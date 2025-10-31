@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"log"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -23,6 +24,7 @@ func NewDocumentHandler(db *database.DB, projectID string) *DocumentHandler {
 }
 
 // CreateDocument creates a new document
+// Supports both path-based creation (auto-resolve folders) and direct folder_id
 // POST /api/documents
 func (h *DocumentHandler) CreateDocument(c *fiber.Ctx) error {
 	var req models.CreateDocumentRequest
@@ -30,19 +32,36 @@ func (h *DocumentHandler) CreateDocument(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
 	}
 
-	// Validate path
-	normalizedPath := utils.NormalizePath(req.Path)
-	if err := utils.ValidatePath(normalizedPath); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, err.Error())
-	}
+	var folderID *string
+	var docName string
 
-	// Check if document with this path already exists
-	existing, err := h.db.GetDocumentByPath(normalizedPath, h.projectID)
-	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "Failed to check existing document")
-	}
-	if existing != nil {
-		return fiber.NewError(fiber.StatusConflict, "Document with this path already exists")
+	// Path-based creation: "Characters/Aria" → auto-create folders
+	if req.Path != nil && *req.Path != "" {
+		// Normalize and validate path
+		normalizedPath := utils.NormalizePath(*req.Path)
+		if err := utils.ValidatePath(normalizedPath); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
+
+		// Resolve path: create folders if needed, extract document name
+		result, err := utils.ResolvePath(h.db, h.projectID, normalizedPath)
+		if err != nil {
+			log.Printf("Error resolving path: %v", err)
+			return fiber.NewError(fiber.StatusInternalServerError, "Failed to resolve path")
+		}
+
+		folderID = result.FolderID
+		docName = result.Name
+	} else if req.FolderID != nil && req.Name != nil {
+		// Direct folder_id creation
+		if err := utils.ValidateDocumentName(*req.Name); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
+
+		folderID = req.FolderID
+		docName = *req.Name
+	} else {
+		return fiber.NewError(fiber.StatusBadRequest, "Either 'path' or both 'folder_id' and 'name' must be provided")
 	}
 
 	// Convert TipTap JSON to Markdown
@@ -58,7 +77,8 @@ func (h *DocumentHandler) CreateDocument(c *fiber.Ctx) error {
 	// Create document
 	doc := &models.Document{
 		ProjectID:       h.projectID,
-		Path:            normalizedPath,
+		FolderID:        folderID,
+		Name:            docName,
 		ContentTipTap:   req.ContentTipTap,
 		ContentMarkdown: markdown,
 		WordCount:       wordCount,
@@ -68,34 +88,25 @@ func (h *DocumentHandler) CreateDocument(c *fiber.Ctx) error {
 
 	if err := h.db.CreateDocument(doc); err != nil {
 		log.Printf("Error creating document: %v", err)
-		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create document")
+		if strings.Contains(err.Error(), "already exists") {
+			return fiber.NewError(fiber.StatusConflict, err.Error())
+		}
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create document: "+err.Error())
+	}
+
+	// Compute display path for response
+	path, err := h.db.GetDocumentPath(doc)
+	if err != nil {
+		log.Printf("Warning: failed to compute path: %v", err)
+		doc.Path = docName
+	} else {
+		doc.Path = path
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(doc)
 }
 
-// ListDocuments retrieves all documents in the project
-// GET /api/documents
-func (h *DocumentHandler) ListDocuments(c *fiber.Ctx) error {
-	documents, err := h.db.ListDocuments(h.projectID)
-	if err != nil {
-		log.Printf("Error listing documents: %v", err)
-		return fiber.NewError(fiber.StatusInternalServerError, "Failed to list documents")
-	}
-
-	if documents == nil {
-		documents = []models.Document{}
-	}
-
-	response := models.DocumentListResponse{
-		Documents: documents,
-		Total:     len(documents),
-	}
-
-	return c.JSON(response)
-}
-
-// GetDocument retrieves a single document
+// GetDocument retrieves a single document by ID (with full content)
 // GET /api/documents/:id
 func (h *DocumentHandler) GetDocument(c *fiber.Ctx) error {
 	id := c.Params("id")
@@ -112,10 +123,17 @@ func (h *DocumentHandler) GetDocument(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to get document")
 	}
 
+	folderID := "nil"
+	if doc.FolderID != nil {
+		folderID = *doc.FolderID
+	}
+	log.Printf("DEBUG GetDocument: %s has folder_id=%s", doc.Name, folderID)
+
 	return c.JSON(doc)
 }
 
 // UpdateDocument updates an existing document
+// Supports updating content, name, or folder_id (move)
 // PUT /api/documents/:id
 func (h *DocumentHandler) UpdateDocument(c *fiber.Ctx) error {
 	id := c.Params("id")
@@ -138,25 +156,17 @@ func (h *DocumentHandler) UpdateDocument(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to get document")
 	}
 
-	// Update path if provided
-	if req.Path != nil {
-		normalizedPath := utils.NormalizePath(*req.Path)
-		if err := utils.ValidatePath(normalizedPath); err != nil {
+	// Update name if provided (rename)
+	if req.Name != nil {
+		if err := utils.ValidateDocumentName(*req.Name); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, err.Error())
 		}
+		doc.Name = *req.Name
+	}
 
-		// Check if a different document with this path already exists
-		if normalizedPath != doc.Path {
-			existing, err := h.db.GetDocumentByPath(normalizedPath, h.projectID)
-			if err != nil {
-				return fiber.NewError(fiber.StatusInternalServerError, "Failed to check existing document")
-			}
-			if existing != nil && existing.ID != doc.ID {
-				return fiber.NewError(fiber.StatusConflict, "Document with this path already exists")
-			}
-		}
-
-		doc.Path = normalizedPath
+	// Update folder_id if provided (move document)
+	if req.FolderID != nil {
+		doc.FolderID = req.FolderID
 	}
 
 	// Update content if provided
@@ -177,7 +187,19 @@ func (h *DocumentHandler) UpdateDocument(c *fiber.Ctx) error {
 
 	if err := h.db.UpdateDocument(doc); err != nil {
 		log.Printf("Error updating document: %v", err)
-		return fiber.NewError(fiber.StatusInternalServerError, "Failed to update document")
+		if strings.Contains(err.Error(), "already exists") {
+			return fiber.NewError(fiber.StatusConflict, err.Error())
+		}
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to update document: "+err.Error())
+	}
+
+	// Compute display path for response
+	path, err := h.db.GetDocumentPath(doc)
+	if err != nil {
+		log.Printf("Warning: failed to compute path: %v", err)
+		doc.Path = doc.Name
+	} else {
+		doc.Path = path
 	}
 
 	return c.JSON(doc)
@@ -210,4 +232,3 @@ func (h *DocumentHandler) HealthCheck(c *fiber.Ctx) error {
 		"time":   time.Now(),
 	})
 }
-

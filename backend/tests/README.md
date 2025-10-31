@@ -7,79 +7,93 @@ Test artifacts and integration tests for the Meridian backend.
 ### Quick Setup
 
 1. **Install Insomnia**: https://insomnia.rest/download
-2. **Open Insomnia** → Click "Create" → "Import From" → "File"
-3. **Select** `backend/tests/insomnia-collection.json`
+2. **Open Insomnia** → Application → Preferences → Data → Import Data
+3. **Import collections** from `backend/tests/insomnia/`:
+   - Start with `01-basic.json` to test server connection
+   - Import others as needed: `02-folders.json`, `03-documents.json`, `04-workflows.json`
 4. **Done!** All endpoints are ready to test
 
 ### What's Included
 
-The Insomnia collection includes:
+Four focused collections organized by feature:
 
-- ✅ **Pre-configured requests** - All API endpoints ready to use
-- ✅ **Environment variables** - `base_url` and `document_id` auto-managed
-- ✅ **Example payloads** - Realistic TipTap JSON samples
-- ✅ **Auto-capture script** - Document IDs automatically saved after creation
+- ✅ **`01-basic.json`** - Health check & tree navigation (2 requests)
+- ✅ **`02-folders.json`** - Folder CRUD operations (6 requests)
+- ✅ **`03-documents.json`** - Document CRUD operations (7 requests)
+- ✅ **`04-workflows.json`** - Real-world scenarios (7 requests)
 
-### Collection Structure
-
-```
-Meridian Backend
-├── Health Check                    # GET /health
-├── Documents
-│   ├── List All Documents          # GET /api/documents
-│   ├── Get Document by ID          # GET /api/documents/:id
-│   ├── Create Document             # POST /api/documents
-│   ├── Update Document             # PUT /api/documents/:id
-│   └── Delete Document             # DELETE /api/documents/:id
-└── Examples
-    ├── Create Chapter              # POST with chapter example
-    ├── Create Character Profile    # POST with character example
-    └── Create World Building Doc   # POST with world building example
-```
-
-### Environment Variables
-
-The collection uses these variables (auto-configured):
-
-- `base_url` - Default: `http://localhost:8080`
-- `document_id` - Auto-captured from Create requests
-
-### After-Response Script
-
-The "Create Document" and example creation requests include an after-response script that automatically captures the `document_id`:
-
-```javascript
-const response = await insomnia.response.json();
-if (response && response.id) {
-  await insomnia.environment.set('document_id', response.id);
-  console.log('✅ Saved document_id:', response.id);
-}
-```
-
-This means you can:
-1. Create a document
-2. Immediately use "Get Document by ID" or "Update Document" without manual copying
+Each collection includes:
+- Pre-configured requests with numbered sequence
+- Environment variables (auto-configured)
+- After-response scripts that auto-capture IDs
+- Example TipTap JSON payloads
 
 ### Testing Workflow
 
-1. **Health Check** - Verify server is running
-2. **Create Document** - Creates a new document (ID auto-saved)
-3. **Get Document** - Retrieves the just-created document
-4. **Update Document** - Modifies the document
-5. **List All** - Verify all documents
-6. **Delete Document** - Clean up
+**Quick Test (Recommended order):**
+1. Import `01-basic.json` → Run "Health Check" and "Get Document Tree"
+2. Import `04-workflows.json` → Run all 7 requests in sequence
+3. View "Get Document Tree" again to see structure
 
-### Changing the Server URL
+**Feature-Specific Testing:**
+- Testing folders? Import `02-folders.json`
+- Testing documents? Import `03-documents.json`
+- Testing workflows? Import `04-workflows.json`
 
-If your server runs on a different port:
+### After-Response Scripts
 
-1. Click on the environment dropdown (top-left)
-2. Edit `base_url` to your server URL
-3. All requests will use the new URL
+Collections auto-capture IDs for easy chaining:
+
+```javascript
+// Example: After creating a folder
+const response = await insomnia.response.json();
+if (response && response.id) {
+  await insomnia.environment.set('folder_id', response.id);
+  console.log('✅ Saved folder_id:', response.id);
+}
+```
+
+Check the **Console** tab in Insomnia to see captured values.
+
+### Environment Variables
+
+Each collection has its own environment:
+
+**`01-basic.json`:**
+- `base_url`: `http://localhost:8080`
+
+**`02-folders.json`:**
+- `base_url`, `folder_id`, `subfolder_id`
+
+**`03-documents.json`:**
+- `base_url`, `document_id`, `root_document_id`, `folder_id`
+
+**`04-workflows.json`:**
+- `base_url`, `nested_doc_id`, `chapters_folder_id`, `chapter1_id`, `archive_folder_id`
+
+### Detailed Documentation
+
+See `insomnia/README.md` for:
+- Detailed collection descriptions
+- Request-by-request explanations
+- Troubleshooting tips
+- Advanced usage
 
 ## Manual Testing with curl
 
 See `_docs/technical/backend/api-testing-comprehensive.md` for complete curl examples and test scenarios.
+
+## Seeding Test Data
+
+To populate the database with sample data:
+
+```bash
+cd backend
+make seed           # Regular seed (keeps tables, clears data)
+make seed-fresh     # Fresh start (drops tables, recreates, seeds)
+```
+
+See `_docs/technical/backend/database-seeding.md` for details.
 
 ## Unit Tests (Future)
 
@@ -95,22 +109,10 @@ go test ./...
 
 ## Integration Tests (Future)
 
-Integration tests will go in this directory:
+Integration tests will go in:
 - `tests/integration/` - Full API integration tests
 - `tests/fixtures/` - Test data fixtures
 
-## Seeding Test Data
-
-To populate the database with sample data:
-
-```bash
-cd backend
-make seed
-```
-
-See `_docs/technical/backend/database-seeding.md` for details.
-
 ---
 
-**Pro tip:** Use the Insomnia collection for manual testing and visual inspection. Reserve curl for CI/CD and automation! 🚀
-
+**Pro tip:** Use the Insomnia collections for manual testing and visual inspection. Each collection is focused on a specific area, making it easy to test features in isolation! 🚀

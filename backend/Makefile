@@ -41,3 +41,6 @@ docker-run: ## Run Docker container
 seed: ## Seed the database with sample data
 	go run ./cmd/seed/main.go
 
+seed-fresh: ## Drop all tables and seed from scratch (fresh start)
+	go run ./cmd/seed/main.go --drop-tables
+

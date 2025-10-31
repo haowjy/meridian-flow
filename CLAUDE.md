@@ -14,20 +14,34 @@ Meridian is a document management system for creative writers, starting with fic
 
 ```
 backend/
-├── cmd/server/main.go              # Entry point, routing, middleware setup
+├── cmd/
+│   ├── server/main.go              # Entry point, routing, middleware setup
+│   └── seed/main.go                # Database seeder
 ├── internal/
 │   ├── config/                     # Environment configuration
 │   ├── database/                   # DB connection, CRUD operations
 │   │   ├── database.go             # Connection wrapper with table prefix support
 │   │   ├── table_names.go          # Dynamic table naming (dev_/test_/prod_)
-│   │   └── documents.go            # Document queries
+│   │   ├── documents.go            # Document queries
+│   │   ├── folders.go              # Folder queries
+│   │   └── tree.go                 # Tree builder (nested folder/document structure)
 │   ├── handlers/                   # HTTP request handlers (Fiber)
+│   │   ├── documents.go            # Document CRUD handlers
+│   │   ├── folders.go              # Folder CRUD handlers
+│   │   └── tree.go                 # Tree endpoint handler
 │   ├── middleware/                 # Auth stub, error handling
-│   ├── models/                     # Document, Project structs
+│   ├── models/                     # Folder, Document, Project structs
+│   │   ├── folder.go               # Folder + TreeNode models
+│   │   ├── document.go             # Document model
+│   │   └── project.go              # Project model
 │   └── utils/
 │       ├── tiptap_converter.go     # TipTap JSON → Markdown conversion
 │       ├── word_counter.go         # Word counting from Markdown
-│       └── path_validator.go       # Document path validation
+│       ├── path_validator.go       # Document path validation
+│       └── path_resolver.go        # Path → folder_id resolver (auto-create folders)
+├── tests/                          # Test artifacts
+│   ├── insomnia-collection.json    # API testing collection
+│   └── README.md                   # Testing guide
 └── schema.sql                      # Database schema (run in Supabase)
 
 _docs/                              # Product documentation
@@ -74,9 +88,18 @@ make dev
 
 1. Create Supabase project at supabase.com
 2. Go to SQL Editor in Supabase dashboard
-3. Run `backend/schema.sql` to create `dev_projects` and `dev_documents` tables
+3. Run `backend/schema.sql` to create `dev_projects`, `dev_folders`, and `dev_documents` tables
 4. Get database connection string from Settings → Database
 5. Configure `.env` with `SUPABASE_DB_URL` (this is all you need for Phase 1!)
+
+### Seeding Database
+
+```bash
+# Populate with sample documents and folders
+make seed
+# or
+go run ./cmd/seed/main.go
+```
 
 ### API Testing
 
@@ -88,33 +111,49 @@ make dev
 # Health check
 curl http://localhost:8080/health
 
-# Create document
+# Get document tree (nested folder/document structure)
+curl http://localhost:8080/api/tree
+
+# Create document (path auto-resolves folders)
 curl -X POST http://localhost:8080/api/documents \
   -H "Content-Type: application/json" \
   -d '{
-    "path": "Test Document",
+    "path": "Characters/Aria",
     "content_tiptap": {
       "type": "doc",
       "content": [{
         "type": "paragraph",
-        "content": [{"type": "text", "text": "Hello world!"}]
+        "content": [{"type": "text", "text": "Aria is the protagonist..."}]
       }]
     }
   }'
 
-# List all documents
-curl http://localhost:8080/api/documents
-
 # Get document by ID
 curl http://localhost:8080/api/documents/{id}
 
-# Update document
+# Update document (rename, move, or edit content)
 curl -X PUT http://localhost:8080/api/documents/{id} \
   -H "Content-Type: application/json" \
-  -d '{"path": "Updated Title"}'
+  -d '{"name": "Aria Moonwhisper"}'
 
 # Delete document
 curl -X DELETE http://localhost:8080/api/documents/{id}
+
+# Create folder
+curl -X POST http://localhost:8080/api/folders \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Chapters", "parent_id": null}'
+
+# Get folder with children
+curl http://localhost:8080/api/folders/{id}
+
+# Rename or move folder
+curl -X PUT http://localhost:8080/api/folders/{id} \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Story Chapters"}'
+
+# Delete folder
+curl -X DELETE http://localhost:8080/api/folders/{id}
 ```
 
 ## Important Coding Conventions

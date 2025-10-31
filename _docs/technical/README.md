@@ -6,6 +6,16 @@ Comprehensive technical specifications and implementation details for Meridian.
 
 Backend architecture, database, and API implementation.
 
+### Backend Refactoring (October 2025)
+
+**🚨 MUST READ for anyone working on backend architecture:**
+
+- **[Architecture Review](./architecture-review.md)** ⭐ - Comprehensive analysis of current issues (Score: 4.25/10)
+- **[Go Best Practices Research](./go-best-practices-research.md)** - 2025 Go patterns, recommended packages
+- **[Refactoring Plan](./refactoring-plan.md)** - Step-by-step migration guide (2-3 weeks)
+
+**Quick Summary:** Current backend needs refactoring to support LLM streaming and vector search. Migration to clean architecture (Handler → Service → Repository) with pgx, structured logging, and background jobs.
+
 ### Core Documentation
 
 - **[Environment Setup](./backend/environment-setup.md)** - Environment-based table prefixes, deployment strategies

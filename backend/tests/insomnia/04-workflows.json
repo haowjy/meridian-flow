@@ -1,0 +1,222 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2025-10-31T12:00:00.000Z",
+  "__export_source": "insomnia.desktop.app:v2023.5.8",
+  "resources": [
+    {
+      "_id": "req_workflow_nested",
+      "parentId": "fld_workflows",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "1. Create Deeply Nested Document",
+      "description": "Create a document with deep path - auto-creates all folders in hierarchy",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"path\": \"World Building/Locations/Cities/Eldergrove\",\n  \"content_tiptap\": {\n    \"type\": \"doc\",\n    \"content\": [\n      {\n        \"type\": \"heading\",\n        \"attrs\": {\"level\": 1},\n        \"content\": [{\"type\": \"text\", \"text\": \"Eldergrove\"}]\n      },\n      {\n        \"type\": \"paragraph\",\n        \"content\": [{\"type\": \"text\", \"text\": \"A bustling city at the crossroads of three kingdoms.\"}]\n      }\n    ]\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739100000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = await insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('nested_doc_id', response.id);\n  console.log('✅ Document created in nested folders');\n  console.log('Path:', response.path);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_workflow_get_tree",
+      "parentId": "fld_workflows",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/tree",
+      "name": "2. View Full Tree",
+      "description": "See the entire folder/document tree structure created",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739090000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_workflow_folder_direct",
+      "parentId": "fld_workflows",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders",
+      "name": "3. Create Folder Then Document",
+      "description": "First create a folder, then add document to it using folder_id",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"Chapters\",\n  \"parent_id\": null\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739080000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = await insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('chapters_folder_id', response.id);\n  console.log('✅ Chapters folder created:', response.id);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_workflow_doc_in_folder",
+      "parentId": "fld_workflows",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "4. Add Document to Folder",
+      "description": "Create document using folder_id (from previous step)",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"folder_id\": \"{{ _.chapters_folder_id }}\",\n  \"name\": \"Chapter 1 - The Beginning\",\n  \"content_tiptap\": {\n    \"type\": \"doc\",\n    \"content\": [\n      {\n        \"type\": \"heading\",\n        \"attrs\": {\"level\": 1},\n        \"content\": [{\"type\": \"text\", \"text\": \"The Beginning\"}]\n      },\n      {\n        \"type\": \"paragraph\",\n        \"content\": [{\"type\": \"text\", \"text\": \"Once upon a time...\"}]\n      }\n    ]\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739070000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = await insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('chapter1_id', response.id);\n  console.log('✅ Chapter 1 created in Chapters folder');\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_workflow_reorganize",
+      "parentId": "fld_workflows",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders",
+      "name": "5. Create Archive Folder",
+      "description": "Create an Archive folder to reorganize documents",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"Archive\",\n  \"parent_id\": null\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739060000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = await insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('archive_folder_id', response.id);\n  console.log('✅ Archive folder created:', response.id);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_workflow_move_doc",
+      "parentId": "fld_workflows",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.chapter1_id }}",
+      "name": "6. Move Document to Archive",
+      "description": "Move Chapter 1 to the Archive folder",
+      "method": "PUT",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"folder_id\": \"{{ _.archive_folder_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739050000,
+      "isPrivate": false,
+      "afterResponseScript": "console.log('✅ Document moved to Archive folder');",
+      "_type": "request"
+    },
+    {
+      "_id": "req_workflow_final_tree",
+      "parentId": "fld_workflows",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/tree",
+      "name": "7. View Final Structure",
+      "description": "See the final reorganized tree structure",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739040000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "fld_workflows",
+      "parentId": "wrk_workflows",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Common Workflows",
+      "description": "Test realistic user workflows",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698739200000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "wrk_workflows",
+      "parentId": null,
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "04 - Workflows",
+      "description": "Common user workflows and scenarios",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "env_base",
+      "parentId": "wrk_workflows",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:8080",
+        "nested_doc_id": "",
+        "chapters_folder_id": "",
+        "chapter1_id": "",
+        "archive_folder_id": ""
+      },
+      "dataPropertyOrder": {
+        "&": [
+          "base_url",
+          "nested_doc_id",
+          "chapters_folder_id",
+          "chapter1_id",
+          "archive_folder_id"
+        ]
+      },
+      "color": null,
+      "isPrivate": false,
+      "metaSortKey": 1698739200000,
+      "_type": "environment"
+    }
+  ]
+}
+

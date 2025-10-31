@@ -65,11 +65,17 @@ Writer: "This is magical."
 
 **What users see:**
 - Document tree (folders + documents)
-- Click document → opens in editor
-- Create/rename/delete documents
+- Click document → opens in editor (single view, one document at a time)
+- Create/rename/delete/move documents
 - Rich text editing (bold, italic, headings, lists)
 - Auto-save (every 2 seconds after typing stops)
 - Word count
+
+**MVP simplification:**
+- Single document view (no tabs)
+- Clicking new document saves current and loads new one
+- Keeps MVP focused and simple
+- Tabs can be added in Phase 1.5 if needed
 
 **What happens behind the scenes:**
 - Store TipTap JSON (for editor)

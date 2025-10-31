@@ -17,7 +17,7 @@ Get the Meridian backend up and running in 5 minutes.
 4. Click **Run** (or press Cmd/Ctrl + Enter)
 5. You should see "Success. No rows returned"
 
-This creates your `dev_projects` and `dev_documents` tables.
+This creates your `dev_projects`, `dev_folders`, and `dev_documents` tables.
 
 ## Step 3: Configure Environment
 
@@ -81,11 +81,13 @@ You should get:
 
 ## Test Creating a Document
 
+Create a document with automatic folder creation:
+
 ```bash
 curl -X POST http://localhost:8080/api/documents \
   -H "Content-Type: application/json" \
   -d '{
-    "path": "Test Document",
+    "path": "Characters/Hero",
     "content_tiptap": {
       "type": "doc",
       "content": [
@@ -94,7 +96,7 @@ curl -X POST http://localhost:8080/api/documents \
           "content": [
             {
               "type": "text",
-              "text": "Hello world!"
+              "text": "The hero of our story..."
             }
           ]
         }
@@ -103,11 +105,13 @@ curl -X POST http://localhost:8080/api/documents \
   }'
 ```
 
-## Test Listing Documents
+## Test Getting the Document Tree
 
 ```bash
-curl http://localhost:8080/api/documents
+curl http://localhost:8080/api/tree
 ```
+
+This returns a nested folder/document structure showing your entire project hierarchy.
 
 ## Next Steps
 
@@ -127,8 +131,8 @@ Once the server is running:
 
 ### "Failed to ensure test project"
 
-- Make sure you ran the migration (`001_initial_schema.sql`)
-- Check if the `projects` table exists in Supabase (Table Editor)
+- Make sure you ran `schema.sql` in the Supabase SQL Editor
+- Check if the `dev_projects` table exists in Supabase (Table Editor)
 
 ### Port already in use
 

@@ -1,0 +1,217 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2025-10-31T12:00:00.000Z",
+  "__export_source": "insomnia.desktop.app:v2023.5.8",
+  "resources": [
+    {
+      "_id": "req_create_doc_path",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "1. Create Document (Path Auto-Resolve)",
+      "description": "Create document with path - automatically creates 'Characters' folder if it doesn't exist",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"path\": \"Characters/Aria Moonwhisper\",\n  \"content_tiptap\": {\n    \"type\": \"doc\",\n    \"content\": [\n      {\n        \"type\": \"heading\",\n        \"attrs\": {\"level\": 1},\n        \"content\": [{\"type\": \"text\", \"text\": \"Aria Moonwhisper\"}]\n      },\n      {\n        \"type\": \"paragraph\",\n        \"content\": [\n          {\"type\": \"text\", \"text\": \"A powerful sorceress with \"},\n          {\"type\": \"text\", \"marks\": [{\"type\": \"bold\"}], \"text\": \"silver hair\"},\n          {\"type\": \"text\", \"text\": \" and violet eyes.\"}\n        ]\n      },\n      {\n        \"type\": \"bulletList\",\n        \"content\": [\n          {\n            \"type\": \"listItem\",\n            \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Age: 17\"}]}]\n          },\n          {\n            \"type\": \"listItem\",\n            \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Element: Wind\"}]}]\n          }\n        ]\n      }\n    ]\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739100000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = await insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('document_id', response.id);\n  console.log('✅ Saved document_id:', response.id);\n}\nif (response && response.folder_id) {\n  await insomnia.environment.set('folder_id', response.folder_id);\n  console.log('✅ Saved folder_id:', response.folder_id);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_doc_root",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "2. Create Root Document",
+      "description": "Create a document at root level (no folder)",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"path\": \"Quick Notes\",\n  \"content_tiptap\": {\n    \"type\": \"doc\",\n    \"content\": [\n      {\n        \"type\": \"heading\",\n        \"attrs\": {\"level\": 1},\n        \"content\": [{\"type\": \"text\", \"text\": \"Quick Notes\"}]\n      },\n      {\n        \"type\": \"paragraph\",\n        \"content\": [{\"type\": \"text\", \"text\": \"Random ideas and thoughts to explore later.\"}]\n      }\n    ]\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739085000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = await insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('root_document_id', response.id);\n  console.log('✅ Saved root_document_id:', response.id);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_document",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
+      "name": "3. Get Document by ID",
+      "description": "Get a specific document by ID (with full content)",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698738900000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_update_content",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
+      "name": "4. Update Document Content",
+      "description": "Update the content of a document (name and folder stay the same)",
+      "method": "PUT",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"content_tiptap\": {\n    \"type\": \"doc\",\n    \"content\": [\n      {\n        \"type\": \"heading\",\n        \"attrs\": {\"level\": 1},\n        \"content\": [{\"type\": \"text\", \"text\": \"Aria Moonwhisper - Updated!\"}]\n      },\n      {\n        \"type\": \"paragraph\",\n        \"content\": [{\"type\": \"text\", \"text\": \"This content has been updated! She is now level 25.\"}]\n      }\n    ]\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738800000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_rename_document",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
+      "name": "5. Rename Document",
+      "description": "Change the name of a document (stays in same folder)",
+      "method": "PUT",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"Aria the Enchantress\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738700000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_move_document",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.root_document_id }}",
+      "name": "6. Move Document to Folder",
+      "description": "Move root document into a folder (uses folder_id from environment)",
+      "method": "PUT",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"folder_id\": \"{{ _.folder_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738650000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_delete_document",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
+      "name": "7. Delete Document",
+      "description": "Delete a document by ID",
+      "method": "DELETE",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698738600000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "fld_documents",
+      "parentId": "wrk_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Document Operations",
+      "description": "Test document CRUD operations",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698739200000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "wrk_documents",
+      "parentId": null,
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "03 - Documents",
+      "description": "Document CRUD operations",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "env_base",
+      "parentId": "wrk_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:8080",
+        "document_id": "",
+        "root_document_id": "",
+        "folder_id": ""
+      },
+      "dataPropertyOrder": {
+        "&": [
+          "base_url",
+          "document_id",
+          "root_document_id",
+          "folder_id"
+        ]
+      },
+      "color": null,
+      "isPrivate": false,
+      "metaSortKey": 1698739200000,
+      "_type": "environment"
+    }
+  ]
+}
+

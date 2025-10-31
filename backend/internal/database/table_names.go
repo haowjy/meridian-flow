@@ -5,6 +5,7 @@ import "fmt"
 // TableNames holds the prefixed table names for the current environment
 type TableNames struct {
 	Projects  string
+	Folders   string
 	Documents string
 }
 
@@ -12,6 +13,7 @@ type TableNames struct {
 func NewTableNames(prefix string) *TableNames {
 	return &TableNames{
 		Projects:  fmt.Sprintf("%sprojects", prefix),
+		Folders:   fmt.Sprintf("%sfolders", prefix),
 		Documents: fmt.Sprintf("%sdocuments", prefix),
 	}
 }
@@ -25,6 +27,8 @@ func (db *DB) GetTableName(baseName string) string {
 	switch baseName {
 	case "projects":
 		return db.Tables.Projects
+	case "folders":
+		return db.Tables.Folders
 	case "documents":
 		return db.Tables.Documents
 	default:

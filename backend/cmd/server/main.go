@@ -2,11 +2,12 @@ package main
 
 import (
 	"log"
+	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/jimmyyao/meridian/backend/internal/config"
 	"github.com/jimmyyao/meridian/backend/internal/database"
@@ -21,6 +22,23 @@ func main() {
 
 	// Load configuration
 	cfg := config.Load()
+
+	// Setup structured logging
+	logLevel := slog.LevelInfo
+	if cfg.Environment == "dev" {
+		logLevel = slog.LevelDebug
+	}
+
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: logLevel,
+	}))
+	slog.SetDefault(logger) // Set as default logger
+
+	logger.Info("server starting",
+		"environment", cfg.Environment,
+		"port", cfg.Port,
+		"table_prefix", cfg.TablePrefix,
+	)
 
 	// Connect to database
 	db, err := database.Connect(cfg.SupabaseDBURL, cfg.TablePrefix)
@@ -41,7 +59,6 @@ func main() {
 
 	// Middleware
 	app.Use(recover.New())
-	app.Use(logger.New())
 
 	// CORS configuration
 	app.Use(cors.New(cors.Config{
@@ -51,8 +68,14 @@ func main() {
 		AllowCredentials: true,
 	}))
 
-	// Auth middleware (stub for now)
+	// Auth middleware (stub for now) - injects userID into context
 	app.Use(middleware.AuthMiddleware(cfg.TestUserID))
+
+	// Project middleware - injects projectID into context
+	app.Use(func(c *fiber.Ctx) error {
+		c.Locals("projectID", cfg.TestProjectID)
+		return c.Next()
+	})
 
 	// Initialize handlers
 	documentHandler := handlers.NewDocumentHandler(db, cfg.TestProjectID)
@@ -63,9 +86,20 @@ func main() {
 	// Health check
 	app.Get("/health", documentHandler.HealthCheck)
 
+	// Tree endpoint (get folder/document hierarchy)
+	api.Get("/tree", handlers.GetTree(db))
+
+	// Debug endpoint
+	api.Get("/debug/documents", handlers.DebugDocuments(db))
+
+	// Folder routes
+	api.Post("/folders", handlers.CreateFolder(db))
+	api.Get("/folders/:id", handlers.GetFolder(db))
+	api.Put("/folders/:id", handlers.UpdateFolder(db))
+	api.Delete("/folders/:id", handlers.DeleteFolder(db))
+
 	// Document routes
 	api.Post("/documents", documentHandler.CreateDocument)
-	api.Get("/documents", documentHandler.ListDocuments)
 	api.Get("/documents/:id", documentHandler.GetDocument)
 	api.Put("/documents/:id", documentHandler.UpdateDocument)
 	api.Delete("/documents/:id", documentHandler.DeleteDocument)

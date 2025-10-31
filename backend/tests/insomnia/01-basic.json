@@ -1,0 +1,84 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2025-10-31T12:00:00.000Z",
+  "__export_source": "insomnia.desktop.app:v2023.5.8",
+  "resources": [
+    {
+      "_id": "req_health_check",
+      "parentId": "fld_basic",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/health",
+      "name": "Health Check",
+      "description": "Check if the server is running",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739200000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_tree",
+      "parentId": "fld_basic",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/tree",
+      "name": "Get Document Tree",
+      "description": "Get complete nested folder/document tree structure (metadata only, no content)",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739100000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "fld_basic",
+      "parentId": "wrk_basic",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Basic Operations",
+      "description": "Health check and tree navigation",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698739200000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "wrk_basic",
+      "parentId": null,
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "01 - Basic Operations",
+      "description": "Health check and tree navigation",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "env_base",
+      "parentId": "wrk_basic",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:8080"
+      },
+      "dataPropertyOrder": {
+        "&": [
+          "base_url"
+        ]
+      },
+      "color": null,
+      "isPrivate": false,
+      "metaSortKey": 1698739200000,
+      "_type": "environment"
+    }
+  ]
+}
+
