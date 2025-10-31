@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"log/slog"
 	"os"
@@ -11,8 +12,11 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/jimmyyao/meridian/backend/internal/config"
 	"github.com/jimmyyao/meridian/backend/internal/database"
+	"github.com/jimmyyao/meridian/backend/internal/handler"
 	"github.com/jimmyyao/meridian/backend/internal/handlers"
 	"github.com/jimmyyao/meridian/backend/internal/middleware"
+	"github.com/jimmyyao/meridian/backend/internal/repository/postgres"
+	"github.com/jimmyyao/meridian/backend/internal/service"
 	"github.com/joho/godotenv"
 )
 
@@ -40,17 +44,51 @@ func main() {
 		"table_prefix", cfg.TablePrefix,
 	)
 
-	// Connect to database
-	db, err := database.Connect(cfg.SupabaseDBURL, cfg.TablePrefix)
+	// Create pgx connection pool
+	ctx := context.Background()
+	pool, err := postgres.CreateConnectionPool(ctx, cfg.SupabaseDBURL)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		log.Fatalf("Failed to create connection pool: %v", err)
 	}
-	defer db.Close()
+	defer pool.Close()
 
-	// Ensure test project exists
-	if err := db.EnsureTestProject(cfg.TestProjectID, cfg.TestUserID, "Test Project"); err != nil {
+	logger.Info("database connected",
+		"max_conns", 25,
+		"min_conns", 5,
+	)
+
+	// Keep old database connection for non-migrated handlers (temporary)
+	oldDB, err := database.Connect(cfg.SupabaseDBURL, cfg.TablePrefix)
+	if err != nil {
+		log.Fatalf("Failed to connect to old database: %v", err)
+	}
+	defer oldDB.Close()
+
+	// Ensure test project exists (using old DB for now)
+	if err := oldDB.EnsureTestProject(cfg.TestProjectID, cfg.TestUserID, "Test Project"); err != nil {
 		log.Fatalf("Failed to ensure test project: %v", err)
 	}
+
+	// Create table names
+	tables := postgres.NewTableNames(cfg.TablePrefix)
+
+	// Create repositories
+	repoConfig := &postgres.RepositoryConfig{
+		Pool:   pool,
+		Tables: tables,
+		Logger: logger,
+	}
+	docRepo := postgres.NewDocumentRepository(repoConfig)
+	folderRepo := postgres.NewFolderRepository(repoConfig)
+	txManager := postgres.NewTransactionManager(pool)
+
+	// Create services
+	docService := service.NewDocumentService(docRepo, folderRepo, txManager, logger)
+
+	// Create new handlers
+	newDocHandler := handler.NewDocumentHandler(docService, logger)
+
+	logger.Info("services initialized")
 
 	// Create Fiber app with custom error handler
 	app := fiber.New(fiber.Config{
@@ -77,32 +115,29 @@ func main() {
 		return c.Next()
 	})
 
-	// Initialize handlers
-	documentHandler := handlers.NewDocumentHandler(db, cfg.TestProjectID)
-
 	// Routes
 	api := app.Group("/api")
 
 	// Health check
-	app.Get("/health", documentHandler.HealthCheck)
+	app.Get("/health", newDocHandler.HealthCheck)
 
-	// Tree endpoint (get folder/document hierarchy)
-	api.Get("/tree", handlers.GetTree(db))
+	// Tree endpoint (OLD - will migrate in Phase 3)
+	api.Get("/tree", handlers.GetTree(oldDB))
 
-	// Debug endpoint
-	api.Get("/debug/documents", handlers.DebugDocuments(db))
+	// Debug endpoint (OLD - will migrate in Phase 3)
+	api.Get("/debug/documents", handlers.DebugDocuments(oldDB))
 
-	// Folder routes
-	api.Post("/folders", handlers.CreateFolder(db))
-	api.Get("/folders/:id", handlers.GetFolder(db))
-	api.Put("/folders/:id", handlers.UpdateFolder(db))
-	api.Delete("/folders/:id", handlers.DeleteFolder(db))
+	// Folder routes (OLD - will migrate in Phase 2)
+	api.Post("/folders", handlers.CreateFolder(oldDB))
+	api.Get("/folders/:id", handlers.GetFolder(oldDB))
+	api.Put("/folders/:id", handlers.UpdateFolder(oldDB))
+	api.Delete("/folders/:id", handlers.DeleteFolder(oldDB))
 
-	// Document routes
-	api.Post("/documents", documentHandler.CreateDocument)
-	api.Get("/documents/:id", documentHandler.GetDocument)
-	api.Put("/documents/:id", documentHandler.UpdateDocument)
-	api.Delete("/documents/:id", documentHandler.DeleteDocument)
+	// Document routes (NEW - using clean architecture)
+	api.Post("/documents", newDocHandler.CreateDocument)
+	api.Get("/documents/:id", newDocHandler.GetDocument)
+	api.Put("/documents/:id", newDocHandler.UpdateDocument)
+	api.Delete("/documents/:id", newDocHandler.DeleteDocument)
 
 	// Start server
 	log.Printf("Server starting on port %s", cfg.Port)
