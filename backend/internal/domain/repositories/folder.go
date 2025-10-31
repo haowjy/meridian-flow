@@ -28,4 +28,7 @@ type FolderRepository interface {
 
 	// GetPath computes the path for a folder
 	GetPath(ctx context.Context, folderID *string, projectID string) (string, error)
+
+	// GetAllByProject retrieves all folders in a project (flat list)
+	GetAllByProject(ctx context.Context, projectID string) ([]models.Folder, error)
 }

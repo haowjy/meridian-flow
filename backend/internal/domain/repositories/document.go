@@ -25,4 +25,7 @@ type DocumentRepository interface {
 
 	// GetPath computes the display path for a document
 	GetPath(ctx context.Context, doc *models.Document) (string, error)
+
+	// GetAllMetadataByProject retrieves all document metadata in a project (no content)
+	GetAllMetadataByProject(ctx context.Context, projectID string) ([]models.Document, error)
 }

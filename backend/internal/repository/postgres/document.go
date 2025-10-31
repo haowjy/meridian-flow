@@ -189,6 +189,45 @@ func (r *PostgresDocumentRepository) ListByFolder(ctx context.Context, folderID 
 	return documents, nil
 }
 
+// GetAllMetadataByProject retrieves all document metadata in a project (no content)
+func (r *PostgresDocumentRepository) GetAllMetadataByProject(ctx context.Context, projectID string) ([]models.Document, error) {
+	query := fmt.Sprintf(`
+		SELECT id, project_id, folder_id, name, word_count, updated_at
+		FROM %s
+		WHERE project_id = $1
+		ORDER BY updated_at DESC
+	`, r.tables.Documents)
+
+	rows, err := r.pool.Query(ctx, query, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("get all document metadata: %w", err)
+	}
+	defer rows.Close()
+
+	var documents []models.Document
+	for rows.Next() {
+		var doc models.Document
+		err := rows.Scan(
+			&doc.ID,
+			&doc.ProjectID,
+			&doc.FolderID,
+			&doc.Name,
+			&doc.WordCount,
+			&doc.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan document: %w", err)
+		}
+		documents = append(documents, doc)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate documents: %w", err)
+	}
+
+	return documents, nil
+}
+
 // GetPath computes the display path for a document
 func (r *PostgresDocumentRepository) GetPath(ctx context.Context, doc *models.Document) (string, error) {
 	if doc.FolderID == nil {

@@ -253,6 +253,45 @@ func (r *PostgresFolderRepository) GetPath(ctx context.Context, folderID *string
 	return path, nil
 }
 
+// GetAllByProject retrieves all folders in a project (flat list)
+func (r *PostgresFolderRepository) GetAllByProject(ctx context.Context, projectID string) ([]models.Folder, error) {
+	query := fmt.Sprintf(`
+		SELECT id, project_id, parent_id, name, created_at, updated_at
+		FROM %s
+		WHERE project_id = $1
+		ORDER BY created_at ASC
+	`, r.tables.Folders)
+
+	rows, err := r.pool.Query(ctx, query, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("get all folders: %w", err)
+	}
+	defer rows.Close()
+
+	var folders []models.Folder
+	for rows.Next() {
+		var folder models.Folder
+		err := rows.Scan(
+			&folder.ID,
+			&folder.ProjectID,
+			&folder.ParentID,
+			&folder.Name,
+			&folder.CreatedAt,
+			&folder.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan folder: %w", err)
+		}
+		folders = append(folders, folder)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate folders: %w", err)
+	}
+
+	return folders, nil
+}
+
 // GetByPath retrieves a folder by its full path (helper method, not in interface)
 func (r *PostgresFolderRepository) GetByPath(ctx context.Context, projectID string, path string) (*models.Folder, error) {
 	segments := strings.Split(strings.Trim(path, "/"), "/")

@@ -2,23 +2,39 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jimmyyao/meridian/backend/internal/config"
-	"github.com/jimmyyao/meridian/backend/internal/database"
 	"github.com/jimmyyao/meridian/backend/internal/handler"
-	"github.com/jimmyyao/meridian/backend/internal/handlers"
 	"github.com/jimmyyao/meridian/backend/internal/middleware"
 	"github.com/jimmyyao/meridian/backend/internal/repository/postgres"
 	"github.com/jimmyyao/meridian/backend/internal/service"
 	"github.com/joho/godotenv"
 )
+
+// ensureTestProject creates a test project if it doesn't exist (Phase 1 auth stub)
+func ensureTestProject(ctx context.Context, pool *pgxpool.Pool, tables *postgres.TableNames, projectID, userID, name string) error {
+	query := fmt.Sprintf(`
+		INSERT INTO %s (id, user_id, name, created_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (id) DO NOTHING
+	`, tables.Projects)
+
+	_, err := pool.Exec(ctx, query, projectID, userID, name, time.Now())
+	if err != nil {
+		return fmt.Errorf("failed to ensure test project: %w", err)
+	}
+	return nil
+}
 
 func main() {
 	// Load .env file (silently ignore if it doesn't exist - for production)
@@ -57,20 +73,13 @@ func main() {
 		"min_conns", 5,
 	)
 
-	// Keep old database connection for non-migrated handlers (temporary)
-	oldDB, err := database.Connect(cfg.SupabaseDBURL, cfg.TablePrefix)
-	if err != nil {
-		log.Fatalf("Failed to connect to old database: %v", err)
-	}
-	defer oldDB.Close()
-
-	// Ensure test project exists (using old DB for now)
-	if err := oldDB.EnsureTestProject(cfg.TestProjectID, cfg.TestUserID, "Test Project"); err != nil {
-		log.Fatalf("Failed to ensure test project: %v", err)
-	}
-
 	// Create table names
 	tables := postgres.NewTableNames(cfg.TablePrefix)
+
+	// Ensure test project exists (Phase 1 auth stub)
+	if err := ensureTestProject(ctx, pool, tables, cfg.TestProjectID, cfg.TestUserID, "Test Project"); err != nil {
+		log.Fatalf("Failed to ensure test project: %v", err)
+	}
 
 	// Create repositories
 	repoConfig := &postgres.RepositoryConfig{
@@ -85,10 +94,12 @@ func main() {
 	// Create services
 	docService := service.NewDocumentService(docRepo, folderRepo, txManager, logger)
 	folderService := service.NewFolderService(folderRepo, docRepo, logger)
+	treeService := service.NewTreeService(folderRepo, docRepo, logger)
 
 	// Create new handlers
 	newDocHandler := handler.NewDocumentHandler(docService, logger)
 	newFolderHandler := handler.NewFolderHandler(folderService, logger)
+	newTreeHandler := handler.NewTreeHandler(treeService, logger)
 
 	logger.Info("services initialized")
 
@@ -123,11 +134,8 @@ func main() {
 	// Health check
 	app.Get("/health", newDocHandler.HealthCheck)
 
-	// Tree endpoint (OLD - will migrate in Phase 3)
-	api.Get("/tree", handlers.GetTree(oldDB))
-
-	// Debug endpoint (OLD - will migrate in Phase 3)
-	api.Get("/debug/documents", handlers.DebugDocuments(oldDB))
+	// Tree endpoint (NEW - using clean architecture)
+	api.Get("/tree", newTreeHandler.GetTree)
 
 	// Folder routes (NEW - using clean architecture)
 	api.Post("/folders", newFolderHandler.CreateFolder)
