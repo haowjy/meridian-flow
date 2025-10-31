@@ -23,17 +23,17 @@ type DocumentService interface {
 
 // CreateDocumentRequest represents a document creation request
 type CreateDocumentRequest struct {
-	ProjectID     string
-	Path          *string                // Path-based creation (e.g., "Characters/Aria")
-	FolderID      *string                // Direct folder assignment
-	Name          *string                // Document name (if not using path)
-	ContentTipTap map[string]interface{} // TipTap JSON
+	ProjectID     string                 `json:"project_id"`
+	Path          *string                `json:"path,omitempty"`          // Path-based creation (e.g., "Characters/Aria")
+	FolderID      *string                `json:"folder_id,omitempty"`     // Direct folder assignment
+	Name          *string                `json:"name,omitempty"`          // Document name (if not using path)
+	ContentTipTap map[string]interface{} `json:"content_tiptap"`          // TipTap JSON
 }
 
 // UpdateDocumentRequest represents a document update request
 type UpdateDocumentRequest struct {
-	ProjectID     string
-	Name          *string
-	FolderID      *string
-	ContentTipTap *map[string]interface{}
+	ProjectID     string                  `json:"project_id"`
+	Name          *string                 `json:"name,omitempty"`
+	FolderID      *string                 `json:"folder_id,omitempty"`
+	ContentTipTap *map[string]interface{} `json:"content_tiptap,omitempty"`
 }
