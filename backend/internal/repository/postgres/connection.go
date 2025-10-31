@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -41,6 +42,10 @@ func CreateConnectionPool(ctx context.Context, databaseURL string) (*pgxpool.Poo
 	// Configure pool
 	config.MaxConns = 25
 	config.MinConns = 5
+
+	// Disable automatic prepared statement caching to avoid conflicts
+	// when using dynamic table names via fmt.Sprintf
+	config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {

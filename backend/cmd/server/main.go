@@ -84,9 +84,11 @@ func main() {
 
 	// Create services
 	docService := service.NewDocumentService(docRepo, folderRepo, txManager, logger)
+	folderService := service.NewFolderService(folderRepo, docRepo, logger)
 
 	// Create new handlers
 	newDocHandler := handler.NewDocumentHandler(docService, logger)
+	newFolderHandler := handler.NewFolderHandler(folderService, logger)
 
 	logger.Info("services initialized")
 
@@ -127,11 +129,11 @@ func main() {
 	// Debug endpoint (OLD - will migrate in Phase 3)
 	api.Get("/debug/documents", handlers.DebugDocuments(oldDB))
 
-	// Folder routes (OLD - will migrate in Phase 2)
-	api.Post("/folders", handlers.CreateFolder(oldDB))
-	api.Get("/folders/:id", handlers.GetFolder(oldDB))
-	api.Put("/folders/:id", handlers.UpdateFolder(oldDB))
-	api.Delete("/folders/:id", handlers.DeleteFolder(oldDB))
+	// Folder routes (NEW - using clean architecture)
+	api.Post("/folders", newFolderHandler.CreateFolder)
+	api.Get("/folders/:id", newFolderHandler.GetFolder)
+	api.Put("/folders/:id", newFolderHandler.UpdateFolder)
+	api.Delete("/folders/:id", newFolderHandler.DeleteFolder)
 
 	// Document routes (NEW - using clean architecture)
 	api.Post("/documents", newDocHandler.CreateDocument)

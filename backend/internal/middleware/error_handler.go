@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"log"
+	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -16,9 +16,19 @@ func ErrorHandler(c *fiber.Ctx, err error) error {
 	if e, ok := err.(*fiber.Error); ok {
 		code = e.Code
 		message = e.Message
+		slog.Info("fiber error",
+			"code", code,
+			"message", message,
+			"path", c.Path(),
+			"method", c.Method(),
+		)
 	} else {
 		// Log unexpected errors
-		log.Printf("Error: %v", err)
+		slog.Error("unexpected error",
+			"error", err,
+			"path", c.Path(),
+			"method", c.Method(),
+		)
 	}
 
 	// Send JSON error response

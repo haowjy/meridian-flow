@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jimmyyao/meridian/backend/internal/domain"
@@ -37,9 +38,9 @@ func (r *PostgresFolderRepository) Create(ctx context.Context, folder *models.Fo
 	}
 
 	query := fmt.Sprintf(`
-		INSERT INTO %s (project_id, parent_id, name, created_at)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, created_at
+		INSERT INTO %s (project_id, parent_id, name, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, created_at, updated_at
 	`, r.tables.Folders)
 
 	err = r.pool.QueryRow(ctx, query,
@@ -47,7 +48,8 @@ func (r *PostgresFolderRepository) Create(ctx context.Context, folder *models.Fo
 		folder.ParentID,
 		folder.Name,
 		folder.CreatedAt,
-	).Scan(&folder.ID, &folder.CreatedAt)
+		folder.UpdatedAt,
+	).Scan(&folder.ID, &folder.CreatedAt, &folder.UpdatedAt)
 
 	if err != nil {
 		if isPgDuplicateError(err) {
@@ -62,7 +64,7 @@ func (r *PostgresFolderRepository) Create(ctx context.Context, folder *models.Fo
 // GetByID retrieves a folder by ID
 func (r *PostgresFolderRepository) GetByID(ctx context.Context, id, projectID string) (*models.Folder, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, parent_id, name, created_at
+		SELECT id, project_id, parent_id, name, created_at, updated_at
 		FROM %s
 		WHERE id = $1 AND project_id = $2
 	`, r.tables.Folders)
@@ -74,6 +76,7 @@ func (r *PostgresFolderRepository) GetByID(ctx context.Context, id, projectID st
 		&folder.ParentID,
 		&folder.Name,
 		&folder.CreatedAt,
+		&folder.UpdatedAt,
 	)
 
 	if err != nil {
@@ -90,13 +93,14 @@ func (r *PostgresFolderRepository) GetByID(ctx context.Context, id, projectID st
 func (r *PostgresFolderRepository) Update(ctx context.Context, folder *models.Folder) error {
 	query := fmt.Sprintf(`
 		UPDATE %s
-		SET parent_id = $1, name = $2
-		WHERE id = $3 AND project_id = $4
+		SET parent_id = $1, name = $2, updated_at = $3
+		WHERE id = $4 AND project_id = $5
 	`, r.tables.Folders)
 
 	result, err := r.pool.Exec(ctx, query,
 		folder.ParentID,
 		folder.Name,
+		folder.UpdatedAt,
 		folder.ID,
 		folder.ProjectID,
 	)
@@ -144,7 +148,7 @@ func (r *PostgresFolderRepository) ListChildren(ctx context.Context, folderID *s
 
 	if folderID == nil {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, parent_id, name, created_at
+			SELECT id, project_id, parent_id, name, created_at, updated_at
 			FROM %s
 			WHERE project_id = $1 AND parent_id IS NULL
 			ORDER BY name ASC
@@ -152,7 +156,7 @@ func (r *PostgresFolderRepository) ListChildren(ctx context.Context, folderID *s
 		args = append(args, projectID)
 	} else {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, parent_id, name, created_at
+			SELECT id, project_id, parent_id, name, created_at, updated_at
 			FROM %s
 			WHERE project_id = $1 AND parent_id = $2
 			ORDER BY name ASC
@@ -175,6 +179,7 @@ func (r *PostgresFolderRepository) ListChildren(ctx context.Context, folderID *s
 			&folder.ParentID,
 			&folder.Name,
 			&folder.CreatedAt,
+			&folder.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan folder: %w", err)
@@ -201,10 +206,13 @@ func (r *PostgresFolderRepository) CreateIfNotExists(ctx context.Context, projec
 	}
 
 	// Create new folder
+	now := time.Now()
 	folder := &models.Folder{
 		ProjectID: projectID,
 		ParentID:  parentID,
 		Name:      name,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 
 	if err := r.Create(ctx, folder); err != nil {
@@ -280,14 +288,14 @@ func (r *PostgresFolderRepository) getFolderByNameAndParent(ctx context.Context,
 
 	if parentID == nil {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, parent_id, name, created_at
+			SELECT id, project_id, parent_id, name, created_at, updated_at
 			FROM %s
 			WHERE project_id = $1 AND name = $2 AND parent_id IS NULL
 		`, r.tables.Folders)
 		args = append(args, projectID, name)
 	} else {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, parent_id, name, created_at
+			SELECT id, project_id, parent_id, name, created_at, updated_at
 			FROM %s
 			WHERE project_id = $1 AND name = $2 AND parent_id = $3
 		`, r.tables.Folders)
@@ -301,6 +309,7 @@ func (r *PostgresFolderRepository) getFolderByNameAndParent(ctx context.Context,
 		&folder.ParentID,
 		&folder.Name,
 		&folder.CreatedAt,
+		&folder.UpdatedAt,
 	)
 
 	if err != nil {

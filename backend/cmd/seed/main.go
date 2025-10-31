@@ -145,6 +145,7 @@ func runSchema(db *database.DB, prefix string) error {
 			parent_id UUID REFERENCES ` + foldersTable + `(id) ON DELETE CASCADE,
 			name TEXT NOT NULL,
 			created_at TIMESTAMPTZ DEFAULT NOW(),
+			updated_at TIMESTAMPTZ DEFAULT NOW(),
 			UNIQUE(project_id, parent_id, name)
 		)
 	`

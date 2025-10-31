@@ -2,6 +2,8 @@ package handler
 
 import (
 	"errors"
+	"fmt"
+	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jimmyyao/meridian/backend/internal/domain"
@@ -21,6 +23,10 @@ func mapErrorToHTTP(err error) error {
 	case errors.Is(err, domain.ErrForbidden):
 		return fiber.NewError(fiber.StatusForbidden, "Forbidden")
 	default:
+		slog.Error("unmapped error in mapErrorToHTTP",
+			"error", err,
+			"error_type", fmt.Sprintf("%T", err),
+		)
 		return fiber.NewError(fiber.StatusInternalServerError, "Internal server error")
 	}
 }

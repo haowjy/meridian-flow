@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS dev_folders (
     parent_id UUID REFERENCES dev_folders(id) ON DELETE CASCADE,  -- NULL = root level
     name TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(project_id, parent_id, name)  -- No duplicate folder names at same level
 );
 
