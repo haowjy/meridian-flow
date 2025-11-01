@@ -38,6 +38,7 @@ sequenceDiagram
     participant Editor as TipTap Editor
     participant State as React State
     participant Debounce as Debounce (1s)
+    participant Codec as Codec (Worker) MD↔︎TipTap
     participant IndexedDB
     participant Zustand as Tree Store
     participant Queue as Sync Queue
@@ -50,13 +51,17 @@ sequenceDiagram
     Note over State,Debounce: User stops typing...
 
     State->>Debounce: Wait 1 second
-    Debounce->>IndexedDB: saveDocument(content)
+    Debounce->>Codec: exportMarkdown(editorState)
+    Codec-->>Debounce: markdown
+    Debounce->>IndexedDB: saveDocument(markdown)
     IndexedDB-->>Debounce: ✅ Success (auto‑evicts cache if needed)
+
+    Note over Debounce,Codec: Conversion runs in a Web Worker<br/>Typing/UI stay responsive
 
     Debounce->>Zustand: updateDocument(wordCount)
     Zustand-->>Debounce: ✅ Updated
 
-    Debounce->>Queue: queueSync(operation)
+    Debounce->>Queue: queueSync(operation with markdown)
     Queue-->>Debounce: ✅ Queued
 
     par Background Sync (async)
@@ -81,6 +86,7 @@ sequenceDiagram
 - Step 6-7: Background sync can fail and never blocks the user
 - Data remains safe in IndexedDB even if backend is down
 - Sync retries automatically with exponential backoff
+- Canonical content format is Markdown; the editor uses TipTap internally. Conversions happen on save/load via a small codec.
 
 ---
 
@@ -148,7 +154,7 @@ graph TB
 
     subgraph "Persistence Layer (Local)"
         LocalStorage[localStorage<br/>Tree + UI state<br/>~5MB limit]
-        IndexedDB[IndexedDB via Dexie<br/>Document content<br/>Sync queue<br/>50MB-10GB quota]
+        IndexedDB[IndexedDB via Dexie<br/>Markdown content<br/>Sync queue<br/>50MB-10GB quota]
     end
 
     subgraph "Sync Layer"
@@ -160,19 +166,19 @@ graph TB
         API[Backend API<br/>Persistence only]
     end
 
-    Editor -->|Read| IndexedDB
-    Editor -->|Write debounced| IndexedDB
-    Tree -->|Read| TreeStore
+    Editor -->|"Read"| IndexedDB
+    Editor -->|"Write debounced"| IndexedDB
+    Tree -->|"Read"| TreeStore
 
-    TreeStore -.->|Persist| LocalStorage
-    UIStore -.->|Persist| LocalStorage
+    TreeStore -.->|"Persist"| LocalStorage
+    UIStore -.->|"Persist"| LocalStorage
 
-    IndexedDB -->|On save| SyncQueue
-    SyncQueue -->|Background| SyncRunner
-    SyncRunner -.->|HTTP| API
+    IndexedDB -->|"On save"| SyncQueue
+    SyncQueue -->|"Background"| SyncRunner
+    SyncRunner -.->|"HTTP"| API
 
-    API -.->|Session load| TreeStore
-    API -.->|Session load| IndexedDB
+    API -.->|"Session load"| TreeStore
+    API -.->|"Session load (markdown)"| IndexedDB
 
     classDef primary fill:#1a5490,stroke:#333,stroke-width:2px,color:#fff
     classDef storage fill:#2d8d4d,stroke:#333,stroke-width:2px,color:#fff
@@ -181,14 +187,14 @@ graph TB
 
     class IndexedDB,LocalStorage storage
     class TreeStore,UIStore primary
-    class SyncQueue,SyncRunner sync
+    class "SyncQueue,SyncRunner sync silently<br/>(see Flow 7)"
     class API backend
 ```
 
 **Key points:**
 - Solid lines = primary data flow
 - Dashed lines = background/optional
-- IndexedDB holds document content and the sync queue
+- IndexedDB holds Markdown document content and the sync queue
 - Zustand + localStorage persist only tree and UI metadata (never full document content)
 - Backend is optional (app works offline)
 
@@ -251,35 +257,35 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Save[User saves document] --> LocalSave{Save to<br/>IndexedDB}
+    Save["User saves document"] --> LocalSave{"Save to<br/>IndexedDB"}
 
-    LocalSave -->|Success| UpdateUI[Update UI<br/>word count, etc.]
-    LocalSave -->|Storage pressure| AutoEvict[Auto‑evict cache silently<br/>(see Flow 7)]
+    LocalSave -->|"Success"| UpdateUI["Update UI<br/>word count, etc."]
+    LocalSave -->|"Storage pressure"| AutoEvict["Auto‑evict cache silently<br/>(see Flow 7)"]
 
-    AutoEvict --> RetrySave{Try save again}
-    RetrySave -->|Success| UpdateUI
-    RetrySave -->|Still insufficient (rare)| Defer[Hold change in memory<br/>retry in background]
+    AutoEvict --> RetrySave{"Try save again"}
+    RetrySave -->|"Success"| UpdateUI
+    RetrySave -->|"Still insufficient (rare)"| Defer["Hold change in memory<br/>retry in background"]
 
-    UpdateUI --> QueueSync[Queue sync operation]
-    QueueSync --> AttemptSync{Attempt<br/>backend sync}
+    UpdateUI --> QueueSync["Queue sync operation"]
+    QueueSync --> AttemptSync{"Attempt<br/>backend sync"}
 
-    AttemptSync -->|200 OK| SyncSuccess[Badge: Saved ✅<br/>Remove from queue]
-    AttemptSync -->|Network error| NetworkFail[Badge: Saved locally ⚠️<br/>Queue for retry]
-    AttemptSync -->|400 Validation| ValidationFail[Toast: Sync failed<br/>Show error + retry button]
-    AttemptSync -->|500 Server| ServerFail[Silent retry<br/>Only show after 5 failures]
+    AttemptSync -->|"200 OK"| SyncSuccess["Badge: Saved ✅<br/>Remove from queue"]
+    AttemptSync -->|"Network error"| NetworkFail["Badge: Saved locally ⚠️<br/>Queue for retry"]
+    AttemptSync -->|"400 Validation"| ValidationFail["Toast: Sync failed<br/>Show error + retry button"]
+    AttemptSync -->|"500 Server"| ServerFail["Silent retry<br/>Only show after 5 failures"]
 
-    NetworkFail --> RetryQueue[Add to retry queue<br/>Exponential backoff]
+    NetworkFail --> RetryQueue["Add to retry queue<br/>Exponential backoff"]
     ValidationFail --> RetryQueue
     ServerFail --> RetryQueue
 
-    RetryQueue --> WaitTrigger{Wait for<br/>trigger}
+    RetryQueue --> WaitTrigger{"Wait for<br/>trigger"}
 
-    WaitTrigger -->|Online event| AttemptSync
-    WaitTrigger -->|Tab focus| AttemptSync
-    WaitTrigger -->|30s interval| AttemptSync
-    WaitTrigger -->|Manual retry| AttemptSync
+    WaitTrigger -->|"Online event"| AttemptSync
+    WaitTrigger -->|"Tab focus"| AttemptSync
+    WaitTrigger -->|"30s interval"| AttemptSync
+    WaitTrigger -->|"Manual retry"| AttemptSync
 
-    SyncSuccess --> End([Save pipeline complete])
+    SyncSuccess --> End(["Save pipeline complete"])
     Defer --> End
 
     style LocalSave fill:#2d7d2d
@@ -307,32 +313,52 @@ sequenceDiagram
     participant Tree
     participant IndexedDB
     participant Editor
+    participant Codec as Codec (Worker) MD↔︎TipTap
     participant Backend
 
     User->>Tree: Click document
     Tree->>IndexedDB: getDocument(id)
-    IndexedDB-->>Tree: Document with content
+    IndexedDB-->>Tree: Document with markdown
 
     Tree->>Tree: Check if content is stub
 
     alt Content exists (not stub)
-        Tree->>Editor: Show document ✅
-        Editor-->>User: Instant render
+        Tree->>Codec: importToEditor(markdown)
+        Codec-->>Tree: editorState
+        alt Import < 100ms
+            Tree->>Editor: Show document ✅
+            Editor-->>User: Instant render
+        else Import >= 100ms
+            Tree->>Editor: Show skeleton
+            Codec-->>Tree: editorState
+            Tree->>Editor: Hydrate with content
+            Editor-->>User: Render
+        end
     else Content is stub (empty)
-        Tree->>Backend: Fetch full document
-        Backend-->>Tree: Full document
-        Tree->>IndexedDB: saveDocument(full content)
-        Tree->>Editor: Show document
-        Editor-->>User: Render (200ms delay)
+        Tree->>Backend: Fetch full markdown
+        Backend-->>Tree: Full markdown
+        Tree->>IndexedDB: saveDocument(markdown)
+        Tree->>Codec: importToEditor(markdown)
+        alt Import < 100ms
+            Codec-->>Tree: editorState
+            Tree->>Editor: Show document
+            Editor-->>User: Render (fast)
+        else Import >= 100ms
+            Tree->>Editor: Show skeleton
+            Codec-->>Tree: editorState
+            Tree->>Editor: Hydrate with content
+            Editor-->>User: Render
+        end
     end
 
+    Note over IndexedDB,Codec: Conversion runs in a Web Worker
     Note over IndexedDB,Backend: Next time this doc is opened,<br/>content is local (instant)
 ```
 
 **Key points:**
 - Session bootstrap creates metadata stubs (not full content)
-- First open of a document fetches content from backend
-- Content is cached in IndexedDB for next time
+- First open of a document fetches Markdown from backend
+- Markdown is cached in IndexedDB for next time
 - Subsequent opens are instant (local read)
 - If backend fails, user can still create/edit other documents
 
@@ -397,10 +423,10 @@ Implementation details are intentionally omitted here for simplicity.
 
 | Data Type | Storage | Role |
 |-----------|---------|------|
-| Document content | IndexedDB | Partial cache of full content; authoritative for local-first edits |
+| Document content (Markdown) | IndexedDB | Partial cache of full content; authoritative locally, synced to backend as Markdown |
 | Tree structure metadata | Zustand + localStorage | Small, fast metadata (names, ids, relationships) |
 | UI state | Zustand + localStorage | Small UI preferences and navigation state |
-| Sync queue | IndexedDB | Pending operations for background retry |
+| Sync queue | IndexedDB | Pending operations for background retry (payload includes Markdown) |
 
 Quota considerations (Phase 1.5): monitor storage usage and handle near‑quota conditions gracefully; auto‑eviction strategy can expand beyond the MVP.
 
@@ -409,6 +435,16 @@ Quota considerations (Phase 1.5): monitor storage usage and handle near‑quota 
 - localStorage is synchronous and suitable only for tiny values; we use it exclusively for minimal metadata and UI preferences.
 - IndexedDB is asynchronous and optimized for larger payloads; with a 1000ms debounce on editor writes, user typing is never blocked by disk I/O.
 - Reads for already‑cached documents are effectively instant for UX purposes; first‑open may fetch from the backend (see Flow 6).
+- Conversions MD↔︎TipTap occur on save/load. For MVP we do them eagerly at boundaries and do not persist derived editor state; consider adding a derived cache post‑MVP if needed.
+
+### Content Format & Converters
+
+- Canonical content format across network and storage: Markdown.
+- Editor engine: TipTap (ProseMirror). The editor state is internal and transient.
+- Converters:
+  - Import: Markdown → TipTap on document open.
+  - Export: TipTap → Markdown on debounced save and before sync.
+- Post‑MVP option: cache derived editor state keyed by a hash of Markdown to speed cold opens without changing the canonical format.
 
 ### Debounce Timing
 

@@ -23,17 +23,18 @@ type DocumentService interface {
 
 // CreateDocumentRequest represents a document creation request
 type CreateDocumentRequest struct {
-	ProjectID     string                 `json:"project_id"`
-	Path          *string                `json:"path,omitempty"`          // Path-based creation (e.g., "Characters/Aria")
-	FolderID      *string                `json:"folder_id,omitempty"`     // Direct folder assignment
-	Name          *string                `json:"name,omitempty"`          // Document name (if not using path)
-	ContentTipTap map[string]interface{} `json:"content_tiptap"`          // TipTap JSON
+	ProjectID  string  `json:"project_id"`
+	FolderPath *string `json:"folder_path,omitempty"` // Folder path (e.g., "Characters/Aria" or "Characters" or "" for root)
+	FolderID   *string `json:"folder_id,omitempty"`   // Direct folder assignment (alternative to FolderPath)
+	Name       string  `json:"name"`                  // Document name (required)
+	Content    string  `json:"content"`               // Markdown content
 }
 
 // UpdateDocumentRequest represents a document update request
 type UpdateDocumentRequest struct {
-	ProjectID     string                  `json:"project_id"`
-	Name          *string                 `json:"name,omitempty"`
-	FolderID      *string                 `json:"folder_id,omitempty"`
-	ContentTipTap *map[string]interface{} `json:"content_tiptap,omitempty"`
+	ProjectID  string  `json:"project_id"`
+	Name       *string `json:"name,omitempty"`
+	FolderPath *string `json:"folder_path,omitempty"` // Move to folder path (resolve/auto-create)
+	FolderID   *string `json:"folder_id,omitempty"`   // Move to folder ID (direct, faster)
+	Content    *string `json:"content,omitempty"`
 }

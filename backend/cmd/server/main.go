@@ -104,11 +104,13 @@ func main() {
 	docService := service.NewDocumentService(docRepo, folderRepo, txManager, logger)
 	folderService := service.NewFolderService(folderRepo, docRepo, logger)
 	treeService := service.NewTreeService(folderRepo, docRepo, logger)
+	importService := service.NewImportService(docRepo, docService, logger)
 
 	// Create new handlers
 	newDocHandler := handler.NewDocumentHandler(docService, logger)
 	newFolderHandler := handler.NewFolderHandler(folderService, logger)
 	newTreeHandler := handler.NewTreeHandler(treeService, logger)
+	importHandler := handler.NewImportHandler(importService, logger)
 
 	logger.Info("services initialized")
 
@@ -157,6 +159,10 @@ func main() {
 	api.Get("/documents/:id", newDocHandler.GetDocument)
 	api.Put("/documents/:id", newDocHandler.UpdateDocument)
 	api.Delete("/documents/:id", newDocHandler.DeleteDocument)
+
+	// Import routes
+	api.Post("/import", importHandler.Merge)
+	api.Post("/import/replace", importHandler.Replace)
 
 	// Start server
 	log.Printf("Server starting on port %s", cfg.Port)

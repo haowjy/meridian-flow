@@ -38,17 +38,14 @@ docker-build: ## Build Docker image
 docker-run: ## Run Docker container
 	docker run -p 8080:8080 --env-file .env meridian-backend
 
-seed: ## Seed the database via API (recommended - uses scripts/seed.sh)
-	./scripts/seed.sh
+seed: ## Seed the database with markdown documents
+	go run ./cmd/seed/main.go
 
-seed-fresh: ## Drop all tables and seed from scratch via API (recommended)
-	./scripts/seed.sh --drop-tables
+seed-fresh: ## Drop all tables and seed from scratch
+	go run ./cmd/seed/main.go --drop-tables
 
 seed-clear: ## Clear all documents and folders (keep schema)
 	go run ./cmd/seed/main.go --clear-data
-
-seed-go: ## Seed the database using Go script (legacy - has JSONB encoding issues)
-	go run ./cmd/seed/main.go
 
 seed-schema: ## Drop and recreate tables only (no data seeding)
 	go run ./cmd/seed/main.go --drop-tables --schema-only

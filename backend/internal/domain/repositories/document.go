@@ -20,6 +20,9 @@ type DocumentRepository interface {
 	// Delete deletes a document
 	Delete(ctx context.Context, id, projectID string) error
 
+	// DeleteAllByProject deletes all documents in a project
+	DeleteAllByProject(ctx context.Context, projectID string) error
+
 	// ListByFolder lists documents in a folder
 	ListByFolder(ctx context.Context, folderID *string, projectID string) ([]models.Document, error)
 

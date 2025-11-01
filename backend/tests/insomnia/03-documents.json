@@ -10,12 +10,12 @@
       "modified": 1698739200000,
       "created": 1698739200000,
       "url": "{{ _.base_url }}/api/documents",
-      "name": "1. Create Document (Path Auto-Resolve)",
-      "description": "Create document with path - automatically creates 'Characters' folder if it doesn't exist",
+      "name": "1. Create Document (Simple - folder_path only)",
+      "description": "External AI pattern: Create with folder_path only, auto-creates folders",
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"path\": \"Characters/Aria Moonwhisper\",\n  \"content_tiptap\": {\n    \"type\": \"doc\",\n    \"content\": [\n      {\n        \"type\": \"heading\",\n        \"attrs\": {\"level\": 1},\n        \"content\": [{\"type\": \"text\", \"text\": \"Aria Moonwhisper\"}]\n      },\n      {\n        \"type\": \"paragraph\",\n        \"content\": [\n          {\"type\": \"text\", \"text\": \"A powerful sorceress with \"},\n          {\"type\": \"text\", \"marks\": [{\"type\": \"bold\"}], \"text\": \"silver hair\"},\n          {\"type\": \"text\", \"text\": \" and violet eyes.\"}\n        ]\n      },\n      {\n        \"type\": \"bulletList\",\n        \"content\": [\n          {\n            \"type\": \"listItem\",\n            \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Age: 17\"}]}]\n          },\n          {\n            \"type\": \"listItem\",\n            \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Element: Wind\"}]}]\n          }\n        ]\n      }\n    ]\n  }\n}"
+        "text": "{\n  \"folder_path\": \"Characters\",\n  \"name\": \"Aria Moonwhisper\",\n  \"content\": \"# Aria Moonwhisper\\n\\nA powerful sorceress with **silver hair** and violet eyes.\\n\\n- Age: 17\\n- Element: Wind\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -31,17 +31,68 @@
       "_type": "request"
     },
     {
+      "_id": "req_create_doc_optimized",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "1b. Create Document (Optimized - folder_id + folder_path)",
+      "description": "Frontend pattern: Pass folder_id for speed, folder_path as backup",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"folder_path\": \"Characters\",\n  \"folder_id\": \"{{ _.folder_id }}\",\n  \"name\": \"Professor Thorne\",\n  \"content\": \"# Professor Thorne\\n\\nAn enigmatic teacher with secrets to hide.\\n\\n- Age: Unknown\\n- Element: All\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739092500,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_doc_priority_test",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "1c. [PRIORITY TEST] Create with Both - folder_id Wins",
+      "description": "Verify folder_id takes priority over folder_path when both provided",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"folder_path\": \"Characters\",\n  \"folder_id\": \"{{ _.folder_id }}\",\n  \"name\": \"Priority Test Document\",\n  \"content\": \"# Testing Priority\\n\\nThis document should be in the folder_id location, NOT Characters.\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739088750,
+      "isPrivate": false,
+      "afterResponseScript": "const response = await insomnia.response.json();\nif (response && response.folder_id === insomnia.environment.get('folder_id')) {\n  console.log('✅ Priority test passed: folder_id was used');\n} else {\n  console.log('❌ Priority test failed: wrong folder_id');\n}\nconsole.log('Expected folder_id:', insomnia.environment.get('folder_id'));\nconsole.log('Actual folder_id:', response.folder_id);",
+      "_type": "request"
+    },
+    {
       "_id": "req_create_doc_root",
       "parentId": "fld_documents",
       "modified": 1698739200000,
       "created": 1698739200000,
       "url": "{{ _.base_url }}/api/documents",
       "name": "2. Create Root Document",
-      "description": "Create a document at root level (no folder)",
+      "description": "Create a document at root level (empty folder_path)",
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"path\": \"Quick Notes\",\n  \"content_tiptap\": {\n    \"type\": \"doc\",\n    \"content\": [\n      {\n        \"type\": \"heading\",\n        \"attrs\": {\"level\": 1},\n        \"content\": [{\"type\": \"text\", \"text\": \"Quick Notes\"}]\n      },\n      {\n        \"type\": \"paragraph\",\n        \"content\": [{\"type\": \"text\", \"text\": \"Random ideas and thoughts to explore later.\"}]\n      }\n    ]\n  }\n}"
+        "text": "{\n  \"folder_path\": \"\",\n  \"name\": \"Quick Notes\",\n  \"content\": \"# Quick Notes\\n\\nRandom ideas and thoughts to explore later.\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -84,7 +135,7 @@
       "method": "PUT",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"content_tiptap\": {\n    \"type\": \"doc\",\n    \"content\": [\n      {\n        \"type\": \"heading\",\n        \"attrs\": {\"level\": 1},\n        \"content\": [{\"type\": \"text\", \"text\": \"Aria Moonwhisper - Updated!\"}]\n      },\n      {\n        \"type\": \"paragraph\",\n        \"content\": [{\"type\": \"text\", \"text\": \"This content has been updated! She is now level 25.\"}]\n      }\n    ]\n  }\n}"
+        "text": "{\n  \"content\": \"# Aria Moonwhisper - Updated!\\n\\nThis content has been updated! She is now level 25.\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -124,6 +175,32 @@
       "_type": "request"
     },
     {
+      "_id": "req_move_document_via_path",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
+      "name": "5b. Move Document via folder_path",
+      "description": "Move document using folder_path (auto-creates folders if needed)",
+      "method": "PUT",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"folder_path\": \"Archive/Old Characters\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738675000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = await insomnia.response.json();\nconsole.log('✅ Document moved to:', response.path);\nconsole.log('Expected path contains: Archive/Old Characters');",
+      "_type": "request"
+    },
+    {
       "_id": "req_move_document",
       "parentId": "fld_documents",
       "modified": 1698739200000,
@@ -149,6 +226,32 @@
       "_type": "request"
     },
     {
+      "_id": "req_move_document_priority_test",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.root_document_id }}",
+      "name": "6b. [PRIORITY TEST] Move with Both - folder_id Wins",
+      "description": "When both folder_id and folder_path provided, folder_id takes priority",
+      "method": "PUT",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"folder_id\": \"{{ _.folder_id }}\",\n  \"folder_path\": \"Archive\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738637500,
+      "isPrivate": false,
+      "afterResponseScript": "const response = await insomnia.response.json();\nif (response && response.folder_id === insomnia.environment.get('folder_id')) {\n  console.log('✅ Priority test passed: folder_id was used');\n} else {\n  console.log('❌ Priority test failed: wrong folder_id');\n}\nconsole.log('Expected folder_id:', insomnia.environment.get('folder_id'));\nconsole.log('Actual folder_id:', response.folder_id);",
+      "_type": "request"
+    },
+    {
       "_id": "req_move_document_to_root",
       "parentId": "fld_documents",
       "modified": 1698739200000,
@@ -171,6 +274,32 @@
       "authentication": {},
       "metaSortKey": -1698738625000,
       "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_doc_validation_test",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "7b. [VALIDATION] Create without folder_path or folder_id",
+      "description": "Should fail: must provide at least one of folder_path or folder_id",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"Invalid Document\",\n  \"content\": \"# Invalid\\n\\nThis should fail validation.\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738617500,
+      "isPrivate": false,
+      "afterResponseScript": "const status = await insomnia.response.getStatusCode();\nif (status === 400) {\n  console.log('✅ Validation test passed: got expected 400 error');\n} else {\n  console.log('❌ Validation test failed: expected 400, got', status);\n}",
       "_type": "request"
     },
     {

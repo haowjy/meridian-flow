@@ -34,8 +34,7 @@ CREATE TABLE IF NOT EXISTS dev_documents (
     project_id UUID NOT NULL REFERENCES dev_projects(id) ON DELETE CASCADE,
     folder_id UUID REFERENCES dev_folders(id) ON DELETE SET NULL,  -- NULL = root level
     name TEXT NOT NULL,  -- Just "Aria", not "Characters/Aria"
-    content_tiptap JSONB NOT NULL,
-    content_markdown TEXT NOT NULL,
+    content TEXT NOT NULL,  -- Markdown content
     word_count INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),

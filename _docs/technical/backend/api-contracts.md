@@ -32,6 +32,7 @@ Rationale: distinguishing an explicit move to root from “no change” avoids a
 
 - Same patterns as folders, but use `folder_id` for moves. Moving to root uses an empty string.
 - Supports rename, move, and content updates—these can be combined.
+- Content format is Markdown. Requests that update content provide a `content` field; responses include `content`.
 
 **Validation:**
 - Document names **can contain** `/` for artistic titles (e.g., "Hero/Villain")
@@ -39,6 +40,11 @@ Rationale: distinguishing an explicit move to root from “no change” avoids a
 - Max length: See `config.MaxDocumentNameLength`
 
 **Why allow slashes in documents:** Documents are content/leaf nodes with flexible naming. Folders are structural hierarchy elements used in paths.
+
+**Content format:**
+- Canonical content stored and emitted by the API is Markdown.
+- The frontend editor uses a different internal representation and converts to/from Markdown at the boundary.
+- Word count and similar derived fields are computed from Markdown.
 
 ## Validation Rules Summary
 
@@ -75,7 +81,7 @@ Implementation notes: folder validation enforces the slash restriction; document
 - Structural operations: rollback local change on validation/conflict errors (400/409) and surface the server message
 - Show a retry action on failures when appropriate
 
-**See also:** Frontend flows documentation (`_docs/technical/frontend/flows.md`).
+**See also:** Frontend flows documentation when available.
 
 ## Path Computation
 

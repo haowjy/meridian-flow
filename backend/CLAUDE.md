@@ -76,27 +76,16 @@ query := "SELECT * FROM documents WHERE id = $1"
 
 See `internal/repository/postgres/` for examples.
 
-### 2. TipTap JSON Structure
+### 2. Markdown Content Storage
 
-Must have exact structure:
-```json
-{
-  "type": "doc",
-  "content": [...]
-}
-```
+Documents store content as **markdown** (TEXT):
+- Single source of truth
+- Used for word count, search, and storage
+- Frontend handles markdown ↔ editor conversion
 
-See `internal/domain/services/document.go` for validation.
+No server-side format conversion required.
 
-### 3. Dual Content Storage
-
-Documents store **both**:
-- TipTap JSON (JSONB) - for editor
-- Markdown (TEXT) - for word count, search
-
-See `internal/service/document.go:CreateDocument` for conversion flow.
-
-### 4. Error Handling
+### 3. Error Handling
 
 Use Fiber errors:
 ```go

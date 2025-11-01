@@ -39,7 +39,7 @@ func NewDocumentService(
 	}
 }
 
-// CreateDocument creates a new document, resolving path to folders
+// CreateDocument creates a new document with priority-based folder resolution
 func (s *documentService) CreateDocument(ctx context.Context, req *services.CreateDocumentRequest) (*models.Document, error) {
 	// Validate request
 	if err := s.validateCreateRequest(req); err != nil {
@@ -47,40 +47,38 @@ func (s *documentService) CreateDocument(ctx context.Context, req *services.Crea
 	}
 
 	var folderID *string
-	var docName string
+	docName := req.Name
 
-	// Path-based creation: resolve folders
-	if req.Path != nil && *req.Path != "" {
-		resolvedFolder, name, err := s.resolvePath(ctx, req.ProjectID, *req.Path)
+	// Priority-based folder resolution:
+	// 1. Try folder_id first (frontend optimization - direct lookup)
+	// 2. Fall back to folder_path (external AI / import - resolve/auto-create)
+	if req.FolderID != nil {
+		// Frontend optimization: use provided folder_id directly
+		folderID = req.FolderID
+	} else if req.FolderPath != nil {
+		// External AI / Import: resolve folder path, creating folders if needed
+		resolvedFolder, err := s.resolveFolderPath(ctx, req.ProjectID, *req.FolderPath)
 		if err != nil {
 			return nil, err
 		}
 		folderID = resolvedFolder
-		docName = name
 	} else {
-		folderID = req.FolderID
-		docName = *req.Name
-	}
-
-	// Convert TipTap to Markdown (business logic)
-	markdown, err := s.convertTipTapToMarkdown(req.ContentTipTap)
-	if err != nil {
-		return nil, fmt.Errorf("%w: failed to convert TipTap to markdown", domain.ErrValidation)
+		// Should never reach here due to validation, but defensive check
+		return nil, fmt.Errorf("%w: either folder_path or folder_id must be provided", domain.ErrValidation)
 	}
 
 	// Count words (business logic)
-	wordCount := s.countWords(markdown)
+	wordCount := s.countWords(req.Content)
 
 	// Create document
 	doc := &models.Document{
-		ProjectID:       req.ProjectID,
-		FolderID:        folderID,
-		Name:            docName,
-		ContentTipTap:   req.ContentTipTap,
-		ContentMarkdown: markdown,
-		WordCount:       wordCount,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
+		ProjectID: req.ProjectID,
+		FolderID:  folderID,
+		Name:      docName,
+		Content:   req.Content,
+		WordCount: wordCount,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 
 	if err := s.docRepo.Create(ctx, doc); err != nil {
@@ -138,19 +136,28 @@ func (s *documentService) UpdateDocument(ctx context.Context, id string, req *se
 	if req.Name != nil {
 		doc.Name = *req.Name
 	}
-	if req.FolderID != nil {
-		doc.FolderID = req.FolderID
-	}
-	if req.ContentTipTap != nil {
-		doc.ContentTipTap = *req.ContentTipTap
 
-		// Regenerate markdown and word count
-		markdown, err := s.convertTipTapToMarkdown(doc.ContentTipTap)
+	// Priority-based folder resolution for moving documents:
+	// 1. Try folder_id first (frontend optimization - direct lookup)
+	// 2. Fall back to folder_path (external AI - resolve/auto-create)
+	// 3. Neither = don't move document
+	if req.FolderID != nil {
+		// Frontend optimization: use provided folder_id directly
+		doc.FolderID = req.FolderID
+	} else if req.FolderPath != nil {
+		// External AI: resolve folder path, creating folders if needed
+		resolvedFolder, err := s.resolveFolderPath(ctx, req.ProjectID, *req.FolderPath)
 		if err != nil {
-			return nil, fmt.Errorf("%w: failed to convert TipTap to markdown", domain.ErrValidation)
+			return nil, err
 		}
-		doc.ContentMarkdown = markdown
-		doc.WordCount = s.countWords(markdown)
+		doc.FolderID = resolvedFolder
+	}
+	// If neither provided: keep current folder location
+
+	if req.Content != nil {
+		doc.Content = *req.Content
+		// Recalculate word count
+		doc.WordCount = s.countWords(doc.Content)
 	}
 
 	doc.UpdatedAt = time.Now()
@@ -194,23 +201,27 @@ func (s *documentService) DeleteDocument(ctx context.Context, id, projectID stri
 
 // validateCreateRequest validates a document creation request
 func (s *documentService) validateCreateRequest(req *services.CreateDocumentRequest) error {
+	// Require at least one of FolderPath or FolderID
+	if req.FolderPath == nil && req.FolderID == nil {
+		return fmt.Errorf("either folder_path or folder_id must be provided")
+	}
+
 	return validation.ValidateStruct(req,
 		validation.Field(&req.ProjectID, validation.Required),
-		validation.Field(&req.Path,
-			validation.When(req.FolderID == nil && req.Name == nil, validation.Required).Else(validation.Nil),
-			validation.Length(1, config.MaxDocumentPathLength),
-			validation.By(s.validatePath),
+		validation.Field(&req.FolderPath,
+			validation.Length(0, config.MaxDocumentPathLength), // 0-length allowed for root level
+			validation.By(s.validateFolderPath),
 		),
 		validation.Field(&req.Name,
-			validation.When(req.Path == nil, validation.Required).Else(validation.Nil),
+			validation.Required,
 			validation.Length(1, config.MaxDocumentNameLength),
 		),
-		validation.Field(&req.ContentTipTap, validation.Required),
+		validation.Field(&req.Content, validation.Required),
 	)
 }
 
-// validatePath validates a document path
-func (s *documentService) validatePath(value interface{}) error {
+// validateFolderPath validates a folder path
+func (s *documentService) validateFolderPath(value interface{}) error {
 	path, ok := value.(*string)
 	if !ok || path == nil {
 		return nil
@@ -218,57 +229,55 @@ func (s *documentService) validatePath(value interface{}) error {
 
 	pathStr := *path
 
+	// Empty string is valid (root level)
+	if pathStr == "" {
+		return nil
+	}
+
 	// No leading/trailing slashes
 	if strings.HasPrefix(pathStr, "/") || strings.HasSuffix(pathStr, "/") {
-		return fmt.Errorf("path cannot start or end with '/'")
+		return fmt.Errorf("folder_path cannot start or end with '/'")
 	}
 
 	// No consecutive slashes
 	if strings.Contains(pathStr, "//") {
-		return fmt.Errorf("path cannot contain consecutive slashes")
+		return fmt.Errorf("folder_path cannot contain consecutive slashes")
 	}
 
 	// Only alphanumeric, spaces, hyphens, underscores, slashes
 	for _, char := range pathStr {
 		if !unicode.IsLetter(char) && !unicode.IsDigit(char) &&
 			char != ' ' && char != '-' && char != '_' && char != '/' {
-			return fmt.Errorf("path contains invalid character: %c", char)
+			return fmt.Errorf("folder_path contains invalid character: %c", char)
 		}
 	}
 
 	return nil
 }
 
-// resolvePath resolves a path to a folder ID, creating folders if needed
-func (s *documentService) resolvePath(ctx context.Context, projectID, path string) (*string, string, error) {
+// resolveFolderPath resolves a folder path to a folder ID, creating folders if needed
+func (s *documentService) resolveFolderPath(ctx context.Context, projectID, folderPath string) (*string, error) {
 	// Trim leading/trailing slashes
-	path = strings.Trim(path, "/")
-	if path == "" {
-		return nil, "", fmt.Errorf("path cannot be empty")
+	folderPath = strings.Trim(folderPath, "/")
+
+	// Empty path means root level
+	if folderPath == "" {
+		return nil, nil
 	}
 
-	// Split path into segments
-	segments := strings.Split(path, "/")
+	// Split path into folder segments
+	segments := strings.Split(folderPath, "/")
 	if len(segments) == 0 {
-		return nil, "", fmt.Errorf("invalid path")
+		return nil, fmt.Errorf("invalid folder_path")
 	}
 
-	// Last segment is the document name
-	docName := segments[len(segments)-1]
-
-	// If there's only one segment, it's a root-level document
-	if len(segments) == 1 {
-		return nil, docName, nil
-	}
-
-	// Create folders for all segments except the last one
-	folderSegments := segments[:len(segments)-1]
-	folderID, err := s.createFolderHierarchy(ctx, projectID, folderSegments)
+	// Create all folders in the hierarchy
+	folderID, err := s.createFolderHierarchy(ctx, projectID, segments)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
-	return folderID, docName, nil
+	return folderID, nil
 }
 
 // createFolderHierarchy creates a hierarchy of folders, creating them if they don't exist
@@ -292,216 +301,6 @@ func (s *documentService) createFolderHierarchy(ctx context.Context, projectID s
 	}
 
 	return currentParentID, nil
-}
-
-// convertTipTapToMarkdown converts TipTap JSON to Markdown
-func (s *documentService) convertTipTapToMarkdown(tiptapJSON map[string]interface{}) (string, error) {
-	if tiptapJSON == nil {
-		return "", nil
-	}
-
-	content, ok := tiptapJSON["content"].([]interface{})
-	if !ok {
-		return "", nil
-	}
-
-	var markdown strings.Builder
-	for _, node := range content {
-		nodeMap, ok := node.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		s.convertNode(&markdown, nodeMap, 0)
-	}
-
-	return strings.TrimSpace(markdown.String()), nil
-}
-
-// convertNode converts a TipTap node to markdown (recursive)
-func (s *documentService) convertNode(builder *strings.Builder, node map[string]interface{}, level int) {
-	nodeType, _ := node["type"].(string)
-
-	switch nodeType {
-	case "heading":
-		s.convertHeading(builder, node)
-	case "paragraph":
-		s.convertParagraph(builder, node)
-	case "bulletList":
-		s.convertBulletList(builder, node)
-	case "orderedList":
-		s.convertOrderedList(builder, node)
-	case "listItem":
-		s.convertListItem(builder, node, level)
-	case "codeBlock":
-		s.convertCodeBlock(builder, node)
-	case "blockquote":
-		s.convertBlockquote(builder, node)
-	case "horizontalRule":
-		builder.WriteString("---\n\n")
-	case "hardBreak":
-		builder.WriteString("  \n")
-	default:
-		// For unknown types, try to process content
-		if content, ok := node["content"].([]interface{}); ok {
-			for _, child := range content {
-				if childNode, ok := child.(map[string]interface{}); ok {
-					s.convertNode(builder, childNode, level)
-				}
-			}
-		}
-	}
-}
-
-func (s *documentService) convertHeading(builder *strings.Builder, node map[string]interface{}) {
-	attrs, _ := node["attrs"].(map[string]interface{})
-	level, _ := attrs["level"].(float64)
-
-	for i := 0; i < int(level); i++ {
-		builder.WriteString("#")
-	}
-	builder.WriteString(" ")
-
-	if content, ok := node["content"].([]interface{}); ok {
-		s.processInlineContent(builder, content)
-	}
-	builder.WriteString("\n\n")
-}
-
-func (s *documentService) convertParagraph(builder *strings.Builder, node map[string]interface{}) {
-	if content, ok := node["content"].([]interface{}); ok {
-		s.processInlineContent(builder, content)
-	}
-	builder.WriteString("\n\n")
-}
-
-func (s *documentService) convertBulletList(builder *strings.Builder, node map[string]interface{}) {
-	if content, ok := node["content"].([]interface{}); ok {
-		for _, item := range content {
-			if itemNode, ok := item.(map[string]interface{}); ok {
-				builder.WriteString("- ")
-				s.convertListItem(builder, itemNode, 0)
-			}
-		}
-	}
-	builder.WriteString("\n")
-}
-
-func (s *documentService) convertOrderedList(builder *strings.Builder, node map[string]interface{}) {
-	if content, ok := node["content"].([]interface{}); ok {
-		for i, item := range content {
-			if itemNode, ok := item.(map[string]interface{}); ok {
-				builder.WriteString(fmt.Sprintf("%d. ", i+1))
-				s.convertListItem(builder, itemNode, 0)
-			}
-		}
-	}
-	builder.WriteString("\n")
-}
-
-func (s *documentService) convertListItem(builder *strings.Builder, node map[string]interface{}, level int) {
-	if content, ok := node["content"].([]interface{}); ok {
-		for _, child := range content {
-			if childNode, ok := child.(map[string]interface{}); ok {
-				childType, _ := childNode["type"].(string)
-				if childType == "paragraph" {
-					if childContent, ok := childNode["content"].([]interface{}); ok {
-						s.processInlineContent(builder, childContent)
-					}
-					builder.WriteString("\n")
-				} else {
-					s.convertNode(builder, childNode, level+1)
-				}
-			}
-		}
-	}
-}
-
-func (s *documentService) convertCodeBlock(builder *strings.Builder, node map[string]interface{}) {
-	attrs, _ := node["attrs"].(map[string]interface{})
-	language, _ := attrs["language"].(string)
-
-	builder.WriteString("```")
-	if language != "" {
-		builder.WriteString(language)
-	}
-	builder.WriteString("\n")
-
-	if content, ok := node["content"].([]interface{}); ok {
-		for _, child := range content {
-			if childNode, ok := child.(map[string]interface{}); ok {
-				if text, ok := childNode["text"].(string); ok {
-					builder.WriteString(text)
-				}
-			}
-		}
-	}
-
-	builder.WriteString("\n```\n\n")
-}
-
-func (s *documentService) convertBlockquote(builder *strings.Builder, node map[string]interface{}) {
-	if content, ok := node["content"].([]interface{}); ok {
-		for _, child := range content {
-			if childNode, ok := child.(map[string]interface{}); ok {
-				builder.WriteString("> ")
-				s.convertNode(builder, childNode, 0)
-			}
-		}
-	}
-}
-
-func (s *documentService) processInlineContent(builder *strings.Builder, content []interface{}) {
-	for _, item := range content {
-		node, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		nodeType, _ := node["type"].(string)
-		if nodeType == "text" {
-			text, _ := node["text"].(string)
-
-			// Apply marks (bold, italic, code, etc.)
-			if marks, ok := node["marks"].([]interface{}); ok {
-				text = s.applyMarks(text, marks)
-			}
-
-			builder.WriteString(text)
-		} else if nodeType == "hardBreak" {
-			builder.WriteString("  \n")
-		}
-	}
-}
-
-func (s *documentService) applyMarks(text string, marks []interface{}) string {
-	result := text
-	var wrappers []string
-
-	for _, mark := range marks {
-		markMap, ok := mark.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		markType, _ := markMap["type"].(string)
-		switch markType {
-		case "bold":
-			wrappers = append([]string{"**"}, wrappers...)
-		case "italic":
-			wrappers = append([]string{"*"}, wrappers...)
-		case "code":
-			wrappers = append([]string{"`"}, wrappers...)
-		case "strike":
-			wrappers = append([]string{"~~"}, wrappers...)
-		}
-	}
-
-	// Wrap text with all marks
-	for _, wrapper := range wrappers {
-		result = wrapper + result + wrapper
-	}
-
-	return result
 }
 
 // countWords counts the number of words in markdown text

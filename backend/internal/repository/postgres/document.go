@@ -27,8 +27,8 @@ func NewDocumentRepository(config *RepositoryConfig) repositories.DocumentReposi
 // Create creates a new document
 func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *models.Document) error {
 	query := fmt.Sprintf(`
-		INSERT INTO %s (project_id, folder_id, name, content_tiptap, content_markdown, word_count, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO %s (project_id, folder_id, name, content, word_count, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, created_at, updated_at
 	`, r.tables.Documents)
 
@@ -36,8 +36,7 @@ func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *models.Doc
 		doc.ProjectID,
 		doc.FolderID,
 		doc.Name,
-		doc.ContentTipTap, // pgx handles JSONB natively
-		doc.ContentMarkdown,
+		doc.Content,
 		doc.WordCount,
 		doc.CreatedAt,
 		doc.UpdatedAt,
@@ -56,7 +55,7 @@ func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *models.Doc
 // GetByID retrieves a document by ID
 func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID string) (*models.Document, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, folder_id, name, content_tiptap, content_markdown, word_count, created_at, updated_at
+		SELECT id, project_id, folder_id, name, content, word_count, created_at, updated_at
 		FROM %s
 		WHERE id = $1 AND project_id = $2
 	`, r.tables.Documents)
@@ -67,8 +66,7 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 		&doc.ProjectID,
 		&doc.FolderID,
 		&doc.Name,
-		&doc.ContentTipTap, // pgx handles JSONB natively
-		&doc.ContentMarkdown,
+		&doc.Content,
 		&doc.WordCount,
 		&doc.CreatedAt,
 		&doc.UpdatedAt,
@@ -88,15 +86,14 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Document) error {
 	query := fmt.Sprintf(`
 		UPDATE %s
-		SET folder_id = $1, name = $2, content_tiptap = $3, content_markdown = $4, word_count = $5, updated_at = $6
-		WHERE id = $7 AND project_id = $8
+		SET folder_id = $1, name = $2, content = $3, word_count = $4, updated_at = $5
+		WHERE id = $6 AND project_id = $7
 	`, r.tables.Documents)
 
 	result, err := r.pool.Exec(ctx, query,
 		doc.FolderID,
 		doc.Name,
-		doc.ContentTipTap, // pgx handles JSONB natively
-		doc.ContentMarkdown,
+		doc.Content,
 		doc.WordCount,
 		doc.UpdatedAt,
 		doc.ID,
@@ -131,6 +128,21 @@ func (r *PostgresDocumentRepository) Delete(ctx context.Context, id, projectID s
 
 	if result.RowsAffected() == 0 {
 		return fmt.Errorf("document %s: %w", id, domain.ErrNotFound)
+	}
+
+	return nil
+}
+
+// DeleteAllByProject deletes all documents in a project
+func (r *PostgresDocumentRepository) DeleteAllByProject(ctx context.Context, projectID string) error {
+	query := fmt.Sprintf(`
+		DELETE FROM %s
+		WHERE project_id = $1
+	`, r.tables.Documents)
+
+	_, err := r.pool.Exec(ctx, query, projectID)
+	if err != nil {
+		return fmt.Errorf("delete all documents: %w", err)
 	}
 
 	return nil

@@ -1,15 +1,17 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"flag"
 	"log"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	"meridian/internal/config"
-	"meridian/internal/domain/services"
 	"meridian/internal/repository/postgres"
 	"meridian/internal/service"
 
@@ -108,28 +110,38 @@ func main() {
 
 	// Create services
 	docService := service.NewDocumentService(docRepo, folderRepo, txManager, logger)
+	importService := service.NewImportService(docRepo, docService, logger)
 
 	// Clear existing data
 	log.Println("⚠️  Clearing existing documents and folders...")
-	if err := clearProjectData(ctx, pool, tables, cfg.TestProjectID); err != nil {
+	if err := importService.DeleteAllDocuments(ctx, cfg.TestProjectID); err != nil {
 		log.Printf("Warning: Could not clear data: %v", err)
 	}
 
-	// Seed documents
-	log.Println("📝 Seeding documents with folder structure...")
+	// Seed documents using import service
+	log.Println("📝 Seeding documents from seed_data directory...")
 
-	documents := getSeedDocuments(cfg.TestProjectID)
+	// Create zip from seed_data directory
+	zipBuffer, err := createZipFromDirectory("scripts/seed_data")
+	if err != nil {
+		log.Fatalf("Failed to create zip from seed_data: %v", err)
+	}
 
-	for i, docData := range documents {
-		// Use service layer to create document (handles path resolution, conversion, etc.)
-		doc, err := docService.CreateDocument(ctx, docData.request)
-		if err != nil {
-			log.Printf("❌ Failed to create document '%s': %v", docData.path, err)
-			continue
+	// Process zip file using import service
+	result, err := importService.ProcessZipFile(ctx, cfg.TestProjectID, bytes.NewReader(zipBuffer.Bytes()))
+	if err != nil {
+		log.Fatalf("Failed to process seed data: %v", err)
+	}
+
+	// Log results
+	log.Printf("✅ Created: %d documents", result.Summary.Created)
+	log.Printf("✅ Updated: %d documents", result.Summary.Updated)
+	log.Printf("⏭️  Skipped: %d files", result.Summary.Skipped)
+	if result.Summary.Failed > 0 {
+		log.Printf("❌ Failed: %d files", result.Summary.Failed)
+		for _, err := range result.Errors {
+			log.Printf("  ❌ %s: %s", err.File, err.Error)
 		}
-
-		log.Printf("✅ Created document %d/%d: %s (ID: %s, Words: %d)",
-			i+1, len(documents), docData.path, doc.ID, doc.WordCount)
 	}
 
 	log.Println("🎉 Seeding complete!")
@@ -193,8 +205,7 @@ func runSchema(ctx context.Context, pool *pgxpool.Pool, tables *postgres.TableNa
 			project_id UUID NOT NULL REFERENCES ` + tables.Projects + `(id) ON DELETE CASCADE,
 			folder_id UUID REFERENCES ` + tables.Folders + `(id) ON DELETE SET NULL,
 			name TEXT NOT NULL,
-			content_tiptap JSONB NOT NULL,
-			content_markdown TEXT NOT NULL,
+			content TEXT NOT NULL,
 			word_count INTEGER DEFAULT 0,
 			created_at TIMESTAMPTZ DEFAULT NOW(),
 			updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -258,513 +269,58 @@ func clearProjectData(ctx context.Context, pool *pgxpool.Pool, tables *postgres.
 	return nil
 }
 
-type seedDocument struct {
-	path    string
-	request *services.CreateDocumentRequest
-}
+// createZipFromDirectory creates a zip file from all markdown files in a directory
+func createZipFromDirectory(dirPath string) (*bytes.Buffer, error) {
+	zipBuffer := new(bytes.Buffer)
+	zipWriter := zip.NewWriter(zipBuffer)
+	defer zipWriter.Close()
 
-func getSeedDocuments(projectID string) []seedDocument {
-	return []seedDocument{
-		// Chapters
-		{
-			path: "Chapters/Chapter 1 - The Beginning",
-			request: &services.CreateDocumentRequest{
-				ProjectID: projectID,
-				Path:      stringPtr("Chapters/Chapter 1 - The Beginning"),
-				ContentTipTap: map[string]interface{}{
-					"type": "doc",
-					"content": []interface{}{
-						map[string]interface{}{
-							"type":  "heading",
-							"attrs": map[string]interface{}{"level": float64(1)},
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "The Beginning"},
-							},
-						},
-						map[string]interface{}{
-							"type": "paragraph",
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "The morning sun cast long shadows across the cobblestone streets of Eldergrove. "},
-								map[string]interface{}{
-									"type":  "text",
-									"marks": []interface{}{map[string]interface{}{"type": "bold"}},
-									"text":  "Aria",
-								},
-								map[string]interface{}{"type": "text", "text": " stood at the window of her small apartment, watching the city wake. Today was the day everything would change."},
-							},
-						},
-						map[string]interface{}{
-							"type": "paragraph",
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "She had received the letter three days ago - an invitation to the Academy of Arcane Arts. "},
-								map[string]interface{}{
-									"type":  "text",
-									"marks": []interface{}{map[string]interface{}{"type": "italic"}},
-									"text":  "Only the most gifted are chosen",
-								},
-								map[string]interface{}{"type": "text", "text": ", the letter had said. But Aria knew the truth: she wasn't gifted at all."},
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			path: "Chapters/Chapter 2 - The Academy",
-			request: &services.CreateDocumentRequest{
-				ProjectID: projectID,
-				Path:      stringPtr("Chapters/Chapter 2 - The Academy"),
-				ContentTipTap: map[string]interface{}{
-					"type": "doc",
-					"content": []interface{}{
-						map[string]interface{}{
-							"type":  "heading",
-							"attrs": map[string]interface{}{"level": float64(1)},
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "The Academy"},
-							},
-						},
-						map[string]interface{}{
-							"type": "paragraph",
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "The Academy's spires pierced the clouds, their crystalline surfaces reflecting the afternoon light in a thousand directions. Aria's breath caught as the carriage rounded the final bend."},
-							},
-						},
-						map[string]interface{}{
-							"type":  "heading",
-							"attrs": map[string]interface{}{"level": float64(2)},
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "First Impressions"},
-							},
-						},
-						map[string]interface{}{
-							"type": "paragraph",
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Students in elegant robes hurried across the courtyard, books floating beside them without visible support. This was a world Aria had only read about in dusty library books."},
-							},
-						},
-					},
-				},
-			},
-		},
+	// Walk through the directory
+	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
 
-		// Characters
-		{
-			path: "Characters/Aria Moonwhisper",
-			request: &services.CreateDocumentRequest{
-				ProjectID: projectID,
-				Path:      stringPtr("Characters/Aria Moonwhisper"),
-				ContentTipTap: map[string]interface{}{
-					"type": "doc",
-					"content": []interface{}{
-						map[string]interface{}{
-							"type":  "heading",
-							"attrs": map[string]interface{}{"level": float64(1)},
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Aria Moonwhisper"},
-							},
-						},
-						map[string]interface{}{
-							"type": "paragraph",
-							"content": []interface{}{
-								map[string]interface{}{
-									"type":  "text",
-									"marks": []interface{}{map[string]interface{}{"type": "bold"}},
-									"text":  "Age:",
-								},
-								map[string]interface{}{"type": "text", "text": " 17"},
-							},
-						},
-						map[string]interface{}{
-							"type": "paragraph",
-							"content": []interface{}{
-								map[string]interface{}{
-									"type":  "text",
-									"marks": []interface{}{map[string]interface{}{"type": "bold"}},
-									"text":  "Appearance:",
-								},
-								map[string]interface{}{"type": "text", "text": " Silver hair, violet eyes, petite build"},
-							},
-						},
-						map[string]interface{}{
-							"type":  "heading",
-							"attrs": map[string]interface{}{"level": float64(2)},
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Background"},
-							},
-						},
-						map[string]interface{}{
-							"type": "paragraph",
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Orphaned at age 5, raised in Eldergrove by her grandmother. Discovered magical potential at 16, but struggles with control."},
-							},
-						},
-						map[string]interface{}{
-							"type":  "heading",
-							"attrs": map[string]interface{}{"level": float64(2)},
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Abilities"},
-							},
-						},
-						map[string]interface{}{
-							"type": "bulletList",
-							"content": []interface{}{
-								map[string]interface{}{
-									"type": "listItem",
-									"content": []interface{}{
-										map[string]interface{}{
-											"type": "paragraph",
-											"content": []interface{}{
-												map[string]interface{}{"type": "text", "text": "Elemental affinity: Wind"},
-											},
-										},
-									},
-								},
-								map[string]interface{}{
-									"type": "listItem",
-									"content": []interface{}{
-										map[string]interface{}{
-											"type": "paragraph",
-											"content": []interface{}{
-												map[string]interface{}{"type": "text", "text": "Rare ability to sense emotional auras"},
-											},
-										},
-									},
-								},
-								map[string]interface{}{
-									"type": "listItem",
-									"content": []interface{}{
-										map[string]interface{}{
-											"type": "paragraph",
-											"content": []interface{}{
-												map[string]interface{}{"type": "text", "text": "Photographic memory for spell patterns"},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			path: "Characters/Professor Thorne",
-			request: &services.CreateDocumentRequest{
-				ProjectID: projectID,
-				Path:      stringPtr("Characters/Professor Thorne"),
-				ContentTipTap: map[string]interface{}{
-					"type": "doc",
-					"content": []interface{}{
-						map[string]interface{}{
-							"type":  "heading",
-							"attrs": map[string]interface{}{"level": float64(1)},
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Professor Elias Thorne"},
-							},
-						},
-						map[string]interface{}{
-							"type": "paragraph",
-							"content": []interface{}{
-								map[string]interface{}{
-									"type":  "text",
-									"marks": []interface{}{map[string]interface{}{"type": "bold"}},
-									"text":  "Role:",
-								},
-								map[string]interface{}{"type": "text", "text": " Head of Elemental Studies"},
-							},
-						},
-						map[string]interface{}{
-							"type": "paragraph",
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Strict but fair mentor. Known for pushing students beyond their perceived limits."},
-							},
-						},
-						map[string]interface{}{
-							"type": "blockquote",
-							"content": []interface{}{
-								map[string]interface{}{
-									"type": "paragraph",
-									"content": []interface{}{
-										map[string]interface{}{
-											"type":  "text",
-											"marks": []interface{}{map[string]interface{}{"type": "italic"}},
-											"text":  "Magic is not about power. It's about understanding the fundamental forces that bind our world together.",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			path: "Characters/Villains/The Shadow",
-			request: &services.CreateDocumentRequest{
-				ProjectID: projectID,
-				Path:      stringPtr("Characters/Villains/The Shadow"),
-				ContentTipTap: map[string]interface{}{
-					"type": "doc",
-					"content": []interface{}{
-						map[string]interface{}{
-							"type":  "heading",
-							"attrs": map[string]interface{}{"level": float64(1)},
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "The Shadow"},
-							},
-						},
-						map[string]interface{}{
-							"type": "paragraph",
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "A mysterious figure who seeks to corrupt the Academy from within. Identity unknown."},
-							},
-						},
-						map[string]interface{}{
-							"type":  "heading",
-							"attrs": map[string]interface{}{"level": float64(2)},
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Motivations"},
-							},
-						},
-						map[string]interface{}{
-							"type": "paragraph",
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Believes the Academy is hoarding magical knowledge that should belong to everyone."},
-							},
-						},
-					},
-				},
-			},
-		},
+		// Skip directories
+		if info.IsDir() {
+			return nil
+		}
 
-		// World Building
-		{
-			path: "World Building/Magic System",
-			request: &services.CreateDocumentRequest{
-				ProjectID: projectID,
-				Path:      stringPtr("World Building/Magic System"),
-				ContentTipTap: map[string]interface{}{
-					"type": "doc",
-					"content": []interface{}{
-						map[string]interface{}{
-							"type":  "heading",
-							"attrs": map[string]interface{}{"level": float64(1)},
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Magic System"},
-							},
-						},
-						map[string]interface{}{
-							"type":  "heading",
-							"attrs": map[string]interface{}{"level": float64(2)},
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Core Principles"},
-							},
-						},
-						map[string]interface{}{
-							"type": "orderedList",
-							"content": []interface{}{
-								map[string]interface{}{
-									"type": "listItem",
-									"content": []interface{}{
-										map[string]interface{}{
-											"type": "paragraph",
-											"content": []interface{}{
-												map[string]interface{}{
-													"type":  "text",
-													"marks": []interface{}{map[string]interface{}{"type": "bold"}},
-													"text":  "Conservation:",
-												},
-												map[string]interface{}{"type": "text", "text": " Magic cannot be created or destroyed, only transformed"},
-											},
-										},
-									},
-								},
-								map[string]interface{}{
-									"type": "listItem",
-									"content": []interface{}{
-										map[string]interface{}{
-											"type": "paragraph",
-											"content": []interface{}{
-												map[string]interface{}{
-													"type":  "text",
-													"marks": []interface{}{map[string]interface{}{"type": "bold"}},
-													"text":  "Resonance:",
-												},
-												map[string]interface{}{"type": "text", "text": " Spells resonate with elemental frequencies"},
-											},
-										},
-									},
-								},
-								map[string]interface{}{
-									"type": "listItem",
-									"content": []interface{}{
-										map[string]interface{}{
-											"type": "paragraph",
-											"content": []interface{}{
-												map[string]interface{}{
-													"type":  "text",
-													"marks": []interface{}{map[string]interface{}{"type": "bold"}},
-													"text":  "Cost:",
-												},
-												map[string]interface{}{"type": "text", "text": " All magic requires energy from the caster"},
-											},
-										},
-									},
-								},
-							},
-						},
-						map[string]interface{}{
-							"type":  "heading",
-							"attrs": map[string]interface{}{"level": float64(2)},
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Elements"},
-							},
-						},
-						map[string]interface{}{
-							"type": "bulletList",
-							"content": []interface{}{
-								map[string]interface{}{
-									"type": "listItem",
-									"content": []interface{}{
-										map[string]interface{}{
-											"type": "paragraph",
-											"content": []interface{}{
-												map[string]interface{}{"type": "text", "text": "Fire - Transformation and energy"},
-											},
-										},
-									},
-								},
-								map[string]interface{}{
-									"type": "listItem",
-									"content": []interface{}{
-										map[string]interface{}{
-											"type": "paragraph",
-											"content": []interface{}{
-												map[string]interface{}{"type": "text", "text": "Water - Flow and adaptation"},
-											},
-										},
-									},
-								},
-								map[string]interface{}{
-									"type": "listItem",
-									"content": []interface{}{
-										map[string]interface{}{
-											"type": "paragraph",
-											"content": []interface{}{
-												map[string]interface{}{"type": "text", "text": "Earth - Stability and endurance"},
-											},
-										},
-									},
-								},
-								map[string]interface{}{
-									"type": "listItem",
-									"content": []interface{}{
-										map[string]interface{}{
-											"type": "paragraph",
-											"content": []interface{}{
-												map[string]interface{}{"type": "text", "text": "Wind - Freedom and perception"},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
+		// Only include .md files
+		if filepath.Ext(path) != ".md" {
+			return nil
+		}
 
-		// Outline
-		{
-			path: "Outline/Plot Notes",
-			request: &services.CreateDocumentRequest{
-				ProjectID: projectID,
-				Path:      stringPtr("Outline/Plot Notes"),
-				ContentTipTap: map[string]interface{}{
-					"type": "doc",
-					"content": []interface{}{
-						map[string]interface{}{
-							"type":  "heading",
-							"attrs": map[string]interface{}{"level": float64(1)},
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Plot Notes"},
-							},
-						},
-						map[string]interface{}{
-							"type":  "heading",
-							"attrs": map[string]interface{}{"level": float64(2)},
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Act 1 - Discovery"},
-							},
-						},
-						map[string]interface{}{
-							"type": "paragraph",
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Aria arrives at the Academy and discovers she has a rare form of magic that others fear."},
-							},
-						},
-						map[string]interface{}{
-							"type":  "heading",
-							"attrs": map[string]interface{}{"level": float64(2)},
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Act 2 - Conflict"},
-							},
-						},
-						map[string]interface{}{
-							"type": "paragraph",
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Dark forces emerge seeking to exploit her abilities. Professor Thorne reveals a hidden truth about her past."},
-							},
-						},
-						map[string]interface{}{
-							"type":  "heading",
-							"attrs": map[string]interface{}{"level": float64(2)},
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Act 3 - Resolution"},
-							},
-						},
-						map[string]interface{}{
-							"type": "paragraph",
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Aria must choose between safety and destiny."},
-							},
-						},
-					},
-				},
-			},
-		},
+		// Get relative path from base directory
+		relPath, err := filepath.Rel(dirPath, path)
+		if err != nil {
+			return err
+		}
 
-		// Root-level document
-		{
-			path: "Quick Notes",
-			request: &services.CreateDocumentRequest{
-				ProjectID: projectID,
-				Path:      stringPtr("Quick Notes"),
-				ContentTipTap: map[string]interface{}{
-					"type": "doc",
-					"content": []interface{}{
-						map[string]interface{}{
-							"type":  "heading",
-							"attrs": map[string]interface{}{"level": float64(1)},
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Quick Notes"},
-							},
-						},
-						map[string]interface{}{
-							"type": "paragraph",
-							"content": []interface{}{
-								map[string]interface{}{"type": "text", "text": "Random ideas and thoughts to explore later."},
-							},
-						},
-					},
-				},
-			},
-		},
+		// Create file in zip
+		fileWriter, err := zipWriter.Create(relPath)
+		if err != nil {
+			return err
+		}
+
+		// Read file content
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		// Write content to zip
+		_, err = fileWriter.Write(content)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
-}
 
-// stringPtr returns a pointer to a string
-func stringPtr(s string) *string {
-	return &s
+	return zipBuffer, nil
 }

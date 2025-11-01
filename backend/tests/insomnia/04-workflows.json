@@ -15,7 +15,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"path\": \"World Building/Locations/Cities/Eldergrove\",\n  \"content_tiptap\": {\n    \"type\": \"doc\",\n    \"content\": [\n      {\n        \"type\": \"heading\",\n        \"attrs\": {\"level\": 1},\n        \"content\": [{\"type\": \"text\", \"text\": \"Eldergrove\"}]\n      },\n      {\n        \"type\": \"paragraph\",\n        \"content\": [{\"type\": \"text\", \"text\": \"A bustling city at the crossroads of three kingdoms.\"}]\n      }\n    ]\n  }\n}"
+        "text": "{\n  \"folder_path\": \"World Building/Locations/Cities\",\n  \"name\": \"Eldergrove\",\n  \"content\": \"# Eldergrove\\n\\nA bustling city at the crossroads of three kingdoms.\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -84,7 +84,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"folder_id\": \"{{ _.chapters_folder_id }}\",\n  \"name\": \"Chapter 1 - The Beginning\",\n  \"content_tiptap\": {\n    \"type\": \"doc\",\n    \"content\": [\n      {\n        \"type\": \"heading\",\n        \"attrs\": {\"level\": 1},\n        \"content\": [{\"type\": \"text\", \"text\": \"The Beginning\"}]\n      },\n      {\n        \"type\": \"paragraph\",\n        \"content\": [{\"type\": \"text\", \"text\": \"Once upon a time...\"}]\n      }\n    ]\n  }\n}"
+        "text": "{\n  \"folder_id\": \"{{ _.chapters_folder_id }}\",\n  \"name\": \"Chapter 1 - The Beginning\",\n  \"content\": \"# The Beginning\\n\\nOnce upon a time...\"\n}"
       },
       "parameters": [],
       "headers": [
