@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/jimmyyao/meridian/backend/internal/domain/services"
+	"meridian/internal/domain/services"
 )
 
 // DocumentHandler handles document HTTP requests

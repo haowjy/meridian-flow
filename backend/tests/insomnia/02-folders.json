@@ -105,11 +105,11 @@
       "created": 1698739200000,
       "url": "{{ _.base_url }}/api/folders/{{ _.subfolder_id }}",
       "name": "5. Move Subfolder to Root",
-      "description": "Move the subfolder to root level (set parent_id to null)",
+      "description": "Move the subfolder to root level (set parent_id to empty string)",
       "method": "PUT",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"parent_id\": null\n}"
+        "text": "{\n  \"parent_id\": \"\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -130,13 +130,63 @@
       "created": 1698739200000,
       "url": "{{ _.base_url }}/api/folders/{{ _.subfolder_id }}",
       "name": "6. Delete Folder",
-      "description": "Delete a folder (cascades to all children - folders and documents)",
+      "description": "Delete a folder (must be empty - no subfolders or documents)",
       "method": "DELETE",
       "body": {},
       "parameters": [],
       "headers": [],
       "authentication": {},
       "metaSortKey": -1698739200000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_folder_invalid_slash",
+      "parentId": "fld_folders",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders",
+      "name": "7. [VALIDATION] Create Folder with Slash",
+      "description": "Should fail: folder names cannot contain slashes (400 validation error)",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"World/Characters\",\n  \"parent_id\": null\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739190000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_rename_folder_invalid_slash",
+      "parentId": "fld_folders",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders/{{ _.folder_id }}",
+      "name": "8. [VALIDATION] Rename Folder with Slash",
+      "description": "Should fail: folder names cannot contain slashes (400 validation error)",
+      "method": "PUT",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"Main/Side Characters\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739180000,
       "isPrivate": false,
       "_type": "request"
     },

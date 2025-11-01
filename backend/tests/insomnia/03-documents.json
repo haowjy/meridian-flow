@@ -149,12 +149,62 @@
       "_type": "request"
     },
     {
+      "_id": "req_move_document_to_root",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
+      "name": "7. Move Document to Root",
+      "description": "Move document to root level (set folder_id to empty string)",
+      "method": "PUT",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"folder_id\": \"\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738625000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_rename_document_with_slash",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
+      "name": "8. [VALIDATION] Rename Document with Slash",
+      "description": "Should succeed: document names CAN contain slashes (unlike folders)",
+      "method": "PUT",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"Hero/Villain Arc\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738610000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
       "_id": "req_delete_document",
       "parentId": "fld_documents",
       "modified": 1698739200000,
       "created": 1698739200000,
       "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
-      "name": "7. Delete Document",
+      "name": "9. Delete Document",
       "description": "Delete a document by ID",
       "method": "DELETE",
       "body": {},

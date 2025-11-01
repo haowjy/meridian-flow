@@ -6,7 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/jimmyyao/meridian/backend/internal/domain"
+	"meridian/internal/domain"
 )
 
 // mapErrorToHTTP maps domain errors to HTTP status codes

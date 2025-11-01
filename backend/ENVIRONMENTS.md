@@ -21,6 +21,29 @@ ENVIRONMENT=dev  # or test, or prod
 
 Backend automatically prefixes all tables based on this value.
 
+### Database Connections
+
+| Connection Type | Port | Use Case | Configuration |
+|-----------------|------|----------|---------------|
+| Pooled (PgBouncer) | 6543 | Development | Auto-detects simple protocol |
+| Direct | 5432 | Production | Auto-uses prepared statements |
+
+**Development:**
+```env
+# Port 6543 auto-configures to avoid prepared statement conflicts
+SUPABASE_DB_URL=postgresql://...@...pooler.supabase.com:6543/postgres
+```
+
+**Production:**
+```env
+# Port 5432 uses prepared statements for best performance
+SUPABASE_DB_URL=postgresql://...@db.your-project.supabase.co:5432/postgres
+```
+
+⚠️ **Important**: Port 6543 is auto-detected and uses simple protocol. For explicit control, add `?default_query_exec_mode=simple_protocol`.
+
+📖 **Full details**: `../_docs/technical/backend/database-connections.md`
+
 ### Two Approaches
 
 **Single Database (Phase 1):**

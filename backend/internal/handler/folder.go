@@ -4,7 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/jimmyyao/meridian/backend/internal/domain/services"
+	"meridian/internal/domain/services"
 )
 
 // FolderHandler handles folder HTTP requests

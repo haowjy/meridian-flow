@@ -9,11 +9,11 @@ import (
 	"unicode"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
-	"github.com/jimmyyao/meridian/backend/internal/config"
-	"github.com/jimmyyao/meridian/backend/internal/domain"
-	"github.com/jimmyyao/meridian/backend/internal/domain/models"
-	"github.com/jimmyyao/meridian/backend/internal/domain/repositories"
-	"github.com/jimmyyao/meridian/backend/internal/domain/services"
+	"meridian/internal/config"
+	"meridian/internal/domain"
+	"meridian/internal/domain/models"
+	"meridian/internal/domain/repositories"
+	"meridian/internal/domain/services"
 )
 
 // documentService implements the DocumentService interface

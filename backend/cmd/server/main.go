@@ -12,12 +12,13 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/jimmyyao/meridian/backend/internal/config"
-	"github.com/jimmyyao/meridian/backend/internal/handler"
-	"github.com/jimmyyao/meridian/backend/internal/middleware"
-	"github.com/jimmyyao/meridian/backend/internal/repository/postgres"
-	"github.com/jimmyyao/meridian/backend/internal/service"
+	"meridian/internal/config"
+	"meridian/internal/handler"
+	"meridian/internal/middleware"
+	"meridian/internal/repository/postgres"
+	"meridian/internal/service"
 	"github.com/joho/godotenv"
 )
 
@@ -29,7 +30,15 @@ func ensureTestProject(ctx context.Context, pool *pgxpool.Pool, tables *postgres
 		ON CONFLICT (id) DO NOTHING
 	`, tables.Projects)
 
-	_, err := pool.Exec(ctx, query, projectID, userID, name, time.Now())
+	// Use a connection from the pool with simple protocol to avoid prepared statement conflicts
+	// This happens when the seed script runs just before the server starts
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to acquire connection: %w", err)
+	}
+	defer conn.Release()
+
+	_, err = conn.Exec(ctx, query, pgx.QueryExecModeExec, projectID, userID, name, time.Now())
 	if err != nil {
 		return fmt.Errorf("failed to ensure test project: %w", err)
 	}

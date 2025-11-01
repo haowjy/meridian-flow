@@ -42,8 +42,8 @@ graph TB
         Models --> DB
     end
 
-    style DB fill:#f99,stroke:#333,stroke-width:2px
-    style Handler fill:#ff9,stroke:#333,stroke-width:2px
+    style DB fill:#b82d2d,stroke:#333,stroke-width:2px
+    style Handler fill:#9d8d2d,stroke:#333,stroke-width:2px
 ```
 
 **Problems:**
@@ -68,10 +68,10 @@ graph TB
         Handler --> Domain
     end
 
-    style Handler fill:#9f9,stroke:#333,stroke-width:2px
-    style Service fill:#9cf,stroke:#333,stroke-width:2px
-    style Repo fill:#fcf,stroke:#333,stroke-width:2px
-    style Domain fill:#ffc,stroke:#333,stroke-width:2px
+    style Handler fill:#2d8d2d,stroke:#333,stroke-width:2px
+    style Service fill:#2d7d9d,stroke:#333,stroke-width:2px
+    style Repo fill:#9d4d9d,stroke:#333,stroke-width:2px
+    style Domain fill:#9d8d2d,stroke:#333,stroke-width:2px
 ```
 
 ---
@@ -241,10 +241,10 @@ graph LR
         SvcIfaces[services/<br/>─────────<br/>DocumentService<br/>FolderService<br/>TreeService<br/>Interfaces only]
     end
 
-    style Errors fill:#fcc,stroke:#333,stroke-width:2px
-    style Models fill:#cfc,stroke:#333,stroke-width:2px
-    style RepoIfaces fill:#ccf,stroke:#333,stroke-width:2px
-    style SvcIfaces fill:#fcf,stroke:#333,stroke-width:2px
+    style Errors fill:#b84d4d,stroke:#333,stroke-width:2px
+    style Models fill:#2d7d2d,stroke:#333,stroke-width:2px
+    style RepoIfaces fill:#4d6db8,stroke:#333,stroke-width:2px
+    style SvcIfaces fill:#9d4d9d,stroke:#333,stroke-width:2px
 ```
 
 **Purpose**: Define business concepts independent of infrastructure
@@ -287,10 +287,10 @@ graph TB
     Create --> TipTap[TipTap converter<br/>Domain logic]
     Create --> PathRes[Path resolver<br/>Auto-create folders]
 
-    style Create fill:#9cf,stroke:#333,stroke-width:2px
-    style Validation fill:#ffc,stroke:#333,stroke-width:2px
-    style TipTap fill:#ffc,stroke:#333,stroke-width:2px
-    style PathRes fill:#ffc,stroke:#333,stroke-width:2px
+    style Create fill:#2d7d9d,stroke:#333,stroke-width:2px
+    style Validation fill:#9d8d2d,stroke:#333,stroke-width:2px
+    style TipTap fill:#9d8d2d,stroke:#333,stroke-width:2px
+    style PathRes fill:#9d8d2d,stroke:#333,stroke-width:2px
 ```
 
 **Example - Document Service CreateDocument:**
@@ -387,9 +387,9 @@ graph TB
         Delete --> V9[Check documents]
     end
 
-    style V5 fill:#f99,stroke:#333,stroke-width:2px
-    style V8 fill:#f99,stroke:#333,stroke-width:2px
-    style V9 fill:#f99,stroke:#333,stroke-width:2px
+    style V5 fill:#b82d2d,stroke:#333,stroke-width:2px
+    style V8 fill:#b82d2d,stroke:#333,stroke-width:2px
+    style V9 fill:#b82d2d,stroke:#333,stroke-width:2px
 ```
 
 **Example - Circular Reference Prevention:**
@@ -445,8 +445,8 @@ graph LR
         Tables[table_names.go<br/>────────<br/>Dynamic naming<br/>dev_/test_/prod_]
     end
 
-    style Doc fill:#fcf,stroke:#333,stroke-width:2px
-    style Folder fill:#fcf,stroke:#333,stroke-width:2px
+    style Doc fill:#9d4d9d,stroke:#333,stroke-width:2px
+    style Folder fill:#9d4d9d,stroke:#333,stroke-width:2px
 ```
 
 **Example - Document Repository Create (Pure SQL):**
@@ -506,9 +506,9 @@ graph TB
         Build --> Return[Return TreeNode]
     end
 
-    style Pass1 fill:#9cf,stroke:#333,stroke-width:2px
-    style Pass2 fill:#9cf,stroke:#333,stroke-width:2px
-    style Pass3 fill:#9cf,stroke:#333,stroke-width:2px
+    style Pass1 fill:#2d7d9d,stroke:#333,stroke-width:2px
+    style Pass2 fill:#2d7d9d,stroke:#333,stroke-width:2px
+    style Pass3 fill:#2d7d9d,stroke:#333,stroke-width:2px
 ```
 
 **Old location:** `internal/database/tree.go` (mixed with SQL)
@@ -690,8 +690,8 @@ graph TB
         Repo2 --> Domain2
     end
 
-    style Domain fill:#ffc,stroke:#333,stroke-width:3px
-    style Domain2 fill:#ffc,stroke:#333,stroke-width:3px
+    style Domain fill:#9d8d2d,stroke:#333,stroke-width:3px
+    style Domain2 fill:#9d8d2d,stroke:#333,stroke-width:3px
 ```
 
 **Dependency Inversion Principle:**
@@ -1016,9 +1016,9 @@ graph TB
     Business -->|YES| Service[Add to service/]
     Data -->|YES| Repo[Add to repository/]
 
-    style Handler fill:#9f9
-    style Service fill:#9cf
-    style Repo fill:#fcf
+    style Handler fill:#2d8d2d
+    style Service fill:#2d7d9d
+    style Repo fill:#9d4d9d
 ```
 
 **Examples:**

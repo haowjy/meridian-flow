@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 
-	"github.com/jimmyyao/meridian/backend/internal/domain/models"
+	"meridian/internal/domain/models"
 )
 
 // DocumentService handles document business logic

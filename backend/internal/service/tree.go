@@ -4,9 +4,9 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/jimmyyao/meridian/backend/internal/domain/models"
-	"github.com/jimmyyao/meridian/backend/internal/domain/repositories"
-	"github.com/jimmyyao/meridian/backend/internal/domain/services"
+	"meridian/internal/domain/models"
+	"meridian/internal/domain/repositories"
+	"meridian/internal/domain/services"
 )
 
 // treeService implements the TreeService interface

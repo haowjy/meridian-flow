@@ -3,7 +3,7 @@ package repositories
 import (
 	"context"
 
-	"github.com/jimmyyao/meridian/backend/internal/domain/models"
+	"meridian/internal/domain/models"
 )
 
 // FolderRepository defines data access operations for folders

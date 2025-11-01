@@ -4,14 +4,15 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"time"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
-	"github.com/jimmyyao/meridian/backend/internal/config"
-	"github.com/jimmyyao/meridian/backend/internal/domain"
-	"github.com/jimmyyao/meridian/backend/internal/domain/repositories"
-	"github.com/jimmyyao/meridian/backend/internal/domain/services"
-	"github.com/jimmyyao/meridian/backend/internal/domain/models"
+	"meridian/internal/config"
+	"meridian/internal/domain"
+	"meridian/internal/domain/repositories"
+	"meridian/internal/domain/services"
+	"meridian/internal/domain/models"
 )
 
 type folderService struct {
@@ -275,6 +276,7 @@ func (s *folderService) validateCreateRequest(req *services.CreateFolderRequest)
 		validation.Field(&req.Name,
 			validation.Required,
 			validation.Length(1, config.MaxFolderNameLength),
+			validation.Match(regexp.MustCompile(`^[^/]+$`)).Error("folder name cannot contain slashes"),
 		),
 	)
 }
@@ -295,6 +297,7 @@ func (s *folderService) validateUpdateRequest(req *services.UpdateFolderRequest)
 			validation.Field(&req.Name,
 				validation.Required,
 				validation.Length(1, config.MaxFolderNameLength),
+				validation.Match(regexp.MustCompile(`^[^/]+$`)).Error("folder name cannot contain slashes"),
 			),
 		)
 	}

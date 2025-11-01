@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/jimmyyao/meridian/backend/internal/domain"
-	"github.com/jimmyyao/meridian/backend/internal/domain/models"
-	"github.com/jimmyyao/meridian/backend/internal/domain/repositories"
+	"meridian/internal/domain"
+	"meridian/internal/domain/models"
+	"meridian/internal/domain/repositories"
 )
 
 // PostgresDocumentRepository implements the DocumentRepository interface

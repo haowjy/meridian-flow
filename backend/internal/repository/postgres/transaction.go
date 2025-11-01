@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/jimmyyao/meridian/backend/internal/domain/repositories"
+	"meridian/internal/domain/repositories"
 )
 
 // TransactionManager implements the TransactionManager interface
