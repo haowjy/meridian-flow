@@ -26,11 +26,15 @@ export function CollapsiblePanel({
 }: CollapsiblePanelProps) {
   const Icon = side === 'left' ? ChevronLeft : ChevronRight
   const ExpandIcon = side === 'left' ? ChevronRight : ChevronLeft
+  // Collapse buttons always on left when expanded; expand buttons on opposite edges when collapsed
+  const buttonSideClass = collapsed
+    ? (side === 'left' ? 'right-2' : 'left-2')
+    : 'left-2'
 
   return (
     <div className={cn('relative flex h-full flex-col', className)}>
       {/* Collapse Toggle Button */}
-      <div className="absolute right-2 top-2 z-10">
+      <div className={cn('absolute top-2 z-10', buttonSideClass)}>
         <Button
           variant="ghost"
           size="icon"
@@ -46,7 +50,7 @@ export function CollapsiblePanel({
       {!collapsed && (
         <div className="flex h-full flex-col overflow-hidden">
           {title && (
-            <div className="border-b px-4 py-3">
+            <div className="border-b py-3 pl-12 pr-4">
               <h2 className="text-sm font-semibold">{title}</h2>
             </div>
           )}

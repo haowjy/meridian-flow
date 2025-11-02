@@ -1,5 +1,8 @@
-import { ReactNode } from 'react'
+import { ReactNode, useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { Button } from '@/shared/components/ui/button'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useUIStore } from '@/core/stores/useUIStore'
 
 interface PanelLayoutProps {
   left: ReactNode
@@ -28,12 +31,74 @@ export function PanelLayout({
   onRightCollapse,
   className,
 }: PanelLayoutProps) {
+  // Only enable transitions after Zustand has hydrated from localStorage
+  const hasHydrated = useUIStore((state) => state._hasHydrated)
+
+  function ExpandHandle({
+    side,
+    title,
+    onClick,
+  }: {
+    side: 'left' | 'right'
+    title: string
+    onClick: () => void
+  }) {
+    const [dimmed, setDimmed] = useState(false)
+    const timerRef = useRef<NodeJS.Timeout | null>(null)
+
+    useEffect(() => {
+      timerRef.current = setTimeout(() => setDimmed(true), 2000)
+      return () => {
+        if (timerRef.current) clearTimeout(timerRef.current)
+      }
+    }, [])
+
+    const restartIdle = () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(() => setDimmed(true), 2000)
+    }
+
+    const handleEnter = () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+      setDimmed(false)
+    }
+    const handleLeave = () => restartIdle()
+
+    const posClass = side === 'left' ? 'left-2' : 'right-2'
+
+    return (
+      <div className={cn('pointer-events-none absolute top-2 z-20', posClass)}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn(
+            'pointer-events-auto h-8 w-8 rounded-lg bg-background/80 shadow-sm ring-1 ring-border transition-opacity',
+            dimmed ? 'opacity-60' : 'opacity-100'
+          )}
+          onClick={onClick}
+          title={title}
+          onMouseEnter={handleEnter}
+          onMouseLeave={handleLeave}
+          onFocus={handleEnter}
+          onBlur={handleLeave}
+        >
+          {side === 'left' ? (
+            <ChevronRight className="h-4 w-4" />
+          ) : (
+            <ChevronLeft className="h-4 w-4" />
+          )}
+        </Button>
+      </div>
+    )
+  }
+
   return (
-    <div className={cn('flex h-full w-full overflow-hidden', className)}>
+    <div className={cn('relative flex h-full w-full overflow-hidden', className)}>
       {/* Left Panel (25% or collapsed) */}
       <div
         className={cn(
-          'flex-shrink-0 border-r transition-all duration-300',
+          'flex-shrink-0 border-r',
+          hasHydrated && 'transition-all duration-300',
           leftCollapsed ? 'w-0' : 'w-1/4'
         )}
       >
@@ -46,12 +111,21 @@ export function PanelLayout({
       {/* Right Panel (25% or collapsed) */}
       <div
         className={cn(
-          'flex-shrink-0 border-l transition-all duration-300',
+          'flex-shrink-0 border-l',
+          hasHydrated && 'transition-all duration-300',
           rightCollapsed ? 'w-0' : 'w-1/4'
         )}
       >
         {!rightCollapsed && right}
       </div>
+
+      {/* Expand handles when collapsed */}
+      {leftCollapsed && onLeftCollapse && (
+        <ExpandHandle side="left" title="Expand left panel" onClick={onLeftCollapse} />
+      )}
+      {rightCollapsed && onRightCollapse && (
+        <ExpandHandle side="right" title="Expand right panel" onClick={onRightCollapse} />
+      )}
     </div>
   )
 }

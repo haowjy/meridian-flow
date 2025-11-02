@@ -2,6 +2,7 @@ import './globals.css'
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import { Toaster } from '@/shared/components/ui/sonner'
+import { PreloadRemover } from '@/core/components/PreloadRemover'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -17,7 +18,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body className={`${inter.className} preload`}>
+        <PreloadRemover />
         {children}
         <Toaster />
       </body>
