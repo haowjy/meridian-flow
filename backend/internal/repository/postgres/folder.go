@@ -34,7 +34,12 @@ func (r *PostgresFolderRepository) Create(ctx context.Context, folder *models.Fo
 		return err
 	}
 	if existing != nil {
-		return fmt.Errorf("folder '%s': %w", folder.Name, domain.ErrConflict)
+		// Return structured conflict error with existing folder ID
+		return &domain.ConflictError{
+			Message:      fmt.Sprintf("folder '%s' already exists at this level", folder.Name),
+			ResourceType: "folder",
+			ResourceID:   existing.ID,
+		}
 	}
 
 	query := fmt.Sprintf(`
@@ -53,7 +58,19 @@ func (r *PostgresFolderRepository) Create(ctx context.Context, folder *models.Fo
 
 	if err != nil {
 		if isPgDuplicateError(err) {
-			return fmt.Errorf("folder '%s': %w", folder.Name, domain.ErrConflict)
+			// Fallback: query for existing folder if database detected duplicate
+			existing, queryErr := r.getFolderByNameAndParent(ctx, folder.ProjectID, folder.Name, folder.ParentID)
+			if queryErr != nil || existing == nil {
+				// Can't find existing folder, return generic conflict
+				return fmt.Errorf("folder '%s' already exists at this level: %w", folder.Name, domain.ErrConflict)
+			}
+
+			// Return structured conflict error
+			return &domain.ConflictError{
+				Message:      fmt.Sprintf("folder '%s' already exists at this level", folder.Name),
+				ResourceType: "folder",
+				ResourceID:   existing.ID,
+			}
 		}
 		return fmt.Errorf("create folder: %w", err)
 	}
@@ -107,7 +124,19 @@ func (r *PostgresFolderRepository) Update(ctx context.Context, folder *models.Fo
 
 	if err != nil {
 		if isPgDuplicateError(err) {
-			return fmt.Errorf("folder '%s': %w", folder.Name, domain.ErrConflict)
+			// Query for existing folder
+			existing, queryErr := r.getFolderByNameAndParent(ctx, folder.ProjectID, folder.Name, folder.ParentID)
+			if queryErr != nil || existing == nil {
+				// Can't find existing folder, return generic conflict
+				return fmt.Errorf("folder '%s' already exists at this level: %w", folder.Name, domain.ErrConflict)
+			}
+
+			// Return structured conflict error
+			return &domain.ConflictError{
+				Message:      fmt.Sprintf("folder '%s' already exists at this level", folder.Name),
+				ResourceType: "folder",
+				ResourceID:   existing.ID,
+			}
 		}
 		return fmt.Errorf("update folder: %w", err)
 	}

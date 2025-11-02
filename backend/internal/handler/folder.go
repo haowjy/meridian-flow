@@ -40,7 +40,7 @@ func (h *FolderHandler) CreateFolder(c *fiber.Ctx) error {
 	// Call service
 	folder, err := h.folderService.CreateFolder(c.Context(), &req)
 	if err != nil {
-		return mapErrorToHTTP(err)
+		return handleError(c, err)
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(folder)
@@ -61,7 +61,7 @@ func (h *FolderHandler) GetFolder(c *fiber.Ctx) error {
 
 	folder, err := h.folderService.GetFolder(c.Context(), id, projectID)
 	if err != nil {
-		return mapErrorToHTTP(err)
+		return handleError(c, err)
 	}
 
 	return c.JSON(folder)
@@ -88,7 +88,7 @@ func (h *FolderHandler) UpdateFolder(c *fiber.Ctx) error {
 
 	folder, err := h.folderService.UpdateFolder(c.Context(), id, &req)
 	if err != nil {
-		return mapErrorToHTTP(err)
+		return handleError(c, err)
 	}
 
 	return c.JSON(folder)
@@ -108,7 +108,7 @@ func (h *FolderHandler) DeleteFolder(c *fiber.Ctx) error {
 	}
 
 	if err := h.folderService.DeleteFolder(c.Context(), id, projectID); err != nil {
-		return mapErrorToHTTP(err)
+		return handleError(c, err)
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)
@@ -130,7 +130,7 @@ func (h *FolderHandler) ListChildren(c *fiber.Ctx) error {
 
 	contents, err := h.folderService.ListChildren(c.Context(), folderID, projectID)
 	if err != nil {
-		return mapErrorToHTTP(err)
+		return handleError(c, err)
 	}
 
 	return c.JSON(contents)

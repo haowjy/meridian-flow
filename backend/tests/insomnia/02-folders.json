@@ -15,7 +15,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"name\": \"Characters\",\n  \"parent_id\": null\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Characters\",\n  \"parent_id\": null\n}"
       },
       "parameters": [],
       "headers": [
@@ -41,7 +41,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"name\": \"Villains\",\n  \"parent_id\": \"{{ _.folder_id }}\"\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Villains\",\n  \"parent_id\": \"{{ _.folder_id }}\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -84,7 +84,7 @@
       "method": "PUT",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"name\": \"Main Characters\"\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Main Characters\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -109,7 +109,7 @@
       "method": "PUT",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"parent_id\": \"\"\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"parent_id\": \"\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -151,7 +151,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"name\": \"World/Characters\",\n  \"parent_id\": null\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"World/Characters\",\n  \"parent_id\": null\n}"
       },
       "parameters": [],
       "headers": [
@@ -176,7 +176,7 @@
       "method": "PUT",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"name\": \"Main/Side Characters\"\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Main/Side Characters\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -220,12 +220,14 @@
       "name": "Base Environment",
       "data": {
         "base_url": "http://localhost:8080",
+        "project_id": "00000000-0000-0000-0000-000000000001",
         "folder_id": "",
         "subfolder_id": ""
       },
       "dataPropertyOrder": {
         "&": [
           "base_url",
+          "project_id",
           "folder_id",
           "subfolder_id"
         ]

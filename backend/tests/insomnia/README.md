@@ -4,6 +4,25 @@ Organized test collections for the Meridian API. Each collection tests a specifi
 
 ## Collections
 
+### 00 - Projects (`00-projects.json`)
+**Tests:** Project CRUD operations
+
+**Requests (run in order):**
+1. List Projects → saves first project's `project_id`
+2. Create Project → saves `project_id`
+3. Get Project by ID → refreshes `project_id`
+4. Update Project Name → updates name and timestamp
+5. Delete Project (Empty) → deletes project with no documents
+6. Delete Project (Has Documents) → should fail with 409
+7. Validation: Empty Name → should fail with 400
+8. Validation: Name Too Long → should fail with 400
+
+**Use when:** Testing project management, setting up test projects
+
+**Tip:** Run "List Projects" first to capture an existing project ID, or "Create Project" to make a new one.
+
+---
+
 ### 01 - Basic Operations (`01-basic.json`)
 **Tests:** Health check and tree navigation
 
@@ -85,6 +104,7 @@ Each collection has its own environment with:
 - `base_url`: `http://localhost:8080` (change if needed)
 
 **Collection-specific:**
+- `00-projects.json`: `project_id`, `test_project_id`
 - `01-basic.json`: No variables needed
 - `02-folders.json`: `folder_id`, `subfolder_id`
 - `03-documents.json`: `document_id`, `root_document_id`, `folder_id`
@@ -102,6 +122,17 @@ Run requests **in order** within each collection:
 ### Example Flow
 
 ```
+00-projects.json:
+1. List Projects
+   ↓ (see all projects)
+2. Create Project
+   ↓ (saves project_id)
+3. Get Project by ID
+   ↓ (uses project_id)
+4. Update Project Name
+   ↓ (updates timestamp)
+...
+
 02-folders.json:
 1. Create Root Folder
    ↓ (saves folder_id)
@@ -117,6 +148,13 @@ Run requests **in order** within each collection:
 Collections use scripts to auto-capture IDs:
 
 ```javascript
+// Example: After creating a project
+const response = await insomnia.response.json();
+if (response && response.id) {
+  await insomnia.environment.set('project_id', response.id);
+  console.log('✅ Saved project_id:', response.id);
+}
+
 // Example: After creating a folder
 const response = await insomnia.response.json();
 if (response && response.id) {

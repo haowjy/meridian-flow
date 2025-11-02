@@ -44,7 +44,19 @@ func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *models.Doc
 
 	if err != nil {
 		if isPgDuplicateError(err) {
-			return fmt.Errorf("document '%s' already exists in this location: %w", doc.Name, domain.ErrConflict)
+			// Query for the existing document to get its ID
+			existingID, queryErr := r.getExistingDocumentID(ctx, doc.ProjectID, doc.FolderID, doc.Name)
+			if queryErr != nil {
+				// Fallback to generic conflict error if we can't find the existing document
+				return fmt.Errorf("document '%s' already exists in this location: %w", doc.Name, domain.ErrConflict)
+			}
+
+			// Return structured conflict error with resource ID
+			return &domain.ConflictError{
+				Message:      fmt.Sprintf("document '%s' already exists in this location", doc.Name),
+				ResourceType: "document",
+				ResourceID:   existingID,
+			}
 		}
 		return fmt.Errorf("create document: %w", err)
 	}
@@ -102,7 +114,19 @@ func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Doc
 
 	if err != nil {
 		if isPgDuplicateError(err) {
-			return fmt.Errorf("document '%s' already exists in this location: %w", doc.Name, domain.ErrConflict)
+			// Query for the existing document to get its ID
+			existingID, queryErr := r.getExistingDocumentID(ctx, doc.ProjectID, doc.FolderID, doc.Name)
+			if queryErr != nil {
+				// Fallback to generic conflict error if we can't find the existing document
+				return fmt.Errorf("document '%s' already exists in this location: %w", doc.Name, domain.ErrConflict)
+			}
+
+			// Return structured conflict error with resource ID
+			return &domain.ConflictError{
+				Message:      fmt.Sprintf("document '%s' already exists in this location", doc.Name),
+				ResourceType: "document",
+				ResourceID:   existingID,
+			}
 		}
 		return fmt.Errorf("update document: %w", err)
 	}
@@ -272,4 +296,41 @@ func (r *PostgresDocumentRepository) GetPath(ctx context.Context, doc *models.Do
 	}
 
 	return folderPath + "/" + doc.Name, nil
+}
+
+// getExistingDocumentID queries for an existing document by unique constraint fields
+// Returns the document ID if found, error otherwise
+func (r *PostgresDocumentRepository) getExistingDocumentID(ctx context.Context, projectID string, folderID *string, name string) (string, error) {
+	query := fmt.Sprintf(`
+		SELECT id
+		FROM %s
+		WHERE project_id = $1 AND name = $3
+	`, r.tables.Documents)
+
+	var id string
+	var err error
+
+	if folderID == nil {
+		// Query for root-level document (folder_id IS NULL)
+		query = fmt.Sprintf(`
+			SELECT id
+			FROM %s
+			WHERE project_id = $1 AND folder_id IS NULL AND name = $2
+		`, r.tables.Documents)
+		err = r.pool.QueryRow(ctx, query, projectID, name).Scan(&id)
+	} else {
+		// Query for document in specific folder
+		query = fmt.Sprintf(`
+			SELECT id
+			FROM %s
+			WHERE project_id = $1 AND folder_id = $2 AND name = $3
+		`, r.tables.Documents)
+		err = r.pool.QueryRow(ctx, query, projectID, *folderID, name).Scan(&id)
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("get existing document ID: %w", err)
+	}
+
+	return id, nil
 }

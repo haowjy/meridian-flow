@@ -41,6 +41,11 @@ func (s *folderService) CreateFolder(ctx context.Context, req *services.CreateFo
 		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
 	}
 
+	// Normalize empty string to nil for root-level folders (consistent with UPDATE)
+	if req.ParentID != nil && *req.ParentID == "" {
+		req.ParentID = nil
+	}
+
 	// If parent folder is specified, verify it exists
 	if req.ParentID != nil {
 		parent, err := s.folderRepo.GetByID(ctx, *req.ParentID, req.ProjectID)

@@ -14,3 +14,12 @@ func getProjectID(c *fiber.Ctx) (string, error) {
 	}
 	return projectID, nil
 }
+
+// getUserID extracts the user ID from the context
+func getUserID(c *fiber.Ctx) (string, error) {
+	userID, ok := c.Locals("userID").(string)
+	if !ok || userID == "" {
+		return "", fmt.Errorf("user ID not found in context")
+	}
+	return userID, nil
+}

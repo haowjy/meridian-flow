@@ -32,7 +32,7 @@ func (h *TreeHandler) GetTree(c *fiber.Ctx) error {
 	// Build the tree
 	tree, err := h.treeService.GetProjectTree(c.Context(), projectID)
 	if err != nil {
-		return mapErrorToHTTP(err)
+		return handleError(c, err)
 	}
 
 	return c.JSON(tree)

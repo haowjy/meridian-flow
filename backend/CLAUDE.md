@@ -13,6 +13,9 @@ go mod download
 # Run schema in Supabase SQL Editor (one-time)
 # Copy contents of schema.sql → Supabase Dashboard → SQL Editor → Run
 
+# Seed test data (creates test project + sample documents)
+make seed
+
 # Start server
 make run
 ```
@@ -44,7 +47,9 @@ make seed-clear   # Clear data (keep schema)
 **Automated testing:** Claude can run curl:
 ```bash
 curl http://localhost:8080/health
+curl http://localhost:8080/api/projects
 curl http://localhost:8080/api/tree
+curl http://localhost:8080/api/documents/:id
 ```
 
 See `tests/insomnia-collection.json` for all endpoint examples.
@@ -129,6 +134,7 @@ See `_docs/technical/backend/database-connections.md`
 No real auth yet. Uses hardcoded IDs from `.env`:
 - Middleware injects `TEST_USER_ID` into context
 - All operations use `TEST_PROJECT_ID`
+- Test project created by `make seed` (not by server on startup)
 - Don't build multi-project logic yet
 
-See `internal/middleware/auth.go` and `cmd/server/main.go:ensureTestProject`.
+See `internal/middleware/auth.go` and `cmd/seed/main.go:ensureTestProject`.

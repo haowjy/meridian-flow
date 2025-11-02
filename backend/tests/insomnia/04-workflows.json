@@ -15,7 +15,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"folder_path\": \"World Building/Locations/Cities\",\n  \"name\": \"Eldergrove\",\n  \"content\": \"# Eldergrove\\n\\nA bustling city at the crossroads of three kingdoms.\"\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_path\": \"World Building/Locations/Cities\",\n  \"name\": \"Eldergrove\",\n  \"content\": \"# Eldergrove\\n\\nA bustling city at the crossroads of three kingdoms.\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -58,7 +58,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"name\": \"Chapters\",\n  \"parent_id\": null\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Chapters\",\n  \"parent_id\": null\n}"
       },
       "parameters": [],
       "headers": [
@@ -84,7 +84,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"folder_id\": \"{{ _.chapters_folder_id }}\",\n  \"name\": \"Chapter 1 - The Beginning\",\n  \"content\": \"# The Beginning\\n\\nOnce upon a time...\"\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_id\": \"{{ _.chapters_folder_id }}\",\n  \"name\": \"Chapter 1 - The Beginning\",\n  \"content\": \"# The Beginning\\n\\nOnce upon a time...\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -110,7 +110,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"name\": \"Archive\",\n  \"parent_id\": null\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Archive\",\n  \"parent_id\": null\n}"
       },
       "parameters": [],
       "headers": [
@@ -136,7 +136,7 @@
       "method": "PUT",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"folder_id\": \"{{ _.archive_folder_id }}\"\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_id\": \"{{ _.archive_folder_id }}\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -198,6 +198,7 @@
       "name": "Base Environment",
       "data": {
         "base_url": "http://localhost:8080",
+        "project_id": "00000000-0000-0000-0000-000000000001",
         "nested_doc_id": "",
         "chapters_folder_id": "",
         "chapter1_id": "",
@@ -206,6 +207,7 @@
       "dataPropertyOrder": {
         "&": [
           "base_url",
+          "project_id",
           "nested_doc_id",
           "chapters_folder_id",
           "chapter1_id",

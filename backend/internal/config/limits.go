@@ -1,6 +1,11 @@
 package config
 
 const (
+	// MaxProjectNameLength is the maximum length for project names.
+	// Limited to 255 to fit in PostgreSQL VARCHAR(255) and provide
+	// reasonable UX (names should be short and descriptive).
+	MaxProjectNameLength = 255
+
 	// MaxDocumentNameLength is the maximum length for document names.
 	// Limited to 255 to fit in PostgreSQL VARCHAR(255) and provide
 	// reasonable UX (names should be short and descriptive).

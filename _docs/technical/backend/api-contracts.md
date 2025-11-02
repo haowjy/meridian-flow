@@ -5,18 +5,86 @@ audience: developer
 
 # API Contracts & Validation Rules
 
-## Overview
+## Project Operations
 
-Documents API contracts, validation rules, and frontend-backend expectations for Meridian's document management system.
+### List Projects (GET /api/projects)
+
+- Returns all projects for the authenticated user
+- Ordered by `updated_at DESC` (most recently updated first)
+- Returns empty array `[]` if user has no projects
+
+**Response:** Array of Project objects
+
+### Create Project (POST /api/projects)
+
+**Request Body:**
+```json
+{
+  "name": "My New Project"
+}
+```
+
+**Validation:**
+- Name required (cannot be empty after trimming)
+- Max length: 255 characters (see `config.MaxProjectNameLength`)
+- Name is trimmed of leading/trailing whitespace
+
+**Response:** Created Project object with generated `id`, `created_at`, and `updated_at`
+
+### Get Project (GET /api/projects/:id)
+
+- Returns single project by ID
+- Returns 404 if project not found or doesn't belong to user
+
+**Response:** Project object
+
+### Update Project (PATCH /api/projects/:id)
+
+**Request Body:**
+```json
+{
+  "name": "Updated Project Name"
+}
+```
+
+**Validation:**
+- Same rules as Create Project
+- Updates `updated_at` timestamp automatically
+
+**Response:** Updated Project object
+
+### Delete Project (DELETE /api/projects/:id)
+
+- Deletes project if it has no documents
+- Returns 409 Conflict if project contains documents (FK constraint with `ON DELETE RESTRICT`)
+- Returns 404 if project not found
+- Returns 204 No Content on success
+
+**Safety:** User must delete all documents before deleting project (prevents accidental data loss)
 
 ## Folder Operations
+
+### Create Folder (POST /api/folders)
+
+**Request Body:**
+```json
+{
+  "project_id": "uuid",
+  "name": "Folder Name",
+  "parent_id": ""  // Empty string for root level (or omit/null)
+}
+```
+
+**Root-level convention:**
+- Use `""` (empty string), `null`, or omit `parent_id` for root-level folders
+- All three are equivalent and create a folder at the project root
 
 ### Update Folder (PUT /api/folders/:id)
 
 - Moving to root uses an empty string for the parent identifier (not null), to disambiguate from omitted fields.
 - Renaming and moving can be performed independently or combined in a single request.
 
-Rationale: distinguishing an explicit move to root from “no change” avoids ambiguity in request payloads.
+Rationale: distinguishing an explicit move to root from "no change" avoids ambiguity in request payloads.
 
 **Validation:**
 - At least one field (`name` or `parent_id`) must be provided
@@ -27,6 +95,24 @@ Rationale: distinguishing an explicit move to root from “no change” avoids a
 **Implementation:** Details omitted here; behavior is defined by the validation and response rules below.
 
 ## Document Operations
+
+### Create Document (POST /api/documents)
+
+**Request Body:**
+```json
+{
+  "project_id": "uuid",
+  "name": "Document Name",
+  "content": "Markdown content",
+  "folder_id": "",        // Empty string for root level (or omit/null)
+  "folder_path": "Path"   // Alternative: use folder path instead
+}
+```
+
+**Root-level convention:**
+- Use `""` (empty string), `null`, or omit `folder_id`/`folder_path` for root-level documents
+- All three are equivalent and create a document at the project root
+- `folder_id` and `folder_path` are mutually exclusive; `folder_id` takes priority if both provided
 
 ### Update Document (PUT /api/documents/:id)
 
@@ -48,40 +134,61 @@ Rationale: distinguishing an explicit move to root from “no change” avoids a
 
 ## Validation Rules Summary
 
-| Entity   | Slash Allowed? | Reason                                    |
-|----------|----------------|-------------------------------------------|
-| Folders  | ❌ No          | Used in paths, structural elements        |
-| Documents| ✅ Yes         | Artistic freedom, content not structure   |
+| Entity   | Slash Allowed? | Max Length | Reason                                    |
+|----------|----------------|------------|-------------------------------------------|
+| Projects | N/A            | 255        | Top-level container                       |
+| Folders  | ❌ No          | 255        | Used in paths, structural elements        |
+| Documents| ✅ Yes         | 255        | Artistic freedom, content not structure   |
 
 Implementation notes: folder validation enforces the slash restriction; document validation does not restrict slashes.
 
 ## Error Responses
 
+### Standard Error Format
+
+Most errors return a simple JSON object:
+```json
+{
+  "error": "Human-readable error message"
+}
+```
+
+### Conflict Errors (409)
+
+**For creation conflicts** (duplicate documents, folders, or projects), the response includes structured details about the existing resource:
+
+```json
+{
+  "error": "document 'Chapter 1' already exists in this location",
+  "conflict": {
+    "type": "duplicate",
+    "resource_type": "document",
+    "resource_id": "uuid-of-existing-document",
+    "location": "/api/documents/uuid-of-existing-document"
+  }
+}
+```
+
+**For other conflicts** (e.g., folder not empty, project has documents), returns simple error format:
+```json
+{
+  "error": "folder contains 3 documents"
+}
+```
+
 **Frontend handling:**
 - Validation errors (400): display specific server message
 - Server errors (500): generic error messaging with retry
-- Conflict errors (409): e.g., folder not empty or circular move prevented
+- Conflict errors (409): can fetch existing resource via `conflict.resource_id` or `conflict.location` if provided
 
-## Optimistic UI Expectations
+## Frontend Expectations
 
 **Phase 1 (Single-User):**
-- Frontend updates local state immediately
-- Backend is persistence layer only
-- No conflict resolution needed
-- No real-time sync
+- Frontend updates optimistically; backend validates and persists
+- Content edits: don't rollback on error (keep local, retry)
+- Structural ops: rollback on 400/409 and show server message
 
-**Backend responsibilities:**
-- Validate requests and persist changes
-- Return updated entities with computed fields (e.g., a display path)
-- Return clear error messages on validation/conflict
-
-**Frontend responsibilities:**
-- Update UI optimistically and send requests asynchronously
-- Content edits: do not rollback on error; keep local and retry
-- Structural operations: rollback local change on validation/conflict errors (400/409) and surface the server message
-- Show a retry action on failures when appropriate
-
-**See also:** Frontend flows documentation when available.
+**See:** Frontend state management documentation
 
 ## Path Computation
 

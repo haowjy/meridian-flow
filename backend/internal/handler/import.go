@@ -166,7 +166,7 @@ func (h *ImportHandler) Replace(c *fiber.Ctx) error {
 			"project_id", projectID,
 			"error", err,
 		)
-		return mapErrorToHTTP(err)
+		return handleError(c, err)
 	}
 
 	h.logger.Info("deleted all documents",

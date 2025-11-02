@@ -41,7 +41,7 @@ func (h *DocumentHandler) CreateDocument(c *fiber.Ctx) error {
 	// Call service (all business logic is here)
 	doc, err := h.docService.CreateDocument(c.Context(), &req)
 	if err != nil {
-		return mapErrorToHTTP(err)
+		return handleError(c, err)
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(doc)
@@ -62,7 +62,7 @@ func (h *DocumentHandler) GetDocument(c *fiber.Ctx) error {
 
 	doc, err := h.docService.GetDocument(c.Context(), id, projectID)
 	if err != nil {
-		return mapErrorToHTTP(err)
+		return handleError(c, err)
 	}
 
 	return c.JSON(doc)
@@ -89,7 +89,7 @@ func (h *DocumentHandler) UpdateDocument(c *fiber.Ctx) error {
 
 	doc, err := h.docService.UpdateDocument(c.Context(), id, &req)
 	if err != nil {
-		return mapErrorToHTTP(err)
+		return handleError(c, err)
 	}
 
 	return c.JSON(doc)
@@ -109,7 +109,7 @@ func (h *DocumentHandler) DeleteDocument(c *fiber.Ctx) error {
 	}
 
 	if err := h.docService.DeleteDocument(c.Context(), id, projectID); err != nil {
-		return mapErrorToHTTP(err)
+		return handleError(c, err)
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)

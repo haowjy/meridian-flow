@@ -2,48 +2,21 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"log/slog"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/recover"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/joho/godotenv"
 	"meridian/internal/config"
 	"meridian/internal/handler"
 	"meridian/internal/middleware"
 	"meridian/internal/repository/postgres"
 	"meridian/internal/service"
-	"github.com/joho/godotenv"
 )
-
-// ensureTestProject creates a test project if it doesn't exist (Phase 1 auth stub)
-func ensureTestProject(ctx context.Context, pool *pgxpool.Pool, tables *postgres.TableNames, projectID, userID, name string) error {
-	query := fmt.Sprintf(`
-		INSERT INTO %s (id, user_id, name, created_at)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (id) DO NOTHING
-	`, tables.Projects)
-
-	// Use a connection from the pool with simple protocol to avoid prepared statement conflicts
-	// This happens when the seed script runs just before the server starts
-	conn, err := pool.Acquire(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to acquire connection: %w", err)
-	}
-	defer conn.Release()
-
-	_, err = conn.Exec(ctx, query, pgx.QueryExecModeExec, projectID, userID, name, time.Now())
-	if err != nil {
-		return fmt.Errorf("failed to ensure test project: %w", err)
-	}
-	return nil
-}
 
 func main() {
 	// Load .env file (silently ignore if it doesn't exist - for production)
@@ -85,28 +58,26 @@ func main() {
 	// Create table names
 	tables := postgres.NewTableNames(cfg.TablePrefix)
 
-	// Ensure test project exists (Phase 1 auth stub)
-	if err := ensureTestProject(ctx, pool, tables, cfg.TestProjectID, cfg.TestUserID, "Test Project"); err != nil {
-		log.Fatalf("Failed to ensure test project: %v", err)
-	}
-
 	// Create repositories
 	repoConfig := &postgres.RepositoryConfig{
 		Pool:   pool,
 		Tables: tables,
 		Logger: logger,
 	}
+	projectRepo := postgres.NewProjectRepository(repoConfig)
 	docRepo := postgres.NewDocumentRepository(repoConfig)
 	folderRepo := postgres.NewFolderRepository(repoConfig)
 	txManager := postgres.NewTransactionManager(pool)
 
 	// Create services
+	projectService := service.NewProjectService(projectRepo, logger)
 	docService := service.NewDocumentService(docRepo, folderRepo, txManager, logger)
 	folderService := service.NewFolderService(folderRepo, docRepo, logger)
 	treeService := service.NewTreeService(folderRepo, docRepo, logger)
 	importService := service.NewImportService(docRepo, docService, logger)
 
 	// Create new handlers
+	projectHandler := handler.NewProjectHandler(projectService, logger)
 	newDocHandler := handler.NewDocumentHandler(docService, logger)
 	newFolderHandler := handler.NewFolderHandler(folderService, logger)
 	newTreeHandler := handler.NewTreeHandler(treeService, logger)
@@ -144,6 +115,13 @@ func main() {
 
 	// Health check
 	app.Get("/health", newDocHandler.HealthCheck)
+
+	// Project routes
+	api.Get("/projects", projectHandler.ListProjects)
+	api.Post("/projects", projectHandler.CreateProject)
+	api.Get("/projects/:id", projectHandler.GetProject)
+	api.Patch("/projects/:id", projectHandler.UpdateProject)
+	api.Delete("/projects/:id", projectHandler.DeleteProject)
 
 	// Tree endpoint (NEW - using clean architecture)
 	api.Get("/tree", newTreeHandler.GetTree)

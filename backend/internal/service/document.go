@@ -46,6 +46,12 @@ func (s *documentService) CreateDocument(ctx context.Context, req *services.Crea
 		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
 	}
 
+	// Normalize empty string folder_id to nil for root-level documents (consistent with UPDATE)
+	// Note: folder_path already handles empty string in resolveFolderPath
+	if req.FolderID != nil && *req.FolderID == "" {
+		req.FolderID = nil
+	}
+
 	var folderID *string
 	docName := req.Name
 

@@ -67,11 +67,13 @@
       "created": 1698739200000,
       "name": "Base Environment",
       "data": {
-        "base_url": "http://localhost:8080"
+        "base_url": "http://localhost:8080",
+        "project_id": "00000000-0000-0000-0000-000000000001"
       },
       "dataPropertyOrder": {
         "&": [
-          "base_url"
+          "base_url",
+          "project_id"
         ]
       },
       "color": null,

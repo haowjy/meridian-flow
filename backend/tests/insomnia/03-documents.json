@@ -15,7 +15,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"folder_path\": \"Characters\",\n  \"name\": \"Aria Moonwhisper\",\n  \"content\": \"# Aria Moonwhisper\\n\\nA powerful sorceress with **silver hair** and violet eyes.\\n\\n- Age: 17\\n- Element: Wind\"\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_path\": \"Characters\",\n  \"name\": \"Aria Moonwhisper\",\n  \"content\": \"# Aria Moonwhisper\\n\\nA powerful sorceress with **silver hair** and violet eyes.\\n\\n- Age: 17\\n- Element: Wind\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -41,7 +41,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"folder_path\": \"Characters\",\n  \"folder_id\": \"{{ _.folder_id }}\",\n  \"name\": \"Professor Thorne\",\n  \"content\": \"# Professor Thorne\\n\\nAn enigmatic teacher with secrets to hide.\\n\\n- Age: Unknown\\n- Element: All\"\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_path\": \"Characters\",\n  \"folder_id\": \"{{ _.folder_id }}\",\n  \"name\": \"Professor Thorne\",\n  \"content\": \"# Professor Thorne\\n\\nAn enigmatic teacher with secrets to hide.\\n\\n- Age: Unknown\\n- Element: All\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -66,7 +66,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"folder_path\": \"Characters\",\n  \"folder_id\": \"{{ _.folder_id }}\",\n  \"name\": \"Priority Test Document\",\n  \"content\": \"# Testing Priority\\n\\nThis document should be in the folder_id location, NOT Characters.\"\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_path\": \"Characters\",\n  \"folder_id\": \"{{ _.folder_id }}\",\n  \"name\": \"Priority Test Document\",\n  \"content\": \"# Testing Priority\\n\\nThis document should be in the folder_id location, NOT Characters.\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -92,7 +92,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"folder_path\": \"\",\n  \"name\": \"Quick Notes\",\n  \"content\": \"# Quick Notes\\n\\nRandom ideas and thoughts to explore later.\"\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_path\": \"\",\n  \"name\": \"Quick Notes\",\n  \"content\": \"# Quick Notes\\n\\nRandom ideas and thoughts to explore later.\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -135,7 +135,7 @@
       "method": "PUT",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"content\": \"# Aria Moonwhisper - Updated!\\n\\nThis content has been updated! She is now level 25.\"\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"content\": \"# Aria Moonwhisper - Updated!\\n\\nThis content has been updated! She is now level 25.\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -160,7 +160,7 @@
       "method": "PUT",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"name\": \"Aria the Enchantress\"\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Aria the Enchantress\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -185,7 +185,7 @@
       "method": "PUT",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"folder_path\": \"Archive/Old Characters\"\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_path\": \"Archive/Old Characters\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -211,7 +211,7 @@
       "method": "PUT",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"folder_id\": \"{{ _.folder_id }}\"\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_id\": \"{{ _.folder_id }}\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -236,7 +236,7 @@
       "method": "PUT",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"folder_id\": \"{{ _.folder_id }}\",\n  \"folder_path\": \"Archive\"\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_id\": \"{{ _.folder_id }}\",\n  \"folder_path\": \"Archive\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -262,7 +262,7 @@
       "method": "PUT",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"folder_id\": \"\"\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_id\": \"\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -287,7 +287,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"name\": \"Invalid Document\",\n  \"content\": \"# Invalid\\n\\nThis should fail validation.\"\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Invalid Document\",\n  \"content\": \"# Invalid\\n\\nThis should fail validation.\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -313,7 +313,7 @@
       "method": "PUT",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"name\": \"Hero/Villain Arc\"\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Hero/Villain Arc\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -374,6 +374,7 @@
       "name": "Base Environment",
       "data": {
         "base_url": "http://localhost:8080",
+        "project_id": "00000000-0000-0000-0000-000000000001",
         "document_id": "",
         "root_document_id": "",
         "folder_id": ""
@@ -381,6 +382,7 @@
       "dataPropertyOrder": {
         "&": [
           "base_url",
+          "project_id",
           "document_id",
           "root_document_id",
           "folder_id"

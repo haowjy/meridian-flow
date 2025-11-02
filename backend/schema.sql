@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS dev_projects (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL,
     name TEXT NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Folders table (real folder entities for hierarchy)
@@ -31,7 +32,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_dev_folders_root_unique
 -- Documents table (updated for folder support)
 CREATE TABLE IF NOT EXISTS dev_documents (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    project_id UUID NOT NULL REFERENCES dev_projects(id) ON DELETE CASCADE,
+    project_id UUID NOT NULL REFERENCES dev_projects(id) ON DELETE RESTRICT,  -- Prevent accidental cascade deletion
     folder_id UUID REFERENCES dev_folders(id) ON DELETE SET NULL,  -- NULL = root level
     name TEXT NOT NULL,  -- Just "Aria", not "Characters/Aria"
     content TEXT NOT NULL,  -- Markdown content

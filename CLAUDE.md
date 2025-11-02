@@ -132,3 +132,4 @@ Here's how to query:
 - **Frontend** (future): Vercel
 
 See `backend/CLAUDE.md` for backend deployment details.
+- never `make run` for me... let the user make run

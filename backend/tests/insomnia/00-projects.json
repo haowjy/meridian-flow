@@ -1,0 +1,278 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2024-11-01T00:00:00.000Z",
+  "__export_source": "insomnia.desktop.app:v2023.5.8",
+  "resources": [
+    {
+      "_id": "req_projects_list",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects",
+      "name": "1. List Projects",
+      "description": "Get all projects for authenticated user (ordered by updated_at DESC)",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698796800000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request",
+      "scripts": {
+        "after-response": "const response = await insomnia.response.json();\nif (response && response.length > 0) {\n  await insomnia.environment.set('project_id', response[0].id);\n  console.log('✅ Saved first project_id:', response[0].id);\n  console.log('Total projects:', response.length);\n}"
+      }
+    },
+    {
+      "_id": "req_projects_create",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects",
+      "name": "2. Create Project",
+      "description": "Create a new project → saves project_id",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"My Novel Project\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698796700000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request",
+      "scripts": {
+        "after-response": "const response = await insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('project_id', response.id);\n  console.log('✅ Saved project_id:', response.id);\n}"
+      }
+    },
+    {
+      "_id": "req_projects_get",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects/{{ _.project_id }}",
+      "name": "3. Get Project by ID",
+      "description": "Retrieve a specific project → refreshes project_id",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698796600000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request",
+      "scripts": {
+        "after-response": "const response = await insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('project_id', response.id);\n  console.log('✅ Refreshed project_id:', response.id);\n}"
+      }
+    },
+    {
+      "_id": "req_projects_update",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects/{{ _.project_id }}",
+      "name": "4. Update Project Name",
+      "description": "Rename a project (updates updated_at automatically)",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"My Updated Novel Project\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698796500000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_projects_delete_empty",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects/{{ _.project_id }}",
+      "name": "5. Delete Project (Empty)",
+      "description": "Delete a project with no documents → returns 204",
+      "method": "DELETE",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698796400000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_projects_delete_with_docs",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects/{{ _.test_project_id }}",
+      "name": "6. Delete Project (Has Documents)",
+      "description": "Attempt to delete project with documents → returns 409 Conflict",
+      "method": "DELETE",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698796300000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_projects_create_validation",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects",
+      "name": "7. Validation: Empty Name",
+      "description": "Test validation: should reject empty name → 400",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"   \"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698796200000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_projects_create_long_name",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects",
+      "name": "8. Validation: Name Too Long",
+      "description": "Test validation: should reject name over 255 chars → 400",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Extra text to exceed 255 characters limit.\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698796100000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "fld_projects",
+      "parentId": "wrk_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "name": "Projects",
+      "description": "Project CRUD operations",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698796800000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "wrk_projects",
+      "parentId": null,
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "name": "00 - Projects",
+      "description": "Project management endpoints",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "env_projects",
+      "parentId": "wrk_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:8080",
+        "project_id": "",
+        "test_project_id": "00000000-0000-0000-0000-000000000001"
+      },
+      "dataPropertyOrder": {
+        "&": [
+          "base_url",
+          "project_id",
+          "test_project_id"
+        ]
+      },
+      "color": null,
+      "isPrivate": false,
+      "metaSortKey": 1698796800000,
+      "_type": "environment"
+    }
+  ]
+}

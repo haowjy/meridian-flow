@@ -150,11 +150,12 @@ func main() {
 // ensureTestProject creates a test project if it doesn't exist
 func ensureTestProject(ctx context.Context, pool *pgxpool.Pool, tables *postgres.TableNames, projectID, userID string) error {
 	query := `
-		INSERT INTO ` + tables.Projects + ` (id, user_id, name, created_at)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO ` + tables.Projects + ` (id, user_id, name, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (id) DO NOTHING
 	`
-	_, err := pool.Exec(ctx, query, projectID, userID, "Test Project", time.Now())
+	now := time.Now()
+	_, err := pool.Exec(ctx, query, projectID, userID, "Test Project", now, now)
 	if err != nil {
 		return err
 	}
@@ -175,7 +176,8 @@ func runSchema(ctx context.Context, pool *pgxpool.Pool, tables *postgres.TableNa
 			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
 			user_id UUID NOT NULL,
 			name TEXT NOT NULL,
-			created_at TIMESTAMPTZ DEFAULT NOW()
+			created_at TIMESTAMPTZ DEFAULT NOW(),
+			updated_at TIMESTAMPTZ DEFAULT NOW()
 		)
 	`
 	if _, err := pool.Exec(ctx, createProjects); err != nil {
@@ -202,7 +204,7 @@ func runSchema(ctx context.Context, pool *pgxpool.Pool, tables *postgres.TableNa
 	createDocuments := `
 		CREATE TABLE IF NOT EXISTS ` + tables.Documents + ` (
 			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-			project_id UUID NOT NULL REFERENCES ` + tables.Projects + `(id) ON DELETE CASCADE,
+			project_id UUID NOT NULL REFERENCES ` + tables.Projects + `(id) ON DELETE RESTRICT,
 			folder_id UUID REFERENCES ` + tables.Folders + `(id) ON DELETE SET NULL,
 			name TEXT NOT NULL,
 			content TEXT NOT NULL,
@@ -218,10 +220,12 @@ func runSchema(ctx context.Context, pool *pgxpool.Pool, tables *postgres.TableNa
 
 	// Create indexes
 	indexes := []string{
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_` + tablePrefix + `projects_user_name ON ` + tables.Projects + `(user_id, name)`,
 		`CREATE INDEX IF NOT EXISTS idx_` + tablePrefix + `folders_project_parent ON ` + tables.Folders + `(project_id, parent_id)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_` + tablePrefix + `folders_root_unique ON ` + tables.Folders + `(project_id, name) WHERE parent_id IS NULL`,
 		`CREATE INDEX IF NOT EXISTS idx_` + tablePrefix + `documents_project_id ON ` + tables.Documents + `(project_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_` + tablePrefix + `documents_project_folder ON ` + tables.Documents + `(project_id, folder_id)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_` + tablePrefix + `documents_root_unique ON ` + tables.Documents + `(project_id, name) WHERE folder_id IS NULL`,
 	}
 
 	for _, indexSQL := range indexes {

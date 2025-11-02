@@ -19,3 +19,20 @@ var (
 	// ErrForbidden indicates authorization failure
 	ErrForbidden = errors.New("forbidden")
 )
+
+// ConflictError represents a resource conflict with details about the existing resource
+type ConflictError struct {
+	Message      string // Human-readable error message
+	ResourceType string // Type of resource (document, folder, project)
+	ResourceID   string // ID of the existing/conflicting resource
+}
+
+// Error implements the error interface
+func (e *ConflictError) Error() string {
+	return e.Message
+}
+
+// Is allows errors.Is() to match against ErrConflict
+func (e *ConflictError) Is(target error) bool {
+	return target == ErrConflict
+}
