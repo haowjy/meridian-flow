@@ -529,7 +529,7 @@ POST   /api/chats/:chatId/messages           # Send message (gets mock response)
 CREATE TABLE chats (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID REFERENCES projects(id) NOT NULL,
-  name VARCHAR(255) NOT NULL,
+  title VARCHAR(255) NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -758,16 +758,16 @@ interface ChatStore {
 
   loadChats: (projectId: string) => Promise<void>
   loadChat: (chatId: string) => Promise<void>
-  createChat: (projectId: string, name: string) => Promise<Chat>
+  createChat: (projectId: string, title: string) => Promise<Chat>
   sendMessage: (chatId: string, content: string) => Promise<void>
-  renameChat: (chatId: string, name: string) => Promise<void>
+  renameChat: (chatId: string, title: string) => Promise<void>
   deleteChat: (chatId: string) => Promise<void>
 }
 
 interface Chat {
   id: string
   projectId: string
-  name: string
+  title: string
   lastMessage?: string
   updatedAt: Date
 }

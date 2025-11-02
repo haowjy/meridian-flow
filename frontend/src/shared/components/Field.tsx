@@ -16,7 +16,7 @@ export function Field({ label, id, error, required, children, className }: Field
 
   // Clone the child element and add aria attributes
   const enhancedChild = React.isValidElement(children)
-    ? React.cloneElement(children, {
+    ? React.cloneElement(children as React.ReactElement<any>, {
         id,
         'aria-invalid': error ? true : undefined,
         'aria-describedby': error ? errorId : undefined,

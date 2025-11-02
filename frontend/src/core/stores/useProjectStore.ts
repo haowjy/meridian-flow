@@ -2,14 +2,15 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { Project } from '@/features/projects/types/project'
 import { api } from '@/core/lib/api'
-import { toast } from 'sonner'
+import { handleApiError } from '@/core/lib/errors'
 
 interface ProjectStore {
-  currentProject: Project | null
+  currentProjectId: string | null
   projects: Project[]
   isLoading: boolean
   error: string | null
 
+  currentProject: () => Project | null
   setCurrentProject: (project: Project | null) => void
   loadProjects: () => Promise<void>
   createProject: (name: string) => Promise<Project>
@@ -19,13 +20,19 @@ interface ProjectStore {
 
 export const useProjectStore = create<ProjectStore>()(
   persist(
-    (set) => ({
-      currentProject: null,
+    (set, get) => ({
+      currentProjectId: null,
       projects: [],
       isLoading: false,
       error: null,
 
-      setCurrentProject: (project) => set({ currentProject: project }),
+      currentProject: () => {
+        const state = get()
+        if (!state.currentProjectId) return null
+        return state.projects.find((p) => p.id === state.currentProjectId) || null
+      },
+
+      setCurrentProject: (project) => set({ currentProjectId: project?.id || null }),
 
       loadProjects: async () => {
         set({ isLoading: true, error: null })
@@ -35,7 +42,7 @@ export const useProjectStore = create<ProjectStore>()(
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Failed to load projects'
           set({ error: message, isLoading: false })
-          toast.error('Failed to load projects. Please check your connection.')
+          handleApiError(error, 'Failed to load projects. Please check your connection.')
         }
       },
 
@@ -47,12 +54,11 @@ export const useProjectStore = create<ProjectStore>()(
             projects: [...state.projects, project],
             isLoading: false,
           }))
-          toast.success('Project created!')
           return project
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Failed to create project'
           set({ error: message, isLoading: false })
-          toast.error('Failed to create project')
+          handleApiError(error, 'Failed to create project')
           throw error
         }
       },
@@ -62,11 +68,9 @@ export const useProjectStore = create<ProjectStore>()(
           const updated = await api.projects.update(id, name)
           set((state) => ({
             projects: state.projects.map((p) => (p.id === id ? updated : p)),
-            currentProject: state.currentProject?.id === id ? updated : state.currentProject,
           }))
-          toast.success('Project updated!')
         } catch (error) {
-          toast.error('Failed to update project')
+          handleApiError(error, 'Failed to update project')
           throw error
         }
       },
@@ -76,11 +80,10 @@ export const useProjectStore = create<ProjectStore>()(
           await api.projects.delete(id)
           set((state) => ({
             projects: state.projects.filter((p) => p.id !== id),
-            currentProject: state.currentProject?.id === id ? null : state.currentProject,
+            currentProjectId: state.currentProjectId === id ? null : state.currentProjectId,
           }))
-          toast.success('Project deleted')
         } catch (error) {
-          toast.error('Failed to delete project')
+          handleApiError(error, 'Failed to delete project')
           throw error
         }
       },
@@ -88,7 +91,7 @@ export const useProjectStore = create<ProjectStore>()(
     {
       name: 'project-store',
       partialize: (state) => ({
-        currentProject: state.currentProject,
+        currentProjectId: state.currentProjectId,
       }),
     }
   )
