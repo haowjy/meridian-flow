@@ -1,6 +1,7 @@
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
+import { Skeleton } from "./skeleton"
 
 function Card({ className, ...props }: React.ComponentProps<"div">) {
   return (
@@ -81,6 +82,19 @@ function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+function CardSkeleton({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <Card className={className} aria-hidden="true" {...props}>
+      <CardHeader>
+        <Skeleton className="h-6 w-3/4" />
+      </CardHeader>
+      <CardContent>
+        <Skeleton className="h-4 w-1/2" />
+      </CardContent>
+    </Card>
+  )
+}
+
 export {
   Card,
   CardHeader,
@@ -89,4 +103,5 @@ export {
   CardAction,
   CardDescription,
   CardContent,
+  CardSkeleton,
 }

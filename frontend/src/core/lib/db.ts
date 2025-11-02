@@ -5,7 +5,7 @@ export interface SyncQueueItem {
   id?: number
   operation: 'create' | 'update' | 'delete'
   documentId: string
-  data: any
+  data: Record<string, unknown>  // Generic object for sync data
   retryCount: number
   createdAt: Date
 }

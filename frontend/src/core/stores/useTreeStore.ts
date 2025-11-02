@@ -16,7 +16,7 @@ export const useTreeStore = create<TreeStore>()((set) => ({
   folders: [],
   expandedFolders: new Set(),
 
-  loadTree: async (projectId) => {
+  loadTree: async (_projectId: string) => {
     // TODO: Implement in Phase 4
   },
   toggleFolder: (folderId) => {
