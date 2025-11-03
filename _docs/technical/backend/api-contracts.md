@@ -62,6 +62,57 @@ audience: developer
 
 **Safety:** User must delete all documents before deleting project (prevents accidental data loss)
 
+### Get Project Tree (GET /api/projects/:id/tree)
+
+- Returns the nested folder/document tree for a project
+- Metadata only (no document content)
+
+**Response:**
+```json
+{
+  "folders": [
+    {
+      "id": "folder-uuid",
+      "name": "Characters",
+      "parent_id": null,
+      "created_at": "2025-11-02T10:00:00Z",
+      "folders": [
+        {
+          "id": "subfolder-uuid",
+          "name": "Heroes",
+          "parent_id": "folder-uuid",
+          "created_at": "2025-11-02T10:05:00Z",
+          "folders": [],
+          "documents": []
+        }
+      ],
+      "documents": [
+        {
+          "id": "doc-uuid",
+          "name": "Aria Moonwhisper",
+          "folder_id": "folder-uuid",
+          "word_count": 312,
+          "updated_at": "2025-11-02T12:03:45Z"
+        }
+      ]
+    }
+  ],
+  "documents": [
+    {
+      "id": "root-doc-uuid",
+      "name": "Quick Notes",
+      "folder_id": null,
+      "word_count": 57,
+      "updated_at": "2025-11-02T11:47:12Z"
+    }
+  ]
+}
+```
+
+Notes:
+- This structure mirrors `TreeNode`/`FolderTreeNode`/`DocumentTreeNode` in the backend domain models.
+- Designed for fast navigation; individual document content is fetched via `GET /api/documents/:id`.
+
 ## Folder Operations
 
 ### Create Folder (POST /api/folders)

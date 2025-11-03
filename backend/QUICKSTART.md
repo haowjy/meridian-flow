@@ -107,11 +107,13 @@ curl -X POST http://localhost:8080/api/documents \
 
 ## Test Getting the Document Tree
 
+Use the project-scoped endpoint to fetch the nested folder/document structure:
+
 ```bash
-curl http://localhost:8080/api/tree
+curl http://localhost:8080/api/projects/<PROJECT_ID>/tree
 ```
 
-This returns a nested folder/document structure showing your entire project hierarchy.
+Tree is always scoped to a project. The legacy `/api/tree` path has been removed.
 
 ## Next Steps
 
@@ -166,4 +168,3 @@ go fmt ./...
 ## Need Help?
 
 Check the main [README.md](./README.md) for more detailed documentation.
-

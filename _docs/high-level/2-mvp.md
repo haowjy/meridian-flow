@@ -299,10 +299,10 @@ status: string (active, complete, error)
 
 ## API Endpoints
 
-### Documents
+### Documents & Tree
 ```
-POST   /api/projects/:projectId/documents
-GET    /api/projects/:projectId/documents
+GET    /api/projects/:projectId/tree
+POST   /api/documents
 GET    /api/documents/:id
 PUT    /api/documents/:id
 DELETE /api/documents/:id

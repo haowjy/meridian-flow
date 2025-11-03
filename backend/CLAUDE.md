@@ -48,7 +48,7 @@ make seed-clear   # Clear data (keep schema)
 ```bash
 curl http://localhost:8080/health
 curl http://localhost:8080/api/projects
-curl http://localhost:8080/api/tree
+curl http://localhost:8080/api/projects/<PROJECT_ID>/tree
 curl http://localhost:8080/api/documents/:id
 ```
 

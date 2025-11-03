@@ -1218,7 +1218,7 @@ go run ./cmd/server
 
 # Test endpoints (use Insomnia or curl)
 curl http://localhost:8080/health
-curl http://localhost:8080/api/tree
+curl http://localhost:8080/api/projects/<PROJECT_ID>/tree
 curl -X POST http://localhost:8080/api/documents -H "Content-Type: application/json" -d '{...}'
 ```
 

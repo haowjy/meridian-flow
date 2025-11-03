@@ -22,29 +22,12 @@
       "_type": "request"
     },
     {
-      "_id": "req_get_tree",
-      "parentId": "fld_basic",
-      "modified": 1698739200000,
-      "created": 1698739200000,
-      "url": "{{ _.base_url }}/api/tree",
-      "name": "Get Document Tree",
-      "description": "Get complete nested folder/document tree structure (metadata only, no content)",
-      "method": "GET",
-      "body": {},
-      "parameters": [],
-      "headers": [],
-      "authentication": {},
-      "metaSortKey": -1698739100000,
-      "isPrivate": false,
-      "_type": "request"
-    },
-    {
       "_id": "fld_basic",
       "parentId": "wrk_basic",
       "modified": 1698739200000,
       "created": 1698739200000,
       "name": "Basic Operations",
-      "description": "Health check and tree navigation",
+      "description": "Health check only",
       "environment": {},
       "environmentPropertyOrder": null,
       "metaSortKey": -1698739200000,
@@ -56,7 +39,7 @@
       "modified": 1698739200000,
       "created": 1698739200000,
       "name": "01 - Basic Operations",
-      "description": "Health check and tree navigation",
+      "description": "Health check",
       "scope": "collection",
       "_type": "workspace"
     },
@@ -67,14 +50,10 @@
       "created": 1698739200000,
       "name": "Base Environment",
       "data": {
-        "base_url": "http://localhost:8080",
-        "project_id": "00000000-0000-0000-0000-000000000001"
+        "base_url": "http://localhost:8080"
       },
       "dataPropertyOrder": {
-        "&": [
-          "base_url",
-          "project_id"
-        ]
+        "&": ["base_url"]
       },
       "color": null,
       "isPrivate": false,
@@ -83,4 +62,3 @@
     }
   ]
 }
-

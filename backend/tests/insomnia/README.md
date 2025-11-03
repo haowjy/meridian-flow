@@ -5,7 +5,7 @@ Organized test collections for the Meridian API. Each collection tests a specifi
 ## Collections
 
 ### 00 - Projects (`00-projects.json`)
-**Tests:** Project CRUD operations
+**Tests:** Project CRUD operations and project tree
 
 **Requests (run in order):**
 1. List Projects → saves first project's `project_id`
@@ -16,6 +16,7 @@ Organized test collections for the Meridian API. Each collection tests a specifi
 6. Delete Project (Has Documents) → should fail with 409
 7. Validation: Empty Name → should fail with 400
 8. Validation: Name Too Long → should fail with 400
+9. Get Project Tree → visualize folder/document tree
 
 **Use when:** Testing project management, setting up test projects
 
@@ -24,11 +25,10 @@ Organized test collections for the Meridian API. Each collection tests a specifi
 ---
 
 ### 01 - Basic Operations (`01-basic.json`)
-**Tests:** Health check and tree navigation
+**Tests:** Health check
 
 **Requests:**
 - Health Check
-- Get Document Tree
 
 **Use when:** First time setup, checking if server is running
 
@@ -93,8 +93,9 @@ Organized test collections for the Meridian API. Each collection tests a specifi
 ### Option 2: Import One at a Time
 
 1. Import `01-basic.json` first
-2. Test health check and tree
-3. Import others as needed
+2. Test health check
+3. Import `00-projects.json` to view project tree
+4. Import others as needed
 
 ## Environment Variables
 
@@ -168,7 +169,7 @@ Check the **Console** tab in Insomnia to see captured values.
 ## Testing Tips
 
 1. **Start fresh**: Run `make seed-fresh` before testing
-2. **Check tree often**: Use "Get Document Tree" to visualize structure
+2. **Check tree often**: In `00-projects.json`, use "Get Project Tree" (GET `/api/projects/{{ project_id }}/tree`) to visualize structure
 3. **Sequential order**: Run numbered requests in order
 4. **Watch console**: Scripts log captured IDs
 5. **Mix and match**: Can use requests from different collections together
@@ -222,4 +223,3 @@ Expected tree structure after running all workflows:
 - See `../README.md` for full API documentation
 - See `../../QUICKSTART.md` for setup instructions
 - Check `_docs/technical/backend/api-testing-comprehensive.md` for curl examples
-

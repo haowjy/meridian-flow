@@ -10,14 +10,15 @@ Test artifacts and integration tests for the Meridian backend.
 2. **Open Insomnia** → Application → Preferences → Data → Import Data
 3. **Import collections** from `backend/tests/insomnia/`:
    - Start with `01-basic.json` to test server connection
-   - Import others as needed: `02-folders.json`, `03-documents.json`, `04-workflows.json`
+   - Import others as needed: `00-projects.json`, `02-folders.json`, `03-documents.json`, `04-workflows.json`
 4. **Done!** All endpoints are ready to test
 
 ### What's Included
 
-Four focused collections organized by feature:
+Collections organized by feature:
 
-- ✅ **`01-basic.json`** - Health check & tree navigation (2 requests)
+- ✅ **`00-projects.json`** - Project CRUD + project tree
+- ✅ **`01-basic.json`** - Health check (1 request)
 - ✅ **`02-folders.json`** - Folder CRUD operations (6 requests)
 - ✅ **`03-documents.json`** - Document CRUD operations (7 requests)
 - ✅ **`04-workflows.json`** - Real-world scenarios (7 requests)
@@ -31,9 +32,9 @@ Each collection includes:
 ### Testing Workflow
 
 **Quick Test (Recommended order):**
-1. Import `01-basic.json` → Run "Health Check" and "Get Document Tree"
-2. Import `04-workflows.json` → Run all 7 requests in sequence
-3. View "Get Document Tree" again to see structure
+1. Import `01-basic.json` → Run "Health Check"
+2. Import `00-projects.json` → Run "Get Project Tree"
+3. Import `04-workflows.json` → Run all 7 requests in sequence
 
 **Feature-Specific Testing:**
 - Testing folders? Import `02-folders.json`

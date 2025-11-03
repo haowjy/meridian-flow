@@ -457,7 +457,7 @@ sequenceDiagram
 
 **Already implemented**:
 ```
-GET    /api/documents           # Tree structure (all docs + folders)
+GET    /api/projects/:id/tree   # Project-scoped document tree (metadata only)
 POST   /api/documents           # Create document
 GET    /api/documents/:id       # Get document (with content)
 PATCH  /api/documents/:id       # Update document (content, name, folder)
@@ -466,7 +466,7 @@ DELETE /api/documents/:id       # Delete document
 
 **Expected request/response** (verify in api-contracts.md):
 ```typescript
-// GET /documents
+// GET /projects/:id/tree
 Response: {
   documents: [
     {
@@ -605,7 +605,7 @@ POST   /api/documents                        # Add project_id to request body
 1. User opens app
 2. Load project list from backend
 3. User selects project
-4. Fetch document tree from backend (GET /projects/:id/documents)
+4. Fetch project tree from backend (GET /api/projects/:id/tree)
 5. Store in Zustand + localStorage (tree metadata)
 6. Store in IndexedDB (document content, lazy-loaded)
 7. Render UI

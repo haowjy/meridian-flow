@@ -31,6 +31,23 @@
       }
     },
     {
+      "_id": "req_projects_tree",
+      "parentId": "fld_projects",
+      "modified": 1698796800001,
+      "created": 1698796800001,
+      "url": "{{ _.base_url }}/api/projects/{{ _.project_id }}/tree",
+      "name": "9. Get Project Tree",
+      "description": "Get the nested folder/document tree for a project",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698796000000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
       "_id": "req_projects_create",
       "parentId": "fld_projects",
       "modified": 1698796800000,

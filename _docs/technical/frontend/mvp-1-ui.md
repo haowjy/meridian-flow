@@ -583,11 +583,11 @@ POST   /api/projects/:id/chats        # Create new chat
 GET    /api/chats/:id                 # Load chat messages
 POST   /api/chats/:id/messages        # Send message (MVP: no AI)
 
-# Documents already implemented (from git status)
-GET    /api/documents                 # Tree structure
-POST   /api/documents                 # Create document
-PATCH  /api/documents/:id             # Update/rename/move
-DELETE /api/documents/:id             # Delete
+# Tree and documents
+GET    /api/projects/:id/tree         # Project-scoped document tree (metadata only)
+POST   /api/documents                 # Create document (body includes project_id)
+PATCH  /api/documents/:id             # Update/rename/move (requires project_id in body)
+DELETE /api/documents/:id             # Delete (requires project_id in context)
 ```
 
 **Zustand stores**:

@@ -123,8 +123,22 @@ func main() {
 	api.Patch("/projects/:id", projectHandler.UpdateProject)
 	api.Delete("/projects/:id", projectHandler.DeleteProject)
 
-	// Tree endpoint (NEW - using clean architecture)
-	api.Get("/tree", newTreeHandler.GetTree)
+	// Tree endpoint removed: tree must be project-scoped
+
+	// Project-scoped routes (provide explicit :id paths expected by the frontend)
+	projectScoped := api.Group("/projects/:id", func(c *fiber.Ctx) error {
+		// Override projectID from route param for scoped endpoints
+		if id := c.Params("id"); id != "" {
+			c.Locals("projectID", id)
+		}
+		return c.Next()
+	})
+
+		// Project tree endpoint
+		projectScoped.Get("/tree", newTreeHandler.GetTree)
+
+	// Project-scoped document creation alias
+	projectScoped.Post("/documents", newDocHandler.CreateDocument)
 
 	// Folder routes (NEW - using clean architecture)
 	api.Post("/folders", newFolderHandler.CreateFolder)

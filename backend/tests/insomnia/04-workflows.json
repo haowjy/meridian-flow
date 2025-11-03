@@ -35,7 +35,7 @@
       "parentId": "fld_workflows",
       "modified": 1698739200000,
       "created": 1698739200000,
-      "url": "{{ _.base_url }}/api/tree",
+      "url": "{{ _.base_url }}/api/projects/{{ _.project_id }}/tree",
       "name": "2. View Full Tree",
       "description": "See the entire folder/document tree structure created",
       "method": "GET",
@@ -156,7 +156,7 @@
       "parentId": "fld_workflows",
       "modified": 1698739200000,
       "created": 1698739200000,
-      "url": "{{ _.base_url }}/api/tree",
+      "url": "{{ _.base_url }}/api/projects/{{ _.project_id }}/tree",
       "name": "7. View Final Structure",
       "description": "See the final reorganized tree structure",
       "method": "GET",
@@ -221,4 +221,3 @@
     }
   ]
 }
-

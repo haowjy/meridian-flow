@@ -134,7 +134,7 @@ export const api = {
 
   documents: {
     getTree: async (projectId: string): Promise<DocumentTree> => {
-      const data = await fetchAPI<DocumentTreeDto>(`/api/projects/${projectId}/documents/tree`)
+      const data = await fetchAPI<DocumentTreeDto>(`/api/projects/${projectId}/tree`)
       return fromDocumentTreeDto(data)
     },
     get: async (id: string): Promise<Document> => {
