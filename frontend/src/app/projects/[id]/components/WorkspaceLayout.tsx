@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { PanelLayout } from '@/shared/components/layout/PanelLayout'
 import { CollapsiblePanel } from '@/shared/components/layout/CollapsiblePanel'
@@ -10,6 +11,8 @@ interface WorkspaceLayoutProps {
 }
 
 export default function WorkspaceLayout({ projectId }: WorkspaceLayoutProps) {
+  const [mounted, setMounted] = useState(false)
+
   const {
     leftPanelCollapsed,
     rightPanelCollapsed,
@@ -25,6 +28,14 @@ export default function WorkspaceLayout({ projectId }: WorkspaceLayoutProps) {
   })))
 
   const rightTitle = rightPanelState === 'editor' ? 'Editor' : 'File Explorer'
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted) {
+    return <div className="h-screen w-full bg-background" />
+  }
 
   return (
     <div className="h-screen w-full overflow-hidden">

@@ -2,7 +2,6 @@ import { ReactNode, useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { useUIStore } from '@/core/stores/useUIStore'
 
 interface PanelLayoutProps {
   left: ReactNode
@@ -31,8 +30,6 @@ export function PanelLayout({
   onRightCollapse,
   className,
 }: PanelLayoutProps) {
-  // Only enable transitions after Zustand has hydrated from localStorage
-  const hasHydrated = useUIStore((state) => state._hasHydrated)
 
   function ExpandHandle({
     side,
@@ -97,8 +94,7 @@ export function PanelLayout({
       {/* Left Panel (25% or collapsed) */}
       <div
         className={cn(
-          'flex-shrink-0 border-r',
-          hasHydrated && 'transition-all duration-300',
+          'flex-shrink-0 border-r transition-all duration-300',
           leftCollapsed ? 'w-0' : 'w-1/4'
         )}
       >
@@ -111,8 +107,7 @@ export function PanelLayout({
       {/* Right Panel (25% or collapsed) */}
       <div
         className={cn(
-          'flex-shrink-0 border-l',
-          hasHydrated && 'transition-all duration-300',
+          'flex-shrink-0 border-l transition-all duration-300',
           rightCollapsed ? 'w-0' : 'w-1/4'
         )}
       >
