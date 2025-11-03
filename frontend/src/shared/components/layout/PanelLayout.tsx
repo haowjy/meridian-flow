@@ -62,6 +62,7 @@ export function PanelLayout({
     const handleLeave = () => restartIdle()
 
     const posClass = side === 'left' ? 'left-2' : 'right-2'
+    const panelId = `${side}-panel-layout`
 
     return (
       <div className={cn('pointer-events-none absolute top-2 z-20', posClass)}>
@@ -73,6 +74,9 @@ export function PanelLayout({
             dimmed ? 'opacity-60' : 'opacity-100'
           )}
           onClick={onClick}
+          aria-label={title}
+          aria-expanded={false}
+          aria-controls={panelId}
           title={title}
           onMouseEnter={handleEnter}
           onMouseLeave={handleLeave}
@@ -93,6 +97,9 @@ export function PanelLayout({
     <div className={cn('relative flex h-full w-full overflow-hidden', className)}>
       {/* Left Panel (25% or collapsed) */}
       <div
+        id="left-panel-layout"
+        role="region"
+        aria-label="Left panel"
         className={cn(
           'flex-shrink-0 border-r transition-all duration-300',
           leftCollapsed ? 'w-0' : 'w-1/4'
@@ -102,10 +109,20 @@ export function PanelLayout({
       </div>
 
       {/* Center Panel (50% or expanded if sides collapsed) */}
-      <div className="flex-1 overflow-hidden">{center}</div>
+      <div
+        id="center-panel-layout"
+        role="region"
+        aria-label="Center panel"
+        className="flex-1 overflow-hidden"
+      >
+        {center}
+      </div>
 
       {/* Right Panel (25% or collapsed) */}
       <div
+        id="right-panel-layout"
+        role="region"
+        aria-label="Right panel"
         className={cn(
           'flex-shrink-0 border-l transition-all duration-300',
           rightCollapsed ? 'w-0' : 'w-1/4'

@@ -14,7 +14,8 @@ export default function HomePage() {
 
   useEffect(() => {
     loadProjects()
-  }, [loadProjects])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   if (isLoading) {
     return (

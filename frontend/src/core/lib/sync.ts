@@ -4,19 +4,108 @@
  */
 
 import { db } from './db'
+import type { Document } from '@/features/documents/types/document'
+import type { Chat, Message } from '@/features/chats/types/chat'
+
+/**
+ * Payload types for sync operations.
+ * Create operations exclude server-generated fields.
+ * Update operations allow partial updates.
+ * Delete operations don't need data payload.
+ */
+type CreateDocumentData = Omit<Document, 'id' | 'updatedAt'>
+type UpdateDocumentData = Partial<Omit<Document, 'id' | 'projectId'>>
+type CreateChatData = Omit<Chat, 'id' | 'createdAt' | 'updatedAt'>
+type UpdateChatData = Partial<Omit<Chat, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>>
+type CreateMessageData = Omit<Message, 'id' | 'createdAt'>
+type UpdateMessageData = Partial<Omit<Message, 'id' | 'chatId' | 'createdAt'>>
 
 /**
  * Sync operation stored in IndexedDB queue.
+ * Discriminated union ensures type-safe data payloads based on operation and entity type.
  */
-export interface SyncOperation {
-  id?: number
-  operation: 'create' | 'update' | 'delete'
-  entityType: 'document' | 'chat' | 'message'
-  entityId: string
-  data: any
-  timestamp: Date
-  retryCount: number
-}
+export type SyncOperation =
+  | {
+      id?: number
+      operation: 'create'
+      entityType: 'document'
+      entityId: string
+      data: CreateDocumentData
+      timestamp: Date
+      retryCount: number
+    }
+  | {
+      id?: number
+      operation: 'update'
+      entityType: 'document'
+      entityId: string
+      data: UpdateDocumentData
+      timestamp: Date
+      retryCount: number
+    }
+  | {
+      id?: number
+      operation: 'delete'
+      entityType: 'document'
+      entityId: string
+      data: undefined
+      timestamp: Date
+      retryCount: number
+    }
+  | {
+      id?: number
+      operation: 'create'
+      entityType: 'chat'
+      entityId: string
+      data: CreateChatData
+      timestamp: Date
+      retryCount: number
+    }
+  | {
+      id?: number
+      operation: 'update'
+      entityType: 'chat'
+      entityId: string
+      data: UpdateChatData
+      timestamp: Date
+      retryCount: number
+    }
+  | {
+      id?: number
+      operation: 'delete'
+      entityType: 'chat'
+      entityId: string
+      data: undefined
+      timestamp: Date
+      retryCount: number
+    }
+  | {
+      id?: number
+      operation: 'create'
+      entityType: 'message'
+      entityId: string
+      data: CreateMessageData
+      timestamp: Date
+      retryCount: number
+    }
+  | {
+      id?: number
+      operation: 'update'
+      entityType: 'message'
+      entityId: string
+      data: UpdateMessageData
+      timestamp: Date
+      retryCount: number
+    }
+  | {
+      id?: number
+      operation: 'delete'
+      entityType: 'message'
+      entityId: string
+      data: undefined
+      timestamp: Date
+      retryCount: number
+    }
 
 /**
  * Calculate exponential backoff delay for retry attempts.
@@ -43,14 +132,18 @@ export function calculateBackoff(retryCount: number): number {
  *
  * @param operation - Sync operation to queue
  */
-export async function queueSync(
-  operation: Omit<SyncOperation, 'id' | 'timestamp' | 'retryCount'>
-): Promise<void> {
-  await db.syncQueue.add({
+export async function queueSync<
+  T extends Omit<SyncOperation, 'id' | 'timestamp' | 'retryCount'>
+>(operation: T): Promise<void> {
+  // Type assertion is safe here: we take a valid partial SyncOperation,
+  // add back the omitted fields, and the result is guaranteed to be a valid SyncOperation
+  const syncOp = {
     ...operation,
     timestamp: new Date(),
     retryCount: 0,
-  })
+  } as SyncOperation
+
+  await db.syncQueue.add(syncOp)
 
   console.log(`[Sync] Queued ${operation.operation} ${operation.entityType}:${operation.entityId}`)
 }

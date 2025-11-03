@@ -31,6 +31,12 @@ export function CollapsiblePanel({
     ? (side === 'left' ? 'right-2' : 'left-2')
     : 'left-2'
 
+  const panelLabel = title || `${side} panel`
+  const panelId = `${side}-panel`
+  const ariaLabel = collapsed
+    ? `Expand ${panelLabel.toLowerCase()}`
+    : `Collapse ${panelLabel.toLowerCase()}`
+
   return (
     <div className={cn('relative flex h-full flex-col', className)}>
       {/* Collapse Toggle Button */}
@@ -40,7 +46,10 @@ export function CollapsiblePanel({
           size="icon"
           onClick={onToggle}
           className="h-8 w-8"
-          title={collapsed ? 'Expand panel' : 'Collapse panel'}
+          aria-label={ariaLabel}
+          aria-expanded={!collapsed}
+          aria-controls={panelId}
+          title={ariaLabel}
         >
           {collapsed ? <ExpandIcon className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
         </Button>
@@ -48,7 +57,12 @@ export function CollapsiblePanel({
 
       {/* Panel Content */}
       {!collapsed && (
-        <div className="flex h-full flex-col overflow-hidden">
+        <div
+          id={panelId}
+          role="region"
+          aria-label={panelLabel}
+          className="flex h-full flex-col overflow-hidden"
+        >
           {title && (
             <div className="border-b py-3 pl-12 pr-4">
               <h2 className="text-sm font-semibold">{title}</h2>
