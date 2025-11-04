@@ -4,17 +4,6 @@ import { Document, DocumentTree } from '@/features/documents/types/document'
 import { Folder } from '@/features/folders/types/folder'
 
 // API Error Types
-export interface APIError {
-  message: string
-  code?: string
-  status: number
-}
-
-export interface APIResponse<T> {
-  data?: T
-  error?: APIError
-}
-
 export interface ApiErrorResponse {
   error?: string
   message?: string
@@ -64,11 +53,13 @@ export interface FolderDto {
   parent_id: string | null
   name: string
   created_at: string
+  folders?: FolderDto[]      // Nested subfolders (from /tree endpoint)
+  documents?: DocumentDto[]  // Nested documents (from /tree endpoint)
 }
 
 export interface DocumentTreeDto {
-  folders: FolderDto[]
-  documents: DocumentDto[]
+  folders: FolderDto[]      // Root folders (can contain nested folders/documents)
+  documents: DocumentDto[]  // Root-level documents only
 }
 
 // DTO Mappers
@@ -124,8 +115,50 @@ export function fromFolderDto(dto: FolderDto): Folder {
 }
 
 export function fromDocumentTreeDto(dto: DocumentTreeDto): DocumentTree {
+  // Flatten nested folder structure recursively
+  function flattenFoldersDto(foldersDto: FolderDto[]): Folder[] {
+    const result: Folder[] = []
+
+    function flatten(folders: FolderDto[]) {
+      for (const folderDto of folders) {
+        result.push(fromFolderDto(folderDto))
+
+        if (folderDto.folders && folderDto.folders.length > 0) {
+          flatten(folderDto.folders)
+        }
+      }
+    }
+
+    flatten(foldersDto)
+    return result
+  }
+
+  // Flatten nested document structure recursively
+  function flattenDocumentsDto(foldersDto: FolderDto[], documentsDto: DocumentDto[]): Document[] {
+    const result: Document[] = []
+
+    // Add root-level documents
+    result.push(...documentsDto.map(fromDocumentDto))
+
+    // Recursively extract documents from folders
+    function extractDocs(folders: FolderDto[]) {
+      for (const folderDto of folders) {
+        if (folderDto.documents && folderDto.documents.length > 0) {
+          result.push(...folderDto.documents.map(fromDocumentDto))
+        }
+
+        if (folderDto.folders && folderDto.folders.length > 0) {
+          extractDocs(folderDto.folders)
+        }
+      }
+    }
+
+    extractDocs(foldersDto)
+    return result
+  }
+
   return {
-    folders: dto.folders.map(fromFolderDto),
-    documents: dto.documents.map(fromDocumentDto),
+    folders: flattenFoldersDto(dto.folders),
+    documents: flattenDocumentsDto(dto.folders, dto.documents),
   }
 }

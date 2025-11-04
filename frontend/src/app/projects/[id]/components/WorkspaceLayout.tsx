@@ -5,6 +5,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { PanelLayout } from '@/shared/components/layout/PanelLayout'
 import { CollapsiblePanel } from '@/shared/components/layout/CollapsiblePanel'
 import { useUIStore } from '@/core/stores/useUIStore'
+import { DocumentPanel } from '@/features/documents/components/DocumentPanel'
 
 interface WorkspaceLayoutProps {
   projectId: string
@@ -16,22 +17,28 @@ export default function WorkspaceLayout({ projectId }: WorkspaceLayoutProps) {
   const {
     leftPanelCollapsed,
     rightPanelCollapsed,
-    rightPanelState,
     toggleLeftPanel,
     toggleRightPanel,
+    setActiveDocument,
+    setRightPanelState,
   } = useUIStore(useShallow((s) => ({
     leftPanelCollapsed: s.leftPanelCollapsed,
     rightPanelCollapsed: s.rightPanelCollapsed,
-    rightPanelState: s.rightPanelState,
     toggleLeftPanel: s.toggleLeftPanel,
     toggleRightPanel: s.toggleRightPanel,
+    setActiveDocument: s.setActiveDocument,
+    setRightPanelState: s.setRightPanelState,
   })))
-
-  const rightTitle = rightPanelState === 'editor' ? 'Editor' : 'File Explorer'
 
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  // Reset UI state when project changes to prevent context leakage
+  useEffect(() => {
+    setActiveDocument(null)
+    setRightPanelState('documents')
+  }, [projectId, setActiveDocument, setRightPanelState])
 
   if (!mounted) {
     return <div className="h-screen w-full bg-background" />
@@ -49,7 +56,6 @@ export default function WorkspaceLayout({ projectId }: WorkspaceLayoutProps) {
             side="left"
             collapsed={leftPanelCollapsed}
             onToggle={toggleLeftPanel}
-            title="Select Chats"
           >
             <div className="p-4 text-sm text-muted-foreground">
               Left panel placeholder (Chat list)
@@ -68,11 +74,8 @@ export default function WorkspaceLayout({ projectId }: WorkspaceLayoutProps) {
             side="right"
             collapsed={rightPanelCollapsed}
             onToggle={toggleRightPanel}
-            title={rightTitle}
           >
-            <div className="p-4 text-sm text-muted-foreground">
-              Right panel placeholder ({rightTitle})
-            </div>
+            <DocumentPanel projectId={projectId} />
           </CollapsiblePanel>
         }
       />

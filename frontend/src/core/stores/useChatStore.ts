@@ -22,6 +22,10 @@ interface ChatStore {
   deleteChat: (chatId: string) => Promise<void>
 }
 
+// Track abort controllers to cancel previous requests
+let loadChatsController: AbortController | null = null
+let loadMessagesController: AbortController | null = null
+
 export const useChatStore = create<ChatStore>()(
   persist(
     (set, get) => ({
@@ -41,11 +45,26 @@ export const useChatStore = create<ChatStore>()(
       setActiveChat: (chat) => set({ activeChatId: chat?.id || null }),
 
       loadChats: async (projectId: string) => {
+        // Abort any previous loadChats request
+        if (loadChatsController) {
+          loadChatsController.abort()
+        }
+
+        // Create new controller for this request
+        loadChatsController = new AbortController()
+        const signal = loadChatsController.signal
+
         set({ isLoadingChats: true, error: null })
         try {
-          const chats = await api.chats.list(projectId)
+          const chats = await api.chats.list(projectId, { signal })
           set({ chats, isLoadingChats: false })
         } catch (error) {
+          // Handle AbortError silently
+          if (error instanceof Error && error.name === 'AbortError') {
+            set({ isLoadingChats: false })
+            return
+          }
+
           const message = error instanceof Error ? error.message : 'Failed to load chats'
           set({ error: message, isLoadingChats: false })
           handleApiError(error, 'Failed to load chats')
@@ -53,11 +72,26 @@ export const useChatStore = create<ChatStore>()(
       },
 
       loadMessages: async (chatId: string) => {
+        // Abort any previous loadMessages request
+        if (loadMessagesController) {
+          loadMessagesController.abort()
+        }
+
+        // Create new controller for this request
+        loadMessagesController = new AbortController()
+        const signal = loadMessagesController.signal
+
         set({ isLoadingMessages: true, error: null })
         try {
-          const messages = await api.messages.list(chatId)
+          const messages = await api.messages.list(chatId, { signal })
           set({ messages, isLoadingMessages: false })
         } catch (error) {
+          // Handle AbortError silently
+          if (error instanceof Error && error.name === 'AbortError') {
+            set({ isLoadingMessages: false })
+            return
+          }
+
           const message = error instanceof Error ? error.message : 'Failed to load messages'
           set({ error: message, isLoadingMessages: false })
           handleApiError(error, 'Failed to load messages')

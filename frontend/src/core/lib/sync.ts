@@ -4,8 +4,11 @@
  */
 
 import { db } from './db'
+import { api } from './api'
+import { useEditorStore } from '@/core/stores/useEditorStore'
 import type { Document } from '@/features/documents/types/document'
 import type { Chat, Message } from '@/features/chats/types/chat'
+import { toast } from 'sonner'
 
 /**
  * Payload types for sync operations.
@@ -151,30 +154,217 @@ export async function queueSync<
 /**
  * Process all pending sync operations in the queue.
  * Called by sync listeners (online event, visibility change, interval).
- *
- * Implementation in Phase 4 Task 4.13.
+ * Attempts to sync each operation, handles retries with exponential backoff.
  */
 export async function processSyncQueue(): Promise<void> {
-  // Skeleton - will be implemented in Phase 4
-  console.log('[Sync] processSyncQueue called (not yet implemented)')
+  // Check if online
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    console.log('[Sync] Offline, skipping sync queue processing')
+    return
+  }
+
+  const operations = await db.syncQueue.toArray()
+
+  if (operations.length === 0) {
+    return
+  }
+
+  console.log(`[Sync] Processing ${operations.length} queued operations`)
+
+  for (const op of operations) {
+    try {
+      // Check if operation is ready to retry (based on backoff delay)
+      const backoffDelay = calculateBackoff(op.retryCount)
+
+      if (backoffDelay === Infinity) {
+        // Max retries reached, log error and remove from queue
+        console.error(`[Sync] Max retries reached for ${op.operation} ${op.entityType}:${op.entityId}`)
+        toast.error(`Failed to sync ${op.entityType} after multiple attempts`)
+        await db.syncQueue.delete(op.id!)
+        continue
+      }
+
+      const timeSinceLastAttempt = Date.now() - op.timestamp.getTime()
+      if (timeSinceLastAttempt < backoffDelay) {
+        // Not ready to retry yet
+        continue
+      }
+
+      // Attempt to sync based on entity type and operation
+      await executeSyncOperation(op)
+
+      // Success! Remove from queue
+      await db.syncQueue.delete(op.id!)
+      console.log(`[Sync] Successfully synced ${op.operation} ${op.entityType}:${op.entityId}`)
+
+      // Update store status if this was the active document
+      if (op.entityType === 'document') {
+        const store = useEditorStore.getState()
+        if (store.activeDocument?.id === op.entityId && store.status === 'local') {
+          store.setStatus('saved')
+        }
+      }
+    } catch (error) {
+      // Sync failed, increment retry count and update timestamp
+      console.error(`[Sync] Failed to sync ${op.operation} ${op.entityType}:${op.entityId}`, error)
+
+      await db.syncQueue.update(op.id!, {
+        retryCount: op.retryCount + 1,
+        timestamp: new Date(),
+      })
+    }
+  }
 }
 
 /**
+ * Execute a single sync operation by calling the appropriate API method.
+ */
+async function executeSyncOperation(op: SyncOperation): Promise<void> {
+  switch (op.entityType) {
+    case 'document':
+      await syncDocument(op)
+      break
+    case 'chat':
+      await syncChat(op)
+      break
+    case 'message':
+      await syncMessage(op)
+      break
+    default:
+      throw new Error(`Unknown entity type: ${(op as any).entityType}`)
+  }
+}
+
+/**
+ * Sync a document operation to the backend.
+ */
+async function syncDocument(
+  op: Extract<SyncOperation, { entityType: 'document' }>
+): Promise<void> {
+  switch (op.operation) {
+    case 'create':
+      // Note: Create operations would need projectId and folderId from the data
+      // For now, skipping create sync as it's typically done immediately
+      throw new Error('Document create sync not implemented (done synchronously)')
+    case 'update':
+      if (op.data.content !== undefined) {
+        await api.documents.update(op.entityId, op.data.content)
+      }
+      break
+    case 'delete':
+      await api.documents.delete(op.entityId)
+      break
+  }
+}
+
+/**
+ * Sync a chat operation to the backend.
+ */
+async function syncChat(
+  op: Extract<SyncOperation, { entityType: 'chat' }>
+): Promise<void> {
+  switch (op.operation) {
+    case 'create':
+      // Note: Create operations would need projectId from the data
+      throw new Error('Chat create sync not implemented (done synchronously)')
+    case 'update':
+      if (op.data.title !== undefined) {
+        await api.chats.update(op.entityId, op.data.title)
+      }
+      break
+    case 'delete':
+      await api.chats.delete(op.entityId)
+      break
+  }
+}
+
+/**
+ * Sync a message operation to the backend.
+ */
+async function syncMessage(
+  op: Extract<SyncOperation, { entityType: 'message' }>
+): Promise<void> {
+  switch (op.operation) {
+    case 'create':
+      // Messages are typically created synchronously via send endpoint
+      throw new Error('Message create sync not implemented (done synchronously)')
+    case 'update':
+      // Message updates are not supported in current API
+      throw new Error('Message update not supported')
+    case 'delete':
+      // Message deletes are not supported in current API
+      throw new Error('Message delete not supported')
+  }
+}
+
+// Global references for cleanup
+let syncInterval: NodeJS.Timeout | null = null
+let onlineHandler: (() => void) | null = null
+let visibilityHandler: (() => void) | null = null
+
+/**
  * Initialize sync listeners (online, visibility, interval).
- *
- * Implementation in Phase 4 Task 4.14.
+ * Should be called once when the app starts (e.g., in a root layout or provider).
  */
 export function initializeSyncListeners(): void {
-  // Skeleton - will be implemented in Phase 4
-  console.log('[Sync] initializeSyncListeners called (not yet implemented)')
+  if (typeof window === 'undefined') {
+    return // Skip in SSR
+  }
+
+  console.log('[Sync] Initializing sync listeners')
+
+  // 1. Listen for online event (user goes back online)
+  onlineHandler = () => {
+    console.log('[Sync] Network online, processing sync queue')
+    processSyncQueue().catch((error) => {
+      console.error('[Sync] Error processing sync queue on online event:', error)
+    })
+  }
+  window.addEventListener('online', onlineHandler)
+
+  // 2. Listen for visibility change (tab becomes visible)
+  visibilityHandler = () => {
+    if (document.visibilityState === 'visible') {
+      console.log('[Sync] Tab visible, processing sync queue')
+      processSyncQueue().catch((error) => {
+        console.error('[Sync] Error processing sync queue on visibility change:', error)
+      })
+    }
+  }
+  document.addEventListener('visibilitychange', visibilityHandler)
+
+  // 3. Periodic sync (every 30 seconds while app is running)
+  syncInterval = setInterval(() => {
+    processSyncQueue().catch((error) => {
+      console.error('[Sync] Error processing sync queue on interval:', error)
+    })
+  }, 30000) // 30 seconds
+
+  // Initial sync on startup
+  processSyncQueue().catch((error) => {
+    console.error('[Sync] Error processing sync queue on startup:', error)
+  })
 }
 
 /**
  * Clean up sync listeners and intervals.
- *
- * Implementation in Phase 4 Task 4.14.
+ * Should be called when the app is unmounting or cleaning up.
  */
 export function cleanupSyncListeners(): void {
-  // Skeleton - will be implemented in Phase 4
-  console.log('[Sync] cleanupSyncListeners called (not yet implemented)')
+  console.log('[Sync] Cleaning up sync listeners')
+
+  if (onlineHandler) {
+    window.removeEventListener('online', onlineHandler)
+    onlineHandler = null
+  }
+
+  if (visibilityHandler) {
+    document.removeEventListener('visibilitychange', visibilityHandler)
+    visibilityHandler = null
+  }
+
+  if (syncInterval) {
+    clearInterval(syncInterval)
+    syncInterval = null
+  }
 }

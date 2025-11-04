@@ -18,6 +18,9 @@ interface ProjectStore {
   deleteProject: (id: string) => Promise<void>
 }
 
+// Track abort controller to cancel previous loadProjects request
+let loadProjectsController: AbortController | null = null
+
 export const useProjectStore = create<ProjectStore>()(
   persist(
     (set, get) => ({
@@ -35,11 +38,26 @@ export const useProjectStore = create<ProjectStore>()(
       setCurrentProject: (project) => set({ currentProjectId: project?.id || null }),
 
       loadProjects: async () => {
+        // Abort any previous loadProjects request
+        if (loadProjectsController) {
+          loadProjectsController.abort()
+        }
+
+        // Create new controller for this request
+        loadProjectsController = new AbortController()
+        const signal = loadProjectsController.signal
+
         set({ isLoading: true, error: null })
         try {
-          const projects = await api.projects.list()
+          const projects = await api.projects.list({ signal })
           set({ projects, isLoading: false })
         } catch (error) {
+          // Handle AbortError silently
+          if (error instanceof Error && error.name === 'AbortError') {
+            set({ isLoading: false })
+            return
+          }
+
           const message = error instanceof Error ? error.message : 'Failed to load projects'
           set({ error: message, isLoading: false })
           handleApiError(error, 'Failed to load projects. Please check your connection.')

@@ -96,7 +96,7 @@ func main() {
 	// CORS configuration
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     cfg.CORSOrigins,
-		AllowMethods:     strings.Join([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}, ","),
+		AllowMethods:     strings.Join([]string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}, ","),
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
 		AllowCredentials: true,
 	}))
@@ -149,7 +149,7 @@ func main() {
 	// Document routes (NEW - using clean architecture)
 	api.Post("/documents", newDocHandler.CreateDocument)
 	api.Get("/documents/:id", newDocHandler.GetDocument)
-	api.Put("/documents/:id", newDocHandler.UpdateDocument)
+	api.Patch("/documents/:id", newDocHandler.UpdateDocument)
 	api.Delete("/documents/:id", newDocHandler.DeleteDocument)
 
 	// Import routes

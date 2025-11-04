@@ -126,3 +126,133 @@ body.preload * {
   transition: none !important;
   animation-duration: 0s !important;
 }
+
+/* TipTap Editor Styles - Following official TipTap recommendations */
+/* https://tiptap.dev/docs/editor/getting-started/style-editor#style-using-tailwind-css */
+
+@layer components {
+  /* TipTap wrapper */
+  .tiptap {
+    @apply min-h-screen p-8 focus:outline-none;
+  }
+
+  /* ProseMirror editor content */
+  .ProseMirror {
+    @apply min-h-[40vh] outline-none;
+  }
+
+  /* Typography */
+  .ProseMirror p {
+    @apply mb-4 text-base leading-relaxed;
+  }
+
+  .ProseMirror h1 {
+    @apply mb-4 mt-8 text-4xl font-bold leading-tight;
+  }
+
+  .ProseMirror h2 {
+    @apply mb-3 mt-6 text-3xl font-semibold leading-snug;
+  }
+
+  .ProseMirror h3 {
+    @apply mb-3 mt-5 text-2xl font-semibold leading-snug;
+  }
+
+  .ProseMirror h4 {
+    @apply mb-2 mt-4 text-xl font-semibold;
+  }
+
+  .ProseMirror h5 {
+    @apply mb-2 mt-3 text-lg font-semibold;
+  }
+
+  .ProseMirror h6 {
+    @apply mb-2 mt-3 text-base font-semibold;
+  }
+
+  /* Lists */
+  .ProseMirror ul {
+    @apply mb-4 list-disc pl-6;
+  }
+
+  .ProseMirror ol {
+    @apply mb-4 list-decimal pl-6;
+  }
+
+  .ProseMirror li {
+    @apply mb-1;
+  }
+
+  /* Nested lists */
+  .ProseMirror ul ul,
+  .ProseMirror ol ul {
+    @apply list-[circle] mt-1;
+  }
+
+  .ProseMirror ul ol,
+  .ProseMirror ol ol {
+    @apply list-[lower-alpha] mt-1;
+  }
+
+  /* Blockquotes */
+  .ProseMirror blockquote {
+    @apply mb-4 border-l-4 border-border pl-4 italic text-muted-foreground;
+  }
+
+  /* Code blocks */
+  .ProseMirror pre {
+    @apply mb-4 overflow-x-auto rounded-lg bg-muted p-4 font-mono text-sm;
+  }
+
+  .ProseMirror code {
+    @apply rounded bg-muted px-1.5 py-0.5 font-mono text-sm;
+  }
+
+  .ProseMirror pre code {
+    @apply bg-transparent p-0;
+  }
+
+  /* Horizontal rule */
+  .ProseMirror hr {
+    @apply my-6 border-t border-border;
+  }
+
+  /* Links */
+  .ProseMirror a {
+    @apply text-primary underline underline-offset-2 hover:text-primary/80;
+  }
+
+  /* Bold and italic */
+  .ProseMirror strong {
+    @apply font-bold;
+  }
+
+  .ProseMirror em {
+    @apply italic;
+  }
+
+  /* Strike through */
+  .ProseMirror s {
+    @apply line-through;
+  }
+
+  /* Highlighted text (from @tiptap/extension-highlight) */
+  .ProseMirror mark {
+    @apply bg-yellow-200 dark:bg-yellow-900/50;
+  }
+
+  /* Placeholder */
+  .ProseMirror p.is-editor-empty:first-child::before {
+    @apply pointer-events-none float-left h-0 text-muted-foreground;
+    content: attr(data-placeholder);
+  }
+
+  /* Read-only mode styling */
+  .tiptap.read-only {
+    @apply cursor-default;
+  }
+
+  .tiptap.read-only .ProseMirror {
+    @apply pointer-events-none select-text;
+  }
+}
