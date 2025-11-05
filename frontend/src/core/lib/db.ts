@@ -1,13 +1,11 @@
 import Dexie, { Table } from 'dexie'
 import { Document } from '@/features/documents/types/document'
 import { Chat, Message } from '@/features/chats/types'
-import { SyncOperation } from './sync'
 
 export class MeridianDB extends Dexie {
   documents!: Table<Document & { content: string }, string>
   chats!: Table<Chat, string>
   messages!: Table<Message, string>
-  syncQueue!: Table<SyncOperation, number>
 
   constructor() {
     super('meridian')
@@ -24,6 +22,21 @@ export class MeridianDB extends Dexie {
       chats: 'id, projectId, createdAt',
       messages: 'id, chatId, createdAt',
       syncQueue: '++id, entityType, entityId, timestamp, retryCount',
+    })
+
+    // Version 3: Remove syncQueue (moved to in-memory retry system)
+    this.version(3).stores({
+      documents: 'id, projectId, folderId, updatedAt',
+      chats: 'id, projectId, createdAt',
+      messages: 'id, chatId, createdAt',
+      syncQueue: null, // Delete the table
+    })
+
+    // Version 4: Add lastAccessedAt to messages for future eviction
+    this.version(4).stores({
+      documents: 'id, projectId, folderId, updatedAt',
+      chats: 'id, projectId, createdAt',
+      messages: 'id, chatId, createdAt, lastAccessedAt',
     })
   }
 }

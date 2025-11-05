@@ -3,6 +3,8 @@ import { persist } from 'zustand/middleware'
 import { Chat, Message } from '@/features/chats/types'
 import { api } from '@/core/lib/api'
 import { handleApiError } from '@/core/lib/errors'
+import { db } from '@/core/lib/db'
+import { loadNetworkFirst, bulkCacheUpdate, windowedCacheUpdate } from '@/core/lib/cache'
 
 interface ChatStore {
   chats: Chat[]
@@ -56,7 +58,20 @@ export const useChatStore = create<ChatStore>()(
 
         set({ isLoadingChats: true, error: null })
         try {
-          const chats = await api.chats.list(projectId, { signal })
+          // Network-first load with cache fallback
+          const chats = await loadNetworkFirst({
+            cacheKey: `chats-${projectId}`,
+            cacheLookup: async () => {
+              const cached = await db.chats.where('projectId').equals(projectId).toArray()
+              return cached.length > 0 ? cached : undefined
+            },
+            apiFetch: (signal) => api.chats.list(projectId, { signal }),
+            cacheUpdate: async (chats) => {
+              await bulkCacheUpdate(db.chats, chats)
+            },
+            signal,
+          })
+
           set({ chats, isLoadingChats: false })
         } catch (error) {
           // Handle AbortError silently
@@ -83,7 +98,21 @@ export const useChatStore = create<ChatStore>()(
 
         set({ isLoadingMessages: true, error: null })
         try {
-          const messages = await api.messages.list(chatId, { signal })
+          // Network-first load with cache fallback + windowing
+          const messages = await loadNetworkFirst({
+            cacheKey: `messages-${chatId}`,
+            cacheLookup: async () => {
+              const cached = await db.messages.where('chatId').equals(chatId).toArray()
+              return cached.length > 0 ? cached : undefined
+            },
+            apiFetch: (signal) => api.messages.list(chatId, { signal }),
+            cacheUpdate: async (messages) => {
+              // Only cache last 100 messages (windowing)
+              await windowedCacheUpdate(db.messages, `chat-${chatId}`, messages, 100)
+            },
+            signal,
+          })
+
           set({ messages, isLoadingMessages: false })
         } catch (error) {
           // Handle AbortError silently
@@ -102,6 +131,10 @@ export const useChatStore = create<ChatStore>()(
         set({ isLoadingChats: true, error: null })
         try {
           const chat = await api.chats.create(projectId, title)
+
+          // Update IndexedDB cache
+          await db.chats.put(chat)
+
           set((state) => ({
             chats: [...state.chats, chat],
             isLoadingChats: false,
@@ -118,6 +151,10 @@ export const useChatStore = create<ChatStore>()(
       renameChat: async (chatId: string, title: string) => {
         try {
           const updated = await api.chats.update(chatId, title)
+
+          // Update IndexedDB cache
+          await db.chats.put(updated)
+
           set((state) => ({
             chats: state.chats.map((c) => (c.id === chatId ? updated : c)),
           }))
@@ -131,6 +168,12 @@ export const useChatStore = create<ChatStore>()(
         // Skeleton - optimistic updates implemented in Phase 4 Task 4.7
         try {
           const response = await api.messages.send(chatId, content)
+
+          // Update IndexedDB cache with windowing (only keep last 100)
+          const newMessages = [response.userMessage, response.assistantMessage]
+          const allMessages = [...get().messages, ...newMessages]
+          await windowedCacheUpdate(db.messages, `chat-${chatId}`, allMessages, 100)
+
           set((state) => ({
             messages: [...state.messages, response.userMessage, response.assistantMessage],
           }))
@@ -143,6 +186,11 @@ export const useChatStore = create<ChatStore>()(
       deleteChat: async (chatId: string) => {
         try {
           await api.chats.delete(chatId)
+
+          // Remove from IndexedDB cache (chat + all its messages)
+          await db.chats.delete(chatId)
+          await db.messages.where('chatId').equals(chatId).delete()
+
           set((state) => ({
             chats: state.chats.filter((c) => c.id !== chatId),
             activeChatId: state.activeChatId === chatId ? null : state.activeChatId,

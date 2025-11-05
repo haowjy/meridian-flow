@@ -203,6 +203,14 @@ export const api = {
       })
       return fromDocumentDto(data)
     },
+    rename: async (id: string, name: string, options?: { signal?: AbortSignal }): Promise<Document> => {
+      const data = await fetchAPI<DocumentDto>(`/api/documents/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name }),
+        signal: options?.signal,
+      })
+      return fromDocumentDto(data)
+    },
     delete: (id: string, options?: { signal?: AbortSignal }) =>
       fetchAPI<void>(`/api/documents/${id}`, { method: 'DELETE', signal: options?.signal }),
   },

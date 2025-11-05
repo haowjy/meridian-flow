@@ -1,370 +1,270 @@
 /**
- * Sync queue infrastructure for local-first architecture.
- * Handles background sync of local changes to backend with retry logic.
+ * Simplified direct sync system for local-first architecture.
+ *
+ * Design Philosophy:
+ * - Direct sync on save (no persistent queue)
+ * - Optimistic updates to IndexedDB first (instant feedback)
+ * - Always apply server responses (source of truth for timestamps)
+ * - Simple retry mechanism for network failures only (3 attempts, 5s delay)
+ * - In-memory retry queue (cleared on page reload)
+ *
+ * This eliminates race conditions from the old queue-based system while maintaining
+ * reliability through automatic retries and proper error handling.
  */
 
-import { db } from './db'
 import { api } from './api'
+import { db } from './db'
 import { useEditorStore } from '@/core/stores/useEditorStore'
 import type { Document } from '@/features/documents/types/document'
-import type { Chat, Message } from '@/features/chats/types/chat'
 import { toast } from 'sonner'
 
 /**
- * Payload types for sync operations.
- * Create operations exclude server-generated fields.
- * Update operations allow partial updates.
- * Delete operations don't need data payload.
+ * Retry operation stored in memory (not persisted).
+ * Lost on page reload, but IndexedDB still has the content.
  */
-type CreateDocumentData = Omit<Document, 'id' | 'updatedAt'>
-type UpdateDocumentData = Partial<Omit<Document, 'id' | 'projectId'>>
-type CreateChatData = Omit<Chat, 'id' | 'createdAt' | 'updatedAt'>
-type UpdateChatData = Partial<Omit<Chat, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>>
-type CreateMessageData = Omit<Message, 'id' | 'createdAt'>
-type UpdateMessageData = Partial<Omit<Message, 'id' | 'chatId' | 'createdAt'>>
+interface RetryOperation {
+  entityType: 'document'
+  entityId: string
+  content: string
+  attemptCount: number
+  nextRetryAt: Date
+}
+
+// In-memory retry queue (key = documentId)
+const retryQueue = new Map<string, RetryOperation>()
+
+// Track active sync operations to prevent duplicates
+const activeSyncs = new Set<string>()
+
+// Retry processor interval reference
+let retryInterval: NodeJS.Timeout | null = null
 
 /**
- * Sync operation stored in IndexedDB queue.
- * Discriminated union ensures type-safe data payloads based on operation and entity type.
- */
-export type SyncOperation =
-  | {
-      id?: number
-      operation: 'create'
-      entityType: 'document'
-      entityId: string
-      data: CreateDocumentData
-      timestamp: Date
-      retryCount: number
-    }
-  | {
-      id?: number
-      operation: 'update'
-      entityType: 'document'
-      entityId: string
-      data: UpdateDocumentData
-      timestamp: Date
-      retryCount: number
-    }
-  | {
-      id?: number
-      operation: 'delete'
-      entityType: 'document'
-      entityId: string
-      data: undefined
-      timestamp: Date
-      retryCount: number
-    }
-  | {
-      id?: number
-      operation: 'create'
-      entityType: 'chat'
-      entityId: string
-      data: CreateChatData
-      timestamp: Date
-      retryCount: number
-    }
-  | {
-      id?: number
-      operation: 'update'
-      entityType: 'chat'
-      entityId: string
-      data: UpdateChatData
-      timestamp: Date
-      retryCount: number
-    }
-  | {
-      id?: number
-      operation: 'delete'
-      entityType: 'chat'
-      entityId: string
-      data: undefined
-      timestamp: Date
-      retryCount: number
-    }
-  | {
-      id?: number
-      operation: 'create'
-      entityType: 'message'
-      entityId: string
-      data: CreateMessageData
-      timestamp: Date
-      retryCount: number
-    }
-  | {
-      id?: number
-      operation: 'update'
-      entityType: 'message'
-      entityId: string
-      data: UpdateMessageData
-      timestamp: Date
-      retryCount: number
-    }
-  | {
-      id?: number
-      operation: 'delete'
-      entityType: 'message'
-      entityId: string
-      data: undefined
-      timestamp: Date
-      retryCount: number
-    }
-
-/**
- * Calculate exponential backoff delay for retry attempts.
- * Returns delay in milliseconds: 1s → 2s → 4s → 8s → 16s
- * Returns Infinity after max retries (5).
+ * Sync a document directly to the backend.
  *
- * @param retryCount - Current retry attempt (0-based)
- * @returns Delay in milliseconds
+ * This is the core sync function. It:
+ * 1. Calls the API to update the document
+ * 2. Returns the server's response (includes server timestamp)
+ *
+ * The caller is responsible for applying the response to local state.
+ *
+ * @param documentId - Document ID to sync
+ * @param content - Document content to sync
+ * @returns Updated document from server (with server's timestamp)
+ * @throws Error if API call fails
  */
-export function calculateBackoff(retryCount: number): number {
-  const MAX_RETRIES = 5
+export async function syncDocument(
+  documentId: string,
+  content: string
+): Promise<Document> {
+  console.log(`[Sync] Syncing document ${documentId}`)
 
-  if (retryCount >= MAX_RETRIES) {
-    return Infinity
+  // Call API - this returns the updated document from the server
+  const updatedDoc = await api.documents.update(documentId, content)
+
+  // Update IndexedDB with server's response
+  // This ensures our cache has the authoritative timestamp from the server
+  if (updatedDoc.content !== undefined) {
+    await db.documents.put(updatedDoc as Document & { content: string })
   }
 
-  // Exponential backoff: 2^n * 1000ms
-  return Math.pow(2, retryCount) * 1000
+  console.log(`[Sync] Successfully synced document ${documentId}`)
+  return updatedDoc
 }
 
 /**
- * Add operation to sync queue for background processing.
- * Non-blocking - actual sync happens via processSyncQueue().
+ * Add a failed sync operation to the retry queue.
  *
- * @param operation - Sync operation to queue
+ * This is called when a sync fails due to network errors (not client errors).
+ * The operation will be retried automatically by the retry processor.
+ *
+ * NOTE: If the user keeps typing and triggers a new save, the new save will
+ * automatically supersede this retry (newer content wins).
+ *
+ * @param op - Retry operation to queue
  */
-export async function queueSync<
-  T extends Omit<SyncOperation, 'id' | 'timestamp' | 'retryCount'>
->(operation: T): Promise<void> {
-  // Type assertion is safe here: we take a valid partial SyncOperation,
-  // add back the omitted fields, and the result is guaranteed to be a valid SyncOperation
-  const syncOp = {
-    ...operation,
-    timestamp: new Date(),
-    retryCount: 0,
-  } as SyncOperation
+export function addRetryOperation(op: Omit<RetryOperation, 'nextRetryAt'>) {
+  const operation: RetryOperation = {
+    ...op,
+    nextRetryAt: new Date(Date.now() + 5000), // Retry after 5 seconds
+  }
 
-  await db.syncQueue.add(syncOp)
-
-  console.log(`[Sync] Queued ${operation.operation} ${operation.entityType}:${operation.entityId}`)
+  retryQueue.set(op.entityId, operation)
+  console.log(`[Sync] Queued retry for document ${op.entityId} (attempt ${op.attemptCount + 1}/3)`)
 }
 
 /**
- * Process all pending sync operations in the queue.
- * Called by sync listeners (online event, visibility change, interval).
- * Attempts to sync each operation, handles retries with exponential backoff.
+ * Cancel any pending retry for a document.
+ *
+ * This is called when:
+ * 1. A new save is triggered (user kept typing) → abandon old retry
+ * 2. A retry succeeds → remove from queue
+ * 3. Max retries reached → remove from queue
+ *
+ * This prevents stale retries from overwriting newer content.
  */
-export async function processSyncQueue(): Promise<void> {
-  // Check if online
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    console.log('[Sync] Offline, skipping sync queue processing')
-    return
+export function cancelRetry(documentId: string) {
+  if (retryQueue.has(documentId)) {
+    console.log(`[Sync] Cancelled pending retry for document ${documentId}`)
+    retryQueue.delete(documentId)
   }
+}
 
-  const operations = await db.syncQueue.toArray()
+/**
+ * Process all pending retry operations.
+ *
+ * This runs in the background (every 5 seconds) to retry failed sync operations.
+ * It's the only "background" processing in the new sync system.
+ *
+ * For each retry:
+ * - Check if enough time has passed since last attempt (5s delay)
+ * - Attempt to sync to backend
+ * - On success: Remove from queue, update store status
+ * - On failure: Increment attempt count, schedule next retry
+ * - After 3 attempts: Give up, show error to user
+ */
+export async function processRetryQueue() {
+  if (retryQueue.size === 0) return
 
-  if (operations.length === 0) {
-    return
-  }
+  const now = new Date()
+  console.log(`[Sync] Processing ${retryQueue.size} retry operations`)
 
-  console.log(`[Sync] Processing ${operations.length} queued operations`)
+  for (const [documentId, op] of retryQueue.entries()) {
+    // Check if ready to retry (5s delay between attempts)
+    if (op.nextRetryAt > now) {
+      continue
+    }
 
-  for (const op of operations) {
+    // Skip if already syncing (prevents duplicate concurrent syncs)
+    if (activeSyncs.has(documentId)) {
+      console.log(`[Sync] Skipping retry for ${documentId} - sync already in progress`)
+      continue
+    }
+
     try {
-      // Check if operation is ready to retry (based on backoff delay)
-      const backoffDelay = calculateBackoff(op.retryCount)
+      activeSyncs.add(documentId)
 
-      if (backoffDelay === Infinity) {
-        // Max retries reached, log error and remove from queue
-        console.error(`[Sync] Max retries reached for ${op.operation} ${op.entityType}:${op.entityId}`)
-        toast.error(`Failed to sync ${op.entityType} after multiple attempts`)
-        await db.syncQueue.delete(op.id!)
-        continue
-      }
+      // Attempt to sync
+      const updatedDoc = await syncDocument(documentId, op.content)
 
-      const timeSinceLastAttempt = Date.now() - op.timestamp.getTime()
-      if (timeSinceLastAttempt < backoffDelay) {
-        // Not ready to retry yet
-        continue
-      }
+      // Success! Remove from retry queue
+      retryQueue.delete(documentId)
 
-      // Attempt to sync based on entity type and operation
-      await executeSyncOperation(op)
-
-      // Success! Remove from queue
-      await db.syncQueue.delete(op.id!)
-      console.log(`[Sync] Successfully synced ${op.operation} ${op.entityType}:${op.entityId}`)
-
-      // Update store status if this was the active document
-      if (op.entityType === 'document') {
-        const store = useEditorStore.getState()
-        if (store.activeDocument?.id === op.entityId && store.status === 'local') {
+      // Update store if this is the active document
+      const store = useEditorStore.getState()
+      if (store.activeDocument?.id === documentId) {
+        // Only update if content hasn't changed (avoid overwriting newer edits)
+        if (store.activeDocument.content === op.content) {
           store.setStatus('saved')
+          store.updateActiveDocument(updatedDoc)
+          toast.success('Changes synced successfully')
+        } else {
+          console.log(`[Sync] Skipping store update - content has changed since retry was queued`)
         }
       }
     } catch (error) {
-      // Sync failed, increment retry count and update timestamp
-      console.error(`[Sync] Failed to sync ${op.operation} ${op.entityType}:${op.entityId}`, error)
+      // Retry failed
+      console.error(`[Sync] Retry attempt ${op.attemptCount + 1} failed for ${documentId}:`, error)
 
-      await db.syncQueue.update(op.id!, {
-        retryCount: op.retryCount + 1,
-        timestamp: new Date(),
-      })
+      if (op.attemptCount >= 2) {
+        // Max retries (3 total attempts: initial + 2 retries)
+        retryQueue.delete(documentId)
+        toast.error(
+          `Failed to sync document after 3 attempts. ` +
+          `Changes are saved locally and will be synced when connection is restored.`,
+          { duration: 10000 }
+        )
+      } else {
+        // Schedule next retry
+        op.attemptCount++
+        op.nextRetryAt = new Date(Date.now() + 5000)
+      }
+    } finally {
+      activeSyncs.delete(documentId)
     }
   }
 }
 
 /**
- * Execute a single sync operation by calling the appropriate API method.
+ * Check if an error is a network error (should retry).
+ *
+ * Network errors: Connection failed, timeout, 5xx server errors
+ * Client errors: 400, 404, validation errors (should NOT retry)
+ *
+ * @param error - Error to check
+ * @returns true if this is a network error
  */
-async function executeSyncOperation(op: SyncOperation): Promise<void> {
-  switch (op.entityType) {
-    case 'document':
-      await syncDocument(op)
-      break
-    case 'chat':
-      await syncChat(op)
-      break
-    case 'message':
-      await syncMessage(op)
-      break
-    default:
-      throw new Error(`Unknown entity type: ${(op as any).entityType}`)
+export function isNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+
+  // Check for common network error patterns
+  const message = error.message.toLowerCase()
+
+  // Fetch API network errors
+  if (message.includes('network') || message.includes('fetch')) return true
+
+  // Timeout errors
+  if (message.includes('timeout')) return true
+
+  // Check if it's an HTTP error response
+  // In our API layer, 5xx errors should throw with status code
+  if ('status' in error) {
+    const status = (error as any).status
+    // 5xx server errors: retry
+    if (status >= 500) return true
+    // 4xx client errors: don't retry
+    if (status >= 400) return false
   }
+
+  // Default: treat as network error to be safe
+  return true
 }
 
 /**
- * Sync a document operation to the backend.
+ * Initialize the retry processor.
+ *
+ * This starts a background interval that checks for pending retries every 5 seconds.
+ * Should be called once when the app starts (in SyncProvider or root layout).
+ *
+ * Note: This is the ONLY background processing in the new sync system.
+ * Unlike the old system, we don't have online/visibility listeners racing with each other.
  */
-async function syncDocument(
-  op: Extract<SyncOperation, { entityType: 'document' }>
-): Promise<void> {
-  switch (op.operation) {
-    case 'create':
-      // Note: Create operations would need projectId and folderId from the data
-      // For now, skipping create sync as it's typically done immediately
-      throw new Error('Document create sync not implemented (done synchronously)')
-    case 'update':
-      if (op.data.content !== undefined) {
-        await api.documents.update(op.entityId, op.data.content)
-      }
-      break
-    case 'delete':
-      await api.documents.delete(op.entityId)
-      break
-  }
-}
+export function initializeRetryProcessor(): void {
+  if (typeof window === 'undefined') return // Skip in SSR
+  if (retryInterval) return // Already initialized
 
-/**
- * Sync a chat operation to the backend.
- */
-async function syncChat(
-  op: Extract<SyncOperation, { entityType: 'chat' }>
-): Promise<void> {
-  switch (op.operation) {
-    case 'create':
-      // Note: Create operations would need projectId from the data
-      throw new Error('Chat create sync not implemented (done synchronously)')
-    case 'update':
-      if (op.data.title !== undefined) {
-        await api.chats.update(op.entityId, op.data.title)
-      }
-      break
-    case 'delete':
-      await api.chats.delete(op.entityId)
-      break
-  }
-}
+  console.log('[Sync] Initializing retry processor (5s interval)')
 
-/**
- * Sync a message operation to the backend.
- */
-async function syncMessage(
-  op: Extract<SyncOperation, { entityType: 'message' }>
-): Promise<void> {
-  switch (op.operation) {
-    case 'create':
-      // Messages are typically created synchronously via send endpoint
-      throw new Error('Message create sync not implemented (done synchronously)')
-    case 'update':
-      // Message updates are not supported in current API
-      throw new Error('Message update not supported')
-    case 'delete':
-      // Message deletes are not supported in current API
-      throw new Error('Message delete not supported')
-  }
-}
-
-// Global references for cleanup
-let syncInterval: NodeJS.Timeout | null = null
-let onlineHandler: (() => void) | null = null
-let visibilityHandler: (() => void) | null = null
-
-/**
- * Initialize sync listeners (online, visibility, interval).
- * Should be called once when the app starts (e.g., in a root layout or provider).
- */
-export function initializeSyncListeners(): void {
-  if (typeof window === 'undefined') {
-    return // Skip in SSR
-  }
-
-  console.log('[Sync] Initializing sync listeners')
-
-  // 1. Listen for online event (user goes back online)
-  onlineHandler = () => {
-    console.log('[Sync] Network online, processing sync queue')
-    processSyncQueue().catch((error) => {
-      console.error('[Sync] Error processing sync queue on online event:', error)
+  retryInterval = setInterval(() => {
+    processRetryQueue().catch((error) => {
+      console.error('[Sync] Error processing retry queue:', error)
     })
-  }
-  window.addEventListener('online', onlineHandler)
-
-  // 2. Listen for visibility change (tab becomes visible)
-  visibilityHandler = () => {
-    if (document.visibilityState === 'visible') {
-      console.log('[Sync] Tab visible, processing sync queue')
-      processSyncQueue().catch((error) => {
-        console.error('[Sync] Error processing sync queue on visibility change:', error)
-      })
-    }
-  }
-  document.addEventListener('visibilitychange', visibilityHandler)
-
-  // 3. Periodic sync (every 30 seconds while app is running)
-  syncInterval = setInterval(() => {
-    processSyncQueue().catch((error) => {
-      console.error('[Sync] Error processing sync queue on interval:', error)
-    })
-  }, 30000) // 30 seconds
-
-  // Initial sync on startup
-  processSyncQueue().catch((error) => {
-    console.error('[Sync] Error processing sync queue on startup:', error)
-  })
+  }, 5000)
 }
 
 /**
- * Clean up sync listeners and intervals.
- * Should be called when the app is unmounting or cleaning up.
+ * Clean up the retry processor.
+ * Should be called when the app unmounts.
  */
-export function cleanupSyncListeners(): void {
-  console.log('[Sync] Cleaning up sync listeners')
+export function cleanupRetryProcessor(): void {
+  console.log('[Sync] Cleaning up retry processor')
 
-  if (onlineHandler) {
-    window.removeEventListener('online', onlineHandler)
-    onlineHandler = null
+  if (retryInterval) {
+    clearInterval(retryInterval)
+    retryInterval = null
   }
+}
 
-  if (visibilityHandler) {
-    document.removeEventListener('visibilitychange', visibilityHandler)
-    visibilityHandler = null
-  }
-
-  if (syncInterval) {
-    clearInterval(syncInterval)
-    syncInterval = null
+/**
+ * Get current retry queue state (for debugging).
+ */
+export function getRetryQueueState() {
+  return {
+    size: retryQueue.size,
+    operations: Array.from(retryQueue.entries()).map(([id, op]) => ({
+      documentId: id,
+      attemptCount: op.attemptCount,
+      nextRetryAt: op.nextRetryAt,
+    })),
   }
 }

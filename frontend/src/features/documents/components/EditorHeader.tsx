@@ -13,8 +13,9 @@ interface EditorHeaderProps {
 }
 
 /**
- * Compact editor header with navigation and breadcrumbs.
- * Layout: [Back] | [Breadcrumbs / Document Name] | [Read/Edit Toggle] | [Close]
+ * Compact editor header with navigation and folder breadcrumbs.
+ * Layout: [Back] | [Folder Breadcrumbs] | [Read/Edit Toggle] | [Close]
+ * Note: Document name now shown separately in EditorTitle component
  */
 export function EditorHeader({ document }: EditorHeaderProps) {
   const folders = useTreeStore((state) => state.folders)
@@ -22,14 +23,9 @@ export function EditorHeader({ document }: EditorHeaderProps) {
   const toggleEditorReadOnly = useUIStore((state) => state.toggleEditorReadOnly)
   const { CollapseButton } = useCollapsiblePanel()
 
-  // Build folder breadcrumbs
+  // Build folder breadcrumbs (document name shown separately now)
   const breadcrumbSegments = buildBreadcrumbs(document.folderId, folders, 3)
-  const breadcrumbPath = formatBreadcrumbs(breadcrumbSegments)
-
-  // Combine breadcrumbs with document name
-  const fullPath = breadcrumbPath
-    ? `${breadcrumbPath} / ${document.name}`
-    : document.name
+  const breadcrumbPath = formatBreadcrumbs(breadcrumbSegments) || 'Project Root'
 
   const handleBack = () => {
     closeEditor()
@@ -55,10 +51,10 @@ export function EditorHeader({ document }: EditorHeaderProps) {
         <ArrowLeft className="h-4 w-4" />
       </Button>
 
-      {/* Breadcrumbs */}
+      {/* Folder breadcrumbs only (document name shown separately below) */}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium" title={fullPath}>
-          {fullPath}
+        <p className="truncate text-sm text-muted-foreground" title={breadcrumbPath}>
+          {breadcrumbPath}
         </p>
       </div>
 

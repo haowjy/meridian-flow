@@ -16,4 +16,5 @@ export interface Message {
   role: 'user' | 'assistant'
   content: string
   createdAt: Date
+  lastAccessedAt?: Date // For cache eviction (future feature)
 }

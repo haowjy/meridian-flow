@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 import { Project } from '@/features/projects/types/project'
 import { api } from '@/core/lib/api'
 import { handleApiError } from '@/core/lib/errors'
+import { clearEditorCache } from '@/core/hooks/useEditorCache'
 
 interface ProjectStore {
   currentProjectId: string | null
@@ -35,7 +36,11 @@ export const useProjectStore = create<ProjectStore>()(
         return state.projects.find((p) => p.id === state.currentProjectId) || null
       },
 
-      setCurrentProject: (project) => set({ currentProjectId: project?.id || null }),
+      setCurrentProject: (project) => {
+        // Clear editor cache when switching projects to prevent stale data and memory leaks
+        clearEditorCache()
+        set({ currentProjectId: project?.id || null })
+      },
 
       loadProjects: async () => {
         // Abort any previous loadProjects request
@@ -110,6 +115,7 @@ export const useProjectStore = create<ProjectStore>()(
       name: 'project-store',
       partialize: (state) => ({
         currentProjectId: state.currentProjectId,
+        projects: state.projects, // Cache projects list for instant load
       }),
     }
   )

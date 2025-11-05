@@ -8,16 +8,70 @@ Meridian is a document management system for creative writers, starting with fic
 
 **Current Status:**
 - ✅ Backend (Go + Fiber + PostgreSQL): Fully implemented
-- 🚧 Frontend (Next.js + TipTap): Not yet started
+- 🚧 Frontend (Next.js + TipTap): In active development
 
 For product details, see `_docs/high-level/1-overview.md`.
+
+## Guiding Principles for Development
+
+These principles emerged from redesigning the sync system and guide future architectural decisions:
+
+1. **Start Simple, Stay Simple**
+   - Write the simplest thing that could work
+   - Add complexity only when necessary
+   - Regularly refactor to remove unnecessary complexity
+
+2. **Make Correctness Obvious**
+   - Code should make bugs impossible or obvious
+   - Use types to prevent invalid states
+   - Fail fast and loudly (don't swallow errors)
+
+3. **One Thing At A Time**
+   - Don't optimize and add features simultaneously
+   - Test each change before moving on
+   - Small, incremental changes are easier to debug
+
+4. **Explicit Over Implicit**
+   - `hasUserEdit` flag > trying to detect user edits
+   - `content !== undefined` > `content` (falsy check)
+   - Direct sync > background queue
+
+5. **Design for Debuggability**
+   - Clear console logs at key decision points
+   - Helper functions to inspect state (`getRetryQueueState()`)
+   - Predictable, deterministic behavior
+
+6. **Guard Against Races**
+   - Add locks/flags to prevent concurrent execution
+   - Use intent flags to coordinate subsystems
+   - Cancel stale operations proactively
+
+7. **Treat Empty as Valid**
+   - Empty string `""` is valid data
+   - Empty array `[]` is valid data
+   - Only `undefined`/`null` means "absent"
+
+8. **Server is Authority**
+   - Always use API responses
+   - Don't trust local timestamps
+   - Sync server state to local, not vice versa
+
+9. **Comment the "Weird"**
+   - If it needs a guard, comment why
+   - If it prevents a race, explain the race
+   - If you had to debug it, future you will too
+
+10. **Prefer Local-First, But Don't Over-Engineer**
+    - IndexedDB for instant loads ✅
+    - Optimistic updates ✅
+    - Persistent operation queues ❌ (usually overkill)
 
 ## Where to Find Things
 
 ### Code-Specific Instructions
 
 - **Backend**: `backend/CLAUDE.md` - Development commands, architecture, conventions
-- **Frontend** (future): `frontend/CLAUDE.md` - When frontend development starts
+- **Frontend**: `frontend/CLAUDE.md` - Caching patterns, store architecture, TipTap conventions
 
 ### Documentation
 
@@ -74,6 +128,17 @@ _docs/
    - Use darker, saturated colors (e.g., `#2d7d2d` not `#90EE90`)
    - Avoid light pastels that disappear on dark backgrounds
    - Test: colors should be visible on both light AND dark backgrounds
+
+### Mermaid Quick Rules
+
+- **Quote labels with spaces, parentheses, punctuation, or HTML**
+  - Nodes: `Node["Label"]`, Edges: `A -->|"edge"| B`, Subgraphs: `subgraph "Title (X)"` … `end`
+- **Put `<br/>` only inside quoted labels**
+- **Use ASCII operators** in labels (`>=`, `<=`) instead of unicode
+- **Don't change diagram types or structure** - Fix parse errors by adding quotes, not refactors
+- **Leave `class` directives as-authored** - Move prose into labels only if asked
+- **If asked to revert, restore the exact previous lines**
+- **Before saving: quick scan for unbalanced quotes**
 
 ### Examples
 
@@ -132,4 +197,3 @@ Here's how to query:
 - **Frontend** (future): Vercel
 
 See `backend/CLAUDE.md` for backend deployment details.
-- never `make run` for me... let the user make run

@@ -2,19 +2,19 @@
 
 import { SaveStatusIcon } from './SaveStatusIcon'
 import { formatRelative } from '@/core/lib/formatDate'
-import { countWords } from '@/core/lib/countWords'
 import { cn } from '@/lib/utils'
 import type { SaveStatus } from '@/shared/components/ui/StatusBadge'
+import type { Editor } from '@tiptap/react'
 
 interface EditorStatusBarProps {
-  content: string
+  editor: Editor
   status: SaveStatus
   lastSaved: Date | null
   className?: string
 }
 
-export function EditorStatusBar({ content, status, lastSaved, className }: EditorStatusBarProps) {
-  const words = countWords(content)
+export function EditorStatusBar({ editor, status, lastSaved, className }: EditorStatusBarProps) {
+  const words = editor.storage.characterCount?.words() ?? 0
   return (
     <div
       className={cn(
