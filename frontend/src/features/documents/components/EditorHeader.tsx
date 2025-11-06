@@ -3,7 +3,6 @@ import { Button } from '@/shared/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { useUIStore } from '@/core/stores/useUIStore'
-import { useCollapsiblePanel } from '@/shared/components/layout/CollapsiblePanelContext'
 import { closeEditor } from '@/core/lib/panelHelpers'
 import { buildBreadcrumbs, formatBreadcrumbs } from '@/core/lib/breadcrumbBuilder'
 import type { Document } from '@/features/documents/types/document'
@@ -22,7 +21,6 @@ export function EditorHeader({ document }: EditorHeaderProps) {
   const folders = useTreeStore((state) => state.folders)
   const editorReadOnly = useUIStore((state) => state.editorReadOnly)
   const setEditorReadOnly = useUIStore((state) => state.setEditorReadOnly)
-  const { CollapseButton } = useCollapsiblePanel()
 
   // Build folder breadcrumbs (document name shown separately now)
   const breadcrumbSegments = buildBreadcrumbs(document.folderId, folders, 3)
@@ -67,8 +65,7 @@ export function EditorHeader({ document }: EditorHeaderProps) {
         rightTitle="Edit"
       />
 
-      {/* Collapse button from panel context */}
-      <CollapseButton />
+      {/* Sidebar collapse/expand is controlled from center panel toggles */}
     </div>
   )
 }

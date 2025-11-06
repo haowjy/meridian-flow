@@ -4,7 +4,6 @@ import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { ScrollArea } from '@/shared/components/ui/scroll-area'
 import { EmptyState } from '@/shared/components/EmptyState'
-import { useCollapsiblePanel } from '@/shared/components/layout/CollapsiblePanelContext'
 
 interface DocumentTreePanelProps {
   children: ReactNode
@@ -25,7 +24,6 @@ export function DocumentTreePanel({
   isEmpty = false,
 }: DocumentTreePanelProps) {
   const [searchQuery, setSearchQuery] = useState('')
-  const { CollapseButton } = useCollapsiblePanel()
 
   const handleSearchChange = (value: string) => {
     setSearchQuery(value)
@@ -45,7 +43,6 @@ export function DocumentTreePanel({
           >
             <Plus className="h-4 w-4" />
           </Button>
-          <CollapseButton />
         </div>
       </div>
 
