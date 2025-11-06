@@ -42,7 +42,19 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
 
   // Load tree on mount
   useEffect(() => {
-    loadTree(projectId)
+    const abortController = new AbortController()
+    loadTree(projectId, abortController.signal)
+
+    // Cleanup: abort request if component unmounts or projectId changes
+    // NOTE: In dev mode with React Strict Mode, this abort() will be called during the
+    // intentional double-mount cleanup, causing an AbortError to appear in the Next.js
+    // error overlay. This is EXPECTED and HARMLESS - the error is caught and handled
+    // silently by useTreeStore. In production (no Strict Mode), this only runs on real
+    // unmounts or project changes. The abort is necessary to prevent stale requests from
+    // updating state after the component has moved on.
+    return () => {
+      abortController.abort()
+    }
   }, [projectId, loadTree])
 
   // Handle document click

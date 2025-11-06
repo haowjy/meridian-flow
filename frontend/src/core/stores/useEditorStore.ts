@@ -3,7 +3,7 @@ import type { Document } from '@/features/documents/types/document'
 import type { SaveStatus } from '@/shared/components/ui/StatusBadge'
 import { api } from '@/core/lib/api'
 import { db } from '@/core/lib/db'
-import { loadNewestByUpdatedAt } from '@/core/lib/cache'
+import { loadWithPolicy, ReconcileNewestPolicy, ICacheRepo, IRemoteRepo } from '@/core/lib/cache'
 import { syncDocument, addRetryOperation, cancelRetry, isNetworkError } from '@/core/lib/sync'
 import { toast } from 'sonner'
 
@@ -23,9 +23,6 @@ interface EditorStore {
   setHasUserEdit: (hasEdit: boolean) => void
 }
 
-// Internal AbortController to survive React StrictMode double-invocation
-let loadDocumentController: AbortController | null = null
-
 export const useEditorStore = create<EditorStore>()((set, get) => ({
   activeDocument: null,
   _activeDocumentId: null,
@@ -35,7 +32,7 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
   error: null,
   hasUserEdit: false,
 
-  loadDocument: async (documentId: string, _signal?: AbortSignal) => {
+  loadDocument: async (documentId: string, signal?: AbortSignal) => {
     // CRITICAL: Set expected document ID FIRST (synchronous, before any await)
     // This prevents race conditions when user rapidly switches documents
     set({
@@ -48,77 +45,46 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
     console.log(`[Load] Starting load for document ${documentId}`)
 
     try {
-      // Abort any previous in-flight load
-      if (loadDocumentController) {
-        loadDocumentController.abort()
-      }
-      loadDocumentController = new AbortController()
-      const signal = loadDocumentController.signal
 
-      // Phase 1: Try cache immediately for instant display (only if full content exists)
-      const cachedRaw = await db.documents.get(documentId)
-      const cached = cachedRaw && cachedRaw.content !== undefined ? cachedRaw : undefined
-      const hadCached = !!cached
-
-      if (get()._activeDocumentId !== documentId) {
-        console.log(`[Load] Aborting stale IndexedDB read for ${documentId}`)
-        return
-      }
-
-      if (hadCached) {
-        console.log(`[Load] Cache hit for document ${documentId}`)
-        // Show cached content immediately; keep isLoading true while reconciling so editor stays read-only
-        set({ activeDocument: cached })
-      } else {
-        console.log(`[Load] No cached content for ${documentId}`)
-      }
-
-      // Phase 2: Reconcile with server by updatedAt (always attempt)
-      loadNewestByUpdatedAt<Document>({
-        cacheKey: `document:${documentId}`,
-        cacheLookup: async () => {
+      const cacheRepo: ICacheRepo<Document> = {
+        get: async () => {
           const d = await db.documents.get(documentId)
           return d && d.content !== undefined ? d : undefined
         },
-        apiFetch: () => api.documents.get(documentId, { signal }),
-        cacheUpdate: async (doc) => {
+        put: async (doc) => {
           if ((doc as any).content !== undefined) {
             await db.documents.put(doc as Document & { content: string })
           }
         },
+      }
+
+      const remoteRepo: IRemoteRepo<Document> = {
+        fetch: () => api.documents.get(documentId, { signal }),
+      }
+
+      await loadWithPolicy<Document>(new ReconcileNewestPolicy<Document>(), {
+        cacheRepo,
+        remoteRepo,
         signal,
+        onIntermediate: (r) => {
+          if (get()._activeDocumentId !== documentId) return
+          // Show cached content immediately and allow UI to render
+          set({ activeDocument: r.data, isLoading: false })
+        },
       })
-        .then((doc) => {
-          if (get()._activeDocumentId !== documentId) {
-            console.log(`[Load] Aborting stale reconciled result for ${documentId}`)
-            return
-          }
-          console.log(`[Load] Loaded (reconciled) document ${documentId}`)
-          set({ activeDocument: doc, status: 'saved', isLoading: false })
+        .then((final) => {
+          if (get()._activeDocumentId !== documentId) return
+          set({ activeDocument: final.data, status: 'saved', isLoading: false })
         })
         .catch((error) => {
           if (error instanceof Error && error.name === 'AbortError') {
-            console.log(`[Load] Aborted reconciliation for ${documentId}`)
-            // Ensure loading flag is off so UI can render whatever we have
             set({ isLoading: false })
             return
           }
-          console.warn(`[Load] Reconciliation failed for ${documentId}:`, error)
-          // If we had cached content shown, clear loading; otherwise surface error so UI shows ErrorPanel
-          if (hadCached) {
-            set({ isLoading: false })
-          } else {
-            const message = error instanceof Error ? error.message : 'Failed to load document'
-            set({ isLoading: false, error: message })
-            toast.error(message)
-          }
+          const message = error instanceof Error ? error.message : 'Failed to load document'
+          set({ error: message, isLoading: false })
+          toast.error(message)
         })
-
-      // If we had no cache, leave isLoading true until reconciliation resolves
-      if (hadCached) {
-        // We already displayed something; keep loading false to avoid skeleton
-        set((state) => ({ isLoading: false, status: state.status }))
-      }
     } catch (error) {
       // Handle AbortError silently (expected when user switches documents)
       if (error instanceof Error && error.name === 'AbortError') {

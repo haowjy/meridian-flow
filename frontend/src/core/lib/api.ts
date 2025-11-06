@@ -22,13 +22,13 @@ export async function fetchAPI<T>(
   endpoint: string,
   options?: RequestInit & { signal?: AbortSignal }
 ): Promise<T> {
-  try {
-    // Only set Content-Type if request has a body
-    const headers: Record<string, string> = {
-      ...options?.headers,
-    }
-    if (options?.body) {
-      headers['Content-Type'] = 'application/json'
+  const method = (options?.method || 'GET').toUpperCase()
+
+  const attempt = async (): Promise<T> => {
+    // Build headers robustly (HeadersInit union): preserve caller headers
+    const headers = new Headers(options?.headers as HeadersInit | undefined)
+    if (options?.body && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json')
     }
 
     const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -40,31 +40,75 @@ export async function fetchAPI<T>(
     if (!response.ok) {
       // Try to parse error response body
       let errorMessage = response.statusText
-
       try {
         const errorBody: ApiErrorResponse = await response.json()
         errorMessage = errorBody.message || errorBody.error || errorMessage
       } catch {
-        // If error body can't be parsed, use statusText
+        // ignore
       }
-
-      // Throw standardized AppError
       throw httpErrorToAppError(response.status, errorMessage)
     }
 
-    // Handle 204 No Content or empty responses (DELETE operations)
-    if (response.status === 204 || response.headers.get('content-length') === '0') {
+    // Handle no content
+    const contentLength = response.headers.get('content-length')
+    if (response.status === 204 || contentLength === '0') {
       return undefined as any
     }
 
-    return response.json()
+    const contentType = response.headers.get('content-type') || ''
+    if (contentType.includes('application/json')) {
+      const raw = await response.text()
+      try {
+        return JSON.parse(raw) as T
+      } catch (e) {
+        const { ErrorType, AppError } = await import('./errors')
+        const snippet = raw ? raw.slice(0, 180) : ''
+        throw new AppError(
+          ErrorType.ServerError,
+          `Invalid JSON from ${endpoint}: ${(e as Error).message}${snippet ? `; body: ${snippet}` : ''}`
+        )
+      }
+    }
+
+    // Non-JSON success — surface a clearer error
+    const bodyText = await response.text().catch(() => '')
+    const { ErrorType, AppError } = await import('./errors')
+    const snippet = bodyText ? `; body: ${bodyText.slice(0, 180)}` : ''
+    throw new AppError(
+      ErrorType.ServerError,
+      `Invalid response from server for ${endpoint}: expected application/json but got "${contentType || 'unknown'}"${snippet}`
+    )
+  }
+
+  // One-shot retry for GET on network/parse errors (transient)
+  const shouldRetry = (err: unknown) => {
+    if (method !== 'GET') return false
+    if (err instanceof TypeError) return true
+    if (err && (err as any).name === 'AppError') {
+      const t = (err as any).type
+      if (t === 'SERVER_ERROR' || t === 'UNKNOWN_ERROR') return true
+    }
+    return false
+  }
+
+  try {
+    return await attempt()
   } catch (error) {
-    // If it's already an AppError or AbortError, rethrow as-is
-    if (error instanceof Error && (error.name === 'AbortError' || error.constructor.name === 'AppError')) {
+    // Check for AbortError FIRST before retry logic to avoid retrying aborted requests
+    if (error instanceof Error && error.name === 'AbortError') {
       throw error
     }
 
-    // Network errors (TypeError, etc.) - wrap in AppError
+    if (shouldRetry(error)) {
+      await new Promise((r) => setTimeout(r, 200))
+      return await attempt()
+    }
+
+    // If it's already an AppError, rethrow as-is
+    if (error instanceof Error && error.constructor.name === 'AppError') {
+      throw error
+    }
+
     if (error instanceof TypeError) {
       const { ErrorType, AppError } = await import('./errors')
       throw new AppError(
@@ -73,7 +117,6 @@ export async function fetchAPI<T>(
       )
     }
 
-    // Unknown errors - wrap in AppError
     const { ErrorType, AppError } = await import('./errors')
     const message = error instanceof Error ? error.message : 'An unexpected error occurred'
     throw new AppError(ErrorType.Unknown, message)

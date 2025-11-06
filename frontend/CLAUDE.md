@@ -27,13 +27,12 @@ npm run type-check  # TypeScript type checking
 
 Three distinct caching patterns based on data characteristics:
 
-#### 1. Documents (Cache-First)
-**Pattern**: Local is source of truth, server is backup
-- Check IndexedDB first → display immediately
-- Background refresh from API (if not actively editing)
+#### 1. Documents (Reconcile-Newest)
+**Pattern**: Always fetch server; compare with cache by `updatedAt`; render newest
+- Emit cached content immediately if present (read-only), reconcile with server
 - Optimistic updates + retry on network failure
 - **Implementation**: `useEditorStore.ts`
-- **Utilities**: `loadCacheFirst()` in `core/lib/cache.ts`
+- **Utilities**: `loadWithPolicy(new ReconcileNewestPolicy())` in `core/lib/cache.ts`
 
 #### 2. Chats/Messages (Network-First)
 **Pattern**: Server is source of truth, cache is fallback
@@ -41,7 +40,7 @@ Three distinct caching patterns based on data characteristics:
 - On network error: fallback to IndexedDB if available
 - Windowed caching for messages (last 100 only)
 - **Implementation**: `useChatStore.ts`
-- **Utilities**: `loadNetworkFirst()`, `windowedCacheUpdate()` in `core/lib/cache.ts`
+- **Utilities**: `loadWithPolicy(new NetworkFirstPolicy())`, `windowedCacheUpdate()` in `core/lib/cache.ts`
 
 #### 3. Metadata (Persist Middleware)
 **Pattern**: Small data, synchronous access via localStorage

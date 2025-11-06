@@ -17,6 +17,8 @@ interface UseEditorCacheOptions extends Partial<EditorOptions> {
   content: string
   extensions: Extensions
   maxCacheSize?: number
+  // TipTap React option to avoid SSR hydration mismatch
+  immediatelyRender?: boolean
 }
 
 interface UseEditorCacheResult {

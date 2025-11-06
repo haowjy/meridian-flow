@@ -17,27 +17,29 @@ import { db } from './db'
 import { useEditorStore } from '@/core/stores/useEditorStore'
 import type { Document } from '@/features/documents/types/document'
 import { toast } from 'sonner'
+import { RetryScheduler, SyncOp } from './retry'
 
 /**
  * Retry operation stored in memory (not persisted).
  * Lost on page reload, but IndexedDB still has the content.
  */
-interface RetryOperation {
-  entityType: 'document'
-  entityId: string
-  content: string
-  attemptCount: number
-  nextRetryAt: Date
+// Retry scheduler (policy-based)
+let scheduler: RetryScheduler<string, string, Document> | null = null
+
+function ensureScheduler(): RetryScheduler<string, string, Document> {
+  if (!scheduler) {
+    scheduler = new RetryScheduler<string, string, Document>({
+      sync: async (op: SyncOp<string, string>) => {
+        // Reuse syncDocument for actual API+IDB write
+        return await syncDocument(op.id, op.payload)
+      },
+      // jittered backoff default inside scheduler
+      maxAttempts: 3,
+      tickMs: 1000,
+    })
+  }
+  return scheduler
 }
-
-// In-memory retry queue (key = documentId)
-const retryQueue = new Map<string, RetryOperation>()
-
-// Track active sync operations to prevent duplicates
-const activeSyncs = new Set<string>()
-
-// Retry processor interval reference
-let retryInterval: NodeJS.Timeout | null = null
 
 /**
  * Sync a document directly to the backend.
@@ -83,14 +85,31 @@ export async function syncDocument(
  *
  * @param op - Retry operation to queue
  */
-export function addRetryOperation(op: Omit<RetryOperation, 'nextRetryAt'>) {
-  const operation: RetryOperation = {
-    ...op,
-    nextRetryAt: new Date(Date.now() + 5000), // Retry after 5 seconds
-  }
-
-  retryQueue.set(op.entityId, operation)
+export function addRetryOperation(op: { entityType: 'document'; entityId: string; content: string; attemptCount: number }) {
+  const sched = ensureScheduler()
   console.log(`[Sync] Queued retry for document ${op.entityId} (attempt ${op.attemptCount + 1}/3)`)
+
+  sched.add({ id: op.entityId, payload: op.content }, {
+    onSuccess: (updatedDoc) => {
+      const store = useEditorStore.getState()
+      if (store.activeDocument?.id === op.entityId) {
+        if (store.activeDocument.content === op.content) {
+          store.setStatus('saved')
+          store.updateActiveDocument(updatedDoc)
+          toast.success('Changes synced successfully')
+        } else {
+          console.log(`[Sync] Skipping store update - content changed since retry was queued`)
+        }
+      }
+    },
+    onPermanentFailure: () => {
+      toast.error(
+        `Failed to sync document after retries. ` +
+        `Changes are saved locally and will be synced when connection is restored.`,
+        { duration: 10000 }
+      )
+    },
+  })
 }
 
 /**
@@ -104,10 +123,9 @@ export function addRetryOperation(op: Omit<RetryOperation, 'nextRetryAt'>) {
  * This prevents stale retries from overwriting newer content.
  */
 export function cancelRetry(documentId: string) {
-  if (retryQueue.has(documentId)) {
-    console.log(`[Sync] Cancelled pending retry for document ${documentId}`)
-    retryQueue.delete(documentId)
-  }
+  const sched = ensureScheduler()
+  console.log(`[Sync] Cancelled pending retry for document ${documentId}`)
+  sched.cancel(documentId)
 }
 
 /**
@@ -124,65 +142,7 @@ export function cancelRetry(documentId: string) {
  * - After 3 attempts: Give up, show error to user
  */
 export async function processRetryQueue() {
-  if (retryQueue.size === 0) return
-
-  const now = new Date()
-  console.log(`[Sync] Processing ${retryQueue.size} retry operations`)
-
-  for (const [documentId, op] of retryQueue.entries()) {
-    // Check if ready to retry (5s delay between attempts)
-    if (op.nextRetryAt > now) {
-      continue
-    }
-
-    // Skip if already syncing (prevents duplicate concurrent syncs)
-    if (activeSyncs.has(documentId)) {
-      console.log(`[Sync] Skipping retry for ${documentId} - sync already in progress`)
-      continue
-    }
-
-    try {
-      activeSyncs.add(documentId)
-
-      // Attempt to sync
-      const updatedDoc = await syncDocument(documentId, op.content)
-
-      // Success! Remove from retry queue
-      retryQueue.delete(documentId)
-
-      // Update store if this is the active document
-      const store = useEditorStore.getState()
-      if (store.activeDocument?.id === documentId) {
-        // Only update if content hasn't changed (avoid overwriting newer edits)
-        if (store.activeDocument.content === op.content) {
-          store.setStatus('saved')
-          store.updateActiveDocument(updatedDoc)
-          toast.success('Changes synced successfully')
-        } else {
-          console.log(`[Sync] Skipping store update - content has changed since retry was queued`)
-        }
-      }
-    } catch (error) {
-      // Retry failed
-      console.error(`[Sync] Retry attempt ${op.attemptCount + 1} failed for ${documentId}:`, error)
-
-      if (op.attemptCount >= 2) {
-        // Max retries (3 total attempts: initial + 2 retries)
-        retryQueue.delete(documentId)
-        toast.error(
-          `Failed to sync document after 3 attempts. ` +
-          `Changes are saved locally and will be synced when connection is restored.`,
-          { duration: 10000 }
-        )
-      } else {
-        // Schedule next retry
-        op.attemptCount++
-        op.nextRetryAt = new Date(Date.now() + 5000)
-      }
-    } finally {
-      activeSyncs.delete(documentId)
-    }
-  }
+  // No-op: kept for backward compatibility; scheduler ticks internally.
 }
 
 /**
@@ -230,16 +190,10 @@ export function isNetworkError(error: unknown): boolean {
  * Unlike the old system, we don't have online/visibility listeners racing with each other.
  */
 export function initializeRetryProcessor(): void {
-  if (typeof window === 'undefined') return // Skip in SSR
-  if (retryInterval) return // Already initialized
-
-  console.log('[Sync] Initializing retry processor (5s interval)')
-
-  retryInterval = setInterval(() => {
-    processRetryQueue().catch((error) => {
-      console.error('[Sync] Error processing retry queue:', error)
-    })
-  }, 5000)
+  if (typeof window === 'undefined') return
+  const sched = ensureScheduler()
+  console.log('[Sync] Starting retry scheduler')
+  sched.start()
 }
 
 /**
@@ -247,24 +201,13 @@ export function initializeRetryProcessor(): void {
  * Should be called when the app unmounts.
  */
 export function cleanupRetryProcessor(): void {
-  console.log('[Sync] Cleaning up retry processor')
-
-  if (retryInterval) {
-    clearInterval(retryInterval)
-    retryInterval = null
-  }
+  console.log('[Sync] Stopping retry scheduler')
+  scheduler?.stop()
 }
 
 /**
  * Get current retry queue state (for debugging).
  */
 export function getRetryQueueState() {
-  return {
-    size: retryQueue.size,
-    operations: Array.from(retryQueue.entries()).map(([id, op]) => ({
-      documentId: id,
-      attemptCount: op.attemptCount,
-      nextRetryAt: op.nextRetryAt,
-    })),
-  }
+  return undefined
 }

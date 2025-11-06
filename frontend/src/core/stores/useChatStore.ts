@@ -4,7 +4,7 @@ import { Chat, Message } from '@/features/chats/types'
 import { api } from '@/core/lib/api'
 import { handleApiError } from '@/core/lib/errors'
 import { db } from '@/core/lib/db'
-import { loadNetworkFirst, bulkCacheUpdate, windowedCacheUpdate } from '@/core/lib/cache'
+import { loadWithPolicy, NetworkFirstPolicy, bulkCacheUpdate, windowedCacheUpdate, ICacheRepo, IRemoteRepo } from '@/core/lib/cache'
 
 interface ChatStore {
   chats: Chat[]
@@ -16,17 +16,13 @@ interface ChatStore {
 
   activeChat: () => Chat | null
   setActiveChat: (chat: Chat | null) => void
-  loadChats: (projectId: string) => Promise<void>
-  loadMessages: (chatId: string) => Promise<void>
+  loadChats: (projectId: string, signal?: AbortSignal) => Promise<void>
+  loadMessages: (chatId: string, signal?: AbortSignal) => Promise<void>
   createChat: (projectId: string, title: string) => Promise<Chat>
   renameChat: (chatId: string, title: string) => Promise<void>
   sendMessage: (chatId: string, content: string) => Promise<void>
   deleteChat: (chatId: string) => Promise<void>
 }
-
-// Track abort controllers to cancel previous requests
-let loadChatsController: AbortController | null = null
-let loadMessagesController: AbortController | null = null
 
 export const useChatStore = create<ChatStore>()(
   persist(
@@ -46,33 +42,30 @@ export const useChatStore = create<ChatStore>()(
 
       setActiveChat: (chat) => set({ activeChatId: chat?.id || null }),
 
-      loadChats: async (projectId: string) => {
-        // Abort any previous loadChats request
-        if (loadChatsController) {
-          loadChatsController.abort()
-        }
-
-        // Create new controller for this request
-        loadChatsController = new AbortController()
-        const signal = loadChatsController.signal
-
+      loadChats: async (projectId: string, signal?: AbortSignal) => {
         set({ isLoadingChats: true, error: null })
         try {
-          // Network-first load with cache fallback
-          const chats = await loadNetworkFirst({
-            cacheKey: `chats-${projectId}`,
-            cacheLookup: async () => {
+          const cacheRepo: ICacheRepo<Chat[]> = {
+            get: async () => {
               const cached = await db.chats.where('projectId').equals(projectId).toArray()
               return cached.length > 0 ? cached : undefined
             },
-            apiFetch: (signal) => api.chats.list(projectId, { signal }),
-            cacheUpdate: async (chats) => {
+            put: async (chats) => {
               await bulkCacheUpdate(db.chats, chats)
             },
+          }
+          const remoteRepo: IRemoteRepo<Chat[]> = {
+            fetch: (s) => api.chats.list(projectId, { signal: s }),
+          }
+
+          const result = await loadWithPolicy<Chat[]>(new NetworkFirstPolicy<Chat[]>(), {
+            cacheRepo,
+            remoteRepo,
             signal,
+            onIntermediate: (r) => set({ chats: r.data, isLoadingChats: false }),
           })
 
-          set({ chats, isLoadingChats: false })
+          set({ chats: result.data, isLoadingChats: false })
         } catch (error) {
           // Handle AbortError silently
           if (error instanceof Error && error.name === 'AbortError') {
@@ -86,34 +79,30 @@ export const useChatStore = create<ChatStore>()(
         }
       },
 
-      loadMessages: async (chatId: string) => {
-        // Abort any previous loadMessages request
-        if (loadMessagesController) {
-          loadMessagesController.abort()
-        }
-
-        // Create new controller for this request
-        loadMessagesController = new AbortController()
-        const signal = loadMessagesController.signal
-
+      loadMessages: async (chatId: string, signal?: AbortSignal) => {
         set({ isLoadingMessages: true, error: null })
         try {
-          // Network-first load with cache fallback + windowing
-          const messages = await loadNetworkFirst({
-            cacheKey: `messages-${chatId}`,
-            cacheLookup: async () => {
+          const cacheRepoMsgs: ICacheRepo<Message[]> = {
+            get: async () => {
               const cached = await db.messages.where('chatId').equals(chatId).toArray()
               return cached.length > 0 ? cached : undefined
             },
-            apiFetch: (signal) => api.messages.list(chatId, { signal }),
-            cacheUpdate: async (messages) => {
-              // Only cache last 100 messages (windowing)
+            put: async (messages) => {
               await windowedCacheUpdate(db.messages, `chat-${chatId}`, messages, 100)
             },
+          }
+          const remoteRepoMsgs: IRemoteRepo<Message[]> = {
+            fetch: (s) => api.messages.list(chatId, { signal: s }),
+          }
+
+          const resultMsgs = await loadWithPolicy<Message[]>(new NetworkFirstPolicy<Message[]>(), {
+            cacheRepo: cacheRepoMsgs,
+            remoteRepo: remoteRepoMsgs,
             signal,
+            onIntermediate: (r) => set({ messages: r.data, isLoadingMessages: false }),
           })
 
-          set({ messages, isLoadingMessages: false })
+          set({ messages: resultMsgs.data, isLoadingMessages: false })
         } catch (error) {
           // Handle AbortError silently
           if (error instanceof Error && error.name === 'AbortError') {

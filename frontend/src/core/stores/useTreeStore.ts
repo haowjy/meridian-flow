@@ -15,12 +15,9 @@ interface TreeStore {
   isLoading: boolean
   error: string | null
 
-  loadTree: (projectId: string) => Promise<void>
+  loadTree: (projectId: string, signal?: AbortSignal) => Promise<void>
   toggleFolder: (folderId: string) => void
 }
-
-// Track abort controller for loadTree to cancel previous requests
-let loadTreeController: AbortController | null = null
 
 export const useTreeStore = create<TreeStore>()((set) => ({
   documents: [],
@@ -30,16 +27,7 @@ export const useTreeStore = create<TreeStore>()((set) => ({
   isLoading: false,
   error: null,
 
-  loadTree: async (projectId: string) => {
-    // Abort any previous loadTree request
-    if (loadTreeController) {
-      loadTreeController.abort()
-    }
-
-    // Create new controller for this request
-    loadTreeController = new AbortController()
-    const signal = loadTreeController.signal
-
+  loadTree: async (projectId: string, signal?: AbortSignal) => {
     set({ isLoading: true, error: null })
 
     try {

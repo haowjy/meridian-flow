@@ -9,7 +9,6 @@ import CharacterCount from '@tiptap/extension-character-count'
 import Placeholder from '@tiptap/extension-placeholder'
 import { useEditorStore } from '@/core/stores/useEditorStore'
 import { useUIStore } from '@/core/stores/useUIStore'
-import { useAbortController } from '@/core/hooks/useAbortController'
 import { useDebounce } from '@/core/hooks/useDebounce'
 import { useEditorCache } from '@/core/hooks/useEditorCache'
 import { cn } from '@/lib/utils'
@@ -35,6 +34,7 @@ interface EditorPanelProps {
 export function EditorPanel({ documentId }: EditorPanelProps) {
   const {
     activeDocument,
+    _activeDocumentId,
     isLoading,
     error,
     status,
@@ -44,7 +44,6 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   } = useEditorStore()
 
   const editorReadOnly = useUIStore((state) => state.editorReadOnly)
-  const signal = useAbortController([documentId])
 
   // Get document metadata from tree (available immediately, no need to wait for content)
   const documents = useTreeStore((state) => state.documents)
@@ -92,13 +91,34 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
 
   // Load document on mount or when documentId changes
   useEffect(() => {
+    // Prevent duplicate loads from React Strict Mode double-mounting
+    // Skip if we're already loading this exact document
+    if (_activeDocumentId === documentId && isLoading) {
+      console.log('[EditorPanel] Skipping duplicate load for', documentId)
+      return
+    }
+
+    // Create AbortController for this load operation
+    const abortController = new AbortController()
+
     // Reset local editor state on document change
     setIsInitialized(false)
     initializedRef.current = false
     setHasUserEdit(false)
     // Do NOT clear localContent here; allow cached editor to repopulate if present
-    loadDocument(documentId, signal)
-  }, [documentId, loadDocument, signal])
+    loadDocument(documentId, abortController.signal)
+
+    // Cleanup: abort request if component unmounts or documentId changes
+    // NOTE: In dev mode with React Strict Mode, this abort() will be called during the
+    // intentional double-mount cleanup, causing an AbortError to appear in the Next.js
+    // error overlay. This is EXPECTED and HARMLESS - the error is caught and handled
+    // silently by useEditorStore. In production (no Strict Mode), this only runs on
+    // real unmounts or document changes. The abort is necessary to prevent stale
+    // requests from updating state after the component has moved on.
+    return () => {
+      abortController.abort()
+    }
+  }, [documentId, loadDocument])
 
   // Initialize local content when document loads
   // BUT: Skip if we're using a cached editor (it has the correct content already)
@@ -187,6 +207,8 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   }
 
   // Error state - show error panel without header
+  // Note: onRetry doesn't pass signal, which is fine for manual retries
+  // The AbortController in the useEffect will handle cleanup if user navigates away
   if (error) {
     return (
       <ErrorPanel

@@ -14,7 +14,9 @@ For product details, see `_docs/high-level/1-overview.md`.
 
 ## Guiding Principles for Development
 
-These principles emerged from redesigning the sync system and guide future architectural decisions:
+ALWAYS FOLLOW SOLID PRINCIPLES.
+
+Then, these principles can also help you make architectural decisions and other development tasks:
 
 1. **Start Simple, Stay Simple**
    - Write the simplest thing that could work

@@ -1,11 +1,9 @@
 import './globals.css'
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
 import { Toaster } from '@/shared/components/ui/sonner'
 import { PreloadRemover } from '@/core/components/PreloadRemover'
 import { SyncProvider } from '@/core/components/SyncProvider'
 
-const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: 'Meridian',
@@ -19,7 +17,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${inter.className} preload`}>
+      <body className={`font-sans preload`}>
         <PreloadRemover />
         <SyncProvider />
         {children}
