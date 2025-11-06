@@ -88,12 +88,14 @@ export function httpErrorToAppError(status: number, message?: string): AppError 
  * Check if error is a network error (no connection).
  */
 export function isNetworkError(error: unknown): boolean {
+  // Native fetch/network failure
   if (error instanceof TypeError && error.message === 'Failed to fetch') {
     return true
   }
 
-  if (error instanceof AppError && error.type === ErrorType.Network) {
-    return true
+  if (error instanceof AppError) {
+    // Treat ServerError as transient to allow retries on 5xx
+    return error.type === ErrorType.Network || error.type === ErrorType.ServerError
   }
 
   return false

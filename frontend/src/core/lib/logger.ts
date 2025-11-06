@@ -1,0 +1,59 @@
+type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent'
+
+const ENV_LEVEL = (process.env.NEXT_PUBLIC_LOG_LEVEL || '').toLowerCase() as LogLevel
+const NODE_ENV = process.env.NODE_ENV || 'development'
+
+function levelOrder(level: LogLevel): number {
+  switch (level) {
+    case 'debug':
+      return 10
+    case 'info':
+      return 20
+    case 'warn':
+      return 30
+    case 'error':
+      return 40
+    case 'silent':
+      return 50
+    default:
+      return 20
+  }
+}
+
+// Default: debug in development, info otherwise
+const DEFAULT_LEVEL: LogLevel = NODE_ENV === 'development' ? 'debug' : 'info'
+const ACTIVE_LEVEL: LogLevel = (ENV_LEVEL && ['debug','info','warn','error','silent'].includes(ENV_LEVEL))
+  ? ENV_LEVEL
+  : DEFAULT_LEVEL
+
+function shouldLog(level: LogLevel): boolean {
+  return levelOrder(level) >= levelOrder(ACTIVE_LEVEL) && ACTIVE_LEVEL !== 'silent'
+}
+
+export interface Logger {
+  debug: (...args: any[]) => void
+  info: (...args: any[]) => void
+  warn: (...args: any[]) => void
+  error: (...args: any[]) => void
+}
+
+export function makeLogger(namespace: string): Logger {
+  const prefix = `[${namespace}]`
+  return {
+    debug: (...args: any[]) => {
+      if (shouldLog('debug')) console.debug(prefix, ...args)
+    },
+    info: (...args: any[]) => {
+      if (shouldLog('info')) console.info(prefix, ...args)
+    },
+    warn: (...args: any[]) => {
+      if (shouldLog('warn')) console.warn(prefix, ...args)
+    },
+    error: (...args: any[]) => {
+      if (shouldLog('error')) console.error(prefix, ...args)
+    },
+  }
+}
+
+export const logger = makeLogger('core')
+

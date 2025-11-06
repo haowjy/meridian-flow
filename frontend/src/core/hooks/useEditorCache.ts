@@ -1,4 +1,5 @@
 import { useRef, useCallback, useEffect, useState } from 'react'
+import { makeLogger } from '@/core/lib/logger'
 import { Editor } from '@tiptap/react'
 import type { Extensions, EditorOptions } from '@tiptap/core'
 
@@ -11,6 +12,7 @@ interface CachedEditor {
 // Global editor cache (persists across component mounts)
 // Cleared manually via clearEditorCache() when switching projects
 const globalEditorCache = new Map<string, CachedEditor>()
+const log = makeLogger('editor-cache')
 
 interface UseEditorCacheOptions extends Partial<EditorOptions> {
   documentId: string
@@ -65,7 +67,7 @@ export function useEditorCache(options: UseEditorCacheOptions): UseEditorCacheRe
   const evictLRU = useCallback(() => {
     if (globalEditorCache.size < maxCacheSize) return
 
-    console.log(`[EditorCache] Cache full (${globalEditorCache.size}/${maxCacheSize}), evicting LRU`)
+    log.debug('cache full', `${globalEditorCache.size}/${maxCacheSize}`, 'evicting LRU')
 
     // Find least recently used
     let lruKey: string | null = null
@@ -81,7 +83,7 @@ export function useEditorCache(options: UseEditorCacheOptions): UseEditorCacheRe
     if (lruKey) {
       const lruEditor = globalEditorCache.get(lruKey)
       if (lruEditor) {
-        console.log(`[EditorCache] Destroying editor for ${lruKey}`)
+        log.debug('destroying editor for', lruKey)
         lruEditor.editor.destroy()
         globalEditorCache.delete(lruKey)
       }
@@ -91,7 +93,7 @@ export function useEditorCache(options: UseEditorCacheOptions): UseEditorCacheRe
   // Create new editor instance
   const createEditor = useCallback(
     (): Editor => {
-      console.log(`[EditorCache] Creating new editor for ${documentId}`)
+      log.debug('creating new editor for', documentId)
 
       // Evict before creating to ensure we don't exceed limit
       evictLRU()
@@ -125,7 +127,7 @@ export function useEditorCache(options: UseEditorCacheOptions): UseEditorCacheRe
 
     if (cached) {
       // Cache hit!
-      console.log(`[EditorCache] Cache hit for ${documentId}`)
+      log.debug('cache hit for', documentId)
       setIsFromCache(true)
 
       // Update last accessed time (for LRU)
@@ -136,7 +138,7 @@ export function useEditorCache(options: UseEditorCacheOptions): UseEditorCacheRe
     } else {
       // Cache miss - create new empty editor
       // EditorPanel will initialize it with proper content
-      console.log(`[EditorCache] Cache miss for ${documentId}`)
+      log.debug('cache miss for', documentId)
       setIsFromCache(false)
 
       const created = createEditor()
@@ -197,7 +199,7 @@ export function useEditorCache(options: UseEditorCacheOptions): UseEditorCacheRe
  * ```
  */
 export function clearEditorCache() {
-  console.log(`[EditorCache] Clearing cache (${globalEditorCache.size} editors)`)
+  log.info('clearing cache', `(${globalEditorCache.size} editors)`) 
 
   // Destroy all editors to free memory
   for (const { editor } of globalEditorCache.values()) {
@@ -207,5 +209,5 @@ export function clearEditorCache() {
   // Clear the cache
   globalEditorCache.clear()
 
-  console.log('[EditorCache] Cache cleared')
+  log.info('cache cleared')
 }

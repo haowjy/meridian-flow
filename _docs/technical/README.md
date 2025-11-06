@@ -1,51 +1,58 @@
-# Technical Documentation
-
-Comprehensive technical specifications and implementation details for Meridian.
-
-## Backend
-
-Backend architecture, database, and API implementation.
-
-### Backend Refactoring (October 2025)
-
-**🚨 MUST READ for anyone working on backend architecture:**
-
-- **[Architecture Review](./architecture-review.md)** ⭐ - Comprehensive analysis of current issues (Score: 4.25/10)
-- **[Go Best Practices Research](./go-best-practices-research.md)** - 2025 Go patterns, recommended packages
-- **[Refactoring Plan](./refactoring-plan.md)** - Step-by-step migration guide (2-3 weeks)
-
-**Quick Summary:** Current backend needs refactoring to support LLM streaming and vector search. Migration to clean architecture (Handler → Service → Repository) with pgx, structured logging, and background jobs.
-
-### Core Documentation
-
-- **[Environment Setup](./backend/environment-setup.md)** - Environment-based table prefixes, deployment strategies
-- **[Supabase Integration](./backend/supabase-integration.md)** - Database connection, API keys, connection methods
-- **[API Testing](./backend/api-testing-comprehensive.md)** - Complete API testing guide with curl examples
-- **[Database Seeding](./backend/database-seeding.md)** - Populate database with sample data
-
-### Quick Links
-
-For practical guides, see:
-- `backend/README.md` - Main backend documentation
-- `backend/QUICKSTART.md` - 5-minute setup guide
-- `backend/tests/README.md` - Insomnia collection usage
-
-## Frontend
-
-*Coming in Phase 2*
-
-## Deployment
-
-*Coming in Phase 2*
-
+---
+detail: minimal
+audience: developer
+status: active
 ---
 
-## Documentation Philosophy
+# Technical Documentation Index
 
-This directory contains **official technical documentation** that:
-- Explains architectural decisions
-- Provides comprehensive implementation details
-- Serves as reference for complex topics
-- Is tracked in the documentation system
+Lean, up-to-date references for engineers. Prefer code over prose; include file/line pointers.
 
-For **practical guides** and **quick references**, see the respective project directories (`backend/`, `frontend/`, etc.).
+## System Overview
+
+```mermaid
+flowchart LR
+  FE["Next.js Frontend\n(Zustand + Dexie)"]
+  API["Go + Fiber API\n(Handler → Service → Repository)"]
+  DB[("PostgreSQL\n(Supabase)")]
+
+  FE <---> | JSON (DTOs) | API
+  FE <-->| Cache | IDB["IndexedDB (Dexie)"]
+  API <---> | pgx | DB
+
+  classDef a fill:#2d7d9d,stroke:#1e4d1e,color:#fff
+  classDef b fill:#2d8d2d,stroke:#1e4d1e,color:#fff
+  class FE a
+  class API b
+```
+
+## Backend (Go)
+- API contracts: _docs/technical/backend/api-contracts.md
+- Clean architecture guide: _docs/technical/backend/clean-architecture-guide.md
+- Database connections (PgBouncer vs direct): _docs/technical/backend/database-connections.md
+
+Relevant code
+- Entry/Wiring: backend/cmd/server/main.go
+- Services: backend/internal/service/
+- Repos: backend/internal/repository/postgres/
+- Handlers: backend/internal/handler/
+
+## Frontend (Next.js)
+- Setup quickstart: _docs/technical/frontend/setup-quickstart.md
+- Sync system (minimal): _docs/technical/frontend/sync-system-minimal.md
+- Editor caching/load flows: _docs/technical/frontend/editor-caching.md
+- Editor UI overview: _docs/technical/frontend/editor-ui-overview.md
+
+Relevant code
+- Core libs: frontend/src/core/lib/{api,cache,sync,logger}.ts
+- Stores: frontend/src/core/stores/
+- Services: frontend/src/core/services/
+- Components: frontend/src/features/**
+
+## Futures / Brainstorming
+- Published content access (non-committal): _docs/future/published-content-access.md
+- See also hidden brainstorming docs in _docs/hidden/brainstorming/ (not tracked)
+
+Notes
+- Keep docs minimal; reference code where possible.
+- Prefer Mermaid for high-level flows.

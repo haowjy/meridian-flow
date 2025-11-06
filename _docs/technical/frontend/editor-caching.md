@@ -7,15 +7,16 @@ audience: developer
 
 Purpose: map the exact data flow for opening, editing, and saving a document with the TipTap editor cache and IndexedDB cache, and call out edge cases that can cause “stuck loading” or “shows previous doc” symptoms.
 
-See also: `_docs/technical/frontend/flows.md` for broader local‑first flows.
+See also: `_docs/technical/frontend/sync-system-minimal.md` for broader sync overview.
 
 ## Components Involved
 
-- `EditorPanel` (view) — `frontend/src/features/documents/components/EditorPanel.tsx:31`
-- `useEditorCache` (TipTap instance LRU) — `frontend/src/core/hooks/useEditorCache.ts:55`
-- `useEditorStore.loadDocument` (cache‑first content) — `frontend/src/core/stores/useEditorStore.ts:25`
-- `MeridianDB.documents` (IndexedDB via Dexie) — `frontend/src/core/lib/db.ts:1`
-- API client — `frontend/src/core/lib/api.ts:180`
+- `EditorPanel` (view) — `frontend/src/features/documents/components/EditorPanel.tsx`
+- `useEditorCache` (TipTap instance LRU) — `frontend/src/core/hooks/useEditorCache.ts`
+- `useEditorStore.loadDocument` (cache emit + server reconcile) — `frontend/src/core/stores/useEditorStore.ts`
+- `DocumentSyncService` (optimistic save + retry) — `frontend/src/core/services/documentSyncService.ts`
+- `MeridianDB.documents` (IndexedDB via Dexie) — `frontend/src/core/lib/db.ts`
+- API client — `frontend/src/core/lib/api.ts`
 
 ## Flow A — Open Document (cache‑first)
 
@@ -84,6 +85,7 @@ sequenceDiagram
     participant Editor as "TipTap Editor (D)"
     participant Panel as "EditorPanel localContent / debounce(1s)"
     participant Store as "useEditorStore.saveDocument"
+    participant Service as "DocumentSyncService.save"
     participant IDB as "IndexedDB"
     participant API as "Backend API"
 
@@ -91,14 +93,17 @@ sequenceDiagram
     Panel->>Panel: debounce 1s ("hasUserEdit" true)
     Panel->>Store: saveDocument(D, debouncedContent)
     Store->>Store: set({status:'saving'})
-    Store->>IDB: documents.update/put(D, content)
+    Store->>Service: save(D, content, currentDoc)
+    Service->>IDB: documents.update/put(D, content)
     alt Network OK
-        Store->>API: PATCH /api/documents/D {content}
-        API-->>Store: Document(D, serverTimestamp)
-        Store->>IDB: documents.put(D, content with server ts)
+        Service->>API: PATCH /api/documents/D {content}
+        API-->>Service: Document(D, serverTimestamp)
+        Service->>IDB: documents.put(D, content with server ts)
+        Service-->>Store: onServerSaved(serverDoc)
         Store-->>Store: set({activeDocument:serverDoc, status:'saved'})
     else Network error (retryable)
-        Store-->>Store: queue in‑memory retry (content snapshot)
+        Service-->>Store: onRetryScheduled()
+        Service-->>Retry: addRetry(D, content)
         Note over Store: status remains 'saving' until retry success
     end
 ```

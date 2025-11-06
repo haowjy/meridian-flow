@@ -6,7 +6,7 @@ See main `CLAUDE.md` for general principles. This document focuses on frontend-s
 
 ## Tech Stack
 
-- **Framework**: Next.js 14 (App Router)
+- **Framework**: Next.js 16 (App Router)
 - **State Management**: Zustand with persist middleware
 - **Local Database**: Dexie (IndexedDB wrapper)
 - **Editor**: TipTap (ProseMirror-based rich text editor)
@@ -16,9 +16,11 @@ See main `CLAUDE.md` for general principles. This document focuses on frontend-s
 ## Development Commands
 
 ```bash
-npm run dev         # Start dev server (http://localhost:3000)
-npm run build       # Production build
-npm run type-check  # TypeScript type checking
+npm run dev          # Start dev server (http://localhost:3000)
+npm run build        # Production build
+npm run lint         # ESLint
+npm run test         # Vitest unit tests (core libs + services)
+npm run test:watch   # Vitest in watch mode
 ```
 
 ## Architecture Overview
@@ -68,16 +70,15 @@ All stores use Zustand. Key conventions:
 
 ### Sync System
 
-**Location**: `frontend/src/core/lib/sync.ts`
+- Core policy + scheduler: `frontend/src/core/lib/cache.ts`, `frontend/src/core/lib/retry.ts`, `frontend/src/core/lib/sync.ts`
+- UI-free orchestration service: `frontend/src/core/services/documentSyncService.ts`
 
-Simplified direct sync (no persistent queue):
-1. Save to IndexedDB first (instant feedback)
-2. Sync directly to API
-3. On network error: Add to in-memory retry queue (max 3 attempts, 5s delay)
-4. On client error (4xx): Show error modal, allow manual retry
-5. Always apply server response (source of truth for timestamps)
+Flow (documents):
+1) Optimistic write to IndexedDB → 2) direct PATCH to API → 3) apply server doc (authoritative timestamps). On network/5xx, enqueue in-memory retry (jittered backoff; max attempts). 4xx bubbles to UI for manual retry.
 
-**Background processing**: Only the retry processor runs (every 5s). No other background listeners.
+Background: only the retry scheduler (ticked in `SyncProvider`). No visibility/online listeners.
+
+Dev: optional retry inspector in dev builds — set `NEXT_PUBLIC_DEV_TOOLS=1` to enable small bottom-left panel.
 
 ### IndexedDB Schema
 
@@ -96,6 +97,20 @@ Current version: 4
 - `messages`: `id, chatId, createdAt, lastAccessedAt`
 
 **Auto-eviction**: Not implemented yet (YAGNI). Add only when quota issues appear.
+
+### Logging
+
+- Use `frontend/src/core/lib/logger.ts` → `makeLogger('namespace')` with `debug/info/warn/error`.
+- Defaults: `debug` in development, `info` in production. Override via `NEXT_PUBLIC_LOG_LEVEL`.
+
+### Testing
+
+- Unit tests live under `frontend/tests/` and run with Vitest.
+- Focused coverage for: retry scheduler, cache policies, and `DocumentSyncService`.
+
+### Dev Tools
+
+- Set `NEXT_PUBLIC_DEV_TOOLS=1` to show the Retry panel overlay.
 
 ## Key Conventions
 

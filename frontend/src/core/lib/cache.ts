@@ -6,6 +6,10 @@
  * 2. Network-first: Chats/Projects (server = source of truth, cache fallback)
  * 3. Windowed: Messages (only cache recent N items)
  */
+import type { Table } from 'dexie'
+import { makeLogger } from '@/core/lib/logger'
+
+const log = makeLogger('cache')
 
 /**
  * Cache-first load pattern.
@@ -39,7 +43,7 @@
  * Use for: Document trees, chat lists, project lists
  */
 export async function bulkCacheUpdate<T extends { id: string }>(
-  table: any, // Dexie table
+  table: Table<T, string>,
   items: T[],
   filterFn?: (item: T) => boolean
 ): Promise<void> {
@@ -47,7 +51,7 @@ export async function bulkCacheUpdate<T extends { id: string }>(
 
   if (toCache.length > 0) {
     await table.bulkPut(toCache)
-    console.log(`[Cache] Bulk cached ${toCache.length} items to ${table.name}`)
+    log.info(`bulk cached`, toCache.length, 'items')
   }
 }
 
@@ -60,7 +64,7 @@ export async function bulkCacheUpdate<T extends { id: string }>(
  * Adds lastAccessedAt for future eviction (not implemented yet).
  */
 export async function windowedCacheUpdate<T extends { id: string; createdAt: Date }>(
-  table: any, // Dexie table
+  table: Table<T, string>,
   parentKey: string, // e.g., 'chat-123' for logging
   items: T[],
   windowSize: number = 100
@@ -78,7 +82,7 @@ export async function windowedCacheUpdate<T extends { id: string; createdAt: Dat
   }))
 
   await table.bulkPut(withTimestamp)
-  console.log(`[Cache] Windowed cache: ${toCache.length}/${items.length} items for ${parentKey}`)
+  log.info(`windowed cache`, `${toCache.length}/${items.length}`, 'for', parentKey)
 }
 
 /**

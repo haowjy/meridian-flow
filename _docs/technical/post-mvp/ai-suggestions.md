@@ -1,223 +1,44 @@
+detail: minimal
+audience: architect
+status: backlog
+implementation: post-mvp
 ---
-detail: comprehensive
-audience: developer, architect
-status: design-complete
-implementation: post-prototype-mvp
----
+ 
+# AI Suggestions (Three-Way Merge) — Backlog
 
-# AI Suggestion System with Three-Way Merge
+This is an outline for a future feature. Do not implement until prioritized.
 
-## Purpose
+## Idea
+Let AI propose edits while users continue typing, then reconcile via three‑way merge (Base, User, AI). User edits always win; non‑conflicting AI edits apply cleanly; conflicts surface for review.
 
-This document defines the technical approach for AI-generated document edits in Meridian's chat-first interface. The system allows AI to suggest changes to documents while users simultaneously edit, using a three-way merge algorithm to resolve conflicts gracefully.
+## High‑Level
 
-**Status**: This is forward-looking architecture documentation. Not implemented in prototype MVP.
+```mermaid
+flowchart TB
+  Base["Base Snapshot\n(at AI request)"]
+  User["User Version\n(current doc)"]
+  AI["AI Proposed Edits\n(from Base)"]
+  Merge["Three‑Way Merge\n(non‑conflicts auto, conflicts flagged)"]
 
-## The Problem
+  Base --> User
+  Base --> AI
+  User --> Merge
+  AI --> Merge
 
-In Meridian's chat-first workflow, users brainstorm with AI while documents are open in the editor. This creates a race condition:
-
-1. User is editing Chapter 1
-2. User asks AI: "Make the tavern scene more vivid"
-3. AI analyzes the document and generates suggestions
-4. Meanwhile, user continues editing (adds new lines, changes text)
-5. AI responds with edits based on outdated version
-6. Naive application of AI edits would corrupt the document
-
-**Requirements**:
-- User edits always take priority (never lose user work)
-- AI edits apply cleanly where no conflict exists
-- Conflicts are clearly surfaced for manual resolution
-- Document never becomes messy with duplicate/shifted content
-- System handles insertions, deletions, and modifications
-
-## Solution: Three-Way Merge with Full-Text Diff
-
-### Core Concept
-
-```
-Base Version (snapshot)
-       ↓
-   ┌───┴───┐
-   ↓       ↓
-User Edit  AI Edit
-   ↓       ↓
-   └───┬───┘
-       ↓
-  Merge Result
+  classDef node fill:#2d5f8d,stroke:#1b3a56,color:#fff
+  class Base,User,AI,Merge node
 ```
 
-**Three versions**:
-1. **Base**: Document state when AI started working (stored snapshot)
-2. **User**: Current document state (user's canonical version)
-3. **AI**: AI's proposed version (generated from base)
+## Notes
+- Snapshot Base at AI request time; compute diffs against Base.
+- Persist sessions separately from documents; expire safely.
+- Start with character‑level diff; upgrade only if needed.
 
-**Algorithm**:
-1. Calculate `userChanges = diff(base, user)`
-2. Calculate `aiChanges = diff(base, ai)`
-3. Detect overlaps between change ranges
-4. Apply non-overlapping AI changes as clean suggestions
-5. Mark overlapping changes as conflicts (show both versions)
+## When We Build It
+- Define minimal DTOs and endpoints.
+- Store sessions in DB; add small Dexie cache only if necessary.
+- Keep UI passive until we have confident merge quality.
 
-### Why Full-Text Diff?
-
-**Alternative rejected approaches**:
-- **Line-based patches**: Fail when user inserts/deletes lines (line numbers shift)
-- **Fuzzy matching**: Unreliable, can apply changes to wrong locations
-- **Content search**: Fails when user edited the target text
-
-**Full-text diff advantages**:
-- ✅ Character-based positioning (precise)
-- ✅ Handles insertions, deletions, modifications
-- ✅ Industry-proven (git, GitHub, VS Code)
-- ✅ Clear conflict detection (overlap in character ranges)
-- ✅ Maps positions through structural changes
-
-## Technical Architecture
-
-### Backend Changes
-
-#### New API Endpoints
-
-```
-POST   /api/chat/:chatId/suggest-edits
-GET    /api/documents/:id/ai-sessions
-POST   /api/documents/:id/ai-sessions/:sessionId/resolve
-DELETE /api/documents/:id/ai-sessions/:sessionId
-```
-
-#### Database Schema
-
-```sql
-CREATE TABLE ai_sessions (
-  id UUID PRIMARY KEY,
-  document_id UUID REFERENCES documents(id),
-  chat_id UUID REFERENCES chats(id),
-  base_snapshot TEXT NOT NULL,  -- Full markdown at time of AI request
-  base_version INTEGER,          -- Document version number
-  ai_edits JSONB,                -- Array of edit objects
-  status VARCHAR(20),            -- 'pending', 'applied', 'rejected', 'conflicted'
-  created_at TIMESTAMP,
-  expires_at TIMESTAMP           -- Auto-cleanup after 24h-7d
-);
-
-CREATE INDEX idx_ai_sessions_document ON ai_sessions(document_id);
-CREATE INDEX idx_ai_sessions_status ON ai_sessions(status);
-CREATE INDEX idx_ai_sessions_expires ON ai_sessions(expires_at);
-```
-
-**AI Edit Object Schema**:
-```json
-{
-  "type": "replace",
-  "start": 150,
-  "end": 200,
-  "text": "new content",
-  "description": "Made tavern description more vivid"
-}
-```
-
-#### Retention Policy
-
-- **Pending**: Keep until user resolves (applies/rejects)
-- **Applied**: Delete immediately (merged into document)
-- **Rejected**: Retain 24 hours (allow undo)
-- **Abandoned**: Auto-delete after 7 days
-- **Cleanup**: Background job runs hourly to purge expired sessions
-
-### Frontend Changes
-
-#### IndexedDB Schema (Dexie)
-
-```typescript
-import Dexie from 'dexie'
-
-interface AISession {
-  id: string
-  documentId: string
-  chatId: string
-  baseSnapshot: string        // Markdown
-  baseVersion: number
-  aiEdits: AIEdit[]
-  status: 'pending' | 'applied' | 'rejected' | 'conflicted'
-  createdAt: number
-  expiresAt: number
-}
-
-interface AIEdit {
-  type: 'insert' | 'delete' | 'replace'
-  start: number               // Character offset
-  end: number
-  text?: string
-  description: string
-}
-
-class MeridianDB extends Dexie {
-  aiSessions!: Dexie.Table<AISession, string>
-
-  constructor() {
-    super('meridian')
-    this.version(2).stores({
-      documents: 'id, folderId, updatedAt',
-      syncQueue: '++id, documentId, retryCount',
-      aiSessions: 'id, documentId, [documentId+status], expiresAt'
-    })
-  }
-}
-```
-
-#### Core Algorithm Implementation
-
-**Step 1: Capture Base Snapshot**
-
-```typescript
-async function requestAIEdits(
-  documentId: string,
-  chatId: string,
-  userPrompt: string
-) {
-  const document = await db.documents.get(documentId)
-  const baseSnapshot = document.content  // Markdown
-
-  // Create session
-  const session: AISession = {
-    id: crypto.randomUUID(),
-    documentId,
-    chatId,
-    baseSnapshot,
-    baseVersion: Date.now(),
-    aiEdits: [],
-    status: 'pending',
-    createdAt: Date.now(),
-    expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000)
-  }
-
-  await db.aiSessions.add(session)
-
-  // Send to backend
-  const response = await fetch(`/api/chat/${chatId}/suggest-edits`, {
-    method: 'POST',
-    body: JSON.stringify({
-      documentId,
-      sessionId: session.id,
-      content: baseSnapshot,
-      prompt: userPrompt
-    })
-  })
-
-  // Update with AI's edits
-  const { edits } = await response.json()
-  session.aiEdits = edits
-  await db.aiSessions.put(session)
-}
-```
-
-**Step 2: Calculate Diffs**
-
-```typescript
-import { diffChars } from 'diff'  // npm: diff
-
-interface ChangeRange {
   type: 'insert' | 'delete' | 'replace'
   start: number
   end: number

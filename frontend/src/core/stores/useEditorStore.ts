@@ -4,7 +4,7 @@ import type { SaveStatus } from '@/shared/components/ui/StatusBadge'
 import { api } from '@/core/lib/api'
 import { db } from '@/core/lib/db'
 import { loadWithPolicy, ReconcileNewestPolicy, ICacheRepo, IRemoteRepo } from '@/core/lib/cache'
-import { syncDocument, addRetryOperation, cancelRetry, isNetworkError } from '@/core/lib/sync'
+import { documentSyncService } from '@/core/services/documentSyncService'
 import { toast } from 'sonner'
 
 interface EditorStore {
@@ -103,76 +103,35 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
 
   saveDocument: async (documentId: string, content: string) => {
     set({ status: 'saving' })
-
-    // Cancel any pending retry for this document (user kept typing, newer content wins)
-    cancelRetry(documentId)
-
+    const currentDoc = get().activeDocument
     try {
-      const now = new Date()
-
-      // Get current document for fallback put if update fails
-      const currentDoc = get().activeDocument
-
-      // Step 1: Optimistic update to IndexedDB (instant feedback)
-      const updated = await db.documents.update(documentId, {
-        content,
-        updatedAt: now,
-      })
-
-      // If update failed (document doesn't exist in IndexedDB), insert it
-      if (updated === 0 && currentDoc && currentDoc.id === documentId) {
-        await db.documents.put({
-          ...currentDoc,
-          content,
-          updatedAt: now,
-        })
-      }
-
-      // Step 2: Direct sync to backend (no queue)
-      try {
-        const serverDoc = await syncDocument(documentId, content)
-
-        // Step 3: Apply server response (source of truth for timestamps)
-        set({
-          activeDocument: serverDoc,
-          status: 'saved',
-          lastSaved: serverDoc.updatedAt,
-        })
-      } catch (error) {
-        // Sync failed - check if it's a network error or client error
-        if (isNetworkError(error)) {
-          // Network error: Queue for automatic retry
-          addRetryOperation({
-            entityType: 'document',
-            entityId: documentId,
-            content,
-            attemptCount: 0,
-          })
-
+      await documentSyncService.save(documentId, content, currentDoc, {
+        onServerSaved: (serverDoc) => {
+          if (get()._activeDocumentId === documentId) {
+            set({ activeDocument: serverDoc, status: 'saved', lastSaved: serverDoc.updatedAt })
+          }
+        },
+        onRetryScheduled: () => {
           // Keep showing "saving" status while retry is pending
-          // User will see "saved" when retry succeeds
           toast.info('Syncing changes...', { duration: 2000 })
-        } else {
-          // Client error (400, 404, validation): Show error, don't retry
+        },
+        onPermanentFailure: (err) => {
           set({ status: 'error' })
-          const message = error instanceof Error ? error.message : 'Failed to save document'
-          toast.error(`Save failed: ${message}`, {
-            duration: 10000,
-            action: {
-              label: 'Retry',
-              onClick: () => {
-                // Manual retry
-                get().saveDocument(documentId, content)
-              },
-            },
-          })
-        }
-      }
+          const message = err instanceof Error ? err.message : 'Failed to sync after retries'
+          toast.error(message, { duration: 10000 })
+        },
+      })
     } catch (error) {
-      // IndexedDB save failed (rare)
+      // Client/validation errors (no retry)
       set({ status: 'error' })
-      const message = error instanceof Error ? error.message : 'Failed to save document locally'
-      toast.error(message)
+      const message = error instanceof Error ? error.message : 'Failed to save document'
+      toast.error(`Save failed: ${message}`, {
+        duration: 10000,
+        action: {
+          label: 'Retry',
+          onClick: () => get().saveDocument(documentId, content),
+        },
+      })
     }
   },
 

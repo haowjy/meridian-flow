@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { Toaster } from '@/shared/components/ui/sonner'
 import { PreloadRemover } from '@/core/components/PreloadRemover'
 import { SyncProvider } from '@/core/components/SyncProvider'
+import { DevRetryPanel } from '@/core/components/DevRetryPanel'
 
 
 export const metadata: Metadata = {
@@ -22,6 +23,7 @@ export default function RootLayout({
         <SyncProvider />
         {children}
         <Toaster />
+        {process.env.NEXT_PUBLIC_DEV_TOOLS === '1' ? <DevRetryPanel /> : null}
       </body>
     </html>
   )
