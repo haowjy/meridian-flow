@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"meridian/internal/domain/repositories"
 )
 
 // RepositoryConfig holds configuration for repository implementations
@@ -106,4 +107,17 @@ func CreateConnectionPool(ctx context.Context, databaseURL string) (*pgxpool.Poo
 	}
 
 	return pool, nil
+}
+
+// GetExecutor returns the appropriate query executor for the context.
+// If a transaction is present in the context, it returns the transaction.
+// Otherwise, it returns the provided pool.
+// This enables repositories to automatically participate in transactions when they exist.
+func GetExecutor(ctx context.Context, pool *pgxpool.Pool) repositories.DBTX {
+	// Check if there's a transaction in the context
+	if tx := repositories.GetTx(ctx); tx != nil {
+		return tx
+	}
+	// No transaction, use the pool
+	return pool
 }

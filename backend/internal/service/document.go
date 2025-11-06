@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
-	"unicode"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"meridian/internal/config"
@@ -18,10 +16,12 @@ import (
 
 // documentService implements the DocumentService interface
 type documentService struct {
-	docRepo    repositories.DocumentRepository
-	folderRepo repositories.FolderRepository
-	txManager  repositories.TransactionManager
-	logger     *slog.Logger
+	docRepo          repositories.DocumentRepository
+	folderRepo       repositories.FolderRepository
+	txManager        repositories.TransactionManager
+	contentAnalyzer  services.ContentAnalyzer
+	pathResolver     services.PathResolver
+	logger           *slog.Logger
 }
 
 // NewDocumentService creates a new document service
@@ -29,13 +29,17 @@ func NewDocumentService(
 	docRepo repositories.DocumentRepository,
 	folderRepo repositories.FolderRepository,
 	txManager repositories.TransactionManager,
+	contentAnalyzer services.ContentAnalyzer,
+	pathResolver services.PathResolver,
 	logger *slog.Logger,
 ) services.DocumentService {
 	return &documentService{
-		docRepo:    docRepo,
-		folderRepo: folderRepo,
-		txManager:  txManager,
-		logger:     logger,
+		docRepo:         docRepo,
+		folderRepo:      folderRepo,
+		txManager:       txManager,
+		contentAnalyzer: contentAnalyzer,
+		pathResolver:    pathResolver,
+		logger:          logger,
 	}
 }
 
@@ -63,7 +67,7 @@ func (s *documentService) CreateDocument(ctx context.Context, req *services.Crea
 		folderID = req.FolderID
 	} else if req.FolderPath != nil {
 		// External AI / Import: resolve folder path, creating folders if needed
-		resolvedFolder, err := s.resolveFolderPath(ctx, req.ProjectID, *req.FolderPath)
+		resolvedFolder, err := s.pathResolver.ResolveFolderPath(ctx, req.ProjectID, *req.FolderPath)
 		if err != nil {
 			return nil, err
 		}
@@ -74,7 +78,7 @@ func (s *documentService) CreateDocument(ctx context.Context, req *services.Crea
 	}
 
 	// Count words (business logic)
-	wordCount := s.countWords(req.Content)
+	wordCount := s.contentAnalyzer.CountWords(req.Content)
 
 	// Create document
 	doc := &models.Document{
@@ -152,7 +156,7 @@ func (s *documentService) UpdateDocument(ctx context.Context, id string, req *se
 		doc.FolderID = req.FolderID
 	} else if req.FolderPath != nil {
 		// External AI: resolve folder path, creating folders if needed
-		resolvedFolder, err := s.resolveFolderPath(ctx, req.ProjectID, *req.FolderPath)
+		resolvedFolder, err := s.pathResolver.ResolveFolderPath(ctx, req.ProjectID, *req.FolderPath)
 		if err != nil {
 			return nil, err
 		}
@@ -163,7 +167,7 @@ func (s *documentService) UpdateDocument(ctx context.Context, id string, req *se
 	if req.Content != nil {
 		doc.Content = *req.Content
 		// Recalculate word count
-		doc.WordCount = s.countWords(doc.Content)
+		doc.WordCount = s.contentAnalyzer.CountWords(doc.Content)
 	}
 
 	doc.UpdatedAt = time.Now()
@@ -212,11 +216,17 @@ func (s *documentService) validateCreateRequest(req *services.CreateDocumentRequ
 		return fmt.Errorf("either folder_path or folder_id must be provided")
 	}
 
+	// Validate folder path if provided
+	if req.FolderPath != nil {
+		if err := s.pathResolver.ValidateFolderPath(*req.FolderPath); err != nil {
+			return err
+		}
+	}
+
 	return validation.ValidateStruct(req,
 		validation.Field(&req.ProjectID, validation.Required),
 		validation.Field(&req.FolderPath,
 			validation.Length(0, config.MaxDocumentPathLength), // 0-length allowed for root level
-			validation.By(s.validateFolderPath),
 		),
 		validation.Field(&req.Name,
 			validation.Required,
@@ -226,167 +236,3 @@ func (s *documentService) validateCreateRequest(req *services.CreateDocumentRequ
 	)
 }
 
-// validateFolderPath validates a folder path
-func (s *documentService) validateFolderPath(value interface{}) error {
-	path, ok := value.(*string)
-	if !ok || path == nil {
-		return nil
-	}
-
-	pathStr := *path
-
-	// Empty string is valid (root level)
-	if pathStr == "" {
-		return nil
-	}
-
-	// No leading/trailing slashes
-	if strings.HasPrefix(pathStr, "/") || strings.HasSuffix(pathStr, "/") {
-		return fmt.Errorf("folder_path cannot start or end with '/'")
-	}
-
-	// No consecutive slashes
-	if strings.Contains(pathStr, "//") {
-		return fmt.Errorf("folder_path cannot contain consecutive slashes")
-	}
-
-	// Only alphanumeric, spaces, hyphens, underscores, slashes
-	for _, char := range pathStr {
-		if !unicode.IsLetter(char) && !unicode.IsDigit(char) &&
-			char != ' ' && char != '-' && char != '_' && char != '/' {
-			return fmt.Errorf("folder_path contains invalid character: %c", char)
-		}
-	}
-
-	return nil
-}
-
-// resolveFolderPath resolves a folder path to a folder ID, creating folders if needed
-func (s *documentService) resolveFolderPath(ctx context.Context, projectID, folderPath string) (*string, error) {
-	// Trim leading/trailing slashes
-	folderPath = strings.Trim(folderPath, "/")
-
-	// Empty path means root level
-	if folderPath == "" {
-		return nil, nil
-	}
-
-	// Split path into folder segments
-	segments := strings.Split(folderPath, "/")
-	if len(segments) == 0 {
-		return nil, fmt.Errorf("invalid folder_path")
-	}
-
-	// Create all folders in the hierarchy
-	folderID, err := s.createFolderHierarchy(ctx, projectID, segments)
-	if err != nil {
-		return nil, err
-	}
-
-	return folderID, nil
-}
-
-// createFolderHierarchy creates a hierarchy of folders, creating them if they don't exist
-func (s *documentService) createFolderHierarchy(ctx context.Context, projectID string, segments []string) (*string, error) {
-	var currentParentID *string // Start at root
-
-	for _, segment := range segments {
-		// Validate folder name
-		if len(segment) > config.MaxFolderNameLength {
-			return nil, fmt.Errorf("folder name '%s' exceeds maximum length of %d", segment, config.MaxFolderNameLength)
-		}
-
-		// Create folder if it doesn't exist
-		folder, err := s.folderRepo.CreateIfNotExists(ctx, projectID, currentParentID, segment)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create/get folder '%s': %w", segment, err)
-		}
-
-		// Move to next level
-		currentParentID = &folder.ID
-	}
-
-	return currentParentID, nil
-}
-
-// countWords counts the number of words in markdown text
-func (s *documentService) countWords(markdown string) int {
-	// Remove markdown syntax for more accurate word count
-	text := s.cleanMarkdown(markdown)
-
-	// Split by whitespace and count non-empty tokens
-	words := strings.FieldsFunc(text, func(r rune) bool {
-		return unicode.IsSpace(r)
-	})
-
-	// Filter out empty strings
-	count := 0
-	for _, word := range words {
-		if len(strings.TrimSpace(word)) > 0 {
-			count++
-		}
-	}
-
-	return count
-}
-
-func (s *documentService) cleanMarkdown(markdown string) string {
-	text := markdown
-
-	// Remove code blocks
-	text = s.removeCodeBlocks(text)
-
-	// Remove inline code
-	text = strings.ReplaceAll(text, "`", "")
-
-	// Remove bold and italic markers
-	text = strings.ReplaceAll(text, "**", "")
-	text = strings.ReplaceAll(text, "*", "")
-	text = strings.ReplaceAll(text, "__", "")
-	text = strings.ReplaceAll(text, "_", "")
-	text = strings.ReplaceAll(text, "~~", "")
-
-	// Remove heading markers
-	text = strings.ReplaceAll(text, "#", "")
-
-	// Remove list markers
-	lines := strings.Split(text, "\n")
-	var cleanedLines []string
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "- ") {
-			line = strings.TrimPrefix(line, "- ")
-		} else if strings.HasPrefix(line, "* ") {
-			line = strings.TrimPrefix(line, "* ")
-		}
-		if len(line) > 2 && unicode.IsDigit(rune(line[0])) && line[1] == '.' {
-			line = line[2:]
-		}
-		cleanedLines = append(cleanedLines, line)
-	}
-	text = strings.Join(cleanedLines, " ")
-
-	// Remove blockquote markers
-	text = strings.ReplaceAll(text, ">", "")
-
-	// Remove horizontal rules
-	text = strings.ReplaceAll(text, "---", "")
-	text = strings.ReplaceAll(text, "***", "")
-
-	return text
-}
-
-func (s *documentService) removeCodeBlocks(text string) string {
-	for {
-		start := strings.Index(text, "```")
-		if start == -1 {
-			break
-		}
-		end := strings.Index(text[start+3:], "```")
-		if end == -1 {
-			break
-		}
-		text = text[:start] + text[start+end+6:]
-	}
-	return text
-}

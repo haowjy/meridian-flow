@@ -1,20 +1,29 @@
-package utils
+package service
 
 import (
 	"strings"
 	"unicode"
+
+	"meridian/internal/domain/services"
 )
 
-// CountWords counts the number of words in a markdown string
-func CountWords(markdown string) int {
+type contentAnalyzerService struct{}
+
+// NewContentAnalyzer creates a new content analyzer service
+func NewContentAnalyzer() services.ContentAnalyzer {
+	return &contentAnalyzerService{}
+}
+
+// CountWords counts the number of words in markdown text
+func (s *contentAnalyzerService) CountWords(markdown string) int {
 	// Remove markdown syntax for more accurate word count
-	text := cleanMarkdown(markdown)
-	
+	text := s.CleanMarkdown(markdown)
+
 	// Split by whitespace and count non-empty tokens
 	words := strings.FieldsFunc(text, func(r rune) bool {
 		return unicode.IsSpace(r)
 	})
-	
+
 	// Filter out empty strings
 	count := 0
 	for _, word := range words {
@@ -22,29 +31,30 @@ func CountWords(markdown string) int {
 			count++
 		}
 	}
-	
+
 	return count
 }
 
-func cleanMarkdown(markdown string) string {
+// CleanMarkdown removes markdown syntax from text
+func (s *contentAnalyzerService) CleanMarkdown(markdown string) string {
 	text := markdown
-	
+
 	// Remove code blocks
-	text = removeCodeBlocks(text)
-	
+	text = s.removeCodeBlocks(text)
+
 	// Remove inline code
 	text = strings.ReplaceAll(text, "`", "")
-	
+
 	// Remove bold and italic markers
 	text = strings.ReplaceAll(text, "**", "")
 	text = strings.ReplaceAll(text, "*", "")
 	text = strings.ReplaceAll(text, "__", "")
 	text = strings.ReplaceAll(text, "_", "")
 	text = strings.ReplaceAll(text, "~~", "")
-	
+
 	// Remove heading markers
 	text = strings.ReplaceAll(text, "#", "")
-	
+
 	// Remove list markers
 	lines := strings.Split(text, "\n")
 	var cleanedLines []string
@@ -63,19 +73,19 @@ func cleanMarkdown(markdown string) string {
 		cleanedLines = append(cleanedLines, line)
 	}
 	text = strings.Join(cleanedLines, " ")
-	
+
 	// Remove blockquote markers
 	text = strings.ReplaceAll(text, ">", "")
-	
+
 	// Remove horizontal rules
 	text = strings.ReplaceAll(text, "---", "")
 	text = strings.ReplaceAll(text, "***", "")
-	
+
 	return text
 }
 
-func removeCodeBlocks(text string) string {
-	// Simple implementation to remove ```...``` blocks
+// removeCodeBlocks removes ```...``` code blocks from text
+func (s *contentAnalyzerService) removeCodeBlocks(text string) string {
 	for {
 		start := strings.Index(text, "```")
 		if start == -1 {
@@ -89,4 +99,3 @@ func removeCodeBlocks(text string) string {
 	}
 	return text
 }
-

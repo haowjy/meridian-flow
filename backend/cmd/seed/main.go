@@ -109,7 +109,9 @@ func main() {
 	txManager := postgres.NewTransactionManager(pool)
 
 	// Create services
-	docService := service.NewDocumentService(docRepo, folderRepo, txManager, logger)
+	contentAnalyzer := service.NewContentAnalyzer()
+	pathResolver := service.NewPathResolver(folderRepo, txManager)
+	docService := service.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, logger)
 	importService := service.NewImportService(docRepo, docService, logger)
 
 	// Clear existing data

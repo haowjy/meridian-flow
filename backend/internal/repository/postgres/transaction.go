@@ -34,8 +34,11 @@ func (tm *TransactionManager) ExecTx(ctx context.Context, fn repositories.TxFn) 
 		}
 	}()
 
+	// Store transaction in context so repositories can access it
+	txCtx := repositories.SetTx(ctx, tx)
+
 	// Execute function with transaction context
-	if err := fn(ctx); err != nil {
+	if err := fn(txCtx); err != nil {
 		return err
 	}
 

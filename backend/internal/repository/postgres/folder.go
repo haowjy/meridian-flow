@@ -48,7 +48,8 @@ func (r *PostgresFolderRepository) Create(ctx context.Context, folder *models.Fo
 		RETURNING id, created_at, updated_at
 	`, r.tables.Folders)
 
-	err = r.pool.QueryRow(ctx, query,
+	executor := GetExecutor(ctx, r.pool)
+	err = executor.QueryRow(ctx, query,
 		folder.ProjectID,
 		folder.ParentID,
 		folder.Name,
@@ -371,7 +372,8 @@ func (r *PostgresFolderRepository) getFolderByNameAndParent(ctx context.Context,
 	}
 
 	var folder models.Folder
-	err := r.pool.QueryRow(ctx, query, args...).Scan(
+	executor := GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, query, args...).Scan(
 		&folder.ID,
 		&folder.ProjectID,
 		&folder.ParentID,

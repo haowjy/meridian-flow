@@ -70,8 +70,10 @@ func main() {
 	txManager := postgres.NewTransactionManager(pool)
 
 	// Create services
+	contentAnalyzer := service.NewContentAnalyzer()
+	pathResolver := service.NewPathResolver(folderRepo, txManager)
 	projectService := service.NewProjectService(projectRepo, logger)
-	docService := service.NewDocumentService(docRepo, folderRepo, txManager, logger)
+	docService := service.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, logger)
 	folderService := service.NewFolderService(folderRepo, docRepo, logger)
 	treeService := service.NewTreeService(folderRepo, docRepo, logger)
 	importService := service.NewImportService(docRepo, docService, logger)
