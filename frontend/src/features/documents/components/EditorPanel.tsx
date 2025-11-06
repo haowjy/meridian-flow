@@ -44,6 +44,7 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   } = useEditorStore()
 
   const editorReadOnly = useUIStore((state) => state.editorReadOnly)
+  const setEditorReadOnly = useUIStore((state) => state.setEditorReadOnly)
 
   // Get document metadata from tree (available immediately, no need to wait for content)
   const documents = useTreeStore((state) => state.documents)
@@ -105,6 +106,8 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     setIsInitialized(false)
     initializedRef.current = false
     setHasUserEdit(false)
+    // Default to read-only on document change
+    setEditorReadOnly(true)
     // Do NOT clear localContent here; allow cached editor to repopulate if present
     loadDocument(documentId, abortController.signal)
 

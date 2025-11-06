@@ -88,6 +88,8 @@ interface UIStore {
 
   /** Toggles editor between read-only and edit modes */
   toggleEditorReadOnly: () => void
+  /** Explicitly sets editor read-only mode */
+  setEditorReadOnly: (readOnly: boolean) => void
 }
 
 export const useUIStore = create<UIStore>()(
@@ -114,6 +116,8 @@ export const useUIStore = create<UIStore>()(
         set({ activeChatId: id }),
       toggleEditorReadOnly: () =>
         set((state) => ({ editorReadOnly: !state.editorReadOnly })),
+      setEditorReadOnly: (readOnly) =>
+        set({ editorReadOnly: readOnly }),
     }),
     {
       name: 'ui-store',
