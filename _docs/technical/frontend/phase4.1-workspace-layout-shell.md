@@ -12,10 +12,12 @@ Clarify the 3‑panel workspace shell implementation and which components own co
 
 ## Components
 
-- Panel sizing/transitions: see `frontend/src/shared/components/layout/PanelLayout.tsx`.
-- Collapse/expand buttons: see `frontend/src/shared/components/layout/CollapsiblePanel.tsx`.
+- Panel sizing/transitions: `frontend/src/shared/components/layout/PanelLayout.tsx` (shadcn Resizable).
+- Collapse/expand controls: always in the center panel, rendered by `PanelLayout`.
+- CollapsiblePanel: wraps panel content and hides it when collapsed (no internal toggle UI).
 
-PanelLayout sets widths (25% | flex‑1 | 25%) and animates to `w-0` when a side is collapsed. CollapsiblePanel renders the actual toggle button and wraps panel content.
+Behavior:
+- 0-width (drag-to-edge) is treated as fully collapsed via `onCollapse`/`onExpand` and synced to the UI store.
 
 ## UI Store usage
 
@@ -25,7 +27,9 @@ Use the existing store in `frontend/src/core/stores/useUIStore.ts`:
 - Right panel: `toggleRightPanel()` and `setRightPanelCollapsed(collapsed)`
 - Right panel mode: `setRightPanelState('documents' | 'editor' | null)`
 
-Note: Docs/examples should call `toggleLeftPanel` for the left side (no `setLeftPanelCollapsed` function is provided at this time).
+Notes:
+- Call `toggleLeftPanel` for the left side (no `setLeftPanelCollapsed`).
+- PanelLayout syncs drag-to-zero and drag-from-zero with these toggles.
 
 ## Next.js 16 route params
 
@@ -44,5 +48,4 @@ Wrap the shell in a viewport‑filling container so panels scroll independently:
 
 - Use `h-screen w-full overflow-hidden` on the top wrapper
 - Let each panel manage internal scroll with `overflow-auto`
-
 

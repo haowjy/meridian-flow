@@ -15,20 +15,3 @@ type Document struct {
 	CreatedAt time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
 }
-
-type CreateDocumentRequest struct {
-	// Path-based creation (auto-resolve folders)
-	Path *string `json:"path,omitempty"`
-
-	// Direct folder assignment
-	FolderID *string `json:"folder_id,omitempty"`
-	Name     *string `json:"name,omitempty"`
-
-	Content string `json:"content" validate:"required"`
-}
-
-type UpdateDocumentRequest struct {
-	Name     *string `json:"name,omitempty"`
-	FolderID *string `json:"folder_id,omitempty"` // Move document
-	Content  *string `json:"content,omitempty"`
-}

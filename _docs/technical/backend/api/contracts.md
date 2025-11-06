@@ -145,6 +145,83 @@ Rationale: distinguishing an explicit move to root from "no change" avoids ambig
 
 **Implementation:** Details omitted here; behavior is defined by the validation and response rules below.
 
+## Import Operations
+
+### Merge Import (POST /api/import)
+
+Bulk import documents from zip file(s) in merge mode. Existing documents are updated, new ones are created.
+
+**Request:**
+- Method: POST
+- Content-Type: multipart/form-data
+- Field name: `files` (supports multiple zip files)
+- Each zip file should contain markdown files with optional frontmatter
+
+**Frontmatter Support:**
+Documents can include YAML frontmatter with metadata:
+```markdown
+---
+name: Document Name
+folder: Characters/Heroes
+---
+
+Document content here...
+```
+
+**Behavior:**
+- Creates folders automatically based on file paths or frontmatter
+- Updates existing documents (same name + folder)
+- Creates new documents if they don't exist
+- Processes multiple zip files in single request
+
+**Response:**
+```json
+{
+  "success": true,
+  "summary": {
+    "created": 5,
+    "updated": 2,
+    "skipped": 0,
+    "failed": 1,
+    "total_files": 8
+  },
+  "errors": [
+    {
+      "file": "invalid.txt",
+      "error": "file is not a zip file"
+    }
+  ],
+  "documents": [
+    {
+      "id": "doc-uuid",
+      "path": "Characters/Heroes/Aria",
+      "name": "Aria",
+      "action": "created"
+    }
+  ]
+}
+```
+
+### Replace Import (POST /api/import/replace)
+
+Bulk import documents from zip file(s) in replace mode. **Deletes all existing documents** in the project first, then imports.
+
+**Request:** Same format as Merge Import
+
+**Behavior:**
+1. Deletes ALL documents in the project
+2. Deletes ALL folders in the project
+3. Imports all documents from zip file(s)
+4. Creates folder structure from file paths
+
+**Warning:** This is a destructive operation. All existing content will be permanently deleted before import.
+
+**Response:** Same format as Merge Import
+
+**Use Cases:**
+- Merge Import: Sync changes, add new content
+- Replace Import: Full project restore from backup, complete content refresh
+
 ## Document Operations
 
 ### Create Document (POST /api/documents)
@@ -165,7 +242,7 @@ Rationale: distinguishing an explicit move to root from "no change" avoids ambig
 - All three are equivalent and create a document at the project root
 - `folder_id` and `folder_path` are mutually exclusive; `folder_id` takes priority if both provided
 
-### Update Document (PUT /api/documents/:id)
+### Update Document (PATCH /api/documents/:id)
 
 - Same patterns as folders, but use `folder_id` for moves. Moving to root uses an empty string.
 - Supports rename, move, and content updates—these can be combined.

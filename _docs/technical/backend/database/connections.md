@@ -61,7 +61,29 @@ SUPABASE_DB_URL=postgresql://...pooler.supabase.com:6543/postgres?default_query_
 2. Whitelist IP in Supabase: Dashboard → Database → Database settings → Add IP
 3. Use port 5432 connection string (auto-uses prepared statements)
 
-## Why Dynamic Table Names Work
+## Environment-Based Table Names
+
+Tables use environment-specific prefixes to isolate dev/test/prod data in the same database.
+
+### How It Works
+
+```mermaid
+graph TB
+    ENV["ENVIRONMENT variable"] --> CHECK{Value?}
+    CHECK -->|"dev"| DEV["Prefix: 'dev_'"]
+    CHECK -->|"test"| TEST["Prefix: 'test_'"]
+    CHECK -->|"prod"| PROD["Prefix: 'prod_'"]
+
+    DEV --> TABLES1["dev_projects<br/>dev_folders<br/>dev_documents"]
+    TEST --> TABLES2["test_projects<br/>test_folders<br/>test_documents"]
+    PROD --> TABLES3["prod_projects<br/>prod_folders<br/>prod_documents"]
+
+    style DEV fill:#2d7d2d
+    style TEST fill:#9d7d2d
+    style PROD fill:#7d2d2d
+```
+
+### Dynamic Table Names in Code
 
 Our code uses `fmt.Sprintf` for dynamic table names:
 ```go
@@ -73,7 +95,21 @@ This works with prepared statements because:
 - Each environment gets different SQL → different prepared statements
 - `dev_documents` and `test_documents` have separate statement caches
 
-See `internal/repository/postgres/document.go:29-33` for examples.
+**Implementation:** `internal/repository/postgres/connection.go:15-27`
+
+**Example:**
+```go
+// Environment: dev
+tables.Documents = "dev_documents"
+query = "SELECT * FROM dev_documents WHERE id = $1"  // Statement cache: dev_documents_select
+
+// Environment: test
+tables.Documents = "test_documents"
+query = "SELECT * FROM test_documents WHERE id = $1"  // Statement cache: test_documents_select
+// No conflict!
+```
+
+See `internal/repository/postgres/document.go:29-33` for usage examples.
 
 ## Troubleshooting
 
