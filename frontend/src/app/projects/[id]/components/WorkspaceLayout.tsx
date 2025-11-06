@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { PanelLayout } from '@/shared/components/layout/PanelLayout'
 import { CollapsiblePanel } from '@/shared/components/layout/CollapsiblePanel'
@@ -9,10 +9,12 @@ import { DocumentPanel } from '@/features/documents/components/DocumentPanel'
 
 interface WorkspaceLayoutProps {
   projectId: string
+  initialDocumentId?: string
 }
 
-export default function WorkspaceLayout({ projectId }: WorkspaceLayoutProps) {
+export default function WorkspaceLayout({ projectId, initialDocumentId }: WorkspaceLayoutProps) {
   const [mounted, setMounted] = useState(false)
+  const previousDocumentIdRef = useRef<string | undefined>(undefined)
 
   const {
     leftPanelCollapsed,
@@ -21,6 +23,7 @@ export default function WorkspaceLayout({ projectId }: WorkspaceLayoutProps) {
     toggleRightPanel,
     setActiveDocument,
     setRightPanelState,
+    setRightPanelCollapsed,
   } = useUIStore(useShallow((s) => ({
     leftPanelCollapsed: s.leftPanelCollapsed,
     rightPanelCollapsed: s.rightPanelCollapsed,
@@ -28,6 +31,7 @@ export default function WorkspaceLayout({ projectId }: WorkspaceLayoutProps) {
     toggleRightPanel: s.toggleRightPanel,
     setActiveDocument: s.setActiveDocument,
     setRightPanelState: s.setRightPanelState,
+    setRightPanelCollapsed: s.setRightPanelCollapsed,
   })))
 
   useEffect(() => {
@@ -38,7 +42,35 @@ export default function WorkspaceLayout({ projectId }: WorkspaceLayoutProps) {
   useEffect(() => {
     setActiveDocument(null)
     setRightPanelState('documents')
+    previousDocumentIdRef.current = undefined // Reset ref so next URL is treated as changed
   }, [projectId, setActiveDocument, setRightPanelState])
+
+  // Sync URL document ID to UI state (for direct URL navigation, bookmarks, browser back/forward)
+  // Only sync when URL actually changes to prevent overriding manual view toggles
+  useEffect(() => {
+    // Check if the URL actually changed
+    const urlChanged = previousDocumentIdRef.current !== initialDocumentId
+
+    if (!urlChanged) {
+      // URL didn't change, user just toggled view manually - don't override
+      return
+    }
+
+    // URL changed - sync view to match new URL
+    if (initialDocumentId) {
+      // Document URL - open editor with this document
+      setActiveDocument(initialDocumentId)
+      setRightPanelState('editor')
+      setRightPanelCollapsed(false)
+    } else {
+      // Tree URL - show tree view
+      setActiveDocument(null)
+      setRightPanelState('documents')
+    }
+
+    // Update ref to track this URL for next comparison
+    previousDocumentIdRef.current = initialDocumentId
+  }, [initialDocumentId, setActiveDocument, setRightPanelState, setRightPanelCollapsed])
 
   if (!mounted) {
     return <div className="h-screen w-full bg-background" />

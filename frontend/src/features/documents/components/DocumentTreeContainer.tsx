@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useShallow } from 'zustand/react/shallow'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { useUIStore } from '@/core/stores/useUIStore'
@@ -24,6 +25,7 @@ interface DocumentTreeContainerProps {
  * Fetches data, handles events, renders tree structure recursively.
  */
 export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps) {
+  const router = useRouter()
   const { tree, folders, expandedFolders, isLoading, error, loadTree, toggleFolder } = useTreeStore(
     useShallow((s) => ({
       tree: s.tree,
@@ -59,7 +61,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
 
   // Handle document click
   const handleDocumentClick = (documentId: string) => {
-    openDocument(documentId)
+    openDocument(documentId, projectId, router)
   }
 
   // Handle create document

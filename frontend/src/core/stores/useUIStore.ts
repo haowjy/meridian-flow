@@ -67,7 +67,8 @@ interface UIStore {
 
   /**
    * Sets right panel view mode.
-   * Use panelHelpers.openDocument() or closeEditor() for coordinated state updates.
+   * Use panelHelpers.openDocument() for opening documents with history tracking.
+   * Call directly with 'documents' to show tree view without affecting history.
    */
   setRightPanelState: (state: RightPanelState) => void
 

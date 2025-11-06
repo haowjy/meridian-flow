@@ -83,7 +83,7 @@ export function PanelLayout({
   }, [rightCollapsed])
 
   return (
-    <div className={cn('relative flex h-full w-full overflow-hidden', className)}>
+    <div className={cn('relative flex h-full w-full overflow-hidden border-x', className)}>
       <ResizablePanelGroup direction="horizontal" autoSaveId="workspace:panels:v1">
         {/* Left Panel */}
         <ResizablePanel
@@ -98,7 +98,6 @@ export function PanelLayout({
           onExpand={() => {
             if (leftCollapsed) onLeftCollapse?.()
           }}
-          className="border-r"
         >
           {/* When collapsed, CollapsiblePanel hides content; width goes to 0 via collapsedSize. */}
           {!leftCollapsed && left}
@@ -136,7 +135,6 @@ export function PanelLayout({
           onExpand={() => {
             if (rightCollapsed) onRightCollapse?.()
           }}
-          className="border-l"
         >
           {!rightCollapsed && right}
         </ResizablePanel>
