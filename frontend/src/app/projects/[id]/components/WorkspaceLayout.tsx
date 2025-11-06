@@ -6,6 +6,7 @@ import { PanelLayout } from '@/shared/components/layout/PanelLayout'
 import { CollapsiblePanel } from '@/shared/components/layout/CollapsiblePanel'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { DocumentPanel } from '@/features/documents/components/DocumentPanel'
+import { useTreeStore } from '@/core/stores/useTreeStore'
 
 interface WorkspaceLayoutProps {
   projectId: string
@@ -19,6 +20,8 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
   const {
     leftPanelCollapsed,
     rightPanelCollapsed,
+    rightPanelState,
+    activeDocumentId,
     toggleLeftPanel,
     toggleRightPanel,
     setActiveDocument,
@@ -27,11 +30,21 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
   } = useUIStore(useShallow((s) => ({
     leftPanelCollapsed: s.leftPanelCollapsed,
     rightPanelCollapsed: s.rightPanelCollapsed,
+    rightPanelState: s.rightPanelState,
+    activeDocumentId: s.activeDocumentId,
     toggleLeftPanel: s.toggleLeftPanel,
     toggleRightPanel: s.toggleRightPanel,
     setActiveDocument: s.setActiveDocument,
     setRightPanelState: s.setRightPanelState,
     setRightPanelCollapsed: s.setRightPanelCollapsed,
+  })))
+
+  // Ensure document tree is loaded when deep-linking to a document URL
+  const { isTreeLoading, documentsCount, documents, loadTree } = useTreeStore(useShallow((s) => ({
+    isTreeLoading: s.isLoading,
+    documentsCount: s.documents.length,
+    documents: s.documents,
+    loadTree: s.loadTree,
   })))
 
   useEffect(() => {
@@ -48,29 +61,56 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
   // Sync URL document ID to UI state (for direct URL navigation, bookmarks, browser back/forward)
   // Only sync when URL actually changes to prevent overriding manual view toggles
   useEffect(() => {
-    // Check if the URL actually changed
     const urlChanged = previousDocumentIdRef.current !== initialDocumentId
+    // Record the current URL doc id immediately to avoid repeated triggers
+    previousDocumentIdRef.current = initialDocumentId
 
     if (!urlChanged) {
-      // URL didn't change, user just toggled view manually - don't override
       return
     }
 
-    // URL changed - sync view to match new URL
     if (initialDocumentId) {
-      // Document URL - open editor with this document
-      setActiveDocument(initialDocumentId)
-      setRightPanelState('editor')
-      setRightPanelCollapsed(false)
+      // Document URL - open editor with this document and ensure sidebar open
+      if (activeDocumentId !== initialDocumentId) {
+        setActiveDocument(initialDocumentId)
+      }
+      if (rightPanelState !== 'editor') {
+        setRightPanelState('editor')
+      }
+      if (rightPanelCollapsed) {
+        setRightPanelCollapsed(false)
+      }
     } else {
       // Tree URL - show tree view
-      setActiveDocument(null)
-      setRightPanelState('documents')
+      if (activeDocumentId !== null) {
+        setActiveDocument(null)
+      }
+      if (rightPanelState !== 'documents') {
+        setRightPanelState('documents')
+      }
     }
+  }, [initialDocumentId, activeDocumentId, rightPanelState, rightPanelCollapsed, setActiveDocument, setRightPanelState, setRightPanelCollapsed])
 
-    // Update ref to track this URL for next comparison
-    previousDocumentIdRef.current = initialDocumentId
-  }, [initialDocumentId, setActiveDocument, setRightPanelState, setRightPanelCollapsed])
+  // For deep links: load the tree once in the background if empty
+  useEffect(() => {
+    if (!initialDocumentId) return
+    if (documentsCount !== 0 || isTreeLoading) return
+
+    const abortController = new AbortController()
+    loadTree(projectId, abortController.signal)
+    return () => abortController.abort()
+  }, [projectId, initialDocumentId])
+
+  // After the tree loads, ensure the active document selection reflects the tree entry
+  useEffect(() => {
+    if (!initialDocumentId) return
+    if (documentsCount === 0) return
+
+    const existsInTree = documents.some((d) => d.id === initialDocumentId)
+    if (existsInTree && activeDocumentId !== initialDocumentId) {
+      setActiveDocument(initialDocumentId)
+    }
+  }, [documentsCount, documents, initialDocumentId, activeDocumentId, setActiveDocument])
 
   if (!mounted) {
     return <div className="h-screen w-full bg-background" />
@@ -114,5 +154,3 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
     </div>
   )
 }
-
-

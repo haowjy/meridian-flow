@@ -24,6 +24,7 @@ import { toast } from 'sonner'
 
 interface EditorPanelProps {
   documentId: string
+  projectId?: string
 }
 
 /**
@@ -31,7 +32,7 @@ interface EditorPanelProps {
  * Integrates: Document loading, auto-save, read-only mode.
  * Uses two-state pattern for instant typing + debounced auto-save.
  */
-export function EditorPanel({ documentId }: EditorPanelProps) {
+export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
   const {
     activeDocument,
     _activeDocumentId,
@@ -122,6 +123,8 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
       abortController.abort()
     }
   }, [documentId, loadDocument])
+
+  // Note: The tree is loaded by WorkspaceLayout on deep links.
 
   // Initialize local content when document loads
   // BUT: Skip if we're using a cached editor (it has the correct content already)
@@ -222,12 +225,20 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     )
   }
 
-  // No metadata available - shouldn't happen but handle gracefully
-  if (!documentMetadata) {
+  // Determine the best available source for header metadata
+  const headerDocument = documentMetadata || (activeDocument?.id === documentId ? activeDocument : null)
+
+  // If we don't yet have header metadata or the active document, show a lightweight skeleton
+  if (!headerDocument) {
     return (
       <div className="flex h-full flex-col">
+        <div className="border-b px-4 py-3">
+          <CardSkeleton className="h-8" />
+        </div>
         <div className="flex-1 p-8">
-          <p className="text-muted-foreground">Document not found in tree</p>
+          <CardSkeleton className="mb-4 h-8" />
+          <CardSkeleton className="mb-4 h-6" />
+          <CardSkeleton className="h-6" />
         </div>
       </div>
     )
@@ -243,11 +254,11 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   return (
     <div className="flex h-full flex-col">
       {/* Header with navigation and folder breadcrumbs - shows immediately */}
-      <EditorHeader document={documentMetadata} />
+      <EditorHeader document={headerDocument} />
 
       {/* Editable title - shows immediately */}
       <EditorTitle
-        title={activeDocument?.name || documentMetadata.name}
+        title={activeDocument?.name || headerDocument.name}
         onRename={handleRename}
         readOnly={editorReadOnly}
       />
