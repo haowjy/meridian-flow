@@ -1,4 +1,4 @@
-package service
+package docsystem
 
 import (
 	"context"
@@ -7,26 +7,27 @@ import (
 	"regexp"
 	"time"
 
-	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"meridian/internal/config"
 	"meridian/internal/domain"
-	"meridian/internal/domain/repositories"
-	"meridian/internal/domain/services"
-	"meridian/internal/domain/models"
+	models "meridian/internal/domain/models/docsystem"
+	docsysRepo "meridian/internal/domain/repositories/docsystem"
+	docsysSvc "meridian/internal/domain/services/docsystem"
+
+	validation "github.com/go-ozzo/ozzo-validation/v4"
 )
 
 type folderService struct {
-	folderRepo repositories.FolderRepository
-	docRepo    repositories.DocumentRepository
+	folderRepo docsysRepo.FolderRepository
+	docRepo    docsysRepo.DocumentRepository
 	logger     *slog.Logger
 }
 
 // NewFolderService creates a new folder service
 func NewFolderService(
-	folderRepo repositories.FolderRepository,
-	docRepo repositories.DocumentRepository,
+	folderRepo docsysRepo.FolderRepository,
+	docRepo docsysRepo.DocumentRepository,
 	logger *slog.Logger,
-) services.FolderService {
+) docsysSvc.FolderService {
 	return &folderService{
 		folderRepo: folderRepo,
 		docRepo:    docRepo,
@@ -35,7 +36,7 @@ func NewFolderService(
 }
 
 // CreateFolder creates a new folder
-func (s *folderService) CreateFolder(ctx context.Context, req *services.CreateFolderRequest) (*models.Folder, error) {
+func (s *folderService) CreateFolder(ctx context.Context, req *docsysSvc.CreateFolderRequest) (*models.Folder, error) {
 	// Validate request
 	if err := s.validateCreateRequest(req); err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
@@ -111,7 +112,7 @@ func (s *folderService) GetFolder(ctx context.Context, id, projectID string) (*m
 }
 
 // UpdateFolder updates a folder (rename or move)
-func (s *folderService) UpdateFolder(ctx context.Context, id string, req *services.UpdateFolderRequest) (*models.Folder, error) {
+func (s *folderService) UpdateFolder(ctx context.Context, id string, req *docsysSvc.UpdateFolderRequest) (*models.Folder, error) {
 	// Validate request
 	if err := s.validateUpdateRequest(req); err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
@@ -220,7 +221,7 @@ func (s *folderService) DeleteFolder(ctx context.Context, id, projectID string) 
 }
 
 // ListChildren lists all child folders and documents in a folder
-func (s *folderService) ListChildren(ctx context.Context, folderID *string, projectID string) (*services.FolderContents, error) {
+func (s *folderService) ListChildren(ctx context.Context, folderID *string, projectID string) (*docsysSvc.FolderContents, error) {
 	var folder *models.Folder
 	var err error
 
@@ -267,7 +268,7 @@ func (s *folderService) ListChildren(ctx context.Context, folderID *string, proj
 		}
 	}
 
-	return &services.FolderContents{
+	return &docsysSvc.FolderContents{
 		Folder:    folder,
 		Folders:   childFolders,
 		Documents: docs,
@@ -275,7 +276,7 @@ func (s *folderService) ListChildren(ctx context.Context, folderID *string, proj
 }
 
 // validateCreateRequest validates a folder creation request
-func (s *folderService) validateCreateRequest(req *services.CreateFolderRequest) error {
+func (s *folderService) validateCreateRequest(req *docsysSvc.CreateFolderRequest) error {
 	return validation.ValidateStruct(req,
 		validation.Field(&req.ProjectID, validation.Required),
 		validation.Field(&req.Name,
@@ -287,7 +288,7 @@ func (s *folderService) validateCreateRequest(req *services.CreateFolderRequest)
 }
 
 // validateUpdateRequest validates a folder update request
-func (s *folderService) validateUpdateRequest(req *services.UpdateFolderRequest) error {
+func (s *folderService) validateUpdateRequest(req *docsysSvc.UpdateFolderRequest) error {
 	// At least one field must be provided
 	if req.Name == nil && req.ParentID == nil {
 		return fmt.Errorf("at least one field must be provided")

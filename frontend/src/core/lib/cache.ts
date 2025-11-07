@@ -142,7 +142,7 @@ function defaultCompare<T>(a: any, b: any): number {
  * ReconcileNewestPolicy
  * - Emit cache immediately if present (via onIntermediate)
  * - Always attempt server
- * - Choose newer by compare (server wins on tie)
+ * - Choose newer by compare (local wins on tie)
  * - Update cache when server wins
  * - On abort/network error: return cache if available, else throw
  */
@@ -173,9 +173,9 @@ export class ReconcileNewestPolicy<T> implements LoadPolicy<T> {
         return { data: server, source: 'server', isFinal: true }
       }
 
-      // Compare; server wins on tie (>= 0 means server is newer or equal)
+      // Compare; local wins on tie (server must be strictly newer)
       const cmp = compare(cached as any, server as any)
-      if (cmp <= 0) {
+      if (cmp < 0) {
         await cacheRepo.put(server)
         return { data: server, source: 'server', isFinal: true }
       }

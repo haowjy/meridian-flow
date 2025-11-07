@@ -1,4 +1,4 @@
-package service
+package docsystem
 
 import (
 	"context"
@@ -8,19 +8,20 @@ import (
 
 	"meridian/internal/config"
 	"meridian/internal/domain/repositories"
-	"meridian/internal/domain/services"
+	docsysRepo "meridian/internal/domain/repositories/docsystem"
+	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
 type pathResolverService struct {
-	folderRepo repositories.FolderRepository
+	folderRepo docsysRepo.FolderRepository
 	txManager  repositories.TransactionManager
 }
 
 // NewPathResolver creates a new path resolver service
 func NewPathResolver(
-	folderRepo repositories.FolderRepository,
+	folderRepo docsysRepo.FolderRepository,
 	txManager repositories.TransactionManager,
-) services.PathResolver {
+) docsysSvc.PathResolver {
 	return &pathResolverService{
 		folderRepo: folderRepo,
 		txManager:  txManager,

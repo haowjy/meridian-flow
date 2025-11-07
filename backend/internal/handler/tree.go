@@ -4,17 +4,17 @@ import (
 	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
-	"meridian/internal/domain/services"
+	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
 // TreeHandler handles HTTP requests for tree operations
 type TreeHandler struct {
-	treeService services.TreeService
+	treeService docsysSvc.TreeService
 	logger      *slog.Logger
 }
 
 // NewTreeHandler creates a new tree handler
-func NewTreeHandler(treeService services.TreeService, logger *slog.Logger) *TreeHandler {
+func NewTreeHandler(treeService docsysSvc.TreeService, logger *slog.Logger) *TreeHandler {
 	return &TreeHandler{
 		treeService: treeService,
 		logger:      logger,

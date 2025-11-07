@@ -7,8 +7,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// isPgDuplicateError checks if error is a unique constraint violation
-func isPgDuplicateError(err error) bool {
+// IsPgDuplicateError checks if error is a unique constraint violation
+func IsPgDuplicateError(err error) bool {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		// 23505 = unique_violation
@@ -17,13 +17,13 @@ func isPgDuplicateError(err error) bool {
 	return false
 }
 
-// isPgNoRowsError checks if error is a "no rows" error
-func isPgNoRowsError(err error) bool {
+// IsPgNoRowsError checks if error is a "no rows" error
+func IsPgNoRowsError(err error) bool {
 	return errors.Is(err, pgx.ErrNoRows)
 }
 
-// isPgForeignKeyError checks if error is a foreign key violation
-func isPgForeignKeyError(err error) bool {
+// IsPgForeignKeyError checks if error is a foreign key violation
+func IsPgForeignKeyError(err error) bool {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		// 23503 = foreign_key_violation

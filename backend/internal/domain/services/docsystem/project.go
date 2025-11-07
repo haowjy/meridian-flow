@@ -1,9 +1,9 @@
-package services
+package docsystem
 
 import (
 	"context"
 
-	"meridian/internal/domain/models"
+	"meridian/internal/domain/models/docsystem"
 )
 
 // CreateProjectRequest represents a request to create a project
@@ -20,16 +20,16 @@ type UpdateProjectRequest struct {
 // ProjectService defines business logic operations for projects
 type ProjectService interface {
 	// CreateProject creates a new project
-	CreateProject(ctx context.Context, req *CreateProjectRequest) (*models.Project, error)
+	CreateProject(ctx context.Context, req *CreateProjectRequest) (*docsystem.Project, error)
 
 	// GetProject retrieves a project by ID
-	GetProject(ctx context.Context, id, userID string) (*models.Project, error)
+	GetProject(ctx context.Context, id, userID string) (*docsystem.Project, error)
 
 	// ListProjects retrieves all projects for a user
-	ListProjects(ctx context.Context, userID string) ([]models.Project, error)
+	ListProjects(ctx context.Context, userID string) ([]docsystem.Project, error)
 
 	// UpdateProject updates a project's name
-	UpdateProject(ctx context.Context, id, userID string, req *UpdateProjectRequest) (*models.Project, error)
+	UpdateProject(ctx context.Context, id, userID string, req *UpdateProjectRequest) (*docsystem.Project, error)
 
 	// DeleteProject deletes a project
 	// Returns clear error if project has documents

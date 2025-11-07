@@ -1,4 +1,4 @@
-package service
+package docsystem
 
 import (
 	"context"
@@ -6,33 +6,35 @@ import (
 	"log/slog"
 	"time"
 
-	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"meridian/internal/config"
 	"meridian/internal/domain"
-	"meridian/internal/domain/models"
+	models "meridian/internal/domain/models/docsystem"
 	"meridian/internal/domain/repositories"
-	"meridian/internal/domain/services"
+	docsysRepo "meridian/internal/domain/repositories/docsystem"
+	docsysSvc "meridian/internal/domain/services/docsystem"
+
+	validation "github.com/go-ozzo/ozzo-validation/v4"
 )
 
 // documentService implements the DocumentService interface
 type documentService struct {
-	docRepo          repositories.DocumentRepository
-	folderRepo       repositories.FolderRepository
-	txManager        repositories.TransactionManager
-	contentAnalyzer  services.ContentAnalyzer
-	pathResolver     services.PathResolver
-	logger           *slog.Logger
+	docRepo         docsysRepo.DocumentRepository
+	folderRepo      docsysRepo.FolderRepository
+	txManager       repositories.TransactionManager
+	contentAnalyzer docsysSvc.ContentAnalyzer
+	pathResolver    docsysSvc.PathResolver
+	logger          *slog.Logger
 }
 
 // NewDocumentService creates a new document service
 func NewDocumentService(
-	docRepo repositories.DocumentRepository,
-	folderRepo repositories.FolderRepository,
+	docRepo docsysRepo.DocumentRepository,
+	folderRepo docsysRepo.FolderRepository,
 	txManager repositories.TransactionManager,
-	contentAnalyzer services.ContentAnalyzer,
-	pathResolver services.PathResolver,
+	contentAnalyzer docsysSvc.ContentAnalyzer,
+	pathResolver docsysSvc.PathResolver,
 	logger *slog.Logger,
-) services.DocumentService {
+) docsysSvc.DocumentService {
 	return &documentService{
 		docRepo:         docRepo,
 		folderRepo:      folderRepo,
@@ -44,7 +46,7 @@ func NewDocumentService(
 }
 
 // CreateDocument creates a new document with priority-based folder resolution
-func (s *documentService) CreateDocument(ctx context.Context, req *services.CreateDocumentRequest) (*models.Document, error) {
+func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.CreateDocumentRequest) (*models.Document, error) {
 	// Validate request
 	if err := s.validateCreateRequest(req); err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
@@ -135,7 +137,7 @@ func (s *documentService) GetDocument(ctx context.Context, id, projectID string)
 }
 
 // UpdateDocument updates a document
-func (s *documentService) UpdateDocument(ctx context.Context, id string, req *services.UpdateDocumentRequest) (*models.Document, error) {
+func (s *documentService) UpdateDocument(ctx context.Context, id string, req *docsysSvc.UpdateDocumentRequest) (*models.Document, error) {
 	// Get existing document
 	doc, err := s.docRepo.GetByID(ctx, id, req.ProjectID)
 	if err != nil {
@@ -210,7 +212,7 @@ func (s *documentService) DeleteDocument(ctx context.Context, id, projectID stri
 }
 
 // validateCreateRequest validates a document creation request
-func (s *documentService) validateCreateRequest(req *services.CreateDocumentRequest) error {
+func (s *documentService) validateCreateRequest(req *docsysSvc.CreateDocumentRequest) error {
 	// Require at least one of FolderPath or FolderID
 	if req.FolderPath == nil && req.FolderID == nil {
 		return fmt.Errorf("either folder_path or folder_id must be provided")
@@ -235,4 +237,3 @@ func (s *documentService) validateCreateRequest(req *services.CreateDocumentRequ
 		validation.Field(&req.Content, validation.Required),
 	)
 }
-

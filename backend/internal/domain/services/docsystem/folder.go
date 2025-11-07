@@ -1,21 +1,21 @@
-package services
+package docsystem
 
 import (
 	"context"
 
-	"meridian/internal/domain/models"
+	"meridian/internal/domain/models/docsystem"
 )
 
 // FolderService handles folder business logic
 type FolderService interface {
 	// CreateFolder creates a new folder
-	CreateFolder(ctx context.Context, req *CreateFolderRequest) (*models.Folder, error)
+	CreateFolder(ctx context.Context, req *CreateFolderRequest) (*docsystem.Folder, error)
 
 	// GetFolder retrieves a folder with its computed path
-	GetFolder(ctx context.Context, id, projectID string) (*models.Folder, error)
+	GetFolder(ctx context.Context, id, projectID string) (*docsystem.Folder, error)
 
 	// UpdateFolder updates a folder (rename or move)
-	UpdateFolder(ctx context.Context, id string, req *UpdateFolderRequest) (*models.Folder, error)
+	UpdateFolder(ctx context.Context, id string, req *UpdateFolderRequest) (*docsystem.Folder, error)
 
 	// DeleteFolder deletes a folder (must be empty)
 	DeleteFolder(ctx context.Context, id, projectID string) error
@@ -40,7 +40,7 @@ type UpdateFolderRequest struct {
 
 // FolderContents represents a folder with its children
 type FolderContents struct {
-	Folder    *models.Folder     `json:"folder,omitempty"` // null for root
-	Folders   []models.Folder    `json:"folders"`
-	Documents []models.Document  `json:"documents"`
+	Folder    *docsystem.Folder    `json:"folder,omitempty"` // null for root
+	Folders   []docsystem.Folder   `json:"folders"`
+	Documents []docsystem.Document `json:"documents"`
 }

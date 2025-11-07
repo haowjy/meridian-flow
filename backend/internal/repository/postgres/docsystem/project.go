@@ -1,23 +1,26 @@
-package postgres
+package docsystem
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"meridian/internal/domain"
-	"meridian/internal/domain/models"
-	"meridian/internal/domain/repositories"
+	models "meridian/internal/domain/models/docsystem"
+	docsysRepo "meridian/internal/domain/repositories/docsystem"
+
+	"meridian/internal/repository/postgres"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // PostgresProjectRepository implements the ProjectRepository interface
 type PostgresProjectRepository struct {
 	pool   *pgxpool.Pool
-	tables *TableNames
+	tables *postgres.TableNames
 }
 
 // NewProjectRepository creates a new project repository
-func NewProjectRepository(config *RepositoryConfig) repositories.ProjectRepository {
+func NewProjectRepository(config *postgres.RepositoryConfig) docsysRepo.ProjectRepository {
 	return &PostgresProjectRepository{
 		pool:   config.Pool,
 		tables: config.Tables,
@@ -40,7 +43,7 @@ func (r *PostgresProjectRepository) Create(ctx context.Context, project *models.
 	).Scan(&project.ID, &project.CreatedAt, &project.UpdatedAt)
 
 	if err != nil {
-		if isPgDuplicateError(err) {
+		if postgres.IsPgDuplicateError(err) {
 			// Query for the existing project to get its ID
 			existingID, queryErr := r.getExistingProjectID(ctx, project.UserID, project.Name)
 			if queryErr != nil {
@@ -79,7 +82,7 @@ func (r *PostgresProjectRepository) GetByID(ctx context.Context, id, userID stri
 	)
 
 	if err != nil {
-		if isPgNoRowsError(err) {
+		if postgres.IsPgNoRowsError(err) {
 			return nil, fmt.Errorf("project %s: %w", id, domain.ErrNotFound)
 		}
 		return nil, fmt.Errorf("get project: %w", err)
@@ -147,7 +150,7 @@ func (r *PostgresProjectRepository) Update(ctx context.Context, project *models.
 	)
 
 	if err != nil {
-		if isPgDuplicateError(err) {
+		if postgres.IsPgDuplicateError(err) {
 			// Query for the existing project to get its ID
 			existingID, queryErr := r.getExistingProjectID(ctx, project.UserID, project.Name)
 			if queryErr != nil {
@@ -183,7 +186,7 @@ func (r *PostgresProjectRepository) Delete(ctx context.Context, id, userID strin
 	result, err := r.pool.Exec(ctx, query, id, userID)
 
 	if err != nil {
-		if isPgForeignKeyError(err) {
+		if postgres.IsPgForeignKeyError(err) {
 			return fmt.Errorf("cannot delete project with documents: %w", domain.ErrConflict)
 		}
 		return fmt.Errorf("delete project: %w", err)

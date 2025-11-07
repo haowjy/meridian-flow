@@ -5,17 +5,17 @@ import (
 	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
-	"meridian/internal/domain/services"
+	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
 // ImportHandler handles bulk import HTTP requests
 type ImportHandler struct {
-	importService services.ImportService
+	importService docsysSvc.ImportService
 	logger        *slog.Logger
 }
 
 // NewImportHandler creates a new import handler
-func NewImportHandler(importService services.ImportService, logger *slog.Logger) *ImportHandler {
+func NewImportHandler(importService docsysSvc.ImportService, logger *slog.Logger) *ImportHandler {
 	return &ImportHandler{
 		importService: importService,
 		logger:        logger,
@@ -25,9 +25,9 @@ func NewImportHandler(importService services.ImportService, logger *slog.Logger)
 // ImportResponse represents the response for import operations
 type ImportResponse struct {
 	Success  bool                     `json:"success"`
-	Summary  services.ImportSummary   `json:"summary"`
-	Errors   []services.ImportError   `json:"errors"`
-	Documents []services.ImportDocument `json:"documents"`
+	Summary  docsysSvc.ImportSummary   `json:"summary"`
+	Errors   []docsysSvc.ImportError   `json:"errors"`
+	Documents []docsysSvc.ImportDocument `json:"documents"`
 }
 
 // Merge handles bulk import in merge mode (upserts documents)
@@ -57,10 +57,10 @@ func (h *ImportHandler) Merge(c *fiber.Ctx) error {
 	)
 
 	// Aggregate results across all files
-	aggregatedResult := &services.ImportResult{
-		Summary:   services.ImportSummary{},
-		Errors:    []services.ImportError{},
-		Documents: []services.ImportDocument{},
+	aggregatedResult := &docsysSvc.ImportResult{
+		Summary:   docsysSvc.ImportSummary{},
+		Errors:    []docsysSvc.ImportError{},
+		Documents: []docsysSvc.ImportDocument{},
 	}
 
 	// Process each zip file
@@ -68,7 +68,7 @@ func (h *ImportHandler) Merge(c *fiber.Ctx) error {
 		// Validate file is a zip
 		if fileHeader.Header.Get("Content-Type") != "application/zip" &&
 			fileHeader.Header.Get("Content-Type") != "application/x-zip-compressed" {
-			aggregatedResult.Errors = append(aggregatedResult.Errors, services.ImportError{
+			aggregatedResult.Errors = append(aggregatedResult.Errors, docsysSvc.ImportError{
 				File:  fileHeader.Filename,
 				Error: "file is not a zip file",
 			})
@@ -83,7 +83,7 @@ func (h *ImportHandler) Merge(c *fiber.Ctx) error {
 				"file", fileHeader.Filename,
 				"error", err,
 			)
-			aggregatedResult.Errors = append(aggregatedResult.Errors, services.ImportError{
+			aggregatedResult.Errors = append(aggregatedResult.Errors, docsysSvc.ImportError{
 				File:  fileHeader.Filename,
 				Error: fmt.Sprintf("failed to open file: %v", err),
 			})
@@ -99,7 +99,7 @@ func (h *ImportHandler) Merge(c *fiber.Ctx) error {
 				"file", fileHeader.Filename,
 				"error", err,
 			)
-			aggregatedResult.Errors = append(aggregatedResult.Errors, services.ImportError{
+			aggregatedResult.Errors = append(aggregatedResult.Errors, docsysSvc.ImportError{
 				File:  fileHeader.Filename,
 				Error: fmt.Sprintf("failed to process zip: %v", err),
 			})
@@ -174,10 +174,10 @@ func (h *ImportHandler) Replace(c *fiber.Ctx) error {
 	)
 
 	// Aggregate results across all files
-	aggregatedResult := &services.ImportResult{
-		Summary:   services.ImportSummary{},
-		Errors:    []services.ImportError{},
-		Documents: []services.ImportDocument{},
+	aggregatedResult := &docsysSvc.ImportResult{
+		Summary:   docsysSvc.ImportSummary{},
+		Errors:    []docsysSvc.ImportError{},
+		Documents: []docsysSvc.ImportDocument{},
 	}
 
 	// Process each zip file (same as Merge)
@@ -185,7 +185,7 @@ func (h *ImportHandler) Replace(c *fiber.Ctx) error {
 		// Validate file is a zip
 		if fileHeader.Header.Get("Content-Type") != "application/zip" &&
 			fileHeader.Header.Get("Content-Type") != "application/x-zip-compressed" {
-			aggregatedResult.Errors = append(aggregatedResult.Errors, services.ImportError{
+			aggregatedResult.Errors = append(aggregatedResult.Errors, docsysSvc.ImportError{
 				File:  fileHeader.Filename,
 				Error: "file is not a zip file",
 			})
@@ -200,7 +200,7 @@ func (h *ImportHandler) Replace(c *fiber.Ctx) error {
 				"file", fileHeader.Filename,
 				"error", err,
 			)
-			aggregatedResult.Errors = append(aggregatedResult.Errors, services.ImportError{
+			aggregatedResult.Errors = append(aggregatedResult.Errors, docsysSvc.ImportError{
 				File:  fileHeader.Filename,
 				Error: fmt.Sprintf("failed to open file: %v", err),
 			})
@@ -216,7 +216,7 @@ func (h *ImportHandler) Replace(c *fiber.Ctx) error {
 				"file", fileHeader.Filename,
 				"error", err,
 			)
-			aggregatedResult.Errors = append(aggregatedResult.Errors, services.ImportError{
+			aggregatedResult.Errors = append(aggregatedResult.Errors, docsysSvc.ImportError{
 				File:  fileHeader.Filename,
 				Error: fmt.Sprintf("failed to process zip: %v", err),
 			})

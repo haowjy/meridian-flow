@@ -7,7 +7,7 @@ audience: developer
 
 ## Why
 - Remove races, keep UX snappy, and make failure modes obvious.
-- Server is authority; local caches give instant reads and resilient writes.
+- Render newest by `updatedAt`; local wins on tie. Server timestamps become canonical once applied.
 
 ## How
 - Loads: policy-based reconciliation (cache emit + server reconcile). See `frontend/src/core/lib/cache.ts:120` and `:205`.
@@ -29,7 +29,7 @@ audience: developer
 
 ## Test Matrix (unit)
 - RetryScheduler: success path, backoff retries, cancel, permanent failure.
-- Cache policies: cache-emit + server-win; abort/network fallback.
+- Cache policies: cache-emit + newest; tie→local; abort/network fallback.
 - DocumentSyncService: optimistic put, server application, retry scheduling on server error, bubble validation.
 
 Implementation references in tests: `frontend/tests/*.test.ts`.
@@ -67,7 +67,7 @@ sequenceDiagram
         Store->>API: GET /api/documents/D (AbortController owned by store)
         alt "200 OK"
             API-->>Store: serverDoc
-            Store->>Store: pick newer by updatedAt (server wins on tie)
+            Store->>Store: pick newer by updatedAt (local wins on tie)
             alt "server newer"
                 Store->>IDB: put(serverDoc)
                 Store-->>UI: activeDocument=serverDoc

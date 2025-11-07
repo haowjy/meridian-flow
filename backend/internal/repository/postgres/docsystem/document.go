@@ -1,23 +1,26 @@
-package postgres
+package docsystem
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"meridian/internal/domain"
-	"meridian/internal/domain/models"
-	"meridian/internal/domain/repositories"
+	models "meridian/internal/domain/models/docsystem"
+	docsysRepo "meridian/internal/domain/repositories/docsystem"
+
+	"meridian/internal/repository/postgres"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // PostgresDocumentRepository implements the DocumentRepository interface
 type PostgresDocumentRepository struct {
 	pool   *pgxpool.Pool
-	tables *TableNames
+	tables *postgres.TableNames
 }
 
 // NewDocumentRepository creates a new document repository
-func NewDocumentRepository(config *RepositoryConfig) repositories.DocumentRepository {
+func NewDocumentRepository(config *postgres.RepositoryConfig) docsysRepo.DocumentRepository {
 	return &PostgresDocumentRepository{
 		pool:   config.Pool,
 		tables: config.Tables,
@@ -43,7 +46,7 @@ func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *models.Doc
 	).Scan(&doc.ID, &doc.CreatedAt, &doc.UpdatedAt)
 
 	if err != nil {
-		if isPgDuplicateError(err) {
+		if postgres.IsPgDuplicateError(err) {
 			// Query for the existing document to get its ID
 			existingID, queryErr := r.getExistingDocumentID(ctx, doc.ProjectID, doc.FolderID, doc.Name)
 			if queryErr != nil {
@@ -85,7 +88,7 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 	)
 
 	if err != nil {
-		if isPgNoRowsError(err) {
+		if postgres.IsPgNoRowsError(err) {
 			return nil, fmt.Errorf("document %s: %w", id, domain.ErrNotFound)
 		}
 		return nil, fmt.Errorf("get document: %w", err)
@@ -113,7 +116,7 @@ func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Doc
 	)
 
 	if err != nil {
-		if isPgDuplicateError(err) {
+		if postgres.IsPgDuplicateError(err) {
 			// Query for the existing document to get its ID
 			existingID, queryErr := r.getExistingDocumentID(ctx, doc.ProjectID, doc.FolderID, doc.Name)
 			if queryErr != nil {
@@ -288,7 +291,7 @@ func (r *PostgresDocumentRepository) GetPath(ctx context.Context, doc *models.Do
 	var folderPath string
 	err := r.pool.QueryRow(ctx, query, *doc.FolderID, doc.ProjectID).Scan(&folderPath)
 	if err != nil {
-		if isPgNoRowsError(err) {
+		if postgres.IsPgNoRowsError(err) {
 			// Folder not found, return just document name
 			return doc.Name, nil
 		}

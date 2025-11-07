@@ -1,4 +1,4 @@
-package service
+package docsystem
 
 import (
 	"archive/zip"
@@ -10,24 +10,24 @@ import (
 	"path/filepath"
 	"strings"
 
-	"meridian/internal/domain/repositories"
-	"meridian/internal/domain/services"
+	docsysRepo "meridian/internal/domain/repositories/docsystem"
+	docsysSvc "meridian/internal/domain/services/docsystem"
 	"meridian/internal/utils"
 )
 
 // importService implements the ImportService interface
 type importService struct {
-	docRepo    repositories.DocumentRepository
-	docService services.DocumentService
+	docRepo    docsysRepo.DocumentRepository
+	docService docsysSvc.DocumentService
 	logger     *slog.Logger
 }
 
 // NewImportService creates a new import service
 func NewImportService(
-	docRepo repositories.DocumentRepository,
-	docService services.DocumentService,
+	docRepo docsysRepo.DocumentRepository,
+	docService docsysSvc.DocumentService,
 	logger *slog.Logger,
-) services.ImportService {
+) docsysSvc.ImportService {
 	return &importService{
 		docRepo:    docRepo,
 		docService: docService,
@@ -53,7 +53,7 @@ func (s *importService) DeleteAllDocuments(ctx context.Context, projectID string
 }
 
 // ProcessZipFile processes a zip file and imports documents
-func (s *importService) ProcessZipFile(ctx context.Context, projectID string, zipReader io.Reader) (*services.ImportResult, error) {
+func (s *importService) ProcessZipFile(ctx context.Context, projectID string, zipReader io.Reader) (*docsysSvc.ImportResult, error) {
 	// Read zip file into memory
 	zipData, err := io.ReadAll(zipReader)
 	if err != nil {
@@ -90,10 +90,10 @@ func (s *importService) ProcessZipFile(ctx context.Context, projectID string, zi
 	}
 
 	// Initialize result
-	result := &services.ImportResult{
-		Summary:   services.ImportSummary{},
-		Errors:    []services.ImportError{},
-		Documents: []services.ImportDocument{},
+	result := &docsysSvc.ImportResult{
+		Summary:   docsysSvc.ImportSummary{},
+		Errors:    []docsysSvc.ImportError{},
+		Documents: []docsysSvc.ImportDocument{},
 	}
 
 	// Process each file in the zip
@@ -133,7 +133,7 @@ func (s *importService) processMarkdownFile(
 	projectID string,
 	file *zip.File,
 	docMap map[string]string,
-	result *services.ImportResult,
+	result *docsysSvc.ImportResult,
 ) {
 	result.Summary.TotalFiles++
 
@@ -227,11 +227,11 @@ func (s *importService) createDocument(
 	folderPath string,
 	docName string,
 	content string,
-	result *services.ImportResult,
+	result *docsysSvc.ImportResult,
 ) {
 	// Create document via service
 	// Always pass FolderPath as a pointer (empty string for root level)
-	doc, err := s.docService.CreateDocument(ctx, &services.CreateDocumentRequest{
+	doc, err := s.docService.CreateDocument(ctx, &docsysSvc.CreateDocumentRequest{
 		ProjectID:  projectID,
 		FolderPath: &folderPath, // Always pass pointer, empty string is valid for root
 		Name:       docName,
@@ -249,7 +249,7 @@ func (s *importService) createDocument(
 
 	// Add to result
 	result.Summary.Created++
-	result.Documents = append(result.Documents, services.ImportDocument{
+	result.Documents = append(result.Documents, docsysSvc.ImportDocument{
 		ID:     doc.ID,
 		Path:   doc.Path,
 		Name:   doc.Name,
@@ -269,10 +269,10 @@ func (s *importService) updateDocument(
 	projectID string,
 	docID string,
 	content string,
-	result *services.ImportResult,
+	result *docsysSvc.ImportResult,
 ) {
 	// Update document via service
-	doc, err := s.docService.UpdateDocument(ctx, docID, &services.UpdateDocumentRequest{
+	doc, err := s.docService.UpdateDocument(ctx, docID, &docsysSvc.UpdateDocumentRequest{
 		ProjectID: projectID,
 		Content:   &content,
 	})
@@ -284,7 +284,7 @@ func (s *importService) updateDocument(
 
 	// Add to result
 	result.Summary.Updated++
-	result.Documents = append(result.Documents, services.ImportDocument{
+	result.Documents = append(result.Documents, docsysSvc.ImportDocument{
 		ID:     doc.ID,
 		Path:   doc.Path,
 		Name:   doc.Name,
@@ -298,9 +298,9 @@ func (s *importService) updateDocument(
 }
 
 // addError adds an error to the result
-func (s *importService) addError(result *services.ImportResult, file string, errorMsg string) {
+func (s *importService) addError(result *docsysSvc.ImportResult, file string, errorMsg string) {
 	result.Summary.Failed++
-	result.Errors = append(result.Errors, services.ImportError{
+	result.Errors = append(result.Errors, docsysSvc.ImportError{
 		File:  file,
 		Error: errorMsg,
 	})

@@ -1,4 +1,4 @@
-package services
+package docsystem
 
 // ContentAnalyzer handles content analysis operations
 type ContentAnalyzer interface {

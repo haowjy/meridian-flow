@@ -1,27 +1,27 @@
-package service
+package docsystem
 
 import (
 	"context"
 	"log/slog"
 
-	"meridian/internal/domain/models"
-	"meridian/internal/domain/repositories"
-	"meridian/internal/domain/services"
+	models "meridian/internal/domain/models/docsystem"
+	docsysRepo "meridian/internal/domain/repositories/docsystem"
+	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
 // treeService implements the TreeService interface
 type treeService struct {
-	folderRepo   repositories.FolderRepository
-	documentRepo repositories.DocumentRepository
+	folderRepo   docsysRepo.FolderRepository
+	documentRepo docsysRepo.DocumentRepository
 	logger       *slog.Logger
 }
 
 // NewTreeService creates a new tree service
 func NewTreeService(
-	folderRepo repositories.FolderRepository,
-	documentRepo repositories.DocumentRepository,
+	folderRepo docsysRepo.FolderRepository,
+	documentRepo docsysRepo.DocumentRepository,
 	logger *slog.Logger,
-) services.TreeService {
+) docsysSvc.TreeService {
 	return &treeService{
 		folderRepo:   folderRepo,
 		documentRepo: documentRepo,

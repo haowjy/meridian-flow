@@ -13,7 +13,8 @@ import (
 
 	"meridian/internal/config"
 	"meridian/internal/repository/postgres"
-	"meridian/internal/service"
+	postgresDocsys "meridian/internal/repository/postgres/docsystem"
+	serviceDocsys "meridian/internal/service/docsystem"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -104,15 +105,15 @@ func main() {
 		Tables: tables,
 		Logger: logger,
 	}
-	docRepo := postgres.NewDocumentRepository(repoConfig)
-	folderRepo := postgres.NewFolderRepository(repoConfig)
+	docRepo := postgresDocsys.NewDocumentRepository(repoConfig)
+	folderRepo := postgresDocsys.NewFolderRepository(repoConfig)
 	txManager := postgres.NewTransactionManager(pool)
 
 	// Create services
-	contentAnalyzer := service.NewContentAnalyzer()
-	pathResolver := service.NewPathResolver(folderRepo, txManager)
-	docService := service.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, logger)
-	importService := service.NewImportService(docRepo, docService, logger)
+	contentAnalyzer := serviceDocsys.NewContentAnalyzer()
+	pathResolver := serviceDocsys.NewPathResolver(folderRepo, txManager)
+	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, logger)
+	importService := serviceDocsys.NewImportService(docRepo, docService, logger)
 
 	// Clear existing data
 	log.Println("⚠️  Clearing existing documents and folders...")

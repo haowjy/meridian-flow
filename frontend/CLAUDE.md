@@ -30,7 +30,7 @@ npm run test:watch   # Vitest in watch mode
 Three distinct caching patterns based on data characteristics:
 
 #### 1. Documents (Reconcile-Newest)
-**Pattern**: Always fetch server; compare with cache by `updatedAt`; render newest
+**Pattern**: Always fetch server; compare with cache by `updatedAt`; render newest (local wins on tie)
 - Emit cached content immediately if present (read-only), reconcile with server
 - Optimistic updates + retry on network failure
 - **Implementation**: `useEditorStore.ts`
@@ -74,7 +74,7 @@ All stores use Zustand. Key conventions:
 - UI-free orchestration service: `frontend/src/core/services/documentSyncService.ts`
 
 Flow (documents):
-1) Optimistic write to IndexedDB → 2) direct PATCH to API → 3) apply server doc (authoritative timestamps). On network/5xx, enqueue in-memory retry (jittered backoff; max attempts). 4xx bubbles to UI for manual retry.
+1) Optimistic write to IndexedDB → 2) direct PATCH to API → 3) apply server doc (server timestamps become canonical once applied). On network/5xx, enqueue in-memory retry (jittered backoff; max attempts). 4xx bubbles to UI for manual retry.
 
 Background: only the retry scheduler (ticked in `SyncProvider`). No visibility/online listeners.
 

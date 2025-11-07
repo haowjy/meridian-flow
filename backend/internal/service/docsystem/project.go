@@ -1,4 +1,4 @@
-package service
+package docsystem
 
 import (
 	"context"
@@ -7,25 +7,26 @@ import (
 	"strings"
 	"time"
 
-	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"meridian/internal/config"
 	"meridian/internal/domain"
-	"meridian/internal/domain/models"
-	"meridian/internal/domain/repositories"
-	"meridian/internal/domain/services"
+	models "meridian/internal/domain/models/docsystem"
+	docsysRepo "meridian/internal/domain/repositories/docsystem"
+	docsysSvc "meridian/internal/domain/services/docsystem"
+
+	validation "github.com/go-ozzo/ozzo-validation/v4"
 )
 
 // projectService implements the ProjectService interface
 type projectService struct {
-	projectRepo repositories.ProjectRepository
+	projectRepo docsysRepo.ProjectRepository
 	logger      *slog.Logger
 }
 
 // NewProjectService creates a new project service
 func NewProjectService(
-	projectRepo repositories.ProjectRepository,
+	projectRepo docsysRepo.ProjectRepository,
 	logger *slog.Logger,
-) services.ProjectService {
+) docsysSvc.ProjectService {
 	return &projectService{
 		projectRepo: projectRepo,
 		logger:      logger,
@@ -33,7 +34,7 @@ func NewProjectService(
 }
 
 // CreateProject creates a new project
-func (s *projectService) CreateProject(ctx context.Context, req *services.CreateProjectRequest) (*models.Project, error) {
+func (s *projectService) CreateProject(ctx context.Context, req *docsysSvc.CreateProjectRequest) (*models.Project, error) {
 	// Validate request
 	if err := s.validateCreateRequest(req); err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
@@ -84,7 +85,7 @@ func (s *projectService) ListProjects(ctx context.Context, userID string) ([]mod
 }
 
 // UpdateProject updates a project's name
-func (s *projectService) UpdateProject(ctx context.Context, id, userID string, req *services.UpdateProjectRequest) (*models.Project, error) {
+func (s *projectService) UpdateProject(ctx context.Context, id, userID string, req *docsysSvc.UpdateProjectRequest) (*models.Project, error) {
 	// Validate request
 	if err := s.validateUpdateRequest(req); err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
@@ -138,7 +139,7 @@ func (s *projectService) DeleteProject(ctx context.Context, id, userID string) e
 }
 
 // validateCreateRequest validates a create project request
-func (s *projectService) validateCreateRequest(req *services.CreateProjectRequest) error {
+func (s *projectService) validateCreateRequest(req *docsysSvc.CreateProjectRequest) error {
 	return validation.ValidateStruct(req,
 		validation.Field(&req.UserID, validation.Required),
 		validation.Field(&req.Name,
@@ -150,7 +151,7 @@ func (s *projectService) validateCreateRequest(req *services.CreateProjectReques
 }
 
 // validateUpdateRequest validates an update project request
-func (s *projectService) validateUpdateRequest(req *services.UpdateProjectRequest) error {
+func (s *projectService) validateUpdateRequest(req *docsysSvc.UpdateProjectRequest) error {
 	return validation.ValidateStruct(req,
 		validation.Field(&req.Name,
 			validation.Required,

@@ -5,17 +5,17 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"meridian/internal/domain/services"
+	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
 // DocumentHandler handles document HTTP requests
 type DocumentHandler struct {
-	docService services.DocumentService
+	docService docsysSvc.DocumentService
 	logger     *slog.Logger
 }
 
 // NewDocumentHandler creates a new document handler
-func NewDocumentHandler(docService services.DocumentService, logger *slog.Logger) *DocumentHandler {
+func NewDocumentHandler(docService docsysSvc.DocumentService, logger *slog.Logger) *DocumentHandler {
 	return &DocumentHandler{
 		docService: docService,
 		logger:     logger,
@@ -32,7 +32,7 @@ func (h *DocumentHandler) CreateDocument(c *fiber.Ctx) error {
 	}
 
 	// Parse request
-	var req services.CreateDocumentRequest
+	var req docsysSvc.CreateDocumentRequest
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
 	}
@@ -81,7 +81,7 @@ func (h *DocumentHandler) UpdateDocument(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Document ID is required")
 	}
 
-	var req services.UpdateDocumentRequest
+	var req docsysSvc.UpdateDocumentRequest
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
 	}

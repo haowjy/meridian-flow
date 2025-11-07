@@ -1,4 +1,4 @@
-package models
+package docsystem
 
 import (
 	"time"

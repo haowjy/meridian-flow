@@ -4,17 +4,17 @@ import (
 	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
-	"meridian/internal/domain/services"
+	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
 // FolderHandler handles folder HTTP requests
 type FolderHandler struct {
-	folderService services.FolderService
+	folderService docsysSvc.FolderService
 	logger        *slog.Logger
 }
 
 // NewFolderHandler creates a new folder handler
-func NewFolderHandler(folderService services.FolderService, logger *slog.Logger) *FolderHandler {
+func NewFolderHandler(folderService docsysSvc.FolderService, logger *slog.Logger) *FolderHandler {
 	return &FolderHandler{
 		folderService: folderService,
 		logger:        logger,
@@ -31,7 +31,7 @@ func (h *FolderHandler) CreateFolder(c *fiber.Ctx) error {
 	}
 
 	// Parse request
-	var req services.CreateFolderRequest
+	var req docsysSvc.CreateFolderRequest
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
 	}
@@ -80,7 +80,7 @@ func (h *FolderHandler) UpdateFolder(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Folder ID is required")
 	}
 
-	var req services.UpdateFolderRequest
+	var req docsysSvc.UpdateFolderRequest
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
 	}

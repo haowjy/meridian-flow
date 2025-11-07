@@ -25,6 +25,25 @@ describe('Cache policies', () => {
     expect(result.isFinal).toBe(true)
   })
 
+  it('ReconcileNewestPolicy keeps cache on tie (local wins)', async () => {
+    const when = new Date('2025-02-01T00:00:00Z')
+    const cached: Item = { id: 'a', updatedAt: when }
+    const server: Item = { id: 'a', updatedAt: when }
+
+    const cacheRepo: ICacheRepo<Item> = {
+      get: async () => cached,
+      put: async () => void 0,
+    }
+    const remoteRepo: IRemoteRepo<Item> = {
+      fetch: async () => server,
+    }
+
+    const result = await new ReconcileNewestPolicy<Item>().run({ cacheRepo, remoteRepo })
+    expect(result.data).toEqual(cached)
+    expect(result.source).toBe('cache')
+    expect(result.isFinal).toBe(true)
+  })
+
   it('ReconcileNewestPolicy falls back to cache on AbortError', async () => {
     const cached: Item = { id: 'a', updatedAt: new Date('2025-01-01T00:00:00Z') }
     const cacheRepo: ICacheRepo<Item> = {
@@ -61,4 +80,3 @@ describe('Cache policies', () => {
     expect(result.source).toBe('cache')
   })
 })
-

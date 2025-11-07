@@ -4,17 +4,17 @@ import (
 	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
-	"meridian/internal/domain/services"
+	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
 // ProjectHandler handles project HTTP requests
 type ProjectHandler struct {
-	projectService services.ProjectService
+	projectService docsysSvc.ProjectService
 	logger         *slog.Logger
 }
 
 // NewProjectHandler creates a new project handler
-func NewProjectHandler(projectService services.ProjectService, logger *slog.Logger) *ProjectHandler {
+func NewProjectHandler(projectService docsysSvc.ProjectService, logger *slog.Logger) *ProjectHandler {
 	return &ProjectHandler{
 		projectService: projectService,
 		logger:         logger,
@@ -49,7 +49,7 @@ func (h *ProjectHandler) CreateProject(c *fiber.Ctx) error {
 	}
 
 	// Parse request
-	var req services.CreateProjectRequest
+	var req docsysSvc.CreateProjectRequest
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
 	}
@@ -98,7 +98,7 @@ func (h *ProjectHandler) UpdateProject(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Project ID is required")
 	}
 
-	var req services.UpdateProjectRequest
+	var req docsysSvc.UpdateProjectRequest
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
 	}

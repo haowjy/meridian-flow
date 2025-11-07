@@ -7,15 +7,17 @@ import (
 	"os"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/recover"
-	"github.com/joho/godotenv"
 	"meridian/internal/config"
 	"meridian/internal/handler"
 	"meridian/internal/middleware"
 	"meridian/internal/repository/postgres"
-	"meridian/internal/service"
+	postgresDocsys "meridian/internal/repository/postgres/docsystem"
+	serviceDocsys "meridian/internal/service/docsystem"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/joho/godotenv"
 )
 
 func main() {
@@ -64,19 +66,19 @@ func main() {
 		Tables: tables,
 		Logger: logger,
 	}
-	projectRepo := postgres.NewProjectRepository(repoConfig)
-	docRepo := postgres.NewDocumentRepository(repoConfig)
-	folderRepo := postgres.NewFolderRepository(repoConfig)
+	projectRepo := postgresDocsys.NewProjectRepository(repoConfig)
+	docRepo := postgresDocsys.NewDocumentRepository(repoConfig)
+	folderRepo := postgresDocsys.NewFolderRepository(repoConfig)
 	txManager := postgres.NewTransactionManager(pool)
 
 	// Create services
-	contentAnalyzer := service.NewContentAnalyzer()
-	pathResolver := service.NewPathResolver(folderRepo, txManager)
-	projectService := service.NewProjectService(projectRepo, logger)
-	docService := service.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, logger)
-	folderService := service.NewFolderService(folderRepo, docRepo, logger)
-	treeService := service.NewTreeService(folderRepo, docRepo, logger)
-	importService := service.NewImportService(docRepo, docService, logger)
+	contentAnalyzer := serviceDocsys.NewContentAnalyzer()
+	pathResolver := serviceDocsys.NewPathResolver(folderRepo, txManager)
+	projectService := serviceDocsys.NewProjectService(projectRepo, logger)
+	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, logger)
+	folderService := serviceDocsys.NewFolderService(folderRepo, docRepo, logger)
+	treeService := serviceDocsys.NewTreeService(folderRepo, docRepo, logger)
+	importService := serviceDocsys.NewImportService(docRepo, docService, logger)
 
 	// Create new handlers
 	projectHandler := handler.NewProjectHandler(projectService, logger)
@@ -125,8 +127,6 @@ func main() {
 	api.Patch("/projects/:id", projectHandler.UpdateProject)
 	api.Delete("/projects/:id", projectHandler.DeleteProject)
 
-	// Tree endpoint removed: tree must be project-scoped
-
 	// Project-scoped routes (provide explicit :id paths expected by the frontend)
 	projectScoped := api.Group("/projects/:id", func(c *fiber.Ctx) error {
 		// Override projectID from route param for scoped endpoints
@@ -136,8 +136,8 @@ func main() {
 		return c.Next()
 	})
 
-		// Project tree endpoint
-		projectScoped.Get("/tree", newTreeHandler.GetTree)
+	// Project tree endpoint
+	projectScoped.Get("/tree", newTreeHandler.GetTree)
 
 	// Project-scoped document creation alias
 	projectScoped.Post("/documents", newDocHandler.CreateDocument)

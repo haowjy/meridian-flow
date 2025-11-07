@@ -51,17 +51,12 @@ These principles emerged from redesigning the sync system and guide future archi
    - Empty array `[]` is valid data
    - Only `undefined`/`null` means "absent"
 
-8. **Server is Authority**
-   - Always use API responses
-   - Don't trust local timestamps
-   - Sync server state to local, not vice versa
-
-9. **Comment the "Weird"**
+8. **Comment the "Weird"**
    - If it needs a guard, comment why
    - If it prevents a race, explain the race
    - If you had to debug it, future you will too
 
-10. **Prefer Local-First, But Don't Over-Engineer**
+9. **Prefer Local-First, But Don't Over-Engineer**
     - IndexedDB for instant loads ✅
     - Optimistic updates ✅
     - Persistent operation queues ❌ (usually overkill)

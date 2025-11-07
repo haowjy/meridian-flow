@@ -1,4 +1,4 @@
-package postgres
+package docsystem
 
 import (
 	"context"
@@ -6,20 +6,23 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"meridian/internal/domain"
-	"meridian/internal/domain/models"
-	"meridian/internal/domain/repositories"
+	models "meridian/internal/domain/models/docsystem"
+	docsysRepo "meridian/internal/domain/repositories/docsystem"
+
+	"meridian/internal/repository/postgres"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // PostgresFolderRepository implements the FolderRepository interface
 type PostgresFolderRepository struct {
 	pool   *pgxpool.Pool
-	tables *TableNames
+	tables *postgres.TableNames
 }
 
 // NewFolderRepository creates a new folder repository
-func NewFolderRepository(config *RepositoryConfig) repositories.FolderRepository {
+func NewFolderRepository(config *postgres.RepositoryConfig) docsysRepo.FolderRepository {
 	return &PostgresFolderRepository{
 		pool:   config.Pool,
 		tables: config.Tables,
@@ -48,7 +51,7 @@ func (r *PostgresFolderRepository) Create(ctx context.Context, folder *models.Fo
 		RETURNING id, created_at, updated_at
 	`, r.tables.Folders)
 
-	executor := GetExecutor(ctx, r.pool)
+	executor := postgres.GetExecutor(ctx, r.pool)
 	err = executor.QueryRow(ctx, query,
 		folder.ProjectID,
 		folder.ParentID,
@@ -58,7 +61,7 @@ func (r *PostgresFolderRepository) Create(ctx context.Context, folder *models.Fo
 	).Scan(&folder.ID, &folder.CreatedAt, &folder.UpdatedAt)
 
 	if err != nil {
-		if isPgDuplicateError(err) {
+		if postgres.IsPgDuplicateError(err) {
 			// Fallback: query for existing folder if database detected duplicate
 			existing, queryErr := r.getFolderByNameAndParent(ctx, folder.ProjectID, folder.Name, folder.ParentID)
 			if queryErr != nil || existing == nil {
@@ -98,7 +101,7 @@ func (r *PostgresFolderRepository) GetByID(ctx context.Context, id, projectID st
 	)
 
 	if err != nil {
-		if isPgNoRowsError(err) {
+		if postgres.IsPgNoRowsError(err) {
 			return nil, fmt.Errorf("folder %s: %w", id, domain.ErrNotFound)
 		}
 		return nil, fmt.Errorf("get folder: %w", err)
@@ -124,7 +127,7 @@ func (r *PostgresFolderRepository) Update(ctx context.Context, folder *models.Fo
 	)
 
 	if err != nil {
-		if isPgDuplicateError(err) {
+		if postgres.IsPgDuplicateError(err) {
 			// Query for existing folder
 			existing, queryErr := r.getFolderByNameAndParent(ctx, folder.ProjectID, folder.Name, folder.ParentID)
 			if queryErr != nil || existing == nil {
@@ -158,7 +161,7 @@ func (r *PostgresFolderRepository) Delete(ctx context.Context, id, projectID str
 
 	result, err := r.pool.Exec(ctx, query, id, projectID)
 	if err != nil {
-		if isPgForeignKeyError(err) {
+		if postgres.IsPgForeignKeyError(err) {
 			return fmt.Errorf("cannot delete folder with children: %w", domain.ErrConflict)
 		}
 		return fmt.Errorf("delete folder: %w", err)
@@ -274,7 +277,7 @@ func (r *PostgresFolderRepository) GetPath(ctx context.Context, folderID *string
 	var path string
 	err := r.pool.QueryRow(ctx, query, *folderID, projectID).Scan(&path)
 	if err != nil {
-		if isPgNoRowsError(err) {
+		if postgres.IsPgNoRowsError(err) {
 			return "", fmt.Errorf("folder %s: %w", *folderID, domain.ErrNotFound)
 		}
 		return "", fmt.Errorf("get folder path: %w", err)
@@ -372,7 +375,7 @@ func (r *PostgresFolderRepository) getFolderByNameAndParent(ctx context.Context,
 	}
 
 	var folder models.Folder
-	executor := GetExecutor(ctx, r.pool)
+	executor := postgres.GetExecutor(ctx, r.pool)
 	err := executor.QueryRow(ctx, query, args...).Scan(
 		&folder.ID,
 		&folder.ProjectID,
@@ -383,7 +386,7 @@ func (r *PostgresFolderRepository) getFolderByNameAndParent(ctx context.Context,
 	)
 
 	if err != nil {
-		if isPgNoRowsError(err) {
+		if postgres.IsPgNoRowsError(err) {
 			return nil, nil // Not found, not an error
 		}
 		return nil, fmt.Errorf("get folder by name and parent: %w", err)

@@ -1,21 +1,21 @@
-package services
+package docsystem
 
 import (
 	"context"
 
-	"meridian/internal/domain/models"
+	"meridian/internal/domain/models/docsystem"
 )
 
 // DocumentService handles document business logic
 type DocumentService interface {
 	// CreateDocument creates a new document, resolving path to folders
-	CreateDocument(ctx context.Context, req *CreateDocumentRequest) (*models.Document, error)
+	CreateDocument(ctx context.Context, req *CreateDocumentRequest) (*docsystem.Document, error)
 
 	// GetDocument retrieves a document with its computed path
-	GetDocument(ctx context.Context, id, projectID string) (*models.Document, error)
+	GetDocument(ctx context.Context, id, projectID string) (*docsystem.Document, error)
 
 	// UpdateDocument updates a document
-	UpdateDocument(ctx context.Context, id string, req *UpdateDocumentRequest) (*models.Document, error)
+	UpdateDocument(ctx context.Context, id string, req *UpdateDocumentRequest) (*docsystem.Document, error)
 
 	// DeleteDocument deletes a document
 	DeleteDocument(ctx context.Context, id, projectID string) error
