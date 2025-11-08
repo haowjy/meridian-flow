@@ -74,13 +74,13 @@ audience: developer
     {
       "id": "folder-uuid",
       "name": "Characters",
-      "parent_id": null,
+      "folder_id": null,
       "created_at": "2025-11-02T10:00:00Z",
       "folders": [
         {
           "id": "subfolder-uuid",
           "name": "Heroes",
-          "parent_id": "folder-uuid",
+          "folder_id": "folder-uuid",
           "created_at": "2025-11-02T10:05:00Z",
           "folders": [],
           "documents": []
@@ -122,15 +122,50 @@ Notes:
 {
   "project_id": "uuid",
   "name": "Folder Name",
-  "parent_id": ""  // Empty string for root level (or omit/null)
+  "folder_id": ""  // Empty string for root level (or omit/null)
 }
 ```
 
+**Unix-style Path Notation (NEW):**
+
+The `name` field now supports Unix-style path notation for creating nested folder hierarchies in a single request:
+
+**Examples:**
+```json
+// Relative path - creates nested folders relative to folder_id
+{
+  "name": "Characters/Villains",
+  "folder_id": null
+}
+// Creates: Characters (parent) → Villains (child)
+
+// Absolute path - ignores folder_id, creates from root
+{
+  "name": "/Magic/Spells",
+  "folder_id": "some-folder-id"
+}
+// Creates: Magic (root) → Spells (child), folder_id is ignored
+```
+
+**Path Notation Rules:**
+- **Relative paths** (`a/b/c`): Creates folders relative to `folder_id` (or root if `folder_id` is null/omitted)
+- **Absolute paths** (`/a/b/c`): Leading `/` means start from project root, ignoring `folder_id`
+- **Auto-creation**: Intermediate folders are created automatically if they don't exist (idempotent)
+- **Transaction**: All folders created atomically - if any fails, entire operation is rolled back
+- **Final segment**: The last segment becomes the actual folder name
+
+**Path Validation (Strict):**
+- ❌ No consecutive slashes: `a//b` → 400 error
+- ❌ No trailing slashes: `a/` → 400 error
+- ❌ No empty segments
+- ✅ Each segment must be valid folder name (alphanumeric, spaces, hyphens, underscores)
+- ✅ Each segment length ≤ `config.MaxFolderNameLength`
+
 **Root-level convention:**
-- Use `""` (empty string), `null`, or omit `parent_id` for root-level folders
+- Use `""` (empty string), `null`, or omit `folder_id` for root-level folders
 - All three are equivalent and create a folder at the project root
 
-### Update Folder (PUT /api/folders/:id)
+### Update Folder (PATCH /api/folders/:id)
 
 - Moving to root uses an empty string for the parent identifier (not null), to disambiguate from omitted fields.
 - Renaming and moving can be performed independently or combined in a single request.
@@ -138,8 +173,9 @@ Notes:
 Rationale: distinguishing an explicit move to root from "no change" avoids ambiguity in request payloads.
 
 **Validation:**
-- At least one field (`name` or `parent_id`) must be provided
-- Folder names cannot contain `/` (regex: `^[^/]+$`)
+- At least one field (`name` or `folder_id`) must be provided
+- Simple folder names cannot contain `/` (regex: `^[^/]+$`)
+- Path notation only supported in CREATE operations, not UPDATE
 - Max length: See `config.MaxFolderNameLength`
 - Cannot create circular references (validated server-side)
 
@@ -173,6 +209,12 @@ Document content here...
 - Updates existing documents (same name + folder)
 - Creates new documents if they don't exist
 - Processes multiple zip files in single request
+
+**Name Sanitization:**
+- Document names containing `/` are automatically sanitized to `-` during import
+- Prevents filesystem path confusion (document names follow same rules as folder names)
+- Example: `"Hero/Villain"` in frontmatter becomes `"Hero-Villain"`
+- Ensures imported documents meet validation rules
 
 **Response:**
 ```json
@@ -237,23 +279,64 @@ Bulk import documents from zip file(s) in replace mode. **Deletes all existing d
 }
 ```
 
+**Unix-style Path Notation in `name` Field (NEW):**
+
+Similar to folders, the `name` field now supports Unix-style path notation for creating documents with auto-created folder hierarchies:
+
+**Examples:**
+```json
+// Relative path - creates folders and document relative to folder_id
+{
+  "name": "Locations/Cities/Stormhaven",
+  "folder_id": null,
+  "content": "# Stormhaven\n\nA coastal city..."
+}
+// Creates: Locations → Cities → Document "Stormhaven"
+
+// Absolute path - ignores folder_id, creates from root
+{
+  "name": "/Worldbuilding/timeline",
+  "folder_id": "some-folder-id",
+  "content": "# Timeline\n\nHistory..."
+}
+// Creates: Worldbuilding (root) → Document "timeline", folder_id is ignored
+```
+
+**Path Notation Rules:**
+- **Relative paths** (`a/b/doc`): Creates folders relative to `folder_id` (or root if `folder_id` is null/omitted)
+- **Absolute paths** (`/a/b/doc`): Leading `/` means start from project root, ignoring `folder_id`
+- **Auto-creation**: Intermediate folders are created automatically (idempotent)
+- **Transaction**: All folders and document created atomically
+- **Final segment**: The last segment becomes the document name
+- **Priority**: If `name` contains path notation, it overrides both `folder_id` and `folder_path`
+
+**Path Validation (Strict):**
+- Same strict rules as folder path notation
+- ❌ No consecutive slashes, trailing slashes, or empty segments
+- ✅ Each segment (except final) must be valid folder name
+- ✅ Final segment must be valid document name
+
 **Root-level convention:**
 - Use `""` (empty string), `null`, or omit `folder_id`/`folder_path` for root-level documents
 - All three are equivalent and create a document at the project root
-- `folder_id` and `folder_path` are mutually exclusive; `folder_id` takes priority if both provided
+- **Resolution priority** (when `name` has NO path notation):
+  1. `folder_id` (direct folder reference) - frontend optimization
+  2. `folder_path` (legacy path resolution) - external AI/import
 
 ### Update Document (PATCH /api/documents/:id)
 
 - Same patterns as folders, but use `folder_id` for moves. Moving to root uses an empty string.
 - Supports rename, move, and content updates—these can be combined.
 - Content format is Markdown. Requests that update content provide a `content` field; responses include `content`.
+- **Path notation NOT supported in UPDATE** - only in CREATE operations
 
 **Validation:**
-- Document names **can contain** `/` for artistic titles (e.g., "Hero/Villain")
-- No slash restriction on document names
+- Simple document names **cannot contain** `/` (filesystem semantics, regex: `^[^/]+$`)
+- Path notation only supported in CREATE operations, not UPDATE
+- Names are automatically trimmed of leading/trailing whitespace
 - Max length: See `config.MaxDocumentNameLength`
 
-**Why allow slashes in documents:** Documents are content/leaf nodes with flexible naming. Folders are structural hierarchy elements used in paths.
+**Rationale:** Documents follow filesystem naming conventions. Use folder structure for hierarchy, not slashes in document names.
 
 **Content format:**
 - Canonical content stored and emitted by the API is Markdown.
@@ -265,10 +348,16 @@ Bulk import documents from zip file(s) in replace mode. **Deletes all existing d
 | Entity   | Slash Allowed? | Max Length | Reason                                    |
 |----------|----------------|------------|-------------------------------------------|
 | Projects | N/A            | 255        | Top-level container                       |
-| Folders  | ❌ No          | 255        | Used in paths, structural elements        |
-| Documents| ✅ Yes         | 255        | Artistic freedom, content not structure   |
+| Folders  | ✅ CREATE only (path notation) / ❌ UPDATE | 255 | Path notation for CREATE, simple names for UPDATE |
+| Documents| ✅ CREATE only (path notation) / ❌ UPDATE | 255 | Path notation for CREATE, simple names for UPDATE |
 
-Implementation notes: folder validation enforces the slash restriction; document validation does not restrict slashes.
+**Implementation notes:**
+- **CREATE operations**: `name` field supports Unix-style path notation (`a/b/c` or `/a/b/c`)
+  - Path notation auto-creates intermediate folders
+  - Final segment must be valid simple name (no slashes)
+  - Strict validation: no `//`, no trailing `/`, no empty segments
+- **UPDATE operations**: Simple names only (no slashes), regex: `^[^/]+$`
+- **Import**: Automatically sanitizes slashes to hyphens in document names
 
 ## Error Responses
 

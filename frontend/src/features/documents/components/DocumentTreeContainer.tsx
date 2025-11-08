@@ -9,6 +9,7 @@ import { openDocument } from '@/core/lib/panelHelpers'
 import { filterTree, TreeNode } from '@/core/lib/treeBuilder'
 import { api } from '@/core/lib/api'
 import { toast } from 'sonner'
+import { handleApiError, isAppError } from '@/core/lib/errors'
 import { DocumentTreePanel } from './DocumentTreePanel'
 import { FolderTreeItem } from './FolderTreeItem'
 import { DocumentTreeItem } from './DocumentTreeItem'
@@ -73,8 +74,18 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
       // Reload tree to show new document
       await loadTree(projectId)
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to create document'
-      toast.error(message)
+      // Special-case conflicts to offer navigating to the existing document
+      if (isAppError(error) && error.type === 'CONFLICT' && (error.resource as any)?.id) {
+        const existingId = (error.resource as any).id as string
+        toast.error(error.message || 'Resource already exists.', {
+          action: {
+            label: 'Open',
+            onClick: () => handleDocumentClick(existingId),
+          },
+        })
+      } else {
+        handleApiError(error, 'Failed to create document')
+      }
       throw error // Re-throw so dialog can handle
     }
   }

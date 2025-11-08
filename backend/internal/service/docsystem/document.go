@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"regexp"
+	"strings"
 	"time"
 
 	"meridian/internal/config"
@@ -46,37 +48,127 @@ func NewDocumentService(
 }
 
 // CreateDocument creates a new document with priority-based folder resolution
+// Supports Unix-style path notation in name field:
+//   - "name.md" → create document with given name at folder_id
+//   - "a/b/c.md" → auto-create intermediate folders (a, b) and document (c.md) at folder_id
+//   - "/a/b/c.md" → absolute path from root (ignore folder_id)
 func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.CreateDocumentRequest) (*models.Document, error) {
-	// Validate request
-	if err := s.validateCreateRequest(req); err != nil {
-		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
-	}
-
-	// Normalize empty string folder_id to nil for root-level documents (consistent with UPDATE)
-	// Note: folder_path already handles empty string in resolveFolderPath
+	// Normalize empty string folder_id to nil for root-level documents
 	if req.FolderID != nil && *req.FolderID == "" {
 		req.FolderID = nil
 	}
 
 	var folderID *string
-	docName := req.Name
+	var docName string
 
-	// Priority-based folder resolution:
-	// 1. Try folder_id first (frontend optimization - direct lookup)
-	// 2. Fall back to folder_path (external AI / import - resolve/auto-create)
-	if req.FolderID != nil {
-		// Frontend optimization: use provided folder_id directly
-		folderID = req.FolderID
-	} else if req.FolderPath != nil {
-		// External AI / Import: resolve folder path, creating folders if needed
-		resolvedFolder, err := s.pathResolver.ResolveFolderPath(ctx, req.ProjectID, *req.FolderPath)
+	// Check if name contains path notation
+	if IsPathNotation(req.Name) {
+		// Parse path notation in name field
+		pathResult, err := ParsePath(req.Name, config.MaxDocumentNameLength)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid path notation in name: %v", domain.ErrValidation, err)
+		}
+
+		s.logger.Debug("path notation detected in name",
+			"original_name", req.Name,
+			"is_absolute", pathResult.IsAbsolute,
+			"segments", pathResult.Segments,
+			"final_name", pathResult.FinalName,
+		)
+
+		// Resolve base folder ID for relative paths
+		var baseParentID *string
+		if pathResult.IsAbsolute {
+			// Absolute path: ignore both folder_id and folder_path, start from root
+			baseParentID = nil
+		} else {
+			// Relative path: use priority system (folder_id → folder_path → root)
+			if req.FolderID != nil {
+				// Priority 1: Use provided folder_id directly
+				baseParentID = req.FolderID
+			} else if req.FolderPath != nil {
+				// Priority 2: Resolve folder_path
+				resolvedFolder, err := s.pathResolver.ResolveFolderPath(ctx, req.ProjectID, *req.FolderPath)
+				if err != nil {
+					return nil, fmt.Errorf("failed to resolve folder_path for relative path notation: %w", err)
+				}
+				baseParentID = resolvedFolder
+			} else {
+				// Priority 3: Use root (nil)
+				baseParentID = nil
+			}
+		}
+
+		// Create intermediate folders and resolve final folder ID in a transaction
+		err = s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
+			currentParentID := baseParentID
+
+			// Create all intermediate folders (parent path)
+			for _, segment := range pathResult.ParentPath {
+				// Validate segment as folder name
+				if err := ValidateSimpleName(segment, config.MaxFolderNameLength); err != nil {
+					return fmt.Errorf("invalid folder name '%s': %w", segment, err)
+				}
+
+				// Create folder if it doesn't exist (idempotent)
+				intermediateFolder, err := s.folderRepo.CreateIfNotExists(txCtx, req.ProjectID, currentParentID, segment)
+				if err != nil {
+					return fmt.Errorf("failed to create intermediate folder '%s': %w", segment, err)
+				}
+
+				s.logger.Debug("intermediate folder created/found",
+					"name", segment,
+					"id", intermediateFolder.ID,
+				)
+
+				// Move to next level
+				currentParentID = &intermediateFolder.ID
+			}
+
+			// Store resolved folder ID
+			folderID = currentParentID
+			return nil
+		})
+
 		if err != nil {
 			return nil, err
 		}
-		folderID = resolvedFolder
+
+		// Use final segment as document name
+		docName = pathResult.FinalName
+
+		// Validate final document name (no slashes allowed)
+		if err := ValidateSimpleName(docName, config.MaxDocumentNameLength); err != nil {
+			return nil, fmt.Errorf("%w: invalid final document name '%s': %v", domain.ErrValidation, docName, err)
+		}
+
 	} else {
-		// Should never reach here due to validation, but defensive check
-		return nil, fmt.Errorf("%w: either folder_path or folder_id must be provided", domain.ErrValidation)
+		// No path notation in name - use standard validation and folder resolution
+
+		// Validate request (simple name validation)
+		if err := s.validateCreateRequest(req); err != nil {
+			return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
+		}
+
+		docName = strings.TrimSpace(req.Name)
+
+		// Priority-based folder resolution:
+		// 1. Try folder_id first (frontend optimization - direct lookup)
+		// 2. Fall back to folder_path (external AI / import - resolve/auto-create)
+		if req.FolderID != nil {
+			// Frontend optimization: use provided folder_id directly
+			folderID = req.FolderID
+		} else if req.FolderPath != nil {
+			// External AI / Import: resolve folder path, creating folders if needed
+			resolvedFolder, err := s.pathResolver.ResolveFolderPath(ctx, req.ProjectID, *req.FolderPath)
+			if err != nil {
+				return nil, err
+			}
+			folderID = resolvedFolder
+		} else {
+			// Should never reach here due to validation, but defensive check
+			return nil, fmt.Errorf("%w: either folder_path or folder_id must be provided", domain.ErrValidation)
+		}
 	}
 
 	// Count words (business logic)
@@ -112,6 +204,7 @@ func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.Cre
 		"project_id", req.ProjectID,
 		"folder_id", folderID,
 		"word_count", wordCount,
+		"path_notation", IsPathNotation(req.Name),
 	)
 
 	return doc, nil
@@ -146,7 +239,12 @@ func (s *documentService) UpdateDocument(ctx context.Context, id string, req *do
 
 	// Update fields
 	if req.Name != nil {
-		doc.Name = *req.Name
+		trimmedName := strings.TrimSpace(*req.Name)
+		// Validate name doesn't contain slashes
+		if strings.Contains(trimmedName, "/") {
+			return nil, fmt.Errorf("%w: document name cannot contain slashes", domain.ErrValidation)
+		}
+		doc.Name = trimmedName
 	}
 
 	// Priority-based folder resolution for moving documents:
@@ -233,6 +331,7 @@ func (s *documentService) validateCreateRequest(req *docsysSvc.CreateDocumentReq
 		validation.Field(&req.Name,
 			validation.Required,
 			validation.Length(1, config.MaxDocumentNameLength),
+			validation.Match(regexp.MustCompile(`^[^/]+$`)).Error("document name cannot contain slashes"),
 		),
 		validation.Field(&req.Content, validation.Required),
 	)

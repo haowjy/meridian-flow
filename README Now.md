@@ -1,6 +1,6 @@
 # Meridian
 
-AI Writing Assistant - A powerful document management system for writers.
+AI Writing Assistant - A powerful file management system for writers.
 
 ## Project Status
 
@@ -23,13 +23,13 @@ meridian/
 └── README.md               # This file
 ```
 
-## Phase 1: Document System Foundation
+## Phase 1: File System Foundation
 
 **Goal**: Create, organize, and edit rich text documents with auto-save.
 
 ### Backend ✅ Complete
 
-The Go backend provides a REST API for document management with:
+The Go backend provides a REST API for file management with:
 
 - Full CRUD operations for documents
 - TipTap JSON to Markdown conversion

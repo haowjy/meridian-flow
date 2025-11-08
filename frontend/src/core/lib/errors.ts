@@ -12,18 +12,31 @@ export enum ErrorType {
   Validation = 'VALIDATION_ERROR',
   NotFound = 'NOT_FOUND',
   Unauthorized = 'UNAUTHORIZED',
+  Conflict = 'CONFLICT',
   ServerError = 'SERVER_ERROR',
   Unknown = 'UNKNOWN_ERROR',
 }
 
 /**
- * Application error with type and user-friendly message.
+ * Field-level validation error (RFC 7807 invalid_params)
  */
-export class AppError extends Error {
+export interface FieldError {
+  name: string   // Field name
+  reason: string // Why it's invalid
+}
+
+/**
+ * Application error with type and user-friendly message.
+ * For conflict errors (409), includes the existing resource.
+ * For validation errors (400), includes field-level errors.
+ */
+export class AppError<TResource = unknown> extends Error {
   constructor(
     public type: ErrorType,
     public message: string,
-    public originalError?: Error
+    public originalError?: Error,
+    public resource?: TResource,
+    public fieldErrors?: FieldError[]
   ) {
     super(message)
     this.name = 'AppError'
@@ -52,12 +65,20 @@ export function getErrorMessage(error: unknown): string {
 /**
  * Convert HTTP response to AppError based on status code.
  */
-export function httpErrorToAppError(status: number, message?: string): AppError {
+export function httpErrorToAppError<TResource = unknown>(
+  status: number,
+  message?: string,
+  resource?: TResource,
+  fieldErrors?: FieldError[]
+): AppError<TResource> {
   switch (status) {
     case 400:
       return new AppError(
         ErrorType.Validation,
-        message || 'Invalid request. Please check your input.'
+        message || 'Invalid request. Please check your input.',
+        undefined,
+        undefined,
+        fieldErrors
       )
     case 401:
       return new AppError(
@@ -68,6 +89,13 @@ export function httpErrorToAppError(status: number, message?: string): AppError 
       return new AppError(
         ErrorType.NotFound,
         message || 'The requested resource was not found.'
+      )
+    case 409:
+      return new AppError(
+        ErrorType.Conflict,
+        message || 'Resource already exists.',
+        undefined,
+        resource
       )
     case 500:
     case 502:
@@ -99,6 +127,25 @@ export function isNetworkError(error: unknown): boolean {
   }
 
   return false
+}
+
+/**
+ * Narrow an AbortError emitted by fetch/AbortController.
+ */
+export function isAbortError(error: unknown): error is Error {
+  return error instanceof Error && error.name === 'AbortError'
+}
+
+/**
+ * Best-effort guard for AppError across dynamic import boundaries.
+ */
+export function isAppError(error: unknown): error is AppError<any> {
+  return (
+    !!error &&
+    typeof error === 'object' &&
+    (error as any).name === 'AppError' &&
+    typeof (error as any).message === 'string'
+  )
 }
 
 /**

@@ -20,6 +20,7 @@ import { CardSkeleton } from '@/shared/components/ui/card'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { api } from '@/core/lib/api'
+import { handleApiError } from '@/core/lib/errors'
 import { toast } from 'sonner'
 
 interface EditorPanelProps {
@@ -206,8 +207,7 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
       // TODO: Add a method to update document name in tree store
       // For now, the tree will update on next reload
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to rename document'
-      toast.error(message)
+      handleApiError(error, 'Failed to rename document')
       throw error // Re-throw so EditorTitle stays in edit mode
     }
   }

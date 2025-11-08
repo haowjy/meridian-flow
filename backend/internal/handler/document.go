@@ -1,10 +1,13 @@
 package handler
 
 import (
+	"errors"
 	"log/slog"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"meridian/internal/domain"
+	docsystem "meridian/internal/domain/models/docsystem"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
@@ -24,6 +27,7 @@ func NewDocumentHandler(docService docsysSvc.DocumentService, logger *slog.Logge
 
 // CreateDocument creates a new document
 // POST /api/documents
+// Returns 201 if created, 409 with existing document if duplicate
 func (h *DocumentHandler) CreateDocument(c *fiber.Ctx) error {
 	// Extract project ID from context
 	projectID, err := getProjectID(c)
@@ -41,7 +45,15 @@ func (h *DocumentHandler) CreateDocument(c *fiber.Ctx) error {
 	// Call service (all business logic is here)
 	doc, err := h.docService.CreateDocument(c.Context(), &req)
 	if err != nil {
-		return handleError(c, err)
+		// Handle conflict by fetching and returning existing document with 409
+		return HandleCreateConflict(c, err, func() (*docsystem.Document, error) {
+			// Get ConflictError to extract resource ID
+			var conflictErr *domain.ConflictError
+			if errors.As(err, &conflictErr) {
+				return h.docService.GetDocument(c.Context(), conflictErr.ResourceID, projectID)
+			}
+			return nil, err
+		})
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(doc)

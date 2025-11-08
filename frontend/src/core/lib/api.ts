@@ -38,15 +38,26 @@ export async function fetchAPI<T>(
     })
 
     if (!response.ok) {
-      // Try to parse error response body
+      // Parse RFC 7807 Problem Details response (backend standard)
       let errorMessage = response.statusText
+      let resource: T | undefined
+
       try {
-        const errorBody: ApiErrorResponse = await response.json()
-        errorMessage = errorBody.message || errorBody.error || errorMessage
+        const errorBody = await response.json()
+        // RFC 7807 format: {type, title, status, detail, ...extensions}
+        // Fall back to legacy { message | error } if not a problem+json body
+        errorMessage = errorBody.detail || errorBody.title || errorBody.message || errorBody.error || errorMessage
+
+        // Preserve resource for 409 Conflict to offer actionable UI (e.g., Open existing)
+        if (response.status === 409 && errorBody.resource) {
+          resource = errorBody.resource as T
+        }
       } catch {
-        // ignore
+        // JSON parse failed; keep statusText fallback
       }
-      throw httpErrorToAppError(response.status, errorMessage)
+
+      // Minimal mapping: status + message (+ optional resource)
+      throw httpErrorToAppError(response.status, errorMessage, resource)
     }
 
     // Handle no content
@@ -56,7 +67,7 @@ export async function fetchAPI<T>(
     }
 
     const contentType = response.headers.get('content-type') || ''
-    if (contentType.includes('application/json')) {
+    if (contentType.includes('application/json') || contentType.includes('application/problem+json')) {
       const raw = await response.text()
       try {
         return JSON.parse(raw) as T

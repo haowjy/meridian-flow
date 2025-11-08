@@ -44,7 +44,7 @@ export function convertNestedToTreeNodes(
     const folder: Folder = {
       id: folderDto.id,
       projectId: folderDto.project_id,
-      parentId: folderDto.parent_id,
+      parentId: folderDto.folder_id,
       name: folderDto.name,
       createdAt: new Date(folderDto.created_at),
     }

@@ -8,7 +8,7 @@ import { DevRetryPanel } from '@/core/components/DevRetryPanel'
 
 export const metadata: Metadata = {
   title: 'Meridian',
-  description: 'Document management for creative writers',
+  description: 'File management for creative writers',
 }
 
 export default function RootLayout({

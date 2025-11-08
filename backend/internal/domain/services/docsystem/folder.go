@@ -26,16 +26,17 @@ type FolderService interface {
 
 // CreateFolderRequest represents a folder creation request
 type CreateFolderRequest struct {
-	ProjectID string  `json:"project_id"`
-	Name      string  `json:"name"`
-	ParentID  *string `json:"parent_id,omitempty"` // null for root folders
+	ProjectID  string  `json:"project_id"`
+	Name       string  `json:"name"`
+	FolderID   *string `json:"folder_id,omitempty"`   // Parent folder ID (null for root)
+	FolderPath *string `json:"folder_path,omitempty"` // Alternative: resolve path to folder
 }
 
 // UpdateFolderRequest represents a folder update request
 type UpdateFolderRequest struct {
 	ProjectID string  `json:"project_id"`
 	Name      *string `json:"name,omitempty"`      // rename
-	ParentID  *string `json:"parent_id,omitempty"` // move (use empty string for root)
+	FolderID  *string `json:"folder_id,omitempty"` // move (use empty string for root)
 }
 
 // FolderContents represents a folder with its children

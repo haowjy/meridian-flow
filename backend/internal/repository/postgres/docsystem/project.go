@@ -35,7 +35,8 @@ func (r *PostgresProjectRepository) Create(ctx context.Context, project *models.
 		RETURNING id, created_at, updated_at
 	`, r.tables.Projects)
 
-	err := r.pool.QueryRow(ctx, query,
+	executor := postgres.GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, query,
 		project.UserID,
 		project.Name,
 		project.CreatedAt,
@@ -69,11 +70,12 @@ func (r *PostgresProjectRepository) GetByID(ctx context.Context, id, userID stri
 	query := fmt.Sprintf(`
 		SELECT id, user_id, name, created_at, updated_at
 		FROM %s
-		WHERE id = $1 AND user_id = $2
+		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 	`, r.tables.Projects)
 
 	var project models.Project
-	err := r.pool.QueryRow(ctx, query, id, userID).Scan(
+	executor := postgres.GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, query, id, userID).Scan(
 		&project.ID,
 		&project.UserID,
 		&project.Name,
@@ -96,11 +98,12 @@ func (r *PostgresProjectRepository) List(ctx context.Context, userID string) ([]
 	query := fmt.Sprintf(`
 		SELECT id, user_id, name, created_at, updated_at
 		FROM %s
-		WHERE user_id = $1
+		WHERE user_id = $1 AND deleted_at IS NULL
 		ORDER BY updated_at DESC
 	`, r.tables.Projects)
 
-	rows, err := r.pool.Query(ctx, query, userID)
+	executor := postgres.GetExecutor(ctx, r.pool)
+	rows, err := executor.Query(ctx, query, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list projects: %w", err)
 	}
@@ -142,7 +145,8 @@ func (r *PostgresProjectRepository) Update(ctx context.Context, project *models.
 		WHERE id = $3 AND user_id = $4
 	`, r.tables.Projects)
 
-	result, err := r.pool.Exec(ctx, query,
+	executor := postgres.GetExecutor(ctx, r.pool)
+	result, err := executor.Exec(ctx, query,
 		project.Name,
 		project.UpdatedAt,
 		project.ID,
@@ -175,28 +179,34 @@ func (r *PostgresProjectRepository) Update(ctx context.Context, project *models.
 	return nil
 }
 
-// Delete deletes a project
-// Returns error if project has documents (FK constraint with ON DELETE RESTRICT)
-func (r *PostgresProjectRepository) Delete(ctx context.Context, id, userID string) error {
+// Delete soft-deletes a project by setting deleted_at timestamp and returns the deleted project
+func (r *PostgresProjectRepository) Delete(ctx context.Context, id, userID string) (*models.Project, error) {
 	query := fmt.Sprintf(`
-		DELETE FROM %s
-		WHERE id = $1 AND user_id = $2
+		UPDATE %s
+		SET deleted_at = NOW()
+		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+		RETURNING id, user_id, name, created_at, updated_at, deleted_at
 	`, r.tables.Projects)
 
-	result, err := r.pool.Exec(ctx, query, id, userID)
+	var project models.Project
+	executor := postgres.GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, query, id, userID).Scan(
+		&project.ID,
+		&project.UserID,
+		&project.Name,
+		&project.CreatedAt,
+		&project.UpdatedAt,
+		&project.DeletedAt,
+	)
 
 	if err != nil {
-		if postgres.IsPgForeignKeyError(err) {
-			return fmt.Errorf("cannot delete project with documents: %w", domain.ErrConflict)
+		if postgres.IsPgNoRowsError(err) {
+			return nil, fmt.Errorf("project %s: %w", id, domain.ErrNotFound)
 		}
-		return fmt.Errorf("delete project: %w", err)
+		return nil, fmt.Errorf("delete project: %w", err)
 	}
 
-	if result.RowsAffected() == 0 {
-		return fmt.Errorf("project %s: %w", id, domain.ErrNotFound)
-	}
-
-	return nil
+	return &project, nil
 }
 
 // getExistingProjectID queries for an existing project by user_id and name
@@ -205,11 +215,12 @@ func (r *PostgresProjectRepository) getExistingProjectID(ctx context.Context, us
 	query := fmt.Sprintf(`
 		SELECT id
 		FROM %s
-		WHERE user_id = $1 AND name = $2
+		WHERE user_id = $1 AND name = $2 AND deleted_at IS NULL
 	`, r.tables.Projects)
 
 	var id string
-	err := r.pool.QueryRow(ctx, query, userID, name).Scan(&id)
+	executor := postgres.GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, query, userID, name).Scan(&id)
 	if err != nil {
 		return "", fmt.Errorf("get existing project ID: %w", err)
 	}

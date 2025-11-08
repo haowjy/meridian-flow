@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Meridian is a document management system for creative writers, starting with fiction writers who manage 100+ chapter web serials.
+Meridian is a file management system for creative writers, starting with fiction writers who manage 100+ chapter web serials.
 
 **Current Status:**
 - ✅ Backend (Go + Fiber + PostgreSQL): Fully implemented

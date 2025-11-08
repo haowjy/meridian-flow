@@ -31,7 +31,7 @@ type ProjectService interface {
 	// UpdateProject updates a project's name
 	UpdateProject(ctx context.Context, id, userID string, req *UpdateProjectRequest) (*docsystem.Project, error)
 
-	// DeleteProject deletes a project
-	// Returns clear error if project has documents
-	DeleteProject(ctx context.Context, id, userID string) error
+	// DeleteProject soft-deletes a project by setting deleted_at timestamp
+	// Returns the deleted project with deleted_at set
+	DeleteProject(ctx context.Context, id, userID string) (*docsystem.Project, error)
 }

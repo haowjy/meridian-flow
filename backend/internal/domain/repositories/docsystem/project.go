@@ -20,7 +20,7 @@ type ProjectRepository interface {
 	// Update updates a project's name and updated_at timestamp
 	Update(ctx context.Context, project *docsystem.Project) error
 
-	// Delete deletes a project
-	// Returns error if project has documents (FK constraint)
-	Delete(ctx context.Context, id, userID string) error
+	// Delete soft-deletes a project by setting deleted_at timestamp
+	// Returns the deleted project with deleted_at set
+	Delete(ctx context.Context, id, userID string) (*docsystem.Project, error)
 }

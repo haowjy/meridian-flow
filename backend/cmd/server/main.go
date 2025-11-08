@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"meridian/internal/config"
 	"meridian/internal/handler"
@@ -76,7 +77,7 @@ func main() {
 	pathResolver := serviceDocsys.NewPathResolver(folderRepo, txManager)
 	projectService := serviceDocsys.NewProjectService(projectRepo, logger)
 	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, logger)
-	folderService := serviceDocsys.NewFolderService(folderRepo, docRepo, logger)
+	folderService := serviceDocsys.NewFolderService(folderRepo, docRepo, pathResolver, txManager, logger)
 	treeService := serviceDocsys.NewTreeService(folderRepo, docRepo, logger)
 	importService := serviceDocsys.NewImportService(docRepo, docService, logger)
 
@@ -89,9 +90,12 @@ func main() {
 
 	logger.Info("services initialized")
 
-	// Create Fiber app with custom error handler
+	// Create Fiber app with custom error handler and timeouts
 	app := fiber.New(fiber.Config{
 		ErrorHandler: middleware.ErrorHandler,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	})
 
 	// Middleware
@@ -145,7 +149,7 @@ func main() {
 	// Folder routes (NEW - using clean architecture)
 	api.Post("/folders", newFolderHandler.CreateFolder)
 	api.Get("/folders/:id", newFolderHandler.GetFolder)
-	api.Put("/folders/:id", newFolderHandler.UpdateFolder)
+	api.Patch("/folders/:id", newFolderHandler.UpdateFolder)
 	api.Delete("/folders/:id", newFolderHandler.DeleteFolder)
 
 	// Document routes (NEW - using clean architecture)

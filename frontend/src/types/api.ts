@@ -50,7 +50,7 @@ export interface DocumentDto {
 export interface FolderDto {
   id: string
   project_id: string
-  parent_id: string | null
+  folder_id: string | null  // Parent folder ID (renamed from parent_id for API consistency)
   name: string
   created_at: string
   folders?: FolderDto[]      // Nested subfolders (from /tree endpoint)
@@ -108,7 +108,7 @@ export function fromFolderDto(dto: FolderDto): Folder {
   return {
     id: dto.id,
     projectId: dto.project_id,
-    parentId: dto.parent_id,
+    parentId: dto.folder_id,
     name: dto.name,
     createdAt: new Date(dto.created_at),
   }

@@ -61,7 +61,7 @@ Writer: "This is magical."
 
 ## The Three Core Systems
 
-### 1. Document Management
+### 1. File Management
 
 **What users see:**
 - Document tree (folders + documents)
@@ -131,7 +131,7 @@ Writer: "This is magical."
 
 ## Development Phases
 
-### Phase 1: Document System (Week 1-2)
+### Phase 1: File System (Week 1-2)
 
 **Backend:**
 - Go + Fiber server setup

@@ -144,6 +144,11 @@ if (content) { ... }  // Fails for empty strings
 - Client errors (4xx, validation): Show error, manual retry only
 - Abort errors: Silent (user cancelled operation)
 
+Conventions:
+- Use `handleApiError(error, fallback)` from `core/lib/errors.ts` in UI/store catch blocks for consistent toasts.
+- Use `isAbortError(error)` for early returns on cancelled requests.
+- Global UI fallbacks: `app/error.tsx` and `app/global-error.tsx` render an `ErrorPanel` and log via `makeLogger()`.
+
 ## File Structure
 
 ```

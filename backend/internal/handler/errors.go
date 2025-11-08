@@ -9,39 +9,72 @@ import (
 	"meridian/internal/domain"
 )
 
-// ConflictDetail provides structured information about a resource conflict
-type ConflictDetail struct {
-	Type         string `json:"type"`          // Always "duplicate" for now
-	ResourceType string `json:"resource_type"` // "document", "folder", or "project"
-	ResourceID   string `json:"resource_id"`   // ID of the conflicting resource
-	Location     string `json:"location"`      // API path to the conflicting resource
+// RFC 7807 Problem Details for HTTP APIs
+// https://datatracker.ietf.org/doc/html/rfc7807
+
+// ProblemDetail represents a standard RFC 7807 error response
+type ProblemDetail struct {
+	Type   string `json:"type"`             // Error type identifier (e.g., "validation-error")
+	Title  string `json:"title"`            // Short, human-readable summary
+	Status int    `json:"status"`           // HTTP status code
+	Detail string `json:"detail,omitempty"` // Human-readable explanation of this specific error
 }
 
-// ConflictResponse represents a 409 conflict response with structured details
-type ConflictResponse struct {
-	Error    string          `json:"error"`              // Human-readable error message
-	Conflict *ConflictDetail `json:"conflict,omitempty"` // Optional structured conflict details
+// InvalidParam represents a single validation error for a field
+type InvalidParam struct {
+	Name   string `json:"name"`   // Field name
+	Reason string `json:"reason"` // Why the field is invalid
+}
+
+// ValidationProblem extends ProblemDetail with field-level validation errors
+type ValidationProblem struct {
+	Type          string         `json:"type"`
+	Title         string         `json:"title"`
+	Status        int            `json:"status"`
+	Detail        string         `json:"detail,omitempty"`
+	InvalidParams []InvalidParam `json:"invalid_params,omitempty"` // Field-level validation errors
+}
+
+// ConflictProblem extends ProblemDetail with the existing resource (custom extension per RFC 7807)
+// Used for CREATE operations that conflict with existing resources
+type ConflictProblem[T any] struct {
+	Type     string `json:"type"`
+	Title    string `json:"title"`
+	Status   int    `json:"status"`
+	Detail   string `json:"detail,omitempty"`
+	Resource T      `json:"resource"` // The existing resource in same format as GET endpoint
+}
+
+// HandleCreateConflict handles conflict errors for create operations by fetching and returning the existing resource
+// If the error is a ConflictError, it fetches the existing resource and returns 409 with ConflictProblem response
+// Otherwise, it delegates to standard error handling
+func HandleCreateConflict[T any](c *fiber.Ctx, err error, fetchFunc func() (T, error)) error {
+	var conflictErr *domain.ConflictError
+	if errors.As(err, &conflictErr) {
+		// Fetch the existing resource
+		existing, fetchErr := fetchFunc()
+		if fetchErr != nil {
+			// Failed to fetch existing - fall back to standard error handling
+			return handleError(c, fetchErr)
+		}
+		// Return 409 with RFC 7807 ConflictProblem + full existing resource
+		c.Set("Content-Type", "application/problem+json")
+		return c.Status(fiber.StatusConflict).JSON(ConflictProblem[T]{
+			Type:     "conflict",
+			Title:    "Resource Already Exists",
+			Status:   fiber.StatusConflict,
+			Detail:   conflictErr.Message,
+			Resource: existing,
+		})
+	}
+
+	// Not a conflict error - use standard error handling
+	return handleError(c, err)
 }
 
 // handleError maps domain errors to HTTP responses
 // Returns nil if error was handled (response sent), otherwise returns fiber error
 func handleError(c *fiber.Ctx, err error) error {
-	// Check for structured ConflictError first
-	var conflictErr *domain.ConflictError
-	if errors.As(err, &conflictErr) {
-		// Return structured conflict response with resource ID
-		return c.Status(fiber.StatusConflict).JSON(ConflictResponse{
-			Error: conflictErr.Message,
-			Conflict: &ConflictDetail{
-				Type:         "duplicate",
-				ResourceType: conflictErr.ResourceType,
-				ResourceID:   conflictErr.ResourceID,
-				Location:     fmt.Sprintf("/api/%ss/%s", conflictErr.ResourceType, conflictErr.ResourceID),
-			},
-		})
-	}
-
-	// Fall back to standard error mapping
 	return mapErrorToHTTP(err)
 }
 

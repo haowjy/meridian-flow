@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"errors"
 	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
+	"meridian/internal/domain"
+	"meridian/internal/domain/models/docsystem"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
@@ -41,6 +44,7 @@ func (h *ProjectHandler) ListProjects(c *fiber.Ctx) error {
 
 // CreateProject creates a new project
 // POST /api/projects
+// Returns 201 if created, 409 with existing project if duplicate
 func (h *ProjectHandler) CreateProject(c *fiber.Ctx) error {
 	// Extract user ID from context
 	userID, err := getUserID(c)
@@ -58,7 +62,15 @@ func (h *ProjectHandler) CreateProject(c *fiber.Ctx) error {
 	// Call service (all business logic is here)
 	project, err := h.projectService.CreateProject(c.Context(), &req)
 	if err != nil {
-		return handleError(c, err)
+		// Handle conflict by fetching and returning existing project with 409
+		return HandleCreateConflict(c, err, func() (*docsystem.Project, error) {
+			// Get ConflictError to extract resource ID
+			var conflictErr *domain.ConflictError
+			if errors.As(err, &conflictErr) {
+				return h.projectService.GetProject(c.Context(), conflictErr.ResourceID, userID)
+			}
+			return nil, err
+		})
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(project)
@@ -111,7 +123,7 @@ func (h *ProjectHandler) UpdateProject(c *fiber.Ctx) error {
 	return c.JSON(project)
 }
 
-// DeleteProject deletes a project
+// DeleteProject soft-deletes a project and returns it with deleted_at timestamp
 // DELETE /api/projects/:id
 func (h *ProjectHandler) DeleteProject(c *fiber.Ctx) error {
 	userID, err := getUserID(c)
@@ -124,10 +136,10 @@ func (h *ProjectHandler) DeleteProject(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Project ID is required")
 	}
 
-	err = h.projectService.DeleteProject(c.Context(), id, userID)
+	project, err := h.projectService.DeleteProject(c.Context(), id, userID)
 	if err != nil {
 		return handleError(c, err)
 	}
 
-	return c.SendStatus(fiber.StatusNoContent)
+	return c.JSON(project)
 }

@@ -1,0 +1,1769 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2025-01-08T00:00:00.000Z",
+  "__export_source": "insomnia.desktop.app:v2023.5.8",
+  "resources": [
+    {
+      "_id": "req_projects_list",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects",
+      "name": "1. List Projects",
+      "description": "Get all projects for authenticated user (ordered by updated_at DESC)",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698796800000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request",
+      "scripts": {
+        "after-response": "const response = insomnia.response.json();\nif (response && response.length > 0) {\n  await insomnia.environment.set('project_id', response[0].id);\n  console.log('✅ Saved first project_id:', response[0].id);\n  console.log('Total projects:', response.length);\n}"
+      }
+    },
+    {
+      "_id": "req_projects_create",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects",
+      "name": "2. Create Project",
+      "description": "Create a new project → saves project_id",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"My Novel Project\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698796700000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request",
+      "scripts": {
+        "after-response": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('project_id', response.id);\n  console.log('✅ Saved project_id:', response.id);\n}"
+      }
+    },
+    {
+      "_id": "req_projects_get",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects/{{ _.project_id }}",
+      "name": "3. Get Project by ID",
+      "description": "Retrieve a specific project → refreshes project_id",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698796600000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request",
+      "scripts": {
+        "after-response": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('project_id', response.id);\n  console.log('✅ Refreshed project_id:', response.id);\n}"
+      }
+    },
+    {
+      "_id": "req_projects_update",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects/{{ _.project_id }}",
+      "name": "4. Update Project Name",
+      "description": "Rename a project (updates updated_at automatically)",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"My Updated Novel Project\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698796500000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_projects_delete_empty",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects/{{ _.project_id }}",
+      "name": "5. Delete Project (Empty)",
+      "description": "Delete a project with no documents → returns 204",
+      "method": "DELETE",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698796400000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_projects_delete_with_docs",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects/{{ _.test_project_id }}",
+      "name": "6. Delete Project (Has Documents)",
+      "description": "Attempt to delete project with documents → returns 409 Conflict",
+      "method": "DELETE",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698796300000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_projects_create_validation",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects",
+      "name": "7. [VAL] Empty Name",
+      "description": "Test validation: should reject empty name → 400",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"   \"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698796200000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_projects_create_long_name",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects",
+      "name": "8. [VAL] Name Too Long",
+      "description": "Test validation: should reject name over 255 chars → 400",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Extra text to exceed 255 characters limit.\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698796100000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_projects_tree",
+      "parentId": "fld_projects",
+      "modified": 1698796800001,
+      "created": 1698796800001,
+      "url": "{{ _.base_url }}/api/projects/{{ _.project_id }}/tree",
+      "name": "9. Get Project Tree",
+      "description": "Get the nested folder/document tree for a project",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698796000000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_folder_root",
+      "parentId": "fld_folders",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders",
+      "name": "1. Create Root Folder",
+      "description": "Create a folder at root level. May return nothing if already exists (idempotent).",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Characters\",\n  \"folder_id\": null\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698740000000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\n\nif (status === 200 || status === 201) {\n  if (response && response.id) {\n    await insomnia.environment.set('folder_id', response.id);\n    console.log('✅ Saved folder_id:', response.id);\n  }\n} else if (status === 409) {\n  console.log('⚠️  Folder already exists (409 conflict)');\n  if (response && response.resource && response.resource.id) {\n    await insomnia.environment.set('folder_id', response.resource.id);\n    console.log('✅ Captured existing folder_id:', response.resource.id);\n    console.log('Message:', response.detail);\n  } else {\n    console.log('Error:', response.detail || 'Unknown');\n  }\n} else {\n  console.log('Status:', status, response);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_folder",
+      "parentId": "fld_folders",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders/{{ _.folder_id }}",
+      "name": "2. Get Folder (captures ID)",
+      "description": "Get folder details. Use this to capture folder_id if CREATE returned nothing.",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739900000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('folder_id', response.id);\n  console.log('✅ Captured folder_id from GET:', response.id);\n}\nif (response && response.children) {\n  console.log('📁 Folders:', response.children.folders?.length || 0);\n  console.log('📄 Documents:', response.children.documents?.length || 0);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_subfolder",
+      "parentId": "fld_folders",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders",
+      "name": "3. Create Subfolder",
+      "description": "Create a nested folder inside the parent folder.",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Villains\",\n  \"folder_id\": \"{{ _.folder_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739800000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\n\nif (status === 200 || status === 201) {\n  if (response && response.id) {\n    await insomnia.environment.set('subfolder_id', response.id);\n    console.log('✅ Saved subfolder_id:', response.id);\n  }\n} else if (status === 409) {\n  console.log('⚠️  Subfolder already exists (409 conflict)');\n  if (response && response.resource && response.resource.id) {\n    await insomnia.environment.set('subfolder_id', response.resource.id);\n    console.log('✅ Captured existing subfolder_id:', response.resource.id);\n    console.log('Message:', response.detail);\n  }\n} else {\n  console.log('Status:', status, response);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_rename_folder",
+      "parentId": "fld_folders",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders/{{ _.folder_id }}",
+      "name": "4. Rename Folder",
+      "description": "Change the name of a folder (stays at same level)",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Main Characters\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739700000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_move_folder_to_root",
+      "parentId": "fld_folders",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders/{{ _.subfolder_id }}",
+      "name": "5. Move Subfolder to Root",
+      "description": "Move the subfolder to root level (set folder_id to empty string)",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_id\": \"\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739600000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_delete_folder",
+      "parentId": "fld_folders",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders/{{ _.subfolder_id }}",
+      "name": "6. Delete Folder",
+      "description": "Delete a folder (cascades to child folders/documents)",
+      "method": "DELETE",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739500000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_doc_path",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "1. Create Document (Simple - folder_path only)",
+      "description": "External AI pattern: Create with folder_path only, auto-creates folders",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_path\": \"Characters\",\n  \"name\": \"Aria Moonwhisper\",\n  \"content\": \"# Aria Moonwhisper\\n\\nA powerful sorceress with **silver hair** and violet eyes.\\n\\n- Age: 17\\n- Element: Wind\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739400000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\n\nif (status === 200 || status === 201) {\n  if (response && response.id) {\n    await insomnia.environment.set('document_id', response.id);\n    console.log('✅ Saved document_id:', response.id);\n    if (response.folder_id) {\n      await insomnia.environment.set('folder_id', response.folder_id);\n      console.log('✅ Saved folder_id:', response.folder_id);\n    }\n  }\n} else if (status === 409) {\n  console.log('⚠️  Document already exists (409 conflict)');\n  if (response && response.resource && response.resource.id) {\n    await insomnia.environment.set('document_id', response.resource.id);\n    console.log('✅ Captured existing document_id:', response.resource.id);\n    console.log('Message:', response.detail);\n  }\n} else {\n  console.log('Status:', status, response);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_document",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
+      "name": "2. Get Document (captures ID)",
+      "description": "Get document by ID. Use this to capture document_id if CREATE returned nothing.",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739300000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('document_id', response.id);\n  console.log('✅ Captured document_id from GET:', response.id);\n}\nif (response && response.folder_id) {\n  await insomnia.environment.set('folder_id', response.folder_id);\n  console.log('✅ Captured folder_id:', response.folder_id);\n}\nif (response) {\n  console.log('📄 Name:', response.name);\n  console.log('📊 Word count:', response.word_count);\n  console.log('📍 Path:', response.path);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_doc_optimized",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "3. Create Document (Optimized - folder_id + folder_path)",
+      "description": "Frontend pattern: Pass folder_id for speed, folder_path as backup",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_path\": \"Characters\",\n  \"folder_id\": \"{{ _.folder_id }}\",\n  \"name\": \"Professor Thorne\",\n  \"content\": \"# Professor Thorne\\n\\nAn enigmatic teacher with secrets to hide.\\n\\n- Age: Unknown\\n- Element: All\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739200000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\n\nif (status === 200 || status === 201) {\n  if (response && response.id) {\n    console.log('✅ Created document:', response.id);\n  }\n} else if (status === 409) {\n  console.log('⚠️  Document already exists (409 conflict)');\n  if (response && response.resource && response.resource.id) {\n    console.log('✅ Existing document_id:', response.resource.id);\n    console.log('Message:', response.detail);\n  }\n} else {\n  console.log('Status:', status, response);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_doc_root",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "4. Create Root Document",
+      "description": "Create a document at root level (empty folder_path)",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_path\": \"\",\n  \"name\": \"Quick Notes\",\n  \"content\": \"# Quick Notes\\n\\nRandom ideas and thoughts to explore later.\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739100000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\n\nif (status === 200 || status === 201) {\n  if (response && response.id) {\n    await insomnia.environment.set('root_document_id', response.id);\n    console.log('✅ Saved root_document_id:', response.id);\n  }\n} else if (status === 409) {\n  console.log('⚠️  Document already exists (409 conflict)');\n  if (response && response.resource && response.resource.id) {\n    await insomnia.environment.set('root_document_id', response.resource.id);\n    console.log('✅ Captured existing root_document_id:', response.resource.id);\n    console.log('Message:', response.detail);\n  }\n} else {\n  console.log('Status:', status, response);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_update_content",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
+      "name": "5. Update Document Content",
+      "description": "Update the content of a document (name and folder stay the same)",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"content\": \"# Aria Moonwhisper - Updated!\\n\\nThis content has been updated! She is now level 25.\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739000000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_rename_document",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
+      "name": "6. Rename Document",
+      "description": "Change the name of a document (stays in same folder)",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Aria the Enchantress\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738900000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_move_document_via_path",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
+      "name": "7. Move Document via folder_path",
+      "description": "Move document using folder_path (auto-creates folders if needed)",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_path\": \"Archive/Old Characters\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738800000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response) {\n  console.log('✅ Document moved to:', response.path);\n  console.log('Expected path contains: Archive/Old Characters');\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_move_document",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.root_document_id }}",
+      "name": "8. Move Document to Folder",
+      "description": "Move root document into a folder (uses folder_id)",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_id\": \"{{ _.folder_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738700000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_move_document_to_root",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
+      "name": "9. Move Document to Root",
+      "description": "Move document to root level (set folder_id to empty string)",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_id\": \"\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738600000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_delete_document",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
+      "name": "10. Delete Document",
+      "description": "Delete a document by ID",
+      "method": "DELETE",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698738500000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_deeply_nested",
+      "parentId": "fld_integration",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "1. [INTEGRATION] Auto-Create Nested Folders",
+      "description": "Create document with deep folder path - auto-creates all folders",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_path\": \"World Building/Locations/Cities\",\n  \"name\": \"Eldergrove\",\n  \"content\": \"# Eldergrove\\n\\nAn ancient city built into massive trees.\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738400000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\n\nif (status === 200 || status === 201) {\n  if (response) {\n    console.log('✅ Created nested document');\n    console.log('📍 Path:', response.path);\n    console.log('Expected: World Building/Locations/Cities/Eldergrove');\n  }\n} else if (status === 409) {\n  console.log('⚠️  Document already exists (409 conflict)');\n  if (response && response.resource && response.resource.id) {\n    console.log('✅ Existing document ID:', response.resource.id);\n    console.log('Message:', response.detail);\n  }\n} else {\n  console.log('Status:', status, response);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_folder_then_doc",
+      "parentId": "fld_integration",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders",
+      "name": "2. [INTEGRATION] Create Folder Then Document",
+      "description": "Manual folder creation, then add document using folder_id",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Weapons\",\n  \"folder_id\": null\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738300000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\n\nif (status === 200 || status === 201) {\n  if (response && response.id) {\n    await insomnia.environment.set('weapons_folder_id', response.id);\n    console.log('✅ Created Weapons folder:', response.id);\n    console.log('→ Now create a document in this folder using the ID');\n  }\n} else if (status === 409) {\n  console.log('⚠️  Weapons folder already exists (409 conflict)');\n  if (response && response.resource && response.resource.id) {\n    await insomnia.environment.set('weapons_folder_id', response.resource.id);\n    console.log('✅ Captured existing weapons_folder_id:', response.resource.id);\n    console.log('Message:', response.detail);\n  }\n} else {\n  console.log('Status:', status, response);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_add_doc_to_folder",
+      "parentId": "fld_integration",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "3. [INTEGRATION] Add Document to Folder",
+      "description": "Create document using folder_id from previous request",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_id\": \"{{ _.weapons_folder_id }}\",\n  \"folder_path\": \"Weapons\",\n  \"name\": \"Stormcaller Blade\",\n  \"content\": \"# Stormcaller Blade\\n\\nA legendary sword that channels lightning.\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738200000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\n\nif (status === 200 || status === 201) {\n  if (response && response.folder_id === insomnia.environment.get('weapons_folder_id')) {\n    console.log('✅ Document created in correct folder');\n  } else {\n    console.log('⚠️  Document may be in wrong folder');\n  }\n  if (response) {\n    console.log('📍 Path:', response.path);\n  }\n} else if (status === 409) {\n  console.log('⚠️  Document already exists (409 conflict)');\n  if (response && response.resource && response.resource.id) {\n    console.log('✅ Existing document ID:', response.resource.id);\n    console.log('Message:', response.detail);\n  }\n} else {\n  console.log('Status:', status, response);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_folder_relative_path",
+      "parentId": "fld_integration",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders",
+      "name": "4. [PATH] Folder - Relative Path",
+      "description": "Create folder using relative path notation: 'Characters/Villains' creates both folders",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Characters/Villains\",\n  \"folder_id\": null\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738150000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\n\nif (status === 200 || status === 201) {\n  console.log('✅ Folder created via path notation');\n  if (response && response.id) {\n    await insomnia.environment.set('villains_folder_id', response.id);\n    console.log('📍 Path:', response.path);\n    console.log('📁 Folder ID:', response.id);\n    console.log('→ Path notation auto-created intermediate folders');\n  }\n} else if (status === 409) {\n  console.log('⚠️  Folder already exists (409 conflict)');\n  if (response && response.resource && response.resource.id) {\n    await insomnia.environment.set('villains_folder_id', response.resource.id);\n    console.log('✅ Captured existing folder_id:', response.resource.id);\n    console.log('Message:', response.detail);\n  }\n} else {\n  console.log('❌ Error:', status, response);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_folder_absolute_path",
+      "parentId": "fld_integration",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders",
+      "name": "5. [PATH] Folder - Absolute Path",
+      "description": "Create folder using absolute path notation: '/Magic/Spells' ignores folder_id",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"/Magic/Spells\",\n  \"folder_id\": \"{{ _.weapons_folder_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738140000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\n\nif (status === 200 || status === 201) {\n  console.log('✅ Folder created via absolute path');\n  if (response && response.id) {\n    await insomnia.environment.set('spells_folder_id', response.id);\n    console.log('📍 Path:', response.path);\n    console.log('📁 Folder ID:', response.id);\n    console.log('→ Absolute path ignored parent_id and created from root');\n  }\n} else if (status === 409) {\n  console.log('⚠️  Folder already exists (409 conflict)');\n  if (response && response.resource && response.resource.id) {\n    await insomnia.environment.set('spells_folder_id', response.resource.id);\n    console.log('✅ Captured existing folder_id:', response.resource.id);\n    console.log('Message:', response.detail);\n  }\n} else {\n  console.log('❌ Error:', status, response);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_doc_relative_path",
+      "parentId": "fld_integration",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "6. [PATH] Document - Relative Path",
+      "description": "Create document using relative path notation in name field",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_id\": null,\n  \"name\": \"Locations/Cities/Stormhaven\",\n  \"content\": \"# Stormhaven\\n\\nA coastal city known for its lightning storms.\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738130000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\n\nif (status === 200 || status === 201) {\n  console.log('✅ Document created via path notation');\n  if (response) {\n    console.log('📍 Path:', response.path);\n    console.log('📁 Folder ID:', response.folder_id);\n    console.log('📄 Document:', response.name);\n    console.log('→ Auto-created folders: Locations → Cities');\n  }\n} else if (status === 409) {\n  console.log('⚠️  Document already exists (409 conflict)');\n  if (response && response.resource) {\n    console.log('✅ Existing document:', response.resource.name);\n    console.log('Message:', response.detail);\n  }\n} else {\n  console.log('❌ Error:', status, response);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_doc_absolute_path",
+      "parentId": "fld_integration",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "7. [PATH] Document - Absolute Path",
+      "description": "Create document using absolute path notation (ignores folder_id)",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_id\": \"{{ _.weapons_folder_id }}\",\n  \"name\": \"/Worldbuilding/timeline\",\n  \"content\": \"# Timeline\\n\\nChronological history of major events.\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738120000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\n\nif (status === 200 || status === 201) {\n  console.log('✅ Document created via absolute path');\n  if (response) {\n    console.log('📍 Path:', response.path);\n    console.log('📁 Folder ID:', response.folder_id);\n    console.log('→ Absolute path ignored folder_id and created from root');\n  }\n} else if (status === 409) {\n  console.log('⚠️  Document already exists (409 conflict)');\n  if (response && response.resource) {\n    console.log('✅ Existing document:', response.resource.name);\n    console.log('Message:', response.detail);\n  }\n} else {\n  console.log('❌ Error:', status, response);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_path_validation_error",
+      "parentId": "fld_integration",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders",
+      "name": "8. [PATH] Validation Errors",
+      "description": "Test edge cases - should return 400 for invalid paths like 'a//b', 'a/', etc.",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Invalid//Path\",\n  \"folder_id\": null\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738110000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\n\nif (status === 400) {\n  console.log('✅ Validation correctly rejected invalid path');\n  console.log('Error message:', response.detail);\n  console.log('→ Try other invalid paths: \"a/\", \"//a\", etc.');\n} else if (status === 200 || status === 201) {\n  console.log('⚠️  UNEXPECTED: Invalid path was accepted');\n  console.log('Response:', response);\n} else {\n  console.log('Status:', status, response);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_import_merge_simple",
+      "parentId": "fld_import_merge",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/import",
+      "name": "1. Import Merge (Simple Zip)",
+      "description": "Merge mode: Upsert documents from zip file. Auto-creates folders, updates existing docs.",
+      "method": "POST",
+      "body": {
+        "mimeType": "multipart/form-data",
+        "params": [
+          {
+            "name": "files",
+            "value": "",
+            "description": "Upload a zip file containing markdown documents",
+            "type": "file",
+            "fileName": "test-import.zip"
+          }
+        ]
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "X-Project-ID",
+          "value": "{{ _.project_id }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698740000000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.summary) {\n  console.log('📊 Import Summary:');\n  console.log('  ✅ Created:', response.summary.created);\n  console.log('  🔄 Updated:', response.summary.updated);\n  console.log('  ❌ Failed:', response.summary.failed);\n  console.log('  📁 Total:', response.summary.total);\n}\nif (response && response.details && response.details.length > 0) {\n  console.log('⚠️  Errors:', response.details.length);\n  response.details.forEach(err => {\n    console.log('  -', err.file, ':', err.error);\n  });\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_import_merge_nested",
+      "parentId": "fld_import_merge",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/import",
+      "name": "2. Import Merge (Nested Folders)",
+      "description": "Import zip with nested folder structure (e.g. Characters/Villains/doc.md)",
+      "method": "POST",
+      "body": {
+        "mimeType": "multipart/form-data",
+        "params": [
+          {
+            "name": "files",
+            "value": "",
+            "description": "Upload zip with nested folders",
+            "type": "file",
+            "fileName": "nested-structure.zip"
+          }
+        ]
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "X-Project-ID",
+          "value": "{{ _.project_id }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739900000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.documents) {\n  console.log('📄 Imported Documents:');\n  response.documents.forEach(doc => {\n    console.log('  -', doc.path);\n  });\n}\nconsole.log('\\n💡 Tip: Check project tree to verify folder hierarchy');\nconsole.log('   GET /api/projects/' + insomnia.environment.get('project_id') + '/tree');",
+      "_type": "request"
+    },
+    {
+      "_id": "req_import_merge_duplicates",
+      "parentId": "fld_import_merge",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/import",
+      "name": "3. Import Merge (Duplicate Names - Upsert)",
+      "description": "Import documents that already exist - should UPDATE existing docs, not fail",
+      "method": "POST",
+      "body": {
+        "mimeType": "multipart/form-data",
+        "params": [
+          {
+            "name": "files",
+            "value": "",
+            "description": "Upload zip with same names as existing docs",
+            "type": "file",
+            "fileName": "duplicate-test.zip"
+          }
+        ]
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "X-Project-ID",
+          "value": "{{ _.project_id }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739800000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.summary) {\n  console.log('📊 Upsert Behavior Check:');\n  console.log('  🆕 Created:', response.summary.created);\n  console.log('  🔄 Updated:', response.summary.updated, '← Should have updates');\n  if (response.summary.updated > 0) {\n    console.log('  ✅ Upsert working correctly');\n  } else {\n    console.log('  ⚠️  Expected some updates for duplicates');\n  }\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_tree_after_merge",
+      "parentId": "fld_import_merge",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/projects/{{ _.project_id }}/tree",
+      "name": "4. View Tree (After Merge)",
+      "description": "Visualize project structure after merge import",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739700000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response) {\n  console.log('🌳 Project Tree Structure:');\n  console.log('📁 Root folders:', response.folders?.length || 0);\n  console.log('📄 Root documents:', response.documents?.length || 0);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_import_replace_mode",
+      "parentId": "fld_import_replace",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/import/replace",
+      "name": "5. Import Replace (Clear All First)",
+      "description": "Replace mode: DELETE all existing documents, then import. Dangerous!",
+      "method": "POST",
+      "body": {
+        "mimeType": "multipart/form-data",
+        "params": [
+          {
+            "name": "files",
+            "value": "",
+            "description": "Upload zip file that will REPLACE all existing content",
+            "type": "file",
+            "fileName": "fresh-start.zip"
+          }
+        ]
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "X-Project-ID",
+          "value": "{{ _.project_id }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739600000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.summary) {\n  console.log('🗑️  Replace Mode Results:');\n  console.log('  ✅ Created:', response.summary.created, '← All documents are new');\n  console.log('  🔄 Updated:', response.summary.updated, '← Should be 0 (all deleted first)');\n  console.log('  ❌ Failed:', response.summary.failed);\n  console.log('\\n⚠️  WARNING: Old content was deleted!');\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_tree_after_replace",
+      "parentId": "fld_import_replace",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/projects/{{ _.project_id }}/tree",
+      "name": "6. View Tree (After Replace)",
+      "description": "Verify old content deleted, only new content exists",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739500000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response) {\n  console.log('🌳 Project Tree After Replace:');\n  console.log('📁 Root folders:', response.folders?.length || 0);\n  console.log('📄 Root documents:', response.documents?.length || 0);\n  console.log('\\n💡 Should only contain documents from the zip file');\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_import_empty_zip",
+      "parentId": "fld_import_edge_cases",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/import",
+      "name": "7. [EDGE] Empty Zip File",
+      "description": "Import empty zip - should succeed with 0 documents",
+      "method": "POST",
+      "body": {
+        "mimeType": "multipart/form-data",
+        "params": [
+          {
+            "name": "files",
+            "value": "",
+            "description": "Upload empty zip file",
+            "type": "file",
+            "fileName": "empty.zip"
+          }
+        ]
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "X-Project-ID",
+          "value": "{{ _.project_id }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739400000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = insomnia.response.json();\nconst status = insomnia.response.code;\nif (status === 200 && response.summary.total === 0) {\n  console.log('✅ Empty zip handled correctly: 200 OK with 0 documents');\n} else {\n  console.log('Status:', status);\n  console.log('Total:', response.summary?.total);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_import_invalid_zip",
+      "parentId": "fld_import_edge_cases",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/import",
+      "name": "8. [EDGE] Invalid Zip Structure",
+      "description": "Import zip with invalid content - should report errors gracefully",
+      "method": "POST",
+      "body": {
+        "mimeType": "multipart/form-data",
+        "params": [
+          {
+            "name": "files",
+            "value": "",
+            "description": "Upload corrupted or invalid zip",
+            "type": "file",
+            "fileName": "invalid.zip"
+          }
+        ]
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "X-Project-ID",
+          "value": "{{ _.project_id }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739300000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.details) {\n  console.log('⚠️  Error handling check:');\n  console.log('  Errors reported:', response.details.length);\n  console.log('  Failed count:', response.summary?.failed || 0);\n  response.details.forEach(err => {\n    console.log('  -', err.error);\n  });\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_import_slash_sanitization",
+      "parentId": "fld_import_edge_cases",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/import",
+      "name": "9. [EDGE] Document Name Sanitization",
+      "description": "Import documents with slashes in names - should sanitize to hyphens",
+      "method": "POST",
+      "body": {
+        "mimeType": "multipart/form-data",
+        "params": [
+          {
+            "name": "files",
+            "value": "",
+            "description": "Upload zip with docs named 'Hero/Villain.md' (should become 'Hero-Villain')",
+            "type": "file",
+            "fileName": "slash-test.zip"
+          }
+        ]
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "X-Project-ID",
+          "value": "{{ _.project_id }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739200000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.documents) {\n  console.log('🔧 Name Sanitization Check:');\n  response.documents.forEach(doc => {\n    if (doc.name.includes('/')) {\n      console.log('  ❌ FAIL: Name still has slash:', doc.name);\n    } else if (doc.name.includes('-')) {\n      console.log('  ✅ OK: Slash converted to hyphen:', doc.name);\n    } else {\n      console.log('  ℹ️  Name:', doc.name);\n    }\n  });\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_import_no_files",
+      "parentId": "fld_import_edge_cases",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/import",
+      "name": "10. [EDGE] No Files Provided",
+      "description": "Call import endpoint without any files - should return 400 error",
+      "method": "POST",
+      "body": {
+        "mimeType": "multipart/form-data",
+        "params": []
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "X-Project-ID",
+          "value": "{{ _.project_id }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739100000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nif (status === 400) {\n  console.log('✅ Validation working: Got expected 400 error for missing files');\n} else {\n  console.log('❌ Expected 400, got:', status);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_workflow_nested",
+      "parentId": "fld_workflows",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "1. Create Deeply Nested Document",
+      "description": "Create a document with deep path - auto-creates all folders in hierarchy",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_path\": \"World Building/Locations/Cities\",\n  \"name\": \"Eldergrove\",\n  \"content\": \"# Eldergrove\\n\\nA bustling city at the crossroads of three kingdoms.\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739100000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('nested_doc_id', response.id);\n  console.log('✅ Document created in nested folders');\n  console.log('Path:', response.path);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_workflow_get_tree",
+      "parentId": "fld_workflows",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/projects/{{ _.project_id }}/tree",
+      "name": "2. View Full Tree",
+      "description": "See the entire folder/document tree structure created",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739090000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_workflow_folder_direct",
+      "parentId": "fld_workflows",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders",
+      "name": "3. Create Folder Then Document",
+      "description": "First create a folder, then add document to it using folder_id",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Chapters\",\n  \"folder_id\": null\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739080000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\nif (status === 200 || status === 201) {\n  if (response && response.id) {\n    await insomnia.environment.set('chapters_folder_id', response.id);\n    console.log('✅ Chapters folder created:', response.id);\n  }\n} else if (status === 409) {\n  if (response && response.resource && response.resource.id) {\n    await insomnia.environment.set('chapters_folder_id', response.resource.id);\n    console.log('⚠️  Folder exists, using existing ID:', response.resource.id);\n  }\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_workflow_doc_in_folder",
+      "parentId": "fld_workflows",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "4. Add Document to Folder",
+      "description": "Create document using folder_id (from previous step)",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_id\": \"{{ _.chapters_folder_id }}\",\n  \"name\": \"Chapter 1 - The Beginning\",\n  \"content\": \"# The Beginning\\n\\nOnce upon a time...\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739070000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\nif (status === 200 || status === 201) {\n  if (response && response.id) {\n    await insomnia.environment.set('chapter1_id', response.id);\n    console.log('✅ Chapter 1 created in Chapters folder');\n  }\n} else if (status === 409) {\n  if (response && response.resource && response.resource.id) {\n    await insomnia.environment.set('chapter1_id', response.resource.id);\n    console.log('⚠️  Document exists, using existing ID:', response.resource.id);\n  }\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_workflow_reorganize",
+      "parentId": "fld_workflows",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders",
+      "name": "5. Create Archive Folder",
+      "description": "Create an Archive folder to reorganize documents",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Archive\",\n  \"folder_id\": null\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739060000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\nif (status === 200 || status === 201) {\n  if (response && response.id) {\n    await insomnia.environment.set('archive_folder_id', response.id);\n    console.log('✅ Archive folder created:', response.id);\n  }\n} else if (status === 409) {\n  if (response && response.resource && response.resource.id) {\n    await insomnia.environment.set('archive_folder_id', response.resource.id);\n    console.log('⚠️  Folder exists, using existing ID:', response.resource.id);\n  }\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_workflow_move_doc",
+      "parentId": "fld_workflows",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.chapter1_id }}",
+      "name": "6. Move Document to Archive",
+      "description": "Move Chapter 1 to the Archive folder",
+      "method": "PUT",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_id\": \"{{ _.archive_folder_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739050000,
+      "isPrivate": false,
+      "afterResponseScript": "console.log('✅ Document moved to Archive folder');",
+      "_type": "request"
+    },
+    {
+      "_id": "req_workflow_final_tree",
+      "parentId": "fld_workflows",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/projects/{{ _.project_id }}/tree",
+      "name": "7. View Final Structure",
+      "description": "See the final reorganized tree structure",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739040000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_folder_slash",
+      "parentId": "fld_validations",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders",
+      "name": "1. [VAL] Folder Name with Slash",
+      "description": "Should FAIL: folder names cannot contain slashes (400 validation error)",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"World/Characters\",\n  \"folder_id\": null\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698740000000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nif (status === 400) {\n  console.log('✅ Validation passed: Folder slash rejected (400)');\n} else {\n  console.log('❌ Expected 400, got:', status);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_rename_folder_slash",
+      "parentId": "fld_validations",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders/{{ _.folder_id }}",
+      "name": "2. [VAL] Rename Folder with Slash",
+      "description": "Should FAIL: folder names cannot contain slashes (400 validation error)",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Main/Side Characters\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739900000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nif (status === 400) {\n  console.log('✅ Validation passed: Folder rename slash rejected (400)');\n} else {\n  console.log('❌ Expected 400, got:', status);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_doc_no_folder",
+      "parentId": "fld_validations",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "3. [VAL] Document without folder_path or folder_id",
+      "description": "Should FAIL: must provide at least one of folder_path or folder_id (400)",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Invalid Document\",\n  \"content\": \"# Invalid\\n\\nThis should fail validation.\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739800000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nif (status === 400) {\n  console.log('✅ Validation passed: Missing folder info rejected (400)');\n} else {\n  console.log('❌ Expected 400, got:', status);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_project_empty_name",
+      "parentId": "fld_validations",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/projects",
+      "name": "4. [VAL] Project with Empty Name",
+      "description": "Should FAIL: project name is required (400)",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739700000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nif (status === 400) {\n  console.log('✅ Validation passed: Empty project name rejected (400)');\n} else {\n  console.log('❌ Expected 400, got:', status);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_project_too_long",
+      "parentId": "fld_validations",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/projects",
+      "name": "5. [VAL] Project Name Too Long",
+      "description": "Should FAIL: project name exceeds max length (400)",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"This is an extremely long project name that definitely exceeds the maximum allowed length for project names in the system and should be rejected by validation rules because it is way too long\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739600000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nif (status === 400) {\n  console.log('✅ Validation passed: Too-long project name rejected (400)');\n} else {\n  console.log('❌ Expected 400, got:', status);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_doc_priority_folder_id",
+      "parentId": "fld_priority",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "1. [PRIORITY] Create - folder_id Wins",
+      "description": "When both folder_id and folder_path provided, folder_id takes priority",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_path\": \"Characters\",\n  \"folder_id\": \"{{ _.folder_id }}\",\n  \"name\": \"Priority Test Document\",\n  \"content\": \"# Testing Priority\\n\\nThis document should be in the folder_id location, NOT Characters.\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739500000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = insomnia.response.json();\nconst expectedFolderId = insomnia.environment.get('folder_id');\nif (response && response.folder_id === expectedFolderId) {\n  console.log('✅ Priority test PASSED: folder_id was used');\n  console.log('  Expected:', expectedFolderId);\n  console.log('  Actual:', response.folder_id);\n} else {\n  console.log('❌ Priority test FAILED');\n  console.log('  Expected folder_id:', expectedFolderId);\n  console.log('  Actual folder_id:', response?.folder_id);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_move_doc_priority_folder_id",
+      "parentId": "fld_priority",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
+      "name": "2. [PRIORITY] Move - folder_id Wins",
+      "description": "When both folder_id and folder_path provided in update, folder_id wins",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_id\": \"{{ _.folder_id }}\",\n  \"folder_path\": \"Archive\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739400000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = insomnia.response.json();\nconst expectedFolderId = insomnia.environment.get('folder_id');\nif (response && response.folder_id === expectedFolderId) {\n  console.log('✅ Priority test PASSED: folder_id was used for move');\n} else {\n  console.log('❌ Priority test FAILED');\n  console.log('  Expected folder_id:', expectedFolderId);\n  console.log('  Actual folder_id:', response?.folder_id);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_delete_project_with_docs",
+      "parentId": "fld_errors",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/projects/{{ _.test_project_id }}",
+      "name": "1. [ERROR] Delete Project with Documents",
+      "description": "Should FAIL: Cannot delete project that has documents (409 conflict)",
+      "method": "DELETE",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739300000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nif (status === 409) {\n  console.log('✅ Protection working: Cannot delete project with documents (409)');\n} else {\n  console.log('Expected 409 Conflict, got:', status);\n  console.log('⚠️  Project may have been deleted! Check if documents exist first.');\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_nonexistent_document",
+      "parentId": "fld_errors",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/00000000-0000-0000-0000-999999999999",
+      "name": "2. [ERROR] Get Nonexistent Document",
+      "description": "Should return 404 for document that doesn't exist",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739200000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nif (status === 404) {\n  console.log('✅ Error handling correct: Nonexistent document returns 404');\n} else {\n  console.log('Expected 404, got:', status);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_nonexistent_folder",
+      "parentId": "fld_errors",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders/00000000-0000-0000-0000-999999999999",
+      "name": "3. [ERROR] Get Nonexistent Folder",
+      "description": "Should return 404 for folder that doesn't exist",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739100000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nif (status === 404) {\n  console.log('✅ Error handling correct: Nonexistent folder returns 404');\n} else {\n  console.log('Expected 404, got:', status);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_duplicate_folder",
+      "parentId": "fld_errors",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders",
+      "name": "4. [ERROR] Create Duplicate Folder Name",
+      "description": "Should FAIL: Cannot create folder with same name in same location (409 conflict)",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Characters\",\n  \"folder_id\": null\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739000000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nif (status === 409) {\n  console.log('✅ Uniqueness enforced: Duplicate folder name rejected (409)');\n} else if (status === 200) {\n  console.log('ℹ️  Folder already exists - no error (idempotent behavior)');\n} else {\n  console.log('Got status:', status);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_duplicate_document",
+      "parentId": "fld_errors",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "5. [ERROR] Create Duplicate Document Name",
+      "description": "Should FAIL: Cannot create document with same name in same folder (409 conflict)",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_path\": \"Characters\",\n  \"name\": \"Aria Moonwhisper\",\n  \"content\": \"# Duplicate test\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738900000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nif (status === 409) {\n  console.log('✅ Uniqueness enforced: Duplicate document name rejected (409)');\n} else if (status === 200) {\n  console.log('ℹ️  Document already exists - no error (idempotent behavior)');\n} else {\n  console.log('Got status:', status);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "fld_projects",
+      "parentId": "wrk_file_system",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "name": "Projects",
+      "description": "Project CRUD operations + tree",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698800000000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "fld_folders",
+      "parentId": "wrk_file_system",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Folders",
+      "description": "Folder CRUD operations",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698740000000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "fld_documents",
+      "parentId": "wrk_file_system",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Documents",
+      "description": "Document CRUD operations",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698739000000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "fld_integration",
+      "parentId": "wrk_file_system",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Integration",
+      "description": "Cross-feature integration tests",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698738000000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "fld_import_merge",
+      "parentId": "wrk_file_system",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Import - Merge Mode",
+      "description": "Upsert documents (create or update existing)",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698737000000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "fld_import_replace",
+      "parentId": "wrk_file_system",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Import - Replace Mode",
+      "description": "Delete all, then import (dangerous!)",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698736000000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "fld_import_edge_cases",
+      "parentId": "wrk_file_system",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Import - Edge Cases",
+      "description": "Error handling and validation tests for import",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698735000000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "fld_workflows",
+      "parentId": "wrk_file_system",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Workflows",
+      "description": "Realistic end-to-end user scenarios",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698734000000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "fld_validations",
+      "parentId": "wrk_file_system",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Edge Cases - Validations",
+      "description": "Input validation tests (should return 400)",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698733000000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "fld_priority",
+      "parentId": "wrk_file_system",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Edge Cases - Priority Tests",
+      "description": "Test folder_id vs folder_path priority logic",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698732000000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "fld_errors",
+      "parentId": "wrk_file_system",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Edge Cases - Error Paths",
+      "description": "Error handling tests (404, 409, etc.)",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698731000000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "wrk_file_system",
+      "parentId": null,
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "01 - File System",
+      "description": "Complete file system operations: projects, folders, documents, import, workflows, and edge cases",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "env_base",
+      "parentId": "wrk_file_system",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:8080",
+        "project_id": "00000000-0000-0000-0000-000000000002",
+        "test_project_id": "00000000-0000-0000-0000-000000000002",
+        "folder_id": "",
+        "subfolder_id": "",
+        "document_id": "",
+        "root_document_id": "",
+        "weapons_folder_id": "",
+        "nested_doc_id": "",
+        "chapters_folder_id": "",
+        "chapter1_id": "",
+        "archive_folder_id": ""
+      },
+      "dataPropertyOrder": {
+        "&": [
+          "base_url",
+          "project_id",
+          "test_project_id",
+          "folder_id",
+          "subfolder_id",
+          "document_id",
+          "root_document_id",
+          "weapons_folder_id",
+          "nested_doc_id",
+          "chapters_folder_id",
+          "chapter1_id",
+          "archive_folder_id"
+        ]
+      },
+      "color": null,
+      "isPrivate": false,
+      "metaSortKey": 1698739200000,
+      "_type": "environment"
+    }
+  ]
+}

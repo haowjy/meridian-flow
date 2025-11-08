@@ -35,7 +35,8 @@ func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *models.Doc
 		RETURNING id, created_at, updated_at
 	`, r.tables.Documents)
 
-	err := r.pool.QueryRow(ctx, query,
+	executor := postgres.GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, query,
 		doc.ProjectID,
 		doc.FolderID,
 		doc.Name,
@@ -72,11 +73,12 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 	query := fmt.Sprintf(`
 		SELECT id, project_id, folder_id, name, content, word_count, created_at, updated_at
 		FROM %s
-		WHERE id = $1 AND project_id = $2
+		WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
 	`, r.tables.Documents)
 
 	var doc models.Document
-	err := r.pool.QueryRow(ctx, query, id, projectID).Scan(
+	executor := postgres.GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, query, id, projectID).Scan(
 		&doc.ID,
 		&doc.ProjectID,
 		&doc.FolderID,
@@ -102,10 +104,11 @@ func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Doc
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET folder_id = $1, name = $2, content = $3, word_count = $4, updated_at = $5
-		WHERE id = $6 AND project_id = $7
+		WHERE id = $6 AND project_id = $7 AND deleted_at IS NULL
 	`, r.tables.Documents)
 
-	result, err := r.pool.Exec(ctx, query,
+	executor := postgres.GetExecutor(ctx, r.pool)
+	result, err := executor.Exec(ctx, query,
 		doc.FolderID,
 		doc.Name,
 		doc.Content,
@@ -141,14 +144,16 @@ func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Doc
 	return nil
 }
 
-// Delete deletes a document
+// Delete soft-deletes a document by setting deleted_at timestamp
 func (r *PostgresDocumentRepository) Delete(ctx context.Context, id, projectID string) error {
 	query := fmt.Sprintf(`
-		DELETE FROM %s
-		WHERE id = $1 AND project_id = $2
+		UPDATE %s
+		SET deleted_at = NOW()
+		WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
 	`, r.tables.Documents)
 
-	result, err := r.pool.Exec(ctx, query, id, projectID)
+	executor := postgres.GetExecutor(ctx, r.pool)
+	result, err := executor.Exec(ctx, query, id, projectID)
 	if err != nil {
 		return fmt.Errorf("delete document: %w", err)
 	}
@@ -160,14 +165,16 @@ func (r *PostgresDocumentRepository) Delete(ctx context.Context, id, projectID s
 	return nil
 }
 
-// DeleteAllByProject deletes all documents in a project
+// DeleteAllByProject soft-deletes all documents in a project
 func (r *PostgresDocumentRepository) DeleteAllByProject(ctx context.Context, projectID string) error {
 	query := fmt.Sprintf(`
-		DELETE FROM %s
-		WHERE project_id = $1
+		UPDATE %s
+		SET deleted_at = NOW()
+		WHERE project_id = $1 AND deleted_at IS NULL
 	`, r.tables.Documents)
 
-	_, err := r.pool.Exec(ctx, query, projectID)
+	executor := postgres.GetExecutor(ctx, r.pool)
+	_, err := executor.Exec(ctx, query, projectID)
 	if err != nil {
 		return fmt.Errorf("delete all documents: %w", err)
 	}
@@ -184,7 +191,7 @@ func (r *PostgresDocumentRepository) ListByFolder(ctx context.Context, folderID 
 		query = fmt.Sprintf(`
 			SELECT id, project_id, folder_id, name, word_count, updated_at
 			FROM %s
-			WHERE project_id = $1 AND folder_id IS NULL
+			WHERE project_id = $1 AND folder_id IS NULL AND deleted_at IS NULL
 			ORDER BY name ASC
 		`, r.tables.Documents)
 		args = append(args, projectID)
@@ -192,13 +199,14 @@ func (r *PostgresDocumentRepository) ListByFolder(ctx context.Context, folderID 
 		query = fmt.Sprintf(`
 			SELECT id, project_id, folder_id, name, word_count, updated_at
 			FROM %s
-			WHERE project_id = $1 AND folder_id = $2
+			WHERE project_id = $1 AND folder_id = $2 AND deleted_at IS NULL
 			ORDER BY name ASC
 		`, r.tables.Documents)
 		args = append(args, projectID, *folderID)
 	}
 
-	rows, err := r.pool.Query(ctx, query, args...)
+	executor := postgres.GetExecutor(ctx, r.pool)
+	rows, err := executor.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list documents in folder: %w", err)
 	}
@@ -233,11 +241,12 @@ func (r *PostgresDocumentRepository) GetAllMetadataByProject(ctx context.Context
 	query := fmt.Sprintf(`
 		SELECT id, project_id, folder_id, name, word_count, updated_at
 		FROM %s
-		WHERE project_id = $1
+		WHERE project_id = $1 AND deleted_at IS NULL
 		ORDER BY updated_at DESC
 	`, r.tables.Documents)
 
-	rows, err := r.pool.Query(ctx, query, projectID)
+	executor := postgres.GetExecutor(ctx, r.pool)
+	rows, err := executor.Query(ctx, query, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("get all document metadata: %w", err)
 	}
@@ -279,17 +288,19 @@ func (r *PostgresDocumentRepository) GetPath(ctx context.Context, doc *models.Do
 		WITH RECURSIVE folder_path AS (
 			SELECT id, name, parent_id, name::text AS path
 			FROM %s
-			WHERE id = $1 AND project_id = $2
+			WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
 			UNION ALL
 			SELECT f.id, f.name, f.parent_id, f.name || '/' || fp.path
 			FROM %s f
 			JOIN folder_path fp ON f.id = fp.parent_id
+			WHERE f.deleted_at IS NULL
 		)
 		SELECT path FROM folder_path WHERE parent_id IS NULL
 	`, r.tables.Folders, r.tables.Folders)
 
 	var folderPath string
-	err := r.pool.QueryRow(ctx, query, *doc.FolderID, doc.ProjectID).Scan(&folderPath)
+	executor := postgres.GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, query, *doc.FolderID, doc.ProjectID).Scan(&folderPath)
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
 			// Folder not found, return just document name
@@ -312,23 +323,24 @@ func (r *PostgresDocumentRepository) getExistingDocumentID(ctx context.Context, 
 
 	var id string
 	var err error
+	executor := postgres.GetExecutor(ctx, r.pool)
 
 	if folderID == nil {
 		// Query for root-level document (folder_id IS NULL)
 		query = fmt.Sprintf(`
 			SELECT id
 			FROM %s
-			WHERE project_id = $1 AND folder_id IS NULL AND name = $2
+			WHERE project_id = $1 AND folder_id IS NULL AND name = $2 AND deleted_at IS NULL
 		`, r.tables.Documents)
-		err = r.pool.QueryRow(ctx, query, projectID, name).Scan(&id)
+		err = executor.QueryRow(ctx, query, projectID, name).Scan(&id)
 	} else {
 		// Query for document in specific folder
 		query = fmt.Sprintf(`
 			SELECT id
 			FROM %s
-			WHERE project_id = $1 AND folder_id = $2 AND name = $3
+			WHERE project_id = $1 AND folder_id = $2 AND name = $3 AND deleted_at IS NULL
 		`, r.tables.Documents)
-		err = r.pool.QueryRow(ctx, query, projectID, *folderID, name).Scan(&id)
+		err = executor.QueryRow(ctx, query, projectID, *folderID, name).Scan(&id)
 	}
 
 	if err != nil {

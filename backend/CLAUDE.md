@@ -129,6 +129,33 @@ See `_docs/technical/backend/database-connections.md`
 - **API examples**: `tests/insomnia-collection.json`
 - **Seeding**: `scripts/README.md`
 
+## Server Configuration
+
+### HTTP Timeouts
+
+**Production (hardened):**
+- `ReadTimeout`: 15 seconds - Maximum time to read request
+- `WriteTimeout`: 30 seconds - Maximum time to write response
+- `IdleTimeout`: 60 seconds - Maximum keep-alive time
+
+**Purpose:** Prevents hung connections, slowloris attacks, and resource exhaustion.
+
+**Configuration:** See `cmd/server/main.go:93-97`
+
+### Validation Rules
+
+**Name Normalization:**
+- All names (projects, folders, documents) are automatically trimmed of leading/trailing whitespace
+- Internal behavior, transparent to API clients
+
+**Folder/Document Name Restrictions:**
+- Folder names **cannot contain** `/` (used in path construction)
+- Document names **cannot contain** `/` (filesystem semantics)
+- Validation regex: `^[^/]+$`
+- Import automatically sanitizes `/` to `-` in document names
+
+**See:** `_docs/technical/backend/api/contracts.md` for complete validation rules
+
 ## Phase 1 Auth Stub
 
 No real auth yet. Uses hardcoded IDs from `.env`:

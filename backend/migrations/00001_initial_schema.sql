@@ -1,12 +1,12 @@
 -- +goose Up
 -- +goose ENVSUB ON
--- Initial schema for Meridian: document system + LLM chat system
+-- Initial schema for Meridian: file system + LLM chat system
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================================================
--- DOCUMENT SYSTEM TABLES
+-- FILE SYSTEM TABLES
 -- ============================================================================
 
 -- Projects table
@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS ${TABLE_PREFIX}projects (
     user_id UUID NOT NULL,
     name TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ DEFAULT NULL
 );
 
 -- Folders table (real folder entities for hierarchy)
@@ -26,6 +27,7 @@ CREATE TABLE IF NOT EXISTS ${TABLE_PREFIX}folders (
     name TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ DEFAULT NULL,
     UNIQUE(project_id, parent_id, name)
 );
 
@@ -39,6 +41,7 @@ CREATE TABLE IF NOT EXISTS ${TABLE_PREFIX}documents (
     word_count INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ DEFAULT NULL,
     UNIQUE(project_id, folder_id, name)
 );
 
@@ -53,7 +56,8 @@ CREATE TABLE IF NOT EXISTS ${TABLE_PREFIX}chats (
     user_id UUID NOT NULL,
     title TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ DEFAULT NULL
 );
 
 -- Turns table (conversation tree structure)
@@ -101,7 +105,7 @@ CREATE TABLE IF NOT EXISTS ${TABLE_PREFIX}assistant_responses (
 -- INDEXES
 -- ============================================================================
 
--- Document system indexes
+-- File system indexes
 CREATE UNIQUE INDEX IF NOT EXISTS idx_${TABLE_PREFIX}projects_user_name ON ${TABLE_PREFIX}projects(user_id, name);
 CREATE INDEX IF NOT EXISTS idx_${TABLE_PREFIX}folders_project_parent ON ${TABLE_PREFIX}folders(project_id, parent_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_${TABLE_PREFIX}folders_root_unique ON ${TABLE_PREFIX}folders(project_id, name) WHERE parent_id IS NULL;
@@ -117,11 +121,23 @@ CREATE INDEX IF NOT EXISTS idx_${TABLE_PREFIX}turns_parent ON ${TABLE_PREFIX}tur
 CREATE INDEX IF NOT EXISTS idx_${TABLE_PREFIX}content_blocks_turn_seq ON ${TABLE_PREFIX}content_blocks(turn_id, sequence);
 CREATE INDEX IF NOT EXISTS idx_${TABLE_PREFIX}content_blocks_ref ON ${TABLE_PREFIX}content_blocks(ref_id) WHERE ref_id IS NOT NULL;
 
+-- Soft delete indexes
+CREATE INDEX IF NOT EXISTS idx_${TABLE_PREFIX}projects_deleted_at ON ${TABLE_PREFIX}projects(deleted_at) WHERE deleted_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_${TABLE_PREFIX}folders_deleted_at ON ${TABLE_PREFIX}folders(deleted_at) WHERE deleted_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_${TABLE_PREFIX}documents_deleted_at ON ${TABLE_PREFIX}documents(deleted_at) WHERE deleted_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_${TABLE_PREFIX}chats_deleted_at ON ${TABLE_PREFIX}chats(deleted_at) WHERE deleted_at IS NOT NULL;
+
 -- +goose ENVSUB OFF
 
 -- +goose Down
 -- +goose ENVSUB ON
 -- Drop tables in reverse dependency order
+
+-- Drop soft delete indexes
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}chats_deleted_at;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}documents_deleted_at;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}folders_deleted_at;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}projects_deleted_at;
 
 DROP INDEX IF EXISTS idx_${TABLE_PREFIX}content_blocks_ref;
 DROP INDEX IF EXISTS idx_${TABLE_PREFIX}content_blocks_turn_seq;

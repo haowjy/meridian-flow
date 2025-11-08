@@ -191,12 +191,15 @@ func (s *importService) processMarkdownFile(
 	}
 
 	if docMeta.Name != nil {
-		// Use name from frontmatter (allows "/" in names)
+		// Use name from frontmatter
 		docName = *docMeta.Name
 	} else {
 		// Use filename without extension as document name
 		docName = strings.TrimSuffix(filepath.Base(file.Name), ".md")
 	}
+
+	// Sanitize document name: replace slashes with hyphens (filesystem semantics)
+	docName = strings.ReplaceAll(docName, "/", "-")
 
 	// Construct full path for document lookup
 	// This must match how GetPath() constructs paths for existing documents
@@ -278,7 +281,7 @@ func (s *importService) updateDocument(
 	})
 
 	if err != nil {
-		s.addError(result, doc.Path, fmt.Sprintf("failed to update document: %v", err))
+		s.addError(result, docID, fmt.Sprintf("failed to update document: %v", err))
 		return
 	}
 

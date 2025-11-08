@@ -5,6 +5,7 @@ import { api } from '@/core/lib/api'
 import { db } from '@/core/lib/db'
 import { loadWithPolicy, ReconcileNewestPolicy, ICacheRepo, IRemoteRepo } from '@/core/lib/cache'
 import { documentSyncService } from '@/core/services/documentSyncService'
+import { handleApiError, isAbortError } from '@/core/lib/errors'
 import { toast } from 'sonner'
 
 interface EditorStore {
@@ -77,17 +78,17 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
           set({ activeDocument: final.data, status: 'saved', isLoading: false })
         })
         .catch((error) => {
-          if (error instanceof Error && error.name === 'AbortError') {
+          if (isAbortError(error)) {
             set({ isLoading: false })
             return
           }
           const message = error instanceof Error ? error.message : 'Failed to load document'
           set({ error: message, isLoading: false })
-          toast.error(message)
+          handleApiError(error, 'Failed to load document')
         })
     } catch (error) {
       // Handle AbortError silently (expected when user switches documents)
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (isAbortError(error)) {
         console.log(`[Load] Aborted load for ${documentId}`)
         set({ isLoading: false })
         return
@@ -97,7 +98,7 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
       const message = error instanceof Error ? error.message : 'Failed to load document'
       console.error(`[Load] Failed to load document ${documentId}:`, error)
       set({ error: message, isLoading: false })
-      toast.error(message)
+      handleApiError(error, 'Failed to load document')
     }
   },
 
@@ -132,6 +133,8 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
           onClick: () => get().saveDocument(documentId, content),
         },
       })
+      // Also funnel through centralized handler for consistency/logging
+      handleApiError(error, 'Failed to save document')
     }
   },
 

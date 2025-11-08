@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"errors"
 	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
+	"meridian/internal/domain"
+	docsystem "meridian/internal/domain/models/docsystem"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
@@ -23,6 +26,7 @@ func NewFolderHandler(folderService docsysSvc.FolderService, logger *slog.Logger
 
 // CreateFolder creates a new folder
 // POST /api/folders
+// Returns 201 if created, 409 with existing folder if duplicate
 func (h *FolderHandler) CreateFolder(c *fiber.Ctx) error {
 	// Extract project ID from context
 	projectID, err := getProjectID(c)
@@ -40,7 +44,15 @@ func (h *FolderHandler) CreateFolder(c *fiber.Ctx) error {
 	// Call service
 	folder, err := h.folderService.CreateFolder(c.Context(), &req)
 	if err != nil {
-		return handleError(c, err)
+		// Handle conflict by fetching and returning existing folder with 409
+		return HandleCreateConflict(c, err, func() (*docsystem.Folder, error) {
+			// Get ConflictError to extract resource ID
+			var conflictErr *domain.ConflictError
+			if errors.As(err, &conflictErr) {
+				return h.folderService.GetFolder(c.Context(), conflictErr.ResourceID, projectID)
+			}
+			return nil, err
+		})
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(folder)
@@ -68,7 +80,7 @@ func (h *FolderHandler) GetFolder(c *fiber.Ctx) error {
 }
 
 // UpdateFolder updates a folder (rename or move)
-// PUT /api/folders/:id
+// PATCH /api/folders/:id
 func (h *FolderHandler) UpdateFolder(c *fiber.Ctx) error {
 	projectID, err := getProjectID(c)
 	if err != nil {

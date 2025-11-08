@@ -14,7 +14,7 @@ tracked: true
 
 **Complex creative projects with interconnected documentation need a better way to maintain consistency.**
 
-Document-based organization + AI that understands your entire project + tools to explore and maintain it.
+File-based organization + AI that understands your entire project + tools to explore and maintain it.
 
 **We're building the infrastructure. The market will tell us where it's most valuable.**
 
@@ -36,7 +36,7 @@ If enterprise product teams want it → pivot to B2B
 
 **We're optimizing for learning, not a specific market.**
 
-The technology (document system, AI context discovery, persistent streaming) works for any domain. We're figuring out where it provides the most value.
+The technology (file system, AI context discovery, persistent streaming) works for any domain. We're figuring out where it provides the most value.
 
 ---
 

@@ -101,7 +101,7 @@ Returns nested folder/document structure with metadata (no content).
 ```
 POST   /api/folders
 GET    /api/folders/:id
-PUT    /api/folders/:id
+PATCH  /api/folders/:id
 DELETE /api/folders/:id
 ```
 
@@ -265,8 +265,10 @@ All three are equivalent.
 ### Documents
 
 - Name required, max 255 chars
-- **Slashes allowed** (artistic freedom)
+- **No slashes allowed** (filesystem semantics)
+- Regex: `^[^/]+$`
 - Content can be empty string
+- Import sanitizes `/` to `-`
 
 ## Rate Limiting
 

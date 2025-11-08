@@ -18,7 +18,7 @@ tracked: true
 
 Meridian is a cloud-based tool for managing complex creative projects through:
 
-1. **Document-based organization** - Like a code editor, but for any creative work
+1. **File-based organization** - Like a code editor, but for any creative work
 2. **Explicit dependencies** - Connect related documents to build context
 3. **Agentic AI** - AI that actively explores and helps maintain your project
 4. **Multi-provider support** - Choose Claude, GPT-4, or bring your own keys
@@ -167,7 +167,7 @@ AI automatically:
 
 **The pattern:** Complex, interconnected documentation that needs consistency.
 
-## Document System Philosophy
+## File System Philosophy
 
 ### Just Documents
 

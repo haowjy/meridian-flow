@@ -1,0 +1,375 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2025-01-08T00:00:00.000Z",
+  "__export_source": "insomnia.desktop.app:v2023.5.8",
+  "resources": [
+    {
+      "_id": "req_create_session",
+      "parentId": "fld_sessions",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/chat/sessions",
+      "name": "1. Create Chat Session (PLACEHOLDER)",
+      "description": "PLACEHOLDER: Create a new chat session. API not yet implemented.",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"title\": \"Planning Chapter 5\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698740000000,
+      "isPrivate": false,
+      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');\nconst response = await insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('session_id', response.id);\n  console.log('✅ Session ID captured:', response.id);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_list_sessions",
+      "parentId": "fld_sessions",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/chat/sessions?project_id={{ _.project_id }}",
+      "name": "2. List Chat Sessions (PLACEHOLDER)",
+      "description": "PLACEHOLDER: Get all chat sessions for a project. API not yet implemented.",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739900000,
+      "isPrivate": false,
+      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');",
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_session",
+      "parentId": "fld_sessions",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/chat/sessions/{{ _.session_id }}",
+      "name": "3. Get Chat Session (PLACEHOLDER)",
+      "description": "PLACEHOLDER: Get a specific chat session by ID. API not yet implemented.",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739800000,
+      "isPrivate": false,
+      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');",
+      "_type": "request"
+    },
+    {
+      "_id": "req_delete_session",
+      "parentId": "fld_sessions",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/chat/sessions/{{ _.session_id }}",
+      "name": "4. Delete Chat Session (PLACEHOLDER)",
+      "description": "PLACEHOLDER: Delete a chat session and all its turns. API not yet implemented.",
+      "method": "DELETE",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739700000,
+      "isPrivate": false,
+      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');",
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_turn",
+      "parentId": "fld_turns",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/chat/sessions/{{ _.session_id }}/turns",
+      "name": "1. Create Turn (PLACEHOLDER)",
+      "description": "PLACEHOLDER: Send a message and get AI response. API not yet implemented.",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"message\": \"What are the key themes in this chapter?\",\n  \"document_ids\": [\"{{ _.document_id }}\"]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739600000,
+      "isPrivate": false,
+      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');\nconst response = await insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('turn_id', response.id);\n  console.log('✅ Turn ID captured:', response.id);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_turn_history",
+      "parentId": "fld_turns",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/chat/sessions/{{ _.session_id }}/turns",
+      "name": "2. Get Turn History (PLACEHOLDER)",
+      "description": "PLACEHOLDER: Get all turns (conversation history) for a session. API not yet implemented.",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739500000,
+      "isPrivate": false,
+      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');",
+      "_type": "request"
+    },
+    {
+      "_id": "req_stream_response",
+      "parentId": "fld_streaming",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/chat/sessions/{{ _.session_id }}/stream",
+      "name": "1. Stream Response (SSE) (PLACEHOLDER)",
+      "description": "PLACEHOLDER: Stream AI response via Server-Sent Events. API not yet implemented.",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"message\": \"Summarize the protagonist's journey\",\n  \"document_ids\": [\"{{ _.document_id }}\"]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Accept",
+          "value": "text/event-stream"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739400000,
+      "isPrivate": false,
+      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');\nconsole.log('💡 SSE streaming will return data in real-time chunks');",
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_cached_response",
+      "parentId": "fld_streaming",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/chat/sessions/{{ _.session_id }}/turns/{{ _.turn_id }}",
+      "name": "2. Get Cached Response (PLACEHOLDER)",
+      "description": "PLACEHOLDER: Get completed turn response (after streaming). API not yet implemented.",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739300000,
+      "isPrivate": false,
+      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');",
+      "_type": "request"
+    },
+    {
+      "_id": "req_add_document_context",
+      "parentId": "fld_context",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/chat/sessions/{{ _.session_id }}/context",
+      "name": "1. Add Document Context (PLACEHOLDER)",
+      "description": "PLACEHOLDER: Add documents to session context. API not yet implemented.",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"document_ids\": [\"{{ _.document_id }}\", \"{{ _.root_document_id }}\"]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739200000,
+      "isPrivate": false,
+      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');",
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_context",
+      "parentId": "fld_context",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/chat/sessions/{{ _.session_id }}/context",
+      "name": "2. Get Context (PLACEHOLDER)",
+      "description": "PLACEHOLDER: Get documents currently in session context. API not yet implemented.",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739100000,
+      "isPrivate": false,
+      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');",
+      "_type": "request"
+    },
+    {
+      "_id": "req_branch_conversation",
+      "parentId": "fld_advanced",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/chat/sessions/{{ _.session_id }}/branch",
+      "name": "1. Branch Conversation (PLACEHOLDER)",
+      "description": "PLACEHOLDER: Create a new session branching from a specific turn. API not yet implemented.",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"from_turn_id\": \"{{ _.turn_id }}\",\n  \"title\": \"Alternative storyline\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739000000,
+      "isPrivate": false,
+      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');\nconst response = await insomnia.response.json();\nif (response && response.id) {\n  console.log('✅ New branched session ID:', response.id);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_search_documents",
+      "parentId": "fld_advanced",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/chat/search",
+      "name": "2. Search Documents (PLACEHOLDER)",
+      "description": "PLACEHOLDER: Semantic search across project documents for chat context. API not yet implemented.",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"query\": \"character motivations and backstory\",\n  \"limit\": 5\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738900000,
+      "isPrivate": false,
+      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');\nconsole.log('💡 Will return relevant documents for chat context');",
+      "_type": "request"
+    },
+    {
+      "_id": "fld_sessions",
+      "parentId": "wrk_chat",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Chat Sessions",
+      "description": "Session lifecycle management (CRUD)",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698740000000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "fld_turns",
+      "parentId": "wrk_chat",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Turns",
+      "description": "Message exchange (user → AI)",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698739000000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "fld_streaming",
+      "parentId": "wrk_chat",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Streaming",
+      "description": "Real-time SSE response streaming",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698738000000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "fld_context",
+      "parentId": "wrk_chat",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Context",
+      "description": "Document context management",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698737000000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "fld_advanced",
+      "parentId": "wrk_chat",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Advanced",
+      "description": "Branching and semantic search",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698736000000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "wrk_chat",
+      "parentId": null,
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "02 - Chat (PLACEHOLDER)",
+      "description": "Chat API endpoints - NOT YET IMPLEMENTED. Skeleton for future testing.",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "env_base",
+      "parentId": "wrk_chat",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:8080",
+        "project_id": "00000000-0000-0000-0000-000000000001",
+        "document_id": "",
+        "root_document_id": "",
+        "session_id": "",
+        "turn_id": ""
+      },
+      "dataPropertyOrder": {
+        "&": [
+          "base_url",
+          "project_id",
+          "document_id",
+          "root_document_id",
+          "session_id",
+          "turn_id"
+        ]
+      },
+      "color": null,
+      "isPrivate": false,
+      "metaSortKey": 1698739200000,
+      "_type": "environment"
+    }
+  ]
+}

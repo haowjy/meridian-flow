@@ -3,7 +3,7 @@ import { Document } from '@/features/documents/types/document'
 import { Folder } from '@/features/folders/types/folder'
 import { buildTree, TreeNode } from '@/core/lib/treeBuilder'
 import { api } from '@/core/lib/api'
-import { getErrorMessage } from '@/core/lib/errors'
+import { getErrorMessage, handleApiError, isAbortError } from '@/core/lib/errors'
 import { db } from '@/core/lib/db'
 import { toast } from 'sonner'
 
@@ -54,14 +54,14 @@ export const useTreeStore = create<TreeStore>()((set) => ({
       })
     } catch (error) {
       // Handle AbortError silently (expected when loading new project)
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (isAbortError(error)) {
         set({ isLoading: false })
         return
       }
 
       const message = getErrorMessage(error) || 'Failed to load documents'
       set({ error: message, isLoading: false })
-      toast.error(message)
+      handleApiError(error, 'Failed to load documents')
     }
   },
 

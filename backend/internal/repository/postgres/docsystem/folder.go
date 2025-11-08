@@ -87,11 +87,12 @@ func (r *PostgresFolderRepository) GetByID(ctx context.Context, id, projectID st
 	query := fmt.Sprintf(`
 		SELECT id, project_id, parent_id, name, created_at, updated_at
 		FROM %s
-		WHERE id = $1 AND project_id = $2
+		WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
 	`, r.tables.Folders)
 
 	var folder models.Folder
-	err := r.pool.QueryRow(ctx, query, id, projectID).Scan(
+	executor := postgres.GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, query, id, projectID).Scan(
 		&folder.ID,
 		&folder.ProjectID,
 		&folder.ParentID,
@@ -115,10 +116,11 @@ func (r *PostgresFolderRepository) Update(ctx context.Context, folder *models.Fo
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET parent_id = $1, name = $2, updated_at = $3
-		WHERE id = $4 AND project_id = $5
+		WHERE id = $4 AND project_id = $5 AND deleted_at IS NULL
 	`, r.tables.Folders)
 
-	result, err := r.pool.Exec(ctx, query,
+	executor := postgres.GetExecutor(ctx, r.pool)
+	result, err := executor.Exec(ctx, query,
 		folder.ParentID,
 		folder.Name,
 		folder.UpdatedAt,
@@ -152,18 +154,17 @@ func (r *PostgresFolderRepository) Update(ctx context.Context, folder *models.Fo
 	return nil
 }
 
-// Delete deletes a folder
+// Delete soft-deletes a folder by setting deleted_at timestamp
 func (r *PostgresFolderRepository) Delete(ctx context.Context, id, projectID string) error {
 	query := fmt.Sprintf(`
-		DELETE FROM %s
-		WHERE id = $1 AND project_id = $2
+		UPDATE %s
+		SET deleted_at = NOW()
+		WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
 	`, r.tables.Folders)
 
-	result, err := r.pool.Exec(ctx, query, id, projectID)
+	executor := postgres.GetExecutor(ctx, r.pool)
+	result, err := executor.Exec(ctx, query, id, projectID)
 	if err != nil {
-		if postgres.IsPgForeignKeyError(err) {
-			return fmt.Errorf("cannot delete folder with children: %w", domain.ErrConflict)
-		}
 		return fmt.Errorf("delete folder: %w", err)
 	}
 
@@ -183,7 +184,7 @@ func (r *PostgresFolderRepository) ListChildren(ctx context.Context, folderID *s
 		query = fmt.Sprintf(`
 			SELECT id, project_id, parent_id, name, created_at, updated_at
 			FROM %s
-			WHERE project_id = $1 AND parent_id IS NULL
+			WHERE project_id = $1 AND parent_id IS NULL AND deleted_at IS NULL
 			ORDER BY name ASC
 		`, r.tables.Folders)
 		args = append(args, projectID)
@@ -191,13 +192,14 @@ func (r *PostgresFolderRepository) ListChildren(ctx context.Context, folderID *s
 		query = fmt.Sprintf(`
 			SELECT id, project_id, parent_id, name, created_at, updated_at
 			FROM %s
-			WHERE project_id = $1 AND parent_id = $2
+			WHERE project_id = $1 AND parent_id = $2 AND deleted_at IS NULL
 			ORDER BY name ASC
 		`, r.tables.Folders)
 		args = append(args, projectID, *folderID)
 	}
 
-	rows, err := r.pool.Query(ctx, query, args...)
+	executor := postgres.GetExecutor(ctx, r.pool)
+	rows, err := executor.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list folder children: %w", err)
 	}
@@ -265,17 +267,19 @@ func (r *PostgresFolderRepository) GetPath(ctx context.Context, folderID *string
 		WITH RECURSIVE folder_path AS (
 			SELECT id, name, parent_id, name::text AS path
 			FROM %s
-			WHERE id = $1 AND project_id = $2
+			WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
 			UNION ALL
 			SELECT f.id, f.name, f.parent_id, f.name || '/' || fp.path
 			FROM %s f
 			JOIN folder_path fp ON f.id = fp.parent_id
+			WHERE f.deleted_at IS NULL
 		)
 		SELECT path FROM folder_path WHERE parent_id IS NULL
 	`, r.tables.Folders, r.tables.Folders)
 
 	var path string
-	err := r.pool.QueryRow(ctx, query, *folderID, projectID).Scan(&path)
+	executor := postgres.GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, query, *folderID, projectID).Scan(&path)
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
 			return "", fmt.Errorf("folder %s: %w", *folderID, domain.ErrNotFound)
@@ -291,11 +295,12 @@ func (r *PostgresFolderRepository) GetAllByProject(ctx context.Context, projectI
 	query := fmt.Sprintf(`
 		SELECT id, project_id, parent_id, name, created_at, updated_at
 		FROM %s
-		WHERE project_id = $1
+		WHERE project_id = $1 AND deleted_at IS NULL
 		ORDER BY created_at ASC
 	`, r.tables.Folders)
 
-	rows, err := r.pool.Query(ctx, query, projectID)
+	executor := postgres.GetExecutor(ctx, r.pool)
+	rows, err := executor.Query(ctx, query, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("get all folders: %w", err)
 	}
@@ -362,14 +367,14 @@ func (r *PostgresFolderRepository) getFolderByNameAndParent(ctx context.Context,
 		query = fmt.Sprintf(`
 			SELECT id, project_id, parent_id, name, created_at, updated_at
 			FROM %s
-			WHERE project_id = $1 AND name = $2 AND parent_id IS NULL
+			WHERE project_id = $1 AND name = $2 AND parent_id IS NULL AND deleted_at IS NULL
 		`, r.tables.Folders)
 		args = append(args, projectID, name)
 	} else {
 		query = fmt.Sprintf(`
 			SELECT id, project_id, parent_id, name, created_at, updated_at
 			FROM %s
-			WHERE project_id = $1 AND name = $2 AND parent_id = $3
+			WHERE project_id = $1 AND name = $2 AND parent_id = $3 AND deleted_at IS NULL
 		`, r.tables.Folders)
 		args = append(args, projectID, name, *parentID)
 	}

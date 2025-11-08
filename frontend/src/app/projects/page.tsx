@@ -22,7 +22,7 @@ export default function ProjectsPage() {
       <div className="container mx-auto max-w-6xl p-8">
         <SectionHeader
           title="Meridian"
-          subtitle="Document management for creative writers"
+          subtitle="File management for creative writers"
         />
         <CardGrid>
           {Array.from({ length: 3 }).map((_, i) => (
@@ -49,7 +49,7 @@ export default function ProjectsPage() {
     <div className="container mx-auto max-w-6xl p-8">
       <SectionHeader
         title="Meridian"
-        subtitle="Document management for creative writers"
+        subtitle="File management for creative writers"
       />
 
       <ProjectList projects={projects} onCreateClick={() => setDialogOpen(true)} />

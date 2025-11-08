@@ -12,7 +12,7 @@ type TreeNode struct {
 type FolderTreeNode struct {
 	ID        string             `json:"id"`
 	Name      string             `json:"name"`
-	ParentID  *string            `json:"parent_id"`
+	ParentID  *string            `json:"folder_id"`
 	CreatedAt time.Time          `json:"created_at"`
 	Folders   []*FolderTreeNode  `json:"folders"` // Pointers for proper nesting
 	Documents []DocumentTreeNode `json:"documents"`
