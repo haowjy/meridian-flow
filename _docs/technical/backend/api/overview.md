@@ -131,7 +131,7 @@ POST /api/import          # Merge mode (upsert)
 POST /api/import/replace  # Replace mode (delete all first)
 ```
 
-Bulk import from zip files. Supports frontmatter, auto-creates folders.
+Bulk import from zip files. Auto-creates folders based on directory paths.
 
 **Format:** `multipart/form-data` with zip file(s)
 

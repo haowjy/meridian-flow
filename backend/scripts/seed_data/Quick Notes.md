@@ -2,4 +2,4 @@
 
 Random ideas and thoughts to explore later.
 
-*This file has no frontmatter - the path "Quick Notes" is derived from the filename.*
+*Name and path are derived from the filename and directory.*

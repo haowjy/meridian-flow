@@ -21,7 +21,7 @@ Go REST API for the Meridian file management system.
 - ✅ Markdown content storage
 - ✅ Word counting
 - ✅ Path-based document creation
-- ✅ Bulk import (zip files with frontmatter)
+- ✅ Bulk import (zip files; folder path from directories)
 - ✅ Environment-based table prefixes (dev/test/prod isolation)
 - ✅ CORS configured
 - ✅ Structured logging

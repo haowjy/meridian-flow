@@ -1,7 +1,3 @@
----
-path: Characters/Aria Moonwhisper
----
-
 # Aria Moonwhisper
 
 **Age:** 17

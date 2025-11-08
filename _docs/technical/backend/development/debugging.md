@@ -184,7 +184,7 @@ SELECT * FROM dev_projects WHERE id = '00000000-0000-0000-0000-000000000002';
 
 **Solution:** Remove slashes from folder name.
 
-**Note:** Document names CAN contain slashes (e.g., "Hero/Villain").
+**Note:** Document names must not contain slashes. For CREATE with path notation, slashes indicate folders and the final segment (document name) cannot include `/`. Import sanitizes any `/` to `-`.
 
 ## Import Issues
 
@@ -207,19 +207,8 @@ SELECT * FROM dev_projects WHERE id = '00000000-0000-0000-0000-000000000002';
 ### Import Creates Wrong Folder Structure
 
 **Check:**
-- Frontmatter `folder:` field (if using)
 - Zip file structure (folders map to paths)
-- Leading/trailing slashes in paths
-
-**Example frontmatter:**
-```markdown
----
-folder: Characters/Heroes
-name: Aria
----
-
-Content here...
-```
+- Leading/trailing slashes in directory names
 
 ## Build/Compilation Issues
 

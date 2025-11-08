@@ -2,7 +2,7 @@
 
 A mysterious figure who seeks to corrupt the Academy from within. Identity unknown.
 
-*No frontmatter needed - path "Characters/Villains/The Shadow" is derived from directory structure.*
+*Path "Characters/Villains/The Shadow" is derived from directory structure.*
 
 ## Motivations
 

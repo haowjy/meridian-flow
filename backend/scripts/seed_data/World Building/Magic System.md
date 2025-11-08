@@ -1,7 +1,3 @@
----
-path: World Building/Magic System
----
-
 # Magic System
 
 ## Core Principles

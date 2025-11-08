@@ -1,9 +1,4 @@
----
-path: Characters/Aria Moonwhisper
-name: Hero/Villain Arc
----
-
-# Hero/Villain Arc
+# Hero-Villain Arc
 
 This document tracks Aria's moral journey throughout the story.
 
@@ -36,3 +31,4 @@ She decides to destroy the Academy's power source to prevent future abuse, even 
 ## Resolution
 
 Aria accepts that history will judge her harshly, but she believes it's the right thing to do. The story ends with her as both hero and villain, depending on who's telling the tale.
+

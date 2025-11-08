@@ -1,7 +1,3 @@
----
-path: Outline/Plot Notes
----
-
 # Plot Notes
 
 ## Act 1 - Discovery

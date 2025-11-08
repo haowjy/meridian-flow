@@ -1,9 +1,4 @@
----
-path: Chapters/Chapter 1 - The Beginning
-name: Scene 1/3 - Arrival
----
-
-# Scene 1/3 - Arrival at the Academy
+# Scene 1-3 - Arrival at the Academy
 
 **POV:** Aria Moonwhisper
 **Location:** Academy Gates
@@ -43,3 +38,4 @@ Aria is equal parts excited and terrified. This is her dream come true, but some
 ## Word Count Goal
 
 Target: 2,500 words
+

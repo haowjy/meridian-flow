@@ -191,21 +191,10 @@ Bulk import documents from zip file(s) in merge mode. Existing documents are upd
 - Method: POST
 - Content-Type: multipart/form-data
 - Field name: `files` (supports multiple zip files)
-- Each zip file should contain markdown files with optional frontmatter
-
-**Frontmatter Support:**
-Documents can include YAML frontmatter with metadata:
-```markdown
----
-name: Document Name
-folder: Characters/Heroes
----
-
-Document content here...
-```
+- Each zip file should contain markdown (`.md`) files organized in folders
 
 **Behavior:**
-- Creates folders automatically based on file paths or frontmatter
+- Creates folders automatically based on file paths
 - Updates existing documents (same name + folder)
 - Creates new documents if they don't exist
 - Processes multiple zip files in single request
@@ -213,7 +202,7 @@ Document content here...
 **Name Sanitization:**
 - Document names containing `/` are automatically sanitized to `-` during import
 - Prevents filesystem path confusion (document names follow same rules as folder names)
-- Example: `"Hero/Villain"` in frontmatter becomes `"Hero-Villain"`
+- Example: `"Hero/Villain"` (from filename) becomes `"Hero-Villain"`
 - Ensures imported documents meet validation rules
 
 **Response:**

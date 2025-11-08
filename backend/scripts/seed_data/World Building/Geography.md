@@ -1,6 +1,6 @@
 # Geography
 
-This document has NO frontmatter. The path will be derived from the directory structure.
+Folder path is derived from the directory structure.
 
 ## The Five Kingdoms
 

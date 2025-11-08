@@ -1,18 +1,17 @@
 package docsystem
 
 import (
-	"archive/zip"
-	"bytes"
-	"context"
-	"fmt"
-	"io"
-	"log/slog"
-	"path/filepath"
-	"strings"
+    "archive/zip"
+    "bytes"
+    "context"
+    "fmt"
+    "io"
+    "log/slog"
+    "path/filepath"
+    "strings"
 
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
-	docsysSvc "meridian/internal/domain/services/docsystem"
-	"meridian/internal/utils"
+    docsysRepo "meridian/internal/domain/repositories/docsystem"
+    docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
 // importService implements the ImportService interface
@@ -152,51 +151,27 @@ func (s *importService) processMarkdownFile(
 		return
 	}
 
-	// Parse frontmatter (optional)
-	metadata, markdown, err := utils.ParseFrontmatter(fileContent)
-	var docMeta *utils.DocumentMetadata
-
-	if err != nil {
-		// No frontmatter - derive everything from filepath
-		markdown = string(fileContent)
-		docMeta = &utils.DocumentMetadata{}
-	} else {
-		// Validate metadata
-		docMeta, err = utils.ValidateImportMetadata(metadata)
-		if err != nil {
-			s.addError(result, file.Name, fmt.Sprintf("invalid frontmatter: %v", err))
-			return
-		}
-	}
+    // Frontmatter is no longer supported for import. Treat entire file as markdown content
+    markdown := string(fileContent)
 
 	// Determine folder path and document name
 	var folderPath string
 	var docName string
 
-	if docMeta.Path != nil {
-		// Use path from frontmatter as folder path
-		folderPath = *docMeta.Path
-	} else {
-		// Derive folder path from directory structure in zip
-		// Example: "Characters/Aria.md" -> folderPath="Characters"
-		// Example: "Characters/Villains/Shadow.md" -> folderPath="Characters/Villains"
-		// Example: "root.md" -> folderPath=""
-		dirPath := filepath.Dir(file.Name)
-		if dirPath == "." {
-			// File is at root of zip
-			folderPath = ""
-		} else {
-			folderPath = dirPath
-		}
-	}
+    // Derive folder path from directory structure in zip
+    // Example: "Characters/Aria.md" -> folderPath="Characters"
+    // Example: "Characters/Villains/Shadow.md" -> folderPath="Characters/Villains"
+    // Example: "root.md" -> folderPath=""
+    dirPath := filepath.Dir(file.Name)
+    if dirPath == "." {
+        // File is at root of zip
+        folderPath = ""
+    } else {
+        folderPath = dirPath
+    }
 
-	if docMeta.Name != nil {
-		// Use name from frontmatter
-		docName = *docMeta.Name
-	} else {
-		// Use filename without extension as document name
-		docName = strings.TrimSuffix(filepath.Base(file.Name), ".md")
-	}
+    // Use filename without extension as document name
+    docName = strings.TrimSuffix(filepath.Base(file.Name), ".md")
 
 	// Sanitize document name: replace slashes with hyphens (filesystem semantics)
 	docName = strings.ReplaceAll(docName, "/", "-")

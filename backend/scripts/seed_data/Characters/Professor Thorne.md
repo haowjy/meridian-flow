@@ -1,7 +1,3 @@
----
-path: Characters/Professor Thorne
----
-
 # Professor Elias Thorne
 
 **Role:** Head of Elemental Studies
