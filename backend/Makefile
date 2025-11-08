@@ -1,5 +1,15 @@
 .PHONY: help build run test clean install dev
 
+# Load environment variables from .env
+include .env
+export
+
+# Derive TABLE_PREFIX from ENVIRONMENT (e.g., dev → dev_)
+export TABLE_PREFIX := $(ENVIRONMENT)_
+
+# Goose binary location (adjust if needed)
+GOOSE := $(shell which goose || echo ~/go/bin/goose)
+
 help: ## Show this help message
 	@echo 'Usage: make [target]'
 	@echo ''
@@ -38,15 +48,30 @@ docker-build: ## Build Docker image
 docker-run: ## Run Docker container
 	docker run -p 8080:8080 --env-file .env meridian-backend
 
-seed: ## Seed the database with markdown documents
+migrate-up: ## Apply all pending migrations
+	$(GOOSE) -dir migrations postgres "$(SUPABASE_DB_URL)" up
+
+migrate-down: ## Rollback last migration
+	$(GOOSE) -dir migrations postgres "$(SUPABASE_DB_URL)" down
+
+migrate-down-all: ## Rollback all migrations (drops all tables)
+	$(GOOSE) -dir migrations postgres "$(SUPABASE_DB_URL)" down-to 0
+
+migrate-status: ## Show migration status
+	$(GOOSE) -dir migrations postgres "$(SUPABASE_DB_URL)" status
+
+migrate-create: ## Create a new migration file (usage: make migrate-create name="add_feature")
+	$(GOOSE) -dir migrations create $(name) sql
+
+seed: ## Seed the database with data (runs migrations first)
+	$(GOOSE) -dir migrations postgres "$(SUPABASE_DB_URL)" up
 	go run ./cmd/seed/main.go
 
-seed-fresh: ## Drop all tables and seed from scratch
-	go run ./cmd/seed/main.go --drop-tables
+seed-fresh: ## Drop all tables, run migrations, and seed data
+	$(GOOSE) -dir migrations postgres "$(SUPABASE_DB_URL)" down-to 0
+	$(GOOSE) -dir migrations postgres "$(SUPABASE_DB_URL)" up
+	go run ./cmd/seed/main.go
 
 seed-clear: ## Clear all documents and folders (keep schema)
 	go run ./cmd/seed/main.go --clear-data
-
-seed-schema: ## Drop and recreate tables only (no data seeding)
-	go run ./cmd/seed/main.go --drop-tables --schema-only
 

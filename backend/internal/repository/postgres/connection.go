@@ -22,6 +22,12 @@ type TableNames struct {
 	Projects  string
 	Folders   string
 	Documents string
+
+	// Chat system tables
+	Chats              string
+	Turns              string
+	ContentBlocks      string
+	AssistantResponses string
 }
 
 // NewTableNames creates table names with the given prefix
@@ -30,6 +36,12 @@ func NewTableNames(prefix string) *TableNames {
 		Projects:  fmt.Sprintf("%sprojects", prefix),
 		Folders:   fmt.Sprintf("%sfolders", prefix),
 		Documents: fmt.Sprintf("%sdocuments", prefix),
+
+		// Chat system tables
+		Chats:              fmt.Sprintf("%schats", prefix),
+		Turns:              fmt.Sprintf("%sturns", prefix),
+		ContentBlocks:      fmt.Sprintf("%scontent_blocks", prefix),
+		AssistantResponses: fmt.Sprintf("%sassistant_responses", prefix),
 	}
 }
 
