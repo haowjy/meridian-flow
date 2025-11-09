@@ -79,14 +79,18 @@ func main() {
 		Tables: tables,
 		Logger: logger,
 	}
+	projectRepo := postgresDocsys.NewProjectRepository(repoConfig)
 	docRepo := postgresDocsys.NewDocumentRepository(repoConfig)
 	folderRepo := postgresDocsys.NewFolderRepository(repoConfig)
 	txManager := postgres.NewTransactionManager(pool)
 
+	// Create validator for soft-delete validation
+	docsysValidator := serviceDocsys.NewResourceValidator(projectRepo, folderRepo)
+
 	// Create services for document seeding
 	contentAnalyzer := serviceDocsys.NewContentAnalyzer()
 	pathResolver := serviceDocsys.NewPathResolver(folderRepo, txManager)
-	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, logger)
+	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, docsysValidator, logger)
 	importService := serviceDocsys.NewImportService(docRepo, docService, logger)
 
 	// Clear existing data
