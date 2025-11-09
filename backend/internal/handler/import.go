@@ -39,6 +39,12 @@ func (h *ImportHandler) Merge(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
 	}
 
+	// Extract user ID from context
+	userID, err := getUserID(c)
+	if err != nil {
+		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+	}
+
 	// Parse multipart form
 	form, err := c.MultipartForm()
 	if err != nil {
@@ -91,7 +97,7 @@ func (h *ImportHandler) Merge(c *fiber.Ctx) error {
 		}
 
 		// Process zip file
-		result, err := h.importService.ProcessZipFile(c.Context(), projectID, file)
+		result, err := h.importService.ProcessZipFile(c.Context(), projectID, userID, file)
 		file.Close()
 
 		if err != nil {
@@ -139,6 +145,12 @@ func (h *ImportHandler) Merge(c *fiber.Ctx) error {
 func (h *ImportHandler) Replace(c *fiber.Ctx) error {
 	// Extract project ID from context
 	projectID, err := getProjectID(c)
+	if err != nil {
+		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+	}
+
+	// Extract user ID from context
+	userID, err := getUserID(c)
 	if err != nil {
 		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
 	}
@@ -208,7 +220,7 @@ func (h *ImportHandler) Replace(c *fiber.Ctx) error {
 		}
 
 		// Process zip file
-		result, err := h.importService.ProcessZipFile(c.Context(), projectID, file)
+		result, err := h.importService.ProcessZipFile(c.Context(), projectID, userID, file)
 		file.Close()
 
 		if err != nil {

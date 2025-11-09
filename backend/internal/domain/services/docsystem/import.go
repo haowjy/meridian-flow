@@ -12,7 +12,7 @@ type ImportService interface {
 
 	// ProcessZipFile processes a zip file and imports documents
 	// Returns detailed results including created/updated/failed counts
-	ProcessZipFile(ctx context.Context, projectID string, zipReader io.Reader) (*ImportResult, error)
+	ProcessZipFile(ctx context.Context, projectID, userID string, zipReader io.Reader) (*ImportResult, error)
 }
 
 // ImportResult represents the result of a bulk import operation

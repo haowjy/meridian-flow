@@ -15,6 +15,11 @@ const (
 	// Same as document names for consistency.
 	MaxFolderNameLength = 255
 
+	// MaxChatTitleLength is the maximum length for chat titles.
+	// Limited to 255 to fit in PostgreSQL VARCHAR(255) and provide
+	// reasonable UX (titles should be short and descriptive).
+	MaxChatTitleLength = 255
+
 	// MaxDocumentPathLength is the maximum length for full document paths.
 	// Set to 500 to allow paths like "A/B/C/D/E/document" where each
 	// segment can be up to 100 characters. Longer paths indicate

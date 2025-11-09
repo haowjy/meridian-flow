@@ -201,33 +201,22 @@ func (r *PostgresChatRepository) UpdateChat(ctx context.Context, chat *llmModels
 }
 
 // DeleteChat soft-deletes a chat
-func (r *PostgresChatRepository) DeleteChat(ctx context.Context, chatID, userID string) (*llmModels.Chat, error) {
+func (r *PostgresChatRepository) DeleteChat(ctx context.Context, chatID, userID string) error {
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET deleted_at = NOW()
 		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
-		RETURNING id, project_id, user_id, title, last_viewed_turn_id, created_at, updated_at, deleted_at
 	`, r.tables.Chats)
 
-	var chat llmModels.Chat
 	executor := postgres.GetExecutor(ctx, r.pool)
-	err := executor.QueryRow(ctx, query, chatID, userID).Scan(
-		&chat.ID,
-		&chat.ProjectID,
-		&chat.UserID,
-		&chat.Title,
-		&chat.LastViewedTurnID,
-		&chat.CreatedAt,
-		&chat.UpdatedAt,
-		&chat.DeletedAt,
-	)
-
+	result, err := executor.Exec(ctx, query, chatID, userID)
 	if err != nil {
-		if postgres.IsPgNoRowsError(err) {
-			return nil, fmt.Errorf("chat %s: %w", chatID, domain.ErrNotFound)
-		}
-		return nil, fmt.Errorf("delete chat: %w", err)
+		return fmt.Errorf("delete chat: %w", err)
 	}
 
-	return &chat, nil
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("chat %s: %w", chatID, domain.ErrNotFound)
+	}
+
+	return nil
 }

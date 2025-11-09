@@ -24,7 +24,6 @@ type ChatRepository interface {
 	UpdateChat(ctx context.Context, chat *llm.Chat) error
 
 	// DeleteChat soft-deletes a chat
-	// Returns the deleted chat with deleted_at timestamp
 	// Returns domain.ErrNotFound if not found or already deleted
-	DeleteChat(ctx context.Context, chatID, userID string) (*llm.Chat, error)
+	DeleteChat(ctx context.Context, chatID, userID string) error
 }

@@ -52,7 +52,7 @@ func (s *importService) DeleteAllDocuments(ctx context.Context, projectID string
 }
 
 // ProcessZipFile processes a zip file and imports documents
-func (s *importService) ProcessZipFile(ctx context.Context, projectID string, zipReader io.Reader) (*docsysSvc.ImportResult, error) {
+func (s *importService) ProcessZipFile(ctx context.Context, projectID, userID string, zipReader io.Reader) (*docsysSvc.ImportResult, error) {
 	// Read zip file into memory
 	zipData, err := io.ReadAll(zipReader)
 	if err != nil {
@@ -111,7 +111,7 @@ func (s *importService) ProcessZipFile(ctx context.Context, projectID string, zi
 		}
 
 		// Process markdown file
-		s.processMarkdownFile(ctx, projectID, file, docMap, result)
+		s.processMarkdownFile(ctx, projectID, userID, file, docMap, result)
 	}
 
 	s.logger.Info("zip file processing complete",
@@ -130,6 +130,7 @@ func (s *importService) ProcessZipFile(ctx context.Context, projectID string, zi
 func (s *importService) processMarkdownFile(
 	ctx context.Context,
 	projectID string,
+	userID string,
 	file *zip.File,
 	docMap map[string]string,
 	result *docsysSvc.ImportResult,
@@ -194,7 +195,7 @@ func (s *importService) processMarkdownFile(
 		s.updateDocument(ctx, projectID, existingDocID, markdown, result)
 	} else {
 		// Create new document
-		s.createDocument(ctx, projectID, folderPath, docName, markdown, result)
+		s.createDocument(ctx, projectID, userID, folderPath, docName, markdown, result)
 	}
 }
 
@@ -202,6 +203,7 @@ func (s *importService) processMarkdownFile(
 func (s *importService) createDocument(
 	ctx context.Context,
 	projectID string,
+	userID string,
 	folderPath string,
 	docName string,
 	content string,
@@ -211,6 +213,7 @@ func (s *importService) createDocument(
 	// Always pass FolderPath as a pointer (empty string for root level)
 	doc, err := s.docService.CreateDocument(ctx, &docsysSvc.CreateDocumentRequest{
 		ProjectID:  projectID,
+		UserID:     userID,
 		FolderPath: &folderPath, // Always pass pointer, empty string is valid for root
 		Name:       docName,
 		Content:    content,

@@ -151,12 +151,11 @@ func (h *ChatHandler) DeleteChat(c *fiber.Ctx) error {
 	}
 
 	// Call service
-	chat, err := h.chatService.DeleteChat(c.Context(), chatID, userID)
-	if err != nil {
+	if err := h.chatService.DeleteChat(c.Context(), chatID, userID); err != nil {
 		return handleError(c, err)
 	}
 
-	return c.JSON(chat)
+	return c.SendStatus(fiber.StatusNoContent)
 }
 
 // CreateTurn creates a new turn (user message)
@@ -168,8 +167,11 @@ func (h *ChatHandler) CreateTurn(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Chat ID is required")
 	}
 
-	// Get userID from context (set by auth middleware)
-	userID := c.Locals("userID").(string)
+	// Extract user ID from context
+	userID, err := getUserID(c)
+	if err != nil {
+		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+	}
 
 	// Parse request
 	var req llmSvc.CreateTurnRequest

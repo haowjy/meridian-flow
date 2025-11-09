@@ -3,6 +3,7 @@ package docsystem
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"meridian/internal/domain"
 	models "meridian/internal/domain/models/docsystem"
@@ -17,6 +18,7 @@ import (
 type PostgresDocumentRepository struct {
 	pool   *pgxpool.Pool
 	tables *postgres.TableNames
+	logger *slog.Logger
 }
 
 // NewDocumentRepository creates a new document repository
@@ -24,6 +26,7 @@ func NewDocumentRepository(config *postgres.RepositoryConfig) docsysRepo.Documen
 	return &PostgresDocumentRepository{
 		pool:   config.Pool,
 		tables: config.Tables,
+		logger: config.Logger,
 	}
 }
 
@@ -233,6 +236,11 @@ func (r *PostgresDocumentRepository) ListByFolder(ctx context.Context, folderID 
 		return nil, fmt.Errorf("iterate documents: %w", err)
 	}
 
+	// Return empty slice instead of nil
+	if documents == nil {
+		documents = []models.Document{}
+	}
+
 	return documents, nil
 }
 
@@ -271,6 +279,11 @@ func (r *PostgresDocumentRepository) GetAllMetadataByProject(ctx context.Context
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate documents: %w", err)
+	}
+
+	// Return empty slice instead of nil
+	if documents == nil {
+		documents = []models.Document{}
 	}
 
 	return documents, nil

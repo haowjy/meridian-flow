@@ -109,7 +109,7 @@ func main() {
 	}
 
 	// Process zip file using import service
-	result, err := importService.ProcessZipFile(ctx, cfg.TestProjectID, bytes.NewReader(zipBuffer.Bytes()))
+	result, err := importService.ProcessZipFile(ctx, cfg.TestProjectID, cfg.TestUserID, bytes.NewReader(zipBuffer.Bytes()))
 	if err != nil {
 		log.Fatalf("Failed to process seed data: %v", err)
 	}

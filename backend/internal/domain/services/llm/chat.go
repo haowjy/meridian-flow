@@ -26,7 +26,7 @@ type ChatService interface {
 
 	// DeleteChat soft-deletes a chat
 	// Validates user has access
-	DeleteChat(ctx context.Context, chatID, userID string) (*llm.Chat, error)
+	DeleteChat(ctx context.Context, chatID, userID string) error
 
 	// CreateTurn creates a new user turn (client message only)
 	// Validates chat exists, prev turn exists if provided

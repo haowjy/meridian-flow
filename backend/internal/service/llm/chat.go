@@ -141,18 +141,17 @@ func (s *chatService) UpdateChat(ctx context.Context, chatID, userID string, req
 }
 
 // DeleteChat soft-deletes a chat
-func (s *chatService) DeleteChat(ctx context.Context, chatID, userID string) (*llmModels.Chat, error) {
-	chat, err := s.chatRepo.DeleteChat(ctx, chatID, userID)
-	if err != nil {
-		return nil, err
+func (s *chatService) DeleteChat(ctx context.Context, chatID, userID string) error {
+	if err := s.chatRepo.DeleteChat(ctx, chatID, userID); err != nil {
+		return err
 	}
 
 	s.logger.Info("chat deleted",
-		"id", chat.ID,
+		"id", chatID,
 		"user_id", userID,
 	)
 
-	return chat, nil
+	return nil
 }
 
 // CreateTurn creates a new user turn (message from client)
@@ -160,7 +159,7 @@ func (s *chatService) DeleteChat(ctx context.Context, chatID, userID string) (*l
 // will be triggered separately in Phase 2 (LLM integration).
 // For now, assistant turns must be created manually via test tools.
 func (s *chatService) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest) (*llmModels.Turn, error) {
-	// Fix Issue 1: Normalize empty string to nil for prev_turn_id
+	// Normalize empty string to nil for prev_turn_id
 	if req.PrevTurnID != nil && *req.PrevTurnID == "" {
 		req.PrevTurnID = nil
 	}
@@ -173,18 +172,6 @@ func (s *chatService) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequ
 	// Validate chat exists and is not deleted
 	if err := s.validator.ValidateChat(ctx, req.ChatID, req.UserID); err != nil {
 		return nil, err
-	}
-
-	// Verify chat exists (implicitly validates user access via GetChat)
-	// Note: In Phase 1, we're using global user ID, but this would need refinement
-	// when proper multi-user support is added
-
-	// Validate prev turn exists if provided
-	if req.PrevTurnID != nil {
-		_, err := s.turnRepo.GetTurn(ctx, *req.PrevTurnID)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	// Create turn
@@ -355,7 +342,7 @@ func (s *chatService) validateCreateChatRequest(req *llmSvc.CreateChatRequest) e
 		validation.Field(&req.UserID, validation.Required),
 		validation.Field(&req.Title,
 			validation.Required,
-			validation.Length(1, config.MaxProjectNameLength), // Reuse project name length for now
+			validation.Length(1, config.MaxChatTitleLength),
 		),
 	)
 }
@@ -364,7 +351,7 @@ func (s *chatService) validateUpdateChatRequest(req *llmSvc.UpdateChatRequest) e
 	return validation.ValidateStruct(req,
 		validation.Field(&req.Title,
 			validation.Required,
-			validation.Length(1, config.MaxProjectNameLength),
+			validation.Length(1, config.MaxChatTitleLength),
 		),
 	)
 }
@@ -374,7 +361,7 @@ func (s *chatService) validateCreateTurnRequest(req *llmSvc.CreateTurnRequest) e
 		validation.Field(&req.ChatID, validation.Required),
 		validation.Field(&req.Role,
 			validation.Required,
-			validation.In("user"), // Fix Issue 3: Only allow user turns from client
+			validation.In("user"), // Only allow user role from client (assistant turns created internally)
 		),
 		validation.Field(&req.ContentBlocks, validation.Each(validation.By(s.validateContentBlock))),
 	)
