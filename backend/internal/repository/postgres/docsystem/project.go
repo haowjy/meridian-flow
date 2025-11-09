@@ -142,7 +142,7 @@ func (r *PostgresProjectRepository) Update(ctx context.Context, project *models.
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET name = $1, updated_at = $2
-		WHERE id = $3 AND user_id = $4
+		WHERE id = $3 AND user_id = $4 AND deleted_at IS NULL
 	`, r.tables.Projects)
 
 	executor := postgres.GetExecutor(ctx, r.pool)

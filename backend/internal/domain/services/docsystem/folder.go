@@ -27,6 +27,7 @@ type FolderService interface {
 // CreateFolderRequest represents a folder creation request
 type CreateFolderRequest struct {
 	ProjectID  string  `json:"project_id"`
+	UserID     string  `json:"-"` // Set by handler from auth context, not from request body
 	Name       string  `json:"name"`
 	FolderID   *string `json:"folder_id,omitempty"`   // Parent folder ID (null for root)
 	FolderPath *string `json:"folder_path,omitempty"` // Alternative: resolve path to folder

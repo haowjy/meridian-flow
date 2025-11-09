@@ -23,6 +23,7 @@ type folderService struct {
 	docRepo      docsysRepo.DocumentRepository
 	pathResolver docsysSvc.PathResolver
 	txManager    repositories.TransactionManager
+	validator    *ResourceValidator
 	logger       *slog.Logger
 }
 
@@ -32,6 +33,7 @@ func NewFolderService(
 	docRepo docsysRepo.DocumentRepository,
 	pathResolver docsysSvc.PathResolver,
 	txManager repositories.TransactionManager,
+	validator *ResourceValidator,
 	logger *slog.Logger,
 ) docsysSvc.FolderService {
 	return &folderService{
@@ -39,6 +41,7 @@ func NewFolderService(
 		docRepo:      docRepo,
 		pathResolver: pathResolver,
 		txManager:    txManager,
+		validator:    validator,
 		logger:       logger,
 	}
 }
@@ -52,6 +55,16 @@ func (s *folderService) CreateFolder(ctx context.Context, req *docsysSvc.CreateF
 	// Normalize empty string to nil for root-level folders
 	if req.FolderID != nil && *req.FolderID == "" {
 		req.FolderID = nil
+	}
+
+	// Validate parent resources are not deleted
+	if err := s.validator.ValidateProject(ctx, req.ProjectID, req.UserID); err != nil {
+		return nil, err
+	}
+	if req.FolderID != nil {
+		if err := s.validator.ValidateFolder(ctx, *req.FolderID, req.ProjectID); err != nil {
+			return nil, err
+		}
 	}
 
 	// Check if name contains path notation

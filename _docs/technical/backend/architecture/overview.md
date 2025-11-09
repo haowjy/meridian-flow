@@ -84,6 +84,7 @@ func (h *DocumentHandler) CreateDocument(c *fiber.Ctx) error {
 
 **Does:**
 - Validate business rules (ozzo-validation)
+- Validate parent resources exist and aren't soft-deleted (ResourceValidator, ChatValidator)
 - Coordinate multiple repositories
 - Transform data (word counting, path resolution)
 - Enforce application rules

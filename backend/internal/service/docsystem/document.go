@@ -25,6 +25,7 @@ type documentService struct {
 	txManager       repositories.TransactionManager
 	contentAnalyzer docsysSvc.ContentAnalyzer
 	pathResolver    docsysSvc.PathResolver
+	validator       *ResourceValidator
 	logger          *slog.Logger
 }
 
@@ -35,6 +36,7 @@ func NewDocumentService(
 	txManager repositories.TransactionManager,
 	contentAnalyzer docsysSvc.ContentAnalyzer,
 	pathResolver docsysSvc.PathResolver,
+	validator *ResourceValidator,
 	logger *slog.Logger,
 ) docsysSvc.DocumentService {
 	return &documentService{
@@ -43,6 +45,7 @@ func NewDocumentService(
 		txManager:       txManager,
 		contentAnalyzer: contentAnalyzer,
 		pathResolver:    pathResolver,
+		validator:       validator,
 		logger:          logger,
 	}
 }
@@ -56,6 +59,16 @@ func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.Cre
 	// Normalize empty string folder_id to nil for root-level documents
 	if req.FolderID != nil && *req.FolderID == "" {
 		req.FolderID = nil
+	}
+
+	// Validate parent resources are not deleted
+	if err := s.validator.ValidateProject(ctx, req.ProjectID, req.UserID); err != nil {
+		return nil, err
+	}
+	if req.FolderID != nil {
+		if err := s.validator.ValidateFolder(ctx, *req.FolderID, req.ProjectID); err != nil {
+			return nil, err
+		}
 	}
 
 	var folderID *string
@@ -252,6 +265,13 @@ func (s *documentService) UpdateDocument(ctx context.Context, id string, req *do
 	// 2. Fall back to folder_path (external AI - resolve/auto-create)
 	// 3. Neither = don't move document
 	if req.FolderID != nil {
+		// Validate target folder exists and is not deleted
+		targetFolderID := *req.FolderID
+		if targetFolderID != "" { // Empty string means root, which is always valid
+			if err := s.validator.ValidateFolder(ctx, targetFolderID, req.ProjectID); err != nil {
+				return nil, err
+			}
+		}
 		// Frontend optimization: use provided folder_id directly
 		doc.FolderID = req.FolderID
 	} else if req.FolderPath != nil {
@@ -259,6 +279,12 @@ func (s *documentService) UpdateDocument(ctx context.Context, id string, req *do
 		resolvedFolder, err := s.pathResolver.ResolveFolderPath(ctx, req.ProjectID, *req.FolderPath)
 		if err != nil {
 			return nil, err
+		}
+		// Validate resolved folder exists and is not deleted (if not root)
+		if resolvedFolder != nil && *resolvedFolder != "" {
+			if err := s.validator.ValidateFolder(ctx, *resolvedFolder, req.ProjectID); err != nil {
+				return nil, err
+			}
 		}
 		doc.FolderID = resolvedFolder
 	}

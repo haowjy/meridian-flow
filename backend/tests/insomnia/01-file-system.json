@@ -26,9 +26,7 @@
       "settingRebuildPath": true,
       "settingFollowRedirects": "global",
       "_type": "request",
-      "scripts": {
-        "after-response": "const response = insomnia.response.json();\nif (response && response.length > 0) {\n  await insomnia.environment.set('project_id', response[0].id);\n  console.log('✅ Saved first project_id:', response[0].id);\n  console.log('Total projects:', response.length);\n}"
-      }
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.length > 0) {\n  await insomnia.environment.set('project_id', response[0].id);\n  console.log('✅ Saved first project_id:', response[0].id);\n  console.log('Total projects:', response.length);\n}"
     },
     {
       "_id": "req_projects_create",
@@ -60,9 +58,7 @@
       "settingRebuildPath": true,
       "settingFollowRedirects": "global",
       "_type": "request",
-      "scripts": {
-        "after-response": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('project_id', response.id);\n  console.log('✅ Saved project_id:', response.id);\n}"
-      }
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('project_id', response.id);\n  console.log('✅ Saved project_id:', response.id);\n}"
     },
     {
       "_id": "req_projects_get",
@@ -86,9 +82,7 @@
       "settingRebuildPath": true,
       "settingFollowRedirects": "global",
       "_type": "request",
-      "scripts": {
-        "after-response": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('project_id', response.id);\n  console.log('✅ Refreshed project_id:', response.id);\n}"
-      }
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('project_id', response.id);\n  console.log('✅ Refreshed project_id:', response.id);\n}"
     },
     {
       "_id": "req_projects_update",
@@ -1732,8 +1726,8 @@
       "name": "Base Environment",
       "data": {
         "base_url": "http://localhost:8080",
-        "project_id": "00000000-0000-0000-0000-000000000002",
-        "test_project_id": "00000000-0000-0000-0000-000000000002",
+        "project_id": "00000000-0000-0000-0000-000000000001",
+        "test_project_id": "00000000-0000-0000-0000-000000000001",
         "folder_id": "",
         "subfolder_id": "",
         "document_id": "",

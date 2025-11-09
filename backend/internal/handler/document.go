@@ -35,12 +35,16 @@ func (h *DocumentHandler) CreateDocument(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
 	}
 
+	// Get userID from context (set by auth middleware)
+	userID := c.Locals("userID").(string)
+
 	// Parse request
 	var req docsysSvc.CreateDocumentRequest
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
 	}
 	req.ProjectID = projectID
+	req.UserID = userID
 
 	// Call service (all business logic is here)
 	doc, err := h.docService.CreateDocument(c.Context(), &req)

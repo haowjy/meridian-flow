@@ -5,17 +5,17 @@
   "__export_source": "insomnia.desktop.app:v2023.5.8",
   "resources": [
     {
-      "_id": "req_create_session",
-      "parentId": "fld_sessions",
-      "modified": 1698739200000,
-      "created": 1698739200000,
-      "url": "{{ _.base_url }}/api/chat/sessions",
-      "name": "1. Create Chat Session (PLACEHOLDER)",
-      "description": "PLACEHOLDER: Create a new chat session. API not yet implemented.",
+      "_id": "req_chats_create",
+      "parentId": "fld_basic_ops",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/chats",
+      "name": "1. Create Chat",
+      "description": "Create a new chat session → saves chat_id\nReturns 201 on success, 409 if duplicate title exists",
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"title\": \"Planning Chapter 5\"\n}"
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"title\": \"Test Chat - Character Analysis\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -25,77 +25,103 @@
         }
       ],
       "authentication": {},
-      "metaSortKey": -1698740000000,
+      "metaSortKey": -1698796800000,
       "isPrivate": false,
-      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');\nconst response = await insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('session_id', response.id);\n  console.log('✅ Session ID captured:', response.id);\n}",
-      "_type": "request"
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('chat_id', response.id);\n  console.log('✅ Saved chat_id:', response.id);\n  console.log('Title:', response.title);\n}"
     },
     {
-      "_id": "req_list_sessions",
-      "parentId": "fld_sessions",
-      "modified": 1698739200000,
-      "created": 1698739200000,
-      "url": "{{ _.base_url }}/api/chat/sessions?project_id={{ _.project_id }}",
-      "name": "2. List Chat Sessions (PLACEHOLDER)",
-      "description": "PLACEHOLDER: Get all chat sessions for a project. API not yet implemented.",
+      "_id": "req_chats_list",
+      "parentId": "fld_basic_ops",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/chats?project_id={{ _.project_id }}",
+      "name": "2. List Chats",
+      "description": "Get all chats for a project (ordered by updated_at DESC)\nReturns empty array [] if no chats found",
       "method": "GET",
       "body": {},
       "parameters": [],
       "headers": [],
       "authentication": {},
-      "metaSortKey": -1698739900000,
+      "metaSortKey": -1698796700000,
       "isPrivate": false,
-      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');",
-      "_type": "request"
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.length > 0) {\n  await insomnia.environment.set('chat_id', response[0].id);\n  console.log('✅ Saved first chat_id:', response[0].id);\n  console.log('Total chats:', response.length);\n} else {\n  console.log('ℹ️  No chats found for this project');\n}"
     },
     {
-      "_id": "req_get_session",
-      "parentId": "fld_sessions",
-      "modified": 1698739200000,
-      "created": 1698739200000,
-      "url": "{{ _.base_url }}/api/chat/sessions/{{ _.session_id }}",
-      "name": "3. Get Chat Session (PLACEHOLDER)",
-      "description": "PLACEHOLDER: Get a specific chat session by ID. API not yet implemented.",
+      "_id": "req_chats_get",
+      "parentId": "fld_basic_ops",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}",
+      "name": "3. Get Chat by ID",
+      "description": "Retrieve a specific chat → refreshes chat_id\nReturns 404 if chat not found or deleted",
       "method": "GET",
       "body": {},
       "parameters": [],
       "headers": [],
       "authentication": {},
-      "metaSortKey": -1698739800000,
+      "metaSortKey": -1698796600000,
       "isPrivate": false,
-      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');",
-      "_type": "request"
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('chat_id', response.id);\n  console.log('✅ Refreshed chat_id:', response.id);\n  console.log('Title:', response.title);\n  console.log('Created:', response.created_at);\n}"
     },
     {
-      "_id": "req_delete_session",
-      "parentId": "fld_sessions",
-      "modified": 1698739200000,
-      "created": 1698739200000,
-      "url": "{{ _.base_url }}/api/chat/sessions/{{ _.session_id }}",
-      "name": "4. Delete Chat Session (PLACEHOLDER)",
-      "description": "PLACEHOLDER: Delete a chat session and all its turns. API not yet implemented.",
+      "_id": "req_chats_update",
+      "parentId": "fld_basic_ops",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}",
+      "name": "4. Update Chat Title",
+      "description": "Rename a chat (updates updated_at automatically)\nReturns 409 if new title conflicts with existing chat",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"title\": \"Updated Chat Title - Story Deep Dive\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698796500000,
+      "isPrivate": false,
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  console.log('✅ Updated chat:', response.id);\n  console.log('New title:', response.title);\n  console.log('Updated at:', response.updated_at);\n}"
+    },
+    {
+      "_id": "req_chats_delete",
+      "parentId": "fld_basic_ops",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}",
+      "name": "5. Delete Chat (Soft)",
+      "description": "Soft-delete a chat (sets deleted_at timestamp)\nReturns the deleted chat with deleted_at populated\nDeleted chats won't appear in list/get queries",
       "method": "DELETE",
       "body": {},
       "parameters": [],
       "headers": [],
       "authentication": {},
-      "metaSortKey": -1698739700000,
+      "metaSortKey": -1698796400000,
       "isPrivate": false,
-      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');",
-      "_type": "request"
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  console.log('✅ Soft-deleted chat:', response.id);\n  console.log('Deleted at:', response.deleted_at);\n  console.log('💡 This chat will no longer appear in list queries');\n}"
     },
     {
-      "_id": "req_create_turn",
+      "_id": "req_turns_create_root",
       "parentId": "fld_turns",
-      "modified": 1698739200000,
-      "created": 1698739200000,
-      "url": "{{ _.base_url }}/api/chat/sessions/{{ _.session_id }}/turns",
-      "name": "1. Create Turn (PLACEHOLDER)",
-      "description": "PLACEHOLDER: Send a message and get AI response. API not yet implemented.",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
+      "name": "1. Create Root Turn (User)",
+      "description": "Create first turn in conversation (prev_turn_id = null)\nRole: 'user', with text content block\nReturns 201 with turn_id → saves to environment",
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"message\": \"What are the key themes in this chapter?\",\n  \"document_ids\": [\"{{ _.document_id }}\"]\n}"
+        "text": "{\n  \"role\": \"user\",\n  \"content_blocks\": [\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"Analyze the protagonist's character arc in Chapter 1\"\n    }\n  ]\n}"
       },
       "parameters": [],
       "headers": [
@@ -105,89 +131,111 @@
         }
       ],
       "authentication": {},
-      "metaSortKey": -1698739600000,
+      "metaSortKey": -1698796300000,
       "isPrivate": false,
-      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');\nconst response = await insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('turn_id', response.id);\n  console.log('✅ Turn ID captured:', response.id);\n}",
-      "_type": "request"
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('turn_id', response.id);\n  await insomnia.environment.set('root_turn_id', response.id);\n  console.log('✅ Created root turn:', response.id);\n  console.log('Role:', response.role);\n  console.log('Status:', response.status);\n  console.log('Content blocks:', response.content_blocks?.length || 0);\n}"
     },
     {
-      "_id": "req_get_turn_history",
+      "_id": "req_turns_create_child",
       "parentId": "fld_turns",
-      "modified": 1698739200000,
-      "created": 1698739200000,
-      "url": "{{ _.base_url }}/api/chat/sessions/{{ _.session_id }}/turns",
-      "name": "2. Get Turn History (PLACEHOLDER)",
-      "description": "PLACEHOLDER: Get all turns (conversation history) for a session. API not yet implemented.",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/debug/api/chats/{{ _.chat_id }}/turns",
+      "name": "2. Create Child Turn (Assistant) [DEBUG ONLY]",
+      "description": "Create an assistant turn using the debug-only endpoint\nRole: 'assistant' for AI response\n\nDEBUG ENDPOINT: POST /debug/api/chats/:id/turns\nOnly available when ENVIRONMENT=dev\n\nPhase 1 (Current): This debug endpoint allows manual assistant turn creation for testing.\nPhase 2 (Planned): LLM response generator will create assistant turns automatically\nwhen user sends a message, with streaming support every 0.1s.\n\nProduction: This endpoint does NOT exist (returns 404)",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prev_turn_id\": \"{{ _.turn_id }}\",\n  \"role\": \"assistant\",\n  \"content_blocks\": [\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"The protagonist demonstrates significant growth through...\"\n    }\n  ]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698796200000,
+      "isPrivate": false,
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('turn_id', response.id);\n  await insomnia.environment.set('assistant_turn_id', response.id);\n  console.log('✅ Created child turn:', response.id);\n  console.log('Parent:', response.prev_turn_id);\n  console.log('Role:', response.role);\n}"
+    },
+    {
+      "_id": "req_turns_create_branch",
+      "parentId": "fld_turns",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
+      "name": "3. Create Branch Turn",
+      "description": "Branch conversation from assistant_turn_id\nCreates alternative path in conversation tree\nMultiple children = multiple branches",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prev_turn_id\": \"{{ _.assistant_turn_id }}\",\n  \"role\": \"user\",\n  \"content_blocks\": [\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"How does this compare to the antagonist's development?\"\n    }\n  ]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698796100000,
+      "isPrivate": false,
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('branch_turn_id', response.id);\n  console.log('✅ Created branch turn:', response.id);\n  console.log('Branches from:', response.prev_turn_id);\n  console.log('💡 Use GET /turns/:prev_turn_id/children to see all branches');\n}"
+    },
+    {
+      "_id": "req_turns_get_path",
+      "parentId": "fld_turns",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/turns/{{ _.turn_id }}/path",
+      "name": "4. Get Turn Path (Root to Turn)",
+      "description": "Get full conversation path from root to specified turn\nReturns turns in order: [root, child, grandchild, ...]\nUsed to build LLM context in Backend 4",
       "method": "GET",
       "body": {},
       "parameters": [],
       "headers": [],
       "authentication": {},
-      "metaSortKey": -1698739500000,
+      "metaSortKey": -1698796000000,
       "isPrivate": false,
-      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');",
-      "_type": "request"
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && Array.isArray(response)) {\n  console.log('✅ Found conversation path with', response.length, 'turn(s)');\n  response.forEach((turn, i) => {\n    console.log(`  ${i + 1}. [${turn.role}] ${turn.id.substring(0, 8)}...`);\n  });\n  console.log('💡 This path represents the full conversation context');\n}"
     },
     {
-      "_id": "req_stream_response",
-      "parentId": "fld_streaming",
-      "modified": 1698739200000,
-      "created": 1698739200000,
-      "url": "{{ _.base_url }}/api/chat/sessions/{{ _.session_id }}/stream",
-      "name": "1. Stream Response (SSE) (PLACEHOLDER)",
-      "description": "PLACEHOLDER: Stream AI response via Server-Sent Events. API not yet implemented.",
-      "method": "POST",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"message\": \"Summarize the protagonist's journey\",\n  \"document_ids\": [\"{{ _.document_id }}\"]\n}"
-      },
-      "parameters": [],
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        },
-        {
-          "name": "Accept",
-          "value": "text/event-stream"
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": -1698739400000,
-      "isPrivate": false,
-      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');\nconsole.log('💡 SSE streaming will return data in real-time chunks');",
-      "_type": "request"
-    },
-    {
-      "_id": "req_get_cached_response",
-      "parentId": "fld_streaming",
-      "modified": 1698739200000,
-      "created": 1698739200000,
-      "url": "{{ _.base_url }}/api/chat/sessions/{{ _.session_id }}/turns/{{ _.turn_id }}",
-      "name": "2. Get Cached Response (PLACEHOLDER)",
-      "description": "PLACEHOLDER: Get completed turn response (after streaming). API not yet implemented.",
+      "_id": "req_turns_get_children",
+      "parentId": "fld_turns",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/turns/{{ _.assistant_turn_id }}/children",
+      "name": "5. Get Turn Children (Branches)",
+      "description": "Get all child turns (branches) from a parent turn\nReturns array of turns (empty [] if no children)\nUsed to display branching UI",
       "method": "GET",
       "body": {},
       "parameters": [],
       "headers": [],
       "authentication": {},
-      "metaSortKey": -1698739300000,
+      "metaSortKey": -1698795900000,
       "isPrivate": false,
-      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');",
-      "_type": "request"
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && Array.isArray(response)) {\n  console.log('✅ Found', response.length, 'branch(es)');\n  response.forEach((turn, i) => {\n    console.log(`  Branch ${i + 1}: [${turn.role}] ${turn.id.substring(0, 8)}...`);\n  });\n  if (response.length === 0) {\n    console.log('ℹ️  No branches from this turn');\n  }\n}"
     },
     {
-      "_id": "req_add_document_context",
-      "parentId": "fld_context",
-      "modified": 1698739200000,
-      "created": 1698739200000,
-      "url": "{{ _.base_url }}/api/chat/sessions/{{ _.session_id }}/context",
-      "name": "1. Add Document Context (PLACEHOLDER)",
-      "description": "PLACEHOLDER: Add documents to session context. API not yet implemented.",
+      "_id": "req_content_text",
+      "parentId": "fld_content_blocks",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
+      "name": "1. Turn with Text Content",
+      "description": "User turn with simple text content block\nMost common content type",
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"document_ids\": [\"{{ _.document_id }}\", \"{{ _.root_document_id }}\"]\n}"
+        "text": "{\n  \"role\": \"user\",\n  \"content_blocks\": [\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"What are the major themes in this chapter?\"\n    }\n  ]\n}"
       },
       "parameters": [],
       "headers": [
@@ -197,41 +245,145 @@
         }
       ],
       "authentication": {},
-      "metaSortKey": -1698739200000,
+      "metaSortKey": -1698795800000,
       "isPrivate": false,
-      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');",
-      "_type": "request"
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  console.log('✅ Created turn with text content');\n  console.log('Content blocks:', response.content_blocks?.length);\n  if (response.content_blocks?.[0]) {\n    console.log('Block type:', response.content_blocks[0].block_type);\n  }\n}"
     },
     {
-      "_id": "req_get_context",
-      "parentId": "fld_context",
-      "modified": 1698739200000,
-      "created": 1698739200000,
-      "url": "{{ _.base_url }}/api/chat/sessions/{{ _.session_id }}/context",
-      "name": "2. Get Context (PLACEHOLDER)",
-      "description": "PLACEHOLDER: Get documents currently in session context. API not yet implemented.",
+      "_id": "req_content_reference",
+      "parentId": "fld_content_blocks",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
+      "name": "2. Turn with Document Reference",
+      "description": "User turn referencing entire document\nIncludes ref_id (document UUID) and ref_type",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"role\": \"user\",\n  \"content_blocks\": [\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"Analyze this document:\"\n    },\n    {\n      \"block_type\": \"reference\",\n      \"ref_id\": \"{{ _.document_id }}\",\n      \"ref_type\": \"document\"\n    }\n  ]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698795700000,
+      "isPrivate": false,
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  console.log('✅ Created turn with document reference');\n  console.log('Content blocks:', response.content_blocks?.length);\n  const refBlock = response.content_blocks?.find(b => b.block_type === 'reference');\n  if (refBlock) {\n    console.log('Referenced document:', refBlock.ref_id);\n  }\n}"
+    },
+    {
+      "_id": "req_content_partial",
+      "parentId": "fld_content_blocks",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
+      "name": "3. Turn with Partial Reference",
+      "description": "User turn with text selection from document\nIncludes selection_start/end and copied text_content",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"role\": \"user\",\n  \"content_blocks\": [\n    {\n      \"block_type\": \"partial_reference\",\n      \"ref_id\": \"{{ _.document_id }}\",\n      \"ref_type\": \"document\",\n      \"text_content\": \"The protagonist's journey begins with a fateful decision...\",\n      \"selection_start\": 150,\n      \"selection_end\": 320\n    },\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"What does this passage reveal about their motivations?\"\n    }\n  ]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698795600000,
+      "isPrivate": false,
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  console.log('✅ Created turn with partial reference');\n  const partialBlock = response.content_blocks?.find(b => b.block_type === 'partial_reference');\n  if (partialBlock) {\n    console.log('Selection:', partialBlock.selection_start, '-', partialBlock.selection_end);\n    console.log('Excerpt length:', partialBlock.text_content?.length, 'chars');\n  }\n}"
+    },
+    {
+      "_id": "req_content_multiple",
+      "parentId": "fld_content_blocks",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
+      "name": "4. Turn with Multiple Blocks",
+      "description": "Complex turn with mixed content types\nBlocks are stored in sequence order",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"role\": \"user\",\n  \"content_blocks\": [\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"Compare these two chapters:\"\n    },\n    {\n      \"block_type\": \"reference\",\n      \"ref_id\": \"{{ _.document_id }}\",\n      \"ref_type\": \"document\"\n    },\n    {\n      \"block_type\": \"reference\",\n      \"ref_id\": \"{{ _.root_document_id }}\",\n      \"ref_type\": \"document\"\n    },\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"Focus on character development and pacing.\"\n    }\n  ]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698795500000,
+      "isPrivate": false,
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  console.log('✅ Created turn with multiple content blocks');\n  console.log('Total blocks:', response.content_blocks?.length);\n  response.content_blocks?.forEach((block, i) => {\n    console.log(`  Block ${i + 1}: ${block.block_type}`);\n  });\n}"
+    },
+    {
+      "_id": "req_workflow_full",
+      "parentId": "fld_integration",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/chats",
+      "name": "Workflow: Create Chat → Turn → Get Path",
+      "description": "Full workflow demonstrating typical usage:\n1. Create chat\n2. Add user turn\n3. Get conversation path\n\nRun sequentially to test complete flow",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"title\": \"Workflow Test - Plot Analysis\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698795400000,
+      "isPrivate": false,
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('workflow_chat_id', response.id);\n  console.log('✅ Step 1/3: Created chat:', response.id);\n  console.log('📝 Next: Create a turn in this chat');\n  console.log('   POST /api/chats/' + response.id + '/turns');\n}"
+    },
+    {
+      "_id": "req_test_seeded",
+      "parentId": "fld_integration",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/chats/11111111-1111-1111-1111-111111111111",
+      "name": "Test with Seeded Data",
+      "description": "Get the seeded chat created by `make seed`\nID: 11111111-1111-1111-1111-111111111111\nContains 8 turns demonstrating branching conversation tree",
       "method": "GET",
       "body": {},
       "parameters": [],
       "headers": [],
       "authentication": {},
-      "metaSortKey": -1698739100000,
+      "metaSortKey": -1698795300000,
       "isPrivate": false,
-      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');",
-      "_type": "request"
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('seeded_chat_id', response.id);\n  console.log('✅ Retrieved seeded chat');\n  console.log('Title:', response.title);\n  console.log('💡 This chat has a branching conversation tree');\n  console.log('   Try: GET /api/turns/{{turn_id}}/children to explore branches');\n}"
     },
     {
-      "_id": "req_branch_conversation",
-      "parentId": "fld_advanced",
-      "modified": 1698739200000,
-      "created": 1698739200000,
-      "url": "{{ _.base_url }}/api/chat/sessions/{{ _.session_id }}/branch",
-      "name": "1. Branch Conversation (PLACEHOLDER)",
-      "description": "PLACEHOLDER: Create a new session branching from a specific turn. API not yet implemented.",
+      "_id": "req_validation_invalid_project",
+      "parentId": "fld_validation",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/chats",
+      "name": "Invalid project_id",
+      "description": "Attempt to create chat with non-existent project\nExpect: 404 Not Found",
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"from_turn_id\": \"{{ _.turn_id }}\",\n  \"title\": \"Alternative storyline\"\n}"
+        "text": "{\n  \"project_id\": \"99999999-9999-9999-9999-999999999999\",\n  \"title\": \"Invalid Project Chat\"\n}"
       },
       "parameters": [],
       "headers": [
@@ -241,23 +393,23 @@
         }
       ],
       "authentication": {},
-      "metaSortKey": -1698739000000,
+      "metaSortKey": -1698795200000,
       "isPrivate": false,
-      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');\nconst response = await insomnia.response.json();\nif (response && response.id) {\n  console.log('✅ New branched session ID:', response.id);\n}",
-      "_type": "request"
+      "_type": "request",
+      "afterResponseScript": "const status = insomnia.response.code();\nif (status === 404) {\n  console.log('✅ Correctly rejected invalid project_id (404)');\n} else {\n  console.log('⚠️  Expected 404, got', status);\n}"
     },
     {
-      "_id": "req_search_documents",
-      "parentId": "fld_advanced",
-      "modified": 1698739200000,
-      "created": 1698739200000,
-      "url": "{{ _.base_url }}/api/chat/search",
-      "name": "2. Search Documents (PLACEHOLDER)",
-      "description": "PLACEHOLDER: Semantic search across project documents for chat context. API not yet implemented.",
+      "_id": "req_validation_invalid_parent",
+      "parentId": "fld_validation",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
+      "name": "Invalid prev_turn_id",
+      "description": "Attempt to create turn with non-existent parent\nExpect: 404 Not Found",
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"query\": \"character motivations and backstory\",\n  \"limit\": 5\n}"
+        "text": "{\n  \"prev_turn_id\": \"99999999-9999-9999-9999-999999999999\",\n  \"role\": \"user\",\n  \"content_blocks\": [\n    {\"block_type\": \"text\", \"text_content\": \"Test\"}\n  ]\n}"
       },
       "parameters": [],
       "headers": [
@@ -267,94 +419,177 @@
         }
       ],
       "authentication": {},
-      "metaSortKey": -1698738900000,
+      "metaSortKey": -1698795100000,
       "isPrivate": false,
-      "afterResponseScript": "console.log('⚠️  PLACEHOLDER: Chat API not yet implemented');\nconsole.log('💡 Will return relevant documents for chat context');",
-      "_type": "request"
+      "_type": "request",
+      "afterResponseScript": "const status = insomnia.response.code();\nif (status === 404) {\n  console.log('✅ Correctly rejected invalid prev_turn_id (404)');\n} else {\n  console.log('⚠️  Expected 404, got', status);\n}"
     },
     {
-      "_id": "fld_sessions",
+      "_id": "req_validation_missing_fields",
+      "parentId": "fld_validation",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/chats",
+      "name": "Missing required fields",
+      "description": "Attempt to create chat without title\nExpect: 400 Bad Request with validation error",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698795000000,
+      "isPrivate": false,
+      "_type": "request",
+      "afterResponseScript": "const status = insomnia.response.code();\nif (status === 400) {\n  console.log('✅ Correctly rejected missing title (400)');\n  const response = insomnia.response.json();\n  console.log('Error:', response.message || response.error);\n} else {\n  console.log('⚠️  Expected 400, got', status);\n}"
+    },
+    {
+      "_id": "req_validation_invalid_role",
+      "parentId": "fld_validation",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
+      "name": "Invalid role value",
+      "description": "Attempt to create turn with invalid role\nExpect: 400 Bad Request (must be 'user' or 'assistant')",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"role\": \"invalid_role\",\n  \"content_blocks\": [\n    {\"block_type\": \"text\", \"text_content\": \"Test\"}\n  ]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698794900000,
+      "isPrivate": false,
+      "_type": "request",
+      "afterResponseScript": "const status = insomnia.response.code();\nif (status === 400) {\n  console.log('✅ Correctly rejected invalid role (400)');\n} else {\n  console.log('⚠️  Expected 400, got', status);\n}"
+    },
+    {
+      "_id": "req_validation_invalid_block_type",
+      "parentId": "fld_validation",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
+      "name": "Invalid content block type",
+      "description": "Attempt to create turn with invalid block_type\nExpect: 400 Bad Request (must be text/image/reference/partial_reference)",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"role\": \"user\",\n  \"content_blocks\": [\n    {\"block_type\": \"invalid_type\", \"text_content\": \"Test\"}\n  ]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698794800000,
+      "isPrivate": false,
+      "_type": "request",
+      "afterResponseScript": "const status = insomnia.response.code();\nif (status === 400) {\n  console.log('✅ Correctly rejected invalid block_type (400)');\n} else {\n  console.log('⚠️  Expected 400, got', status);\n}"
+    },
+    {
+      "_id": "fld_basic_ops",
       "parentId": "wrk_chat",
-      "modified": 1698739200000,
-      "created": 1698739200000,
-      "name": "Chat Sessions",
-      "description": "Session lifecycle management (CRUD)",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "name": "Basic Operations",
+      "description": "Chat CRUD operations (Create, Read, Update, Delete)",
       "environment": {},
       "environmentPropertyOrder": null,
-      "metaSortKey": -1698740000000,
+      "metaSortKey": -1698796800000,
       "_type": "request_group"
     },
     {
       "_id": "fld_turns",
       "parentId": "wrk_chat",
-      "modified": 1698739200000,
-      "created": 1698739200000,
+      "modified": 1698796800000,
+      "created": 1698796800000,
       "name": "Turns",
-      "description": "Message exchange (user → AI)",
+      "description": "Turn creation and tree navigation",
       "environment": {},
       "environmentPropertyOrder": null,
-      "metaSortKey": -1698739000000,
+      "metaSortKey": -1698796000000,
       "_type": "request_group"
     },
     {
-      "_id": "fld_streaming",
+      "_id": "fld_content_blocks",
       "parentId": "wrk_chat",
-      "modified": 1698739200000,
-      "created": 1698739200000,
-      "name": "Streaming",
-      "description": "Real-time SSE response streaming",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "name": "Content Blocks",
+      "description": "Different content block types (text, reference, partial)",
       "environment": {},
       "environmentPropertyOrder": null,
-      "metaSortKey": -1698738000000,
+      "metaSortKey": -1698795000000,
       "_type": "request_group"
     },
     {
-      "_id": "fld_context",
+      "_id": "fld_integration",
       "parentId": "wrk_chat",
-      "modified": 1698739200000,
-      "created": 1698739200000,
-      "name": "Context",
-      "description": "Document context management",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "name": "Integration Tests",
+      "description": "Multi-step workflows and seeded data tests",
       "environment": {},
       "environmentPropertyOrder": null,
-      "metaSortKey": -1698737000000,
+      "metaSortKey": -1698794000000,
       "_type": "request_group"
     },
     {
-      "_id": "fld_advanced",
+      "_id": "fld_validation",
       "parentId": "wrk_chat",
-      "modified": 1698739200000,
-      "created": 1698739200000,
-      "name": "Advanced",
-      "description": "Branching and semantic search",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "name": "Validation Tests",
+      "description": "Error handling and edge cases",
       "environment": {},
       "environmentPropertyOrder": null,
-      "metaSortKey": -1698736000000,
+      "metaSortKey": -1698793000000,
       "_type": "request_group"
     },
     {
       "_id": "wrk_chat",
       "parentId": null,
-      "modified": 1698739200000,
-      "created": 1698739200000,
-      "name": "02 - Chat (PLACEHOLDER)",
-      "description": "Chat API endpoints - NOT YET IMPLEMENTED. Skeleton for future testing.",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "name": "02 - Chat",
+      "description": "Chat API - Conversation management with tree structure and content blocks",
       "scope": "collection",
       "_type": "workspace"
     },
     {
       "_id": "env_base",
       "parentId": "wrk_chat",
-      "modified": 1698739200000,
-      "created": 1698739200000,
+      "modified": 1698796800000,
+      "created": 1698796800000,
       "name": "Base Environment",
       "data": {
         "base_url": "http://localhost:8080",
         "project_id": "00000000-0000-0000-0000-000000000001",
         "document_id": "",
         "root_document_id": "",
-        "session_id": "",
-        "turn_id": ""
+        "chat_id": "",
+        "turn_id": "",
+        "root_turn_id": "",
+        "assistant_turn_id": "",
+        "branch_turn_id": "",
+        "workflow_chat_id": "",
+        "seeded_chat_id": "11111111-1111-1111-1111-111111111111"
       },
       "dataPropertyOrder": {
         "&": [
@@ -362,13 +597,18 @@
           "project_id",
           "document_id",
           "root_document_id",
-          "session_id",
-          "turn_id"
+          "chat_id",
+          "turn_id",
+          "root_turn_id",
+          "assistant_turn_id",
+          "branch_turn_id",
+          "workflow_chat_id",
+          "seeded_chat_id"
         ]
       },
       "color": null,
       "isPrivate": false,
-      "metaSortKey": 1698739200000,
+      "metaSortKey": 1698796800000,
       "_type": "environment"
     }
   ]

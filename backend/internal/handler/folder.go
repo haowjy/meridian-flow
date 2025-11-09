@@ -34,12 +34,16 @@ func (h *FolderHandler) CreateFolder(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
 	}
 
+	// Get userID from context (set by auth middleware)
+	userID := c.Locals("userID").(string)
+
 	// Parse request
 	var req docsysSvc.CreateFolderRequest
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
 	}
 	req.ProjectID = projectID
+	req.UserID = userID
 
 	// Call service
 	folder, err := h.folderService.CreateFolder(c.Context(), &req)

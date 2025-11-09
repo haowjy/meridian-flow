@@ -13,7 +13,9 @@ import (
 	"meridian/internal/middleware"
 	"meridian/internal/repository/postgres"
 	postgresDocsys "meridian/internal/repository/postgres/docsystem"
+	postgresLLM "meridian/internal/repository/postgres/llm"
 	serviceDocsys "meridian/internal/service/docsystem"
+	serviceLLM "meridian/internal/service/llm"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -72,14 +74,25 @@ func main() {
 	folderRepo := postgresDocsys.NewFolderRepository(repoConfig)
 	txManager := postgres.NewTransactionManager(pool)
 
+	// Chat repositories
+	chatRepo := postgresLLM.NewChatRepository(repoConfig)
+	turnRepo := postgresLLM.NewTurnRepository(repoConfig)
+
+	// Create validators (for soft-delete validation)
+	docsysValidator := serviceDocsys.NewResourceValidator(projectRepo, folderRepo)
+	chatValidator := serviceLLM.NewChatValidator(chatRepo)
+
 	// Create services
 	contentAnalyzer := serviceDocsys.NewContentAnalyzer()
 	pathResolver := serviceDocsys.NewPathResolver(folderRepo, txManager)
 	projectService := serviceDocsys.NewProjectService(projectRepo, logger)
-	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, logger)
-	folderService := serviceDocsys.NewFolderService(folderRepo, docRepo, pathResolver, txManager, logger)
+	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, docsysValidator, logger)
+	folderService := serviceDocsys.NewFolderService(folderRepo, docRepo, pathResolver, txManager, docsysValidator, logger)
 	treeService := serviceDocsys.NewTreeService(folderRepo, docRepo, logger)
 	importService := serviceDocsys.NewImportService(docRepo, docService, logger)
+
+	// Chat services
+	chatService := serviceLLM.NewChatService(chatRepo, turnRepo, projectRepo, chatValidator, logger)
 
 	// Create new handlers
 	projectHandler := handler.NewProjectHandler(projectService, logger)
@@ -87,6 +100,16 @@ func main() {
 	newFolderHandler := handler.NewFolderHandler(folderService, logger)
 	newTreeHandler := handler.NewTreeHandler(treeService, logger)
 	importHandler := handler.NewImportHandler(importService, logger)
+
+	// Chat handlers
+	chatHandler := handler.NewChatHandler(chatService, logger)
+
+	// Debug handlers (only in dev environment)
+	var chatDebugHandler *handler.ChatDebugHandler
+	if cfg.Environment == "dev" {
+		chatDebugHandler = handler.NewChatDebugHandler(chatService)
+		logger.Warn("DEBUG MODE: Debug endpoints enabled (NEVER use in production!)")
+	}
 
 	logger.Info("services initialized")
 
@@ -161,6 +184,23 @@ func main() {
 	// Import routes
 	api.Post("/import", importHandler.Merge)
 	api.Post("/import/replace", importHandler.Replace)
+
+	// Chat routes
+	api.Post("/chats", chatHandler.CreateChat)
+	api.Get("/chats", chatHandler.ListChats)
+	api.Get("/chats/:id", chatHandler.GetChat)
+	api.Patch("/chats/:id", chatHandler.UpdateChat)
+	api.Delete("/chats/:id", chatHandler.DeleteChat)
+	api.Post("/chats/:id/turns", chatHandler.CreateTurn)
+	api.Get("/turns/:id/path", chatHandler.GetTurnPath)
+	api.Get("/turns/:id/children", chatHandler.GetTurnChildren)
+
+	// Debug routes (only in dev environment)
+	if cfg.Environment == "dev" && chatDebugHandler != nil {
+		debug := app.Group("/debug/api")
+		debug.Post("/chats/:id/turns", chatDebugHandler.CreateAssistantTurn)
+		logger.Warn("Debug route registered: POST /debug/api/chats/:id/turns (assistant turn creation)")
+	}
 
 	// Start server
 	log.Printf("Server starting on port %s", cfg.Port)

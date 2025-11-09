@@ -348,6 +348,10 @@ Similar to folders, the `name` field now supports Unix-style path notation for c
 - **UPDATE operations**: Simple names only (no slashes), regex: `^[^/]+$`
 - **Import**: Automatically sanitizes slashes to hyphens in document names
 
+### Parent Resource Validation
+
+All create operations validate that parent resources exist and are not soft-deleted. See [Error Responses](error-responses.md#404-not-found) for validation behavior and error examples.
+
 ## Error Responses
 
 ### Standard Error Format

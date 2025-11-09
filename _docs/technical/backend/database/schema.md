@@ -100,6 +100,7 @@ Top-level container for all user content (documents + chats).
 - `user_id` (UUID) - Owner (not enforced as FK in Phase 1)
 - `name` (TEXT) - Project name
 - `created_at`, `updated_at` (TIMESTAMPTZ) - Timestamps
+- `deleted_at` (TIMESTAMPTZ, nullable) - Soft delete timestamp
 
 **Constraints:**
 - `UNIQUE(user_id, name)` - No duplicate project names per user
@@ -120,6 +121,7 @@ Hierarchical folder structure using adjacency list pattern (self-referencing tre
 - `parent_id` (UUID, FK → folders, nullable) - Parent folder (NULL = root level)
 - `name` (TEXT) - Folder name (no slashes allowed)
 - `created_at`, `updated_at` (TIMESTAMPTZ) - Timestamps
+- `deleted_at` (TIMESTAMPTZ, nullable) - Soft delete timestamp
 
 **Constraints:**
 - `UNIQUE(project_id, parent_id, name)` - No duplicate names at same level
@@ -145,6 +147,7 @@ Content documents (leaf nodes in hierarchy). Store markdown content.
 - `content` (TEXT) - Markdown content (canonical storage format)
 - `word_count` (INTEGER) - Computed from markdown on create/update
 - `created_at`, `updated_at` (TIMESTAMPTZ) - Timestamps
+- `deleted_at` (TIMESTAMPTZ, nullable) - Soft delete timestamp
 
 **Constraints:**
 - `UNIQUE(project_id, folder_id, name)` - No duplicate names in same folder
@@ -239,6 +242,7 @@ Chat sessions scoped to projects.
 - `title` (TEXT) - Chat title
 - `last_viewed_turn_id` (UUID, FK → turns, nullable) - Last turn viewed by user (for UI navigation)
 - `created_at`, `updated_at` (TIMESTAMPTZ) - Timestamps
+- `deleted_at` (TIMESTAMPTZ, nullable) - Soft delete timestamp
 
 **Deletion Behavior:**
 - CASCADE when project deleted
@@ -429,6 +433,18 @@ query := "SELECT * FROM documents WHERE id = $1"
 **Documents:**
 - `UNIQUE(project_id, folder_id, name)` - No duplicate names in same folder
 - Same name allowed in different folders
+
+### Soft Delete System
+
+Primary resources (projects, folders, documents, chats) support soft deletion via `deleted_at` timestamp.
+
+**Behavior:**
+- Soft-deleted resources return 404 (treated as non-existent)
+- Create operations validate parents aren't soft-deleted (service layer validators)
+- Soft-delete does NOT cascade to children
+- Hard delete (row removal) uses database CASCADE rules
+
+**Implementation:** See `internal/service/docsystem/validation.go` and `internal/service/llm/validation.go`
 
 ## Indexes
 

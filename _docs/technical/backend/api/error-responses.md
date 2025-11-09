@@ -104,6 +104,18 @@ User is authenticated but lacks permission for this resource.
 
 Requested resource does not exist.
 
+**When it occurs:**
+- Resource doesn't exist with the given ID
+- Resource is soft-deleted (has `deleted_at` timestamp)
+- User doesn't have access to the resource
+- Invalid resource relationship (e.g., folder doesn't belong to project)
+
+**Soft-delete behavior:**
+- Soft-deleted resources are treated as non-existent
+- Operations on child resources fail if parent is soft-deleted
+- Example: Creating document in deleted project → 404
+- No distinction between "never existed" and "deleted" to prevent information leakage
+
 ```json
 {
   "type": "not-found",

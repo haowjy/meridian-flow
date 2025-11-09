@@ -24,6 +24,7 @@ type DocumentService interface {
 // CreateDocumentRequest represents a document creation request
 type CreateDocumentRequest struct {
 	ProjectID  string  `json:"project_id"`
+	UserID     string  `json:"-"` // Set by handler from auth context, not from request body
 	FolderPath *string `json:"folder_path,omitempty"` // Folder path (e.g., "Characters/Aria" or "Characters" or "" for root)
 	FolderID   *string `json:"folder_id,omitempty"`   // Direct folder assignment (alternative to FolderPath)
 	Name       string  `json:"name"`                  // Document name (required)
