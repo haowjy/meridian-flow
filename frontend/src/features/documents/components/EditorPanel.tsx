@@ -2,11 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { EditorContent } from '@tiptap/react'
-import StarterKit from '@tiptap/starter-kit'
-import Highlight from '@tiptap/extension-highlight'
-import Typography from '@tiptap/extension-typography'
-import CharacterCount from '@tiptap/extension-character-count'
-import Placeholder from '@tiptap/extension-placeholder'
+import { getExtensions } from '@/core/editor/extensions'
 import { useEditorStore } from '@/core/stores/useEditorStore'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { useDebounce } from '@/core/hooks/useDebounce'
@@ -66,15 +62,7 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
   const { editor, isFromCache } = useEditorCache({
     documentId,
     content: localContent,
-    extensions: [
-      StarterKit,
-      Highlight,
-      Typography,
-      CharacterCount,
-      Placeholder.configure({
-        placeholder: 'Start writing...',
-      }),
-    ],
+    extensions: getExtensions(),
     // Keep editor read-only until initialization completes for this document
     editable: !editorReadOnly && !!activeDocument && activeDocument.id === documentId && !isLoading && isInitialized,
     immediatelyRender: false, // Fix SSR hydration mismatch
@@ -86,8 +74,8 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
     onUpdate: ({ editor }) => {
       // Ignore TipTap's early updates before we finish initializing content
       if (!initializedRef.current) return
-      const html = editor.getHTML()
-      setLocalContent(html)
+      const markdown = editor.getMarkdown()
+      setLocalContent(markdown)
       setHasUserEdit(true) // Mark that user has edited
     },
   })
@@ -135,24 +123,30 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
       setLocalContent(activeDocument.content ?? '')
       setHasUserEdit(false) // Reset flag when switching documents
       if (editor) {
-        editor.commands.setContent(activeDocument.content ?? '', { emitUpdate: false })
+        editor.commands.setContent(activeDocument.content ?? '', {
+          contentType: 'markdown',
+          emitUpdate: false
+        })
       }
       setIsInitialized(true)
     } else if (activeDocument && activeDocument.id === documentId && isFromCache) {
       // Cached editor: Preserve its content (may have unsaved changes)
       // UNLESS the cached editor is empty AND server has content
       // (This handles incomplete initialization race condition)
-      const cachedContent = editor?.getHTML() ?? ''
+      const cachedContent = editor?.getMarkdown() ?? ''
       const serverContent = activeDocument.content ?? ''
-      const cachedIsEmpty = cachedContent === '' || cachedContent === '<p></p>'
-      const serverHasContent = serverContent !== '' && serverContent !== '<p></p>'
+      const cachedIsEmpty = cachedContent === ''
+      const serverHasContent = serverContent !== ''
 
       if (cachedIsEmpty && serverHasContent) {
         // Cached editor never got initialized properly, use server content
         console.log('[Editor] Cached editor is empty, initializing from server')
         setLocalContent(serverContent)
         if (editor) {
-          editor.commands.setContent(serverContent, { emitUpdate: false })
+          editor.commands.setContent(serverContent, {
+            contentType: 'markdown',
+            emitUpdate: false
+          })
         }
         setIsInitialized(true)
       } else {
@@ -178,7 +172,7 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
   useEffect(() => {
     if (!editor) return
 
-    const currentContent = editor.getHTML()
+    const currentContent = editor.getMarkdown()
 
     if (isFromCache) {
       // Cached editor is source of truth - preserve its content (may have unsaved changes)
@@ -192,7 +186,10 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
       // New editor - initialize it with current localContent from store
       if (localContent !== undefined && currentContent !== localContent) {
         console.log('[Editor] Initializing new editor with localContent')
-        editor.commands.setContent(localContent, { emitUpdate: false })
+        editor.commands.setContent(localContent, {
+          contentType: 'markdown',
+          emitUpdate: false
+        })
       }
     }
   }, [editor, isFromCache, localContent, documentId])

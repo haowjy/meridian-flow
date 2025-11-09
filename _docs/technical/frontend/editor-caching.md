@@ -5,9 +5,9 @@ audience: developer
 
 # Editor Caching and Document Loading
 
-Purpose: map the exact data flow for opening, editing, and saving a document with the TipTap editor cache and IndexedDB cache, and call out edge cases that can cause “stuck loading” or “shows previous doc” symptoms.
+Purpose: map the exact data flow for opening, editing, and saving a document with the TipTap editor cache and IndexedDB cache, and call out edge cases that can cause "stuck loading" or "shows previous doc" symptoms.
 
-See also: `_docs/technical/frontend/sync-system-minimal.md` for broader sync overview.
+See also: `_docs/technical/frontend/architecture/sync-system.md` for broader sync overview.
 
 ## Components Involved
 

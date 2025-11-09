@@ -5,7 +5,7 @@ export interface Document {
   projectId: string
   folderId: string | null
   name: string
-  content?: string  // Lazy-loaded
+  content?: string  // Markdown format, lazy-loaded
   wordCount?: number
   updatedAt: Date
 }

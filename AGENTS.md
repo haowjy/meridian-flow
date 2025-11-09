@@ -1,6 +1,6 @@
-# AGENTS.md
+# CLAUDE.md
 
-This file provides guidance to Claude agents when working with code in this repository.
+This file provides guidance to Codex when working with code in this repository.
 
 ## Project Overview
 
@@ -14,7 +14,9 @@ For product details, see `_docs/high-level/1-overview.md`.
 
 ## Guiding Principles for Development
 
-These principles emerged from redesigning the sync system and guide future architectural decisions:
+ALWAYS FOLLOW SOLID PRINCIPLES.
+
+Then, these principles can also help you make architectural decisions and other development tasks:
 
 1. **Start Simple, Stay Simple**
    - Write the simplest thing that could work
@@ -103,23 +105,42 @@ _docs/
 
 ### Core Principles
 
-1. **Keep it lean** - As short as possible while still useful
-2. **Reference, don't duplicate** - Point to code, don't copy it
+1. **Diagrams > Words** - A picture is easier to understand than paragraphs
+   - Prefer Mermaid diagrams to explain flows, architecture, relationships
+   - Use tables for comparisons or lists of issues
+   - Keep text minimal - just enough to connect the diagrams
+
+2. **Minimize words** - Every sentence should earn its place
+   - Can a diagram replace 3 paragraphs? Use the diagram
+   - Can a table replace verbose lists? Use the table
+   - Cut ruthlessly - too much text hurts comprehension
+
+3. **Reference, don't duplicate** - Point to code, don't copy it
    - ✅ "See `internal/service/document.go:29-33`"
    - ❌ Pasting 50 lines of existing code
-3. **Use frontmatter** for detail level:
+
+4. **Split by purpose, not size** - Each doc should have a single, clear purpose
+   - If covering multiple distinct topics → split into separate docs
+   - Organize related docs into folders (e.g., `architecture/`, `features/`)
+   - Update index/README to maintain discoverability
+   - Guideline: If someone asks "where's the X doc?" and you can't point to one file, structure is wrong
+
+5. **Use frontmatter** for detail level:
    ```yaml
    ---
    detail: minimal | standard | comprehensive
    audience: developer | architect | claude
    ---
    ```
-4. **Code examples sparingly** - Only when:
+
+6. **Code examples sparingly** - Only when:
    - Showing a pattern that doesn't exist yet
    - Demonstrating a specific fix/workaround
    - Concept can't be found in existing code
-5. **Focus on WHY, not WHAT** - Code shows WHAT; explain WHY
-6. **Mermaid diagrams** - Use dark mode compatible colors:
+
+7. **Focus on WHY, not WHAT** - Code shows WHAT; explain WHY
+
+8. **Mermaid diagrams** - Use dark mode compatible colors:
    - Use darker, saturated colors (e.g., `#2d7d2d` not `#90EE90`)
    - Avoid light pastels that disappear on dark backgrounds
    - Test: colors should be visible on both light AND dark backgrounds

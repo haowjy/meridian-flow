@@ -73,7 +73,7 @@ export function httpErrorToAppError<TResource = unknown>(
 ): AppError<TResource> {
   switch (status) {
     case 400:
-      return new AppError(
+      return new AppError<TResource>(
         ErrorType.Validation,
         message || 'Invalid request. Please check your input.',
         undefined,
@@ -81,12 +81,12 @@ export function httpErrorToAppError<TResource = unknown>(
         fieldErrors
       )
     case 401:
-      return new AppError(
+      return new AppError<TResource>(
         ErrorType.Unauthorized,
         message || 'You are not authorized to perform this action.'
       )
     case 404:
-      return new AppError(
+      return new AppError<TResource>(
         ErrorType.NotFound,
         message || 'The requested resource was not found.'
       )
@@ -100,12 +100,12 @@ export function httpErrorToAppError<TResource = unknown>(
     case 500:
     case 502:
     case 503:
-      return new AppError(
+      return new AppError<TResource>(
         ErrorType.ServerError,
         message || 'Server error. Please try again later.'
       )
     default:
-      return new AppError(
+      return new AppError<TResource>(
         ErrorType.Unknown,
         message || 'An unexpected error occurred.'
       )

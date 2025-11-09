@@ -38,12 +38,19 @@ Relevant code
 - Handlers: backend/internal/handler/
 
 ## Frontend (Next.js)
-- Setup quickstart: _docs/technical/frontend/setup-quickstart.md
-- Sync system (minimal): _docs/technical/frontend/sync-system-minimal.md
+
+**Architecture:**
+- Navigation pattern: _docs/technical/frontend/architecture/navigation-pattern.md
+- Sync system: _docs/technical/frontend/architecture/sync-system.md
+
+**Features:**
 - Editor caching/load flows: _docs/technical/frontend/editor-caching.md
 - Editor UI overview: _docs/technical/frontend/editor-ui-overview.md
 
-Relevant code
+**Guides:**
+- Setup quickstart: _docs/technical/frontend/setup-quickstart.md
+
+**Relevant code:**
 - Core libs: frontend/src/core/lib/{api,cache,sync,logger}.ts
 - Stores: frontend/src/core/stores/
 - Services: frontend/src/core/services/

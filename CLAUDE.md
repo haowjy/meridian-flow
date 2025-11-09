@@ -105,41 +105,54 @@ _docs/
 
 ### Core Principles
 
-1. **Keep it lean** - As short as possible while still useful
-2. **Reference, don't duplicate** - Point to code, don't copy it
+1. **Diagrams > Words** - A picture is easier to understand than paragraphs
+   - Prefer Mermaid diagrams to explain flows, architecture, relationships
+   - Use tables for comparisons or lists of issues
+   - Keep text minimal - just enough to connect the diagrams
+
+2. **Minimize words** - Every sentence should earn its place
+   - Can a diagram replace 3 paragraphs? Use the diagram
+   - Can a table replace verbose lists? Use the table
+   - Cut ruthlessly - too much text hurts comprehension
+
+3. **Reference, don't duplicate** - Point to code, don't copy it
    - ✅ "See `internal/service/document.go:29-33`"
    - ❌ Pasting 50 lines of existing code
-3. **Use frontmatter** for detail level:
+
+4. **Split by purpose, not size** - Each doc should have a single, clear purpose
+   - If covering multiple distinct topics → split into separate docs
+   - Organize related docs into folders (e.g., `architecture/`, `features/`)
+   - Update index/README to maintain discoverability
+   - Guideline: If someone asks "where's the X doc?" and you can't point to one file, structure is wrong
+
+5. **Use frontmatter** for detail level:
    ```yaml
    ---
    detail: minimal | standard | comprehensive
    audience: developer | architect | claude
    ---
    ```
-4. **Code examples sparingly** - Only when:
+
+6. **Code examples sparingly** - Only when:
    - Showing a pattern that doesn't exist yet
    - Demonstrating a specific fix/workaround
    - Concept can't be found in existing code
-5. **Focus on WHY, not WHAT** - Code shows WHAT; explain WHY
-6. **Mermaid diagrams** - Use dark mode compatible colors:
+
+7. **Focus on WHY, not WHAT** - Code shows WHAT; explain WHY
+
+8. **Mermaid diagrams** - Use dark mode compatible colors:
    - Use darker, saturated colors (e.g., `#2d7d2d` not `#90EE90`)
    - Avoid light pastels that disappear on dark backgrounds
    - Test: colors should be visible on both light AND dark backgrounds
 
 ### Mermaid Quick Rules
 
-- **Quote labels with spaces, parentheses, punctuation, or HTML**
-  - Nodes: `Node["Label"]`, Edges: `A -->|"edge"| B`, Subgraphs: `subgraph "Title (X)"` … `end`
-- **Put `<br/>` only inside quoted labels**
-- **Use ASCII operators** in labels (`>=`, `<=`) instead of unicode
-- **Don't change diagram types or structure** - Fix parse errors by adding quotes, not refactors
-- **Leave `class` directives as-authored** - Move prose into labels only if asked
-- **If asked to revert, restore the exact previous lines**
-- **Before saving: quick scan for unbalanced quotes**
+- Quote labels with spaces/punctuation: `Node["Label"]`, `A -->|"edge"| B`
+- Use ASCII operators (`>=`, `<=`) not unicode
+- Fix parse errors by adding quotes, not restructuring diagrams
 
-### Examples
+### Example
 
-**Good (minimal):**
 ```markdown
 # Database Connections
 
@@ -151,20 +164,6 @@ Add `?pgbouncer=true` for dev (port 6543).
 
 ## Implementation
 See `internal/repository/postgres/connection.go`
-```
-
-**Bad (verbose):**
-```markdown
-# Database Connections
-
-PostgreSQL is a powerful database...
-[3 paragraphs of history]
-
-Here's the connection code:
-[50 lines copied from connection.go]
-
-Here's how to query:
-[30 more lines]
 ```
 
 ## General Conventions

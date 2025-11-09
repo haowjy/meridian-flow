@@ -67,8 +67,8 @@ interface UIStore {
 
   /**
    * Sets right panel view mode.
-   * Use panelHelpers.openDocument() for opening documents with history tracking.
-   * Call directly with 'documents' to show tree view without affecting history.
+   * Use panelHelpers.openDocument() for opening documents (navigates URL).
+   * Call directly with 'documents' to show tree view without navigating.
    */
   setRightPanelState: (state: RightPanelState) => void
 

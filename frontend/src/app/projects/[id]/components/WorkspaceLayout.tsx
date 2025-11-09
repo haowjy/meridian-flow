@@ -17,26 +17,18 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
   const [mounted, setMounted] = useState(false)
   const previousDocumentIdRef = useRef<string | undefined>(undefined)
 
+  // Subscribe only to panel collapse state (needed for PanelLayout props)
+  // Use getState() in effects to read other values without subscribing
   const {
     leftPanelCollapsed,
     rightPanelCollapsed,
-    rightPanelState,
-    activeDocumentId,
     toggleLeftPanel,
     toggleRightPanel,
-    setActiveDocument,
-    setRightPanelState,
-    setRightPanelCollapsed,
   } = useUIStore(useShallow((s) => ({
     leftPanelCollapsed: s.leftPanelCollapsed,
     rightPanelCollapsed: s.rightPanelCollapsed,
-    rightPanelState: s.rightPanelState,
-    activeDocumentId: s.activeDocumentId,
     toggleLeftPanel: s.toggleLeftPanel,
     toggleRightPanel: s.toggleRightPanel,
-    setActiveDocument: s.setActiveDocument,
-    setRightPanelState: s.setRightPanelState,
-    setRightPanelCollapsed: s.setRightPanelCollapsed,
   })))
 
   // Ensure document tree is loaded when deep-linking to a document URL
@@ -53,43 +45,61 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
 
   // Reset UI state when project changes to prevent context leakage
   useEffect(() => {
-    setActiveDocument(null)
-    setRightPanelState('documents')
+    const store = useUIStore.getState()
+    store.setActiveDocument(null)
+    store.setRightPanelState('documents')
     previousDocumentIdRef.current = undefined // Reset ref so next URL is treated as changed
-  }, [projectId, setActiveDocument, setRightPanelState])
+  }, [projectId])
 
   // Sync URL document ID to UI state (for direct URL navigation, bookmarks, browser back/forward)
-  // Only sync when URL actually changes to prevent overriding manual view toggles
+  // Uses getState() to read current values without subscribing (prevents unnecessary re-runs)
+  // Effect only runs when document URL param changes, not when UI state changes
+  // This allows future chat effects to run independently without interfering
   useEffect(() => {
+    console.log('[WorkspaceLayout] URL sync effect triggered', {
+      previousDocId: previousDocumentIdRef.current,
+      currentDocId: initialDocumentId,
+    })
+
     const urlChanged = previousDocumentIdRef.current !== initialDocumentId
-    // Record the current URL doc id immediately to avoid repeated triggers
     previousDocumentIdRef.current = initialDocumentId
 
     if (!urlChanged) {
+      console.log('[WorkspaceLayout] URL unchanged, skipping sync')
       return
     }
 
+    console.log('[WorkspaceLayout] URL changed, syncing UI state to match URL...')
+
+    // Read current state without subscribing (no re-renders when state changes)
+    const store = useUIStore.getState()
+
     if (initialDocumentId) {
       // Document URL - open editor with this document and ensure sidebar open
-      if (activeDocumentId !== initialDocumentId) {
-        setActiveDocument(initialDocumentId)
+      if (store.activeDocumentId !== initialDocumentId) {
+        console.log('[WorkspaceLayout] Setting active document:', initialDocumentId)
+        store.setActiveDocument(initialDocumentId)
       }
-      if (rightPanelState !== 'editor') {
-        setRightPanelState('editor')
+      if (store.rightPanelState !== 'editor') {
+        console.log('[WorkspaceLayout] Setting panel state: editor')
+        store.setRightPanelState('editor')
       }
-      if (rightPanelCollapsed) {
-        setRightPanelCollapsed(false)
+      if (store.rightPanelCollapsed) {
+        console.log('[WorkspaceLayout] Expanding right panel')
+        store.setRightPanelCollapsed(false)
       }
     } else {
       // Tree URL - show tree view
-      if (activeDocumentId !== null) {
-        setActiveDocument(null)
+      if (store.activeDocumentId !== null) {
+        console.log('[WorkspaceLayout] Clearing active document')
+        store.setActiveDocument(null)
       }
-      if (rightPanelState !== 'documents') {
-        setRightPanelState('documents')
+      if (store.rightPanelState !== 'documents') {
+        console.log('[WorkspaceLayout] Setting panel state: documents')
+        store.setRightPanelState('documents')
       }
     }
-  }, [initialDocumentId, activeDocumentId, rightPanelState, rightPanelCollapsed, setActiveDocument, setRightPanelState, setRightPanelCollapsed])
+  }, [initialDocumentId])
 
   // For deep links: load the tree once in the background if empty
   useEffect(() => {
@@ -107,10 +117,12 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
     if (documentsCount === 0) return
 
     const existsInTree = documents.some((d) => d.id === initialDocumentId)
-    if (existsInTree && activeDocumentId !== initialDocumentId) {
-      setActiveDocument(initialDocumentId)
+    const store = useUIStore.getState()
+    if (existsInTree && store.activeDocumentId !== initialDocumentId) {
+      console.log('[WorkspaceLayout] Tree loaded, syncing active document to URL:', initialDocumentId)
+      store.setActiveDocument(initialDocumentId)
     }
-  }, [documentsCount, documents, initialDocumentId, activeDocumentId, setActiveDocument])
+  }, [documentsCount, documents, initialDocumentId])
 
   if (!mounted) {
     return <div className="h-screen w-full bg-background" />

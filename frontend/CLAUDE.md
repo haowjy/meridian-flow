@@ -68,6 +68,23 @@ All stores use Zustand. Key conventions:
 - `useTreeStore.ts` - Document tree structure (network-first, bulk cache)
 - `useUIStore.ts` - UI state (persist middleware)
 
+### Navigation Pattern
+
+Document and panel navigation uses a **two-pronged approach**:
+
+1. **Direct state updates** via `panelHelpers` (instant feedback, handles same-URL clicks)
+2. **URL sync effect** in `WorkspaceLayout` (syncs UI to URL on back/forward/refresh)
+
+**Key pattern**: Use `getState()` in effects to read state without subscribing:
+- Prevents unnecessary effect re-runs when state changes
+- Allows independent effects (document URL vs chat query params)
+- Essential for future chat integration (chat persists across document navigation)
+
+**Implementation:**
+- Navigation helpers: `frontend/src/core/lib/panelHelpers.ts`
+- URL sync effect: `frontend/src/app/projects/[id]/components/WorkspaceLayout.tsx:54-102`
+- **See**: `_docs/technical/frontend/architecture/navigation-pattern.md` for comprehensive guide
+
 ### Sync System
 
 - Core policy + scheduler: `frontend/src/core/lib/cache.ts`, `frontend/src/core/lib/retry.ts`, `frontend/src/core/lib/sync.ts`
@@ -79,6 +96,8 @@ Flow (documents):
 Background: only the retry scheduler (ticked in `SyncProvider`). No visibility/online listeners.
 
 Dev: optional retry inspector in dev builds — set `NEXT_PUBLIC_DEV_TOOLS=1` to enable small bottom-left panel.
+
+**See**: `_docs/technical/frontend/architecture/sync-system.md` for detailed sync mechanics and diagrams.
 
 ### IndexedDB Schema
 
@@ -131,8 +150,17 @@ if (content) { ... }  // Fails for empty strings
 - Guard background operations with intent flags (e.g., `hasUserEdit`)
 
 ### TipTap Editor
-**Extensions**:
+
+**Content Format**:
+- **Storage**: Markdown (backend, API, IndexedDB, stores)
+- **Editor**: HTML/ProseMirror (TipTap internal representation)
+- **Conversion**: At editor boundary in `EditorPanel.tsx`
+  - Load: `editor.commands.setContent(markdown, { contentType: 'markdown' })`
+  - Save: `editor.getMarkdown()`
+
+**Extensions** (configured in `core/editor/extensions.ts`):
 - StarterKit (core functionality)
+- Markdown (enables markdown ↔ HTML conversion)
 - CharacterCount (word/character counting)
 - Placeholder (empty state)
 - Highlight, Typography

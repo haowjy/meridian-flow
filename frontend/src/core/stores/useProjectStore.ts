@@ -4,7 +4,6 @@ import { Project } from '@/features/projects/types/project'
 import { api } from '@/core/lib/api'
 import { handleApiError } from '@/core/lib/errors'
 import { clearEditorCache } from '@/core/hooks/useEditorCache'
-import { useNavigationStore } from '@/core/stores/useNavigationStore'
 
 interface ProjectStore {
   currentProjectId: string | null
@@ -38,10 +37,8 @@ export const useProjectStore = create<ProjectStore>()(
       },
 
       setCurrentProject: (project) => {
-        // Clear editor cache and navigation history when switching projects
-        // to prevent stale data and memory leaks
+        // Clear editor cache when switching projects to prevent stale data and memory leaks
         clearEditorCache()
-        useNavigationStore.getState().clear()
         set({ currentProjectId: project?.id || null })
       },
 

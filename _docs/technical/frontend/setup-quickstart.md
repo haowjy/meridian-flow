@@ -33,7 +33,7 @@ These commands are intentionally generic to avoid coupling to specific layouts; 
 ## Notes
 
 - The backend is the system of record; local browser storage is treated as a cache.
-- See `_docs/technical/frontend/sync-system-minimal.md` for the current sync architecture.
+- See `_docs/technical/frontend/architecture/sync-system.md` for the current sync architecture.
 - This quickstart will change only if setup changes; UI details live in the design/flows docs.
 
 ## High‑Level Dev Flow (Mermaid)
