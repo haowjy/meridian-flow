@@ -133,7 +133,7 @@ body.preload * {
 @layer components {
   /* Editor toolbar shell */
   .tiptap-toolbar {
-    @apply px-2 py-0 my-0;
+    @apply px-8 py-0 my-0;
   }
   .tiptap-toolbar__pill {
     @apply relative flex items-center overflow-hidden rounded-lg bg-card/80 ring-1 ring-border/40 shadow-sm transition-all;

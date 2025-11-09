@@ -2,7 +2,7 @@ import { ButtonHTMLAttributes, ReactNode, forwardRef } from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
-type ToolbarIconButtonVariant = 'default'
+type ToolbarIconButtonVariant = 'default' | 'toggle'
 
 export interface ToolbarIconButtonProps
   extends ButtonHTMLAttributes<HTMLButtonElement>,
@@ -17,7 +17,8 @@ const toolbarIconButtonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'h-9 w-9 text-muted-foreground hover:bg-muted/60 border border-transparent',
+        default: 'h-9 w-9 text-muted-foreground hover:border-border hover:shadow-sm border border-transparent',
+        toggle: 'h-9 w-9 text-foreground bg-transparent hover:border-border hover:shadow-sm border border-transparent',
       },
       state: {
         active: '',
@@ -28,7 +29,12 @@ const toolbarIconButtonVariants = cva(
       {
         variant: 'default',
         state: 'active',
-        class: 'bg-card text-foreground border border-border/60 shadow-xs',
+        class: 'border-border shadow-md text-foreground',
+      },
+      {
+        variant: 'toggle',
+        state: 'active',
+        class: 'bg-transparent border-transparent text-foreground',
       }
     ],
     defaultVariants: {

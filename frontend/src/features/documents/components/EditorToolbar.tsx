@@ -89,7 +89,9 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, readOnly
 
         {/* Gray background wrapper - foundation layer, extends full width in edit mode */}
         <div className={cn(
-          "flex items-center rounded-lg bg-muted/30 ring-1 ring-border/30",
+          "flex items-center rounded-lg group",
+          readOnly ? "bg-muted/30 shadow-md" : "bg-muted",
+          readOnly ? "ring-1 ring-border/60" : "ring-1 ring-border/30",
           !readOnly && "flex-1"
         )}>
           {/* Eye button - read-only mode toggle */}
@@ -99,8 +101,12 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, readOnly
             aria-label="Read-only mode"
             aria-pressed={readOnly}
             isActive={readOnly}
+            variant="toggle"
             onClick={() => onModeChange(!readOnly)}
-            className="rounded-r-none border-r-0"
+            className={cn(
+              "rounded-r-none border-r-0",
+              !readOnly && "hover:border-r"
+            )}
           />
 
           {/* Pencil cell - wraps edit mode button and controls
@@ -109,7 +115,7 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, readOnly
             ref={pencilCellRef}
             className={cn(
               "flex items-center gap-0.5 rounded-l-none",
-              !readOnly && "flex-1 bg-card ring-1 ring-border/60 shadow-xs rounded-lg"
+              !readOnly && "flex-1 bg-card ring-1 ring-border/60 shadow-md rounded-lg group-hover:shadow-lg group-hover:ring-1 group-hover:ring-border"
             )}
           >
             {/* Pencil button - edit mode toggle */}
@@ -117,11 +123,11 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, readOnly
               icon={<Pencil className="h-4.5 w-4.5" />}
               aria-label="Edit mode"
               aria-pressed={!readOnly}
-              isActive={false}
+              isActive={!readOnly}
+              variant="toggle"
               onClick={() => onModeChange(!readOnly)}
               className={cn(
-                "rounded-l-none",
-                readOnly ? "rounded-r-none" : "border-transparent"
+                readOnly ? "rounded-l-none rounded-r-lg" : "rounded-l-lg"
               )}
             />
 

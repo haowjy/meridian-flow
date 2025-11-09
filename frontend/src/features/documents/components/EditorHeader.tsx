@@ -42,7 +42,6 @@ export function EditorHeader({ document }: EditorHeaderProps) {
             type="button"
             onClick={handleProjectClick}
             aria-label="Show document tree"
-            title={projectName}
             className="font-semibold hover:underline truncate focus-visible:underline focus:outline-none"
           >
             {projectName}
@@ -56,13 +55,13 @@ export function EditorHeader({ document }: EditorHeaderProps) {
           )}
           {lastFolderName && (
             <>
-              <span className="truncate text-muted-foreground" title={lastFolderName}>
+              <span className="truncate text-muted-foreground">
                 {lastFolderName}
               </span>
               <span className="mx-1 text-muted-foreground" aria-hidden="true">/</span>
             </>
           )}
-          <span className="truncate" title={document.name}>
+          <span className="truncate font-semibold">
             {document.name}
           </span>
         </div>

@@ -37,34 +37,32 @@ export function DocumentTreePanel({
     <div className="flex h-full flex-col">
       {/* Header */}
       <DocumentHeaderBar
-        title={<h2 className="truncate text-sm font-semibold" title={title}>{title}</h2>}
-        trailing={
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              onClick={onCreateDocument}
-              aria-label="Create new document"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-          </div>
-        }
+        title={<div className="truncate text-sm font-semibold" title={title}>{title}</div>}
         ariaLabel="Documents explorer header"
         showDivider={false}
       />
 
       {/* Search Bar */}
       <div className="px-3 py-2">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Search documents..."
-            value={searchQuery}
-            onChange={(e) => handleSearchChange(e.target.value)}
-            className="pl-9"
-            aria-label="Search documents by name"
-          />
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Search documents..."
+              value={searchQuery}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              className="pl-9"
+              aria-label="Search documents by name"
+            />
+          </div>
+          <Button
+            size="sm"
+            onClick={onCreateDocument}
+            aria-label="Create new document"
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
