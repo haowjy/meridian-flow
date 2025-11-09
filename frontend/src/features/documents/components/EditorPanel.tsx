@@ -14,9 +14,7 @@ import { EditorStatusBar } from './EditorStatusBar'
 import { CardSkeleton } from '@/shared/components/ui/card'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { useTreeStore } from '@/core/stores/useTreeStore'
-import { api } from '@/core/lib/api'
-import { handleApiError } from '@/core/lib/errors'
-import { toast } from 'sonner'
+// Removed inline rename flow for now (EditorTitle deleted)
 
 interface EditorPanelProps {
   documentId: string
@@ -193,20 +191,7 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
     }
   }, [editor, isFromCache, localContent, documentId])
 
-  // Handle document rename
-  const handleRename = async (newName: string) => {
-    try {
-      await api.documents.rename(documentId, newName)
-      toast.success('Document renamed')
-
-      // Update tree store to reflect the change
-      // TODO: Add a method to update document name in tree store
-      // For now, the tree will update on next reload
-    } catch (error) {
-      handleApiError(error, 'Failed to rename document')
-      throw error // Re-throw so EditorTitle stays in edit mode
-    }
-  }
+  // No inline rename handler here; breadcrumb rename to be added later.
 
   // Error state - show error panel without extra chrome
   // Note: onRetry doesn't pass signal, which is fine for manual retries

@@ -5,7 +5,6 @@ interface DocumentHeaderBarProps {
   leading?: ReactNode
   title?: ReactNode
   trailing?: ReactNode
-  muted?: boolean
   ariaLabel?: string
   showDivider?: boolean
 }
@@ -19,7 +18,6 @@ export function DocumentHeaderBar({
   leading,
   title,
   trailing,
-  muted = false,
   ariaLabel = 'Document header',
   showDivider = false,
 }: DocumentHeaderBarProps) {
@@ -27,7 +25,7 @@ export function DocumentHeaderBar({
     <div
       role="region"
       aria-label={ariaLabel}
-      className={cn('flex items-center gap-2 px-3 py-2', showDivider && 'border-b', muted && 'bg-muted/20')}
+      className={cn('flex items-center gap-2 px-3 py-2', showDivider && 'border-b')}
     >
       {leading}
       <div className="min-w-0 flex-1">{title}</div>

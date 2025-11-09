@@ -161,7 +161,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
   return (
     <>
       <DocumentTreePanel
-        title={projectName ?? 'Documents'}
+        title={projectName || undefined}
         onCreateDocument={() => setIsCreateDialogOpen(true)}
         onSearch={setSearchQuery}
         isEmpty={isEmpty}

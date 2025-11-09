@@ -24,7 +24,7 @@ export function DocumentTreePanel({
   onCreateDocument,
   onSearch,
   isEmpty = false,
-  title = 'Documents',
+  title,
 }: DocumentTreePanelProps) {
   const [searchQuery, setSearchQuery] = useState('')
 
