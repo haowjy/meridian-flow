@@ -10,53 +10,57 @@ Complete technical reference for the Meridian backend (Go + Fiber + PostgreSQL).
 ## Quick Links
 
 **First time?** → [Getting Started](#getting-started)
-**API Reference?** → [API Contracts](api-contracts.md)
+**API Reference?** → [API Contracts](api/contracts.md)
 **Architecture?** → [Architecture Overview](architecture/overview.md)
+**Database?** → [Schema](database/schema.md)
 **Troubleshooting?** → [Debugging Guide](development/debugging.md)
 
 ## Getting Started
 
 ### Quick Start (5 minutes)
-See `/backend/QUICKSTART.md` for fastest path to running server.
+See `/backend/CLAUDE.md` for commands and setup workflow.
 
-### Detailed Setup
-For comprehensive setup including Supabase configuration, database setup, and environment details:
-- [Detailed Setup Guide](getting-started/detailed-setup.md) - Complete first-time setup
+### Setup Resources
 - [Database Connections](database/connections.md) - PgBouncer vs direct connections
-- [First Document Tutorial](getting-started/first-document-tutorial.md) - Hands-on API walkthrough
+- [Database Schema](database/schema.md) - Complete schema with ER diagrams
+- [API Overview](api/overview.md) - Available endpoints
 
 ## Architecture
 
 Clean Architecture (Hexagonal) with clear layer separation:
 
-- [Overview](architecture/overview.md) - High-level architecture and design principles
-- [Layers](architecture/layers.md) - Handler → Service → Repository explained
-- [Request Lifecycle](architecture/request-lifecycle.md) - How requests flow through the system
-- [Go Patterns](architecture/go-patterns.md) - Common Go patterns used in the codebase
+- [Overview](architecture/overview.md) - Architecture, design principles, and layer responsibilities
 
 ## API
 
 Complete API reference with contracts, validation rules, and examples:
 
 - [Overview](api/overview.md) - API design and navigation
-- [Contracts](api-contracts.md) - All endpoints with request/response formats ⭐
-- [Error Handling](api/error-handling.md) - Error responses and conflict resolution
+- [Contracts](api/contracts.md) - All endpoints with request/response formats ⭐
+- [Error Responses](api/error-responses.md) - RFC 7807 error format and conflict resolution
 
 ## Database
 
 PostgreSQL schema, connections, and data management:
 
-- [Schema](database/schema.md) - Database structure with ER diagram
+- [Schema](database/schema.md) - Database structure with ER diagram ⭐
 - [Connections](database/connections.md) - Connection setup and troubleshooting
-- [Seeding](database/seeding.md) - Test data and seed scripts
+
+## Chat System
+
+**Status:** Schema implemented, CRUD pending
+
+Multi-turn LLM conversations with unified JSONB content blocks:
+
+- Schema documented in [database/schema.md](database/schema.md#chat-system)
+- CRUD operations: Not yet implemented
 
 ## Development
 
 Tools and workflows for development:
 
-- [Testing](development/testing.md) - Unit tests, API tests, Insomnia collection
 - [Debugging](development/debugging.md) - Common issues and solutions
-- [Deployment](development/deployment.md) - Railway deployment and environments
+- Test data: Run `make seed-fresh` (see `/backend/CLAUDE.md`)
 
 ## Documentation Conventions
 

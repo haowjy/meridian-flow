@@ -4,17 +4,14 @@ import (
 	"time"
 )
 
+// Chat represents a chat session within a project
 type Chat struct {
-	ID        string         `json:"id" db:"id"`
-	Name      string         `json:"name" db:"name"`
-	CreatedAt time.Time      `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at" db:"updated_at"`
-	Messages  []*MessageNode `json:"messages"` // Pointers for proper nesting
-}
-
-// FolderTreeNode represents a folder in the tree with nested children
-type MessageNode struct {
-	ID       string         `json:"id"`
-	ParentID *string        `json:"parent_id"`
-	Messages []*MessageNode `json:"messages"` // Pointers for proper nesting
+	ID               string     `json:"id" db:"id"`
+	ProjectID        string     `json:"project_id" db:"project_id"`
+	UserID           string     `json:"user_id" db:"user_id"`
+	Title            string     `json:"title" db:"title"`
+	LastViewedTurnID *string    `json:"last_viewed_turn_id,omitempty" db:"last_viewed_turn_id"`
+	CreatedAt        time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at" db:"updated_at"`
+	DeletedAt        *time.Time `json:"deleted_at,omitempty" db:"deleted_at"`
 }
