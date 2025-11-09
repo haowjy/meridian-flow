@@ -5,8 +5,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"meridian/internal/repository/postgres"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // LLMSeeder handles seeding of LLM-related data (chats, turns, content blocks, responses)
@@ -65,7 +66,7 @@ func (s *LLMSeeder) SeedChatData(ctx context.Context, projectID, userID string) 
 
 	// Turn 2: Assistant response to turn 1
 	turn2ID := "22222222-2222-2222-2222-222222222222"
-	model := "claude-3-5-sonnet-20241022"
+	model := "claude-haiku-4-5-20251001"
 	tokenCount := 150
 	if err := s.insertTurn(ctx, turn2ID, chatID, &turn1ID, "assistant", "complete", &model, &tokenCount, now.Add(1*time.Second)); err != nil {
 		return err

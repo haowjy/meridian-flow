@@ -7,22 +7,24 @@ import (
 	"strings"
 	"time"
 
-	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"meridian/internal/config"
 	"meridian/internal/domain"
 	llmModels "meridian/internal/domain/models/llm"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	llmRepo "meridian/internal/domain/repositories/llm"
 	llmSvc "meridian/internal/domain/services/llm"
+
+	validation "github.com/go-ozzo/ozzo-validation/v4"
 )
 
 // chatService implements the ChatService interface
 type chatService struct {
-	chatRepo    llmRepo.ChatRepository
-	turnRepo    llmRepo.TurnRepository
-	projectRepo docsysRepo.ProjectRepository
-	validator   *ChatValidator
-	logger      *slog.Logger
+	chatRepo          llmRepo.ChatRepository
+	turnRepo          llmRepo.TurnRepository
+	projectRepo       docsysRepo.ProjectRepository
+	validator         *ChatValidator
+	responseGenerator *ResponseGenerator
+	logger            *slog.Logger
 }
 
 // NewChatService creates a new chat service
@@ -31,14 +33,16 @@ func NewChatService(
 	turnRepo llmRepo.TurnRepository,
 	projectRepo docsysRepo.ProjectRepository,
 	validator *ChatValidator,
+	responseGenerator *ResponseGenerator,
 	logger *slog.Logger,
 ) llmSvc.ChatService {
 	return &chatService{
-		chatRepo:    chatRepo,
-		turnRepo:    turnRepo,
-		projectRepo: projectRepo,
-		validator:   validator,
-		logger:      logger,
+		chatRepo:          chatRepo,
+		turnRepo:          turnRepo,
+		projectRepo:       projectRepo,
+		validator:         validator,
+		responseGenerator: responseGenerator,
+		logger:            logger,
 	}
 }
 
@@ -141,9 +145,10 @@ func (s *chatService) UpdateChat(ctx context.Context, chatID, userID string, req
 }
 
 // DeleteChat soft-deletes a chat
-func (s *chatService) DeleteChat(ctx context.Context, chatID, userID string) error {
-	if err := s.chatRepo.DeleteChat(ctx, chatID, userID); err != nil {
-		return err
+func (s *chatService) DeleteChat(ctx context.Context, chatID, userID string) (*llmModels.Chat, error) {
+	deletedChat, err := s.chatRepo.DeleteChat(ctx, chatID, userID)
+	if err != nil {
+		return nil, err
 	}
 
 	s.logger.Info("chat deleted",
@@ -151,13 +156,12 @@ func (s *chatService) DeleteChat(ctx context.Context, chatID, userID string) err
 		"user_id", userID,
 	)
 
-	return nil
+	return deletedChat, nil
 }
 
-// CreateTurn creates a new user turn (message from client)
-// Note: This endpoint only creates user turns. LLM response generation
-// will be triggered separately in Phase 2 (LLM integration).
-// For now, assistant turns must be created manually via test tools.
+// CreateTurn creates a new user turn and generates an LLM response.
+// This is a synchronous operation - it blocks until the LLM responds.
+// The user turn is returned to the client, and the assistant turn is created in the background.
 func (s *chatService) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest) (*llmModels.Turn, error) {
 	// Normalize empty string to nil for prev_turn_id
 	if req.PrevTurnID != nil && *req.PrevTurnID == "" {
@@ -174,14 +178,14 @@ func (s *chatService) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequ
 		return nil, err
 	}
 
-	// Create turn
+	// Create user turn
 	now := time.Now()
 	turn := &llmModels.Turn{
 		ChatID:       req.ChatID,
 		PrevTurnID:   req.PrevTurnID,
 		Role:         req.Role,
 		SystemPrompt: req.SystemPrompt,
-		Status:       "pending",
+		Status:       "complete", // User turn is immediately complete
 		CreatedAt:    now,
 	}
 
@@ -211,7 +215,7 @@ func (s *chatService) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequ
 		turn.ContentBlocks = blocks
 	}
 
-	s.logger.Info("turn created",
+	s.logger.Info("user turn created",
 		"id", turn.ID,
 		"chat_id", req.ChatID,
 		"role", req.Role,
@@ -219,6 +223,86 @@ func (s *chatService) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequ
 		"content_blocks", len(req.ContentBlocks),
 	)
 
+	// Generate LLM response synchronously
+	// Merge request params with defaults
+	requestParams := req.RequestParams
+	if requestParams == nil {
+		requestParams = make(map[string]interface{})
+	}
+
+	// Extract model from request_params with default fallback
+	model := "claude-haiku-4-5-20251001" // Default
+	if modelParam, ok := requestParams["model"].(string); ok && modelParam != "" {
+		model = modelParam
+	}
+
+	response, err := s.responseGenerator.GenerateResponse(ctx, turn.ID, model, requestParams)
+	if err != nil {
+		s.logger.Error("failed to generate LLM response",
+			"error", err,
+			"user_turn_id", turn.ID,
+			"model", model,
+		)
+		// Return user turn successfully, but LLM failed
+		// Client can see user turn exists but no assistant response
+		return turn, fmt.Errorf("LLM generation failed: %w", err)
+	}
+
+	// Create assistant turn with LLM response
+	assistantTurnID := turn.ID // Use user turn as prev_turn_id
+	contentBlocks := make([]llmSvc.ContentBlockInput, len(response.Content))
+	for i, block := range response.Content {
+		contentBlocks[i] = llmSvc.ContentBlockInput{
+			BlockType:   block.BlockType,
+			TextContent: block.TextContent,
+			Content:     block.Content,
+		}
+	}
+
+	assistantTurn, err := s.CreateAssistantTurnDebug(
+		ctx,
+		req.ChatID,
+		req.UserID,
+		&assistantTurnID,
+		contentBlocks,
+		response.Model,
+	)
+	if err != nil {
+		s.logger.Error("failed to create assistant turn",
+			"error", err,
+			"user_turn_id", turn.ID,
+		)
+		return turn, fmt.Errorf("failed to create assistant turn: %w", err)
+	}
+
+	// Update assistant turn with metadata (token counts, stop reason, request params, response metadata)
+	assistantTurn.Status = "complete"
+	inputTokens := response.InputTokens
+	outputTokens := response.OutputTokens
+	stopReason := response.StopReason
+	assistantTurn.InputTokens = &inputTokens
+	assistantTurn.OutputTokens = &outputTokens
+	assistantTurn.StopReason = &stopReason
+	assistantTurn.RequestParams = requestParams                // Store raw client request
+	assistantTurn.ResponseMetadata = response.ResponseMetadata // Store provider-specific data
+
+	if err := s.turnRepo.UpdateTurn(ctx, assistantTurn); err != nil {
+		s.logger.Error("failed to update assistant turn metadata",
+			"error", err,
+			"assistant_turn_id", assistantTurn.ID,
+		)
+	}
+
+	s.logger.Info("assistant response generated",
+		"user_turn_id", turn.ID,
+		"assistant_turn_id", assistantTurn.ID,
+		"model", response.Model,
+		"input_tokens", response.InputTokens,
+		"output_tokens", response.OutputTokens,
+		"stop_reason", response.StopReason,
+	)
+
+	// Return the user turn (client can poll for assistant turn)
 	return turn, nil
 }
 
@@ -231,7 +315,8 @@ func (s *chatService) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequ
 // It bypasses the "user" role validation that the public CreateTurn endpoint enforces.
 //
 // Usage:
-//   turn, err := s.CreateAssistantTurnDebug(ctx, chatID, userTurnID, blocks, "claude-3-5-sonnet-20241022")
+//
+//	turn, err := s.CreateAssistantTurnDebug(ctx, chatID, userTurnID, blocks, "claude-haiku-4-5-20251001")
 //
 // The ResponseGenerator should:
 // 1. Call this to create assistant turn with status="streaming"

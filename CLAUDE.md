@@ -7,8 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Meridian is a file management system for creative writers, starting with fiction writers who manage 100+ chapter web serials.
 
 **Current Status:**
-- ✅ Backend (Go + Fiber + PostgreSQL): Fully implemented
-- 🚧 Frontend (Next.js + TipTap): In active development
+- ✅ Backend (Go + Fiber + PostgreSQL): File system complete, Chat/LLM in progress (Anthropic provider working, streaming infrastructure pending)
+- 🚧 Frontend (Next.js + TipTap): Document editor complete, chat UI pending
 
 For product details, see `_docs/high-level/1-overview.md`.
 

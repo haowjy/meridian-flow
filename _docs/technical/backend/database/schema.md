@@ -9,6 +9,8 @@ Complete PostgreSQL database schema for Meridian: file management + LLM chat sys
 
 ## System Overview
 
+**Note:** Both `folders` and `documents` include a computed `path` field in API responses (not stored in database). This field contains the full hierarchical path including the entity's own name (e.g., "World Building/Locations/Cities"). See [API Contracts](../api/contracts.md#path-computation) for details.
+
 ```mermaid
 erDiagram
     projects ||--o{ folders : "has many"
@@ -201,7 +203,7 @@ LLM-powered chat sessions with tree-structured conversations and unified JSONB c
 graph TB
     chat[Chat Session]
     turn1[Turn 1<br/>user]
-    turn2[Turn 2<br/>assistant<br/>model: claude-sonnet-4]
+    turn2[Turn 2<br/>assistant<br/>model: claude-haiku-4-5]
     turn3a[Turn 3a<br/>user]
     turn3b[Turn 3b<br/>user<br/>branched conversation]
     cb1_text[Block 0<br/>type: text]
@@ -266,7 +268,7 @@ Conversation tree structure. Each turn is either a user message or assistant res
 - `system_prompt` (TEXT, nullable) - System instructions for this turn
 - `status` (TEXT) - One of: `'pending'`, `'streaming'`, `'waiting_subagents'`, `'complete'`, `'cancelled'`, `'error'`
 - `error` (TEXT, nullable) - Error message if status = `'error'`
-- `model` (TEXT, nullable) - LLM model identifier (e.g., `'claude-3-5-sonnet-20241022'`) for assistant turns
+- `model` (TEXT, nullable) - LLM model identifier (e.g., `'claude-haiku-4-5-20251001'`) for assistant turns
 - `input_tokens` (INT, nullable) - Token count for input context
 - `output_tokens` (INT, nullable) - Token count for generated output
 - `created_at` (TIMESTAMPTZ) - Turn creation time

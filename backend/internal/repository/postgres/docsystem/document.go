@@ -289,20 +289,22 @@ func (r *PostgresDocumentRepository) GetAllMetadataByProject(ctx context.Context
 	return documents, nil
 }
 
-// GetPath computes the display path for a document
+// GetPath computes the full display path for a document (folder path + document name)
 func (r *PostgresDocumentRepository) GetPath(ctx context.Context, doc *models.Document) (string, error) {
 	if doc.FolderID == nil {
-		// Root level document
+		// Root level document - path is just the document name
 		return doc.Name, nil
 	}
 
-	// Get folder path using recursive CTE
+	// Get folder's full path using recursive CTE
 	query := fmt.Sprintf(`
 		WITH RECURSIVE folder_path AS (
+			-- Base case: start from the folder itself
 			SELECT id, name, parent_id, name::text AS path
 			FROM %s
 			WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
 			UNION ALL
+			-- Recursive case: walk up the tree, prepending parent names
 			SELECT f.id, f.name, f.parent_id, f.name || '/' || fp.path
 			FROM %s f
 			JOIN folder_path fp ON f.id = fp.parent_id
@@ -322,6 +324,7 @@ func (r *PostgresDocumentRepository) GetPath(ctx context.Context, doc *models.Do
 		return "", fmt.Errorf("get folder path: %w", err)
 	}
 
+	// Append document name to folder path
 	return folderPath + "/" + doc.Name, nil
 }
 

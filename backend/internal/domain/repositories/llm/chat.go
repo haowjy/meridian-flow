@@ -23,7 +23,7 @@ type ChatRepository interface {
 	// Returns domain.ErrNotFound if not found
 	UpdateChat(ctx context.Context, chat *llm.Chat) error
 
-	// DeleteChat soft-deletes a chat
+	// DeleteChat soft-deletes a chat and returns the deleted chat object
 	// Returns domain.ErrNotFound if not found or already deleted
-	DeleteChat(ctx context.Context, chatID, userID string) error
+	DeleteChat(ctx context.Context, chatID, userID string) (*llm.Chat, error)
 }

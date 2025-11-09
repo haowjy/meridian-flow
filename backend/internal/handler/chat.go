@@ -151,11 +151,12 @@ func (h *ChatHandler) DeleteChat(c *fiber.Ctx) error {
 	}
 
 	// Call service
-	if err := h.chatService.DeleteChat(c.Context(), chatID, userID); err != nil {
+	deletedChat, err := h.chatService.DeleteChat(c.Context(), chatID, userID)
+	if err != nil {
 		return handleError(c, err)
 	}
 
-	return c.SendStatus(fiber.StatusNoContent)
+	return c.Status(fiber.StatusOK).JSON(deletedChat)
 }
 
 // CreateTurn creates a new turn (user message)

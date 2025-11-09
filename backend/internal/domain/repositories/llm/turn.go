@@ -25,9 +25,17 @@ type TurnRepository interface {
 	// Returns empty slice if no children found
 	GetTurnChildren(ctx context.Context, prevTurnID string) ([]llm.Turn, error)
 
+	// GetRootTurns retrieves all root turns for a specific chat
+	// Root turns are turns where prev_turn_id IS NULL
+	// Returns empty slice if no root turns found
+	GetRootTurns(ctx context.Context, chatID string) ([]llm.Turn, error)
+
 	// UpdateTurnStatus updates a turn's status and completion time
 	// Used for streaming state management
 	UpdateTurnStatus(ctx context.Context, turnID, status string, completedAt *llm.Turn) error
+
+	// UpdateTurn updates a turn's fields (status, tokens, model, error, etc.)
+	UpdateTurn(ctx context.Context, turn *llm.Turn) error
 
 	// CreateContentBlocks creates content blocks for a turn (user or assistant)
 	// Blocks are inserted in sequence order

@@ -2,89 +2,154 @@ package llm
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+
+	domainllm "meridian/internal/domain/services/llm"
+	llmRepo "meridian/internal/domain/repositories/llm"
+	"meridian/internal/domain/models/llm"
 )
 
-// ResponseGenerator handles LLM response generation and streaming
-// Phase 2: LLM Integration - Currently contains stub methods
+// ResponseGenerator handles LLM response generation
 type ResponseGenerator struct {
-	logger *slog.Logger
+	registry *ProviderRegistry
+	turnRepo llmRepo.TurnRepository
+	logger   *slog.Logger
 }
 
 // NewResponseGenerator creates a new response generator
-func NewResponseGenerator(logger *slog.Logger) *ResponseGenerator {
+func NewResponseGenerator(registry *ProviderRegistry, turnRepo llmRepo.TurnRepository, logger *slog.Logger) *ResponseGenerator {
 	return &ResponseGenerator{
-		logger: logger,
+		registry: registry,
+		turnRepo: turnRepo,
+		logger:   logger,
 	}
 }
 
-// GenerateMockResponse generates a mock LLM response for a user turn
-//
-// Phase 2 TODO:
-// 1. Fetch conversation path using GetTurnPath(ctx, userTurnID)
-// 2. Build LLM context from conversation history
-// 3. Create assistant turn with status="streaming"
-// 4. Generate mock response word-by-word (every 0.1s for testing)
-// 5. Append content blocks as chunks are generated
-// 6. Update turn status to "complete" when done
-// 7. Notify SSE stream of new content (if connected)
-//
-// Streaming behavior:
-// - Stream chunks every ~0.1 seconds
-// - Support cancellation via context or explicit call to CancelGeneration
-// - Handle errors gracefully (set turn status to "error")
-//
-// Example mock response:
-//   "The protagonist demonstrates growth through several key moments..."
-//   (streamed word-by-word)
-func (g *ResponseGenerator) GenerateMockResponse(ctx context.Context, userTurnID string) error {
-	g.logger.Info("TODO: Generate mock LLM response (Phase 2)",
+// GenerateResponse generates an LLM response for a user turn.
+// This is a synchronous implementation - it blocks until the response is complete.
+// Streaming support will be added in a future phase.
+func (g *ResponseGenerator) GenerateResponse(ctx context.Context, userTurnID string, model string, requestParams map[string]interface{}) (*domainllm.GenerateResponse, error) {
+	// Validate request params
+	if err := llm.ValidateRequestParams(requestParams); err != nil {
+		return nil, fmt.Errorf("invalid request params: %w", err)
+	}
+
+	// Parse request params to typed struct
+	params, err := llm.GetRequestParamStruct(requestParams)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse request params: %w", err)
+	}
+
+	// Allow model override via params
+	if params.Model != nil && *params.Model != "" {
+		model = *params.Model
+	}
+
+	g.logger.Info("generating LLM response",
 		"user_turn_id", userTurnID,
+		"model", model,
 	)
 
-	// TODO: Implement mock response generation with streaming
-	// For now, this is a no-op stub
+	// 1. Get conversation path (turn history)
+	path, err := g.turnRepo.GetTurnPath(ctx, userTurnID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get turn path: %w", err)
+	}
 
-	return nil
-}
+	if len(path) == 0 {
+		return nil, fmt.Errorf("turn path is empty")
+	}
 
-// CancelGeneration cancels an ongoing LLM response generation
-//
-// Phase 2 TODO:
-// 1. Stop the response generation goroutine
-// 2. Update assistant turn status to "cancelled"
-// 3. Close SSE stream connection (if active)
-// 4. Return any partially generated content
-//
-// Cancellation should be graceful:
-// - Complete current word/chunk before stopping
-// - Save partial response to database
-// - Allow user to continue from cancelled point or branch
-func (g *ResponseGenerator) CancelGeneration(turnID string) error {
-	g.logger.Info("TODO: Cancel LLM generation (Phase 2)",
-		"turn_id", turnID,
+	g.logger.Debug("retrieved turn path",
+		"turn_count", len(path),
 	)
 
-	// TODO: Implement cancellation logic
+	// 1b. Load content blocks for all turns in the path
+	for i := range path {
+		blocks, err := g.turnRepo.GetContentBlocks(ctx, path[i].ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get content blocks for turn %s: %w", path[i].ID, err)
+		}
+		path[i].ContentBlocks = blocks
+	}
 
-	return nil
+	g.logger.Debug("loaded content blocks for turns")
+
+	// 2. Build messages from turn history
+	messages, err := g.buildMessages(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build messages: %w", err)
+	}
+
+	g.logger.Debug("built message context",
+		"message_count", len(messages),
+	)
+
+	// 3. Get provider for model
+	provider, err := g.registry.GetProvider(model)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get provider: %w", err)
+	}
+
+	// 4. Generate response with params
+	req := &domainllm.GenerateRequest{
+		Messages: messages,
+		Model:    model,
+		Params:   params,
+	}
+
+	response, err := provider.GenerateResponse(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("provider failed to generate response: %w", err)
+	}
+
+	g.logger.Info("LLM response generated",
+		"model", response.Model,
+		"input_tokens", response.InputTokens,
+		"output_tokens", response.OutputTokens,
+		"content_blocks", len(response.Content),
+		"stop_reason", response.StopReason,
+	)
+
+	return response, nil
 }
 
-// Phase 2 Implementation Notes:
-//
-// Architecture:
-// - ResponseGenerator should be wired into CreateTurn handler
-// - When user creates turn, trigger GenerateMockResponse asynchronously
-// - Stream responses via SSE endpoint (GET /api/turns/:id/stream)
-// - Store active streams in a concurrent-safe map
-//
-// Mock Response Format:
-// - Generate thinking block first (if enabled)
-// - Then generate text response block
-// - Stream both as content_block_delta events
-//
-// Real LLM Integration (Future Phase 3):
-// - Replace mock generator with real LLM client (Anthropic/OpenAI)
-// - Handle tool use blocks (tool_use, tool_result)
-// - Support extended thinking (signature field)
-// - Add retry logic and error handling
+// buildMessages converts turn history to LLM messages.
+// path is ordered from oldest to newest (root → current turn)
+func (g *ResponseGenerator) buildMessages(path []llm.Turn) ([]domainllm.Message, error) {
+	messages := make([]domainllm.Message, 0, len(path))
+
+	for _, turn := range path {
+		// Determine role
+		var role string
+		switch turn.Role {
+		case "user":
+			role = "user"
+		case "assistant":
+			role = "assistant"
+		default:
+			return nil, fmt.Errorf("unsupported turn role: %s", turn.Role)
+		}
+
+		// Get content blocks for this turn
+		if len(turn.ContentBlocks) == 0 {
+			// Empty turn - skip it
+			g.logger.Warn("skipping turn with no content blocks", "turn_id", turn.ID)
+			continue
+		}
+
+		// Convert []ContentBlock to []*ContentBlock
+		contentPtrs := make([]*llm.ContentBlock, len(turn.ContentBlocks))
+		for i := range turn.ContentBlocks {
+			contentPtrs[i] = &turn.ContentBlocks[i]
+		}
+
+		messages = append(messages, domainllm.Message{
+			Role:    role,
+			Content: contentPtrs,
+		})
+	}
+
+	return messages, nil
+}

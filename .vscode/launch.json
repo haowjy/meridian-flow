@@ -2,14 +2,35 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Go: Debug Backend",
+      "name": "Backend: Run Server",
       "type": "go",
       "request": "launch",
       "mode": "auto",
-      "program": "${workspaceFolder}/backend/cmd/server",
+      "program": "${workspaceFolder}/backend/cmd/server/main.go",
       "cwd": "${workspaceFolder}/backend",
-      "env": {},
-      "args": []
+      "envFile": "${workspaceFolder}/backend/.env",
+      "showLog": true
+    },
+    {
+      "name": "Backend: Run LLM Interactive CLI",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/backend/scripts/llm_cli.go",
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "showLog": true,
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Backend: Run Seed",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/backend/cmd/seed/main.go",
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "showLog": true
     },
     {
       "name": "Next.js: debug server-side",

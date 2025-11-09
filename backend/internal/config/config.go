@@ -14,6 +14,9 @@ type Config struct {
 	TestProjectID string
 	CORSOrigins   string
 	TablePrefix   string
+	// LLM Configuration
+	AnthropicAPIKey string
+	DefaultModel    string
 }
 
 func Load() *Config {
@@ -30,6 +33,9 @@ func Load() *Config {
 		TestProjectID: getEnv("TEST_PROJECT_ID", "00000000-0000-0000-0000-000000000001"),
 		CORSOrigins:   getEnv("CORS_ORIGINS", "http://localhost:3000"),
 		TablePrefix:   tablePrefix,
+		// LLM Configuration
+		AnthropicAPIKey: getEnv("ANTHROPIC_API_KEY", ""),
+		DefaultModel:    getEnv("DEFAULT_MODEL", "claude-haiku-4-5-20251001"),
 	}
 }
 

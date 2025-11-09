@@ -48,12 +48,14 @@ PostgreSQL schema, connections, and data management:
 
 ## Chat System
 
-**Status:** Schema implemented, CRUD pending
+**Status:** ✅ Fully implemented (CRUD, LLM integration, Anthropic Claude provider)
 
 Multi-turn LLM conversations with unified JSONB content blocks:
 
-- Schema documented in [database/schema.md](database/schema.md#chat-system)
-- CRUD operations: Not yet implemented
+- Complete implementation documented in [chat/overview.md](chat/overview.md)
+- Schema: [database/schema.md](database/schema.md#chat-system)
+- Content blocks: [chat/content-blocks.md](chat/content-blocks.md)
+- Testing: 29 Insomnia test requests covering all operations
 
 ## Development
 

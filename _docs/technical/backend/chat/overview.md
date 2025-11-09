@@ -108,7 +108,7 @@ Tokens tracked at **turn level** (not block level):
 
 ```go
 type Turn struct {
-    Model        *string  // "claude-3-5-sonnet-20241022"
+    Model        *string  // "claude-haiku-4-5-20251001"
     InputTokens  *int     // Context sent to LLM
     OutputTokens *int     // LLM generated tokens
 }
@@ -176,15 +176,43 @@ See [database/schema.md](../database/schema.md#chat-system) for:
 
 ## Implementation Status
 
+**Core Features:**
 - ✅ Schema migrations
-- ✅ Domain models
-- ✅ JSONB validation
-- ✅ Repository layer
-- ✅ Service layer (partial)
-- ❌ HTTP handlers (CRUD)
-- ❌ LLM integration
+- ✅ Domain models (Chat, Turn, ContentBlock)
+- ✅ JSONB validation for all content block types
+- ✅ Repository layer (PostgreSQL)
+- ✅ Service layer with business logic
+- ✅ HTTP handlers (complete CRUD)
+- ✅ Chat creation, retrieval, update, deletion
+- ✅ Turn creation and retrieval
+- ✅ Content block support (text, thinking, tool_use, tool_result, image, reference, partial_reference)
+- ✅ Turn tree navigation (get path, get children)
+- ✅ Request parameters (temperature, thinking, top-k, top-p, model, stop_sequences)
+- ✅ Soft delete with cascade
+
+**LLM Integration:**
+- ✅ Provider abstraction layer (`LLMProvider` interface)
+- ✅ Provider registry (dynamic provider selection)
+- ✅ Anthropic Claude provider (fully implemented)
+  - Models: claude-haiku-4-5, claude-sonnet-4-5, claude-opus-4-5
+  - Extended thinking support (low/medium/high budgets)
+  - Token tracking (input/output)
+  - Request/response metadata
+- ✅ Response generation pipeline
+- ❌ Streaming infrastructure (async with goroutines) - **In Progress**
+- ❌ SSE endpoints for real-time updates
 - ❌ Tool execution
-- ❌ Streaming support
+- ❌ OpenAI provider
+- ❌ Google Gemini provider
+
+**Testing:**
+- ✅ Complete Insomnia test collection (29 requests across 6 groups)
+- ✅ All CRUD operations tested
+- ✅ Content block variations tested
+- ✅ Parameter validation tested
+- ✅ Integration tests (full workflows)
+
+**Current Limitation:** LLM calls are synchronous (blocking HTTP response). Streaming infrastructure (Task 5) in development to enable async execution and SSE streaming.
 
 ## References
 

@@ -74,12 +74,14 @@ audience: developer
     {
       "id": "folder-uuid",
       "name": "Characters",
+      "path": "Characters",
       "folder_id": null,
       "created_at": "2025-11-02T10:00:00Z",
       "folders": [
         {
           "id": "subfolder-uuid",
           "name": "Heroes",
+          "path": "Characters/Heroes",
           "folder_id": "folder-uuid",
           "created_at": "2025-11-02T10:05:00Z",
           "folders": [],
@@ -90,6 +92,7 @@ audience: developer
         {
           "id": "doc-uuid",
           "name": "Aria Moonwhisper",
+          "path": "Characters/Aria Moonwhisper",
           "folder_id": "folder-uuid",
           "word_count": 312,
           "updated_at": "2025-11-02T12:03:45Z"
@@ -101,6 +104,7 @@ audience: developer
     {
       "id": "root-doc-uuid",
       "name": "Quick Notes",
+      "path": "Quick Notes",
       "folder_id": null,
       "word_count": 57,
       "updated_at": "2025-11-02T11:47:12Z"
@@ -404,7 +408,21 @@ Most errors return a simple JSON object:
 
 Both folders and documents include a computed `path` field in responses.
 
-Paths are computed server‑side (not stored), and returned with entities for display purposes.
+**What the path contains:**
+- **Folders:** Full hierarchical path including the folder's own name
+  - Example: Folder "Cities" in "World Building/Locations" → `path: "World Building/Locations/Cities"`
+  - Root folder "Characters" → `path: "Characters"`
+- **Documents:** Full hierarchical path including the document's own name
+  - Example: Document "Eldergrove" in "World Building/Locations/Cities" → `path: "World Building/Locations/Cities/Eldergrove"`
+  - Root document "Quick Notes" → `path: "Quick Notes"`
+
+**Path format:**
+- Uses `/` as separator
+- Starts from project root (no leading `/`)
+- Includes the entity's own name as the final segment
+- Not stored in database (computed on-demand via recursive CTE)
+
+**Implementation:** The path is computed by walking up the folder hierarchy from the entity to the root, concatenating folder names with `/` separators. See `internal/repository/postgres/docsystem/folder.go:GetPath()` and `internal/repository/postgres/docsystem/document.go:GetPath()`.
 
 ## Special Cases
 

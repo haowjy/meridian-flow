@@ -82,6 +82,15 @@ func main() {
 	docsysValidator := serviceDocsys.NewResourceValidator(projectRepo, folderRepo)
 	chatValidator := serviceLLM.NewChatValidator(chatRepo)
 
+	// Setup LLM providers
+	providerRegistry, err := serviceLLM.SetupProviders(cfg, logger)
+	if err != nil {
+		log.Fatalf("Failed to setup LLM providers: %v", err)
+	}
+
+	// Create response generator
+	responseGenerator := serviceLLM.NewResponseGenerator(providerRegistry, turnRepo, logger)
+
 	// Create services
 	contentAnalyzer := serviceDocsys.NewContentAnalyzer()
 	pathResolver := serviceDocsys.NewPathResolver(folderRepo, txManager)
@@ -92,7 +101,7 @@ func main() {
 	importService := serviceDocsys.NewImportService(docRepo, docService, logger)
 
 	// Chat services
-	chatService := serviceLLM.NewChatService(chatRepo, turnRepo, projectRepo, chatValidator, logger)
+	chatService := serviceLLM.NewChatService(chatRepo, turnRepo, projectRepo, chatValidator, responseGenerator, logger)
 
 	// Create new handlers
 	projectHandler := handler.NewProjectHandler(projectService, logger)

@@ -24,9 +24,9 @@ type ChatService interface {
 	// Validates user has access
 	UpdateChat(ctx context.Context, chatID, userID string, req *UpdateChatRequest) (*llm.Chat, error)
 
-	// DeleteChat soft-deletes a chat
+	// DeleteChat soft-deletes a chat and returns the deleted chat object
 	// Validates user has access
-	DeleteChat(ctx context.Context, chatID, userID string) error
+	DeleteChat(ctx context.Context, chatID, userID string) (*llm.Chat, error)
 
 	// CreateTurn creates a new user turn (client message only)
 	// Validates chat exists, prev turn exists if provided
@@ -71,12 +71,13 @@ type UpdateChatRequest struct {
 
 // CreateTurnRequest is the DTO for creating a new turn
 type CreateTurnRequest struct {
-	ChatID        string              `json:"chat_id"`
-	UserID        string              `json:"-"` // Set by handler from auth context, not from request body
-	PrevTurnID    *string             `json:"prev_turn_id,omitempty"`
-	Role          string              `json:"role"` // "user" only (backend generates assistant turns)
-	SystemPrompt  *string             `json:"system_prompt,omitempty"`
-	ContentBlocks []ContentBlockInput `json:"content_blocks,omitempty"`
+	ChatID        string                 `json:"chat_id"`
+	UserID        string                 `json:"-"` // Set by handler from auth context, not from request body
+	PrevTurnID    *string                `json:"prev_turn_id,omitempty"`
+	Role          string                 `json:"role"` // "user" only (backend generates assistant turns)
+	SystemPrompt  *string                `json:"system_prompt,omitempty"`
+	ContentBlocks []ContentBlockInput    `json:"content_blocks,omitempty"`
+	RequestParams map[string]interface{} `json:"request_params,omitempty"` // LLM request parameters (model, temperature, thinking_enabled, etc.)
 }
 
 // ContentBlockInput is the DTO for content block creation

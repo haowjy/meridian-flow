@@ -4,8 +4,9 @@ package handler
 // These handlers are always compiled but only registered when ENVIRONMENT=dev
 
 import (
-	"github.com/gofiber/fiber/v2"
 	llmSvc "meridian/internal/domain/services/llm"
+
+	"github.com/gofiber/fiber/v2"
 )
 
 // ChatDebugHandler provides debug-only endpoints for testing assistant turn creation
@@ -50,8 +51,8 @@ func (h *ChatDebugHandler) CreateAssistantTurn(c *fiber.Ctx) error {
 
 	// Parse request
 	var req struct {
-		PrevTurnID    *string                     `json:"prev_turn_id"`
-		Role          string                      `json:"role"`
+		PrevTurnID    *string                    `json:"prev_turn_id"`
+		Role          string                     `json:"role"`
 		ContentBlocks []llmSvc.ContentBlockInput `json:"content_blocks"`
 	}
 	if err := c.BodyParser(&req); err != nil {
@@ -64,7 +65,7 @@ func (h *ChatDebugHandler) CreateAssistantTurn(c *fiber.Ctx) error {
 	}
 
 	// Create assistant turn via debug service method
-	model := "claude-3-5-sonnet-20241022" // Default model for debug turns
+	model := "claude-haiku-4-5-20251001" // Default model for debug turns
 	turn, err := h.chatService.CreateAssistantTurnDebug(c.Context(), chatID, userID, req.PrevTurnID, req.ContentBlocks, model)
 	if err != nil {
 		return handleError(c, err)

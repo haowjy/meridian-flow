@@ -75,3 +75,6 @@ seed-fresh: ## Drop all tables, run migrations, and seed data
 seed-clear: ## Clear all documents and folders (keep schema)
 	go run ./cmd/seed/main.go --clear-data
 
+llm-cli: ## Run interactive LLM CLI (requires TEST_PROJECT_ID and TEST_USER_ID)
+	go run ./scripts/llm_cli.go
+

@@ -63,7 +63,9 @@ make seed-fresh   # Drop tables + seed
 
 ### API Testing
 
-**Insomnia collection:** `tests/insomnia-collection.json`
+**Insomnia collections:** 5 focused test suites in `tests/insomnia/`
+- `00-health.json`, `01-file-system-crud.json`, `02-file-system-import.json`, `03-file-system-advanced.json`, `04-chat.json`
+- See `tests/insomnia/README.md` for details
 
 **Manual testing:**
 ```bash

@@ -42,7 +42,7 @@ make seed-clear   # Clear data (keep schema)
 
 ## API Testing
 
-**Manual testing:** Import `tests/insomnia-collection.json` to Insomnia
+**Manual testing:** Import Insomnia collections from `tests/insomnia/` (see collection list below)
 
 **Automated testing:** Claude can run curl:
 ```bash
@@ -52,7 +52,14 @@ curl http://localhost:8080/api/projects/<PROJECT_ID>/tree
 curl http://localhost:8080/api/documents/:id
 ```
 
-See `tests/insomnia-collection.json` for all endpoint examples.
+**Insomnia test collections:** Import from `tests/insomnia/`:
+- `00-health.json` - Server health check (1 request)
+- `01-file-system-crud.json` - Core CRUD operations (25 requests)
+- `02-file-system-import.json` - Bulk import testing (10 requests)
+- `03-file-system-advanced.json` - Integration tests and workflows (27 requests)
+- `04-chat.json` - Complete chat and LLM testing (29 requests)
+
+See `tests/insomnia/README.md` for detailed collection guide.
 
 ## Architecture
 

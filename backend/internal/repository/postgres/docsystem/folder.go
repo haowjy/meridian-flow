@@ -265,10 +265,12 @@ func (r *PostgresFolderRepository) GetPath(ctx context.Context, folderID *string
 
 	query := fmt.Sprintf(`
 		WITH RECURSIVE folder_path AS (
+			-- Base case: start from the folder itself
 			SELECT id, name, parent_id, name::text AS path
 			FROM %s
 			WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
 			UNION ALL
+			-- Recursive case: walk up the tree, prepending parent names
 			SELECT f.id, f.name, f.parent_id, f.name || '/' || fp.path
 			FROM %s f
 			JOIN folder_path fp ON f.id = fp.parent_id

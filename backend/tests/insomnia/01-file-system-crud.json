@@ -1,0 +1,707 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2025-11-09T19:37:05.000Z",
+  "__export_source": "insomnia.desktop.app:v2023.5.8",
+  "resources": [
+    {
+      "_id": "req_projects_list",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects",
+      "name": "1. List Projects",
+      "description": "Get all projects for authenticated user (ordered by updated_at DESC)",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698796800000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.length > 0) {\n  await insomnia.environment.set('project_id', response[0].id);\n  console.log('\u2705 Saved first project_id:', response[0].id);\n  console.log('Total projects:', response.length);\n}"
+    },
+    {
+      "_id": "req_projects_create",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects",
+      "name": "2. Create Project",
+      "description": "Create a new project \u2192 saves project_id",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"My Novel Project\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698796700000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('project_id', response.id);\n  console.log('\u2705 Saved project_id:', response.id);\n}"
+    },
+    {
+      "_id": "req_projects_get",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects/{{ _.project_id }}",
+      "name": "3. Get Project by ID",
+      "description": "Retrieve a specific project \u2192 refreshes project_id",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698796600000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('project_id', response.id);\n  console.log('\u2705 Refreshed project_id:', response.id);\n}"
+    },
+    {
+      "_id": "req_projects_update",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects/{{ _.project_id }}",
+      "name": "4. Update Project Name",
+      "description": "Rename a project (updates updated_at automatically)",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"My Updated Novel Project\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698796500000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_projects_delete_empty",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects/{{ _.project_id }}",
+      "name": "5. Delete Project (Empty)",
+      "description": "Delete a project with no documents \u2192 returns 204",
+      "method": "DELETE",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698796400000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_projects_delete_with_docs",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects/{{ _.test_project_id }}",
+      "name": "6. Delete Project (Has Documents)",
+      "description": "Attempt to delete project with documents \u2192 returns 409 Conflict",
+      "method": "DELETE",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698796300000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_projects_create_validation",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects",
+      "name": "7. [VAL] Empty Name",
+      "description": "Test validation: should reject empty name \u2192 400",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"   \"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698796200000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_projects_create_long_name",
+      "parentId": "fld_projects",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "url": "{{ _.base_url }}/api/projects",
+      "name": "8. [VAL] Name Too Long",
+      "description": "Test validation: should reject name over 255 chars \u2192 400",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Extra text to exceed 255 characters limit.\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698796100000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_projects_tree",
+      "parentId": "fld_projects",
+      "modified": 1698796800001,
+      "created": 1698796800001,
+      "url": "{{ _.base_url }}/api/projects/{{ _.project_id }}/tree",
+      "name": "9. Get Project Tree",
+      "description": "Get the nested folder/document tree for a project",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698796000000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_folder_root",
+      "parentId": "fld_folders",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders",
+      "name": "1. Create Root Folder",
+      "description": "Create a folder at root level. May return nothing if already exists (idempotent).",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Characters\",\n  \"folder_id\": null\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698740000000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\n\nif (status === 200 || status === 201) {\n  if (response && response.id) {\n    await insomnia.environment.set('folder_id', response.id);\n    console.log('\u2705 Saved folder_id:', response.id);\n  }\n} else if (status === 409) {\n  console.log('\u26a0\ufe0f  Folder already exists (409 conflict)');\n  if (response && response.resource && response.resource.id) {\n    await insomnia.environment.set('folder_id', response.resource.id);\n    console.log('\u2705 Captured existing folder_id:', response.resource.id);\n    console.log('Message:', response.detail);\n  } else {\n    console.log('Error:', response.detail || 'Unknown');\n  }\n} else {\n  console.log('Status:', status, response);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_folder",
+      "parentId": "fld_folders",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders/{{ _.folder_id }}",
+      "name": "2. Get Folder (captures ID)",
+      "description": "Get folder details. Use this to capture folder_id if CREATE returned nothing.",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739900000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('folder_id', response.id);\n  console.log('\u2705 Captured folder_id from GET:', response.id);\n}\nif (response && response.children) {\n  console.log('\ud83d\udcc1 Folders:', response.children.folders?.length || 0);\n  console.log('\ud83d\udcc4 Documents:', response.children.documents?.length || 0);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_subfolder",
+      "parentId": "fld_folders",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders",
+      "name": "3. Create Subfolder",
+      "description": "Create a nested folder inside the parent folder.",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Villains\",\n  \"folder_id\": \"{{ _.folder_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739800000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\n\nif (status === 200 || status === 201) {\n  if (response && response.id) {\n    await insomnia.environment.set('subfolder_id', response.id);\n    console.log('\u2705 Saved subfolder_id:', response.id);\n  }\n} else if (status === 409) {\n  console.log('\u26a0\ufe0f  Subfolder already exists (409 conflict)');\n  if (response && response.resource && response.resource.id) {\n    await insomnia.environment.set('subfolder_id', response.resource.id);\n    console.log('\u2705 Captured existing subfolder_id:', response.resource.id);\n    console.log('Message:', response.detail);\n  }\n} else {\n  console.log('Status:', status, response);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_rename_folder",
+      "parentId": "fld_folders",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders/{{ _.folder_id }}",
+      "name": "4. Rename Folder",
+      "description": "Change the name of a folder (stays at same level)",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Main Characters\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739700000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_move_folder_to_root",
+      "parentId": "fld_folders",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders/{{ _.subfolder_id }}",
+      "name": "5. Move Subfolder to Root",
+      "description": "Move the subfolder to root level (set folder_id to empty string)",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_id\": \"\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739600000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_delete_folder",
+      "parentId": "fld_folders",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/folders/{{ _.subfolder_id }}",
+      "name": "6. Delete Folder",
+      "description": "Delete a folder (cascades to child folders/documents)",
+      "method": "DELETE",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739500000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_doc_path",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "1. Create Document (Simple - folder_path only)",
+      "description": "External AI pattern: Create with folder_path only, auto-creates folders",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_path\": \"Characters\",\n  \"name\": \"Aria Moonwhisper\",\n  \"content\": \"# Aria Moonwhisper\\n\\nA powerful sorceress with **silver hair** and violet eyes.\\n\\n- Age: 17\\n- Element: Wind\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739400000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\n\nif (status === 200 || status === 201) {\n  if (response && response.id) {\n    await insomnia.environment.set('document_id', response.id);\n    console.log('\u2705 Saved document_id:', response.id);\n    if (response.folder_id) {\n      await insomnia.environment.set('folder_id', response.folder_id);\n      console.log('\u2705 Saved folder_id:', response.folder_id);\n    }\n  }\n} else if (status === 409) {\n  console.log('\u26a0\ufe0f  Document already exists (409 conflict)');\n  if (response && response.resource && response.resource.id) {\n    await insomnia.environment.set('document_id', response.resource.id);\n    console.log('\u2705 Captured existing document_id:', response.resource.id);\n    console.log('Message:', response.detail);\n  }\n} else {\n  console.log('Status:', status, response);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_document",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
+      "name": "2. Get Document (captures ID)",
+      "description": "Get document by ID. Use this to capture document_id if CREATE returned nothing.",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698739300000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('document_id', response.id);\n  console.log('\u2705 Captured document_id from GET:', response.id);\n}\nif (response && response.folder_id) {\n  await insomnia.environment.set('folder_id', response.folder_id);\n  console.log('\u2705 Captured folder_id:', response.folder_id);\n}\nif (response) {\n  console.log('\ud83d\udcc4 Name:', response.name);\n  console.log('\ud83d\udcca Word count:', response.word_count);\n  console.log('\ud83d\udccd Path:', response.path);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_doc_optimized",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "3. Create Document (Optimized - folder_id + folder_path)",
+      "description": "Frontend pattern: Pass folder_id for speed, folder_path as backup",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_path\": \"Characters\",\n  \"folder_id\": \"{{ _.folder_id }}\",\n  \"name\": \"Professor Thorne\",\n  \"content\": \"# Professor Thorne\\n\\nAn enigmatic teacher with secrets to hide.\\n\\n- Age: Unknown\\n- Element: All\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739200000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\n\nif (status === 200 || status === 201) {\n  if (response && response.id) {\n    console.log('\u2705 Created document:', response.id);\n  }\n} else if (status === 409) {\n  console.log('\u26a0\ufe0f  Document already exists (409 conflict)');\n  if (response && response.resource && response.resource.id) {\n    console.log('\u2705 Existing document_id:', response.resource.id);\n    console.log('Message:', response.detail);\n  }\n} else {\n  console.log('Status:', status, response);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_create_doc_root",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents",
+      "name": "4. Create Root Document",
+      "description": "Create a document at root level (empty folder_path)",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_path\": \"\",\n  \"name\": \"Quick Notes\",\n  \"content\": \"# Quick Notes\\n\\nRandom ideas and thoughts to explore later.\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739100000,
+      "isPrivate": false,
+      "afterResponseScript": "const status = insomnia.response.code;\nconst response = insomnia.response.json();\n\nif (status === 200 || status === 201) {\n  if (response && response.id) {\n    await insomnia.environment.set('root_document_id', response.id);\n    console.log('\u2705 Saved root_document_id:', response.id);\n  }\n} else if (status === 409) {\n  console.log('\u26a0\ufe0f  Document already exists (409 conflict)');\n  if (response && response.resource && response.resource.id) {\n    await insomnia.environment.set('root_document_id', response.resource.id);\n    console.log('\u2705 Captured existing root_document_id:', response.resource.id);\n    console.log('Message:', response.detail);\n  }\n} else {\n  console.log('Status:', status, response);\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_update_content",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
+      "name": "5. Update Document Content",
+      "description": "Update the content of a document (name and folder stay the same)",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"content\": \"# Aria Moonwhisper - Updated!\\n\\nThis content has been updated! She is now level 25.\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698739000000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_rename_document",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
+      "name": "6. Rename Document",
+      "description": "Change the name of a document (stays in same folder)",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"name\": \"Aria the Enchantress\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738900000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_move_document_via_path",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
+      "name": "7. Move Document via folder_path",
+      "description": "Move document using folder_path (auto-creates folders if needed)",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_path\": \"Archive/Old Characters\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738800000,
+      "isPrivate": false,
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response) {\n  console.log('\u2705 Document moved to:', response.path);\n  console.log('Expected path contains: Archive/Old Characters');\n}",
+      "_type": "request"
+    },
+    {
+      "_id": "req_move_document",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.root_document_id }}",
+      "name": "8. Move Document to Folder",
+      "description": "Move root document into a folder (uses folder_id)",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_id\": \"{{ _.folder_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738700000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_move_document_to_root",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
+      "name": "9. Move Document to Root",
+      "description": "Move document to root level (set folder_id to empty string)",
+      "method": "PATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"project_id\": \"{{ _.project_id }}\",\n  \"folder_id\": \"\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1698738600000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "req_delete_document",
+      "parentId": "fld_documents",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "url": "{{ _.base_url }}/api/documents/{{ _.document_id }}",
+      "name": "10. Delete Document",
+      "description": "Delete a document by ID",
+      "method": "DELETE",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698738500000,
+      "isPrivate": false,
+      "_type": "request"
+    },
+    {
+      "_id": "fld_projects",
+      "parentId": "wrk_file_system",
+      "modified": 1698796800000,
+      "created": 1698796800000,
+      "name": "Projects",
+      "description": "Project CRUD operations + tree",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698800000000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "fld_folders",
+      "parentId": "wrk_file_system",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Folders",
+      "description": "Folder CRUD operations",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698740000000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "fld_documents",
+      "parentId": "wrk_file_system",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Documents",
+      "description": "Document CRUD operations",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698739000000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "wrk_file_system",
+      "parentId": null,
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "File System - CRUD Operations",
+      "description": "Core CRUD operations for projects, folders, and documents",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "env_base",
+      "parentId": "wrk_file_system",
+      "modified": 1698739200000,
+      "created": 1698739200000,
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:8080",
+        "project_id": "00000000-0000-0000-0000-000000000001",
+        "test_project_id": "00000000-0000-0000-0000-000000000001",
+        "folder_id": "",
+        "subfolder_id": "",
+        "document_id": "",
+        "root_document_id": "",
+        "weapons_folder_id": "",
+        "nested_doc_id": "",
+        "chapters_folder_id": "",
+        "chapter1_id": "",
+        "archive_folder_id": ""
+      },
+      "dataPropertyOrder": {
+        "&": [
+          "base_url",
+          "project_id",
+          "test_project_id",
+          "folder_id",
+          "subfolder_id",
+          "document_id",
+          "root_document_id",
+          "weapons_folder_id",
+          "nested_doc_id",
+          "chapters_folder_id",
+          "chapter1_id",
+          "archive_folder_id"
+        ]
+      },
+      "color": null,
+      "isPrivate": false,
+      "metaSortKey": 1698739200000,
+      "_type": "environment"
+    }
+  ]
+}

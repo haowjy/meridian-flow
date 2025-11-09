@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS ${TABLE_PREFIX}turns (
     system_prompt TEXT,  -- Optional system prompt override for this turn
     status TEXT NOT NULL CHECK (status IN ('pending', 'streaming', 'waiting_subagents', 'complete', 'cancelled', 'error')),
     error TEXT,  -- Error message if status = 'error'
-    model TEXT,  -- LLM model used (e.g., "claude-3-5-sonnet-20241022")
+    model TEXT,  -- LLM model used (e.g., "claude-haiku-4-5-20251001")
     input_tokens INT,  -- Token count for input
     output_tokens INT,  -- Token count for output
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

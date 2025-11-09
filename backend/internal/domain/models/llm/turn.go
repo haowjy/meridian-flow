@@ -20,6 +20,11 @@ type Turn struct {
 	CreatedAt    time.Time  `json:"created_at" db:"created_at"`
 	CompletedAt  *time.Time `json:"completed_at,omitempty" db:"completed_at"`
 
+	// LLM Request/Response Metadata (JSONB columns)
+	RequestParams    map[string]interface{} `json:"request_params,omitempty" db:"request_params"`       // All request parameters (temperature, max_tokens, thinking settings, etc.)
+	StopReason       *string                `json:"stop_reason,omitempty" db:"stop_reason"`             // Why generation stopped ("end_turn", "max_tokens", "stop_sequence", etc.)
+	ResponseMetadata map[string]interface{} `json:"response_metadata,omitempty" db:"response_metadata"` // Provider-specific response data (stop_sequence, cache tokens, etc.)
+
 	// Computed fields (not stored in DB)
 	ContentBlocks []ContentBlock `json:"content_blocks,omitempty"`
 }

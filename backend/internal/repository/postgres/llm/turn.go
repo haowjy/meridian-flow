@@ -43,8 +43,12 @@ func (r *PostgresTurnRepository) CreateTurn(ctx context.Context, turn *llmModels
 	}
 
 	query := fmt.Sprintf(`
-		INSERT INTO %s (chat_id, prev_turn_id, role, system_prompt, status, error, model, input_tokens, output_tokens, created_at, completed_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		INSERT INTO %s (
+			chat_id, prev_turn_id, role, system_prompt, status, error,
+			model, input_tokens, output_tokens, created_at, completed_at,
+			request_params, stop_reason, response_metadata
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING id, created_at
 	`, r.tables.Turns)
 
@@ -61,6 +65,9 @@ func (r *PostgresTurnRepository) CreateTurn(ctx context.Context, turn *llmModels
 		turn.OutputTokens,
 		turn.CreatedAt,
 		turn.CompletedAt,
+		turn.RequestParams,    // pgx handles map -> JSONB (nil becomes NULL)
+		turn.StopReason,       // TEXT
+		turn.ResponseMetadata, // pgx handles map -> JSONB (nil becomes NULL)
 	).Scan(&turn.ID, &turn.CreatedAt)
 
 	if err != nil {
@@ -87,17 +94,17 @@ func (r *PostgresTurnRepository) turnExists(ctx context.Context, turnID string) 
 	return exists, nil
 }
 
-// GetTurn retrieves a turn by ID
-func (r *PostgresTurnRepository) GetTurn(ctx context.Context, turnID string) (*llmModels.Turn, error) {
-	query := fmt.Sprintf(`
-		SELECT id, chat_id, prev_turn_id, role, system_prompt, status, error, model, input_tokens, output_tokens, created_at, completed_at
-		FROM %s
-		WHERE id = $1
-	`, r.tables.Turns)
+// scanner defines the interface for row scanning (implemented by both pgx.Row and pgx.Rows)
+type scanner interface {
+	Scan(dest ...interface{}) error
+}
 
+// scanTurnRow scans a database row into a Turn struct
+// Handles all turn fields including JSONB metadata
+// Works with both pgx.Row (from QueryRow) and pgx.Rows (from Query)
+func (r *PostgresTurnRepository) scanTurnRow(row scanner) (*llmModels.Turn, error) {
 	var turn llmModels.Turn
-	executor := postgres.GetExecutor(ctx, r.pool)
-	err := executor.QueryRow(ctx, query, turnID).Scan(
+	err := row.Scan(
 		&turn.ID,
 		&turn.ChatID,
 		&turn.PrevTurnID,
@@ -110,8 +117,28 @@ func (r *PostgresTurnRepository) GetTurn(ctx context.Context, turnID string) (*l
 		&turn.OutputTokens,
 		&turn.CreatedAt,
 		&turn.CompletedAt,
+		&turn.RequestParams,    // pgx handles JSONB -> map
+		&turn.StopReason,       // TEXT
+		&turn.ResponseMetadata, // pgx handles JSONB -> map
 	)
+	if err != nil {
+		return nil, err
+	}
+	return &turn, nil
+}
 
+// GetTurn retrieves a turn by ID
+func (r *PostgresTurnRepository) GetTurn(ctx context.Context, turnID string) (*llmModels.Turn, error) {
+	query := fmt.Sprintf(`
+		SELECT id, chat_id, prev_turn_id, role, system_prompt, status, error,
+		       model, input_tokens, output_tokens, created_at, completed_at,
+		       request_params, stop_reason, response_metadata
+		FROM %s
+		WHERE id = $1
+	`, r.tables.Turns)
+
+	executor := postgres.GetExecutor(ctx, r.pool)
+	turn, err := r.scanTurnRow(executor.QueryRow(ctx, query, turnID))
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
 			return nil, fmt.Errorf("turn %s: %w", turnID, domain.ErrNotFound)
@@ -119,7 +146,7 @@ func (r *PostgresTurnRepository) GetTurn(ctx context.Context, turnID string) (*l
 		return nil, fmt.Errorf("get turn: %w", err)
 	}
 
-	return &turn, nil
+	return turn, nil
 }
 
 // GetTurnPath retrieves the conversation path from a turn to the root
@@ -129,19 +156,25 @@ func (r *PostgresTurnRepository) GetTurnPath(ctx context.Context, turnID string)
 	query := fmt.Sprintf(`
 		WITH RECURSIVE turn_path AS (
 			-- Base case: start with the specified turn
-			SELECT id, chat_id, prev_turn_id, role, system_prompt, status, error, model, input_tokens, output_tokens, created_at, completed_at, 1 as depth
+			SELECT id, chat_id, prev_turn_id, role, system_prompt, status, error,
+			       model, input_tokens, output_tokens, created_at, completed_at,
+			       request_params, stop_reason, response_metadata, 1 as depth
 			FROM %s
 			WHERE id = $1
 
 			UNION ALL
 
 			-- Recursive case: get prev turns
-			SELECT t.id, t.chat_id, t.prev_turn_id, t.role, t.system_prompt, t.status, t.error, t.model, t.input_tokens, t.output_tokens, t.created_at, t.completed_at, tp.depth + 1
+			SELECT t.id, t.chat_id, t.prev_turn_id, t.role, t.system_prompt, t.status, t.error,
+			       t.model, t.input_tokens, t.output_tokens, t.created_at, t.completed_at,
+			       t.request_params, t.stop_reason, t.response_metadata, tp.depth + 1
 			FROM %s t
 			INNER JOIN turn_path tp ON t.id = tp.prev_turn_id
 			WHERE tp.depth < 100  -- Prevent infinite recursion
 		)
-		SELECT id, chat_id, prev_turn_id, role, system_prompt, status, error, model, input_tokens, output_tokens, created_at, completed_at
+		SELECT id, chat_id, prev_turn_id, role, system_prompt, status, error,
+		       model, input_tokens, output_tokens, created_at, completed_at,
+		       request_params, stop_reason, response_metadata
 		FROM turn_path
 		ORDER BY depth DESC  -- Root first, specified turn last
 	`, r.tables.Turns, r.tables.Turns)
@@ -155,25 +188,11 @@ func (r *PostgresTurnRepository) GetTurnPath(ctx context.Context, turnID string)
 
 	var turns []llmModels.Turn
 	for rows.Next() {
-		var turn llmModels.Turn
-		err := rows.Scan(
-			&turn.ID,
-			&turn.ChatID,
-			&turn.PrevTurnID,
-			&turn.Role,
-			&turn.SystemPrompt,
-			&turn.Status,
-			&turn.Error,
-			&turn.Model,
-			&turn.InputTokens,
-			&turn.OutputTokens,
-			&turn.CreatedAt,
-			&turn.CompletedAt,
-		)
+		turn, err := r.scanTurnRow(rows)
 		if err != nil {
 			return nil, fmt.Errorf("scan turn: %w", err)
 		}
-		turns = append(turns, turn)
+		turns = append(turns, *turn)
 	}
 
 	if err := rows.Err(); err != nil {
@@ -191,7 +210,9 @@ func (r *PostgresTurnRepository) GetTurnPath(ctx context.Context, turnID string)
 // GetTurnChildren retrieves all child turns (branches) of a prev turn
 func (r *PostgresTurnRepository) GetTurnChildren(ctx context.Context, prevTurnID string) ([]llmModels.Turn, error) {
 	query := fmt.Sprintf(`
-		SELECT id, chat_id, prev_turn_id, role, system_prompt, status, error, model, input_tokens, output_tokens, created_at, completed_at
+		SELECT id, chat_id, prev_turn_id, role, system_prompt, status, error,
+		       model, input_tokens, output_tokens, created_at, completed_at,
+		       request_params, stop_reason, response_metadata
 		FROM %s
 		WHERE prev_turn_id = $1
 		ORDER BY created_at
@@ -206,25 +227,11 @@ func (r *PostgresTurnRepository) GetTurnChildren(ctx context.Context, prevTurnID
 
 	var turns []llmModels.Turn
 	for rows.Next() {
-		var turn llmModels.Turn
-		err := rows.Scan(
-			&turn.ID,
-			&turn.ChatID,
-			&turn.PrevTurnID,
-			&turn.Role,
-			&turn.SystemPrompt,
-			&turn.Status,
-			&turn.Error,
-			&turn.Model,
-			&turn.InputTokens,
-			&turn.OutputTokens,
-			&turn.CreatedAt,
-			&turn.CompletedAt,
-		)
+		turn, err := r.scanTurnRow(rows)
 		if err != nil {
 			return nil, fmt.Errorf("scan turn: %w", err)
 		}
-		turns = append(turns, turn)
+		turns = append(turns, *turn)
 	}
 
 	if err := rows.Err(); err != nil {
@@ -232,6 +239,45 @@ func (r *PostgresTurnRepository) GetTurnChildren(ctx context.Context, prevTurnID
 	}
 
 	// Return empty slice if no children found
+	if turns == nil {
+		turns = []llmModels.Turn{}
+	}
+
+	return turns, nil
+}
+
+// GetRootTurns retrieves all root turns for a specific chat
+func (r *PostgresTurnRepository) GetRootTurns(ctx context.Context, chatID string) ([]llmModels.Turn, error) {
+	query := fmt.Sprintf(`
+		SELECT id, chat_id, prev_turn_id, role, system_prompt, status, error,
+		       model, input_tokens, output_tokens, created_at, completed_at,
+		       request_params, stop_reason, response_metadata
+		FROM %s
+		WHERE chat_id = $1 AND prev_turn_id IS NULL
+		ORDER BY created_at
+	`, r.tables.Turns)
+
+	executor := postgres.GetExecutor(ctx, r.pool)
+	rows, err := executor.Query(ctx, query, chatID)
+	if err != nil {
+		return nil, fmt.Errorf("get root turns: %w", err)
+	}
+	defer rows.Close()
+
+	var turns []llmModels.Turn
+	for rows.Next() {
+		turn, err := r.scanTurnRow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan turn: %w", err)
+		}
+		turns = append(turns, *turn)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate turns: %w", err)
+	}
+
+	// Return empty slice if no root turns found
 	if turns == nil {
 		turns = []llmModels.Turn{}
 	}
@@ -260,6 +306,40 @@ func (r *PostgresTurnRepository) UpdateTurnStatus(ctx context.Context, turnID, s
 
 	if result.RowsAffected() == 0 {
 		return fmt.Errorf("turn %s: %w", turnID, domain.ErrNotFound)
+	}
+
+	return nil
+}
+
+// UpdateTurn updates a turn's fields (status, model, tokens, metadata, etc.)
+func (r *PostgresTurnRepository) UpdateTurn(ctx context.Context, turn *llmModels.Turn) error {
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET status = $1, model = $2, input_tokens = $3, output_tokens = $4,
+		    completed_at = $5, error = $6,
+		    request_params = $7, stop_reason = $8, response_metadata = $9
+		WHERE id = $10
+	`, r.tables.Turns)
+
+	executor := postgres.GetExecutor(ctx, r.pool)
+	result, err := executor.Exec(ctx, query,
+		turn.Status,
+		turn.Model,
+		turn.InputTokens,
+		turn.OutputTokens,
+		turn.CompletedAt,
+		turn.Error,
+		turn.RequestParams,    // pgx handles map -> JSONB (nil becomes NULL)
+		turn.StopReason,       // TEXT
+		turn.ResponseMetadata, // pgx handles map -> JSONB (nil becomes NULL)
+		turn.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("update turn: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("turn %s: %w", turn.ID, domain.ErrNotFound)
 	}
 
 	return nil
