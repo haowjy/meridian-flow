@@ -9,7 +9,7 @@ import { useDebounce } from '@/core/hooks/useDebounce'
 import { useEditorCache } from '@/core/hooks/useEditorCache'
 import { cn } from '@/lib/utils'
 import { EditorHeader } from './EditorHeader'
-import { EditorToolbar } from './EditorToolbar'
+import { EditorToolbarContainer } from './EditorToolbarContainer'
 import { EditorStatusBar } from './EditorStatusBar'
 import { CardSkeleton } from '@/shared/components/ui/card'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
@@ -246,8 +246,8 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
         </div>
       ) : (
         <>
-          {/* Toolbar (only in edit mode) */}
-          {!editorReadOnly && <EditorToolbar editor={editor} />}
+          {/* Toolbar pill with integrated toggle (always visible) */}
+          <EditorToolbarContainer editor={editor} />
 
           {/* Editor Content */}
           <div className="flex-1 overflow-auto relative">

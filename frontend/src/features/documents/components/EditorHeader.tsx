@@ -1,9 +1,7 @@
-import { Eye, Pencil } from 'lucide-react'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { buildBreadcrumbs } from '@/core/lib/breadcrumbBuilder'
 import type { Document } from '@/features/documents/types/document'
-import { SegmentedIconToggle } from '@/shared/components/SegmentedIconToggle'
 import { DocumentHeaderBar } from './DocumentHeaderBar'
 import { useProjectStore } from '@/core/stores/useProjectStore'
 
@@ -18,8 +16,7 @@ interface EditorHeaderProps {
  */
 export function EditorHeader({ document }: EditorHeaderProps) {
   const folders = useTreeStore((state) => state.folders)
-  const editorReadOnly = useUIStore((state) => state.editorReadOnly)
-  const setEditorReadOnly = useUIStore((state) => state.setEditorReadOnly)
+  // Toggle moved into EditorToolbar pill
   const projectName = useProjectStore((s) =>
     s.projects.find((p) => p.id === document.projectId)?.name || s.currentProject()?.name || 'Project'
   )
@@ -69,16 +66,6 @@ export function EditorHeader({ document }: EditorHeaderProps) {
             {document.name}
           </span>
         </div>
-      }
-      trailing={
-        <SegmentedIconToggle
-          value={editorReadOnly ? 0 : 1}
-          onChange={(v) => setEditorReadOnly(v === 0)}
-          leftIcon={<Eye className="h-4 w-4" />}
-          rightIcon={<Pencil className="h-4 w-4" />}
-          leftTitle="Read-only"
-          rightTitle="Edit"
-        />
       }
       ariaLabel={`Breadcrumb: ${fullPathTitle}`}
       showDivider={false}

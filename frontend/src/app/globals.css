@@ -131,9 +131,22 @@ body.preload * {
 /* https://tiptap.dev/docs/editor/getting-started/style-editor#style-using-tailwind-css */
 
 @layer components {
+  /* Editor toolbar shell */
+  .tiptap-toolbar {
+    @apply px-2 py-0 my-0;
+  }
+  .tiptap-toolbar__pill {
+    @apply relative flex items-center overflow-hidden rounded-lg bg-card/80 ring-1 ring-border/40 shadow-sm transition-all;
+  }
+  .tiptap-toolbar__pill[data-readonly='true'] {
+    @apply w-auto gap-0 px-0 py-0;
+  }
+  .tiptap-toolbar__pill[data-readonly='false'] {
+    @apply w-full gap-1 px-0 py-0;
+  }
   /* TipTap wrapper */
   .tiptap {
-    @apply min-h-screen p-8 focus:outline-none;
+    @apply min-h-screen px-8 py-0 focus:outline-none;
   }
 
   /* ProseMirror editor content */

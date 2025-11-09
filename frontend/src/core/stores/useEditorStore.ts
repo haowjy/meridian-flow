@@ -106,7 +106,7 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
     set({ status: 'saving' })
     const currentDoc = get().activeDocument
     try {
-      await documentSyncService.save(documentId, content, currentDoc, {
+      await documentSyncService.save(documentId, content, currentDoc ?? undefined, {
         onServerSaved: (serverDoc) => {
           if (get()._activeDocumentId === documentId) {
             set({ activeDocument: serverDoc, status: 'saved', lastSaved: serverDoc.updatedAt })
