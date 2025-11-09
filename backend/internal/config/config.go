@@ -19,7 +19,7 @@ type Config struct {
 func Load() *Config {
 	env := getEnv("ENVIRONMENT", "dev")
 	tablePrefix := getTablePrefix(env)
-	
+
 	return &Config{
 		Port:          getEnv("PORT", "8080"),
 		Environment:   env,
@@ -27,7 +27,7 @@ func Load() *Config {
 		SupabaseKey:   getEnv("SUPABASE_KEY", ""),
 		SupabaseDBURL: getEnv("SUPABASE_DB_URL", ""),
 		TestUserID:    getEnv("TEST_USER_ID", "00000000-0000-0000-0000-000000000001"),
-		TestProjectID: getEnv("TEST_PROJECT_ID", "00000000-0000-0000-0000-000000000002"),
+		TestProjectID: getEnv("TEST_PROJECT_ID", "00000000-0000-0000-0000-000000000001"),
 		CORSOrigins:   getEnv("CORS_ORIGINS", "http://localhost:3000"),
 		TablePrefix:   tablePrefix,
 	}
@@ -39,7 +39,7 @@ func getTablePrefix(env string) string {
 	if prefix := os.Getenv("TABLE_PREFIX"); prefix != "" {
 		return prefix
 	}
-	
+
 	// Auto-generate based on environment
 	switch env {
 	case "prod":
@@ -59,4 +59,3 @@ func getEnv(key, defaultValue string) string {
 	}
 	return defaultValue
 }
-

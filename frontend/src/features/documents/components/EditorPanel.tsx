@@ -9,7 +9,6 @@ import { useDebounce } from '@/core/hooks/useDebounce'
 import { useEditorCache } from '@/core/hooks/useEditorCache'
 import { cn } from '@/lib/utils'
 import { EditorHeader } from './EditorHeader'
-import { EditorTitle } from './EditorTitle'
 import { EditorToolbar } from './EditorToolbar'
 import { EditorStatusBar } from './EditorStatusBar'
 import { CardSkeleton } from '@/shared/components/ui/card'
@@ -209,7 +208,7 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
     }
   }
 
-  // Error state - show error panel without header
+  // Error state - show error panel without extra chrome
   // Note: onRetry doesn't pass signal, which is fine for manual retries
   // The AbortController in the useEffect will handle cleanup if user navigates away
   if (error) {
@@ -229,7 +228,7 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
   if (!headerDocument) {
     return (
       <div className="flex h-full flex-col">
-        <div className="border-b px-4 py-3">
+        <div className="px-3 py-2">
           <CardSkeleton className="h-8" />
         </div>
         <div className="flex-1 p-8">
@@ -252,13 +251,6 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
     <div className="flex h-full flex-col">
       {/* Header with navigation and folder breadcrumbs - shows immediately */}
       <EditorHeader document={headerDocument} />
-
-      {/* Editable title - shows immediately */}
-      <EditorTitle
-        title={activeDocument?.name || headerDocument.name}
-        onRename={handleRename}
-        readOnly={editorReadOnly}
-      />
 
       {/* Content area - shows skeleton while loading */}
       {isContentLoading ? (

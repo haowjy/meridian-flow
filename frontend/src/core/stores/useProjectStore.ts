@@ -37,9 +37,13 @@ export const useProjectStore = create<ProjectStore>()(
       },
 
       setCurrentProject: (project) => {
-        // Clear editor cache when switching projects to prevent stale data and memory leaks
-        clearEditorCache()
-        set({ currentProjectId: project?.id || null })
+        // Clear editor cache only when actually switching away from a non-null project
+        const prevId = get().currentProjectId
+        const nextId = project?.id || null
+        if (prevId && prevId !== nextId) {
+          clearEditorCache()
+        }
+        set({ currentProjectId: nextId })
       },
 
       loadProjects: async () => {

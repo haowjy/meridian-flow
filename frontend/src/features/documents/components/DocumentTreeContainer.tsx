@@ -16,6 +16,7 @@ import { DocumentTreeItem } from './DocumentTreeItem'
 import { CreateDocumentDialog } from './CreateDocumentDialog'
 import { CardSkeleton } from '@/shared/components/ui/card'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
+import { useProjectStore } from '@/core/stores/useProjectStore'
 
 interface DocumentTreeContainerProps {
   projectId: string
@@ -39,6 +40,11 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
     }))
   )
   const activeDocumentId = useUIStore((state) => state.activeDocumentId)
+
+  // Read project name from store for header title (centralized approach)
+  const projectName = useProjectStore((s) =>
+    s.projects.find((p) => p.id === projectId)?.name || s.currentProject()?.name || undefined
+  )
 
   const [searchQuery, setSearchQuery] = useState('')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
@@ -125,7 +131,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
   if (isLoading) {
     return (
       <div className="flex h-full flex-col">
-        <div className="border-b px-4 py-3">
+        <div className="px-3 py-2">
           <CardSkeleton className="h-8" />
         </div>
         <div className="space-y-2 p-4">
@@ -155,6 +161,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
   return (
     <>
       <DocumentTreePanel
+        title={projectName ?? 'Documents'}
         onCreateDocument={() => setIsCreateDialogOpen(true)}
         onSearch={setSearchQuery}
         isEmpty={isEmpty}

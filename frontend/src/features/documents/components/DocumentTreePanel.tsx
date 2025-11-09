@@ -4,12 +4,14 @@ import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { ScrollArea } from '@/shared/components/ui/scroll-area'
 import { EmptyState } from '@/shared/components/EmptyState'
+import { DocumentHeaderBar } from './DocumentHeaderBar'
 
 interface DocumentTreePanelProps {
   children: ReactNode
   onCreateDocument: () => void
   onSearch?: (query: string) => void
   isEmpty?: boolean
+  title?: string
 }
 
 /**
@@ -22,6 +24,7 @@ export function DocumentTreePanel({
   onCreateDocument,
   onSearch,
   isEmpty = false,
+  title = 'Documents',
 }: DocumentTreePanelProps) {
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -33,21 +36,25 @@ export function DocumentTreePanel({
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <h2 className="text-sm font-semibold">Documents</h2>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            onClick={onCreateDocument}
-            aria-label="Create new document"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+      <DocumentHeaderBar
+        title={<h2 className="truncate text-sm font-semibold" title={title}>{title}</h2>}
+        trailing={
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={onCreateDocument}
+              aria-label="Create new document"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+        }
+        ariaLabel="Documents explorer header"
+        showDivider={false}
+      />
 
       {/* Search Bar */}
-      <div className="border-b px-4 py-3">
+      <div className="px-3 py-2">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input

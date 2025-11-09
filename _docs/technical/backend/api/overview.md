@@ -310,7 +310,7 @@ curl http://localhost:8080/api/projects/{PROJECT_ID}/tree
 curl -X POST http://localhost:8080/api/documents \
   -H "Content-Type: application/json" \
   -d '{
-    "project_id": "00000000-0000-0000-0000-000000000002",
+    "project_id": "00000000-0000-0000-0000-000000000001",
     "name": "Test Document",
     "content": "# Test\n\nContent here"
   }'

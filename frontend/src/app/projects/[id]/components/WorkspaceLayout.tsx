@@ -7,6 +7,8 @@ import { CollapsiblePanel } from '@/shared/components/layout/CollapsiblePanel'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { DocumentPanel } from '@/features/documents/components/DocumentPanel'
 import { useTreeStore } from '@/core/stores/useTreeStore'
+import { useProjectStore } from '@/core/stores/useProjectStore'
+import { api } from '@/core/lib/api'
 
 interface WorkspaceLayoutProps {
   projectId: string
@@ -16,6 +18,7 @@ interface WorkspaceLayoutProps {
 export default function WorkspaceLayout({ projectId, initialDocumentId }: WorkspaceLayoutProps) {
   const [mounted, setMounted] = useState(false)
   const previousDocumentIdRef = useRef<string | undefined>(undefined)
+  const previousProjectIdRef = useRef<string | undefined>(undefined)
 
   // Subscribe only to panel collapse state (needed for PanelLayout props)
   // Use getState() in effects to read other values without subscribing
@@ -39,9 +42,60 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
     loadTree: s.loadTree,
   })))
 
+  // Projects store to centralize current project for the workspace
+  const {
+    projects,
+    currentProjectId,
+    setCurrentProject,
+  } = useProjectStore(useShallow((s) => ({
+    projects: s.projects,
+    currentProjectId: s.currentProjectId,
+    setCurrentProject: s.setCurrentProject,
+  })))
+
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  // Ensure the workspace has the current project set and present in the store
+  useEffect(() => {
+    // Prevent duplicate work for the same project id
+    if (previousProjectIdRef.current === projectId) return
+    previousProjectIdRef.current = projectId
+
+    let ignore = false
+    const abortController = new AbortController()
+
+    async function ensureProject() {
+      // Try to find the project in the existing list first
+      const existing = projects.find((p) => p.id === projectId)
+
+      let project = existing
+      if (!project) {
+        try {
+          project = await api.projects.get(projectId, { signal: abortController.signal })
+        } catch (e) {
+          // Non-fatal for the layout; header will fallback until projects page refreshes
+          // Errors are surfaced elsewhere when listing projects.
+        }
+      }
+
+      if (!ignore && project) {
+        // Switch context only if different to avoid unnecessary editor cache clears
+        if (currentProjectId !== project.id) {
+          setCurrentProject(project)
+        }
+      }
+    }
+
+    ensureProject()
+    return () => {
+      ignore = true
+      abortController.abort()
+    }
+    // Intentionally depend only on projectId and stable setters to avoid constant re-runs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
 
   // Reset UI state when project changes to prevent context leakage
   useEffect(() => {
