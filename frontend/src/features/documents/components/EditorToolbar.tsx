@@ -2,13 +2,16 @@
 
 import { useRef } from 'react'
 import type { Editor as TiptapEditor } from '@tiptap/react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Bold, Italic, Heading1, Heading2, List, ListOrdered, MoreHorizontal, Eye, Pencil } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ToolbarIconButton } from './ToolbarIconButton'
 import { ToolbarButtonGroup } from './ToolbarButtonGroup'
 import { ToolbarDivider } from './ToolbarDivider'
+import { EditorStatusInfo } from './EditorStatusInfo'
 import { useThumbFollow } from '../hooks/useThumbFollow'
+import type { SaveStatus } from '@/shared/components/ui/StatusBadge'
 
 // Toolbar button group definitions - centralized configuration
 type FormatButton = {
@@ -49,10 +52,13 @@ interface EditorToolbarProps {
   disabled?: boolean
   readOnly: boolean
   onModeChange: (readOnly: boolean) => void
+  status: SaveStatus
+  lastSaved: Date | null
 }
 
-export function EditorToolbar({ editor, disabled: disabledProp = false, readOnly, onModeChange }: EditorToolbarProps) {
+export function EditorToolbar({ editor, disabled: disabledProp = false, readOnly, onModeChange, status, lastSaved }: EditorToolbarProps) {
   const disabled = !editor || disabledProp
+  const wordCount = editor?.storage.characterCount?.words() ?? 0
 
   // Refs for thumb positioning
   const containerRef = useRef<HTMLDivElement>(null)
@@ -89,7 +95,7 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, readOnly
 
         {/* Gray background wrapper - foundation layer, extends full width in edit mode */}
         <div className={cn(
-          "flex items-center rounded-lg group",
+          "flex items-center rounded-lg group overflow-hidden",
           readOnly ? "bg-muted/30 shadow-md" : "bg-muted",
           readOnly ? "ring-1 ring-border/60" : "ring-1 ring-border/30",
           !readOnly && "flex-1"
@@ -101,7 +107,7 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, readOnly
             aria-label="Read-only mode"
             aria-pressed={readOnly}
             isActive={readOnly}
-            variant="toggle"
+            variant="toggleReadOnly"
             onClick={() => onModeChange(!readOnly)}
             className={cn(
               "rounded-r-none border-r-0",
@@ -114,7 +120,7 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, readOnly
           <div
             ref={pencilCellRef}
             className={cn(
-              "flex items-center gap-0.5 rounded-l-none",
+              "flex items-center gap-0.5 rounded-l-none overflow-hidden transition-all duration-200",
               !readOnly && "flex-1 bg-card ring-1 ring-border/60 shadow-md rounded-lg group-hover:shadow-lg group-hover:ring-1 group-hover:ring-border"
             )}
           >
@@ -124,7 +130,7 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, readOnly
               aria-label="Edit mode"
               aria-pressed={!readOnly}
               isActive={!readOnly}
-              variant="toggle"
+              variant="toggleEdit"
               onClick={() => onModeChange(!readOnly)}
               className={cn(
                 readOnly ? "rounded-l-none rounded-r-lg" : "rounded-l-lg"
@@ -132,9 +138,16 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, readOnly
             />
 
             {/* Edit controls - only visible in edit mode */}
-            {!readOnly && (
-              <>
-                <ToolbarDivider />
+            <AnimatePresence>
+              {!readOnly && (
+                <motion.div
+                  initial={{ opacity: 0, width: 0 }}
+                  animate={{ opacity: 1, width: "auto" }}
+                  exit={{ opacity: 0, width: 0 }}
+                  transition={{ type: "tween", duration: 0.2 }}
+                  className="flex items-center gap-0.5 overflow-hidden flex-1"
+                >
+                  <ToolbarDivider />
 
                 {/* Bold / Italic group */}
                 <ToolbarButtonGroup gap="tight">
@@ -193,11 +206,22 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, readOnly
                     disabled={disabled}
                   />
                 </ToolbarButtonGroup>
-              </>
-            )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       </div>
+
+      {/* Status info - floats right, outside toolbar pill in read-only mode */}
+      {readOnly && (
+        <EditorStatusInfo
+          wordCount={wordCount}
+          status={status}
+          lastSaved={lastSaved}
+          className="ml-auto"
+        />
+      )}
     </div>
   )
 }

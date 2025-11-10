@@ -247,17 +247,22 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
       ) : (
         <>
           {/* Toolbar pill with integrated toggle (always visible) */}
-          <EditorToolbarContainer editor={editor} />
+          <EditorToolbarContainer
+            editor={editor}
+            status={status}
+            lastSaved={lastSaved}
+          />
 
           {/* Editor Content */}
           <div className="flex-1 overflow-auto relative">
             <EditorContent editor={editor} />
 
-            {/* Floating Status Bar */}
+            {/* Floating Status Bar (hidden in read-only mode) */}
             <EditorStatusBar
               editor={editor}
               status={status}
               lastSaved={lastSaved}
+              readOnly={editorReadOnly}
               className="fixed bottom-4 right-4"
             />
           </div>
