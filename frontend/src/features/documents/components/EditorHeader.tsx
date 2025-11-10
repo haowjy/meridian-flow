@@ -42,7 +42,7 @@ export function EditorHeader({ document }: EditorHeaderProps) {
             type="button"
             onClick={handleProjectClick}
             aria-label="Show document tree"
-            className="font-semibold hover:underline truncate focus-visible:underline focus:outline-none"
+            className="text-lg font-semibold hover:underline truncate focus-visible:underline focus:outline-none"
           >
             {projectName}
           </button>
@@ -61,7 +61,7 @@ export function EditorHeader({ document }: EditorHeaderProps) {
               <span className="mx-1 text-muted-foreground" aria-hidden="true">/</span>
             </>
           )}
-          <span className="truncate font-semibold">
+          <span className="truncate text-base font-semibold">
             {document.name}
           </span>
         </div>

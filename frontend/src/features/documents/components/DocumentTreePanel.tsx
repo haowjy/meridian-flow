@@ -37,7 +37,7 @@ export function DocumentTreePanel({
     <div className="flex h-full flex-col">
       {/* Header */}
       <DocumentHeaderBar
-        title={<div className="truncate text-sm font-semibold" title={title}>{title}</div>}
+        title={<div className="truncate text-lg font-semibold" title={title}>{title}</div>}
         ariaLabel="Documents explorer header"
         showDivider={false}
       />
