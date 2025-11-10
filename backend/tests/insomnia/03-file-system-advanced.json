@@ -729,7 +729,7 @@
       "parentId": null,
       "modified": 1698739200000,
       "created": 1698739200000,
-      "name": "File System - Advanced Testing",
+      "name": "03 - File System - Advanced",
       "description": "Integration tests, workflows, edge cases, and error scenarios",
       "scope": "collection",
       "_type": "workspace"

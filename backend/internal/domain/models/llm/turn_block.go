@@ -15,8 +15,8 @@ const (
 	BlockTypePartialReference = "partial_reference"
 )
 
-// ContentBlock represents a multimodal content block in a turn (user or assistant)
-// Supports text, thinking, tool use, images, and document references
+// TurnBlock represents a multimodal content block in a turn (user or assistant)
+// Accumulated from Anthropic's streaming content_block deltas during LLM execution
 //
 // User blocks: text, image, reference, partial_reference, tool_result
 // Assistant blocks: text, thinking, tool_use
@@ -28,7 +28,7 @@ const (
 // - tool_result: {"tool_use_id": "toolu_...", "is_error": false}
 // - image: {"url": "...", "mime_type": "...", "alt_text": "..."}
 // - reference: {"ref_id": "...", "ref_type": "...", "selection_start": 0, ...}
-type ContentBlock struct {
+type TurnBlock struct {
 	ID          string                 `json:"id" db:"id"`
 	TurnID      string                 `json:"turn_id" db:"turn_id"`
 	BlockType   string                 `json:"block_type" db:"block_type"`
@@ -38,23 +38,23 @@ type ContentBlock struct {
 	CreatedAt   time.Time              `json:"created_at" db:"created_at"`
 }
 
-// IsUserBlock returns true if this is a user content block
-func (cb *ContentBlock) IsUserBlock() bool {
-	return cb.BlockType == BlockTypeText ||
-		cb.BlockType == BlockTypeImage ||
-		cb.BlockType == BlockTypeReference ||
-		cb.BlockType == BlockTypePartialReference ||
-		cb.BlockType == BlockTypeToolResult
+// IsUserBlock returns true if this is a user turn block
+func (tb *TurnBlock) IsUserBlock() bool {
+	return tb.BlockType == BlockTypeText ||
+		tb.BlockType == BlockTypeImage ||
+		tb.BlockType == BlockTypeReference ||
+		tb.BlockType == BlockTypePartialReference ||
+		tb.BlockType == BlockTypeToolResult
 }
 
-// IsAssistantBlock returns true if this is an assistant content block
-func (cb *ContentBlock) IsAssistantBlock() bool {
-	return cb.BlockType == BlockTypeText ||
-		cb.BlockType == BlockTypeThinking ||
-		cb.BlockType == BlockTypeToolUse
+// IsAssistantBlock returns true if this is an assistant turn block
+func (tb *TurnBlock) IsAssistantBlock() bool {
+	return tb.BlockType == BlockTypeText ||
+		tb.BlockType == BlockTypeThinking ||
+		tb.BlockType == BlockTypeToolUse
 }
 
 // IsToolBlock returns true if this is a tool-related block (tool_use or tool_result)
-func (cb *ContentBlock) IsToolBlock() bool {
-	return cb.BlockType == BlockTypeToolUse || cb.BlockType == BlockTypeToolResult
+func (tb *TurnBlock) IsToolBlock() bool {
+	return tb.BlockType == BlockTypeToolUse || tb.BlockType == BlockTypeToolResult
 }

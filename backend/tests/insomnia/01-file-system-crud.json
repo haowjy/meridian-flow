@@ -657,7 +657,7 @@
       "parentId": null,
       "modified": 1698739200000,
       "created": 1698739200000,
-      "name": "File System - CRUD Operations",
+      "name": "01 File System - CRUD",
       "description": "Core CRUD operations for projects, folders, and documents",
       "scope": "collection",
       "_type": "workspace"

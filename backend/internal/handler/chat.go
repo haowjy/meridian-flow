@@ -5,21 +5,29 @@ import (
 	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
+
 	"meridian/internal/domain"
 	llmModels "meridian/internal/domain/models/llm"
+	llmRepo "meridian/internal/domain/repositories/llm"
 	llmSvc "meridian/internal/domain/services/llm"
+	llmservice "meridian/internal/service/llm"
 )
 
 // ChatHandler handles chat HTTP requests
 type ChatHandler struct {
 	chatService llmSvc.ChatService
+	turnRepo    llmRepo.TurnRepository
+	registry    *llmservice.TurnExecutorRegistry
 	logger      *slog.Logger
 }
 
 // NewChatHandler creates a new chat handler
-func NewChatHandler(chatService llmSvc.ChatService, logger *slog.Logger) *ChatHandler {
+func NewChatHandler(chatService llmSvc.ChatService, turnRepo llmRepo.TurnRepository, registry *llmservice.TurnExecutorRegistry, logger *slog.Logger) *ChatHandler {
 	return &ChatHandler{
 		chatService: chatService,
+		turnRepo:    turnRepo,
+		registry:    registry,
 		logger:      logger,
 	}
 }
@@ -183,12 +191,12 @@ func (h *ChatHandler) CreateTurn(c *fiber.Ctx) error {
 	req.UserID = userID
 
 	// Call service
-	turn, err := h.chatService.CreateTurn(c.Context(), &req)
+	response, err := h.chatService.CreateTurn(c.Context(), &req)
 	if err != nil {
 		return handleError(c, err)
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(turn)
+	return c.Status(fiber.StatusCreated).JSON(response)
 }
 
 // GetTurnPath retrieves the conversation path from a turn to root
@@ -225,4 +233,70 @@ func (h *ChatHandler) GetTurnChildren(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(turns)
+}
+
+// GetTurnBlocks retrieves all completed turn blocks for a turn
+// GET /api/turns/:id/blocks
+// Used for reconnection - client fetches completed blocks before connecting to SSE stream
+func (h *ChatHandler) GetTurnBlocks(c *fiber.Ctx) error {
+	// Get turn ID from route param
+	turnID := c.Params("id")
+	if turnID == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "Turn ID is required")
+	}
+
+	// Validate turn ID format
+	if _, err := uuid.Parse(turnID); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid turn ID format")
+	}
+
+	// Get blocks from repository
+	blocks, err := h.turnRepo.GetTurnBlocks(c.Context(), turnID)
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	return c.JSON(blocks)
+}
+
+// InterruptTurn cancels a streaming turn
+// POST /api/turns/:id/interrupt
+func (h *ChatHandler) InterruptTurn(c *fiber.Ctx) error {
+	// Get turn ID from route param
+	turnID := c.Params("id")
+	if turnID == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "Turn ID is required")
+	}
+
+	// Validate turn ID format
+	if _, err := uuid.Parse(turnID); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid turn ID format")
+	}
+
+	// Get executor from registry
+	executor := h.registry.Get(turnID)
+	if executor == nil {
+		return fiber.NewError(fiber.StatusNotFound, "Turn is not currently streaming")
+	}
+
+	// Interrupt the executor
+	executor.Interrupt()
+
+	// Update turn status in database (executor will do this, but do it here for immediate feedback)
+	if err := h.turnRepo.UpdateTurnStatus(c.Context(), turnID, "cancelled", nil); err != nil {
+		// Log error but don't fail - executor will update status
+		h.logger.Warn("failed to update turn status on interrupt", "turn_id", turnID, "error", err)
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"success": true,
+		"turn_id": turnID,
+		"status":  "cancelled",
+	})
+}
+
+// StreamTurn streams turn deltas via Server-Sent Events (SSE)
+// GET /api/turns/:id/stream
+func (h *ChatHandler) StreamTurn(c *fiber.Ctx) error {
+	return NewSSEHandler(h.registry, h.logger).StreamTurn(c)
 }

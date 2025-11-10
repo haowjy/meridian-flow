@@ -24,6 +24,7 @@ type chatService struct {
 	projectRepo       docsysRepo.ProjectRepository
 	validator         *ChatValidator
 	responseGenerator *ResponseGenerator
+	registry          *TurnExecutorRegistry
 	logger            *slog.Logger
 }
 
@@ -34,6 +35,7 @@ func NewChatService(
 	projectRepo docsysRepo.ProjectRepository,
 	validator *ChatValidator,
 	responseGenerator *ResponseGenerator,
+	registry *TurnExecutorRegistry,
 	logger *slog.Logger,
 ) llmSvc.ChatService {
 	return &chatService{
@@ -42,6 +44,7 @@ func NewChatService(
 		projectRepo:       projectRepo,
 		validator:         validator,
 		responseGenerator: responseGenerator,
+		registry:          registry,
 		logger:            logger,
 	}
 }
@@ -159,10 +162,9 @@ func (s *chatService) DeleteChat(ctx context.Context, chatID, userID string) (*l
 	return deletedChat, nil
 }
 
-// CreateTurn creates a new user turn and generates an LLM response.
-// This is a synchronous operation - it blocks until the LLM responds.
-// The user turn is returned to the client, and the assistant turn is created in the background.
-func (s *chatService) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest) (*llmModels.Turn, error) {
+// CreateTurn creates a new user turn and triggers assistant streaming response.
+// Returns both the user turn and the assistant turn for client to connect to SSE stream.
+func (s *chatService) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest) (*llmSvc.CreateTurnResponse, error) {
 	// Normalize empty string to nil for prev_turn_id
 	if req.PrevTurnID != nil && *req.PrevTurnID == "" {
 		req.PrevTurnID = nil
@@ -194,10 +196,10 @@ func (s *chatService) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequ
 	}
 
 	// Create content blocks if provided
-	if len(req.ContentBlocks) > 0 {
-		blocks := make([]llmModels.ContentBlock, len(req.ContentBlocks))
-		for i, blockInput := range req.ContentBlocks {
-			blocks[i] = llmModels.ContentBlock{
+	if len(req.TurnBlocks) > 0 {
+		blocks := make([]llmModels.TurnBlock, len(req.TurnBlocks))
+		for i, blockInput := range req.TurnBlocks {
+			blocks[i] = llmModels.TurnBlock{
 				TurnID:      turn.ID,
 				BlockType:   blockInput.BlockType,
 				Sequence:    i,
@@ -207,12 +209,12 @@ func (s *chatService) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequ
 			}
 		}
 
-		if err := s.turnRepo.CreateContentBlocks(ctx, blocks); err != nil {
+		if err := s.turnRepo.CreateTurnBlocks(ctx, blocks); err != nil {
 			return nil, err
 		}
 
 		// Attach content blocks to turn
-		turn.ContentBlocks = blocks
+		turn.TurnBlocks = blocks
 	}
 
 	s.logger.Info("user turn created",
@@ -220,10 +222,10 @@ func (s *chatService) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequ
 		"chat_id", req.ChatID,
 		"role", req.Role,
 		"prev_turn_id", req.PrevTurnID,
-		"content_blocks", len(req.ContentBlocks),
+		"turn_blocks", len(req.TurnBlocks),
 	)
 
-	// Generate LLM response synchronously
+	// Generate LLM response asynchronously via streaming
 	// Merge request params with defaults
 	requestParams := req.RequestParams
 	if requestParams == nil {
@@ -236,74 +238,207 @@ func (s *chatService) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequ
 		model = modelParam
 	}
 
-	response, err := s.responseGenerator.GenerateResponse(ctx, turn.ID, model, requestParams)
+	// Validate and parse request params
+	if err := llmModels.ValidateRequestParams(requestParams); err != nil {
+		s.logger.Error("invalid request params", "error", err)
+		return nil, fmt.Errorf("invalid request params: %w", err)
+	}
+
+	params, err := llmModels.GetRequestParamStruct(requestParams)
 	if err != nil {
-		s.logger.Error("failed to generate LLM response",
-			"error", err,
-			"user_turn_id", turn.ID,
-			"model", model,
-		)
-		// Return user turn successfully, but LLM failed
-		// Client can see user turn exists but no assistant response
-		return turn, fmt.Errorf("LLM generation failed: %w", err)
+		s.logger.Error("failed to parse request params", "error", err)
+		return nil, fmt.Errorf("failed to parse request params: %w", err)
 	}
 
-	// Create assistant turn with LLM response
-	assistantTurnID := turn.ID // Use user turn as prev_turn_id
-	contentBlocks := make([]llmSvc.ContentBlockInput, len(response.Content))
-	for i, block := range response.Content {
-		contentBlocks[i] = llmSvc.ContentBlockInput{
-			BlockType:   block.BlockType,
-			TextContent: block.TextContent,
-			Content:     block.Content,
-		}
+	// Allow model override via params
+	if params.Model != nil && *params.Model != "" {
+		model = *params.Model
 	}
 
-	assistantTurn, err := s.CreateAssistantTurnDebug(
-		ctx,
-		req.ChatID,
-		req.UserID,
-		&assistantTurnID,
-		contentBlocks,
-		response.Model,
-	)
-	if err != nil {
-		s.logger.Error("failed to create assistant turn",
-			"error", err,
-			"user_turn_id", turn.ID,
-		)
-		return turn, fmt.Errorf("failed to create assistant turn: %w", err)
+	// Create assistant turn with status="streaming"
+	assistantTurn := &llmModels.Turn{
+		ChatID:        req.ChatID,
+		PrevTurnID:    &turn.ID, // Assistant turn follows user turn
+		Role:          "assistant",
+		Status:        "streaming",
+		Model:         &model,
+		RequestParams: requestParams,
+		CreatedAt:     time.Now(),
 	}
 
-	// Update assistant turn with metadata (token counts, stop reason, request params, response metadata)
-	assistantTurn.Status = "complete"
-	inputTokens := response.InputTokens
-	outputTokens := response.OutputTokens
-	stopReason := response.StopReason
-	assistantTurn.InputTokens = &inputTokens
-	assistantTurn.OutputTokens = &outputTokens
-	assistantTurn.StopReason = &stopReason
-	assistantTurn.RequestParams = requestParams                // Store raw client request
-	assistantTurn.ResponseMetadata = response.ResponseMetadata // Store provider-specific data
-
-	if err := s.turnRepo.UpdateTurn(ctx, assistantTurn); err != nil {
-		s.logger.Error("failed to update assistant turn metadata",
-			"error", err,
-			"assistant_turn_id", assistantTurn.ID,
-		)
+	if err := s.turnRepo.CreateTurn(ctx, assistantTurn); err != nil {
+		s.logger.Error("failed to create assistant turn", "error", err)
+		return nil, fmt.Errorf("failed to create assistant turn: %w", err)
 	}
 
-	s.logger.Info("assistant response generated",
+	s.logger.Info("assistant turn created with streaming status",
 		"user_turn_id", turn.ID,
 		"assistant_turn_id", assistantTurn.ID,
-		"model", response.Model,
-		"input_tokens", response.InputTokens,
-		"output_tokens", response.OutputTokens,
-		"stop_reason", response.StopReason,
+		"model", model,
 	)
 
-	// Return the user turn (client can poll for assistant turn)
-	return turn, nil
+	// Get provider for model (do this synchronously to avoid race)
+	provider, err := s.responseGenerator.registry.GetProvider(model)
+	if err != nil {
+		s.logger.Error("failed to get provider for streaming",
+			"error", err,
+			"model", model,
+			"assistant_turn_id", assistantTurn.ID,
+		)
+		// Update turn to error status
+		if updateErr := s.turnRepo.UpdateTurnError(ctx, assistantTurn.ID, fmt.Sprintf("failed to get provider: %v", err)); updateErr != nil {
+			s.logger.Error("failed to update turn error", "error", updateErr)
+		}
+		return nil, fmt.Errorf("failed to get provider for model %s: %w", model, err)
+	}
+
+	// Create TurnExecutor immediately (before goroutine) to avoid race condition
+	// This ensures SSE clients can connect while we're preparing the request
+	executor := NewTurnExecutor(
+		ctx,
+		assistantTurn.ID,
+		model,
+		s.turnRepo,
+		provider,
+	)
+
+	// Register executor in global registry IMMEDIATELY
+	// This must happen before returning response to prevent race with SSE connections
+	if !s.registry.Register(assistantTurn.ID, executor) {
+		s.logger.Error("failed to register executor (already exists)",
+			"assistant_turn_id", assistantTurn.ID,
+		)
+		return nil, fmt.Errorf("failed to register executor: already exists for turn %s", assistantTurn.ID)
+	}
+
+	s.logger.Info("executor registered, starting background streaming",
+		"assistant_turn_id", assistantTurn.ID,
+		"model", model,
+	)
+
+	// Start streaming in background goroutine
+	// Use context.Background() to prevent cancellation when HTTP request completes
+	// Pass the already-created executor to avoid race
+	go s.startStreamingExecution(context.Background(), assistantTurn.ID, turn.ID, executor, params)
+
+	// Return both turns and stream URL
+	streamURL := fmt.Sprintf("/api/turns/%s/stream", assistantTurn.ID)
+	return &llmSvc.CreateTurnResponse{
+		UserTurn:      turn,
+		AssistantTurn: assistantTurn,
+		StreamURL:     streamURL,
+	}, nil
+}
+
+// startStreamingExecution starts the streaming execution for an assistant turn.
+// This runs in a background goroutine and prepares the request before starting the stream.
+// The executor is already created and registered before this function is called.
+func (s *chatService) startStreamingExecution(ctx context.Context, assistantTurnID, userTurnID string, executor *TurnExecutor, params *llmModels.RequestParams) {
+	s.logger.Info("preparing streaming request",
+		"assistant_turn_id", assistantTurnID,
+	)
+
+	// Get conversation history (turn path)
+	path, err := s.turnRepo.GetTurnPath(ctx, userTurnID)
+	if err != nil {
+		s.logger.Error("failed to get turn path for streaming",
+			"error", err,
+			"user_turn_id", userTurnID,
+		)
+		if updateErr := s.turnRepo.UpdateTurnError(ctx, assistantTurnID, fmt.Sprintf("failed to get turn path: %v", err)); updateErr != nil {
+			s.logger.Error("failed to update turn error", "error", updateErr)
+		}
+		return
+	}
+
+	// Load content blocks for all turns in the path
+	for i := range path {
+		blocks, err := s.turnRepo.GetTurnBlocks(ctx, path[i].ID)
+		if err != nil {
+			s.logger.Error("failed to get content blocks",
+				"error", err,
+				"turn_id", path[i].ID,
+			)
+			if updateErr := s.turnRepo.UpdateTurnError(ctx, assistantTurnID, fmt.Sprintf("failed to get content blocks: %v", err)); updateErr != nil {
+				s.logger.Error("failed to update turn error", "error", updateErr)
+			}
+			return
+		}
+		path[i].TurnBlocks = blocks
+	}
+
+	// Build messages from turn history
+	messages, err := s.buildMessagesFromPath(path)
+	if err != nil {
+		s.logger.Error("failed to build messages for streaming",
+			"error", err,
+		)
+		if updateErr := s.turnRepo.UpdateTurnError(ctx, assistantTurnID, fmt.Sprintf("failed to build messages: %v", err)); updateErr != nil {
+			s.logger.Error("failed to update turn error", "error", updateErr)
+		}
+		return
+	}
+
+	// Build GenerateRequest
+	generateReq := &llmSvc.GenerateRequest{
+		Messages: messages,
+		Model:    executor.model,
+		Params:   params,
+	}
+
+	// Start streaming execution (non-blocking)
+	executor.Start(generateReq)
+
+	s.logger.Info("streaming execution started",
+		"assistant_turn_id", assistantTurnID,
+		"model", executor.model,
+	)
+
+	// Note: Executor will:
+	// - Stream from provider
+	// - Accumulate deltas into TurnBlocks
+	// - Broadcast SSE events to clients
+	// - Update turn status on completion/error
+	// - Registry will clean up executor after retention period
+}
+
+// buildMessagesFromPath converts turn history to LLM messages.
+// path is ordered from oldest to newest (root → current turn)
+func (s *chatService) buildMessagesFromPath(path []llmModels.Turn) ([]llmSvc.Message, error) {
+	messages := make([]llmSvc.Message, 0, len(path))
+
+	for _, turn := range path {
+		// Determine role
+		var role string
+		switch turn.Role {
+		case "user":
+			role = "user"
+		case "assistant":
+			role = "assistant"
+		default:
+			return nil, fmt.Errorf("unsupported turn role: %s", turn.Role)
+		}
+
+		// Get content blocks for this turn
+		if len(turn.TurnBlocks) == 0 {
+			// Empty turn - skip it
+			s.logger.Warn("skipping turn with no content blocks", "turn_id", turn.ID)
+			continue
+		}
+
+		// Convert []TurnBlock to []*TurnBlock
+		contentPtrs := make([]*llmModels.TurnBlock, len(turn.TurnBlocks))
+		for i := range turn.TurnBlocks {
+			contentPtrs[i] = &turn.TurnBlocks[i]
+		}
+
+		messages = append(messages, llmSvc.Message{
+			Role:    role,
+			Content: contentPtrs,
+		})
+	}
+
+	return messages, nil
 }
 
 // CreateAssistantTurnDebug creates an assistant turn (DEBUG/INTERNAL USE ONLY)
@@ -327,7 +462,7 @@ func (s *chatService) CreateAssistantTurnDebug(
 	chatID string,
 	userID string,
 	prevTurnID *string,
-	contentBlocks []llmSvc.ContentBlockInput,
+	contentBlocks []llmSvc.TurnBlockInput,
 	model string,
 ) (*llmModels.Turn, error) {
 	// Validate chat exists and is not deleted
@@ -360,9 +495,9 @@ func (s *chatService) CreateAssistantTurnDebug(
 
 	// Create initial content blocks if provided
 	if len(contentBlocks) > 0 {
-		blocks := make([]llmModels.ContentBlock, len(contentBlocks))
+		blocks := make([]llmModels.TurnBlock, len(contentBlocks))
 		for i, blockInput := range contentBlocks {
-			blocks[i] = llmModels.ContentBlock{
+			blocks[i] = llmModels.TurnBlock{
 				TurnID:      turn.ID,
 				BlockType:   blockInput.BlockType,
 				Sequence:    i,
@@ -372,11 +507,11 @@ func (s *chatService) CreateAssistantTurnDebug(
 			}
 		}
 
-		if err := s.turnRepo.CreateContentBlocks(ctx, blocks); err != nil {
+		if err := s.turnRepo.CreateTurnBlocks(ctx, blocks); err != nil {
 			return nil, err
 		}
 
-		turn.ContentBlocks = blocks
+		turn.TurnBlocks = blocks
 	}
 
 	s.logger.Info("assistant turn created (internal)",
@@ -384,7 +519,7 @@ func (s *chatService) CreateAssistantTurnDebug(
 		"chat_id", chatID,
 		"prev_turn_id", prevTurnID,
 		"model", model,
-		"content_blocks", len(contentBlocks),
+		"turn_blocks", len(contentBlocks),
 	)
 
 	return turn, nil
@@ -399,11 +534,11 @@ func (s *chatService) GetTurnPath(ctx context.Context, turnID string) ([]llmMode
 
 	// Load content blocks for all turns (user and assistant)
 	for i := range turns {
-		blocks, err := s.turnRepo.GetContentBlocks(ctx, turns[i].ID)
+		blocks, err := s.turnRepo.GetTurnBlocks(ctx, turns[i].ID)
 		if err != nil {
 			return nil, err
 		}
-		turns[i].ContentBlocks = blocks
+		turns[i].TurnBlocks = blocks
 	}
 
 	return turns, nil
@@ -448,12 +583,12 @@ func (s *chatService) validateCreateTurnRequest(req *llmSvc.CreateTurnRequest) e
 			validation.Required,
 			validation.In("user"), // Only allow user role from client (assistant turns created internally)
 		),
-		validation.Field(&req.ContentBlocks, validation.Each(validation.By(s.validateContentBlock))),
+		validation.Field(&req.TurnBlocks, validation.Each(validation.By(s.validateTurnBlock))),
 	)
 }
 
-func (s *chatService) validateContentBlock(value interface{}) error {
-	block, ok := value.(llmSvc.ContentBlockInput)
+func (s *chatService) validateTurnBlock(value interface{}) error {
+	block, ok := value.(llmSvc.TurnBlockInput)
 	if !ok {
 		return fmt.Errorf("invalid content block type")
 	}

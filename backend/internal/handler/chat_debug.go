@@ -37,7 +37,7 @@ func NewChatDebugHandler(chatService llmSvc.ChatService) *ChatDebugHandler {
 //	{
 //	  "prev_turn_id": "uuid",  // optional
 //	  "role": "assistant",      // must be "assistant"
-//	  "content_blocks": [...]
+//	  "turn_blocks": [...]
 //	}
 func (h *ChatDebugHandler) CreateAssistantTurn(c *fiber.Ctx) error {
 	// Get chat ID from route param
@@ -53,7 +53,7 @@ func (h *ChatDebugHandler) CreateAssistantTurn(c *fiber.Ctx) error {
 	var req struct {
 		PrevTurnID    *string                    `json:"prev_turn_id"`
 		Role          string                     `json:"role"`
-		ContentBlocks []llmSvc.ContentBlockInput `json:"content_blocks"`
+		TurnBlocks []llmSvc.TurnBlockInput `json:"turn_blocks"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
@@ -66,7 +66,7 @@ func (h *ChatDebugHandler) CreateAssistantTurn(c *fiber.Ctx) error {
 
 	// Create assistant turn via debug service method
 	model := "claude-haiku-4-5-20251001" // Default model for debug turns
-	turn, err := h.chatService.CreateAssistantTurnDebug(c.Context(), chatID, userID, req.PrevTurnID, req.ContentBlocks, model)
+	turn, err := h.chatService.CreateAssistantTurnDebug(c.Context(), chatID, userID, req.PrevTurnID, req.TurnBlocks, model)
 	if err != nil {
 		return handleError(c, err)
 	}

@@ -345,8 +345,102 @@ func (r *PostgresTurnRepository) UpdateTurn(ctx context.Context, turn *llmModels
 	return nil
 }
 
-// CreateContentBlocks creates content blocks for a turn (user or assistant)
-func (r *PostgresTurnRepository) CreateContentBlocks(ctx context.Context, blocks []llmModels.ContentBlock) error {
+// UpdateTurnError updates a turn's error message and sets status to "error"
+func (r *PostgresTurnRepository) UpdateTurnError(ctx context.Context, turnID, errorMsg string) error {
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET status = 'error', error = $1, completed_at = $2
+		WHERE id = $3
+	`, r.tables.Turns)
+
+	executor := postgres.GetExecutor(ctx, r.pool)
+	result, err := executor.Exec(ctx, query, errorMsg, time.Now(), turnID)
+	if err != nil {
+		return fmt.Errorf("update turn error: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("turn %s: %w", turnID, domain.ErrNotFound)
+	}
+
+	return nil
+}
+
+// UpdateTurnMetadata updates a turn's metadata fields (model, tokens, stop_reason, etc.)
+func (r *PostgresTurnRepository) UpdateTurnMetadata(ctx context.Context, turnID string, metadata map[string]interface{}) error {
+	// Extract fields from metadata map
+	model, _ := metadata["model"].(string)
+	inputTokens, _ := metadata["input_tokens"].(int)
+	outputTokens, _ := metadata["output_tokens"].(int)
+	stopReason, _ := metadata["stop_reason"].(string)
+	responseMetadata, _ := metadata["response_metadata"].(map[string]interface{})
+	completedAt, _ := metadata["completed_at"].(time.Time)
+
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET model = $1, input_tokens = $2, output_tokens = $3,
+		    stop_reason = $4, response_metadata = $5, completed_at = $6
+		WHERE id = $7
+	`, r.tables.Turns)
+
+	executor := postgres.GetExecutor(ctx, r.pool)
+	result, err := executor.Exec(ctx, query,
+		model,
+		inputTokens,
+		outputTokens,
+		stopReason,
+		responseMetadata, // pgx handles map -> JSONB (nil becomes NULL)
+		completedAt,
+		turnID,
+	)
+	if err != nil {
+		return fmt.Errorf("update turn metadata: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("turn %s: %w", turnID, domain.ErrNotFound)
+	}
+
+	return nil
+}
+
+// CreateTurnBlock creates a single turn block for a turn
+func (r *PostgresTurnRepository) CreateTurnBlock(ctx context.Context, block *llmModels.TurnBlock) error {
+	query := fmt.Sprintf(`
+		INSERT INTO %s (
+			turn_id, block_type, sequence, text_content, content, created_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, created_at
+	`, r.tables.TurnBlocks)
+
+	// Set created_at if not provided
+	if block.CreatedAt.IsZero() {
+		block.CreatedAt = time.Now()
+	}
+
+	executor := postgres.GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, query,
+		block.TurnID,
+		block.BlockType,
+		block.Sequence,
+		block.TextContent,
+		block.Content, // pgx handles map -> JSONB (nil becomes NULL)
+		block.CreatedAt,
+	).Scan(&block.ID, &block.CreatedAt)
+
+	if err != nil {
+		if postgres.IsPgForeignKeyError(err) {
+			return fmt.Errorf("turn not found: %w", domain.ErrNotFound)
+		}
+		return fmt.Errorf("create turn block: %w", err)
+	}
+
+	return nil
+}
+
+// CreateTurnBlocks creates turn blocks for a turn (user or assistant)
+func (r *PostgresTurnRepository) CreateTurnBlocks(ctx context.Context, blocks []llmModels.TurnBlock) error {
 	if len(blocks) == 0 {
 		return nil
 	}
@@ -357,7 +451,7 @@ func (r *PostgresTurnRepository) CreateContentBlocks(ctx context.Context, blocks
 			turn_id, block_type, sequence, text_content, content, created_at
 		)
 		VALUES
-	`, r.tables.ContentBlocks)
+	`, r.tables.TurnBlocks)
 
 	// Build VALUES clause dynamically (6 parameters per block)
 	args := make([]interface{}, 0, len(blocks)*6)
@@ -385,32 +479,32 @@ func (r *PostgresTurnRepository) CreateContentBlocks(ctx context.Context, blocks
 		if postgres.IsPgForeignKeyError(err) {
 			return fmt.Errorf("turn not found: %w", domain.ErrNotFound)
 		}
-		return fmt.Errorf("create content blocks: %w", err)
+		return fmt.Errorf("create turn blocks: %w", err)
 	}
 
 	return nil
 }
 
-// GetContentBlocks retrieves all content blocks for a turn
-func (r *PostgresTurnRepository) GetContentBlocks(ctx context.Context, turnID string) ([]llmModels.ContentBlock, error) {
+// GetTurnBlocks retrieves all turn blocks for a turn
+func (r *PostgresTurnRepository) GetTurnBlocks(ctx context.Context, turnID string) ([]llmModels.TurnBlock, error) {
 	query := fmt.Sprintf(`
 		SELECT
 			id, turn_id, block_type, sequence, text_content, content, created_at
 		FROM %s
 		WHERE turn_id = $1
 		ORDER BY sequence
-	`, r.tables.ContentBlocks)
+	`, r.tables.TurnBlocks)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
 	rows, err := executor.Query(ctx, query, turnID)
 	if err != nil {
-		return nil, fmt.Errorf("get content blocks: %w", err)
+		return nil, fmt.Errorf("get turn blocks: %w", err)
 	}
 	defer rows.Close()
 
-	var blocks []llmModels.ContentBlock
+	var blocks []llmModels.TurnBlock
 	for rows.Next() {
-		var block llmModels.ContentBlock
+		var block llmModels.TurnBlock
 		err := rows.Scan(
 			&block.ID,
 			&block.TurnID,
@@ -421,18 +515,18 @@ func (r *PostgresTurnRepository) GetContentBlocks(ctx context.Context, turnID st
 			&block.CreatedAt,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("scan content block: %w", err)
+			return nil, fmt.Errorf("scan turn block: %w", err)
 		}
 		blocks = append(blocks, block)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate content blocks: %w", err)
+		return nil, fmt.Errorf("iterate turn blocks: %w", err)
 	}
 
 	// Return empty slice if no blocks found
 	if blocks == nil {
-		blocks = []llmModels.ContentBlock{}
+		blocks = []llmModels.TurnBlock{}
 	}
 
 	return blocks, nil

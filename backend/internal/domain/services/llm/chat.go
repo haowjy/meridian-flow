@@ -28,12 +28,12 @@ type ChatService interface {
 	// Validates user has access
 	DeleteChat(ctx context.Context, chatID, userID string) (*llm.Chat, error)
 
-	// CreateTurn creates a new user turn (client message only)
+	// CreateTurn creates a new user turn and triggers assistant streaming response
 	// Validates chat exists, prev turn exists if provided
-	// Creates turn with content blocks
+	// Creates turn with turn blocks
+	// Returns both the user turn and the created assistant turn for streaming
 	// Note: Only accepts "user" role. Assistant turns are created internally
-	// by the LLM response generator (Phase 2 - not yet implemented)
-	CreateTurn(ctx context.Context, req *CreateTurnRequest) (*llm.Turn, error)
+	CreateTurn(ctx context.Context, req *CreateTurnRequest) (*CreateTurnResponse, error)
 
 	// GetTurnPath retrieves the conversation path from a turn to root
 	// Used to build context for LLM requests
@@ -48,13 +48,13 @@ type ChatService interface {
 	// - Debug handlers (when ENVIRONMENT=dev)
 	// - Internal LLM response generator (Phase 2)
 	// DO NOT expose this to public API endpoints
-	CreateAssistantTurnDebug(ctx context.Context, chatID string, userID string, prevTurnID *string, contentBlocks []ContentBlockInput, model string) (*llm.Turn, error)
+	CreateAssistantTurnDebug(ctx context.Context, chatID string, userID string, prevTurnID *string, contentBlocks []TurnBlockInput, model string) (*llm.Turn, error)
 
 	// TODO: Phase 2 - LLM Integration
 	// Future methods to add:
 	// - StreamTurnResponse(ctx, turnID) - SSE streaming endpoint
 	// - UpdateTurnStatus(ctx, turnID, status) - Update turn status during streaming
-	// - AppendContentBlock(ctx, turnID, block) - Append block during streaming
+	// - AppendTurnBlock(ctx, turnID, block) - Append block during streaming
 }
 
 // CreateChatRequest is the DTO for creating a new chat
@@ -76,13 +76,21 @@ type CreateTurnRequest struct {
 	PrevTurnID    *string                `json:"prev_turn_id,omitempty"`
 	Role          string                 `json:"role"` // "user" only (backend generates assistant turns)
 	SystemPrompt  *string                `json:"system_prompt,omitempty"`
-	ContentBlocks []ContentBlockInput    `json:"content_blocks,omitempty"`
+	TurnBlocks []TurnBlockInput    `json:"turn_blocks,omitempty"`
 	RequestParams map[string]interface{} `json:"request_params,omitempty"` // LLM request parameters (model, temperature, thinking_enabled, etc.)
 }
 
-// ContentBlockInput is the DTO for content block creation
-type ContentBlockInput struct {
+// TurnBlockInput is the DTO for content block creation
+type TurnBlockInput struct {
 	BlockType   string                 `json:"block_type"` // "text", "thinking", "tool_use", "tool_result", "image", "reference", "partial_reference"
 	TextContent *string                `json:"text_content,omitempty"`
 	Content     map[string]interface{} `json:"content,omitempty"` // JSONB for type-specific structured data
+}
+
+// CreateTurnResponse is the response DTO for CreateTurn
+// Returns both the user turn and the assistant turn that was created for streaming
+type CreateTurnResponse struct {
+	UserTurn      *llm.Turn `json:"user_turn"`
+	AssistantTurn *llm.Turn `json:"assistant_turn"`
+	StreamURL     string    `json:"stream_url"` // Convenience URL for SSE streaming
 }

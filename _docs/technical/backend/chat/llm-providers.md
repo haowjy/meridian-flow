@@ -53,7 +53,7 @@ type GenerateRequest struct {
 **GenerateResponse:**
 ```go
 type GenerateResponse struct {
-    Content          []ContentBlock
+    Content          []TurnBlock
     Model            string
     StopReason       string
     InputTokens      int

@@ -54,7 +54,7 @@ Multi-turn LLM conversations with unified JSONB content blocks:
 
 - Complete implementation documented in [chat/overview.md](chat/overview.md)
 - Schema: [database/schema.md](database/schema.md#chat-system)
-- Content blocks: [chat/content-blocks.md](chat/content-blocks.md)
+- Turn blocks: [chat/turn-blocks.md](chat/turn-blocks.md)
 - Testing: 29 Insomnia test requests covering all operations
 
 ## Development

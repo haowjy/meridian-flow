@@ -208,6 +208,7 @@ func main() {
 		projectRepo,
 		validator,
 		responseGen,
+		llmService.GetGlobalRegistry(),
 		logger,
 	)
 	logger.Info("chat services initialized")
@@ -338,7 +339,7 @@ func (cli *CLI) newChatFlow() {
 		ChatID: chat.ID,
 		UserID: cli.userID,
 		Role:   "user",
-		ContentBlocks: []llmDomain.ContentBlockInput{
+		TurnBlocks: []llmDomain.TurnBlockInput{
 			{
 				BlockType:   "text",
 				TextContent: &message,
@@ -356,11 +357,11 @@ func (cli *CLI) newChatFlow() {
 		return
 	}
 
-	cli.logger.Info("user turn created", "turn_id", turn.ID)
-	fmt.Printf("%s✓ User turn created: %s%s\n", colorGreen, turn.ID, colorReset)
+	cli.logger.Info("user turn created", "turn_id", turn.UserTurn.ID)
+	fmt.Printf("%s✓ User turn created: %s%s\n", colorGreen, turn.UserTurn.ID, colorReset)
 
 	// Get assistant response
-	cli.displayAssistantResponse(turn.ID)
+	cli.displayAssistantResponse(turn.UserTurn.ID)
 }
 
 // selectModel prompts user to select a model
@@ -634,7 +635,7 @@ func getProviderName(model string) string {
 func (cli *CLI) displayTurn(turn *llmModels.Turn) {
 	// Load content blocks
 	cli.logger.Debug("loading content blocks for turn", "turn_id", turn.ID)
-	blocks, err := cli.turnRepo.GetContentBlocks(cli.ctx, turn.ID)
+	blocks, err := cli.turnRepo.GetTurnBlocks(cli.ctx, turn.ID)
 	if err != nil {
 		cli.logger.Error("failed to load content blocks",
 			"error", err,
@@ -761,7 +762,7 @@ func (cli *CLI) continueConversation() {
 		UserID:     cli.userID,
 		PrevTurnID: &lastTurnID,
 		Role:       "user",
-		ContentBlocks: []llmDomain.ContentBlockInput{
+		TurnBlocks: []llmDomain.TurnBlockInput{
 			{
 				BlockType:   "text",
 				TextContent: &message,
@@ -775,10 +776,10 @@ func (cli *CLI) continueConversation() {
 		return
 	}
 
-	fmt.Printf("%s✓ User turn created: %s%s\n", colorGreen, turn.ID, colorReset)
+	fmt.Printf("%s✓ User turn created: %s%s\n", colorGreen, turn.UserTurn.ID, colorReset)
 
 	// Get assistant response
-	cli.displayAssistantResponse(turn.ID)
+	cli.displayAssistantResponse(turn.UserTurn.ID)
 }
 
 func (cli *CLI) getLastTurnID(chatID string) (string, error) {

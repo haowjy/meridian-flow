@@ -21,7 +21,7 @@ erDiagram
     chats ||--o{ turns : "has many"
     chats }o--|| turns : "last viewed"
     turns ||--o{ turns : "branches from"
-    turns ||--o{ content_blocks : "has many"
+    turns ||--o{ turn_blocks : "has many"
 
     projects {
         uuid id PK
@@ -76,7 +76,7 @@ erDiagram
         timestamptz completed_at "nullable"
     }
 
-    content_blocks {
+    turn_blocks {
         uuid id PK
         uuid turn_id FK
         text block_type
@@ -248,7 +248,7 @@ Chat sessions scoped to projects.
 
 **Deletion Behavior:**
 - CASCADE when project deleted
-- CASCADE to all turns (and transitively to content_blocks)
+- CASCADE to all turns (and transitively to turn_blocks)
 - SET NULL on last_viewed_turn_id when referenced turn deleted
 
 **Indexes:**
@@ -282,13 +282,13 @@ Conversation tree structure. Each turn is either a user message or assistant res
 **Deletion Behavior:**
 - CASCADE when prev turn or chat deleted
 - CASCADE to child turns (deletes entire conversation branch)
-- CASCADE to content_blocks
+- CASCADE to turn_blocks
 
 **Indexes:**
 - `idx_turns_chat` on `chat_id` - Fast chat queries
 - `idx_turns_prev` on `prev_turn_id` - Fast tree traversal
 
-#### `content_blocks`
+#### `turn_blocks`
 
 Unified multimodal content for both user and assistant turns. Uses JSONB for type-specific structured data.
 
@@ -326,9 +326,9 @@ Unified multimodal content for both user and assistant turns. Uses JSONB for typ
 - CASCADE when turn deleted
 
 **Indexes:**
-- `idx_content_blocks_turn_sequence` on `(turn_id, sequence)` - Fast ordered retrieval
-- `idx_content_blocks_turn_type` on `(turn_id, block_type)` - Filter blocks by type
-- `idx_content_blocks_content_gin` (GIN) on `content` - Fast JSONB queries
+- `idx_turn_blocks_turn_sequence` on `(turn_id, sequence)` - Fast ordered retrieval
+- `idx_turn_blocks_turn_type` on `(turn_id, block_type)` - Filter blocks by type
+- `idx_turn_blocks_content_gin` (GIN) on `content` - Fast JSONB queries
 
 **Validation:** Type-specific JSONB schemas validated in application layer. See `internal/domain/models/llm/content_types.go`
 
@@ -470,9 +470,9 @@ Primary resources (projects, folders, documents, chats) support soft deletion vi
 | `idx_chats_last_viewed` | `last_viewed_turn_id` | BTREE | Fast navigation queries |
 | `idx_turns_chat` | `chat_id` | BTREE | Fast chat turn queries |
 | `idx_turns_prev` | `prev_turn_id` | BTREE | Fast tree traversal |
-| `idx_content_blocks_turn_sequence` | `(turn_id, sequence)` | BTREE | Fast ordered block retrieval |
-| `idx_content_blocks_turn_type` | `(turn_id, block_type)` | BTREE | Filter blocks by type |
-| `idx_content_blocks_content_gin` | `content` | GIN | Fast JSONB queries |
+| `idx_turn_blocks_turn_sequence` | `(turn_id, sequence)` | BTREE | Fast ordered block retrieval |
+| `idx_turn_blocks_turn_type` | `(turn_id, block_type)` | BTREE | Filter blocks by type |
+| `idx_turn_blocks_content_gin` | `content` | GIN | Fast JSONB queries |
 
 ## Foreign Key Behavior Summary
 
@@ -498,7 +498,7 @@ Primary resources (projects, folders, documents, chats) support soft deletion vi
 | chats | turns | chat_id | CASCADE |
 | turns (prev) | turns (child) | prev_turn_id | CASCADE |
 | turns | chats | last_viewed_turn_id | SET NULL |
-| turns | content_blocks | turn_id | CASCADE |
+| turns | turn_blocks | turn_id | CASCADE |
 
 **Rationale:**
 - All CASCADE: Chat data is transient/ephemeral (no accidental data loss concerns)

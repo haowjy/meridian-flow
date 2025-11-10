@@ -100,8 +100,11 @@ func main() {
 	treeService := serviceDocsys.NewTreeService(folderRepo, docRepo, logger)
 	importService := serviceDocsys.NewImportService(docRepo, docService, logger)
 
+	// Turn executor registry for streaming
+	registry := serviceLLM.GetGlobalRegistry()
+
 	// Chat services
-	chatService := serviceLLM.NewChatService(chatRepo, turnRepo, projectRepo, chatValidator, responseGenerator, logger)
+	chatService := serviceLLM.NewChatService(chatRepo, turnRepo, projectRepo, chatValidator, responseGenerator, registry, logger)
 
 	// Create new handlers
 	projectHandler := handler.NewProjectHandler(projectService, logger)
@@ -111,7 +114,7 @@ func main() {
 	importHandler := handler.NewImportHandler(importService, logger)
 
 	// Chat handlers
-	chatHandler := handler.NewChatHandler(chatService, logger)
+	chatHandler := handler.NewChatHandler(chatService, turnRepo, registry, logger)
 
 	// Debug handlers (only in dev environment)
 	var chatDebugHandler *handler.ChatDebugHandler
@@ -203,6 +206,11 @@ func main() {
 	api.Post("/chats/:id/turns", chatHandler.CreateTurn)
 	api.Get("/turns/:id/path", chatHandler.GetTurnPath)
 	api.Get("/turns/:id/children", chatHandler.GetTurnChildren)
+
+	// Streaming routes
+	api.Get("/turns/:id/stream", chatHandler.StreamTurn)      // SSE streaming endpoint
+	api.Get("/turns/:id/blocks", chatHandler.GetTurnBlocks)   // Get completed blocks (for reconnection)
+	api.Post("/turns/:id/interrupt", chatHandler.InterruptTurn) // Cancel streaming turn
 
 	// Debug routes (only in dev environment)
 	if cfg.Environment == "dev" && chatDebugHandler != nil {

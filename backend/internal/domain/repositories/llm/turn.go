@@ -37,12 +37,24 @@ type TurnRepository interface {
 	// UpdateTurn updates a turn's fields (status, tokens, model, error, etc.)
 	UpdateTurn(ctx context.Context, turn *llm.Turn) error
 
-	// CreateContentBlocks creates content blocks for a turn (user or assistant)
+	// UpdateTurnError updates a turn's error message and sets status to "error"
+	// Used during streaming error handling
+	UpdateTurnError(ctx context.Context, turnID, errorMsg string) error
+
+	// UpdateTurnMetadata updates a turn's metadata fields (model, tokens, stop_reason, etc.)
+	// Used when streaming completes to store final metadata
+	UpdateTurnMetadata(ctx context.Context, turnID string, metadata map[string]interface{}) error
+
+	// CreateTurnBlock creates a single turn block for a turn
+	// Used during streaming accumulation (writes one block at a time)
+	CreateTurnBlock(ctx context.Context, block *llm.TurnBlock) error
+
+	// CreateTurnBlocks creates multiple turn blocks for a turn (batch operation)
 	// Blocks are inserted in sequence order
 	// Handles JSONB metadata for assistant blocks (thinking, tool_use)
-	CreateContentBlocks(ctx context.Context, blocks []llm.ContentBlock) error
+	CreateTurnBlocks(ctx context.Context, blocks []llm.TurnBlock) error
 
-	// GetContentBlocks retrieves all content blocks for a turn
+	// GetTurnBlocks retrieves all turn blocks for a turn
 	// Returns blocks ordered by sequence
-	GetContentBlocks(ctx context.Context, turnID string) ([]llm.ContentBlock, error)
+	GetTurnBlocks(ctx context.Context, turnID string) ([]llm.TurnBlock, error)
 }

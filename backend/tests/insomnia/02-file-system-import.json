@@ -345,7 +345,7 @@
       "parentId": null,
       "modified": 1698739200000,
       "created": 1698739200000,
-      "name": "File System - Import",
+      "name": "02 - File System - Import",
       "description": "Bulk import operations with merge and replace modes",
       "scope": "collection",
       "_type": "workspace"

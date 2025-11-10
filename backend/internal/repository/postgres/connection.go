@@ -26,7 +26,7 @@ type TableNames struct {
 	// Chat system tables
 	Chats              string
 	Turns              string
-	ContentBlocks      string
+	TurnBlocks         string
 	AssistantResponses string
 }
 
@@ -40,7 +40,7 @@ func NewTableNames(prefix string) *TableNames {
 		// Chat system tables
 		Chats:              fmt.Sprintf("%schats", prefix),
 		Turns:              fmt.Sprintf("%sturns", prefix),
-		ContentBlocks:      fmt.Sprintf("%scontent_blocks", prefix),
+		TurnBlocks:         fmt.Sprintf("%sturn_blocks", prefix),
 		AssistantResponses: fmt.Sprintf("%sassistant_responses", prefix),
 	}
 }

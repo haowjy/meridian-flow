@@ -6,6 +6,7 @@ import (
 
 	"meridian/internal/config"
 	"meridian/internal/service/llm/providers/anthropic"
+	"meridian/internal/service/llm/providers/lorem"
 )
 
 // SetupProviders initializes and registers all configured LLM providers.
@@ -23,6 +24,16 @@ func SetupProviders(cfg *config.Config, logger *slog.Logger) (*ProviderRegistry,
 		logger.Info("provider registered", "name", "anthropic", "models", "claude-*")
 	} else {
 		logger.Warn("ANTHROPIC_API_KEY not set - Anthropic provider not available")
+	}
+
+	// Register Lorem provider (mock - dev/test only)
+	if cfg.Environment == "dev" || cfg.Environment == "test" {
+		loremProvider := lorem.NewProvider()
+		registry.RegisterProvider(loremProvider)
+		logger.Warn("provider registered (MOCK)",
+			"name", "lorem",
+			"models", "lorem-*",
+			"warning", "Lorem provider is for testing only - not for production!")
 	}
 
 	// Future providers: OpenAI, Google, OpenRouter, etc.

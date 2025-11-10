@@ -5,7 +5,7 @@ audience: developer
 
 # Chat System Overview
 
-Multi-turn LLM conversations with branching support and unified JSONB content blocks.
+Multi-turn LLM conversations with branching support and unified JSONB turn blocks.
 
 ## Core Concepts
 
@@ -49,9 +49,9 @@ graph TD
 | `user` | Client | User message with optional document references |
 | `assistant` | Backend | LLM response with thinking blocks and tool use |
 
-### Content Blocks
+### Turn Blocks
 
-Turns contain **ordered content blocks** (0-indexed sequence):
+Turns contain **ordered turn blocks** (0-indexed sequence):
 
 ```mermaid
 graph LR
@@ -74,7 +74,7 @@ graph LR
 - **User:** text, image, reference, partial_reference, tool_result
 - **Assistant:** text, thinking, tool_use
 
-See [content-blocks.md](content-blocks.md) for JSONB schemas.
+See [turn-blocks.md](turn-blocks.md) for JSONB schemas.
 
 ## Status Lifecycle
 
@@ -178,8 +178,8 @@ See [database/schema.md](../database/schema.md#chat-system) for:
 
 **Core Features:**
 - ✅ Schema migrations
-- ✅ Domain models (Chat, Turn, ContentBlock)
-- ✅ JSONB validation for all content block types
+- ✅ Domain models (Chat, Turn, TurnBlock)
+- ✅ JSONB validation for all turn block types
 - ✅ Repository layer (PostgreSQL)
 - ✅ Service layer with business logic
 - ✅ HTTP handlers (complete CRUD)
@@ -216,7 +216,7 @@ See [database/schema.md](../database/schema.md#chat-system) for:
 
 ## References
 
-- [Content Blocks](content-blocks.md) - JSONB schemas
+- [Turn Blocks](turn-blocks.md) - JSONB schemas
 - [Database Schema](../database/schema.md#chat-system) - Table details
 - Domain models: `internal/domain/models/llm/`
 - Validation: `internal/domain/models/llm/content_types.go`

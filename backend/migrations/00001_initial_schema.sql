@@ -74,12 +74,15 @@ CREATE TABLE IF NOT EXISTS ${TABLE_PREFIX}turns (
     model TEXT,  -- LLM model used (e.g., "claude-haiku-4-5-20251001")
     input_tokens INT,  -- Token count for input
     output_tokens INT,  -- Token count for output
+    request_params JSONB,  -- Request parameters sent to LLM provider (temperature, max_tokens, etc.)
+    stop_reason TEXT,  -- Why the turn stopped (end_turn, max_tokens, stop_sequence, tool_use)
+    response_metadata JSONB,  -- Provider-specific response metadata (usage stats, etc.)
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     completed_at TIMESTAMPTZ
 );
 
--- Content Blocks: Multimodal content for user and assistant turns
--- Unified structure using JSONB for type-specific content
+-- Turn Blocks: Multimodal content for user and assistant turns
+-- Accumulated from streaming turn_block deltas during LLM execution
 --
 -- Block types:
 --   User blocks: text, image, reference, partial_reference, tool_result
@@ -93,7 +96,7 @@ CREATE TABLE IF NOT EXISTS ${TABLE_PREFIX}turns (
 --   - image: {"url": "...", "mime_type": "...", "alt_text": "..."}
 --   - reference: {"ref_id": "...", "ref_type": "document|image|s3_document", "version_timestamp": "...", "selection_start": 0, "selection_end": 100}
 --   - partial_reference: {"ref_id": "...", "ref_type": "document", "selection_start": 0, "selection_end": 100}
-CREATE TABLE IF NOT EXISTS ${TABLE_PREFIX}content_blocks (
+CREATE TABLE IF NOT EXISTS ${TABLE_PREFIX}turn_blocks (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     turn_id UUID NOT NULL REFERENCES ${TABLE_PREFIX}turns(id) ON DELETE CASCADE,
     block_type TEXT NOT NULL CHECK (block_type IN ('text', 'thinking', 'tool_use', 'tool_result', 'image', 'reference', 'partial_reference')),
@@ -134,15 +137,15 @@ CREATE INDEX idx_chats_deleted ON ${TABLE_PREFIX}chats(deleted_at) WHERE deleted
 CREATE INDEX idx_turns_chat ON ${TABLE_PREFIX}turns(chat_id);
 CREATE INDEX idx_turns_prev ON ${TABLE_PREFIX}turns(prev_turn_id);
 
-CREATE INDEX idx_content_blocks_turn_sequence ON ${TABLE_PREFIX}content_blocks(turn_id, sequence);
-CREATE INDEX idx_content_blocks_turn_type ON ${TABLE_PREFIX}content_blocks(turn_id, block_type);
-CREATE INDEX idx_content_blocks_content_gin ON ${TABLE_PREFIX}content_blocks USING GIN (content);
+CREATE INDEX idx_turn_blocks_turn_sequence ON ${TABLE_PREFIX}turn_blocks(turn_id, sequence);
+CREATE INDEX idx_turn_blocks_turn_type ON ${TABLE_PREFIX}turn_blocks(turn_id, block_type);
+CREATE INDEX idx_turn_blocks_content_gin ON ${TABLE_PREFIX}turn_blocks USING GIN (content);
 
 -- +goose Down
 -- Drop all indexes
-DROP INDEX IF EXISTS idx_content_blocks_content_gin;
-DROP INDEX IF EXISTS idx_content_blocks_turn_type;
-DROP INDEX IF EXISTS idx_content_blocks_turn_sequence;
+DROP INDEX IF EXISTS idx_turn_blocks_content_gin;
+DROP INDEX IF EXISTS idx_turn_blocks_turn_type;
+DROP INDEX IF EXISTS idx_turn_blocks_turn_sequence;
 DROP INDEX IF EXISTS idx_turns_prev;
 DROP INDEX IF EXISTS idx_turns_chat;
 DROP INDEX IF EXISTS idx_chats_deleted;
@@ -159,12 +162,12 @@ DROP INDEX IF EXISTS idx_projects_deleted;
 DROP INDEX IF EXISTS idx_projects_user_name;
 
 -- Drop all tables in reverse dependency order
-DROP TABLE IF EXISTS ${TABLE_PREFIX}content_blocks CASCADE;
+DROP TABLE IF EXISTS ${TABLE_PREFIX}turn_blocks CASCADE;
 DROP TABLE IF EXISTS ${TABLE_PREFIX}turns CASCADE;
 DROP TABLE IF EXISTS ${TABLE_PREFIX}chats CASCADE;
 DROP TABLE IF EXISTS ${TABLE_PREFIX}documents CASCADE;
 DROP TABLE IF EXISTS ${TABLE_PREFIX}folders CASCADE;
 DROP TABLE IF EXISTS ${TABLE_PREFIX}projects CASCADE;
 
--- Drop extension
-DROP EXTENSION IF EXISTS "uuid-ossp";
+-- Note: Don't drop uuid-ossp extension - Supabase manages it globally
+-- Other schemas (auth, storage, etc.) depend on it

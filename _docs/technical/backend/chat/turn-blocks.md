@@ -3,7 +3,7 @@ detail: comprehensive
 audience: developer
 ---
 
-# Content Block Schemas
+# Turn Block Schemas
 
 Complete JSONB schema reference for all content block types.
 
@@ -328,13 +328,13 @@ invalid content for partial_reference block: selection_start must be >= 0
 
 ## Helper Methods
 
-**ContentBlock model methods:**
+**TurnBlock model methods:**
 
 ```go
 // Check block ownership
-func (cb *ContentBlock) IsUserBlock() bool
-func (cb *ContentBlock) IsAssistantBlock() bool
-func (cb *ContentBlock) IsToolBlock() bool
+func (cb *TurnBlock) IsUserBlock() bool
+func (cb *TurnBlock) IsAssistantBlock() bool
+func (cb *TurnBlock) IsToolBlock() bool
 ```
 
 **Usage:**
@@ -359,19 +359,19 @@ UNIQUE (turn_id, sequence)  -- Prevent duplicate sequences
 
 **Indexes:**
 ```sql
-CREATE INDEX idx_content_blocks_turn_sequence ON content_blocks(turn_id, sequence);
-CREATE INDEX idx_content_blocks_turn_type ON content_blocks(turn_id, block_type);
-CREATE INDEX idx_content_blocks_content_gin ON content_blocks USING GIN (content);
+CREATE INDEX idx_turn_blocks_turn_sequence ON turn_blocks(turn_id, sequence);
+CREATE INDEX idx_turn_blocks_turn_type ON turn_blocks(turn_id, block_type);
+CREATE INDEX idx_turn_blocks_content_gin ON turn_blocks USING GIN (content);
 ```
 
 **GIN index enables fast JSONB queries:**
 ```sql
 -- Find all blocks referencing a specific document
-SELECT * FROM content_blocks
+SELECT * FROM turn_blocks
 WHERE content @> '{"ref_id": "doc-uuid"}';
 
 -- Find all tool uses for a specific tool
-SELECT * FROM content_blocks
+SELECT * FROM turn_blocks
 WHERE block_type = 'tool_use'
 AND content->>'tool_name' = 'create_file';
 ```
@@ -379,6 +379,6 @@ AND content->>'tool_name' = 'create_file';
 ## References
 
 - [Chat Overview](overview.md) - Turn tree structure
-- [Database Schema](../database/schema.md#content-blocks) - Table definition
+- [Database Schema](../database/schema.md) - Table definition
 - Validation: `internal/domain/models/llm/content_types.go`
-- Domain model: `internal/domain/models/llm/content_block.go`
+- Domain model: `internal/domain/models/llm/turn_block.go`

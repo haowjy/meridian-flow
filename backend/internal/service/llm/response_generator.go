@@ -67,11 +67,11 @@ func (g *ResponseGenerator) GenerateResponse(ctx context.Context, userTurnID str
 
 	// 1b. Load content blocks for all turns in the path
 	for i := range path {
-		blocks, err := g.turnRepo.GetContentBlocks(ctx, path[i].ID)
+		blocks, err := g.turnRepo.GetTurnBlocks(ctx, path[i].ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get content blocks for turn %s: %w", path[i].ID, err)
 		}
-		path[i].ContentBlocks = blocks
+		path[i].TurnBlocks = blocks
 	}
 
 	g.logger.Debug("loaded content blocks for turns")
@@ -108,7 +108,7 @@ func (g *ResponseGenerator) GenerateResponse(ctx context.Context, userTurnID str
 		"model", response.Model,
 		"input_tokens", response.InputTokens,
 		"output_tokens", response.OutputTokens,
-		"content_blocks", len(response.Content),
+		"turn_blocks", len(response.Content),
 		"stop_reason", response.StopReason,
 	)
 
@@ -133,16 +133,16 @@ func (g *ResponseGenerator) buildMessages(path []llm.Turn) ([]domainllm.Message,
 		}
 
 		// Get content blocks for this turn
-		if len(turn.ContentBlocks) == 0 {
+		if len(turn.TurnBlocks) == 0 {
 			// Empty turn - skip it
 			g.logger.Warn("skipping turn with no content blocks", "turn_id", turn.ID)
 			continue
 		}
 
-		// Convert []ContentBlock to []*ContentBlock
-		contentPtrs := make([]*llm.ContentBlock, len(turn.ContentBlocks))
-		for i := range turn.ContentBlocks {
-			contentPtrs[i] = &turn.ContentBlocks[i]
+		// Convert []TurnBlock to []*TurnBlock
+		contentPtrs := make([]*llm.TurnBlock, len(turn.TurnBlocks))
+		for i := range turn.TurnBlocks {
+			contentPtrs[i] = &turn.TurnBlocks[i]
 		}
 
 		messages = append(messages, domainllm.Message{

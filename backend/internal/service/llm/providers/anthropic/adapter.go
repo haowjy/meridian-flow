@@ -14,7 +14,7 @@ func convertToAnthropicMessages(messages []domainllm.Message) ([]anthropic.Messa
 	result := make([]anthropic.MessageParam, 0, len(messages))
 
 	for i, msg := range messages {
-		// Convert content blocks to ContentBlockParamUnion
+		// Convert turn blocks to Anthropic ContentBlockParamUnion
 		blocks := make([]anthropic.ContentBlockParamUnion, 0, len(msg.Content))
 
 		for _, block := range msg.Content {
@@ -51,16 +51,16 @@ func convertToAnthropicMessages(messages []domainllm.Message) ([]anthropic.Messa
 // convertFromAnthropicResponse converts an Anthropic response to domain format.
 func convertFromAnthropicResponse(msg *anthropic.Message) (*domainllm.GenerateResponse, error) {
 	// Convert content blocks
-	blocks := make([]*llm.ContentBlock, 0, len(msg.Content))
+	blocks := make([]*llm.TurnBlock, 0, len(msg.Content))
 
 	for i, content := range msg.Content {
-		var domainBlock *llm.ContentBlock
+		var domainBlock *llm.TurnBlock
 
 		// Check content type and extract appropriate fields
 		switch content.Type {
 		case "text":
 			text := content.Text
-			domainBlock = &llm.ContentBlock{
+			domainBlock = &llm.TurnBlock{
 				BlockType:   llm.BlockTypeText,
 				Sequence:    i,
 				TextContent: &text,
@@ -74,7 +74,7 @@ func convertFromAnthropicResponse(msg *anthropic.Message) (*domainllm.GenerateRe
 			if signature != "" {
 				contentMap["signature"] = signature
 			}
-			domainBlock = &llm.ContentBlock{
+			domainBlock = &llm.TurnBlock{
 				BlockType:   llm.BlockTypeThinking,
 				Sequence:    i,
 				TextContent: &thinking,

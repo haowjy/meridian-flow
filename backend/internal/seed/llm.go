@@ -137,7 +137,7 @@ func (s *LLMSeeder) insertTurn(ctx context.Context, turnID, chatID string, prevT
 
 // Helper to insert a text content block
 func (s *LLMSeeder) insertTextBlock(ctx context.Context, turnID string, sequence int, blockType, textContent string, createdAt time.Time) error {
-	query := `INSERT INTO ` + s.tables.ContentBlocks + ` (turn_id, block_type, sequence, text_content, content, created_at)
+	query := `INSERT INTO ` + s.tables.TurnBlocks + ` (turn_id, block_type, sequence, text_content, content, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6)`
 	_, err := s.pool.Exec(ctx, query, turnID, blockType, sequence, textContent, nil, createdAt)
 	return err
@@ -149,7 +149,7 @@ func (s *LLMSeeder) insertReferenceBlock(ctx context.Context, turnID string, seq
 		"ref_id":   refID,
 		"ref_type": refType,
 	}
-	query := `INSERT INTO ` + s.tables.ContentBlocks + ` (turn_id, block_type, sequence, text_content, content, created_at)
+	query := `INSERT INTO ` + s.tables.TurnBlocks + ` (turn_id, block_type, sequence, text_content, content, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6)`
 	_, err := s.pool.Exec(ctx, query, turnID, "reference", sequence, nil, content, createdAt)
 	return err
