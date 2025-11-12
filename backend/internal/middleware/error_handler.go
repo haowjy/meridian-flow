@@ -56,19 +56,29 @@ func ErrorHandler(c *fiber.Ctx, err error) error {
 	if e, ok := err.(*fiber.Error); ok {
 		code = e.Code
 		message = e.Message
-		slog.Info("fiber error",
-			"code", code,
-			"message", message,
-			"path", c.Path(),
-			"method", c.Method(),
-		)
-	} else {
-		// Log unexpected errors
-		slog.Error("unexpected error",
-			"error", err,
-			"path", c.Path(),
-			"method", c.Method(),
-		)
+	}
+
+	// Build log fields with request context
+	logFields := []any{
+		"code", code,
+		"message", message,
+		"path", c.Path(),
+		"method", c.Method(),
+	}
+
+	// Add user context if available
+	if userID, ok := c.Locals("userID").(string); ok && userID != "" {
+		logFields = append(logFields, "user_id", userID)
+	}
+	if projectID, ok := c.Locals("projectID").(string); ok && projectID != "" {
+		logFields = append(logFields, "project_id", projectID)
+	}
+
+	// Log at appropriate level based on status code
+	if code >= 500 {
+		slog.Error("server error", logFields...)
+	} else if code >= 400 {
+		slog.Warn("client error", logFields...)
 	}
 
 	// Return RFC 7807 Problem Details response

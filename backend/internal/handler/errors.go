@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"unicode"
 
 	"github.com/gofiber/fiber/v2"
 	"meridian/internal/domain"
@@ -82,14 +83,31 @@ func handleError(c *fiber.Ctx, err error) error {
 func mapErrorToHTTP(err error) error {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
-		return fiber.NewError(fiber.StatusNotFound, "Resource not found")
+		// Log before converting to HTTP response
+		slog.Warn("resource not found",
+			"error", err.Error(),
+		)
+		// Use error message to preserve context (e.g., "chat abc-123: not found")
+		return fiber.NewError(fiber.StatusNotFound, capitalizeErrorMessage(err.Error()))
 	case errors.Is(err, domain.ErrConflict):
+		slog.Warn("resource conflict",
+			"error", err.Error(),
+		)
 		return fiber.NewError(fiber.StatusConflict, err.Error())
 	case errors.Is(err, domain.ErrValidation):
+		slog.Warn("validation error",
+			"error", err.Error(),
+		)
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	case errors.Is(err, domain.ErrUnauthorized):
+		slog.Warn("unauthorized access",
+			"error", err.Error(),
+		)
 		return fiber.NewError(fiber.StatusUnauthorized, "Unauthorized")
 	case errors.Is(err, domain.ErrForbidden):
+		slog.Warn("forbidden access",
+			"error", err.Error(),
+		)
 		return fiber.NewError(fiber.StatusForbidden, "Forbidden")
 	default:
 		slog.Error("unmapped error in mapErrorToHTTP",
@@ -98,4 +116,16 @@ func mapErrorToHTTP(err error) error {
 		)
 		return fiber.NewError(fiber.StatusInternalServerError, "Internal server error")
 	}
+}
+
+// capitalizeErrorMessage capitalizes the first letter of the error message
+// Example: "chat abc-123: not found" -> "Chat abc-123: not found"
+func capitalizeErrorMessage(msg string) string {
+	if msg == "" {
+		return msg
+	}
+	// Convert to runes to handle Unicode properly
+	runes := []rune(msg)
+	runes[0] = unicode.ToUpper(runes[0])
+	return string(runes)
 }

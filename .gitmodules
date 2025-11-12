@@ -1,0 +1,3 @@
+[submodule "meridian-stream"]
+	path = meridian-stream
+	url = https://github.com/haowjy/meridian-stream
