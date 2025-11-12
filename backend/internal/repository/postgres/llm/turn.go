@@ -676,7 +676,7 @@ func (r *PostgresTurnRepository) GetSiblingsForTurns(
 	}
 
 	// Query to find siblings for each turn
-	// For each turn, find all other turns with the same prev_turn_id
+	// For each turn, find all turns with the same prev_turn_id (including self)
 	query := fmt.Sprintf(`
 		WITH turn_parents AS (
 			SELECT id, prev_turn_id
@@ -687,7 +687,7 @@ func (r *PostgresTurnRepository) GetSiblingsForTurns(
 			tp.id as turn_id,
 			array_remove(array_agg(t.id ORDER BY t.created_at), NULL) as sibling_ids
 		FROM turn_parents tp
-		LEFT JOIN %s t ON t.prev_turn_id = tp.prev_turn_id AND t.id != tp.id
+		LEFT JOIN %s t ON t.prev_turn_id = tp.prev_turn_id
 		GROUP BY tp.id
 	`, r.tables.Turns, r.tables.Turns)
 

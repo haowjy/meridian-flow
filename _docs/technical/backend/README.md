@@ -77,6 +77,7 @@ Real-time LLM response delivery via Server-Sent Events:
 Tools and workflows for development:
 
 - [Debugging](development/debugging.md) - Common issues and solutions
+- [Workspace + Submodule](development/workspace-and-submodule.md) - Local edits with pinned deps
 - Test data: Run `make seed-fresh` (see `/backend/CLAUDE.md`)
 
 ## Documentation Conventions

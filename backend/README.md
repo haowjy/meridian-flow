@@ -8,7 +8,7 @@ Go REST API for the Meridian file management system.
 
 ## Tech Stack
 
-- **Language:** Go 1.21+
+- **Language:** Go 1.25.4
 - **Framework:** [Fiber](https://gofiber.io/) v2 (fast, Express-like)
 - **Database:** PostgreSQL via [Supabase](https://supabase.com/)
 - **Driver:** pgx v5 (native PostgreSQL)

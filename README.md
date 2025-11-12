@@ -81,13 +81,13 @@ Will be documented once frontend is implemented.
 ## Tech Stack
 
 ### Backend
-- **Language**: Go 1.21+
+- **Language**: Go 1.25.4
 - **Framework**: [Fiber](https://gofiber.io/) (Express-like for Go)
 - **Database**: PostgreSQL via [Supabase](https://supabase.com/)
 - **Deployment**: Railway
 
 ### Frontend (Planned)
-- **Framework**: Next.js 14 (App Router)
+- **Framework**: Next.js 15 (App Router)
 - **Editor**: TipTap (React)
 - **State Management**: TanStack Query + Zustand
 - **Styling**: Tailwind CSS

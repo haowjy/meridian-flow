@@ -1,4 +1,4 @@
-.PHONY: help build run test clean install dev llm-cli llm-cli-build
+.PHONY: help build run test clean install dev llm-cli llm-cli-build build-local run-local
 
 # Load environment variables from .env
 include .env
@@ -6,6 +6,9 @@ export
 
 # Derive TABLE_PREFIX from ENVIRONMENT (e.g., dev → dev_)
 export TABLE_PREFIX := $(ENVIRONMENT)_
+
+## Absolute path to workspace file for local builds
+GO_WORK_FILE := $(abspath ../go.work)
 
 # Goose binary location (adjust if needed)
 GOOSE := $(shell which goose || echo ~/go/bin/goose)
@@ -26,7 +29,7 @@ build: ## Build the server binary
 run: ## Run the server
 	go run ./cmd/server/main.go
 
-dev: ## Run the server with hot reload (requires air)
+dev: ## Hot reload (air)
 	air
 
 test: ## Run tests
@@ -84,3 +87,11 @@ run-cli: ## Run interactive LLM CLI (requires server running at localhost:8080)
 build-cli: ## Build standalone LLM CLI binary
 	cd ../cli && go build -o ../backend/bin/llm-cli .
 	@echo "Built: bin/llm-cli"
+
+# ===== Local workspace convenience targets =====
+
+build-local: ## Build using local workspace (forces GOWORK=../go.work)
+	GOWORK=$(GO_WORK_FILE) go build -o bin/server ./cmd/server
+
+run-local: ## Run using local workspace (forces GOWORK=../go.work)
+	GOWORK=$(GO_WORK_FILE) go run ./cmd/server/main.go
