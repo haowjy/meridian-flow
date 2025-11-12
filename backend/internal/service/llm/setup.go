@@ -1,19 +1,20 @@
 package llm
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
-	"time"
+
+	mstream "github.com/haowjy/meridian-stream-go"
 
 	"meridian/internal/config"
 	"meridian/internal/domain/repositories"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	llmRepo "meridian/internal/domain/repositories/llm"
 	llmSvc "meridian/internal/domain/services/llm"
+	"meridian/internal/service/llm/adapters"
 	"meridian/internal/service/llm/chat"
 	"meridian/internal/service/llm/conversation"
-	"meridian/internal/service/llm/providers/anthropic"
-	"meridian/internal/service/llm/providers/lorem"
 	"meridian/internal/service/llm/streaming"
 )
 
@@ -24,11 +25,11 @@ func SetupProviders(cfg *config.Config, logger *slog.Logger) (*ProviderRegistry,
 
 	// Register Anthropic provider (if API key is configured)
 	if cfg.AnthropicAPIKey != "" {
-		anthropicProvider, err := anthropic.NewProvider(cfg.AnthropicAPIKey)
+		anthropicAdapter, err := adapters.NewAnthropicAdapter(cfg.AnthropicAPIKey)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create Anthropic provider: %w", err)
+			return nil, fmt.Errorf("failed to create Anthropic adapter: %w", err)
 		}
-		registry.RegisterProvider(anthropicProvider)
+		registry.RegisterProvider(anthropicAdapter)
 		logger.Info("provider registered", "name", "anthropic", "models", "claude-*")
 	} else {
 		logger.Warn("ANTHROPIC_API_KEY not set - Anthropic provider not available")
@@ -36,8 +37,8 @@ func SetupProviders(cfg *config.Config, logger *slog.Logger) (*ProviderRegistry,
 
 	// Register Lorem provider (mock - dev/test only)
 	if cfg.Environment == "dev" || cfg.Environment == "test" {
-		loremProvider := lorem.NewProvider()
-		registry.RegisterProvider(loremProvider)
+		loremAdapter := adapters.NewLoremAdapter()
+		registry.RegisterProvider(loremAdapter)
 		logger.Warn("provider registered (MOCK)",
 			"name", "lorem",
 			"models", "lorem-*",
@@ -71,13 +72,15 @@ func SetupServices(
 	cfg *config.Config,
 	txManager repositories.TransactionManager,
 	logger *slog.Logger,
-) (*Services, *streaming.TurnExecutorRegistry, error) {
+) (*Services, *mstream.Registry, error) {
 	// Create shared validator
 	validator := NewChatValidator(chatRepo)
 
-	// Create turn executor registry (for SSE streaming)
-	// Cleanup every 5 minutes, retain completed executors for 10 minutes
-	executorRegistry := streaming.NewTurnExecutorRegistry(5*time.Minute, 10*time.Minute)
+	// Create mstream registry (for SSE streaming)
+	streamRegistry := mstream.NewRegistry()
+
+	// Start cleanup goroutine for old streams
+	go streamRegistry.StartCleanup(context.Background())
 
 	// Create response generator
 	responseGenerator := streaming.NewResponseGenerator(providerRegistry, turnRepo, logger)
@@ -100,7 +103,7 @@ func SetupServices(
 		turnRepo,
 		validator,
 		responseGenerator,
-		executorRegistry,
+		streamRegistry,
 		cfg,
 		txManager,
 		logger,
@@ -110,5 +113,5 @@ func SetupServices(
 		Chat:         chatService,
 		Conversation: conversationService,
 		Streaming:    streamingService,
-	}, executorRegistry, nil
+	}, streamRegistry, nil
 }

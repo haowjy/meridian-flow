@@ -88,7 +88,7 @@ func main() {
 	}
 
 	// Setup LLM services (chat, conversation, streaming)
-	llmServices, executorRegistry, err := serviceLLM.SetupServices(
+	llmServices, streamRegistry, err := serviceLLM.SetupServices(
 		chatRepo,
 		turnRepo,
 		projectRepo,
@@ -123,7 +123,7 @@ func main() {
 		llmServices.Conversation,
 		llmServices.Streaming,
 		turnRepo,
-		executorRegistry,
+		streamRegistry,
 		logger,
 	)
 

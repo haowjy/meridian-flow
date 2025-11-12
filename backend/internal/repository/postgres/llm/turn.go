@@ -687,7 +687,7 @@ func (r *PostgresTurnRepository) GetSiblingsForTurns(
 			tp.id as turn_id,
 			array_remove(array_agg(t.id ORDER BY t.created_at), NULL) as sibling_ids
 		FROM turn_parents tp
-		LEFT JOIN %s t ON t.prev_turn_id = tp.prev_turn_id
+		LEFT JOIN %s t ON t.prev_turn_id IS NOT DISTINCT FROM tp.prev_turn_id
 		GROUP BY tp.id
 	`, r.tables.Turns, r.tables.Turns)
 

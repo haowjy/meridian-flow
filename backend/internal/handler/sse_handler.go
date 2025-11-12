@@ -2,26 +2,26 @@ package handler
 
 import (
 	"bufio"
-	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	mstream "github.com/haowjy/meridian-stream-go"
 
 	llmModels "meridian/internal/domain/models/llm"
-	"meridian/internal/service/llm/streaming"
 )
 
 // SSEHandler handles Server-Sent Events for streaming turn responses
 type SSEHandler struct {
-	registry *streaming.TurnExecutorRegistry
+	registry *mstream.Registry
 	logger   *slog.Logger
 }
 
 // NewSSEHandler creates a new SSE handler
-func NewSSEHandler(registry *streaming.TurnExecutorRegistry, logger *slog.Logger) *SSEHandler {
+func NewSSEHandler(registry *mstream.Registry, logger *slog.Logger) *SSEHandler {
 	return &SSEHandler{
 		registry: registry,
 		logger:   logger,
@@ -55,16 +55,16 @@ func (h *SSEHandler) StreamTurn(c *fiber.Ctx) error {
 	c.Set("Transfer-Encoding", "chunked")
 	c.Set("X-Accel-Buffering", "no") // Disable nginx buffering
 
-	// Get TurnExecutor from registry
-	executor := h.registry.Get(turnID)
-	if executor == nil {
-		h.logger.Warn("executor not found for SSE connection",
+	// Get Stream from registry
+	stream := h.registry.Get(turnID)
+	if stream == nil {
+		h.logger.Warn("stream not found for SSE connection",
 			"turn_id", turnID,
 			"client_ip", clientIP,
 		)
 		// Don't return early - establish SSE connection first, then send error
 	} else {
-		h.logger.Info("executor found for SSE connection",
+		h.logger.Info("stream found for SSE connection",
 			"turn_id", turnID,
 			"client_ip", clientIP,
 		)
@@ -72,6 +72,9 @@ func (h *SSEHandler) StreamTurn(c *fiber.Ctx) error {
 
 	// Generate client ID
 	clientID := uuid.New().String()
+
+	// Read Last-Event-ID header BEFORE entering goroutine (Fiber context not available inside)
+	lastEventID := c.Get("Last-Event-ID", "")
 
 	// Stream events to client
 	c.Status(fiber.StatusOK).Context().SetBodyStreamWriter(func(w *bufio.Writer) {
@@ -90,52 +93,94 @@ func (h *SSEHandler) StreamTurn(c *fiber.Ctx) error {
 			"client_id", clientID,
 		)
 
-		// If no executor, send error event and close gracefully
-		if executor == nil {
-			errorEvent, _ := llmModels.NewTurnErrorEvent(turnID, "streaming not active for this turn", nil)
-			fmt.Fprintf(w, "%s", errorEvent)
+		// If no stream, send error event and close gracefully
+		if stream == nil {
+			errorData, _ := json.Marshal(llmModels.TurnErrorEvent{
+				TurnID: turnID,
+				Error:  "streaming not active for this turn",
+			})
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", llmModels.SSEEventTurnError, string(errorData))
 			w.Flush()
-			h.logger.Info("sent error event for missing executor, closing stream",
+			h.logger.Info("sent error event for missing stream, closing stream",
 				"turn_id", turnID,
 				"client_id", clientID,
 			)
 			return
 		}
 
-		// Register client with executor (get event channel)
-		eventChan := executor.AddClient(clientID)
+		h.logger.Debug("SSE connection details",
+			"turn_id", turnID,
+			"client_id", clientID,
+			"last_event_id", lastEventID,
+		)
+
+		// Get catchup events (for first connection or reconnection)
+		catchupEvents := stream.GetCatchupEvents(lastEventID)
+		if len(catchupEvents) > 0 {
+			h.logger.Debug("sending catchup events",
+				"turn_id", turnID,
+				"client_id", clientID,
+				"last_event_id", lastEventID,
+				"catchup_count", len(catchupEvents),
+			)
+
+			// Send catchup events
+			for _, event := range catchupEvents {
+				if event.Type != "" {
+					fmt.Fprintf(w, "event: %s\n", event.Type)
+				}
+				if event.ID != "" {
+					fmt.Fprintf(w, "id: %s\n", event.ID)
+				}
+				if event.Retry > 0 {
+					fmt.Fprintf(w, "retry: %d\n", event.Retry)
+				}
+				fmt.Fprintf(w, "data: %s\n\n", string(event.Data))
+
+				if err := w.Flush(); err != nil {
+					h.logger.Info("client disconnected during catchup",
+						"turn_id", turnID,
+						"client_id", clientID,
+						"error", err,
+					)
+					return
+				}
+			}
+
+			h.logger.Debug("catchup events sent",
+				"turn_id", turnID,
+				"client_id", clientID,
+				"catchup_count", len(catchupEvents),
+			)
+		}
+
+		// Check if stream is already done (completed/error/cancelled)
+		status := stream.Status()
+		if status == mstream.StatusComplete ||
+			status == mstream.StatusError ||
+			status == mstream.StatusCancelled {
+			h.logger.Debug("stream already finished, closing connection",
+				"turn_id", turnID,
+				"client_id", clientID,
+				"status", status,
+			)
+			return // Close SSE connection gracefully
+		}
+
+		// Stream still active - add client to stream (get event channel for live events)
+		eventChan := stream.AddClient(clientID)
 		defer func() {
-			executor.RemoveClient(clientID)
+			stream.RemoveClient(clientID)
 			h.logger.Debug("SSE client removed",
 				"turn_id", turnID,
 				"client_id", clientID,
 			)
 		}()
 
-		h.logger.Debug("SSE client registered",
+		h.logger.Debug("SSE client registered with stream",
 			"turn_id", turnID,
 			"client_id", clientID,
 		)
-
-		// Get bidirectional channel for reconnection (to write catchup events)
-		clientChan := executor.GetClientChannel(clientID)
-
-		// Send catchup events for reconnection
-		// IMPORTANT: Use context.Background() here, not c.Context()
-		// We're inside a goroutine spawned by SetBodyStreamWriter, and the Fiber context
-		// is not valid in this goroutine. Using c.Context() causes nil pointer dereference.
-		if err := executor.HandleReconnection(context.Background(), clientID, clientChan); err != nil {
-			h.logger.Warn("catchup failed, client will receive live events only",
-				"turn_id", turnID,
-				"client_id", clientID,
-				"error", err,
-			)
-		} else {
-			h.logger.Debug("catchup completed",
-				"turn_id", turnID,
-				"client_id", clientID,
-			)
-		}
 
 		// Send keepalive comments every 15 seconds to prevent timeout
 		ticker := time.NewTicker(15 * time.Second)
@@ -153,8 +198,18 @@ func (h *SSEHandler) StreamTurn(c *fiber.Ctx) error {
 					return
 				}
 
-				// Write event to client
-				fmt.Fprintf(w, "%s", event)
+				// Format mstream.Event as SSE
+				if event.Type != "" {
+					fmt.Fprintf(w, "event: %s\n", event.Type)
+				}
+				if event.ID != "" {
+					fmt.Fprintf(w, "id: %s\n", event.ID)
+				}
+				if event.Retry > 0 {
+					fmt.Fprintf(w, "retry: %d\n", event.Retry)
+				}
+				fmt.Fprintf(w, "data: %s\n\n", string(event.Data))
+
 				if err := w.Flush(); err != nil {
 					// Client disconnected (detected via flush error)
 					h.logger.Info("client disconnected during event write",
@@ -168,6 +223,7 @@ func (h *SSEHandler) StreamTurn(c *fiber.Ctx) error {
 				h.logger.Debug("SSE event sent",
 					"turn_id", turnID,
 					"client_id", clientID,
+					"event_type", event.Type,
 				)
 
 			case <-ticker.C:

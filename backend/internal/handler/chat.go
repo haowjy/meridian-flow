@@ -6,12 +6,12 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	mstream "github.com/haowjy/meridian-stream-go"
 
 	"meridian/internal/domain"
 	llmModels "meridian/internal/domain/models/llm"
 	llmRepo "meridian/internal/domain/repositories/llm"
 	llmSvc "meridian/internal/domain/services/llm"
-	"meridian/internal/service/llm/streaming"
 )
 
 // ChatHandler handles chat HTTP requests
@@ -20,7 +20,7 @@ type ChatHandler struct {
 	conversationService llmSvc.ConversationService
 	streamingService    llmSvc.StreamingService
 	turnRepo            llmRepo.TurnRepository
-	registry            *streaming.TurnExecutorRegistry
+	registry            *mstream.Registry
 	logger              *slog.Logger
 }
 
@@ -30,7 +30,7 @@ func NewChatHandler(
 	conversationService llmSvc.ConversationService,
 	streamingService llmSvc.StreamingService,
 	turnRepo llmRepo.TurnRepository,
-	registry *streaming.TurnExecutorRegistry,
+	registry *mstream.Registry,
 	logger *slog.Logger,
 ) *ChatHandler {
 	return &ChatHandler{
@@ -321,14 +321,14 @@ func (h *ChatHandler) InterruptTurn(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid turn ID format")
 	}
 
-	// Get executor from registry
-	executor := h.registry.Get(turnID)
-	if executor == nil {
+	// Get stream from registry
+	stream := h.registry.Get(turnID)
+	if stream == nil {
 		return fiber.NewError(fiber.StatusNotFound, "Turn is not currently streaming")
 	}
 
-	// Interrupt the executor
-	executor.Interrupt()
+	// Cancel the stream
+	stream.Cancel()
 
 	// Update turn status in database (executor will do this, but do it here for immediate feedback)
 	if err := h.turnRepo.UpdateTurnStatus(c.Context(), turnID, "cancelled", nil); err != nil {

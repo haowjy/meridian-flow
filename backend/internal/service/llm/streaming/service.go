@@ -7,6 +7,7 @@ import (
 	"time"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
+	mstream "github.com/haowjy/meridian-stream-go"
 
 	"meridian/internal/config"
 	"meridian/internal/domain"
@@ -27,7 +28,7 @@ type Service struct {
 	turnRepo          llmRepo.TurnRepository
 	validator         ChatValidator
 	responseGenerator *ResponseGenerator
-	registry          *TurnExecutorRegistry
+	registry          *mstream.Registry
 	config            *config.Config
 	txManager         repositories.TransactionManager
 	logger            *slog.Logger
@@ -38,7 +39,7 @@ func NewService(
 	turnRepo llmRepo.TurnRepository,
 	validator ChatValidator,
 	responseGenerator *ResponseGenerator,
-	registry          *TurnExecutorRegistry,
+	registry          *mstream.Registry,
 	cfg               *config.Config,
 	txManager         repositories.TransactionManager,
 	logger            *slog.Logger,
@@ -197,26 +198,22 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		return nil, fmt.Errorf("failed to get provider for model %s: %w", model, err)
 	}
 
-	// Create TurnExecutor immediately (before goroutine) to avoid race condition
+	// Create StreamExecutor immediately (before goroutine) to avoid race condition
 	// This ensures SSE clients can connect while we're preparing the request
-	executor := NewTurnExecutor(
-		ctx,
+	executor := NewStreamExecutor(
 		assistantTurn.ID,
 		model,
 		s.turnRepo,
 		provider,
+		s.logger,
 	)
 
-	// Register executor in global registry IMMEDIATELY
+	// Register stream in registry IMMEDIATELY
 	// This must happen before returning response to prevent race with SSE connections
-	if !s.registry.Register(assistantTurn.ID, executor) {
-		s.logger.Error("failed to register executor (already exists)",
-			"assistant_turn_id", assistantTurn.ID,
-		)
-		return nil, fmt.Errorf("failed to register executor: already exists for turn %s", assistantTurn.ID)
-	}
+	stream := executor.GetStream()
+	s.registry.Register(stream)
 
-	s.logger.Info("executor registered, starting background streaming",
+	s.logger.Info("stream registered, starting background streaming",
 		"assistant_turn_id", assistantTurn.ID,
 		"model", model,
 	)
@@ -238,7 +235,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 // startStreamingExecution starts the streaming execution for an assistant turn.
 // This runs in a background goroutine and prepares the request before starting the stream.
 // The executor is already created and registered before this function is called.
-func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, userTurnID string, executor *TurnExecutor, params *llmModels.RequestParams) {
+func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, userTurnID string, executor *StreamExecutor, params *llmModels.RequestParams) {
 	s.logger.Info("preparing streaming request",
 		"assistant_turn_id", assistantTurnID,
 	)
@@ -299,12 +296,12 @@ func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, 
 		"model", executor.model,
 	)
 
-	// Note: Executor will:
+	// Note: StreamExecutor will:
 	// - Stream from provider
 	// - Accumulate deltas into TurnBlocks
-	// - Broadcast SSE events to clients
+	// - Broadcast events via mstream
 	// - Update turn status on completion/error
-	// - Registry will clean up executor after retention period
+	// - Registry will clean up stream after retention period
 }
 
 // buildMessagesFromPath converts turn history to LLM messages.
