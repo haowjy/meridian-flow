@@ -11,17 +11,17 @@ import (
 	"github.com/google/uuid"
 
 	llmModels "meridian/internal/domain/models/llm"
-	llmservice "meridian/internal/service/llm"
+	"meridian/internal/service/llm/streaming"
 )
 
 // SSEHandler handles Server-Sent Events for streaming turn responses
 type SSEHandler struct {
-	registry *llmservice.TurnExecutorRegistry
+	registry *streaming.TurnExecutorRegistry
 	logger   *slog.Logger
 }
 
 // NewSSEHandler creates a new SSE handler
-func NewSSEHandler(registry *llmservice.TurnExecutorRegistry, logger *slog.Logger) *SSEHandler {
+func NewSSEHandler(registry *streaming.TurnExecutorRegistry, logger *slog.Logger) *SSEHandler {
 	return &SSEHandler{
 		registry: registry,
 		logger:   logger,
@@ -124,7 +124,7 @@ func (h *SSEHandler) StreamTurn(c *fiber.Ctx) error {
 		// IMPORTANT: Use context.Background() here, not c.Context()
 		// We're inside a goroutine spawned by SetBodyStreamWriter, and the Fiber context
 		// is not valid in this goroutine. Using c.Context() causes nil pointer dereference.
-		if err := executor.HandleReconnection(context.Background(), clientChan); err != nil {
+		if err := executor.HandleReconnection(context.Background(), clientID, clientChan); err != nil {
 			h.logger.Warn("catchup failed, client will receive live events only",
 				"turn_id", turnID,
 				"client_id", clientID,

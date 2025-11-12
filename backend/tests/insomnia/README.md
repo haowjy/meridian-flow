@@ -92,7 +92,7 @@ Import error handling and validation
 **Use when:** Testing bulk import features, migration scenarios
 
 **Important:**
-- Import uses `X-Project-ID` header instead of body field
+- No project header required in Phase 1 (project ID is injected by middleware). Insomnia collections may include `X-Project-ID` headers for clarity — they are ignored by the server.
 - Replace mode is destructive - use with caution
 
 ---

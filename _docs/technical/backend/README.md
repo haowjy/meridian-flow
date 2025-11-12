@@ -48,14 +48,29 @@ PostgreSQL schema, connections, and data management:
 
 ## Chat System
 
-**Status:** ✅ Fully implemented (CRUD, LLM integration, Anthropic Claude provider)
+**Status:** ✅ Core features complete, streaming in development
 
-Multi-turn LLM conversations with unified JSONB content blocks:
+Multi-turn LLM conversations with SOLID-compliant service architecture:
 
-- Complete implementation documented in [chat/overview.md](chat/overview.md)
-- Schema: [database/schema.md](database/schema.md#chat-system)
+- Domain model: [chat/overview.md](chat/overview.md)
+- Service layer: [architecture/service-layer.md](architecture/service-layer.md)
+- Pagination: [chat/pagination.md](chat/pagination.md)
+- LLM providers: [chat/llm-providers.md](chat/llm-providers.md)
 - Turn blocks: [chat/turn-blocks.md](chat/turn-blocks.md)
-- Testing: 29 Insomnia test requests covering all operations
+- Schema: [database/schema.md](database/schema.md#chat-system)
+- Testing: 29 Insomnia test requests
+
+## Streaming System
+
+**Status:** 🚧 In Development
+
+Real-time LLM response delivery via Server-Sent Events:
+
+- Overview: [streaming/README.md](streaming/README.md)
+- Architecture: [architecture/streaming-architecture.md](architecture/streaming-architecture.md)
+- API endpoints: [streaming/api-endpoints.md](streaming/api-endpoints.md)
+- Tool execution: [streaming/tool-execution.md](streaming/tool-execution.md)
+- Edge cases: [streaming/edge-cases.md](streaming/edge-cases.md)
 
 ## Development
 

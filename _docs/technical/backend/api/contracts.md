@@ -336,6 +336,213 @@ Similar to folders, the `name` field now supports Unix-style path notation for c
 - The frontend editor uses a different internal representation and converts to/from Markdown at the boundary.
 - Word count and similar derived fields are computed from Markdown.
 
+## Chat Operations
+
+Chat system provides multi-turn LLM conversations with efficient pagination for large conversations (1000+ turns).
+
+### Strategy: Two-Endpoint Pagination
+
+**Tree Endpoint** - Lightweight structure for cache validation (~2KB for 1000 turns)
+**Pagination Endpoint** - Full Turn objects with nested blocks
+
+### Get Chat Tree (GET /api/chats/:id/tree)
+
+⚠️ **Status:** Currently implemented but **debug-only**. Available at `GET /debug/api/chats/:id/tree` in development mode. Not yet exposed as a production API.
+
+Returns lightweight conversation structure with IDs and relationships only (no turn content).
+
+**Use Cases:**
+- Cache validation (detect new turns)
+- Conversation structure overview
+- Quick turn count calculation
+
+**Response:**
+```json
+{
+  "chat_id": "chat-uuid",
+  "turns": [
+    {
+      "id": "turn-1-uuid",
+      "prev_turn_id": null,
+      "role": "user"
+    },
+    {
+      "id": "turn-2-uuid",
+      "prev_turn_id": "turn-1-uuid",
+      "role": "assistant"
+    },
+    {
+      "id": "turn-3a-uuid",
+      "prev_turn_id": "turn-2-uuid",
+      "role": "user"
+    },
+    {
+      "id": "turn-3b-uuid",
+      "prev_turn_id": "turn-2-uuid",
+      "role": "user"
+    }
+  ]
+}
+```
+
+**Performance:**
+- ~2KB for 1000 turns
+- < 100ms response time
+- No nested blocks (IDs only)
+
+**Turn Branching:**
+- Multiple turns can reference the same `prev_turn_id` (branching)
+- Root turns have `prev_turn_id: null`
+
+### Get Paginated Turns (GET /api/chats/:id/turns)
+
+Returns full Turn objects with nested turn blocks for efficient pagination.
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `from_turn_id` | UUID | No | `last_viewed_turn_id` | Starting turn for pagination |
+| `limit` | Integer | No | 50 | Max turns to return (max 200) |
+| `direction` | String | No | "both" | Navigation direction: `before`, `after`, or `both` |
+
+**Direction Modes:**
+
+- **`before`** - Load history (scroll up)
+  - Follows `prev_turn_id` chain backwards
+  - Returns older turns before `from_turn_id`
+  - Use case: Infinite scroll upward
+
+- **`after`** - Load future (scroll down)
+  - Follows children forward
+  - Picks most recent branch on forks
+  - Returns newer turns after `from_turn_id`
+  - Use case: Infinite scroll downward
+
+- **`both`** - Context window (initial load)
+  - Splits limit **25%/75%** (before/after) - asymmetric split favors future context
+  - 25% for history (older turns)
+  - 75% for continuation (newer turns)
+  - Centers view around `from_turn_id`
+  - Use case: Opening chat to last viewed turn
+  - **Rationale:** Users typically care more about seeing the continuation than past history
+
+**Validation:**
+- `limit` must be ≤ 200 (see `MaxPaginationLimit`)
+- `direction` must be one of: `before`, `after`, `both`
+- `from_turn_id` must exist in the chat (if provided)
+- If `from_turn_id` omitted, uses `chat.last_viewed_turn_id`
+
+**Response:**
+```json
+{
+  "turns": [
+    {
+      "id": "turn-uuid",
+      "chat_id": "chat-uuid",
+      "prev_turn_id": "prev-turn-uuid",
+      "role": "user",
+      "status": "complete",
+      "blocks": [
+        {
+          "block_index": 0,
+          "block_type": "text",
+          "content": {
+            "text": "Write a story about dragons"
+          }
+        }
+      ],
+      "model": null,
+      "input_tokens": null,
+      "output_tokens": null,
+      "created_at": "2025-01-15T10:30:00Z",
+      "updated_at": "2025-01-15T10:30:00Z",
+      "deleted_at": null
+    },
+    {
+      "id": "turn-2-uuid",
+      "chat_id": "chat-uuid",
+      "prev_turn_id": "turn-uuid",
+      "role": "assistant",
+      "status": "complete",
+      "blocks": [
+        {
+          "block_index": 0,
+          "block_type": "thinking",
+          "content": {
+            "thinking": "I should write an engaging opening..."
+          }
+        },
+        {
+          "block_index": 1,
+          "block_type": "text",
+          "content": {
+            "text": "Once upon a time, in a land of fire and scales..."
+          }
+        }
+      ],
+      "model": "claude-haiku-4-5-20251001",
+      "input_tokens": 150,
+      "output_tokens": 280,
+      "created_at": "2025-01-15T10:30:05Z",
+      "updated_at": "2025-01-15T10:30:12Z",
+      "deleted_at": null
+    }
+  ],
+  "has_more_before": true,
+  "has_more_after": false,
+  "from_turn_id": "turn-uuid"
+}
+```
+
+**Response Fields:**
+- `turns` - Array of Turn objects with nested blocks
+- `has_more_before` - Boolean indicating more history available
+- `has_more_after` - Boolean indicating more future turns available
+- `from_turn_id` - Starting turn used for pagination (for debugging)
+
+**Turn Block Types:**
+
+**User blocks:**
+- `text` - Plain text message
+- `image` - Image attachment
+- `reference` - Full document reference
+- `partial_reference` - Document text selection
+- `tool_result` - Tool execution result
+
+**Assistant blocks:**
+- `text` - LLM response text
+- `thinking` - Extended thinking (Claude only)
+- `tool_use` - Tool invocation request
+
+See [turn-blocks.md](../chat/turn-blocks.md) for detailed JSONB schemas.
+
+**Example Requests:**
+
+```bash
+# Initial load - get 50 turns around last viewed position
+GET /api/chats/abc-123/turns
+
+# Load 100 more history turns
+GET /api/chats/abc-123/turns?from_turn_id=turn-xyz&limit=100&direction=before
+
+# Load next 50 turns in conversation
+GET /api/chats/abc-123/turns?from_turn_id=turn-xyz&limit=50&direction=after
+
+# Get 200 turns centered around specific turn
+GET /api/chats/abc-123/turns?from_turn_id=turn-xyz&limit=200&direction=both
+```
+
+**Performance Optimization:**
+
+Backend avoids N+1 queries by:
+1. Fetching turn IDs via pagination algorithm
+2. Bulk loading all turns in single query
+3. Bulk loading all turn blocks in single query (sorted by turn_id, block_index)
+4. Assembling in-memory
+
+See [pagination.md](../chat/pagination.md) for backend implementation details.
+
 ## Validation Rules Summary
 
 | Entity   | Slash Allowed? | Max Length | Reason                                    |

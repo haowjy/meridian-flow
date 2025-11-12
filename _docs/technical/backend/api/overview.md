@@ -153,9 +153,19 @@ All three are equivalent.
 
 ### Pagination
 
-**Phase 1:** No pagination (returns all data)
+**Document System:** No pagination (returns all data)
 
-**Future:** Add limit/offset or cursor-based pagination
+**Chat System:** ✅ Implemented direction-based pagination for large conversations
+
+- **Tree Endpoint:** ⚠️ `GET /debug/api/chats/:id/tree` (debug-only) - Lightweight structure for cache validation
+- **Pagination Endpoint:** ✅ `GET /api/chats/:id/turns` (production) - Direction-based turn loading
+  - Query params: `from_turn_id`, `limit` (max 200), `direction` (before/after/both)
+  - Returns full Turn objects with nested blocks
+  - Supports infinite scroll and context windows
+  - Uses 25%/75% split for "both" direction (favors future context)
+
+**Backend:** [Pagination Guide](../chat/pagination.md)
+**Frontend:** `_docs/technical/frontend/chat-pagination-guide.md`
 
 ### Filtering
 

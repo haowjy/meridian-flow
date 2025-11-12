@@ -7,6 +7,9 @@
 /backend
 /server
 /bin
+llm-cli
+llm_cli
+main
 
 # Test binary
 *.test

@@ -80,7 +80,6 @@ func main() {
 
 	// Create validators (for soft-delete validation)
 	docsysValidator := serviceDocsys.NewResourceValidator(projectRepo, folderRepo)
-	chatValidator := serviceLLM.NewChatValidator(chatRepo)
 
 	// Setup LLM providers
 	providerRegistry, err := serviceLLM.SetupProviders(cfg, logger)
@@ -88,10 +87,21 @@ func main() {
 		log.Fatalf("Failed to setup LLM providers: %v", err)
 	}
 
-	// Create response generator
-	responseGenerator := serviceLLM.NewResponseGenerator(providerRegistry, turnRepo, logger)
+	// Setup LLM services (chat, conversation, streaming)
+	llmServices, executorRegistry, err := serviceLLM.SetupServices(
+		chatRepo,
+		turnRepo,
+		projectRepo,
+		providerRegistry,
+		cfg,
+		txManager,
+		logger,
+	)
+	if err != nil {
+		log.Fatalf("Failed to setup LLM services: %v", err)
+	}
 
-	// Create services
+	// Create document services
 	contentAnalyzer := serviceDocsys.NewContentAnalyzer()
 	pathResolver := serviceDocsys.NewPathResolver(folderRepo, txManager)
 	projectService := serviceDocsys.NewProjectService(projectRepo, logger)
@@ -99,12 +109,6 @@ func main() {
 	folderService := serviceDocsys.NewFolderService(folderRepo, docRepo, pathResolver, txManager, docsysValidator, logger)
 	treeService := serviceDocsys.NewTreeService(folderRepo, docRepo, logger)
 	importService := serviceDocsys.NewImportService(docRepo, docService, logger)
-
-	// Turn executor registry for streaming
-	registry := serviceLLM.GetGlobalRegistry()
-
-	// Chat services
-	chatService := serviceLLM.NewChatService(chatRepo, turnRepo, projectRepo, chatValidator, responseGenerator, registry, logger)
 
 	// Create new handlers
 	projectHandler := handler.NewProjectHandler(projectService, logger)
@@ -114,12 +118,19 @@ func main() {
 	importHandler := handler.NewImportHandler(importService, logger)
 
 	// Chat handlers
-	chatHandler := handler.NewChatHandler(chatService, turnRepo, registry, logger)
+	chatHandler := handler.NewChatHandler(
+		llmServices.Chat,
+		llmServices.Conversation,
+		llmServices.Streaming,
+		turnRepo,
+		executorRegistry,
+		logger,
+	)
 
 	// Debug handlers (only in dev environment)
 	var chatDebugHandler *handler.ChatDebugHandler
 	if cfg.Environment == "dev" {
-		chatDebugHandler = handler.NewChatDebugHandler(chatService)
+		chatDebugHandler = handler.NewChatDebugHandler(llmServices.Conversation, llmServices.Streaming, cfg)
 		logger.Warn("DEBUG MODE: Debug endpoints enabled (NEVER use in production!)")
 	}
 
@@ -129,7 +140,7 @@ func main() {
 	app := fiber.New(fiber.Config{
 		ErrorHandler: middleware.ErrorHandler,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: 0, // Disabled to allow long-lived SSE streams
 		IdleTimeout:  60 * time.Second,
 	})
 
@@ -203,9 +214,10 @@ func main() {
 	api.Get("/chats/:id", chatHandler.GetChat)
 	api.Patch("/chats/:id", chatHandler.UpdateChat)
 	api.Delete("/chats/:id", chatHandler.DeleteChat)
+	api.Get("/chats/:id/turns", chatHandler.GetPaginatedTurns)
 	api.Post("/chats/:id/turns", chatHandler.CreateTurn)
 	api.Get("/turns/:id/path", chatHandler.GetTurnPath)
-	api.Get("/turns/:id/children", chatHandler.GetTurnChildren)
+	api.Get("/turns/:id/siblings", chatHandler.GetTurnSiblings)
 
 	// Streaming routes
 	api.Get("/turns/:id/stream", chatHandler.StreamTurn)      // SSE streaming endpoint
@@ -216,7 +228,9 @@ func main() {
 	if cfg.Environment == "dev" && chatDebugHandler != nil {
 		debug := app.Group("/debug/api")
 		debug.Post("/chats/:id/turns", chatDebugHandler.CreateAssistantTurn)
+		debug.Get("/chats/:id/tree", chatDebugHandler.GetChatTree)
 		logger.Warn("Debug route registered: POST /debug/api/chats/:id/turns (assistant turn creation)")
+		logger.Warn("Debug route registered: GET /debug/api/chats/:id/tree (full conversation tree - use pagination in production)")
 	}
 
 	// Start server

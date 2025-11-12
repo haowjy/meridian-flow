@@ -186,6 +186,83 @@ func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *models.Doc
 
 **Key pattern:** Repository is dumb persistence. No business logic.
 
+---
+
+## LLM Service Layer Organization
+
+The LLM service layer demonstrates advanced Clean Architecture with a **3-service split** following SOLID principles.
+
+### Why Split Services?
+
+A monolithic ChatService (1500+ lines) was split into 3 focused services:
+
+```mermaid
+graph TB
+    Handler[ChatHandler]
+
+    Chat[ChatService<br/>Session CRUD]
+    Convo[ConversationService<br/>History & Navigation]
+    Stream[StreamingService<br/>Turn Creation & Streaming]
+
+    Handler --> Chat
+    Handler --> Convo
+    Handler --> Stream
+
+    style Chat fill:#2d7d7d
+    style Convo fill:#2d7d7d
+    style Stream fill:#2d7d7d
+```
+
+### Service Responsibilities
+
+**ChatService** (`service/llm/chat/`)
+- Create/Read/Update/Delete chat sessions
+- 5 methods, 150 lines
+- Dependencies: ChatRepository, ProjectRepository
+
+**ConversationService** (`service/llm/conversation/`)
+- Get turn path (root to leaf)
+- Get turn siblings (branching)
+- Paginated turn loading
+- 4 methods, 90 lines
+- Dependencies: ChatRepository, TurnRepository
+
+**StreamingService** (`service/llm/streaming/`)
+- Create turn (user + assistant)
+- Initiate LLM streaming
+- 2 methods, 280 lines (+ supporting components)
+- Dependencies: TurnRepository, ResponseGenerator, ExecutorRegistry
+
+### SOLID Compliance
+
+**Single Responsibility** - Each service has one reason to change
+**Interface Segregation** - 3 focused interfaces instead of 1 fat interface (11 methods)
+**Dependency Inversion** - Services depend on repository interfaces, not implementations
+
+See [Service Layer Architecture](service-layer.md) for detailed explanation.
+
+### Service Structure
+
+```
+internal/service/llm/
+├── chat/
+│   └── service.go              # ChatService implementation
+├── conversation/
+│   └── service.go              # ConversationService implementation
+├── streaming/
+│   ├── service.go              # StreamingService implementation
+│   ├── executor.go             # TurnExecutor (background goroutine)
+│   ├── accumulator.go          # Block accumulation logic
+│   ├── registry.go             # Active executor tracking
+│   └── response_generator.go  # LLM provider coordination
+├── providers/
+│   └── anthropic/              # Anthropic Claude provider
+├── registry.go                 # Provider registry
+└── setup.go                    # Dependency injection helper
+```
+
+---
+
 ## Dependency Flow
 
 ```mermaid
@@ -283,6 +360,8 @@ backend/
 
 Dependencies are wired up in `cmd/server/main.go`:
 
+### Document System Example
+
 ```go
 // 1. Create repositories (outermost layer)
 docRepo := postgres.NewDocumentRepository(repoConfig)
@@ -306,6 +385,38 @@ docHandler := handler.NewDocumentHandler(
 // 4. Register routes
 api.Post("/documents", docHandler.CreateDocument)
 ```
+
+### LLM Services Example
+
+LLM services use a setup helper for cleaner dependency injection:
+
+```go
+// Setup LLM provider registry
+providerRegistry, err := serviceLLM.SetupProviders(cfg, logger)
+
+// Setup all 3 LLM services at once
+llmServices, executorRegistry, err := serviceLLM.SetupServices(
+    chatRepo,
+    turnRepo,
+    projectRepo,
+    providerRegistry,
+    cfg,
+    txManager,
+    logger,
+)
+
+// Create handler with all 3 services
+chatHandler := handler.NewChatHandler(
+    llmServices.Chat,          // ChatService
+    llmServices.Conversation,  // ConversationService
+    llmServices.Streaming,     // StreamingService
+    turnRepo,
+    executorRegistry,
+    logger,
+)
+```
+
+See `internal/service/llm/setup.go` for implementation.
 
 **Flow:** Database → Repository → Service → Handler → HTTP
 

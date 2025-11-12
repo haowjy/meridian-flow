@@ -1,4 +1,4 @@
-package llm
+package streaming
 
 import (
 	"context"

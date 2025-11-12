@@ -26,4 +26,10 @@ type ChatRepository interface {
 	// DeleteChat soft-deletes a chat and returns the deleted chat object
 	// Returns domain.ErrNotFound if not found or already deleted
 	DeleteChat(ctx context.Context, chatID, userID string) (*llm.Chat, error)
+
+	// GetChatTree retrieves the lightweight tree structure of a chat for cache validation
+	// Returns only turn IDs and parent relationships (no content)
+	// Performance: <100ms even for 1000+ turns
+	// Used by frontend to detect gaps, new branches, and structural changes
+	GetChatTree(ctx context.Context, chatID, userID string) (*llm.ChatTree, error)
 }

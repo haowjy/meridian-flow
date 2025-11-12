@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"meridian/internal/domain"
@@ -231,4 +232,86 @@ func (r *PostgresChatRepository) DeleteChat(ctx context.Context, chatID, userID 
 	}
 
 	return &chat, nil
+}
+
+// GetChatTree retrieves the lightweight tree structure for cache validation
+func (r *PostgresChatRepository) GetChatTree(ctx context.Context, chatID, userID string) (*llmModels.ChatTree, error) {
+	// First verify chat exists and user has access
+	chatQuery := fmt.Sprintf(`
+		SELECT updated_at
+		FROM %s
+		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+	`, r.tables.Chats)
+
+	executor := postgres.GetExecutor(ctx, r.pool)
+
+	var updatedAt time.Time
+	err := executor.QueryRow(ctx, chatQuery, chatID, userID).Scan(&updatedAt)
+	if err != nil {
+		if postgres.IsPgNoRowsError(err) {
+			return nil, fmt.Errorf("chat %s: %w", chatID, domain.ErrNotFound)
+		}
+		return nil, fmt.Errorf("get chat for tree: %w", err)
+	}
+
+	// Get all turns for this chat (just IDs and parent relationships)
+	// Uses depth-first traversal order (visit all descendants before siblings)
+	// NOTE: This is a DEBUG endpoint - production should use pagination with sibling_ids
+	turnsQuery := fmt.Sprintf(`
+		WITH RECURSIVE dfs AS (
+			-- Base case: root nodes (no parent)
+			SELECT
+				id,
+				prev_turn_id,
+				ARRAY[created_at::text, id::text] as sort_path,
+				0 as depth
+			FROM %s
+			WHERE chat_id = $1 AND prev_turn_id IS NULL
+
+			UNION ALL
+
+			-- Recursive case: children (depth-first traversal)
+			SELECT
+				t.id,
+				t.prev_turn_id,
+				dfs.sort_path || ARRAY[t.created_at::text, t.id::text],
+				dfs.depth + 1
+			FROM %s t
+			INNER JOIN dfs ON t.prev_turn_id = dfs.id
+			WHERE dfs.depth < 1000  -- Prevent infinite recursion
+		)
+		SELECT id, prev_turn_id
+		FROM dfs
+		ORDER BY sort_path
+	`, r.tables.Turns, r.tables.Turns)
+
+	rows, err := executor.Query(ctx, turnsQuery, chatID)
+	if err != nil {
+		return nil, fmt.Errorf("get turns for tree: %w", err)
+	}
+	defer rows.Close()
+
+	var nodes []llmModels.TurnTreeNode
+	for rows.Next() {
+		var node llmModels.TurnTreeNode
+		err := rows.Scan(&node.ID, &node.PrevTurnID)
+		if err != nil {
+			return nil, fmt.Errorf("scan turn node: %w", err)
+		}
+		nodes = append(nodes, node)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate turn nodes: %w", err)
+	}
+
+	// Return empty slice if no turns (not nil)
+	if nodes == nil {
+		nodes = []llmModels.TurnTreeNode{}
+	}
+
+	return &llmModels.ChatTree{
+		Turns:     nodes,
+		UpdatedAt: updatedAt,
+	}, nil
 }

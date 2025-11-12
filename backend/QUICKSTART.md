@@ -81,29 +81,21 @@ You should get:
 
 ## Test Creating a Document
 
-Create a document with automatic folder creation:
+Create a document (markdown content) and auto-create its folder path:
 
 ```bash
-curl -X POST http://localhost:8080/api/documents \
+curl -X POST http://localhost:8080/api/projects/<PROJECT_ID>/documents \
   -H "Content-Type: application/json" \
   -d '{
-    "path": "Characters/Hero",
-    "content_tiptap": {
-      "type": "doc",
-      "content": [
-        {
-          "type": "paragraph",
-          "content": [
-            {
-              "type": "text",
-              "text": "The hero of our story..."
-            }
-          ]
-        }
-      ]
-    }
+    "name": "Hero",
+    "content": "# Hero\n\nThe hero of our story...",
+    "folder_path": "Characters"
   }'
 ```
+
+Notes:
+- Use `folder_path` for path-based placement (auto-creates folders) or `folder_id` for direct placement.
+- To create at the project root, either omit `folder_path` or send it as an empty string `""`.
 
 ## Test Getting the Document Tree
 
@@ -119,9 +111,8 @@ Tree is always scoped to a project. The legacy `/api/tree` path has been removed
 
 Once the server is running:
 - ✅ Test with Insomnia: `backend/tests/README.md`
-- 📖 Read full docs: `_docs/technical/`
-- 🔧 Environment setup: `_docs/technical/backend/environment-setup.md`
-- 🔐 Supabase details: `_docs/technical/backend/supabase-integration.md`
+- 🧪 Manual API testing (curl): `_docs/technical/backend/development/testing.md`
+- 📖 Docs index: `_docs/technical/`
 
 ## Troubleshooting
 

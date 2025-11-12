@@ -11,24 +11,35 @@ import (
 	llmModels "meridian/internal/domain/models/llm"
 	llmRepo "meridian/internal/domain/repositories/llm"
 	llmSvc "meridian/internal/domain/services/llm"
-	llmservice "meridian/internal/service/llm"
+	"meridian/internal/service/llm/streaming"
 )
 
 // ChatHandler handles chat HTTP requests
 type ChatHandler struct {
-	chatService llmSvc.ChatService
-	turnRepo    llmRepo.TurnRepository
-	registry    *llmservice.TurnExecutorRegistry
-	logger      *slog.Logger
+	chatService         llmSvc.ChatService
+	conversationService llmSvc.ConversationService
+	streamingService    llmSvc.StreamingService
+	turnRepo            llmRepo.TurnRepository
+	registry            *streaming.TurnExecutorRegistry
+	logger              *slog.Logger
 }
 
 // NewChatHandler creates a new chat handler
-func NewChatHandler(chatService llmSvc.ChatService, turnRepo llmRepo.TurnRepository, registry *llmservice.TurnExecutorRegistry, logger *slog.Logger) *ChatHandler {
+func NewChatHandler(
+	chatService llmSvc.ChatService,
+	conversationService llmSvc.ConversationService,
+	streamingService llmSvc.StreamingService,
+	turnRepo llmRepo.TurnRepository,
+	registry *streaming.TurnExecutorRegistry,
+	logger *slog.Logger,
+) *ChatHandler {
 	return &ChatHandler{
-		chatService: chatService,
-		turnRepo:    turnRepo,
-		registry:    registry,
-		logger:      logger,
+		chatService:         chatService,
+		conversationService: conversationService,
+		streamingService:    streamingService,
+		turnRepo:            turnRepo,
+		registry:            registry,
+		logger:              logger,
 	}
 }
 
@@ -191,7 +202,7 @@ func (h *ChatHandler) CreateTurn(c *fiber.Ctx) error {
 	req.UserID = userID
 
 	// Call service
-	response, err := h.chatService.CreateTurn(c.Context(), &req)
+	response, err := h.streamingService.CreateTurn(c.Context(), &req)
 	if err != nil {
 		return handleError(c, err)
 	}
@@ -209,7 +220,7 @@ func (h *ChatHandler) GetTurnPath(c *fiber.Ctx) error {
 	}
 
 	// Call service
-	turns, err := h.chatService.GetTurnPath(c.Context(), turnID)
+	turns, err := h.conversationService.GetTurnPath(c.Context(), turnID)
 	if err != nil {
 		return handleError(c, err)
 	}
@@ -217,22 +228,59 @@ func (h *ChatHandler) GetTurnPath(c *fiber.Ctx) error {
 	return c.JSON(turns)
 }
 
-// GetTurnChildren retrieves all child turns (branches) from a previous turn
-// GET /api/turns/:id/children
-func (h *ChatHandler) GetTurnChildren(c *fiber.Ctx) error {
-	// Get previous turn ID from route param
-	prevTurnID := c.Params("id")
-	if prevTurnID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Previous turn ID is required")
+// GetTurnSiblings retrieves all sibling turns (including self) for version browsing
+// GET /api/turns/:id/siblings
+func (h *ChatHandler) GetTurnSiblings(c *fiber.Ctx) error {
+	// Get turn ID from route param
+	turnID := c.Params("id")
+	if turnID == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "Turn ID is required")
 	}
 
 	// Call service
-	turns, err := h.chatService.GetTurnChildren(c.Context(), prevTurnID)
+	siblings, err := h.conversationService.GetTurnSiblings(c.Context(), turnID)
 	if err != nil {
 		return handleError(c, err)
 	}
 
-	return c.JSON(turns)
+	return c.JSON(siblings)
+}
+
+// GetPaginatedTurns retrieves turns and blocks in paginated fashion
+// GET /api/chats/:id/turns?from_turn_id=X&limit=100&direction=both
+func (h *ChatHandler) GetPaginatedTurns(c *fiber.Ctx) error {
+	// Extract user ID from context
+	userID, err := getUserID(c)
+	if err != nil {
+		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+	}
+
+	// Get chat ID from route param
+	chatID := c.Params("id")
+	if chatID == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "Chat ID is required")
+	}
+
+	// Parse query parameters
+	fromTurnIDStr := c.Query("from_turn_id")
+	var fromTurnID *string
+	if fromTurnIDStr != "" {
+		fromTurnID = &fromTurnIDStr
+	}
+
+	// Parse limit (default 100)
+	limit := c.QueryInt("limit", 100)
+
+	// Parse direction (default "both")
+	direction := c.Query("direction", "both")
+
+	// Call service
+	response, err := h.conversationService.GetPaginatedTurns(c.Context(), chatID, userID, fromTurnID, limit, direction)
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	return c.JSON(response)
 }
 
 // GetTurnBlocks retrieves all completed turn blocks for a turn

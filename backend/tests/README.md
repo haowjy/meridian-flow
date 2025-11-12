@@ -82,7 +82,7 @@ See `insomnia/README.md` for:
 
 ## Manual Testing with curl
 
-See `_docs/technical/backend/api-testing-comprehensive.md` for complete curl examples and test scenarios.
+See `_docs/technical/backend/development/testing.md` for minimal curl examples.
 
 ## Seeding Test Data
 
@@ -94,7 +94,7 @@ make seed           # Regular seed (keeps tables, clears data)
 make seed-fresh     # Fresh start (drops tables, recreates, seeds)
 ```
 
-See `_docs/technical/backend/database-seeding.md` for details.
+Details: `backend/scripts/README.md`.
 
 ## Unit Tests (Future)
 

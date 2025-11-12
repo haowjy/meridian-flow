@@ -1,4 +1,4 @@
-package llm
+package streaming
 
 import (
 	"context"
@@ -10,15 +10,21 @@ import (
 	"meridian/internal/domain/models/llm"
 )
 
+// ProviderRegistry is the interface for getting LLM providers
+// This avoids import cycles with the parent llm package
+type ProviderRegistry interface {
+	GetProvider(model string) (domainllm.LLMProvider, error)
+}
+
 // ResponseGenerator handles LLM response generation
 type ResponseGenerator struct {
-	registry *ProviderRegistry
+	registry ProviderRegistry
 	turnRepo llmRepo.TurnRepository
 	logger   *slog.Logger
 }
 
 // NewResponseGenerator creates a new response generator
-func NewResponseGenerator(registry *ProviderRegistry, turnRepo llmRepo.TurnRepository, logger *slog.Logger) *ResponseGenerator {
+func NewResponseGenerator(registry ProviderRegistry, turnRepo llmRepo.TurnRepository, logger *slog.Logger) *ResponseGenerator {
 	return &ResponseGenerator{
 		registry: registry,
 		turnRepo: turnRepo,
@@ -71,7 +77,7 @@ func (g *ResponseGenerator) GenerateResponse(ctx context.Context, userTurnID str
 		if err != nil {
 			return nil, fmt.Errorf("failed to get content blocks for turn %s: %w", path[i].ID, err)
 		}
-		path[i].TurnBlocks = blocks
+		path[i].Blocks = blocks
 	}
 
 	g.logger.Debug("loaded content blocks for turns")
@@ -133,16 +139,16 @@ func (g *ResponseGenerator) buildMessages(path []llm.Turn) ([]domainllm.Message,
 		}
 
 		// Get content blocks for this turn
-		if len(turn.TurnBlocks) == 0 {
+		if len(turn.Blocks) == 0 {
 			// Empty turn - skip it
 			g.logger.Warn("skipping turn with no content blocks", "turn_id", turn.ID)
 			continue
 		}
 
 		// Convert []TurnBlock to []*TurnBlock
-		contentPtrs := make([]*llm.TurnBlock, len(turn.TurnBlocks))
-		for i := range turn.TurnBlocks {
-			contentPtrs[i] = &turn.TurnBlocks[i]
+		contentPtrs := make([]*llm.TurnBlock, len(turn.Blocks))
+		for i := range turn.Blocks {
+			contentPtrs[i] = &turn.Blocks[i]
 		}
 
 		messages = append(messages, domainllm.Message{

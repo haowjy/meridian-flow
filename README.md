@@ -1,26 +1,26 @@
 # Meridian
 
-AI Writing Assistant - A powerful file management system for writers.
+AI Writing Assistant — a file management system for writers.
 
-## Project Status
+## Project Status (Nov 12, 2025)
 
-- ✅ **Backend**: Complete and functional ([See details](./_docs/hidden/status/BACKEND_COMPLETE.md))
-- 🚧 **Frontend**: Coming next (Next.js + TipTap)
+- ✅ Backend: Complete and functional (see `backend/README.md`)
+- 🚧 Frontend: In progress (Next.js + TipTap)
 
 ## Monorepo Structure
 
 ```
 meridian/
 ├── backend/                 # Go + Fiber + PostgreSQL
-│   ├── cmd/                # Applications (server, seeder)
-│   ├── internal/           # Internal packages
-│   ├── tests/              # Testing artifacts
-│   ├── schema.sql          # Database schema
-│   ├── README.md           # Backend documentation
-│   └── QUICKSTART.md       # 5-minute setup guide
-├── _docs/                  # Product & technical documentation
-├── frontend/               # Next.js + TipTap (coming soon)
-└── README.md               # This file
+│   ├── cmd/                 # Applications (server, seeder)
+│   ├── internal/            # Internal packages
+│   ├── tests/               # Testing artifacts
+│   ├── schema.sql           # Database schema
+│   ├── README.md            # Backend documentation
+│   └── QUICKSTART.md        # 5-minute setup guide
+├── _docs/                   # Product & technical documentation
+├── frontend/                # Next.js + TipTap (in progress)
+└── README.md                # This file
 ```
 
 ## Phase 1: File System Foundation
@@ -29,16 +29,17 @@ meridian/
 
 ### Backend ✅ Complete
 
-The Go backend provides a REST API for file management with:
+Go REST API for file management:
 
-- Full CRUD operations for documents
-- TipTap JSON to Markdown conversion
+- Projects, folders, documents (full CRUD)
+- Path-based operations (`folder_id` or `folder_path`)
+- Bulk import from zip (merge/replace)
 - Automatic word counting
 - Path validation and normalization
 - CORS-enabled for frontend access
 - PostgreSQL/Supabase integration
 
-**[Quick Start Guide →](./backend/QUICKSTART.md)**
+See `backend/README.md` and `backend/QUICKSTART.md` for setup.
 
 ### Frontend 🚧 Coming Next
 
@@ -92,30 +93,19 @@ Will be documented once frontend is implemented.
 - **Styling**: Tailwind CSS
 - **Deployment**: Vercel
 
-## API Endpoints
+## API Docs
 
-The backend exposes these REST endpoints:
-
-```
-GET    /health                    Health check
-POST   /api/documents             Create document
-GET    /api/documents             List all documents
-GET    /api/documents/:id         Get single document
-PUT    /api/documents/:id         Update document
-DELETE /api/documents/:id         Delete document
-```
-
-See [Backend README](./backend/README.md) for detailed API documentation.
+- Overview: `_docs/technical/backend/api/overview.md`
+- Contracts & validation: `_docs/technical/backend/api/contracts.md`
+- Backend guide: `backend/README.md`
 
 ## Features
 
 ### Phase 1 (Current)
 - ✅ Create and organize documents
-- ✅ Rich text editing with TipTap
-- ✅ Auto-save functionality
+- ✅ Path-based folder organization
 - ✅ Word count tracking
-- ✅ Folder organization via paths
-- ✅ Markdown export (automatic)
+- ✅ Zip import (merge/replace)
 
 ### Phase 2 (Future)
 - 🔮 AI context building

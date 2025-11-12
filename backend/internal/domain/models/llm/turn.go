@@ -26,5 +26,6 @@ type Turn struct {
 	ResponseMetadata map[string]interface{} `json:"response_metadata,omitempty" db:"response_metadata"` // Provider-specific response data (stop_sequence, cache tokens, etc.)
 
 	// Computed fields (not stored in DB)
-	TurnBlocks []TurnBlock `json:"turn_blocks,omitempty"`
+	Blocks     []TurnBlock `json:"blocks,omitempty"`      // Content blocks for this turn
+	SiblingIDs []string    `json:"sibling_ids,omitempty"` // IDs of sibling turns (same prev_turn_id)
 }

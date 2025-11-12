@@ -166,6 +166,50 @@ Content blocks can reference documents:
 
 Backend fetches document content and includes in LLM context.
 
+---
+
+## Pagination
+
+For large conversations (1000+ turns), the system provides efficient pagination:
+
+### Two-Endpoint Strategy
+
+**Tree Endpoint** (`GET /api/chats/:id/tree`)
+- Returns lightweight structure (IDs + prev_turn_id only)
+- Used for cache validation
+- ~2KB for 1000 turns, <100ms response time
+
+**Pagination Endpoint** (`GET /api/chats/:id/turns`)
+- Returns full Turn objects with nested blocks
+- Direction modes: `before` (history), `after` (future), `both` (context window)
+- Defaults to `last_viewed_turn_id` if no starting point specified
+
+### Direction Modes
+
+- **`before`** - Follow prev_turn_id chain backwards (scroll up, load history)
+- **`after`** - Follow children forward, pick most recent on branches (scroll down)
+- **`both`** - Split limit 25%/75% (before/after) for initial context window
+
+### ConversationService
+
+Pagination is handled by ConversationService (one of 3 focused LLM services):
+
+```go
+conversationService.GetPaginatedTurns(
+    ctx,
+    chatID,
+    userID,
+    fromTurnID,  // Optional, defaults to last_viewed_turn_id
+    limit,       // Max 200, default 50
+    direction,   // "before", "after", or "both"
+)
+```
+
+**See:** [Backend Pagination Guide](pagination.md) for implementation details
+**Frontend:** `_docs/technical/frontend/chat-pagination-guide.md`
+
+---
+
 ## Database Schema
 
 See [database/schema.md](../database/schema.md#chat-system) for:
@@ -181,12 +225,16 @@ See [database/schema.md](../database/schema.md#chat-system) for:
 - ✅ Domain models (Chat, Turn, TurnBlock)
 - ✅ JSONB validation for all turn block types
 - ✅ Repository layer (PostgreSQL)
-- ✅ Service layer with business logic
+- ✅ Service layer refactored into 3 focused services (SOLID compliance)
+  - ChatService - Chat session CRUD
+  - ConversationService - History & navigation
+  - StreamingService - Turn creation & streaming
 - ✅ HTTP handlers (complete CRUD)
 - ✅ Chat creation, retrieval, update, deletion
 - ✅ Turn creation and retrieval
 - ✅ Content block support (text, thinking, tool_use, tool_result, image, reference, partial_reference)
-- ✅ Turn tree navigation (get path, get children)
+- ✅ Turn tree navigation (get path, get siblings)
+- ✅ Pagination (tree endpoint + direction-based turn loading)
 - ✅ Request parameters (temperature, thinking, top-k, top-p, model, stop_sequences)
 - ✅ Soft delete with cascade
 

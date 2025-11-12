@@ -257,7 +257,7 @@ func TestProvider_GenerateResponse(t *testing.T) {
 
 ## Provider Selection
 
-The chat service uses the provider registry to look up providers by model name. Provider selection logic in `internal/service/llm/response_generator.go`:
+The streaming service uses the provider registry to look up providers by model name. Provider selection logic in `internal/service/llm/streaming/response_generator.go`:
 
 ```go
 func (g *ResponseGenerator) GenerateResponse(ctx context.Context, turnID string, model string, params map[string]interface{}) (*Response, error) {
@@ -324,5 +324,9 @@ This metadata is stored in the `turns` table (`response_metadata` JSONB field) f
 - **Implementation:** `internal/service/llm/providers/`
 - **Interface:** `internal/domain/services/llm/provider.go`
 - **Registry:** `internal/service/llm/registry.go`
-- **Response Generator:** `internal/service/llm/response_generator.go`
-- **Chat Service:** `internal/service/llm/chat.go`
+- **Response Generator:** `internal/service/llm/streaming/response_generator.go`
+- **Services:**
+  - `internal/service/llm/chat/service.go` - ChatService
+  - `internal/service/llm/conversation/service.go` - ConversationService
+  - `internal/service/llm/streaming/service.go` - StreamingService
+- **Setup:** `internal/service/llm/setup.go`

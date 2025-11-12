@@ -1,4 +1,4 @@
-package llm
+package streaming
 
 import (
 	"context"
@@ -101,6 +101,16 @@ func (e *TurnExecutor) RemoveClient(clientID string) {
 	}
 }
 
+// safeRemoveClient removes a client without acquiring the lock.
+// MUST be called while holding e.clientsMu lock.
+// Used internally by handleCompletion and handleError.
+func (e *TurnExecutor) safeRemoveClient(clientID string) {
+	if ch, exists := e.clients[clientID]; exists {
+		close(ch)
+		delete(e.clients, clientID)
+	}
+}
+
 // GetClientChannel returns the bidirectional channel for a client.
 // Used for sending catchup events during reconnection.
 // Returns nil if client doesn't exist.
@@ -147,7 +157,8 @@ func (e *TurnExecutor) GetMetadata() *domainllm.StreamMetadata {
 
 // HandleReconnection sends catchup events to a newly connected client.
 // Sends all completed blocks + current partial block (if any).
-func (e *TurnExecutor) HandleReconnection(ctx context.Context, clientChan chan<- string) error {
+// For completed/error/cancelled turns, removes the client after sending final event.
+func (e *TurnExecutor) HandleReconnection(ctx context.Context, clientID string, clientChan chan<- string) error {
 	// Get all completed blocks from database
 	blocks, err := e.turnRepo.GetTurnBlocks(ctx, e.turnID)
 	if err != nil {
@@ -188,7 +199,7 @@ func (e *TurnExecutor) HandleReconnection(ctx context.Context, clientChan chan<-
 			}
 		}
 	} else if status == "complete" {
-		// Turn already completed - send turn_complete event and close channel
+		// Turn already completed - send turn_complete event and remove client
 		metadata := e.GetMetadata()
 		if metadata != nil {
 			event, err := llm.NewTurnCompleteEvent(
@@ -208,10 +219,10 @@ func (e *TurnExecutor) HandleReconnection(ctx context.Context, clientChan chan<-
 				return ctx.Err()
 			}
 		}
-		// Close channel so SSE connection ends gracefully
-		close(clientChan)
+		// Remove client (closes channel and removes from map)
+		e.RemoveClient(clientID)
 	} else if status == "error" {
-		// Turn errored - send turn_error event and close channel
+		// Turn errored - send turn_error event and remove client
 		statusErr := e.GetError()
 		errorMsg := "unknown error"
 		if statusErr != nil {
@@ -229,10 +240,10 @@ func (e *TurnExecutor) HandleReconnection(ctx context.Context, clientChan chan<-
 			return ctx.Err()
 		}
 
-		// Close channel so SSE connection ends gracefully
-		close(clientChan)
+		// Remove client (closes channel and removes from map)
+		e.RemoveClient(clientID)
 	} else if status == "cancelled" {
-		// Turn cancelled - send error event and close channel
+		// Turn cancelled - send error event and remove client
 		event, err := llm.NewTurnErrorEvent(e.turnID, "turn was cancelled", nil)
 		if err != nil {
 			return fmt.Errorf("failed to create cancellation event: %w", err)
@@ -244,8 +255,8 @@ func (e *TurnExecutor) HandleReconnection(ctx context.Context, clientChan chan<-
 			return ctx.Err()
 		}
 
-		// Close channel so SSE connection ends gracefully
-		close(clientChan)
+		// Remove client (closes channel and removes from map)
+		e.RemoveClient(clientID)
 	}
 
 	return nil
@@ -273,30 +284,41 @@ func (e *TurnExecutor) executeStreaming(req *domainllm.GenerateRequest) {
 	// Process streaming events
 	var currentBlockIndex = -1
 
-	for streamEvent := range streamChan {
-		// Check for errors
-		if streamEvent.Error != nil {
-			e.handleError(streamEvent.Error)
+	for {
+		select {
+		case <-e.ctx.Done():
+			// Context cancelled - handle graceful shutdown
+			e.handleError(fmt.Errorf("streaming interrupted: %w", e.ctx.Err()))
 			return
-		}
 
-		// Process delta
-		if streamEvent.Delta != nil {
-			if err := e.processDelta(streamEvent.Delta, &currentBlockIndex); err != nil {
-				e.handleError(err)
+		case streamEvent, ok := <-streamChan:
+			if !ok {
+				// Stream channel closed without metadata - unexpected
+				e.handleError(fmt.Errorf("stream closed without metadata"))
+				return
+			}
+
+			// Check for errors
+			if streamEvent.Error != nil {
+				e.handleError(streamEvent.Error)
+				return
+			}
+
+			// Process delta
+			if streamEvent.Delta != nil {
+				if err := e.processDelta(streamEvent.Delta, &currentBlockIndex); err != nil {
+					e.handleError(err)
+					return
+				}
+			}
+
+			// Process metadata (final event)
+			if streamEvent.Metadata != nil {
+				e.handleCompletion(streamEvent.Metadata)
 				return
 			}
 		}
-
-		// Process metadata (final event)
-		if streamEvent.Metadata != nil {
-			e.handleCompletion(streamEvent.Metadata)
-			return
-		}
 	}
-
-	// Stream channel closed without metadata - unexpected
-	e.handleError(fmt.Errorf("stream closed without metadata"))
 }
 
 // processDelta handles a single TurnBlockDelta.
@@ -378,9 +400,14 @@ func (e *TurnExecutor) handleCompletion(metadata *domainllm.StreamMetadata) {
 
 	// Close all client channels
 	e.clientsMu.Lock()
-	for clientID, ch := range e.clients {
-		close(ch)
-		delete(e.clients, clientID)
+	// Collect client IDs first to avoid modification during iteration
+	clientIDs := make([]string, 0, len(e.clients))
+	for clientID := range e.clients {
+		clientIDs = append(clientIDs, clientID)
+	}
+	// Remove each client (closes channel and removes from map)
+	for _, clientID := range clientIDs {
+		e.safeRemoveClient(clientID)
 	}
 	e.clientsMu.Unlock()
 }
@@ -415,9 +442,14 @@ func (e *TurnExecutor) handleError(err error) {
 
 	// Close all client channels
 	e.clientsMu.Lock()
-	for clientID, ch := range e.clients {
-		close(ch)
-		delete(e.clients, clientID)
+	// Collect client IDs first to avoid modification during iteration
+	clientIDs := make([]string, 0, len(e.clients))
+	for clientID := range e.clients {
+		clientIDs = append(clientIDs, clientID)
+	}
+	// Remove each client (closes channel and removes from map)
+	for _, clientID := range clientIDs {
+		e.safeRemoveClient(clientID)
 	}
 	e.clientsMu.Unlock()
 }

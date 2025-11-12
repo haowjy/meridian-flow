@@ -120,7 +120,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"role\": \"user\",\n  \"turn_blocks\": [\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"Analyze the protagonist's character arc in Chapter 1\"\n    }\n  ]\n}"
+        "text": "{\n  \"role\": \"user\",\n  \"turn_blocks\": [\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"Analyze the protagonist's character arc in Chapter 1\"\n    }\n  ],\n  \"request_params\": {\n    \"model\": \"lorem-fast\",\n    \"max_tokens\": 100\n  }\n}"
       },
       "parameters": [],
       "headers": [
@@ -168,7 +168,7 @@
       "created": 1698796800000,
       "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
       "name": "3. Create Branch Turn",
-      "description": "Branch conversation from assistant_turn_id\nCreates alternative path in conversation tree\nMultiple children = multiple branches",
+      "description": "Branch conversation from assistant_turn_id\nCreates alternative path in conversation tree\nMultiple siblings = multiple versions/branches",
       "method": "POST",
       "body": {
         "mimeType": "application/json",
@@ -185,7 +185,7 @@
       "metaSortKey": -1698796100000,
       "isPrivate": false,
       "_type": "request",
-      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.user_turn) {\n  await insomnia.environment.set('branch_turn_id', response.user_turn.id);\n  console.log('✅ Created branch turn:', response.user_turn.id.substring(0, 8) + '...');\n  console.log('Branches from:', response.user_turn.prev_turn_id);\n  console.log('💡 Use GET /turns/:prev_turn_id/children to see all branches');\n}"
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.user_turn) {\n  await insomnia.environment.set('branch_turn_id', response.user_turn.id);\n  console.log('✅ Created branch turn:', response.user_turn.id.substring(0, 8) + '...');\n  console.log('Branches from:', response.user_turn.prev_turn_id);\n  console.log('💡 Use GET /turns/:id/siblings to see all versions');\n}"
     },
     {
       "_id": "req_turns_get_path",
@@ -206,13 +206,13 @@
       "afterResponseScript": "const response = insomnia.response.json();\nif (response && Array.isArray(response)) {\n  console.log('✅ Found conversation path with', response.length, 'turn(s)');\n  response.forEach((turn, i) => {\n    console.log(`  ${i + 1}. [${turn.role}] ${turn.id.substring(0, 8)}...`);\n  });\n  console.log('💡 This path represents the full conversation context');\n}"
     },
     {
-      "_id": "req_turns_get_children",
+      "_id": "req_turns_get_siblings",
       "parentId": "fld_turns",
       "modified": 1698796800000,
       "created": 1698796800000,
-      "url": "{{ _.base_url }}/api/turns/{{ _.assistant_turn_id }}/children",
-      "name": "5. Get Turn Children (Branches)",
-      "description": "Get all child turns (branches) from a parent turn\nReturns array of turns (empty [] if no children)\nUsed to display branching UI",
+      "url": "{{ _.base_url }}/api/turns/{{ _.assistant_turn_id }}/siblings",
+      "name": "5. Get Turn Siblings (Versions)",
+      "description": "Get all sibling turns (including self) for version browsing\nReturns array of turns with blocks (alternative versions sharing same parent)\nUsed for \"1 of 3\" version navigation UI",
       "method": "GET",
       "body": {},
       "parameters": [],
@@ -221,7 +221,7 @@
       "metaSortKey": -1698795900000,
       "isPrivate": false,
       "_type": "request",
-      "afterResponseScript": "const response = insomnia.response.json();\nif (response && Array.isArray(response)) {\n  console.log('✅ Found', response.length, 'branch(es)');\n  response.forEach((turn, i) => {\n    console.log(`  Branch ${i + 1}: [${turn.role}] ${turn.id.substring(0, 8)}...`);\n  });\n  if (response.length === 0) {\n    console.log('ℹ️  No branches from this turn');\n  }\n}"
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && Array.isArray(response)) {\n  console.log('✅ Found', response.length, 'version(s) (including self)');\n  response.forEach((turn, i) => {\n    console.log(`  Version ${i + 1}: [${turn.role}] ${turn.id.substring(0, 8)}... (${turn.blocks?.length || 0} blocks)`);\n  });\n  if (response.length === 1) {\n    console.log('ℹ️  No alternative versions (only this turn)');\n  }\n}"
     },
     {
       "_id": "req_content_text",
@@ -546,7 +546,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"role\": \"user\",\n  \"turn_blocks\": [\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"Write a short poem about coding\"\n    }\n  ],\n  \"request_params\": {\n    \"model\": \"lorem-slow\",\n    \"max_tokens\": 100\n  }\n}"
+        "text": "{\n  \"prev_turn_id\": \"{{ _.assistant_turn_id }}\", \"role\": \"user\",\n  \"turn_blocks\": [\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"Write a short poem about coding\"\n    }\n  ],\n  \"request_params\": {\n    \"model\": \"lorem-slow\",\n    \"max_tokens\": 100\n  }\n}"
       },
       "parameters": [],
       "headers": [
@@ -715,7 +715,7 @@
       "metaSortKey": -1698795300000,
       "isPrivate": false,
       "_type": "request",
-      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('seeded_chat_id', response.id);\n  console.log('✅ Retrieved seeded chat');\n  console.log('Title:', response.title);\n  console.log('💡 This chat has a branching conversation tree');\n  console.log('   Try: GET /api/turns/{{turn_id}}/children to explore branches');\n}"
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('seeded_chat_id', response.id);\n  console.log('✅ Retrieved seeded chat');\n  console.log('Title:', response.title);\n  console.log('💡 This chat has a branching conversation tree');\n  console.log('   Try: GET /api/turns/{{turn_id}}/siblings to see versions');\n}"
     },
     {
       "_id": "req_validation_invalid_project",
@@ -929,6 +929,90 @@
       "environment": {},
       "environmentPropertyOrder": null,
       "metaSortKey": -1698793000000,
+      "_type": "request_group"
+    },
+    {
+      "_id": "req_chat_tree",
+      "parentId": "fld_pagination",
+      "modified": 1736553600000,
+      "created": 1736553600000,
+      "url": "{{ _.base_url }}/debug/api/chats/{{ _.chat_id }}/tree",
+      "name": "1. Get Chat Tree (DEBUG ONLY)",
+      "description": "⚠️ DEBUG ONLY - DO NOT USE IN PRODUCTION (only available in dev mode)\nRetrieve lightweight tree structure in depth-first order\nReturns only turn IDs and parent relationships (no content)\nProduction should use pagination endpoint which includes sibling_ids\n\nNote: This endpoint is ONLY registered when ENVIRONMENT=dev",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698792000000,
+      "isPrivate": false,
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.turns) {\n  console.log('✅ Tree loaded');\n  console.log('Total turns:', response.turns.length);\n  console.log('Updated at:', response.updated_at);\n  if (response.turns.length > 0) {\n    console.log('Sample turn:', response.turns[0]);\n  }\n}"
+    },
+    {
+      "_id": "req_paginated_turns_before",
+      "parentId": "fld_pagination",
+      "modified": 1736553600000,
+      "created": 1736553600000,
+      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns?limit=50&direction=before",
+      "name": "2. Paginate Before (History)",
+      "description": "Load conversation history (follow prev_turn_id backwards)\nUse for: Scrolling up, loading older messages\nReturns: Turns with nested blocks and sibling_ids",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698791900000,
+      "isPrivate": false,
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.turns) {\n  console.log('✅ Pagination response:');\n  console.log('Turns loaded:', response.turns.length);\n  console.log('Has more before:', response.has_more_before);\n  console.log('Has more after:', response.has_more_after);\n  // Count total blocks (now nested in turns)\n  const totalBlocks = response.turns.reduce((sum, t) => sum + (t.blocks?.length || 0), 0);\n  console.log('Total blocks:', totalBlocks);\n  // Check for siblings\n  const turnsWithSiblings = response.turns.filter(t => t.sibling_ids?.length > 0).length;\n  console.log('Turns with siblings:', turnsWithSiblings);\n  if (response.turns.length > 0 && response.turns[0].sibling_ids) {\n    console.log('Sample sibling_ids:', response.turns[0].sibling_ids);\n  }\n}"
+    },
+    {
+      "_id": "req_paginated_turns_after",
+      "parentId": "fld_pagination",
+      "modified": 1736553600000,
+      "created": 1736553600000,
+      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns?from_turn_id={{ _.user_turn_id }}&limit=50&direction=after",
+      "name": "3. Paginate After (Future)",
+      "description": "Load subsequent messages (follow most recent child forward)\nUse for: Scrolling down, loading newer messages\nFollows most recent child when multiple siblings exist\nReturns: Turns with nested blocks and sibling_ids",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698791800000,
+      "isPrivate": false,
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.turns) {\n  console.log('✅ Pagination response:');\n  console.log('Turns loaded:', response.turns.length);\n  console.log('Has more before:', response.has_more_before);\n  console.log('Has more after:', response.has_more_after);\n  // Count total blocks (now nested in turns)\n  const totalBlocks = response.turns.reduce((sum, t) => sum + (t.blocks?.length || 0), 0);\n  console.log('Total blocks:', totalBlocks);\n  // Check for siblings\n  const turnsWithSiblings = response.turns.filter(t => t.sibling_ids?.length > 0).length;\n  console.log('Turns with siblings:', turnsWithSiblings);\n}"
+    },
+    {
+      "_id": "req_paginated_turns_both",
+      "parentId": "fld_pagination",
+      "modified": 1736553600000,
+      "created": 1736553600000,
+      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns?from_turn_id={{ _.user_turn_id }}&limit=100&direction=both",
+      "name": "4. Paginate Both (Context Window)",
+      "description": "Load context around a specific turn (25% before, 75% after)\nUse for: Initial load, jumping to a specific message\nDefaults to last_viewed_turn_id if from_turn_id not specified\nReturns: Turns with nested blocks and sibling_ids",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698791700000,
+      "isPrivate": false,
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.turns) {\n  console.log('✅ Pagination response:');\n  console.log('Turns loaded:', response.turns.length);\n  console.log('Has more before:', response.has_more_before);\n  console.log('Has more after:', response.has_more_after);\n  const totalBlocks = response.turns.reduce((sum, t) => sum + (t.blocks?.length || 0), 0);\n  console.log('Total blocks:', totalBlocks);\n  // Count turns before/after from_turn_id\n  const fromId = '{{ _.user_turn_id }}';\n  const fromIndex = response.turns.findIndex(t => t.id === fromId);\n  if (fromIndex >= 0) {\n    console.log('Turns before from_turn_id:', fromIndex);\n    console.log('Turns after from_turn_id:', response.turns.length - fromIndex - 1);\n  }\n}"
+    },
+    {
+      "_id": "fld_pagination",
+      "parentId": "wrk_chat",
+      "modified": 1736553600000,
+      "created": 1736553600000,
+      "name": "Pagination",
+      "description": "Paginated turn loading for large conversations (1000+ turns)\nReturns turns with nested blocks and sibling_ids for branch discovery\nPrimary endpoint for production - tree endpoint is debug-only",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1698792500000,
       "_type": "request_group"
     },
     {

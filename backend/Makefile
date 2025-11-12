@@ -1,4 +1,4 @@
-.PHONY: help build run test clean install dev
+.PHONY: help build run test clean install dev llm-cli llm-cli-build
 
 # Load environment variables from .env
 include .env
@@ -75,6 +75,12 @@ seed-fresh: ## Drop all tables, run migrations, and seed data
 seed-clear: ## Clear all documents and folders (keep schema)
 	go run ./cmd/seed/main.go --clear-data
 
-llm-cli: ## Run interactive LLM CLI (requires TEST_PROJECT_ID and TEST_USER_ID)
-	go run ./scripts/llm_cli.go
+run-cli: ## Run interactive LLM CLI (requires server running at localhost:8080)
+	@echo "Starting interactive LLM CLI..."
+	@echo "Controls: ↑/↓ navigate | ←/→ branches | [n]ew turn | [p]arams | [h]elp | [q]uit"
+	@echo ""
+	cd ../cli && go run .
 
+build-cli: ## Build standalone LLM CLI binary
+	cd ../cli && go build -o ../backend/bin/llm-cli .
+	@echo "Built: bin/llm-cli"
