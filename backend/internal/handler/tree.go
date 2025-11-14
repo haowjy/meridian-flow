@@ -2,9 +2,10 @@ package handler
 
 import (
 	"log/slog"
+	"net/http"
 
-	"github.com/gofiber/fiber/v2"
 	docsysSvc "meridian/internal/domain/services/docsystem"
+	"meridian/internal/httputil"
 )
 
 // TreeHandler handles HTTP requests for tree operations
@@ -22,18 +23,20 @@ func NewTreeHandler(treeService docsysSvc.TreeService, logger *slog.Logger) *Tre
 }
 
 // GetTree returns the nested folder/document tree for a project
-func (h *TreeHandler) GetTree(c *fiber.Ctx) error {
+func (h *TreeHandler) GetTree(w http.ResponseWriter, r *http.Request) {
 	// Get project ID from context (injected by auth middleware)
-	projectID, err := getProjectID(c)
+	projectID, err := getProjectID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
 	// Build the tree
-	tree, err := h.treeService.GetProjectTree(c.Context(), projectID)
+	tree, err := h.treeService.GetProjectTree(r.Context(), projectID)
 	if err != nil {
-		return handleError(c, err)
+		handleError(w, err)
+		return
 	}
 
-	return c.JSON(tree)
+	httputil.RespondJSON(w, http.StatusOK, tree)
 }

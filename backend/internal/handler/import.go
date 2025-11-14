@@ -3,9 +3,10 @@ package handler
 import (
 	"fmt"
 	"log/slog"
+	"net/http"
 
-	"github.com/gofiber/fiber/v2"
 	docsysSvc "meridian/internal/domain/services/docsystem"
+	"meridian/internal/httputil"
 )
 
 // ImportHandler handles bulk import HTTP requests
@@ -32,29 +33,32 @@ type ImportResponse struct {
 
 // Merge handles bulk import in merge mode (upserts documents)
 // POST /api/import
-func (h *ImportHandler) Merge(c *fiber.Ctx) error {
+func (h *ImportHandler) Merge(w http.ResponseWriter, r *http.Request) {
 	// Extract project ID from context
-	projectID, err := getProjectID(c)
+	projectID, err := getProjectID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
 	// Extract user ID from context
-	userID, err := getUserID(c)
+	userID, err := getUserID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
-	// Parse multipart form
-	form, err := c.MultipartForm()
-	if err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "Failed to parse multipart form")
+	// Parse multipart form (max 100MB for zip files)
+	if err := r.ParseMultipartForm(100 << 20); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Failed to parse multipart form")
+		return
 	}
 
 	// Get zip files from form
-	files := form.File["files"]
+	files := r.MultipartForm.File["files"]
 	if len(files) == 0 {
-		return fiber.NewError(fiber.StatusBadRequest, "No files provided")
+		httputil.RespondError(w, http.StatusBadRequest, "No files provided")
+		return
 	}
 
 	h.logger.Info("starting merge import",
@@ -97,7 +101,7 @@ func (h *ImportHandler) Merge(c *fiber.Ctx) error {
 		}
 
 		// Process zip file
-		result, err := h.importService.ProcessZipFile(c.Context(), projectID, userID, file)
+		result, err := h.importService.ProcessZipFile(r.Context(), projectID, userID, file)
 		file.Close()
 
 		if err != nil {
@@ -137,34 +141,37 @@ func (h *ImportHandler) Merge(c *fiber.Ctx) error {
 		Documents: aggregatedResult.Documents,
 	}
 
-	return c.Status(fiber.StatusOK).JSON(response)
+	httputil.RespondJSON(w, http.StatusOK, response)
 }
 
 // Replace handles bulk import in replace mode (deletes all documents then imports)
 // POST /api/import/replace
-func (h *ImportHandler) Replace(c *fiber.Ctx) error {
+func (h *ImportHandler) Replace(w http.ResponseWriter, r *http.Request) {
 	// Extract project ID from context
-	projectID, err := getProjectID(c)
+	projectID, err := getProjectID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
 	// Extract user ID from context
-	userID, err := getUserID(c)
+	userID, err := getUserID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
-	// Parse multipart form
-	form, err := c.MultipartForm()
-	if err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "Failed to parse multipart form")
+	// Parse multipart form (max 100MB for zip files)
+	if err := r.ParseMultipartForm(100 << 20); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Failed to parse multipart form")
+		return
 	}
 
 	// Get zip files from form
-	files := form.File["files"]
+	files := r.MultipartForm.File["files"]
 	if len(files) == 0 {
-		return fiber.NewError(fiber.StatusBadRequest, "No files provided")
+		httputil.RespondError(w, http.StatusBadRequest, "No files provided")
+		return
 	}
 
 	h.logger.Info("starting replace import",
@@ -173,12 +180,13 @@ func (h *ImportHandler) Replace(c *fiber.Ctx) error {
 	)
 
 	// Delete all documents first
-	if err := h.importService.DeleteAllDocuments(c.Context(), projectID); err != nil {
+	if err := h.importService.DeleteAllDocuments(r.Context(), projectID); err != nil {
 		h.logger.Error("failed to delete all documents",
 			"project_id", projectID,
 			"error", err,
 		)
-		return handleError(c, err)
+		handleError(w, err)
+		return
 	}
 
 	h.logger.Info("deleted all documents",
@@ -220,7 +228,7 @@ func (h *ImportHandler) Replace(c *fiber.Ctx) error {
 		}
 
 		// Process zip file
-		result, err := h.importService.ProcessZipFile(c.Context(), projectID, userID, file)
+		result, err := h.importService.ProcessZipFile(r.Context(), projectID, userID, file)
 		file.Close()
 
 		if err != nil {
@@ -260,5 +268,5 @@ func (h *ImportHandler) Replace(c *fiber.Ctx) error {
 		Documents: aggregatedResult.Documents,
 	}
 
-	return c.Status(fiber.StatusOK).JSON(response)
+	httputil.RespondJSON(w, http.StatusOK, response)
 }

@@ -2,23 +2,24 @@ package handler
 
 import (
 	"fmt"
+	"net/http"
 
-	"github.com/gofiber/fiber/v2"
+	"meridian/internal/httputil"
 )
 
 // getProjectID extracts the project ID from the context
-func getProjectID(c *fiber.Ctx) (string, error) {
-	projectID, ok := c.Locals("projectID").(string)
-	if !ok || projectID == "" {
+func getProjectID(r *http.Request) (string, error) {
+	projectID := httputil.GetProjectID(r)
+	if projectID == "" {
 		return "", fmt.Errorf("project ID not found in context")
 	}
 	return projectID, nil
 }
 
 // getUserID extracts the user ID from the context
-func getUserID(c *fiber.Ctx) (string, error) {
-	userID, ok := c.Locals("userID").(string)
-	if !ok || userID == "" {
+func getUserID(r *http.Request) (string, error) {
+	userID := httputil.GetUserID(r)
+	if userID == "" {
 		return "", fmt.Errorf("user ID not found in context")
 	}
 	return userID, nil

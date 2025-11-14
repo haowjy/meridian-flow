@@ -1,3 +1,7 @@
 _docs/hidden/
 
 .DS_Store
+
+# Go workspace files (local development only)
+go.work
+go.work.sum

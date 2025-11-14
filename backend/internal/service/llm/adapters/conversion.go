@@ -68,10 +68,16 @@ func convertFromLibraryEvent(event llmprovider.StreamEvent) domainllm.StreamEven
 			BlockType:         event.Delta.BlockType,
 			DeltaType:         event.Delta.DeltaType,
 			TextDelta:         event.Delta.TextDelta,
+			SignatureDelta:    event.Delta.SignatureDelta,
 			InputJSONDelta:    event.Delta.InputJSONDelta,
-			ToolUseID:         event.Delta.ToolUseID,
-			ToolName:          event.Delta.ToolName,
-			ThinkingSignature: event.Delta.ThinkingSignature,
+			ToolCallID:        event.Delta.ToolCallID,
+			ToolCallName:      event.Delta.ToolCallName,
+			ToolUseID:         event.Delta.ToolUseID,         // Legacy
+			ToolName:          event.Delta.ToolName,          // Legacy
+			ThinkingSignature: event.Delta.ThinkingSignature, // Legacy
+			InputTokens:       event.Delta.InputTokens,
+			OutputTokens:      event.Delta.OutputTokens,
+			ThinkingTokens:    event.Delta.ThinkingTokens,
 		}
 	}
 

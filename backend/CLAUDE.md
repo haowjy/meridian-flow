@@ -172,3 +172,62 @@ No real auth yet. Uses hardcoded IDs from `.env`:
 - Don't build multi-project logic yet
 
 See `internal/middleware/auth.go` and `cmd/seed/main.go:ensureTestProject`.
+
+## Streaming Architecture
+
+**Status:** ✅ Working (catchup, multi-block, race conditions fixed)
+
+### Key Pattern: Atomic PersistAndClear
+
+**Always use this pattern:**
+```go
+// ✅ Atomic persist-and-clear (prevents race conditions)
+stream.PersistAndClear(func(events []mstream.Event) error {
+    return db.SaveBlock(events)
+})
+```
+
+**Never do this:**
+```go
+// ❌ Race condition: buffer cleared before DB commit
+db.SaveBlock(events)
+stream.ClearBuffer()
+```
+
+### DEBUG Mode
+
+**Development:** `DEBUG=true` in `.env` - enables sequential event IDs for debugging
+
+**Production:** `DEBUG=false` - no event IDs (better performance)
+
+### Documentation
+
+- **Start here:** `_docs/technical/backend/streaming/README.md` (navigation hub)
+- Architecture: `_docs/technical/backend/architecture/streaming-architecture.md`
+- Block types: `_docs/technical/backend/streaming/block-types-reference.md`
+- Race conditions: `_docs/technical/backend/streaming/race-conditions.md`
+- Library: `meridian-stream-go/README.md`
+
+### Testing Submodule Examples
+
+The submodules have their own Makefiles for testing:
+
+```bash
+# Test meridian-stream-go examples
+cd meridian-stream-go
+make run-simple              # Basic streaming
+make run-nethttp-sse         # SSE with net/http
+make run-catchup-test        # Reconnection/catchup
+make clean                   # Remove binaries
+
+# Test meridian-llm-go examples
+cd meridian-llm-go
+make run-lorem-streaming     # Mock provider (no API key)
+make run-anthropic-streaming # Real Claude API
+make clean
+```
+
+See submodule READMEs for complete documentation:
+- `meridian-stream-go/README.md`
+- `meridian-llm-go/README.md`
+- `meridian-llm-go/examples/README.md`

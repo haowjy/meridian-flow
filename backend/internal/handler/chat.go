@@ -3,8 +3,9 @@ package handler
 import (
 	"errors"
 	"log/slog"
+	"net/http"
+	"strconv"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	mstream "github.com/haowjy/meridian-stream-go"
 
@@ -12,6 +13,7 @@ import (
 	llmModels "meridian/internal/domain/models/llm"
 	llmRepo "meridian/internal/domain/repositories/llm"
 	llmSvc "meridian/internal/domain/services/llm"
+	"meridian/internal/httputil"
 )
 
 // ChatHandler handles chat HTTP requests
@@ -46,297 +48,338 @@ func NewChatHandler(
 // CreateChat creates a new chat session
 // POST /api/chats
 // Returns 201 if created, 409 with existing chat if duplicate
-func (h *ChatHandler) CreateChat(c *fiber.Ctx) error {
+func (h *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
 	// Extract user ID from context
-	userID, err := getUserID(c)
+	userID, err := getUserID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
 	// Parse request
 	var req llmSvc.CreateChatRequest
-	if err := c.BodyParser(&req); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	if err := httputil.ParseJSON(w, r, &req); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
+		return
 	}
 	req.UserID = userID
 
 	// Call service
-	chat, err := h.chatService.CreateChat(c.Context(), &req)
+	chat, err := h.chatService.CreateChat(r.Context(), &req)
 	if err != nil {
 		// Handle conflict by fetching and returning existing chat with 409
-		return HandleCreateConflict(c, err, func() (*llmModels.Chat, error) {
+		HandleCreateConflict(w, err, func() (*llmModels.Chat, error) {
 			var conflictErr *domain.ConflictError
 			if errors.As(err, &conflictErr) {
-				return h.chatService.GetChat(c.Context(), conflictErr.ResourceID, userID)
+				return h.chatService.GetChat(r.Context(), conflictErr.ResourceID, userID)
 			}
 			return nil, err
 		})
+		return
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(chat)
+	httputil.RespondJSON(w, http.StatusCreated, chat)
 }
 
 // ListChats retrieves all chats for a project
 // GET /api/chats?project_id=:id
-func (h *ChatHandler) ListChats(c *fiber.Ctx) error {
+func (h *ChatHandler) ListChats(w http.ResponseWriter, r *http.Request) {
 	// Extract user ID from context
-	userID, err := getUserID(c)
+	userID, err := getUserID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
 	// Get project ID from query param
-	projectID := c.Query("project_id")
+	projectID := r.URL.Query().Get("project_id")
 	if projectID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "project_id query parameter is required")
+		httputil.RespondError(w, http.StatusBadRequest, "project_id query parameter is required")
+		return
 	}
 
 	// Call service
-	chats, err := h.chatService.ListChats(c.Context(), projectID, userID)
+	chats, err := h.chatService.ListChats(r.Context(), projectID, userID)
 	if err != nil {
-		return handleError(c, err)
+		handleError(w, err)
+		return
 	}
 
-	return c.JSON(chats)
+	httputil.RespondJSON(w, http.StatusOK, chats)
 }
 
 // GetChat retrieves a single chat by ID
-// GET /api/chats/:id
-func (h *ChatHandler) GetChat(c *fiber.Ctx) error {
+// GET /api/chats/{id}
+func (h *ChatHandler) GetChat(w http.ResponseWriter, r *http.Request) {
 	// Extract user ID from context
-	userID, err := getUserID(c)
+	userID, err := getUserID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
 	// Get chat ID from route param
-	chatID := c.Params("id")
+	chatID := r.PathValue("id")
 	if chatID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Chat ID is required")
+		httputil.RespondError(w, http.StatusBadRequest, "Chat ID is required")
+		return
 	}
 
 	// Call service
-	chat, err := h.chatService.GetChat(c.Context(), chatID, userID)
+	chat, err := h.chatService.GetChat(r.Context(), chatID, userID)
 	if err != nil {
-		return handleError(c, err)
+		handleError(w, err)
+		return
 	}
 
-	return c.JSON(chat)
+	httputil.RespondJSON(w, http.StatusOK, chat)
 }
 
 // UpdateChat updates a chat's title
-// PATCH /api/chats/:id
-func (h *ChatHandler) UpdateChat(c *fiber.Ctx) error {
+// PATCH /api/chats/{id}
+func (h *ChatHandler) UpdateChat(w http.ResponseWriter, r *http.Request) {
 	// Extract user ID from context
-	userID, err := getUserID(c)
+	userID, err := getUserID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
 	// Get chat ID from route param
-	chatID := c.Params("id")
+	chatID := r.PathValue("id")
 	if chatID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Chat ID is required")
+		httputil.RespondError(w, http.StatusBadRequest, "Chat ID is required")
+		return
 	}
 
 	// Parse request
 	var req llmSvc.UpdateChatRequest
-	if err := c.BodyParser(&req); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	if err := httputil.ParseJSON(w, r, &req); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
+		return
 	}
 
 	// Call service
-	chat, err := h.chatService.UpdateChat(c.Context(), chatID, userID, &req)
+	chat, err := h.chatService.UpdateChat(r.Context(), chatID, userID, &req)
 	if err != nil {
-		return handleError(c, err)
+		handleError(w, err)
+		return
 	}
 
-	return c.JSON(chat)
+	httputil.RespondJSON(w, http.StatusOK, chat)
 }
 
 // DeleteChat soft-deletes a chat
-// DELETE /api/chats/:id
-func (h *ChatHandler) DeleteChat(c *fiber.Ctx) error {
+// DELETE /api/chats/{id}
+func (h *ChatHandler) DeleteChat(w http.ResponseWriter, r *http.Request) {
 	// Extract user ID from context
-	userID, err := getUserID(c)
+	userID, err := getUserID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
 	// Get chat ID from route param
-	chatID := c.Params("id")
+	chatID := r.PathValue("id")
 	if chatID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Chat ID is required")
+		httputil.RespondError(w, http.StatusBadRequest, "Chat ID is required")
+		return
 	}
 
 	// Call service
-	deletedChat, err := h.chatService.DeleteChat(c.Context(), chatID, userID)
+	deletedChat, err := h.chatService.DeleteChat(r.Context(), chatID, userID)
 	if err != nil {
-		return handleError(c, err)
+		handleError(w, err)
+		return
 	}
 
-	return c.Status(fiber.StatusOK).JSON(deletedChat)
+	httputil.RespondJSON(w, http.StatusOK, deletedChat)
 }
 
 // CreateTurn creates a new turn (user message)
-// POST /api/chats/:id/turns
-func (h *ChatHandler) CreateTurn(c *fiber.Ctx) error {
+// POST /api/chats/{id}/turns
+func (h *ChatHandler) CreateTurn(w http.ResponseWriter, r *http.Request) {
 	// Get chat ID from route param
-	chatID := c.Params("id")
+	chatID := r.PathValue("id")
 	if chatID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Chat ID is required")
+		httputil.RespondError(w, http.StatusBadRequest, "Chat ID is required")
+		return
 	}
 
 	// Extract user ID from context
-	userID, err := getUserID(c)
+	userID, err := getUserID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
 	// Parse request
 	var req llmSvc.CreateTurnRequest
-	if err := c.BodyParser(&req); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	if err := httputil.ParseJSON(w, r, &req); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
+		return
 	}
 	req.ChatID = chatID
 	req.UserID = userID
 
 	// Call service
-	response, err := h.streamingService.CreateTurn(c.Context(), &req)
+	response, err := h.streamingService.CreateTurn(r.Context(), &req)
 	if err != nil {
-		return handleError(c, err)
+		handleError(w, err)
+		return
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(response)
+	httputil.RespondJSON(w, http.StatusCreated, response)
 }
 
 // GetTurnPath retrieves the conversation path from a turn to root
-// GET /api/turns/:id/path
-func (h *ChatHandler) GetTurnPath(c *fiber.Ctx) error {
+// GET /api/turns/{id}/path
+func (h *ChatHandler) GetTurnPath(w http.ResponseWriter, r *http.Request) {
 	// Get turn ID from route param
-	turnID := c.Params("id")
+	turnID := r.PathValue("id")
 	if turnID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Turn ID is required")
+		httputil.RespondError(w, http.StatusBadRequest, "Turn ID is required")
+		return
 	}
 
 	// Call service
-	turns, err := h.conversationService.GetTurnPath(c.Context(), turnID)
+	turns, err := h.conversationService.GetTurnPath(r.Context(), turnID)
 	if err != nil {
-		return handleError(c, err)
+		handleError(w, err)
+		return
 	}
 
-	return c.JSON(turns)
+	httputil.RespondJSON(w, http.StatusOK, turns)
 }
 
 // GetTurnSiblings retrieves all sibling turns (including self) for version browsing
-// GET /api/turns/:id/siblings
-func (h *ChatHandler) GetTurnSiblings(c *fiber.Ctx) error {
+// GET /api/turns/{id}/siblings
+func (h *ChatHandler) GetTurnSiblings(w http.ResponseWriter, r *http.Request) {
 	// Get turn ID from route param
-	turnID := c.Params("id")
+	turnID := r.PathValue("id")
 	if turnID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Turn ID is required")
+		httputil.RespondError(w, http.StatusBadRequest, "Turn ID is required")
+		return
 	}
 
 	// Call service
-	siblings, err := h.conversationService.GetTurnSiblings(c.Context(), turnID)
+	siblings, err := h.conversationService.GetTurnSiblings(r.Context(), turnID)
 	if err != nil {
-		return handleError(c, err)
+		handleError(w, err)
+		return
 	}
 
-	return c.JSON(siblings)
+	httputil.RespondJSON(w, http.StatusOK, siblings)
 }
 
 // GetPaginatedTurns retrieves turns and blocks in paginated fashion
-// GET /api/chats/:id/turns?from_turn_id=X&limit=100&direction=both
-func (h *ChatHandler) GetPaginatedTurns(c *fiber.Ctx) error {
+// GET /api/chats/{id}/turns?from_turn_id=X&limit=100&direction=both
+func (h *ChatHandler) GetPaginatedTurns(w http.ResponseWriter, r *http.Request) {
 	// Extract user ID from context
-	userID, err := getUserID(c)
+	userID, err := getUserID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
 	// Get chat ID from route param
-	chatID := c.Params("id")
+	chatID := r.PathValue("id")
 	if chatID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Chat ID is required")
+		httputil.RespondError(w, http.StatusBadRequest, "Chat ID is required")
+		return
 	}
 
 	// Parse query parameters
-	fromTurnIDStr := c.Query("from_turn_id")
+	fromTurnIDStr := r.URL.Query().Get("from_turn_id")
 	var fromTurnID *string
 	if fromTurnIDStr != "" {
 		fromTurnID = &fromTurnIDStr
 	}
 
 	// Parse limit (default 100)
-	limit := c.QueryInt("limit", 100)
-
-	// Parse direction (default "both")
-	direction := c.Query("direction", "both")
-
-	// Call service
-	response, err := h.conversationService.GetPaginatedTurns(c.Context(), chatID, userID, fromTurnID, limit, direction)
-	if err != nil {
-		return handleError(c, err)
+	limit := 100
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
+			limit = parsed
+		}
 	}
 
-	return c.JSON(response)
+	// Parse direction (default "both")
+	direction := r.URL.Query().Get("direction")
+	if direction == "" {
+		direction = "both"
+	}
+
+	// Call service
+	response, err := h.conversationService.GetPaginatedTurns(r.Context(), chatID, userID, fromTurnID, limit, direction)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	httputil.RespondJSON(w, http.StatusOK, response)
 }
 
 // GetTurnBlocks retrieves all completed turn blocks for a turn
-// GET /api/turns/:id/blocks
+// GET /api/turns/{id}/blocks
 // Used for reconnection - client fetches completed blocks before connecting to SSE stream
-func (h *ChatHandler) GetTurnBlocks(c *fiber.Ctx) error {
+func (h *ChatHandler) GetTurnBlocks(w http.ResponseWriter, r *http.Request) {
 	// Get turn ID from route param
-	turnID := c.Params("id")
+	turnID := r.PathValue("id")
 	if turnID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Turn ID is required")
+		httputil.RespondError(w, http.StatusBadRequest, "Turn ID is required")
+		return
 	}
 
 	// Validate turn ID format
 	if _, err := uuid.Parse(turnID); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid turn ID format")
+		httputil.RespondError(w, http.StatusBadRequest, "Invalid turn ID format")
+		return
 	}
 
 	// Get blocks from repository
-	blocks, err := h.turnRepo.GetTurnBlocks(c.Context(), turnID)
+	blocks, err := h.turnRepo.GetTurnBlocks(r.Context(), turnID)
 	if err != nil {
-		return handleError(c, err)
+		handleError(w, err)
+		return
 	}
 
-	return c.JSON(blocks)
+	httputil.RespondJSON(w, http.StatusOK, blocks)
 }
 
 // InterruptTurn cancels a streaming turn
-// POST /api/turns/:id/interrupt
-func (h *ChatHandler) InterruptTurn(c *fiber.Ctx) error {
+// POST /api/turns/{id}/interrupt
+func (h *ChatHandler) InterruptTurn(w http.ResponseWriter, r *http.Request) {
 	// Get turn ID from route param
-	turnID := c.Params("id")
+	turnID := r.PathValue("id")
 	if turnID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Turn ID is required")
+		httputil.RespondError(w, http.StatusBadRequest, "Turn ID is required")
+		return
 	}
 
 	// Validate turn ID format
 	if _, err := uuid.Parse(turnID); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid turn ID format")
+		httputil.RespondError(w, http.StatusBadRequest, "Invalid turn ID format")
+		return
 	}
 
 	// Get stream from registry
 	stream := h.registry.Get(turnID)
 	if stream == nil {
-		return fiber.NewError(fiber.StatusNotFound, "Turn is not currently streaming")
+		httputil.RespondError(w, http.StatusNotFound, "Turn is not currently streaming")
+		return
 	}
 
 	// Cancel the stream
 	stream.Cancel()
 
 	// Update turn status in database (executor will do this, but do it here for immediate feedback)
-	if err := h.turnRepo.UpdateTurnStatus(c.Context(), turnID, "cancelled", nil); err != nil {
+	if err := h.turnRepo.UpdateTurnStatus(r.Context(), turnID, "cancelled", nil); err != nil {
 		// Log error but don't fail - executor will update status
 		h.logger.Warn("failed to update turn status on interrupt", "turn_id", turnID, "error", err)
 	}
 
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+	httputil.RespondJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"turn_id": turnID,
 		"status":  "cancelled",
@@ -344,7 +387,7 @@ func (h *ChatHandler) InterruptTurn(c *fiber.Ctx) error {
 }
 
 // StreamTurn streams turn deltas via Server-Sent Events (SSE)
-// GET /api/turns/:id/stream
-func (h *ChatHandler) StreamTurn(c *fiber.Ctx) error {
-	return NewSSEHandler(h.registry, h.logger).StreamTurn(c)
+// GET /api/turns/{id}/stream
+func (h *ChatHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
+	NewSSEHandler(h.registry, h.logger).StreamTurn(w, r)
 }

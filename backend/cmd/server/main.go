@@ -4,8 +4,8 @@ import (
 	"context"
 	"log"
 	"log/slog"
+	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"meridian/internal/config"
@@ -17,10 +17,8 @@ import (
 	serviceDocsys "meridian/internal/service/docsystem"
 	serviceLLM "meridian/internal/service/llm"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/joho/godotenv"
+	"github.com/rs/cors"
 )
 
 func main() {
@@ -136,106 +134,94 @@ func main() {
 
 	logger.Info("services initialized")
 
-	// Create Fiber app with custom error handler and timeouts
-	app := fiber.New(fiber.Config{
-		ErrorHandler: middleware.ErrorHandler,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 0, // Disabled to allow long-lived SSE streams
-		IdleTimeout:  60 * time.Second,
-	})
-
-	// Middleware
-	app.Use(recover.New())
-
-	// CORS configuration
-	app.Use(cors.New(cors.Config{
-		AllowOrigins:     cfg.CORSOrigins,
-		AllowMethods:     strings.Join([]string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}, ","),
-		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
-		AllowCredentials: true,
-	}))
-
-	// Auth middleware (stub for now) - injects userID into context
-	app.Use(middleware.AuthMiddleware(cfg.TestUserID))
-
-	// Project middleware - injects projectID into context
-	app.Use(func(c *fiber.Ctx) error {
-		c.Locals("projectID", cfg.TestProjectID)
-		return c.Next()
-	})
-
-	// Routes
-	api := app.Group("/api")
+	// Create HTTP router (Go 1.22+ enhanced patterns)
+	mux := http.NewServeMux()
 
 	// Health check
-	app.Get("/health", newDocHandler.HealthCheck)
+	mux.HandleFunc("GET /health", newDocHandler.HealthCheck)
 
 	// Project routes
-	api.Get("/projects", projectHandler.ListProjects)
-	api.Post("/projects", projectHandler.CreateProject)
-	api.Get("/projects/:id", projectHandler.GetProject)
-	api.Patch("/projects/:id", projectHandler.UpdateProject)
-	api.Delete("/projects/:id", projectHandler.DeleteProject)
-
-	// Project-scoped routes (provide explicit :id paths expected by the frontend)
-	projectScoped := api.Group("/projects/:id", func(c *fiber.Ctx) error {
-		// Override projectID from route param for scoped endpoints
-		if id := c.Params("id"); id != "" {
-			c.Locals("projectID", id)
-		}
-		return c.Next()
-	})
+	mux.HandleFunc("GET /api/projects", projectHandler.ListProjects)
+	mux.HandleFunc("POST /api/projects", projectHandler.CreateProject)
+	mux.HandleFunc("GET /api/projects/{id}", projectHandler.GetProject)
+	mux.HandleFunc("PATCH /api/projects/{id}", projectHandler.UpdateProject)
+	mux.HandleFunc("DELETE /api/projects/{id}", projectHandler.DeleteProject)
 
 	// Project tree endpoint
-	projectScoped.Get("/tree", newTreeHandler.GetTree)
+	mux.HandleFunc("GET /api/projects/{id}/tree", newTreeHandler.GetTree)
 
 	// Project-scoped document creation alias
-	projectScoped.Post("/documents", newDocHandler.CreateDocument)
+	mux.HandleFunc("POST /api/projects/{id}/documents", newDocHandler.CreateDocument)
 
-	// Folder routes (NEW - using clean architecture)
-	api.Post("/folders", newFolderHandler.CreateFolder)
-	api.Get("/folders/:id", newFolderHandler.GetFolder)
-	api.Patch("/folders/:id", newFolderHandler.UpdateFolder)
-	api.Delete("/folders/:id", newFolderHandler.DeleteFolder)
+	// Folder routes
+	mux.HandleFunc("POST /api/folders", newFolderHandler.CreateFolder)
+	mux.HandleFunc("GET /api/folders/{id}", newFolderHandler.GetFolder)
+	mux.HandleFunc("PATCH /api/folders/{id}", newFolderHandler.UpdateFolder)
+	mux.HandleFunc("DELETE /api/folders/{id}", newFolderHandler.DeleteFolder)
 
-	// Document routes (NEW - using clean architecture)
-	api.Post("/documents", newDocHandler.CreateDocument)
-	api.Get("/documents/:id", newDocHandler.GetDocument)
-	api.Patch("/documents/:id", newDocHandler.UpdateDocument)
-	api.Delete("/documents/:id", newDocHandler.DeleteDocument)
+	// Document routes
+	mux.HandleFunc("POST /api/documents", newDocHandler.CreateDocument)
+	mux.HandleFunc("GET /api/documents/{id}", newDocHandler.GetDocument)
+	mux.HandleFunc("PATCH /api/documents/{id}", newDocHandler.UpdateDocument)
+	mux.HandleFunc("DELETE /api/documents/{id}", newDocHandler.DeleteDocument)
 
 	// Import routes
-	api.Post("/import", importHandler.Merge)
-	api.Post("/import/replace", importHandler.Replace)
+	mux.HandleFunc("POST /api/import", importHandler.Merge)
+	mux.HandleFunc("POST /api/import/replace", importHandler.Replace)
 
 	// Chat routes
-	api.Post("/chats", chatHandler.CreateChat)
-	api.Get("/chats", chatHandler.ListChats)
-	api.Get("/chats/:id", chatHandler.GetChat)
-	api.Patch("/chats/:id", chatHandler.UpdateChat)
-	api.Delete("/chats/:id", chatHandler.DeleteChat)
-	api.Get("/chats/:id/turns", chatHandler.GetPaginatedTurns)
-	api.Post("/chats/:id/turns", chatHandler.CreateTurn)
-	api.Get("/turns/:id/path", chatHandler.GetTurnPath)
-	api.Get("/turns/:id/siblings", chatHandler.GetTurnSiblings)
+	mux.HandleFunc("POST /api/chats", chatHandler.CreateChat)
+	mux.HandleFunc("GET /api/chats", chatHandler.ListChats)
+	mux.HandleFunc("GET /api/chats/{id}", chatHandler.GetChat)
+	mux.HandleFunc("PATCH /api/chats/{id}", chatHandler.UpdateChat)
+	mux.HandleFunc("DELETE /api/chats/{id}", chatHandler.DeleteChat)
+	mux.HandleFunc("GET /api/chats/{id}/turns", chatHandler.GetPaginatedTurns)
+	mux.HandleFunc("POST /api/chats/{id}/turns", chatHandler.CreateTurn)
+	mux.HandleFunc("GET /api/turns/{id}/path", chatHandler.GetTurnPath)
+	mux.HandleFunc("GET /api/turns/{id}/siblings", chatHandler.GetTurnSiblings)
 
 	// Streaming routes
-	api.Get("/turns/:id/stream", chatHandler.StreamTurn)      // SSE streaming endpoint
-	api.Get("/turns/:id/blocks", chatHandler.GetTurnBlocks)   // Get completed blocks (for reconnection)
-	api.Post("/turns/:id/interrupt", chatHandler.InterruptTurn) // Cancel streaming turn
+	mux.HandleFunc("GET /api/turns/{id}/stream", chatHandler.StreamTurn)        // SSE streaming endpoint
+	mux.HandleFunc("GET /api/turns/{id}/blocks", chatHandler.GetTurnBlocks)     // Get completed blocks
+	mux.HandleFunc("POST /api/turns/{id}/interrupt", chatHandler.InterruptTurn) // Cancel streaming turn
 
 	// Debug routes (only in dev environment)
 	if cfg.Environment == "dev" && chatDebugHandler != nil {
-		debug := app.Group("/debug/api")
-		debug.Post("/chats/:id/turns", chatDebugHandler.CreateAssistantTurn)
-		debug.Get("/chats/:id/tree", chatDebugHandler.GetChatTree)
+		mux.HandleFunc("POST /debug/api/chats/{id}/turns", chatDebugHandler.CreateAssistantTurn)
+		mux.HandleFunc("GET /debug/api/chats/{id}/tree", chatDebugHandler.GetChatTree)
 		logger.Warn("Debug route registered: POST /debug/api/chats/:id/turns (assistant turn creation)")
 		logger.Warn("Debug route registered: GET /debug/api/chats/:id/tree (full conversation tree - use pagination in production)")
 	}
 
+	// Build middleware chain
+	var handler http.Handler = mux
+
+	// Apply middleware in reverse order (they wrap each other)
+	handler = middleware.ProjectMiddleware(cfg.TestProjectID)(handler)
+	handler = middleware.AuthMiddleware(cfg.TestUserID)(handler)
+	handler = middleware.Recovery(logger)(handler)
+
+	// CORS
+	corsHandler := cors.New(cors.Options{
+		AllowedOrigins:   []string{cfg.CORSOrigins}, // Will be split if comma-separated
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		AllowCredentials: true,
+	})
+	handler = corsHandler.Handler(handler)
+
+	// Create HTTP server
+	server := &http.Server{
+		Addr:         ":" + cfg.Port,
+		Handler:      handler,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 0, // Disabled to allow long-lived SSE streams
+		IdleTimeout:  60 * time.Second,
+	}
+
 	// Start server
-	log.Printf("Server starting on port %s", cfg.Port)
-	if err := app.Listen(":" + cfg.Port); err != nil {
+	logger.Info("server starting", "port", cfg.Port)
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }

@@ -33,8 +33,8 @@ type TurnStartEvent struct {
 
 // BlockStartEvent signals that a new block has started
 type BlockStartEvent struct {
-	BlockIndex int    `json:"block_index"` // 0-indexed sequence
-	BlockType  string `json:"block_type"`  // "text", "thinking", "tool_use"
+	BlockIndex int     `json:"block_index"`           // 0-indexed sequence
+	BlockType  *string `json:"block_type,omitempty"` // "text", "thinking", "tool_use" (optional)
 }
 
 // BlockDeltaEvent contains incremental content for the current block
@@ -97,7 +97,7 @@ func NewTurnStartEvent(turnID, model string) (string, error) {
 }
 
 // NewBlockStartEvent creates a block_start SSE event
-func NewBlockStartEvent(blockIndex int, blockType string) (string, error) {
+func NewBlockStartEvent(blockIndex int, blockType *string) (string, error) {
 	return FormatSSE(SSEEventBlockStart, BlockStartEvent{
 		BlockIndex: blockIndex,
 		BlockType:  blockType,

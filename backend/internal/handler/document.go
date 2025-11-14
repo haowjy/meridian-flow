@@ -3,12 +3,13 @@ package handler
 import (
 	"errors"
 	"log/slog"
+	"net/http"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
 	"meridian/internal/domain"
 	docsystem "meridian/internal/domain/models/docsystem"
 	docsysSvc "meridian/internal/domain/services/docsystem"
+	"meridian/internal/httputil"
 )
 
 // DocumentHandler handles document HTTP requests
@@ -28,112 +29,125 @@ func NewDocumentHandler(docService docsysSvc.DocumentService, logger *slog.Logge
 // CreateDocument creates a new document
 // POST /api/documents
 // Returns 201 if created, 409 with existing document if duplicate
-func (h *DocumentHandler) CreateDocument(c *fiber.Ctx) error {
+func (h *DocumentHandler) CreateDocument(w http.ResponseWriter, r *http.Request) {
 	// Extract project ID from context
-	projectID, err := getProjectID(c)
+	projectID, err := getProjectID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
 	// Get userID from context (set by auth middleware)
-	userID := c.Locals("userID").(string)
+	userID := httputil.GetUserID(r)
 
 	// Parse request
 	var req docsysSvc.CreateDocumentRequest
-	if err := c.BodyParser(&req); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	if err := httputil.ParseJSON(w, r, &req); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
+		return
 	}
 	req.ProjectID = projectID
 	req.UserID = userID
 
 	// Call service (all business logic is here)
-	doc, err := h.docService.CreateDocument(c.Context(), &req)
+	doc, err := h.docService.CreateDocument(r.Context(), &req)
 	if err != nil {
 		// Handle conflict by fetching and returning existing document with 409
-		return HandleCreateConflict(c, err, func() (*docsystem.Document, error) {
+		HandleCreateConflict(w, err, func() (*docsystem.Document, error) {
 			// Get ConflictError to extract resource ID
 			var conflictErr *domain.ConflictError
 			if errors.As(err, &conflictErr) {
-				return h.docService.GetDocument(c.Context(), conflictErr.ResourceID, projectID)
+				return h.docService.GetDocument(r.Context(), conflictErr.ResourceID, projectID)
 			}
 			return nil, err
 		})
+		return
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(doc)
+	httputil.RespondJSON(w, http.StatusCreated, doc)
 }
 
 // GetDocument retrieves a document by ID
-// GET /api/documents/:id
-func (h *DocumentHandler) GetDocument(c *fiber.Ctx) error {
-	projectID, err := getProjectID(c)
+// GET /api/documents/{id}
+func (h *DocumentHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
+	projectID, err := getProjectID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
-	id := c.Params("id")
+	id := r.PathValue("id")
 	if id == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Document ID is required")
+		httputil.RespondError(w, http.StatusBadRequest, "Document ID is required")
+		return
 	}
 
-	doc, err := h.docService.GetDocument(c.Context(), id, projectID)
+	doc, err := h.docService.GetDocument(r.Context(), id, projectID)
 	if err != nil {
-		return handleError(c, err)
+		handleError(w, err)
+		return
 	}
 
-	return c.JSON(doc)
+	httputil.RespondJSON(w, http.StatusOK, doc)
 }
 
 // UpdateDocument updates a document
-// PUT /api/documents/:id
-func (h *DocumentHandler) UpdateDocument(c *fiber.Ctx) error {
-	projectID, err := getProjectID(c)
+// PATCH /api/documents/{id}
+func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request) {
+	projectID, err := getProjectID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
-	id := c.Params("id")
+	id := r.PathValue("id")
 	if id == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Document ID is required")
+		httputil.RespondError(w, http.StatusBadRequest, "Document ID is required")
+		return
 	}
 
 	var req docsysSvc.UpdateDocumentRequest
-	if err := c.BodyParser(&req); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	if err := httputil.ParseJSON(w, r, &req); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
+		return
 	}
 	req.ProjectID = projectID
 
-	doc, err := h.docService.UpdateDocument(c.Context(), id, &req)
+	doc, err := h.docService.UpdateDocument(r.Context(), id, &req)
 	if err != nil {
-		return handleError(c, err)
+		handleError(w, err)
+		return
 	}
 
-	return c.JSON(doc)
+	httputil.RespondJSON(w, http.StatusOK, doc)
 }
 
 // DeleteDocument deletes a document
-// DELETE /api/documents/:id
-func (h *DocumentHandler) DeleteDocument(c *fiber.Ctx) error {
-	projectID, err := getProjectID(c)
+// DELETE /api/documents/{id}
+func (h *DocumentHandler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
+	projectID, err := getProjectID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
-	id := c.Params("id")
+	id := r.PathValue("id")
 	if id == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Document ID is required")
+		httputil.RespondError(w, http.StatusBadRequest, "Document ID is required")
+		return
 	}
 
-	if err := h.docService.DeleteDocument(c.Context(), id, projectID); err != nil {
-		return handleError(c, err)
+	if err := h.docService.DeleteDocument(r.Context(), id, projectID); err != nil {
+		handleError(w, err)
+		return
 	}
 
-	return c.SendStatus(fiber.StatusNoContent)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // HealthCheck is a simple health check endpoint
-func (h *DocumentHandler) HealthCheck(c *fiber.Ctx) error {
-	return c.JSON(fiber.Map{
+func (h *DocumentHandler) HealthCheck(w http.ResponseWriter, r *http.Request) {
+	httputil.RespondJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "ok",
 		"time":   time.Now(),
 	})

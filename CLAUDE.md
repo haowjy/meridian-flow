@@ -74,6 +74,7 @@ Then, these principles can also help you make architectural decisions and other 
 
 - **Product/high-level**: `_docs/high-level/` - Product vision, MVP specs, user stories
 - **Technical details**: `_docs/technical/backend/` - Architecture decisions, setup guides
+  - **Streaming/SSE**: `_docs/technical/backend/streaming/` - Real-time LLM responses, block types
 - **Documentation structure**: `_docs/README.md` - How docs are organized
 
 **Always check `_docs/technical/` first before creating new documentation.**

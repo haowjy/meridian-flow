@@ -1,7 +1,7 @@
 # Streaming Architecture: LLM Response Streaming & Turn Block Accumulation
 
-**Status:** Architecture Design
-**Last Updated:** 2025-11-09
+**Status:** ✅ Implemented and Working
+**Last Updated:** 2025-01-13
 
 ---
 
@@ -1124,9 +1124,26 @@ func (e *TurnExecutor) StreamWithTimeout() error {
 
 ---
 
-**Next Steps:**
-- Implement `TurnBlockDelta` domain model
-- Create SSE handler infrastructure
-- Add streaming support to TurnExecutor
-- Implement reconnection logic
-- Add provider transformation layers
+## Race Condition Fixes
+
+**Status:** ✅ Fixed (2025-01-13)
+
+Three critical race conditions were discovered and fixed:
+
+1. **Event ID jumps** - Removed manual event ID calculation, rely on library's DEBUG mode
+2. **Buffer clear race** - Added catchup coordination mutex for atomic persist-and-clear
+3. **Catchup content** - Send full block content instead of markers (bandwidth efficient)
+
+**User verification:** "IT WORKS CATCHUP WORKS TOO!"
+
+**Details:** See [race-conditions.md](../streaming/race-conditions.md)
+
+---
+
+**Implementation Status:**
+- ~~Implement `TurnBlockDelta` domain model~~ ✅ Done
+- ~~Create SSE handler infrastructure~~ ✅ Done
+- ~~Add streaming support to TurnExecutor~~ ✅ Done
+- ~~Implement reconnection logic~~ ✅ Done
+- ~~Add provider transformation layers~~ ✅ Done
+- ~~Fix race conditions~~ ✅ Done

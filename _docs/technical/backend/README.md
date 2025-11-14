@@ -48,7 +48,7 @@ PostgreSQL schema, connections, and data management:
 
 ## Chat System
 
-**Status:** ✅ Core features complete, streaming in development
+**Status:** ✅ Complete (multi-turn, streaming, catchup working)
 
 Multi-turn LLM conversations with SOLID-compliant service architecture:
 
@@ -62,13 +62,15 @@ Multi-turn LLM conversations with SOLID-compliant service architecture:
 
 ## Streaming System
 
-**Status:** 🚧 In Development
+**Status:** ✅ Working (catchup, multi-block, race conditions fixed)
 
 Real-time LLM response delivery via Server-Sent Events:
 
-- Overview: [streaming/README.md](streaming/README.md)
+- **Start here:** [streaming/README.md](streaming/README.md) ⭐
 - Architecture: [architecture/streaming-architecture.md](architecture/streaming-architecture.md)
+- Block types: [streaming/block-types-reference.md](streaming/block-types-reference.md)
 - API endpoints: [streaming/api-endpoints.md](streaming/api-endpoints.md)
+- Race conditions: [streaming/race-conditions.md](streaming/race-conditions.md)
 - Tool execution: [streaming/tool-execution.md](streaming/tool-execution.md)
 - Edge cases: [streaming/edge-cases.md](streaming/edge-cases.md)
 

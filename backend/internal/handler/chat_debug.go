@@ -4,10 +4,11 @@ package handler
 // These handlers are always compiled but only registered when ENVIRONMENT=dev
 
 import (
+	"net/http"
+
 	"meridian/internal/config"
 	llmSvc "meridian/internal/domain/services/llm"
-
-	"github.com/gofiber/fiber/v2"
+	"meridian/internal/httputil"
 )
 
 // ChatDebugHandler provides debug-only endpoints for testing assistant turn creation
@@ -33,7 +34,7 @@ func NewChatDebugHandler(
 }
 
 // CreateAssistantTurn creates an assistant turn (DEBUG ONLY)
-// POST /debug/api/chats/:id/turns
+// POST /debug/api/chats/{id}/turns
 //
 // WARNING: This endpoint bypasses validation and should NEVER be used in production.
 // It exists solely for testing purposes during Phase 1 development.
@@ -48,15 +49,16 @@ func NewChatDebugHandler(
 //	  "role": "assistant",      // must be "assistant"
 //	  "turn_blocks": [...]
 //	}
-func (h *ChatDebugHandler) CreateAssistantTurn(c *fiber.Ctx) error {
+func (h *ChatDebugHandler) CreateAssistantTurn(w http.ResponseWriter, r *http.Request) {
 	// Get chat ID from route param
-	chatID := c.Params("id")
+	chatID := r.PathValue("id")
 	if chatID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Chat ID is required")
+		httputil.RespondError(w, http.StatusBadRequest, "Chat ID is required")
+		return
 	}
 
 	// Get userID from context (set by auth middleware)
-	userID := c.Locals("userID").(string)
+	userID := httputil.GetUserID(r)
 
 	// Parse request
 	var req struct {
@@ -64,13 +66,15 @@ func (h *ChatDebugHandler) CreateAssistantTurn(c *fiber.Ctx) error {
 		Role          string                     `json:"role"`
 		TurnBlocks []llmSvc.TurnBlockInput `json:"turn_blocks"`
 	}
-	if err := c.BodyParser(&req); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	if err := httputil.ParseJSON(w, r, &req); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
+		return
 	}
 
 	// Validate role is assistant
 	if req.Role != "assistant" {
-		return fiber.NewError(fiber.StatusBadRequest, "Debug endpoint only accepts role='assistant'")
+		httputil.RespondError(w, http.StatusBadRequest, "Debug endpoint only accepts role='assistant'")
+		return
 	}
 
 	// Create assistant turn via debug service method
@@ -78,19 +82,20 @@ func (h *ChatDebugHandler) CreateAssistantTurn(c *fiber.Ctx) error {
 	if model == "" {
 		model = "claude-haiku-4-5-20251001" // Fallback if config not set
 	}
-	turn, err := h.streamingService.CreateAssistantTurnDebug(c.Context(), chatID, userID, req.PrevTurnID, req.TurnBlocks, model)
+	turn, err := h.streamingService.CreateAssistantTurnDebug(r.Context(), chatID, userID, req.PrevTurnID, req.TurnBlocks, model)
 	if err != nil {
-		return handleError(c, err)
+		handleError(w, err)
+		return
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(turn)
+	httputil.RespondJSON(w, http.StatusCreated, turn)
 }
 
 // GetChatTree retrieves the complete conversation tree structure (DEBUG ONLY)
-// GET /debug/api/chats/:id/tree
+// GET /debug/api/chats/{id}/tree
 //
 // WARNING: This endpoint is DEBUG ONLY and should NEVER be used in production.
-// Production code should use the pagination endpoint (/api/chats/:id/turns) which
+// Production code should use the pagination endpoint (/api/chats/{id}/turns) which
 // returns turns with nested blocks and sibling_ids for efficient branch discovery.
 //
 // This endpoint exists solely for debugging and visualizing the full conversation tree
@@ -103,24 +108,27 @@ func (h *ChatDebugHandler) CreateAssistantTurn(c *fiber.Ctx) error {
 //	  "turns": [{"id": "...", "prev_turn_id": "..."}],
 //	  "updated_at": "2024-01-01T00:00:00Z"
 //	}
-func (h *ChatDebugHandler) GetChatTree(c *fiber.Ctx) error {
+func (h *ChatDebugHandler) GetChatTree(w http.ResponseWriter, r *http.Request) {
 	// Extract user ID from context
-	userID, err := getUserID(c)
+	userID, err := getUserID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
 	// Get chat ID from route param
-	chatID := c.Params("id")
+	chatID := r.PathValue("id")
 	if chatID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Chat ID is required")
+		httputil.RespondError(w, http.StatusBadRequest, "Chat ID is required")
+		return
 	}
 
 	// Call service
-	tree, err := h.conversationService.GetChatTree(c.Context(), chatID, userID)
+	tree, err := h.conversationService.GetChatTree(r.Context(), chatID, userID)
 	if err != nil {
-		return handleError(c, err)
+		handleError(w, err)
+		return
 	}
 
-	return c.JSON(tree)
+	httputil.RespondJSON(w, http.StatusOK, tree)
 }

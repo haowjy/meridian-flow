@@ -92,7 +92,30 @@ TurnBlocks:    [Block 0: thinking]         [Block 1: text]  [Block 2: tool_use]
 
 ---
 
+**[Block Types Reference](block-types-reference.md)** (~300 lines)
+- Complete list of TurnBlock types (text, thinking, tool_use, etc.)
+- Delta type reference and accumulation mapping
+- SSE event type summary
+- Content structure schemas (JSONB)
+- Validation rules
+- Meridian extensions vs library types
+
+**When to read:** Implementing UI for blocks, parsing SSE events, understanding content schemas
+
+---
+
 ### Specialized Topics
+
+**[Race Conditions](race-conditions.md)** (~180 lines)
+- Buffer clear race condition & fix
+- Catchup coordination mutex
+- DEBUG mode for event IDs
+- Atomic PersistAndClear pattern
+- Sequence diagrams of fixes
+
+**When to read:** Understanding reliability fixes, debugging reconnection issues
+
+---
 
 **[Tool Execution](tool-execution.md)** (~180 lines)
 - Complete tool call cycle

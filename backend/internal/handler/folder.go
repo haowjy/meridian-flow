@@ -3,11 +3,12 @@ package handler
 import (
 	"errors"
 	"log/slog"
+	"net/http"
 
-	"github.com/gofiber/fiber/v2"
 	"meridian/internal/domain"
 	docsystem "meridian/internal/domain/models/docsystem"
 	docsysSvc "meridian/internal/domain/services/docsystem"
+	"meridian/internal/httputil"
 )
 
 // FolderHandler handles folder HTTP requests
@@ -27,127 +28,142 @@ func NewFolderHandler(folderService docsysSvc.FolderService, logger *slog.Logger
 // CreateFolder creates a new folder
 // POST /api/folders
 // Returns 201 if created, 409 with existing folder if duplicate
-func (h *FolderHandler) CreateFolder(c *fiber.Ctx) error {
+func (h *FolderHandler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 	// Extract project ID from context
-	projectID, err := getProjectID(c)
+	projectID, err := getProjectID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
 	// Get userID from context (set by auth middleware)
-	userID := c.Locals("userID").(string)
+	userID := httputil.GetUserID(r)
 
 	// Parse request
 	var req docsysSvc.CreateFolderRequest
-	if err := c.BodyParser(&req); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	if err := httputil.ParseJSON(w, r, &req); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
+		return
 	}
 	req.ProjectID = projectID
 	req.UserID = userID
 
 	// Call service
-	folder, err := h.folderService.CreateFolder(c.Context(), &req)
+	folder, err := h.folderService.CreateFolder(r.Context(), &req)
 	if err != nil {
 		// Handle conflict by fetching and returning existing folder with 409
-		return HandleCreateConflict(c, err, func() (*docsystem.Folder, error) {
+		HandleCreateConflict(w, err, func() (*docsystem.Folder, error) {
 			// Get ConflictError to extract resource ID
 			var conflictErr *domain.ConflictError
 			if errors.As(err, &conflictErr) {
-				return h.folderService.GetFolder(c.Context(), conflictErr.ResourceID, projectID)
+				return h.folderService.GetFolder(r.Context(), conflictErr.ResourceID, projectID)
 			}
 			return nil, err
 		})
+		return
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(folder)
+	httputil.RespondJSON(w, http.StatusCreated, folder)
 }
 
 // GetFolder retrieves a folder by ID with its computed path
-// GET /api/folders/:id
-func (h *FolderHandler) GetFolder(c *fiber.Ctx) error {
-	projectID, err := getProjectID(c)
+// GET /api/folders/{id}
+func (h *FolderHandler) GetFolder(w http.ResponseWriter, r *http.Request) {
+	projectID, err := getProjectID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
-	id := c.Params("id")
+	id := r.PathValue("id")
 	if id == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Folder ID is required")
+		httputil.RespondError(w, http.StatusBadRequest, "Folder ID is required")
+		return
 	}
 
-	folder, err := h.folderService.GetFolder(c.Context(), id, projectID)
+	folder, err := h.folderService.GetFolder(r.Context(), id, projectID)
 	if err != nil {
-		return handleError(c, err)
+		handleError(w, err)
+		return
 	}
 
-	return c.JSON(folder)
+	httputil.RespondJSON(w, http.StatusOK, folder)
 }
 
 // UpdateFolder updates a folder (rename or move)
-// PATCH /api/folders/:id
-func (h *FolderHandler) UpdateFolder(c *fiber.Ctx) error {
-	projectID, err := getProjectID(c)
+// PATCH /api/folders/{id}
+func (h *FolderHandler) UpdateFolder(w http.ResponseWriter, r *http.Request) {
+	projectID, err := getProjectID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
-	id := c.Params("id")
+	id := r.PathValue("id")
 	if id == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Folder ID is required")
+		httputil.RespondError(w, http.StatusBadRequest, "Folder ID is required")
+		return
 	}
 
 	var req docsysSvc.UpdateFolderRequest
-	if err := c.BodyParser(&req); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	if err := httputil.ParseJSON(w, r, &req); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
+		return
 	}
 	req.ProjectID = projectID
 
-	folder, err := h.folderService.UpdateFolder(c.Context(), id, &req)
+	folder, err := h.folderService.UpdateFolder(r.Context(), id, &req)
 	if err != nil {
-		return handleError(c, err)
+		handleError(w, err)
+		return
 	}
 
-	return c.JSON(folder)
+	httputil.RespondJSON(w, http.StatusOK, folder)
 }
 
 // DeleteFolder deletes a folder (must be empty)
-// DELETE /api/folders/:id
-func (h *FolderHandler) DeleteFolder(c *fiber.Ctx) error {
-	projectID, err := getProjectID(c)
+// DELETE /api/folders/{id}
+func (h *FolderHandler) DeleteFolder(w http.ResponseWriter, r *http.Request) {
+	projectID, err := getProjectID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
-	id := c.Params("id")
+	id := r.PathValue("id")
 	if id == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Folder ID is required")
+		httputil.RespondError(w, http.StatusBadRequest, "Folder ID is required")
+		return
 	}
 
-	if err := h.folderService.DeleteFolder(c.Context(), id, projectID); err != nil {
-		return handleError(c, err)
+	if err := h.folderService.DeleteFolder(r.Context(), id, projectID); err != nil {
+		handleError(w, err)
+		return
 	}
 
-	return c.SendStatus(fiber.StatusNoContent)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ListChildren lists all child folders and documents in a folder
-// GET /api/folders/:id/children (or /api/folders for root)
-func (h *FolderHandler) ListChildren(c *fiber.Ctx) error {
-	projectID, err := getProjectID(c)
+// GET /api/folders/{id}/children (or /api/folders for root)
+func (h *FolderHandler) ListChildren(w http.ResponseWriter, r *http.Request) {
+	projectID, err := getProjectID(r)
 	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
 
-	id := c.Params("id")
+	id := r.PathValue("id")
 	var folderID *string
 	if id != "" {
 		folderID = &id
 	}
 
-	contents, err := h.folderService.ListChildren(c.Context(), folderID, projectID)
+	contents, err := h.folderService.ListChildren(r.Context(), folderID, projectID)
 	if err != nil {
-		return handleError(c, err)
+		handleError(w, err)
+		return
 	}
 
-	return c.JSON(contents)
+	httputil.RespondJSON(w, http.StatusOK, contents)
 }

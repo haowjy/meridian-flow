@@ -16,15 +16,14 @@ import (
 // StreamExecutor wraps mstream.Stream and manages LLM streaming for a turn.
 // It adapts the existing TurnExecutor logic to work with mstream's architecture.
 type StreamExecutor struct {
-	stream        *mstream.Stream
-	turnID        string
-	model         string
-	turnRepo      llmRepo.TurnRepository
-	provider      domainllm.LLMProvider
-	accumulator   *BlockAccumulator
-	logger        *slog.Logger
-	req           *domainllm.GenerateRequest // Stored for WorkFunc to use
-	eventSequence int                        // Sequential event ID counter for Last-Event-ID tracking
+	stream      *mstream.Stream
+	turnID      string
+	model       string
+	turnRepo    llmRepo.TurnRepository
+	provider    domainllm.LLMProvider
+	accumulator *BlockAccumulator
+	logger      *slog.Logger
+	req         *domainllm.GenerateRequest // Stored for WorkFunc to use
 }
 
 // NewStreamExecutor creates a new mstream-based executor for a turn.
@@ -34,6 +33,7 @@ func NewStreamExecutor(
 	turnRepo llmRepo.TurnRepository,
 	provider domainllm.LLMProvider,
 	logger *slog.Logger,
+	debugMode bool,
 ) *StreamExecutor {
 	se := &StreamExecutor{
 		turnID:      turnID,
@@ -47,9 +47,19 @@ func NewStreamExecutor(
 	// Create catchup function for database-backed event replay
 	catchupFunc := buildCatchupFunc(turnRepo, logger)
 
-	// Create mstream.Stream with WorkFunc and catchup support
-	stream := mstream.NewStream(turnID, se.workFunc, mstream.WithCatchup(catchupFunc))
+	// Create mstream.Stream with WorkFunc, catchup support, and optional event IDs (DEBUG mode)
+	stream := mstream.NewStream(
+		turnID,
+		se.workFunc,
+		mstream.WithCatchup(catchupFunc),
+		mstream.WithEventIDs(debugMode), // Enable event IDs only in DEBUG mode
+	)
 	se.stream = stream
+
+	logger.Debug("stream executor created",
+		"turn_id", turnID,
+		"debug_mode", debugMode,
+	)
 
 	return se
 }
@@ -81,11 +91,8 @@ func (se *StreamExecutor) workFunc(ctx context.Context, send func(mstream.Event)
 		return fmt.Errorf("failed to update turn status: %w", err)
 	}
 
-	// Send turn_start event
-	se.sendEvent(send, llmModels.SSEEventTurnStart, llmModels.TurnStartEvent{
-		TurnID: se.turnID,
-		Model:  se.model,
-	})
+	// NOTE: turn_start (event-0) is emitted by catchup function, not here
+	// Live streaming starts with block events (event-1+)
 
 	// Start provider streaming
 	streamChan, err := se.provider.StreamResponse(ctx, req)
@@ -139,13 +146,87 @@ func (se *StreamExecutor) workFunc(ctx context.Context, send func(mstream.Event)
 func (se *StreamExecutor) processDelta(ctx context.Context, send func(mstream.Event), delta *llmModels.TurnBlockDelta, currentBlockIndex *int) error {
 	// Detect new block start
 	if delta.BlockIndex != *currentBlockIndex {
-		// Send block_start event
+		// FIRST: Flush old block (if one exists) and send block_stop BEFORE starting new block
+		if *currentBlockIndex >= 0 {
+			// Accumulate this delta (which triggers flush of old block when index changes)
+			flushedBlock, err := se.accumulator.ProcessDelta(ctx, delta)
+			if err != nil {
+				return fmt.Errorf("failed to process delta during block transition: %w", err)
+			}
+
+			// Send block_stop for the old block
+			if flushedBlock != nil {
+				se.sendEvent(send, llmModels.SSEEventBlockStop, llmModels.BlockStopEvent{
+					BlockIndex: flushedBlock.Sequence,
+				})
+
+				// Clear buffer atomically with catchup coordination
+				// Note: Block already persisted by accumulator, so persist function is no-op
+				if err := se.stream.PersistAndClear(func(events []mstream.Event) error {
+					return nil // Already persisted to DB by accumulator
+				}); err != nil {
+					se.logger.Error("failed to clear buffer atomically",
+						"error", err,
+						"block_index", flushedBlock.Sequence,
+					)
+				}
+
+				se.logger.Debug("cleared buffer after block flush",
+					"block_index", flushedBlock.Sequence,
+					"turn_id", se.turnID,
+				)
+			}
+		}
+
+		// THEN: Send block_start for new block
 		se.sendEvent(send, llmModels.SSEEventBlockStart, llmModels.BlockStartEvent{
 			BlockIndex: delta.BlockIndex,
 			BlockType:  delta.BlockType,
 		})
 
 		*currentBlockIndex = delta.BlockIndex
+
+		// Handle empty DeltaType (block start signal with no content)
+		if delta.DeltaType == "" {
+			se.logger.Debug("block start delta with no content, initializing accumulator",
+				"block_index", delta.BlockIndex,
+				"block_type", delta.BlockType,
+			)
+			// Don't send SSE event (no content), but accumulator must initialize the block
+			_, err := se.accumulator.ProcessDelta(ctx, delta)
+			if err != nil {
+				return fmt.Errorf("failed to initialize block %d: %w", delta.BlockIndex, err)
+			}
+			return nil
+		}
+
+		// Send the first block_delta for new block (has content)
+		se.sendEvent(send, llmModels.SSEEventBlockDelta, llmModels.BlockDeltaEvent{
+			BlockIndex:     delta.BlockIndex,
+			DeltaType:      delta.DeltaType,
+			TextDelta:      delta.TextDelta,
+			InputJSONDelta: delta.InputJSONDelta,
+		})
+
+		// Accumulate the delta
+		_, err := se.accumulator.ProcessDelta(ctx, delta)
+		if err != nil {
+			return fmt.Errorf("failed to accumulate delta: %w", err)
+		}
+
+		return nil
+	}
+
+	// Same block - continue accumulating
+	// Handle empty DeltaType (no content to broadcast, but still accumulate for state)
+	if delta.DeltaType == "" {
+		se.logger.Debug("delta with no content, accumulating state only",
+			"block_index", delta.BlockIndex,
+			"block_type", delta.BlockType,
+		)
+		// Don't send SSE event (no content), but accumulator needs to maintain state
+		_, err := se.accumulator.ProcessDelta(ctx, delta)
+		return err
 	}
 
 	// Send block_delta event
@@ -156,17 +237,10 @@ func (se *StreamExecutor) processDelta(ctx context.Context, send func(mstream.Ev
 		InputJSONDelta: delta.InputJSONDelta,
 	})
 
-	// Accumulate delta (may flush previous block to DB)
-	flushedBlock, err := se.accumulator.ProcessDelta(ctx, delta)
+	// Accumulate delta (no flush since same block)
+	_, err := se.accumulator.ProcessDelta(ctx, delta)
 	if err != nil {
 		return fmt.Errorf("failed to process delta: %w", err)
-	}
-
-	// If a block was flushed, send block_stop event
-	if flushedBlock != nil {
-		se.sendEvent(send, llmModels.SSEEventBlockStop, llmModels.BlockStopEvent{
-			BlockIndex: flushedBlock.Sequence,
-		})
 	}
 
 	return nil
@@ -236,7 +310,8 @@ func (se *StreamExecutor) handleError(ctx context.Context, send func(mstream.Eve
 	})
 }
 
-// sendEvent sends an event via mstream with sequential ID for Last-Event-ID tracking
+// sendEvent sends an event via mstream.
+// Event IDs are automatically generated by the library when DEBUG mode is enabled.
 func (se *StreamExecutor) sendEvent(send func(mstream.Event), eventType string, data interface{}) {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
@@ -244,13 +319,8 @@ func (se *StreamExecutor) sendEvent(send func(mstream.Event), eventType string, 
 		return
 	}
 
-	// Generate sequential event ID
-	eventID := fmt.Sprintf("event-%d", se.eventSequence)
-	se.eventSequence++
-
-	event := mstream.NewEvent(jsonData).
-		WithType(eventType).
-		WithID(eventID)
+	// Create event with type - library will add event ID if DEBUG mode enabled
+	event := mstream.NewEvent(jsonData).WithType(eventType)
 	send(event)
 }
 

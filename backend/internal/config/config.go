@@ -17,6 +17,8 @@ type Config struct {
 	// LLM Configuration
 	AnthropicAPIKey string
 	DefaultModel    string
+	// Debug flags
+	Debug bool // Enables DEBUG features like SSE event IDs
 }
 
 func Load() *Config {
@@ -36,7 +38,17 @@ func Load() *Config {
 		// LLM Configuration
 		AnthropicAPIKey: getEnv("ANTHROPIC_API_KEY", ""),
 		DefaultModel:    getEnv("DEFAULT_MODEL", "claude-haiku-4-5-20251001"),
+		// Debug flags - default to true in dev/test, false in production
+		Debug: getEnv("DEBUG", getDefaultDebug(env)) == "true",
 	}
+}
+
+// getDefaultDebug returns the default debug setting based on environment
+func getDefaultDebug(env string) string {
+	if env == "prod" {
+		return "false"
+	}
+	return "true" // Enable DEBUG in dev/test by default
 }
 
 // getTablePrefix returns the table prefix based on environment

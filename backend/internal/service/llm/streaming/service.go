@@ -206,6 +206,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		s.turnRepo,
 		provider,
 		s.logger,
+		s.config.Debug, // Pass DEBUG flag for optional event IDs
 	)
 
 	// Register stream in registry IMMEDIATELY

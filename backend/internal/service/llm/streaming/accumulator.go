@@ -25,14 +25,17 @@ type BlockAccumulator struct {
 
 	// Current block being accumulated
 	currentBlockIndex int
-	currentBlockType  string
-	accumulatedText   strings.Builder // Text content (for text, thinking blocks)
-	accumulatedJSON   strings.Builder // JSON content (for tool_use input)
+	currentBlockType  *string           // Optional - set on block start
+	accumulatedText   strings.Builder   // Text content (for text, thinking blocks)
+	accumulatedJSON   strings.Builder   // JSON content (for tool_use input)
+	accumulatedSig    strings.Builder   // Signature (for thinking blocks)
 
 	// Block metadata
-	toolUseID         *string // For tool_use blocks
-	toolName          *string // For tool_use blocks
-	thinkingSignature *string // For thinking blocks
+	toolCallID        *string // For tool_use blocks
+	toolCallName      *string // For tool_use blocks
+	toolUseID         *string // Legacy - for tool_use blocks
+	toolName          *string // Legacy - for tool_use blocks
+	thinkingSignature *string // Legacy - for thinking blocks (use accumulatedSig instead)
 
 	// Track last written block sequence for database writes
 	lastWrittenSequence int
@@ -96,18 +99,35 @@ func (acc *BlockAccumulator) startNewBlock(delta *llm.TurnBlockDelta) {
 	// Reset accumulated content
 	acc.accumulatedText.Reset()
 	acc.accumulatedJSON.Reset()
+	acc.accumulatedSig.Reset()
 
 	// Reset metadata
+	acc.toolCallID = nil
+	acc.toolCallName = nil
 	acc.toolUseID = nil
 	acc.toolName = nil
 	acc.thinkingSignature = nil
 
-	// Extract block start metadata
+	// Extract block start metadata (new fields)
+	if delta.ToolCallID != nil {
+		acc.toolCallID = delta.ToolCallID
+	}
+	if delta.ToolCallName != nil {
+		acc.toolCallName = delta.ToolCallName
+	}
+
+	// Extract block start metadata (legacy fields)
 	if delta.ToolUseID != nil {
 		acc.toolUseID = delta.ToolUseID
+		if acc.toolCallID == nil {
+			acc.toolCallID = delta.ToolUseID // Fallback to legacy
+		}
 	}
 	if delta.ToolName != nil {
 		acc.toolName = delta.ToolName
+		if acc.toolCallName == nil {
+			acc.toolCallName = delta.ToolName // Fallback to legacy
+		}
 	}
 	if delta.ThinkingSignature != nil {
 		acc.thinkingSignature = delta.ThinkingSignature
@@ -123,16 +143,32 @@ func (acc *BlockAccumulator) accumulateDelta(delta *llm.TurnBlockDelta) {
 		acc.accumulatedText.WriteString(*delta.TextDelta)
 	}
 
+	if delta.SignatureDelta != nil {
+		acc.accumulatedSig.WriteString(*delta.SignatureDelta)
+	}
+
 	if delta.InputJSONDelta != nil {
 		acc.accumulatedJSON.WriteString(*delta.InputJSONDelta)
 	}
 
 	// Update metadata if provided (edge case: metadata comes in separate delta)
+	if delta.ToolCallID != nil {
+		acc.toolCallID = delta.ToolCallID
+	}
+	if delta.ToolCallName != nil {
+		acc.toolCallName = delta.ToolCallName
+	}
 	if delta.ToolUseID != nil {
 		acc.toolUseID = delta.ToolUseID
+		if acc.toolCallID == nil {
+			acc.toolCallID = delta.ToolUseID // Fallback
+		}
 	}
 	if delta.ToolName != nil {
 		acc.toolName = delta.ToolName
+		if acc.toolCallName == nil {
+			acc.toolCallName = delta.ToolName // Fallback
+		}
 	}
 	if delta.ThinkingSignature != nil {
 		acc.thinkingSignature = delta.ThinkingSignature
@@ -146,10 +182,16 @@ func (acc *BlockAccumulator) flushCurrentBlock(ctx context.Context) (*llm.TurnBl
 		return nil, nil // No block to flush
 	}
 
+	// Dereference block type (accumulator stores *string, TurnBlock needs string)
+	blockType := ""
+	if acc.currentBlockType != nil {
+		blockType = *acc.currentBlockType
+	}
+
 	// Build TurnBlock from accumulated state
 	block := &llm.TurnBlock{
 		TurnID:    acc.turnID,
-		BlockType: acc.currentBlockType,
+		BlockType: blockType,
 		Sequence:  acc.currentBlockIndex,
 	}
 
@@ -162,14 +204,19 @@ func (acc *BlockAccumulator) flushCurrentBlock(ctx context.Context) (*llm.TurnBl
 	// Set JSONB content (type-specific metadata)
 	content := make(map[string]interface{})
 
-	switch acc.currentBlockType {
+	switch blockType {
 	case llm.BlockTypeText:
 		// Text block: no JSONB content needed (text in text_content)
 		block.Content = nil
 
 	case llm.BlockTypeThinking:
-		// Thinking block: add signature if present
-		if acc.thinkingSignature != nil {
+		// Thinking block: add accumulated signature if present
+		sigStr := acc.accumulatedSig.String()
+		if sigStr != "" {
+			content["signature"] = sigStr
+		}
+		// Fallback to legacy field if new field empty
+		if sigStr == "" && acc.thinkingSignature != nil {
 			content["signature"] = *acc.thinkingSignature
 		}
 		if len(content) > 0 {
@@ -178,10 +225,18 @@ func (acc *BlockAccumulator) flushCurrentBlock(ctx context.Context) (*llm.TurnBl
 
 	case llm.BlockTypeToolUse:
 		// Tool use block: parse accumulated JSON input
-		if acc.toolUseID != nil {
+		// Use new fields first, fallback to legacy
+		if acc.toolCallID != nil {
+			content["id"] = *acc.toolCallID
+			content["tool_use_id"] = *acc.toolCallID // Also store in legacy field
+		} else if acc.toolUseID != nil {
 			content["tool_use_id"] = *acc.toolUseID
 		}
-		if acc.toolName != nil {
+
+		if acc.toolCallName != nil {
+			content["name"] = *acc.toolCallName
+			content["tool_name"] = *acc.toolCallName // Also store in legacy field
+		} else if acc.toolName != nil {
 			content["tool_name"] = *acc.toolName
 		}
 
@@ -221,10 +276,16 @@ func (acc *BlockAccumulator) GetCurrentBlock() *llm.TurnBlock {
 		return nil // No block started
 	}
 
+	// Dereference block type (accumulator stores *string, TurnBlock needs string)
+	blockType := ""
+	if acc.currentBlockType != nil {
+		blockType = *acc.currentBlockType
+	}
+
 	// Build partial block from current state (same logic as flushCurrentBlock)
 	block := &llm.TurnBlock{
 		TurnID:    acc.turnID,
-		BlockType: acc.currentBlockType,
+		BlockType: blockType,
 		Sequence:  acc.currentBlockIndex,
 	}
 
@@ -237,7 +298,7 @@ func (acc *BlockAccumulator) GetCurrentBlock() *llm.TurnBlock {
 	// Set JSONB content
 	content := make(map[string]interface{})
 
-	switch acc.currentBlockType {
+	switch blockType {
 	case llm.BlockTypeThinking:
 		if acc.thinkingSignature != nil {
 			content["signature"] = *acc.thinkingSignature

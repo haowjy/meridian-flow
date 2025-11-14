@@ -27,9 +27,9 @@ flowchart LR
 ```
 
 ## Backend (Go)
-- API contracts: _docs/technical/backend/api-contracts.md
-- Clean architecture guide: _docs/technical/backend/clean-architecture-guide.md
-- Database connections (PgBouncer vs direct): _docs/technical/backend/database-connections.md
+- API contracts: [backend/api/contracts.md](backend/api/contracts.md)
+- Architecture overview: [backend/architecture/overview.md](backend/architecture/overview.md)
+- Database connections: [backend/database/connections.md](backend/database/connections.md)
 
 Relevant code
 - Entry/Wiring: backend/cmd/server/main.go
