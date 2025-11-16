@@ -5,328 +5,497 @@ audience: developer
 
 # LLM Provider Architecture
 
-Multi-provider abstraction layer for supporting multiple LLM APIs (Anthropic, OpenAI, Google, etc.)
+> **NOTE:** This document describes the **V5 standalone library architecture** using `meridian-llm-go`. For the legacy internal provider pattern, see commit history.
 
 ## Overview
 
-The provider architecture allows Meridian to support multiple LLM services through a unified interface, enabling:
-- Easy switching between providers
-- Provider-specific feature support (thinking modes, streaming, tool calling)
-- Centralized provider management
-- Consistent error handling across providers
+The backend integrates with **`meridian-llm-go`**, a standalone Go library that provides a unified abstraction layer for multiple LLM providers (Anthropic, OpenAI, Gemini, OpenRouter).
 
-## Provider Interface
+**Benefits:**
+- **Single library** handles all provider integrations
+- **Backend focuses on business logic** (provider selection, tool execution, retry strategies)
+- **Easy switching** between providers via simple string parameter
+- **Consistent error handling** through normalized error types
+- **Shared capability validation** across all consumers
 
-All providers implement the `LLMProvider` interface defined in `internal/domain/services/llm/provider.go`:
+**Architecture:**
+```
+Backend (meridian/backend)
+    ↓ imports
+meridian-llm-go (standalone library)
+    ├── Core layer (Block, Message, abstractions)
+    ├── Adapter layer (Anthropic, OpenAI, Gemini, OpenRouter)
+    └── Capabilities (YAML configs for validation)
+```
+
+**See:** [`_docs/technical/llm/`](../../llm/) for complete library documentation
+
+## Library API
+
+The backend uses the `meridian-llm-go` library client to interact with all providers:
 
 ```go
-type LLMProvider interface {
-    // GenerateResponse generates a complete response from the LLM
-    GenerateResponse(ctx context.Context, req *GenerateRequest) (*GenerateResponse, error)
+// File: meridian-llm-go/client.go
 
-    // Name returns the provider's unique identifier
-    Name() string
-
-    // SupportsModel returns whether the provider supports a given model
-    SupportsModel(model string) bool
+type LLMClient struct {
+    // Internal: providers, capabilities, validator
 }
+
+// Initialize library with capability configs
+func NewLLMClient(configDir string) (*LLMClient, error)
+
+// Generate complete response
+func (c *LLMClient) GenerateResponse(ctx context.Context, provider string, req *GenerateRequest) (*Response, error)
+
+// Generate streaming response
+func (c *LLMClient) GenerateStream(ctx context.Context, provider string, req *GenerateRequest) (*StreamHandle, error)
+
+// Helper: Detect tool execution side
+func (c *LLMClient) GetToolExecutionSide(block *Block) ToolExecutionSide
 ```
+
+**Supported Providers** (pass as string parameter):
+- `"anthropic"` - Claude models
+- `"openai"` - GPT models
+- `"gemini"` - Google Gemini models
+- `"openrouter"` - Proxy to multiple providers
 
 ### Request/Response Models
 
-**GenerateRequest:**
+**GenerateRequest** (Block-centric):
 ```go
 type GenerateRequest struct {
-    Model           string
-    SystemPrompt    *string
-    Messages        []Message
-    Temperature     *float64
-    TopP            *float64
-    TopK            *int
-    MaxTokens       *int
-    StopSequences   []string
-    ThinkingEnabled *bool
-    ThinkingBudget  *string  // "low", "medium", "high"
+    Model    string
+    Messages []Message      // Messages contain Blocks
+    Params   RequestParams  // Thinking, tools, sampling
+}
+
+type Message struct {
+    Role   string   // "user", "assistant"
+    Blocks []*Block // Content blocks
+}
+
+type Block struct {
+    Sequence  int
+    BlockType string                 // "text", "image", "tool_use", "tool_result", "thinking"
+    Content   map[string]interface{} // Block-specific content
+}
+
+type RequestParams struct {
+    Thinking         *ThinkingConfig
+    Tools            []Tool       // Unified: both built-in and custom tools
+    ToolChoice       *ToolChoice  // Controls whether/which tools to use
+    Temperature      *float64
+    TopP             *float64
+    TopK             *int
+    MaxTokens        *int
+    StopSequences    []string
 }
 ```
 
-**GenerateResponse:**
+**Response:**
 ```go
-type GenerateResponse struct {
-    Content          []TurnBlock
-    Model            string
-    StopReason       string
-    InputTokens      int
-    OutputTokens     int
-    ResponseMetadata map[string]interface{}  // Provider-specific data
+type Response struct {
+    Blocks       []*Block  // Response content blocks
+    Model        string
+    StopReason   string
+    InputTokens  int
+    OutputTokens int
+    Metadata     map[string]interface{}
 }
 ```
 
-## Provider Registry
+## Backend Integration
 
-Central registry for provider management located in `internal/service/llm/registry.go`:
+### Initialization
 
 ```go
-// Create registry
-registry := llm.NewProviderRegistry()
+// File: backend/internal/service/llm/service.go
 
-// Register providers
-registry.RegisterProvider(anthropicProvider)
-registry.RegisterProvider(openaiProvider)
+type LLMService struct {
+    client   *llm.LLMClient
+    provider string  // Default provider ("anthropic", "openai", etc.)
+    logger   *slog.Logger
+}
 
-// Get provider by name
-provider := registry.GetProvider("anthropic")
+func NewLLMService(cfg *config.Config) (*LLMService, error) {
+    // Capability configs loaded from backend/config/capabilities/
+    configDir := filepath.Join(cfg.RootDir, "config")
 
-// Get all registered providers
-providers := registry.ListProviders()
+    // Initialize library client
+    client, err := llm.NewLLMClient(configDir)
+    if err != nil {
+        return nil, fmt.Errorf("init LLM client: %w", err)
+    }
+
+    return &LLMService{
+        client:   client,
+        provider: cfg.LLMProvider,  // From environment
+        logger:   cfg.Logger,
+    }, nil
+}
 ```
 
-**Key Features:**
-- Thread-safe registration
-- Provider lookup by name
-- List all available providers
-- Validation during registration
+**Backend responsibilities:**
+1. Initialize library client with capability configs
+2. Select provider based on business logic (user tier, rate limits, fallback rules)
+3. Convert domain models ↔ library blocks
+4. Implement custom tool execution
+5. Handle tool execution loop
+6. Apply retry strategies
+7. Format errors for users
 
-## Implemented Providers
+**Library responsibilities:**
+1. Provider abstraction and switching
+2. Format translation (Block ↔ provider API format)
+3. Streaming infrastructure
+4. Error normalization
+5. Capability validation
+
+## Usage Examples
+
+### Basic Response Generation
+
+```go
+// File: backend/internal/service/llm/chat_service.go
+
+func (s *LLMService) GenerateTurn(ctx context.Context, chatID, userMessage string) (*Turn, error) {
+    // Build library request
+    req := &llm.GenerateRequest{
+        Model: "claude-sonnet-4-5",
+        Messages: []llm.Message{
+            {
+                Role: "user",
+                Blocks: []*llm.Block{
+                    {
+                        BlockType: "text",
+                        Content: map[string]interface{}{
+                            "text": userMessage,
+                        },
+                    },
+                },
+            },
+        },
+    }
+
+    // Call library with provider selection
+    resp, err := s.client.GenerateResponse(ctx, s.provider, req)
+    if err != nil {
+        return nil, s.handleError(err)
+    }
+
+    // Convert library blocks to domain Turn
+    return s.convertToTurn(chatID, resp), nil
+}
+```
+
+### Streaming Response
+
+```go
+func (s *LLMService) GenerateTurnStream(ctx context.Context, req *TurnRequest) (*StreamHandle, error) {
+    llmReq := s.buildLLMRequest(req)
+
+    // Start library stream
+    stream, err := s.client.GenerateStream(ctx, s.provider, llmReq)
+    if err != nil {
+        return nil, err
+    }
+
+    return &StreamHandle{
+        libraryStream: stream,
+        chatID:        req.ChatID,
+    }, nil
+}
+```
+
+### Provider Selection (Business Logic)
+
+```go
+func (s *LLMService) SelectProvider(req *TurnRequest) (string, error) {
+    // Business rule: Use specific provider for certain features
+    if req.RequiresWebSearch {
+        // Prefer providers with native search
+        return "anthropic", nil  // web_search_20250305
+    }
+
+    if req.RequiresCodeExec {
+        return "gemini", nil  // code_execution
+    }
+
+    // Default to configured provider
+    return s.provider, nil
+}
+```
+
+## Supported Providers
+
+**Current Status (Backend Integration):**
+- ✅ **Anthropic** - Fully integrated with provider factory and routing
+- 🚧 **OpenAI** - Library code exists, backend integration pending
+- 🚧 **Gemini** - Library code exists, backend integration pending
+- 🚧 **OpenRouter** - Library code exists, backend integration pending
+
+The `meridian-llm-go` library contains adapters for all providers below. The backend currently routes only to Anthropic via the provider factory pattern (see `backend/internal/service/llm/provider_factory.go`).
 
 ### Anthropic Claude
 
-**Status:** ✅ Fully implemented
-
-**Location:** `internal/service/llm/providers/anthropic/`
+**Provider String:** `"anthropic"`
 
 **Supported Models:**
 - `claude-haiku-4-5-20251001` - Fast, cost-effective
 - `claude-sonnet-4-5-20250514` - Balanced performance
 - `claude-opus-4-5-20250514` - Most capable
 
+**Built-in Tools:**
+- ✅ `search` → `web_search_20250305` (server-executed)
+- ✅ `code_exec` → `bash_20241022` (client-executed)
+- ✅ `apply_patch` → `text_editor_20250728` (client-executed)
+
 **Features:**
-- ✅ Extended thinking support (low/medium/high budgets)
-  - Low: 2000 tokens
-  - Medium: 5000 tokens
-  - High: 12000 tokens
-- ✅ Temperature control (0.0 - 1.0)
-- ✅ Top-k and top-p sampling
-- ✅ Stop sequences
-- ✅ Token tracking (input/output)
-- ✅ Request/response metadata capture
-- ❌ Streaming (planned for Task 5)
-- ❌ Tool calling (planned)
+- ✅ Extended thinking (low/medium/high/effort budgets)
+- ✅ Streaming
+- ✅ Temperature/Top-p/Top-k sampling
+- ✅ Custom tools (Pattern A)
 
-**Files:**
-- `adapter.go` - Converts between domain models and Anthropic API format
-- `client.go` - HTTP client and API integration
-- `config.go` - Provider configuration
+### OpenAI (Library Implementation)
 
-**Configuration:**
+**Provider String:** `"openai"`
+
+**Supported Models:**
+- `gpt-4o` - Most capable
+- `gpt-4o-mini` - Fast and efficient
+- `o1-preview` - Advanced reasoning
+- `o1-mini` - Reasoning on budget
+
+**Built-in Tools:**
+- ✅ `code_exec` → `code_interpreter` (server-executed)
+
+**Features:**
+- ✅ Basic thinking support
+- ✅ Streaming
+- ✅ Custom tools (function calling)
+
+### Google Gemini (Library Implementation)
+
+**Provider String:** `"gemini"`
+
+**Supported Models:**
+- `gemini-2.0-flash-exp` - Fast preview
+- `gemini-exp-1206` - Advanced capabilities
+
+**Built-in Tools:**
+- ✅ `search` → `google_search` (server-executed)
+- ✅ `web_fetch` → `url_context` (server-executed)
+- ✅ `code_exec` → `code_execution` (server-executed)
+
+**Features:**
+- ✅ Dynamic thinking (effort=-1)
+- ✅ Streaming
+- ✅ Custom tools (compositional)
+
+### OpenRouter (Library Implementation)
+
+**Provider String:** `"openrouter"`
+
+**Supported Models:**
+- Proxies to any supported model (Anthropic, OpenAI, Gemini, etc.)
+
+**Built-in Tools:**
+- ✅ `search` → plugin `web` (server-executed)
+
+**Features:**
+- ✅ Multi-provider access
+- ✅ Model fallback support
+- ✅ Streaming
+
+## Backend Configuration
+
+Provider selection and configuration happen in the backend:
+
+### Environment Variables
+
 ```env
+# Backend provider selection
+LLM_PROVIDER=anthropic  # Default provider
+
+# Provider API keys (library uses these)
 ANTHROPIC_API_KEY=sk-ant-...
-ANTHROPIC_MODEL=claude-haiku-4-5-20251001
+OPENAI_API_KEY=sk-...
+GOOGLE_API_KEY=...
+OPENROUTER_API_KEY=sk-or-...
 ```
 
-**Example Usage:**
-```go
-provider := anthropic.NewProvider(apiKey, defaultModel, logger)
-response, err := provider.GenerateResponse(ctx, request)
+### Capability Configs (Optional Overrides)
+
+The library embeds default capability configs, but backends can override:
+
+```
+backend/
+├── config/
+│   └── capabilities/
+│       ├── anthropic.yaml   # Optional overrides
+│       ├── openai.yaml
+│       ├── gemini.yaml
+│       └── openrouter.yaml
 ```
 
-### OpenAI (Planned)
-
-**Status:** ❌ Not implemented
-
-**Planned Models:**
-- `gpt-4o`
-- `gpt-4o-mini`
-- `o1-preview`
-- `o1-mini`
-
-**Planned Location:** `internal/service/llm/providers/openai/`
-
-### Google Gemini (Planned)
-
-**Status:** ❌ Not implemented
-
-**Planned Models:**
-- `gemini-2.0-flash-exp`
-- `gemini-exp-1206`
-
-**Planned Location:** `internal/service/llm/providers/google/`
-
-## Adding a New Provider
-
-To add support for a new LLM provider:
-
-### 1. Create Provider Directory
-
-```bash
-mkdir -p internal/service/llm/providers/{provider_name}
+**Example override:**
+```yaml
+# backend/config/capabilities/anthropic.yaml
+models:
+  claude-sonnet-4-5:
+    input_price_per_mtok: 3.00    # Enterprise pricing
+    output_price_per_mtok: 15.00
 ```
 
-### 2. Implement Provider Interface
-
-Create `client.go`:
-
-```go
-package providername
-
-import (
-    "context"
-    domainllm "meridian/internal/domain/services/llm"
-)
-
-type Provider struct {
-    apiKey string
-    model  string
-    logger *slog.Logger
-}
-
-func NewProvider(apiKey, model string, logger *slog.Logger) *Provider {
-    return &Provider{
-        apiKey: apiKey,
-        model:  model,
-        logger: logger,
-    }
-}
-
-func (p *Provider) GenerateResponse(ctx context.Context, req *domainllm.GenerateRequest) (*domainllm.GenerateResponse, error) {
-    // Implementation here
-}
-
-func (p *Provider) Name() string {
-    return "providername"
-}
-
-func (p *Provider) SupportsModel(model string) bool {
-    // Check if model is supported
-}
-```
-
-### 3. Create Adapter
-
-Create `adapter.go` to convert between your provider's API format and domain models:
-
-```go
-package providername
-
-func toProviderRequest(req *domainllm.GenerateRequest) *ProviderAPIRequest {
-    // Convert domain request to provider's format
-}
-
-func fromProviderResponse(resp *ProviderAPIResponse) *domainllm.GenerateResponse {
-    // Convert provider's response to domain format
-}
-```
-
-### 4. Add Configuration
-
-Add to `internal/config/config.go`:
-
-```go
-// Provider config
-ProviderAPIKey  string `env:"PROVIDER_API_KEY,required"`
-ProviderModel   string `env:"PROVIDER_MODEL" envDefault:"default-model"`
-```
-
-### 5. Register Provider
-
-In `cmd/server/main.go`:
-
-```go
-import providername "meridian/internal/service/llm/providers/providername"
-
-// Create provider
-providerClient := providername.NewProvider(
-    cfg.ProviderAPIKey,
-    cfg.ProviderModel,
-    logger,
-)
-
-// Register with registry
-llmRegistry.RegisterProvider(providerClient)
-```
-
-### 6. Test
-
-Add tests in `providers/{provider_name}/client_test.go`:
-
-```go
-func TestProvider_GenerateResponse(t *testing.T) {
-    // Test implementation
-}
-```
-
-## Provider Selection
-
-The streaming service uses the provider registry to look up providers by model name. Provider selection logic in `internal/service/llm/streaming/response_generator.go`:
-
-```go
-func (g *ResponseGenerator) GenerateResponse(ctx context.Context, turnID string, model string, params map[string]interface{}) (*Response, error) {
-    // Get provider from registry based on model
-    provider := g.registry.GetProviderForModel(model)
-
-    // Generate response
-    response, err := provider.GenerateResponse(ctx, request)
-}
-```
+**See:** [`_docs/technical/llm/capability-loading.md`](../../llm/capability-loading.md) for config loading details
 
 ## Error Handling
 
-All providers should follow consistent error handling patterns:
+The library returns normalized errors across all providers:
 
-**Domain Errors:**
-- `ErrProviderNotFound` - Provider not registered
-- `ErrModelNotSupported` - Model not supported by provider
-- `ErrAPIError` - Provider API returned error
-- `ErrInvalidRequest` - Invalid request parameters
+### Normalized LLMError
 
-**Example:**
 ```go
-if !p.SupportsModel(req.Model) {
-    return nil, fmt.Errorf("%w: model %s not supported by %s",
-        domain.ErrModelNotSupported, req.Model, p.Name())
+// File: meridian-llm-go/errors.go
+
+type LLMError struct {
+    Category  ErrorCategory
+    Message   string
+    Provider  string
+    Retryable bool
+    Original  error  // Original provider error
+}
+
+type ErrorCategory string
+
+const (
+    ErrorRateLimit           ErrorCategory = "rate_limit"
+    ErrorProviderOverloaded  ErrorCategory = "provider_overloaded"
+    ErrorInvalidRequest      ErrorCategory = "invalid_request"
+    ErrorModelNotSupported   ErrorCategory = "model_not_supported"
+    ErrorProviderError       ErrorCategory = "provider_error"
+    ErrorNetworkError        ErrorCategory = "network_error"
+)
+```
+
+### Backend Error Handling
+
+```go
+func (s *LLMService) handleError(err error) error {
+    var llmErr *llm.LLMError
+    if !errors.As(err, &llmErr) {
+        return err  // Unknown error
+    }
+
+    // Log with category and provider info
+    s.logger.Error("LLM error",
+        "category", llmErr.Category,
+        "provider", llmErr.Provider,
+        "retryable", llmErr.Retryable,
+        "message", llmErr.Message,
+    )
+
+    // Return user-friendly message
+    return fmt.Errorf("AI service error: %s", s.formatUserError(llmErr))
+}
+
+func (s *LLMService) formatUserError(err *llm.LLMError) string {
+    switch err.Category {
+    case llm.ErrorRateLimit:
+        return "Too many requests. Please wait a moment and try again."
+    case llm.ErrorProviderOverloaded:
+        return "The AI service is temporarily overloaded. Please try again shortly."
+    default:
+        return err.Message
+    }
 }
 ```
 
-## Metadata Handling
+**See:** [`_docs/technical/llm/error-normalization.md`](../../llm/error-normalization.md) for complete error handling
 
-Each provider can include provider-specific metadata in responses via `ResponseMetadata`:
+## Tool Execution
+
+The backend implements **Pattern A** (consumer-side tool execution loop):
+
+### Tools Example
 
 ```go
-response := &domainllm.GenerateResponse{
-    Content: content,
-    ResponseMetadata: map[string]interface{}{
-        "provider":       "anthropic",
-        "api_version":    "2023-06-01",
-        "model_version":  "claude-haiku-4-5-20251001",
-        "cache_stats":    cacheInfo,
+// Backend defines tools: mix of built-in (auto-mapped) and custom
+tools := []llm.Tool{
+    // Built-in tools (minimal definition - auto-maps to provider implementation)
+    {Name: "web_search"},
+    {Name: "bash"},
+
+    // Custom tool (explicit type + full definition)
+    {
+        Type:          llm.ToolTypeCustom,
+        Name:          "get_document",
+        Category:      llm.ToolCategoryCustom,
+        ExecutionSide: llm.ExecutionSideClient,
+        Config: &llm.CustomToolConfig{
+            Description: "Retrieve a document by ID",
+            InputSchema: map[string]interface{}{
+                "type": "object",
+                "properties": map[string]interface{}{
+                    "doc_id": {"type": "string"},
+                },
+            },
+        },
     },
 }
+
+// Tool execution loop (backend responsibility)
+maxIterations := 10
+for i := 0; i < maxIterations; i++ {
+    resp, err := s.client.GenerateResponse(ctx, s.provider, req)
+    if err != nil {
+        return nil, err
+    }
+
+    // Extract tool calls
+    toolCalls := s.extractToolCalls(resp.Blocks)
+    if len(toolCalls) == 0 {
+        return resp, nil  // Done!
+    }
+
+    // Execute tools locally
+    toolResults, err := s.executeTools(ctx, toolCalls)
+    if err != nil {
+        return nil, err
+    }
+
+    // Add results back to conversation
+    req.Messages = append(req.Messages, llm.Message{
+        Role:   "user",
+        Blocks: toolResults,
+    })
+}
 ```
 
-This metadata is stored in the `turns` table (`response_metadata` JSONB field) for debugging and analytics.
+**Tool Auto-Mapping:**
 
-## Future Enhancements
+- **Built-in tools** (`web_search`, `bash`, `text_editor`): Use minimal definition `{Name: "tool_name"}` - library auto-maps to provider implementation
+- **Custom tools**: Must use `Type: ToolTypeCustom` with full definition (Description, InputSchema)
 
-**Task 5: Streaming Infrastructure**
-- Add `StreamResponse()` method to interface
-- Implement channel-based streaming
-- Background goroutine execution
-- Event accumulation and storage
-
-**Multi-Provider Features:**
-- Automatic fallback to alternative providers
-- Load balancing across providers
-- Cost optimization (route to cheapest provider)
-- Provider-specific feature detection
+**See:**
+- [`meridian-llm-go/docs/tools.md`](../../../meridian-llm-go/docs/tools.md) for complete tool guide
+- [`_docs/technical/backend/llm-integration.md`](../llm-integration.md) for complete backend integration guide
 
 ## References
 
-- **Implementation:** `internal/service/llm/providers/`
-- **Interface:** `internal/domain/services/llm/provider.go`
-- **Registry:** `internal/service/llm/registry.go`
-- **Response Generator:** `internal/service/llm/streaming/response_generator.go`
-- **Services:**
-  - `internal/service/llm/chat/service.go` - ChatService
-  - `internal/service/llm/conversation/service.go` - ConversationService
-  - `internal/service/llm/streaming/service.go` - StreamingService
-- **Setup:** `internal/service/llm/setup.go`
+### Library Documentation
+- **[LLM Library README](../../llm/README.md)** - Library overview
+- **[Architecture](../../llm/architecture.md)** - 3-layer design
+- **[Tool Mapping](../../llm/unified-tool-mapping.md)** - Tool execution patterns
+- **[Error Normalization](../../llm/error-normalization.md)** - Error handling
+- **[Capability Configuration](../../llm/capability-config-schema.md)** - Capability schema
+- **[Capability Loading](../../llm/capability-loading.md)** - Config loading strategy
+
+### Backend Integration
+- **[Backend Integration Guide](../llm-integration.md)** - Complete integration patterns
+- **[Streaming Integration](../streaming/README.md)** - Streaming infrastructure
+- **[Tool Execution](../../llm/streaming/tool-execution.md)** - Tool execution details
+
+### Implementation Plan
+- **[V5 Plan](_docs/hidden/handoffs/llm-provider-unification-plan-v5.md)** - Complete implementation plan (6 phases)

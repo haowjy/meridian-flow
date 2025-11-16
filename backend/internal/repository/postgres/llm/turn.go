@@ -16,7 +16,12 @@ import (
 
 const (
 	// Pagination constants for "both" direction queries
-	// When fetching context around a turn, prioritize showing future conversation
+	// When fetching context around a turn, prioritize showing future conversation.
+	// UX rationale: When users swap siblings (alternative conversation branches),
+	// we expect them to paginate down (forward) to see how the conversation continued,
+	// rather than paginating up (backward) to see earlier context. Therefore we
+	// allocate 75% of the limit to "after" (newer turns) and 25% to "before" (older turns).
+	// TODO: Make these configurable via query params (keep current values as defaults)
 	PaginationBeforeRatio = 0.25 // 25% of limit for older turns
 	PaginationAfterRatio  = 0.75 // 75% of limit for newer turns
 
@@ -446,10 +451,39 @@ func (r *PostgresTurnRepository) UpdateTurnError(ctx context.Context, turnID, er
 
 // UpdateTurnMetadata updates a turn's metadata fields (model, tokens, stop_reason, etc.)
 func (r *PostgresTurnRepository) UpdateTurnMetadata(ctx context.Context, turnID string, metadata map[string]interface{}) error {
-	// Extract fields from metadata map
-	model, _ := metadata["model"].(string)
-	inputTokens, _ := metadata["input_tokens"].(int)
-	outputTokens, _ := metadata["output_tokens"].(int)
+	// Validate metadata map is not nil
+	if metadata == nil {
+		return fmt.Errorf("metadata cannot be nil")
+	}
+
+	// Extract and validate model (required field)
+	model, ok := metadata["model"].(string)
+	if !ok {
+		return fmt.Errorf("metadata missing or invalid 'model' field (expected non-empty string)")
+	}
+	if model == "" {
+		return fmt.Errorf("metadata 'model' field cannot be empty")
+	}
+
+	// Extract and validate token counts (must be non-negative if provided)
+	inputTokens, ok := metadata["input_tokens"].(int)
+	if !ok {
+		// If not provided or wrong type, default to 0
+		inputTokens = 0
+	}
+	if inputTokens < 0 {
+		return fmt.Errorf("metadata 'input_tokens' must be non-negative, got %d", inputTokens)
+	}
+
+	outputTokens, ok := metadata["output_tokens"].(int)
+	if !ok {
+		outputTokens = 0
+	}
+	if outputTokens < 0 {
+		return fmt.Errorf("metadata 'output_tokens' must be non-negative, got %d", outputTokens)
+	}
+
+	// Extract optional fields (allow missing/wrong type, use zero values)
 	stopReason, _ := metadata["stop_reason"].(string)
 	responseMetadata, _ := metadata["response_metadata"].(map[string]interface{})
 	completedAt, _ := metadata["completed_at"].(time.Time)
@@ -486,9 +520,9 @@ func (r *PostgresTurnRepository) UpdateTurnMetadata(ctx context.Context, turnID 
 func (r *PostgresTurnRepository) CreateTurnBlock(ctx context.Context, block *llmModels.TurnBlock) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
-			turn_id, block_type, sequence, text_content, content, created_at
+			turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, created_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id, created_at
 	`, r.tables.TurnBlocks)
 
@@ -503,7 +537,10 @@ func (r *PostgresTurnRepository) CreateTurnBlock(ctx context.Context, block *llm
 		block.BlockType,
 		block.Sequence,
 		block.TextContent,
-		block.Content, // pgx handles map -> JSONB (nil becomes NULL)
+		block.Content,       // pgx handles map -> JSONB (nil becomes NULL)
+		block.Provider,      // TEXT (nil becomes NULL)
+		block.ProviderData,  // pgx handles json.RawMessage -> JSONB (nil becomes NULL)
+		block.ExecutionSide, // TEXT (nil becomes NULL)
 		block.CreatedAt,
 	).Scan(&block.ID, &block.CreatedAt)
 
@@ -526,27 +563,35 @@ func (r *PostgresTurnRepository) CreateTurnBlocks(ctx context.Context, blocks []
 	// Build batch insert query
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
-			turn_id, block_type, sequence, text_content, content, created_at
+			turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, created_at
 		)
 		VALUES
 	`, r.tables.TurnBlocks)
 
-	// Build VALUES clause dynamically (6 parameters per block)
-	args := make([]interface{}, 0, len(blocks)*6)
+	// Build VALUES clause dynamically (9 parameters per block)
+	args := make([]interface{}, 0, len(blocks)*9)
 	for i, block := range blocks {
+		// Set created_at if not provided (consistent with CreateTurnBlock)
+		if block.CreatedAt.IsZero() {
+			block.CreatedAt = time.Now()
+		}
+
 		if i > 0 {
 			query += ","
 		}
 		query += fmt.Sprintf(`
-			($%d, $%d, $%d, $%d, $%d, $%d)
-		`, i*6+1, i*6+2, i*6+3, i*6+4, i*6+5, i*6+6)
+			($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)
+		`, i*9+1, i*9+2, i*9+3, i*9+4, i*9+5, i*9+6, i*9+7, i*9+8, i*9+9)
 
 		args = append(args,
 			block.TurnID,
 			block.BlockType,
 			block.Sequence,
 			block.TextContent,
-			block.Content, // pgx automatically handles map -> JSONB conversion (nil becomes NULL)
+			block.Content,       // pgx automatically handles map -> JSONB conversion (nil becomes NULL)
+			block.Provider,      // TEXT (nil becomes NULL)
+			block.ProviderData,  // pgx automatically handles json.RawMessage -> JSONB conversion (nil becomes NULL)
+			block.ExecutionSide, // TEXT (nil becomes NULL)
 			block.CreatedAt,
 		)
 	}
@@ -567,7 +612,7 @@ func (r *PostgresTurnRepository) CreateTurnBlocks(ctx context.Context, blocks []
 func (r *PostgresTurnRepository) GetTurnBlocks(ctx context.Context, turnID string) ([]llmModels.TurnBlock, error) {
 	query := fmt.Sprintf(`
 		SELECT
-			id, turn_id, block_type, sequence, text_content, content, created_at
+			id, turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, created_at
 		FROM %s
 		WHERE turn_id = $1
 		ORDER BY sequence
@@ -589,7 +634,10 @@ func (r *PostgresTurnRepository) GetTurnBlocks(ctx context.Context, turnID strin
 			&block.BlockType,
 			&block.Sequence,
 			&block.TextContent,
-			&block.Content, // pgx automatically handles JSONB -> map conversion
+			&block.Content,       // pgx automatically handles JSONB -> map conversion
+			&block.Provider,      // TEXT
+			&block.ProviderData,  // pgx automatically handles JSONB -> json.RawMessage conversion
+			&block.ExecutionSide, // TEXT
 			&block.CreatedAt,
 		)
 		if err != nil {
@@ -623,7 +671,7 @@ func (r *PostgresTurnRepository) GetTurnBlocksForTurns(
 
 	query := fmt.Sprintf(`
 		SELECT
-			id, turn_id, block_type, sequence, text_content, content, created_at
+			id, turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, created_at
 		FROM %s
 		WHERE turn_id = ANY($1)
 		ORDER BY turn_id, sequence
@@ -646,7 +694,10 @@ func (r *PostgresTurnRepository) GetTurnBlocksForTurns(
 			&block.BlockType,
 			&block.Sequence,
 			&block.TextContent,
-			&block.Content, // pgx automatically handles JSONB -> map conversion
+			&block.Content,       // pgx automatically handles JSONB -> map conversion
+			&block.Provider,      // TEXT
+			&block.ProviderData,  // pgx automatically handles JSONB -> json.RawMessage conversion
+			&block.ExecutionSide, // TEXT
 			&block.CreatedAt,
 		)
 		if err != nil {
@@ -1052,36 +1103,48 @@ func (r *PostgresTurnRepository) fetchTurnsAfter(ctx context.Context, startTurnI
 }
 
 // findMostRecentLeaf traverses down the tree to find the most recent leaf
-// Follows the most recent child (created_at DESC) at each level
+// Follows the most recent child (created_at DESC) at each level using a recursive CTE
 // Returns the leaf turn_id
 func (r *PostgresTurnRepository) findMostRecentLeaf(ctx context.Context, startTurnID string) (string, error) {
-	currentID := startTurnID
-	depth := 0
-	executor := postgres.GetExecutor(ctx, r.pool)
-
-	for depth < MaxLeafSearchDepth { // Prevent infinite loops
-		// Check if current turn has children
-		query := fmt.Sprintf(`
-			SELECT id
+	// Use recursive CTE to find the leaf in a single query instead of N sequential queries
+	// This reduces latency from O(n) round-trips to O(1) query for deep conversation trees
+	query := fmt.Sprintf(`
+		WITH RECURSIVE leaf_finder(id, depth) AS (
+			-- Base case: start with the given turn
+			SELECT id, 0 as depth
 			FROM %s
-			WHERE prev_turn_id = $1
-			ORDER BY created_at DESC
-			LIMIT 1
-		`, r.tables.Turns)
+			WHERE id = $1
 
-		var childID string
-		err := executor.QueryRow(ctx, query, currentID).Scan(&childID)
-		if err != nil {
-			if postgres.IsPgNoRowsError(err) {
-				// No children - this is the leaf
-				return currentID, nil
-			}
-			return "", fmt.Errorf("find leaf: %w", err)
+			UNION ALL
+
+			-- Recursive case: find the most recent child
+			SELECT t.id, lf.depth + 1
+			FROM leaf_finder lf
+			CROSS JOIN LATERAL (
+				SELECT id
+				FROM %s
+				WHERE prev_turn_id = lf.id
+				ORDER BY created_at DESC
+				LIMIT 1
+			) t
+			WHERE lf.depth < $2
+		)
+		SELECT id FROM leaf_finder ORDER BY depth DESC LIMIT 1
+	`, r.tables.Turns, r.tables.Turns)
+
+	executor := postgres.GetExecutor(ctx, r.pool)
+	var leafID string
+
+	// Use MaxRecursionDepth (100) instead of MaxLeafSearchDepth (1000)
+	// 100 levels is more than sufficient for any conversation tree
+	err := executor.QueryRow(ctx, query, startTurnID, MaxRecursionDepth).Scan(&leafID)
+	if err != nil {
+		if postgres.IsPgNoRowsError(err) {
+			// This shouldn't happen if startTurnID exists, but handle gracefully
+			return "", fmt.Errorf("turn %s not found: %w", startTurnID, domain.ErrNotFound)
 		}
-
-		currentID = childID
-		depth++
+		return "", fmt.Errorf("find leaf: %w", err)
 	}
 
-	return "", fmt.Errorf("max recursion depth reached finding leaf")
+	return leafID, nil
 }

@@ -71,8 +71,11 @@ seed: ## Seed the database with data (runs migrations first)
 	go run ./cmd/seed/main.go
 
 seed-fresh: ## Drop all tables, run migrations, and seed data
-	$(GOOSE) -dir migrations postgres "$(SUPABASE_DB_URL)" down-to 0
+	@echo "Dropping all tables..."
+	@go run ./scripts/drop_all_tables.go
+	@echo "Running migrations..."
 	$(GOOSE) -dir migrations postgres "$(SUPABASE_DB_URL)" up
+	@echo "Seeding database..."
 	go run ./cmd/seed/main.go
 
 seed-clear: ## Clear all documents and folders (keep schema)

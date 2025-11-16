@@ -17,18 +17,26 @@ type ProviderRegistry interface {
 }
 
 // ResponseGenerator handles LLM response generation
+// Uses minimal interfaces (TurnReader, TurnNavigator) for better ISP compliance
 type ResponseGenerator struct {
-	registry ProviderRegistry
-	turnRepo llmRepo.TurnRepository
-	logger   *slog.Logger
+	registry      ProviderRegistry
+	turnReader    llmRepo.TurnReader
+	turnNavigator llmRepo.TurnNavigator
+	logger        *slog.Logger
 }
 
 // NewResponseGenerator creates a new response generator
-func NewResponseGenerator(registry ProviderRegistry, turnRepo llmRepo.TurnRepository, logger *slog.Logger) *ResponseGenerator {
+func NewResponseGenerator(
+	registry ProviderRegistry,
+	turnReader llmRepo.TurnReader,
+	turnNavigator llmRepo.TurnNavigator,
+	logger *slog.Logger,
+) *ResponseGenerator {
 	return &ResponseGenerator{
-		registry: registry,
-		turnRepo: turnRepo,
-		logger:   logger,
+		registry:      registry,
+		turnReader:    turnReader,
+		turnNavigator: turnNavigator,
+		logger:        logger,
 	}
 }
 
@@ -58,7 +66,7 @@ func (g *ResponseGenerator) GenerateResponse(ctx context.Context, userTurnID str
 	)
 
 	// 1. Get conversation path (turn history)
-	path, err := g.turnRepo.GetTurnPath(ctx, userTurnID)
+	path, err := g.turnNavigator.GetTurnPath(ctx, userTurnID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get turn path: %w", err)
 	}
@@ -73,7 +81,7 @@ func (g *ResponseGenerator) GenerateResponse(ctx context.Context, userTurnID str
 
 	// 1b. Load content blocks for all turns in the path
 	for i := range path {
-		blocks, err := g.turnRepo.GetTurnBlocks(ctx, path[i].ID)
+		blocks, err := g.turnReader.GetTurnBlocks(ctx, path[i].ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get content blocks for turn %s: %w", path[i].ID, err)
 		}

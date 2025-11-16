@@ -86,10 +86,15 @@ type GenerateResponse struct {
 }
 
 // StreamEvent represents a single event in a streaming response.
-// Each event contains either a delta, metadata (completion), or an error.
+// Each event contains either a delta, a complete block, metadata (completion), or an error.
 type StreamEvent struct {
-	// Delta contains incremental block content (nil if metadata or error)
+	// Delta contains incremental block content for real-time UI updates (nil if block/metadata/error)
 	Delta *llm.TurnBlockDelta
+
+	// Block contains a complete block when a block finishes streaming (nil if delta/metadata/error)
+	// This is emitted once per block when streaming completes for that block.
+	// The block is normalized and ready for database persistence.
+	Block *llm.TurnBlock
 
 	// Metadata contains final response data when streaming completes (nil until end)
 	Metadata *StreamMetadata

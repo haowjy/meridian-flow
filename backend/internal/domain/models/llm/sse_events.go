@@ -40,8 +40,9 @@ type BlockStartEvent struct {
 // BlockDeltaEvent contains incremental content for the current block
 type BlockDeltaEvent struct {
 	BlockIndex     int     `json:"block_index"`                // Which block this delta belongs to
-	DeltaType      string  `json:"delta_type"`                 // "text_delta", "input_json_delta"
+	DeltaType      string  `json:"delta_type"`                 // "text_delta", "signature_delta", "input_json_delta"
 	TextDelta      *string `json:"text_delta,omitempty"`       // Incremental text content
+	SignatureDelta *string `json:"signature_delta,omitempty"`  // Incremental signature (thinking blocks)
 	InputJSONDelta *string `json:"input_json_delta,omitempty"` // Incremental tool input JSON
 }
 
@@ -110,6 +111,7 @@ func NewBlockDeltaEvent(delta *TurnBlockDelta) (string, error) {
 		BlockIndex:     delta.BlockIndex,
 		DeltaType:      delta.DeltaType,
 		TextDelta:      delta.TextDelta,
+		SignatureDelta: delta.SignatureDelta,
 		InputJSONDelta: delta.InputJSONDelta,
 	})
 }

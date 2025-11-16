@@ -21,9 +21,9 @@ graph TB
     TurnRepo[(TurnRepository)]
     ProjectRepo[(ProjectRepository)]
 
-    Executor[TurnExecutor<br/>Background Goroutine]
+    Executor[StreamExecutor<br/>mstream Stream Worker]
     Generator[ResponseGenerator<br/>LLM Orchestration]
-    Registry[ExecutorRegistry<br/>Active Streams]
+    Registry[StreamRegistry<br/>Active Streams (mstream)]
 
     Handler --> ChatSvc
     Handler --> ConvoSvc
@@ -112,7 +112,7 @@ graph TB
 - `TurnRepository` - Turn persistence
 - `ChatValidator` - Validate chat exists and ownership
 - `ResponseGenerator` - LLM response orchestration
-- `TurnExecutorRegistry` - Manage active streaming goroutines
+- `*mstream.Registry` - Manage active streaming streams (SSE fan-out + catchup)
 - `TransactionManager` - Atomic user+assistant turn creation
 
 **Why Separate?**
@@ -124,9 +124,9 @@ graph TB
 **File:** `internal/service/llm/streaming/service.go` (~280 lines)
 
 **Supporting Components:**
-- `executor.go` - TurnExecutor goroutine (block accumulation, SSE broadcast)
-- `registry.go` - Track active streaming sessions
-- `accumulator.go` - Block accumulation logic
+- `mstream_adapter.go` - StreamExecutor (adapts meridian-llm-go → TurnBlockDelta/TurnBlock + mstream.Stream)
+- `catchup.go` - DB-backed catchup for reconnection
+- `debug.go` - Debug helpers for internal streaming flows
 - `response_generator.go` - LLM provider orchestration
 
 ---
@@ -141,7 +141,8 @@ sequenceDiagram
     participant Handler as ChatHandler
     participant Stream as StreamingService
     participant Turn as TurnRepository
-    participant Executor as TurnExecutor
+    participant Registry as StreamRegistry
+    participant Executor as StreamExecutor
     participant Generator as ResponseGenerator
     participant Provider as LLM Provider
 
@@ -151,31 +152,29 @@ sequenceDiagram
     Stream->>Turn: CreateTurn(user turn)
     Turn-->>Stream: User turn created
 
-    Stream->>Turn: CreateTurn(assistant turn, status="pending")
+    Stream->>Turn: CreateTurn(assistant turn, status="streaming")
     Turn-->>Stream: Assistant turn created
 
-    Stream->>Executor: NewTurnExecutor(turnID, ...)
-    Stream->>Executor: StartStreaming() in goroutine
+    Stream->>Registry: Register new mstream.Stream(turnID)
+    Stream->>Executor: NewStreamExecutor(turnID, provider, turnRepo, logger)
+    Stream->>Executor: Start(generateReq) in goroutine
 
     Stream-->>Handler: {user_turn, assistant_turn, stream_url}
     Handler-->>Client: 201 Created
 
-    Note over Executor,Provider: Background goroutine
+    Note over Executor,Provider: Background goroutine (mstream WorkFunc)
 
-    Executor->>Generator: GenerateResponse(turnID, messages)
-    Generator->>Provider: StreamMessages(params)
+    Executor->>Provider: StreamResponse(generateReq)
 
     loop Stream events
-        Provider-->>Generator: Delta events
-        Generator-->>Executor: TurnBlockDelta
-        Executor->>Turn: Save completed blocks
-        Executor->>Client: SSE events
+        Provider-->>Executor: StreamEvent{Delta | Block | Metadata}
+        Executor->>Registry: Send events via mstream.Stream
+        Registry-->>Client: SSE events (block_start, block_delta, block_stop, turn_complete)
     end
 
-    Provider-->>Generator: Complete
-    Generator-->>Executor: Done
+    Provider-->>Executor: StreamEvent{Metadata}
     Executor->>Turn: UpdateTurnStatus("complete")
-    Executor->>Client: SSE: turn_complete
+    Executor->>Registry: Send turn_complete
 ```
 
 ### Flow: User Views Chat History
@@ -387,10 +386,10 @@ internal/
 │   │
 │   ├── streaming/
 │   │   ├── service.go              # StreamingService implementation
-│   │   ├── executor.go             # TurnExecutor goroutine
-│   │   ├── accumulator.go          # Block accumulation logic
-│   │   ├── registry.go             # ExecutorRegistry
-│   │   └── response_generator.go  # LLM orchestration
+│   │   ├── mstream_adapter.go      # StreamExecutor + mstream integration
+│   │   ├── catchup.go              # DB-backed catchup logic
+│   │   ├── debug.go                # Streaming debug helpers
+│   │   └── response_generator.go   # LLM orchestration
 │   │
 │   ├── providers/
 │   │   ├── anthropic/              # Anthropic Claude provider
@@ -427,7 +426,7 @@ type Services struct {
     Streaming    llmSvc.StreamingService
 }
 
-// SetupServices creates and wires all services
+// SetupServices initializes all LLM services with proper dependency injection
 func SetupServices(
     chatRepo llmRepo.ChatRepository,
     turnRepo llmRepo.TurnRepository,
@@ -436,43 +435,38 @@ func SetupServices(
     cfg *config.Config,
     txManager repositories.TransactionManager,
     logger *slog.Logger,
-) (*Services, *streaming.TurnExecutorRegistry, error) {
-
-    // Create chat validator
+) (*Services, *mstream.Registry, error) {
+    // Create shared validator
     validator := NewChatValidator(chatRepo)
 
-    // Create executor registry for streaming
-    executorRegistry := streaming.NewTurnExecutorRegistry(
-        5*time.Minute,  // Cleanup interval
-        10*time.Minute, // Retention time
-    )
+    // Create mstream registry (for SSE streaming)
+    streamRegistry := mstream.NewRegistry()
+
+    // Start cleanup goroutine for old streams
+    go streamRegistry.StartCleanup(context.Background())
 
     // Create response generator
-    responseGenerator := streaming.NewResponseGenerator(
-        providerRegistry,
-        turnRepo,
-        logger,
-    )
+    responseGenerator := streaming.NewResponseGenerator(providerRegistry, turnRepo, logger)
 
-    // Create chat service (CRUD)
+    // Create chat service (CRUD only)
     chatService := chat.NewService(
         chatRepo,
         projectRepo,
         logger,
     )
 
-    // Create conversation service (navigation)
+    // Create conversation service (history/navigation)
     conversationService := conversation.NewService(
         chatRepo,
         turnRepo,
     )
 
-    // Create streaming service (orchestration)
+    // Create streaming service (turn creation/orchestration)
     streamingService := streaming.NewService(
         turnRepo,
         validator,
         responseGenerator,
-        executorRegistry,
+        streamRegistry,
         cfg,
         txManager,
         logger,
@@ -482,7 +476,7 @@ func SetupServices(
         Chat:         chatService,
         Conversation: conversationService,
         Streaming:    streamingService,
-    }, executorRegistry, nil
+    }, streamRegistry, nil
 }
 ```
 
@@ -490,7 +484,7 @@ func SetupServices(
 
 ```go
 // Setup LLM services
-llmServices, executorRegistry, err := serviceLLM.SetupServices(
+llmServices, streamRegistry, err := serviceLLM.SetupServices(
     chatRepo,
     turnRepo,
     projectRepo,
@@ -504,20 +498,10 @@ if err != nil {
 }
 
 // Create handler with all 3 services
-chatHandler := handler.NewChatHandler(
-    llmServices.Chat,          // ChatService
-    llmServices.Conversation,  // ConversationService
-    llmServices.Streaming,     // StreamingService
-    turnRepo,
-    executorRegistry,
+// Create SSE handler
+sseHandler := handler.NewSSEHandler(
+    streamRegistry,
     logger,
-)
-
-// Debug handler (only in dev)
-chatDebugHandler := handler.NewChatDebugHandler(
-    llmServices.Conversation,
-    llmServices.Streaming,
-    cfg,
 )
 ```
 
@@ -610,7 +594,7 @@ type Service struct {
     turnRepo          llmRepo.TurnRepository
     validator         ChatValidator
     responseGenerator *ResponseGenerator
-    registry          *TurnExecutorRegistry
+    registry          *mstream.Registry
     config            *config.Config
     txManager         repositories.TransactionManager
     logger            *slog.Logger

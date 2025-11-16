@@ -5,7 +5,7 @@ audience: developer
 
 # Backend Technical Documentation
 
-Complete technical reference for the Meridian backend (Go + Fiber + PostgreSQL).
+Complete technical reference for the Meridian backend (Go + net/http + PostgreSQL).
 
 ## Quick Links
 
@@ -46,6 +46,24 @@ PostgreSQL schema, connections, and data management:
 - [Schema](database/schema.md) - Database structure with ER diagram ⭐
 - [Connections](database/connections.md) - Connection setup and troubleshooting
 
+## LLM Integration
+
+**Library:** [`meridian-llm-go`](../llm/README.md) - Unified provider abstraction
+
+The backend uses the `meridian-llm-go` library for all LLM provider interactions.
+
+**For LLM library documentation:**
+- [Architecture](../llm/architecture.md) - Library design and 3-layer architecture
+- [Tool Mapping](../llm/unified-tool-mapping.md) - Unified tool abstraction across providers
+- [Error Handling](../llm/error-normalization.md) - Error normalization and retry strategies
+- [Capability Loading](../llm/capability-loading.md) - Provider config loading patterns
+- [Streaming](../llm/streaming/README.md) - Streaming architecture and block types
+
+**For backend integration:**
+- [LLM Integration Guide](./llm-integration.md) - How backend uses meridian-llm-go
+- [Provider Routing](provider-routing.md) - Model string parsing and provider selection
+- [Environment Gating](environment-gating.md) - Tool restrictions (dev/test only)
+
 ## Chat System
 
 **Status:** ✅ Complete (multi-turn, streaming, catchup working)
@@ -66,13 +84,13 @@ Multi-turn LLM conversations with SOLID-compliant service architecture:
 
 Real-time LLM response delivery via Server-Sent Events:
 
-- **Start here:** [streaming/README.md](streaming/README.md) ⭐
+- **Start here:** [../llm/streaming/README.md](../llm/streaming/README.md) ⭐
 - Architecture: [architecture/streaming-architecture.md](architecture/streaming-architecture.md)
-- Block types: [streaming/block-types-reference.md](streaming/block-types-reference.md)
-- API endpoints: [streaming/api-endpoints.md](streaming/api-endpoints.md)
-- Race conditions: [streaming/race-conditions.md](streaming/race-conditions.md)
-- Tool execution: [streaming/tool-execution.md](streaming/tool-execution.md)
-- Edge cases: [streaming/edge-cases.md](streaming/edge-cases.md)
+- Block types: [../llm/streaming/block-types-reference.md](../llm/streaming/block-types-reference.md)
+- API endpoints: [../llm/streaming/api-endpoints.md](../llm/streaming/api-endpoints.md)
+- Race conditions: [../llm/streaming/race-conditions.md](../llm/streaming/race-conditions.md)
+- Tool execution: [../llm/streaming/tool-execution.md](../llm/streaming/tool-execution.md)
+- Edge cases: [../llm/streaming/edge-cases.md](../llm/streaming/edge-cases.md)
 
 ## Development
 

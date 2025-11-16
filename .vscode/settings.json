@@ -20,5 +20,10 @@
   ],
   "[typescript]": {
     "editor.defaultFormatter": "denoland.vscode-deno"
-  }
+  },
+  "python.defaultInterpreterPath": "${workspaceFolder}/cli/.venv/bin/python",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/cli"
+  ],
+  "python.analysis.autoSearchPaths": true
 }

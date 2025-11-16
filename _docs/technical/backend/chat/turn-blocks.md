@@ -32,91 +32,37 @@ Content blocks use **two fields** for storage:
 | image | ✅ | ❌ | null | Image data |
 | reference | ✅ | ❌ | null | Doc reference |
 | partial_reference | ✅ | ❌ | null | Selection reference |
+| web_search_use | ❌ | ✅ | null | Server-side web search invocation |
+| web_search_result | ❌ | ✅ | null | Server-side web search result payload |
 
-## User Block Types
+## Block Types (DB View)
 
-### `text`
+For full JSON schemas and streaming behavior, use the canonical LLM reference:  
+`_docs/technical/llm/streaming/block-types-reference.md`.
 
-Plain user message text.
+From the backend/DB perspective:
+- `text`: `text_content` holds plain text; `content` is always `null`.
+- `thinking`: `text_content` holds reasoning text; `content.signature` (optional) stores extended-thinking signature.
+- `tool_use`: `content` holds tool metadata (`tool_use_id`, `tool_name`, `input`); `text_content` is `null`.
+- `tool_result`: `text_content` is optional human-readable output; `content.tool_use_id` + `content.is_error` describe status.
+- `image`: `content` holds `{url, mime_type, alt_text?}`; `text_content` is `null`.
+- `reference` / `partial_reference`: `content` holds document reference and optional selection offsets; `text_content` is `null`.
+- `web_search_use`: server-side tool invocation (`tool_use_id`, `tool_name: "web_search"`, `input.query`, `execution_side: "server"`).
+- `web_search_result`: normalized provider search result or error payload; `text_content` is `null`; `content.tool_use_id` links back to `web_search_use`.
 
-**Fields:**
-```sql
-text_content: "Please analyze this character arc"
-content:      null
-```
+Backend code that enforces these shapes:
+- Domain model: `backend/internal/domain/models/llm/turn_block.go`
+- Content validation: `backend/internal/domain/models/llm/content_types.go`
 
-**Example:**
-```json
-{
-  "turn_id": "uuid",
-  "block_type": "text",
-  "sequence": 0,
-  "text_content": "Please analyze this character arc",
-  "content": null
-}
-```
+## Examples (DB-Focused)
 
-### `image`
+### Document reference block
 
-Image attachment (URL-based).
-
-**Fields:**
-```sql
-text_content: null
-content:      {"url": "...", "mime_type": "...", "alt_text": "..."}
-```
-
-**JSONB Schema:**
-```typescript
-{
-  url: string          // Image URL (uploaded to S3/storage)
-  mime_type: string    // "image/png", "image/jpeg", etc.
-  alt_text?: string    // Optional accessibility text
-}
-```
-
-**Example:**
-```json
-{
-  "turn_id": "uuid",
-  "block_type": "image",
-  "sequence": 1,
-  "text_content": null,
-  "content": {
-    "url": "https://storage.example.com/image.png",
-    "mime_type": "image/png",
-    "alt_text": "Character concept art"
-  }
-}
-```
-
-### `reference`
-
-Full document reference (entire content).
-
-**Fields:**
-```sql
-text_content: null
-content:      {"ref_id": "...", "ref_type": "document", "version_timestamp": "..."}
-```
-
-**JSONB Schema:**
-```typescript
-{
-  ref_id: string              // UUID of referenced document/image
-  ref_type: string            // "document" | "image" | "s3_document"
-  version_timestamp?: string  // ISO 8601 timestamp for versioning
-  selection_start?: number    // Optional (for full doc, usually omitted)
-  selection_end?: number      // Optional (for full doc, usually omitted)
-}
-```
-
-**Example:**
 ```json
 {
   "turn_id": "uuid",
   "block_type": "reference",
-  "sequence": 0,
+  "sequence": 1,
   "text_content": null,
   "content": {
     "ref_id": "doc-uuid-1234",
@@ -126,181 +72,34 @@ content:      {"ref_id": "...", "ref_type": "document", "version_timestamp": "..
 }
 ```
 
-### `partial_reference`
+DB concerns:
+- Indexed via `idx_turn_blocks_content_gin` for queries like `content @> '{"ref_id": "doc-uuid-1234"}'`.
+- Used by conversation-loading code to attach referenced documents.
 
-Text selection within document (character range).
+### Web search result block
 
-**Fields:**
-```sql
-text_content: null
-content:      {"ref_id": "...", "ref_type": "document", "selection_start": 100, "selection_end": 500}
-```
-
-**JSONB Schema:**
-```typescript
-{
-  ref_id: string            // UUID of referenced document
-  ref_type: string          // "document" (image selections not supported)
-  selection_start: number   // Character offset start (0-indexed)
-  selection_end: number     // Character offset end (exclusive)
-}
-```
-
-**Example:**
 ```json
 {
   "turn_id": "uuid",
-  "block_type": "partial_reference",
-  "sequence": 1,
+  "block_type": "web_search_result",
+  "sequence": 2,
   "text_content": null,
   "content": {
-    "ref_id": "doc-uuid-1234",
-    "ref_type": "document",
-    "selection_start": 150,
-    "selection_end": 450
+    "tool_use_id": "srvtoolu_abc123",
+    "results": [
+      {
+        "title": "Public Domain Poetry - Main Index",
+        "url": "https://www.public-domain-poetry.com/",
+        "page_age": ""
+      }
+    ]
   }
 }
 ```
 
-**Note:** Selection offsets are character-based (not line-based). Frontend must convert between TipTap positions and character offsets.
-
-### `tool_result`
-
-Tool execution result sent back to LLM.
-
-**Fields:**
-```sql
-text_content: "File created successfully"
-content:      {"tool_use_id": "toolu_...", "is_error": false}
-```
-
-**JSONB Schema:**
-```typescript
-{
-  tool_use_id: string  // Matches tool_use block that requested this
-  is_error: boolean    // true if tool execution failed
-}
-```
-
-**Example (success):**
-```json
-{
-  "turn_id": "uuid",
-  "block_type": "tool_result",
-  "sequence": 2,
-  "text_content": "File created at /path/to/file.txt",
-  "content": {
-    "tool_use_id": "toolu_abc123",
-    "is_error": false
-  }
-}
-```
-
-**Example (error):**
-```json
-{
-  "turn_id": "uuid",
-  "block_type": "tool_result",
-  "sequence": 2,
-  "text_content": "Error: Permission denied",
-  "content": {
-    "tool_use_id": "toolu_abc123",
-    "is_error": true
-  }
-}
-```
-
-## Assistant Block Types
-
-### `text`
-
-Assistant response text (same type as user text, different role).
-
-**Fields:**
-```sql
-text_content: "The protagonist demonstrates growth through..."
-content:      null
-```
-
-**Example:**
-```json
-{
-  "turn_id": "uuid",
-  "block_type": "text",
-  "sequence": 1,
-  "text_content": "The protagonist demonstrates growth through...",
-  "content": null
-}
-```
-
-### `thinking`
-
-Internal reasoning (Claude's `<thinking>` blocks).
-
-**Fields:**
-```sql
-text_content: "The user wants analysis of character development..."
-content:      {"signature": "4k_a"}
-```
-
-**JSONB Schema:**
-```typescript
-{
-  signature?: string  // Optional model signature (e.g., "4k_a", "12k_a")
-}
-```
-
-**Example:**
-```json
-{
-  "turn_id": "uuid",
-  "block_type": "thinking",
-  "sequence": 0,
-  "text_content": "The user wants analysis of character development. I should focus on the protagonist's arc from Chapter 1 to Chapter 7.",
-  "content": {
-    "signature": "4k_a"
-  }
-}
-```
-
-**Note:** Signature indicates extended thinking mode (4k, 12k token windows).
-
-### `tool_use`
-
-LLM requesting tool execution.
-
-**Fields:**
-```sql
-text_content: null
-content:      {"tool_use_id": "toolu_...", "tool_name": "create_file", "input": {...}}
-```
-
-**JSONB Schema:**
-```typescript
-{
-  tool_use_id: string             // Unique ID for this tool invocation
-  tool_name: string               // Tool identifier ("create_file", "search_docs", etc.)
-  input: Record<string, unknown>  // Tool-specific input parameters
-}
-```
-
-**Example:**
-```json
-{
-  "turn_id": "uuid",
-  "block_type": "tool_use",
-  "sequence": 1,
-  "text_content": null,
-  "content": {
-    "tool_use_id": "toolu_abc123",
-    "tool_name": "create_file",
-    "input": {
-      "path": "/docs/new_chapter.md",
-      "content": "# Chapter 8\n\n..."
-    }
-  }
-}
-```
+DB concerns:
+- `block_type = 'web_search_result'` for filtering.
+- `content->>'tool_use_id'` used to join back to the corresponding `web_search_use` block.
 
 ## Validation
 
@@ -353,7 +152,8 @@ if block.IsToolBlock() {
 **Table-level:**
 ```sql
 CHECK (block_type IN ('text', 'thinking', 'tool_use', 'tool_result',
-                      'image', 'reference', 'partial_reference'))
+                      'image', 'reference', 'partial_reference',
+                      'web_search_use', 'web_search_result'))
 UNIQUE (turn_id, sequence)  -- Prevent duplicate sequences
 ```
 

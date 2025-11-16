@@ -86,23 +86,28 @@ CREATE TABLE IF NOT EXISTS ${TABLE_PREFIX}turns (
 --
 -- Block types:
 --   User blocks: text, image, reference, partial_reference, tool_result
---   Assistant blocks: text, thinking, tool_use
+--   Assistant blocks: text, thinking, tool_use, web_search, web_search_result
 --
 -- JSONB content structure by block type:
 --   - text: null (text in text_content field)
---   - thinking: {"signature": "4k_a"} (optional, text in text_content)
+--   - thinking: null (text in text_content, signature in provider_data)
 --   - tool_use: {"tool_use_id": "toolu_...", "tool_name": "...", "input": {...}}
 --   - tool_result: {"tool_use_id": "toolu_...", "is_error": false}
+--   - web_search: {"tool_use_id": "toolu_...", "tool_name": "web_search", "input": {...}}
+--   - web_search_result: {"tool_use_id": "toolu_...", "results": [{title, url, page_age}]} or {"tool_use_id": "...", "is_error": true, "error_code": "..."}
 --   - image: {"url": "...", "mime_type": "...", "alt_text": "..."}
 --   - reference: {"ref_id": "...", "ref_type": "document|image|s3_document", "version_timestamp": "...", "selection_start": 0, "selection_end": 100}
 --   - partial_reference: {"ref_id": "...", "ref_type": "document", "selection_start": 0, "selection_end": 100}
 CREATE TABLE IF NOT EXISTS ${TABLE_PREFIX}turn_blocks (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     turn_id UUID NOT NULL REFERENCES ${TABLE_PREFIX}turns(id) ON DELETE CASCADE,
-    block_type TEXT NOT NULL CHECK (block_type IN ('text', 'thinking', 'tool_use', 'tool_result', 'image', 'reference', 'partial_reference')),
+    block_type TEXT NOT NULL CHECK (block_type IN ('text', 'thinking', 'tool_use', 'tool_result', 'image', 'reference', 'partial_reference', 'web_search_use', 'web_search_result')),
     sequence INT NOT NULL,  -- Order within turn (0-indexed)
     text_content TEXT,  -- Plain text content (for text, thinking, tool_result blocks)
     content JSONB,  -- Type-specific structured data
+    provider TEXT,  -- LLM provider that generated this block (e.g., "anthropic", "openai")
+    provider_data JSONB,  -- Raw provider-specific block data for replay (opaque)
+    execution_side TEXT,  -- For tool_use blocks: "server" (provider executes) or "client" (consumer executes)
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(turn_id, sequence)  -- Prevent duplicate sequences within a turn
 );

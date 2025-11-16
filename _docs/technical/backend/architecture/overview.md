@@ -251,10 +251,10 @@ internal/service/llm/
 │   └── service.go              # ConversationService implementation
 ├── streaming/
 │   ├── service.go              # StreamingService implementation
-│   ├── executor.go             # TurnExecutor (background goroutine)
-│   ├── accumulator.go          # Block accumulation logic
-│   ├── registry.go             # Active executor tracking
-│   └── response_generator.go  # LLM provider coordination
+│   ├── mstream_adapter.go      # StreamExecutor + meridian-stream-go integration
+│   ├── catchup.go              # DB-backed catchup for reconnection
+│   ├── debug.go                # Debug helpers for internal streaming
+│   └── response_generator.go   # LLM provider coordination
 ├── providers/
 │   └── anthropic/              # Anthropic Claude provider
 ├── registry.go                 # Provider registry

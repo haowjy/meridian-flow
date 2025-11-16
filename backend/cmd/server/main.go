@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"meridian/internal/config"
@@ -189,8 +190,10 @@ func main() {
 	if cfg.Environment == "dev" && chatDebugHandler != nil {
 		mux.HandleFunc("POST /debug/api/chats/{id}/turns", chatDebugHandler.CreateAssistantTurn)
 		mux.HandleFunc("GET /debug/api/chats/{id}/tree", chatDebugHandler.GetChatTree)
+		mux.HandleFunc("POST /debug/api/chats/{id}/llm-request", chatDebugHandler.BuildProviderRequest)
 		logger.Warn("Debug route registered: POST /debug/api/chats/:id/turns (assistant turn creation)")
 		logger.Warn("Debug route registered: GET /debug/api/chats/:id/tree (full conversation tree - use pagination in production)")
+		logger.Warn("Debug route registered: POST /debug/api/chats/:id/llm-request (LLM provider request preview)")
 	}
 
 	// Build middleware chain
@@ -203,7 +206,7 @@ func main() {
 
 	// CORS
 	corsHandler := cors.New(cors.Options{
-		AllowedOrigins:   []string{cfg.CORSOrigins}, // Will be split if comma-separated
+		AllowedOrigins:   strings.Split(cfg.CORSOrigins, ","),
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		AllowCredentials: true,

@@ -1,15 +1,19 @@
 ---
 detail: minimal
-audience: developer
+audience: backend developers
 ---
 
-# Streaming System
+# Backend Streaming System
 
-Real-time LLM response delivery via Server-Sent Events (SSE) with turn block accumulation.
+Real-time LLM response delivery via Server-Sent Events (SSE) with turn block accumulation and database persistence.
+
+**Note:** This describes **backend streaming implementation** (SSE, catchup, persistence). For **library-level streaming** (StreamEvent, BlockDelta), see:
+- [meridian-llm-go/docs/streaming.md](../../../meridian-llm-go/docs/streaming.md)
+- [meridian-llm-go/docs/blocks.md](../../../meridian-llm-go/docs/blocks.md)
 
 ## Quick Links
 
-**First time?** → [Streaming Architecture](../architecture/streaming-architecture.md)
+**First time?** → [Streaming Architecture](../../backend/architecture/streaming-architecture.md)
 **API integration?** → [API Endpoints](api-endpoints.md)
 **Tool calling?** → [Tool Execution](tool-execution.md)
 **Troubleshooting?** → [Edge Cases](edge-cases.md)
@@ -23,25 +27,28 @@ graph TB
     Client[Client<br/>Browser]
     SSE[SSE Handler<br/>Server-Sent Events]
     Stream[StreamingService<br/>Orchestration]
-    Executor[TurnExecutor<br/>Background Goroutine]
-    Generator[ResponseGenerator<br/>LLM Coordinator]
-    Provider[LLM Provider<br/>Anthropic/OpenAI/etc]
+    MStream[mstream.Registry<br/>Active Streams]
+    Executor[StreamExecutor<br/>mstream Worker]
+    Provider[LLM Provider<br/>via meridian-llm-go]
     DB[(PostgreSQL<br/>Turn Blocks)]
 
-    Client -->|GET /turns/:id/stream| SSE
     Client -->|POST /chats/:id/turns| Stream
-    Stream -->|Create executor| Executor
-    Executor -->|Request| Generator
-    Generator -->|Stream| Provider
-    Provider -->|Delta events| Generator
-    Generator -->|TurnBlockDelta| Executor
-    Executor -->|Broadcast| SSE
+    Stream -->|Create StreamExecutor<br/>+ mstream.Stream| MStream
+
+    Client -->|GET /turns/:id/stream| SSE
+    SSE -->|Get stream| MStream
+    MStream -->|Catchup + SSE events| SSE
     SSE -->|SSE events| Client
-    Executor -->|Save blocks| DB
+
+    Executor -->|StreamResponse| Provider
+    Provider -->|StreamEvents<br/>(Delta, Block, Metadata)| Executor
+    Executor -->|TurnBlockDelta events| MStream
+    Executor -->|Persist TurnBlock| DB
 
     style Client fill:#2d7d9d
     style Executor fill:#7d4d4d
     style DB fill:#2d5d2d
+    style MStream fill:#7d7d2d
 ```
 
 ---
@@ -64,14 +71,9 @@ graph TB
 
 ### Accumulation Rule
 
-**Write to database when block type changes:**
-
-```
-Streaming:     thinking → thinking → thinking → text → text → tool_use
-                     ↓                              ↓           ↓
-TurnBlocks:    [Block 0: thinking]         [Block 1: text]  [Block 2: tool_use]
-               (all deltas accumulated)     (accumulated)    (complete)
-```
+- Provider-specific events are normalized and **accumulated in `meridian-llm-go`**, not in the backend.
+- The library emits complete `Block` structs when a provider block finishes.
+- Backend persists those blocks as `TurnBlock`s and only uses deltas for real-time UI.
 
 ---
 
@@ -154,21 +156,22 @@ TurnBlocks:    [Block 0: thinking]         [Block 1: text]  [Block 2: tool_use]
 ### Creating a Turn (User Sends Message)
 
 1. **Client** → POST `/api/chats/:id/turns` with user message
-2. **StreamingService** creates user turn + assistant turn (status="pending")
-3. **TurnExecutor** starts in background goroutine
-4. **ResponseGenerator** calls LLM provider
-5. **Provider** streams delta events
-6. **Executor** accumulates deltas, broadcasts via SSE
-7. **Executor** writes completed blocks to database
-8. **Client** receives real-time updates via SSE
+2. **StreamingService** creates user turn + assistant turn (`status="streaming"`)
+3. **StreamingService** creates `StreamExecutor` + `mstream.Stream` and registers it in the `mstream.Registry`
+4. **StreamExecutor** calls LLM provider (`StreamResponse`) via `meridian-llm-go`
+5. **Provider** streams events (`Delta`, `Block`, `Metadata`)
+6. **StreamExecutor**:
+   - Sends `TurnBlockDelta` events into `mstream.Stream` for SSE
+   - Persists complete `TurnBlock`s to PostgreSQL
+7. **Client** receives real-time updates via SSE (`turn_start`, `block_start`, `block_delta`, `block_stop`, `turn_complete`)
 
 ### Streaming Events (SSE)
 
 1. **Client** → GET `/api/turns/:id/stream`
-2. **SSE Handler** registers client with TurnExecutor
-3. **Executor** sends catchup events (if reconnecting)
-4. **Executor** broadcasts live delta events
-5. **Executor** sends turn_complete event
+2. **SSE Handler** gets `mstream.Stream` from the registry and replays catchup events (if reconnecting)
+3. **StreamExecutor** pushes new events into `mstream.Stream`
+4. **mstream.Stream** broadcasts SSE events (`block_*`, `turn_*`) to all connected clients
+5. **StreamExecutor** sends `turn_complete` / `turn_error` when streaming finishes
 6. **Connection** closes gracefully
 
 ---
@@ -177,9 +180,9 @@ TurnBlocks:    [Block 0: thinking]         [Block 1: text]  [Block 2: tool_use]
 
 **Service Layer:**
 - `internal/service/llm/streaming/service.go` - StreamingService (orchestration)
-- `internal/service/llm/streaming/executor.go` - TurnExecutor (background goroutine)
-- `internal/service/llm/streaming/accumulator.go` - Block accumulation logic
-- `internal/service/llm/streaming/registry.go` - Active executor tracking
+- `internal/service/llm/streaming/mstream_adapter.go` - StreamExecutor + mstream integration
+- `internal/service/llm/streaming/catchup.go` - DB-backed catchup logic
+- `internal/service/llm/streaming/debug.go` - Debug helpers
 - `internal/service/llm/streaming/response_generator.go` - LLM coordination
 
 **Handlers:**

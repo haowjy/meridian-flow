@@ -62,8 +62,8 @@ func (h *ChatDebugHandler) CreateAssistantTurn(w http.ResponseWriter, r *http.Re
 
 	// Parse request
 	var req struct {
-		PrevTurnID    *string                    `json:"prev_turn_id"`
-		Role          string                     `json:"role"`
+		PrevTurnID *string              `json:"prev_turn_id"`
+		Role       string               `json:"role"`
 		TurnBlocks []llmSvc.TurnBlockInput `json:"turn_blocks"`
 	}
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
@@ -89,6 +89,54 @@ func (h *ChatDebugHandler) CreateAssistantTurn(w http.ResponseWriter, r *http.Re
 	}
 
 	httputil.RespondJSON(w, http.StatusCreated, turn)
+}
+
+// BuildProviderRequest builds and returns the provider-facing JSON request that would be
+// sent for a CreateTurn call (DEBUG ONLY).
+//
+// POST /debug/api/chats/{id}/llm-request
+//
+// This endpoint accepts the same payload as the production CreateTurn endpoint:
+//
+//	{
+//	  "prev_turn_id": "uuid",         // optional
+//	  "role": "user",                 // must be "user"
+//	  "turn_blocks": [...],
+//	  "request_params": { ... }       // model, max_tokens, tools, etc.
+//	}
+//
+// It does NOT create any turns or call the provider. Instead, it returns the
+// meridian-llm-go GenerateRequest (after all conversions) as JSON for inspection.
+func (h *ChatDebugHandler) BuildProviderRequest(w http.ResponseWriter, r *http.Request) {
+	// Get chat ID from route param
+	chatID := r.PathValue("id")
+	if chatID == "" {
+		httputil.RespondError(w, http.StatusBadRequest, "Chat ID is required")
+		return
+	}
+
+	// Get userID from context (set by auth middleware)
+	userID := httputil.GetUserID(r)
+
+	// Parse request body into CreateTurnRequest shape
+	var req llmSvc.CreateTurnRequest
+	if err := httputil.ParseJSON(w, r, &req); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	// Override chat/user IDs from context/path to avoid trusting client for these
+	req.ChatID = chatID
+	req.UserID = userID
+
+	// Delegate to streaming service debug builder
+	debugReq, err := h.streamingService.BuildDebugProviderRequest(r.Context(), &req)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	httputil.RespondJSON(w, http.StatusOK, debugReq)
 }
 
 // GetChatTree retrieves the complete conversation tree structure (DEBUG ONLY)

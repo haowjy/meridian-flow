@@ -8,6 +8,35 @@ status: active
 
 Lean, up-to-date references for engineers. Prefer code over prose; include file/line pointers.
 
+## Read These First
+
+- **High-level product:** `_docs/high-level/1-overview.md`
+- **Backend architecture:** `backend/architecture/overview.md`
+- **LLM core library:** `llm/README.md`
+- **Streaming architecture (LLM responses):** `backend/architecture/streaming-architecture.md`
+
+## Deep Dives
+
+- **Block types & schemas (canonical):**  
+  `llm/streaming/block-types-reference.md`
+- **Unified tool mapping (search, tools, providers):**  
+  `llm/unified-tool-mapping.md`
+- **LLM library architecture & adapters:**  
+  `llm/architecture.md`
+- **Backend ↔ LLM library integration:**  
+  `backend/llm-integration.md`
+- **Streaming race-condition fixes & rationale:**  
+  `llm/streaming/race-conditions.md`
+
+## Historical / Design Notes
+
+- **Block type + web_search design rationale:**  
+  `_docs/hidden/block-type-design.md`
+- **LLM provider unification plan (final):**  
+  `_docs/hidden/handoffs/llm-provider-unification-plan-v5.md`
+- **Cross-provider web_search TODO:**  
+  `_docs/hidden/TODO-cross-provider-web-search.md`
+
 ## System Overview
 
 ```mermaid

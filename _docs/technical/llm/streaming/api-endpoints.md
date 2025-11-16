@@ -89,10 +89,10 @@ event: block_start
 data: {"block_index": 0, "block_type": "thinking"}
 
 event: block_delta
-data: {"block_index": 0, "delta": {"text": "Let me"}}
+data: {"block_index": 0, "delta_type": "thinking_delta", "text_delta": "Let me"}
 
 event: block_delta
-data: {"block_index": 0, "delta": {"text": " think"}}
+data: {"block_index": 0, "delta_type": "thinking_delta", "text_delta": " think"}
 
 event: block_stop
 data: {"block_index": 0}
@@ -101,26 +101,26 @@ event: block_start
 data: {"block_index": 1, "block_type": "text"}
 
 event: block_delta
-data: {"block_index": 1, "delta": {"text": "Based on"}}
+data: {"block_index": 1, "delta_type": "text_delta", "text_delta": "Based on"}
 
 event: block_stop
 data: {"block_index": 1}
 
 event: turn_complete
-data: {"status": "complete", "output_tokens": 420}
+data: {"turn_id": "uuid-123", "stop_reason": "end_turn", "input_tokens": 150, "output_tokens": 420}
 ```
 
 **Event Types:**
 
-| Event | Purpose | Data |
-|-------|---------|------|
-| `turn_start` | Turn begins | turn_id, model, timestamp |
-| `block_start` | New block starts | block_index, block_type |
-| `block_delta` | Content delta | block_index, delta object |
-| `block_stop` | Block complete | block_index |
-| `block_catchup` | Reconnection catchup | accumulated content |
-| `turn_complete` | Turn finished | status, tokens, stop_reason |
-| `turn_error` | Error occurred | error message, code |
+| Event | Purpose | Data (shape) |
+|-------|---------|-------------|
+| `turn_start` | Turn begins | `{turn_id, model}` |
+| `block_start` | New block starts | `{block_index, block_type?}` |
+| `block_delta` | Content delta | `{block_index, delta_type, text_delta?, signature_delta?, input_json_delta?}` |
+| `block_stop` | Block complete | `{block_index}` |
+| `block_catchup` | Reconnection catchup | `{block: TurnBlock}` |
+| `turn_complete` | Turn finished | `{turn_id, stop_reason, input_tokens, output_tokens, response_metadata?}` |
+| `turn_error` | Error occurred | `{turn_id, error}` |
 
 **Keepalive:**
 - Comment sent every 15 seconds: `: keepalive\n\n`
@@ -214,10 +214,7 @@ data: {"status": "complete", "output_tokens": 420}
 ```json
 {
   "turn_id": "uuid-123",
-  "chat_id": "uuid-456",
-  "role": "assistant",
-  "model": "claude-haiku-4-5-20251001",
-  "timestamp": "2025-11-09T10:30:00Z"
+  "model": "claude-haiku-4-5-20251001"
 }
 ```
 
@@ -225,7 +222,6 @@ data: {"status": "complete", "output_tokens": 420}
 
 ```json
 {
-  "turn_id": "uuid-123",
   "block_index": 0,
   "block_type": "thinking"
 }
@@ -236,24 +232,18 @@ data: {"status": "complete", "output_tokens": 420}
 **Text/Thinking:**
 ```json
 {
-  "turn_id": "uuid-123",
   "block_index": 0,
-  "block_type": "thinking",
-  "delta": {
-    "text": "Let me analyze"
-  }
+  "delta_type": "thinking_delta",
+  "text_delta": "Let me analyze"
 }
 ```
 
 **Tool Use (JSON streaming):**
 ```json
 {
-  "turn_id": "uuid-123",
   "block_index": 1,
-  "block_type": "tool_use",
-  "delta": {
-    "partial_json": "{\"tool_name\": \"read"
-  }
+  "delta_type": "input_json_delta",
+  "input_json_delta": "{\"tool_name\": \"read"
 }
 ```
 
@@ -261,21 +251,22 @@ data: {"status": "complete", "output_tokens": 420}
 
 ```json
 {
-  "turn_id": "uuid-123",
-  "block_index": 0,
-  "block_type": "thinking"
+  "block_index": 0
 }
 ```
 
 ### block_catchup
 
-**Sent on reconnection - accumulated content:**
+**Sent on reconnection - full block for catchup:**
 ```json
 {
-  "turn_id": "uuid-123",
-  "block_index": 2,
-  "block_type": "text",
-  "accumulated_text": "I found several issues that need"
+  "block": {
+    "turn_id": "uuid-123",
+    "sequence": 2,
+    "block_type": "text",
+    "text_content": "I found several issues that need",
+    "content": null
+  }
 }
 ```
 
@@ -284,11 +275,9 @@ data: {"status": "complete", "output_tokens": 420}
 ```json
 {
   "turn_id": "uuid-123",
-  "status": "complete",
   "stop_reason": "end_turn",
   "input_tokens": 150,
-  "output_tokens": 420,
-  "total_blocks": 3
+  "output_tokens": 420
 }
 ```
 
@@ -297,9 +286,7 @@ data: {"status": "complete", "output_tokens": 420}
 ```json
 {
   "turn_id": "uuid-123",
-  "error": "Rate limit exceeded",
-  "code": "rate_limit_error",
-  "blocks_completed": 2
+  "error": "Rate limit exceeded"
 }
 ```
 

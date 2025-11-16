@@ -6,6 +6,7 @@
 *.dylib
 /backend
 /server
+/server_new
 /bin
 llm-cli
 llm_cli

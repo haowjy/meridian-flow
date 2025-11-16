@@ -15,37 +15,39 @@ import (
 
 // StreamExecutor wraps mstream.Stream and manages LLM streaming for a turn.
 // It adapts the existing TurnExecutor logic to work with mstream's architecture.
+// Complete blocks come from the library (already normalized), so no accumulation needed.
 type StreamExecutor struct {
-	stream      *mstream.Stream
-	turnID      string
-	model       string
-	turnRepo    llmRepo.TurnRepository
-	provider    domainllm.LLMProvider
-	accumulator *BlockAccumulator
-	logger      *slog.Logger
-	req         *domainllm.GenerateRequest // Stored for WorkFunc to use
+	stream   *mstream.Stream
+	turnID   string
+	model    string
+	turnRepo llmRepo.TurnWriter // Only needs write operations (ISP compliance)
+	provider domainllm.LLMProvider
+	logger   *slog.Logger
+	req      *domainllm.GenerateRequest // Stored for WorkFunc to use
 }
 
 // NewStreamExecutor creates a new mstream-based executor for a turn.
+// Accepts minimal interfaces for better ISP compliance: TurnWriter for writes, TurnReader for catchup
 func NewStreamExecutor(
 	turnID string,
 	model string,
-	turnRepo llmRepo.TurnRepository,
+	turnWriter llmRepo.TurnWriter,
+	turnReader llmRepo.TurnReader,
 	provider domainllm.LLMProvider,
 	logger *slog.Logger,
 	debugMode bool,
 ) *StreamExecutor {
 	se := &StreamExecutor{
-		turnID:      turnID,
-		model:       model,
-		turnRepo:    turnRepo,
-		provider:    provider,
-		accumulator: NewBlockAccumulator(turnID, turnRepo),
-		logger:      logger,
+		turnID:   turnID,
+		model:    model,
+		turnRepo: turnWriter,
+		provider: provider,
+		logger:   logger,
 	}
 
-	// Create catchup function for database-backed event replay
-	catchupFunc := buildCatchupFunc(turnRepo, logger)
+	// Create catchup function for database-backed event replay (needs TurnReader)
+	serializer := llmModels.NewBlockSerializer()
+	catchupFunc := buildCatchupFunc(turnReader, serializer, logger)
 
 	// Create mstream.Stream with WorkFunc, catchup support, and optional event IDs (DEBUG mode)
 	stream := mstream.NewStream(
@@ -126,9 +128,17 @@ func (se *StreamExecutor) workFunc(ctx context.Context, send func(mstream.Event)
 				return streamEvent.Error
 			}
 
-			// Process delta
+			// Process delta (for real-time UI updates)
 			if streamEvent.Delta != nil {
 				if err := se.processDelta(ctx, send, streamEvent.Delta, &currentBlockIndex); err != nil {
+					se.handleError(ctx, send, err)
+					return err
+				}
+			}
+
+			// Process complete block (for database persistence)
+			if streamEvent.Block != nil {
+				if err := se.processCompleteBlock(ctx, send, streamEvent.Block); err != nil {
 					se.handleError(ctx, send, err)
 					return err
 				}
@@ -142,125 +152,95 @@ func (se *StreamExecutor) workFunc(ctx context.Context, send func(mstream.Event)
 	}
 }
 
-// processDelta handles a single TurnBlockDelta
+// processDelta handles a single TurnBlockDelta for real-time UI updates.
+// Deltas are broadcast to SSE clients but NOT accumulated (complete blocks come separately).
 func (se *StreamExecutor) processDelta(ctx context.Context, send func(mstream.Event), delta *llmModels.TurnBlockDelta, currentBlockIndex *int) error {
 	// Detect new block start
 	if delta.BlockIndex != *currentBlockIndex {
-		// FIRST: Flush old block (if one exists) and send block_stop BEFORE starting new block
-		if *currentBlockIndex >= 0 {
-			// Accumulate this delta (which triggers flush of old block when index changes)
-			flushedBlock, err := se.accumulator.ProcessDelta(ctx, delta)
-			if err != nil {
-				return fmt.Errorf("failed to process delta during block transition: %w", err)
-			}
-
-			// Send block_stop for the old block
-			if flushedBlock != nil {
-				se.sendEvent(send, llmModels.SSEEventBlockStop, llmModels.BlockStopEvent{
-					BlockIndex: flushedBlock.Sequence,
-				})
-
-				// Clear buffer atomically with catchup coordination
-				// Note: Block already persisted by accumulator, so persist function is no-op
-				if err := se.stream.PersistAndClear(func(events []mstream.Event) error {
-					return nil // Already persisted to DB by accumulator
-				}); err != nil {
-					se.logger.Error("failed to clear buffer atomically",
-						"error", err,
-						"block_index", flushedBlock.Sequence,
-					)
-				}
-
-				se.logger.Debug("cleared buffer after block flush",
-					"block_index", flushedBlock.Sequence,
-					"turn_id", se.turnID,
-				)
-			}
-		}
-
-		// THEN: Send block_start for new block
+		// Send block_start for new block
 		se.sendEvent(send, llmModels.SSEEventBlockStart, llmModels.BlockStartEvent{
 			BlockIndex: delta.BlockIndex,
 			BlockType:  delta.BlockType,
 		})
 
 		*currentBlockIndex = delta.BlockIndex
+	}
 
-		// Handle empty DeltaType (block start signal with no content)
-		if delta.DeltaType == "" {
-			se.logger.Debug("block start delta with no content, initializing accumulator",
-				"block_index", delta.BlockIndex,
-				"block_type", delta.BlockType,
-			)
-			// Don't send SSE event (no content), but accumulator must initialize the block
-			_, err := se.accumulator.ProcessDelta(ctx, delta)
-			if err != nil {
-				return fmt.Errorf("failed to initialize block %d: %w", delta.BlockIndex, err)
-			}
-			return nil
-		}
-
-		// Send the first block_delta for new block (has content)
+	// Send block_delta event (skip empty deltas)
+	if delta.DeltaType != "" {
 		se.sendEvent(send, llmModels.SSEEventBlockDelta, llmModels.BlockDeltaEvent{
 			BlockIndex:     delta.BlockIndex,
 			DeltaType:      delta.DeltaType,
 			TextDelta:      delta.TextDelta,
+			SignatureDelta: delta.SignatureDelta,
 			InputJSONDelta: delta.InputJSONDelta,
 		})
+	}
 
-		// Accumulate the delta
-		_, err := se.accumulator.ProcessDelta(ctx, delta)
-		if err != nil {
-			return fmt.Errorf("failed to accumulate delta: %w", err)
+	return nil
+}
+
+// processCompleteBlock handles a complete, normalized block from the library.
+// The library has already normalized provider-specific types (web_search_tool_result → tool_result).
+func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(mstream.Event), block *llmModels.TurnBlock) error {
+	// Set turn ID
+	block.TurnID = se.turnID
+
+	// Persist block to database atomically using PersistAndClear
+	// NOTE: We intentionally do NOT check ctx.Done() before persisting.
+	// Even if context is cancelled (e.g., client disconnect, server shutdown),
+	// we want to persist LLM responses to avoid losing data. This ensures
+	// graceful shutdown and allows users to retrieve responses later via catchup.
+	if err := se.stream.PersistAndClear(func(events []mstream.Event) error {
+		// Persist the block to database
+		if err := se.turnRepo.CreateTurnBlock(ctx, block); err != nil {
+			return fmt.Errorf("create turn block: %w", err)
 		}
-
 		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to persist block %d: %w", block.Sequence, err)
 	}
 
-	// Same block - continue accumulating
-	// Handle empty DeltaType (no content to broadcast, but still accumulate for state)
-	if delta.DeltaType == "" {
-		se.logger.Debug("delta with no content, accumulating state only",
-			"block_index", delta.BlockIndex,
-			"block_type", delta.BlockType,
-		)
-		// Don't send SSE event (no content), but accumulator needs to maintain state
-		_, err := se.accumulator.ProcessDelta(ctx, delta)
-		return err
+	// After persistence, emit a block_delta event with full JSON content (if present)
+	// so clients can render structured results (e.g., web_search_result) during streaming.
+	if block.Content != nil {
+		contentJSON, err := json.Marshal(block.Content)
+		if err != nil {
+			se.logger.Error("failed to marshal block content for delta",
+				"error", err,
+				"block_index", block.Sequence,
+				"block_type", block.BlockType,
+			)
+		} else {
+			contentStr := string(contentJSON)
+			se.sendEvent(send, llmModels.SSEEventBlockDelta, llmModels.BlockDeltaEvent{
+				BlockIndex:     block.Sequence,
+				DeltaType:      llmModels.DeltaTypeInputJSON,
+				TextDelta:      nil,
+				SignatureDelta: nil,
+				InputJSONDelta: &contentStr,
+			})
+		}
 	}
 
-	// Send block_delta event
-	se.sendEvent(send, llmModels.SSEEventBlockDelta, llmModels.BlockDeltaEvent{
-		BlockIndex:     delta.BlockIndex,
-		DeltaType:      delta.DeltaType,
-		TextDelta:      delta.TextDelta,
-		InputJSONDelta: delta.InputJSONDelta,
+	// Send block_stop event to SSE clients
+	se.sendEvent(send, llmModels.SSEEventBlockStop, llmModels.BlockStopEvent{
+		BlockIndex: block.Sequence,
 	})
 
-	// Accumulate delta (no flush since same block)
-	_, err := se.accumulator.ProcessDelta(ctx, delta)
-	if err != nil {
-		return fmt.Errorf("failed to process delta: %w", err)
-	}
+	se.logger.Debug("persisted complete block",
+		"block_index", block.Sequence,
+		"block_type", block.BlockType,
+		"turn_id", se.turnID,
+	)
 
 	return nil
 }
 
 // handleCompletion handles successful stream completion
 func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstream.Event), metadata *domainllm.StreamMetadata) error {
-	// Finalize accumulator (flush last block)
-	lastBlock, err := se.accumulator.Finalize(ctx)
-	if err != nil {
-		se.handleError(ctx, send, fmt.Errorf("failed to finalize accumulator: %w", err))
-		return err
-	}
-
-	// Send block_stop for last block
-	if lastBlock != nil {
-		se.sendEvent(send, llmModels.SSEEventBlockStop, llmModels.BlockStopEvent{
-			BlockIndex: lastBlock.Sequence,
-		})
-	}
+	// No need to finalize accumulator - complete blocks are received directly from library
+	// and persisted in processCompleteBlock()
 
 	// Update turn with metadata
 	if err := se.updateTurnMetadata(ctx, metadata); err != nil {
@@ -287,26 +267,19 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 
 // handleError handles streaming errors
 func (se *StreamExecutor) handleError(ctx context.Context, send func(mstream.Event), err error) {
-	// Finalize accumulator to save partial content
-	lastBlock, _ := se.accumulator.Finalize(ctx)
+	// No need to finalize accumulator - complete blocks are already persisted
+	// Partial blocks are not persisted (streaming stopped mid-block)
 
 	// Update turn status in database
 	if updateErr := se.turnRepo.UpdateTurnError(ctx, se.turnID, err.Error()); updateErr != nil {
 		se.logger.Error("failed to update turn error", "error", updateErr)
 	}
 
-	// Determine last block index
-	var lastBlockIndex *int
-	if lastBlock != nil {
-		idx := lastBlock.Sequence
-		lastBlockIndex = &idx
-	}
-
 	// Send turn_error event
 	se.sendEvent(send, llmModels.SSEEventTurnError, llmModels.TurnErrorEvent{
 		TurnID:         se.turnID,
 		Error:          err.Error(),
-		LastBlockIndex: lastBlockIndex,
+		LastBlockIndex: nil, // Could be determined from DB if needed
 	})
 }
 

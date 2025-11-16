@@ -25,6 +25,12 @@ type StreamingService interface {
 	// DO NOT expose this to public API endpoints
 	CreateAssistantTurnDebug(ctx context.Context, chatID string, userID string, prevTurnID *string, contentBlocks []TurnBlockInput, model string) (*llm.Turn, error)
 
+	// BuildDebugProviderRequest builds the provider-facing request payload for a hypothetical
+	// user turn without executing it (DEBUG/INTERNAL USE ONLY).
+	// Used by debug HTTP endpoints to inspect the exact JSON that would be sent to
+	// the underlying LLM provider library for a CreateTurn request.
+	BuildDebugProviderRequest(ctx context.Context, req *CreateTurnRequest) (map[string]interface{}, error)
+
 	// TODO: Phase 2 - Additional streaming methods
 	// Future methods to add:
 	// - GetTurnExecutor(turnID string) (*TurnExecutor, error) - Get executor for SSE connection

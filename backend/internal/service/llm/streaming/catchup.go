@@ -14,7 +14,8 @@ import (
 
 // buildCatchupFunc creates a catchup function that retrieves events from the database.
 // This function is used by mstream to replay missed events during reconnection or first connection.
-func buildCatchupFunc(turnRepo llmRepo.TurnRepository, logger *slog.Logger) mstream.CatchupFunc {
+// Uses TurnReader interface for better ISP compliance (only needs read operations)
+func buildCatchupFunc(turnRepo llmRepo.TurnReader, serializer *llmModels.BlockSerializer, logger *slog.Logger) mstream.CatchupFunc {
 	return func(streamID string, lastEventID string) ([]mstream.Event, error) {
 		ctx := context.Background()
 		turnID := streamID // streamID is the turnID
@@ -60,49 +61,10 @@ func buildCatchupFunc(turnRepo llmRepo.TurnRepository, logger *slog.Logger) mstr
 		events = append(events, mstream.NewEvent(turnStartData).
 			WithType(llmModels.SSEEventTurnStart))
 
-		// Emit block events with full content
+		// Emit block events with full content using BlockSerializer
 		for i, block := range blocks {
-			// Send block_start event
-			blockStartData, _ := json.Marshal(llmModels.BlockStartEvent{
-				BlockIndex: i,
-				BlockType:  &block.BlockType,
-			})
-			events = append(events, mstream.NewEvent(blockStartData).
-				WithType(llmModels.SSEEventBlockStart))
-
-			// Send full block content as single delta
-			// (Library will add event IDs if DEBUG mode enabled)
-			if block.TextContent != nil && *block.TextContent != "" {
-				blockDeltaData, _ := json.Marshal(llmModels.BlockDeltaEvent{
-					BlockIndex:     i,
-					DeltaType:      "text_delta",
-					TextDelta:      block.TextContent,
-					InputJSONDelta: nil,
-				})
-				events = append(events, mstream.NewEvent(blockDeltaData).
-					WithType(llmModels.SSEEventBlockDelta))
-			}
-
-			// For blocks with structured content, send as input_json_delta
-			if block.Content != nil {
-				contentJSON, _ := json.Marshal(block.Content)
-				contentStr := string(contentJSON)
-				blockDeltaData, _ := json.Marshal(llmModels.BlockDeltaEvent{
-					BlockIndex:     i,
-					DeltaType:      "input_json_delta",
-					TextDelta:      nil,
-					InputJSONDelta: &contentStr,
-				})
-				events = append(events, mstream.NewEvent(blockDeltaData).
-					WithType(llmModels.SSEEventBlockDelta))
-			}
-
-			// Send block_stop event
-			blockStopData, _ := json.Marshal(llmModels.BlockStopEvent{
-				BlockIndex: i,
-			})
-			events = append(events, mstream.NewEvent(blockStopData).
-				WithType(llmModels.SSEEventBlockStop))
+			blockEvents := serializer.BlockToSSEEvents(&block, i)
+			events = append(events, blockEvents...)
 		}
 
 		logger.Debug("catchup events built",

@@ -105,6 +105,13 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		model = *params.Model
 	}
 
+	// Environment gating: Reject tools in production
+	if s.config.Environment != "dev" && s.config.Environment != "test" {
+		if len(params.Tools) > 0 {
+			return nil, fmt.Errorf("%w: tools are only allowed in dev/test environments", domain.ErrValidation)
+		}
+	}
+
 	// Create user turn + blocks and assistant turn atomically in a transaction
 	var turn *llmModels.Turn
 	var assistantTurn *llmModels.Turn
@@ -203,7 +210,8 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	executor := NewStreamExecutor(
 		assistantTurn.ID,
 		model,
-		s.turnRepo,
+		s.turnRepo, // TurnWriter
+		s.turnRepo, // TurnReader (same repo implements both)
 		provider,
 		s.logger,
 		s.config.Debug, // Pass DEBUG flag for optional event IDs

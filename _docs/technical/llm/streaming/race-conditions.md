@@ -139,27 +139,32 @@ stream.PersistAndClear(func(events []mstream.Event) error {
 
 ### 1. Fixed Atomic Buffer Clear
 
-**File:** `internal/service/llm/streaming/mstream_adapter.go:164`
+**File:** `backend/internal/service/llm/streaming/mstream_adapter.go`
 
 **Before (Race Condition):**
-```go
-if flushedBlock != nil {
-    se.sendEvent(send, SSEEventBlockStop, ...)
-    se.stream.ClearBuffer()  // ❌ Bypasses catchup mutex!
-}
-```
+- Backend wrote blocks to the database and then called `ClearBuffer()` directly, bypassing `catchupMu`.
+- A reconnecting client could see an empty buffer while the DB write was still in flight.
 
 **After (Atomic with Coordination):**
 ```go
-if flushedBlock != nil {
-    se.sendEvent(send, SSEEventBlockStop, ...)
+func (se *StreamExecutor) processCompleteBlock(...) error {
+    // Persist block to database atomically using PersistAndClear
+    if err := se.stream.PersistAndClear(func(events []mstream.Event) error {
+        if err := se.turnRepo.CreateTurnBlock(ctx, block); err != nil {
+            return fmt.Errorf("create turn block: %w", err)
+        }
+        return nil
+    }); err != nil {
+        return fmt.Errorf("failed to persist block %d: %w", block.Sequence, err)
+    }
 
-    // ✅ Atomic persist-and-clear
-    err := se.stream.PersistAndClear(func(events []mstream.Event) error {
-        return nil  // Already persisted by accumulator
-    })
+    // ... emit block_delta + block_stop events ...
 }
 ```
+
+**Effect:**
+- DB persist and buffer clear happen inside `PersistAndClear`, under `catchupMu`.
+- Catchup (`GetCatchupEvents`) and live streaming see a consistent view of events.
 
 ### 2. Rewrote Catchup to Send Full Block Content
 

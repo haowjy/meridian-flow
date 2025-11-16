@@ -28,6 +28,26 @@ func NewSSEHandler(registry *mstream.Registry, logger *slog.Logger) *SSEHandler 
 	}
 }
 
+// safeFlush flushes the response and checks if the connection is still healthy
+// Returns an error if the connection has been closed/broken
+func (h *SSEHandler) safeFlush(w http.ResponseWriter, flusher http.Flusher, turnID, clientID string) error {
+	// Flush buffered data
+	flusher.Flush()
+
+	// Check connection health by attempting a zero-byte write
+	// If connection is closed, this will return an error
+	if _, err := w.Write([]byte{}); err != nil {
+		h.logger.Warn("flush failed, client likely disconnected",
+			"turn_id", turnID,
+			"client_id", clientID,
+			"error", err,
+		)
+		return err
+	}
+
+	return nil
+}
+
 // StreamTurn handles GET /api/turns/{id}/stream
 // Streams turn events via Server-Sent Events (SSE)
 func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +108,10 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 
 	// Write 200 status and flush headers
 	w.WriteHeader(http.StatusOK)
-	flusher.Flush() // No error checking - connection status detected on next write
+	if err := h.safeFlush(w, flusher, turnID, clientID); err != nil {
+		// Client disconnected before stream established
+		return
+	}
 
 	h.logger.Debug("SSE stream established",
 		"turn_id", turnID,
@@ -102,11 +125,31 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 			Error:  "streaming not active for this turn",
 		})
 		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", llmModels.SSEEventTurnError, string(errorData))
-		flusher.Flush() // No error checking - connection status detected on next write
+		if err := h.safeFlush(w, flusher, turnID, clientID); err != nil {
+			// Client disconnected, error already logged
+			return
+		}
 		h.logger.Info("sent error event for missing stream, closing stream",
 			"turn_id", turnID,
 			"client_id", clientID,
 		)
+		return
+	}
+
+	// If stream exists but is no longer running, do not replay.
+	// Clear the buffer to avoid lingering in-memory events and close immediately.
+	status := stream.Status()
+	if status == mstream.StatusComplete ||
+		status == mstream.StatusError ||
+		status == mstream.StatusCancelled {
+		h.logger.Debug("stream not running, skipping catchup and clearing buffer",
+			"turn_id", turnID,
+			"client_id", clientID,
+			"status", status,
+		)
+
+		// Clear buffer after completion to prevent 10-minute replay semantics.
+		stream.ClearBuffer()
 		return
 	}
 
@@ -139,7 +182,10 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 			}
 			fmt.Fprintf(w, "data: %s\n\n", string(event.Data))
 
-			flusher.Flush() // No error checking - connection status detected on next write
+			if err := h.safeFlush(w, flusher, turnID, clientID); err != nil {
+				// Client disconnected during catchup
+				return
+			}
 			h.logger.Debug("catchup event sent",
 				"turn_id", turnID,
 				"client_id", clientID,
@@ -155,7 +201,7 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if stream is already done (completed/error/cancelled)
-	status := stream.Status()
+	status = stream.Status()
 	if status == mstream.StatusComplete ||
 		status == mstream.StatusError ||
 		status == mstream.StatusCancelled {
@@ -210,7 +256,10 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 			}
 			fmt.Fprintf(w, "data: %s\n\n", string(event.Data))
 
-			flusher.Flush() // No error checking - connection status detected on next write
+			if err := h.safeFlush(w, flusher, turnID, clientID); err != nil {
+				// Client disconnected during event stream
+				return
+			}
 			h.logger.Debug("SSE event sent",
 				"turn_id", turnID,
 				"client_id", clientID,
@@ -220,7 +269,10 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 		case <-ticker.C:
 			// Send keepalive comment
 			fmt.Fprintf(w, ": keepalive\n\n")
-			flusher.Flush() // No error checking - connection status detected on next write
+			if err := h.safeFlush(w, flusher, turnID, clientID); err != nil {
+				// Client disconnected during keepalive
+				return
+			}
 
 			h.logger.Debug("keepalive sent",
 				"turn_id", turnID,

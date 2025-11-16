@@ -200,13 +200,114 @@ stream.ClearBuffer()
 
 **Production:** `DEBUG=false` - no event IDs (better performance)
 
+**Lorem Testing Parameters:**
+- `lorem_max`: Limits lorem provider output to N words
+- Works with any `lorem-*` model (`lorem-fast`, `lorem-slow`, `lorem-medium`)
+- Overrides `max_tokens` when set
+- Use cases:
+  - Quick testing: Set `lorem_max` < `max_tokens` for fast responses
+  - Cutoff simulation: Set `lorem_max` > `max_tokens` to test max_tokens limits
+- Examples:
+  ```json
+  // Quick test (stops early)
+  {
+    "model": "lorem-slow",
+    "max_tokens": 500,
+    "lorem_max": 50
+  }
+  // Result: Lorem stops at 50 words
+
+  // Simulate cutoff (hits limit)
+  {
+    "model": "lorem-slow",
+    "max_tokens": 100,
+    "lorem_max": 150
+  }
+  // Result: Lorem tries to generate 150 words but cuts off at 100 (stop_reason: "max_tokens")
+  ```
+
+**Insomnia Environment Variables:**
+- `llm_model`: Default model for non-streaming requests (default: `lorem-fast`)
+- `llm_max_tokens`: Max tokens for non-streaming (default: 200)
+- `llm_model_streaming`: Model for streaming requests (default: `lorem-slow`)
+- `llm_max_tokens_streaming`: Max tokens for streaming (default: 500)
+
 ### Documentation
 
-- **Start here:** `_docs/technical/backend/streaming/README.md` (navigation hub)
+- **Start here:** `_docs/technical/llm/streaming/README.md` (navigation hub)
 - Architecture: `_docs/technical/backend/architecture/streaming-architecture.md`
-- Block types: `_docs/technical/backend/streaming/block-types-reference.md`
-- Race conditions: `_docs/technical/backend/streaming/race-conditions.md`
+- Block types: `_docs/technical/llm/streaming/block-types-reference.md`
+- Race conditions: `_docs/technical/llm/streaming/race-conditions.md`
 - Library: `meridian-stream-go/README.md`
+
+## Tool Auto-Mapping
+
+The backend automatically maps minimal tool definitions to provider-specific implementations.
+
+### Usage Patterns
+
+**Minimal definition (auto-map to built-in):**
+```json
+{
+  "tools": [
+    {"name": "web_search"},
+    {"name": "bash"},
+    {"name": "text_editor"}
+  ]
+}
+```
+→ Library resolves to provider's built-in tools (e.g., Anthropic's `web_search_20250305`)
+
+**Custom tool (bypass auto-mapping):**
+```json
+{
+  "tools": [
+    {
+      "type": "custom",
+      "name": "make_file",
+      "description": "Write text to a file",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "filename": {"type": "string"},
+          "content": {"type": "string"}
+        }
+      }
+    }
+  ]
+}
+```
+→ Used as-is, no mapping (user-provided custom tool)
+
+**Mix both:**
+```json
+{
+  "tools": [
+    {"name": "web_search"},
+    {"type": "custom", "name": "my_tool", "description": "...", "input_schema": {...}}
+  ]
+}
+```
+→ First tool auto-maps, second bypasses
+
+### Supported Built-in Tools
+
+- `web_search` (or `search`) - Web search (server-executed)
+- `text_editor` (or `file_edit`) - Text editor (client-executed)
+- `bash` (or `code_exec`) - Bash command execution (client-executed)
+
+### Detection Logic
+
+```
+if tool.Type == "custom":
+    → Pass through as-is (user-provided custom tool)
+elif tool has only Name (missing Category/ExecutionSide/Config):
+    → Auto-map to built-in using MapToolByName()
+else:
+    → Pass through as-is (already fully defined)
+```
+
+**Implementation:** See `backend/internal/service/llm/adapters/conversion.go:convertTools()`
 
 ### Testing Submodule Examples
 

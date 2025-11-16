@@ -3,6 +3,8 @@ package llm
 import (
 	"encoding/json"
 	"fmt"
+
+	llmprovider "github.com/haowjy/meridian-llm-go"
 )
 
 // RequestParams represents all possible LLM request parameters across providers.
@@ -77,12 +79,15 @@ type RequestParams struct {
 
 	// ===== Tool Parameters =====
 
-	// Tools available for the model to use
-	Tools []Tool `json:"tools,omitempty"`
+	// Tools available for the model to use (backend intermediate format)
+	// Includes built-in tools (minimal: {"name": "web_search"})
+	// and custom tools (full: {"type": "custom", "name": "...", "description": "...", "input_schema": {...}})
+	// Converted to library types using ToLibraryTools() in conversion layer
+	Tools []ToolDefinition `json:"tools,omitempty"`
 
 	// ToolChoice controls whether/which tools to use
-	// Can be "auto", "none", or specific tool name
-	ToolChoice interface{} `json:"tool_choice,omitempty"`
+	// Use library ToolChoice type for type safety
+	ToolChoice *llmprovider.ToolChoice `json:"tool_choice,omitempty"`
 
 	// ParallelToolCalls allows model to use multiple tools simultaneously
 	ParallelToolCalls *bool `json:"parallel_tool_calls,omitempty"`
@@ -95,6 +100,14 @@ type RequestParams struct {
 
 	// FallbackModels lists alternative models if primary fails
 	FallbackModels []string `json:"fallback_models,omitempty"`
+
+	// ===== Debug Parameters (Only Active When DEBUG=true) =====
+
+	// LoremMax limits lorem provider output to N words (DEBUG only)
+	// Overrides max_tokens when using lorem-* models in DEBUG mode
+	// Ignored in production (DEBUG=false)
+	// Use case: Test streaming/interruption without waiting for large responses
+	LoremMax *int `json:"lorem_max,omitempty"`
 }
 
 // ResponseFormat specifies the format for structured outputs
@@ -103,13 +116,14 @@ type ResponseFormat struct {
 	JSONSchema interface{} `json:"json_schema,omitempty"` // Schema for structured output
 }
 
-// Tool represents a function the model can call
-type Tool struct {
+// LegacyTool represents a function the model can call (OpenAI format)
+// DEPRECATED: Use llmprovider.Tool for new code
+type LegacyTool struct {
 	Type     string       `json:"type"` // "function"
 	Function ToolFunction `json:"function"`
 }
 
-// ToolFunction defines a callable function
+// ToolFunction defines a callable function (legacy OpenAI format)
 type ToolFunction struct {
 	Name        string      `json:"name"`
 	Description string      `json:"description,omitempty"`
@@ -177,6 +191,12 @@ func ValidateRequestParams(params map[string]interface{}) error {
 		}
 	}
 
+	if rp.LoremMax != nil {
+		if *rp.LoremMax < 1 {
+			return fmt.Errorf("lorem_max must be positive, got %d", *rp.LoremMax)
+		}
+	}
+
 	return nil
 }
 
@@ -232,4 +252,13 @@ func (rp *RequestParams) GetThinkingBudgetTokens() int {
 	default:
 		return 0
 	}
+}
+
+// GetLoremMax returns lorem_max with default fallback
+// Used to limit lorem provider output in DEBUG mode
+func (rp *RequestParams) GetLoremMax(defaultValue int) int {
+	if rp.LoremMax != nil {
+		return *rp.LoremMax
+	}
+	return defaultValue
 }

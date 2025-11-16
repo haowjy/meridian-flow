@@ -320,6 +320,14 @@ func (h *ChatHandler) GetPaginatedTurns(w http.ResponseWriter, r *http.Request) 
 	httputil.RespondJSON(w, http.StatusOK, response)
 }
 
+// GetTurnBlocksResponse is the response for GET /api/turns/{id}/blocks
+type GetTurnBlocksResponse struct {
+	TurnID string                `json:"turn_id"`
+	Status string                `json:"status"`
+	Error  *string               `json:"error,omitempty"`
+	Blocks []llmModels.TurnBlock `json:"blocks"`
+}
+
 // GetTurnBlocks retrieves all completed turn blocks for a turn
 // GET /api/turns/{id}/blocks
 // Used for reconnection - client fetches completed blocks before connecting to SSE stream
@@ -337,6 +345,13 @@ func (h *ChatHandler) GetTurnBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get turn metadata (status, error, etc.)
+	turn, err := h.turnRepo.GetTurn(r.Context(), turnID)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
 	// Get blocks from repository
 	blocks, err := h.turnRepo.GetTurnBlocks(r.Context(), turnID)
 	if err != nil {
@@ -344,7 +359,15 @@ func (h *ChatHandler) GetTurnBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httputil.RespondJSON(w, http.StatusOK, blocks)
+	// Return structured response with turn status and error
+	response := GetTurnBlocksResponse{
+		TurnID: turn.ID,
+		Status: turn.Status,
+		Error:  turn.Error,
+		Blocks: blocks,
+	}
+
+	httputil.RespondJSON(w, http.StatusOK, response)
 }
 
 // InterruptTurn cancels a streaming turn

@@ -328,214 +328,6 @@
       "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.user_turn) {\n  console.log('✅ Created turn with multiple content blocks');\n  console.log('Total blocks:', response.user_turn.turn_blocks?.length);\n  response.user_turn.turn_blocks?.forEach((block, i) => {\n    console.log(`  Block ${i + 1}: ${block.block_type}`);\n  });\n}"
     },
     {
-      "_id": "req_params_temperature",
-      "parentId": "fld_request_params",
-      "modified": 1736294400000,
-      "created": 1736294400000,
-      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
-      "name": "1. Turn with Temperature",
-      "description": "Test temperature and max_tokens parameters\nValidates request_params storage in database\nHigher temperature = more creative/random responses",
-      "method": "POST",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"role\": \"user\",\n  \"turn_blocks\": [\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"Write a creative short story about a space explorer\"\n    }\n  ],\n  \"request_params\": {\n    \"model\": \"claude-haiku-4-5\",\n    \"temperature\": 0.9,\n    \"max_tokens\": 500\n  }\n}"
-      },
-      "parameters": [],
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": -1698794700000,
-      "isPrivate": false,
-      "_type": "request",
-      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.assistant_turn) {\n  await insomnia.environment.set('param_turn_id', response.assistant_turn.id);\n  console.log('✅ Created turn with temperature');\n  console.log('📊 Request params:', JSON.stringify(response.assistant_turn.request_params));\n  console.log('🤖 Model:', response.assistant_turn.model);\n  console.log('Verify: request_params stored in assistant turn');\n}"
-    },
-    {
-      "_id": "req_params_thinking_low",
-      "parentId": "fld_request_params",
-      "modified": 1736294400000,
-      "created": 1736294400000,
-      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
-      "name": "2. Turn with Thinking (Low)",
-      "description": "Test thinking mode with low budget (2000 tokens)\nShould see thinking blocks in response\nThinking level: low = 2K, medium = 5K, high = 12K tokens",
-      "method": "POST",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"role\": \"user\",\n  \"turn_blocks\": [\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"Solve this logic puzzle: If all roses are flowers, and some flowers fade quickly, what can we conclude?\"\n    }\n  ],\n  \"request_params\": {\n    \"model\": \"claude-haiku-4-5\",\n    \"thinking_enabled\": true,\n    \"thinking_level\": \"low\"\n  }\n}"
-      },
-      "parameters": [],
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": -1698794600000,
-      "isPrivate": false,
-      "_type": "request",
-      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.assistant_turn) {\n  console.log('✅ Created turn with thinking (low)');\n  console.log('📊 Request params:', JSON.stringify(response.assistant_turn.request_params));\n  console.log('💡 Note: Thinking blocks will appear in assistant turn after streaming completes');\n  console.log('   Stream URL:', response.stream_url);\n}"
-    },
-    {
-      "_id": "req_params_thinking_high",
-      "parentId": "fld_request_params",
-      "modified": 1736294400000,
-      "created": 1736294400000,
-      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
-      "name": "3. Turn with Thinking (High)",
-      "description": "Test thinking mode with high budget (12000 tokens)\nAllows for more extensive reasoning\nCompare thinking block length vs low budget test",
-      "method": "POST",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"role\": \"user\",\n  \"turn_blocks\": [\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"Design a comprehensive system architecture for a distributed chat application with real-time messaging, user presence, and message history\"\n    }\n  ],\n  \"request_params\": {\n    \"model\": \"claude-haiku-4-5\",\n    \"thinking_enabled\": true,\n    \"thinking_level\": \"high\"\n  }\n}"
-      },
-      "parameters": [],
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": -1698794500000,
-      "isPrivate": false,
-      "_type": "request",
-      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.assistant_turn) {\n  console.log('✅ Created turn with thinking (high)');\n  console.log('📊 Request params:', JSON.stringify(response.assistant_turn.request_params));\n  console.log('💡 Note: Thinking blocks will appear in assistant turn after streaming completes');\n  console.log('   Should be more extensive than low budget test');\n  console.log('   Stream URL:', response.stream_url);\n}"
-    },
-    {
-      "_id": "req_params_sampling",
-      "parentId": "fld_request_params",
-      "modified": 1736294400000,
-      "created": 1736294400000,
-      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
-      "name": "4. Turn with Top-P and Top-K",
-      "description": "Test sampling parameters\ntop_p: Nucleus sampling threshold (0.0-1.0)\ntop_k: Limits vocabulary to top K tokens",
-      "method": "POST",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"role\": \"user\",\n  \"turn_blocks\": [\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"Explain the concept of entropy in simple terms\"\n    }\n  ],\n  \"request_params\": {\n    \"model\": \"claude-haiku-4-5\",\n    \"top_p\": 0.95,\n    \"top_k\": 40,\n    \"temperature\": 0.7\n  }\n}"
-      },
-      "parameters": [],
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": -1698794400000,
-      "isPrivate": false,
-      "_type": "request",
-      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.assistant_turn) {\n  console.log('✅ Created turn with sampling params');\n  console.log('📊 Request params:', JSON.stringify(response.assistant_turn.request_params));\n  console.log('🎲 Top-P:', response.assistant_turn.request_params?.top_p);\n  console.log('🎲 Top-K:', response.assistant_turn.request_params?.top_k);\n  console.log('🌡️  Temperature:', response.assistant_turn.request_params?.temperature);\n  console.log('Verify: Anthropic provider received these params');\n}"
-    },
-    {
-      "_id": "req_params_model_override",
-      "parentId": "fld_request_params",
-      "modified": 1736294400000,
-      "created": 1736294400000,
-      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
-      "name": "5. Turn with Custom Model",
-      "description": "Test model override via request_params\nOverrides default model (claude-haiku-4-5)\nResponse.model should match requested model",
-      "method": "POST",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"role\": \"user\",\n  \"turn_blocks\": [\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"What is the capital of France?\"\n    }\n  ],\n  \"request_params\": {\n    \"model\": \"claude-haiku-4-5\"\n  }\n}"
-      },
-      "parameters": [],
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": -1698794300000,
-      "isPrivate": false,
-      "_type": "request",
-      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.assistant_turn) {\n  console.log('✅ Created turn with custom model');\n  console.log('📊 Requested model:', response.assistant_turn.request_params?.model);\n  console.log('🤖 Response model:', response.assistant_turn.model);\n  if (response.assistant_turn.model === response.assistant_turn.request_params?.model) {\n    console.log('✅ Model override successful');\n  } else {\n    console.log('⚠️  Model mismatch detected');\n  }\n}"
-    },
-    {
-      "_id": "req_params_stop",
-      "parentId": "fld_request_params",
-      "modified": 1736294400000,
-      "created": 1736294400000,
-      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
-      "name": "6. Turn with Stop Sequences",
-      "description": "Test stop sequences parameter\nGeneration stops if any sequence is encountered\nUseful for structured outputs or control flow",
-      "method": "POST",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"role\": \"user\",\n  \"turn_blocks\": [\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"Count from 1 to 10\"\n    }\n  ],\n  \"request_params\": {\n    \"model\": \"claude-haiku-4-5\",\n    \"stop\": [\"5\", \"END\"]\n  }\n}"
-      },
-      "parameters": [],
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": -1698794200000,
-      "isPrivate": false,
-      "_type": "request",
-      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.assistant_turn) {\n  console.log('✅ Created turn with stop sequences');\n  console.log('📊 Stop sequences:', JSON.stringify(response.assistant_turn.request_params?.stop));\n  console.log('💡 Note: Stop reason will be available after streaming completes');\n  console.log('   Stream URL:', response.stream_url);\n}"
-    },
-    {
-      "_id": "req_params_invalid_temp",
-      "parentId": "fld_request_params",
-      "modified": 1736294400000,
-      "created": 1736294400000,
-      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
-      "name": "7. [VAL] Invalid Temperature Range",
-      "description": "Test validation: temperature out of range\nValid range: 0.0 - 2.0\nExpect: 400 Bad Request with validation error",
-      "method": "POST",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"role\": \"user\",\n  \"turn_blocks\": [\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"Test message\"\n    }\n  ],\n  \"request_params\": {\n    \"model\": \"lorem-slow\",\n    \"temperature\": 1.5,\"max_tokens\": 100\n  }\n}"
-      },
-      "parameters": [],
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": -1698794100000,
-      "isPrivate": false,
-      "_type": "request",
-      "afterResponseScript": "const status = insomnia.response.code();\nif (status === 400) {\n  console.log('✅ Correctly rejected invalid temperature (400)');\n  const response = insomnia.response.json();\n  console.log('Error message:', response.message || response.error);\n  console.log('Expected: temperature must be between 0.0 and 2.0');\n} else {\n  console.log('⚠️  Expected 400, got', status);\n}"
-    },
-    {
-      "_id": "req_params_invalid_thinking",
-      "parentId": "fld_request_params",
-      "modified": 1736294400000,
-      "created": 1736294400000,
-      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
-      "name": "8. [VAL] Invalid Thinking Level",
-      "description": "Test validation: invalid thinking_level value\nValid values: 'low', 'medium', 'high'\nExpect: 400 Bad Request with validation error",
-      "method": "POST",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"role\": \"user\",\n  \"turn_blocks\": [\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"Test message\"\n    }\n  ],\n  \"request_params\": {\n    \"model\": \"lorem-slow\",\n    \"thinking_enabled\": true,\n    \"thinking_level\": \"ultra\"\n  }\n}"
-      },
-      "parameters": [],
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": -1698794000000,
-      "isPrivate": false,
-      "_type": "request",
-      "afterResponseScript": "const status = insomnia.response.code();\nif (status === 400) {\n  console.log('✅ Correctly rejected invalid thinking_level (400)');\n  const response = insomnia.response.json();\n  console.log('Error message:', response.message || response.error);\n  console.log('Expected: thinking_level must be low, medium, or high');\n} else {\n  console.log('⚠️  Expected 400, got', status);\n}"
-    },
-    {
       "_id": "req_streaming_create_turn",
       "parentId": "fld_streaming",
       "modified": 1736467200000,
@@ -546,7 +338,7 @@
       "method": "POST",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"prev_turn_id\": \"{{ _.assistant_turn_id }}\", \"role\": \"user\",\n  \"turn_blocks\": [\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"Write a short poem about coding\"\n    }\n  ],\n  \"request_params\": {\n    \"model\": \"lorem-slow\",\n    \"max_tokens\": 100\n  }\n}"
+        "text": "{\n  \"prev_turn_id\": \"{{ _.assistant_turn_id }}\",\n  \"role\": \"user\",\n  \"turn_blocks\": [\n    {\n      \"block_type\": \"text\",\n      \"text_content\": \"Can you search for a public domain short poem and write it to a file called poem.txt?\"\n    }\n  ],\n  \"request_params\": {\n    \"model\": \"{{ _.llm_model_streaming }}\",\n    \"max_tokens\": {{ _.llm_max_tokens_streaming }},\n    \"lorem_max\": 150,\n    \"thinking_enabled\": true,\n    \"thinking_level\": \"low\",\n    \"tools\": [\n      {\n        \"name\": \"web_search\"\n      },\n      {\n        \"type\": \"function\",\n        \"function\": {\n          \"name\": \"make_file\",\n          \"description\": \"Write text to a file\",\n          \"parameters\": {\n            \"type\": \"object\",\n            \"properties\": {\n              \"filename\": {\n                \"type\": \"string\",\n                \"description\": \"The filename to write text to\"\n              },\n              \"lines_of_text\": {\n                \"type\": \"array\",\n                \"description\": \"An array of lines of text to write to the file\",\n                \"items\": { \"type\": \"string\" }\n              }\n            },\n            \"required\": [\"filename\", \"lines_of_text\"]\n          }\n        }\n      }\n    ]\n  }\n}"
       },
       "parameters": [],
       "headers": [
@@ -718,136 +510,6 @@
       "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.id) {\n  await insomnia.environment.set('seeded_chat_id', response.id);\n  console.log('✅ Retrieved seeded chat');\n  console.log('Title:', response.title);\n  console.log('💡 This chat has a branching conversation tree');\n  console.log('   Try: GET /api/turns/{{turn_id}}/siblings to see versions');\n}"
     },
     {
-      "_id": "req_validation_invalid_project",
-      "parentId": "fld_validation",
-      "modified": 1698796800000,
-      "created": 1698796800000,
-      "url": "{{ _.base_url }}/api/chats",
-      "name": "Invalid project_id",
-      "description": "Attempt to create chat with non-existent project\nExpect: 404 Not Found",
-      "method": "POST",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"project_id\": \"99999999-9999-9999-9999-999999999999\",\n  \"title\": \"Invalid Project Chat\"\n}"
-      },
-      "parameters": [],
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": -1698795200000,
-      "isPrivate": false,
-      "_type": "request",
-      "afterResponseScript": "const status = insomnia.response.code();\nif (status === 404) {\n  console.log('✅ Correctly rejected invalid project_id (404)');\n} else {\n  console.log('⚠️  Expected 404, got', status);\n}"
-    },
-    {
-      "_id": "req_validation_invalid_parent",
-      "parentId": "fld_validation",
-      "modified": 1698796800000,
-      "created": 1698796800000,
-      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
-      "name": "Invalid prev_turn_id",
-      "description": "Attempt to create turn with non-existent parent\nExpect: 404 Not Found",
-      "method": "POST",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"prev_turn_id\": \"99999999-9999-9999-9999-999999999999\",\n  \"role\": \"user\",\n  \"turn_blocks\": [\n    {\"block_type\": \"text\", \"text_content\": \"Test\"}\n  ]\n}"
-      },
-      "parameters": [],
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": -1698795100000,
-      "isPrivate": false,
-      "_type": "request",
-      "afterResponseScript": "const status = insomnia.response.code();\nif (status === 404) {\n  console.log('✅ Correctly rejected invalid prev_turn_id (404)');\n} else {\n  console.log('⚠️  Expected 404, got', status);\n}"
-    },
-    {
-      "_id": "req_validation_missing_fields",
-      "parentId": "fld_validation",
-      "modified": 1698796800000,
-      "created": 1698796800000,
-      "url": "{{ _.base_url }}/api/chats",
-      "name": "Missing required fields",
-      "description": "Attempt to create chat without title\nExpect: 400 Bad Request with validation error",
-      "method": "POST",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"project_id\": \"{{ _.project_id }}\"\n}"
-      },
-      "parameters": [],
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": -1698795000000,
-      "isPrivate": false,
-      "_type": "request",
-      "afterResponseScript": "const status = insomnia.response.code();\nif (status === 400) {\n  console.log('✅ Correctly rejected missing title (400)');\n  const response = insomnia.response.json();\n  console.log('Error:', response.message || response.error);\n} else {\n  console.log('⚠️  Expected 400, got', status);\n}"
-    },
-    {
-      "_id": "req_validation_invalid_role",
-      "parentId": "fld_validation",
-      "modified": 1698796800000,
-      "created": 1698796800000,
-      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
-      "name": "Invalid role value",
-      "description": "Attempt to create turn with invalid role\nExpect: 400 Bad Request (must be 'user' or 'assistant')",
-      "method": "POST",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"role\": \"invalid_role\",\n  \"turn_blocks\": [\n    {\"block_type\": \"text\", \"text_content\": \"Test\"}\n  ]\n}"
-      },
-      "parameters": [],
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": -1698794900000,
-      "isPrivate": false,
-      "_type": "request",
-      "afterResponseScript": "const status = insomnia.response.code();\nif (status === 400) {\n  console.log('✅ Correctly rejected invalid role (400)');\n} else {\n  console.log('⚠️  Expected 400, got', status);\n}"
-    },
-    {
-      "_id": "req_validation_invalid_block_type",
-      "parentId": "fld_validation",
-      "modified": 1698796800000,
-      "created": 1698796800000,
-      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns",
-      "name": "Invalid content block type",
-      "description": "Attempt to create turn with invalid block_type\nExpect: 400 Bad Request (must be text/image/reference/partial_reference)",
-      "method": "POST",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"role\": \"user\",\n  \"turn_blocks\": [\n    {\"block_type\": \"invalid_type\", \"text_content\": \"Test\"}\n  ]\n}"
-      },
-      "parameters": [],
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": -1698794800000,
-      "isPrivate": false,
-      "_type": "request",
-      "afterResponseScript": "const status = insomnia.response.code();\nif (status === 400) {\n  console.log('✅ Correctly rejected invalid block_type (400)');\n} else {\n  console.log('⚠️  Expected 400, got', status);\n}"
-    },
-    {
       "_id": "fld_basic_ops",
       "parentId": "wrk_chat",
       "modified": 1698796800000,
@@ -884,18 +546,6 @@
       "_type": "request_group"
     },
     {
-      "_id": "fld_request_params",
-      "parentId": "wrk_chat",
-      "modified": 1736294400000,
-      "created": 1736294400000,
-      "name": "Request Parameters",
-      "description": "Testing LLM request parameters (temperature, thinking, max_tokens, etc.)\nValidates JSONB storage and provider parameter handling",
-      "environment": {},
-      "environmentPropertyOrder": null,
-      "metaSortKey": -1698794500000,
-      "_type": "request_group"
-    },
-    {
       "_id": "fld_streaming",
       "parentId": "wrk_chat",
       "modified": 1736467200000,
@@ -917,18 +567,6 @@
       "environment": {},
       "environmentPropertyOrder": null,
       "metaSortKey": -1698794000000,
-      "_type": "request_group"
-    },
-    {
-      "_id": "fld_validation",
-      "parentId": "wrk_chat",
-      "modified": 1698796800000,
-      "created": 1698796800000,
-      "name": "Validation Tests",
-      "description": "Error handling and edge cases",
-      "environment": {},
-      "environmentPropertyOrder": null,
-      "metaSortKey": -1698793000000,
       "_type": "request_group"
     },
     {
@@ -1044,7 +682,11 @@
         "branch_turn_id": "",
         "workflow_chat_id": "",
         "streaming_turn_id": "",
-        "seeded_chat_id": "11111111-1111-1111-1111-111111111111"
+        "seeded_chat_id": "11111111-1111-1111-1111-111111111111",
+        "llm_model": "lorem-fast",
+        "llm_max_tokens": 200,
+        "llm_model_streaming": "lorem-slow",
+        "llm_max_tokens_streaming": 500
       },
       "dataPropertyOrder": {
         "&": [
@@ -1060,7 +702,11 @@
           "branch_turn_id",
           "workflow_chat_id",
           "streaming_turn_id",
-          "seeded_chat_id"
+          "seeded_chat_id",
+          "llm_model",
+          "llm_max_tokens",
+          "llm_model_streaming",
+          "llm_max_tokens_streaming"
         ]
       },
       "color": null,

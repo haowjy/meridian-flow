@@ -12,52 +12,46 @@ How LLM tool calling works in the streaming system.
 ```mermaid
 sequenceDiagram
     participant Client
-    participant Executor as TurnExecutor
+    participant Executor as StreamExecutor
     participant Provider as Anthropic
     participant Tool as Tool Executor
     participant DB as PostgreSQL
 
     Note over Provider: LLM decides to use tool
 
-    Provider-->>Executor: content_block_start (tool_use)
-    Executor->>Client: SSE: block_start {type: "tool_use"}
+    Provider-->>Executor: StreamEvent{Delta (tool_use)}
+    Executor->>Client: SSE: block_start {block_index, block_type: "tool_use"}
+    Executor->>Client: SSE: block_delta {delta_type: "input_json_delta", input_json_delta: "{...}"}
 
-    Provider-->>Executor: input_json_delta
-    Executor->>Client: SSE: block_delta {delta: {...}}
+    Note over Executor: Persist tool_use block when complete Block arrives
 
-    Provider-->>Executor: content_block_stop (tool_use)
+    Provider-->>Executor: StreamEvent{Block (tool_use)}
+    Executor->>DB: INSERT turn_blocks<br/>(block_type: "tool_use", content: {...})
 
-    Executor->>DB: INSERT turn_blocks<br/>(type: "tool_use", content: {...})
-    Executor->>Client: SSE: block_stop {type: "tool_use"}
-
-    Note over Executor: Execute tool
+    Note over Executor: Execute tool (for client-executed tools)
 
     Executor->>Tool: ExecuteTool(name, input)
     Tool-->>Executor: ToolResult {output: "..."}
 
     Note over Executor: Create tool_result block
 
-    Executor->>DB: INSERT turn_blocks<br/>(type: "tool_result", content: {...})
-    Executor->>Client: SSE: block_start {type: "tool_result"}
-    Executor->>Client: SSE: block_delta {result: "..."}
-    Executor->>Client: SSE: block_stop {type: "tool_result"}
+    Executor->>DB: INSERT turn_blocks<br/>(block_type: "tool_result", content: {...})
+    Executor->>Client: SSE: block_start {block_index, block_type: "tool_result"}
+    Executor->>Client: SSE: block_delta {delta_type: "text_delta", text_delta: "Result..."}
+    Executor->>Client: SSE: block_stop {block_index}
 
-    Note over Executor: Send tool result back to LLM
+    Note over Executor: Send tool result back to LLM (if provider expects it)
 
     Executor->>Provider: ContinueWithToolResult(result)
 
     Note over Provider: LLM continues with result
 
-    Provider-->>Executor: content_block_start (text)
-    Executor->>Client: SSE: block_start {type: "text"}
+    Provider-->>Executor: StreamEvent{Delta (text)}
+    Executor->>Client: SSE: block_start {block_index, block_type: "text"}
+    Executor->>Client: SSE: block_delta {delta_type: "text_delta", text_delta: "..."}
 
-    loop Continued response
-        Provider-->>Executor: content_block_delta (text)
-        Executor->>Client: SSE: block_delta {text: "..."}
-    end
-
-    Provider-->>Executor: message_stop
-    Executor->>DB: INSERT turn_blocks (final text)
+    Provider-->>Executor: StreamEvent{Metadata}
+    Executor->>DB: UPDATE turns SET status="complete"
     Executor->>Client: SSE: turn_complete
 ```
 
@@ -118,46 +112,22 @@ Provider streams `tool_use` block:
 }
 ```
 
-### 2. Executor Persists Tool Request
+### 2. StreamExecutor Persists Tool Request
 
-Write `tool_use` block to database when `content_block_stop` received.
+- `StreamExecutor.processCompleteBlock` persists the `tool_use` `TurnBlock` when the library emits a complete Block.
 
-### 3. Executor Calls Tool
+### 3. Consumer Executes Tool (Client-Side Tools)
 
-```go
-func (e *TurnExecutor) ExecuteTool(toolName string, input map[string]interface{}) (*ToolResult, error) {
-    tool := e.toolRegistry.GetTool(toolName)
-    if tool == nil {
-        return nil, fmt.Errorf("tool %s not found", toolName)
-    }
+- For client-executed tools (e.g., `bash`, `text_editor`, custom tools), the backend:
+  - Inspects `tool_use` blocks.
+  - Executes the corresponding tool in application code.
+  - Writes a `tool_result` block with `content.tool_use_id` and `is_error`.
 
-    result, err := tool.Execute(input)
-    if err != nil {
-        return &ToolResult{
-            Error: err.Error(),
-        }, nil
-    }
+### 4. Provider-Executed Tools (Server-Side)
 
-    return result, nil
-}
-```
-
-### 4. Executor Creates tool_result Block
-
-```json
-{
-  "block_type": "tool_result",
-  "content": {
-    "tool_use_id": "toolu_abc123",
-    "content": "File content here...",
-    "is_error": false
-  }
-}
-```
-
-### 5. Executor Continues LLM Stream
-
-Send tool result back to provider, LLM continues with result in context.
+- For provider-executed tools (e.g., Anthropic web search):
+  - Provider runs the tool; results arrive as `web_search_result` blocks.
+  - Backend does not execute a local tool; it only persists the result blocks.
 
 ---
 
@@ -237,8 +207,8 @@ if err != nil {
 ## References
 
 **Implementation:**
-- Tool executor: `internal/service/llm/streaming/executor.go` (tool execution logic)
-- Tool registry: `internal/service/llm/tools/registry.go` (planned)
+- Streaming: `backend/internal/service/llm/streaming/mstream_adapter.go`
+- Backend tool handling: see `_docs/technical/backend/llm-integration.md`
 
 **Related:**
 - [Streaming Architecture](../architecture/streaming-architecture.md)
