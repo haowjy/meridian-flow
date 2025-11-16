@@ -1,0 +1,159 @@
+/* Meridian CLI Styles */
+
+/* General */
+Screen {
+    background: $surface;
+}
+
+.screen-title {
+    text-style: bold;
+    color: $primary;
+    margin: 1 0;
+}
+
+/* Turn Browser - Two-box layout */
+#turn-browser {
+    layout: vertical;
+    height: 100%;
+}
+
+#display-box {
+    height: 70%;
+    border: solid $primary;
+    padding: 1;
+    overflow-y: auto;
+}
+
+#input-box {
+    height: 30%;
+    border: solid $secondary;
+    padding: 1;
+}
+
+#display-box:focus {
+    border: solid $accent;
+}
+
+#input-box:focus {
+    border: solid $accent;
+}
+
+/* Streaming mode: swap heights */
+#turn-browser.streaming #display-box {
+    height: 30%;
+}
+
+#turn-browser.streaming #input-box {
+    height: 70%;
+}
+
+/* Streaming screen - 50/50 split */
+#streaming-container {
+    layout: vertical;
+    height: 100%;
+}
+
+#streaming-container #user-message-box {
+    height: 50%;
+    border: solid $primary;
+    padding: 1;
+    overflow-y: auto;
+}
+
+#streaming-container #streaming-box {
+    height: 50%;
+    border: solid $secondary;
+    padding: 1;
+    overflow-y: auto;
+}
+
+#streaming-container #user-message-box:focus {
+    border: solid $accent;
+}
+
+#streaming-container #streaming-box:focus {
+    border: solid $accent;
+}
+
+/* List screens */
+.project-item, .chat-item {
+    padding: 1;
+}
+
+.project-item:hover, .chat-item:hover {
+    background: $primary-lighten-1;
+}
+
+/* Dialogs */
+#dialog {
+    width: 60;
+    height: auto;
+    border: thick $background 80%;
+    background: $surface;
+    padding: 1;
+}
+
+.dialog-title {
+    text-style: bold;
+    color: $primary;
+    margin-bottom: 1;
+}
+
+.button-row {
+    layout: horizontal;
+    height: auto;
+    align: center middle;
+    margin-top: 1;
+}
+
+.button-row Button {
+    margin: 0 1;
+}
+
+/* Confirmation screen */
+#confirmation-dialog {
+    width: 80;
+    height: auto;
+    border: thick $background 80%;
+    background: $surface;
+    padding: 2;
+}
+
+.section-title {
+    text-style: bold;
+    color: $primary;
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+.preview-content {
+    border: solid $secondary;
+    padding: 1;
+    margin-bottom: 1;
+}
+
+.params-content {
+    border: solid $secondary;
+    padding: 1;
+    margin-bottom: 1;
+    color: $text-muted;
+}
+
+/* Params editor */
+#params-editor {
+    width: 60;
+    height: auto;
+    border: thick $background 80%;
+    background: $surface;
+    padding: 2;
+}
+
+.field-label {
+    text-style: bold;
+    margin-top: 1;
+    margin-bottom: 0;
+}
+
+Select {
+    margin-bottom: 1;
+}

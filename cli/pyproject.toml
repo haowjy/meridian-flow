@@ -1,0 +1,18 @@
+[project]
+name = "meridian-cli"
+version = "0.1.0"
+description = "Terminal UI for browsing Meridian chat conversations"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "textual>=0.82.0",
+    "httpx>=0.27.0",
+    "pydantic>=2.9.0",
+]
+
+[project.scripts]
+meridian-cli = "meridian_cli.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
