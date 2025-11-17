@@ -27,11 +27,11 @@ export function Field({ label, id, error, required, children, className }: Field
     <div className={cn('grid gap-2', className)}>
       <Label htmlFor={id}>
         {label}
-        {required && <span className="text-destructive ml-1">*</span>}
+        {required && <span className="ml-1 text-error">*</span>}
       </Label>
       {enhancedChild}
       {error && (
-        <p id={errorId} className="text-sm text-destructive">
+        <p id={errorId} className="text-sm text-error">
           {error}
         </p>
       )}

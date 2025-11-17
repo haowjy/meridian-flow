@@ -800,6 +800,25 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 		return nil, fmt.Errorf("verify chat access: %w", err)
 	}
 
+	// last_viewed_turn_id behavior - Two modes of operation:
+	//
+	// CACHE MODE (explicit from_turn_id provided):
+	//   - Stores user's scroll position (can be mid-tree)
+	//   - NO leaf resolution performed
+	//   - Used during active sessions when client explicitly tracks position
+	//   - Updated to from_turn_id without modification (see lines 841-851)
+	//
+	// LEAF RESOLUTION MODE (no from_turn_id, cold start):
+	//   - Resolves to end of active branch (most recent leaf)
+	//   - Used when client has no position (fresh page load, new tab)
+	//   - last_viewed_turn_id resolved to leaf via findMostRecentLeaf() (see lines 832-839)
+	//   - Ensures user sees "end of conversation" not mid-tree bookmark
+	//
+	// Client responsibility:
+	//   - Track scroll position per tab
+	//   - Send explicit from_turn_id during active scrolling
+	//   - Only rely on server cache (last_viewed_turn_id) on fresh loads
+
 	// Determine starting turn ID
 	startTurnID := fromTurnID
 	if startTurnID == nil {
@@ -829,7 +848,10 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 		startTurnID = &mostRecent
 	}
 
-	// Resolve to leaf if no from_turn_id was provided (initial load)
+	// CRITICAL: Leaf resolution ONLY when fromTurnID is nil (cold start)
+	// This is the key difference between cache mode and leaf resolution mode:
+	// - Cold start (fromTurnID == nil): User opening chat fresh → resolve to leaf (end of active branch)
+	// - Active session (fromTurnID != nil): User scrolling → use exact position (can be mid-tree)
 	if fromTurnID == nil {
 		leaf, err := r.findMostRecentLeaf(ctx, *startTurnID)
 		if err != nil {
@@ -838,7 +860,11 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 		startTurnID = &leaf
 	}
 
-	// Update last_viewed_turn_id to the turn we're paginating from
+	// Update last_viewed_turn_id to cache the user's position
+	// This value will be:
+	//   - The resolved leaf (if fromTurnID was nil, cold start)
+	//   - The exact from_turn_id (if provided, active session)
+	// Used as default starting point when client doesn't provide from_turn_id
 	updateQuery := fmt.Sprintf(`
 		UPDATE %s
 		SET last_viewed_turn_id = $1
@@ -847,10 +873,14 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 	_, err = executor.Exec(ctx, updateQuery, *startTurnID, chatID)
 	if err != nil {
 		// Log error but don't fail the request
+		// If update fails, pagination succeeds but cache becomes stale
 		r.logger.Error("failed to update last_viewed_turn_id", "error", err)
 	}
 
 	// Apply defaults for direction and limit
+	// Default direction depends on whether this is a cold start or active session:
+	// - Cold start (fromTurnID == nil): direction="before" to show history from resolved leaf
+	// - Active session (fromTurnID != nil): direction="both" to show context around scroll position
 	if direction == "" {
 		if fromTurnID == nil {
 			direction = "before" // Initial load: show history from leaf
@@ -1103,8 +1133,9 @@ func (r *PostgresTurnRepository) fetchTurnsAfter(ctx context.Context, startTurnI
 }
 
 // findMostRecentLeaf traverses down the tree to find the most recent leaf
+// ONLY CALLED ON COLD STARTS (when fromTurnID == nil in GetPaginatedTurns)
 // Follows the most recent child (created_at DESC) at each level using a recursive CTE
-// Returns the leaf turn_id
+// Returns the leaf turn_id to show "end of active branch"
 func (r *PostgresTurnRepository) findMostRecentLeaf(ctx context.Context, startTurnID string) (string, error) {
 	// Use recursive CTE to find the leaf in a single query instead of N sequential queries
 	// This reduces latency from O(n) round-trips to O(1) query for deep conversation trees

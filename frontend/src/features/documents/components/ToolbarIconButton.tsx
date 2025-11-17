@@ -13,13 +13,13 @@ export interface ToolbarIconButtonProps
 }
 
 const toolbarIconButtonVariants = cva(
-  'inline-flex items-center justify-center shrink-0 select-none transition-colors outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:border-ring disabled:opacity-50 disabled:pointer-events-none rounded-lg',
+  'inline-flex items-center justify-center shrink-0 select-none transition-colors outline-none rounded-sm border border-transparent disabled:opacity-[--opacity-disabled] disabled:pointer-events-none',
   {
     variants: {
       variant: {
-        default: 'h-9 w-9 text-muted-foreground hover:border-border hover:shadow-sm border border-transparent',
-        toggleReadOnly: 'h-9 w-9 text-foreground bg-transparent hover:border-border hover:shadow-sm border border-transparent',
-        toggleEdit: 'h-9 w-9 text-foreground bg-transparent hover:border-border hover:shadow-sm border border-transparent',
+        default: 'h-9 w-9 text-muted-foreground hover:border-border hover:bg-[var(--hover)]',
+        toggleReadOnly: 'h-9 w-9 text-foreground bg-transparent hover:border-border hover:bg-[var(--hover)]',
+        toggleEdit: 'h-9 w-9 text-foreground bg-transparent hover:border-border hover:bg-[var(--hover)]',
       },
       state: {
         active: '',
@@ -30,12 +30,12 @@ const toolbarIconButtonVariants = cva(
       {
         variant: 'default',
         state: 'active',
-        class: 'border-border shadow-md text-foreground',
+        class: 'border-border bg-card text-foreground',
       },
       {
         variant: 'toggleReadOnly',
         state: 'active',
-        class: 'bg-card border-border shadow-md text-foreground',
+        class: 'bg-card border-border text-foreground',
       },
       {
         variant: 'toggleEdit',

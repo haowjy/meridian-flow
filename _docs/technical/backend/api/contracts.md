@@ -338,7 +338,196 @@ Similar to folders, the `name` field now supports Unix-style path notation for c
 
 ## Chat Operations
 
-Chat system provides multi-turn LLM conversations with efficient pagination for large conversations (1000+ turns).
+Chat system provides multi-turn LLM conversations with branching, streaming, and efficient pagination.
+
+### List Chats (GET /api/chats?project_id=:id)
+
+Returns all chats for a given project belonging to the authenticated user.
+
+- Requires `project_id` query parameter (400 if missing).
+- Only returns chats where the project belongs to the current user.
+- Soft-deleted chats (with `deleted_at` set) are excluded.
+- Ordered by `updated_at DESC` (most recently updated first).
+- Returns empty array `[]` if no chats exist for the project.
+
+**Response:** Array of Chat objects
+
+```json
+[
+  {
+    "id": "chat-uuid",
+    "project_id": "project-uuid",
+    "user_id": "user-uuid",
+    "title": "Brainstorm: Act 1",
+    "last_viewed_turn_id": "turn-uuid-or-null",
+    "created_at": "2025-01-15T10:30:00Z",
+    "updated_at": "2025-01-15T10:45:12Z"
+  }
+]
+```
+
+### Create Chat (POST /api/chats)
+
+Creates a new chat session within a project.
+
+**Request Body:**
+```json
+{
+  "project_id": "project-uuid",
+  "title": "Brainstorm: Act 1"
+}
+```
+
+**Validation:**
+- `project_id` required (must reference an existing project owned by the user).
+- `title` required.
+- `title` length: 1–255 characters (see `config.MaxChatTitleLength`).
+
+**Conflict Handling (409):**
+- If a chat with a conflicting title already exists (according to domain rules), returns:
+  - HTTP 409 with error message.
+  - Response body includes the existing `Chat` resource to allow the frontend to offer “Open existing” flows.
+
+**Response (201 Created):**
+```json
+{
+  "id": "chat-uuid",
+  "project_id": "project-uuid",
+  "user_id": "user-uuid",
+  "title": "Brainstorm: Act 1",
+  "last_viewed_turn_id": null,
+  "created_at": "2025-01-15T10:30:00Z",
+  "updated_at": "2025-01-15T10:30:00Z"
+}
+```
+
+### Get Chat (GET /api/chats/:id)
+
+Returns a single chat by ID for the authenticated user.
+
+- Validates that the chat exists and belongs to a project owned by the user.
+- Returns 404 if not found or not accessible.
+
+**Response:** Chat object (same shape as Create Chat response).
+
+### Update Chat (PATCH /api/chats/:id)
+
+Updates a chat’s title.
+
+**Request Body:**
+```json
+{
+  "title": "Revised Brainstorm: Act 1"
+}
+```
+
+**Validation:**
+- `title` required.
+- `title` length: 1–255 characters (`config.MaxChatTitleLength`).
+
+**Response (200 OK):** Updated Chat object with new `title` and `updated_at`.
+
+### Delete Chat (DELETE /api/chats/:id)
+
+Soft-deletes a chat and returns the deleted chat object.
+
+- Marks `deleted_at` timestamp instead of hard-deleting.
+- Deleted chats are excluded from `GET /api/chats` and from conversation operations.
+- Returns 404 if chat not found or not accessible.
+
+**Response (200 OK):**
+```json
+{
+  "id": "chat-uuid",
+  "project_id": "project-uuid",
+  "user_id": "user-uuid",
+  "title": "Brainstorm: Act 1",
+  "last_viewed_turn_id": null,
+  "created_at": "2025-01-15T10:30:00Z",
+  "updated_at": "2025-01-15T10:45:12Z",
+  "deleted_at": "2025-01-15T11:00:00Z"
+}
+```
+
+### Create Turn (POST /api/chats/:chatId/turns)
+
+Creates a new **user** turn in a chat and triggers an assistant streaming response.
+
+**Request Body:**
+```json
+{
+  "prev_turn_id": "uuid-prev-turn-or-null",
+  "role": "user",
+  "system_prompt": null,
+  "turn_blocks": [
+    {
+      "block_type": "text",
+      "text_content": "Write a scene where the hero meets the mentor.",
+      "content": {
+        "text": "Write a scene where the hero meets the mentor."
+      }
+    }
+  ],
+  "request_params": {
+    "model": "claude-haiku-4-5-20251001",
+    "temperature": 0.7,
+    "max_tokens": 1024,
+    "thinking": "low"
+  }
+}
+```
+
+**Validation:**
+- `chatId` path parameter required and must reference a chat owned by the user.
+- `role` must be `"user"` (assistant turns are created internally).
+- `turn_blocks`:
+  - Each block requires `block_type`.
+  - Supported types: `text`, `thinking`, `tool_use`, `tool_result`, `image`, `reference`, `partial_reference`.
+  - `content` must pass type-specific validation (see `turn-blocks.md`).
+- `prev_turn_id` (if provided) must belong to the same chat.
+
+**Response (201 Created):**
+
+Returns both the user turn and the assistant turn that will stream, plus a convenience SSE URL:
+
+```json
+{
+  "user_turn": {
+    "id": "user-turn-uuid",
+    "chat_id": "chat-uuid",
+    "prev_turn_id": "prev-turn-uuid-or-null",
+    "role": "user",
+    "status": "complete",
+    "blocks": [
+      {
+        "block_index": 0,
+        "block_type": "text",
+        "content": {
+          "text": "Write a scene where the hero meets the mentor."
+        }
+      }
+    ],
+    "created_at": "2025-01-15T10:30:00Z",
+    "completed_at": "2025-01-15T10:30:00Z"
+  },
+  "assistant_turn": {
+    "id": "assistant-turn-uuid",
+    "chat_id": "chat-uuid",
+    "prev_turn_id": "user-turn-uuid",
+    "role": "assistant",
+    "status": "streaming",
+    "model": "claude-haiku-4-5-20251001",
+    "created_at": "2025-01-15T10:30:00Z",
+    "completed_at": null
+  },
+  "stream_url": "/api/turns/assistant-turn-uuid/stream"
+}
+```
+
+**Usage:**
+- Frontend persists the returned turns, renders the user turn immediately, and connects to `stream_url` via SSE to receive incremental `block_delta` events for the assistant turn.
+
+### Strategy: Two-Endpoint Pagination
 
 ### Strategy: Two-Endpoint Pagination
 

@@ -1,14 +1,14 @@
 # CLAUDE.md
 
-This file provides guidance to Codex when working with code in this repository.
+This file provides guidance when working with the code in this repository.
 
 ## Project Overview
 
 Meridian is a file management system for creative writers, starting with fiction writers who manage 100+ chapter web serials.
 
 **Current Status:**
-- ✅ Backend (Go + Fiber + PostgreSQL): Fully implemented
-- 🚧 Frontend (Next.js + TipTap): In active development
+- ✅ Backend (Go + Fiber + PostgreSQL): File system complete, Chat/LLM in progress (Anthropic provider working, streaming infrastructure pending)
+- 🚧 Frontend (Next.js + TipTap): Document editor complete, chat UI pending
 
 For product details, see `_docs/high-level/1-overview.md`.
 
@@ -63,6 +63,8 @@ Then, these principles can also help you make architectural decisions and other 
     - Optimistic updates ✅
     - Persistent operation queues ❌ (usually overkill)
 
+10. **Extensible** - Design for extensibility.
+
 ## Where to Find Things
 
 ### Code-Specific Instructions
@@ -74,6 +76,7 @@ Then, these principles can also help you make architectural decisions and other 
 
 - **Product/high-level**: `_docs/high-level/` - Product vision, MVP specs, user stories
 - **Technical details**: `_docs/technical/backend/` - Architecture decisions, setup guides
+  - **Streaming/SSE**: `_docs/technical/llm/streaming/` - Real-time LLM responses, block types
 - **Documentation structure**: `_docs/README.md` - How docs are organized
 
 **Always check `_docs/technical/` first before creating new documentation.**
@@ -113,7 +116,7 @@ _docs/
 2. **Minimize words** - Every sentence should earn its place
    - Can a diagram replace 3 paragraphs? Use the diagram
    - Can a table replace verbose lists? Use the table
-   - Cut ruthlessly - too much text hurts comprehension
+   - Cut ruthlessly; too much text hurts comprehension
 
 3. **Reference, don't duplicate** - Point to code, don't copy it
    - ✅ "See `internal/service/document.go:29-33`"
@@ -138,7 +141,7 @@ _docs/
    - Demonstrating a specific fix/workaround
    - Concept can't be found in existing code
 
-7. **Focus on WHY, not WHAT** - Code shows WHAT; explain WHY
+7. **Focus on WHY and WHAT, not HOW** - let the implementation show the how. How can always change. Some How details are important to note (like specific implementation details to ensure effiency, compliance, etc.), but not always.
 
 8. **Mermaid diagrams** - Use dark mode compatible colors:
    - Use darker, saturated colors (e.g., `#2d7d2d` not `#90EE90`)
@@ -147,18 +150,12 @@ _docs/
 
 ### Mermaid Quick Rules
 
-- **Quote labels with spaces, parentheses, punctuation, or HTML**
-  - Nodes: `Node["Label"]`, Edges: `A -->|"edge"| B`, Subgraphs: `subgraph "Title (X)"` … `end`
-- **Put `<br/>` only inside quoted labels**
-- **Use ASCII operators** in labels (`>=`, `<=`) instead of unicode
-- **Don't change diagram types or structure** - Fix parse errors by adding quotes, not refactors
-- **Leave `class` directives as-authored** - Move prose into labels only if asked
-- **If asked to revert, restore the exact previous lines**
-- **Before saving: quick scan for unbalanced quotes**
+- Quote labels with spaces/punctuation: `Node["Label"]`, `A -->|"edge"| B`
+- Use ASCII operators (`>=`, `<=`) not unicode
+- Fix parse errors by adding quotes, not restructuring diagrams
 
-### Examples
+### Example
 
-**Good (minimal):**
 ```markdown
 # Database Connections
 
@@ -170,20 +167,6 @@ Add `?pgbouncer=true` for dev (port 6543).
 
 ## Implementation
 See `internal/repository/postgres/connection.go`
-```
-
-**Bad (verbose):**
-```markdown
-# Database Connections
-
-PostgreSQL is a powerful database...
-[3 paragraphs of history]
-
-Here's the connection code:
-[50 lines copied from connection.go]
-
-Here's how to query:
-[30 more lines]
 ```
 
 ## General Conventions

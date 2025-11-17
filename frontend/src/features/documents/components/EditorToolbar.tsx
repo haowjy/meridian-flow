@@ -96,7 +96,7 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, readOnly
         {/* Gray background wrapper - foundation layer, extends full width in edit mode */}
         <div className={cn(
           "flex items-center rounded-lg group overflow-hidden",
-          readOnly ? "bg-muted/30 shadow-md" : "bg-muted",
+          readOnly ? "bg-muted/30" : "bg-muted",
           readOnly ? "ring-1 ring-border/60" : "ring-1 ring-border/30",
           !readOnly && "flex-1"
         )}>
@@ -121,7 +121,7 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, readOnly
             ref={pencilCellRef}
             className={cn(
               "flex items-center gap-0.5 rounded-l-none overflow-hidden transition-all duration-200",
-              !readOnly && "flex-1 bg-card ring-1 ring-border/60 shadow-md rounded-lg group-hover:shadow-lg group-hover:ring-1 group-hover:ring-border"
+              !readOnly && "flex-1 bg-card ring-1 ring-border/60 rounded-lg group-hover:ring-border"
             )}
           >
             {/* Pencil button - edit mode toggle */}

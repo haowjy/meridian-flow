@@ -3,121 +3,365 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ============================================================================
+   MERIDIAN DESIGN SYSTEM - Jade & Gold Theme
+   ============================================================================
+
+   Based on: _docs/technical/frontend/ui-colors.md
+
+   Color Philosophy:
+   - Jade = flow, balance, cultivated focus
+   - Gold = insight, value, illumination
+   - Parchment = writer's craft, warm and legible
+   - Dark mode = green-black jade for depth, reduced glare
+
+   THEME SWAPPING:
+   To create alternative themes, add new color definitions using data attributes:
+
+   [data-theme="alternative-name"] {
+     --jade-900: ...;
+     --gold-500: ...;
+     // override primitive colors
+   }
+
+   All components use semantic tokens so swapping themes only requires
+   changing the primitive color values below.
+   ============================================================================ */
+
 @theme inline {
+  /* === Core Colors === */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
+  --color-primary: var(--jade-primary);
+  --color-primary-foreground: var(--jade-foreground);
+  --color-accent: var(--gold);
+  --color-accent-foreground: var(--gold-foreground);
   --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
+  --color-input: var(--input-border);
+  --color-ring: var(--focus-ring);
+
+  /* === Semantic Colors === */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-error: var(--error);
+  --color-error-foreground: var(--error-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+
+  /* === Interactive States === */
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  --color-disabled: var(--disabled);
+
+  /* === UI Component Colors === */
   --color-card: var(--card);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  /* === Sidebar (Jade Base) === */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-icon: var(--sidebar-icon);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* === Typography === */
+  --font-sans: var(--font-inter);
+  --font-serif: var(--font-literata);
+  --font-mono: ui-monospace, monospace;
+
+  /* === Border Radius === */
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* === Spacing (8pt grid) === */
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 16px;
+  --spacing-4: 24px;
+  --spacing-5: 32px;
+  --spacing-6: 48px;
+
+  /* === Shadows (multi-layer) === */
+  --shadow-1: var(--shadow-1-value);
+  --shadow-2: var(--shadow-2-value);
+  --shadow-3: var(--shadow-3-value);
+
+  /* === Opacity Scale === */
+  --opacity-disabled: 0.6;
+  --opacity-hover: 0.08;
+  --opacity-overlay: 0.6;
+  --opacity-subtle: 0.2;
+
+  /* === Animation === */
+  --duration-fast: 150ms;
+  --duration-medium: 200ms;
+  --duration-slow: 250ms;
+  --easing-default: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* === Focus Ring Opacities === */
+  --focus-outer-opacity: 0.28;
+  --focus-inner-opacity: 0.12;
 }
+
+/* ============================================================================
+   LIGHT MODE - Morning study: parchment warmth, calm focus
+   ============================================================================ */
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.042 264.695);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.129 0.042 264.695);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.208 0.042 265.755);
-  --primary-foreground: oklch(0.984 0.003 247.858);
-  --secondary: oklch(0.968 0.007 247.896);
-  --secondary-foreground: oklch(0.208 0.042 265.755);
-  --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417);
-  --accent: oklch(0.968 0.007 247.896);
-  --accent-foreground: oklch(0.208 0.042 265.755);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.929 0.013 255.508);
-  --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.984 0.003 247.858);
-  --sidebar-foreground: oklch(0.129 0.042 264.695);
-  --sidebar-primary: oklch(0.208 0.042 265.755);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.968 0.007 247.896);
-  --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
-  --sidebar-border: oklch(0.929 0.013 255.508);
-  --sidebar-ring: oklch(0.704 0.04 256.788);
+  /* === Base Palette === */
+
+  /* Jade - Primary (CORRECTED: Jade 900 is PRIMARY, not Jade 300!) */
+  --jade-900: oklch(0.54 0.08 175); /* #2F7F72 - PRIMARY jade for icons, buttons */
+  --jade-300: oklch(0.76 0.04 165); /* #A9BDB5 - MUTED for sidebar background only */
+  --jade-hover: oklch(0.79 0.03 165); /* #BCD1CA - hover wash */
+
+  /* Gold - Accent */
+  --gold-500: oklch(0.78 0.18 85); /* #F4B41A */
+
+  /* Parchment - Surfaces */
+  --parchment-50: oklch(0.97 0.01 75); /* #F7F3EB - app background */
+  --parchment-0: oklch(1 0 0); /* #FFFFFF - pure white for cards/bubbles */
+  --neutral-100: oklch(0.95 0.005 70); /* #F2EFE8 - subtle fills */
+
+  /* Ink - Text */
+  --ink-900: oklch(0.20 0.02 50); /* #1C1A18 */
+  --ink-muted: oklch(0.50 0.02 50); /* #8A7F6C - timestamps */
+
+  /* Lines - Borders */
+  --line-200: oklch(0.88 0.01 70); /* #DDD6C8 */
+
+  /* === Semantic Assignments === */
+
+  /* Core */
+  --background: var(--parchment-50);
+  --foreground: var(--ink-900);
+
+  /* Primary = DARK JADE (Jade 900), not light jade! */
+  --jade-primary: var(--jade-900);
+  --jade-foreground: oklch(1 0 0); /* white text on dark jade */
+
+  /* Accent = Gold */
+  --gold: var(--gold-500);
+  --gold-foreground: var(--ink-900);
+
+  /* Interactive States */
+  --hover: oklch(0.79 0.03 165 / var(--opacity-hover)); /* jade wash at 8% */
+  --active: var(--jade-900);
+  --disabled: oklch(0.60 0.01 50); /* #9A958A */
+
+  /* Borders & Inputs */
+  --border: var(--line-200);
+  --input-border: var(--line-200);
+
+  /* Focus Rings - Layered: jade outline + inner gold */
+  --focus-ring-outer: oklch(0.54 0.08 175 / var(--focus-outer-opacity)); /* jade at 28% */
+  --focus-ring-inner: oklch(0.78 0.18 85 / var(--focus-inner-opacity)); /* gold at 12% */
+  --focus-ring: var(--focus-ring-outer); /* for simple references */
+
+  /* Cards & Popovers - PURE WHITE, not parchment! */
+  --card: var(--parchment-0);
+  --card-foreground: var(--ink-900);
+  --popover: var(--parchment-0);
+  --popover-foreground: var(--ink-900);
+
+  /* Muted - Neutral fills */
+  --muted: var(--neutral-100);
+  --muted-foreground: var(--ink-muted);
+
+  /* Semantic Feedback */
+  --success: var(--jade-900); /* jade for success */
+  --success-foreground: oklch(1 0 0);
+  --success-wash: oklch(0.94 0.03 165); /* #EBF5F2 */
+
+  --warning: oklch(0.75 0.12 65); /* #EBA868 amber-clay */
+  --warning-foreground: var(--ink-900);
+  --warning-wash: oklch(0.98 0.02 65); /* #FDF3E6 */
+
+  --error: oklch(0.75 0.12 65); /* same as warning */
+  --error-foreground: var(--ink-900);
+
+  --info: var(--jade-900);
+  --info-foreground: oklch(1 0 0);
+  --info-wash: var(--success-wash);
+
+  /* Sidebar - LIGHT JADE background, DARK JADE icons */
+  --sidebar: var(--jade-300); /* light jade for bg */
+  --sidebar-foreground: var(--parchment-50); /* parchment text */
+  --sidebar-icon: var(--jade-900); /* DARK JADE for icons! */
+  --sidebar-primary: var(--gold-500); /* gold active marker */
+  --sidebar-primary-foreground: var(--ink-900);
+  --sidebar-accent: var(--jade-hover); /* hover wash */
+  --sidebar-accent-foreground: var(--sidebar-foreground);
+  --sidebar-border: var(--jade-900);
+  --sidebar-ring: var(--gold-500);
+
+  /* Multi-Layer Shadows - Light Mode (ink-based, not jade-tinted!) */
+  --shadow-1-value:
+    rgba(28, 26, 24, 0.06) 0px 1px 2px,
+    rgba(28, 26, 24, 0.04) 0px 2px 6px;
+
+  --shadow-2-value:
+    rgba(28, 26, 24, 0.10) 0px 3px 8px,
+    rgba(28, 26, 24, 0.06) 0px 6px 16px;
+
+  --shadow-3-value:
+    rgba(28, 26, 24, 0.18) 0px 8px 24px,
+    rgba(28, 26, 24, 0.10) 0px 12px 32px;
+
+  /* Selection & Highlights */
+  --selection-bg: oklch(0.78 0.18 85 / 0.3); /* gold at 30% */
+  --selection-fg: var(--ink-900);
 }
 
+/* ============================================================================
+   DARK MODE - Evening chamber: luminous jade over soft shadow
+   ============================================================================ */
+
 .dark {
-  --background: oklch(0.129 0.042 264.695);
-  --foreground: oklch(0.984 0.003 247.858);
-  --card: oklch(0.208 0.042 265.755);
-  --card-foreground: oklch(0.984 0.003 247.858);
-  --popover: oklch(0.208 0.042 265.755);
-  --popover-foreground: oklch(0.984 0.003 247.858);
-  --primary: oklch(0.929 0.013 255.508);
-  --primary-foreground: oklch(0.208 0.042 265.755);
-  --secondary: oklch(0.279 0.041 260.031);
-  --secondary-foreground: oklch(0.984 0.003 247.858);
-  --muted: oklch(0.279 0.041 260.031);
-  --muted-foreground: oklch(0.704 0.04 256.788);
-  --accent: oklch(0.279 0.041 260.031);
-  --accent-foreground: oklch(0.984 0.003 247.858);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.208 0.042 265.755);
-  --sidebar-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.279 0.041 260.031);
-  --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.551 0.027 264.364);
+  /* === Base Palette === */
+
+  /* Dark Jade */
+  --jade-black: oklch(0.22 0.02 165); /* #1B2421 - base */
+  --jade-800: oklch(0.24 0.01 165); /* #202622 - surfaces */
+  --slate-700: oklch(0.26 0.01 165); /* #242A27 - alt surface for bubbles */
+  --jade-hover-dark: oklch(0.27 0.02 165); /* #25302C - hover wash */
+
+  /* Glow Jade - SPECIAL ACCENT for dark mode! */
+  --glow-jade: oklch(0.72 0.14 180); /* #3CC8B4 - cyan-jade for focus/AI rims */
+
+  /* Jade Tint for UI */
+  --jade-tint: oklch(0.78 0.06 170); /* #B7D4CC - jade tint for secondary buttons */
+
+  /* Warm Gold */
+  --gold-warm-400: oklch(0.78 0.10 85); /* #E3C169 */
+
+  /* Light Ink */
+  --ink-50: oklch(0.93 0.005 50); /* #EAEAE7 */
+  --ink-muted-dark: oklch(0.72 0.01 50); /* #B6B0A2 - timestamps */
+
+  /* Lines */
+  --line-800: oklch(0.32 0.02 165); /* #2E332F */
+
+  /* === Semantic Assignments === */
+
+  /* Core */
+  --background: var(--jade-800);
+  --foreground: var(--ink-50);
+
+  /* Primary = Keep dark jade */
+  --jade-primary: var(--jade-900); /* still use the same dark jade */
+  --jade-foreground: var(--ink-50);
+
+  /* Accent = Warm Gold */
+  --gold: var(--gold-warm-400);
+  --gold-foreground: var(--jade-black);
+
+  /* Interactive States */
+  --hover: oklch(0.27 0.02 165 / var(--opacity-hover)); /* jade wash at 8% */
+  --active: var(--jade-900);
+  --disabled: oklch(0.50 0.01 50); /* #7E857F */
+
+  /* Borders & Inputs */
+  --border: var(--line-800);
+  --input-border: var(--line-800);
+
+  /* Focus Rings - Layered: GLOW JADE outline + inner gold */
+  --focus-ring-outer: oklch(0.72 0.14 180 / 0.22); /* glow jade at 22% */
+  --focus-ring-inner: oklch(0.78 0.10 85 / 0.10); /* gold at 10% */
+  --focus-ring: var(--focus-ring-outer);
+
+  /* Cards & Popovers - Alt surface (Slate 700) */
+  --card: var(--slate-700);
+  --card-foreground: var(--ink-50);
+  --popover: var(--slate-700);
+  --popover-foreground: var(--ink-50);
+
+  /* Muted */
+  --muted: var(--jade-black);
+  --muted-foreground: var(--ink-muted-dark);
+
+  /* Semantic Feedback */
+  --success: var(--glow-jade); /* glow jade for success in dark mode */
+  --success-foreground: var(--ink-50);
+  --success-wash: oklch(0.24 0.02 165); /* #1E2724 */
+
+  --warning: oklch(0.72 0.14 55); /* #E0A15F amber */
+  --warning-foreground: var(--jade-black);
+  --warning-wash: oklch(0.22 0.02 60); /* #2A2620 */
+
+  --error: oklch(0.72 0.14 55);
+  --error-foreground: var(--jade-black);
+
+  --info: var(--glow-jade);
+  --info-foreground: var(--ink-50);
+  --info-wash: var(--success-wash);
+
+  /* Sidebar */
+  --sidebar: var(--jade-black);
+  --sidebar-foreground: var(--ink-50);
+  --sidebar-icon: var(--ink-50);
+  --sidebar-primary: var(--gold-warm-400);
+  --sidebar-primary-foreground: var(--jade-black);
+  --sidebar-accent: var(--jade-hover-dark);
+  --sidebar-accent-foreground: var(--ink-50);
+  --sidebar-border: var(--line-800);
+  --sidebar-ring: var(--gold-warm-400);
+
+  /* Multi-Layer Shadows - Dark Mode (black + inset jade/gold hints) */
+  --shadow-1-value:
+    rgba(0, 0, 0, 0.30) 0px 1px 2px,
+    rgba(60, 200, 180, 0.10) 0px 0px 0px 1px inset;
+
+  --shadow-2-value:
+    rgba(0, 0, 0, 0.45) 0px 3px 10px,
+    rgba(227, 193, 105, 0.10) 0px 0px 0px 1px inset;
+
+  --shadow-3-value:
+    rgba(0, 0, 0, 0.60) 0px 8px 28px,
+    rgba(60, 200, 180, 0.12) 0px 0px 24px;
+
+  /* Selection & Highlights */
+  --selection-bg: oklch(0.78 0.10 85 / 0.4); /* gold at 40% */
+  --selection-fg: var(--ink-50);
 }
+
+/* ============================================================================
+   BASE STYLES
+   ============================================================================ */
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
+  }
+
+  /* Text selection */
+  ::selection {
+    background-color: var(--selection-bg);
+    color: var(--selection-fg);
+  }
+
+  /* Focus ring strategy - Layered: outer jade + inner gold */
+  *:focus-visible {
+    outline: 3px solid var(--focus-ring-outer);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 2px var(--focus-ring-inner);
   }
 }
 
@@ -127,60 +371,252 @@ body.preload * {
   animation-duration: 0s !important;
 }
 
-/* TipTap Editor Styles - Following official TipTap recommendations */
-/* https://tiptap.dev/docs/editor/getting-started/style-editor#style-using-tailwind-css */
+/* ============================================================================
+   COMPONENT LAYER - Custom Components
+   ============================================================================ */
 
 @layer components {
-  /* Editor toolbar shell */
+  /* === Typography Utilities (shared front + workspace) === */
+
+  .type-display {
+    @apply font-serif font-semibold;
+    font-size: 20px;
+    line-height: 1.3;
+  }
+
+  .type-section {
+    @apply font-serif font-semibold;
+    font-size: 18px;
+    line-height: 1.35;
+  }
+
+  .type-body {
+    @apply font-serif;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  .type-label {
+    @apply font-sans font-medium;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .type-meta {
+    @apply font-sans;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--muted-foreground);
+  }
+
+  /* === Chat Pane (Left Sidebar) === */
+
+  .chat-pane {
+    @apply bg-sidebar text-sidebar-foreground;
+  }
+
+  .chat-pane-header {
+    @apply bg-sidebar/80;
+  }
+
+  .chat-pane-body {
+    @apply overflow-hidden;
+  }
+
+  .chat-pane-scroll {
+    @apply h-full;
+  }
+
+  .chat-pane-empty {
+    @apply text-xs text-sidebar-foreground/70;
+  }
+
+  .chat-list-item {
+    @apply cursor-pointer text-xs transition-colors duration-[--duration-fast];
+    @apply hover:bg-sidebar-accent/20;
+  }
+
+  /* Active chat gets GOLD highlight */
+  .chat-list-item--active {
+    @apply font-semibold;
+    border-left: 3px solid var(--sidebar-primary);
+    background: var(--sidebar-accent);
+  }
+
+  /* Sidebar icons use DARK JADE in light mode */
+  .chat-pane [data-icon] {
+    color: var(--sidebar-icon);
+  }
+
+  /* === Chat Main Panel === */
+
+  .chat-main {
+    @apply flex h-full flex-col bg-background;
+  }
+
+  .chat-main-header {
+    @apply flex items-center justify-between border-b px-4 py-2;
+  }
+
+  .chat-main-body {
+    @apply flex-1 overflow-y-auto;
+  }
+
+  .chat-main-empty {
+    @apply flex h-full flex-col items-center justify-center px-4 text-center text-sm text-muted-foreground;
+  }
+
+  /* Chat messages - spec: pure white user, jade rim AI */
+  .chat-message {
+    border-radius: var(--radius-lg);
+    transition: box-shadow var(--duration-medium) var(--easing-default);
+  }
+
+  .chat-message:hover {
+    box-shadow: var(--shadow-2);
+  }
+
+  /* User messages: PURE WHITE fill in light mode, Slate 700 in dark */
+  .chat-message--user {
+    @apply bg-card text-card-foreground;
+    border: 1px solid var(--border);
+  }
+
+  /* AI messages: jade border in light, GLOW JADE rim in dark */
+  .chat-message--ai {
+    @apply bg-card text-card-foreground;
+  }
+
+  .chat-message--ai {
+    border: 1px solid var(--jade-primary);
+  }
+
+  .dark .chat-message--ai {
+    border: 1px solid var(--glow-jade);
+    border-opacity: 0.3;
+  }
+
+  /* Code blocks in messages: Neutral 100 in light, Jade Black in dark */
+  .chat-message code,
+  .chat-message pre {
+    background: var(--muted);
+  }
+
+  /* Chat input */
+  .chat-input-shell {
+    @apply border-t bg-background/95 px-4 py-3;
+  }
+
+  .chat-input {
+    @apply w-full resize-none rounded border bg-card px-3 py-2 text-sm outline-none ring-offset-0;
+    box-shadow: var(--shadow-1);
+    transition: box-shadow var(--duration-fast) var(--easing-default);
+  }
+
+  .chat-input:focus-visible {
+    outline: 3px solid var(--focus-ring-outer);
+    outline-offset: 0;
+    box-shadow:
+      var(--shadow-1),
+      0 0 0 2px var(--focus-ring-inner);
+  }
+
+  .chat-input-row {
+    @apply flex items-center gap-2;
+  }
+
+  /* === Workspace Panel Shells (left/right slabs) === */
+
+  .workspace-panel-left {
+    position: relative;
+    box-shadow: var(--shadow-1);
+    z-index: 5;
+  }
+
+  .workspace-panel-right {
+    position: relative;
+    z-index: 10;
+    border-left: 1px solid var(--border);
+    /* Subtle, directional shadow so the right panel floats
+       above the center content without feeling heavy. */
+    box-shadow:
+      -6px 0 16px rgba(28, 26, 24, 0.12),
+      -2px 0 6px rgba(28, 26, 24, 0.08);
+  }
+
+  /* === TipTap Editor (Parchment Workspace with Literata) === */
+
+  /* Toolbar */
   .tiptap-toolbar {
     @apply px-8 py-0 my-0;
   }
+
   .tiptap-toolbar__pill {
-    @apply relative flex items-center overflow-hidden rounded-lg bg-card/80 ring-1 ring-border/40 shadow-sm transition-all;
+    @apply relative flex items-center overflow-hidden rounded-lg bg-card/80 ring-1 ring-border/40;
+    box-shadow: var(--shadow-1);
+    transition: all var(--duration-medium) var(--easing-default);
   }
+
   .tiptap-toolbar__pill[data-readonly='true'] {
     @apply w-auto gap-0 px-0 py-0;
   }
+
   .tiptap-toolbar__pill[data-readonly='false'] {
     @apply w-full gap-1 px-0 py-0;
   }
-  /* TipTap wrapper */
+
+  /* Editor wrapper */
   .tiptap {
-    @apply min-h-screen px-8 py-0 focus:outline-none;
+    @apply min-h-screen px-8 py-0 focus:outline-none bg-background;
+    font-family: var(--font-serif);
   }
 
   /* ProseMirror editor content */
   .ProseMirror {
-    @apply min-h-[40vh] outline-none;
+    @apply min-h-[40vh] outline-none cursor-text;
+    font-family: var(--font-serif);
   }
 
-  /* Typography */
+  /* === Typography (Literata for content) === */
+
   .ProseMirror p {
-    @apply mb-4 text-base leading-relaxed;
+    @apply mb-4 leading-relaxed;
+    font-size: 16px;
+    line-height: 1.6;
+    min-width: 1px;  /* Prevent collapse, ensure cursor visibility */
   }
 
   .ProseMirror h1 {
-    @apply mb-4 mt-8 text-4xl font-bold leading-tight;
+    @apply mb-4 mt-8 font-bold leading-tight;
+    font-size: 26px;
+    line-height: 1.3;
   }
 
   .ProseMirror h2 {
-    @apply mb-3 mt-6 text-3xl font-semibold leading-snug;
+    @apply mb-3 mt-6 font-semibold leading-snug;
+    font-size: 22px;
+    line-height: 1.3;
   }
 
   .ProseMirror h3 {
-    @apply mb-3 mt-5 text-2xl font-semibold leading-snug;
+    @apply mb-3 mt-5 font-semibold leading-snug;
+    font-size: 19px;
+    line-height: 1.3;
   }
 
   .ProseMirror h4 {
-    @apply mb-2 mt-4 text-xl font-semibold;
+    @apply mb-2 mt-4 font-semibold;
+    font-size: 17px;
   }
 
   .ProseMirror h5 {
-    @apply mb-2 mt-3 text-lg font-semibold;
+    @apply mb-2 mt-3 font-semibold;
+    font-size: 16px;
   }
 
   .ProseMirror h6 {
-    @apply mb-2 mt-3 text-base font-semibold;
+    @apply mb-2 mt-3 font-semibold;
+    font-size: 15px;
   }
 
   /* Lists */
@@ -214,11 +650,15 @@ body.preload * {
 
   /* Code blocks */
   .ProseMirror pre {
-    @apply mb-4 overflow-x-auto rounded-lg bg-muted p-4 font-mono text-sm;
+    @apply mb-4 overflow-x-auto rounded-lg p-4 text-sm;
+    font-family: var(--font-mono);
+    background: var(--muted);
   }
 
   .ProseMirror code {
-    @apply rounded bg-muted px-1.5 py-0.5 font-mono text-sm;
+    @apply rounded px-1.5 py-0.5 text-sm;
+    font-family: var(--font-mono);
+    background: var(--muted);
   }
 
   .ProseMirror pre code {
@@ -232,7 +672,13 @@ body.preload * {
 
   /* Links */
   .ProseMirror a {
-    @apply text-primary underline underline-offset-2 hover:text-primary/80;
+    @apply underline underline-offset-2;
+    color: var(--jade-primary);
+    transition: color var(--duration-fast) var(--easing-default);
+  }
+
+  .ProseMirror a:hover {
+    color: var(--gold);
   }
 
   /* Bold and italic */
@@ -249,9 +695,10 @@ body.preload * {
     @apply line-through;
   }
 
-  /* Highlighted text (from @tiptap/extension-highlight) */
+  /* Highlighted text - Gold accent */
   .ProseMirror mark {
-    @apply bg-yellow-200 dark:bg-yellow-900/50;
+    background-color: var(--selection-bg);
+    color: var(--selection-fg);
   }
 
   /* Placeholder */
@@ -260,12 +707,67 @@ body.preload * {
     content: attr(data-placeholder);
   }
 
-  /* Read-only mode styling */
+  /* Read-only mode */
   .tiptap.read-only {
     @apply cursor-default;
   }
 
   .tiptap.read-only .ProseMirror {
-    @apply pointer-events-none select-text;
+    @apply select-text;
+    cursor: default !important;
+  }
+
+  /* Ensure text cursor in editable mode */
+  .tiptap:not(.read-only) .ProseMirror {
+    cursor: text !important;
+  }
+
+  /* === Special UI Elements === */
+
+  /* Tooltips */
+  .tooltip {
+    @apply rounded-sm border border-border bg-popover px-3 py-2 text-xs text-popover-foreground;
+    box-shadow: var(--shadow-2);
+    font-family: var(--font-sans);
+  }
+
+  /* Progress bars */
+  .progress-bar {
+    @apply h-1 overflow-hidden rounded-full;
+    background-color: oklch(from var(--jade-primary) l c h / var(--opacity-subtle));
+  }
+
+  .progress-bar__fill {
+    @apply h-full transition-all;
+    background-color: var(--gold);
+    transition-duration: var(--duration-medium);
+    transition-timing-function: var(--easing-default);
+  }
+
+  /* Badges / Tags */
+  .badge {
+    @apply inline-flex items-center rounded-sm border px-2.5 py-0.5 text-xs font-medium;
+    background-color: oklch(from var(--jade-primary) l c h / 0.1);
+    border-color: var(--jade-primary);
+    color: var(--jade-foreground);
+    font-family: var(--font-sans);
+  }
+
+  /* Document tree connectors */
+  .tree-children {
+    position: relative;
+    margin-left: 0.75rem; /* 12px */
+    padding-left: 0.75rem;
+  }
+
+  .tree-children::before {
+    content: "";
+    position: absolute;
+    inset-inline-start: 0.25rem;
+    top: 0.25rem;
+    bottom: 0.25rem;
+    border-left: 1px solid var(--border);
+    opacity: var(--opacity-subtle);
+    pointer-events: none;
   }
 }

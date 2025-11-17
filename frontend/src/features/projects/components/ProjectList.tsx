@@ -29,10 +29,10 @@ export function ProjectList({ projects, onCreateClick }: ProjectListProps) {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-2xl font-bold">Your Projects</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="type-section">Your Projects</h2>
         <Button onClick={onCreateClick}>
-          <Plus className="mr-2 h-4 w-4" />
+          <Plus className="h-4 w-4" />
           Create Project
         </Button>
       </div>

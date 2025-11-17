@@ -6,6 +6,8 @@ import { PanelLayout } from '@/shared/components/layout/PanelLayout'
 import { CollapsiblePanel } from '@/shared/components/layout/CollapsiblePanel'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { DocumentPanel } from '@/features/documents/components/DocumentPanel'
+import { ChatListPanel } from '@/features/chats/components/ChatListPanel'
+import { ActiveChatView } from '@/features/chats/components/ActiveChatView'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { useProjectStore } from '@/core/stores/useProjectStore'
 import { api } from '@/core/lib/api'
@@ -195,18 +197,11 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
             collapsed={leftPanelCollapsed}
             onToggle={toggleLeftPanel}
           >
-            <div className="p-4 text-sm text-muted-foreground">
-              Left panel placeholder (Chat list)
-            </div>
+            {/* Chat list / navigation lives entirely in the left panel */}
+            <ChatListPanel projectId={projectId} />
           </CollapsiblePanel>
         }
-        center={
-          <div className="flex h-full flex-col overflow-hidden">
-            <div className="flex-1 overflow-auto p-4 text-muted-foreground">
-              Center panel placeholder (Actual chat)
-            </div>
-          </div>
-        }
+        center={<ActiveChatView />}
         right={
           <CollapsiblePanel
             side="right"

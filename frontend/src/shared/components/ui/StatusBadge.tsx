@@ -20,25 +20,25 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
     saving: {
       icon: Loader2,
       label: 'Saving...',
-      className: 'text-yellow-600 bg-yellow-50 border-yellow-200',
+      className: 'text-warning-foreground bg-warning/10 border-warning',
       iconClassName: 'animate-spin',
     },
     local: {
       icon: Cloud,
       label: 'Saved locally',
-      className: 'text-orange-600 bg-orange-50 border-orange-200',
+      className: 'text-warning-foreground bg-warning/10 border-warning',
       iconClassName: '',
     },
     saved: {
       icon: CheckCircle2,
       label: 'Saved',
-      className: 'text-green-600 bg-green-50 border-green-200',
+      className: 'text-success-foreground bg-success/10 border-success',
       iconClassName: '',
     },
     error: {
       icon: AlertCircle,
       label: 'Save failed',
-      className: 'text-red-600 bg-red-50 border-red-200',
+      className: 'text-error-foreground bg-error/10 border-error',
       iconClassName: '',
     },
   }
@@ -49,7 +49,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
   return (
     <div
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium',
+        'inline-flex items-center gap-1.5 border px-2.5 py-1 text-xs font-medium font-sans rounded-lg',
         config.className,
         className
       )}

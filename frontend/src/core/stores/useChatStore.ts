@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { Chat, Message } from '@/features/chats/types'
+import { Chat, Turn } from '@/features/chats/types'
 import { api } from '@/core/lib/api'
 import { handleApiError } from '@/core/lib/errors'
 import { db } from '@/core/lib/db'
@@ -8,19 +8,16 @@ import { loadWithPolicy, NetworkFirstPolicy, bulkCacheUpdate, windowedCacheUpdat
 
 interface ChatStore {
   chats: Chat[]
-  messages: Message[]
-  activeChatId: string | null
+  turns: Turn[]
   isLoadingChats: boolean
-  isLoadingMessages: boolean
+  isLoadingTurns: boolean
   error: string | null
 
-  activeChat: () => Chat | null
-  setActiveChat: (chat: Chat | null) => void
   loadChats: (projectId: string, signal?: AbortSignal) => Promise<void>
-  loadMessages: (chatId: string, signal?: AbortSignal) => Promise<void>
+  loadTurns: (chatId: string, signal?: AbortSignal) => Promise<void>
   createChat: (projectId: string, title: string) => Promise<Chat>
   renameChat: (chatId: string, title: string) => Promise<void>
-  sendMessage: (chatId: string, content: string) => Promise<void>
+  createTurn: (chatId: string, content: string) => Promise<void>
   deleteChat: (chatId: string) => Promise<void>
 }
 
@@ -28,19 +25,10 @@ export const useChatStore = create<ChatStore>()(
   persist(
     (set, get) => ({
       chats: [],
-      messages: [],
-      activeChatId: null,
+      turns: [],
       isLoadingChats: false,
-      isLoadingMessages: false,
+      isLoadingTurns: false,
       error: null,
-
-      activeChat: () => {
-        const state = get()
-        if (!state.activeChatId) return null
-        return state.chats.find((c) => c.id === state.activeChatId) || null
-      },
-
-      setActiveChat: (chat) => set({ activeChatId: chat?.id || null }),
 
       loadChats: async (projectId: string, signal?: AbortSignal) => {
         set({ isLoadingChats: true, error: null })
@@ -79,39 +67,39 @@ export const useChatStore = create<ChatStore>()(
         }
       },
 
-      loadMessages: async (chatId: string, signal?: AbortSignal) => {
-        set({ isLoadingMessages: true, error: null })
+      loadTurns: async (chatId: string, signal?: AbortSignal) => {
+        set({ isLoadingTurns: true, error: null })
         try {
-          const cacheRepoMsgs: ICacheRepo<Message[]> = {
+          const cacheRepoTurns: ICacheRepo<Turn[]> = {
             get: async () => {
               const cached = await db.messages.where('chatId').equals(chatId).toArray()
               return cached.length > 0 ? cached : undefined
             },
-            put: async (messages) => {
-              await windowedCacheUpdate(db.messages, `chat-${chatId}`, messages, 100)
+            put: async (turns) => {
+              await windowedCacheUpdate(db.messages, `chat-${chatId}`, turns, 100)
             },
           }
-          const remoteRepoMsgs: IRemoteRepo<Message[]> = {
-            fetch: (s) => api.messages.list(chatId, { signal: s }),
+          const remoteRepoTurns: IRemoteRepo<Turn[]> = {
+            fetch: (s) => api.turns.list(chatId, { signal: s }),
           }
 
-          const resultMsgs = await loadWithPolicy<Message[]>(new NetworkFirstPolicy<Message[]>(), {
-            cacheRepo: cacheRepoMsgs,
-            remoteRepo: remoteRepoMsgs,
+          const resultTurns = await loadWithPolicy<Turn[]>(new NetworkFirstPolicy<Turn[]>(), {
+            cacheRepo: cacheRepoTurns,
+            remoteRepo: remoteRepoTurns,
             signal,
-            onIntermediate: (r) => set({ messages: r.data, isLoadingMessages: false }),
+            onIntermediate: (r) => set({ turns: r.data, isLoadingTurns: false }),
           })
 
-          set({ messages: resultMsgs.data, isLoadingMessages: false })
+          set({ turns: resultTurns.data, isLoadingTurns: false })
         } catch (error) {
           // Handle AbortError silently
           if (error instanceof Error && error.name === 'AbortError') {
-            set({ isLoadingMessages: false })
+            set({ isLoadingTurns: false })
             return
           }
 
           const message = error instanceof Error ? error.message : 'Failed to load messages'
-          set({ error: message, isLoadingMessages: false })
+          set({ error: message, isLoadingTurns: false })
           handleApiError(error, 'Failed to load messages')
         }
       },
@@ -153,18 +141,19 @@ export const useChatStore = create<ChatStore>()(
         }
       },
 
-      sendMessage: async (chatId: string, content: string) => {
+      createTurn: async (chatId: string, content: string) => {
         // Skeleton - optimistic updates implemented in Phase 4 Task 4.7
         try {
-          const response = await api.messages.send(chatId, content)
+          const response = await api.turns.send(chatId, content)
 
+          // Response contains both user's turn and assistant's turn (streaming handled separately)
           // Update IndexedDB cache with windowing (only keep last 100)
-          const newMessages = [response.userMessage, response.assistantMessage]
-          const allMessages = [...get().messages, ...newMessages]
-          await windowedCacheUpdate(db.messages, `chat-${chatId}`, allMessages, 100)
+          const newTurns = [response.userTurn, response.assistantTurn]
+          const allTurns = [...get().turns, ...newTurns]
+          await windowedCacheUpdate(db.messages, `chat-${chatId}`, allTurns, 100)
 
           set((state) => ({
-            messages: [...state.messages, response.userMessage, response.assistantMessage],
+            turns: [...state.turns, response.userTurn, response.assistantTurn],
           }))
         } catch (error) {
           handleApiError(error, 'Failed to send message')
@@ -182,8 +171,7 @@ export const useChatStore = create<ChatStore>()(
 
           set((state) => ({
             chats: state.chats.filter((c) => c.id !== chatId),
-            activeChatId: state.activeChatId === chatId ? null : state.activeChatId,
-            messages: state.activeChatId === chatId ? [] : state.messages,
+            turns: state.turns.filter((t) => t.chatId !== chatId),
           }))
         } catch (error) {
           handleApiError(error, 'Failed to delete chat')
@@ -193,9 +181,8 @@ export const useChatStore = create<ChatStore>()(
     }),
     {
       name: 'chat-store',
-      partialize: (state) => ({
-        activeChatId: state.activeChatId,
-      }),
+      // No persisted fields yet; chats/turns are cached via IndexedDB instead.
+      partialize: () => ({}),
     }
   )
 )

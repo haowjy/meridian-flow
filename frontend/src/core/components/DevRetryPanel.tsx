@@ -16,7 +16,15 @@ export function DevRetryPanel() {
   const [collapsed, setCollapsed] = useState(true)
 
   useEffect(() => {
-    const update = () => setEntries(getRetryQueueState() || [])
+    // Dev-only function may not exist in all builds - handle gracefully
+    const update = () => {
+      try {
+        setEntries(getRetryQueueState() || [])
+      } catch {
+        // Function may not be available - ignore silently
+        setEntries([])
+      }
+    }
     update()
     const t = setInterval(update, 1000)
     return () => clearInterval(t)
@@ -42,7 +50,7 @@ export function DevRetryPanel() {
   }
 
   return (
-    <div className="fixed left-4 bottom-4 z-50 w-80 rounded-md border border-zinc-800/60 bg-zinc-900/90 text-zinc-100 backdrop-blur p-3 shadow-lg">
+    <div className="fixed left-4 bottom-4 z-50 w-80 rounded border border-zinc-800/60 bg-zinc-900/90 text-zinc-100 backdrop-blur p-3 shadow">
       <div className="flex items-center justify-between mb-2">
         <div className="text-xs font-semibold uppercase tracking-wide">Retry Queue</div>
         {badge}
@@ -72,4 +80,3 @@ export function DevRetryPanel() {
     </div>
   )
 }
-

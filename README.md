@@ -87,7 +87,7 @@ Will be documented once frontend is implemented.
 - **Deployment**: Railway
 
 ### Frontend (Planned)
-- **Framework**: Next.js 15 (App Router)
+- **Framework**: Next.js 16 (App Router)
 - **Editor**: TipTap (React)
 - **State Management**: TanStack Query + Zustand
 - **Styling**: Tailwind CSS

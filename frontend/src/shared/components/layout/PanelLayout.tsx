@@ -47,7 +47,8 @@ export function PanelLayout({
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 rounded-lg bg-background/80 shadow-sm ring-1 ring-border"
+          className="h-8 w-8 rounded bg-background/80 ring-1 ring-border"
+          style={{ boxShadow: 'var(--shadow-1)' }}
           onClick={() => onToggle?.()}
           aria-label={ariaLabel}
           aria-controls={panelId}
@@ -83,11 +84,12 @@ export function PanelLayout({
   }, [rightCollapsed])
 
   return (
-    <div className={cn('relative flex h-full w-full overflow-hidden border-x', className)}>
+    <div className={cn('relative flex h-full w-full overflow-hidden', className)}>
       <ResizablePanelGroup direction="horizontal" autoSaveId="workspace:panels:v1">
         {/* Left Panel */}
         <ResizablePanel
           ref={leftRef}
+          className="workspace-panel-left"
           collapsible
           collapsedSize={0}
           minSize={12}
@@ -103,7 +105,7 @@ export function PanelLayout({
           {!leftCollapsed && left}
         </ResizablePanel>
 
-        <ResizableHandle />
+        <ResizableHandle className="after:!bg-sidebar-border" />
 
         {/* Center Panel */}
         <ResizablePanel minSize={30} defaultSize={56} className="min-w-0">
@@ -125,6 +127,7 @@ export function PanelLayout({
         {/* Right Panel */}
         <ResizablePanel
           ref={rightRef}
+          className="workspace-panel-right"
           collapsible
           collapsedSize={0}
           minSize={16}

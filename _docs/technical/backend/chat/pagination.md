@@ -694,6 +694,171 @@ if fromTurnIDStr != "" {
 
 ---
 
+## last_viewed_turn_id: Cache vs Leaf Resolution
+
+### Two Modes of Operation
+
+`last_viewed_turn_id` serves two distinct purposes depending on whether `from_turn_id` is provided:
+
+```mermaid
+flowchart TD
+    Start[GET /api/chats/:id/turns]
+    HasFromTurnID{from_turn_id<br/>provided?}
+    CacheMode[CACHE MODE<br/>Bookmark scroll position]
+    LeafMode[LEAF RESOLUTION MODE<br/>Find end of branch]
+
+    UpdateCache[Update last_viewed_turn_id<br/>to from_turn_id]
+    ResolveLeaf[Resolve last_viewed_turn_id<br/>to leaf via findMostRecentLeaf]
+    UpdateLeaf[Update last_viewed_turn_id<br/>to resolved leaf]
+
+    DirectionBoth[Default direction: both<br/>Show context around position]
+    DirectionBefore[Default direction: before<br/>Show history from leaf]
+
+    Start --> HasFromTurnID
+    HasFromTurnID -->|Yes| CacheMode
+    HasFromTurnID -->|No| LeafMode
+
+    CacheMode --> UpdateCache
+    LeafMode --> ResolveLeaf --> UpdateLeaf
+
+    UpdateCache --> DirectionBoth
+    UpdateLeaf --> DirectionBefore
+
+    style CacheMode fill:#2d7d2d
+    style LeafMode fill:#7d4d2d
+```
+
+### Cache Mode (Active Session)
+
+**When:** Client explicitly provides `from_turn_id` parameter
+
+**Behavior:**
+- `last_viewed_turn_id` stores exact scroll position (can be mid-tree)
+- NO leaf resolution
+- Turn is used as-is for pagination starting point
+- Default direction: `both` (show context around position)
+
+**Use case:** User actively scrolling through chat
+
+**Example:**
+```
+Tree structure:
+  T1 → T2 → T3 → T4 → T5 (leaf)
+           ↓
+          T2b → T3b (leaf)
+
+Request: GET /turns?from_turn_id=T3
+Result:
+  - last_viewed_turn_id = T3 (mid-tree position cached)
+  - Pagination starts from T3
+  - NO resolution to T5 or T3b
+```
+
+### Leaf Resolution Mode (Cold Start)
+
+**When:** Client does NOT provide `from_turn_id` (fresh page load, new tab)
+
+**Behavior:**
+- `last_viewed_turn_id` (or most recent turn) is resolved to leaf
+- Leaf = deepest descendant on most recent branch
+- Ensures user sees "end of active conversation"
+- Default direction: `before` (show history from leaf)
+
+**Use case:** Opening chat without explicit position
+
+**Example:**
+```
+Tree structure:
+  T1 → T2 → T3 → T4 → T5 (leaf)
+           ↓
+          T2b → T3b (leaf)
+
+Scenario: last_viewed_turn_id = T2 (mid-tree)
+
+Request: GET /turns (no from_turn_id)
+Result:
+  - T2 resolved to T5 via findMostRecentLeaf()
+  - last_viewed_turn_id = T5 (leaf cached)
+  - Pagination starts from T5
+  - Direction: before (show history T4, T3, T2, T1)
+```
+
+### Client Responsibility
+
+**Per-tab scroll tracking:**
+- Client maintains scroll position per browser tab
+- On scroll events: Client tracks current visible turn_id
+- On pagination: Client sends explicit `from_turn_id`
+
+**Server cache usage:**
+- Only use `last_viewed_turn_id` when client has no position (fresh load)
+- Do NOT rely on server cache during active scrolling
+
+**Why this separation:**
+- Server cache: Per-chat (shared across all client tabs/devices)
+- Client tracking: Per-tab (each tab has independent scroll position)
+- Cold start: Use server cache (resolved to leaf for continuity)
+- Active session: Use client tracking (exact scroll position)
+
+### Implementation Reference
+
+**Code:** `internal/repository/postgres/llm/turn.go`
+
+```go
+// Lines 803-820: Starting turn resolution
+startTurnID := fromTurnID
+if startTurnID == nil {
+    startTurnID = lastViewedTurnID  // Use server cache
+}
+if startTurnID == nil {
+    // No cache - get most recent turn
+}
+
+// CRITICAL: Leaf resolution ONLY when fromTurnID is nil
+if fromTurnID == nil {
+    leaf, err := r.findMostRecentLeaf(ctx, *startTurnID)
+    startTurnID = &leaf
+}
+
+// Update server cache
+updateLastViewedTurnID(startTurnID)
+
+// Lines 880-890: Default direction
+if direction == "" {
+    if fromTurnID == nil {
+        direction = "before"  // Cold start: show history from leaf
+    } else {
+        direction = "both"    // Active session: show context
+    }
+}
+```
+
+### Edge Cases
+
+**User edits turn mid-tree:**
+```
+Original: T1 → T2 → T3 → T4 → T5
+User edits T3 → Creates T3_new → T4_new (new branch)
+
+Scenario 1 (Cache mode): from_turn_id=T4 (old branch)
+Result: Pagination from T4 (can show old branch if client requests)
+
+Scenario 2 (Cold start): No from_turn_id
+Result: Resolves to T4_new leaf (shows new branch automatically)
+```
+
+**Turn deletion:**
+```
+Schema: last_viewed_turn_id FK turns ON DELETE SET NULL
+
+If last_viewed_turn_id references deleted turn:
+  1. DB sets last_viewed_turn_id = NULL
+  2. Pagination falls back to most recent turn
+  3. Resolves to leaf (cold start mode)
+```
+
+---
+
 ## Error Handling
 
 ### Invalid Direction

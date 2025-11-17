@@ -1,5 +1,5 @@
 import { Project } from '@/features/projects/types/project'
-import { Chat, Message } from '@/features/chats/types'
+import { Chat } from '@/features/chats/types'
 import { Document, DocumentTree } from '@/features/documents/types/document'
 import { Folder } from '@/features/folders/types/folder'
 
@@ -26,14 +26,6 @@ export interface ChatDto {
   title: string
   created_at: string
   updated_at: string
-}
-
-export interface MessageDto {
-  id: string
-  chat_id: string
-  role: 'user' | 'assistant'
-  content: string
-  created_at: string
 }
 
 // Document DTOs
@@ -79,16 +71,6 @@ export function fromChatDto(dto: ChatDto): Chat {
     title: dto.title,
     createdAt: new Date(dto.created_at),
     updatedAt: new Date(dto.updated_at),
-  }
-}
-
-export function fromMessageDto(dto: MessageDto): Message {
-  return {
-    id: dto.id,
-    chatId: dto.chat_id,
-    role: dto.role,
-    content: dto.content,
-    createdAt: new Date(dto.created_at),
   }
 }
 

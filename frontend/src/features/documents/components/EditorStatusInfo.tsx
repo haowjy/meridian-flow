@@ -25,9 +25,10 @@ export function EditorStatusInfo({
       layout="position"
       transition={{ type: "tween", duration: 0.2 }}
       className={cn(
-        'inline-flex items-center gap-2.5 text-xs rounded-lg bg-card/90 px-3.5 h-9 shadow-lg ring-1 ring-border/40 backdrop-blur',
+        'inline-flex items-center gap-2.5 text-xs rounded-lg bg-card/90 px-3.5 h-9 ring-1 ring-border/40 backdrop-blur',
         className
       )}
+      style={{ boxShadow: 'var(--shadow-2)' }}
       aria-live="polite"
     >
       <div className="font-medium text-foreground">

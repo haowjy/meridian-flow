@@ -6,15 +6,15 @@ interface SectionHeaderProps {
 
 export function SectionHeader({ title, subtitle, action }: SectionHeaderProps) {
   return (
-    <div className="mb-8">
-      <div className="flex items-center justify-between">
+    <div className="mb-4">
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-bold">{title}</h1>
+          <h1 className="type-display">{title}</h1>
           {subtitle && (
-            <p className="mt-2 text-muted-foreground">{subtitle}</p>
+            <p className="mt-1 type-body text-muted-foreground">{subtitle}</p>
           )}
         </div>
-        {action && <div>{action}</div>}
+        {action && <div className="shrink-0">{action}</div>}
       </div>
     </div>
   )

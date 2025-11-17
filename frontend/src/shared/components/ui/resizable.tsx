@@ -41,11 +41,9 @@ function ResizableHandle({
       data-slot="resizable-handle"
       hitAreaMargins={hitAreaMargins ?? { coarse: 12, fine: 6 }}
       className={cn(
-        // Make the handle easier to grab while keeping a subtle hairline
-        "relative flex w-2 items-center justify-center focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1",
-        // Hairline indicator
-        "after:absolute after:inset-y-0 after:left-1 after:w-px after:bg-border data-[panel-group-direction=vertical]:after:left-0 data-[panel-group-direction=vertical]:after:top-1/2 data-[panel-group-direction=vertical]:after:h-px data-[panel-group-direction=vertical]:after:w-full data-[panel-group-direction=vertical]:after:-translate-y-1/2",
-        // Rotate any inner handle icon for vertical groups
+        // Invisible handle: no visual gap or line; interaction comes from hitAreaMargins.
+        "relative z-0 flex w-0 items-center justify-center focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1",
+        // Rotate any inner handle icon for vertical groups (if we ever show it)
         "[&[data-panel-group-direction=vertical]>div]:rotate-90",
         className
       )}

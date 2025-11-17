@@ -1,7 +1,3 @@
-/**
- * Chat domain types (camelCase, Date objects).
- */
-
 export interface Chat {
   id: string
   projectId: string
@@ -10,7 +6,7 @@ export interface Chat {
   updatedAt: Date
 }
 
-export interface Message {
+export interface Turn {
   id: string
   chatId: string
   role: 'user' | 'assistant'

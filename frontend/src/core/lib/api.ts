@@ -1,15 +1,13 @@
 import { Project } from '@/features/projects/types/project'
-import { Chat, Message } from '@/features/chats/types'
+import { Chat, Turn } from '@/features/chats/types'
 import { Document, DocumentTree } from '@/features/documents/types/document'
 import {
   ProjectDto,
   ChatDto,
-  MessageDto,
   DocumentDto,
   DocumentTreeDto,
   fromProjectDto,
   fromChatDto,
-  fromMessageDto,
   fromDocumentDto,
   fromDocumentTreeDto,
   ApiErrorResponse,
@@ -60,7 +58,9 @@ export async function fetchAPI<T>(
       throw httpErrorToAppError(response.status, errorMessage, resource)
     }
 
-    // Handle no content
+    // Handle no content (e.g., 204 No Content from DELETE operations)
+    // Type assertion needed: when T is void, TypeScript requires explicit undefined return
+    // DELETE endpoints specify fetchAPI<void>() which expects this behavior
     const contentLength = response.headers.get('content-length')
     if (response.status === 204 || contentLength === '0') {
       return undefined as any
@@ -105,7 +105,8 @@ export async function fetchAPI<T>(
   try {
     return await attempt()
   } catch (error) {
-    // Check for AbortError FIRST before retry logic to avoid retrying aborted requests
+    // Check for AbortError FIRST before retry logic to prevent race condition:
+    // If user switches views/resources, the aborted request should not be retried
     if (error instanceof Error && error.name === 'AbortError') {
       throw error
     }
@@ -131,6 +132,46 @@ export async function fetchAPI<T>(
     const { ErrorType, AppError } = await import('./errors')
     const message = error instanceof Error ? error.message : 'An unexpected error occurred'
     throw new AppError(ErrorType.Unknown, message)
+  }
+}
+
+// Shared types and utilities for Turn API
+type TurnBlockDto = {
+  block_type: string
+  text_content?: string | null
+  content?: Record<string, unknown> | null
+}
+
+type TurnDto = {
+  id: string
+  chat_id: string
+  prev_turn_id?: string | null
+  role: 'user' | 'assistant'
+  status: string
+  blocks?: TurnBlockDto[]
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * Converts a backend TurnDto to a frontend Turn model.
+ * Extracts text from all text blocks and joins with double newline for paragraph separation.
+ */
+function turnDtoToTurn(turn: TurnDto): Turn {
+  const blocks = turn.blocks ?? []
+  const textBlocks = blocks.filter((b) => b.block_type === 'text')
+  // Extract text from all text blocks and join with double newline for paragraph separation
+  // Empty text_content fields become empty strings (treating empty as valid data)
+  const content = textBlocks.length > 0
+    ? textBlocks.map((b) => b.text_content ?? '').join('\n\n')
+    : ''
+
+  return {
+    id: turn.id,
+    chatId: turn.chat_id,
+    role: turn.role,
+    content,
+    createdAt: new Date(turn.created_at),
   }
 }
 
@@ -170,7 +211,7 @@ export const api = {
 
   chats: {
     list: async (projectId: string, options?: { signal?: AbortSignal }): Promise<Chat[]> => {
-      const data = await fetchAPI<ChatDto[]>(`/api/projects/${projectId}/chats`, {
+      const data = await fetchAPI<ChatDto[]>(`/api/chats?project_id=${encodeURIComponent(projectId)}`, {
         signal: options?.signal,
       })
       return data.map(fromChatDto)
@@ -182,9 +223,9 @@ export const api = {
       return fromChatDto(data)
     },
     create: async (projectId: string, title: string, options?: { signal?: AbortSignal }): Promise<Chat> => {
-      const data = await fetchAPI<ChatDto>(`/api/projects/${projectId}/chats`, {
+      const data = await fetchAPI<ChatDto>('/api/chats', {
         method: 'POST',
-        body: JSON.stringify({ title }),
+        body: JSON.stringify({ project_id: projectId, title }),
         signal: options?.signal,
       })
       return fromChatDto(data)
@@ -201,29 +242,65 @@ export const api = {
       fetchAPI<void>(`/api/chats/${id}`, { method: 'DELETE', signal: options?.signal }),
   },
 
-  messages: {
-    list: async (chatId: string, options?: { signal?: AbortSignal }): Promise<Message[]> => {
-      const data = await fetchAPI<MessageDto[]>(`/api/chats/${chatId}/messages`, {
-        signal: options?.signal,
-      })
-      return data.map(fromMessageDto)
+  turns: {
+    // NOTE: This is a thin adapter on top of the turn-based API.
+    // It calls GET /api/chats/:id/turns and maps backend Turn to the frontend Turn type.
+    list: async (chatId: string, options?: { signal?: AbortSignal }): Promise<Turn[]> => {
+
+      type PaginatedTurnsDto = {
+        turns: TurnDto[]
+        has_more_before: boolean
+        has_more_after: boolean
+        from_turn_id?: string
+      }
+
+      const data = await fetchAPI<PaginatedTurnsDto>(
+        `/api/chats/${chatId}/turns?limit=100&direction=both`,
+        { signal: options?.signal }
+      )
+
+      return data.turns.map(turnDtoToTurn)
     },
+
+    // Wrapper on top of CreateTurn (POST /api/chats/:id/turns).
+    // Returns both the created user turn and the assistant turn that will stream.
     send: async (
       chatId: string,
       content: string,
       options?: { signal?: AbortSignal }
-    ): Promise<{ userMessage: Message; assistantMessage: Message }> => {
-      const data = await fetchAPI<{ user_message: MessageDto; assistant_message: MessageDto }>(
-        `/api/chats/${chatId}/messages`,
+    ): Promise<{ userTurn: Turn; assistantTurn: Turn }> => {
+      type CreateTurnResponseDto = {
+        user_turn: TurnDto
+        assistant_turn: TurnDto
+        stream_url: string
+      }
+
+      const body = {
+        role: 'user',
+        prev_turn_id: null,
+        turn_blocks: [
+          {
+            block_type: 'text',
+            text_content: content,
+            // For text blocks, content is null by schema.
+            content: null as Record<string, unknown> | null,
+          },
+        ],
+        request_params: {},
+      }
+
+      const data = await fetchAPI<CreateTurnResponseDto>(
+        `/api/chats/${chatId}/turns`,
         {
           method: 'POST',
-          body: JSON.stringify({ content }),
+          body: JSON.stringify(body),
           signal: options?.signal,
         }
       )
+
       return {
-        userMessage: fromMessageDto(data.user_message),
-        assistantMessage: fromMessageDto(data.assistant_message),
+        userTurn: turnDtoToTurn(data.user_turn),
+        assistantTurn: turnDtoToTurn(data.assistant_turn),
       }
     },
   },

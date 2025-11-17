@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance when working with the code in this repository.
 
 ## Project Overview
 
@@ -53,7 +53,8 @@ Then, these principles can also help you make architectural decisions and other 
    - Empty array `[]` is valid data
    - Only `undefined`/`null` means "absent"
 
-8. **Comment the "Weird"**
+8. **Comment the "Weird" and the "WHY"**
+   - anything that is not obvious, comment why.
    - If it needs a guard, comment why
    - If it prevents a race, explain the race
    - If you had to debug it, future you will too
@@ -62,6 +63,12 @@ Then, these principles can also help you make architectural decisions and other 
     - IndexedDB for instant loads ✅
     - Optimistic updates ✅
     - Persistent operation queues ❌ (usually overkill)
+
+10. **Extensible** - Design for extensibility.
+
+11. **Keep Documentation Up-to-Date** - Update documentation AFTER finalizing changes.
+
+12. **Keep the code clean** - keep the code clean and readable, as the code grows, it will become more difficult to understand, its easier to refactor now than later (make sure to delete dead code as well).
 
 ## Where to Find Things
 
@@ -114,7 +121,7 @@ _docs/
 2. **Minimize words** - Every sentence should earn its place
    - Can a diagram replace 3 paragraphs? Use the diagram
    - Can a table replace verbose lists? Use the table
-   - Cut ruthlessly - too much text hurts comprehension
+   - Cut ruthlessly; too much text hurts comprehension
 
 3. **Reference, don't duplicate** - Point to code, don't copy it
    - ✅ "See `internal/service/document.go:29-33`"
@@ -139,7 +146,7 @@ _docs/
    - Demonstrating a specific fix/workaround
    - Concept can't be found in existing code
 
-7. **Focus on WHY, not WHAT** - Code shows WHAT; explain WHY
+7. **Focus on WHY and WHAT, not HOW** - let the implementation show the how. How can always change. Some How details are important to note (like specific implementation details to ensure effiency, compliance, etc.), but not always.
 
 8. **Mermaid diagrams** - Use dark mode compatible colors:
    - Use darker, saturated colors (e.g., `#2d7d2d` not `#90EE90`)

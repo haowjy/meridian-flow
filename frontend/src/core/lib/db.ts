@@ -1,11 +1,11 @@
 import Dexie, { Table } from 'dexie'
 import { Document } from '@/features/documents/types/document'
-import { Chat, Message } from '@/features/chats/types'
+import { Chat, Turn } from '@/features/chats/types'
 
 export class MeridianDB extends Dexie {
   documents!: Table<Document & { content: string }, string>
   chats!: Table<Chat, string>
-  messages!: Table<Message, string>
+  messages!: Table<Turn, string>
 
   constructor() {
     super('meridian')

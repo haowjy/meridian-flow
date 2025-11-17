@@ -126,11 +126,13 @@ interface PaginationParams {
 
 **Initial Load:**
 ```typescript
-// Load context around last viewed turn
+// Load context around last viewed turn (AFTER leaf resolution on server)
+// Server will resolve last_viewed_turn_id to leaf if this is a cold start
 const response = await api.get(`/chats/${chatId}/turns`, {
   params: { limit: 100, direction: 'both' }
 });
-// Uses chat.last_viewed_turn_id automatically
+// Note: Server automatically uses chat.last_viewed_turn_id and resolves to leaf
+// This ensures user sees "end of conversation" not mid-tree bookmark
 ```
 
 **Scroll Up (Load History):**
@@ -167,6 +169,13 @@ const response = await api.get(`/chats/${chatId}/turns`, {
   }
 });
 ```
+
+**Important:** During active scrolling, ALWAYS provide `from_turn_id` to preserve exact scroll position. Only omit `from_turn_id` on fresh page loads when you want the server to resolve to the conversation end (leaf).
+
+**Why:**
+- **With `from_turn_id`** (Cache Mode): Server stores exact position, can be mid-tree
+- **Without `from_turn_id`** (Leaf Resolution Mode): Server resolves to end of active branch
+- Client should track scroll position per tab and provide explicit `from_turn_id` during active sessions
 
 ---
 

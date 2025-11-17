@@ -1,5 +1,5 @@
 import { ReactNode } from 'react'
-import { Folder, FolderOpen, ChevronRight } from 'lucide-react'
+import { Folder, FolderOpen } from 'lucide-react'
 import {
   Collapsible,
   CollapsibleContent,
@@ -24,18 +24,12 @@ export function FolderTreeItem({ folder, isExpanded, onToggle, children }: Folde
     <Collapsible open={isExpanded} onOpenChange={onToggle}>
       <CollapsibleTrigger
         className={cn(
-          'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors',
-          'hover:bg-accent hover:text-accent-foreground',
+          'flex w-full items-center gap-1.5 rounded-sm px-2.5 py-1 text-left text-xs md:text-sm transition-colors',
+          'hover:bg-hover',
           'group'
         )}
         aria-label={`${isExpanded ? 'Collapse' : 'Expand'} folder: ${folder.name}`}
       >
-        <ChevronRight
-          className={cn(
-            'h-4 w-4 flex-shrink-0 transition-transform',
-            isExpanded && 'rotate-90'
-          )}
-        />
         {isExpanded ? (
           <FolderOpen className="h-4 w-4 flex-shrink-0" />
         ) : (
@@ -45,7 +39,7 @@ export function FolderTreeItem({ folder, isExpanded, onToggle, children }: Folde
       </CollapsibleTrigger>
 
       <CollapsibleContent className="overflow-hidden transition-all data-[state=open]:animate-accordion-down data-[state=closed]:animate-accordion-up">
-        <div className="pl-6">{children}</div>
+        <div className="tree-children">{children}</div>
       </CollapsibleContent>
     </Collapsible>
   )
