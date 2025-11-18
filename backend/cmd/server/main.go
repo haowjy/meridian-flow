@@ -91,6 +91,7 @@ func main() {
 		chatRepo,
 		turnRepo,
 		projectRepo,
+		docRepo,
 		providerRegistry,
 		cfg,
 		txManager,

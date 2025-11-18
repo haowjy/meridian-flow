@@ -458,7 +458,7 @@ Creates a new **user** turn in a chat and triggers an assistant streaming respon
 {
   "prev_turn_id": "uuid-prev-turn-or-null",
   "role": "user",
-  "system_prompt": null,
+  "selected_skills": ["skill-name"],
   "turn_blocks": [
     {
       "block_type": "text",
@@ -472,10 +472,20 @@ Creates a new **user** turn in a chat and triggers an assistant streaming respon
     "model": "claude-haiku-4-5-20251001",
     "temperature": 0.7,
     "max_tokens": 1024,
-    "thinking": "low"
+    "thinking": "low",
+    "system": "Optional user-provided system prompt"
   }
 }
 ```
+
+**System Prompt Resolution:**
+System prompts are resolved hierarchically at request time from:
+1. `request_params.system` - User-provided system prompt (optional)
+2. `project.system_prompt` - Project-level system prompt
+3. `chat.system_prompt` - Chat-level system prompt
+4. `selected_skills` - Skills loaded from `.skills/{skill_name}/SKILL`
+
+All parts are concatenated with `\n\n` separator.
 
 **Validation:**
 - `chatId` path parameter required and must reference a chat owned by the user.

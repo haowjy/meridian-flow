@@ -14,6 +14,9 @@ type DocumentRepository interface {
 	// GetByID retrieves a document by ID
 	GetByID(ctx context.Context, id, projectID string) (*docsystem.Document, error)
 
+	// GetByPath retrieves a document by its path (e.g., ".skills/cw-prose-writing/SKILL.md")
+	GetByPath(ctx context.Context, path string, projectID string) (*docsystem.Document, error)
+
 	// Update updates an existing document
 	Update(ctx context.Context, doc *docsystem.Document) error
 

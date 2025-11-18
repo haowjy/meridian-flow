@@ -98,11 +98,19 @@ func (s *pathResolverService) ValidateFolderPath(path string) error {
 		return fmt.Errorf("folder_path cannot contain consecutive slashes")
 	}
 
-	// Only alphanumeric, spaces, hyphens, underscores, slashes
+	// Only alphanumeric, spaces, hyphens, underscores, dots, slashes
 	for _, char := range path {
 		if !unicode.IsLetter(char) && !unicode.IsDigit(char) &&
-			char != ' ' && char != '-' && char != '_' && char != '/' {
+			char != ' ' && char != '-' && char != '_' && char != '.' && char != '/' {
 			return fmt.Errorf("folder_path contains invalid character: %c", char)
+		}
+	}
+
+	// Prevent . and .. as complete folder names (path traversal safety)
+	segments := strings.Split(path, "/")
+	for _, segment := range segments {
+		if segment == "." || segment == ".." {
+			return fmt.Errorf("folder_path cannot contain '.' or '..' as folder names")
 		}
 	}
 

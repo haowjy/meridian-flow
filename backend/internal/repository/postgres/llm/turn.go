@@ -69,11 +69,11 @@ func (r *PostgresTurnRepository) CreateTurn(ctx context.Context, turn *llmModels
 
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
-			chat_id, prev_turn_id, role, system_prompt, status, error,
+			chat_id, prev_turn_id, role, status, error,
 			model, input_tokens, output_tokens, created_at, completed_at,
 			request_params, stop_reason, response_metadata
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING id, created_at
 	`, r.tables.Turns)
 
@@ -82,7 +82,6 @@ func (r *PostgresTurnRepository) CreateTurn(ctx context.Context, turn *llmModels
 		turn.ChatID,
 		turn.PrevTurnID,
 		turn.Role,
-		turn.SystemPrompt,
 		turn.Status,
 		turn.Error,
 		turn.Model,
@@ -134,7 +133,6 @@ func (r *PostgresTurnRepository) scanTurnRow(row scanner) (*llmModels.Turn, erro
 		&turn.ChatID,
 		&turn.PrevTurnID,
 		&turn.Role,
-		&turn.SystemPrompt,
 		&turn.Status,
 		&turn.Error,
 		&turn.Model,
@@ -155,7 +153,7 @@ func (r *PostgresTurnRepository) scanTurnRow(row scanner) (*llmModels.Turn, erro
 // GetTurn retrieves a turn by ID
 func (r *PostgresTurnRepository) GetTurn(ctx context.Context, turnID string) (*llmModels.Turn, error) {
 	query := fmt.Sprintf(`
-		SELECT id, chat_id, prev_turn_id, role, system_prompt, status, error,
+		SELECT id, chat_id, prev_turn_id, role, status, error,
 		       model, input_tokens, output_tokens, created_at, completed_at,
 		       request_params, stop_reason, response_metadata
 		FROM %s
@@ -181,7 +179,7 @@ func (r *PostgresTurnRepository) GetTurnPath(ctx context.Context, turnID string)
 	query := fmt.Sprintf(`
 		WITH RECURSIVE turn_path AS (
 			-- Base case: start with the specified turn
-			SELECT id, chat_id, prev_turn_id, role, system_prompt, status, error,
+			SELECT id, chat_id, prev_turn_id, role, status, error,
 			       model, input_tokens, output_tokens, created_at, completed_at,
 			       request_params, stop_reason, response_metadata, 1 as depth
 			FROM %s
@@ -190,14 +188,14 @@ func (r *PostgresTurnRepository) GetTurnPath(ctx context.Context, turnID string)
 			UNION ALL
 
 			-- Recursive case: get prev turns
-			SELECT t.id, t.chat_id, t.prev_turn_id, t.role, t.system_prompt, t.status, t.error,
+			SELECT t.id, t.chat_id, t.prev_turn_id, t.role, t.status, t.error,
 			       t.model, t.input_tokens, t.output_tokens, t.created_at, t.completed_at,
 			       t.request_params, t.stop_reason, t.response_metadata, tp.depth + 1
 			FROM %s t
 			INNER JOIN turn_path tp ON t.id = tp.prev_turn_id
 			WHERE tp.depth < %d  -- Prevent infinite recursion
 		)
-		SELECT id, chat_id, prev_turn_id, role, system_prompt, status, error,
+		SELECT id, chat_id, prev_turn_id, role, status, error,
 		       model, input_tokens, output_tokens, created_at, completed_at,
 		       request_params, stop_reason, response_metadata
 		FROM turn_path
@@ -261,7 +259,7 @@ func (r *PostgresTurnRepository) GetTurnSiblings(ctx context.Context, turnID str
 	if prevTurnID == nil {
 		// Root turn - get all root turns for this chat
 		siblingsQuery = fmt.Sprintf(`
-			SELECT id, chat_id, prev_turn_id, role, system_prompt, status, error,
+			SELECT id, chat_id, prev_turn_id, role, status, error,
 			       model, input_tokens, output_tokens, created_at, completed_at,
 			       request_params, stop_reason, response_metadata
 			FROM %s
@@ -272,7 +270,7 @@ func (r *PostgresTurnRepository) GetTurnSiblings(ctx context.Context, turnID str
 	} else {
 		// Non-root - get all turns with same prev_turn_id
 		siblingsQuery = fmt.Sprintf(`
-			SELECT id, chat_id, prev_turn_id, role, system_prompt, status, error,
+			SELECT id, chat_id, prev_turn_id, role, status, error,
 			       model, input_tokens, output_tokens, created_at, completed_at,
 			       request_params, stop_reason, response_metadata
 			FROM %s
@@ -332,7 +330,7 @@ func (r *PostgresTurnRepository) GetTurnSiblings(ctx context.Context, turnID str
 // GetRootTurns retrieves all root turns for a specific chat
 func (r *PostgresTurnRepository) GetRootTurns(ctx context.Context, chatID string) ([]llmModels.Turn, error) {
 	query := fmt.Sprintf(`
-		SELECT id, chat_id, prev_turn_id, role, system_prompt, status, error,
+		SELECT id, chat_id, prev_turn_id, role, status, error,
 		       model, input_tokens, output_tokens, created_at, completed_at,
 		       request_params, stop_reason, response_metadata
 		FROM %s
@@ -1018,7 +1016,7 @@ func (r *PostgresTurnRepository) fetchTurnsBefore(ctx context.Context, startTurn
 	query := fmt.Sprintf(`
 		WITH RECURSIVE turn_path AS (
 			-- Base case: get the prev turn of start turn
-			SELECT t.id, t.chat_id, t.prev_turn_id, t.role, t.system_prompt, t.status, t.error,
+			SELECT t.id, t.chat_id, t.prev_turn_id, t.role, t.status, t.error,
 			       t.model, t.input_tokens, t.output_tokens, t.created_at, t.completed_at,
 			       t.request_params, t.stop_reason, t.response_metadata, 1 as depth
 			FROM %s t
@@ -1028,14 +1026,14 @@ func (r *PostgresTurnRepository) fetchTurnsBefore(ctx context.Context, startTurn
 			UNION ALL
 
 			-- Recursive case: follow prev_turn_id chain
-			SELECT t.id, t.chat_id, t.prev_turn_id, t.role, t.system_prompt, t.status, t.error,
+			SELECT t.id, t.chat_id, t.prev_turn_id, t.role, t.status, t.error,
 			       t.model, t.input_tokens, t.output_tokens, t.created_at, t.completed_at,
 			       t.request_params, t.stop_reason, t.response_metadata, tp.depth + 1
 			FROM %s t
 			INNER JOIN turn_path tp ON t.id = tp.prev_turn_id
 			WHERE tp.depth < $2
 		)
-		SELECT id, chat_id, prev_turn_id, role, system_prompt, status, error,
+		SELECT id, chat_id, prev_turn_id, role, status, error,
 		       model, input_tokens, output_tokens, created_at, completed_at,
 		       request_params, stop_reason, response_metadata
 		FROM turn_path
@@ -1073,7 +1071,7 @@ func (r *PostgresTurnRepository) fetchTurnsAfter(ctx context.Context, startTurnI
 	query := fmt.Sprintf(`
 		WITH RECURSIVE turn_path AS (
 			-- Base case: get the most recent child of start turn
-			SELECT t.id, t.chat_id, t.prev_turn_id, t.role, t.system_prompt, t.status, t.error,
+			SELECT t.id, t.chat_id, t.prev_turn_id, t.role, t.status, t.error,
 			       t.model, t.input_tokens, t.output_tokens, t.created_at, t.completed_at,
 			       t.request_params, t.stop_reason, t.response_metadata, 1 as depth
 			FROM %s t
@@ -1088,7 +1086,7 @@ func (r *PostgresTurnRepository) fetchTurnsAfter(ctx context.Context, startTurnI
 			UNION ALL
 
 			-- Recursive case: follow most recent child
-			SELECT t.id, t.chat_id, t.prev_turn_id, t.role, t.system_prompt, t.status, t.error,
+			SELECT t.id, t.chat_id, t.prev_turn_id, t.role, t.status, t.error,
 			       t.model, t.input_tokens, t.output_tokens, t.created_at, t.completed_at,
 			       t.request_params, t.stop_reason, t.response_metadata, tp.depth + 1
 			FROM %s t
@@ -1101,7 +1099,7 @@ func (r *PostgresTurnRepository) fetchTurnsAfter(ctx context.Context, startTurnI
 			    LIMIT 1
 			  )
 		)
-		SELECT id, chat_id, prev_turn_id, role, system_prompt, status, error,
+		SELECT id, chat_id, prev_turn_id, role, status, error,
 		       model, input_tokens, output_tokens, created_at, completed_at,
 		       request_params, stop_reason, response_metadata
 		FROM turn_path

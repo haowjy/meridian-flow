@@ -11,7 +11,6 @@ type Turn struct {
 	ChatID       string     `json:"chat_id" db:"chat_id"`
 	PrevTurnID   *string    `json:"prev_turn_id" db:"prev_turn_id"`
 	Role         string     `json:"role" db:"role"` // "user" or "assistant"
-	SystemPrompt *string    `json:"system_prompt,omitempty" db:"system_prompt"`
 	Status       string     `json:"status" db:"status"` // "pending", "streaming", "waiting_subagents", "complete", "cancelled", "error"
 	Error        *string    `json:"error,omitempty" db:"error"`
 	Model        *string    `json:"model,omitempty" db:"model"` // LLM model used for assistant turns

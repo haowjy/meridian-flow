@@ -25,33 +25,41 @@ type ChatValidator interface {
 // Service implements the StreamingService interface
 // Handles turn creation and streaming orchestration
 type Service struct {
-	turnRepo          llmRepo.TurnRepository
-	validator         ChatValidator
-	responseGenerator *ResponseGenerator
-	registry          *mstream.Registry
-	config            *config.Config
-	txManager         repositories.TransactionManager
-	logger            *slog.Logger
+	turnRepo             llmRepo.TurnRepository
+	validator            ChatValidator
+	responseGenerator    *ResponseGenerator
+	registry             *mstream.Registry
+	config               *config.Config
+	txManager            repositories.TransactionManager
+	systemPromptResolver SystemPromptResolver
+	logger               *slog.Logger
+}
+
+// SystemPromptResolver resolves system prompts from project, chat, and skills
+type SystemPromptResolver interface {
+	Resolve(ctx context.Context, chatID string, userID string, userSystem *string, selectedSkills []string) (*string, error)
 }
 
 // NewService creates a new streaming service
 func NewService(
-	turnRepo llmRepo.TurnRepository,
-	validator ChatValidator,
-	responseGenerator *ResponseGenerator,
-	registry          *mstream.Registry,
-	cfg               *config.Config,
-	txManager         repositories.TransactionManager,
-	logger            *slog.Logger,
+	turnRepo             llmRepo.TurnRepository,
+	validator            ChatValidator,
+	responseGenerator    *ResponseGenerator,
+	registry             *mstream.Registry,
+	cfg                  *config.Config,
+	txManager            repositories.TransactionManager,
+	systemPromptResolver SystemPromptResolver,
+	logger               *slog.Logger,
 ) llmSvc.StreamingService {
 	return &Service{
-		turnRepo:          turnRepo,
-		validator:         validator,
-		responseGenerator: responseGenerator,
-		registry:          registry,
-		config:            cfg,
-		txManager:         txManager,
-		logger:            logger,
+		turnRepo:             turnRepo,
+		validator:            validator,
+		responseGenerator:    responseGenerator,
+		registry:             registry,
+		config:               cfg,
+		txManager:            txManager,
+		systemPromptResolver: systemPromptResolver,
+		logger:               logger,
 	}
 }
 
@@ -112,6 +120,13 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		}
 	}
 
+	// Resolve system prompt from user, project, chat, and selected skills
+	// Always resolve if skills are selected, or if no user system prompt provided
+	if err := s.resolveSystemPromptForParams(ctx, req.ChatID, req.UserID, params, req.SelectedSkills); err != nil {
+		s.logger.Error("failed to resolve system prompt", "error", err)
+		return nil, err
+	}
+
 	// Create user turn + blocks and assistant turn atomically in a transaction
 	var turn *llmModels.Turn
 	var assistantTurn *llmModels.Turn
@@ -120,12 +135,11 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	err = s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
 		// Create user turn
 		turn = &llmModels.Turn{
-			ChatID:       req.ChatID,
-			PrevTurnID:   req.PrevTurnID,
-			Role:         req.Role,
-			SystemPrompt: req.SystemPrompt,
-			Status:       "complete", // User turn is immediately complete
-			CreatedAt:    now,
+			ChatID:     req.ChatID,
+			PrevTurnID: req.PrevTurnID,
+			Role:       req.Role,
+			Status:     "complete", // User turn is immediately complete
+			CreatedAt:  now,
 		}
 
 		if err := s.turnRepo.CreateTurn(txCtx, turn); err != nil {
@@ -434,6 +448,38 @@ func (s *Service) CreateAssistantTurnDebug(
 	)
 
 	return turn, nil
+}
+
+// resolveSystemPromptForParams resolves system prompt from multiple sources and updates params.
+// This consolidates logic shared between CreateTurn and BuildDebugProviderRequest.
+//
+// Resolution order:
+// 1. User-provided system prompt (from params.System)
+// 2. Project system prompt
+// 3. Chat system prompt
+// 4. Selected skills (from .skills/{skillName}/SKILL documents)
+//
+// The method only resolves when:
+// - Skills are selected (len(selectedSkills) > 0), OR
+// - No user system prompt is provided (params.System == nil)
+func (s *Service) resolveSystemPromptForParams(
+	ctx context.Context,
+	chatID string,
+	userID string,
+	params *llmModels.RequestParams,
+	selectedSkills []string,
+) error {
+	if len(selectedSkills) > 0 || params.System == nil {
+		systemPrompt, err := s.systemPromptResolver.Resolve(ctx, chatID, userID, params.System, selectedSkills)
+		if err != nil {
+			return fmt.Errorf("failed to resolve system prompt: %w", err)
+		}
+		// Set resolved system prompt in params (concatenated result)
+		if systemPrompt != nil {
+			params.System = systemPrompt
+		}
+	}
+	return nil
 }
 
 // Validation methods

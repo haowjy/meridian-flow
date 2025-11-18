@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"meridian/internal/domain"
 	models "meridian/internal/domain/models/docsystem"
@@ -100,6 +101,107 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 	}
 
 	return &doc, nil
+}
+
+// GetByPath retrieves a document by its path (e.g., ".skills/cw-prose-writing/SKILL.md")
+func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string, projectID string) (*models.Document, error) {
+	// Split path into parts
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("invalid path: %w", domain.ErrNotFound)
+	}
+
+	// Last part is the document name
+	docName := parts[len(parts)-1]
+	folderParts := parts[:len(parts)-1]
+
+	// Find the folder by walking the path
+	var folderID *string
+	for _, folderName := range folderParts {
+		folder, err := r.findFolderByName(ctx, projectID, folderID, folderName)
+		if err != nil {
+			return nil, fmt.Errorf("folder '%s' not found: %w", folderName, err)
+		}
+		folderID = &folder.ID
+	}
+
+	// Query for the document in the final folder
+	query := fmt.Sprintf(`
+		SELECT id, project_id, folder_id, name, content, word_count, created_at, updated_at
+		FROM %s
+		WHERE project_id = $1 AND name = $2 AND deleted_at IS NULL
+	`, r.tables.Documents)
+
+	args := []interface{}{projectID, docName}
+
+	// Add folder_id condition
+	if folderID != nil {
+		query += ` AND folder_id = $3`
+		args = append(args, *folderID)
+	} else {
+		query += ` AND folder_id IS NULL`
+	}
+
+	var doc models.Document
+	executor := postgres.GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, query, args...).Scan(
+		&doc.ID,
+		&doc.ProjectID,
+		&doc.FolderID,
+		&doc.Name,
+		&doc.Content,
+		&doc.WordCount,
+		&doc.CreatedAt,
+		&doc.UpdatedAt,
+	)
+
+	if err != nil {
+		if postgres.IsPgNoRowsError(err) {
+			return nil, fmt.Errorf("document at path '%s': %w", path, domain.ErrNotFound)
+		}
+		return nil, fmt.Errorf("get document by path: %w", err)
+	}
+
+	return &doc, nil
+}
+
+// findFolderByName finds a folder by name within a parent folder
+func (r *PostgresDocumentRepository) findFolderByName(ctx context.Context, projectID string, parentID *string, name string) (*models.Folder, error) {
+	query := fmt.Sprintf(`
+		SELECT id, project_id, parent_id, name, created_at, updated_at
+		FROM %s
+		WHERE project_id = $1 AND name = $2 AND deleted_at IS NULL
+	`, r.tables.Folders)
+
+	args := []interface{}{projectID, name}
+
+	// Add parent_id condition
+	if parentID != nil {
+		query += ` AND parent_id = $3`
+		args = append(args, *parentID)
+	} else {
+		query += ` AND parent_id IS NULL`
+	}
+
+	var folder models.Folder
+	executor := postgres.GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, query, args...).Scan(
+		&folder.ID,
+		&folder.ProjectID,
+		&folder.ParentID,
+		&folder.Name,
+		&folder.CreatedAt,
+		&folder.UpdatedAt,
+	)
+
+	if err != nil {
+		if postgres.IsPgNoRowsError(err) {
+			return nil, fmt.Errorf("folder '%s': %w", name, domain.ErrNotFound)
+		}
+		return nil, fmt.Errorf("find folder by name: %w", err)
+	}
+
+	return &folder, nil
 }
 
 // Update updates an existing document

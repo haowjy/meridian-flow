@@ -13,7 +13,9 @@ func ParseJSON(w http.ResponseWriter, r *http.Request, dest interface{}) error {
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 
 	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields() // Strict parsing
+	// Note: DisallowUnknownFields() is intentionally NOT used to allow flexible
+	// map fields like request_params to accept arbitrary LLM provider parameters.
+	// Validation is performed downstream via domain-specific validators.
 
 	if err := decoder.Decode(dest); err != nil {
 		return fmt.Errorf("invalid JSON: %w", err)

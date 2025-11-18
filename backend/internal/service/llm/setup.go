@@ -60,6 +60,7 @@ func SetupServices(
 	chatRepo llmRepo.ChatRepository,
 	turnRepo llmRepo.TurnRepository,
 	projectRepo docsysRepo.ProjectRepository,
+	documentRepo docsysRepo.DocumentRepository,
 	providerRegistry *ProviderRegistry,
 	cfg *config.Config,
 	txManager repositories.TransactionManager,
@@ -96,6 +97,14 @@ func SetupServices(
 		turnRepo, // TurnNavigator (same repo implements both)
 	)
 
+	// Create system prompt resolver
+	systemPromptResolver := streaming.NewSystemPromptResolver(
+		projectRepo,
+		chatRepo,
+		documentRepo,
+		logger,
+	)
+
 	// Create streaming service (turn creation/orchestration)
 	streamingService := streaming.NewService(
 		turnRepo,
@@ -104,6 +113,7 @@ func SetupServices(
 		streamRegistry,
 		cfg,
 		txManager,
+		systemPromptResolver,
 		logger,
 	)
 

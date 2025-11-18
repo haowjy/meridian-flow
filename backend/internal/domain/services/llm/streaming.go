@@ -39,13 +39,13 @@ type StreamingService interface {
 
 // CreateTurnRequest is the DTO for creating a new turn
 type CreateTurnRequest struct {
-	ChatID        string                 `json:"chat_id"`
-	UserID        string                 `json:"-"` // Set by handler from auth context, not from request body
-	PrevTurnID    *string                `json:"prev_turn_id,omitempty"`
-	Role          string                 `json:"role"` // "user" only (backend generates assistant turns)
-	SystemPrompt  *string                `json:"system_prompt,omitempty"`
-	TurnBlocks    []TurnBlockInput       `json:"turn_blocks,omitempty"`
-	RequestParams map[string]interface{} `json:"request_params,omitempty"` // LLM request parameters (model, temperature, thinking_enabled, etc.)
+	ChatID         string                 `json:"chat_id"`
+	UserID         string                 `json:"-"` // Set by handler from auth context, not from request body
+	PrevTurnID     *string                `json:"prev_turn_id,omitempty"`
+	Role           string                 `json:"role"`                      // "user" only (backend generates assistant turns)
+	SelectedSkills []string               `json:"selected_skills,omitempty"` // Skills to load from .skills/ folder
+	TurnBlocks     []TurnBlockInput       `json:"turn_blocks,omitempty"`
+	RequestParams  map[string]interface{} `json:"request_params,omitempty"` // LLM request parameters (model, temperature, thinking_enabled, system, etc.)
 }
 
 // TurnBlockInput is the DTO for content block creation

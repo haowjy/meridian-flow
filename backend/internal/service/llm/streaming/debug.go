@@ -82,6 +82,13 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 		}
 	}
 
+	// Resolve system prompt from user, project, chat, and selected skills (mirror CreateTurn)
+	// Always resolve if skills are selected, or if no user system prompt provided
+	if err := s.resolveSystemPromptForParams(ctx, req.ChatID, req.UserID, params, req.SelectedSkills); err != nil {
+		s.logger.Error("failed to resolve system prompt for debug", "error", err)
+		return nil, err
+	}
+
 	// Build conversation path from prev_turn_id (if provided)
 	var path []llmModels.Turn
 	if req.PrevTurnID != nil {

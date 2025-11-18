@@ -66,7 +66,6 @@ erDiagram
         uuid chat_id FK
         uuid prev_turn_id FK "nullable, self-ref"
         text role "user|assistant"
-        text system_prompt "nullable"
         text status
         text error "nullable"
         text model "nullable"
@@ -265,7 +264,6 @@ Conversation tree structure. Each turn is either a user message or assistant res
 - `chat_id` (UUID, FK → chats) - Parent chat session
 - `prev_turn_id` (UUID, FK → turns, nullable) - Previous turn in conversation (NULL = first turn)
 - `role` (TEXT) - `'user'` or `'assistant'`
-- `system_prompt` (TEXT, nullable) - System instructions for this turn
 - `status` (TEXT) - One of: `'pending'`, `'streaming'`, `'waiting_subagents'`, `'complete'`, `'cancelled'`, `'error'`
 - `error` (TEXT, nullable) - Error message if status = `'error'`
 - `model` (TEXT, nullable) - LLM model identifier (e.g., `'claude-haiku-4-5-20251001'`) for assistant turns
@@ -273,6 +271,15 @@ Conversation tree structure. Each turn is either a user message or assistant res
 - `output_tokens` (INT, nullable) - Token count for generated output
 - `created_at` (TIMESTAMPTZ) - Turn creation time
 - `completed_at` (TIMESTAMPTZ, nullable) - Turn completion time
+
+**Note on System Prompts:**
+System prompts are NOT stored per-turn. They are resolved at request time from:
+1. `request_params.system` (user-provided)
+2. `project.system_prompt` (project settings)
+3. `chat.system_prompt` (chat settings)
+4. Selected skills (from `.skills/` folder)
+
+See migration `00003_remove_turn_system_prompt.sql` for details.
 
 **Constraints:**
 - CHECK: `role IN ('user', 'assistant')`
