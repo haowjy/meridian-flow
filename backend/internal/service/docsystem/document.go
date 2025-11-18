@@ -362,3 +362,65 @@ func (s *documentService) validateCreateRequest(req *docsysSvc.CreateDocumentReq
 		validation.Field(&req.Content, validation.Required),
 	)
 }
+
+// SearchDocuments performs full-text search across documents with path computation
+func (s *documentService) SearchDocuments(ctx context.Context, req *docsysSvc.SearchDocumentsRequest) (*models.SearchResults, error) {
+	// Validate request
+	if req.Query == "" {
+		return nil, fmt.Errorf("%w: search query cannot be empty", domain.ErrValidation)
+	}
+
+	// TODO: Add permission check
+	// If projectID is specified, verify user has access to that project
+	// If projectID is empty, search will naturally be limited to user's projects
+	// when we add user_id to documents table or project membership checks
+
+	// Convert string fields to SearchField enum
+	var fields []models.SearchField
+	for _, f := range req.Fields {
+		switch f {
+		case "name":
+			fields = append(fields, models.SearchFieldName)
+		case "content":
+			fields = append(fields, models.SearchFieldContent)
+		default:
+			return nil, fmt.Errorf("%w: invalid search field %q (supported: name, content)", domain.ErrValidation, f)
+		}
+	}
+
+	// Convert request to repository SearchOptions
+	opts := &models.SearchOptions{
+		Query:     req.Query,
+		ProjectID: req.ProjectID,
+		Fields:    fields, // Will default to [name, content] in ApplyDefaults() if empty
+		Limit:     req.Limit,
+		Offset:    req.Offset,
+		Language:  req.Language,
+		FolderID:  req.FolderID,
+		Strategy:  models.SearchStrategyFullText, // Always use fulltext for now
+	}
+
+	// Call repository search
+	results, err := s.docRepo.SearchDocuments(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Compute paths for all documents (business logic)
+	for i := range results.Results {
+		doc := &results.Results[i].Document
+		path, err := s.docRepo.GetPath(ctx, doc)
+		if err != nil {
+			// Log warning but don't fail the entire search
+			s.logger.Warn("failed to compute path for search result",
+				"doc_id", doc.ID,
+				"error", err,
+			)
+			doc.Path = doc.Name // Fallback to just the name
+		} else {
+			doc.Path = path
+		}
+	}
+
+	return results, nil
+}

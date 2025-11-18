@@ -34,4 +34,9 @@ type DocumentRepository interface {
 
 	// GetAllMetadataByProject retrieves all document metadata in a project (no content)
 	GetAllMetadataByProject(ctx context.Context, projectID string) ([]docsystem.Document, error)
+
+	// SearchDocuments performs full-text search across document content
+	// Currently supports only full-text search (SearchStrategyFullText)
+	// Future: Will support vector search and hybrid search strategies
+	SearchDocuments(ctx context.Context, options *docsystem.SearchOptions) (*docsystem.SearchResults, error)
 }

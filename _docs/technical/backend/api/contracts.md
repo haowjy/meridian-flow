@@ -336,6 +336,85 @@ Similar to folders, the `name` field now supports Unix-style path notation for c
 - The frontend editor uses a different internal representation and converts to/from Markdown at the boundary.
 - Word count and similar derived fields are computed from Markdown.
 
+### Search Documents (GET /api/documents/search)
+
+Full-text search across documents with multi-field support and weighted ranking.
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `query` | String | Yes | - | Search query string |
+| `project_id` | UUID | No | - | Scope to specific project (empty = search all projects) |
+| `fields` | String | No | `name,content` | Comma-separated fields to search (`name`, `content`) |
+| `limit` | Integer | No | 20 | Results per page (max 100) |
+| `offset` | Integer | No | 0 | Pagination offset |
+| `language` | String | No | `english` | FTS language config (e.g., `spanish`, `french`) |
+| `folder_id` | UUID | No | - | Filter by specific folder |
+
+**Field Weighting:**
+- `name` matches: 2.0x multiplier (title matches ranked higher)
+- `content` matches: 1.0x multiplier (normal weight)
+- Multi-field searches combine scores additively
+
+**Response:**
+```json
+{
+  "results": [
+    {
+      "document": {
+        "id": "doc-uuid",
+        "project_id": "project-uuid",
+        "folder_id": "folder-uuid",
+        "name": "Dragon Lore",
+        "content": "# Dragon Lore\n\nDragons are ancient...",
+        "word_count": 312,
+        "path": "World Building/Creatures/Dragon Lore",
+        "created_at": "2025-01-15T10:00:00Z",
+        "updated_at": "2025-01-15T10:05:00Z"
+      },
+      "score": 0.0845,
+      "metadata": {
+        "rank_method": "ts_rank",
+        "language": "english"
+      }
+    }
+  ],
+  "total_count": 42,
+  "has_more": true,
+  "offset": 0,
+  "limit": 20,
+  "strategy": "fulltext"
+}
+```
+
+**Examples:**
+
+```bash
+# Basic search (defaults: both fields, 20 results)
+GET /api/documents/search?query=dragon
+
+# Search specific project
+GET /api/documents/search?query=battle+scene&project_id=uuid
+
+# Search only document names/titles
+GET /api/documents/search?query=chapter&fields=name
+
+# Search both fields explicitly
+GET /api/documents/search?query=magic&fields=name,content
+
+# Paginated search
+GET /api/documents/search?query=character&limit=50&offset=100
+
+# Folder-scoped search
+GET /api/documents/search?query=spell&folder_id=uuid&limit=10
+
+# Multi-language search
+GET /api/documents/search?query=dragón&language=spanish
+```
+
+**Implementation:** See `_docs/technical/backend/search-architecture.md` for PostgreSQL full-text search details, indexing strategy, and future vector search plans.
+
 ## Chat Operations
 
 Chat system provides multi-turn LLM conversations with branching, streaming, and efficient pagination.

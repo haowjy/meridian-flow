@@ -163,6 +163,7 @@ func main() {
 
 	// Document routes
 	mux.HandleFunc("POST /api/documents", newDocHandler.CreateDocument)
+	mux.HandleFunc("GET /api/documents/search", newDocHandler.SearchDocuments) // Must come before {id} route
 	mux.HandleFunc("GET /api/documents/{id}", newDocHandler.GetDocument)
 	mux.HandleFunc("PATCH /api/documents/{id}", newDocHandler.UpdateDocument)
 	mux.HandleFunc("DELETE /api/documents/{id}", newDocHandler.DeleteDocument)

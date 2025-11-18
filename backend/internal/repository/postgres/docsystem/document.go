@@ -467,3 +467,211 @@ func (r *PostgresDocumentRepository) getExistingDocumentID(ctx context.Context, 
 
 	return id, nil
 }
+
+// SearchDocuments performs full-text search on document content
+// Currently supports only SearchStrategyFullText
+func (r *PostgresDocumentRepository) SearchDocuments(ctx context.Context, options *models.SearchOptions) (*models.SearchResults, error) {
+	// Apply defaults and validate
+	options.ApplyDefaults()
+	if err := options.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid search options: %w", err)
+	}
+
+	// Route to appropriate search implementation
+	switch options.Strategy {
+	case models.SearchStrategyFullText:
+		return r.fullTextSearch(ctx, options)
+	case models.SearchStrategyVector:
+		return nil, fmt.Errorf("vector search not yet implemented")
+	case models.SearchStrategyHybrid:
+		return nil, fmt.Errorf("hybrid search not yet implemented")
+	default:
+		return nil, fmt.Errorf("unknown search strategy: %s", options.Strategy)
+	}
+}
+
+// fullTextSearch implements PostgreSQL full-text search with configurable language and fields
+func (r *PostgresDocumentRepository) fullTextSearch(ctx context.Context, opts *models.SearchOptions) (*models.SearchResults, error) {
+	// Build dynamic search query based on which fields to search
+	// PostgreSQL full-text search components:
+	// - to_tsvector(language, field): Converts field to searchable tokens
+	// - plainto_tsquery(language, query): Converts user query to search format
+	// - @@: Full-text match operator
+	// - ts_rank(): Ranks results by relevance (higher = better match)
+	//
+	// Field weighting:
+	// - name matches: 2.0x multiplier (more important)
+	// - content matches: 1.0x multiplier (normal weight)
+
+	// Build field-specific search conditions and rank expressions
+	var searchConditions []string
+	var rankExpressions []string
+
+	for _, field := range opts.Fields {
+		switch field {
+		case models.SearchFieldName:
+			// Search in name/title field
+			searchConditions = append(searchConditions,
+				"to_tsvector($1, name) @@ plainto_tsquery($1, $2)")
+			// Weight title matches 2x higher
+			rankExpressions = append(rankExpressions,
+				"ts_rank(to_tsvector($1, name), plainto_tsquery($1, $2)) * 2.0")
+
+		case models.SearchFieldContent:
+			// Search in content field
+			searchConditions = append(searchConditions,
+				"to_tsvector($1, content) @@ plainto_tsquery($1, $2)")
+			// Normal weight
+			rankExpressions = append(rankExpressions,
+				"ts_rank(to_tsvector($1, content), plainto_tsquery($1, $2))")
+		}
+	}
+
+	// Combine conditions with OR (matches if ANY field matches)
+	whereClause := strings.Join(searchConditions, " OR ")
+
+	// Sum rank expressions for combined score
+	rankExpression := strings.Join(rankExpressions, " + ")
+
+	baseQuery := fmt.Sprintf(`
+		SELECT id, project_id, folder_id, name, content, word_count, created_at, updated_at,
+		       (%s) AS rank_score
+		FROM %s
+		WHERE deleted_at IS NULL
+		  AND (%s)
+	`, rankExpression, r.tables.Documents, whereClause)
+
+	args := []interface{}{opts.Language, opts.Query}
+	paramIndex := 3
+
+	// Add optional project filter
+	if opts.ProjectID != "" {
+		baseQuery += fmt.Sprintf(` AND project_id = $%d`, paramIndex)
+		args = append(args, opts.ProjectID)
+		paramIndex++
+	}
+
+	// Add optional folder filter
+	if opts.FolderID != nil {
+		baseQuery += fmt.Sprintf(` AND folder_id = $%d`, paramIndex)
+		args = append(args, *opts.FolderID)
+		paramIndex++
+	}
+
+	// Order by relevance score (descending)
+	baseQuery += ` ORDER BY rank_score DESC`
+
+	// Add pagination
+	baseQuery += fmt.Sprintf(` LIMIT $%d OFFSET $%d`, paramIndex, paramIndex+1)
+	args = append(args, opts.Limit, opts.Offset)
+
+	// Execute search query
+	executor := postgres.GetExecutor(ctx, r.pool)
+	rows, err := executor.Query(ctx, baseQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("full-text search query failed: %w", err)
+	}
+	defer rows.Close()
+
+	// Collect results with scores
+	var searchResults []models.SearchResult
+	for rows.Next() {
+		var doc models.Document
+		var score float64
+
+		err := rows.Scan(
+			&doc.ID,
+			&doc.ProjectID,
+			&doc.FolderID,
+			&doc.Name,
+			&doc.Content,
+			&doc.WordCount,
+			&doc.CreatedAt,
+			&doc.UpdatedAt,
+			&score,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan search result: %w", err)
+		}
+
+		searchResults = append(searchResults, models.SearchResult{
+			Document: doc,
+			Score:    score,
+			Metadata: map[string]interface{}{
+				"rank_method": "ts_rank",
+				"language":    opts.Language,
+			},
+		})
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate search results: %w", err)
+	}
+
+	// Return empty slice instead of nil
+	if searchResults == nil {
+		searchResults = []models.SearchResult{}
+	}
+
+	// Get total count for pagination metadata
+	totalCount, err := r.countTotalMatches(ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("count total matches: %w", err)
+	}
+
+	// Build results with pagination metadata
+	results := models.NewSearchResults(searchResults, totalCount, opts)
+
+	return results, nil
+}
+
+// countTotalMatches counts total matching documents (without limit/offset)
+func (r *PostgresDocumentRepository) countTotalMatches(ctx context.Context, opts *models.SearchOptions) (int, error) {
+	// Build same search conditions as fullTextSearch
+	var searchConditions []string
+
+	for _, field := range opts.Fields {
+		switch field {
+		case models.SearchFieldName:
+			searchConditions = append(searchConditions,
+				"to_tsvector($1, name) @@ plainto_tsquery($1, $2)")
+		case models.SearchFieldContent:
+			searchConditions = append(searchConditions,
+				"to_tsvector($1, content) @@ plainto_tsquery($1, $2)")
+		}
+	}
+
+	whereClause := strings.Join(searchConditions, " OR ")
+
+	countQuery := fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM %s
+		WHERE deleted_at IS NULL
+		  AND (%s)
+	`, r.tables.Documents, whereClause)
+
+	args := []interface{}{opts.Language, opts.Query}
+	paramIndex := 3
+
+	// Add optional project filter
+	if opts.ProjectID != "" {
+		countQuery += fmt.Sprintf(` AND project_id = $%d`, paramIndex)
+		args = append(args, opts.ProjectID)
+		paramIndex++
+	}
+
+	// Add optional folder filter
+	if opts.FolderID != nil {
+		countQuery += fmt.Sprintf(` AND folder_id = $%d`, paramIndex)
+		args = append(args, *opts.FolderID)
+	}
+
+	var total int
+	executor := postgres.GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, countQuery, args...).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("count query failed: %w", err)
+	}
+
+	return total, nil
+}

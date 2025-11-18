@@ -19,6 +19,9 @@ type DocumentService interface {
 
 	// DeleteDocument deletes a document
 	DeleteDocument(ctx context.Context, id, projectID string) error
+
+	// SearchDocuments performs full-text search across documents
+	SearchDocuments(ctx context.Context, req *SearchDocumentsRequest) (*docsystem.SearchResults, error)
 }
 
 // CreateDocumentRequest represents a document creation request
@@ -38,4 +41,15 @@ type UpdateDocumentRequest struct {
 	FolderPath *string `json:"folder_path,omitempty"` // Move to folder path (resolve/auto-create)
 	FolderID   *string `json:"folder_id,omitempty"`   // Move to folder ID (direct, faster)
 	Content    *string `json:"content,omitempty"`
+}
+
+// SearchDocumentsRequest represents a document search request
+type SearchDocumentsRequest struct {
+	Query     string   `json:"query"`                // Search query (required)
+	ProjectID string   `json:"project_id,omitempty"` // Optional - empty means search all user's projects
+	Fields    []string `json:"fields,omitempty"`     // Which fields to search: "name", "content" (default: both)
+	Limit     int      `json:"limit,omitempty"`      // Results per page (default: 20, max: 100)
+	Offset    int      `json:"offset,omitempty"`     // Skip N results (default: 0)
+	Language  string   `json:"language,omitempty"`   // FTS language config (default: "english")
+	FolderID  *string  `json:"folder_id,omitempty"`  // Optional folder filter
 }

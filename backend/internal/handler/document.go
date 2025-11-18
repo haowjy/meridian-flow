@@ -4,6 +4,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"meridian/internal/domain"
@@ -143,6 +145,66 @@ func (h *DocumentHandler) DeleteDocument(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// SearchDocuments performs full-text search across documents
+// GET /api/documents/search?query=dragon&project_id=uuid&fields=name,content&limit=20
+func (h *DocumentHandler) SearchDocuments(w http.ResponseWriter, r *http.Request) {
+	// Parse required query parameter
+	query := r.URL.Query().Get("query")
+	if query == "" {
+		httputil.RespondError(w, http.StatusBadRequest, "query parameter is required")
+		return
+	}
+
+	// Build search request
+	req := &docsysSvc.SearchDocumentsRequest{
+		Query:     query,
+		ProjectID: r.URL.Query().Get("project_id"), // Optional - empty means search all projects
+	}
+
+	// Parse optional fields parameter (comma-separated: "name,content")
+	if fieldsStr := r.URL.Query().Get("fields"); fieldsStr != "" {
+		fields := strings.Split(fieldsStr, ",")
+		// Trim whitespace from each field
+		for i := range fields {
+			fields[i] = strings.TrimSpace(fields[i])
+		}
+		req.Fields = fields
+	}
+
+	// Parse optional limit parameter (default handled by service/repository)
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 {
+			req.Limit = limit
+		}
+	}
+
+	// Parse optional offset parameter (default handled by service/repository)
+	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
+		if offset, err := strconv.Atoi(offsetStr); err == nil && offset >= 0 {
+			req.Offset = offset
+		}
+	}
+
+	// Parse optional language parameter (default handled by service/repository)
+	if language := r.URL.Query().Get("language"); language != "" {
+		req.Language = language
+	}
+
+	// Parse optional folder_id parameter
+	if folderID := r.URL.Query().Get("folder_id"); folderID != "" {
+		req.FolderID = &folderID
+	}
+
+	// Call service
+	results, err := h.docService.SearchDocuments(r.Context(), req)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	httputil.RespondJSON(w, http.StatusOK, results)
 }
 
 // HealthCheck is a simple health check endpoint
