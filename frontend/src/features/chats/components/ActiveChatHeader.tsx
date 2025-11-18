@@ -3,9 +3,11 @@
 import type { Chat } from '@/features/chats/types'
 import { Button } from '@/shared/components/ui/button'
 import { MoreHorizontal } from 'lucide-react'
+import { ChatBreadcrumb } from './ChatBreadcrumb'
 
 interface ActiveChatHeaderProps {
   chat: Chat
+  projectName?: string | null
 }
 
 /**
@@ -14,13 +16,13 @@ interface ActiveChatHeaderProps {
  * Single responsibility:
  * - Show chat title + affordances for future actions (rename, menu).
  */
-export function ActiveChatHeader({ chat }: ActiveChatHeaderProps) {
+export function ActiveChatHeader({ chat, projectName }: ActiveChatHeaderProps) {
+  const chatTitle = chat.title || 'Untitled Chat'
+
   return (
     <div className="chat-main-header">
       <div className="min-w-0">
-        <h2 className="truncate text-sm font-semibold">
-          {chat.title || 'Untitled Chat'}
-        </h2>
+        <ChatBreadcrumb projectName={projectName} chatTitle={chatTitle} />
       </div>
       <div className="flex items-center gap-1">
         {/* Placeholder for future actions: rename, delete, export */}
@@ -36,4 +38,3 @@ export function ActiveChatHeader({ chat }: ActiveChatHeaderProps) {
     </div>
   )
 }
-

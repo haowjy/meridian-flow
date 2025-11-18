@@ -8,6 +8,8 @@ import { ActiveChatHeader } from './ActiveChatHeader'
 import { TurnList } from './TurnList'
 import { TurnInput } from './TurnInput'
 import { ActiveChatEmpty } from './ActiveChatEmpty'
+import { ChatBreadcrumb } from './ChatBreadcrumb'
+import { useProjectStore } from '@/core/stores/useProjectStore'
 
 /**
  * Center panel chat view.
@@ -30,18 +32,34 @@ export function ActiveChatView() {
     chats: s.chats,
   })))
 
+  const projectName = useProjectStore(useShallow((state) => {
+    const currentId = state.currentProjectId
+    if (!currentId) return null
+    const project = state.projects.find((p) => p.id === currentId)
+    return project?.name ?? null
+  }))
+
   // Always call hooks unconditionally to respect Rules of Hooks.
   const { turns, isLoading } = useTurnsForChat(activeChatId)
 
   const activeChat = chats.find((c) => c.id === activeChatId) || null
 
   if (!activeChat) {
-    return <ActiveChatEmpty />
+    return (
+      <div className="chat-main">
+        <div className="chat-main-header">
+          <ChatBreadcrumb projectName={projectName} />
+        </div>
+        <div className="chat-main-body">
+          <ActiveChatEmpty />
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="chat-main">
-      <ActiveChatHeader chat={activeChat} />
+      <ActiveChatHeader chat={activeChat} projectName={projectName} />
       <div className="chat-main-body">
         {/* Simple loading state for now; can be replaced with skeletons later */}
         {isLoading ? (
