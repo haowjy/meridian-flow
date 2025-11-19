@@ -67,7 +67,8 @@ The backend uses the `meridian-llm-go` library for all LLM provider interactions
 **For LLM library documentation:**
 - [Architecture](../llm/architecture.md) - Library design and 3-layer architecture
 - [Tool Mapping](../llm/unified-tool-mapping.md) - Unified tool abstraction across providers
-- [Error Handling](../llm/error-normalization.md) - Error normalization and retry strategies
+- [Error Handling](../../meridian-llm-go/docs/errors.md) - Error normalization
+- [Retry Strategies](../../future/ideas/infrastructure/retry-strategies.md) - Future retry implementation
 - [Capability Loading](../llm/capability-loading.md) - Provider config loading patterns
 - [Streaming](../llm/streaming/README.md) - Streaming architecture and block types
 

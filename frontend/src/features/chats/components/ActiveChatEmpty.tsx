@@ -9,7 +9,7 @@ export function ActiveChatEmpty() {
   return (
     <div className="chat-main-empty">
       <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-muted text-foreground">
-        <MessageSquare className="h-5 w-5" />
+        <MessageSquare className="size-5" />
       </div>
       <p className="mb-1 font-medium">
         No chat selected

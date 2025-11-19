@@ -1,12 +1,14 @@
 ---
+status: future
+priority: medium
+featureset: performance
 detail: planning
 audience: developer
-status: backlog
 ---
 
-# Post‑MVP Questions & Explorations
+# Frontend Performance & Optimization Questions
 
-This document tracks topics to revisit after the MVP ships. No code decisions are implied here.
+This document tracks frontend performance and optimization topics to explore after MVP ships.
 
 ## Lazy Loading & Prefetch
 - Whether to prefetch visible/likely‑to‑open documents during bootstrap.

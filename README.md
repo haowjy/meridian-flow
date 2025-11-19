@@ -11,7 +11,7 @@ AI Writing Assistant — a file management system for writers.
 
 ```
 meridian/
-├── backend/                 # Go + Fiber + PostgreSQL
+├── backend/                 # Go + net/http + PostgreSQL
 │   ├── cmd/                 # Applications (server, seeder)
 │   ├── internal/            # Internal packages
 │   ├── tests/               # Testing artifacts
@@ -82,7 +82,7 @@ Will be documented once frontend is implemented.
 
 ### Backend
 - **Language**: Go 1.25.4
-- **Framework**: [Fiber](https://gofiber.io/) (Express-like for Go)
+- **HTTP**: Go standard library `net/http`
 - **Database**: PostgreSQL via [Supabase](https://supabase.com/)
 - **Deployment**: Railway
 

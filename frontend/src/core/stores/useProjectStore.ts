@@ -19,7 +19,19 @@ interface ProjectStore {
   deleteProject: (id: string) => Promise<void>
 }
 
-// Track abort controller to cancel previous loadProjects request
+/**
+ * Module-level AbortController for loadProjects requests.
+ *
+ * Pattern: Single shared controller ensures only one loadProjects request is active at a time.
+ * When a new loadProjects call starts, it aborts the previous request to prevent race conditions.
+ *
+ * Why module-level:
+ * - Projects are global to the app (not per-component instance)
+ * - Simple cancellation without store state pollution
+ * - Avoids memory leaks from concurrent project list fetches
+ *
+ * Alternative considered: Store-level controller - rejected as it adds unnecessary state complexity
+ */
 let loadProjectsController: AbortController | null = null
 
 export const useProjectStore = create<ProjectStore>()(

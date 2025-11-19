@@ -99,7 +99,7 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
               Cancel
             </Button>
             <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isSubmitting && <Loader2 className="mr-2 size-4 animate-spin" />}
               Create Project
             </Button>
           </DialogFooter>

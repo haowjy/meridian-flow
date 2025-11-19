@@ -375,56 +375,15 @@ func (s *LLMService) formatUserError(err *llm.LLMError) string {
 }
 ```
 
-**See:** [`../llm/error-normalization.md`](../llm/error-normalization.md) for complete error handling.
+**See:** [`meridian-llm-go/docs/errors.md`](../../meridian-llm-go/docs/errors.md) for complete error handling.
 
 ---
 
-## Retry Strategies (PLANNED)
+## Retry Strategies
 
-### Exponential Backoff
+**Status**: Not yet implemented.
 
-```go
-// File: backend/internal/service/llm/retry.go
-
-func (s *LLMService) GenerateWithRetry(ctx context.Context, req *llm.GenerateRequest) (*llm.Response, error) {
-    maxRetries := 3
-    baseDelay := 1 * time.Second
-
-    for attempt := 0; attempt <= maxRetries; attempt++ {
-        resp, err := s.client.GenerateResponse(ctx, s.provider, req)
-        if err == nil {
-            return resp, nil
-        }
-
-        // Check if retryable
-        var llmErr *llm.LLMError
-        if !errors.As(err, &llmErr) || !llmErr.Retryable {
-            return nil, err  // Don't retry
-        }
-
-        // Last attempt failed
-        if attempt == maxRetries {
-            return nil, llmErr
-        }
-
-        // Calculate delay
-        delay := baseDelay * time.Duration(1<<attempt)
-        if llmErr.Category == llm.ErrorRateLimit {
-            delay = 10 * time.Second * time.Duration(1<<attempt)
-        }
-
-        // Wait before retry
-        select {
-        case <-time.After(delay):
-            continue
-        case <-ctx.Done():
-            return nil, ctx.Err()
-        }
-    }
-
-    return nil, fmt.Errorf("max retries exceeded")
-}
-```
+For detailed retry strategy implementation plans, see: [`../../future/ideas/infrastructure/retry-strategies.md`](../../future/ideas/infrastructure/retry-strategies.md)
 
 ---
 
@@ -432,17 +391,29 @@ func (s *LLMService) GenerateWithRetry(ctx context.Context, req *llm.GenerateReq
 
 ### Automatic Routing
 
-Backend routes model strings to providers via **factory pattern**:
+Backend routes requests to providers via **smart defaults**:
 
 ```
-Model: "claude-haiku-4-5" → Parser → {provider: "anthropic"} → Factory → Anthropic Provider
+Request: {model: "claude-haiku-4-5"} → Model Mapping → {provider: "anthropic"} → Factory → Anthropic Provider
+Request: {provider: "openrouter", model: "moonshotai/kimi-k2"} → Factory → OpenRouter Provider
 ```
 
-**Status:**
+**Selection Priority:**
+1. **Explicit provider** in `request_params.provider` (highest priority)
+2. **Model prefix mapping** via `GetProviderForModel()` (e.g., `claude-*` → `anthropic`)
+3. **OpenRouter fallback** (default when no match found)
+
+**Supported Providers:**
 - ✅ Anthropic: Fully implemented
-- 🚧 OpenAI, Gemini, OpenRouter: Library exists, factory pending
+- ✅ OpenRouter: Fully implemented
+- ✅ OpenAI: Fully implemented
+- ✅ Google: Fully implemented
+- ✅ Lorem: Testing provider
 
-**Implementation:** `backend/internal/service/llm/provider_factory.go`
+**Implementation:**
+- Model mapping: `backend/internal/domain/models/llm/model_mapping.go`
+- Provider factory: `backend/internal/service/llm/provider_factory.go`
+- Request extraction: `backend/internal/service/llm/streaming/service.go:96-130`
 
 **See:** [Provider Routing](provider-routing.md) for complete routing architecture
 

@@ -12,11 +12,25 @@ tracked: true
 
 ## The Core Insight
 
-**Complex creative projects with interconnected documentation need a better way to maintain consistency.**
+**"Agentic coding" (like Claude Code, Cursor) revolutionized software development. The same patterns can transform creative writing.**
 
-File-based organization + AI that understands your entire project + tools to explore and maintain it.
+### Agentic Writing: The Concept
 
-**We're building the infrastructure. The market will tell us where it's most valuable.**
+**Agentic Coding:**
+- AI explores codebase autonomously
+- AI suggests edits across multiple files
+- Developer reviews and approves
+- Iterative refinement until code works
+
+**Agentic Writing (Our Vision):**
+- AI explores creative project autonomously
+- AI suggests edits across multiple documents (lore + chapters)
+- Writer reviews and approves
+- Iterative refinement until story works
+
+**The pattern:** AI handles structure, consistency, and drafting. Human provides creative vision and final approval.
+
+**We're building this infrastructure for creative writing. The market will tell us where it's most valuable.**
 
 ---
 
@@ -366,38 +380,148 @@ Now AI definitely loads that document.
 
 ---
 
-## The Agentic Vision (Potential)
+## The Agentic Vision: Full Roadmap
 
-**AI doesn't just respond when asked. It proactively helps.**
+**AI doesn't just respond when asked. It actively collaborates on your creative project.**
 
-**Potential behaviors:**
+### Multi-Document Batch Editing
 
-```
-While writing:
-"I noticed you mentioned Elara's eyes as green here,
- but Characters/Elara says blue. Which is correct?
- 
- [Update character doc] [Update this chapter] [Ignore]"
-```
+**The capability:**
 
 ```
-After saving:
-"This chapter mentions several entities I couldn't 
- find documents for:
- - Master Chen (no character document)
- - Council of Seven (no faction document)
- 
- Want me to create placeholder documents?"
+Writer: "Make Elara more cynical"
+
+AI updates in one batch:
+├─ Characters/Elara.md (update personality)
+├─ Chapter 1 (rewrite dialogue)
+├─ Chapter 5 (adjust inner monologue)
+├─ Chapter 12 (change reaction to betrayal)
+└─ Characters/Marcus.md (update relationship notes)
+
+Writer: Reviews all 5 changes
+├─ Accept all → atomic commit
+├─ Accept some → selective application
+└─ Refine → AI iterates on feedback
 ```
 
+**Why this matters:**
+- Consistency across entire project
+- One creative direction → many document updates
+- Like git commits for creative work
+- Review all changes before applying
+
+**Technical requirements:**
+- Multi-document version management
+- Atomic batch commits
+- Bulk accept/reject UI
+- Cross-document consistency analysis
+
+### Skills System: Different AI Behaviors
+
+**The concept:** Different "skills" for different creative tasks, each with specialized behavior.
+
+**Potential skills:**
+
+**cw-brainstorming:**
+- Captures messy creative notes
+- Minimal structure, maximum freedom
+- Identifies entities and themes
+- Suggests lore document creation
+
+**cw-lore-builder:**
+- Transforms brainstorm into structured wikis
+- Creates character profiles, world docs, faction pages
+- Maintains consistent formatting
+- Links related lore documents
+
+**cw-prose-writing:**
+- Drafts chapters based on lore
+- Follows established character voices
+- Incorporates world-building details
+- Maintains tone and style consistency
+
+**cw-editor:**
+- Suggests prose improvements
+- Focuses on style, pacing, clarity
+- Preserves author voice
+- Iterative refinement workflow
+
+**cw-consistency-checker:**
+- Analyzes project for contradictions
+- Flags timeline issues
+- Detects character inconsistencies
+- Suggests fixes across multiple documents
+
+**How it works:**
+- User selects skill when starting chat
+- Skill provides specialized system prompt
+- AI behavior adapts to task
+- Same underlying model, different expertise
+
+### Ideas → Lore → Story Pipeline
+
+**The three-phase workflow automated:**
+
+**Phase 1: Brain Dump**
 ```
-Proactive analysis:
-"You haven't referenced Locations/The Capital in 
- 20 chapters but you're writing about it now. 
- Want me to load it into context?"
+Skill: cw-brainstorming
+Input: Stream-of-consciousness creative ideas
+Output: Structured brainstorming doc + entity list
 ```
 
-**But these are hypotheses. Users will tell us what's valuable.**
+**Phase 2: Lore Generation**
+```
+Skill: cw-lore-builder
+Input: Brainstorming doc + entity list
+Process:
+  - Create Characters/[name].md for each character
+  - Create World/[concept].md for world elements
+  - Create Factions/[group].md for organizations
+  - Link related documents
+Output: Structured wiki of project lore
+```
+
+**Phase 3: Story Drafting**
+```
+Skill: cw-prose-writing
+Input: Lore docs + plot outline
+Process:
+  - Load relevant lore into context
+  - Draft chapter incorporating world details
+  - Maintain character voices
+  - Follow established canon
+Output: Chapter draft referencing lore
+```
+
+**The vision:** Type creative ideas → AI structures → AI drafts → You refine.
+
+### Proactive AI Behaviors (Future Exploration)
+
+**Potential autonomous actions:**
+
+**Consistency Monitoring:**
+- AI notices: "You said her eyes were blue in Ch 1, green in Ch 5"
+- Suggests: Fix in one chapter or update both
+- User: Approves or dismisses
+
+**Missing Documentation Detection:**
+- AI notices: "You mention 'The Council' in 3 chapters but have no lore doc"
+- Suggests: Create Factions/The-Council.md
+- User: Accepts → AI drafts initial version
+
+**Context Optimization:**
+- AI suggests: "Add Characters/Elara as reference to this chapter"
+- User: Accepts with one click
+- Better AI responses without manual work
+
+**Stale Content Alerts:**
+- AI notices: "This chapter contradicts updated character wiki"
+- Suggests: Review or update chapter
+- Prevents drift between lore and prose
+
+**All suggestions require user approval** - AI never modifies without permission.
+
+**For detailed implementation ideas**, see: [`_docs/future/ideas/ai-behaviors/proactive-assistance.md`](../../future/ideas/ai-behaviors/proactive-assistance.md)
 
 ---
 

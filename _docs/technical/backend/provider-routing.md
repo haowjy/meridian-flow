@@ -7,55 +7,70 @@ audience: developer
 
 ## Problem
 
-Backend needs to route model strings like `"claude-haiku-4-5"` or `"openrouter/anthropic/claude-sonnet"` to the correct LLM provider.
+Backend needs to route LLM requests to the correct provider (Anthropic, OpenRouter, OpenAI, etc.) based on client-specified parameters.
 
 ## Solution
 
-Three-step pattern: Parse → Create → Cache
+Separate provider and model fields with smart defaults: Extract → Infer → Create → Cache
 
 ```mermaid
 graph TD
-    A["Client Request<br/>model: 'claude-haiku-4-5'"] --> B[Model Parser]
-    B --> C["Provider Info<br/>{provider: 'anthropic', model: 'claude-haiku-4-5'}"]
+    A["Client Request<br/>{provider: 'openrouter', model: 'moonshotai/kimi-k2-thinking'}"] --> B{Provider Specified?}
+    B -->|Yes| C[Use Explicit Provider]
+    B -->|No| D[Model Mapping]
 
-    C --> D{Cache Hit?}
-    D -->|Yes| E[Return Cached Provider]
-    D -->|No| F[Provider Factory]
+    D --> E{Prefix Match?}
+    E -->|claude-*| F[provider = 'anthropic']
+    E -->|gpt-*, o1-*| G[provider = 'openai']
+    E -->|gemini-*| H[provider = 'google']
+    E -->|lorem-*| I[provider = 'lorem']
+    E -->|No match| J[provider = 'openrouter']
 
-    F --> G["Create Provider<br/>(with API key)"]
-    G --> H[Wrap in Adapter]
-    H --> I[Cache for Reuse]
-    I --> E
+    C --> K{Cache Hit?}
+    F --> K
+    G --> K
+    H --> K
+    I --> K
+    J --> K
 
-    E --> J[Execute Request]
+    K -->|Yes| L[Return Cached Provider]
+    K -->|No| M[Provider Factory]
+
+    M --> N["Create Provider<br/>(with API key)"]
+    N --> O[Wrap in Adapter]
+    O --> P[Cache for Reuse]
+    P --> L
+
+    L --> Q[Execute Request]
 
     style A fill:#2d5f7d
-    style C fill:#2d5f7d
-    style E fill:#2d7d2d
-    style I fill:#7d2d5f
+    style C fill:#2d7d2d
+    style J fill:#7d2d5f
+    style L fill:#2d7d2d
+    style P fill:#7d2d5f
 ```
 
-## Model Parsing
+## Request Format
 
-**Format:** `[provider/]model`
+**Separate Fields:** Client sends provider and model as distinct parameters
 
-| Input | Provider | Model | Notes |
-|-------|----------|-------|-------|
-| `claude-haiku-4-5` | `anthropic` | `claude-haiku-4-5` | Inferred from prefix |
-| `gpt-4o` | `openai` | `gpt-4o` | Inferred from prefix |
-| `openrouter/anthropic/claude` | `openrouter` | `anthropic/claude` | Explicit provider |
-| `bedrock/claude-haiku` | `bedrock` | `claude-haiku` | Explicit provider |
+| request_params | Provider Used | Model Sent to Provider | Notes |
+|----------------|---------------|------------------------|-------|
+| `{model: "claude-haiku-4-5"}` | `anthropic` | `claude-haiku-4-5` | Inferred from `claude-` prefix |
+| `{model: "gpt-4o"}` | `openai` | `gpt-4o` | Inferred from `gpt-` prefix |
+| `{model: "gemini-2.0-flash"}` | `google` | `gemini-2.0-flash` | Inferred from `gemini-` prefix |
+| `{model: "moonshotai/kimi-k2"}` | `openrouter` | `moonshotai/kimi-k2` | No prefix match → defaults to OpenRouter |
+| `{provider: "openrouter", model: "anthropic/claude-sonnet-4-5"}` | `openrouter` | `anthropic/claude-sonnet-4-5` | Explicit provider override |
 
-**Implementation:** `backend/internal/service/llm/model_parser.go:14-42`
+**Implementation:** `backend/internal/domain/models/llm/model_mapping.go:10-41`
 
 ## Provider Factory
 
 Creates provider instances with API keys from environment variables.
 
-**Current:** Anthropic only
-**Planned:** OpenAI, Gemini, OpenRouter, Bedrock
+**Supported Providers:** Anthropic, OpenRouter, OpenAI, Google, Lorem (testing)
 
-**Implementation:** `backend/internal/service/llm/provider_factory.go:10-34`
+**Implementation:** `backend/internal/service/llm/provider_factory.go`
 
 ## Registry
 
@@ -63,18 +78,29 @@ Caches provider instances per provider name to avoid recreating clients.
 
 **Thread-safe:** Uses `sync.RWMutex` for concurrent access
 
-**Implementation:** `backend/internal/service/llm/registry.go:15-80`
+**Implementation:** `backend/internal/service/llm/registry.go:27-80`
+
+## Model Mapping
+
+Smart defaults infer provider from model name prefixes when provider not specified.
+
+**Mappings:**
+- `claude-*` → anthropic
+- `gpt-*`, `o1-*`, `text-*`, `davinci-*` → openai
+- `gemini-*` → google
+- `lorem-*` → lorem (testing)
+- **No match** → openrouter (universal fallback)
+
+**Implementation:** `backend/internal/domain/models/llm/model_mapping.go:10-41`
 
 ## References
 
-- **Model parser:** `backend/internal/service/llm/model_parser.go`
+- **Model mapping:** `backend/internal/domain/models/llm/model_mapping.go`
 - **Provider factory:** `backend/internal/service/llm/provider_factory.go`
 - **Registry:** `backend/internal/service/llm/registry.go`
-- **Setup:** `backend/internal/service/llm/setup.go:20-49`
-- **Tests:** `backend/internal/service/llm/model_parser_test.go` (17 tests)
+- **Request extraction:** `backend/internal/service/llm/streaming/service.go:96-130`
 
 ## See Also
 
 - [LLM Integration Guide](llm-integration.md) - Complete backend integration patterns
 - [Environment Gating](environment-gating.md) - Tool restrictions
-- [Phase 2 Handoff](../../hidden/handoffs/phase-2-completion.md) - Implementation summary

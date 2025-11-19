@@ -4,11 +4,10 @@ import { useShallow } from 'zustand/react/shallow'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { useTurnsForChat } from '@/features/chats/hooks/useTurnsForChat'
 import { useChatStore } from '@/core/stores/useChatStore'
-import { ActiveChatHeader } from './ActiveChatHeader'
+import { ChatHeader } from './ChatHeader'
 import { TurnList } from './TurnList'
 import { TurnInput } from './TurnInput'
 import { ActiveChatEmpty } from './ActiveChatEmpty'
-import { ChatBreadcrumb } from './ChatBreadcrumb'
 import { useProjectStore } from '@/core/stores/useProjectStore'
 
 /**
@@ -47,9 +46,7 @@ export function ActiveChatView() {
   if (!activeChat) {
     return (
       <div className="chat-main">
-        <div className="chat-main-header">
-          <ChatBreadcrumb projectName={projectName} />
-        </div>
+        <ChatHeader chat={null} projectName={projectName} />
         <div className="chat-main-body">
           <ActiveChatEmpty />
         </div>
@@ -59,7 +56,7 @@ export function ActiveChatView() {
 
   return (
     <div className="chat-main">
-      <ActiveChatHeader chat={activeChat} projectName={projectName} />
+      <ChatHeader chat={activeChat} projectName={projectName} />
       <div className="chat-main-body">
         {/* Simple loading state for now; can be replaced with skeletons later */}
         {isLoading ? (

@@ -25,7 +25,7 @@ export function DocumentHeaderBar({
     <div
       role="region"
       aria-label={ariaLabel}
-      className={cn('flex items-center gap-2 px-3 py-4', showDivider && 'border-b')}
+      className={cn('flex h-12 items-center gap-2 px-3 border-b', showDivider && 'border-b')}
     >
       {leading}
       <div className="min-w-0 flex-1">{title}</div>

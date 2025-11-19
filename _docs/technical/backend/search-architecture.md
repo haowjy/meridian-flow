@@ -37,7 +37,8 @@ sequenceDiagram
 ```go
 type SearchOptions struct {
     Query     string           // Search query (required)
-    ProjectID string           // Scope to project (required)
+    ProjectID string           // Optional: scope to project (empty string = search all projects)
+    Fields    []SearchField    // Which fields to search (default: [name, content])
     Limit     int              // Page size (default: 20, max: 100)
     Offset    int              // Skip N results (default: 0)
     Language  string           // FTS language config (default: "english")
@@ -66,36 +67,68 @@ type SearchResult struct {
 
 ### PostgreSQL Implementation
 
-**Query Structure:**
+**Query Structure (Multi-Field Search):**
+
+Search supports configurable fields (`name`, `content`) with weighted ranking:
+
 ```sql
+-- Example: Searching both name and content fields
 SELECT id, project_id, folder_id, name, content, word_count, created_at, updated_at,
-       ts_rank(to_tsvector($1, content), plainto_tsquery($1, $2)) AS rank_score
+       (ts_rank(to_tsvector($1, name), plainto_tsquery($1, $2)) * 2.0 +
+        ts_rank(to_tsvector($1, content), plainto_tsquery($1, $2))) AS rank_score
 FROM documents
-WHERE project_id = $3
-  AND deleted_at IS NULL
-  AND to_tsvector($1, content) @@ plainto_tsquery($1, $2)
+WHERE deleted_at IS NULL
+  AND (to_tsvector($1, name) @@ plainto_tsquery($1, $2) OR
+       to_tsvector($1, content) @@ plainto_tsquery($1, $2))
 ORDER BY rank_score DESC
-LIMIT $4 OFFSET $5
+LIMIT $3 OFFSET $4
 ```
 
+**Field Weighting:**
+- **Name matches**: 2.0x multiplier (title matches ranked higher)
+- **Content matches**: 1.0x multiplier (normal weight)
+- **Combined scoring**: Rank scores are added together
+
+**Dynamic Query Building:**
+- WHERE clause uses `OR` to match any selected field
+- Rank expression adds weighted scores from each field
+- Fields parameter controls which fields are searched (defaults to both)
+
 **Components:**
-- `to_tsvector(language, content)` - Converts text to searchable tokens
+- `to_tsvector(language, field)` - Converts text to searchable tokens
 - `plainto_tsquery(language, query)` - Converts user query to search format
 - `@@` operator - Full-text match
 - `ts_rank()` - Relevance scoring (higher = better match)
 
 **Indexes:**
-```sql
--- Language-agnostic (no stemming)
-CREATE INDEX idx_documents_fts_simple
-ON documents USING gin(to_tsvector('simple', content));
 
--- English-optimized (with stemming)
-CREATE INDEX idx_documents_fts_english
-ON documents USING gin(to_tsvector('english', content));
+Four GIN (Generalized Inverted Index) indexes support fast full-text search across both document content and names:
+
+```sql
+-- Content field indexes
+CREATE INDEX idx_documents_content_fts_simple
+ON documents USING gin(to_tsvector('simple', content))
+WHERE deleted_at IS NULL;
+
+CREATE INDEX idx_documents_content_fts_english
+ON documents USING gin(to_tsvector('english', content))
+WHERE deleted_at IS NULL;
+
+-- Name field indexes (for title search)
+CREATE INDEX idx_documents_name_fts_simple
+ON documents USING gin(to_tsvector('simple', name))
+WHERE deleted_at IS NULL;
+
+CREATE INDEX idx_documents_name_fts_english
+ON documents USING gin(to_tsvector('english', name))
+WHERE deleted_at IS NULL;
 ```
 
-PostgreSQL's query planner automatically selects the appropriate index based on the language parameter.
+**Index Strategy:**
+- **`simple` indexes**: Language-agnostic, no stemming (exact word matching)
+- **`english` indexes**: English-optimized with stemming ("running" matches "run")
+- **Partial indexes**: `WHERE deleted_at IS NULL` excludes soft-deleted documents for better performance
+- **Automatic selection**: PostgreSQL's query planner selects the appropriate index based on language parameter and search fields
 
 ### Multi-Language Support
 
@@ -149,243 +182,14 @@ results, err := repo.SearchDocuments(ctx, opts)
 
 ---
 
-## Future: Vector Search (Semantic)
+## Future Directions
 
-**Status:** Not yet implemented
-**Strategy:** `SearchStrategyVector`
+The search architecture supports extensibility for advanced search strategies. For detailed implementation plans, see:
 
-### Prerequisites
+- **[Vector Search](../../future/ideas/search/vector-search.md)** - Semantic search using pgvector embeddings
+- **[Hybrid Search](../../future/ideas/search/hybrid-search.md)** - Combining FTS + vector with Reciprocal Rank Fusion (RRF)
 
-1. **Enable pgvector extension:**
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS vector;
-   ```
-
-2. **Add embedding column:**
-   ```sql
-   ALTER TABLE documents ADD COLUMN embedding vector(1536);
-   ```
-
-3. **Create vector index:**
-   ```sql
-   -- IVFFlat (faster indexing, good for large datasets)
-   CREATE INDEX idx_documents_embedding
-   ON documents USING ivfflat (embedding vector_cosine_ops)
-   WITH (lists = 100);
-
-   -- HNSW (better accuracy, slower indexing)
-   CREATE INDEX idx_documents_embedding_hnsw
-   ON documents USING hnsw (embedding vector_cosine_ops)
-   WITH (m = 16, ef_construction = 64);
-   ```
-
-### Implementation Plan
-
-**1. Add Embedding Generation Service:**
-```go
-// internal/service/embeddings/generator.go
-type EmbeddingGenerator interface {
-    Generate(ctx context.Context, text string) ([]float64, error)
-}
-
-// OpenAI implementation
-type OpenAIEmbeddings struct {
-    client *openai.Client
-}
-
-func (e *OpenAIEmbeddings) Generate(ctx context.Context, text string) ([]float64, error) {
-    resp, err := e.client.CreateEmbeddings(ctx, openai.EmbeddingRequest{
-        Model: "text-embedding-ada-002",  // 1536 dimensions
-        Input: text,
-    })
-    return resp.Data[0].Embedding, err
-}
-```
-
-**2. Generate Embeddings on Document Create/Update:**
-```go
-func (s *DocumentService) CreateDocument(ctx context.Context, doc *Document) error {
-    // Generate embedding
-    embedding, err := s.embeddingGen.Generate(ctx, doc.Content)
-    if err != nil {
-        // Log warning, but don't fail document creation
-        s.logger.Warn("failed to generate embedding", "error", err)
-    } else {
-        doc.Embedding = embedding
-    }
-
-    return s.repo.Create(ctx, doc)
-}
-```
-
-**3. Implement Vector Search:**
-```go
-func (r *PostgresDocumentRepository) vectorSearch(ctx context.Context, opts *SearchOptions) (*SearchResults, error) {
-    // Generate query embedding
-    queryEmbedding, err := r.embeddingGen.Generate(ctx, opts.Query)
-    if err != nil {
-        return nil, fmt.Errorf("generate query embedding: %w", err)
-    }
-
-    // Vector similarity search
-    query := fmt.Sprintf(`
-        SELECT id, project_id, folder_id, name, content, word_count, created_at, updated_at,
-               1 - (embedding <=> $1) AS similarity_score
-        FROM %s
-        WHERE project_id = $2
-          AND deleted_at IS NULL
-          AND embedding IS NOT NULL
-        ORDER BY embedding <=> $1
-        LIMIT $3 OFFSET $4
-    `, r.tables.Documents)
-
-    // embedding <=> $1 is cosine distance (lower = more similar)
-    // 1 - distance = similarity score (higher = more similar)
-
-    rows, err := executor.Query(ctx, query, queryEmbedding, opts.ProjectID, opts.Limit, opts.Offset)
-    // ... scan results
-}
-```
-
-### Vector Search Configuration
-
-```go
-// Usage
-opts := &SearchOptions{
-    Query:     "epic battle scene with magical elements",
-    ProjectID: projectID,
-    Strategy:  SearchStrategyVector,  // Use semantic search
-}
-results, err := repo.SearchDocuments(ctx, opts)
-```
-
-**Advantages:**
-- Finds semantically similar content (synonyms, paraphrases)
-- Language-independent (works across languages)
-- Handles conceptual queries ("sad ending" finds "tragic conclusion")
-
-**Disadvantages:**
-- Requires embedding generation (API cost + latency)
-- Higher storage cost (1536 floats per document)
-- Slower than FTS for exact keyword matching
-
----
-
-## Future: Hybrid Search (FTS + Vector + Reranking)
-
-**Status:** Not yet implemented
-**Strategy:** `SearchStrategyHybrid`
-
-### Approach: Reciprocal Rank Fusion (RRF)
-
-Combines FTS and vector search results using rank-based merging.
-
-```mermaid
-graph LR
-    Query[User Query] --> FTS[Full-Text Search]
-    Query --> Vector[Vector Search]
-    FTS --> |Ranked Results| RRF[Reciprocal Rank Fusion]
-    Vector --> |Ranked Results| RRF
-    RRF --> |Merged & Reranked| Final[Final Results]
-```
-
-### Implementation
-
-**1. Execute Both Searches in Parallel:**
-```go
-func (r *PostgresDocumentRepository) hybridSearch(ctx context.Context, opts *SearchOptions) (*SearchResults, error) {
-    // Execute FTS and vector search concurrently
-    var ftsResults, vectorResults *SearchResults
-    var ftsErr, vectorErr error
-
-    var wg sync.WaitGroup
-    wg.Add(2)
-
-    go func() {
-        defer wg.Done()
-        ftsResults, ftsErr = r.fullTextSearch(ctx, opts)
-    }()
-
-    go func() {
-        defer wg.Done()
-        vectorResults, vectorErr = r.vectorSearch(ctx, opts)
-    }()
-
-    wg.Wait()
-
-    if ftsErr != nil {
-        return nil, fmt.Errorf("fts search failed: %w", ftsErr)
-    }
-    if vectorErr != nil {
-        return nil, fmt.Errorf("vector search failed: %w", vectorErr)
-    }
-
-    // Merge using RRF
-    merged := r.reciprocalRankFusion(ftsResults, vectorResults, 60)
-    return merged, nil
-}
-```
-
-**2. Reciprocal Rank Fusion Algorithm:**
-```go
-// RRF Score = Σ (1 / (k + rank))
-// k = constant (typically 60)
-// Lower rank = higher score
-func (r *PostgresDocumentRepository) reciprocalRankFusion(
-    ftsResults, vectorResults *SearchResults,
-    k int,
-) *SearchResults {
-    scores := make(map[string]float64)
-
-    // Add FTS scores
-    for i, result := range ftsResults.Results {
-        rank := i + 1
-        scores[result.Document.ID] += 1.0 / float64(k+rank)
-    }
-
-    // Add vector scores
-    for i, result := range vectorResults.Results {
-        rank := i + 1
-        scores[result.Document.ID] += 1.0 / float64(k+rank)
-    }
-
-    // Sort by combined score
-    var merged []SearchResult
-    for docID, score := range scores {
-        // Find document in either result set
-        doc := findDocument(docID, ftsResults, vectorResults)
-        merged = append(merged, SearchResult{
-            Document: doc,
-            Score:    score,
-            Metadata: map[string]interface{}{
-                "rrf_score": score,
-                "strategy":  "hybrid",
-            },
-        })
-    }
-
-    sort.Slice(merged, func(i, j int) bool {
-        return merged[i].Score > merged[j].Score
-    })
-
-    return &SearchResults{
-        Results:  merged[:min(len(merged), opts.Limit)],
-        Strategy: SearchStrategyHybrid,
-    }
-}
-```
-
-### When to Use Hybrid Search
-
-**Best for:**
-- General user queries (mix of keywords and concepts)
-- Balancing precision (FTS) and recall (vector)
-- Handling typos and synonyms while preserving exact matches
-
-**Not ideal for:**
-- Pure keyword searches → use FTS (faster)
-- Pure semantic searches → use vector (better conceptual matching)
-- High-frequency queries → higher cost (2x searches + merging)
+These strategies use the same `SearchOptions` interface and extend the existing repository pattern.
 
 ---
 
@@ -415,34 +219,6 @@ WHERE to_tsvector('english', content) @@ plainto_tsquery('english', 'dragon');
 
 -- Should show: "Bitmap Index Scan using idx_documents_fts_english"
 -- Should NOT show: "Seq Scan"
-```
-
-### Vector Search Optimization
-
-**Index Tuning (IVFFlat):**
-```sql
--- lists = sqrt(total_documents)
--- For 10,000 docs: lists = 100
--- For 100,000 docs: lists = 316
-CREATE INDEX idx_documents_embedding
-ON documents USING ivfflat (embedding vector_cosine_ops)
-WITH (lists = 316);
-```
-
-**Index Tuning (HNSW):**
-```sql
--- m = 16 (default, good for most cases)
--- ef_construction = 64-128 (higher = better accuracy, slower build)
-CREATE INDEX idx_documents_embedding_hnsw
-ON documents USING hnsw (embedding vector_cosine_ops)
-WITH (m = 16, ef_construction = 128);
-```
-
-**Query-Time Parameters:**
-```sql
--- Increase search quality (at cost of speed)
-SET ivfflat.probes = 10;  -- Default: 1
-SET hnsw.ef_search = 40;  -- Default: 40
 ```
 
 ---

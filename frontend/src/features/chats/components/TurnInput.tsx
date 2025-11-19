@@ -67,7 +67,7 @@ export function TurnInput({ chatId }: TurnInputProps) {
           onClick={handleSend}
           aria-label="Send message"
         >
-          <Send className="h-4 w-4" />
+          <Send className="size-4" />
         </Button>
       </div>
     </div>

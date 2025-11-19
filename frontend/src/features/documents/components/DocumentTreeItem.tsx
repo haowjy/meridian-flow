@@ -24,7 +24,7 @@ export function DocumentTreeItem({ document, isActive, onClick }: DocumentTreeIt
       aria-label={`Open document: ${document.name}`}
       aria-current={isActive ? 'page' : undefined}
     >
-      <FileText className="h-4 w-4 flex-shrink-0" />
+      <FileText className="size-4 flex-shrink-0" />
       <span className="truncate">{document.name}</span>
     </button>
   )

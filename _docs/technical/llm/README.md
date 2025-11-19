@@ -3,9 +3,9 @@ detail: minimal
 audience: backend developers
 ---
 
-# Backend LLM Integration
+# LLM Documentation Hub
 
-**Purpose:** How Meridian backend integrates with the `meridian-llm-go` library for chat functionality.
+**Purpose:** Navigation hub for LLM library documentation and backend integration guides.
 
 ---
 
@@ -42,8 +42,9 @@ For **standalone library usage**:
 For **Meridian backend implementation**:
 
 - **[Architecture](./architecture.md)** - Backend service layer architecture
-- **[LLM Integration](./llm-integration.md)** - How backend uses meridian-llm-go
-- **[Provider Routing](./provider-routing.md)** - Model-based provider selection
+- **[LLM Integration Guide](../backend/llm-integration.md)** - How backend uses meridian-llm-go (comprehensive)
+- **[Provider Routing](../backend/provider-routing.md)** - Model-based provider selection
+- **[Environment Gating](../backend/environment-gating.md)** - Tool restrictions (dev/test only)
 
 ### Backend Streaming
 

@@ -4,6 +4,10 @@ import { buildBreadcrumbs } from '@/core/lib/breadcrumbBuilder'
 import type { Document } from '@/features/documents/types/document'
 import { DocumentHeaderBar } from './DocumentHeaderBar'
 import { useProjectStore } from '@/core/stores/useProjectStore'
+import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
+import { CompactBreadcrumb, type BreadcrumbSegment } from '@/shared/components/ui/CompactBreadcrumb'
+import { ChevronLeft } from 'lucide-react'
+import { Button } from '@/shared/components/ui/button'
 
 interface EditorHeaderProps {
   document: Document
@@ -23,51 +27,42 @@ export function EditorHeader({ document }: EditorHeaderProps) {
 
   // Build full folder path; we'll display as: Project / ... / Last Folder / File
   const fullFolderPath = buildBreadcrumbs(document.folderId, folders, 99)
-  const hasFolders = fullFolderPath.length > 0
-  const hasDeepFolders = fullFolderPath.length > 1
-  const lastFolderName = hasFolders ? fullFolderPath[fullFolderPath.length - 1]!.name : null
   const fullPathTitle = [projectName, ...fullFolderPath.map((s) => s.name), document.name].join(' / ')
 
-  const handleProjectClick = () => {
-    // Toggle view to show tree without touching URL/history or panel collapsed state
+  // User requested to show only the document name to save space.
+  // We still build the full path for the tooltip.
+  const segments: BreadcrumbSegment[] = [
+    { label: document.name }
+  ]
+
+
+
+  const handleBackClick = () => {
     const store = useUIStore.getState()
     store.setRightPanelState('documents')
   }
 
   return (
     <DocumentHeaderBar
+      leading={
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 -ml-1"
+          onClick={handleBackClick}
+          aria-label="Back to documents"
+        >
+          <ChevronLeft className="size-3" />
+        </Button>
+      }
       title={
-        <div className="flex min-w-0 items-center gap-1 text-sm" title={fullPathTitle}>
-          <button
-            type="button"
-            onClick={handleProjectClick}
-            aria-label="Show document tree"
-            className="cursor-pointer text-lg font-semibold hover:underline truncate focus-visible:underline focus:outline-none"
-          >
-            {projectName}
-          </button>
-          <span className="mx-1 text-muted-foreground" aria-hidden="true">/</span>
-          {hasDeepFolders && (
-            <>
-              <span className="text-muted-foreground">...</span>
-              <span className="mx-1 text-muted-foreground" aria-hidden="true">/</span>
-            </>
-          )}
-          {lastFolderName && (
-            <>
-              <span className="truncate text-muted-foreground">
-                {lastFolderName}
-              </span>
-              <span className="mx-1 text-muted-foreground" aria-hidden="true">/</span>
-            </>
-          )}
-          <span className="truncate text-base font-semibold">
-            {document.name}
-          </span>
+        <div title={fullPathTitle}>
+          <CompactBreadcrumb segments={segments} />
         </div>
       }
       ariaLabel={`Breadcrumb: ${fullPathTitle}`}
       showDivider={false}
+      trailing={<SidebarToggle side="right" />}
     />
   )
 }

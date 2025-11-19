@@ -9,7 +9,7 @@ Go REST API for the Meridian file management system.
 ## Tech Stack
 
 - **Language:** Go 1.25.4
-- **Framework:** [Fiber](https://gofiber.io/) v2 (fast, Express-like)
+- **HTTP:** Go standard library `net/http`
 - **Database:** PostgreSQL via [Supabase](https://supabase.com/)
 - **Driver:** pgx v5 (native PostgreSQL)
 - **Architecture:** Clean Architecture (Handler → Service → Repository)
@@ -35,7 +35,7 @@ backend/
 │   └── seed/main.go        # Database seeder
 ├── internal/
 │   ├── domain/             # Interfaces + models
-│   ├── handler/            # HTTP handlers (Fiber)
+│   ├── handler/            # HTTP handlers (net/http)
 │   ├── service/            # Business logic
 │   ├── repository/         # Data access (PostgreSQL)
 │   ├── middleware/         # HTTP middleware

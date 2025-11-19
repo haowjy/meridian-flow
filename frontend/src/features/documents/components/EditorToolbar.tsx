@@ -103,7 +103,7 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, readOnly
           {/* Eye button - read-only mode toggle */}
           <ToolbarIconButton
             ref={eyeRef}
-            icon={<Eye className="h-4.5 w-4.5" />}
+            icon={<Eye className="size-4.5" />}
             aria-label="Read-only mode"
             aria-pressed={readOnly}
             isActive={readOnly}
@@ -126,7 +126,7 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, readOnly
           >
             {/* Pencil button - edit mode toggle */}
             <ToolbarIconButton
-              icon={<Pencil className="h-4.5 w-4.5" />}
+              icon={<Pencil className="size-4.5" />}
               aria-label="Edit mode"
               aria-pressed={!readOnly}
               isActive={!readOnly}
@@ -154,7 +154,7 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, readOnly
                   {FORMAT_BUTTONS.map(({ icon: Icon, label, format }) => (
                     <ToolbarIconButton
                       key={format}
-                      icon={<Icon className="h-4 w-4" />}
+                      icon={<Icon className="size-4" />}
                       aria-label={label}
                       disabled={disabled}
                       isActive={editor?.isActive(format) ?? false}
@@ -170,7 +170,7 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, readOnly
                   {HEADING_BUTTONS.map(({ icon: Icon, label, level }) => (
                     <ToolbarIconButton
                       key={`heading-${level}`}
-                      icon={<Icon className="h-4 w-4" />}
+                      icon={<Icon className="size-4" />}
                       aria-label={label}
                       disabled={disabled}
                       isActive={editor?.isActive('heading', { level }) ?? false}
@@ -186,7 +186,7 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, readOnly
                   {LIST_BUTTONS.map(({ icon: Icon, label, listType }) => (
                     <ToolbarIconButton
                       key={listType}
-                      icon={<Icon className="h-4 w-4" />}
+                      icon={<Icon className="size-4" />}
                       aria-label={label}
                       disabled={disabled}
                       isActive={editor?.isActive(listType) ?? false}
@@ -201,7 +201,7 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, readOnly
                 {/* More button - right-aligned */}
                 <ToolbarButtonGroup gap="normal">
                   <ToolbarIconButton
-                    icon={<MoreHorizontal className="h-4 w-4" />}
+                    icon={<MoreHorizontal className="size-4" />}
                     aria-label="More"
                     disabled={disabled}
                   />

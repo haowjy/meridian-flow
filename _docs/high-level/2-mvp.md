@@ -52,6 +52,19 @@ AI automatically:
 ├── Loads any other docs mentioning Elara
 └── Responds with full context
 
+Writer asks AI:
+"Make her dialogue more cynical"
+
+AI:
+├── Creates version snapshot
+├── Suggests edits to dialogue
+└── Shows suggestion in chat
+
+Writer:
+├── Clicks "Review" → sees diff
+├── Accepts changes
+└── Document updated
+
 Writer: "This is magical."
 ```
 
@@ -59,7 +72,7 @@ Writer: "This is magical."
 
 ---
 
-## The Three Core Systems
+## The Four Core Systems
 
 ### 1. File Management
 
@@ -78,8 +91,8 @@ Writer: "This is magical."
 - Tabs can be added in Phase 1.5 if needed
 
 **What happens behind the scenes:**
-- Store TipTap JSON (for editor)
-- Generate Markdown (for AI + search)
+- Store Markdown (single source of truth)
+- Frontend converts to/from editor format
 - Full-text search index
 - Document metadata (created, modified, word count)
 
@@ -123,9 +136,56 @@ Writer: "This is magical."
 **What happens behind the scenes:**
 - Create stream session in Go
 - Launch goroutine for AI call
-- Cache chunks to Redis
+- Cache chunks in-memory (buffer)
 - Save to database when complete
-- Reconnection pulls from cache + continues
+- Reconnection pulls from database + continues (catchup)
+
+### 4. AI Tools & Editing
+
+**What users see:**
+- Ask AI to find information → AI searches and reads documents autonomously
+- Ask AI to improve writing → AI suggests edits
+- Review suggestions side-by-side
+- Accept or reject changes
+- AI can iterate on feedback
+
+**What happens behind the scenes:**
+- **Read-only tools** AI uses during conversation:
+  - `view_file` - Fetch document content by ID
+  - `get_tree` - List documents in folder
+  - `search_documents` - Full-text search across project
+- **Editing tool**:
+  - `suggest_document_edits` - AI proposes changes to a document
+- **Version snapshots**:
+  - Snapshot document when AI starts editing
+  - Track what AI saw vs current state
+  - Handle concurrent editing (user keeps working while AI generates)
+- **Accept/reject workflow**:
+  - AI creates version (doesn't modify live document)
+  - User reviews diff in editor
+  - Accept → applies changes, Reject → discards
+  - Can iterate: "make it shorter" → AI refines suggestion
+
+**Example flow:**
+```
+User: "Make this paragraph more formal"
+
+AI:
+1. Creates snapshot of current document
+2. Generates suggested edits
+3. Returns version for review
+
+User sees:
+- Suggestion card in chat
+- Click "Review" → opens diff view
+- Accept → document updated
+- OR: "Make it shorter too"
+  → AI refines suggestion (v2 → v3)
+```
+
+**MVP0 scope: Single-document editing only**
+- AI suggests edits to ONE document at a time
+- Multi-document batch editing deferred to post-MVP
 
 ---
 
@@ -134,10 +194,10 @@ Writer: "This is magical."
 ### Phase 1: File System (Week 1-2) ✅ Backend Complete | 🚧 Frontend In Progress
 
 **Backend:** ✅ All Complete
-- ✅ Go + Fiber server setup
+- ✅ Go + net/http server setup
 - ✅ Supabase connection (PostgreSQL)
 - ✅ Document CRUD endpoints
-- ✅ Store both TipTap JSON and Markdown
+- ✅ Store Markdown (frontend handles editor conversion)
 - ✅ Full-text search indexing
 - ✅ Deploy to Railway
 
@@ -255,18 +315,18 @@ User asks: "Is Elara's dialogue consistent?"
 - Learning from usage patterns
 - But don't need these for MVP
 
-### Why Store Both TipTap JSON and Markdown?
+### Why Markdown Storage?
 
-**TipTap JSON:**
-- Editor needs it to render
-- Preserves formatting
+**Single source of truth:**
+- Markdown stored in database
+- Frontend converts to/from TipTap editor format at the boundary
+- No synchronization issues
 
-**Markdown:**
-- Cleaner for AI
-- Better for search
+**Benefits:**
+- Cleaner for AI consumption
+- Better for full-text search
 - Easy to export
-
-**Generate Markdown automatically on save.**
+- Simpler architecture
 
 ### Why Go for Backend?
 
@@ -280,10 +340,10 @@ Persistent streaming needs goroutines. Go makes it simple. Python needs Celery +
 ```
 id: UUID
 project_id: UUID
-path: string (e.g., "Characters/Elara")
-content_tiptap: text (TipTap JSON)
-content_markdown: text (generated from TipTap)
-word_count: int
+folder_id: UUID (nullable, for folder hierarchy)
+name: string (e.g., "Elara")
+content: text (Markdown - single source of truth)
+word_count: int (computed from markdown)
 created_at: timestamp
 updated_at: timestamp
 ```
@@ -296,14 +356,58 @@ name: string
 created_at: timestamp
 ```
 
-### Stream Session (Redis)
+### Turn Blocks
 ```
-session_id: string
-user_id: string
-document_id: string
-chunks: array
-status: string (active, complete, error)
+id: UUID
+turn_id: UUID
+sequence: int (order within turn)
+block_type: string (text, thinking, tool_use, tool_result, reference)
+content: JSONB (flexible structure per block type)
+created_at: timestamp
 ```
+
+**Block types:**
+- `text` - AI response text
+- `thinking` - Extended thinking (Claude)
+- `tool_use` - AI calling a tool (view_file, search_documents, suggest_document_edits)
+- `tool_result` - Results from tool execution
+- `reference` - Document references (scaffolded, not used in MVP0 UI)
+
+### Document Version
+```
+id: UUID
+document_id: UUID
+parent_version_id: UUID (nullable, for version tree)
+version_type: string (user_edit, ai_suggestion, manual_snapshot)
+created_by_turn_id: UUID (nullable, links to chat turn)
+content: text (Markdown snapshot)
+content_hash: text (SHA256 for comparison)
+description: text (what changed)
+created_at: timestamp
+```
+
+**Used for:**
+- AI suggestion snapshots (what AI saw when making edits)
+- Accept/reject workflow (user reviews version diffs)
+- Concurrent editing safety (user edits while AI works)
+
+**MVP0 scope:**
+- Only AI suggestions versioned
+- NOT full version history of all user edits
+- That's post-MVP
+
+### Stream Session (In-Memory)
+```
+turn_id: UUID (primary key)
+status: string (streaming, complete, error)
+buffer: in-memory event buffer for catchup
+registry: map of active streams (automatic cleanup)
+persistence: events saved to database as blocks when complete
+```
+
+**Two-tier catchup:**
+1. **In-memory buffer**: Fast catchup for recent connections (events buffered during streaming)
+2. **Database**: Historical catchup when buffer unavailable (completed turns)
 
 ---
 
@@ -335,15 +439,35 @@ GET    /api/chat/:sessionId/stream
 Returns: SSE stream
 ```
 
+### AI Tools (Internal - Called by LLM during streaming)
+```
+Tool: view_file(document_id) → document content
+Tool: get_tree(folder_id) → list of documents
+Tool: search_documents(query) → ranked results
+Tool: suggest_document_edits(document_id, edits) → version_id
+```
+
+### Document Versions
+```
+POST   /api/documents/:id/versions/:versionId/accept
+POST   /api/documents/:id/versions/:versionId/reject
+GET    /api/documents/:id/versions
+GET    /api/versions/:id
+```
+
 ---
 
 ## Success Criteria
 
 ### Technical Success
 - Documents persist correctly
-- Both formats stored
 - Search returns relevant results
 - AI responses include context from search
+- **AI tools execute successfully** (view_file, get_tree, search_documents)
+- **Tool results stream correctly** (tools execute during streaming)
+- **Version snapshots persist** (AI suggestions saved as versions)
+- **Suggestion workflow works** (create → review → accept/reject)
+- **Diff viewer displays correctly** (side-by-side comparison)
 - Streaming works
 - Reconnection works
 - No data loss
@@ -352,8 +476,12 @@ Returns: SSE stream
 - Writer creates 20+ documents
 - Writer asks 10+ AI questions
 - AI demonstrates context knowledge
+- **Writer asks AI to improve writing** (AI editing workflow)
+- **Writer reviews suggestions in diff view** (accept/reject flow)
+- **Writer refines suggestions iteratively** ("make it shorter" → AI updates)
 - Writer says "this is helpful"
 - Writer wants to keep using it
+- **Writer feels in control** (not scared of AI auto-editing)
 
 ### Validation Success
 - 5+ beta writers test
@@ -366,27 +494,58 @@ Returns: SSE stream
 ## What We're NOT Building Yet
 
 **Save for post-MVP:**
-- @-reference syntax (optional explicit references)
-- Manual context additions
-- RAG/embeddings (full-text search first)
+
+**Advanced AI Features:**
+- Multi-document batch editing (AI updates multiple docs at once)
+- Skills system (different AI behaviors for different tasks)
+- Ideas → Lore → Story pipeline (three-phase workflow automation)
+- Proactive AI suggestions (AI suggests without being asked)
+- Advanced @-reference features (autocomplete, fuzzy search)
+
+**Other Features:**
+- Frontend reference handling (@-reference syntax - backend supports it, no UI yet)
+- Manual context additions (drag docs into chat)
+- RAG/embeddings (full-text search sufficient for MVP)
 - Multiple chat threads
-- Collaboration
-- Version history
-- Export
-- Advanced search
+- Collaboration (multi-user)
+- Full version history (only AI suggestions versioned, not all user edits)
+- Export functionality
+- Advanced search filters
 - Graph visualization
 
-**Focus:** Core loop only.
+**MVP0 Focus:**
+- Single-document AI editing with review workflow
+- AI tools for autonomous exploration (view, search, read)
+- Simple full-text context discovery
+- Persistent streaming
+- Core file management
+
+**The pattern:** Build foundation (tools + single-doc editing), expand later (multi-doc, skills, automation).
 
 ---
 
-## The MVP Loop
+## The MVP0 Loop
+
+**Core workflow:**
 
 ```
 1. Writer creates documents
 2. Writer writes naturally
 3. Writer asks AI questions
-4. AI searches all documents
-5. AI responds with full context
-6. Writer: "This is helpful!"
+   ├─ AI searches all documents (search_documents tool)
+   ├─ AI reads specific docs (view_file tool)
+   └─ AI responds with full context
+4. Writer asks AI to improve writing
+   ├─ AI creates version snapshot
+   ├─ AI suggests edits (suggest_document_edits tool)
+   └─ AI shows suggestion in chat
+5. Writer reviews suggestion
+   ├─ Opens diff viewer (side-by-side comparison)
+   ├─ Accepts → document updated
+   └─ OR refines: "make it shorter" → AI iterates
+6. Writer: "This is magical!"
 ```
+
+**Two modes:**
+- **Q&A mode:** AI explores project, answers questions
+- **Edit mode:** AI suggests improvements, writer reviews/accepts

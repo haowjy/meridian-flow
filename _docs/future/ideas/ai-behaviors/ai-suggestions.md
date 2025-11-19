@@ -1,15 +1,18 @@
+---
+status: future
+priority: medium
+featureset: ai-behaviors
 detail: minimal
 audience: architect
-status: backlog
-implementation: post-mvp
 ---
- 
-# AI Suggestions (Three-Way Merge) — Backlog
+
+# AI Suggestions (Three-Way Merge)
+
+## Overview
 
 This is an outline for a future feature. Do not implement until prioritized.
 
-## Idea
-Let AI propose edits while users continue typing, then reconcile via three‑way merge (Base, User, AI). User edits always win; non‑conflicting AI edits apply cleanly; conflicts surface for review.
+Let AI propose edits while users continue typing, then reconcile via three-way merge (Base, User, AI). User edits always win; non-conflicting AI edits apply cleanly; conflicts surface for review.
 
 ## High‑Level
 

@@ -5,6 +5,8 @@ import { Input } from '@/shared/components/ui/input'
 import { ScrollArea } from '@/shared/components/ui/scroll-area'
 import { EmptyState } from '@/shared/components/EmptyState'
 import { DocumentHeaderBar } from './DocumentHeaderBar'
+import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
+import { CompactBreadcrumb } from '@/shared/components/ui/CompactBreadcrumb'
 
 interface DocumentTreePanelProps {
   children: ReactNode
@@ -37,9 +39,10 @@ export function DocumentTreePanel({
     <div className="flex h-full flex-col">
       {/* Header */}
       <DocumentHeaderBar
-        title={<div className="truncate text-lg font-semibold" title={title}>{title}</div>}
+        title={<CompactBreadcrumb segments={[{ label: title ?? 'Project', title }]} singleSegmentVariant="nonLast" />}
         ariaLabel="Documents explorer header"
         showDivider={false}
+        trailing={<SidebarToggle side="right" />}
       />
 
       {/* Search Bar */}
@@ -60,7 +63,7 @@ export function DocumentTreePanel({
             onClick={onCreateDocument}
             aria-label="Create new document"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="size-3" />
           </Button>
         </div>
       </div>

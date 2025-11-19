@@ -14,10 +14,12 @@ interface LogoWordmarkProps {
  */
 export function LogoWordmark({ secondaryLabel, className }: LogoWordmarkProps) {
   return (
-    <div className={cn('min-w-0', className)}>
-      <p className="type-display truncate">Meridian</p>
+    <div className={cn('flex items-baseline gap-1.5 min-w-0 select-none', className)}>
+      <p className="font-serif font-semibold text-base tracking-tight text-foreground">
+        Meridian
+      </p>
       {secondaryLabel ? (
-        <p className="mt-0.5 type-meta tracking-wide">
+        <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-sans font-medium">
           {secondaryLabel}
         </p>
       ) : null}

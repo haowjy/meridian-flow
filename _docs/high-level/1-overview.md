@@ -10,19 +10,24 @@ tracked: true
 
 # Meridian: Project Overview
 
-**AI-Powered Creative Documentation Assistant with Full Project Context**
+**Agentic Writing Assistant: Turn Creative Ideas Into Structured Stories**
+
+Like Claude Code, but for creative writing.
 
 ---
 
 ## What Is Meridian?
 
-Meridian is a cloud-based tool for managing complex creative projects through:
+Meridian is an agentic writing assistant that helps fiction writers transform messy creative ideas into well-structured lore and detail-rich stories.
 
-1. **File-based organization** - Like a code editor, but for any creative work
-2. **Explicit dependencies** - Connect related documents to build context
-3. **Agentic AI** - AI that actively explores and helps maintain your project
-4. **Multi-provider support** - Choose Claude, GPT-4, or bring your own keys
-5. **Persistent streaming** - AI continues working even if you close the browser
+**Core capabilities:**
+
+1. **File-based organization** - Like a code editor, but for creative work
+2. **Agentic AI** - AI that actively explores, structures, and edits your project
+3. **Multi-document editing** - AI can update multiple docs at once (character wikis + chapters)
+4. **Iterative refinement** - Ask AI to improve, review suggestions, refine until perfect
+5. **Multi-provider support** - Choose Claude, GPT-4, or bring your own keys
+6. **Persistent streaming** - AI continues working even if you close the browser
 
 ## The Core Problem
 
@@ -63,10 +68,12 @@ Creators working on complex projects face:
 
 ### What Makes It Different
 
-**vs Google Docs:** Has AI that knows your project + better organization
-**vs ChatGPT:** Maintains full project context + can explore your documents
-**vs Notion:** Purpose-built for creative work + AI assistance + simpler
-**vs Cursor/Claude Code:** Made for creators, not developers + rich text editing
+**vs Google Docs:** Agentic AI that structures ideas + edits multiple docs at once + project-wide context
+**vs ChatGPT:** Maintains full project state + can edit documents + persistent work (doesn't forget)
+**vs Notion:** Purpose-built for creative writing + AI drafts & edits + simpler
+**vs Cursor/Claude Code:** Same agentic UX, but for writers not developers + rich text not code
+
+**The key insight:** Apply "agentic coding" patterns (like Claude Code) to creative writing.
 
 ## How It Works
 
@@ -134,15 +141,54 @@ AI automatically:
 - "Check against all character documents" → manually add Characters/ folder
 - Both auto and manual context work together
 
-### 4. AI Takes Action
+### 4. The Three-Phase Creative Workflow
 
-**Brainstorming:** Takes notes while you explore ideas
-**Documentation:** Creates character profiles from your chapters
-**Writing:** Drafts content based on your established material
+**Meridian helps transform ideas into stories through three phases:**
+
+**Phase 1: Brain Dump (Messy Ideas)**
+```
+Writer: "Dragons represent hope, Elara is cynical but grows,
+        knights are corrupt, rebellion builds..."
+
+You: Just dump your creative thoughts naturally
+```
+
+**Phase 2: Structured Lore (AI Organizes)**
+```
+AI creates/updates:
+- Characters/Elara.md (personality, arc, relationships)
+- World/Dragons.md (symbolism, biology, culture)
+- Factions/Knights.md (corruption, structure)
+- Plot/Rebellion-Arc.md (timeline, key events)
+
+AI: Transforms brainstorm into structured wiki
+```
+
+**Phase 3: Rich Story (AI Drafts)**
+```
+AI writes Chapter 1 incorporating:
+- Elara's cynicism from character wiki
+- Dragon symbolism from world lore
+- Knight corruption from faction docs
+- Sets up rebellion arc
+
+You: Review, refine, and iterate until perfect
+```
+
+**The power:** Go from scattered ideas → organized lore → actual story chapters, all with AI assistance.
+
+### 5. AI Takes Action (Autonomously)
+
+**Explore:** Searches and reads documents to understand your project
+**Structure:** Organizes messy notes into lore wikis
+**Draft:** Writes chapters based on established material
+**Improve:** Suggests edits to existing content
+**Batch Edit:** Updates multiple documents for consistency (e.g., change character trait → updates wiki + all chapters)
 **Critique:** Analyzes consistency, pacing, structure
-**Search:** Finds all mentions of a character across documents
 
-### 5. Choose Your AI
+**All with your review and approval** - AI suggests, you decide.
+
+### 6. Choose Your AI
 
 - Use Meridian's managed keys (simple, pay per tier)
 - Or bring your own keys (privacy, cost control, unlimited)
@@ -181,9 +227,8 @@ AI automatically:
 ### Under The Hood
 
 **Storage (you don't see this):**
-- TipTap JSON (for editor rendering)
-- Markdown (for AI consumption and search)
-- Both generated automatically
+- Markdown (single source of truth)
+- Frontend converts to/from editor format at the boundary
 - Document ID for references
 
 **In the UI:**
@@ -282,7 +327,7 @@ References (managed separately):
 Persistent streaming is core - users can close browser, AI keeps working. Go makes this trivial with goroutines. Python would require complex background task management.
 
 ### Key Technical Features
-- **Dual storage:** TipTap JSON (editor) + Markdown (AI/search)
+- **Markdown storage:** Single source of truth, frontend handles editor conversion
 - **Document references:** Explicit dependency graph, not inline syntax
 - **Persistent streaming:** Background goroutines continue AI generation
 - **Multi-provider:** Abstract interface, easy to add new AI providers

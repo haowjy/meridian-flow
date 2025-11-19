@@ -1,8 +1,7 @@
-'use client'
-
 import { Plus } from 'lucide-react'
 import { Button } from '@/shared/components/ui/button'
 import { LogoWordmark } from '@/shared/components'
+import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
 
 interface ChatListHeaderProps {
   projectId: string
@@ -26,27 +25,35 @@ export function ChatListHeader({
   onBrandClick,
 }: ChatListHeaderProps) {
   return (
-    <div className="chat-pane-header flex items-center justify-between px-3 py-3">
-      {onBrandClick ? (
-        <button
-          type="button"
-          onClick={onBrandClick}
-          className="min-w-0 text-left cursor-pointer transition-opacity hover:opacity-80"
-          aria-label="Back to projects"
-        >
+    <div className="chat-pane-header flex h-12 items-center justify-between px-3 relative">
+      {/* Left: Toggle Sidebar */}
+      <SidebarToggle side="left" />
+
+      {/* Center: Logo */}
+      <div className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center">
+        {onBrandClick ? (
+          <button
+            type="button"
+            onClick={onBrandClick}
+            className="min-w-0 text-left cursor-pointer transition-opacity hover:opacity-80"
+            aria-label="Back to projects"
+          >
+            <LogoWordmark secondaryLabel="Flow" />
+          </button>
+        ) : (
           <LogoWordmark secondaryLabel="Flow" />
-        </button>
-      ) : (
-        <LogoWordmark secondaryLabel="Flow" />
-      )}
+        )}
+      </div>
+
+      {/* Right: New Chat */}
       <Button
         size="icon"
-        className="h-8 w-8"
+        className="size-5"
         disabled={isLoading}
         onClick={onNewChat}
         aria-label="New chat"
       >
-        <Plus className="h-4 w-4" />
+        <Plus className="size-3" />
       </Button>
     </div>
   )

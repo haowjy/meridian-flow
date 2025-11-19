@@ -22,7 +22,7 @@ export function ProjectList({ projects, onCreateClick }: ProjectListProps) {
           label: 'Create Project',
           onClick: onCreateClick
         }}
-        icon={<Plus className="h-12 w-12 text-muted-foreground" />}
+        icon={<Plus className="size-12 text-muted-foreground" />}
       />
     )
   }
@@ -32,7 +32,7 @@ export function ProjectList({ projects, onCreateClick }: ProjectListProps) {
       <div className="flex items-center justify-between">
         <h2 className="type-section">Your Projects</h2>
         <Button onClick={onCreateClick}>
-          <Plus className="h-4 w-4" />
+          <Plus className="size-4" />
           Create Project
         </Button>
       </div>

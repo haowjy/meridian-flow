@@ -17,7 +17,7 @@ export function ChatListEmpty({ onNewChat }: ChatListEmptyProps) {
   return (
     <div className="chat-pane-empty flex h-full flex-col items-center justify-center px-4 text-center text-xs text-muted-foreground">
       <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-full bg-muted text-foreground">
-        <MessageCircle className="h-4 w-4" />
+        <MessageCircle className="size-4" />
       </div>
       <p className="mb-1 font-medium text-foreground">
         Start a conversation

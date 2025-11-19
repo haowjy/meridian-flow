@@ -66,7 +66,7 @@ See `tests/insomnia/README.md` for detailed collection guide.
 Uses Clean Architecture (Hexagonal):
 ```
 cmd/server/main.go           → Entry point
-internal/handler/            → HTTP layer (Fiber)
+internal/handler/            → HTTP layer (net/http)
 internal/service/            → Business logic
 internal/repository/postgres → Data layer
 internal/domain/             → Interfaces + models
@@ -99,12 +99,12 @@ No server-side format conversion required.
 
 ### 3. Error Handling
 
-Use Fiber errors:
+Use standard HTTP error responses via `httputil` package:
 ```go
-return fiber.NewError(fiber.StatusBadRequest, "Invalid input")
+httputil.RespondError(w, http.StatusBadRequest, "Invalid input")
 ```
 
-See `internal/handler/errors.go` for error mapping.
+See `internal/handler/errors.go` for error mapping and `internal/httputil/` for response helpers.
 
 ## Environment Variables
 

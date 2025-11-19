@@ -13,7 +13,7 @@ export interface ToolbarIconButtonProps
 }
 
 const toolbarIconButtonVariants = cva(
-  'inline-flex items-center justify-center shrink-0 select-none transition-colors outline-none rounded-sm border border-transparent disabled:opacity-[--opacity-disabled] disabled:pointer-events-none',
+  'inline-flex items-center justify-center shrink-0 select-none transition-colors outline-none cursor-pointer rounded-sm border border-transparent disabled:cursor-not-allowed disabled:opacity-[--opacity-disabled] disabled:pointer-events-none',
   {
     variants: {
       variant: {

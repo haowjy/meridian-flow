@@ -31,9 +31,9 @@ export function FolderTreeItem({ folder, isExpanded, onToggle, children }: Folde
         aria-label={`${isExpanded ? 'Collapse' : 'Expand'} folder: ${folder.name}`}
       >
         {isExpanded ? (
-          <FolderOpen className="h-4 w-4 flex-shrink-0" />
+          <FolderOpen className="size-4 flex-shrink-0" />
         ) : (
-          <Folder className="h-4 w-4 flex-shrink-0" />
+          <Folder className="size-4 flex-shrink-0" />
         )}
         <span className="truncate font-medium">{folder.name}</span>
       </CollapsibleTrigger>

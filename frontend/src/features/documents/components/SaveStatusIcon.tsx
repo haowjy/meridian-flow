@@ -17,5 +17,5 @@ export function SaveStatusIcon({ status, className }: SaveStatusIconProps) {
     error: { Icon: AlertCircle, className: '', label: 'Save failed' },
   }
   const { Icon, className: extra, label } = map[status]
-  return <Icon aria-label={label} className={cn('h-4 w-4', extra, className)} />
+  return <Icon aria-label={label} className={cn('size-4', extra, className)} />
 }
