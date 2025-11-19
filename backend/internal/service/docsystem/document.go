@@ -71,118 +71,26 @@ func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.Cre
 		}
 	}
 
-	var folderID *string
-	var docName string
-
-	// Check if name contains path notation
-	if IsPathNotation(req.Name) {
-		// Parse path notation in name field
-		pathResult, err := ParsePath(req.Name, config.MaxDocumentNameLength)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid path notation in name: %v", domain.ErrValidation, err)
-		}
-
-		s.logger.Debug("path notation detected in name",
-			"original_name", req.Name,
-			"is_absolute", pathResult.IsAbsolute,
-			"segments", pathResult.Segments,
-			"final_name", pathResult.FinalName,
-		)
-
-		// Resolve base folder ID for relative paths
-		var baseParentID *string
-		if pathResult.IsAbsolute {
-			// Absolute path: ignore both folder_id and folder_path, start from root
-			baseParentID = nil
-		} else {
-			// Relative path: use priority system (folder_id → folder_path → root)
-			if req.FolderID != nil {
-				// Priority 1: Use provided folder_id directly
-				baseParentID = req.FolderID
-			} else if req.FolderPath != nil {
-				// Priority 2: Resolve folder_path
-				resolvedFolder, err := s.pathResolver.ResolveFolderPath(ctx, req.ProjectID, *req.FolderPath)
-				if err != nil {
-					return nil, fmt.Errorf("failed to resolve folder_path for relative path notation: %w", err)
-				}
-				baseParentID = resolvedFolder
-			} else {
-				// Priority 3: Use root (nil)
-				baseParentID = nil
-			}
-		}
-
-		// Create intermediate folders and resolve final folder ID in a transaction
-		err = s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
-			currentParentID := baseParentID
-
-			// Create all intermediate folders (parent path)
-			for _, segment := range pathResult.ParentPath {
-				// Validate segment as folder name
-				if err := ValidateSimpleName(segment, config.MaxFolderNameLength); err != nil {
-					return fmt.Errorf("invalid folder name '%s': %w", segment, err)
-				}
-
-				// Create folder if it doesn't exist (idempotent)
-				intermediateFolder, err := s.folderRepo.CreateIfNotExists(txCtx, req.ProjectID, currentParentID, segment)
-				if err != nil {
-					return fmt.Errorf("failed to create intermediate folder '%s': %w", segment, err)
-				}
-
-				s.logger.Debug("intermediate folder created/found",
-					"name", segment,
-					"id", intermediateFolder.ID,
-				)
-
-				// Move to next level
-				currentParentID = &intermediateFolder.ID
-			}
-
-			// Store resolved folder ID
-			folderID = currentParentID
-			return nil
-		})
-
-		if err != nil {
-			return nil, err
-		}
-
-		// Use final segment as document name
-		docName = pathResult.FinalName
-
-		// Validate final document name (no slashes allowed)
-		if err := ValidateSimpleName(docName, config.MaxDocumentNameLength); err != nil {
-			return nil, fmt.Errorf("%w: invalid final document name '%s': %v", domain.ErrValidation, docName, err)
-		}
-
-	} else {
-		// No path notation in name - use standard validation and folder resolution
-
-		// Validate request (simple name validation)
-		if err := s.validateCreateRequest(req); err != nil {
-			return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
-		}
-
-		docName = strings.TrimSpace(req.Name)
-
-		// Priority-based folder resolution:
-		// 1. Try folder_id first (frontend optimization - direct lookup)
-		// 2. Fall back to folder_path (external AI / import - resolve/auto-create)
-		if req.FolderID != nil {
-			// Frontend optimization: use provided folder_id directly
-			folderID = req.FolderID
-		} else if req.FolderPath != nil {
-			// External AI / Import: resolve folder path, creating folders if needed
-			resolvedFolder, err := s.pathResolver.ResolveFolderPath(ctx, req.ProjectID, *req.FolderPath)
-			if err != nil {
-				return nil, err
-			}
-			folderID = resolvedFolder
-		} else {
-			// Should never reach here due to validation, but defensive check
-			return nil, fmt.Errorf("%w: either folder_path or folder_id must be provided", domain.ErrValidation)
-		}
+	// Use path notation resolver to handle all path logic (unified)
+	result, err := s.pathResolver.ResolvePathNotation(ctx, &docsysSvc.PathNotationRequest{
+		ProjectID:     req.ProjectID,
+		Name:          req.Name,
+		FolderID:      req.FolderID,
+		FolderPath:    req.FolderPath,
+		MaxNameLength: config.MaxDocumentNameLength,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
 	}
+
+	folderID := result.ResolvedFolderID
+	docName := result.FinalName
+
+	s.logger.Debug("path notation resolved",
+		"original_name", req.Name,
+		"final_name", docName,
+		"folder_id", folderID,
+	)
 
 	// Count words (business logic)
 	wordCount := s.contentAnalyzer.CountWords(req.Content)

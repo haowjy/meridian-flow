@@ -40,6 +40,12 @@ func NewResponseGenerator(
 	}
 }
 
+// GetProvider gets an LLM provider by model name (delegates to registry)
+// This allows ResponseGenerator to implement the LLMProviderGetter interface
+func (g *ResponseGenerator) GetProvider(model string) (domainllm.LLMProvider, error) {
+	return g.registry.GetProvider(model)
+}
+
 // GenerateResponse generates an LLM response for a user turn.
 // This is a synchronous implementation - it blocks until the response is complete.
 // Streaming support will be added in a future phase.

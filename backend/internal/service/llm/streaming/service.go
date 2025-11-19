@@ -22,12 +22,17 @@ type ChatValidator interface {
 	ValidateChat(ctx context.Context, chatID, userID string) error
 }
 
+// LLMProviderGetter provides access to LLM providers by model name
+type LLMProviderGetter interface {
+	GetProvider(model string) (llmSvc.LLMProvider, error)
+}
+
 // Service implements the StreamingService interface
 // Handles turn creation and streaming orchestration
 type Service struct {
 	turnRepo             llmRepo.TurnRepository
 	validator            ChatValidator
-	responseGenerator    *ResponseGenerator
+	providerGetter       LLMProviderGetter
 	registry             *mstream.Registry
 	config               *config.Config
 	txManager            repositories.TransactionManager
@@ -44,7 +49,7 @@ type SystemPromptResolver interface {
 func NewService(
 	turnRepo             llmRepo.TurnRepository,
 	validator            ChatValidator,
-	responseGenerator    *ResponseGenerator,
+	providerGetter       LLMProviderGetter,
 	registry             *mstream.Registry,
 	cfg                  *config.Config,
 	txManager            repositories.TransactionManager,
@@ -54,7 +59,7 @@ func NewService(
 	return &Service{
 		turnRepo:             turnRepo,
 		validator:            validator,
-		responseGenerator:    responseGenerator,
+		providerGetter:       providerGetter,
 		registry:             registry,
 		config:               cfg,
 		txManager:            txManager,
@@ -205,7 +210,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	)
 
 	// Get provider for model (do this synchronously to avoid race)
-	provider, err := s.responseGenerator.registry.GetProvider(model)
+	provider, err := s.providerGetter.GetProvider(model)
 	if err != nil {
 		s.logger.Error("failed to get provider for streaming",
 			"error", err,

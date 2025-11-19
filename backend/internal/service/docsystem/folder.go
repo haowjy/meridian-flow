@@ -67,159 +67,23 @@ func (s *folderService) CreateFolder(ctx context.Context, req *docsysSvc.CreateF
 		}
 	}
 
-	// Check if name contains path notation
-	if IsPathNotation(req.Name) {
-		// Parse path notation
-		pathResult, err := ParsePath(req.Name, config.MaxFolderNameLength)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid path notation: %v", domain.ErrValidation, err)
-		}
-
-		s.logger.Debug("path notation detected",
-			"original_name", req.Name,
-			"is_absolute", pathResult.IsAbsolute,
-			"segments", pathResult.Segments,
-			"final_name", pathResult.FinalName,
-		)
-
-		// Resolve base folder ID for relative paths
-		var baseParentID *string
-		if pathResult.IsAbsolute {
-			// Absolute path: ignore both folder_id and folder_path, start from root
-			baseParentID = nil
-		} else {
-			// Relative path: use priority system (folder_id → folder_path → root)
-			if req.FolderID != nil {
-				// Priority 1: Use provided folder_id directly
-				baseParentID = req.FolderID
-			} else if req.FolderPath != nil {
-				// Priority 2: Resolve folder_path
-				resolvedFolder, err := s.pathResolver.ResolveFolderPath(ctx, req.ProjectID, *req.FolderPath)
-				if err != nil {
-					return nil, fmt.Errorf("failed to resolve folder_path for relative path notation: %w", err)
-				}
-				baseParentID = resolvedFolder
-			} else {
-				// Priority 3: Use root (nil)
-				baseParentID = nil
-			}
-		}
-
-		// Create intermediate folders and final folder in a single transaction
-		var folder *models.Folder
-		err = s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
-			// Create all intermediate folders (parent path)
-			currentParentID := baseParentID
-			for _, segment := range pathResult.ParentPath {
-				// Validate segment as folder name
-				if err := ValidateSimpleName(segment, config.MaxFolderNameLength); err != nil {
-					return fmt.Errorf("invalid folder name '%s': %w", segment, err)
-				}
-
-				// Create folder if it doesn't exist (idempotent)
-				intermediateFolder, err := s.folderRepo.CreateIfNotExists(txCtx, req.ProjectID, currentParentID, segment)
-				if err != nil {
-					return fmt.Errorf("failed to create intermediate folder '%s': %w", segment, err)
-				}
-
-				s.logger.Debug("intermediate folder created/found",
-					"name", segment,
-					"id", intermediateFolder.ID,
-				)
-
-				// Move to next level
-				currentParentID = &intermediateFolder.ID
-			}
-
-			// Validate final name
-			if err := ValidateSimpleName(pathResult.FinalName, config.MaxFolderNameLength); err != nil {
-				return fmt.Errorf("invalid final folder name '%s': %w", pathResult.FinalName, err)
-			}
-
-			// Create final folder
-			folder = &models.Folder{
-				ProjectID: req.ProjectID,
-				ParentID:  currentParentID,
-				Name:      pathResult.FinalName,
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
-			}
-
-			if err := s.folderRepo.Create(txCtx, folder); err != nil {
-				return err
-			}
-
-			return nil
-		})
-
-		if err != nil {
-			return nil, err
-		}
-
-		// Compute display path
-		path, err := s.folderRepo.GetPath(ctx, &folder.ID, req.ProjectID)
-		if err != nil {
-			s.logger.Warn("failed to compute path", "folder_id", folder.ID, "error", err)
-			folder.Path = folder.Name
-		} else {
-			folder.Path = path
-		}
-
-		s.logger.Info("folder created via path notation",
-			"id", folder.ID,
-			"name", folder.Name,
-			"original_path", req.Name,
-			"project_id", req.ProjectID,
-			"folder_id", folder.ParentID,
-			"path", folder.Path,
-		)
-
-		return folder, nil
-	}
-
-	// No path notation - use original logic
-	// Validate request (simple name validation)
-	if err := s.validateCreateRequest(req); err != nil {
+	// Use path notation resolver to handle all path logic (unified)
+	result, err := s.pathResolver.ResolvePathNotation(ctx, &docsysSvc.PathNotationRequest{
+		ProjectID:     req.ProjectID,
+		Name:          req.Name,
+		FolderID:      req.FolderID,
+		FolderPath:    req.FolderPath,
+		MaxNameLength: config.MaxFolderNameLength,
+	})
+	if err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
 	}
 
-	// Resolve parent folder ID using priority system
-	var folderID *string
-	if req.FolderID != nil {
-		// Priority 1: Use provided folder_id directly
-		folderID = req.FolderID
-	} else if req.FolderPath != nil {
-		// Priority 2: Resolve folder_path
-		resolvedFolder, err := s.pathResolver.ResolveFolderPath(ctx, req.ProjectID, *req.FolderPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve folder_path: %w", err)
-		}
-		folderID = resolvedFolder
-	} else {
-		// Priority 3: Use root (nil)
-		folderID = nil
-	}
-
-	// If parent folder is specified, verify it exists
-	if folderID != nil {
-		parent, err := s.folderRepo.GetByID(ctx, *folderID, req.ProjectID)
-		if err != nil {
-			return nil, fmt.Errorf("parent folder not found: %w", err)
-		}
-		s.logger.Debug("parent folder found",
-			"folder_id", parent.ID,
-			"parent_name", parent.Name,
-		)
-	}
-
-	// Normalize name (trim whitespace)
-	name := strings.TrimSpace(req.Name)
-
-	// Create folder
+	// Create the final folder
 	folder := &models.Folder{
 		ProjectID: req.ProjectID,
-		ParentID:  folderID,
-		Name:      name,
+		ParentID:  result.ResolvedFolderID,
+		Name:      result.FinalName,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -241,7 +105,7 @@ func (s *folderService) CreateFolder(ctx context.Context, req *docsysSvc.CreateF
 		"id", folder.ID,
 		"name", folder.Name,
 		"project_id", req.ProjectID,
-		"folder_id", folderID,
+		"parent_folder_id", folder.ParentID,
 		"path", folder.Path,
 	)
 

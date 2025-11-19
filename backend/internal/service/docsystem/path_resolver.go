@@ -116,3 +116,107 @@ func (s *pathResolverService) ValidateFolderPath(path string) error {
 
 	return nil
 }
+
+// ResolvePathNotation handles Unix-style path notation with priority-based folder resolution
+func (s *pathResolverService) ResolvePathNotation(ctx context.Context, req *docsysSvc.PathNotationRequest) (*docsysSvc.PathNotationResult, error) {
+	// Check if name contains path notation
+	if !IsPathNotation(req.Name) {
+		// No path notation - just validate simple name and return
+		name := strings.TrimSpace(req.Name)
+		if err := ValidateSimpleName(name, req.MaxNameLength); err != nil {
+			return nil, fmt.Errorf("invalid name: %w", err)
+		}
+
+		// Resolve folder using priority system (no path notation case)
+		var resolvedFolderID *string
+		if req.FolderID != nil {
+			// Priority 1: Use provided folder_id directly
+			resolvedFolderID = req.FolderID
+		} else if req.FolderPath != nil {
+			// Priority 2: Resolve folder_path
+			resolved, err := s.ResolveFolderPath(ctx, req.ProjectID, *req.FolderPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve folder_path: %w", err)
+			}
+			resolvedFolderID = resolved
+		} else {
+			// Priority 3: Use root (nil)
+			resolvedFolderID = nil
+		}
+
+		return &docsysSvc.PathNotationResult{
+			ResolvedFolderID: resolvedFolderID,
+			FinalName:        name,
+		}, nil
+	}
+
+	// Path notation detected - parse it
+	pathResult, err := ParsePath(req.Name, req.MaxNameLength)
+	if err != nil {
+		return nil, fmt.Errorf("invalid path notation: %w", err)
+	}
+
+	// Resolve base folder ID based on absolute vs relative
+	var baseParentID *string
+	if pathResult.IsAbsolute {
+		// Absolute path: ignore both folder_id and folder_path, start from root
+		baseParentID = nil
+	} else {
+		// Relative path: use priority system (folder_id → folder_path → root)
+		if req.FolderID != nil {
+			// Priority 1: Use provided folder_id directly
+			baseParentID = req.FolderID
+		} else if req.FolderPath != nil {
+			// Priority 2: Resolve folder_path
+			resolved, err := s.ResolveFolderPath(ctx, req.ProjectID, *req.FolderPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve folder_path for relative path notation: %w", err)
+			}
+			baseParentID = resolved
+		} else {
+			// Priority 3: Use root (nil)
+			baseParentID = nil
+		}
+	}
+
+	// Create intermediate folders and resolve final folder ID in a transaction
+	var resolvedFolderID *string
+	err = s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
+		currentParentID := baseParentID
+
+		// Create all intermediate folders (parent path)
+		for _, segment := range pathResult.ParentPath {
+			// Validate segment as folder name
+			if err := ValidateSimpleName(segment, config.MaxFolderNameLength); err != nil {
+				return fmt.Errorf("invalid folder name '%s': %w", segment, err)
+			}
+
+			// Create folder if it doesn't exist (idempotent)
+			intermediateFolder, err := s.folderRepo.CreateIfNotExists(txCtx, req.ProjectID, currentParentID, segment)
+			if err != nil {
+				return fmt.Errorf("failed to create intermediate folder '%s': %w", segment, err)
+			}
+
+			// Move to next level
+			currentParentID = &intermediateFolder.ID
+		}
+
+		// Store resolved folder ID
+		resolvedFolderID = currentParentID
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate final name (no slashes allowed)
+	if err := ValidateSimpleName(pathResult.FinalName, req.MaxNameLength); err != nil {
+		return nil, fmt.Errorf("invalid final name '%s': %w", pathResult.FinalName, err)
+	}
+
+	return &docsysSvc.PathNotationResult{
+		ResolvedFolderID: resolvedFolderID,
+		FinalName:        pathResult.FinalName,
+	}, nil
+}

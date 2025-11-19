@@ -46,6 +46,18 @@ PostgreSQL schema, connections, and data management:
 - [Schema](database/schema.md) - Database structure with ER diagram ⭐
 - [Connections](database/connections.md) - Connection setup and troubleshooting
 
+## Document Search
+
+Full-text search across documents with multi-field support and weighted ranking:
+
+- [Search Architecture](search-architecture.md) - PostgreSQL FTS implementation, indexing strategy, and future vector search plans ⭐
+
+**Features:**
+- Multi-field search (name, content) with configurable weighting
+- Multi-language support (17 languages)
+- Pagination and folder filtering
+- Extensible design for future vector/hybrid search
+
 ## LLM Integration
 
 **Library:** [`meridian-llm-go`](../llm/README.md) - Unified provider abstraction

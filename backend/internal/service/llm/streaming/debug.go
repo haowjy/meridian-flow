@@ -140,7 +140,7 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 	}
 
 	// Get provider for model (same registry used for real execution)
-	provider, err := s.responseGenerator.registry.GetProvider(model)
+	provider, err := s.providerGetter.GetProvider(model)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get provider for debug: %w", err)
 	}
