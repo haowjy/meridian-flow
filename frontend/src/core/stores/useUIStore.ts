@@ -52,12 +52,7 @@ interface UIStore {
    */
   activeChatId: string | null
 
-  /**
-   * Controls editor read-only mode.
-   * Persisted across sessions.
-   * @default true (read-only by default for AI agent-centric workflows)
-   */
-  editorReadOnly: boolean
+
 
   /** Toggles left panel collapsed/expanded state */
   toggleLeftPanel: () => void
@@ -87,10 +82,7 @@ interface UIStore {
    */
   setActiveChat: (id: string | null) => void
 
-  /** Toggles editor between read-only and edit modes */
-  toggleEditorReadOnly: () => void
-  /** Explicitly sets editor read-only mode */
-  setEditorReadOnly: (readOnly: boolean) => void
+
 }
 
 export const useUIStore = create<UIStore>()(
@@ -101,7 +93,7 @@ export const useUIStore = create<UIStore>()(
       rightPanelState: 'documents',
       activeDocumentId: null,
       activeChatId: null,
-      editorReadOnly: true,
+
 
       toggleLeftPanel: () =>
         set((state) => ({ leftPanelCollapsed: !state.leftPanelCollapsed })),
@@ -115,10 +107,7 @@ export const useUIStore = create<UIStore>()(
         set({ activeDocumentId: id }),
       setActiveChat: (id) =>
         set({ activeChatId: id }),
-      toggleEditorReadOnly: () =>
-        set((state) => ({ editorReadOnly: !state.editorReadOnly })),
-      setEditorReadOnly: (readOnly) =>
-        set({ editorReadOnly: readOnly }),
+
     }),
     {
       name: 'ui-store',
@@ -127,7 +116,7 @@ export const useUIStore = create<UIStore>()(
         rightPanelCollapsed: state.rightPanelCollapsed,
         activeDocumentId: state.activeDocumentId,
         activeChatId: state.activeChatId,
-        editorReadOnly: state.editorReadOnly,
+
         // rightPanelState excluded - always resets to 'documents' on page load
       }),
     }

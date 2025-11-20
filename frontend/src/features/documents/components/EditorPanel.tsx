@@ -10,7 +10,6 @@ import { useEditorCache } from '@/core/hooks/useEditorCache'
 import { cn } from '@/lib/utils'
 import { EditorHeader } from './EditorHeader'
 import { EditorToolbarContainer } from './EditorToolbarContainer'
-import { EditorStatusBar } from './EditorStatusBar'
 import { CardSkeleton } from '@/shared/components/ui/card'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { useTreeStore } from '@/core/stores/useTreeStore'
@@ -23,7 +22,7 @@ interface EditorPanelProps {
 
 /**
  * Minimal TipTap editor with markdown shortcuts.
- * Integrates: Document loading, auto-save, read-only mode.
+ * Integrates: Document loading, auto-save.
  * Uses two-state pattern for instant typing + debounced auto-save.
  */
 export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
@@ -38,8 +37,7 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
     saveDocument,
   } = useEditorStore()
 
-  const editorReadOnly = useUIStore((state) => state.editorReadOnly)
-  const setEditorReadOnly = useUIStore((state) => state.setEditorReadOnly)
+
 
   // Get document metadata from tree (available immediately, no need to wait for content)
   const documents = useTreeStore((state) => state.documents)
@@ -60,12 +58,12 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
     documentId,
     content: localContent,
     extensions: getExtensions(),
-    // Keep editor read-only until initialization completes for this document
-    editable: !editorReadOnly && !!activeDocument && activeDocument.id === documentId && !isLoading && isInitialized,
+    // Always editable once initialized
+    editable: !!activeDocument && activeDocument.id === documentId && !isLoading && isInitialized,
     immediatelyRender: false, // Fix SSR hydration mismatch
     editorProps: {
       attributes: {
-        class: cn('tiptap', editorReadOnly && 'read-only'),
+        class: cn('tiptap cursor-text'),
       },
     },
     onUpdate: ({ editor }) => {
@@ -93,8 +91,7 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
     setIsInitialized(false)
     initializedRef.current = false
     setHasUserEdit(false)
-    // Default to read-only on document change
-    setEditorReadOnly(true)
+
     // Do NOT clear localContent here; allow cached editor to repopulate if present
     loadDocument(documentId, abortController.signal)
 
@@ -160,10 +157,10 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
   // Auto-save when debounced content changes (only in edit mode AFTER init)
   // Treat empty string "" as valid content (do not use falsy checks)
   useEffect(() => {
-    if (!editorReadOnly && isInitialized && hasUserEdit && debouncedContent !== activeDocument?.content) {
+    if (isInitialized && hasUserEdit && debouncedContent !== activeDocument?.content) {
       saveDocument(documentId, debouncedContent)
     }
-  }, [editorReadOnly, isInitialized, hasUserEdit, debouncedContent, documentId, activeDocument?.content, saveDocument])
+  }, [isInitialized, hasUserEdit, debouncedContent, documentId, activeDocument?.content, saveDocument])
 
   // Sync content: cached editor → localContent OR localContent → new editor
   useEffect(() => {
@@ -256,15 +253,6 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
           {/* Editor Content */}
           <div className="flex-1 overflow-auto relative">
             <EditorContent editor={editor} />
-
-            {/* Floating Status Bar (hidden in read-only mode) */}
-            <EditorStatusBar
-              editor={editor}
-              status={status}
-              lastSaved={lastSaved}
-              readOnly={editorReadOnly}
-              className="fixed bottom-4 right-4"
-            />
           </div>
         </>
       )}

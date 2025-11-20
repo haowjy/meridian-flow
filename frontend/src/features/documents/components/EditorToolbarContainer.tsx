@@ -17,14 +17,9 @@ interface EditorToolbarContainerProps {
  * Keeps state management out of the view for SOLID/DIP.
  */
 export function EditorToolbarContainer({ editor, disabled, status, lastSaved }: EditorToolbarContainerProps) {
-  const readOnly = useUIStore((s) => s.editorReadOnly)
-  const setEditorReadOnly = useUIStore((s) => s.setEditorReadOnly)
-
   return (
     <EditorToolbar
       editor={editor}
-      readOnly={readOnly}
-      onModeChange={(ro) => setEditorReadOnly(ro)}
       disabled={disabled}
       status={status}
       lastSaved={lastSaved}
