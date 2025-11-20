@@ -92,16 +92,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		requestParams = make(map[string]interface{})
 	}
 
-	// Extract model from request_params with default fallback from config
-	model := s.config.DefaultModel
-	if model == "" {
-		model = "claude-haiku-4-5-20251001" // Fallback if config not set
-	}
-	if modelParam, ok := requestParams["model"].(string); ok && modelParam != "" {
-		model = modelParam
-	}
-
-	// Validate and parse request params
+	// Validate request params first
 	if err := llmModels.ValidateRequestParams(requestParams); err != nil {
 		s.logger.Error("invalid request params", "error", err)
 		return nil, fmt.Errorf("invalid request params: %w", err)
@@ -113,9 +104,28 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		return nil, fmt.Errorf("failed to parse request params: %w", err)
 	}
 
-	// Allow model override via params
+	// Extract model from request_params (pure model name, no provider prefix)
+	model := s.config.DefaultModel
+	if model == "" {
+		model = "claude-haiku-4-5-20251001" // Fallback if config not set
+	}
 	if params.Model != nil && *params.Model != "" {
 		model = *params.Model
+	}
+
+	// Extract provider from request_params or infer from model
+	var provider string
+	if params.Provider != nil && *params.Provider != "" {
+		// Provider explicitly specified
+		provider = *params.Provider
+	} else {
+		// Try to infer provider from model name
+		if mappedProvider, found := llmModels.GetProviderForModel(model); found {
+			provider = mappedProvider
+		} else {
+			// No mapping found - default to openrouter (has all models)
+			provider = "openrouter"
+		}
 	}
 
 	// Environment gating: Reject tools in production
@@ -207,13 +217,15 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		"user_turn_id", turn.ID,
 		"assistant_turn_id", assistantTurn.ID,
 		"model", model,
+		"provider", provider,
 	)
 
-	// Get provider for model (do this synchronously to avoid race)
-	provider, err := s.providerGetter.GetProvider(model)
+	// Get provider adapter (do this synchronously to avoid race)
+	llmProvider, err := s.providerGetter.GetProvider(provider)
 	if err != nil {
 		s.logger.Error("failed to get provider for streaming",
 			"error", err,
+			"provider", provider,
 			"model", model,
 			"assistant_turn_id", assistantTurn.ID,
 		)
@@ -221,17 +233,17 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		if updateErr := s.turnRepo.UpdateTurnError(ctx, assistantTurn.ID, fmt.Sprintf("failed to get provider: %v", err)); updateErr != nil {
 			s.logger.Error("failed to update turn error", "error", updateErr)
 		}
-		return nil, fmt.Errorf("failed to get provider for model %s: %w", model, err)
+		return nil, fmt.Errorf("failed to get provider '%s': %w", provider, err)
 	}
 
 	// Create StreamExecutor immediately (before goroutine) to avoid race condition
 	// This ensures SSE clients can connect while we're preparing the request
 	executor := NewStreamExecutor(
 		assistantTurn.ID,
-		model,
-		s.turnRepo, // TurnWriter
-		s.turnRepo, // TurnReader (same repo implements both)
-		provider,
+		model,        // Pure model name (no provider prefix)
+		s.turnRepo,   // TurnWriter
+		s.turnRepo,   // TurnReader (same repo implements both)
+		llmProvider,  // Provider adapter
 		s.logger,
 		s.config.Debug, // Pass DEBUG flag for optional event IDs
 	)

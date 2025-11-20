@@ -25,6 +25,21 @@ Go REST API for the Meridian file management system.
 - ✅ Environment-based table prefixes (dev/test/prod isolation)
 - ✅ CORS configured
 - ✅ Structured logging
+- ✅ LLM integration - Anthropic (Claude), OpenRouter (multi-provider proxy)
+- ✅ Real-time streaming - SSE with catchup for reconnections
+
+## LLM Providers
+
+**Working:** Anthropic, OpenRouter
+**Planned:** OpenAI, Google/Gemini
+
+**Configuration:** Add API keys to `.env`:
+```env
+ANTHROPIC_API_KEY=sk-ant-...
+OPENROUTER_API_KEY=sk-or-...
+```
+
+**See:** [LLM Integration Guide](../_docs/technical/backend/llm-integration.md), [Provider Routing](../_docs/technical/backend/provider-routing.md)
 
 ## Project Structure
 

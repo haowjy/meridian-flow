@@ -15,8 +15,10 @@ type Config struct {
 	CORSOrigins   string
 	TablePrefix   string
 	// LLM Configuration
-	AnthropicAPIKey string
-	DefaultModel    string
+	AnthropicAPIKey  string
+	OpenRouterAPIKey string
+	DefaultProvider  string
+	DefaultModel     string
 	// Debug flags
 	Debug bool // Enables DEBUG features like SSE event IDs
 }
@@ -36,8 +38,10 @@ func Load() *Config {
 		CORSOrigins:   getEnv("CORS_ORIGINS", "http://localhost:3000"),
 		TablePrefix:   tablePrefix,
 		// LLM Configuration
-		AnthropicAPIKey: getEnv("ANTHROPIC_API_KEY", ""),
-		DefaultModel:    getEnv("DEFAULT_MODEL", "claude-haiku-4-5-20251001"),
+		AnthropicAPIKey:  getEnv("ANTHROPIC_API_KEY", ""),
+		OpenRouterAPIKey: getEnv("OPENROUTER_API_KEY", ""),
+		DefaultProvider:  getEnv("DEFAULT_PROVIDER", "anthropic"),
+		DefaultModel:     getEnv("DEFAULT_MODEL", "claude-haiku-4-5-20251001"),
 		// Debug flags - default to true in dev/test, false in production
 		Debug: getEnv("DEBUG", getDefaultDebug(env)) == "true",
 	}

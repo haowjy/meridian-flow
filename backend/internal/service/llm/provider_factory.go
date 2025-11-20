@@ -6,6 +6,7 @@ import (
 	llmprovider "github.com/haowjy/meridian-llm-go"
 	"github.com/haowjy/meridian-llm-go/providers/anthropic"
 	"github.com/haowjy/meridian-llm-go/providers/lorem"
+	"github.com/haowjy/meridian-llm-go/providers/openrouter"
 
 	"meridian/internal/config"
 )
@@ -27,7 +28,7 @@ func NewProviderFactory(cfg *config.Config) *ProviderFactory {
 // Supported providers:
 //   - "anthropic" - Claude models via Anthropic API
 //   - "lorem" - Mock provider for testing (no API key required)
-//   - "openrouter" - Multiple providers via OpenRouter (future)
+//   - "openrouter" - Multiple providers via OpenRouter
 //   - "bedrock" - AWS Bedrock (future)
 //   - "openai" - OpenAI models (future)
 //   - "gemini" - Google Gemini models (future)
@@ -39,9 +40,10 @@ func (f *ProviderFactory) GetProvider(providerName string) (llmprovider.Provider
 	case "lorem":
 		return f.createLoremProvider()
 
+	case "openrouter":
+		return f.createOpenRouterProvider()
+
 	// Future providers:
-	// case "openrouter":
-	// 	return f.createOpenRouterProvider()
 	// case "bedrock":
 	// 	return f.createBedrockProvider()
 	// case "openai":
@@ -75,14 +77,21 @@ func (f *ProviderFactory) createLoremProvider() (llmprovider.Provider, error) {
 	return provider, nil
 }
 
-// Future provider creation methods:
+// createOpenRouterProvider creates an OpenRouter provider instance
+func (f *ProviderFactory) createOpenRouterProvider() (llmprovider.Provider, error) {
+	if f.config.OpenRouterAPIKey == "" {
+		return nil, fmt.Errorf("OPENROUTER_API_KEY environment variable not set")
+	}
 
-// func (f *ProviderFactory) createOpenRouterProvider() (llmprovider.Provider, error) {
-// 	if f.config.OpenRouterAPIKey == "" {
-// 		return nil, fmt.Errorf("OPENROUTER_API_KEY environment variable not set")
-// 	}
-// 	return openrouter.NewProvider(f.config.OpenRouterAPIKey)
-// }
+	provider, err := openrouter.NewProvider(f.config.OpenRouterAPIKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create OpenRouter provider: %w", err)
+	}
+
+	return provider, nil
+}
+
+// Future provider creation methods:
 //
 // func (f *ProviderFactory) createBedrockProvider() (llmprovider.Provider, error) {
 // 	// AWS Bedrock uses IAM credentials, not API keys

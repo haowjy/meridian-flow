@@ -80,6 +80,23 @@ Caches provider instances per provider name to avoid recreating clients.
 
 **Implementation:** `backend/internal/service/llm/registry.go:27-80`
 
+## GetProvider() API Contract
+
+**Critical:** `GetProvider()` accepts **provider name**, not model name.
+
+```go
+// ✅ Correct
+provider, err := registry.GetProvider("anthropic")
+provider, err := registry.GetProvider("openrouter")
+
+// ❌ Wrong (pre-refactor behavior)
+provider, err := registry.GetProvider("claude-sonnet-4-5")
+```
+
+**Recent Fix:** Debug route and response generator were incorrectly passing model to `GetProvider()`. Now properly resolve provider first using model mapping logic.
+
+**See:** `backend/internal/service/llm/streaming/debug.go:78-91`, `response_generator.go:69-82`
+
 ## Model Mapping
 
 Smart defaults infer provider from model name prefixes when provider not specified.

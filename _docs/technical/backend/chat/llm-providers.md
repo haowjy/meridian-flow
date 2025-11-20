@@ -231,11 +231,11 @@ func (s *LLMService) SelectProvider(req *TurnRequest) (string, error) {
 
 **Current Status (Backend Integration):**
 - ✅ **Anthropic** - Fully integrated with provider factory and routing
+- ✅ **OpenRouter** - Fully integrated with provider factory and routing
 - 🚧 **OpenAI** - Library code exists, backend integration pending
 - 🚧 **Gemini** - Library code exists, backend integration pending
-- 🚧 **OpenRouter** - Library code exists, backend integration pending
 
-The `meridian-llm-go` library contains adapters for all providers below. The backend currently routes only to Anthropic via the provider factory pattern (see `backend/internal/service/llm/provider_factory.go`).
+The `meridian-llm-go` library contains adapters for all providers below. The backend currently routes to Anthropic and OpenRouter via the provider factory pattern (see `backend/internal/service/llm/provider_factory.go`).
 
 ### Anthropic Claude
 

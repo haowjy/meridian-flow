@@ -114,6 +114,10 @@ Required:
 - `PORT` - Default 8080
 - `TEST_USER_ID`, `TEST_PROJECT_ID` - Phase 1 auth stubs
 
+LLM Configuration (at least one required):
+- `ANTHROPIC_API_KEY` - For Claude models via Anthropic API
+- `OPENROUTER_API_KEY` - For multiple providers via OpenRouter
+
 See `.env.example` for full list and `ENVIRONMENTS.md` for details.
 
 ## Common Issues

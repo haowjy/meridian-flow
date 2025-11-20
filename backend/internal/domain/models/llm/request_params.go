@@ -13,7 +13,8 @@ import (
 type RequestParams struct {
 	// ===== Core Parameters (Most Providers) =====
 
-	// Model specifies the LLM model to use (e.g., "claude-haiku-4-5-20251001")
+	// Model specifies the LLM model to use (pure model name without provider prefix)
+	// Examples: "claude-haiku-4-5-20251001", "gpt-4o", "moonshotai/kimi-k2-thinking"
 	// Can be overridden at request time
 	Model *string `json:"model,omitempty"`
 
@@ -92,10 +93,11 @@ type RequestParams struct {
 	// ParallelToolCalls allows model to use multiple tools simultaneously
 	ParallelToolCalls *bool `json:"parallel_tool_calls,omitempty"`
 
-	// ===== Provider Routing (OpenRouter) =====
+	// ===== Provider Routing =====
 
-	// Provider specifies which provider to use (OpenRouter)
-	// Format: "anthropic/claude-haiku-4-5", "openai/gpt-4", etc.
+	// Provider explicitly specifies which LLM provider to use
+	// Values: "anthropic", "openrouter", "openai", "google", "lorem"
+	// If not specified, provider is inferred from model name or defaults to "openrouter"
 	Provider *string `json:"provider,omitempty"`
 
 	// FallbackModels lists alternative models if primary fails

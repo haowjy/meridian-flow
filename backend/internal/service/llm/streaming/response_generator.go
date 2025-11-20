@@ -66,9 +66,25 @@ func (g *ResponseGenerator) GenerateResponse(ctx context.Context, userTurnID str
 		model = *params.Model
 	}
 
+	// Extract provider from request_params or infer from model
+	var provider string
+	if params.Provider != nil && *params.Provider != "" {
+		// Provider explicitly specified
+		provider = *params.Provider
+	} else {
+		// Try to infer provider from model name
+		if mappedProvider, found := llm.GetProviderForModel(model); found {
+			provider = mappedProvider
+		} else {
+			// No mapping found - default to openrouter (has all models)
+			provider = "openrouter"
+		}
+	}
+
 	g.logger.Info("generating LLM response",
 		"user_turn_id", userTurnID,
 		"model", model,
+		"provider", provider,
 	)
 
 	// 1. Get conversation path (turn history)
@@ -106,8 +122,8 @@ func (g *ResponseGenerator) GenerateResponse(ctx context.Context, userTurnID str
 		"message_count", len(messages),
 	)
 
-	// 3. Get provider for model
-	provider, err := g.registry.GetProvider(model)
+	// 3. Get provider
+	llmProvider, err := g.registry.GetProvider(provider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get provider: %w", err)
 	}
@@ -119,7 +135,7 @@ func (g *ResponseGenerator) GenerateResponse(ctx context.Context, userTurnID str
 		Params:   params,
 	}
 
-	response, err := provider.GenerateResponse(ctx, req)
+	response, err := llmProvider.GenerateResponse(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("provider failed to generate response: %w", err)
 	}

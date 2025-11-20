@@ -75,6 +75,21 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 		model = *params.Model
 	}
 
+	// Extract provider from request_params or infer from model
+	var provider string
+	if params.Provider != nil && *params.Provider != "" {
+		// Provider explicitly specified
+		provider = *params.Provider
+	} else {
+		// Try to infer provider from model name
+		if mappedProvider, found := llmModels.GetProviderForModel(model); found {
+			provider = mappedProvider
+		} else {
+			// No mapping found - default to openrouter (has all models)
+			provider = "openrouter"
+		}
+	}
+
 	// Environment gating: Reject tools in production (same as CreateTurn)
 	if s.config.Environment != "dev" && s.config.Environment != "test" {
 		if len(params.Tools) > 0 {
@@ -139,8 +154,8 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 		Params:   params,
 	}
 
-	// Get provider for model (same registry used for real execution)
-	provider, err := s.providerGetter.GetProvider(model)
+	// Get provider (same registry used for real execution)
+	llmProvider, err := s.providerGetter.GetProvider(provider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get provider for debug: %w", err)
 	}
@@ -150,7 +165,7 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 		BuildDebugProviderRequest(ctx context.Context, req *llmSvc.GenerateRequest) (map[string]interface{}, error)
 	}
 
-	if dbg, ok := provider.(debugProvider); ok {
+	if dbg, ok := llmProvider.(debugProvider); ok {
 		return dbg.BuildDebugProviderRequest(ctx, generateReq)
 	}
 

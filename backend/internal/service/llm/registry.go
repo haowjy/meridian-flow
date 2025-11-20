@@ -24,23 +24,21 @@ func NewProviderRegistry(factory *ProviderFactory) *ProviderRegistry {
 	}
 }
 
-// GetProvider returns the provider for the given model string.
-// Parses model to extract provider, creates provider via factory, wraps in adapter.
+// GetProvider returns the provider adapter for the given provider name.
+// Creates provider via factory, wraps in appropriate adapter, and caches for reuse.
 //
 // Examples:
-//   - "claude-haiku-4-5" → parses to "anthropic", creates Anthropic provider
-//   - "lorem-fast" → parses to "lorem", creates Lorem provider (testing)
-//   - "openrouter/anthropic/claude-haiku-4-5" → parses to "openrouter", creates OpenRouter provider
-func (r *ProviderRegistry) GetProvider(model string) (domainllm.LLMProvider, error) {
-	// Parse model to extract provider
-	modelInfo, err := ParseModel(model)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse model string '%s': %w", model, err)
+//   - "anthropic" → creates Anthropic provider, wraps in AnthropicAdapter
+//   - "openrouter" → creates OpenRouter provider, wraps in AnthropicAdapter
+//   - "lorem" → creates Lorem provider, wraps in LoremAdapter
+func (r *ProviderRegistry) GetProvider(provider string) (domainllm.LLMProvider, error) {
+	if provider == "" {
+		return nil, fmt.Errorf("provider cannot be empty")
 	}
 
 	// Fast path: check cache with read lock (optimistic path for cache hits)
 	r.mu.RLock()
-	if cached, exists := r.cache[modelInfo.Provider]; exists {
+	if cached, exists := r.cache[provider]; exists {
 		r.mu.RUnlock()
 		return cached, nil
 	}
@@ -52,19 +50,19 @@ func (r *ProviderRegistry) GetProvider(model string) (domainllm.LLMProvider, err
 
 	// Double-check cache after acquiring write lock
 	// Another goroutine may have created the provider while we waited for the lock
-	if cached, exists := r.cache[modelInfo.Provider]; exists {
+	if cached, exists := r.cache[provider]; exists {
 		return cached, nil
 	}
 
 	// Create provider via factory (still holding write lock)
-	libraryProvider, err := r.factory.GetProvider(modelInfo.Provider)
+	libraryProvider, err := r.factory.GetProvider(provider)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create provider '%s': %w", modelInfo.Provider, err)
+		return nil, fmt.Errorf("failed to create provider '%s': %w", provider, err)
 	}
 
 	// Wrap in appropriate adapter based on provider type
 	var adapter domainllm.LLMProvider
-	switch modelInfo.Provider {
+	switch provider {
 	case "lorem":
 		adapter = adapters.NewLoremAdapterWithProvider(libraryProvider)
 	case "anthropic":
@@ -76,7 +74,7 @@ func (r *ProviderRegistry) GetProvider(model string) (domainllm.LLMProvider, err
 	}
 
 	// Cache for future use (still holding write lock)
-	r.cache[modelInfo.Provider] = adapter
+	r.cache[provider] = adapter
 
 	return adapter, nil
 }
