@@ -15,6 +15,15 @@ The backend provides two complementary endpoints for handling large conversation
 
 This guide explains how to integrate these endpoints with IndexedDB caching and virtual scrolling.
 
+### MVP Simplification (current build)
+
+- For the initial MVP, the chat UI renders a server-driven “current turn + window” without Dexie caching for turns.
+- Use the pagination endpoint exclusively to load:
+  - Initial context window (direction omitted → server defaults)
+  - Older messages (direction=before)
+  - Newer messages (direction=after)
+- Only update `chat.last_viewed_turn_id` when intentionally bookmarking (e.g., switching to a sibling) via `?update_last_viewed=true`.
+
 ## ⚠️ Critical Requirements
 
 **These are REQUIRED, not optional:**
@@ -110,13 +119,22 @@ interface PaginationParams {
 
 ### Response Format
 
+Note: Blocks are nested inside each Turn (no separate `blocks` map).
+
 ```json
 {
-  "turns": [/* Full Turn objects */],
-  "blocks": {  // Blocks grouped by turn_id
-    "turn1_id": [/* blocks */],
-    "turn2_id": [/* blocks */]
-  },
+  "turns": [
+    {
+      "id": "uuid-turn-1",
+      "chat_id": "uuid-chat",
+      "prev_turn_id": null,
+      "role": "user",
+      "status": "complete",
+      "created_at": "2025-01-10T10:00:00Z",
+      "sibling_ids": [],
+      "blocks": [/* turn blocks ordered by sequence */]
+    }
+  ],
   "has_more_before": true,
   "has_more_after": false
 }
@@ -160,12 +178,13 @@ const response = await api.get(`/chats/${chatId}/turns`, {
 
 **Switch Branch:**
 ```typescript
-// When user selects a sibling turn to view
+// When user selects a sibling turn to view, explicitly bookmark position on server
 const response = await api.get(`/chats/${chatId}/turns`, {
   params: {
     from_turn_id: siblingTurnId,
     limit: 100,
-    direction: 'after'
+    direction: 'both',
+    update_last_viewed: true
   }
 });
 ```
@@ -173,7 +192,8 @@ const response = await api.get(`/chats/${chatId}/turns`, {
 **Important:** During active scrolling, ALWAYS provide `from_turn_id` to preserve exact scroll position. Only omit `from_turn_id` on fresh page loads when you want the server to resolve to the conversation end (leaf).
 
 **Why:**
-- **With `from_turn_id`** (Cache Mode): Server stores exact position, can be mid-tree
+- **With `from_turn_id`** (Cache Mode): Server uses exact position, can be mid-tree.
+- To persist a bookmark across tabs/devices, include `update_last_viewed=true` on explicit navigation (e.g., sibling switch).
 - **Without `from_turn_id`** (Leaf Resolution Mode): Server resolves to end of active branch
 - Client should track scroll position per tab and provide explicit `from_turn_id` during active sessions
 

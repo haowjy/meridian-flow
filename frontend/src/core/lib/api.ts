@@ -137,41 +137,64 @@ export async function fetchAPI<T>(
 
 // Shared types and utilities for Turn API
 type TurnBlockDto = {
+  id: string
+  turn_id: string
   block_type: string
+  sequence: number
   text_content?: string | null
   content?: Record<string, unknown> | null
+  created_at: string
 }
 
 type TurnDto = {
   id: string
   chat_id: string
   prev_turn_id?: string | null
-  role: 'user' | 'assistant'
   status: string
-  blocks?: TurnBlockDto[]
+  error?: string | null
+  model?: string | null
+  input_tokens?: number | null
+  output_tokens?: number | null
+  role: 'user' | 'assistant'
   created_at: string
-  updated_at: string
+  completed_at?: string | null
+  blocks?: TurnBlockDto[]
+  sibling_ids?: string[]
 }
 
 /**
  * Converts a backend TurnDto to a frontend Turn model.
- * Extracts text from all text blocks and joins with double newline for paragraph separation.
+ *
+ * Pure data transformation - no presentation logic.
+ * Use extractTextContent() from turnHelpers for UI-specific text extraction.
  */
 function turnDtoToTurn(turn: TurnDto): Turn {
-  const blocks = turn.blocks ?? []
-  const textBlocks = blocks.filter((b) => b.block_type === 'text')
-  // Extract text from all text blocks and join with double newline for paragraph separation
-  // Empty text_content fields become empty strings (treating empty as valid data)
-  const content = textBlocks.length > 0
-    ? textBlocks.map((b) => b.text_content ?? '').join('\n\n')
-    : ''
+  const blocks = (turn.blocks ?? []).map((b): import('@/features/chats/types').TurnBlock => ({
+    id: b.id,
+    turnId: b.turn_id,
+    blockType: b.block_type,
+    sequence: b.sequence,
+    textContent: b.text_content ?? undefined,
+    content: b.content ?? undefined,
+    createdAt: new Date(b.created_at),
+  }))
 
   return {
     id: turn.id,
     chatId: turn.chat_id,
+    prevTurnId: turn.prev_turn_id ?? null,
     role: turn.role,
-    content,
+    status: turn.status,
+    error: turn.error ?? undefined,
+    model: turn.model ?? undefined,
+    inputTokens: turn.input_tokens ?? undefined,
+    outputTokens: turn.output_tokens ?? undefined,
+    // Deprecated: Use extractTextContent(turn) from turnHelpers instead
+    content: '',
     createdAt: new Date(turn.created_at),
+    completedAt: turn.completed_at ? new Date(turn.completed_at) : undefined,
+    blocks,
+    siblingIds: turn.sibling_ids ?? [],
   }
 }
 
@@ -243,10 +266,44 @@ export const api = {
   },
 
   turns: {
+    paginate: async (
+      chatId: string,
+      options?: {
+        fromTurnId?: string
+        direction?: 'before' | 'after' | 'both' | ''
+        limit?: number
+        updateLastViewed?: boolean
+        signal?: AbortSignal
+      }
+    ): Promise<{ turns: Turn[]; hasMoreBefore: boolean; hasMoreAfter: boolean }> => {
+      type PaginatedTurnsDto = {
+        turns: TurnDto[]
+        has_more_before: boolean
+        has_more_after: boolean
+      }
+
+      const params = new URLSearchParams()
+      if (options?.fromTurnId) params.set('from_turn_id', options.fromTurnId)
+      if (options?.limit && options.limit > 0) params.set('limit', String(options.limit))
+      // Allow empty direction to let server apply defaults; only send if provided non-empty
+      if (options?.direction) params.set('direction', options.direction)
+      if (options?.updateLastViewed) params.set('update_last_viewed', String(options.updateLastViewed))
+
+      const query = params.toString()
+      const endpoint = `/api/chats/${chatId}/turns${query ? `?${query}` : ''}`
+
+      const data = await fetchAPI<PaginatedTurnsDto>(endpoint, { signal: options?.signal })
+
+      return {
+        turns: (data.turns ?? []).map(turnDtoToTurn),
+        hasMoreBefore: !!data.has_more_before,
+        hasMoreAfter: !!data.has_more_after,
+      }
+    },
+
     // NOTE: This is a thin adapter on top of the turn-based API.
     // It calls GET /api/chats/:id/turns and maps backend Turn to the frontend Turn type.
     list: async (chatId: string, options?: { signal?: AbortSignal }): Promise<Turn[]> => {
-
       type PaginatedTurnsDto = {
         turns: TurnDto[]
         has_more_before: boolean
@@ -259,7 +316,7 @@ export const api = {
         { signal: options?.signal }
       )
 
-      return data.turns.map(turnDtoToTurn)
+      return (data.turns ?? []).map(turnDtoToTurn)
     },
 
     // Wrapper on top of CreateTurn (POST /api/chats/:id/turns).
@@ -267,41 +324,56 @@ export const api = {
     send: async (
       chatId: string,
       content: string,
-      options?: { signal?: AbortSignal }
+      options?: { prevTurnId?: string | null; signal?: AbortSignal }
     ): Promise<{ userTurn: Turn; assistantTurn: Turn }> => {
-      type CreateTurnResponseDto = {
-        user_turn: TurnDto
-        assistant_turn: TurnDto
-        stream_url: string
-      }
-
-      const body = {
-        role: 'user',
-        prev_turn_id: null,
-        turn_blocks: [
-          {
-            block_type: 'text',
-            text_content: content,
-            // For text blocks, content is null by schema.
-            content: null as Record<string, unknown> | null,
-          },
-        ],
-        request_params: {},
-      }
-
-      const data = await fetchAPI<CreateTurnResponseDto>(
+      const response = await fetchAPI<{ user_turn: TurnDto; assistant_turn: TurnDto }>(
         `/api/chats/${chatId}/turns`,
         {
           method: 'POST',
-          body: JSON.stringify(body),
+          body: JSON.stringify({
+            role: 'user',
+            turn_blocks: [
+              {
+                block_type: 'text',
+                text_content: content,
+                content: null,
+              },
+            ],
+            prev_turn_id: options?.prevTurnId ?? null,
+            request_params: {},
+          }),
           signal: options?.signal,
         }
       )
-
       return {
-        userTurn: turnDtoToTurn(data.user_turn),
-        assistantTurn: turnDtoToTurn(data.assistant_turn),
+        userTurn: turnDtoToTurn(response.user_turn),
+        assistantTurn: turnDtoToTurn(response.assistant_turn),
       }
+    },
+
+    getBranch: async (chatId: string, turnId: string, options?: { signal?: AbortSignal }): Promise<Turn[]> => {
+      const data = await fetchAPI<TurnDto[]>(`/api/turns/${turnId}/path`, {
+        signal: options?.signal,
+      })
+      return (data ?? []).map(turnDtoToTurn)
+    },
+
+    getSiblings: async (turnId: string, options?: { signal?: AbortSignal }): Promise<string[]> => {
+      const data = await fetchAPI<TurnDto[]>(`/api/turns/${turnId}/siblings`, {
+        signal: options?.signal,
+      })
+      return (data ?? []).map((t) => t.id)
+    },
+
+    getContinuation: async (chatId: string, fromTurnId: string, options?: { signal?: AbortSignal }): Promise<Turn[]> => {
+      type PaginatedTurnsDto = {
+        turns: TurnDto[]
+      }
+      const data = await fetchAPI<PaginatedTurnsDto>(
+        `/api/chats/${chatId}/turns?from_turn_id=${fromTurnId}&limit=100&direction=after`,
+        { signal: options?.signal }
+      )
+      return (data.turns ?? []).map(turnDtoToTurn)
     },
   },
 

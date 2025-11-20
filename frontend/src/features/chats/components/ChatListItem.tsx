@@ -25,7 +25,7 @@ export function ChatListItem({ chat, isActive, isDisabled, onClick }: ChatListIt
       onClick={onClick}
       disabled={isDisabled}
       className={cn(
-        'chat-list-item group flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors',
+        'chat-list-item group flex w-full items-center gap-2 rounded px-3 py-1.5 text-left text-sm transition-colors',
         'hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground',
         isActive && 'chat-list-item--active bg-sidebar-accent text-sidebar-accent-foreground',
         isDisabled && 'opacity-60'

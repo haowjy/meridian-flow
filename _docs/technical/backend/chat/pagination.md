@@ -820,8 +820,10 @@ if fromTurnID == nil {
     startTurnID = &leaf
 }
 
-// Update server cache
-updateLastViewedTurnID(startTurnID)
+// Update server cache ONLY when client requests it via ?update_last_viewed=true
+if updateLastViewed {
+    updateLastViewedTurnID(startTurnID)
+}
 
 // Lines 880-890: Default direction
 if direction == "" {

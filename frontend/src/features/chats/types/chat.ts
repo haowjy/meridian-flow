@@ -6,11 +6,31 @@ export interface Chat {
   updatedAt: Date
 }
 
+export interface TurnBlock {
+  id: string
+  turnId: string
+  blockType: string
+  sequence: number
+  textContent?: string
+  content?: Record<string, unknown>
+  createdAt: Date
+}
+
 export interface Turn {
   id: string
   chatId: string
+  prevTurnId: string | null
   role: 'user' | 'assistant'
-  content: string
+  status: string
+  error?: string | null
+  model?: string | null
+  inputTokens?: number | null
+  outputTokens?: number | null
   createdAt: Date
-  lastAccessedAt?: Date // For cache eviction (future feature)
+  completedAt?: Date | null
+  siblingIds: string[]
+  blocks: TurnBlock[]
+  // Convenience: derived plain-text content from text blocks (legacy UI expects this)
+  content: string
+  lastAccessedAt?: Date
 }

@@ -219,6 +219,51 @@ export class NetworkFirstPolicy<T> implements LoadPolicy<T> {
   }
 }
 
+/**
+ * StaleWhileRevalidatePolicy
+ * - Emit cache immediately if present (via onIntermediate)
+ * - Always attempt server
+ * - Always update cache with server data (Server is source of truth)
+ * - Return server data
+ * - On abort/network error: return cache if available, else throw
+ */
+export class StaleWhileRevalidatePolicy<T> implements LoadPolicy<T> {
+  async run({ cacheRepo, remoteRepo, onIntermediate, signal }: LoadPolicyArgs<T>): Promise<LoadResult<T>> {
+    const cachePromise = cacheRepo.get()
+    const remotePromise = remoteRepo.fetch(signal)
+
+    let cached: T | undefined
+
+    try {
+      cached = await cachePromise
+      if (cached) {
+        onIntermediate?.({ data: cached, source: 'cache', isFinal: false })
+      }
+    } catch {
+      // cache read failure → ignore, rely on server
+    }
+
+    try {
+      const server = await remotePromise
+      await cacheRepo.put(server)
+      return { data: server, source: 'server', isFinal: true }
+    } catch (err: any) {
+      // Abort: if we emitted cache, use it; else rethrow
+      if (err?.name === 'AbortError') {
+        if (cached) {
+          return { data: cached, source: 'cache', isFinal: true }
+        }
+        throw err
+      }
+      // Network failure: fallback to cache if we have it
+      if (cached) {
+        return { data: cached, source: 'cache', isFinal: true }
+      }
+      throw err
+    }
+  }
+}
+
 export async function loadWithPolicy<T>(policy: LoadPolicy<T>, args: LoadPolicyArgs<T>): Promise<LoadResult<T>> {
   return policy.run(args)
 }

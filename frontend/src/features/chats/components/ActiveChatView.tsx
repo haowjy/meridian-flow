@@ -58,14 +58,14 @@ export function ActiveChatView() {
     <div className="chat-main">
       <ChatHeader chat={activeChat} projectName={projectName} />
       <div className="chat-main-body">
-        {/* Simple loading state for now; can be replaced with skeletons later */}
-        {isLoading ? (
-          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-            Loading conversation…
-          </div>
-        ) : (
+        <div className="relative h-full">
+          {isLoading && (
+            <div className="absolute inset-x-0 top-2 z-10 mx-auto w-max rounded border bg-popover px-2 py-1 text-xs text-popover-foreground">
+              Loading…
+            </div>
+          )}
           <TurnList turns={turns} />
-        )}
+        </div>
       </div>
       <TurnInput chatId={activeChat.id} />
     </div>

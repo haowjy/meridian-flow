@@ -56,6 +56,7 @@ export function PanelLayout({
         <ResizablePanel
           ref={leftRef}
           className="workspace-panel-left"
+          style={{ minWidth: '250px' }}
           collapsible
           collapsedSize={0}
           minSize={12}
