@@ -252,7 +252,7 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
 
           {/* Editor Content */}
           <div className="flex-1 overflow-auto relative">
-            <EditorContent editor={editor} />
+            <EditorContent editor={editor} className="min-h-full flex flex-col" />
           </div>
         </>
       )}

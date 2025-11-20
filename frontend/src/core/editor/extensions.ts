@@ -5,6 +5,7 @@ import CharacterCount from '@tiptap/extension-character-count'
 import Placeholder from '@tiptap/extension-placeholder'
 import { Markdown } from '@tiptap/markdown'
 import { MarkdownClipboard } from './MarkdownClipboard'
+import { ClickHandler } from './extensions/ClickHandler'
 
 /**
  * Get TipTap editor extensions configuration.
@@ -29,5 +30,6 @@ export function getExtensions() {
     Placeholder.configure({
       placeholder: 'Start writing...',
     }),
+    ClickHandler,
   ]
 }

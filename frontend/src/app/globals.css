@@ -124,24 +124,34 @@
   /* === Base Palette === */
 
   /* Jade - Primary (CORRECTED: Jade 900 is PRIMARY, not Jade 300!) */
-  --jade-900: oklch(0.54 0.08 175); /* #2F7F72 - PRIMARY jade for icons, buttons */
-  --jade-300: oklch(0.76 0.04 165); /* #A9BDB5 - MUTED for sidebar background only */
-  --jade-hover: oklch(0.79 0.03 165); /* #BCD1CA - hover wash */
+  --jade-900: oklch(0.54 0.08 175);
+  /* #2F7F72 - PRIMARY jade for icons, buttons */
+  --jade-300: oklch(0.76 0.04 165);
+  /* #A9BDB5 - MUTED for sidebar background only */
+  --jade-hover: oklch(0.79 0.03 165);
+  /* #BCD1CA - hover wash */
 
   /* Gold - Accent */
-  --gold-500: oklch(0.78 0.18 85); /* #F4B41A */
+  --gold-500: oklch(0.78 0.18 85);
+  /* #F4B41A */
 
   /* Parchment - Surfaces */
-  --parchment-50: oklch(0.97 0.01 75); /* #F7F3EB - app background */
-  --parchment-0: oklch(1 0 0); /* #FFFFFF - pure white for cards/bubbles */
-  --neutral-100: oklch(0.95 0.005 70); /* #F2EFE8 - subtle fills */
+  --parchment-50: oklch(0.97 0.01 75);
+  /* #F7F3EB - app background */
+  --parchment-0: oklch(1 0 0);
+  /* #FFFFFF - pure white for cards/bubbles */
+  --neutral-100: oklch(0.95 0.005 70);
+  /* #F2EFE8 - subtle fills */
 
   /* Ink - Text */
-  --ink-900: oklch(0.20 0.02 50); /* #1C1A18 */
-  --ink-muted: oklch(0.50 0.02 50); /* #8A7F6C - timestamps */
+  --ink-900: oklch(0.20 0.02 50);
+  /* #1C1A18 */
+  --ink-muted: oklch(0.50 0.02 50);
+  /* #8A7F6C - timestamps */
 
   /* Lines - Borders */
-  --line-200: oklch(0.88 0.01 70); /* #DDD6C8 */
+  --line-200: oklch(0.88 0.01 70);
+  /* #DDD6C8 */
 
   /* === Semantic Assignments === */
 
@@ -151,25 +161,31 @@
 
   /* Primary = DARK JADE (Jade 900), not light jade! */
   --jade-primary: var(--jade-900);
-  --jade-foreground: oklch(1 0 0); /* white text on dark jade */
+  --jade-foreground: oklch(1 0 0);
+  /* white text on dark jade */
 
   /* Accent = Gold */
   --gold: var(--gold-500);
   --gold-foreground: var(--ink-900);
 
   /* Interactive States */
-  --hover: oklch(0.79 0.03 165 / var(--opacity-hover)); /* jade wash at 8% */
+  --hover: oklch(0.79 0.03 165 / var(--opacity-hover));
+  /* jade wash at 8% */
   --active: var(--jade-900);
-  --disabled: oklch(0.60 0.01 50); /* #9A958A */
+  --disabled: oklch(0.60 0.01 50);
+  /* #9A958A */
 
   /* Borders & Inputs */
   --border: var(--line-200);
   --input-border: var(--line-200);
 
   /* Focus Rings - Layered: jade outline + inner gold */
-  --focus-ring-outer: oklch(0.54 0.08 175 / var(--focus-outer-opacity)); /* jade at 28% */
-  --focus-ring-inner: oklch(0.78 0.18 85 / var(--focus-inner-opacity)); /* gold at 12% */
-  --focus-ring: var(--focus-ring-outer); /* for simple references */
+  --focus-ring-outer: oklch(0.54 0.08 175 / var(--focus-outer-opacity));
+  /* jade at 28% */
+  --focus-ring-inner: oklch(0.78 0.18 85 / var(--focus-inner-opacity));
+  /* gold at 12% */
+  --focus-ring: var(--focus-ring-outer);
+  /* for simple references */
 
   /* Cards & Popovers - PURE WHITE, not parchment! */
   --card: var(--parchment-0);
@@ -182,15 +198,20 @@
   --muted-foreground: var(--ink-muted);
 
   /* Semantic Feedback */
-  --success: var(--jade-900); /* jade for success */
+  --success: var(--jade-900);
+  /* jade for success */
   --success-foreground: oklch(1 0 0);
-  --success-wash: oklch(0.94 0.03 165); /* #EBF5F2 */
+  --success-wash: oklch(0.94 0.03 165);
+  /* #EBF5F2 */
 
-  --warning: oklch(0.75 0.12 65); /* #EBA868 amber-clay */
+  --warning: oklch(0.75 0.12 65);
+  /* #EBA868 amber-clay */
   --warning-foreground: var(--ink-900);
-  --warning-wash: oklch(0.98 0.02 65); /* #FDF3E6 */
+  --warning-wash: oklch(0.98 0.02 65);
+  /* #FDF3E6 */
 
-  --error: oklch(0.75 0.12 65); /* same as warning */
+  --error: oklch(0.75 0.12 65);
+  /* same as warning */
   --error-foreground: var(--ink-900);
 
   --info: var(--jade-900);
@@ -198,12 +219,17 @@
   --info-wash: var(--success-wash);
 
   /* Sidebar - LIGHT JADE background, DARK JADE icons */
-  --sidebar: var(--jade-300); /* light jade for bg */
-  --sidebar-foreground: var(--parchment-50); /* parchment text */
-  --sidebar-icon: var(--jade-900); /* DARK JADE for icons! */
-  --sidebar-primary: var(--gold-500); /* gold active marker */
+  --sidebar: var(--jade-300);
+  /* light jade for bg */
+  --sidebar-foreground: var(--parchment-50);
+  /* parchment text */
+  --sidebar-icon: var(--jade-900);
+  /* DARK JADE for icons! */
+  --sidebar-primary: var(--gold-500);
+  /* gold active marker */
   --sidebar-primary-foreground: var(--ink-900);
-  --sidebar-accent: var(--jade-hover); /* hover wash */
+  --sidebar-accent: var(--jade-hover);
+  /* hover wash */
   --sidebar-accent-foreground: var(--sidebar-foreground);
   --sidebar-border: var(--jade-900);
   --sidebar-ring: var(--gold-500);
@@ -222,7 +248,8 @@
     rgba(28, 26, 24, 0.10) 0px 12px 32px;
 
   /* Selection & Highlights */
-  --selection-bg: oklch(0.78 0.18 85 / 0.3); /* gold at 30% */
+  --selection-bg: oklch(0.78 0.18 85 / 0.3);
+  /* gold at 30% */
   --selection-fg: var(--ink-900);
 }
 
@@ -234,26 +261,36 @@
   /* === Base Palette === */
 
   /* Dark Jade */
-  --jade-black: oklch(0.22 0.02 165); /* #1B2421 - base */
-  --jade-800: oklch(0.24 0.01 165); /* #202622 - surfaces */
-  --slate-700: oklch(0.26 0.01 165); /* #242A27 - alt surface for bubbles */
-  --jade-hover-dark: oklch(0.27 0.02 165); /* #25302C - hover wash */
+  --jade-black: oklch(0.22 0.02 165);
+  /* #1B2421 - base */
+  --jade-800: oklch(0.24 0.01 165);
+  /* #202622 - surfaces */
+  --slate-700: oklch(0.26 0.01 165);
+  /* #242A27 - alt surface for bubbles */
+  --jade-hover-dark: oklch(0.27 0.02 165);
+  /* #25302C - hover wash */
 
   /* Glow Jade - SPECIAL ACCENT for dark mode! */
-  --glow-jade: oklch(0.72 0.14 180); /* #3CC8B4 - cyan-jade for focus/AI rims */
+  --glow-jade: oklch(0.72 0.14 180);
+  /* #3CC8B4 - cyan-jade for focus/AI rims */
 
   /* Jade Tint for UI */
-  --jade-tint: oklch(0.78 0.06 170); /* #B7D4CC - jade tint for secondary buttons */
+  --jade-tint: oklch(0.78 0.06 170);
+  /* #B7D4CC - jade tint for secondary buttons */
 
   /* Warm Gold */
-  --gold-warm-400: oklch(0.78 0.10 85); /* #E3C169 */
+  --gold-warm-400: oklch(0.78 0.10 85);
+  /* #E3C169 */
 
   /* Light Ink */
-  --ink-50: oklch(0.93 0.005 50); /* #EAEAE7 */
-  --ink-muted-dark: oklch(0.72 0.01 50); /* #B6B0A2 - timestamps */
+  --ink-50: oklch(0.93 0.005 50);
+  /* #EAEAE7 */
+  --ink-muted-dark: oklch(0.72 0.01 50);
+  /* #B6B0A2 - timestamps */
 
   /* Lines */
-  --line-800: oklch(0.32 0.02 165); /* #2E332F */
+  --line-800: oklch(0.32 0.02 165);
+  /* #2E332F */
 
   /* === Semantic Assignments === */
 
@@ -262,7 +299,8 @@
   --foreground: var(--ink-50);
 
   /* Primary = Keep dark jade */
-  --jade-primary: var(--jade-900); /* still use the same dark jade */
+  --jade-primary: var(--jade-900);
+  /* still use the same dark jade */
   --jade-foreground: var(--ink-50);
 
   /* Accent = Warm Gold */
@@ -270,17 +308,21 @@
   --gold-foreground: var(--jade-black);
 
   /* Interactive States */
-  --hover: oklch(0.27 0.02 165 / var(--opacity-hover)); /* jade wash at 8% */
+  --hover: oklch(0.27 0.02 165 / var(--opacity-hover));
+  /* jade wash at 8% */
   --active: var(--jade-900);
-  --disabled: oklch(0.50 0.01 50); /* #7E857F */
+  --disabled: oklch(0.50 0.01 50);
+  /* #7E857F */
 
   /* Borders & Inputs */
   --border: var(--line-800);
   --input-border: var(--line-800);
 
   /* Focus Rings - Layered: GLOW JADE outline + inner gold */
-  --focus-ring-outer: oklch(0.72 0.14 180 / 0.22); /* glow jade at 22% */
-  --focus-ring-inner: oklch(0.78 0.10 85 / 0.10); /* gold at 10% */
+  --focus-ring-outer: oklch(0.72 0.14 180 / 0.22);
+  /* glow jade at 22% */
+  --focus-ring-inner: oklch(0.78 0.10 85 / 0.10);
+  /* gold at 10% */
   --focus-ring: var(--focus-ring-outer);
 
   /* Cards & Popovers - Alt surface (Slate 700) */
@@ -294,13 +336,17 @@
   --muted-foreground: var(--ink-muted-dark);
 
   /* Semantic Feedback */
-  --success: var(--glow-jade); /* glow jade for success in dark mode */
+  --success: var(--glow-jade);
+  /* glow jade for success in dark mode */
   --success-foreground: var(--ink-50);
-  --success-wash: oklch(0.24 0.02 165); /* #1E2724 */
+  --success-wash: oklch(0.24 0.02 165);
+  /* #1E2724 */
 
-  --warning: oklch(0.72 0.14 55); /* #E0A15F amber */
+  --warning: oklch(0.72 0.14 55);
+  /* #E0A15F amber */
   --warning-foreground: var(--jade-black);
-  --warning-wash: oklch(0.22 0.02 60); /* #2A2620 */
+  --warning-wash: oklch(0.22 0.02 60);
+  /* #2A2620 */
 
   --error: oklch(0.72 0.14 55);
   --error-foreground: var(--jade-black);
@@ -334,7 +380,8 @@
     rgba(60, 200, 180, 0.12) 0px 0px 24px;
 
   /* Selection & Highlights */
-  --selection-bg: oklch(0.78 0.10 85 / 0.4); /* gold at 40% */
+  --selection-bg: oklch(0.78 0.10 85 / 0.4);
+  /* gold at 40% */
   --selection-fg: var(--ink-50);
 }
 
@@ -567,13 +614,13 @@ body.preload * {
 
   /* Editor wrapper */
   .tiptap {
-    @apply min-h-screen px-8 py-0 focus:outline-none bg-background;
+    @apply flex-1 h-full px-8 outline-none;
     font-family: var(--font-serif);
   }
 
   /* ProseMirror editor content */
   .ProseMirror {
-    @apply min-h-[40vh] outline-none cursor-text;
+    @apply flex-1 h-full outline-none cursor-text;
     font-family: var(--font-serif);
   }
 
@@ -583,7 +630,8 @@ body.preload * {
     @apply mb-4 leading-relaxed;
     font-size: 16px;
     line-height: 1.6;
-    min-width: 1px;  /* Prevent collapse, ensure cursor visibility */
+    min-width: 1px;
+    /* Prevent collapse, ensure cursor visibility */
   }
 
   .ProseMirror h1 {
@@ -756,7 +804,8 @@ body.preload * {
   /* Document tree connectors */
   .tree-children {
     position: relative;
-    margin-left: 0.75rem; /* 12px */
+    margin-left: 0.75rem;
+    /* 12px */
     padding-left: 0.75rem;
   }
 
