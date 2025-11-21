@@ -9,9 +9,11 @@ import (
 	docsysModels "meridian/internal/domain/models/docsystem"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	llmRepo "meridian/internal/domain/repositories/llm"
+	llmSvc "meridian/internal/domain/services/llm"
 )
 
 // systemPromptResolver builds the final system prompt from project, chat, and skills
+// Implements llmSvc.SystemPromptResolver interface
 type systemPromptResolver struct {
 	projectRepo  docsysRepo.ProjectRepository
 	chatRepo     llmRepo.ChatRepository
@@ -25,7 +27,7 @@ func NewSystemPromptResolver(
 	chatRepo llmRepo.ChatRepository,
 	documentRepo docsysRepo.DocumentRepository,
 	logger *slog.Logger,
-) *systemPromptResolver {
+) llmSvc.SystemPromptResolver {
 	return &systemPromptResolver{
 		projectRepo:  projectRepo,
 		chatRepo:     chatRepo,

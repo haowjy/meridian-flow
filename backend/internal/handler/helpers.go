@@ -8,10 +8,18 @@ import (
 	"meridian/internal/httputil"
 )
 
-// handleError converts domain errors to HTTP responses
+// handleError converts domain errors to HTTP responses.
+// Uses HTTPError interface for extensible error handling (OCP compliance).
+// New error types can be added by implementing HTTPError interface without modifying this function.
 func handleError(w http.ResponseWriter, err error) {
-	var conflictErr *domain.ConflictError
+	// Try to use HTTPError interface (supports new error types without modification)
+	var httpErr domain.HTTPError
+	if errors.As(err, &httpErr) {
+		httputil.RespondError(w, httpErr.StatusCode(), httpErr.Error())
+		return
+	}
 
+	// Fallback: Check sentinel errors for backwards compatibility
 	switch {
 	case errors.Is(err, domain.ErrValidation):
 		httputil.RespondError(w, http.StatusBadRequest, err.Error())
@@ -21,8 +29,6 @@ func handleError(w http.ResponseWriter, err error) {
 		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
 	case errors.Is(err, domain.ErrForbidden):
 		httputil.RespondError(w, http.StatusForbidden, err.Error())
-	case errors.As(err, &conflictErr):
-		httputil.RespondError(w, http.StatusConflict, conflictErr.Error())
 	default:
 		httputil.RespondError(w, http.StatusInternalServerError, "internal server error")
 	}

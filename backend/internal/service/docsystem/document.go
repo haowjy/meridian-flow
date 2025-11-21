@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 	"time"
 
@@ -14,8 +13,6 @@ import (
 	"meridian/internal/domain/repositories"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	docsysSvc "meridian/internal/domain/services/docsystem"
-
-	validation "github.com/go-ozzo/ozzo-validation/v4"
 )
 
 // documentService implements the DocumentService interface
@@ -241,34 +238,6 @@ func (s *documentService) DeleteDocument(ctx context.Context, id, projectID stri
 	)
 
 	return nil
-}
-
-// validateCreateRequest validates a document creation request
-func (s *documentService) validateCreateRequest(req *docsysSvc.CreateDocumentRequest) error {
-	// Require at least one of FolderPath or FolderID
-	if req.FolderPath == nil && req.FolderID == nil {
-		return fmt.Errorf("either folder_path or folder_id must be provided")
-	}
-
-	// Validate folder path if provided
-	if req.FolderPath != nil {
-		if err := s.pathResolver.ValidateFolderPath(*req.FolderPath); err != nil {
-			return err
-		}
-	}
-
-	return validation.ValidateStruct(req,
-		validation.Field(&req.ProjectID, validation.Required),
-		validation.Field(&req.FolderPath,
-			validation.Length(0, config.MaxDocumentPathLength), // 0-length allowed for root level
-		),
-		validation.Field(&req.Name,
-			validation.Required,
-			validation.Length(1, config.MaxDocumentNameLength),
-			validation.Match(regexp.MustCompile(`^[^/]+$`)).Error("document name cannot contain slashes"),
-		),
-		validation.Field(&req.Content, validation.Required),
-	)
 }
 
 // SearchDocuments performs full-text search across documents with path computation

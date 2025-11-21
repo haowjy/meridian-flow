@@ -90,3 +90,23 @@ func (s *Service) GetPaginatedTurns(ctx context.Context, chatID, userID string, 
 
 	return response, nil
 }
+
+// GetTurnWithBlocks retrieves a turn's metadata and all its content blocks
+func (s *Service) GetTurnWithBlocks(ctx context.Context, turnID string) (*llmModels.Turn, error) {
+	// Get turn metadata (status, error, etc.)
+	turn, err := s.turnReader.GetTurn(ctx, turnID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get blocks for this turn
+	blocks, err := s.turnReader.GetTurnBlocks(ctx, turnID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Attach blocks to turn
+	turn.Blocks = blocks
+
+	return turn, nil
+}

@@ -21,12 +21,16 @@ import (
 // Returns a configured ProviderRegistry or an error if setup fails.
 func SetupProviders(cfg *config.Config, logger *slog.Logger) (*ProviderRegistry, error) {
 	// Create provider factory with config (manages API keys, creates providers)
-	factory := NewProviderFactory(cfg)
+	providerFactory := NewProviderFactory(cfg)
 
-	// Create registry with factory (handles model parsing and provider routing)
-	registry := NewProviderRegistry(factory)
+	// Create adapter factory (maps provider names to adapter constructors)
+	// Enables adding new providers without modifying existing code (OCP compliance)
+	adapterFactory := NewDefaultAdapterFactory()
 
-	// Validate factory is configured
+	// Create registry with both factories (DIP compliance - depends on abstractions)
+	registry := NewProviderRegistry(providerFactory, adapterFactory)
+
+	// Validate factories are configured
 	if err := registry.Validate(); err != nil {
 		return nil, fmt.Errorf("provider registry validation failed: %w", err)
 	}
@@ -108,8 +112,11 @@ func SetupServices(
 
 	// Create streaming service (turn creation/orchestration)
 	// Tools are created per-request with project-specific context
+	// Uses minimal interfaces (ISP compliance)
 	streamingService := streaming.NewService(
-		turnRepo,
+		turnRepo, // TurnWriter
+		turnRepo, // TurnReader
+		turnRepo, // TurnNavigator (same repo implements all three)
 		chatRepo,
 		documentRepo,
 		folderRepo,

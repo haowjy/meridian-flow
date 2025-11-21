@@ -31,8 +31,11 @@ type LLMProviderGetter interface {
 
 // Service implements the StreamingService interface
 // Handles turn creation and streaming orchestration
+// Uses minimal interfaces (ISP compliance): TurnWriter for creating turns, TurnReader for reading blocks
 type Service struct {
-	turnRepo             llmRepo.TurnRepository
+	turnWriter           llmRepo.TurnWriter
+	turnReader           llmRepo.TurnReader
+	turnNavigator        llmRepo.TurnNavigator
 	chatRepo             llmRepo.ChatRepository
 	documentRepo         docsysRepo.DocumentRepository
 	folderRepo           docsysRepo.FolderRepository
@@ -41,18 +44,15 @@ type Service struct {
 	registry             *mstream.Registry
 	config               *config.Config
 	txManager            repositories.TransactionManager
-	systemPromptResolver SystemPromptResolver
+	systemPromptResolver llmSvc.SystemPromptResolver
 	logger               *slog.Logger
-}
-
-// SystemPromptResolver resolves system prompts from project, chat, and skills
-type SystemPromptResolver interface {
-	Resolve(ctx context.Context, chatID string, userID string, userSystem *string, selectedSkills []string) (*string, error)
 }
 
 // NewService creates a new streaming service
 func NewService(
-	turnRepo             llmRepo.TurnRepository,
+	turnWriter           llmRepo.TurnWriter,
+	turnReader           llmRepo.TurnReader,
+	turnNavigator        llmRepo.TurnNavigator,
 	chatRepo             llmRepo.ChatRepository,
 	documentRepo         docsysRepo.DocumentRepository,
 	folderRepo           docsysRepo.FolderRepository,
@@ -61,11 +61,13 @@ func NewService(
 	registry             *mstream.Registry,
 	cfg                  *config.Config,
 	txManager            repositories.TransactionManager,
-	systemPromptResolver SystemPromptResolver,
+	systemPromptResolver llmSvc.SystemPromptResolver,
 	logger               *slog.Logger,
 ) llmSvc.StreamingService {
 	return &Service{
-		turnRepo:             turnRepo,
+		turnWriter:           turnWriter,
+		turnReader:           turnReader,
+		turnNavigator:        turnNavigator,
 		chatRepo:             chatRepo,
 		documentRepo:         documentRepo,
 		folderRepo:           folderRepo,
@@ -161,7 +163,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 			CreatedAt:  now,
 		}
 
-		if err := s.turnRepo.CreateTurn(txCtx, turn); err != nil {
+		if err := s.turnWriter.CreateTurn(txCtx, turn); err != nil {
 			return err
 		}
 
@@ -179,7 +181,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 				}
 			}
 
-			if err := s.turnRepo.CreateTurnBlocks(txCtx, blocks); err != nil {
+			if err := s.turnWriter.CreateTurnBlocks(txCtx, blocks); err != nil {
 				return err
 			}
 
@@ -198,7 +200,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 			CreatedAt:     time.Now(),
 		}
 
-		if err := s.turnRepo.CreateTurn(txCtx, assistantTurn); err != nil {
+		if err := s.turnWriter.CreateTurn(txCtx, assistantTurn); err != nil {
 			return fmt.Errorf("failed to create assistant turn: %w", err)
 		}
 
@@ -233,7 +235,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 			"user_id", req.UserID,
 		)
 		// Update turn to error status
-		if updateErr := s.turnRepo.UpdateTurnError(ctx, assistantTurn.ID, fmt.Sprintf("failed to get chat: %v", err)); updateErr != nil {
+		if updateErr := s.turnWriter.UpdateTurnError(ctx, assistantTurn.ID, fmt.Sprintf("failed to get chat: %v", err)); updateErr != nil {
 			s.logger.Error("failed to update turn error", "error", updateErr)
 		}
 		return nil, fmt.Errorf("failed to get chat for tools: %w", err)
@@ -259,7 +261,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 			"assistant_turn_id", assistantTurn.ID,
 		)
 		// Update turn to error status
-		if updateErr := s.turnRepo.UpdateTurnError(ctx, assistantTurn.ID, fmt.Sprintf("failed to get provider: %v", err)); updateErr != nil {
+		if updateErr := s.turnWriter.UpdateTurnError(ctx, assistantTurn.ID, fmt.Sprintf("failed to get provider: %v", err)); updateErr != nil {
 			s.logger.Error("failed to update turn error", "error", updateErr)
 		}
 		return nil, fmt.Errorf("failed to get provider '%s': %w", provider, err)
@@ -269,13 +271,13 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	// This ensures SSE clients can connect while we're preparing the request
 	executor := NewStreamExecutor(
 		assistantTurn.ID,
-		model,         // Pure model name (no provider prefix)
-		s.turnRepo,    // TurnWriter
-		s.turnRepo,    // TurnReader (same repo implements both)
-		llmProvider,   // Provider adapter
-		toolRegistry,  // Per-request ToolRegistry with project-specific tools
+		model,           // Pure model name (no provider prefix)
+		s.turnWriter,    // TurnWriter
+		s.turnReader,    // TurnReader
+		llmProvider,     // Provider adapter
+		toolRegistry,    // Per-request ToolRegistry with project-specific tools
 		s.logger,
-		s.config.Debug, // Pass DEBUG flag for optional event IDs
+		s.config.Debug,  // Pass DEBUG flag for optional event IDs
 	)
 
 	// Register stream in registry IMMEDIATELY
@@ -311,13 +313,13 @@ func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, 
 	)
 
 	// Get conversation history (turn path)
-	path, err := s.turnRepo.GetTurnPath(ctx, userTurnID)
+	path, err := s.turnNavigator.GetTurnPath(ctx, userTurnID)
 	if err != nil {
 		s.logger.Error("failed to get turn path for streaming",
 			"error", err,
 			"user_turn_id", userTurnID,
 		)
-		if updateErr := s.turnRepo.UpdateTurnError(ctx, assistantTurnID, fmt.Sprintf("failed to get turn path: %v", err)); updateErr != nil {
+		if updateErr := s.turnWriter.UpdateTurnError(ctx, assistantTurnID, fmt.Sprintf("failed to get turn path: %v", err)); updateErr != nil {
 			s.logger.Error("failed to update turn error", "error", updateErr)
 		}
 		return
@@ -325,13 +327,13 @@ func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, 
 
 	// Load content blocks for all turns in the path
 	for i := range path {
-		blocks, err := s.turnRepo.GetTurnBlocks(ctx, path[i].ID)
+		blocks, err := s.turnReader.GetTurnBlocks(ctx, path[i].ID)
 		if err != nil {
 			s.logger.Error("failed to get content blocks",
 				"error", err,
 				"turn_id", path[i].ID,
 			)
-			if updateErr := s.turnRepo.UpdateTurnError(ctx, assistantTurnID, fmt.Sprintf("failed to get content blocks: %v", err)); updateErr != nil {
+			if updateErr := s.turnWriter.UpdateTurnError(ctx, assistantTurnID, fmt.Sprintf("failed to get content blocks: %v", err)); updateErr != nil {
 				s.logger.Error("failed to update turn error", "error", updateErr)
 			}
 			return
@@ -345,7 +347,7 @@ func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, 
 		s.logger.Error("failed to build messages for streaming",
 			"error", err,
 		)
-		if updateErr := s.turnRepo.UpdateTurnError(ctx, assistantTurnID, fmt.Sprintf("failed to build messages: %v", err)); updateErr != nil {
+		if updateErr := s.turnWriter.UpdateTurnError(ctx, assistantTurnID, fmt.Sprintf("failed to build messages: %v", err)); updateErr != nil {
 			s.logger.Error("failed to update turn error", "error", updateErr)
 		}
 		return
@@ -444,7 +446,7 @@ func (s *Service) CreateAssistantTurnDebug(
 
 	// Validate prev turn exists if provided
 	if prevTurnID != nil {
-		_, err := s.turnRepo.GetTurn(ctx, *prevTurnID)
+		_, err := s.turnReader.GetTurn(ctx, *prevTurnID)
 		if err != nil {
 			return nil, err
 		}
@@ -461,7 +463,7 @@ func (s *Service) CreateAssistantTurnDebug(
 		CreatedAt:  now,
 	}
 
-	if err := s.turnRepo.CreateTurn(ctx, turn); err != nil {
+	if err := s.turnWriter.CreateTurn(ctx, turn); err != nil {
 		return nil, err
 	}
 
@@ -479,7 +481,7 @@ func (s *Service) CreateAssistantTurnDebug(
 			}
 		}
 
-		if err := s.turnRepo.CreateTurnBlocks(ctx, blocks); err != nil {
+		if err := s.turnWriter.CreateTurnBlocks(ctx, blocks); err != nil {
 			return nil, err
 		}
 

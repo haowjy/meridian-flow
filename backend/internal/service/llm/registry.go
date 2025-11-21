@@ -5,22 +5,24 @@ import (
 	"sync"
 
 	domainllm "meridian/internal/domain/services/llm"
-	"meridian/internal/service/llm/adapters"
 )
 
 // ProviderRegistry manages LLM providers and routes model requests to the appropriate provider.
 // Uses ModelParser to extract provider from model string, then ProviderFactory to create instances.
+// Follows Dependency Inversion Principle (DIP) by depending on AdapterFactory abstraction.
 type ProviderRegistry struct {
-	factory   *ProviderFactory
-	cache     map[string]domainllm.LLMProvider // Cache provider instances
-	mu        sync.RWMutex
+	providerFactory *ProviderFactory
+	adapterFactory  AdapterFactory
+	cache           map[string]domainllm.LLMProvider // Cache provider instances
+	mu              sync.RWMutex
 }
 
 // NewProviderRegistry creates a new provider registry.
-func NewProviderRegistry(factory *ProviderFactory) *ProviderRegistry {
+func NewProviderRegistry(providerFactory *ProviderFactory, adapterFactory AdapterFactory) *ProviderRegistry {
 	return &ProviderRegistry{
-		factory: factory,
-		cache:   make(map[string]domainllm.LLMProvider),
+		providerFactory: providerFactory,
+		adapterFactory:  adapterFactory,
+		cache:           make(map[string]domainllm.LLMProvider),
 	}
 }
 
@@ -55,24 +57,16 @@ func (r *ProviderRegistry) GetProvider(provider string) (domainllm.LLMProvider, 
 	}
 
 	// Create provider via factory (still holding write lock)
-	libraryProvider, err := r.factory.GetProvider(provider)
+	libraryProvider, err := r.providerFactory.GetProvider(provider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create provider '%s': %w", provider, err)
 	}
 
-	// Wrap in appropriate adapter based on provider type
-	var adapter domainllm.LLMProvider
-	switch provider {
-	case "lorem":
-		adapter = adapters.NewLoremAdapterWithProvider(libraryProvider)
-	case "anthropic":
-		adapter = adapters.NewAnthropicAdapterWithProvider(libraryProvider)
-	case "openrouter":
-		adapter = adapters.NewOpenRouterAdapterWithProvider(libraryProvider)
-	default:
-		// Default to anthropic adapter for unknown providers
-		// TODO: Create a generic adapter instead
-		adapter = adapters.NewAnthropicAdapterWithProvider(libraryProvider)
+	// Create adapter via adapter factory (DIP + OCP compliance)
+	// AdapterFactory handles provider-to-adapter mapping, enabling extension without modification
+	adapter, err := r.adapterFactory.CreateAdapter(provider, libraryProvider)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create adapter for provider '%s': %w", provider, err)
 	}
 
 	// Cache for future use (still holding write lock)
@@ -81,11 +75,14 @@ func (r *ProviderRegistry) GetProvider(provider string) (domainllm.LLMProvider, 
 	return adapter, nil
 }
 
-// Validate checks if the factory is properly configured.
+// Validate checks if the factories are properly configured.
 // Should be called at startup to fail fast if misconfigured.
 func (r *ProviderRegistry) Validate() error {
-	if r.factory == nil {
+	if r.providerFactory == nil {
 		return fmt.Errorf("provider factory is not configured")
+	}
+	if r.adapterFactory == nil {
+		return fmt.Errorf("adapter factory is not configured")
 	}
 	return nil
 }

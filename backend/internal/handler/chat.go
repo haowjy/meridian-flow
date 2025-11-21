@@ -11,17 +11,16 @@ import (
 
 	"meridian/internal/domain"
 	llmModels "meridian/internal/domain/models/llm"
-	llmRepo "meridian/internal/domain/repositories/llm"
 	llmSvc "meridian/internal/domain/services/llm"
 	"meridian/internal/httputil"
 )
 
 // ChatHandler handles chat HTTP requests
+// Follows Clean Architecture: handlers only communicate with services, never repositories
 type ChatHandler struct {
 	chatService         llmSvc.ChatService
 	conversationService llmSvc.ConversationService
 	streamingService    llmSvc.StreamingService
-	turnRepo            llmRepo.TurnRepository
 	registry            *mstream.Registry
 	logger              *slog.Logger
 }
@@ -31,7 +30,6 @@ func NewChatHandler(
 	chatService llmSvc.ChatService,
 	conversationService llmSvc.ConversationService,
 	streamingService llmSvc.StreamingService,
-	turnRepo llmRepo.TurnRepository,
 	registry *mstream.Registry,
 	logger *slog.Logger,
 ) *ChatHandler {
@@ -39,7 +37,6 @@ func NewChatHandler(
 		chatService:         chatService,
 		conversationService: conversationService,
 		streamingService:    streamingService,
-		turnRepo:            turnRepo,
 		registry:            registry,
 		logger:              logger,
 	}
@@ -351,15 +348,8 @@ func (h *ChatHandler) GetTurnBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get turn metadata (status, error, etc.)
-	turn, err := h.turnRepo.GetTurn(r.Context(), turnID)
-	if err != nil {
-		handleError(w, err)
-		return
-	}
-
-	// Get blocks from repository
-	blocks, err := h.turnRepo.GetTurnBlocks(r.Context(), turnID)
+	// Get turn with blocks from service (follows Clean Architecture)
+	turn, err := h.conversationService.GetTurnWithBlocks(r.Context(), turnID)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -370,7 +360,7 @@ func (h *ChatHandler) GetTurnBlocks(w http.ResponseWriter, r *http.Request) {
 		TurnID: turn.ID,
 		Status: turn.Status,
 		Error:  turn.Error,
-		Blocks: blocks,
+		Blocks: turn.Blocks,
 	}
 
 	httputil.RespondJSON(w, http.StatusOK, response)
@@ -399,14 +389,8 @@ func (h *ChatHandler) InterruptTurn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cancel the stream
+	// Cancel the stream (executor will update turn status in database)
 	stream.Cancel()
-
-	// Update turn status in database (executor will do this, but do it here for immediate feedback)
-	if err := h.turnRepo.UpdateTurnStatus(r.Context(), turnID, "cancelled", nil); err != nil {
-		// Log error but don't fail - executor will update status
-		h.logger.Warn("failed to update turn status on interrupt", "turn_id", turnID, "error", err)
-	}
 
 	httputil.RespondJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,

@@ -100,14 +100,14 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 	// Build conversation path from prev_turn_id (if provided)
 	var path []llmModels.Turn
 	if req.PrevTurnID != nil {
-		path, err = s.turnRepo.GetTurnPath(ctx, *req.PrevTurnID)
+		path, err = s.turnNavigator.GetTurnPath(ctx, *req.PrevTurnID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get turn path for debug: %w", err)
 		}
 
 		// Load content blocks for all turns in the path (matches startStreamingExecution)
 		for i := range path {
-			blocks, err := s.turnRepo.GetTurnBlocks(ctx, path[i].ID)
+			blocks, err := s.turnReader.GetTurnBlocks(ctx, path[i].ID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get content blocks for debug: %w", err)
 			}

@@ -126,12 +126,11 @@ func main() {
 	newTreeHandler := handler.NewTreeHandler(treeService, logger)
 	importHandler := handler.NewImportHandler(importService, logger)
 
-	// Chat handlers
+	// Chat handlers (follows Clean Architecture - no repository access)
 	chatHandler := handler.NewChatHandler(
 		llmServices.Chat,
 		llmServices.Conversation,
 		llmServices.Streaming,
-		turnRepo,
 		streamRegistry,
 		logger,
 	)

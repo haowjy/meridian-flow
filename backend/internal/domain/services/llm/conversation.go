@@ -34,4 +34,9 @@ type ConversationService interface {
 	// fromTurnID: starting point (optional - defaults to chat.last_viewed_turn_id)
 	// Returns turns with blocks plus has_more flags for pagination
 	GetPaginatedTurns(ctx context.Context, chatID, userID string, fromTurnID *string, limit int, direction string, updateLastViewed bool) (*llm.PaginatedTurnsResponse, error)
+
+	// GetTurnWithBlocks retrieves a turn's metadata (status, error) and all its content blocks
+	// Used for reconnection - client fetches completed blocks before connecting to SSE stream
+	// Returns turn with blocks attached
+	GetTurnWithBlocks(ctx context.Context, turnID string) (*llm.Turn, error)
 }
