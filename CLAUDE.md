@@ -80,7 +80,10 @@ Then, these principles can also help you make architectural decisions and other 
 ### Documentation
 
 - **Product/high-level**: `_docs/high-level/` - Product vision, MVP specs, user stories
-- **Technical details**: `_docs/technical/backend/` - Architecture decisions, setup guides
+- **Technical details**: `_docs/technical/` - Architecture, implementation guides
+  - **Backend**: `_docs/technical/backend/` - Go backend architecture, API design
+  - **Frontend**: `_docs/technical/frontend/` - Next.js frontend architecture, patterns
+  - **Authentication**: `_docs/technical/auth-overview.md` - Cross-stack auth flow (Supabase)
   - **Streaming/SSE**: `_docs/technical/llm/streaming/` - Real-time LLM responses, block types
 - **Documentation structure**: `_docs/README.md` - How docs are organized
 
@@ -193,6 +196,11 @@ See `internal/repository/postgres/connection.go`
 - User runs tests manually or via CI/CD
 - Claude can suggest test commands
 - Claude can help write/fix tests
+
+### Frontend
+
+- use `pnpm` instead of `npm` for faster compile times
+- run `pnpm run lint` to run ESLint after making changes
 
 ## Deployment
 

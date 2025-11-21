@@ -2,6 +2,9 @@ import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { DOMSerializer } from '@tiptap/pm/model'
 import type {} from '@tiptap/markdown' // Import to trigger Editor type augmentation
+import { makeLogger } from '@/core/lib/logger'
+
+const logger = makeLogger('markdown-clipboard')
 
 /**
  * MarkdownClipboard Extension
@@ -23,30 +26,30 @@ export const MarkdownClipboard = Extension.create({
           // Handle copy events - add markdown to clipboard
           handleDOMEvents: {
             copy: (view, event) => {
-              console.log('[MarkdownClipboard] Copy event triggered')
+              logger.debug('Copy event triggered')
               const { state } = view
               const { selection } = state
 
               // Only handle if there's a selection
               if (selection.empty) {
-                console.log('[MarkdownClipboard] Selection is empty, skipping')
+                logger.debug('Selection is empty, skipping')
                 return false
               }
 
-              console.log('[MarkdownClipboard] Has clipboardData:', !!event.clipboardData)
-              console.log('[MarkdownClipboard] Has editor.markdown:', !!editor.markdown)
+              logger.debug('Has clipboardData:', !!event.clipboardData)
+              logger.debug('Has editor.markdown:', !!editor.markdown)
 
               // Manually handle both text/plain (markdown) and text/html (formatted)
               if (event.clipboardData && editor.markdown) {
                 // Get the selected content
                 const slice = selection.content()
                 const tempDoc = state.schema.topNodeType.createAndFill(undefined, slice.content)
-                console.log('[MarkdownClipboard] Created tempDoc:', !!tempDoc)
+                logger.debug('Created tempDoc:', !!tempDoc)
 
                 if (tempDoc) {
                   // 1. Serialize to markdown for text/plain
                   const selectedMarkdown = editor.markdown.serialize(tempDoc.toJSON())
-                  console.log('[MarkdownClipboard] Serialized markdown:', selectedMarkdown.substring(0, 200))
+                  logger.debug('Serialized markdown:', selectedMarkdown.substring(0, 200))
 
                   // 2. Serialize to HTML for text/html
                   const div = document.createElement('div')
@@ -56,12 +59,12 @@ export const MarkdownClipboard = Extension.create({
                     div
                   )
                   const html = div.innerHTML
-                  console.log('[MarkdownClipboard] Serialized HTML:', html.substring(0, 200))
+                  logger.debug('Serialized HTML:', html.substring(0, 200))
 
                   // 3. Set both clipboard data types
                   event.clipboardData.setData('text/plain', selectedMarkdown)
                   event.clipboardData.setData('text/html', html)
-                  console.log('[MarkdownClipboard] Set both text/plain (markdown) and text/html')
+                  logger.debug('Set both text/plain (markdown) and text/html')
 
                   // 4. Prevent default to stop browser from overwriting our clipboard data
                   event.preventDefault()
@@ -69,7 +72,7 @@ export const MarkdownClipboard = Extension.create({
                 }
               }
 
-              console.log('[MarkdownClipboard] Fallback - using default copy')
+              logger.debug('Fallback - using default copy')
               return false
             },
           },
@@ -80,7 +83,7 @@ export const MarkdownClipboard = Extension.create({
             const text = event.clipboardData?.getData('text/plain')
             const html = event.clipboardData?.getData('text/html')
 
-            console.log('[MarkdownClipboard] Paste event:', {
+            logger.debug('Paste event:', {
               hasText: !!text,
               hasHtml: !!html,
               textPreview: text?.substring(0, 100),
@@ -88,32 +91,32 @@ export const MarkdownClipboard = Extension.create({
 
             // Priority 1: Rich editors (Word, Docs, GitHub rendered) → preserve HTML
             if (html && looksLikeRichEditor(html)) {
-              console.log('[MarkdownClipboard] Rich editor detected, using HTML')
+              logger.debug('Rich editor detected, using HTML')
               return false
             }
 
             // Priority 2: VSCode-specific detection via metadata
             const vscodeData = event.clipboardData?.getData('vscode-editor-data')
             if (vscodeData) {
-              console.log('[MarkdownClipboard] VSCode data detected:', vscodeData)
+              logger.debug('VSCode data detected:', vscodeData)
               try {
                 const data = JSON.parse(vscodeData)
-                console.log('[MarkdownClipboard] VSCode mode:', data.mode)
+                logger.debug('VSCode mode:', data.mode)
                 // VSCode markdown file → parse as markdown
                 if (data.mode === 'markdown' && text && editor.markdown) {
-                  console.log('[MarkdownClipboard] VSCode markdown detected, parsing')
+                  logger.debug('VSCode markdown detected, parsing')
                   const json = editor.markdown.parse(text)
-                  console.log('[MarkdownClipboard] Parsed markdown:', json)
+                  logger.debug('Parsed markdown:', json)
                   editor.commands.insertContent(json)
                   return true
                 }
                 // VSCode code file → use default (preserves code block from HTML)
                 if (text && looksLikeCode(text)) {
-                  console.log('[MarkdownClipboard] VSCode code detected, using default')
+                  logger.debug('VSCode code detected, using default')
                   return false
                 }
               } catch {
-                console.log('[MarkdownClipboard] Failed to parse VSCode data')
+                logger.debug('Failed to parse VSCode data')
                 // Invalid JSON, continue to pattern detection
               }
             }
@@ -122,20 +125,20 @@ export const MarkdownClipboard = Extension.create({
             if (text) {
               // Looks like markdown → parse it
               if (looksLikeMarkdown(text) && editor.markdown) {
-                console.log('[MarkdownClipboard] Pattern: markdown detected, parsing')
+                logger.debug('Pattern: markdown detected, parsing')
                 const json = editor.markdown.parse(text)
                 editor.commands.insertContent(json)
                 return true
               }
               // Looks like code → use default (HTML becomes code block if present)
               if (looksLikeCode(text)) {
-                console.log('[MarkdownClipboard] Pattern: code detected, using default')
+                logger.debug('Pattern: code detected, using default')
                 return false
               }
             }
 
             // Fallback to default
-            console.log('[MarkdownClipboard] Fallback to default')
+            logger.debug('Fallback to default')
             return false
           },
         },

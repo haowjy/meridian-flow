@@ -90,13 +90,6 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 		}
 	}
 
-	// Environment gating: Reject tools in production (same as CreateTurn)
-	if s.config.Environment != "dev" && s.config.Environment != "test" {
-		if len(params.Tools) > 0 {
-			return nil, fmt.Errorf("%w: tools are only allowed in dev/test environments", domain.ErrValidation)
-		}
-	}
-
 	// Resolve system prompt from user, project, chat, and selected skills (mirror CreateTurn)
 	// Always resolve if skills are selected, or if no user system prompt provided
 	if err := s.resolveSystemPromptForParams(ctx, req.ChatID, req.UserID, params, req.SelectedSkills); err != nil {

@@ -13,8 +13,10 @@ import (
 	"meridian/internal/domain"
 	llmModels "meridian/internal/domain/models/llm"
 	"meridian/internal/domain/repositories"
+	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	llmRepo "meridian/internal/domain/repositories/llm"
 	llmSvc "meridian/internal/domain/services/llm"
+	"meridian/internal/service/llm/tools"
 )
 
 // ChatValidator is shared validation logic for chat operations
@@ -31,6 +33,9 @@ type LLMProviderGetter interface {
 // Handles turn creation and streaming orchestration
 type Service struct {
 	turnRepo             llmRepo.TurnRepository
+	chatRepo             llmRepo.ChatRepository
+	documentRepo         docsysRepo.DocumentRepository
+	folderRepo           docsysRepo.FolderRepository
 	validator            ChatValidator
 	providerGetter       LLMProviderGetter
 	registry             *mstream.Registry
@@ -48,6 +53,9 @@ type SystemPromptResolver interface {
 // NewService creates a new streaming service
 func NewService(
 	turnRepo             llmRepo.TurnRepository,
+	chatRepo             llmRepo.ChatRepository,
+	documentRepo         docsysRepo.DocumentRepository,
+	folderRepo           docsysRepo.FolderRepository,
 	validator            ChatValidator,
 	providerGetter       LLMProviderGetter,
 	registry             *mstream.Registry,
@@ -58,6 +66,9 @@ func NewService(
 ) llmSvc.StreamingService {
 	return &Service{
 		turnRepo:             turnRepo,
+		chatRepo:             chatRepo,
+		documentRepo:         documentRepo,
+		folderRepo:           folderRepo,
 		validator:            validator,
 		providerGetter:       providerGetter,
 		registry:             registry,
@@ -125,13 +136,6 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		} else {
 			// No mapping found - default to openrouter (has all models)
 			provider = "openrouter"
-		}
-	}
-
-	// Environment gating: Reject tools in production
-	if s.config.Environment != "dev" && s.config.Environment != "test" {
-		if len(params.Tools) > 0 {
-			return nil, fmt.Errorf("%w: tools are only allowed in dev/test environments", domain.ErrValidation)
 		}
 	}
 
@@ -220,6 +224,31 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		"provider", provider,
 	)
 
+	// Get chat to extract project_id for tools
+	chat, err := s.chatRepo.GetChat(ctx, req.ChatID, req.UserID)
+	if err != nil {
+		s.logger.Error("failed to get chat for tools",
+			"error", err,
+			"chat_id", req.ChatID,
+			"user_id", req.UserID,
+		)
+		// Update turn to error status
+		if updateErr := s.turnRepo.UpdateTurnError(ctx, assistantTurn.ID, fmt.Sprintf("failed to get chat: %v", err)); updateErr != nil {
+			s.logger.Error("failed to update turn error", "error", updateErr)
+		}
+		return nil, fmt.Errorf("failed to get chat for tools: %w", err)
+	}
+
+	// Create per-request tool registry with project-specific tools
+	toolRegistry := tools.NewToolRegistry()
+	tools.RegisterReadOnlyTools(toolRegistry, chat.ProjectID, s.documentRepo, s.folderRepo)
+
+	s.logger.Info("per-request tool registry created",
+		"project_id", chat.ProjectID,
+		"chat_id", req.ChatID,
+		"assistant_turn_id", assistantTurn.ID,
+	)
+
 	// Get provider adapter (do this synchronously to avoid race)
 	llmProvider, err := s.providerGetter.GetProvider(provider)
 	if err != nil {
@@ -240,10 +269,11 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	// This ensures SSE clients can connect while we're preparing the request
 	executor := NewStreamExecutor(
 		assistantTurn.ID,
-		model,        // Pure model name (no provider prefix)
-		s.turnRepo,   // TurnWriter
-		s.turnRepo,   // TurnReader (same repo implements both)
-		llmProvider,  // Provider adapter
+		model,         // Pure model name (no provider prefix)
+		s.turnRepo,    // TurnWriter
+		s.turnRepo,    // TurnReader (same repo implements both)
+		llmProvider,   // Provider adapter
+		toolRegistry,  // Per-request ToolRegistry with project-specific tools
 		s.logger,
 		s.config.Debug, // Pass DEBUG flag for optional event IDs
 	)

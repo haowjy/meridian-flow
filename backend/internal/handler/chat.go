@@ -296,6 +296,15 @@ func (h *ChatHandler) GetPaginatedTurns(w http.ResponseWriter, r *http.Request) 
 		fromTurnID = &fromTurnIDStr
 	}
 
+	// Parse update_last_viewed (default: false)
+	updateLastViewed := false
+	if ulv := r.URL.Query().Get("update_last_viewed"); ulv != "" {
+		parsed, err := strconv.ParseBool(ulv)
+		if err == nil {
+			updateLastViewed = parsed
+		}
+	}
+
 	// Parse limit (default 100)
 	limit := 100
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
@@ -304,14 +313,11 @@ func (h *ChatHandler) GetPaginatedTurns(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// Parse direction (default "both")
+	// Parse direction (no default here; repository applies defaults based on from_turn_id presence)
 	direction := r.URL.Query().Get("direction")
-	if direction == "" {
-		direction = "both"
-	}
 
 	// Call service
-	response, err := h.conversationService.GetPaginatedTurns(r.Context(), chatID, userID, fromTurnID, limit, direction)
+	response, err := h.conversationService.GetPaginatedTurns(r.Context(), chatID, userID, fromTurnID, limit, direction, updateLastViewed)
 	if err != nil {
 		handleError(w, err)
 		return

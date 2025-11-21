@@ -1,5 +1,5 @@
 import { Extension } from '@tiptap/core'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Plugin, PluginKey, Selection } from '@tiptap/pm/state'
 import { EditorView } from '@tiptap/pm/view'
 
 /**
@@ -51,7 +51,7 @@ export const ClickHandler = Extension.create({
                 // We want to move the cursor there.
                 
                 const tr = view.state.tr.setSelection(
-                  view.state.selection.constructor.near(view.state.doc.resolve(pos))
+                  Selection.near(view.state.doc.resolve(pos))
                 )
                 view.dispatch(tr)
                 view.focus()

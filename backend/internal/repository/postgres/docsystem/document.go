@@ -74,15 +74,28 @@ func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *models.Doc
 
 // GetByID retrieves a document by ID
 func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID string) (*models.Document, error) {
-	query := fmt.Sprintf(`
-		SELECT id, project_id, folder_id, name, content, word_count, created_at, updated_at
-		FROM %s
-		WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
-	`, r.tables.Documents)
+	var query string
+	var args []interface{}
+
+	if projectID != "" {
+		query = fmt.Sprintf(`
+			SELECT id, project_id, folder_id, name, content, word_count, created_at, updated_at
+			FROM %s
+			WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
+		`, r.tables.Documents)
+		args = []interface{}{id, projectID}
+	} else {
+		query = fmt.Sprintf(`
+			SELECT id, project_id, folder_id, name, content, word_count, created_at, updated_at
+			FROM %s
+			WHERE id = $1 AND deleted_at IS NULL
+		`, r.tables.Documents)
+		args = []interface{}{id}
+	}
 
 	var doc models.Document
 	executor := postgres.GetExecutor(ctx, r.pool)
-	err := executor.QueryRow(ctx, query, id, projectID).Scan(
+	err := executor.QueryRow(ctx, query, args...).Scan(
 		&doc.ID,
 		&doc.ProjectID,
 		&doc.FolderID,
@@ -206,22 +219,41 @@ func (r *PostgresDocumentRepository) findFolderByName(ctx context.Context, proje
 
 // Update updates an existing document
 func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Document) error {
-	query := fmt.Sprintf(`
-		UPDATE %s
-		SET folder_id = $1, name = $2, content = $3, word_count = $4, updated_at = $5
-		WHERE id = $6 AND project_id = $7 AND deleted_at IS NULL
-	`, r.tables.Documents)
+	var query string
+	var args []interface{}
+	if doc.ProjectID != "" {
+		query = fmt.Sprintf(`
+			UPDATE %s
+			SET folder_id = $1, name = $2, content = $3, word_count = $4, updated_at = $5
+			WHERE id = $6 AND project_id = $7 AND deleted_at IS NULL
+		`, r.tables.Documents)
+		args = []interface{}{
+			doc.FolderID,
+			doc.Name,
+			doc.Content,
+			doc.WordCount,
+			doc.UpdatedAt,
+			doc.ID,
+			doc.ProjectID,
+		}
+	} else {
+		query = fmt.Sprintf(`
+			UPDATE %s
+			SET folder_id = $1, name = $2, content = $3, word_count = $4, updated_at = $5
+			WHERE id = $6 AND deleted_at IS NULL
+		`, r.tables.Documents)
+		args = []interface{}{
+			doc.FolderID,
+			doc.Name,
+			doc.Content,
+			doc.WordCount,
+			doc.UpdatedAt,
+			doc.ID,
+		}
+	}
 
 	executor := postgres.GetExecutor(ctx, r.pool)
-	result, err := executor.Exec(ctx, query,
-		doc.FolderID,
-		doc.Name,
-		doc.Content,
-		doc.WordCount,
-		doc.UpdatedAt,
-		doc.ID,
-		doc.ProjectID,
-	)
+	result, err := executor.Exec(ctx, query, args...)
 
 	if err != nil {
 		if postgres.IsPgDuplicateError(err) {
@@ -251,14 +283,27 @@ func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Doc
 
 // Delete soft-deletes a document by setting deleted_at timestamp
 func (r *PostgresDocumentRepository) Delete(ctx context.Context, id, projectID string) error {
-	query := fmt.Sprintf(`
-		UPDATE %s
-		SET deleted_at = NOW()
-		WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
-	`, r.tables.Documents)
+	var query string
+	var args []interface{}
+
+	if projectID != "" {
+		query = fmt.Sprintf(`
+			UPDATE %s
+			SET deleted_at = NOW()
+			WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
+		`, r.tables.Documents)
+		args = []interface{}{id, projectID}
+	} else {
+		query = fmt.Sprintf(`
+			UPDATE %s
+			SET deleted_at = NOW()
+			WHERE id = $1 AND deleted_at IS NULL
+		`, r.tables.Documents)
+		args = []interface{}{id}
+	}
 
 	executor := postgres.GetExecutor(ctx, r.pool)
-	result, err := executor.Exec(ctx, query, id, projectID)
+	result, err := executor.Exec(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("delete document: %w", err)
 	}
@@ -495,7 +540,7 @@ func (r *PostgresDocumentRepository) fullTextSearch(ctx context.Context, opts *m
 	// Build dynamic search query based on which fields to search
 	// PostgreSQL full-text search components:
 	// - to_tsvector(language, field): Converts field to searchable tokens
-	// - plainto_tsquery(language, query): Converts user query to search format
+	// - websearch_to_tsquery(language, query): Converts query with Google-like syntax (OR, NOT, phrases)
 	// - @@: Full-text match operator
 	// - ts_rank(): Ranks results by relevance (higher = better match)
 	//
@@ -512,18 +557,18 @@ func (r *PostgresDocumentRepository) fullTextSearch(ctx context.Context, opts *m
 		case models.SearchFieldName:
 			// Search in name/title field
 			searchConditions = append(searchConditions,
-				"to_tsvector($1, name) @@ plainto_tsquery($1, $2)")
+				"to_tsvector($1, name) @@ websearch_to_tsquery($1, $2)")
 			// Weight title matches 2x higher
 			rankExpressions = append(rankExpressions,
-				"ts_rank(to_tsvector($1, name), plainto_tsquery($1, $2)) * 2.0")
+				"ts_rank(to_tsvector($1, name), websearch_to_tsquery($1, $2)) * 2.0")
 
 		case models.SearchFieldContent:
 			// Search in content field
 			searchConditions = append(searchConditions,
-				"to_tsvector($1, content) @@ plainto_tsquery($1, $2)")
+				"to_tsvector($1, content) @@ websearch_to_tsquery($1, $2)")
 			// Normal weight
 			rankExpressions = append(rankExpressions,
-				"ts_rank(to_tsvector($1, content), plainto_tsquery($1, $2))")
+				"ts_rank(to_tsvector($1, content), websearch_to_tsquery($1, $2))")
 		}
 	}
 
@@ -634,10 +679,10 @@ func (r *PostgresDocumentRepository) countTotalMatches(ctx context.Context, opts
 		switch field {
 		case models.SearchFieldName:
 			searchConditions = append(searchConditions,
-				"to_tsvector($1, name) @@ plainto_tsquery($1, $2)")
+				"to_tsvector($1, name) @@ websearch_to_tsquery($1, $2)")
 		case models.SearchFieldContent:
 			searchConditions = append(searchConditions,
-				"to_tsvector($1, content) @@ plainto_tsquery($1, $2)")
+				"to_tsvector($1, content) @@ websearch_to_tsquery($1, $2)")
 		}
 	}
 

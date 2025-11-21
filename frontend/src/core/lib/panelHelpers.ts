@@ -1,5 +1,8 @@
 import { useUIStore } from '@/core/stores/useUIStore'
 import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime'
+import { makeLogger } from '@/core/lib/logger'
+
+const logger = makeLogger('panel-helpers')
 
 /**
  * Panel coordination helpers for managing workspace state.
@@ -30,7 +33,7 @@ export function openDocument(
   const store = useUIStore.getState()
 
   // Set UI state directly (needed when clicking current document after manual toggle)
-  console.log('[panelHelpers] openDocument:', documentId)
+  logger.debug('openDocument:', documentId)
   store.setActiveDocument(documentId)
   store.setRightPanelState('editor')
   store.setRightPanelCollapsed(false)
@@ -53,7 +56,7 @@ export function closeEditor(projectId: string, router: AppRouterInstance) {
   const store = useUIStore.getState()
 
   // Set UI state directly
-  console.log('[panelHelpers] closeEditor')
+  logger.debug('closeEditor')
   store.setActiveDocument(null)
   store.setRightPanelState('documents')
 

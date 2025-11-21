@@ -67,6 +67,8 @@ func (r *ProviderRegistry) GetProvider(provider string) (domainllm.LLMProvider, 
 		adapter = adapters.NewLoremAdapterWithProvider(libraryProvider)
 	case "anthropic":
 		adapter = adapters.NewAnthropicAdapterWithProvider(libraryProvider)
+	case "openrouter":
+		adapter = adapters.NewOpenRouterAdapterWithProvider(libraryProvider)
 	default:
 		// Default to anthropic adapter for unknown providers
 		// TODO: Create a generic adapter instead

@@ -6,12 +6,13 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"meridian/internal/domain"
 	llmModels "meridian/internal/domain/models/llm"
 	llmRepo "meridian/internal/domain/repositories/llm"
 	"meridian/internal/repository/postgres"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -726,9 +727,10 @@ func (r *PostgresTurnRepository) GetSiblingsForTurns(
 
 	// Query to find siblings for each turn
 	// For each turn, find all turns with the same prev_turn_id (including self)
+	// CRITICAL: Must filter by chat_id to prevent cross-chat contamination
 	query := fmt.Sprintf(`
 		WITH turn_parents AS (
-			SELECT id, prev_turn_id
+			SELECT id, prev_turn_id, chat_id
 			FROM %s
 			WHERE id = ANY($1)
 		)
@@ -737,6 +739,7 @@ func (r *PostgresTurnRepository) GetSiblingsForTurns(
 			array_remove(array_agg(t.id ORDER BY t.created_at), NULL) as sibling_ids
 		FROM turn_parents tp
 		LEFT JOIN %s t ON t.prev_turn_id IS NOT DISTINCT FROM tp.prev_turn_id
+			AND t.chat_id = tp.chat_id
 		GROUP BY tp.id
 	`, r.tables.Turns, r.tables.Turns)
 
@@ -778,6 +781,7 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 	fromTurnID *string,
 	limit int,
 	direction string,
+	updateLastViewed bool,
 ) (*llmModels.PaginatedTurnsResponse, error) {
 	executor := postgres.GetExecutor(ctx, r.pool)
 
@@ -796,6 +800,36 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 			return nil, fmt.Errorf("chat %s: %w", chatID, domain.ErrNotFound)
 		}
 		return nil, fmt.Errorf("verify chat access: %w", err)
+	}
+
+	// Validate last_viewed_turn_id belongs to this chat
+	// If invalid (deleted, wrong chat, etc.), reset to NULL to trigger fallback logic
+	var needsReset bool
+	var invalidTurnID string
+	if lastViewedTurnID != nil {
+		var belongsToChat bool
+		validateQuery := fmt.Sprintf(`
+			SELECT EXISTS(
+				SELECT 1 FROM %s
+				WHERE id = $1 AND chat_id = $2
+			)
+		`, r.tables.Turns)
+
+		err := executor.QueryRow(ctx, validateQuery, *lastViewedTurnID, chatID).Scan(&belongsToChat)
+		if err != nil {
+			return nil, fmt.Errorf("validate last_viewed_turn_id: %w", err)
+		}
+
+		if !belongsToChat {
+			// Invalid reference - will reset after determining final start turn
+			r.logger.Warn("detected invalid last_viewed_turn_id, will reset to NULL",
+				"chat_id", chatID,
+				"invalid_turn_id", *lastViewedTurnID,
+			)
+			needsReset = true
+			invalidTurnID = *lastViewedTurnID
+			lastViewedTurnID = nil // Treat as if no bookmark exists
+		}
 	}
 
 	// last_viewed_turn_id behavior - Two modes of operation:
@@ -858,21 +892,44 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 		startTurnID = &leaf
 	}
 
-	// Update last_viewed_turn_id to cache the user's position
-	// This value will be:
-	//   - The resolved leaf (if fromTurnID was nil, cold start)
-	//   - The exact from_turn_id (if provided, active session)
-	// Used as default starting point when client doesn't provide from_turn_id
-	updateQuery := fmt.Sprintf(`
-		UPDATE %s
-		SET last_viewed_turn_id = $1
-		WHERE id = $2
-	`, r.tables.Chats)
-	_, err = executor.Exec(ctx, updateQuery, *startTurnID, chatID)
-	if err != nil {
-		// Log error but don't fail the request
-		// If update fails, pagination succeeds but cache becomes stale
-		r.logger.Error("failed to update last_viewed_turn_id", "error", err)
+	// Reset invalid last_viewed_turn_id in database
+	// Uses optimistic WHERE clause to prevent overwriting concurrent valid updates
+	if needsReset {
+		resetQuery := fmt.Sprintf(`
+			UPDATE %s
+			SET last_viewed_turn_id = NULL
+			WHERE id = $1 AND last_viewed_turn_id = $2
+		`, r.tables.Chats)
+
+		_, err := executor.Exec(ctx, resetQuery, chatID, invalidTurnID)
+		if err != nil {
+			// Log but don't fail - pagination can still proceed
+			r.logger.Error("failed to reset invalid last_viewed_turn_id",
+				"chat_id", chatID,
+				"invalid_turn_id", invalidTurnID,
+				"error", err,
+			)
+		} else {
+			r.logger.Info("successfully reset invalid last_viewed_turn_id",
+				"chat_id", chatID,
+				"invalid_turn_id", invalidTurnID,
+			)
+		}
+	}
+
+	// Update last_viewed_turn_id ONLY when explicitly requested by client
+	if updateLastViewed {
+		updateQuery := fmt.Sprintf(`
+			UPDATE %s
+			SET last_viewed_turn_id = $1
+			WHERE id = $2
+		`, r.tables.Chats)
+		_, err = executor.Exec(ctx, updateQuery, *startTurnID, chatID)
+		if err != nil {
+			// Log error but don't fail the request
+			// If update fails, pagination succeeds but cache becomes stale
+			r.logger.Error("failed to update last_viewed_turn_id", "error", err)
+		}
 	}
 
 	// Apply defaults for direction and limit

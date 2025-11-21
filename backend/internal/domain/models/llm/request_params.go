@@ -203,6 +203,7 @@ func ValidateRequestParams(params map[string]interface{}) error {
 }
 
 // GetRequestParamStruct unmarshals a JSONB map into a typed RequestParams struct
+// It also resolves minimal tool definitions ({"name": "doc_view"}) to full tool schemas.
 func GetRequestParamStruct(params map[string]interface{}) (*RequestParams, error) {
 	if params == nil {
 		return &RequestParams{}, nil
@@ -216,6 +217,22 @@ func GetRequestParamStruct(params map[string]interface{}) (*RequestParams, error
 	var rp RequestParams
 	if err := json.Unmarshal(jsonBytes, &rp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal params: %w", err)
+	}
+
+	// Resolve minimal tool definitions to full schemas
+	// This allows users to specify {"name": "doc_view"} instead of the full OpenAI schema
+	if len(rp.Tools) > 0 {
+		for i, tool := range rp.Tools {
+			// Check if this is a minimal definition (only Name set, no Function)
+			if tool.Function == nil && tool.Name != "" {
+				// Try to resolve as a custom read-only tool first
+				if fullDef := GetToolDefinitionByName(tool.Name); fullDef != nil {
+					rp.Tools[i] = *fullDef
+					continue
+				}
+				// Otherwise, leave it as-is to be resolved as a built-in tool by the library
+			}
+		}
 	}
 
 	return &rp, nil

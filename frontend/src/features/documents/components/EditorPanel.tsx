@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { EditorContent } from '@tiptap/react'
 import { getExtensions } from '@/core/editor/extensions'
 import { useEditorStore } from '@/core/stores/useEditorStore'
-import { useUIStore } from '@/core/stores/useUIStore'
+
 import { useDebounce } from '@/core/hooks/useDebounce'
 import { useEditorCache } from '@/core/hooks/useEditorCache'
 import { cn } from '@/lib/utils'
@@ -13,11 +13,13 @@ import { EditorToolbarContainer } from './EditorToolbarContainer'
 import { CardSkeleton } from '@/shared/components/ui/card'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { useTreeStore } from '@/core/stores/useTreeStore'
+import { makeLogger } from '@/core/lib/logger'
+
+const logger = makeLogger('editor-panel')
 // Removed inline rename flow for now (EditorTitle deleted)
 
 interface EditorPanelProps {
   documentId: string
-  projectId?: string
 }
 
 /**
@@ -25,7 +27,7 @@ interface EditorPanelProps {
  * Integrates: Document loading, auto-save.
  * Uses two-state pattern for instant typing + debounced auto-save.
  */
-export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
+export function EditorPanel({ documentId }: EditorPanelProps) {
   const {
     activeDocument,
     _activeDocumentId,
@@ -80,7 +82,7 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
     // Prevent duplicate loads from React Strict Mode double-mounting
     // Skip if we're already loading this exact document
     if (_activeDocumentId === documentId && isLoading) {
-      console.log('[EditorPanel] Skipping duplicate load for', documentId)
+      logger.debug('Skipping duplicate load for', documentId)
       return
     }
 
@@ -134,7 +136,7 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
 
       if (cachedIsEmpty && serverHasContent) {
         // Cached editor never got initialized properly, use server content
-        console.log('[Editor] Cached editor is empty, initializing from server')
+        logger.debug('Cached editor is empty, initializing from server')
         setLocalContent(serverContent)
         if (editor) {
           editor.commands.setContent(serverContent, {
@@ -145,7 +147,7 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
         setIsInitialized(true)
       } else {
         // Trust the cached editor (it has either the correct content or unsaved changes)
-        console.log('[Editor] Using cached editor content')
+        logger.debug('Using cached editor content')
         setLocalContent(cachedContent)
         setIsInitialized(true)
       }
@@ -172,14 +174,14 @@ export function EditorPanel({ documentId, projectId }: EditorPanelProps) {
       // Cached editor is source of truth - preserve its content (may have unsaved changes)
       // Sync localContent FROM editor to prevent loadDocument from overwriting it
       if (currentContent !== localContent) {
-        console.log('[Editor] Syncing localContent from cached editor')
+        logger.debug('Syncing localContent from cached editor')
         setLocalContent(currentContent)
         // Important: Don't set hasUserEdit here - this is just state sync, not a user action
       }
     } else {
       // New editor - initialize it with current localContent from store
       if (localContent !== undefined && currentContent !== localContent) {
-        console.log('[Editor] Initializing new editor with localContent')
+        logger.debug('Initializing new editor with localContent')
         editor.commands.setContent(localContent, {
           contentType: 'markdown',
           emitUpdate: false

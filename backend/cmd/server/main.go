@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"meridian/internal/auth"
 	"meridian/internal/config"
 	"meridian/internal/handler"
 	"meridian/internal/middleware"
@@ -45,6 +46,13 @@ func main() {
 		"port", cfg.Port,
 		"table_prefix", cfg.TablePrefix,
 	)
+
+	// Create JWT verifier for Supabase authentication
+	jwtVerifier, err := auth.NewJWTVerifier(cfg.SupabaseJWKSURL, logger)
+	if err != nil {
+		log.Fatalf("Failed to create JWT verifier: %v", err)
+	}
+	defer jwtVerifier.Close()
 
 	// Create pgx connection pool
 	ctx := context.Background()
@@ -92,6 +100,7 @@ func main() {
 		turnRepo,
 		projectRepo,
 		docRepo,
+		folderRepo,
 		providerRegistry,
 		cfg,
 		txManager,
@@ -202,11 +211,11 @@ func main() {
 	var handler http.Handler = mux
 
 	// Apply middleware in reverse order (they wrap each other)
-	handler = middleware.ProjectMiddleware(cfg.TestProjectID)(handler)
-	handler = middleware.AuthMiddleware(cfg.TestUserID)(handler)
+	// Order: CORS → Recovery → Auth → Routes
+	handler = middleware.AuthMiddleware(jwtVerifier)(handler)
 	handler = middleware.Recovery(logger)(handler)
 
-	// CORS
+	// CORS - Must be before auth to handle OPTIONS pre-flight requests
 	corsHandler := cors.New(cors.Options{
 		AllowedOrigins:   strings.Split(cfg.CORSOrigins, ","),
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},

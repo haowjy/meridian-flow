@@ -5,15 +5,14 @@ import (
 )
 
 type Config struct {
-	Port          string
-	Environment   string
-	SupabaseURL   string
-	SupabaseKey   string
-	SupabaseDBURL string
-	TestUserID    string
-	TestProjectID string
-	CORSOrigins   string
-	TablePrefix   string
+	Port            string
+	Environment     string
+	SupabaseURL     string
+	SupabaseKey     string
+	SupabaseDBURL   string
+	SupabaseJWKSURL string // Constructed from SupabaseURL + /auth/v1/.well-known/jwks.json
+	CORSOrigins     string
+	TablePrefix     string
 	// LLM Configuration
 	AnthropicAPIKey  string
 	OpenRouterAPIKey string
@@ -26,17 +25,20 @@ type Config struct {
 func Load() *Config {
 	env := getEnv("ENVIRONMENT", "dev")
 	tablePrefix := getTablePrefix(env)
+	supabaseURL := getEnv("SUPABASE_URL", "")
+
+	// Construct JWKS URL from Supabase URL
+	jwksURL := supabaseURL + "/auth/v1/.well-known/jwks.json"
 
 	return &Config{
-		Port:          getEnv("PORT", "8080"),
-		Environment:   env,
-		SupabaseURL:   getEnv("SUPABASE_URL", ""),
-		SupabaseKey:   getEnv("SUPABASE_KEY", ""),
-		SupabaseDBURL: getEnv("SUPABASE_DB_URL", ""),
-		TestUserID:    getEnv("TEST_USER_ID", "00000000-0000-0000-0000-000000000001"),
-		TestProjectID: getEnv("TEST_PROJECT_ID", "00000000-0000-0000-0000-000000000001"),
-		CORSOrigins:   getEnv("CORS_ORIGINS", "http://localhost:3000"),
-		TablePrefix:   tablePrefix,
+		Port:            getEnv("PORT", "8080"),
+		Environment:     env,
+		SupabaseURL:     supabaseURL,
+		SupabaseKey:     getEnv("SUPABASE_KEY", ""),
+		SupabaseDBURL:   getEnv("SUPABASE_DB_URL", ""),
+		SupabaseJWKSURL: jwksURL,
+		CORSOrigins:     getEnv("CORS_ORIGINS", "http://localhost:3000"),
+		TablePrefix:     tablePrefix,
 		// LLM Configuration
 		AnthropicAPIKey:  getEnv("ANTHROPIC_API_KEY", ""),
 		OpenRouterAPIKey: getEnv("OPENROUTER_API_KEY", ""),

@@ -61,6 +61,7 @@ func SetupServices(
 	turnRepo llmRepo.TurnRepository,
 	projectRepo docsysRepo.ProjectRepository,
 	documentRepo docsysRepo.DocumentRepository,
+	folderRepo docsysRepo.FolderRepository,
 	providerRegistry *ProviderRegistry,
 	cfg *config.Config,
 	txManager repositories.TransactionManager,
@@ -106,8 +107,12 @@ func SetupServices(
 	)
 
 	// Create streaming service (turn creation/orchestration)
+	// Tools are created per-request with project-specific context
 	streamingService := streaming.NewService(
 		turnRepo,
+		chatRepo,
+		documentRepo,
+		folderRepo,
 		validator,
 		responseGenerator,
 		streamRegistry,

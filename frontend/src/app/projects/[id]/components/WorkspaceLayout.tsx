@@ -11,6 +11,9 @@ import { ActiveChatView } from '@/features/chats/components/ActiveChatView'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { useProjectStore } from '@/core/stores/useProjectStore'
 import { api } from '@/core/lib/api'
+import { makeLogger } from '@/core/lib/logger'
+
+const logger = makeLogger('workspace-layout')
 
 interface WorkspaceLayoutProps {
   projectId: string
@@ -112,7 +115,7 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
   // Effect only runs when document URL param changes, not when UI state changes
   // This allows future chat effects to run independently without interfering
   useEffect(() => {
-    console.log('[WorkspaceLayout] URL sync effect triggered', {
+    logger.debug('URL sync effect triggered', {
       previousDocId: previousDocumentIdRef.current,
       currentDocId: initialDocumentId,
     })
@@ -121,11 +124,11 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
     previousDocumentIdRef.current = initialDocumentId
 
     if (!urlChanged) {
-      console.log('[WorkspaceLayout] URL unchanged, skipping sync')
+      logger.debug('URL unchanged, skipping sync')
       return
     }
 
-    console.log('[WorkspaceLayout] URL changed, syncing UI state to match URL...')
+    logger.debug('URL changed, syncing UI state to match URL...')
 
     // Read current state without subscribing (no re-renders when state changes)
     const store = useUIStore.getState()
@@ -133,25 +136,25 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
     if (initialDocumentId) {
       // Document URL - open editor with this document and ensure sidebar open
       if (store.activeDocumentId !== initialDocumentId) {
-        console.log('[WorkspaceLayout] Setting active document:', initialDocumentId)
+        logger.debug('Setting active document:', initialDocumentId)
         store.setActiveDocument(initialDocumentId)
       }
       if (store.rightPanelState !== 'editor') {
-        console.log('[WorkspaceLayout] Setting panel state: editor')
+        logger.debug('Setting panel state: editor')
         store.setRightPanelState('editor')
       }
       if (store.rightPanelCollapsed) {
-        console.log('[WorkspaceLayout] Expanding right panel')
+        logger.debug('Expanding right panel')
         store.setRightPanelCollapsed(false)
       }
     } else {
       // Tree URL - show tree view
       if (store.activeDocumentId !== null) {
-        console.log('[WorkspaceLayout] Clearing active document')
+        logger.debug('Clearing active document')
         store.setActiveDocument(null)
       }
       if (store.rightPanelState !== 'documents') {
-        console.log('[WorkspaceLayout] Setting panel state: documents')
+        logger.debug('Setting panel state: documents')
         store.setRightPanelState('documents')
       }
     }
@@ -175,7 +178,7 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
     const existsInTree = documents.some((d) => d.id === initialDocumentId)
     const store = useUIStore.getState()
     if (existsInTree && store.activeDocumentId !== initialDocumentId) {
-      console.log('[WorkspaceLayout] Tree loaded, syncing active document to URL:', initialDocumentId)
+      logger.debug('Tree loaded, syncing active document to URL:', initialDocumentId)
       store.setActiveDocument(initialDocumentId)
     }
   }, [documentsCount, documents, initialDocumentId])

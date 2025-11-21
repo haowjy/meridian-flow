@@ -12,6 +12,8 @@ Lean, up-to-date references for engineers. Prefer code over prose; include file/
 
 - **High-level product:** `_docs/high-level/1-overview.md`
 - **Backend architecture:** `backend/architecture/overview.md`
+- **Frontend overview:** `frontend/README.md`
+- **Authentication (cross-stack):** `auth-overview.md`
 - **LLM core library:** `llm/README.md`
 - **Streaming architecture (LLM responses):** `backend/architecture/streaming-architecture.md`
 
@@ -55,12 +57,29 @@ flowchart LR
   class API b
 ```
 
+## Authentication
+
+**Status:** Backend 🚧 Planned | Frontend ✅ Complete
+
+Supabase Auth integration with JWT-based authentication:
+
+- **Cross-stack overview:** [auth-overview.md](auth-overview.md) - Complete auth flow
+- **Frontend implementation:** [frontend/auth-implementation.md](frontend/auth-implementation.md) - Supabase integration, middleware, JWT injection
+- **Backend implementation:** [backend/auth/supabase-jwt-implementation.md](backend/auth/supabase-jwt-implementation.md) - JWT validation (planned)
+
+**Frontend:** Cookie-based sessions, route protection, automatic JWT injection
+**Backend:** Test stubs (`TEST_USER_ID`) → JWT validation planned
+
 ## Backend (Go)
+
+**Overview:** [backend/README.md](backend/README.md)
+
+**Key docs:**
 - API contracts: [backend/api/contracts.md](backend/api/contracts.md)
 - Architecture overview: [backend/architecture/overview.md](backend/architecture/overview.md)
 - Database connections: [backend/database/connections.md](backend/database/connections.md)
 
-Relevant code
+**Relevant code:**
 - Entry/Wiring: backend/cmd/server/main.go
 - Services: backend/internal/service/
 - Repos: backend/internal/repository/postgres/
@@ -68,16 +87,19 @@ Relevant code
 
 ## Frontend (Next.js)
 
+**Overview:** [frontend/README.md](frontend/README.md)
+
 **Architecture:**
-- Navigation pattern: _docs/technical/frontend/architecture/navigation-pattern.md
-- Sync system: _docs/technical/frontend/architecture/sync-system.md
+- Navigation pattern: [frontend/architecture/navigation-pattern.md](frontend/architecture/navigation-pattern.md)
+- Sync system: [frontend/architecture/sync-system.md](frontend/architecture/sync-system.md)
 
 **Features:**
-- Editor caching/load flows: _docs/technical/frontend/editor-caching.md
-- Editor UI overview: _docs/technical/frontend/editor-ui-overview.md
+- Authentication: [frontend/auth-implementation.md](frontend/auth-implementation.md) ⭐
+- Editor caching/load flows: [frontend/editor-caching.md](frontend/editor-caching.md)
+- Editor UI overview: [frontend/editor-ui-overview.md](frontend/editor-ui-overview.md)
 
 **Guides:**
-- Setup quickstart: _docs/technical/frontend/setup-quickstart.md
+- Setup quickstart: [frontend/setup-quickstart.md](frontend/setup-quickstart.md)
 
 **Relevant code:**
 - Core libs: frontend/src/core/lib/{api,cache,sync,logger}.ts

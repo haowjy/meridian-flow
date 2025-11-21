@@ -33,5 +33,5 @@ type ConversationService interface {
 	// Direction: "before" (history), "after" (future/branches), "both" (split limit)
 	// fromTurnID: starting point (optional - defaults to chat.last_viewed_turn_id)
 	// Returns turns with blocks plus has_more flags for pagination
-	GetPaginatedTurns(ctx context.Context, chatID, userID string, fromTurnID *string, limit int, direction string) (*llm.PaginatedTurnsResponse, error)
+	GetPaginatedTurns(ctx context.Context, chatID, userID string, fromTurnID *string, limit int, direction string, updateLastViewed bool) (*llm.PaginatedTurnsResponse, error)
 }

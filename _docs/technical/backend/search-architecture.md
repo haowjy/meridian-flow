@@ -74,12 +74,12 @@ Search supports configurable fields (`name`, `content`) with weighted ranking:
 ```sql
 -- Example: Searching both name and content fields
 SELECT id, project_id, folder_id, name, content, word_count, created_at, updated_at,
-       (ts_rank(to_tsvector($1, name), plainto_tsquery($1, $2)) * 2.0 +
-        ts_rank(to_tsvector($1, content), plainto_tsquery($1, $2))) AS rank_score
+       (ts_rank(to_tsvector($1, name), websearch_to_tsquery($1, $2)) * 2.0 +
+        ts_rank(to_tsvector($1, content), websearch_to_tsquery($1, $2))) AS rank_score
 FROM documents
 WHERE deleted_at IS NULL
-  AND (to_tsvector($1, name) @@ plainto_tsquery($1, $2) OR
-       to_tsvector($1, content) @@ plainto_tsquery($1, $2))
+  AND (to_tsvector($1, name) @@ websearch_to_tsquery($1, $2) OR
+       to_tsvector($1, content) @@ websearch_to_tsquery($1, $2))
 ORDER BY rank_score DESC
 LIMIT $3 OFFSET $4
 ```
@@ -96,9 +96,16 @@ LIMIT $3 OFFSET $4
 
 **Components:**
 - `to_tsvector(language, field)` - Converts text to searchable tokens
-- `plainto_tsquery(language, query)` - Converts user query to search format
+- `websearch_to_tsquery(language, query)` - Converts query with Google-like syntax (OR, NOT, phrases)
 - `@@` operator - Full-text match
 - `ts_rank()` - Relevance scoring (higher = better match)
+
+**Search Query Syntax:**
+- **Simple search**: `dragon knight` (both words, like AND)
+- **OR search**: `dragon OR knight` (either word)
+- **NOT search**: `dragon -fire` (dragon but not fire)
+- **Phrase search**: `"dragon knight"` (exact phrase)
+- **Combined**: `"dragon rider" OR knight -villain` (complex queries)
 
 **Indexes:**
 
@@ -153,16 +160,44 @@ opts := &SearchOptions{
 ### Usage Example
 
 ```go
-// Basic search
+// Basic search (AND by default)
 opts := &docsystem.SearchOptions{
     Query:     "dragon knight battle",
     ProjectID: projectID,
 }
 results, err := repo.SearchDocuments(ctx, opts)
 
+// OR search (find either term)
+opts := &docsystem.SearchOptions{
+    Query:     "dragon OR knight",
+    ProjectID: projectID,
+}
+results, err := repo.SearchDocuments(ctx, opts)
+
+// NOT search (exclude terms)
+opts := &docsystem.SearchOptions{
+    Query:     "dragon -fire",  // dragon but not fire
+    ProjectID: projectID,
+}
+results, err := repo.SearchDocuments(ctx, opts)
+
+// Phrase search (exact match)
+opts := &docsystem.SearchOptions{
+    Query:     `"dark knight rises"`,  // exact phrase
+    ProjectID: projectID,
+}
+results, err := repo.SearchDocuments(ctx, opts)
+
+// Complex query (combining operators)
+opts := &docsystem.SearchOptions{
+    Query:     `"dragon rider" OR knight -villain`,
+    ProjectID: projectID,
+}
+results, err := repo.SearchDocuments(ctx, opts)
+
 // With pagination and language
 opts := &docsystem.SearchOptions{
-    Query:     "dragón batalla",
+    Query:     "dragón OR batalla",
     ProjectID: projectID,
     Limit:     50,
     Offset:    100,
@@ -204,8 +239,8 @@ These strategies use the same `SearchOptions` interface and extend the existing 
 
 **Query Optimization:**
 ```sql
--- Good: Uses index
-WHERE to_tsvector('english', content) @@ plainto_tsquery('english', $1)
+-- Good: Uses index (FTS with websearch syntax)
+WHERE to_tsvector('english', content) @@ websearch_to_tsquery('english', $1)
 
 -- Bad: Cannot use index (function on left side of WHERE)
 WHERE content LIKE '%dragon%'
@@ -215,9 +250,9 @@ WHERE content LIKE '%dragon%'
 ```sql
 EXPLAIN ANALYZE
 SELECT * FROM documents
-WHERE to_tsvector('english', content) @@ plainto_tsquery('english', 'dragon');
+WHERE to_tsvector('english', content) @@ websearch_to_tsquery('english', 'dragon OR knight');
 
--- Should show: "Bitmap Index Scan using idx_documents_fts_english"
+-- Should show: "Bitmap Index Scan using idx_documents_content_fts_english"
 -- Should NOT show: "Seq Scan"
 ```
 

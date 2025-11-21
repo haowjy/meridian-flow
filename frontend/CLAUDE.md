@@ -23,6 +23,80 @@ npm run test         # Vitest unit tests (core libs + services)
 npm run test:watch   # Vitest in watch mode
 ```
 
+## Authentication
+
+**Status**: ✅ Complete (Supabase Auth integration)
+
+**Overview**: Cookie-based sessions with automatic JWT injection into all API calls. Next.js middleware protects routes.
+
+### Supabase Clients
+
+Two client factories based on context:
+
+1. **Browser Client** (`src/core/supabase/client.ts`) - Use in Client Components
+2. **Server Client** (`src/core/supabase/server.ts`) - Use in Server Components, Route Handlers, middleware
+
+### Accessing User Session
+
+**In Client Components**:
+```typescript
+import { createBrowserSupabaseClient } from '@/core/supabase/client'
+
+const supabase = createBrowserSupabaseClient()
+const { data: { session } } = await supabase.auth.getSession()
+// session?.user.id, session?.user.email
+```
+
+**In Server Components**:
+```typescript
+import { createServerSupabaseClient } from '@/core/supabase/server'
+
+const supabase = await createServerSupabaseClient()
+const { data: { session } } = await supabase.auth.getSession()
+```
+
+### Route Protection
+
+**All routes automatically protected** by middleware (`src/proxy.ts`). No additional code needed in components.
+
+- Unauthenticated users → Redirect to `/login`
+- Authenticated users on `/login` or `/` → Redirect to `/projects`
+
+### API Calls
+
+**JWT injection is automatic**. No action needed in components:
+
+```typescript
+import { api } from '@/core/lib/api'
+
+// JWT automatically added to Authorization header
+const chats = await api.chats.list(projectId)
+```
+
+Implementation: `src/core/lib/api.ts:21-27` extracts JWT from session and adds to every request.
+
+### Key Files
+
+- `src/core/supabase/client.ts` - Browser client factory
+- `src/core/supabase/server.ts` - Server client factory with cookie handling
+- `src/proxy.ts` - Auth middleware (route protection)
+- `src/core/lib/api.ts` - JWT injection
+- `src/app/login/page.tsx` - Login UI
+- `src/features/auth/components/LoginForm.tsx` - Login form with OAuth
+- `src/app/auth/callback/route.ts` - OAuth callback handler
+
+### Environment Variables
+
+Required in `.env.local`:
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-anon-key
+```
+
+See `frontend/.env.example` for template.
+
+**Full documentation**: `_docs/technical/frontend/auth-implementation.md`
+
 ## Architecture Overview
 
 ### Caching Strategy
@@ -37,12 +111,10 @@ Three distinct caching patterns based on data characteristics:
 - **Utilities**: `loadWithPolicy(new ReconcileNewestPolicy())` in `core/lib/cache.ts`
 
 #### 2. Chats/Messages (Network-First)
-**Pattern**: Server is source of truth, cache is fallback
-- Fetch from API first → update IndexedDB
-- On network error: fallback to IndexedDB if available
-- Windowed caching for messages (last 100 only)
+**Pattern**: Server is source of truth.
+- Fetch from API first
+- No local caching (Dexie) currently implemented
 - **Implementation**: `useChatStore.ts`
-- **Utilities**: `loadWithPolicy(new NetworkFirstPolicy())`, `windowedCacheUpdate()` in `core/lib/cache.ts`
 
 #### 3. Metadata (Persist Middleware)
 **Pattern**: Small data, synchronous access via localStorage

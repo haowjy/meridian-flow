@@ -24,10 +24,10 @@ func NewTreeHandler(treeService docsysSvc.TreeService, logger *slog.Logger) *Tre
 
 // GetTree returns the nested folder/document tree for a project
 func (h *TreeHandler) GetTree(w http.ResponseWriter, r *http.Request) {
-	// Get project ID from context (injected by auth middleware)
-	projectID, err := getProjectID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+	// Get project ID from URL path
+	projectID := r.PathValue("id")
+	if projectID == "" {
+		httputil.RespondError(w, http.StatusBadRequest, "Project ID is required")
 		return
 	}
 

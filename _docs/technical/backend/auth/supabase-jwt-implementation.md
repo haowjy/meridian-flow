@@ -1,267 +1,105 @@
 ---
-detail: comprehensive
+detail: standard
 audience: developer
 status: implementation-ready
 ---
 
-# Supabase JWT Authentication Implementation Plan
+# Supabase JWT Authentication Implementation
 
-**Purpose:** Implement production-ready Supabase JWT authentication for the Go backend to replace Phase 1 test user stubs.
+**Purpose:** Replace test auth stubs with production-ready Supabase JWT validation.
 
-**Target Audience:** Backend engineer implementing authentication
-
-**Estimated Time:** 4-6 hours (including testing)
+**Context:** Backend currently uses hardcoded `TEST_USER_ID` (see `backend/internal/middleware/auth.go:9-20`). This guide covers migrating to real JWT validation while maintaining the existing middleware architecture.
 
 ---
 
-## Table of Contents
+## Decision: RS256 vs HS256
 
-1. [Context & Current State](#context--current-state)
-2. [Why This Implementation](#why-this-implementation)
-3. [Approach Decision: RS256 vs HS256](#approach-decision-rs256-vs-hs256)
-4. [Implementation Steps](#implementation-steps)
-5. [Testing & Validation](#testing--validation)
-6. [Security Considerations](#security-considerations)
-7. [Migration & Rollout](#migration--rollout)
-8. [Reference Links](#reference-links)
+Supabase supports two JWT signing methods. Choose based on project creation date:
 
----
+| Scenario | Method | Migrate By |
+|----------|--------|-----------|
+| Project created after May 1, 2025 | **RS256 + JWKS** | N/A |
+| Project created before May 1, 2025 | HS256 + JWT_SECRET | Nov 2025 |
+| Production-bound in 2025+ | **RS256 + JWKS** | N/A |
+| Quick prototype/MVP | HS256 + JWT_SECRET | Nov 2025 |
 
-## Context & Current State
+**Recommendation:** Use RS256 + JWKS for new projects (more secure, future-proof, automatic key rotation).
 
-### Current Architecture (Phase 1)
-
-The backend uses **test authentication stubs** for development:
-
-```
-Request → AuthMiddleware (injects TEST_USER_ID) → Handler → Service
-```
-
-**Key Files:**
-- `backend/internal/middleware/auth.go:9-20` - Stub middleware
-- `backend/internal/config/config.go:7-22` - Config with test IDs
-- `backend/internal/handler/context.go` - User/project ID extraction
-- `backend/cmd/server/main.go` - Middleware chain setup
-
-**How it works:**
-1. `AuthMiddleware` injects `TEST_USER_ID` from env var into request context
-2. Handlers call `getUserID(r)` to extract user ID from context
-3. Services receive user ID for authorization checks
-4. Returns 401 if user ID missing from context
-
-### Why Replace Test Stubs
-
-**Current limitations:**
-- ❌ No real authentication (anyone can access API)
-- ❌ Single hardcoded user/project ID
-- ❌ Cannot distinguish between users
-- ❌ Not production-ready
-- ❌ Cannot test multi-user scenarios
-
-**Phase 2 requirements:**
-- ✅ Validate real users from Supabase Auth
-- ✅ Extract user ID from JWT tokens
-- ✅ Support multiple users/projects
-- ✅ Production-ready security
-- ✅ Align with Supabase 2025 best practices
+**Check your project:**
+- Supabase Dashboard → Settings → API
+- If "JWKS Endpoint" exists → Use RS256
+- If only "JWT Secret" exists → Use HS256 (then migrate)
 
 ---
 
-## Why This Implementation
+## Architecture Flow
 
-### Business Requirements
+### RS256 + JWKS (Recommended)
 
-1. **User Authentication:** Verify users are who they claim to be
-2. **Multi-User Support:** Different users access different projects
-3. **Security:** Protect user data from unauthorized access
-4. **Integration:** Frontend uses Supabase Auth, backend must validate
+```mermaid
+sequenceDiagram
+    participant Frontend
+    participant Supabase Auth
+    participant Backend
+    participant JWKS Endpoint
 
-### Technical Requirements
+    Frontend->>Supabase Auth: Login (email/password)
+    Supabase Auth-->>Frontend: JWT (RS256 signed with private key)
 
-1. **JWT Validation:** Verify tokens issued by Supabase Auth
-2. **User ID Extraction:** Get user ID from JWT `sub` claim
-3. **Minimal Code Changes:** Leverage existing middleware architecture
-4. **Future-Proof:** Align with Supabase 2025 direction
-
-### Success Criteria
-
-- [ ] Backend validates JWT tokens from Supabase Auth
-- [ ] Unauthorized requests return 401
-- [ ] User ID correctly extracted and injected into context
-- [ ] All existing handlers work without modification
-- [ ] Test coverage for auth failures
-
----
-
-## Approach Decision: RS256 vs HS256
-
-Supabase supports two JWT signing methods. **Choose based on your project creation date.**
-
-### Option 1: RS256 + JWKS (Recommended for New Projects)
-
-**When to use:**
-- ✅ Project created after May 1, 2025
-- ✅ Want best security practices
-- ✅ Planning for production
-- ✅ Need automatic key rotation
-
-**How it works:**
-```
-Frontend Login → Supabase Auth → JWT (signed with private key)
-                                    ↓
-Backend → Fetch public key from JWKS → Verify signature → Extract claims
+    Frontend->>Backend: API Request + Authorization: Bearer {JWT}
+    Backend->>JWKS Endpoint: Fetch public keys (cached 10min)
+    JWKS Endpoint-->>Backend: Public keys
+    Backend->>Backend: Verify JWT signature with public key
+    Backend->>Backend: Check expiration (exp claim)
+    Backend->>Backend: Extract user ID (sub claim)
+    Backend->>Backend: Inject user ID into request context
+    Backend-->>Frontend: Response (200/401)
 ```
 
-**Pros:**
-- 🔒 More secure (no shared secrets)
+**Key differences vs HS256:**
+- ✅ No shared secret (more secure)
+- ✅ Backend fetches public keys (can't forge tokens)
+- ✅ Automatic key rotation support
 - ⚡ Faster (no network call to Supabase for validation)
-- 🔄 Automatic key rotation support
-- 📈 Future-proof (Supabase's direction)
 
-**Cons:**
-- Slightly more complex implementation
-- Requires JWKS fetching/caching
+### HS256 + JWT_SECRET (Legacy)
 
-**JWKS Endpoint:**
-```
-https://<project-id>.supabase.co/auth/v1/.well-known/jwks.json
-```
+```mermaid
+sequenceDiagram
+    participant Frontend
+    participant Supabase Auth
+    participant Backend
 
-### Option 2: HS256 + JWT_SECRET (Legacy but Still Supported)
+    Frontend->>Supabase Auth: Login (email/password)
+    Supabase Auth-->>Frontend: JWT (HS256 signed with JWT_SECRET)
 
-**When to use:**
-- ✅ Project created before May 1, 2025
-- ✅ Want simpler implementation
-- ✅ Short-term solution (migrate to RS256 by Nov 2025)
-
-**How it works:**
-```
-Frontend Login → Supabase Auth → JWT (signed with JWT_SECRET)
-                                    ↓
-Backend → Verify with same JWT_SECRET → Extract claims
+    Frontend->>Backend: API Request + Authorization: Bearer {JWT}
+    Backend->>Backend: Verify JWT signature with JWT_SECRET
+    Backend->>Backend: Check expiration (exp claim)
+    Backend->>Backend: Extract user ID (sub claim)
+    Backend->>Backend: Inject user ID into request context
+    Backend-->>Frontend: Response (200/401)
 ```
 
-**Pros:**
-- 🎯 Simpler implementation
-- ✅ Still officially supported (until Nov 2025)
-- 📚 More examples/tutorials available
-
-**Cons:**
+**Key differences:**
 - ⚠️ Shared secret (less secure)
 - ⏰ Being phased out (migrate by Nov 2025)
-- 🔐 Secret leakage risk
-
-**JWT_SECRET Location:**
-```
-Supabase Dashboard → Settings → API → JWT Secret
-```
-
-### Recommendation
-
-| Scenario | Choice |
-|----------|--------|
-| New project (post May 2025) | **RS256 + JWKS** |
-| Legacy project (pre May 2025) | **HS256 + JWT_SECRET** (then migrate) |
-| Production-bound in 2025+ | **RS256 + JWKS** |
-| Quick prototype/MVP | **HS256 + JWT_SECRET** |
-
-**For this project:** Since you're building for production and aligning with 2025 standards, **I recommend RS256 + JWKS**.
 
 ---
 
-## Implementation Steps
+## Supabase-Specific Patterns
 
-### Prerequisites
+### JWT Claims Structure
 
-**Check your Supabase project:**
-1. Go to Supabase Dashboard → Settings → API
-2. Check if you see "JWKS Endpoint" or "JWT Secret"
-3. If JWKS endpoint exists → Use RS256 approach
-4. If only JWT Secret exists → Use HS256 approach (migrate later)
-
----
-
-### Implementation: RS256 + JWKS (Recommended)
-
-#### Step 1: Add Dependencies
-
-```bash
-cd backend
-go get github.com/golang-jwt/jwt/v5
-go get github.com/MicahParks/keyfunc/v3
-```
-
-**Why these libraries:**
-- `golang-jwt/jwt/v5` - Industry-standard JWT parsing (12,777+ importers)
-- `MicahParks/keyfunc/v3` - JWKS fetching and caching for golang-jwt
-
-#### Step 2: Add Configuration
-
-**File:** `backend/internal/config/config.go`
-
-```go
-type Config struct {
-	Port          string
-	Environment   string
-	SupabaseURL   string
-	SupabaseKey   string  // Existing (anon key for frontend)
-	SupabaseDBURL string
-	TestUserID    string
-	TestProjectID string
-	CORSOrigins   string
-	TablePrefix   string
-	// LLM Configuration
-	AnthropicAPIKey string
-	DefaultModel    string
-	// Debug flags
-	Debug bool
-	// NEW: JWT Configuration
-	SupabaseJWKSURL string // Add this
-}
-
-func Load() *Config {
-	env := getEnv("ENVIRONMENT", "dev")
-	tablePrefix := getTablePrefix(env)
-	supabaseURL := getEnv("SUPABASE_URL", "")
-
-	// Construct JWKS URL from Supabase URL
-	jwksURL := ""
-	if supabaseURL != "" {
-		jwksURL = supabaseURL + "/auth/v1/.well-known/jwks.json"
-	}
-
-	return &Config{
-		Port:          getEnv("PORT", "8080"),
-		Environment:   env,
-		SupabaseURL:   supabaseURL,
-		SupabaseKey:   getEnv("SUPABASE_KEY", ""),
-		SupabaseDBURL: getEnv("SUPABASE_DB_URL", ""),
-		TestUserID:    getEnv("TEST_USER_ID", "00000000-0000-0000-0000-000000000001"),
-		TestProjectID: getEnv("TEST_PROJECT_ID", "00000000-0000-0000-0000-000000000001"),
-		CORSOrigins:   getEnv("CORS_ORIGINS", "http://localhost:3000"),
-		TablePrefix:   tablePrefix,
-		AnthropicAPIKey: getEnv("ANTHROPIC_API_KEY", ""),
-		DefaultModel:    getEnv("DEFAULT_MODEL", "claude-haiku-4-5-20251001"),
-		Debug: getEnv("DEBUG", getDefaultDebug(env)) == "true",
-		// NEW: JWKS URL
-		SupabaseJWKSURL: getEnv("SUPABASE_JWKS_URL", jwksURL),
-	}
-}
-```
-
-**Why:** Auto-construct JWKS URL from `SUPABASE_URL` (DRY principle)
-
-#### Step 3: Define JWT Claims Struct
-
-**File:** `backend/internal/domain/auth.go` (create new file)
+Supabase Auth includes custom claims beyond standard JWT fields:
 
 ```go
 package domain
 
 import "github.com/golang-jwt/jwt/v5"
 
-// SupabaseClaims represents the JWT claims from Supabase Auth
-// See: https://supabase.com/docs/guides/auth/jwt-fields
+// SupabaseClaims represents JWT claims from Supabase Auth
+// Reference: https://supabase.com/docs/guides/auth/jwt-fields
 type SupabaseClaims struct {
 	jwt.RegisteredClaims                      // iss, sub, aud, exp, iat, nbf
 	Email                string               `json:"email"`
@@ -280,757 +118,238 @@ func (c *SupabaseClaims) GetUserID() string {
 }
 ```
 
-**Why:**
-- `RegisteredClaims` provides standard JWT fields (exp, iat, etc.)
-- Matches Supabase's JWT structure
-- Type-safe access to claims
+**Why this matters:** Supabase's claims structure differs from generic OAuth providers. Using this struct ensures type-safe access to Supabase-specific fields.
 
-**Reference:** https://supabase.com/docs/guides/auth/jwt-fields
+### JWKS Endpoint Construction
 
-#### Step 4: Create JWT Verifier Service
-
-**File:** `backend/internal/auth/jwt_verifier.go` (create new file/package)
+Supabase's JWKS endpoint follows a predictable pattern:
 
 ```go
-package auth
-
-import (
-	"context"
-	"fmt"
-	"time"
-
-	"github.com/MicahParks/keyfunc/v3"
-	"github.com/golang-jwt/jwt/v5"
-	"meridian/internal/domain"
-)
-
-// JWTVerifier handles JWT token verification using JWKS
-type JWTVerifier struct {
-	jwks keyfunc.Keyfunc
-}
-
-// NewJWTVerifier creates a new JWT verifier with JWKS
-func NewJWTVerifier(jwksURL string) (*JWTVerifier, error) {
-	// Configure JWKS with automatic refresh
-	options := keyfunc.Options{
-		RefreshInterval: 10 * time.Minute, // Supabase caches for 10 min
-		RefreshTimeout:  10 * time.Second,
-		RefreshErrorHandler: func(err error) {
-			fmt.Printf("JWKS refresh error: %v\n", err)
-		},
-	}
-
-	// Create JWKS from remote URL
-	jwks, err := keyfunc.NewDefaultCtx(context.Background(), []string{jwksURL}, options)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create JWKS: %w", err)
-	}
-
-	return &JWTVerifier{jwks: jwks}, nil
-}
-
-// VerifyToken verifies a JWT token and returns the claims
-func (v *JWTVerifier) VerifyToken(tokenString string) (*domain.SupabaseClaims, error) {
-	// Parse and validate token
-	token, err := jwt.ParseWithClaims(
-		tokenString,
-		&domain.SupabaseClaims{},
-		v.jwks.Keyfunc,
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse token: %w", err)
-	}
-
-	if !token.Valid {
-		return nil, fmt.Errorf("token is invalid")
-	}
-
-	// Extract claims
-	claims, ok := token.Claims.(*domain.SupabaseClaims)
-	if !ok {
-		return nil, fmt.Errorf("invalid claims type")
-	}
-
-	return claims, nil
-}
-
-// Close cleans up the JWKS background refresh
-func (v *JWTVerifier) Close() {
-	v.jwks.EndBackground()
-}
+// Auto-construct JWKS URL from Supabase URL
+supabaseURL := "https://your-project.supabase.co"
+jwksURL := supabaseURL + "/auth/v1/.well-known/jwks.json"
 ```
 
-**Why:**
-- Encapsulates JWT verification logic
-- Automatic JWKS refresh every 10 minutes (matches Supabase cache)
-- Error handling for network issues
-- Reusable across middleware
-
-**Reference:** https://github.com/MicahParks/keyfunc
-
-#### Step 5: Update Auth Middleware
-
-**File:** `backend/internal/middleware/auth.go`
-
-```go
-package middleware
-
-import (
-	"fmt"
-	"net/http"
-	"strings"
-
-	"meridian/internal/auth"
-	"meridian/internal/httputil"
-)
-
-// AuthMiddleware validates Supabase JWT tokens and injects user ID into context
-func AuthMiddleware(jwtVerifier *auth.JWTVerifier) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Extract token from Authorization header
-			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" {
-				httputil.RespondError(w, http.StatusUnauthorized, "missing authorization header")
-				return
-			}
-
-			// Expected format: "Bearer <token>"
-			parts := strings.SplitN(authHeader, " ", 2)
-			if len(parts) != 2 || parts[0] != "Bearer" {
-				httputil.RespondError(w, http.StatusUnauthorized, "invalid authorization header format")
-				return
-			}
-
-			tokenString := parts[1]
-
-			// Verify token and extract claims
-			claims, err := jwtVerifier.VerifyToken(tokenString)
-			if err != nil {
-				httputil.RespondError(w, http.StatusUnauthorized, fmt.Sprintf("invalid token: %v", err))
-				return
-			}
-
-			// Inject user ID into context
-			userID := claims.GetUserID()
-			r = httputil.WithUserID(r, userID)
-
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-```
-
-**Why:**
-- Validates JWT signature using JWKS public keys
-- Checks token expiration automatically (via `jwt.ParseWithClaims`)
-- Extracts user ID and injects into context (matches existing pattern)
-- Returns 401 for any validation failure
-
-**Changes from Phase 1:**
-- No longer uses test user ID
-- Validates real JWT tokens
-- Same interface → handlers don't need changes
-
-#### Step 6: Update Server Initialization
-
-**File:** `backend/cmd/server/main.go`
-
-```go
-package main
-
-import (
-	"database/sql"
-	"fmt"
-	"log"
-	"net/http"
-	"os"
-	"strings"
-
-	"github.com/joho/godotenv"
-	"github.com/rs/cors"
-
-	"meridian/internal/auth"     // NEW
-	"meridian/internal/config"
-	"meridian/internal/handler"
-	"meridian/internal/middleware"
-	"meridian/internal/repository/postgres"
-	"meridian/internal/service"
-)
-
-func main() {
-	// Load environment variables
-	if err := godotenv.Load(); err != nil {
-		log.Printf("Warning: .env file not found")
-	}
-
-	// Load config
-	cfg := config.Load()
-
-	// Connect to database
-	db, err := sql.Open("pgx", cfg.SupabaseDBURL)
-	if err != nil {
-		log.Fatal("Failed to connect to database:", err)
-	}
-	defer db.Close()
-
-	// NEW: Initialize JWT verifier
-	jwtVerifier, err := auth.NewJWTVerifier(cfg.SupabaseJWKSURL)
-	if err != nil {
-		log.Fatal("Failed to create JWT verifier:", err)
-	}
-	defer jwtVerifier.Close()
-
-	// Initialize repositories
-	documentRepo := postgres.NewDocumentRepository(db, cfg.TablePrefix)
-	folderRepo := postgres.NewFolderRepository(db, cfg.TablePrefix)
-	// ... other repos
-
-	// Initialize services
-	documentService := service.NewDocumentService(documentRepo, folderRepo)
-	// ... other services
-
-	// Initialize handlers
-	documentHandler := handler.NewDocumentHandler(documentService)
-	// ... other handlers
-
-	// Create router
-	mux := http.NewServeMux()
-	documentHandler.RegisterRoutes(mux)
-	// ... register other routes
-
-	// Apply middleware (reverse order)
-	var httpHandler http.Handler = mux
-	httpHandler = middleware.ProjectMiddleware(cfg.TestProjectID)(httpHandler)
-	httpHandler = middleware.AuthMiddleware(jwtVerifier)(httpHandler)  // CHANGED
-	httpHandler = middleware.Recovery()(httpHandler)
-
-	// CORS
-	corsHandler := cors.New(cors.Options{
-		AllowedOrigins:   strings.Split(cfg.CORSOrigins, ","),
-		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", "Accept", "Origin"},
-		AllowCredentials: true,
-	}).Handler(httpHandler)
-
-	// Start server
-	addr := ":" + cfg.Port
-	log.Printf("Server starting on %s", addr)
-	if err := http.ListenAndServe(addr, corsHandler); err != nil {
-		log.Fatal("Server failed:", err)
-	}
-}
-```
-
-**Changes:**
-1. Import `meridian/internal/auth` package
-2. Create `jwtVerifier` from JWKS URL
-3. Pass `jwtVerifier` to `AuthMiddleware` (instead of test user ID)
-4. Close verifier on shutdown
-
-#### Step 7: Update Environment Variables
-
-**File:** `backend/.env`
-
-```bash
-# Existing
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your-anon-key  # Frontend uses this
-SUPABASE_DB_URL=postgresql://postgres:[password]@db.[project].supabase.co:6543/postgres
-
-# NEW (optional - auto-constructed from SUPABASE_URL)
-# SUPABASE_JWKS_URL=https://your-project.supabase.co/auth/v1/.well-known/jwks.json
-```
-
-**Why:**
-- JWKS URL auto-constructed from `SUPABASE_URL` → DRY
-- Override available if needed (e.g., custom auth server)
+This allows DRY configuration - set `SUPABASE_URL` once, derive JWKS URL automatically.
 
 ---
 
-### Implementation: HS256 + JWT_SECRET (Legacy Alternative)
+## Implementation Checklist
 
-If your project uses legacy JWT_SECRET instead of JWKS, follow these steps instead:
+### RS256 + JWKS Approach
 
-#### Step 1: Add Dependencies
-
+**1. Dependencies**
 ```bash
 cd backend
 go get github.com/golang-jwt/jwt/v5
+go get github.com/MicahParks/keyfunc/v3
 ```
 
-#### Step 2: Add Configuration
+**2. Configuration** (`backend/internal/config/config.go`)
+- [ ] Add `SupabaseJWKSURL string` to Config struct
+- [ ] Auto-construct from `SUPABASE_URL + "/auth/v1/.well-known/jwks.json"`
+- [ ] Allow override via `SUPABASE_JWKS_URL` env var
 
-**File:** `backend/internal/config/config.go`
+**3. JWT Claims** (`backend/internal/domain/auth.go` - new file)
+- [ ] Create `SupabaseClaims` struct (see above)
+- [ ] Add `GetUserID()` helper method
 
-```go
-type Config struct {
-	// ... existing fields ...
-	SupabaseJWTSecret string // Add this
-}
+**4. JWT Verifier** (`backend/internal/auth/jwt_verifier.go` - new package)
+- [ ] Create `JWTVerifier` struct with `keyfunc.Keyfunc` field
+- [ ] Implement `NewJWTVerifier(jwksURL)` with 10min refresh interval
+- [ ] Implement `VerifyToken(tokenString) (*SupabaseClaims, error)`
+- [ ] Implement `Close()` for cleanup
+- [ ] See: https://github.com/MicahParks/keyfunc for JWKS patterns
+- [ ] See: https://pkg.go.dev/github.com/golang-jwt/jwt/v5 for JWT parsing
 
-func Load() *Config {
-	return &Config{
-		// ... existing fields ...
-		SupabaseJWTSecret: getEnv("SUPABASE_JWT_SECRET", ""),
-	}
-}
-```
+**5. Auth Middleware** (`backend/internal/middleware/auth.go`)
+- [ ] Change signature: `AuthMiddleware(jwtVerifier *auth.JWTVerifier)`
+- [ ] Extract token from `Authorization: Bearer <token>` header
+- [ ] Call `jwtVerifier.VerifyToken(tokenString)`
+- [ ] Extract user ID: `claims.GetUserID()`
+- [ ] Inject into context: `httputil.WithUserID(r, userID)`
+- [ ] Return 401 for missing/invalid tokens
 
-#### Step 3: Define JWT Claims
+**6. Server Initialization** (`backend/cmd/server/main.go`)
+- [ ] Import `meridian/internal/auth`
+- [ ] Create `jwtVerifier, err := auth.NewJWTVerifier(cfg.SupabaseJWKSURL)`
+- [ ] Pass to middleware: `middleware.AuthMiddleware(jwtVerifier)`
+- [ ] Add `defer jwtVerifier.Close()` for cleanup
 
-Same as RS256 approach - use `backend/internal/domain/auth.go` from Step 3 above.
-
-#### Step 4: Update Auth Middleware (HS256 Version)
-
-**File:** `backend/internal/middleware/auth.go`
-
-```go
-package middleware
-
-import (
-	"fmt"
-	"net/http"
-	"strings"
-
-	"github.com/golang-jwt/jwt/v5"
-	"meridian/internal/domain"
-	"meridian/internal/httputil"
-)
-
-// AuthMiddleware validates Supabase JWT tokens using JWT_SECRET
-func AuthMiddleware(jwtSecret string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Extract token from Authorization header
-			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" {
-				httputil.RespondError(w, http.StatusUnauthorized, "missing authorization header")
-				return
-			}
-
-			// Expected format: "Bearer <token>"
-			parts := strings.SplitN(authHeader, " ", 2)
-			if len(parts) != 2 || parts[0] != "Bearer" {
-				httputil.RespondError(w, http.StatusUnauthorized, "invalid authorization header format")
-				return
-			}
-
-			tokenString := parts[1]
-
-			// Parse and validate token
-			token, err := jwt.ParseWithClaims(tokenString, &domain.SupabaseClaims{}, func(token *jwt.Token) (interface{}, error) {
-				// Validate signing method (prevent algorithm confusion attack)
-				if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-					return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-				}
-				return []byte(jwtSecret), nil
-			})
-
-			if err != nil {
-				httputil.RespondError(w, http.StatusUnauthorized, fmt.Sprintf("invalid token: %v", err))
-				return
-			}
-
-			if !token.Valid {
-				httputil.RespondError(w, http.StatusUnauthorized, "token is not valid")
-				return
-			}
-
-			// Extract claims
-			claims, ok := token.Claims.(*domain.SupabaseClaims)
-			if !ok {
-				httputil.RespondError(w, http.StatusUnauthorized, "invalid token claims")
-				return
-			}
-
-			// Inject user ID into context
-			r = httputil.WithUserID(r, claims.GetUserID())
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-```
-
-#### Step 5: Update Server Initialization (HS256 Version)
-
-**File:** `backend/cmd/server/main.go`
-
-```go
-// Replace this line:
-httpHandler = middleware.AuthMiddleware(cfg.TestUserID)(httpHandler)
-
-// With this:
-httpHandler = middleware.AuthMiddleware(cfg.SupabaseJWTSecret)(httpHandler)
-```
-
-#### Step 6: Update Environment Variables
-
-**File:** `backend/.env`
-
+**7. Environment Variables** (`backend/.env`)
 ```bash
-# Existing
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your-anon-key
-SUPABASE_DB_URL=postgresql://...
+# SUPABASE_JWKS_URL auto-constructed (override if needed)
+```
 
-# NEW - Get from Supabase Dashboard → Settings → API → JWT Secret
+### HS256 + JWT_SECRET Approach (Legacy)
+
+Same as above, except:
+
+**1. Dependencies**
+```bash
+go get github.com/golang-jwt/jwt/v5  # Only need this
+```
+
+**2. Configuration**
+- [ ] Add `SupabaseJWTSecret string` to Config
+- [ ] Load from `SUPABASE_JWT_SECRET` env var
+
+**3. Auth Middleware**
+- [ ] Change signature: `AuthMiddleware(jwtSecret string)`
+- [ ] Parse with: `jwt.ParseWithClaims(token, &SupabaseClaims{}, func(token) { return []byte(jwtSecret), nil })`
+- [ ] Validate signing method is HMAC (prevent algorithm confusion attack)
+
+**4. Environment Variables**
+```bash
+# Get from: Supabase Dashboard → Settings → API → JWT Secret
 SUPABASE_JWT_SECRET=your-jwt-secret-here
 ```
 
-**Where to find JWT Secret:**
-1. Supabase Dashboard → Project Settings → API
-2. Scroll to "JWT Settings"
-3. Copy "JWT Secret" (long base64 string)
-
 ---
 
-## Testing & Validation
-
-### Unit Tests
-
-**File:** `backend/internal/middleware/auth_test.go` (create new)
-
-```go
-package middleware_test
-
-import (
-	"net/http"
-	"net/http/httptest"
-	"testing"
-
-	"meridian/internal/auth"
-	"meridian/internal/middleware"
-)
-
-func TestAuthMiddleware_MissingHeader(t *testing.T) {
-	// Setup
-	verifier, _ := auth.NewJWTVerifier("https://test.supabase.co/.well-known/jwks.json")
-	handler := middleware.AuthMiddleware(verifier)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	// Test
-	req := httptest.NewRequest("GET", "/test", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	// Assert
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %d", rec.Code)
-	}
-}
-
-func TestAuthMiddleware_InvalidFormat(t *testing.T) {
-	// Setup
-	verifier, _ := auth.NewJWTVerifier("https://test.supabase.co/.well-known/jwks.json")
-	handler := middleware.AuthMiddleware(verifier)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	// Test - missing "Bearer" prefix
-	req := httptest.NewRequest("GET", "/test", nil)
-	req.Header.Set("Authorization", "some-token")
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	// Assert
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %d", rec.Code)
-	}
-}
-
-// Add more tests for:
-// - Invalid token
-// - Expired token
-// - Valid token (requires mock JWKS or test token)
-```
-
-### Integration Tests
-
-**Test with real Supabase token:**
-
-```bash
-# 1. Get a token from your frontend or Supabase Auth
-# (login via Supabase Auth UI or use supabase-js client)
-
-# 2. Export token
-export TOKEN="eyJhbGci..."
-
-# 3. Test protected endpoint
-curl -v \
-  -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/documents
-
-# Expected: 200 OK (if token valid)
-```
+## Testing Strategy
 
 ### Test Cases
 
-| Test Case | Expected Result |
-|-----------|----------------|
-| No Authorization header | 401 Unauthorized |
-| Wrong header format (no "Bearer") | 401 Unauthorized |
-| Invalid token signature | 401 Unauthorized |
-| Expired token | 401 Unauthorized |
-| Valid token | User ID extracted, request proceeds |
-| Token from different Supabase project | 401 Unauthorized |
+| Test Case | Expected Result | How to Test |
+|-----------|----------------|-------------|
+| No Authorization header | 401 Unauthorized | `curl http://localhost:8080/api/documents` |
+| Wrong header format | 401 Unauthorized | `curl -H "Authorization: token123" ...` |
+| Invalid signature | 401 Unauthorized | Use JWT from different Supabase project |
+| Expired token | 401 Unauthorized | Use token > 1 hour old |
+| Valid token | User ID extracted, 200 OK | Login via frontend, get token, test |
+| Multiple users | Correct user ID per token | Test with 2+ Supabase users |
 
-### Manual Testing Checklist
+### Manual Testing Flow
 
-- [ ] Start backend server
-- [ ] Login via frontend (get JWT token)
-- [ ] Call protected endpoint with valid token → 200 OK
-- [ ] Call without Authorization header → 401
-- [ ] Call with malformed header → 401
-- [ ] Call with expired token → 401
-- [ ] Verify user ID is correct in backend logs
-- [ ] Test multiple users (different tokens)
+1. **Get a real token:**
+   - Login via frontend (uses Supabase Auth)
+   - Extract JWT from localStorage or network tab
+   - Or use `supabase-js` client to generate token
+
+2. **Test with curl:**
+   ```bash
+   export TOKEN="eyJhbGci..."
+   curl -v -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/documents
+   ```
+
+3. **Verify logs:**
+   - Check backend logs for extracted user ID
+   - Confirm it matches Supabase Auth user
+
+### Unit Testing
+
+Create `backend/internal/middleware/auth_test.go`:
+- Test missing Authorization header → 401
+- Test invalid format (no "Bearer") → 401
+- Test expired token → 401
+- Test valid token → user ID in context
+
+For valid token tests, use test JWT from https://jwt.io or mock JWKS endpoint.
 
 ---
 
 ## Security Considerations
 
-### Token Security
+### Critical Checks
 
-1. **HTTPS in Production**
-   - Always use HTTPS to prevent token interception
-   - Tokens in HTTP headers are vulnerable to man-in-the-middle attacks
-
-2. **Token Expiration**
-   - Supabase default: 1 hour (configurable)
-   - Short expiration reduces risk of token theft
-   - Frontend should handle token refresh automatically
-
-3. **Secret Management**
-   - **NEVER commit secrets to Git** (use `.env`, add to `.gitignore`)
-   - **NEVER expose JWT_SECRET in frontend code**
-   - Use environment variables in production (Railway secrets, etc.)
-
-4. **Algorithm Validation**
-   - Always validate signing algorithm (prevents algorithm confusion attacks)
-   - Code explicitly checks for HMAC (HS256) or RSA (RS256)
-
-### Common Vulnerabilities
-
-| Vulnerability | Mitigation |
-|---------------|------------|
-| Algorithm confusion | Validate `token.Method` before verification |
-| Token replay | Use short expiration + HTTPS |
-| Secret leakage | Environment variables + .gitignore |
-| XSS token theft | Frontend: use httpOnly cookies (if possible) |
-| Missing validation | Always check `token.Valid` after parsing |
+| Vulnerability | Mitigation | Where |
+|---------------|-----------|-------|
+| Algorithm confusion attack | Validate signing method (HMAC or RSA) | Middleware parsing |
+| Token replay | Use HTTPS + short expiration (1hr default) | Infrastructure |
+| Secret leakage | Never commit secrets, use env vars | `.gitignore` + Railway secrets |
+| Missing validation | Always check `token.Valid` after parsing | Middleware |
+| XSS token theft | Frontend: httpOnly cookies (if possible) | Frontend config |
 
 ### Best Practices
 
-1. **Validate Everything**
-   ```go
-   // ✅ Good
-   if !token.Valid {
-       return error
-   }
-
-   // ❌ Bad - assumes token is valid
-   claims := token.Claims.(*SupabaseClaims)
-   ```
-
-2. **Explicit Algorithm Check**
-   ```go
-   // ✅ Good
-   if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-       return error
-   }
-
-   // ❌ Bad - accepts any algorithm
-   return []byte(secret), nil
-   ```
-
-3. **Error Messages**
-   ```go
-   // ✅ Good - generic message
-   return "unauthorized"
-
-   // ❌ Bad - reveals implementation details
-   return "JWT signature invalid: " + err.Error()
-   ```
+1. **Always use HTTPS in production** - JWTs in HTTP headers are vulnerable to interception
+2. **Validate signing algorithm explicitly** - Prevents attacker from changing algorithm
+3. **Keep tokens short-lived** - Supabase default is 1 hour (configurable)
+4. **Never log full tokens** - Log user ID only, not token content
+5. **Generic error messages** - Don't reveal token validation details in 401 responses
 
 ---
 
-## Migration & Rollout
+## Migration Path
 
-### Gradual Rollout Strategy
+### Current State → RS256
 
-**Option 1: Environment-based toggle**
+```mermaid
+graph LR
+    A[Test Stub<br/>hardcoded ID] --> B[RS256 + JWKS<br/>real validation]
 
-```go
-// cmd/server/main.go
-
-if cfg.Environment == "dev" && cfg.TestUserID != "" {
-    // Use test auth for local development
-    httpHandler = middleware.AuthMiddleware(cfg.TestUserID)(httpHandler)
-} else {
-    // Use real JWT auth for staging/production
-    jwtVerifier, err := auth.NewJWTVerifier(cfg.SupabaseJWKSURL)
-    if err != nil {
-        log.Fatal("Failed to create JWT verifier:", err)
-    }
-    defer jwtVerifier.Close()
-    httpHandler = middleware.AuthMiddleware(jwtVerifier)(httpHandler)
-}
+    style A fill:#ff6b6b
+    style B fill:#51cf66
 ```
 
-**Option 2: Feature flag**
-
-```bash
-# .env
-USE_REAL_AUTH=true  # false for test auth
-```
-
-### Deployment Checklist
-
-**Before Deployment:**
-- [ ] Add `SUPABASE_JWKS_URL` (or `SUPABASE_JWT_SECRET`) to production env vars
-- [ ] Verify JWKS endpoint is accessible from production (test with `curl`)
-- [ ] Update frontend to send `Authorization: Bearer <token>` header
-- [ ] Test with real Supabase tokens in staging environment
-- [ ] Add monitoring/logging for auth failures
-
-**During Deployment:**
+**Deployment checklist:**
+- [ ] Add `SUPABASE_JWKS_URL` to production env vars (Railway)
+- [ ] Verify JWKS endpoint accessible: `curl https://your-project.supabase.co/auth/v1/.well-known/jwks.json`
 - [ ] Deploy backend with new auth code
-- [ ] Deploy frontend with token-sending code
-- [ ] Monitor error logs for auth failures
+- [ ] Ensure frontend sends `Authorization: Bearer <token>` header
 - [ ] Test login flow end-to-end
-
-**After Deployment:**
-- [ ] Verify users can authenticate
-- [ ] Check 401 errors for unauthenticated requests
-- [ ] Monitor for unusual auth patterns
-- [ ] Remove test user middleware code
+- [ ] Monitor logs for auth failures
+- [ ] Remove test user middleware code after validation
 
 ### Rollback Plan
 
 If issues occur:
-
-1. **Backend rollback:**
-   ```bash
-   git revert <auth-commit>
-   # Redeploy
-   ```
-
-2. **Environment variable rollback:**
-   ```bash
-   # Temporarily re-enable test auth
-   USE_REAL_AUTH=false
-   ```
-
-3. **Verify:**
-   - Test endpoints work with test user ID
-   - Check database connections still work
-   - Verify no auth-related errors
+```bash
+git revert <auth-commit>
+# Or temporarily: USE_REAL_AUTH=false (if you add feature flag)
+```
 
 ---
 
 ## Reference Links
 
-### Official Supabase Documentation
-
+### Supabase Documentation
 - **JWT Overview:** https://supabase.com/docs/guides/auth/jwts
-- **JWT Claims Reference:** https://supabase.com/docs/guides/auth/jwt-fields
-- **JWT Signing Keys (RS256):** https://supabase.com/docs/guides/auth/signing-keys
-- **Server-Side Auth Guide:** https://supabase.com/docs/guides/auth/server-side
-- **Auth Architecture:** https://supabase.com/docs/guides/auth/architecture
+- **JWT Claims:** https://supabase.com/docs/guides/auth/jwt-fields
+- **Signing Keys (RS256):** https://supabase.com/docs/guides/auth/signing-keys
+- **Server-Side Auth:** https://supabase.com/docs/guides/auth/server-side
 
 ### Go Libraries
-
 - **golang-jwt/jwt (v5):** https://pkg.go.dev/github.com/golang-jwt/jwt/v5
 - **MicahParks/keyfunc (JWKS):** https://github.com/MicahParks/keyfunc
-- **Go JWT Tutorial:** https://golang-jwt.github.io/jwt/usage/create/
-
-### Community Resources
-
-- **Supabase + Go Backend Example:** https://depshub.com/blog/using-supabase-auth-as-a-service-with-a-custom-backend/
-- **StackOverflow: Supabase JWT Go:** https://stackoverflow.com/questions/74711755/how-to-connect-supabase-with-my-golang-for-jwt-token-verification-api-from-supab
-- **GitHub Discussions:** https://github.com/orgs/supabase/discussions/29289
 
 ### Security
-
 - **OWASP JWT Security:** https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_for_Java_Cheat_Sheet.html
 - **Algorithm Confusion Attack:** https://auth0.com/blog/critical-vulnerabilities-in-json-web-token-libraries/
-- **JWT Best Practices:** https://tools.ietf.org/html/rfc8725
 
 ### Supabase 2025 Changes
-
 - **API Keys Migration:** https://github.com/orgs/supabase/discussions/29260
-- **Asymmetric Keys Announcement:** https://dev.to/kvetoslavnovak/supabase-auth-itroduces-asymmetric-jwts-4i4e
-- **RS256 Support Discussion:** https://github.com/orgs/supabase/discussions/12759
+- **RS256 Announcement:** https://dev.to/kvetoslavnovak/supabase-auth-itroduces-asymmetric-jwts-4i4e
 
 ---
 
-## Appendix: Troubleshooting
+## Troubleshooting
 
 ### Common Errors
 
-**Error:** `failed to create JWKS: connection refused`
-- **Cause:** JWKS URL unreachable
-- **Fix:** Check `SUPABASE_URL` is correct, verify network access
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `failed to create JWKS: connection refused` | JWKS URL unreachable | Check `SUPABASE_URL`, verify network access |
+| `unexpected signing method: HS256` | Project uses HS256, code expects RS256 | Use HS256 implementation instead |
+| `token is expired` | Token older than 1 hour | Frontend: implement token refresh |
+| `sub claim not found` | Token not from Supabase | Verify token source, check Auth integration |
 
-**Error:** `unexpected signing method: HS256`
-- **Cause:** Project uses HS256 but code expects RS256
-- **Fix:** Use HS256 implementation (legacy approach)
+### Debug Commands
 
-**Error:** `token is expired`
-- **Cause:** Frontend token expired (default 1 hour)
-- **Fix:** Implement token refresh in frontend
+```bash
+# Verify JWKS endpoint
+curl https://your-project.supabase.co/auth/v1/.well-known/jwks.json
 
-**Error:** `sub claim not found`
-- **Cause:** Token not from Supabase Auth
-- **Fix:** Verify token source, check Supabase Auth integration
+# Decode token (install: https://github.com/mike-engel/jwt-cli)
+jwt decode <token>
 
-### Debugging Tips
-
-1. **Log token claims:**
-   ```go
-   claims, _ := jwtVerifier.VerifyToken(tokenString)
-   log.Printf("User ID: %s, Email: %s", claims.GetUserID(), claims.Email)
-   ```
-
-2. **Decode token locally:**
-   ```bash
-   # Install jwt-cli: https://github.com/mike-engel/jwt-cli
-   jwt decode <token>
-   ```
-
-3. **Verify JWKS endpoint:**
-   ```bash
-   curl https://your-project.supabase.co/auth/v1/.well-known/jwks.json
-   ```
-
-4. **Test token in jwt.io:**
-   - Go to https://jwt.io
-   - Paste token
-   - Check claims structure
+# Or use jwt.io in browser
+```
 
 ---
 
-## Summary
+## Additional Resources
 
-**What we're building:**
-- Replace test auth middleware with real Supabase JWT validation
-- Extract user ID from JWT tokens
-- Maintain existing handler architecture (no handler changes needed)
-
-**Why RS256 + JWKS (recommended):**
-- ✅ Future-proof (Supabase's 2025 direction)
-- ✅ More secure (no shared secrets)
-- ✅ Automatic key rotation
-- ✅ Production-ready
-
-**Why HS256 + JWT_SECRET (legacy):**
-- ✅ Simpler implementation
-- ✅ Works for older projects
-- ⚠️ Must migrate to RS256 by Nov 2025
-
-**Implementation time:** 4-6 hours (including testing)
-
-**Questions?** Check reference links or Supabase Discord: https://discord.supabase.com
+For comprehensive reference with full implementation code, see: `REFERENCE-supabase-jwt-full.md`

@@ -29,6 +29,15 @@ export async function fetchAPI<T>(
       headers.set('Content-Type', 'application/json')
     }
 
+    // Inject Supabase Auth Token
+    const { createClient } = await import('@/core/supabase/client')
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    
+    if (session?.access_token) {
+      headers.set('Authorization', `Bearer ${session.access_token}`)
+    }
+
     const response = await fetch(`${API_BASE}${endpoint}`, {
       ...options,
       signal: options?.signal,

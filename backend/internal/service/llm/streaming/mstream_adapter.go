@@ -11,6 +11,7 @@ import (
 	llmModels "meridian/internal/domain/models/llm"
 	llmRepo "meridian/internal/domain/repositories/llm"
 	domainllm "meridian/internal/domain/services/llm"
+	"meridian/internal/service/llm/tools"
 )
 
 // StreamExecutor wraps mstream.Stream and manages LLM streaming for a turn.
@@ -24,6 +25,13 @@ type StreamExecutor struct {
 	provider domainllm.LLMProvider
 	logger   *slog.Logger
 	req      *domainllm.GenerateRequest // Stored for WorkFunc to use
+
+	// Tool execution support
+	toolRegistry     *tools.ToolRegistry
+	collectedTools   []tools.ToolCall // tool_use blocks collected during streaming
+	toolIteration    int              // current tool round (0 = initial, 1+ = continuations)
+	maxToolRounds    int              // maximum number of tool execution rounds (default: 5)
+	maxBlockSequence int              // highest block sequence number persisted (for tool_result sequencing)
 }
 
 // NewStreamExecutor creates a new mstream-based executor for a turn.
@@ -34,15 +42,19 @@ func NewStreamExecutor(
 	turnWriter llmRepo.TurnWriter,
 	turnReader llmRepo.TurnReader,
 	provider domainllm.LLMProvider,
+	toolRegistry *tools.ToolRegistry,
 	logger *slog.Logger,
 	debugMode bool,
 ) *StreamExecutor {
 	se := &StreamExecutor{
-		turnID:   turnID,
-		model:    model,
-		turnRepo: turnWriter,
-		provider: provider,
-		logger:   logger,
+		turnID:        turnID,
+		model:         model,
+		turnRepo:      turnWriter,
+		provider:      provider,
+		logger:        logger,
+		toolRegistry:  toolRegistry,
+		toolIteration: 0,
+		maxToolRounds: 5, // Prevent infinite loops
 	}
 
 	// Create catchup function for database-backed event replay (needs TurnReader)
@@ -186,6 +198,11 @@ func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(ms
 	// Set turn ID
 	block.TurnID = se.turnID
 
+	// Collect tool_use blocks for later execution (if tool registry is available)
+	if se.toolRegistry != nil && block.BlockType == llmModels.BlockTypeToolUse {
+		se.collectToolUse(block)
+	}
+
 	// Persist block to database atomically using PersistAndClear
 	// NOTE: We intentionally do NOT check ctx.Done() before persisting.
 	// Even if context is cancelled (e.g., client disconnect, server shutdown),
@@ -199,6 +216,11 @@ func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(ms
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to persist block %d: %w", block.Sequence, err)
+	}
+
+	// Track max sequence for tool_result block sequencing
+	if block.Sequence > se.maxBlockSequence {
+		se.maxBlockSequence = block.Sequence
 	}
 
 	// After persistence, emit a block_delta event with full JSON content (if present)
@@ -242,12 +264,38 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 	// No need to finalize accumulator - complete blocks are received directly from library
 	// and persisted in processCompleteBlock()
 
+	// Use request model as fallback if provider doesn't send it in metadata
+	// This prevents validation errors when OpenRouter or other providers omit model in streaming responses
+	if metadata.Model == "" {
+		metadata.Model = se.model
+	}
+
 	// Update turn with metadata
 	if err := se.updateTurnMetadata(ctx, metadata); err != nil {
 		se.handleError(ctx, send, fmt.Errorf("failed to update turn metadata: %w", err))
 		return err
 	}
 
+	// Check if we have collected tools to execute
+	if len(se.collectedTools) > 0 && se.toolRegistry != nil {
+		// Check iteration limit to prevent infinite loops
+		if se.toolIteration >= se.maxToolRounds {
+			se.logger.Warn("max tool rounds reached, completing without tool execution",
+				"tool_iteration", se.toolIteration,
+				"max_rounds", se.maxToolRounds,
+				"collected_tools", len(se.collectedTools),
+			)
+		} else {
+			// Execute tools and continue streaming
+			se.logger.Info("executing collected tools",
+				"tool_count", len(se.collectedTools),
+				"iteration", se.toolIteration,
+			)
+			return se.executeToolsAndContinue(ctx, send)
+		}
+	}
+
+	// No tools to execute, complete the turn
 	// Update turn status in database
 	if err := se.turnRepo.UpdateTurnStatus(ctx, se.turnID, "complete", nil); err != nil {
 		se.logger.Error("failed to update turn status to complete", "error", err)
@@ -306,4 +354,128 @@ func (se *StreamExecutor) updateTurnMetadata(ctx context.Context, metadata *doma
 		"stop_reason":       metadata.StopReason,
 		"response_metadata": metadata.ResponseMetadata,
 	})
+}
+
+// collectToolUse extracts tool use information from a tool_use block and adds it to the collection.
+func (se *StreamExecutor) collectToolUse(block *llmModels.TurnBlock) {
+	// Extract tool use info from block.Content
+	// Expected format: {"tool_use_id": "...", "tool_name": "...", "input": {...}}
+	if block.Content == nil {
+		se.logger.Warn("tool_use block has no content", "block_id", block.ID)
+		return
+	}
+
+	toolUseID, ok := block.Content["tool_use_id"].(string)
+	if !ok {
+		se.logger.Warn("tool_use block missing tool_use_id", "block_id", block.ID)
+		return
+	}
+
+	toolName, ok := block.Content["tool_name"].(string)
+	if !ok {
+		se.logger.Warn("tool_use block missing tool_name", "block_id", block.ID)
+		return
+	}
+
+	toolInput, ok := block.Content["input"].(map[string]interface{})
+	if !ok {
+		se.logger.Warn("tool_use block missing or invalid input", "block_id", block.ID)
+		return
+	}
+
+	// Add to collected tools
+	toolCall := tools.ToolCall{
+		ID:    toolUseID,
+		Name:  toolName,
+		Input: toolInput,
+	}
+
+	se.collectedTools = append(se.collectedTools, toolCall)
+
+	se.logger.Debug("collected tool use",
+		"tool_use_id", toolUseID,
+		"tool_name", toolName,
+		"tool_count", len(se.collectedTools),
+	)
+}
+
+// executeToolsAndContinue executes the collected tools in parallel, persists the results,
+// and continues streaming with the tool results.
+func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func(mstream.Event)) error {
+	// Execute all collected tools in parallel
+	toolResults := se.toolRegistry.ExecuteParallel(ctx, se.collectedTools)
+
+	se.logger.Info("tool execution completed",
+		"tool_count", len(toolResults),
+		"iteration", se.toolIteration,
+	)
+
+	// Persist tool_result blocks to database
+	// Each tool result becomes a separate tool_result block
+	// Start sequencing after the last block persisted during streaming
+	nextSequence := se.maxBlockSequence + 1
+
+	for i, toolResult := range toolResults {
+		resultBlock := &llmModels.TurnBlock{
+			TurnID:    se.turnID,
+			BlockType: llmModels.BlockTypeToolResult,
+			Sequence:  nextSequence + i,
+			Content: map[string]interface{}{
+				"tool_use_id": toolResult.ID,
+				"is_error":    toolResult.IsError,
+			},
+		}
+
+		// Add result or error to content
+		if toolResult.IsError {
+			resultBlock.Content["error"] = toolResult.Error.Error()
+		} else {
+			resultBlock.Content["result"] = toolResult.Result
+		}
+
+		// Persist the tool_result block
+		if err := se.turnRepo.CreateTurnBlock(ctx, resultBlock); err != nil {
+			se.logger.Error("failed to persist tool result block",
+				"error", err,
+				"tool_use_id", toolResult.ID,
+			)
+			// Update turn status to error before returning
+			if updateErr := se.turnRepo.UpdateTurnError(ctx, se.turnID, err.Error()); updateErr != nil {
+				se.logger.Error("failed to update turn error status", "error", updateErr)
+			}
+			return fmt.Errorf("failed to persist tool result: %w", err)
+		}
+
+		// Track max sequence for potential future tool rounds
+		if resultBlock.Sequence > se.maxBlockSequence {
+			se.maxBlockSequence = resultBlock.Sequence
+		}
+
+		se.logger.Debug("persisted tool result",
+			"tool_use_id", toolResult.ID,
+			"is_error", toolResult.IsError,
+		)
+	}
+
+	// TODO: Continue streaming with tool results
+	// This requires building a new GenerateRequest with the conversation history
+	// including the tool results, and calling the provider again
+	// For now, we'll complete the turn
+
+	se.logger.Warn("tool continuation not yet implemented, completing turn",
+		"tool_count", len(toolResults),
+	)
+
+	// Update turn status to complete
+	if err := se.turnRepo.UpdateTurnStatus(ctx, se.turnID, "complete", nil); err != nil {
+		se.logger.Error("failed to update turn status", "error", err)
+	}
+
+	// Send completion event
+	se.sendEvent(send, llmModels.SSEEventTurnComplete, llmModels.TurnCompleteEvent{
+		TurnID:     se.turnID,
+		StopReason: "tool_use", // Indicate we stopped for tool execution
+	})
+
+	return nil
 }

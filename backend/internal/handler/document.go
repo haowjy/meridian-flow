@@ -33,11 +33,13 @@ func NewDocumentHandler(docService docsysSvc.DocumentService, logger *slog.Logge
 // Returns 201 if created, 409 with existing document if duplicate
 func (h *DocumentHandler) CreateDocument(w http.ResponseWriter, r *http.Request) {
 	// Extract project ID from context
-	projectID, err := getProjectID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
-		return
+	// Extract project ID from context or path
+	projectID := r.PathValue("id")
+	if projectID == "" {
+		projectID, _ = getProjectID(r)
 	}
+	// If still empty, we'll rely on the body or fail later if strictly required by service
+
 
 	// Get userID from context (set by auth middleware)
 	userID := httputil.GetUserID(r)
@@ -72,11 +74,7 @@ func (h *DocumentHandler) CreateDocument(w http.ResponseWriter, r *http.Request)
 // GetDocument retrieves a document by ID
 // GET /api/documents/{id}
 func (h *DocumentHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
-	projectID, err := getProjectID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
-		return
-	}
+	projectID, _ := getProjectID(r)
 
 	id := r.PathValue("id")
 	if id == "" {
@@ -96,11 +94,7 @@ func (h *DocumentHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 // UpdateDocument updates a document
 // PATCH /api/documents/{id}
 func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request) {
-	projectID, err := getProjectID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
-		return
-	}
+	projectID, _ := getProjectID(r)
 
 	id := r.PathValue("id")
 	if id == "" {
@@ -127,11 +121,7 @@ func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request)
 // DeleteDocument deletes a document
 // DELETE /api/documents/{id}
 func (h *DocumentHandler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
-	projectID, err := getProjectID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
-		return
-	}
+	projectID, _ := getProjectID(r)
 
 	id := r.PathValue("id")
 	if id == "" {

@@ -642,6 +642,24 @@
       "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.turns) {\n  console.log('✅ Pagination response:');\n  console.log('Turns loaded:', response.turns.length);\n  console.log('Has more before:', response.has_more_before);\n  console.log('Has more after:', response.has_more_after);\n  const totalBlocks = response.turns.reduce((sum, t) => sum + (t.blocks?.length || 0), 0);\n  console.log('Total blocks:', totalBlocks);\n  // Count turns before/after from_turn_id\n  const fromId = '{{ _.user_turn_id }}';\n  const fromIndex = response.turns.findIndex(t => t.id === fromId);\n  if (fromIndex >= 0) {\n    console.log('Turns before from_turn_id:', fromIndex);\n    console.log('Turns after from_turn_id:', response.turns.length - fromIndex - 1);\n  }\n}"
     },
     {
+      "_id": "req_paginated_turns_both_update",
+      "parentId": "fld_pagination",
+      "modified": 1736553600000,
+      "created": 1736553600000,
+      "url": "{{ _.base_url }}/api/chats/{{ _.chat_id }}/turns?from_turn_id={{ _.user_turn_id }}&limit=100&direction=both&update_last_viewed=true",
+      "name": "5. Paginate Both (Update Last Viewed)",
+      "description": "Same as 'Paginate Both' but explicitly updates chat.last_viewed_turn_id via ?update_last_viewed=true\nUse for: Sibling switching, bookmarking a position",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1698791650000,
+      "isPrivate": false,
+      "_type": "request",
+      "afterResponseScript": "const response = insomnia.response.json();\nif (response && response.turns) {\n  console.log('✅ Pagination (update_last_viewed) response:');\n  console.log('Turns loaded:', response.turns.length);\n  console.log('Has more before:', response.has_more_before);\n  console.log('Has more after:', response.has_more_after);\n}"
+    },
+    {
       "_id": "fld_pagination",
       "parentId": "wrk_chat",
       "modified": 1736553600000,

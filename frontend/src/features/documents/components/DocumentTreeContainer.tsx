@@ -146,11 +146,18 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
   // Error state
   if (error) {
     return (
-      <ErrorPanel
-        title="Failed to load documents"
-        message={error}
-        onRetry={() => loadTree(projectId)}
-      />
+      <DocumentTreePanel
+        title={projectName || undefined}
+        onCreateDocument={() => setIsCreateDialogOpen(true)}
+        onSearch={setSearchQuery}
+        isEmpty={false}
+      >
+        <ErrorPanel
+          title="Failed to load documents"
+          message={error}
+          onRetry={() => loadTree(projectId)}
+        />
+      </DocumentTreePanel>
     )
   }
 

@@ -30,5 +30,5 @@ type TurnNavigator interface {
 	// When direction is "after" and multiple children exist, follows the most recent child (latest created_at)
 	// fromTurnID: starting point (optional - defaults to chat.last_viewed_turn_id)
 	// Returns turns with blocks in a single response, plus has_more flags for pagination
-	GetPaginatedTurns(ctx context.Context, chatID, userID string, fromTurnID *string, limit int, direction string) (*llm.PaginatedTurnsResponse, error)
+	GetPaginatedTurns(ctx context.Context, chatID, userID string, fromTurnID *string, limit int, direction string, updateLastViewed bool) (*llm.PaginatedTurnsResponse, error)
 }

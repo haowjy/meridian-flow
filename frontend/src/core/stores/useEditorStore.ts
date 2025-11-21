@@ -7,6 +7,9 @@ import { loadWithPolicy, ReconcileNewestPolicy, ICacheRepo, IRemoteRepo } from '
 import { documentSyncService } from '@/core/services/documentSyncService'
 import { handleApiError, isAbortError } from '@/core/lib/errors'
 import { toast } from 'sonner'
+import { makeLogger } from '@/core/lib/logger'
+
+const logger = makeLogger('editor-store')
 
 interface EditorStore {
   activeDocument: Document | null
@@ -43,7 +46,7 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
       hasUserEdit: false, // Reset edit flag when switching docs
     })
 
-    console.log(`[Load] Starting load for document ${documentId}`)
+    logger.debug(`Starting load for document ${documentId}`)
 
     try {
 
@@ -89,14 +92,14 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
     } catch (error) {
       // Handle AbortError silently (expected when user switches documents)
       if (isAbortError(error)) {
-        console.log(`[Load] Aborted load for ${documentId}`)
+        logger.debug(`Aborted load for ${documentId}`)
         set({ isLoading: false })
         return
       }
 
       // Real errors: show to user
       const message = error instanceof Error ? error.message : 'Failed to load document'
-      console.error(`[Load] Failed to load document ${documentId}:`, error)
+      logger.error(`Failed to load document ${documentId}:`, error)
       set({ error: message, isLoading: false })
       handleApiError(error, 'Failed to load document')
     }

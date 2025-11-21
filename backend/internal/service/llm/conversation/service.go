@@ -81,9 +81,9 @@ func (s *Service) GetChatTree(ctx context.Context, chatID, userID string) (*llmM
 }
 
 // GetPaginatedTurns retrieves turns and blocks in paginated fashion
-func (s *Service) GetPaginatedTurns(ctx context.Context, chatID, userID string, fromTurnID *string, limit int, direction string) (*llmModels.PaginatedTurnsResponse, error) {
+func (s *Service) GetPaginatedTurns(ctx context.Context, chatID, userID string, fromTurnID *string, limit int, direction string, updateLastViewed bool) (*llmModels.PaginatedTurnsResponse, error) {
 	// Delegate to repository (validation happens there)
-	response, err := s.turnNavigator.GetPaginatedTurns(ctx, chatID, userID, fromTurnID, limit, direction)
+	response, err := s.turnNavigator.GetPaginatedTurns(ctx, chatID, userID, fromTurnID, limit, direction, updateLastViewed)
 	if err != nil {
 		return nil, err
 	}

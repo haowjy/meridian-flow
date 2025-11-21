@@ -124,9 +124,11 @@ site_url = "http://127.0.0.1:3000"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
 additional_redirect_urls = ["https://127.0.0.1:3000"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
-jwt_expiry = 3600
+jwt_expiry = 36000
+# JWT issuer URL. If not set, defaults to the local API URL (http://127.0.0.1:<port>/auth/v1).
+# jwt_issuer = ""
 # Path to JWT signing key. DO NOT commit your signing keys file to git.
-# signing_keys_path = "./signing_keys.json"
+signing_keys_path = "./signing_keys.json"
 # If disabled, the refresh token will never expire.
 enable_refresh_token_rotation = true
 # Allows refresh tokens to be reused after expiry, up to the specified interval in seconds.
@@ -197,6 +199,12 @@ otp_expiry = 3600
 # [auth.email.template.invite]
 # subject = "You have been invited"
 # content_path = "./supabase/templates/invite.html"
+
+# Uncomment to customize notification email template
+# [auth.email.notification.password_changed]
+# enabled = true
+# subject = "Your password has been changed"
+# content_path = "./templates/password_changed_notification.html"
 
 [auth.sms]
 # Allow/disallow new user signups via SMS to your project.

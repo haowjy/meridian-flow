@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"meridian/internal/auth"
 	"meridian/internal/config"
 	"meridian/internal/repository/postgres"
 	postgresDocsys "meridian/internal/repository/postgres/docsystem"
@@ -58,10 +59,32 @@ func main() {
 	// Create table names
 	tables := postgres.NewTableNames(cfg.TablePrefix)
 
+	// Create auth admin client for user management
+	authClient := auth.NewAdminClient(cfg.SupabaseURL, cfg.SupabaseKey)
+
+	// Create or recreate test user
+	testEmail := "test@example.com"
+	testPassword := "meridian"
+
+	log.Printf("🔐 Deleting existing test user (%s) if exists...", testEmail)
+	if err := authClient.DeleteUserByEmail(testEmail); err != nil {
+		log.Printf("⚠️  Warning: Failed to delete user: %v (continuing anyway)", err)
+	}
+
+	log.Printf("🔐 Creating test user (%s)...", testEmail)
+	userID, err := authClient.CreateUser(testEmail, testPassword)
+	if err != nil {
+		log.Fatalf("❌ Failed to create test user: %v", err)
+	}
+	log.Printf("✅ Created test user with ID: %s", userID)
+
+	// Fixed project ID for test data
+	projectID := "00000000-0000-0000-0000-000000000001"
+
 	// Exit early if clear-data mode (just clear and exit)
 	if *clearData {
 		log.Println("🧹 Clearing existing documents and folders...")
-		if err := clearProjectData(ctx, pool, tables, cfg.TestProjectID); err != nil {
+		if err := clearProjectData(ctx, pool, tables, projectID); err != nil {
 			log.Fatalf("Failed to clear data: %v", err)
 		}
 		log.Println("✅ Data cleared successfully")
@@ -69,7 +92,7 @@ func main() {
 	}
 
 	// Ensure test project exists
-	if err := ensureTestProject(ctx, pool, tables, cfg.TestProjectID, cfg.TestUserID); err != nil {
+	if err := ensureTestProject(ctx, pool, tables, projectID, userID); err != nil {
 		log.Fatalf("Failed to ensure test project: %v", err)
 	}
 
@@ -95,7 +118,7 @@ func main() {
 
 	// Clear existing data
 	log.Println("⚠️  Clearing existing documents and folders...")
-	if err := importService.DeleteAllDocuments(ctx, cfg.TestProjectID); err != nil {
+	if err := importService.DeleteAllDocuments(ctx, projectID); err != nil {
 		log.Printf("Warning: Could not clear data: %v", err)
 	}
 
@@ -109,7 +132,7 @@ func main() {
 	}
 
 	// Process zip file using import service
-	result, err := importService.ProcessZipFile(ctx, cfg.TestProjectID, cfg.TestUserID, bytes.NewReader(zipBuffer.Bytes()))
+	result, err := importService.ProcessZipFile(ctx, projectID, userID, bytes.NewReader(zipBuffer.Bytes()))
 	if err != nil {
 		log.Fatalf("Failed to process seed data: %v", err)
 	}
@@ -130,7 +153,7 @@ func main() {
 	// Seed chat data
 	log.Println("💬 Seeding chat data...")
 	llmSeeder := seed.NewLLMSeeder(pool, tables, logger)
-	if err := llmSeeder.SeedChatData(ctx, cfg.TestProjectID, cfg.TestUserID); err != nil {
+	if err := llmSeeder.SeedChatData(ctx, projectID, userID); err != nil {
 		log.Fatalf("Failed to seed chat data: %v", err)
 	}
 	log.Println("✅ Chat data seeded")
