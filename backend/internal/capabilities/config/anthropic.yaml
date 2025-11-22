@@ -1,0 +1,18 @@
+provider: anthropic
+models:
+  claude-haiku-4-5:
+    display_name: "Claude Haiku 4.5"
+    description: "Fast, affordable model for everyday tasks"
+    supports_tools: true
+    supports_thinking: true
+    supports_vision: true
+    tool_call_quality: excellent
+    image_generation: none
+    context_window: 200000
+    max_output: 8192
+    pricing_tiers:
+      - threshold: null
+        input_price:
+          text: 0.80
+        output_price:
+          text: 4.00

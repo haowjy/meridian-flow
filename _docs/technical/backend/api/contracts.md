@@ -925,6 +925,163 @@ Backend prevents moving folder to be a child of its own descendant.
 
 Moves that would create circular references are rejected with a validation error.
 
+## Model Capabilities
+
+Provides model capability metadata for UI rendering and provider selection.
+
+### Get Model Capabilities (GET /api/models/capabilities)
+
+Returns available models grouped by provider, filtered by configured API keys.
+
+**Response:**
+```json
+{
+  "providers": [
+    {
+      "id": "anthropic",
+      "name": "Anthropic",
+      "models": [
+        {
+          "id": "claude-haiku-4-5",
+          "display_name": "Claude Haiku 4.5",
+          "context_window": 200000,
+          "capabilities": {
+            "tool_calls": "excellent",
+            "image_input": true,
+            "image_generation": false,
+            "streaming": true,
+            "thinking": true
+          },
+          "pricing": {
+            "input_per_1m": 0.80,
+            "output_per_1m": 4.00,
+            "tiers": [
+              {
+                "threshold": null,
+                "input_price": {"text": 0.80},
+                "output_price": {"text": 4.00}
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "models": [
+        {
+          "id": "x-ai/grok-4.1-fast",
+          "display_name": "Grok 4.1 Fast",
+          "context_window": 131072,
+          "capabilities": {
+            "tool_calls": "excellent",
+            "image_input": false,
+            "image_generation": false,
+            "streaming": true,
+            "thinking": true
+          },
+          "pricing": {
+            "input_per_1m": 0.20,
+            "output_per_1m": 0.50,
+            "tiers": [
+              {
+                "threshold": null,
+                "input_price": {"text": 0.20},
+                "output_price": {"text": 0.50}
+              },
+              {
+                "threshold": 128000,
+                "input_price": {"text": 0.40},
+                "output_price": {"text": 1.00}
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Pricing Structure:**
+- `input_per_1m`/`output_per_1m`: First tier's text modality price (backward compatible, simple access)
+- `tiers`: Full pricing structure with thresholds and modality support
+  - `threshold: null`: No upper limit (applies to all context sizes, or to context size below next tier)
+  - `threshold: 128000`: Price changes at 128K tokens
+  - Modalities: Currently only `"text"`, future support for `"audio"`, `"image"` output
+- Tiers are ordered by threshold (lowest to highest)
+
+**Behavior:**
+- Only returns providers with configured API keys (e.g., if `ANTHROPIC_API_KEY` is not set, Anthropic provider is omitted)
+- Capability data loaded from embedded YAML files in `backend/internal/capabilities/config/`
+- No authentication required (public endpoint)
+
+**Use Cases:**
+- Frontend model selector dropdowns
+- Displaying model capabilities and pricing
+- Feature availability detection
+- Cost calculation with tier-aware pricing
+
+## User Preferences
+
+User-specific preferences including favorite models and default selections.
+
+### Get User Preferences (GET /api/users/me/preferences)
+
+Retrieves preferences for the authenticated user.
+
+**Response:**
+```json
+{
+  "user_id": "user-uuid",
+  "favorite_models": [
+    {"provider": "anthropic", "model": "claude-haiku-4-5"},
+    {"provider": "openrouter", "model": "x-ai/grok-code-fast-1"}
+  ],
+  "default_model": "claude-haiku-4-5",
+  "default_provider": "anthropic",
+  "settings": {},
+  "created_at": "2025-01-15T10:00:00Z",
+  "updated_at": "2025-01-15T10:05:00Z"
+}
+```
+
+**Behavior:**
+- Returns default/empty preferences if user has never set any
+- Default response includes empty arrays and null values for unset fields
+
+### Update User Preferences (PATCH /api/users/me/preferences)
+
+Updates user preferences (partial update supported).
+
+**Request Body:**
+```json
+{
+  "favorite_models": [
+    {"provider": "anthropic", "model": "claude-haiku-4-5"},
+    {"provider": "openrouter", "model": "google/gemini-2.5-flash"}
+  ],
+  "default_model": "claude-haiku-4-5",
+  "default_provider": "anthropic",
+  "settings": {"theme": "dark"}
+}
+```
+
+**Validation:**
+- All fields are optional (partial updates allowed)
+- `favorite_models`: Array of provider/model pair objects (each with `provider` and `model` fields)
+- `default_model`: String model ID (nullable)
+- `default_provider`: String provider ID (nullable)
+- `settings`: JSON object for future extensibility
+
+**Response:** Updated preferences object (same structure as GET)
+
+**Behavior:**
+- Creates new preferences row if none exists (upsert)
+- Only updates provided fields (null values are treated as "set to null")
+- `updated_at` timestamp automatically updated
+
 ## References
 
 See the frontend state management and flows documentation for complementary guidance.

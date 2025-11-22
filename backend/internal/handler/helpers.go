@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/google/uuid"
 	"meridian/internal/domain"
 	"meridian/internal/httputil"
 )
@@ -53,4 +54,9 @@ func HandleCreateConflict[T any](w http.ResponseWriter, err error, fetchFn func(
 
 	// Not a conflict error, handle normally
 	handleError(w, err)
+}
+
+// parseUUID parses a string into a UUID
+func parseUUID(s string) (uuid.UUID, error) {
+	return uuid.Parse(s)
 }

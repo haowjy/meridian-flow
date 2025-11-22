@@ -7,6 +7,7 @@ import (
 
 	mstream "github.com/haowjy/meridian-stream-go"
 
+	"meridian/internal/capabilities"
 	"meridian/internal/config"
 	"meridian/internal/domain/repositories"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
@@ -70,6 +71,7 @@ func SetupServices(
 	providerRegistry *ProviderRegistry,
 	cfg *config.Config,
 	txManager repositories.TransactionManager,
+	capabilityRegistry *capabilities.Registry,
 	logger *slog.Logger,
 ) (*Services, *mstream.Registry, error) {
 	// Create shared validator
@@ -101,6 +103,7 @@ func SetupServices(
 		chatRepo,
 		turnRepo, // TurnReader
 		turnRepo, // TurnNavigator (same repo implements both)
+		capabilityRegistry,
 	)
 
 	// Create system prompt resolver
@@ -134,6 +137,7 @@ func SetupServices(
 		txManager,
 		systemPromptResolver,
 		formatterRegistry,
+		capabilityRegistry,
 		logger,
 	)
 

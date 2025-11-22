@@ -10,12 +10,14 @@ import (
 	"time"
 
 	"meridian/internal/auth"
+	"meridian/internal/capabilities"
 	"meridian/internal/config"
 	"meridian/internal/handler"
 	"meridian/internal/middleware"
 	"meridian/internal/repository/postgres"
 	postgresDocsys "meridian/internal/repository/postgres/docsystem"
 	postgresLLM "meridian/internal/repository/postgres/llm"
+	"meridian/internal/service"
 	serviceDocsys "meridian/internal/service/docsystem"
 	serviceLLM "meridian/internal/service/llm"
 
@@ -85,6 +87,9 @@ func main() {
 	chatRepo := postgresLLM.NewChatRepository(repoConfig)
 	turnRepo := postgresLLM.NewTurnRepository(repoConfig)
 
+	// User preferences repository
+	userPrefsRepo := postgres.NewUserPreferencesRepository(repoConfig)
+
 	// Create validators (for soft-delete validation)
 	docsysValidator := serviceDocsys.NewResourceValidator(projectRepo, folderRepo)
 
@@ -93,6 +98,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to setup LLM providers: %v", err)
 	}
+
+	// Initialize capability registry
+	capabilityRegistry, err := capabilities.NewRegistry()
+	if err != nil {
+		log.Fatalf("Failed to initialize capability registry: %v", err)
+	}
+	logger.Info("capability registry initialized")
 
 	// Setup LLM services (chat, conversation, streaming)
 	llmServices, streamRegistry, err := serviceLLM.SetupServices(
@@ -104,6 +116,7 @@ func main() {
 		providerRegistry,
 		cfg,
 		txManager,
+		capabilityRegistry,
 		logger,
 	)
 	if err != nil {
@@ -118,6 +131,9 @@ func main() {
 	folderService := serviceDocsys.NewFolderService(folderRepo, docRepo, pathResolver, txManager, docsysValidator, logger)
 	treeService := serviceDocsys.NewTreeService(folderRepo, docRepo, logger)
 	importService := serviceDocsys.NewImportService(docRepo, docService, logger)
+
+	// Create user preferences service
+	userPrefsService := service.NewUserPreferencesService(userPrefsRepo, logger)
 
 	// Create new handlers
 	projectHandler := handler.NewProjectHandler(projectService, logger)
@@ -134,6 +150,10 @@ func main() {
 		streamRegistry,
 		logger,
 	)
+
+	// Model capabilities and user preferences handlers
+	modelsHandler := handler.NewModelsHandler(cfg, logger, capabilityRegistry)
+	userPrefsHandler := handler.NewUserPreferencesHandler(userPrefsService, logger)
 
 	// Debug handlers (only in dev environment)
 	var chatDebugHandler *handler.ChatDebugHandler
@@ -179,6 +199,13 @@ func main() {
 	// Import routes
 	mux.HandleFunc("POST /api/import", importHandler.Merge)
 	mux.HandleFunc("POST /api/import/replace", importHandler.Replace)
+
+	// Model capabilities routes
+	mux.HandleFunc("GET /api/models/capabilities", modelsHandler.GetCapabilities)
+
+	// User preferences routes
+	mux.HandleFunc("GET /api/users/me/preferences", userPrefsHandler.GetPreferences)
+	mux.HandleFunc("PATCH /api/users/me/preferences", userPrefsHandler.UpdatePreferences)
 
 	// Chat routes
 	mux.HandleFunc("POST /api/chats", chatHandler.CreateChat)

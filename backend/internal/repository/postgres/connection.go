@@ -28,6 +28,9 @@ type TableNames struct {
 	Turns              string
 	TurnBlocks         string
 	AssistantResponses string
+
+	// User preferences
+	UserPreferences string
 }
 
 // NewTableNames creates table names with the given prefix
@@ -42,6 +45,9 @@ func NewTableNames(prefix string) *TableNames {
 		Turns:              fmt.Sprintf("%sturns", prefix),
 		TurnBlocks:         fmt.Sprintf("%sturn_blocks", prefix),
 		AssistantResponses: fmt.Sprintf("%sassistant_responses", prefix),
+
+		// User preferences
+		UserPreferences: fmt.Sprintf("%suser_preferences", prefix),
 	}
 }
 

@@ -7,9 +7,9 @@ import (
 	"time"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
-	llmprovider "github.com/haowjy/meridian-llm-go"
 	mstream "github.com/haowjy/meridian-stream-go"
 
+	"meridian/internal/capabilities"
 	"meridian/internal/config"
 	"meridian/internal/domain"
 	llmModels "meridian/internal/domain/models/llm"
@@ -48,6 +48,7 @@ type Service struct {
 	txManager            repositories.TransactionManager
 	systemPromptResolver llmSvc.SystemPromptResolver
 	formatterRegistry    *formatting.FormatterRegistry
+	capabilityRegistry   *capabilities.Registry
 	logger               *slog.Logger
 }
 
@@ -66,6 +67,7 @@ func NewService(
 	txManager            repositories.TransactionManager,
 	systemPromptResolver llmSvc.SystemPromptResolver,
 	formatterRegistry    *formatting.FormatterRegistry,
+	capabilityRegistry   *capabilities.Registry,
 	logger               *slog.Logger,
 ) llmSvc.StreamingService {
 	return &Service{
@@ -82,6 +84,7 @@ func NewService(
 		txManager:            txManager,
 		systemPromptResolver: systemPromptResolver,
 		formatterRegistry:    formatterRegistry,
+		capabilityRegistry:   capabilityRegistry,
 		logger:               logger,
 	}
 }
@@ -541,8 +544,7 @@ func (s *Service) injectTokenLimitWarningIfNeeded(path []llmModels.Turn, message
 	}
 
 	// Get model capability from registry
-	registry := llmprovider.GetCapabilityRegistry()
-	modelCap, err := registry.GetModelCapability(provider, *lastAssistantTurn.Model)
+	modelCap, err := s.capabilityRegistry.GetModelCapabilities(provider, *lastAssistantTurn.Model)
 	if err != nil {
 		// Model not in registry - skip warning
 		return nil

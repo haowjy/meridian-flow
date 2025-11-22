@@ -4,8 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	llmprovider "github.com/haowjy/meridian-llm-go"
-
+	"meridian/internal/capabilities"
 	llmModels "meridian/internal/domain/models/llm"
 	llmRepo "meridian/internal/domain/repositories/llm"
 	llmSvc "meridian/internal/domain/services/llm"
@@ -15,9 +14,10 @@ import (
 // Handles conversation history and navigation operations
 // Uses minimal interfaces (TurnReader, TurnNavigator) for better ISP compliance
 type Service struct {
-	chatRepo      llmRepo.ChatRepository
-	turnReader    llmRepo.TurnReader
-	turnNavigator llmRepo.TurnNavigator
+	chatRepo          llmRepo.ChatRepository
+	turnReader        llmRepo.TurnReader
+	turnNavigator     llmRepo.TurnNavigator
+	capabilityRegistry *capabilities.Registry
 }
 
 // NewService creates a new conversation service
@@ -25,11 +25,13 @@ func NewService(
 	chatRepo llmRepo.ChatRepository,
 	turnReader llmRepo.TurnReader,
 	turnNavigator llmRepo.TurnNavigator,
+	capabilityRegistry *capabilities.Registry,
 ) llmSvc.ConversationService {
 	return &Service{
-		chatRepo:      chatRepo,
-		turnReader:    turnReader,
-		turnNavigator: turnNavigator,
+		chatRepo:          chatRepo,
+		turnReader:        turnReader,
+		turnNavigator:     turnNavigator,
+		capabilityRegistry: capabilityRegistry,
 	}
 }
 
@@ -151,8 +153,7 @@ func (s *Service) GetTurnTokenUsage(ctx context.Context, turnID string) (*llmMod
 	info.ProviderName = &provider
 
 	// Get model capability from registry
-	registry := llmprovider.GetCapabilityRegistry()
-	modelCap, err := registry.GetModelCapability(provider, *turn.Model)
+	modelCap, err := s.capabilityRegistry.GetModelCapabilities(provider, *turn.Model)
 	if err != nil {
 		// Model not in registry - return what we have without limit/percentage
 		return info, nil
