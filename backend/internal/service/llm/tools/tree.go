@@ -39,14 +39,15 @@ func NewTreeTool(
 // Returns:
 //   - {type: "tree", path, folders: [...], documents: [...]}
 func (t *TreeTool) Execute(ctx context.Context, input map[string]interface{}) (interface{}, error) {
-	// Validate and extract folder path
-	folderPath, ok := input["folder"].(string)
-	if !ok || folderPath == "" {
-		return nil, errors.New("missing required parameter: folder (string)")
+	// Extract folder path (default to root)
+	folderPath := "/" // default
+	if folderVal, exists := input["folder"]; exists {
+		if fp, ok := folderVal.(string); ok && strings.TrimSpace(fp) != "" {
+			folderPath = strings.TrimSpace(fp)
+		}
 	}
 
 	// Normalize path
-	folderPath = strings.TrimSpace(folderPath)
 	if folderPath == "" {
 		folderPath = "/"
 	}

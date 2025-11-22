@@ -6,12 +6,12 @@ const (
 	DeltaTypeThinking      = "thinking_delta"    // Thinking/reasoning text
 	DeltaTypeSignature     = "signature_delta"   // Cryptographic signature (Anthropic/Gemini Extended Thinking)
 	DeltaTypeToolCallStart = "tool_call_start"   // Tool call initiated (name, id)
-	DeltaTypeInputJSON     = "input_json_delta"  // Incremental tool input JSON
+	DeltaTypeJSON          = "json_delta"        // Incremental JSON content (tool input, tool results, etc.)
 	DeltaTypeUsage         = "usage_delta"       // Token usage updates
 
 	// Legacy aliases for backwards compatibility
 	DeltaTypeTextDelta      = DeltaTypeText
-	DeltaTypeInputJSONDelta = DeltaTypeInputJSON
+	DeltaTypeInputJSONDelta = DeltaTypeJSON // DEPRECATED: use DeltaTypeJSON
 )
 
 // TurnBlockDelta represents an incremental update to a turn block during streaming
@@ -55,9 +55,11 @@ type TurnBlockDelta struct {
 	// Accumulated into TurnBlock.Content["signature"]
 	SignatureDelta *string `json:"signature_delta,omitempty"`
 
-	// InputJSONDelta contains incremental JSON for tool input (tool_use blocks)
-	// Accumulated into TurnBlock.Content["input"]
-	InputJSONDelta *string `json:"input_json_delta,omitempty"`
+	// JSONDelta contains incremental JSON content
+	// For tool_use blocks: accumulated into TurnBlock.Content["input"]
+	// For tool_result blocks: accumulated into TurnBlock.Content["result"]
+	// For other structured blocks: accumulated into appropriate Content field
+	JSONDelta *string `json:"json_delta,omitempty"`
 
 	// === Tool Call Metadata ===
 
@@ -103,9 +105,14 @@ func (d *TurnBlockDelta) IsTextDelta() bool {
 	return (d.DeltaType == DeltaTypeText || d.DeltaType == DeltaTypeThinking) && d.TextDelta != nil
 }
 
-// IsInputJSONDelta returns true if this delta contains tool input JSON
+// IsJSONDelta returns true if this delta contains JSON content
+func (d *TurnBlockDelta) IsJSONDelta() bool {
+	return d.DeltaType == DeltaTypeJSON && d.JSONDelta != nil
+}
+
+// IsInputJSONDelta is DEPRECATED, use IsJSONDelta instead
 func (d *TurnBlockDelta) IsInputJSONDelta() bool {
-	return d.DeltaType == DeltaTypeInputJSON && d.InputJSONDelta != nil
+	return d.IsJSONDelta()
 }
 
 // IsBlockStart returns true if this delta signals the start of a new block

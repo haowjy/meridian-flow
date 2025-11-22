@@ -21,7 +21,7 @@ sequenceDiagram
 
     Provider-->>Executor: StreamEvent{Delta (tool_use)}
     Executor->>Client: SSE: block_start {block_index, block_type: "tool_use"}
-    Executor->>Client: SSE: block_delta {delta_type: "input_json_delta", input_json_delta: "{...}"}
+    Executor->>Client: SSE: block_delta {delta_type: "json_delta", json_delta: "{...}"}
 
     Note over Executor: Persist tool_use block when complete Block arrives
 

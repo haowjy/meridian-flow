@@ -366,6 +366,32 @@ func (h *ChatHandler) GetTurnBlocks(w http.ResponseWriter, r *http.Request) {
 	httputil.RespondJSON(w, http.StatusOK, response)
 }
 
+// GetTurnTokenUsage retrieves token usage statistics for a turn
+// GET /api/turns/{id}/token-usage
+func (h *ChatHandler) GetTurnTokenUsage(w http.ResponseWriter, r *http.Request) {
+	// Get turn ID from route param
+	turnID := r.PathValue("id")
+	if turnID == "" {
+		httputil.RespondError(w, http.StatusBadRequest, "Turn ID is required")
+		return
+	}
+
+	// Validate turn ID format
+	if _, err := uuid.Parse(turnID); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Invalid turn ID format")
+		return
+	}
+
+	// Get token usage from service
+	tokenUsage, err := h.conversationService.GetTurnTokenUsage(r.Context(), turnID)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	httputil.RespondJSON(w, http.StatusOK, tokenUsage)
+}
+
 // InterruptTurn cancels a streaming turn
 // POST /api/turns/{id}/interrupt
 func (h *ChatHandler) InterruptTurn(w http.ResponseWriter, r *http.Request) {

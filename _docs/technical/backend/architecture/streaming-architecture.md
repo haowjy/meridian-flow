@@ -48,8 +48,8 @@ This design provides:
 - Key fields:
   - `block_index`: Which block this delta belongs to (0‑indexed, matches `TurnBlock.sequence`).
   - `block_type?`: Present only on the first delta for a block (acts as `block_start` signal).
-  - `delta_type`: `"text_delta"`, `"thinking_delta"`, `"signature_delta"`, `"tool_call_start"`, `"input_json_delta"`, `"usage_delta"`.
-  - `text_delta`, `signature_delta`, `input_json_delta`: Payload fields depending on `delta_type`.
+  - `delta_type`: `"text_delta"`, `"thinking_delta"`, `"signature_delta"`, `"tool_call_start"`, `"json_delta"`, `"usage_delta"`.
+  - `text_delta`, `signature_delta`, `json_delta`: Payload fields depending on `delta_type`.
 - Canonical definition: `backend/internal/domain/models/llm/turn_block_delta.go`.
 - Canonical SSE shapes: `_docs/technical/llm/streaming/block-types-reference.md`.
 
@@ -219,7 +219,7 @@ sequenceDiagram
 
     Provider-->>Executor: StreamEvent{Block}
     Executor->>DB: CreateTurnBlock(block)
-    Executor->>Stream: send block_delta (input_json_delta) + block_stop
+    Executor->>Stream: send block_delta (json_delta) + block_stop
     Stream-->>Client: SSE: block_delta + block_stop
 
     Provider-->>Executor: StreamEvent{Metadata}
@@ -254,7 +254,7 @@ sequenceDiagram
 - `StreamExecutor.processCompleteBlock`:
   - Sets `TurnID` and persists the `TurnBlock` via `turnRepo.CreateTurnBlock`.
   - Wraps persistence in `stream.PersistAndClear(...)` so DB writes and in‑memory event buffer stay consistent for catchup.
-  - After persistence, emits a final `block_delta` with `delta_type: "input_json_delta"` when `content` is present (e.g., `web_search_result`), followed by `block_stop`.
+  - After persistence, emits a final `block_delta` with `delta_type: "json_delta"` when `content` is present (e.g., `web_search_result`, tool results, etc.), followed by `block_stop`.
 
 ---
 
@@ -327,9 +327,9 @@ Tool execution is modeled entirely in terms of blocks:
 
 Streaming behavior:
 - Tool‑related blocks follow the same event pattern:
-  - `block_start` → `block_delta` (including `input_json_delta`) → `block_stop`.
+  - `block_start` → `block_delta` (including `json_delta` for structured content) → `block_stop`.
 - For `web_search_result`, the library:
-  - Emits `tool_result_start` + `input_json_delta` as described in  
+  - Emits `tool_result_start` + `json_delta` as described in
     `_docs/technical/llm/streaming/block-types-reference.md`.
 
 For canonical schemas and examples, see:

@@ -1,6 +1,7 @@
 package adapters
 
 import (
+	"encoding/json"
 	"strings"
 
 	llmprovider "github.com/haowjy/meridian-llm-go"
@@ -8,6 +9,39 @@ import (
 	domainllm "meridian/internal/domain/services/llm"
 	"meridian/internal/domain/models/llm"
 )
+
+// normalizeToolResultContent converts tool result content to string format.
+// If result is already a string (from formatters like doc_tree), use directly.
+// If result is structured data (maps/arrays), JSON-marshal it for LLM consumption.
+// This normalization happens at the backend-library boundary so adapters can
+// assume Content["result"] is always a string (Single Responsibility Principle).
+func normalizeToolResultContent(content map[string]interface{}) {
+	if content == nil {
+		return
+	}
+
+	// Only normalize tool_result content that has a "result" field
+	result, hasResult := content["result"]
+	if !hasResult {
+		return
+	}
+
+	// If already a string (from formatters), keep as-is
+	if _, ok := result.(string); ok {
+		return
+	}
+
+	// Structured data - marshal to pretty JSON for LLM readability
+	resultJSON, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		// Fallback: keep original if marshaling fails
+		// This ensures we don't break existing functionality
+		return
+	}
+
+	// Replace with JSON string
+	content["result"] = string(resultJSON)
+}
 
 // ConvertToLibraryRequest converts backend GenerateRequest to library GenerateRequest.
 // This is used by provider adapters and debug tooling to inspect the exact payload
@@ -22,6 +56,12 @@ func ConvertToLibraryRequest(req *domainllm.GenerateRequest) (*llmprovider.Gener
 			if tb.ExecutionSide != nil {
 				side := llmprovider.ExecutionSide(*tb.ExecutionSide)
 				executionSide = &side
+			}
+
+			// Normalize tool_result blocks: convert Content["result"] to string
+			// This prevents double JSON-encoding in provider adapters
+			if tb.BlockType == llm.BlockTypeToolResult {
+				normalizeToolResultContent(tb.Content)
 			}
 
 			blocks[j] = &llmprovider.Block{
@@ -99,7 +139,7 @@ func convertFromLibraryEvent(event llmprovider.StreamEvent) domainllm.StreamEven
 			DeltaType:         event.Delta.DeltaType,
 			TextDelta:         event.Delta.TextDelta,
 			SignatureDelta:    event.Delta.SignatureDelta,
-			InputJSONDelta:    event.Delta.InputJSONDelta,
+			JSONDelta:         event.Delta.JSONDelta,
 			ToolCallID:        event.Delta.ToolCallID,
 			ToolCallName:      event.Delta.ToolCallName,
 			ToolUseID:         event.Delta.ToolUseID,         // Legacy

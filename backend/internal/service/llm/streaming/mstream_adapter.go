@@ -32,6 +32,10 @@ type StreamExecutor struct {
 	toolIteration    int              // current tool round (0 = initial, 1+ = continuations)
 	maxToolRounds    int              // maximum number of tool execution rounds (default: 5)
 	maxBlockSequence int              // highest block sequence number persisted (for tool_result sequencing)
+
+	// JSON delta accumulation (for complete block deltas)
+	// Partial JSON deltas are useless - accumulate and send complete JSON once
+	jsonAccumulator map[int]string // blockIndex -> accumulated JSON
 }
 
 // NewStreamExecutor creates a new mstream-based executor for a turn.
@@ -165,7 +169,8 @@ func (se *StreamExecutor) workFunc(ctx context.Context, send func(mstream.Event)
 }
 
 // processDelta handles a single TurnBlockDelta for real-time UI updates.
-// Deltas are broadcast to SSE clients but NOT accumulated (complete blocks come separately).
+// - Text/signature deltas are sent immediately (useful for progressive display)
+// - JSON deltas are accumulated (partial JSON is unparseable/useless, send complete JSON later)
 func (se *StreamExecutor) processDelta(ctx context.Context, send func(mstream.Event), delta *llmModels.TurnBlockDelta, currentBlockIndex *int) error {
 	// Detect new block start
 	if delta.BlockIndex != *currentBlockIndex {
@@ -178,14 +183,24 @@ func (se *StreamExecutor) processDelta(ctx context.Context, send func(mstream.Ev
 		*currentBlockIndex = delta.BlockIndex
 	}
 
-	// Send block_delta event (skip empty deltas)
-	if delta.DeltaType != "" {
+	// Accumulate JSON deltas instead of sending (partial JSON is useless)
+	if delta.JSONDelta != nil && *delta.JSONDelta != "" {
+		if se.jsonAccumulator == nil {
+			se.jsonAccumulator = make(map[int]string)
+		}
+		se.jsonAccumulator[delta.BlockIndex] += *delta.JSONDelta
+		// Don't send - partial JSON is unparseable
+		return nil
+	}
+
+	// Send text/signature deltas immediately (useful incrementally)
+	if delta.DeltaType != "" && (delta.TextDelta != nil || delta.SignatureDelta != nil) {
 		se.sendEvent(send, llmModels.SSEEventBlockDelta, llmModels.BlockDeltaEvent{
 			BlockIndex:     delta.BlockIndex,
 			DeltaType:      delta.DeltaType,
 			TextDelta:      delta.TextDelta,
 			SignatureDelta: delta.SignatureDelta,
-			InputJSONDelta: delta.InputJSONDelta,
+			JSONDelta:      nil, // Never send partial JSON
 		})
 	}
 
@@ -198,8 +213,13 @@ func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(ms
 	// Set turn ID
 	block.TurnID = se.turnID
 
-	// Collect tool_use blocks for later execution (if tool registry is available)
-	if se.toolRegistry != nil && block.BlockType == llmModels.BlockTypeToolUse {
+	// Collect CLIENT-SIDE tool_use blocks for execution (if tool registry is available)
+	// Server-side tools (e.g., web_search) are already executed by the provider
+	// TODO: Optimization - start executing tools in background goroutine immediately upon collection
+	// instead of waiting for stream completion. This would overlap tool execution with provider
+	// streaming, reducing total latency. Currently: collect → stream finishes → execute → stream results.
+	// Optimized: collect + execute in background → stream finishes → wait for execution → stream results.
+	if se.toolRegistry != nil && block.IsClientSideTool() {
 		se.collectToolUse(block)
 	}
 
@@ -223,26 +243,15 @@ func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(ms
 		se.maxBlockSequence = block.Sequence
 	}
 
-	// After persistence, emit a block_delta event with full JSON content (if present)
-	// so clients can render structured results (e.g., web_search_result) during streaming.
-	if block.Content != nil {
-		contentJSON, err := json.Marshal(block.Content)
-		if err != nil {
-			se.logger.Error("failed to marshal block content for delta",
-				"error", err,
-				"block_index", block.Sequence,
-				"block_type", block.BlockType,
-			)
-		} else {
-			contentStr := string(contentJSON)
-			se.sendEvent(send, llmModels.SSEEventBlockDelta, llmModels.BlockDeltaEvent{
-				BlockIndex:     block.Sequence,
-				DeltaType:      llmModels.DeltaTypeInputJSON,
-				TextDelta:      nil,
-				SignatureDelta: nil,
-				InputJSONDelta: &contentStr,
-			})
-		}
+	// Send accumulated JSON as complete delta (if any)
+	// This provides complete, parseable JSON instead of useless partial fragments
+	if accumulatedJSON, exists := se.jsonAccumulator[block.Sequence]; exists {
+		se.sendEvent(send, llmModels.SSEEventBlockDelta, llmModels.BlockDeltaEvent{
+			BlockIndex: block.Sequence,
+			DeltaType:  llmModels.DeltaTypeJSON,
+			JSONDelta:  &accumulatedJSON,
+		})
+		delete(se.jsonAccumulator, block.Sequence) // Cleanup
 	}
 
 	// Send block_stop event to SSE clients
@@ -361,26 +370,90 @@ func (se *StreamExecutor) collectToolUse(block *llmModels.TurnBlock) {
 	// Extract tool use info from block.Content
 	// Expected format: {"tool_use_id": "...", "tool_name": "...", "input": {...}}
 	if block.Content == nil {
-		se.logger.Warn("tool_use block has no content", "block_id", block.ID)
+		se.logger.Warn("tool_use block has no content",
+			"sequence", block.Sequence,
+			"block_type", block.BlockType)
 		return
 	}
 
+	// Helper to get map keys for debugging
+	getKeys := func(m map[string]interface{}) []string {
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, k)
+		}
+		return keys
+	}
+
+	// Extract tool_use_id (string)
 	toolUseID, ok := block.Content["tool_use_id"].(string)
 	if !ok {
-		se.logger.Warn("tool_use block missing tool_use_id", "block_id", block.ID)
-		return
+		// Try fallback: fmt.Sprintf
+		if val, exists := block.Content["tool_use_id"]; exists {
+			toolUseID = fmt.Sprintf("%v", val)
+			se.logger.Debug("tool_use_id extracted via fallback",
+				"sequence", block.Sequence,
+				"type", fmt.Sprintf("%T", val))
+		} else {
+			se.logger.Warn("tool_use block missing tool_use_id",
+				"sequence", block.Sequence,
+				"available_keys", getKeys(block.Content))
+			return
+		}
 	}
 
+	// Extract tool_name (string)
 	toolName, ok := block.Content["tool_name"].(string)
 	if !ok {
-		se.logger.Warn("tool_use block missing tool_name", "block_id", block.ID)
+		// Try fallback: fmt.Sprintf
+		if val, exists := block.Content["tool_name"]; exists {
+			toolName = fmt.Sprintf("%v", val)
+			se.logger.Debug("tool_name extracted via fallback",
+				"sequence", block.Sequence,
+				"type", fmt.Sprintf("%T", val))
+		} else {
+			se.logger.Warn("tool_use block missing tool_name",
+				"sequence", block.Sequence,
+				"available_keys", getKeys(block.Content))
+			return
+		}
+	}
+
+	// Extract input (map[string]interface{})
+	var toolInput map[string]interface{}
+	inputRaw, exists := block.Content["input"]
+	if !exists {
+		se.logger.Warn("tool_use block missing input field",
+			"sequence", block.Sequence,
+			"available_keys", getKeys(block.Content))
 		return
 	}
 
-	toolInput, ok := block.Content["input"].(map[string]interface{})
+	// Try direct type assertion first (fast path)
+	toolInput, ok = inputRaw.(map[string]interface{})
 	if !ok {
-		se.logger.Warn("tool_use block missing or invalid input", "block_id", block.ID)
-		return
+		// Fallback: marshal to JSON and unmarshal to target type
+		// This handles cases where the type is correct but wrapped in interface{}
+		inputJSON, err := json.Marshal(inputRaw)
+		if err != nil {
+			se.logger.Warn("tool_use block input cannot be marshaled",
+				"sequence", block.Sequence,
+				"input_type", fmt.Sprintf("%T", inputRaw),
+				"error", err)
+			return
+		}
+
+		if err := json.Unmarshal(inputJSON, &toolInput); err != nil {
+			se.logger.Warn("tool_use block input cannot be unmarshaled",
+				"sequence", block.Sequence,
+				"input_json", string(inputJSON),
+				"error", err)
+			return
+		}
+
+		se.logger.Debug("tool input extracted via JSON fallback",
+			"sequence", block.Sequence,
+			"original_type", fmt.Sprintf("%T", inputRaw))
 	}
 
 	// Add to collected tools
@@ -396,6 +469,7 @@ func (se *StreamExecutor) collectToolUse(block *llmModels.TurnBlock) {
 		"tool_use_id", toolUseID,
 		"tool_name", toolName,
 		"tool_count", len(se.collectedTools),
+		"sequence", block.Sequence,
 	)
 }
 
@@ -422,6 +496,7 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 			Sequence:  nextSequence + i,
 			Content: map[string]interface{}{
 				"tool_use_id": toolResult.ID,
+				"tool_name":   toolResult.Name,
 				"is_error":    toolResult.IsError,
 			},
 		}
@@ -451,9 +526,41 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 			se.maxBlockSequence = resultBlock.Sequence
 		}
 
-		se.logger.Debug("persisted tool result",
+		// Stream the tool_result block to frontend via SSE
+		// Send block_start
+		blockType := resultBlock.BlockType
+		se.sendEvent(send, llmModels.SSEEventBlockStart, llmModels.BlockStartEvent{
+			BlockIndex: resultBlock.Sequence,
+			BlockType:  &blockType,
+		})
+
+		// Send block_delta with full JSON content
+		contentJSON, err := json.Marshal(resultBlock.Content)
+		if err != nil {
+			se.logger.Error("failed to marshal tool result content for delta",
+				"error", err,
+				"tool_use_id", toolResult.ID,
+			)
+		} else {
+			contentStr := string(contentJSON)
+			se.sendEvent(send, llmModels.SSEEventBlockDelta, llmModels.BlockDeltaEvent{
+				BlockIndex:     resultBlock.Sequence,
+				DeltaType:      llmModels.DeltaTypeJSON,
+				TextDelta:      nil,
+				SignatureDelta: nil,
+				JSONDelta:      &contentStr,
+			})
+		}
+
+		// Send block_stop
+		se.sendEvent(send, llmModels.SSEEventBlockStop, llmModels.BlockStopEvent{
+			BlockIndex: resultBlock.Sequence,
+		})
+
+		se.logger.Debug("persisted and streamed tool result",
 			"tool_use_id", toolResult.ID,
 			"is_error", toolResult.IsError,
+			"sequence", resultBlock.Sequence,
 		)
 	}
 

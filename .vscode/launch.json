@@ -12,6 +12,19 @@
       "showLog": true
     },
     {
+      "name": "Backend: Run Server (Local Workspace)",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/backend/cmd/server/main.go",
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "env": {
+        "GOWORK": "${workspaceFolder}/go.work"
+      },
+      "showLog": true
+    },
+    {
       "name": "Backend: Run LLM Interactive CLI",
       "type": "go",
       "request": "launch",

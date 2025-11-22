@@ -38,10 +38,10 @@ func (s *BlockSerializer) BlockToSSEEvents(block *TurnBlock, blockIndex int) []m
 	// Text content (for text, thinking blocks)
 	if block.TextContent != nil && *block.TextContent != "" {
 		blockDeltaData, _ := json.Marshal(BlockDeltaEvent{
-			BlockIndex:     blockIndex,
-			DeltaType:      "text_delta",
-			TextDelta:      block.TextContent,
-			InputJSONDelta: nil,
+			BlockIndex: blockIndex,
+			DeltaType:  "text_delta",
+			TextDelta:  block.TextContent,
+			JSONDelta:  nil,
 		})
 		events = append(events, mstream.NewEvent(blockDeltaData).
 			WithType(SSEEventBlockDelta))
@@ -52,10 +52,10 @@ func (s *BlockSerializer) BlockToSSEEvents(block *TurnBlock, blockIndex int) []m
 		contentJSON, _ := json.Marshal(block.Content)
 		contentStr := string(contentJSON)
 		blockDeltaData, _ := json.Marshal(BlockDeltaEvent{
-			BlockIndex:     blockIndex,
-			DeltaType:      "input_json_delta",
-			TextDelta:      nil,
-			InputJSONDelta: &contentStr,
+			BlockIndex: blockIndex,
+			DeltaType:  "json_delta",
+			TextDelta:  nil,
+			JSONDelta:  &contentStr,
 		})
 		events = append(events, mstream.NewEvent(blockDeltaData).
 			WithType(SSEEventBlockDelta))

@@ -16,6 +16,7 @@ type ToolCall struct {
 // ToolResult represents the result of a tool execution.
 type ToolResult struct {
 	ID      string      `json:"id"`       // tool_use_id (matches ToolCall.ID)
+	Name    string      `json:"name"`     // tool name (matches ToolCall.Name)
 	Result  interface{} `json:"result"`   // execution result (nil if error)
 	Error   error       `json:"error"`    // execution error (nil if success)
 	IsError bool        `json:"is_error"` // whether execution failed
@@ -58,6 +59,7 @@ func (r *ToolRegistry) Execute(ctx context.Context, call ToolCall) ToolResult {
 	if executor == nil {
 		return ToolResult{
 			ID:      call.ID,
+			Name:    call.Name,
 			Result:  nil,
 			Error:   fmt.Errorf("tool not found: %s", call.Name),
 			IsError: true,
@@ -68,6 +70,7 @@ func (r *ToolRegistry) Execute(ctx context.Context, call ToolCall) ToolResult {
 	if err != nil {
 		return ToolResult{
 			ID:      call.ID,
+			Name:    call.Name,
 			Result:  nil,
 			Error:   err,
 			IsError: true,
@@ -76,6 +79,7 @@ func (r *ToolRegistry) Execute(ctx context.Context, call ToolCall) ToolResult {
 
 	return ToolResult{
 		ID:      call.ID,
+		Name:    call.Name,
 		Result:  result,
 		Error:   nil,
 		IsError: false,
@@ -105,6 +109,7 @@ func (r *ToolRegistry) ExecuteParallel(ctx context.Context, calls []ToolCall) []
 			case <-ctx.Done():
 				results[index] = ToolResult{
 					ID:      toolCall.ID,
+					Name:    toolCall.Name,
 					Result:  nil,
 					Error:   ctx.Err(),
 					IsError: true,

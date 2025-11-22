@@ -78,6 +78,7 @@ func (tb *TurnBlock) IsServerSideTool() bool {
 }
 
 // IsClientSideTool returns true if this is a client-side tool_use block (e.g., bash, text_editor)
+// Treats nil ExecutionSide as client-side (defensive default)
 func (tb *TurnBlock) IsClientSideTool() bool {
-	return tb.BlockType == BlockTypeToolUse && tb.ExecutionSide != nil && *tb.ExecutionSide == "client"
+	return tb.BlockType == BlockTypeToolUse && (tb.ExecutionSide == nil || *tb.ExecutionSide == "client")
 }

@@ -192,9 +192,10 @@ func main() {
 	mux.HandleFunc("GET /api/turns/{id}/siblings", chatHandler.GetTurnSiblings)
 
 	// Streaming routes
-	mux.HandleFunc("GET /api/turns/{id}/stream", chatHandler.StreamTurn)        // SSE streaming endpoint
-	mux.HandleFunc("GET /api/turns/{id}/blocks", chatHandler.GetTurnBlocks)     // Get completed blocks
-	mux.HandleFunc("POST /api/turns/{id}/interrupt", chatHandler.InterruptTurn) // Cancel streaming turn
+	mux.HandleFunc("GET /api/turns/{id}/stream", chatHandler.StreamTurn)            // SSE streaming endpoint
+	mux.HandleFunc("GET /api/turns/{id}/blocks", chatHandler.GetTurnBlocks)         // Get completed blocks
+	mux.HandleFunc("GET /api/turns/{id}/token-usage", chatHandler.GetTurnTokenUsage) // Get token usage stats
+	mux.HandleFunc("POST /api/turns/{id}/interrupt", chatHandler.InterruptTurn)     // Cancel streaming turn
 
 	// Debug routes (only in dev environment)
 	if cfg.Environment == "dev" && chatDebugHandler != nil {

@@ -579,7 +579,10 @@ func (r *PostgresDocumentRepository) fullTextSearch(ctx context.Context, opts *m
 	rankExpression := strings.Join(rankExpressions, " + ")
 
 	baseQuery := fmt.Sprintf(`
-		SELECT id, project_id, folder_id, name, content, word_count, created_at, updated_at,
+		SELECT id, project_id, folder_id, name,
+		       ts_headline($1, content, websearch_to_tsquery($1, $2),
+		                   'MaxWords=50, MinWords=20, MaxFragments=1') AS content,
+		       word_count, created_at, updated_at,
 		       (%s) AS rank_score
 		FROM %s
 		WHERE deleted_at IS NULL

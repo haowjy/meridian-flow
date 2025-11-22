@@ -28,3 +28,16 @@ type Turn struct {
 	Blocks     []TurnBlock `json:"blocks,omitempty"`      // Content blocks for this turn
 	SiblingIDs []string    `json:"sibling_ids,omitempty"` // IDs of sibling turns (same prev_turn_id)
 }
+
+// TokenUsageInfo provides token usage statistics for a turn
+type TokenUsageInfo struct {
+	TurnID         string   `json:"turn_id"`
+	InputTokens    *int     `json:"input_tokens"`     // Tokens used for input (nil if not available)
+	OutputTokens   *int     `json:"output_tokens"`    // Tokens used for output (nil if not available)
+	TotalTokens    *int     `json:"total_tokens"`     // Sum of input + output (nil if either is unavailable)
+	ContextLimit   *int     `json:"context_limit"`    // Model's max context window (nil if unknown)
+	UsagePercent   *float64 `json:"usage_percent"`    // Percentage of context used (nil if limit unknown)
+	Model          *string  `json:"model"`            // Model name
+	ProviderName   *string  `json:"provider_name"`    // Provider name (derived from model or request params)
+	WarningMessage *string  `json:"warning_message"`  // Human-readable warning if usage is high
+}

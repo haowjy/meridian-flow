@@ -39,4 +39,9 @@ type ConversationService interface {
 	// Used for reconnection - client fetches completed blocks before connecting to SSE stream
 	// Returns turn with blocks attached
 	GetTurnWithBlocks(ctx context.Context, turnID string) (*llm.Turn, error)
+
+	// GetTurnTokenUsage retrieves token usage statistics for a turn
+	// Returns input/output tokens, model context limit, and usage percentage
+	// Used by frontend to display warnings and make continuation decisions
+	GetTurnTokenUsage(ctx context.Context, turnID string) (*llm.TokenUsageInfo, error)
 }

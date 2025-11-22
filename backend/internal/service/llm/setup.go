@@ -14,6 +14,7 @@ import (
 	llmSvc "meridian/internal/domain/services/llm"
 	"meridian/internal/service/llm/chat"
 	"meridian/internal/service/llm/conversation"
+	"meridian/internal/service/llm/formatting"
 	"meridian/internal/service/llm/streaming"
 )
 
@@ -110,6 +111,12 @@ func SetupServices(
 		logger,
 	)
 
+	// Create formatter registry and register doc tool formatters
+	formatterRegistry := formatting.NewFormatterRegistry()
+	formatterRegistry.Register("doc_search", &formatting.DocSearchFormatter{})
+	formatterRegistry.Register("doc_view", &formatting.DocViewFormatter{})
+	formatterRegistry.Register("doc_tree", formatting.NewDocTreeFormatter())
+
 	// Create streaming service (turn creation/orchestration)
 	// Tools are created per-request with project-specific context
 	// Uses minimal interfaces (ISP compliance)
@@ -126,6 +133,7 @@ func SetupServices(
 		cfg,
 		txManager,
 		systemPromptResolver,
+		formatterRegistry,
 		logger,
 	)
 

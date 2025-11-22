@@ -35,9 +35,11 @@ func NewSearchTool(
 // Input parameters:
 //   - query (string, required): Search query (keywords or phrases)
 //   - folder (string, optional): Limit search to this folder path
+//   - limit (integer, optional): Maximum results to return (default: 5, max: 20)
+//   - offset (integer, optional): Number of results to skip (default: 0)
 //
 // Returns:
-//   - {results: [...], count: N, has_more: bool}
+//   - {results: [...], total_count: N, has_more: bool}
 func (t *SearchTool) Execute(ctx context.Context, input map[string]interface{}) (interface{}, error) {
 	// Validate and extract query
 	query, ok := input["query"].(string)
@@ -63,12 +65,36 @@ func (t *SearchTool) Execute(ctx context.Context, input map[string]interface{}) 
 		}
 	}
 
+	// Extract optional limit parameter (default: 5, max: 20)
+	limit := 5
+	if limitVal, exists := input["limit"]; exists {
+		if limitFloat, ok := limitVal.(float64); ok {
+			limit = int(limitFloat)
+			if limit < 1 {
+				limit = 1
+			} else if limit > 20 {
+				limit = 20
+			}
+		}
+	}
+
+	// Extract optional offset parameter (default: 0)
+	offset := 0
+	if offsetVal, exists := input["offset"]; exists {
+		if offsetFloat, ok := offsetVal.(float64); ok {
+			offset = int(offsetFloat)
+			if offset < 0 {
+				offset = 0
+			}
+		}
+	}
+
 	// Build search options
 	searchOpts := &docsystem.SearchOptions{
 		Query:     query,
 		ProjectID: t.projectID,
-		Limit:     20, // Return top 20 results
-		Offset:    0,
+		Limit:     limit,
+		Offset:    offset,
 		FolderID:  folderID,
 	}
 
@@ -105,11 +131,9 @@ func (t *SearchTool) Execute(ctx context.Context, input map[string]interface{}) 
 	}
 
 	return map[string]interface{}{
-		"results":  resultList,
-		"count":    results.TotalCount,
-		"has_more": results.HasMore,
-		"limit":    results.Limit,
-		"offset":   results.Offset,
+		"results":     resultList,
+		"total_count": results.TotalCount,
+		"has_more":    results.HasMore,
 	}, nil
 }
 

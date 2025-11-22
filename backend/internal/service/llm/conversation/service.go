@@ -2,6 +2,9 @@ package conversation
 
 import (
 	"context"
+	"fmt"
+
+	llmprovider "github.com/haowjy/meridian-llm-go"
 
 	llmModels "meridian/internal/domain/models/llm"
 	llmRepo "meridian/internal/domain/repositories/llm"
@@ -109,4 +112,72 @@ func (s *Service) GetTurnWithBlocks(ctx context.Context, turnID string) (*llmMod
 	turn.Blocks = blocks
 
 	return turn, nil
+}
+
+// GetTurnTokenUsage retrieves token usage statistics for a turn
+func (s *Service) GetTurnTokenUsage(ctx context.Context, turnID string) (*llmModels.TokenUsageInfo, error) {
+	// Get turn metadata
+	turn, err := s.turnReader.GetTurn(ctx, turnID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get turn: %w", err)
+	}
+
+	// Initialize response
+	info := &llmModels.TokenUsageInfo{
+		TurnID:       turnID,
+		InputTokens:  turn.InputTokens,
+		OutputTokens: turn.OutputTokens,
+		Model:        turn.Model,
+	}
+
+	// Calculate total tokens if both are available
+	if turn.InputTokens != nil && turn.OutputTokens != nil {
+		total := *turn.InputTokens + *turn.OutputTokens
+		info.TotalTokens = &total
+	}
+
+	// If no model specified, return what we have
+	if turn.Model == nil || *turn.Model == "" {
+		return info, nil
+	}
+
+	// Determine provider from request params or infer from model
+	provider := "anthropic" // default
+	if turn.RequestParams != nil {
+		if providerParam, ok := turn.RequestParams["provider"].(string); ok && providerParam != "" {
+			provider = providerParam
+		}
+	}
+	info.ProviderName = &provider
+
+	// Get model capability from registry
+	registry := llmprovider.GetCapabilityRegistry()
+	modelCap, err := registry.GetModelCapability(provider, *turn.Model)
+	if err != nil {
+		// Model not in registry - return what we have without limit/percentage
+		return info, nil
+	}
+
+	// Set context limit
+	contextLimit := modelCap.ContextWindow
+	info.ContextLimit = &contextLimit
+
+	// Calculate usage percentage if we have total tokens
+	if info.TotalTokens != nil && contextLimit > 0 {
+		percent := (float64(*info.TotalTokens) / float64(contextLimit)) * 100
+		info.UsagePercent = &percent
+
+		// Generate warning message if usage is high
+		if percent >= 75 {
+			var warningMsg string
+			if percent >= 90 {
+				warningMsg = fmt.Sprintf("Critical: Using %.1f%% of context limit (%d/%d tokens). Consider wrapping up.", percent, *info.TotalTokens, contextLimit)
+			} else {
+				warningMsg = fmt.Sprintf("Warning: Using %.1f%% of context limit (%d/%d tokens). Approaching limit.", percent, *info.TotalTokens, contextLimit)
+			}
+			info.WarningMessage = &warningMsg
+		}
+	}
+
+	return info, nil
 }

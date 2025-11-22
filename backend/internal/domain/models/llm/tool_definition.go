@@ -149,7 +149,7 @@ func getTreeToolDefinition() ToolDefinition {
 				"properties": map[string]interface{}{
 					"folder": map[string]interface{}{
 						"type":        "string",
-						"description": "The Unix-style path to the folder (e.g., '/drafts', '/chapters'). Use '/' for the root folder.",
+						"description": "The Unix-style path to the folder (e.g., '/drafts', '/chapters'). Defaults to '/' (root folder) if not provided.",
 					},
 					"depth": map[string]interface{}{
 						"type":        "integer",
@@ -158,7 +158,7 @@ func getTreeToolDefinition() ToolDefinition {
 						"maximum":     5,
 					},
 				},
-				"required": []string{"folder"},
+				"required": []string{},
 			},
 		},
 	}
@@ -171,7 +171,7 @@ func getSearchToolDefinition() ToolDefinition {
 		Type: "function",
 		Function: &FunctionDetails{
 			Name:        "doc_search",
-			Description: "Search for documents by content or name using full-text search. Returns ranked results with metadata. Supports advanced search syntax: use OR for alternatives (e.g., 'dragon OR knight'), minus sign to exclude terms (e.g., 'dragon -fire'), and double quotes for exact phrases (e.g., '\"dark knight\"'). You can combine these (e.g., '\"dragon rider\" OR knight -villain').",
+			Description: "Search for documents by content or name using full-text search. Returns up to 'limit' results (default: 5) with matched content snippets. Use 'offset' to paginate through results. Check 'has_more' to see if additional pages exist. Supports advanced search syntax: use OR for alternatives (e.g., 'dragon OR knight'), minus sign to exclude terms (e.g., 'dragon -fire'), and double quotes for exact phrases (e.g., '\"dark knight\"'). You can combine these (e.g., '\"dragon rider\" OR knight -villain').",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -182,6 +182,17 @@ func getSearchToolDefinition() ToolDefinition {
 					"folder": map[string]interface{}{
 						"type":        "string",
 						"description": "Optional: limit search to documents within this folder path (e.g., '/drafts'). Omit to search all documents.",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "Optional: maximum number of results to return (default: 5, max: 20).",
+						"minimum":     1,
+						"maximum":     20,
+					},
+					"offset": map[string]interface{}{
+						"type":        "integer",
+						"description": "Optional: number of results to skip for pagination (default: 0).",
+						"minimum":     0,
 					},
 				},
 				"required": []string{"query"},
