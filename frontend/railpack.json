@@ -13,8 +13,6 @@
   "steps": {
     "install": {
       "commands": [
-        "corepack enable",
-        "corepack prepare pnpm@latest --activate",
         "pnpm install --frozen-lockfile"
       ],
       "caches": ["pnpm-store"]
