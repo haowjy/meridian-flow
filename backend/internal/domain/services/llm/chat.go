@@ -27,6 +27,10 @@ type ChatService interface {
 	// Validates user has access
 	UpdateChat(ctx context.Context, chatID, userID string, req *UpdateChatRequest) (*llm.Chat, error)
 
+	// UpdateLastViewedTurn updates the last_viewed_turn_id field for a chat
+	// Validates user has access to the chat
+	UpdateLastViewedTurn(ctx context.Context, chatID, userID, turnID string) error
+
 	// DeleteChat soft-deletes a chat and returns the deleted chat object
 	// Validates user has access
 	DeleteChat(ctx context.Context, chatID, userID string) (*llm.Chat, error)

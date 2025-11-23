@@ -212,6 +212,7 @@ func main() {
 	mux.HandleFunc("GET /api/chats", chatHandler.ListChats)
 	mux.HandleFunc("GET /api/chats/{id}", chatHandler.GetChat)
 	mux.HandleFunc("PATCH /api/chats/{id}", chatHandler.UpdateChat)
+	mux.HandleFunc("PATCH /api/chats/{id}/last-viewed-turn", chatHandler.UpdateLastViewedTurn)
 	mux.HandleFunc("DELETE /api/chats/{id}", chatHandler.DeleteChat)
 	mux.HandleFunc("GET /api/chats/{id}/turns", chatHandler.GetPaginatedTurns)
 	mux.HandleFunc("POST /api/chats/{id}/turns", chatHandler.CreateTurn)

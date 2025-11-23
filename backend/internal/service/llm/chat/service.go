@@ -136,6 +136,34 @@ func (s *Service) UpdateChat(ctx context.Context, chatID, userID string, req *ll
 	return chat, nil
 }
 
+// UpdateLastViewedTurn updates the last_viewed_turn_id field for a chat
+func (s *Service) UpdateLastViewedTurn(ctx context.Context, chatID, userID, turnID string) error {
+	// Validate input
+	if chatID == "" {
+		return fmt.Errorf("%w: chat ID is required", domain.ErrValidation)
+	}
+	if userID == "" {
+		return fmt.Errorf("%w: user ID is required", domain.ErrValidation)
+	}
+	if turnID == "" {
+		return fmt.Errorf("%w: turn ID is required", domain.ErrValidation)
+	}
+
+	// Update the last_viewed_turn_id
+	// Repository validates chat ownership and turn belongs to chat
+	if err := s.chatRepo.UpdateLastViewedTurn(ctx, chatID, userID, turnID); err != nil {
+		return err
+	}
+
+	s.logger.Debug("last_viewed_turn_id updated",
+		"chat_id", chatID,
+		"turn_id", turnID,
+		"user_id", userID,
+	)
+
+	return nil
+}
+
 // DeleteChat soft-deletes a chat
 func (s *Service) DeleteChat(ctx context.Context, chatID, userID string) (*llmModels.Chat, error) {
 	deletedChat, err := s.chatRepo.DeleteChat(ctx, chatID, userID)

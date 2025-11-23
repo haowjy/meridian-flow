@@ -201,6 +201,40 @@ func (r *PostgresChatRepository) UpdateChat(ctx context.Context, chat *llmModels
 	return nil
 }
 
+// UpdateLastViewedTurn updates only the last_viewed_turn_id field
+// Validates that the turn belongs to the chat before updating (single query)
+func (r *PostgresChatRepository) UpdateLastViewedTurn(ctx context.Context, chatID, userID, turnID string) error {
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET last_viewed_turn_id = $1, updated_at = $2
+		WHERE id = $3
+		  AND user_id = $4
+		  AND deleted_at IS NULL
+		  AND EXISTS (
+		    SELECT 1 FROM %s
+		    WHERE id = $1 AND chat_id = $3
+		  )
+	`, r.tables.Chats, r.tables.Turns)
+
+	executor := postgres.GetExecutor(ctx, r.pool)
+	result, err := executor.Exec(ctx, query,
+		turnID,
+		time.Now(),
+		chatID,
+		userID,
+	)
+
+	if err != nil {
+		return fmt.Errorf("update last_viewed_turn_id: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("chat %s: %w", chatID, domain.ErrNotFound)
+	}
+
+	return nil
+}
+
 // DeleteChat soft-deletes a chat
 func (r *PostgresChatRepository) DeleteChat(ctx context.Context, chatID, userID string) (*llmModels.Chat, error) {
 	query := fmt.Sprintf(`

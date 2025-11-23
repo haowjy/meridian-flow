@@ -23,6 +23,10 @@ type ChatRepository interface {
 	// Returns domain.ErrNotFound if not found
 	UpdateChat(ctx context.Context, chat *llm.Chat) error
 
+	// UpdateLastViewedTurn updates only the last_viewed_turn_id field
+	// Returns domain.ErrNotFound if chat not found
+	UpdateLastViewedTurn(ctx context.Context, chatID, userID, turnID string) error
+
 	// DeleteChat soft-deletes a chat and returns the deleted chat object
 	// Returns domain.ErrNotFound if not found or already deleted
 	DeleteChat(ctx context.Context, chatID, userID string) (*llm.Chat, error)

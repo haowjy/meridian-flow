@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "provider": "go",
+  "packages": {
+    "go": "1.25.3"
+  },
+  "caches": {
+    "go-mod": {
+      "directory": "/go/pkg/mod",
+      "type": "shared"
+    },
+    "go-build": {
+      "directory": "/root/.cache/go-build",
+      "type": "shared"
+    }
+  },
+  "steps": {
+    "deps": {
+      "commands": [
+        "go mod download"
+      ],
+      "caches": ["go-mod"]
+    },
+    "build": {
+      "inputs": [
+        { "step": "deps" },
+        { "local": true, "include": ["."] }
+      ],
+      "commands": [
+        "go build -o bin/server ./cmd/server"
+      ],
+      "caches": ["go-build"]
+    }
+  },
+  "deploy": {
+    "base": {
+      "image": "gcr.io/distroless/base-debian12:latest"
+    },
+    "startCommand": "./bin/server",
+    "inputs": [
+      { "step": "build", "include": ["bin/server"] }
+    ]
+  }
+}

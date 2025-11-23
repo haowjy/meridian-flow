@@ -167,6 +167,39 @@ func (h *ChatHandler) UpdateChat(w http.ResponseWriter, r *http.Request) {
 	httputil.RespondJSON(w, http.StatusOK, chat)
 }
 
+// UpdateLastViewedTurn updates the last_viewed_turn_id for a chat
+// PATCH /api/chats/{id}/last-viewed-turn
+func (h *ChatHandler) UpdateLastViewedTurn(w http.ResponseWriter, r *http.Request) {
+	// Extract user ID from context
+	userID, err := getUserID(r)
+	if err != nil {
+		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	// Get chat ID from route param
+	chatID := r.PathValue("id")
+
+	// Parse request body
+	var req struct {
+		TurnID string `json:"turn_id"`
+	}
+	if err := httputil.ParseJSON(w, r, &req); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	// Call service (all validation handled by service layer)
+	err = h.chatService.UpdateLastViewedTurn(r.Context(), chatID, userID, req.TurnID)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	// Return success with no body (204 No Content)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // DeleteChat soft-deletes a chat
 // DELETE /api/chats/{id}
 func (h *ChatHandler) DeleteChat(w http.ResponseWriter, r *http.Request) {
