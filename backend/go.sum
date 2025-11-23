@@ -18,8 +18,6 @@ github.com/golang-jwt/jwt/v5 v5.3.0 h1:pv4AsKCKKZuqlgs5sUmn4x8UlGa0kEVt/puTpKx9v
 github.com/golang-jwt/jwt/v5 v5.3.0/go.mod h1:fxCRLWMO43lRc8nhHWY6LGqRcf+1gQWArsqaEUEa5bE=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
-github.com/haowjy/meridian-llm-go v0.0.1 h1:8CYCIVD+l0vTZLdkrWAIotR8/nXOjtLGd0f+YgBMKZo=
-github.com/haowjy/meridian-llm-go v0.0.1/go.mod h1:LSw1nDqxPopGKOicTW6UEOlNtUwxux9MgAHm+xOLRio=
 github.com/haowjy/meridian-stream-go v0.0.4 h1:Bj3hItFmOAYqJSfZFpwFmPbTmbm2o7we0TvBDYUTlvU=
 github.com/haowjy/meridian-stream-go v0.0.4/go.mod h1:peM6Dz8/NGmYHR9Ep/uHm6jDrn6d9NH75eEjgpYSx7c=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=

@@ -28,10 +28,13 @@ type StreamExecutor struct {
 
 	// Tool execution support
 	toolRegistry     *tools.ToolRegistry
-	collectedTools   []tools.ToolCall // tool_use blocks collected during streaming
-	toolIteration    int              // current tool round (0 = initial, 1+ = continuations)
-	maxToolRounds    int              // maximum number of tool execution rounds (default: 5)
-	maxBlockSequence int              // highest block sequence number persisted (for tool_result sequencing)
+	turnNavigator    llmRepo.TurnNavigator     // For loading conversation path during continuation
+	turnReader       llmRepo.TurnReader        // For loading turn blocks during continuation
+	messageBuilder   domainllm.MessageBuilder  // For building messages from conversation history
+	collectedTools   []tools.ToolCall          // tool_use blocks collected during streaming
+	toolIteration    int                       // current tool round (0 = initial, 1+ = continuations)
+	maxToolRounds    int                       // maximum number of tool execution rounds (default: 5)
+	maxBlockSequence int                       // highest block sequence number persisted (for tool_result sequencing)
 
 	// JSON delta accumulation (for complete block deltas)
 	// Partial JSON deltas are useless - accumulate and send complete JSON once
@@ -39,26 +42,32 @@ type StreamExecutor struct {
 }
 
 // NewStreamExecutor creates a new mstream-based executor for a turn.
-// Accepts minimal interfaces for better ISP compliance: TurnWriter for writes, TurnReader for catchup
+// Accepts minimal interfaces for better ISP compliance: TurnWriter for writes, TurnReader for block reads and catchup
 func NewStreamExecutor(
 	turnID string,
 	model string,
 	turnWriter llmRepo.TurnWriter,
 	turnReader llmRepo.TurnReader,
+	turnNavigator llmRepo.TurnNavigator,
 	provider domainllm.LLMProvider,
 	toolRegistry *tools.ToolRegistry,
+	messageBuilder domainllm.MessageBuilder,
 	logger *slog.Logger,
+	maxToolRounds int,
 	debugMode bool,
 ) *StreamExecutor {
 	se := &StreamExecutor{
-		turnID:        turnID,
-		model:         model,
-		turnRepo:      turnWriter,
-		provider:      provider,
-		logger:        logger,
-		toolRegistry:  toolRegistry,
-		toolIteration: 0,
-		maxToolRounds: 5, // Prevent infinite loops
+		turnID:         turnID,
+		model:          model,
+		turnRepo:       turnWriter,
+		provider:       provider,
+		logger:         logger,
+		toolRegistry:   toolRegistry,
+		turnNavigator:  turnNavigator,
+		turnReader:     turnReader,
+		messageBuilder: messageBuilder,
+		toolIteration:  0,
+		maxToolRounds:  maxToolRounds,
 	}
 
 	// Create catchup function for database-backed event replay (needs TurnReader)
@@ -105,6 +114,8 @@ func (se *StreamExecutor) workFunc(ctx context.Context, send func(mstream.Event)
 	}
 
 	// Update turn status to "streaming"
+	// NOTE: Turn stays "streaming" through all continuation rounds.
+	// Only marked "complete" when handleCompletion receives stop_reason != "tool_use"
 	if err := se.turnRepo.UpdateTurnStatus(ctx, se.turnID, "streaming", nil); err != nil {
 		return fmt.Errorf("failed to update turn status: %w", err)
 	}
@@ -119,8 +130,26 @@ func (se *StreamExecutor) workFunc(ctx context.Context, send func(mstream.Event)
 		return err
 	}
 
-	// Process streaming events
-	var currentBlockIndex = -1
+	// Delegate to stream processor (reusable for continuation)
+	return se.processProviderStream(ctx, streamChan, send)
+}
+
+// processProviderStream processes streaming events from the provider.
+// This function can be called recursively for tool continuation.
+func (se *StreamExecutor) processProviderStream(
+	ctx context.Context,
+	streamChan <-chan domainllm.StreamEvent,
+	send func(mstream.Event),
+) error {
+	// CRITICAL: Track where this stream starts for sequence remapping
+	// Provider always emits block indices starting at 0, but continuation streams
+	// need to continue from where we left off (after tool_result blocks)
+	// Initial stream: maxBlockSequence = -1, streamStartSequence = 0
+	// Continuation: maxBlockSequence = 2, streamStartSequence = 3
+	streamStartSequence := se.maxBlockSequence + 1
+
+	// Track current block index for delta events (-1 means no block started yet)
+	currentBlockIndex := -1
 
 	for {
 		select {
@@ -146,7 +175,7 @@ func (se *StreamExecutor) workFunc(ctx context.Context, send func(mstream.Event)
 
 			// Process delta (for real-time UI updates)
 			if streamEvent.Delta != nil {
-				if err := se.processDelta(ctx, send, streamEvent.Delta, &currentBlockIndex); err != nil {
+				if err := se.processDelta(ctx, send, streamEvent.Delta, &currentBlockIndex, streamStartSequence); err != nil {
 					se.handleError(ctx, send, err)
 					return err
 				}
@@ -154,7 +183,7 @@ func (se *StreamExecutor) workFunc(ctx context.Context, send func(mstream.Event)
 
 			// Process complete block (for database persistence)
 			if streamEvent.Block != nil {
-				if err := se.processCompleteBlock(ctx, send, streamEvent.Block); err != nil {
+				if err := se.processCompleteBlock(ctx, send, streamEvent.Block, streamStartSequence); err != nil {
 					se.handleError(ctx, send, err)
 					return err
 				}
@@ -171,12 +200,17 @@ func (se *StreamExecutor) workFunc(ctx context.Context, send func(mstream.Event)
 // processDelta handles a single TurnBlockDelta for real-time UI updates.
 // - Text/signature deltas are sent immediately (useful for progressive display)
 // - JSON deltas are accumulated (partial JSON is unparseable/useless, send complete JSON later)
-func (se *StreamExecutor) processDelta(ctx context.Context, send func(mstream.Event), delta *llmModels.TurnBlockDelta, currentBlockIndex *int) error {
+// streamStartSequence is used to remap provider block indices to turn-level sequences
+func (se *StreamExecutor) processDelta(ctx context.Context, send func(mstream.Event), delta *llmModels.TurnBlockDelta, currentBlockIndex *int, streamStartSequence int) error {
 	// Detect new block start
 	if delta.BlockIndex != *currentBlockIndex {
+		// CRITICAL: Remap provider block index to turn-level sequence for SSE event
+		// Provider always sends indices 0, 1, 2... but continuation streams need 3, 4, 5...
+		turnLevelSequence := streamStartSequence + delta.BlockIndex
+
 		// Send block_start for new block
 		se.sendEvent(send, llmModels.SSEEventBlockStart, llmModels.BlockStartEvent{
-			BlockIndex: delta.BlockIndex,
+			BlockIndex: turnLevelSequence,
 			BlockType:  delta.BlockType,
 		})
 
@@ -184,6 +218,7 @@ func (se *StreamExecutor) processDelta(ctx context.Context, send func(mstream.Ev
 	}
 
 	// Accumulate JSON deltas instead of sending (partial JSON is useless)
+	// NOTE: Use provider's block index as map key (not remapped sequence)
 	if delta.JSONDelta != nil && *delta.JSONDelta != "" {
 		if se.jsonAccumulator == nil {
 			se.jsonAccumulator = make(map[int]string)
@@ -194,9 +229,11 @@ func (se *StreamExecutor) processDelta(ctx context.Context, send func(mstream.Ev
 	}
 
 	// Send text/signature deltas immediately (useful incrementally)
+	// CRITICAL: Remap provider block index to turn-level sequence for SSE event
 	if delta.DeltaType != "" && (delta.TextDelta != nil || delta.SignatureDelta != nil) {
+		turnLevelSequence := streamStartSequence + delta.BlockIndex
 		se.sendEvent(send, llmModels.SSEEventBlockDelta, llmModels.BlockDeltaEvent{
-			BlockIndex:     delta.BlockIndex,
+			BlockIndex:     turnLevelSequence,
 			DeltaType:      delta.DeltaType,
 			TextDelta:      delta.TextDelta,
 			SignatureDelta: delta.SignatureDelta,
@@ -209,9 +246,21 @@ func (se *StreamExecutor) processDelta(ctx context.Context, send func(mstream.Ev
 
 // processCompleteBlock handles a complete, normalized block from the library.
 // The library has already normalized provider-specific types (web_search_tool_result → tool_result).
-func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(mstream.Event), block *llmModels.TurnBlock) error {
+// streamStartSequence is used to remap provider block indices to turn-level sequences
+func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(mstream.Event), block *llmModels.TurnBlock, streamStartSequence int) error {
 	// Set turn ID
 	block.TurnID = se.turnID
+
+	// CRITICAL: Save provider's original block index before remapping
+	// We need this to access jsonAccumulator (which uses provider indices as keys)
+	providerBlockIndex := block.Sequence
+
+	// CRITICAL FIX: Remap provider block index to turn-level sequence
+	// Provider always emits blocks starting at index 0 for each stream, but continuation
+	// streams need to continue from where we left off (after tool_result blocks)
+	// Initial stream: streamStartSequence = 0, provider block 0 → sequence 0
+	// Continuation: streamStartSequence = 3, provider block 0 → sequence 3
+	block.Sequence = streamStartSequence + providerBlockIndex
 
 	// Collect CLIENT-SIDE tool_use blocks for execution (if tool registry is available)
 	// Server-side tools (e.g., web_search) are already executed by the provider
@@ -245,18 +294,19 @@ func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(ms
 
 	// Send accumulated JSON as complete delta (if any)
 	// This provides complete, parseable JSON instead of useless partial fragments
-	if accumulatedJSON, exists := se.jsonAccumulator[block.Sequence]; exists {
+	// NOTE: Use provider's original block index to access jsonAccumulator
+	if accumulatedJSON, exists := se.jsonAccumulator[providerBlockIndex]; exists {
 		se.sendEvent(send, llmModels.SSEEventBlockDelta, llmModels.BlockDeltaEvent{
-			BlockIndex: block.Sequence,
+			BlockIndex: block.Sequence, // Use remapped sequence for SSE
 			DeltaType:  llmModels.DeltaTypeJSON,
 			JSONDelta:  &accumulatedJSON,
 		})
-		delete(se.jsonAccumulator, block.Sequence) // Cleanup
+		delete(se.jsonAccumulator, providerBlockIndex) // Cleanup using provider index
 	}
 
 	// Send block_stop event to SSE clients
 	se.sendEvent(send, llmModels.SSEEventBlockStop, llmModels.BlockStopEvent{
-		BlockIndex: block.Sequence,
+		BlockIndex: block.Sequence, // Use remapped sequence for SSE
 	})
 
 	se.logger.Debug("persisted complete block",
@@ -304,22 +354,8 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 		}
 	}
 
-	// No tools to execute, complete the turn
-	// Update turn status in database
-	if err := se.turnRepo.UpdateTurnStatus(ctx, se.turnID, "complete", nil); err != nil {
-		se.logger.Error("failed to update turn status to complete", "error", err)
-	}
-
-	// Send turn_complete event
-	se.sendEvent(send, llmModels.SSEEventTurnComplete, llmModels.TurnCompleteEvent{
-		TurnID:           se.turnID,
-		StopReason:       metadata.StopReason,
-		InputTokens:      metadata.InputTokens,
-		OutputTokens:     metadata.OutputTokens,
-		ResponseMetadata: metadata.ResponseMetadata,
-	})
-
-	return nil
+	// No tools to execute (or stop_reason != "tool_use"), complete the turn
+	return se.completeTurn(ctx, send, metadata.StopReason, metadata)
 }
 
 // handleError handles streaming errors
@@ -333,9 +369,14 @@ func (se *StreamExecutor) handleError(ctx context.Context, send func(mstream.Eve
 	}
 
 	// Send turn_error event
+	errorMsg := err.Error()
+	if errorMsg == "" {
+		errorMsg = "Unknown error occurred"
+	}
+
 	se.sendEvent(send, llmModels.SSEEventTurnError, llmModels.TurnErrorEvent{
 		TurnID:         se.turnID,
-		Error:          err.Error(),
+		Error:          errorMsg,
 		LastBlockIndex: nil, // Could be determined from DB if needed
 	})
 }
@@ -564,25 +605,116 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 		)
 	}
 
-	// TODO: Continue streaming with tool results
-	// This requires building a new GenerateRequest with the conversation history
-	// including the tool results, and calling the provider again
-	// For now, we'll complete the turn
-
-	se.logger.Warn("tool continuation not yet implemented, completing turn",
-		"tool_count", len(toolResults),
-	)
-
-	// Update turn status to complete
-	if err := se.turnRepo.UpdateTurnStatus(ctx, se.turnID, "complete", nil); err != nil {
-		se.logger.Error("failed to update turn status", "error", err)
+	// 4. Check iteration limit
+	se.toolIteration++
+	if se.toolIteration >= se.maxToolRounds {
+		se.logger.Warn("max tool rounds reached, completing turn",
+			"iterations", se.toolIteration,
+			"max_rounds", se.maxToolRounds,
+		)
+		return se.completeTurn(ctx, send, "max_tool_rounds", nil)
 	}
 
-	// Send completion event
-	se.sendEvent(send, llmModels.SSEEventTurnComplete, llmModels.TurnCompleteEvent{
+	// 5. Load conversation history with tool results (using TurnNavigator + TurnReader)
+	path, err := se.turnNavigator.GetTurnPath(ctx, se.turnID)
+	if err != nil {
+		se.handleError(ctx, send, fmt.Errorf("failed to load turn path for continuation: %w", err))
+		return fmt.Errorf("failed to load turn path for continuation: %w", err)
+	}
+
+	// Load blocks for all turns in the path
+	for i := range path {
+		blocks, err := se.turnReader.GetTurnBlocks(ctx, path[i].ID)
+		if err != nil {
+			se.handleError(ctx, send, fmt.Errorf("failed to load blocks for turn %s: %w", path[i].ID, err))
+			return fmt.Errorf("failed to load blocks for turn %s: %w", path[i].ID, err)
+		}
+		path[i].Blocks = blocks
+	}
+
+	// 6. Build messages using MessageBuilder (pure conversion)
+	messages, err := se.messageBuilder.BuildMessages(ctx, path)
+	if err != nil {
+		se.handleError(ctx, send, fmt.Errorf("failed to build continuation messages: %w", err))
+		return fmt.Errorf("failed to build continuation messages: %w", err)
+	}
+
+	se.logger.Debug("built continuation messages",
+		"message_count", len(messages),
+		"iteration", se.toolIteration,
+		"next_block_sequence", se.maxBlockSequence+1,
+	)
+
+	// 7. Create continuation request (reuse original params)
+	contReq := &domainllm.GenerateRequest{
+		Messages: messages,
+		Model:    se.req.Model,
+		Params:   se.req.Params, // Reuse original params (temperature, max_tokens, system prompt, etc.)
+	}
+
+	// 8. Call provider for continuation stream
+	// NOTE: Use ctx from workFunc (NOT context.Background())
+	// - The background goroutine already uses context.Background() (see service.go:304)
+	// - This ctx comes from mstream, which manages stream lifecycle
+	// - Browser disconnection doesn't cancel this ctx (goroutine-level protection)
+	// - Using mstream's ctx prevents goroutine leaks and respects cancellation
+	contStreamChan, err := se.provider.StreamResponse(ctx, contReq)
+	if err != nil {
+		se.handleError(ctx, send, fmt.Errorf("continuation stream failed: %w", err))
+		return fmt.Errorf("continuation stream failed: %w", err)
+	}
+
+	se.logger.Info("continuation stream started",
+		"iteration", se.toolIteration,
+		"next_expected_block", se.maxBlockSequence+1,
+	)
+
+	// 9. Reset tool collection for next iteration
+	se.collectedTools = nil
+
+	// 10. Process continuation stream (recursive call)
+	// maxBlockSequence will be updated by processProviderStream -> processCompleteBlock
+	return se.processProviderStream(ctx, contStreamChan, send)
+}
+
+// completeTurn marks the turn as complete and sends turn_complete event.
+// This is called ONLY when stop_reason != "tool_use" (or max iterations hit).
+// The turn remains "streaming" during all continuation rounds.
+// metadata can be nil (e.g., when max_tool_rounds is hit before next stream)
+func (se *StreamExecutor) completeTurn(
+	ctx context.Context,
+	send func(mstream.Event),
+	stopReason string,
+	metadata *domainllm.StreamMetadata,
+) error {
+	se.logger.Info("completing turn",
+		"turn_id", se.turnID,
+		"stop_reason", stopReason,
+		"total_tool_iterations", se.toolIteration,
+	)
+
+	// Update turn status in database
+	// NOTE: This marks the FINAL completion after all continuation rounds
+	if err := se.turnRepo.UpdateTurnStatus(ctx, se.turnID, "complete", nil); err != nil {
+		se.logger.Error("failed to update turn status", "error", err)
+		// Continue despite error - SSE event is more important
+	}
+
+	// Build completion event
+	completeEvent := llmModels.TurnCompleteEvent{
 		TurnID:     se.turnID,
-		StopReason: "tool_use", // Indicate we stopped for tool execution
-	})
+		StopReason: stopReason,
+	}
+
+	// Add metadata if available (may be nil for max_tool_rounds)
+	if metadata != nil {
+		completeEvent.InputTokens = metadata.InputTokens
+		completeEvent.OutputTokens = metadata.OutputTokens
+		completeEvent.ResponseMetadata = metadata.ResponseMetadata
+	}
+
+	// Send turn_complete SSE event
+	se.sendEvent(send, llmModels.SSEEventTurnComplete, completeEvent)
 
 	return nil
 }

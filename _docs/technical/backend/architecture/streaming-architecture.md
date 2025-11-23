@@ -93,7 +93,7 @@ Signals the beginning of turn streaming.
   "event": "turn_start",
   "data": {
     "turn_id": "uuid-abc-123",
-    "model": "claude-haiku-4-5-20251001"
+    "model": "moonshotai/kimi-k2-thinking"
   }
 }
 ```

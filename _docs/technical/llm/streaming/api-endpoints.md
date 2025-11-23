@@ -84,7 +84,7 @@ X-Accel-Buffering: no
 **Event Stream:**
 ```
 event: turn_start
-data: {"turn_id": "uuid-123", "model": "claude-haiku-4-5-20251001"}
+data: {"turn_id": "uuid-123", "model": "moonshotai/kimi-k2-thinking"}
 
 event: block_start
 data: {"block_index": 0, "block_type": "thinking"}
@@ -187,7 +187,7 @@ data: {"turn_id": "uuid-123", "stop_reason": "end_turn", "input_tokens": 150, "o
 ```json
 {
   "turn_id": "uuid-assistant-turn",
-  "model": "claude-haiku-4-5-20251001",
+  "model": "moonshotai/kimi-k2-thinking",
   "input_tokens": 150,
   "output_tokens": 420,
   "total_tokens": 570,
@@ -259,7 +259,7 @@ data: {"turn_id": "uuid-123", "stop_reason": "end_turn", "input_tokens": 150, "o
 ```json
 {
   "turn_id": "uuid-123",
-  "model": "claude-haiku-4-5-20251001"
+  "model": "moonshotai/kimi-k2-thinking"
 }
 ```
 

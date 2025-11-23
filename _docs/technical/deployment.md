@@ -54,8 +54,8 @@ ANTHROPIC_API_KEY=sk-ant-your-key-here
 OPENROUTER_API_KEY=sk-or-your-key-here
 
 # Optional
-DEFAULT_PROVIDER=anthropic
-DEFAULT_MODEL=claude-haiku-4-5-20251001
+DEFAULT_PROVIDER=openrouter
+DEFAULT_MODEL=moonshotai/kimi-k2-thinking
 DEBUG=false
 ```
 

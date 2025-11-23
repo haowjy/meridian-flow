@@ -237,11 +237,16 @@ func (s *LLMService) SelectProvider(req *TurnRequest) (string, error) {
 
 The `meridian-llm-go` library contains adapters for all providers below. The backend currently routes to Anthropic and OpenRouter via the provider factory pattern (see `backend/internal/service/llm/provider_factory.go`).
 
-### Anthropic Claude
+### Default Model
+
+- **Provider:** `openrouter`
+- **Model:** `moonshotai/kimi-k2-thinking` (Kimi K2 Thinking)
+
+### Anthropic Claude (still supported)
 
 **Provider String:** `"anthropic"`
 
-**Supported Models:**
+**Example Models (non-exhaustive):**
 - `claude-haiku-4-5-20251001` - Fast, cost-effective
 - `claude-sonnet-4-5-20250514` - Balanced performance
 - `claude-opus-4-5-20250514` - Most capable

@@ -33,3 +33,6 @@ require (
 	golang.org/x/text v0.29.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
 )
+
+// Use local meridian-llm-go submodule for development
+replace github.com/haowjy/meridian-llm-go => ../meridian-llm-go

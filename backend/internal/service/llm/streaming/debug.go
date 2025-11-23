@@ -115,8 +115,8 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 		}
 	}
 
-	// Build messages from turn history
-	messages, err := s.buildMessagesFromPath(path)
+	// Build messages from turn history using MessageBuilder
+	messages, err := s.messageBuilder.BuildMessages(ctx, path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build messages for debug: %w", err)
 	}

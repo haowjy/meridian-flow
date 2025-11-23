@@ -266,7 +266,7 @@ Conversation tree structure. Each turn is either a user message or assistant res
 - `role` (TEXT) - `'user'` or `'assistant'`
 - `status` (TEXT) - One of: `'pending'`, `'streaming'`, `'waiting_subagents'`, `'complete'`, `'cancelled'`, `'error'`
 - `error` (TEXT, nullable) - Error message if status = `'error'`
-- `model` (TEXT, nullable) - LLM model identifier (e.g., `'claude-haiku-4-5-20251001'`) for assistant turns
+- `model` (TEXT, nullable) - LLM model identifier (e.g., `'moonshotai/kimi-k2-thinking'`) for assistant turns
 - `input_tokens` (INT, nullable) - Token count for input context
 - `output_tokens` (INT, nullable) - Token count for generated output
 - `created_at` (TIMESTAMPTZ) - Turn creation time

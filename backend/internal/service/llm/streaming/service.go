@@ -9,7 +9,6 @@ import (
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 	mstream "github.com/haowjy/meridian-stream-go"
 
-	"meridian/internal/capabilities"
 	"meridian/internal/config"
 	"meridian/internal/domain"
 	llmModels "meridian/internal/domain/models/llm"
@@ -17,7 +16,6 @@ import (
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	llmRepo "meridian/internal/domain/repositories/llm"
 	llmSvc "meridian/internal/domain/services/llm"
-	"meridian/internal/service/llm/formatting"
 	"meridian/internal/service/llm/tools"
 )
 
@@ -47,8 +45,7 @@ type Service struct {
 	config               *config.Config
 	txManager            repositories.TransactionManager
 	systemPromptResolver llmSvc.SystemPromptResolver
-	formatterRegistry    *formatting.FormatterRegistry
-	capabilityRegistry   *capabilities.Registry
+	messageBuilder       llmSvc.MessageBuilder
 	logger               *slog.Logger
 }
 
@@ -66,8 +63,7 @@ func NewService(
 	cfg                  *config.Config,
 	txManager            repositories.TransactionManager,
 	systemPromptResolver llmSvc.SystemPromptResolver,
-	formatterRegistry    *formatting.FormatterRegistry,
-	capabilityRegistry   *capabilities.Registry,
+	messageBuilder       llmSvc.MessageBuilder,
 	logger               *slog.Logger,
 ) llmSvc.StreamingService {
 	return &Service{
@@ -83,8 +79,7 @@ func NewService(
 		config:               cfg,
 		txManager:            txManager,
 		systemPromptResolver: systemPromptResolver,
-		formatterRegistry:    formatterRegistry,
-		capabilityRegistry:   capabilityRegistry,
+		messageBuilder:       messageBuilder,
 		logger:               logger,
 	}
 }
@@ -128,7 +123,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	// Extract model from request_params (pure model name, no provider prefix)
 	model := s.config.DefaultModel
 	if model == "" {
-		model = "claude-haiku-4-5-20251001" // Fallback if config not set
+		model = "moonshotai/kimi-k2-thinking" // Fallback if config not set
 	}
 	if params.Model != nil && *params.Model != "" {
 		model = *params.Model
@@ -279,13 +274,16 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	// This ensures SSE clients can connect while we're preparing the request
 	executor := NewStreamExecutor(
 		assistantTurn.ID,
-		model,           // Pure model name (no provider prefix)
-		s.turnWriter,    // TurnWriter
-		s.turnReader,    // TurnReader
-		llmProvider,     // Provider adapter
-		toolRegistry,    // Per-request ToolRegistry with project-specific tools
+		model,            // Pure model name (no provider prefix)
+		s.turnWriter,     // TurnWriter
+		s.turnReader,     // TurnReader
+		s.turnNavigator,       // TurnNavigator (for continuation path loading)
+		llmProvider,           // Provider adapter
+		toolRegistry,          // Per-request ToolRegistry with project-specific tools
+		s.messageBuilder,      // MessageBuilder (for continuation message building)
 		s.logger,
-		s.config.Debug,  // Pass DEBUG flag for optional event IDs
+		s.config.MaxToolRounds, // Maximum tool execution rounds (configurable via MAX_TOOL_ROUNDS env)
+		s.config.Debug,        // Pass DEBUG flag for optional event IDs
 	)
 
 	// Register stream in registry IMMEDIATELY
@@ -349,8 +347,8 @@ func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, 
 		path[i].Blocks = blocks
 	}
 
-	// Build messages from turn history
-	messages, err := s.buildMessagesFromPath(path)
+	// Build messages from turn history using MessageBuilder
+	messages, err := s.messageBuilder.BuildMessages(ctx, path)
 	if err != nil {
 		s.logger.Error("failed to build messages for streaming",
 			"error", err,
@@ -384,206 +382,6 @@ func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, 
 	// - Registry will clean up stream after retention period
 }
 
-// buildMessagesFromPath converts turn history to LLM messages.
-// path is ordered from oldest to newest (root → current turn)
-//
-// Tool results are stored in the assistant turn (for simplicity in DB), but we need to
-// split them into a separate user message for the API (per Anthropic spec and other providers).
-func (s *Service) buildMessagesFromPath(path []llmModels.Turn) ([]llmSvc.Message, error) {
-	messages := make([]llmSvc.Message, 0, len(path))
-
-	for _, turn := range path {
-		// Determine role
-		var role string
-		switch turn.Role {
-		case "user":
-			role = "user"
-		case "assistant":
-			role = "assistant"
-		default:
-			return nil, fmt.Errorf("unsupported turn role: %s", turn.Role)
-		}
-
-		// Get content blocks for this turn
-		if len(turn.Blocks) == 0 {
-			// Empty turn - skip it
-			s.logger.Warn("skipping turn with no content blocks", "turn_id", turn.ID)
-			continue
-		}
-
-		// For assistant turns, split tool_result blocks into separate user message
-		// (required by Anthropic API and cleaner for other providers)
-		if role == "assistant" {
-			// Partition blocks into assistant blocks and tool_result blocks
-			assistantBlocks := make([]*llmModels.TurnBlock, 0, len(turn.Blocks))
-			toolResultBlocks := make([]*llmModels.TurnBlock, 0)
-
-			for i := range turn.Blocks {
-				if turn.Blocks[i].BlockType == llmModels.BlockTypeToolResult {
-					// Apply tool result formatting before adding to message
-					block := &turn.Blocks[i]
-					s.formatToolResultBlock(block)
-					toolResultBlocks = append(toolResultBlocks, block)
-				} else {
-					assistantBlocks = append(assistantBlocks, &turn.Blocks[i])
-				}
-			}
-
-			// Create assistant message (if it has content)
-			if len(assistantBlocks) > 0 {
-				messages = append(messages, llmSvc.Message{
-					Role:    "assistant",
-					Content: assistantBlocks,
-				})
-			}
-
-			// Create synthetic user message for tool_result blocks (if any)
-			if len(toolResultBlocks) > 0 {
-				messages = append(messages, llmSvc.Message{
-					Role:    "user",
-					Content: toolResultBlocks,
-				})
-			}
-		} else {
-			// User turn - append as-is
-			contentPtrs := make([]*llmModels.TurnBlock, len(turn.Blocks))
-			for i := range turn.Blocks {
-				contentPtrs[i] = &turn.Blocks[i]
-			}
-
-			messages = append(messages, llmSvc.Message{
-				Role:    role,
-				Content: contentPtrs,
-			})
-		}
-	}
-
-	// Optional: Inject token limit warning if last assistant turn is approaching limit
-	// TODO: Experiment with system prompt injection instead of user message
-	if err := s.injectTokenLimitWarningIfNeeded(path, &messages); err != nil {
-		s.logger.Warn("failed to inject token limit warning", "error", err)
-		// Don't fail the request if warning injection fails
-	}
-
-	return messages, nil
-}
-
-// formatToolResultBlock applies tool-specific formatting to a tool_result block's result field.
-// This modifies the block in-place by replacing Content["result"] with the formatted version.
-// Formatting happens on message build (not at storage time), so we keep full data in DB.
-func (s *Service) formatToolResultBlock(block *llmModels.TurnBlock) {
-	// Defensive: ensure formatter registry and block content exist
-	if s.formatterRegistry == nil {
-		return
-	}
-	if block.Content == nil {
-		return
-	}
-
-	// Extract tool_name from block content
-	toolName, ok := block.Content["tool_name"].(string)
-	if !ok || toolName == "" {
-		// No tool name - can't format
-		return
-	}
-
-	// Extract result from block content
-	result, ok := block.Content["result"]
-	if !ok {
-		// No result to format (might be error or already formatted)
-		return
-	}
-
-	// Apply formatting
-	formattedResult := s.formatterRegistry.Format(toolName, result)
-
-	// Replace result with formatted version in-place
-	block.Content["result"] = formattedResult
-}
-
-// injectTokenLimitWarningIfNeeded checks if the last assistant turn is approaching the token limit
-// and injects a user message warning if usage is >75%
-func (s *Service) injectTokenLimitWarningIfNeeded(path []llmModels.Turn, messages *[]llmSvc.Message) error {
-	if len(path) == 0 {
-		return nil
-	}
-
-	// Find the last assistant turn
-	var lastAssistantTurn *llmModels.Turn
-	for i := len(path) - 1; i >= 0; i-- {
-		if path[i].Role == "assistant" {
-			lastAssistantTurn = &path[i]
-			break
-		}
-	}
-
-	// No assistant turn found
-	if lastAssistantTurn == nil {
-		return nil
-	}
-
-	// Check if we have token usage data
-	if lastAssistantTurn.InputTokens == nil || lastAssistantTurn.OutputTokens == nil {
-		return nil
-	}
-
-	// Check if we have a model
-	if lastAssistantTurn.Model == nil || *lastAssistantTurn.Model == "" {
-		return nil
-	}
-
-	// Calculate total tokens
-	totalTokens := *lastAssistantTurn.InputTokens + *lastAssistantTurn.OutputTokens
-
-	// Determine provider
-	provider := "anthropic" // default
-	if lastAssistantTurn.RequestParams != nil {
-		if providerParam, ok := lastAssistantTurn.RequestParams["provider"].(string); ok && providerParam != "" {
-			provider = providerParam
-		}
-	}
-
-	// Get model capability from registry
-	modelCap, err := s.capabilityRegistry.GetModelCapabilities(provider, *lastAssistantTurn.Model)
-	if err != nil {
-		// Model not in registry - skip warning
-		return nil
-	}
-
-	// Calculate usage percentage
-	if modelCap.ContextWindow <= 0 {
-		return nil
-	}
-
-	usagePercent := (float64(totalTokens) / float64(modelCap.ContextWindow)) * 100
-
-	// Inject warning if >75%
-	if usagePercent > 75 {
-		warningText := fmt.Sprintf("Note: You're approaching the context limit (%.1f%% used, %d/%d tokens). Consider wrapping up.", usagePercent, totalTokens, modelCap.ContextWindow)
-
-		// Create a text block for the warning
-		warningBlock := &llmModels.TurnBlock{
-			BlockType: llmModels.BlockTypeText,
-			Content: map[string]interface{}{
-				"text": warningText,
-			},
-		}
-
-		// Inject as user message
-		*messages = append(*messages, llmSvc.Message{
-			Role:    "user",
-			Content: []*llmModels.TurnBlock{warningBlock},
-		})
-
-		s.logger.Info("injected token limit warning",
-			"usage_percent", usagePercent,
-			"total_tokens", totalTokens,
-			"context_limit", modelCap.ContextWindow,
-		)
-	}
-
-	return nil
-}
 
 // CreateAssistantTurnDebug creates an assistant turn (DEBUG/INTERNAL USE ONLY)
 //

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 )
 
@@ -18,6 +19,7 @@ type Config struct {
 	OpenRouterAPIKey string
 	DefaultProvider  string
 	DefaultModel     string
+	MaxToolRounds    int    // Maximum tool execution rounds to prevent infinite loops
 	// Debug flags
 	Debug bool // Enables DEBUG features like SSE event IDs
 }
@@ -42,8 +44,9 @@ func Load() *Config {
 		// LLM Configuration
 		AnthropicAPIKey:  getEnv("ANTHROPIC_API_KEY", ""),
 		OpenRouterAPIKey: getEnv("OPENROUTER_API_KEY", ""),
-		DefaultProvider:  getEnv("DEFAULT_PROVIDER", "anthropic"),
-		DefaultModel:     getEnv("DEFAULT_MODEL", "claude-haiku-4-5-20251001"),
+		DefaultProvider:  getEnv("DEFAULT_PROVIDER", "openrouter"),
+		DefaultModel:     getEnv("DEFAULT_MODEL", "moonshotai/kimi-k2-thinking"),
+		MaxToolRounds:    getEnvInt("MAX_TOOL_ROUNDS", 5),
 		// Debug flags - default to true in dev/test, false in production
 		Debug: getEnv("DEBUG", getDefaultDebug(env)) == "true",
 	}
@@ -81,5 +84,21 @@ func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
 	}
+	return defaultValue
+}
+
+func getEnvInt(key string, defaultValue int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+
+	// Parse int from string
+	var intValue int
+	if _, err := fmt.Sscanf(value, "%d", &intValue); err == nil {
+		return intValue
+	}
+
+	// If parsing fails, return default
 	return defaultValue
 }

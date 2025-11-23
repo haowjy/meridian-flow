@@ -102,8 +102,8 @@ CORS_ORIGINS=https://meridian.vercel.app,https://*.vercel.app
 ANTHROPIC_API_KEY=sk-ant-prod-key-here
 OPENROUTER_API_KEY=sk-or-prod-key-here
 
-DEFAULT_PROVIDER=anthropic
-DEFAULT_MODEL=claude-haiku-4-5-20251001
+DEFAULT_PROVIDER=openrouter
+DEFAULT_MODEL=moonshotai/kimi-k2-thinking
 ```
 
 **Features:**
@@ -162,8 +162,8 @@ DEFAULT_MODEL=claude-haiku-4-5-20251001
 |----------|----------|-------------|
 | `ANTHROPIC_API_KEY` | One required* | Anthropic API key (starts with `sk-ant-`) |
 | `OPENROUTER_API_KEY` | One required* | OpenRouter API key (starts with `sk-or-`) |
-| `DEFAULT_PROVIDER` | No | Default: `anthropic`<br>Options: `anthropic`, `openrouter` |
-| `DEFAULT_MODEL` | No | Default: `claude-haiku-4-5-20251001` |
+| `DEFAULT_PROVIDER` | No | Default: `openrouter`<br>Options: `anthropic`, `openrouter` |
+| `DEFAULT_MODEL` | No | Default: `moonshotai/kimi-k2-thinking` |
 
 \* At least one LLM provider key required
 

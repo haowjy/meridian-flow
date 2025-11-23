@@ -120,6 +120,13 @@ func SetupServices(
 	formatterRegistry.Register("doc_view", &formatting.DocViewFormatter{})
 	formatterRegistry.Register("doc_tree", formatting.NewDocTreeFormatter())
 
+	// Create MessageBuilder service (pure conversion, no data loading)
+	messageBuilder := conversation.NewMessageBuilderService(
+		formatterRegistry,
+		capabilityRegistry,
+		logger,
+	)
+
 	// Create streaming service (turn creation/orchestration)
 	// Tools are created per-request with project-specific context
 	// Uses minimal interfaces (ISP compliance)
@@ -136,8 +143,7 @@ func SetupServices(
 		cfg,
 		txManager,
 		systemPromptResolver,
-		formatterRegistry,
-		capabilityRegistry,
+		messageBuilder,
 		logger,
 	)
 

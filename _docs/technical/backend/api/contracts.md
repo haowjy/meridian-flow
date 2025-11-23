@@ -548,7 +548,7 @@ Creates a new **user** turn in a chat and triggers an assistant streaming respon
     }
   ],
   "request_params": {
-    "model": "claude-haiku-4-5-20251001",
+    "model": "moonshotai/kimi-k2-thinking",
     "temperature": 0.7,
     "max_tokens": 1024,
     "thinking": "low",
@@ -605,7 +605,7 @@ Returns both the user turn and the assistant turn that will stream, plus a conve
     "prev_turn_id": "user-turn-uuid",
     "role": "assistant",
     "status": "streaming",
-    "model": "claude-haiku-4-5-20251001",
+    "model": "moonshotai/kimi-k2-thinking",
     "created_at": "2025-01-15T10:30:00Z",
     "completed_at": null
   },
@@ -759,7 +759,7 @@ Returns full Turn objects with nested turn blocks for efficient pagination.
           }
         }
       ],
-      "model": "claude-haiku-4-5-20251001",
+      "model": "moonshotai/kimi-k2-thinking",
       "input_tokens": 150,
       "output_tokens": 280,
       "created_at": "2025-01-15T10:30:05Z",
@@ -1036,11 +1036,11 @@ Retrieves preferences for the authenticated user.
 {
   "user_id": "user-uuid",
   "favorite_models": [
-    {"provider": "anthropic", "model": "claude-haiku-4-5"},
+    {"provider": "openrouter", "model": "moonshotai/kimi-k2-thinking"},
     {"provider": "openrouter", "model": "x-ai/grok-code-fast-1"}
   ],
-  "default_model": "claude-haiku-4-5",
-  "default_provider": "anthropic",
+  "default_model": "moonshotai/kimi-k2-thinking",
+  "default_provider": "openrouter",
   "settings": {},
   "created_at": "2025-01-15T10:00:00Z",
   "updated_at": "2025-01-15T10:05:00Z"
@@ -1059,11 +1059,11 @@ Updates user preferences (partial update supported).
 ```json
 {
   "favorite_models": [
-    {"provider": "anthropic", "model": "claude-haiku-4-5"},
+    {"provider": "openrouter", "model": "moonshotai/kimi-k2-thinking"},
     {"provider": "openrouter", "model": "google/gemini-2.5-flash"}
   ],
-  "default_model": "claude-haiku-4-5",
-  "default_provider": "anthropic",
+  "default_model": "moonshotai/kimi-k2-thinking",
+  "default_provider": "openrouter",
   "settings": {"theme": "dark"}
 }
 ```

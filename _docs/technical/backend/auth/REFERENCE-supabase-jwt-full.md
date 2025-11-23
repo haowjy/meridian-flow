@@ -242,7 +242,7 @@ func Load() *Config {
 		CORSOrigins:   getEnv("CORS_ORIGINS", "http://localhost:3000"),
 		TablePrefix:   tablePrefix,
 		AnthropicAPIKey: getEnv("ANTHROPIC_API_KEY", ""),
-		DefaultModel:    getEnv("DEFAULT_MODEL", "claude-haiku-4-5-20251001"),
+		DefaultModel:    getEnv("DEFAULT_MODEL", "moonshotai/kimi-k2-thinking"),
 		Debug: getEnv("DEBUG", getDefaultDebug(env)) == "true",
 		// NEW: JWKS URL
 		SupabaseJWKSURL: getEnv("SUPABASE_JWKS_URL", jwksURL),

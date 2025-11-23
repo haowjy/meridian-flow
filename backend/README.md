@@ -91,6 +91,65 @@ curl http://localhost:8080/api/projects/{ID}/tree
 
 See [tests/README.md](tests/README.md) for details.
 
+## Database Migrations
+
+**Hybrid approach:** Goose for dev, manual script for test/prod.
+
+### Development (Dev Environment)
+
+Use **goose** via Makefile commands:
+
+```bash
+make migrate-up        # Apply pending migrations
+make migrate-down      # Rollback last migration
+make migrate-status    # Show migration status
+make seed-fresh        # Drop all + migrate + seed
+```
+
+**Benefits:**
+- Tracks which migrations have run (`goose_db_version` table)
+- Prevents re-running migrations
+- Supports rollback for iteration
+- Incremental updates when adding new migrations
+
+**Use cases:**
+- Day-to-day development
+- Testing schema changes
+- Adding new migration files
+
+### Test/Production Environments
+
+Use **manual script** for one-time environment setup:
+
+```bash
+# Interactive mode (recommended)
+./scripts/migrate-prefix.sh
+# Shows menu → select test/prod → enter DB URL → migrates
+
+# Direct mode (for automation)
+./scripts/migrate-prefix.sh test_
+./scripts/migrate-prefix.sh prod_
+```
+
+**Why manual?** Goose can't handle multiple table prefixes (dev_, test_, prod_) in the same database.
+
+**Benefits:**
+- Prompts for DB URL (safer than reusing .env)
+- Interactive safety confirmations
+- Flexible for any prefix/database combination
+
+**See:** [scripts/README.md](../scripts/README.md#migrate-prefixsh) for detailed usage.
+
+### When to Use Which
+
+| Scenario | Tool | Command |
+|----------|------|---------|
+| Daily dev work | Goose | `make seed-fresh` |
+| Testing schema changes | Goose | `make migrate-down` + `make migrate-up` |
+| Setting up Docker test env | Manual script | `./scripts/migrate-prefix.sh test_` |
+| Deploying to production | Manual script | `./scripts/migrate-prefix.sh prod_` |
+| Adding new migration | Goose | `make migrate-create name="add_feature"` |
+
 ## Documentation
 
 ### Quick References (in `/backend/`)

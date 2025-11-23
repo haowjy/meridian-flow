@@ -108,7 +108,7 @@ Tokens tracked at **turn level** (not block level):
 
 ```go
 type Turn struct {
-    Model        *string  // "claude-haiku-4-5-20251001"
+    Model        *string  // "moonshotai/kimi-k2-thinking"
     InputTokens  *int     // Context sent to LLM
     OutputTokens *int     // LLM generated tokens
 }

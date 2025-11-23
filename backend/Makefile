@@ -73,6 +73,8 @@ seed: ## Seed the database with data (runs migrations first)
 seed-fresh: ## Drop all tables, run migrations, and seed data
 	@echo "Dropping all tables..."
 	@go run ./scripts/drop_all_tables.go
+	@echo "Dropping goose version table (for fresh migration)..."
+	@psql "$(SUPABASE_DB_URL)" -c "DROP TABLE IF EXISTS goose_db_version CASCADE;" 2>/dev/null || true
 	@echo "Running migrations..."
 	$(GOOSE) -dir migrations postgres "$(SUPABASE_DB_URL)" up
 	@echo "Seeding database..."
