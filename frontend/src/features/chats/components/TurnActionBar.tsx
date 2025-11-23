@@ -79,7 +79,7 @@ export const TurnActionBar = React.memo(function TurnActionBar({
             <div className="flex items-center gap-1">
                 <button
                     onClick={handleCopy}
-                    className="p-1 hover:bg-muted rounded transition-colors"
+                    className="p-1 rounded cursor-pointer hover:bg-muted/60 hover:text-foreground transition-colors"
                     aria-label="Copy text"
                 >
                     {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
@@ -88,7 +88,7 @@ export const TurnActionBar = React.memo(function TurnActionBar({
                 {onEdit && (
                     <button
                         onClick={onEdit}
-                        className="p-1 hover:bg-muted rounded transition-colors"
+                        className="p-1 rounded cursor-pointer hover:bg-muted/60 hover:text-foreground transition-colors"
                         aria-label="Edit message"
                     >
                         <Edit2 className="w-3.5 h-3.5" />
@@ -98,7 +98,7 @@ export const TurnActionBar = React.memo(function TurnActionBar({
                 {onRegenerate && (
                     <button
                         onClick={onRegenerate}
-                        className="p-1 hover:bg-muted rounded transition-colors"
+                        className="p-1 rounded cursor-pointer hover:bg-muted/60 hover:text-foreground transition-colors"
                         aria-label="Regenerate response"
                     >
                         <RefreshCw className="w-3.5 h-3.5" />
@@ -107,22 +107,22 @@ export const TurnActionBar = React.memo(function TurnActionBar({
             </div>
 
             {showNavigation && (
-                <div className="flex items-center gap-1 ml-1 text-muted-foreground/60">
+                <div className="flex items-center gap-0 ml-1 text-muted-foreground/60">
                     <button
                         onClick={handlePrev}
                         disabled={currentIndex === 0 || isLoading}
-                        className="p-1 hover:bg-muted rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        className="px-0.5 py-0.5 rounded cursor-pointer hover:bg-muted/60 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                         aria-label="Previous version"
                     >
                         <ChevronLeft className="w-4 h-4" />
                     </button>
-                    <span className="text-xs font-medium min-w-[2rem] text-center select-none">
+                    <span className="px-0 text-[10px] font-medium text-center select-none">
                         {currentNumber}/{siblingCount}
                     </span>
                     <button
                         onClick={handleNext}
                         disabled={currentIndex === siblingCount - 1 || isLoading}
-                        className="p-1 hover:bg-muted rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        className="px-0.5 py-0.5 rounded cursor-pointer hover:bg-muted/60 hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                         aria-label="Next version"
                     >
                         <ChevronRight className="w-4 h-4" />

@@ -56,7 +56,14 @@ export function PanelLayout({
         <ResizablePanel
           ref={leftRef}
           className="workspace-panel-left"
-          style={{ minWidth: '250px' }}
+          // IMPORTANT:
+          // - When expanded, enforce a minimum pixel width so the chat list
+          //   never becomes unusably narrow.
+          // - When collapsed, remove the minWidth constraint so the panel
+          //   can truly shrink to `collapsedSize={0}`.
+          //   Otherwise the CSS min-width would keep reserving space and
+          //   leave an empty slab on the left while “collapsed”.
+          style={{ minWidth: leftCollapsed ? 0 : 250 }}
           collapsible
           collapsedSize={0}
           minSize={12}

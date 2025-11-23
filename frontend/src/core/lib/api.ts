@@ -1,5 +1,5 @@
 import { Project } from '@/features/projects/types/project'
-import { Chat, Turn } from '@/features/chats/types'
+import { Chat, Turn, type ChatRequestOptions, DEFAULT_CHAT_REQUEST_OPTIONS } from '@/features/chats/types'
 import { Document, DocumentTree } from '@/features/documents/types/document'
 import {
   ProjectDto,
@@ -182,7 +182,7 @@ function turnDtoToTurn(turn: TurnDto): Turn {
   const blocks = (turn.blocks ?? []).map((b): import('@/features/chats/types').TurnBlock => ({
     id: b.id,
     turnId: b.turn_id,
-    blockType: b.block_type,
+    blockType: b.block_type as import('@/features/chats/types').BlockType,
     sequence: b.sequence,
     textContent: b.text_content ?? undefined,
     content: b.content ?? undefined,
@@ -204,6 +204,77 @@ function turnDtoToTurn(turn: TurnDto): Turn {
     blocks,
     siblingIds: turn.sibling_ids ?? [],
   }
+}
+
+// Model capabilities (used for chat model selection)
+type ModelCapabilityDto = {
+  id: string
+  display_name: string
+  context_window: number
+  capabilities: {
+    tool_calls?: string
+    image_input?: boolean
+    image_generation?: boolean
+    streaming?: boolean
+    thinking?: boolean
+    [key: string]: unknown
+  }
+  pricing?: {
+    input_per_1m?: number
+    output_per_1m?: number
+    [key: string]: unknown
+  }
+}
+
+type ModelProviderDto = {
+  id: string
+  name: string
+  models: ModelCapabilityDto[]
+}
+
+export type ModelCapabilitiesProvider = {
+  id: string
+  name: string
+  models: {
+    id: string
+    displayName: string
+    contextWindow: number
+    supportsThinking: boolean
+  }[]
+}
+
+type SendTurnOptions = {
+  prevTurnId?: string | null
+  signal?: AbortSignal
+  requestOptions?: ChatRequestOptions
+}
+
+function buildRequestParamsFromChatOptions(
+  options?: ChatRequestOptions
+): Record<string, unknown> {
+  const resolved = options ?? DEFAULT_CHAT_REQUEST_OPTIONS
+
+  const requestParams: Record<string, unknown> = {
+    model: resolved.modelId,
+    provider: resolved.providerId,
+    // NOTE: max_tokens and lorem_max are left to backend defaults for now.
+    thinking_enabled: true,
+    thinking_level: resolved.reasoning,
+  }
+
+  const tools: Array<Record<string, string>> = [
+    { name: 'doc_view' },
+    { name: 'doc_search' },
+    { name: 'doc_tree' },
+  ]
+
+  // For now, web_search is only enabled for Anthropic.
+  if (resolved.providerId === 'anthropic' && resolved.searchEnabled) {
+    tools.push({ name: 'web_search' })
+  }
+
+  requestParams.tools = tools
+  return requestParams
 }
 
 export const api = {
@@ -238,6 +309,31 @@ export const api = {
     },
     delete: (id: string, options?: { signal?: AbortSignal }) =>
       fetchAPI<void>(`/api/projects/${id}`, { method: 'DELETE', signal: options?.signal }),
+  },
+
+  models: {
+    getCapabilities: async (options?: {
+      signal?: AbortSignal
+    }): Promise<ModelCapabilitiesProvider[]> => {
+      type ResponseDto = { providers: ModelProviderDto[] }
+
+      const data = await fetchAPI<ResponseDto>('/api/models/capabilities', {
+        signal: options?.signal,
+      })
+
+      const providers = data.providers ?? []
+
+      return providers.map((provider): ModelCapabilitiesProvider => ({
+        id: provider.id,
+        name: provider.name,
+        models: (provider.models ?? []).map((model) => ({
+          id: model.id,
+          displayName: model.display_name,
+          contextWindow: model.context_window,
+          supportsThinking: !!model.capabilities?.thinking,
+        })),
+      }))
+    },
   },
 
   chats: {
@@ -315,9 +411,11 @@ export const api = {
     // Returns both the created user turn and the assistant turn that will stream.
     send: async (
       chatId: string,
-      content: string,
-      options?: { prevTurnId?: string | null; signal?: AbortSignal }
+      message: string,
+      options?: SendTurnOptions
     ): Promise<{ userTurn: Turn; assistantTurn: Turn; streamUrl: string }> => {
+      const requestParams = buildRequestParamsFromChatOptions(options?.requestOptions)
+
       const response = await fetchAPI<{
         user_turn: TurnDto
         assistant_turn: TurnDto
@@ -331,12 +429,12 @@ export const api = {
             turn_blocks: [
               {
                 block_type: 'text',
-                text_content: content,
+                text_content: message,
                 content: null,
               },
             ],
             prev_turn_id: options?.prevTurnId ?? null,
-            request_params: {},
+            request_params: requestParams,
           }),
           signal: options?.signal,
         }
@@ -371,6 +469,27 @@ export const api = {
         { signal: options?.signal }
       )
       return (data.turns ?? []).map(turnDtoToTurn)
+    },
+
+    getBlocks: async (turnId: string, options?: { signal?: AbortSignal }): Promise<import('@/features/chats/types').TurnBlock[]> => {
+      type GetTurnBlocksResponseDto = {
+        turn_id: string
+        status: string
+        error?: string | null
+        blocks: TurnBlockDto[]
+      }
+      const data = await fetchAPI<GetTurnBlocksResponseDto>(`/api/turns/${turnId}/blocks`, {
+        signal: options?.signal,
+      })
+      return (data.blocks ?? []).map((b) => ({
+        id: b.id,
+        turnId: b.turn_id,
+        blockType: b.block_type as import('@/features/chats/types').BlockType,
+        sequence: b.sequence,
+        textContent: b.text_content ?? undefined,
+        content: b.content ?? undefined,
+        createdAt: new Date(b.created_at),
+      }))
     },
   },
 

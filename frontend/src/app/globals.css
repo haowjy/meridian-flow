@@ -553,7 +553,7 @@ body.preload * {
 
   /* Chat input */
   .chat-input-shell {
-    @apply border-t bg-background/95 px-4 py-3;
+    @apply bg-background/95 px-4 py-2;
   }
 
   .chat-input {

@@ -16,9 +16,11 @@ export const ThinkingBlock = React.memo(function ThinkingBlock({ block }: Thinki
   const text = block.textContent ?? ''
 
   return (
-    <details className="my-2 p-3 border-l-2 border-muted-foreground/30 bg-muted/30 rounded text-sm text-muted-foreground">
-      <summary className="cursor-pointer font-medium">Thinking...</summary>
-      <div className="mt-2 whitespace-pre-wrap">
+    <details className="my-2 border-l-2 border-muted-foreground/30 bg-muted/30 rounded text-sm text-muted-foreground">
+      <summary className="cursor-pointer font-medium px-3 py-2">
+        Thinking...
+      </summary>
+      <div className="mt-1 px-3 pb-3 whitespace-pre-wrap">
         <Streamdown>{text}</Streamdown>
       </div>
     </details>

@@ -1,12 +1,14 @@
 "use client"
 
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useCallback } from 'react'
 import { useShallow } from 'zustand/react/shallow'
+import { toast } from 'sonner'
 import { useChatStore } from '@/core/stores/useChatStore'
 import { useStreamingBuffer } from './useStreamingBuffer'
 import type { BlockType } from '@/features/chats/types'
 import { API_BASE_URL } from '@/core/lib/api'
 import { makeLogger } from '@/core/lib/logger'
+import { fetchEventSource, EventSourceMessage } from '@microsoft/fetch-event-source'
 
 type DeltaType = 'text_delta' | 'thinking_delta' | 'signature_delta' | 'json_delta'
 
@@ -43,18 +45,22 @@ interface TurnErrorEvent {
  */
 export function useChatSSE() {
   const {
+    chatId,
     streamingTurnId,
     streamingUrl,
     appendStreamingTextDelta,
     setStreamingBlockContent,
     clearStreamingStream,
+    refreshTurn,
   } = useChatStore(
     useShallow((s) => ({
+      chatId: s.chatId,
       streamingTurnId: s.streamingTurnId,
       streamingUrl: s.streamingUrl,
       appendStreamingTextDelta: s.appendStreamingTextDelta,
       setStreamingBlockContent: s.setStreamingBlockContent,
       clearStreamingStream: s.clearStreamingStream,
+      refreshTurn: s.refreshTurn,
     }))
   )
 
@@ -64,16 +70,19 @@ export function useChatSSE() {
   const currentBlockIndexRef = useRef<number | null>(null)
   const currentBlockTypeRef = useRef<BlockType | null>(null)
   const jsonBufferRef = useRef<string>('')
+  const ctrlRef = useRef<AbortController | null>(null)
+
+  const handleFlush = useCallback((content: string) => {
+    const turnId = currentTurnIdRef.current
+    const blockIndex = currentBlockIndexRef.current
+    const blockType = currentBlockTypeRef.current ?? 'text'
+    if (!turnId || blockIndex == null || !content) return
+    appendStreamingTextDelta(turnId, blockIndex, blockType, content)
+  }, [appendStreamingTextDelta])
 
   const { append, flush } = useStreamingBuffer({
     flushInterval: 50,
-    onFlush: (content) => {
-      const turnId = currentTurnIdRef.current
-      const blockIndex = currentBlockIndexRef.current
-      const blockType = currentBlockTypeRef.current ?? 'text'
-      if (!turnId || blockIndex == null || !content) return
-      appendStreamingTextDelta(turnId, blockIndex, blockType, content)
-    },
+    onFlush: handleFlush,
   })
 
   useEffect(() => {
@@ -93,102 +102,207 @@ export function useChatSSE() {
     currentBlockTypeRef.current = null
     jsonBufferRef.current = ''
 
-    const es = new EventSource(fullUrl)
+    // Create abort controller for this stream
+    const ctrl = new AbortController()
+    ctrlRef.current = ctrl
 
-    const handleBlockStart = (event: MessageEvent) => {
+    const connect = async () => {
       try {
-        const data = JSON.parse(event.data) as BlockStartEvent
-        currentBlockIndexRef.current = data.block_index
-        currentBlockTypeRef.current = data.block_type ?? 'text'
-      } catch (error) {
-        logger.error('sse:block_start:parse_error', error)
-      }
-    }
+        // Get session token
+        const { createClient } = await import('@/core/supabase/client')
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        const token = session?.access_token
 
-        const handleBlockDelta = (event: MessageEvent) => {
-      try {
-        const data = JSON.parse(event.data) as BlockDeltaEvent
+        if (!token) {
+          logger.error('sse:error:no_token', 'No auth token available')
+          clearStreamingStream()
+          return
+        }
 
-        if (
-          data.delta_type === 'text_delta' ||
-          data.delta_type === 'thinking_delta'
-        ) {
-          if (data.text_delta) {
-            append(data.text_delta)
+        await fetchEventSource(fullUrl, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          signal: ctrl.signal,
+          openWhenHidden: true, // Keep streaming in background tabs
+          
+          async onopen(response: Response) {
+            if (response.ok) {
+              logger.debug('sse:connected')
+              return
+            }
+            
+            // Handle errors
+            if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+              // Client errors (4xx) are fatal - don't retry
+              logger.error('sse:error:client', { status: response.status })
+              throw new Error(`Client error: ${response.status}`)
+            }
+            
+            // Server errors (5xx) might be retried by the library
+            logger.error('sse:error:server', { status: response.status })
+            throw new Error(`Server error: ${response.status}`)
+          },
+
+          onmessage(msg: EventSourceMessage) {
+            // Handle different event types
+            switch (msg.event) {
+              case 'block_start': {
+                try {
+                  const data = JSON.parse(msg.data) as BlockStartEvent
+                  currentBlockIndexRef.current = data.block_index
+                  currentBlockTypeRef.current = data.block_type ?? 'text'
+                  // Clear JSON buffer for new block to prevent concatenation errors
+                  jsonBufferRef.current = ''
+                } catch (error) {
+                  logger.error('sse:block_start:parse_error', error)
+                }
+                break
+              }
+
+              case 'block_delta': {
+                try {
+                  const data = JSON.parse(msg.data) as BlockDeltaEvent
+
+                  if (
+                    data.delta_type === 'text_delta' ||
+                    data.delta_type === 'thinking_delta'
+                  ) {
+                    if (data.text_delta) {
+                      append(data.text_delta)
+                    }
+                  }
+                  if (data.delta_type === 'json_delta' && data.json_delta) {
+                    jsonBufferRef.current += data.json_delta
+                  }
+                } catch (error) {
+                  logger.error('sse:block_delta:parse_error', error)
+                }
+                break
+              }
+
+              case 'block_stop': {
+                const turnId = currentTurnIdRef.current
+                const blockIndex = currentBlockIndexRef.current
+                const blockType = currentBlockTypeRef.current ?? 'text'
+
+                // Flush any remaining text buffer
+                flush()
+
+                // If we collected JSON input for tool blocks, parse once and set content
+                if (turnId && blockIndex != null && jsonBufferRef.current) {
+                    try {
+                      const parsed = JSON.parse(jsonBufferRef.current) as Record<string, unknown>
+                      setStreamingBlockContent(turnId, blockIndex, blockType, parsed)
+                    } catch (error) {
+                      logger.error('sse:block_stop:json_parse_error', error, {
+                        buffer: jsonBufferRef.current,
+                        bufferLength: jsonBufferRef.current.length
+                      })
+                    } finally {
+                    jsonBufferRef.current = ''
+                  }
+                }
+
+                currentBlockIndexRef.current = null
+                currentBlockTypeRef.current = null
+                break
+              }
+
+              case 'turn_complete': {
+                try {
+                  const data = JSON.parse(msg.data) as TurnCompleteEvent
+                  logger.debug('sse:turn_complete', data)
+
+                  if (data.stop_reason === 'max_tool_rounds') {
+                    toast.warning('Tool iteration limit reached', {
+                      description: 'The assistant used the maximum number of tool iterations (5). The conversation has been completed.',
+                      duration: 5000,
+                    })
+                  }
+                  
+                  // Refresh the turn to ensure we have the final state (including any missing blocks or metadata)
+                  if (chatId && data.turn_id) {
+                    refreshTurn(chatId, data.turn_id).catch(err => 
+                      logger.error('sse:turn_complete:refresh_error', err)
+                    )
+                  }
+                } catch {
+                  // Ignore parse errors
+                } finally {
+                  flush()
+                  clearStreamingStream()
+                  jsonBufferRef.current = ''
+                  // Stop the stream
+                  ctrl.abort()
+                }
+                break
+              }
+
+              case 'turn_error': {
+                logger.debug('sse:turn_error:raw', { data: msg.data })
+                try {
+                  const data = JSON.parse(msg.data) as TurnErrorEvent
+                  logger.error('sse:turn_error', data)
+                  
+                  // Show error toast
+                  toast.error('Streaming Error', {
+                    description: data.error || 'An error occurred while generating the response.',
+                    duration: 5000,
+                  })
+
+                  // Refresh the turn to ensure we have the final state (partial blocks)
+                  if (chatId && data.turn_id) {
+                    refreshTurn(chatId, data.turn_id).catch(err => 
+                      logger.error('sse:turn_error:refresh_error', err)
+                    )
+                  }
+                } catch (error) {
+                  logger.error('sse:turn_error:parse_error', error)
+                } finally {
+                  flush()
+                  clearStreamingStream()
+                  jsonBufferRef.current = ''
+                  // Stop the stream
+                  ctrl.abort()
+                }
+                break
+              }
+            }
+          },
+
+          onerror(err: unknown) {
+            // If aborted, ignore
+            if (ctrl.signal.aborted) {
+              return
+            }
+            
+            logger.error('sse:error', err)
+            // Rethrow to let the library handle retry logic if configured,
+            // or stop if it's a fatal error.
+            // For now, we'll stop on error to match previous behavior
+            flush()
+            clearStreamingStream()
+            throw err // This stops retries in fetchEventSource by default if not handled
           }
-        }
-        if (data.delta_type === 'json_delta' && data.json_delta) {
-          jsonBufferRef.current += data.json_delta
-        }
-      } catch (error) {
-        logger.error('sse:block_delta:parse_error', error)
-      }
-    }
-
-    const handleBlockStop = () => {
-      const turnId = currentTurnIdRef.current
-      const blockIndex = currentBlockIndexRef.current
-      const blockType = currentBlockTypeRef.current ?? 'text'
-
-      // Flush any remaining text buffer
-      flush()
-
-      // If we collected JSON input for tool blocks, parse once and set content
-      if (turnId && blockIndex != null && jsonBufferRef.current) {
-        try {
-          const parsed = JSON.parse(jsonBufferRef.current) as Record<string, unknown>
-          setStreamingBlockContent(turnId, blockIndex, blockType, parsed)
-        } catch (error) {
-          logger.error('sse:block_stop:json_parse_error', error)
-        } finally {
-          jsonBufferRef.current = ''
+        })
+      } catch (err) {
+        if (!ctrl.signal.aborted) {
+          logger.error('sse:connect_error', err)
+          clearStreamingStream()
         }
       }
-
-      currentBlockIndexRef.current = null
-      currentBlockTypeRef.current = null
     }
 
-    const handleTurnComplete = (event: MessageEvent) => {
-      try {
-        const data = JSON.parse(event.data) as TurnCompleteEvent
-        logger.debug('sse:turn_complete', data)
-      } catch {
-        // Ignore parse errors here; completion is best-effort
-      } finally {
-        flush()
-        clearStreamingStream()
-        jsonBufferRef.current = ''
-      }
-    }
-
-    const handleTurnError = (event: MessageEvent) => {
-      try {
-        const data = JSON.parse(event.data) as TurnErrorEvent
-        logger.error('sse:turn_error', data)
-      } catch (error) {
-        logger.error('sse:turn_error:parse_error', error)
-      } finally {
-        flush()
-        clearStreamingStream()
-        jsonBufferRef.current = ''
-      }
-    }
-
-    es.addEventListener('block_start', handleBlockStart as EventListener)
-    es.addEventListener('block_delta', handleBlockDelta as EventListener)
-    es.addEventListener('block_stop', handleBlockStop as EventListener)
-    es.addEventListener('turn_complete', handleTurnComplete as EventListener)
-    es.addEventListener('turn_error', handleTurnError as EventListener)
-
-    es.onerror = (error) => {
-      logger.error('sse:error', error)
-    }
+    connect()
 
     return () => {
       logger.debug('sse:cleanup')
       flush()
-      es.close()
+      ctrl.abort()
+      ctrlRef.current = null
       currentTurnIdRef.current = null
       currentBlockIndexRef.current = null
       currentBlockTypeRef.current = null

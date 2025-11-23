@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 
 interface BufferConfig {
   flushInterval?: number // default: 50ms
@@ -19,7 +19,7 @@ export function useStreamingBuffer({
   const bufferRef = useRef<string>('')
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const append = (delta: string) => {
+  const append = useCallback((delta: string) => {
     if (!delta) return
 
     bufferRef.current += delta
@@ -34,9 +34,9 @@ export function useStreamingBuffer({
         timerRef.current = null
       }, flushInterval)
     }
-  }
+  }, [flushInterval, onFlush])
 
-  const flush = () => {
+  const flush = useCallback(() => {
     if (timerRef.current) {
       clearTimeout(timerRef.current)
       timerRef.current = null
@@ -45,7 +45,7 @@ export function useStreamingBuffer({
       onFlush(bufferRef.current)
       bufferRef.current = ''
     }
-  }
+  }, [onFlush])
 
   // Cleanup on unmount
   useEffect(() => {

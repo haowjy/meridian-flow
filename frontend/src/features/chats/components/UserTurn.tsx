@@ -50,8 +50,9 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
   )
 
   const handleSaveEdit = useCallback(
-    async (newContent: string) => {
-      await editTurn(turn.chatId, turn.prevTurnId ?? undefined, newContent)
+    async (newMessageText: string) => {
+      // TODO: extend editTurn to accept ChatRequestOptions and forward them to request_params.
+      await editTurn(turn.chatId, turn.prevTurnId ?? undefined, newMessageText)
       setIsEditing(false)
     },
     [editTurn, turn.chatId, turn.prevTurnId]
@@ -66,28 +67,32 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
   }, [])
 
   return (
-    <div className="flex flex-col items-end gap-1 group text-sm">
-      <Card className={cn('px-3 py-2', 'chat-message chat-message--user')}>
-        {turn.blocks.map((block) => (
-          <BlockRenderer key={block.id} block={block} />
-        ))}
-      </Card>
+    <div className="group flex flex-col items-end gap-1 text-sm">
+      {isEditing ? (
+        <EditTurnDialog
+          isOpen={isEditing}
+          onClose={handleCloseEdit}
+          initialContent={extractTextContent(turn)}
+          onSave={handleSaveEdit}
+        />
+      ) : (
+        <>
+          <Card className={cn('px-3 py-2', 'chat-message chat-message--user')}>
+            {turn.blocks.map((block) => (
+              <BlockRenderer key={block.id} block={block} />
+            ))}
+          </Card>
 
-      <TurnActionBar
-        turn={turn}
-        isLast={false} // TODO: Determine if last? Not strictly needed for basic nav
-        isLoading={isLoadingTurns}
-        onNavigate={handleNavigate}
-        onEdit={handleEdit}
-        className="mr-1"
-      />
-
-      <EditTurnDialog
-        isOpen={isEditing}
-        onClose={handleCloseEdit}
-        initialContent={extractTextContent(turn)}
-        onSave={handleSaveEdit}
-      />
+          <TurnActionBar
+            turn={turn}
+            isLast={false} // TODO: Determine if last? Not strictly needed for basic nav
+            isLoading={isLoadingTurns}
+            onNavigate={handleNavigate}
+            onEdit={handleEdit}
+            className="mr-1"
+          />
+        </>
+      )}
     </div>
   )
 })

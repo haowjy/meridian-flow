@@ -87,10 +87,15 @@ export const ToolInteractionBlock = React.memo(function ToolInteractionBlock({
   }
 
   return (
-    <div className="my-1 rounded border border-dashed border-muted-foreground/40 bg-muted/40 px-3 py-1.5 text-xs flex flex-col gap-1">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-col">
-          <div className="flex min-w-0 items-center gap-1">
+    <div className="my-1 rounded border border-dashed border-muted-foreground/40 bg-muted/40 text-xs flex flex-col">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left cursor-pointer hover:bg-muted/60 transition-colors"
+        onClick={() => setIsExpanded((prev) => !prev)}
+        aria-expanded={isExpanded}
+      >
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <div className="flex min-w-0 items-center gap-2">
             <span className="truncate font-medium text-muted-foreground">
               {title}
             </span>
@@ -100,23 +105,13 @@ export const ToolInteractionBlock = React.memo(function ToolInteractionBlock({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="rounded bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground/80">
-            Tool
-          </span>
-          <button
-            type="button"
-            className="text-[10px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
-            onClick={() => setIsExpanded((prev) => !prev)}
-            aria-expanded={isExpanded}
-          >
-            {isExpanded ? 'Hide details' : 'Show details'}
-          </button>
-        </div>
-      </div>
+        <span className="shrink-0 rounded bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground/80">
+          Tool
+        </span>
+      </button>
 
       {isExpanded && (
-        <div className="mt-0.5 space-y-1.5 text-[11px] text-muted-foreground">
+        <div className="border-t border-muted-foreground/20 px-3 py-1.5 space-y-1.5 text-[11px] text-muted-foreground">
           {toolUse && (toolUse.content as any)?.input && (
             <div>
               <div className="mb-0.5 font-medium text-muted-foreground/80">Call</div>

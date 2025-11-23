@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { Chat, Turn } from '@/features/chats/types'
+import { Chat, Turn, type ChatRequestOptions } from '@/features/chats/types'
+import { DEFAULT_CHAT_REQUEST_OPTIONS } from '@/features/chats/types'
 import { api } from '@/core/lib/api'
 import { handleApiError } from '@/core/lib/errors'
 import { makeLogger } from '@/core/lib/logger'
@@ -35,7 +36,7 @@ interface ChatStore {
   loadTurns: (chatId: string, signal?: AbortSignal) => Promise<void>
   createChat: (projectId: string, title: string) => Promise<Chat>
   renameChat: (chatId: string, title: string) => Promise<void>
-  createTurn: (chatId: string, content: string) => Promise<void>
+  createTurn: (chatId: string, messageText: string, options: ChatRequestOptions) => Promise<void>
   deleteChat: (chatId: string) => Promise<void>
 
   // Streaming helpers
@@ -60,6 +61,29 @@ interface ChatStore {
   switchSibling: (chatId: string, targetTurnId: string, signal?: AbortSignal) => Promise<void>
   editTurn: (chatId: string, parentTurnId: string | undefined, content: string) => Promise<void>
   regenerateTurn: (chatId: string, parentTurnId: string) => Promise<void>
+  refreshTurn: (chatId: string, turnId: string) => Promise<void>
+}
+
+/**
+ * Helper to detect if any assistant turn is actively streaming.
+ * Returns streaming state or null values if no streaming turn found.
+ */
+const detectStreamingState = (turns: Turn[]) => {
+  // Find any assistant turn that's actively streaming
+  const streamingTurn = turns.find(
+    (t) =>
+      (t.status === 'streaming' || t.status === 'waiting_subagents') && t.role === 'assistant'
+  )
+
+  return streamingTurn
+    ? {
+        streamingTurnId: streamingTurn.id,
+        streamingUrl: `/api/turns/${streamingTurn.id}/stream`,
+      }
+    : {
+        streamingTurnId: null,
+        streamingUrl: null,
+      }
 }
 
 export const useChatStore = create<ChatStore>()(
@@ -77,6 +101,21 @@ export const useChatStore = create<ChatStore>()(
       navigationAbortController: null,
       streamingTurnId: null,
       streamingUrl: null,
+
+      refreshTurn: async (chatId: string, turnId: string) => {
+        try {
+          const blocks = await api.turns.getBlocks(turnId)
+          set((state) => {
+            const turns = state.turns.map((turn) => {
+              if (turn.id !== turnId) return turn
+              return { ...turn, blocks }
+            })
+            return { turns }
+          })
+        } catch (error) {
+          handleApiError(error, 'Failed to refresh turn')
+        }
+      },
 
       loadChats: async (projectId: string, signal?: AbortSignal) => {
         set({ isLoadingChats: true, error: null })
@@ -133,7 +172,7 @@ export const useChatStore = create<ChatStore>()(
         }
       },
 
-      createTurn: async (chatId: string, content: string) => {
+      createTurn: async (chatId: string, messageText: string, options: ChatRequestOptions) => {
         // Skeleton - optimistic updates implemented in Phase 4 Task 4.7
         try {
           // Determine prevTurnId from the last turn in the current list
@@ -141,8 +180,9 @@ export const useChatStore = create<ChatStore>()(
           const lastTurn = currentTurns[currentTurns.length - 1]
           const prevTurnId = lastTurn ? lastTurn.id : null
 
-          const { userTurn, assistantTurn, streamUrl } = await api.turns.send(chatId, content, {
+          const { userTurn, assistantTurn, streamUrl } = await api.turns.send(chatId, messageText, {
             prevTurnId,
+            requestOptions: options,
           })
 
           // Response contains both user's turn and assistant's turn (streaming handled via SSE)
@@ -179,7 +219,7 @@ export const useChatStore = create<ChatStore>()(
       appendStreamingTextDelta: (
         turnId: string,
         blockIndex: number,
-        blockType: import('@/features/chats/types').BlockType,
+        blockType: string,
         delta: string
       ) => {
         if (!delta) return
@@ -196,7 +236,7 @@ export const useChatStore = create<ChatStore>()(
               const newBlock = {
                 id: `${turn.id}:${sequence}`,
                 turnId: turn.id,
-                blockType,
+                blockType: blockType as import('@/features/chats/types').BlockType,
                 sequence,
                 textContent: delta,
                 content: undefined,
@@ -213,7 +253,7 @@ export const useChatStore = create<ChatStore>()(
               const text = block.textContent ?? ''
               return {
                 ...block,
-                blockType: block.blockType || blockType,
+                blockType: (block.blockType || blockType) as import('@/features/chats/types').BlockType,
                 textContent: text + delta,
               }
             })
@@ -228,7 +268,7 @@ export const useChatStore = create<ChatStore>()(
       setStreamingBlockContent: (
         turnId: string,
         blockIndex: number,
-        blockType: import('@/features/chats/types').BlockType,
+        blockType: string,
         content: Record<string, unknown>
       ) => {
         set((state) => {
@@ -242,7 +282,7 @@ export const useChatStore = create<ChatStore>()(
               const newBlock = {
                 id: `${turn.id}:${sequence}`,
                 turnId: turn.id,
-                blockType,
+                blockType: blockType as import('@/features/chats/types').BlockType,
                 sequence,
                 textContent: undefined,
                 content,
@@ -256,7 +296,7 @@ export const useChatStore = create<ChatStore>()(
               if (index !== existingIndex) return block
               return {
                 ...block,
-                blockType: block.blockType || blockType,
+                blockType: (block.blockType || blockType) as import('@/features/chats/types').BlockType,
                 content,
               }
             })
@@ -298,13 +338,15 @@ export const useChatStore = create<ChatStore>()(
           for (const t of turns) mergedById.set(t.id, t)
           const lastTurn = turns.length > 0 ? turns[turns.length - 1] : undefined
           const nextCurrent = initialTurnId ?? (lastTurn ? lastTurn.id : null)
+          const turnsArray = Array.from(mergedById.values())
           set({
             chatId,
-            turns: Array.from(mergedById.values()),
+            turns: turnsArray,
             currentTurnId: nextCurrent,
             hasMoreBefore,
             hasMoreAfter,
             isLoadingTurns: false,
+            ...detectStreamingState(turnsArray),
           })
           log.debug('openChat:set', { chatId, currentTurnId: nextCurrent, total: mergedById.size })
         } catch (error) {
@@ -346,10 +388,12 @@ export const useChatStore = create<ChatStore>()(
           // Prepend older turns (chronological order preserved by backend)
           const mergedById = new Map<string, Turn>()
           for (const t of [...turns, ...state.turns]) mergedById.set(t.id, t)
+          const turnsArray = Array.from(mergedById.values())
           set({
-            turns: Array.from(mergedById.values()),
+            turns: turnsArray,
             hasMoreBefore,
             isLoadingTurns: false,
+            ...detectStreamingState(turnsArray),
           })
           log.debug('paginateBefore:set', { total: mergedById.size })
         } catch (error) {
@@ -391,10 +435,12 @@ export const useChatStore = create<ChatStore>()(
           // Append newer turns
           const mergedById = new Map<string, Turn>()
           for (const t of [...state.turns, ...turns]) mergedById.set(t.id, t)
+          const turnsArray = Array.from(mergedById.values())
           set({
-            turns: Array.from(mergedById.values()),
+            turns: turnsArray,
             hasMoreAfter,
             isLoadingTurns: false,
+            ...detectStreamingState(turnsArray),
           })
           log.debug('paginateAfter:set', { total: mergedById.size })
         } catch (error) {
@@ -444,14 +490,16 @@ export const useChatStore = create<ChatStore>()(
 
           // Only update if not aborted
           if (!controller.signal.aborted) {
+            const turnsArray = Array.from(mergedById.values())
             set({
               chatId,
-              turns: Array.from(mergedById.values()),
+              turns: turnsArray,
               currentTurnId: targetTurnId,
               hasMoreBefore,
               hasMoreAfter,
               isLoadingTurns: false,
               navigationAbortController: null, // Clear after success
+              ...detectStreamingState(turnsArray),
             })
             log.debug('switchSibling:set', { chatId, currentTurnId: targetTurnId, total: mergedById.size })
           }
@@ -466,7 +514,7 @@ export const useChatStore = create<ChatStore>()(
         }
       },
 
-      editTurn: async (chatId: string, turnId: string | undefined, content: string) => {
+      editTurn: async (chatId: string, turnId: string | undefined, messageText: string) => {
         set({ isLoadingTurns: true })
         try {
           // Find the original turn to get its prevTurnId
@@ -478,10 +526,15 @@ export const useChatStore = create<ChatStore>()(
 
           // Call createTurn endpoint with the SAME prevTurnId as the original turn
           // This creates a sibling branch.
-          const { userTurn } = await api.turns.send(chatId, content, { prevTurnId })
+          const { userTurn, assistantTurn } = await api.turns.send(chatId, messageText, {
+            prevTurnId,
+            // For now, reuse default chat options when editing.
+            requestOptions: DEFAULT_CHAT_REQUEST_OPTIONS,
+          })
 
-          // Navigate to the new branch (the new user turn)
-          await get().switchSibling(chatId, userTurn.id)
+          // Navigate to the new branch (the assistant turn leaf)
+          // This ensures pagination includes the full conversation context
+          await get().switchSibling(chatId, assistantTurn.id)
         } catch (error) {
           set({ error: 'Failed to edit turn', isLoadingTurns: false })
           handleApiError(error, 'Failed to edit turn')
@@ -507,15 +560,21 @@ export const useChatStore = create<ChatStore>()(
           }
 
           // Rebuild plain-text content from the user's text blocks
-          const userContent = userTurn.blocks
+          const userMessageText = userTurn.blocks
             .filter((b) => b.blockType === 'text')
             .map((b) => b.textContent ?? '')
             .join('\n\n')
 
           // Re-send the user's content to create a new sibling response
-          const { userTurn: newUserTurn } = await api.turns.send(chatId, userContent, { 
-            prevTurnId: userTurn.prevTurnId 
-          })
+          const { userTurn: newUserTurn } = await api.turns.send(
+            chatId,
+            userMessageText,
+            { 
+              prevTurnId: userTurn.prevTurnId,
+              // Regeneration currently uses default chat request options.
+              requestOptions: DEFAULT_CHAT_REQUEST_OPTIONS,
+            }
+          )
 
           // Navigate to the new branch
           await get().switchSibling(chatId, newUserTurn.id)
