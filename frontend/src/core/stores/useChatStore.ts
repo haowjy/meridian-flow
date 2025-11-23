@@ -1,6 +1,11 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { Chat, Turn, type ChatRequestOptions } from '@/features/chats/types'
+import {
+  Chat,
+  Turn,
+  type BlockType,
+  type ChatRequestOptions,
+} from '@/features/chats/types'
 import { DEFAULT_CHAT_REQUEST_OPTIONS } from '@/features/chats/types'
 import { api } from '@/core/lib/api'
 import { handleApiError } from '@/core/lib/errors'
@@ -30,6 +35,8 @@ interface ChatStore {
   // Streaming state for the currently active assistant turn (at most one)
   streamingTurnId: string | null
   streamingUrl: string | null
+  streamingBlockIndex: number | null
+  streamingBlockType: BlockType | null
 
   loadChats: (projectId: string, signal?: AbortSignal) => Promise<void>
   // Legacy shape retained; internally calls openChat
@@ -53,6 +60,12 @@ interface ChatStore {
     content: Record<string, unknown>
   ) => void
   clearStreamingStream: () => void
+  setStreamingBlockInfo: (
+    blockIndex: number | null,
+    blockType: BlockType | null
+  ) => void
+
+  interruptStreamingTurn: () => Promise<void>
 
   // Pagination & navigation (server-driven)
   openChat: (chatId: string, initialTurnId?: string, signal?: AbortSignal) => Promise<void>
@@ -114,6 +127,8 @@ export const useChatStore = create<ChatStore>()(
       navigationAbortController: null,
       streamingTurnId: null,
       streamingUrl: null,
+       streamingBlockIndex: null,
+       streamingBlockType: null,
 
       refreshTurn: async (chatId: string, turnId: string) => {
         try {
@@ -234,6 +249,30 @@ export const useChatStore = create<ChatStore>()(
         }
       },
 
+      interruptStreamingTurn: async () => {
+        const log = makeLogger('chat-store')
+        const state = get()
+        const turnId = state.streamingTurnId
+        const chatId = state.chatId
+
+        if (!turnId) {
+          return
+        }
+
+        log.debug('interruptStreamingTurn:start', { turnId, chatId })
+
+        try {
+          await api.turns.interrupt(turnId)
+
+          // Best-effort refresh so UI sees partial content and updated status.
+          if (chatId) {
+            await state.refreshTurn(chatId, turnId)
+          }
+        } catch (error) {
+          handleApiError(error, 'Failed to interrupt streaming turn')
+        }
+      },
+
       appendStreamingTextDelta: (
         turnId: string,
         blockIndex: number,
@@ -330,6 +369,18 @@ export const useChatStore = create<ChatStore>()(
         set(() => ({
           streamingTurnId: null,
           streamingUrl: null,
+          streamingBlockIndex: null,
+          streamingBlockType: null,
+        }))
+      },
+
+      setStreamingBlockInfo: (
+        blockIndex: number | null,
+        blockType: BlockType | null
+      ) => {
+        set(() => ({
+          streamingBlockIndex: blockIndex,
+          streamingBlockType: blockType,
         }))
       },
 

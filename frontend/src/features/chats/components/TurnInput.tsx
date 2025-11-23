@@ -25,15 +25,19 @@ export function TurnInput({ chatId }: TurnInputProps) {
     providerId: DEFAULT_PROVIDER_ID,
   })
 
-  const { createTurn, isLoadingTurns } = useChatStore(
+  const { createTurn, isLoadingTurns, streamingTurnId, interruptStreamingTurn } = useChatStore(
     useShallow((s) => ({
       createTurn: s.createTurn,
       isLoadingTurns: s.isLoadingTurns,
+      streamingTurnId: s.streamingTurnId,
+      interruptStreamingTurn: s.interruptStreamingTurn,
     })),
   )
 
+  const isStreaming = Boolean(streamingTurnId)
+
   const canSend =
-    value.trim().length > 0 && !isLoadingTurns && !isSubmitting
+    value.trim().length > 0 && !isLoadingTurns && !isSubmitting && !isStreaming
 
   const handleSend = async () => {
     if (!canSend) return
@@ -64,6 +68,8 @@ export function TurnInput({ chatId }: TurnInputProps) {
             onOptionsChange={setOptions}
             onSend={handleSend}
             isSendDisabled={!canSend}
+            isStreaming={isStreaming}
+            onStop={interruptStreamingTurn}
           />
         </div>
       </div>

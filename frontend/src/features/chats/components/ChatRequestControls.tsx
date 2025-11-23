@@ -1,7 +1,7 @@
 "use client"
 
 import type { ReactNode } from 'react'
-import { Brain, ChevronDown, Globe2, Send } from 'lucide-react'
+import { Brain, ChevronDown, Globe2, Send, StopCircle } from 'lucide-react'
 import { Button } from '@/shared/components/ui/button'
 import {
   DropdownMenu,
@@ -24,6 +24,8 @@ interface ChatRequestControlsProps {
   onSend?: () => void
   isSendDisabled?: boolean
   rightContent?: ReactNode
+  isStreaming?: boolean
+  onStop?: () => void
 }
 
 export function ChatRequestControls({
@@ -32,6 +34,8 @@ export function ChatRequestControls({
   onSend,
   isSendDisabled,
   rightContent,
+  isStreaming,
+  onStop,
 }: ChatRequestControlsProps) {
   const { providers } = useModelCapabilities()
 
@@ -65,6 +69,8 @@ export function ChatRequestControls({
       searchEnabled: isAnthropicProvider ? options.searchEnabled : false,
     })
   }
+
+  const showStop = Boolean(isStreaming && onStop)
 
   return (
     <div className="flex items-center gap-2 pt-1 text-[0.7rem] sm:text-xs">
@@ -100,11 +106,11 @@ export function ChatRequestControls({
               type="button"
               size="icon"
               className="shrink-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
-              disabled={isSendDisabled}
-              onClick={onSend}
-              aria-label="Send message"
+              disabled={showStop ? false : isSendDisabled}
+              onClick={showStop && onStop ? onStop : onSend}
+              aria-label={showStop ? 'Stop response' : 'Send message'}
             >
-              <Send className="size-4" />
+              {showStop ? <StopCircle className="size-4" /> : <Send className="size-4" />}
             </Button>
           )}
         </div>

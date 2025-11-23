@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import type { Turn } from '@/features/chats/types'
 import { ScrollArea } from '@/shared/components/ui/scroll-area'
 import { UserTurn } from './UserTurn'

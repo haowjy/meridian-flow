@@ -5,7 +5,7 @@ import type { RefObject } from 'react'
 import type { Turn } from '@/features/chats/types'
 
 interface UseTurnListAutoScrollParams {
-  containerRef: RefObject<HTMLDivElement>
+  containerRef: RefObject<HTMLDivElement | null>
   turns: Turn[]
   scrollToTurnId?: string | null
   isLoading?: boolean
@@ -123,4 +123,3 @@ export function useTurnListAutoScroll({
     hasScrolledRef.current = false
   }, [scrollToTurnId])
 }
-

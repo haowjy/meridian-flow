@@ -52,6 +52,7 @@ export function useChatSSE() {
     setStreamingBlockContent,
     clearStreamingStream,
     refreshTurn,
+    setStreamingBlockInfo,
   } = useChatStore(
     useShallow((s) => ({
       chatId: s.chatId,
@@ -61,6 +62,7 @@ export function useChatSSE() {
       setStreamingBlockContent: s.setStreamingBlockContent,
       clearStreamingStream: s.clearStreamingStream,
       refreshTurn: s.refreshTurn,
+      setStreamingBlockInfo: s.setStreamingBlockInfo,
     }))
   )
 
@@ -152,8 +154,11 @@ export function useChatSSE() {
               case 'block_start': {
                 try {
                   const data = JSON.parse(msg.data) as BlockStartEvent
+                  const blockType = data.block_type ?? 'text'
+
                   currentBlockIndexRef.current = data.block_index
-                  currentBlockTypeRef.current = data.block_type ?? 'text'
+                  currentBlockTypeRef.current = blockType
+                  setStreamingBlockInfo(data.block_index, blockType)
                   // Clear JSON buffer for new block to prevent concatenation errors
                   jsonBufferRef.current = ''
                 } catch (error) {
@@ -208,6 +213,7 @@ export function useChatSSE() {
 
                 currentBlockIndexRef.current = null
                 currentBlockTypeRef.current = null
+                setStreamingBlockInfo(null, null)
                 break
               }
 
@@ -235,6 +241,7 @@ export function useChatSSE() {
                   flush()
                   clearStreamingStream()
                   jsonBufferRef.current = ''
+                  setStreamingBlockInfo(null, null)
                   // Stop the stream
                   ctrl.abort()
                 }
@@ -265,6 +272,7 @@ export function useChatSSE() {
                   flush()
                   clearStreamingStream()
                   jsonBufferRef.current = ''
+                  setStreamingBlockInfo(null, null)
                   // Stop the stream
                   ctrl.abort()
                 }
@@ -285,6 +293,7 @@ export function useChatSSE() {
             // For now, we'll stop on error to match previous behavior
             flush()
             clearStreamingStream()
+            setStreamingBlockInfo(null, null)
             throw err // This stops retries in fetchEventSource by default if not handled
           }
         })
@@ -292,6 +301,7 @@ export function useChatSSE() {
         if (!ctrl.signal.aborted) {
           logger.error('sse:connect_error', err)
           clearStreamingStream()
+          setStreamingBlockInfo(null, null)
         }
       }
     }
@@ -307,6 +317,7 @@ export function useChatSSE() {
       currentBlockIndexRef.current = null
       currentBlockTypeRef.current = null
       jsonBufferRef.current = ''
+      setStreamingBlockInfo(null, null)
     }
   }, [
     chatId,
@@ -319,5 +330,6 @@ export function useChatSSE() {
     clearStreamingStream,
     refreshTurn,
     logger,
+    setStreamingBlockInfo,
   ])
 }

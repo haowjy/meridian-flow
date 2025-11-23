@@ -538,6 +538,13 @@ export const api = {
         createdAt: new Date(b.created_at),
       }))
     },
+
+    interrupt: async (turnId: string, options?: { signal?: AbortSignal }): Promise<void> => {
+      await fetchAPI<void>(`/api/turns/${turnId}/interrupt`, {
+        method: 'POST',
+        signal: options?.signal,
+      })
+    },
   },
 
   documents: {
