@@ -2,14 +2,14 @@
 # See https://docs.railway.app/reference/config-as-code
 
 [build]
-builder = "dockerfile"
+builder = "DOCKERFILE"
 dockerfilePath = "./Dockerfile"
 
 [deploy]
 # Health check endpoint - Railway will ping this to verify the service is running
 healthcheckPath = "/health"
 healthcheckTimeout = 100  # Max time (seconds) for health check to respond
-restartPolicyType = "on-failure"  # Restart only if container crashes
+restartPolicyType = "ON_FAILURE"  # Restart only if container crashes
 restartPolicyMaxRetries = 3
 
 # Note: Railway automatically injects PORT environment variable
