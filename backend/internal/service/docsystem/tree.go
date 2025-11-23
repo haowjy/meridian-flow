@@ -74,7 +74,7 @@ func (s *treeService) GetProjectTree(ctx context.Context, projectID string) (*mo
 	}
 
 	// Third pass: add documents to their folders
-	var rootDocuments []models.DocumentTreeNode
+	rootDocuments := make([]models.DocumentTreeNode, 0)
 	for _, doc := range allDocuments {
 		docNode := models.DocumentTreeNode{
 			ID:        doc.ID,
@@ -96,7 +96,7 @@ func (s *treeService) GetProjectTree(ctx context.Context, projectID string) (*mo
 	}
 
 	// Build final tree using root folder pointers
-	var rootFolders []*models.FolderTreeNode
+	rootFolders := make([]*models.FolderTreeNode, 0)
 	for _, folderID := range rootFolderIDs {
 		if node, exists := folderMap[folderID]; exists {
 			rootFolders = append(rootFolders, node)

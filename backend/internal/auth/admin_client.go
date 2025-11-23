@@ -121,6 +121,12 @@ func (c *AdminClient) findUserIDByEmail(email string) (string, error) {
 	return "", fmt.Errorf("user not found")
 }
 
+// GetUserByEmail retrieves user details by email address.
+// Returns user ID if found, empty string if not found.
+func (c *AdminClient) GetUserByEmail(email string) (string, error) {
+	return c.findUserIDByEmail(email)
+}
+
 // CreateUser creates a new user with the specified email and password.
 // The user is automatically confirmed (no email verification needed).
 // Returns the user's UUID.

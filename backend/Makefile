@@ -83,6 +83,22 @@ seed-fresh: ## Drop all tables, run migrations, and seed data
 seed-clear: ## Clear all documents and folders (keep schema)
 	go run ./cmd/seed/main.go --clear-data
 
+seed-test: ## Seed test_ tables (uses .env.test, additive by default)
+	@if [ ! -f .env.test ]; then \
+		echo "❌ Error: .env.test not found"; \
+		exit 1; \
+	fi
+	@echo "🌱 Seeding test_ tables (additive)..."
+	@env -i PATH="$$PATH" HOME="$$HOME" go run ./cmd/seed/main.go --env-file=.env.test
+
+seed-test-fresh: ## Clear and re-seed test_ tables (destructive)
+	@if [ ! -f .env.test ]; then \
+		echo "❌ Error: .env.test not found"; \
+		exit 1; \
+	fi
+	@echo "🧹 Clearing and re-seeding test_ tables..."
+	@env -i PATH="$$PATH" HOME="$$HOME" go run ./cmd/seed/main.go --env-file=.env.test --clear-data
+
 run-cli: ## Run interactive LLM CLI (requires server running at localhost:8080)
 	@echo "Starting interactive LLM CLI..."
 	@echo "Controls: ↑/↓ navigate | ←/→ branches | [n]ew turn | [p]arams | [h]elp | [q]uit"

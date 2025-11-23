@@ -106,6 +106,41 @@ httputil.RespondError(w, http.StatusBadRequest, "Invalid input")
 
 See `internal/handler/errors.go` for error mapping and `internal/httputil/` for response helpers.
 
+### 4. Local Development with Submodules
+
+**Library versions:**
+- **Production/Docker:** Uses tagged GitHub versions (v0.0.2, v0.0.4, etc.)
+- **Local development:** Uses `go.work` for live submodule changes
+
+**Development workflow:**
+
+```bash
+# Regular dev (uses go.work automatically)
+make run
+make build
+
+# Force local workspace (if go.work not auto-detected)
+make run-local   # GOWORK=../go.work go run ./cmd/server/main.go
+make build-local # GOWORK=../go.work go build -o bin/server ./cmd/server
+```
+
+**Important notes:**
+- ❌ **DO NOT use `replace` directives in `go.mod`** - breaks Docker builds
+- ✅ **Use `go.work`** for local submodule development (already configured)
+- ✅ **Use tagged versions** for production (Docker, Railway)
+
+**Updating library versions:**
+```bash
+# When you've made changes to meridian-llm-go or meridian-stream-go
+./scripts/update-libraries.sh "Add new feature"
+# This script:
+# 1. Tags the library with new version
+# 2. Pushes to GitHub
+# 3. Updates backend/go.mod with new version
+```
+
+**See:** `scripts/README.md` → `update-libraries.sh` for details.
+
 ## Environment Variables
 
 Required:

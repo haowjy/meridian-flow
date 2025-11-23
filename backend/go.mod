@@ -34,5 +34,6 @@ require (
 	golang.org/x/time v0.9.0 // indirect
 )
 
-// Use local meridian-llm-go submodule for development
-replace github.com/haowjy/meridian-llm-go => ../meridian-llm-go
+// Use local meridian-llm-go submodule for development (disabled for Docker/production)
+// For local dev: use GOWORK=../go.work or make run-local/build-local
+// replace github.com/haowjy/meridian-llm-go => ../meridian-llm-go

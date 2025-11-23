@@ -24,10 +24,11 @@ import (
 func main() {
 	// Parse command-line flags
 	clearData := flag.Bool("clear-data", false, "Clear all documents and folders (keep schema)")
+	envFile := flag.String("env-file", ".env", "Path to environment file (default: .env)")
 	flag.Parse()
 
-	// Load .env file
-	_ = godotenv.Load()
+	// Load specified .env file
+	_ = godotenv.Load(*envFile)
 
 	// Load configuration
 	cfg := config.Load()
@@ -62,21 +63,23 @@ func main() {
 	// Create auth admin client for user management
 	authClient := auth.NewAdminClient(cfg.SupabaseURL, cfg.SupabaseKey)
 
-	// Create or recreate test user
+	// Get or create test user (idempotent)
 	testEmail := "test@example.com"
 	testPassword := "meridian"
 
-	log.Printf("🔐 Deleting existing test user (%s) if exists...", testEmail)
-	if err := authClient.DeleteUserByEmail(testEmail); err != nil {
-		log.Printf("⚠️  Warning: Failed to delete user: %v (continuing anyway)", err)
-	}
-
-	log.Printf("🔐 Creating test user (%s)...", testEmail)
-	userID, err := authClient.CreateUser(testEmail, testPassword)
+	log.Printf("🔐 Checking for existing test user (%s)...", testEmail)
+	userID, err := authClient.GetUserByEmail(testEmail)
 	if err != nil {
-		log.Fatalf("❌ Failed to create test user: %v", err)
+		// User doesn't exist, create new one
+		log.Printf("🔐 Creating test user (%s)...", testEmail)
+		userID, err = authClient.CreateUser(testEmail, testPassword)
+		if err != nil {
+			log.Fatalf("❌ Failed to create test user: %v", err)
+		}
+		log.Printf("✅ Created test user with ID: %s", userID)
+	} else {
+		log.Printf("✅ Using existing test user with ID: %s", userID)
 	}
-	log.Printf("✅ Created test user with ID: %s", userID)
 
 	// Fixed project ID for test data
 	projectID := "00000000-0000-0000-0000-000000000001"
@@ -116,13 +119,7 @@ func main() {
 	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, docsysValidator, logger)
 	importService := serviceDocsys.NewImportService(docRepo, docService, logger)
 
-	// Clear existing data
-	log.Println("⚠️  Clearing existing documents and folders...")
-	if err := importService.DeleteAllDocuments(ctx, projectID); err != nil {
-		log.Printf("Warning: Could not clear data: %v", err)
-	}
-
-	// Seed documents using import service
+	// Seed documents using import service (additive - use --clear-data flag to clear first)
 	log.Println("📝 Seeding documents from seed_data directory...")
 
 	// Create zip from seed_data directory

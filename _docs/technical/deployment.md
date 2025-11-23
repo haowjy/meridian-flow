@@ -184,9 +184,65 @@ Supabase Dashboard → Settings → Database:
 
 ---
 
-## Part 4: Verify Deployment
+## Part 4: Database Schema Setup
 
-### 4.1 Backend Health Check
+**IMPORTANT:** Before your backend can handle requests, you must create the production database tables.
+
+### 4.1 Run Production Migration
+
+From your local machine (repo root):
+
+```bash
+./scripts/migrate-prefix.sh
+```
+
+**Interactive prompts:**
+1. Select table prefix: Choose **2) prod_**
+2. Enter Supabase DB URL: Use production database URL from Supabase Dashboard
+   - Settings → Database → Connection String → **Transaction mode** (port 6543)
+   - Format: `postgresql://postgres.[PROJECT]:[PASSWORD]@[HOST]:6543/postgres`
+3. Confirm migration
+
+**Expected output:**
+```
+=== Migration Complete ===
+Created tables with prefix: prod_
+
+Tables created:
+  prod_projects
+  prod_folders
+  prod_documents
+  prod_chats
+  prod_turns
+  prod_turn_blocks
+  prod_user_preferences
+```
+
+### 4.2 Verify Tables
+
+In Supabase Dashboard → Table Editor:
+- You should see 7 tables with `prod_` prefix
+- All tables should have Row Level Security (RLS) enabled
+- Each table should have a "block_postgrest" policy
+
+**Why this is safe:**
+- RLS blocks PostgREST API access (prevents unauthorized access via Supabase anon key)
+- Backend connects as postgres superuser and bypasses RLS
+- See `backend/README.md` → Database Migrations for details
+
+### 4.3 One-Time Operation
+
+**Important notes:**
+- This migration is **NOT** tracked by goose
+- Run only once per environment (test, prod, etc.)
+- For dev environment, use `make seed-fresh` instead (tracked by goose)
+- See `backend/README.md` → Database Migrations for migration strategy
+
+---
+
+## Part 5: Verify Deployment
+
+### 5.1 Backend Health Check
 
 ```bash
 curl https://your-backend.railway.app/health
@@ -194,7 +250,7 @@ curl https://your-backend.railway.app/health
 
 Expected: `{"status":"ok"}`
 
-### 4.2 Test SSE Streaming
+### 5.2 Test SSE Streaming
 
 1. Log into frontend
 2. Start a new chat
@@ -206,7 +262,7 @@ Expected: `{"status":"ok"}`
 - Verify `Content-Type: text/event-stream`
 - Check Railway logs for errors
 
-### 4.3 Check CORS
+### 5.3 Check CORS
 
 Browser console should NOT show CORS errors. If you see:
 ```
@@ -220,9 +276,9 @@ Access to XMLHttpRequest blocked by CORS policy
 
 ---
 
-## Part 5: CI/CD Setup (Auto-Deploy)
+## Part 6: CI/CD Setup (Auto-Deploy)
 
-### 5.1 Railway Auto-Deploy
+### 6.1 Railway Auto-Deploy
 
 Railway automatically deploys on push to `main` branch.
 
@@ -231,7 +287,7 @@ Railway automatically deploys on push to `main` branch.
 - Branch: `main`
 - Deploy on: Push to main branch
 
-### 5.2 Vercel Auto-Deploy
+### 6.2 Vercel Auto-Deploy
 
 Vercel automatically:
 - Deploys `main` → Production

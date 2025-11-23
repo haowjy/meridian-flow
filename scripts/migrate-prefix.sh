@@ -13,6 +13,16 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Check for psql
+if ! command -v psql &> /dev/null; then
+    echo -e "${RED}Error: psql not found${NC}"
+    echo "Install PostgreSQL client tools:"
+    echo "  macOS: brew install postgresql@18"
+    echo "  Ubuntu: sudo apt-get install postgresql-client"
+    echo "  Or: brew install libpq (client only)"
+    exit 1
+fi
+
 # If no argument provided, show interactive menu
 if [ $# -eq 0 ]; then
     echo -e "${BLUE}=== Meridian Schema Migration ===${NC}\n"
@@ -62,7 +72,8 @@ echo -e "${BLUE}=== Migrating Schema for Prefix: ${YELLOW}${PREFIX}${NC}${BLUE} 
 # Prompt for Supabase DB URL
 echo -e "${YELLOW}Enter Supabase DB URL:${NC}"
 echo -e "${BLUE}Format: postgresql://postgres.[PROJECT-REF]:[PASSWORD]@[HOST]:6543/postgres${NC}"
-read -p "> " SUPABASE_DB_URL
+read -s -p "> " SUPABASE_DB_URL
+echo  # Print newline after silent input
 
 if [ -z "$SUPABASE_DB_URL" ]; then
     echo -e "${RED}Error: DB URL cannot be empty${NC}"
@@ -124,7 +135,8 @@ fi
 # Extract +goose Up section only (ignore +goose Down for applying migration)
 # Replace ${TABLE_PREFIX} with actual prefix
 # Run against database
-awk '/\+goose Up/,/\+goose Down/ {if !/\+goose Down/ print}' "$MIGRATION_FILE" | \
+# Note: Using BSD awk compatible syntax for macOS
+awk '/\+goose Up/,/\+goose Down/ {if ($0 !~ /\+goose Down/) print}' "$MIGRATION_FILE" | \
     sed "s/\${TABLE_PREFIX}/$PREFIX/g" | \
     sed "s/-- +goose ENVSUB ON//g" | \
     psql "$SUPABASE_DB_URL" 2>&1 | \
