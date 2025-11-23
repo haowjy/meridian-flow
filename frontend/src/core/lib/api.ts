@@ -10,12 +10,36 @@ import {
   fromChatDto,
   fromDocumentDto,
   fromDocumentTreeDto,
-  ApiErrorResponse,
 } from '@/types/api'
 import { httpErrorToAppError } from '@/core/lib/errors'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 export const API_BASE_URL = API_BASE
+
+/**
+ * Handles 401 Unauthorized errors by attempting session refresh.
+ * If refresh fails, redirects to root (middleware will then redirect to /login).
+ * @returns true if session was refreshed successfully (caller should retry request)
+ */
+async function handleUnauthorized(): Promise<boolean> {
+  const { createClient } = await import('@/core/supabase/client')
+  const supabase = createClient()
+
+  // Attempt to refresh the session
+  const { data, error } = await supabase.auth.refreshSession()
+
+  if (error || !data.session) {
+    // Refresh failed - redirect to root
+    // Middleware will detect no session and redirect to /login
+    if (typeof window !== 'undefined') {
+      window.location.href = '/'
+    }
+    return false
+  }
+
+  // Refresh succeeded - caller should retry the request with new token
+  return true
+}
 
 export async function fetchAPI<T>(
   endpoint: string,
@@ -23,7 +47,7 @@ export async function fetchAPI<T>(
 ): Promise<T> {
   const method = (options?.method || 'GET').toUpperCase()
 
-  const attempt = async (): Promise<T> => {
+  const attempt = async (hasTriedRefresh = false): Promise<T> => {
     // Build headers robustly (HeadersInit union): preserve caller headers
     const headers = new Headers(options?.headers as HeadersInit | undefined)
     if (options?.body && !headers.has('Content-Type')) {
@@ -64,6 +88,17 @@ export async function fetchAPI<T>(
         // JSON parse failed; keep statusText fallback
       }
 
+      // Handle 401 Unauthorized - attempt session refresh once
+      if (response.status === 401 && !hasTriedRefresh) {
+        const refreshed = await handleUnauthorized()
+        if (refreshed) {
+          // Session refreshed successfully - retry request with new token
+          return await attempt(true)
+        }
+        // Refresh failed - handleUnauthorized() already redirected to /
+        // Fall through to throw error for proper cleanup
+      }
+
       // Minimal mapping: status + message (+ optional resource)
       throw httpErrorToAppError(response.status, errorMessage, resource)
     }
@@ -73,7 +108,7 @@ export async function fetchAPI<T>(
     // DELETE endpoints specify fetchAPI<void>() which expects this behavior
     const contentLength = response.headers.get('content-length')
     if (response.status === 204 || contentLength === '0') {
-      return undefined as any
+      return undefined as T
     }
 
     const contentType = response.headers.get('content-type') || ''
@@ -105,15 +140,20 @@ export async function fetchAPI<T>(
   const shouldRetry = (err: unknown) => {
     if (method !== 'GET') return false
     if (err instanceof TypeError) return true
-    if (err && (err as any).name === 'AppError') {
-      const t = (err as any).type
-      if (t === 'SERVER_ERROR' || t === 'UNKNOWN_ERROR') return true
+
+    if (err && typeof err === 'object') {
+      const errorWithMeta = err as { name?: string; type?: string }
+      if (errorWithMeta.name === 'AppError') {
+        const t = errorWithMeta.type
+        if (t === 'SERVER_ERROR' || t === 'UNKNOWN_ERROR') return true
+      }
     }
+
     return false
   }
 
   try {
-    return await attempt()
+    return await attempt(false)
   } catch (error) {
     // Check for AbortError FIRST before retry logic to prevent race condition:
     // If user switches views/resources, the aborted request should not be retried
@@ -123,7 +163,7 @@ export async function fetchAPI<T>(
 
     if (shouldRetry(error)) {
       await new Promise((r) => setTimeout(r, 200))
-      return await attempt()
+      return await attempt(false)
     }
 
     // If it's already an AppError, rethrow as-is
@@ -367,6 +407,13 @@ export const api = {
     },
     delete: (id: string, options?: { signal?: AbortSignal }) =>
       fetchAPI<void>(`/api/chats/${id}`, { method: 'DELETE', signal: options?.signal }),
+    updateLastViewedTurn: async (chatId: string, turnId: string, options?: { signal?: AbortSignal }): Promise<void> => {
+      await fetchAPI<void>(`/api/chats/${chatId}/last-viewed-turn`, {
+        method: 'PATCH',
+        body: JSON.stringify({ turn_id: turnId }),
+        signal: options?.signal,
+      })
+    },
   },
 
   turns: {

@@ -12,29 +12,28 @@ interface UseModelCapabilitiesResult {
 
 export function useModelCapabilities(): UseModelCapabilitiesResult {
   const [providers, setProviders] = useState<ModelCapabilitiesProvider[]>([])
-  const [isLoading, setIsLoading] = useState<boolean>(false)
+  const [isLoading, setIsLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let isMounted = true
-    setIsLoading(true)
-    setError(null)
-
-    api.models
-      .getCapabilities()
-      .then((data) => {
+    const load = async () => {
+      try {
+        const data = await api.models.getCapabilities()
         if (!isMounted) return
         setProviders(data ?? [])
         setIsLoading(false)
-      })
-      .catch((err) => {
+      } catch (err) {
         if (!isMounted) return
         setIsLoading(false)
         const message =
           err instanceof Error ? err.message : 'Failed to load model capabilities'
         setError(message)
         handleApiError(err, 'Failed to load model capabilities')
-      })
+      }
+    }
+
+    load()
 
     return () => {
       isMounted = false
@@ -43,4 +42,3 @@ export function useModelCapabilities(): UseModelCapabilitiesResult {
 
   return { providers, isLoading, error }
 }
-

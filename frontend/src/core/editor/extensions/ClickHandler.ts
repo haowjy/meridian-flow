@@ -44,7 +44,7 @@ export const ClickHandler = Extension.create({
               })
 
               if (posAtCoords) {
-                const { pos, inside } = posAtCoords
+                const { pos } = posAtCoords
                 
                 // If we clicked "after" the last node, posAtCoords might return the position
                 // inside the last node or at the end.

@@ -5,7 +5,6 @@ import { buildTree, TreeNode } from '@/core/lib/treeBuilder'
 import { api } from '@/core/lib/api'
 import { getErrorMessage, handleApiError, isAbortError } from '@/core/lib/errors'
 import { db } from '@/core/lib/db'
-import { toast } from 'sonner'
 
 interface TreeStore {
   documents: Document[]

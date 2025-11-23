@@ -79,9 +79,10 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
       if (!project) {
         try {
           project = await api.projects.get(projectId, { signal: abortController.signal })
-        } catch (e) {
-          // Non-fatal for the layout; header will fallback until projects page refreshes
-          // Errors are surfaced elsewhere when listing projects.
+        } catch (error) {
+          // Non-fatal for the layout; header will fallback until projects page refreshes.
+          // Errors are surfaced elsewhere when listing projects; we still log for debuggability.
+          logger.warn('Failed to ensure project in workspace layout', error)
         }
       }
 
@@ -168,7 +169,7 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
     const abortController = new AbortController()
     loadTree(projectId, abortController.signal)
     return () => abortController.abort()
-  }, [projectId, initialDocumentId])
+  }, [projectId, initialDocumentId, documentsCount, isTreeLoading, loadTree])
 
   // After the tree loads, ensure the active document selection reflects the tree entry
   useEffect(() => {

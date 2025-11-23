@@ -6,7 +6,7 @@ import { createClient } from '@/core/supabase/client'
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/shared/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card'
 import { Github, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -35,6 +35,7 @@ export function LoginForm() {
             router.push('/projects')
             router.refresh()
         } catch (error) {
+            console.error('Email login failed', error)
             toast.error('An unexpected error occurred')
         } finally {
             setLoading(false)
@@ -54,6 +55,7 @@ export function LoginForm() {
                 toast.error(error.message)
             }
         } catch (error) {
+            console.error('GitHub login failed', error)
             toast.error('An unexpected error occurred')
         }
     }

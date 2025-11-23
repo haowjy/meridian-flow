@@ -81,8 +81,13 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
       await loadTree(projectId)
     } catch (error) {
       // Special-case conflicts to offer navigating to the existing document
-      if (isAppError(error) && error.type === 'CONFLICT' && (error.resource as any)?.id) {
-        const existingId = (error.resource as any).id as string
+      if (isAppError(error) && error.type === 'CONFLICT') {
+        const resource = error.resource as { id?: string } | undefined
+        const existingId = resource?.id
+        if (!existingId) {
+          handleApiError(error, 'Failed to create document')
+          throw error
+        }
         toast.error(error.message || 'Resource already exists.', {
           action: {
             label: 'Open',

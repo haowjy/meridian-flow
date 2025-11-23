@@ -67,7 +67,7 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
   }, [])
 
   return (
-    <div className="group flex flex-col items-end gap-1 text-sm">
+    <div className="group flex flex-col items-end gap-1 text-sm" data-turn-id={turn.id}>
       {isEditing ? (
         <EditTurnDialog
           isOpen={isEditing}
@@ -85,7 +85,6 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
 
           <TurnActionBar
             turn={turn}
-            isLast={false} // TODO: Determine if last? Not strictly needed for basic nav
             isLoading={isLoadingTurns}
             onNavigate={handleNavigate}
             onEdit={handleEdit}

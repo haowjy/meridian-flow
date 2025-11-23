@@ -22,15 +22,15 @@ export function useThumbFollow<C extends HTMLElement = HTMLElement, T extends HT
   const [rect, setRect] = useState<ThumbRect | null>(null)
 
   useLayoutEffect(() => {
-    const container = containerRef.current
-    const target = targetRef.current
-
-    if (!container || !target) {
-      setRect(null)
-      return
-    }
-
     const updateRect = () => {
+      const container = containerRef.current
+      const target = targetRef.current
+
+      if (!container || !target) {
+        setRect(null)
+        return
+      }
+
       const containerBounds = container.getBoundingClientRect()
       const targetBounds = target.getBoundingClientRect()
 
@@ -50,6 +50,13 @@ export function useThumbFollow<C extends HTMLElement = HTMLElement, T extends HT
 
     // Initial measurement
     updateRect()
+
+    const container = containerRef.current
+    const target = targetRef.current
+
+    if (!container || !target) {
+      return
+    }
 
     // Observe size changes on both elements
     const resizeObserver = new ResizeObserver(updateRect)

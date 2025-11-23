@@ -1,15 +1,15 @@
 import React, { useState, useCallback, useMemo } from 'react'
 import { Turn } from '@/features/chats/types'
-import { ChevronLeft, ChevronRight, Edit2, RefreshCw, Copy, Check } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Edit2, RefreshCw, Copy, Check, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { makeLogger } from '@/core/lib/logger'
 import { extractTextContent } from '@/features/chats/utils/turnHelpers'
+import { DebugInfoDialog } from '@/core/components/DebugInfoDialog'
 
 const log = makeLogger('TurnActionBar')
 
 interface TurnActionBarProps {
     turn: Turn
-    isLast: boolean
     isLoading?: boolean
     onNavigate: (turnId: string) => void
     onEdit?: () => void
@@ -25,7 +25,6 @@ interface TurnActionBarProps {
  */
 export const TurnActionBar = React.memo(function TurnActionBar({
     turn,
-    isLast,
     isLoading = false,
     onNavigate,
     onEdit,
@@ -33,6 +32,8 @@ export const TurnActionBar = React.memo(function TurnActionBar({
     className,
 }: TurnActionBarProps) {
     const [copied, setCopied] = useState(false)
+    const [showDebug, setShowDebug] = useState(false)
+    const isDevMode = process.env.NEXT_PUBLIC_DEV_TOOLS === '1'
 
     // Memoize sibling calculations to avoid recalculating on every render
     const { siblingList, siblingCount, currentIndex, currentNumber, showNavigation } = useMemo(() => {
@@ -74,6 +75,24 @@ export const TurnActionBar = React.memo(function TurnActionBar({
         }
     }, [currentIndex, siblingCount, siblingList, onNavigate])
 
+    // Prepare debug metadata
+    const debugData = useMemo(() => ({
+        id: turn.id,
+        chatId: turn.chatId,
+        prevTurnId: turn.prevTurnId,
+        role: turn.role,
+        status: turn.status,
+        error: turn.error,
+        model: turn.model,
+        inputTokens: turn.inputTokens,
+        outputTokens: turn.outputTokens,
+        createdAt: turn.createdAt.toISOString(),
+        completedAt: turn.completedAt?.toISOString(),
+        lastAccessedAt: turn.lastAccessedAt?.toISOString(),
+        siblingIds: turn.siblingIds,
+        blockCount: turn.blocks.length,
+    }), [turn])
+
     return (
         <div className={cn('flex items-center gap-2 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity duration-200', className)}>
             <div className="flex items-center gap-1">
@@ -104,6 +123,16 @@ export const TurnActionBar = React.memo(function TurnActionBar({
                         <RefreshCw className="w-3.5 h-3.5" />
                     </button>
                 )}
+
+                {isDevMode && (
+                    <button
+                        onClick={() => setShowDebug(true)}
+                        className="p-1 rounded cursor-pointer hover:bg-muted/60 hover:text-foreground transition-colors"
+                        aria-label="Debug info"
+                    >
+                        <Info className="w-3.5 h-3.5" />
+                    </button>
+                )}
             </div>
 
             {showNavigation && (
@@ -128,6 +157,15 @@ export const TurnActionBar = React.memo(function TurnActionBar({
                         <ChevronRight className="w-4 h-4" />
                     </button>
                 </div>
+            )}
+
+            {isDevMode && (
+                <DebugInfoDialog
+                    isOpen={showDebug}
+                    onClose={() => setShowDebug(false)}
+                    title={`Turn Debug: ${turn.role}`}
+                    data={debugData}
+                />
             )}
         </div>
     )

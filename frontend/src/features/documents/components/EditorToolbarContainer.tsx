@@ -1,7 +1,6 @@
 "use client"
 
 import type { Editor as TiptapEditor } from "@tiptap/react"
-import { useUIStore } from "@/core/stores/useUIStore"
 import { EditorToolbar } from "./EditorToolbar"
 import type { SaveStatus } from '@/shared/components/ui/StatusBadge'
 
@@ -26,4 +25,3 @@ export function EditorToolbarContainer({ editor, disabled, status, lastSaved }: 
     />
   )
 }
-

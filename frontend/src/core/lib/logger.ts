@@ -31,29 +31,28 @@ function shouldLog(level: LogLevel): boolean {
 }
 
 export interface Logger {
-  debug: (...args: any[]) => void
-  info: (...args: any[]) => void
-  warn: (...args: any[]) => void
-  error: (...args: any[]) => void
+  debug: (...args: unknown[]) => void
+  info: (...args: unknown[]) => void
+  warn: (...args: unknown[]) => void
+  error: (...args: unknown[]) => void
 }
 
 export function makeLogger(namespace: string): Logger {
   const prefix = `[${namespace}]`
   return {
-    debug: (...args: any[]) => {
+    debug: (...args: unknown[]) => {
       if (shouldLog('debug')) console.debug(prefix, ...args)
     },
-    info: (...args: any[]) => {
+    info: (...args: unknown[]) => {
       if (shouldLog('info')) console.info(prefix, ...args)
     },
-    warn: (...args: any[]) => {
+    warn: (...args: unknown[]) => {
       if (shouldLog('warn')) console.warn(prefix, ...args)
     },
-    error: (...args: any[]) => {
+    error: (...args: unknown[]) => {
       if (shouldLog('error')) console.error(prefix, ...args)
     },
   }
 }
 
 export const logger = makeLogger('core')
-

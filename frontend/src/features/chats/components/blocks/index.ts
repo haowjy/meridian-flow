@@ -12,5 +12,5 @@ export {
   getBlockRenderer,
   registerBlockRenderer,
   getRegisteredBlockTypes,
-  type BlockRendererComponent,
+  type BlockRendererFn,
 } from './registry'

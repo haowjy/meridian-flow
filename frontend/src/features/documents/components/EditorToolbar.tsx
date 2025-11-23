@@ -130,10 +130,19 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, status, 
 
         <ToolbarDivider className="h-5 mx-0" />
 
-        {/* Metadata: Word Count & Save Status */}
+        {/* Metadata: Word Count, Save Status & Last Saved */}
         <div className="flex items-center gap-2 text-xs text-muted-foreground select-none">
-          <span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span>
-          <SaveStatusIcon status={status} className="size-3.5" />
+          <span>
+            {wordCount} {wordCount === 1 ? 'word' : 'words'}
+          </span>
+          <div className="flex items-center gap-1 text-[11px] text-muted-foreground/80">
+            <SaveStatusIcon status={status} className="size-3.5" />
+            {lastSaved && (
+              <span aria-label="Last saved timestamp">
+                {lastSaved.toLocaleTimeString()}
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>

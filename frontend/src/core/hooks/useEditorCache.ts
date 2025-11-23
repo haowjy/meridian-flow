@@ -57,7 +57,7 @@ interface UseEditorCacheResult {
  * ```
  */
 export function useEditorCache(options: UseEditorCacheOptions): UseEditorCacheResult {
-  const { documentId, content, extensions, maxCacheSize = 5, ...editorOptions } = options
+  const { documentId, extensions, maxCacheSize = 5, ...editorOptions } = options
 
   // Expose cache-hit status and current editor through React state so callers re-render
   const [isFromCache, setIsFromCache] = useState(false)

@@ -90,9 +90,12 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     const abortController = new AbortController()
 
     // Reset local editor state on document change
-    setIsInitialized(false)
-    initializedRef.current = false
-    setHasUserEdit(false)
+    const resetEditorState = () => {
+      setIsInitialized(false)
+      initializedRef.current = false
+      setHasUserEdit(false)
+    }
+    resetEditorState()
 
     // Do NOT clear localContent here; allow cached editor to repopulate if present
     loadDocument(documentId, abortController.signal)
@@ -107,6 +110,9 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     return () => {
       abortController.abort()
     }
+  // Intentionally depend only on documentId and loadDocument.
+  // _activeDocumentId and isLoading are read via the store for duplicate-load prevention.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentId, loadDocument])
 
   // Note: The tree is loaded by WorkspaceLayout on deep links.
@@ -114,47 +120,51 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   // Initialize local content when document loads
   // BUT: Skip if we're using a cached editor (it has the correct content already)
   useEffect(() => {
-    if (activeDocument && activeDocument.id === documentId && !isFromCache) {
-      // New editor: Initialize with document content from DB
-      setLocalContent(activeDocument.content ?? '')
-      setHasUserEdit(false) // Reset flag when switching documents
-      if (editor) {
-        editor.commands.setContent(activeDocument.content ?? '', {
-          contentType: 'markdown',
-          emitUpdate: false
-        })
-      }
-      setIsInitialized(true)
-    } else if (activeDocument && activeDocument.id === documentId && isFromCache) {
-      // Cached editor: Preserve its content (may have unsaved changes)
-      // UNLESS the cached editor is empty AND server has content
-      // (This handles incomplete initialization race condition)
-      const cachedContent = editor?.getMarkdown() ?? ''
-      const serverContent = activeDocument.content ?? ''
-      const cachedIsEmpty = cachedContent === ''
-      const serverHasContent = serverContent !== ''
-
-      if (cachedIsEmpty && serverHasContent) {
-        // Cached editor never got initialized properly, use server content
-        logger.debug('Cached editor is empty, initializing from server')
-        setLocalContent(serverContent)
+    const initializeFromActiveDocument = () => {
+      if (activeDocument && activeDocument.id === documentId && !isFromCache) {
+        // New editor: Initialize with document content from DB
+        setLocalContent(activeDocument.content ?? '')
+        setHasUserEdit(false) // Reset flag when switching documents
         if (editor) {
-          editor.commands.setContent(serverContent, {
+          editor.commands.setContent(activeDocument.content ?? '', {
             contentType: 'markdown',
             emitUpdate: false
           })
         }
         setIsInitialized(true)
-      } else {
-        // Trust the cached editor (it has either the correct content or unsaved changes)
-        logger.debug('Using cached editor content')
-        setLocalContent(cachedContent)
-        setIsInitialized(true)
-      }
+      } else if (activeDocument && activeDocument.id === documentId && isFromCache) {
+        // Cached editor: Preserve its content (may have unsaved changes)
+        // UNLESS the cached editor is empty AND server has content
+        // (This handles incomplete initialization race condition)
+        const cachedContent = editor?.getMarkdown() ?? ''
+        const serverContent = activeDocument.content ?? ''
+        const cachedIsEmpty = cachedContent === ''
+        const serverHasContent = serverContent !== ''
 
-      setHasUserEdit(false) // Reset flag when switching documents
+        if (cachedIsEmpty && serverHasContent) {
+          // Cached editor never got initialized properly, use server content
+          logger.debug('Cached editor is empty, initializing from server')
+          setLocalContent(serverContent)
+          if (editor) {
+            editor.commands.setContent(serverContent, {
+              contentType: 'markdown',
+              emitUpdate: false
+            })
+          }
+          setIsInitialized(true)
+        } else {
+          // Trust the cached editor (it has either the correct content or unsaved changes)
+          logger.debug('Using cached editor content')
+          setLocalContent(cachedContent)
+          setIsInitialized(true)
+        }
+
+        setHasUserEdit(false) // Reset flag when switching documents
+      }
     }
-  }, [activeDocument?.id, activeDocument?.content, isFromCache, editor, documentId]) // Check content updates too
+
+    initializeFromActiveDocument()
+  }, [activeDocument, isFromCache, editor, documentId]) // Check content updates too
 
   // Auto-save when debounced content changes (only in edit mode AFTER init)
   // Treat empty string "" as valid content (do not use falsy checks)
@@ -168,26 +178,30 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   useEffect(() => {
     if (!editor) return
 
-    const currentContent = editor.getMarkdown()
+    const syncEditorAndState = () => {
+      const currentContent = editor.getMarkdown()
 
-    if (isFromCache) {
-      // Cached editor is source of truth - preserve its content (may have unsaved changes)
-      // Sync localContent FROM editor to prevent loadDocument from overwriting it
-      if (currentContent !== localContent) {
-        logger.debug('Syncing localContent from cached editor')
-        setLocalContent(currentContent)
-        // Important: Don't set hasUserEdit here - this is just state sync, not a user action
-      }
-    } else {
-      // New editor - initialize it with current localContent from store
-      if (localContent !== undefined && currentContent !== localContent) {
-        logger.debug('Initializing new editor with localContent')
-        editor.commands.setContent(localContent, {
-          contentType: 'markdown',
-          emitUpdate: false
-        })
+      if (isFromCache) {
+        // Cached editor is source of truth - preserve its content (may have unsaved changes)
+        // Sync localContent FROM editor to prevent loadDocument from overwriting it
+        if (currentContent !== localContent) {
+          logger.debug('Syncing localContent from cached editor')
+          setLocalContent(currentContent)
+          // Important: Don't set hasUserEdit here - this is just state sync, not a user action
+        }
+      } else {
+        // New editor - initialize it with current localContent from store
+        if (localContent !== undefined && currentContent !== localContent) {
+          logger.debug('Initializing new editor with localContent')
+          editor.commands.setContent(localContent, {
+            contentType: 'markdown',
+            emitUpdate: false
+          })
+        }
       }
     }
+
+    syncEditorAndState()
   }, [editor, isFromCache, localContent, documentId])
 
   // No inline rename handler here; breadcrumb rename to be added later.

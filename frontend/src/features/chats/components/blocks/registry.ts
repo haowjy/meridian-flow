@@ -4,30 +4,30 @@ import { TextBlock } from './TextBlock'
 import { ThinkingBlock } from './ThinkingBlock'
 
 /**
- * Block renderer component type.
- * Each block renderer receives a block and renders it appropriately.
+ * Block renderer function type.
+ * Each renderer receives a block and returns a React element.
  */
-export type BlockRendererComponent = React.ComponentType<{ block: TurnBlock }>
+export type BlockRendererFn = (block: TurnBlock) => React.ReactElement
 
 /**
- * Registry of block type to renderer component.
+ * Registry of block type to renderer function.
  *
  * This allows easy extension of new block types without modifying existing code.
  * Simply register a new block type and its renderer here.
  */
-const BLOCK_RENDERERS: Record<string, BlockRendererComponent> = {
-  text: TextBlock,
-  thinking: ThinkingBlock,
-  // citation: CitationBlock,
-  // image: ImageBlock,
+const BLOCK_RENDERERS: Record<string, BlockRendererFn> = {
+  text: (block) => React.createElement(TextBlock, { block }),
+  thinking: (block) => React.createElement(ThinkingBlock, { block }),
+  // citation: (block) => React.createElement(CitationBlock, { block }),
+  // image: (block) => React.createElement(ImageBlock, { block }),
 }
 
 /**
- * Get the renderer component for a given block type.
- * Returns TextBlock as fallback for unknown block types.
+ * Get the renderer function for a given block type.
+ * Returns TextBlock renderer as fallback for unknown block types.
  */
-export function getBlockRenderer(blockType: string): BlockRendererComponent {
-  return BLOCK_RENDERERS[blockType] ?? TextBlock
+export function getBlockRenderer(blockType: string): BlockRendererFn {
+  return BLOCK_RENDERERS[blockType] ?? BLOCK_RENDERERS.text!
 }
 
 /**
@@ -36,14 +36,14 @@ export function getBlockRenderer(blockType: string): BlockRendererComponent {
  *
  * @example
  * ```ts
- * registerBlockRenderer('custom', CustomBlock)
+ * registerBlockRenderer('custom', (block) => <CustomBlock block={block} />)
  * ```
  */
 export function registerBlockRenderer(
   blockType: string,
-  component: BlockRendererComponent
+  renderer: BlockRendererFn
 ): void {
-  BLOCK_RENDERERS[blockType] = component
+  BLOCK_RENDERERS[blockType] = renderer
 }
 
 /**

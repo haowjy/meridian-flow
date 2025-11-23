@@ -24,6 +24,7 @@ export interface ChatDto {
   id: string
   project_id: string
   title: string
+  last_viewed_turn_id: string | null
   created_at: string
   updated_at: string
 }
@@ -69,6 +70,7 @@ export function fromChatDto(dto: ChatDto): Chat {
     id: dto.id,
     projectId: dto.project_id,
     title: dto.title,
+    lastViewedTurnId: dto.last_viewed_turn_id,
     createdAt: new Date(dto.created_at),
     updatedAt: new Date(dto.updated_at),
   }

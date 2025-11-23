@@ -43,7 +43,8 @@ describe('DocumentSyncService.save', () => {
   })
 
   it('queues retry on network/server error and calls onRetryScheduled', async () => {
-    ;(syncDocument as any).mockImplementationOnce(async () => {
+    const syncDocumentMock = syncDocument as unknown as ReturnType<typeof vi.fn>
+    syncDocumentMock.mockImplementationOnce(async () => {
       throw new AppError(ErrorType.ServerError, '5xx')
     })
 
@@ -55,7 +56,8 @@ describe('DocumentSyncService.save', () => {
   })
 
   it('bubbles client errors (validation) to caller', async () => {
-    ;(syncDocument as any).mockImplementationOnce(async () => {
+    const syncDocumentMock = syncDocument as unknown as ReturnType<typeof vi.fn>
+    syncDocumentMock.mockImplementationOnce(async () => {
       throw new AppError(ErrorType.Validation, 'bad')
     })
 
@@ -64,4 +66,3 @@ describe('DocumentSyncService.save', () => {
     ).rejects.toBeInstanceOf(AppError)
   })
 })
-

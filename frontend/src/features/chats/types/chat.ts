@@ -2,6 +2,7 @@ export interface Chat {
   id: string
   projectId: string
   title: string
+  lastViewedTurnId: string | null
   createdAt: Date
   updatedAt: Date
 }

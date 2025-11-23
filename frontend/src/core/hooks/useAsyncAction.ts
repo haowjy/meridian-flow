@@ -27,7 +27,7 @@ export interface AsyncActionState<T> {
  * </Button>
  * ```
  */
-export function useAsyncAction<T, Args extends any[]>(
+export function useAsyncAction<T, Args extends unknown[]>(
   action: (...args: Args) => Promise<T>
 ): [AsyncActionState<T>, (...args: Args) => Promise<void>] {
   const [state, setState] = useState<AsyncActionState<T>>({

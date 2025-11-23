@@ -131,9 +131,12 @@ export interface LoadPolicy<T> {
 }
 
 // Default comparer: compare updatedAt if present, else treat as equal
-function defaultCompare<T>(a: any, b: any): number {
-  if (a && a.updatedAt instanceof Date && b && b.updatedAt instanceof Date) {
-    return a.updatedAt.getTime() - b.updatedAt.getTime()
+function defaultCompare<T>(a: T, b: T): number {
+  const aWithUpdatedAt = a as { updatedAt?: Date } | undefined
+  const bWithUpdatedAt = b as { updatedAt?: Date } | undefined
+
+  if (aWithUpdatedAt?.updatedAt instanceof Date && bWithUpdatedAt?.updatedAt instanceof Date) {
+    return aWithUpdatedAt.updatedAt.getTime() - bWithUpdatedAt.updatedAt.getTime()
   }
   return 0
 }
@@ -152,13 +155,11 @@ export class ReconcileNewestPolicy<T> implements LoadPolicy<T> {
     const remotePromise = remoteRepo.fetch(signal)
 
     let cached: T | undefined
-    let emittedIntermediate = false
 
     try {
       cached = await cachePromise
       if (cached) {
         onIntermediate?.({ data: cached, source: 'cache', isFinal: false })
-        emittedIntermediate = true
       }
     } catch {
       // cache read failure → ignore, rely on server
@@ -174,15 +175,15 @@ export class ReconcileNewestPolicy<T> implements LoadPolicy<T> {
       }
 
       // Compare; local wins on tie (server must be strictly newer)
-      const cmp = compare(cached as any, server as any)
+      const cmp = compare(cached, server)
       if (cmp < 0) {
         await cacheRepo.put(server)
         return { data: server, source: 'server', isFinal: true }
       }
       return { data: cached, source: 'cache', isFinal: true }
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Abort: if we emitted cache, use it; else rethrow
-      if (err?.name === 'AbortError') {
+      if (err instanceof Error && err.name === 'AbortError') {
         if (cached) {
           return { data: cached, source: 'cache', isFinal: true }
         }
@@ -208,7 +209,7 @@ export class NetworkFirstPolicy<T> implements LoadPolicy<T> {
       const data = await remoteRepo.fetch(signal)
       await cacheRepo.put(data)
       return { data, source: 'server', isFinal: true }
-    } catch (err: any) {
+    } catch (err: unknown) {
       const cached = await cacheRepo.get().catch(() => undefined)
       if (cached) {
         onIntermediate?.({ data: cached, source: 'cache', isFinal: true })
@@ -247,9 +248,9 @@ export class StaleWhileRevalidatePolicy<T> implements LoadPolicy<T> {
       const server = await remotePromise
       await cacheRepo.put(server)
       return { data: server, source: 'server', isFinal: true }
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Abort: if we emitted cache, use it; else rethrow
-      if (err?.name === 'AbortError') {
+      if (err instanceof Error && err.name === 'AbortError') {
         if (cached) {
           return { data: cached, source: 'cache', isFinal: true }
         }

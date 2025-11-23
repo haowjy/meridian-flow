@@ -22,6 +22,7 @@ export function buildAssistantRenderItems(blocks: TurnBlock[]): AssistantRenderI
 
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
+    if (!block) continue
 
     if (block.blockType === 'tool_use') {
       const toolUseId = getToolUseId(block)
@@ -34,6 +35,7 @@ export function buildAssistantRenderItems(blocks: TurnBlock[]): AssistantRenderI
       let matchedResult: TurnBlock | null = null
       for (let j = i + 1; j < blocks.length; j++) {
         const candidate = blocks[j]
+        if (!candidate) continue
         if (candidate.blockType !== 'tool_result') continue
         if (consumedResultIndices.has(j)) continue
         const candidateId = getToolUseId(candidate)

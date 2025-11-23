@@ -19,7 +19,7 @@ export function DocumentPanel({ projectId }: DocumentPanelProps) {
 
   // Editor view: Show editor with active document
   if (rightPanelState === 'editor' && activeDocumentId) {
-    return <EditorPanel documentId={activeDocumentId} projectId={projectId} />
+    return <EditorPanel documentId={activeDocumentId} />
   }
 
   // Default view: Show document tree

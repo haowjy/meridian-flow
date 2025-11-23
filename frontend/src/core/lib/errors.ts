@@ -139,13 +139,11 @@ export function isAbortError(error: unknown): error is Error {
 /**
  * Best-effort guard for AppError across dynamic import boundaries.
  */
-export function isAppError(error: unknown): error is AppError<any> {
-  return (
-    !!error &&
-    typeof error === 'object' &&
-    (error as any).name === 'AppError' &&
-    typeof (error as any).message === 'string'
-  )
+export function isAppError(error: unknown): error is AppError<unknown> {
+  if (!error || typeof error !== 'object') return false
+
+  const candidate = error as { name?: unknown; message?: unknown }
+  return candidate.name === 'AppError' && typeof candidate.message === 'string'
 }
 
 /**

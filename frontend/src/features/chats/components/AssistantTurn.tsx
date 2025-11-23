@@ -55,7 +55,7 @@ export const AssistantTurn = React.memo(function AssistantTurn({ turn }: Assista
   const items = buildAssistantRenderItems(turn.blocks)
 
   return (
-    <div className="flex flex-col items-stretch gap-1 group text-sm">
+    <div className="flex flex-col items-stretch gap-1 group text-sm" data-turn-id={turn.id}>
       <div className="w-full space-y-2">
         {items.map((item, index) => {
           if (item.kind === 'block') {
@@ -74,7 +74,6 @@ export const AssistantTurn = React.memo(function AssistantTurn({ turn }: Assista
 
       <TurnActionBar
         turn={turn}
-        isLast={false}
         isLoading={isLoadingTurns}
         onNavigate={handleNavigate}
         onRegenerate={turn.prevTurnId ? handleRegenerate : undefined}

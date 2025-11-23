@@ -28,8 +28,9 @@ export function ActiveChatView() {
     activeChatId: s.activeChatId,
   })))
 
-  const { chats } = useChatStore(useShallow((s) => ({
+  const { chats, currentTurnId } = useChatStore(useShallow((s) => ({
     chats: s.chats,
+    currentTurnId: s.currentTurnId,
   })))
 
   const projectName = useProjectStore(useShallow((state) => {
@@ -66,7 +67,7 @@ export function ActiveChatView() {
               Loading…
             </div>
           )}
-          <TurnList turns={turns} />
+          <TurnList turns={turns} scrollToTurnId={currentTurnId} isLoading={isLoading} />
         </div>
       </div>
       <TurnInput chatId={activeChat.id} />

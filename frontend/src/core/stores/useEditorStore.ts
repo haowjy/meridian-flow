@@ -56,8 +56,9 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
           return d && d.content !== undefined ? d : undefined
         },
         put: async (doc) => {
-          if ((doc as any).content !== undefined) {
-            await db.documents.put(doc as Document & { content: string })
+          const withContent = doc as Document & { content?: unknown }
+          if (withContent.content !== undefined) {
+            await db.documents.put(withContent as Document & { content: string })
           }
         },
       }

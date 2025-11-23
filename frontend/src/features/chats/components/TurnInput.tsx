@@ -2,8 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { Send } from 'lucide-react'
-import { Button } from '@/shared/components/ui/button'
 import { useChatStore } from '@/core/stores/useChatStore'
 import { ChatRequestControls } from '@/features/chats/components/ChatRequestControls'
 import type { ChatRequestOptions } from '@/features/chats/types'

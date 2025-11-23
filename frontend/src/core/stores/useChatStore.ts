@@ -86,6 +86,19 @@ const detectStreamingState = (turns: Turn[]) => {
       }
 }
 
+/**
+ * Helper to update last_viewed_turn_id bookmark.
+ * Logs errors but doesn't throw - bookmark updates are non-critical.
+ */
+const updateLastViewedTurnBookmark = async (chatId: string, turnId: string) => {
+  try {
+    await api.chats.updateLastViewedTurn(chatId, turnId)
+  } catch (err) {
+    const log = makeLogger('chat-store')
+    log.warn('Failed to update last_viewed_turn_id', { chatId, turnId, error: err })
+  }
+}
+
 export const useChatStore = create<ChatStore>()(
   persist(
     (set, get) => ({
@@ -137,8 +150,10 @@ export const useChatStore = create<ChatStore>()(
       },
 
       loadTurns: async (chatId: string, signal?: AbortSignal) => {
-        // For MVP, delegate to openChat with no initial turn (cold start)
-        await get().openChat(chatId, undefined, signal)
+        // Fetch chat to get lastViewedTurnId for auto-scroll
+        const chat = await api.chats.get(chatId)
+        // Delegate to openChat with lastViewedTurnId as initial turn
+        await get().openChat(chatId, chat.lastViewedTurnId ?? undefined, signal)
       },
 
       createChat: async (projectId: string, title: string) => {
@@ -196,6 +211,9 @@ export const useChatStore = create<ChatStore>()(
               streamingUrl: streamUrl,
             }
           })
+
+          // Update bookmark to the new assistant turn
+          await updateLastViewedTurnBookmark(chatId, assistantTurn.id)
         } catch (error) {
           handleApiError(error, 'Failed to send message')
           throw error
@@ -309,7 +327,7 @@ export const useChatStore = create<ChatStore>()(
       },
 
       clearStreamingStream: () => {
-        set((state) => ({
+        set(() => ({
           streamingTurnId: null,
           streamingUrl: null,
         }))
@@ -424,6 +442,7 @@ export const useChatStore = create<ChatStore>()(
             fromTurnId: bottom.id,
             direction: 'after',
             limit: 100,
+            updateLastViewed: true, // Update bookmark when scrolling down
             signal,
           })
           log.debug('paginateAfter:response', {
@@ -526,7 +545,7 @@ export const useChatStore = create<ChatStore>()(
 
           // Call createTurn endpoint with the SAME prevTurnId as the original turn
           // This creates a sibling branch.
-          const { userTurn, assistantTurn } = await api.turns.send(chatId, messageText, {
+          const { assistantTurn } = await api.turns.send(chatId, messageText, {
             prevTurnId,
             // For now, reuse default chat options when editing.
             requestOptions: DEFAULT_CHAT_REQUEST_OPTIONS,

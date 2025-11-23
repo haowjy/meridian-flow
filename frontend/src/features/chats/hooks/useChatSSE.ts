@@ -309,6 +309,7 @@ export function useChatSSE() {
       jsonBufferRef.current = ''
     }
   }, [
+    chatId,
     streamingTurnId,
     streamingUrl,
     append,
@@ -316,6 +317,7 @@ export function useChatSSE() {
     appendStreamingTextDelta,
     setStreamingBlockContent,
     clearStreamingStream,
+    refreshTurn,
     logger,
   ])
 }

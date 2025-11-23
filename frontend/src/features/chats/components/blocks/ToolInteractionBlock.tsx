@@ -10,9 +10,9 @@ function getToolMeta(toolUse: TurnBlock | null, toolResult: TurnBlock | null) {
   const source = toolResult ?? toolUse
   const content = (source?.content ?? {}) as ToolBlockContent
   const toolName =
-    typeof (content as any).tool_name === 'string' ? (content as any).tool_name : 'Tool'
+    typeof content.tool_name === 'string' ? content.tool_name : 'Tool'
   const toolUseId =
-    typeof (content as any).tool_use_id === 'string' ? (content as any).tool_use_id : null
+    typeof content.tool_use_id === 'string' ? content.tool_use_id : null
   const isError = typeof content.is_error === 'boolean' ? content.is_error : false
 
   return { toolName, toolUseId, isError }
@@ -112,11 +112,11 @@ export const ToolInteractionBlock = React.memo(function ToolInteractionBlock({
 
       {isExpanded && (
         <div className="border-t border-muted-foreground/20 px-3 py-1.5 space-y-1.5 text-[11px] text-muted-foreground">
-          {toolUse && (toolUse.content as any)?.input && (
+          {toolUse && (toolUse.content as ToolBlockContent)?.input && (
             <div>
               <div className="mb-0.5 font-medium text-muted-foreground/80">Call</div>
               <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-background/60 px-2 py-1">
-                {JSON.stringify((toolUse.content as any).input, null, 2)}
+                {JSON.stringify((toolUse.content as ToolBlockContent).input ?? {}, null, 2)}
               </pre>
             </div>
           )}
