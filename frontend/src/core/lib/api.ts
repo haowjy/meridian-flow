@@ -15,6 +15,7 @@ import {
 import { httpErrorToAppError } from '@/core/lib/errors'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
+export const API_BASE_URL = API_BASE
 
 export async function fetchAPI<T>(
   endpoint: string,
@@ -198,8 +199,6 @@ function turnDtoToTurn(turn: TurnDto): Turn {
     model: turn.model ?? undefined,
     inputTokens: turn.input_tokens ?? undefined,
     outputTokens: turn.output_tokens ?? undefined,
-    // Deprecated: Use extractTextContent(turn) from turnHelpers instead
-    content: '',
     createdAt: new Date(turn.created_at),
     completedAt: turn.completed_at ? new Date(turn.completed_at) : undefined,
     blocks,
@@ -312,30 +311,18 @@ export const api = {
 
     // NOTE: This is a thin adapter on top of the turn-based API.
     // It calls GET /api/chats/:id/turns and maps backend Turn to the frontend Turn type.
-    list: async (chatId: string, options?: { signal?: AbortSignal }): Promise<Turn[]> => {
-      type PaginatedTurnsDto = {
-        turns: TurnDto[]
-        has_more_before: boolean
-        has_more_after: boolean
-        from_turn_id?: string
-      }
-
-      const data = await fetchAPI<PaginatedTurnsDto>(
-        `/api/chats/${chatId}/turns?limit=100&direction=both`,
-        { signal: options?.signal }
-      )
-
-      return (data.turns ?? []).map(turnDtoToTurn)
-    },
-
     // Wrapper on top of CreateTurn (POST /api/chats/:id/turns).
     // Returns both the created user turn and the assistant turn that will stream.
     send: async (
       chatId: string,
       content: string,
       options?: { prevTurnId?: string | null; signal?: AbortSignal }
-    ): Promise<{ userTurn: Turn; assistantTurn: Turn }> => {
-      const response = await fetchAPI<{ user_turn: TurnDto; assistant_turn: TurnDto }>(
+    ): Promise<{ userTurn: Turn; assistantTurn: Turn; streamUrl: string }> => {
+      const response = await fetchAPI<{
+        user_turn: TurnDto
+        assistant_turn: TurnDto
+        stream_url: string
+      }>(
         `/api/chats/${chatId}/turns`,
         {
           method: 'POST',
@@ -357,6 +344,7 @@ export const api = {
       return {
         userTurn: turnDtoToTurn(response.user_turn),
         assistantTurn: turnDtoToTurn(response.assistant_turn),
+        streamUrl: response.stream_url,
       }
     },
 

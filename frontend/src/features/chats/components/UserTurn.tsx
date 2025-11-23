@@ -66,8 +66,8 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
   }, [])
 
   return (
-    <div className="flex flex-col items-end gap-1 group">
-      <Card className={cn('max-w-3xl px-3 py-2 text-sm', 'chat-message chat-message--user')}>
+    <div className="flex flex-col items-end gap-1 group text-sm">
+      <Card className={cn('px-3 py-2', 'chat-message chat-message--user')}>
         {turn.blocks.map((block) => (
           <BlockRenderer key={block.id} block={block} />
         ))}

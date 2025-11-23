@@ -18,9 +18,6 @@ export type BlockRendererComponent = React.ComponentType<{ block: TurnBlock }>
 const BLOCK_RENDERERS: Record<string, BlockRendererComponent> = {
   text: TextBlock,
   thinking: ThinkingBlock,
-  // Future block types can be added here:
-  // tool_use: ToolUseBlock,
-  // tool_result: ToolResultBlock,
   // citation: CitationBlock,
   // image: ImageBlock,
 }

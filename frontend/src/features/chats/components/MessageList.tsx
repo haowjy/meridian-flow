@@ -21,7 +21,7 @@ interface TurnListProps {
 export function TurnList({ turns }: TurnListProps) {
   return (
     <ScrollArea className="h-full">
-      <div className="flex flex-col gap-3 px-4 py-3">
+      <div className="flex flex-col gap-3 px-4 py-3 w-full max-w-3xl mx-auto">
         {turns.map((turn) =>
           turn.role === 'user' ? (
             <UserTurn key={turn.id} turn={turn} />

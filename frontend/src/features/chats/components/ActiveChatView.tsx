@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { useTurnsForChat } from '@/features/chats/hooks/useTurnsForChat'
 import { useChatStore } from '@/core/stores/useChatStore'
+import { useChatSSE } from '@/features/chats/hooks/useChatSSE'
 import { ChatHeader } from './ChatHeader'
 import { TurnList } from './TurnList'
 import { TurnInput } from './TurnInput'
@@ -20,7 +21,7 @@ import { useProjectStore } from '@/core/stores/useProjectStore'
  *
  * It does NOT:
  * - Know how chats are loaded (left panel concern)
- * - Implement streaming or SSE (future step)
+ * - Contain SSE/EventSource details (delegated to useChatSSE)
  */
 export function ActiveChatView() {
   const { activeChatId } = useUIStore(useShallow((s) => ({
@@ -39,6 +40,7 @@ export function ActiveChatView() {
   }))
 
   // Always call hooks unconditionally to respect Rules of Hooks.
+  useChatSSE()
   const { turns, isLoading } = useTurnsForChat(activeChatId)
 
   const activeChat = chats.find((c) => c.id === activeChatId) || null

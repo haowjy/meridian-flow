@@ -6,10 +6,30 @@ export interface Chat {
   updatedAt: Date
 }
 
+// Normalized block types emitted by the backend.
+export type BlockType =
+  | 'text'
+  | 'thinking'
+  | 'tool_use'
+  | 'tool_result'
+  | 'image'
+  | 'reference'
+  | 'partial_reference'
+  | 'web_search_use'
+  | 'web_search_result'
+
+export interface ToolBlockContent {
+  tool_use_id?: string
+  tool_name?: string
+  input?: Record<string, unknown>
+  is_error?: boolean
+  [key: string]: unknown
+}
+
 export interface TurnBlock {
   id: string
   turnId: string
-  blockType: string
+  blockType: BlockType
   sequence: number
   textContent?: string
   content?: Record<string, unknown>
@@ -30,7 +50,5 @@ export interface Turn {
   completedAt?: Date | null
   siblingIds: string[]
   blocks: TurnBlock[]
-  // Convenience: derived plain-text content from text blocks (legacy UI expects this)
-  content: string
   lastAccessedAt?: Date
 }

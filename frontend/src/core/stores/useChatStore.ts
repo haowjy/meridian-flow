@@ -26,6 +26,10 @@ interface ChatStore {
   error: string | null
   navigationAbortController: AbortController | null
 
+  // Streaming state for the currently active assistant turn (at most one)
+  streamingTurnId: string | null
+  streamingUrl: string | null
+
   loadChats: (projectId: string, signal?: AbortSignal) => Promise<void>
   // Legacy shape retained; internally calls openChat
   loadTurns: (chatId: string, signal?: AbortSignal) => Promise<void>
@@ -33,6 +37,21 @@ interface ChatStore {
   renameChat: (chatId: string, title: string) => Promise<void>
   createTurn: (chatId: string, content: string) => Promise<void>
   deleteChat: (chatId: string) => Promise<void>
+
+  // Streaming helpers
+  appendStreamingTextDelta: (
+    turnId: string,
+    blockIndex: number,
+    blockType: string,
+    delta: string
+  ) => void
+  setStreamingBlockContent: (
+    turnId: string,
+    blockIndex: number,
+    blockType: string,
+    content: Record<string, unknown>
+  ) => void
+  clearStreamingStream: () => void
 
   // Pagination & navigation (server-driven)
   openChat: (chatId: string, initialTurnId?: string, signal?: AbortSignal) => Promise<void>
@@ -56,6 +75,8 @@ export const useChatStore = create<ChatStore>()(
       isLoadingTurns: false,
       error: null,
       navigationAbortController: null,
+      streamingTurnId: null,
+      streamingUrl: null,
 
       loadChats: async (projectId: string, signal?: AbortSignal) => {
         set({ isLoadingChats: true, error: null })
@@ -120,14 +141,20 @@ export const useChatStore = create<ChatStore>()(
           const lastTurn = currentTurns[currentTurns.length - 1]
           const prevTurnId = lastTurn ? lastTurn.id : null
 
-          const response = await api.turns.send(chatId, content, { prevTurnId })
+          const { userTurn, assistantTurn, streamUrl } = await api.turns.send(chatId, content, {
+            prevTurnId,
+          })
 
-          // Response contains both user's turn and assistant's turn (streaming handled separately)
-          const newTurns = [response.userTurn, response.assistantTurn]
+          // Response contains both user's turn and assistant's turn (streaming handled via SSE)
+          const newTurns = [userTurn, assistantTurn]
           set((state) => {
             const mergedById = new Map<string, Turn>()
             for (const t of [...state.turns, ...newTurns]) mergedById.set(t.id, t)
-            return { turns: Array.from(mergedById.values()) }
+            return {
+              turns: Array.from(mergedById.values()),
+              streamingTurnId: assistantTurn.id,
+              streamingUrl: streamUrl,
+            }
           })
         } catch (error) {
           handleApiError(error, 'Failed to send message')
@@ -147,6 +174,105 @@ export const useChatStore = create<ChatStore>()(
           handleApiError(error, 'Failed to delete chat')
           throw error
         }
+      },
+
+      appendStreamingTextDelta: (
+        turnId: string,
+        blockIndex: number,
+        blockType: import('@/features/chats/types').BlockType,
+        delta: string
+      ) => {
+        if (!delta) return
+
+        set((state) => {
+          const turns = state.turns.map((turn) => {
+            if (turn.id !== turnId) return turn
+
+            const sequence = blockIndex
+            const existingIndex = turn.blocks.findIndex((b) => b.sequence === sequence)
+
+            // No existing block for this sequence → create a new one
+            if (existingIndex === -1) {
+              const newBlock = {
+                id: `${turn.id}:${sequence}`,
+                turnId: turn.id,
+                blockType,
+                sequence,
+                textContent: delta,
+                content: undefined,
+                createdAt: new Date(),
+              }
+
+              const blocks = [...turn.blocks, newBlock].sort((a, b) => a.sequence - b.sequence)
+              return { ...turn, blocks }
+            }
+
+            // Update existing block by appending text
+            const blocks = turn.blocks.map((block, index) => {
+              if (index !== existingIndex) return block
+              const text = block.textContent ?? ''
+              return {
+                ...block,
+                blockType: block.blockType || blockType,
+                textContent: text + delta,
+              }
+            })
+
+            return { ...turn, blocks }
+          })
+
+          return { turns }
+        })
+      },
+
+      setStreamingBlockContent: (
+        turnId: string,
+        blockIndex: number,
+        blockType: import('@/features/chats/types').BlockType,
+        content: Record<string, unknown>
+      ) => {
+        set((state) => {
+          const turns = state.turns.map((turn) => {
+            if (turn.id !== turnId) return turn
+
+            const sequence = blockIndex
+            const existingIndex = turn.blocks.findIndex((b) => b.sequence === sequence)
+
+            if (existingIndex === -1) {
+              const newBlock = {
+                id: `${turn.id}:${sequence}`,
+                turnId: turn.id,
+                blockType,
+                sequence,
+                textContent: undefined,
+                content,
+                createdAt: new Date(),
+              }
+              const blocks = [...turn.blocks, newBlock].sort((a, b) => a.sequence - b.sequence)
+              return { ...turn, blocks }
+            }
+
+            const blocks = turn.blocks.map((block, index) => {
+              if (index !== existingIndex) return block
+              return {
+                ...block,
+                blockType: block.blockType || blockType,
+                content,
+              }
+            })
+
+            return { ...turn, blocks }
+          })
+
+          return { turns }
+        })
+      },
+
+      clearStreamingStream: () => {
+        set((state) => ({
+          streamingTurnId: null,
+          streamingUrl: null,
+        }))
       },
 
       openChat: async (chatId: string, initialTurnId?: string, signal?: AbortSignal) => {
@@ -380,8 +506,14 @@ export const useChatStore = create<ChatStore>()(
              throw new Error('Parent user turn not found for regeneration')
           }
 
+          // Rebuild plain-text content from the user's text blocks
+          const userContent = userTurn.blocks
+            .filter((b) => b.blockType === 'text')
+            .map((b) => b.textContent ?? '')
+            .join('\n\n')
+
           // Re-send the user's content to create a new sibling response
-          const { userTurn: newUserTurn } = await api.turns.send(chatId, userTurn.content, { 
+          const { userTurn: newUserTurn } = await api.turns.send(chatId, userContent, { 
             prevTurnId: userTurn.prevTurnId 
           })
 

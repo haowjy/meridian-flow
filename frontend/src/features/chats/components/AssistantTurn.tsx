@@ -3,11 +3,12 @@
 import React, { useCallback } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { Turn } from '@/features/chats/types'
-import { Card } from '@/shared/components/ui/card'
 import { useChatStore } from '@/core/stores/useChatStore'
 import { TurnActionBar } from './TurnActionBar'
 import { BlockRenderer } from './blocks'
 import { makeLogger } from '@/core/lib/logger'
+import { buildAssistantRenderItems } from '@/features/chats/utils/toolGrouping'
+import { ToolInteractionBlock } from './blocks/ToolInteractionBlock'
 
 const log = makeLogger('AssistantTurn')
 
@@ -16,10 +17,10 @@ interface AssistantTurnProps {
 }
 
 /**
- * Assistant turn bubble.
+ * Assistant turn content.
  *
  * Single responsibility:
- * - Render assistant content as a left-aligned bubble using BlockRenderer.
+ * - Render assistant content as left-aligned blocks within the chat column.
  * - Handle actions (regenerate, navigate).
  *
  * The BlockRenderer pattern allows easy extension for new block types
@@ -51,13 +52,25 @@ export const AssistantTurn = React.memo(function AssistantTurn({ turn }: Assista
     }
   }, [regenerateTurn, turn.chatId, turn.prevTurnId])
 
+  const items = buildAssistantRenderItems(turn.blocks)
+
   return (
-    <div className="flex flex-col items-start gap-1 group">
-      <Card className="max-w-3xl px-3 py-2 text-sm chat-message chat-message--ai">
-        {turn.blocks.map((block) => (
-          <BlockRenderer key={block.id} block={block} />
-        ))}
-      </Card>
+    <div className="flex flex-col items-stretch gap-1 group text-sm">
+      <div className="w-full space-y-2">
+        {items.map((item, index) => {
+          if (item.kind === 'block') {
+            return <BlockRenderer key={item.block.id} block={item.block} />
+          }
+
+          return (
+            <ToolInteractionBlock
+              key={item.toolUse?.id ?? item.toolResult?.id ?? `tool-${index}`}
+              toolUse={item.toolUse}
+              toolResult={item.toolResult}
+            />
+          )
+        })}
+      </div>
 
       <TurnActionBar
         turn={turn}
@@ -65,7 +78,7 @@ export const AssistantTurn = React.memo(function AssistantTurn({ turn }: Assista
         isLoading={isLoadingTurns}
         onNavigate={handleNavigate}
         onRegenerate={turn.prevTurnId ? handleRegenerate : undefined}
-        className="ml-1"
+        className="ml-0"
       />
     </div>
   )

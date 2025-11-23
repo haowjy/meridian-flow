@@ -1,5 +1,6 @@
 import React from 'react'
 import type { TurnBlock } from '@/features/chats/types'
+import { Streamdown } from 'streamdown'
 
 interface TextBlockProps {
   block: TurnBlock
@@ -11,5 +12,11 @@ interface TextBlockProps {
  * This is the default block type for user and assistant messages.
  */
 export const TextBlock = React.memo(function TextBlock({ block }: TextBlockProps) {
-  return <div className="whitespace-pre-wrap">{block.textContent}</div>
+  const text = block.textContent ?? ''
+
+  return (
+    <div className="whitespace-pre-wrap">
+      <Streamdown>{text}</Streamdown>
+    </div>
+  )
 })
