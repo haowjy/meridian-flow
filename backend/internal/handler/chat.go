@@ -12,6 +12,7 @@ import (
 	"meridian/internal/domain"
 	llmModels "meridian/internal/domain/models/llm"
 	llmSvc "meridian/internal/domain/services/llm"
+	"meridian/internal/handler/sse"
 	"meridian/internal/httputil"
 )
 
@@ -428,5 +429,8 @@ func (h *ChatHandler) InterruptTurn(w http.ResponseWriter, r *http.Request) {
 // StreamTurn streams turn deltas via Server-Sent Events (SSE)
 // GET /api/turns/{id}/stream
 func (h *ChatHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
-	NewSSEHandler(h.registry, h.logger).StreamTurn(w, r)
+	// Note: SSE config is created here with defaults
+	// TODO: Consider injecting SSE config at ChatHandler creation time for better testability
+	sseConfig := sse.DefaultConfig()
+	NewSSEHandler(h.registry, h.logger, sseConfig).StreamTurn(w, r)
 }

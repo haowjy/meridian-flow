@@ -259,7 +259,50 @@ COMMENT ON COLUMN ${TABLE_PREFIX}chats.system_prompt IS 'Chat-specific system pr
 COMMENT ON TABLE ${TABLE_PREFIX}user_preferences IS 'Stores all user-specific preferences as namespaced JSONB (models, ui, editor, system_instructions, notifications)';
 COMMENT ON COLUMN ${TABLE_PREFIX}user_preferences.preferences IS 'Namespaced JSONB containing all preference categories. See migration file for complete schema documentation.';
 
+-- =============================================================================
+-- ROW LEVEL SECURITY (RLS)
+-- =============================================================================
+-- Blocks Supabase PostgREST API access while allowing backend access
+-- Backend connects as postgres superuser and bypasses RLS
+
+-- Enable RLS on all tables
+ALTER TABLE ${TABLE_PREFIX}projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ${TABLE_PREFIX}folders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ${TABLE_PREFIX}documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ${TABLE_PREFIX}chats ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ${TABLE_PREFIX}turns ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ${TABLE_PREFIX}turn_blocks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ${TABLE_PREFIX}user_preferences ENABLE ROW LEVEL SECURITY;
+
+-- Block all PostgREST API access (anon key cannot access tables)
+-- Backend bypasses these policies (connects as postgres superuser)
+CREATE POLICY "block_postgrest" ON ${TABLE_PREFIX}projects FOR ALL USING (false);
+CREATE POLICY "block_postgrest" ON ${TABLE_PREFIX}folders FOR ALL USING (false);
+CREATE POLICY "block_postgrest" ON ${TABLE_PREFIX}documents FOR ALL USING (false);
+CREATE POLICY "block_postgrest" ON ${TABLE_PREFIX}chats FOR ALL USING (false);
+CREATE POLICY "block_postgrest" ON ${TABLE_PREFIX}turns FOR ALL USING (false);
+CREATE POLICY "block_postgrest" ON ${TABLE_PREFIX}turn_blocks FOR ALL USING (false);
+CREATE POLICY "block_postgrest" ON ${TABLE_PREFIX}user_preferences FOR ALL USING (false);
+
 -- +goose Down
+-- Drop RLS policies
+DROP POLICY IF EXISTS "block_postgrest" ON ${TABLE_PREFIX}user_preferences;
+DROP POLICY IF EXISTS "block_postgrest" ON ${TABLE_PREFIX}turn_blocks;
+DROP POLICY IF EXISTS "block_postgrest" ON ${TABLE_PREFIX}turns;
+DROP POLICY IF EXISTS "block_postgrest" ON ${TABLE_PREFIX}chats;
+DROP POLICY IF EXISTS "block_postgrest" ON ${TABLE_PREFIX}documents;
+DROP POLICY IF EXISTS "block_postgrest" ON ${TABLE_PREFIX}folders;
+DROP POLICY IF EXISTS "block_postgrest" ON ${TABLE_PREFIX}projects;
+
+-- Disable RLS
+ALTER TABLE ${TABLE_PREFIX}user_preferences DISABLE ROW LEVEL SECURITY;
+ALTER TABLE ${TABLE_PREFIX}turn_blocks DISABLE ROW LEVEL SECURITY;
+ALTER TABLE ${TABLE_PREFIX}turns DISABLE ROW LEVEL SECURITY;
+ALTER TABLE ${TABLE_PREFIX}chats DISABLE ROW LEVEL SECURITY;
+ALTER TABLE ${TABLE_PREFIX}documents DISABLE ROW LEVEL SECURITY;
+ALTER TABLE ${TABLE_PREFIX}folders DISABLE ROW LEVEL SECURITY;
+ALTER TABLE ${TABLE_PREFIX}projects DISABLE ROW LEVEL SECURITY;
+
 -- Remove all triggers
 DROP TRIGGER IF EXISTS update_user_preferences_updated_at ON ${TABLE_PREFIX}user_preferences;
 DROP TRIGGER IF EXISTS update_chats_updated_at ON ${TABLE_PREFIX}chats;

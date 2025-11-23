@@ -116,33 +116,31 @@ See [tests/README.md](tests/README.md) for details.
 ```env
 ENVIRONMENT=dev
 SUPABASE_DB_URL=postgresql://...@...pooler.supabase.com:6543/postgres
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=sb_secret_your-key-here
 PORT=8080
-TEST_USER_ID=00000000-0000-0000-0000-000000000001
-TEST_PROJECT_ID=00000000-0000-0000-0000-000000000001
 CORS_ORIGINS=http://localhost:3000
+ANTHROPIC_API_KEY=sk-ant-your-key-here
 ```
 
-**Details:** See [.ENVIRONMENTS.md](.ENVIRONMENTS.md) and [database/connections.md](../_docs/technical/backend/database/connections.md)
+**Details:** See `.env.example` for development and `.env.production.example` for deployment.
 
 ## Deployment
 
-**Platform:** Railway
+**Platform:** Railway (backend) + Vercel (frontend)
 
 **Environment variables required:**
-- `PORT`
-- `ENVIRONMENT` (prod)
-- `SUPABASE_DB_URL` (port 5432 for production)
-- `TEST_USER_ID`
-- `TEST_PROJECT_ID`
-- `CORS_ORIGINS`
+- `ENVIRONMENT=prod`
+- `SUPABASE_DB_URL` - Transaction mode connection (port 6543)
+- `SUPABASE_URL` - For JWT verification
+- `SUPABASE_KEY` - Service role secret
+- `CORS_ORIGINS` - Frontend URLs (comma-separated)
+- `ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY` - LLM provider
+- `DEBUG=false` - Disable debug features in production
 
-**Setup guide:** See [development/deployment.md](../_docs/technical/backend/development/deployment.md) (TBD)
+**Note:** Railway auto-injects `PORT` - do not set manually.
 
-## Phase 1 Notes
-
-**Authentication:** Stubbed with hardcoded test IDs (Phase 1). Real auth in Phase 2.
-
-**Project scope:** Single test project, all operations scoped to `TEST_PROJECT_ID`.
+**Setup guide:** See `_docs/technical/deployment.md`
 
 ## Troubleshooting
 

@@ -110,15 +110,17 @@ See `internal/handler/errors.go` for error mapping and `internal/httputil/` for 
 
 Required:
 - `SUPABASE_DB_URL` - Port 6543 auto-configures for PgBouncer compatibility
+- `SUPABASE_URL` - Supabase project URL (for JWT verification)
+- `SUPABASE_KEY` - Supabase service role secret
 - `ENVIRONMENT` - `dev`, `test`, or `prod` (determines table prefix)
-- `PORT` - Default 8080
-- `TEST_USER_ID`, `TEST_PROJECT_ID` - Phase 1 auth stubs
+- `PORT` - Default 8080 (Railway auto-injects in production)
+- `CORS_ORIGINS` - Comma-separated list of allowed frontend origins
 
 LLM Configuration (at least one required):
 - `ANTHROPIC_API_KEY` - For Claude models via Anthropic API
 - `OPENROUTER_API_KEY` - For multiple providers via OpenRouter
 
-See `.env.example` for full list and `ENVIRONMENTS.md` for details.
+See `.env.example` for development and `.env.production.example` for deployment.
 
 ## Common Issues
 
@@ -144,14 +146,14 @@ See `_docs/technical/backend/database-connections.md`
 
 ### HTTP Timeouts
 
-**Production (hardened):**
+**Production (SSE-optimized):**
 - `ReadTimeout`: 15 seconds - Maximum time to read request
-- `WriteTimeout`: 30 seconds - Maximum time to write response
+- `WriteTimeout`: 0 (unlimited) - Allows long-lived SSE streams
 - `IdleTimeout`: 60 seconds - Maximum keep-alive time
 
-**Purpose:** Prevents hung connections, slowloris attacks, and resource exhaustion.
+**Purpose:** Prevents hung connections while supporting Server-Sent Events for LLM streaming.
 
-**Configuration:** See `cmd/server/main.go:93-97`
+**Configuration:** See `cmd/server/main.go` (HTTP server setup)
 
 ### Validation Rules
 
@@ -167,15 +169,14 @@ See `_docs/technical/backend/database-connections.md`
 
 **See:** `_docs/technical/backend/api/contracts.md` for complete validation rules
 
-## Phase 1 Auth Stub
+## Authentication
 
-No real auth yet. Uses hardcoded IDs from `.env`:
-- Middleware injects `TEST_USER_ID` into context
-- All operations use `TEST_PROJECT_ID`
-- Test project created by `make seed` (not by server on startup)
-- Don't build multi-project logic yet
+Backend uses JWT validation via Supabase Auth:
+- Middleware validates JWT tokens from `Authorization: Bearer <token>` header
+- User ID extracted from JWT claims and injected into request context
+- JWKS endpoint: `{SUPABASE_URL}/auth/v1/.well-known/jwks.json`
 
-See `internal/middleware/auth.go` and `cmd/seed/main.go:ensureTestProject`.
+See `internal/middleware/auth.go` for implementation.
 
 ## Streaming Architecture
 

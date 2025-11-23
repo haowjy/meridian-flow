@@ -246,7 +246,7 @@ func main() {
 	corsHandler := cors.New(cors.Options{
 		AllowedOrigins:   strings.Split(cfg.CORSOrigins, ","),
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		AllowedHeaders:   []string{"Origin", "Content-Type", "Accept", "Authorization", "Last-Event-ID"},
 		AllowCredentials: true,
 	})
 	handler = corsHandler.Handler(handler)

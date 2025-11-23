@@ -11,20 +11,34 @@ import (
 	mstream "github.com/haowjy/meridian-stream-go"
 
 	llmModels "meridian/internal/domain/models/llm"
+	"meridian/internal/handler/sse"
 	"meridian/internal/httputil"
 )
 
 // SSEHandler handles Server-Sent Events for streaming turn responses
+// Follows Dependency Inversion Principle - depends on KeepAliveStrategy interface
 type SSEHandler struct {
-	registry *mstream.Registry
-	logger   *slog.Logger
+	registry         *mstream.Registry
+	logger           *slog.Logger
+	config           *sse.Config
+	keepAliveFactory func(time.Duration) sse.KeepAliveStrategy
 }
 
 // NewSSEHandler creates a new SSE handler
-func NewSSEHandler(registry *mstream.Registry, logger *slog.Logger) *SSEHandler {
+// Dependency Injection: Accepts config instead of hardcoding values
+func NewSSEHandler(
+	registry *mstream.Registry,
+	logger *slog.Logger,
+	config *sse.Config,
+) *SSEHandler {
 	return &SSEHandler{
 		registry: registry,
 		logger:   logger,
+		config:   config,
+		// Factory for creating keep-alive strategies (testable via injection)
+		keepAliveFactory: func(interval time.Duration) sse.KeepAliveStrategy {
+			return sse.NewTickerKeepAlive(interval)
+		},
 	}
 }
 
@@ -228,10 +242,23 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 		"client_id", clientID,
 	)
 
-	// Send keepalive comments every 15 seconds to prevent timeout
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
+	// Initialize keep-alive strategy (Dependency Inversion Principle)
+	// SSEHandler depends on KeepAliveStrategy interface, not concrete implementation
+	keepAliveWriter := sse.NewSSEKeepAliveWriter(w, flusher, turnID, clientID)
+	keepAliveStrategy := h.keepAliveFactory(h.config.KeepAliveInterval)
+	defer keepAliveStrategy.Stop()
 
+	// Start keep-alive in background
+	// Returns channel that closes if keep-alive fails (e.g., connection dropped)
+	keepAliveDone := keepAliveStrategy.Start(keepAliveWriter, h.logger)
+
+	h.logger.Debug("keep-alive started",
+		"turn_id", turnID,
+		"client_id", clientID,
+		"interval", h.config.KeepAliveInterval,
+	)
+
+	// Event loop: Stream events until completion or connection drop
 	for {
 		select {
 		case event, ok := <-eventChan:
@@ -266,18 +293,13 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 				"event_type", event.Type,
 			)
 
-		case <-ticker.C:
-			// Send keepalive comment
-			fmt.Fprintf(w, ": keepalive\n\n")
-			if err := h.safeFlush(w, flusher, turnID, clientID); err != nil {
-				// Client disconnected during keepalive
-				return
-			}
-
-			h.logger.Debug("keepalive sent",
+		case <-keepAliveDone:
+			// Keep-alive failed (connection dropped)
+			h.logger.Debug("keep-alive failed, closing stream",
 				"turn_id", turnID,
 				"client_id", clientID,
 			)
+			return
 		}
 	}
 }
