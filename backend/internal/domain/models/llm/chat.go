@@ -11,7 +11,7 @@ type Chat struct {
 	UserID           string     `json:"user_id" db:"user_id"`
 	Title            string     `json:"title" db:"title"`
 	SystemPrompt     *string    `json:"system_prompt,omitempty" db:"system_prompt"`
-	LastViewedTurnID *string    `json:"last_viewed_turn_id,omitempty" db:"last_viewed_turn_id"`
+	LastViewedTurnID *string    `json:"last_viewed_turn_id" db:"last_viewed_turn_id"`
 	CreatedAt        time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at" db:"updated_at"`
 	DeletedAt        *time.Time `json:"deleted_at,omitempty" db:"deleted_at"`
