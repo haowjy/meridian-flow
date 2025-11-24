@@ -15,7 +15,7 @@ import { FolderTreeItem } from './FolderTreeItem'
 import { DocumentTreeItem } from './DocumentTreeItem'
 import { CreateDocumentDialog } from './CreateDocumentDialog'
 import { ImportDocumentDialog } from './ImportDocumentDialog'
-import { CardSkeleton } from '@/shared/components/ui/card'
+import { Skeleton } from '@/shared/components/ui/skeleton'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { useProjectStore } from '@/core/stores/useProjectStore'
 
@@ -286,12 +286,12 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
     return (
       <div className="flex h-full flex-col">
         <div className="px-3 py-2">
-          <CardSkeleton className="h-8" />
+          <Skeleton className="h-8 w-32" />
         </div>
         <div className="space-y-2 p-4">
-          <CardSkeleton className="h-10" />
-          <CardSkeleton className="h-10" />
-          <CardSkeleton className="h-10" />
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-8 w-40" />
+          <Skeleton className="h-8 w-56" />
         </div>
       </div>
     )

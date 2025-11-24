@@ -44,14 +44,16 @@ export function ImportFileSelector({
   return (
     <>
       <div className="grid gap-4 py-4">
-        <Field label="Import Files" id="importFiles" required>
-          <Input
-            id="importFiles"
-            type="file"
-            accept=".zip,.md,.txt,.html"
-            onChange={handleFileChange}
-            multiple
-          />
+        <div className="space-y-2">
+          <Field label="Import Files" id="importFiles" required>
+            <Input
+              id="importFiles"
+              type="file"
+              accept=".zip,.md,.txt,.html"
+              onChange={handleFileChange}
+              multiple
+            />
+          </Field>
           {selectedFiles.length > 0 && (
             <div className="text-xs text-muted-foreground mt-2 space-y-1">
               <p className="font-medium">
@@ -67,7 +69,7 @@ export function ImportFileSelector({
               </ul>
             </div>
           )}
-        </Field>
+        </div>
 
         {validationErrors.length > 0 && (
           <div className="rounded bg-destructive/10 border border-destructive/20 px-3 py-2">

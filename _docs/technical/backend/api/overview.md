@@ -20,13 +20,12 @@ Production: TBD (Railway deployment)
 
 ## Authentication
 
-**Phase 1:** Auth stub - uses hardcoded test IDs from environment
+**Production:** JWT-based authentication via Supabase Auth
 
-All requests automatically use:
-- User ID: `TEST_USER_ID` (from `.env`)
-- Project ID: `TEST_PROJECT_ID` (from `.env`)
-
-**Future:** Real authentication with JWT tokens
+All requests require:
+- `Authorization: Bearer <JWT>` header (except `/health` endpoint)
+- User ID is extracted from validated JWT claims
+- JWT tokens obtained from Supabase Auth frontend
 
 ## API Design Principles
 

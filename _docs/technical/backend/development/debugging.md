@@ -134,20 +134,19 @@ ls -la .env
 
 ### 401 Unauthorized
 
-**Phase 1 (Auth Stub):**
+**Production (JWT Auth):**
 
-**Cause:** Missing or invalid `TEST_USER_ID` or `TEST_PROJECT_ID`.
+**Cause:** Missing or invalid JWT token in Authorization header.
 
-**Check `.env`:**
-```env
-TEST_USER_ID=00000000-0000-0000-0000-000000000001
-TEST_PROJECT_ID=00000000-0000-0000-0000-000000000001
-```
-
-**Verify test project exists:**
-```sql
-SELECT * FROM dev_projects WHERE id = '00000000-0000-0000-0000-000000000001';
-```
+**Solution:**
+1. Ensure frontend is providing valid JWT token from Supabase Auth session
+2. Check token expiry (tokens have limited lifetime)
+3. Verify `SUPABASE_URL` is configured correctly in backend `.env`
+4. Test JWT validation:
+   ```bash
+   # Get token from frontend session and test
+   curl -H "Authorization: Bearer <JWT>" http://localhost:8080/api/projects
+   ```
 
 ### 409 Conflict - Duplicate Document/Folder
 

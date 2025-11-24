@@ -59,16 +59,16 @@ flowchart LR
 
 ## Authentication
 
-**Status:** Backend 🚧 Planned | Frontend ✅ Complete
+**Status:** Backend ✅ Complete | Frontend ✅ Complete
 
 Supabase Auth integration with JWT-based authentication:
 
 - **Cross-stack overview:** [auth-overview.md](auth-overview.md) - Complete auth flow
 - **Frontend implementation:** [frontend/auth-implementation.md](frontend/auth-implementation.md) - Supabase integration, middleware, JWT injection
-- **Backend implementation:** [backend/auth/supabase-jwt-implementation.md](backend/auth/supabase-jwt-implementation.md) - JWT validation (planned)
+- **Backend implementation:** [backend/auth/supabase-jwt-implementation.md](backend/auth/supabase-jwt-implementation.md) - JWT validation with JWKS
 
 **Frontend:** Cookie-based sessions, route protection, automatic JWT injection
-**Backend:** Test stubs (`TEST_USER_ID`) → JWT validation planned
+**Backend:** JWT validation via Supabase JWKS endpoint (RS256/ES256)
 
 ## Backend (Go)
 

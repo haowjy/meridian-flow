@@ -9,7 +9,7 @@ note: "Comprehensive reference - prefer condensed guide: supabase-jwt-implementa
 
 **Note:** This is a comprehensive reference document with full implementation code. For a condensed implementation guide, see `supabase-jwt-implementation.md`.
 
-**Purpose:** Production-ready Supabase JWT authentication for the Go backend to replace Phase 1 test user stubs.
+**Purpose:** Comprehensive reference for Supabase JWT authentication implementation in the Go backend.
 
 **Target Audience:** Backend engineer implementing authentication
 
@@ -30,34 +30,37 @@ note: "Comprehensive reference - prefer condensed guide: supabase-jwt-implementa
 
 ## Context & Current State
 
-### Current Architecture (Phase 1)
+### Current Architecture (Production)
 
-The backend uses **test authentication stubs** for development:
+The backend uses **JWT validation via JWKS** for authentication:
 
 ```
-Request → AuthMiddleware (injects TEST_USER_ID) → Handler → Service
+Request → AuthMiddleware (validates JWT via JWKS) → Handler → Service
 ```
 
 **Key Files:**
-- `backend/internal/middleware/auth.go:9-20` - Stub middleware
-- `backend/internal/config/config.go:7-22` - Config with test IDs
-- `backend/internal/handler/context.go` - User/project ID extraction
+- `backend/internal/middleware/auth.go` - JWT validation middleware
+- `backend/internal/auth/jwt_verifier.go` - JWKS-based token verification
+- `backend/internal/config/config.go` - Config with Supabase URL
+- `backend/internal/httputil/context.go` - User ID extraction
 - `backend/cmd/server/main.go` - Middleware chain setup
 
 **How it works:**
-1. `AuthMiddleware` injects `TEST_USER_ID` from env var into request context
-2. Handlers call `getUserID(r)` to extract user ID from context
-3. Services receive user ID for authorization checks
-4. Returns 401 if user ID missing from context
+1. `AuthMiddleware` validates JWT from Authorization header via JWKS
+2. User ID extracted from validated JWT claims
+3. User ID injected into request context
+4. Handlers call `getUserID(r)` to extract user ID from context
+5. Services receive user ID for authorization checks
+6. Returns 401 if JWT is missing, invalid, or expired
 
-### Why Replace Test Stubs
+### Architecture Overview
 
-**Current limitations:**
-- ❌ No real authentication (anyone can access API)
-- ❌ Single hardcoded user/project ID
-- ❌ Cannot distinguish between users
-- ❌ Not production-ready
-- ❌ Cannot test multi-user scenarios
+**Features implemented:**
+- ✅ Real JWT authentication via Supabase JWKS
+- ✅ Multi-user support (user ID from JWT claims)
+- ✅ Token validation (RS256/ES256 signatures)
+- ✅ Production-ready security
+- ✅ Automatic key refresh via JWKS caching
 
 **Phase 2 requirements:**
 - ✅ Validate real users from Supabase Auth
