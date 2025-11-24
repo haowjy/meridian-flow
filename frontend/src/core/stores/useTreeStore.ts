@@ -16,6 +16,12 @@ interface TreeStore {
 
   loadTree: (projectId: string, signal?: AbortSignal) => Promise<void>
   toggleFolder: (folderId: string) => void
+  createDocument: (projectId: string, folderId: string | null, name: string) => Promise<void>
+  createFolder: (projectId: string, parentId: string | null, name: string) => Promise<void>
+  deleteDocument: (id: string, projectId: string) => Promise<void>
+  deleteFolder: (id: string, projectId: string) => Promise<void>
+  renameDocument: (id: string, name: string, projectId: string) => Promise<void>
+  renameFolder: (id: string, name: string, projectId: string) => Promise<void>
 }
 
 export const useTreeStore = create<TreeStore>()((set) => ({
@@ -74,5 +80,73 @@ export const useTreeStore = create<TreeStore>()((set) => ({
       }
       return { expandedFolders: expanded }
     })
+  },
+
+  createDocument: async (projectId, folderId, name) => {
+    try {
+      await api.documents.create(projectId, folderId, name)
+      // Reload tree to reflect new document
+      await useTreeStore.getState().loadTree(projectId)
+    } catch (error) {
+      handleApiError(error, 'Failed to create document')
+      throw error
+    }
+  },
+
+  createFolder: async (projectId, parentId, name) => {
+    try {
+      await api.folders.create(projectId, parentId, name)
+      // Reload tree to reflect new folder
+      await useTreeStore.getState().loadTree(projectId)
+    } catch (error) {
+      handleApiError(error, 'Failed to create folder')
+      throw error
+    }
+  },
+
+  deleteDocument: async (id, projectId) => {
+    try {
+      await api.documents.delete(id)
+      // Remove from IndexedDB cache
+      await db.documents.delete(id)
+      // Reload tree to reflect deletion
+      await useTreeStore.getState().loadTree(projectId)
+    } catch (error) {
+      handleApiError(error, 'Failed to delete document')
+      throw error
+    }
+  },
+
+  deleteFolder: async (id, projectId) => {
+    try {
+      await api.folders.delete(id)
+      // Reload tree to reflect deletion
+      await useTreeStore.getState().loadTree(projectId)
+    } catch (error) {
+      handleApiError(error, 'Failed to delete folder')
+      throw error
+    }
+  },
+
+  renameDocument: async (id, name, projectId) => {
+    try {
+      await api.documents.rename(id, name)
+      // Reload tree to reflect rename
+      await useTreeStore.getState().loadTree(projectId)
+    } catch (error) {
+      handleApiError(error, 'Failed to rename document')
+      throw error
+    }
+  },
+
+  renameFolder: async (id, name, projectId) => {
+    try {
+      await api.folders.rename(id, name)
+      // Reload tree to reflect rename
+      await useTreeStore.getState().loadTree(projectId)
+    } catch (error) {
+      handleApiError(error, 'Failed to rename folder')
+      throw error
+    }
   },
 }))

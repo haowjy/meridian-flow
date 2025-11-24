@@ -1,15 +1,18 @@
 import { Project } from '@/features/projects/types/project'
 import { Chat, Turn, type ChatRequestOptions, DEFAULT_CHAT_REQUEST_OPTIONS } from '@/features/chats/types'
 import { Document, DocumentTree } from '@/features/documents/types/document'
+import { Folder } from '@/features/folders/types/folder'
 import {
   ProjectDto,
   ChatDto,
   DocumentDto,
   DocumentTreeDto,
+  FolderDto,
   fromProjectDto,
   fromChatDto,
   fromDocumentDto,
   fromDocumentTreeDto,
+  fromFolderDto,
 } from '@/types/api'
 import { httpErrorToAppError } from '@/core/lib/errors'
 
@@ -561,9 +564,9 @@ export const api = {
       return fromDocumentDto(data)
     },
     create: async (projectId: string, folderId: string | null, name: string, options?: { signal?: AbortSignal }): Promise<Document> => {
-      const data = await fetchAPI<DocumentDto>(`/api/projects/${projectId}/documents`, {
+      const data = await fetchAPI<DocumentDto>('/api/documents', {
         method: 'POST',
-        body: JSON.stringify({ folder_id: folderId, name }),
+        body: JSON.stringify({ project_id: projectId, folder_id: folderId, name }),
         signal: options?.signal,
       })
       return fromDocumentDto(data)
@@ -586,5 +589,26 @@ export const api = {
     },
     delete: (id: string, options?: { signal?: AbortSignal }) =>
       fetchAPI<void>(`/api/documents/${id}`, { method: 'DELETE', signal: options?.signal }),
+  },
+
+  folders: {
+    create: async (projectId: string, parentId: string | null, name: string, options?: { signal?: AbortSignal }): Promise<Folder> => {
+      const data = await fetchAPI<FolderDto>('/api/folders', {
+        method: 'POST',
+        body: JSON.stringify({ project_id: projectId, folder_id: parentId, name }),
+        signal: options?.signal,
+      })
+      return fromFolderDto(data)
+    },
+    rename: async (id: string, name: string, options?: { signal?: AbortSignal }): Promise<Folder> => {
+      const data = await fetchAPI<FolderDto>(`/api/folders/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name }),
+        signal: options?.signal,
+      })
+      return fromFolderDto(data)
+    },
+    delete: (id: string, options?: { signal?: AbortSignal }) =>
+      fetchAPI<void>(`/api/folders/${id}`, { method: 'DELETE', signal: options?.signal }),
   },
 }
