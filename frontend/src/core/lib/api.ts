@@ -1,15 +1,18 @@
 import { Project } from '@/features/projects/types/project'
 import { Chat, Turn, type ChatRequestOptions, DEFAULT_CHAT_REQUEST_OPTIONS } from '@/features/chats/types'
 import { Document, DocumentTree } from '@/features/documents/types/document'
+import { Folder } from '@/features/folders/types/folder'
 import {
   ProjectDto,
   ChatDto,
   DocumentDto,
   DocumentTreeDto,
+  FolderDto,
   fromProjectDto,
   fromChatDto,
   fromDocumentDto,
   fromDocumentTreeDto,
+  fromFolderDto,
 } from '@/types/api'
 import { httpErrorToAppError } from '@/core/lib/errors'
 
@@ -50,7 +53,8 @@ export async function fetchAPI<T>(
   const attempt = async (hasTriedRefresh = false): Promise<T> => {
     // Build headers robustly (HeadersInit union): preserve caller headers
     const headers = new Headers(options?.headers as HeadersInit | undefined)
-    if (options?.body && !headers.has('Content-Type')) {
+    // Only set Content-Type for JSON - FormData sets its own with boundary
+    if (options?.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json')
     }
 
@@ -281,6 +285,19 @@ export type ModelCapabilitiesProvider = {
     contextWindow: number
     supportsThinking: boolean
   }[]
+}
+
+export interface ImportResponse {
+  success: boolean
+  summary: {
+    created: number
+    updated: number
+    skipped: number
+    failed: number
+    total_files: number
+  }
+  errors: Array<{ file: string; error: string }>
+  documents: Array<{ id: string; path: string; name: string; action: string }>
 }
 
 type SendTurnOptions = {
@@ -561,9 +578,9 @@ export const api = {
       return fromDocumentDto(data)
     },
     create: async (projectId: string, folderId: string | null, name: string, options?: { signal?: AbortSignal }): Promise<Document> => {
-      const data = await fetchAPI<DocumentDto>(`/api/projects/${projectId}/documents`, {
+      const data = await fetchAPI<DocumentDto>('/api/documents', {
         method: 'POST',
-        body: JSON.stringify({ folder_id: folderId, name }),
+        body: JSON.stringify({ project_id: projectId, folder_id: folderId, name }),
         signal: options?.signal,
       })
       return fromDocumentDto(data)
@@ -586,5 +603,50 @@ export const api = {
     },
     delete: (id: string, options?: { signal?: AbortSignal }) =>
       fetchAPI<void>(`/api/documents/${id}`, { method: 'DELETE', signal: options?.signal }),
+    import: async (
+      projectId: string,
+      files: File[],
+      folderId?: string | null,
+      options?: { signal?: AbortSignal }
+    ): Promise<ImportResponse> => {
+      const formData = new FormData()
+      // Append all files with the same 'files' key (multipart standard for multiple files)
+      files.forEach((file) => {
+        formData.append('files', file)
+      })
+
+      let url = `/api/import?project_id=${encodeURIComponent(projectId)}`
+      if (folderId) {
+        url += `&folder_id=${encodeURIComponent(folderId)}`
+      }
+
+      const data = await fetchAPI<ImportResponse>(url, {
+        method: 'POST',
+        body: formData,
+        signal: options?.signal,
+      })
+      return data
+    },
+  },
+
+  folders: {
+    create: async (projectId: string, parentId: string | null, name: string, options?: { signal?: AbortSignal }): Promise<Folder> => {
+      const data = await fetchAPI<FolderDto>('/api/folders', {
+        method: 'POST',
+        body: JSON.stringify({ project_id: projectId, folder_id: parentId, name }),
+        signal: options?.signal,
+      })
+      return fromFolderDto(data)
+    },
+    rename: async (id: string, name: string, options?: { signal?: AbortSignal }): Promise<Folder> => {
+      const data = await fetchAPI<FolderDto>(`/api/folders/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name }),
+        signal: options?.signal,
+      })
+      return fromFolderDto(data)
+    },
+    delete: (id: string, options?: { signal?: AbortSignal }) =>
+      fetchAPI<void>(`/api/folders/${id}`, { method: 'DELETE', signal: options?.signal }),
   },
 }

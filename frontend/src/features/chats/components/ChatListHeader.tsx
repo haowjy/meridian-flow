@@ -38,10 +38,10 @@ export function ChatListHeader({
             className="min-w-0 text-left cursor-pointer transition-opacity hover:opacity-80"
             aria-label="Back to projects"
           >
-            <LogoWordmark secondaryLabel="Flow" />
+            <LogoWordmark />
           </button>
         ) : (
-          <LogoWordmark secondaryLabel="Flow" />
+          <LogoWordmark />
         )}
       </div>
 

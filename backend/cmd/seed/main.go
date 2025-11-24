@@ -11,10 +11,12 @@ import (
 
 	"meridian/internal/auth"
 	"meridian/internal/config"
+	docsysSvc "meridian/internal/domain/services/docsystem"
 	"meridian/internal/repository/postgres"
 	postgresDocsys "meridian/internal/repository/postgres/docsystem"
 	"meridian/internal/seed"
 	serviceDocsys "meridian/internal/service/docsystem"
+	"meridian/internal/service/docsystem/converter"
 	"meridian/internal/utils"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -117,7 +119,19 @@ func main() {
 	contentAnalyzer := serviceDocsys.NewContentAnalyzer()
 	pathResolver := serviceDocsys.NewPathResolver(folderRepo, txManager)
 	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, docsysValidator, logger)
-	importService := serviceDocsys.NewImportService(docRepo, docService, logger)
+	converterRegistry := converter.NewConverterRegistry()
+
+	// Create file processor registry
+	fileProcessorRegistry := serviceDocsys.NewFileProcessorRegistry()
+
+	// Register file processors
+	zipProcessor := serviceDocsys.NewZipFileProcessor(docRepo, docService, converterRegistry, logger)
+	individualProcessor := serviceDocsys.NewIndividualFileProcessor(docService, converterRegistry, logger)
+	fileProcessorRegistry.Register(zipProcessor)
+	fileProcessorRegistry.Register(individualProcessor)
+
+	// Create import service with processor registry
+	importService := serviceDocsys.NewImportService(docRepo, fileProcessorRegistry, logger)
 
 	// Seed documents using import service (additive - use --clear-data flag to clear first)
 	log.Println("📝 Seeding documents from seed_data directory...")
@@ -129,7 +143,13 @@ func main() {
 	}
 
 	// Process zip file using import service
-	result, err := importService.ProcessZipFile(ctx, projectID, userID, bytes.NewReader(zipBuffer.Bytes()))
+	uploadedFiles := []docsysSvc.UploadedFile{
+		{
+			Filename: "seed_data.zip",
+			Content:  bytes.NewReader(zipBuffer.Bytes()),
+		},
+	}
+	result, err := importService.ProcessFiles(ctx, projectID, userID, uploadedFiles, "")
 	if err != nil {
 		log.Fatalf("Failed to process seed data: %v", err)
 	}
