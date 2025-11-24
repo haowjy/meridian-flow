@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useShallow } from 'zustand/react/shallow'
 import { useChatStore } from '@/core/stores/useChatStore'
@@ -8,6 +9,7 @@ import { useChatsForProject } from '@/features/chats/hooks/useChatsForProject'
 import { ChatListHeader } from './ChatListHeader'
 import { ChatList } from './ChatList'
 import { ChatListEmpty } from './ChatListEmpty'
+import { ChatListItemSkeleton } from './ChatListItemSkeleton'
 
 interface ChatListPanelProps {
   projectId: string
@@ -25,7 +27,8 @@ interface ChatListPanelProps {
  */
 export function ChatListPanel({ projectId }: ChatListPanelProps) {
   const router = useRouter()
-  const { chats, isLoading } = useChatsForProject(projectId)
+  const { chats, status, isLoading } = useChatsForProject(projectId)
+  const [showSkeleton, setShowSkeleton] = useState(false)
 
   const { createChat } = useChatStore(useShallow((s) => ({
     createChat: s.createChat,
@@ -35,6 +38,20 @@ export function ChatListPanel({ projectId }: ChatListPanelProps) {
     activeChatId: s.activeChatId,
     setActiveChat: s.setActiveChat,
   })))
+
+  // Skeleton delay: only show skeleton after 150ms if still loading
+  useEffect(() => {
+    let timer: NodeJS.Timeout | null = null
+
+    if (status === 'loading') {
+      timer = setTimeout(() => setShowSkeleton(true), 150)
+    }
+
+    return () => {
+      if (timer) clearTimeout(timer)
+      setShowSkeleton(false)
+    }
+  }, [status])
 
   const handleNewChat = async () => {
     // MVP: generic title; later we can use first user turn text or auto-titling
@@ -62,7 +79,14 @@ export function ChatListPanel({ projectId }: ChatListPanelProps) {
         onBrandClick={handleBrandClick}
       />
       <div className="chat-pane-body flex-1 overflow-hidden">
-        {hasChats ? (
+        {/* Show skeleton only for true cold loads (no cached chats) */}
+        {status === 'loading' && showSkeleton ? (
+          <div className="chat-pane-scroll p-2 space-y-1">
+            <ChatListItemSkeleton />
+            <ChatListItemSkeleton />
+            <ChatListItemSkeleton />
+          </div>
+        ) : hasChats ? (
           <ChatList
             chats={chats}
             activeChatId={activeChatId}

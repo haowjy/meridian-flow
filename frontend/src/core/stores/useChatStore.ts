@@ -20,6 +20,8 @@ import { makeLogger } from '@/core/lib/logger'
  * - Strategy: windowed write-through on paginate/send; hydrate on openChat
  * - Ensure no duplication and preserve chronological order on merges
  */
+type LoadStatus = 'idle' | 'loading' | 'success' | 'error'
+
 interface ChatStore {
   chats: Chat[]
   turns: Turn[]
@@ -27,10 +29,14 @@ interface ChatStore {
   currentTurnId: string | null
   hasMoreBefore: boolean
   hasMoreAfter: boolean
-  isLoadingChats: boolean
+  statusChats: LoadStatus
+  isFetchingChats: boolean
   isLoadingTurns: boolean
   error: string | null
   navigationAbortController: AbortController | null
+
+  // Computed getter for backwards compatibility
+  isLoadingChats: boolean
 
   // Streaming state for the currently active assistant turn (at most one)
   streamingTurnId: string | null
@@ -121,7 +127,8 @@ export const useChatStore = create<ChatStore>()(
       currentTurnId: null,
       hasMoreBefore: false,
       hasMoreAfter: false,
-      isLoadingChats: false,
+      statusChats: 'idle' as LoadStatus,
+      isFetchingChats: false,
       isLoadingTurns: false,
       error: null,
       navigationAbortController: null,
@@ -129,6 +136,11 @@ export const useChatStore = create<ChatStore>()(
       streamingUrl: null,
        streamingBlockIndex: null,
        streamingBlockType: null,
+
+      // Computed getter for backwards compatibility
+      get isLoadingChats() {
+        return get().statusChats === 'loading'
+      },
 
       refreshTurn: async (chatId: string, turnId: string) => {
         try {
@@ -146,20 +158,27 @@ export const useChatStore = create<ChatStore>()(
       },
 
       loadChats: async (projectId: string, signal?: AbortSignal) => {
-        set({ isLoadingChats: true, error: null })
+        // Set loading state based on whether we have cached chat data
+        const currentState = get()
+        const status = currentState.chats.length === 0 ? 'loading' : 'success'
+        set({ statusChats: status, isFetchingChats: true, error: null })
+
         try {
           // Network-first for chats; keep Dexie for chats if needed in future
           const data = await api.chats.list(projectId, { signal })
-          set({ chats: data, isLoadingChats: false })
+          set({ chats: data, statusChats: 'success', isFetchingChats: false })
         } catch (error) {
           // Handle AbortError silently
           if (error instanceof Error && error.name === 'AbortError') {
-            set({ isLoadingChats: false })
+            set({ isFetchingChats: false })
             return
           }
 
           const message = error instanceof Error ? error.message : 'Failed to load chats'
-          set({ error: message, isLoadingChats: false })
+          // If we have cached chats, keep status as 'success', otherwise set to 'error'
+          const currentChats = get().chats
+          const errorStatus = currentChats.length > 0 ? 'success' : 'error'
+          set({ error: message, statusChats: errorStatus, isFetchingChats: false })
           handleApiError(error, 'Failed to load chats')
         }
       },

@@ -34,7 +34,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
     folders,
     documents,
     expandedFolders,
-    isLoading,
+    status,
     error,
     loadTree,
     toggleFolder,
@@ -50,7 +50,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
       folders: s.folders,
       documents: s.documents,
       expandedFolders: s.expandedFolders,
-      isLoading: s.isLoading,
+      status: s.status,
       error: s.error,
       loadTree: s.loadTree,
       toggleFolder: s.toggleFolder,
@@ -73,6 +73,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [importTargetFolderId, setImportTargetFolderId] = useState<string | null>(null)
+  const [showSkeleton, setShowSkeleton] = useState(false)
 
   // Load tree on mount
   useEffect(() => {
@@ -90,6 +91,20 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
       abortController.abort()
     }
   }, [projectId, loadTree])
+
+  // Skeleton delay: only show skeleton after 150ms if still loading
+  useEffect(() => {
+    let timer: NodeJS.Timeout | null = null
+
+    if (status === 'loading') {
+      timer = setTimeout(() => setShowSkeleton(true), 150)
+    }
+
+    return () => {
+      if (timer) clearTimeout(timer)
+      setShowSkeleton(false)
+    }
+  }, [status])
 
   // Handle document click
   const handleDocumentClick = (documentId: string) => {
@@ -281,8 +296,8 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
     })
   }
 
-  // Loading state
-  if (isLoading) {
+  // Loading state - show skeleton only for true cold loads (no cached data)
+  if (status === 'loading' && showSkeleton) {
     return (
       <div className="flex h-full flex-col">
         <div className="px-3 py-2">
@@ -297,8 +312,8 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
     )
   }
 
-  // Error state
-  if (error) {
+  // Error state - only show error when we have no cached tree to display
+  if (status === 'error' && tree.length === 0) {
     return (
       <DocumentTreePanel
         title={projectName || undefined}
@@ -310,7 +325,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
       >
         <ErrorPanel
           title="Failed to load documents"
-          message={error}
+          message={error || 'Unknown error'}
           onRetry={() => loadTree(projectId)}
         />
       </DocumentTreePanel>
