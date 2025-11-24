@@ -35,9 +35,9 @@ export function EditorHeader({ document }: EditorHeaderProps) {
     { label: document.name }
   ]
 
-
-
   const handleBackClick = () => {
+    // Only swap the right panel back to the tree view.
+    // URL remains on the document route so browser history is untouched.
     const store = useUIStore.getState()
     store.setRightPanelState('documents')
   }

@@ -1,4 +1,4 @@
-'use client'
+"use client"
 
 import { useEffect, useRef, useState } from 'react'
 import { EditorContent } from '@tiptap/react'
@@ -10,10 +10,16 @@ import { useEditorCache } from '@/core/hooks/useEditorCache'
 import { cn } from '@/lib/utils'
 import { EditorHeader } from './EditorHeader'
 import { EditorToolbarContainer } from './EditorToolbarContainer'
-import { CardSkeleton } from '@/shared/components/ui/card'
+import { Skeleton } from '@/shared/components/ui/skeleton'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { useTreeStore } from '@/core/stores/useTreeStore'
+import { useUIStore } from '@/core/stores/useUIStore'
 import { makeLogger } from '@/core/lib/logger'
+import { DocumentHeaderBar } from './DocumentHeaderBar'
+import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
+import { CompactBreadcrumb } from '@/shared/components/ui/CompactBreadcrumb'
+import { Button } from '@/shared/components/ui/button'
+import { ChevronLeft } from 'lucide-react'
 
 const logger = makeLogger('editor-panel')
 // Removed inline rename flow for now (EditorTitle deleted)
@@ -204,35 +210,69 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     syncEditorAndState()
   }, [editor, isFromCache, localContent, documentId])
 
+  // Determine the best available source for header metadata
+  const headerDocument =
+    documentMetadata || (activeDocument?.id === documentId ? activeDocument : null)
+
+  const handleBackClick = () => {
+    // Only swap the right panel back to the tree view without changing URL.
+    const store = useUIStore.getState()
+    store.setRightPanelState('documents')
+  }
+
+  const header = headerDocument ? (
+    <EditorHeader document={headerDocument} />
+  ) : (
+    <DocumentHeaderBar
+      leading={
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 -ml-1"
+          onClick={handleBackClick}
+          aria-label="Back to documents"
+        >
+          <ChevronLeft className="size-3" />
+        </Button>
+      }
+      title={<CompactBreadcrumb segments={[{ label: 'Document' }]} />}
+      ariaLabel="Document header"
+      showDivider={false}
+      trailing={<SidebarToggle side="right" />}
+    />
+  )
+
   // No inline rename handler here; breadcrumb rename to be added later.
 
-  // Error state - show error panel without extra chrome
+  // Error state - keep workspace header so user can navigate away
   // Note: onRetry doesn't pass signal, which is fine for manual retries
   // The AbortController in the useEffect will handle cleanup if user navigates away
   if (error) {
     return (
-      <ErrorPanel
-        title="Failed to load document"
-        message={error}
-        onRetry={() => loadDocument(documentId)}
-      />
+      <div className="flex h-full flex-col">
+        {header}
+        <div className="flex-1 p-8 flex items-center justify-center">
+          <ErrorPanel
+            title="Failed to load document"
+            message={error}
+            onRetry={() => loadDocument(documentId)}
+          />
+        </div>
+      </div>
     )
   }
-
-  // Determine the best available source for header metadata
-  const headerDocument = documentMetadata || (activeDocument?.id === documentId ? activeDocument : null)
 
   // If we don't yet have header metadata or the active document, show a lightweight skeleton
   if (!headerDocument) {
     return (
       <div className="flex h-full flex-col">
         <div className="px-3 py-2">
-          <CardSkeleton className="h-8" />
+          <Skeleton className="h-8 w-48" />
         </div>
-        <div className="flex-1 p-8">
-          <CardSkeleton className="mb-4 h-8" />
-          <CardSkeleton className="mb-4 h-6" />
-          <CardSkeleton className="h-6" />
+        <div className="flex-1 p-8 space-y-4">
+          <Skeleton className="h-6 w-3/4" />
+          <Skeleton className="h-6 w-full" />
+          <Skeleton className="h-6 w-5/6" />
         </div>
       </div>
     )
@@ -248,14 +288,14 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   return (
     <div className="flex h-full flex-col">
       {/* Header with navigation and folder breadcrumbs - shows immediately */}
-      <EditorHeader document={headerDocument} />
+      {header}
 
       {/* Content area - shows skeleton while loading */}
       {isContentLoading ? (
-        <div className="flex-1 p-8">
-          <CardSkeleton className="mb-4 h-8" />
-          <CardSkeleton className="mb-4 h-6" />
-          <CardSkeleton className="h-6" />
+        <div className="flex-1 p-8 space-y-4">
+          <Skeleton className="h-6 w-3/4" />
+          <Skeleton className="h-6 w-full" />
+          <Skeleton className="h-6 w-5/6" />
         </div>
       ) : (
         <>

@@ -9,15 +9,27 @@ import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { LogoWordmark } from '@/shared/components/LogoWordmark'
 
 export default function ProjectsPage() {
-  const { projects, isLoading, error, loadProjects } = useProjectStore()
+  const { projects, status, error, loadProjects } = useProjectStore()
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [showSkeleton, setShowSkeleton] = useState(false)
 
   useEffect(() => {
     loadProjects()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  if (isLoading) {
+  // Skeleton delay: only show skeleton after 150ms if still loading
+  useEffect(() => {
+    if (status === 'loading') {
+      const timer = setTimeout(() => setShowSkeleton(true), 150)
+      return () => clearTimeout(timer)
+    } else {
+      setShowSkeleton(false)
+    }
+  }, [status])
+
+  // Show skeleton only for true cold loads (no cached data)
+  if (status === 'loading' && showSkeleton) {
     return (
       <div className="container mx-auto max-w-6xl p-8">
         <div className="mb-4">
@@ -33,12 +45,13 @@ export default function ProjectsPage() {
     )
   }
 
-  if (error) {
+  // Only show error when we have no cached projects to display
+  if (status === 'error' && projects.length === 0) {
     return (
       <div className="container mx-auto max-w-6xl p-8">
         <ErrorPanel
           title="Failed to load projects"
-          message={error}
+          message={error || 'Unknown error'}
           onRetry={() => loadProjects()}
         />
       </div>

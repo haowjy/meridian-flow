@@ -79,16 +79,16 @@ The backend uses the `meridian-llm-go` library for all LLM provider interactions
 
 ## Authentication
 
-**Status:** Backend 🚧 Planned | Frontend ✅ Complete
+**Status:** Backend ✅ Complete | Frontend ✅ Complete
 
 JWT-based authentication with Supabase Auth integration:
 
 - [Cross-Stack Overview](../auth-overview.md) - Complete auth flow from frontend to backend ⭐
-- [Implementation Guide](auth/supabase-jwt-implementation.md) - Backend JWT validation guide
+- [Implementation Guide](auth/supabase-jwt-implementation.md) - Backend JWT validation reference
 - [Comprehensive Reference](auth/REFERENCE-supabase-jwt-full.md) - Full implementation code and detailed explanations
 - [Frontend Auth](../frontend/auth-implementation.md) - Frontend Supabase integration (complete)
 
-**Current state:** Backend uses test authentication stubs (`TEST_USER_ID`). Frontend auth is complete with Supabase integration, middleware, and automatic JWT injection. See implementation guide for migrating backend to production JWT validation.
+**Current state:** Backend uses JWT validation via Supabase JWKS endpoint (RS256/ES256). Frontend auth is complete with Supabase integration, middleware, and automatic JWT injection. Both frontend and backend are production-ready.
 
 ## Chat System
 

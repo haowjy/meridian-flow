@@ -5,11 +5,17 @@ import { api } from '@/core/lib/api'
 import { handleApiError } from '@/core/lib/errors'
 import { clearEditorCache } from '@/core/hooks/useEditorCache'
 
+type LoadStatus = 'idle' | 'loading' | 'success' | 'error'
+
 interface ProjectStore {
   currentProjectId: string | null
   projects: Project[]
-  isLoading: boolean
+  status: LoadStatus
+  isFetching: boolean
   error: string | null
+
+  // Computed getter for backwards compatibility
+  isLoading: boolean
 
   currentProject: () => Project | null
   setCurrentProject: (project: Project | null) => void
@@ -39,8 +45,14 @@ export const useProjectStore = create<ProjectStore>()(
     (set, get) => ({
       currentProjectId: null,
       projects: [],
-      isLoading: false,
+      status: 'idle' as LoadStatus,
+      isFetching: false,
       error: null,
+
+      // Computed getter for backwards compatibility
+      get isLoading() {
+        return get().status === 'loading'
+      },
 
       currentProject: () => {
         const state = get()
@@ -68,35 +80,41 @@ export const useProjectStore = create<ProjectStore>()(
         loadProjectsController = new AbortController()
         const signal = loadProjectsController.signal
 
-        set({ isLoading: true, error: null })
+        // Set loading state based on whether we have cached data
+        const currentState = get()
+        const status = currentState.projects.length === 0 ? 'loading' : 'success'
+        set({ status, isFetching: true, error: null })
+
         try {
           const projects = await api.projects.list({ signal })
-          set({ projects, isLoading: false })
+          set({ projects, status: 'success', isFetching: false })
         } catch (error) {
           // Handle AbortError silently
           if (error instanceof Error && error.name === 'AbortError') {
-            set({ isLoading: false })
+            set({ isFetching: false })
             return
           }
 
           const message = error instanceof Error ? error.message : 'Failed to load projects'
-          set({ error: message, isLoading: false })
+          // If we have cached data, keep status as 'success', otherwise set to 'error'
+          const currentProjects = get().projects
+          const errorStatus = currentProjects.length > 0 ? 'success' : 'error'
+          set({ error: message, status: errorStatus, isFetching: false })
           handleApiError(error, 'Failed to load projects. Please check your connection.')
         }
       },
 
       createProject: async (name) => {
-        set({ isLoading: true, error: null })
+        set({ error: null })
         try {
           const project = await api.projects.create(name)
           set((state) => ({
             projects: [...state.projects, project],
-            isLoading: false,
           }))
           return project
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Failed to create project'
-          set({ error: message, isLoading: false })
+          set({ error: message })
           handleApiError(error, 'Failed to create project')
           throw error
         }

@@ -6,9 +6,9 @@ status: implementation-ready
 
 # Supabase JWT Authentication Implementation
 
-**Purpose:** Replace test auth stubs with production-ready Supabase JWT validation.
+**Purpose:** Reference guide for Supabase JWT validation implementation.
 
-**Context:** Backend currently uses hardcoded `TEST_USER_ID` (see `backend/internal/middleware/auth.go:9-20`). This guide covers migrating to real JWT validation while maintaining the existing middleware architecture.
+**Context:** Backend uses JWT validation via JWKS endpoint. This guide documents the implementation approach and architecture decisions made during development.
 
 ---
 

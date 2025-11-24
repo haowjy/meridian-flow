@@ -17,7 +17,8 @@ Minimal, copy-pasteable commands to verify the backend locally.
 ## Base
 
 - Base URL: `http://localhost:8080`
-- Auth: Phase 1 stub; user/project IDs are injected by middleware from `.env`
+- Auth: JWT validation; user ID is extracted from validated JWT claims
+- All requests require `Authorization: Bearer <JWT>` header (except `/health`)
 - Project-scoped endpoints use a path param: `/api/projects/<PROJECT_ID>/...`
 
 ## Health
@@ -83,7 +84,7 @@ curl -X POST http://localhost:8080/api/import/replace \
 
 ## Notes
 
-- No `X-Project-ID` header is required in Phase 1 — the server reads the project from `.env`.
+- All endpoints (except `/health`) require `Authorization: Bearer <JWT>` header with valid JWT token from Supabase Auth
 - For tree/document creation under a specific project, use the project-scoped routes with the path param.
 
 ## References

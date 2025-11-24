@@ -1,7 +1,7 @@
 ---
 detail: minimal
 audience: developer, architect
-status: frontend-complete, backend-planned
+status: complete
 ---
 
 # Authentication Architecture
@@ -53,7 +53,7 @@ flowchart TD
 **Docs**: [Frontend Auth Implementation](frontend/auth-implementation.md)
 
 ### Backend (Go + JWT Validation)
-**Status**: 🚧 Planned (currently using `TEST_USER_ID` stub)
+**Status**: ✅ Complete (JWT validation via JWKS)
 
 **Responsibilities**:
 - JWT signature validation via JWKS
@@ -61,8 +61,9 @@ flowchart TD
 - Request context injection
 - Protected endpoint authorization
 
-**Key Files** (when implemented):
+**Key Files**:
 - `internal/middleware/auth.go` - JWT validation middleware
+- `internal/auth/jwt_verifier.go` - JWKS-based token verification
 - `internal/config/config.go` - Supabase JWKS URL config
 
 **Docs**: [Backend Auth Implementation](backend/auth/supabase-jwt-implementation.md)
@@ -194,12 +195,13 @@ NEXT_PUBLIC_SUPABASE_URL=https://<project-id>.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<anon-key>
 ```
 
-### Backend Environment Variables (Planned)
+### Backend Environment Variables
 
 ```bash
 # .env
-SUPABASE_JWT_SECRET=<jwt-secret>  # For HS256 (dev)
-SUPABASE_JWKS_URL=https://<project-id>.supabase.co/.well-known/jwks.json  # For RS256 (prod)
+SUPABASE_URL=https://<project-id>.supabase.co
+SUPABASE_KEY=<service-role-key>
+# JWKS URL constructed from SUPABASE_URL: ${SUPABASE_URL}/auth/v1/.well-known/jwks.json
 ```
 
 ### Supabase Dashboard Configuration
@@ -224,10 +226,10 @@ SUPABASE_JWKS_URL=https://<project-id>.supabase.co/.well-known/jwks.json  # For 
 - [ ] Verify HTTPS enforcement
 
 ### Backend Deployment
-- [ ] Set `SUPABASE_JWKS_URL` in hosting environment (Railway)
-- [ ] Verify JWKS endpoint is reachable from backend
-- [ ] Test JWT validation with production tokens
-- [ ] Remove `TEST_USER_ID` stub code
+- [x] Set `SUPABASE_URL` in hosting environment (Railway)
+- [x] Verify JWKS endpoint is reachable from backend
+- [x] Test JWT validation with production tokens
+- [x] JWT validation implemented (no TEST_USER_ID stubs)
 
 ### Supabase Configuration
 - [ ] Add production domain to redirect URLs
@@ -257,7 +259,7 @@ curl -H "Authorization: Bearer <JWT>" http://localhost:8080/chats?project=123
 | Component | Status | Notes |
 |-----------|--------|-------|
 | Frontend Auth | ✅ Complete | Supabase integration, middleware, JWT injection |
-| Backend JWT Validation | 🚧 Planned | Currently using `TEST_USER_ID` stub |
+| Backend JWT Validation | ✅ Complete | JWKS-based RS256/ES256 validation |
 | Supabase Setup | ✅ Complete | Project configured, OAuth enabled |
 
 ## References
