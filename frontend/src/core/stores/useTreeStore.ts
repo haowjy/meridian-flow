@@ -6,13 +6,19 @@ import { api } from '@/core/lib/api'
 import { getErrorMessage, handleApiError, isAbortError } from '@/core/lib/errors'
 import { db } from '@/core/lib/db'
 
+type LoadStatus = 'idle' | 'loading' | 'success' | 'error'
+
 interface TreeStore {
   documents: Document[]
   folders: Folder[]
   tree: TreeNode[]
   expandedFolders: Set<string>
-  isLoading: boolean
+  status: LoadStatus
+  isFetching: boolean
   error: string | null
+
+  // Computed getter for backwards compatibility
+  isLoading: boolean
 
   loadTree: (projectId: string, signal?: AbortSignal) => Promise<void>
   toggleFolder: (folderId: string) => void
@@ -24,16 +30,25 @@ interface TreeStore {
   renameFolder: (id: string, name: string, projectId: string) => Promise<void>
 }
 
-export const useTreeStore = create<TreeStore>()((set) => ({
+export const useTreeStore = create<TreeStore>()((set, get) => ({
   documents: [],
   folders: [],
   tree: [],
   expandedFolders: new Set(),
-  isLoading: false,
+  status: 'idle' as LoadStatus,
+  isFetching: false,
   error: null,
 
+  // Computed getter for backwards compatibility
+  get isLoading() {
+    return get().status === 'loading'
+  },
+
   loadTree: async (projectId: string, signal?: AbortSignal) => {
-    set({ isLoading: true, error: null })
+    // Set loading state based on whether we have cached tree data
+    const currentState = get()
+    const status = currentState.tree.length === 0 ? 'loading' : 'success'
+    set({ status, isFetching: true, error: null })
 
     try {
       // Fetch tree from backend (already flattened by fromDocumentTreeDto mapper)
@@ -55,17 +70,21 @@ export const useTreeStore = create<TreeStore>()((set) => ({
         folders: response.folders,
         documents: response.documents,
         tree,
-        isLoading: false,
+        status: 'success',
+        isFetching: false,
       })
     } catch (error) {
       // Handle AbortError silently (expected when loading new project)
       if (isAbortError(error)) {
-        set({ isLoading: false })
+        set({ isFetching: false })
         return
       }
 
       const message = getErrorMessage(error) || 'Failed to load documents'
-      set({ error: message, isLoading: false })
+      // If we have cached tree data, keep status as 'success', otherwise set to 'error'
+      const currentTree = get().tree
+      const errorStatus = currentTree.length > 0 ? 'success' : 'error'
+      set({ error: message, status: errorStatus, isFetching: false })
       handleApiError(error, 'Failed to load documents')
     }
   },

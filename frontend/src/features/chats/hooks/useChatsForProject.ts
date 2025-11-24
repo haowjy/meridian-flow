@@ -5,8 +5,11 @@ import { useShallow } from 'zustand/react/shallow'
 import { useChatStore } from '@/core/stores/useChatStore'
 import { Chat } from '@/features/chats/types'
 
+type LoadStatus = 'idle' | 'loading' | 'success' | 'error'
+
 interface UseChatsForProjectResult {
   chats: Chat[]
+  status: LoadStatus
   isLoading: boolean
   error: string | null
 }
@@ -23,8 +26,9 @@ interface UseChatsForProjectResult {
  * - Create / rename / delete chats (call store methods directly where needed)
  */
 export function useChatsForProject(projectId: string): UseChatsForProjectResult {
-  const { chats, isLoadingChats, error, loadChats } = useChatStore(useShallow((s) => ({
+  const { chats, statusChats, isLoadingChats, error, loadChats } = useChatStore(useShallow((s) => ({
     chats: s.chats,
+    statusChats: s.statusChats,
     isLoadingChats: s.isLoadingChats,
     error: s.error,
     loadChats: s.loadChats,
@@ -56,6 +60,7 @@ export function useChatsForProject(projectId: string): UseChatsForProjectResult 
 
   return {
     chats,
+    status: statusChats,
     isLoading: isLoadingChats,
     error,
   }
