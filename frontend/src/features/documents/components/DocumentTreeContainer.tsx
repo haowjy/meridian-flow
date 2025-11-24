@@ -14,6 +14,7 @@ import { DocumentTreePanel } from './DocumentTreePanel'
 import { FolderTreeItem } from './FolderTreeItem'
 import { DocumentTreeItem } from './DocumentTreeItem'
 import { CreateDocumentDialog } from './CreateDocumentDialog'
+import { ImportDocumentDialog } from './ImportDocumentDialog'
 import { CardSkeleton } from '@/shared/components/ui/card'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { useProjectStore } from '@/core/stores/useProjectStore'
@@ -70,6 +71,8 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
+  const [importTargetFolderId, setImportTargetFolderId] = useState<string | null>(null)
 
   // Load tree on mount
   useEffect(() => {
@@ -221,6 +224,25 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
     }
   }
 
+  // Handle import documents in folder
+  const handleImportInFolder = (folderId: string) => {
+    setImportTargetFolderId(folderId)
+    setIsImportDialogOpen(true)
+  }
+
+  // Handle import documents at root level
+  const handleImportRoot = () => {
+    setImportTargetFolderId(null)
+    setIsImportDialogOpen(true)
+  }
+
+  // Handle import complete
+  const handleImportComplete = () => {
+    // Refresh tree after successful import
+    loadTree(projectId)
+    setIsImportDialogOpen(false)
+  }
+
   // Render tree recursively
   const renderTree = (nodes: TreeNode[]) => {
     return nodes.map((node) => {
@@ -235,6 +257,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
             onToggle={() => toggleFolder(node.id)}
             onCreateDocument={() => handleCreateDocumentInFolder(node.id)}
             onCreateFolder={() => handleCreateFolderInFolder(node.id)}
+            onImport={() => handleImportInFolder(node.id)}
             onRename={() => handleRenameFolder(node.id)}
             onDelete={() => handleDeleteFolder(node.id)}
           >
@@ -281,6 +304,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
         title={projectName || undefined}
         onCreateDocument={handleCreateRootDocument}
         onCreateFolder={handleCreateRootFolder}
+        onImport={handleImportRoot}
         onSearch={setSearchQuery}
         isEmpty={false}
       >
@@ -303,6 +327,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
         title={projectName || undefined}
         onCreateDocument={handleCreateRootDocument}
         onCreateFolder={handleCreateRootFolder}
+        onImport={handleImportRoot}
         onSearch={setSearchQuery}
         isEmpty={isEmpty}
       >
@@ -314,6 +339,14 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
         onOpenChange={setIsCreateDialogOpen}
         onCreate={handleCreateDocument}
         folders={folders}
+      />
+
+      <ImportDocumentDialog
+        open={isImportDialogOpen}
+        onOpenChange={setIsImportDialogOpen}
+        projectId={projectId}
+        folderId={importTargetFolderId}
+        onComplete={handleImportComplete}
       />
     </>
   )

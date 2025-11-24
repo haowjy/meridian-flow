@@ -31,26 +31,17 @@ func NewDocumentHandler(docService docsysSvc.DocumentService, logger *slog.Logge
 // CreateDocument creates a new document
 // POST /api/documents
 // Returns 201 if created, 409 with existing document if duplicate
+// Note: project_id is optional for cross-project documents (future feature)
 func (h *DocumentHandler) CreateDocument(w http.ResponseWriter, r *http.Request) {
-	// Extract project ID from context
-	// Extract project ID from context or path
-	projectID := r.PathValue("id")
-	if projectID == "" {
-		projectID, _ = getProjectID(r)
-	}
-	// If still empty, we'll rely on the body or fail later if strictly required by service
-
-
-	// Get userID from context (set by auth middleware)
-	userID := httputil.GetUserID(r)
-
-	// Parse request
+	// Parse request body
 	var req docsysSvc.CreateDocumentRequest
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	req.ProjectID = projectID
+
+	// Get userID from context (set by auth middleware)
+	userID := httputil.GetUserID(r)
 	req.UserID = userID
 
 	// Call service (all business logic is here)
@@ -61,7 +52,7 @@ func (h *DocumentHandler) CreateDocument(w http.ResponseWriter, r *http.Request)
 			// Get ConflictError to extract resource ID
 			var conflictErr *domain.ConflictError
 			if errors.As(err, &conflictErr) {
-				return h.docService.GetDocument(r.Context(), conflictErr.ResourceID, projectID)
+				return h.docService.GetDocument(r.Context(), conflictErr.ResourceID, req.ProjectID)
 			}
 			return nil, err
 		})

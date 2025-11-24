@@ -14,6 +14,7 @@ interface DocumentTreePanelProps {
   children: ReactNode
   onCreateDocument: () => void
   onCreateFolder?: () => void
+  onImport?: () => void
   onSearch?: (query: string) => void
   isEmpty?: boolean
   title?: string
@@ -28,6 +29,7 @@ export function DocumentTreePanel({
   children,
   onCreateDocument,
   onCreateFolder,
+  onImport,
   onSearch,
   isEmpty = false,
   title,
@@ -42,6 +44,7 @@ export function DocumentTreePanel({
   const rootMenuItems = createRootMenuItems({
     onCreateDocument,
     onCreateFolder,
+    onImport,
   })
 
   return (

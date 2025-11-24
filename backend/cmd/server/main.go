@@ -19,6 +19,7 @@ import (
 	postgresLLM "meridian/internal/repository/postgres/llm"
 	"meridian/internal/service"
 	serviceDocsys "meridian/internal/service/docsystem"
+	"meridian/internal/service/docsystem/converter"
 	serviceLLM "meridian/internal/service/llm"
 
 	"github.com/joho/godotenv"
@@ -130,7 +131,19 @@ func main() {
 	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, docsysValidator, logger)
 	folderService := serviceDocsys.NewFolderService(folderRepo, docRepo, pathResolver, txManager, docsysValidator, logger)
 	treeService := serviceDocsys.NewTreeService(folderRepo, docRepo, logger)
-	importService := serviceDocsys.NewImportService(docRepo, docService, logger)
+	converterRegistry := converter.NewConverterRegistry()
+
+	// Create file processor registry
+	fileProcessorRegistry := serviceDocsys.NewFileProcessorRegistry()
+
+	// Register file processors
+	zipProcessor := serviceDocsys.NewZipFileProcessor(docRepo, docService, converterRegistry, logger)
+	individualProcessor := serviceDocsys.NewIndividualFileProcessor(docService, converterRegistry, logger)
+	fileProcessorRegistry.Register(zipProcessor)
+	fileProcessorRegistry.Register(individualProcessor)
+
+	// Create import service with processor registry
+	importService := serviceDocsys.NewImportService(docRepo, fileProcessorRegistry, logger)
 
 	// Create user preferences service
 	userPrefsService := service.NewUserPreferencesService(userPrefsRepo, logger)
@@ -179,9 +192,6 @@ func main() {
 
 	// Project tree endpoint
 	mux.HandleFunc("GET /api/projects/{id}/tree", newTreeHandler.GetTree)
-
-	// Project-scoped document creation alias
-	mux.HandleFunc("POST /api/projects/{id}/documents", newDocHandler.CreateDocument)
 
 	// Folder routes
 	mux.HandleFunc("POST /api/folders", newFolderHandler.CreateFolder)

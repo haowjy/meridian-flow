@@ -14,6 +14,7 @@ interface DocumentMenuHandlers {
 interface FolderMenuHandlers {
   onCreateDocument?: () => void
   onCreateFolder?: () => void
+  onImport?: () => void
   onRename?: () => void
   onDelete?: () => void
 }
@@ -21,6 +22,7 @@ interface FolderMenuHandlers {
 interface RootMenuHandlers {
   onCreateDocument?: () => void
   onCreateFolder?: () => void
+  onImport?: () => void
 }
 
 /**
@@ -71,6 +73,7 @@ export function createDocumentMenuItems(
  * Menu structure:
  * - New Document
  * - New Folder
+ * - Import Documents
  * - --- separator ---
  * - Rename
  * - --- separator ---
@@ -81,7 +84,7 @@ export function createFolderMenuItems(
 ): ContextMenuItemConfig[] {
   const items: ContextMenuItemConfig[] = []
 
-  const hasCreateActions = handlers.onCreateDocument || handlers.onCreateFolder
+  const hasCreateActions = handlers.onCreateDocument || handlers.onCreateFolder || handlers.onImport
 
   if (handlers.onCreateDocument) {
     items.push({
@@ -96,6 +99,14 @@ export function createFolderMenuItems(
       id: 'new-folder',
       label: 'New Folder',
       onSelect: handlers.onCreateFolder,
+    })
+  }
+
+  if (handlers.onImport) {
+    items.push({
+      id: 'import-documents',
+      label: 'Import Documents',
+      onSelect: handlers.onImport,
     })
   }
 
@@ -126,6 +137,7 @@ export function createFolderMenuItems(
  * Menu structure:
  * - New Document
  * - New Folder
+ * - Import Documents
  */
 export function createRootMenuItems(
   handlers: RootMenuHandlers
@@ -145,6 +157,14 @@ export function createRootMenuItems(
       id: 'new-folder',
       label: 'New Folder',
       onSelect: handlers.onCreateFolder,
+    })
+  }
+
+  if (handlers.onImport) {
+    items.push({
+      id: 'import-documents',
+      label: 'Import Documents',
+      onSelect: handlers.onImport,
     })
   }
 

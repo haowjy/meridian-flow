@@ -34,10 +34,10 @@ type ImportResponse struct {
 // Merge handles bulk import in merge mode (upserts documents)
 // POST /api/import
 func (h *ImportHandler) Merge(w http.ResponseWriter, r *http.Request) {
-	// Extract project ID from context
-	projectID, err := getProjectID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+	// Get project ID from query parameter
+	projectID := r.URL.Query().Get("project_id")
+	if projectID == "" {
+		httputil.RespondError(w, http.StatusBadRequest, "project_id query parameter is required")
 		return
 	}
 
@@ -61,84 +61,58 @@ func (h *ImportHandler) Merge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get folder path from query parameter (empty string = root level)
+	folderPath := r.URL.Query().Get("folder_path")
+
 	h.logger.Info("starting merge import",
 		"project_id", projectID,
 		"file_count", len(files),
+		"folder_path", folderPath,
 	)
 
-	// Aggregate results across all files
-	aggregatedResult := &docsysSvc.ImportResult{
-		Summary:   docsysSvc.ImportSummary{},
-		Errors:    []docsysSvc.ImportError{},
-		Documents: []docsysSvc.ImportDocument{},
-	}
-
-	// Process each zip file
+	// Convert uploaded files to UploadedFile slice
+	uploadedFiles := make([]docsysSvc.UploadedFile, 0, len(files))
 	for _, fileHeader := range files {
-		// Validate file is a zip
-		if fileHeader.Header.Get("Content-Type") != "application/zip" &&
-			fileHeader.Header.Get("Content-Type") != "application/x-zip-compressed" {
-			aggregatedResult.Errors = append(aggregatedResult.Errors, docsysSvc.ImportError{
-				File:  fileHeader.Filename,
-				Error: "file is not a zip file",
-			})
-			aggregatedResult.Summary.Failed++
-			continue
-		}
-
-		// Open file
 		file, err := fileHeader.Open()
 		if err != nil {
 			h.logger.Error("failed to open uploaded file",
 				"file", fileHeader.Filename,
 				"error", err,
 			)
-			aggregatedResult.Errors = append(aggregatedResult.Errors, docsysSvc.ImportError{
-				File:  fileHeader.Filename,
-				Error: fmt.Sprintf("failed to open file: %v", err),
-			})
-			continue
+			httputil.RespondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to open file %s", fileHeader.Filename))
+			return
 		}
+		defer file.Close()
 
-		// Process zip file
-		result, err := h.importService.ProcessZipFile(r.Context(), projectID, userID, file)
-		file.Close()
+		uploadedFiles = append(uploadedFiles, docsysSvc.UploadedFile{
+			Filename: fileHeader.Filename,
+			Content:  file,
+		})
+	}
 
-		if err != nil {
-			h.logger.Error("failed to process zip file",
-				"file", fileHeader.Filename,
-				"error", err,
-			)
-			aggregatedResult.Errors = append(aggregatedResult.Errors, docsysSvc.ImportError{
-				File:  fileHeader.Filename,
-				Error: fmt.Sprintf("failed to process zip: %v", err),
-			})
-			continue
-		}
-
-		// Aggregate results
-		aggregatedResult.Summary.Created += result.Summary.Created
-		aggregatedResult.Summary.Updated += result.Summary.Updated
-		aggregatedResult.Summary.Skipped += result.Summary.Skipped
-		aggregatedResult.Summary.Failed += result.Summary.Failed
-		aggregatedResult.Summary.TotalFiles += result.Summary.TotalFiles
-		aggregatedResult.Errors = append(aggregatedResult.Errors, result.Errors...)
-		aggregatedResult.Documents = append(aggregatedResult.Documents, result.Documents...)
+	// Process files using file processor strategies
+	result, err := h.importService.ProcessFiles(r.Context(), projectID, userID, uploadedFiles, folderPath)
+	if err != nil {
+		h.logger.Error("failed to process files",
+			"error", err,
+		)
+		httputil.RespondError(w, http.StatusInternalServerError, "Failed to process files")
+		return
 	}
 
 	h.logger.Info("merge import complete",
 		"project_id", projectID,
-		"created", aggregatedResult.Summary.Created,
-		"updated", aggregatedResult.Summary.Updated,
-		"failed", aggregatedResult.Summary.Failed,
+		"created", result.Summary.Created,
+		"updated", result.Summary.Updated,
+		"failed", result.Summary.Failed,
 	)
 
 	// Build response
 	response := ImportResponse{
-		Success:   aggregatedResult.Summary.Failed == 0,
-		Summary:   aggregatedResult.Summary,
-		Errors:    aggregatedResult.Errors,
-		Documents: aggregatedResult.Documents,
+		Success:   result.Summary.Failed == 0,
+		Summary:   result.Summary,
+		Errors:    result.Errors,
+		Documents: result.Documents,
 	}
 
 	httputil.RespondJSON(w, http.StatusOK, response)
@@ -147,10 +121,10 @@ func (h *ImportHandler) Merge(w http.ResponseWriter, r *http.Request) {
 // Replace handles bulk import in replace mode (deletes all documents then imports)
 // POST /api/import/replace
 func (h *ImportHandler) Replace(w http.ResponseWriter, r *http.Request) {
-	// Extract project ID from context
-	projectID, err := getProjectID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+	// Get project ID from query parameter
+	projectID := r.URL.Query().Get("project_id")
+	if projectID == "" {
+		httputil.RespondError(w, http.StatusBadRequest, "project_id query parameter is required")
 		return
 	}
 
@@ -174,9 +148,13 @@ func (h *ImportHandler) Replace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get folder path from query parameter (empty string = root level)
+	folderPath := r.URL.Query().Get("folder_path")
+
 	h.logger.Info("starting replace import",
 		"project_id", projectID,
 		"file_count", len(files),
+		"folder_path", folderPath,
 	)
 
 	// Delete all documents first
@@ -193,79 +171,49 @@ func (h *ImportHandler) Replace(w http.ResponseWriter, r *http.Request) {
 		"project_id", projectID,
 	)
 
-	// Aggregate results across all files
-	aggregatedResult := &docsysSvc.ImportResult{
-		Summary:   docsysSvc.ImportSummary{},
-		Errors:    []docsysSvc.ImportError{},
-		Documents: []docsysSvc.ImportDocument{},
-	}
-
-	// Process each zip file (same as Merge)
+	// Convert uploaded files to UploadedFile slice
+	uploadedFiles := make([]docsysSvc.UploadedFile, 0, len(files))
 	for _, fileHeader := range files {
-		// Validate file is a zip
-		if fileHeader.Header.Get("Content-Type") != "application/zip" &&
-			fileHeader.Header.Get("Content-Type") != "application/x-zip-compressed" {
-			aggregatedResult.Errors = append(aggregatedResult.Errors, docsysSvc.ImportError{
-				File:  fileHeader.Filename,
-				Error: "file is not a zip file",
-			})
-			aggregatedResult.Summary.Failed++
-			continue
-		}
-
-		// Open file
 		file, err := fileHeader.Open()
 		if err != nil {
 			h.logger.Error("failed to open uploaded file",
 				"file", fileHeader.Filename,
 				"error", err,
 			)
-			aggregatedResult.Errors = append(aggregatedResult.Errors, docsysSvc.ImportError{
-				File:  fileHeader.Filename,
-				Error: fmt.Sprintf("failed to open file: %v", err),
-			})
-			continue
+			httputil.RespondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to open file %s", fileHeader.Filename))
+			return
 		}
+		defer file.Close()
 
-		// Process zip file
-		result, err := h.importService.ProcessZipFile(r.Context(), projectID, userID, file)
-		file.Close()
+		uploadedFiles = append(uploadedFiles, docsysSvc.UploadedFile{
+			Filename: fileHeader.Filename,
+			Content:  file,
+		})
+	}
 
-		if err != nil {
-			h.logger.Error("failed to process zip file",
-				"file", fileHeader.Filename,
-				"error", err,
-			)
-			aggregatedResult.Errors = append(aggregatedResult.Errors, docsysSvc.ImportError{
-				File:  fileHeader.Filename,
-				Error: fmt.Sprintf("failed to process zip: %v", err),
-			})
-			continue
-		}
-
-		// Aggregate results
-		aggregatedResult.Summary.Created += result.Summary.Created
-		aggregatedResult.Summary.Updated += result.Summary.Updated
-		aggregatedResult.Summary.Skipped += result.Summary.Skipped
-		aggregatedResult.Summary.Failed += result.Summary.Failed
-		aggregatedResult.Summary.TotalFiles += result.Summary.TotalFiles
-		aggregatedResult.Errors = append(aggregatedResult.Errors, result.Errors...)
-		aggregatedResult.Documents = append(aggregatedResult.Documents, result.Documents...)
+	// Process files using file processor strategies
+	result, err := h.importService.ProcessFiles(r.Context(), projectID, userID, uploadedFiles, folderPath)
+	if err != nil {
+		h.logger.Error("failed to process files",
+			"error", err,
+		)
+		httputil.RespondError(w, http.StatusInternalServerError, "Failed to process files")
+		return
 	}
 
 	h.logger.Info("replace import complete",
 		"project_id", projectID,
-		"created", aggregatedResult.Summary.Created,
-		"updated", aggregatedResult.Summary.Updated,
-		"failed", aggregatedResult.Summary.Failed,
+		"created", result.Summary.Created,
+		"updated", result.Summary.Updated,
+		"failed", result.Summary.Failed,
 	)
 
 	// Build response
 	response := ImportResponse{
-		Success:   aggregatedResult.Summary.Failed == 0,
-		Summary:   aggregatedResult.Summary,
-		Errors:    aggregatedResult.Errors,
-		Documents: aggregatedResult.Documents,
+		Success:   result.Summary.Failed == 0,
+		Summary:   result.Summary,
+		Errors:    result.Errors,
+		Documents: result.Documents,
 	}
 
 	httputil.RespondJSON(w, http.StatusOK, response)

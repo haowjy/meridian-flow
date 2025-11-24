@@ -53,7 +53,8 @@ export async function fetchAPI<T>(
   const attempt = async (hasTriedRefresh = false): Promise<T> => {
     // Build headers robustly (HeadersInit union): preserve caller headers
     const headers = new Headers(options?.headers as HeadersInit | undefined)
-    if (options?.body && !headers.has('Content-Type')) {
+    // Only set Content-Type for JSON - FormData sets its own with boundary
+    if (options?.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json')
     }
 
@@ -284,6 +285,19 @@ export type ModelCapabilitiesProvider = {
     contextWindow: number
     supportsThinking: boolean
   }[]
+}
+
+export interface ImportResponse {
+  success: boolean
+  summary: {
+    created: number
+    updated: number
+    skipped: number
+    failed: number
+    total_files: number
+  }
+  errors: Array<{ file: string; error: string }>
+  documents: Array<{ id: string; path: string; name: string; action: string }>
 }
 
 type SendTurnOptions = {
@@ -589,6 +603,30 @@ export const api = {
     },
     delete: (id: string, options?: { signal?: AbortSignal }) =>
       fetchAPI<void>(`/api/documents/${id}`, { method: 'DELETE', signal: options?.signal }),
+    import: async (
+      projectId: string,
+      files: File[],
+      folderId?: string | null,
+      options?: { signal?: AbortSignal }
+    ): Promise<ImportResponse> => {
+      const formData = new FormData()
+      // Append all files with the same 'files' key (multipart standard for multiple files)
+      files.forEach((file) => {
+        formData.append('files', file)
+      })
+
+      let url = `/api/import?project_id=${encodeURIComponent(projectId)}`
+      if (folderId) {
+        url += `&folder_id=${encodeURIComponent(folderId)}`
+      }
+
+      const data = await fetchAPI<ImportResponse>(url, {
+        method: 'POST',
+        body: formData,
+        signal: options?.signal,
+      })
+      return data
+    },
   },
 
   folders: {

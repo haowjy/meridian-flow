@@ -29,23 +29,21 @@ func NewFolderHandler(folderService docsysSvc.FolderService, logger *slog.Logger
 // POST /api/folders
 // Returns 201 if created, 409 with existing folder if duplicate
 func (h *FolderHandler) CreateFolder(w http.ResponseWriter, r *http.Request) {
-	// Extract project ID from context
-	projectID, err := getProjectID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
-		return
-	}
-
-	// Get userID from context (set by auth middleware)
-	userID := httputil.GetUserID(r)
-
-	// Parse request
+	// Parse request body
 	var req docsysSvc.CreateFolderRequest
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	req.ProjectID = projectID
+
+	// Validate project_id from request body
+	if req.ProjectID == "" {
+		httputil.RespondError(w, http.StatusBadRequest, "project_id is required")
+		return
+	}
+
+	// Get userID from context (set by auth middleware)
+	userID := httputil.GetUserID(r)
 	req.UserID = userID
 
 	// Call service
@@ -56,7 +54,7 @@ func (h *FolderHandler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 			// Get ConflictError to extract resource ID
 			var conflictErr *domain.ConflictError
 			if errors.As(err, &conflictErr) {
-				return h.folderService.GetFolder(r.Context(), conflictErr.ResourceID, projectID)
+				return h.folderService.GetFolder(r.Context(), conflictErr.ResourceID, req.ProjectID)
 			}
 			return nil, err
 		})
@@ -69,11 +67,7 @@ func (h *FolderHandler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 // GetFolder retrieves a folder by ID with its computed path
 // GET /api/folders/{id}
 func (h *FolderHandler) GetFolder(w http.ResponseWriter, r *http.Request) {
-	projectID, err := getProjectID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
-		return
-	}
+	projectID, _ := getProjectID(r) // Optional for cross-project support
 
 	id := r.PathValue("id")
 	if id == "" {
@@ -93,11 +87,7 @@ func (h *FolderHandler) GetFolder(w http.ResponseWriter, r *http.Request) {
 // UpdateFolder updates a folder (rename or move)
 // PATCH /api/folders/{id}
 func (h *FolderHandler) UpdateFolder(w http.ResponseWriter, r *http.Request) {
-	projectID, err := getProjectID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
-		return
-	}
+	projectID, _ := getProjectID(r) // Optional for cross-project support
 
 	id := r.PathValue("id")
 	if id == "" {
@@ -124,11 +114,7 @@ func (h *FolderHandler) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 // DeleteFolder deletes a folder (must be empty)
 // DELETE /api/folders/{id}
 func (h *FolderHandler) DeleteFolder(w http.ResponseWriter, r *http.Request) {
-	projectID, err := getProjectID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
-		return
-	}
+	projectID, _ := getProjectID(r) // Optional for cross-project support
 
 	id := r.PathValue("id")
 	if id == "" {

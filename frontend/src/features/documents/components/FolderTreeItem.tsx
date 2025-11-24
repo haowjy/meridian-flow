@@ -17,6 +17,7 @@ interface FolderTreeItemProps {
   children: ReactNode
   onCreateDocument?: () => void
   onCreateFolder?: () => void
+  onImport?: () => void
   onDelete?: () => void
   onRename?: () => void
 }
@@ -33,12 +34,14 @@ export function FolderTreeItem({
   children,
   onCreateDocument,
   onCreateFolder,
+  onImport,
   onDelete,
   onRename,
 }: FolderTreeItemProps) {
   const menuItems = createFolderMenuItems({
     onCreateDocument,
     onCreateFolder,
+    onImport,
     onRename,
     onDelete,
   })

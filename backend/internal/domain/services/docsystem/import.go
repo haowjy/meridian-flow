@@ -2,7 +2,6 @@ package docsystem
 
 import (
 	"context"
-	"io"
 )
 
 // ImportService handles bulk document import operations
@@ -10,9 +9,10 @@ type ImportService interface {
 	// DeleteAllDocuments deletes all documents in a project
 	DeleteAllDocuments(ctx context.Context, projectID string) error
 
-	// ProcessZipFile processes a zip file and imports documents
+	// ProcessFiles processes uploaded files (zip or individual files) and imports documents
+	// Uses file processor strategies to handle different file types
 	// Returns detailed results including created/updated/failed counts
-	ProcessZipFile(ctx context.Context, projectID, userID string, zipReader io.Reader) (*ImportResult, error)
+	ProcessFiles(ctx context.Context, projectID, userID string, files []UploadedFile, folderPath string) (*ImportResult, error)
 }
 
 // ImportResult represents the result of a bulk import operation
