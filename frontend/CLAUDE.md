@@ -27,14 +27,14 @@ npm run test:watch   # Vitest in watch mode
 
 **Status**: ✅ Complete (Supabase Auth integration)
 
-**Overview**: Cookie-based sessions with automatic JWT injection into all API calls. Next.js middleware protects routes.
+**Overview**: Cookie-based sessions with automatic JWT injection into all API calls. Next.js 16 proxy protects routes. Google OAuth only (no email/password).
 
 ### Supabase Clients
 
 Two client factories based on context:
 
 1. **Browser Client** (`src/core/supabase/client.ts`) - Use in Client Components
-2. **Server Client** (`src/core/supabase/server.ts`) - Use in Server Components, Route Handlers, middleware
+2. **Server Client** (`src/core/supabase/server.ts`) - Use in Server Components, Route Handlers, proxy
 
 ### Accessing User Session
 
@@ -57,10 +57,12 @@ const { data: { session } } = await supabase.auth.getSession()
 
 ### Route Protection
 
-**All routes automatically protected** by middleware (`src/proxy.ts`). No additional code needed in components.
+**All routes automatically protected** by Next.js 16 proxy (`src/proxy.ts`). No additional code needed in components.
 
 - Unauthenticated users → Redirect to `/login`
 - Authenticated users on `/login` or `/` → Redirect to `/projects`
+
+**Note**: Next.js 16 renamed `middleware.ts` to `proxy.ts` to clarify the network boundary concept and avoid confusion with Express.js middleware.
 
 ### API Calls
 
@@ -79,11 +81,11 @@ Implementation: `src/core/lib/api.ts:21-27` extracts JWT from session and adds t
 
 - `src/core/supabase/client.ts` - Browser client factory
 - `src/core/supabase/server.ts` - Server client factory with cookie handling
-- `src/proxy.ts` - Auth middleware (route protection)
+- `src/proxy.ts` - Auth proxy (route protection, session refresh)
 - `src/core/lib/api.ts` - JWT injection
 - `src/app/login/page.tsx` - Login UI
-- `src/features/auth/components/LoginForm.tsx` - Login form with OAuth
-- `src/app/auth/callback/route.ts` - OAuth callback handler
+- `src/features/auth/components/LoginForm.tsx` - Google OAuth login button
+- `src/app/auth/callback/route.ts` - OAuth callback handler (PKCE flow)
 
 ### Environment Variables
 
