@@ -3,7 +3,13 @@ import { useShallow } from 'zustand/react/shallow'
 import { Loader2 } from 'lucide-react'
 import type { TurnBlock } from '@/features/chats/types'
 import { useChatStore } from '@/core/stores/useChatStore'
-import { Streamdown } from 'streamdown'
+import { Streamdown, defaultRehypePlugins } from 'streamdown'
+
+// Omit rehype-raw to prevent XML tags from being interpreted as HTML elements
+const rehypePlugins = [
+  defaultRehypePlugins.katex,
+  defaultRehypePlugins.harden,
+].filter(Boolean) as NonNullable<typeof defaultRehypePlugins.katex>[]
 
 interface ThinkingBlockProps {
   block: TurnBlock
@@ -40,7 +46,7 @@ export const ThinkingBlock = React.memo(function ThinkingBlock({ block }: Thinki
         Thinking...
       </summary>
       <div className="mt-1 px-3 pb-3 whitespace-pre-wrap">
-        <Streamdown>{text}</Streamdown>
+        <Streamdown rehypePlugins={rehypePlugins}>{text}</Streamdown>
       </div>
     </details>
   )

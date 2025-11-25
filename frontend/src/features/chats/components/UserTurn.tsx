@@ -52,10 +52,10 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
   const handleSaveEdit = useCallback(
     async (newMessageText: string) => {
       // TODO: extend editTurn to accept ChatRequestOptions and forward them to request_params.
-      await editTurn(turn.chatId, turn.prevTurnId ?? undefined, newMessageText)
+      await editTurn(turn.chatId, turn.id, newMessageText)
       setIsEditing(false)
     },
-    [editTurn, turn.chatId, turn.prevTurnId]
+    [editTurn, turn.chatId, turn.id]
   )
 
   const handleEdit = useCallback(() => {

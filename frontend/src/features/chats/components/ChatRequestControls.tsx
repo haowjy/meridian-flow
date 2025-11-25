@@ -39,9 +39,6 @@ export function ChatRequestControls({
 }: ChatRequestControlsProps) {
   const { providers } = useModelCapabilities()
 
-  const isAnthropic = options.providerId === 'anthropic'
-  const canToggleSearch = isAnthropic
-
   const allModels =
     providers.flatMap((provider) =>
       provider.models.map((model) => ({
@@ -58,15 +55,11 @@ export function ChatRequestControls({
     modelLabel: string,
     providerId: string,
   ) => {
-    const isAnthropicProvider = providerId === 'anthropic'
-
     onOptionsChange({
       ...options,
       modelId,
       modelLabel,
       providerId,
-      // Hard-disable search when switching away from Anthropic
-      searchEnabled: isAnthropicProvider ? options.searchEnabled : false,
     })
   }
 
@@ -89,7 +82,6 @@ export function ChatRequestControls({
         />
         <WebSearchToggle
           enabled={options.searchEnabled}
-          disabled={!canToggleSearch}
           onToggle={() =>
             onOptionsChange({
               ...options,
@@ -275,13 +267,11 @@ function ReasoningDropdown({
 
 interface WebSearchToggleProps {
   enabled: boolean
-  disabled: boolean
   onToggle: () => void
 }
 
 function WebSearchToggle({
   enabled,
-  disabled,
   onToggle,
 }: WebSearchToggleProps) {
   const variant = enabled ? 'default' : 'outline'
@@ -291,7 +281,6 @@ function WebSearchToggle({
       type="button"
       size="sm"
       variant={variant}
-      disabled={disabled}
       className="flex items-center gap-1 px-1.5 py-1 text-[0.7rem] sm:text-xs"
       onClick={onToggle}
     >

@@ -325,9 +325,10 @@ function buildRequestParamsFromChatOptions(
     { name: 'doc_tree' },
   ]
 
-  // For now, web_search is only enabled for Anthropic.
-  if (resolved.providerId === 'anthropic' && resolved.searchEnabled) {
-    tools.push({ name: 'web_search' })
+  // TODO: Move web search to a persistent hidden setting (not per-message toggle)
+  // Using custom Tavily search (server-side) instead of Claude's built-in
+  if (resolved.searchEnabled) {
+    tools.push({ name: 'tavily_web_search' })
   }
 
   requestParams.tools = tools
