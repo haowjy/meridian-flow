@@ -20,6 +20,9 @@ type Config struct {
 	DefaultProvider  string
 	DefaultModel     string
 	MaxToolRounds    int    // Maximum tool execution rounds to prevent infinite loops
+	// Search API Configuration (optional - for web_search tool)
+	SearchAPIKey      string // API key for external search provider
+	SearchAPIProvider string // Provider name: "tavily", "brave", "serper", etc.
 	// Debug flags
 	Debug bool // Enables DEBUG features like SSE event IDs
 }
@@ -47,6 +50,9 @@ func Load() *Config {
 		DefaultProvider:  getEnv("DEFAULT_PROVIDER", "openrouter"),
 		DefaultModel:     getEnv("DEFAULT_MODEL", "moonshotai/kimi-k2-thinking"),
 		MaxToolRounds:    getEnvInt("MAX_TOOL_ROUNDS", 5),
+		// Search API Configuration (optional)
+		SearchAPIKey:      getEnv("SEARCH_API_KEY", ""),
+		SearchAPIProvider: getEnv("SEARCH_API_PROVIDER", "tavily"),
 		// Debug flags - default to true in dev/test, false in production
 		Debug: getEnv("DEBUG", getDefaultDebug(env)) == "true",
 	}

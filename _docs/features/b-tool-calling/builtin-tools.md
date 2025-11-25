@@ -14,9 +14,19 @@ feature: "Built-in Tools"
 
 ## web_search
 
-**Status**: ✅ Server-side execution
-**Provider**: Anthropic (built-in)
-**Execution**: Provider executes, results in `web_search_result` blocks
+**Status**: ✅ Backend-side execution (Tavily)
+**Provider**: Tavily AI (via backend)
+**Execution**: Backend executes Tavily API, results in `tool_result` blocks
+**Parameters**:
+- `query` (required) - Search query string
+- `max_results` (optional) - Max results (default: 5, max: 10)
+- `topic` (optional) - Search category: "general" (default), "news", "finance"
+
+**Provider Variants**:
+- `tavily_web_search` - Tavily AI (implemented)
+- `brave_web_search` - Brave Search (future)
+- `serper_web_search` - Serper.dev (future)
+- `exa_web_search` - Exa AI (future)
 
 ---
 
@@ -40,10 +50,10 @@ feature: "Built-in Tools"
 
 ## Auto-Mapping
 
-All three tools auto-map from minimal definitions:
-- `{"name": "web_search"}` → Anthropic's `web_search_20250305`
-- `{"name": "bash"}` → `bash_20250305`
-- `{"name": "text_editor"}` → `text_editor_20250305`
+Built-in tools auto-map from minimal definitions:
+- `{"name": "tavily_web_search"}` → Custom `web_search` tool with `ExecutionSide: Server`
+- `{"name": "bash"}` → `bash_20250305` (provider-specific)
+- `{"name": "text_editor"}` → `text_editor_20250305` (provider-specific)
 
 ---
 

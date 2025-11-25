@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"meridian/internal/domain"
-	"meridian/internal/domain/models/docsystem"
 	docsystemRepo "meridian/internal/domain/repositories/docsystem"
 )
 
@@ -15,7 +14,8 @@ import (
 type TreeTool struct {
 	projectID    string
 	documentRepo docsystemRepo.DocumentRepository
-	folderRepo   docsystemRepo.FolderRepository
+	pathResolver *PathResolver
+	config       *ToolConfig
 }
 
 // NewTreeTool creates a new TreeTool instance.
@@ -23,11 +23,16 @@ func NewTreeTool(
 	projectID string,
 	documentRepo docsystemRepo.DocumentRepository,
 	folderRepo docsystemRepo.FolderRepository,
+	config *ToolConfig,
 ) *TreeTool {
+	if config == nil {
+		config = DefaultToolConfig()
+	}
 	return &TreeTool{
 		projectID:    projectID,
 		documentRepo: documentRepo,
-		folderRepo:   folderRepo,
+		pathResolver: NewPathResolver(projectID, folderRepo),
+		config:       config,
 	}
 }
 
@@ -56,7 +61,7 @@ func (t *TreeTool) Execute(ctx context.Context, input map[string]interface{}) (i
 	}
 
 	// Extract and validate depth (JSON numbers are float64)
-	depth := 2 // default
+	depth := t.config.TreeDefaultDepth
 	if depthVal, exists := input["depth"]; exists {
 		depthFloat, ok := depthVal.(float64)
 		if !ok {
@@ -69,8 +74,8 @@ func (t *TreeTool) Execute(ctx context.Context, input map[string]interface{}) (i
 	if depth < 1 {
 		depth = 1
 	}
-	if depth > 5 {
-		depth = 5 // max depth limit
+	if depth > t.config.TreeMaxDepth {
+		depth = t.config.TreeMaxDepth
 	}
 
 	// Resolve folder path to folder ID
@@ -78,29 +83,16 @@ func (t *TreeTool) Execute(ctx context.Context, input map[string]interface{}) (i
 	resolvedPath := folderPath
 
 	if folderPath != "/" {
-		// Parse path into segments
-		pathSegments := strings.Split(strings.Trim(folderPath, "/"), "/")
-		var currentFolderID *string
-
-		// Walk the path to find the target folder
-		for _, segment := range pathSegments {
-			segment = strings.TrimSpace(segment)
-			if segment == "" {
-				continue
+		// Use PathResolver to resolve folder path
+		resolvedID, resolvedPathStr, err := t.pathResolver.ResolveFolderPath(ctx, folderPath)
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return nil, fmt.Errorf("folder not found: %s", folderPath)
 			}
-
-			folder, err := t.findFolderByName(ctx, currentFolderID, segment)
-			if err != nil {
-				if errors.Is(err, domain.ErrNotFound) {
-					return nil, fmt.Errorf("folder not found: %s", folderPath)
-				}
-				return nil, fmt.Errorf("failed to resolve folder path: %w", err)
-			}
-
-			currentFolderID = &folder.ID
+			return nil, fmt.Errorf("failed to resolve folder path: %w", err)
 		}
-
-		folderID = currentFolderID
+		folderID = resolvedID
+		resolvedPath = resolvedPathStr
 	}
 
 	// Build tree starting from this folder
@@ -128,7 +120,7 @@ func (t *TreeTool) buildTree(ctx context.Context, folderID *string, maxDepth, cu
 	}
 
 	// Get child folders
-	folders, err := t.folderRepo.ListChildren(ctx, folderID, t.projectID)
+	folders, err := t.pathResolver.FolderRepo.ListChildren(ctx, folderID, t.projectID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list folders: %w", err)
 	}
@@ -171,22 +163,4 @@ func (t *TreeTool) buildTree(ctx context.Context, folderID *string, maxDepth, cu
 		"folders":   folderList,
 		"documents": docList,
 	}, nil
-}
-
-// findFolderByName finds a folder by name within a parent folder.
-func (t *TreeTool) findFolderByName(ctx context.Context, parentID *string, name string) (*docsystem.Folder, error) {
-	// Get all child folders
-	folders, err := t.folderRepo.ListChildren(ctx, parentID, t.projectID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list folders: %w", err)
-	}
-
-	// Find folder with matching name
-	for _, folder := range folders {
-		if folder.Name == name {
-			return &folder, nil
-		}
-	}
-
-	return nil, fmt.Errorf("folder '%s': %w", name, domain.ErrNotFound)
 }

@@ -17,7 +17,7 @@ feature: "Tool Calling"
 **Auto-Mapping** - `{"name": "web_search"}` → provider-specific implementation
 - See [auto-mapping.md](auto-mapping.md)
 
-**Built-in Tools** - web_search (server), bash (client), text_editor (client)
+**Built-in Tools** - web_search (backend via Tavily), bash (client), text_editor (client)
 - See [builtin-tools.md](builtin-tools.md)
 
 **Custom Read-Only Tools** - doc_view, doc_tree, doc_search

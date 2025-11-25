@@ -76,6 +76,28 @@ func (td *ToolDefinition) ToLibraryTool() (*llmprovider.Tool, error) {
 
 	// Minimal format: {"name": "web_search"}
 	if td.Name != "" {
+		// Check if this is a web search variant (tavily_web_search, brave_web_search, etc.)
+		// These should be treated as custom backend tools with ExecutionSide: Server
+		if isWebSearchVariant(td.Name) {
+			// Get the full tool definition (all variants map to same web_search schema)
+			fullDef := GetToolDefinitionByName(td.Name)
+			if fullDef == nil || fullDef.Function == nil {
+				return nil, fmt.Errorf("failed to resolve web search variant '%s'", td.Name)
+			}
+
+			// Create custom tool with backend execution
+			tool, err := llmprovider.NewCustomToolWithSide(
+				fullDef.Function.Name,
+				fullDef.Function.Description,
+				fullDef.Function.Parameters,
+				llmprovider.ExecutionSideServer, // Backend executes (Tavily, not provider's built-in)
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create web search tool '%s': %w", td.Name, err)
+			}
+			return tool, nil
+		}
+
 		// Built-in tool - use library mapper
 		tool, err := llmprovider.MapToolByName(td.Name)
 		if err != nil {
@@ -112,6 +134,18 @@ func GetReadOnlyToolDefinitions() []ToolDefinition {
 		getTreeToolDefinition(),
 		getSearchToolDefinition(),
 	}
+}
+
+// GetAllToolDefinitions returns all available tool definitions, including web search.
+// Use includeWebSearch=true to add web_search tool (requires external API configured).
+func GetAllToolDefinitions(includeWebSearch bool) []ToolDefinition {
+	tools := GetReadOnlyToolDefinitions()
+
+	if includeWebSearch {
+		tools = append(tools, getWebSearchToolDefinition())
+	}
+
+	return tools
 }
 
 // getViewToolDefinition returns the schema for the 'doc_view' tool.
@@ -201,9 +235,58 @@ func getSearchToolDefinition() ToolDefinition {
 	}
 }
 
+// getWebSearchToolDefinition returns the schema for the 'web_search' tool.
+// This tool searches the web using external APIs (Tavily, Brave, Serper, etc.).
+func getWebSearchToolDefinition() ToolDefinition {
+	return ToolDefinition{
+		Type: "function",
+		Function: &FunctionDetails{
+			Name:        "web_search",
+			Description: "Search the web for current information using an external search API. Returns up to 'max_results' web pages with titles, URLs, and content snippets. Use this to find recent news, facts, or information not in your training data or the user's documents.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "The search query. Be specific and use relevant keywords for best results.",
+					},
+					"max_results": map[string]interface{}{
+						"type":        "integer",
+						"description": "Optional: maximum number of results to return (default: 5, max: 10).",
+						"minimum":     1,
+						"maximum":     10,
+					},
+					"topic": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"general", "news", "finance"},
+						"description": "Optional: search category that optimizes the search algorithm. 'general' for all web content (tutorials, docs, articles), 'news' for recent news articles, 'finance' for financial data and market information. Default: general.",
+					},
+				},
+				"required": []string{"query"},
+			},
+		},
+	}
+}
+
+// isWebSearchVariant returns true if the tool name is a web search provider variant.
+// Web search variants (tavily_web_search, brave_web_search, etc.) should be treated
+// as custom backend tools with ExecutionSide: Server, not provider-side tools.
+func isWebSearchVariant(name string) bool {
+	switch name {
+	case "tavily_web_search", "brave_web_search", "serper_web_search", "exa_web_search":
+		return true
+	default:
+		return false
+	}
+}
+
 // GetToolDefinitionByName returns the full tool definition for a given tool name.
 // This is used to resolve minimal format {"name": "doc_view"} to full schemas.
 // Returns nil if the tool name is not recognized as a custom read-only tool.
+//
+// Provider-specific web search variants (tavily_web_search, brave_web_search, etc.)
+// all map to the same web_search tool definition. The actual provider implementation
+// is determined by the backend based on which variant was requested.
 func GetToolDefinitionByName(name string) *ToolDefinition {
 	switch name {
 	case "doc_view":
@@ -215,6 +298,22 @@ func GetToolDefinitionByName(name string) *ToolDefinition {
 	case "doc_search":
 		def := getSearchToolDefinition()
 		return &def
+
+	// Provider-specific web search tools
+	// All map to "web_search" schema, backend routes to appropriate provider
+	case "tavily_web_search":
+		def := getWebSearchToolDefinition()
+		return &def
+	case "brave_web_search":
+		def := getWebSearchToolDefinition()
+		return &def
+	case "serper_web_search":
+		def := getWebSearchToolDefinition()
+		return &def
+	case "exa_web_search":
+		def := getWebSearchToolDefinition()
+		return &def
+
 	default:
 		return nil
 	}

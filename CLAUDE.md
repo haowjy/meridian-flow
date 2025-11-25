@@ -58,6 +58,7 @@ Then, these principles can also help you make architectural decisions and other 
    - If it needs a guard, comment why
    - If it prevents a race, explain the race
    - If you had to debug it, future you will too
+   - etc.
 
 9. **Prefer Local-First, But Don't Over-Engineer**
     - IndexedDB for instant loads ✅
@@ -66,7 +67,7 @@ Then, these principles can also help you make architectural decisions and other 
 
 10. **Extensible** - Design for extensibility.
 
-11. **Keep Documentation Up-to-Date** - Update documentation AFTER finalizing changes.
+11. **Keep Documentation Up-to-Date** - Update documentation AFTER finalizing changes. See "Feature Documentation Sync Rule" for feature documentation workflow.
 
 12. **Keep the code clean** - keep the code clean and readable, as the code grows, it will become more difficult to understand, its easier to refactor now than later (make sure to delete dead code as well).
 
@@ -79,15 +80,58 @@ Then, these principles can also help you make architectural decisions and other 
 
 ### Documentation
 
+- **Features**: `_docs/features/` - Feature status, implementation guides by stack (f-/b-/fb- prefixes)
+  - **Overview**: `_docs/features/README.md` - Complete feature inventory with status
+  - **Authentication**: `_docs/features/fb-authentication/` - JWT validation, Supabase integration
+  - **Document Editor**: `_docs/features/f-document-editor/` - TipTap, auto-save, caching
+  - **Chat/LLM**: `_docs/features/fb-chat-llm/` - Turn branching, providers, streaming
+  - **File System**: `_docs/features/fb-file-system/` - CRUD operations, tree structure
 - **Product/high-level**: `_docs/high-level/` - Product vision, MVP specs, user stories
-- **Technical details**: `_docs/technical/` - Architecture, implementation guides
+- **Technical details**: `_docs/technical/` - Deep-dive architecture, implementation specifics
   - **Backend**: `_docs/technical/backend/` - Go backend architecture, API design
   - **Frontend**: `_docs/technical/frontend/` - Next.js frontend architecture, patterns
   - **Authentication**: `_docs/technical/auth-overview.md` - Cross-stack auth flow (Supabase)
   - **Streaming/SSE**: `_docs/technical/llm/streaming/` - Real-time LLM responses, block types
 - **Documentation structure**: `_docs/README.md` - How docs are organized
 
-**Always check `_docs/technical/` first before creating new documentation.**
+**Always check `_docs/features/` first for feature status, then `_docs/technical/` for implementation details.**
+
+## Documentation Philosophy
+
+Documentation is organized in three tiers:
+
+1. **Features** (`_docs/features/`) - **Start here**
+   - What features exist and their status (✅/🟡/❌)
+   - Stack-prefixed folders show frontend-only (f-), backend-only (b-), or both (fb-)
+   - Concise implementation guides with links to technical details
+
+2. **High-Level** (`_docs/high-level/`)
+   - Product vision, user stories, MVP specifications
+   - Non-technical stakeholder documentation
+
+3. **Technical** (`_docs/technical/`)
+   - Deep-dive architecture documents
+   - Detailed implementation patterns and edge cases
+   - Referenced from feature docs when needed
+
+### Feature Documentation Sync Rule
+
+**IMPORTANT: When adding or significantly updating a feature, you MUST update the corresponding feature documentation.**
+
+This applies to both Claude and human developers:
+
+✅ **Update feature docs when:**
+- Implementing a new feature
+- Significantly changing existing feature behavior
+- Changing feature status (e.g., from 🟡 partial to ✅ complete)
+- Adding/removing major functionality
+- Changing stack requirements (e.g., backend-only → full-stack)
+
+**Workflow:**
+1. Implement the feature/update
+2. Update `_docs/features/<feature-name>/` with changes
+3. Update status in `_docs/features/README.md` if needed
+4. Commit code + docs together
 
 ## Repository Structure
 
@@ -106,8 +150,18 @@ backend/
 └── schema.sql              # Database schema
 
 _docs/
+├── features/               # Feature documentation (stack-prefixed)
+│   ├── README.md           # Feature inventory and status
+│   ├── fb-authentication/  # Both stacks
+│   ├── f-document-editor/  # Frontend only
+│   ├── fb-file-system/     # Both stacks
+│   ├── fb-chat-llm/        # Both stacks
+│   └── ...                 # Other features
 ├── high-level/             # Product docs
-└── technical/              # Technical docs
+└── technical/              # Deep-dive technical docs
+    ├── backend/            # Backend architecture
+    ├── frontend/           # Frontend architecture
+    └── llm/                # LLM integration details
 ```
 
 ## Documentation Writing Rules
@@ -132,7 +186,7 @@ _docs/
 
 4. **Split by purpose, not size** - Each doc should have a single, clear purpose
    - If covering multiple distinct topics → split into separate docs
-   - Organize related docs into folders (e.g., `architecture/`, `features/`)
+   - Organize related docs into folders (e.g., `features/fb-authentication/`, `technical/backend/`)
    - Update index/README to maintain discoverability
    - Guideline: If someone asks "where's the X doc?" and you can't point to one file, structure is wrong
 
@@ -201,6 +255,7 @@ See `internal/repository/postgres/connection.go`
 
 - use `pnpm` instead of `npm` for faster compile times
 - run `pnpm run lint` to run ESLint after making changes
+- run `pnpm run build` after finishing changes to ensure the build is working
 
 ## Deployment
 

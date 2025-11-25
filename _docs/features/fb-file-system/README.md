@@ -8,13 +8,13 @@ feature: "File System"
 
 **Project/folder/document management with hierarchical tree structure.**
 
-## Status:  Complete (with gaps)
+## Status: ✅ Complete
 
 ---
 
 ## Features
 
-### Backend ( Complete)
+### Backend (✅ Complete)
 
 #### CRUD Operations
 - Projects: Create, Read, Update, Delete (soft-delete)
@@ -28,30 +28,39 @@ feature: "File System"
 - Field-weighted ranking (name: 2.0x, content: 1.0x)
 - See [search.md](search.md)
 
-#### ZIP Import
-- Bulk import markdown files
-- Two modes: Append (upsert) or Replace (delete all first)
+#### Multi-Format Import
+- Bulk import from zip archives or individual files
+- Supported formats: .zip, .md, .txt, .html (with XSS sanitization)
+- Two modes: Merge (upsert) or Replace (delete all first)
 - Auto-creates folders from directory structure
-- See [import.md](import.md)
+- See `_docs/features/fb-document-import/` for details
 
-### Frontend (=� Mostly Complete)
+### Frontend (✅ Complete)
 
 #### Tree View
 - Hierarchical folder/document display
 - Expand/collapse folders
 - Active document highlighting
-- Context menus (right-click)
-- See [frontend-ui.md](frontend-ui.md)
+- Context menus with right-click actions (create, rename, delete, import)
+- See [frontend-ui.md](frontend-ui.md) and `_docs/features/f-context-menus/`
 
 #### Document Management
-- Create, rename, delete documents
-- Folder creation/deletion
-- Navigation and selection
+- ✅ Create documents via context menu or dialog
+- ✅ Rename documents via context menu
+- ✅ Delete documents via context menu (with confirmation)
+- ✅ Folder creation/deletion via context menu
+- ✅ Navigation and selection
 
-#### Missing/Incomplete
-- =� **Search UI** - Input exists but doesn't filter tree
-- L **Import UI** - Backend exists, no frontend dialog
-- L **Drag-and-drop** - No file reorganization
+#### Import UI
+- ✅ Import dialog with drag-and-drop support
+- ✅ Multi-format support (.zip, .md, .txt, .html)
+- ✅ File validation and error reporting
+- ✅ Progress tracking and result summary
+- See `_docs/features/fb-document-import/` for details
+
+#### Known Gaps
+- 🟡 **Search UI non-functional** - Search input present but doesn't filter tree (backend working)
+- ❌ **Drag-and-drop reordering** - Can't reorganize files via DnD (future enhancement)
 
 ---
 
@@ -60,11 +69,14 @@ feature: "File System"
 ### Backend Files
 - `backend/internal/handler/{project,folder,document}.go` - HTTP handlers
 - `backend/internal/service/docsystem/` - Business logic
+- `backend/internal/service/docsystem/converter/` - Format converters (HTML, text, markdown)
 - `backend/internal/repository/postgres/docsystem/` - Data access
 
 ### Frontend Files
 - `frontend/src/features/documents/components/DocumentTreePanel.tsx` - Tree view
+- `frontend/src/features/documents/components/ImportDocumentDialog.tsx` - Import UI
 - `frontend/src/features/documents/components/CreateDocumentDialog.tsx` - Creation
+- `frontend/src/shared/components/TreeItemWithContextMenu.tsx` - Context menus
 - `frontend/src/core/stores/useTreeStore.ts` - State management
 
 ---
@@ -81,13 +93,13 @@ feature: "File System"
 **Folders**:
 - `POST /api/folders` - Create
 - `GET /api/folders/{id}` - Get
-- `PATCH /api/folders/{id}` - Update
+- `PATCH /api/folders/{id}` - Update (rename, move)
 - `DELETE /api/folders/{id}` - Delete (must be empty)
 
 **Documents**:
 - `POST /api/documents` - Create
 - `GET /api/documents/{id}` - Get
-- `PATCH /api/documents/{id}` - Update
+- `PATCH /api/documents/{id}` - Update (rename, move, content)
 - `DELETE /api/documents/{id}` - Soft-delete
 - `GET /api/documents/search` - Full-text search
 
@@ -95,22 +107,28 @@ feature: "File System"
 - `GET /api/projects/{id}/tree` - Get complete project tree
 
 **Import**:
-- `POST /api/import` - Merge import (upsert)
-- `POST /api/import/replace` - Replace import (delete all first)
+- `POST /api/import` - Merge import (upsert, multipart/form-data)
+- `POST /api/import/replace` - Replace import (delete all first, multipart/form-data)
 
 ---
 
-## Known Gaps
+## Known Gaps & Future Enhancements
 
-1. =� **Search UI non-functional** - Input present but doesn't filter
-2. L **Import UI missing** - No frontend for ZIP uploads
-3. L **Drag-and-drop** - Can't reorganize files via DnD
-4. L **Vector search** - Only FTS, no semantic search
-5. L **Hybrid search** - No combined FTS + vector
+### Current Gaps
+1. 🟡 **Search UI non-functional** - Search input exists but doesn't filter tree (backend working)
+2. ❌ **Drag-and-drop reordering** - Can't reorganize files/folders via DnD
+
+### Future Enhancements
+3. ❌ **Vector search** - Semantic search using embeddings (requires LLM integration)
+4. ❌ **Hybrid search** - Combined FTS + vector search with re-ranking
+5. ❌ **Real-time collaboration** - Multi-user editing with conflict resolution
+6. ❌ **Version history** - Document versioning and rollback
 
 ---
 
 ## Related
 
-- See `/_docs/technical/backend/search-architecture.md` for search details
-- See `/_docs/technical/frontend/` for frontend architecture
+- **Import System:** `_docs/features/fb-document-import/` - Multi-format import with XSS protection
+- **Context Menus:** `_docs/features/f-context-menus/` - Right-click actions for tree items
+- **Search Architecture:** `_docs/technical/backend/search-architecture.md` - FTS implementation
+- **Frontend Architecture:** `_docs/technical/frontend/` - Tree view patterns

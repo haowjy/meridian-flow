@@ -17,6 +17,7 @@ import (
 	llmRepo "meridian/internal/domain/repositories/llm"
 	llmSvc "meridian/internal/domain/services/llm"
 	"meridian/internal/service/llm/tools"
+	"meridian/internal/service/llm/tools/external"
 )
 
 // ChatValidator is shared validation logic for chat operations
@@ -245,13 +246,45 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	}
 
 	// Create per-request tool registry with project-specific tools
-	toolRegistry := tools.NewToolRegistry()
-	tools.RegisterReadOnlyTools(toolRegistry, chat.ProjectID, s.documentRepo, s.folderRepo)
+	builder := tools.NewToolRegistryBuilder().
+		WithDocumentTools(chat.ProjectID, s.documentRepo, s.folderRepo)
+
+	// Add web search tool if requested via provider-specific tool name
+	var hasWebSearch bool
+	var webSearchProvider string
+
+	// Extract tools from request params
+	requestedTools := extractToolNames(requestParams)
+
+	// Check for provider-specific web search tools
+	if contains(requestedTools, "tavily_web_search") {
+		if s.config.SearchAPIKey != "" {
+			searchClient := external.NewTavilyClient(s.config.SearchAPIKey)
+			builder.WithWebSearch(searchClient)
+			hasWebSearch = true
+			webSearchProvider = "tavily"
+		} else {
+			s.logger.Warn("tavily_web_search requested but SEARCH_API_KEY not configured")
+		}
+	} else if contains(requestedTools, "brave_web_search") {
+		// Future: Brave implementation
+		s.logger.Warn("brave_web_search requested but not yet implemented")
+	} else if contains(requestedTools, "serper_web_search") {
+		// Future: Serper implementation
+		s.logger.Warn("serper_web_search requested but not yet implemented")
+	} else if contains(requestedTools, "exa_web_search") {
+		// Future: Exa implementation
+		s.logger.Warn("exa_web_search requested but not yet implemented")
+	}
+
+	toolRegistry := builder.Build()
 
 	s.logger.Info("per-request tool registry created",
 		"project_id", chat.ProjectID,
 		"chat_id", req.ChatID,
 		"assistant_turn_id", assistantTurn.ID,
+		"web_search_enabled", hasWebSearch,
+		"web_search_provider", webSearchProvider,
 	)
 
 	// Get provider adapter (do this synchronously to avoid race)
@@ -545,4 +578,55 @@ func (s *Service) validateTurnBlock(value interface{}) error {
 	}
 
 	return nil
+}
+
+// extractToolNames extracts tool names from request params
+// Handles both minimal format {"name": "tool"} and full format {"function": {"name": "tool"}}
+func extractToolNames(requestParams map[string]interface{}) []string {
+	toolNames := []string{}
+
+	// Extract "tools" array from request params
+	toolsRaw, ok := requestParams["tools"]
+	if !ok {
+		return toolNames
+	}
+
+	tools, ok := toolsRaw.([]interface{})
+	if !ok {
+		return toolNames
+	}
+
+	for _, toolRaw := range tools {
+		toolMap, ok := toolRaw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		// Check minimal format: {"name": "tool"}
+		if name, ok := toolMap["name"].(string); ok {
+			toolNames = append(toolNames, name)
+			continue
+		}
+
+		// Check full format: {"function": {"name": "tool"}}
+		if functionRaw, ok := toolMap["function"]; ok {
+			if functionMap, ok := functionRaw.(map[string]interface{}); ok {
+				if name, ok := functionMap["name"].(string); ok {
+					toolNames = append(toolNames, name)
+				}
+			}
+		}
+	}
+
+	return toolNames
+}
+
+// contains checks if a slice contains a string
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }

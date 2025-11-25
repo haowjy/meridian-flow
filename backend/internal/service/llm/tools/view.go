@@ -13,10 +13,11 @@ import (
 
 // ViewTool implements the 'view' tool for reading document content or listing folder contents.
 type ViewTool struct {
-	projectID      string
-	documentRepo   docsystemRepo.DocumentRepository
-	folderRepo     docsystemRepo.FolderRepository
-	maxContentSize int // Maximum content size to return (prevents token overflow)
+	projectID    string
+	documentRepo docsystemRepo.DocumentRepository
+	folderRepo   docsystemRepo.FolderRepository
+	pathResolver *PathResolver
+	config       *ToolConfig
 }
 
 // NewViewTool creates a new ViewTool instance.
@@ -24,12 +25,17 @@ func NewViewTool(
 	projectID string,
 	documentRepo docsystemRepo.DocumentRepository,
 	folderRepo docsystemRepo.FolderRepository,
+	config *ToolConfig,
 ) *ViewTool {
+	if config == nil {
+		config = DefaultToolConfig()
+	}
 	return &ViewTool{
-		projectID:      projectID,
-		documentRepo:   documentRepo,
-		folderRepo:     folderRepo,
-		maxContentSize: 20000, // 20k characters (~5k tokens)
+		projectID:    projectID,
+		documentRepo: documentRepo,
+		folderRepo:   folderRepo,
+		pathResolver: NewPathResolver(projectID, folderRepo),
+		config:       config,
 	}
 }
 
@@ -75,7 +81,7 @@ func (t *ViewTool) Execute(ctx context.Context, input map[string]interface{}) (i
 	}
 
 	// Try to resolve as folder
-	folderID, folderPath, err := t.resolveFolderPath(ctx, path)
+	folderID, folderPath, err := t.pathResolver.ResolveFolderPath(ctx, path)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return nil, fmt.Errorf("path not found: %s (tried as both document and folder)", path)
@@ -99,8 +105,8 @@ func (t *ViewTool) formatDocument(ctx context.Context, doc *docsystem.Document) 
 	wasTruncated := false
 
 	// Truncate content if too large
-	if len(content) > t.maxContentSize {
-		content = content[:t.maxContentSize] + "\n\n[Content truncated - too large to display fully]"
+	if len(content) > t.config.MaxContentSize {
+		content = content[:t.config.MaxContentSize] + "\n\n[Content truncated - too large to display fully]"
 		wasTruncated = true
 	}
 
@@ -155,60 +161,4 @@ func (t *ViewTool) listFolderContents(ctx context.Context, folderID *string, fol
 		"documents": docList,
 		"folders":   folderList,
 	}, nil
-}
-
-// resolveFolderPath walks a path to find the corresponding folder ID.
-// Returns the folder ID and the resolved path.
-func (t *ViewTool) resolveFolderPath(ctx context.Context, path string) (*string, string, error) {
-	// Parse path into segments
-	path = strings.Trim(path, "/")
-	if path == "" {
-		return nil, "/", nil // Root folder
-	}
-
-	segments := strings.Split(path, "/")
-
-	// Walk the path segment by segment
-	var currentFolderID *string
-	currentPath := "/"
-
-	for _, segment := range segments {
-		segment = strings.TrimSpace(segment)
-		if segment == "" {
-			continue
-		}
-
-		// Find folder with this name in the current folder
-		folder, err := t.findFolderByName(ctx, currentFolderID, segment)
-		if err != nil {
-			return nil, "", err
-		}
-
-		currentFolderID = &folder.ID
-		if currentPath == "/" {
-			currentPath = "/" + folder.Name
-		} else {
-			currentPath = currentPath + "/" + folder.Name
-		}
-	}
-
-	return currentFolderID, currentPath, nil
-}
-
-// findFolderByName finds a folder by name within a parent folder.
-func (t *ViewTool) findFolderByName(ctx context.Context, parentID *string, name string) (*docsystem.Folder, error) {
-	// Get all child folders
-	folders, err := t.folderRepo.ListChildren(ctx, parentID, t.projectID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list folders: %w", err)
-	}
-
-	// Find folder with matching name
-	for _, folder := range folders {
-		if folder.Name == name {
-			return &folder, nil
-		}
-	}
-
-	return nil, fmt.Errorf("folder '%s': %w", name, domain.ErrNotFound)
 }

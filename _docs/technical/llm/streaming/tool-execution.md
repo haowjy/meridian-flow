@@ -28,7 +28,7 @@ sequenceDiagram
     Provider-->>Executor: StreamEvent{Block (tool_use)}
     Executor->>DB: INSERT turn_blocks<br/>(block_type: "tool_use", content: {...})
 
-    Note over Executor: Execute tool (for client-executed tools)
+    Note over Executor: Execute tool (for backend-executed tools)
 
     Executor->>Tool: ExecuteTool(name, input)
     Tool-->>Executor: ToolResult {output: "..."}
@@ -116,18 +116,19 @@ Provider streams `tool_use` block:
 
 - `StreamExecutor.processCompleteBlock` persists the `tool_use` `TurnBlock` when the library emits a complete Block.
 
-### 3. Consumer Executes Tool (Client-Side Tools)
+### 3. Backend Executes Tool (Backend-Side Tools)
 
-- For client-executed tools (e.g., `bash`, `text_editor`, custom tools), the backend:
-  - Inspects `tool_use` blocks.
-  - Executes the corresponding tool in application code.
-  - Writes a `tool_result` block with `content.tool_use_id` and `is_error`.
+- For backend-executed tools (e.g., `doc_search`, `doc_view`, `web_search` via Tavily), the backend:
+  - Checks `block.IsBackendSideTool()` (ExecutionSide: "server" or nil)
+  - Executes the corresponding tool in application code
+  - Writes a `tool_result` block with `content.tool_use_id` and `is_error`
 
-### 4. Provider-Executed Tools (Server-Side)
+### 4. Provider-Executed Tools (Provider-Side)
 
-- For provider-executed tools (e.g., Anthropic web search):
-  - Provider runs the tool; results arrive as `web_search_result` blocks.
-  - Backend does not execute a local tool; it only persists the result blocks.
+- For provider-executed tools (e.g., Anthropic's built-in web_search with `:online` suffix):
+  - Provider runs the tool; results arrive as `web_search_result` blocks
+  - Backend does not execute a local tool; it only persists the result blocks
+  - **Note**: Currently not used (Tavily backend execution preferred)
 
 ---
 
