@@ -68,8 +68,14 @@ export function ActiveChatView() {
   if (!activeChat) {
     return (
       <div className="chat-main">
-        <ChatHeader chat={null} projectName={projectName} />
-        <div className="chat-main-body">
+        {/* Single scroll container - scrollbar extends to top */}
+        <div className="chat-scroll-container">
+          {/* Sticky Header */}
+          <div className="sticky top-0 z-10 bg-background relative">
+            <ChatHeader chat={null} projectName={projectName} />
+            {/* Gradient blur fade - extends below the header */}
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-3 translate-y-full bg-gradient-to-b from-background via-background/50 to-transparent" />
+          </div>
           <ActiveChatEmpty />
         </div>
       </div>
@@ -78,12 +84,19 @@ export function ActiveChatView() {
 
   return (
     <div className="chat-main">
-      <ChatHeader chat={activeChat} projectName={projectName} />
-      <div className="chat-main-body">
-        <div className="relative h-full">
+      {/* Single scroll container - scrollbar extends to top */}
+      <div className="chat-scroll-container">
+        {/* Sticky Header */}
+        <div className="sticky top-0 z-10 bg-background relative">
+          <ChatHeader chat={activeChat} projectName={projectName} />
+          {/* Gradient blur fade - extends below the header */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-3 translate-y-full bg-gradient-to-b from-background via-background/50 to-transparent" />
+        </div>
+
+        <div className="relative min-h-full min-w-0 flex flex-col pt-3">
           {/* Show skeleton conversation for cold loads (no cached turns) */}
           {isLoading && turns.length === 0 && showSkeleton ? (
-            <div className="flex flex-col gap-4 p-4">
+            <div className="flex flex-col gap-4 p-4 flex-1">
               <UserMessageSkeleton />
               <AIMessageSkeleton />
             </div>
@@ -95,12 +108,18 @@ export function ActiveChatView() {
                   Loading…
                 </div>
               )}
-              <TurnList turns={turns} scrollToTurnId={currentTurnId} isLoading={isLoading} />
+              {/* Messages take remaining space, pushing input to bottom when few messages */}
+              <div className="flex-1">
+                <TurnList turns={turns} scrollToTurnId={currentTurnId} isLoading={isLoading} />
+              </div>
             </>
           )}
+          {/* Sticky input at bottom of scroll area */}
+          <div className="sticky bottom-0 bg-background">
+            <TurnInput chatId={activeChat.id} />
+          </div>
         </div>
       </div>
-      <TurnInput chatId={activeChat.id} />
     </div>
   )
 }

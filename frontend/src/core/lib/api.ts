@@ -1,5 +1,5 @@
 import { Project } from '@/features/projects/types/project'
-import { Chat, Turn, type ChatRequestOptions, DEFAULT_CHAT_REQUEST_OPTIONS } from '@/features/chats/types'
+import { Chat, Turn, type ChatRequestOptions, DEFAULT_CHAT_REQUEST_OPTIONS, DEFAULT_TOOLS } from '@/features/chats/types'
 import { Document, DocumentTree } from '@/features/documents/types/document'
 import { Folder } from '@/features/folders/types/folder'
 import {
@@ -261,6 +261,7 @@ type ModelCapabilityDto = {
     image_generation?: boolean
     streaming?: boolean
     thinking?: boolean
+    requires_thinking?: boolean
     [key: string]: unknown
   }
   pricing?: {
@@ -284,6 +285,7 @@ export type ModelCapabilitiesProvider = {
     displayName: string
     contextWindow: number
     supportsThinking: boolean
+    requiresThinking: boolean
   }[]
 }
 
@@ -311,27 +313,19 @@ function buildRequestParamsFromChatOptions(
 ): Record<string, unknown> {
   const resolved = options ?? DEFAULT_CHAT_REQUEST_OPTIONS
 
+  // When reasoning is 'off', disable thinking entirely
+  // Otherwise, enable thinking with the specified level
+  const thinkingEnabled = resolved.reasoning !== 'off'
+
   const requestParams: Record<string, unknown> = {
     model: resolved.modelId,
     provider: resolved.providerId,
     // NOTE: max_tokens and lorem_max are left to backend defaults for now.
-    thinking_enabled: true,
-    thinking_level: resolved.reasoning,
+    thinking_enabled: thinkingEnabled,
+    thinking_level: thinkingEnabled ? resolved.reasoning : null,
+    tools: resolved.tools ?? DEFAULT_TOOLS,
   }
 
-  const tools: Array<Record<string, string>> = [
-    { name: 'doc_view' },
-    { name: 'doc_search' },
-    { name: 'doc_tree' },
-  ]
-
-  // TODO: Move web search to a persistent hidden setting (not per-message toggle)
-  // Using custom Tavily search (server-side) instead of Claude's built-in
-  if (resolved.searchEnabled) {
-    tools.push({ name: 'tavily_web_search' })
-  }
-
-  requestParams.tools = tools
   return requestParams
 }
 
@@ -389,6 +383,7 @@ export const api = {
           displayName: model.display_name,
           contextWindow: model.context_window,
           supportsThinking: !!model.capabilities?.thinking,
+          requiresThinking: !!model.capabilities?.requires_thinking,
         })),
       }))
     },

@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react'
 import { EditorContent } from '@tiptap/react'
 import { getExtensions } from '@/core/editor/extensions'
 import { useEditorStore } from '@/core/stores/useEditorStore'
-
 import { useDebounce } from '@/core/hooks/useDebounce'
 import { useEditorCache } from '@/core/hooks/useEditorCache'
 import { cn } from '@/lib/utils'
@@ -287,31 +286,40 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header with navigation and folder breadcrumbs - shows immediately */}
-      {header}
-
-      {/* Content area - shows skeleton while loading */}
-      {isContentLoading ? (
-        <div className="flex-1 p-8 space-y-4">
-          <Skeleton className="h-6 w-3/4" />
-          <Skeleton className="h-6 w-full" />
-          <Skeleton className="h-6 w-5/6" />
+      {/* Single scroll container - scrollbar extends to top */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
+        {/* Sticky Header */}
+        <div className="sticky top-0 z-20 bg-background">
+          {header}
         </div>
-      ) : (
-        <>
-          {/* Toolbar pill with integrated toggle (always visible) */}
-          <EditorToolbarContainer
-            editor={editor}
-            status={status}
-            lastSaved={lastSaved}
-          />
 
-          {/* Editor Content */}
-          <div className="flex-1 overflow-auto relative">
-            <EditorContent editor={editor} className="min-h-full flex flex-col" />
+        {/* Content area - shows skeleton while loading */}
+        {isContentLoading ? (
+          <div className="p-8 space-y-4">
+            <Skeleton className="h-6 w-3/4" />
+            <Skeleton className="h-6 w-full" />
+            <Skeleton className="h-6 w-5/6" />
           </div>
-        </>
-      )}
+        ) : (
+          <>
+            {/* Sticky Toolbar */}
+            <div className="sticky top-12 z-10 bg-background relative">
+              <EditorToolbarContainer
+                editor={editor}
+                status={status}
+                lastSaved={lastSaved}
+              />
+              {/* Gradient blur fade - extends below the toolbar */}
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-3 translate-y-full bg-gradient-to-b from-background via-background/50 to-transparent" />
+            </div>
+
+            {/* Editor Content */}
+            <div className="relative pt-3">
+              <EditorContent editor={editor} className="min-h-full flex flex-col" />
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }

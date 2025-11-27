@@ -55,7 +55,7 @@ export function TurnInput({ chatId }: TurnInputProps) {
   return (
     <div className="chat-input-shell">
       <div className="mx-auto w-full max-w-3xl">
-        <div className="flex flex-col gap-2 rounded-xl bg-card px-3 py-2 shadow-md">
+        <div className="flex flex-col rounded-xl bg-card px-3 py-2 shadow-md">
           <AutosizeTextarea
             value={value}
             onChange={setValue}

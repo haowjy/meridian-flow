@@ -67,7 +67,7 @@ export function FolderTreeItem({
             'flex w-full items-center gap-1.5 rounded-sm px-2.5 py-1 text-left text-xs md:text-sm'
           )}
         >
-          <FolderIcon className="size-4 flex-shrink-0" />
+          <FolderIcon className="size-3.5 flex-shrink-0" />
           <InlineNameEditor
             initialValue={folder.name}
             existingNames={existingNames}
@@ -94,7 +94,7 @@ export function FolderTreeItem({
           )}
           aria-label={`${isExpanded ? 'Collapse' : 'Expand'} folder: ${folder.name}`}
         >
-          <FolderIcon className="size-4 flex-shrink-0" />
+          <FolderIcon className="size-3.5 flex-shrink-0" />
           <span className="truncate font-medium">{folder.name}</span>
         </CollapsibleTrigger>
       </TreeItemWithContextMenu>

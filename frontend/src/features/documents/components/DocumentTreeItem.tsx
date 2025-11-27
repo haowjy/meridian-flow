@@ -51,7 +51,7 @@ export function DocumentTreeItem({
           isActive && 'bg-muted border-l-2 border-accent'
         )}
       >
-        <FileText className="size-4 flex-shrink-0" />
+        <FileText className="size-3.5 flex-shrink-0" />
         <InlineNameEditor
           initialValue={document.name}
           existingNames={existingNames}
@@ -74,7 +74,7 @@ export function DocumentTreeItem({
         aria-label={`Open document: ${document.name}`}
         aria-current={isActive ? 'page' : undefined}
       >
-        <FileText className="size-4 flex-shrink-0" />
+        <FileText className="size-3.5 flex-shrink-0" />
         <span className="truncate">{document.name}</span>
       </button>
     </TreeItemWithContextMenu>

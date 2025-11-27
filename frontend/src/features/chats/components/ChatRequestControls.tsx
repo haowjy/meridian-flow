@@ -1,7 +1,7 @@
 "use client"
 
 import type { ReactNode } from 'react'
-import { ArrowUp, Brain, ChevronDown, Globe2, StopCircle } from 'lucide-react'
+import { ArrowUp, Brain, ChevronDown, StopCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
 import {
@@ -27,8 +27,6 @@ interface ChatRequestControlsProps {
   rightContent?: ReactNode
   isStreaming?: boolean
   onStop?: () => void
-  /** Show the web search toggle (default: false) */
-  showSearch?: boolean
 }
 
 export function ChatRequestControls({
@@ -39,7 +37,6 @@ export function ChatRequestControls({
   rightContent,
   isStreaming,
   onStop,
-  showSearch = false,
 }: ChatRequestControlsProps) {
   const { providers } = useModelCapabilities()
 
@@ -51,26 +48,38 @@ export function ChatRequestControls({
         id: model.id,
         displayName: model.displayName,
         supportsThinking: model.supportsThinking,
+        requiresThinking: model.requiresThinking,
       })),
     ) ?? []
 
-  // Find the selected model to check if it supports thinking
+  // Find the selected model to check thinking capabilities
   const selectedModel = allModels.find((m) => m.id === options.modelId)
   const supportsThinking = selectedModel?.supportsThinking ?? true
+  const requiresThinking = selectedModel?.requiresThinking ?? false
 
   const handleSelectModel = (
     modelId: string,
     modelLabel: string,
     providerId: string,
     modelSupportsThinking: boolean,
+    modelRequiresThinking: boolean,
   ) => {
+    // Determine appropriate reasoning level based on model capabilities
+    let reasoning = options.reasoning
+    if (!modelSupportsThinking) {
+      // Model doesn't support thinking - force to 'off'
+      reasoning = 'off'
+    } else if (modelRequiresThinking && options.reasoning === 'off') {
+      // Model requires thinking but current is 'off' - set to 'low'
+      reasoning = 'low'
+    }
+
     onOptionsChange({
       ...options,
       modelId,
       modelLabel,
       providerId,
-      // Force reasoning to 'off' if model doesn't support thinking
-      reasoning: modelSupportsThinking ? options.reasoning : 'off',
+      reasoning,
     })
   }
 
@@ -91,18 +100,8 @@ export function ChatRequestControls({
             onOptionsChange({ ...options, reasoning })
           }
           disabled={!supportsThinking}
+          requiresThinking={requiresThinking}
         />
-        {showSearch && (
-          <WebSearchToggle
-            enabled={options.searchEnabled}
-            onToggle={() =>
-              onOptionsChange({
-                ...options,
-                searchEnabled: !options.searchEnabled,
-              })
-            }
-          />
-        )}
       </div>
       {(onSend || rightContent) && (
         <div className="flex items-center gap-1">
@@ -132,6 +131,7 @@ interface ModelSelectorProps {
     id: string
     displayName: string
     supportsThinking: boolean
+    requiresThinking: boolean
   }[]
   selectedModelId: string
   modelLabel: string
@@ -140,6 +140,7 @@ interface ModelSelectorProps {
     modelLabel: string,
     providerId: string,
     supportsThinking: boolean,
+    requiresThinking: boolean,
   ) => void
 }
 
@@ -152,14 +153,14 @@ function ModelSelector({
   const grouped = models.reduce<
     Record<
       string,
-      { providerName: string; items: { id: string; displayName: string; supportsThinking: boolean }[] }
+      { providerName: string; items: { id: string; displayName: string; supportsThinking: boolean; requiresThinking: boolean }[] }
     >
   >((acc, model) => {
     const key = model.providerId
     if (!acc[key]) {
       acc[key] = { providerName: model.providerName, items: [] }
     }
-    acc[key].items.push({ id: model.id, displayName: model.displayName, supportsThinking: model.supportsThinking })
+    acc[key].items.push({ id: model.id, displayName: model.displayName, supportsThinking: model.supportsThinking, requiresThinking: model.requiresThinking })
     return acc
   }, {})
 
@@ -191,6 +192,7 @@ function ModelSelector({
                 DEFAULT_MODEL_LABEL,
                 DEFAULT_PROVIDER_ID,
                 true, // default model supports thinking
+                true, // default model requires thinking (kimi-k2-thinking)
               )
             }
             className="text-[0.7rem] sm:text-xs"
@@ -208,7 +210,7 @@ function ModelSelector({
                 key={model.id}
                 className="flex items-center gap-2 text-[0.7rem] sm:text-xs"
                 onSelect={() =>
-                  onSelectModel(model.id, model.displayName, providerId, model.supportsThinking)
+                  onSelectModel(model.id, model.displayName, providerId, model.supportsThinking, model.requiresThinking)
                 }
               >
                 <span
@@ -242,14 +244,20 @@ interface ReasoningDropdownProps {
   onChange: (value: ReasoningLevel) => void
   /** When true, dropdown is disabled (model doesn't support thinking) */
   disabled?: boolean
+  /** When true, "Off" option is hidden (model requires thinking) */
+  requiresThinking?: boolean
 }
 
 function ReasoningDropdown({
   value,
   onChange,
   disabled = false,
+  requiresThinking = false,
 }: ReasoningDropdownProps) {
-  const levels: ReasoningLevel[] = ['off', 'low', 'medium', 'high']
+  // Filter out "off" option if model requires thinking
+  const levels: ReasoningLevel[] = requiresThinking
+    ? ['low', 'medium', 'high']
+    : ['off', 'low', 'medium', 'high']
   const isActive = value !== 'off'
 
   return (
@@ -293,27 +301,3 @@ function ReasoningDropdown({
   )
 }
 
-interface WebSearchToggleProps {
-  enabled: boolean
-  onToggle: () => void
-}
-
-function WebSearchToggle({
-  enabled,
-  onToggle,
-}: WebSearchToggleProps) {
-  const variant = enabled ? 'default' : 'outline'
-
-  return (
-    <Button
-      type="button"
-      size="sm"
-      variant={variant}
-      className="flex items-center gap-1 px-1.5 py-1 text-[0.7rem] sm:text-xs"
-      onClick={onToggle}
-    >
-      <Globe2 className="size-3" />
-      Search
-    </Button>
-  )
-}

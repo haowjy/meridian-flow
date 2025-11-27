@@ -3,7 +3,6 @@ import { FileText, Plus, Upload } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
-import { ScrollArea } from '@/shared/components/ui/scroll-area'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -78,28 +77,28 @@ export function DocumentTreePanel({
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <DocumentHeaderBar
-        title={<CompactBreadcrumb segments={[{ label: title ?? 'Project', title }]} singleSegmentVariant="nonLast" />}
-        ariaLabel="Documents explorer header"
-        showDivider={false}
-        trailing={<SidebarToggle side="right" />}
-      />
+      {/* Single scroll container - scrollbar extends to top */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
+        {/* Sticky Header */}
+        <div className="sticky top-0 z-20 bg-background">
+          <DocumentHeaderBar
+            title={<CompactBreadcrumb segments={[{ label: title ?? 'Project', title }]} singleSegmentVariant="nonLast" />}
+            ariaLabel="Documents explorer header"
+            showDivider={false}
+            trailing={<SidebarToggle side="right" />}
+          />
+        </div>
 
-      {/* Search Bar */}
-      <div className="px-3 py-1.5">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Input
-              type="search"
-              placeholder="Search documents..."
-              value={searchQuery}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              className=""
-              aria-label="Search documents by name"
-            />
-          </div>
-          {/* Dropdown menu uses same items as context menu for consistency */}
+        {/* Sticky Search Bar */}
+        <div className="sticky top-12 z-10 flex items-center gap-2 px-2 py-1 bg-background relative">
+          <Input
+            type="search"
+            placeholder="Search documents..."
+            value={searchQuery}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            className="flex-1"
+            aria-label="Search documents by name"
+          />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button size="icon" aria-label="Create new item">
@@ -124,52 +123,52 @@ export function DocumentTreePanel({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+          {/* Gradient blur fade - extends below the search bar */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-3 translate-y-full bg-gradient-to-b from-background via-background/50 to-transparent" />
         </div>
-      </div>
 
-      {/* Tree Content */}
-      {isEmpty ? (
-        <div className="flex-1 flex flex-col items-center px-4 pt-4 gap-4">
-          {/* Dropzone */}
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            onClick={onImport}
-            className={cn(
-              'flex flex-col items-center justify-center gap-2 p-6 rounded-lg cursor-pointer transition-colors w-full',
-              'border-2 border-dashed',
-              isDragOver
-                ? 'border-primary bg-primary/5'
-                : 'border-muted-foreground/25 hover:border-muted-foreground/50 hover:bg-muted/30'
-            )}
-          >
-            <Upload className="size-6 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground text-center">
-              Drop files to import
-            </p>
+        {/* Tree Content */}
+        {isEmpty ? (
+          <div className="flex flex-col items-center px-4 pt-4 gap-4">
+            {/* Dropzone */}
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={onImport}
+              className={cn(
+                'flex flex-col items-center justify-center gap-2 p-6 rounded-lg cursor-pointer transition-colors w-full',
+                'border-2 border-dashed',
+                isDragOver
+                  ? 'border-primary bg-primary/5'
+                  : 'border-muted-foreground/25 hover:border-muted-foreground/50 hover:bg-muted/30'
+              )}
+            >
+              <Upload className="size-6 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground text-center">
+                Drop files to import
+              </p>
+            </div>
+
+            {/* Divider with "or" */}
+            <div className="flex items-center gap-3 w-full">
+              <div className="flex-1 h-px bg-border" />
+              <span className="text-xs text-muted-foreground">or</span>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+
+            {/* Create document button */}
+            <Button variant="ghost" size="sm" onClick={onCreateDocument}>
+              <FileText className="mr-2 size-4" />
+              Create a document
+            </Button>
           </div>
-
-          {/* Divider with "or" */}
-          <div className="flex items-center gap-3 w-full">
-            <div className="flex-1 h-px bg-border" />
-            <span className="text-xs text-muted-foreground">or</span>
-            <div className="flex-1 h-px bg-border" />
-          </div>
-
-          {/* Create document button */}
-          <Button variant="ghost" size="sm" onClick={onCreateDocument}>
-            <FileText className="mr-2 size-4" />
-            Create a document
-          </Button>
-        </div>
-      ) : (
-        <ScrollArea className="flex-1 min-h-0">
+        ) : (
           <TreeItemWithContextMenu menuItems={rootMenuItems}>
-            <div className="space-y-0.5 px-2 pt-2 pb-[50vh]">{children}</div>
+            <div className="space-y-0.5 px-2 pt-3 pb-[50vh]">{children}</div>
           </TreeItemWithContextMenu>
-        </ScrollArea>
-      )}
+        )}
+      </div>
     </div>
   )
 }

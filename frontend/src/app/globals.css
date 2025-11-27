@@ -406,6 +406,39 @@
     color: var(--selection-fg);
   }
 
+  /* Minimal scrollbar styling */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  *:hover {
+    scrollbar-color: var(--border) transparent;
+  }
+
+  /* Webkit scrollbar styling (Chrome, Safari, Edge) */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 4px;
+  }
+
+  *:hover::-webkit-scrollbar-thumb {
+    background: var(--border);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+  }
+
   /* Focus ring strategy - Layered: outer jade + inner gold */
   *:focus-visible {
     outline: 3px solid var(--focus-ring-outer);
@@ -514,15 +547,16 @@ body.preload * {
   /* === Chat Main Panel === */
 
   .chat-main {
-    @apply flex h-full flex-col bg-background;
+    @apply flex h-full flex-col bg-background min-w-0;
   }
 
   .chat-main-header {
-    @apply flex items-center justify-between border-b px-4 py-2;
+    @apply flex items-center justify-between px-4 py-2;
   }
 
-  .chat-main-body {
-    @apply flex-1 overflow-y-auto min-h-[150px];
+  /* Scroll container for messages + sticky input */
+  .chat-scroll-container {
+    @apply flex-1 overflow-y-auto overflow-x-hidden min-w-0;
   }
 
   .chat-main-empty {
@@ -567,7 +601,7 @@ body.preload * {
 
   /* Chat input */
   .chat-input-shell {
-    @apply bg-background/95 px-4 py-2 shrink-0;
+    @apply bg-background/95 px-4 py-2;
   }
 
   .chat-input {

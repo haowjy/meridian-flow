@@ -67,7 +67,7 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
   }, [])
 
   return (
-    <div className="group flex flex-col items-end gap-1 text-sm" data-turn-id={turn.id}>
+    <div className="group flex flex-col items-end gap-1 text-sm min-w-0" data-turn-id={turn.id}>
       {isEditing ? (
         <EditTurnDialog
           isOpen={isEditing}

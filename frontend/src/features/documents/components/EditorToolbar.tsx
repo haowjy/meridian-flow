@@ -64,7 +64,7 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, status, 
       aria-label={label}
       title={label}
     >
-      <Icon className="size-4.5" />
+      <Icon className="size-3" />
     </Button>
   )
 
@@ -125,7 +125,7 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, status, 
           disabled={disabled}
           aria-label="More"
         >
-          <MoreHorizontal className="size-4.5" />
+          <MoreHorizontal className="size-3" />
         </Button>
 
         <ToolbarDivider className="h-5 mx-0" />

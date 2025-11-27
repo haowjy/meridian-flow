@@ -10,6 +10,8 @@ import { ChatListHeader } from './ChatListHeader'
 import { ChatList } from './ChatList'
 import { ChatListEmpty } from './ChatListEmpty'
 import { ChatListItemSkeleton } from './ChatListItemSkeleton'
+import { DeleteChatDialog } from './DeleteChatDialog'
+import type { Chat } from '@/features/chats/types'
 
 interface ChatListPanelProps {
   projectId: string
@@ -30,8 +32,15 @@ export function ChatListPanel({ projectId }: ChatListPanelProps) {
   const { chats, status, isLoading } = useChatsForProject(projectId)
   const [showSkeleton, setShowSkeleton] = useState(false)
 
-  const { createChat } = useChatStore(useShallow((s) => ({
+  // State for delete dialog and rename mode
+  const [chatToDelete, setChatToDelete] = useState<Chat | null>(null)
+  const [renamingChatId, setRenamingChatId] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  const { createChat, deleteChat, renameChat } = useChatStore(useShallow((s) => ({
     createChat: s.createChat,
+    deleteChat: s.deleteChat,
+    renameChat: s.renameChat,
   })))
 
   const { activeChatId, setActiveChat } = useUIStore(useShallow((s) => ({
@@ -64,6 +73,44 @@ export function ChatListPanel({ projectId }: ChatListPanelProps) {
     // Actual turns/streaming load lives in center/ActiveChatView, not here.
   }
 
+  // Rename handlers
+  const handleRename = (chatId: string) => {
+    setRenamingChatId(chatId)
+  }
+
+  const handleRenameSubmit = async (chatId: string, newTitle: string) => {
+    try {
+      await renameChat(chatId, newTitle)
+    } finally {
+      setRenamingChatId(null)
+    }
+  }
+
+  const handleRenameCancel = () => {
+    setRenamingChatId(null)
+  }
+
+  // Delete handlers
+  const handleDeleteClick = (chat: Chat) => {
+    setChatToDelete(chat)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!chatToDelete) return
+
+    setIsDeleting(true)
+    try {
+      await deleteChat(chatToDelete.id)
+      // If we deleted the active chat, clear the selection
+      if (activeChatId === chatToDelete.id) {
+        setActiveChat(null)
+      }
+      setChatToDelete(null)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   const hasChats = chats.length > 0
 
   const handleBrandClick = () => {
@@ -72,31 +119,57 @@ export function ChatListPanel({ projectId }: ChatListPanelProps) {
 
   return (
     <div className="chat-pane flex h-full flex-col bg-sidebar text-sidebar-foreground">
-      <ChatListHeader
-        projectId={projectId}
-        isLoading={isLoading}
-        onNewChat={handleNewChat}
-        onBrandClick={handleBrandClick}
-      />
-      <div className="chat-pane-body flex-1 overflow-hidden">
-        {/* Show skeleton only for true cold loads (no cached chats) */}
-        {status === 'loading' && showSkeleton ? (
-          <div className="chat-pane-scroll p-2 space-y-1">
-            <ChatListItemSkeleton />
-            <ChatListItemSkeleton />
-            <ChatListItemSkeleton />
-          </div>
-        ) : hasChats ? (
-          <ChatList
-            chats={chats}
-            activeChatId={activeChatId}
+      {/* Single scroll container - scrollbar extends to top */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
+        {/* Sticky Header */}
+        <div className="sticky top-0 z-10 bg-sidebar relative">
+          <ChatListHeader
+            projectId={projectId}
             isLoading={isLoading}
-            onSelectChat={handleSelectChat}
+            onNewChat={handleNewChat}
+            onBrandClick={handleBrandClick}
           />
-        ) : (
-          <ChatListEmpty onNewChat={handleNewChat} />
-        )}
+          {/* Gradient blur fade - extends below the header */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-3 translate-y-full bg-gradient-to-b from-sidebar via-sidebar/50 to-transparent" />
+        </div>
+
+        {/* Chat List Content */}
+        <div className="chat-pane-body pt-3">
+          {/* Show skeleton only for true cold loads (no cached chats) */}
+          {status === 'loading' && showSkeleton ? (
+            <div className="chat-pane-scroll p-2 space-y-1">
+              <ChatListItemSkeleton />
+              <ChatListItemSkeleton />
+              <ChatListItemSkeleton />
+            </div>
+          ) : hasChats ? (
+            <ChatList
+              chats={chats}
+              activeChatId={activeChatId}
+              isLoading={isLoading}
+              renamingChatId={renamingChatId}
+              onSelectChat={handleSelectChat}
+              onRename={handleRename}
+              onRenameSubmit={handleRenameSubmit}
+              onRenameCancel={handleRenameCancel}
+              onDelete={handleDeleteClick}
+            />
+          ) : (
+            <ChatListEmpty onNewChat={handleNewChat} />
+          )}
+        </div>
       </div>
+
+      {/* Delete confirmation dialog */}
+      <DeleteChatDialog
+        chat={chatToDelete}
+        open={chatToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setChatToDelete(null)
+        }}
+        onConfirm={handleDeleteConfirm}
+        isDeleting={isDeleting}
+      />
     </div>
   )
 }

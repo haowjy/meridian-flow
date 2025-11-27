@@ -24,7 +24,6 @@ export function EditTurnDialog({
     modelLabel: 'Kimi K2 Thinking',
     providerId: 'openrouter',
     reasoning: 'low',
-    searchEnabled: false,
   })
 
   // Reset content when dialog opens/initialContent changes

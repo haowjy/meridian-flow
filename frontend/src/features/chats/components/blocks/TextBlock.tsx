@@ -23,7 +23,7 @@ export const TextBlock = React.memo(function TextBlock({ block }: TextBlockProps
   const text = block.textContent ?? ''
 
   return (
-    <div className="whitespace-pre-wrap">
+    <div className="whitespace-pre-wrap overflow-hidden break-words">
       <Streamdown rehypePlugins={rehypePlugins}>{text}</Streamdown>
     </div>
   )
