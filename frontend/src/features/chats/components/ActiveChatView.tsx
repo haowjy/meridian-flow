@@ -92,7 +92,7 @@ export function ActiveChatView() {
 
           {/* Input at bottom */}
           <div className="bg-background">
-            <TurnInput projectId={projectId ?? undefined} />
+            <TurnInput projectId={projectId ?? undefined} focusKey={activeChatId} />
           </div>
         </div>
       </div>
@@ -132,7 +132,7 @@ export function ActiveChatView() {
           )}
           {/* Sticky input at bottom of scroll area */}
           <div className="sticky bottom-0 bg-background">
-            <TurnInput chatId={activeChat.id} />
+            <TurnInput chatId={activeChat.id} focusKey={activeChatId} />
           </div>
         </div>
       </div>
