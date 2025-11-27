@@ -594,10 +594,10 @@ export const api = {
       })
       return fromDocumentDto(data)
     },
-    rename: async (id: string, name: string, options?: { signal?: AbortSignal }): Promise<Document> => {
+    rename: async (id: string, projectId: string, name: string, options?: { signal?: AbortSignal }): Promise<Document> => {
       const data = await fetchAPI<DocumentDto>(`/api/documents/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ project_id: projectId, name }),
         signal: options?.signal,
       })
       return fromDocumentDto(data)
@@ -608,7 +608,7 @@ export const api = {
       projectId: string,
       files: File[],
       folderId?: string | null,
-      options?: { signal?: AbortSignal }
+      options?: { signal?: AbortSignal; overwrite?: boolean }
     ): Promise<ImportResponse> => {
       const formData = new FormData()
       // Append all files with the same 'files' key (multipart standard for multiple files)
@@ -619,6 +619,9 @@ export const api = {
       let url = `/api/import?project_id=${encodeURIComponent(projectId)}`
       if (folderId) {
         url += `&folder_id=${encodeURIComponent(folderId)}`
+      }
+      if (options?.overwrite) {
+        url += '&overwrite=true'
       }
 
       const data = await fetchAPI<ImportResponse>(url, {
@@ -639,10 +642,10 @@ export const api = {
       })
       return fromFolderDto(data)
     },
-    rename: async (id: string, name: string, options?: { signal?: AbortSignal }): Promise<Folder> => {
+    rename: async (id: string, projectId: string, name: string, options?: { signal?: AbortSignal }): Promise<Folder> => {
       const data = await fetchAPI<FolderDto>(`/api/folders/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ project_id: projectId, name }),
         signal: options?.signal,
       })
       return fromFolderDto(data)

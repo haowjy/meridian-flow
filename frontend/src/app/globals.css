@@ -412,6 +412,20 @@
     outline-offset: 2px;
     box-shadow: 0 0 0 2px var(--focus-ring-inner);
   }
+
+  /* Restore cursor: pointer for buttons and menu items (Tailwind v4 changed to cursor: default)
+     See: https://ui.shadcn.com/docs/components/button */
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  [role="menuitem"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [role="button"]:disabled,
+  [role="menuitem"][aria-disabled="true"] {
+    cursor: not-allowed;
+  }
 }
 
 /* Prevent animations during initial page load / hydration */

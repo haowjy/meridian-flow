@@ -1,3 +1,4 @@
+import { Check, AlertTriangle, Minus, X } from 'lucide-react'
 import { Button } from '@/shared/components/ui/button'
 import { DialogFooter } from '@/shared/components/ui/dialog'
 import { Label } from '@/shared/components/ui/label'
@@ -39,26 +40,18 @@ export function ImportResults({
           <StatBadge label="Failed" value={summary.failed} variant="error" />
         </div>
 
-        {/* Success List */}
+        {/* Documents List */}
         {documents.length > 0 && (
           <div className="space-y-2">
-            <Label>Imported Documents</Label>
+            <Label>Results</Label>
             <div className="max-h-48 overflow-y-auto rounded border border-border bg-muted/20 p-3 space-y-1">
-              {documents.map((doc) => (
+              {documents.map((doc, idx) => (
                 <div
-                  key={doc.id}
-                  className="flex items-center justify-between text-sm"
+                  key={doc.id || idx}
+                  className="flex items-center gap-2 text-sm"
                 >
-                  <span className="truncate font-mono text-xs">{doc.path}</span>
-                  <span
-                    className={
-                      doc.action === 'created'
-                        ? 'text-primary'
-                        : 'text-muted-foreground'
-                    }
-                  >
-                    {doc.action}
-                  </span>
+                  <ActionIcon action={doc.action} />
+                  <span className="truncate font-mono text-xs flex-1">{doc.path || doc.name}</span>
                 </div>
               ))}
             </div>
@@ -91,6 +84,20 @@ export function ImportResults({
       </DialogFooter>
     </>
   )
+}
+
+// Helper component for action icons
+function ActionIcon({ action }: { action: string }) {
+  switch (action) {
+    case 'created':
+      return <Check className="size-4 text-green-500 shrink-0" />
+    case 'updated':
+      return <AlertTriangle className="size-4 text-yellow-500 shrink-0" />
+    case 'skipped':
+      return <Minus className="size-4 text-muted-foreground shrink-0" />
+    default:
+      return <X className="size-4 text-destructive shrink-0" />
+  }
 }
 
 // Helper component for stat badges

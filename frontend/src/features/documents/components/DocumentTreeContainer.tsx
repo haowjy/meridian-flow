@@ -1,23 +1,34 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useShallow } from 'zustand/react/shallow'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { openDocument } from '@/core/lib/panelHelpers'
-import { filterTree, TreeNode } from '@/core/lib/treeBuilder'
+import { filterTree, TreeNode, generateUniqueName, getNodeNames, getFolderChildNames } from '@/core/lib/treeBuilder'
 import { api } from '@/core/lib/api'
-import { toast } from 'sonner'
-import { handleApiError, isAppError } from '@/core/lib/errors'
+import { handleApiError } from '@/core/lib/errors'
 import { DocumentTreePanel } from './DocumentTreePanel'
 import { FolderTreeItem } from './FolderTreeItem'
 import { DocumentTreeItem } from './DocumentTreeItem'
-import { CreateDocumentDialog } from './CreateDocumentDialog'
 import { ImportDocumentDialog } from './ImportDocumentDialog'
 import { Skeleton } from '@/shared/components/ui/skeleton'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { useProjectStore } from '@/core/stores/useProjectStore'
+
+// Tracks which tree item is being edited (existing items only)
+interface EditingItem {
+  type: 'document' | 'folder'
+  id: string
+}
+
+// Visual placeholder for new items (not yet created in backend)
+interface PendingItem {
+  type: 'document' | 'folder'
+  parentId: string | null  // null = root level
+  tempId: string           // for React key
+}
 
 interface DocumentTreeContainerProps {
   projectId: string
@@ -31,15 +42,12 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
   const router = useRouter()
   const {
     tree,
-    folders,
-    documents,
     expandedFolders,
     status,
     error,
     loadTree,
     toggleFolder,
-    createDocument,
-    createFolder,
+    expandFolder,
     deleteDocument,
     deleteFolder,
     renameDocument,
@@ -47,15 +55,12 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
   } = useTreeStore(
     useShallow((s) => ({
       tree: s.tree,
-      folders: s.folders,
-      documents: s.documents,
       expandedFolders: s.expandedFolders,
       status: s.status,
       error: s.error,
       loadTree: s.loadTree,
       toggleFolder: s.toggleFolder,
-      createDocument: s.createDocument,
-      createFolder: s.createFolder,
+      expandFolder: s.expandFolder,
       deleteDocument: s.deleteDocument,
       deleteFolder: s.deleteFolder,
       renameDocument: s.renameDocument,
@@ -70,10 +75,12 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
   )
 
   const [searchQuery, setSearchQuery] = useState('')
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [importTargetFolderId, setImportTargetFolderId] = useState<string | null>(null)
+  const [droppedFiles, setDroppedFiles] = useState<File[]>([])
   const [showSkeleton, setShowSkeleton] = useState(false)
+  const [editingItem, setEditingItem] = useState<EditingItem | null>(null)
+  const [pendingItem, setPendingItem] = useState<PendingItem | null>(null)
 
   // Load tree on mount
   useEffect(() => {
@@ -111,69 +118,10 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
     openDocument(documentId, projectId, router)
   }
 
-  // Handle create document
-  const handleCreateDocument = async (name: string, folderId?: string) => {
-    try {
-      await api.documents.create(projectId, folderId || null, name)
-      toast.success('Document created')
-
-      // Reload tree to show new document
-      await loadTree(projectId)
-    } catch (error) {
-      // Special-case conflicts to offer navigating to the existing document
-      if (isAppError(error) && error.type === 'CONFLICT') {
-        const resource = error.resource as { id?: string } | undefined
-        const existingId = resource?.id
-        if (!existingId) {
-          handleApiError(error, 'Failed to create document')
-          throw error
-        }
-        toast.error(error.message || 'Resource already exists.', {
-          action: {
-            label: 'Open',
-            onClick: () => handleDocumentClick(existingId),
-          },
-        })
-      } else {
-        handleApiError(error, 'Failed to create document')
-      }
-      throw error // Re-throw so dialog can handle
-    }
-  }
-
   // Handle delete document
   const handleDeleteDocument = async (documentId: string) => {
     try {
       await deleteDocument(documentId, projectId)
-      toast.success('Document deleted')
-    } catch {
-      // Error already handled by store
-    }
-  }
-
-  // Handle create document in folder
-  const handleCreateDocumentInFolder = async (folderId: string) => {
-    const folderName = folders.find((f) => f.id === folderId)?.name || 'folder'
-    const documentName = prompt(`Enter document name (in ${folderName}):`)
-    if (!documentName) return
-
-    try {
-      await createDocument(projectId, folderId, documentName)
-      toast.success('Document created')
-    } catch {
-      // Error already handled by store
-    }
-  }
-
-  // Handle create folder in folder
-  const handleCreateFolderInFolder = async (parentId: string) => {
-    const parentName = folders.find((f) => f.id === parentId)?.name || 'folder'
-    const folderName = prompt(`Enter folder name (in ${parentName}):`)
-    if (!folderName) return
-
-    try {
-      await createFolder(projectId, parentId, folderName)
-      toast.success('Folder created')
     } catch {
       // Error already handled by store
     }
@@ -183,61 +131,115 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
   const handleDeleteFolder = async (folderId: string) => {
     try {
       await deleteFolder(folderId, projectId)
-      toast.success('Folder deleted')
     } catch {
       // Error already handled by store
     }
   }
 
-  // Handle rename document
-  const handleRenameDocument = async (documentId: string) => {
-    const document = documents.find((d) => d.id === documentId)
-    if (!document) return
+  // --- Inline rename handlers ---
 
-    const newName = prompt('Enter new document name:', document.name)
-    if (!newName || newName === document.name) return
+  // Start renaming an existing document
+  const startRenameDocument = useCallback((documentId: string) => {
+    setEditingItem({ type: 'document', id: documentId })
+  }, [])
+
+  // Start renaming an existing folder
+  const startRenameFolder = useCallback((folderId: string) => {
+    setEditingItem({ type: 'folder', id: folderId })
+  }, [])
+
+  // Submit inline rename for document
+  const handleRenameDocumentInline = useCallback(async (documentId: string, name: string) => {
+    try {
+      await renameDocument(documentId, name, projectId)
+    } catch {
+      // Error already handled by store
+    } finally {
+      setEditingItem(null)
+    }
+  }, [renameDocument, projectId])
+
+  // Submit inline rename for folder
+  const handleRenameFolderInline = useCallback(async (folderId: string, name: string) => {
+    try {
+      await renameFolder(folderId, name, projectId)
+    } catch {
+      // Error already handled by store
+    } finally {
+      setEditingItem(null)
+    }
+  }, [renameFolder, projectId])
+
+  // Cancel editing - just clear state (no backend calls needed)
+  const handleCancelEdit = useCallback(() => {
+    setPendingItem(null)
+    setEditingItem(null)
+  }, [])
+
+  // Submit new item - create in backend with entered name
+  const handleSubmitNewItem = useCallback(async (name: string) => {
+    if (!pendingItem) return
+
+    const trimmedName = name.trim()
+    if (!trimmedName) {
+      // Empty name - just cancel
+      setPendingItem(null)
+      setEditingItem(null)
+      return
+    }
+
+    // Get sibling names for unique name generation
+    const siblingNames = pendingItem.parentId
+      ? getFolderChildNames(tree, pendingItem.parentId)
+      : getNodeNames(tree)
+    const uniqueName = generateUniqueName(trimmedName, siblingNames)
 
     try {
-      await renameDocument(documentId, newName, projectId)
-      toast.success('Document renamed')
-    } catch {
-      // Error already handled by store
+      if (pendingItem.type === 'folder') {
+        await api.folders.create(projectId, pendingItem.parentId, uniqueName)
+      } else {
+        await api.documents.create(projectId, pendingItem.parentId, uniqueName)
+      }
+      await loadTree(projectId)
+    } catch (error) {
+      handleApiError(error, `Failed to create ${pendingItem.type}`)
+    } finally {
+      setPendingItem(null)
+      setEditingItem(null)
     }
-  }
+  }, [pendingItem, tree, projectId, loadTree])
 
-  // Handle rename folder
-  const handleRenameFolder = async (folderId: string) => {
-    const folder = folders.find((f) => f.id === folderId)
-    if (!folder) return
+  // --- Inline create handlers (show placeholder, no backend call) ---
 
-    const newName = prompt('Enter new folder name:', folder.name)
-    if (!newName || newName === folder.name) return
+  // Create root-level document placeholder
+  const handleCreateRootDocumentInline = useCallback(() => {
+    const tempId = `pending-${Date.now()}`
+    setPendingItem({ type: 'document', parentId: null, tempId })
+    setEditingItem({ type: 'document', id: tempId })
+  }, [])
 
-    try {
-      await renameFolder(folderId, newName, projectId)
-      toast.success('Folder renamed')
-    } catch {
-      // Error already handled by store
-    }
-  }
+  // Create root-level folder placeholder
+  const handleCreateRootFolderInline = useCallback(() => {
+    const tempId = `pending-${Date.now()}`
+    setPendingItem({ type: 'folder', parentId: null, tempId })
+    setEditingItem({ type: 'folder', id: tempId })
+  }, [])
 
-  // Handle create root-level document
-  const handleCreateRootDocument = () => {
-    setIsCreateDialogOpen(true)
-  }
+  // Create document placeholder inside folder
+  const handleCreateDocumentInFolderInline = useCallback((folderId: string) => {
+    const tempId = `pending-${Date.now()}`
+    setPendingItem({ type: 'document', parentId: folderId, tempId })
+    setEditingItem({ type: 'document', id: tempId })
+    expandFolder(folderId)
+  }, [expandFolder])
 
-  // Handle create root-level folder
-  const handleCreateRootFolder = async () => {
-    const folderName = prompt('Enter folder name:')
-    if (!folderName) return
-
-    try {
-      await createFolder(projectId, null, folderName)
-      toast.success('Folder created')
-    } catch {
-      // Error already handled by store
-    }
-  }
+  // Create folder placeholder inside folder
+  const handleCreateFolderInFolderInline = useCallback((parentId: string) => {
+    const tempId = `pending-${Date.now()}`
+    setPendingItem({ type: 'folder', parentId, tempId })
+    setEditingItem({ type: 'folder', id: tempId })
+    expandFolder(parentId)
+  }, [expandFolder])
 
   // Handle import documents in folder
   const handleImportInFolder = (folderId: string) => {
@@ -251,49 +253,162 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
     setIsImportDialogOpen(true)
   }
 
-  // Handle import complete
+  // Handle files dropped on empty state
+  const handleFileDrop = (files: File[]) => {
+    setDroppedFiles(files)
+    setImportTargetFolderId(null)
+    setIsImportDialogOpen(true)
+  }
+
+  // Clear dropped files when dialog closes
+  const handleImportDialogChange = (open: boolean) => {
+    setIsImportDialogOpen(open)
+    if (!open) {
+      setDroppedFiles([])
+    }
+  }
+
+  // Handle import complete - just refresh tree, dialog handles its own closing
   const handleImportComplete = () => {
-    // Refresh tree after successful import
     loadTree(projectId)
-    setIsImportDialogOpen(false)
+  }
+
+  // Render a pending item placeholder (new item not yet created)
+  const renderPendingItem = (parentId: string | null, siblingNames: string[]) => {
+    if (!pendingItem || pendingItem.parentId !== parentId) return null
+
+    const isEditingPending = editingItem?.id === pendingItem.tempId
+
+    // Compute unique default name based on type (auto-increments if duplicate exists)
+    const defaultName = pendingItem.type === 'folder'
+      ? generateUniqueName('New Folder', siblingNames)
+      : generateUniqueName('Untitled', siblingNames)
+
+    if (pendingItem.type === 'folder') {
+      // Placeholder folder data
+      const placeholderFolder = {
+        id: pendingItem.tempId,
+        name: defaultName,
+        projectId: projectId,
+        parentId: parentId,
+        createdAt: new Date(),
+      }
+
+      return (
+        <FolderTreeItem
+          key={pendingItem.tempId}
+          folder={placeholderFolder}
+          isExpanded={false}
+          onToggle={() => {}}
+          onCreateDocument={() => {}}
+          onCreateFolder={() => {}}
+          onImport={() => {}}
+          onRename={() => {}}
+          onDelete={() => {}}
+          isEditing={isEditingPending}
+          onSubmitName={handleSubmitNewItem}
+          onCancelEdit={handleCancelEdit}
+          existingNames={siblingNames}
+        >
+          {null}
+        </FolderTreeItem>
+      )
+    } else {
+      // Placeholder document data
+      const placeholderDocument = {
+        id: pendingItem.tempId,
+        name: defaultName,
+        projectId: projectId,
+        folderId: parentId,
+        content: '',
+        wordCount: 0,
+        updatedAt: new Date(),
+      }
+
+      return (
+        <DocumentTreeItem
+          key={pendingItem.tempId}
+          document={placeholderDocument}
+          isActive={false}
+          onClick={() => {}}
+          onRename={() => {}}
+          onDelete={() => {}}
+          isEditing={isEditingPending}
+          onSubmitName={handleSubmitNewItem}
+          onCancelEdit={handleCancelEdit}
+          existingNames={siblingNames}
+        />
+      )
+    }
   }
 
   // Render tree recursively
-  const renderTree = (nodes: TreeNode[]) => {
-    return nodes.map((node) => {
+  const renderTree = (nodes: TreeNode[], parentId: string | null = null) => {
+    // Compute sibling names for duplicate validation
+    const siblingNames = nodes.map((n) => n.data.name)
+
+    const renderedNodes = nodes.map((node) => {
       if (node.type === 'folder') {
         const isExpanded = expandedFolders.has(node.id)
+        const isEditingFolder = editingItem?.type === 'folder' && editingItem.id === node.id
+
+        // Check if there's a pending item inside this folder
+        const hasPendingChild = pendingItem?.parentId === node.id
 
         return (
           <FolderTreeItem
             key={node.id}
-            folder={node.data} // TypeScript narrows to Folder based on discriminated union
-            isExpanded={isExpanded}
+            folder={node.data}
+            isExpanded={isExpanded || hasPendingChild}
             onToggle={() => toggleFolder(node.id)}
-            onCreateDocument={() => handleCreateDocumentInFolder(node.id)}
-            onCreateFolder={() => handleCreateFolderInFolder(node.id)}
+            onCreateDocument={() => handleCreateDocumentInFolderInline(node.id)}
+            onCreateFolder={() => handleCreateFolderInFolderInline(node.id)}
             onImport={() => handleImportInFolder(node.id)}
-            onRename={() => handleRenameFolder(node.id)}
+            onRename={() => startRenameFolder(node.id)}
             onDelete={() => handleDeleteFolder(node.id)}
+            isEditing={isEditingFolder}
+            onSubmitName={(name) => handleRenameFolderInline(node.id, name)}
+            onCancelEdit={handleCancelEdit}
+            existingNames={siblingNames}
           >
+            {/* Render pending item first if inside this folder */}
+            {renderPendingItem(node.id, node.children ? getNodeNames(node.children) : [])}
             {node.children && node.children.length > 0 && (
-              <>{renderTree(node.children)}</>
+              <>{renderTree(node.children, node.id)}</>
             )}
           </FolderTreeItem>
         )
       } else {
+        const isEditingDocument = editingItem?.type === 'document' && editingItem.id === node.id
+
         return (
           <DocumentTreeItem
             key={node.id}
-            document={node.data} // TypeScript narrows to Document based on discriminated union
+            document={node.data}
             isActive={activeDocumentId === node.id}
             onClick={() => handleDocumentClick(node.id)}
-            onRename={() => handleRenameDocument(node.id)}
+            onRename={() => startRenameDocument(node.id)}
             onDelete={() => handleDeleteDocument(node.id)}
+            isEditing={isEditingDocument}
+            onSubmitName={(name) => handleRenameDocumentInline(node.id, name)}
+            onCancelEdit={handleCancelEdit}
+            existingNames={siblingNames}
           />
         )
       }
     })
+
+    // For root level, render pending item at the top
+    if (parentId === null) {
+      return (
+        <>
+          {renderPendingItem(null, siblingNames)}
+          {renderedNodes}
+        </>
+      )
+    }
+
+    return renderedNodes
   }
 
   // Loading state - show skeleton only for true cold loads (no cached data)
@@ -317,8 +432,8 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
     return (
       <DocumentTreePanel
         title={projectName || undefined}
-        onCreateDocument={handleCreateRootDocument}
-        onCreateFolder={handleCreateRootFolder}
+        onCreateDocument={handleCreateRootDocumentInline}
+        onCreateFolder={handleCreateRootFolderInline}
         onImport={handleImportRoot}
         onSearch={setSearchQuery}
         isEmpty={false}
@@ -340,28 +455,23 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
     <>
       <DocumentTreePanel
         title={projectName || undefined}
-        onCreateDocument={handleCreateRootDocument}
-        onCreateFolder={handleCreateRootFolder}
+        onCreateDocument={handleCreateRootDocumentInline}
+        onCreateFolder={handleCreateRootFolderInline}
         onImport={handleImportRoot}
+        onFileDrop={handleFileDrop}
         onSearch={setSearchQuery}
         isEmpty={isEmpty}
       >
         {renderTree(filteredTree)}
       </DocumentTreePanel>
 
-      <CreateDocumentDialog
-        open={isCreateDialogOpen}
-        onOpenChange={setIsCreateDialogOpen}
-        onCreate={handleCreateDocument}
-        folders={folders}
-      />
-
       <ImportDocumentDialog
         open={isImportDialogOpen}
-        onOpenChange={setIsImportDialogOpen}
+        onOpenChange={handleImportDialogChange}
         projectId={projectId}
         folderId={importTargetFolderId}
         onComplete={handleImportComplete}
+        initialFiles={droppedFiles}
       />
     </>
   )

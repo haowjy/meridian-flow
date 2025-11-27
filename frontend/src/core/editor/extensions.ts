@@ -19,7 +19,8 @@ import { ClickHandler } from './extensions/ClickHandler'
  * - CharacterCount: Word/character counting
  * - Placeholder: Empty state placeholder
  */
-export function getExtensions() {
+export function getExtensions(options?: { placeholder?: string }) {
+  const placeholderText = options?.placeholder ?? 'Start writing...'
   return [
     StarterKit,
     Markdown,          // Required for markdown ↔ HTML conversion
@@ -28,7 +29,7 @@ export function getExtensions() {
     Typography,
     CharacterCount,
     Placeholder.configure({
-      placeholder: 'Start writing...',
+      placeholder: placeholderText,
     }),
     ClickHandler,
   ]

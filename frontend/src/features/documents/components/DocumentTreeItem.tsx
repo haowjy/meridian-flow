@@ -2,6 +2,7 @@ import { FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { TreeItemWithContextMenu } from '@/shared/components/TreeItemWithContextMenu'
 import { createDocumentMenuItems } from '../utils/menuBuilders'
+import { InlineNameEditor } from './InlineNameEditor'
 import type { Document } from '../types/document'
 
 interface DocumentTreeItemProps {
@@ -11,6 +12,11 @@ interface DocumentTreeItemProps {
   onDelete?: () => void
   onRename?: () => void
   onAddAsReference?: () => void
+  // Inline editing props
+  isEditing?: boolean
+  onSubmitName?: (name: string) => void
+  onCancelEdit?: () => void
+  existingNames?: string[]
 }
 
 /**
@@ -25,12 +31,36 @@ export function DocumentTreeItem({
   onDelete,
   onRename,
   onAddAsReference,
+  isEditing,
+  onSubmitName,
+  onCancelEdit,
+  existingNames = [],
 }: DocumentTreeItemProps) {
   const menuItems = createDocumentMenuItems({
     onRename,
     onDelete,
     onAddAsReference,
   })
+
+  // When editing, render inline editor without context menu
+  if (isEditing && onSubmitName && onCancelEdit) {
+    return (
+      <div
+        className={cn(
+          'flex w-full items-center gap-2 rounded-sm px-2.5 py-1 text-left text-xs md:text-sm',
+          isActive && 'bg-muted border-l-2 border-accent'
+        )}
+      >
+        <FileText className="size-4 flex-shrink-0" />
+        <InlineNameEditor
+          initialValue={document.name}
+          existingNames={existingNames}
+          onSubmit={onSubmitName}
+          onCancel={onCancelEdit}
+        />
+      </div>
+    )
+  }
 
   return (
     <TreeItemWithContextMenu menuItems={menuItems}>

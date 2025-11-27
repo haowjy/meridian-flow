@@ -21,7 +21,7 @@ export function LinkCard({ href, onClick, children, className }: LinkCardProps) 
       href={href}
       onClick={handleClick}
       className={cn(
-        'block rounded-lg transition-transform motion-safe:hover:scale-[1.02]',
+        'block cursor-pointer rounded-lg transition-transform motion-safe:hover:scale-[1.02]',
         className
       )}
     >
