@@ -116,6 +116,38 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 	return &doc, nil
 }
 
+// GetByIDOnly retrieves a document by UUID only (no project scoping)
+// Use when authorization is handled separately (e.g., by ResourceAuthorizer)
+func (r *PostgresDocumentRepository) GetByIDOnly(ctx context.Context, id string) (*models.Document, error) {
+	query := fmt.Sprintf(`
+		SELECT id, project_id, folder_id, name, content, word_count, created_at, updated_at
+		FROM %s
+		WHERE id = $1 AND deleted_at IS NULL
+	`, r.tables.Documents)
+
+	var doc models.Document
+	executor := postgres.GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, query, id).Scan(
+		&doc.ID,
+		&doc.ProjectID,
+		&doc.FolderID,
+		&doc.Name,
+		&doc.Content,
+		&doc.WordCount,
+		&doc.CreatedAt,
+		&doc.UpdatedAt,
+	)
+
+	if err != nil {
+		if postgres.IsPgNoRowsError(err) {
+			return nil, fmt.Errorf("document %s: %w", id, domain.ErrNotFound)
+		}
+		return nil, fmt.Errorf("get document: %w", err)
+	}
+
+	return &doc, nil
+}
+
 // GetByPath retrieves a document by its path (e.g., ".skills/cw-prose-writing/SKILL.md")
 func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string, projectID string) (*models.Document, error) {
 	// Split path into parts

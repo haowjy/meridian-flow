@@ -251,6 +251,22 @@ Conventions:
 - Use `isAbortError(error)` for early returns on cancelled requests.
 - Global UI fallbacks: `app/error.tsx` and `app/global-error.tsx` render an `ErrorPanel` and log via `makeLogger()`.
 
+### Cursor Pointer on Interactive Elements
+
+Global CSS in `globals.css` applies `cursor: pointer` to all buttons and menu items (Tailwind v4 changed buttons to `cursor: default`).
+
+**Automatic** (no action needed):
+- `<button>` elements
+- `[role="button"]` elements (Radix primitives)
+- `[role="menuitem"]` elements (Dropdown/Context menu items)
+
+**Manual** (add `cursor-pointer` class):
+- `<a>` / `<Link>` with custom styling
+- Clickable `<div>` elements (without menu role)
+
+**Never use**:
+- `cursor-default` on clickable elements (overrides global rule)
+
 ## File Structure
 
 ```

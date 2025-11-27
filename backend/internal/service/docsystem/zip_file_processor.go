@@ -45,6 +45,7 @@ func (p *zipFileProcessor) CanProcess(filename string) bool {
 }
 
 // Process extracts and imports documents from a zip file
+// If overwrite is true, existing documents are updated; if false, duplicates are skipped
 func (p *zipFileProcessor) Process(
 	ctx context.Context,
 	projectID string,
@@ -52,6 +53,7 @@ func (p *zipFileProcessor) Process(
 	file io.Reader,
 	filename string,
 	folderPath string,
+	overwrite bool,
 ) (*docsysSvc.ImportResult, error) {
 	// Read zip file into memory
 	zipData, err := io.ReadAll(file)
@@ -112,7 +114,7 @@ func (p *zipFileProcessor) Process(
 		}
 
 		// Process file from zip
-		p.processZipEntry(ctx, projectID, userID, zipEntry, docMap, result)
+		p.processZipEntry(ctx, projectID, userID, zipEntry, docMap, overwrite, result)
 	}
 
 	p.logger.Info("zip file processing complete",
@@ -140,6 +142,7 @@ func (p *zipFileProcessor) processZipEntry(
 	userID string,
 	file *zip.File,
 	docMap map[string]string,
+	overwrite bool,
 	result *docsysSvc.ImportResult,
 ) {
 	result.Summary.TotalFiles++
@@ -200,8 +203,13 @@ func (p *zipFileProcessor) processZipEntry(
 	existingDocID, exists := docMap[lookupKey]
 
 	if exists {
-		// Update existing document
-		p.updateDocument(ctx, projectID, existingDocID, markdown, result)
+		if overwrite {
+			// Update existing document
+			p.updateDocument(ctx, projectID, userID, existingDocID, markdown, result)
+		} else {
+			// Skip duplicate - don't overwrite
+			p.skipDocument(result, folderPath, docName)
+		}
 	} else {
 		// Create new document
 		p.createDocument(ctx, projectID, userID, folderPath, docName, markdown, result)
@@ -254,11 +262,12 @@ func (p *zipFileProcessor) createDocument(
 func (p *zipFileProcessor) updateDocument(
 	ctx context.Context,
 	projectID string,
+	userID string,
 	docID string,
 	content string,
 	result *docsysSvc.ImportResult,
 ) {
-	doc, err := p.docService.UpdateDocument(ctx, docID, &docsysSvc.UpdateDocumentRequest{
+	doc, err := p.docService.UpdateDocument(ctx, userID, docID, &docsysSvc.UpdateDocumentRequest{
 		ProjectID: projectID,
 		Content:   &content,
 	})
@@ -279,6 +288,31 @@ func (p *zipFileProcessor) updateDocument(
 	p.logger.Debug("document updated",
 		"id", doc.ID,
 		"path", doc.Path,
+	)
+}
+
+// skipDocument records a skipped duplicate document
+func (p *zipFileProcessor) skipDocument(
+	result *docsysSvc.ImportResult,
+	folderPath string,
+	docName string,
+) {
+	fullPath := folderPath + "/" + docName
+	if folderPath == "" {
+		fullPath = docName
+	}
+
+	result.Summary.Skipped++
+	result.Documents = append(result.Documents, docsysSvc.ImportDocument{
+		ID:     "", // No ID for skipped documents
+		Path:   fullPath,
+		Name:   docName,
+		Action: "skipped",
+	})
+
+	p.logger.Debug("document skipped (duplicate)",
+		"folder_path", folderPath,
+		"name", docName,
 	)
 }
 

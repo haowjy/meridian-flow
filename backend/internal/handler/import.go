@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"meridian/internal/domain/services"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	"meridian/internal/httputil"
 )
@@ -12,13 +13,15 @@ import (
 // ImportHandler handles bulk import HTTP requests
 type ImportHandler struct {
 	importService docsysSvc.ImportService
+	authorizer    services.ResourceAuthorizer
 	logger        *slog.Logger
 }
 
 // NewImportHandler creates a new import handler
-func NewImportHandler(importService docsysSvc.ImportService, logger *slog.Logger) *ImportHandler {
+func NewImportHandler(importService docsysSvc.ImportService, authorizer services.ResourceAuthorizer, logger *slog.Logger) *ImportHandler {
 	return &ImportHandler{
 		importService: importService,
+		authorizer:    authorizer,
 		logger:        logger,
 	}
 }
@@ -42,9 +45,11 @@ func (h *ImportHandler) Merge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract user ID from context
-	userID, err := getUserID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+	userID := httputil.GetUserID(r)
+
+	// Verify user owns the project before importing
+	if err := h.authorizer.CanAccessProject(r.Context(), userID, projectID); err != nil {
+		handleError(w, err)
 		return
 	}
 
@@ -64,10 +69,14 @@ func (h *ImportHandler) Merge(w http.ResponseWriter, r *http.Request) {
 	// Get folder path from query parameter (empty string = root level)
 	folderPath := r.URL.Query().Get("folder_path")
 
+	// Get overwrite flag from query parameter (default: false = skip duplicates)
+	overwrite := r.URL.Query().Get("overwrite") == "true"
+
 	h.logger.Info("starting merge import",
 		"project_id", projectID,
 		"file_count", len(files),
 		"folder_path", folderPath,
+		"overwrite", overwrite,
 	)
 
 	// Convert uploaded files to UploadedFile slice
@@ -91,7 +100,7 @@ func (h *ImportHandler) Merge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Process files using file processor strategies
-	result, err := h.importService.ProcessFiles(r.Context(), projectID, userID, uploadedFiles, folderPath)
+	result, err := h.importService.ProcessFiles(r.Context(), projectID, userID, uploadedFiles, folderPath, overwrite)
 	if err != nil {
 		h.logger.Error("failed to process files",
 			"error", err,
@@ -104,6 +113,7 @@ func (h *ImportHandler) Merge(w http.ResponseWriter, r *http.Request) {
 		"project_id", projectID,
 		"created", result.Summary.Created,
 		"updated", result.Summary.Updated,
+		"skipped", result.Summary.Skipped,
 		"failed", result.Summary.Failed,
 	)
 
@@ -129,9 +139,11 @@ func (h *ImportHandler) Replace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract user ID from context
-	userID, err := getUserID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+	userID := httputil.GetUserID(r)
+
+	// Verify user owns the project before deleting and importing
+	if err := h.authorizer.CanAccessProject(r.Context(), userID, projectID); err != nil {
+		handleError(w, err)
 		return
 	}
 
@@ -192,7 +204,8 @@ func (h *ImportHandler) Replace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Process files using file processor strategies
-	result, err := h.importService.ProcessFiles(r.Context(), projectID, userID, uploadedFiles, folderPath)
+	// Replace mode always overwrites (true) since we deleted everything first
+	result, err := h.importService.ProcessFiles(r.Context(), projectID, userID, uploadedFiles, folderPath, true)
 	if err != nil {
 		h.logger.Error("failed to process files",
 			"error", err,
@@ -205,6 +218,7 @@ func (h *ImportHandler) Replace(w http.ResponseWriter, r *http.Request) {
 		"project_id", projectID,
 		"created", result.Summary.Created,
 		"updated", result.Summary.Updated,
+		"skipped", result.Summary.Skipped,
 		"failed", result.Summary.Failed,
 	)
 

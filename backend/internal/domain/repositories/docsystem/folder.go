@@ -11,8 +11,12 @@ type FolderRepository interface {
 	// Create creates a new folder
 	Create(ctx context.Context, folder *docsystem.Folder) error
 
-	// GetByID retrieves a folder by ID
+	// GetByID retrieves a folder by ID with project scoping
 	GetByID(ctx context.Context, id, projectID string) (*docsystem.Folder, error)
+
+	// GetByIDOnly retrieves a folder by UUID only (no project scoping)
+	// Use when authorization is handled separately (e.g., by ResourceAuthorizer)
+	GetByIDOnly(ctx context.Context, id string) (*docsystem.Folder, error)
 
 	// Update updates a folder
 	Update(ctx context.Context, folder *docsystem.Folder) error

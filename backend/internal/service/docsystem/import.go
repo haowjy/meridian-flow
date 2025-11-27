@@ -47,7 +47,8 @@ func (s *importService) DeleteAllDocuments(ctx context.Context, projectID string
 }
 
 // ProcessFiles processes uploaded files using file processor strategies
-func (s *importService) ProcessFiles(ctx context.Context, projectID, userID string, files []docsysSvc.UploadedFile, folderPath string) (*docsysSvc.ImportResult, error) {
+// If overwrite is true, existing documents are updated; if false, duplicates are skipped
+func (s *importService) ProcessFiles(ctx context.Context, projectID, userID string, files []docsysSvc.UploadedFile, folderPath string, overwrite bool) (*docsysSvc.ImportResult, error) {
 	// Initialize aggregated result
 	aggregatedResult := &docsysSvc.ImportResult{
 		Summary:   docsysSvc.ImportSummary{},
@@ -66,7 +67,7 @@ func (s *importService) ProcessFiles(ctx context.Context, projectID, userID stri
 		}
 
 		// Process file with matched processor
-		result, err := processor.Process(ctx, projectID, userID, file.Content, file.Filename, folderPath)
+		result, err := processor.Process(ctx, projectID, userID, file.Content, file.Filename, folderPath, overwrite)
 		if err != nil {
 			return nil, fmt.Errorf("processor %s failed for file %s: %w", processor.Name(), file.Filename, err)
 		}

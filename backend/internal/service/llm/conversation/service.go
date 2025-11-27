@@ -7,6 +7,7 @@ import (
 	"meridian/internal/capabilities"
 	llmModels "meridian/internal/domain/models/llm"
 	llmRepo "meridian/internal/domain/repositories/llm"
+	"meridian/internal/domain/services"
 	llmSvc "meridian/internal/domain/services/llm"
 )
 
@@ -14,10 +15,11 @@ import (
 // Handles conversation history and navigation operations
 // Uses minimal interfaces (TurnReader, TurnNavigator) for better ISP compliance
 type Service struct {
-	chatRepo          llmRepo.ChatRepository
-	turnReader        llmRepo.TurnReader
-	turnNavigator     llmRepo.TurnNavigator
+	chatRepo           llmRepo.ChatRepository
+	turnReader         llmRepo.TurnReader
+	turnNavigator      llmRepo.TurnNavigator
 	capabilityRegistry *capabilities.Registry
+	authorizer         services.ResourceAuthorizer
 }
 
 // NewService creates a new conversation service
@@ -26,17 +28,25 @@ func NewService(
 	turnReader llmRepo.TurnReader,
 	turnNavigator llmRepo.TurnNavigator,
 	capabilityRegistry *capabilities.Registry,
+	authorizer services.ResourceAuthorizer,
 ) llmSvc.ConversationService {
 	return &Service{
-		chatRepo:          chatRepo,
-		turnReader:        turnReader,
-		turnNavigator:     turnNavigator,
+		chatRepo:           chatRepo,
+		turnReader:         turnReader,
+		turnNavigator:      turnNavigator,
 		capabilityRegistry: capabilityRegistry,
+		authorizer:         authorizer,
 	}
 }
 
 // GetTurnPath retrieves the conversation path from a turn to root
-func (s *Service) GetTurnPath(ctx context.Context, turnID string) ([]llmModels.Turn, error) {
+// Authorization is checked first via the injected authorizer
+func (s *Service) GetTurnPath(ctx context.Context, userID, turnID string) ([]llmModels.Turn, error) {
+	// Authorize: check user can access this turn
+	if err := s.authorizer.CanAccessTurn(ctx, userID, turnID); err != nil {
+		return nil, err
+	}
+
 	turns, err := s.turnNavigator.GetTurnPath(ctx, turnID)
 	if err != nil {
 		return nil, err
@@ -71,7 +81,13 @@ func (s *Service) GetTurnPath(ctx context.Context, turnID string) ([]llmModels.T
 }
 
 // GetTurnSiblings retrieves all sibling turns (including self) with blocks
-func (s *Service) GetTurnSiblings(ctx context.Context, turnID string) ([]llmModels.Turn, error) {
+// Authorization is checked first via the injected authorizer
+func (s *Service) GetTurnSiblings(ctx context.Context, userID, turnID string) ([]llmModels.Turn, error) {
+	// Authorize: check user can access this turn
+	if err := s.authorizer.CanAccessTurn(ctx, userID, turnID); err != nil {
+		return nil, err
+	}
+
 	return s.turnNavigator.GetTurnSiblings(ctx, turnID)
 }
 
@@ -97,7 +113,13 @@ func (s *Service) GetPaginatedTurns(ctx context.Context, chatID, userID string, 
 }
 
 // GetTurnWithBlocks retrieves a turn's metadata and all its content blocks
-func (s *Service) GetTurnWithBlocks(ctx context.Context, turnID string) (*llmModels.Turn, error) {
+// Authorization is checked first via the injected authorizer
+func (s *Service) GetTurnWithBlocks(ctx context.Context, userID, turnID string) (*llmModels.Turn, error) {
+	// Authorize: check user can access this turn
+	if err := s.authorizer.CanAccessTurn(ctx, userID, turnID); err != nil {
+		return nil, err
+	}
+
 	// Get turn metadata (status, error, etc.)
 	turn, err := s.turnReader.GetTurn(ctx, turnID)
 	if err != nil {
@@ -117,7 +139,13 @@ func (s *Service) GetTurnWithBlocks(ctx context.Context, turnID string) (*llmMod
 }
 
 // GetTurnTokenUsage retrieves token usage statistics for a turn
-func (s *Service) GetTurnTokenUsage(ctx context.Context, turnID string) (*llmModels.TokenUsageInfo, error) {
+// Authorization is checked first via the injected authorizer
+func (s *Service) GetTurnTokenUsage(ctx context.Context, userID, turnID string) (*llmModels.TokenUsageInfo, error) {
+	// Authorize: check user can access this turn
+	if err := s.authorizer.CanAccessTurn(ctx, userID, turnID); err != nil {
+		return nil, err
+	}
+
 	// Get turn metadata
 	turn, err := s.turnReader.GetTurn(ctx, turnID)
 	if err != nil {

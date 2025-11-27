@@ -12,6 +12,7 @@ import (
 	"meridian/internal/domain/repositories"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	llmRepo "meridian/internal/domain/repositories/llm"
+	"meridian/internal/domain/services"
 	llmSvc "meridian/internal/domain/services/llm"
 	"meridian/internal/service/llm/chat"
 	"meridian/internal/service/llm/conversation"
@@ -72,6 +73,7 @@ func SetupServices(
 	cfg *config.Config,
 	txManager repositories.TransactionManager,
 	capabilityRegistry *capabilities.Registry,
+	authorizer services.ResourceAuthorizer,
 	logger *slog.Logger,
 ) (*Services, *mstream.Registry, error) {
 	// Create shared validator
@@ -104,6 +106,7 @@ func SetupServices(
 		turnRepo, // TurnReader
 		turnRepo, // TurnNavigator (same repo implements both)
 		capabilityRegistry,
+		authorizer,
 	)
 
 	// Create system prompt resolver

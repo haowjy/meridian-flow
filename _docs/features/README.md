@@ -22,7 +22,7 @@ This directory contains detailed documentation for all features in Meridian, org
 
 | Feature | Stack | Backend | Frontend | Notes |
 |---------|-------|---------|----------|-------|
-| **Authentication** | Both | ✅ Complete | ✅ Complete | JWT validation, Google OAuth only, protected routes |
+| **Authentication** | Both | ✅ Complete | ✅ Complete | JWT validation, Google OAuth only, protected routes, resource authorization |
 | **Document Editor** | Frontend | N/A | ✅ Complete | TipTap, auto-save, markdown, caching |
 | **File System** | Both | ✅ Complete | ✅ Complete | CRUD, tree view, context menus; Search UI non-functional |
 | **Document Import** | Both | ✅ Complete | ✅ Complete | Multi-format (.zip, .md, .txt, .html), XSS sanitization, drag-drop |
@@ -40,10 +40,11 @@ This directory contains detailed documentation for all features in Meridian, org
 ## Feature Categories
 
 ### [fb-authentication/](fb-authentication/)
-**JWT validation, Supabase Auth, protected routes**
-- Backend: JWT verification (JWKS), user context injection, RLS policies
+**JWT validation, Supabase Auth, protected routes, resource authorization**
+- Backend: JWT verification (JWKS), user context injection, RLS policies, ResourceAuthorizer
 - Frontend: **Google OAuth only**, session management, route protection
 - Design decision: Google OAuth only for simplified auth flow
+- Authorization: OwnerBasedAuthorizer protects all endpoints (project → resource ownership)
 
 ### [f-document-editor/](f-document-editor/)
 **TipTap rich text editor with auto-save and caching**

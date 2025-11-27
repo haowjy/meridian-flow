@@ -11,9 +11,14 @@ type ChatRepository interface {
 	// CreateChat creates a new chat session
 	CreateChat(ctx context.Context, chat *llm.Chat) error
 
-	// GetChat retrieves a chat by ID
+	// GetChat retrieves a chat by ID (scoped to user)
 	// Returns domain.ErrNotFound if not found
 	GetChat(ctx context.Context, chatID, userID string) (*llm.Chat, error)
+
+	// GetChatByIDOnly retrieves a chat by UUID only (no user scoping)
+	// Used by ResourceAuthorizer when authorization is handled separately
+	// Returns domain.ErrNotFound if not found
+	GetChatByIDOnly(ctx context.Context, chatID string) (*llm.Chat, error)
 
 	// ListChatsByProject retrieves all chats for a project
 	// Returns empty slice if no chats found

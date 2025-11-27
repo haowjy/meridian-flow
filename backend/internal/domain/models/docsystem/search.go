@@ -50,6 +50,10 @@ type SearchOptions struct {
 	// Empty string = search all documents user has access to (all projects)
 	ProjectID string
 
+	// UserID filters search results to projects owned by this user
+	// Required for authorization - ensures users only see their own documents
+	UserID string
+
 	// Fields specifies which document fields to search
 	// Default: [SearchFieldName, SearchFieldContent]
 	// Supported: name, content

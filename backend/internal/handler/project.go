@@ -1,11 +1,9 @@
 package handler
 
 import (
-	"errors"
 	"log/slog"
 	"net/http"
 
-	"meridian/internal/domain"
 	"meridian/internal/domain/models/docsystem"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	"meridian/internal/httputil"
@@ -29,11 +27,7 @@ func NewProjectHandler(projectService docsysSvc.ProjectService, logger *slog.Log
 // GET /api/projects
 func (h *ProjectHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	// Extract user ID from context
-	userID, err := getUserID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
-		return
-	}
+	userID := httputil.GetUserID(r)
 
 	// Call service
 	projects, err := h.projectService.ListProjects(r.Context(), userID)
@@ -50,11 +44,7 @@ func (h *ProjectHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 // Returns 201 if created, 409 with existing project if duplicate
 func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	// Extract user ID from context
-	userID, err := getUserID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
-		return
-	}
+	userID := httputil.GetUserID(r)
 
 	// Parse request
 	var req docsysSvc.CreateProjectRequest
@@ -67,14 +57,8 @@ func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	// Call service (all business logic is here)
 	project, err := h.projectService.CreateProject(r.Context(), &req)
 	if err != nil {
-		// Handle conflict by fetching and returning existing project with 409
-		HandleCreateConflict(w, err, func() (*docsystem.Project, error) {
-			// Get ConflictError to extract resource ID
-			var conflictErr *domain.ConflictError
-			if errors.As(err, &conflictErr) {
-				return h.projectService.GetProject(r.Context(), conflictErr.ResourceID, userID)
-			}
-			return nil, err
+		HandleCreateConflict(w, err, func(id string) (*docsystem.Project, error) {
+			return h.projectService.GetProject(r.Context(), id, userID)
 		})
 		return
 	}
@@ -85,18 +69,12 @@ func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 // GetProject retrieves a project by ID
 // GET /api/projects/{id}
 func (h *ProjectHandler) GetProject(w http.ResponseWriter, r *http.Request) {
-	userID, err := getUserID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+	id, ok := PathParam(w, r, "id", "Project ID")
+	if !ok {
 		return
 	}
 
-	id := r.PathValue("id")
-	if id == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Project ID is required")
-		return
-	}
-
+	userID := httputil.GetUserID(r)
 	project, err := h.projectService.GetProject(r.Context(), id, userID)
 	if err != nil {
 		handleError(w, err)
@@ -109,18 +87,12 @@ func (h *ProjectHandler) GetProject(w http.ResponseWriter, r *http.Request) {
 // UpdateProject updates a project
 // PATCH /api/projects/{id}
 func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
-	userID, err := getUserID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+	id, ok := PathParam(w, r, "id", "Project ID")
+	if !ok {
 		return
 	}
 
-	id := r.PathValue("id")
-	if id == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Project ID is required")
-		return
-	}
-
+	userID := httputil.GetUserID(r)
 	var req docsysSvc.UpdateProjectRequest
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
@@ -139,18 +111,12 @@ func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 // DeleteProject soft-deletes a project and returns it with deleted_at timestamp
 // DELETE /api/projects/{id}
 func (h *ProjectHandler) DeleteProject(w http.ResponseWriter, r *http.Request) {
-	userID, err := getUserID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+	id, ok := PathParam(w, r, "id", "Project ID")
+	if !ok {
 		return
 	}
 
-	id := r.PathValue("id")
-	if id == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Project ID is required")
-		return
-	}
-
+	userID := httputil.GetUserID(r)
 	project, err := h.projectService.DeleteProject(r.Context(), id, userID)
 	if err != nil {
 		handleError(w, err)

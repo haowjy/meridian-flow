@@ -14,7 +14,9 @@ import (
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	"meridian/internal/repository/postgres"
 	postgresDocsys "meridian/internal/repository/postgres/docsystem"
+	postgresLLM "meridian/internal/repository/postgres/llm"
 	"meridian/internal/seed"
+	serviceAuth "meridian/internal/service/auth"
 	serviceDocsys "meridian/internal/service/docsystem"
 	"meridian/internal/service/docsystem/converter"
 	"meridian/internal/utils"
@@ -112,13 +114,20 @@ func main() {
 	folderRepo := postgresDocsys.NewFolderRepository(repoConfig)
 	txManager := postgres.NewTransactionManager(pool)
 
+	// Chat/turn repos for authorizer (needed for auth chain: turn → chat → project → user)
+	chatRepo := postgresLLM.NewChatRepository(repoConfig)
+	turnRepo := postgresLLM.NewTurnRepository(repoConfig)
+
 	// Create validator for soft-delete validation
 	docsysValidator := serviceDocsys.NewResourceValidator(projectRepo, folderRepo)
+
+	// Create authorizer (ownership-based)
+	authorizer := serviceAuth.NewOwnerBasedAuthorizer(projectRepo, folderRepo, docRepo, chatRepo, turnRepo)
 
 	// Create services for document seeding
 	contentAnalyzer := serviceDocsys.NewContentAnalyzer()
 	pathResolver := serviceDocsys.NewPathResolver(folderRepo, txManager)
-	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, docsysValidator, logger)
+	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, docsysValidator, authorizer, logger)
 	converterRegistry := converter.NewConverterRegistry()
 
 	// Create file processor registry
@@ -126,7 +135,7 @@ func main() {
 
 	// Register file processors
 	zipProcessor := serviceDocsys.NewZipFileProcessor(docRepo, docService, converterRegistry, logger)
-	individualProcessor := serviceDocsys.NewIndividualFileProcessor(docService, converterRegistry, logger)
+	individualProcessor := serviceDocsys.NewIndividualFileProcessor(docRepo, docService, converterRegistry, logger)
 	fileProcessorRegistry.Register(zipProcessor)
 	fileProcessorRegistry.Register(individualProcessor)
 
@@ -149,7 +158,7 @@ func main() {
 			Content:  bytes.NewReader(zipBuffer.Bytes()),
 		},
 	}
-	result, err := importService.ProcessFiles(ctx, projectID, userID, uploadedFiles, "")
+	result, err := importService.ProcessFiles(ctx, projectID, userID, uploadedFiles, "", true) // overwrite=true for seeding
 	if err != nil {
 		log.Fatalf("Failed to process seed data: %v", err)
 	}

@@ -1,14 +1,12 @@
 package handler
 
 import (
-	"errors"
 	"log/slog"
+	"math"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
-	"meridian/internal/domain"
 	docsystem "meridian/internal/domain/models/docsystem"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	"meridian/internal/httputil"
@@ -47,14 +45,8 @@ func (h *DocumentHandler) CreateDocument(w http.ResponseWriter, r *http.Request)
 	// Call service (all business logic is here)
 	doc, err := h.docService.CreateDocument(r.Context(), &req)
 	if err != nil {
-		// Handle conflict by fetching and returning existing document with 409
-		HandleCreateConflict(w, err, func() (*docsystem.Document, error) {
-			// Get ConflictError to extract resource ID
-			var conflictErr *domain.ConflictError
-			if errors.As(err, &conflictErr) {
-				return h.docService.GetDocument(r.Context(), conflictErr.ResourceID, req.ProjectID)
-			}
-			return nil, err
+		HandleCreateConflict(w, err, func(id string) (*docsystem.Document, error) {
+			return h.docService.GetDocument(r.Context(), userID, id)
 		})
 		return
 	}
@@ -65,15 +57,14 @@ func (h *DocumentHandler) CreateDocument(w http.ResponseWriter, r *http.Request)
 // GetDocument retrieves a document by ID
 // GET /api/documents/{id}
 func (h *DocumentHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
-	projectID, _ := getProjectID(r)
-
-	id := r.PathValue("id")
-	if id == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Document ID is required")
+	id, ok := PathParam(w, r, "id", "Document ID")
+	if !ok {
 		return
 	}
 
-	doc, err := h.docService.GetDocument(r.Context(), id, projectID)
+	userID := httputil.GetUserID(r)
+
+	doc, err := h.docService.GetDocument(r.Context(), userID, id)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -85,11 +76,8 @@ func (h *DocumentHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 // UpdateDocument updates a document
 // PATCH /api/documents/{id}
 func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request) {
-	projectID, _ := getProjectID(r)
-
-	id := r.PathValue("id")
-	if id == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Document ID is required")
+	id, ok := PathParam(w, r, "id", "Document ID")
+	if !ok {
 		return
 	}
 
@@ -98,9 +86,11 @@ func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request)
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	req.ProjectID = projectID
 
-	doc, err := h.docService.UpdateDocument(r.Context(), id, &req)
+	// Get userID from context (set by auth middleware)
+	userID := httputil.GetUserID(r)
+
+	doc, err := h.docService.UpdateDocument(r.Context(), userID, id, &req)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -112,15 +102,14 @@ func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request)
 // DeleteDocument deletes a document
 // DELETE /api/documents/{id}
 func (h *DocumentHandler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
-	projectID, _ := getProjectID(r)
-
-	id := r.PathValue("id")
-	if id == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Document ID is required")
+	id, ok := PathParam(w, r, "id", "Document ID")
+	if !ok {
 		return
 	}
 
-	if err := h.docService.DeleteDocument(r.Context(), id, projectID); err != nil {
+	userID := httputil.GetUserID(r)
+
+	if err := h.docService.DeleteDocument(r.Context(), userID, id); err != nil {
 		handleError(w, err)
 		return
 	}
@@ -154,19 +143,9 @@ func (h *DocumentHandler) SearchDocuments(w http.ResponseWriter, r *http.Request
 		req.Fields = fields
 	}
 
-	// Parse optional limit parameter (default handled by service/repository)
-	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 {
-			req.Limit = limit
-		}
-	}
-
-	// Parse optional offset parameter (default handled by service/repository)
-	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
-		if offset, err := strconv.Atoi(offsetStr); err == nil && offset >= 0 {
-			req.Offset = offset
-		}
-	}
+	// Parse optional limit/offset parameters
+	req.Limit = QueryInt(r, "limit", 0, 1, 1000)   // 0 = use service default
+	req.Offset = QueryInt(r, "offset", 0, 0, math.MaxInt)
 
 	// Parse optional language parameter (default handled by service/repository)
 	if language := r.URL.Query().Get("language"); language != "" {
@@ -178,8 +157,11 @@ func (h *DocumentHandler) SearchDocuments(w http.ResponseWriter, r *http.Request
 		req.FolderID = &folderID
 	}
 
+	// Get userID from context (set by auth middleware)
+	userID := httputil.GetUserID(r)
+
 	// Call service
-	results, err := h.docService.SearchDocuments(r.Context(), req)
+	results, err := h.docService.SearchDocuments(r.Context(), userID, req)
 	if err != nil {
 		handleError(w, err)
 		return

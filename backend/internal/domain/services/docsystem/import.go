@@ -11,8 +11,9 @@ type ImportService interface {
 
 	// ProcessFiles processes uploaded files (zip or individual files) and imports documents
 	// Uses file processor strategies to handle different file types
-	// Returns detailed results including created/updated/failed counts
-	ProcessFiles(ctx context.Context, projectID, userID string, files []UploadedFile, folderPath string) (*ImportResult, error)
+	// If overwrite is true, existing documents are updated; if false, duplicates are skipped
+	// Returns detailed results including created/updated/skipped/failed counts
+	ProcessFiles(ctx context.Context, projectID, userID string, files []UploadedFile, folderPath string, overwrite bool) (*ImportResult, error)
 }
 
 // ImportResult represents the result of a bulk import operation
@@ -37,10 +38,10 @@ type ImportError struct {
 	Error string `json:"error"`
 }
 
-// ImportDocument represents a successfully processed document
+// ImportDocument represents a processed document
 type ImportDocument struct {
 	ID     string `json:"id"`
 	Path   string `json:"path"`
 	Name   string `json:"name"`
-	Action string `json:"action"` // "created" or "updated"
+	Action string `json:"action"` // "created", "updated", or "skipped"
 }

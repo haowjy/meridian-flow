@@ -66,8 +66,7 @@ migrate-status: ## Show migration status
 migrate-create: ## Create a new migration file (usage: make migrate-create name="add_feature")
 	$(GOOSE) -dir migrations create $(name) sql
 
-seed: ## Seed the database with data (runs migrations first)
-	$(GOOSE) -dir migrations postgres "$(SUPABASE_DB_URL)" up
+seed: ## Seed the database with data
 	go run ./cmd/seed/main.go
 
 seed-fresh: ## Drop all tables, run migrations, and seed data

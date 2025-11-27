@@ -13,6 +13,7 @@ import (
 	models "meridian/internal/domain/models/docsystem"
 	"meridian/internal/domain/repositories"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
+	"meridian/internal/domain/services"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
@@ -24,6 +25,7 @@ type folderService struct {
 	pathResolver docsysSvc.PathResolver
 	txManager    repositories.TransactionManager
 	validator    *ResourceValidator
+	authorizer   services.ResourceAuthorizer
 	logger       *slog.Logger
 }
 
@@ -34,6 +36,7 @@ func NewFolderService(
 	pathResolver docsysSvc.PathResolver,
 	txManager repositories.TransactionManager,
 	validator *ResourceValidator,
+	authorizer services.ResourceAuthorizer,
 	logger *slog.Logger,
 ) docsysSvc.FolderService {
 	return &folderService{
@@ -42,6 +45,7 @@ func NewFolderService(
 		pathResolver: pathResolver,
 		txManager:    txManager,
 		validator:    validator,
+		authorizer:   authorizer,
 		logger:       logger,
 	}
 }
@@ -79,6 +83,21 @@ func (s *folderService) CreateFolder(ctx context.Context, req *docsysSvc.CreateF
 		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
 	}
 
+	// Check for duplicate name in target folder
+	siblingFolders, err := s.folderRepo.ListChildren(ctx, result.ResolvedFolderID, req.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check for duplicate names: %w", err)
+	}
+	for _, sibling := range siblingFolders {
+		if sibling.Name == result.FinalName {
+			return nil, &domain.ConflictError{
+				Message:      fmt.Sprintf("a folder named %q already exists in this location", result.FinalName),
+				ResourceType: "folder",
+				ResourceID:   sibling.ID,
+			}
+		}
+	}
+
 	// Create the final folder
 	folder := &models.Folder{
 		ProjectID: req.ProjectID,
@@ -113,14 +132,21 @@ func (s *folderService) CreateFolder(ctx context.Context, req *docsysSvc.CreateF
 }
 
 // GetFolder retrieves a folder with its computed path
-func (s *folderService) GetFolder(ctx context.Context, id, projectID string) (*models.Folder, error) {
-	folder, err := s.folderRepo.GetByID(ctx, id, projectID)
+// Authorization is checked first via the injected authorizer
+func (s *folderService) GetFolder(ctx context.Context, userID, folderID string) (*models.Folder, error) {
+	// Authorize: check user can access this folder
+	if err := s.authorizer.CanAccessFolder(ctx, userID, folderID); err != nil {
+		return nil, err
+	}
+
+	// Get folder (authorization already done, use GetByIDOnly)
+	folder, err := s.folderRepo.GetByIDOnly(ctx, folderID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Compute display path
-	path, err := s.folderRepo.GetPath(ctx, &folder.ID, projectID)
+	path, err := s.folderRepo.GetPath(ctx, &folder.ID, folder.ProjectID)
 	if err != nil {
 		s.logger.Warn("failed to compute path", "folder_id", folder.ID, "error", err)
 		folder.Path = folder.Name
@@ -132,14 +158,20 @@ func (s *folderService) GetFolder(ctx context.Context, id, projectID string) (*m
 }
 
 // UpdateFolder updates a folder (rename or move)
-func (s *folderService) UpdateFolder(ctx context.Context, id string, req *docsysSvc.UpdateFolderRequest) (*models.Folder, error) {
+// Authorization is checked first via the injected authorizer
+func (s *folderService) UpdateFolder(ctx context.Context, userID, folderID string, req *docsysSvc.UpdateFolderRequest) (*models.Folder, error) {
+	// Authorize: check user can access this folder
+	if err := s.authorizer.CanAccessFolder(ctx, userID, folderID); err != nil {
+		return nil, err
+	}
+
 	// Validate request
 	if err := s.validateUpdateRequest(req); err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
 	}
 
-	// Get existing folder
-	folder, err := s.folderRepo.GetByID(ctx, id, req.ProjectID)
+	// Get existing folder (authorization already done, use GetByIDOnly)
+	folder, err := s.folderRepo.GetByIDOnly(ctx, folderID)
 	if err != nil {
 		return nil, err
 	}
@@ -152,25 +184,42 @@ func (s *folderService) UpdateFolder(ctx context.Context, id string, req *docsys
 	if req.FolderID != nil {
 		// Validate parent folder exists (unless moving to root)
 		if *req.FolderID != "" {
-			parent, err := s.folderRepo.GetByID(ctx, *req.FolderID, req.ProjectID)
+			parent, err := s.folderRepo.GetByID(ctx, *req.FolderID, folder.ProjectID)
 			if err != nil {
 				return nil, fmt.Errorf("parent folder not found: %w", err)
 			}
 
 			// Prevent circular references (can't move folder to be a child of itself or its descendants)
-			if err := s.validateNoCircularReference(ctx, id, *req.FolderID, req.ProjectID); err != nil {
+			if err := s.validateNoCircularReference(ctx, folderID, *req.FolderID, folder.ProjectID); err != nil {
 				return nil, err
 			}
 
 			folder.ParentID = &parent.ID
 			s.logger.Debug("moving folder to new parent",
-				"folder_id", id,
+				"folder_id", folderID,
 				"new_folder_id", parent.ID,
 			)
 		} else {
 			// Move to root
 			folder.ParentID = nil
-			s.logger.Debug("moving folder to root", "folder_id", id)
+			s.logger.Debug("moving folder to root", "folder_id", folderID)
+		}
+	}
+
+	// Check for duplicate name in target folder (if name or parent changed)
+	if req.Name != nil || req.FolderID != nil {
+		siblingFolders, err := s.folderRepo.ListChildren(ctx, folder.ParentID, folder.ProjectID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check for duplicate names: %w", err)
+		}
+		for _, sibling := range siblingFolders {
+			if sibling.ID != folder.ID && sibling.Name == folder.Name {
+				return nil, &domain.ConflictError{
+					Message:      fmt.Sprintf("a folder named %q already exists in this location", folder.Name),
+					ResourceType: "folder",
+					ResourceID:   sibling.ID,
+				}
+			}
 		}
 	}
 
@@ -182,7 +231,7 @@ func (s *folderService) UpdateFolder(ctx context.Context, id string, req *docsys
 	}
 
 	// Compute display path
-	path, err := s.folderRepo.GetPath(ctx, &folder.ID, req.ProjectID)
+	path, err := s.folderRepo.GetPath(ctx, &folder.ID, folder.ProjectID)
 	if err != nil {
 		s.logger.Warn("failed to compute path", "folder_id", folder.ID, "error", err)
 		folder.Path = folder.Name
@@ -201,15 +250,21 @@ func (s *folderService) UpdateFolder(ctx context.Context, id string, req *docsys
 }
 
 // DeleteFolder deletes a folder (must be empty)
-func (s *folderService) DeleteFolder(ctx context.Context, id, projectID string) error {
-	// Verify folder exists
-	folder, err := s.folderRepo.GetByID(ctx, id, projectID)
+// Authorization is checked first via the injected authorizer
+func (s *folderService) DeleteFolder(ctx context.Context, userID, folderID string) error {
+	// Authorize: check user can access this folder
+	if err := s.authorizer.CanAccessFolder(ctx, userID, folderID); err != nil {
+		return err
+	}
+
+	// Get folder (authorization already done, use GetByIDOnly)
+	folder, err := s.folderRepo.GetByIDOnly(ctx, folderID)
 	if err != nil {
 		return err
 	}
 
 	// Check for child folders
-	childFolders, err := s.folderRepo.ListChildren(ctx, &id, projectID)
+	childFolders, err := s.folderRepo.ListChildren(ctx, &folderID, folder.ProjectID)
 	if err != nil {
 		return fmt.Errorf("failed to check child folders: %w", err)
 	}
@@ -218,7 +273,7 @@ func (s *folderService) DeleteFolder(ctx context.Context, id, projectID string) 
 	}
 
 	// Check for documents
-	docs, err := s.docRepo.ListByFolder(ctx, &id, projectID)
+	docs, err := s.docRepo.ListByFolder(ctx, &folderID, folder.ProjectID)
 	if err != nil {
 		return fmt.Errorf("failed to check documents: %w", err)
 	}
@@ -227,21 +282,26 @@ func (s *folderService) DeleteFolder(ctx context.Context, id, projectID string) 
 	}
 
 	// Delete folder
-	if err := s.folderRepo.Delete(ctx, id, projectID); err != nil {
+	if err := s.folderRepo.Delete(ctx, folderID, folder.ProjectID); err != nil {
 		return err
 	}
 
 	s.logger.Info("folder deleted",
-		"id", id,
+		"id", folderID,
 		"name", folder.Name,
-		"project_id", projectID,
+		"project_id", folder.ProjectID,
 	)
 
 	return nil
 }
 
 // ListChildren lists all child folders and documents in a folder
-func (s *folderService) ListChildren(ctx context.Context, folderID *string, projectID string) (*docsysSvc.FolderContents, error) {
+// Authorization is checked first via the injected authorizer
+func (s *folderService) ListChildren(ctx context.Context, userID string, folderID *string, projectID string) (*docsysSvc.FolderContents, error) {
+	// Authorize: check user can access this project
+	if err := s.authorizer.CanAccessProject(ctx, userID, projectID); err != nil {
+		return nil, err
+	}
 	var folder *models.Folder
 	var err error
 
