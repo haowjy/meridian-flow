@@ -20,9 +20,9 @@ const (
 
 // PricingTier represents a pricing tier based on context window usage
 type PricingTier struct {
-	Threshold   *int                `yaml:"threshold" json:"threshold"`       // null = unlimited
-	InputPrice  map[string]float64  `yaml:"input_price" json:"input_price"`   // modality -> price (e.g., "text": 5.00, "audio": 15.00)
-	OutputPrice map[string]float64  `yaml:"output_price" json:"output_price"` // modality -> price (e.g., "text": 15.00, "image": 20.00)
+	Threshold   *int               `yaml:"threshold" json:"threshold"`       // null = unlimited
+	InputPrice  map[string]float64 `yaml:"input_price" json:"input_price"`   // modality -> price (e.g., "text": 5.00, "audio": 15.00)
+	OutputPrice map[string]float64 `yaml:"output_price" json:"output_price"` // modality -> price (e.g., "text": 15.00, "image": 20.00)
 }
 
 // ModelCapabilities represents all metadata for a specific model
@@ -35,6 +35,10 @@ type ModelCapabilities struct {
 	SupportsTools    bool `yaml:"supports_tools" json:"supports_tools"`
 	SupportsThinking bool `yaml:"supports_thinking" json:"supports_thinking"`
 	SupportsVision   bool `yaml:"supports_vision" json:"supports_vision"`
+
+	// RequiresThinking means this model cannot have thinking disabled
+	// True for thinking-variant models like kimi-k2-thinking
+	RequiresThinking bool `yaml:"requires_thinking" json:"requires_thinking"`
 
 	// Advanced capabilities
 	ToolCallQuality ToolCallQuality `yaml:"tool_call_quality" json:"tool_call_quality"`
@@ -50,6 +54,6 @@ type ModelCapabilities struct {
 
 // ProviderCapabilities represents all models for a provider
 type ProviderCapabilities struct {
-	Provider string                        `yaml:"provider" json:"provider"`
-	Models   map[string]ModelCapabilities  `yaml:"models" json:"models"`
+	Provider string                       `yaml:"provider" json:"provider"`
+	Models   map[string]ModelCapabilities `yaml:"models" json:"models"`
 }

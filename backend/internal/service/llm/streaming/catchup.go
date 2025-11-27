@@ -20,11 +20,6 @@ func buildCatchupFunc(turnRepo llmRepo.TurnReader, serializer *llmModels.BlockSe
 		ctx := context.Background()
 		turnID := streamID // streamID is the turnID
 
-		logger.Debug("building catchup events",
-			"turn_id", turnID,
-			"last_event_id", lastEventID,
-		)
-
 		// Get turn metadata for model info
 		turn, err := turnRepo.GetTurn(ctx, turnID)
 		if err != nil {
@@ -66,12 +61,6 @@ func buildCatchupFunc(turnRepo llmRepo.TurnReader, serializer *llmModels.BlockSe
 			blockEvents := serializer.BlockToSSEEvents(&block, i)
 			events = append(events, blockEvents...)
 		}
-
-		logger.Debug("catchup events built",
-			"turn_id", turnID,
-			"last_event_id", lastEventID,
-			"total_events", len(events),
-		)
 
 		return events, nil
 	}

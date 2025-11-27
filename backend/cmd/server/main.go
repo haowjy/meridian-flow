@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"log"
 	"log/slog"
 	"net/http"
@@ -40,7 +41,18 @@ func main() {
 		logLevel = slog.LevelDebug
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	// Determine log output destination
+	var logOutput io.Writer = os.Stdout
+	if cfg.LogToFile {
+		f, err := config.SetupLogFile(cfg.LogDir, cfg.LogMaxFiles)
+		if err != nil {
+			log.Fatalf("failed to setup log file: %v", err)
+		}
+		defer f.Close()
+		logOutput = f
+	}
+
+	logger := slog.New(slog.NewJSONHandler(logOutput, &slog.HandlerOptions{
 		Level: logLevel,
 	}))
 	slog.SetDefault(logger) // Set as default logger

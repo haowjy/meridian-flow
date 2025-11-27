@@ -97,10 +97,6 @@ func (g *ResponseGenerator) GenerateResponse(ctx context.Context, userTurnID str
 		return nil, fmt.Errorf("turn path is empty")
 	}
 
-	g.logger.Debug("retrieved turn path",
-		"turn_count", len(path),
-	)
-
 	// 1b. Load content blocks for all turns in the path
 	for i := range path {
 		blocks, err := g.turnReader.GetTurnBlocks(ctx, path[i].ID)
@@ -110,17 +106,11 @@ func (g *ResponseGenerator) GenerateResponse(ctx context.Context, userTurnID str
 		path[i].Blocks = blocks
 	}
 
-	g.logger.Debug("loaded content blocks for turns")
-
 	// 2. Build messages from turn history
 	messages, err := g.buildMessages(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build messages: %w", err)
 	}
-
-	g.logger.Debug("built message context",
-		"message_count", len(messages),
-	)
 
 	// 3. Get provider
 	llmProvider, err := g.registry.GetProvider(provider)

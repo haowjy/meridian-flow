@@ -155,6 +155,11 @@ LLM Configuration (at least one required):
 - `ANTHROPIC_API_KEY` - For Claude models via Anthropic API
 - `OPENROUTER_API_KEY` - For multiple providers via OpenRouter
 
+Optional (Logging):
+- `LOG_TO_FILE` - Enable file logging (default: false)
+- `LOG_DIR` - Log directory (default: ./logs)
+- `LOG_MAX_FILES` - Max session log files to keep (default: 10)
+
 See `.env.example` for development and `.env.production.example` for deployment.
 
 ## Common Issues

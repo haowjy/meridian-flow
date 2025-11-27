@@ -25,6 +25,10 @@ type Config struct {
 	SearchAPIProvider string // Provider name: "tavily", "brave", "serper", etc.
 	// Debug flags
 	Debug bool // Enables DEBUG features like SSE event IDs
+	// Logging configuration
+	LogToFile   bool   // Enable file logging instead of stdout
+	LogDir      string // Directory for log files
+	LogMaxFiles int    // Max session log files to keep
 }
 
 func Load() *Config {
@@ -55,6 +59,10 @@ func Load() *Config {
 		SearchAPIProvider: getEnv("SEARCH_API_PROVIDER", "tavily"),
 		// Debug flags - default to true in dev/test, false in production
 		Debug: getEnv("DEBUG", getDefaultDebug(env)) == "true",
+		// Logging configuration
+		LogToFile:   getEnv("LOG_TO_FILE", "false") == "true",
+		LogDir:      getEnv("LOG_DIR", "./logs"),
+		LogMaxFiles: getEnvInt("LOG_MAX_FILES", 10),
 	}
 }
 

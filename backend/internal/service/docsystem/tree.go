@@ -118,11 +118,5 @@ func (s *treeService) GetProjectTree(ctx context.Context, userID, projectID stri
 		Documents: rootDocuments,
 	}
 
-	s.logger.Info("project tree built",
-		"project_id", projectID,
-		"folder_count", len(allFolders),
-		"document_count", len(allDocuments),
-	)
-
 	return tree, nil
 }

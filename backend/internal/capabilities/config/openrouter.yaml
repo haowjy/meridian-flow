@@ -1,7 +1,7 @@
 provider: openrouter
 models:
 
-  anthropic/claude-haiku-4-5:
+  anthropic/claude-haiku-4.5:
     display_name: "Claude Haiku 4.5"
     description: "Fast and affordable"
     supports_tools: true
@@ -95,6 +95,7 @@ models:
     description: "Kimi's thinking model"
     supports_tools: true
     supports_thinking: true
+    requires_thinking: true
     supports_vision: false
     tool_call_quality: good
     image_generation: none
@@ -112,6 +113,7 @@ models:
     description: "DeepSeek Thinking Model"
     supports_tools: true
     supports_thinking: true
+    requires_thinking: true
     supports_vision: false
     tool_call_quality: good
     image_generation: none
