@@ -32,6 +32,9 @@ export function ImportFileSelector({
   const [isDragOver, setIsDragOver] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  // Handle file selection from both input and drag-and-drop.
+  // Validation is immediate (client-side) - backend does additional validation.
+  // On validation failure: clear selection to prevent invalid files from being submitted.
   const handleFiles = (files: File[]) => {
     const errors = validateFiles(files)
     setValidationErrors(errors)
@@ -39,7 +42,7 @@ export function ImportFileSelector({
     if (errors.length === 0) {
       onFileSelect(files)
     } else {
-      onFileSelect([])
+      onFileSelect([]) // Clear selection on validation error
     }
   }
 

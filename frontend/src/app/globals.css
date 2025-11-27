@@ -522,7 +522,7 @@ body.preload * {
   }
 
   .chat-main-body {
-    @apply flex-1 overflow-y-auto;
+    @apply flex-1 overflow-y-auto min-h-[150px];
   }
 
   .chat-main-empty {
@@ -567,7 +567,7 @@ body.preload * {
 
   /* Chat input */
   .chat-input-shell {
-    @apply bg-background/95 px-4 py-2;
+    @apply bg-background/95 px-4 py-2 shrink-0;
   }
 
   .chat-input {

@@ -14,7 +14,13 @@ import (
 	"meridian/internal/service/docsystem/converter"
 )
 
-// individualFileProcessor processes individual files (.md, .txt, .html)
+// individualFileProcessor processes individual files (.md, .txt, .html).
+// Implements FileProcessor interface using Strategy pattern.
+//
+// Responsibilities:
+//   - Handle single file uploads (non-zip)
+//   - Route to appropriate ContentConverter based on extension
+//   - Detect duplicates and handle create/update/skip decisions
 type individualFileProcessor struct {
 	docRepo           docsysRepo.DocumentRepository
 	docService        docsysSvc.DocumentService
@@ -86,13 +92,11 @@ func (p *individualFileProcessor) Process(
 		return result, nil
 	}
 
-	// Extract document name (without extension)
+	// Extract document name (filename without extension)
 	baseName := filepath.Base(filename)
 	ext := filepath.Ext(baseName)
 	docName := strings.TrimSuffix(baseName, ext)
-
-	// Sanitize document name: replace slashes with hyphens
-	docName = strings.ReplaceAll(docName, "/", "-")
+	docName = SanitizeDocName(docName) // Replace invalid characters
 
 	// Check for existing document with same name in target folder
 	existingDoc, err := p.findExistingDocument(ctx, projectID, folderPath, docName)
@@ -137,16 +141,11 @@ func (p *individualFileProcessor) Process(
 				"folder_path", folderPath,
 			)
 		} else {
-			// Skip duplicate
-			fullPath := folderPath + "/" + docName
-			if folderPath == "" {
-				fullPath = docName
-			}
-
+			// Skip duplicate - document already exists and overwrite is false
 			result.Summary.Skipped = 1
 			result.Documents = append(result.Documents, docsysSvc.ImportDocument{
 				ID:     existingDoc.ID,
-				Path:   fullPath,
+				Path:   BuildFullPath(folderPath, docName),
 				Name:   docName,
 				Action: "skipped",
 			})
@@ -196,36 +195,36 @@ func (p *individualFileProcessor) Process(
 	return result, nil
 }
 
-// findExistingDocument checks if a document with the given name exists in the target folder
+// findExistingDocument checks if a document with the given name exists in the target folder.
+//
+// Performance Note: This scans ALL documents in the project (O(n) where n = document count).
+// Acceptable for projects with < 1000 documents. For larger projects, consider:
+//   - Adding a database index on (project_id, folder_path, name)
+//   - Caching the document map across multiple imports
+//   - Using a single bulk lookup at the start (like ZipFileProcessor does)
 func (p *individualFileProcessor) findExistingDocument(
 	ctx context.Context,
 	projectID string,
 	folderPath string,
 	docName string,
 ) (*docsysModels.Document, error) {
-	// Get all documents in project and find matching one
+	// Fetch all documents - see Performance Note above
 	docs, err := p.docRepo.GetAllMetadataByProject(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Build target path for comparison
-	targetPath := folderPath + "/" + docName
-	if folderPath == "" {
-		targetPath = docName
-	}
+	// Build target lookup key using the same format as docMap in ZipFileProcessor
+	targetPath := BuildFullPath(folderPath, docName)
+	targetKey := BuildLookupKey(targetPath, docName)
 
 	for _, doc := range docs {
-		// Compute path for this document
 		path, err := p.docRepo.GetPath(ctx, &doc)
 		if err != nil {
 			continue
 		}
 
-		// Check if path and name match
-		key := fmt.Sprintf("%s|%s", path, doc.Name)
-		targetKey := fmt.Sprintf("%s|%s", targetPath, docName)
-		if key == targetKey {
+		if BuildLookupKey(path, doc.Name) == targetKey {
 			return &doc, nil
 		}
 	}

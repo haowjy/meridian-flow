@@ -1,5 +1,5 @@
-import { useState, ReactNode, DragEvent } from 'react'
-import { FileText, Folder, Plus, Upload } from 'lucide-react'
+import { useState, ReactNode, DragEvent, Fragment } from 'react'
+import { FileText, Plus, Upload } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
@@ -99,32 +99,29 @@ export function DocumentTreePanel({
               aria-label="Search documents by name"
             />
           </div>
+          {/* Dropdown menu uses same items as context menu for consistency */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button size="icon" aria-label="Create new item">
                 <Plus className="size-3" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={onCreateDocument}>
-                <FileText className="mr-1 size-4" />
-                New document
-              </DropdownMenuItem>
-              {onCreateFolder && (
-                <DropdownMenuItem onClick={onCreateFolder}>
-                  <Folder className="mr-1 size-4" />
-                  New folder
-                </DropdownMenuItem>
-              )}
-              {onImport && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={onImport}>
-                    <Upload className="mr-1 size-4" />
-                    Import...
+            <DropdownMenuContent align="end" onCloseAutoFocus={(e) => e.preventDefault()}>
+              {rootMenuItems.map((item, index) => (
+                <Fragment key={item.id}>
+                  {item.separator === 'before' && index > 0 && <DropdownMenuSeparator />}
+                  <DropdownMenuItem
+                    onClick={item.onSelect}
+                    className={item.variant === 'destructive' ? 'text-destructive' : ''}
+                  >
+                    {item.icon && <span className="mr-1">{item.icon}</span>}
+                    {item.label}
                   </DropdownMenuItem>
-                </>
-              )}
+                  {item.separator === 'after' && index < rootMenuItems.length - 1 && (
+                    <DropdownMenuSeparator />
+                  )}
+                </Fragment>
+              ))}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

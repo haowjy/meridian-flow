@@ -3,10 +3,40 @@
 import { createClient } from '@/core/supabase/client'
 import { Button } from '@/shared/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card'
+import { Input } from '@/shared/components/ui/input'
+import { Label } from '@/shared/components/ui/label'
+import { FormEvent, useState } from 'react'
 import { toast } from 'sonner'
+
+const isDevMode = process.env.NEXT_PUBLIC_DEV_TOOLS === '1'
 
 export function LoginForm() {
     const supabase = createClient()
+    const [email, setEmail] = useState('')
+    const [password, setPassword] = useState('')
+    const [isLoading, setIsLoading] = useState(false)
+
+    const handleEmailLogin = async (e: FormEvent) => {
+        e.preventDefault()
+        setIsLoading(true)
+        try {
+            const { error } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+            })
+            if (error) {
+                toast.error(error.message)
+            } else {
+                // Supabase sets session cookies automatically
+                window.location.href = '/projects'
+            }
+        } catch (error) {
+            console.error('Email login failed', error)
+            toast.error('An unexpected error occurred')
+        } finally {
+            setIsLoading(false)
+        }
+    }
 
     const handleGoogleLogin = async () => {
         try {
@@ -60,6 +90,52 @@ export function LoginForm() {
                     </svg>
                     Continue with Google
                 </Button>
+
+                {isDevMode && (
+                    <>
+                        <div className="relative my-4">
+                            <div className="absolute inset-0 flex items-center">
+                                <span className="w-full border-t" />
+                            </div>
+                            <div className="relative flex justify-center text-xs uppercase">
+                                <span className="bg-card px-2 text-muted-foreground">
+                                    or (dev only)
+                                </span>
+                            </div>
+                        </div>
+
+                        <form onSubmit={handleEmailLogin} className="space-y-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="email">Email</Label>
+                                <Input
+                                    id="email"
+                                    type="email"
+                                    placeholder="test@example.com"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    required
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="password">Password</Label>
+                                <Input
+                                    id="password"
+                                    type="password"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    required
+                                />
+                            </div>
+                            <Button
+                                type="submit"
+                                className="w-full"
+                                disabled={isLoading}
+                            >
+                                {isLoading ? 'Signing in...' : 'Sign in with Email'}
+                            </Button>
+                        </form>
+                    </>
+                )}
             </CardContent>
         </Card>
     )

@@ -1,8 +1,19 @@
-import { Check, AlertTriangle, Minus, X } from 'lucide-react'
+import { Check, AlertTriangle, Minus, X, LucideIcon } from 'lucide-react'
 import { Button } from '@/shared/components/ui/button'
 import { DialogFooter } from '@/shared/components/ui/dialog'
 import { Label } from '@/shared/components/ui/label'
 import { ImportResponse } from '@/core/lib/api'
+
+/**
+ * Configuration for action status icons.
+ * Extensible: add new actions here when backend adds new action types.
+ */
+const ACTION_CONFIG: Record<string, { icon: LucideIcon; className: string }> = {
+  created: { icon: Check, className: 'text-green-500' },
+  updated: { icon: AlertTriangle, className: 'text-yellow-500' },
+  skipped: { icon: Minus, className: 'text-muted-foreground' },
+  failed: { icon: X, className: 'text-destructive' },
+} as const
 
 interface ImportResultsProps {
   results: ImportResponse
@@ -86,18 +97,11 @@ export function ImportResults({
   )
 }
 
-// Helper component for action icons
+// Helper component for action icons - uses ACTION_CONFIG for extensibility
 function ActionIcon({ action }: { action: string }) {
-  switch (action) {
-    case 'created':
-      return <Check className="size-4 text-green-500 shrink-0" />
-    case 'updated':
-      return <AlertTriangle className="size-4 text-yellow-500 shrink-0" />
-    case 'skipped':
-      return <Minus className="size-4 text-muted-foreground shrink-0" />
-    default:
-      return <X className="size-4 text-destructive shrink-0" />
-  }
+  const config = ACTION_CONFIG[action] ?? ACTION_CONFIG.failed
+  const Icon = config.icon
+  return <Icon className={`size-4 shrink-0 ${config.className}`} />
 }
 
 // Helper component for stat badges

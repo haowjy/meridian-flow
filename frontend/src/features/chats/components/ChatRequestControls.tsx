@@ -1,7 +1,8 @@
 "use client"
 
 import type { ReactNode } from 'react'
-import { Brain, ChevronDown, Globe2, Send, StopCircle } from 'lucide-react'
+import { ArrowUp, Brain, ChevronDown, Globe2, StopCircle } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
 import {
   DropdownMenu,
@@ -26,6 +27,8 @@ interface ChatRequestControlsProps {
   rightContent?: ReactNode
   isStreaming?: boolean
   onStop?: () => void
+  /** Show the web search toggle (default: false) */
+  showSearch?: boolean
 }
 
 export function ChatRequestControls({
@@ -36,6 +39,7 @@ export function ChatRequestControls({
   rightContent,
   isStreaming,
   onStop,
+  showSearch = false,
 }: ChatRequestControlsProps) {
   const { providers } = useModelCapabilities()
 
@@ -50,16 +54,23 @@ export function ChatRequestControls({
       })),
     ) ?? []
 
+  // Find the selected model to check if it supports thinking
+  const selectedModel = allModels.find((m) => m.id === options.modelId)
+  const supportsThinking = selectedModel?.supportsThinking ?? true
+
   const handleSelectModel = (
     modelId: string,
     modelLabel: string,
     providerId: string,
+    modelSupportsThinking: boolean,
   ) => {
     onOptionsChange({
       ...options,
       modelId,
       modelLabel,
       providerId,
+      // Force reasoning to 'off' if model doesn't support thinking
+      reasoning: modelSupportsThinking ? options.reasoning : 'off',
     })
   }
 
@@ -79,16 +90,19 @@ export function ChatRequestControls({
           onChange={(reasoning) =>
             onOptionsChange({ ...options, reasoning })
           }
+          disabled={!supportsThinking}
         />
-        <WebSearchToggle
-          enabled={options.searchEnabled}
-          onToggle={() =>
-            onOptionsChange({
-              ...options,
-              searchEnabled: !options.searchEnabled,
-            })
-          }
-        />
+        {showSearch && (
+          <WebSearchToggle
+            enabled={options.searchEnabled}
+            onToggle={() =>
+              onOptionsChange({
+                ...options,
+                searchEnabled: !options.searchEnabled,
+              })
+            }
+          />
+        )}
       </div>
       {(onSend || rightContent) && (
         <div className="flex items-center gap-1">
@@ -102,7 +116,7 @@ export function ChatRequestControls({
               onClick={showStop && onStop ? onStop : onSend}
               aria-label={showStop ? 'Stop response' : 'Send message'}
             >
-              {showStop ? <StopCircle className="size-4" /> : <Send className="size-4" />}
+              {showStop ? <StopCircle className="size-4" /> : <ArrowUp className="size-4" />}
             </Button>
           )}
         </div>
@@ -125,6 +139,7 @@ interface ModelSelectorProps {
     modelId: string,
     modelLabel: string,
     providerId: string,
+    supportsThinking: boolean,
   ) => void
 }
 
@@ -137,14 +152,14 @@ function ModelSelector({
   const grouped = models.reduce<
     Record<
       string,
-      { providerName: string; items: { id: string; displayName: string }[] }
+      { providerName: string; items: { id: string; displayName: string; supportsThinking: boolean }[] }
     >
   >((acc, model) => {
     const key = model.providerId
     if (!acc[key]) {
       acc[key] = { providerName: model.providerName, items: [] }
     }
-    acc[key].items.push({ id: model.id, displayName: model.displayName })
+    acc[key].items.push({ id: model.id, displayName: model.displayName, supportsThinking: model.supportsThinking })
     return acc
   }, {})
 
@@ -175,6 +190,7 @@ function ModelSelector({
                 DEFAULT_MODEL_ID,
                 DEFAULT_MODEL_LABEL,
                 DEFAULT_PROVIDER_ID,
+                true, // default model supports thinking
               )
             }
             className="text-[0.7rem] sm:text-xs"
@@ -192,7 +208,7 @@ function ModelSelector({
                 key={model.id}
                 className="flex items-center gap-2 text-[0.7rem] sm:text-xs"
                 onSelect={() =>
-                  onSelectModel(model.id, model.displayName, providerId)
+                  onSelectModel(model.id, model.displayName, providerId, model.supportsThinking)
                 }
               >
                 <span
@@ -215,6 +231,7 @@ function ModelSelector({
 }
 
 const REASONING_LABELS: Record<ReasoningLevel, string> = {
+  off: 'Off',
   low: 'Low',
   medium: 'Medium',
   high: 'High',
@@ -223,22 +240,35 @@ const REASONING_LABELS: Record<ReasoningLevel, string> = {
 interface ReasoningDropdownProps {
   value: ReasoningLevel
   onChange: (value: ReasoningLevel) => void
+  /** When true, dropdown is disabled (model doesn't support thinking) */
+  disabled?: boolean
 }
 
 function ReasoningDropdown({
   value,
   onChange,
+  disabled = false,
 }: ReasoningDropdownProps) {
-  const levels: ReasoningLevel[] = ['low', 'medium', 'high']
+  const levels: ReasoningLevel[] = ['off', 'low', 'medium', 'high']
+  const isActive = value !== 'off'
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+      <DropdownMenuTrigger asChild disabled={disabled}>
         <Button
           type="button"
           size="sm"
           variant="outline"
-          className="flex items-center gap-1 px-1.5 py-1 text-[0.7rem] sm:text-xs"
+          disabled={disabled}
+          className={cn(
+            "flex items-center gap-1 px-2 py-1 text-[0.7rem] sm:text-xs",
+            // Off state: white/card background to blend with message input
+            !isActive && "bg-card",
+            // Active state: subtle jade background tint
+            isActive && "bg-primary/10",
+            // Disabled state: muted appearance
+            disabled && "text-muted-foreground opacity-50"
+          )}
         >
           <Brain className="size-3" />
           <span>{REASONING_LABELS[value]}</span>
@@ -246,10 +276,6 @@ function ReasoningDropdown({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
-        <DropdownMenuLabel className="text-[0.7rem] sm:text-xs">
-          Reasoning
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
         {levels.map((level) => (
           <DropdownMenuItem
             key={level}
@@ -257,7 +283,9 @@ function ReasoningDropdown({
             className="flex items-center gap-2 text-[0.7rem] sm:text-xs"
           >
             <Brain className="size-3" />
-            <span>{REASONING_LABELS[level]}</span>
+            <span className={value === level ? 'font-medium' : undefined}>
+              {REASONING_LABELS[level]}
+            </span>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

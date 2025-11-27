@@ -12,7 +12,8 @@ interface InlineNameEditorProps {
 /**
  * Inline text input for renaming documents/folders in the tree.
  * - Enter: Submit if valid (non-empty, no duplicates)
- * - Escape/blur: Cancel
+ * - Escape: Cancel
+ * - Blur (click away): Submit if valid, cancel if empty
  * - Shows inline error for duplicate names
  */
 export function InlineNameEditor({
@@ -80,8 +81,16 @@ export function InlineNameEditor({
   }
 
   const handleBlur = () => {
-    // Cancel on blur (user clicked away)
-    onCancel()
+    // Submit if valid, cancel if empty/invalid.
+    // This sidesteps focus race conditions from dropdown/context menus
+    // and matches OS behavior (Finder, Explorer, VS Code).
+    const trimmed = value.trim()
+    const validationError = validate(trimmed)
+    if (trimmed && !validationError) {
+      onSubmit(trimmed)
+    } else {
+      onCancel()
+    }
   }
 
   return (

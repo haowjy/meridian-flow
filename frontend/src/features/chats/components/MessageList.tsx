@@ -35,7 +35,7 @@ export function TurnList({ turns, scrollToTurnId, isLoading }: TurnListProps) {
 
   return (
     <ScrollArea className="h-full">
-      <div ref={containerRef} className="flex flex-col gap-3 px-4 py-3 w-full max-w-3xl mx-auto">
+      <div ref={containerRef} className="flex flex-col gap-3 px-4 py-3 w-full max-w-5xl mx-auto">
         {turns.map((turn) =>
           turn.role === 'user' ? (
             <UserTurn key={turn.id} turn={turn} />

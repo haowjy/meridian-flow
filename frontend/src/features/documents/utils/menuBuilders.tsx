@@ -1,8 +1,10 @@
+import { FileText, Folder, Upload, Pencil, Trash2, BookOpen } from 'lucide-react'
 import type { ContextMenuItemConfig } from '@/shared/components/TreeItemWithContextMenu'
 
 /**
  * Menu builder utilities for document tree context menus.
  * Centralized menu logic following SOLID principles.
+ * Icons are included to ensure consistent UI across ContextMenu and DropdownMenu.
  */
 
 interface DocumentMenuHandlers {
@@ -42,6 +44,7 @@ export function createDocumentMenuItems(
     items.push({
       id: 'add-reference',
       label: 'Add as reference',
+      icon: <BookOpen className="size-4" />,
       onSelect: handlers.onAddAsReference,
       separator: 'after',
     })
@@ -51,6 +54,7 @@ export function createDocumentMenuItems(
     items.push({
       id: 'rename',
       label: 'Rename',
+      icon: <Pencil className="size-4" />,
       onSelect: handlers.onRename,
     })
   }
@@ -59,6 +63,7 @@ export function createDocumentMenuItems(
     items.push({
       id: 'delete',
       label: 'Delete',
+      icon: <Trash2 className="size-4" />,
       onSelect: handlers.onDelete,
       variant: 'destructive',
       separator: 'before',
@@ -90,6 +95,7 @@ export function createFolderMenuItems(
     items.push({
       id: 'new-document',
       label: 'New Document',
+      icon: <FileText className="size-4" />,
       onSelect: handlers.onCreateDocument,
     })
   }
@@ -98,6 +104,7 @@ export function createFolderMenuItems(
     items.push({
       id: 'new-folder',
       label: 'New Folder',
+      icon: <Folder className="size-4" />,
       onSelect: handlers.onCreateFolder,
     })
   }
@@ -106,6 +113,7 @@ export function createFolderMenuItems(
     items.push({
       id: 'import-documents',
       label: 'Import Documents',
+      icon: <Upload className="size-4" />,
       onSelect: handlers.onImport,
     })
   }
@@ -114,6 +122,7 @@ export function createFolderMenuItems(
     items.push({
       id: 'rename',
       label: 'Rename',
+      icon: <Pencil className="size-4" />,
       onSelect: handlers.onRename,
       separator: hasCreateActions ? 'before' : undefined,
     })
@@ -123,6 +132,7 @@ export function createFolderMenuItems(
     items.push({
       id: 'delete',
       label: 'Delete',
+      icon: <Trash2 className="size-4" />,
       onSelect: handlers.onDelete,
       variant: 'destructive',
       separator: 'before',
@@ -148,6 +158,7 @@ export function createRootMenuItems(
     items.push({
       id: 'new-document',
       label: 'New Document',
+      icon: <FileText className="size-4" />,
       onSelect: handlers.onCreateDocument,
     })
   }
@@ -156,6 +167,7 @@ export function createRootMenuItems(
     items.push({
       id: 'new-folder',
       label: 'New Folder',
+      icon: <Folder className="size-4" />,
       onSelect: handlers.onCreateFolder,
     })
   }
@@ -164,6 +176,7 @@ export function createRootMenuItems(
     items.push({
       id: 'import-documents',
       label: 'Import Documents',
+      icon: <Upload className="size-4" />,
       onSelect: handlers.onImport,
     })
   }

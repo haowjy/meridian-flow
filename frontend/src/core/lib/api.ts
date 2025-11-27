@@ -604,6 +604,13 @@ export const api = {
     },
     delete: (id: string, options?: { signal?: AbortSignal }) =>
       fetchAPI<void>(`/api/documents/${id}`, { method: 'DELETE', signal: options?.signal }),
+    /**
+     * Import documents from files (zip, markdown, text, or HTML).
+     *
+     * Uses multipart/form-data for file upload. Note: Do NOT set Content-Type header
+     * manually - the browser automatically sets it with the correct boundary when
+     * using FormData as the body.
+     */
     import: async (
       projectId: string,
       files: File[],
@@ -611,7 +618,8 @@ export const api = {
       options?: { signal?: AbortSignal; overwrite?: boolean }
     ): Promise<ImportResponse> => {
       const formData = new FormData()
-      // Append all files with the same 'files' key (multipart standard for multiple files)
+      // Multipart standard: multiple files use the same key name.
+      // Backend receives these as an array under "files".
       files.forEach((file) => {
         formData.append('files', file)
       })
@@ -624,6 +632,7 @@ export const api = {
         url += '&overwrite=true'
       }
 
+      // FormData body: browser sets Content-Type to multipart/form-data with boundary
       const data = await fetchAPI<ImportResponse>(url, {
         method: 'POST',
         body: formData,

@@ -37,7 +37,12 @@ export function ImportDocumentDialog({
   const [overwrite, setOverwrite] = useState(false)
   const [prevInitialFiles, setPrevInitialFiles] = useState(initialFiles)
 
-  // Sync initial files when prop changes (React pattern: adjust state during render)
+  // Sync initial files when prop changes.
+  // This uses React's "adjust state during render" pattern (recommended over useEffect).
+  // See: https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  //
+  // Why: initialFiles prop comes from drag-and-drop which can trigger mid-render.
+  // Using useEffect would cause an extra render cycle; this pattern is synchronous.
   if (initialFiles !== prevInitialFiles) {
     setPrevInitialFiles(initialFiles)
     if (open && initialFiles && initialFiles.length > 0) {
