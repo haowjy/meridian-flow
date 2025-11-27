@@ -23,6 +23,7 @@ This directory contains detailed documentation for all features in Meridian, org
 | Feature | Stack | Backend | Frontend | Notes |
 |---------|-------|---------|----------|-------|
 | **Authentication** | Both | ✅ Complete | ✅ Complete | JWT validation, Google OAuth only, protected routes, resource authorization |
+| **User Settings** | Both | ✅ Complete | 🟡 Partial | Profile UI complete, preferences API complete, preferences UI missing |
 | **Document Editor** | Frontend | N/A | ✅ Complete | TipTap, auto-save, markdown, caching |
 | **File System** | Both | ✅ Complete | ✅ Complete | CRUD, tree view, context menus; Search UI non-functional |
 | **Document Import** | Both | ✅ Complete | ✅ Complete | Multi-format (.zip, .md, .txt, .html), XSS sanitization, drag-drop |
@@ -33,7 +34,6 @@ This directory contains detailed documentation for all features in Meridian, org
 | **State Management** | Frontend | N/A | ✅ Complete | Zustand, IndexedDB, optimistic updates, retry queue |
 | **UI Components** | Frontend | N/A | ✅ Complete | shadcn/ui, custom components, high polish |
 | **Infrastructure** | Both | ✅ Complete | ✅ Complete | Errors, DB features, routing, logging, deployment |
-| **User Preferences** | Backend | ✅ Complete | ❌ Missing | Backend API exists, no frontend UI |
 
 ---
 
@@ -45,6 +45,12 @@ This directory contains detailed documentation for all features in Meridian, org
 - Frontend: **Google OAuth only**, session management, route protection
 - Design decision: Google OAuth only for simplified auth flow
 - Authorization: OwnerBasedAuthorizer protects all endpoints (project → resource ownership)
+
+### [fb-user-settings/](fb-user-settings/)
+**User profile display and preferences configuration**
+- Profile UI: avatar, user menu, settings page (frontend ✅)
+- Preferences API: JSONB storage, 5 categories (backend ✅)
+- Preferences UI: not yet implemented (frontend ❌)
 
 ### [f-document-editor/](f-document-editor/)
 **TipTap rich text editor with auto-save and caching**
@@ -112,11 +118,6 @@ This directory contains detailed documentation for all features in Meridian, org
 - Backend: Error handling, DB features (soft delete, RLS, transactions), CORS
 - Frontend: Next.js routing, logging, dev tools
 - Deployment: Railway (backend), Vercel (frontend)
-
-### [b-user-preferences/](b-user-preferences/)
-**User-specific settings**
-- Backend API complete (JSONB storage, 5 categories)
-- ❌ No frontend settings UI
 
 ---
 

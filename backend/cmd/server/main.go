@@ -245,7 +245,8 @@ func main() {
 	mux.HandleFunc("PATCH /api/chats/{id}/last-viewed-turn", chatHandler.UpdateLastViewedTurn)
 	mux.HandleFunc("DELETE /api/chats/{id}", chatHandler.DeleteChat)
 	mux.HandleFunc("GET /api/chats/{id}/turns", chatHandler.GetPaginatedTurns)
-	mux.HandleFunc("POST /api/chats/{id}/turns", chatHandler.CreateTurn)
+	mux.HandleFunc("POST /api/chats/{id}/turns", chatHandler.CreateTurn) // Deprecated: use POST /api/turns
+	mux.HandleFunc("POST /api/turns", chatHandler.CreateTurnV2)          // New: chat_id/project_id in body
 	mux.HandleFunc("GET /api/turns/{id}/path", chatHandler.GetTurnPath)
 	mux.HandleFunc("GET /api/turns/{id}/siblings", chatHandler.GetTurnSiblings)
 

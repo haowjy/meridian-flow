@@ -73,6 +73,7 @@ All authentication features are fully implemented and production-ready.
 - Session expiry detection
 - JWT automatically added to all API requests via middleware
 - Logout functionality
+- **User profile display**: See [fb-user-settings/](../fb-user-settings/) for avatar and settings UI
 
 #### Protected Routes
 **Status**: ✅ Complete

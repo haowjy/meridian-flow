@@ -6,10 +6,11 @@ import { useUIStore } from '@/core/stores/useUIStore'
 import { useTurnsForChat } from '@/features/chats/hooks/useTurnsForChat'
 import { useChatStore } from '@/core/stores/useChatStore'
 import { useChatSSE } from '@/features/chats/hooks/useChatSSE'
+import { Sparkles } from 'lucide-react'
+import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { ChatHeader } from './ChatHeader'
 import { TurnList } from './TurnList'
 import { TurnInput } from './TurnInput'
-import { ActiveChatEmpty } from './ActiveChatEmpty'
 import { UserMessageSkeleton } from './skeletons/UserMessageSkeleton'
 import { AIMessageSkeleton } from './skeletons/AIMessageSkeleton'
 import { useProjectStore } from '@/core/stores/useProjectStore'
@@ -38,11 +39,14 @@ export function ActiveChatView() {
     currentTurnId: s.currentTurnId,
   })))
 
-  const projectName = useProjectStore(useShallow((state) => {
+  const { projectId, projectName } = useProjectStore(useShallow((state) => {
     const currentId = state.currentProjectId
-    if (!currentId) return null
+    if (!currentId) return { projectId: null, projectName: null }
     const project = state.projects.find((p) => p.id === currentId)
-    return project?.name ?? null
+    return {
+      projectId: currentId,
+      projectName: project?.name ?? null,
+    }
   }))
 
   // Always call hooks unconditionally to respect Rules of Hooks.
@@ -65,18 +69,31 @@ export function ActiveChatView() {
 
   const activeChat = chats.find((c) => c.id === activeChatId) || null
 
+  // Cold start: no chat selected but projectId available
+  // Uses simpler flex layout without scroll container (no scrolling needed)
   if (!activeChat) {
     return (
       <div className="chat-main">
-        {/* Single scroll container - scrollbar extends to top */}
-        <div className="chat-scroll-container">
-          {/* Sticky Header */}
-          <div className="sticky top-0 z-10 bg-background relative">
-            <ChatHeader chat={null} projectName={projectName} />
-            {/* Gradient blur fade - extends below the header */}
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-3 translate-y-full bg-gradient-to-b from-background via-background/50 to-transparent" />
+        {/* Header - not sticky, just at top */}
+        <div className="bg-background relative">
+          <ChatHeader chat={null} projectName={projectName} />
+          <HeaderGradientFade />
+        </div>
+
+        {/* Content fills remaining space - flex-1 works because chat-main is flex col */}
+        <div className="flex-1 flex flex-col min-w-0 pt-3">
+          {/* Welcome centered in available space */}
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center text-muted-foreground">
+              <Sparkles className="mx-auto mb-2 size-6" />
+              <p>Start a new conversation</p>
+            </div>
           </div>
-          <ActiveChatEmpty />
+
+          {/* Input at bottom */}
+          <div className="bg-background">
+            <TurnInput projectId={projectId ?? undefined} />
+          </div>
         </div>
       </div>
     )
@@ -89,8 +106,7 @@ export function ActiveChatView() {
         {/* Sticky Header */}
         <div className="sticky top-0 z-10 bg-background relative">
           <ChatHeader chat={activeChat} projectName={projectName} />
-          {/* Gradient blur fade - extends below the header */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-3 translate-y-full bg-gradient-to-b from-background via-background/50 to-transparent" />
+          <HeaderGradientFade />
         </div>
 
         <div className="relative min-h-full min-w-0 flex flex-col pt-3">

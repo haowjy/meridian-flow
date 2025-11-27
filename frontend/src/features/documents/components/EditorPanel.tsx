@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { EditorContent } from '@tiptap/react'
+import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { getExtensions } from '@/core/editor/extensions'
 import { useEditorStore } from '@/core/stores/useEditorStore'
 import { useDebounce } from '@/core/hooks/useDebounce'
@@ -309,8 +310,7 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
                 status={status}
                 lastSaved={lastSaved}
               />
-              {/* Gradient blur fade - extends below the toolbar */}
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-3 translate-y-full bg-gradient-to-b from-background via-background/50 to-transparent" />
+              <HeaderGradientFade />
             </div>
 
             {/* Editor Content */}

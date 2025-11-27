@@ -3,19 +3,21 @@
 import { useEffect, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useChatStore } from '@/core/stores/useChatStore'
+import { useUIStore } from '@/core/stores/useUIStore'
 import { ChatRequestControls } from '@/features/chats/components/ChatRequestControls'
 import type { ChatRequestOptions } from '@/features/chats/types'
 import { DEFAULT_CHAT_REQUEST_OPTIONS } from '@/features/chats/types'
 
 interface TurnInputProps {
-  chatId: string
+  chatId?: string      // Existing chat
+  projectId?: string   // Cold start (no chat yet)
 }
 
 const DEFAULT_MODEL_ID = 'moonshotai/kimi-k2-thinking'
 const DEFAULT_MODEL_LABEL = 'Kimi K2 Thinking'
 const DEFAULT_PROVIDER_ID = 'openrouter'
 
-export function TurnInput({ chatId }: TurnInputProps) {
+export function TurnInput({ chatId, projectId }: TurnInputProps) {
   const [value, setValue] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [options, setOptions] = useState<ChatRequestOptions>({
@@ -25,19 +27,23 @@ export function TurnInput({ chatId }: TurnInputProps) {
     providerId: DEFAULT_PROVIDER_ID,
   })
 
-  const { createTurn, isLoadingTurns, streamingTurnId, interruptStreamingTurn } = useChatStore(
+  const { createTurn, startNewChat, isLoadingTurns, streamingTurnId, interruptStreamingTurn } = useChatStore(
     useShallow((s) => ({
       createTurn: s.createTurn,
+      startNewChat: s.startNewChat,
       isLoadingTurns: s.isLoadingTurns,
       streamingTurnId: s.streamingTurnId,
       interruptStreamingTurn: s.interruptStreamingTurn,
     })),
   )
 
+  const setActiveChat = useUIStore((s) => s.setActiveChat)
+
   const isStreaming = Boolean(streamingTurnId)
 
+  // Can send if: has text, not loading, not submitting, not streaming, and has either chatId or projectId
   const canSend =
-    value.trim().length > 0 && !isLoadingTurns && !isSubmitting && !isStreaming
+    value.trim().length > 0 && !isLoadingTurns && !isSubmitting && !isStreaming && (Boolean(chatId) || Boolean(projectId))
 
   const handleSend = async () => {
     if (!canSend) return
@@ -46,7 +52,14 @@ export function TurnInput({ chatId }: TurnInputProps) {
 
     setIsSubmitting(true)
     try {
-      await createTurn(chatId, messageText, options)
+      if (chatId) {
+        // Existing chat flow
+        await createTurn(chatId, messageText, options)
+      } else if (projectId) {
+        // Cold start flow - creates chat atomically
+        const chat = await startNewChat(projectId, messageText, options)
+        setActiveChat(chat.id)
+      }
     } finally {
       setIsSubmitting(false)
     }

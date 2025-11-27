@@ -303,6 +303,8 @@ export interface ImportResponse {
 }
 
 type SendTurnOptions = {
+  chatId?: string           // Optional - if not provided with projectId, creates new chat
+  projectId?: string        // Required if chatId is not provided (for cold start)
   prevTurnId?: string | null
   signal?: AbortSignal
   requestOptions?: ChatRequestOptions
@@ -465,26 +467,31 @@ export const api = {
       }
     },
 
-    // NOTE: This is a thin adapter on top of the turn-based API.
-    // It calls GET /api/chats/:id/turns and maps backend Turn to the frontend Turn type.
-    // Wrapper on top of CreateTurn (POST /api/chats/:id/turns).
-    // Returns both the created user turn and the assistant turn that will stream.
+    // Send a message to create a new turn.
+    // Uses POST /api/turns with chat resolution:
+    // 1. If prevTurnId provided → infer chat from that turn
+    // 2. Else if chatId provided → use that chat
+    // 3. Else if projectId provided → create new chat (cold start)
+    //
+    // Returns the created turns and optionally the new chat if cold start.
     send: async (
-      chatId: string,
       message: string,
-      options?: SendTurnOptions
-    ): Promise<{ userTurn: Turn; assistantTurn: Turn; streamUrl: string }> => {
+      options: SendTurnOptions
+    ): Promise<import('@/features/chats/types').SendTurnResponse> => {
       const requestParams = buildRequestParamsFromChatOptions(options?.requestOptions)
 
       const response = await fetchAPI<{
+        chat?: ChatDto // Only present on cold start
         user_turn: TurnDto
         assistant_turn: TurnDto
         stream_url: string
       }>(
-        `/api/chats/${chatId}/turns`,
+        '/api/turns',
         {
           method: 'POST',
           body: JSON.stringify({
+            chat_id: options.chatId ?? null,
+            project_id: options.projectId ?? null,
             role: 'user',
             turn_blocks: [
               {
@@ -500,6 +507,7 @@ export const api = {
         }
       )
       return {
+        chat: response.chat ? fromChatDto(response.chat) : undefined,
         userTurn: turnDtoToTurn(response.user_turn),
         assistantTurn: turnDtoToTurn(response.assistant_turn),
         streamUrl: response.stream_url,

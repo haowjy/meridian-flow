@@ -138,6 +138,7 @@ func SetupServices(
 		turnRepo, // TurnReader
 		turnRepo, // TurnNavigator (same repo implements all three)
 		chatRepo,
+		projectRepo, // For validating project access on cold start
 		documentRepo,
 		folderRepo,
 		validator,

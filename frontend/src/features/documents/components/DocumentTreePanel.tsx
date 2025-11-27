@@ -1,5 +1,6 @@
 import { useState, ReactNode, DragEvent, Fragment } from 'react'
 import { FileText, Plus, Upload } from 'lucide-react'
+import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
@@ -123,8 +124,7 @@ export function DocumentTreePanel({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-          {/* Gradient blur fade - extends below the search bar */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-3 translate-y-full bg-gradient-to-b from-background via-background/50 to-transparent" />
+          <HeaderGradientFade />
         </div>
 
         {/* Tree Content */}

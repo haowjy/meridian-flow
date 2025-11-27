@@ -116,7 +116,7 @@ func (h *ChatDebugHandler) BuildProviderRequest(w http.ResponseWriter, r *http.R
 	}
 
 	// Override chat/user IDs from context/path to avoid trusting client for these
-	req.ChatID = chatID
+	req.ChatID = &chatID
 	req.UserID = userID
 
 	// Delegate to streaming service debug builder

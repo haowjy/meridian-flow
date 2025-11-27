@@ -55,6 +55,16 @@ func (r *systemPromptResolver) Resolve(
 		"selected_skills", selectedSkills,
 	)
 
+	// For cold start (new chat), chatID is empty - skip chat/project system prompt loading
+	// since the chat doesn't exist yet. Just return user-provided system prompt if any.
+	if chatID == "" {
+		r.logger.Info("cold start detected (empty chatID), skipping chat/project system prompt")
+		if userSystem != nil && *userSystem != "" {
+			return userSystem, nil
+		}
+		return nil, nil
+	}
+
 	var parts []string
 
 	// 1. User-provided system prompt (highest priority)

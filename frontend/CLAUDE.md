@@ -205,6 +205,42 @@ Current version: 4
 
 - Set `NEXT_PUBLIC_DEV_TOOLS=1` to show the Retry panel overlay.
 
+## UI Philosophy: Writer-First
+
+Meridian's UI serves the writer's creative process. Everything else is secondary.
+
+### Core Principles
+
+1. **Content gets the most space** - Writing is the star, UI supports it
+2. **AI assists, doesn't overwhelm** - Chat is present but compact
+3. **Minimal distractions** - Compact controls, calm aesthetic
+4. **Flow-supporting design** - Nothing interrupts creative momentum
+
+### Practical Guidelines
+
+- **Compact over spacious**: Use smaller padding/gaps for UI chrome (e.g., `px-1.5 py-1` not `px-4 py-3`)
+- **Hierarchy matters**: Content > Chat > Navigation > Settings
+- **Progressive disclosure**: Show less by default, reveal on interaction
+
+### Jade & Gold Design System
+
+The design system reinforces writer-first principles:
+
+- **Jade** = Primary, calm, focused (backgrounds, primary actions)
+- **Gold** = Accent, insight, highlights (active states, important indicators)
+- **Parchment** = Warm backgrounds (never stark white - easier on eyes for long writing sessions)
+
+**Typography classes**:
+- `.type-display` - Page titles
+- `.type-section` - Section headers (18px serif)
+- `.type-body` - Body text (15px serif)
+- `.type-label` - UI labels (13px sans)
+- `.type-meta` - Timestamps/secondary (12px sans muted)
+
+**Spacing**: 8pt grid (`gap-2` = 8px standard)
+
+**Shadows**: `--shadow-1`, `--shadow-2`, `--shadow-3` hierarchy
+
 ## Key Conventions
 
 ### Empty Content Handling
@@ -273,7 +309,7 @@ Global CSS in `globals.css` applies `cursor: pointer` to all buttons and menu it
 frontend/src/
 ├── app/                        # Next.js App Router pages
 ├── core/
-│   ├── components/             # Core components (SyncProvider)
+│   ├── components/             # Infrastructure (SyncProvider, HeaderGradientFade)
 │   ├── hooks/                  # Shared hooks (useAbortController)
 │   ├── lib/                    # Core utilities
 │   │   ├── api.ts              # API client

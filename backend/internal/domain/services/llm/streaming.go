@@ -38,9 +38,16 @@ type StreamingService interface {
 }
 
 // CreateTurnRequest is the DTO for creating a new turn
+//
+// Chat resolution priority:
+// 1. If PrevTurnID provided → lookup its chat_id from DB (ignores ChatID/ProjectID)
+// 2. Else if ChatID provided → use that chat
+// 3. Else if ProjectID provided → create new chat (cold start, title from first text block)
+// 4. Else → validation error
 type CreateTurnRequest struct {
-	ChatID         string                 `json:"chat_id"`
-	UserID         string                 `json:"-"` // Set by handler from auth context, not from request body
+	ChatID         *string                `json:"chat_id,omitempty"`    // Optional - if nil with ProjectID, creates new chat
+	ProjectID      *string                `json:"project_id,omitempty"` // Required if ChatID is nil (for new chat creation)
+	UserID         string                 `json:"-"`                    // Set by handler from auth context, not from request body
 	PrevTurnID     *string                `json:"prev_turn_id,omitempty"`
 	Role           string                 `json:"role"`                      // "user" only (backend generates assistant turns)
 	SelectedSkills []string               `json:"selected_skills,omitempty"` // Skills to load from .skills/ folder
@@ -57,7 +64,9 @@ type TurnBlockInput struct {
 
 // CreateTurnResponse is the response DTO for CreateTurn
 // Returns both the user turn and the assistant turn that was created for streaming
+// If a new chat was created (cold start), the Chat field is populated
 type CreateTurnResponse struct {
+	Chat          *llm.Chat `json:"chat,omitempty"` // Populated when new chat was created (cold start)
 	UserTurn      *llm.Turn `json:"user_turn"`
 	AssistantTurn *llm.Turn `json:"assistant_turn"`
 	StreamURL     string    `json:"stream_url"` // Convenience URL for SSE streaming

@@ -184,8 +184,35 @@ func (h *ChatHandler) DeleteChat(w http.ResponseWriter, r *http.Request) {
 	httputil.RespondJSON(w, http.StatusOK, deletedChat)
 }
 
-// CreateTurn creates a new turn (user message)
+// CreateTurnV2 creates a new turn (user message) with chat_id in request body
+// POST /api/turns
+//
+// Chat resolution priority:
+// 1. If prev_turn_id provided → infer chat from that turn
+// 2. Else if chat_id provided → use that chat
+// 3. Else if project_id provided → create new chat (cold start)
+func (h *ChatHandler) CreateTurnV2(w http.ResponseWriter, r *http.Request) {
+	userID := httputil.GetUserID(r)
+	var req llmSvc.CreateTurnRequest
+	if err := httputil.ParseJSON(w, r, &req); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	req.UserID = userID
+
+	// Call service - chat_id, project_id, prev_turn_id come from body
+	response, err := h.streamingService.CreateTurn(r.Context(), &req)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	httputil.RespondJSON(w, http.StatusCreated, response)
+}
+
+// CreateTurn creates a new turn (user message) - DEPRECATED
 // POST /api/chats/{id}/turns
+// Use POST /api/turns instead (CreateTurnV2)
 func (h *ChatHandler) CreateTurn(w http.ResponseWriter, r *http.Request) {
 	chatID, ok := PathParam(w, r, "id", "Chat ID")
 	if !ok {
@@ -198,7 +225,7 @@ func (h *ChatHandler) CreateTurn(w http.ResponseWriter, r *http.Request) {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	req.ChatID = chatID
+	req.ChatID = &chatID // Convert path param to pointer
 	req.UserID = userID
 
 	// Call service

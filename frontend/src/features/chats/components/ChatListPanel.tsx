@@ -6,11 +6,13 @@ import { useShallow } from 'zustand/react/shallow'
 import { useChatStore } from '@/core/stores/useChatStore'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { useChatsForProject } from '@/features/chats/hooks/useChatsForProject'
+import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { ChatListHeader } from './ChatListHeader'
 import { ChatList } from './ChatList'
 import { ChatListEmpty } from './ChatListEmpty'
 import { ChatListItemSkeleton } from './ChatListItemSkeleton'
 import { DeleteChatDialog } from './DeleteChatDialog'
+import { useUserProfile, useAuthActions, UserMenuButton } from '@/features/auth'
 import type { Chat } from '@/features/chats/types'
 
 interface ChatListPanelProps {
@@ -37,8 +39,7 @@ export function ChatListPanel({ projectId }: ChatListPanelProps) {
   const [renamingChatId, setRenamingChatId] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
-  const { createChat, deleteChat, renameChat } = useChatStore(useShallow((s) => ({
-    createChat: s.createChat,
+  const { deleteChat, renameChat } = useChatStore(useShallow((s) => ({
     deleteChat: s.deleteChat,
     renameChat: s.renameChat,
   })))
@@ -47,6 +48,10 @@ export function ChatListPanel({ projectId }: ChatListPanelProps) {
     activeChatId: s.activeChatId,
     setActiveChat: s.setActiveChat,
   })))
+
+  // User profile for bottom menu
+  const { profile, status: profileStatus } = useUserProfile()
+  const { signOut } = useAuthActions()
 
   // Skeleton delay: only show skeleton after 150ms if still loading
   useEffect(() => {
@@ -62,10 +67,9 @@ export function ChatListPanel({ projectId }: ChatListPanelProps) {
     }
   }, [status])
 
-  const handleNewChat = async () => {
-    // MVP: generic title; later we can use first user turn text or auto-titling
-    const chat = await createChat(projectId, 'New Chat')
-    setActiveChat(chat.id)
+  const handleNewChat = () => {
+    // Clear active chat to show cold start UI - chat is created atomically with first message
+    setActiveChat(null)
   }
 
   const handleSelectChat = (chatId: string) => {
@@ -129,8 +133,7 @@ export function ChatListPanel({ projectId }: ChatListPanelProps) {
             onNewChat={handleNewChat}
             onBrandClick={handleBrandClick}
           />
-          {/* Gradient blur fade - extends below the header */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-3 translate-y-full bg-gradient-to-b from-sidebar via-sidebar/50 to-transparent" />
+          <HeaderGradientFade variant="sidebar" />
         </div>
 
         {/* Chat List Content */}
@@ -159,6 +162,18 @@ export function ChatListPanel({ projectId }: ChatListPanelProps) {
           )}
         </div>
       </div>
+
+      {/* User profile menu at bottom of sidebar */}
+      {profileStatus === 'authenticated' && profile && (
+        <div className="shrink-0 border-t border-border p-2">
+          <UserMenuButton
+            profile={profile}
+            onSettings={() => router.push('/settings')}
+            onSignOut={signOut}
+            menuSide="top"
+          />
+        </div>
+      )}
 
       {/* Delete confirmation dialog */}
       <DeleteChatDialog

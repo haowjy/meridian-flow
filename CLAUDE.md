@@ -12,6 +12,12 @@ Meridian is a file management system for creative writers, starting with fiction
 
 For product details, see `_docs/high-level/1-overview.md`.
 
+## Product Philosophy
+
+**Writer-first**: Meridian exists to serve the creative writer. Every feature, UI element, and AI interaction should support—not distract from—the writing process.
+
+See `frontend/CLAUDE.md` for UI-specific implementation of this philosophy.
+
 ## Guiding Principles for Development
 
 ALWAYS FOLLOW SOLID PRINCIPLES.

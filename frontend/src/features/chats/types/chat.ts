@@ -53,3 +53,14 @@ export interface Turn {
   blocks: TurnBlock[]
   lastAccessedAt?: Date
 }
+
+/**
+ * Response from POST /api/turns
+ * If a new chat was created (cold start), chat field is populated
+ */
+export interface SendTurnResponse {
+  chat?: Chat // Only populated on cold start (new chat created)
+  userTurn: Turn
+  assistantTurn: Turn
+  streamUrl: string
+}
