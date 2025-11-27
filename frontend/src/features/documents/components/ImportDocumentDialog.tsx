@@ -19,6 +19,7 @@ interface ImportDocumentDialogProps {
   projectId: string
   folderId: string | null // null = root level
   onComplete: () => void // Callback to refresh tree
+  initialFiles?: File[] // Pre-selected files (e.g., from drag-and-drop)
 }
 
 export function ImportDocumentDialog({
@@ -27,11 +28,27 @@ export function ImportDocumentDialog({
   projectId,
   folderId,
   onComplete,
+  initialFiles,
 }: ImportDocumentDialogProps) {
   const [phase, setPhase] = useState<DialogPhase>('selection')
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [results, setResults] = useState<ImportResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [overwrite, setOverwrite] = useState(false)
+  const [prevInitialFiles, setPrevInitialFiles] = useState(initialFiles)
+
+  // Sync initial files when prop changes.
+  // This uses React's "adjust state during render" pattern (recommended over useEffect).
+  // See: https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  //
+  // Why: initialFiles prop comes from drag-and-drop which can trigger mid-render.
+  // Using useEffect would cause an extra render cycle; this pattern is synchronous.
+  if (initialFiles !== prevInitialFiles) {
+    setPrevInitialFiles(initialFiles)
+    if (open && initialFiles && initialFiles.length > 0) {
+      setSelectedFiles(initialFiles)
+    }
+  }
 
   const handleFileSelect = (files: File[]) => {
     setSelectedFiles(files)
@@ -46,7 +63,7 @@ export function ImportDocumentDialog({
     setError(null)
 
     try {
-      const data = await api.documents.import(projectId, selectedFiles, folderId)
+      const data = await api.documents.import(projectId, selectedFiles, folderId, { overwrite })
       setResults(data)
       setPhase('results')
       onComplete() // Refresh tree after successful import
@@ -67,6 +84,7 @@ export function ImportDocumentDialog({
     setSelectedFiles([])
     setResults(null)
     setError(null)
+    setOverwrite(false)
   }
 
   const handleOpenChange = (newOpen: boolean) => {
@@ -81,12 +99,13 @@ export function ImportDocumentDialog({
       setSelectedFiles([])
       setResults(null)
       setError(null)
+      setOverwrite(false)
     }
   }
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent>
+      <DialogContent className="gap-3 p-5">
         <DialogHeader>
           <DialogTitle>Import Documents</DialogTitle>
           <DialogDescription>
@@ -102,6 +121,8 @@ export function ImportDocumentDialog({
             onSubmit={handleSubmit}
             onCancel={handleClose}
             error={error}
+            overwrite={overwrite}
+            onOverwriteChange={setOverwrite}
           />
         )}
 

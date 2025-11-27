@@ -6,6 +6,7 @@ import (
 
 	models "meridian/internal/domain/models/docsystem"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
+	"meridian/internal/domain/services"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
@@ -13,6 +14,7 @@ import (
 type treeService struct {
 	folderRepo   docsysRepo.FolderRepository
 	documentRepo docsysRepo.DocumentRepository
+	authorizer   services.ResourceAuthorizer
 	logger       *slog.Logger
 }
 
@@ -20,17 +22,25 @@ type treeService struct {
 func NewTreeService(
 	folderRepo docsysRepo.FolderRepository,
 	documentRepo docsysRepo.DocumentRepository,
+	authorizer services.ResourceAuthorizer,
 	logger *slog.Logger,
 ) docsysSvc.TreeService {
 	return &treeService{
 		folderRepo:   folderRepo,
 		documentRepo: documentRepo,
+		authorizer:   authorizer,
 		logger:       logger,
 	}
 }
 
 // GetProjectTree builds and returns the nested folder/document tree for a project
-func (s *treeService) GetProjectTree(ctx context.Context, projectID string) (*models.TreeNode, error) {
+// Authorization is checked first via the injected authorizer
+func (s *treeService) GetProjectTree(ctx context.Context, userID, projectID string) (*models.TreeNode, error) {
+	// Authorize: check user can access this project
+	if err := s.authorizer.CanAccessProject(ctx, userID, projectID); err != nil {
+		return nil, err
+	}
+
 	// Get all folders in the project
 	allFolders, err := s.folderRepo.GetAllByProject(ctx, projectID)
 	if err != nil {
@@ -107,12 +117,6 @@ func (s *treeService) GetProjectTree(ctx context.Context, projectID string) (*mo
 		Folders:   rootFolders,
 		Documents: rootDocuments,
 	}
-
-	s.logger.Info("project tree built",
-		"project_id", projectID,
-		"folder_count", len(allFolders),
-		"document_count", len(allDocuments),
-	)
 
 	return tree, nil
 }

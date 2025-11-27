@@ -11,8 +11,12 @@ type DocumentRepository interface {
 	// Create creates a new document
 	Create(ctx context.Context, doc *docsystem.Document) error
 
-	// GetByID retrieves a document by ID
+	// GetByID retrieves a document by ID with project scoping
 	GetByID(ctx context.Context, id, projectID string) (*docsystem.Document, error)
+
+	// GetByIDOnly retrieves a document by UUID only (no project scoping)
+	// Use when authorization is handled separately (e.g., by ResourceAuthorizer)
+	GetByIDOnly(ctx context.Context, id string) (*docsystem.Document, error)
 
 	// GetByPath retrieves a document by its path (e.g., ".skills/cw-prose-writing/SKILL.md")
 	GetByPath(ctx context.Context, path string, projectID string) (*docsystem.Document, error)

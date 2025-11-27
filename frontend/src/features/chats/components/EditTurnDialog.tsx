@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Button } from '@/shared/components/ui/button'
+import { AutosizeTextarea } from '@/features/chats/components/AutosizeTextarea'
 import { ChatRequestControls } from '@/features/chats/components/ChatRequestControls'
 import type { ChatRequestOptions } from '@/features/chats/types'
 
@@ -18,13 +19,11 @@ export function EditTurnDialog({
 }: EditTurnDialogProps) {
   const [content, setContent] = useState(initialContent)
   const [isSaving, setIsSaving] = useState(false)
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const [options, setOptions] = useState<ChatRequestOptions>({
     modelId: 'moonshotai/kimi-k2-thinking',
     modelLabel: 'Kimi K2 Thinking',
     providerId: 'openrouter',
     reasoning: 'low',
-    searchEnabled: false,
   })
 
   // Reset content when dialog opens/initialContent changes
@@ -34,21 +33,10 @@ export function EditTurnDialog({
     }
   }, [isOpen, initialContent])
 
-  useEffect(() => {
-    if (!isOpen || !textareaRef.current) return
 
-    const el = textareaRef.current
-    const length = el.value.length
-    // Place cursor at the end of the content for quicker edits
-    el.focus()
-    try {
-      el.setSelectionRange(length, length)
-    } catch {
-      // Some browsers may not support setSelectionRange on certain input types.
-    }
-  }, [isOpen])
 
   const handleSave = async () => {
+    // Validate content before saving
     if (!content.trim()) return
 
     setIsSaving(true)
@@ -66,23 +54,21 @@ export function EditTurnDialog({
   if (!isOpen) return null
 
   return (
-    <div className="w-full rounded-xl bg-card px-3 py-2 shadow-md">
-      <div className="py-2">
-        <textarea
-          ref={textareaRef}
-          value={content}
-          onChange={(event) => setContent(event.target.value)}
-          className="w-full min-h-[6rem] resize-y rounded-md bg-transparent p-2 text-sm outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus:ring-offset-0 placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
-          placeholder="Edit your message..."
-          autoFocus
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              event.preventDefault()
-              if (!isSaving) onClose()
-            }
-          }}
-        />
-      </div>
+    <div className="flex flex-col w-full rounded-xl bg-card px-3 py-2 shadow-md">
+      <AutosizeTextarea
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        placeholder="Edit your message..."
+        autoFocus
+        maxHeight="50vh"
+        minHeight="auto"
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            if (!isSaving) onClose()
+          }
+        }}
+      />
       <ChatRequestControls
         options={options}
         onOptionsChange={setOptions}

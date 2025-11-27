@@ -50,17 +50,12 @@ func NewChatDebugHandler(
 //	  "turn_blocks": [...]
 //	}
 func (h *ChatDebugHandler) CreateAssistantTurn(w http.ResponseWriter, r *http.Request) {
-	// Get chat ID from route param
-	chatID := r.PathValue("id")
-	if chatID == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Chat ID is required")
+	chatID, ok := PathParam(w, r, "id", "Chat ID")
+	if !ok {
 		return
 	}
 
-	// Get userID from context (set by auth middleware)
 	userID := httputil.GetUserID(r)
-
-	// Parse request
 	var req struct {
 		PrevTurnID *string              `json:"prev_turn_id"`
 		Role       string               `json:"role"`
@@ -108,17 +103,12 @@ func (h *ChatDebugHandler) CreateAssistantTurn(w http.ResponseWriter, r *http.Re
 // It does NOT create any turns or call the provider. Instead, it returns the
 // meridian-llm-go GenerateRequest (after all conversions) as JSON for inspection.
 func (h *ChatDebugHandler) BuildProviderRequest(w http.ResponseWriter, r *http.Request) {
-	// Get chat ID from route param
-	chatID := r.PathValue("id")
-	if chatID == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Chat ID is required")
+	chatID, ok := PathParam(w, r, "id", "Chat ID")
+	if !ok {
 		return
 	}
 
-	// Get userID from context (set by auth middleware)
 	userID := httputil.GetUserID(r)
-
-	// Parse request body into CreateTurnRequest shape
 	var req llmSvc.CreateTurnRequest
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
@@ -126,7 +116,7 @@ func (h *ChatDebugHandler) BuildProviderRequest(w http.ResponseWriter, r *http.R
 	}
 
 	// Override chat/user IDs from context/path to avoid trusting client for these
-	req.ChatID = chatID
+	req.ChatID = &chatID
 	req.UserID = userID
 
 	// Delegate to streaming service debug builder
@@ -157,21 +147,12 @@ func (h *ChatDebugHandler) BuildProviderRequest(w http.ResponseWriter, r *http.R
 //	  "updated_at": "2024-01-01T00:00:00Z"
 //	}
 func (h *ChatDebugHandler) GetChatTree(w http.ResponseWriter, r *http.Request) {
-	// Extract user ID from context
-	userID, err := getUserID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+	chatID, ok := PathParam(w, r, "id", "Chat ID")
+	if !ok {
 		return
 	}
 
-	// Get chat ID from route param
-	chatID := r.PathValue("id")
-	if chatID == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Chat ID is required")
-		return
-	}
-
-	// Call service
+	userID := httputil.GetUserID(r)
 	tree, err := h.conversationService.GetChatTree(r.Context(), chatID, userID)
 	if err != nil {
 		handleError(w, err)

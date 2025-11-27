@@ -55,9 +55,19 @@ feature: "Chat Frontend UI"
 
 ## Chat List
 
-**Features**: Scrollable list, active chat highlighting, create new chat button, empty state
+**Features**: Scrollable list, active chat highlighting, new chat button (→ cold start), empty state
 
 **File**: `frontend/src/features/chats/components/ChatList.tsx`
+
+---
+
+## Cold Start
+
+**UX**: When no chat is selected, shows input at bottom with welcome message.
+
+**Atomic Creation**: Chat created with first message via `POST /api/turns` - no empty chats.
+
+**File**: `frontend/src/features/chats/components/ActiveChatView.tsx`
 
 ---
 

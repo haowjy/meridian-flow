@@ -193,3 +193,43 @@ export function filterTree(tree: TreeNode[], query: string): TreeNode[] {
 
   return tree.map(filterNode).filter((n): n is TreeNode => n !== null)
 }
+
+/**
+ * Generate unique name by appending suffix: "Name", "Name (2)", "Name (3)", etc.
+ * Used for auto-generating names for new documents/folders.
+ */
+export function generateUniqueName(baseName: string, existingNames: string[]): string {
+  if (!existingNames.includes(baseName)) return baseName
+  let counter = 2
+  while (existingNames.includes(`${baseName} (${counter})`)) counter++
+  return `${baseName} (${counter})`
+}
+
+/**
+ * Get all names from tree nodes (both folders and documents).
+ * Useful for duplicate checking at a given level.
+ */
+export function getNodeNames(nodes: TreeNode[]): string[] {
+  return nodes.map((n) => n.data.name)
+}
+
+/**
+ * Find folder node by ID and return its children's names.
+ * Used to check for duplicates when creating items inside a folder.
+ */
+export function getFolderChildNames(nodes: TreeNode[], folderId: string): string[] {
+  for (const node of nodes) {
+    if (node.type === 'folder') {
+      if (node.id === folderId) {
+        return node.children ? getNodeNames(node.children) : []
+      }
+      if (node.children) {
+        const found = getFolderChildNames(node.children, folderId)
+        if (found.length > 0 || node.children.some(c => c.type === 'folder' && c.id === folderId)) {
+          return found
+        }
+      }
+    }
+  }
+  return []
+}

@@ -406,11 +406,58 @@
     color: var(--selection-fg);
   }
 
+  /* Minimal scrollbar styling */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  *:hover {
+    scrollbar-color: var(--border) transparent;
+  }
+
+  /* Webkit scrollbar styling (Chrome, Safari, Edge) */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 4px;
+  }
+
+  *:hover::-webkit-scrollbar-thumb {
+    background: var(--border);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+  }
+
   /* Focus ring strategy - Layered: outer jade + inner gold */
   *:focus-visible {
     outline: 3px solid var(--focus-ring-outer);
     outline-offset: 2px;
     box-shadow: 0 0 0 2px var(--focus-ring-inner);
+  }
+
+  /* Restore cursor: pointer for buttons and menu items (Tailwind v4 changed to cursor: default)
+     See: https://ui.shadcn.com/docs/components/button */
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  [role="menuitem"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [role="button"]:disabled,
+  [role="menuitem"][aria-disabled="true"] {
+    cursor: not-allowed;
   }
 }
 
@@ -500,15 +547,16 @@ body.preload * {
   /* === Chat Main Panel === */
 
   .chat-main {
-    @apply flex h-full flex-col bg-background;
+    @apply flex h-full flex-col bg-background min-w-0;
   }
 
   .chat-main-header {
-    @apply flex items-center justify-between border-b px-4 py-2;
+    @apply flex items-center justify-between px-4 py-2;
   }
 
-  .chat-main-body {
-    @apply flex-1 overflow-y-auto;
+  /* Scroll container for messages + sticky input */
+  .chat-scroll-container {
+    @apply flex-1 overflow-y-auto overflow-x-hidden min-w-0;
   }
 
   .chat-main-empty {

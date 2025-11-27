@@ -12,6 +12,7 @@ type FileProcessor interface {
 	CanProcess(filename string) bool
 
 	// Process handles file upload and returns import results
+	// If overwrite is true, existing documents are updated; if false, duplicates are skipped
 	Process(
 		ctx context.Context,
 		projectID string,
@@ -19,6 +20,7 @@ type FileProcessor interface {
 		file io.Reader,
 		filename string,
 		folderPath string,
+		overwrite bool,
 	) (*ImportResult, error)
 
 	// Name returns the processor name for logging

@@ -12,16 +12,20 @@ type FolderService interface {
 	CreateFolder(ctx context.Context, req *CreateFolderRequest) (*docsystem.Folder, error)
 
 	// GetFolder retrieves a folder with its computed path
-	GetFolder(ctx context.Context, id, projectID string) (*docsystem.Folder, error)
+	// userID is used for authorization check
+	GetFolder(ctx context.Context, userID, folderID string) (*docsystem.Folder, error)
 
 	// UpdateFolder updates a folder (rename or move)
-	UpdateFolder(ctx context.Context, id string, req *UpdateFolderRequest) (*docsystem.Folder, error)
+	// userID is used for authorization check
+	UpdateFolder(ctx context.Context, userID, folderID string, req *UpdateFolderRequest) (*docsystem.Folder, error)
 
 	// DeleteFolder deletes a folder (must be empty)
-	DeleteFolder(ctx context.Context, id, projectID string) error
+	// userID is used for authorization check
+	DeleteFolder(ctx context.Context, userID, folderID string) error
 
 	// ListChildren lists all child folders and documents
-	ListChildren(ctx context.Context, folderID *string, projectID string) (*FolderContents, error)
+	// userID is used for authorization check, folderID is optional (nil for root)
+	ListChildren(ctx context.Context, userID string, folderID *string, projectID string) (*FolderContents, error)
 }
 
 // CreateFolderRequest represents a folder creation request

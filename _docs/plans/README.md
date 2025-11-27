@@ -14,28 +14,6 @@ Each plan document includes:
 
 ## Active Plans
 
-### [Tool Continuation](./tool-continuation.md)
-**Status:** Ready to implement
-**Priority:** High
-**Effort:** 4-6 hours
-
-Implement automatic tool execution continuation so LLMs can use tools and see results without frontend involvement. Critical for "don't lose conversation on browser close" goal.
-
-**Current gap:** Tools execute but conversation stops before LLM sees results (TODO at `mstream_adapter.go:567`).
-
-**Implementation:** Refactor `workFunc` for recursion, add continuation logic, load conversation history, and continue streaming until `stop_reason != "tool_use"`.
-
----
-
-### [Chat Streaming Markdown Rendering](./chat-streaming-markdown-rendering.md)
-**Status:** In planning
-**Priority:** Medium
-**Effort:** TBD
-
-See existing plan document for details.
-
----
-
 ### [AI Editing MVP0](./ai-editing-mvp0.md)
 **Status:** In progress
 **Priority:** High

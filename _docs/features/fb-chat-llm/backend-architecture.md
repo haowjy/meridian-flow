@@ -47,6 +47,7 @@ feature: "Chat Backend Architecture"
 ## API Endpoints
 
 - `POST /api/chats/{id}/turns` - Create user turn + trigger LLM
+- `POST /api/turns` - Create turn with atomic chat creation (cold start)
 - `GET /api/chats/{id}/turns` - Paginated turn history
 - `GET /api/turns/{id}/path` - Conversation path to root
 - `GET /api/turns/{id}/siblings` - Sibling turns (branching)

@@ -22,6 +22,7 @@ interface TreeStore {
 
   loadTree: (projectId: string, signal?: AbortSignal) => Promise<void>
   toggleFolder: (folderId: string) => void
+  expandFolder: (folderId: string) => void
   createDocument: (projectId: string, folderId: string | null, name: string) => Promise<void>
   createFolder: (projectId: string, parentId: string | null, name: string) => Promise<void>
   deleteDocument: (id: string, projectId: string) => Promise<void>
@@ -101,6 +102,15 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
     })
   },
 
+  expandFolder: (folderId) => {
+    set((state) => {
+      if (state.expandedFolders.has(folderId)) return state
+      const expanded = new Set(state.expandedFolders)
+      expanded.add(folderId)
+      return { expandedFolders: expanded }
+    })
+  },
+
   createDocument: async (projectId, folderId, name) => {
     try {
       await api.documents.create(projectId, folderId, name)
@@ -149,7 +159,7 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
 
   renameDocument: async (id, name, projectId) => {
     try {
-      await api.documents.rename(id, name)
+      await api.documents.rename(id, projectId, name)
       // Reload tree to reflect rename
       await useTreeStore.getState().loadTree(projectId)
     } catch (error) {
@@ -160,7 +170,7 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
 
   renameFolder: async (id, name, projectId) => {
     try {
-      await api.folders.rename(id, name)
+      await api.folders.rename(id, projectId, name)
       // Reload tree to reflect rename
       await useTreeStore.getState().loadTree(projectId)
     } catch (error) {

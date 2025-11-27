@@ -1,11 +1,9 @@
 package handler
 
 import (
-	"errors"
 	"log/slog"
 	"net/http"
 
-	"meridian/internal/domain"
 	docsystem "meridian/internal/domain/models/docsystem"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	"meridian/internal/httputil"
@@ -49,14 +47,8 @@ func (h *FolderHandler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 	// Call service
 	folder, err := h.folderService.CreateFolder(r.Context(), &req)
 	if err != nil {
-		// Handle conflict by fetching and returning existing folder with 409
-		HandleCreateConflict(w, err, func() (*docsystem.Folder, error) {
-			// Get ConflictError to extract resource ID
-			var conflictErr *domain.ConflictError
-			if errors.As(err, &conflictErr) {
-				return h.folderService.GetFolder(r.Context(), conflictErr.ResourceID, req.ProjectID)
-			}
-			return nil, err
+		HandleCreateConflict(w, err, func(id string) (*docsystem.Folder, error) {
+			return h.folderService.GetFolder(r.Context(), userID, id)
 		})
 		return
 	}
@@ -67,15 +59,14 @@ func (h *FolderHandler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 // GetFolder retrieves a folder by ID with its computed path
 // GET /api/folders/{id}
 func (h *FolderHandler) GetFolder(w http.ResponseWriter, r *http.Request) {
-	projectID, _ := getProjectID(r) // Optional for cross-project support
-
-	id := r.PathValue("id")
-	if id == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Folder ID is required")
+	id, ok := PathParam(w, r, "id", "Folder ID")
+	if !ok {
 		return
 	}
 
-	folder, err := h.folderService.GetFolder(r.Context(), id, projectID)
+	userID := httputil.GetUserID(r)
+
+	folder, err := h.folderService.GetFolder(r.Context(), userID, id)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -87,11 +78,8 @@ func (h *FolderHandler) GetFolder(w http.ResponseWriter, r *http.Request) {
 // UpdateFolder updates a folder (rename or move)
 // PATCH /api/folders/{id}
 func (h *FolderHandler) UpdateFolder(w http.ResponseWriter, r *http.Request) {
-	projectID, _ := getProjectID(r) // Optional for cross-project support
-
-	id := r.PathValue("id")
-	if id == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Folder ID is required")
+	id, ok := PathParam(w, r, "id", "Folder ID")
+	if !ok {
 		return
 	}
 
@@ -100,9 +88,11 @@ func (h *FolderHandler) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	req.ProjectID = projectID
 
-	folder, err := h.folderService.UpdateFolder(r.Context(), id, &req)
+	// Get userID from context (set by auth middleware)
+	userID := httputil.GetUserID(r)
+
+	folder, err := h.folderService.UpdateFolder(r.Context(), userID, id, &req)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -114,15 +104,14 @@ func (h *FolderHandler) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 // DeleteFolder deletes a folder (must be empty)
 // DELETE /api/folders/{id}
 func (h *FolderHandler) DeleteFolder(w http.ResponseWriter, r *http.Request) {
-	projectID, _ := getProjectID(r) // Optional for cross-project support
-
-	id := r.PathValue("id")
-	if id == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Folder ID is required")
+	id, ok := PathParam(w, r, "id", "Folder ID")
+	if !ok {
 		return
 	}
 
-	if err := h.folderService.DeleteFolder(r.Context(), id, projectID); err != nil {
+	userID := httputil.GetUserID(r)
+
+	if err := h.folderService.DeleteFolder(r.Context(), userID, id); err != nil {
 		handleError(w, err)
 		return
 	}
@@ -131,13 +120,17 @@ func (h *FolderHandler) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListChildren lists all child folders and documents in a folder
-// GET /api/folders/{id}/children (or /api/folders for root)
+// GET /api/folders/{id}/children?project_id=xxx
 func (h *FolderHandler) ListChildren(w http.ResponseWriter, r *http.Request) {
-	projectID, err := getProjectID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+	// Get project_id from query parameter (consistent with import, search, ListChats)
+	projectID := r.URL.Query().Get("project_id")
+	if projectID == "" {
+		httputil.RespondError(w, http.StatusBadRequest, "project_id query parameter is required")
 		return
 	}
+
+	// Get userID from context (set by auth middleware)
+	userID := httputil.GetUserID(r)
 
 	id := r.PathValue("id")
 	var folderID *string
@@ -145,7 +138,7 @@ func (h *FolderHandler) ListChildren(w http.ResponseWriter, r *http.Request) {
 		folderID = &id
 	}
 
-	contents, err := h.folderService.ListChildren(r.Context(), folderID, projectID)
+	contents, err := h.folderService.ListChildren(r.Context(), userID, folderID, projectID)
 	if err != nil {
 		handleError(w, err)
 		return

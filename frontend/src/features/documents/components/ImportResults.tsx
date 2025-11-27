@@ -1,7 +1,19 @@
+import { Check, AlertTriangle, Minus, X, LucideIcon } from 'lucide-react'
 import { Button } from '@/shared/components/ui/button'
 import { DialogFooter } from '@/shared/components/ui/dialog'
 import { Label } from '@/shared/components/ui/label'
 import { ImportResponse } from '@/core/lib/api'
+
+/**
+ * Configuration for action status icons.
+ * Extensible: add new actions here when backend adds new action types.
+ */
+const ACTION_CONFIG: Record<string, { icon: LucideIcon; className: string }> = {
+  created: { icon: Check, className: 'text-green-500' },
+  updated: { icon: AlertTriangle, className: 'text-yellow-500' },
+  skipped: { icon: Minus, className: 'text-muted-foreground' },
+  failed: { icon: X, className: 'text-destructive' },
+} as const
 
 interface ImportResultsProps {
   results: ImportResponse
@@ -39,26 +51,18 @@ export function ImportResults({
           <StatBadge label="Failed" value={summary.failed} variant="error" />
         </div>
 
-        {/* Success List */}
+        {/* Documents List */}
         {documents.length > 0 && (
           <div className="space-y-2">
-            <Label>Imported Documents</Label>
+            <Label>Results</Label>
             <div className="max-h-48 overflow-y-auto rounded border border-border bg-muted/20 p-3 space-y-1">
-              {documents.map((doc) => (
+              {documents.map((doc, idx) => (
                 <div
-                  key={doc.id}
-                  className="flex items-center justify-between text-sm"
+                  key={doc.id || idx}
+                  className="flex items-center gap-2 text-sm"
                 >
-                  <span className="truncate font-mono text-xs">{doc.path}</span>
-                  <span
-                    className={
-                      doc.action === 'created'
-                        ? 'text-primary'
-                        : 'text-muted-foreground'
-                    }
-                  >
-                    {doc.action}
-                  </span>
+                  <ActionIcon action={doc.action} />
+                  <span className="truncate font-mono text-xs flex-1">{doc.path || doc.name}</span>
                 </div>
               ))}
             </div>
@@ -91,6 +95,13 @@ export function ImportResults({
       </DialogFooter>
     </>
   )
+}
+
+// Helper component for action icons - uses ACTION_CONFIG for extensibility
+function ActionIcon({ action }: { action: string }) {
+  const config = (ACTION_CONFIG[action] ?? ACTION_CONFIG.failed)!
+  const Icon = config.icon
+  return <Icon className={`size-4 shrink-0 ${config.className}`} />
 }
 
 // Helper component for stat badges

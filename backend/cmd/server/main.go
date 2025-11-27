@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"log"
 	"log/slog"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	postgresDocsys "meridian/internal/repository/postgres/docsystem"
 	postgresLLM "meridian/internal/repository/postgres/llm"
 	"meridian/internal/service"
+	serviceAuth "meridian/internal/service/auth"
 	serviceDocsys "meridian/internal/service/docsystem"
 	"meridian/internal/service/docsystem/converter"
 	serviceLLM "meridian/internal/service/llm"
@@ -39,7 +41,18 @@ func main() {
 		logLevel = slog.LevelDebug
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	// Determine log output destination
+	var logOutput io.Writer = os.Stdout
+	if cfg.LogToFile {
+		f, err := config.SetupLogFile(cfg.LogDir, cfg.LogMaxFiles)
+		if err != nil {
+			log.Fatalf("failed to setup log file: %v", err)
+		}
+		defer f.Close()
+		logOutput = f
+	}
+
+	logger := slog.New(slog.NewJSONHandler(logOutput, &slog.HandlerOptions{
 		Level: logLevel,
 	}))
 	slog.SetDefault(logger) // Set as default logger
@@ -94,6 +107,10 @@ func main() {
 	// Create validators (for soft-delete validation)
 	docsysValidator := serviceDocsys.NewResourceValidator(projectRepo, folderRepo)
 
+	// Create authorizer (ownership-based, swappable for role-based later)
+	// Needs all repositories for checking ownership chains (turn → chat → project → user)
+	authorizer := serviceAuth.NewOwnerBasedAuthorizer(projectRepo, folderRepo, docRepo, chatRepo, turnRepo)
+
 	// Setup LLM providers
 	providerRegistry, err := serviceLLM.SetupProviders(cfg, logger)
 	if err != nil {
@@ -118,6 +135,7 @@ func main() {
 		cfg,
 		txManager,
 		capabilityRegistry,
+		authorizer,
 		logger,
 	)
 	if err != nil {
@@ -128,9 +146,9 @@ func main() {
 	contentAnalyzer := serviceDocsys.NewContentAnalyzer()
 	pathResolver := serviceDocsys.NewPathResolver(folderRepo, txManager)
 	projectService := serviceDocsys.NewProjectService(projectRepo, logger)
-	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, docsysValidator, logger)
-	folderService := serviceDocsys.NewFolderService(folderRepo, docRepo, pathResolver, txManager, docsysValidator, logger)
-	treeService := serviceDocsys.NewTreeService(folderRepo, docRepo, logger)
+	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, docsysValidator, authorizer, logger)
+	folderService := serviceDocsys.NewFolderService(folderRepo, docRepo, pathResolver, txManager, docsysValidator, authorizer, logger)
+	treeService := serviceDocsys.NewTreeService(folderRepo, docRepo, authorizer, logger)
 	converterRegistry := converter.NewConverterRegistry()
 
 	// Create file processor registry
@@ -138,7 +156,7 @@ func main() {
 
 	// Register file processors
 	zipProcessor := serviceDocsys.NewZipFileProcessor(docRepo, docService, converterRegistry, logger)
-	individualProcessor := serviceDocsys.NewIndividualFileProcessor(docService, converterRegistry, logger)
+	individualProcessor := serviceDocsys.NewIndividualFileProcessor(docRepo, docService, converterRegistry, logger)
 	fileProcessorRegistry.Register(zipProcessor)
 	fileProcessorRegistry.Register(individualProcessor)
 
@@ -153,7 +171,7 @@ func main() {
 	newDocHandler := handler.NewDocumentHandler(docService, logger)
 	newFolderHandler := handler.NewFolderHandler(folderService, logger)
 	newTreeHandler := handler.NewTreeHandler(treeService, logger)
-	importHandler := handler.NewImportHandler(importService, logger)
+	importHandler := handler.NewImportHandler(importService, authorizer, logger)
 
 	// Chat handlers (follows Clean Architecture - no repository access)
 	chatHandler := handler.NewChatHandler(
@@ -161,6 +179,7 @@ func main() {
 		llmServices.Conversation,
 		llmServices.Streaming,
 		streamRegistry,
+		authorizer,
 		logger,
 	)
 
@@ -198,6 +217,7 @@ func main() {
 	mux.HandleFunc("GET /api/folders/{id}", newFolderHandler.GetFolder)
 	mux.HandleFunc("PATCH /api/folders/{id}", newFolderHandler.UpdateFolder)
 	mux.HandleFunc("DELETE /api/folders/{id}", newFolderHandler.DeleteFolder)
+	mux.HandleFunc("GET /api/folders/{id}/children", newFolderHandler.ListChildren)
 
 	// Document routes
 	mux.HandleFunc("POST /api/documents", newDocHandler.CreateDocument)
@@ -225,7 +245,8 @@ func main() {
 	mux.HandleFunc("PATCH /api/chats/{id}/last-viewed-turn", chatHandler.UpdateLastViewedTurn)
 	mux.HandleFunc("DELETE /api/chats/{id}", chatHandler.DeleteChat)
 	mux.HandleFunc("GET /api/chats/{id}/turns", chatHandler.GetPaginatedTurns)
-	mux.HandleFunc("POST /api/chats/{id}/turns", chatHandler.CreateTurn)
+	mux.HandleFunc("POST /api/chats/{id}/turns", chatHandler.CreateTurn) // Deprecated: use POST /api/turns
+	mux.HandleFunc("POST /api/turns", chatHandler.CreateTurnV2)          // New: chat_id/project_id in body
 	mux.HandleFunc("GET /api/turns/{id}/path", chatHandler.GetTurnPath)
 	mux.HandleFunc("GET /api/turns/{id}/siblings", chatHandler.GetTurnSiblings)
 

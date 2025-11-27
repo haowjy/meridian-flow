@@ -127,11 +127,6 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.logger.Debug("SSE stream established",
-		"turn_id", turnID,
-		"client_id", clientID,
-	)
-
 	// If no stream, send error event and close gracefully
 	if stream == nil {
 		errorData, _ := json.Marshal(llmModels.TurnErrorEvent{
@@ -156,33 +151,14 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 	if status == mstream.StatusComplete ||
 		status == mstream.StatusError ||
 		status == mstream.StatusCancelled {
-		h.logger.Debug("stream not running, skipping catchup and clearing buffer",
-			"turn_id", turnID,
-			"client_id", clientID,
-			"status", status,
-		)
-
 		// Clear buffer after completion to prevent 10-minute replay semantics.
 		stream.ClearBuffer()
 		return
 	}
 
-	h.logger.Debug("SSE connection details",
-		"turn_id", turnID,
-		"client_id", clientID,
-		"last_event_id", lastEventID,
-	)
-
 	// Get catchup events (for first connection or reconnection)
 	catchupEvents := stream.GetCatchupEvents(lastEventID)
 	if len(catchupEvents) > 0 {
-		h.logger.Debug("sending catchup events",
-			"turn_id", turnID,
-			"client_id", clientID,
-			"last_event_id", lastEventID,
-			"catchup_count", len(catchupEvents),
-		)
-
 		// Send catchup events
 		for _, event := range catchupEvents {
 			if event.Type != "" {
@@ -200,18 +176,7 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 				// Client disconnected during catchup
 				return
 			}
-			h.logger.Debug("catchup event sent",
-				"turn_id", turnID,
-				"client_id", clientID,
-				"event_id", event.ID,
-			)
 		}
-
-		h.logger.Debug("catchup events sent",
-			"turn_id", turnID,
-			"client_id", clientID,
-			"catchup_count", len(catchupEvents),
-		)
 	}
 
 	// Check if stream is already done (completed/error/cancelled)
@@ -219,28 +184,12 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 	if status == mstream.StatusComplete ||
 		status == mstream.StatusError ||
 		status == mstream.StatusCancelled {
-		h.logger.Debug("stream already finished, closing connection",
-			"turn_id", turnID,
-			"client_id", clientID,
-			"status", status,
-		)
 		return // Close SSE connection gracefully
 	}
 
 	// Stream still active - add client to stream (get event channel for live events)
 	eventChan := stream.AddClient(clientID)
-	defer func() {
-		stream.RemoveClient(clientID)
-		h.logger.Debug("SSE client removed",
-			"turn_id", turnID,
-			"client_id", clientID,
-		)
-	}()
-
-	h.logger.Debug("SSE client registered with stream",
-		"turn_id", turnID,
-		"client_id", clientID,
-	)
+	defer stream.RemoveClient(clientID)
 
 	// Initialize keep-alive strategy (Dependency Inversion Principle)
 	// SSEHandler depends on KeepAliveStrategy interface, not concrete implementation
@@ -252,22 +201,12 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 	// Returns channel that closes if keep-alive fails (e.g., connection dropped)
 	keepAliveDone := keepAliveStrategy.Start(keepAliveWriter, h.logger)
 
-	h.logger.Debug("keep-alive started",
-		"turn_id", turnID,
-		"client_id", clientID,
-		"interval", h.config.KeepAliveInterval,
-	)
-
 	// Event loop: Stream events until completion or connection drop
 	for {
 		select {
 		case event, ok := <-eventChan:
 			if !ok {
 				// Channel closed - streaming complete/error/cancelled
-				h.logger.Debug("event channel closed, ending stream",
-					"turn_id", turnID,
-					"client_id", clientID,
-				)
 				return
 			}
 
@@ -287,18 +226,9 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 				// Client disconnected during event stream
 				return
 			}
-			h.logger.Debug("SSE event sent",
-				"turn_id", turnID,
-				"client_id", clientID,
-				"event_type", event.Type,
-			)
 
 		case <-keepAliveDone:
 			// Keep-alive failed (connection dropped)
-			h.logger.Debug("keep-alive failed, closing stream",
-				"turn_id", turnID,
-				"client_id", clientID,
-			)
 			return
 		}
 	}

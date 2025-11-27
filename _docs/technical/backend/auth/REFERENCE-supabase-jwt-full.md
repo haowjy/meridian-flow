@@ -49,7 +49,7 @@ Request → AuthMiddleware (validates JWT via JWKS) → Handler → Service
 1. `AuthMiddleware` validates JWT from Authorization header via JWKS
 2. User ID extracted from validated JWT claims
 3. User ID injected into request context
-4. Handlers call `getUserID(r)` to extract user ID from context
+4. Handlers call `httputil.GetUserID(r)` to extract user ID from context
 5. Services receive user ID for authorization checks
 6. Returns 401 if JWT is missing, invalid, or expired
 

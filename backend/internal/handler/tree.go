@@ -31,8 +31,11 @@ func (h *TreeHandler) GetTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get userID from context (set by auth middleware)
+	userID := httputil.GetUserID(r)
+
 	// Build the tree
-	tree, err := h.treeService.GetProjectTree(r.Context(), projectID)
+	tree, err := h.treeService.GetProjectTree(r.Context(), userID, projectID)
 	if err != nil {
 		handleError(w, err)
 		return

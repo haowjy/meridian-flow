@@ -46,9 +46,15 @@ func (s *importService) DeleteAllDocuments(ctx context.Context, projectID string
 	return nil
 }
 
-// ProcessFiles processes uploaded files using file processor strategies
-func (s *importService) ProcessFiles(ctx context.Context, projectID, userID string, files []docsysSvc.UploadedFile, folderPath string) (*docsysSvc.ImportResult, error) {
-	// Initialize aggregated result
+// ProcessFiles processes uploaded files using file processor strategies.
+// If overwrite is true, existing documents are updated; if false, duplicates are skipped.
+//
+// Aggregation Pattern: Each file is processed independently and results are merged.
+// A single file failure does NOT halt the entire batch - this allows partial success
+// (e.g., 8 of 10 files imported successfully). Errors are collected and returned
+// in the ImportResult for the frontend to display.
+func (s *importService) ProcessFiles(ctx context.Context, projectID, userID string, files []docsysSvc.UploadedFile, folderPath string, overwrite bool) (*docsysSvc.ImportResult, error) {
+	// Initialize aggregated result - will collect stats from all processors
 	aggregatedResult := &docsysSvc.ImportResult{
 		Summary:   docsysSvc.ImportSummary{},
 		Errors:    []docsysSvc.ImportError{},
@@ -66,7 +72,7 @@ func (s *importService) ProcessFiles(ctx context.Context, projectID, userID stri
 		}
 
 		// Process file with matched processor
-		result, err := processor.Process(ctx, projectID, userID, file.Content, file.Filename, folderPath)
+		result, err := processor.Process(ctx, projectID, userID, file.Content, file.Filename, folderPath, overwrite)
 		if err != nil {
 			return nil, fmt.Errorf("processor %s failed for file %s: %w", processor.Name(), file.Filename, err)
 		}

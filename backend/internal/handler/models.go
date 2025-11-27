@@ -34,34 +34,35 @@ type ProviderResponse struct {
 
 // ModelResponse represents a model's capabilities for the API response
 type ModelResponse struct {
-	ID            string            `json:"id"`
-	DisplayName   string            `json:"display_name"`
-	ContextWindow int               `json:"context_window"`
-	Capabilities  CapabilitiesInfo  `json:"capabilities"`
-	Pricing       PricingInfo       `json:"pricing"`
+	ID            string           `json:"id"`
+	DisplayName   string           `json:"display_name"`
+	ContextWindow int              `json:"context_window"`
+	Capabilities  CapabilitiesInfo `json:"capabilities"`
+	Pricing       PricingInfo      `json:"pricing"`
 }
 
 // CapabilitiesInfo represents model capabilities
 type CapabilitiesInfo struct {
-	ToolCalls       string `json:"tool_calls"`        // excellent, good, fair, poor
-	ImageInput      bool   `json:"image_input"`       // Vision
-	ImageGeneration bool   `json:"image_generation"`
-	Streaming       bool   `json:"streaming"`
-	Thinking        bool   `json:"thinking"`
+	ToolCalls        string `json:"tool_calls"`  // excellent, good, fair, poor
+	ImageInput       bool   `json:"image_input"` // Vision
+	ImageGeneration  bool   `json:"image_generation"`
+	Streaming        bool   `json:"streaming"`
+	Thinking         bool   `json:"thinking"`
+	RequiresThinking bool   `json:"requires_thinking"` // Model cannot have thinking disabled
 }
 
 // PricingInfo represents model pricing
 type PricingInfo struct {
-	InputPer1M  float64              `json:"input_per_1m"`  // First tier, text modality (backward compat)
-	OutputPer1M float64              `json:"output_per_1m"` // First tier, text modality (backward compat)
+	InputPer1M  float64               `json:"input_per_1m"`  // First tier, text modality (backward compat)
+	OutputPer1M float64               `json:"output_per_1m"` // First tier, text modality (backward compat)
 	Tiers       []PricingTierResponse `json:"tiers"`         // Full tier information
 }
 
 // PricingTierResponse represents a single pricing tier
 type PricingTierResponse struct {
-	Threshold   *int                `json:"threshold"`    // null = unlimited
-	InputPrice  map[string]float64  `json:"input_price"`  // modality -> price
-	OutputPrice map[string]float64  `json:"output_price"` // modality -> price
+	Threshold   *int               `json:"threshold"`    // null = unlimited
+	InputPrice  map[string]float64 `json:"input_price"`  // modality -> price
+	OutputPrice map[string]float64 `json:"output_price"` // modality -> price
 }
 
 // GetCapabilities returns model capabilities for all configured providers
@@ -123,11 +124,12 @@ func (h *ModelsHandler) convertProvider(id, name string, models map[string]capab
 			DisplayName:   modelCap.DisplayName,
 			ContextWindow: modelCap.ContextWindow,
 			Capabilities: CapabilitiesInfo{
-				ToolCalls:       string(modelCap.ToolCallQuality),
-				ImageInput:      modelCap.SupportsVision,
-				ImageGeneration: modelCap.ImageGeneration != capabilities.ImageGenerationNone,
-				Streaming:       true, // All providers support streaming
-				Thinking:        modelCap.SupportsThinking,
+				ToolCalls:        string(modelCap.ToolCallQuality),
+				ImageInput:       modelCap.SupportsVision,
+				ImageGeneration:  modelCap.ImageGeneration != capabilities.ImageGenerationNone,
+				Streaming:        true, // All providers support streaming
+				Thinking:         modelCap.SupportsThinking,
+				RequiresThinking: modelCap.RequiresThinking,
 			},
 			Pricing: PricingInfo{
 				InputPer1M:  inputPer1M,

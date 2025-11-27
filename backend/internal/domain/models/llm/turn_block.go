@@ -42,7 +42,7 @@ type TurnBlock struct {
 	Content       map[string]interface{} `json:"content,omitempty" db:"content"`    // JSONB for type-specific data
 	Provider      *string                `json:"provider,omitempty" db:"provider"`
 	ProviderData  json.RawMessage        `json:"provider_data,omitempty" db:"provider_data"` // JSONB for raw provider-specific data (opaque bytes)
-	ExecutionSide *string                `json:"execution_side,omitempty" db:"execution_side"`        // "server" or "client" for tool_use blocks
+	ExecutionSide *string                `json:"execution_side,omitempty" db:"execution_side"`        // "provider", "server", or "client" for tool_use blocks
 	CreatedAt     time.Time              `json:"created_at" db:"created_at"`
 }
 
@@ -72,13 +72,23 @@ func (tb *TurnBlock) IsToolBlock() bool {
 		tb.BlockType == BlockTypeWebSearchResult
 }
 
-// IsServerSideTool returns true if this is a server-side tool_use block (e.g., web_search)
-func (tb *TurnBlock) IsServerSideTool() bool {
-	return tb.BlockType == BlockTypeToolUse && tb.ExecutionSide != nil && *tb.ExecutionSide == "server"
+// IsProviderSideTool returns true if this is a provider-side tool_use block (e.g., Anthropic's web_search)
+func (tb *TurnBlock) IsProviderSideTool() bool {
+	return tb.BlockType == BlockTypeToolUse && tb.ExecutionSide != nil && *tb.ExecutionSide == "provider"
 }
 
-// IsClientSideTool returns true if this is a client-side tool_use block (e.g., bash, text_editor)
-// Treats nil ExecutionSide as client-side (defensive default)
+// IsBackendSideTool returns true if this is a backend-side tool_use block (e.g., Tavily, bash, custom tools)
+// Treats nil ExecutionSide as backend-side (default)
+func (tb *TurnBlock) IsBackendSideTool() bool {
+	return tb.BlockType == BlockTypeToolUse && (tb.ExecutionSide == nil || *tb.ExecutionSide == "server")
+}
+
+// IsClientSideTool returns true if this is a client-side tool_use block (frontend execution)
 func (tb *TurnBlock) IsClientSideTool() bool {
-	return tb.BlockType == BlockTypeToolUse && (tb.ExecutionSide == nil || *tb.ExecutionSide == "client")
+	return tb.BlockType == BlockTypeToolUse && tb.ExecutionSide != nil && *tb.ExecutionSide == "client"
+}
+
+// Deprecated: Use IsProviderSideTool instead
+func (tb *TurnBlock) IsServerSideTool() bool {
+	return tb.IsProviderSideTool()
 }

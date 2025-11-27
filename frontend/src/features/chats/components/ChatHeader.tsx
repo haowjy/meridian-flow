@@ -29,7 +29,7 @@ export function ChatHeader({ chat, projectName }: ChatHeaderProps) {
   })))
 
   return (
-    <div className="chat-main-header h-12 px-3 flex items-center justify-between border-b">
+    <div className="chat-main-header h-12 px-3 flex items-center justify-between">
       <div className="flex items-center gap-2 min-w-0 flex-1">
         {/* Left Toggle: Only show if left panel is collapsed */}
         {leftPanelCollapsed && (

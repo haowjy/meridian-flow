@@ -12,16 +12,20 @@ type DocumentService interface {
 	CreateDocument(ctx context.Context, req *CreateDocumentRequest) (*docsystem.Document, error)
 
 	// GetDocument retrieves a document with its computed path
-	GetDocument(ctx context.Context, id, projectID string) (*docsystem.Document, error)
+	// userID is used for authorization check
+	GetDocument(ctx context.Context, userID, documentID string) (*docsystem.Document, error)
 
 	// UpdateDocument updates a document
-	UpdateDocument(ctx context.Context, id string, req *UpdateDocumentRequest) (*docsystem.Document, error)
+	// userID is used for authorization check
+	UpdateDocument(ctx context.Context, userID, documentID string, req *UpdateDocumentRequest) (*docsystem.Document, error)
 
 	// DeleteDocument deletes a document
-	DeleteDocument(ctx context.Context, id, projectID string) error
+	// userID is used for authorization check
+	DeleteDocument(ctx context.Context, userID, documentID string) error
 
 	// SearchDocuments performs full-text search across documents
-	SearchDocuments(ctx context.Context, req *SearchDocumentsRequest) (*docsystem.SearchResults, error)
+	// userID is used to filter results to user's accessible projects
+	SearchDocuments(ctx context.Context, userID string, req *SearchDocumentsRequest) (*docsystem.SearchResults, error)
 }
 
 // CreateDocumentRequest represents a document creation request

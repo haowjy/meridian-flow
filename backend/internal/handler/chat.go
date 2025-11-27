@@ -1,16 +1,16 @@
 package handler
 
 import (
-	"errors"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 
 	"github.com/google/uuid"
 	mstream "github.com/haowjy/meridian-stream-go"
 
-	"meridian/internal/domain"
 	llmModels "meridian/internal/domain/models/llm"
+	"meridian/internal/domain/services"
 	llmSvc "meridian/internal/domain/services/llm"
 	"meridian/internal/handler/sse"
 	"meridian/internal/httputil"
@@ -23,6 +23,7 @@ type ChatHandler struct {
 	conversationService llmSvc.ConversationService
 	streamingService    llmSvc.StreamingService
 	registry            *mstream.Registry
+	authorizer          services.ResourceAuthorizer
 	logger              *slog.Logger
 }
 
@@ -32,6 +33,7 @@ func NewChatHandler(
 	conversationService llmSvc.ConversationService,
 	streamingService llmSvc.StreamingService,
 	registry *mstream.Registry,
+	authorizer services.ResourceAuthorizer,
 	logger *slog.Logger,
 ) *ChatHandler {
 	return &ChatHandler{
@@ -39,6 +41,7 @@ func NewChatHandler(
 		conversationService: conversationService,
 		streamingService:    streamingService,
 		registry:            registry,
+		authorizer:          authorizer,
 		logger:              logger,
 	}
 }
@@ -48,11 +51,7 @@ func NewChatHandler(
 // Returns 201 if created, 409 with existing chat if duplicate
 func (h *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
 	// Extract user ID from context
-	userID, err := getUserID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
-		return
-	}
+	userID := httputil.GetUserID(r)
 
 	// Parse request
 	var req llmSvc.CreateChatRequest
@@ -65,13 +64,8 @@ func (h *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
 	// Call service
 	chat, err := h.chatService.CreateChat(r.Context(), &req)
 	if err != nil {
-		// Handle conflict by fetching and returning existing chat with 409
-		HandleCreateConflict(w, err, func() (*llmModels.Chat, error) {
-			var conflictErr *domain.ConflictError
-			if errors.As(err, &conflictErr) {
-				return h.chatService.GetChat(r.Context(), conflictErr.ResourceID, userID)
-			}
-			return nil, err
+		HandleCreateConflict(w, err, func(id string) (*llmModels.Chat, error) {
+			return h.chatService.GetChat(r.Context(), id, userID)
 		})
 		return
 	}
@@ -83,11 +77,7 @@ func (h *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
 // GET /api/chats?project_id=:id
 func (h *ChatHandler) ListChats(w http.ResponseWriter, r *http.Request) {
 	// Extract user ID from context
-	userID, err := getUserID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
-		return
-	}
+	userID := httputil.GetUserID(r)
 
 	// Get project ID from query param
 	projectID := r.URL.Query().Get("project_id")
@@ -109,21 +99,12 @@ func (h *ChatHandler) ListChats(w http.ResponseWriter, r *http.Request) {
 // GetChat retrieves a single chat by ID
 // GET /api/chats/{id}
 func (h *ChatHandler) GetChat(w http.ResponseWriter, r *http.Request) {
-	// Extract user ID from context
-	userID, err := getUserID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+	chatID, ok := PathParam(w, r, "id", "Chat ID")
+	if !ok {
 		return
 	}
 
-	// Get chat ID from route param
-	chatID := r.PathValue("id")
-	if chatID == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Chat ID is required")
-		return
-	}
-
-	// Call service
+	userID := httputil.GetUserID(r)
 	chat, err := h.chatService.GetChat(r.Context(), chatID, userID)
 	if err != nil {
 		handleError(w, err)
@@ -136,21 +117,12 @@ func (h *ChatHandler) GetChat(w http.ResponseWriter, r *http.Request) {
 // UpdateChat updates a chat's title
 // PATCH /api/chats/{id}
 func (h *ChatHandler) UpdateChat(w http.ResponseWriter, r *http.Request) {
-	// Extract user ID from context
-	userID, err := getUserID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+	chatID, ok := PathParam(w, r, "id", "Chat ID")
+	if !ok {
 		return
 	}
 
-	// Get chat ID from route param
-	chatID := r.PathValue("id")
-	if chatID == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Chat ID is required")
-		return
-	}
-
-	// Parse request
+	userID := httputil.GetUserID(r)
 	var req llmSvc.UpdateChatRequest
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
@@ -170,17 +142,12 @@ func (h *ChatHandler) UpdateChat(w http.ResponseWriter, r *http.Request) {
 // UpdateLastViewedTurn updates the last_viewed_turn_id for a chat
 // PATCH /api/chats/{id}/last-viewed-turn
 func (h *ChatHandler) UpdateLastViewedTurn(w http.ResponseWriter, r *http.Request) {
-	// Extract user ID from context
-	userID, err := getUserID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+	chatID, ok := PathParam(w, r, "id", "Chat ID")
+	if !ok {
 		return
 	}
 
-	// Get chat ID from route param
-	chatID := r.PathValue("id")
-
-	// Parse request body
+	userID := httputil.GetUserID(r)
 	var req struct {
 		TurnID string `json:"turn_id"`
 	}
@@ -190,8 +157,7 @@ func (h *ChatHandler) UpdateLastViewedTurn(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Call service (all validation handled by service layer)
-	err = h.chatService.UpdateLastViewedTurn(r.Context(), chatID, userID, req.TurnID)
-	if err != nil {
+	if err := h.chatService.UpdateLastViewedTurn(r.Context(), chatID, userID, req.TurnID); err != nil {
 		handleError(w, err)
 		return
 	}
@@ -203,21 +169,12 @@ func (h *ChatHandler) UpdateLastViewedTurn(w http.ResponseWriter, r *http.Reques
 // DeleteChat soft-deletes a chat
 // DELETE /api/chats/{id}
 func (h *ChatHandler) DeleteChat(w http.ResponseWriter, r *http.Request) {
-	// Extract user ID from context
-	userID, err := getUserID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+	chatID, ok := PathParam(w, r, "id", "Chat ID")
+	if !ok {
 		return
 	}
 
-	// Get chat ID from route param
-	chatID := r.PathValue("id")
-	if chatID == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Chat ID is required")
-		return
-	}
-
-	// Call service
+	userID := httputil.GetUserID(r)
 	deletedChat, err := h.chatService.DeleteChat(r.Context(), chatID, userID)
 	if err != nil {
 		handleError(w, err)
@@ -227,30 +184,48 @@ func (h *ChatHandler) DeleteChat(w http.ResponseWriter, r *http.Request) {
 	httputil.RespondJSON(w, http.StatusOK, deletedChat)
 }
 
-// CreateTurn creates a new turn (user message)
-// POST /api/chats/{id}/turns
-func (h *ChatHandler) CreateTurn(w http.ResponseWriter, r *http.Request) {
-	// Get chat ID from route param
-	chatID := r.PathValue("id")
-	if chatID == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Chat ID is required")
-		return
-	}
-
-	// Extract user ID from context
-	userID, err := getUserID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
-		return
-	}
-
-	// Parse request
+// CreateTurnV2 creates a new turn (user message) with chat_id in request body
+// POST /api/turns
+//
+// Chat resolution priority:
+// 1. If prev_turn_id provided → infer chat from that turn
+// 2. Else if chat_id provided → use that chat
+// 3. Else if project_id provided → create new chat (cold start)
+func (h *ChatHandler) CreateTurnV2(w http.ResponseWriter, r *http.Request) {
+	userID := httputil.GetUserID(r)
 	var req llmSvc.CreateTurnRequest
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	req.ChatID = chatID
+	req.UserID = userID
+
+	// Call service - chat_id, project_id, prev_turn_id come from body
+	response, err := h.streamingService.CreateTurn(r.Context(), &req)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	httputil.RespondJSON(w, http.StatusCreated, response)
+}
+
+// CreateTurn creates a new turn (user message) - DEPRECATED
+// POST /api/chats/{id}/turns
+// Use POST /api/turns instead (CreateTurnV2)
+func (h *ChatHandler) CreateTurn(w http.ResponseWriter, r *http.Request) {
+	chatID, ok := PathParam(w, r, "id", "Chat ID")
+	if !ok {
+		return
+	}
+
+	userID := httputil.GetUserID(r)
+	var req llmSvc.CreateTurnRequest
+	if err := httputil.ParseJSON(w, r, &req); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	req.ChatID = &chatID // Convert path param to pointer
 	req.UserID = userID
 
 	// Call service
@@ -266,15 +241,13 @@ func (h *ChatHandler) CreateTurn(w http.ResponseWriter, r *http.Request) {
 // GetTurnPath retrieves the conversation path from a turn to root
 // GET /api/turns/{id}/path
 func (h *ChatHandler) GetTurnPath(w http.ResponseWriter, r *http.Request) {
-	// Get turn ID from route param
-	turnID := r.PathValue("id")
-	if turnID == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Turn ID is required")
+	turnID, ok := PathParam(w, r, "id", "Turn ID")
+	if !ok {
 		return
 	}
 
-	// Call service
-	turns, err := h.conversationService.GetTurnPath(r.Context(), turnID)
+	userID := httputil.GetUserID(r)
+	turns, err := h.conversationService.GetTurnPath(r.Context(), userID, turnID)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -286,15 +259,13 @@ func (h *ChatHandler) GetTurnPath(w http.ResponseWriter, r *http.Request) {
 // GetTurnSiblings retrieves all sibling turns (including self) for version browsing
 // GET /api/turns/{id}/siblings
 func (h *ChatHandler) GetTurnSiblings(w http.ResponseWriter, r *http.Request) {
-	// Get turn ID from route param
-	turnID := r.PathValue("id")
-	if turnID == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Turn ID is required")
+	turnID, ok := PathParam(w, r, "id", "Turn ID")
+	if !ok {
 		return
 	}
 
-	// Call service
-	siblings, err := h.conversationService.GetTurnSiblings(r.Context(), turnID)
+	userID := httputil.GetUserID(r)
+	siblings, err := h.conversationService.GetTurnSiblings(r.Context(), userID, turnID)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -306,19 +277,12 @@ func (h *ChatHandler) GetTurnSiblings(w http.ResponseWriter, r *http.Request) {
 // GetPaginatedTurns retrieves turns and blocks in paginated fashion
 // GET /api/chats/{id}/turns?from_turn_id=X&limit=100&direction=both
 func (h *ChatHandler) GetPaginatedTurns(w http.ResponseWriter, r *http.Request) {
-	// Extract user ID from context
-	userID, err := getUserID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
+	chatID, ok := PathParam(w, r, "id", "Chat ID")
+	if !ok {
 		return
 	}
 
-	// Get chat ID from route param
-	chatID := r.PathValue("id")
-	if chatID == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Chat ID is required")
-		return
-	}
+	userID := httputil.GetUserID(r)
 
 	// Parse query parameters
 	fromTurnIDStr := r.URL.Query().Get("from_turn_id")
@@ -336,15 +300,8 @@ func (h *ChatHandler) GetPaginatedTurns(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// Parse limit (default 100)
-	limit := 100
-	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
-			limit = parsed
-		}
-	}
-
-	// Parse direction (no default here; repository applies defaults based on from_turn_id presence)
+	// Parse limit and direction
+	limit := QueryInt(r, "limit", 100, 1, math.MaxInt)
 	direction := r.URL.Query().Get("direction")
 
 	// Call service
@@ -369,10 +326,8 @@ type GetTurnBlocksResponse struct {
 // GET /api/turns/{id}/blocks
 // Used for reconnection - client fetches completed blocks before connecting to SSE stream
 func (h *ChatHandler) GetTurnBlocks(w http.ResponseWriter, r *http.Request) {
-	// Get turn ID from route param
-	turnID := r.PathValue("id")
-	if turnID == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Turn ID is required")
+	turnID, ok := PathParam(w, r, "id", "Turn ID")
+	if !ok {
 		return
 	}
 
@@ -382,8 +337,10 @@ func (h *ChatHandler) GetTurnBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID := httputil.GetUserID(r)
+
 	// Get turn with blocks from service (follows Clean Architecture)
-	turn, err := h.conversationService.GetTurnWithBlocks(r.Context(), turnID)
+	turn, err := h.conversationService.GetTurnWithBlocks(r.Context(), userID, turnID)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -403,10 +360,8 @@ func (h *ChatHandler) GetTurnBlocks(w http.ResponseWriter, r *http.Request) {
 // GetTurnTokenUsage retrieves token usage statistics for a turn
 // GET /api/turns/{id}/token-usage
 func (h *ChatHandler) GetTurnTokenUsage(w http.ResponseWriter, r *http.Request) {
-	// Get turn ID from route param
-	turnID := r.PathValue("id")
-	if turnID == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Turn ID is required")
+	turnID, ok := PathParam(w, r, "id", "Turn ID")
+	if !ok {
 		return
 	}
 
@@ -416,8 +371,10 @@ func (h *ChatHandler) GetTurnTokenUsage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	userID := httputil.GetUserID(r)
+
 	// Get token usage from service
-	tokenUsage, err := h.conversationService.GetTurnTokenUsage(r.Context(), turnID)
+	tokenUsage, err := h.conversationService.GetTurnTokenUsage(r.Context(), userID, turnID)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -429,16 +386,22 @@ func (h *ChatHandler) GetTurnTokenUsage(w http.ResponseWriter, r *http.Request) 
 // InterruptTurn cancels a streaming turn
 // POST /api/turns/{id}/interrupt
 func (h *ChatHandler) InterruptTurn(w http.ResponseWriter, r *http.Request) {
-	// Get turn ID from route param
-	turnID := r.PathValue("id")
-	if turnID == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "Turn ID is required")
+	turnID, ok := PathParam(w, r, "id", "Turn ID")
+	if !ok {
 		return
 	}
 
 	// Validate turn ID format
 	if _, err := uuid.Parse(turnID); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid turn ID format")
+		return
+	}
+
+	userID := httputil.GetUserID(r)
+
+	// Authorize: check user can access this turn
+	if err := h.authorizer.CanAccessTurn(r.Context(), userID, turnID); err != nil {
+		handleError(w, err)
 		return
 	}
 
@@ -462,6 +425,19 @@ func (h *ChatHandler) InterruptTurn(w http.ResponseWriter, r *http.Request) {
 // StreamTurn streams turn deltas via Server-Sent Events (SSE)
 // GET /api/turns/{id}/stream
 func (h *ChatHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
+	turnID, ok := PathParam(w, r, "id", "Turn ID")
+	if !ok {
+		return
+	}
+
+	userID := httputil.GetUserID(r)
+
+	// Authorize: check user can access this turn
+	if err := h.authorizer.CanAccessTurn(r.Context(), userID, turnID); err != nil {
+		handleError(w, err)
+		return
+	}
+
 	// Note: SSE config is created here with defaults
 	// TODO: Consider injecting SSE config at ChatHandler creation time for better testability
 	sseConfig := sse.DefaultConfig()

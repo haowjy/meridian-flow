@@ -197,4 +197,3 @@ const buildTurnPath = (turn: Turn): Turn[] => {
 
 - `_docs/technical/backend/chat/turn-navigation.md` - Turn path traversal
 - `_docs/technical/backend/chat/llm-providers.md` - Message building
-- `_docs/plans/tool-continuation.md` - Related to tool_use branching use case

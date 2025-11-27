@@ -1,7 +1,8 @@
 "use client"
 
 import type { ReactNode } from 'react'
-import { Brain, ChevronDown, Globe2, Send, StopCircle } from 'lucide-react'
+import { ArrowUp, Brain, ChevronDown, StopCircle } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
 import {
   DropdownMenu,
@@ -39,9 +40,6 @@ export function ChatRequestControls({
 }: ChatRequestControlsProps) {
   const { providers } = useModelCapabilities()
 
-  const isAnthropic = options.providerId === 'anthropic'
-  const canToggleSearch = isAnthropic
-
   const allModels =
     providers.flatMap((provider) =>
       provider.models.map((model) => ({
@@ -50,23 +48,38 @@ export function ChatRequestControls({
         id: model.id,
         displayName: model.displayName,
         supportsThinking: model.supportsThinking,
+        requiresThinking: model.requiresThinking,
       })),
     ) ?? []
+
+  // Find the selected model to check thinking capabilities
+  const selectedModel = allModels.find((m) => m.id === options.modelId)
+  const supportsThinking = selectedModel?.supportsThinking ?? true
+  const requiresThinking = selectedModel?.requiresThinking ?? false
 
   const handleSelectModel = (
     modelId: string,
     modelLabel: string,
     providerId: string,
+    modelSupportsThinking: boolean,
+    modelRequiresThinking: boolean,
   ) => {
-    const isAnthropicProvider = providerId === 'anthropic'
+    // Determine appropriate reasoning level based on model capabilities
+    let reasoning = options.reasoning
+    if (!modelSupportsThinking) {
+      // Model doesn't support thinking - force to 'off'
+      reasoning = 'off'
+    } else if (modelRequiresThinking && options.reasoning === 'off') {
+      // Model requires thinking but current is 'off' - set to 'low'
+      reasoning = 'low'
+    }
 
     onOptionsChange({
       ...options,
       modelId,
       modelLabel,
       providerId,
-      // Hard-disable search when switching away from Anthropic
-      searchEnabled: isAnthropicProvider ? options.searchEnabled : false,
+      reasoning,
     })
   }
 
@@ -86,16 +99,8 @@ export function ChatRequestControls({
           onChange={(reasoning) =>
             onOptionsChange({ ...options, reasoning })
           }
-        />
-        <WebSearchToggle
-          enabled={options.searchEnabled}
-          disabled={!canToggleSearch}
-          onToggle={() =>
-            onOptionsChange({
-              ...options,
-              searchEnabled: !options.searchEnabled,
-            })
-          }
+          disabled={!supportsThinking}
+          requiresThinking={requiresThinking}
         />
       </div>
       {(onSend || rightContent) && (
@@ -110,7 +115,7 @@ export function ChatRequestControls({
               onClick={showStop && onStop ? onStop : onSend}
               aria-label={showStop ? 'Stop response' : 'Send message'}
             >
-              {showStop ? <StopCircle className="size-4" /> : <Send className="size-4" />}
+              {showStop ? <StopCircle className="size-4" /> : <ArrowUp className="size-4" />}
             </Button>
           )}
         </div>
@@ -126,6 +131,7 @@ interface ModelSelectorProps {
     id: string
     displayName: string
     supportsThinking: boolean
+    requiresThinking: boolean
   }[]
   selectedModelId: string
   modelLabel: string
@@ -133,6 +139,8 @@ interface ModelSelectorProps {
     modelId: string,
     modelLabel: string,
     providerId: string,
+    supportsThinking: boolean,
+    requiresThinking: boolean,
   ) => void
 }
 
@@ -145,14 +153,14 @@ function ModelSelector({
   const grouped = models.reduce<
     Record<
       string,
-      { providerName: string; items: { id: string; displayName: string }[] }
+      { providerName: string; items: { id: string; displayName: string; supportsThinking: boolean; requiresThinking: boolean }[] }
     >
   >((acc, model) => {
     const key = model.providerId
     if (!acc[key]) {
       acc[key] = { providerName: model.providerName, items: [] }
     }
-    acc[key].items.push({ id: model.id, displayName: model.displayName })
+    acc[key].items.push({ id: model.id, displayName: model.displayName, supportsThinking: model.supportsThinking, requiresThinking: model.requiresThinking })
     return acc
   }, {})
 
@@ -183,6 +191,8 @@ function ModelSelector({
                 DEFAULT_MODEL_ID,
                 DEFAULT_MODEL_LABEL,
                 DEFAULT_PROVIDER_ID,
+                true, // default model supports thinking
+                true, // default model requires thinking (kimi-k2-thinking)
               )
             }
             className="text-[0.7rem] sm:text-xs"
@@ -200,7 +210,7 @@ function ModelSelector({
                 key={model.id}
                 className="flex items-center gap-2 text-[0.7rem] sm:text-xs"
                 onSelect={() =>
-                  onSelectModel(model.id, model.displayName, providerId)
+                  onSelectModel(model.id, model.displayName, providerId, model.supportsThinking, model.requiresThinking)
                 }
               >
                 <span
@@ -223,6 +233,7 @@ function ModelSelector({
 }
 
 const REASONING_LABELS: Record<ReasoningLevel, string> = {
+  off: 'Off',
   low: 'Low',
   medium: 'Medium',
   high: 'High',
@@ -231,22 +242,41 @@ const REASONING_LABELS: Record<ReasoningLevel, string> = {
 interface ReasoningDropdownProps {
   value: ReasoningLevel
   onChange: (value: ReasoningLevel) => void
+  /** When true, dropdown is disabled (model doesn't support thinking) */
+  disabled?: boolean
+  /** When true, "Off" option is hidden (model requires thinking) */
+  requiresThinking?: boolean
 }
 
 function ReasoningDropdown({
   value,
   onChange,
+  disabled = false,
+  requiresThinking = false,
 }: ReasoningDropdownProps) {
-  const levels: ReasoningLevel[] = ['low', 'medium', 'high']
+  // Filter out "off" option if model requires thinking
+  const levels: ReasoningLevel[] = requiresThinking
+    ? ['low', 'medium', 'high']
+    : ['off', 'low', 'medium', 'high']
+  const isActive = value !== 'off'
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+      <DropdownMenuTrigger asChild disabled={disabled}>
         <Button
           type="button"
           size="sm"
           variant="outline"
-          className="flex items-center gap-1 px-1.5 py-1 text-[0.7rem] sm:text-xs"
+          disabled={disabled}
+          className={cn(
+            "flex items-center gap-1 px-2 py-1 text-[0.7rem] sm:text-xs",
+            // Off state: white/card background to blend with message input
+            !isActive && "bg-card",
+            // Active state: subtle jade background tint
+            isActive && "bg-primary/10",
+            // Disabled state: muted appearance
+            disabled && "text-muted-foreground opacity-50"
+          )}
         >
           <Brain className="size-3" />
           <span>{REASONING_LABELS[value]}</span>
@@ -254,10 +284,6 @@ function ReasoningDropdown({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
-        <DropdownMenuLabel className="text-[0.7rem] sm:text-xs">
-          Reasoning
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
         {levels.map((level) => (
           <DropdownMenuItem
             key={level}
@@ -265,7 +291,9 @@ function ReasoningDropdown({
             className="flex items-center gap-2 text-[0.7rem] sm:text-xs"
           >
             <Brain className="size-3" />
-            <span>{REASONING_LABELS[level]}</span>
+            <span className={value === level ? 'font-medium' : undefined}>
+              {REASONING_LABELS[level]}
+            </span>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
@@ -273,30 +301,3 @@ function ReasoningDropdown({
   )
 }
 
-interface WebSearchToggleProps {
-  enabled: boolean
-  disabled: boolean
-  onToggle: () => void
-}
-
-function WebSearchToggle({
-  enabled,
-  disabled,
-  onToggle,
-}: WebSearchToggleProps) {
-  const variant = enabled ? 'default' : 'outline'
-
-  return (
-    <Button
-      type="button"
-      size="sm"
-      variant={variant}
-      disabled={disabled}
-      className="flex items-center gap-1 px-1.5 py-1 text-[0.7rem] sm:text-xs"
-      onClick={onToggle}
-    >
-      <Globe2 className="size-3" />
-      Search
-    </Button>
-  )
-}

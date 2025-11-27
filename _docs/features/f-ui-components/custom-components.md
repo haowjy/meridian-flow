@@ -20,8 +20,9 @@ feature: "Custom Components"
 **EmptyState** - Empty state placeholder
 **ErrorPanel** - Error display with retry button
 **PanelLayout** - 3-panel collapsible layout
+**HeaderGradientFade** - Gradient fade below sticky headers (variants: `background`, `sidebar`)
 
-**Location**: `frontend/src/shared/components/`
+**Location**: `frontend/src/shared/components/` + `frontend/src/core/components/HeaderGradientFade.tsx`
 
 ---
 

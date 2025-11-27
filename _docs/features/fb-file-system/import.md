@@ -34,9 +34,17 @@ feature: "ZIP Import"
 
 ---
 
-## Frontend: ❌ Missing
+## Frontend: ✅ Complete
 
-No import UI (no dialog, no file upload button)
+**Implementation**: `frontend/src/features/documents/components/ImportDocumentDialog.tsx`
+
+**Features**:
+- Drag-and-drop file upload
+- Multi-file selection (.zip, .md, .txt, .html)
+- Overwrite toggle (skip vs overwrite existing documents)
+- Progress indicator during upload
+- Results summary (created, updated, skipped, failed counts)
+- File validation with error display
 
 ---
 

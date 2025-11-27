@@ -1,15 +1,20 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { ProjectList, CreateProjectDialog } from '@/features/projects'
 import { useProjectStore } from '@/core/stores/useProjectStore'
+import { useUserProfile, useAuthActions, UserMenuButton } from '@/features/auth'
 import { CardSkeleton } from '@/shared/components/ui/card'
 import { CardGrid } from '@/shared/components/CardGrid'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { LogoWordmark } from '@/shared/components/LogoWordmark'
 
 export default function ProjectsPage() {
+  const router = useRouter()
   const { projects, status, error, loadProjects } = useProjectStore()
+  const { profile, status: profileStatus } = useUserProfile()
+  const { signOut } = useAuthActions()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [showSkeleton, setShowSkeleton] = useState(false)
 
@@ -59,7 +64,20 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div className="container mx-auto max-w-6xl p-8">
+    <div className="relative container mx-auto max-w-6xl p-8">
+      {/* User menu in top-right */}
+      {profileStatus === 'authenticated' && profile && (
+        <div className="absolute top-4 right-4">
+          <UserMenuButton
+            profile={profile}
+            onSettings={() => router.push('/settings')}
+            onSignOut={signOut}
+            menuSide="bottom"
+            showName={false}
+          />
+        </div>
+      )}
+
       <div className="mb-4">
         <LogoWordmark className="h-6" />
         <p className="mt-1 type-body text-muted-foreground">File management for creative writers</p>

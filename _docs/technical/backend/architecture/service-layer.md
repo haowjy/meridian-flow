@@ -362,6 +362,35 @@ func (r *PostgresChatRepository) Create(...) error {
 
 ---
 
+## Authorization Pattern
+
+All services receive a `ResourceAuthorizer` dependency for ownership-based access control:
+
+```go
+type DocumentService struct {
+    docRepo    docsysRepo.DocumentRepository
+    authorizer services.ResourceAuthorizer  // Injected dependency
+    logger     *slog.Logger
+}
+
+func (s *DocumentService) GetDocument(ctx context.Context, userID, docID string) (*Document, error) {
+    // Auth check first
+    if err := s.authorizer.CanAccessDocument(ctx, userID, docID); err != nil {
+        return nil, err
+    }
+    // Then fetch
+    return s.docRepo.GetByIDOnly(ctx, docID)
+}
+```
+
+**Key Points:**
+- Authorization at service layer (not handler)
+- Consistent across all entry points
+- Uses `GetByIDOnly` pattern after auth (no projectID needed)
+- See [authorization.md](../auth/authorization.md) for details
+
+---
+
 ## File Structure
 
 ```

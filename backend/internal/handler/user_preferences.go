@@ -27,11 +27,7 @@ func NewUserPreferencesHandler(service services.UserPreferencesService, logger *
 // GET /api/users/me/preferences
 func (h *UserPreferencesHandler) GetPreferences(w http.ResponseWriter, r *http.Request) {
 	// Extract user ID from context
-	userID, err := getUserID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
-		return
-	}
+	userID := httputil.GetUserID(r)
 
 	// Parse UUID
 	uuid, err := parseUUID(userID)
@@ -54,11 +50,7 @@ func (h *UserPreferencesHandler) GetPreferences(w http.ResponseWriter, r *http.R
 // PATCH /api/users/me/preferences
 func (h *UserPreferencesHandler) UpdatePreferences(w http.ResponseWriter, r *http.Request) {
 	// Extract user ID from context
-	userID, err := getUserID(r)
-	if err != nil {
-		httputil.RespondError(w, http.StatusUnauthorized, err.Error())
-		return
-	}
+	userID := httputil.GetUserID(r)
 
 	// Parse UUID
 	uuid, err := parseUUID(userID)

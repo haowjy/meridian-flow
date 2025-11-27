@@ -3,11 +3,34 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/google/uuid"
 	"meridian/internal/domain"
 	"meridian/internal/httputil"
 )
+
+// PathParam extracts a required path parameter, returning false if missing.
+// Writes 400 error response if the parameter is empty.
+func PathParam(w http.ResponseWriter, r *http.Request, name, resourceName string) (string, bool) {
+	value := r.PathValue(name)
+	if value == "" {
+		httputil.RespondError(w, http.StatusBadRequest, resourceName+" is required")
+		return "", false
+	}
+	return value, true
+}
+
+// QueryInt parses an optional integer query parameter with bounds checking.
+// Returns defaultVal if missing, invalid, or out of bounds.
+func QueryInt(r *http.Request, name string, defaultVal, min, max int) int {
+	if val := r.URL.Query().Get(name); val != "" {
+		if parsed, err := strconv.Atoi(val); err == nil && parsed >= min && parsed <= max {
+			return parsed
+		}
+	}
+	return defaultVal
+}
 
 // handleError converts domain errors to HTTP responses.
 // Uses HTTPError interface for extensible error handling (OCP compliance).
@@ -35,25 +58,25 @@ func handleError(w http.ResponseWriter, err error) {
 	}
 }
 
-// HandleCreateConflict handles conflicts during creation by returning the existing resource with 409
-// If the error is a ConflictError, it calls fetchFn to retrieve the existing resource
-func HandleCreateConflict[T any](w http.ResponseWriter, err error, fetchFn func() (*T, error)) {
+// HandleCreateConflict handles conflicts during creation by returning the existing resource with 409.
+// If the error is a ConflictError, extracts the resourceID and calls fetchByID to retrieve the existing resource.
+func HandleCreateConflict[T any](w http.ResponseWriter, err error, fetchByID func(resourceID string) (*T, error)) {
 	var conflictErr *domain.ConflictError
-	if errors.As(err, &conflictErr) {
-		// Try to fetch existing resource
-		existing, fetchErr := fetchFn()
-		if fetchErr != nil {
-			handleError(w, fetchErr)
-			return
-		}
-
-		// Return existing resource with 409 status
-		httputil.RespondJSON(w, http.StatusConflict, existing)
+	if !errors.As(err, &conflictErr) {
+		// Not a conflict error, handle normally
+		handleError(w, err)
 		return
 	}
 
-	// Not a conflict error, handle normally
-	handleError(w, err)
+	// Try to fetch existing resource by ID from conflict error
+	existing, fetchErr := fetchByID(conflictErr.ResourceID)
+	if fetchErr != nil {
+		handleError(w, fetchErr)
+		return
+	}
+
+	// Return existing resource with 409 status
+	httputil.RespondJSON(w, http.StatusConflict, existing)
 }
 
 // parseUUID parses a string into a UUID

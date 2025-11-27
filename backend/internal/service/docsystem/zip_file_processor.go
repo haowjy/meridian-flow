@@ -15,7 +15,13 @@ import (
 	"meridian/internal/service/docsystem/converter"
 )
 
-// zipFileProcessor processes zip files and imports their contents
+// zipFileProcessor processes zip files and imports their contents.
+// Implements FileProcessor interface using Strategy pattern.
+//
+// Responsibilities:
+//   - Extract files from zip archive preserving folder structure
+//   - Route each file to appropriate ContentConverter based on extension
+//   - Handle create/update/skip decisions based on existing documents
 type zipFileProcessor struct {
 	docRepo           docsysRepo.DocumentRepository
 	docService        docsysSvc.DocumentService
@@ -45,6 +51,7 @@ func (p *zipFileProcessor) CanProcess(filename string) bool {
 }
 
 // Process extracts and imports documents from a zip file
+// If overwrite is true, existing documents are updated; if false, duplicates are skipped
 func (p *zipFileProcessor) Process(
 	ctx context.Context,
 	projectID string,
@@ -52,6 +59,7 @@ func (p *zipFileProcessor) Process(
 	file io.Reader,
 	filename string,
 	folderPath string,
+	overwrite bool,
 ) (*docsysSvc.ImportResult, error) {
 	// Read zip file into memory
 	zipData, err := io.ReadAll(file)
@@ -66,16 +74,18 @@ func (p *zipFileProcessor) Process(
 		return nil, fmt.Errorf("failed to open zip file: %w", err)
 	}
 
-	// Get all existing documents in project to check for updates
+	// Get all existing documents in project to check for updates.
+	// This enables O(1) lookup during import instead of querying for each file.
 	existingDocs, err := p.docRepo.GetAllMetadataByProject(ctx, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get existing documents: %w", err)
 	}
 
-	// Build map of (path, name) -> document_id for quick lookup
-	docMap := make(map[string]string) // key: "path|name", value: document_id
+	// Build lookup map for deduplication: "path|name" → document_id
+	// The key format uses pipe separator (see BuildLookupKey) to ensure uniqueness
+	// since the same document name can exist in different folders.
+	docMap := make(map[string]string)
 	for _, doc := range existingDocs {
-		// Compute path for the document
 		path, err := p.docRepo.GetPath(ctx, &doc)
 		if err != nil {
 			p.logger.Warn("failed to compute path for existing document",
@@ -84,8 +94,7 @@ func (p *zipFileProcessor) Process(
 			)
 			continue
 		}
-		key := fmt.Sprintf("%s|%s", path, doc.Name)
-		docMap[key] = doc.ID
+		docMap[BuildLookupKey(path, doc.Name)] = doc.ID
 	}
 
 	// Initialize result
@@ -112,7 +121,7 @@ func (p *zipFileProcessor) Process(
 		}
 
 		// Process file from zip
-		p.processZipEntry(ctx, projectID, userID, zipEntry, docMap, result)
+		p.processZipEntry(ctx, projectID, userID, zipEntry, docMap, overwrite, result)
 	}
 
 	p.logger.Info("zip file processing complete",
@@ -140,6 +149,7 @@ func (p *zipFileProcessor) processZipEntry(
 	userID string,
 	file *zip.File,
 	docMap map[string]string,
+	overwrite bool,
 	result *docsysSvc.ImportResult,
 ) {
 	result.Summary.TotalFiles++
@@ -166,42 +176,42 @@ func (p *zipFileProcessor) processZipEntry(
 		return
 	}
 
-	// Determine folder path and document name
+	// Extract folder path and document name from zip entry path.
+	// Zip entries use forward slashes regardless of OS: "folder/subfolder/file.md"
+	//
+	// Examples:
+	//   - "chapter1.md" → folderPath="", docName="chapter1"
+	//   - "book/chapter1.md" → folderPath="book", docName="chapter1"
+	//   - "book/part1/intro.md" → folderPath="book/part1", docName="intro"
 	var folderPath string
 	var docName string
 
-	// Derive folder path from directory structure in zip
 	dirPath := filepath.Dir(file.Name)
 	if dirPath == "." {
-		// File is at root of zip
-		folderPath = ""
+		folderPath = "" // File is at root of zip
 	} else {
 		folderPath = dirPath
 	}
 
-	// Use filename without extension as document name
+	// Extract document name (filename without extension)
 	baseName := filepath.Base(file.Name)
 	ext := filepath.Ext(baseName)
 	docName = strings.TrimSuffix(baseName, ext)
+	docName = SanitizeDocName(docName) // Replace invalid characters
 
-	// Sanitize document name: replace slashes with hyphens
-	docName = strings.ReplaceAll(docName, "/", "-")
-
-	// Construct full path for document lookup
-	fullPath := folderPath
-	if docName != "" && folderPath != "" {
-		fullPath = folderPath + "/" + docName
-	} else if docName != "" {
-		fullPath = docName
-	}
-
-	// Check if document exists
-	lookupKey := fmt.Sprintf("%s|%s", fullPath, docName)
+	// Build lookup key to check for existing document
+	fullPath := BuildFullPath(folderPath, docName)
+	lookupKey := BuildLookupKey(fullPath, docName)
 	existingDocID, exists := docMap[lookupKey]
 
 	if exists {
-		// Update existing document
-		p.updateDocument(ctx, projectID, existingDocID, markdown, result)
+		if overwrite {
+			// Update existing document
+			p.updateDocument(ctx, projectID, userID, existingDocID, markdown, result)
+		} else {
+			// Skip duplicate - don't overwrite
+			p.skipDocument(result, folderPath, docName)
+		}
 	} else {
 		// Create new document
 		p.createDocument(ctx, projectID, userID, folderPath, docName, markdown, result)
@@ -227,11 +237,7 @@ func (p *zipFileProcessor) createDocument(
 	})
 
 	if err != nil {
-		fullPath := folderPath + "/" + docName
-		if folderPath == "" {
-			fullPath = docName
-		}
-		p.addError(result, fullPath, fmt.Sprintf("failed to create document: %v", err))
+		p.addError(result, BuildFullPath(folderPath, docName), fmt.Sprintf("failed to create document: %v", err))
 		return
 	}
 
@@ -254,11 +260,12 @@ func (p *zipFileProcessor) createDocument(
 func (p *zipFileProcessor) updateDocument(
 	ctx context.Context,
 	projectID string,
+	userID string,
 	docID string,
 	content string,
 	result *docsysSvc.ImportResult,
 ) {
-	doc, err := p.docService.UpdateDocument(ctx, docID, &docsysSvc.UpdateDocumentRequest{
+	doc, err := p.docService.UpdateDocument(ctx, userID, docID, &docsysSvc.UpdateDocumentRequest{
 		ProjectID: projectID,
 		Content:   &content,
 	})
@@ -279,6 +286,27 @@ func (p *zipFileProcessor) updateDocument(
 	p.logger.Debug("document updated",
 		"id", doc.ID,
 		"path", doc.Path,
+	)
+}
+
+// skipDocument records a skipped duplicate document
+func (p *zipFileProcessor) skipDocument(
+	result *docsysSvc.ImportResult,
+	folderPath string,
+	docName string,
+) {
+	fullPath := BuildFullPath(folderPath, docName)
+	result.Summary.Skipped++
+	result.Documents = append(result.Documents, docsysSvc.ImportDocument{
+		ID:     "", // No ID for skipped documents
+		Path:   fullPath,
+		Name:   docName,
+		Action: "skipped",
+	})
+
+	p.logger.Debug("document skipped (duplicate)",
+		"folder_path", folderPath,
+		"name", docName,
 	)
 }
 

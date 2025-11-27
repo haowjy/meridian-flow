@@ -12,6 +12,7 @@ import (
 	models "meridian/internal/domain/models/docsystem"
 	"meridian/internal/domain/repositories"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
+	"meridian/internal/domain/services"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
@@ -23,6 +24,7 @@ type documentService struct {
 	contentAnalyzer docsysSvc.ContentAnalyzer
 	pathResolver    docsysSvc.PathResolver
 	validator       *ResourceValidator
+	authorizer      services.ResourceAuthorizer
 	logger          *slog.Logger
 }
 
@@ -34,6 +36,7 @@ func NewDocumentService(
 	contentAnalyzer docsysSvc.ContentAnalyzer,
 	pathResolver docsysSvc.PathResolver,
 	validator *ResourceValidator,
+	authorizer services.ResourceAuthorizer,
 	logger *slog.Logger,
 ) docsysSvc.DocumentService {
 	return &documentService{
@@ -43,6 +46,7 @@ func NewDocumentService(
 		contentAnalyzer: contentAnalyzer,
 		pathResolver:    pathResolver,
 		validator:       validator,
+		authorizer:      authorizer,
 		logger:          logger,
 	}
 }
@@ -89,6 +93,21 @@ func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.Cre
 		"folder_id", folderID,
 	)
 
+	// Check for duplicate name in target folder
+	siblings, err := s.docRepo.ListByFolder(ctx, folderID, req.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check for duplicate names: %w", err)
+	}
+	for _, sibling := range siblings {
+		if sibling.Name == docName {
+			return nil, &domain.ConflictError{
+				Message:      fmt.Sprintf("a document named %q already exists in this folder", docName),
+				ResourceType: "document",
+				ResourceID:   sibling.ID,
+			}
+		}
+	}
+
 	// Count words (business logic)
 	wordCount := s.contentAnalyzer.CountWords(req.Content)
 
@@ -129,8 +148,15 @@ func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.Cre
 }
 
 // GetDocument retrieves a document with its computed path
-func (s *documentService) GetDocument(ctx context.Context, id, projectID string) (*models.Document, error) {
-	doc, err := s.docRepo.GetByID(ctx, id, projectID)
+// Authorization is checked first via the injected authorizer
+func (s *documentService) GetDocument(ctx context.Context, userID, documentID string) (*models.Document, error) {
+	// Authorize: check user can access this document
+	if err := s.authorizer.CanAccessDocument(ctx, userID, documentID); err != nil {
+		return nil, err
+	}
+
+	// Get document (authorization already done, use GetByIDOnly)
+	doc, err := s.docRepo.GetByIDOnly(ctx, documentID)
 	if err != nil {
 		return nil, err
 	}
@@ -148,9 +174,15 @@ func (s *documentService) GetDocument(ctx context.Context, id, projectID string)
 }
 
 // UpdateDocument updates a document
-func (s *documentService) UpdateDocument(ctx context.Context, id string, req *docsysSvc.UpdateDocumentRequest) (*models.Document, error) {
-	// Get existing document
-	doc, err := s.docRepo.GetByID(ctx, id, req.ProjectID)
+// Authorization is checked first via the injected authorizer
+func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID string, req *docsysSvc.UpdateDocumentRequest) (*models.Document, error) {
+	// Authorize: check user can access this document
+	if err := s.authorizer.CanAccessDocument(ctx, userID, documentID); err != nil {
+		return nil, err
+	}
+
+	// Get existing document (authorization already done, use GetByIDOnly)
+	doc, err := s.docRepo.GetByIDOnly(ctx, documentID)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +205,7 @@ func (s *documentService) UpdateDocument(ctx context.Context, id string, req *do
 		// Validate target folder exists and is not deleted
 		targetFolderID := *req.FolderID
 		if targetFolderID != "" { // Empty string means root, which is always valid
-			if err := s.validator.ValidateFolder(ctx, targetFolderID, req.ProjectID); err != nil {
+			if err := s.validator.ValidateFolder(ctx, targetFolderID, doc.ProjectID); err != nil {
 				return nil, err
 			}
 		}
@@ -181,13 +213,13 @@ func (s *documentService) UpdateDocument(ctx context.Context, id string, req *do
 		doc.FolderID = req.FolderID
 	} else if req.FolderPath != nil {
 		// External AI: resolve folder path, creating folders if needed
-		resolvedFolder, err := s.pathResolver.ResolveFolderPath(ctx, req.ProjectID, *req.FolderPath)
+		resolvedFolder, err := s.pathResolver.ResolveFolderPath(ctx, doc.ProjectID, *req.FolderPath)
 		if err != nil {
 			return nil, err
 		}
 		// Validate resolved folder exists and is not deleted (if not root)
 		if resolvedFolder != nil && *resolvedFolder != "" {
-			if err := s.validator.ValidateFolder(ctx, *resolvedFolder, req.ProjectID); err != nil {
+			if err := s.validator.ValidateFolder(ctx, *resolvedFolder, doc.ProjectID); err != nil {
 				return nil, err
 			}
 		}
@@ -199,6 +231,23 @@ func (s *documentService) UpdateDocument(ctx context.Context, id string, req *do
 		doc.Content = *req.Content
 		// Recalculate word count
 		doc.WordCount = s.contentAnalyzer.CountWords(doc.Content)
+	}
+
+	// Check for duplicate name in target folder (if name or folder changed)
+	if req.Name != nil || req.FolderID != nil || req.FolderPath != nil {
+		siblings, err := s.docRepo.ListByFolder(ctx, doc.FolderID, doc.ProjectID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check for duplicate names: %w", err)
+		}
+		for _, sibling := range siblings {
+			if sibling.ID != doc.ID && sibling.Name == doc.Name {
+				return nil, &domain.ConflictError{
+					Message:      fmt.Sprintf("a document named %q already exists in this folder", doc.Name),
+					ResourceType: "document",
+					ResourceID:   sibling.ID,
+				}
+			}
+		}
 	}
 
 	doc.UpdatedAt = time.Now()
@@ -220,37 +269,55 @@ func (s *documentService) UpdateDocument(ctx context.Context, id string, req *do
 	s.logger.Info("document updated",
 		"id", doc.ID,
 		"name", doc.Name,
-		"project_id", req.ProjectID,
+		"project_id", doc.ProjectID,
 	)
 
 	return doc, nil
 }
 
 // DeleteDocument deletes a document
-func (s *documentService) DeleteDocument(ctx context.Context, id, projectID string) error {
-	if err := s.docRepo.Delete(ctx, id, projectID); err != nil {
+// Authorization is checked first via the injected authorizer
+func (s *documentService) DeleteDocument(ctx context.Context, userID, documentID string) error {
+	// Authorize: check user can access this document
+	if err := s.authorizer.CanAccessDocument(ctx, userID, documentID); err != nil {
+		return err
+	}
+
+	// Get document (authorization already done, use GetByIDOnly)
+	doc, err := s.docRepo.GetByIDOnly(ctx, documentID)
+	if err != nil {
+		return err
+	}
+
+	if err := s.docRepo.Delete(ctx, documentID, doc.ProjectID); err != nil {
 		return err
 	}
 
 	s.logger.Info("document deleted",
-		"id", id,
-		"project_id", projectID,
+		"id", documentID,
+		"project_id", doc.ProjectID,
 	)
 
 	return nil
 }
 
 // SearchDocuments performs full-text search across documents with path computation
-func (s *documentService) SearchDocuments(ctx context.Context, req *docsysSvc.SearchDocumentsRequest) (*models.SearchResults, error) {
+// userID is required for authorization - verifies user can access the project
+func (s *documentService) SearchDocuments(ctx context.Context, userID string, req *docsysSvc.SearchDocumentsRequest) (*models.SearchResults, error) {
 	// Validate request
 	if req.Query == "" {
 		return nil, fmt.Errorf("%w: search query cannot be empty", domain.ErrValidation)
 	}
 
-	// TODO: Add permission check
-	// If projectID is specified, verify user has access to that project
-	// If projectID is empty, search will naturally be limited to user's projects
-	// when we add user_id to documents table or project membership checks
+	// Require projectID for authorization (cross-project search not yet supported)
+	if req.ProjectID == "" {
+		return nil, fmt.Errorf("%w: project_id is required for search", domain.ErrValidation)
+	}
+
+	// Verify user has access to this project
+	if err := s.authorizer.CanAccessProject(ctx, userID, req.ProjectID); err != nil {
+		return nil, err
+	}
 
 	// Convert string fields to SearchField enum
 	var fields []models.SearchField
@@ -266,6 +333,7 @@ func (s *documentService) SearchDocuments(ctx context.Context, req *docsysSvc.Se
 	}
 
 	// Convert request to repository SearchOptions
+	// Authorization already verified above via CanAccessProject
 	opts := &models.SearchOptions{
 		Query:     req.Query,
 		ProjectID: req.ProjectID,

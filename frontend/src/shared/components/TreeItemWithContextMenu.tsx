@@ -48,7 +48,7 @@ export function TreeItemWithContextMenu({
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-      <ContextMenuContent>
+      <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
         {menuItems.map((item, index) => {
           const showSeparatorBefore =
             item.separator === 'before' || item.separator === 'both'

@@ -111,6 +111,36 @@ func (r *PostgresFolderRepository) GetByID(ctx context.Context, id, projectID st
 	return &folder, nil
 }
 
+// GetByIDOnly retrieves a folder by UUID only (no project scoping)
+// Use when authorization is handled separately (e.g., by ResourceAuthorizer)
+func (r *PostgresFolderRepository) GetByIDOnly(ctx context.Context, id string) (*models.Folder, error) {
+	query := fmt.Sprintf(`
+		SELECT id, project_id, parent_id, name, created_at, updated_at
+		FROM %s
+		WHERE id = $1 AND deleted_at IS NULL
+	`, r.tables.Folders)
+
+	var folder models.Folder
+	executor := postgres.GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, query, id).Scan(
+		&folder.ID,
+		&folder.ProjectID,
+		&folder.ParentID,
+		&folder.Name,
+		&folder.CreatedAt,
+		&folder.UpdatedAt,
+	)
+
+	if err != nil {
+		if postgres.IsPgNoRowsError(err) {
+			return nil, fmt.Errorf("folder %s: %w", id, domain.ErrNotFound)
+		}
+		return nil, fmt.Errorf("get folder: %w", err)
+	}
+
+	return &folder, nil
+}
+
 // Update updates a folder
 func (r *PostgresFolderRepository) Update(ctx context.Context, folder *models.Folder) error {
 	query := fmt.Sprintf(`

@@ -83,11 +83,6 @@ func NewStreamExecutor(
 	)
 	se.stream = stream
 
-	logger.Debug("stream executor created",
-		"turn_id", turnID,
-		"debug_mode", debugMode,
-	)
-
 	return se
 }
 
@@ -262,13 +257,14 @@ func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(ms
 	// Continuation: streamStartSequence = 3, provider block 0 → sequence 3
 	block.Sequence = streamStartSequence + providerBlockIndex
 
-	// Collect CLIENT-SIDE tool_use blocks for execution (if tool registry is available)
-	// Server-side tools (e.g., web_search) are already executed by the provider
+	// Collect BACKEND-SIDE tool_use blocks for execution (if tool registry is available)
+	// Provider-side tools (e.g., Anthropic's built-in web_search) are already executed by the provider
+	// Backend-side tools (e.g., Tavily web search, doc_view, doc_tree) need backend execution
 	// TODO: Optimization - start executing tools in background goroutine immediately upon collection
 	// instead of waiting for stream completion. This would overlap tool execution with provider
 	// streaming, reducing total latency. Currently: collect → stream finishes → execute → stream results.
 	// Optimized: collect + execute in background → stream finishes → wait for execution → stream results.
-	if se.toolRegistry != nil && block.IsClientSideTool() {
+	if se.toolRegistry != nil && block.IsBackendSideTool() {
 		se.collectToolUse(block)
 	}
 
@@ -432,9 +428,6 @@ func (se *StreamExecutor) collectToolUse(block *llmModels.TurnBlock) {
 		// Try fallback: fmt.Sprintf
 		if val, exists := block.Content["tool_use_id"]; exists {
 			toolUseID = fmt.Sprintf("%v", val)
-			se.logger.Debug("tool_use_id extracted via fallback",
-				"sequence", block.Sequence,
-				"type", fmt.Sprintf("%T", val))
 		} else {
 			se.logger.Warn("tool_use block missing tool_use_id",
 				"sequence", block.Sequence,
@@ -449,9 +442,6 @@ func (se *StreamExecutor) collectToolUse(block *llmModels.TurnBlock) {
 		// Try fallback: fmt.Sprintf
 		if val, exists := block.Content["tool_name"]; exists {
 			toolName = fmt.Sprintf("%v", val)
-			se.logger.Debug("tool_name extracted via fallback",
-				"sequence", block.Sequence,
-				"type", fmt.Sprintf("%T", val))
 		} else {
 			se.logger.Warn("tool_use block missing tool_name",
 				"sequence", block.Sequence,
@@ -491,10 +481,6 @@ func (se *StreamExecutor) collectToolUse(block *llmModels.TurnBlock) {
 				"error", err)
 			return
 		}
-
-		se.logger.Debug("tool input extracted via JSON fallback",
-			"sequence", block.Sequence,
-			"original_type", fmt.Sprintf("%T", inputRaw))
 	}
 
 	// Add to collected tools
@@ -505,13 +491,6 @@ func (se *StreamExecutor) collectToolUse(block *llmModels.TurnBlock) {
 	}
 
 	se.collectedTools = append(se.collectedTools, toolCall)
-
-	se.logger.Debug("collected tool use",
-		"tool_use_id", toolUseID,
-		"tool_name", toolName,
-		"tool_count", len(se.collectedTools),
-		"sequence", block.Sequence,
-	)
 }
 
 // executeToolsAndContinue executes the collected tools in parallel, persists the results,
@@ -638,12 +617,6 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 		se.handleError(ctx, send, fmt.Errorf("failed to build continuation messages: %w", err))
 		return fmt.Errorf("failed to build continuation messages: %w", err)
 	}
-
-	se.logger.Debug("built continuation messages",
-		"message_count", len(messages),
-		"iteration", se.toolIteration,
-		"next_block_sequence", se.maxBlockSequence+1,
-	)
 
 	// 7. Create continuation request (reuse original params)
 	contReq := &domainllm.GenerateRequest{

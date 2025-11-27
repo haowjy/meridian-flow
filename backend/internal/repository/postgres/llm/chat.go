@@ -83,7 +83,7 @@ func (r *PostgresChatRepository) getExistingChatID(ctx context.Context, projectI
 	return id, nil
 }
 
-// GetChat retrieves a chat by ID
+// GetChat retrieves a chat by ID (scoped to user)
 func (r *PostgresChatRepository) GetChat(ctx context.Context, chatID, userID string) (*llmModels.Chat, error) {
 	query := fmt.Sprintf(`
 		SELECT id, project_id, user_id, title, last_viewed_turn_id, created_at, updated_at, deleted_at
@@ -94,6 +94,38 @@ func (r *PostgresChatRepository) GetChat(ctx context.Context, chatID, userID str
 	var chat llmModels.Chat
 	executor := postgres.GetExecutor(ctx, r.pool)
 	err := executor.QueryRow(ctx, query, chatID, userID).Scan(
+		&chat.ID,
+		&chat.ProjectID,
+		&chat.UserID,
+		&chat.Title,
+		&chat.LastViewedTurnID,
+		&chat.CreatedAt,
+		&chat.UpdatedAt,
+		&chat.DeletedAt,
+	)
+
+	if err != nil {
+		if postgres.IsPgNoRowsError(err) {
+			return nil, fmt.Errorf("chat %s: %w", chatID, domain.ErrNotFound)
+		}
+		return nil, fmt.Errorf("get chat: %w", err)
+	}
+
+	return &chat, nil
+}
+
+// GetChatByIDOnly retrieves a chat by UUID only (no user scoping)
+// Used by ResourceAuthorizer when authorization is handled separately
+func (r *PostgresChatRepository) GetChatByIDOnly(ctx context.Context, chatID string) (*llmModels.Chat, error) {
+	query := fmt.Sprintf(`
+		SELECT id, project_id, user_id, title, last_viewed_turn_id, created_at, updated_at, deleted_at
+		FROM %s
+		WHERE id = $1 AND deleted_at IS NULL
+	`, r.tables.Chats)
+
+	var chat llmModels.Chat
+	executor := postgres.GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, query, chatID).Scan(
 		&chat.ID,
 		&chat.ProjectID,
 		&chat.UserID,

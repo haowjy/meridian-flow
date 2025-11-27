@@ -1,5 +1,5 @@
 import { Project } from '@/features/projects/types/project'
-import { Chat, Turn, type ChatRequestOptions, DEFAULT_CHAT_REQUEST_OPTIONS } from '@/features/chats/types'
+import { Chat, Turn, type ChatRequestOptions, DEFAULT_CHAT_REQUEST_OPTIONS, DEFAULT_TOOLS } from '@/features/chats/types'
 import { Document, DocumentTree } from '@/features/documents/types/document'
 import { Folder } from '@/features/folders/types/folder'
 import {
@@ -261,6 +261,7 @@ type ModelCapabilityDto = {
     image_generation?: boolean
     streaming?: boolean
     thinking?: boolean
+    requires_thinking?: boolean
     [key: string]: unknown
   }
   pricing?: {
@@ -284,6 +285,7 @@ export type ModelCapabilitiesProvider = {
     displayName: string
     contextWindow: number
     supportsThinking: boolean
+    requiresThinking: boolean
   }[]
 }
 
@@ -301,6 +303,8 @@ export interface ImportResponse {
 }
 
 type SendTurnOptions = {
+  chatId?: string           // Optional - if not provided with projectId, creates new chat
+  projectId?: string        // Required if chatId is not provided (for cold start)
   prevTurnId?: string | null
   signal?: AbortSignal
   requestOptions?: ChatRequestOptions
@@ -311,26 +315,19 @@ function buildRequestParamsFromChatOptions(
 ): Record<string, unknown> {
   const resolved = options ?? DEFAULT_CHAT_REQUEST_OPTIONS
 
+  // When reasoning is 'off', disable thinking entirely
+  // Otherwise, enable thinking with the specified level
+  const thinkingEnabled = resolved.reasoning !== 'off'
+
   const requestParams: Record<string, unknown> = {
     model: resolved.modelId,
     provider: resolved.providerId,
     // NOTE: max_tokens and lorem_max are left to backend defaults for now.
-    thinking_enabled: true,
-    thinking_level: resolved.reasoning,
+    thinking_enabled: thinkingEnabled,
+    thinking_level: thinkingEnabled ? resolved.reasoning : null,
+    tools: resolved.tools ?? DEFAULT_TOOLS,
   }
 
-  const tools: Array<Record<string, string>> = [
-    { name: 'doc_view' },
-    { name: 'doc_search' },
-    { name: 'doc_tree' },
-  ]
-
-  // For now, web_search is only enabled for Anthropic.
-  if (resolved.providerId === 'anthropic' && resolved.searchEnabled) {
-    tools.push({ name: 'web_search' })
-  }
-
-  requestParams.tools = tools
   return requestParams
 }
 
@@ -388,6 +385,7 @@ export const api = {
           displayName: model.display_name,
           contextWindow: model.context_window,
           supportsThinking: !!model.capabilities?.thinking,
+          requiresThinking: !!model.capabilities?.requires_thinking,
         })),
       }))
     },
@@ -469,26 +467,31 @@ export const api = {
       }
     },
 
-    // NOTE: This is a thin adapter on top of the turn-based API.
-    // It calls GET /api/chats/:id/turns and maps backend Turn to the frontend Turn type.
-    // Wrapper on top of CreateTurn (POST /api/chats/:id/turns).
-    // Returns both the created user turn and the assistant turn that will stream.
+    // Send a message to create a new turn.
+    // Uses POST /api/turns with chat resolution:
+    // 1. If prevTurnId provided → infer chat from that turn
+    // 2. Else if chatId provided → use that chat
+    // 3. Else if projectId provided → create new chat (cold start)
+    //
+    // Returns the created turns and optionally the new chat if cold start.
     send: async (
-      chatId: string,
       message: string,
-      options?: SendTurnOptions
-    ): Promise<{ userTurn: Turn; assistantTurn: Turn; streamUrl: string }> => {
+      options: SendTurnOptions
+    ): Promise<import('@/features/chats/types').SendTurnResponse> => {
       const requestParams = buildRequestParamsFromChatOptions(options?.requestOptions)
 
       const response = await fetchAPI<{
+        chat?: ChatDto // Only present on cold start
         user_turn: TurnDto
         assistant_turn: TurnDto
         stream_url: string
       }>(
-        `/api/chats/${chatId}/turns`,
+        '/api/turns',
         {
           method: 'POST',
           body: JSON.stringify({
+            chat_id: options.chatId ?? null,
+            project_id: options.projectId ?? null,
             role: 'user',
             turn_blocks: [
               {
@@ -504,6 +507,7 @@ export const api = {
         }
       )
       return {
+        chat: response.chat ? fromChatDto(response.chat) : undefined,
         userTurn: turnDtoToTurn(response.user_turn),
         assistantTurn: turnDtoToTurn(response.assistant_turn),
         streamUrl: response.stream_url,
@@ -593,24 +597,32 @@ export const api = {
       })
       return fromDocumentDto(data)
     },
-    rename: async (id: string, name: string, options?: { signal?: AbortSignal }): Promise<Document> => {
+    rename: async (id: string, projectId: string, name: string, options?: { signal?: AbortSignal }): Promise<Document> => {
       const data = await fetchAPI<DocumentDto>(`/api/documents/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ project_id: projectId, name }),
         signal: options?.signal,
       })
       return fromDocumentDto(data)
     },
     delete: (id: string, options?: { signal?: AbortSignal }) =>
       fetchAPI<void>(`/api/documents/${id}`, { method: 'DELETE', signal: options?.signal }),
+    /**
+     * Import documents from files (zip, markdown, text, or HTML).
+     *
+     * Uses multipart/form-data for file upload. Note: Do NOT set Content-Type header
+     * manually - the browser automatically sets it with the correct boundary when
+     * using FormData as the body.
+     */
     import: async (
       projectId: string,
       files: File[],
       folderId?: string | null,
-      options?: { signal?: AbortSignal }
+      options?: { signal?: AbortSignal; overwrite?: boolean }
     ): Promise<ImportResponse> => {
       const formData = new FormData()
-      // Append all files with the same 'files' key (multipart standard for multiple files)
+      // Multipart standard: multiple files use the same key name.
+      // Backend receives these as an array under "files".
       files.forEach((file) => {
         formData.append('files', file)
       })
@@ -619,7 +631,11 @@ export const api = {
       if (folderId) {
         url += `&folder_id=${encodeURIComponent(folderId)}`
       }
+      if (options?.overwrite) {
+        url += '&overwrite=true'
+      }
 
+      // FormData body: browser sets Content-Type to multipart/form-data with boundary
       const data = await fetchAPI<ImportResponse>(url, {
         method: 'POST',
         body: formData,
@@ -638,10 +654,10 @@ export const api = {
       })
       return fromFolderDto(data)
     },
-    rename: async (id: string, name: string, options?: { signal?: AbortSignal }): Promise<Folder> => {
+    rename: async (id: string, projectId: string, name: string, options?: { signal?: AbortSignal }): Promise<Folder> => {
       const data = await fetchAPI<FolderDto>(`/api/folders/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ project_id: projectId, name }),
         signal: options?.signal,
       })
       return fromFolderDto(data)

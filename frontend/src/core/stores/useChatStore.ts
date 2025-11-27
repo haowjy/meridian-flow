@@ -50,6 +50,8 @@ interface ChatStore {
   createChat: (projectId: string, title: string) => Promise<Chat>
   renameChat: (chatId: string, title: string) => Promise<void>
   createTurn: (chatId: string, messageText: string, options: ChatRequestOptions) => Promise<void>
+  // Cold-start: creates a new chat atomically with the first turn
+  startNewChat: (projectId: string, messageText: string, options: ChatRequestOptions) => Promise<Chat>
   deleteChat: (chatId: string) => Promise<void>
 
   // Streaming helpers
@@ -229,7 +231,8 @@ export const useChatStore = create<ChatStore>()(
           const lastTurn = currentTurns[currentTurns.length - 1]
           const prevTurnId = lastTurn ? lastTurn.id : null
 
-          const { userTurn, assistantTurn, streamUrl } = await api.turns.send(chatId, messageText, {
+          const { userTurn, assistantTurn, streamUrl } = await api.turns.send(messageText, {
+            chatId,
             prevTurnId,
             requestOptions: options,
           })
@@ -250,6 +253,39 @@ export const useChatStore = create<ChatStore>()(
           await updateLastViewedTurnBookmark(chatId, assistantTurn.id)
         } catch (error) {
           handleApiError(error, 'Failed to send message')
+          throw error
+        }
+      },
+
+      startNewChat: async (
+        projectId: string,
+        messageText: string,
+        options: ChatRequestOptions
+      ): Promise<Chat> => {
+        // Cold-start: atomically create chat + first turn in one request
+        try {
+          const { chat, userTurn, assistantTurn, streamUrl } = await api.turns.send(messageText, {
+            projectId,
+            requestOptions: options,
+          })
+
+          if (!chat) {
+            throw new Error('Expected new chat in response but received none')
+          }
+
+          // Add the new chat and its turns to state
+          set((state) => ({
+            chats: [chat, ...state.chats],
+            chatId: chat.id,
+            turns: [userTurn, assistantTurn],
+            currentTurnId: assistantTurn.id,
+            streamingTurnId: assistantTurn.id,
+            streamingUrl: streamUrl,
+          }))
+
+          return chat
+        } catch (error) {
+          handleApiError(error, 'Failed to start new chat')
           throw error
         }
       },
@@ -615,7 +651,8 @@ export const useChatStore = create<ChatStore>()(
 
           // Call createTurn endpoint with the SAME prevTurnId as the original turn
           // This creates a sibling branch.
-          const { assistantTurn } = await api.turns.send(chatId, messageText, {
+          const { assistantTurn } = await api.turns.send(messageText, {
+            chatId,
             prevTurnId,
             // For now, reuse default chat options when editing.
             requestOptions: DEFAULT_CHAT_REQUEST_OPTIONS,
@@ -656,9 +693,9 @@ export const useChatStore = create<ChatStore>()(
 
           // Re-send the user's content to create a new sibling response
           const { userTurn: newUserTurn } = await api.turns.send(
-            chatId,
             userMessageText,
-            { 
+            {
+              chatId,
               prevTurnId: userTurn.prevTurnId,
               // Regeneration currently uses default chat request options.
               requestOptions: DEFAULT_CHAT_REQUEST_OPTIONS,

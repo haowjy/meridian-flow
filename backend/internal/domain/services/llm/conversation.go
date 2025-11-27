@@ -14,13 +14,15 @@ type ConversationService interface {
 	// GetTurnPath retrieves the conversation path from a turn to root
 	// Used to build context for LLM requests
 	// Returns turns in order from root to the specified turn
-	GetTurnPath(ctx context.Context, turnID string) ([]llm.Turn, error)
+	// userID is used for authorization check
+	GetTurnPath(ctx context.Context, userID, turnID string) ([]llm.Turn, error)
 
 	// GetTurnSiblings retrieves all sibling turns (including self) for a given turn
 	// Siblings are turns that share the same prev_turn_id (alternative conversation branches)
 	// Returns turns with blocks nested, ordered by created_at
 	// Used for version browsing UI ("1 of 3" navigation)
-	GetTurnSiblings(ctx context.Context, turnID string) ([]llm.Turn, error)
+	// userID is used for authorization check
+	GetTurnSiblings(ctx context.Context, userID, turnID string) ([]llm.Turn, error)
 
 	// GetChatTree retrieves the lightweight tree structure for cache validation
 	// Returns only turn IDs and parent relationships (no content)
@@ -38,10 +40,12 @@ type ConversationService interface {
 	// GetTurnWithBlocks retrieves a turn's metadata (status, error) and all its content blocks
 	// Used for reconnection - client fetches completed blocks before connecting to SSE stream
 	// Returns turn with blocks attached
-	GetTurnWithBlocks(ctx context.Context, turnID string) (*llm.Turn, error)
+	// userID is used for authorization check
+	GetTurnWithBlocks(ctx context.Context, userID, turnID string) (*llm.Turn, error)
 
 	// GetTurnTokenUsage retrieves token usage statistics for a turn
 	// Returns input/output tokens, model context limit, and usage percentage
 	// Used by frontend to display warnings and make continuation decisions
-	GetTurnTokenUsage(ctx context.Context, turnID string) (*llm.TokenUsageInfo, error)
+	// userID is used for authorization check
+	GetTurnTokenUsage(ctx context.Context, userID, turnID string) (*llm.TokenUsageInfo, error)
 }

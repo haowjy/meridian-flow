@@ -90,8 +90,6 @@ func (v *SupabaseJWTVerifier) VerifyToken(tokenString string) (*models.SupabaseC
 		return nil, domain.ErrUnauthorized
 	}
 
-	v.logger.Debug("Token verified successfully", "user_id", claims.Subject, "role", claims.Role)
-
 	return claims, nil
 }
 
