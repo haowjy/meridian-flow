@@ -99,7 +99,7 @@ export function ImportResults({
 
 // Helper component for action icons - uses ACTION_CONFIG for extensibility
 function ActionIcon({ action }: { action: string }) {
-  const config = ACTION_CONFIG[action] ?? ACTION_CONFIG.failed
+  const config = (ACTION_CONFIG[action] ?? ACTION_CONFIG.failed)!
   const Icon = config.icon
   return <Icon className={`size-4 shrink-0 ${config.className}`} />
 }
