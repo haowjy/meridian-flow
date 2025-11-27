@@ -8,13 +8,13 @@ feature: "File System"
 
 **Project/folder/document management with hierarchical tree structure.**
 
-## Status: ✅ Complete
+## Status: â Complete
 
 ---
 
 ## Features
 
-### Backend (✅ Complete)
+### Backend (â Complete)
 
 #### CRUD Operations
 - Projects: Create, Read, Update, Delete (soft-delete)
@@ -36,7 +36,7 @@ feature: "File System"
 - Auto-creates folders from directory structure
 - See `_docs/features/fb-document-import/` for details
 
-### Frontend (✅ Complete)
+### Frontend (â Complete)
 
 #### Tree View
 - Hierarchical folder/document display
@@ -46,22 +46,22 @@ feature: "File System"
 - See [frontend-ui.md](frontend-ui.md) and `_docs/features/f-context-menus/`
 
 #### Document Management
-- ✅ Create documents via context menu or dialog
-- ✅ Rename documents via context menu
-- ✅ Delete documents via context menu (with confirmation)
-- ✅ Folder creation/deletion via context menu
-- ✅ Navigation and selection
+- â Create documents via context menu or dialog
+- â Rename documents via context menu
+- â Delete documents via context menu (with confirmation)
+- â Folder creation/deletion via context menu
+- â Navigation and selection
 
 #### Import UI
-- ✅ Import dialog with drag-and-drop support
-- ✅ Multi-format support (.zip, .md, .txt, .html)
-- ✅ File validation and error reporting
-- ✅ Progress tracking and result summary
+- â Import dialog with drag-and-drop support
+- â Multi-format support (.zip, .md, .txt, .html)
+- â File validation and error reporting
+- â Progress tracking and result summary
 - See `_docs/features/fb-document-import/` for details
 
 #### Known Gaps
-- 🟡 **Search UI non-functional** - Search input present but doesn't filter tree (backend working)
-- ❌ **Drag-and-drop reordering** - Can't reorganize files via DnD (future enhancement)
+- ð¡ **Search UI non-functional** - Search input present but doesn't filter tree (backend working)
+- â **Drag-and-drop reordering** - Can't reorganize files via DnD (future enhancement)
 
 ---
 
@@ -116,14 +116,14 @@ feature: "File System"
 ## Known Gaps & Future Enhancements
 
 ### Current Gaps
-1. 🟡 **Search UI non-functional** - Search input exists but doesn't filter tree (backend working)
-2. ❌ **Drag-and-drop reordering** - Can't reorganize files/folders via DnD
+1. ð¡ **Search UI non-functional** - Search input exists but doesn't filter tree (backend working)
+2. â **Drag-and-drop reordering** - Can't reorganize files/folders via DnD
 
 ### Future Enhancements
-3. ❌ **Vector search** - Semantic search using embeddings (requires LLM integration)
-4. ❌ **Hybrid search** - Combined FTS + vector search with re-ranking
-5. ❌ **Real-time collaboration** - Multi-user editing with conflict resolution
-6. ❌ **Version history** - Document versioning and rollback
+3. â **Vector search** - Semantic search using embeddings (requires LLM integration)
+4. â **Hybrid search** - Combined FTS + vector search with re-ranking
+5. â **Real-time collaboration** - Multi-user editing with conflict resolution
+6. â **Version history** - Document versioning and rollback
 
 ---
 
