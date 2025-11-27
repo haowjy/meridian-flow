@@ -112,5 +112,5 @@ All service layer operations receive `userID` from handlers.
 
 ## Related
 
-- See `/_docs/technical/auth-overview.md` (outdated, says "planned")
+- See `/_docs/technical/backend/auth/authorization.md` (resource authorization)
 - See `/_docs/technical/backend/auth/supabase-jwt-implementation.md` (implementation guide)

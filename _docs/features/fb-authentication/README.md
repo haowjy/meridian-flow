@@ -38,12 +38,18 @@ All authentication features are fully implemented and production-ready.
 - `block_postgrest` policy blocks direct PostgREST access
 - Backend bypasses RLS (uses postgres superuser credentials)
 
-#### Permission Checking
-**Status**: 🟡 Partial
-- ✅ User ID validation in all service operations
-- ✅ Project/chat ownership validation
-- ❌ No RBAC or team-level permissions
-- ❌ No granular permission system (read/write/admin)
+#### Resource Authorization
+**Status**: ✅ Complete
+- ✅ `ResourceAuthorizer` interface with 5 methods (Project, Folder, Document, Chat, Turn)
+- ✅ `OwnerBasedAuthorizer` implementation checking ownership chains
+- ✅ All endpoints protected (GET, PATCH, DELETE, import, streaming)
+- ✅ Service-layer authorization (consistent across all entry points)
+- See [authorization.md](../../technical/backend/auth/authorization.md)
+
+**Not implemented (future):**
+- ❌ RBAC (role-based access control)
+- ❌ Team-level permissions
+- ❌ Granular permission system (read/write/admin)
 
 ### Frontend
 
@@ -83,7 +89,9 @@ All authentication features are fully implemented and production-ready.
 - `backend/internal/auth/jwt_verifier.go` - JWT verification via JWKS
 - `backend/internal/middleware/auth.go` - Auth middleware
 - `backend/internal/httputil/context.go` - User context injection
-- `backend/cmd/server/main.go:242` - Middleware wiring
+- `backend/internal/domain/services/authorizer.go` - ResourceAuthorizer interface
+- `backend/internal/service/auth/owner_based_authorizer.go` - OwnerBasedAuthorizer implementation
+- `backend/cmd/server/main.go` - Middleware wiring + authorizer injection
 
 ### Frontend Files
 - `frontend/src/core/supabase/client.ts` - Supabase client factories

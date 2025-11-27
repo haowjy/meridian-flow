@@ -232,11 +232,11 @@ type ConflictProblem[T any] struct {
 **Usage**:
 ```go
 // Standard error
-return fiber.NewError(fiber.StatusBadRequest, "Invalid input")
+httputil.RespondError(w, http.StatusBadRequest, "Invalid input")
 
 // CREATE conflict with resource
-return HandleCreateConflict(c, err, func() (*docsystem.Document, error) {
-    return h.docService.GetDocument(ctx, conflictErr.ResourceID, projectID)
+HandleCreateConflict(w, err, func(id string) (*docsystem.Document, error) {
+    return h.docService.GetDocument(ctx, userID, id)
 })
 ```
 

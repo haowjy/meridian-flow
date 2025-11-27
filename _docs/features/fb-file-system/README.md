@@ -20,6 +20,7 @@ feature: "File System"
 - Projects: Create, Read, Update, Delete (soft-delete)
 - Folders: Nested hierarchy, path resolution
 - Documents: Markdown storage, word count tracking
+- **Unique names enforced**: No duplicate names in same folder (HTTP 409 on conflict)
 - See [backend-api.md](backend-api.md)
 
 #### Full-Text Search

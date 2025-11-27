@@ -176,6 +176,11 @@ The `name` field now supports Unix-style path notation for creating nested folde
 
 Rationale: distinguishing an explicit move to root from "no change" avoids ambiguity in request payloads.
 
+**Request Body:**
+- `project_id` (string, required): Project ID
+- `name` (string, optional): New folder name
+- `folder_id` (string, optional): New parent folder ID (empty string for root)
+
 **Validation:**
 - At least one field (`name` or `folder_id`) must be provided
 - Simple folder names cannot contain `/` (regex: `^[^/]+$`)
@@ -322,6 +327,12 @@ Similar to folders, the `name` field now supports Unix-style path notation for c
 - Supports rename, move, and content updates—these can be combined.
 - Content format is Markdown. Requests that update content provide a `content` field; responses include `content`.
 - **Path notation NOT supported in UPDATE** - only in CREATE operations
+
+**Request Body:**
+- `project_id` (string, required): Project ID
+- `name` (string, optional): New document name
+- `folder_id` (string, optional): New parent folder ID (empty string for root)
+- `content` (string, optional): New content (Markdown)
 
 **Validation:**
 - Simple document names **cannot contain** `/` (filesystem semantics, regex: `^[^/]+$`)
