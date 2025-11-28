@@ -48,6 +48,8 @@ function DropdownMenuContent({
         onCloseAutoFocus={(event) => {
           event.preventDefault()
         }}
+        // Prevent keyboard event bubbling through React portals
+        onKeyDown={(e) => e.stopPropagation()}
         style={{ boxShadow: "var(--shadow-2)" }}
         {...props}
       />
@@ -81,6 +83,9 @@ function DropdownMenuItem({
         "focus:bg-hover focus:text-foreground data-[variant=destructive]:text-error data-[variant=destructive]:focus:bg-error/10 data-[variant=destructive]:focus:text-error data-[variant=destructive]:*:[svg]:!text-error [&_svg:not([class*='text-'])]:text-muted-foreground relative flex items-center gap-1 px-2 py-1.5 text-xs outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-[--opacity-disabled] data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 rounded-sm transition-colors duration-[--duration-fast]",
         className
       )}
+      // Prevent React's portal event bubbling to parent containers
+      // See: https://github.com/radix-ui/primitives/issues/1242
+      onClick={(e) => e.stopPropagation()}
       {...props}
     />
   )

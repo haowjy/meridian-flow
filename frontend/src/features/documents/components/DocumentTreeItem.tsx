@@ -96,7 +96,7 @@ export function DocumentTreeItem({
           <div key={item.id}>
             {showSeparatorBefore && index > 0 && <DropdownMenuSeparator />}
             <DropdownMenuItem
-              onClick={item.onSelect}
+              onSelect={item.onSelect}
               variant={item.variant}
               disabled={item.disabled}
             >

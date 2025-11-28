@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import { useShallow } from 'zustand/react/shallow'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { useUIStore } from '@/core/stores/useUIStore'
-import { openDocument, closeEditor } from '@/core/lib/panelHelpers'
+import { openDocument } from '@/core/lib/panelHelpers'
+import { useResourceOperations } from '@/core/hooks'
 import { filterTree, TreeNode, generateUniqueName, getNodeNames, getFolderChildNames } from '@/core/lib/treeBuilder'
 import { api } from '@/core/lib/api'
 import { handleApiError } from '@/core/lib/errors'
@@ -35,29 +36,6 @@ interface DocumentTreeContainerProps {
 }
 
 /**
- * Check if a document is inside a folder (or its descendants).
- * Traverses UP from document's folderId through parent chain.
- * Used to determine if we need to navigate away when deleting a folder.
- */
-function isDocumentInFolder(
-  docId: string,
-  targetFolderId: string,
-  documents: { id: string; folderId: string | null }[],
-  folders: { id: string; parentId: string | null }[]
-): boolean {
-  const doc = documents.find((d) => d.id === docId)
-  if (!doc || !doc.folderId) return false
-
-  let currentFolderId: string | null = doc.folderId
-  while (currentFolderId) {
-    if (currentFolderId === targetFolderId) return true
-    const folder = folders.find((f) => f.id === currentFolderId)
-    currentFolderId = folder?.parentId ?? null
-  }
-  return false
-}
-
-/**
  * Data layer for document tree.
  * Fetches data, handles events, renders tree structure recursively.
  */
@@ -65,36 +43,31 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
   const router = useRouter()
   const {
     tree,
-    documents,
-    folders,
     expandedFolders,
     status,
     error,
     loadTree,
     toggleFolder,
     expandFolder,
-    deleteDocument,
-    deleteFolder,
     renameDocument,
     renameFolder,
   } = useTreeStore(
     useShallow((s) => ({
       tree: s.tree,
-      documents: s.documents,
-      folders: s.folders,
       expandedFolders: s.expandedFolders,
       status: s.status,
       error: s.error,
       loadTree: s.loadTree,
       toggleFolder: s.toggleFolder,
       expandFolder: s.expandFolder,
-      deleteDocument: s.deleteDocument,
-      deleteFolder: s.deleteFolder,
       renameDocument: s.renameDocument,
       renameFolder: s.renameFolder,
     }))
   )
   const activeDocumentId = useUIStore((state) => state.activeDocumentId)
+
+  // Navigation-aware delete operations (handles "navigate away first" pattern)
+  const { deleteDocument, deleteFolder } = useResourceOperations(projectId)
 
   // Read project name from store for header title (centralized approach)
   const projectName = useProjectStore((s) =>
@@ -147,12 +120,8 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
 
   // Handle delete document
   const handleDeleteDocument = async (documentId: string) => {
-    // If deleting the currently open document, navigate away first
-    if (activeDocumentId === documentId) {
-      closeEditor(projectId, router)
-    }
     try {
-      await deleteDocument(documentId, projectId)
+      await deleteDocument(documentId) // Hook handles navigation if needed
     } catch {
       // Error already handled by store
     }
@@ -160,12 +129,8 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
 
   // Handle delete folder
   const handleDeleteFolder = async (folderId: string) => {
-    // If deleting a folder that contains the currently open document, navigate away first
-    if (activeDocumentId && isDocumentInFolder(activeDocumentId, folderId, documents, folders)) {
-      closeEditor(projectId, router)
-    }
     try {
-      await deleteFolder(folderId, projectId)
+      await deleteFolder(folderId) // Hook handles navigation if needed
     } catch {
       // Error already handled by store
     }
