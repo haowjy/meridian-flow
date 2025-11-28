@@ -147,7 +147,7 @@ func main() {
 	pathResolver := serviceDocsys.NewPathResolver(folderRepo, txManager)
 	projectService := serviceDocsys.NewProjectService(projectRepo, logger)
 	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, docsysValidator, authorizer, logger)
-	folderService := serviceDocsys.NewFolderService(folderRepo, docRepo, pathResolver, txManager, docsysValidator, authorizer, logger)
+	folderService := serviceDocsys.NewFolderService(folderRepo, docRepo, docService, pathResolver, txManager, docsysValidator, authorizer, logger)
 	treeService := serviceDocsys.NewTreeService(folderRepo, docRepo, authorizer, logger)
 	converterRegistry := converter.NewConverterRegistry()
 

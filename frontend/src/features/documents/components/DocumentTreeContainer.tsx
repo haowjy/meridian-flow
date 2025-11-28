@@ -14,9 +14,11 @@ import { DocumentTreePanel } from './DocumentTreePanel'
 import { FolderTreeItem } from './FolderTreeItem'
 import { DocumentTreeItem } from './DocumentTreeItem'
 import { ImportDocumentDialog } from './ImportDocumentDialog'
+import { DeleteFolderDialog } from './DeleteFolderDialog'
 import { Skeleton } from '@/shared/components/ui/skeleton'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { useProjectStore } from '@/core/stores/useProjectStore'
+import type { Folder } from '@/features/folders/types/folder'
 
 // Tracks which tree item is being edited (existing items only)
 interface EditingItem {
@@ -81,6 +83,9 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
   const [showSkeleton, setShowSkeleton] = useState(false)
   const [editingItem, setEditingItem] = useState<EditingItem | null>(null)
   const [pendingItem, setPendingItem] = useState<PendingItem | null>(null)
+  // Folder deletion confirmation state
+  const [folderToDelete, setFolderToDelete] = useState<Folder | null>(null)
+  const [isDeletingFolder, setIsDeletingFolder] = useState(false)
 
   // Load tree on mount
   useEffect(() => {
@@ -127,12 +132,23 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
     }
   }
 
-  // Handle delete folder
-  const handleDeleteFolder = async (folderId: string) => {
+  // Handle delete folder - show confirmation dialog
+  const handleDeleteFolder = (folder: Folder) => {
+    setFolderToDelete(folder)
+  }
+
+  // Confirm folder deletion - actually delete
+  const handleConfirmDeleteFolder = async () => {
+    if (!folderToDelete) return
+
+    setIsDeletingFolder(true)
     try {
-      await deleteFolder(folderId) // Hook handles navigation if needed
+      await deleteFolder(folderToDelete.id) // Hook handles navigation if needed
+      setFolderToDelete(null)
     } catch {
       // Error already handled by store
+    } finally {
+      setIsDeletingFolder(false)
     }
   }
 
@@ -367,7 +383,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
             onCreateFolder={() => handleCreateFolderInFolderInline(node.id)}
             onImport={() => handleImportInFolder(node.id)}
             onRename={() => startRenameFolder(node.id)}
-            onDelete={() => handleDeleteFolder(node.id)}
+            onDelete={() => handleDeleteFolder(node.data)}
             isEditing={isEditingFolder}
             onSubmitName={(name) => handleRenameFolderInline(node.id, name)}
             onCancelEdit={handleCancelEdit}
@@ -476,6 +492,14 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
         folderId={importTargetFolderId}
         onComplete={handleImportComplete}
         initialFiles={droppedFiles}
+      />
+
+      <DeleteFolderDialog
+        folder={folderToDelete}
+        open={folderToDelete !== null}
+        onOpenChange={(open) => !open && setFolderToDelete(null)}
+        onConfirm={handleConfirmDeleteFolder}
+        isDeleting={isDeletingFolder}
       />
     </>
   )
