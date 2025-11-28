@@ -180,10 +180,6 @@ function ModelSelector({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
-        <DropdownMenuLabel className="text-[0.7rem] sm:text-xs">
-          Models
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
         {groups.length === 0 && (
           <DropdownMenuItem
             onSelect={() =>
@@ -200,7 +196,7 @@ function ModelSelector({
             {DEFAULT_MODEL_LABEL}
           </DropdownMenuItem>
         )}
-        {groups.map(([providerId, group]) => (
+        {groups.map(([providerId, group], index) => (
           <div key={providerId}>
             <DropdownMenuLabel className="mt-1 text-[0.65rem] font-normal text-muted-foreground sm:text-[0.7rem]">
               {group.providerName}
@@ -224,7 +220,7 @@ function ModelSelector({
                 </span>
               </DropdownMenuItem>
             ))}
-            <DropdownMenuSeparator />
+            {index < groups.length - 1 && <DropdownMenuSeparator />}
           </div>
         ))}
       </DropdownMenuContent>

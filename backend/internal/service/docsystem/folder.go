@@ -22,6 +22,7 @@ import (
 type folderService struct {
 	folderRepo   docsysRepo.FolderRepository
 	docRepo      docsysRepo.DocumentRepository
+	docService   docsysSvc.DocumentService // For delegating document deletion (SRP)
 	pathResolver docsysSvc.PathResolver
 	txManager    repositories.TransactionManager
 	validator    *ResourceValidator
@@ -33,6 +34,7 @@ type folderService struct {
 func NewFolderService(
 	folderRepo docsysRepo.FolderRepository,
 	docRepo docsysRepo.DocumentRepository,
+	docService docsysSvc.DocumentService, // For delegating document deletion (SRP)
 	pathResolver docsysSvc.PathResolver,
 	txManager repositories.TransactionManager,
 	validator *ResourceValidator,
@@ -42,6 +44,7 @@ func NewFolderService(
 	return &folderService{
 		folderRepo:   folderRepo,
 		docRepo:      docRepo,
+		docService:   docService,
 		pathResolver: pathResolver,
 		txManager:    txManager,
 		validator:    validator,
@@ -249,8 +252,8 @@ func (s *folderService) UpdateFolder(ctx context.Context, userID, folderID strin
 	return folder, nil
 }
 
-// DeleteFolder deletes a folder (must be empty)
-// Authorization is checked first via the injected authorizer
+// DeleteFolder deletes a folder and all its contents (documents and subfolders) recursively.
+// Authorization is checked first via the injected authorizer.
 func (s *folderService) DeleteFolder(ctx context.Context, userID, folderID string) error {
 	// Authorize: check user can access this folder
 	if err := s.authorizer.CanAccessFolder(ctx, userID, folderID); err != nil {
@@ -263,25 +266,12 @@ func (s *folderService) DeleteFolder(ctx context.Context, userID, folderID strin
 		return err
 	}
 
-	// Check for child folders
-	childFolders, err := s.folderRepo.ListChildren(ctx, &folderID, folder.ProjectID)
-	if err != nil {
-		return fmt.Errorf("failed to check child folders: %w", err)
-	}
-	if len(childFolders) > 0 {
-		return fmt.Errorf("%w: folder contains %d subfolders", domain.ErrConflict, len(childFolders))
+	// Recursively delete all descendants (child folders and documents)
+	if err := s.deleteDescendants(ctx, userID, folderID, folder.ProjectID); err != nil {
+		return err
 	}
 
-	// Check for documents
-	docs, err := s.docRepo.ListByFolder(ctx, &folderID, folder.ProjectID)
-	if err != nil {
-		return fmt.Errorf("failed to check documents: %w", err)
-	}
-	if len(docs) > 0 {
-		return fmt.Errorf("%w: folder contains %d documents", domain.ErrConflict, len(docs))
-	}
-
-	// Delete folder
+	// Delete the folder itself
 	if err := s.folderRepo.Delete(ctx, folderID, folder.ProjectID); err != nil {
 		return err
 	}
@@ -291,6 +281,43 @@ func (s *folderService) DeleteFolder(ctx context.Context, userID, folderID strin
 		"name", folder.Name,
 		"project_id", folder.ProjectID,
 	)
+
+	return nil
+}
+
+// deleteDescendants recursively deletes all child folders and documents.
+// Documents are deleted via DocumentService to maintain SRP.
+func (s *folderService) deleteDescendants(ctx context.Context, userID, folderID, projectID string) error {
+	// 1. Get and recursively delete child folders
+	childFolders, err := s.folderRepo.ListChildren(ctx, &folderID, projectID)
+	if err != nil {
+		return fmt.Errorf("failed to list child folders: %w", err)
+	}
+
+	for _, child := range childFolders {
+		// Recursively delete this child's descendants first
+		if err := s.deleteDescendants(ctx, userID, child.ID, projectID); err != nil {
+			return err
+		}
+		// Then delete the child folder itself
+		if err := s.folderRepo.Delete(ctx, child.ID, projectID); err != nil {
+			return fmt.Errorf("failed to delete child folder %q: %w", child.Name, err)
+		}
+		s.logger.Debug("deleted child folder", "id", child.ID, "name", child.Name)
+	}
+
+	// 2. Delete all documents in this folder via DocumentService (SRP: delegate to owner)
+	docs, err := s.docRepo.ListByFolder(ctx, &folderID, projectID)
+	if err != nil {
+		return fmt.Errorf("failed to list documents: %w", err)
+	}
+
+	for _, doc := range docs {
+		if err := s.docService.DeleteDocument(ctx, userID, doc.ID); err != nil {
+			return fmt.Errorf("failed to delete document %q: %w", doc.Name, err)
+		}
+		s.logger.Debug("deleted document", "id", doc.ID, "name", doc.Name)
+	}
 
 	return nil
 }

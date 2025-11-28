@@ -122,13 +122,29 @@ sequenceDiagram
 **Responsibilities:**
 - Extract zip archive contents
 - Preserve folder hierarchy from zip structure
+- Filter system files (defense-in-depth, frontend filters first)
 - Route each extracted file to appropriate converter
 - Handle nested zips (flatten or reject)
 
+**System File Filtering:**
+
+Uses `shouldIgnorePath()` to skip system directories and files:
+- Version control: `.git`, `.svn`, `.hg`
+- macOS artifacts: `__MACOSX`, `.DS_Store`, `.AppleDouble`
+- Windows metadata: `Thumbs.db`, `desktop.ini`
+- Dependencies: `node_modules`, `.venv`, `venv`, `__pycache__`
+- IDE settings: `.vscode`, `.idea`
+- Security: `.env*` prefix
+
 **Key Logic:**
 ```go
-// Extract zip → iterate files → convert each → collect ProcessedFiles
+// Extract zip → filter system files → convert each → collect ProcessedFiles
 for _, zipFile := range zipReader.File {
+    // Skip system files (defense-in-depth: frontend filters too)
+    if shouldIgnorePath(zipFile.Name) {
+        continue
+    }
+
     folderPath := extractFolderPath(zipFile.Name)  // "dir/subdir/file.md" → "dir/subdir"
     fileName := extractFileName(zipFile.Name)       // "file.md"
     content := readContent(zipFile)

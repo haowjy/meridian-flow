@@ -135,9 +135,10 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
 
   deleteDocument: async (id, projectId) => {
     try {
-      await api.documents.delete(id)
-      // Remove from IndexedDB cache
+      // Clear from IndexedDB cache FIRST to prevent race conditions
+      // where URL sync might try to load a deleted document
       await db.documents.delete(id)
+      await api.documents.delete(id)
       // Reload tree to reflect deletion
       await useTreeStore.getState().loadTree(projectId)
     } catch (error) {

@@ -15,6 +15,58 @@ import (
 	"meridian/internal/service/docsystem/converter"
 )
 
+// ignoredPathPatterns contains system directories and files that should be
+// filtered out during import. Defense-in-depth: frontend filters these too,
+// but we filter again here to handle direct zip uploads.
+var ignoredPathPatterns = []string{
+	// Version control
+	".git",
+	".svn",
+	".hg",
+	// macOS
+	"__MACOSX",
+	".DS_Store",
+	".AppleDouble",
+	// Windows
+	"Thumbs.db",
+	"desktop.ini",
+	// Dependencies/build
+	"node_modules",
+	".venv",
+	"venv",
+	"__pycache__",
+	// IDE/editor
+	".vscode",
+	".idea",
+}
+
+// shouldIgnorePath checks if a zip entry path should be filtered out.
+// Returns true for system directories, macOS artifacts, etc.
+func shouldIgnorePath(path string) bool {
+	segments := strings.Split(path, "/")
+	filename := segments[len(segments)-1]
+
+	for _, pattern := range ignoredPathPatterns {
+		// Check directory patterns (any segment matches)
+		for _, seg := range segments {
+			if seg == pattern {
+				return true
+			}
+		}
+		// Check filename patterns
+		if filename == pattern {
+			return true
+		}
+	}
+
+	// Check .env prefix (security: environment files may contain secrets)
+	if strings.HasPrefix(filename, ".env") {
+		return true
+	}
+
+	return false
+}
+
 // zipFileProcessor processes zip files and imports their contents.
 // Implements FileProcessor interface using Strategy pattern.
 //
@@ -108,6 +160,12 @@ func (p *zipFileProcessor) Process(
 	for _, zipEntry := range zipFile.File {
 		// Skip directories
 		if zipEntry.FileInfo().IsDir() {
+			continue
+		}
+
+		// Skip system files and hidden directories (defense-in-depth: frontend filters too)
+		if shouldIgnorePath(zipEntry.Name) {
+			p.logger.Debug("skipping system file", "file", zipEntry.Name)
 			continue
 		}
 

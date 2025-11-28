@@ -52,6 +52,12 @@ interface UIStore {
    */
   activeChatId: string | null
 
+  /**
+   * Monotonic counter used to drive chat input auto-focus.
+   * Incremented when "New Chat" is pressed so the input refocuses even if
+   * the activeChatId does not change (e.g., cold-start state).
+   */
+  chatFocusVersion: number
 
 
   /** Toggles left panel collapsed/expanded state */
@@ -82,6 +88,8 @@ interface UIStore {
    */
   setActiveChat: (id: string | null) => void
 
+  /** Bumps chatFocusVersion to request chat input focus. */
+  bumpChatFocusVersion: () => void
 
 }
 
@@ -93,6 +101,7 @@ export const useUIStore = create<UIStore>()(
       rightPanelState: 'documents',
       activeDocumentId: null,
       activeChatId: null,
+      chatFocusVersion: 0,
 
 
       toggleLeftPanel: () =>
@@ -107,6 +116,8 @@ export const useUIStore = create<UIStore>()(
         set({ activeDocumentId: id }),
       setActiveChat: (id) =>
         set({ activeChatId: id }),
+      bumpChatFocusVersion: () =>
+        set((state) => ({ chatFocusVersion: state.chatFocusVersion + 1 })),
 
     }),
     {
@@ -116,6 +127,7 @@ export const useUIStore = create<UIStore>()(
         rightPanelCollapsed: state.rightPanelCollapsed,
         activeDocumentId: state.activeDocumentId,
         activeChatId: state.activeChatId,
+        // chatFocusVersion is ephemeral and not persisted
 
         // rightPanelState excluded - always resets to 'documents' on page load
       }),

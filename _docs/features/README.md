@@ -60,18 +60,12 @@ This directory contains detailed documentation for all features in Meridian, org
 - Word count, save status UI
 
 ### [fb-file-system/](fb-file-system/)
-**Project/folder/document management**
-- Backend: CRUD APIs, validation, path resolution, full-text search
-- Frontend: Tree view, context menus, navigation
+**Project/folder/document management + import**
+- Backend: CRUD APIs, validation, path resolution, full-text search, multi-format import
+- Frontend: Tree view, context menus, navigation, import dialog
 - âœ… Full CRUD operations via context menus
+- âœ… Multi-format import (.zip, .md, .txt, .html) with system file filtering
 - ðŸŸ¡ Search UI present but non-functional (backend working)
-
-### [fb-document-import/](fb-document-import/)
-**Multi-format document import system** âœ¨ NEW
-- Backend: File processors (zip, individual), content converters (markdown, text, HTML)
-- Frontend: Import dialog with drag-and-drop, file validation, progress tracking
-- Supported formats: .zip, .md, .txt, .html (with XSS sanitization)
-- Security: bluemonday HTML sanitization prevents XSS attacks
 
 ### [f-context-menus/](f-context-menus/)
 **Right-click context menus for file tree** âœ¨ NEW

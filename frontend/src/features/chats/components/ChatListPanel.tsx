@@ -44,9 +44,10 @@ export function ChatListPanel({ projectId }: ChatListPanelProps) {
     renameChat: s.renameChat,
   })))
 
-  const { activeChatId, setActiveChat } = useUIStore(useShallow((s) => ({
+  const { activeChatId, setActiveChat, bumpChatFocusVersion } = useUIStore(useShallow((s) => ({
     activeChatId: s.activeChatId,
     setActiveChat: s.setActiveChat,
+    bumpChatFocusVersion: s.bumpChatFocusVersion,
   })))
 
   // User profile for bottom menu
@@ -70,6 +71,8 @@ export function ChatListPanel({ projectId }: ChatListPanelProps) {
   const handleNewChat = () => {
     // Clear active chat to show cold start UI - chat is created atomically with first message
     setActiveChat(null)
+    // Always refocus chat input, even if already in cold-start state.
+    bumpChatFocusVersion()
   }
 
   const handleSelectChat = (chatId: string) => {

@@ -34,7 +34,7 @@ feature: "File System"
 - Supported formats: .zip, .md, .txt, .html (with XSS sanitization)
 - Two modes: Merge (upsert) or Replace (delete all first)
 - Auto-creates folders from directory structure
-- See `_docs/features/fb-document-import/` for details
+- See [import/](./import/) for detailed architecture
 
 ### Frontend (â Complete)
 
@@ -57,7 +57,7 @@ feature: "File System"
 - â Multi-format support (.zip, .md, .txt, .html)
 - â File validation and error reporting
 - â Progress tracking and result summary
-- See `_docs/features/fb-document-import/` for details
+- See [import/](./import/) for detailed architecture
 
 #### Known Gaps
 - ð¡ **Search UI non-functional** - Search input present but doesn't filter tree (backend working)
@@ -129,7 +129,7 @@ feature: "File System"
 
 ## Related
 
-- **Import System:** `_docs/features/fb-document-import/` - Multi-format import with XSS protection
+- **Import System:** [import/](./import/) - Multi-format import with XSS protection
 - **Context Menus:** `_docs/features/f-context-menus/` - Right-click actions for tree items
 - **Search Architecture:** `_docs/technical/backend/search-architecture.md` - FTS implementation
 - **Frontend Architecture:** `_docs/technical/frontend/` - Tree view patterns

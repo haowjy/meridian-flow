@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Button } from '@/shared/components/ui/button'
 import type { Chat } from '@/features/chats/types'
 import {
   DropdownMenu,
@@ -152,18 +153,19 @@ export function ChatListItem({
       {!isRenaming && (onRename || onDelete) && (
         <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
           <DropdownMenuTrigger asChild>
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={(e) => e.stopPropagation()}
               className={cn(
-                'flex-shrink-0 p-0.5 rounded hover:bg-sidebar-accent-foreground/10 transition-opacity',
+                'flex-shrink-0 h-4 w-4 p-0 rounded-sm hover:bg-sidebar-accent transition-opacity',
                 'opacity-0 group-hover:opacity-100 focus:opacity-100',
                 dropdownOpen && 'opacity-100'
               )}
               aria-label="Chat options"
             >
-              <MoreHorizontal className="size-3.5" />
-            </button>
+              <MoreHorizontal className="h-4.5 w-4.5" />
+            </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" side="bottom">
             {menuItems}

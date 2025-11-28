@@ -8,10 +8,13 @@ import {
 } from '@/shared/components/ui/dialog'
 import { api, ImportResponse } from '@/core/lib/api'
 import { ImportFileSelector } from './ImportFileSelector'
+import { ImportPreview } from './ImportPreview'
 import { ImportProgress } from './ImportProgress'
 import { ImportResults } from './ImportResults'
+import { processSelection, buildUploadFiles, getValidFileCount } from '../utils/importProcessing'
+import type { ImportSelection } from '../types/import'
 
-type DialogPhase = 'selection' | 'uploading' | 'results'
+type DialogPhase = 'selection' | 'preview' | 'uploading' | 'results'
 
 interface ImportDocumentDialogProps {
   open: boolean
@@ -31,10 +34,11 @@ export function ImportDocumentDialog({
   initialFiles,
 }: ImportDocumentDialogProps) {
   const [phase, setPhase] = useState<DialogPhase>('selection')
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
+  const [selection, setSelection] = useState<ImportSelection | null>(null)
   const [results, setResults] = useState<ImportResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [overwrite, setOverwrite] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
   const [prevInitialFiles, setPrevInitialFiles] = useState(initialFiles)
 
   // Sync initial files when prop changes.
@@ -46,24 +50,46 @@ export function ImportDocumentDialog({
   if (initialFiles !== prevInitialFiles) {
     setPrevInitialFiles(initialFiles)
     if (open && initialFiles && initialFiles.length > 0) {
-      setSelectedFiles(initialFiles)
+      // Process initial files and go to preview
+      const processed = processSelection(initialFiles as unknown as FileList)
+      if (getValidFileCount(processed) > 0) {
+        setSelection(processed)
+        setPhase('preview')
+      }
     }
   }
 
-  const handleFileSelect = (files: File[]) => {
-    setSelectedFiles(files)
+  const handleFilesSelected = (files: FileList) => {
     // Clear previous error when selecting new files
     if (error) setError(null)
+
+    // Process files into categorized selection
+    const processed = processSelection(files)
+
+    // If we have valid files, go to preview; otherwise show error
+    if (getValidFileCount(processed) > 0) {
+      setSelection(processed)
+      setPhase('preview')
+    } else if (processed.skippedFiles.length > 0) {
+      setError('No supported files found. Supported formats: .md, .txt, .html, .zip')
+    }
   }
 
-  const handleSubmit = async () => {
-    if (selectedFiles.length === 0) return
+  const handleConfirmImport = async () => {
+    if (!selection || getValidFileCount(selection) === 0) return
 
-    setPhase('uploading')
+    setIsProcessing(true)
     setError(null)
 
     try {
-      const data = await api.documents.import(projectId, selectedFiles, folderId, { overwrite })
+      // Build final upload files (zips folders if needed)
+      const uploadFiles = await buildUploadFiles(selection)
+
+      setIsProcessing(false)
+      setPhase('uploading')
+
+      // Upload to API
+      const data = await api.documents.import(projectId, uploadFiles, folderId, { overwrite })
       setResults(data)
       setPhase('results')
       onComplete() // Refresh tree after successful import
@@ -71,8 +97,15 @@ export function ImportDocumentDialog({
       const errorMessage =
         err instanceof Error ? err.message : 'Failed to import documents'
       setError(errorMessage)
-      setPhase('selection')
+      setIsProcessing(false)
+      setPhase('preview') // Stay on preview to show error
     }
+  }
+
+  const handleBackToSelection = () => {
+    setPhase('selection')
+    setSelection(null)
+    setError(null)
   }
 
   const handleClose = () => {
@@ -81,31 +114,32 @@ export function ImportDocumentDialog({
 
   const handleImportMore = () => {
     setPhase('selection')
-    setSelectedFiles([])
+    setSelection(null)
     setResults(null)
     setError(null)
     setOverwrite(false)
   }
 
   const handleOpenChange = (newOpen: boolean) => {
-    // Prevent closing during upload
-    if (phase === 'uploading') return
+    // Prevent closing during upload or processing
+    if (phase === 'uploading' || isProcessing) return
 
     onOpenChange(newOpen)
 
     // Reset state when dialog closes
     if (!newOpen) {
       setPhase('selection')
-      setSelectedFiles([])
+      setSelection(null)
       setResults(null)
       setError(null)
       setOverwrite(false)
+      setIsProcessing(false)
     }
   }
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="gap-3 p-5">
+      <DialogContent className="gap-3 p-5 sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Import Documents</DialogTitle>
           <DialogDescription>
@@ -116,13 +150,20 @@ export function ImportDocumentDialog({
 
         {phase === 'selection' && (
           <ImportFileSelector
-            selectedFiles={selectedFiles}
-            onFileSelect={handleFileSelect}
-            onSubmit={handleSubmit}
+            onFilesSelected={handleFilesSelected}
             onCancel={handleClose}
             error={error}
+          />
+        )}
+
+        {phase === 'preview' && selection && (
+          <ImportPreview
+            selection={selection}
+            onConfirm={handleConfirmImport}
+            onCancel={handleBackToSelection}
             overwrite={overwrite}
             onOverwriteChange={setOverwrite}
+            isProcessing={isProcessing}
           />
         )}
 

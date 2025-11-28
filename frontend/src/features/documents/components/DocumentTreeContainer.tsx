@@ -6,6 +6,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { openDocument } from '@/core/lib/panelHelpers'
+import { useResourceOperations } from '@/core/hooks'
 import { filterTree, TreeNode, generateUniqueName, getNodeNames, getFolderChildNames } from '@/core/lib/treeBuilder'
 import { api } from '@/core/lib/api'
 import { handleApiError } from '@/core/lib/errors'
@@ -13,9 +14,11 @@ import { DocumentTreePanel } from './DocumentTreePanel'
 import { FolderTreeItem } from './FolderTreeItem'
 import { DocumentTreeItem } from './DocumentTreeItem'
 import { ImportDocumentDialog } from './ImportDocumentDialog'
+import { DeleteFolderDialog } from './DeleteFolderDialog'
 import { Skeleton } from '@/shared/components/ui/skeleton'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { useProjectStore } from '@/core/stores/useProjectStore'
+import type { Folder } from '@/features/folders/types/folder'
 
 // Tracks which tree item is being edited (existing items only)
 interface EditingItem {
@@ -48,8 +51,6 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
     loadTree,
     toggleFolder,
     expandFolder,
-    deleteDocument,
-    deleteFolder,
     renameDocument,
     renameFolder,
   } = useTreeStore(
@@ -61,13 +62,14 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
       loadTree: s.loadTree,
       toggleFolder: s.toggleFolder,
       expandFolder: s.expandFolder,
-      deleteDocument: s.deleteDocument,
-      deleteFolder: s.deleteFolder,
       renameDocument: s.renameDocument,
       renameFolder: s.renameFolder,
     }))
   )
   const activeDocumentId = useUIStore((state) => state.activeDocumentId)
+
+  // Navigation-aware delete operations (handles "navigate away first" pattern)
+  const { deleteDocument, deleteFolder } = useResourceOperations(projectId)
 
   // Read project name from store for header title (centralized approach)
   const projectName = useProjectStore((s) =>
@@ -81,6 +83,9 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
   const [showSkeleton, setShowSkeleton] = useState(false)
   const [editingItem, setEditingItem] = useState<EditingItem | null>(null)
   const [pendingItem, setPendingItem] = useState<PendingItem | null>(null)
+  // Folder deletion confirmation state
+  const [folderToDelete, setFolderToDelete] = useState<Folder | null>(null)
+  const [isDeletingFolder, setIsDeletingFolder] = useState(false)
 
   // Load tree on mount
   useEffect(() => {
@@ -121,18 +126,29 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
   // Handle delete document
   const handleDeleteDocument = async (documentId: string) => {
     try {
-      await deleteDocument(documentId, projectId)
+      await deleteDocument(documentId) // Hook handles navigation if needed
     } catch {
       // Error already handled by store
     }
   }
 
-  // Handle delete folder
-  const handleDeleteFolder = async (folderId: string) => {
+  // Handle delete folder - show confirmation dialog
+  const handleDeleteFolder = (folder: Folder) => {
+    setFolderToDelete(folder)
+  }
+
+  // Confirm folder deletion - actually delete
+  const handleConfirmDeleteFolder = async () => {
+    if (!folderToDelete) return
+
+    setIsDeletingFolder(true)
     try {
-      await deleteFolder(folderId, projectId)
+      await deleteFolder(folderToDelete.id) // Hook handles navigation if needed
+      setFolderToDelete(null)
     } catch {
       // Error already handled by store
+    } finally {
+      setIsDeletingFolder(false)
     }
   }
 
@@ -309,6 +325,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
           onSubmitName={handleSubmitNewItem}
           onCancelEdit={handleCancelEdit}
           existingNames={siblingNames}
+          editorMode="create"
         >
           {null}
         </FolderTreeItem>
@@ -337,6 +354,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
           onSubmitName={handleSubmitNewItem}
           onCancelEdit={handleCancelEdit}
           existingNames={siblingNames}
+          editorMode="create"
         />
       )
     }
@@ -365,7 +383,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
             onCreateFolder={() => handleCreateFolderInFolderInline(node.id)}
             onImport={() => handleImportInFolder(node.id)}
             onRename={() => startRenameFolder(node.id)}
-            onDelete={() => handleDeleteFolder(node.id)}
+            onDelete={() => handleDeleteFolder(node.data)}
             isEditing={isEditingFolder}
             onSubmitName={(name) => handleRenameFolderInline(node.id, name)}
             onCancelEdit={handleCancelEdit}
@@ -449,7 +467,9 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
 
   // Filter tree by search query
   const filteredTree = filterTree(tree, searchQuery)
-  const isEmpty = tree.length === 0
+  // Treat the tree as non-empty while a pending item is being created so that
+  // the inline editor can be rendered instead of the zero-state panel.
+  const isEmpty = tree.length === 0 && !pendingItem
 
   return (
     <>
@@ -472,6 +492,14 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
         folderId={importTargetFolderId}
         onComplete={handleImportComplete}
         initialFiles={droppedFiles}
+      />
+
+      <DeleteFolderDialog
+        folder={folderToDelete}
+        open={folderToDelete !== null}
+        onOpenChange={(open) => !open && setFolderToDelete(null)}
+        onConfirm={handleConfirmDeleteFolder}
+        isDeleting={isDeletingFolder}
       />
     </>
   )
