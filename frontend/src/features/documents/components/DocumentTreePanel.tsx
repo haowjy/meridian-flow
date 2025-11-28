@@ -45,6 +45,7 @@ export function DocumentTreePanel({
 }: DocumentTreePanelProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [isDragOver, setIsDragOver] = useState(false)
+  const [pendingRootAction, setPendingRootAction] = useState<(() => void) | null>(null)
 
   const handleSearchChange = (value: string) => {
     setSearchQuery(value)
@@ -76,6 +77,14 @@ export function DocumentTreePanel({
     onImport,
   })
 
+  const handleRootMenuOpenChange = (open: boolean) => {
+    if (!open && pendingRootAction) {
+      const action = pendingRootAction
+      setPendingRootAction(null)
+      action()
+    }
+  }
+
   return (
     <div className="flex h-full flex-col">
       {/* Single scroll container - scrollbar extends to top */}
@@ -100,7 +109,7 @@ export function DocumentTreePanel({
             className="flex-1"
             aria-label="Search documents by name"
           />
-          <DropdownMenu>
+          <DropdownMenu onOpenChange={handleRootMenuOpenChange}>
             <DropdownMenuTrigger asChild>
               <Button size="icon" aria-label="Create new item">
                 <Plus className="size-3" />
@@ -111,7 +120,7 @@ export function DocumentTreePanel({
                 <Fragment key={item.id}>
                   {item.separator === 'before' && index > 0 && <DropdownMenuSeparator />}
                   <DropdownMenuItem
-                    onClick={item.onSelect}
+                    onClick={() => setPendingRootAction(() => item.onSelect)}
                     className={item.variant === 'destructive' ? 'text-destructive' : ''}
                   >
                     {item.icon && <span className="mr-1">{item.icon}</span>}

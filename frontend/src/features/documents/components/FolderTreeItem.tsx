@@ -12,6 +12,7 @@ import {
 import { createFolderMenuItems } from '../utils/menuBuilders'
 import { InlineNameEditor } from './InlineNameEditor'
 import { cn } from '@/lib/utils'
+import { Button } from '@/shared/components/ui/button'
 import type { Folder as FolderType } from '@/features/folders/types/folder'
 
 interface FolderTreeItemProps {
@@ -29,6 +30,12 @@ interface FolderTreeItemProps {
   onSubmitName?: (name: string) => void
   onCancelEdit?: () => void
   existingNames?: string[]
+  /**
+   * Controls how the inline editor behaves.
+   * - 'rename' (default): existing folder rename.
+   * - 'create': new, temporary folder being created.
+   */
+  editorMode?: 'rename' | 'create'
 }
 
 /**
@@ -50,6 +57,7 @@ export function FolderTreeItem({
   onSubmitName,
   onCancelEdit,
   existingNames = [],
+  editorMode = 'rename',
 }: FolderTreeItemProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false)
 
@@ -99,7 +107,7 @@ export function FolderTreeItem({
       <Collapsible open={isExpanded} onOpenChange={onToggle}>
         <div
           className={cn(
-            'flex w-full items-center gap-1.5 rounded-sm px-2.5 py-1 text-left text-xs md:text-sm'
+            'group flex w-full items-center gap-1.5 rounded-sm px-2.5 py-1 text-left text-xs md:text-sm'
           )}
         >
           <FolderIcon className="size-3.5 flex-shrink-0" />
@@ -108,6 +116,7 @@ export function FolderTreeItem({
             existingNames={existingNames}
             onSubmit={onSubmitName}
             onCancel={onCancelEdit}
+            mode={editorMode}
           />
         </div>
 
@@ -146,18 +155,19 @@ export function FolderTreeItem({
           {hasMenuItems && (
             <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
               <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={(e) => e.stopPropagation()}
                   className={cn(
-                    'flex-shrink-0 p-0.5 rounded hover:bg-accent/50 transition-opacity',
+                    'flex-shrink-0 h-4 w-4 p-0 rounded-sm transition-opacity',
                     'opacity-0 group-hover:opacity-100 focus:opacity-100',
                     dropdownOpen && 'opacity-100'
                   )}
                   aria-label="Folder options"
                 >
-                  <MoreHorizontal className="size-3.5" />
-                </button>
+                  <MoreHorizontal className="h-4.5 w-4.5" />
+                </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" side="bottom">
                 {renderDropdownItems()}

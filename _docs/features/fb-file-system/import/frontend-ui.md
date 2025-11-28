@@ -22,47 +22,80 @@ Multi-phase dialog with file validation, drag-and-drop upload, and detailed erro
 stateDiagram-v2
     [*] --> Closed
     Closed --> Selection : User clicks "Import"
-    Selection --> Uploading : User confirms files
+    Selection --> Preview : Files/folder selected
+    Preview --> Uploading : User confirms
     Uploading --> Results : Upload complete
     Results --> Closed : User dismisses
     Selection --> Closed : User cancels
+    Preview --> Selection : User goes back
 ```
 
 ### Sub-Components
 
-1. **ImportFileSelector** - File picker with drag-and-drop
-2. **ImportProgress** - Loading spinner during upload
-3. **ImportResults** - Success/failure summary
+1. **ImportFileSelector** - Dual dropzones (files + folder)
+2. **ImportPreview** - Categorized file list with confirmation
+3. **ImportProgress** - Loading spinner during upload
+4. **ImportResults** - Success/failure summary
 
 ## User Flow
 
 ### Phase 1: File Selection
 
 **UI:**
-- Drag-and-drop zone with visual feedback
-- "Browse files" button for traditional file picker
-- Live file list with individual remove buttons
-- Validation errors displayed per-file
+- **Files dropzone**: "Click or drag files to import"
+- **Divider**: "— or —"
+- **Folder dropzone**: "Click or drag folder to import"
+- Both zones have drag-over visual feedback
 
 **User actions:**
-- Drag files onto drop zone
-- Click "Browse files" to select via file dialog
-- Remove individual files from list
-- Click "Import" to proceed (disabled if no valid files)
-- Click "Cancel" to close dialog
+- Click/drag files onto file dropzone
+- Click/drag folder onto folder dropzone
+- Selection immediately proceeds to Preview phase
 
 **Code:**
 ```tsx
 <ImportFileSelector
-  selectedFiles={selectedFiles}
   onFilesSelected={handleFilesSelected}
-  onFileRemove={handleFileRemove}
-  accept=".zip,.md,.txt,.html,.htm"
-  maxTotalSize={100 * 1024 * 1024}  // 100MB
+  onCancel={onClose}
+  error={error}
 />
 ```
 
-### Phase 2: Uploading
+**Folder support:** Uses `webkitdirectory` attribute for browser folder picker. Files from folder selection have `webkitRelativePath` property.
+
+### Phase 2: Preview
+
+**UI:**
+- File count and total size summary
+- Categorized preview list:
+  - Individual files (at root)
+  - Folder tree (expandable/collapsible)
+  - Zip archives
+- Skipped files warning (unsupported extensions)
+- Filtered system files info (.git, node_modules, etc.)
+- Overwrite checkbox option
+
+**User actions:**
+- Review what will be imported
+- Toggle overwrite setting
+- Click "Import" to proceed
+- Click "Cancel" to go back to selection
+
+**Code:**
+```tsx
+<ImportPreview
+  selection={selection}
+  onConfirm={handleConfirm}
+  onCancel={() => setPhase('selection')}
+  overwrite={overwrite}
+  onOverwriteChange={setOverwrite}
+  isProcessing={isProcessing}
+/>
+```
+
+**Processing:** When user confirms, folder files are zipped client-side using JSZip before upload.
+
+### Phase 3: Uploading
 
 **UI:**
 - Loading spinner
@@ -80,7 +113,7 @@ const result = await api.documents.import(formData);
 
 **Duration:** Typically <2 seconds for small files, up to 30 seconds for large zips.
 
-### Phase 3: Results
+### Phase 4: Results
 
 **UI - Success (all files imported):**
 ```
@@ -163,49 +196,55 @@ Errors appear above file list, user must fix before proceeding.
 
 ## Drag-and-Drop Implementation
 
-### Drop Zone Component
+### Dual Dropzone Layout
 
-```tsx
-<div
-  onDrop={handleDrop}
-  onDragOver={handleDragOver}
-  onDragLeave={handleDragLeave}
-  className={cn(
-    "border-2 border-dashed rounded-lg p-8 text-center",
-    isDragging && "border-primary bg-primary/5"
-  )}
->
-  {isDragging ? (
-    <p>Drop files here</p>
-  ) : (
-    <p>Drag files here or click Browse</p>
-  )}
-</div>
 ```
-
-### Event Handlers
-
-```tsx
-const handleDrop = (e: React.DragEvent) => {
-  e.preventDefault();
-  setIsDragging(false);
-
-  const files = Array.from(e.dataTransfer.files);
-  validateAndAddFiles(files);
-};
-
-const handleDragOver = (e: React.DragEvent) => {
-  e.preventDefault();
-  setIsDragging(true);
-};
+┌────────────────────────────────────────┐
+│         📤                             │
+│    Click or drag files to import       │
+└────────────────────────────────────────┘
+           ────── or ──────
+┌────────────────────────────────────────┐
+│  📁 Click or drag folder to import     │
+└────────────────────────────────────────┘
 ```
 
 ### Visual Feedback
 
-- **Idle:** Gray dashed border
-- **Drag over:** Blue border + light blue background
-- **Drop:** Flash animation, then return to idle
-- **Error:** Red border + error message
+- **Idle:** Gray dashed border, muted background
+- **Drag over:** Primary color border + tinted background
+- **Folder zone:** Slightly smaller padding than file zone
+
+## Folder Processing
+
+### Client-Side Zip Flow
+
+```
+Folder selection → processSelection() → ImportSelection → buildUploadFiles() → FormData
+                         ↓                     ↓                  ↓
+                   Categorize files      Preview display    JSZip compression
+```
+
+### ImportSelection Type
+
+```typescript
+interface ImportSelection {
+  individualFiles: File[]      // .md/.txt/.html at root
+  folderFiles: File[]          // Files from folder (will be zipped)
+  folderName: string | null    // Root folder name
+  zipFiles: File[]             // .zip files (pass-through)
+  skippedFiles: string[]       // Unsupported extensions
+  filteredSystemFiles: Array<{ name: string; reason: string }>
+}
+```
+
+### System File Filtering
+
+Auto-excluded from folder uploads:
+- `.git/`, `.svn/`, `.hg/` (version control)
+- `node_modules/`, `__pycache__/`, `.venv/` (dependencies)
+- `.DS_Store`, `Thumbs.db`, `desktop.ini` (OS files)
+- `*.log`, `.env*` (generated/sensitive files)
 
 ## API Integration
 
@@ -268,10 +307,11 @@ interface ImportResult {
 ### Local Component State
 
 ```tsx
-const [phase, setPhase] = useState<'selection' | 'uploading' | 'results'>('selection');
-const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+const [phase, setPhase] = useState<'selection' | 'preview' | 'uploading' | 'results'>('selection');
+const [selection, setSelection] = useState<ImportSelection | null>(null);
 const [importResult, setImportResult] = useState<ImportResult | null>(null);
-const [validationError, setValidationError] = useState<string | null>(null);
+const [error, setError] = useState<string | null>(null);
+const [overwrite, setOverwrite] = useState(false);
 ```
 
 **Why local state?**
@@ -409,14 +449,23 @@ if (!response.ok) {
 
 ## Testing Scenarios
 
-### Happy Path
-1. User drags 3 markdown files onto drop zone
-2. Files appear in list with green checkmarks
+### Happy Path (Files)
+1. User drags 3 markdown files onto file dropzone
+2. Preview shows "3 files to import"
 3. User clicks "Import"
 4. Loading spinner appears
 5. Results show "All 3 files imported successfully"
 6. User clicks "Close"
 7. Tree refreshes, new documents appear
+
+### Happy Path (Folder)
+1. User clicks folder dropzone, selects a folder
+2. Preview shows folder tree with expandable structure
+3. System files (.git, etc.) shown as "excluded"
+4. User clicks "Import"
+5. Folder is zipped client-side, then uploaded
+6. Results show imported files
+7. Tree refreshes with folder structure preserved
 
 ### Error Scenarios
 
@@ -446,14 +495,18 @@ if (!response.ok) {
 ## Key Files
 
 - `frontend/src/features/documents/components/ImportDocumentDialog.tsx` - Main dialog
-- `frontend/src/features/documents/components/ImportFileSelector.tsx` - File picker + drag-drop
+- `frontend/src/features/documents/components/ImportFileSelector.tsx` - Dual dropzones (files + folder)
+- `frontend/src/features/documents/components/ImportPreview.tsx` - Preview with folder tree
 - `frontend/src/features/documents/components/ImportProgress.tsx` - Loading state
 - `frontend/src/features/documents/components/ImportResults.tsx` - Results display
-- `frontend/src/features/documents/utils/fileValidation.ts` - Validation logic
+- `frontend/src/features/documents/utils/importProcessing.ts` - Folder processing, JSZip
+- `frontend/src/features/documents/utils/importFilters.ts` - System file filtering
+- `frontend/src/features/documents/types/import.ts` - Import types
 - `frontend/src/core/lib/api.ts:documents.import()` - API client
 
 ## Dependencies
 
 - `@radix-ui/react-dialog` - Dialog primitive
-- `lucide-react` - Icons (AlertCircle, Upload, Check, X)
-- Built-in browser APIs: FileReader, FormData, drag events
+- `jszip` - Client-side folder compression
+- `lucide-react` - Icons (Upload, FolderOpen, FileText, etc.)
+- Built-in browser APIs: FormData, drag events, webkitdirectory

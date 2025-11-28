@@ -30,8 +30,9 @@ import { useProjectStore } from '@/core/stores/useProjectStore'
 export function ActiveChatView() {
   const [showSkeleton, setShowSkeleton] = useState(false)
 
-  const { activeChatId } = useUIStore(useShallow((s) => ({
+  const { activeChatId, chatFocusVersion } = useUIStore(useShallow((s) => ({
     activeChatId: s.activeChatId,
+    chatFocusVersion: s.chatFocusVersion,
   })))
 
   const { chats, currentTurnId } = useChatStore(useShallow((s) => ({
@@ -92,7 +93,10 @@ export function ActiveChatView() {
 
           {/* Input at bottom */}
           <div className="bg-background">
-            <TurnInput projectId={projectId ?? undefined} focusKey={activeChatId} />
+            <TurnInput
+              projectId={projectId ?? undefined}
+              focusKey={`${activeChatId ?? 'none'}:${chatFocusVersion}`}
+            />
           </div>
         </div>
       </div>
@@ -132,7 +136,10 @@ export function ActiveChatView() {
           )}
           {/* Sticky input at bottom of scroll area */}
           <div className="sticky bottom-0 bg-background">
-            <TurnInput chatId={activeChat.id} focusKey={activeChatId} />
+            <TurnInput
+              chatId={activeChat.id}
+              focusKey={`${activeChatId ?? 'none'}:${chatFocusVersion}`}
+            />
           </div>
         </div>
       </div>

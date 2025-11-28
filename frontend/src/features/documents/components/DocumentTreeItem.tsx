@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { FileText, MoreHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Button } from '@/shared/components/ui/button'
 import { TreeItemWithContextMenu } from '@/shared/components/TreeItemWithContextMenu'
 import {
   DropdownMenu,
@@ -25,6 +26,12 @@ interface DocumentTreeItemProps {
   onSubmitName?: (name: string) => void
   onCancelEdit?: () => void
   existingNames?: string[]
+  /**
+   * Controls how the inline editor behaves.
+   * - 'rename' (default): existing document rename.
+   * - 'create': new, temporary document being created.
+   */
+  editorMode?: 'rename' | 'create'
 }
 
 /**
@@ -43,6 +50,7 @@ export function DocumentTreeItem({
   onSubmitName,
   onCancelEdit,
   existingNames = [],
+  editorMode = 'rename',
 }: DocumentTreeItemProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false)
 
@@ -59,7 +67,7 @@ export function DocumentTreeItem({
     return (
       <div
         className={cn(
-          'flex w-full items-center gap-2 rounded-sm px-2.5 py-1 text-left text-xs md:text-sm',
+          'group flex w-full items-center gap-2 rounded-sm px-2.5 py-1 text-left text-xs md:text-sm',
           isActive && 'bg-muted border-l-2 border-accent'
         )}
       >
@@ -69,6 +77,7 @@ export function DocumentTreeItem({
           existingNames={existingNames}
           onSubmit={onSubmitName}
           onCancel={onCancelEdit}
+          mode={editorMode}
         />
       </div>
     )
@@ -130,18 +139,19 @@ export function DocumentTreeItem({
         {hasMenuItems && (
           <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
             <DropdownMenuTrigger asChild>
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={(e) => e.stopPropagation()}
                 className={cn(
-                  'flex-shrink-0 p-0.5 rounded hover:bg-accent/50 transition-opacity',
+                  'flex-shrink-0 h-4 w-4 p-0 rounded-sm transition-opacity',
                   'opacity-0 group-hover:opacity-100 focus:opacity-100',
                   dropdownOpen && 'opacity-100'
                 )}
                 aria-label="Document options"
               >
-                <MoreHorizontal className="size-3.5" />
-              </button>
+                <MoreHorizontal className="h-4.5 w-4.5" />
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" side="bottom">
               {renderDropdownItems()}

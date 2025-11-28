@@ -62,7 +62,7 @@ export function ImportResults({
                   className="flex items-center gap-2 text-sm"
                 >
                   <ActionIcon action={doc.action} />
-                  <span className="truncate font-mono text-xs flex-1">{doc.path || doc.name}</span>
+                  <span className="truncate font-mono text-xs flex-1 break-all whitespace-normal">{doc.path || doc.name}</span>
                 </div>
               ))}
             </div>
@@ -76,8 +76,8 @@ export function ImportResults({
             <div className="max-h-32 overflow-y-auto rounded border border-destructive/30 bg-destructive/5 p-3 space-y-2">
               {errors.map((err, idx) => (
                 <div key={idx} className="text-sm space-y-0.5">
-                  <div className="font-medium text-destructive">{err.file}</div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="font-medium text-destructive break-all">{err.file}</div>
+                  <div className="text-xs text-muted-foreground break-words">
                     {err.error}
                   </div>
                 </div>

@@ -1,54 +1,35 @@
-import { useState, useRef, DragEvent } from 'react'
-import { Upload } from 'lucide-react'
+import { useRef, DragEvent, useState } from 'react'
+import { Upload, FolderOpen } from 'lucide-react'
 import { Button } from '@/shared/components/ui/button'
 import { DialogFooter } from '@/shared/components/ui/dialog'
-import { Checkbox } from '@/shared/components/ui/checkbox'
-import { Label } from '@/shared/components/ui/label'
-import { validateFiles, formatFileSize } from '../utils/fileValidation'
 import { cn } from '@/lib/utils'
+import { isFolderUploadSupported } from '../utils/importProcessing'
 
 interface ImportFileSelectorProps {
-  selectedFiles: File[]
-  onFileSelect: (files: File[]) => void
-  onSubmit: () => void
+  onFilesSelected: (files: FileList) => void
   onCancel: () => void
   error: string | null
-  overwrite: boolean
-  onOverwriteChange: (overwrite: boolean) => void
 }
 
 export function ImportFileSelector({
-  selectedFiles,
-  onFileSelect,
-  onSubmit,
+  onFilesSelected,
   onCancel,
   error,
-  overwrite,
-  onOverwriteChange,
 }: ImportFileSelectorProps) {
-  const [validationErrors, setValidationErrors] = useState<
-    Array<{ file: string; error: string }>
-  >([])
   const [isDragOver, setIsDragOver] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const [isFolderDragOver, setIsFolderDragOver] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
 
-  // Handle file selection from both input and drag-and-drop.
-  // Validation is immediate (client-side) - backend does additional validation.
-  // On validation failure: clear selection to prevent invalid files from being submitted.
-  const handleFiles = (files: File[]) => {
-    const errors = validateFiles(files)
-    setValidationErrors(errors)
-
-    if (errors.length === 0) {
-      onFileSelect(files)
-    } else {
-      onFileSelect([]) // Clear selection on validation error
-    }
-  }
+  const folderSupported = isFolderUploadSupported()
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || [])
-    handleFiles(files)
+    const files = e.target.files
+    if (files && files.length > 0) {
+      onFilesSelected(files)
+    }
+    // Reset input so same files can be selected again
+    e.target.value = ''
   }
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
@@ -64,22 +45,46 @@ export function ImportFileSelector({
   const handleDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     setIsDragOver(false)
-    const files = Array.from(e.dataTransfer.files)
-    handleFiles(files)
+    const files = e.dataTransfer.files
+    if (files && files.length > 0) {
+      onFilesSelected(files)
+    }
   }
 
-  const handleChooseFiles = () => {
-    inputRef.current?.click()
+  const handleDropzoneClick = () => {
+    fileInputRef.current?.click()
   }
 
-  const totalSize = selectedFiles.reduce((acc, file) => acc + file.size, 0)
+  const handleChooseFolder = () => {
+    folderInputRef.current?.click()
+  }
+
+  // Folder dropzone handlers
+  const handleFolderDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setIsFolderDragOver(true)
+  }
+
+  const handleFolderDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setIsFolderDragOver(false)
+  }
+
+  const handleFolderDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setIsFolderDragOver(false)
+    const files = e.dataTransfer.files
+    if (files && files.length > 0) {
+      onFilesSelected(files)
+    }
+  }
 
   return (
     <>
-      <div className="space-y-3">
-        {/* Dropzone */}
+      <div className="space-y-2">
+        {/* Dropzone - clickable for files, drag for files/folders */}
         <div
-          onClick={handleChooseFiles}
+          onClick={handleDropzoneClick}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
@@ -94,64 +99,63 @@ export function ImportFileSelector({
           <div className="rounded-full bg-muted p-2">
             <Upload className="size-5 text-muted-foreground" />
           </div>
-          <div className="text-center">
-            <p className="text-sm text-muted-foreground">
-              Click or drag files to import
-            </p>
-          </div>
+          <p className="text-sm text-muted-foreground text-center">
+            Click or drag files to import
+          </p>
+        </div>
+
+        {/* Divider and folder dropzone */}
+        {folderSupported && (
+          <>
+            <div className="flex items-center gap-3 py-1">
+              <div className="flex-1 h-px bg-border" />
+              <span className="text-xs text-muted-foreground">or</span>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+
+            <div
+              onClick={handleChooseFolder}
+              onDragOver={handleFolderDragOver}
+              onDragLeave={handleFolderDragLeave}
+              onDrop={handleFolderDrop}
+              className={cn(
+                'flex items-center justify-center gap-2 p-3 rounded-lg cursor-pointer transition-colors',
+                'border-2 border-dashed',
+                isFolderDragOver
+                  ? 'border-primary bg-primary/5'
+                  : 'border-muted-foreground/25 bg-muted/30 hover:border-muted-foreground/50 hover:bg-muted/50'
+              )}
+            >
+              <FolderOpen className="size-4 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">
+                Click or drag folder to import
+              </p>
+            </div>
+          </>
+        )}
+
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".zip,.md,.txt,.html"
+          onChange={handleFileChange}
+          multiple
+          className="hidden"
+        />
+
+        {/* Hidden folder input (webkitdirectory) */}
+        {folderSupported && (
           <input
-            ref={inputRef}
+            ref={folderInputRef}
             type="file"
-            accept=".zip,.md,.txt,.html"
             onChange={handleFileChange}
+            // @ts-expect-error webkitdirectory is not in React types
+            webkitdirectory=""
+            directory=""
             multiple
             className="hidden"
           />
-        </div>
-
-        {/* Selected files list */}
-        {selectedFiles.length > 0 && (
-          <div className="text-sm space-y-2">
-            <p className="font-medium text-muted-foreground">
-              {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected ({formatFileSize(totalSize)} total)
-            </p>
-            <ul className="text-xs text-muted-foreground space-y-1 max-h-32 overflow-y-auto">
-              {selectedFiles.map((file, index) => (
-                <li key={index} className="flex items-center gap-2">
-                  <span className="truncate">{file.name}</span>
-                  <span className="text-muted-foreground/60">({formatFileSize(file.size)})</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* Overwrite checkbox */}
-        <div className="flex items-center space-x-2">
-          <Checkbox
-            id="overwrite"
-            checked={overwrite}
-            onCheckedChange={(checked) => onOverwriteChange(checked === true)}
-          />
-          <Label htmlFor="overwrite" className="text-sm font-normal cursor-pointer">
-            Overwrite existing documents
-          </Label>
-        </div>
-
-        {/* Validation errors */}
-        {validationErrors.length > 0 && (
-          <div className="rounded bg-destructive/10 border border-destructive/20 px-3 py-2">
-            <p className="text-sm text-destructive font-medium mb-2" role="alert">
-              Validation Errors:
-            </p>
-            <ul className="text-xs text-destructive space-y-1">
-              {validationErrors.map((err, index) => (
-                <li key={index}>
-                  <strong>{err.file}:</strong> {err.error}
-                </li>
-              ))}
-            </ul>
-          </div>
         )}
 
         {/* API error */}
@@ -167,9 +171,6 @@ export function ImportFileSelector({
       <DialogFooter>
         <Button variant="outline" onClick={onCancel}>
           Cancel
-        </Button>
-        <Button onClick={onSubmit} disabled={selectedFiles.length === 0}>
-          Import
         </Button>
       </DialogFooter>
     </>

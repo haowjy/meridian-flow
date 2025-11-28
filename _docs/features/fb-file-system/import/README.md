@@ -11,11 +11,12 @@ audience: developer
 **Stack:** Backend + Frontend
 **Status:** ✅ Complete
 
-Multi-format document import system supporting zip archives and individual files with automatic format conversion and XSS sanitization.
+Multi-format document import system supporting zip archives, folders, and individual files with automatic format conversion and XSS sanitization.
 
 ## Overview
 
 The import system allows users to bulk-import documents from:
+- **Folders** - Browser folder picker with client-side zip compression
 - **Zip archives** - Nested folder structure preserved
 - **Individual files** - Single document upload
 - **Multiple formats** - Markdown (.md), Plain text (.txt), HTML (.html, .htm)
@@ -51,24 +52,29 @@ ConverterRegistry
 **Component:** `ImportDocumentDialog`
 
 **Phases:**
-1. **Selection** - File picker with drag-and-drop support
-2. **Uploading** - Progress indicator during upload
-3. **Results** - Success/failure summary with error details
+1. **Selection** - Dual dropzones for files and folders
+2. **Preview** - Categorized file list with confirmation
+3. **Uploading** - Progress indicator during upload
+4. **Results** - Success/failure summary with error details
 
 **Validation:**
-- File types: .zip, .md, .txt, .html, .htm
+- File types: .zip, .md, .txt, .html, .htm (folders filter to supported types)
 - Size limits: 100MB per file, 100MB total
 - Client-side validation before upload
+- System files auto-excluded (.git, node_modules, .DS_Store, etc.)
 
 ## Features
 
 | Feature | Backend | Frontend | Notes |
 |---------|---------|----------|-------|
+| Folder import | N/A | ✅ | Client-side JSZip compression |
 | Zip import | ✅ | ✅ | Folder structure preserved |
 | Markdown import | ✅ | ✅ | Pass-through (no conversion) |
 | Text import | ✅ | ✅ | Auto-converts to markdown |
 | HTML import | ✅ | ✅ | XSS sanitization + conversion |
-| Drag-and-drop | N/A | ✅ | Upload UI enhancement |
+| Drag-and-drop | N/A | ✅ | Separate zones for files/folders |
+| Preview confirmation | N/A | ✅ | Review before upload |
+| System file filtering | ✅ | ✅ | Defense-in-depth: both filter .git, __MACOSX, etc. |
 | Error reporting | ✅ | ✅ | Detailed per-file errors |
 | Multipart upload | ✅ | ✅ | Multiple files in single request |
 
@@ -96,6 +102,10 @@ ConverterRegistry
 - `backend/internal/handler/document.go:ImportDocuments()` - API endpoint
 
 ### Frontend
-- `frontend/src/features/documents/components/ImportDocumentDialog.tsx` - Main UI
-- `frontend/src/features/documents/utils/fileValidation.ts` - Validation logic
+- `frontend/src/features/documents/components/ImportDocumentDialog.tsx` - Main dialog
+- `frontend/src/features/documents/components/ImportFileSelector.tsx` - Dual dropzones
+- `frontend/src/features/documents/components/ImportPreview.tsx` - Preview confirmation
+- `frontend/src/features/documents/utils/importProcessing.ts` - Folder processing, JSZip
+- `frontend/src/features/documents/utils/importFilters.ts` - System file filtering
+- `frontend/src/features/documents/types/import.ts` - Import types
 - `frontend/src/core/lib/api.ts:documents.import()` - API client
