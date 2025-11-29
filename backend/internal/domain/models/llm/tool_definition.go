@@ -85,12 +85,11 @@ func (td *ToolDefinition) ToLibraryTool() (*llmprovider.Tool, error) {
 				return nil, fmt.Errorf("failed to resolve web search variant '%s'", td.Name)
 			}
 
-			// Create custom tool with backend execution
-			tool, err := llmprovider.NewCustomToolWithSide(
+			// Create custom tool (backend execution determined by tool registry routing)
+			tool, err := llmprovider.NewCustomTool(
 				fullDef.Function.Name,
 				fullDef.Function.Description,
 				fullDef.Function.Parameters,
-				llmprovider.ExecutionSideServer, // Backend executes (Tavily, not provider's built-in)
 			)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create web search tool '%s': %w", td.Name, err)
