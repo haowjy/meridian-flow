@@ -21,9 +21,9 @@ feature: "Infrastructure"
 - See [backend-infrastructure.md](backend-infrastructure.md)
 
 ### Frontend
-**Routing** - Next.js App Router, protected routes, deep linking
+**Routing** - TanStack Router (file-based), protected routes via `beforeLoad`, deep linking
 **Logging** - Namespace-based logging system
-**Dev Tools** - Retry panel, debug dialogs
+**Dev Tools** - TanStack Router Devtools, retry panel, debug dialogs
 - See [frontend-infrastructure.md](frontend-infrastructure.md)
 
 ### Deployment

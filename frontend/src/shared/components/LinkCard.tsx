@@ -1,15 +1,15 @@
-import Link from 'next/link'
+import { Link } from '@tanstack/react-router'
 import { Card } from './ui/card'
 import { cn } from '@/lib/utils'
 
 interface LinkCardProps {
-  href: string
+  to: string
   onClick?: () => void
   children: React.ReactNode
   className?: string
 }
 
-export function LinkCard({ href, onClick, children, className }: LinkCardProps) {
+export function LinkCard({ to, onClick, children, className }: LinkCardProps) {
   const handleClick = () => {
     if (onClick) {
       onClick()
@@ -18,7 +18,7 @@ export function LinkCard({ href, onClick, children, className }: LinkCardProps) 
 
   return (
     <Link
-      href={href}
+      to={to}
       onClick={handleClick}
       className={cn(
         'block cursor-pointer rounded-lg transition-transform motion-safe:hover:scale-[1.02]',

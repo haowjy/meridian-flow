@@ -1,7 +1,6 @@
-'use client'
-
+import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useNavigate } from '@tanstack/react-router'
 import { ProjectList, CreateProjectDialog } from '@/features/projects'
 import { useProjectStore } from '@/core/stores/useProjectStore'
 import { useUserProfile, useAuthActions, UserMenuButton } from '@/features/auth'
@@ -10,8 +9,12 @@ import { CardGrid } from '@/shared/components/CardGrid'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { LogoWordmark } from '@/shared/components/LogoWordmark'
 
-export default function ProjectsPage() {
-  const router = useRouter()
+export const Route = createFileRoute('/_authenticated/projects/')({
+  component: ProjectsPage,
+})
+
+function ProjectsPage() {
+  const navigate = useNavigate()
   const { projects, status, error, loadProjects } = useProjectStore()
   const { profile, status: profileStatus } = useUserProfile()
   const { signOut } = useAuthActions()
@@ -70,7 +73,7 @@ export default function ProjectsPage() {
         <div className="absolute top-4 right-4">
           <UserMenuButton
             profile={profile}
-            onSettings={() => router.push('/settings')}
+            onSettings={() => navigate({ to: '/settings' })}
             onSignOut={signOut}
             menuSide="bottom"
             showName={false}

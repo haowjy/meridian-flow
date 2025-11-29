@@ -1,7 +1,7 @@
 type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent'
 
-const ENV_LEVEL = (process.env.NEXT_PUBLIC_LOG_LEVEL || '').toLowerCase() as LogLevel
-const NODE_ENV = process.env.NODE_ENV || 'development'
+const ENV_LEVEL = (import.meta.env.VITE_LOG_LEVEL || '').toLowerCase() as LogLevel
+const NODE_ENV = import.meta.env.MODE || 'development'
 
 function levelOrder(level: LogLevel): number {
   switch (level) {

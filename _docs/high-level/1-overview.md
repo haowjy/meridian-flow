@@ -317,8 +317,8 @@ References (managed separately):
 ## Technical Approach
 
 ### Stack
-- **Frontend:** Next.js + TypeScript + TipTap
-- **Backend:** Go + Fiber (for persistent streaming)
+- **Frontend:** Vite + TanStack Router + TypeScript + TipTap
+- **Backend:** Go + net/http (for persistent streaming)
 - **Database:** Supabase (PostgreSQL + Auth)
 - **AI:** Multi-provider (Claude, OpenAI, etc.)
 - **Deploy:** Vercel (frontend) + Railway (backend)

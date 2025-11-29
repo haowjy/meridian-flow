@@ -1,5 +1,3 @@
-'use client'
-
 import { createClient } from '@/core/supabase/client'
 import { Button } from '@/shared/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card'
@@ -8,7 +6,7 @@ import { Label } from '@/shared/components/ui/label'
 import { FormEvent, useState } from 'react'
 import { toast } from 'sonner'
 
-const isDevMode = process.env.NEXT_PUBLIC_DEV_TOOLS === '1'
+const isDevMode = import.meta.env.VITE_DEV_TOOLS === '1'
 
 export function LoginForm() {
     const supabase = createClient()

@@ -1,12 +1,14 @@
-'use client'
-
-import { useRouter } from 'next/navigation'
+import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { ArrowLeft, LogOut } from 'lucide-react'
 import { useUserProfile, useAuthActions, UserAvatar } from '@/features/auth'
 import { Button } from '@/shared/components/ui/button'
 import { Skeleton } from '@/shared/components/ui/skeleton'
 
-export default function SettingsPage() {
+export const Route = createFileRoute('/_authenticated/settings')({
+  component: SettingsPage,
+})
+
+function SettingsPage() {
   const router = useRouter()
   const { profile, status } = useUserProfile()
   const { signOut } = useAuthActions()
@@ -29,7 +31,7 @@ export default function SettingsPage() {
     )
   }
 
-  // Should not happen if proxy is working, but handle gracefully
+  // Should not happen if auth guard is working, but handle gracefully
   if (status === 'unauthenticated' || !profile) {
     return (
       <div className="container mx-auto max-w-2xl p-8">
@@ -42,7 +44,7 @@ export default function SettingsPage() {
     <div className="container mx-auto max-w-2xl p-8">
       {/* Back button - respects navigation history */}
       <button
-        onClick={() => router.back()}
+        onClick={() => router.history.back()}
         className="mb-8 inline-flex items-center gap-2 type-label text-muted-foreground hover:text-foreground transition-colors"
       >
         <ArrowLeft className="size-4" />

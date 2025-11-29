@@ -6,7 +6,7 @@ See main `CLAUDE.md` for general principles. This document focuses on frontend-s
 
 ## Tech Stack
 
-- **Framework**: Next.js 16 (App Router)
+- **Framework**: Vite + TanStack Router
 - **State Management**: Zustand with persist middleware
 - **Local Database**: Dexie (IndexedDB wrapper)
 - **Editor**: TipTap (ProseMirror-based rich text editor)
@@ -27,42 +27,28 @@ npm run test:watch   # Vitest in watch mode
 
 **Status**: ✅ Complete (Supabase Auth integration)
 
-**Overview**: Cookie-based sessions with automatic JWT injection into all API calls. Next.js 16 proxy protects routes. Google OAuth only (no email/password).
+**Overview**: Cookie-based sessions with automatic JWT injection into all API calls. TanStack Router handles route protection. Google OAuth only (no email/password).
 
-### Supabase Clients
+### Supabase Client
 
-Two client factories based on context:
-
-1. **Browser Client** (`src/core/supabase/client.ts`) - Use in Client Components
-2. **Server Client** (`src/core/supabase/server.ts`) - Use in Server Components, Route Handlers, proxy
+**Browser Client** (`src/core/supabase/client.ts`) - Use throughout the application (Vite is client-side only)
 
 ### Accessing User Session
 
-**In Client Components**:
 ```typescript
-import { createBrowserSupabaseClient } from '@/core/supabase/client'
+import { createClient } from '@/core/supabase/client'
 
-const supabase = createBrowserSupabaseClient()
+const supabase = createClient()
 const { data: { session } } = await supabase.auth.getSession()
 // session?.user.id, session?.user.email
 ```
 
-**In Server Components**:
-```typescript
-import { createServerSupabaseClient } from '@/core/supabase/server'
-
-const supabase = await createServerSupabaseClient()
-const { data: { session } } = await supabase.auth.getSession()
-```
-
 ### Route Protection
 
-**All routes automatically protected** by Next.js 16 proxy (`src/proxy.ts`). No additional code needed in components.
+Routes use TanStack Router's `beforeLoad` hooks for authentication checks.
 
 - Unauthenticated users → Redirect to `/login`
 - Authenticated users on `/login` or `/` → Redirect to `/projects`
-
-**Note**: Next.js 16 renamed `middleware.ts` to `proxy.ts` to clarify the network boundary concept and avoid confusion with Express.js middleware.
 
 ### API Calls
 
@@ -79,20 +65,18 @@ Implementation: `src/core/lib/api.ts:21-27` extracts JWT from session and adds t
 
 ### Key Files
 
-- `src/core/supabase/client.ts` - Browser client factory
-- `src/core/supabase/server.ts` - Server client factory with cookie handling
-- `src/proxy.ts` - Auth proxy (route protection, session refresh)
+- `src/core/supabase/client.ts` - Supabase client factory
 - `src/core/lib/api.ts` - JWT injection
-- `src/app/login/page.tsx` - Login UI
+- `src/routes/login.tsx` - Login route
 - `src/features/auth/components/LoginForm.tsx` - Google OAuth login button
-- `src/app/auth/callback/route.ts` - OAuth callback handler (PKCE flow)
+- TanStack Router routes with auth guards
 
 ### Environment Variables
 
 Required in `.env.local`:
 ```bash
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-anon-key
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-anon-key
 ```
 
 See `frontend/.env.example` for template.
@@ -156,7 +140,7 @@ Document and panel navigation uses a **two-pronged approach**:
 
 **Implementation:**
 - Navigation helpers: `frontend/src/core/lib/panelHelpers.ts`
-- URL sync effect: `frontend/src/app/projects/[id]/components/WorkspaceLayout.tsx:54-102`
+- URL sync effect: `frontend/src/features/workspace/components/WorkspaceLayout.tsx`
 - **See**: `_docs/technical/frontend/architecture/navigation-pattern.md` for comprehensive guide
 
 ### Sync System
@@ -169,7 +153,7 @@ Flow (documents):
 
 Background: only the retry scheduler (ticked in `SyncProvider`). No visibility/online listeners.
 
-Dev: optional retry inspector in dev builds — set `NEXT_PUBLIC_DEV_TOOLS=1` to enable small bottom-left panel.
+Dev: optional retry inspector in dev builds — set `VITE_DEV_TOOLS=1` to enable small bottom-left panel.
 
 **See**: `_docs/technical/frontend/architecture/sync-system.md` for detailed sync mechanics and diagrams.
 
@@ -194,7 +178,7 @@ Current version: 4
 ### Logging
 
 - Use `frontend/src/core/lib/logger.ts` → `makeLogger('namespace')` with `debug/info/warn/error`.
-- Defaults: `debug` in development, `info` in production. Override via `NEXT_PUBLIC_LOG_LEVEL`.
+- Defaults: `debug` in development, `info` in production. Override via `VITE_LOG_LEVEL`.
 
 ### Testing
 
@@ -203,7 +187,7 @@ Current version: 4
 
 ### Dev Tools
 
-- Set `NEXT_PUBLIC_DEV_TOOLS=1` to show the Retry panel overlay.
+- Set `VITE_DEV_TOOLS=1` to show the Retry panel overlay.
 
 ## UI Philosophy: Writer-First
 
@@ -285,7 +269,7 @@ if (content) { ... }  // Fails for empty strings
 Conventions:
 - Use `handleApiError(error, fallback)` from `core/lib/errors.ts` in UI/store catch blocks for consistent toasts.
 - Use `isAbortError(error)` for early returns on cancelled requests.
-- Global UI fallbacks: `app/error.tsx` and `app/global-error.tsx` render an `ErrorPanel` and log via `makeLogger()`.
+- Error boundaries handle global errors and log via `makeLogger()`.
 
 ### Cursor Pointer on Interactive Elements
 
@@ -307,7 +291,7 @@ Global CSS in `globals.css` applies `cursor: pointer` to all buttons and menu it
 
 ```
 frontend/src/
-├── app/                        # Next.js App Router pages
+├── routes/                     # TanStack Router routes
 ├── core/
 │   ├── components/             # Infrastructure (SyncProvider, HeaderGradientFade)
 │   ├── hooks/                  # Shared hooks (useAbortController)

@@ -1,5 +1,3 @@
-"use client"
-
 import type { Editor as TiptapEditor } from '@tiptap/react'
 import { Bold, Italic, Heading1, Heading2, List, ListOrdered, MoreHorizontal } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'

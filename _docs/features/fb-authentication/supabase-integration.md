@@ -16,30 +16,25 @@ feature: "Supabase Auth Integration"
 
 ### Supabase Client
 
-**Files**:
-- `/Users/jimmyyao/gitrepos/meridian/frontend/src/core/supabase/client.ts` - Browser client
-- `/Users/jimmyyao/gitrepos/meridian/frontend/src/core/supabase/server.ts` - Server client
+**File**: `frontend/src/core/supabase/client.ts`
+
+**Note**: Vite is client-only, so only browser client exists (no server client needed)
 
 **Features**:
 - Cookie-based session storage
 - Automatic token refresh
-- Browser and Server client factories
+- Browser client factory
 - PKCE flow support
 
 **Client Creation**:
 ```typescript
-// Browser client (client components)
 import { createClient } from '@/core/supabase/client'
 const supabase = createClient()
-
-// Server client (server components/actions)
-import { createClient } from '@/core/supabase/server'
-const supabase = await createClient()
 ```
 
 ### Login Flow
 
-**File**: `/Users/jimmyyao/gitrepos/meridian/frontend/src/app/login/page.tsx`
+**File**: `frontend/src/routes/login.tsx`
 
 **OAuth Flow**:
 1. User clicks "Sign in with Google"
@@ -58,7 +53,7 @@ const supabase = await createClient()
 - Token extraction for API calls
 - Session expiry detection
 
-**JWT Injection**: All API calls automatically include JWT token via proxy
+**JWT Injection**: All API calls automatically include JWT token via `api.ts` middleware
 
 ---
 
@@ -67,7 +62,7 @@ const supabase = await createClient()
 ### JWT Verification
 
 **Backend receives JWT from frontend via `Authorization` header**:
-- Frontend proxy adds `Authorization: Bearer <token>` to all API requests
+- Frontend API middleware (`api.ts`) adds `Authorization: Bearer <token>` to all API requests
 - Backend validates JWT via JWKS (see [jwt-validation.md](jwt-validation.md))
 
 ### JWKS Endpoint
@@ -83,8 +78,8 @@ const supabase = await createClient()
 
 ### Frontend Environment Variables
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+VITE_SUPABASE_URL=https://xxx.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
 ### Backend Environment Variables
@@ -97,7 +92,7 @@ SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... (service role key)
 
 ## OAuth Configuration
 
-**Supabase Dashboard** ’ Authentication ’ Providers ’ Google:
+**Supabase Dashboard** ï¿½ Authentication ï¿½ Providers ï¿½ Google:
 - Enable Google provider
 - Add OAuth credentials (Client ID, Client Secret)
 - Configure redirect URLs:
@@ -110,7 +105,6 @@ SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... (service role key)
 
 **Cookie-based** (not localStorage):
 - More secure (HttpOnly, SameSite)
-- Works with Server Components
 - Automatic expiry handling
 
 **Cookie Names**:
@@ -121,7 +115,7 @@ SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... (service role key)
 
 ## Auth Callback Handler
 
-**File**: `/Users/jimmyyao/gitrepos/meridian/frontend/src/app/auth/callback/route.ts`
+**File**: `frontend/src/routes/auth/callback.tsx`
 
 **Flow**:
 1. Receive authorization code from OAuth provider
@@ -136,17 +130,17 @@ SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... (service role key)
 ```mermaid
 sequenceDiagram
     participant F as Frontend
-    participant P as Proxy
+    participant M as API Middleware (api.ts)
     participant S as Supabase
     participant B as Backend
 
-    F->>P: API request
-    P->>S: Get session
-    S->>P: Return JWT token
-    P->>B: Request + Authorization: Bearer <JWT>
+    F->>M: API request
+    M->>S: Get session
+    S->>M: Return JWT token
+    M->>B: Request + Authorization: Bearer <JWT>
     B->>B: Verify JWT via JWKS
-    B->>P: Response
-    P->>F: Response
+    B->>M: Response
+    M->>F: Response
 ```
 
 ---

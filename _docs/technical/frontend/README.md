@@ -5,7 +5,7 @@ audience: developer
 
 # Frontend Technical Documentation
 
-Complete technical reference for Meridian frontend (Next.js + TypeScript + TipTap + Supabase).
+Complete technical reference for Meridian frontend (Vite + TanStack Router + TypeScript + TipTap + Supabase).
 
 ## Quick Links
 
@@ -88,7 +88,8 @@ All docs follow minimal detail principle from main `CLAUDE.md`:
 
 ## External References
 
-- [Next.js App Router Docs](https://nextjs.org/docs/app)
+- [Vite Docs](https://vitejs.dev/)
+- [TanStack Router Docs](https://tanstack.com/router)
 - [TipTap Editor Docs](https://tiptap.dev/)
 - [Supabase Auth Docs](https://supabase.com/docs/guides/auth)
 - [Tailwind CSS](https://tailwindcss.com/)

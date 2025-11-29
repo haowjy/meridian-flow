@@ -22,11 +22,11 @@ feature: "Loading and Error States"
 
 ## Error Boundaries
 
-**Files**:
-- `frontend/src/app/error.tsx` - Page-level errors
-- `frontend/src/app/global-error.tsx` - App-level errors
+**Pattern**: React Error Boundaries catch component errors
 
 **Features**: ErrorPanel with retry button, logging
+
+**Note**: Vite handles errors differently than Next.js - error boundaries are implemented at component level rather than via framework-specific files
 
 ---
 

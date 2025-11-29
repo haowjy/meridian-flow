@@ -1,7 +1,5 @@
-'use client'
-
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useNavigate } from '@tanstack/react-router'
 import { useShallow } from 'zustand/react/shallow'
 import { useChatStore } from '@/core/stores/useChatStore'
 import { useUIStore } from '@/core/stores/useUIStore'
@@ -30,7 +28,7 @@ interface ChatListPanelProps {
  * - Render chat contents (delegated to ActiveChatView).
  */
 export function ChatListPanel({ projectId }: ChatListPanelProps) {
-  const router = useRouter()
+  const navigate = useNavigate()
   const { chats, status, isLoading } = useChatsForProject(projectId)
   const [showSkeleton, setShowSkeleton] = useState(false)
 
@@ -121,7 +119,7 @@ export function ChatListPanel({ projectId }: ChatListPanelProps) {
   const hasChats = chats.length > 0
 
   const handleBrandClick = () => {
-    router.push('/projects')
+    navigate({ to: '/projects' })
   }
 
   return (
@@ -171,7 +169,7 @@ export function ChatListPanel({ projectId }: ChatListPanelProps) {
         <div className="shrink-0 border-t border-border p-2">
           <UserMenuButton
             profile={profile}
-            onSettings={() => router.push('/settings')}
+            onSettings={() => navigate({ to: '/settings' })}
             onSignOut={signOut}
             menuSide="top"
           />

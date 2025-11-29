@@ -30,12 +30,12 @@ feature: "Deployment"
 
 ## Frontend Deployment
 
-**Platform**: Vercel (planned)
+**Platform**: Vercel
 
 **Environment Variables**:
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `NEXT_PUBLIC_API_URL`
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `VITE_API_URL`
 
 ---
 

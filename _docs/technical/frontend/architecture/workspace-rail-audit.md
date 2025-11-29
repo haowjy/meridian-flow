@@ -18,7 +18,7 @@ audience: developer
   - Wraps three `ResizablePanel`s (left / center / right) from `react-resizable-panels`.
   - Uses a non-zero `collapsedSize` (4%) so Flow/Docs columns remain mounted as slim strips when collapsed, keeping edge icons aligned in the rail.
 
-- `WorkspaceLayout` (`frontend/src/app/projects/[id]/components/WorkspaceLayout.tsx`):
+- `WorkspaceLayout` (`frontend/src/features/workspace/components/WorkspaceLayout.tsx`):
   - Connects `useUIStore` to `PanelLayout` (passes collapse booleans, sizes, and `setPanelLayout`).
   - Wraps left/right content in `CollapsiblePanel`:
     - Left: `CollapsiblePanel side="left"` + `ChatListPanel`.
@@ -83,7 +83,7 @@ audience: developer
 ## Header Height Alignment
 
 - Token:
-  - `frontend/src/app/globals.css` defines `--header-height: 2.75rem;` inside `@theme inline`.
+  - `frontend/src/globals.css` defines `--header-height: 2.75rem;` inside `@theme inline`.
 - Utility:
   - Tailwind height utility `h-header` is used on:
     - Flow header root: `ChatListHeader` (`chat-pane-header h-header ...`).

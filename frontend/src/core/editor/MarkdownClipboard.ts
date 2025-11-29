@@ -222,7 +222,7 @@ function looksLikeCode(text: string): boolean {
     // Keywords
     /\b(function|class|const|let|var|import|export|return|if|else|for|while)\b/,
     // Common syntax
-    /[{}\[\]();]/,              // Braces, brackets, semicolons
+    /[{}[\]();]/,              // Braces, brackets, semicolons
     /=>/,                       // Arrow functions
     /\/\//,                     // Single-line comments
     /\/\*[\s\S]*?\*\//,         // Multi-line comments

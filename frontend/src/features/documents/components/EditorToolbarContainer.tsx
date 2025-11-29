@@ -1,5 +1,3 @@
-"use client"
-
 import type { Editor as TiptapEditor } from "@tiptap/react"
 import { EditorToolbar } from "./EditorToolbar"
 import type { SaveStatus } from '@/shared/components/ui/StatusBadge'

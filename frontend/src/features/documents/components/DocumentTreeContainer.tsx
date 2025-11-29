@@ -1,7 +1,5 @@
-'use client'
-
 import { useEffect, useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useNavigate } from '@tanstack/react-router'
 import { useShallow } from 'zustand/react/shallow'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { useUIStore } from '@/core/stores/useUIStore'
@@ -42,7 +40,7 @@ interface DocumentTreeContainerProps {
  * Fetches data, handles events, renders tree structure recursively.
  */
 export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps) {
-  const router = useRouter()
+  const navigate = useNavigate()
   const {
     tree,
     expandedFolders,
@@ -94,7 +92,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
 
     // Cleanup: abort request if component unmounts or projectId changes
     // NOTE: In dev mode with React Strict Mode, this abort() will be called during the
-    // intentional double-mount cleanup, causing an AbortError to appear in the Next.js
+    // intentional double-mount cleanup, causing an AbortError to appear in the dev mode
     // error overlay. This is EXPECTED and HARMLESS - the error is caught and handled
     // silently by useTreeStore. In production (no Strict Mode), this only runs on real
     // unmounts or project changes. The abort is necessary to prevent stale requests from
@@ -120,7 +118,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
 
   // Handle document click
   const handleDocumentClick = (documentId: string) => {
-    openDocument(documentId, projectId, router)
+    openDocument(documentId, projectId, navigate)
   }
 
   // Handle delete document

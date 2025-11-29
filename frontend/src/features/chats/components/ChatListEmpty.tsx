@@ -1,5 +1,3 @@
-'use client'
-
 import { MessageCircle } from 'lucide-react'
 import { Button } from '@/shared/components/ui/button'
 

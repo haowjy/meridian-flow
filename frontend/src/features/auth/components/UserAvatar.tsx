@@ -1,7 +1,4 @@
-'use client'
-
 import { useMemo } from 'react'
-import Image from 'next/image'
 import { cn } from '@/lib/utils'
 
 /**
@@ -83,12 +80,12 @@ export function UserAvatar({
       style={avatarUrl ? undefined : { backgroundColor: bgColor }}
     >
       {avatarUrl ? (
-        <Image
+        <img
           src={avatarUrl}
           alt={name ?? email}
-          fill
-          className="object-cover"
+          className="absolute inset-0 h-full w-full object-cover"
           referrerPolicy="no-referrer"
+          loading="lazy"
         />
       ) : (
         <span className="font-medium text-white">{initials}</span>

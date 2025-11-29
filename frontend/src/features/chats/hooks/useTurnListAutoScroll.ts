@@ -1,5 +1,3 @@
-"use client"
-
 import { useEffect, useRef } from 'react'
 import type { RefObject } from 'react'
 import type { Turn } from '@/features/chats/types'

@@ -33,7 +33,7 @@ export const TurnActionBar = React.memo(function TurnActionBar({
 }: TurnActionBarProps) {
     const [copied, setCopied] = useState(false)
     const [showDebug, setShowDebug] = useState(false)
-    const isDevMode = process.env.NEXT_PUBLIC_DEV_TOOLS === '1'
+    const isDevMode = import.meta.env.VITE_DEV_TOOLS === '1'
 
     // Memoize sibling calculations to avoid recalculating on every render
     const { siblingList, siblingCount, currentIndex, currentNumber, showNavigation } = useMemo(() => {
