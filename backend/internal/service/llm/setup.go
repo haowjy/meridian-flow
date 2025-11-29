@@ -149,7 +149,8 @@ func SetupServices(
 		txManager,
 		systemPromptResolver,
 		messageBuilder,
-		toolLimitResolver, // Tool round limit resolver (tier-ready)
+		toolLimitResolver,    // Tool round limit resolver (tier-ready)
+		capabilityRegistry,   // For checking model capabilities (e.g., supports_tools)
 		logger,
 	)
 

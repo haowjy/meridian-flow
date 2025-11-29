@@ -69,19 +69,22 @@ type PricingTierResponse struct {
 func (h *ModelsHandler) GetCapabilities(w http.ResponseWriter, r *http.Request) {
 	var providers []ProviderResponse
 
-	// Check Anthropic
-	if h.config.AnthropicAPIKey != "" {
-		if models, err := h.registry.ListProviderModels("anthropic"); err == nil {
-			provider := h.convertProvider("anthropic", "Anthropic", models)
-			providers = append(providers, provider)
-		}
+	// Fixed provider order: Anthropic first, then OpenRouter
+	providerOrder := []struct {
+		id     string
+		name   string
+		apiKey string
+	}{
+		{"anthropic", "Anthropic", h.config.AnthropicAPIKey},
+		{"openrouter", "OpenRouter", h.config.OpenRouterAPIKey},
 	}
 
-	// Check OpenRouter
-	if h.config.OpenRouterAPIKey != "" {
-		if models, err := h.registry.ListProviderModels("openrouter"); err == nil {
-			provider := h.convertProvider("openrouter", "OpenRouter", models)
-			providers = append(providers, provider)
+	for _, p := range providerOrder {
+		if p.apiKey != "" {
+			if models, err := h.registry.ListProviderModels(p.id); err == nil {
+				provider := h.convertProvider(p.id, p.name, models)
+				providers = append(providers, provider)
+			}
 		}
 	}
 
@@ -93,10 +96,10 @@ func (h *ModelsHandler) GetCapabilities(w http.ResponseWriter, r *http.Request) 
 }
 
 // convertProvider converts capability registry data to API response format
-func (h *ModelsHandler) convertProvider(id, name string, models map[string]capabilities.ModelCapabilities) ProviderResponse {
+func (h *ModelsHandler) convertProvider(id, name string, models []capabilities.ModelCapabilities) ProviderResponse {
 	var modelResponses []ModelResponse
 
-	for modelID, modelCap := range models {
+	for _, modelCap := range models {
 		// Convert pricing tiers
 		var tiers []PricingTierResponse
 		for _, tier := range modelCap.PricingTiers {
@@ -120,7 +123,7 @@ func (h *ModelsHandler) convertProvider(id, name string, models map[string]capab
 		}
 
 		modelResponses = append(modelResponses, ModelResponse{
-			ID:            modelID,
+			ID:            modelCap.ID,
 			DisplayName:   modelCap.DisplayName,
 			ContextWindow: modelCap.ContextWindow,
 			Capabilities: CapabilitiesInfo{

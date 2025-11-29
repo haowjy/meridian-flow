@@ -13,7 +13,6 @@ const router = createRouter({
 // the expected route components don't appear to re-render.
 if (typeof window !== 'undefined' && import.meta.env.DEV) {
   window.addEventListener('popstate', (event) => {
-    // eslint-disable-next-line no-console
     console.log('[POPSTATE]', {
       path: window.location.pathname,
       state: event.state,
@@ -21,7 +20,6 @@ if (typeof window !== 'undefined' && import.meta.env.DEV) {
   })
 
   router.history.subscribe((event) => {
-    // eslint-disable-next-line no-console
     console.log('[HISTORY EVENT]', {
       action: event.action,
       path: event.location.pathname,

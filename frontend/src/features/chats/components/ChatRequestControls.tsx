@@ -202,18 +202,15 @@ function ModelSelector({
             {group.items.map((model) => (
               <DropdownMenuItem
                 key={model.id}
-                className="flex items-center gap-2 text-[0.7rem] sm:text-xs"
+                className={cn(
+                  "flex items-center gap-2 text-[0.7rem] sm:text-xs",
+                  model.id === selectedModelId && "bg-muted"
+                )}
                 onSelect={() =>
                   onSelectModel(model.id, model.displayName, providerId, model.supportsThinking, model.requiresThinking)
                 }
               >
-                <span
-                  className={
-                    model.id === selectedModelId
-                      ? 'font-medium'
-                      : undefined
-                  }
-                >
+                <span className={model.id === selectedModelId ? 'font-medium' : undefined}>
                   {model.displayName}
                 </span>
               </DropdownMenuItem>

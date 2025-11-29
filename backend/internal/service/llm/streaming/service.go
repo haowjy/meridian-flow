@@ -10,6 +10,7 @@ import (
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 	mstream "github.com/haowjy/meridian-stream-go"
 
+	"meridian/internal/capabilities"
 	"meridian/internal/config"
 	"meridian/internal/domain"
 	llmModels "meridian/internal/domain/models/llm"
@@ -49,7 +50,8 @@ type Service struct {
 	txManager            repositories.TransactionManager
 	systemPromptResolver llmSvc.SystemPromptResolver
 	messageBuilder       llmSvc.MessageBuilder
-	toolLimitResolver    llmSvc.ToolLimitResolver // Resolves tool round limits (tier-ready)
+	toolLimitResolver    llmSvc.ToolLimitResolver   // Resolves tool round limits (tier-ready)
+	capabilityRegistry   *capabilities.Registry     // For checking model capabilities (e.g., supports_tools)
 	logger               *slog.Logger
 }
 
@@ -70,6 +72,7 @@ func NewService(
 	systemPromptResolver llmSvc.SystemPromptResolver,
 	messageBuilder       llmSvc.MessageBuilder,
 	toolLimitResolver    llmSvc.ToolLimitResolver,
+	capabilityRegistry   *capabilities.Registry,
 	logger               *slog.Logger,
 ) llmSvc.StreamingService {
 	return &Service{
@@ -88,6 +91,7 @@ func NewService(
 		systemPromptResolver: systemPromptResolver,
 		messageBuilder:       messageBuilder,
 		toolLimitResolver:    toolLimitResolver,
+		capabilityRegistry:   capabilityRegistry,
 		logger:               logger,
 	}
 }
@@ -166,6 +170,28 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		// Persist resolved provider to request_params for turn history/edit
 		// This ensures we always know which provider was actually used
 		requestParams["provider"] = provider
+	}
+
+	// Filter out tools if model doesn't support them
+	// This prevents "No endpoints found that support tool use" errors from providers
+	if modelCap, err := s.capabilityRegistry.GetModelCapabilities(provider, model); err == nil {
+		if !modelCap.SupportsTools && params.Tools != nil && len(params.Tools) > 0 {
+			s.logger.Info("filtering out tools - model doesn't support tools",
+				"provider", provider,
+				"model", model,
+				"tools_count", len(params.Tools),
+			)
+			params.Tools = nil
+			// Also remove from requestParams to keep them in sync
+			delete(requestParams, "tools")
+		}
+	} else {
+		// Model not found in registry - log warning but continue (fail-open)
+		s.logger.Warn("model not found in capability registry, skipping tool filter",
+			"provider", provider,
+			"model", model,
+			"error", err,
+		)
 	}
 
 	// Resolve system prompt from user, project, chat, and selected skills

@@ -333,15 +333,18 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 
 	// Check if we have collected tools to execute
 	if len(se.collectedTools) > 0 && se.toolRegistry != nil {
-		// Check iteration limit to prevent infinite loops
-		if se.toolIteration >= se.maxToolRounds {
-			se.logger.Warn("max tool rounds reached, completing without tool execution",
+		// Check hard limit to prevent infinite loops
+		// (soft limit will be handled in executeToolsAndContinue via user message)
+		hardLimit := se.maxToolRounds * 2
+		if se.toolIteration >= hardLimit {
+			se.logger.Warn("hard limit reached, completing without tool execution",
 				"tool_iteration", se.toolIteration,
-				"max_rounds", se.maxToolRounds,
+				"hard_limit", hardLimit,
 				"collected_tools", len(se.collectedTools),
 			)
 		} else {
 			// Execute tools and continue streaming
+			// Soft limit notification will be injected if needed in executeToolsAndContinue
 			se.logger.Info("executing collected tools",
 				"tool_count", len(se.collectedTools),
 				"iteration", se.toolIteration,
@@ -584,12 +587,18 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 		)
 	}
 
-	// 4. Check iteration limit
+	// 4. Check iteration limit with tiered approach
 	se.toolIteration++
-	if se.toolIteration >= se.maxToolRounds {
-		se.logger.Warn("max tool rounds reached, executing final round with limit note",
+
+	softLimit := se.maxToolRounds
+	hardLimit := se.maxToolRounds * 2
+
+	// HARD LIMIT: Force graceful completion (safety backstop against infinite loops)
+	if se.toolIteration >= hardLimit {
+		se.logger.Warn("hard limit reached, forcing graceful completion",
 			"iterations", se.toolIteration,
-			"max_rounds", se.maxToolRounds,
+			"soft_limit", softLimit,
+			"hard_limit", hardLimit,
 		)
 		return se.executeToolsAndContinueWithLimit(ctx, send)
 	}
@@ -618,12 +627,44 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 		return fmt.Errorf("failed to build continuation messages: %w", err)
 	}
 
+	// 6a. SOFT LIMIT: Inject user notification message if above soft limit
+	// This gives the LLM a gentle reminder to wrap up, but still allows tool use if critical
+	if se.toolIteration >= softLimit {
+		notificationText := fmt.Sprintf(
+			"You've exceeded the recommended tool usage limit of %d rounds. "+
+			"Please consider providing your final answer based on the information you've gathered.",
+			softLimit,
+		)
+
+		notificationMsg := domainllm.Message{
+			Role: "user",
+			Content: []*llmModels.TurnBlock{
+				{
+					BlockType:   llmModels.BlockTypeText,
+					TextContent: &notificationText,
+				},
+			},
+		}
+
+		// Prepend notification so LLM sees it first
+		messages = append([]domainllm.Message{notificationMsg}, messages...)
+
+		se.logger.Info("soft limit reached, injected user notification",
+			"iterations", se.toolIteration,
+			"soft_limit", softLimit,
+			"hard_limit", hardLimit,
+		)
+	}
+
 	// 7. Create continuation request (reuse original params)
 	contReq := &domainllm.GenerateRequest{
 		Messages: messages,
 		Model:    se.req.Model,
 		Params:   se.req.Params, // Reuse original params (temperature, max_tokens, system prompt, etc.)
 	}
+
+	// DEBUG: Log continuation request details to diagnose 400 errors
+	se.logContinuationRequest(contReq)
 
 	// 8. Call provider for continuation stream
 	// NOTE: Use ctx from workFunc (NOT context.Background())
@@ -689,15 +730,17 @@ func (se *StreamExecutor) executeToolsAndContinueWithLimit(ctx context.Context, 
 	// Note: This modifies messages in-memory only (NOT persisted to database)
 	injectToolLimitNote(messages, se.toolIteration, se.maxToolRounds)
 
-	// 4. Create continuation request with tools DISABLED and system prompt override
-	// Triple-layer defense against tool requests:
-	// 1. Remove tools array (API won't recognize tool calls)
-	// 2. System prompt override (prevents LLM from outputting tool syntax)
-	// 3. Tool result limit note (provides context - already injected above)
+	// 4. Create continuation request with system prompt override
+	// IMPORTANT: Keep tools array even though we don't want the LLM to call them.
+	// Reason: Messages contain role:"tool" blocks (for OpenRouter), and OpenRouter
+	// rejects role:"tool" messages when no tools are defined in the request (400 error).
+	// The system prompt override is sufficient to prevent the LLM from calling tools.
 	paramsWithoutTools := *se.req.Params // Shallow copy
-	paramsWithoutTools.Tools = nil       // Layer 1: Remove tools - API won't accept tool calls
+	// paramsWithoutTools.Tools remains unchanged (keeps original tools for message validation)
 
-	// Layer 2: Override system prompt to prevent LLM from outputting tool call syntax
+	// Dual-layer defense against unwanted tool calls:
+	// Layer 1: System prompt override (strong instruction to NOT call tools)
+	// Layer 2: Tool result limit note (provides context - already injected above)
 	limitInstruction := "\n\nIMPORTANT: You have reached your tool usage limit. " +
 		"Do NOT format any tool calls. " +
 		"Provide your answer in natural language based on the information you gathered. " +
@@ -712,10 +755,13 @@ func (se *StreamExecutor) executeToolsAndContinueWithLimit(ctx context.Context, 
 	}
 
 	contReq := &domainllm.GenerateRequest{
-		Messages: messages,           // Contains limit note in last tool_result (Layer 3)
+		Messages: messages,           // Contains limit note in last tool_result (Layer 2)
 		Model:    se.req.Model,
-		Params:   &paramsWithoutTools, // No tools + limit instruction
+		Params:   &paramsWithoutTools, // Tools kept + limit instruction (Layer 1)
 	}
+
+	// DEBUG: Log continuation request details to diagnose 400 errors
+	se.logContinuationRequest(contReq)
 
 	// 5. Call provider for final continuation stream
 	contStreamChan, err := se.provider.StreamResponse(ctx, contReq)
@@ -807,4 +853,36 @@ func (se *StreamExecutor) completeTurn(
 	se.sendEvent(send, llmModels.SSEEventTurnComplete, completeEvent)
 
 	return nil
+}
+
+// logContinuationRequest logs detailed information about the continuation request
+// to help diagnose 400 errors from OpenRouter.
+func (se *StreamExecutor) logContinuationRequest(req *domainllm.GenerateRequest) {
+	// Log basic info
+	se.logger.Info("continuation request structure",
+		"message_count", len(req.Messages),
+		"model", req.Model,
+	)
+
+	// Log each message's structure (roles and block types)
+	for i, msg := range req.Messages {
+		blockTypes := make([]string, len(msg.Content))
+		for j, block := range msg.Content {
+			blockTypes[j] = block.BlockType
+		}
+		se.logger.Info("continuation message",
+			"index", i,
+			"role", msg.Role,
+			"block_count", len(msg.Content),
+			"block_types", blockTypes,
+		)
+	}
+
+	// Log full request as JSON for debugging (use DEBUG level to avoid spamming)
+	reqJSON, err := json.MarshalIndent(req, "", "  ")
+	if err != nil {
+		se.logger.Warn("failed to marshal continuation request for logging", "error", err)
+	} else {
+		se.logger.Debug("continuation request JSON", "request", string(reqJSON))
+	}
 }

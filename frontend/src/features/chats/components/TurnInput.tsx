@@ -38,8 +38,8 @@ export function TurnInput({ chatId, projectId, focusKey }: TurnInputProps) {
     if (!turns || turns.length === 0) return null
     // Find the last turn with requestParams (usually the last user turn)
     for (let i = turns.length - 1; i >= 0; i--) {
-      if (turns[i].requestParams) {
-        return turns[i].requestParams
+      if (turns[i]?.requestParams) {
+        return turns[i]?.requestParams
       }
     }
     return null

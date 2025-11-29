@@ -65,16 +65,17 @@ func (r *Registry) GetModelCapabilities(provider, model string) (*ModelCapabilit
 		return nil, fmt.Errorf("unknown provider: %s", provider)
 	}
 
-	modelCaps, ok := providerCaps.Models[model]
-	if !ok {
-		return nil, fmt.Errorf("unknown model %s for provider %s", model, provider)
+	for i := range providerCaps.Models {
+		if providerCaps.Models[i].ID == model {
+			return &providerCaps.Models[i], nil
+		}
 	}
 
-	return &modelCaps, nil
+	return nil, fmt.Errorf("unknown model %s for provider %s", model, provider)
 }
 
-// ListProviderModels returns all models for a provider
-func (r *Registry) ListProviderModels(provider string) (map[string]ModelCapabilities, error) {
+// ListProviderModels returns all models for a provider (ordered as defined in YAML)
+func (r *Registry) ListProviderModels(provider string) ([]ModelCapabilities, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

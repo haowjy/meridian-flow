@@ -1,22 +1,8 @@
 provider: openrouter
 models:
-
-  anthropic/claude-haiku-4.5:
-    display_name: "Claude Haiku 4.5"
-    description: "Fast and affordable"
-    supports_tools: true
-    supports_thinking: true
-    supports_vision: true
-    tool_call_quality: excellent
-    image_generation: none
-    context_window: 200000
-    max_output: 4096
-    pricing_tiers:
-      - threshold: null
-        input_price:
-          text: 1.00
-        output_price:
-          text: 5.00
+  # NOTE: Anthropic models via OpenRouter do NOT support tool continuation with thinking.
+  # OpenRouter's reasoning_details format loses Anthropic's cryptographic signatures.
+  # Use direct Anthropic API instead for Claude models.
 
   openai/gpt-5-mini:
     display_name: "GPT-5 Mini"
@@ -52,7 +38,7 @@ models:
         output_price:
           text: 2.50
 
-  x-ai/grok-4.1-fast:
+  x-ai/grok-4.1-fast:free:
     display_name: "Grok 4.1 Fast"
     description: "Grok's fast model"
     supports_tools: true
@@ -90,6 +76,7 @@ models:
           text: 0.60
         output_price:
           text: 3.00
+  
   moonshotai/kimi-k2-thinking:
     display_name: "Kimi K2 Thinking"
     description: "Kimi's thinking model"
@@ -108,10 +95,10 @@ models:
         output_price:
           text: 2.50
 
-  deepseek/deepseek-r1-0528:free:
+  deepseek/deepseek-r1-0528:
     display_name: "DeepSeek R1 05/28"
     description: "DeepSeek Thinking Model"
-    supports_tools: true
+    supports_tools: false
     supports_thinking: true
     requires_thinking: true
     supports_vision: false
@@ -125,20 +112,56 @@ models:
           text: 0.20
         output_price:
           text: 4.50
-  
-  qwen/qwen3-235b-a22b:
-    display_name: "Qwen 3.2 235B"
-    description: "Qwen's thinking model"
-    supports_tools: true
+
+  deepseek/deepseek-chat-v3-0324:
+    display_name: "DeepSeek Chat V3 03/24"
+    description: "DeepSeek's chat model"
+    supports_tools: false
     supports_thinking: true
+    requires_thinking: true
     supports_vision: false
     tool_call_quality: good
     image_generation: none
-    context_window: 40960
-    max_output: 40960
+    context_window: 163840
+    max_output: 163840
     pricing_tiers:
       - threshold: null
         input_price:
           text: 0.20
         output_price:
-          text: 0.50
+          text: 0.90
+  
+  qwen/qwen3-vl-235b-a22b-instruct:
+    display_name: "Qwen 3.2 VL 235B"
+    description: "Qwen's thinking model"
+    supports_tools: true
+    supports_thinking: true
+    supports_vision: true
+    tool_call_quality: good
+    image_generation: none
+    context_window: 131072
+    max_output: 32768
+    pricing_tiers:
+      - threshold: null
+        input_price:
+          text: 0.30
+        output_price:
+          text: 1.20
+  
+  prime-intellect/intellect-3:
+    display_name: "Intellect 3"
+    description: "Prime Intellect's thinking model based on GLM-4.5-Air-Base"
+    supports_tools: true
+    supports_thinking: true
+    requires_thinking: true
+    supports_vision: false
+    tool_call_quality: good
+    image_generation: none
+    context_window: 131072
+    max_output: 131072
+    pricing_tiers:
+      - threshold: null
+        input_price:
+          text: 0.20
+        output_price:
+          text: 1.10
