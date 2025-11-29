@@ -1,3 +1,5 @@
+import type { RequestParams } from './chat'
+
 export type ReasoningLevel = 'off' | 'low' | 'medium' | 'high'
 
 export interface ChatRequestOptions {
@@ -20,4 +22,26 @@ export const DEFAULT_CHAT_REQUEST_OPTIONS: ChatRequestOptions = {
   modelLabel: 'Kimi K2 Thinking',
   providerId: 'openrouter',
   reasoning: 'low', // Default model (kimi-k2-thinking) requires thinking
+}
+
+/**
+ * Converts backend RequestParams to frontend ChatRequestOptions.
+ * Falls back to defaults for missing fields.
+ */
+export function requestParamsToOptions(params?: RequestParams | null): ChatRequestOptions {
+  if (!params) return { ...DEFAULT_CHAT_REQUEST_OPTIONS }
+
+  // Map thinking_level to reasoning, defaulting to 'low' if thinking is enabled but no level set
+  let reasoning: ReasoningLevel = 'off'
+  if (params.thinking_enabled || params.thinking_level) {
+    reasoning = (params.thinking_level as ReasoningLevel) ?? 'low'
+  }
+
+  return {
+    modelId: params.model ?? DEFAULT_CHAT_REQUEST_OPTIONS.modelId,
+    modelLabel: params.model ?? DEFAULT_CHAT_REQUEST_OPTIONS.modelLabel, // Will be overwritten by ChatRequestControls if needed
+    providerId: params.provider ?? DEFAULT_CHAT_REQUEST_OPTIONS.providerId,
+    reasoning,
+    tools: params.tools as Array<{ name: string }> | undefined,
+  }
 }

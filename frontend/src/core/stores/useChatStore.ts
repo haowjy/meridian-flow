@@ -6,7 +6,7 @@ import {
   type BlockType,
   type ChatRequestOptions,
 } from '@/features/chats/types'
-import { DEFAULT_CHAT_REQUEST_OPTIONS } from '@/features/chats/types'
+import { DEFAULT_CHAT_REQUEST_OPTIONS, requestParamsToOptions } from '@/features/chats/types'
 import { api } from '@/core/lib/api'
 import { handleApiError } from '@/core/lib/errors'
 import { makeLogger } from '@/core/lib/logger'
@@ -80,7 +80,7 @@ interface ChatStore {
   paginateBefore: (signal?: AbortSignal) => Promise<void>
   paginateAfter: (signal?: AbortSignal) => Promise<void>
   switchSibling: (chatId: string, targetTurnId: string, signal?: AbortSignal) => Promise<void>
-  editTurn: (chatId: string, parentTurnId: string | undefined, content: string) => Promise<void>
+  editTurn: (chatId: string, parentTurnId: string | undefined, content: string, options?: ChatRequestOptions) => Promise<void>
   regenerateTurn: (chatId: string, parentTurnId: string) => Promise<void>
   refreshTurn: (chatId: string, turnId: string) => Promise<void>
 }
@@ -639,7 +639,7 @@ export const useChatStore = create<ChatStore>()(
         }
       },
 
-      editTurn: async (chatId: string, turnId: string | undefined, messageText: string) => {
+      editTurn: async (chatId: string, turnId: string | undefined, messageText: string, options?: ChatRequestOptions) => {
         set({ isLoadingTurns: true })
         try {
           // Find the original turn to get its prevTurnId
@@ -651,11 +651,11 @@ export const useChatStore = create<ChatStore>()(
 
           // Call createTurn endpoint with the SAME prevTurnId as the original turn
           // This creates a sibling branch.
+          // Use provided options or fall back to defaults
           const { assistantTurn } = await api.turns.send(messageText, {
             chatId,
             prevTurnId,
-            // For now, reuse default chat options when editing.
-            requestOptions: DEFAULT_CHAT_REQUEST_OPTIONS,
+            requestOptions: options ?? DEFAULT_CHAT_REQUEST_OPTIONS,
           })
 
           // Navigate to the new branch (the assistant turn leaf)
@@ -672,7 +672,7 @@ export const useChatStore = create<ChatStore>()(
         try {
           const currentTurns = get().turns
           const assistantTurn = currentTurns.find((t) => t.id === assistantTurnId)
-          
+
           if (!assistantTurn) {
              throw new Error('Assistant turn not found')
           }
@@ -691,14 +691,17 @@ export const useChatStore = create<ChatStore>()(
             .map((b) => b.textContent ?? '')
             .join('\n\n')
 
+          // Use the original assistant turn's request params for regeneration
+          // This preserves the model, provider, thinking level, etc.
+          const requestOptions = requestParamsToOptions(assistantTurn.requestParams)
+
           // Re-send the user's content to create a new sibling response
           const { userTurn: newUserTurn } = await api.turns.send(
             userMessageText,
             {
               chatId,
               prevTurnId: userTurn.prevTurnId,
-              // Regeneration currently uses default chat request options.
-              requestOptions: DEFAULT_CHAT_REQUEST_OPTIONS,
+              requestOptions,
             }
           )
 

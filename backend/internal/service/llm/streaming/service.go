@@ -49,6 +49,7 @@ type Service struct {
 	txManager            repositories.TransactionManager
 	systemPromptResolver llmSvc.SystemPromptResolver
 	messageBuilder       llmSvc.MessageBuilder
+	toolLimitResolver    llmSvc.ToolLimitResolver // Resolves tool round limits (tier-ready)
 	logger               *slog.Logger
 }
 
@@ -68,6 +69,7 @@ func NewService(
 	txManager            repositories.TransactionManager,
 	systemPromptResolver llmSvc.SystemPromptResolver,
 	messageBuilder       llmSvc.MessageBuilder,
+	toolLimitResolver    llmSvc.ToolLimitResolver,
 	logger               *slog.Logger,
 ) llmSvc.StreamingService {
 	return &Service{
@@ -85,6 +87,7 @@ func NewService(
 		txManager:            txManager,
 		systemPromptResolver: systemPromptResolver,
 		messageBuilder:       messageBuilder,
+		toolLimitResolver:    toolLimitResolver,
 		logger:               logger,
 	}
 }
@@ -160,6 +163,9 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 			// No mapping found - default to openrouter (has all models)
 			provider = "openrouter"
 		}
+		// Persist resolved provider to request_params for turn history/edit
+		// This ensures we always know which provider was actually used
+		requestParams["provider"] = provider
 	}
 
 	// Resolve system prompt from user, project, chat, and selected skills
@@ -202,12 +208,14 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		}
 
 		// Create user turn
+		// Store request_params on user turn so it's available when editing
 		turn = &llmModels.Turn{
-			ChatID:     chatContext.chatID,
-			PrevTurnID: req.PrevTurnID,
-			Role:       req.Role,
-			Status:     "complete", // User turn is immediately complete
-			CreatedAt:  now,
+			ChatID:        chatContext.chatID,
+			PrevTurnID:    req.PrevTurnID,
+			Role:          req.Role,
+			Status:        "complete", // User turn is immediately complete
+			RequestParams: requestParams,
+			CreatedAt:     now,
 		}
 
 		if err := s.turnWriter.CreateTurn(txCtx, turn); err != nil {
@@ -354,6 +362,18 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		return nil, fmt.Errorf("failed to get provider '%s': %w", provider, err)
 	}
 
+	// Resolve tool round limit for this user (tier-ready)
+	toolRoundLimit, err := s.toolLimitResolver.GetToolRoundLimit(ctx, req.UserID)
+	if err != nil {
+		// Log warning and fall back to config default
+		s.logger.Warn("failed to get tool round limit, using config default",
+			"error", err,
+			"user_id", req.UserID,
+			"fallback_limit", s.config.MaxToolRounds,
+		)
+		toolRoundLimit = s.config.MaxToolRounds
+	}
+
 	// Create StreamExecutor immediately (before goroutine) to avoid race condition
 	// This ensures SSE clients can connect while we're preparing the request
 	executor := NewStreamExecutor(
@@ -366,7 +386,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		toolRegistry,          // Per-request ToolRegistry with project-specific tools
 		s.messageBuilder,      // MessageBuilder (for continuation message building)
 		s.logger,
-		s.config.MaxToolRounds, // Maximum tool execution rounds (configurable via MAX_TOOL_ROUNDS env)
+		toolRoundLimit,        // Per-user tool round limit (tier-ready)
 		s.config.Debug,        // Pass DEBUG flag for optional event IDs
 	)
 

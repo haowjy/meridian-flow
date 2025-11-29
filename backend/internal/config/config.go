@@ -19,7 +19,7 @@ type Config struct {
 	OpenRouterAPIKey string
 	DefaultProvider  string
 	DefaultModel     string
-	MaxToolRounds    int    // Maximum tool execution rounds to prevent infinite loops
+	MaxToolRounds    int    // Fallback limit if resolver fails (default: 10)
 	// Search API Configuration (optional - for web_search tool)
 	SearchAPIKey      string // API key for external search provider
 	SearchAPIProvider string // Provider name: "tavily", "brave", "serper", etc.
@@ -53,7 +53,7 @@ func Load() *Config {
 		OpenRouterAPIKey: getEnv("OPENROUTER_API_KEY", ""),
 		DefaultProvider:  getEnv("DEFAULT_PROVIDER", "openrouter"),
 		DefaultModel:     getEnv("DEFAULT_MODEL", "moonshotai/kimi-k2-thinking"),
-		MaxToolRounds:    getEnvInt("MAX_TOOL_ROUNDS", 5),
+		MaxToolRounds:    getEnvInt("MAX_TOOL_ROUNDS", 10),
 		// Search API Configuration (optional)
 		SearchAPIKey:      getEnv("SEARCH_API_KEY", ""),
 		SearchAPIProvider: getEnv("SEARCH_API_PROVIDER", "tavily"),

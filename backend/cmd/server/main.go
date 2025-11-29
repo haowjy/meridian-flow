@@ -23,6 +23,7 @@ import (
 	serviceDocsys "meridian/internal/service/docsystem"
 	"meridian/internal/service/docsystem/converter"
 	serviceLLM "meridian/internal/service/llm"
+	domainLLM "meridian/internal/domain/services/llm"
 
 	"github.com/joho/godotenv"
 	"github.com/rs/cors"
@@ -34,6 +35,11 @@ func main() {
 
 	// Load configuration
 	cfg := config.Load()
+
+	// Create tool limit resolver (tier-ready architecture)
+	// Uses MAX_TOOL_ROUNDS from env (default: 10) - generous while no subscription tiers
+	// When Stripe subscriptions go live, swap in JWTTierResolver (one line change)
+	toolLimitResolver := domainLLM.NewConfigToolLimitResolver(cfg.MaxToolRounds)
 
 	// Setup structured logging
 	logLevel := slog.LevelInfo
@@ -136,6 +142,7 @@ func main() {
 		txManager,
 		capabilityRegistry,
 		authorizer,
+		toolLimitResolver,
 		logger,
 	)
 	if err != nil {

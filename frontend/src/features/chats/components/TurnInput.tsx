@@ -1,11 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useChatStore } from '@/core/stores/useChatStore'
+import { useChatPrefsStore } from '@/core/stores/useChatPrefsStore'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { ChatRequestControls } from '@/features/chats/components/ChatRequestControls'
 import { AutosizeTextarea } from '@/features/chats/components/AutosizeTextarea'
-import type { ChatRequestOptions } from '@/features/chats/types'
-import { DEFAULT_CHAT_REQUEST_OPTIONS } from '@/features/chats/types'
 
 interface TurnInputProps {
   chatId?: string      // Existing chat
@@ -14,31 +13,43 @@ interface TurnInputProps {
   focusKey?: string | null
 }
 
-const DEFAULT_MODEL_ID = 'moonshotai/kimi-k2-thinking'
-const DEFAULT_MODEL_LABEL = 'Kimi K2 Thinking'
-const DEFAULT_PROVIDER_ID = 'openrouter'
-
 export function TurnInput({ chatId, projectId, focusKey }: TurnInputProps) {
   const [value, setValue] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [options, setOptions] = useState<ChatRequestOptions>({
-    ...DEFAULT_CHAT_REQUEST_OPTIONS,
-    modelId: DEFAULT_MODEL_ID,
-    modelLabel: DEFAULT_MODEL_LABEL,
-    providerId: DEFAULT_PROVIDER_ID,
-  })
 
-  const { createTurn, startNewChat, isLoadingTurns, streamingTurnId, interruptStreamingTurn } = useChatStore(
+  // Chat preferences from dedicated store (persisted globally, session-aware)
+  const { currentOptions, initOptionsForChat, updateOptionsManually } = useChatPrefsStore()
+
+  const { createTurn, startNewChat, isLoadingTurns, streamingTurnId, interruptStreamingTurn, turns } = useChatStore(
     useShallow((s) => ({
       createTurn: s.createTurn,
       startNewChat: s.startNewChat,
       isLoadingTurns: s.isLoadingTurns,
       streamingTurnId: s.streamingTurnId,
       interruptStreamingTurn: s.interruptStreamingTurn,
+      turns: s.turns,
     })),
   )
 
   const setActiveChat = useUIStore((s) => s.setActiveChat)
+
+  // Get last turn's request params (for per-conversation preference)
+  const lastTurnParams = useMemo(() => {
+    if (!turns || turns.length === 0) return null
+    // Find the last turn with requestParams (usually the last user turn)
+    for (let i = turns.length - 1; i >= 0; i--) {
+      if (turns[i].requestParams) {
+        return turns[i].requestParams
+      }
+    }
+    return null
+  }, [turns])
+
+  // Re-initialize options when chat changes or on mount
+  // Store handles new-chat vs existing-chat logic internally
+  useEffect(() => {
+    initOptionsForChat(chatId, lastTurnParams)
+  }, [chatId, lastTurnParams, initOptionsForChat])
 
   const isStreaming = Boolean(streamingTurnId)
 
@@ -55,10 +66,10 @@ export function TurnInput({ chatId, projectId, focusKey }: TurnInputProps) {
     try {
       if (chatId) {
         // Existing chat flow
-        await createTurn(chatId, messageText, options)
+        await createTurn(chatId, messageText, currentOptions)
       } else if (projectId) {
         // Cold start flow - creates chat atomically
-        const chat = await startNewChat(projectId, messageText, options)
+        const chat = await startNewChat(projectId, messageText, currentOptions)
         setActiveChat(chat.id)
       }
     } finally {
@@ -79,8 +90,8 @@ export function TurnInput({ chatId, projectId, focusKey }: TurnInputProps) {
           />
           <AttachedBlocksRow />
           <ChatRequestControls
-            options={options}
-            onOptionsChange={setOptions}
+            options={currentOptions}
+            onOptionsChange={updateOptionsManually}
             onSend={handleSend}
             isSendDisabled={!canSend}
             isStreaming={isStreaming}

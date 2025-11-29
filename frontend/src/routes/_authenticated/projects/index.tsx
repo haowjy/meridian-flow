@@ -7,7 +7,7 @@ import { useUserProfile, useAuthActions, UserMenuButton } from '@/features/auth'
 import { CardSkeleton } from '@/shared/components/ui/card'
 import { CardGrid } from '@/shared/components/CardGrid'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
-import { LogoWordmark } from '@/shared/components/LogoWordmark'
+import { Logo } from '@/shared/components'
 
 export const Route = createFileRoute('/_authenticated/projects/')({
   component: ProjectsPage,
@@ -41,7 +41,7 @@ function ProjectsPage() {
     return (
       <div className="container mx-auto max-w-6xl p-8">
         <div className="mb-4">
-          <LogoWordmark className="h-6" />
+          <Logo size={24} />
           <p className="mt-1 type-body text-muted-foreground">File management for creative writers</p>
         </div>
         <CardGrid>
@@ -82,7 +82,7 @@ function ProjectsPage() {
       )}
 
       <div className="mb-4">
-        <LogoWordmark className="h-6" />
+        <Logo size={24} />
         <p className="mt-1 type-body text-muted-foreground">File management for creative writers</p>
       </div>
 

@@ -587,11 +587,11 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 	// 4. Check iteration limit
 	se.toolIteration++
 	if se.toolIteration >= se.maxToolRounds {
-		se.logger.Warn("max tool rounds reached, completing turn",
+		se.logger.Warn("max tool rounds reached, executing final round with limit note",
 			"iterations", se.toolIteration,
 			"max_rounds", se.maxToolRounds,
 		)
-		return se.completeTurn(ctx, send, "max_tool_rounds", nil)
+		return se.executeToolsAndContinueWithLimit(ctx, send)
 	}
 
 	// 5. Load conversation history with tool results (using TurnNavigator + TurnReader)
@@ -648,6 +648,123 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 	// 10. Process continuation stream (recursive call)
 	// maxBlockSequence will be updated by processProviderStream -> processCompleteBlock
 	return se.processProviderStream(ctx, contStreamChan, send)
+}
+
+// executeToolsAndContinueWithLimit is called when tool round limit is reached.
+// It loads conversation history (including tool results just persisted), injects
+// a limit note into the last tool_result, and streams one final LLM response.
+// This allows graceful completion where the LLM synthesizes findings instead of abrupt cutoff.
+func (se *StreamExecutor) executeToolsAndContinueWithLimit(ctx context.Context, send func(mstream.Event)) error {
+	se.logger.Info("graceful completion: injecting limit note for final LLM response",
+		"iteration", se.toolIteration,
+		"max_rounds", se.maxToolRounds,
+	)
+
+	// 1. Load conversation history with tool results (using TurnNavigator + TurnReader)
+	path, err := se.turnNavigator.GetTurnPath(ctx, se.turnID)
+	if err != nil {
+		se.handleError(ctx, send, fmt.Errorf("failed to load turn path for graceful completion: %w", err))
+		return fmt.Errorf("failed to load turn path for graceful completion: %w", err)
+	}
+
+	// Load blocks for all turns in the path
+	for i := range path {
+		blocks, err := se.turnReader.GetTurnBlocks(ctx, path[i].ID)
+		if err != nil {
+			se.handleError(ctx, send, fmt.Errorf("failed to load blocks for turn %s: %w", path[i].ID, err))
+			return fmt.Errorf("failed to load blocks for turn %s: %w", path[i].ID, err)
+		}
+		path[i].Blocks = blocks
+	}
+
+	// 2. Build messages using MessageBuilder (pure conversion)
+	messages, err := se.messageBuilder.BuildMessages(ctx, path)
+	if err != nil {
+		se.handleError(ctx, send, fmt.Errorf("failed to build messages for graceful completion: %w", err))
+		return fmt.Errorf("failed to build messages for graceful completion: %w", err)
+	}
+
+	// 3. INJECT LIMIT NOTE into last tool_result message
+	// This tells the LLM it has reached the limit and should respond with gathered info
+	// Note: This modifies messages in-memory only (NOT persisted to database)
+	injectToolLimitNote(messages, se.toolIteration, se.maxToolRounds)
+
+	// 4. Create continuation request with tools DISABLED and system prompt override
+	// Triple-layer defense against tool requests:
+	// 1. Remove tools array (API won't recognize tool calls)
+	// 2. System prompt override (prevents LLM from outputting tool syntax)
+	// 3. Tool result limit note (provides context - already injected above)
+	paramsWithoutTools := *se.req.Params // Shallow copy
+	paramsWithoutTools.Tools = nil       // Layer 1: Remove tools - API won't accept tool calls
+
+	// Layer 2: Override system prompt to prevent LLM from outputting tool call syntax
+	limitInstruction := "\n\nIMPORTANT: You have reached your tool usage limit. " +
+		"Do NOT format any tool calls. " +
+		"Provide your answer in natural language based on the information you gathered. " +
+		"Let the user know you reached the tool limit and are providing your best answer with available information."
+
+	if paramsWithoutTools.System != nil {
+		originalPrompt := *paramsWithoutTools.System
+		updatedPrompt := originalPrompt + limitInstruction
+		paramsWithoutTools.System = &updatedPrompt
+	} else {
+		paramsWithoutTools.System = &limitInstruction
+	}
+
+	contReq := &domainllm.GenerateRequest{
+		Messages: messages,           // Contains limit note in last tool_result (Layer 3)
+		Model:    se.req.Model,
+		Params:   &paramsWithoutTools, // No tools + limit instruction
+	}
+
+	// 5. Call provider for final continuation stream
+	contStreamChan, err := se.provider.StreamResponse(ctx, contReq)
+	if err != nil {
+		se.handleError(ctx, send, fmt.Errorf("graceful completion stream failed: %w", err))
+		return fmt.Errorf("graceful completion stream failed: %w", err)
+	}
+
+	se.logger.Info("graceful completion stream started",
+		"iteration", se.toolIteration,
+		"next_expected_block", se.maxBlockSequence+1,
+	)
+
+	// 6. Reset tool collection (no more tool rounds allowed)
+	se.collectedTools = nil
+
+	// 7. Process final stream (will complete with end_turn stop_reason)
+	return se.processProviderStream(ctx, contStreamChan, send)
+}
+
+// injectToolLimitNote appends a limit notification to the last tool_result block.
+// This tells the LLM it has reached the maximum tool rounds and should respond
+// with the information gathered so far. The note is injected into messages
+// before sending to the provider, but is NOT persisted to the database.
+func injectToolLimitNote(messages []domainllm.Message, currentRound, maxRounds int) {
+	// Find last message with role="user" (tool results are sent as user messages)
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			// Find last tool_result block in this message
+			blocks := messages[i].Content
+			for j := len(blocks) - 1; j >= 0; j-- {
+				if blocks[j].BlockType == llmModels.BlockTypeToolResult {
+					// Inject limit note into the result field
+					// Content is already map[string]interface{} - no type assertion needed
+					content := blocks[j].Content
+					if result, exists := content["result"]; exists {
+						// Append limit note to existing result
+						resultStr := fmt.Sprintf("%v", result)
+						limitNote := fmt.Sprintf(
+							"\n\n---\nNote: You have reached the maximum tool rounds (%d/%d). Please provide your response based on the information you've gathered so far. No additional tool calls are available.",
+							currentRound, maxRounds,
+						)
+						content["result"] = resultStr + limitNote
+					}
+					return
+				}
+			}
+		}
+	}
 }
 
 // completeTurn marks the turn as complete and sends turn_complete event.
