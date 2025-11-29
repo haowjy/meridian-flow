@@ -235,7 +235,7 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
             <ChatListPanel projectId={projectId} />
           </CollapsiblePanel>
         }
-        center={<ActiveChatView />}
+        center={<ActiveChatView projectId={projectId} />}
         right={
           <CollapsiblePanel
             side="right"

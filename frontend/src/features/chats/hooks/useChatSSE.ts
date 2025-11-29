@@ -220,16 +220,9 @@ export function useChatSSE() {
                   const data = JSON.parse(msg.data) as TurnCompleteEvent
                   logger.debug('sse:turn_complete', data)
 
-                  if (data.stop_reason === 'max_tool_rounds') {
-                    toast.warning('Tool iteration limit reached', {
-                      description: 'The assistant used the maximum number of tool iterations (5). The conversation has been completed.',
-                      duration: 5000,
-                    })
-                  }
-                  
                   // Refresh the turn to ensure we have the final state (including any missing blocks or metadata)
                   if (chatId && data.turn_id) {
-                    refreshTurn(chatId, data.turn_id).catch(err => 
+                    refreshTurn(chatId, data.turn_id).catch(err =>
                       logger.error('sse:turn_complete:refresh_error', err)
                     )
                   }

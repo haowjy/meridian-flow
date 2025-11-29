@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useShallow } from 'zustand/react/shallow'
+import { Plus } from 'lucide-react'
 import { useChatStore } from '@/core/stores/useChatStore'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { useChatsForProject } from '@/features/chats/hooks/useChatsForProject'
 import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
+import { Button } from '@/shared/components/ui/button'
 import { ChatListHeader } from './ChatListHeader'
 import { ChatList } from './ChatList'
 import { ChatListEmpty } from './ChatListEmpty'
@@ -126,14 +128,22 @@ export function ChatListPanel({ projectId }: ChatListPanelProps) {
     <div className="chat-pane flex h-full flex-col bg-sidebar text-sidebar-foreground">
       {/* Single scroll container - scrollbar extends to top */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
-        {/* Sticky Header */}
+        {/* Sticky Header + New Chat Button */}
         <div className="sticky top-0 z-10 bg-sidebar relative">
-          <ChatListHeader
-            projectId={projectId}
-            isLoading={isLoading}
-            onNewChat={handleNewChat}
-            onBrandClick={handleBrandClick}
-          />
+          <ChatListHeader onBrandClick={handleBrandClick} />
+
+          {/* New Chat Button */}
+          <div className="px-3 pt-2">
+            <Button
+              className="w-full"
+              disabled={isLoading}
+              onClick={handleNewChat}
+            >
+              <Plus className="size-4 mr-2" />
+              New Chat
+            </Button>
+          </div>
+
           <HeaderGradientFade variant="sidebar" />
         </div>
 

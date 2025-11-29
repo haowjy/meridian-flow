@@ -1,12 +1,7 @@
-import { Plus } from 'lucide-react'
-import { Button } from '@/shared/components/ui/button'
-import { LogoWordmark } from '@/shared/components'
+import { Logo } from '@/shared/components'
 import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
 
 interface ChatListHeaderProps {
-  projectId: string
-  isLoading: boolean
-  onNewChat: () => void
   onBrandClick?: () => void
 }
 
@@ -14,47 +9,32 @@ interface ChatListHeaderProps {
  * Header for the chat list panel.
  *
  * Single responsibility:
- * - Render title + “New Chat” affordance.
- *
- * Reusable: can be swapped out or reused in other layouts that
- * need a minimal chat header.
+ * - Render sidebar toggle + centered logo.
  */
-export function ChatListHeader({
-  isLoading,
-  onNewChat,
-  onBrandClick,
-}: ChatListHeaderProps) {
+export function ChatListHeader({ onBrandClick }: ChatListHeaderProps) {
   return (
-    <div className="chat-pane-header flex h-12 items-center justify-between px-3 relative">
+    <div className="chat-pane-header flex h-12 items-center px-3">
       {/* Left: Toggle Sidebar */}
       <SidebarToggle side="left" />
 
-      {/* Center: Logo */}
-      <div className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center">
+      {/* Center: Logo (takes remaining space, centered) */}
+      <div className="flex-1 flex justify-center">
         {onBrandClick ? (
           <button
             type="button"
             onClick={onBrandClick}
-            className="min-w-0 text-left cursor-pointer transition-opacity hover:opacity-80"
+            className="cursor-pointer transition-opacity hover:opacity-80"
             aria-label="Back to projects"
           >
-            <LogoWordmark />
+            <Logo variant="compact" size={32} mono />
           </button>
         ) : (
-          <LogoWordmark />
+          <Logo variant="compact" size={32} mono />
         )}
       </div>
 
-      {/* Right: New Chat */}
-      <Button
-        size="icon"
-        className="size-5"
-        disabled={isLoading}
-        onClick={onNewChat}
-        aria-label="New chat"
-      >
-        <Plus className="size-3" />
-      </Button>
+      {/* Right spacer to balance the toggle */}
+      <div className="size-8" />
     </div>
   )
 }

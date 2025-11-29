@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import type { Turn } from '@/features/chats/types'
+import type { Turn, ChatRequestOptions } from '@/features/chats/types'
 import { cn } from '@/lib/utils'
 import { Card } from '@/shared/components/ui/card'
 import { TurnActionBar } from './TurnActionBar'
@@ -48,9 +48,8 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
   )
 
   const handleSaveEdit = useCallback(
-    async (newMessageText: string) => {
-      // TODO: extend editTurn to accept ChatRequestOptions and forward them to request_params.
-      await editTurn(turn.chatId, turn.id, newMessageText)
+    async (newMessageText: string, options: ChatRequestOptions) => {
+      await editTurn(turn.chatId, turn.id, newMessageText, options)
       setIsEditing(false)
     },
     [editTurn, turn.chatId, turn.id]
@@ -71,6 +70,7 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
           isOpen={isEditing}
           onClose={handleCloseEdit}
           initialContent={extractTextContent(turn)}
+          originalRequestParams={turn.requestParams}
           onSave={handleSaveEdit}
         />
       ) : (

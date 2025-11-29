@@ -74,6 +74,7 @@ func SetupServices(
 	txManager repositories.TransactionManager,
 	capabilityRegistry *capabilities.Registry,
 	authorizer services.ResourceAuthorizer,
+	toolLimitResolver llmSvc.ToolLimitResolver,
 	logger *slog.Logger,
 ) (*Services, *mstream.Registry, error) {
 	// Create shared validator
@@ -148,6 +149,7 @@ func SetupServices(
 		txManager,
 		systemPromptResolver,
 		messageBuilder,
+		toolLimitResolver, // Tool round limit resolver (tier-ready)
 		logger,
 	)
 

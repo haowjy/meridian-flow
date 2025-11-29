@@ -1,37 +1,43 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { Button } from '@/shared/components/ui/button'
 import { AutosizeTextarea } from '@/features/chats/components/AutosizeTextarea'
 import { ChatRequestControls } from '@/features/chats/components/ChatRequestControls'
-import type { ChatRequestOptions } from '@/features/chats/types'
+import type { ChatRequestOptions, RequestParams } from '@/features/chats/types'
+import { requestParamsToOptions } from '@/features/chats/types'
 
 interface EditTurnDialogProps {
   isOpen: boolean
   onClose: () => void
   initialContent: string
-  onSave: (content: string) => Promise<void>
+  /** Original request params from the turn being edited */
+  originalRequestParams?: RequestParams | null
+  onSave: (content: string, options: ChatRequestOptions) => Promise<void>
 }
 
 export function EditTurnDialog({
   isOpen,
   onClose,
   initialContent,
+  originalRequestParams,
   onSave,
 }: EditTurnDialogProps) {
   const [content, setContent] = useState(initialContent)
   const [isSaving, setIsSaving] = useState(false)
-  const [options, setOptions] = useState<ChatRequestOptions>({
-    modelId: 'moonshotai/kimi-k2-thinking',
-    modelLabel: 'Kimi K2 Thinking',
-    providerId: 'openrouter',
-    reasoning: 'low',
-  })
 
-  // Reset content when dialog opens/initialContent changes
+  // Initialize options from original request params
+  const initialOptions = useMemo(
+    () => requestParamsToOptions(originalRequestParams),
+    [originalRequestParams]
+  )
+  const [options, setOptions] = useState<ChatRequestOptions>(initialOptions)
+
+  // Reset content and options when dialog opens
   useEffect(() => {
     if (isOpen) {
       setContent(initialContent)
+      setOptions(requestParamsToOptions(originalRequestParams))
     }
-  }, [isOpen, initialContent])
+  }, [isOpen, initialContent, originalRequestParams])
 
 
 
@@ -41,8 +47,7 @@ export function EditTurnDialog({
 
     setIsSaving(true)
     try {
-      // TODO: extend onSave to accept ChatRequestOptions and forward them to editTurn request_params.
-      await onSave(content)
+      await onSave(content, options)
       onClose()
     } catch (error) {
       console.error('Failed to save turn:', error)

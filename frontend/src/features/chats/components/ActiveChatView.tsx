@@ -13,6 +13,11 @@ import { UserMessageSkeleton } from './skeletons/UserMessageSkeleton'
 import { AIMessageSkeleton } from './skeletons/AIMessageSkeleton'
 import { useProjectStore } from '@/core/stores/useProjectStore'
 
+interface ActiveChatViewProps {
+  /** Project ID passed directly from route - avoids async store race condition */
+  projectId: string
+}
+
 /**
  * Center panel chat view.
  *
@@ -25,7 +30,7 @@ import { useProjectStore } from '@/core/stores/useProjectStore'
  * - Know how chats are loaded (left panel concern)
  * - Contain SSE/EventSource details (delegated to useChatSSE)
  */
-export function ActiveChatView() {
+export function ActiveChatView({ projectId }: ActiveChatViewProps) {
   const [showSkeleton, setShowSkeleton] = useState(false)
 
   const { activeChatId, chatFocusVersion } = useUIStore(useShallow((s) => ({
@@ -38,15 +43,11 @@ export function ActiveChatView() {
     currentTurnId: s.currentTurnId,
   })))
 
-  const { projectId, projectName } = useProjectStore(useShallow((state) => {
-    const currentId = state.currentProjectId
-    if (!currentId) return { projectId: null, projectName: null }
-    const project = state.projects.find((p) => p.id === currentId)
-    return {
-      projectId: currentId,
-      projectName: project?.name ?? null,
-    }
-  }))
+  // Only need projectName for display - projectId comes from prop (avoids async race)
+  const projectName = useProjectStore((state) => {
+    const project = state.projects.find((p) => p.id === projectId)
+    return project?.name ?? null
+  })
 
   // Always call hooks unconditionally to respect Rules of Hooks.
   useChatSSE()
@@ -92,7 +93,7 @@ export function ActiveChatView() {
           {/* Input at bottom */}
           <div className="bg-background">
             <TurnInput
-              projectId={projectId ?? undefined}
+              projectId={projectId}
               focusKey={`${activeChatId ?? 'none'}:${chatFocusVersion}`}
             />
           </div>

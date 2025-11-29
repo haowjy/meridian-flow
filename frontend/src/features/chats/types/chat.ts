@@ -37,6 +37,21 @@ export interface TurnBlock {
   createdAt: Date
 }
 
+/**
+ * Request parameters stored with each turn.
+ * Used to restore original settings when editing/regenerating turns.
+ */
+export interface RequestParams {
+  provider?: string
+  model?: string
+  temperature?: number
+  max_tokens?: number
+  thinking_enabled?: boolean
+  thinking_level?: 'low' | 'medium' | 'high'
+  // Additional params can be accessed via the Record type
+  [key: string]: unknown
+}
+
 export interface Turn {
   id: string
   chatId: string
@@ -52,6 +67,8 @@ export interface Turn {
   siblingIds: string[]
   blocks: TurnBlock[]
   lastAccessedAt?: Date
+  /** Original request params used for this turn (provider, model, thinking, etc.) */
+  requestParams?: RequestParams | null
 }
 
 /**
