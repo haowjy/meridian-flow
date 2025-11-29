@@ -44,6 +44,21 @@ feature: "LLM Providers"
 
 ---
 
+## Known Limitations
+
+### OpenRouter + Anthropic Models
+
+**Anthropic models via OpenRouter do NOT support tool continuation with thinking.**
+
+OpenRouter's `reasoning_details` format loses Anthropic's cryptographic `signature` field, causing continuation requests to fail with:
+```
+Expected `thinking` or `redacted_thinking`, but found `text`
+```
+
+**Workaround:** Use direct Anthropic API for Claude models.
+
+---
+
 ## Related
 
 - See [model-capabilities.md](model-capabilities.md) for capability registry

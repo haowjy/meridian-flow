@@ -103,7 +103,7 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
         } catch (error) {
           // Non-fatal for the layout; header will fallback until projects page refreshes.
           // Errors are surfaced elsewhere when listing projects; we still log for debuggability.
-          if ((error as any)?.name === 'AbortError') {
+          if ((error as Error)?.name === 'AbortError') {
             logger.debug('Project fetch aborted in workspace layout (expected during unmount/StrictMode)')
           } else {
             logger.warn('Failed to ensure project in workspace layout', error)
