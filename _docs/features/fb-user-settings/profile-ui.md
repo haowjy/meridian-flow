@@ -61,4 +61,4 @@ utils/
 ## Implementation Files
 
 - `frontend/src/features/auth/` - All hooks, components, types
-- `frontend/src/app/settings/page.tsx` - Settings page
+- `frontend/src/routes/_authenticated/settings.tsx` - Settings page

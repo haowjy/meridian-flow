@@ -8,7 +8,7 @@ Meridian is a file management system for creative writers, starting with fiction
 
 **Current Status:**
 - ✅ Backend (Go + net/http + PostgreSQL): File system complete, Auth complete (JWT/JWKS), Chat/LLM in progress (Anthropic provider working, streaming complete)
-- ✅ Frontend (Next.js + TipTap): Document editor complete, Chat UI complete
+- ✅ Frontend (Vite + TanStack Router + TipTap): Document editor complete, Chat UI complete
 
 For product details, see `_docs/high-level/1-overview.md`.
 
@@ -95,7 +95,7 @@ Then, these principles can also help you make architectural decisions and other 
 - **Product/high-level**: `_docs/high-level/` - Product vision, MVP specs, user stories
 - **Technical details**: `_docs/technical/` - Deep-dive architecture, implementation specifics
   - **Backend**: `_docs/technical/backend/` - Go backend architecture, API design
-  - **Frontend**: `_docs/technical/frontend/` - Next.js frontend architecture, patterns
+  - **Frontend**: `_docs/technical/frontend/` - Vite + TanStack Router frontend architecture, patterns
   - **Authentication**: `_docs/technical/auth-overview.md` - Cross-stack auth flow (Supabase)
   - **Streaming/SSE**: `_docs/technical/llm/streaming/` - Real-time LLM responses, block types
 - **Documentation structure**: `_docs/README.md` - How docs are organized

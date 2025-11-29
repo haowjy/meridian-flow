@@ -1,8 +1,10 @@
 import { useUIStore } from '@/core/stores/useUIStore'
-import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime'
+import type { useNavigate } from '@tanstack/react-router'
 import { makeLogger } from '@/core/lib/logger'
 
 const logger = makeLogger('panel-helpers')
+
+type NavigateFunction = ReturnType<typeof useNavigate>
 
 /**
  * Panel coordination helpers for managing workspace state.
@@ -18,17 +20,17 @@ const logger = makeLogger('panel-helpers')
 /**
  * Opens a document in the editor.
  * - Directly sets UI state to show editor (handles same-document clicks)
- * - Navigates to document URL via router.push()
+ * - Navigates to document URL via navigate()
  * - WorkspaceLayout effect will also sync if URL actually changes
  *
  * @param documentId - The ID of the document to open
  * @param projectId - The current project ID
- * @param router - Next.js router instance from useRouter()
+ * @param navigate - TanStack Router navigate function from useNavigate()
  */
 export function openDocument(
   documentId: string,
   projectId: string,
-  router: AppRouterInstance
+  navigate: NavigateFunction
 ) {
   const store = useUIStore.getState()
 
@@ -40,19 +42,22 @@ export function openDocument(
 
   // Navigate to document URL (updates browser history)
   // If URL is already this document, router won't navigate, but state is already set above
-  router.push(`/projects/${projectId}/documents/${documentId}`)
+  navigate({
+    to: '/projects/$id/documents/$documentId',
+    params: { id: projectId, documentId },
+  })
 }
 
 /**
  * Closes the editor and returns to document tree view.
  * - Directly sets UI state to show tree
- * - Navigates to project tree URL via router.push()
+ * - Navigates to project tree URL via navigate()
  * - WorkspaceLayout effect will also sync if URL actually changes
  *
  * @param projectId - The current project ID
- * @param router - Next.js router instance from useRouter()
+ * @param navigate - TanStack Router navigate function from useNavigate()
  */
-export function closeEditor(projectId: string, router: AppRouterInstance) {
+export function closeEditor(projectId: string, navigate: NavigateFunction) {
   const store = useUIStore.getState()
 
   // Set UI state directly
@@ -61,7 +66,10 @@ export function closeEditor(projectId: string, router: AppRouterInstance) {
   store.setRightPanelState('documents')
 
   // Navigate to tree URL (updates browser history)
-  router.push(`/projects/${projectId}`)
+  navigate({
+    to: '/projects/$id',
+    params: { id: projectId },
+  })
 }
 
 /**

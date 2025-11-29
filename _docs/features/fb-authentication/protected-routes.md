@@ -6,134 +6,204 @@ feature: "Protected Routes"
 
 # Protected Routes
 
-**Automatic route protection using Next.js 16 proxy.**
+**Automatic route protection using TanStack Router `beforeLoad` hooks.**
 
-## Status:  Complete
+## Status: ✅ Complete
 
 ---
 
 ## Implementation
 
-### Next.js Proxy
+### TanStack Router Layout Route
 
-**File**: `/Users/jimmyyao/gitrepos/meridian/frontend/src/proxy.ts`
+**File**: `frontend/src/routes/_authenticated.tsx`
 
 **How it works**:
-- Next.js 16's `next()` function automatically invokes proxy
-- Proxy checks authentication status before rendering page
-- Automatic redirects based on auth state
-- No manual protection needed in components
+- Layout route wraps all protected routes
+- `beforeLoad` hook executes before rendering any child routes
+- Checks authentication status and redirects if needed
+- Automatic deep linking support via redirect query parameter
 
-**Configuration** (`next.config.ts`):
+**Code**:
 ```typescript
-experimental: {
-  authInterrupts: true // Enable Next.js 16 proxy
-}
+import { createFileRoute, redirect, Outlet } from '@tanstack/react-router'
+import { createClient } from '@/core/supabase/client'
+
+export const Route = createFileRoute('/_authenticated')({
+  beforeLoad: async ({ location }) => {
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+
+    if (!session) {
+      throw redirect({
+        to: '/login',
+        search: { redirect: location.href },
+      })
+    }
+  },
+  component: () => <Outlet />,
+})
 ```
-
----
-
-## Redirect Logic
-
-### Unauthenticated Users
-**Redirects**: All routes � `/login` (except `/login` itself)
-
-**Protected Routes**:
-- `/projects`
-- `/projects/[id]`
-- `/projects/[id]/documents/[documentId]`
-- All other authenticated routes
-
-### Authenticated Users
-**Redirects**: `/login` � `/projects`, `/` � `/projects`
-
-**Landing page behavior**:
-- Anonymous users: See landing page at `/`
-- Authenticated users: Auto-redirect to `/projects`
 
 ---
 
 ## Route Structure
 
 ```
-/                           # Landing page (public)
-/login                      # Login page (public, redirects if authenticated)
-/projects                   # Project list (protected)
-/projects/[id]              # Project workspace (protected)
-/projects/[id]/documents/[documentId]  # Document editor (protected)
+src/routes/
+├── __root.tsx                        # Root layout (global)
+├── _authenticated.tsx                # Auth guard layout
+├── _authenticated/                   # All protected routes nested here
+│   ├── projects/
+│   │   ├── index.tsx                 # /projects
+│   │   └── $id/
+│   │       ├── index.tsx             # /projects/:id
+│   │       └── documents/
+│   │           └── $documentId.tsx   # /projects/:id/documents/:documentId
+│   └── settings.tsx                  # /settings
+├── auth/
+│   └── callback.tsx                  # /auth/callback (OAuth)
+├── index.tsx                         # / (public, redirects if authenticated)
+└── login.tsx                         # /login (public, redirects if authenticated)
+```
+
+**Pattern**: All protected routes must be nested under `_authenticated/` directory
+
+---
+
+## Redirect Logic
+
+### Unauthenticated Users
+**Behavior**: Redirect to `/login` with return URL
+
+**Flow**:
+1. User visits `/projects/abc/documents/def`
+2. `beforeLoad` detects no session
+3. Redirects to `/login?redirect=/projects/abc/documents/def`
+4. After login, OAuth callback uses `redirect` param to return to original URL
+
+**Protected Routes**:
+- `/projects` - Project list
+- `/projects/:id` - Project workspace
+- `/projects/:id/documents/:documentId` - Document editor
+- `/settings` - User settings
+
+### Authenticated Users on Public Routes
+**Behavior**: Public routes (/, /login) redirect authenticated users to `/projects`
+
+**Implementation**: Each public route checks session and redirects:
+```typescript
+// In src/routes/index.tsx or login.tsx
+beforeLoad: async () => {
+  const supabase = createClient()
+  const { data: { session } } = await supabase.auth.getSession()
+
+  if (session) {
+    throw redirect({ to: '/projects' })
+  }
+}
+```
+
+---
+
+## Deep Linking
+
+**Fully Supported**: Users can bookmark and navigate directly to any protected route
+
+**Flow**:
+1. User visits bookmarked URL: `/projects/abc/documents/def`
+2. `beforeLoad` checks authentication
+3. **If authenticated**: Route renders normally
+4. **If not authenticated**:
+   - Redirect to `/login?redirect=/projects/abc/documents/def`
+   - After OAuth completes, `/auth/callback` reads `redirect` param
+   - User lands on original bookmarked URL
+
+**Implementation** (`src/routes/auth/callback.tsx`):
+```typescript
+export const Route = createFileRoute('/auth/callback')({
+  validateSearch: (search: Record<string, unknown>) => ({
+    code: search.code as string | undefined,
+    next: (search.next as string) ?? '/projects',  // Default fallback
+  }),
+  // ... handles OAuth code exchange and redirects to 'next' URL
+})
 ```
 
 ---
 
 ## Session Check
 
-**Implementation**:
-```typescript
-// In proxy.ts
-const supabase = await createClient()
-const { data: { user } } = await supabase.auth.getUser()
+**Method**: `supabase.auth.getSession()`
 
-if (!user) {
-  // Redirect to /login
+**Performance**: Fast cookie-based check, no network request
+
+**What it checks**:
+- Cookie exists and is valid
+- JWT hasn't expired
+- Session contains user data
+
+**Code Pattern**:
+```typescript
+const supabase = createClient()
+const { data: { session } } = await supabase.auth.getSession()
+
+if (!session) {
+  // Not authenticated
 } else {
-  // Allow access
+  // Authenticated: session.user.id, session.user.email available
 }
 ```
 
-**Performance**: Session check is fast (cookie-based, no network request)
+---
+
+## Manual Protection (Not Needed)
+
+TanStack Router's `beforeLoad` hooks eliminate the need for:
+- ❌ `useEffect` checks in components
+- ❌ HOC (Higher-Order Components)
+- ❌ Manual redirects in components
+- ❌ Client-side guard wrappers
+
+**Reason**: Layout route protects all children automatically
 
 ---
 
-## Deep Linking
+## Comparison to Previous Approach
 
-**Supported**: Users can bookmark and navigate directly to documents
-
-**Flow**:
-1. User visits `/projects/abc123/documents/def456`
-2. Proxy checks authentication
-3. If authenticated: Render page
-4. If not authenticated: Redirect to `/login`, store original URL
-5. After login: Redirect back to original URL
-
-**Note**: Return URL storage not yet implemented (always redirects to `/projects`)
-
----
-
-## Manual Protection (Not Used)
-
-**Alternative approaches not needed**:
-- L `useEffect` checks in components
-- L HOC (Higher-Order Components)
-- L Manual redirects in components
-- L Middleware (Next.js middleware)
-
-**Reason**: Proxy handles everything automatically
-
----
-
-## Health Check Exception
-
-**Backend**: `/health` endpoint excluded from auth (for load balancers)
-
-**Frontend**: No equivalent exclusion needed (no public API routes)
+| Feature | Next.js 16 Proxy | TanStack Router `beforeLoad` |
+|---------|------------------|------------------------------|
+| **Mechanism** | `next()` function + `authInterrupts` | Layout route + `beforeLoad` hook |
+| **Config** | `next.config.ts` required | File-based, no config |
+| **Redirect** | Automatic | `throw redirect()` |
+| **Deep Linking** | Manual implementation | Built-in via search params |
+| **Loading State** | Brief flash (limitation) | Clean transition |
+| **Type Safety** | Moderate | Excellent (full TypeScript) |
 
 ---
 
 ## Testing
 
 **Dev Mode**:
-1. Visit protected route while logged out � redirects to `/login`
-2. Login with Google � redirects to `/projects`
-3. Visit `/login` while logged in � redirects to `/projects`
-4. Logout � next protected route visit redirects to `/login`
+1. Visit `/projects` while logged out → redirects to `/login?redirect=/projects`
+2. Login with Google → OAuth callback redirects to `/projects`
+3. Visit `/login` while logged in → redirects to `/projects`
+4. Bookmark `/projects/abc/documents/def` while logged out
+5. Login → lands on bookmarked document
+
+**Production**: Same behavior, tested via deployment
 
 ---
 
 ## Known Gaps
 
-1. **No return URL** - After login, always redirects to `/projects` (doesn't remember where user was going)
-2. **No loading state** - Brief flash before redirect (Next.js proxy limitation)
-3. **No custom 401 page** - Just redirects, no "unauthorized" message
+1. **No custom 401 page** - Just redirects, no "unauthorized" message shown to user
+2. **No role-based protection** - All authenticated users have same access (no RBAC yet)
+
+**Future Enhancements**:
+- Add role checks in `beforeLoad` for RBAC
+- Custom "unauthorized" error page for insufficient permissions
+- Loading spinner during auth check
 
 ---
 
@@ -141,4 +211,5 @@ if (!user) {
 
 - See [supabase-integration.md](supabase-integration.md) for session management
 - See [jwt-validation.md](jwt-validation.md) for backend auth
-- See `/Users/jimmyyao/gitrepos/meridian/frontend/src/proxy.ts` for implementation
+- See `frontend/src/routes/_authenticated.tsx` for implementation
+- See `frontend/src/routes/auth/callback.tsx` for OAuth flow

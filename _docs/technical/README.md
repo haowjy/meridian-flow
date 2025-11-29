@@ -43,7 +43,7 @@ Lean, up-to-date references for engineers. Prefer code over prose; include file/
 
 ```mermaid
 flowchart LR
-  FE["Next.js Frontend\n(Zustand + Dexie)"]
+  FE["Vite + TanStack Router Frontend\n(Zustand + Dexie)"]
   API["Go + Fiber API\n(Handler → Service → Repository)"]
   DB[("PostgreSQL\n(Supabase)")]
 
@@ -85,7 +85,7 @@ Supabase Auth integration with JWT-based authentication:
 - Repos: backend/internal/repository/postgres/
 - Handlers: backend/internal/handler/
 
-## Frontend (Next.js)
+## Frontend (Vite + TanStack Router)
 
 **Overview:** [frontend/README.md](frontend/README.md)
 

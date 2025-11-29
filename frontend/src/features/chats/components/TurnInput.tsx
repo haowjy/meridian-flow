@@ -1,5 +1,3 @@
-"use client"
-
 import { useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useChatStore } from '@/core/stores/useChatStore'

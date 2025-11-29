@@ -56,7 +56,7 @@ All authentication features are fully implemented and production-ready.
 #### Supabase Auth Integration
 **Status**: âœ… Complete
 - Cookie-based sessions with automatic JWT refresh
-- Browser + Server client factories
+- Browser client factory (Vite is client-only)
 - Full JWT injection into API calls
 - See [supabase-integration.md](supabase-integration.md)
 
@@ -77,8 +77,8 @@ All authentication features are fully implemented and production-ready.
 
 #### Protected Routes
 **Status**: âœ… Complete
-- Next.js 16 proxy for route protection
-- Auto-redirect: unauthenticated â†’ `/login`, authenticated â†’ `/projects`
+- TanStack Router `beforeLoad` hooks for route protection
+- Auto-redirect: unauthenticated â†' `/login`, authenticated â†' `/projects`
 - Public routes: `/login`, `/auth/callback`, `/health`
 - See [protected-routes.md](protected-routes.md)
 
@@ -95,10 +95,10 @@ All authentication features are fully implemented and production-ready.
 - `backend/cmd/server/main.go` - Middleware wiring + authorizer injection
 
 ### Frontend Files
-- `frontend/src/core/supabase/client.ts` - Supabase client factories
-- `frontend/src/app/login/page.tsx` - Login page with Google OAuth
-- `frontend/src/proxy.ts` - Route protection proxy
-- `frontend/src/middleware.ts` - Next.js middleware for auth
+- `frontend/src/core/supabase/client.ts` - Supabase browser client
+- `frontend/src/routes/login.tsx` - Login page with Google OAuth
+- `frontend/src/routes/_authenticated.tsx` - Route protection via `beforeLoad` hooks
+- `frontend/src/routes/auth/callback.tsx` - OAuth callback handler
 
 ---
 

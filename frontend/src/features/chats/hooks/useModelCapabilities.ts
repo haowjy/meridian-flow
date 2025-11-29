@@ -1,5 +1,3 @@
-"use client"
-
 import { useEffect, useState } from 'react'
 import { api, type ModelCapabilitiesProvider } from '@/core/lib/api'
 import { handleApiError } from '@/core/lib/errors'

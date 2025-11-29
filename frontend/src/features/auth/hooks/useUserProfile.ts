@@ -1,5 +1,3 @@
-'use client'
-
 import { useMemo } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { useSupabaseSession } from './useSupabaseSession'

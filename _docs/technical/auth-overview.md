@@ -6,18 +6,18 @@ status: complete
 
 # Authentication Architecture
 
-Complete authentication flow across the Meridian stack: Frontend (Next.js) → Supabase Auth → Backend (Go).
+Complete authentication flow across the Meridian stack: Frontend (Vite + TanStack Router) → Supabase Auth → Backend (Go).
 
 ## System Overview
 
 ```mermaid
 flowchart TD
-    User[User] -->|1. Login| Frontend[Next.js Frontend]
+    User[User] -->|1. Login| Frontend[Vite Frontend]
     Frontend -->|2. Authenticate| Supabase[Supabase Auth]
     Supabase -->|3. JWT + Session| Frontend
     Frontend -->|4. Store in Cookie| Cookie[HTTPOnly Cookie]
 
-    User2[User] -->|5. Use App| Frontend2[Next.js Frontend]
+    User2[User] -->|5. Use App| Frontend2[Vite Frontend]
     Frontend2 -->|6. Read Session| Cookie2[Cookie]
     Frontend2 -->|7. API Request + JWT| Backend[Go Backend]
     Backend -->|8. Validate JWT| JWKS[Supabase JWKS]
@@ -34,21 +34,21 @@ flowchart TD
 
 ## Components
 
-### Frontend (Next.js + Supabase Auth)
+### Frontend (Vite + TanStack Router + Supabase Auth)
 **Status**: ✅ Complete
 
 **Responsibilities**:
-- User authentication UI (email/password, OAuth)
+- User authentication UI (Google OAuth only)
 - Session management (cookie storage)
-- Route protection via middleware
+- Route protection via `beforeLoad` hooks
 - Automatic JWT injection into API calls
 
 **Key Files**:
 - `src/core/supabase/client.ts` - Browser client
-- `src/core/supabase/server.ts` - Server client
-- `src/proxy.ts` - Auth middleware
+- `src/routes/_authenticated.tsx` - Route protection via `beforeLoad`
 - `src/core/lib/api.ts` - JWT injection
 - `src/features/auth/components/LoginForm.tsx` - Login UI
+- `src/routes/auth/callback.tsx` - OAuth callback handler
 
 **Docs**: [Frontend Auth Implementation](frontend/auth-implementation.md)
 
@@ -81,46 +81,29 @@ flowchart TD
 
 ## Authentication Flows
 
-### 1. Login Flow
+### 1. Google OAuth Login Flow
 
 ```mermaid
 sequenceDiagram
     actor User
-    participant LoginUI as Login Form<br/>(Next.js)
+    participant LoginUI as Login Form<br/>(Vite)
     participant Supabase as Supabase Auth
-    participant Cookie as Browser Cookie
-
-    User->>LoginUI: Enter credentials
-    LoginUI->>Supabase: POST /auth/v1/token<br/>(email + password)
-    Supabase->>Supabase: Validate credentials
-    Supabase-->>LoginUI: Session + JWT
-    LoginUI->>Cookie: Store session<br/>(HTTPOnly cookie)
-    LoginUI->>User: Redirect to /projects
-```
-
-### 2. OAuth Flow (GitHub)
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant LoginUI as Login Form
-    participant Supabase as Supabase Auth
-    participant GitHub
+    participant Google
     participant Callback as /auth/callback
     participant Cookie as Browser Cookie
 
-    User->>LoginUI: Click "GitHub Login"
-    LoginUI->>Supabase: signInWithOAuth({provider: 'github'})
-    Supabase->>GitHub: Redirect to GitHub OAuth
-    User->>GitHub: Authorize app
-    GitHub->>Callback: Redirect with code
+    User->>LoginUI: Click "Sign in with Google"
+    LoginUI->>Supabase: signInWithOAuth({provider: 'google'})
+    Supabase->>Google: Redirect to Google OAuth
+    User->>Google: Authorize app
+    Google->>Callback: Redirect with code
     Callback->>Supabase: exchangeCodeForSession(code)
     Supabase-->>Callback: Session + JWT
-    Callback->>Cookie: Store session
+    Callback->>Cookie: Store session<br/>(HTTPOnly cookie)
     Callback->>User: Redirect to /projects
 ```
 
-### 3. API Request Flow (with JWT)
+### 2. API Request Flow (with JWT)
 
 ```mermaid
 sequenceDiagram
@@ -147,25 +130,28 @@ sequenceDiagram
     API-->>Component: Chat data
 ```
 
-### 4. Middleware Protection Flow
+### 3. Route Protection Flow (TanStack Router)
 
 ```mermaid
 sequenceDiagram
     actor User
-    participant Middleware as Next.js Middleware
+    participant Router as TanStack Router
+    participant beforeLoad as beforeLoad Hook
     participant Cookie as Browser Cookie
     participant Page as Protected Page
 
-    User->>Middleware: Navigate to /projects
-    Middleware->>Cookie: getSession()
+    User->>Router: Navigate to /projects
+    Router->>beforeLoad: Execute _authenticated route
+    beforeLoad->>Cookie: getSession()
 
     alt No session
-        Cookie-->>Middleware: null
-        Middleware->>User: Redirect to /login
+        Cookie-->>beforeLoad: null
+        beforeLoad->>User: throw redirect({ to: '/login' })
     else Has session
-        Cookie-->>Middleware: Valid session
-        Middleware->>Page: Allow access
-        Page-->>User: Render page
+        Cookie-->>beforeLoad: Valid session
+        beforeLoad->>Router: Continue
+        Router->>Page: Render page
+        Page-->>User: Display content
     end
 ```
 
@@ -173,7 +159,7 @@ sequenceDiagram
 
 ### Frontend Security
 - **Cookie Storage**: HTTPOnly, Secure, SameSite flags (handled by `@supabase/ssr`)
-- **XSS Protection**: Next.js automatic escaping
+- **XSS Protection**: React automatic escaping
 - **Token Exposure**: JWTs never exposed to JavaScript (in cookies only)
 
 ### Backend Security
@@ -191,8 +177,8 @@ sequenceDiagram
 
 ```bash
 # .env.local
-NEXT_PUBLIC_SUPABASE_URL=https://<project-id>.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<anon-key>
+VITE_SUPABASE_URL=https://<project-id>.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon-key>
 ```
 
 ### Backend Environment Variables
@@ -211,8 +197,7 @@ SUPABASE_KEY=<service-role-key>
    - Redirect URLs: `https://your-app.com/auth/callback`
 
 2. **Authentication > Providers**:
-   - Enable Email provider
-   - Enable GitHub provider (configure OAuth app)
+   - Enable Google provider (configure OAuth app)
 
 3. **API Settings**:
    - Copy project URL and anon key to frontend `.env.local`
@@ -220,8 +205,8 @@ SUPABASE_KEY=<service-role-key>
 ## Deployment Checklist
 
 ### Frontend Deployment
-- [ ] Set `NEXT_PUBLIC_SUPABASE_URL` in hosting environment (Vercel/Railway)
-- [ ] Set `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- [ ] Set `VITE_SUPABASE_URL` in hosting environment (Vercel)
+- [ ] Set `VITE_SUPABASE_ANON_KEY`
 - [ ] Configure Supabase redirect URLs for production domain
 - [ ] Verify HTTPS enforcement
 
@@ -240,7 +225,7 @@ SUPABASE_KEY=<service-role-key>
 ## Testing
 
 ### Manual End-to-End Test
-1. **Login**: Email/password and OAuth both work
+1. **Login**: Google OAuth works
 2. **Session Persistence**: Refresh page, still logged in
 3. **API Calls**: Authenticated requests return 200 (not 401)
 4. **Route Protection**: `/projects` without session → redirects to `/login`

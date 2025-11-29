@@ -35,7 +35,7 @@ flowchart TB
 
 ### Navigation
 - Panel helpers: `frontend/src/core/lib/panelHelpers.ts`
-- URL sync: `frontend/src/app/projects/[id]/components/WorkspaceLayout.tsx`
+- URL sync: `frontend/src/features/workspace/components/WorkspaceLayout.tsx`
 - UI state: `frontend/src/core/stores/useUIStore.ts`
 - **Pattern doc**: `architecture/navigation-pattern.md`
 

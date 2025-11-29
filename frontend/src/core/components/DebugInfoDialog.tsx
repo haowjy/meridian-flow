@@ -1,5 +1,3 @@
-"use client"
-
 import {
   Dialog,
   DialogContent,
@@ -18,7 +16,7 @@ interface DebugInfoDialogProps {
  * Debug information dialog.
  *
  * Displays metadata in a simple key-value format.
- * Only shown when NEXT_PUBLIC_DEV_TOOLS=1.
+ * Only shown when VITE_DEV_TOOLS=1.
  */
 export function DebugInfoDialog({ isOpen, onClose, title, data }: DebugInfoDialogProps) {
   return (

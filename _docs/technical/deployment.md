@@ -7,7 +7,7 @@ audience: developer
 
 **Stack:**
 - Backend: Go (Railway)
-- Frontend: Next.js (Vercel)
+- Frontend: Vite + TanStack Router (Vercel)
 - Database: Supabase (hosted PostgreSQL)
 
 **Estimated Cost:** ~$10-15/month (MVP)
@@ -93,8 +93,9 @@ If Railway doesn't auto-detect:
 2. Click "Add New..." → "Project"
 3. Import your GitHub repository
 4. **Root Directory:** Set to `frontend`
-5. **Framework Preset:** Next.js (auto-detected)
-6. **Build Command:** `pnpm run build` (or leave default)
+5. **Framework Preset:** Vite
+6. **Build Command:** `pnpm run build`
+7. **Output Directory:** `dist` (Vite default)
 
 ### 2.2 Configure Environment Variables
 
@@ -102,21 +103,21 @@ In Vercel dashboard → Settings → Environment Variables, add for **all enviro
 
 ```env
 # Supabase (public - safe for client-side)
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=eyJhbGc...  # Anon/public key
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJhbGc...  # Anon/public key
 
-# Backend API (NEXT_PUBLIC_ prefix - frontend calls Railway directly from browser)
-NEXT_PUBLIC_API_URL=https://your-backend.railway.app
+# Backend API (VITE_ prefix - frontend calls Railway directly from browser)
+VITE_API_URL=https://your-backend.railway.app
 
 # Optional
-NEXT_PUBLIC_ENVIRONMENT=production
+VITE_ENVIRONMENT=production
 ```
 
 **Getting Supabase keys:**
 - Anon key: Settings → API → Project API keys → `anon` `public`
 
 **Important:**
-- `NEXT_PUBLIC_*` variables are exposed to the browser (safe for client-side)
+- `VITE_*` variables are exposed to the browser (safe for client-side)
 - Frontend calls Railway backend directly from browser (CORS handles security)
 
 ### 2.3 Update Frontend API Configuration
@@ -124,7 +125,7 @@ NEXT_PUBLIC_ENVIRONMENT=production
 Verify `/frontend/src/core/lib/api.ts` uses the environment variable:
 
 ```typescript
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080'
 ```
 
 **Already configured** - no changes needed.
@@ -300,19 +301,6 @@ Vercel automatically:
 
 ## Troubleshooting
 
-### SSE Timeouts
-
-**Symptom:** Streaming cuts off after 10 seconds
-
-**Cause:** Vercel Node.js runtime timeout
-
-**Fix:** Verify SSE routes use Edge Runtime:
-```typescript
-// frontend/src/app/api/chat/route.ts
-export const runtime = 'edge'
-export const dynamic = 'force-dynamic'
-```
-
 ### CORS Errors
 
 **Symptom:** `Access-Control-Allow-Origin` errors in browser
@@ -328,7 +316,7 @@ export const dynamic = 'force-dynamic'
 **Symptom:** Frontend can't reach backend
 
 **Fixes:**
-1. Verify `NEXT_PUBLIC_API_URL` in Vercel matches Railway URL
+1. Verify `VITE_API_URL` in Vercel matches Railway URL
 2. Check Railway deployment status
 3. Test health endpoint directly: `curl https://your-backend.railway.app/health`
 
@@ -439,7 +427,7 @@ export const dynamic = 'force-dynamic'
 - [ ] HTTPS enforced (automatic on Railway/Vercel)
 - [ ] CORS restricted to known origins (no `*`)
 - [ ] Supabase service role key (`SUPABASE_KEY`) not exposed to frontend (only in Railway backend)
-- [ ] `NEXT_PUBLIC_API_URL` correctly points to Railway backend
+- [ ] `VITE_API_URL` correctly points to Railway backend
 - [ ] JWT validation enabled (middleware in `internal/middleware/auth.go`)
 - [ ] Database connection uses transaction pooling (port 6543)
 - [ ] Supabase redirect URLs configured correctly

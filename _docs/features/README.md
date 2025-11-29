@@ -110,7 +110,7 @@ This directory contains detailed documentation for all features in Meridian, org
 ### [fb-infrastructure/](fb-infrastructure/)
 **Core infrastructure**
 - Backend: Error handling, DB features (soft delete, RLS, transactions), CORS
-- Frontend: Next.js routing, logging, dev tools
+- Frontend: TanStack Router (file-based routing), logging, dev tools
 - Deployment: Railway (backend), Vercel (frontend)
 
 ---

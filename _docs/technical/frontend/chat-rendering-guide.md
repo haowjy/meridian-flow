@@ -362,11 +362,10 @@ export function ChatHistory({ turns }: { turns: Turn[] }) {
 
 ```typescript
 // Only load syntax highlighter for code blocks
-import dynamic from 'next/dynamic';
+import { lazy } from 'react';
 
-const SyntaxHighlighter = dynamic(
-  () => import('react-syntax-highlighter').then(mod => mod.Prism),
-  { ssr: false }
+const SyntaxHighlighter = lazy(
+  () => import('react-syntax-highlighter').then(mod => ({ default: mod.Prism }))
 );
 ```
 

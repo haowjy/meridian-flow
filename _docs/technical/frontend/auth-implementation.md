@@ -6,28 +6,34 @@ status: implementation-complete
 
 # Frontend Authentication Implementation
 
-Supabase Auth integration for Next.js frontend with cookie-based sessions and automatic JWT injection.
+Supabase Auth integration for Vite + TanStack Router frontend with cookie-based sessions and automatic JWT injection.
 
 ## Architecture
 
-### Login Flow
+### Google OAuth Login Flow
 
 ```mermaid
 sequenceDiagram
     participant User
     participant LoginUI as Login Form
     participant Supabase as Supabase Auth
-    participant Middleware as Next.js Middleware
+    participant Google
+    participant Callback as /auth/callback
+    participant beforeLoad as beforeLoad Hook
     participant Projects as /projects
 
-    User->>LoginUI: Enter credentials
-    LoginUI->>Supabase: signInWithPassword() / signInWithOAuth()
-    Supabase-->>LoginUI: Session + JWT
-    LoginUI->>LoginUI: Store session in cookies
-    LoginUI->>Projects: Redirect to /projects
-    Projects->>Middleware: Request with cookie
-    Middleware->>Middleware: Validate session
-    Middleware-->>Projects: Allow access
+    User->>LoginUI: Click "Sign in with Google"
+    LoginUI->>Supabase: signInWithOAuth({provider: 'google'})
+    Supabase->>Google: Redirect to Google OAuth
+    User->>Google: Authorize app
+    Google->>Callback: Redirect with code
+    Callback->>Supabase: exchangeCodeForSession(code)
+    Supabase-->>Callback: Session + JWT
+    Callback->>Callback: Store session in cookies
+    Callback->>Projects: Redirect to /projects
+    Projects->>beforeLoad: Execute _authenticated route
+    beforeLoad->>beforeLoad: Validate session
+    beforeLoad-->>Projects: Allow access
 ```
 
 ### API Request Flow
@@ -49,51 +55,64 @@ sequenceDiagram
     API-->>Component: Response data
 ```
 
-### Middleware Protection Flow
+### Route Protection Flow (TanStack Router)
 
 ```mermaid
 flowchart TD
-    A[Incoming Request] --> B{Static Asset?}
-    B -->|Yes| C[Allow]
-    B -->|No| D{Has Session?}
-    D -->|No| E{Public Route?}
-    E -->|Yes /login| C
-    E -->|No| F[Redirect to /login]
-    D -->|Yes| G{Already on /login or /?}
-    G -->|Yes| H[Redirect to /projects]
-    G -->|No| C
+    A[Navigate to Route] --> B{Protected Route?}
+    B -->|No /login, /| C{Has Session?}
+    C -->|Yes| D[Redirect to /projects]
+    C -->|No| E[Render Route]
+    B -->|Yes _authenticated/*| F{beforeLoad: Has Session?}
+    F -->|No| G[throw redirect to /login]
+    F -->|Yes| H[Render Protected Route]
 
-    style C fill:#2d7d2d
-    style F fill:#8b0000
-    style H fill:#1e5a8e
+    style E fill:#2d7d2d
+    style H fill:#2d7d2d
+    style G fill:#8b0000
+    style D fill:#1e5a8e
 ```
 
 ## Components
 
-### 1. Supabase Clients
+### 1. Supabase Client
 
-**Browser Client** (`src/core/supabase/client.ts`):
-- Use in Client Components
-- Reads `NEXT_PUBLIC_SUPABASE_*` env vars
-- Fallback warnings if env vars missing
+**File**: `src/core/supabase/client.ts`
 
-**Server Client** (`src/core/supabase/server.ts`):
-- Use in Server Components and Route Handlers
+**Note**: Vite is client-only, so only browser client exists
+
+- Reads `VITE_SUPABASE_*` env vars
 - Cookie-based session management via `@supabase/ssr`
 - Handles session refresh automatically
+- Fallback warnings if env vars missing
 
-### 2. Middleware (Route Protection)
+### 2. Route Protection (`beforeLoad` Hooks)
 
-**File**: `src/proxy.ts`
+**File**: `src/routes/_authenticated.tsx`
 
-Enforces authentication on all routes except:
-- Static assets (`_next/static`, `_next/image`, `favicon.ico`)
-- Public files (`/*.svg`, `/*.png`)
+Layout route that wraps all protected routes with authentication check:
+
+```typescript
+export const Route = createFileRoute('/_authenticated')({
+  beforeLoad: async ({ location }) => {
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+
+    if (!session) {
+      throw redirect({
+        to: '/login',
+        search: { redirect: location.href },
+      })
+    }
+  },
+  component: () => <Outlet />,
+})
+```
 
 **Logic**:
-- No session → Redirect to `/login` (except if already on `/login`)
-- Has session on `/` or `/login` → Redirect to `/projects`
-- Has session on protected routes → Allow access
+- No session → Redirect to `/login` with return URL
+- Has session → Allow access to nested routes
+- Public routes (`/login`, `/`) check session and redirect authenticated users to `/projects`
 
 ### 3. API Integration
 
@@ -113,19 +132,18 @@ Every API call automatically includes JWT for backend authentication.
 **Form Component**: `src/features/auth/components/LoginForm.tsx`
 
 Features:
-- Email/password authentication
-- GitHub OAuth button
+- Google OAuth button (Google only)
 - Loading states
 - Error handling via toast notifications
 - Redirects to `/projects` on success
 
-**Page**: `src/app/login/page.tsx`
+**Page**: `src/routes/login.tsx`
 
 ### 5. OAuth Callback Handler
 
-**File**: `src/app/auth/callback/route.ts`
+**File**: `src/routes/auth/callback.tsx`
 
-Handles OAuth provider redirects (e.g., GitHub):
+Handles Google OAuth redirects:
 1. Receives `code` query parameter
 2. Exchanges code for session via `exchangeCodeForSession()`
 3. Sets session cookie
@@ -137,8 +155,8 @@ Handles OAuth provider redirects (e.g., GitHub):
 
 Required in `frontend/.env.local`:
 ```bash
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-anon-key
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-publishable-anon-key
 ```
 
 See `frontend/.env.example` for template.
@@ -148,17 +166,17 @@ See `frontend/.env.example` for template.
 1. **Project URL**: Copy from Supabase project settings
 2. **Anon Key**: Copy from Supabase API settings
 3. **OAuth Providers**: Configure in Authentication > Providers
-   - Enable GitHub provider
+   - Enable Google provider
    - Set redirect URL: `https://your-app.com/auth/callback`
 
 ## Usage Patterns
 
-### Access User Session in Client Components
+### Access User Session
 
 ```typescript
-import { createBrowserSupabaseClient } from '@/core/supabase/client'
+import { createClient } from '@/core/supabase/client'
 
-const supabase = createBrowserSupabaseClient()
+const supabase = createClient()
 const { data: { session } } = await supabase.auth.getSession()
 
 if (session) {
@@ -167,18 +185,9 @@ if (session) {
 }
 ```
 
-### Access User Session in Server Components
-
-```typescript
-import { createServerSupabaseClient } from '@/core/supabase/server'
-
-const supabase = await createServerSupabaseClient()
-const { data: { session } } = await supabase.auth.getSession()
-```
-
 ### Protected Routes
 
-All routes are automatically protected by middleware (`src/proxy.ts`). No additional code needed in components.
+All routes under `_authenticated/` are automatically protected by the `beforeLoad` hook in `src/routes/_authenticated.tsx`. No additional code needed in components.
 
 ### Making Authenticated API Calls
 
@@ -196,21 +205,20 @@ const chats = await api.chats.list(projectId)
 - **Cookies**: HTTPOnly, Secure flags handled by `@supabase/ssr`
 - **Token Storage**: JWTs in cookies (not localStorage)
 - **HTTPS**: Required in production
-- **XSS Prevention**: Framework-level protections (Next.js escaping)
+- **XSS Prevention**: React automatic escaping
 - **CSRF**: Covered by SameSite cookie policy
 
 ## Testing
 
 **Manual Testing Checklist**:
-- [ ] Login with email/password
-- [ ] Login with GitHub OAuth
+- [ ] Login with Google OAuth
 - [ ] Protected route redirects to `/login` when not authenticated
 - [ ] `/login` redirects to `/projects` when authenticated
 - [ ] API calls receive 200 (not 401) when authenticated
 - [ ] Logout clears session and redirects to `/login`
 
 **OAuth Testing Locally**:
-- Configure GitHub OAuth app with callback: `http://localhost:3000/auth/callback`
+- Configure Google OAuth app with callback: `http://localhost:3000/auth/callback`
 - Update Supabase dashboard with local callback URL
 
 ## References
@@ -219,4 +227,4 @@ const chats = await api.chats.list(projectId)
 - **Cross-Stack Overview**: `_docs/technical/auth-overview.md`
 - **Supabase Auth Docs**: https://supabase.com/docs/guides/auth
 - **@supabase/ssr**: https://supabase.com/docs/guides/auth/server-side/creating-a-client
-- **Next.js Middleware**: https://nextjs.org/docs/app/building-your-application/routing/middleware
+- **TanStack Router Docs**: https://tanstack.com/router

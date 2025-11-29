@@ -1,6 +1,6 @@
 # Meridian Frontend
 
-Next.js application for the Meridian writing assistant.
+Vite + TanStack Router application for the Meridian writing assistant.
 
 ## Quick Start
 
@@ -26,7 +26,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## Tech Stack
 
-- **Framework**: Next.js 16 (App Router)
+- **Framework**: Vite + TanStack Router (file-based routing)
 - **State**: Zustand + IndexedDB (Dexie)
 - **Editor**: TipTap (markdown storage)
 - **UI**: Tailwind CSS + Radix UI + shadcn/ui
@@ -36,7 +36,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ```
 frontend/src/
-├── app/                    # Next.js pages (App Router)
+├── routes/                 # TanStack Router routes (file-based routing)
 ├── core/                   # Core utilities, stores, hooks
 │   ├── lib/                # API, cache, DB, sync
 │   └── stores/             # Zustand state management

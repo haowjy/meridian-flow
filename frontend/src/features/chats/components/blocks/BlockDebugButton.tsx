@@ -1,5 +1,3 @@
-"use client"
-
 import { useState } from 'react'
 import { Info } from 'lucide-react'
 import type { TurnBlock } from '@/features/chats/types'
@@ -13,11 +11,11 @@ interface BlockDebugButtonProps {
  * Debug button for blocks.
  *
  * Floats in top-right corner of each block.
- * Only rendered when NEXT_PUBLIC_DEV_TOOLS=1.
+ * Only rendered when VITE_DEV_TOOLS=1.
  */
 export function BlockDebugButton({ block }: BlockDebugButtonProps) {
   const [showDebug, setShowDebug] = useState(false)
-  const isDevMode = process.env.NEXT_PUBLIC_DEV_TOOLS === '1'
+  const isDevMode = import.meta.env.VITE_DEV_TOOLS === '1'
 
   if (!isDevMode) {
     return null

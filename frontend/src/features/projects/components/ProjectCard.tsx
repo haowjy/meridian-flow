@@ -1,5 +1,3 @@
-'use client'
-
 import { CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
 import { LinkCard } from '@/shared/components/LinkCard'
 import { Project } from '../types/project'
@@ -18,7 +16,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
   }
 
   return (
-    <LinkCard href={`/projects/${project.id}`} onClick={handleClick}>
+    <LinkCard to={`/projects/${project.id}`} onClick={handleClick}>
       <CardHeader>
         <CardTitle>{project.name}</CardTitle>
       </CardHeader>

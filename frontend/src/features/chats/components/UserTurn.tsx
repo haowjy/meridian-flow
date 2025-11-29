@@ -1,5 +1,3 @@
-"use client"
-
 import React, { useState, useCallback } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { Turn } from '@/features/chats/types'

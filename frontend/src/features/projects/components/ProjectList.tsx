@@ -1,5 +1,3 @@
-'use client'
-
 import { ProjectCard } from './ProjectCard'
 import { Project } from '../types/project'
 import { Button } from '@/shared/components/ui/button'

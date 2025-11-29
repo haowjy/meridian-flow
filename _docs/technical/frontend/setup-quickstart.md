@@ -16,16 +16,16 @@ Purpose: provide only the initial environment setup and run commands. The UI is 
 
 ## Environment
 
-- Set `NEXT_PUBLIC_API_URL` to your backend (e.g., `http://localhost:8080`).
-- Optional: `NEXT_PUBLIC_DEV_TOOLS=1` to enable the Retry panel.
+- Set `VITE_API_URL` to your backend (e.g., `http://localhost:8080`).
+- Optional: `VITE_DEV_TOOLS=1` to enable the Retry panel and Router devtools.
 
 ## Commands
 
 ```bash
 cd frontend
-npm install
-npm run dev          # http://localhost:3000
-npm run test         # unit tests (Vitest)
+pnpm install
+pnpm run dev          # http://localhost:3000
+pnpm run test         # unit tests (Vitest)
 ```
 
 These commands are intentionally generic to avoid coupling to specific layouts; use the project’s standard task runner targets (e.g., install, run, dev, test, seed) as provided.
@@ -41,12 +41,12 @@ These commands are intentionally generic to avoid coupling to specific layouts; 
 ```mermaid
 flowchart LR
     subgraph "Browser (Dev)"
-      UI["Next.js App (localhost:3000)"]
+      UI["Vite App (localhost:3000)"]
       IDB["IndexedDB (Dexie)"]
       Retry["Retry Panel (dev)"]
     end
 
-    API["Backend API (NEXT_PUBLIC_API_URL)"]
+    API["Backend API (VITE_API_URL)"]
 
     UI -->|"fetch JSON"| API
     UI <-->|"cache/read/write"| IDB

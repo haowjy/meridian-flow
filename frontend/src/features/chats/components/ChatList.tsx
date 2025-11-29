@@ -1,5 +1,3 @@
-'use client'
-
 import { ScrollArea } from '@/shared/components/ui/scroll-area'
 import type { Chat } from '@/features/chats/types'
 import { ChatListItem } from './ChatListItem'

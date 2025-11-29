@@ -1,5 +1,3 @@
-'use client'
-
 import { Loader2, Cloud, AlertCircle, CloudOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { SaveStatus } from '@/shared/components/ui/StatusBadge'

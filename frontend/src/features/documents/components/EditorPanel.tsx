@@ -1,5 +1,3 @@
-"use client"
-
 import { useEffect, useRef, useState } from 'react'
 import { EditorContent } from '@tiptap/react'
 import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
@@ -108,7 +106,7 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
 
     // Cleanup: abort request if component unmounts or documentId changes
     // NOTE: In dev mode with React Strict Mode, this abort() will be called during the
-    // intentional double-mount cleanup, causing an AbortError to appear in the Next.js
+    // intentional double-mount cleanup, causing an AbortError to appear in the dev mode
     // error overlay. This is EXPECTED and HARMLESS - the error is caught and handled
     // silently by useEditorStore. In production (no Strict Mode), this only runs on
     // real unmounts or document changes. The abort is necessary to prevent stale

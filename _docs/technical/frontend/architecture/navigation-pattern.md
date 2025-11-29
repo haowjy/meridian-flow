@@ -11,7 +11,7 @@ status: active
 ```mermaid
 flowchart TD
     Click["User clicks document"] --> Direct["Direct state update\n(panelHelpers)"]
-    Direct --> Router["router.push()"]
+    Direct --> Router["navigate({ to, params })"]
     Router --> URLChange{"URL changed?"}
 
     URLChange -->|"Yes"| Effect["WorkspaceLayout effect\nsyncs UI to URL"]
@@ -115,5 +115,5 @@ Navigating between documents won't reload chat data.
 
 **Core files:**
 - `frontend/src/core/lib/panelHelpers.ts:24-62` - Direct state updates
-- `frontend/src/app/projects/[id]/components/WorkspaceLayout.tsx:54-102` - URL sync effect
+- `frontend/src/features/workspace/components/WorkspaceLayout.tsx` - URL sync effect
 - `frontend/src/core/stores/useUIStore.ts` - State store

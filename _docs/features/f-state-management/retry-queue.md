@@ -36,7 +36,7 @@ feature: "Retry Queue"
 
 **Retry Panel**: Shows queue state, manual retry trigger
 
-**Toggle**: `NEXT_PUBLIC_DEV_TOOLS=1`
+**Toggle**: `VITE_DEV_TOOLS=1`
 
 **File**: `frontend/src/core/components/DevRetryPanel.tsx`
 

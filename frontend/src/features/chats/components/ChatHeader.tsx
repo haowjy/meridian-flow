@@ -1,5 +1,3 @@
-"use client"
-
 import type { Chat } from '@/features/chats/types'
 import { Button } from '@/shared/components/ui/button'
 import { MoreHorizontal } from 'lucide-react'

@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useNavigate } from '@tanstack/react-router'
 import { useShallow } from 'zustand/react/shallow'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { useUIStore } from '@/core/stores/useUIStore'
@@ -39,7 +39,7 @@ function isDocumentInFolder(
  * await deleteDocument(docId)  // Auto-navigates away if needed
  */
 export function useResourceOperations(projectId: string) {
-  const router = useRouter()
+  const navigate = useNavigate()
   const activeDocumentId = useUIStore((s) => s.activeDocumentId)
 
   const { documents, folders, deleteDocument, deleteFolder } = useTreeStore(
@@ -58,11 +58,11 @@ export function useResourceOperations(projectId: string) {
     async (documentId: string) => {
       // Navigate away FIRST if deleting the active document
       if (activeDocumentId === documentId) {
-        closeEditor(projectId, router)
+        closeEditor(projectId, navigate)
       }
       await deleteDocument(documentId, projectId)
     },
-    [activeDocumentId, projectId, router, deleteDocument]
+    [activeDocumentId, projectId, navigate, deleteDocument]
   )
 
   /**
@@ -75,11 +75,11 @@ export function useResourceOperations(projectId: string) {
         activeDocumentId &&
         isDocumentInFolder(activeDocumentId, folderId, documents, folders)
       ) {
-        closeEditor(projectId, router)
+        closeEditor(projectId, navigate)
       }
       await deleteFolder(folderId, projectId)
     },
-    [activeDocumentId, projectId, router, deleteFolder, documents, folders]
+    [activeDocumentId, projectId, navigate, deleteFolder, documents, folders]
   )
 
   return {

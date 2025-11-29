@@ -1,5 +1,3 @@
-"use client"
-
 import { useEffect, useMemo, useRef, useCallback } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { toast } from 'sonner'

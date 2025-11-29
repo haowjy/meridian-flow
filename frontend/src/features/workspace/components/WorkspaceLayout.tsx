@@ -1,6 +1,5 @@
-"use client"
-
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
+import { useLocation } from '@tanstack/react-router'
 import { useShallow } from 'zustand/react/shallow'
 import { PanelLayout } from '@/shared/components/layout/PanelLayout'
 import { CollapsiblePanel } from '@/shared/components/layout/CollapsiblePanel'
@@ -24,6 +23,7 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
   const [mounted, setMounted] = useState(false)
   const previousDocumentIdRef = useRef<string | undefined>(undefined)
   const previousProjectIdRef = useRef<string | undefined>(undefined)
+  const isFirstMountRef = useRef(true)
 
   // Subscribe only to panel collapse state (needed for PanelLayout props)
   // Use getState() in effects to read other values without subscribing
@@ -62,6 +62,27 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
     setMounted(true)
   }, [])
 
+  const location = useLocation()
+
+  // Derive the document ID from the current URL path.
+  // This is intentionally decoupled from route components so that:
+  // - Direct URL navigation (deep links)
+  // - Browser back/forward
+  // still drive the editor/tree state correctly even if the document route
+  // component itself does not render (e.g., due to nesting or Outlet usage).
+  const urlDocumentId = useMemo(() => {
+    const segments = location.pathname.split('/').filter(Boolean)
+    const documentsIndex = segments.indexOf('documents')
+    if (documentsIndex === -1) return undefined
+    const id = segments[documentsIndex + 1]
+    return id || undefined
+  }, [location.pathname])
+
+  // Prefer explicit prop when provided (e.g., from a dedicated document route),
+  // but fall back to URL parsing so that deep links and browser navigation
+  // still work correctly.
+  const effectiveDocumentId = initialDocumentId ?? urlDocumentId
+
   // Ensure the workspace has the current project set and present in the store
   useEffect(() => {
     // Prevent duplicate work for the same project id
@@ -82,7 +103,11 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
         } catch (error) {
           // Non-fatal for the layout; header will fallback until projects page refreshes.
           // Errors are surfaced elsewhere when listing projects; we still log for debuggability.
-          logger.warn('Failed to ensure project in workspace layout', error)
+          if ((error as any)?.name === 'AbortError') {
+            logger.debug('Project fetch aborted in workspace layout (expected during unmount/StrictMode)')
+          } else {
+            logger.warn('Failed to ensure project in workspace layout', error)
+          }
         }
       }
 
@@ -118,14 +143,19 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
   useEffect(() => {
     logger.debug('URL sync effect triggered', {
       previousDocId: previousDocumentIdRef.current,
-      currentDocId: initialDocumentId,
+      currentDocId: effectiveDocumentId,
+      isFirstMount: isFirstMountRef.current,
     })
 
-    const urlChanged = previousDocumentIdRef.current !== initialDocumentId
-    previousDocumentIdRef.current = initialDocumentId
+    const urlChanged = previousDocumentIdRef.current !== effectiveDocumentId
+    const isFirstMount = isFirstMountRef.current
 
-    if (!urlChanged) {
-      logger.debug('URL unchanged, skipping sync')
+    previousDocumentIdRef.current = effectiveDocumentId
+    isFirstMountRef.current = false
+
+    // Skip only if NOT first mount AND URL didn't change
+    if (!isFirstMount && !urlChanged) {
+      logger.debug('URL unchanged (not first mount), skipping sync')
       return
     }
 
@@ -134,11 +164,11 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
     // Read current state without subscribing (no re-renders when state changes)
     const store = useUIStore.getState()
 
-    if (initialDocumentId) {
+    if (effectiveDocumentId) {
       // Document URL - open editor with this document and ensure sidebar open
-      if (store.activeDocumentId !== initialDocumentId) {
-        logger.debug('Setting active document:', initialDocumentId)
-        store.setActiveDocument(initialDocumentId)
+      if (store.activeDocumentId !== effectiveDocumentId) {
+        logger.debug('Setting active document:', effectiveDocumentId)
+        store.setActiveDocument(effectiveDocumentId)
       }
       if (store.rightPanelState !== 'editor') {
         logger.debug('Setting panel state: editor')
@@ -159,30 +189,30 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
         store.setRightPanelState('documents')
       }
     }
-  }, [initialDocumentId])
+  }, [effectiveDocumentId])
 
   // For deep links: load the tree once in the background if empty
   useEffect(() => {
-    if (!initialDocumentId) return
+    if (!effectiveDocumentId) return
     if (documentsCount !== 0 || isTreeLoading) return
 
     const abortController = new AbortController()
     loadTree(projectId, abortController.signal)
     return () => abortController.abort()
-  }, [projectId, initialDocumentId, documentsCount, isTreeLoading, loadTree])
+  }, [projectId, effectiveDocumentId, documentsCount, isTreeLoading, loadTree])
 
   // After the tree loads, ensure the active document selection reflects the tree entry
   useEffect(() => {
-    if (!initialDocumentId) return
+    if (!effectiveDocumentId) return
     if (documentsCount === 0) return
 
-    const existsInTree = documents.some((d) => d.id === initialDocumentId)
+    const existsInTree = documents.some((d) => d.id === effectiveDocumentId)
     const store = useUIStore.getState()
-    if (existsInTree && store.activeDocumentId !== initialDocumentId) {
-      logger.debug('Tree loaded, syncing active document to URL:', initialDocumentId)
-      store.setActiveDocument(initialDocumentId)
+    if (existsInTree && store.activeDocumentId !== effectiveDocumentId) {
+      logger.debug('Tree loaded, syncing active document to URL:', effectiveDocumentId)
+      store.setActiveDocument(effectiveDocumentId)
     }
-  }, [documentsCount, documents, initialDocumentId])
+  }, [documentsCount, documents, effectiveDocumentId])
 
   if (!mounted) {
     return <div className="h-screen w-full bg-background" />

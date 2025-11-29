@@ -1,5 +1,3 @@
-"use client"
-
 import type { ReactNode } from 'react'
 import { ArrowUp, Brain, ChevronDown, StopCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'

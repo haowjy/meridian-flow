@@ -1,5 +1,3 @@
-'use client'
-
 import { useCallback } from 'react'
 import { createClient } from '@/core/supabase/client'
 import type { AuthActions } from '../types'
