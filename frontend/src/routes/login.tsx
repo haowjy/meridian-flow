@@ -18,11 +18,19 @@ export const Route = createFileRoute('/login')({
 
 function LoginPage() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-muted/50">
-      <div className="mb-8">
-        <Logo size={32} />
+    <div className="min-h-screen flex flex-col items-center justify-start pt-12 p-6 bg-background">
+      {/* Logo */}
+      <div className="mb-4">
+        <Logo size={44} />
       </div>
+
+      {/* Login form */}
       <LoginForm />
+
+      {/* Footer */}
+      <p className="mt-5 text-xs text-muted-foreground">
+        Your writing workspace
+      </p>
     </div>
   )
 }
