@@ -127,17 +127,19 @@
 :root {
   /* === Base Palette === */
 
-  /* Jade - Primary (CORRECTED: Jade 900 is PRIMARY, not Jade 300!) */
-  --jade-900: oklch(0.54 0.08 175);
-  /* #2F7F72 - PRIMARY jade for icons, buttons */
-  --jade-300: oklch(0.76 0.04 165);
-  /* #A9BDB5 - MUTED for sidebar background only */
-  --jade-hover: oklch(0.79 0.03 165);
-  /* #BCD1CA - hover wash */
+  /* Jade - Primary (Deep Jade - more green, less teal) */
+  --jade-900: oklch(0.42 0.08 160);
+  /* Deep jade #356e5b - buttons, icons */
+  --jade-300: oklch(0.91 0.015 100);
+  /* Sage parchment - subtle green tint for sidebar */
+  --jade-hover: oklch(0.88 0.02 100);
+  /* Slightly darker sage for hover */
 
   /* Gold - Accent */
   --gold-500: oklch(0.78 0.18 85);
-  /* #F4B41A */
+  /* #F4B41A - bright gold for highlights */
+  --gold-muted: oklch(0.62 0.12 85);
+  /* #c59b39 - muted gold for subtle accents */
 
   /* Parchment - Surfaces */
   --parchment-50: oklch(0.97 0.01 75);
@@ -224,16 +226,16 @@
 
   /* Sidebar - LIGHT JADE background, DARK JADE icons */
   --sidebar: var(--jade-300);
-  /* light jade for bg */
-  --sidebar-foreground: var(--parchment-50);
-  /* parchment text */
+  /* sage parchment for bg */
+  --sidebar-foreground: var(--ink-900);
+  /* dark text on light sidebar */
   --sidebar-icon: var(--jade-900);
   /* DARK JADE for icons! */
-  --sidebar-primary: var(--gold-500);
-  /* gold active marker */
+  --sidebar-primary: var(--gold-muted);
+  /* muted gold active marker */
   --sidebar-primary-foreground: var(--ink-900);
   --sidebar-accent: var(--jade-hover);
-  /* hover wash */
+  /* jade for active/hover states */
   --sidebar-accent-foreground: var(--sidebar-foreground);
   --sidebar-border: var(--jade-900);
   --sidebar-ring: var(--gold-500);
@@ -264,15 +266,15 @@
 .dark {
   /* === Base Palette === */
 
-  /* Dark Jade */
-  --jade-black: oklch(0.22 0.02 165);
-  /* #1B2421 - base */
-  --jade-800: oklch(0.24 0.01 165);
-  /* #202622 - surfaces */
-  --slate-700: oklch(0.26 0.01 165);
-  /* #242A27 - alt surface for bubbles */
-  --jade-hover-dark: oklch(0.27 0.02 165);
-  /* #25302C - hover wash */
+  /* Dark neutrals (was jade-tinted) */
+  --jade-black: oklch(0.18 0.01 60);
+  /* Warm dark gray - base (was green-tinted) */
+  --jade-800: oklch(0.20 0.01 60);
+  /* Warm dark gray - surfaces */
+  --slate-700: oklch(0.22 0.01 60);
+  /* Warm dark gray - alt surface for bubbles */
+  --jade-hover-dark: oklch(0.24 0.01 60);
+  /* Warm dark gray - hover wash */
 
   /* Glow Jade - SPECIAL ACCENT for dark mode! */
   --glow-jade: oklch(0.72 0.14 180);
@@ -534,11 +536,9 @@ body.preload * {
     @apply hover:bg-sidebar-accent/20;
   }
 
-  /* Active chat gets GOLD highlight */
+  /* Active chat styling (background handled by Tailwind in component) */
   .chat-list-item--active {
     @apply font-semibold;
-    border-left: 3px solid var(--sidebar-primary);
-    background: var(--sidebar-accent);
   }
 
   /* Sidebar icons use DARK JADE in light mode */
