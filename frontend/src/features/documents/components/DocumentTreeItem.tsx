@@ -68,7 +68,7 @@ export function DocumentTreeItem({
       <div
         className={cn(
           'group flex w-full items-center gap-2 rounded-sm px-2.5 py-1 text-left text-xs md:text-sm',
-          isActive && 'bg-muted border-l-2 border-accent'
+          isActive && 'bg-sidebar-accent/50'
         )}
       >
         <FileText className="size-3.5 flex-shrink-0" />
@@ -127,7 +127,7 @@ export function DocumentTreeItem({
         className={cn(
           'group flex w-full items-center gap-2 rounded-sm px-2.5 py-1 text-left text-xs md:text-sm transition-colors',
           'hover:bg-hover',
-          isActive && 'bg-muted font-medium border-l-2 border-accent'
+          isActive && 'bg-sidebar-accent/50 font-medium'
         )}
         aria-label={`Open document: ${document.name}`}
         aria-current={isActive ? 'page' : undefined}
