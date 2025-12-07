@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meridian — Enhanced Literary Theme</title>
+
+  <!-- Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;1,8..60,400;1,8..60,500&family=Manrope:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    /* ═══════════════════════════════════════════════════════════════
+       CSS VARIABLES — Enhanced Literary Theme
+       ═══════════════════════════════════════════════════════════════ */
+
+    :root {
+      /* Typography */
+      --font-display: 'Cormorant Garamond', Georgia, serif;
+      --font-body: 'Source Serif 4', Georgia, serif;
+      --font-ui: 'Manrope', system-ui, sans-serif;
+
+      /* Spacing */
+      --space-xs: 4px;
+      --space-sm: 8px;
+      --space-md: 16px;
+      --space-lg: 24px;
+      --space-xl: 32px;
+
+      /* Radius */
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       LIGHT MODE — Warm Paper & Antique Gold
+       ═══════════════════════════════════════════════════════════════ */
+
+    [data-theme="light"] {
+      /* Backgrounds */
+      --bg-page: #F9F6F0;
+      --bg-surface: #FFFDF8;
+      --bg-sidebar: #F3EFE7;
+      --bg-elevated: #FFFFFF;
+
+      /* Text */
+      --text-primary: #2C2418;
+      --text-secondary: #6B5D4D;
+      --text-muted: #9C8E7C;
+
+      /* Accent — Antique Gold */
+      --accent: #C8973E;
+      --accent-hover: #B8872E;
+      --accent-subtle: rgba(200, 151, 62, 0.12);
+      --accent-text: #2C2418;
+
+      /* Borders & Dividers */
+      --border: #E5DFD4;
+      --border-subtle: #EDE8DE;
+
+      /* Shadows — warm lamp-like */
+      --shadow-sm: 0 1px 2px rgba(44, 36, 24, 0.06);
+      --shadow-md: 0 4px 12px rgba(44, 36, 24, 0.08), 0 1px 3px rgba(44, 36, 24, 0.04);
+      --shadow-lg: 0 8px 24px rgba(44, 36, 24, 0.12), 0 2px 8px rgba(44, 36, 24, 0.06);
+
+      /* Paper grain texture */
+      --texture-grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+      --texture-opacity: 0.03;
+
+      /* Selection */
+      --selection-bg: rgba(200, 151, 62, 0.25);
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       DARK MODE — Rich Espresso & Warm Amber
+       ═══════════════════════════════════════════════════════════════ */
+
+    [data-theme="dark"] {
+      /* Backgrounds — espresso/ink tones, NOT blue */
+      --bg-page: #1C1917;
+      --bg-surface: #252220;
+      --bg-sidebar: #171412;
+      --bg-elevated: #2A2724;
+
+      /* Text */
+      --text-primary: #F5F2ED;
+      --text-secondary: #B8B0A4;
+      --text-muted: #857D71;
+
+      /* Accent — Warm Amber */
+      --accent: #E4B866;
+      --accent-hover: #F0C87A;
+      --accent-subtle: rgba(228, 184, 102, 0.15);
+      --accent-text: #1C1917;
+
+      /* Borders & Dividers */
+      --border: #3D3835;
+      --border-subtle: #2F2B28;
+
+      /* Shadows — reading lamp glow */
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(228, 184, 102, 0.03);
+      --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(228, 184, 102, 0.05);
+      --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 24px rgba(228, 184, 102, 0.08);
+
+      /* Texture — subtle grain */
+      --texture-grain: none;
+      --texture-opacity: 0;
+
+      /* Selection */
+      --selection-bg: rgba(228, 184, 102, 0.35);
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       BASE STYLES
+       ═══════════════════════════════════════════════════════════════ */
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--bg-page);
+      color: var(--text-primary);
+      line-height: 1.6;
+      min-height: 100vh;
+      transition: background 0.3s ease, color 0.3s ease;
+    }
+
+    /* Paper grain overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: var(--texture-grain);
+      opacity: var(--texture-opacity);
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    ::selection {
+      background: var(--selection-bg);
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       LAYOUT
+       ═══════════════════════════════════════════════════════════════ */
+
+    .app {
+      display: grid;
+      grid-template-columns: 260px 1fr 340px;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       SIDEBAR
+       ═══════════════════════════════════════════════════════════════ */
+
+    .sidebar {
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sidebar-header {
+      padding: var(--space-md);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+    }
+
+    .logo {
+      font-family: var(--font-display);
+      font-size: 1.5rem;
+      font-weight: 500;
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
+    }
+
+    .logo-accent {
+      color: var(--accent);
+    }
+
+    .project-name {
+      font-family: var(--font-ui);
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: var(--space-sm) var(--space-md);
+      margin-top: var(--space-sm);
+    }
+
+    .tree {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 var(--space-sm);
+    }
+
+    .tree-item {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      padding: var(--space-xs) var(--space-sm);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-family: var(--font-ui);
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      transition: all 0.15s ease;
+    }
+
+    .tree-item:hover {
+      background: var(--accent-subtle);
+      color: var(--text-primary);
+    }
+
+    .tree-item.active {
+      background: var(--accent-subtle);
+      color: var(--accent);
+    }
+
+    .tree-item.folder {
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    .tree-item .icon {
+      width: 16px;
+      height: 16px;
+      opacity: 0.6;
+    }
+
+    .tree-item.active .icon {
+      opacity: 1;
+    }
+
+    .tree-indent {
+      padding-left: var(--space-lg);
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       EDITOR PANEL
+       ═══════════════════════════════════════════════════════════════ */
+
+    .editor-panel {
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-page);
+      overflow: hidden;
+    }
+
+    .editor-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-sm) var(--space-md);
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--bg-surface);
+    }
+
+    .toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: var(--space-xs);
+    }
+
+    .toolbar-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border: none;
+      background: transparent;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      color: var(--text-secondary);
+      transition: all 0.15s ease;
+    }
+
+    .toolbar-btn:hover {
+      background: var(--accent-subtle);
+      color: var(--text-primary);
+    }
+
+    .toolbar-btn.active {
+      background: var(--accent-subtle);
+      color: var(--accent);
+    }
+
+    .editor-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: var(--space-xl) calc(var(--space-xl) * 2);
+    }
+
+    .editor-surface {
+      max-width: 720px;
+      margin: 0 auto;
+      background: var(--bg-surface);
+      border-radius: var(--radius-lg);
+      padding: var(--space-xl);
+      box-shadow: var(--shadow-md);
+      min-height: calc(100vh - 200px);
+    }
+
+    .doc-title {
+      font-family: var(--font-display);
+      font-size: 2.5rem;
+      font-weight: 500;
+      line-height: 1.2;
+      margin-bottom: var(--space-lg);
+      color: var(--text-primary);
+      border: none;
+      outline: none;
+      width: 100%;
+    }
+
+    .doc-meta {
+      display: flex;
+      align-items: center;
+      gap: var(--space-md);
+      padding-bottom: var(--space-md);
+      margin-bottom: var(--space-lg);
+      border-bottom: 1px solid var(--border-subtle);
+      font-family: var(--font-ui);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .doc-meta .tag {
+      background: var(--accent-subtle);
+      color: var(--accent);
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-weight: 500;
+    }
+
+    .prose {
+      font-family: var(--font-body);
+      font-size: 1.125rem;
+      line-height: 1.8;
+      color: var(--text-primary);
+    }
+
+    .prose p {
+      margin-bottom: 1.5em;
+      text-align: justify;
+      hyphens: auto;
+    }
+
+    .prose p:first-of-type::first-letter {
+      font-family: var(--font-display);
+      font-size: 3.5em;
+      float: left;
+      line-height: 0.8;
+      padding-right: 0.1em;
+      padding-top: 0.1em;
+      color: var(--accent);
+    }
+
+    .prose em {
+      font-style: italic;
+    }
+
+    .prose strong {
+      font-weight: 600;
+    }
+
+    .prose .scene-break {
+      text-align: center;
+      margin: 2em 0;
+      color: var(--accent);
+      font-family: var(--font-display);
+      letter-spacing: 0.5em;
+    }
+
+    /* AI suggestion highlight */
+    .ai-suggestion {
+      background: linear-gradient(
+        to bottom,
+        rgba(200, 151, 62, 0.15) 0%,
+        rgba(200, 151, 62, 0.08) 100%
+      );
+      border-left: 2px solid var(--accent);
+      padding-left: var(--space-md);
+      margin-left: calc(var(--space-md) * -1 - 2px);
+      position: relative;
+    }
+
+    [data-theme="dark"] .ai-suggestion {
+      background: linear-gradient(
+        to bottom,
+        rgba(228, 184, 102, 0.12) 0%,
+        rgba(228, 184, 102, 0.05) 100%
+      );
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       CHAT PANEL
+       ═══════════════════════════════════════════════════════════════ */
+
+    .chat-panel {
+      background: var(--bg-sidebar);
+      border-left: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .chat-header {
+      padding: var(--space-md);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .chat-title {
+      font-family: var(--font-ui);
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: var(--space-md);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-md);
+    }
+
+    .message {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-xs);
+    }
+
+    .message-author {
+      font-family: var(--font-ui);
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .message-author.ai {
+      color: var(--accent);
+    }
+
+    .message-content {
+      font-family: var(--font-body);
+      font-size: 0.9375rem;
+      line-height: 1.6;
+      color: var(--text-primary);
+      background: var(--bg-elevated);
+      padding: var(--space-sm) var(--space-md);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .message.user .message-content {
+      background: var(--accent-subtle);
+      border: 1px solid var(--border);
+    }
+
+    .chat-input-container {
+      padding: var(--space-md);
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .chat-input {
+      width: 100%;
+      padding: var(--space-sm) var(--space-md);
+      font-family: var(--font-body);
+      font-size: 0.9375rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      resize: none;
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .chat-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-subtle);
+    }
+
+    .chat-input::placeholder {
+      color: var(--text-muted);
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       THEME TOGGLE
+       ═══════════════════════════════════════════════════════════════ */
+
+    .theme-toggle {
+      position: fixed;
+      bottom: var(--space-md);
+      right: var(--space-md);
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      padding: var(--space-xs) var(--space-sm);
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-family: var(--font-ui);
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      cursor: pointer;
+      box-shadow: var(--shadow-md);
+      transition: all 0.15s ease;
+      z-index: 100;
+    }
+
+    .theme-toggle:hover {
+      border-color: var(--accent);
+      color: var(--text-primary);
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       ICONS (inline SVG)
+       ═══════════════════════════════════════════════════════════════ */
+
+    .icon {
+      display: inline-block;
+      width: 1em;
+      height: 1em;
+      vertical-align: middle;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       ANIMATIONS
+       ═══════════════════════════════════════════════════════════════ */
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .editor-surface {
+      animation: fadeIn 0.4s ease;
+    }
+
+    .message {
+      animation: fadeIn 0.3s ease;
+    }
+  </style>
+</head>
+<body data-theme="light">
+  <div class="app">
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SIDEBAR
+         ═══════════════════════════════════════════════════════════════ -->
+    <aside class="sidebar">
+      <header class="sidebar-header">
+        <span class="logo">Meri<span class="logo-accent">d</span>ian</span>
+      </header>
+
+      <div class="project-name">The Wandering Flame</div>
+
+      <nav class="tree">
+        <div class="tree-item folder">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+          </svg>
+          Characters
+        </div>
+        <div class="tree-indent">
+          <div class="tree-item">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/>
+            </svg>
+            Elara Ashvane
+          </div>
+          <div class="tree-item">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/>
+            </svg>
+            Master Chen
+          </div>
+          <div class="tree-item">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/>
+            </svg>
+            King Aldric
+          </div>
+        </div>
+
+        <div class="tree-item folder">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+          </svg>
+          Locations
+        </div>
+        <div class="tree-indent">
+          <div class="tree-item">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/>
+            </svg>
+            The Jade Court
+          </div>
+          <div class="tree-item">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/>
+            </svg>
+            Thornwood Village
+          </div>
+        </div>
+
+        <div class="tree-item folder">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+          </svg>
+          Chapters
+        </div>
+        <div class="tree-indent">
+          <div class="tree-item">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/>
+            </svg>
+            Chapter 1
+          </div>
+          <div class="tree-item active">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/>
+            </svg>
+            Chapter 2
+          </div>
+          <div class="tree-item">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/>
+            </svg>
+            Chapter 3
+          </div>
+        </div>
+      </nav>
+    </aside>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         EDITOR PANEL
+         ═══════════════════════════════════════════════════════════════ -->
+    <main class="editor-panel">
+      <div class="editor-toolbar">
+        <div class="toolbar-group">
+          <button class="toolbar-btn" title="Bold">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M6 4h8a4 4 0 014 4 4 4 0 01-4 4H6z"/><path d="M6 12h9a4 4 0 014 4 4 4 0 01-4 4H6z"/>
+            </svg>
+          </button>
+          <button class="toolbar-btn" title="Italic">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/>
+            </svg>
+          </button>
+          <button class="toolbar-btn active" title="Heading">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 12h16"/><path d="M4 4v16"/><path d="M20 4v16"/>
+            </svg>
+          </button>
+        </div>
+        <div class="toolbar-group">
+          <button class="toolbar-btn" title="Word count">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="editor-content">
+        <article class="editor-surface">
+          <h1 class="doc-title" contenteditable="true">Chapter 2: The Jade Court</h1>
+
+          <div class="doc-meta">
+            <span>2,847 words</span>
+            <span>·</span>
+            <span>Last edited 2 minutes ago</span>
+            <span class="tag">Draft</span>
+          </div>
+
+          <div class="prose" contenteditable="true">
+            <p>The throne room of the Jade Court stretched before Elara like a canyon carved from emerald and obsidian. Pillars of dark stone rose toward a ceiling lost in shadow, their surfaces etched with characters she could not read—ancient script from a time when the Court had been a temple, not a seat of power.</p>
+
+            <p>King Aldric sat upon the Jade Throne, his posture rigid as the stone that cradled him. Even from this distance, Elara could see the threads of silver in his beard that had not been there five years ago. The weight of rule had aged him faster than time.</p>
+
+            <p class="ai-suggestion">"You've grown." The king's voice echoed through the chamber, resonant and cool. "When last you stood before me, you barely reached Master Chen's shoulder."</p>
+
+            <p>"I've learned much since then, Your Majesty." Elara kept her gaze level, though every instinct screamed at her to look away. Meeting the eyes of a king was dangerous. Meeting <em>these</em> eyes was worse.</p>
+
+            <p class="scene-break">· · ·</p>
+
+            <p>She remembered the lessons well. <em>Power flows like water</em>, Master Chen had told her during those endless hours of meditation in the mountain temple. <em>It seeks the lowest point, the path of least resistance. A ruler who fights against this nature will drown. One who learns to swim will be carried to great heights.</em></p>
+
+            <p>The Council of Seven watched from their positions along the eastern wall. She counted them without looking directly at any face—a skill Chen had drilled into her until it became instinct. Lord Varen. Lady Mira. The twins from the Northern Houses. The others she did not know, new appointments in her absence.</p>
+          </div>
+        </article>
+      </div>
+    </main>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         CHAT PANEL
+         ═══════════════════════════════════════════════════════════════ -->
+    <aside class="chat-panel">
+      <header class="chat-header">
+        <span class="chat-title">AI Assistant</span>
+        <button class="toolbar-btn" title="New chat">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+        </button>
+      </header>
+
+      <div class="chat-messages">
+        <div class="message user">
+          <span class="message-author">You</span>
+          <div class="message-content">
+            Can you check if Elara's dialogue here is consistent with her character from earlier chapters?
+          </div>
+        </div>
+
+        <div class="message ai">
+          <span class="message-author ai">Claude</span>
+          <div class="message-content">
+            I've reviewed Elara's character document and Chapters 1-2. Her response to King Aldric feels consistent—she's formal but guarded, matching her established wariness of authority figures.
+            <br><br>
+            One note: In Chapter 1, she's described as avoiding direct eye contact. Here, she "keeps her gaze level" with the king. This could show character growth, or you might want to add internal conflict about this choice.
+            <br><br>
+            I've highlighted the suggested paragraph where this tension could be explored.
+          </div>
+        </div>
+
+        <div class="message user">
+          <span class="message-author">You</span>
+          <div class="message-content">
+            Good catch. Add some internal conflict about the eye contact.
+          </div>
+        </div>
+
+        <div class="message ai">
+          <span class="message-author ai">Claude</span>
+          <div class="message-content">
+            I've added a suggestion to the paragraph (highlighted in amber). The addition shows Elara's awareness that meeting the king's eyes is unusual for her, connecting back to Master Chen's training while showing she's choosing to do it anyway.
+          </div>
+        </div>
+      </div>
+
+      <div class="chat-input-container">
+        <textarea class="chat-input" rows="3" placeholder="Ask about your story..."></textarea>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Theme Toggle -->
+  <button class="theme-toggle" onclick="toggleTheme()">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+    </svg>
+    <span id="theme-label">Light</span>
+  </button>
+
+  <script>
+    function toggleTheme() {
+      const body = document.body;
+      const label = document.getElementById('theme-label');
+      const currentTheme = body.getAttribute('data-theme');
+
+      if (currentTheme === 'light') {
+        body.setAttribute('data-theme', 'dark');
+        label.textContent = 'Dark';
+      } else {
+        body.setAttribute('data-theme', 'light');
+        label.textContent = 'Light';
+      }
+    }
+  </script>
+</body>
+</html>

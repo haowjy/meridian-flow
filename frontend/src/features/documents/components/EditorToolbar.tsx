@@ -1,4 +1,4 @@
-import type { Editor as TiptapEditor } from '@tiptap/react'
+import type { CodeMirrorEditorRef } from '@/core/editor/codemirror'
 import { Bold, Italic, Heading1, Heading2, List, ListOrdered, MoreHorizontal } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/shared/components/ui/button'
@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils'
 type FormatButton = {
   icon: LucideIcon
   label: string
-  format: string
+  format: 'bold' | 'italic'
 }
 
 type HeadingButton = {
@@ -42,7 +42,7 @@ const LIST_BUTTONS: ListButton[] = [
 ]
 
 interface EditorToolbarProps {
-  editor: TiptapEditor | null
+  editor: CodeMirrorEditorRef | null
   disabled?: boolean
   status: SaveStatus
   lastSaved: Date | null
@@ -50,14 +50,18 @@ interface EditorToolbarProps {
 
 export function EditorToolbar({ editor, disabled: disabledProp = false, status, lastSaved }: EditorToolbarProps) {
   const disabled = !editor || disabledProp
-  const wordCount = editor?.storage.characterCount?.words() ?? 0
+  const wordCount = editor?.getWordCount().words ?? 0
 
-  const renderButton = (Icon: LucideIcon, label: string, isActive: boolean, onClick: () => void) => (
+  const renderButton = (Icon: LucideIcon, label: string, isActive: boolean, onAction: () => void) => (
     <Button
       variant="ghost"
       size="icon"
-      className={cn("size-8", isActive && "bg-muted text-foreground")}
-      onClick={onClick}
+      className={cn("size-8", isActive && "bg-accent/20 text-accent-foreground")}
+      // Use onMouseDown + preventDefault to keep editor focus and selection
+      onMouseDown={(e) => {
+        e.preventDefault()
+        onAction()
+      }}
       disabled={disabled}
       aria-label={label}
       title={label}
@@ -65,6 +69,32 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, status, 
       <Icon className="size-3" />
     </Button>
   )
+
+  // Handle format button clicks (focus preserved via onMouseDown preventDefault)
+  const handleFormatClick = (format: 'bold' | 'italic') => {
+    if (!editor) return
+    if (format === 'bold') {
+      editor.toggleBold()
+    } else {
+      editor.toggleItalic()
+    }
+  }
+
+  // Handle heading button clicks
+  const handleHeadingClick = (level: 1 | 2) => {
+    if (!editor) return
+    editor.toggleHeading(level)
+  }
+
+  // Handle list button clicks
+  const handleListClick = (listType: 'bulletList' | 'orderedList') => {
+    if (!editor) return
+    if (listType === 'bulletList') {
+      editor.toggleBulletList()
+    } else {
+      editor.toggleOrderedList()
+    }
+  }
 
   return (
     <div className="flex w-full items-center gap-0.5 px-4 py-2">
@@ -75,8 +105,8 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, status, 
             {renderButton(
               icon,
               label,
-              editor?.isActive(format) ?? false,
-              () => editor?.chain().focus().toggleMark(format).run()
+              editor?.isFormatActive(format) ?? false,
+              () => handleFormatClick(format)
             )}
           </div>
         ))}
@@ -91,8 +121,8 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, status, 
             {renderButton(
               icon,
               label,
-              editor?.isActive('heading', { level }) ?? false,
-              () => editor?.chain().focus().toggleHeading({ level }).run()
+              editor?.isFormatActive('heading', level) ?? false,
+              () => handleHeadingClick(level)
             )}
           </div>
         ))}
@@ -107,8 +137,8 @@ export function EditorToolbar({ editor, disabled: disabledProp = false, status, 
             {renderButton(
               icon,
               label,
-              editor?.isActive(listType) ?? false,
-              () => editor?.chain().focus()[listType === 'bulletList' ? 'toggleBulletList' : 'toggleOrderedList']().run()
+              editor?.isFormatActive(listType) ?? false,
+              () => handleListClick(listType)
             )}
           </div>
         ))}

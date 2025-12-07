@@ -2,7 +2,7 @@
 
 AI Writing Assistant — a file management system for writers.
 
-## Project Status (Nov 12, 2025)
+## Project Status (Nov 29, 2025)
 
 - ✅ Backend: Complete and functional (see `backend/README.md`)
 - 🚧 Frontend: In progress (Next.js + TipTap)

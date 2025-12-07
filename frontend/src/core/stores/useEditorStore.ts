@@ -107,6 +107,7 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
   },
 
   saveDocument: async (documentId: string, content: string) => {
+    logger.info('saveDocument called', { documentId, contentLength: content.length })
     set({ status: 'saving' })
     const currentDoc = get().activeDocument
     try {

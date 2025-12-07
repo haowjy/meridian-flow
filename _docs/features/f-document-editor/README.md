@@ -6,30 +6,29 @@ feature: "Document Editor"
 
 # Document Editor
 
-**TipTap rich text editor with auto-save, caching, and markdown conversion.**
+**CodeMirror 6 markdown editor with live preview, auto-save, and caching.**
 
-## Status:  Complete (Frontend Only)
+## Status: ✅ Complete (Frontend Only)
 
 ---
 
 ## Features
 
-### TipTap Integration
-**Status**:  Complete
-- Full TipTap editor with StarterKit extensions
-- LRU cache for instant document switching (5 editors cached)
-- Markdown � HTML conversion at boundary
-- See [tiptap-integration.md](tiptap-integration.md)
+### CodeMirror Integration
+**Status**: ✅ Complete
+- CodeMirror 6 with markdown language support
+- Live preview rendering within editor
+- Markdown-native (no conversion needed)
 
 ### Rich Text Editing
-**Status**:  Complete
-- Extensions: StarterKit, Markdown, CharacterCount, Placeholder, Highlight, Typography, Underline
-- Toolbar: Bold, italic, underline, strikethrough, headings (H1-H3), lists, blockquote, code block
+**Status**: ✅ Complete
+- Toolbar: Bold, italic, headings (H1-H3), lists, blockquote, code block
+- Keyboard shortcuts (Cmd/Ctrl+B, Cmd/Ctrl+I, etc.)
 - Word count display
 - See [rich-text-features.md](rich-text-features.md)
 
 ### Document Saving
-**Status**:  Complete
+**Status**: ✅ Complete
 - Auto-save with 1-second debounce (trailing edge)
 - Manual save via Cmd/Ctrl+S
 - Save status UI (Saved, Saving, Error with timestamp)
@@ -37,51 +36,51 @@ feature: "Document Editor"
 - See [saving-and-sync.md](saving-and-sync.md)
 
 ### Content Caching
-**Status**:  Complete
+**Status**: ✅ Complete
 - Strategy: Reconcile-Newest (cache-first with server reconciliation)
 - IndexedDB for instant loads
 - Optimistic updates
 - Conflict handling via server timestamps
 - See [saving-and-sync.md](saving-and-sync.md)
 
-### Markdown Conversion
-**Status**:  Complete
-- Storage format: Markdown everywhere (backend, API, IndexedDB, stores)
-- Load: `editor.commands.setContent(markdown, { contentType: 'markdown' })`
-- Save: `editor.getMarkdown()`
-- See [markdown-conversion.md](markdown-conversion.md)
+### Live Preview
+**Status**: ✅ Complete
+- Inline markdown rendering (headings, bold, italic, etc.)
+- Code syntax highlighting
+- Links rendered with hover preview
+
+### AI Editing Interface
+**Status**: ✅ Available
+- `AIEditorRef` interface for AI suggestions
+- Decoration support for suggestions, accepted, rejected states
+- Programmatic text manipulation via editor commands
 
 ---
 
 ## Implementation
 
 ### Core Files
-- `/Users/jimmyyao/gitrepos/meridian/frontend/src/features/documents/components/EditorPanel.tsx` - Main editor component
-- `/Users/jimmyyao/gitrepos/meridian/frontend/src/core/editor/extensions.ts` - TipTap extensions config
-- `/Users/jimmyyao/gitrepos/meridian/frontend/src/core/hooks/useEditorCache.ts` - Editor caching hook
+- `frontend/src/features/documents/components/EditorPanel.tsx` - Main editor component
+- `frontend/src/core/editor/codemirror/` - CodeMirror setup and extensions
+- `frontend/src/core/editor/api/` - AI integration interface
 
 ### Toolbar
-- `/Users/jimmyyao/gitrepos/meridian/frontend/src/features/documents/components/EditorToolbar.tsx` - Toolbar component
-- `/Users/jimmyyao/gitrepos/meridian/frontend/src/features/documents/components/EditorToolbarContainer.tsx` - Toolbar container
+- `frontend/src/features/documents/components/EditorToolbar.tsx` - Toolbar component
+- `frontend/src/features/documents/components/EditorToolbarContainer.tsx` - Toolbar container
 
 ### Sync & Cache
-- `/Users/jimmyyao/gitrepos/meridian/frontend/src/core/services/documentSyncService.ts` - Sync logic
-- `/Users/jimmyyao/gitrepos/meridian/frontend/src/core/lib/cache.ts` - Cache strategies
-- `/Users/jimmyyao/gitrepos/meridian/frontend/src/core/lib/db.ts` - IndexedDB schema (Dexie)
+- `frontend/src/core/services/documentSyncService.ts` - Sync logic
+- `frontend/src/core/lib/cache.ts` - Cache strategies
+- `frontend/src/core/lib/db.ts` - IndexedDB schema (Dexie)
 
 ---
 
 ## User Experience
 
-**Instant document switching**:
-1. Editor instances cached (5 most recent)
-2. No re-initialization on switch
-3. Smooth transitions between documents
-
 **Auto-save flow**:
 1. User types content
 2. 1-second debounce timer starts
-3. On debounce completion: Save to IndexedDB � Show "Saving" � Sync to server
+3. On debounce completion: Save to IndexedDB → Show "Saving" → Sync to server
 4. On success: Show "Saved" with timestamp
 5. On error: Show error icon, retry automatically
 
@@ -93,11 +92,6 @@ feature: "Document Editor"
 ---
 
 ## Performance
-
-**Editor cache benefits**:
-- No TipTap re-initialization (expensive operation)
-- Instant document switching
-- LRU eviction (keeps memory bounded)
 
 **IndexedDB benefits**:
 - Instant document loads (cached content shows immediately)
@@ -117,5 +111,4 @@ feature: "Document Editor"
 
 ## Related
 
-- See `/_docs/technical/frontend/editor-caching.md` for caching architecture
 - See `/_docs/technical/frontend/README.md` for frontend overview

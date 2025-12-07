@@ -1,26 +1,34 @@
 # Phase 5: Accept/Reject UI
 
-**Dependencies**: Phase 4 (TipTap Marks)
-**Estimated Time**: 2-3 hours
+**Dependencies**: Phase 4 (Live Diff Display)
 
 ---
 
 ## Overview
 
-UI for accepting/rejecting individual suggestions and bulk actions.
+UI for accepting/rejecting AI suggestions shown as live diff hunks. Uses the diff computed from `diff(USER_EDITS, ai_version)`.
+
+**Key Design**:
+- Per-hunk Keep/Undo buttons (inline)
+- Keep All / Undo All toolbar
+- No Model B (no implicit accept) - explicit actions only
+- Dismissed hunks tracked in session store (persists across document switches)
 
 ```
-┌─────────────────────────────────────────────┐
-│ AI Suggestions (3 pending)  [Accept All] [✗]│
-├─────────────────────────────────────────────┤
-│                                             │
-│  The [gentleman→man] entered the            │
-│            ↑                                │
-│    ┌───────────────────┐                    │
-│    │ Accept │ Reject   │                    │
-│    └───────────────────┘                    │
-│                                             │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│ 3 changes                                      [Keep All][Undo All] │
+├─────────────────────────────────────────────────────────────────────┤
+│  1  │ The story begins on a dark and stormy night.                  │
+│  2  │ The ~~man walked~~ gentleman strode into the tavern. [K][U]   │
+│  3  │ He ordered a drink.                                           │
+│  4  │ "Give me your ~~strongest~~ finest ale," he said.    [K][U]   │
+│  5  │ The ~~bartender~~ innkeeper nodded.                  [K][U]   │
+└─────────────────────────────────────────────────────────────────────┘
+
+Legend:
+  ~~strikethrough~~ = user's current text (being replaced)
+  highlighted = AI's suggested text
+  [K][U] = Keep (accept AI) / Undo (reject, keep user's)
 ```
 
 ---
@@ -29,90 +37,52 @@ UI for accepting/rejecting individual suggestions and bulk actions.
 
 | File | Action |
 |------|--------|
-| `frontend/src/features/documents/components/SuggestionPopover.tsx` | Hover UI |
-| `frontend/src/features/documents/components/SuggestionToolbar.tsx` | Bulk actions |
+| `frontend/src/features/documents/components/AIToolbar.tsx` | Create |
+| `frontend/src/features/documents/components/DiffHunk.tsx` | Create (from Phase 4) |
+| `frontend/src/features/documents/stores/useAISessionStore.ts` | Modify (add dismissedHunks)
 
 ---
 
-## SuggestionPopover
+## Actions
 
-```typescript
-import { Popover, PopoverContent, PopoverTrigger } from '@/shared/components/ui/popover'
-import { Button } from '@/shared/components/ui/button'
-import { Check, X } from 'lucide-react'
+| Action | Description | Backend Call |
+|--------|-------------|--------------|
+| **Keep (hunk)** | Replace user lines with AI lines in editor | None (local change) |
+| **Undo (hunk)** | Dismiss hunk (hide from view) | None (local state) |
+| **Keep All** | Replace entire doc with `ai_version` | `POST /ai-sessions/:id/resolve {status: accepted}` |
+| **Undo All** | Clear all suggestions, keep user content | `POST /ai-sessions/:id/resolve {status: rejected}` |
 
-interface SuggestionPopoverProps {
-  versionId: string
-  original: string
-  suggested: string
-  onAccept: () => void
-  onReject: () => void
-  children: React.ReactNode
-}
-
-export function SuggestionPopover({
-  versionId,
-  original,
-  suggested,
-  onAccept,
-  onReject,
-  children,
-}: SuggestionPopoverProps) {
-  return (
-    <Popover>
-      <PopoverTrigger asChild>{children}</PopoverTrigger>
-      <PopoverContent className="w-64 p-2">
-        <div className="space-y-2">
-          <div className="text-sm">
-            <span className="text-muted-foreground line-through">{original}</span>
-            <span className="mx-1">→</span>
-            <span className="text-green-600 font-medium">{suggested}</span>
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" variant="default" onClick={onAccept}>
-              <Check className="w-4 h-4 mr-1" /> Accept
-            </Button>
-            <Button size="sm" variant="outline" onClick={onReject}>
-              <X className="w-4 h-4 mr-1" /> Reject
-            </Button>
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
-  )
-}
-```
+**Key insight**:
+- Keep: Modifies editor content → diff recomputes → hunk disappears
+- Undo: Just hides the hunk (React state), user content unchanged
 
 ---
 
-## SuggestionToolbar
+## AIToolbar Component
 
 ```typescript
-interface SuggestionToolbarProps {
-  count: number
-  onAcceptAll: () => void
-  onRejectAll: () => void
+interface AIToolbarProps {
+  hunkCount: number
+  onKeepAll: () => void
+  onUndoAll: () => void
 }
 
-export function SuggestionToolbar({
-  count,
-  onAcceptAll,
-  onRejectAll,
-}: SuggestionToolbarProps) {
-  if (count === 0) return null
+export function AIToolbar({ hunkCount, onKeepAll, onUndoAll }: AIToolbarProps) {
+  if (hunkCount === 0) return null
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2 bg-green-50 dark:bg-green-950 border-b">
-      <span className="text-sm text-green-700 dark:text-green-300">
-        {count} AI suggestion{count !== 1 ? 's' : ''} pending
+    <div className="ai-toolbar">
+      <span className="ai-toolbar-count">
+        {hunkCount} change{hunkCount !== 1 ? 's' : ''}
       </span>
-      <div className="flex-1" />
-      <Button size="sm" variant="default" onClick={onAcceptAll}>
-        Accept All
-      </Button>
-      <Button size="sm" variant="ghost" onClick={onRejectAll}>
-        Reject All
-      </Button>
+      <div className="ai-toolbar-actions">
+        <Button size="sm" variant="default" onClick={onKeepAll}>
+          Keep All
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onUndoAll}>
+          Undo All
+        </Button>
+      </div>
     </div>
   )
 }
@@ -120,18 +90,300 @@ export function SuggestionToolbar({
 
 ---
 
-## Accept Flow
+## Accept/Reject Logic
+
+### Keep Hunk (Accept AI Suggestion)
 
 ```typescript
-async function handleAccept(versionId: string) {
-  // 1. Call API to accept
-  await api.documents.acceptSuggestion(documentId, versionId)
+function keepHunk(view: EditorView, hunk: DiffHunk) {
+  // Replace user's lines with AI's lines
+  const startLine = view.state.doc.line(hunk.startLine)
+  const endLine = view.state.doc.line(hunk.startLine + hunk.userLines.length - 1)
 
-  // 2. Reload document (now has accepted content)
-  await refreshDocument()
+  view.dispatch({
+    changes: {
+      from: startLine.from,
+      to: endLine.to,
+      insert: hunk.aiLines.join('\n')
+    }
+  })
+  // Diff recomputes automatically since USER_EDITS changed
+  // Hunk disappears because user text now matches AI text
+}
+```
 
-  // 3. Remaining suggestions need re-diffing against new content
-  // (handled by useSuggestions hook on content change)
+### Undo Hunk (Reject AI Suggestion)
+
+```typescript
+// Track dismissed hunks in Zustand store (persists across document switches)
+function undoHunk(sessionId: string, hunkId: string) {
+  // Just hide this hunk - no document change
+  useAISessionStore.getState().dismissHunk(sessionId, hunkId)
+}
+
+// Filter hunks for display
+const dismissedHunks = useAISessionStore(state => state.getDismissedHunks(session?.id))
+const visibleHunks = hunks.filter(h => !dismissedHunks.has(h.id))
+```
+
+### Keep All (Accept All Suggestions)
+
+```typescript
+async function keepAll(view: EditorView, aiVersion: string, sessionId: string) {
+  // Replace entire document with ai_version
+  view.dispatch({
+    changes: {
+      from: 0,
+      to: view.state.doc.length,
+      insert: aiVersion
+    }
+  })
+
+  // Resolve session on backend
+  await api.aiSessions.resolve(sessionId, 'accepted')
+}
+```
+
+### Undo All (Reject All Suggestions)
+
+```typescript
+async function undoAll(sessionId: string) {
+  // No document changes - just clear the session
+  // User keeps their current content
+  await api.aiSessions.resolve(sessionId, 'rejected')
+}
+```
+
+---
+
+## Integration with Editor
+
+```typescript
+function EditorWithAISuggestions({ documentId }: Props) {
+  const { session, aiVersion } = useAISession(documentId)
+  const [editorContent, setEditorContent] = useState('')
+  const viewRef = useRef<EditorView | null>(null)
+
+  // Compute diff hunks live
+  const { hunks, visibleHunks, dismissHunk, resetDismissed } = useAIDiff(
+    editorContent,
+    session?.status === 'active' ? aiVersion : null
+  )
+
+  const handleKeepHunk = (hunk: DiffHunk) => {
+    if (!viewRef.current) return
+    keepHunk(viewRef.current, hunk)
+    // Diff will recompute, hunk will disappear
+  }
+
+  const handleUndoHunk = (hunkId: string) => {
+    dismissHunk(hunkId)
+  }
+
+  const handleKeepAll = async () => {
+    if (!viewRef.current || !aiVersion || !session) return
+    await keepAll(viewRef.current, aiVersion, session.id)
+  }
+
+  const handleUndoAll = async () => {
+    if (!session) return
+    await undoAll(session.id)
+    resetDismissed() // Clear dismissed set for next session
+  }
+
+  return (
+    <div>
+      <AIToolbar
+        hunkCount={visibleHunks.length}
+        onKeepAll={handleKeepAll}
+        onUndoAll={handleUndoAll}
+      />
+      <CodeMirrorEditor
+        value={editorContent}
+        onChange={setEditorContent}
+        hunks={visibleHunks}
+        onKeepHunk={handleKeepHunk}
+        onUndoHunk={handleUndoHunk}
+        ref={viewRef}
+      />
+    </div>
+  )
+}
+```
+
+---
+
+## UI States
+
+### Active Session with Suggestions
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 3 changes                                      [Keep All][Undo All] │
+├─────────────────────────────────────────────────────────────────────┤
+│  The ~~man walked~~ gentleman strode into the tavern. [Keep][Undo]  │
+│  ...                                                                │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### No Active Session
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                       (no toolbar shown)                            │
+├─────────────────────────────────────────────────────────────────────┤
+│  The man walked into the tavern.                                    │
+│  ...                                                                │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Action Results
+```
+Keep (hunk):
+  Before: "The ~~man walked~~ gentleman strode into the tavern. [K][U]"
+  After:  "The gentleman strode into the tavern."  (no diff, hunk gone)
+
+Undo (hunk):
+  Before: "The ~~man walked~~ gentleman strode into the tavern. [K][U]"
+  After:  "The man walked into the tavern."  (hunk dismissed, hidden)
+
+Keep All:
+  USER_EDITS = ai_version
+  All hunks disappear (no diff)
+  Session status = 'accepted'
+
+Undo All:
+  USER_EDITS unchanged
+  Session status = 'rejected'
+  All hunks hidden
+```
+
+---
+
+## What Changed from Original Design
+
+| Original | New |
+|----------|-----|
+| TipTap marks with `original` attr | Live diff hunks |
+| Model B: edit inside = accept | **Removed** - explicit only |
+| SuggestionPopover hover UI | Inline Keep/Undo buttons |
+| Mark-based restore | No restore needed (user text unchanged) |
+
+---
+
+## Dismissed Hunks Persistence
+
+Store dismissed hunks in Zustand session store, not component state. This ensures:
+- Dismissed hunks persist across document switches
+- State is cleaned up when session closes
+
+```typescript
+// In useAISessionStore (Zustand)
+interface AISessionState {
+  // ... existing session state
+  dismissedHunks: Map<string, Set<string>>  // sessionId → hunkIds
+
+  dismissHunk: (sessionId: string, hunkId: string) => void
+  getDismissedHunks: (sessionId: string) => Set<string>
+  clearDismissed: (sessionId: string) => void
+}
+
+export const useAISessionStore = create<AISessionState>((set, get) => ({
+  dismissedHunks: new Map(),
+
+  dismissHunk: (sessionId, hunkId) => {
+    set(state => {
+      const newMap = new Map(state.dismissedHunks)
+      const existing = newMap.get(sessionId) ?? new Set()
+      newMap.set(sessionId, new Set([...existing, hunkId]))
+      return { dismissedHunks: newMap }
+    })
+  },
+
+  getDismissedHunks: (sessionId) => {
+    return get().dismissedHunks.get(sessionId) ?? new Set()
+  },
+
+  clearDismissed: (sessionId) => {
+    set(state => {
+      const newMap = new Map(state.dismissedHunks)
+      newMap.delete(sessionId)
+      return { dismissedHunks: newMap }
+    })
+  },
+}))
+
+// Usage in component
+const dismissedHunks = useAISessionStore(
+  state => state.getDismissedHunks(session?.id)
+)
+
+const handleUndoHunk = (hunkId: string) => {
+  if (session) {
+    useAISessionStore.getState().dismissHunk(session.id, hunkId)
+  }
+}
+```
+
+---
+
+## Stale Suggestion Warning
+
+When user edits diverge significantly from AI suggestions, show a warning:
+
+```typescript
+interface AIToolbarProps {
+  hunkCount: number
+  totalHunkChars: number  // Sum of all userText + aiText lengths
+  documentLength: number
+  onKeepAll: () => void
+  onUndoAll: () => void
+}
+
+export function AIToolbar({
+  hunkCount,
+  totalHunkChars,
+  documentLength,
+  onKeepAll,
+  onUndoAll
+}: AIToolbarProps) {
+  if (hunkCount === 0) return null
+
+  // Show warning if >50% of document is affected by diffs
+  const divergenceRatio = totalHunkChars / Math.max(documentLength, 1)
+  const isStale = divergenceRatio > 0.5
+
+  return (
+    <div className="ai-toolbar">
+      <span className="ai-toolbar-count">
+        {hunkCount} change{hunkCount !== 1 ? 's' : ''}
+      </span>
+
+      {isStale && (
+        <span className="ai-warning">
+          ⚠️ These suggestions may be outdated due to your edits
+        </span>
+      )}
+
+      <div className="ai-toolbar-actions">
+        <Button size="sm" variant="default" onClick={onKeepAll}>
+          Keep All
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onUndoAll}>
+          Undo All
+        </Button>
+      </div>
+    </div>
+  )
+}
+```
+
+CSS:
+```css
+.ai-warning {
+  font-size: 12px;
+  color: var(--warning);
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 ```
 
@@ -139,9 +391,13 @@ async function handleAccept(versionId: string) {
 
 ## Success Criteria
 
-- [ ] Hover on suggestion shows popover
-- [ ] Accept updates document and removes mark
-- [ ] Reject removes mark without updating document
-- [ ] Accept All applies all suggestions
-- [ ] Reject All removes all marks
-- [ ] Toolbar shows pending count
+- [ ] Toolbar shows hunk count
+- [ ] Keep All replaces doc with ai_version, resolves session
+- [ ] Undo All resolves session, keeps user content
+- [ ] Per-hunk Keep button replaces user lines with AI lines
+- [ ] Per-hunk Undo button dismisses hunk (hides from view)
+- [ ] Dismissed hunks don't reappear during session
+- [ ] Dismissed hunks persist across document switches
+- [ ] User can edit freely while suggestions are pending
+- [ ] No implicit accept behavior (explicit Keep/Undo only)
+- [ ] Stale suggestion warning shown when >50% divergence

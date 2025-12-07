@@ -1,14 +1,14 @@
 ---
 stack: frontend
 status: complete
-feature: "Markdown Conversion"
+feature: "Markdown Format"
 ---
 
-# Markdown Conversion
+# Markdown Format
 
 **Markdown as the single source of truth across the entire stack.**
 
-## Status:  Complete
+## Status: âœ… Complete
 
 ---
 
@@ -19,32 +19,26 @@ feature: "Markdown Conversion"
 - API requests/responses: Markdown strings
 - IndexedDB cache: Markdown strings
 - Zustand stores: Markdown strings
+- Editor: Markdown (CodeMirror 6 is markdown-native)
 
 **No intermediate formats**: No HTML, no JSON, just markdown
 
 ---
 
-## TipTap Integration
+## CodeMirror Integration
 
-**File**: `/Users/jimmyyao/gitrepos/meridian/frontend/src/core/lib/mdToTiptap.ts`
+CodeMirror 6 works directly with markdown - no conversion needed.
 
-**Load (Markdown ’ Editor)**:
-```typescript
-editor.commands.setContent(markdown, { contentType: 'markdown' })
-```
+**Load**: Pass markdown string to `initialContent` prop
+**Save**: Get markdown via `editorRef.getContent()`
+**Edit**: All operations work directly on markdown text
 
-**Save (Editor ’ Markdown)**:
-```typescript
-const markdown = editor.getMarkdown()
-```
-
-**TipTap Extension**: `@tiptap/extension-markdown` (official)
+This is simpler than the previous TipTap setup which required markdown â†” HTML conversion.
 
 ---
 
-## Conversion Quality
+## Supported Syntax
 
-**Supported Syntax**:
 - Headings (# ## ###)
 - Bold (**text** or __text__)
 - Italic (*text* or _text_)
@@ -55,21 +49,6 @@ const markdown = editor.getMarkdown()
 - Inline code (\`code\`)
 - Links ([text](url))
 - Horizontal rules (---)
-
-**Round-trip fidelity**: Markdown ’ TipTap ’ Markdown preserves formatting
-
----
-
-## Word Count Calculation
-
-**Backend**: Uses HTML parsing (legacy approach)
-
-**Frontend**: Uses TipTap CharacterCount extension
-```typescript
-editor.storage.characterCount.words()
-```
-
-**Note**: Backend should migrate to markdown-based counting
 
 ---
 
@@ -98,5 +77,4 @@ editor.storage.characterCount.words()
 
 ## Related
 
-- See [tiptap-integration.md](tiptap-integration.md) for editor setup
 - See [rich-text-features.md](rich-text-features.md) for supported formatting

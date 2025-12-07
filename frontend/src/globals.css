@@ -6,28 +6,20 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ============================================================================
-   MERIDIAN DESIGN SYSTEM - Jade & Gold Theme
+   MERIDIAN DESIGN SYSTEM - Themeable Architecture
    ============================================================================
 
-   Based on: _docs/technical/frontend/ui-colors.md
+   Theme system overview:
+   - --theme-* variables are set by JavaScript (src/core/theme/useTheme.ts)
+   - Semantic variables (--background, --foreground, etc.) reference --theme-*
+   - Components use semantic variables, so theme changes propagate automatically
+   - Fallback values ensure the app works before JS loads (modern-literary theme)
 
-   Color Philosophy:
-   - Jade = flow, balance, cultivated focus
-   - Gold = insight, value, illumination
-   - Parchment = writer's craft, warm and legible
-   - Dark mode = green-black jade for depth, reduced glare
+   To add new themes:
+   1. Add a ThemePreset in src/core/theme/themes.ts
+   2. The theme system handles CSS variable injection automatically
 
-   THEME SWAPPING:
-   To create alternative themes, add new color definitions using data attributes:
-
-   [data-theme="alternative-name"] {
-     --jade-900: ...;
-     --gold-500: ...;
-     // override primitive colors
-   }
-
-   All components use semantic tokens so swapping themes only requires
-   changing the primitive color values below.
+   See: _docs/hidden/handoffs/design-system-theme-architecture.md
    ============================================================================ */
 
 @theme inline {
@@ -76,11 +68,12 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* === Typography === */
-  --font-inter: 'Inter', system-ui, sans-serif;
-  --font-literata: 'Literata', Georgia, serif;
-  --font-sans: var(--font-inter);
-  --font-serif: var(--font-literata);
+  /* === Typography (bridged from theme system) === */
+  --font-display: var(--theme-font-display, 'Cormorant Garamond', Georgia, serif);
+  --font-body: var(--theme-font-body, 'Source Serif 4', Georgia, serif);
+  --font-ui: var(--theme-font-ui, 'Manrope', system-ui, sans-serif);
+  --font-sans: var(--font-ui);
+  --font-serif: var(--font-body);
   --font-mono: ui-monospace, monospace;
 
   /* === Border Radius === */
@@ -121,274 +114,240 @@
 }
 
 /* ============================================================================
-   LIGHT MODE - Morning study: parchment warmth, calm focus
+   LIGHT MODE - Default theme fallbacks (Modern Literary)
+   These values are used before JS loads, then overridden by theme system
    ============================================================================ */
 
 :root {
-  /* === Base Palette === */
+  /* === Theme Variable Fallbacks (Modern Literary Light) === */
+  /* Colors from: _docs/technical/frontend/themes/modern-literary.md */
+  --theme-bg: #F9F6F0;           /* Warm paper */
+  --theme-surface: #FFFDF8;      /* Off-white surface */
+  --theme-text: #2C2418;         /* Warm ink */
+  --theme-text-muted: #6B5D4D;   /* Warm muted brown */
+  --theme-border: #E5DFD4;       /* Warm border */
+  --theme-accent: #C8973E;       /* Antique gold */
+  --theme-accent-hover: #B8872E;
+  --theme-accent-foreground: #2C2418;
+  --theme-primary: #C8973E;      /* Antique gold */
+  --theme-primary-foreground: #2C2418;
+  --theme-success: #2D5A47;
+  --theme-success-foreground: #FFFFFF;
+  --theme-warning: #DB9A30;
+  --theme-warning-foreground: #2C2418;
+  --theme-error: #C4785A;
+  --theme-error-foreground: #FFFFFF;
+  --theme-focus-ring-outer: rgba(200, 151, 62, 0.35);
+  --theme-focus-ring-inner: rgba(200, 151, 62, 0.15);
+  --theme-sidebar: #F3EFE7;      /* Warm sidebar */
+  --theme-sidebar-foreground: #2C2418;
+  --theme-sidebar-icon: #6B5D4D;
+  --theme-sidebar-accent: #EDE8DE;
+  --theme-sidebar-border: #E5DFD4;
+  /* Warm lamp-like shadows */
+  --theme-shadow-1: rgba(44, 36, 24, 0.06) 0px 1px 2px, rgba(44, 36, 24, 0.04) 0px 2px 6px;
+  --theme-shadow-2: rgba(44, 36, 24, 0.08) 0px 4px 12px, rgba(44, 36, 24, 0.04) 0px 1px 3px;
+  --theme-shadow-3: rgba(44, 36, 24, 0.12) 0px 8px 24px, rgba(44, 36, 24, 0.06) 0px 2px 8px;
+  --theme-selection-bg: rgba(200, 151, 62, 0.25);
+  --theme-selection-fg: #2C2418;
+  /* Typography: Cormorant Garamond (display), Source Serif 4 (body), Manrope (UI) */
+  --theme-font-display: 'Cormorant Garamond', Georgia, serif;
+  --theme-font-body: 'Source Serif 4', Georgia, serif;
+  --theme-font-ui: 'Manrope', system-ui, sans-serif;
+  --theme-radius: 8px;
 
-  /* Jade - Primary (Deep Jade - more green, less teal) */
-  --jade-900: oklch(0.42 0.08 160);
-  /* Deep jade #356e5b - buttons, icons */
-  --jade-300: oklch(0.91 0.015 100);
-  /* Sage parchment - subtle green tint for sidebar */
-  --jade-hover: oklch(0.88 0.02 100);
-  /* Slightly darker sage for hover */
+  /* Paper grain texture (subtle noise for light mode, disabled in dark) */
+  --texture-grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  --texture-opacity: 0.03;
 
-  /* Gold - Accent */
-  --gold-500: oklch(0.78 0.18 85);
-  /* #F4B41A - bright gold for highlights */
-  --gold-muted: oklch(0.62 0.12 85);
-  /* #c59b39 - muted gold for subtle accents */
-
-  /* Parchment - Surfaces */
-  --parchment-50: oklch(0.97 0.01 75);
-  /* #F7F3EB - app background */
-  --parchment-0: oklch(1 0 0);
-  /* #FFFFFF - pure white for cards/bubbles */
-  --neutral-100: oklch(0.95 0.005 70);
-  /* #F2EFE8 - subtle fills */
-
-  /* Ink - Text */
-  --ink-900: oklch(0.20 0.02 50);
-  /* #1C1A18 */
-  --ink-muted: oklch(0.50 0.02 50);
-  /* #8A7F6C - timestamps */
-
-  /* Lines - Borders */
-  --line-200: oklch(0.88 0.01 70);
-  /* #DDD6C8 */
-
-  /* === Semantic Assignments === */
-
-  /* Core */
-  --background: var(--parchment-50);
-  --foreground: var(--ink-900);
-
-  /* Primary = DARK JADE (Jade 900), not light jade! */
-  --jade-primary: var(--jade-900);
-  --jade-foreground: oklch(1 0 0);
-  /* white text on dark jade */
-
-  /* Accent = Gold */
-  --gold: var(--gold-500);
-  --gold-foreground: var(--ink-900);
-
-  /* Interactive States */
-  --hover: oklch(0.79 0.03 165 / var(--opacity-hover));
-  /* jade wash at 8% */
-  --active: var(--jade-900);
-  --disabled: oklch(0.60 0.01 50);
-  /* #9A958A */
-
-  /* Borders & Inputs */
-  --border: var(--line-200);
-  --input-border: var(--line-200);
-
-  /* Focus Rings - Layered: jade outline + inner gold */
-  --focus-ring-outer: oklch(0.54 0.08 175 / var(--focus-outer-opacity));
-  /* jade at 28% */
-  --focus-ring-inner: oklch(0.78 0.18 85 / var(--focus-inner-opacity));
-  /* gold at 12% */
-  --focus-ring: var(--focus-ring-outer);
-  /* for simple references */
-
-  /* Cards & Popovers - PURE WHITE, not parchment! */
-  --card: var(--parchment-0);
-  --card-foreground: var(--ink-900);
-  --popover: var(--parchment-0);
-  --popover-foreground: var(--ink-900);
-
-  /* Muted - Neutral fills */
-  --muted: var(--neutral-100);
-  --muted-foreground: var(--ink-muted);
-
-  /* Semantic Feedback */
-  --success: var(--jade-900);
-  /* jade for success */
-  --success-foreground: oklch(1 0 0);
-  --success-wash: oklch(0.94 0.03 165);
-  /* #EBF5F2 */
-
-  --warning: oklch(0.75 0.12 65);
-  /* #EBA868 amber-clay */
-  --warning-foreground: var(--ink-900);
-  --warning-wash: oklch(0.98 0.02 65);
-  /* #FDF3E6 */
-
-  --error: oklch(0.75 0.12 65);
-  /* same as warning */
-  --error-foreground: var(--ink-900);
-
-  --info: var(--jade-900);
-  --info-foreground: oklch(1 0 0);
-  --info-wash: var(--success-wash);
-
-  /* Sidebar - LIGHT JADE background, DARK JADE icons */
-  --sidebar: var(--jade-300);
-  /* sage parchment for bg */
-  --sidebar-foreground: var(--ink-900);
-  /* dark text on light sidebar */
-  --sidebar-icon: var(--jade-900);
-  /* DARK JADE for icons! */
-  --sidebar-primary: var(--gold-muted);
-  /* muted gold active marker */
-  --sidebar-primary-foreground: var(--ink-900);
-  --sidebar-accent: var(--jade-hover);
-  /* jade for active/hover states */
-  --sidebar-accent-foreground: var(--sidebar-foreground);
-  --sidebar-border: var(--jade-900);
-  --sidebar-ring: var(--gold-500);
-
-  /* Multi-Layer Shadows - Light Mode (ink-based, not jade-tinted!) */
-  --shadow-1-value:
-    rgba(28, 26, 24, 0.06) 0px 1px 2px,
-    rgba(28, 26, 24, 0.04) 0px 2px 6px;
-
-  --shadow-2-value:
-    rgba(28, 26, 24, 0.10) 0px 3px 8px,
-    rgba(28, 26, 24, 0.06) 0px 6px 16px;
-
-  --shadow-3-value:
-    rgba(28, 26, 24, 0.18) 0px 8px 24px,
-    rgba(28, 26, 24, 0.10) 0px 12px 32px;
-
-  /* Selection & Highlights */
-  --selection-bg: oklch(0.78 0.18 85 / 0.3);
-  /* gold at 30% */
-  --selection-fg: var(--ink-900);
-}
-
-/* ============================================================================
-   DARK MODE - Evening chamber: luminous jade over soft shadow
-   ============================================================================ */
-
-.dark {
-  /* === Base Palette === */
-
-  /* Dark neutrals (was jade-tinted) */
-  --jade-black: oklch(0.18 0.01 60);
-  /* Warm dark gray - base (was green-tinted) */
-  --jade-800: oklch(0.20 0.01 60);
-  /* Warm dark gray - surfaces */
-  --slate-700: oklch(0.22 0.01 60);
-  /* Warm dark gray - alt surface for bubbles */
-  --jade-hover-dark: oklch(0.24 0.01 60);
-  /* Warm dark gray - hover wash */
-
-  /* Glow Jade - SPECIAL ACCENT for dark mode! */
-  --glow-jade: oklch(0.72 0.14 180);
-  /* #3CC8B4 - cyan-jade for focus/AI rims */
-
-  /* Jade Tint for UI */
-  --jade-tint: oklch(0.78 0.06 170);
-  /* #B7D4CC - jade tint for secondary buttons */
-
-  /* Warm Gold */
-  --gold-warm-400: oklch(0.78 0.10 85);
-  /* #E3C169 */
-
-  /* Light Ink */
-  --ink-50: oklch(0.93 0.005 50);
-  /* #EAEAE7 */
-  --ink-muted-dark: oklch(0.72 0.01 50);
-  /* #B6B0A2 - timestamps */
-
-  /* Lines */
-  --line-800: oklch(0.32 0.02 165);
-  /* #2E332F */
-
-  /* === Semantic Assignments === */
+  /* === Semantic Variables (bridge to theme system) === */
 
   /* Core */
-  --background: var(--jade-800);
-  --foreground: var(--ink-50);
+  --background: var(--theme-bg);
+  --foreground: var(--theme-text);
 
-  /* Primary = Keep dark jade */
-  --jade-primary: var(--jade-900);
-  /* still use the same dark jade */
-  --jade-foreground: var(--ink-50);
+  /* Primary */
+  --jade-primary: var(--theme-primary);
+  --jade-foreground: var(--theme-primary-foreground);
 
-  /* Accent = Warm Gold */
-  --gold: var(--gold-warm-400);
-  --gold-foreground: var(--jade-black);
+  /* Accent */
+  --gold: var(--theme-accent);
+  --gold-foreground: var(--theme-accent-foreground);
 
   /* Interactive States */
-  --hover: oklch(0.27 0.02 165 / var(--opacity-hover));
-  /* jade wash at 8% */
-  --active: var(--jade-900);
-  --disabled: oklch(0.50 0.01 50);
-  /* #7E857F */
+  --hover: color-mix(in srgb, var(--theme-accent) 8%, transparent);
+  --active: var(--theme-primary);
+  --disabled: #9A958A;
 
   /* Borders & Inputs */
-  --border: var(--line-800);
-  --input-border: var(--line-800);
+  --border: var(--theme-border);
+  --input-border: var(--theme-border);
 
-  /* Focus Rings - Layered: GLOW JADE outline + inner gold */
-  --focus-ring-outer: oklch(0.72 0.14 180 / 0.22);
-  /* glow jade at 22% */
-  --focus-ring-inner: oklch(0.78 0.10 85 / 0.10);
-  /* gold at 10% */
+  /* Focus Rings */
+  --focus-ring-outer: var(--theme-focus-ring-outer);
+  --focus-ring-inner: var(--theme-focus-ring-inner);
   --focus-ring: var(--focus-ring-outer);
 
-  /* Cards & Popovers - Alt surface (Slate 700) */
-  --card: var(--slate-700);
-  --card-foreground: var(--ink-50);
-  --popover: var(--slate-700);
-  --popover-foreground: var(--ink-50);
+  /* Cards & Popovers */
+  --card: var(--theme-surface);
+  --card-foreground: var(--theme-text);
+  --popover: var(--theme-surface);
+  --popover-foreground: var(--theme-text);
 
   /* Muted */
-  --muted: var(--jade-black);
-  --muted-foreground: var(--ink-muted-dark);
+  --muted: color-mix(in srgb, var(--theme-bg) 50%, var(--theme-border) 50%);
+  --muted-foreground: var(--theme-text-muted);
 
   /* Semantic Feedback */
-  --success: var(--glow-jade);
-  /* glow jade for success in dark mode */
-  --success-foreground: var(--ink-50);
-  --success-wash: oklch(0.24 0.02 165);
-  /* #1E2724 */
+  --success: var(--theme-success);
+  --success-foreground: var(--theme-success-foreground);
+  --success-wash: color-mix(in srgb, var(--theme-success) 10%, var(--theme-bg) 90%);
 
-  --warning: oklch(0.72 0.14 55);
-  /* #E0A15F amber */
-  --warning-foreground: var(--jade-black);
-  --warning-wash: oklch(0.22 0.02 60);
-  /* #2A2620 */
+  --warning: var(--theme-warning);
+  --warning-foreground: var(--theme-warning-foreground);
+  --warning-wash: color-mix(in srgb, var(--theme-warning) 10%, var(--theme-bg) 90%);
 
-  --error: oklch(0.72 0.14 55);
-  --error-foreground: var(--jade-black);
+  --error: var(--theme-error);
+  --error-foreground: var(--theme-error-foreground);
 
-  --info: var(--glow-jade);
-  --info-foreground: var(--ink-50);
+  --info: var(--theme-primary);
+  --info-foreground: var(--theme-primary-foreground);
   --info-wash: var(--success-wash);
 
   /* Sidebar */
-  --sidebar: var(--jade-black);
-  --sidebar-foreground: var(--ink-50);
-  --sidebar-icon: var(--ink-50);
-  --sidebar-primary: var(--gold-warm-400);
-  --sidebar-primary-foreground: var(--jade-black);
-  --sidebar-accent: var(--jade-hover-dark);
-  --sidebar-accent-foreground: var(--ink-50);
-  --sidebar-border: var(--line-800);
-  --sidebar-ring: var(--gold-warm-400);
+  --sidebar: var(--theme-sidebar);
+  --sidebar-foreground: var(--theme-sidebar-foreground);
+  --sidebar-icon: var(--theme-sidebar-icon);
+  --sidebar-accent: var(--theme-sidebar-accent);
+  --sidebar-accent-foreground: var(--theme-sidebar-foreground);
+  --sidebar-border: var(--theme-sidebar-border);
+  --sidebar-ring: var(--theme-accent);
 
-  /* Multi-Layer Shadows - Dark Mode (black + inset jade/gold hints) */
-  --shadow-1-value:
-    rgba(0, 0, 0, 0.30) 0px 1px 2px,
-    rgba(60, 200, 180, 0.10) 0px 0px 0px 1px inset;
-
-  --shadow-2-value:
-    rgba(0, 0, 0, 0.45) 0px 3px 10px,
-    rgba(227, 193, 105, 0.10) 0px 0px 0px 1px inset;
-
-  --shadow-3-value:
-    rgba(0, 0, 0, 0.60) 0px 8px 28px,
-    rgba(60, 200, 180, 0.12) 0px 0px 24px;
+  /* Shadows */
+  --shadow-1-value: var(--theme-shadow-1);
+  --shadow-2-value: var(--theme-shadow-2);
+  --shadow-3-value: var(--theme-shadow-3);
 
   /* Selection & Highlights */
-  --selection-bg: oklch(0.78 0.10 85 / 0.4);
-  /* gold at 40% */
-  --selection-fg: var(--ink-50);
+  --selection-bg: var(--theme-selection-bg);
+  --selection-fg: var(--theme-selection-fg);
+}
+
+/* ============================================================================
+   DARK MODE - Default dark theme fallbacks (Modern Literary Dark)
+   These are CSS-only fallbacks; the theme system sets --theme-* variables via JS
+   ============================================================================ */
+
+.dark {
+  /* === Theme Variable Fallbacks (Modern Literary Dark) === */
+  /* Colors from: _docs/technical/frontend/themes/modern-literary.md */
+  --theme-bg: #1C1917;           /* Espresso/ink */
+  --theme-surface: #252220;      /* Warm charcoal */
+  --theme-text: #F0EBE3;         /* Warm cream */
+  --theme-text-muted: #A89E8E;   /* Warm muted */
+  --theme-border: #3A3530;       /* Warm border */
+  --theme-accent: #E4B866;       /* Warm amber */
+  --theme-accent-hover: #F0C87A;
+  --theme-accent-foreground: #1C1917;
+  --theme-primary: #E4B866;      /* Warm amber */
+  --theme-primary-foreground: #1C1917;
+  --theme-success: #4A8F72;
+  --theme-success-foreground: #1C1917;
+  --theme-warning: #F0B042;
+  --theme-warning-foreground: #1C1917;
+  --theme-error: #D4896B;
+  --theme-error-foreground: #1C1917;
+  --theme-focus-ring-outer: rgba(228, 184, 102, 0.30);
+  --theme-focus-ring-inner: rgba(228, 184, 102, 0.12);
+  --theme-sidebar: #14120F;      /* Deep sidebar */
+  --theme-sidebar-foreground: #F0EBE3;
+  --theme-sidebar-icon: #A89E8E;
+  --theme-sidebar-accent: #2A2724;
+  --theme-sidebar-border: #3A3530;
+  /* Reading lamp glow shadows */
+  --theme-shadow-1: rgba(0, 0, 0, 0.30) 0px 1px 2px, rgba(228, 184, 102, 0.03) 0px 1px 0px inset;
+  --theme-shadow-2: rgba(0, 0, 0, 0.40) 0px 4px 16px, rgba(228, 184, 102, 0.05) 0px 0px 0px 1px;
+  --theme-shadow-3: rgba(0, 0, 0, 0.50) 0px 8px 32px, rgba(228, 184, 102, 0.08) 0px 0px 24px;
+  --theme-selection-bg: rgba(228, 184, 102, 0.35);
+  --theme-selection-fg: #F0EBE3;
+
+  /* Disable paper grain in dark mode */
+  --texture-opacity: 0;
+
+  /* === Semantic Variables (same bridge as light, but referencing updated --theme-* values) === */
+
+  /* Core */
+  --background: var(--theme-bg);
+  --foreground: var(--theme-text);
+
+  /* Primary */
+  --jade-primary: var(--theme-primary);
+  --jade-foreground: var(--theme-primary-foreground);
+
+  /* Accent */
+  --gold: var(--theme-accent);
+  --gold-foreground: var(--theme-accent-foreground);
+
+  /* Glow accent for AI elements in dark mode */
+  --glow-jade: var(--theme-accent);
+
+  /* Interactive States */
+  --hover: color-mix(in srgb, var(--theme-accent) 8%, transparent);
+  --active: var(--theme-primary);
+  --disabled: #7E857F;
+
+  /* Borders & Inputs */
+  --border: var(--theme-border);
+  --input-border: var(--theme-border);
+
+  /* Focus Rings */
+  --focus-ring-outer: var(--theme-focus-ring-outer);
+  --focus-ring-inner: var(--theme-focus-ring-inner);
+  --focus-ring: var(--focus-ring-outer);
+
+  /* Cards & Popovers */
+  --card: var(--theme-surface);
+  --card-foreground: var(--theme-text);
+  --popover: var(--theme-surface);
+  --popover-foreground: var(--theme-text);
+
+  /* Muted */
+  --muted: color-mix(in srgb, var(--theme-bg) 70%, var(--theme-border) 30%);
+  --muted-foreground: var(--theme-text-muted);
+
+  /* Semantic Feedback */
+  --success: var(--theme-success);
+  --success-foreground: var(--theme-success-foreground);
+  --success-wash: color-mix(in srgb, var(--theme-success) 15%, var(--theme-bg) 85%);
+
+  --warning: var(--theme-warning);
+  --warning-foreground: var(--theme-warning-foreground);
+  --warning-wash: color-mix(in srgb, var(--theme-warning) 15%, var(--theme-bg) 85%);
+
+  --error: var(--theme-error);
+  --error-foreground: var(--theme-error-foreground);
+
+  --info: var(--theme-primary);
+  --info-foreground: var(--theme-primary-foreground);
+  --info-wash: var(--success-wash);
+
+  /* Sidebar */
+  --sidebar: var(--theme-sidebar);
+  --sidebar-foreground: var(--theme-sidebar-foreground);
+  --sidebar-icon: var(--theme-sidebar-icon);
+  --sidebar-accent: var(--theme-sidebar-accent);
+  --sidebar-accent-foreground: var(--theme-sidebar-foreground);
+  --sidebar-border: var(--theme-sidebar-border);
+  --sidebar-ring: var(--theme-accent);
+
+  /* Shadows */
+  --shadow-1-value: var(--theme-shadow-1);
+  --shadow-2-value: var(--theme-shadow-2);
+  --shadow-3-value: var(--theme-shadow-3);
+
+  /* Selection & Highlights */
+  --selection-bg: var(--theme-selection-bg);
+  --selection-fg: var(--theme-selection-fg);
 }
 
 /* ============================================================================
@@ -443,11 +402,31 @@
     background: var(--muted-foreground);
   }
 
-  /* Focus ring strategy - Layered: outer jade + inner gold */
-  *:focus-visible {
+  /* Focus ring strategy - only for interactive elements */
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  [role="button"]:focus-visible,
+  [role="menuitem"]:focus-visible,
+  [role="tab"]:focus-visible,
+  [role="checkbox"]:focus-visible,
+  [role="switch"]:focus-visible {
     outline: 3px solid var(--focus-ring-outer);
     outline-offset: 2px;
     box-shadow: 0 0 0 2px var(--focus-ring-inner);
+  }
+
+  /* Paper grain texture overlay (subtle in light mode, disabled in dark) */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: var(--texture-grain);
+    opacity: var(--texture-opacity);
+    pointer-events: none;
+    z-index: 9999;
   }
 
   /* Restore cursor: pointer for buttons and menu items (Tailwind v4 changed to cursor: default)
@@ -507,6 +486,27 @@ body.preload * {
     font-size: 12px;
     line-height: 1.4;
     color: var(--muted-foreground);
+  }
+
+  /* === Literary Typography Enhancements === */
+
+  /* Drop cap for first paragraph in prose - apply .prose-drop-cap to container */
+  .prose-drop-cap p:first-of-type::first-letter {
+    font-family: var(--font-display);
+    font-size: 3.5em;
+    float: left;
+    line-height: 0.8;
+    padding-right: 0.1em;
+    padding-top: 0.1em;
+    color: var(--theme-accent);
+  }
+
+  /* Scene break decoration (· · ·) */
+  .scene-break {
+    @apply text-center my-8;
+    color: var(--theme-accent);
+    font-family: var(--font-display);
+    letter-spacing: 0.5em;
   }
 
   /* === Chat Pane (Left Sidebar) === */
@@ -643,185 +643,6 @@ body.preload * {
       -2px 0 6px rgba(28, 26, 24, 0.08);
   }
 
-  /* === TipTap Editor (Parchment Workspace with Literata) === */
-
-  /* Toolbar */
-  .tiptap-toolbar {
-    @apply px-8 py-0 my-0;
-  }
-
-  .tiptap-toolbar__pill {
-    @apply relative flex items-center overflow-hidden rounded-lg bg-card/80 ring-1 ring-border/40;
-    box-shadow: var(--shadow-1);
-    transition: all var(--duration-medium) var(--easing-default);
-  }
-
-  .tiptap-toolbar__pill[data-readonly='true'] {
-    @apply w-auto gap-0 px-0 py-0;
-  }
-
-  .tiptap-toolbar__pill[data-readonly='false'] {
-    @apply w-full gap-1 px-0 py-0;
-  }
-
-  /* Editor wrapper */
-  .tiptap {
-    @apply flex-1 h-full px-8 outline-none;
-    font-family: var(--font-serif);
-  }
-
-  /* ProseMirror editor content */
-  .ProseMirror {
-    @apply flex-1 h-full outline-none cursor-text;
-    font-family: var(--font-serif);
-  }
-
-  /* === Typography (Literata for content) === */
-
-  .ProseMirror p {
-    @apply mb-4 leading-relaxed;
-    font-size: 16px;
-    line-height: 1.6;
-    min-width: 1px;
-    /* Prevent collapse, ensure cursor visibility */
-  }
-
-  .ProseMirror h1 {
-    @apply mb-4 mt-8 font-bold leading-tight;
-    font-size: 26px;
-    line-height: 1.3;
-  }
-
-  .ProseMirror h2 {
-    @apply mb-3 mt-6 font-semibold leading-snug;
-    font-size: 22px;
-    line-height: 1.3;
-  }
-
-  .ProseMirror h3 {
-    @apply mb-3 mt-5 font-semibold leading-snug;
-    font-size: 19px;
-    line-height: 1.3;
-  }
-
-  .ProseMirror h4 {
-    @apply mb-2 mt-4 font-semibold;
-    font-size: 17px;
-  }
-
-  .ProseMirror h5 {
-    @apply mb-2 mt-3 font-semibold;
-    font-size: 16px;
-  }
-
-  .ProseMirror h6 {
-    @apply mb-2 mt-3 font-semibold;
-    font-size: 15px;
-  }
-
-  /* Lists */
-  .ProseMirror ul {
-    @apply mb-4 list-disc pl-6;
-  }
-
-  .ProseMirror ol {
-    @apply mb-4 list-decimal pl-6;
-  }
-
-  .ProseMirror li {
-    @apply mb-1;
-  }
-
-  /* Nested lists */
-  .ProseMirror ul ul,
-  .ProseMirror ol ul {
-    @apply list-[circle] mt-1;
-  }
-
-  .ProseMirror ul ol,
-  .ProseMirror ol ol {
-    @apply list-[lower-alpha] mt-1;
-  }
-
-  /* Blockquotes */
-  .ProseMirror blockquote {
-    @apply mb-4 border-l-4 border-border pl-4 italic text-muted-foreground;
-  }
-
-  /* Code blocks */
-  .ProseMirror pre {
-    @apply mb-4 overflow-x-auto rounded-lg p-4 text-sm;
-    font-family: var(--font-mono);
-    background: var(--muted);
-  }
-
-  .ProseMirror code {
-    @apply rounded px-1.5 py-0.5 text-sm;
-    font-family: var(--font-mono);
-    background: var(--muted);
-  }
-
-  .ProseMirror pre code {
-    @apply bg-transparent p-0;
-  }
-
-  /* Horizontal rule */
-  .ProseMirror hr {
-    @apply my-6 border-t border-border;
-  }
-
-  /* Links */
-  .ProseMirror a {
-    @apply underline underline-offset-2;
-    color: var(--jade-primary);
-    transition: color var(--duration-fast) var(--easing-default);
-  }
-
-  .ProseMirror a:hover {
-    color: var(--gold);
-  }
-
-  /* Bold and italic */
-  .ProseMirror strong {
-    @apply font-bold;
-  }
-
-  .ProseMirror em {
-    @apply italic;
-  }
-
-  /* Strike through */
-  .ProseMirror s {
-    @apply line-through;
-  }
-
-  /* Highlighted text - Gold accent */
-  .ProseMirror mark {
-    background-color: var(--selection-bg);
-    color: var(--selection-fg);
-  }
-
-  /* Placeholder */
-  .ProseMirror p.is-editor-empty:first-child::before {
-    @apply pointer-events-none float-left h-0 text-muted-foreground;
-    content: attr(data-placeholder);
-  }
-
-  /* Read-only mode */
-  .tiptap.read-only {
-    @apply cursor-default;
-  }
-
-  .tiptap.read-only .ProseMirror {
-    @apply select-text;
-    cursor: default !important;
-  }
-
-  /* Ensure text cursor in editable mode */
-  .tiptap:not(.read-only) .ProseMirror {
-    cursor: text !important;
-  }
-
   /* === Special UI Elements === */
 
   /* Tooltips */
@@ -871,4 +692,182 @@ body.preload * {
     opacity: var(--opacity-subtle);
     pointer-events: none;
   }
+
+  /* ============================================================================
+     CODEMIRROR LIVE PREVIEW STYLES
+     Obsidian-style WYSIWYG markdown rendering
+     ============================================================================ */
+
+  /* Hidden marks (*, **, #, etc.) - cursor reveal handled by plugin */
+  .cm-md-hidden {
+    display: none;
+  }
+
+  /* Headings - serif font, progressively sized */
+  .cm-md-heading1 {
+    font-size: 2em;
+    font-weight: 700;
+    line-height: 1.2;
+    padding-top: 0.5em;
+  }
+
+  .cm-md-heading2 {
+    font-size: 1.5em;
+    font-weight: 600;
+    line-height: 1.3;
+    padding-top: 0.4em;
+  }
+
+  .cm-md-heading3 {
+    font-size: 1.25em;
+    font-weight: 600;
+    line-height: 1.4;
+    padding-top: 0.3em;
+  }
+
+  .cm-md-heading4 {
+    font-size: 1.1em;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  .cm-md-heading5 {
+    font-size: 1em;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+
+  .cm-md-heading6 {
+    font-size: 0.9em;
+    font-weight: 600;
+    line-height: 1.5;
+    color: var(--muted-foreground);
+  }
+
+  /* Emphasis - bold, italic, combined */
+  .cm-md-bold {
+    font-weight: 700;
+  }
+
+  .cm-md-italic {
+    font-style: italic;
+  }
+
+  .cm-md-bold-italic {
+    font-weight: 700;
+    font-style: italic;
+  }
+
+  .cm-md-strikethrough {
+    text-decoration: line-through;
+    color: var(--muted-foreground);
+  }
+
+  /* Code - monospace with subtle background */
+  .cm-md-inline-code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    background-color: var(--muted);
+    padding: 0.1em 0.3em;
+    border-radius: 3px;
+  }
+
+  .cm-md-code-block {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    background-color: var(--muted);
+  }
+
+  /* Links - underlined with subtle icon */
+  .cm-md-link {
+    color: var(--jade-primary);
+    text-decoration: underline;
+    text-decoration-color: var(--jade-primary);
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+
+  .cm-md-link:hover {
+    text-decoration-thickness: 2px;
+  }
+
+  .cm-md-link-url {
+    color: var(--muted-foreground);
+    font-size: 0.9em;
+  }
+
+  .cm-md-link-icon {
+    color: var(--muted-foreground);
+    font-size: 0.8em;
+    vertical-align: super;
+  }
+
+  /* Lists */
+  .cm-md-list-marker {
+    color: var(--muted-foreground);
+  }
+
+  .cm-md-checkbox {
+    font-family: var(--font-mono);
+  }
+
+  .cm-md-checkbox-checked {
+    color: var(--jade-primary);
+  }
+
+  /* Other block elements */
+  .cm-md-blockquote {
+    border-left: 3px solid var(--border);
+    padding-left: 1em;
+    color: var(--muted-foreground);
+  }
+
+  .cm-md-hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 1em 0;
+  }
+
+  /* ============================================================================
+     AI DECORATIONS
+     ============================================================================ */
+
+  /* Base AI decoration styles */
+  .ai-decoration {
+    /* Base styles for all AI decorations */
+  }
+
+  /* AI suggestion - pending review (warm amber gradient with accent border) */
+  .ai-suggestion {
+    background: linear-gradient(
+      to bottom,
+      rgba(200, 151, 62, 0.15) 0%,
+      rgba(200, 151, 62, 0.08) 100%
+    );
+    border-left: 2px solid var(--theme-accent);
+    padding-left: 1rem;
+    margin-left: -1rem;
+    position: relative;
+  }
+
+  .dark .ai-suggestion {
+    background: linear-gradient(
+      to bottom,
+      rgba(228, 184, 102, 0.12) 0%,
+      rgba(228, 184, 102, 0.05) 100%
+    );
+  }
+
+  /* AI accepted - confirmed changes (subtle success tint) */
+  .ai-accepted {
+    background-color: oklch(from var(--success) l c h / 0.1);
+  }
+
+  /* AI rejected - declined changes (subtle error tint with strikethrough) */
+  .ai-rejected {
+    background-color: oklch(from var(--error) l c h / 0.1);
+    text-decoration: line-through;
+    text-decoration-color: var(--error);
+  }
+
 }
