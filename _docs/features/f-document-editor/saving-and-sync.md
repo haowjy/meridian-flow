@@ -19,8 +19,8 @@ feature: "Saving and Sync"
 **Trigger**: Any content change in editor
 
 **Flow**:
-1. User types ’ debounce timer starts
-2. Timer expires ’ save to IndexedDB (immediate)
+1. User types ï¿½ debounce timer starts
+2. Timer expires ï¿½ save to IndexedDB (immediate)
 3. Show "Saving" status
 4. Sync to server (background)
 5. On success: Show "Saved" + timestamp
@@ -59,8 +59,8 @@ feature: "Saving and Sync"
 - Retry queue for failed saves
 - Exponential backoff with jitter
 - Max 5 retry attempts
-- 4xx errors ’ show toast, don't retry
-- 5xx errors ’ auto-retry
+- 4xx errors ï¿½ show toast, don't retry
+- 5xx errors ï¿½ auto-retry
 
 **Retry intervals**: 5s, 10s, 20s, 40s, 80s (with jitter)
 
@@ -72,8 +72,8 @@ feature: "Saving and Sync"
 
 **States**:
 -  **Saved** - Checkmark icon + "Last saved: 2m ago"
-- ó **Saving** - Spinner + "Saving..."
--   **Error** - Warning icon + "Error saving"
+- ï¿½ **Saving** - Spinner + "Saving..."
+- ï¿½ **Error** - Warning icon + "Error saving"
 
 **Timestamp**: Relative time (e.g., "2 minutes ago", "just now")
 
@@ -83,7 +83,7 @@ feature: "Saving and Sync"
 
 **Server timestamp is canonical**:
 - On load: Server `updatedAt` wins if newer
-- On save: 409 Conflict ’ fetch server version, update cache
+- On save: 409 Conflict ï¿½ fetch server version, update cache
 - No manual conflict resolution UI (server always wins)
 
 **Rationale**: Single-user editing, no collaborative conflicts expected
@@ -119,5 +119,4 @@ feature: "Saving and Sync"
 
 ## Related
 
-- See [tiptap-integration.md](tiptap-integration.md) for editor caching
 - See `/_docs/technical/frontend/editor-caching.md` for architecture details

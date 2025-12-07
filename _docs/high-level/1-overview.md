@@ -317,7 +317,7 @@ References (managed separately):
 ## Technical Approach
 
 ### Stack
-- **Frontend:** Vite + TanStack Router + TypeScript + TipTap
+- **Frontend:** Vite + TanStack Router + TypeScript + CodeMirror
 - **Backend:** Go + net/http (for persistent streaming)
 - **Database:** Supabase (PostgreSQL + Auth)
 - **AI:** Multi-provider (Claude, OpenAI, etc.)

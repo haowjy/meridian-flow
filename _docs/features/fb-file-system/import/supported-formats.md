@@ -67,7 +67,7 @@ Content here.
 **Supported markdown features:**
 - All CommonMark syntax
 - GFM (GitHub Flavored Markdown) extensions
-- Custom TipTap extensions (handled by editor)
+- Live preview rendering (handled by CodeMirror)
 
 **Notes:**
 - Frontmatter preserved (YAML between `---` delimiters)

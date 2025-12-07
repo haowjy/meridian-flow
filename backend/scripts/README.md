@@ -21,35 +21,6 @@ The seed script:
 4. **Posts documents** to `/api/documents` endpoint
 5. **Cleans up** (stops server if it started one)
 
-## Adding Seed Data
-
-Create JSON files in `scripts/seed_data/` with this format:
-
-```json
-{
-  "path": "Chapters/Chapter 1",
-  "content_tiptap": {
-    "type": "doc",
-    "content": [
-      {
-        "type": "heading",
-        "attrs": { "level": 1 },
-        "content": [{ "type": "text", "text": "My Heading" }]
-      },
-      {
-        "type": "paragraph",
-        "content": [{ "type": "text", "text": "Paragraph text here..." }]
-      }
-    ]
-  }
-}
-```
-
-**Key points:**
-- `path` auto-creates folder hierarchy (e.g., `"Chapters/Chapter 1"` creates "Chapters" folder)
-- `content_tiptap` must be valid TipTap JSON format
-- Files are processed in alphabetical order (use prefixes like `01-`, `02-` to control order)
-
 ## Why Use API for Seeding?
 
 **Benefits:**
@@ -76,13 +47,3 @@ The old Go-based seed script (`cmd/seed/main.go`) still exists for schema manage
 # Check if server is running first (script auto-starts if needed)
 curl http://localhost:8080/health
 ```
-
-## TipTap JSON Format
-
-See the sample files in `seed_data/` for examples:
-- `01-chapter-1.json` - Headings, paragraphs, bold/italic
-- `02-chapter-2.json` - Multiple heading levels
-- `03-aria.json` - Bullet lists
-- `04-quick-notes.json` - Simple document
-
-For full TipTap schema, see: https://tiptap.dev/api/schema

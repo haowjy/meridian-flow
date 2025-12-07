@@ -54,7 +54,7 @@ sequenceDiagram
 1. **Named Entity Recognition** - Extract character/location mentions
 2. **Vector Search** - Find related documents (character sheets, location docs)
 3. **Contradiction Detection** - Compare attributes (LLM-based)
-4. **Inline Warnings** - TipTap decorations with action buttons
+4. **Inline Warnings** - CodeMirror decorations with action buttons
 
 ### Batch Analysis (Phase 2)
 
