@@ -1,13 +1,7 @@
-export { livePreviewPlugin, getLivePreviewExtension } from './plugin'
-export { RendererRegistry, globalRendererRegistry } from './registry'
-export { CLASSES, hideDecoration, markDecoration, lineDecoration } from './decorations'
-export type { MarkdownRenderer, LivePreviewConfig, LivePreviewState } from './types'
+/**
+ * Live Preview Module Exports
+ */
 
-// Re-export renderers for custom configurations
-export {
-  headingRenderer,
-  emphasisRenderer,
-  linkRenderer,
-  inlineCodeRenderer,
-  codeBlockRenderer,
-} from './renderers'
+export { livePreviewPlugin, registerRenderer, clearRenderers } from './plugin'
+export { registerBuiltinRenderers } from './renderers'
+export type { NodeRenderer, RenderContext, DecorationRange } from './types'

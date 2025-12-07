@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
-import { CodeMirrorEditor, type CodeMirrorEditorRef } from '@/core/editor/codemirror'
+import { CodeMirrorEditor, EditorContextMenu, type CodeMirrorEditorRef } from '@/core/editor/codemirror'
 import { useEditorStore } from '@/core/stores/useEditorStore'
 import { useDebounce } from '@/core/hooks/useDebounce'
 import { EditorHeader } from './EditorHeader'
-import { EditorToolbarContainer } from './EditorToolbarContainer'
 import { Skeleton } from '@/shared/components/ui/skeleton'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { useTreeStore } from '@/core/stores/useTreeStore'
@@ -138,8 +137,16 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     store.setRightPanelState('documents')
   }
 
+  // Get word count from editor ref (updates on re-render)
+  const wordCount = editorRef.current?.getWordCount().words ?? 0
+
   const header = headerDocument ? (
-    <EditorHeader document={headerDocument} />
+    <EditorHeader
+      document={headerDocument}
+      wordCount={wordCount}
+      status={status}
+      lastSaved={lastSaved}
+    />
   ) : (
     <DocumentHeaderBar
       leading={
@@ -209,8 +216,9 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
       {/* Single scroll container - scrollbar extends to top */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
         {/* Sticky Header */}
-        <div className="sticky top-0 z-20 bg-background">
+        <div className="sticky top-0 z-20 bg-background relative">
           {header}
+          <HeaderGradientFade />
         </div>
 
         {/* Content area - shows skeleton while loading */}
@@ -221,18 +229,8 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
             <Skeleton className="h-6 w-5/6" />
           </div>
         ) : (
-          <>
-            {/* Sticky Toolbar with formatting commands */}
-            <div className="sticky top-12 z-10 bg-background relative">
-              <EditorToolbarContainer
-                editor={editorRef.current}
-                status={status}
-                lastSaved={lastSaved}
-              />
-              <HeaderGradientFade />
-            </div>
-
-            {/* Editor Content - CodeMirror 6 */}
+          /* Editor Content - CodeMirror 6 with right-click context menu */
+          <EditorContextMenu editorRef={editorRef.current}>
             <div className="relative pt-1 flex-1">
               <CodeMirrorEditor
                 initialContent={localContent}
@@ -243,7 +241,7 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
                 className="min-h-full"
               />
             </div>
-          </>
+          </EditorContextMenu>
         )}
       </div>
     </div>

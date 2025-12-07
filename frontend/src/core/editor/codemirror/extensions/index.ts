@@ -1,8 +1,7 @@
-export {
-  markdownEditor,
-  minimalEditor,
-  readonlyViewer,
-  type MarkdownEditorOptions,
-  type MinimalEditorOptions,
-  type ReadonlyViewerOptions,
-} from './bundle'
+/**
+ * Extensions Module Exports
+ */
+
+export { markdownLanguage } from './markdown'
+export { baseTheme, livePreviewTheme, editorTheme } from './theme'
+export { getWordCount } from './wordCount'

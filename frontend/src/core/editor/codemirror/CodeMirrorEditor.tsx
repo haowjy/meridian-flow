@@ -1,178 +1,206 @@
-import { useRef, useEffect, forwardRef, useImperativeHandle } from 'react'
-import { EditorView } from '@codemirror/view'
-import { EditorState } from '@codemirror/state'
-import { markdownEditor } from './extensions/bundle'
-import { setEditable } from './compartments/editable'
-import { createEditorState } from './setup'
-import type { CodeMirrorEditorRef, CodeMirrorEditorOptions, WordCount } from './types'
-import { cn } from '@/lib/utils'
+/**
+ * CodeMirror Editor Component
+ *
+ * SOLID: Single Responsibility - Only handles React lifecycle and ref binding
+ */
+
+import { useEffect, useRef, useImperativeHandle, forwardRef } from 'react'
+import { EditorView, keymap, placeholder as placeholderExtension } from '@codemirror/view'
+import { EditorState, Prec, Compartment, type Extension } from '@codemirror/state'
+import { history, historyKeymap, defaultKeymap } from '@codemirror/commands'
+import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
+
+import type { CodeMirrorEditorRef, CodeMirrorEditorOptions, FormatType } from './types'
+import { markdownLanguage, editorTheme, getWordCount } from './extensions'
+import { livePreviewPlugin, registerBuiltinRenderers } from './livePreview'
 import {
-  toggleBold as toggleBoldCmd,
-  toggleItalic as toggleItalicCmd,
-  toggleHeading as toggleHeadingCmd,
-  toggleBulletList as toggleBulletListCmd,
-  toggleOrderedList as toggleOrderedListCmd,
-  isFormatActive as isFormatActiveCmd,
+  toggleBold,
+  toggleItalic,
+  toggleInlineCode,
+  toggleHeading,
+  insertLink,
+  toggleBulletList,
+  toggleOrderedList,
+  isFormatActive,
 } from './commands'
-import { getWordCount } from './extensions/wordCount'
+import { markdownEnterKeymap, autoPairsExtension, formattingKeymap } from './keyHandlers'
+
+// ============================================================================
+// COMPARTMENTS (CM6 best practice for dynamic reconfiguration)
+// ============================================================================
 
 /**
- * CodeMirror 6 editor component for markdown editing.
- *
- * This is the core editor shell (Phase 0.1). It provides:
- * - Basic markdown editing with syntax highlighting
- * - Undo/redo via CM6 history
- * - Content load/save via ref methods
- * - Editable toggle for "edit before init" race prevention
- *
- * The editor is controlled via the ref, not props. Content changes
- * are reported via onChange callback, but setting content is done
- * via ref.setContent().
- *
- * @example
- * ```tsx
- * const editorRef = useRef<CodeMirrorEditorRef>(null)
- *
- * // Load content
- * editorRef.current?.setContent(markdown)
- *
- * // Get content
- * const content = editorRef.current?.getContent()
- * ```
+ * Compartment for editable state.
+ * Allows toggling read-only mode without recreating the editor.
  */
+const editableCompartment = new Compartment()
+
+/**
+ * Compartment for theme.
+ * Allows runtime theme switching without recreating the editor.
+ */
+const themeCompartment = new Compartment()
+
+// ============================================================================
+// INITIALIZATION
+// ============================================================================
+
+/**
+ * Initialize renderers once (deferred from module load to component init)
+ * This improves testability and initialization order control.
+ */
+let renderersInitialized = false
+
+function initializeRenderers() {
+  if (!renderersInitialized) {
+    registerBuiltinRenderers()
+    renderersInitialized = true
+  }
+}
+
+// ============================================================================
+// COMPONENT
+// ============================================================================
+
 export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, CodeMirrorEditorOptions>(
   function CodeMirrorEditor(
-    {
-      initialContent = '',
-      editable = true,
-      placeholder = 'Start writing...',
-      extensions: additionalExtensions = [],
-      onChange,
-      onReady,
-      className,
-    },
+    { initialContent = '', onChange, onReady, editable = true, placeholder, autoFocus, className },
     ref
   ) {
     const containerRef = useRef<HTMLDivElement>(null)
     const viewRef = useRef<EditorView | null>(null)
-    const onChangeRef = useRef(onChange)
 
-    // Keep onChange ref up to date without causing effect re-runs
-    useEffect(() => {
-      onChangeRef.current = onChange
-    }, [onChange])
+    // Expose ref API
+    useImperativeHandle(
+      ref,
+      () => ({
+        // EditorRef
+        getContent() {
+          return viewRef.current?.state.doc.toString() ?? ''
+        },
+        setContent(content: string) {
+          const view = viewRef.current
+          if (view) {
+            view.dispatch({
+              changes: { from: 0, to: view.state.doc.length, insert: content },
+            })
+          }
+        },
+        focus() {
+          viewRef.current?.focus()
+        },
+        getView() {
+          return viewRef.current
+        },
 
-    // Create the editor ref interface
-    const editorRef: CodeMirrorEditorRef = {
-      getContent() {
-        return viewRef.current?.state.doc.toString() ?? ''
-      },
-      setContent(content: string, cursorPos?: number) {
-        const view = viewRef.current
-        if (!view) return
+        // FormattingRef
+        toggleBold() {
+          if (viewRef.current) toggleBold(viewRef.current)
+        },
+        toggleItalic() {
+          if (viewRef.current) toggleItalic(viewRef.current)
+        },
+        toggleInlineCode() {
+          if (viewRef.current) toggleInlineCode(viewRef.current)
+        },
+        toggleHeading(level: 1 | 2 | 3) {
+          if (viewRef.current) toggleHeading(viewRef.current, level)
+        },
+        insertLink(url: string, text?: string) {
+          if (viewRef.current) insertLink(viewRef.current, url, text)
+        },
 
-        // Determine cursor position:
-        // - If provided: use it (AI edits specify where cursor should go)
-        // - If not provided: preserve current position, clamped to new content length
-        const newCursorPos = cursorPos ?? Math.min(
-          view.state.selection.main.head,
-          content.length
-        )
+        // ListRef
+        toggleBulletList() {
+          if (viewRef.current) toggleBulletList(viewRef.current)
+        },
+        toggleOrderedList() {
+          if (viewRef.current) toggleOrderedList(viewRef.current)
+        },
 
-        // Replace entire document content
-        view.dispatch({
-          changes: {
-            from: 0,
-            to: view.state.doc.length,
-            insert: content,
-          },
-          selection: { anchor: newCursorPos },
-          // Don't add to undo history when setting content externally
-          annotations: [],
-        })
-      },
-      getState() {
-        return viewRef.current?.state ?? EditorState.create({ doc: '' })
-      },
-      getView() {
-        return viewRef.current
-      },
-      focus() {
-        viewRef.current?.focus()
-      },
+        // FormatDetectionRef
+        isFormatActive(format: FormatType) {
+          if (viewRef.current) return isFormatActive(viewRef.current, format)
+          return false
+        },
 
-      // Formatting commands
-      toggleBold() {
-        const view = viewRef.current
-        if (!view) return false
-        return toggleBoldCmd(view)
-      },
-      toggleItalic() {
-        const view = viewRef.current
-        if (!view) return false
-        return toggleItalicCmd(view)
-      },
-      toggleHeading(level: 1 | 2 | 3 | 4 | 5 | 6) {
-        const view = viewRef.current
-        if (!view) return false
-        return toggleHeadingCmd(view, level)
-      },
-      toggleBulletList() {
-        const view = viewRef.current
-        if (!view) return false
-        return toggleBulletListCmd(view)
-      },
-      toggleOrderedList() {
-        const view = viewRef.current
-        if (!view) return false
-        return toggleOrderedListCmd(view)
-      },
+        // WordCountRef
+        getWordCount() {
+          if (viewRef.current) return getWordCount(viewRef.current.state)
+          return { words: 0, characters: 0, paragraphs: 0 }
+        },
 
-      // Format detection
-      isFormatActive(format: 'bold' | 'italic' | 'heading' | 'bulletList' | 'orderedList', level?: number) {
-        const view = viewRef.current
-        if (!view) return false
-        return isFormatActiveCmd(view, format, level)
-      },
+        // ConfigurationRef - dynamic reconfiguration via compartments
+        setEditable(value: boolean) {
+          viewRef.current?.dispatch({
+            effects: editableCompartment.reconfigure(EditorView.editable.of(value)),
+          })
+        },
+        setTheme(theme: Extension) {
+          viewRef.current?.dispatch({
+            effects: themeCompartment.reconfigure(theme),
+          })
+        },
+      }),
+      []
+    )
 
-      // Word count
-      getWordCount(): WordCount {
-        const view = viewRef.current
-        if (!view) return { words: 0, characters: 0, paragraphs: 0 }
-        return getWordCount(view.state)
-      },
-    }
-
-    // Expose the ref
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- editorRef is stable (uses refs internally)
-    useImperativeHandle(ref, () => editorRef, [])
-
-    // Create editor on mount
+    // Initialize editor
     useEffect(() => {
       if (!containerRef.current) return
 
-      // Build extensions using SOLID-compliant bundle
-      const baseExtensions = markdownEditor({
-        placeholder,
-        editable,
-      })
+      // Initialize renderers once (moved from module level for better control)
+      initializeRenderers()
 
-      // Add update listener for onChange
-      const updateListener = EditorView.updateListener.of((update) => {
-        if (update.docChanged) {
-          console.log('[CM] docChanged, calling onChange')
-          if (onChangeRef.current) {
-            onChangeRef.current(update.state.doc.toString())
-          }
+      const updateListener = EditorView.updateListener.of(update => {
+        if (update.docChanged && onChange) {
+          onChange(update.state.doc.toString())
         }
       })
 
-      // Create state and view
-      const state = createEditorState(initialContent, [
-        ...baseExtensions,
-        ...additionalExtensions,
+      const extensions = [
+        // Core
+        history(),
+
+        // Key handling (high priority)
+        Prec.highest(markdownEnterKeymap),
+        autoPairsExtension,
+        Prec.high(formattingKeymap),
+
+        // Default keymaps
+        keymap.of([...defaultKeymap, ...historyKeymap, ...closeBracketsKeymap]),
+
+        // For quotes only (brackets handled by autoPairs)
+        closeBrackets(),
+
+        // Markdown
+        markdownLanguage,
+
+        // Live preview
+        livePreviewPlugin,
+
+        // Theming (wrapped in compartment for runtime switching)
+        themeCompartment.of(editorTheme),
+
+        // Line wrapping
+        EditorView.lineWrapping,
+
+        // Editable state (wrapped in compartment for dynamic toggling)
+        editableCompartment.of(EditorView.editable.of(editable)),
+
+        // Update listener
         updateListener,
-      ])
+      ]
+
+      // Add placeholder if provided
+      if (placeholder) {
+        extensions.push(placeholderExtension(placeholder))
+      }
+
+      const state = EditorState.create({
+        doc: initialContent,
+        extensions,
+      })
 
       const view = new EditorView({
         state,
@@ -181,34 +209,54 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, CodeMirrorEditor
 
       viewRef.current = view
 
-      // Notify that editor is ready
-      onReady?.(editorRef)
+      // Auto-focus if requested
+      if (autoFocus) {
+        view.focus()
+      }
 
-      // Cleanup on unmount
+      // Notify ready
+      if (onReady) {
+        onReady({
+          getContent: () => view.state.doc.toString(),
+          setContent: (content: string) => {
+            view.dispatch({
+              changes: { from: 0, to: view.state.doc.length, insert: content },
+            })
+          },
+          focus: () => view.focus(),
+          getView: () => view,
+          toggleBold: () => toggleBold(view),
+          toggleItalic: () => toggleItalic(view),
+          toggleInlineCode: () => toggleInlineCode(view),
+          toggleHeading: (level: 1 | 2 | 3) => toggleHeading(view, level),
+          insertLink: (url: string, text?: string) => insertLink(view, url, text),
+          toggleBulletList: () => toggleBulletList(view),
+          toggleOrderedList: () => toggleOrderedList(view),
+          isFormatActive: (format: FormatType) => isFormatActive(view, format),
+          getWordCount: () => getWordCount(view.state),
+          setEditable: (value: boolean) => {
+            view.dispatch({
+              effects: editableCompartment.reconfigure(EditorView.editable.of(value)),
+            })
+          },
+          setTheme: (theme: Extension) => {
+            view.dispatch({
+              effects: themeCompartment.reconfigure(theme),
+            })
+          },
+        })
+      }
+
       return () => {
         view.destroy()
         viewRef.current = null
       }
-      // Only run on mount - content updates happen via ref
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
+    }, []) // Only run on mount - intentionally omit deps to avoid recreating editor
 
-    // Update editable state when prop changes
-    useEffect(() => {
-      if (viewRef.current) {
-        setEditable(viewRef.current, editable)
-      }
-    }, [editable])
+    // Note: editable and theme can now be changed dynamically via ref.setEditable() and ref.setTheme()
+    // thanks to compartments - no need to recreate the editor
 
-    return (
-      <div
-        ref={containerRef}
-        className={cn(
-          'codemirror-editor',
-          'min-h-full flex-1',
-          className
-        )}
-      />
-    )
+    return <div ref={containerRef} className={className ?? 'h-full w-full'} />
   }
 )

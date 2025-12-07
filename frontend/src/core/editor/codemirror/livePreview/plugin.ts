@@ -1,121 +1,229 @@
+/**
+ * Live Preview Plugin
+ *
+ * SOLID: Open/Closed - Uses registry pattern for extensibility
+ *
+ * This plugin hides markdown syntax when cursor is not in the formatted region,
+ * showing a clean "live preview" like Obsidian.
+ */
+
 import {
   ViewPlugin,
-  ViewUpdate,
   Decoration,
-  DecorationSet,
-  EditorView,
+  type DecorationSet,
+  type EditorView,
+  type ViewUpdate,
 } from '@codemirror/view'
+import { RangeSetBuilder, type EditorState } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
-import type { Range } from '@codemirror/state'
-import { globalRendererRegistry } from './registry'
+import type { NodeRenderer, DecorationRange, RenderContext } from './types'
 
-// Import renderers to trigger registration
-import './renderers'
+// ============================================================================
+// RENDERER REGISTRY (OCP: Open for Extension)
+// ============================================================================
+
+const renderers = new Map<string, NodeRenderer[]>()
 
 /**
- * Check if cursor position is within a range.
+ * Register a node renderer
+ *
+ * Multiple renderers can handle the same node type.
+ * Renderers are called in registration order.
  */
-function cursorInRange(cursorPos: number, from: number, to: number): boolean {
-  return cursorPos >= from && cursorPos <= to
+export function registerRenderer(renderer: NodeRenderer): void {
+  for (const nodeType of renderer.nodeTypes) {
+    const existing = renderers.get(nodeType) || []
+    renderers.set(nodeType, [...existing, renderer])
+  }
 }
 
 /**
- * Get the current cursor position from the view.
- * Returns the head of the primary selection.
+ * Get all renderers for a node type
  */
-function getCursorPosition(view: EditorView): number {
-  return view.state.selection.main.head
+export function getRenderers(nodeType: string): NodeRenderer[] {
+  return renderers.get(nodeType) || []
 }
 
 /**
- * Build decorations for the visible viewport.
- * Only processes nodes that are visible for performance.
+ * Clear all registered renderers (for testing)
  */
-function buildDecorations(view: EditorView): DecorationSet {
-  const decorations: Range<Decoration>[] = []
-  const cursor = getCursorPosition(view)
-  const hasFocus = view.hasFocus
+export function clearRenderers(): void {
+  renderers.clear()
+}
 
-  // Get visible ranges for viewport optimization
-  const visibleRanges = view.visibleRanges
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
 
-  for (const { from, to } of visibleRanges) {
-    // Iterate through the syntax tree in the visible range
-    syntaxTree(view.state).iterate({
-      from,
-      to,
-      enter: (node) => {
-        // Check if we have a renderer for this node type
-        const renderers = globalRendererRegistry.getRenderers(node.type.name)
+/**
+ * Get word boundaries around a position (non-whitespace sequence)
+ */
+export function getWordBounds(
+  state: EditorState,
+  pos: number
+): { from: number; to: number } {
+  const line = state.doc.lineAt(pos)
+  const lineText = line.text
+  const lineStart = line.from
+  const offsetInLine = pos - lineStart
 
-        if (renderers.length === 0) {
-          return // No renderer for this node type
-        }
+  // Handle edge case: position at start of line with whitespace
+  if (offsetInLine === 0 && lineText.length > 0) {
+    const firstChar = lineText.charAt(0)
+    if (/\s/.test(firstChar)) {
+      return { from: pos, to: pos }
+    }
+  }
 
-        // Check if cursor is in this node's range
-        // When unfocused, treat all nodes as if cursor is not in range (hide all markdown syntax)
-        const isCursorInRange = hasFocus && cursorInRange(cursor, node.from, node.to)
+  // Find start of word (scan backwards for whitespace)
+  let wordStart = offsetInLine
+  while (wordStart > 0) {
+    const char = lineText.charAt(wordStart - 1)
+    if (/\s/.test(char)) break
+    wordStart--
+  }
 
-        // Run all renderers for this node
-        for (const renderer of renderers) {
-          const nodeDecorations = renderer.render(node.node, view, isCursorInRange)
-          decorations.push(...nodeDecorations)
-        }
-      },
+  // Find end of word (scan forwards for whitespace)
+  let wordEnd = offsetInLine
+  while (wordEnd < lineText.length) {
+    const char = lineText.charAt(wordEnd)
+    if (/\s/.test(char)) break
+    wordEnd++
+  }
+
+  return { from: lineStart + wordStart, to: lineStart + wordEnd }
+}
+
+/**
+ * Check if cursor is in the same "word" as a formatting node
+ */
+export function cursorInSameWord(
+  cursorWords: Array<{ from: number; to: number }>,
+  nodeFrom: number,
+  nodeTo: number
+): boolean {
+  for (const cursorWord of cursorWords) {
+    if (cursorWord.from < nodeTo && cursorWord.to > nodeFrom) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * Check if selection overlaps a range
+ */
+export function selectionOverlapsRange(
+  state: EditorState,
+  from: number,
+  to: number
+): boolean {
+  const { selection } = state
+  for (const range of selection.ranges) {
+    if (range.from < to && range.to > from) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * Get line range for a position
+ */
+export function getLineRange(
+  state: EditorState,
+  pos: number
+): { from: number; to: number } {
+  const line = state.doc.lineAt(pos)
+  return { from: line.from, to: line.to }
+}
+
+// ============================================================================
+// LIVE PREVIEW PLUGIN
+// ============================================================================
+
+class LivePreviewPlugin {
+  decorations: DecorationSet
+
+  constructor(view: EditorView) {
+    this.decorations = this.buildDecorations(view)
+  }
+
+  update(update: ViewUpdate) {
+    // Rebuild when document, selection, or viewport changes
+    if (update.docChanged || update.selectionSet || update.viewportChanged) {
+      this.decorations = this.buildDecorations(update.view)
+    }
+  }
+
+  /**
+   * Cleanup method called when plugin is destroyed.
+   * Currently no external resources to clean up, but adding for:
+   * 1. Future-proofing (may add event listeners, subscriptions later)
+   * 2. CodeMirror best practice compliance
+   */
+  destroy() {
+    // No external resources to clean up currently
+  }
+
+  buildDecorations(view: EditorView): DecorationSet {
+    const { state } = view
+    const decorations: DecorationRange[] = []
+
+    // Pre-compute cursor word bounds for performance
+    const cursorWords = state.selection.ranges.map(range =>
+      getWordBounds(state, range.head)
+    )
+
+    const ctx: RenderContext = { state, cursorWords }
+
+    // Iterate through syntax tree for visible ranges only
+    const tree = syntaxTree(state)
+
+    for (const { from, to } of view.visibleRanges) {
+      tree.iterate({
+        from,
+        to,
+        enter(node) {
+          // Get renderers for this node type
+          const nodeRenderers = getRenderers(node.name)
+
+          // Call each renderer and collect decorations
+          // Wrap in try-catch for resilience - a buggy renderer shouldn't crash the editor
+          for (const renderer of nodeRenderers) {
+            try {
+              const decos = renderer.render(node.node, ctx)
+              decorations.push(...decos)
+            } catch (error) {
+              console.warn(`[LivePreview] Renderer for ${node.name} failed:`, error)
+              // Continue with other renderers - don't crash entire editor
+            }
+          }
+        },
+      })
+    }
+
+    // Sort decorations by position (required by RangeSetBuilder)
+    // Point decorations (where to === from) come before range decorations
+    decorations.sort((a, b) => {
+      if (a.from !== b.from) return a.from - b.from
+      const aIsPoint = a.to === a.from
+      const bIsPoint = b.to === b.from
+      if (aIsPoint && !bIsPoint) return -1
+      if (!aIsPoint && bIsPoint) return 1
+      return a.to - b.to
     })
-  }
 
-  // Sort decorations by position and create DecorationSet
-  return Decoration.set(
-    decorations.sort((a, b) => a.from - b.from || a.value.startSide - b.value.startSide)
-  )
-}
-
-/**
- * ViewPlugin for live preview.
- *
- * This plugin:
- * 1. Watches for document changes and selection changes
- * 2. Rebuilds decorations for the visible viewport
- * 3. Uses the renderer registry to process nodes (OCP)
- *
- * Performance notes:
- * - Only processes visible ranges (viewport optimization)
- * - Rebuilds on doc change, selection change, or viewport change
- */
-export const livePreviewPlugin = ViewPlugin.fromClass(
-  class {
-    decorations: DecorationSet
-
-    constructor(view: EditorView) {
-      this.decorations = buildDecorations(view)
+    // Build the decoration set
+    const builder = new RangeSetBuilder<Decoration>()
+    for (const { from, to, deco } of decorations) {
+      builder.add(from, to, deco)
     }
 
-    update(update: ViewUpdate): void {
-      // Rebuild decorations if:
-      // - Document changed
-      // - Selection changed (cursor moved)
-      // - Viewport changed (scrolled)
-      // - Focus changed (show/hide all markdown on focus/blur)
-      if (
-        update.docChanged ||
-        update.selectionSet ||
-        update.viewportChanged ||
-        update.focusChanged
-      ) {
-        this.decorations = buildDecorations(update.view)
-      }
-    }
-  },
-  {
-    decorations: (v) => v.decorations,
+    return builder.finish()
   }
-)
-
-/**
- * Get the live preview extension.
- * This is the main entry point for enabling live preview.
- */
-export function getLivePreviewExtension(): typeof livePreviewPlugin {
-  return livePreviewPlugin
 }
+
+export const livePreviewPlugin = ViewPlugin.fromClass(LivePreviewPlugin, {
+  decorations: v => v.decorations,
+})

@@ -1,43 +1,59 @@
-import type { DecorationSet, Decoration, EditorView } from '@codemirror/view'
-import type { Range } from '@codemirror/state'
+/**
+ * Live Preview Types
+ *
+ * SOLID: Open/Closed - NodeRenderer interface allows extension without modification
+ */
+
+import type { Decoration } from '@codemirror/view'
+import type { EditorState } from '@codemirror/state'
 import type { SyntaxNode } from '@lezer/common'
 
+// ============================================================================
+// RENDER CONTEXT
+// ============================================================================
+
 /**
- * A renderer for a specific markdown element type.
- * Follows OCP - new renderers can be added without modifying the plugin.
+ * Context passed to renderers for decoration building
  */
-export interface MarkdownRenderer {
-  /** The node types this renderer handles (e.g., 'ATXHeading1', 'Emphasis') */
+export interface RenderContext {
+  /** Current editor state */
+  state: EditorState
+  /** Pre-computed cursor word bounds for performance */
+  cursorWords: Array<{ from: number; to: number }>
+}
+
+// ============================================================================
+// DECORATION RANGE
+// ============================================================================
+
+/**
+ * A decoration with its position range
+ */
+export interface DecorationRange {
+  from: number
+  to: number
+  deco: Decoration
+}
+
+// ============================================================================
+// NODE RENDERER INTERFACE (OCP: Open for Extension)
+// ============================================================================
+
+/**
+ * Interface for node renderers
+ *
+ * Implement this to add new node type support without modifying the plugin.
+ */
+export interface NodeRenderer {
+  /** Node types this renderer handles (e.g., ['StrongEmphasis', 'Emphasis']) */
   nodeTypes: string[]
 
   /**
-   * Create decorations for the given node.
-   * @param node - The syntax tree node
-   * @param view - The editor view
-   * @param cursorInRange - Whether the cursor is within this node's range
-   * @returns Array of decoration ranges, or empty array to skip
+   * Render decorations for a node
+   *
+   * @param node - The syntax tree node to render
+   * @param ctx - Render context with state and cursor info
+   * @returns Array of decorations to apply
    */
-  render(
-    node: SyntaxNode,
-    view: EditorView,
-    cursorInRange: boolean
-  ): Range<Decoration>[]
-}
-
-/**
- * Configuration for the live preview plugin.
- */
-export interface LivePreviewConfig {
-  /** Whether to hide syntax when cursor is not on element */
-  hideInactiveSyntax: boolean
-  /** Whether links are clickable */
-  clickableLinks: boolean
-}
-
-/**
- * State tracked by the live preview plugin.
- */
-export interface LivePreviewState {
-  /** Current decorations */
-  decorations: DecorationSet
+  render(node: SyntaxNode, ctx: RenderContext): DecorationRange[]
 }

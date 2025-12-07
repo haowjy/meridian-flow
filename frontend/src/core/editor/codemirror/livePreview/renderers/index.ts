@@ -1,32 +1,68 @@
-import { globalRendererRegistry } from '../registry'
-import { headingRenderer } from './heading'
-import { emphasisRenderer } from './emphasis'
-import { linkRenderer } from './link'
-import { inlineCodeRenderer, codeBlockRenderer } from './code'
+/**
+ * Renderer Registration
+ *
+ * SOLID: Open/Closed - Registers all built-in renderers
+ *
+ * To add a new renderer:
+ * 1. Create a new file in this directory
+ * 2. Export a NodeRenderer
+ * 3. Import and register it here
+ */
 
-// Export individual renderers for testing/customization
-export { headingRenderer } from './heading'
-export { emphasisRenderer } from './emphasis'
-export { linkRenderer } from './link'
-export { inlineCodeRenderer, codeBlockRenderer } from './code'
+import { registerRenderer } from '../plugin'
+import { boldRenderer, italicRenderer } from './emphasis'
+import { heading1Renderer, heading2Renderer, heading3Renderer } from './heading'
+import { linkRenderer } from './link'
+import { inlineCodeRenderer, fencedCodeRenderer } from './code'
+import { listItemRenderer } from './list'
+import { blockquoteRenderer } from './blockquote'
+import { horizontalRuleRenderer } from './horizontalRule'
+import { strikethroughRenderer } from './strikethrough'
+import { tableRenderer } from './table'
 
 /**
- * Register all built-in renderers with the global registry.
- * Called once at module initialization.
+ * Register all built-in renderers
  */
 export function registerBuiltinRenderers(): void {
-  // P0: Core formatting
-  globalRendererRegistry.register(headingRenderer)
-  globalRendererRegistry.register(emphasisRenderer)
+  // Emphasis
+  registerRenderer(boldRenderer)
+  registerRenderer(italicRenderer)
 
-  // P1: Links and code
-  globalRendererRegistry.register(linkRenderer)
-  globalRendererRegistry.register(inlineCodeRenderer)
-  globalRendererRegistry.register(codeBlockRenderer)
+  // Headings
+  registerRenderer(heading1Renderer)
+  registerRenderer(heading2Renderer)
+  registerRenderer(heading3Renderer)
 
-  // P2: Lists, blockquotes - to be added
-  // P3: Tables - deferred
+  // Links
+  registerRenderer(linkRenderer)
+
+  // Code
+  registerRenderer(inlineCodeRenderer)
+  registerRenderer(fencedCodeRenderer)
+
+  // Lists
+  registerRenderer(listItemRenderer)
+
+  // Blockquotes
+  registerRenderer(blockquoteRenderer)
+
+  // Horizontal rules
+  registerRenderer(horizontalRuleRenderer)
+
+  // Strikethrough (GFM)
+  registerRenderer(strikethroughRenderer)
+
+  // Tables (GFM)
+  registerRenderer(tableRenderer)
 }
 
-// Auto-register on module load
-registerBuiltinRenderers()
+// Re-export individual renderers for testing/customization
+export { boldRenderer, italicRenderer } from './emphasis'
+export { heading1Renderer, heading2Renderer, heading3Renderer } from './heading'
+export { linkRenderer } from './link'
+export { inlineCodeRenderer, fencedCodeRenderer } from './code'
+export { listItemRenderer } from './list'
+export { blockquoteRenderer } from './blockquote'
+export { horizontalRuleRenderer } from './horizontalRule'
+export { strikethroughRenderer } from './strikethrough'
+export { tableRenderer } from './table'
