@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { useTurnsForChat } from '@/features/chats/hooks/useTurnsForChat'
@@ -9,6 +9,8 @@ import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { ChatHeader } from './ChatHeader'
 import { TurnList } from './TurnList'
 import { TurnInput } from './TurnInput'
+import { ScrollToBottomButton } from './ScrollToBottomButton'
+import { useStreamingAutoScroll } from '@/features/chats/hooks/useStreamingAutoScroll'
 import { UserMessageSkeleton } from './skeletons/UserMessageSkeleton'
 import { AIMessageSkeleton } from './skeletons/AIMessageSkeleton'
 import { useProjectStore } from '@/core/stores/useProjectStore'
@@ -38,9 +40,11 @@ export function ActiveChatView({ projectId }: ActiveChatViewProps) {
     chatFocusVersion: s.chatFocusVersion,
   })))
 
-  const { chats, currentTurnId } = useChatStore(useShallow((s) => ({
+  const { chats, currentTurnId, streamingTurnId, setCurrentTurnId } = useChatStore(useShallow((s) => ({
     chats: s.chats,
     currentTurnId: s.currentTurnId,
+    streamingTurnId: s.streamingTurnId,
+    setCurrentTurnId: s.setCurrentTurnId,
   })))
 
   // Only need projectName for display - projectId comes from prop (avoids async race)
@@ -49,9 +53,28 @@ export function ActiveChatView({ projectId }: ActiveChatViewProps) {
     return project?.name ?? null
   })
 
+  // Callback ref pattern: useState triggers re-render when element is assigned,
+  // allowing effects to run with the actual element (useRef doesn't trigger re-renders)
+  const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(null)
+
   // Always call hooks unconditionally to respect Rules of Hooks.
   useChatSSE()
   const { turns, isLoading } = useTurnsForChat(activeChatId)
+
+  // Callback to update currentTurnId when scrolling to bottom
+  const handleScrollToBottom = useCallback(() => {
+    const latestTurn = turns[turns.length - 1]
+    if (latestTurn) {
+      setCurrentTurnId(latestTurn.id)
+    }
+  }, [turns, setCurrentTurnId])
+
+  // Auto-scroll management during streaming
+  const { showScrollButton, scrollToBottom } = useStreamingAutoScroll({
+    scrollContainer,
+    isStreaming: streamingTurnId !== null,
+    onScrollToBottom: handleScrollToBottom,
+  })
 
   // Skeleton delay: only show skeleton after 150ms if still loading with no turns
   useEffect(() => {
@@ -105,7 +128,7 @@ export function ActiveChatView({ projectId }: ActiveChatViewProps) {
   return (
     <div className="chat-main">
       {/* Single scroll container - scrollbar extends to top */}
-      <div className="chat-scroll-container">
+      <div ref={setScrollContainer} className="chat-scroll-container">
         {/* Sticky Header */}
         <div className="sticky top-0 z-10 bg-background relative">
           <ChatHeader chat={activeChat} projectName={projectName} />
@@ -134,7 +157,9 @@ export function ActiveChatView({ projectId }: ActiveChatViewProps) {
             </>
           )}
           {/* Sticky input at bottom of scroll area */}
-          <div className="sticky bottom-0 bg-background">
+          <div className="sticky bottom-0 bg-background relative">
+            {/* Floating scroll-to-bottom button - positioned above input */}
+            <ScrollToBottomButton visible={showScrollButton} onClick={scrollToBottom} />
             <TurnInput
               chatId={activeChat.id}
               focusKey={`${activeChatId ?? 'none'}:${chatFocusVersion}`}
