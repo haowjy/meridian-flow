@@ -1,4 +1,4 @@
-.PHONY: help build run test clean install dev llm-cli llm-cli-build build-local run-local migrate migrate-up migrate-down migrate-status migrate-dry-run migrate-sql migrate-prod migrate-staging
+.PHONY: help build run test clean install dev llm-cli llm-cli-build build-local run-local migrate migrate-up migrate-down migrate-status migrate-dry-run migrate-sql migrate-prod migrate-test
 
 # Load environment variables from .env
 include .env
@@ -72,8 +72,8 @@ migrate-sql: ## Apply migrations via direct SQL (no goose tracking)
 migrate-prod: ## Apply migrations to production (SQL mode, requires .env.prod)
 	@./scripts/migrate.sh --prod --yes up
 
-migrate-staging: ## Apply migrations to staging (SQL mode, requires .env.staging)
-	@./scripts/migrate.sh --staging --yes up
+migrate-test: ## Apply migrations to test (requires .env.test)
+	@./scripts/migrate.sh --test --yes up
 
 migrate-down-all: ## Rollback all migrations (drops all tables, goose only)
 	$(GOOSE) -dir migrations postgres "$(SUPABASE_DB_URL)" down-to 0
