@@ -68,9 +68,10 @@ type TurnCompleteEvent struct {
 
 // TurnErrorEvent signals that the turn encountered an error
 type TurnErrorEvent struct {
-	TurnID       string `json:"turn_id"`
-	Error        string `json:"error"`                   // Error message
-	LastBlockIndex *int  `json:"last_block_index,omitempty"` // Last successfully written block (if any)
+	TurnID         string `json:"turn_id"`
+	Error          string `json:"error"`                       // Error message
+	IsCancelled    bool   `json:"is_cancelled,omitempty"`      // True if user cancelled (don't show error toast)
+	LastBlockIndex *int   `json:"last_block_index,omitempty"`  // Last successfully written block (if any)
 }
 
 // FormatSSE formats an SSE event for transmission

@@ -117,6 +117,55 @@ func (h *DocumentHandler) DeleteDocument(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// UpdateAIVersionRequest represents a request to update ai_version
+type UpdateAIVersionRequest struct {
+	AIVersion *string `json:"ai_version"` // nil to clear
+}
+
+// UpdateAIVersion updates the ai_version field for a document
+// PATCH /api/documents/{id}/ai-version
+func (h *DocumentHandler) UpdateAIVersion(w http.ResponseWriter, r *http.Request) {
+	id, ok := PathParam(w, r, "id", "Document ID")
+	if !ok {
+		return
+	}
+
+	var req UpdateAIVersionRequest
+	if err := httputil.ParseJSON(w, r, &req); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	userID := httputil.GetUserID(r)
+
+	doc, err := h.docService.UpdateAIVersion(r.Context(), userID, id, req.AIVersion)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	httputil.RespondJSON(w, http.StatusOK, doc)
+}
+
+// DeleteAIVersion clears the ai_version field for a document (reject suggestions)
+// DELETE /api/documents/{id}/ai-version
+func (h *DocumentHandler) DeleteAIVersion(w http.ResponseWriter, r *http.Request) {
+	id, ok := PathParam(w, r, "id", "Document ID")
+	if !ok {
+		return
+	}
+
+	userID := httputil.GetUserID(r)
+
+	doc, err := h.docService.UpdateAIVersion(r.Context(), userID, id, nil)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	httputil.RespondJSON(w, http.StatusOK, doc)
+}
+
 // SearchDocuments performs full-text search across documents
 // GET /api/documents/search?query=dragon&project_id=uuid&fields=name,content&limit=20
 func (h *DocumentHandler) SearchDocuments(w http.ResponseWriter, r *http.Request) {

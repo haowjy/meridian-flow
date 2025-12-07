@@ -36,4 +36,9 @@ type TurnWriter interface {
 	// UpdateTurnMetadata updates a turn's metadata fields (model, tokens, stop_reason, etc.)
 	// Used when streaming completes to store final metadata
 	UpdateTurnMetadata(ctx context.Context, turnID string, metadata map[string]interface{}) error
+
+	// UpsertPartialTextBlock creates or updates a partial text block
+	// Used during streaming interruption to persist accumulated text
+	// Uses ON CONFLICT to handle both insert (first partial) and update (more text accumulated)
+	UpsertPartialTextBlock(ctx context.Context, block *llm.TurnBlock) error
 }
