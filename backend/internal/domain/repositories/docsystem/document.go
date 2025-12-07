@@ -24,6 +24,10 @@ type DocumentRepository interface {
 	// Update updates an existing document
 	Update(ctx context.Context, doc *docsystem.Document) error
 
+	// UpdateAIVersion updates the ai_version field for a document
+	// Pass nil to clear ai_version (reject suggestions)
+	UpdateAIVersion(ctx context.Context, id string, aiVersion *string) error
+
 	// Delete deletes a document
 	Delete(ctx context.Context, id, projectID string) error
 

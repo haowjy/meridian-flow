@@ -19,6 +19,11 @@ type DocumentService interface {
 	// userID is used for authorization check
 	UpdateDocument(ctx context.Context, userID, documentID string, req *UpdateDocumentRequest) (*docsystem.Document, error)
 
+	// UpdateAIVersion updates the ai_version field for a document
+	// userID is used for authorization check
+	// Pass nil to clear ai_version (reject suggestions)
+	UpdateAIVersion(ctx context.Context, userID, documentID string, aiVersion *string) (*docsystem.Document, error)
+
 	// DeleteDocument deletes a document
 	// userID is used for authorization check
 	DeleteDocument(ctx context.Context, userID, documentID string) error

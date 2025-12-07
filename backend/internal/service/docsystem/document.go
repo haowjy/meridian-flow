@@ -275,6 +275,47 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 	return doc, nil
 }
 
+// UpdateAIVersion updates the ai_version field for a document
+// Authorization is checked first via the injected authorizer
+// Pass nil to clear ai_version (reject suggestions)
+func (s *documentService) UpdateAIVersion(ctx context.Context, userID, documentID string, aiVersion *string) (*models.Document, error) {
+	// Authorize: check user can access this document
+	if err := s.authorizer.CanAccessDocument(ctx, userID, documentID); err != nil {
+		return nil, err
+	}
+
+	// Update ai_version in database
+	if err := s.docRepo.UpdateAIVersion(ctx, documentID, aiVersion); err != nil {
+		return nil, err
+	}
+
+	// Get updated document to return
+	doc, err := s.docRepo.GetByIDOnly(ctx, documentID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Compute display path
+	path, err := s.docRepo.GetPath(ctx, doc)
+	if err != nil {
+		s.logger.Warn("failed to compute path", "doc_id", doc.ID, "error", err)
+		doc.Path = doc.Name
+	} else {
+		doc.Path = path
+	}
+
+	action := "updated"
+	if aiVersion == nil {
+		action = "cleared"
+	}
+	s.logger.Info("document ai_version "+action,
+		"id", doc.ID,
+		"project_id", doc.ProjectID,
+	)
+
+	return doc, nil
+}
+
 // DeleteDocument deletes a document
 // Authorization is checked first via the injected authorizer
 func (s *documentService) DeleteDocument(ctx context.Context, userID, documentID string) error {
