@@ -1,4 +1,4 @@
-.PHONY: help build run test clean install dev llm-cli llm-cli-build build-local run-local
+.PHONY: help build run test clean install dev llm-cli llm-cli-build build-local run-local migrate migrate-up migrate-down migrate-status migrate-dry-run migrate-sql migrate-prod migrate-staging
 
 # Load environment variables from .env
 include .env
@@ -51,17 +51,32 @@ docker-build: ## Build Docker image
 docker-run: ## Run Docker container
 	docker run -p 8080:8080 --env-file .env meridian-backend
 
-migrate-up: ## Apply all pending migrations
-	$(GOOSE) -dir migrations postgres "$(SUPABASE_DB_URL)" up
+migrate: ## Interactive migration menu (goose mode for dev)
+	@./scripts/migrate.sh
 
-migrate-down: ## Rollback last migration
-	$(GOOSE) -dir migrations postgres "$(SUPABASE_DB_URL)" down
+migrate-up: ## Apply pending migrations (goose mode)
+	@./scripts/migrate.sh --yes up
 
-migrate-down-all: ## Rollback all migrations (drops all tables)
-	$(GOOSE) -dir migrations postgres "$(SUPABASE_DB_URL)" down-to 0
+migrate-down: ## Rollback last migration (goose mode)
+	@./scripts/migrate.sh --yes down
 
 migrate-status: ## Show migration status
-	$(GOOSE) -dir migrations postgres "$(SUPABASE_DB_URL)" status
+	@./scripts/migrate.sh status
+
+migrate-dry-run: ## Preview pending migrations (no changes)
+	@./scripts/migrate.sh --dry-run
+
+migrate-sql: ## Apply migrations via direct SQL (no goose tracking)
+	@./scripts/migrate.sh --sql --yes up
+
+migrate-prod: ## Apply migrations to production (SQL mode, requires .env.prod)
+	@./scripts/migrate.sh --prod --yes up
+
+migrate-staging: ## Apply migrations to staging (SQL mode, requires .env.staging)
+	@./scripts/migrate.sh --staging --yes up
+
+migrate-down-all: ## Rollback all migrations (drops all tables, goose only)
+	$(GOOSE) -dir migrations postgres "$(SUPABASE_DB_URL)" down-to 0
 
 migrate-create: ## Create a new migration file (usage: make migrate-create name="add_feature")
 	$(GOOSE) -dir migrations create $(name) sql

@@ -3,6 +3,7 @@ package streaming
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -39,6 +40,11 @@ type StreamExecutor struct {
 	// JSON delta accumulation (for complete block deltas)
 	// Partial JSON deltas are useless - accumulate and send complete JSON once
 	jsonAccumulator map[int]string // blockIndex -> accumulated JSON
+
+	// Text delta accumulation (for partial block persistence on interruption)
+	// Text deltas are sent immediately to SSE, but also accumulated here in case of interruption
+	textAccumulator map[int]string // blockIndex -> accumulated text
+	blockTypes      map[int]string // blockIndex -> block type (for filtering on persistence)
 }
 
 // NewStreamExecutor creates a new mstream-based executor for a turn.
@@ -195,6 +201,7 @@ func (se *StreamExecutor) processProviderStream(
 // processDelta handles a single TurnBlockDelta for real-time UI updates.
 // - Text/signature deltas are sent immediately (useful for progressive display)
 // - JSON deltas are accumulated (partial JSON is unparseable/useless, send complete JSON later)
+// - Text deltas are also accumulated for partial block persistence on interruption
 // streamStartSequence is used to remap provider block indices to turn-level sequences
 func (se *StreamExecutor) processDelta(ctx context.Context, send func(mstream.Event), delta *llmModels.TurnBlockDelta, currentBlockIndex *int, streamStartSequence int) error {
 	// Detect new block start
@@ -209,6 +216,14 @@ func (se *StreamExecutor) processDelta(ctx context.Context, send func(mstream.Ev
 			BlockType:  delta.BlockType,
 		})
 
+		// Track block type for partial block persistence (only text blocks are persisted)
+		if delta.BlockType != nil {
+			if se.blockTypes == nil {
+				se.blockTypes = make(map[int]string)
+			}
+			se.blockTypes[delta.BlockIndex] = *delta.BlockType
+		}
+
 		*currentBlockIndex = delta.BlockIndex
 	}
 
@@ -221,6 +236,15 @@ func (se *StreamExecutor) processDelta(ctx context.Context, send func(mstream.Ev
 		se.jsonAccumulator[delta.BlockIndex] += *delta.JSONDelta
 		// Don't send - partial JSON is unparseable
 		return nil
+	}
+
+	// Accumulate text deltas for partial block persistence on interruption
+	// This allows us to save partial text blocks if the stream is interrupted
+	if delta.TextDelta != nil && *delta.TextDelta != "" {
+		if se.textAccumulator == nil {
+			se.textAccumulator = make(map[int]string)
+		}
+		se.textAccumulator[delta.BlockIndex] += *delta.TextDelta
 	}
 
 	// Send text/signature deltas immediately (useful incrementally)
@@ -300,6 +324,14 @@ func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(ms
 		delete(se.jsonAccumulator, providerBlockIndex) // Cleanup using provider index
 	}
 
+	// Clear text accumulator for this completed block (no longer needed for partial persistence)
+	if se.textAccumulator != nil {
+		delete(se.textAccumulator, providerBlockIndex)
+	}
+	if se.blockTypes != nil {
+		delete(se.blockTypes, providerBlockIndex)
+	}
+
 	// Send block_stop event to SSE clients
 	se.sendEvent(send, llmModels.SSEEventBlockStop, llmModels.BlockStopEvent{
 		BlockIndex: block.Sequence, // Use remapped sequence for SSE
@@ -357,13 +389,84 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 	return se.completeTurn(ctx, send, metadata.StopReason, metadata)
 }
 
+// persistPartialTextBlocks saves any accumulated text blocks as partial blocks
+// Called during error/interruption handling to preserve partial LLM responses
+func (se *StreamExecutor) persistPartialTextBlocks(ctx context.Context) {
+	if se.textAccumulator == nil || len(se.textAccumulator) == 0 {
+		return
+	}
+
+	se.logger.Info("persisting partial text blocks",
+		"turn_id", se.turnID,
+		"block_count", len(se.textAccumulator),
+	)
+
+	for providerBlockIndex, textContent := range se.textAccumulator {
+		if textContent == "" {
+			continue
+		}
+
+		// Only persist text blocks - other types (thinking, tool_use, etc.) require complete structure
+		blockType := llmModels.BlockTypeText // default to text
+		if bt, exists := se.blockTypes[providerBlockIndex]; exists {
+			blockType = bt
+		}
+
+		// Skip non-text blocks - they're invalid when partial
+		if blockType != llmModels.BlockTypeText {
+			se.logger.Debug("skipping partial non-text block",
+				"block_type", blockType,
+				"provider_index", providerBlockIndex,
+			)
+			continue
+		}
+
+		// Calculate turn-level sequence
+		// maxBlockSequence tracks the highest completed block sequence
+		// Partial blocks continue from there
+		turnSequence := se.maxBlockSequence + 1 + providerBlockIndex
+
+		// Create partial block
+		partialBlock := &llmModels.TurnBlock{
+			TurnID:      se.turnID,
+			BlockType:   blockType,
+			Sequence:    turnSequence,
+			TextContent: &textContent,
+			Status:      "partial",
+		}
+
+		// Persist the partial block
+		if err := se.turnRepo.UpsertPartialTextBlock(ctx, partialBlock); err != nil {
+			se.logger.Error("failed to persist partial text block",
+				"error", err,
+				"sequence", turnSequence,
+				"text_length", len(textContent),
+			)
+		} else {
+			se.logger.Info("persisted partial text block",
+				"sequence", turnSequence,
+				"text_length", len(textContent),
+			)
+		}
+	}
+
+	// Clear accumulators after persistence attempt
+	se.textAccumulator = nil
+	se.blockTypes = nil
+}
+
 // handleError handles streaming errors
 func (se *StreamExecutor) handleError(ctx context.Context, send func(mstream.Event), err error) {
-	// No need to finalize accumulator - complete blocks are already persisted
-	// Partial blocks are not persisted (streaming stopped mid-block)
+	// Persist any accumulated partial text blocks BEFORE marking turn as error
+	// Use a background context since the original may be cancelled
+	persistCtx := context.Background()
+	se.persistPartialTextBlocks(persistCtx)
+
+	// Detect if this is a user cancellation (don't show error toast for these)
+	isCancelled := errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 
 	// Update turn status in database
-	if updateErr := se.turnRepo.UpdateTurnError(ctx, se.turnID, err.Error()); updateErr != nil {
+	if updateErr := se.turnRepo.UpdateTurnError(persistCtx, se.turnID, err.Error()); updateErr != nil {
 		se.logger.Error("failed to update turn error", "error", updateErr)
 	}
 
@@ -376,6 +479,7 @@ func (se *StreamExecutor) handleError(ctx context.Context, send func(mstream.Eve
 	se.sendEvent(send, llmModels.SSEEventTurnError, llmModels.TurnErrorEvent{
 		TurnID:         se.turnID,
 		Error:          errorMsg,
+		IsCancelled:    isCancelled,
 		LastBlockIndex: nil, // Could be determined from DB if needed
 	})
 }

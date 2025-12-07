@@ -519,9 +519,9 @@ func (r *PostgresTurnRepository) UpdateTurnMetadata(ctx context.Context, turnID 
 func (r *PostgresTurnRepository) CreateTurnBlock(ctx context.Context, block *llmModels.TurnBlock) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
-			turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, created_at
+			turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, status, created_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'complete', $9)
 		RETURNING id, created_at
 	`, r.tables.TurnBlocks)
 
@@ -562,13 +562,13 @@ func (r *PostgresTurnRepository) CreateTurnBlocks(ctx context.Context, blocks []
 	// Build batch insert query
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
-			turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, created_at
+			turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, status, created_at
 		)
 		VALUES
 	`, r.tables.TurnBlocks)
 
-	// Build VALUES clause dynamically (9 parameters per block)
-	args := make([]interface{}, 0, len(blocks)*9)
+	// Build VALUES clause dynamically (10 parameters per block)
+	args := make([]interface{}, 0, len(blocks)*10)
 	for i, block := range blocks {
 		// Set created_at if not provided (consistent with CreateTurnBlock)
 		if block.CreatedAt.IsZero() {
@@ -579,8 +579,8 @@ func (r *PostgresTurnRepository) CreateTurnBlocks(ctx context.Context, blocks []
 			query += ","
 		}
 		query += fmt.Sprintf(`
-			($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)
-		`, i*9+1, i*9+2, i*9+3, i*9+4, i*9+5, i*9+6, i*9+7, i*9+8, i*9+9)
+			($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, 'complete', $%d)
+		`, i*10+1, i*10+2, i*10+3, i*10+4, i*10+5, i*10+6, i*10+7, i*10+8, i*10+9)
 
 		args = append(args,
 			block.TurnID,
@@ -607,11 +607,47 @@ func (r *PostgresTurnRepository) CreateTurnBlocks(ctx context.Context, blocks []
 	return nil
 }
 
+// UpsertPartialTextBlock creates or updates a partial text block
+// Used during streaming interruption to persist accumulated text
+func (r *PostgresTurnRepository) UpsertPartialTextBlock(ctx context.Context, block *llmModels.TurnBlock) error {
+	query := fmt.Sprintf(`
+		INSERT INTO %s (
+			turn_id, block_type, sequence, text_content, status, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, 'partial', $5, $5)
+		ON CONFLICT (turn_id, sequence)
+		DO UPDATE SET
+			text_content = EXCLUDED.text_content,
+			status = 'partial',
+			updated_at = EXCLUDED.updated_at
+		RETURNING id, created_at, updated_at
+	`, r.tables.TurnBlocks)
+
+	now := time.Now()
+	executor := postgres.GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, query,
+		block.TurnID,
+		block.BlockType,
+		block.Sequence,
+		block.TextContent,
+		now,
+	).Scan(&block.ID, &block.CreatedAt, &block.UpdatedAt)
+
+	if err != nil {
+		if postgres.IsPgForeignKeyError(err) {
+			return fmt.Errorf("turn not found: %w", domain.ErrNotFound)
+		}
+		return fmt.Errorf("upsert partial text block: %w", err)
+	}
+
+	return nil
+}
+
 // GetTurnBlocks retrieves all turn blocks for a turn
 func (r *PostgresTurnRepository) GetTurnBlocks(ctx context.Context, turnID string) ([]llmModels.TurnBlock, error) {
 	query := fmt.Sprintf(`
 		SELECT
-			id, turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, created_at
+			id, turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, status, created_at, updated_at
 		FROM %s
 		WHERE turn_id = $1
 		ORDER BY sequence
@@ -637,7 +673,9 @@ func (r *PostgresTurnRepository) GetTurnBlocks(ctx context.Context, turnID strin
 			&block.Provider,      // TEXT
 			&block.ProviderData,  // pgx automatically handles JSONB -> json.RawMessage conversion
 			&block.ExecutionSide, // TEXT
+			&block.Status,        // TEXT (partial or complete)
 			&block.CreatedAt,
+			&block.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan turn block: %w", err)
@@ -670,7 +708,7 @@ func (r *PostgresTurnRepository) GetTurnBlocksForTurns(
 
 	query := fmt.Sprintf(`
 		SELECT
-			id, turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, created_at
+			id, turn_id, block_type, sequence, text_content, content, provider, provider_data, execution_side, status, created_at, updated_at
 		FROM %s
 		WHERE turn_id = ANY($1)
 		ORDER BY turn_id, sequence
@@ -697,7 +735,9 @@ func (r *PostgresTurnRepository) GetTurnBlocksForTurns(
 			&block.Provider,      // TEXT
 			&block.ProviderData,  // pgx automatically handles JSONB -> json.RawMessage conversion
 			&block.ExecutionSide, // TEXT
+			&block.Status,        // TEXT (partial or complete)
 			&block.CreatedAt,
+			&block.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan turn block: %w", err)

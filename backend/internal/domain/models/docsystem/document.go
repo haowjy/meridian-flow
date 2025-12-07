@@ -10,7 +10,8 @@ type Document struct {
 	FolderID  *string    `json:"folder_id" db:"folder_id"` // NULL = root level
 	Name      string     `json:"name" db:"name"`           // Just "Aria", not "Characters/Aria"
 	Path      string     `json:"path,omitempty"`           // Computed display path, not stored in DB
-	Content   string     `json:"content" db:"content"`     // Markdown content
+	Content   string     `json:"content" db:"content"`               // Markdown content
+	AIVersion *string    `json:"ai_version,omitempty" db:"ai_version"` // AI's suggested version (nullable)
 	WordCount int        `json:"word_count" db:"word_count"`
 	CreatedAt time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`

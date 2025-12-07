@@ -79,14 +79,14 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 
 	if projectID != "" {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, folder_id, name, content, word_count, created_at, updated_at
+			SELECT id, project_id, folder_id, name, content, ai_version, word_count, created_at, updated_at
 			FROM %s
 			WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
 		`, r.tables.Documents)
 		args = []interface{}{id, projectID}
 	} else {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, folder_id, name, content, word_count, created_at, updated_at
+			SELECT id, project_id, folder_id, name, content, ai_version, word_count, created_at, updated_at
 			FROM %s
 			WHERE id = $1 AND deleted_at IS NULL
 		`, r.tables.Documents)
@@ -101,6 +101,7 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 		&doc.FolderID,
 		&doc.Name,
 		&doc.Content,
+		&doc.AIVersion,
 		&doc.WordCount,
 		&doc.CreatedAt,
 		&doc.UpdatedAt,
@@ -120,7 +121,7 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 // Use when authorization is handled separately (e.g., by ResourceAuthorizer)
 func (r *PostgresDocumentRepository) GetByIDOnly(ctx context.Context, id string) (*models.Document, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, folder_id, name, content, word_count, created_at, updated_at
+		SELECT id, project_id, folder_id, name, content, ai_version, word_count, created_at, updated_at
 		FROM %s
 		WHERE id = $1 AND deleted_at IS NULL
 	`, r.tables.Documents)
@@ -133,6 +134,7 @@ func (r *PostgresDocumentRepository) GetByIDOnly(ctx context.Context, id string)
 		&doc.FolderID,
 		&doc.Name,
 		&doc.Content,
+		&doc.AIVersion,
 		&doc.WordCount,
 		&doc.CreatedAt,
 		&doc.UpdatedAt,
@@ -172,7 +174,7 @@ func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string,
 
 	// Query for the document in the final folder
 	query := fmt.Sprintf(`
-		SELECT id, project_id, folder_id, name, content, word_count, created_at, updated_at
+		SELECT id, project_id, folder_id, name, content, ai_version, word_count, created_at, updated_at
 		FROM %s
 		WHERE project_id = $1 AND name = $2 AND deleted_at IS NULL
 	`, r.tables.Documents)
@@ -195,6 +197,7 @@ func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string,
 		&doc.FolderID,
 		&doc.Name,
 		&doc.Content,
+		&doc.AIVersion,
 		&doc.WordCount,
 		&doc.CreatedAt,
 		&doc.UpdatedAt,
@@ -308,6 +311,28 @@ func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Doc
 
 	if result.RowsAffected() == 0 {
 		return fmt.Errorf("document %s: %w", doc.ID, domain.ErrNotFound)
+	}
+
+	return nil
+}
+
+// UpdateAIVersion updates the ai_version field for a document
+// Pass nil to clear ai_version (reject suggestions)
+func (r *PostgresDocumentRepository) UpdateAIVersion(ctx context.Context, id string, aiVersion *string) error {
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET ai_version = $1, updated_at = NOW()
+		WHERE id = $2 AND deleted_at IS NULL
+	`, r.tables.Documents)
+
+	executor := postgres.GetExecutor(ctx, r.pool)
+	result, err := executor.Exec(ctx, query, aiVersion, id)
+	if err != nil {
+		return fmt.Errorf("update ai_version: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("document %s: %w", id, domain.ErrNotFound)
 	}
 
 	return nil

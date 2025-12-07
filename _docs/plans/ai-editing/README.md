@@ -5,7 +5,7 @@ priority: high
 
 # AI Document Editing Implementation Plan
 
-**Goal**: Inline AI suggestions (Google Docs style) with conflict resolution for collaborative writing
+**Goal**: Inline AI suggestions (Google Docs style) for collaborative writing
 
 **Philosophy**: AI as collaborative editing partner through chat. User always wins. Simple, intuitive, non-blocking.
 
@@ -16,118 +16,110 @@ priority: high
 ```mermaid
 flowchart LR
     subgraph Backend
-        S[AI Sessions DB] --> T[doc_edit Tool] --> A[Session API]
-        T --> V[ai_version]
+        D[documents.ai_version] --> T[doc_edit Tool]
     end
 
     subgraph Frontend
-        D[Live Diff] --> U[Accept/Reject UI]
+        DIFF[Live Diff] --> UI[Keep/Undo UI]
         C[Chat Card]
     end
 
-    A --> D
+    T --> D
+    D --> DIFF
     T --> C
 
-    style S fill:#2d5f8d
+    style D fill:#2d5f8d
     style T fill:#2d5f8d
-    style A fill:#2d5f8d
-    style V fill:#2d5f8d
-    style D fill:#2d7d2d
-    style U fill:#2d7d2d
+    style DIFF fill:#2d7d2d
+    style UI fill:#2d7d2d
     style C fill:#2d7d2d
 ```
 
-**Key Architecture**: Frontend computes `diff(USER_EDITS, ai_version)` live for display. No position hints or complex mark matching needed.
+**Key Architecture**:
+- `documents.ai_version` column stores AI's suggested version
+- Frontend computes `diff(content, ai_version)` live
+- User can edit `ai_version` directly (tweak before accepting)
+- No separate tables, no session state machine
 
 ---
 
-## Data Model
+## Data Model (Simplified)
 
-### Storage (Markdown-Centric)
+| What | Where | Notes |
+|------|-------|-------|
+| User content | `documents.content` | Frontend owns, synced via auto-save |
+| AI suggestions | `documents.ai_version` | Backend owns (AI writes), user can edit |
+| Edit history | `turn_blocks` | Tool calls preserved in chat |
 
-| What | Where | Format |
-|------|-------|--------|
-| User content | `documents.content` | Pure markdown (auto-saved) |
-| AI suggestions | `ai_sessions.ai_version` | Pre-computed document with AI edits |
-| Edit history | `ai_edits` table | Operations (old_str, new_str) for audit |
+**Key insight**: No separate tables needed. Just one nullable column on documents.
 
-**Key insight**: Frontend computes `diff(USER_EDITS, ai_version)` live. No position hints needed.
-
-### Status Values
-
-| Entity | Values | Notes |
-|--------|--------|-------|
-| Session | `active` \| `accepted` \| `rejected` | Kept for history/restore |
-| Edit | `pending` \| `accepted` \| `rejected` | For audit only |
-
-### Two-Way Version Model (Simplified!)
+### Live Diff Model
 
 ```
-documents.content = USER_EDITS (always, auto-saved markdown)
+documents.content   = what user has (frontend source of truth)
+documents.ai_version = what AI suggests (nullable, editable by user)
 
-BASE (base_snapshot - doc when AI session started)
-├── + User edits during session ──► USER_EDITS (in documents.content)
-│
-└── + ALL AI edits ────────────────► AI_VERSION (pre-computed in ai_sessions)
-
-DIFF = diff(USER_EDITS, ai_version) computed live by frontend
+DIFF = diff(content, ai_version) computed live by frontend
      = Shows inline word-level diff: ~~old~~ new
+     = Empty when content equals ai_version (no UI shown)
 ```
 
 ---
 
 ## Implementation Phases
 
-| Phase | File | Description | Dependencies | Parallel With |
-|-------|------|-------------|--------------|---------------|
-| - | [editing-flow.md](editing-flow.md) | Visual reference: All editing flows with mermaid diagrams | - | - |
-| - | [architecture-solid.md](architecture-solid.md) | SOLID patterns: registries, interfaces, abstractions | - | - |
-| **0** | [codemirror-migration/](codemirror-migration/) | **Frontend: Migrate TipTap → CodeMirror 6 with live preview** (8 subphases) | None | Phase 1 |
-| 1 | [phase-1-version-db.md](phase-1-version-db.md) | Backend: ai_sessions + ai_edits tables (with ai_version) | None | Phase 0 |
-| 2 | [phase-2-suggest-tool.md](phase-2-suggest-tool.md) | Backend: doc_edit tool (updates ai_version) | Phase 1 | Phase 3 |
-| 3 | [phase-3-version-api.md](phase-3-version-api.md) | Backend: Session API endpoints | Phase 1 | Phase 2 |
-| 4 | [phase-4-live-diff.md](phase-4-live-diff.md) | Frontend: Live diff with inline display (~~old~~ new) | Phase 0, Phase 3 | - |
-| 5 | [phase-5-accept-ui.md](phase-5-accept-ui.md) | Frontend: Keep/Undo UI for diff hunks | Phase 4 | - |
-| 6 | [phase-6-chat-card.md](phase-6-chat-card.md) | Frontend: SuggestionCard in chat | Phase 2 | Phase 4, 5 |
+| Phase | File | Description | Status |
+|-------|------|-------------|--------|
+| **0** | [codemirror-migration/](codemirror-migration/) | Frontend: TipTap → CodeMirror 6 | ✅ Complete |
+| **1** | [phase-1-version-db.md](phase-1-version-db.md) | Backend: Add `ai_version` column to documents | Ready |
+| **2** | [phase-2-suggest-tool.md](phase-2-suggest-tool.md) | Backend: `doc_edit` tool writes to ai_version | Depends on 1 |
+| **3** | [phase-3-version-api.md](phase-3-version-api.md) | Backend: PATCH/DELETE endpoints for ai_version | Depends on 1 |
+| **4** | [phase-4-live-diff.md](phase-4-live-diff.md) | Frontend: Live diff display (~~old~~ new) | Depends on 0, 3 |
+| **5** | [phase-5-accept-ui.md](phase-5-accept-ui.md) | Frontend: Keep/Undo UI | Depends on 4 |
+| **6** | [phase-6-chat-card.md](phase-6-chat-card.md) | Frontend: SuggestionCard in chat | Depends on 2 |
 
-### Phase 0 Subphases (CodeMirror Migration)
+### Reference Documents
 
-| Subphase | Description | SOLID Focus |
-|----------|-------------|-------------|
-| [0.1](codemirror-migration/phase-0.1-core-shell.md) | Core Editor Shell | Single Responsibility |
-| [0.2](codemirror-migration/phase-0.2-extension-architecture.md) | Extension Architecture (Facets, Compartments) | Open/Closed, Interface Segregation |
-| [0.3](codemirror-migration/phase-0.3-toolbar.md) | Toolbar Integration | Single Responsibility |
-| [0.4](codemirror-migration/phase-0.4-live-preview.md) | Live Preview (Obsidian-style) | Open/Closed (Registry) |
-| [0.5](codemirror-migration/phase-0.5-clipboard.md) | Copy/Paste Handling | Single Responsibility |
-| [0.6](codemirror-migration/phase-0.6-caching.md) | Editor Caching | - |
-| [0.7](codemirror-migration/phase-0.7-ai-integration.md) | AI Integration Points | Dependency Inversion |
-| [0.8](codemirror-migration/phase-0.8-migration-complete.md) | Migration Complete | - |
-
-> **Note**: Live diff approach simplifies everything - frontend computes `diff(USER_EDITS, ai_version)` on-the-fly. No position hints, no mark matching, no Model B.
+| File | Description |
+|------|-------------|
+| [editing-flow.md](editing-flow.md) | Visual flows with mermaid diagrams |
+| [architecture-solid.md](architecture-solid.md) | SOLID patterns and abstractions |
 
 ---
 
 ## Core Design Decisions
 
-### 1. Live Diff Approach
-- Frontend computes `diff(USER_EDITS, ai_version)` on-the-fly using `diffLines()` + `diffWords()`
-- Shows inline word-level diff: ~~old~~ new (Google Docs style)
-- No position hints, mark matching, or fallback logic needed
+### 1. `ai_version` on Document (Not Separate Tables)
+- Single nullable column: `documents.ai_version TEXT`
+- No `ai_sessions` table, no `ai_edits` table
+- Dramatically simpler schema and code
 
-### 2. Explicit Accept/Reject Only (No Model B)
-User must explicitly Keep or Undo each hunk. No implicit accept when editing inside suggestions.
+### 2. User Can Edit `ai_version`
+- User can tweak AI suggestions before accepting
+- PATCH endpoint for user edits
+- Prevents "accept then fix" workflow
 
-### 3. Backend Pre-Computes `ai_version`
-Backend maintains `ai_version` (BASE + all AI edits) after each edit for efficiency.
+### 3. Frontend Owns `content`, Backend Owns `ai_version`
+- Avoids race conditions with auto-save
+- Frontend sets editor content, syncs to backend
+- Backend handles AI tool writes to ai_version
 
-### 4. Backend Doesn't Validate Against DB
-DB may be stale due to debounced saves. Frontend has source of truth (editor state).
+### 4. No Explicit Accept/Reject State
+- "Accept" = user makes content match ai_version (Ctrl+Z reverses)
+- "Reject" = user deletes ai_version (sets null)
+- Diff just shows difference, no state machine
 
-### 5. Pattern-Based Editing
-`doc_edit` tool uses Anthropic-style `str_replace` commands (not position-based).
+### 5. Last Write Wins
+- Multiple AI edits overwrite ai_version
+- Future workspace feature handles multi-source conflicts
+- See `_docs/future/ideas/ai-behaviors/ai-editing-workspace.md`
 
-### 6. Unix-Style Paths
-Documents referenced by human-readable paths (`/Chapter 5.md`), not UUIDs.
+### 6. Pattern-Based Editing
+- `doc_edit` tool uses `str_replace` commands (not positions)
+- AI sees `ai_version` if exists, else `content`
+
+### 7. Unix-Style Paths
+- Documents referenced by paths (`/Chapter 5.md`), not UUIDs
 
 ---
 
@@ -141,25 +133,33 @@ sequenceDiagram
     participant Editor
 
     User->>Chat: "Make chapter 5 more suspenseful"
-    Chat->>AI: Request edits with context
-    Note over AI: AI uses doc_edit tool<br/>Backend updates ai_version
+    Chat->>AI: Request with context
+    Note over AI: AI uses doc_edit tool<br/>Backend sets documents.ai_version
 
     AI-->>Chat: "I've made some changes"
     Chat-->>Editor: SuggestionCard links to editor
 
     User->>Editor: Opens chapter 5
-    Editor->>Editor: Compute diff(USER_EDITS, ai_version)
+    Editor->>Editor: Compute diff(content, ai_version)
     Editor->>Editor: Shows inline diff (~~old~~ new)
 
-    alt User accepts all
-        User->>Editor: Click "Keep All"
-        Editor->>Editor: Replace doc with ai_version
-    else User rejects all
+    alt User tweaks suggestion
+        User->>Editor: Edits green highlighted text
+        Editor->>Editor: PATCH ai_version, diff updates
+    end
+
+    alt User accepts (Keep)
+        User->>Editor: Click "Keep" or "Keep All"
+        Editor->>Editor: Set content = ai_version
+        Note over Editor: Diff empty, UI hides
+    else User rejects (Undo All)
         User->>Editor: Click "Undo All"
-        Editor->>Editor: Keep user content, clear session
-    else User accepts per-hunk
-        User->>Editor: Click "Keep" on specific hunk
-        Editor->>Editor: Replace hunk lines, diff recomputes
+        Editor->>Editor: DELETE ai_version
+        Note over Editor: No ai_version, no diff
+    else User undoes accept (Ctrl+Z)
+        User->>Editor: Ctrl+Z
+        Editor->>Editor: Content reverts
+        Note over Editor: Diff reappears
     end
 ```
 
@@ -167,20 +167,22 @@ sequenceDiagram
 
 ## Success Criteria
 
-- [ ] AI can suggest edits via chat using `doc_edit` tool
-- [ ] `doc_edit` supports: view, str_replace, insert, append, create
-- [ ] Documents referenced by human-readable Unix-style paths
-- [ ] Suggestions shown as inline word-level diff (~~old~~ new)
+- [ ] `ai_version` column on documents table
+- [ ] AI can edit via `doc_edit` tool (writes to ai_version)
+- [ ] `doc_edit` supports: view, str_replace, insert, append
+- [ ] User can PATCH ai_version (tweak suggestions)
+- [ ] User can DELETE ai_version (reject all)
+- [ ] Frontend computes live diff(content, ai_version)
+- [ ] Inline word-level diff shown (~~old~~ new)
+- [ ] Per-hunk Keep/Undo buttons
+- [ ] Keep All / Undo All buttons
+- [ ] Ctrl+Z reverses accept (diff reappears)
 - [ ] User can edit freely while suggestions pending
-- [ ] Keep All replaces doc with ai_version
-- [ ] Undo All keeps user content, clears session
-- [ ] Per-hunk Keep/Undo buttons work
-- [ ] Backend pre-computes ai_version for efficiency
-- [ ] Ctrl+Z works (CodeMirror native undo)
 
 ---
 
 ## Related Documentation
 
-- **Tool calling docs**: `_docs/features/b-tool-calling/`
-- **CodeMirror extensions**: `frontend/src/core/editor/` (after Phase 0)
+- **Tool calling**: `_docs/features/b-tool-calling/`
+- **CodeMirror editor**: `frontend/src/core/editor/`
+- **Future workspace**: `_docs/future/ideas/ai-behaviors/ai-editing-workspace.md`

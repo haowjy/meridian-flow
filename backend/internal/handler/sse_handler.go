@@ -128,10 +128,12 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// If no stream, send error event and close gracefully
+	// This is not a real error - stream may have finished or never existed
 	if stream == nil {
 		errorData, _ := json.Marshal(llmModels.TurnErrorEvent{
-			TurnID: turnID,
-			Error:  "streaming not active for this turn",
+			TurnID:      turnID,
+			Error:       "streaming not active for this turn",
+			IsCancelled: true, // Don't show error toast for this
 		})
 		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", llmModels.SSEEventTurnError, string(errorData))
 		if err := h.safeFlush(w, flusher, turnID, clientID); err != nil {

@@ -39,11 +39,13 @@ type TurnBlock struct {
 	BlockType     string                 `json:"block_type" db:"block_type"`
 	Sequence      int                    `json:"sequence" db:"sequence"`
 	TextContent   *string                `json:"text_content,omitempty" db:"text_content"`
-	Content       map[string]interface{} `json:"content,omitempty" db:"content"`    // JSONB for type-specific data
+	Content       map[string]interface{} `json:"content,omitempty" db:"content"`                      // JSONB for type-specific data
 	Provider      *string                `json:"provider,omitempty" db:"provider"`
-	ProviderData  json.RawMessage        `json:"provider_data,omitempty" db:"provider_data"` // JSONB for raw provider-specific data (opaque bytes)
+	ProviderData  json.RawMessage        `json:"provider_data,omitempty" db:"provider_data"`          // JSONB for raw provider-specific data (opaque bytes)
 	ExecutionSide *string                `json:"execution_side,omitempty" db:"execution_side"`        // "provider", "server", or "client" for tool_use blocks
+	Status        string                 `json:"status,omitempty" db:"status"`                        // "complete" or "partial" (for interrupted streams)
 	CreatedAt     time.Time              `json:"created_at" db:"created_at"`
+	UpdatedAt     *time.Time             `json:"updated_at,omitempty" db:"updated_at"`
 }
 
 // IsUserBlock returns true if this is a user turn block
@@ -91,4 +93,14 @@ func (tb *TurnBlock) IsClientSideTool() bool {
 // Deprecated: Use IsProviderSideTool instead
 func (tb *TurnBlock) IsServerSideTool() bool {
 	return tb.IsProviderSideTool()
+}
+
+// IsPartial returns true if this block was interrupted during streaming
+func (tb *TurnBlock) IsPartial() bool {
+	return tb.Status == "partial"
+}
+
+// IsComplete returns true if this block finished normally (or status is unset for backwards compatibility)
+func (tb *TurnBlock) IsComplete() bool {
+	return tb.Status == "" || tb.Status == "complete"
 }
