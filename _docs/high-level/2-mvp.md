@@ -203,7 +203,7 @@ User sees:
 
 **Frontend:** ✅ Complete
 - ✅ Next.js + TypeScript setup
-- ✅ TipTap editor integration
+- ✅ CodeMirror editor integration
 - ✅ Document tree component
 - ✅ Auto-save implementation
 - ✅ API client for backend
@@ -319,7 +319,7 @@ User asks: "Is Elara's dialogue consistent?"
 
 **Single source of truth:**
 - Markdown stored in database
-- Frontend converts to/from TipTap editor format at the boundary
+- CodeMirror works directly with markdown (no conversion needed)
 - No synchronization issues
 
 **Benefits:**

@@ -5,14 +5,14 @@ audience: developer
 
 # Editor Caching and Document Loading
 
-Purpose: map the exact data flow for opening, editing, and saving a document with the TipTap editor cache and IndexedDB cache, and call out edge cases that can cause "stuck loading" or "shows previous doc" symptoms.
+Purpose: map the exact data flow for opening, editing, and saving a document with the CodeMirror editor and IndexedDB cache, and call out edge cases that can cause "stuck loading" or "shows previous doc" symptoms.
 
 See also: `_docs/technical/frontend/architecture/sync-system.md` for broader sync overview.
 
 ## Components Involved
 
 - `EditorPanel` (view) — `frontend/src/features/documents/components/EditorPanel.tsx`
-- `useEditorCache` (TipTap instance LRU) — `frontend/src/core/hooks/useEditorCache.ts`
+- `CodeMirrorEditor` (editor component) — `frontend/src/core/editor/codemirror/index.ts`
 - `useEditorStore.loadDocument` (cache emit + server reconcile) — `frontend/src/core/stores/useEditorStore.ts`
 - `DocumentSyncService` (optimistic save + retry) — `frontend/src/core/services/documentSyncService.ts`
 - `MeridianDB.documents` (IndexedDB via Dexie) — `frontend/src/core/lib/db.ts`
@@ -25,7 +25,7 @@ sequenceDiagram
     autonumber
     participant UI as UI "DocumentTree / openDocument(id)"
     participant Panel as "EditorPanel"
-    participant EC as "useEditorCache (globalEditorCache)"
+    participant EC as "CodeMirrorEditor"
     participant Store as "useEditorStore.loadDocument(id)"
     participant IDB as "IndexedDB (Dexie)"
     participant API as "Backend API"
@@ -33,12 +33,8 @@ sequenceDiagram
     UI->>Panel: props(documentId = D)
     Note over Panel: mount/update when activeDocumentId changes
 
-    Panel->>EC: get or create editor for D
-    alt Cache hit (editor exists)
-        EC-->>Panel: editor(D), isFromCache=true
-    else Cache miss
-        EC-->>Panel: new empty editor(D), isFromCache=false
-    end
+    Panel->>EC: mount editor with initialContent
+    EC-->>Panel: editor ready
 
     Panel->>Store: loadDocument(D, AbortSignal)
     Store->>Store: set({_activeDocumentId:D, isLoading:true})
@@ -61,18 +57,7 @@ sequenceDiagram
     end
 
     Note over Panel,EC: Initialize content
-    alt isFromCache == false (new editor)
-        Panel->>Panel: setLocalContent(activeDocument.content)
-        Panel->>EC: editor.commands.setContent(localContent,{emitUpdate:false})
-    else isFromCache == true (reuse)
-        Panel->>Panel: cached = editor.getHTML()
-        alt cached empty && server has content
-            Panel->>EC: setContent(serverContent,{emitUpdate:false})
-            Panel->>Panel: setLocalContent(serverContent)
-        else trust cached editor
-            Panel->>Panel: setLocalContent(cached)
-        end
-    end
+    Panel->>EC: setContent(activeDocument.content)
 ```
 
 Color note: diagrams use defaults; UI nodes are conceptual. Dark‑mode safe colors applied in later focused diagrams.
@@ -82,14 +67,14 @@ Color note: diagrams use defaults; UI nodes are conceptual. Dark‑mode safe col
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Editor as "TipTap Editor (D)"
+    participant Editor as "CodeMirror Editor (D)"
     participant Panel as "EditorPanel localContent / debounce(1s)"
     participant Store as "useEditorStore.saveDocument"
     participant Service as "DocumentSyncService.save"
     participant IDB as "IndexedDB"
     participant API as "Backend API"
 
-    Editor->>Panel: onUpdate → setLocalContent(html)
+    Editor->>Panel: onChange → setLocalContent(markdown)
     Panel->>Panel: debounce 1s ("hasUserEdit" true)
     Panel->>Store: saveDocument(D, debouncedContent)
     Store->>Store: set({status:'saving'})
@@ -156,19 +141,14 @@ flowchart TD
 - Fix: compare strings, don’t check truthiness.
 - Code: `EditorPanel.tsx:118` (fixed).
 
-3) Editor instance reuse shows wrong document
-- Symptom: switching to B renders A’s content or stays on A.
+3) Editor shows wrong document
+- Symptom: switching to B renders A's content or stays on A.
 - Potential causes:
-  - The editor cache returns a stale instance for the wrong key (Map key mismatch).
-  - EditorPanel holds onto the first editor because caller never re‑renders when `documentId` changes.
-  - Content init order: editor fetched from cache before `activeDocument` updates; init logic must be idempotent.
+  - EditorPanel holds onto first editor because caller never re‑renders when `documentId` changes.
+  - Content init order: editor mounted before `activeDocument` updates.
 - Current guards:
-  - Cache key is `documentId`; effect in `useEditorCache` runs only on `documentId` change and sets state: `editor`, `isFromCache`. See `useEditorCache.ts:119-141`.
-  - EditorPanel initializes a new editor with server content, or trusts cached content, with an extra check for "empty cached editor". See `EditorPanel.tsx:85-116`.
-- Additional hardening (recommended):
-  - Tag editor instances with their `documentId` and assert on reuse. If mismatch, destroy and recreate.
-    - Implementation sketch: `editor.storage.__docId = documentId`; on cache hit, verify `cached.editor.storage.__docId === documentId`.
-  - Make `editable` depend on the exact doc: `editable: !readOnly && activeDocument?.id === documentId && !isLoading`.
+  - CodeMirror re-mounts when documentId changes (key prop).
+  - EditorPanel initializes editor with server content after load completes.
 
 4) Skeleton stuck ("always loading")
 - Symptom: Editor skeleton never exits after switching.
@@ -180,37 +160,23 @@ flowchart TD
   - Every early return on race guard should also reset loading if nothing else will. Current returns exit before setting to false only on early read; pattern is mitigated by subsequent state updates, but worth double‑checking in logs.
   - EditorPanel shows content only when `activeDocument` is set; ensure `loadDocument` is called for the new `documentId` and not debounced away.
 
-5) LRU eviction while active
-- Risk: evicting the currently visible editor.
-- Mitigation: `useEditorCache` uses `lastAccessed` and is only called on doc switch, so the active doc is the most recently accessed. Consider explicitly skipping eviction of the key just loaded.
-
-6) Normalized emptiness
-- TipTap may render empty as `"<p></p>"`; server stores `""`.
-- Current handling: treat both as empty; only override cached editor if cached is empty and server has content. See `EditorPanel.tsx:96-106`.
+5) Normalized emptiness
+- CodeMirror stores plain markdown - empty is just `""`.
+- No normalization needed (unlike TipTap which rendered empty as `"<p></p>"`).
 
 ## Proposed Invariants (to prevent regressions)
 
-- I1: When `EditorPanel` receives `documentId=D`, the `useEditorCache` returns an editor whose logical owner is D. If not, recreate.
+- I1: When `EditorPanel` receives `documentId=D`, CodeMirror receives content for D via `initialContent` prop.
 - I2: `loadDocument(D)` either sets `{activeDocument:D, isLoading:false}` or `{isLoading:false}` with an explicit AbortError path. No code path leaves `isLoading:true` for D once effects settle.
 - I3: Empty string is a valid content value everywhere (no falsy checks).
 - I4: The editor is only editable when `activeDocument?.id === documentId` and the store is not loading.
 
-## Quick Checks to Diagnose “stuck on first doc”
+## Quick Checks to Diagnose "stuck on first doc"
 
 1) Open A → type → switch to B → back to A. Capture console:
-- Expect: one cache miss per new doc, subsequent hits; at most one AbortError per switch.
+- Expect: at most one AbortError per switch; content should match each document.
 
-2) Add a runtime assertion in `useEditorCache` on cache hit:
-```ts
-// Pseudocode: inside cache-hit branch
-const cached = globalEditorCache.get(documentId)
-if (cached && (cached as any).editor.storage?.__docId && (cached as any).editor.storage.__docId !== documentId) {
-  console.warn('[EditorCache] DocId mismatch, recreating editor', documentId)
-  cached.editor.destroy()
-  globalEditorCache.delete(documentId)
-  // fall through to create
-}
-```
+2) Check that CodeMirror receives correct `key` prop (should be documentId) to force remount on switch.
 
 3) Temporarily gate `editable`:
 ```ts
@@ -221,10 +187,9 @@ If the issue disappears, it was a timing mismatch during content init.
 
 ## Why this design
 
-- Two caches serve different latency goals:
-  - Editor cache preserves TipTap state (selection, history) for fast toggling.
-  - IndexedDB cache avoids network during document open and enables offline work.
+- IndexedDB cache avoids network during document open and enables offline work.
 - Race guards keep correctness obvious: intent flag `_activeDocumentId` and AbortSignals ensure stale work is canceled.
+- CodeMirror remounts per document (via key prop) - simpler than caching editor instances.
 
 ## Revised: Reconcile by `updatedAt` (Server + Cache)
 
@@ -274,9 +239,9 @@ Notes:
 
 ## References (code)
 
-- `frontend/src/core/hooks/useEditorCache.ts:55, 88-114, 119-141, 149-171`
-- `frontend/src/features/documents/components/EditorPanel.tsx:31, 80-116, 118-147`
-- `frontend/src/core/stores/useEditorStore.ts:25, 48-104, 140-206`
-- `frontend/src/core/lib/sync.ts:56-111, 205-268`
-- `frontend/src/core/lib/db.ts:1-38`
-- `frontend/src/core/lib/api.ts:180-219`
+- `frontend/src/core/editor/codemirror/index.ts` - CodeMirror editor component
+- `frontend/src/features/documents/components/EditorPanel.tsx` - Editor panel container
+- `frontend/src/core/stores/useEditorStore.ts` - Document loading and state
+- `frontend/src/core/services/documentSyncService.ts` - Sync service
+- `frontend/src/core/lib/db.ts` - IndexedDB schema
+- `frontend/src/core/lib/api.ts` - API client

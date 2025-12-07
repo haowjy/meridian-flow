@@ -49,7 +49,7 @@ This document tracks frontend performance and optimization topics to explore aft
 ## Converters & Formats
 - Coverage of Markdown features vs. editor features (tables, callouts, task lists, footnotes).
 - Handling of front‑matter or metadata blocks.
-- Stability of round‑trip MD ↔︎ TipTap for complex nodes.
+- CodeMirror is markdown-native (no round-trip conversion needed).
 - Import/export to other formats (HTML, PDF, Docx) and where those live.
 
 ## Assets (Images)
