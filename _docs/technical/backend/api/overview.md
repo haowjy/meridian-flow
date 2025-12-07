@@ -244,7 +244,7 @@ All three are equivalent.
 }
 ```
 
-**Frontend conversion:** TipTap ↔ Markdown happens at API boundary
+**Frontend:** CodeMirror works directly with markdown (no conversion needed)
 
 ### Computed Fields
 

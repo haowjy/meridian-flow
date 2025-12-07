@@ -5,7 +5,7 @@ audience: developer
 
 # Frontend Technical Documentation
 
-Complete technical reference for Meridian frontend (Vite + TanStack Router + TypeScript + TipTap + Supabase).
+Complete technical reference for Meridian frontend (Vite + TanStack Router + TypeScript + CodeMirror + Supabase).
 
 ## Quick Links
 
@@ -38,7 +38,7 @@ Core patterns and system design:
 ### Editor
 
 - [Editor Caching](editor-caching.md) - Document caching strategy with IndexedDB
-- [Editor UI Overview](editor-ui-overview.md) - TipTap editor UI components
+- [Editor UI Overview](editor-ui-overview.md) - CodeMirror editor UI components
 
 ### Chat UI
 
@@ -89,6 +89,6 @@ All docs follow minimal detail principle from main `CLAUDE.md`:
 
 - [Vite Docs](https://vitejs.dev/)
 - [TanStack Router Docs](https://tanstack.com/router)
-- [TipTap Editor Docs](https://tiptap.dev/)
+- [CodeMirror Docs](https://codemirror.net/)
 - [Supabase Auth Docs](https://supabase.com/docs/guides/auth)
 - [Tailwind CSS](https://tailwindcss.com/)

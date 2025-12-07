@@ -15,7 +15,7 @@ flowchart TB
   subgraph "Right Panel"
     Header["Header: ← | Breadcrumbs | ✕"]
     Toolbar["Toolbar: B I H1 H2 • ≡"]
-    Editor["TipTap Editor"]
+    Editor["CodeMirror Editor"]
     Status["Status Bar: words • cloud/saving/error"]
   end
 

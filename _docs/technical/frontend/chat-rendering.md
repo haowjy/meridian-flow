@@ -5,7 +5,7 @@ audience: developer
 
 # Chat Rendering: Streamdown Decision
 
-**Purpose:** Document why Streamdown was chosen for chat message rendering over TipTap and react-markdown.
+**Purpose:** Document why Streamdown was chosen for chat message rendering over other options.
 
 **See also:**
 - `chat-rendering-guide.md` - Implementation guide and best practices
@@ -15,15 +15,9 @@ audience: developer
 
 **Use Streamdown for chat message rendering.**
 
-TipTap remains for document editing only.
+CodeMirror is used for document editing.
 
 ## Why Streamdown
-
-**Problem with TipTap:**
-- Designed as rich text **editor**, not lightweight renderer
-- Heavy memory/DOM overhead for 100+ message instances
-- React performance issues without careful optimization
-- Not optimized for read-only rendering
 
 **Problem with react-markdown:**
 - Assumes complete markdown documents
@@ -99,14 +93,14 @@ TipTap remains for document editing only.
 
 ## Quick Reference
 
-| Feature | TipTap | react-markdown | Streamdown |
-|---------|--------|----------------|------------|
-| **Purpose** | Rich text editor | Static markdown render | AI streaming |
-| **Streaming** | ⚠️ Has API, not optimized | ❌ Re-parses all content | ✅ Incremental |
-| **Incomplete MD** | ❌ No | ❌ Breaks | ✅ Handles gracefully |
-| **100+ messages** | ❌ Heavy | ⚠️ Needs optimization | ✅ Memoized |
-| **Extensibility** | ✅ Extensions | ✅ Components/plugins | ✅ Components/plugins |
-| **Bundle size** | Large (~2MB) | Medium (~125KB) | Medium (~similar) |
+| Feature | react-markdown | Streamdown |
+|---------|----------------|------------|
+| **Purpose** | Static markdown render | AI streaming |
+| **Streaming** | ❌ Re-parses all content | ✅ Incremental |
+| **Incomplete MD** | ❌ Breaks | ✅ Handles gracefully |
+| **100+ messages** | ⚠️ Needs optimization | ✅ Memoized |
+| **Extensibility** | ✅ Components/plugins | ✅ Components/plugins |
+| **Bundle size** | Medium (~125KB) | Medium (~similar) |
 
 ## Implementation
 

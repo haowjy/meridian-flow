@@ -223,9 +223,14 @@ async function applyThreeWayMerge(
 
 ### UI Implementation
 
-#### Inline Suggestion Rendering (TipTap)
+#### Inline Suggestion Rendering
 
-**Custom TipTap Mark for Suggestions**:
+> **Note:** This section was written for TipTap. Now that we use CodeMirror, the implementation approach needs updating:
+> - Use CodeMirror **Decorations** instead of TipTap Marks
+> - Use CodeMirror **StateFields** to track suggestion state
+> - See `frontend/src/core/editor/codemirror/livePreview/` for decoration patterns
+
+**Legacy TipTap approach (for reference)**:
 
 ```typescript
 import { Mark } from '@tiptap/core'
@@ -482,13 +487,14 @@ Why:
 - Larger bundle (12KB)
 - More familiar API
 
-### TipTap Extensions
+### CodeMirror Integration
 
-```bash
-npm install @tiptap/core @tiptap/pm @tiptap/react
-```
+CodeMirror uses a different approach than TipTap:
+- **Decorations** for visual rendering (not marks)
+- **StateFields** for tracking suggestion state
+- **ViewPlugins** for interactive behavior
 
-Custom marks and decorations for inline suggestions.
+See existing patterns in `frontend/src/core/editor/codemirror/livePreview/` for decoration examples.
 
 ## Storage & Performance
 
@@ -555,14 +561,14 @@ async function emergencyCleanup() {
 ⚠️ **Storage overhead** - Must store base snapshot (10-50KB per session)
 ⚠️ **Diff calculation cost** - O(n*m) for Myers algorithm (~1ms for <100KB docs)
 ⚠️ **Complexity** - More moving parts than naive approaches
-⚠️ **UI complexity** - Inline suggestions require custom TipTap marks
+⚠️ **UI complexity** - Inline suggestions require custom CodeMirror decorations
 
 ### Mitigations
 
 - Automatic cleanup keeps storage usage low
 - Diff calculation is fast enough for <100KB documents (typical chapter)
 - Complexity is abstracted behind clear API
-- TipTap marks provide smooth UX
+- CodeMirror decorations provide smooth UX
 
 ## Integration with Existing Architecture
 
@@ -646,5 +652,5 @@ Solution:
 - **Backend API contracts**: `_docs/technical/backend/api-contracts.md`
 - **High-level product vision**: `_docs/high-level/1-overview.md`
 - **Myers diff algorithm**: [Original paper](http://www.xmailserver.org/diff2.pdf)
-- **TipTap docs**: [tiptap.dev](https://tiptap.dev)
+- **CodeMirror docs**: [codemirror.net](https://codemirror.net)
 - **Dexie.js docs**: [dexie.org](https://dexie.org)

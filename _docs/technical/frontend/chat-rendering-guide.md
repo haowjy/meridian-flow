@@ -410,7 +410,7 @@ sequenceDiagram
 ### 2. Empty Content Handling
 - Empty string `""` is valid content
 - Never use falsy checks: ✅ `content !== undefined` | ❌ `content`
-- TipTap may render empty as `<p></p>`, server stores `""`
+- Server stores empty as `""`
 
 ### 3. Incomplete Markdown
 - Streamdown handles unterminated syntax gracefully

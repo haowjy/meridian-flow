@@ -166,7 +166,7 @@ Content documents (leaf nodes in hierarchy). Store markdown content.
 
 **Format:** Markdown (TEXT)
 
-Documents store content as plain markdown. Frontend editor (TipTap) converts to/from markdown at API boundary.
+Documents store content as plain markdown. Frontend editor (CodeMirror) works directly with markdown.
 
 **Why markdown?**
 - Single source of truth

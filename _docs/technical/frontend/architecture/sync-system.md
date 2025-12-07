@@ -45,7 +45,7 @@ sequenceDiagram
     participant Store as "useEditorStore.loadDocument"
     participant IDB as "IndexedDB (Dexie)"
     participant API as "Backend API"
-    participant EC as "useEditorCache (TipTap LRU)"
+    participant EC as "CodeMirrorEditor"
 
     UI->>Store: loadDocument(D)
     Store->>Store: set({_activeDocumentId:D,isLoading:true})

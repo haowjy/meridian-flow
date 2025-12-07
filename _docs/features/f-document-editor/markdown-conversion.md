@@ -33,7 +33,7 @@ CodeMirror 6 works directly with markdown - no conversion needed.
 **Save**: Get markdown via `editorRef.getContent()`
 **Edit**: All operations work directly on markdown text
 
-This is simpler than the previous TipTap setup which required markdown ↔ HTML conversion.
+This is simpler than HTML-based editors which require markdown ↔ HTML conversion.
 
 ---
 
