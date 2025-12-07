@@ -72,6 +72,7 @@ interface ChatStore {
     blockIndex: number | null,
     blockType: BlockType | null
   ) => void
+  setCurrentTurnId: (turnId: string) => void
 
   interruptStreamingTurn: () => Promise<void>
 
@@ -437,6 +438,10 @@ export const useChatStore = create<ChatStore>()(
           streamingBlockIndex: blockIndex,
           streamingBlockType: blockType,
         }))
+      },
+
+      setCurrentTurnId: (turnId: string) => {
+        set(() => ({ currentTurnId: turnId }))
       },
 
       openChat: async (chatId: string, initialTurnId?: string, signal?: AbortSignal) => {

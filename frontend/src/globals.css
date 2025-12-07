@@ -549,7 +549,7 @@ body.preload * {
   /* === Chat Main Panel === */
 
   .chat-main {
-    @apply flex h-full flex-col bg-background min-w-0;
+    @apply flex h-full flex-col bg-background min-w-0 relative;
   }
 
   .chat-main-header {
@@ -559,6 +559,22 @@ body.preload * {
   /* Scroll container for messages + sticky input */
   .chat-scroll-container {
     @apply flex-1 overflow-y-auto overflow-x-hidden min-w-0;
+  }
+
+  /* Floating scroll-to-bottom button - positioned above sticky input wrapper */
+  .scroll-to-bottom-button {
+    @apply absolute left-1/2 -translate-x-1/2 z-20 rounded-full shadow-md;
+    /* Position above the sticky wrapper using negative top */
+    top: -48px;
+    /* Fade animation */
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 150ms ease-in-out;
+  }
+
+  .scroll-to-bottom-button.visible {
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .chat-main-empty {
