@@ -1,65 +1,47 @@
-// Public API for CodeMirror editor
+/**
+ * CodeMirror Editor - Public API
+ *
+ * This module provides a markdown editor with:
+ * - Obsidian-style live preview
+ * - Smart list continuation
+ * - Auto-closing brackets
+ * - Formatting commands
+ */
+
+// Main component
 export { CodeMirrorEditor } from './CodeMirrorEditor'
+
+// Components
+export { EditorContextMenu } from './components'
+
+// Types
 export type {
   CodeMirrorEditorRef,
   CodeMirrorEditorOptions,
   WordCount,
+  FormatType,
+  EditorRef,
+  FormattingRef,
+  ListRef,
+  FormatDetectionRef,
+  WordCountRef,
 } from './types'
 
-// Extension bundles (SOLID: SRP)
-export {
-  markdownEditor,
-  minimalEditor,
-  readonlyViewer,
-  type MarkdownEditorOptions,
-  type MinimalEditorOptions,
-  type ReadonlyViewerOptions,
-} from './extensions'
-
-// Compartments for runtime reconfiguration (SOLID: ISP)
-export {
-  setEditable,
-  setLanguage,
-  setTheme,
-  setLivePreview,
-} from './compartments'
-
-// Facets for configuration (SOLID: OCP)
-export {
-  editorConfigFacet,
-  getEditorConfig,
-  renderingConfigFacet,
-  getRenderingConfig,
-  type EditorConfig,
-  type RenderingConfig,
-} from './facets'
-
-// Re-export setup utilities for advanced use cases
-export { createBaseExtensions, createEditorState } from './setup'
-
-// Commands (for direct use or custom integrations)
+// Commands (for external use)
 export {
   toggleBold,
   toggleItalic,
+  toggleInlineCode,
   toggleHeading,
+  insertLink,
   toggleBulletList,
   toggleOrderedList,
-  toggleInlineCode,
-  insertLink,
   isFormatActive,
 } from './commands'
 
-// Word count
-export { wordCountField, getWordCount } from './extensions/wordCount'
+// Extensions (for custom configurations)
+export { markdownLanguage, editorTheme, getWordCount } from './extensions'
 
-// Editor caching
-export { editorCache, useEditorCache } from '../cache'
-
-// AI integration API (DIP boundary)
-export type {
-  AIEditorRef,
-  DecorationAttrs,
-  DecorationHandle,
-  DecorationInfo,
-} from '../api'
-export { createAIEditorRef, aiDecorations } from '../api'
+// Live preview (for extending with custom renderers)
+export { registerRenderer, livePreviewPlugin } from './livePreview'
+export type { NodeRenderer, RenderContext, DecorationRange } from './livePreview'

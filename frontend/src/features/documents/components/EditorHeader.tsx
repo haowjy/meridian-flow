@@ -3,14 +3,19 @@ import { useUIStore } from '@/core/stores/useUIStore'
 import { buildBreadcrumbs } from '@/core/lib/breadcrumbBuilder'
 import type { Document } from '@/features/documents/types/document'
 import { DocumentHeaderBar } from './DocumentHeaderBar'
+import { DocumentStatus } from './DocumentStatus'
 import { useProjectStore } from '@/core/stores/useProjectStore'
 import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
 import { CompactBreadcrumb, type BreadcrumbSegment } from '@/shared/components/ui/CompactBreadcrumb'
 import { ChevronLeft } from 'lucide-react'
 import { Button } from '@/shared/components/ui/button'
+import type { SaveStatus } from '@/shared/components/ui/StatusBadge'
 
 interface EditorHeaderProps {
   document: Document
+  wordCount?: number
+  status?: SaveStatus
+  lastSaved?: Date | null
 }
 
 /**
@@ -18,7 +23,7 @@ interface EditorHeaderProps {
  * Layout: [Project / ... / Last Folder / File] | [Read/Edit Toggle]
  * Consistent style with explorer; no muted background in read-only.
  */
-export function EditorHeader({ document }: EditorHeaderProps) {
+export function EditorHeader({ document, wordCount, status, lastSaved }: EditorHeaderProps) {
   const folders = useTreeStore((state) => state.folders)
   // Toggle moved into EditorToolbar pill
   const projectName = useProjectStore((s) =>
@@ -62,7 +67,18 @@ export function EditorHeader({ document }: EditorHeaderProps) {
       }
       ariaLabel={`Breadcrumb: ${fullPathTitle}`}
       showDivider={false}
-      trailing={<SidebarToggle side="right" />}
+      trailing={
+        <div className="flex items-center gap-3">
+          {status && (
+            <DocumentStatus
+              wordCount={wordCount ?? 0}
+              status={status}
+              lastSaved={lastSaved ?? null}
+            />
+          )}
+          <SidebarToggle side="right" />
+        </div>
+      }
     />
   )
 }

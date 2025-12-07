@@ -8,12 +8,18 @@ importers:
 
   .:
     dependencies:
+      '@codemirror/autocomplete':
+        specifier: ^6.20.0
+        version: 6.20.0
       '@codemirror/commands':
         specifier: ^6.10.0
         version: 6.10.0
       '@codemirror/lang-markdown':
         specifier: ^6.5.0
         version: 6.5.0
+      '@codemirror/lang-yaml':
+        specifier: ^6.1.2
+        version: 6.1.2
       '@codemirror/language':
         specifier: ^6.11.3
         version: 6.11.3
@@ -32,6 +38,9 @@ importers:
       '@lezer/common':
         specifier: ^1.4.0
         version: 1.4.0
+      '@lezer/markdown':
+        specifier: ^1.6.1
+        version: 1.6.1
       '@microsoft/fetch-event-source':
         specifier: ^2.0.1
         version: 2.0.1
@@ -74,6 +83,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^5.1.1
         version: 5.1.1(vite@7.2.4(@types/node@20.19.24)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.20.6))
+      autocomplete@latest:
+        specifier: link:codemirror/autocomplete@latest
+        version: link:codemirror/autocomplete@latest
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -774,8 +786,8 @@ packages:
   '@lezer/lr@1.4.4':
     resolution: {integrity: sha512-LHL17Mq0OcFXm1pGQssuGTQFPPdxARjKM8f7GA5+sGtHi0K3R84YaSbmche0+RKWHnCsx9asEe5OWOI4FHfe4A==}
 
-  '@lezer/markdown@1.6.0':
-    resolution: {integrity: sha512-AXb98u3M6BEzTnreBnGtQaF7xFTiMA92Dsy5tqEjpacbjRxDSFdN4bKJo9uvU4cEEOS7D2B9MT7kvDgOEIzJSw==}
+  '@lezer/markdown@1.6.1':
+    resolution: {integrity: sha512-72ah+Sml7lD8Wn7lnz9vwYmZBo9aQT+I2gjK/0epI+gjdwUbWw3MJ/ZBGEqG1UfrIauRqH37/c5mVHXeCTGXtA==}
 
   '@lezer/php@1.0.5':
     resolution: {integrity: sha512-W7asp9DhM6q0W6DYNwIkLSKOvxlXRrif+UXBMxzsJUuqmhE7oVU+gS3THO4S/Puh7Xzgm858UNaFi6dxTP8dJA==}
@@ -4192,7 +4204,7 @@ snapshots:
       '@codemirror/state': 6.5.2
       '@codemirror/view': 6.38.8
       '@lezer/common': 1.4.0
-      '@lezer/markdown': 1.6.0
+      '@lezer/markdown': 1.6.1
 
   '@codemirror/lang-php@6.0.2':
     dependencies:
@@ -4602,7 +4614,7 @@ snapshots:
     dependencies:
       '@lezer/common': 1.4.0
 
-  '@lezer/markdown@1.6.0':
+  '@lezer/markdown@1.6.1':
     dependencies:
       '@lezer/common': 1.4.0
       '@lezer/highlight': 1.2.3

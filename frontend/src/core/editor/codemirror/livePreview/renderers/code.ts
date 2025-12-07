@@ -1,95 +1,93 @@
-import { Decoration } from '@codemirror/view'
-import type { Range } from '@codemirror/state'
-import type { EditorView } from '@codemirror/view'
-import type { SyntaxNode } from '@lezer/common'
-import type { MarkdownRenderer } from '../types'
-import { CLASSES, hideDecoration, markDecoration, lineDecoration } from '../decorations'
-
 /**
- * Renderer for inline code `code`.
+ * Code Renderer (Inline Code & Code Blocks)
  *
- * When cursor is NOT in the code:
- * - Hide the backticks
- * - Style with code background
- *
- * When cursor IS in the code:
- * - Show backticks (dimmed)
- * - Still style with code background
+ * SOLID: Single Responsibility - Only handles code formatting
  */
-export const inlineCodeRenderer: MarkdownRenderer = {
+
+import { Decoration } from '@codemirror/view'
+import type { SyntaxNode } from '@lezer/common'
+import type { NodeRenderer, DecorationRange, RenderContext } from '../types'
+import { cursorInSameWord } from '../plugin'
+
+// ============================================================================
+// DECORATIONS
+// ============================================================================
+
+const inlineCodeMark = Decoration.mark({ class: 'cm-inline-code' })
+const codeBlockLineDeco = Decoration.line({ class: 'cm-code-block' })
+
+// ============================================================================
+// INLINE CODE RENDERER
+// ============================================================================
+
+export const inlineCodeRenderer: NodeRenderer = {
   nodeTypes: ['InlineCode'],
 
-  render(
-    node: SyntaxNode,
-    view: EditorView,
-    cursorInRange: boolean
-  ): Range<Decoration>[] {
-    const decorations: Range<Decoration>[] = []
-    const doc = view.state.doc
-    const nodeText = doc.sliceString(node.from, node.to)
+  render(node: SyntaxNode, ctx: RenderContext): DecorationRange[] {
+    const decorations: DecorationRange[] = []
+    const { cursorWords } = ctx
+    const from = node.from
+    const to = node.to
 
-    // Determine backtick count (can be ` or ``)
-    let backtickCount = 0
-    for (const char of nodeText) {
-      if (char === '`') backtickCount++
-      else break
-    }
-
-    // Verify closing backticks match
-    const expectedEnd = '`'.repeat(backtickCount)
-    if (!nodeText.endsWith(expectedEnd)) {
-      // Malformed, skip
+    // If cursor is in same word, show backticks but style content
+    if (cursorInSameWord(cursorWords, from, to)) {
+      if (to - from > 2) {
+        decorations.push({
+          from: from + 1,
+          to: to - 1,
+          deco: inlineCodeMark,
+        })
+      }
       return decorations
     }
 
-    const contentFrom = node.from + backtickCount
-    const contentTo = node.to - backtickCount
+    // Hide the ` markers
+    decorations.push({
+      from,
+      to: from + 1,
+      deco: Decoration.replace({}),
+    })
+    decorations.push({
+      from: to - 1,
+      to,
+      deco: Decoration.replace({}),
+    })
 
-    if (!cursorInRange) {
-      // Hide backticks
-      decorations.push(hideDecoration(node.from, contentFrom))
-      decorations.push(hideDecoration(contentTo, node.to))
-    }
-
-    // Style the code content (or whole thing if cursor is in)
-    if (cursorInRange) {
-      // Style whole thing including backticks when editing
-      decorations.push(markDecoration(node.from, node.to, CLASSES.inlineCode))
-    } else {
-      // Style just the content
-      decorations.push(markDecoration(contentFrom, contentTo, CLASSES.inlineCode))
+    // Style the content
+    if (to - from > 2) {
+      decorations.push({
+        from: from + 1,
+        to: to - 1,
+        deco: inlineCodeMark,
+      })
     }
 
     return decorations
   },
 }
 
-/**
- * Renderer for fenced code blocks.
- *
- * ```language
- * code
- * ```
- *
- * Styles the entire block with code styling.
- * The language is preserved for syntax highlighting.
- */
-export const codeBlockRenderer: MarkdownRenderer = {
+// ============================================================================
+// FENCED CODE RENDERER
+// ============================================================================
+
+export const fencedCodeRenderer: NodeRenderer = {
   nodeTypes: ['FencedCode'],
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  render(node: SyntaxNode, view: EditorView, cursorInRange: boolean): Range<Decoration>[] {
-    const decorations: Range<Decoration>[] = []
-    const doc = view.state.doc
+  render(node: SyntaxNode, ctx: RenderContext): DecorationRange[] {
+    const decorations: DecorationRange[] = []
+    const { state } = ctx
 
-    // Get all lines in the code block
-    const startLine = doc.lineAt(node.from)
-    const endLine = doc.lineAt(node.to)
+    const startLine = state.doc.lineAt(node.from)
+    const endLine = state.doc.lineAt(node.to)
 
-    // Add line decoration to each line
+    // Add line decoration to each line in the code block
     for (let lineNum = startLine.number; lineNum <= endLine.number; lineNum++) {
-      const line = doc.line(lineNum)
-      decorations.push(lineDecoration(line.from, CLASSES.codeBlock))
+      const line = state.doc.line(lineNum)
+      decorations.push({
+        from: line.from,
+        to: line.from,
+        deco: codeBlockLineDeco,
+      })
     }
 
     return decorations
