@@ -119,16 +119,27 @@ Provider streams `tool_use` block:
 ### 3. Backend Executes Tool (Backend-Side Tools)
 
 - For backend-executed tools (e.g., `doc_search`, `doc_view`, `web_search` via Tavily), the backend:
-  - Checks `block.IsBackendSideTool()` (ExecutionSide: "server" or nil)
+  - Checks `block.IsBackendSideTool()` (ExecutionSide: `"server"` or nil)
   - Executes the corresponding tool in application code
   - Writes a `tool_result` block with `content.tool_use_id` and `is_error`
 
 ### 4. Provider-Executed Tools (Provider-Side)
 
-- For provider-executed tools (e.g., Anthropic's built-in web_search with `:online` suffix):
+- For provider-executed tools (e.g., Anthropic's built-in web_search):
+  - ExecutionSide: `"provider"`
   - Provider runs the tool; results arrive as `web_search_result` blocks
   - Backend does not execute a local tool; it only persists the result blocks
   - **Note**: Currently not used (Tavily backend execution preferred)
+
+### ExecutionSide Values
+
+| Value | Who Executes | Examples |
+|-------|--------------|----------|
+| `"provider"` | LLM provider (Anthropic, OpenRouter) | Anthropic's built-in web_search |
+| `"server"` | Meridian backend | Tavily, doc_search, custom tools |
+| `"client"` | Frontend/browser | (Rarely used) |
+
+Default: nil is treated as `"server"` (backend-side)
 
 ---
 
