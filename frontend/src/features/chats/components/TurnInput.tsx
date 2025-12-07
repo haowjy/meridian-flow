@@ -87,6 +87,7 @@ export function TurnInput({ chatId, projectId, focusKey }: TurnInputProps) {
             onSubmit={handleSend}
             canSend={canSend}
             focusKey={focusKey}
+            placeholder="Type a message..."
           />
           <AttachedBlocksRow />
           <ChatRequestControls
