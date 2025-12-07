@@ -71,15 +71,13 @@ while [[ $# -gt 0 ]]; do
             TABLE_PREFIX_ARG="prod_"
             PREFIX_SET=true
             USE_DIRECT=true
-            USE_GOOSE=false  # Never use goose for prod
             shift
             ;;
-        --staging)
-            ENV_FILE_ARG="$BACKEND_DIR/.env.staging"
-            TABLE_PREFIX_ARG="staging_"
+        --test)
+            ENV_FILE_ARG="$BACKEND_DIR/.env.test"
+            TABLE_PREFIX_ARG="test_"
             PREFIX_SET=true
             USE_DIRECT=true
-            USE_GOOSE=false  # Never use goose for staging
             shift
             ;;
         --local)
@@ -106,7 +104,7 @@ while [[ $# -gt 0 ]]; do
             SKIP_PROMPTS=true
             shift
             ;;
-        up|down|status|redo)
+        up|down|status|redo|baseline)
             ACTION="$1"
             SKIP_PROMPTS=true  # Direct action skips prompts
             shift
@@ -128,23 +126,24 @@ while [[ $# -gt 0 ]]; do
             echo "  -h, --help       Show this help"
             echo ""
             echo "Environment shortcuts:"
-            echo "  --prod           Load .env.prod, prod_ prefix, direct, SQL mode (no goose)"
-            echo "  --staging        Load .env.staging, staging_ prefix, direct, SQL mode (no goose)"
-            echo "  --local          Use .env with direct connection (goose allowed)"
+            echo "  --prod           Load .env.prod, prod_ prefix, direct connection"
+            echo "  --test           Load .env.test, test_ prefix, direct connection"
+            echo "  --local          Use .env with direct connection"
             echo ""
             echo "Actions:"
             echo "  up              Apply all pending migrations"
             echo "  down            Rollback last migration"
             echo "  status          Show migration status"
             echo "  redo            Rollback and re-apply last migration"
+            echo "  baseline        Mark all migrations as applied (for existing DBs)"
             echo ""
             echo "Examples:"
-            echo "  $0                         # Interactive mode (goose)"
+            echo "  $0                         # Interactive mode"
             echo "  $0 --dry-run up            # Preview 'up' SQL"
-            echo "  $0 --prod up               # Production: SQL mode, no goose"
-            echo "  $0 --staging status        # Staging: SQL mode, no goose"
-            echo "  $0 --local up              # Local with direct connection (goose)"
-            echo "  $0 --sql up                # Dev with SQL mode (skip goose)"
+            echo "  $0 --prod up               # Production: apply pending migrations"
+            echo "  $0 --prod baseline         # Mark existing prod DB as up-to-date"
+            echo "  $0 --test status           # Test: show migration status"
+            echo "  $0 --sql up                # Direct SQL mode (no tracking)"
             echo "  $0 --to 00002 up           # Migrate to specific version"
             echo "  $0 --verbose up            # Show SQL before executing"
             exit 0
@@ -199,17 +198,12 @@ if [ "$PREFIX_SET" = true ]; then
     TABLE_PREFIX="$TABLE_PREFIX_ARG"
 fi
 
-# Block goose for prod/staging environments (safety check)
-if [ "$USE_GOOSE" = true ]; then
-    if [[ "$TABLE_PREFIX" == "prod_" || "$TABLE_PREFIX" == "staging_" ]]; then
-        echo -e "${RED}Error: Cannot use goose for prod/staging environments${NC}"
-        echo -e "${YELLOW}Use --sql flag or remove --goose to use direct SQL mode${NC}"
-        exit 1
-    fi
-fi
-
 # Export TABLE_PREFIX for goose ENVSUB
 export TABLE_PREFIX
+
+# Compute tracking table name (prefix-aware)
+# This allows multiple environments to coexist in the same database
+TRACKING_TABLE="${TABLE_PREFIX}schema_migrations"
 
 # Mask DB URL for display (hide password)
 MASKED_URL=$(echo "$DB_URL" | sed -E 's/(:\/\/[^:]+:)[^@]+(@)/\1****\2/')
@@ -222,7 +216,7 @@ if [ "$USE_DIRECT" = true ]; then
     echo -e "Connection: ${GREEN}direct (port 5432)${NC}"
 fi
 if [ "$USE_GOOSE" = true ]; then
-    echo -e "Execution: ${GREEN}goose${NC} (migration tracking enabled)"
+    echo -e "Execution: ${GREEN}goose${NC} (tracking: ${TRACKING_TABLE})"
 else
     echo -e "Execution: ${YELLOW}SQL${NC} (direct psql, no tracking)"
 fi
@@ -242,7 +236,8 @@ echo ""
 show_status() {
     echo -e "${BLUE}Current migration status:${NC}"
     if [ "$USE_GOOSE" = true ]; then
-        $GOOSE -dir "$MIGRATIONS_DIR" postgres "$DB_URL" status 2>/dev/null || echo "  (no migrations applied yet)"
+        # Goose writes status to stderr, redirect to stdout
+        $GOOSE --table "$TRACKING_TABLE" -dir "$MIGRATIONS_DIR" postgres "$DB_URL" status 2>&1 || echo "  (no migrations applied yet)"
     else
         echo "  (SQL mode - goose tracking disabled)"
         echo "  Available migrations:"
@@ -258,18 +253,23 @@ show_status() {
 # Show header with current settings
 show_header() {
     MASKED_URL=$(echo "$DB_URL" | sed -E 's/(:\/\/[^:]+:)[^@]+(@)/\1****\2/')
+    # Recompute tracking table in case prefix changed
+    TRACKING_TABLE="${TABLE_PREFIX}schema_migrations"
     echo ""
     echo -e "${BLUE}=== Meridian Database Migration ===${NC}"
     echo -e "Database: ${YELLOW}$MASKED_URL${NC}"
     echo -e "Table prefix: ${YELLOW}${TABLE_PREFIX:-<none>}${NC}"
     if [ "$USE_DIRECT" = true ]; then
-        echo -e "Connection: ${GREEN}direct (port 5432)${NC}"
+        echo -e "Connection: ${GREEN}direct${NC} (port 5432)"
+    else
+        echo -e "Connection: ${YELLOW}pooler${NC} (port 6543)"
     fi
     if [ "$USE_GOOSE" = true ]; then
-        echo -e "Execution: ${GREEN}goose${NC} (migration tracking enabled)"
+        echo -e "Execution: ${GREEN}goose${NC} (tracking: ${TRACKING_TABLE})"
     else
         echo -e "Execution: ${YELLOW}SQL${NC} (direct psql, no tracking)"
     fi
+    echo -e "Migrations: ${YELLOW}$MIGRATIONS_DIR${NC}"
     echo ""
 }
 
@@ -306,38 +306,79 @@ reload_env() {
 # Interactive environment selection
 select_environment() {
     echo -e "${BLUE}Select environment:${NC}"
-    echo "  1) dev (.env) - goose allowed"
-    echo "  2) staging (.env.staging) - SQL only"
-    echo "  3) prod (.env.prod) - SQL only"
+    echo "  1) dev (.env)"
+    echo "  2) test (.env.test)"
+    echo "  3) prod (.env.prod)"
     echo "  b) Back"
     echo -n "Choose [1-3/b]: "
     read -r env_choice
     case $env_choice in
         1) reload_env "$BACKEND_DIR/.env" "${ENVIRONMENT:-dev}_" true ;;
-        2) reload_env "$BACKEND_DIR/.env.staging" "staging_" false ;;
-        3) reload_env "$BACKEND_DIR/.env.prod" "prod_" false ;;
+        2) reload_env "$BACKEND_DIR/.env.test" "test_" true ;;
+        3) reload_env "$BACKEND_DIR/.env.prod" "prod_" true ;;
         *) ;; # Keep current
     esac
 }
 
 # Toggle goose/SQL execution mode
 toggle_execution_mode() {
-    # Check if toggle is allowed
-    if [[ "$TABLE_PREFIX" == "prod_" || "$TABLE_PREFIX" == "staging_" ]]; then
-        if [ "$USE_GOOSE" = false ]; then
-            echo -e "${RED}Cannot enable goose for prod/staging environments${NC}"
-            return 1
-        fi
-    fi
-
     if [ "$USE_GOOSE" = true ]; then
         USE_GOOSE=false
         echo -e "Switched to ${YELLOW}SQL mode${NC} (direct psql, no tracking)"
     else
         USE_GOOSE=true
-        echo -e "Switched to ${GREEN}goose mode${NC} (migration tracking enabled)"
+        echo -e "Switched to ${GREEN}goose mode${NC} (tracking: ${TRACKING_TABLE})"
     fi
-    echo ""
+    show_header
+    show_status
+}
+
+# Change database URL interactively
+change_database_url() {
+    echo -e "${BLUE}Current: ${YELLOW}$MASKED_URL${NC}"
+    echo -n "Enter new database URL (or 'b' to go back): "
+    read -r new_url
+    if [[ "$new_url" != "b" && -n "$new_url" ]]; then
+        DB_URL="$new_url"
+        # Apply direct mode if enabled
+        if [ "$USE_DIRECT" = true ]; then
+            DB_URL=$(echo "$DB_URL" | sed 's/:6543/:5432/')
+        fi
+        MASKED_URL=$(echo "$DB_URL" | sed -E 's/(:\/\/[^:]+:)[^@]+(@)/\1****\2/')
+        echo -e "${GREEN}Database URL updated${NC}"
+        show_header
+        show_status
+    fi
+}
+
+# Change table prefix interactively
+change_table_prefix() {
+    echo -e "${BLUE}Current prefix: ${YELLOW}${TABLE_PREFIX:-<none>}${NC}"
+    echo -n "Enter new prefix (e.g., 'dev_', 'test_', or empty for none): "
+    read -r new_prefix
+    TABLE_PREFIX="$new_prefix"
+    export TABLE_PREFIX
+    # Recompute tracking table
+    TRACKING_TABLE="${TABLE_PREFIX}schema_migrations"
+    echo -e "${GREEN}Table prefix updated to: ${YELLOW}${TABLE_PREFIX:-<none>}${NC}"
+    show_header
+    show_status
+}
+
+# Toggle pooler/direct connection mode
+toggle_connection_mode() {
+    if [ "$USE_DIRECT" = true ]; then
+        USE_DIRECT=false
+        DB_URL=$(echo "$DB_URL" | sed 's/:5432/:6543/')
+        echo -e "Switched to ${YELLOW}pooler${NC} (port 6543)"
+    else
+        USE_DIRECT=true
+        DB_URL=$(echo "$DB_URL" | sed 's/:6543/:5432/')
+        echo -e "Switched to ${GREEN}direct${NC} (port 5432)"
+    fi
+    MASKED_URL=$(echo "$DB_URL" | sed -E 's/(:\/\/[^:]+:)[^@]+(@)/\1****\2/')
+    show_header
+    show_status
 }
 
 # Preview SQL for a migration action
@@ -388,24 +429,24 @@ execute_migration() {
 
     # Execute with goose or direct SQL
     if [ "$USE_GOOSE" = true ]; then
-        # Goose mode - uses goose_db_version for tracking
+        # Goose mode - uses prefix-aware tracking table
         case $action in
             up)
                 if [ -n "$TARGET_VERSION" ]; then
                     echo -e "${GREEN}Applying migrations up to version $TARGET_VERSION...${NC}"
-                    $GOOSE -dir "$MIGRATIONS_DIR" postgres "$DB_URL" up-to "$TARGET_VERSION"
+                    $GOOSE --table "$TRACKING_TABLE" -dir "$MIGRATIONS_DIR" postgres "$DB_URL" up-to "$TARGET_VERSION"
                 else
                     echo -e "${GREEN}Applying pending migrations...${NC}"
-                    $GOOSE -dir "$MIGRATIONS_DIR" postgres "$DB_URL" up
+                    $GOOSE --table "$TRACKING_TABLE" -dir "$MIGRATIONS_DIR" postgres "$DB_URL" up
                 fi
                 ;;
             down)
                 if [ -n "$TARGET_VERSION" ]; then
                     echo -e "${YELLOW}Rolling back to version $TARGET_VERSION...${NC}"
-                    $GOOSE -dir "$MIGRATIONS_DIR" postgres "$DB_URL" down-to "$TARGET_VERSION"
+                    $GOOSE --table "$TRACKING_TABLE" -dir "$MIGRATIONS_DIR" postgres "$DB_URL" down-to "$TARGET_VERSION"
                 else
                     echo -e "${YELLOW}Rolling back last migration...${NC}"
-                    $GOOSE -dir "$MIGRATIONS_DIR" postgres "$DB_URL" down
+                    $GOOSE --table "$TRACKING_TABLE" -dir "$MIGRATIONS_DIR" postgres "$DB_URL" down
                 fi
                 ;;
             status)
@@ -414,7 +455,32 @@ execute_migration() {
                 ;;
             redo)
                 echo -e "${YELLOW}Re-doing last migration (down + up)...${NC}"
-                $GOOSE -dir "$MIGRATIONS_DIR" postgres "$DB_URL" redo
+                $GOOSE --table "$TRACKING_TABLE" -dir "$MIGRATIONS_DIR" postgres "$DB_URL" redo
+                ;;
+            baseline)
+                echo -e "${GREEN}Creating baseline: marking all migrations as applied...${NC}"
+                # Create tracking table if it doesn't exist
+                psql "$DB_URL" -c "CREATE TABLE IF NOT EXISTS $TRACKING_TABLE (
+                    id SERIAL PRIMARY KEY,
+                    version_id BIGINT NOT NULL,
+                    is_applied BOOLEAN NOT NULL DEFAULT true,
+                    tstamp TIMESTAMP DEFAULT NOW()
+                );" 2>/dev/null
+                # Mark each migration as applied
+                for file in "$MIGRATIONS_DIR"/*.sql; do
+                    if [ -f "$file" ]; then
+                        version=$(basename "$file" | cut -d'_' -f1 | sed 's/^0*//')
+                        # Check if already exists
+                        exists=$(psql "$DB_URL" -t -c "SELECT 1 FROM $TRACKING_TABLE WHERE version_id = $version LIMIT 1;" 2>/dev/null | tr -d ' ')
+                        if [ "$exists" != "1" ]; then
+                            psql "$DB_URL" -c "INSERT INTO $TRACKING_TABLE (version_id, is_applied) VALUES ($version, true);" 2>/dev/null
+                            echo -e "  Marked: ${YELLOW}$(basename "$file")${NC} (version $version)"
+                        else
+                            echo -e "  Skipped: ${YELLOW}$(basename "$file")${NC} (already tracked)"
+                        fi
+                    fi
+                done
+                echo -e "${GREEN}Baseline complete!${NC}"
                 ;;
         esac
     else
@@ -493,21 +559,25 @@ else
     while true; do
         echo -e "${BLUE}Options:${NC}"
         echo "  e) Switch environment (dev/staging/prod)"
+        echo "  d) Change database URL"
+        echo "  p) Change table prefix"
         echo "  m) Toggle execution mode (goose ↔ SQL)"
+        echo "  c) Toggle connection mode (pooler ↔ direct)"
         echo ""
         echo -e "${BLUE}Actions:${NC}"
-        echo "  1) up     - Apply all pending migrations"
-        echo "  2) down   - Rollback last migration"
-        echo "  3) status - Show current status"
-        echo "  4) redo   - Rollback and re-apply last migration"
-        echo "  5) quit   - Exit"
+        echo "  1) up       - Apply pending migrations"
+        echo "  2) down     - Rollback last migration"
+        echo "  3) status   - Show current status"
+        echo "  4) redo     - Rollback and re-apply last migration"
+        echo "  5) baseline - Mark all migrations as applied (for existing DBs)"
+        echo "  6) quit     - Exit"
 
         if [ "$DRY_RUN" = true ]; then
-            echo "  p) preview - Show SQL for 'up' migration"
+            echo "  v) preview - Show SQL for 'up' migration"
         fi
         echo ""
 
-        echo -n "Choose [e/m/1-5]: "
+        echo -n "Choose [e/d/p/m/c/1-6]: "
         read -r choice
 
         case $choice in
@@ -515,8 +585,20 @@ else
                 select_environment
                 continue
                 ;;
+            d|D)
+                change_database_url
+                continue
+                ;;
+            p|P)
+                change_table_prefix
+                continue
+                ;;
             m|M)
                 toggle_execution_mode
+                continue
+                ;;
+            c|C)
+                toggle_connection_mode
                 continue
                 ;;
             1|up)
@@ -541,11 +623,17 @@ else
                 fi
                 break
                 ;;
-            5|q|quit)
+            5|baseline)
+                if confirm_action "baseline"; then
+                    execute_migration "baseline"
+                fi
+                break
+                ;;
+            6|q|quit)
                 echo "Bye!"
                 break
                 ;;
-            p|preview)
+            v|preview)
                 if [ "$DRY_RUN" = true ]; then
                     preview_sql "up"
                 else
