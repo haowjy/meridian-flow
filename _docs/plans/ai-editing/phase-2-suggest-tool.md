@@ -1,33 +1,35 @@
-# Phase 2: Suggest Document Edits Tool
+# Phase 2: doc_edit Tool
 
-**Dependencies**: Phase 1 (Version Snapshots)
-**Estimated Time**: 3-4 hours
+**Dependencies**: Phase 1 (AI Sessions Database)
 
 ---
 
 ## Overview
 
-Implement `suggest_document_edits` tool for AI to create version snapshots without modifying the live document.
+Implement `doc_edit` tool for AI to apply edits using Anthropic-style `str_replace` commands. Edits update `ai_version` in the session - frontend computes `diff(USER_EDITS, ai_version)` live for display.
+
+**Key Design Decision**: Backend stores edits without validating against DB content. DB may be stale due to debounced saves (1 second). Frontend has source of truth (editor state). `success: true` means "edit recorded to ai_version", not "edit applied to document".
+
+**Simplification**: No position hints needed. Frontend computes diff on-the-fly.
 
 ```mermaid
 sequenceDiagram
     participant LLM
     participant Tool
-    participant VersionService
+    participant SessionService
     participant Database
 
-    LLM->>Tool: suggest_document_edits(doc_id, edits)
-    Tool->>VersionService: Get current version
-    VersionService->>Database: SELECT current_version_id
+    LLM->>Tool: doc_edit(str_replace, path, old_str, new_str)
+    Tool->>Tool: Resolve path → document UUID
+    Tool->>SessionService: Get/create AI session
+    SessionService->>Database: SELECT/INSERT ai_sessions
 
-    Tool->>Tool: Apply edits to create new content
+    Tool->>SessionService: AddEdit(session_id, edit)
+    SessionService->>Database: INSERT INTO ai_edits
 
-    Tool->>VersionService: CreateVersion(ai_suggestion)
-    VersionService->>Database: INSERT INTO document_versions
+    Tool-->>LLM: {success, edit_summary}
 
-    Tool-->>LLM: {version_id, description}
-
-    Note over Database: Document unchanged<br/>Suggestion stored as version
+    Note over Database: Edit stored for restore<br/>Frontend applies mark via SSE
 ```
 
 ---
@@ -36,9 +38,40 @@ sequenceDiagram
 
 | File | Action | Description |
 |------|--------|-------------|
-| `backend/internal/service/llm/tools/suggest_edits.go` | Create | Tool implementation |
+| `backend/internal/service/llm/tools/doc_edit.go` | Create | Tool implementation |
+| `backend/internal/service/llm/tools/path_resolver.go` | Create | Path → UUID resolution |
 | `backend/internal/domain/models/llm/tool_definition.go` | Modify | Add tool schema |
 | `backend/internal/service/llm/tools/builder.go` | Modify | Register tool |
+
+---
+
+## Tool Design
+
+Modeled after Anthropic's `text_editor` tool, adapted for creative writing documents.
+
+### Commands
+
+| Command | Parameters | Description |
+|---------|------------|-------------|
+| `view` | `path`, `view_range?` | View document content (with line numbers) |
+| `str_replace` | `path`, `old_str`, `new_str` | Replace exact text (pattern-based) |
+| `insert` | `path`, `insert_line`, `new_str` | Insert text after line N |
+| `append` | `path`, `new_str` | Add to end of document |
+| `create` | `path`, `file_text` | Create new document |
+
+### Path Format (Unix-style)
+
+```
+/characters/protagonist.md     # Document in folder
+/Chapter 5.md                  # Document at root
+/characters/                   # View folder contents
+```
+
+**Rules:**
+- `.md` extension required for documents
+- Trailing `/` indicates folder (view contents)
+- Paths are project-scoped
+- Leading `/` preferred, but relative paths normalized
 
 ---
 
@@ -47,56 +80,56 @@ sequenceDiagram
 Add to `tool_definition.go`:
 
 ```go
-func getSuggestDocumentEditsDefinition() ToolDefinition {
+func getDocEditDefinition() ToolDefinition {
     return ToolDefinition{
         Type: "function",
         Function: &FunctionDetails{
-            Name: "suggest_document_edits",
-            Description: `Suggest edits to a document. Creates a version for the user to review.
-User can accept, reject, or ask you to refine further.
+            Name: "doc_edit",
+            Description: `Edit documents in the user's project. Use this when asked to modify, improve, or create writing.
 
-IMPORTANT: When refining previous suggestions, your edits build on the last suggestion (not the live document).
+Commands:
+- view: Read document content (with line numbers)
+- str_replace: Replace exact text (must match exactly)
+- insert: Insert new text after a specific line
+- append: Add text to end of document
+- create: Create new document
 
-Use this tool when the user asks you to edit, improve, rewrite, or modify their writing.`,
+Documents use Unix-style paths: /Chapter 5.md, /characters/protagonist.md`,
             Parameters: map[string]interface{}{
                 "type": "object",
                 "properties": map[string]interface{}{
-                    "document_id": map[string]interface{}{
+                    "command": map[string]interface{}{
                         "type":        "string",
-                        "description": "ID of the document to edit",
+                        "enum":        []string{"view", "str_replace", "insert", "append", "create"},
+                        "description": "The editing command to execute",
                     },
-                    "edits": map[string]interface{}{
-                        "type": "array",
-                        "description": "List of edits to apply",
-                        "items": map[string]interface{}{
-                            "type": "object",
-                            "properties": map[string]interface{}{
-                                "type": map[string]interface{}{
-                                    "type": "string",
-                                    "enum": []string{"insert", "delete", "replace"},
-                                },
-                                "start": map[string]interface{}{
-                                    "type":        "integer",
-                                    "description": "Start character position (0-indexed)",
-                                },
-                                "end": map[string]interface{}{
-                                    "type":        "integer",
-                                    "description": "End character position (for delete/replace)",
-                                },
-                                "text": map[string]interface{}{
-                                    "type":        "string",
-                                    "description": "Text to insert or replace with",
-                                },
-                            },
-                            "required": []string{"type", "start"},
-                        },
-                    },
-                    "description": map[string]interface{}{
+                    "path": map[string]interface{}{
                         "type":        "string",
-                        "description": "Brief description of what these edits accomplish",
+                        "description": "Document path (e.g., /Chapter 5.md, /characters/protagonist.md)",
+                    },
+                    "old_str": map[string]interface{}{
+                        "type":        "string",
+                        "description": "For str_replace: exact text to find and replace",
+                    },
+                    "new_str": map[string]interface{}{
+                        "type":        "string",
+                        "description": "For str_replace/insert/append: new text to insert",
+                    },
+                    "insert_line": map[string]interface{}{
+                        "type":        "integer",
+                        "description": "For insert: line number to insert after (0 = start)",
+                    },
+                    "file_text": map[string]interface{}{
+                        "type":        "string",
+                        "description": "For create: initial document content",
+                    },
+                    "view_range": map[string]interface{}{
+                        "type":        "array",
+                        "items":       map[string]interface{}{"type": "integer"},
+                        "description": "For view: [start_line, end_line] range (optional)",
                     },
                 },
-                "required": []string{"document_id", "edits", "description"},
+                "required": []string{"command", "path"},
             },
         },
     }
@@ -105,143 +138,238 @@ Use this tool when the user asks you to edit, improve, rewrite, or modify their 
 
 ---
 
-## Tool Implementation
+## Path Resolution
 
-**File**: `backend/internal/service/llm/tools/suggest_edits.go`
+**File**: `backend/internal/service/llm/tools/path_resolver.go`
 
 ```go
-type SuggestEditsTool struct {
-    projectID      string
-    versionService docsysSvc.VersionService
-    docRepo        docsysRepo.DocumentRepository
-    config         *ToolConfig
+type PathResolver struct {
+    docRepo    docsysRepo.DocumentRepository
+    folderRepo docsysRepo.FolderRepository
 }
 
-func NewSuggestEditsTool(
-    projectID string,
-    versionService docsysSvc.VersionService,
+func NewPathResolver(
     docRepo docsysRepo.DocumentRepository,
-    config *ToolConfig,
-) *SuggestEditsTool {
-    if config == nil {
-        config = DefaultToolConfig()
-    }
-    return &SuggestEditsTool{
-        projectID:      projectID,
-        versionService: versionService,
-        docRepo:        docRepo,
-        config:         config,
+    folderRepo docsysRepo.FolderRepository,
+) *PathResolver {
+    return &PathResolver{
+        docRepo:    docRepo,
+        folderRepo: folderRepo,
     }
 }
 
-func (t *SuggestEditsTool) Execute(ctx context.Context, input map[string]interface{}) (interface{}, error) {
-    // 1. Extract parameters
-    docID, ok := input["document_id"].(string)
-    if !ok || docID == "" {
-        return nil, errors.New("document_id is required")
+// Resolve converts a Unix-style path to a document UUID
+func (r *PathResolver) Resolve(ctx context.Context, projectID, path string) (string, error) {
+    // Normalize path (ensure leading /)
+    path = normalizePath(path)
+
+    // Check for folder view (trailing /)
+    if strings.HasSuffix(path, "/") {
+        return "", ErrFolderView // Handle separately
     }
 
-    editsRaw, ok := input["edits"].([]interface{})
-    if !ok {
-        return nil, errors.New("edits array is required")
+    // Split into folder path + document name
+    folder, name := splitPath(path)
+
+    // Get folder ID (or root if "/")
+    var folderID *string
+    if folder != "/" {
+        f, err := r.folderRepo.GetByPath(ctx, projectID, folder)
+        if err != nil {
+            return "", fmt.Errorf("folder not found: %s", folder)
+        }
+        folderID = &f.ID
     }
 
-    description, _ := input["description"].(string)
-
-    // 2. Parse edits
-    edits, err := parseEdits(editsRaw)
+    // Query document by folder and name
+    doc, err := r.docRepo.GetByFolderAndName(ctx, projectID, folderID, name)
     if err != nil {
-        return nil, fmt.Errorf("invalid edits: %w", err)
+        return "", fmt.Errorf("document not found: %s", path)
     }
 
-    // 3. Get current document content
-    doc, err := t.docRepo.GetByID(ctx, docID, t.projectID)
-    if err != nil {
-        return nil, fmt.Errorf("document not found: %w", err)
-    }
+    return doc.ID, nil
+}
 
-    // 4. Apply edits to create new content
-    newContent, err := applyEdits(doc.Content, edits)
-    if err != nil {
-        return nil, fmt.Errorf("failed to apply edits: %w", err)
+func normalizePath(path string) string {
+    path = strings.TrimSpace(path)
+    if !strings.HasPrefix(path, "/") {
+        path = "/" + path
     }
+    return path
+}
 
-    // 5. Create AI suggestion version
-    turnID := ctx.Value("turn_id").(string) // Set by streaming adapter
-    version, err := t.versionService.CreateVersion(ctx, &docsysSvc.CreateVersionRequest{
-        DocumentID:      docID,
-        ParentVersionID: doc.CurrentVersionID,
-        CreatedByTurnID: &turnID,
-        Content:         newContent,
-        VersionType:     models.VersionTypeAISuggestion,
-        Description:     &description,
-    })
-    if err != nil {
-        return nil, fmt.Errorf("failed to create version: %w", err)
+func splitPath(path string) (folder, name string) {
+    path = strings.TrimPrefix(path, "/")
+    lastSlash := strings.LastIndex(path, "/")
+    if lastSlash == -1 {
+        return "/", path
     }
-
-    // 6. Return version info (NOT updating live document!)
-    return map[string]interface{}{
-        "version_id":   version.ID,
-        "description":  description,
-        "edit_count":   len(edits),
-        "char_delta":   len(newContent) - len(doc.Content),
-    }, nil
+    return "/" + path[:lastSlash], path[lastSlash+1:]
 }
 ```
 
 ---
 
-## Edit Application Logic
+## Tool Implementation (SOLID: Open/Closed via Command Registry)
+
+**File**: `backend/internal/service/llm/tools/doc_edit.go`
+
+Uses command registry pattern - add new commands without modifying existing code:
 
 ```go
-type Edit struct {
-    Type  string // "insert", "delete", "replace"
-    Start int
-    End   int    // Only for delete/replace
-    Text  string // Only for insert/replace
+// EditCommand interface - each command type implements this
+type EditCommand interface {
+    Name() string
+    Validate(input map[string]interface{}) error
+    Execute(ctx context.Context, tool *DocEditTool, input map[string]interface{}) (interface{}, error)
+    // For editing commands: how to apply this edit to ai_version
+    ApplyToVersion(current string, input map[string]interface{}) (string, error)
 }
 
-func applyEdits(content string, edits []Edit) (string, error) {
-    // Sort edits by position (descending) to avoid offset issues
-    sort.Slice(edits, func(i, j int) bool {
-        return edits[i].Start > edits[j].Start
-    })
+// EditCommandRegistry - register and execute commands
+type EditCommandRegistry struct {
+    commands map[string]EditCommand
+}
 
-    runes := []rune(content)
+func NewEditCommandRegistry() *EditCommandRegistry {
+    r := &EditCommandRegistry{commands: make(map[string]EditCommand)}
+    // Register built-in commands
+    r.Register(&ViewCommand{})
+    r.Register(&StrReplaceCommand{})
+    r.Register(&InsertCommand{})
+    r.Register(&AppendCommand{})
+    r.Register(&CreateCommand{})
+    return r
+}
 
-    for _, edit := range edits {
-        if edit.Start < 0 || edit.Start > len(runes) {
-            return "", fmt.Errorf("invalid start position: %d", edit.Start)
-        }
+func (r *EditCommandRegistry) Register(cmd EditCommand) {
+    r.commands[cmd.Name()] = cmd
+}
 
-        switch edit.Type {
-        case "insert":
-            // Insert text at position
-            runes = insertAt(runes, edit.Start, []rune(edit.Text))
+func (r *EditCommandRegistry) Get(name string) (EditCommand, bool) {
+    cmd, ok := r.commands[name]
+    return cmd, ok
+}
 
-        case "delete":
-            if edit.End < edit.Start || edit.End > len(runes) {
-                return "", fmt.Errorf("invalid end position: %d", edit.End)
-            }
-            runes = append(runes[:edit.Start], runes[edit.End:]...)
+// DocEditTool uses registry instead of switch
+type DocEditTool struct {
+    projectID      string
+    sessionService llmSvc.AISessionService
+    docRepo        docsysRepo.DocumentRepository
+    pathResolver   *PathResolver
+    registry       *EditCommandRegistry
+    config         *ToolConfig
+}
 
-        case "replace":
-            if edit.End < edit.Start || edit.End > len(runes) {
-                return "", fmt.Errorf("invalid end position: %d", edit.End)
-            }
-            runes = append(runes[:edit.Start], append([]rune(edit.Text), runes[edit.End:]...)...)
+func NewDocEditTool(
+    projectID string,
+    sessionService llmSvc.AISessionService,
+    docRepo docsysRepo.DocumentRepository,
+    pathResolver *PathResolver,
+    config *ToolConfig,
+) *DocEditTool {
+    if config == nil {
+        config = DefaultToolConfig()
+    }
+    return &DocEditTool{
+        projectID:      projectID,
+        sessionService: sessionService,
+        docRepo:        docRepo,
+        pathResolver:   pathResolver,
+        registry:       NewEditCommandRegistry(),
+        config:         config,
+    }
+}
 
-        default:
-            return "", fmt.Errorf("unknown edit type: %s", edit.Type)
-        }
+func (t *DocEditTool) Execute(ctx context.Context, input map[string]interface{}) (interface{}, error) {
+    cmdName, _ := input["command"].(string)
+    path, _ := input["path"].(string)
+
+    if path == "" {
+        return nil, errors.New("path is required")
     }
 
-    return string(runes), nil
+    cmd, ok := t.registry.Get(cmdName)
+    if !ok {
+        return nil, fmt.Errorf("unknown command: %s", cmdName)
+    }
+
+    if err := cmd.Validate(input); err != nil {
+        return nil, err
+    }
+
+    return cmd.Execute(ctx, t, input)
 }
 
-func insertAt(runes []rune, pos int, insert []rune) []rune {
-    return append(runes[:pos], append(insert, runes[pos:]...)...)
+func (t *DocEditTool) executeStrReplace(ctx context.Context, path string, input map[string]interface{}) (interface{}, error) {
+    oldStr, _ := input["old_str"].(string)
+    newStr, _ := input["new_str"].(string)
+
+    if oldStr == "" {
+        return nil, errors.New("old_str is required for str_replace")
+    }
+
+    // Resolve path to document
+    docID, err := t.pathResolver.Resolve(ctx, t.projectID, path)
+    if err != nil {
+        return nil, err
+    }
+
+    // Get document content for base_snapshot (if creating new session)
+    // NOTE: We do NOT validate old_str against DB content here.
+    // DB may be stale due to debounced saves. Frontend validates against editor state.
+    doc, err := t.docRepo.GetByID(ctx, docID, t.projectID)
+    if err != nil {
+        return nil, fmt.Errorf("document not found: %w", err)
+    }
+
+    // Get or create AI session
+    session, err := t.getOrCreateSession(ctx, docID, doc.Content)
+    if err != nil {
+        return nil, err
+    }
+
+    // Add edit to session - this updates ai_version
+    // No position hints needed - frontend computes diff(USER_EDITS, ai_version) live
+    edit, err := t.sessionService.AddEdit(ctx, session.ID, &llmModels.CreateAIEditInput{
+        Command: llmModels.AIEditCommandStrReplace,
+        Path:    path,
+        OldStr:  &oldStr,
+        NewStr:  &newStr,
+    })
+    if err != nil {
+        return nil, fmt.Errorf("failed to add edit: %w", err)
+    }
+
+    return map[string]interface{}{
+        "success":    true,  // Means "edit recorded to ai_version", NOT "edit applied to document"
+        "session_id": session.ID,
+        "edit_id":    edit.ID,
+        "path":       path,
+        "message":    fmt.Sprintf("Suggested edit for %s", path),
+    }, nil
+}
+
+func (t *DocEditTool) getOrCreateSession(ctx context.Context, docID, content string) (*llmModels.AISession, error) {
+    // Check for existing active session
+    session, err := t.sessionService.GetActiveSession(ctx, docID)
+    if err != nil {
+        return nil, err
+    }
+    if session != nil {
+        return session, nil
+    }
+
+    // Create new session
+    chatID := ctx.Value("chat_id").(string)
+    turnID := ctx.Value("turn_id").(string)
+
+    return t.sessionService.CreateSession(ctx, &llmSvc.CreateAISessionRequest{
+        DocumentID:   docID,
+        ChatID:       &chatID,
+        TurnID:       &turnID,
+        BaseSnapshot: content,
+    })
 }
 ```
 
@@ -252,13 +380,15 @@ func insertAt(runes []rune, pos int, insert []rune) []rune {
 **File**: `backend/internal/service/llm/tools/builder.go`
 
 ```go
-func (b *ToolRegistryBuilder) WithSuggestEdits(
+func (b *ToolRegistryBuilder) WithDocEdit(
     projectID string,
-    versionService docsysSvc.VersionService,
+    sessionService llmSvc.AISessionService,
     docRepo docsysRepo.DocumentRepository,
+    folderRepo docsysRepo.FolderRepository,
 ) *ToolRegistryBuilder {
-    tool := NewSuggestEditsTool(projectID, versionService, docRepo, b.config)
-    b.registry.Register("suggest_document_edits", tool)
+    pathResolver := NewPathResolver(docRepo, folderRepo)
+    tool := NewDocEditTool(projectID, sessionService, docRepo, pathResolver, b.config)
+    b.registry.Register("doc_edit", tool)
     return b
 }
 ```
@@ -267,33 +397,71 @@ func (b *ToolRegistryBuilder) WithSuggestEdits(
 
 ## Context Injection
 
-The streaming adapter must inject `turn_id` into context:
-
-**File**: `backend/internal/service/llm/streaming/mstream_adapter.go`
+The streaming adapter must inject `chat_id` and `turn_id` into context:
 
 ```go
-// In executeToolsAndContinue or similar
-toolCtx := context.WithValue(ctx, "turn_id", turn.ID)
+// In executeToolsAndContinue
+toolCtx := context.WithValue(ctx, "chat_id", chat.ID)
+toolCtx = context.WithValue(toolCtx, "turn_id", turn.ID)
 results := toolRegistry.ExecuteParallel(toolCtx, toolCalls)
 ```
 
 ---
 
-## Testing Checklist
+## Key Implementation Notes
 
-- [ ] Tool parses input correctly
-- [ ] Single edit (insert, delete, replace) applies correctly
-- [ ] Multiple edits apply in correct order (descending positions)
-- [ ] Version created with correct type and turn ID
-- [ ] Live document NOT modified
-- [ ] Error handling: invalid document ID, invalid positions, malformed edits
+### No Backend Validation
+- Backend does NOT validate `old_str` against DB content
+- DB may be stale due to debounced saves (1 second delay)
+- Frontend has source of truth (editor state)
+- `success: true` means "edit recorded to ai_version", not "edit applied to document"
+- Frontend computes `diff(USER_EDITS, ai_version)` live for display
+
+### Pattern-Based Matching (AI Side)
+- `str_replace` uses exact string matching (not regex)
+- AI should use `view` command first to see current content
+- Multiple matches: AI should provide more context in `old_str`
+
+### Edit Storage (Simplified!)
+- Each edit stored with `edit_order` for ordering (for history/audit)
+- **No position hints needed** - frontend computes diff on-the-fly
+- Edits preserved even after session resolved (for history)
+- Edit commands: `str_replace`, `insert`, `append`
+
+### Session Management
+- First edit creates session with `base_snapshot`
+- `ai_version` initialized to `base_snapshot`
+- Each subsequent edit updates `ai_version`
+- Subsequent edits reuse existing active session
+- Session per document (not per turn)
+
+### View Behavior
+- When a session exists, `view` returns `ai_version` (base + all edits applied)
+- If no session exists, `view` returns the current persisted document content
+- `ai_version` is pre-computed, so no reconstruction needed per `view` call
+
+### Result Shape & Error Codes
+- All commands return a structured result with `success: boolean`
+- Editing commands (`str_replace`, `insert`, `append`, `create`) return `session_id`, `edit_id`, `path`, and a short `message` for the LLM
+- `view` returns `path`, `content`, `line_count`, and optional `view_range` metadata
+- Failures use an `error_code` enum to guide the LLM:
+  - `NO_MATCH` – `old_str` not found in the current AI version (suggests calling `view` first)
+  - `AMBIGUOUS_MATCH` – `old_str` appears more than once
+  - `DOC_NOT_FOUND` – path could not be resolved
+  - `SESSION_NOT_FOUND` – session expired or missing
 
 ---
 
 ## Success Criteria
 
-- [ ] AI can call `suggest_document_edits` tool
-- [ ] Edits create version snapshot
-- [ ] Live document unchanged
-- [ ] Version linked to turn ID
-- [ ] Tool returns version_id for frontend use
+- [ ] AI can call `doc_edit` tool with str_replace command
+- [ ] Path resolution works (Unix-style → UUID)
+- [ ] Session created on first edit with `ai_version = base_snapshot`
+- [ ] Edits stored in ai_edits table (for history)
+- [ ] `ai_version` updated after each edit
+- [ ] Edit order auto-incremented
+- [ ] Backend does NOT validate old_str against DB (frontend computes diff)
+- [ ] Error handling: document not found (but NOT old_str not found)
+- [ ] Context injection for chat_id/turn_id
+
+**Note**: No position hints needed - frontend computes `diff(USER_EDITS, ai_version)` live.

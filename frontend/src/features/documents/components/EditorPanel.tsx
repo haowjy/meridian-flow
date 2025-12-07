@@ -1,33 +1,26 @@
-import { useEffect, useRef, useState } from 'react'
-import { EditorContent } from '@tiptap/react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
-import { getExtensions } from '@/core/editor/extensions'
+import { CodeMirrorEditor, type CodeMirrorEditorRef } from '@/core/editor/codemirror'
 import { useEditorStore } from '@/core/stores/useEditorStore'
 import { useDebounce } from '@/core/hooks/useDebounce'
-import { useEditorCache } from '@/core/hooks/useEditorCache'
-import { cn } from '@/lib/utils'
 import { EditorHeader } from './EditorHeader'
 import { EditorToolbarContainer } from './EditorToolbarContainer'
 import { Skeleton } from '@/shared/components/ui/skeleton'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { useUIStore } from '@/core/stores/useUIStore'
-import { makeLogger } from '@/core/lib/logger'
 import { DocumentHeaderBar } from './DocumentHeaderBar'
 import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
 import { CompactBreadcrumb } from '@/shared/components/ui/CompactBreadcrumb'
 import { Button } from '@/shared/components/ui/button'
 import { ChevronLeft } from 'lucide-react'
 
-const logger = makeLogger('editor-panel')
-// Removed inline rename flow for now (EditorTitle deleted)
-
 interface EditorPanelProps {
   documentId: string
 }
 
 /**
- * Minimal TipTap editor with markdown shortcuts.
+ * CodeMirror 6 markdown editor panel.
  * Integrates: Document loading, auto-save.
  * Uses two-state pattern for instant typing + debounced auto-save.
  */
@@ -43,8 +36,6 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     saveDocument,
   } = useEditorStore()
 
-
-
   // Get document metadata from tree (available immediately, no need to wait for content)
   const documents = useTreeStore((state) => state.documents)
   const documentMetadata = documents.find((doc) => doc.id === documentId)
@@ -59,34 +50,29 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   }, [isInitialized])
   const debouncedContent = useDebounce(localContent, 1000) // 1 second trailing edge
 
-  // TipTap editor instance with LRU caching for instant document switching
-  const { editor, isFromCache } = useEditorCache({
-    documentId,
-    content: localContent,
-    extensions: getExtensions(),
-    // Always editable once initialized
-    editable: !!activeDocument && activeDocument.id === documentId && !isLoading && isInitialized,
-    immediatelyRender: false, // Fix SSR hydration mismatch
-    editorProps: {
-      attributes: {
-        class: cn('tiptap cursor-text'),
-      },
-    },
-    onUpdate: ({ editor }) => {
-      // Ignore TipTap's early updates before we finish initializing content
-      if (!initializedRef.current) return
-      const markdown = editor.getMarkdown()
-      setLocalContent(markdown)
-      setHasUserEdit(true) // Mark that user has edited
-    },
-  })
+  // CodeMirror editor ref
+  const editorRef = useRef<CodeMirrorEditorRef | null>(null)
+
+  // Handle content changes from the editor
+  const handleChange = useCallback((content: string) => {
+    // Ignore changes before initialization
+    if (!initializedRef.current) {
+      return
+    }
+    setLocalContent(content)
+    setHasUserEdit(true)
+  }, [])
+
+  // Handle editor ready
+  const handleReady = useCallback((ref: CodeMirrorEditorRef) => {
+    editorRef.current = ref
+  }, [])
 
   // Load document on mount or when documentId changes
   useEffect(() => {
     // Prevent duplicate loads from React Strict Mode double-mounting
     // Skip if we're already loading this exact document
     if (_activeDocumentId === documentId && isLoading) {
-      logger.debug('Skipping duplicate load for', documentId)
       return
     }
 
@@ -101,112 +87,46 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     }
     resetEditorState()
 
-    // Do NOT clear localContent here; allow cached editor to repopulate if present
     loadDocument(documentId, abortController.signal)
 
     // Cleanup: abort request if component unmounts or documentId changes
-    // NOTE: In dev mode with React Strict Mode, this abort() will be called during the
-    // intentional double-mount cleanup, causing an AbortError to appear in the dev mode
-    // error overlay. This is EXPECTED and HARMLESS - the error is caught and handled
-    // silently by useEditorStore. In production (no Strict Mode), this only runs on
-    // real unmounts or document changes. The abort is necessary to prevent stale
-    // requests from updating state after the component has moved on.
     return () => {
       abortController.abort()
     }
-  // Intentionally depend only on documentId and loadDocument.
-  // _activeDocumentId and isLoading are read via the store for duplicate-load prevention.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentId, loadDocument])
 
-  // Note: The tree is loaded by WorkspaceLayout on deep links.
-
   // Initialize local content when document loads
-  // BUT: Skip if we're using a cached editor (it has the correct content already)
   useEffect(() => {
-    const initializeFromActiveDocument = () => {
-      if (activeDocument && activeDocument.id === documentId && !isFromCache) {
-        // New editor: Initialize with document content from DB
-        setLocalContent(activeDocument.content ?? '')
-        setHasUserEdit(false) // Reset flag when switching documents
-        if (editor) {
-          editor.commands.setContent(activeDocument.content ?? '', {
-            contentType: 'markdown',
-            emitUpdate: false
-          })
-        }
-        setIsInitialized(true)
-      } else if (activeDocument && activeDocument.id === documentId && isFromCache) {
-        // Cached editor: Preserve its content (may have unsaved changes)
-        // UNLESS the cached editor is empty AND server has content
-        // (This handles incomplete initialization race condition)
-        const cachedContent = editor?.getMarkdown() ?? ''
-        const serverContent = activeDocument.content ?? ''
-        const cachedIsEmpty = cachedContent === ''
-        const serverHasContent = serverContent !== ''
+    if (activeDocument && activeDocument.id === documentId) {
+      const serverContent = activeDocument.content ?? ''
+      setLocalContent(serverContent)
+      setHasUserEdit(false)
 
-        if (cachedIsEmpty && serverHasContent) {
-          // Cached editor never got initialized properly, use server content
-          logger.debug('Cached editor is empty, initializing from server')
-          setLocalContent(serverContent)
-          if (editor) {
-            editor.commands.setContent(serverContent, {
-              contentType: 'markdown',
-              emitUpdate: false
-            })
-          }
-          setIsInitialized(true)
-        } else {
-          // Trust the cached editor (it has either the correct content or unsaved changes)
-          logger.debug('Using cached editor content')
-          setLocalContent(cachedContent)
-          setIsInitialized(true)
+      // Update editor content if ref is available and content differs
+      // Skip if content is identical (e.g., after auto-save) to preserve cursor position
+      if (editorRef.current) {
+        const currentContent = editorRef.current.getContent()
+        if (currentContent !== serverContent) {
+          editorRef.current.setContent(serverContent)
         }
-
-        setHasUserEdit(false) // Reset flag when switching documents
       }
-    }
 
-    initializeFromActiveDocument()
-  }, [activeDocument, isFromCache, editor, documentId]) // Check content updates too
+      setIsInitialized(true)
+    }
+  }, [activeDocument, documentId])
 
   // Auto-save when debounced content changes (only in edit mode AFTER init)
   // Treat empty string "" as valid content (do not use falsy checks)
   useEffect(() => {
+    // Only save if debounce has "settled" (caught up to localContent)
+    // This prevents saving stale debounced values during initialization
+    if (debouncedContent !== localContent) return
+
     if (isInitialized && hasUserEdit && debouncedContent !== activeDocument?.content) {
       saveDocument(documentId, debouncedContent)
     }
-  }, [isInitialized, hasUserEdit, debouncedContent, documentId, activeDocument?.content, saveDocument])
-
-  // Sync content: cached editor → localContent OR localContent → new editor
-  useEffect(() => {
-    if (!editor) return
-
-    const syncEditorAndState = () => {
-      const currentContent = editor.getMarkdown()
-
-      if (isFromCache) {
-        // Cached editor is source of truth - preserve its content (may have unsaved changes)
-        // Sync localContent FROM editor to prevent loadDocument from overwriting it
-        if (currentContent !== localContent) {
-          logger.debug('Syncing localContent from cached editor')
-          setLocalContent(currentContent)
-          // Important: Don't set hasUserEdit here - this is just state sync, not a user action
-        }
-      } else {
-        // New editor - initialize it with current localContent from store
-        if (localContent !== undefined && currentContent !== localContent) {
-          logger.debug('Initializing new editor with localContent')
-          editor.commands.setContent(localContent, {
-            contentType: 'markdown',
-            emitUpdate: false
-          })
-        }
-      }
-    }
-
-    syncEditorAndState()
-  }, [editor, isFromCache, localContent, documentId])
+  }, [isInitialized, hasUserEdit, debouncedContent, localContent, documentId, activeDocument?.content, saveDocument])
 
   // Determine the best available source for header metadata
   const headerDocument =
@@ -278,10 +198,11 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
 
   // Show header and title immediately (metadata available from tree)
   // Show skeleton only for editor content while loading
-  // Show content as soon as we have an activeDocument and editor instance,
-  // even if the store is still reconciling (isLoading=true). Editor remains read-only
-  // until initialization finishes.
-  const isContentLoading = !editor || activeDocument?.id !== documentId || !isInitialized
+  // Editor is ready when we have activeDocument for this documentId
+  const isContentLoading = activeDocument?.id !== documentId || !isInitialized
+
+  // Determine editable state: editable once initialized
+  const isEditable = isInitialized && activeDocument?.id === documentId && !isLoading
 
   return (
     <div className="flex h-full flex-col">
@@ -301,19 +222,26 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
           </div>
         ) : (
           <>
-            {/* Sticky Toolbar */}
+            {/* Sticky Toolbar with formatting commands */}
             <div className="sticky top-12 z-10 bg-background relative">
               <EditorToolbarContainer
-                editor={editor}
+                editor={editorRef.current}
                 status={status}
                 lastSaved={lastSaved}
               />
               <HeaderGradientFade />
             </div>
 
-            {/* Editor Content */}
-            <div className="relative pt-3">
-              <EditorContent editor={editor} className="min-h-full flex flex-col" />
+            {/* Editor Content - CodeMirror 6 */}
+            <div className="relative pt-1 flex-1">
+              <CodeMirrorEditor
+                initialContent={localContent}
+                editable={isEditable}
+                placeholder="Start writing..."
+                onChange={handleChange}
+                onReady={handleReady}
+                className="min-h-full"
+              />
             </div>
           </>
         )}

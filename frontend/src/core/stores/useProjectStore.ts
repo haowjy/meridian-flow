@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware'
 import { Project } from '@/features/projects/types/project'
 import { api } from '@/core/lib/api'
 import { handleApiError } from '@/core/lib/errors'
-import { clearEditorCache } from '@/core/hooks/useEditorCache'
+import { editorCache } from '@/core/editor/cache'
 
 type LoadStatus = 'idle' | 'loading' | 'success' | 'error'
 
@@ -65,7 +65,7 @@ export const useProjectStore = create<ProjectStore>()(
         const prevId = get().currentProjectId
         const nextId = project?.id || null
         if (prevId && prevId !== nextId) {
-          clearEditorCache()
+          editorCache.clear()
         }
         set({ currentProjectId: nextId })
       },

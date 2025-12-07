@@ -24,9 +24,9 @@ export function Logo({
   mono = false,
   className,
 }: LogoProps) {
-  const GOLD = '#F4B41A'
-  const GLOW_JADE = '#3CC8B4'
-  const JADE_300 = '#A9BDB5'
+  // Theme-aware colors via CSS variables
+  const ACCENT = 'var(--theme-accent)'
+  const RING_COLOR = 'var(--muted-foreground)'
 
   return (
     <div
@@ -46,9 +46,9 @@ export function Logo({
           cx="50"
           cy="50"
           r="38"
-          stroke={mono ? 'currentColor' : GLOW_JADE}
+          stroke={mono ? 'currentColor' : RING_COLOR}
           strokeWidth="2"
-          opacity={0.5}
+          opacity={0.4}
         />
 
         {/* Inner Ring - The Vessel */}
@@ -56,27 +56,27 @@ export function Logo({
           cx="50"
           cy="50"
           r="30"
-          stroke={mono ? 'currentColor' : JADE_300}
+          stroke={mono ? 'currentColor' : RING_COLOR}
           strokeWidth="3"
-          opacity={0.9}
+          opacity={0.7}
         />
 
-        {/* The Meridian Needle - always gold */}
+        {/* The Meridian Needle - accent color (gold/amber) */}
         <path
           d="M50 8V92"
-          stroke={GOLD}
+          stroke={ACCENT}
           strokeWidth="5"
           strokeLinecap="round"
         />
 
-        {/* The Core Diamond - always gold */}
+        {/* The Core Diamond - accent color (gold/amber) */}
         <rect
           x="43"
           y="43"
           width="14"
           height="14"
           rx="2"
-          fill={GOLD}
+          fill={ACCENT}
           transform="rotate(45 50 50)"
         />
       </svg>

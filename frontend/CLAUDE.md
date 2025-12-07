@@ -9,7 +9,7 @@ See main `CLAUDE.md` for general principles. This document focuses on frontend-s
 - **Framework**: Vite + TanStack Router
 - **State Management**: Zustand with persist middleware
 - **Local Database**: Dexie (IndexedDB wrapper)
-- **Editor**: TipTap (ProseMirror-based rich text editor)
+- **Editor**: CodeMirror 6 (markdown-native with live preview)
 - **Styling**: Tailwind CSS
 - **UI Components**: Radix UI + shadcn/ui
 
@@ -206,24 +206,25 @@ Meridian's UI serves the writer's creative process. Everything else is secondary
 - **Hierarchy matters**: Content > Chat > Navigation > Settings
 - **Progressive disclosure**: Show less by default, reveal on interaction
 
-### Jade & Gold Design System
+### Theme System
 
-The design system reinforces writer-first principles:
+Flexible theming with runtime switching. Default theme is **Modern Literary** (Slate + Amber).
 
-- **Jade** = Primary, calm, focused (backgrounds, primary actions)
-- **Gold** = Accent, insight, highlights (active states, important indicators)
-- **Parchment** = Warm backgrounds (never stark white - easier on eyes for long writing sessions)
+**Available themes**: `modern-literary` (default), `classic-jade`, `academic`
 
-**Typography classes**:
-- `.type-display` - Page titles
-- `.type-section` - Section headers (18px serif)
-- `.type-body` - Body text (15px serif)
-- `.type-label` - UI labels (13px sans)
-- `.type-meta` - Timestamps/secondary (12px sans muted)
+**Usage**:
+```typescript
+import { useThemeContext } from '@/core/theme';
+const { themeId, setThemeId, isDark, setMode } = useThemeContext();
+```
+
+**Key CSS variables**: `--theme-bg`, `--theme-surface`, `--theme-text`, `--theme-accent`, `--theme-font-display`, `--theme-font-body`, `--theme-font-ui`
 
 **Spacing**: 8pt grid (`gap-2` = 8px standard)
 
-**Shadows**: `--shadow-1`, `--shadow-2`, `--shadow-3` hierarchy
+**Shadows**: `--theme-shadow-1`, `--theme-shadow-2`, `--theme-shadow-3`
+
+**Full docs**: `_docs/technical/frontend/theme-system.md`
 
 ## Key Conventions
 
@@ -243,23 +244,28 @@ if (content) { ... }  // Fails for empty strings
 - Cancel stale operations proactively
 - Guard background operations with intent flags (e.g., `hasUserEdit`)
 
-### TipTap Editor
+### CodeMirror Editor
 
 **Content Format**:
-- **Storage**: Markdown (backend, API, IndexedDB, stores)
-- **Editor**: HTML/ProseMirror (TipTap internal representation)
-- **Conversion**: At editor boundary in `EditorPanel.tsx`
-  - Load: `editor.commands.setContent(markdown, { contentType: 'markdown' })`
-  - Save: `editor.getMarkdown()`
+- **Storage & Editor**: Markdown (native format throughout)
+- **No conversion needed**: Unlike TipTap, CodeMirror works directly with markdown
 
-**Extensions** (configured in `core/editor/extensions.ts`):
-- StarterKit (core functionality)
-- Markdown (enables markdown ↔ HTML conversion)
-- CharacterCount (word/character counting)
-- Placeholder (empty state)
-- Highlight, Typography
+**Component**: `CodeMirrorEditor` from `core/editor/codemirror`
+- `initialContent`: Initial markdown string
+- `onChange`: Callback for content changes
+- `onReady`: Returns `CodeMirrorEditorRef` for programmatic access
+- `editable`: Control read-only state
 
-**Word count**: Use `editor.storage.characterCount.words()` (not manual HTML parsing)
+**Programmatic Access** via `CodeMirrorEditorRef`:
+- `getContent()`: Get current markdown
+- `setContent(markdown)`: Replace content
+- `focus()`: Focus editor
+- Formatting commands: `toggleBold()`, `toggleItalic()`, `toggleHeading(level)`, etc.
+
+**AI Integration** via `AIEditorRef` (from `core/editor/api`):
+- `addSuggestion(range, text)`: Add AI suggestion decoration
+- `acceptSuggestion(id)`: Accept suggestion
+- `rejectSuggestion(id)`: Reject suggestion
 
 ### Error Handling
 - Network errors (5xx, timeout, fetch fail): Automatic retry

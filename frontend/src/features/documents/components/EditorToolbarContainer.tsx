@@ -1,9 +1,9 @@
-import type { Editor as TiptapEditor } from "@tiptap/react"
+import type { CodeMirrorEditorRef } from '@/core/editor/codemirror'
 import { EditorToolbar } from "./EditorToolbar"
 import type { SaveStatus } from '@/shared/components/ui/StatusBadge'
 
 interface EditorToolbarContainerProps {
-  editor: TiptapEditor | null
+  editor: CodeMirrorEditorRef | null
   disabled?: boolean
   status: SaveStatus
   lastSaved: Date | null

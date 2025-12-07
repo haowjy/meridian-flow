@@ -28,7 +28,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 - **Framework**: Vite + TanStack Router (file-based routing)
 - **State**: Zustand + IndexedDB (Dexie)
-- **Editor**: TipTap (markdown storage)
+- **Editor**: CodeMirror 6 (markdown-native)
 - **UI**: Tailwind CSS + Radix UI + shadcn/ui
 - **Testing**: Vitest
 
