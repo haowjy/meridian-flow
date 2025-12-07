@@ -34,7 +34,9 @@ export interface TurnBlock {
   sequence: number
   textContent?: string
   content?: Record<string, unknown>
+  status?: 'complete' | 'partial' // partial = interrupted during streaming
   createdAt: Date
+  updatedAt?: Date
 }
 
 /**

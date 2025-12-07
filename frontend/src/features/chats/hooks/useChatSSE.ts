@@ -30,6 +30,7 @@ interface TurnCompleteEvent {
 interface TurnErrorEvent {
   turn_id: string
   error: string
+  is_cancelled?: boolean // User cancelled streaming (don't show error toast)
 }
 
 /**
@@ -243,17 +244,21 @@ export function useChatSSE() {
                 logger.debug('sse:turn_error:raw', { data: msg.data })
                 try {
                   const data = JSON.parse(msg.data) as TurnErrorEvent
-                  logger.error('sse:turn_error', data)
-                  
-                  // Show error toast
-                  toast.error('Streaming Error', {
-                    description: data.error || 'An error occurred while generating the response.',
-                    duration: 5000,
-                  })
+
+                  // Only show error toast for real errors, not user cancellations
+                  if (!data.is_cancelled) {
+                    logger.error('sse:turn_error', data)
+                    toast.error('Streaming Error', {
+                      description: data.error || 'An error occurred while generating the response.',
+                      duration: 5000,
+                    })
+                  } else {
+                    logger.debug('sse:turn_cancelled', data)
+                  }
 
                   // Refresh the turn to ensure we have the final state (partial blocks)
                   if (chatId && data.turn_id) {
-                    refreshTurn(chatId, data.turn_id).catch(err => 
+                    refreshTurn(chatId, data.turn_id).catch(err =>
                       logger.error('sse:turn_error:refresh_error', err)
                     )
                   }
