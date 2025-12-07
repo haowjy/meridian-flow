@@ -33,7 +33,7 @@ export function DevRetryPanel() {
     <button
       type="button"
       onClick={() => setCollapsed((v) => !v)}
-      className="rounded-full bg-indigo-600/90 hover:bg-indigo-600 text-white px-3 py-1 text-xs shadow"
+      className="rounded-full bg-accent/90 hover:bg-accent text-accent-foreground px-3 py-1 text-xs shadow-[var(--shadow-1)]"
     >
       Retries: {count}
     </button>
@@ -48,25 +48,25 @@ export function DevRetryPanel() {
   }
 
   return (
-    <div className="fixed left-4 bottom-4 z-50 w-80 rounded border border-zinc-800/60 bg-zinc-900/90 text-zinc-100 backdrop-blur p-3 shadow">
+    <div className="fixed left-4 bottom-4 z-50 w-80 rounded-lg border border-border bg-popover/95 text-popover-foreground backdrop-blur-sm p-3 shadow-[var(--shadow-3)]">
       <div className="flex items-center justify-between mb-2">
-        <div className="text-xs font-semibold uppercase tracking-wide">Retry Queue</div>
+        <div className="text-xs font-semibold uppercase tracking-wide text-foreground">Retry Queue</div>
         {badge}
       </div>
       {entries.length === 0 ? (
-        <div className="text-xs text-zinc-400">Empty</div>
+        <div className="text-xs text-muted-foreground">Empty</div>
       ) : (
         <ul className="space-y-2 max-h-56 overflow-auto">
           {entries.map((e) => (
             <li key={e.id} className="flex items-center justify-between gap-2 text-xs">
               <div className="min-w-0">
-                <div className="truncate font-medium">{e.id}</div>
-                <div className="text-zinc-400">attempt {e.attempt} • next in {fmtEta(e.nextAt)}</div>
+                <div className="truncate font-medium text-foreground">{e.id}</div>
+                <div className="text-muted-foreground">attempt {e.attempt} • next in {fmtEta(e.nextAt)}</div>
               </div>
               <button
                 type="button"
                 onClick={() => cancelRetry(e.id)}
-                className="shrink-0 rounded bg-zinc-800 hover:bg-zinc-700 px-2 py-1"
+                className="shrink-0 rounded bg-muted hover:bg-muted/80 text-muted-foreground px-2 py-1"
                 aria-label={`Cancel retry ${e.id}`}
               >
                 Cancel

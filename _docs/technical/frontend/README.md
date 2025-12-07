@@ -18,7 +18,7 @@ Complete technical reference for Meridian frontend (Vite + TanStack Router + Typ
 ## Getting Started
 
 - [Setup Quickstart](setup-quickstart.md) - Development environment setup
-- [UI Colors](ui-colors.md) - Theme and color system
+- [Theme System](theme-system.md) - Theming architecture and presets
 
 ## Architecture
 
@@ -56,9 +56,8 @@ See `frontend/CLAUDE.md` for:
 
 ## Styling & UI
 
-- [UI Colors](ui-colors.md) - Color system and theming
-- TipTap extensions in `src/core/editor/extensions/`
-- Tailwind configuration in `tailwind.config.ts`
+- [Theme System](theme-system.md) - Theming architecture, presets, CSS variables
+- Tailwind configuration in `globals.css` (Tailwind v4 CSS-first approach)
 
 ## Development
 
