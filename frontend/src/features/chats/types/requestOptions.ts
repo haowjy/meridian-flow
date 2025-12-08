@@ -7,13 +7,15 @@ export interface ChatRequestOptions {
   modelLabel: string
   providerId: string
   reasoning: ReasoningLevel
-  tools?: Array<{ name: string }>
+  // Note: tools are NOT user-configurable here - always uses DEFAULT_TOOLS
+  // Future: add disabledTools: string[] for opt-out of specific tools
 }
 
 export const DEFAULT_TOOLS = [
   { name: 'doc_view' },
   { name: 'doc_search' },
   { name: 'doc_tree' },
+  { name: 'doc_edit' },
   { name: 'tavily_web_search' },
 ]
 
@@ -42,6 +44,6 @@ export function requestParamsToOptions(params?: RequestParams | null): ChatReque
     modelLabel: params.model ?? DEFAULT_CHAT_REQUEST_OPTIONS.modelLabel, // Will be overwritten by ChatRequestControls if needed
     providerId: params.provider ?? DEFAULT_CHAT_REQUEST_OPTIONS.providerId,
     reasoning,
-    tools: params.tools as Array<{ name: string }> | undefined,
+    // Note: tools not included - always uses DEFAULT_TOOLS via api.ts
   }
 }

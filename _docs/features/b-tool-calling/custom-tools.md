@@ -1,14 +1,14 @@
 ---
 stack: backend
 status: complete
-feature: "Custom Read-Only Tools"
+feature: "Custom Tools"
 ---
 
-# Custom Read-Only Tools
+# Custom Tools
 
-**Three custom tools for document access: doc_view, doc_tree, doc_search.**
+**Four custom tools for document access and editing: doc_view, doc_tree, doc_search, doc_edit.**
 
-## Status: ✅ Complete (Read-Only)
+## Status: ✅ Complete
 
 ---
 
@@ -59,9 +59,28 @@ feature: "Custom Read-Only Tools"
 
 ---
 
+## doc_edit
+
+**Purpose**: Edit document content via AI suggestions (writes to `ai_version` column)
+
+**Commands**:
+- `str_replace`: Find and replace exact text
+- `insert`: Insert text at specific line
+- `append`: Add text at end
+- `create`: Create new document
+
+**Features**:
+- Unix-style path resolution
+- Edits go to `ai_version` (user review before accepting)
+- Accumulative: multiple edits build on previous `ai_version`
+
+**File**: `backend/internal/service/llm/tools/doc_edit.go`
+
+---
+
 ## Known Gaps
 
-❌ **Write tools** - No doc_create, doc_update, doc_delete
+❌ **doc_delete** - No tool to delete documents via AI
 
 ---
 

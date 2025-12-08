@@ -31,7 +31,7 @@ func (b *ToolRegistryBuilder) WithConfig(config *ToolConfig) *ToolRegistryBuilde
 	return b
 }
 
-// WithDocumentTools registers all document-related tools (doc_view, doc_search, doc_tree).
+// WithDocumentTools registers all document-related tools (doc_view, doc_search, doc_tree, doc_edit).
 // These tools operate on the project's document system.
 func (b *ToolRegistryBuilder) WithDocumentTools(
 	projectID string,
@@ -41,10 +41,12 @@ func (b *ToolRegistryBuilder) WithDocumentTools(
 	viewTool := NewViewTool(projectID, documentRepo, folderRepo, b.config)
 	treeTool := NewTreeTool(projectID, documentRepo, folderRepo, b.config)
 	searchTool := NewSearchTool(projectID, documentRepo, folderRepo, b.config)
+	editTool := NewEditTool(projectID, documentRepo, folderRepo, b.config)
 
 	b.registry.Register("doc_view", viewTool)
 	b.registry.Register("doc_tree", treeTool)
 	b.registry.Register("doc_search", searchTool)
+	b.registry.Register("doc_edit", editTool)
 
 	return b
 }

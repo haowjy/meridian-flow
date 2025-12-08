@@ -20,7 +20,7 @@ feature: "Tool Calling"
 **Built-in Tools** - web_search (backend via Tavily), bash (client), text_editor (client)
 - See [builtin-tools.md](builtin-tools.md)
 
-**Custom Read-Only Tools** - doc_view, doc_tree, doc_search
+**Custom Tools** - doc_view, doc_tree, doc_search, doc_edit
 - See [custom-tools.md](custom-tools.md)
 
 **Tool Continuation** - Multi-turn tool use until `end_turn`
@@ -36,7 +36,7 @@ feature: "Tool Calling"
 
 ## Known Gaps
 
-❌ **Write tools** - No doc_create, doc_update, doc_delete
+❌ **doc_delete tool** - No tool to delete documents via AI
 ❌ **Extended chaining** - Basic continuation works, no advanced patterns
 
 ---

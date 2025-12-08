@@ -71,10 +71,10 @@ DIFF = diff(content, ai_version) computed live by frontend
 | Phase | File | Description | Status |
 |-------|------|-------------|--------|
 | **0** | [codemirror-migration/](codemirror-migration/) | Frontend: TipTap → CodeMirror 6 | ✅ Complete |
-| **1** | [phase-1-version-db.md](phase-1-version-db.md) | Backend: Add `ai_version` column to documents | Ready |
-| **2** | [phase-2-suggest-tool.md](phase-2-suggest-tool.md) | Backend: `doc_edit` tool writes to ai_version | Depends on 1 |
-| **3** | [phase-3-version-api.md](phase-3-version-api.md) | Backend: PATCH/DELETE endpoints for ai_version | Depends on 1 |
-| **4** | [phase-4-live-diff.md](phase-4-live-diff.md) | Frontend: Live diff display (~~old~~ new) | Depends on 0, 3 |
+| **1** | [done/phase-1-version-db.md](done/phase-1-version-db.md) | Backend: Add `ai_version` column to documents | ✅ Complete |
+| **2** | [done/phase-2-suggest-tool.md](done/phase-2-suggest-tool.md) | Backend: `doc_edit` tool writes to ai_version | ✅ Complete |
+| **3** | [phase-3-version-api.md](phase-3-version-api.md) | Backend: PATCH/DELETE endpoints for ai_version | Ready |
+| **4** | [phase-4-live-diff.md](phase-4-live-diff.md) | Frontend: Live diff display (~~old~~ new) | Depends on 3 |
 | **5** | [phase-5-accept-ui.md](phase-5-accept-ui.md) | Frontend: Keep/Undo UI | Depends on 4 |
 | **6** | [phase-6-chat-card.md](phase-6-chat-card.md) | Frontend: SuggestionCard in chat | Depends on 2 |
 
