@@ -327,7 +327,7 @@ function buildRequestParamsFromChatOptions(
     // NOTE: max_tokens and lorem_max are left to backend defaults for now.
     thinking_enabled: thinkingEnabled,
     thinking_level: thinkingEnabled ? resolved.reasoning : null,
-    tools: resolved.tools ?? DEFAULT_TOOLS,
+    tools: DEFAULT_TOOLS, // Always use system defaults; future: filter by disabledTools
   }
 
   return requestParams

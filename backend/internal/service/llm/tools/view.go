@@ -101,7 +101,12 @@ func (t *ViewTool) formatDocument(ctx context.Context, doc *docsystem.Document) 
 		return nil, fmt.Errorf("failed to compute document path: %w", err)
 	}
 
+	// AI sees ai_version if it exists (includes AI's pending suggestions)
+	// Otherwise sees user's content
 	content := doc.Content
+	if doc.AIVersion != nil {
+		content = *doc.AIVersion
+	}
 	wasTruncated := false
 
 	// Truncate content if too large
