@@ -58,7 +58,10 @@ export const useChatPrefsStore = create<ChatPrefsState>()(
     {
       name: 'chat-prefs',
       // Only persist globalOptions - currentOptions is session-only
-      partialize: (state) => ({ globalOptions: state.globalOptions }),
+      // Exclude tools from persistence - always use DEFAULT_TOOLS to ensure new tools appear
+      partialize: (state) => ({
+        globalOptions: { ...state.globalOptions, tools: undefined }
+      }),
     }
   )
 )

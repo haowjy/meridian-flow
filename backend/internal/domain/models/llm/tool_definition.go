@@ -135,6 +135,17 @@ func GetReadOnlyToolDefinitions() []ToolDefinition {
 	}
 }
 
+// GetDocumentToolDefinitions returns all document tool definitions (read + edit).
+// Includes both read-only tools (view, tree, search) and edit tools (doc_edit).
+func GetDocumentToolDefinitions() []ToolDefinition {
+	return []ToolDefinition{
+		getViewToolDefinition(),
+		getTreeToolDefinition(),
+		getSearchToolDefinition(),
+		getEditToolDefinition(),
+	}
+}
+
 // GetAllToolDefinitions returns all available tool definitions, including web search.
 // Use includeWebSearch=true to add web_search tool (requires external API configured).
 func GetAllToolDefinitions(includeWebSearch bool) []ToolDefinition {
@@ -234,6 +245,57 @@ func getSearchToolDefinition() ToolDefinition {
 	}
 }
 
+// getEditToolDefinition returns the schema for the 'doc_edit' tool.
+// This tool edits documents by writing to ai_version for user review.
+func getEditToolDefinition() ToolDefinition {
+	return ToolDefinition{
+		Type: "function",
+		Function: &FunctionDetails{
+			Name: "doc_edit",
+			Description: `Edit documents in the user's project. Use this to modify, improve, or create writing.
+
+Commands:
+- str_replace: Replace exact text (must match exactly, use doc_view first to see content)
+- insert: Insert new text after a specific line number
+- append: Add text to end of document
+- create: Create a new document
+
+Changes are suggested to the user for review before being applied. Always use doc_view first to see the current content before making edits.`,
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"command": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"str_replace", "insert", "append", "create"},
+						"description": "The editing command to execute",
+					},
+					"path": map[string]interface{}{
+						"type":        "string",
+						"description": "Unix-style path to document (e.g., '/Chapter 5.md', '/characters/hero.md')",
+					},
+					"old_str": map[string]interface{}{
+						"type":        "string",
+						"description": "For str_replace: exact text to find and replace. Must match exactly, including whitespace and newlines.",
+					},
+					"new_str": map[string]interface{}{
+						"type":        "string",
+						"description": "For str_replace/insert/append: new text to insert. Can be empty string for str_replace (deletion).",
+					},
+					"insert_line": map[string]interface{}{
+						"type":        "integer",
+						"description": "For insert: line number to insert after (0 = insert at start of document, before line 1).",
+					},
+					"file_text": map[string]interface{}{
+						"type":        "string",
+						"description": "For create: initial content for the new document.",
+					},
+				},
+				"required": []string{"command", "path"},
+			},
+		},
+	}
+}
+
 // getWebSearchToolDefinition returns the schema for the 'web_search' tool.
 // This tool searches the web using external APIs (Tavily, Brave, Serper, etc.).
 func getWebSearchToolDefinition() ToolDefinition {
@@ -296,6 +358,9 @@ func GetToolDefinitionByName(name string) *ToolDefinition {
 		return &def
 	case "doc_search":
 		def := getSearchToolDefinition()
+		return &def
+	case "doc_edit":
+		def := getEditToolDefinition()
 		return &def
 
 	// Provider-specific web search tools

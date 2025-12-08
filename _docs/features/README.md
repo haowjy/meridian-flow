@@ -30,7 +30,8 @@ This directory contains detailed documentation for all features in Meridian, org
 | **Context Menus** | Frontend | N/A | âœ… Complete | Right-click actions for tree (create, rename, delete, import) |
 | **Chat/LLM** | Both | âœ… Complete | âœ… Complete | Turn branching, streaming, 3 providers working |
 | **Streaming (SSE)** | Both | âœ… Complete | âœ… Complete | Catchup, reconnection, race-free |
-| **Tool Calling** | Backend | âœ… Complete | N/A | Auto-mapping, 3 built-in + 3 custom read-only tools |
+| **Tool Calling** | Backend | ✅ Complete | N/A | Auto-mapping, 3 built-in + 4 custom tools |
+| **AI Editing** | Both | 🟡 Partial | ❌ Missing | Backend complete (ai_version + doc_edit); Frontend diff UI pending |
 | **State Management** | Frontend | N/A | âœ… Complete | Zustand, IndexedDB, optimistic updates, retry queue |
 | **UI Components** | Frontend | N/A | âœ… Complete | shadcn/ui, custom components, high polish |
 | **Infrastructure** | Both | âœ… Complete | âœ… Complete | Errors, DB features, routing, logging, deployment |
@@ -89,9 +90,9 @@ This directory contains detailed documentation for all features in Meridian, org
 
 ### [b-tool-calling/](b-tool-calling/)
 **Tool calling system for LLM interactions**
-- Auto-mapping: Minimal definitions â†’ provider-specific
+- Auto-mapping: Minimal definitions → provider-specific
 - Built-in tools: web_search (server), bash (client), text_editor (client)
-- Custom read-only tools: doc_view, doc_tree, doc_search
+- Custom tools: doc_view, doc_tree, doc_search, doc_edit
 - Multi-turn tool continuation
 
 ### [f-state-management/](f-state-management/)
