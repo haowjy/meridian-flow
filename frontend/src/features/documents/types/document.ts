@@ -15,6 +15,12 @@ export interface Document {
    * Optional for backwards compatibility - defaults to 'markdown' when undefined.
    */
   fileType?: EditorType
+  /**
+   * AI-suggested version of the document content.
+   * When present, frontend computes diff(content, aiVersion) to show inline suggestions.
+   * null/undefined means no pending AI suggestions.
+   */
+  aiVersion?: string | null
 }
 
 export interface DocumentTree {

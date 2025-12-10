@@ -130,15 +130,26 @@ export interface LoadPolicy<T> {
   run(args: LoadPolicyArgs<T>): Promise<LoadResult<T>>
 }
 
-// Default comparer: compare updatedAt if present, else treat as equal
-function defaultCompare<T>(a: T, b: T): number {
-  const aWithUpdatedAt = a as { updatedAt?: Date } | undefined
-  const bWithUpdatedAt = b as { updatedAt?: Date } | undefined
+// Helper to safely get timestamp from Date or ISO string
+// IndexedDB may serialize Date objects to strings, so we need to handle both
+function getTimestamp(value: Date | string | undefined): number {
+  if (!value) return 0
+  if (value instanceof Date) return value.getTime()
+  // Handle ISO string (e.g., from IndexedDB serialization)
+  const parsed = new Date(value)
+  return isNaN(parsed.getTime()) ? 0 : parsed.getTime()
+}
 
-  if (aWithUpdatedAt?.updatedAt instanceof Date && bWithUpdatedAt?.updatedAt instanceof Date) {
-    return aWithUpdatedAt.updatedAt.getTime() - bWithUpdatedAt.updatedAt.getTime()
-  }
-  return 0
+// Default comparer: compare updatedAt if present, else treat as equal
+// Handles both Date objects and ISO strings (from IndexedDB serialization)
+function defaultCompare<T>(a: T, b: T): number {
+  const aWithUpdatedAt = a as { updatedAt?: Date | string } | undefined
+  const bWithUpdatedAt = b as { updatedAt?: Date | string } | undefined
+
+  const aTime = getTimestamp(aWithUpdatedAt?.updatedAt)
+  const bTime = getTimestamp(bWithUpdatedAt?.updatedAt)
+
+  return aTime - bTime
 }
 
 /**

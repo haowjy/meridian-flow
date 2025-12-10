@@ -25,6 +25,8 @@ interface EditorStore {
   setStatus: (status: SaveStatus) => void
   updateActiveDocument: (document: Document) => void
   setHasUserEdit: (hasEdit: boolean) => void
+  /** Force refresh document from server (e.g., after AI edit tool) */
+  refreshDocument: (documentId: string) => Promise<void>
 }
 
 export const useEditorStore = create<EditorStore>()((set, get) => ({
@@ -152,4 +154,36 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
     }),
 
   setHasUserEdit: (hasEdit) => set({ hasUserEdit: hasEdit }),
+
+  refreshDocument: async (documentId: string) => {
+    // Skip if this isn't the active document
+    if (get()._activeDocumentId !== documentId) return
+
+    logger.debug(`Force refreshing document ${documentId}`)
+
+    try {
+      // Fetch fresh from server, bypassing cache comparison
+      const doc = await api.documents.get(documentId)
+
+      // Only update if still the active document
+      if (get()._activeDocumentId !== documentId) return
+
+      // Update state
+      set({
+        activeDocument: doc,
+        status: 'saved',
+        lastSaved: doc.updatedAt,
+      })
+
+      // Update cache with fresh data (ensure content is defined for IndexedDB)
+      if (doc.content !== undefined) {
+        await db.documents.put(doc as Document & { content: string })
+      }
+
+      logger.info(`Refreshed document ${documentId}`)
+    } catch (error) {
+      // Silent fail - this is a background refresh, not a user action
+      logger.warn(`Failed to refresh document ${documentId}:`, error)
+    }
+  },
 }))

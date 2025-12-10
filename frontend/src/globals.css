@@ -886,4 +886,43 @@ body.preload * {
     text-decoration-color: var(--error);
   }
 
+  /* ============================================================================
+     AI DIFF DISPLAY (Live diff between content and ai_version)
+     ============================================================================ */
+
+  /* Diff toolbar - shows suggestion count and Keep All / Undo All buttons */
+  .ai-toolbar {
+    background: color-mix(in srgb, var(--success) 8%, var(--background) 92%);
+    border-bottom: 1px solid color-mix(in srgb, var(--success) 20%, var(--border) 80%);
+  }
+
+  /* Inline diff - removed text (user's version) */
+  .ai-diff-removed {
+    text-decoration: line-through;
+    color: var(--muted-foreground);
+    opacity: 0.7;
+  }
+
+  /* Inline diff - added text (AI's suggestion) */
+  .ai-diff-added {
+    background-color: color-mix(in srgb, var(--success) 20%, transparent);
+    color: var(--success);
+    border-radius: 2px;
+    padding: 0 2px;
+  }
+
+  .dark .ai-diff-added {
+    background-color: color-mix(in srgb, var(--success) 25%, transparent);
+  }
+
+  /* Diff hunk container */
+  .ai-diff-hunk {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    background-color: color-mix(in srgb, var(--success) 5%, var(--background) 95%);
+    border-radius: 4px;
+    padding: 2px 4px;
+  }
+
 }
