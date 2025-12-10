@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useCallback } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { toast } from 'sonner'
 import { useChatStore } from '@/core/stores/useChatStore'
+import { useEditorStore } from '@/core/stores/useEditorStore'
 import { useStreamingBuffer } from './useStreamingBuffer'
 import type { BlockType } from '@/features/chats/types'
 import { API_BASE_URL } from '@/core/lib/api'
@@ -225,6 +226,15 @@ export function useChatSSE() {
                   if (chatId && data.turn_id) {
                     refreshTurn(chatId, data.turn_id).catch(err =>
                       logger.error('sse:turn_complete:refresh_error', err)
+                    )
+                  }
+
+                  // Refresh active document in case AI edited it via doc_edit tool
+                  // This ensures ai_version changes are reflected in the editor
+                  const activeDocId = useEditorStore.getState()._activeDocumentId
+                  if (activeDocId) {
+                    useEditorStore.getState().refreshDocument(activeDocId).catch(err =>
+                      logger.error('sse:turn_complete:document_refresh_error', err)
                     )
                   }
                 } catch {
