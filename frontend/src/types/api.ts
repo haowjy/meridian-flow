@@ -38,6 +38,7 @@ export interface DocumentDto {
   content?: string
   word_count?: number
   updated_at: string
+  ai_version?: string | null
 }
 
 export interface FolderDto {
@@ -85,6 +86,7 @@ export function fromDocumentDto(dto: DocumentDto): Document {
     content: dto.content,
     wordCount: dto.word_count,
     updatedAt: new Date(dto.updated_at),
+    aiVersion: dto.ai_version ?? null,
   }
 }
 

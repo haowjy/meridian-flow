@@ -13,6 +13,10 @@ import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
 import { CompactBreadcrumb } from '@/shared/components/ui/CompactBreadcrumb'
 import { Button } from '@/shared/components/ui/button'
 import { ChevronLeft } from 'lucide-react'
+import { api } from '@/core/lib/api'
+import { useAIDiff, applyKeep, applyUndo, type DiffHunk } from '../hooks/useAIDiff'
+import { AIToolbar } from './AIToolbar'
+import { handleApiError } from '@/core/lib/errors'
 
 interface EditorPanelProps {
   documentId: string
@@ -39,6 +43,9 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   const documents = useTreeStore((state) => state.documents)
   const documentMetadata = documents.find((doc) => doc.id === documentId)
 
+  // AI suggestion state
+  const [aiActionLoading, setAiActionLoading] = useState(false)
+
   // Two-state pattern: local state for instant updates, debounced for saves
   const [localContent, setLocalContent] = useState('')
   const [hasUserEdit, setHasUserEdit] = useState(false)
@@ -51,6 +58,80 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
 
   // CodeMirror editor ref
   const editorRef = useRef<CodeMirrorEditorRef | null>(null)
+
+  // AI diff computation - compute hunks between user content and AI suggestion
+  const aiVersion = activeDocument?.aiVersion
+  const hunks = useAIDiff(localContent, aiVersion)
+
+  // AI suggestion handlers for individual hunks (used by future inline per-hunk buttons)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _handleKeep = useCallback(async (hunk: DiffHunk) => {
+    if (!editorRef.current || !aiVersion) return
+    setAiActionLoading(true)
+    try {
+      // Apply AI change to content (replace userText with aiText)
+      const newContent = applyKeep(localContent, hunk)
+      editorRef.current.setContent(newContent)
+      setLocalContent(newContent)
+      setHasUserEdit(true) // Trigger auto-save
+    } finally {
+      setAiActionLoading(false)
+    }
+  }, [localContent, aiVersion])
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _handleUndo = useCallback(async (hunk: DiffHunk) => {
+    if (!aiVersion) return
+    setAiActionLoading(true)
+    try {
+      // Revert AI change in ai_version (replace aiText with userText)
+      const newAIVersion = applyUndo(aiVersion, hunk)
+      const updatedDoc = await api.documents.patchAIVersion(documentId, newAIVersion)
+      useEditorStore.getState().updateActiveDocument(updatedDoc)
+    } catch (error) {
+      handleApiError(error, 'Failed to update AI suggestion')
+    } finally {
+      setAiActionLoading(false)
+    }
+  }, [documentId, aiVersion])
+
+  const handleKeepAll = useCallback(async () => {
+    if (!editorRef.current || !aiVersion) return
+    setAiActionLoading(true)
+    try {
+      // 1. Set editor to merged content (UI updates immediately)
+      editorRef.current.setContent(aiVersion)
+      setLocalContent(aiVersion)
+
+      // 2. Save merged content to server FIRST (direct API call)
+      // This ensures server has the new content before we clear ai_version
+      await api.documents.update(documentId, aiVersion)
+
+      // 3. Then clear AI version - server now has correct content
+      // so the returned doc won't trigger a revert in the effect
+      const finalDoc = await api.documents.deleteAIVersion(documentId)
+
+      // 4. Update store with final state (content matches, no aiVersion)
+      useEditorStore.getState().updateActiveDocument(finalDoc)
+    } catch (error) {
+      handleApiError(error, 'Failed to accept all suggestions')
+    } finally {
+      setAiActionLoading(false)
+    }
+  }, [documentId, aiVersion])
+
+  const handleUndoAll = useCallback(async () => {
+    setAiActionLoading(true)
+    try {
+      // Clear ai_version (user keeps their content)
+      const updatedDoc = await api.documents.deleteAIVersion(documentId)
+      useEditorStore.getState().updateActiveDocument(updatedDoc)
+    } catch (error) {
+      handleApiError(error, 'Failed to reject all suggestions')
+    } finally {
+      setAiActionLoading(false)
+    }
+  }, [documentId])
 
   // Handle content changes from the editor
   const handleChange = useCallback((content: string) => {
@@ -220,6 +301,16 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
           {header}
           <HeaderGradientFade />
         </div>
+
+        {/* AI Suggestion Toolbar - shows when there are pending suggestions */}
+        {hunks.length > 0 && (
+          <AIToolbar
+            hunkCount={hunks.length}
+            onKeepAll={handleKeepAll}
+            onUndoAll={handleUndoAll}
+            isLoading={aiActionLoading}
+          />
+        )}
 
         {/* Content area - shows skeleton while loading */}
         {isContentLoading ? (
