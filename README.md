@@ -5,7 +5,7 @@ AI Writing Assistant — a file management system for writers.
 ## Project Status (Nov 29, 2025)
 
 - ✅ Backend: Complete and functional (see `backend/README.md`)
-- 🚧 Frontend: In progress (Next.js + TipTap)
+- ✅ Frontend: Complete (Vite + TanStack Router + CodeMirror)
 
 ## Monorepo Structure
 
@@ -19,7 +19,7 @@ meridian/
 │   ├── README.md            # Backend documentation
 │   └── QUICKSTART.md        # 5-minute setup guide
 ├── _docs/                   # Product & technical documentation
-├── frontend/                # Next.js + TipTap (in progress)
+├── frontend/                # Vite + TanStack Router + CodeMirror
 └── README.md                # This file
 ```
 
@@ -41,15 +41,14 @@ Go REST API for file management:
 
 See `backend/README.md` and `backend/QUICKSTART.md` for setup.
 
-### Frontend 🚧 Coming Next
+### Frontend ✅ Complete
 
-Next.js application with:
+Vite + TanStack Router application with:
 
-- TipTap rich text editor
+- CodeMirror 6 markdown editor
 - Document tree/folder navigation
-- Auto-save (2 second debounce)
-- TanStack Query for caching
-- Zustand for UI state
+- Auto-save (1 second debounce)
+- IndexedDB caching with Zustand
 - Word count display
 
 ## Getting Started
@@ -74,9 +73,20 @@ Next.js application with:
 
 See the [Backend Quick Start Guide](./backend/QUICKSTART.md) for detailed instructions.
 
-### Frontend Setup (Coming Soon)
+### Frontend Setup
 
-Will be documented once frontend is implemented.
+1. **Install dependencies**
+   ```bash
+   cd frontend
+   pnpm install
+   ```
+
+2. **Start development server**
+   ```bash
+   pnpm run dev
+   ```
+
+See `frontend/README.md` for detailed documentation.
 
 ## Tech Stack
 
@@ -86,11 +96,11 @@ Will be documented once frontend is implemented.
 - **Database**: PostgreSQL via [Supabase](https://supabase.com/)
 - **Deployment**: Railway
 
-### Frontend (Planned)
-- **Framework**: Next.js 16 (App Router)
-- **Editor**: TipTap (React)
-- **State Management**: TanStack Query + Zustand
-- **Styling**: Tailwind CSS
+### Frontend
+- **Framework**: Vite + TanStack Router
+- **Editor**: CodeMirror 6 (markdown-native)
+- **State Management**: Zustand + IndexedDB (Dexie)
+- **Styling**: Tailwind CSS + Radix UI
 - **Deployment**: Vercel
 
 ## API Docs
@@ -131,13 +141,13 @@ go build -o bin/server ./cmd/server
 go test ./...
 ```
 
-### Frontend (Coming Soon)
+### Frontend
 ```bash
 cd frontend
 
 # Install dependencies
-npm install
+pnpm install
 
 # Run dev server
-npm run dev
+pnpm run dev
 ```

@@ -8,7 +8,7 @@ Meridian is a file management system for creative writers, starting with fiction
 
 **Current Status:**
 - ✅ Backend (Go + net/http + PostgreSQL): File system complete, Auth complete (JWT/JWKS), Chat/LLM in progress (Anthropic provider working, streaming complete)
-- ✅ Frontend (Vite + TanStack Router + TipTap): Document editor complete, Chat UI complete
+- ✅ Frontend (Vite + TanStack Router + CodeMirror): Document editor complete, Chat UI complete
 
 For product details, see `_docs/high-level/1-overview.md`.
 
@@ -82,14 +82,14 @@ Then, these principles can also help you make architectural decisions and other 
 ### Code-Specific Instructions
 
 - **Backend**: `backend/CLAUDE.md` - Development commands, architecture, conventions
-- **Frontend**: `frontend/CLAUDE.md` - Caching patterns, store architecture, TipTap conventions
+- **Frontend**: `frontend/CLAUDE.md` - Caching patterns, store architecture, CodeMirror conventions
 
 ### Documentation
 
 - **Features**: `_docs/features/` - Feature status, implementation guides by stack (f-/b-/fb- prefixes)
   - **Overview**: `_docs/features/README.md` - Complete feature inventory with status
   - **Authentication**: `_docs/features/fb-authentication/` - JWT validation, Supabase integration
-  - **Document Editor**: `_docs/features/f-document-editor/` - TipTap, auto-save, caching
+  - **Document Editor**: `_docs/features/f-document-editor/` - CodeMirror, auto-save, caching
   - **Chat/LLM**: `_docs/features/fb-chat-llm/` - Turn branching, providers, streaming
   - **File System**: `_docs/features/fb-file-system/` - CRUD operations, tree structure
 - **Product/high-level**: `_docs/high-level/` - Product vision, MVP specs, user stories
