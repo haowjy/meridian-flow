@@ -763,7 +763,7 @@ flowchart TD
 - **Turn block types:** `backend/internal/domain/models/llm/turn_block.go`
 - **SSE streaming:** `_docs/technical/llm/streaming/README.md`
 - **Current chat UI:** `frontend/src/features/chats/components/ActiveChatView.tsx`
-- **TipTap usage:** `frontend/src/features/documents/components/EditorPanel.tsx`
+- **CodeMirror usage:** `frontend/src/features/documents/components/EditorPanel.tsx`
 - **Project principles:** `CLAUDE.md`
 - **Frontend docs:** `frontend/CLAUDE.md`
 

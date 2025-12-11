@@ -136,7 +136,7 @@ Change the `PORT` in `.env` to something else (e.g., `8081`).
 Once the backend is running:
 
 1. ✅ Backend is ready
-2. 📝 Set up the frontend (Next.js)
+2. 📝 Set up the frontend (Vite + TanStack Router)
 3. 🔗 Connect frontend to backend
 4. 🎉 Start building!
 

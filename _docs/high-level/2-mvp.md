@@ -202,7 +202,7 @@ User sees:
 - ✅ Deploy to Railway
 
 **Frontend:** ✅ Complete
-- ✅ Next.js + TypeScript setup
+- ✅ Vite + TanStack Router + TypeScript setup
 - ✅ CodeMirror editor integration
 - ✅ Document tree component
 - ✅ Auto-save implementation
