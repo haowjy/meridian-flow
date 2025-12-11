@@ -12,7 +12,7 @@ Display AI suggestions as inline word-level diffs (Google Docs style). Computed 
 - `ai_version` stored in session (backend computes after each edit)
 - Frontend computes `diffLines(USER_EDITS, ai_version)` on-the-fly
 - Word-level diff shown inline: ~~old~~ new
-- Multi-line changes grouped with single Keep/Undo
+- Multi-line changes grouped with single Accept/Reject
 
 ```
 Before:
@@ -31,7 +31,7 @@ With AI suggestion:
 |------|--------|-------------|
 | `frontend/src/features/documents/hooks/useAIDiff.ts` | Create | Live diff computation (pure string diff) |
 | `frontend/src/features/documents/components/DiffHunk.tsx` | Create | Inline word-diff display |
-| `frontend/src/features/documents/components/AIToolbar.tsx` | Create | Keep All / Undo All buttons |
+| `frontend/src/features/documents/components/AIToolbar.tsx` | Create | Accept All / Reject All buttons |
 | `frontend/src/features/documents/components/EditorWithAISuggestions.tsx` | Create | Orchestrates `CodeMirrorEditor` + diff via `CodeMirrorEditorRef` |
 | `frontend/src/globals.css` | Modify | Inline diff styles |
 
@@ -134,7 +134,7 @@ function computeDiffHunks(userEdits: string, aiVersion: string): DiffHunk[] {
       id: 'timeout',
       startPos: 0,
       userText: '(diff unavailable for large document)',
-      aiText: '(click Keep All to accept AI version)',
+      aiText: '(click Accept All to apply AI version)',
     }]
   }
 
@@ -148,7 +148,7 @@ function computeDiffHunks(userEdits: string, aiVersion: string): DiffHunk[] {
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│ 3 changes                                      [Keep All][Undo All] │
+│ 3 changes                                    [Accept All][Reject All] │
 ├─────────────────────────────────────────────────────────────────────┤
 │  1  │ The story begins on a dark and stormy night.                  │
 │  2  │ The ~~man walked~~ gentleman strode into the tavern. [K][U]   │
@@ -160,7 +160,7 @@ function computeDiffHunks(userEdits: string, aiVersion: string): DiffHunk[] {
 Legend:
   ~~strikethrough~~ = user's current text (being replaced)
   highlighted = AI's suggested text
-  [K][U] = Keep (accept AI) / Undo (reject, keep user's)
+  [K][U] = Accept (apply AI) / Reject (keep user's)
 ```
 
 ---
@@ -281,17 +281,17 @@ const DIFF_EQUAL = 0
 
 interface DiffHunkProps {
   hunk: DiffHunk
-  onKeep: () => void
-  onUndo: () => void
+  onAccept: () => void
+  onReject: () => void
 }
 
-export function DiffHunkDisplay({ hunk, onKeep, onUndo }: DiffHunkProps) {
+export function DiffHunkDisplay({ hunk, onAccept, onReject }: DiffHunkProps) {
   return (
     <div className="ai-hunk">
       <InlineDiff userText={hunk.userText} aiText={hunk.aiText} />
       <div className="ai-hunk-actions">
-        <button onClick={onKeep} title="Accept AI suggestion">Keep</button>
-        <button onClick={onUndo} title="Keep your version">Undo</button>
+        <button onClick={onAccept} title="Accept AI suggestion">Accept</button>
+        <button onClick={onReject} title="Reject AI suggestion">Reject</button>
       </div>
     </div>
   )
@@ -326,11 +326,11 @@ function InlineDiff({ userText, aiText }: { userText: string; aiText: string }) 
 ```typescript
 interface AIToolbarProps {
   hunkCount: number
-  onKeepAll: () => void
-  onUndoAll: () => void
+  onAcceptAll: () => void
+  onRejectAll: () => void
 }
 
-export function AIToolbar({ hunkCount, onKeepAll, onUndoAll }: AIToolbarProps) {
+export function AIToolbar({ hunkCount, onAcceptAll, onRejectAll }: AIToolbarProps) {
   if (hunkCount === 0) return null
 
   return (
@@ -339,8 +339,8 @@ export function AIToolbar({ hunkCount, onKeepAll, onUndoAll }: AIToolbarProps) {
         {hunkCount} change{hunkCount !== 1 ? 's' : ''}
       </span>
       <div className="ai-toolbar-actions">
-        <button onClick={onKeepAll}>Keep All</button>
-        <button onClick={onUndoAll}>Undo All</button>
+        <button onClick={onAcceptAll}>Accept All</button>
+        <button onClick={onRejectAll}>Reject All</button>
       </div>
     </div>
   )
@@ -351,7 +351,7 @@ export function AIToolbar({ hunkCount, onKeepAll, onUndoAll }: AIToolbarProps) {
 
 ## Accept/Reject Logic
 
-### Accept Hunk (Keep)
+### Accept Hunk
 
 ```typescript
 function acceptHunk(editor: CodeMirrorEditorRef, hunk: DiffHunk) {
@@ -365,7 +365,7 @@ function acceptHunk(editor: CodeMirrorEditorRef, hunk: DiffHunk) {
 }
 ```
 
-### Reject Hunk (Undo)
+### Reject Hunk
 
 ```typescript
 function rejectHunk(hunkId: string, dismissHunk: (id: string) => void) {
@@ -401,7 +401,7 @@ The live diff feature sits **on top of** the core editor abstraction from Phase 
 
 - `useAIDiff` works purely on strings (`USER_EDITS`, `ai_version`)
 - An `EditorWithAISuggestions` component owns a `CodeMirrorEditorRef`
-- All document changes for Keep / Keep All go through the ref (`replaceRange`, `replaceAll`)
+- All document changes for Accept / Accept All go through the ref (`replaceRange`, `replaceAll`)
 
 This keeps:
 - Single Responsibility: core editor manages CM6 state; AI diff manages comparison + UI
@@ -480,7 +480,7 @@ This keeps:
 | Original | Simplified |
 |----------|------------|
 | Character-range marks | Character-based diff hunks via diff-match-patch |
-| Model B (edit inside = accept) | Explicit Keep/Undo only |
+| Model B (edit inside = accept) | Explicit Accept/Reject only |
 | Position hints in DB | Frontend computes diff |
 | Complex StateField/StateEffect | React state + useMemo |
 | Diff fallback for failed matches | We ARE the diff |
@@ -494,8 +494,8 @@ This keeps:
 - [ ] `diff(USER_EDITS, ai_version)` computed live
 - [ ] Word-level inline diff displayed (~~old~~ new)
 - [ ] Whitespace-only changes handled gracefully (not noisy)
-- [ ] Per-hunk Keep/Undo buttons work
-- [ ] Keep All / Undo All work
+- [ ] Per-hunk Accept/Reject buttons work
+- [ ] Accept All / Reject All work
 - [ ] User can edit freely, diff recomputes
 - [ ] Dismissed hunks don't reappear (content-based hunk IDs)
 - [ ] Multi-line changes grouped sensibly (semantic cleanup)

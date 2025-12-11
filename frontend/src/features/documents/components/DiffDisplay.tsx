@@ -12,10 +12,10 @@ const DIFF_INSERT = 1
 interface DiffHunkDisplayProps {
   /** The diff hunk to display */
   hunk: DiffHunk
-  /** Called when user clicks "Keep" (accept AI suggestion) */
-  onKeep: () => void
-  /** Called when user clicks "Undo" (reject AI suggestion) */
-  onUndo: () => void
+  /** Called when user clicks "Accept" (apply AI suggestion) */
+  onAccept: () => void
+  /** Called when user clicks "Reject" (discard AI suggestion) */
+  onReject: () => void
   /** Whether an action is in progress */
   isLoading?: boolean
 }
@@ -27,7 +27,7 @@ const dmp = new DiffMatchPatch()
  * Displays a single diff hunk with inline word-level changes.
  * Shows strikethrough for removed text and highlight for added text.
  */
-export function DiffHunkDisplay({ hunk, onKeep, onUndo, isLoading }: DiffHunkDisplayProps) {
+export function DiffHunkDisplay({ hunk, onAccept, onReject, isLoading }: DiffHunkDisplayProps) {
   // Compute word-level diff for inline display
   const inlineDiff = useMemo(() => {
     const diffs = dmp.diff_main(hunk.userText, hunk.aiText)
@@ -60,9 +60,9 @@ export function DiffHunkDisplay({ hunk, onKeep, onUndo, isLoading }: DiffHunkDis
         <Button
           size="icon-sm"
           variant="ghost"
-          onClick={onKeep}
+          onClick={onAccept}
           disabled={isLoading}
-          title="Keep (accept AI suggestion)"
+          title="Accept AI suggestion"
           className="size-5 text-emerald-600 hover:bg-emerald-100 dark:hover:bg-emerald-900/50"
         >
           <Check className="size-3" />
@@ -70,9 +70,9 @@ export function DiffHunkDisplay({ hunk, onKeep, onUndo, isLoading }: DiffHunkDis
         <Button
           size="icon-sm"
           variant="ghost"
-          onClick={onUndo}
+          onClick={onReject}
           disabled={isLoading}
-          title="Undo (reject AI suggestion)"
+          title="Reject AI suggestion"
           className="size-5 text-muted-foreground hover:bg-muted"
         >
           <Undo2 className="size-3" />
@@ -85,10 +85,10 @@ export function DiffHunkDisplay({ hunk, onKeep, onUndo, isLoading }: DiffHunkDis
 interface DiffDisplayProps {
   /** Array of diff hunks to display */
   hunks: DiffHunk[]
-  /** Called when user clicks "Keep" on a hunk */
-  onKeep: (hunk: DiffHunk) => void
-  /** Called when user clicks "Undo" on a hunk */
-  onUndo: (hunk: DiffHunk) => void
+  /** Called when user clicks "Accept" on a hunk */
+  onAccept: (hunk: DiffHunk) => void
+  /** Called when user clicks "Reject" on a hunk */
+  onReject: (hunk: DiffHunk) => void
   /** ID of hunk currently being processed */
   loadingHunkId?: string
 }
@@ -106,8 +106,8 @@ export function DiffDisplay({ hunks, onKeep, onUndo, loadingHunkId }: DiffDispla
         <div key={hunk.id} className="ai-diff-item">
           <DiffHunkDisplay
             hunk={hunk}
-            onKeep={() => onKeep(hunk)}
-            onUndo={() => onUndo(hunk)}
+            onAccept={() => onAccept(hunk)}
+            onReject={() => onReject(hunk)}
             isLoading={loadingHunkId === hunk.id}
           />
         </div>

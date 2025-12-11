@@ -126,8 +126,8 @@ GET /api/ai-sessions/:sessionId/edits
 
 **Edit status values**:
 - `pending`: Edit recorded, session still active
-- `accepted`: User accepted the edit (via Keep All or per-hunk Keep)
-- `rejected`: User rejected the edit (via Undo All or per-hunk Undo)
+- `accepted`: User accepted the edit (via Accept All or per-hunk Accept)
+- `rejected`: User rejected the edit (via Reject All or per-hunk Reject)
 
 > **Note**: Frontend does NOT use `ai_edits` for display - it computes `diff(USER_EDITS, ai_version)` live. Edits are stored for history/audit only.
 
@@ -169,8 +169,8 @@ PATCH /api/ai-edits/:editId/status
 **Response**: `204 No Content`
 
 **Use cases**:
-- Frontend marks edit as `accepted` when user clicks "Keep" on a hunk
-- Frontend marks edit as `rejected` when user clicks "Undo" on a hunk
+- Frontend marks edit as `accepted` when user clicks "Accept" on a hunk
+- Frontend marks edit as `rejected` when user clicks "Reject" on a hunk
 
 > **Note**: This is optional - the frontend uses live diff and doesn't need to track per-edit status. This endpoint is provided for audit/history purposes.
 
