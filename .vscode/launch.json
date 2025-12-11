@@ -46,10 +46,10 @@
       "showLog": true
     },
     {
-      "name": "Next.js: debug server-side",
+      "name": "Frontend: debug Vite dev server",
       "type": "node-terminal",
       "request": "launch",
-      "command": "npm run dev",
+      "command": "pnpm run dev",
       "cwd": "${workspaceFolder}/frontend",
       "serverReadyAction": {
         "pattern": "- Local:.+(https?://.+)",
@@ -58,17 +58,17 @@
       }
     },
     {
-      "name": "Next.js: debug client-side",
+      "name": "Frontend: debug client-side",
       "type": "chrome",
       "request": "launch",
       "url": "http://localhost:3000",
       "webRoot": "${workspaceFolder}/frontend"
     },
     {
-      "name": "Next.js: debug full stack",
+      "name": "Frontend: debug full stack",
       "type": "node-terminal",
       "request": "launch",
-      "command": "npm run dev",
+      "command": "pnpm run dev",
       "cwd": "${workspaceFolder}/frontend",
       "console": "integratedTerminal",
       "serverReadyAction": {
