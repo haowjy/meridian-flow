@@ -35,7 +35,7 @@ After:
 Before: EditorPanel handles everything
 After:
    useAIDiff hook        → computes diff(USER_EDITS, ai_version)
-   AIToolbar component   → Keep All / Undo All buttons
+   AIToolbar component   → Accept All / Reject All buttons
    DiffHunk component    → inline diff display per hunk
 ```
 

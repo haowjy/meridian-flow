@@ -40,8 +40,8 @@ dmp.Diff_Timeout = 1  // 1 second max for large documents
 /**
  * Computes diff hunks between user content and AI version.
  * Each hunk contains positions in both strings for bidirectional operations:
- * - Keep: replace userText with aiText at startPos in content
- * - Undo: replace aiText with userText at aiStartPos in ai_version
+ * - Accept: replace userText with aiText at startPos in content
+ * - Reject: replace aiText with userText at aiStartPos in ai_version
  */
 function computeDiffHunks(userContent: string, aiVersion: string): DiffHunk[] {
   // Compute diff with semantic cleanup
@@ -110,13 +110,13 @@ function computeDiffHunks(userContent: string, aiVersion: string): DiffHunk[] {
  * ```tsx
  * const hunks = useAIDiff(editorContent, document.aiVersion)
  *
- * // Keep hunk: apply AI change to content
- * const handleKeep = (hunk: DiffHunk) => {
+ * // Accept hunk: apply AI change to content
+ * const handleAccept = (hunk: DiffHunk) => {
  *   editor.replaceRange(hunk.startPos, hunk.startPos + hunk.userText.length, hunk.aiText)
  * }
  *
- * // Undo hunk: revert change in ai_version
- * const handleUndo = async (hunk: DiffHunk) => {
+ * // Reject hunk: revert change in ai_version
+ * const handleReject = async (hunk: DiffHunk) => {
  *   const newAIVersion = aiVersion.slice(0, hunk.aiStartPos) +
  *                        hunk.userText +
  *                        aiVersion.slice(hunk.aiStartPos + hunk.aiText.length)
@@ -133,10 +133,10 @@ export function useAIDiff(content: string, aiVersion: string | null | undefined)
 }
 
 /**
- * Apply a "Keep" operation: replace userText with aiText in content.
+ * Apply an "Accept" operation: replace userText with aiText in content.
  * Returns the new content string.
  */
-export function applyKeep(content: string, hunk: DiffHunk): string {
+export function applyAccept(content: string, hunk: DiffHunk): string {
   return (
     content.slice(0, hunk.startPos) +
     hunk.aiText +
@@ -145,10 +145,10 @@ export function applyKeep(content: string, hunk: DiffHunk): string {
 }
 
 /**
- * Apply an "Undo" operation: replace aiText with userText in ai_version.
+ * Apply a "Reject" operation: replace aiText with userText in ai_version.
  * Returns the new ai_version string.
  */
-export function applyUndo(aiVersion: string, hunk: DiffHunk): string {
+export function applyReject(aiVersion: string, hunk: DiffHunk): string {
   return (
     aiVersion.slice(0, hunk.aiStartPos) +
     hunk.userText +

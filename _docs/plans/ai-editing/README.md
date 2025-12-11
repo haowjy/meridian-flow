@@ -20,7 +20,7 @@ flowchart LR
     end
 
     subgraph Frontend
-        DIFF[Live Diff] --> UI[Keep/Undo UI]
+        DIFF[Live Diff] --> UI[Accept/Reject UI]
         C[Chat Card]
     end
 
@@ -75,7 +75,7 @@ DIFF = diff(content, ai_version) computed live by frontend
 | **2** | [done/phase-2-suggest-tool.md](done/phase-2-suggest-tool.md) | Backend: `doc_edit` tool writes to ai_version | ✅ Complete |
 | **3** | [phase-3-version-api.md](phase-3-version-api.md) | Backend: PATCH/DELETE endpoints for ai_version | Ready |
 | **4** | [phase-4-live-diff.md](phase-4-live-diff.md) | Frontend: Live diff display (~~old~~ new) | Depends on 3 |
-| **5** | [phase-5-accept-ui.md](phase-5-accept-ui.md) | Frontend: Keep/Undo UI | Depends on 4 |
+| **5** | [phase-5-accept-ui.md](phase-5-accept-ui.md) | Frontend: Accept/Reject UI | Depends on 4 |
 | **6** | [phase-6-chat-card.md](phase-6-chat-card.md) | Frontend: SuggestionCard in chat | Depends on 2 |
 
 ### Reference Documents
@@ -148,12 +148,12 @@ sequenceDiagram
         Editor->>Editor: PATCH ai_version, diff updates
     end
 
-    alt User accepts (Keep)
-        User->>Editor: Click "Keep" or "Keep All"
+    alt User accepts (Accept)
+        User->>Editor: Click "Accept" or "Accept All"
         Editor->>Editor: Set content = ai_version
         Note over Editor: Diff empty, UI hides
-    else User rejects (Undo All)
-        User->>Editor: Click "Undo All"
+    else User rejects (Reject All)
+        User->>Editor: Click "Reject All"
         Editor->>Editor: DELETE ai_version
         Note over Editor: No ai_version, no diff
     else User undoes accept (Ctrl+Z)
@@ -174,8 +174,8 @@ sequenceDiagram
 - [ ] User can DELETE ai_version (reject all)
 - [ ] Frontend computes live diff(content, ai_version)
 - [ ] Inline word-level diff shown (~~old~~ new)
-- [ ] Per-hunk Keep/Undo buttons
-- [ ] Keep All / Undo All buttons
+- [ ] Per-hunk Accept/Reject buttons
+- [ ] Accept All / Reject All buttons
 - [ ] Ctrl+Z reverses accept (diff reappears)
 - [ ] User can edit freely while suggestions pending
 

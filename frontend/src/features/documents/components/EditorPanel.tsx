@@ -14,7 +14,7 @@ import { CompactBreadcrumb } from '@/shared/components/ui/CompactBreadcrumb'
 import { Button } from '@/shared/components/ui/button'
 import { ChevronLeft } from 'lucide-react'
 import { api } from '@/core/lib/api'
-import { useAIDiff, applyKeep, applyUndo, type DiffHunk } from '../hooks/useAIDiff'
+import { useAIDiff, applyAccept, applyReject, type DiffHunk } from '../hooks/useAIDiff'
 import { AIToolbar } from './AIToolbar'
 import { handleApiError } from '@/core/lib/errors'
 
@@ -65,12 +65,12 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
 
   // AI suggestion handlers for individual hunks (used by future inline per-hunk buttons)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _handleKeep = useCallback(async (hunk: DiffHunk) => {
+  const _handleAccept = useCallback(async (hunk: DiffHunk) => {
     if (!editorRef.current || !aiVersion) return
     setAiActionLoading(true)
     try {
       // Apply AI change to content (replace userText with aiText)
-      const newContent = applyKeep(localContent, hunk)
+      const newContent = applyAccept(localContent, hunk)
       editorRef.current.setContent(newContent)
       setLocalContent(newContent)
       setHasUserEdit(true) // Trigger auto-save
@@ -80,12 +80,12 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   }, [localContent, aiVersion])
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _handleUndo = useCallback(async (hunk: DiffHunk) => {
+  const _handleReject = useCallback(async (hunk: DiffHunk) => {
     if (!aiVersion) return
     setAiActionLoading(true)
     try {
       // Revert AI change in ai_version (replace aiText with userText)
-      const newAIVersion = applyUndo(aiVersion, hunk)
+      const newAIVersion = applyReject(aiVersion, hunk)
       const updatedDoc = await api.documents.patchAIVersion(documentId, newAIVersion)
       useEditorStore.getState().updateActiveDocument(updatedDoc)
     } catch (error) {
@@ -95,7 +95,7 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     }
   }, [documentId, aiVersion])
 
-  const handleKeepAll = useCallback(async () => {
+  const handleAcceptAll = useCallback(async () => {
     if (!editorRef.current || !aiVersion) return
     setAiActionLoading(true)
     try {
@@ -120,7 +120,7 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     }
   }, [documentId, aiVersion])
 
-  const handleUndoAll = useCallback(async () => {
+  const handleRejectAll = useCallback(async () => {
     setAiActionLoading(true)
     try {
       // Clear ai_version (user keeps their content)
@@ -306,8 +306,8 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
         {hunks.length > 0 && (
           <AIToolbar
             hunkCount={hunks.length}
-            onKeepAll={handleKeepAll}
-            onUndoAll={handleUndoAll}
+            onAcceptAll={handleAcceptAll}
+            onRejectAll={handleRejectAll}
             isLoading={aiActionLoading}
           />
         )}

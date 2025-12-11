@@ -98,7 +98,7 @@ User tweaks suggestion:
   2. Frontend PATCHes ai_version to backend
   3. Diff recomputes live
 
-User accepts (Keep):
+User accepts (Accept):
   1. Frontend sets editorContent = ai_version
   2. Auto-save syncs content to backend
   3. content now equals ai_version → diff empty → UI shows no suggestions
@@ -108,7 +108,7 @@ User undoes accept (Ctrl+Z):
   2. content differs from ai_version again
   3. Diff reappears automatically
 
-User rejects (Undo All):
+User rejects (Reject All):
   1. Frontend DELETEs ai_version (sets to null)
   2. No ai_version → no diff → suggestions gone
 ```

@@ -6,10 +6,10 @@ Vite + TanStack Router application for the Meridian writing assistant.
 
 ```bash
 # Install dependencies
-npm install
+pnpm install
 
 # Start development server
-npm run dev
+pnpm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
@@ -47,11 +47,11 @@ frontend/src/
 ## Available Scripts
 
 ```bash
-npm run dev          # Development server
-npm run build        # Production build
-npm run lint         # Run ESLint
-npm run test         # Run unit tests
-npm run test:watch   # Run tests in watch mode
+pnpm run dev          # Development server
+pnpm run build        # Production build
+pnpm run lint         # Run ESLint
+pnpm run test         # Run unit tests
+pnpm run test:watch   # Run tests in watch mode
 ```
 
 For detailed architecture, conventions, and workflows, see `CLAUDE.md`.

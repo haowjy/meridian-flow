@@ -91,7 +91,7 @@ See `frontend/README.md` for detailed documentation.
 ## Tech Stack
 
 ### Backend
-- **Language**: Go 1.25.4
+- **Language**: Go 1.25.3
 - **HTTP**: Go standard library `net/http`
 - **Database**: PostgreSQL via [Supabase](https://supabase.com/)
 - **Deployment**: Railway
