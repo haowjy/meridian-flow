@@ -890,7 +890,7 @@ body.preload * {
      AI DIFF DISPLAY (Live diff between content and ai_version)
      ============================================================================ */
 
-  /* Diff toolbar - shows suggestion count and Keep All / Undo All buttons */
+  /* Diff toolbar - shows suggestion count and Accept All / Reject All buttons */
   .ai-toolbar {
     background: color-mix(in srgb, var(--success) 8%, var(--background) 92%);
     border-bottom: 1px solid color-mix(in srgb, var(--success) 20%, var(--border) 80%);

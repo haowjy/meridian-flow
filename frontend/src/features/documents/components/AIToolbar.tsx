@@ -4,19 +4,19 @@ import { Check, Undo2 } from 'lucide-react'
 interface AIToolbarProps {
   /** Number of diff hunks currently displayed */
   hunkCount: number
-  /** Called when user clicks "Keep All" */
-  onKeepAll: () => void
-  /** Called when user clicks "Undo All" */
-  onUndoAll: () => void
+  /** Called when user clicks "Accept All" */
+  onAcceptAll: () => void
+  /** Called when user clicks "Reject All" */
+  onRejectAll: () => void
   /** Whether an action is in progress */
   isLoading?: boolean
 }
 
 /**
- * Toolbar for AI suggestions - shows hunk count and Keep All / Undo All buttons.
+ * Toolbar for AI suggestions - shows hunk count and Accept All / Reject All buttons.
  * Only renders when there are active suggestions (hunkCount > 0).
  */
-export function AIToolbar({ hunkCount, onKeepAll, onUndoAll, isLoading }: AIToolbarProps) {
+export function AIToolbar({ hunkCount, onAcceptAll, onRejectAll, isLoading }: AIToolbarProps) {
   if (hunkCount === 0) return null
 
   return (
@@ -28,21 +28,21 @@ export function AIToolbar({ hunkCount, onKeepAll, onUndoAll, isLoading }: AITool
         <Button
           size="sm"
           variant="default"
-          onClick={onKeepAll}
+          onClick={onAcceptAll}
           disabled={isLoading}
           className="bg-emerald-600 hover:bg-emerald-700 text-white"
         >
           <Check className="size-3.5" />
-          Keep All
+          Accept All
         </Button>
         <Button
           size="sm"
           variant="ghost"
-          onClick={onUndoAll}
+          onClick={onRejectAll}
           disabled={isLoading}
         >
           <Undo2 className="size-3.5" />
-          Undo All
+          Reject All
         </Button>
       </div>
     </div>

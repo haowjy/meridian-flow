@@ -60,7 +60,7 @@ sequenceDiagram
 
 ---
 
-## Flow 2: Keep All (Accept)
+## Flow 2: Accept All
 
 Replaces user content with ai_version, resolves session.
 
@@ -70,7 +70,7 @@ sequenceDiagram
     participant Editor
     participant Backend
 
-    User->>Editor: Click "Keep All"
+    User->>Editor: Click "Accept All"
 
     Editor->>Editor: Replace doc content with ai_version
     Editor->>Backend: PATCH /documents/:id {content: ai_version}
@@ -85,7 +85,7 @@ sequenceDiagram
 
 ---
 
-## Flow 3: Undo All (Reject)
+## Flow 3: Reject All
 
 Keeps user content unchanged, resolves session.
 
@@ -95,7 +95,7 @@ sequenceDiagram
     participant Editor
     participant Backend
 
-    User->>Editor: Click "Undo All"
+    User->>Editor: Click "Reject All"
 
     Note over Editor: No document change needed -<br/>USER_EDITS already preserved
 

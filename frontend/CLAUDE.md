@@ -16,11 +16,11 @@ See main `CLAUDE.md` for general principles. This document focuses on frontend-s
 ## Development Commands
 
 ```bash
-npm run dev          # Start dev server (http://localhost:3000)
-npm run build        # Production build
-npm run lint         # ESLint
-npm run test         # Vitest unit tests (core libs + services)
-npm run test:watch   # Vitest in watch mode
+pnpm run dev          # Start dev server (http://localhost:3000)
+pnpm run build        # Production build
+pnpm run lint         # ESLint
+pnpm run test         # Vitest unit tests (core libs + services)
+pnpm run test:watch   # Vitest in watch mode
 ```
 
 ## Authentication
@@ -325,4 +325,4 @@ frontend/src/
 ## Deployment
 
 - **Platform**: Vercel (future)
-- **Environment**: Production builds via `npm run build`
+- **Environment**: Production builds via `pnpm run build`

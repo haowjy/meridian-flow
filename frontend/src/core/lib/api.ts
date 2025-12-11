@@ -623,7 +623,7 @@ export const api = {
     },
     /**
      * Clear the AI-suggested version of a document.
-     * Used when user rejects all suggestions (Undo All).
+     * Used when user rejects all suggestions (Reject All).
      */
     deleteAIVersion: async (id: string, options?: { signal?: AbortSignal }): Promise<Document> => {
       const data = await fetchAPI<DocumentDto>(`/api/documents/${id}/ai-version`, {
