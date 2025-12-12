@@ -276,17 +276,65 @@ Key behaviors:
 
 `EditorPanel` chooses extensions based on mode and whether an AI draft exists:
 
-- If `!aiVersion` → normal “content” editor (no merge view, no toolbar).
+- If `!aiVersion` → normal "content" editor (no merge view, no toolbar).
 - If `aiVersion` present:
   - Mode `aiDraft` → `draftExtensions`.
   - Mode `changes` → `changesExtensions(content)`.
-  - Mode `original` → separate read‑only view (no editing, no history).
+  - Mode `original` → separate read‑only view (no editing).
 
-Switching modes:
+#### History Preservation with Compartments
 
-- Does **not** change the underlying draft text.
-- Simply reconfigures extensions and which text is rendered.
-- **Note:** Mode switching recreates CodeMirror state, so undo history resets. This is an acceptable trade-off for simplicity; users rarely switch modes mid-edit.
+Both Changes and AI Draft modes edit the **same document** (the draft). Use CodeMirror's `Compartment` to swap extensions without recreating state:
+
+```ts
+import { Compartment } from '@codemirror/state'
+
+// Compartment for mode-specific extensions (created once)
+const modeCompartment = new Compartment()
+
+// Initial editor setup
+const state = EditorState.create({
+  doc: draft,
+  extensions: [
+    ...baseExtensions,
+    modeCompartment.of(changesExtensions(baseline)), // Default to Changes mode
+  ]
+})
+
+// Switch modes - PRESERVES UNDO HISTORY
+function switchMode(view: EditorView, newMode: 'changes' | 'aiDraft', baseline: string) {
+  const extensions = newMode === 'changes'
+    ? changesExtensions(baseline)
+    : draftExtensions
+
+  view.dispatch({
+    effects: modeCompartment.reconfigure(extensions)
+  })
+}
+```
+
+| Switch | Same Doc? | History Preserved? |
+|--------|-----------|-------------------|
+| Changes ↔ AI Draft | ✅ Yes | ✅ Yes (via `reconfigure()`) |
+| → Original | N/A | Original is read-only overlay |
+| Original → back | ✅ Yes | Main editor untouched |
+
+#### Original Mode Implementation
+
+Original mode shows the baseline (read-only). Options:
+
+1. **Overlay approach** (recommended): Render baseline in a separate read-only `EditorView` as an overlay. Main editor stays intact underneath, preserving state.
+2. **Conditional render**: Swap which `EditorView` is visible via CSS/React.
+
+```tsx
+// Overlay approach
+{mode === 'original' && (
+  <div className="absolute inset-0 z-10 bg-background">
+    <ReadOnlyEditor content={baseline} />
+  </div>
+)}
+<MergeEditor draft={draft} baseline={baseline} /> {/* Always mounted */}
+```
 
 ### 4.4 Persisting Draft Changes
 
@@ -305,103 +353,34 @@ This keeps backend semantics aligned with the current API while shifting editing
 
 ---
 
-## 5. Implementation Plan
+## 5. Implementation Plan (Incremental Migration)
 
-### Phase 1: Mode State + Toolbar
+This plan migrates from the current `diff-match-patch` approach to `@codemirror/merge` in small, safe steps. Each step should be a separate commit/PR.
 
-**Files**
+**Detailed implementation steps are in:** `inline-suggestions-impl/`
 
-- `frontend/src/core/stores/useEditorStore.ts`
-- `frontend/src/features/documents/components/AIToolbar.tsx`
+| Phase | File | Steps | Goal |
+|-------|------|-------|------|
+| 1 | `01-foundation.md` | 1-4 | Install deps, store, extensions, hook |
+| 2 | `02-ui-wiring.md` | 5-8 | Toolbar, merge view, mode switching |
+| 3 | `03-polish.md` | 9-11 | Keyboard, navigator, styling |
+| 4 | `04-cleanup.md` | 12 | Remove old implementation |
 
-**Changes**
+### Step Dependencies
 
-- Add editor mode state:
-
-```ts
-export type EditorMode = 'normal' | 'changes' | 'aiDraft'
-
-interface EditorStore {
-  editorMode: EditorMode
-  setEditorMode: (mode: EditorMode) => void
-}
+```
+Step 1 (deps) ─┐
+Step 2 (store) ┼─→ Step 5 (UI)
+Step 3 (ext)   ┤
+Step 4 (hook) ─┼─→ Step 6 (wire) → Step 7 (modes) → Step 8 (original)
+               │
+               └─→ Step 9 (keys) → Step 10 (nav) → Step 11 (style)
+                                                         │
+                                                         ↓
+                                                   Step 12 (cleanup)
 ```
 
-- Update `AIToolbar` (or AI mode strip) to:
-  - Only render when `aiVersion` is present.
-  - Show mode buttons: Original, Changes, AI Draft.
-
-### Phase 2: EditorPanel Wiring
-
-**File**
-
-- `frontend/src/features/documents/components/EditorPanel.tsx`
-
-**Changes**
-
-- Derive:
-  - `baseline = activeDocument.content ?? ''`
-  - `draft = activeDocument.aiVersion ?? baseline`
-- When `aiVersion` exists:
-  - Disable normal `content` auto‑save (content is frozen).
-  - Use `editorMode` to choose which view to show:
-    - Original → read‑only CM with `EditorView.editable.of(false)`, doc = `baseline`.
-    - AI Draft → editable CM with `draftExtensions`, doc = `draft`.
-    - Changes → editable CM with `changesExtensions(baseline)`, doc = `draft`.
-- Wire draft editing to:
-  - Local `draft` state.
-  - Debounced `api.documents.patchAIVersion(documentId, draft)` call.
-- Wire per-chunk accept/reject (Changes mode only):
-
-```ts
-// The mergeControls option adds built-in ✓/✗ buttons per chunk.
-// For programmatic/keyboard control:
-import { acceptChunk, rejectChunk, goToNextChunk, goToPreviousChunk } from '@codemirror/merge'
-
-// Call on editor view to accept/reject chunk at cursor
-acceptChunk(editorRef.current.view)
-rejectChunk(editorRef.current.view)
-
-// Optional keyboard shortcuts (add to extensions)
-keymap.of([
-  { key: 'Mod-Enter', run: acceptChunk },
-  { key: 'Mod-Backspace', run: rejectChunk },
-  { key: 'Alt-n', run: goToNextChunk },
-  { key: 'Alt-p', run: goToPreviousChunk },
-])
-```
-
-### Phase 3: Accept All / Reject All Semantics
-
-Accept All:
-
-- Set editor content to `draft`.
-- Call `api.documents.update(documentId, draft)`.
-- Call `api.documents.deleteAIVersion(documentId)` and update store with returned doc.
-
-Reject All:
-
-- Call `api.documents.deleteAIVersion(documentId)` to drop the draft.
-- Store updates; `content` becomes editable again in normal mode.
-
-### Phase 4: Styling & UX Polish
-
-**Files**
-
-- `frontend/src/globals.css`
-- `frontend/src/features/documents/components/AIToolbar.tsx`
- - `frontend/src/features/documents/components/AIHunkNavigator.tsx` (new)
-
-**Changes**
-
-- Ensure unified diff view uses:
-  - Red strikethrough for deletions.
-  - Green highlights for additions.
-- Keep toolbar consistent with existing AI styles (colors, buttons).
-- Add floating **AI hunk navigator pill**:
-  - Positioned at bottom‑center of the editor pane (absolute within editor container).
-  - Semi‑transparent background; hides or fades when no hunks are present.
-  - Uses `goToNextChunk` / `goToPreviousChunk` and current hunk index to drive navigation.
+Each step is independently testable and deployable.
 
 ---
 

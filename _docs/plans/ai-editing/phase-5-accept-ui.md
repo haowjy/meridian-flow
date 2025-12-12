@@ -334,16 +334,16 @@ interface AIToolbarProps {
   hunkCount: number
   totalHunkChars: number  // Sum of all userText + aiText lengths
   documentLength: number
-  onKeepAll: () => void
-  onUndoAll: () => void
+  onAcceptAll: () => void
+  onRejectAll: () => void
 }
 
 export function AIToolbar({
   hunkCount,
   totalHunkChars,
   documentLength,
-  onKeepAll,
-  onUndoAll
+  onAcceptAll,
+  onRejectAll
 }: AIToolbarProps) {
   if (hunkCount === 0) return null
 

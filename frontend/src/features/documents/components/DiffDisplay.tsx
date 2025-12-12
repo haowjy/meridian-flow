@@ -97,7 +97,7 @@ interface DiffDisplayProps {
  * Displays all diff hunks in a list format.
  * Used for showing suggestions outside the editor (e.g., in a panel).
  */
-export function DiffDisplay({ hunks, onKeep, onUndo, loadingHunkId }: DiffDisplayProps) {
+export function DiffDisplay({ hunks, onAccept, onReject, loadingHunkId }: DiffDisplayProps) {
   if (hunks.length === 0) return null
 
   return (
