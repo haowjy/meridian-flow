@@ -1,49 +1,66 @@
-import { Button } from '@/shared/components/ui/button'
-import { Check, Undo2 } from 'lucide-react'
+/**
+ * AIToolbar Component
+ *
+ * Mode switcher for AI suggestion review (Original | Changes | AI Draft).
+ * Appears when AI suggestions exist (aiVersion is present).
+ *
+ * Accept All / Reject All will be in the floating pill (AIHunkNavigator).
+ *
+ * @see `_docs/plans/ai-editing/inline-suggestions.md` for full UX spec
+ */
 
-interface AIToolbarProps {
-  /** Number of diff hunks currently displayed */
-  hunkCount: number
-  /** Called when user clicks "Accept All" */
-  onAcceptAll: () => void
-  /** Called when user clicks "Reject All" */
-  onRejectAll: () => void
-  /** Whether an action is in progress */
-  isLoading?: boolean
-}
+import { useEditorStore, type AIEditorMode } from '@/core/stores/useEditorStore'
+import { cn } from '@/lib/utils'
+
+// ============================================================================
+// MODE CONFIGURATION
+// ============================================================================
 
 /**
- * Toolbar for AI suggestions - shows hunk count and Accept All / Reject All buttons.
- * Only renders when there are active suggestions (hunkCount > 0).
+ * Mode configuration for the mode switcher.
+ * Order determines button order in the UI.
+ *
+ * Why this order?
+ * - Original first: Shows "before" state (reference point)
+ * - Changes second: Default mode, shows inline diff
+ * - AI Draft third: Shows "after" state (clean view)
  */
-export function AIToolbar({ hunkCount, onAcceptAll, onRejectAll, isLoading }: AIToolbarProps) {
-  if (hunkCount === 0) return null
+const modes: { value: AIEditorMode; label: string }[] = [
+  { value: 'original', label: 'Original' },
+  { value: 'changes', label: 'Changes' },
+  { value: 'aiDraft', label: 'AI Draft' },
+]
+
+// ============================================================================
+// COMPONENT
+// ============================================================================
+
+/**
+ * Mode switcher toolbar for AI suggestions.
+ * Allows switching between Original, Changes (diff), and AI Draft views.
+ */
+export function AIToolbar() {
+  const aiEditorMode = useEditorStore((s) => s.aiEditorMode)
+  const setAIEditorMode = useEditorStore((s) => s.setAIEditorMode)
 
   return (
-    <div className="ai-toolbar flex items-center justify-between px-3 py-2 bg-emerald-50 dark:bg-emerald-950/30 border-b border-emerald-200 dark:border-emerald-800/50">
-      <span className="text-sm text-emerald-700 dark:text-emerald-300">
-        {hunkCount} change{hunkCount !== 1 ? 's' : ''} suggested
-      </span>
-      <div className="flex items-center gap-2">
-        <Button
-          size="sm"
-          variant="default"
-          onClick={onAcceptAll}
-          disabled={isLoading}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white"
-        >
-          <Check className="size-3.5" />
-          Accept All
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={onRejectAll}
-          disabled={isLoading}
-        >
-          <Undo2 className="size-3.5" />
-          Reject All
-        </Button>
+    <div className="ai-toolbar flex items-center justify-center px-3 py-2 bg-background">
+      {/* Mode Switcher - segmented control for Original/Changes/AI Draft */}
+      <div className="flex gap-1 bg-muted rounded-md p-0.5 border border-border">
+        {modes.map((m) => (
+          <button
+            key={m.value}
+            onClick={() => setAIEditorMode(m.value)}
+            className={cn(
+              'px-2 py-1 text-xs rounded transition-colors',
+              aiEditorMode === m.value
+                ? 'bg-background shadow-sm font-medium'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            {m.label}
+          </button>
+        ))}
       </div>
     </div>
   )

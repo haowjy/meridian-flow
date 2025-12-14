@@ -149,7 +149,7 @@ Document and panel navigation uses a **two-pronged approach**:
 - UI-free orchestration service: `frontend/src/core/services/documentSyncService.ts`
 
 Flow (documents):
-1) Optimistic write to IndexedDB → 2) direct PATCH to API → 3) apply server doc (server timestamps become canonical once applied). On network/5xx, enqueue in-memory retry (jittered backoff; max attempts). 4xx bubbles to UI for manual retry.
+1) Optimistic write to IndexedDB → 2) direct PATCH to API → 3) apply server doc (server timestamps become canonical once applied). On network/5xx, enqueue in-memory retry (jittered backoff; max 3 attempts). 4xx bubbles to UI for manual retry.
 
 Background: only the retry scheduler (ticked in `SyncProvider`). No visibility/online listeners.
 
@@ -224,7 +224,7 @@ const { themeId, setThemeId, isDark, setMode } = useThemeContext();
 
 **Shadows**: `--theme-shadow-1`, `--theme-shadow-2`, `--theme-shadow-3`
 
-**Full docs**: `_docs/technical/frontend/theme-system.md`
+**Full docs**: `_docs/technical/frontend/themes/README.md`
 
 ## Key Conventions
 
