@@ -64,7 +64,7 @@ function initializeRenderers() {
 
 export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, CodeMirrorEditorOptions>(
   function CodeMirrorEditor(
-    { initialContent = '', onChange, onReady, editable = true, placeholder, autoFocus, className },
+    { initialContent = '', onChange, onReady, editable = true, placeholder, autoFocus, className, extensions: extraExtensions = [] },
     ref
   ) {
     const containerRef = useRef<HTMLDivElement>(null)
@@ -190,6 +190,10 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, CodeMirrorEditor
 
         // Update listener
         updateListener,
+
+        // Extra extensions (e.g., merge view for AI suggestions)
+        // These come last so they can override base behaviors if needed
+        ...extraExtensions,
       ]
 
       // Add placeholder if provided

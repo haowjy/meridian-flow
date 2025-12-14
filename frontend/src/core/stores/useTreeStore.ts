@@ -5,6 +5,7 @@ import { buildTree, TreeNode } from '@/core/lib/treeBuilder'
 import { api } from '@/core/lib/api'
 import { getErrorMessage, handleApiError, isAbortError } from '@/core/lib/errors'
 import { db } from '@/core/lib/db'
+import { cancelRetry, cancelAIVersionClearRetry } from '@/core/lib/sync'
 
 type LoadStatus = 'idle' | 'loading' | 'success' | 'error'
 
@@ -135,7 +136,12 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
 
   deleteDocument: async (id, projectId) => {
     try {
-      // Clear from IndexedDB cache FIRST to prevent race conditions
+      // Cancel any pending retries FIRST to prevent stale content from being re-synced
+      // after we delete the document from cache and server
+      cancelRetry(id)
+      cancelAIVersionClearRetry(id)
+
+      // Clear from IndexedDB cache to prevent race conditions
       // where URL sync might try to load a deleted document
       await db.documents.delete(id)
       await api.documents.delete(id)

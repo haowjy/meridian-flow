@@ -132,22 +132,28 @@ export interface LoadPolicy<T> {
 
 // Helper to safely get timestamp from Date or ISO string
 // IndexedDB may serialize Date objects to strings, so we need to handle both
+// Returns NaN for missing/invalid timestamps (not 0/epoch) to distinguish "unknown" from "very old"
 function getTimestamp(value: Date | string | undefined): number {
-  if (!value) return 0
+  if (!value) return NaN  // Missing = unknown, not epoch
   if (value instanceof Date) return value.getTime()
   // Handle ISO string (e.g., from IndexedDB serialization)
   const parsed = new Date(value)
-  return isNaN(parsed.getTime()) ? 0 : parsed.getTime()
+  return parsed.getTime()  // Returns NaN if invalid
 }
 
-// Default comparer: compare updatedAt if present, else treat as equal
+// Default comparer: compare updatedAt if present, else treat as equal (local wins on tie)
 // Handles both Date objects and ISO strings (from IndexedDB serialization)
+// When timestamps are missing (NaN), returns 0 so local wins by tie-breaker
 function defaultCompare<T>(a: T, b: T): number {
   const aWithUpdatedAt = a as { updatedAt?: Date | string } | undefined
   const bWithUpdatedAt = b as { updatedAt?: Date | string } | undefined
 
   const aTime = getTimestamp(aWithUpdatedAt?.updatedAt)
   const bTime = getTimestamp(bWithUpdatedAt?.updatedAt)
+
+  // If either timestamp is missing (NaN), treat as equal
+  // Local wins on tie in ReconcileNewestPolicy (server must be strictly newer)
+  if (isNaN(aTime) || isNaN(bTime)) return 0
 
   return aTime - bTime
 }

@@ -19,6 +19,11 @@ audience: developer
 - Save: post-sync guard ensures we only apply to the currently active doc. See `frontend/src/core/stores/useEditorStore.ts:132`.
 - Editor init: content only applies after `isInitialized` to avoid stale overwrites. See `frontend/src/features/documents/components/EditorPanel.tsx:84`.
 
+## Timestamp Handling
+- Missing timestamps return `NaN` (not `0`/epoch) to distinguish "unknown" from "very old"
+- When either timestamp is `NaN`, comparison returns `0` (equal) → local wins on tie
+- See `frontend/src/core/lib/cache.ts:133-158`
+
 ## Failure Handling
 - Network/5xx → retry; 4xx/validation → toast error, no retry. See `frontend/src/core/lib/errors.ts:73`.
 - On new edits, cancel older retries so newer content wins. See `frontend/src/core/lib/sync.ts:103`.
