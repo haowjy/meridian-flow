@@ -1,6 +1,13 @@
 import type { Document } from '@/features/documents/types/document'
 import { db } from '@/core/lib/db'
-import { addRetryOperation, cancelRetry, syncDocument } from '@/core/lib/sync'
+import {
+  addRetryOperation,
+  cancelRetry,
+  syncDocument,
+  syncClearAIVersion,
+  addAIVersionClearRetry,
+  cancelAIVersionClearRetry,
+} from '@/core/lib/sync'
 import { isNetworkError } from '@/core/lib/errors'
 import type { RetryCallbacks } from '@/core/lib/retry'
 
@@ -50,6 +57,40 @@ export class DocumentSyncService {
           { entityType: 'document', entityId: documentId, content, attemptCount: 0 },
           callbacks
         )
+        cbs?.onRetryScheduled?.()
+        return
+      }
+
+      // Client/validation errors bubble to caller
+      throw error
+    }
+  }
+
+  /**
+   * Clear ai_version with optimistic local update and retry-on-network-failure.
+   *
+   * Called when all AI diff chunks have been resolved (accepted/rejected).
+   * Uses the same pattern as save(): optimistic IndexedDB → server → retry.
+   */
+  async clearAIVersion(documentId: string, cbs?: SaveCallbacks): Promise<void> {
+    // Cancel any pending retry for this document
+    cancelAIVersionClearRetry(documentId)
+
+    // Optimistic update in IndexedDB - clear ai_version locally
+    // This provides immediate UI feedback (merge mode disappears)
+    await db.documents.update(documentId, { aiVersion: undefined })
+
+    try {
+      const serverDoc = await syncClearAIVersion(documentId)
+      cbs?.onServerSaved?.(serverDoc)
+    } catch (error) {
+      if (isNetworkError(error)) {
+        // Schedule retry with mapped callbacks
+        const callbacks: RetryCallbacks<Document> = {
+          onSuccess: (doc) => cbs?.onServerSaved?.(doc),
+          onPermanentFailure: (err) => cbs?.onPermanentFailure?.(err),
+        }
+        addAIVersionClearRetry(documentId, callbacks)
         cbs?.onRetryScheduled?.()
         return
       }

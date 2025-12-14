@@ -5,11 +5,23 @@ import { api } from '@/core/lib/api'
 import { db } from '@/core/lib/db'
 import { loadWithPolicy, ReconcileNewestPolicy, ICacheRepo, IRemoteRepo } from '@/core/lib/cache'
 import { documentSyncService } from '@/core/services/documentSyncService'
+import { cancelAIVersionClearRetry } from '@/core/lib/sync'
 import { handleApiError, isAbortError } from '@/core/lib/errors'
 import { toast } from 'sonner'
 import { makeLogger } from '@/core/lib/logger'
 
 const logger = makeLogger('editor-store')
+
+/**
+ * Editor mode when reviewing AI suggestions.
+ *
+ * - 'changes': Unified diff view showing inline additions/deletions (default)
+ * - 'aiDraft': Plain editor showing only the AI draft (no diff markers)
+ * - 'original': Read-only view of original content before AI changes
+ *
+ * @see `_docs/plans/ai-editing/inline-suggestions.md` for full UX spec
+ */
+export type AIEditorMode = 'changes' | 'aiDraft' | 'original'
 
 interface EditorStore {
   activeDocument: Document | null
@@ -20,6 +32,9 @@ interface EditorStore {
   error: string | null
   hasUserEdit: boolean
 
+  // AI suggestion review mode (only relevant when document.aiVersion exists)
+  aiEditorMode: AIEditorMode
+
   loadDocument: (documentId: string, signal?: AbortSignal) => Promise<void>
   saveDocument: (documentId: string, content: string) => Promise<void>
   setStatus: (status: SaveStatus) => void
@@ -27,6 +42,8 @@ interface EditorStore {
   setHasUserEdit: (hasEdit: boolean) => void
   /** Force refresh document from server (e.g., after AI edit tool) */
   refreshDocument: (documentId: string) => Promise<void>
+  /** Set the AI editor mode (changes/aiDraft/original) */
+  setAIEditorMode: (mode: AIEditorMode) => void
 }
 
 export const useEditorStore = create<EditorStore>()((set, get) => ({
@@ -37,8 +54,18 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
   isLoading: false,
   error: null,
   hasUserEdit: false,
+  aiEditorMode: 'changes', // Default to unified diff view when reviewing AI suggestions
 
   loadDocument: async (documentId: string, signal?: AbortSignal) => {
+    // Get previous document ID before overwriting
+    const previousDocumentId = get()._activeDocumentId
+
+    // Cancel any pending AI version clear retry for the previous document
+    // to prevent clearing AI version on the wrong document when user switches quickly
+    if (previousDocumentId && previousDocumentId !== documentId) {
+      cancelAIVersionClearRetry(previousDocumentId)
+    }
+
     // CRITICAL: Set expected document ID FIRST (synchronous, before any await)
     // This prevents race conditions when user rapidly switches documents
     set({
@@ -186,4 +213,6 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
       logger.warn(`Failed to refresh document ${documentId}:`, error)
     }
   },
+
+  setAIEditorMode: (mode) => set({ aiEditorMode: mode }),
 }))

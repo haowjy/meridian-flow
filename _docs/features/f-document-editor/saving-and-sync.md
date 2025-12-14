@@ -58,11 +58,11 @@ feature: "Saving and Sync"
 **Features**:
 - Retry queue for failed saves
 - Exponential backoff with jitter
-- Max 5 retry attempts
+- Max 3 retry attempts
 - 4xx errors � show toast, don't retry
 - 5xx errors � auto-retry
 
-**Retry intervals**: 5s, 10s, 20s, 40s, 80s (with jitter)
+**Retry intervals**: 5s, 10s, 15s (linear with jitter)
 
 ---
 
@@ -84,7 +84,7 @@ feature: "Saving and Sync"
 **Server timestamp is canonical**:
 - On load: Server `updatedAt` wins if newer
 - On save: 409 Conflict � fetch server version, update cache
-- No manual conflict resolution UI (server always wins)
+- No manual conflict resolution UI (server must be strictly newer to win; local wins on tie)
 
 **Rationale**: Single-user editing, no collaborative conflicts expected
 

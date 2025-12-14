@@ -13,10 +13,9 @@ import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
 import { CompactBreadcrumb } from '@/shared/components/ui/CompactBreadcrumb'
 import { Button } from '@/shared/components/ui/button'
 import { ChevronLeft } from 'lucide-react'
-import { api } from '@/core/lib/api'
-import { useAIDiff, applyAccept, applyReject, type DiffHunk } from '../hooks/useAIDiff'
+import { useAIDiff } from '../hooks/useAIDiff'
 import { AIToolbar } from './AIToolbar'
-import { handleApiError } from '@/core/lib/errors'
+import { OriginalOverlay } from './OriginalOverlay'
 
 interface EditorPanelProps {
   documentId: string
@@ -37,14 +36,12 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     lastSaved,
     loadDocument,
     saveDocument,
+    aiEditorMode,
   } = useEditorStore()
 
   // Get document metadata from tree (available immediately, no need to wait for content)
   const documents = useTreeStore((state) => state.documents)
   const documentMetadata = documents.find((doc) => doc.id === documentId)
-
-  // AI suggestion state
-  const [aiActionLoading, setAiActionLoading] = useState(false)
 
   // Two-state pattern: local state for instant updates, debounced for saves
   const [localContent, setLocalContent] = useState('')
@@ -59,84 +56,32 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   // CodeMirror editor ref
   const editorRef = useRef<CodeMirrorEditorRef | null>(null)
 
+  // Flag to track programmatic content changes (e.g., setContent during mode switch)
+  // Prevents triggering hasUserEdit and auto-save for non-user changes
+  const isProgrammaticChange = useRef(false)
+
   // AI diff computation - compute hunks between user content and AI suggestion
+  // (hunks used by future floating pill for navigation)
   const aiVersion = activeDocument?.aiVersion
-  const hunks = useAIDiff(localContent, aiVersion)
-
-  // AI suggestion handlers for individual hunks (used by future inline per-hunk buttons)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _handleAccept = useCallback(async (hunk: DiffHunk) => {
-    if (!editorRef.current || !aiVersion) return
-    setAiActionLoading(true)
-    try {
-      // Apply AI change to content (replace userText with aiText)
-      const newContent = applyAccept(localContent, hunk)
-      editorRef.current.setContent(newContent)
-      setLocalContent(newContent)
-      setHasUserEdit(true) // Trigger auto-save
-    } finally {
-      setAiActionLoading(false)
-    }
-  }, [localContent, aiVersion])
+  const _hunks = useAIDiff(localContent, aiVersion)
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _handleReject = useCallback(async (hunk: DiffHunk) => {
-    if (!aiVersion) return
-    setAiActionLoading(true)
-    try {
-      // Revert AI change in ai_version (replace aiText with userText)
-      const newAIVersion = applyReject(aiVersion, hunk)
-      const updatedDoc = await api.documents.patchAIVersion(documentId, newAIVersion)
-      useEditorStore.getState().updateActiveDocument(updatedDoc)
-    } catch (error) {
-      handleApiError(error, 'Failed to update AI suggestion')
-    } finally {
-      setAiActionLoading(false)
-    }
-  }, [documentId, aiVersion])
+  // AI suggestions state (for custom diff solution - to be implemented)
+  const hasAISuggestions = !!aiVersion
+  const baseline = activeDocument?.content ?? ''
 
-  const handleAcceptAll = useCallback(async () => {
-    if (!editorRef.current || !aiVersion) return
-    setAiActionLoading(true)
-    try {
-      // 1. Set editor to merged content (UI updates immediately)
-      editorRef.current.setContent(aiVersion)
-      setLocalContent(aiVersion)
-
-      // 2. Save merged content to server FIRST (direct API call)
-      // This ensures server has the new content before we clear ai_version
-      await api.documents.update(documentId, aiVersion)
-
-      // 3. Then clear AI version - server now has correct content
-      // so the returned doc won't trigger a revert in the effect
-      const finalDoc = await api.documents.deleteAIVersion(documentId)
-
-      // 4. Update store with final state (content matches, no aiVersion)
-      useEditorStore.getState().updateActiveDocument(finalDoc)
-    } catch (error) {
-      handleApiError(error, 'Failed to accept all suggestions')
-    } finally {
-      setAiActionLoading(false)
-    }
-  }, [documentId, aiVersion])
-
-  const handleRejectAll = useCallback(async () => {
-    setAiActionLoading(true)
-    try {
-      // Clear ai_version (user keeps their content)
-      const updatedDoc = await api.documents.deleteAIVersion(documentId)
-      useEditorStore.getState().updateActiveDocument(updatedDoc)
-    } catch (error) {
-      handleApiError(error, 'Failed to reject all suggestions')
-    } finally {
-      setAiActionLoading(false)
-    }
-  }, [documentId])
-
-  // Handle content changes from the editor
+  // Handle content changes from the editor (unified for normal and merge modes)
+  // In both modes, changes trigger debounced auto-save
+  // In merge mode, this allows per-hunk accept/reject to persist
   const handleChange = useCallback((content: string) => {
     // Ignore changes before initialization
     if (!initializedRef.current) {
+      return
+    }
+    // Ignore programmatic content changes (e.g., setContent during mode switch)
+    // These shouldn't trigger hasUserEdit or auto-save
+    if (isProgrammaticChange.current) {
+      setLocalContent(content) // Still update local state for consistency
       return
     }
     setLocalContent(content)
@@ -188,7 +133,12 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
       if (editorRef.current) {
         const currentContent = editorRef.current.getContent()
         if (currentContent !== serverContent) {
+          // Mark as programmatic to prevent triggering auto-save
+          isProgrammaticChange.current = true
           editorRef.current.setContent(serverContent)
+          setTimeout(() => {
+            isProgrammaticChange.current = false
+          }, 0)
         }
       }
 
@@ -196,14 +146,19 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     }
   }, [activeDocument, documentId])
 
+  // TODO: Custom diff solution - mode switching and auto-clear will be implemented here
+
   // Auto-save when debounced content changes (only in edit mode AFTER init)
   // Treat empty string "" as valid content (do not use falsy checks)
+  // Note: ai_version is auto-cleared when all chunks resolved (effect above)
+  // or manually via Accept All / Reject All buttons
   useEffect(() => {
     // Only save if debounce has "settled" (caught up to localContent)
     // This prevents saving stale debounced values during initialization
     if (debouncedContent !== localContent) return
 
     if (isInitialized && hasUserEdit && debouncedContent !== activeDocument?.content) {
+      // Save the document content
       saveDocument(documentId, debouncedContent)
     }
   }, [isInitialized, hasUserEdit, debouncedContent, localContent, documentId, activeDocument?.content, saveDocument])
@@ -296,44 +251,42 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     <div className="flex h-full flex-col">
       {/* Single scroll container - scrollbar extends to top */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
-        {/* Sticky Header */}
+        {/* Sticky Header + AI Toolbar */}
         <div className="sticky top-0 z-20 bg-background relative">
           {header}
+          {hasAISuggestions && <AIToolbar />}
           <HeaderGradientFade />
         </div>
 
-        {/* AI Suggestion Toolbar - shows when there are pending suggestions */}
-        {hunks.length > 0 && (
-          <AIToolbar
-            hunkCount={hunks.length}
-            onAcceptAll={handleAcceptAll}
-            onRejectAll={handleRejectAll}
-            isLoading={aiActionLoading}
-          />
-        )}
-
         {/* Content area - shows skeleton while loading */}
-        {isContentLoading ? (
-          <div className="p-8 space-y-4">
-            <Skeleton className="h-6 w-3/4" />
-            <Skeleton className="h-6 w-full" />
-            <Skeleton className="h-6 w-5/6" />
-          </div>
-        ) : (
-          /* Editor Content - CodeMirror 6 with right-click context menu */
-          <EditorContextMenu editorRef={editorRef.current}>
-            <div className="relative pt-1 flex-1">
-              <CodeMirrorEditor
-                initialContent={localContent}
-                editable={isEditable}
-                placeholder="Start writing..."
-                onChange={handleChange}
-                onReady={handleReady}
-                className="min-h-full"
-              />
+        <div className="relative flex-1">
+          {/* Original mode overlay - shows read-only baseline content */}
+          {/* Keeps main editor mounted underneath to preserve state */}
+          {aiEditorMode === 'original' && hasAISuggestions && (
+            <OriginalOverlay content={baseline} />
+          )}
+
+          {isContentLoading ? (
+            <div className="p-8 space-y-4">
+              <Skeleton className="h-6 w-3/4" />
+              <Skeleton className="h-6 w-full" />
+              <Skeleton className="h-6 w-5/6" />
             </div>
-          </EditorContextMenu>
-        )}
+          ) : (
+            <EditorContextMenu editorRef={editorRef.current}>
+              <div className={`relative pt-1 flex-1 ${hasAISuggestions ? 'ai-editor-container' : ''}`}>
+                <CodeMirrorEditor
+                  initialContent={localContent}
+                  editable={isEditable}
+                  placeholder="Start writing..."
+                  onChange={handleChange}
+                  onReady={handleReady}
+                  className="min-h-full"
+                />
+              </div>
+            </EditorContextMenu>
+          )}
+        </div>
       </div>
     </div>
   )
