@@ -17,12 +17,8 @@ type DocumentService interface {
 
 	// UpdateDocument updates a document
 	// userID is used for authorization check
+	// AIVersion field supports tri-state: absent=don't change, null=clear, value=set
 	UpdateDocument(ctx context.Context, userID, documentID string, req *UpdateDocumentRequest) (*docsystem.Document, error)
-
-	// UpdateAIVersion updates the ai_version field for a document
-	// userID is used for authorization check
-	// Pass nil to clear ai_version (reject suggestions)
-	UpdateAIVersion(ctx context.Context, userID, documentID string, aiVersion *string) (*docsystem.Document, error)
 
 	// DeleteDocument deletes a document
 	// userID is used for authorization check
@@ -43,6 +39,17 @@ type CreateDocumentRequest struct {
 	Content    string  `json:"content"`               // Markdown content
 }
 
+// OptionalAIVersion tracks tri-state semantics for ai_version updates (RFC 7396 PATCH).
+// This is transport-agnostic (no JSON tags) - handler maps from httputil.OptionalString.
+//   - Present=false: field absent from request (don't change)
+//   - Present=true, Value=nil: field is null (clear/set to NULL)
+//   - Present=true, Value=&"": field is empty string
+//   - Present=true, Value=&"text": field has value
+type OptionalAIVersion struct {
+	Present bool    // true if field was in request
+	Value   *string // nil = clear, non-nil = set (including empty string)
+}
+
 // UpdateDocumentRequest represents a document update request
 type UpdateDocumentRequest struct {
 	ProjectID  string  `json:"project_id"`
@@ -50,6 +57,7 @@ type UpdateDocumentRequest struct {
 	FolderPath *string `json:"folder_path,omitempty"` // Move to folder path (resolve/auto-create)
 	FolderID   *string `json:"folder_id,omitempty"`   // Move to folder ID (direct, faster)
 	Content    *string `json:"content,omitempty"`
+	AIVersion  OptionalAIVersion // Tri-state: absent=don't change, null=clear, value=set
 }
 
 // SearchDocumentsRequest represents a document search request

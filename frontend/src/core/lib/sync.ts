@@ -27,9 +27,6 @@ const log = makeLogger('sync')
 // Retry scheduler for document content (policy-based)
 let scheduler: RetryScheduler<string, string, Document> | null = null
 
-// Separate scheduler for ai_version clearing (simpler: no payload needed)
-let aiVersionScheduler: RetryScheduler<string, null, Document> | null = null
-
 function ensureScheduler(): RetryScheduler<string, string, Document> {
   if (!scheduler) {
     scheduler = new RetryScheduler<string, string, Document>({
@@ -43,20 +40,6 @@ function ensureScheduler(): RetryScheduler<string, string, Document> {
     })
   }
   return scheduler
-}
-
-function ensureAIVersionScheduler(): RetryScheduler<string, null, Document> {
-  if (!aiVersionScheduler) {
-    aiVersionScheduler = new RetryScheduler<string, null, Document>({
-      sync: async (op: SyncOp<string, null>) => {
-        // Clear ai_version via API
-        return await syncClearAIVersion(op.id)
-      },
-      maxAttempts: 3,
-      tickMs: 1000,
-    })
-  }
-  return aiVersionScheduler
 }
 
 /**
@@ -90,58 +73,6 @@ export async function syncDocument(
 
   log.info(`Synced document`, documentId)
   return updatedDoc
-}
-
-/**
- * Clear ai_version for a document directly to the backend.
- *
- * This is used when all AI diff chunks have been resolved (accepted/rejected).
- * After clearing, the document returns to normal editing mode.
- *
- * @param documentId - Document ID to clear ai_version for
- * @returns Updated document from server (with aiVersion cleared)
- * @throws Error if API call fails
- */
-export async function syncClearAIVersion(documentId: string): Promise<Document> {
-  log.debug(`Clearing ai_version`, documentId)
-
-  const updatedDoc = await api.documents.deleteAIVersion(documentId)
-
-  // Update IndexedDB with server's response
-  if (updatedDoc.content !== undefined) {
-    await db.documents.put(updatedDoc as Document & { content: string })
-  }
-
-  log.info(`Cleared ai_version`, documentId)
-  return updatedDoc
-}
-
-/**
- * Add a failed ai_version clear operation to the retry queue.
- *
- * This is called when clearing ai_version fails due to network errors.
- * The operation will be retried automatically by the retry processor.
- *
- * @param documentId - Document ID to retry clearing ai_version for
- * @param cbs - Optional callbacks for success/failure
- */
-export function addAIVersionClearRetry(
-  documentId: string,
-  cbs?: RetryCallbacks<Document>
-) {
-  const sched = ensureAIVersionScheduler()
-  log.info(`Queued ai_version clear retry`, documentId)
-  sched.add({ id: documentId, payload: null }, cbs)
-}
-
-/**
- * Cancel any pending ai_version clear retry for a document.
- *
- * This prevents duplicate clears if the user triggers another clear
- * while a retry is pending.
- */
-export function cancelAIVersionClearRetry(documentId: string) {
-  aiVersionScheduler?.cancel(documentId)
 }
 
 /**
@@ -221,13 +152,9 @@ export async function processRetryQueue() {
 export function initializeRetryProcessor(): void {
   if (typeof window === 'undefined') return
 
-  // Start both schedulers
   const contentSched = ensureScheduler()
-  const aiVersionSched = ensureAIVersionScheduler()
-
-  log.info('Starting retry schedulers')
+  log.info('Starting retry scheduler')
   contentSched.start()
-  aiVersionSched.start()
 }
 
 /**
@@ -235,9 +162,8 @@ export function initializeRetryProcessor(): void {
  * Should be called when the app unmounts.
  */
 export function cleanupRetryProcessor(): void {
-  log.info('Stopping retry schedulers')
+  log.info('Stopping retry scheduler')
   scheduler?.stop()
-  aiVersionScheduler?.stop()
 }
 
 /**
