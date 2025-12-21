@@ -610,29 +610,6 @@ export const api = {
     delete: (id: string, options?: { signal?: AbortSignal }) =>
       fetchAPI<void>(`/api/documents/${id}`, { method: 'DELETE', signal: options?.signal }),
     /**
-     * Update the AI-suggested version of a document.
-     * Used when user partially rejects a hunk (reverts that change in ai_version).
-     */
-    patchAIVersion: async (id: string, aiVersion: string, options?: { signal?: AbortSignal }): Promise<Document> => {
-      const data = await fetchAPI<DocumentDto>(`/api/documents/${id}/ai-version`, {
-        method: 'PATCH',
-        body: JSON.stringify({ ai_version: aiVersion }),
-        signal: options?.signal,
-      })
-      return fromDocumentDto(data)
-    },
-    /**
-     * Clear the AI-suggested version of a document.
-     * Used when user rejects all suggestions (Reject All).
-     */
-    deleteAIVersion: async (id: string, options?: { signal?: AbortSignal }): Promise<Document> => {
-      const data = await fetchAPI<DocumentDto>(`/api/documents/${id}/ai-version`, {
-        method: 'DELETE',
-        signal: options?.signal,
-      })
-      return fromDocumentDto(data)
-    },
-    /**
      * Import documents from files (zip, markdown, text, or HTML).
      *
      * Uses multipart/form-data for file upload. Note: Do NOT set Content-Type header

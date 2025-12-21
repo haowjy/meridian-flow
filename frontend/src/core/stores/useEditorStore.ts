@@ -5,7 +5,6 @@ import { api } from '@/core/lib/api'
 import { db } from '@/core/lib/db'
 import { loadWithPolicy, ReconcileNewestPolicy, ICacheRepo, IRemoteRepo } from '@/core/lib/cache'
 import { documentSyncService } from '@/core/services/documentSyncService'
-import { cancelAIVersionClearRetry } from '@/core/lib/sync'
 import { handleApiError, isAbortError } from '@/core/lib/errors'
 import { toast } from 'sonner'
 import { makeLogger } from '@/core/lib/logger'
@@ -57,15 +56,6 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
   aiEditorMode: 'changes', // Default to unified diff view when reviewing AI suggestions
 
   loadDocument: async (documentId: string, signal?: AbortSignal) => {
-    // Get previous document ID before overwriting
-    const previousDocumentId = get()._activeDocumentId
-
-    // Cancel any pending AI version clear retry for the previous document
-    // to prevent clearing AI version on the wrong document when user switches quickly
-    if (previousDocumentId && previousDocumentId !== documentId) {
-      cancelAIVersionClearRetry(previousDocumentId)
-    }
-
     // CRITICAL: Set expected document ID FIRST (synchronous, before any await)
     // This prevents race conditions when user rapidly switches documents
     set({

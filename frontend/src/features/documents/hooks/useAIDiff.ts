@@ -120,7 +120,7 @@ function computeDiffHunks(userContent: string, aiVersion: string): DiffHunk[] {
  *   const newAIVersion = aiVersion.slice(0, hunk.aiStartPos) +
  *                        hunk.userText +
  *                        aiVersion.slice(hunk.aiStartPos + hunk.aiText.length)
- *   await api.documents.patchAIVersion(docId, newAIVersion)
+ *   await api.documents.update(docId, { aiVersion: newAIVersion })
  * }
  * ```
  */
