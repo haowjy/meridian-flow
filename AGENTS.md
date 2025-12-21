@@ -12,6 +12,12 @@ Meridian is a file management system for creative writers, starting with fiction
 
 For product details, see `_docs/high-level/1-overview.md`.
 
+## Product Philosophy
+
+**Writer-first**: Meridian exists to serve the creative writer. Every feature, UI element, and AI interaction should support—not distract from—the writing process.
+
+See `frontend/CLAUDE.md` for UI-specific implementation of this philosophy.
+
 ## Guiding Principles for Development
 
 ALWAYS FOLLOW SOLID PRINCIPLES.
@@ -60,16 +66,11 @@ Then, these principles can also help you make architectural decisions and other 
    - If you had to debug it, future you will too
    - etc.
 
-9. **Prefer Local-First, But Don't Over-Engineer**
-    - IndexedDB for instant loads ✅
-    - Optimistic updates ✅
-    - Persistent operation queues ❌ (usually overkill)
+9. **Extensible** - Design for extensibility.
 
-10. **Extensible** - Design for extensibility.
+10. **Keep Documentation Up-to-Date** - Update documentation AFTER finalizing changes. See "Feature Documentation Sync Rule" for feature documentation workflow.
 
-11. **Keep Documentation Up-to-Date** - Update documentation AFTER finalizing changes. See "Feature Documentation Sync Rule" for feature documentation workflow.
-
-12. **Keep the code clean** - keep the code clean and readable, as the code grows, it will become more difficult to understand, its easier to refactor now than later (make sure to delete dead code as well).
+11. **Keep the code clean** - keep the code clean and readable, as the code grows, it will become more difficult to understand, its easier to refactor now than later (make sure to delete dead code as well). Make sure each function/method/file mostly does one thing and does it well (SRP).
 
 ## Where to Find Things
 
@@ -260,6 +261,6 @@ See `internal/repository/postgres/connection.go`
 
 - **Backend**: Railway
 - **Database**: Supabase (PostgreSQL)
-- **Frontend** (future): Vercel
+- **Frontend**: Vercel
 
 See `backend/CLAUDE.md` for backend deployment details.
