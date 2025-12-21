@@ -212,31 +212,57 @@ func (mb *MessageBuilderService) injectTokenLimitWarningIfNeeded(path []llmModel
 	return nil
 }
 
-// sanitizeTurnBlocks filters out invalid blocks from a turn.
-// Specifically, it removes "dangling" tool_use blocks that do not have a corresponding
-// tool_result block in the same turn (which can happen if the stream was interrupted).
+// sanitizeTurnBlocks handles dangling tool_use blocks in a turn.
+// If a tool_use block has no corresponding tool_result (which can happen if the stream
+// was interrupted), we inject a synthetic error tool_result to satisfy Claude's API
+// requirement that every tool_use must have a corresponding tool_result.
 func (mb *MessageBuilderService) sanitizeTurnBlocks(turn llmModels.Turn) []llmModels.TurnBlock {
 	var validBlocks []llmModels.TurnBlock
 
 	for i, block := range turn.Blocks {
 		if block.BlockType == llmModels.BlockTypeToolUse {
-			// Check if there is a subsequent tool_result block in this turn
+			// Extract this tool's ID for matching
+			thisToolUseID, _ := block.Content["tool_use_id"].(string)
+
+			// Check if there is a subsequent tool_result block matching this tool_use_id
 			hasResult := false
 			for j := i + 1; j < len(turn.Blocks); j++ {
 				if turn.Blocks[j].BlockType == llmModels.BlockTypeToolResult {
-					// Verify it matches this tool use (by ID or sequence)
-					// For now, we assume strict ordering: tool_use -> tool_result
-					// TODO: stricter ID matching if we support parallel tool calls in future
-					hasResult = true
-					break
+					// Check if this result matches our tool_use_id
+					resultToolUseID, _ := turn.Blocks[j].Content["tool_use_id"].(string)
+					if resultToolUseID == thisToolUseID {
+						hasResult = true
+						break
+					}
 				}
 			}
 
 			if !hasResult {
-				mb.logger.Warn("dropping dangling tool_use block",
+				mb.logger.Warn("injecting error tool_result for dangling tool_use block",
 					"turn_id", turn.ID,
 					"block_sequence", block.Sequence,
 					"tool_name", block.Content["tool_name"])
+
+				// Keep the tool_use block
+				validBlocks = append(validBlocks, block)
+
+				// Create synthetic error tool_result to satisfy Claude's API requirement
+				// Extract tool_use_id and tool_name from the tool_use block
+				toolUseID, _ := block.Content["tool_use_id"].(string)
+				toolName, _ := block.Content["tool_name"].(string)
+
+				errorResult := llmModels.TurnBlock{
+					TurnID:    turn.ID,
+					BlockType: llmModels.BlockTypeToolResult,
+					Sequence:  block.Sequence + 1, // Immediately after the tool_use
+					Content: map[string]interface{}{
+						"tool_use_id": toolUseID,
+						"tool_name":   toolName,
+						"is_error":    true,
+						"error":       "Tool execution was interrupted",
+					},
+				}
+				validBlocks = append(validBlocks, errorResult)
 				continue
 			}
 		}
