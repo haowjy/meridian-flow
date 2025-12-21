@@ -63,7 +63,7 @@ export async function syncDocument(
   log.debug(`Syncing document`, documentId)
 
   // Call API - this returns the updated document from the server
-  const updatedDoc = await api.documents.update(documentId, content)
+  const updatedDoc = await api.documents.update(documentId, { content })
 
   // Update IndexedDB with server's response
   // This ensures our cache has the authoritative timestamp from the server
