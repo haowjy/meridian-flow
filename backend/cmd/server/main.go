@@ -232,8 +232,7 @@ func main() {
 	mux.HandleFunc("GET /api/documents/{id}", newDocHandler.GetDocument)
 	mux.HandleFunc("PATCH /api/documents/{id}", newDocHandler.UpdateDocument)
 	mux.HandleFunc("DELETE /api/documents/{id}", newDocHandler.DeleteDocument)
-	mux.HandleFunc("PATCH /api/documents/{id}/ai-version", newDocHandler.UpdateAIVersion)
-	mux.HandleFunc("DELETE /api/documents/{id}/ai-version", newDocHandler.DeleteAIVersion)
+	// Note: ai_version is now handled via PATCH /api/documents/{id} with tri-state semantics
 
 	// Import routes
 	mux.HandleFunc("POST /api/import", importHandler.Merge)

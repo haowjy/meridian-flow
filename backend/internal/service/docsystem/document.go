@@ -252,7 +252,55 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 
 	doc.UpdatedAt = time.Now()
 
-	// Update in database
+	// If ai_version is being updated, wrap in transaction for atomicity
+	if req.AIVersion.Present {
+		var result *models.Document
+		err := s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
+			// Update document fields (name, folder, content)
+			if err := s.docRepo.Update(txCtx, doc); err != nil {
+				return err
+			}
+
+			// Update ai_version (nil = clear, non-nil = set)
+			if err := s.docRepo.UpdateAIVersion(txCtx, documentID, req.AIVersion.Value); err != nil {
+				return err
+			}
+
+			// Re-fetch for consistent response (captures updated_at from both updates)
+			fetched, err := s.docRepo.GetByIDOnly(txCtx, documentID)
+			if err != nil {
+				return err
+			}
+			result = fetched
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		// Compute display path (outside tx, non-critical)
+		path, err := s.docRepo.GetPath(ctx, result)
+		if err != nil {
+			s.logger.Warn("failed to compute path", "doc_id", result.ID, "error", err)
+			result.Path = result.Name
+		} else {
+			result.Path = path
+		}
+
+		action := "updated"
+		if req.AIVersion.Value == nil {
+			action = "cleared"
+		}
+		s.logger.Info("document updated with ai_version "+action,
+			"id", result.ID,
+			"name", result.Name,
+			"project_id", result.ProjectID,
+		)
+
+		return result, nil
+	}
+
+	// Non-transactional path (no ai_version change)
 	if err := s.docRepo.Update(ctx, doc); err != nil {
 		return nil, err
 	}

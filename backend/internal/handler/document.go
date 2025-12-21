@@ -73,6 +73,20 @@ func (h *DocumentHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 	httputil.RespondJSON(w, http.StatusOK, doc)
 }
 
+// updateDocumentDTO is the transport-layer request for PATCH /api/documents/{id}.
+// Uses httputil.OptionalString for ai_version to support tri-state PATCH semantics (RFC 7396):
+//   - field absent = don't change
+//   - field null = clear
+//   - field has value = set
+type updateDocumentDTO struct {
+	ProjectID  string                  `json:"project_id"`
+	Name       *string                 `json:"name,omitempty"`
+	FolderPath *string                 `json:"folder_path,omitempty"`
+	FolderID   *string                 `json:"folder_id,omitempty"`
+	Content    *string                 `json:"content,omitempty"`
+	AIVersion  httputil.OptionalString `json:"ai_version"`
+}
+
 // UpdateDocument updates a document
 // PATCH /api/documents/{id}
 func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request) {
@@ -81,16 +95,29 @@ func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var req docsysSvc.UpdateDocumentRequest
-	if err := httputil.ParseJSON(w, r, &req); err != nil {
+	var dto updateDocumentDTO
+	if err := httputil.ParseJSON(w, r, &dto); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return
+	}
+
+	// Map transport DTO to service request
+	req := &docsysSvc.UpdateDocumentRequest{
+		ProjectID:  dto.ProjectID,
+		Name:       dto.Name,
+		FolderPath: dto.FolderPath,
+		FolderID:   dto.FolderID,
+		Content:    dto.Content,
+		AIVersion: docsysSvc.OptionalAIVersion{
+			Present: dto.AIVersion.Present,
+			Value:   dto.AIVersion.Value,
+		},
 	}
 
 	// Get userID from context (set by auth middleware)
 	userID := httputil.GetUserID(r)
 
-	doc, err := h.docService.UpdateDocument(r.Context(), userID, id, &req)
+	doc, err := h.docService.UpdateDocument(r.Context(), userID, id, req)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -115,55 +142,6 @@ func (h *DocumentHandler) DeleteDocument(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// UpdateAIVersionRequest represents a request to update ai_version
-type UpdateAIVersionRequest struct {
-	AIVersion *string `json:"ai_version"` // nil to clear
-}
-
-// UpdateAIVersion updates the ai_version field for a document
-// PATCH /api/documents/{id}/ai-version
-func (h *DocumentHandler) UpdateAIVersion(w http.ResponseWriter, r *http.Request) {
-	id, ok := PathParam(w, r, "id", "Document ID")
-	if !ok {
-		return
-	}
-
-	var req UpdateAIVersionRequest
-	if err := httputil.ParseJSON(w, r, &req); err != nil {
-		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
-		return
-	}
-
-	userID := httputil.GetUserID(r)
-
-	doc, err := h.docService.UpdateAIVersion(r.Context(), userID, id, req.AIVersion)
-	if err != nil {
-		handleError(w, err)
-		return
-	}
-
-	httputil.RespondJSON(w, http.StatusOK, doc)
-}
-
-// DeleteAIVersion clears the ai_version field for a document (reject suggestions)
-// DELETE /api/documents/{id}/ai-version
-func (h *DocumentHandler) DeleteAIVersion(w http.ResponseWriter, r *http.Request) {
-	id, ok := PathParam(w, r, "id", "Document ID")
-	if !ok {
-		return
-	}
-
-	userID := httputil.GetUserID(r)
-
-	doc, err := h.docService.UpdateAIVersion(r.Context(), userID, id, nil)
-	if err != nil {
-		handleError(w, err)
-		return
-	}
-
-	httputil.RespondJSON(w, http.StatusOK, doc)
 }
 
 // SearchDocuments performs full-text search across documents
