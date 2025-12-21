@@ -369,20 +369,33 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 		// (soft limit will be handled in executeToolsAndContinue via user message)
 		hardLimit := se.maxToolRounds * 2
 		if se.toolIteration >= hardLimit {
-			se.logger.Warn("hard limit reached, completing without tool execution",
+			se.logger.Warn("hard limit reached, creating error tool_results and allowing final response",
 				"tool_iteration", se.toolIteration,
 				"hard_limit", hardLimit,
 				"collected_tools", len(se.collectedTools),
 			)
-		} else {
-			// Execute tools and continue streaming
-			// Soft limit notification will be injected if needed in executeToolsAndContinue
-			se.logger.Info("executing collected tools",
-				"tool_count", len(se.collectedTools),
-				"iteration", se.toolIteration,
-			)
-			return se.executeToolsAndContinue(ctx, send)
+
+			// Create error tool_result blocks for each pending tool_use
+			// This ensures every tool_use has a corresponding tool_result (required by Claude API)
+			errMsg := fmt.Sprintf("Tool execution limit reached (%d rounds). Please provide your final answer based on the information gathered so far.", hardLimit)
+			if err := se.persistErrorToolResults(ctx, send, errMsg); err != nil {
+				se.handleError(ctx, send, fmt.Errorf("failed to persist error tool results at hard limit: %w", err))
+				return err
+			}
+
+			// Allow LLM to process one more response to wrap up gracefully
+			// The error tool_results are now persisted, so executeToolsAndContinueWithLimit
+			// will load them and let the LLM respond to them
+			return se.executeToolsAndContinueWithLimit(ctx, send)
 		}
+
+		// Execute tools and continue streaming
+		// Soft limit notification will be injected if needed in executeToolsAndContinue
+		se.logger.Info("executing collected tools",
+			"tool_count", len(se.collectedTools),
+			"iteration", se.toolIteration,
+		)
+		return se.executeToolsAndContinue(ctx, send)
 	}
 
 	// No tools to execute (or stop_reason != "tool_use"), complete the turn
@@ -617,7 +630,7 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 	nextSequence := se.maxBlockSequence + 1
 
 	for i, toolResult := range toolResults {
-		resultBlock := &llmModels.TurnBlock{
+		block := &llmModels.TurnBlock{
 			TurnID:    se.turnID,
 			BlockType: llmModels.BlockTypeToolResult,
 			Sequence:  nextSequence + i,
@@ -630,65 +643,18 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 
 		// Add result or error to content
 		if toolResult.IsError {
-			resultBlock.Content["error"] = toolResult.Error.Error()
+			block.Content["error"] = toolResult.Error.Error()
 		} else {
-			resultBlock.Content["result"] = toolResult.Result
+			block.Content["result"] = toolResult.Result
 		}
 
-		// Persist the tool_result block
-		if err := se.turnRepo.CreateTurnBlock(ctx, resultBlock); err != nil {
-			se.logger.Error("failed to persist tool result block",
-				"error", err,
-				"tool_use_id", toolResult.ID,
-			)
+		if err := se.persistAndStreamToolResult(ctx, send, block); err != nil {
 			// Update turn status to error before returning
 			if updateErr := se.turnRepo.UpdateTurnError(ctx, se.turnID, err.Error()); updateErr != nil {
 				se.logger.Error("failed to update turn error status", "error", updateErr)
 			}
-			return fmt.Errorf("failed to persist tool result: %w", err)
+			return err
 		}
-
-		// Track max sequence for potential future tool rounds
-		if resultBlock.Sequence > se.maxBlockSequence {
-			se.maxBlockSequence = resultBlock.Sequence
-		}
-
-		// Stream the tool_result block to frontend via SSE
-		// Send block_start
-		blockType := resultBlock.BlockType
-		se.sendEvent(send, llmModels.SSEEventBlockStart, llmModels.BlockStartEvent{
-			BlockIndex: resultBlock.Sequence,
-			BlockType:  &blockType,
-		})
-
-		// Send block_delta with full JSON content
-		contentJSON, err := json.Marshal(resultBlock.Content)
-		if err != nil {
-			se.logger.Error("failed to marshal tool result content for delta",
-				"error", err,
-				"tool_use_id", toolResult.ID,
-			)
-		} else {
-			contentStr := string(contentJSON)
-			se.sendEvent(send, llmModels.SSEEventBlockDelta, llmModels.BlockDeltaEvent{
-				BlockIndex:     resultBlock.Sequence,
-				DeltaType:      llmModels.DeltaTypeJSON,
-				TextDelta:      nil,
-				SignatureDelta: nil,
-				JSONDelta:      &contentStr,
-			})
-		}
-
-		// Send block_stop
-		se.sendEvent(send, llmModels.SSEEventBlockStop, llmModels.BlockStopEvent{
-			BlockIndex: resultBlock.Sequence,
-		})
-
-		se.logger.Debug("persisted and streamed tool result",
-			"tool_use_id", toolResult.ID,
-			"is_error", toolResult.IsError,
-			"sequence", resultBlock.Sequence,
-		)
 	}
 
 	// 4. Check iteration limit with tiered approach
@@ -793,6 +759,97 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 	// 10. Process continuation stream (recursive call)
 	// maxBlockSequence will be updated by processProviderStream -> processCompleteBlock
 	return se.processProviderStream(ctx, contStreamChan, send)
+}
+
+// persistAndStreamToolResult persists a tool_result block and streams it via SSE.
+// This is the shared helper used by both executeToolsAndContinue (real results)
+// and persistErrorToolResults (error results) to avoid code duplication.
+func (se *StreamExecutor) persistAndStreamToolResult(ctx context.Context, send func(mstream.Event), block *llmModels.TurnBlock) error {
+	// 1. Persist to database
+	if err := se.turnRepo.CreateTurnBlock(ctx, block); err != nil {
+		se.logger.Error("failed to persist tool result block",
+			"error", err,
+			"tool_use_id", block.Content["tool_use_id"],
+		)
+		return fmt.Errorf("failed to persist tool result: %w", err)
+	}
+
+	// 2. Update sequence tracking
+	if block.Sequence > se.maxBlockSequence {
+		se.maxBlockSequence = block.Sequence
+	}
+
+	// 3. Stream SSE events
+	blockType := block.BlockType
+	se.sendEvent(send, llmModels.SSEEventBlockStart, llmModels.BlockStartEvent{
+		BlockIndex: block.Sequence,
+		BlockType:  &blockType,
+	})
+
+	if contentJSON, err := json.Marshal(block.Content); err == nil {
+		contentStr := string(contentJSON)
+		se.sendEvent(send, llmModels.SSEEventBlockDelta, llmModels.BlockDeltaEvent{
+			BlockIndex: block.Sequence,
+			DeltaType:  llmModels.DeltaTypeJSON,
+			JSONDelta:  &contentStr,
+		})
+	} else {
+		se.logger.Error("failed to marshal tool result content",
+			"error", err,
+			"tool_use_id", block.Content["tool_use_id"],
+		)
+	}
+
+	se.sendEvent(send, llmModels.SSEEventBlockStop, llmModels.BlockStopEvent{
+		BlockIndex: block.Sequence,
+	})
+
+	se.logger.Debug("persisted and streamed tool result",
+		"tool_use_id", block.Content["tool_use_id"],
+		"is_error", block.Content["is_error"],
+		"sequence", block.Sequence,
+	)
+
+	return nil
+}
+
+// persistErrorToolResults creates error tool_result blocks for all collected tools
+// without executing them. Used when we hit hard limit before tool execution.
+// This ensures every tool_use has a corresponding tool_result (required by Claude API).
+func (se *StreamExecutor) persistErrorToolResults(ctx context.Context, send func(mstream.Event), errMsg string) error {
+	if len(se.collectedTools) == 0 {
+		return nil
+	}
+
+	se.logger.Info("persisting error tool results for collected tools",
+		"tool_count", len(se.collectedTools),
+		"error_message", errMsg,
+	)
+
+	nextSequence := se.maxBlockSequence + 1
+
+	for i, tool := range se.collectedTools {
+		block := &llmModels.TurnBlock{
+			TurnID:    se.turnID,
+			BlockType: llmModels.BlockTypeToolResult,
+			Sequence:  nextSequence + i,
+			Content: map[string]interface{}{
+				"tool_use_id": tool.ID,
+				"tool_name":   tool.Name,
+				"is_error":    true,
+				"error":       errMsg,
+			},
+		}
+
+		if err := se.persistAndStreamToolResult(ctx, send, block); err != nil {
+			return err
+		}
+	}
+
+	// Clear collected tools after persisting error results
+	se.collectedTools = nil
+
+	return nil
 }
 
 // executeToolsAndContinueWithLimit is called when tool round limit is reached.
