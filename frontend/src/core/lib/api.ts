@@ -591,10 +591,26 @@ export const api = {
       })
       return fromDocumentDto(data)
     },
-    update: async (id: string, content: string, options?: { signal?: AbortSignal }): Promise<Document> => {
+    /**
+     * Update document with optional content and/or aiVersion.
+     *
+     * Tri-state aiVersion semantics:
+     * - undefined: omit field (no change to ai_version)
+     * - null: clear ai_version
+     * - string (including ""): set ai_version
+     */
+    update: async (
+      id: string,
+      updates: { content?: string; aiVersion?: string | null },
+      options?: { signal?: AbortSignal }
+    ): Promise<Document> => {
+      const body: Record<string, unknown> = {}
+      if (updates.content !== undefined) body.content = updates.content
+      if (updates.aiVersion !== undefined) body.ai_version = updates.aiVersion
+
       const data = await fetchAPI<DocumentDto>(`/api/documents/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ content }),
+        body: JSON.stringify(body),
         signal: options?.signal,
       })
       return fromDocumentDto(data)
