@@ -1,44 +1,207 @@
 # Phase 4: State & Sync
 
 ## Goal
-Extend the Zustand store and sync service to handle:
-1. Accept/reject hunk operations
-2. Dual-document updates (when editing outside hunks)
-3. Race condition prevention with locks
-4. Atomic server sync for both documents
+
+Implement save logic that parses the merged document back to `content` and `aiVersion` for storage.
+
+## What You're Building
+
+A save flow that:
+1. Takes the merged document from the editor
+2. Parses it to extract `content` and `aiVersion`
+3. Saves `content` and `aiVersion` via `PATCH /api/documents/{id}` (single request)
+
+```
+Editor Document (merged)
+        │
+        ▼ parseMergedDocument()
+┌───────────────────────────┐
+│ content: "She felt sad."  │
+│ aiVersion: "A heavy..."   │
+│ hasChanges: true          │
+└───────────────────────────┘
+        │
+        ▼ API PATCH (single request)
+┌───────────────────────────┐
+│ Database (clean markdown) │
+└───────────────────────────┘
+```
+
+## Key Architecture Points
+
+### The Merged Document IS the Source of Truth
+
+During editing, the merged document in CodeMirror contains everything:
+- Original text (in DEL regions)
+- AI text (in INS regions)
+- Unchanged text (outside hunks)
+
+We only parse it back to `content`/`aiVersion` when saving.
+
+### Tri-State Semantics for aiVersion
+
+Per project rule "empty string is valid data":
+
+| Value | Meaning | JSON Sent |
+|-------|---------|-----------|
+| `undefined` | Don't change | Field omitted |
+| `null` | Clear (user rejected all/closed AI) | `null` |
+| `""` (empty string) | AI suggests empty doc | `""` |
+| `"text..."` | AI suggestion | `"text..."` |
+
+**When `parseMergedDocument()` returns `hasChanges: false`:**
+- No markers remain → AI session is complete
+- Send `aiVersion: null` to clear it in storage
 
 ## Steps
 
-### Step 4.1: Add the API method for dual updates
+### Step 4.0: Backend Update (Required)
+
+Update the backend so `PATCH /api/documents/{id}` can also update `ai_version`.
+
+**Goal:** keep the editor save path simple + atomic at the HTTP layer: one request updates both `content` and `ai_version`.
+
+#### Tri-state semantics (required)
+- **absent** → don’t change `ai_version`
+- **null** → clear `ai_version` (set NULL)
+- **string (including `\"\"`)** → set `ai_version` to that value
+
+Go note: `encoding/json` cannot distinguish **absent vs null** using pointer fields (both end up as `nil`). Use a value-type wrapper that tracks whether the field was present during unmarshal.
+
+Create `backend/internal/httputil/optional_string.go`:
+
+```go
+package httputil
+
+import (
+  "bytes"
+  "encoding/json"
+)
+
+// OptionalString distinguishes:
+// - field absent (Present == false)          => no change
+// - field present with null ("null")         => clear
+// - field present with string (incl "")      => set
+type OptionalString struct {
+  Present bool
+  IsNull   bool
+  Value    string
+}
+
+func (o *OptionalString) UnmarshalJSON(data []byte) error {
+  o.Present = true
+  if bytes.Equal(data, []byte("null")) {
+    o.IsNull = true
+    o.Value = ""
+    return nil
+  }
+  o.IsNull = false
+  return json.Unmarshal(data, &o.Value)
+}
+```
+
+Update `backend/internal/domain/services/docsystem/document.go`:
+
+```go
+// OptionalAIVersion is transport-agnostic PATCH semantics for ai_version:
+// - Present=false => no change
+// - Present=true + Value=nil => clear
+// - Present=true + Value=&"" or &"text" => set ("" is valid)
+type OptionalAIVersion struct {
+  Present bool
+  Value   *string
+}
+
+type UpdateDocumentRequest struct {
+  ProjectID  string                 `json:"project_id"`
+  Name       *string                `json:"name,omitempty"`
+  FolderPath *string                `json:"folder_path,omitempty"`
+  FolderID   *string                `json:"folder_id,omitempty"`
+  Content    *string                `json:"content,omitempty"`
+  AIVersion  OptionalAIVersion      `json:"-"`
+}
+```
+
+Update `backend/internal/handler/document.go` to parse a handler-level PATCH DTO and map into the service request:
+
+```go
+type updateDocumentPatchRequest struct {
+  ProjectID  string                  `json:"project_id"`
+  Name       *string                 `json:"name,omitempty"`
+  FolderPath *string                 `json:"folder_path,omitempty"`
+  FolderID   *string                 `json:"folder_id,omitempty"`
+  Content    *string                 `json:"content,omitempty"`
+  AIVersion  httputil.OptionalString `json:"ai_version"`
+}
+
+// In handler UpdateDocument:
+var dto updateDocumentPatchRequest
+if err := httputil.ParseJSON(w, r, &dto); err != nil { ... }
+
+req := docsysSvc.UpdateDocumentRequest{
+  ProjectID:  dto.ProjectID,
+  Name:       dto.Name,
+  FolderPath: dto.FolderPath,
+  FolderID:   dto.FolderID,
+  Content:    dto.Content,
+}
+
+if dto.AIVersion.Present {
+  if dto.AIVersion.IsNull {
+    req.AIVersion = docsysSvc.OptionalAIVersion{Present: true, Value: nil}
+  } else {
+    v := dto.AIVersion.Value
+    req.AIVersion = docsysSvc.OptionalAIVersion{Present: true, Value: &v}
+  }
+}
+```
+
+Update `backend/internal/service/docsystem/document.go` in `UpdateDocument(...)`:
+
+```go
+if req.AIVersion.Present {
+  if req.AIVersion.Value == nil {
+    doc.AIVersion = nil
+  } else {
+    doc.AIVersion = req.AIVersion.Value // includes ""
+  }
+}
+```
+
+Update `backend/internal/repository/postgres/docsystem/document.go` in `Update(...)` to persist `ai_version` in the same SQL statement (add `ai_version = $X` and include `doc.AIVersion` in args).
+
+Proceed to Step 4.1 for frontend API client changes.
+
+---
+
+### Step 4.1: Update the API client
 
 Update `frontend/src/core/lib/api.ts`:
 
-Find the `documents` object and add:
-
 ```typescript
 documents: {
-  // ... existing methods (list, get, create, update, delete, etc.)
+  // ... existing methods ...
 
   /**
-   * Update both content and ai_version atomically.
-   * Used for accept/reject operations and dual-document edits.
+   * Update document with optional content and/or ai_version.
    *
-   * @param id - Document ID
-   * @param content - New baseline content
-   * @param aiVersion - New AI version (null to clear)
+   * Tri-state aiVersion:
+   * - undefined: omit field (no change)
+   * - null: clear ai_version
+   * - string (including ""): set ai_version
    */
-  updateBoth: async (
+  update: async (
     id: string,
-    content: string,
-    aiVersion: string | null,
+    updates: { content?: string; aiVersion?: string | null },
     options?: { signal?: AbortSignal }
   ): Promise<Document> => {
+    const body: Record<string, unknown> = {}
+    if (updates.content !== undefined) body.content = updates.content
+    if (updates.aiVersion !== undefined) body.ai_version = updates.aiVersion
+
     const data = await fetchAPI<DocumentDto>(`/api/documents/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify({
-        content,
-        ai_version: aiVersion,
-      }),
+      body: JSON.stringify(body),
       signal: options?.signal,
     })
     return fromDocumentDto(data)
@@ -48,402 +211,149 @@ documents: {
 
 ---
 
-### Step 4.2: Extend the DocumentSyncService
+### Step 4.2: Create the save helper
 
-Update `frontend/src/core/services/documentSyncService.ts`:
-
-Add these new methods:
+Create `frontend/src/features/documents/utils/saveMergedDocument.ts`:
 
 ```typescript
-/**
- * Save both content and aiVersion atomically.
- * Used for accept/reject operations and dual-document edits.
- *
- * @param documentId - Document to update
- * @param content - New baseline content
- * @param aiVersion - New AI version (null to clear and resolve session)
- * @param cbs - Optional callbacks for success/retry/failure
- */
-async saveBoth(
-  documentId: string,
-  content: string,
-  aiVersion: string | null,
-  cbs?: SaveCallbacks
-): Promise<void> {
-  // Cancel any pending single-doc retries
-  cancelRetry(documentId)
+import { parseMergedDocument } from './mergedDocument'
+import { api } from '@/core/lib/api'
+import { db } from '@/core/lib/db'
+import type { Document } from '@/types'
 
-  const now = new Date()
+export interface SaveMergedResult {
+  /** The saved document from server */
+  document: Document
+  /** Whether the document still has AI changes */
+  hasChanges: boolean
+}
+
+/**
+ * Save a merged document to storage.
+ *
+ * Parses the merged document to extract content and aiVersion,
+ * then saves both in a single API call.
+ *
+ * @param documentId - The document ID
+ * @param merged - The merged document with PUA markers
+ * @returns Save result with server document and hasChanges flag
+ */
+export async function saveMergedDocument(
+  documentId: string,
+  merged: string,
+  options?: { signal?: AbortSignal }
+): Promise<SaveMergedResult> {
+  // Parse merged document to extract content and aiVersion
+  const parsed = parseMergedDocument(merged)
+
+  // Build update payload
+  const updates = {
+    content: parsed.content,
+    // Still has markers → keep aiVersion; no markers → clear (AI session complete)
+    aiVersion: parsed.hasChanges ? parsed.aiVersion : null,
+  } satisfies { content: string; aiVersion: string | null }
 
   // Optimistic update to IndexedDB
+  // NOTE: Use null (not undefined) to clear aiVersion - Dexie ignores undefined fields
+  const now = new Date()
   await db.documents.update(documentId, {
-    content,
-    aiVersion: aiVersion ?? undefined,
+    content: parsed.content,
+    aiVersion: parsed.hasChanges ? parsed.aiVersion : null,  // null clears, undefined skips
     updatedAt: now,
   })
 
-  try {
-    const serverDoc = await api.documents.updateBoth(
-      documentId,
-      content,
-      aiVersion
-    )
-    cbs?.onServerSaved?.(serverDoc)
-  } catch (error) {
-    if (isNetworkError(error)) {
-      // Queue retry with both values
-      // Note: You may want to create a separate retry queue for dual-doc ops
-      this.queueBothRetry(documentId, content, aiVersion, cbs)
-      cbs?.onRetryScheduled?.()
-      return
-    }
-    throw error
+  // Save to server (single request)
+  const document = await api.documents.update(documentId, updates, options)
+
+  return {
+    document,
+    hasChanges: parsed.hasChanges,
   }
-}
-
-/**
- * Save content and clear aiVersion (resolve AI session).
- * Used when accepting all hunks or when content === aiVersion.
- */
-async saveAndClearAiVersion(
-  documentId: string,
-  content: string,
-  cbs?: SaveCallbacks
-): Promise<void> {
-  return this.saveBoth(documentId, content, null, cbs)
-}
-
-/**
- * Queue a retry for dual-document update.
- * Note: For simplicity, this uses the same retry mechanism.
- * Consider a dedicated queue if retry semantics differ.
- */
-private queueBothRetry(
-  documentId: string,
-  content: string,
-  aiVersion: string | null,
-  cbs?: SaveCallbacks
-): void {
-  // For now, we'll retry the full save
-  // In production, you might want a more sophisticated approach
-  addRetryOperation(
-    {
-      id: documentId,
-      operation: async () => {
-        const serverDoc = await api.documents.updateBoth(
-          documentId,
-          content,
-          aiVersion
-        )
-        return serverDoc
-      },
-    },
-    cbs
-  )
 }
 ```
 
 ---
 
-### Step 4.3: Extend the editor store
+### Step 4.3: Update the DocumentSyncService
+
+Update `frontend/src/core/services/documentSyncService.ts`:
+
+Add a method for saving merged documents:
+
+```typescript
+import { saveMergedDocument, type SaveMergedResult } from '@/features/documents/utils/saveMergedDocument'
+
+/**
+ * Save a merged document (with PUA markers).
+ *
+ * Parses the document to extract content/aiVersion and saves both.
+ * If no markers remain, clears aiVersion (AI session complete).
+ */
+async saveMerged(
+  documentId: string,
+  merged: string,
+  cbs?: {
+    onServerSaved?: (result: SaveMergedResult) => void
+    onRetryScheduled?: () => void
+    onError?: (error: Error) => void
+  }
+): Promise<void> {
+  // Cancel any pending retries for this document
+  cancelDocumentPatchRetry(documentId)
+
+  try {
+    const result = await saveMergedDocument(documentId, merged)
+    cbs?.onServerSaved?.(result)
+  } catch (error) {
+    if (isAbortError(error)) {
+      return  // Cancelled, no action needed
+    }
+    if (isNetworkError(error)) {
+      // For now, just report error. Full retry support can be added later.
+      // The merged document is already in IndexedDB for recovery.
+      cbs?.onRetryScheduled?.()
+      return
+    }
+    cbs?.onError?.(error as Error)
+    throw error
+  }
+}
+```
+
+---
+
+### Step 4.4: Extend the editor store
 
 Update `frontend/src/core/stores/useEditorStore.ts`:
 
-Add these new state fields and actions. First, update the interface:
+Add state for diff review UI:
 
 ```typescript
 interface EditorStore {
   // ... existing fields ...
 
-  // New fields for hunk operations
-  /** Lock to prevent concurrent accept/reject operations */
-  isHunkOpInProgress: boolean
-
+  // Diff review UI state
   /** Currently focused hunk index (for keyboard navigation) */
   focusedHunkIndex: number
 
-  // New actions
-  /** Accept a single hunk */
-  acceptHunk: (hunk: WordDiffHunk) => Promise<void>
-
-  /** Reject a single hunk */
-  rejectHunk: (hunk: WordDiffHunk) => Promise<void>
-
-  /** Accept all hunks (apply full AI version) */
-  acceptAllHunks: () => Promise<void>
-
-  /** Reject all hunks (discard AI version) */
-  rejectAllHunks: () => Promise<void>
-
-  /** Update both documents (for dual-doc edits) */
-  updateBothDocuments: (content: string, aiVersion: string) => void
+  /** Set focused hunk index */
+  setFocusedHunkIndex: (index: number) => void
 
   /** Navigate to next/previous hunk */
   navigateHunk: (direction: 'next' | 'prev', totalHunks: number) => void
 }
 ```
 
-Add the import at the top:
-
-```typescript
-import type { WordDiffHunk } from '@/core/editor/codemirror/diffView/types'
-import { applyAcceptHunk, applyRejectHunk } from '@/features/documents/hooks/useWordDiff'
-```
-
-Add the new state and actions in the store:
+Add the implementations:
 
 ```typescript
 export const useEditorStore = create<EditorStore>()((set, get) => ({
   // ... existing state and actions ...
 
   // New state
-  isHunkOpInProgress: false,
   focusedHunkIndex: 0,
 
-  // New actions
-
-  acceptHunk: async (hunk) => {
-    const { activeDocument, isHunkOpInProgress, _activeDocumentId } = get()
-
-    // Guard: prevent concurrent operations
-    if (isHunkOpInProgress) {
-      logger.warn('Hunk operation already in progress')
-      return
-    }
-
-    if (!activeDocument?.content || !activeDocument.aiVersion) {
-      logger.warn('Cannot accept hunk: missing content or aiVersion')
-      return
-    }
-
-    set({ isHunkOpInProgress: true })
-
-    try {
-      // Apply accept: put AI text into content
-      const newContent = applyAcceptHunk(activeDocument.content, hunk)
-
-      // Recompute: after accept, this hunk no longer exists
-      // The content now matches the aiVersion at this position
-      // We need to also update aiVersion to remove the "change"
-      // Actually, for accept: we're updating content to match aiVersion
-      // So aiVersion stays the same, content changes
-
-      // Check if all changes are now accepted
-      const allAccepted = newContent === activeDocument.aiVersion
-
-      // Update local state immediately (optimistic)
-      set({
-        activeDocument: {
-          ...activeDocument,
-          content: newContent,
-          aiVersion: allAccepted ? null : activeDocument.aiVersion,
-        },
-      })
-
-      // Sync to server
-      if (allAccepted) {
-        await documentSyncService.saveAndClearAiVersion(
-          activeDocument.id,
-          newContent,
-          {
-            onServerSaved: (serverDoc) => {
-              if (get()._activeDocumentId === _activeDocumentId) {
-                set({ activeDocument: serverDoc })
-              }
-            },
-            onRetryScheduled: () => {
-              logger.info('Accept retry scheduled')
-            },
-          }
-        )
-      } else {
-        await documentSyncService.saveBoth(
-          activeDocument.id,
-          newContent,
-          activeDocument.aiVersion,
-          {
-            onServerSaved: (serverDoc) => {
-              if (get()._activeDocumentId === _activeDocumentId) {
-                set({ activeDocument: serverDoc })
-              }
-            },
-          }
-        )
-      }
-    } catch (error) {
-      logger.error('Accept hunk failed:', error)
-      // Could revert optimistic update here if needed
-    } finally {
-      if (get()._activeDocumentId === _activeDocumentId) {
-        set({ isHunkOpInProgress: false })
-      }
-    }
-  },
-
-  rejectHunk: async (hunk) => {
-    const { activeDocument, isHunkOpInProgress, _activeDocumentId } = get()
-
-    if (isHunkOpInProgress) {
-      logger.warn('Hunk operation already in progress')
-      return
-    }
-
-    if (!activeDocument?.content || !activeDocument.aiVersion) {
-      logger.warn('Cannot reject hunk: missing content or aiVersion')
-      return
-    }
-
-    set({ isHunkOpInProgress: true })
-
-    try {
-      // Apply reject: put original text back into aiVersion
-      const newAiVersion = applyRejectHunk(activeDocument.aiVersion, hunk)
-
-      // Check if all changes are now rejected
-      const allRejected = activeDocument.content === newAiVersion
-
-      // Update local state
-      set({
-        activeDocument: {
-          ...activeDocument,
-          aiVersion: allRejected ? null : newAiVersion,
-        },
-      })
-
-      // Sync to server
-      if (allRejected) {
-        await documentSyncService.clearAIVersion(activeDocument.id, {
-          onServerSaved: (serverDoc) => {
-            if (get()._activeDocumentId === _activeDocumentId) {
-              set({ activeDocument: serverDoc })
-            }
-          },
-        })
-      } else {
-        await documentSyncService.saveBoth(
-          activeDocument.id,
-          activeDocument.content,
-          newAiVersion,
-          {
-            onServerSaved: (serverDoc) => {
-              if (get()._activeDocumentId === _activeDocumentId) {
-                set({ activeDocument: serverDoc })
-              }
-            },
-          }
-        )
-      }
-    } catch (error) {
-      logger.error('Reject hunk failed:', error)
-    } finally {
-      if (get()._activeDocumentId === _activeDocumentId) {
-        set({ isHunkOpInProgress: false })
-      }
-    }
-  },
-
-  acceptAllHunks: async () => {
-    const { activeDocument, isHunkOpInProgress, _activeDocumentId } = get()
-
-    if (isHunkOpInProgress) return
-    if (!activeDocument?.aiVersion) return
-
-    set({ isHunkOpInProgress: true })
-
-    try {
-      // Accept all = use aiVersion as new content
-      const newContent = activeDocument.aiVersion
-
-      set({
-        activeDocument: {
-          ...activeDocument,
-          content: newContent,
-          aiVersion: null,
-        },
-      })
-
-      await documentSyncService.saveAndClearAiVersion(
-        activeDocument.id,
-        newContent,
-        {
-          onServerSaved: (serverDoc) => {
-            if (get()._activeDocumentId === _activeDocumentId) {
-              set({ activeDocument: serverDoc })
-            }
-          },
-        }
-      )
-    } catch (error) {
-      logger.error('Accept all failed:', error)
-    } finally {
-      if (get()._activeDocumentId === _activeDocumentId) {
-        set({ isHunkOpInProgress: false })
-      }
-    }
-  },
-
-  rejectAllHunks: async () => {
-    const { activeDocument, isHunkOpInProgress, _activeDocumentId } = get()
-
-    if (isHunkOpInProgress) return
-    if (!activeDocument?.aiVersion) return
-
-    set({ isHunkOpInProgress: true })
-
-    try {
-      // Reject all = discard aiVersion, keep content
-      set({
-        activeDocument: {
-          ...activeDocument,
-          aiVersion: null,
-        },
-      })
-
-      await documentSyncService.clearAIVersion(activeDocument.id, {
-        onServerSaved: (serverDoc) => {
-          if (get()._activeDocumentId === _activeDocumentId) {
-            set({ activeDocument: serverDoc })
-          }
-        },
-      })
-    } catch (error) {
-      logger.error('Reject all failed:', error)
-    } finally {
-      if (get()._activeDocumentId === _activeDocumentId) {
-        set({ isHunkOpInProgress: false })
-      }
-    }
-  },
-
-  updateBothDocuments: (content, aiVersion) => {
-    const { activeDocument, _activeDocumentId } = get()
-
-    if (!activeDocument) return
-
-    // Update local state immediately
-    set({
-      activeDocument: {
-        ...activeDocument,
-        content,
-        aiVersion,
-      },
-    })
-
-    // Debounced save (uses the existing save pattern)
-    // Note: This should be debounced similar to normal content saves
-    documentSyncService.saveBoth(
-      activeDocument.id,
-      content,
-      aiVersion,
-      {
-        onServerSaved: (serverDoc) => {
-          if (get()._activeDocumentId === _activeDocumentId) {
-            set({ activeDocument: serverDoc })
-          }
-        },
-      }
-    )
-  },
+  setFocusedHunkIndex: (index) => set({ focusedHunkIndex: index }),
 
   navigateHunk: (direction, totalHunks) => {
     if (totalHunks === 0) return
@@ -466,39 +376,63 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
 
 ---
 
-### Step 4.4: Add the backend API endpoint (if needed)
+## Understanding the Save Flow
 
-If your backend doesn't already support updating both `content` and `ai_version` in a single PATCH request, you'll need to add that.
+```
+┌───────────────────────────────────────────────────────────────┐
+│  Editor: Merged Document                                       │
+│  "\uE000She felt sad.\uE001\uE002A heavy melancholia.\uE003..." │
+└───────────────────────────────────────────────────────────────┘
+                        │
+                        │ Debounce triggers save
+                        ▼
+              ┌─────────────────────┐
+              │ parseMergedDocument │
+              └─────────────────────┘
+                        │
+              ┌─────────┴─────────┐
+              ▼                   ▼
+    ┌──────────────────┐ ┌──────────────────┐
+    │ content:         │ │ aiVersion:       │
+    │ "She felt sad."  │ │ "A heavy..."     │
+    └──────────────────┘ └──────────────────┘
+                        │
+                        ▼
+              ┌─────────────────────┐
+              │  API PATCH (both)   │
+              └─────────────────────┘
+                        │
+                        ▼
+              ┌─────────────────────┐
+              │  Database (clean)   │
+              └─────────────────────┘
+```
 
-**Go backend example** (in `internal/handler/document.go`):
-
-```go
-// UpdateDocumentRequest now supports both fields
-type UpdateDocumentRequest struct {
-    Name      *string `json:"name,omitempty"`
-    Content   *string `json:"content,omitempty"`
-    AIVersion *string `json:"ai_version,omitempty"`  // Add this
-    FolderID  *string `json:"folder_id,omitempty"`
-}
-
-// In the handler:
-if req.AIVersion != nil {
-    updates["ai_version"] = req.AIVersion
-}
+**After Accept All:**
+```
+┌──────────────────────────────────────┐
+│  Editor: "A heavy melancholia. ..."  │  ← No markers
+└──────────────────────────────────────┘
+                │
+                │ parseMergedDocument()
+                ▼
+      content: "A heavy melancholia. ..."
+      aiVersion: null  ← Cleared (hasChanges: false)
 ```
 
 ---
 
-## Race Condition Prevention Summary
+## When Save Happens
 
-The implementation includes these guards:
+The existing debounce pattern continues to work:
 
-| Guard | Purpose | Location |
-|-------|---------|----------|
-| `isHunkOpInProgress` | Prevents concurrent accept/reject | Store actions |
-| `_activeDocumentId` | Prevents stale updates | Store callbacks |
-| `cancelRetry()` | Cancels old retries before new ops | DocumentSyncService |
-| Intent flag check | Guards async completion | All async operations |
+1. User types → `onChange` callback fires
+2. `localContent` state updates
+3. Debounce (1 second) settles
+4. Save triggers with merged document
+5. Parse and send to API
+
+The only change: we parse the merged document instead of sending content directly.
 
 ---
 
@@ -506,26 +440,28 @@ The implementation includes these guards:
 
 Before moving to Phase 5, verify:
 
-- [ ] `api.documents.updateBoth()` method added
-- [ ] `documentSyncService.saveBoth()` method added
-- [ ] Store extended with `isHunkOpInProgress` lock
-- [ ] `acceptHunk()` action works correctly
-- [ ] `rejectHunk()` action works correctly
-- [ ] `acceptAllHunks()` action works correctly
-- [ ] `rejectAllHunks()` action works correctly
-- [ ] `updateBothDocuments()` action works correctly
-- [ ] Concurrent operations are blocked
-- [ ] Server sync happens after operations
+- [ ] Backend `PATCH /api/documents/{id}` supports `ai_version` (absent/null/string)
+- [ ] `api.documents.update()` supports tri-state aiVersion (undefined/null/string)
+- [ ] `saveMergedDocument()` correctly parses and saves
+- [ ] `documentSyncService.saveMerged()` handles save flow
+- [ ] Store has `focusedHunkIndex` and navigation
+- [ ] After accept all: `aiVersion` becomes `null`
+- [ ] After reject all: `content` restored, `aiVersion` becomes `null`
+- [ ] Empty string `""` content/aiVersion handled correctly (not treated as falsy)
 
-## Files Modified
+## Files Modified/Created
 
 | File | Action |
 |------|--------|
-| `frontend/src/core/lib/api.ts` | Modified (added `updateBoth`) |
-| `frontend/src/core/services/documentSyncService.ts` | Modified (added `saveBoth`) |
-| `frontend/src/core/stores/useEditorStore.ts` | Modified (added hunk ops) |
-| `backend/internal/handler/document.go` | Modified (if needed) |
+| `backend/internal/httputil/optional_string.go` | Created |
+| `backend/internal/domain/services/docsystem/document.go` | Modified |
+| `backend/internal/service/docsystem/document.go` | Modified |
+| `backend/internal/repository/postgres/docsystem/document.go` | Modified |
+| `frontend/src/core/lib/api.ts` | Modified |
+| `frontend/src/features/documents/utils/saveMergedDocument.ts` | Created |
+| `frontend/src/core/services/documentSyncService.ts` | Modified |
+| `frontend/src/core/stores/useEditorStore.ts` | Modified |
 
 ## Next Step
 
-→ Continue to `05-ui-components.md` to build the navigator pill and hunk actions
+→ Continue to `05-ui-components.md` to build the navigator pill and hunk action buttons.
