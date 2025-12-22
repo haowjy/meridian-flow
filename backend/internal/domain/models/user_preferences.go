@@ -174,12 +174,23 @@ func (up *UserPreferences) SetSystemInstructions(instructions *string) {
 	}
 }
 
+// OptionalSystemInstructions tracks tri-state semantics for system_instructions updates (RFC 7396 PATCH).
+// This is transport-agnostic (no JSON tags) - handler maps from httputil.OptionalString.
+//   - Present=false: field absent from request (don't change)
+//   - Present=true, Value=nil: field is null (clear)
+//   - Present=true, Value=&"": field is empty string
+//   - Present=true, Value=&"text": field has value
+type OptionalSystemInstructions struct {
+	Present bool    // true if field was in request
+	Value   *string // nil = clear, non-nil = set (including empty string)
+}
+
 // UpdatePreferencesRequest represents the request to update user preferences
 // Supports partial updates via pointers - only provided fields are updated
 type UpdatePreferencesRequest struct {
-	Models              *ModelsPreferences       `json:"models"`               // Update entire models namespace
-	UI                  *UIPreferences           `json:"ui"`                   // Update entire ui namespace
-	Editor              *EditorPreferences       `json:"editor"`               // Update entire editor namespace
-	SystemInstructions  *string                  `json:"system_instructions"`  // Update system instructions (null to clear)
-	Notifications       *NotificationPreferences `json:"notifications"`        // Update entire notifications namespace
+	Models             *ModelsPreferences          `json:"models"`        // Update entire models namespace
+	UI                 *UIPreferences              `json:"ui"`            // Update entire ui namespace
+	Editor             *EditorPreferences          `json:"editor"`        // Update entire editor namespace
+	SystemInstructions OptionalSystemInstructions  // Tri-state: absent=don't change, null=clear, value=set (no json tag - mapped from handler DTO)
+	Notifications      *NotificationPreferences    `json:"notifications"` // Update entire notifications namespace
 }

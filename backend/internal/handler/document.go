@@ -74,15 +74,15 @@ func (h *DocumentHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 }
 
 // updateDocumentDTO is the transport-layer request for PATCH /api/documents/{id}.
-// Uses httputil.OptionalString for ai_version to support tri-state PATCH semantics (RFC 7396):
+// Uses httputil.OptionalString for folder_id and ai_version to support tri-state PATCH semantics (RFC 7396):
 //   - field absent = don't change
-//   - field null = clear
+//   - field null = clear (ai_version) / move to root (folder_id)
 //   - field has value = set
 type updateDocumentDTO struct {
 	ProjectID  string                  `json:"project_id"`
 	Name       *string                 `json:"name,omitempty"`
 	FolderPath *string                 `json:"folder_path,omitempty"`
-	FolderID   *string                 `json:"folder_id,omitempty"`
+	FolderID   httputil.OptionalString `json:"folder_id"`
 	Content    *string                 `json:"content,omitempty"`
 	AIVersion  httputil.OptionalString `json:"ai_version"`
 }
@@ -101,13 +101,22 @@ func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Validate: empty string is not valid for folder_id - use null to move to root
+	if dto.FolderID.Present && dto.FolderID.Value != nil && *dto.FolderID.Value == "" {
+		httputil.RespondError(w, http.StatusBadRequest, "folder_id cannot be empty string; use null to move to root")
+		return
+	}
+
 	// Map transport DTO to service request
 	req := &docsysSvc.UpdateDocumentRequest{
 		ProjectID:  dto.ProjectID,
 		Name:       dto.Name,
 		FolderPath: dto.FolderPath,
-		FolderID:   dto.FolderID,
-		Content:    dto.Content,
+		FolderID: docsysSvc.OptionalFolderID{
+			Present: dto.FolderID.Present,
+			Value:   dto.FolderID.Value,
+		},
+		Content: dto.Content,
 		AIVersion: docsysSvc.OptionalAIVersion{
 			Present: dto.AIVersion.Present,
 			Value:   dto.AIVersion.Value,

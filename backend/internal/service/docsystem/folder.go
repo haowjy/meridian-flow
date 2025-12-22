@@ -184,16 +184,17 @@ func (s *folderService) UpdateFolder(ctx context.Context, userID, folderID strin
 		folder.Name = strings.TrimSpace(*req.Name)
 	}
 
-	if req.FolderID != nil {
-		// Validate parent folder exists (unless moving to root)
-		if *req.FolderID != "" {
-			parent, err := s.folderRepo.GetByID(ctx, *req.FolderID, folder.ProjectID)
+	// Tri-state: only update folder location if field was present in request
+	if req.FolderID.Present {
+		if req.FolderID.Value != nil {
+			// Move to specified folder
+			parent, err := s.folderRepo.GetByID(ctx, *req.FolderID.Value, folder.ProjectID)
 			if err != nil {
 				return nil, fmt.Errorf("parent folder not found: %w", err)
 			}
 
 			// Prevent circular references (can't move folder to be a child of itself or its descendants)
-			if err := s.validateNoCircularReference(ctx, folderID, *req.FolderID, folder.ProjectID); err != nil {
+			if err := s.validateNoCircularReference(ctx, folderID, *req.FolderID.Value, folder.ProjectID); err != nil {
 				return nil, err
 			}
 
@@ -203,14 +204,14 @@ func (s *folderService) UpdateFolder(ctx context.Context, userID, folderID strin
 				"new_folder_id", parent.ID,
 			)
 		} else {
-			// Move to root
+			// null = move to root
 			folder.ParentID = nil
 			s.logger.Debug("moving folder to root", "folder_id", folderID)
 		}
 	}
 
 	// Check for duplicate name in target folder (if name or parent changed)
-	if req.Name != nil || req.FolderID != nil {
+	if req.Name != nil || req.FolderID.Present {
 		siblingFolders, err := s.folderRepo.ListChildren(ctx, folder.ParentID, folder.ProjectID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check for duplicate names: %w", err)
@@ -397,7 +398,7 @@ func (s *folderService) validateCreateRequest(req *docsysSvc.CreateFolderRequest
 // validateUpdateRequest validates a folder update request
 func (s *folderService) validateUpdateRequest(req *docsysSvc.UpdateFolderRequest) error {
 	// At least one field must be provided
-	if req.Name == nil && req.FolderID == nil {
+	if req.Name == nil && !req.FolderID.Present {
 		return fmt.Errorf("at least one field must be provided")
 	}
 

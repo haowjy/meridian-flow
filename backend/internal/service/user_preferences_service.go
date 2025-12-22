@@ -105,8 +105,9 @@ func (s *UserPreferencesService) UpdatePreferences(ctx context.Context, userID u
 		}
 	}
 
-	if req.SystemInstructions != nil {
-		existing.SetSystemInstructions(req.SystemInstructions)
+	// Tri-state: only update if field was present in request
+	if req.SystemInstructions.Present {
+		existing.SetSystemInstructions(req.SystemInstructions.Value)
 	}
 
 	if req.Notifications != nil {
@@ -128,7 +129,7 @@ func (s *UserPreferencesService) UpdatePreferences(ctx context.Context, userID u
 		"has_models", req.Models != nil,
 		"has_ui", req.UI != nil,
 		"has_editor", req.Editor != nil,
-		"has_system_instructions", req.SystemInstructions != nil,
+		"has_system_instructions", req.SystemInstructions.Present,
 		"has_notifications", req.Notifications != nil,
 	)
 

@@ -198,19 +198,20 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 	}
 
 	// Priority-based folder resolution for moving documents:
-	// 1. Try folder_id first (frontend optimization - direct lookup)
+	// 1. Try folder_id first (tri-state: absent=don't change, null=root, value=folder)
 	// 2. Fall back to folder_path (external AI - resolve/auto-create)
 	// 3. Neither = don't move document
-	if req.FolderID != nil {
-		// Validate target folder exists and is not deleted
-		targetFolderID := *req.FolderID
-		if targetFolderID != "" { // Empty string means root, which is always valid
-			if err := s.validator.ValidateFolder(ctx, targetFolderID, doc.ProjectID); err != nil {
+	if req.FolderID.Present {
+		if req.FolderID.Value != nil {
+			// Move to specified folder - validate it exists and is not deleted
+			if err := s.validator.ValidateFolder(ctx, *req.FolderID.Value, doc.ProjectID); err != nil {
 				return nil, err
 			}
+			doc.FolderID = req.FolderID.Value
+		} else {
+			// null = move to root
+			doc.FolderID = nil
 		}
-		// Frontend optimization: use provided folder_id directly
-		doc.FolderID = req.FolderID
 	} else if req.FolderPath != nil {
 		// External AI: resolve folder path, creating folders if needed
 		resolvedFolder, err := s.pathResolver.ResolveFolderPath(ctx, doc.ProjectID, *req.FolderPath)
@@ -234,7 +235,7 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 	}
 
 	// Check for duplicate name in target folder (if name or folder changed)
-	if req.Name != nil || req.FolderID != nil || req.FolderPath != nil {
+	if req.Name != nil || req.FolderID.Present || req.FolderPath != nil {
 		siblings, err := s.docRepo.ListByFolder(ctx, doc.FolderID, doc.ProjectID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check for duplicate names: %w", err)

@@ -75,6 +75,17 @@ func (h *FolderHandler) GetFolder(w http.ResponseWriter, r *http.Request) {
 	httputil.RespondJSON(w, http.StatusOK, folder)
 }
 
+// updateFolderDTO is the transport-layer request for PATCH /api/folders/{id}.
+// Uses httputil.OptionalString for folder_id to support tri-state PATCH semantics (RFC 7396):
+//   - field absent = don't change
+//   - field null = move to root
+//   - field has value = move to folder
+type updateFolderDTO struct {
+	ProjectID string                  `json:"project_id"`
+	Name      *string                 `json:"name,omitempty"`
+	FolderID  httputil.OptionalString `json:"folder_id"`
+}
+
 // UpdateFolder updates a folder (rename or move)
 // PATCH /api/folders/{id}
 func (h *FolderHandler) UpdateFolder(w http.ResponseWriter, r *http.Request) {
@@ -83,16 +94,33 @@ func (h *FolderHandler) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req docsysSvc.UpdateFolderRequest
-	if err := httputil.ParseJSON(w, r, &req); err != nil {
+	// Parse request into transport DTO
+	var dto updateFolderDTO
+	if err := httputil.ParseJSON(w, r, &dto); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return
+	}
+
+	// Validate: empty string is not valid for folder_id - use null to move to root
+	if dto.FolderID.Present && dto.FolderID.Value != nil && *dto.FolderID.Value == "" {
+		httputil.RespondError(w, http.StatusBadRequest, "folder_id cannot be empty string; use null to move to root")
+		return
+	}
+
+	// Map transport DTO to service request
+	req := &docsysSvc.UpdateFolderRequest{
+		ProjectID: dto.ProjectID,
+		Name:      dto.Name,
+		FolderID: docsysSvc.OptionalFolderID{
+			Present: dto.FolderID.Present,
+			Value:   dto.FolderID.Value,
+		},
 	}
 
 	// Get userID from context (set by auth middleware)
 	userID := httputil.GetUserID(r)
 
-	folder, err := h.folderService.UpdateFolder(r.Context(), userID, id, &req)
+	folder, err := h.folderService.UpdateFolder(r.Context(), userID, id, req)
 	if err != nil {
 		handleError(w, err)
 		return

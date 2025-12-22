@@ -51,12 +51,13 @@ type OptionalAIVersion struct {
 }
 
 // UpdateDocumentRequest represents a document update request
+// Uses OptionalFolderID from folder.go (same package) for folder_id tri-state semantics
 type UpdateDocumentRequest struct {
-	ProjectID  string  `json:"project_id"`
-	Name       *string `json:"name,omitempty"`
-	FolderPath *string `json:"folder_path,omitempty"` // Move to folder path (resolve/auto-create)
-	FolderID   *string `json:"folder_id,omitempty"`   // Move to folder ID (direct, faster)
-	Content    *string `json:"content,omitempty"`
+	ProjectID  string           `json:"project_id"`
+	Name       *string          `json:"name,omitempty"`
+	FolderPath *string          `json:"folder_path,omitempty"` // Move to folder path (resolve/auto-create)
+	FolderID   OptionalFolderID // Tri-state: absent=don't change, null=root, value=folder (no json tag - mapped from handler DTO)
+	Content    *string          `json:"content,omitempty"`
 	AIVersion  OptionalAIVersion // Tri-state: absent=don't change, null=clear, value=set
 }
 
