@@ -46,6 +46,19 @@ func (h *UserPreferencesHandler) GetPreferences(w http.ResponseWriter, r *http.R
 	httputil.RespondJSON(w, http.StatusOK, prefs)
 }
 
+// updatePreferencesDTO is the transport-layer request for PATCH /api/users/me/preferences.
+// Uses httputil.OptionalString for system_instructions to support tri-state PATCH semantics (RFC 7396):
+//   - field absent = don't change
+//   - field null = clear
+//   - field has value = set
+type updatePreferencesDTO struct {
+	Models             *models.ModelsPreferences       `json:"models"`
+	UI                 *models.UIPreferences           `json:"ui"`
+	Editor             *models.EditorPreferences       `json:"editor"`
+	SystemInstructions httputil.OptionalString         `json:"system_instructions"`
+	Notifications      *models.NotificationPreferences `json:"notifications"`
+}
+
 // UpdatePreferences updates user preferences
 // PATCH /api/users/me/preferences
 func (h *UserPreferencesHandler) UpdatePreferences(w http.ResponseWriter, r *http.Request) {
@@ -59,15 +72,27 @@ func (h *UserPreferencesHandler) UpdatePreferences(w http.ResponseWriter, r *htt
 		return
 	}
 
-	// Parse request
-	var req models.UpdatePreferencesRequest
-	if err := httputil.ParseJSON(w, r, &req); err != nil {
+	// Parse request into transport DTO
+	var dto updatePreferencesDTO
+	if err := httputil.ParseJSON(w, r, &dto); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
+	// Map transport DTO to service request
+	req := &models.UpdatePreferencesRequest{
+		Models:        dto.Models,
+		UI:            dto.UI,
+		Editor:        dto.Editor,
+		Notifications: dto.Notifications,
+		SystemInstructions: models.OptionalSystemInstructions{
+			Present: dto.SystemInstructions.Present,
+			Value:   dto.SystemInstructions.Value,
+		},
+	}
+
 	// Update preferences
-	prefs, err := h.service.UpdatePreferences(r.Context(), uuid, &req)
+	prefs, err := h.service.UpdatePreferences(r.Context(), uuid, req)
 	if err != nil {
 		handleError(w, err)
 		return
