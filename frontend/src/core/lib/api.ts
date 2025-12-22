@@ -626,6 +626,18 @@ export const api = {
     delete: (id: string, options?: { signal?: AbortSignal }) =>
       fetchAPI<void>(`/api/documents/${id}`, { method: 'DELETE', signal: options?.signal }),
     /**
+     * Move a document to a new folder.
+     * @param folderId - Target folder ID, or null to move to root
+     */
+    move: async (id: string, projectId: string, folderId: string | null, options?: { signal?: AbortSignal }): Promise<Document> => {
+      const data = await fetchAPI<DocumentDto>(`/api/documents/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ project_id: projectId, folder_id: folderId }),
+        signal: options?.signal,
+      })
+      return fromDocumentDto(data)
+    },
+    /**
      * Import documents from files (zip, markdown, text, or HTML).
      *
      * Uses multipart/form-data for file upload. Note: Do NOT set Content-Type header
@@ -676,6 +688,18 @@ export const api = {
       const data = await fetchAPI<FolderDto>(`/api/folders/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ project_id: projectId, name }),
+        signal: options?.signal,
+      })
+      return fromFolderDto(data)
+    },
+    /**
+     * Move a folder to a new parent folder.
+     * @param parentId - Target folder ID, or null to move to root
+     */
+    move: async (id: string, projectId: string, parentId: string | null, options?: { signal?: AbortSignal }): Promise<Folder> => {
+      const data = await fetchAPI<FolderDto>(`/api/folders/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ project_id: projectId, folder_id: parentId }),
         signal: options?.signal,
       })
       return fromFolderDto(data)
