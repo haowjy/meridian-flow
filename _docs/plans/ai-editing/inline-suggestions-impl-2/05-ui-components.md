@@ -1,141 +1,293 @@
 # Phase 5: UI Components
 
 ## Goal
+
 Build the user-facing components:
-1. Floating navigator pill (change counter, prev/next, accept all/reject all)
-2. Per-hunk action widget (✓/✕ buttons)
-3. Keyboard shortcuts
+1. **Navigator pill** - Change counter, prev/next, accept all/reject all
+2. **Per-hunk action buttons** - Inline ✓/✕ buttons
+3. **Keyboard shortcuts** - Quick accept/reject via keyboard
+
+## Key Architecture Point
+
+Accept/reject are **CM6 transactions**, not React state updates. This means:
+- They modify the merged document directly
+- They're automatically recorded in CM6 history
+- **Cmd+Z undoes accept/reject operations!**
+
+```typescript
+// Accept = replace hunk region with insertion text
+view.dispatch({
+  changes: { from: hunk.from, to: hunk.to, insert: hunk.insertedText }
+})
+
+// Reject = replace hunk region with deletion text
+view.dispatch({
+  changes: { from: hunk.from, to: hunk.to, insert: hunk.deletedText }
+})
+```
 
 ## Steps
 
-### Step 5.1: Create the AIHunkNavigator component
+### Step 5.1: Create accept/reject transaction helpers
 
-Create `frontend/src/features/documents/components/AIHunkNavigator.tsx`:
+Create `frontend/src/core/editor/codemirror/diffView/transactions.ts`:
 
-```tsx
-import { ChevronUp, ChevronDown } from 'lucide-react'
-import { Button } from '@/shared/components/ui/button'
-import type { WordDiffHunk } from '@/core/editor/codemirror/diffView/types'
+```typescript
+/**
+ * Accept/Reject Transaction Helpers
+ *
+ * These create CM6 transactions for hunk operations.
+ * Since they're CM6 transactions, they're automatically undoable via Cmd+Z.
+ */
 
-interface AIHunkNavigatorProps {
-  /** All computed hunks */
-  hunks: WordDiffHunk[]
-  /** Currently focused hunk index */
-  currentIndex: number
-  /** Navigate to previous hunk */
-  onPrevious: () => void
-  /** Navigate to next hunk */
-  onNext: () => void
-  /** Accept all changes */
-  onAcceptAll: () => void
-  /** Reject all changes */
-  onRejectAll: () => void
-  /** Whether an operation is in progress */
-  isLoading?: boolean
+import type { EditorView } from '@codemirror/view'
+import { extractHunks, getAcceptReplacement, getRejectReplacement, acceptAllHunks, rejectAllHunks, type MergedHunk } from '@/features/documents/utils/mergedDocument'
+
+/**
+ * Accept a single hunk by ID.
+ *
+ * Replaces the entire hunk (markers + content) with the insertion text.
+ * Returns true if the hunk was found and accepted.
+ */
+export function acceptHunk(view: EditorView, hunkId: string): boolean {
+  const doc = view.state.doc.toString()
+  const hunks = extractHunks(doc)
+  const hunk = hunks.find(h => h.id === hunkId)
+
+  if (!hunk) {
+    console.warn(`Hunk not found: ${hunkId}`)
+    return false
+  }
+
+  const replacement = getAcceptReplacement(hunk)
+
+  view.dispatch({
+    changes: { from: hunk.from, to: hunk.to, insert: replacement },
+    // Bypass transaction filters (we intentionally delete/replace marker ranges)
+    filter: false,
+    userEvent: 'ai.diff.accept',
+  })
+
+  return true
 }
 
 /**
- * Floating navigation pill for diff hunks.
+ * Reject a single hunk by ID.
  *
- * Positioned at bottom-center of the editor.
- * Shows current change count and provides bulk actions.
+ * Replaces the entire hunk (markers + content) with the deletion text.
+ * Returns true if the hunk was found and rejected.
  */
-export function AIHunkNavigator({
-  hunks,
-  currentIndex,
-  onPrevious,
-  onNext,
-  onAcceptAll,
-  onRejectAll,
-  isLoading = false,
-}: AIHunkNavigatorProps) {
-  // Don't render if no hunks
-  if (hunks.length === 0) return null
+export function rejectHunk(view: EditorView, hunkId: string): boolean {
+  const doc = view.state.doc.toString()
+  const hunks = extractHunks(doc)
+  const hunk = hunks.find(h => h.id === hunkId)
 
-  return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
-      <div
-        className="flex items-center gap-1 bg-background/95 backdrop-blur
-                   border rounded-full px-2 py-1 shadow-lg pointer-events-auto"
-      >
-        {/* Navigation controls */}
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7"
-          onClick={onPrevious}
-          disabled={isLoading}
-          title="Previous change (Alt+P)"
-        >
-          <ChevronUp className="h-4 w-4" />
-        </Button>
+  if (!hunk) {
+    console.warn(`Hunk not found: ${hunkId}`)
+    return false
+  }
 
-        {/* Change counter */}
-        <span className="text-sm text-muted-foreground min-w-[5rem] text-center tabular-nums">
-          Change {currentIndex + 1} / {hunks.length}
-        </span>
+  const replacement = getRejectReplacement(hunk)
 
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-7 w-7"
-          onClick={onNext}
-          disabled={isLoading}
-          title="Next change (Alt+N)"
-        >
-          <ChevronDown className="h-4 w-4" />
-        </Button>
+  view.dispatch({
+    changes: { from: hunk.from, to: hunk.to, insert: replacement },
+    filter: false,
+    userEvent: 'ai.diff.reject',
+  })
 
-        {/* Separator */}
-        <div className="w-px h-5 bg-border mx-1" />
+  return true
+}
 
-        {/* Bulk actions */}
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 text-xs px-2"
-          onClick={onRejectAll}
-          disabled={isLoading}
-          title="Reject all changes (Cmd+Shift+Backspace)"
-        >
-          Reject All
-        </Button>
+/**
+ * Accept the hunk at a given document position.
+ *
+ * Used for keyboard shortcut (accept hunk at cursor).
+ */
+export function acceptHunkAtPosition(view: EditorView, pos: number): boolean {
+  const doc = view.state.doc.toString()
+  const hunks = extractHunks(doc)
+  const hunk = hunks.find(h => pos >= h.from && pos <= h.to)
 
-        <Button
-          size="sm"
-          variant="default"
-          className="h-7 text-xs px-2"
-          onClick={onAcceptAll}
-          disabled={isLoading}
-          title="Accept all changes (Cmd+Shift+Enter)"
-        >
-          Accept All
-        </Button>
-      </div>
-    </div>
-  )
+  if (!hunk) return false
+
+  return acceptHunk(view, hunk.id)
+}
+
+/**
+ * Reject the hunk at a given document position.
+ *
+ * Used for keyboard shortcut (reject hunk at cursor).
+ */
+export function rejectHunkAtPosition(view: EditorView, pos: number): boolean {
+  const doc = view.state.doc.toString()
+  const hunks = extractHunks(doc)
+  const hunk = hunks.find(h => pos >= h.from && pos <= h.to)
+
+  if (!hunk) return false
+
+  return rejectHunk(view, hunk.id)
+}
+
+/**
+ * Accept all hunks.
+ *
+ * Replaces the entire document with the AI version.
+ */
+export function acceptAll(view: EditorView): void {
+  const doc = view.state.doc.toString()
+  const accepted = acceptAllHunks(doc)
+
+  view.dispatch({
+    changes: { from: 0, to: doc.length, insert: accepted },
+    filter: false,
+    userEvent: 'ai.diff.acceptAll',
+  })
+}
+
+/**
+ * Reject all hunks.
+ *
+ * Replaces the entire document with the original version.
+ */
+export function rejectAll(view: EditorView): void {
+  const doc = view.state.doc.toString()
+  const rejected = rejectAllHunks(doc)
+
+  view.dispatch({
+    changes: { from: 0, to: doc.length, insert: rejected },
+    filter: false,
+    userEvent: 'ai.diff.rejectAll',
+  })
+}
+
+/**
+ * Get hunks from the current document.
+ *
+ * Convenience function for UI components.
+ */
+export function getHunks(view: EditorView): MergedHunk[] {
+  return extractHunks(view.state.doc.toString())
 }
 ```
 
 ---
 
-### Step 5.2: Create the HunkActionWidget
+### Step 5.2: Create the keyboard shortcuts
+
+Create `frontend/src/core/editor/codemirror/diffView/keymap.ts`:
+
+```typescript
+/**
+ * Keyboard Shortcuts for Diff View
+ *
+ * Shortcuts:
+ * - Alt+N: Navigate to next hunk
+ * - Alt+P: Navigate to previous hunk
+ * - Cmd/Ctrl+Enter: Accept hunk at cursor
+ * - Cmd/Ctrl+Shift+D: Reject hunk at cursor (D for "delete/discard")
+ * - Cmd/Ctrl+Shift+Enter: Accept all hunks
+ * - Cmd/Ctrl+Shift+Backspace: Reject all hunks
+ *
+ * NOTE: We avoid Cmd+Backspace for single-hunk reject because it conflicts
+ * with macOS "delete to beginning of line" shortcut.
+ */
+
+import { keymap } from '@codemirror/view'
+import type { Extension } from '@codemirror/state'
+import { acceptHunkAtPosition, rejectHunkAtPosition, acceptAll, rejectAll } from './transactions'
+
+export interface DiffKeymapCallbacks {
+  /** Navigate to next hunk (scroll + focus) */
+  onNextHunk: () => void
+  /** Navigate to previous hunk (scroll + focus) */
+  onPrevHunk: () => void
+}
+
+/**
+ * Create the diff view keymap extension.
+ *
+ * Accept/reject operations dispatch CM6 transactions directly.
+ * Navigation uses external callbacks (needs to update React state).
+ */
+export function createDiffKeymap(callbacks: DiffKeymapCallbacks): Extension {
+  return keymap.of([
+    // Navigation (external callbacks)
+    {
+      key: 'Alt-n',
+      run: () => {
+        callbacks.onNextHunk()
+        return true
+      },
+    },
+    {
+      key: 'Alt-p',
+      run: () => {
+        callbacks.onPrevHunk()
+        return true
+      },
+    },
+
+    // Single hunk operations (CM6 transactions)
+    {
+      key: 'Mod-Enter',
+      run: (view) => {
+        const pos = view.state.selection.main.head
+        return acceptHunkAtPosition(view, pos)
+      },
+    },
+    {
+      // Cmd+Shift+D to reject (D for "delete/discard")
+      // NOTE: Avoid Cmd+Backspace - conflicts with macOS "delete to beginning of line"
+      key: 'Mod-Shift-d',
+      run: (view) => {
+        const pos = view.state.selection.main.head
+        return rejectHunkAtPosition(view, pos)
+      },
+    },
+
+    // Bulk operations (CM6 transactions)
+    {
+      key: 'Mod-Shift-Enter',
+      run: (view) => {
+        acceptAll(view)
+        return true
+      },
+    },
+    {
+      key: 'Mod-Shift-Backspace',
+      run: (view) => {
+        rejectAll(view)
+        return true
+      },
+    },
+  ])
+}
+```
+
+---
+
+### Step 5.3: Create the HunkActionWidget
 
 Create `frontend/src/core/editor/codemirror/diffView/HunkActionWidget.ts`:
 
 ```typescript
-import { WidgetType } from '@codemirror/view'
+/**
+ * Inline Accept/Reject Buttons for Hunks
+ *
+ * These buttons appear at the end of each insertion region.
+ * Clicking them dispatches CM6 transactions (undoable!).
+ */
+
+import { WidgetType, type EditorView } from '@codemirror/view'
+import { acceptHunk, rejectHunk } from './transactions'
 
 /**
- * Widget that displays accept/reject buttons for a hunk.
- *
- * These buttons appear at the end of each hunk's inserted text.
+ * Widget that displays ✓/✕ buttons at the end of a hunk.
  */
 export class HunkActionWidget extends WidgetType {
   constructor(
     private readonly hunkId: string,
-    private readonly onAccept: (id: string) => void,
-    private readonly onReject: (id: string) => void
+    private readonly view: EditorView
   ) {
     super()
   }
@@ -153,18 +305,18 @@ export class HunkActionWidget extends WidgetType {
     acceptBtn.onclick = (e) => {
       e.preventDefault()
       e.stopPropagation()
-      this.onAccept(this.hunkId)
+      acceptHunk(this.view, this.hunkId)
     }
 
     // Reject button
     const rejectBtn = document.createElement('button')
     rejectBtn.textContent = '✕'
     rejectBtn.className = 'cm-hunk-reject'
-    rejectBtn.title = 'Reject this change (Cmd+Backspace)'
+    rejectBtn.title = 'Reject this change (Cmd+Shift+D)'
     rejectBtn.onclick = (e) => {
       e.preventDefault()
       e.stopPropagation()
-      this.onReject(this.hunkId)
+      rejectHunk(this.view, this.hunkId)
     }
 
     container.appendChild(acceptBtn)
@@ -178,7 +330,7 @@ export class HunkActionWidget extends WidgetType {
   }
 
   ignoreEvent(event: Event): boolean {
-    // Allow click events to propagate to buttons
+    // Allow click events to propagate to our buttons
     return event.type !== 'click'
   }
 }
@@ -186,77 +338,110 @@ export class HunkActionWidget extends WidgetType {
 
 ---
 
-### Step 5.3: Update the plugin to include hunk action widgets
+### Step 5.4: Update the plugin to include action widgets
 
 Update `frontend/src/core/editor/codemirror/diffView/plugin.ts`:
 
-Add the import:
+Add import:
 ```typescript
 import { HunkActionWidget } from './HunkActionWidget'
 ```
 
-Add a new decoration builder function:
+Update the `createHunkDecorations` function to add action widgets:
+
 ```typescript
 /**
- * Create a widget decoration for hunk action buttons.
+ * Create decorations for a single hunk.
+ *
+ * Includes:
+ * 1. Hide all 4 PUA markers
+ * 2. Style deletion content (red strikethrough)
+ * 3. Style insertion content (green underline)
+ * 4. Action widget at end of insertion
  */
-function createHunkActionDecoration(
-  hunk: WordDiffHunk,
-  onAccept: (id: string) => void,
-  onReject: (id: string) => void
-): { pos: number; decoration: Decoration } | null {
-  // Only show actions for hunks with insertions
-  if (!hunk.insertedText) return null
+function createHunkDecorations(
+  hunk: MergedHunk,
+  builder: RangeSetBuilder<Decoration>,
+  view: EditorView
+): void {
+  // 1. Hide DEL_START marker
+  builder.add(
+    hunk.delStart,
+    hunk.delStart + 1,
+    Decoration.replace({ widget: markerWidget })
+  )
 
-  return {
-    pos: hunk.displayTo,
-    decoration: Decoration.widget({
-      widget: new HunkActionWidget(hunk.id, onAccept, onReject),
-      side: 1, // After the insertion
-    }),
+  // 2. Style deletion content (if any)
+  if (hunk.deletedText.length > 0) {
+    builder.add(
+      hunk.delStart + 1,
+      hunk.delEnd,
+      Decoration.mark({ class: 'cm-ai-deletion' })
+    )
   }
+
+  // 3. Hide DEL_END marker
+  builder.add(
+    hunk.delEnd,
+    hunk.delEnd + 1,
+    Decoration.replace({ widget: markerWidget })
+  )
+
+  // 4. Hide INS_START marker
+  builder.add(
+    hunk.delEnd + 1,
+    hunk.delEnd + 2,
+    Decoration.replace({ widget: markerWidget })
+  )
+
+  // 5. Style insertion content (if any)
+  if (hunk.insertedText.length > 0) {
+    builder.add(
+      hunk.delEnd + 2,
+      hunk.to - 1,
+      Decoration.mark({ class: 'cm-ai-insertion' })
+    )
+  }
+
+  // 6. Hide INS_END marker
+  builder.add(
+    hunk.to - 1,
+    hunk.to,
+    Decoration.replace({ widget: markerWidget })
+  )
+
+  // 7. Add action widget after the hunk
+  builder.add(
+    hunk.to,
+    hunk.to,
+    Decoration.widget({
+      widget: new HunkActionWidget(hunk.id, view),
+      side: 1,
+    })
+  )
 }
 ```
 
-Update the `buildDecorations` method in `DiffViewPlugin`:
+Update `buildDecorations` to pass the view:
+
 ```typescript
 buildDecorations(view: EditorView): DecorationSet {
-  const config = view.state.facet(diffConfigFacet)
+  const doc = view.state.doc.toString()
+  const hunks = extractHunks(doc)
 
-  if (config.mode !== 'changes') {
+  if (hunks.length === 0) {
     return Decoration.none
   }
 
   const builder = new RangeSetBuilder<Decoration>()
-  const sortedHunks = [...config.hunks].sort((a, b) => a.displayFrom - b.displayFrom)
 
-  for (const hunk of sortedHunks) {
+  for (const hunk of hunks) {
     const { from: viewFrom, to: viewTo } = view.viewport
-    if (hunk.displayTo < viewFrom || hunk.displayFrom > viewTo) {
+    if (hunk.to < viewFrom || hunk.from > viewTo) {
       continue
     }
 
-    // Add deletion widget
-    const deletionDeco = createDeletionDecoration(hunk)
-    if (deletionDeco) {
-      builder.add(deletionDeco.pos, deletionDeco.pos, deletionDeco.decoration)
-    }
-
-    // Add insertion mark
-    const insertionDeco = createInsertionDecoration(hunk)
-    if (insertionDeco) {
-      builder.add(insertionDeco.from, insertionDeco.to, insertionDeco.decoration)
-    }
-
-    // Add hunk action buttons (after insertion)
-    const actionDeco = createHunkActionDecoration(
-      hunk,
-      config.onAcceptHunk,
-      config.onRejectHunk
-    )
-    if (actionDeco) {
-      builder.add(actionDeco.pos, actionDeco.pos, actionDeco.decoration)
-    }
+    createHunkDecorations(hunk, builder, view)  // Pass view
   }
 
   return builder.finish()
@@ -265,120 +450,131 @@ buildDecorations(view: EditorView): DecorationSet {
 
 ---
 
-### Step 5.4: Create the keyboard shortcuts
+### Step 5.5: Create the AIHunkNavigator component
 
-Create `frontend/src/core/editor/codemirror/diffView/keymap.ts`:
+Create `frontend/src/features/documents/components/AIHunkNavigator.tsx`:
 
-```typescript
-import { keymap } from '@codemirror/view'
-import type { Extension } from '@codemirror/state'
-import { diffConfigFacet } from './plugin'
+```tsx
+import { ChevronUp, ChevronDown } from 'lucide-react'
+import { Button } from '@/shared/components/ui/button'
+import type { MergedHunk } from '@/features/documents/utils/mergedDocument'
+
+interface AIHunkNavigatorProps {
+  /** All hunks in the document */
+  hunks: MergedHunk[]
+  /** Currently focused hunk index */
+  currentIndex: number
+  /** Navigate to previous hunk */
+  onPrevious: () => void
+  /** Navigate to next hunk */
+  onNext: () => void
+  /** Accept all changes (dispatches CM6 transaction) */
+  onAcceptAll: () => void
+  /** Reject all changes (dispatches CM6 transaction) */
+  onRejectAll: () => void
+}
 
 /**
- * Create keyboard shortcuts for diff navigation and actions.
+ * Floating navigation pill for diff hunks.
  *
- * Shortcuts:
- * - Alt+N: Next hunk
- * - Alt+P: Previous hunk
- * - Cmd/Ctrl+Enter: Accept current hunk
- * - Cmd/Ctrl+Backspace: Reject current hunk
- * - Cmd/Ctrl+Shift+Enter: Accept all hunks
- * - Cmd/Ctrl+Shift+Backspace: Reject all hunks
- *
- * @param callbacks - External callbacks for actions
+ * Positioned at bottom-center of the editor.
+ * Shows current change count and provides bulk actions.
  */
-export function createDiffKeymap(callbacks: {
-  onNextHunk: () => void
-  onPrevHunk: () => void
-  onAcceptCurrent: () => void
-  onRejectCurrent: () => void
-  onAcceptAll: () => void
-  onRejectAll: () => void
-}): Extension {
-  return keymap.of([
-    {
-      key: 'Alt-n',
-      run: () => {
-        callbacks.onNextHunk()
-        return true
-      },
-    },
-    {
-      key: 'Alt-p',
-      run: () => {
-        callbacks.onPrevHunk()
-        return true
-      },
-    },
-    {
-      key: 'Mod-Enter',
-      run: () => {
-        callbacks.onAcceptCurrent()
-        return true
-      },
-    },
-    {
-      key: 'Mod-Backspace',
-      run: () => {
-        callbacks.onRejectCurrent()
-        return true
-      },
-    },
-    {
-      key: 'Mod-Shift-Enter',
-      run: () => {
-        callbacks.onAcceptAll()
-        return true
-      },
-    },
-    {
-      key: 'Mod-Shift-Backspace',
-      run: () => {
-        callbacks.onRejectAll()
-        return true
-      },
-    },
-  ])
+export function AIHunkNavigator({
+  hunks,
+  currentIndex,
+  onPrevious,
+  onNext,
+  onAcceptAll,
+  onRejectAll,
+}: AIHunkNavigatorProps) {
+  // Don't render if no hunks
+  if (hunks.length === 0) return null
+
+  // NOTE: Parent EditorPanel must have `position: relative` for this to work
+  return (
+    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+      <div
+        className="flex items-center gap-1 bg-background/95 backdrop-blur
+                   border rounded-full px-2 py-1 shadow-lg pointer-events-auto"
+      >
+        {/* Navigation controls */}
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7"
+          onClick={onPrevious}
+          title="Previous change (Alt+P)"
+        >
+          <ChevronUp className="h-4 w-4" />
+        </Button>
+
+        {/* Change counter */}
+        <span className="text-sm text-muted-foreground min-w-[5rem] text-center tabular-nums">
+          Change {currentIndex + 1} / {hunks.length}
+        </span>
+
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7"
+          onClick={onNext}
+          title="Next change (Alt+N)"
+        >
+          <ChevronDown className="h-4 w-4" />
+        </Button>
+
+        {/* Separator */}
+        <div className="w-px h-5 bg-border mx-1" />
+
+        {/* Bulk actions */}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 text-xs px-2"
+          onClick={onRejectAll}
+          title="Reject all changes (Cmd+Shift+Backspace)"
+        >
+          Reject All
+        </Button>
+
+        <Button
+          size="sm"
+          variant="default"
+          className="h-7 text-xs px-2"
+          onClick={onAcceptAll}
+          title="Accept all changes (Cmd+Shift+Enter)"
+        >
+          Accept All
+        </Button>
+      </div>
+    </div>
+  )
 }
 ```
 
 ---
 
-### Step 5.5: Update the extension bundle to include keymap
+### Step 5.6: Update the extension bundle
 
 Update `frontend/src/core/editor/codemirror/diffView/plugin.ts`:
 
-Add import:
 ```typescript
-import { createDiffKeymap } from './keymap'
-```
+import { createDiffKeymap, type DiffKeymapCallbacks } from './keymap'
 
-Update `createDiffViewExtension`:
-```typescript
 /**
- * Create the full diff view extension bundle.
+ * Create the diff view extension bundle.
  *
- * @param config - Configuration including callbacks
- * @param keymapCallbacks - Keyboard shortcut callbacks (optional)
+ * @param keymapCallbacks - Navigation callbacks (optional)
  */
 export function createDiffViewExtension(
-  config: DiffViewConfig,
-  keymapCallbacks?: {
-    onNextHunk: () => void
-    onPrevHunk: () => void
-    onAcceptCurrent: () => void
-    onRejectCurrent: () => void
-    onAcceptAll: () => void
-    onRejectAll: () => void
-  }
+  keymapCallbacks?: DiffKeymapCallbacks
 ): Extension {
   const extensions: Extension[] = [
-    diffConfigFacet.of(config),
     diffViewPlugin,
     diffEditFilter,
   ]
 
-  // Add keymap if callbacks provided
   if (keymapCallbacks) {
     extensions.push(createDiffKeymap(keymapCallbacks))
   }
@@ -389,7 +585,7 @@ export function createDiffViewExtension(
 
 ---
 
-### Step 5.6: Update the index.ts exports
+### Step 5.7: Update the index.ts exports
 
 Update `frontend/src/core/editor/codemirror/diffView/index.ts`:
 
@@ -397,49 +593,46 @@ Update `frontend/src/core/editor/codemirror/diffView/index.ts`:
 /**
  * Diff View Extension
  *
- * Provides word-level inline diff display for AI suggestions.
+ * Provides PUA marker-based diff display for AI suggestions.
+ * - Hides PUA markers from display
+ * - Styles deletion regions as red strikethrough
+ * - Styles insertion regions as green underline
+ * - Blocks edits in deletion regions
+ * - Accept/reject as CM6 transactions (undoable!)
  */
 
 // Types
-export * from './types'
-
 // Plugin and extension
-export {
-  diffViewPlugin,
-  diffConfigFacet,
-  createDiffViewExtension,
-} from './plugin'
-
-// Position mapping utilities
-export {
-  buildOffsetTable,
-  aiPosToContentPos,
-  contentPosToAiPos,
-  getPositionRegion,
-  applyDualEdit,
-} from './positionMapping'
+export { diffViewPlugin, createDiffViewExtension } from './plugin'
 
 // Edit filter
 export { diffEditFilter } from './editFilter'
 
+// Transactions (accept/reject)
+export {
+  acceptHunk,
+  rejectHunk,
+  acceptHunkAtPosition,
+  rejectHunkAtPosition,
+  acceptAll,
+  rejectAll,
+  getHunks,
+} from './transactions'
+
 // Keymap
-export { createDiffKeymap } from './keymap'
+export { createDiffKeymap, type DiffKeymapCallbacks } from './keymap'
 
 // Widgets
-export { DeletionWidget } from './DeletionWidget'
 export { HunkActionWidget } from './HunkActionWidget'
 ```
 
 ---
 
-### Step 5.7: Add hover effect for hunk actions
+## CSS Styles (Added in Phase 2)
 
-Update `frontend/src/globals.css` to show actions only on hover:
+The CSS for hunk actions was added in Phase 2 (`globals.css`). Ensure these styles exist:
 
 ```css
-/**
- * Hunk action buttons - show on hover
- */
 .cm-hunk-actions {
   display: inline-flex;
   gap: 2px;
@@ -449,19 +642,32 @@ Update `frontend/src/globals.css` to show actions only on hover:
   transition: opacity 150ms ease-in-out;
 }
 
-/* Show on line hover */
 .cm-line:hover .cm-hunk-actions {
   opacity: 1;
 }
 
-/* Show when focused within */
 .cm-hunk-actions:focus-within {
   opacity: 1;
 }
 
-/* Always show for focused hunk */
-.cm-ai-hunk-focused .cm-hunk-actions {
-  opacity: 1;
+.cm-hunk-accept {
+  background: hsl(142.1 76.2% 36.3%);
+  color: white;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cm-hunk-reject {
+  background: var(--error);
+  color: var(--error-foreground);
+  padding: 2px 6px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
 }
 ```
 
@@ -487,32 +693,95 @@ Update `frontend/src/globals.css` to show actions only on hover:
 
 ---
 
+## Keyboard Shortcuts Summary
+
+| Shortcut | Action |
+|----------|--------|
+| `Alt+N` | Navigate to next hunk |
+| `Alt+P` | Navigate to previous hunk |
+| `Cmd/Ctrl+Enter` | Accept hunk at cursor |
+| `Cmd/Ctrl+Shift+D` | Reject hunk at cursor |
+| `Cmd/Ctrl+Shift+Enter` | Accept all hunks |
+| `Cmd/Ctrl+Shift+Backspace` | Reject all hunks |
+| `Cmd/Ctrl+Z` | **Undo** (including undo accept/reject!) |
+
+> **Note:** We use `Cmd+Shift+D` for single-hunk reject (D = delete/discard) instead of `Cmd+Backspace` because the latter conflicts with macOS "delete to beginning of line".
+
+---
+
 ## Verification Checklist
 
 Before moving to Phase 6, verify:
 
-- [ ] `AIHunkNavigator.tsx` component created
-- [ ] `HunkActionWidget.ts` widget created
+- [ ] `transactions.ts` created with accept/reject helpers
 - [ ] `keymap.ts` created with keyboard shortcuts
+- [ ] `HunkActionWidget.ts` created with inline buttons
+- [ ] `AIHunkNavigator.tsx` component created
 - [ ] Plugin updated to render action widgets
-- [ ] CSS updated for hover effects
 - [ ] Navigator shows correct change count
 - [ ] Prev/Next navigation works
-- [ ] Accept/Reject All buttons work
 - [ ] Per-hunk ✓/✕ buttons appear on hover
-- [ ] Keyboard shortcuts work (Alt+N/P, Cmd+Enter, etc.)
+- [ ] Keyboard shortcuts work
+- [ ] **Cmd+Z undoes accept/reject operations!**
 
 ## Files Created/Modified
 
 | File | Action |
 |------|--------|
-| `frontend/src/features/documents/components/AIHunkNavigator.tsx` | Created |
-| `frontend/src/core/editor/codemirror/diffView/HunkActionWidget.ts` | Created |
+| `frontend/src/core/editor/codemirror/diffView/transactions.ts` | Created |
 | `frontend/src/core/editor/codemirror/diffView/keymap.ts` | Created |
+| `frontend/src/core/editor/codemirror/diffView/HunkActionWidget.ts` | Created |
+| `frontend/src/features/documents/components/AIHunkNavigator.tsx` | Created |
 | `frontend/src/core/editor/codemirror/diffView/plugin.ts` | Modified |
 | `frontend/src/core/editor/codemirror/diffView/index.ts` | Modified |
-| `frontend/src/globals.css` | Modified |
 
 ## Next Step
 
-→ Continue to `06-integration.md` to wire everything together
+---
+
+## Focused Hunk Behavior (Required)
+
+When the user navigates between hunks (via the navigator pill or keyboard shortcuts), the currently focused hunk should:
+- get a visual highlight (`.cm-ai-hunk-focused`) on the insertion region
+- always show its inline ✓/✕ actions (even without line hover)
+
+### Step 5.8: Add focused hunk state to the CM6 extension
+
+Create `frontend/src/core/editor/codemirror/diffView/focus.ts`:
+
+```ts
+import { StateEffect, StateField } from '@codemirror/state'
+
+export const setFocusedHunkIndexEffect = StateEffect.define<number>()
+
+export const focusedHunkIndexField = StateField.define<number>({
+  create: () => 0,
+  update: (value, tr) => {
+    for (const e of tr.effects) {
+      if (e.is(setFocusedHunkIndexEffect)) return e.value
+    }
+    return value
+  },
+})
+```
+
+Update `frontend/src/core/editor/codemirror/diffView/plugin.ts`:
+- Import `focusedHunkIndexField` and include it in `createDiffViewExtension()`
+- In the ViewPlugin `update(...)`, rebuild decorations when a transaction includes `setFocusedHunkIndexEffect`
+- In `buildDecorations(...)`, after `extractHunks(doc)`:
+  - `const focusedIndex = view.state.field(focusedHunkIndexField)`
+  - `const focused = hunks[focusedIndex]`
+  - Add a `Decoration.mark({ class: 'cm-ai-hunk-focused' })` over the focused insertion range (e.g. `focused.insStart + 1` → `focused.insEnd`)
+
+Update `frontend/src/core/editor/codemirror/diffView/HunkActionWidget.ts`:
+- Add `focused: boolean` to the widget constructor
+- In `toDOM()`, set `container.dataset.focused = focused ? 'true' : 'false'`
+
+Update `frontend/src/core/editor/codemirror/diffView/plugin.ts` where the widget is created:
+- Pass `focused: index === focusedIndex` when creating `HunkActionWidget`
+
+Update `frontend/src/core/editor/codemirror/diffView/index.ts` exports:
+- Export `setFocusedHunkIndexEffect` so `EditorPanel` can keep CM6 in sync with the store focus state.
+
+
+→ Continue to `06-integration.md` to wire everything together in EditorPanel.

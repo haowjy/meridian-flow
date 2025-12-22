@@ -1,19 +1,28 @@
 # Phase 2: Decorations
 
 ## Goal
-Build the CodeMirror ViewPlugin that displays word-level diffs with:
-- Red strikethrough for deletions (as ghost text)
-- Green underline for insertions
 
-## Key Concept: Ghost Deletions
+Build the CodeMirror ViewPlugin that:
+1. **Always hides PUA markers** from display (replacing them with zero-width) whenever the merged doc is shown
+2. Styles deletion regions as red strikethrough + insertion regions as green underline
 
-The editor shows `aiVersion` as its document. But we need to also show deleted text (from `content`) that doesn't exist in `aiVersion`. We do this with **widget decorations** that insert visual-only content.
+> There are no modes. This plugin targets the single merged review view.
+
+## What You're Building
+
+The decorations layer makes the merged document look like a clean inline diff. The PUA markers are still in the document (important for CM6 history), but users don't see them.
 
 ```
-Editor doc (aiVersion):  "A heavy melancholia settled..."
-Display:                 "S̶h̶e̶ ̶f̶e̶l̶t̶ ̶s̶a̶d̶.̶ A heavy melancholia settled..."
-                          └── ghost widget (not in doc)
+Document:  "\uE000She felt sad.\uE001\uE002A heavy melancholia.\uE003 The rain..."
+Display:   "~~She felt sad.~~ A heavy melancholia. The rain..."
+                            ↑ markers hidden, regions styled
 ```
+
+## Behavior Summary
+
+- Markers are always hidden
+- Deletions are styled as red strikethrough
+- Insertions are styled as green underline
 
 ## Steps
 
@@ -27,20 +36,19 @@ Add to `frontend/src/globals.css`:
    ========================================================================== */
 
 /**
- * Deleted text (ghost widget)
- * Shown as red strikethrough - this text doesn't exist in the editor doc
+ * Deleted text - shown as red strikethrough
+ * This is original content that AI wants to replace
  */
 .cm-ai-deletion {
   text-decoration: line-through;
-  color: hsl(var(--destructive));
-  background-color: hsl(var(--destructive) / 0.1);
+  color: var(--error);
+  background-color: color-mix(in srgb, var(--error) 10%, transparent);
   border-radius: 2px;
-  padding: 0 1px;
 }
 
 /**
- * Inserted text (mark decoration)
- * Shown as green underline - this text exists in the editor doc
+ * Inserted text - shown as green underline
+ * This is AI-suggested replacement text
  */
 .cm-ai-insertion {
   text-decoration: underline;
@@ -49,6 +57,14 @@ Add to `frontend/src/globals.css`:
   text-underline-offset: 2px;
   background-color: hsl(142.1 76.2% 36.3% / 0.1);
   border-radius: 2px;
+}
+
+/**
+ * PUA markers - hidden from display
+ * These are replaced with zero-width spans
+ */
+.cm-pua-marker {
+  display: none;
 }
 
 /**
@@ -67,6 +83,18 @@ Add to `frontend/src/globals.css`:
   gap: 2px;
   margin-left: 4px;
   vertical-align: middle;
+  opacity: 0;
+  transition: opacity 150ms ease-in-out;
+}
+
+/* Show on line hover */
+.cm-line:hover .cm-hunk-actions {
+  opacity: 1;
+}
+
+/* Always show for focused hunk */
+.cm-hunk-actions[data-focused="true"] {
+  opacity: 1;
 }
 
 .cm-hunk-actions button {
@@ -88,8 +116,8 @@ Add to `frontend/src/globals.css`:
 }
 
 .cm-hunk-reject {
-  background: hsl(var(--destructive));
-  color: hsl(var(--destructive-foreground));
+  background: var(--error);
+  color: var(--error-foreground);
 }
 
 .cm-hunk-reject:hover {
@@ -99,78 +127,7 @@ Add to `frontend/src/globals.css`:
 
 ---
 
-### Step 2.2: Create the DeletionWidget
-
-Create `frontend/src/core/editor/codemirror/diffView/DeletionWidget.ts`:
-
-```typescript
-import { WidgetType } from '@codemirror/view'
-
-/**
- * Widget that displays deleted text as a ghost element.
- *
- * This text doesn't exist in the editor document - it's purely visual.
- * The widget is inserted at the position where the deletion occurred.
- */
-export class DeletionWidget extends WidgetType {
-  constructor(
-    private readonly deletedText: string,
-    private readonly hunkId: string
-  ) {
-    super()
-  }
-
-  toDOM(): HTMLElement {
-    const span = document.createElement('span')
-    span.className = 'cm-ai-deletion'
-    span.textContent = this.deletedText
-    span.dataset.hunkId = this.hunkId
-
-    // Prevent cursor from entering the widget
-    span.setAttribute('contenteditable', 'false')
-
-    return span
-  }
-
-  /**
-   * Compare widgets for equality.
-   * Used by CodeMirror to avoid unnecessary DOM updates.
-   */
-  eq(other: DeletionWidget): boolean {
-    return (
-      other.deletedText === this.deletedText &&
-      other.hunkId === this.hunkId
-    )
-  }
-
-  /**
-   * Estimate the visual length of the widget.
-   * Used for cursor positioning calculations.
-   */
-  get estimatedHeight(): number {
-    return -1 // Inline widget, no height contribution
-  }
-
-  /**
-   * Whether the widget is a block widget.
-   */
-  get lineBreaks(): number {
-    // Count line breaks in deleted text for proper height estimation
-    return (this.deletedText.match(/\n/g) || []).length
-  }
-
-  /**
-   * Widget should not be editable.
-   */
-  ignoreEvent(): boolean {
-    return true
-  }
-}
-```
-
----
-
-### Step 2.3: Create the diff view plugin
+### Step 2.2: Create the decoration plugin
 
 Create `frontend/src/core/editor/codemirror/diffView/plugin.ts`:
 
@@ -178,143 +135,175 @@ Create `frontend/src/core/editor/codemirror/diffView/plugin.ts`:
 /**
  * Diff View Plugin
  *
- * Displays word-level diffs between baseline (content) and AI version.
- * - Deletions: Ghost widgets with red strikethrough
- * - Insertions: Mark decorations with green underline
+ * Creates decorations to:
+ * 1. Always hide PUA marker characters (replace with zero-width spans)
+ * 2. Style deletion + insertion regions
  */
 
 import {
   ViewPlugin,
   Decoration,
   type DecorationSet,
-  type EditorView,
+  EditorView,
   type ViewUpdate,
   WidgetType,
 } from '@codemirror/view'
-import { RangeSetBuilder, type Extension, Facet } from '@codemirror/state'
-import type { WordDiffHunk, DiffViewConfig } from './types'
-import { DeletionWidget } from './DeletionWidget'
+import { RangeSetBuilder, type Extension } from '@codemirror/state'
+import { MARKERS, extractHunks, type MergedHunk } from '@/features/documents/utils/mergedDocument'
 
-// ============================================================================
-// FACET FOR CONFIGURATION
-// ============================================================================
+// =============================================================================
+// MARKER HIDING WIDGET
+// =============================================================================
 
 /**
- * Facet to provide diff configuration to the plugin.
- * This allows the config to be updated without recreating the plugin.
+ * Zero-width widget that replaces PUA markers.
+ * The marker is still in the document, but this widget has no visual width.
  */
-export const diffConfigFacet = Facet.define<DiffViewConfig, DiffViewConfig>({
-  combine: (values) => values[values.length - 1] ?? {
-    mode: 'changes',
-    baseline: '',
-    aiVersion: '',
-    hunks: [],
-    onAcceptHunk: () => {},
-    onRejectHunk: () => {},
-    onDualDocChange: () => {},
-  },
-})
+class MarkerWidget extends WidgetType {
+  toDOM(): HTMLElement {
+    const span = document.createElement('span')
+    span.className = 'cm-pua-marker'
+    return span
+  }
 
-// ============================================================================
+  eq(): boolean {
+    return true  // All marker widgets are equivalent
+  }
+}
+
+const markerWidget = new MarkerWidget()
+
+// =============================================================================
 // DECORATION BUILDERS
-// ============================================================================
+// =============================================================================
 
 /**
- * Create a widget decoration for deleted text.
+ * Create decorations for a single hunk.
  */
-function createDeletionDecoration(
-  hunk: WordDiffHunk
-): { pos: number; decoration: Decoration } | null {
-  if (!hunk.deletedText) return null
+function createHunkDecorations(
+  hunk: MergedHunk,
+  builder: RangeSetBuilder<Decoration>
+): void {
+  // 1. Hide DEL_START marker
+  builder.add(
+    hunk.delStart,
+    hunk.delStart + 1,
+    Decoration.replace({ widget: markerWidget })
+  )
 
-  return {
-    pos: hunk.displayFrom,
-    decoration: Decoration.widget({
-      widget: new DeletionWidget(hunk.deletedText, hunk.id),
-      side: -1, // Before the insertion
-    }),
+  // 2. Style deletion content (if any)
+  if (hunk.deletedText.length > 0) {
+    builder.add(
+      hunk.delStart + 1,  // After DEL_START
+      hunk.delEnd,        // Before DEL_END
+      Decoration.mark({ class: 'cm-ai-deletion' })
+    )
   }
+
+  // 3. Hide DEL_END marker
+  builder.add(
+    hunk.delEnd,
+    hunk.delEnd + 1,
+    Decoration.replace({ widget: markerWidget })
+  )
+
+  // 4. Hide INS_START marker
+  builder.add(
+    hunk.insStart,
+    hunk.insStart + 1,
+    Decoration.replace({ widget: markerWidget })
+  )
+
+  // 5. Style insertion content (if any)
+  if (hunk.insertedText.length > 0) {
+    builder.add(
+      hunk.insStart + 1,  // After INS_START
+      hunk.insEnd,        // Before INS_END
+      Decoration.mark({ class: 'cm-ai-insertion' })
+    )
+  }
+
+  // 6. Hide INS_END marker
+  builder.add(
+    hunk.insEnd,
+    hunk.insEnd + 1,
+    Decoration.replace({ widget: markerWidget })
+  )
 }
 
-/**
- * Create a mark decoration for inserted text.
- */
-function createInsertionDecoration(
-  hunk: WordDiffHunk
-): { from: number; to: number; decoration: Decoration } | null {
-  if (!hunk.insertedText || hunk.displayFrom === hunk.displayTo) return null
-
-  return {
-    from: hunk.displayFrom,
-    to: hunk.displayTo,
-    decoration: Decoration.mark({
-      class: 'cm-ai-insertion',
-      attributes: { 'data-hunk-id': hunk.id },
-    }),
-  }
-}
-
-// ============================================================================
+// =============================================================================
 // VIEW PLUGIN
-// ============================================================================
+// =============================================================================
 
-class DiffViewPlugin {
+class DiffViewPluginClass {
   decorations: DecorationSet
+  atomicRanges: DecorationSet
 
   constructor(view: EditorView) {
     this.decorations = this.buildDecorations(view)
+    this.atomicRanges = this.buildAtomicRanges(view)
   }
 
   update(update: ViewUpdate) {
     // Rebuild decorations when:
-    // - Document changes
-    // - Config changes (mode, hunks)
-    // - Viewport changes (for performance, only render visible)
-    const configChanged = update.state.facet(diffConfigFacet) !==
-                          update.startState.facet(diffConfigFacet)
-
-    if (update.docChanged || configChanged || update.viewportChanged) {
+    // - Document changes (hunk positions shift)
+    // - Viewport changes (scrolling can reveal un-decorated markers if culling is used)
+    if (update.docChanged || update.viewportChanged) {
       this.decorations = this.buildDecorations(update.view)
+      this.atomicRanges = this.buildAtomicRanges(update.view)
     }
   }
 
   buildDecorations(view: EditorView): DecorationSet {
-    const config = view.state.facet(diffConfigFacet)
+    // Extract hunks from current document
+    // Note: We could use config.hunks, but extracting fresh ensures
+    // positions are always accurate after edits
+    const doc = view.state.doc.toString()
+    const hunks = extractHunks(doc)
 
-    // Only show decorations in 'changes' mode
-    if (config.mode !== 'changes') {
+    if (hunks.length === 0) {
       return Decoration.none
     }
 
     const builder = new RangeSetBuilder<Decoration>()
 
-    // Sort hunks by display position (required for RangeSetBuilder)
-    const sortedHunks = [...config.hunks].sort((a, b) => a.displayFrom - b.displayFrom)
-
-    // Process each hunk
-    for (const hunk of sortedHunks) {
+    // Process each hunk (they're already sorted by position)
+    for (const hunk of hunks) {
       // Skip hunks outside viewport for performance
       const { from: viewFrom, to: viewTo } = view.viewport
-      if (hunk.displayTo < viewFrom || hunk.displayFrom > viewTo) {
+      if (hunk.to < viewFrom || hunk.from > viewTo) {
         continue
       }
 
-      // Add deletion widget (ghost text)
-      const deletionDeco = createDeletionDecoration(hunk)
-      if (deletionDeco) {
-        // Widgets are point decorations (from === to)
-        builder.add(deletionDeco.pos, deletionDeco.pos, deletionDeco.decoration)
-      }
-
-      // Add insertion mark
-      const insertionDeco = createInsertionDecoration(hunk)
-      if (insertionDeco) {
-        builder.add(insertionDeco.from, insertionDeco.to, insertionDeco.decoration)
-      }
+      // Show diff styling (and hide markers via createHunkDecorations)
+      createHunkDecorations(hunk, builder)
     }
 
     return builder.finish()
   }
+
+  /**
+   * Atomic ranges prevent the cursor from landing "inside" hidden marker ranges.
+   * This is important because marker characters still exist in the document.
+   */
+	  buildAtomicRanges(view: EditorView): DecorationSet {
+	    const doc = view.state.doc.toString()
+	    const hunks = extractHunks(doc)
+	    if (hunks.length === 0) return Decoration.none
+
+	    const builder = new RangeSetBuilder<Decoration>()
+	    const atomic = Decoration.mark({}) // Decoration value doesn't matter; the range is treated as atomic.
+
+	    for (const hunk of hunks) {
+	      // Individual marker chars are atomic
+	      builder.add(hunk.delStart, hunk.delStart + 1, atomic)
+	      builder.add(hunk.delEnd, hunk.delEnd + 1, atomic)
+	      builder.add(hunk.insStart, hunk.insStart + 1, atomic)
+	      builder.add(hunk.insEnd, hunk.insEnd + 1, atomic)
+	    }
+
+	    return builder.finish()
+	  }
 
   destroy() {
     // No cleanup needed
@@ -323,60 +312,53 @@ class DiffViewPlugin {
 
 /**
  * The diff view ViewPlugin.
- *
- * Usage:
- * ```typescript
- * const extensions = [
- *   diffConfigFacet.of(config),
- *   diffViewPlugin,
- * ]
- * ```
  */
-export const diffViewPlugin = ViewPlugin.fromClass(DiffViewPlugin, {
-  decorations: (v) => v.decorations,
+export const diffViewPlugin = ViewPlugin.fromClass(DiffViewPluginClass, {
+  decorations: v => v.decorations,
+  provide: (plugin) =>
+    EditorView.atomicRanges.of((view) => view.plugin(plugin)?.atomicRanges ?? Decoration.none),
 })
 
-// ============================================================================
+// =============================================================================
 // EXTENSION BUNDLE
-// ============================================================================
+// =============================================================================
 
 /**
- * Create the full diff view extension bundle.
+ * Create the diff view extension bundle.
  *
- * @param config - Initial configuration
- * @returns Extension array to add to the editor
+ * NOTE: This is the Phase 2 version. Phase 5 extends this function to accept
+ * an optional keymapCallbacks parameter for navigation shortcuts:
+ *   createDiffViewExtension(callbacks?: DiffKeymapCallbacks): Extension
+ *
+ * @returns Extension array with view plugin
  *
  * @example
  * ```typescript
- * const editor = new EditorView({
- *   extensions: [
- *     ...baseExtensions,
- *     createDiffViewExtension({
- *       mode: 'changes',
- *       baseline: content,
- *       aiVersion: aiVersion,
- *       hunks: computedHunks,
- *       onAcceptHunk: (id) => handleAccept(id),
- *       onRejectHunk: (id) => handleReject(id),
- *       onDualDocChange: (c, a) => handleDualChange(c, a),
- *     }),
- *   ],
+ * // In EditorPanel, wrap in a Compartment for dynamic reconfiguration
+ * const diffCompartment = new Compartment()
+ *
+ * // Initial: empty
+ * extensions: [diffCompartment.of([])]
+ *
+ * // Enable diff view:
+ * view.dispatch({
+ *   effects: diffCompartment.reconfigure(createDiffViewExtension())
  * })
+ *
  * ```
  */
-export function createDiffViewExtension(config: DiffViewConfig): Extension {
+export function createDiffViewExtension(): Extension {
   return [
-    diffConfigFacet.of(config),
     diffViewPlugin,
-    // Edit filter will be added in Phase 3
-    // Keymap will be added in Phase 5
+    // Edit filter added in Phase 3
+    // Keymap with callbacks added in Phase 5
   ]
 }
 ```
 
 ---
 
-### Step 2.4: Update the index.ts export
+### Step 2.3: Update the index.ts exports
 
 Update `frontend/src/core/editor/codemirror/diffView/index.ts`:
 
@@ -384,62 +366,74 @@ Update `frontend/src/core/editor/codemirror/diffView/index.ts`:
 /**
  * Diff View Extension
  *
- * Provides word-level inline diff display for AI suggestions.
- * Shows deletions as red strikethrough (ghost widgets),
- * insertions as green underline (mark decorations).
+ * Provides PUA marker-based diff display for AI suggestions.
+ * - Hides PUA markers from display
+ * - Styles deletion regions as red strikethrough
+ * - Styles insertion regions as green underline
  */
 
-// Types
-export * from './types'
-
 // Plugin and extension
-export {
-  diffViewPlugin,
-  diffConfigFacet,
-  createDiffViewExtension,
-} from './plugin'
-
-// Widget (for testing/customization)
-export { DeletionWidget } from './DeletionWidget'
+export { diffViewPlugin, createDiffViewExtension } from './plugin'
 ```
 
 ---
 
-### Step 2.5: Test the decorations
+### Step 2.4: Test the decorations
 
-Create a quick test component or use the browser console:
+Temporary test code for EditorPanel:
 
 ```typescript
-// In EditorPanel.tsx (temporary test code)
-import { useWordDiff } from '@/features/documents/hooks/useWordDiff'
+import { Compartment } from '@codemirror/state'
 import { createDiffViewExtension } from '@/core/editor/codemirror/diffView'
+import { buildMergedDocument, extractHunks } from '@/features/documents/utils/mergedDocument'
 
-// Inside the component:
-const hunks = useWordDiff(content, aiVersion)
+// Create compartment (once, at module level or in a ref)
+const diffCompartment = new Compartment()
 
-// Log to verify hunks are computed
-useEffect(() => {
-  console.log('Computed hunks:', hunks)
-}, [hunks])
+// Build test document
+const content = "She felt sad. The rain fell."
+const aiVersion = "A heavy melancholia. The rain continued."
+const merged = buildMergedDocument(content, aiVersion)
+const hunks = extractHunks(merged)
 
-// Add extension to editor (temporary - proper wiring in Phase 6)
-const diffExtension = useMemo(() => {
-  if (!aiVersion) return []
-  return createDiffViewExtension({
-    mode: 'changes',
-    baseline: content,
-    aiVersion: aiVersion,
-    hunks,
-    onAcceptHunk: (id) => console.log('Accept:', id),
-    onRejectHunk: (id) => console.log('Reject:', id),
-    onDualDocChange: () => {},
-  })
-}, [content, aiVersion, hunks])
+console.log('Merged document:', JSON.stringify(merged))
+console.log('Hunks:', hunks)
+
+// In your editor initialization:
+// extensions: [diffCompartment.of(createDiffViewExtension())]
+
+// You should see:
+// - PUA markers hidden (no weird characters visible)
+// - "She felt sad." in red strikethrough
+// - "A heavy melancholia." in green underline
+// - "fell" in red, "continued" in green
 ```
 
-You should see:
-- Red strikethrough text for deletions (appearing as ghost text)
-- Green underlined text for insertions
+---
+
+## Understanding the Decoration Flow
+
+```
+Document with PUA markers
+        │
+        ▼
+┌───────────────────────────┐
+│  extractHunks(doc)        │  Extract positions from markers
+└───────────────────────────┘
+        │
+        ▼
+┌───────────────────────────┐
+│  For each hunk:           │
+│  - Hide 4 markers         │  Decoration.replace with zero-width widget
+│  - Style DEL content      │  Decoration.mark with cm-ai-deletion
+│  - Style INS content      │  Decoration.mark with cm-ai-insertion
+└───────────────────────────┘
+        │
+        ▼
+┌───────────────────────────┐
+│  User sees clean diff     │  Markers invisible, content styled
+└───────────────────────────┘
+```
 
 ---
 
@@ -448,38 +442,42 @@ You should see:
 Before moving to Phase 3, verify:
 
 - [ ] CSS classes added to `globals.css`
-- [ ] `DeletionWidget.ts` created
 - [ ] `plugin.ts` created with ViewPlugin
 - [ ] `index.ts` updated with exports
-- [ ] Test shows decorations rendering correctly
-- [ ] Deleted text appears as red strikethrough ghost
-- [ ] Inserted text appears with green underline
+- [ ] PUA markers are hidden (not visible in editor)
+- [ ] Deletion text appears with red strikethrough
+- [ ] Insertion text appears with green underline
+- [ ] Decorations rebuild after document changes
 
 ## Troubleshooting
 
-**Decorations not showing?**
-1. Check `mode` is set to `'changes'`
-2. Verify `hunks` array is not empty
-3. Check browser console for errors
-4. Ensure CSS is loaded
+**Markers still visible?**
+1. Check CSS `.cm-pua-marker { display: none }` is loaded
+2. Verify the replace decorations are being created
+3. Check hunk positions are correct
 
-**Wrong positions?**
-1. Verify editor document is `aiVersion` (not `content`)
-2. Check `displayFrom`/`displayTo` in hunks match aiVersion positions
+**Wrong styling positions?**
+1. Log the hunks from `extractHunks()` and verify positions
+2. Check that marker positions account for the 1-character width
+3. Ensure decorations are added in position order
 
-**Widget not rendering?**
-1. Check `DeletionWidget.toDOM()` returns valid DOM
-2. Verify widget position is within document bounds
+**Performance issues?**
+1. Check viewport culling is working (hunks outside viewport skipped)
+2. Consider memoizing hunk extraction if document hasn't changed
+
+**Performance Note:** For large documents (>100KB) with many hunks (>50), profile `extractHunks()` during typing. PUA marker scanning is O(n) but should be fast due to unique character codes. If needed, optimize by:
+- Caching hunk positions and using CM6 transaction mapping to update them incrementally
+- Throttling decoration rebuilds during rapid typing
+- Using binary search on cached marker positions
 
 ## Files Created/Modified
 
 | File | Action |
 |------|--------|
 | `frontend/src/globals.css` | Modified (added diff styles) |
-| `frontend/src/core/editor/codemirror/diffView/DeletionWidget.ts` | Created |
 | `frontend/src/core/editor/codemirror/diffView/plugin.ts` | Created |
 | `frontend/src/core/editor/codemirror/diffView/index.ts` | Modified |
 
 ## Next Step
 
-→ Continue to `03-edit-handling.md` to implement mode-aware editing
+→ Continue to `03-edit-handling.md` to implement the edit filter that blocks edits in deletion regions.
