@@ -253,11 +253,6 @@ Position is considered "inside" DEL region → blocked.
 ### 2. Cursor at DEL_END marker
 Position is considered "outside" DEL region (just after the marker) → allowed.
 
-**Implementation note:** The `isInDeletionRegion` function sets `insideDel = false` when it encounters DEL_END. This means position `pos` is "inside" only if we're past DEL_START but haven't yet passed DEL_END. The exact boundary behavior:
-- Position AT DEL_START (i.e., `pos == index of \uE000`) → inside (blocked)
-- Position AT DEL_END (i.e., `pos == index of \uE001`) → outside (allowed)
-- If this causes unexpected blocking at boundaries during implementation, consider adjusting to `position > delStartIndex && position < delEndIndex` for stricter exclusion.
-
 ### 3. Selection spanning DEL and INS
 Any overlap with DEL region → blocked.
 
