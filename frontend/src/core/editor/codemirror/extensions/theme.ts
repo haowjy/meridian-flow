@@ -19,7 +19,10 @@ import { EditorView } from '@codemirror/view'
 
 export const baseTheme = EditorView.baseTheme({
   '&.cm-editor': {
-    height: '100%',
+    // Use height: auto so the editor sizes to content, then content uses min-height
+    // to fill the viewport. height: 100% doesn't work reliably with flexbox containers.
+    // See: https://github.com/codemirror/dev/issues/472
+    height: 'auto',
     outline: 'none', // Prevent global outline style from showing on focus
   },
   '.cm-scroller': {
@@ -38,12 +41,22 @@ export const livePreviewTheme = EditorView.theme({
     fontFamily: 'Georgia, serif',
   },
   '.cm-content': {
-    padding: '20px 0',
-    maxWidth: '720px',
-    margin: '0 auto',
+    // IMPORTANT: Keep `.cm-content` full-width so clicking in the left/right
+    // whitespace still updates the cursor position (CM hit-testing is based on
+    // coords inside the content DOM).
+    paddingTop: '20px',
+    paddingBottom: '20px',
+    paddingLeft: 'max(20px, calc((100% - 720px) / 2))',
+    paddingRight: 'max(20px, calc((100% - 720px) / 2))',
+    // Use viewport-based min-height so clicking below content works.
+    // 120px accounts for header (~40px), AI toolbar (~40px), and buffer (~40px).
+    // This works because .cm-editor uses height: auto (see baseTheme).
+    minHeight: 'calc(100vh - 120px)',
+  },
+  '.cm-gutter': {
+    minHeight: 'calc(100vh - 120px)', // Match content height
   },
   '.cm-line': {
-    padding: '0 20px',
     lineHeight: '1.6',
   },
   '.cm-cursor': {
@@ -88,17 +101,14 @@ export const livePreviewTheme = EditorView.theme({
   '.cm-heading-1': {
     fontSize: '2em',
     lineHeight: '1.3',
-    marginTop: '0.5em',
   },
   '.cm-heading-2': {
     fontSize: '1.5em',
     lineHeight: '1.4',
-    marginTop: '0.4em',
   },
   '.cm-heading-3': {
     fontSize: '1.25em',
     lineHeight: '1.5',
-    marginTop: '0.3em',
   },
 
   // List widgets
@@ -127,7 +137,6 @@ export const livePreviewTheme = EditorView.theme({
   '.cm-blockquote': {
     borderLeft: '3px solid var(--theme-accent, #d97706)',
     paddingLeft: '1em',
-    marginLeft: '0.5em',
     color: 'var(--theme-text-muted, #78716c)',
     fontStyle: 'italic',
   },
@@ -138,7 +147,7 @@ export const livePreviewTheme = EditorView.theme({
     width: '100%',
     height: '2px',
     backgroundColor: 'var(--theme-border, #e5e5e5)',
-    margin: '1em 0',
+    padding: '1em 0', // Use padding instead of margin to avoid breaking CM6 hit testing
   },
 
   // Strikethrough
