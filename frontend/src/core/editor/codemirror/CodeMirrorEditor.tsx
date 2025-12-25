@@ -24,6 +24,7 @@ import {
   isFormatActive,
 } from './commands'
 import { markdownEnterKeymap, autoPairsExtension, formattingKeymap } from './keyHandlers'
+import { clickBelowContentExtension } from './extensions/clickBelowContent'
 
 // ============================================================================
 // COMPARTMENTS (CM6 best practice for dynamic reconfiguration)
@@ -40,6 +41,17 @@ const editableCompartment = new Compartment()
  * Allows runtime theme switching without recreating the editor.
  */
 const themeCompartment = new Compartment()
+
+// ============================================================================
+// KEYMAP TUNING
+// ============================================================================
+
+// Writer-first: let browser/app navigation shortcuts work while the editor is focused.
+// CodeMirror binds Mod-[ / Mod-] to indentLess/indentMore in its defaultKeymap, which
+// prevents Cmd-[ / Cmd-] from acting as back/forward navigation in the browser shell.
+const defaultKeymapWithoutBrowserNav = defaultKeymap.filter((binding) => {
+  return binding.key !== 'Mod-[' && binding.key !== 'Mod-]'
+})
 
 // ============================================================================
 // INITIALIZATION
@@ -168,7 +180,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, CodeMirrorEditor
         Prec.high(formattingKeymap),
 
         // Default keymaps
-        keymap.of([...defaultKeymap, ...historyKeymap, ...closeBracketsKeymap]),
+        keymap.of([...defaultKeymapWithoutBrowserNav, ...historyKeymap, ...closeBracketsKeymap]),
 
         // For quotes only (brackets handled by autoPairs)
         closeBrackets(),
@@ -181,6 +193,9 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, CodeMirrorEditor
 
         // Theming (wrapped in compartment for runtime switching)
         themeCompartment.of(editorTheme),
+
+        // Click below content → move cursor to end
+        clickBelowContentExtension,
 
         // Line wrapping
         EditorView.lineWrapping,
@@ -212,6 +227,35 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, CodeMirrorEditor
       })
 
       viewRef.current = view
+
+      // Best-effort measure refresh.
+      // This mitigates rare-but-real cursor/click coordinate glitches when the editor is mounted
+      // during layout churn (panel resize) or before fonts finish loading.
+      requestAnimationFrame(() => view.requestMeasure())
+      if (typeof document !== 'undefined' && 'fonts' in document) {
+        // `document.fonts.ready` resolves after fonts are loaded (or immediately if already ready).
+        // Request a measure so CM recalculates text metrics.
+        void (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready.then(() => {
+          view.requestMeasure()
+        })
+      }
+
+      // Keep CodeMirror's measurements in sync with layout changes.
+      // This is especially important when the editor lives inside resizable panels or containers
+      // that change width without directly changing line DOM metrics in a way CM detects.
+      let resizeObserver: ResizeObserver | null = null
+      let resizeMeasureScheduled = false
+      if (typeof ResizeObserver !== 'undefined') {
+        resizeObserver = new ResizeObserver(() => {
+          if (resizeMeasureScheduled) return
+          resizeMeasureScheduled = true
+          requestAnimationFrame(() => {
+            resizeMeasureScheduled = false
+            view.requestMeasure()
+          })
+        })
+        resizeObserver.observe(containerRef.current)
+      }
 
       // Auto-focus if requested
       if (autoFocus) {
@@ -252,6 +296,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, CodeMirrorEditor
       }
 
       return () => {
+        resizeObserver?.disconnect()
         view.destroy()
         viewRef.current = null
       }

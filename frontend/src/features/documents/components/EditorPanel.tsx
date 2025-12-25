@@ -3,6 +3,7 @@ import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { CodeMirrorEditor, EditorContextMenu, type CodeMirrorEditorRef } from '@/core/editor/codemirror'
 import { useEditorStore } from '@/core/stores/useEditorStore'
 import { useDebounce } from '@/core/hooks/useDebounce'
+import { documentSyncService } from '@/core/services/documentSyncService'
 import { EditorHeader } from './EditorHeader'
 import { Skeleton } from '@/shared/components/ui/skeleton'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
@@ -55,6 +56,20 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
 
   // CodeMirror editor ref
   const editorRef = useRef<CodeMirrorEditorRef | null>(null)
+
+  // Refs for "flush on navigate/unmount" without stale closures
+  const localContentRef = useRef(localContent)
+  const hasUserEditRef = useRef(hasUserEdit)
+  const activeDocumentRef = useRef(activeDocument)
+  useEffect(() => {
+    localContentRef.current = localContent
+  }, [localContent])
+  useEffect(() => {
+    hasUserEditRef.current = hasUserEdit
+  }, [hasUserEdit])
+  useEffect(() => {
+    activeDocumentRef.current = activeDocument
+  }, [activeDocument])
 
   // Flag to track programmatic content changes (e.g., setContent during mode switch)
   // Prevents triggering hasUserEdit and auto-save for non-user changes
@@ -116,6 +131,20 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
 
     // Cleanup: abort request if component unmounts or documentId changes
     return () => {
+      // Flush any unsaved edits when navigating away or switching documents.
+      // We don't block navigation—this is best-effort and relies on the existing
+      // optimistic IndexedDB update + retry-on-network-failure behavior.
+      if (initializedRef.current && hasUserEditRef.current) {
+        const doc = activeDocumentRef.current
+        const docId = doc?.id ?? documentId
+        const serverContent = doc?.content ?? ''
+        const editorContent = editorRef.current?.getContent() ?? localContentRef.current
+
+        // Treat empty string "" as valid content
+        if (editorContent !== serverContent) {
+          void documentSyncService.save(docId, editorContent, doc ?? undefined)
+        }
+      }
       abortController.abort()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
