@@ -36,7 +36,8 @@ Add tri-state semantics for `ai_version` to the existing document PATCH endpoint
 
 - **Explicit presence tracking** in JSON decoding (Go pointers can’t distinguish “absent” vs `null` in a PATCH DTO).
 - **Atomic update** when both `content` and `ai_version` are provided (avoid partial state such as “content saved but AI suggestion not updated”).
-- **Do not introduce new required fields** for this endpoint (do not start requiring `project_id` for content-only patches).
+- **Do not change existing required fields** for this endpoint; keep backward compatibility for existing callers.
+- **Prevent stomping unseen AI updates**: when the client PATCH includes `ai_version`, require an `ai_version_base_rev` precondition against a server-owned `ai_version_rev` counter (409 on mismatch).
 
 ## Implementation outline (what to build)
 
@@ -92,4 +93,3 @@ Prefer API-level verification (since the backend currently has no Go unit tests)
 - The contract table above matches real behavior.
 - Existing frontend code that calls content-only `PATCH /api/documents/{id}` continues to work unchanged.
 - Inline suggestions save path can rely on one request with tri-state semantics.
-

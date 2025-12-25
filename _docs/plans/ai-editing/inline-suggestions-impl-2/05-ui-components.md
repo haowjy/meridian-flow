@@ -330,8 +330,11 @@ export class HunkActionWidget extends WidgetType {
   }
 
   ignoreEvent(event: Event): boolean {
-    // Allow click events to propagate to our buttons
-    return event.type !== 'click'
+    // `ignoreEvent=true` tells CodeMirror to ignore events that happen inside this widget,
+    // so the editor doesn't interfere (selection/cursor changes) with button interactions.
+    // The default WidgetType behavior already ignores all events, but we make it explicit.
+    void event
+    return true
   }
 }
 ```
@@ -389,24 +392,24 @@ function createHunkDecorations(
 
   // 4. Hide INS_START marker
   builder.add(
-    hunk.delEnd + 1,
-    hunk.delEnd + 2,
+    hunk.insStart,
+    hunk.insStart + 1,
     Decoration.replace({ widget: markerWidget })
   )
 
   // 5. Style insertion content (if any)
   if (hunk.insertedText.length > 0) {
     builder.add(
-      hunk.delEnd + 2,
-      hunk.to - 1,
+      hunk.insStart + 1,
+      hunk.insEnd,
       Decoration.mark({ class: 'cm-ai-insertion' })
     )
   }
 
   // 6. Hide INS_END marker
   builder.add(
-    hunk.to - 1,
-    hunk.to,
+    hunk.insEnd,
+    hunk.insEnd + 1,
     Decoration.replace({ widget: markerWidget })
   )
 

@@ -286,24 +286,24 @@ class DiffViewPluginClass {
    * Atomic ranges prevent the cursor from landing "inside" hidden marker ranges.
    * This is important because marker characters still exist in the document.
    */
-	  buildAtomicRanges(view: EditorView): DecorationSet {
-	    const doc = view.state.doc.toString()
-	    const hunks = extractHunks(doc)
-	    if (hunks.length === 0) return Decoration.none
+  buildAtomicRanges(view: EditorView): DecorationSet {
+    const doc = view.state.doc.toString()
+    const hunks = extractHunks(doc)
+    if (hunks.length === 0) return Decoration.none
 
-	    const builder = new RangeSetBuilder<Decoration>()
-	    const atomic = Decoration.mark({}) // Decoration value doesn't matter; the range is treated as atomic.
+    const builder = new RangeSetBuilder<Decoration>()
+    const atomic = Decoration.mark({}) // Decoration value doesn't matter; the range is treated as atomic.
 
-	    for (const hunk of hunks) {
-	      // Individual marker chars are atomic
-	      builder.add(hunk.delStart, hunk.delStart + 1, atomic)
-	      builder.add(hunk.delEnd, hunk.delEnd + 1, atomic)
-	      builder.add(hunk.insStart, hunk.insStart + 1, atomic)
-	      builder.add(hunk.insEnd, hunk.insEnd + 1, atomic)
-	    }
+    for (const hunk of hunks) {
+      // Individual marker chars are atomic
+      builder.add(hunk.delStart, hunk.delStart + 1, atomic)
+      builder.add(hunk.delEnd, hunk.delEnd + 1, atomic)
+      builder.add(hunk.insStart, hunk.insStart + 1, atomic)
+      builder.add(hunk.insEnd, hunk.insEnd + 1, atomic)
+    }
 
-	    return builder.finish()
-	  }
+    return builder.finish()
+  }
 
   destroy() {
     // No cleanup needed
