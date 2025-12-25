@@ -98,6 +98,17 @@ export const MARKERS = {
 └─────────────┘    └─────────────┘
 ```
 
+## Concurrency: Prevent Stomping Unseen AI Updates
+
+AI can update `aiVersion` while the user is reviewing/editing. To prevent a client save from overwriting a newer `aiVersion` it hasn't seen yet, we use a simple compare-and-swap token:
+
+- Persist `ai_version_rev` (integer) alongside `ai_version`.
+- Any time `ai_version` changes (AI tool writes, user clears/sets via PATCH), increment `ai_version_rev`.
+- When the client PATCH includes `ai_version`, it must also include `ai_version_base_rev` (the `ai_version_rev` it last saw).
+- If `ai_version_base_rev` != current `ai_version_rev`, return `409 Conflict` and do **not** apply the `ai_version` change.
+
+This is **not** a 3rd copy of the document; it’s just a revision counter to avoid last-writer-wins on `ai_version`.
+
 ## Core Invariants (Keep Correctness Obvious)
 
 - **Markers are structure, not content.** Users never see or directly edit the marker characters (`\uE000-\uE003`).
@@ -114,6 +125,7 @@ When a new server snapshot arrives (load/refresh/SSE/doc_edit):
 
 - If **not dirty**: refresh the merged document in place (no history).
 - If **dirty**: do **not** update the editor. Stash it as `pendingAiVersion` and show a small “AI updated — Refresh” action.
+  - If a save attempts to PATCH `ai_version` and the server returns `409 Conflict` (`ai_version_rev` mismatch), treat it the same way: stash the latest server snapshot and require explicit refresh.
 
 ### Refresh Strategy (Cursor-Friendly)
 
@@ -239,7 +251,15 @@ Per project rule "empty string is valid data", `aiVersion` uses **tri-state sema
 | `""` (empty string) | AI suggests empty doc | `""` |
 | `"text..."` | AI suggestion | `"text..."` |
 
+**Concurrency note:** whenever `ai_version` is included in a PATCH, also send `ai_version_base_rev` to avoid overwriting unseen server updates.
+
 **Go implementation note:** for `PATCH` semantics you must distinguish `ai_version` **absent vs null**. Pointer fields can’t do that with `encoding/json`; use a value-type wrapper that tracks presence during unmarshal (see `04-state-sync.md` Step 4.0).
+
+**Important (when to PATCH `ai_version`):**
+- Most saves should be **content-only** (omit `ai_version` entirely).
+- When the editor contains markers (AI review active), save should include `ai_version` (string) + `ai_version_base_rev`.
+- When the editor has **no markers** but the server still has `ai_version` (AI session open), save should include `ai_version: null` **once** to close the AI session.
+  - This supports “last hunk resolved via per-hunk ✓/✕” while still keeping undo/redo sane: if the user undoes and markers come back, the next save can re-open AI by PATCHing `ai_version` again.
 
 **Important:** When parsing merged document:
 - If no markers remain → `aiVersion = null` (AI session complete)

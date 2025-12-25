@@ -51,7 +51,29 @@ Per project rule "empty string is valid data":
 
 **When `parseMergedDocument()` returns `hasChanges: false`:**
 - No markers remain → AI session is complete
-- Send `aiVersion: null` to clear it in storage
+- Save behavior depends on server state (see below)
+
+**When to PATCH `ai_version` (important):**
+- If the editor document still has markers (`hasChanges: true`): PATCH `ai_version` as a **string** (including `""`) + `ai_version_base_rev`.
+- If the editor document has **no markers** (`hasChanges: false`) but the server still has AI open (`document.aiVersion !== null`): PATCH `ai_version: null` **once** + `ai_version_base_rev` to close the AI session.
+- If the editor document has **no markers** and the server already has `ai_version = null`: omit `ai_version` entirely (content-only saves).
+
+### Concurrency: Prevent Stomping Unseen AI Updates
+
+AI can update `aiVersion` asynchronously while the user is reviewing or editing. If we blindly PATCH `ai_version` from the client, we can overwrite a newer server `ai_version` the user hasn't seen yet.
+
+Add a lightweight compare-and-swap token:
+
+| Field | Type | Purpose |
+|---|---|---|
+| `ai_version_rev` | integer | Server-owned revision counter for `ai_version` |
+
+Rules:
+- Any time `ai_version` changes (AI tool writes or user sets/clears via PATCH), increment `ai_version_rev`.
+- Any PATCH that includes `ai_version` must also include `ai_version_base_rev` (the last `ai_version_rev` the client saw).
+- If `ai_version_base_rev` != current `ai_version_rev`, return `409 Conflict` and do **not** apply the `ai_version` change.
+
+This is **not** a 3rd copy of the document; it’s just a revision counter to avoid last-writer-wins on `ai_version`.
 
 ## Steps
 
@@ -61,43 +83,46 @@ Update the backend so `PATCH /api/documents/{id}` can also update `ai_version`.
 
 **Goal:** keep the editor save path simple + atomic at the HTTP layer: one request updates both `content` and `ai_version`.
 
+> Note: tri-state `ai_version` decoding via `httputil.OptionalString` is already implemented (see `backend/internal/httputil/optional_string.go` and `backend/internal/handler/document.go`). This step adds `ai_version_rev` + the `ai_version_base_rev` precondition.
+
 #### Tri-state semantics (required)
 - **absent** → don’t change `ai_version`
 - **null** → clear `ai_version` (set NULL)
 - **string (including `\"\"`)** → set `ai_version` to that value
 
-Go note: `encoding/json` cannot distinguish **absent vs null** using pointer fields (both end up as `nil`). Use a value-type wrapper that tracks whether the field was present during unmarshal.
+Go note: `encoding/json` cannot distinguish **absent vs null** using plain pointer fields in a PATCH DTO. Use a presence-tracking wrapper (`httputil.OptionalString`).
+
+#### Add `ai_version_rev` (required)
+
+Add a migration (example):
+
+```sql
+ALTER TABLE ${TABLE_PREFIX}documents
+  ADD COLUMN IF NOT EXISTS ai_version_rev INTEGER NOT NULL DEFAULT 0;
+```
+
+Whenever `ai_version` changes, also increment `ai_version_rev`:
+- AI tool writes to `ai_version` → bumps rev
+- PATCH sets/clears `ai_version` → bumps rev
+
+#### Add `ai_version_base_rev` precondition (required for client PATCHes that include `ai_version`)
+
+Extend PATCH to accept an optional `ai_version_base_rev` integer:
+- If request includes `ai_version` (present, including `null`), require `ai_version_base_rev`.
+- Server checks current `ai_version_rev`:
+  - match → apply `ai_version`, increment rev
+  - mismatch → `409 Conflict` (do not apply `ai_version`)
+
+Recommended `409` response body (minimum):
+- a typed error code (e.g. `"ai_version_conflict"`)
+- the current `ai_version_rev`
+- optionally the current `ai_version` (and/or the full document DTO) so the client can refresh without an extra round-trip
 
 Create `backend/internal/httputil/optional_string.go`:
 
 ```go
-package httputil
-
-import (
-  "bytes"
-  "encoding/json"
-)
-
-// OptionalString distinguishes:
-// - field absent (Present == false)          => no change
-// - field present with null ("null")         => clear
-// - field present with string (incl "")      => set
-type OptionalString struct {
-  Present bool
-  IsNull   bool
-  Value    string
-}
-
-func (o *OptionalString) UnmarshalJSON(data []byte) error {
-  o.Present = true
-  if bytes.Equal(data, []byte("null")) {
-    o.IsNull = true
-    o.Value = ""
-    return nil
-  }
-  o.IsNull = false
-  return json.Unmarshal(data, &o.Value)
-}
+// Already exists; do not re-create.
+// See `backend/internal/httputil/optional_string.go`.
 ```
 
 Update `backend/internal/domain/services/docsystem/document.go`:
@@ -119,6 +144,9 @@ type UpdateDocumentRequest struct {
   FolderID   *string                `json:"folder_id,omitempty"`
   Content    *string                `json:"content,omitempty"`
   AIVersion  OptionalAIVersion      `json:"-"`
+  // Only meaningful when AIVersion.Present == true.
+  // Used for compare-and-swap against documents.ai_version_rev.
+  AIVersionBaseRev int              `json:"-"`
 }
 ```
 
@@ -132,6 +160,7 @@ type updateDocumentPatchRequest struct {
   FolderID   *string                 `json:"folder_id,omitempty"`
   Content    *string                 `json:"content,omitempty"`
   AIVersion  httputil.OptionalString `json:"ai_version"`
+  AIVersionBaseRev *int              `json:"ai_version_base_rev,omitempty"`
 }
 
 // In handler UpdateDocument:
@@ -147,12 +176,20 @@ req := docsysSvc.UpdateDocumentRequest{
 }
 
 if dto.AIVersion.Present {
+  // If client is trying to update ai_version, enforce base-rev precondition.
+  if dto.AIVersionBaseRev == nil {
+    // 400: cannot safely apply ai_version without concurrency token
+  }
+
+  // Map tri-state: null → clear, string → set
   if dto.AIVersion.IsNull {
     req.AIVersion = docsysSvc.OptionalAIVersion{Present: true, Value: nil}
   } else {
     v := dto.AIVersion.Value
     req.AIVersion = docsysSvc.OptionalAIVersion{Present: true, Value: &v}
   }
+
+  req.AIVersionBaseRev = *dto.AIVersionBaseRev
 }
 ```
 
@@ -160,6 +197,8 @@ Update `backend/internal/service/docsystem/document.go` in `UpdateDocument(...)`
 
 ```go
 if req.AIVersion.Present {
+  // Compare-and-swap: prevent stomping unseen server ai_version updates.
+  // If req.AIVersionBaseRev != current ai_version_rev -> return a typed conflict error -> 409.
   if req.AIVersion.Value == nil {
     doc.AIVersion = nil
   } else {
@@ -168,7 +207,12 @@ if req.AIVersion.Present {
 }
 ```
 
-Update `backend/internal/repository/postgres/docsystem/document.go` in `Update(...)` to persist `ai_version` in the same SQL statement (add `ai_version = $X` and include `doc.AIVersion` in args).
+Update `backend/internal/repository/postgres/docsystem/document.go` so updating `ai_version` is atomic with rev bump and base-rev check.
+
+Sketch (single statement):
+- `SET ai_version = $ai, ai_version_rev = ai_version_rev + 1, updated_at = NOW()`
+- `WHERE id = $id AND ai_version_rev = $baseRev`
+- If rows affected == 0 => conflict (rev mismatch)
 
 Proceed to Step 4.1 for frontend API client changes.
 
@@ -189,15 +233,23 @@ documents: {
    * - undefined: omit field (no change)
    * - null: clear ai_version
    * - string (including ""): set ai_version
+   *
+   * Concurrency: if aiVersion is provided, aiVersionBaseRev is required.
    */
   update: async (
     id: string,
-    updates: { content?: string; aiVersion?: string | null },
+    updates: { content?: string; aiVersion?: string | null; aiVersionBaseRev?: number },
     options?: { signal?: AbortSignal }
   ): Promise<Document> => {
     const body: Record<string, unknown> = {}
     if (updates.content !== undefined) body.content = updates.content
-    if (updates.aiVersion !== undefined) body.ai_version = updates.aiVersion
+    if (updates.aiVersion !== undefined) {
+      if (updates.aiVersionBaseRev === undefined) {
+        throw new Error('aiVersionBaseRev is required when aiVersion is provided')
+      }
+      body.ai_version = updates.aiVersion
+      body.ai_version_base_rev = updates.aiVersionBaseRev
+    }
 
     const data = await fetchAPI<DocumentDto>(`/api/documents/${id}`, {
       method: 'PATCH',
@@ -208,6 +260,10 @@ documents: {
   },
 }
 ```
+
+Also update the document DTO + mapper to carry the revision:
+- `frontend/src/types/api.ts`: add `ai_version_rev: number` to `DocumentDto`
+- `fromDocumentDto(...)`: map to `document.aiVersionRev`
 
 ---
 
@@ -228,6 +284,17 @@ export interface SaveMergedResult {
   hasChanges: boolean
 }
 
+export interface SaveMergedOptions {
+  /** Last ai_version_rev the client hydrated from (required if we PATCH ai_version) */
+  aiVersionBaseRev: number
+  /**
+   * Whether the last known server snapshot has AI open.
+   * Used to decide whether we need a one-time PATCH `ai_version: null` when markers are gone.
+   */
+  serverHasAIVersion: boolean
+  signal?: AbortSignal
+}
+
 /**
  * Save a merged document to storage.
  *
@@ -241,29 +308,45 @@ export interface SaveMergedResult {
 export async function saveMergedDocument(
   documentId: string,
   merged: string,
-  options?: { signal?: AbortSignal }
+  options: SaveMergedOptions
 ): Promise<SaveMergedResult> {
   // Parse merged document to extract content and aiVersion
   const parsed = parseMergedDocument(merged)
 
-  // Build update payload
-  const updates = {
-    content: parsed.content,
-    // Still has markers → keep aiVersion; no markers → clear (AI session complete)
-    aiVersion: parsed.hasChanges ? parsed.aiVersion : null,
-  } satisfies { content: string; aiVersion: string | null }
+  // Build update payload.
+  // IMPORTANT: Only PATCH ai_version when needed:
+  // - has markers => PATCH ai_version as a string
+  // - no markers + server still open => PATCH ai_version:null once to close
+  // - no markers + server already closed => omit ai_version entirely
+  const updates: {
+    content: string
+    aiVersion?: string | null
+    aiVersionBaseRev?: number
+  } = { content: parsed.content }
+
+  if (parsed.hasChanges) {
+    updates.aiVersion = parsed.aiVersion
+    updates.aiVersionBaseRev = options.aiVersionBaseRev
+  } else if (options.serverHasAIVersion) {
+    updates.aiVersion = null
+    updates.aiVersionBaseRev = options.aiVersionBaseRev
+  }
 
   // Optimistic update to IndexedDB
   // NOTE: Use null (not undefined) to clear aiVersion - Dexie ignores undefined fields
   const now = new Date()
   await db.documents.update(documentId, {
     content: parsed.content,
-    aiVersion: parsed.hasChanges ? parsed.aiVersion : null,  // null clears, undefined skips
+    // Mirror server intent:
+    // - has markers => keep aiVersion in local cache
+    // - no markers => clear in local cache
+    // (The server may already be closed; clearing locally is still correct UX.)
+    aiVersion: parsed.hasChanges ? parsed.aiVersion : null,
     updatedAt: now,
   })
 
   // Save to server (single request)
-  const document = await api.documents.update(documentId, updates, options)
+  const document = await api.documents.update(documentId, updates, { signal: options.signal })
 
   return {
     document,
@@ -271,6 +354,8 @@ export async function saveMergedDocument(
   }
 }
 ```
+
+Note: `saveMergedDocument(...)` can be used as the “diff workflow” save path; it decides whether to PATCH `ai_version` (string/null) or omit it entirely based on markers + `serverHasAIVersion`.
 
 ---
 
@@ -292,8 +377,10 @@ import { saveMergedDocument, type SaveMergedResult } from '@/features/documents/
 async saveMerged(
   documentId: string,
   merged: string,
+  options: { aiVersionBaseRev: number; serverHasAIVersion: boolean },
   cbs?: {
     onServerSaved?: (result: SaveMergedResult) => void
+    onAIVersionConflict?: (serverDocument?: Document) => void
     onRetryScheduled?: () => void
     onError?: (error: Error) => void
   }
@@ -302,7 +389,10 @@ async saveMerged(
   cancelDocumentPatchRetry(documentId)
 
   try {
-    const result = await saveMergedDocument(documentId, merged)
+    const result = await saveMergedDocument(documentId, merged, {
+      aiVersionBaseRev: options.aiVersionBaseRev,
+      serverHasAIVersion: options.serverHasAIVersion,
+    })
     cbs?.onServerSaved?.(result)
   } catch (error) {
     if (isAbortError(error)) {
@@ -312,6 +402,12 @@ async saveMerged(
       // For now, just report error. Full retry support can be added later.
       // The merged document is already in IndexedDB for recovery.
       cbs?.onRetryScheduled?.()
+      return
+    }
+    if (isConflictError(error)) {
+      // ai_version_rev mismatch: server has a newer ai_version than the client saw.
+      // Do not retry blindly; surface to UI so user can refresh from server.
+      cbs?.onAIVersionConflict?.(extractDocumentFromConflict(error))
       return
     }
     cbs?.onError?.(error as Error)
@@ -341,6 +437,9 @@ interface EditorStore {
 
   /** Navigate to next/previous hunk */
   navigateHunk: (direction: 'next' | 'prev', totalHunks: number) => void
+
+  /** Update the active document with server response */
+  updateActiveDocument: (document: Document) => void
 }
 ```
 
@@ -371,6 +470,12 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
       return { focusedHunkIndex: next }
     })
   },
+
+  updateActiveDocument: (document) => set((state) => {
+    // Only update if still viewing the same document
+    if (state._activeDocumentId !== document.id) return state
+    return { activeDocument: document }
+  }),
 }))
 ```
 
@@ -447,6 +552,8 @@ Before moving to Phase 5, verify:
 - [ ] Store has `focusedHunkIndex` and navigation
 - [ ] After accept all: `aiVersion` becomes `null`
 - [ ] After reject all: `content` restored, `aiVersion` becomes `null`
+- [ ] After last hunk resolved via per-hunk ✓/✕: a save sends `aiVersion: null` once (if server was still open)
+- [ ] After AI is already closed and no markers remain: content saves omit `aiVersion` entirely (no repeated nulling)
 - [ ] Empty string `""` content/aiVersion handled correctly (not treated as falsy)
 
 ## Files Modified/Created

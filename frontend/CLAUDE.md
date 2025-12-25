@@ -262,6 +262,16 @@ if (content) { ... }  // Fails for empty strings
 - `focus()`: Focus editor
 - Formatting commands: `toggleBold()`, `toggleItalic()`, `toggleHeading(level)`, etc.
 
+**Keyboard shortcuts (writer-first):**
+- We intentionally **do not** bind `Cmd-[` / `Cmd-]` (browser/app back/forward) inside CodeMirror.
+  - CodeMirror’s default keymap uses `Mod-[` / `Mod-]` for indentation, which prevents navigation shortcuts while the editor is focused.
+  - See `frontend/src/core/editor/codemirror/CodeMirrorEditor.tsx`.
+
+**Autosave on navigation:**
+- `EditorPanel` does a best-effort flush on unmount/document switch (skip debounce) to reduce the chance of losing a last-second edit.
+  - This relies on the existing optimistic IndexedDB update + retry-on-network-failure behavior.
+  - See `frontend/src/features/documents/components/EditorPanel.tsx`.
+
 **AI Integration** via `AIEditorRef` (from `core/editor/api`):
 - `addSuggestion(range, text)`: Add AI suggestion decoration
 - `acceptSuggestion(id)`: Accept suggestion

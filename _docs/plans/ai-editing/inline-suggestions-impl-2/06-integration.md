@@ -54,6 +54,15 @@ const [localAIVersion, setLocalAIVersion] = useState<string | null>(null)
 const [localDocument, setLocalDocument] = useState('')
 ```
 
+### When to PATCH `ai_version` (important)
+
+We do **not** want to keep sending `ai_version: null` forever after AI is closed.
+
+Rule of thumb for autosave:
+- If the editor document has markers (AI review active) → PATCH `ai_version` (string) + `ai_version_base_rev`.
+- If the editor document has no markers but the last known server snapshot still has AI open (`activeDocument.aiVersion !== null`) → PATCH `ai_version: null` **once** to close it.
+- Otherwise → omit `ai_version` entirely (content-only saves).
+
 ### Server Updates + “Dirty” Policy
 
 We never mutate the merged document underneath active typing.
@@ -62,6 +71,12 @@ We never mutate the merged document underneath active typing.
 - When a new server snapshot arrives (load/refresh/SSE/doc_edit):
   - If **not dirty**: refresh the merged document in place (no history; bypass filters).
   - If **dirty**: stash the incoming snapshot and show “Server updated — Refresh”.
+
+### Concurrency: `ai_version_rev` (Required)
+
+AI can update `aiVersion` asynchronously. To avoid overwriting a newer unseen `aiVersion`, any PATCH that includes `ai_version` must include `ai_version_base_rev` (the `ai_version_rev` the editor last hydrated from). If the server returns `409 Conflict` (rev mismatch), the UI must treat it like “server updated while dirty”:
+- stash the latest server snapshot
+- require explicit refresh before trying to apply further `ai_version` changes
 
 ### Refreshing Merged Doc (Cursor-Friendly)
 
@@ -233,12 +248,16 @@ export function EditorPanel() {
   const [localDocument, setLocalDocument] = useState('')
   const [hasUserEdit, setHasUserEdit] = useState(false)
   const lastHydratedDocIdRef = useRef<string | null>(null)
+  // Last ai_version_rev we hydrated from the server.
+  // Used as ai_version_base_rev for compare-and-swap whenever we PATCH ai_version.
+  const aiVersionBaseRevRef = useRef<number | null>(null)
   const saveTimerRef = useRef<number | null>(null)
 
   // Pending server snapshot (when updates arrive while dirty)
   const [pendingServerSnapshot, setPendingServerSnapshot] = useState<{
     content: string
     aiVersion: string | null | undefined
+    aiVersionRev: number | null | undefined
   } | null>(null)
 
   // Computed hunks from the current document
@@ -263,6 +282,7 @@ export function EditorPanel() {
       setPendingServerSnapshot({
         content: activeDocument.content ?? '',
         aiVersion: activeDocument.aiVersion,
+        aiVersionRev: activeDocument.aiVersionRev,
       })
       return
     }
@@ -279,11 +299,13 @@ export function EditorPanel() {
 
       const content = activeDocument.content ?? ''
       const aiVersion = activeDocument.aiVersion
+      const aiVersionRev = activeDocument.aiVersionRev
 
       if (aiVersion !== null && aiVersion !== undefined) {
         // Build merged document (hasAISuggestions derived from hunks.length)
         const merged = buildMergedDocument(content, aiVersion)
         setLocalDocument(merged)
+        aiVersionBaseRevRef.current = aiVersionRev
 
         // Hydrate editor without adding to history
         if (editorRef.current) {
@@ -292,13 +314,16 @@ export function EditorPanel() {
       } else {
         // No AI version - just use content (hasAISuggestions will be false)
         setLocalDocument(content)
+        // Still track ai_version_rev so we can safely PATCH ai_version if the user undoes
+        // or otherwise re-introduces markers and we need to re-open AI.
+        aiVersionBaseRevRef.current = aiVersionRev
 
         if (editorRef.current) {
           editorRef.current.setContent(content, { addToHistory: false, emitChange: false })
         }
       }
     }
-  }, [activeDocument?.id, activeDocument?.content, activeDocument?.aiVersion, hasUserEdit, pendingServerSnapshot])
+  }, [activeDocument?.id, activeDocument?.content, activeDocument?.aiVersion, activeDocument?.aiVersionRev, hasUserEdit, pendingServerSnapshot])
 
   const handleRefreshFromServer = useCallback(() => {
     if (!pendingServerSnapshot) return
@@ -307,6 +332,7 @@ export function EditorPanel() {
 
     const content = pendingServerSnapshot.content
     const aiVersion = pendingServerSnapshot.aiVersion
+    const aiVersionRev = pendingServerSnapshot.aiVersionRev
     const merged =
       aiVersion !== null && aiVersion !== undefined
         ? buildMergedDocument(content, aiVersion)
@@ -314,6 +340,7 @@ export function EditorPanel() {
 
     setLocalDocument(merged)
     setPendingServerSnapshot(null)
+    aiVersionBaseRevRef.current = aiVersion !== null && aiVersion !== undefined ? aiVersionRev ?? null : null
 
     editorRef.current.setContent(merged, { addToHistory: false, emitChange: false })
   }, [hasUserEdit, pendingServerSnapshot])
@@ -449,6 +476,11 @@ export function EditorPanel() {
     if (!activeDocument) return
     if (!hasUserEdit) return
 
+    // Don't attempt to PATCH ai_version if there's a pending conflict - user must refresh first
+    if (pendingServerSnapshot) {
+      return
+    }
+
     if (saveTimerRef.current) {
       window.clearTimeout(saveTimerRef.current)
     }
@@ -457,7 +489,42 @@ export function EditorPanel() {
     const saveDocumentId = activeDocument.id
 
     saveTimerRef.current = window.setTimeout(() => {
+      const baseRev = aiVersionBaseRevRef.current
+
+      // Decide whether this autosave should PATCH ai_version.
+      // - Markers exist => AI review active => PATCH ai_version (string)
+      // - No markers, but server still has AI open => PATCH ai_version:null once to close
+      // - Otherwise => omit ai_version entirely (content-only)
+      const hasMarkers = hunks.length > 0
+      const serverHasAIVersion = activeDocument.aiVersion !== null && activeDocument.aiVersion !== undefined
+
+      if (!hasMarkers && !serverHasAIVersion) {
+        documentSyncService.save(saveDocumentId, localDocument, {
+          onServerSaved: (doc) => {
+            const currentDocId = useEditorStore.getState()._activeDocumentId
+            if (currentDocId !== saveDocumentId) return
+            useEditorStore.getState().updateActiveDocument(doc)
+            setHasUserEdit(false)
+          },
+        })
+        return
+      }
+
+      if (baseRev === null) {
+        // Should be rare: we intend to PATCH ai_version but don't have a base rev.
+        // Treat as “server updated while dirty”: require explicit refresh.
+        setPendingServerSnapshot({
+          content: activeDocument.content ?? '',
+          aiVersion: activeDocument.aiVersion,
+          aiVersionRev: activeDocument.aiVersionRev,
+        })
+        return
+      }
+
       documentSyncService.saveMerged(saveDocumentId, localDocument, {
+        aiVersionBaseRev: baseRev,
+        serverHasAIVersion,
+      }, {
         onServerSaved: (result) => {
           // Guard: Only update if still viewing the same document
           // This prevents updating wrong document state if user switched documents
@@ -470,8 +537,21 @@ export function EditorPanel() {
 
           // Update store with server response
           useEditorStore.getState().updateActiveDocument(result.document)
+          aiVersionBaseRevRef.current = result.document.aiVersionRev
 
           setHasUserEdit(false)
+        },
+        onAIVersionConflict: (serverDocument) => {
+          // Server has a newer ai_version than this editor snapshot.
+          // Stash snapshot and require explicit refresh before continuing.
+          const latest = serverDocument ?? useEditorStore.getState().activeDocument
+          if (!latest) return
+
+          setPendingServerSnapshot({
+            content: latest.content ?? '',
+            aiVersion: latest.aiVersion,
+            aiVersionRev: latest.aiVersionRev,
+          })
         },
       })
     }, 1000)
@@ -479,7 +559,16 @@ export function EditorPanel() {
     return () => {
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
     }
-  }, [activeDocument?.id, hasUserEdit, localDocument])
+  }, [
+    activeDocument?.id,
+    activeDocument?.content,
+    activeDocument?.aiVersion,
+    activeDocument?.aiVersionRev,
+    hasUserEdit,
+    hunks.length,
+    localDocument,
+    pendingServerSnapshot,
+  ])
 
   // ==========================================================================
   // EDITOR CONTENT
