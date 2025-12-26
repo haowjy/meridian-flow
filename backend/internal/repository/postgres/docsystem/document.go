@@ -79,14 +79,14 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 
 	if projectID != "" {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, folder_id, name, content, ai_version, word_count, created_at, updated_at
+			SELECT id, project_id, folder_id, name, content, ai_version, ai_version_rev, word_count, created_at, updated_at
 			FROM %s
 			WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
 		`, r.tables.Documents)
 		args = []interface{}{id, projectID}
 	} else {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, folder_id, name, content, ai_version, word_count, created_at, updated_at
+			SELECT id, project_id, folder_id, name, content, ai_version, ai_version_rev, word_count, created_at, updated_at
 			FROM %s
 			WHERE id = $1 AND deleted_at IS NULL
 		`, r.tables.Documents)
@@ -102,6 +102,7 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 		&doc.Name,
 		&doc.Content,
 		&doc.AIVersion,
+		&doc.AIVersionRev,
 		&doc.WordCount,
 		&doc.CreatedAt,
 		&doc.UpdatedAt,
@@ -121,7 +122,7 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 // Use when authorization is handled separately (e.g., by ResourceAuthorizer)
 func (r *PostgresDocumentRepository) GetByIDOnly(ctx context.Context, id string) (*models.Document, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, folder_id, name, content, ai_version, word_count, created_at, updated_at
+		SELECT id, project_id, folder_id, name, content, ai_version, ai_version_rev, word_count, created_at, updated_at
 		FROM %s
 		WHERE id = $1 AND deleted_at IS NULL
 	`, r.tables.Documents)
@@ -135,6 +136,7 @@ func (r *PostgresDocumentRepository) GetByIDOnly(ctx context.Context, id string)
 		&doc.Name,
 		&doc.Content,
 		&doc.AIVersion,
+		&doc.AIVersionRev,
 		&doc.WordCount,
 		&doc.CreatedAt,
 		&doc.UpdatedAt,
@@ -174,7 +176,7 @@ func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string,
 
 	// Query for the document in the final folder
 	query := fmt.Sprintf(`
-		SELECT id, project_id, folder_id, name, content, ai_version, word_count, created_at, updated_at
+		SELECT id, project_id, folder_id, name, content, ai_version, ai_version_rev, word_count, created_at, updated_at
 		FROM %s
 		WHERE project_id = $1 AND name = $2 AND deleted_at IS NULL
 	`, r.tables.Documents)
@@ -198,6 +200,7 @@ func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string,
 		&doc.Name,
 		&doc.Content,
 		&doc.AIVersion,
+		&doc.AIVersionRev,
 		&doc.WordCount,
 		&doc.CreatedAt,
 		&doc.UpdatedAt,
@@ -336,6 +339,38 @@ func (r *PostgresDocumentRepository) UpdateAIVersion(ctx context.Context, id str
 	}
 
 	return nil
+}
+
+// UpdateWithAIVersionCheck atomically updates content + ai_version with CAS.
+// Returns rowsAffected: 0 means rev mismatch (conflict), 1 means success.
+// This is the core CAS operation for ai_version concurrency control.
+func (r *PostgresDocumentRepository) UpdateWithAIVersionCheck(ctx context.Context, params docsysRepo.UpdateWithAIVersionParams) (int64, error) {
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET content = COALESCE($1, content),
+		    name = COALESCE($2, name),
+		    folder_id = COALESCE($3, folder_id),
+		    ai_version = $4,
+		    ai_version_rev = ai_version_rev + 1,
+		    updated_at = NOW()
+		WHERE id = $5
+		  AND ai_version_rev = $6
+		  AND deleted_at IS NULL
+	`, r.tables.Documents)
+
+	executor := postgres.GetExecutor(ctx, r.pool)
+	result, err := executor.Exec(ctx, query,
+		params.Content,
+		params.Name,
+		params.FolderID,
+		params.AIVersion,
+		params.ID,
+		params.AIVersionBaseRev,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("update with ai_version check: %w", err)
+	}
+	return result.RowsAffected(), nil
 }
 
 // Delete soft-deletes a document by setting deleted_at timestamp
@@ -535,29 +570,21 @@ func (r *PostgresDocumentRepository) GetPath(ctx context.Context, doc *models.Do
 // getExistingDocumentID queries for an existing document by unique constraint fields
 // Returns the document ID if found, error otherwise
 func (r *PostgresDocumentRepository) getExistingDocumentID(ctx context.Context, projectID string, folderID *string, name string) (string, error) {
-	query := fmt.Sprintf(`
-		SELECT id
-		FROM %s
-		WHERE project_id = $1 AND name = $3
-	`, r.tables.Documents)
-
 	var id string
-	var err error
 	executor := postgres.GetExecutor(ctx, r.pool)
 
+	var err error
 	if folderID == nil {
 		// Query for root-level document (folder_id IS NULL)
-		query = fmt.Sprintf(`
-			SELECT id
-			FROM %s
+		query := fmt.Sprintf(`
+			SELECT id FROM %s
 			WHERE project_id = $1 AND folder_id IS NULL AND name = $2 AND deleted_at IS NULL
 		`, r.tables.Documents)
 		err = executor.QueryRow(ctx, query, projectID, name).Scan(&id)
 	} else {
 		// Query for document in specific folder
-		query = fmt.Sprintf(`
-			SELECT id
-			FROM %s
+		query := fmt.Sprintf(`
+			SELECT id FROM %s
 			WHERE project_id = $1 AND folder_id = $2 AND name = $3 AND deleted_at IS NULL
 		`, r.tables.Documents)
 		err = executor.QueryRow(ctx, query, projectID, *folderID, name).Scan(&id)

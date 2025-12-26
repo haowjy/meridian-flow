@@ -18,7 +18,7 @@ func RespondJSON(w http.ResponseWriter, status int, data interface{}) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	w.Write(payload)
+	_, _ = w.Write(payload) // Error ignored: client may have disconnected
 }
 
 // ProblemDetail represents an RFC 7807 Problem Details response
@@ -69,13 +69,13 @@ func RespondError(w http.ResponseWriter, status int, detail string) {
 		// Fallback to plain text if JSON encoding fails
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("internal server error"))
+		_, _ = w.Write([]byte("internal server error")) // Error ignored: client may have disconnected
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
-	w.Write(payload)
+	_, _ = w.Write(payload) // Error ignored: client may have disconnected
 }
 
 // RespondErrorWithExtras writes an RFC 7807 error with additional fields
@@ -93,13 +93,13 @@ func RespondErrorWithExtras(w http.ResponseWriter, status int, detail string, ex
 		// Fallback to plain text if JSON encoding fails
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("internal server error"))
+		_, _ = w.Write([]byte("internal server error")) // Error ignored: client may have disconnected
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
-	w.Write(payload)
+	_, _ = w.Write(payload) // Error ignored: client may have disconnected
 }
 
 // errorTypeFromStatus returns the RFC 7807 type URI for a status code

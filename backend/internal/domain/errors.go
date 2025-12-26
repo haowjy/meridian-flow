@@ -78,3 +78,26 @@ func (e *ConflictError) StatusCode() int {
 func (e *ConflictError) Is(target error) bool {
 	return target == ErrConflict
 }
+
+// AIVersionConflictError indicates a CAS failure when updating ai_version.
+// Contains the current document so frontend can refresh without extra request.
+// Implements HTTPError interface for extensible error handling.
+type AIVersionConflictError struct {
+	Message  string
+	Document any // *models.Document - use any to avoid circular import
+}
+
+// Error implements the error interface
+func (e *AIVersionConflictError) Error() string {
+	return e.Message
+}
+
+// StatusCode implements the HTTPError interface
+func (e *AIVersionConflictError) StatusCode() int {
+	return http.StatusConflict
+}
+
+// Is allows errors.Is() to match against ErrConflict
+func (e *AIVersionConflictError) Is(target error) bool {
+	return target == ErrConflict
+}

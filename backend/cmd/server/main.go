@@ -54,7 +54,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("failed to setup log file: %v", err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }() // Error ignored: program exiting
 		logOutput = f
 	}
 
@@ -74,7 +74,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create JWT verifier: %v", err)
 	}
-	defer jwtVerifier.Close()
+	defer func() { _ = jwtVerifier.Close() }() // Error ignored: program exiting
 
 	// Create pgx connection pool
 	ctx := context.Background()

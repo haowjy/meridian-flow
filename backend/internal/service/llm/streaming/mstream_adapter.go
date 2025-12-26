@@ -405,7 +405,7 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 // persistPartialTextBlocks saves any accumulated text blocks as partial blocks
 // Called during error/interruption handling to preserve partial LLM responses
 func (se *StreamExecutor) persistPartialTextBlocks(ctx context.Context) {
-	if se.textAccumulator == nil || len(se.textAccumulator) == 0 {
+	if len(se.textAccumulator) == 0 {
 		return
 	}
 

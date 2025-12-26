@@ -253,21 +253,39 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 
 	doc.UpdatedAt = time.Now()
 
-	// If ai_version is being updated, wrap in transaction for atomicity
+	// If ai_version is being updated, use CAS (compare-and-swap) for concurrency safety
 	if req.AIVersion.Present {
 		var result *models.Document
 		err := s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
-			// Update document fields (name, folder, content)
+			// Update document fields first (name, folder, content)
 			if err := s.docRepo.Update(txCtx, doc); err != nil {
 				return err
 			}
 
-			// Update ai_version (nil = clear, non-nil = set)
-			if err := s.docRepo.UpdateAIVersion(txCtx, documentID, req.AIVersion.Value); err != nil {
+			// Atomic CAS update for ai_version with revision check
+			rowsAffected, err := s.docRepo.UpdateWithAIVersionCheck(txCtx, docsysRepo.UpdateWithAIVersionParams{
+				ID:               documentID,
+				AIVersion:        req.AIVersion.Value,
+				AIVersionBaseRev: req.AIVersionBaseRev,
+				// Other fields already updated above, pass nil to skip (COALESCE keeps current)
+			})
+			if err != nil {
 				return err
 			}
+			if rowsAffected == 0 {
+				// CAS failed - ai_version_rev mismatch
+				// Fetch current doc to include in conflict response
+				currentDoc, fetchErr := s.docRepo.GetByIDOnly(txCtx, documentID)
+				if fetchErr != nil {
+					s.logger.Warn("failed to fetch doc for conflict response", "doc_id", documentID, "error", fetchErr)
+				}
+				return &domain.AIVersionConflictError{
+					Message:  "ai_version was modified since last fetch",
+					Document: currentDoc,
+				}
+			}
 
-			// Re-fetch for consistent response (captures updated_at from both updates)
+			// Re-fetch for consistent response (captures updated timestamps)
 			fetched, err := s.docRepo.GetByIDOnly(txCtx, documentID)
 			if err != nil {
 				return err
