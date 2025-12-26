@@ -22,11 +22,31 @@ export interface WordCount {
 // ============================================================================
 
 /**
+ * Options for setContent() to control history and event behavior.
+ * Used for hydration/refresh (server → editor) vs user actions.
+ */
+export interface SetContentOptions {
+  /**
+   * If false, don't add to undo history.
+   * Use for server hydration/refresh.
+   * Default: true
+   */
+  addToHistory?: boolean
+
+  /**
+   * If false, do not call the React onChange callback.
+   * Use for hydration/refresh (server → editor), not for user actions.
+   * Default: true
+   */
+  emitChange?: boolean
+}
+
+/**
  * Core editor operations
  */
 export interface EditorRef {
   getContent(): string
-  setContent(content: string): void
+  setContent(content: string, options?: SetContentOptions): void
   focus(): void
   getView(): EditorView | null
 }
@@ -73,6 +93,8 @@ export interface ConfigurationRef {
   setEditable(editable: boolean): void
   /** Set theme dynamically (via compartment reconfiguration) */
   setTheme(theme: Extension): void
+  /** Enable/disable live preview (for diff mode where preview is confusing) */
+  setLivePreviewEnabled(enabled: boolean): void
 }
 
 /**
