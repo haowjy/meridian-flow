@@ -54,11 +54,27 @@ export const MARKERS = {
 ```
 
 **Why PUA Unicode:**
-- Zero collision risk - users never type these characters
+- Very low collision risk in normal typing (we still strip markers from inputs defensively)
 - No escaping needed - unlike text markers like `[[DEL:]]`
 - CM6 history tracks them - they're document content
 - We can reliably hide them via CM6 decorations (don’t rely on font rendering)
 - Copy/paste will include markers unless we sanitize (see edit-filter rules)
+
+## Why Not CodeMirror Merge View (`@codemirror/merge`)
+
+We intentionally **do not** use CodeMirror’s merge view because Meridian’s AI review mode has a non-standard requirement:
+
+> **Edits in unchanged text (outside a diff chunk) must update both `content` and `aiVersion`.**
+
+Merge view treats the “original” document as a **baseline to compare against**, not a co-edited sibling. Supporting “shared edits” in merge view would require custom bidirectional syncing and careful undo coupling (and tends to be line/chunk-coarse).
+
+The PUA merged-document approach makes this requirement trivial and correct:
+
+| Where user edits | Allowed? | Affects on save | Why |
+|---|---|---|---|
+| Outside hunks (no markers) | ✅ | `content` **and** `aiVersion` | Shared text exists once in the merged doc, so both projections include it |
+| INS region (between `INS_START`/`INS_END`) | ✅ | `aiVersion` only | `parseMergedDocument()` drops INS content when producing `content` |
+| DEL region (between `DEL_START`/`DEL_END`) | ❌ | n/a | Original text is read-only; edits would corrupt structure/meaning |
 
 ## Data Flow
 
@@ -117,15 +133,26 @@ This is **not** a 3rd copy of the document; it’s just a revision counter to av
 - **No “re-diff” on every keystroke.** The merged document is the source of truth during editing; we only rebuild it when `aiVersion` changes from the server.
   - We still scan the merged doc for hunks (`extractHunks`) for decorations/navigation. That’s O(n) marker scanning, not diffing `content` vs `aiVersion`.
 
-## “Dirty” and Server Updates (Don’t Edit Underneath The User)
+## "Dirty" and Server Updates (Don't Edit Underneath The User)
 
 **Dirty** means: the *active* editor has unsaved edits (`hasUserEdit === true`, i.e. debounce pending / in-flight).
 
 When a new server snapshot arrives (load/refresh/SSE/doc_edit):
 
 - If **not dirty**: refresh the merged document in place (no history).
-- If **dirty**: do **not** update the editor. Stash it as `pendingAiVersion` and show a small “AI updated — Refresh” action.
+- If **dirty**: do **not** update the editor. Stash it as `pendingAiVersion` and show a small "AI updated — Refresh" action.
   - If a save attempts to PATCH `ai_version` and the server returns `409 Conflict` (`ai_version_rev` mismatch), treat it the same way: stash the latest server snapshot and require explicit refresh.
+
+### Server-Sent Events (SSE) for Document Updates
+
+AI processes (like `doc_edit` tool calls from background agents) may update `ai_version` outside of the foreground chat context. To handle this:
+
+- **Backend** broadcasts document updates via SSE (`GET /api/documents/{id}/events`)
+- **Frontend** subscribes to document events and triggers the refresh flow when `ai_version_rev` changes
+
+This is preferred over chat-based notifications because it handles background AI processing scenarios where the user isn't actively watching the chat.
+
+See `06-integration.md` Step 6.0.2 for implementation details.
 
 ### Refresh Strategy (Cursor-Friendly)
 
@@ -144,6 +171,15 @@ Editing rules:
 - Green regions (insertions) → editable, changes the AI text
 - Red regions (deletions) → read-only, cannot modify original
 - Outside hunks → editable, changes merged doc directly
+
+## Editor UX Rules in Diff Mode (Writer-first)
+
+Because the editor document is a *merged* representation (not “clean markdown”), some existing editor subsystems must change behavior while diff mode is active (i.e. when markers exist):
+
+- **Live preview**: disabled while diff mode is active. Rendering the merged doc would show both deleted + inserted text and produce confusing output.
+- **Formatting commands (bold/italic/heading/etc.)**: allowed only insofar as they modify editable regions (INS + outside hunks). If a formatting command touches a DEL region, the change is blocked (and should show a small, non-disruptive “Can’t edit deleted text” message).
+- **Word count**: computed from `parseMergedDocument(localMerged).content` (the baseline projection), not from the raw merged doc.
+- **Search/find**: normal find/search works on visible text; markers are hidden and should not affect search UX.
 
 ## Accept/Reject Operations
 
@@ -198,29 +234,47 @@ merged.replace(/\uE000([^]*?)\uE001\uE002[^]*?\uE003/g, '$1')
 
 | Phase | Document | What You'll Build |
 |-------|----------|-------------------|
-| 0.1 | `00-core.md` | PATCH tri-state `ai_version` + atomic save contract |
+| 0.1 | `00-backend-contract.md` | PATCH tri-state `ai_version` + CAS (`ai_version_rev`) |
+| 0.2 | `00-editor-hydration.md` | History-safe hydration + live preview toggle |
 | 1 | `01-foundation.md` | Types, buildMergedDocument, parseMergedDocument |
 | 2 | `02-decorations.md` | ViewPlugin to hide markers and style regions |
 | 3 | `03-edit-handling.md` | Edit filter to block DEL region edits |
-| 4 | `04-state-sync.md` | Save logic, parse on save |
-| 5 | `05-ui-components.md` | Navigator pill, hunk action buttons |
+| 3a | `03a-blocked-edit-feedback.md` | Toast notification when edits blocked |
+| 3.1 | `07-cleanup-and-clipboard.md` | Implement clipboard sanitization early (Step 7.2) |
+| 4 | `04-state-sync.md` | Save logic, parse on save, 409 conflict handling |
+| 4a | `04a-conflict-error-handling.md` | Error utilities for 409 Conflict responses |
+| 5 | `05-ui-components.md` | Navigator pill, hunk action buttons (UI only) |
 | 6 | `06-integration.md` | Wire everything together in EditorPanel |
-| 7 | `07-cleanup-and-clipboard.md` | Clipboard sanitization + save-time safety |
+| 6a | `06a-document-polling.md` | Detect background AI updates (polling v1) |
+| 7 | `07-cleanup-and-clipboard.md` | Save-time safety + corruption repair |
 
 ## Key Files You'll Create/Modify
 
 ### New Files (Frontend)
 ```
 frontend/src/
-├── features/documents/utils/
-│   └── mergedDocument.ts            ← buildMergedDocument, parseMergedDocument
-└── core/editor/codemirror/diffView/
-    ├── index.ts                     ← Extension entry point
-    ├── plugin.ts                    ← ViewPlugin for decorations
-    ├── editFilter.ts                ← Block edits in DEL regions
-    ├── keymap.ts                    ← Keyboard shortcuts
-    ├── transactions.ts              ← Accept/reject transaction helpers
-    └── HunkActionWidget.ts          ← Inline action buttons widget
+├── features/documents/
+│   ├── utils/
+│   │   ├── mergedDocument.ts       ← buildMergedDocument, parseMergedDocument
+│   │   └── saveMergedDocument.ts   ← Save helper for merged docs
+│   └── hooks/
+│       └── useDocumentPolling.ts   ← Poll for background AI updates
+├── core/
+│   ├── editor/codemirror/diffView/
+│   │   ├── index.ts                ← Extension entry point
+│   │   ├── plugin.ts               ← ViewPlugin for decorations
+│   │   ├── editFilter.ts           ← Block edits in DEL regions
+│   │   ├── blockedEditEffect.ts    ← Effect for blocked edit notification
+│   │   ├── blockedEditListener.ts  ← Listener for blocked edit effect
+│   │   ├── clipboard.ts            ← Strip markers on copy/paste
+│   │   ├── keymap.ts               ← Keyboard shortcuts
+│   │   ├── transactions.ts         ← Accept/reject transaction helpers
+│   │   ├── focus.ts                ← Focused hunk highlighting state
+│   │   └── HunkActionWidget.ts     ← Inline action buttons widget
+│   └── lib/
+│       └── errorUtils.ts           ← Error utilities (409 conflict handling)
+└── types/
+    └── errors.ts                   ← Conflict response types
 ```
 
 ### Modified Files (Frontend)
@@ -253,7 +307,7 @@ Per project rule "empty string is valid data", `aiVersion` uses **tri-state sema
 
 **Concurrency note:** whenever `ai_version` is included in a PATCH, also send `ai_version_base_rev` to avoid overwriting unseen server updates.
 
-**Go implementation note:** for `PATCH` semantics you must distinguish `ai_version` **absent vs null**. Pointer fields can’t do that with `encoding/json`; use a value-type wrapper that tracks presence during unmarshal (see `04-state-sync.md` Step 4.0).
+**Go implementation note:** for `PATCH` semantics you must distinguish `ai_version` **absent vs null**. Pointer fields can’t do that with `encoding/json`; use a value-type wrapper that tracks presence during unmarshal (see `00-backend-contract.md`).
 
 **Important (when to PATCH `ai_version`):**
 - Most saves should be **content-only** (omit `ai_version` entirely).

@@ -126,77 +126,58 @@ function diffToChanges(oldMerged: string, newMerged: string) {
 
 ### Step 6.0: Update CodeMirrorEditorRef for history-safe hydration
 
-Update `frontend/src/core/editor/codemirror/types.ts`:
+Complete `00-editor-hydration.md` first (required). This phase assumes:
+- `setContent(..., { addToHistory, emitChange })` exists
+- diff-mode hydration can bypass transaction filters (`filter:false`)
+- live preview can be toggled via a Compartment
 
-```typescript
-interface SetContentOptions {
-  /** If false, don't add to undo history. Default: true */
-  addToHistory?: boolean
+### Step 6.0.1: Disable live preview while diff mode is active (required)
 
-  /**
-   * If false, do not call the React `onChange` callback for this setContent().
-   * Use this for hydration/refresh (server → editor), not for user actions.
-   *
-   * Default: true
-   */
-  emitChange?: boolean
-}
+Implemented in `00-editor-hydration.md` (required). In this phase, `EditorPanel` just calls:
+- diff mode active → `ref.setLivePreviewEnabled(false)`
+- diff mode inactive → `ref.setLivePreviewEnabled(true)`
 
-// Update the existing EditorRef signature:
-export interface EditorRef {
-  getContent(): string
-  setContent(content: string, options?: SetContentOptions): void
-  focus(): void
-  getView(): EditorView | null
-}
-```
+--- 
 
-Update `frontend/src/core/editor/codemirror/CodeMirrorEditor.tsx`:
+### Step 6.0.2: Backend Listener for Document Updates (SSE)
 
-```typescript
-import { Transaction, Annotation } from '@codemirror/state'
+When AI processes (like `doc_edit` tool calls) update `ai_version` in the background, the frontend needs to be notified so it can trigger the "Server updated — Refresh" flow.
 
-// Module-scope annotation shared by setContent() + updateListener.
-// When present, the React onChange callback is suppressed for that transaction.
-const suppressOnChange = Annotation.define<boolean>()
+**Why backend listener instead of chat-based:**
+- AI may run in background processes not associated with the foreground chat
+- Document updates may come from other sources (batch processing, other users, etc.)
+- Decouples document state from chat UI
 
-// In the ref implementation:
-setContent(content: string, options?: SetContentOptions) {
-  if (!viewRef.current) return
+**Implementation approach:**
 
-  // Explicit hydration controls (don’t rely on ad-hoc caller flags)
-  const addToHistory = options?.addToHistory !== false
-  const emitChange = options?.emitChange !== false
+1. **Backend**: Add SSE endpoint or extend existing one to broadcast document updates:
+   ```
+   GET /api/documents/{id}/events
+   ```
+   Event types:
+   - `ai_version_updated`: Sent when `ai_version` changes
+   - `content_updated`: Sent when `content` changes (if needed)
 
-  const annotations = [
-    ...(addToHistory ? [] : [Transaction.addToHistory.of(false)]),
-    ...(emitChange ? [] : [suppressOnChange.of(true)]),
-  ]
+2. **Frontend**: Create a document event listener hook:
+   ```typescript
+   function useDocumentEvents(documentId: string, handlers: {
+     onAIVersionUpdated?: (aiVersionRev: number) => void
+   }) {
+     // Connect to SSE endpoint
+     // On 'ai_version_updated' event:
+     // - Compare event.ai_version_rev with local aiVersionBaseRevRef
+     // - If different and editor is dirty, stash and show "Refresh" banner
+     // - If different and editor is clean, auto-refresh
+   }
+   ```
 
-  viewRef.current.dispatch({
-    changes: { from: 0, to: viewRef.current.state.doc.length, insert: content },
-    annotations: annotations.length > 0 ? annotations : undefined,
-    // IMPORTANT: hydration/refresh replaces marker ranges; bypass diffEditFilter
-    filter: addToHistory === false ? false : undefined,
-  })
-}
-```
+3. **EditorPanel integration**:
+   - Subscribe to document events when component mounts
+   - Handle `onAIVersionUpdated` to trigger refresh flow
 
-Also update the `onReady({ ... })` object’s `setContent` implementation to accept the same `options?: SetContentOptions` and apply the same annotations (there are two `setContent` implementations in this component today).
+> **Note:** This is the preferred approach over relying on chat message events because it handles background AI processing scenarios.
 
-Update the update listener in `CodeMirrorEditor.tsx` to honor the annotation:
-
-```typescript
-// In initialize code (near updateListener):
-const updateListener = EditorView.updateListener.of(update => {
-  const shouldSuppress = update.transactions.some(tr => tr.annotation(suppressOnChange) === true)
-  if (!shouldSuppress && update.docChanged && onChange) {
-    onChange(update.state.doc.toString())
-  }
-})
-```
-
----
+--- 
 
 ### Step 6.1: Update EditorPanel.tsx
 
@@ -208,9 +189,14 @@ import { Compartment } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { useEditorStore } from '@/core/stores/useEditorStore'
 import { CodeMirrorEditor, type CodeMirrorEditorRef } from '@/core/editor/codemirror'
+import { api } from '@/core/lib/api'
+import { isConflictError, extractDocumentFromConflict } from '@/core/lib/errorUtils'
 import {
   buildMergedDocument,
   extractHunks,
+  hasAnyMarker,
+  parseMergedDocument,
+  DiffMarkersCorruptedError,
   type MergedHunk,
 } from '@/features/documents/utils/mergedDocument'
 import { documentSyncService } from '@/core/services/documentSyncService'
@@ -219,7 +205,6 @@ import {
   acceptAll,
   rejectAll,
   setFocusedHunkIndexEffect,
-  type DiffKeymapCallbacks,
 } from '@/core/editor/codemirror/diffView'
 import { AIToolbar } from './AIToolbar'
 import { AIHunkNavigator } from './AIHunkNavigator'
@@ -263,9 +248,23 @@ export function EditorPanel() {
   // Computed hunks from the current document
   const hunks = useMemo(() => extractHunks(localDocument), [localDocument])
 
-  // Derive hasAISuggestions from hunks (single source of truth)
-  // No useState needed - this is computed from localDocument via hunks memo
-  const hasAISuggestions = hunks.length > 0
+  // Diff mode is active when (and only when) the editor document contains markers.
+  // Do NOT derive this from hunks.length — markers can exist even if extraction fails,
+  // and empty string "" is valid ai_version content.
+  const hasAISuggestions = hasAnyMarker(localDocument)
+
+  // Clamp focusedHunkIndex when hunks are removed (e.g., after accept/reject)
+  useEffect(() => {
+    if (hunks.length === 0) {
+      // Reset to 0 when no hunks (will be ignored by navigator)
+      if (focusedHunkIndex !== 0) {
+        setFocusedHunkIndex(0)
+      }
+    } else if (focusedHunkIndex >= hunks.length) {
+      // Clamp to last hunk if current index is out of bounds
+      setFocusedHunkIndex(hunks.length - 1)
+    }
+  }, [hunks.length, focusedHunkIndex, setFocusedHunkIndex])
 
   // ==========================================================================
   // INITIALIZATION: Build merged document from storage
@@ -302,7 +301,6 @@ export function EditorPanel() {
       const aiVersionRev = activeDocument.aiVersionRev
 
       if (aiVersion !== null && aiVersion !== undefined) {
-        // Build merged document (hasAISuggestions derived from hunks.length)
         const merged = buildMergedDocument(content, aiVersion)
         setLocalDocument(merged)
         aiVersionBaseRevRef.current = aiVersionRev
@@ -310,6 +308,32 @@ export function EditorPanel() {
         // Hydrate editor without adding to history
         if (editorRef.current) {
           editorRef.current.setContent(merged, { addToHistory: false, emitChange: false })
+        }
+
+        // Edge case: ai_version exists but produces no markers (no actual diff).
+        // Clear ai_version immediately (CAS) when not dirty so AI doesn't get "stuck on".
+        if (!hasAnyMarker(merged) && aiVersionRev !== null && aiVersionRev !== undefined) {
+          api.documents.update(docId, { aiVersion: null, aiVersionBaseRev: aiVersionRev })
+            .then((updated) => {
+              // Success: update the store so hasAISuggestions becomes false
+              useEditorStore.getState().updateActiveDocument(updated)
+              aiVersionBaseRevRef.current = updated.aiVersionRev ?? null
+            })
+            .catch((error) => {
+              if (isConflictError(error)) {
+                // 409: Server has a newer ai_version. Stash and require refresh.
+                const serverDoc = extractDocumentFromConflict(error)
+                setPendingServerSnapshot({
+                  content: serverDoc?.content ?? content,
+                  aiVersion: serverDoc?.aiVersion,
+                  aiVersionRev: serverDoc?.aiVersionRev,
+                })
+              } else {
+                // Network or other error - log and leave AI "stuck on"
+                // The user can manually close via "Close AI" button
+                console.warn('[EditorPanel] Failed to auto-clear no-op ai_version:', error)
+              }
+            })
         }
       } else {
         // No AI version - just use content (hasAISuggestions will be false)
@@ -351,11 +375,8 @@ export function EditorPanel() {
 
   const [isEditorReady, setIsEditorReady] = useState(false)
 
-  // Navigation callbacks for keymap
-  const keymapCallbacks: DiffKeymapCallbacks = useMemo(() => ({
-    onNextHunk: () => navigateHunk('next', hunks.length),
-    onPrevHunk: () => navigateHunk('prev', hunks.length),
-  }), [navigateHunk, hunks.length])
+  // Keyboard shortcuts are implemented in Phase 5 via createDiffKeymap.
+  // (This snippet focuses on wiring the extension + UI.)
 
   const handleEditorReady = useCallback((ref: CodeMirrorEditorRef) => {
     editorRef.current = ref
@@ -367,12 +388,15 @@ export function EditorPanel() {
 
     const shouldEnable = hasAISuggestions
     if (shouldEnable) {
+      // Diff mode: disable live preview (merged doc is not clean markdown)
+      ref.setLivePreviewEnabled?.(false)
+
       view.dispatch({
-        effects: diffCompartment.reconfigure(createDiffViewExtension(keymapCallbacks))
+        effects: diffCompartment.reconfigure(createDiffViewExtension())
       })
       diffEnabledRef.current = true
     }
-  }, [hasAISuggestions, keymapCallbacks])
+  }, [hasAISuggestions])
 
   // Effect: Enable/disable diff extension
   useEffect(() => {
@@ -383,17 +407,19 @@ export function EditorPanel() {
     const shouldEnable = hasAISuggestions
 
     if (shouldEnable && !diffEnabledRef.current) {
+      editorRef.current?.setLivePreviewEnabled?.(false)
       view.dispatch({
-        effects: diffCompartment.reconfigure(createDiffViewExtension(keymapCallbacks))
+        effects: diffCompartment.reconfigure(createDiffViewExtension())
       })
       diffEnabledRef.current = true
     } else if (!shouldEnable && diffEnabledRef.current) {
+      editorRef.current?.setLivePreviewEnabled?.(true)
       view.dispatch({
         effects: diffCompartment.reconfigure([])
       })
       diffEnabledRef.current = false
     }
-  }, [isEditorReady, hasAISuggestions, keymapCallbacks])
+  }, [isEditorReady, hasAISuggestions])
 
   // Initial extension array
   const initialExtensions = useMemo(() => [diffCompartment.of([])], [])
@@ -458,14 +484,72 @@ export function EditorPanel() {
   }, [setFocusedHunkIndex])
 
   // ==========================================================================
+  // CLOSE AI (dismiss suggestions)
+  // ==========================================================================
+
+  const [isClosingAI, setIsClosingAI] = useState(false)
+
+  const handleCloseAI = useCallback(async () => {
+    if (!activeDocument) return
+    if (hasUserEdit) return  // Don't close while dirty
+
+    const baseRev = aiVersionBaseRevRef.current
+    if (baseRev === null) {
+      // Edge case: no base rev known. Show error and require refresh.
+      setPendingServerSnapshot({
+        content: activeDocument.content ?? '',
+        aiVersion: activeDocument.aiVersion,
+        aiVersionRev: activeDocument.aiVersionRev,
+      })
+      return
+    }
+
+    setIsClosingAI(true)
+
+    try {
+      // PATCH ai_version: null with CAS
+      const updated = await api.documents.update(activeDocument.id, {
+        aiVersion: null,
+        aiVersionBaseRev: baseRev,
+      })
+
+      // Success: clear the merged document to just content
+      const view = editorRef.current?.getView()
+      if (view) {
+        rejectAll(view)  // This removes all markers, keeping original text
+      }
+
+      // Update store
+      useEditorStore.getState().updateActiveDocument(updated)
+      aiVersionBaseRevRef.current = updated.aiVersionRev ?? null
+      setLocalDocument(updated.content ?? '')
+
+    } catch (error) {
+      if (isConflictError(error)) {
+        // 409 Conflict: server has newer ai_version
+        const serverDoc = extractDocumentFromConflict(error)
+        setPendingServerSnapshot({
+          content: serverDoc?.content ?? activeDocument.content ?? '',
+          aiVersion: serverDoc?.aiVersion ?? activeDocument.aiVersion,
+          aiVersionRev: serverDoc?.aiVersionRev ?? activeDocument.aiVersionRev,
+        })
+      } else {
+        console.error('[EditorPanel] Failed to close AI:', error)
+        // Could show a toast here
+      }
+    } finally {
+      setIsClosingAI(false)
+    }
+  }, [activeDocument, hasUserEdit])
+
+  // ==========================================================================
   // CONTENT CHANGES
   // ==========================================================================
 
   const handleContentChange = useCallback((newContent: string) => {
     setLocalDocument(newContent)
     setHasUserEdit(true)
-    // Note: hasAISuggestions is derived from hunks.length, which updates
-    // automatically when localDocument changes via the useMemo above
+    // Note: hasAISuggestions is derived from marker presence in localDocument.
   }, [])
 
   // ==========================================================================
@@ -491,11 +575,28 @@ export function EditorPanel() {
     saveTimerRef.current = window.setTimeout(() => {
       const baseRev = aiVersionBaseRevRef.current
 
+      // Validate marker structure before saving. If corrupted, stop autosave and require refresh/repair.
+      // parseMergedDocument throws DiffMarkersCorruptedError for invalid structure.
+      try {
+        void parseMergedDocument(localDocument)
+      } catch (err) {
+        if (err instanceof DiffMarkersCorruptedError) {
+          // Treat as "blocked until repair": stash latest server snapshot and surface a UI banner.
+          setPendingServerSnapshot({
+            content: activeDocument.content ?? '',
+            aiVersion: activeDocument.aiVersion,
+            aiVersionRev: activeDocument.aiVersionRev,
+          })
+          return
+        }
+        throw err
+      }
+
       // Decide whether this autosave should PATCH ai_version.
       // - Markers exist => AI review active => PATCH ai_version (string)
       // - No markers, but server still has AI open => PATCH ai_version:null once to close
       // - Otherwise => omit ai_version entirely (content-only)
-      const hasMarkers = hunks.length > 0
+      const hasMarkers = hasAnyMarker(localDocument)
       const serverHasAIVersion = activeDocument.aiVersion !== null && activeDocument.aiVersion !== undefined
 
       if (!hasMarkers && !serverHasAIVersion) {
@@ -537,6 +638,12 @@ export function EditorPanel() {
 
           // Update store with server response
           useEditorStore.getState().updateActiveDocument(result.document)
+
+          // IMPORTANT: Update ref BEFORE setting hasUserEdit to false.
+          // When hasUserEdit becomes false, the polling hook resumes. If it polls
+          // before we update the ref, it will see a stale aiVersionBaseRev and
+          // may incorrectly report "server updated" when the server returned
+          // the same rev we just saved.
           aiVersionBaseRevRef.current = result.document.aiVersionRev
 
           setHasUserEdit(false)
@@ -565,7 +672,8 @@ export function EditorPanel() {
     activeDocument?.aiVersion,
     activeDocument?.aiVersionRev,
     hasUserEdit,
-    hunks.length,
+    // NOTE: Do NOT include hunks.length here - it changes on every accept/reject
+    // and would cause rapid effect re-triggers. hasMarkers is derived from localDocument.
     localDocument,
     pendingServerSnapshot,
   ])
@@ -589,7 +697,9 @@ export function EditorPanel() {
           hunksCount={hunks.length}
           hasPendingServerUpdate={pendingServerSnapshot !== null}
           isDirty={hasUserEdit}
+          isClosingAI={isClosingAI}
           onRefreshFromServer={handleRefreshFromServer}
+          onCloseAI={handleCloseAI}
         />
       )}
 
@@ -630,14 +740,18 @@ interface AIToolbarProps {
   hunksCount: number
   hasPendingServerUpdate?: boolean
   isDirty?: boolean
+  isClosingAI?: boolean
   onRefreshFromServer?: () => void
+  onCloseAI?: () => void
 }
 
 export function AIToolbar({
   hunksCount,
   hasPendingServerUpdate,
   isDirty,
+  isClosingAI,
   onRefreshFromServer,
+  onCloseAI,
 }: AIToolbarProps) {
   return (
     <div className="flex items-center justify-between py-2 px-4 border-b bg-muted/30">
@@ -656,6 +770,17 @@ export function AIToolbar({
             Refresh
           </button>
         )}
+
+        {/* Close AI button - always visible, dismisses AI suggestions */}
+        <button
+          type="button"
+          onClick={onCloseAI}
+          disabled={isDirty || isClosingAI}
+          className="text-sm text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
+          title={isDirty ? 'Save first to close AI' : 'Dismiss AI suggestions'}
+        >
+          {isClosingAI ? 'Closing...' : '✕ Close AI'}
+        </button>
       </div>
     </div>
   )
@@ -754,11 +879,10 @@ When `document.aiVersion` exists, the editor displays a merged document with PUA
 1. Try to type in red strikethrough text
 2. ✅ Edit blocked (no changes)
 
-**Test 10: Keyboard navigation**
-1. Press Alt+N → moves to next hunk
-2. Press Alt+P → moves to previous hunk
-3. Press Cmd+Enter → accepts hunk at cursor
-4. Press Cmd+Shift+D → rejects hunk at cursor
+**Test 10: UI Navigation**
+1. Click "Next" button → moves to next hunk
+2. Click "Previous" button → moves to previous hunk
+3. Keyboard shortcuts work (Phase 5)
 
 **Test 11: Save after all resolved**
 1. Accept or reject all hunks
@@ -776,6 +900,10 @@ When `document.aiVersion` exists, the editor displays a merged document with PUA
 7. ✅ Merged doc updates without adding to undo history
 
 ---
+
+## Related: Background AI Update Detection
+
+See `06a-document-polling.md` for implementing the `useDocumentPolling` hook that detects when AI updates `ai_version` in the background.
 
 ## Next Phase
 
@@ -809,8 +937,8 @@ Finish with `07-cleanup-and-clipboard.md` to sanitize clipboard input/output and
 
 | File | Action |
 |------|--------|
-| `frontend/src/core/editor/codemirror/types.ts` | Modified |
-| `frontend/src/core/editor/codemirror/CodeMirrorEditor.tsx` | Modified |
+| `frontend/src/core/editor/codemirror/types.ts` | Modified (Phase 0) |
+| `frontend/src/core/editor/codemirror/CodeMirrorEditor.tsx` | Modified (Phase 0) |
 | `frontend/src/features/documents/components/EditorPanel.tsx` | Major rewrite |
 | `frontend/src/features/documents/components/AIToolbar.tsx` | Updated |
 | `frontend/CLAUDE.md` | Updated |

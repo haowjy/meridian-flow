@@ -4,6 +4,13 @@
 
 Create the core utilities for building and parsing merged documents with PUA markers. This phase establishes the data transformation layer between storage format (separate content/aiVersion) and editor format (merged document).
 
+## Prerequisites
+
+Install the diff library:
+```bash
+pnpm add diff-match-patch @types/diff-match-patch
+```
+
 ## What You're Building
 
 1. **PUA marker constants** - Unicode markers for del/ins regions
@@ -38,6 +45,14 @@ export const MARKERS = {
 /**
  * Regex to match a complete hunk (DEL followed by INS).
  * Captures: [full match, deletion content, insertion content]
+ *
+ * INVARIANT: buildMergedDocument() always produces DEL-INS pairs:
+ * - Pure deletion → empty INS (DEL_START + text + DEL_END + INS_START + INS_END)
+ * - Pure insertion → empty DEL (DEL_START + DEL_END + INS_START + text + INS_END)
+ * - Replacement → both have content
+ *
+ * This regex will NOT match orphaned markers or out-of-order markers.
+ * Use validateMarkerStructure() to detect corruption before parsing.
  */
 export const HUNK_REGEX = new RegExp(
   `${MARKERS.DEL_START}([^${MARKERS.DEL_END}]*)${MARKERS.DEL_END}` +
@@ -49,6 +64,28 @@ export const HUNK_REGEX = new RegExp(
  * Regex to match any marker character.
  */
 export const ANY_MARKER_REGEX = /[\uE000-\uE003]/
+
+/**
+ * Regex to match all marker characters (global).
+ * Use this for replacement/removal (do not use for `.test` due to `lastIndex`).
+ */
+export const ALL_MARKER_REGEX = /[\uE000-\uE003]/g
+
+/**
+ * True if any PUA marker exists in the string.
+ * NOTE: Empty string "" is valid content; treat markers, not falsy-ness, as the signal.
+ */
+export function hasAnyMarker(text: string): boolean {
+  return ANY_MARKER_REGEX.test(text)
+}
+
+/**
+ * Strip marker characters from a string.
+ * Used to harden inputs (server content/aiVersion, AI output, clipboard) against rare-but-real PUA collisions.
+ */
+export function stripMarkers(text: string): string {
+  return text.replace(ALL_MARKER_REGEX, '')
+}
 
 // =============================================================================
 // TYPES
@@ -108,19 +145,6 @@ export interface ParsedDocument {
 const dmp = new DiffMatchPatch()
 
 /**
- * Simple hash function for generating stable hunk IDs.
- */
-function hashCode(str: string): string {
-  let hash = 0
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i)
-    hash = ((hash << 5) - hash) + char
-    hash = hash & hash
-  }
-  return Math.abs(hash).toString(36)
-}
-
-/**
  * Build a merged document from content and aiVersion.
  *
  * The merged document contains both texts with PUA markers indicating
@@ -143,6 +167,17 @@ export function buildMergedDocument(
   content: string,
   aiVersion: string
 ): string {
+  // Harden against rare-but-real marker collisions:
+  // - legacy/imported content containing PUA codepoints
+  // - AI output that accidentally emits PUA codepoints
+  //
+  // If we allow markers inside content, they become structurally ambiguous.
+  if (hasAnyMarker(content) || hasAnyMarker(aiVersion)) {
+    console.warn('buildMergedDocument: stripping unexpected PUA markers from inputs')
+    content = stripMarkers(content)
+    aiVersion = stripMarkers(aiVersion)
+  }
+
   // If identical, no markers needed
   if (content === aiVersion) {
     return content
@@ -199,6 +234,72 @@ export function buildMergedDocument(
 }
 
 // =============================================================================
+// MARKER VALIDATION
+// =============================================================================
+
+/**
+ * Error thrown when marker structure is corrupted.
+ */
+export class DiffMarkersCorruptedError extends Error {
+  constructor(reason: string) {
+    super(`Diff marker structure is corrupted: ${reason}`)
+    this.name = 'DiffMarkersCorruptedError'
+  }
+}
+
+/**
+ * Validate that marker structure is well-formed.
+ *
+ * Valid structure: sequence of (DEL_START, text?, DEL_END, INS_START, text?, INS_END)
+ * Returns { ok: true } if valid, { ok: false, reason: string } if not.
+ */
+export function validateMarkerStructure(
+  merged: string
+): { ok: true } | { ok: false; reason: string } {
+  // State machine: 'outside' -> 'inDel' -> 'afterDel' -> 'inIns' -> 'outside'
+  type State = 'outside' | 'inDel' | 'afterDel' | 'inIns'
+  let state: State = 'outside'
+
+  for (let i = 0; i < merged.length; i++) {
+    const char = merged[i]
+
+    // IMPORTANT: DEL_END must be immediately followed by INS_START.
+    // If anything else appears between them, the hunk structure is ambiguous and hunk extraction breaks.
+    if (state === 'afterDel' && char !== MARKERS.INS_START) {
+      return { ok: false, reason: `Expected INS_START immediately after DEL_END (position ${i}), got ${JSON.stringify(char)}` }
+    }
+
+    if (char === MARKERS.DEL_START) {
+      if (state !== 'outside') {
+        return { ok: false, reason: `Unexpected DEL_START at position ${i}, state was ${state}` }
+      }
+      state = 'inDel'
+    } else if (char === MARKERS.DEL_END) {
+      if (state !== 'inDel') {
+        return { ok: false, reason: `Unexpected DEL_END at position ${i}, state was ${state}` }
+      }
+      state = 'afterDel'
+    } else if (char === MARKERS.INS_START) {
+      if (state !== 'afterDel') {
+        return { ok: false, reason: `Unexpected INS_START at position ${i}, state was ${state}` }
+      }
+      state = 'inIns'
+    } else if (char === MARKERS.INS_END) {
+      if (state !== 'inIns') {
+        return { ok: false, reason: `Unexpected INS_END at position ${i}, state was ${state}` }
+      }
+      state = 'outside'
+    }
+  }
+
+  if (state !== 'outside') {
+    return { ok: false, reason: `Unclosed marker structure, ended in state ${state}` }
+  }
+
+  return { ok: true }
+}
+
+// =============================================================================
 // PARSE MERGED DOCUMENT
 // =============================================================================
 
@@ -207,6 +308,7 @@ export function buildMergedDocument(
  *
  * @param merged - The merged document with PUA markers
  * @returns Parsed content and aiVersion (clean markdown, no markers)
+ * @throws DiffMarkersCorruptedError if marker structure is invalid
  *
  * @example
  * ```typescript
@@ -226,6 +328,12 @@ export function parseMergedDocument(merged: string): ParsedDocument {
       aiVersion: null,
       hasChanges: false,
     }
+  }
+
+  // Validate structure before parsing to prevent corrupt markers leaking into output
+  const validation = validateMarkerStructure(merged)
+  if (!validation.ok) {
+    throw new DiffMarkersCorruptedError(validation.reason)
   }
 
   // Build content: keep DEL content, remove INS content
@@ -275,6 +383,7 @@ export function extractHunks(merged: string): MergedHunk[] {
   HUNK_REGEX.lastIndex = 0
 
   let match: RegExpExecArray | null
+  let index = 0
   while ((match = HUNK_REGEX.exec(merged)) !== null) {
     const fullMatch = match[0]
     const deletedText = match[1]
@@ -284,14 +393,17 @@ export function extractHunks(merged: string): MergedHunk[] {
     const to = from + fullMatch.length
 
     // Calculate marker positions within the hunk
-    const delStart = from
-    const delEnd = from + 1 + deletedText.length  // Index of DEL_END marker
-    const insStart = delEnd + 1  // Index of INS_START marker
-    const insEnd = to - 1  // Index of INS_END marker
+    // Positions are the START index of each marker character
+    const delStart = from                          // Position of DEL_START marker (\uE000)
+    const delEnd = from + 1 + deletedText.length   // Position of DEL_END marker (\uE001)
+    const insStart = delEnd + 1                    // Position of INS_START marker (\uE002)
+    const insEnd = to - 1                          // Position of INS_END marker (\uE003)
 
     hunks.push({
-      // Include position to avoid collisions when identical replacements repeat.
-      id: `hunk-${hashCode(`${from}|${deletedText}|${insertedText}`)}`,
+      // ID is stable creation-order only.
+      // Do NOT include position or content hash - those change when users edit,
+      // which would break accept/reject widget lookups.
+      id: `hunk-${index}`,
       from,
       to,
       delStart,
@@ -301,6 +413,7 @@ export function extractHunks(merged: string): MergedHunk[] {
       deletedText,
       insertedText,
     })
+    index++
   }
 
   return hunks
@@ -485,6 +598,8 @@ Before moving to Phase 2, verify:
 - [ ] `mergedDocument.ts` created with all functions
 - [ ] `buildMergedDocument()` correctly inserts markers
 - [ ] `parseMergedDocument()` correctly extracts content/aiVersion
+- [ ] `parseMergedDocument()` throws `DiffMarkersCorruptedError` on invalid marker structure
+- [ ] `validateMarkerStructure()` detects orphaned/out-of-order markers
 - [ ] `extractHunks()` returns correct positions
 - [ ] `acceptAllHunks()` equals original aiVersion
 - [ ] `rejectAllHunks()` equals original content

@@ -237,11 +237,9 @@ function createHunkDecorations(
 
 class DiffViewPluginClass {
   decorations: DecorationSet
-  atomicRanges: DecorationSet
 
   constructor(view: EditorView) {
     this.decorations = this.buildDecorations(view)
-    this.atomicRanges = this.buildAtomicRanges(view)
   }
 
   update(update: ViewUpdate) {
@@ -250,7 +248,6 @@ class DiffViewPluginClass {
     // - Viewport changes (scrolling can reveal un-decorated markers if culling is used)
     if (update.docChanged || update.viewportChanged) {
       this.decorations = this.buildDecorations(update.view)
-      this.atomicRanges = this.buildAtomicRanges(update.view)
     }
   }
 
@@ -267,39 +264,21 @@ class DiffViewPluginClass {
 
     const builder = new RangeSetBuilder<Decoration>()
 
+    // Use extended viewport with buffer to prevent marker flash on scroll
+    // PUA markers would briefly appear as the viewport expands during scroll
+    const VIEWPORT_BUFFER = 2000  // characters
+    const viewFrom = Math.max(0, view.viewport.from - VIEWPORT_BUFFER)
+    const viewTo = Math.min(doc.length, view.viewport.to + VIEWPORT_BUFFER)
+
     // Process each hunk (they're already sorted by position)
+    // createHunkDecorations handles hiding markers + styling regions
     for (const hunk of hunks) {
-      // Skip hunks outside viewport for performance
-      const { from: viewFrom, to: viewTo } = view.viewport
+      // Skip hunks outside extended viewport for performance
       if (hunk.to < viewFrom || hunk.from > viewTo) {
         continue
       }
 
-      // Show diff styling (and hide markers via createHunkDecorations)
       createHunkDecorations(hunk, builder)
-    }
-
-    return builder.finish()
-  }
-
-  /**
-   * Atomic ranges prevent the cursor from landing "inside" hidden marker ranges.
-   * This is important because marker characters still exist in the document.
-   */
-  buildAtomicRanges(view: EditorView): DecorationSet {
-    const doc = view.state.doc.toString()
-    const hunks = extractHunks(doc)
-    if (hunks.length === 0) return Decoration.none
-
-    const builder = new RangeSetBuilder<Decoration>()
-    const atomic = Decoration.mark({}) // Decoration value doesn't matter; the range is treated as atomic.
-
-    for (const hunk of hunks) {
-      // Individual marker chars are atomic
-      builder.add(hunk.delStart, hunk.delStart + 1, atomic)
-      builder.add(hunk.delEnd, hunk.delEnd + 1, atomic)
-      builder.add(hunk.insStart, hunk.insStart + 1, atomic)
-      builder.add(hunk.insEnd, hunk.insEnd + 1, atomic)
     }
 
     return builder.finish()
@@ -312,11 +291,12 @@ class DiffViewPluginClass {
 
 /**
  * The diff view ViewPlugin.
+ *
+ * Note: We don't need EditorView.atomicRanges because Decoration.replace
+ * widgets already prevent the cursor from landing on replaced content.
  */
 export const diffViewPlugin = ViewPlugin.fromClass(DiffViewPluginClass, {
   decorations: v => v.decorations,
-  provide: (plugin) =>
-    EditorView.atomicRanges.of((view) => view.plugin(plugin)?.atomicRanges ?? Decoration.none),
 })
 
 // =============================================================================

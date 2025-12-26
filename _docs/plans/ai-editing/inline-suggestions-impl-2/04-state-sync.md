@@ -75,146 +75,30 @@ Rules:
 
 This is **not** a 3rd copy of the document; it’s just a revision counter to avoid last-writer-wins on `ai_version`.
 
+### Rev-Bump Checklist (easy to miss)
+
+For the compare-and-swap token to be meaningful, **every** code path that changes `ai_version` must also bump `ai_version_rev`:
+
+- `PATCH /api/documents/{id}` when `ai_version` is present (set or clear)
+- The server-side AI writer (e.g. `doc_edit` tool / any LLM pipeline that writes AI suggestions into `documents.ai_version`)
+- Any other endpoint/method that directly updates `ai_version` (if present in your backend)
+
+If any writer forgets to bump, clients can “successfully” PATCH with a stale base rev and overwrite unseen server updates.
+
+### No-op AI Versions (AI exists but no diff)
+
+If `ai_version` exists but `buildMergedDocument(content, aiVersion)` contains **no markers** (strings are identical), treat this as “AI session already resolved”:
+- Diff UI remains hidden (no markers).
+- Best-effort clear `ai_version` with CAS (`ai_version:null` + `ai_version_base_rev`) when the editor is not dirty, so AI doesn’t get stuck on.
+
 ## Steps
 
 ### Step 4.0: Backend Update (Required)
 
-Update the backend so `PATCH /api/documents/{id}` can also update `ai_version`.
-
-**Goal:** keep the editor save path simple + atomic at the HTTP layer: one request updates both `content` and `ai_version`.
-
-> Note: tri-state `ai_version` decoding via `httputil.OptionalString` is already implemented (see `backend/internal/httputil/optional_string.go` and `backend/internal/handler/document.go`). This step adds `ai_version_rev` + the `ai_version_base_rev` precondition.
-
-#### Tri-state semantics (required)
-- **absent** → don’t change `ai_version`
-- **null** → clear `ai_version` (set NULL)
-- **string (including `\"\"`)** → set `ai_version` to that value
-
-Go note: `encoding/json` cannot distinguish **absent vs null** using plain pointer fields in a PATCH DTO. Use a presence-tracking wrapper (`httputil.OptionalString`).
-
-#### Add `ai_version_rev` (required)
-
-Add a migration (example):
-
-```sql
-ALTER TABLE ${TABLE_PREFIX}documents
-  ADD COLUMN IF NOT EXISTS ai_version_rev INTEGER NOT NULL DEFAULT 0;
-```
-
-Whenever `ai_version` changes, also increment `ai_version_rev`:
-- AI tool writes to `ai_version` → bumps rev
-- PATCH sets/clears `ai_version` → bumps rev
-
-#### Add `ai_version_base_rev` precondition (required for client PATCHes that include `ai_version`)
-
-Extend PATCH to accept an optional `ai_version_base_rev` integer:
-- If request includes `ai_version` (present, including `null`), require `ai_version_base_rev`.
-- Server checks current `ai_version_rev`:
-  - match → apply `ai_version`, increment rev
-  - mismatch → `409 Conflict` (do not apply `ai_version`)
-
-Recommended `409` response body (minimum):
-- a typed error code (e.g. `"ai_version_conflict"`)
-- the current `ai_version_rev`
-- optionally the current `ai_version` (and/or the full document DTO) so the client can refresh without an extra round-trip
-
-Create `backend/internal/httputil/optional_string.go`:
-
-```go
-// Already exists; do not re-create.
-// See `backend/internal/httputil/optional_string.go`.
-```
-
-Update `backend/internal/domain/services/docsystem/document.go`:
-
-```go
-// OptionalAIVersion is transport-agnostic PATCH semantics for ai_version:
-// - Present=false => no change
-// - Present=true + Value=nil => clear
-// - Present=true + Value=&"" or &"text" => set ("" is valid)
-type OptionalAIVersion struct {
-  Present bool
-  Value   *string
-}
-
-type UpdateDocumentRequest struct {
-  ProjectID  string                 `json:"project_id"`
-  Name       *string                `json:"name,omitempty"`
-  FolderPath *string                `json:"folder_path,omitempty"`
-  FolderID   *string                `json:"folder_id,omitempty"`
-  Content    *string                `json:"content,omitempty"`
-  AIVersion  OptionalAIVersion      `json:"-"`
-  // Only meaningful when AIVersion.Present == true.
-  // Used for compare-and-swap against documents.ai_version_rev.
-  AIVersionBaseRev int              `json:"-"`
-}
-```
-
-Update `backend/internal/handler/document.go` to parse a handler-level PATCH DTO and map into the service request:
-
-```go
-type updateDocumentPatchRequest struct {
-  ProjectID  string                  `json:"project_id"`
-  Name       *string                 `json:"name,omitempty"`
-  FolderPath *string                 `json:"folder_path,omitempty"`
-  FolderID   *string                 `json:"folder_id,omitempty"`
-  Content    *string                 `json:"content,omitempty"`
-  AIVersion  httputil.OptionalString `json:"ai_version"`
-  AIVersionBaseRev *int              `json:"ai_version_base_rev,omitempty"`
-}
-
-// In handler UpdateDocument:
-var dto updateDocumentPatchRequest
-if err := httputil.ParseJSON(w, r, &dto); err != nil { ... }
-
-req := docsysSvc.UpdateDocumentRequest{
-  ProjectID:  dto.ProjectID,
-  Name:       dto.Name,
-  FolderPath: dto.FolderPath,
-  FolderID:   dto.FolderID,
-  Content:    dto.Content,
-}
-
-if dto.AIVersion.Present {
-  // If client is trying to update ai_version, enforce base-rev precondition.
-  if dto.AIVersionBaseRev == nil {
-    // 400: cannot safely apply ai_version without concurrency token
-  }
-
-  // Map tri-state: null → clear, string → set
-  if dto.AIVersion.IsNull {
-    req.AIVersion = docsysSvc.OptionalAIVersion{Present: true, Value: nil}
-  } else {
-    v := dto.AIVersion.Value
-    req.AIVersion = docsysSvc.OptionalAIVersion{Present: true, Value: &v}
-  }
-
-  req.AIVersionBaseRev = *dto.AIVersionBaseRev
-}
-```
-
-Update `backend/internal/service/docsystem/document.go` in `UpdateDocument(...)`:
-
-```go
-if req.AIVersion.Present {
-  // Compare-and-swap: prevent stomping unseen server ai_version updates.
-  // If req.AIVersionBaseRev != current ai_version_rev -> return a typed conflict error -> 409.
-  if req.AIVersion.Value == nil {
-    doc.AIVersion = nil
-  } else {
-    doc.AIVersion = req.AIVersion.Value // includes ""
-  }
-}
-```
-
-Update `backend/internal/repository/postgres/docsystem/document.go` so updating `ai_version` is atomic with rev bump and base-rev check.
-
-Sketch (single statement):
-- `SET ai_version = $ai, ai_version_rev = ai_version_rev + 1, updated_at = NOW()`
-- `WHERE id = $id AND ai_version_rev = $baseRev`
-- If rows affected == 0 => conflict (rev mismatch)
-
-Proceed to Step 4.1 for frontend API client changes.
+Complete `00-backend-contract.md` first. This phase assumes:
+- Document DTO includes `ai_version_rev` → mapped to `document.aiVersionRev`
+- PATCH supports tri-state `ai_version` (undefined/null/string) + `ai_version_base_rev` CAS
+- `409 Conflict` uses a typed error code (`ai_version_conflict`) and includes the current document snapshot
 
 ---
 
@@ -560,14 +444,14 @@ Before moving to Phase 5, verify:
 
 | File | Action |
 |------|--------|
-| `backend/internal/httputil/optional_string.go` | Created |
-| `backend/internal/domain/services/docsystem/document.go` | Modified |
-| `backend/internal/service/docsystem/document.go` | Modified |
-| `backend/internal/repository/postgres/docsystem/document.go` | Modified |
 | `frontend/src/core/lib/api.ts` | Modified |
 | `frontend/src/features/documents/utils/saveMergedDocument.ts` | Created |
 | `frontend/src/core/services/documentSyncService.ts` | Modified |
 | `frontend/src/core/stores/useEditorStore.ts` | Modified |
+
+## Related: Error Handling Utilities
+
+See `04a-conflict-error-handling.md` for implementing `isConflictError()` and `extractDocumentFromConflict()` utilities.
 
 ## Next Step
 
