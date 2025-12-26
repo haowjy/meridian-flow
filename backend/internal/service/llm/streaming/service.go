@@ -419,7 +419,9 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	// Register stream in registry IMMEDIATELY
 	// This must happen before returning response to prevent race with SSE connections
 	stream := executor.GetStream()
-	s.registry.Register(stream)
+	if err := s.registry.Register(stream); err != nil {
+		s.logger.Warn("failed to register stream", "turn_id", assistantTurn.ID, "error", err)
+	}
 
 	s.logger.Info("stream registered, starting background streaming",
 		"assistant_turn_id", assistantTurn.ID,

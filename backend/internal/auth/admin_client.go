@@ -73,7 +73,7 @@ func (c *AdminClient) DeleteUserByEmail(email string) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete user: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }() // Error ignored: response consumed
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		body, _ := io.ReadAll(resp.Body)
@@ -99,7 +99,7 @@ func (c *AdminClient) findUserIDByEmail(email string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to list users: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }() // Error ignored: response consumed
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -157,7 +157,7 @@ func (c *AdminClient) CreateUser(email, password string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create user: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }() // Error ignored: response consumed
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

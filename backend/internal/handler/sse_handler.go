@@ -135,7 +135,9 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 			Error:       "streaming not active for this turn",
 			IsCancelled: true, // Don't show error toast for this
 		})
-		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", llmModels.SSEEventTurnError, string(errorData))
+		if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", llmModels.SSEEventTurnError, string(errorData)); err != nil {
+			return // Client disconnected
+		}
 		if err := h.safeFlush(w, flusher, turnID, clientID); err != nil {
 			// Client disconnected, error already logged
 			return
@@ -164,15 +166,23 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 		// Send catchup events
 		for _, event := range catchupEvents {
 			if event.Type != "" {
-				fmt.Fprintf(w, "event: %s\n", event.Type)
+				if _, err := fmt.Fprintf(w, "event: %s\n", event.Type); err != nil {
+					return // Client disconnected
+				}
 			}
 			if event.ID != "" {
-				fmt.Fprintf(w, "id: %s\n", event.ID)
+				if _, err := fmt.Fprintf(w, "id: %s\n", event.ID); err != nil {
+					return // Client disconnected
+				}
 			}
 			if event.Retry > 0 {
-				fmt.Fprintf(w, "retry: %d\n", event.Retry)
+				if _, err := fmt.Fprintf(w, "retry: %d\n", event.Retry); err != nil {
+					return // Client disconnected
+				}
 			}
-			fmt.Fprintf(w, "data: %s\n\n", string(event.Data))
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", string(event.Data)); err != nil {
+				return // Client disconnected
+			}
 
 			if err := h.safeFlush(w, flusher, turnID, clientID); err != nil {
 				// Client disconnected during catchup
@@ -214,15 +224,23 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 
 			// Format mstream.Event as SSE
 			if event.Type != "" {
-				fmt.Fprintf(w, "event: %s\n", event.Type)
+				if _, err := fmt.Fprintf(w, "event: %s\n", event.Type); err != nil {
+					return // Client disconnected
+				}
 			}
 			if event.ID != "" {
-				fmt.Fprintf(w, "id: %s\n", event.ID)
+				if _, err := fmt.Fprintf(w, "id: %s\n", event.ID); err != nil {
+					return // Client disconnected
+				}
 			}
 			if event.Retry > 0 {
-				fmt.Fprintf(w, "retry: %d\n", event.Retry)
+				if _, err := fmt.Fprintf(w, "retry: %d\n", event.Retry); err != nil {
+					return // Client disconnected
+				}
 			}
-			fmt.Fprintf(w, "data: %s\n\n", string(event.Data))
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", string(event.Data)); err != nil {
+				return // Client disconnected
+			}
 
 			if err := h.safeFlush(w, flusher, turnID, clientID); err != nil {
 				// Client disconnected during event stream

@@ -28,6 +28,10 @@ type DocumentRepository interface {
 	// Pass nil to clear ai_version (reject suggestions)
 	UpdateAIVersion(ctx context.Context, id string, aiVersion *string) error
 
+	// UpdateWithAIVersionCheck atomically updates content + ai_version with CAS.
+	// Returns rowsAffected: 0 means rev mismatch (conflict), 1 means success.
+	UpdateWithAIVersionCheck(ctx context.Context, params UpdateWithAIVersionParams) (int64, error)
+
 	// Delete deletes a document
 	Delete(ctx context.Context, id, projectID string) error
 
@@ -47,4 +51,14 @@ type DocumentRepository interface {
 	// Currently supports only full-text search (SearchStrategyFullText)
 	// Future: Will support vector search and hybrid search strategies
 	SearchDocuments(ctx context.Context, options *docsystem.SearchOptions) (*docsystem.SearchResults, error)
+}
+
+// UpdateWithAIVersionParams contains parameters for atomic ai_version update with CAS.
+type UpdateWithAIVersionParams struct {
+	ID               string  // Document ID
+	Content          *string // nil = don't change, &"" = set empty, &"text" = set value
+	Name             *string // nil = don't change
+	FolderID         *string // nil = don't change
+	AIVersion        *string // nil = clear, &"" = set empty, &"text" = set value
+	AIVersionBaseRev int     // Client's last-seen revision (for CAS check)
 }

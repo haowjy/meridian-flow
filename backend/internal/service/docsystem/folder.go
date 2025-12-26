@@ -383,18 +383,6 @@ func (s *folderService) ListChildren(ctx context.Context, userID string, folderI
 	}, nil
 }
 
-// validateCreateRequest validates a folder creation request
-func (s *folderService) validateCreateRequest(req *docsysSvc.CreateFolderRequest) error {
-	return validation.ValidateStruct(req,
-		validation.Field(&req.ProjectID, validation.Required),
-		validation.Field(&req.Name,
-			validation.Required,
-			validation.Length(1, config.MaxFolderNameLength),
-			validation.Match(regexp.MustCompile(`^[^/]+$`)).Error("folder name cannot contain slashes"),
-		),
-	)
-}
-
 // validateUpdateRequest validates a folder update request
 func (s *folderService) validateUpdateRequest(req *docsysSvc.UpdateFolderRequest) error {
 	// At least one field must be provided

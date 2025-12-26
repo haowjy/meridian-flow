@@ -106,6 +106,33 @@ httputil.RespondError(w, http.StatusBadRequest, "Invalid input")
 
 See `internal/handler/errors.go` for error mapping and `internal/httputil/` for response helpers.
 
+#### Error Response Format (RFC 7807)
+
+All errors use RFC 7807 Problem Details format:
+
+**Standard errors** (400, 401, 403, 404, 500):
+```json
+{
+  "type": "https://datatracker.ietf.org/doc/html/rfc7231#section-6.5.1",
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "Human-readable error message"
+}
+```
+
+**409 Conflict errors** (with resource):
+```json
+{
+  "type": "https://datatracker.ietf.org/doc/html/rfc7231#section-6.5.8",
+  "title": "Conflict",
+  "status": 409,
+  "detail": "Resource already exists",
+  "resource": { /* existing/conflicting resource object */ }
+}
+```
+
+**Key convention**: Always use `resource` field (not `document`, `project`, etc.) for frontend compatibility. Use `RespondErrorWithExtras()` for 409s with resources.
+
 ### 4. Local Development with Submodules
 
 **Library versions:**

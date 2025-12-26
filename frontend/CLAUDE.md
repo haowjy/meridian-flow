@@ -287,6 +287,28 @@ Conventions:
 - Use `isAbortError(error)` for early returns on cancelled requests.
 - Error boundaries handle global errors and log via `makeLogger()`.
 
+#### Expected Error Response Format
+
+Backend returns RFC 7807 Problem Details. The API client (`core/lib/api.ts`) extracts:
+
+**Message extraction** (in order of priority):
+```typescript
+errorBody.detail || errorBody.title || errorBody.message || errorBody.error
+```
+
+**409 Conflict resource**:
+```typescript
+if (response.status === 409 && errorBody.resource) {
+  // errorBody.resource contains existing/conflicting resource
+}
+```
+
+**AppError for conflicts**:
+```typescript
+throw new AppError(ErrorType.Conflict, message, undefined, resource)
+// Access via: error.resource
+```
+
 ### Cursor Pointer on Interactive Elements
 
 Global CSS in `globals.css` applies `cursor: pointer` to all buttons and menu items (Tailwind v4 changed buttons to `cursor: default`).

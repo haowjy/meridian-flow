@@ -94,7 +94,7 @@ func (c *TavilyClient) Search(ctx context.Context, query string, opts SearchOpti
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }() // Error ignored: response consumed
 
 	// Read response body
 	body, err := io.ReadAll(resp.Body)

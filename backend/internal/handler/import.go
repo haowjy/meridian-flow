@@ -148,7 +148,7 @@ func (h *ImportHandler) processImportRequest(w http.ResponseWriter, r *http.Requ
 			httputil.RespondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to open file %s", fileHeader.Filename))
 			return
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }() // Error ignored: file already processed
 
 		uploadedFiles = append(uploadedFiles, docsysSvc.UploadedFile{
 			Filename: fileHeader.Filename,

@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"errors"
 	"log/slog"
 	"math"
 	"net/http"
 	"strings"
 	"time"
 
+	"meridian/internal/domain"
 	docsystem "meridian/internal/domain/models/docsystem"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	"meridian/internal/httputil"
@@ -79,12 +81,13 @@ func (h *DocumentHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 //   - field null = clear (ai_version) / move to root (folder_id)
 //   - field has value = set
 type updateDocumentDTO struct {
-	ProjectID  string                  `json:"project_id"`
-	Name       *string                 `json:"name,omitempty"`
-	FolderPath *string                 `json:"folder_path,omitempty"`
-	FolderID   httputil.OptionalString `json:"folder_id"`
-	Content    *string                 `json:"content,omitempty"`
-	AIVersion  httputil.OptionalString `json:"ai_version"`
+	ProjectID        string                  `json:"project_id"`
+	Name             *string                 `json:"name,omitempty"`
+	FolderPath       *string                 `json:"folder_path,omitempty"`
+	FolderID         httputil.OptionalString `json:"folder_id"`
+	Content          *string                 `json:"content,omitempty"`
+	AIVersion        httputil.OptionalString `json:"ai_version"`
+	AIVersionBaseRev *int                    `json:"ai_version_base_rev,omitempty"` // Required when ai_version is present (CAS)
 }
 
 // UpdateDocument updates a document
@@ -107,6 +110,12 @@ func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Validate: ai_version_base_rev required when updating ai_version (CAS)
+	if dto.AIVersion.Present && dto.AIVersionBaseRev == nil {
+		httputil.RespondError(w, http.StatusBadRequest, "ai_version_base_rev required when updating ai_version")
+		return
+	}
+
 	// Map transport DTO to service request
 	req := &docsysSvc.UpdateDocumentRequest{
 		ProjectID:  dto.ProjectID,
@@ -123,11 +132,34 @@ func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request)
 		},
 	}
 
+	// Map ai_version_base_rev when ai_version is being updated
+	if dto.AIVersion.Present {
+		req.AIVersionBaseRev = *dto.AIVersionBaseRev
+	}
+
 	// Get userID from context (set by auth middleware)
 	userID := httputil.GetUserID(r)
 
 	doc, err := h.docService.UpdateDocument(r.Context(), userID, id, req)
 	if err != nil {
+		// Special handling for AI version conflict - include document in RFC 7807 response
+		var aiConflict *domain.AIVersionConflictError
+		if errors.As(err, &aiConflict) {
+			// Cast Document to get AIVersionRev
+			conflictDoc, _ := aiConflict.Document.(*docsystem.Document)
+			var aiVersionRev int
+			if conflictDoc != nil {
+				aiVersionRev = conflictDoc.AIVersionRev
+			}
+			// Use RFC 7807 format with `resource` field for frontend compatibility
+			httputil.RespondErrorWithExtras(w, http.StatusConflict, aiConflict.Message,
+				map[string]interface{}{
+					"error":                  "ai_version_conflict",
+					"current_ai_version_rev": aiVersionRev,
+					"resource":               aiConflict.Document,
+				})
+			return
+		}
 		handleError(w, err)
 		return
 	}

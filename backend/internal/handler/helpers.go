@@ -60,6 +60,7 @@ func handleError(w http.ResponseWriter, err error) {
 
 // HandleCreateConflict handles conflicts during creation by returning the existing resource with 409.
 // If the error is a ConflictError, extracts the resourceID and calls fetchByID to retrieve the existing resource.
+// Returns RFC 7807 Problem Details format with `resource` field for frontend compatibility.
 func HandleCreateConflict[T any](w http.ResponseWriter, err error, fetchByID func(resourceID string) (*T, error)) {
 	var conflictErr *domain.ConflictError
 	if !errors.As(err, &conflictErr) {
@@ -75,8 +76,12 @@ func HandleCreateConflict[T any](w http.ResponseWriter, err error, fetchByID fun
 		return
 	}
 
-	// Return existing resource with 409 status
-	httputil.RespondJSON(w, http.StatusConflict, existing)
+	// Return existing resource with 409 status in RFC 7807 format
+	httputil.RespondErrorWithExtras(w, http.StatusConflict,
+		conflictErr.Message,
+		map[string]interface{}{
+			"resource": existing,
+		})
 }
 
 // parseUUID parses a string into a UUID

@@ -218,7 +218,7 @@ func (p *zipFileProcessor) processZipEntry(
 		p.addError(result, file.Name, fmt.Sprintf("failed to open file: %v", err))
 		return
 	}
-	defer fileReader.Close()
+	defer func() { _ = fileReader.Close() }() // Error ignored: file already read
 
 	// Read file content
 	fileContent, err := io.ReadAll(fileReader)
