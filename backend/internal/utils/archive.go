@@ -8,15 +8,20 @@ import (
 )
 
 // CreateZipFromDirectory creates a zip file from all markdown files in a directory
-func CreateZipFromDirectory(dirPath string) (*bytes.Buffer, error) {
+func CreateZipFromDirectory(dirPath string) (buf *bytes.Buffer, err error) {
 	zipBuffer := new(bytes.Buffer)
 	zipWriter := zip.NewWriter(zipBuffer)
-	defer zipWriter.Close()
+	defer func() {
+		// Close() finalizes the zip - must check its error
+		if closeErr := zipWriter.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 
 	// Walk through the directory
-	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
+	err = filepath.Walk(dirPath, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
 
 		// Skip directories

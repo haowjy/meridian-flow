@@ -59,6 +59,9 @@ type UpdateDocumentRequest struct {
 	FolderID   OptionalFolderID // Tri-state: absent=don't change, null=root, value=folder (no json tag - mapped from handler DTO)
 	Content    *string          `json:"content,omitempty"`
 	AIVersion  OptionalAIVersion // Tri-state: absent=don't change, null=clear, value=set
+	// AIVersionBaseRev is the client's last-seen ai_version_rev.
+	// Required when AIVersion.Present is true. Used for CAS (compare-and-swap) check.
+	AIVersionBaseRev int
 }
 
 // SearchDocumentsRequest represents a document search request
