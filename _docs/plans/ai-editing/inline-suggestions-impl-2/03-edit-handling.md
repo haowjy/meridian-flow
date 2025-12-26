@@ -44,6 +44,14 @@ When the user edits:
 
 On save, we parse the merged document back to `content` and `aiVersion`.
 
+## UX for Blocked Edits (required)
+
+Blocked edits should not feel like “the editor is broken”.
+
+Minimum behavior:
+- If an edit is blocked because it touches a DEL region (read-only original text), show a small toast/banner message like: “Can’t edit deleted text. Accept or reject the change first.”
+- This also applies to formatting commands that span a DEL region.
+
 ## Steps
 
 ### Step 3.1: Create the edit filter
@@ -111,6 +119,14 @@ export const diffEditFilter = EditorState.transactionFilter.of((tr) => {
     // are already blocked above—this catches inserts inside deletedText.
     for (const hunk of hunks) {
       if (fromA <= hunk.delEnd && toA >= hunk.delStart) {
+        shouldBlock = true
+        return
+      }
+
+      // 3) Preserve hunk structure: DEL_END must be immediately followed by INS_START.
+      // Inserting at `insStart` would place text between DEL_END and INS_START, which breaks
+      // hunk extraction (and is rejected by validateMarkerStructure in Phase 1).
+      if (fromA === toA && fromA === hunk.insStart) {
         shouldBlock = true
         return
       }
@@ -186,7 +202,7 @@ Test scenarios to verify:
 **Test 2: Edit in deletion (red) region**
 - Try to click inside red strikethrough text
 - Try to type or delete
-- ✅ Should be blocked (cursor won't enter, no change happens)
+- ✅ Typing/deleting should be blocked (note: a transaction filter blocks edits, not cursor movement)
 
 **Test 3: Edit outside hunks**
 - Click in unchanged text area
@@ -306,6 +322,12 @@ The edit filter only blocks changes, not cursor movement. Users can navigate int
 | `frontend/src/core/editor/codemirror/diffView/plugin.ts` | Modified |
 | `frontend/src/core/editor/codemirror/diffView/index.ts` | Modified |
 
+## Related: Blocked Edit Feedback
+
+See `03a-blocked-edit-feedback.md` for implementing toast notifications when edits are blocked.
+
 ## Next Step
 
-→ Continue to `04-state-sync.md` to implement save logic that parses the merged document.
+Recommended now: implement clipboard sanitization (see `07-cleanup-and-clipboard.md` Step 7.2).
+
+Then continue to `04-state-sync.md` to implement save logic that parses the merged document.

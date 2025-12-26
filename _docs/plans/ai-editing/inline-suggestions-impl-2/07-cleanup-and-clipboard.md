@@ -10,6 +10,8 @@ Make markers “structural only” in practice:
 
 This phase is intentionally last; it’s polish + safety hardening.
 
+**Incremental order note:** implement **Step 7.2 (clipboard filters)** right after Phase 3, before you do heavy end-to-end testing. It prevents accidental marker spread during copy/paste while you’re iterating.
+
 ---
 
 ## What We’re Protecting Against
@@ -29,12 +31,11 @@ This phase is intentionally last; it’s polish + safety hardening.
 Update `frontend/src/features/documents/utils/mergedDocument.ts`:
 
 - `stripMarkers(text: string): string` removes all `\uE000-\uE003`
-- `hasAnyMarker(text: string): boolean` (optional) to detect unexpected markers
+- `hasAnyMarker(text: string): boolean` to detect unexpected markers
+
+> Note: These are now implemented in Phase 1 (`01-foundation.md`) because they are correctness-critical (they prevent marker collisions from becoming structurally ambiguous).
 
 Keep these utilities small and reusable (clipboard + save-time safety).
-
-Also harden inputs:
-- Before `buildMergedDocument(content, aiVersion)`, sanitize **both** `content` and `aiVersion` if they contain markers (strip + `console.warn`). This prevents rare-but-real cases where legacy/imported content or AI output contains PUA codepoints.
 
 ---
 
@@ -52,20 +53,18 @@ Update `frontend/src/core/editor/codemirror/diffView/plugin.ts` (or `index.ts`) 
 
 ---
 
-### Step 7.3: Add malformed-marker validation (fail-fast)
+### Step 7.3: Marker validation (already implemented in Phase 1)
 
-Update `frontend/src/features/documents/utils/mergedDocument.ts`:
+`validateMarkerStructure()` and `DiffMarkersCorruptedError` are now implemented in Phase 1 (`01-foundation.md`) and called from `parseMergedDocument()`.
 
-- `validateMarkerStructure(merged: string): { ok: true } | { ok: false; reason: string }`
-
-Implement as a simple state machine over `\uE000-\uE003`:
+The validation uses a simple state machine over `\uE000-\uE003`:
 - Outside hunk: allow text, or `DEL_START`
 - In deletion: allow text, or `DEL_END`
 - After deletion: must see `INS_START`
 - In insertion: allow text, or `INS_END`
 - End state must be outside
 
-If any marker appears in an unexpected state, return invalid.
+If any marker appears in an unexpected state, `parseMergedDocument()` throws `DiffMarkersCorruptedError`.
 
 ---
 
@@ -73,9 +72,8 @@ If any marker appears in an unexpected state, return invalid.
 
 Update `frontend/src/features/documents/utils/saveMergedDocument.ts`:
 
-- Before parsing, run `validateMarkerStructure(merged)`.
-- If invalid:
-  - Throw a typed error (e.g. `DiffMarkersCorruptedError`) and **do not** attempt to “auto-strip everything” and proceed; that risks saving the wrong `content`/`aiVersion`.
+- `parseMergedDocument()` now automatically validates and throws `DiffMarkersCorruptedError` if structure is invalid.
+- Do **not** attempt to "auto-strip everything" and proceed; that risks saving the wrong `content`/`aiVersion`.
 
 Update `frontend/src/features/documents/components/EditorPanel.tsx`:
 
