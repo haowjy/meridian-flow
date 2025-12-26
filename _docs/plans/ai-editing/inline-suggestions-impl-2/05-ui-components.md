@@ -5,7 +5,9 @@
 Build the user-facing components:
 1. **Navigator pill** - Change counter, prev/next, accept all/reject all
 2. **Per-hunk action buttons** - Inline ✓/✕ buttons
-3. **Keyboard shortcuts** - Quick accept/reject via keyboard
+3. **Close AI** - Clear `ai_version` explicitly (CAS)
+
+> **Note:** Keyboard shortcuts (Step 5.2) are deferred to a future phase. The core functionality works via UI buttons.
 
 ## Key Architecture Point
 
@@ -26,6 +28,23 @@ view.dispatch({
 })
 ```
 
+## Close AI (required)
+
+Provide a "Close AI" action that clears `ai_version` even if there are no visible hunks.
+
+Why:
+- `ai_version` might be non-null while producing no markers (no actual diff).
+- Users should be able to dismiss AI suggestions explicitly without having to type/trigger a save edge case.
+
+Behavior:
+- "Close AI" sends `PATCH ai_version: null` with `ai_version_base_rev` (CAS).
+- On `409 Conflict`, show "AI updated — Refresh" (same as other conflicts).
+- On success, clear the merged document to just `content` (strip all markers via `rejectAll`).
+
+### Close AI Button Location
+
+The "Close AI" button appears in `AIToolbar.tsx` (top of editor when AI mode is active).
+
 ## Steps
 
 ### Step 5.1: Create accept/reject transaction helpers
@@ -41,6 +60,7 @@ Create `frontend/src/core/editor/codemirror/diffView/transactions.ts`:
  */
 
 import type { EditorView } from '@codemirror/view'
+import { Transaction } from '@codemirror/state'
 import { extractHunks, getAcceptReplacement, getRejectReplacement, acceptAllHunks, rejectAllHunks, type MergedHunk } from '@/features/documents/utils/mergedDocument'
 
 /**
@@ -65,7 +85,7 @@ export function acceptHunk(view: EditorView, hunkId: string): boolean {
     changes: { from: hunk.from, to: hunk.to, insert: replacement },
     // Bypass transaction filters (we intentionally delete/replace marker ranges)
     filter: false,
-    userEvent: 'ai.diff.accept',
+    annotations: Transaction.userEvent.of('ai.diff.accept'),
   })
 
   return true
@@ -92,7 +112,7 @@ export function rejectHunk(view: EditorView, hunkId: string): boolean {
   view.dispatch({
     changes: { from: hunk.from, to: hunk.to, insert: replacement },
     filter: false,
-    userEvent: 'ai.diff.reject',
+    annotations: Transaction.userEvent.of('ai.diff.reject'),
   })
 
   return true
@@ -140,7 +160,7 @@ export function acceptAll(view: EditorView): void {
   view.dispatch({
     changes: { from: 0, to: doc.length, insert: accepted },
     filter: false,
-    userEvent: 'ai.diff.acceptAll',
+    annotations: Transaction.userEvent.of('ai.diff.acceptAll'),
   })
 }
 
@@ -156,7 +176,7 @@ export function rejectAll(view: EditorView): void {
   view.dispatch({
     changes: { from: 0, to: doc.length, insert: rejected },
     filter: false,
-    userEvent: 'ai.diff.rejectAll',
+    annotations: Transaction.userEvent.of('ai.diff.rejectAll'),
   })
 }
 
@@ -172,97 +192,16 @@ export function getHunks(view: EditorView): MergedHunk[] {
 
 ---
 
-### Step 5.2: Create the keyboard shortcuts
+### Step 5.2: Keyboard Shortcuts (DEFERRED)
 
-Create `frontend/src/core/editor/codemirror/diffView/keymap.ts`:
-
-```typescript
-/**
- * Keyboard Shortcuts for Diff View
- *
- * Shortcuts:
- * - Alt+N: Navigate to next hunk
- * - Alt+P: Navigate to previous hunk
- * - Cmd/Ctrl+Enter: Accept hunk at cursor
- * - Cmd/Ctrl+Shift+D: Reject hunk at cursor (D for "delete/discard")
- * - Cmd/Ctrl+Shift+Enter: Accept all hunks
- * - Cmd/Ctrl+Shift+Backspace: Reject all hunks
- *
- * NOTE: We avoid Cmd+Backspace for single-hunk reject because it conflicts
- * with macOS "delete to beginning of line" shortcut.
- */
-
-import { keymap } from '@codemirror/view'
-import type { Extension } from '@codemirror/state'
-import { acceptHunkAtPosition, rejectHunkAtPosition, acceptAll, rejectAll } from './transactions'
-
-export interface DiffKeymapCallbacks {
-  /** Navigate to next hunk (scroll + focus) */
-  onNextHunk: () => void
-  /** Navigate to previous hunk (scroll + focus) */
-  onPrevHunk: () => void
-}
-
-/**
- * Create the diff view keymap extension.
- *
- * Accept/reject operations dispatch CM6 transactions directly.
- * Navigation uses external callbacks (needs to update React state).
- */
-export function createDiffKeymap(callbacks: DiffKeymapCallbacks): Extension {
-  return keymap.of([
-    // Navigation (external callbacks)
-    {
-      key: 'Alt-n',
-      run: () => {
-        callbacks.onNextHunk()
-        return true
-      },
-    },
-    {
-      key: 'Alt-p',
-      run: () => {
-        callbacks.onPrevHunk()
-        return true
-      },
-    },
-
-    // Single hunk operations (CM6 transactions)
-    {
-      key: 'Mod-Enter',
-      run: (view) => {
-        const pos = view.state.selection.main.head
-        return acceptHunkAtPosition(view, pos)
-      },
-    },
-    {
-      // Cmd+Shift+D to reject (D for "delete/discard")
-      // NOTE: Avoid Cmd+Backspace - conflicts with macOS "delete to beginning of line"
-      key: 'Mod-Shift-d',
-      run: (view) => {
-        const pos = view.state.selection.main.head
-        return rejectHunkAtPosition(view, pos)
-      },
-    },
-
-    // Bulk operations (CM6 transactions)
-    {
-      key: 'Mod-Shift-Enter',
-      run: (view) => {
-        acceptAll(view)
-        return true
-      },
-    },
-    {
-      key: 'Mod-Shift-Backspace',
-      run: (view) => {
-        rejectAll(view)
-        return true
-      },
-    },
-  ])
-}
-```
+> **Not implemented in v1.** Keyboard shortcuts will be added in a future phase after core functionality is stable.
+>
+> Planned shortcuts for future implementation:
+> - `Alt+N` / `Alt+P`: Navigate between hunks
+> - `Cmd+Enter`: Accept hunk at cursor
+> - `Cmd+Shift+D`: Reject hunk at cursor
+> - `Cmd+Shift+Enter`: Accept all
+> - `Cmd+Shift+Backspace`: Reject all
 
 ---
 
@@ -306,6 +245,8 @@ export class HunkActionWidget extends WidgetType {
       e.preventDefault()
       e.stopPropagation()
       acceptHunk(this.view, this.hunkId)
+      // Restore focus to editor after button click
+      this.view.focus()
     }
 
     // Reject button
@@ -317,6 +258,8 @@ export class HunkActionWidget extends WidgetType {
       e.preventDefault()
       e.stopPropagation()
       rejectHunk(this.view, this.hunkId)
+      // Restore focus to editor after button click
+      this.view.focus()
     }
 
     container.appendChild(acceptBtn)
@@ -563,26 +506,14 @@ export function AIHunkNavigator({
 Update `frontend/src/core/editor/codemirror/diffView/plugin.ts`:
 
 ```typescript
-import { createDiffKeymap, type DiffKeymapCallbacks } from './keymap'
-
 /**
  * Create the diff view extension bundle.
- *
- * @param keymapCallbacks - Navigation callbacks (optional)
  */
-export function createDiffViewExtension(
-  keymapCallbacks?: DiffKeymapCallbacks
-): Extension {
-  const extensions: Extension[] = [
+export function createDiffViewExtension(): Extension {
+  return [
     diffViewPlugin,
     diffEditFilter,
   ]
-
-  if (keymapCallbacks) {
-    extensions.push(createDiffKeymap(keymapCallbacks))
-  }
-
-  return extensions
 }
 ```
 
@@ -604,7 +535,6 @@ Update `frontend/src/core/editor/codemirror/diffView/index.ts`:
  * - Accept/reject as CM6 transactions (undoable!)
  */
 
-// Types
 // Plugin and extension
 export { diffViewPlugin, createDiffViewExtension } from './plugin'
 
@@ -621,9 +551,6 @@ export {
   rejectAll,
   getHunks,
 } from './transactions'
-
-// Keymap
-export { createDiffKeymap, type DiffKeymapCallbacks } from './keymap'
 
 // Widgets
 export { HunkActionWidget } from './HunkActionWidget'
@@ -696,7 +623,11 @@ The CSS for hunk actions was added in Phase 2 (`globals.css`). Ensure these styl
 
 ---
 
-## Keyboard Shortcuts Summary
+## Keyboard Shortcuts Summary (FUTURE ENHANCEMENT)
+
+> **Deferred:** Keyboard shortcuts are not included in initial implementation. Use UI buttons for all actions.
+
+When implemented later:
 
 | Shortcut | Action |
 |----------|--------|
@@ -717,26 +648,27 @@ The CSS for hunk actions was added in Phase 2 (`globals.css`). Ensure these styl
 Before moving to Phase 6, verify:
 
 - [ ] `transactions.ts` created with accept/reject helpers
-- [ ] `keymap.ts` created with keyboard shortcuts
 - [ ] `HunkActionWidget.ts` created with inline buttons
 - [ ] `AIHunkNavigator.tsx` component created
 - [ ] Plugin updated to render action widgets
 - [ ] Navigator shows correct change count
-- [ ] Prev/Next navigation works
+- [ ] Prev/Next navigation works (via UI buttons)
 - [ ] Per-hunk ✓/✕ buttons appear on hover
-- [ ] Keyboard shortcuts work
 - [ ] **Cmd+Z undoes accept/reject operations!**
+
+> **Deferred:** `keymap.ts` and keyboard shortcuts are for future phase.
 
 ## Files Created/Modified
 
 | File | Action |
 |------|--------|
 | `frontend/src/core/editor/codemirror/diffView/transactions.ts` | Created |
-| `frontend/src/core/editor/codemirror/diffView/keymap.ts` | Created |
 | `frontend/src/core/editor/codemirror/diffView/HunkActionWidget.ts` | Created |
 | `frontend/src/features/documents/components/AIHunkNavigator.tsx` | Created |
 | `frontend/src/core/editor/codemirror/diffView/plugin.ts` | Modified |
 | `frontend/src/core/editor/codemirror/diffView/index.ts` | Modified |
+
+> **Future:** `keymap.ts` will be created when keyboard shortcuts are implemented.
 
 ## Next Step
 
