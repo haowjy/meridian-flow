@@ -6,11 +6,11 @@
 
 import { useEffect, useRef, useImperativeHandle, forwardRef } from 'react'
 import { EditorView, keymap, placeholder as placeholderExtension } from '@codemirror/view'
-import { EditorState, Prec, Compartment, type Extension } from '@codemirror/state'
+import { EditorState, Prec, Compartment, Transaction, Annotation, type Extension } from '@codemirror/state'
 import { history, historyKeymap, defaultKeymap } from '@codemirror/commands'
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
 
-import type { CodeMirrorEditorRef, CodeMirrorEditorOptions, FormatType } from './types'
+import type { CodeMirrorEditorRef, CodeMirrorEditorOptions, FormatType, SetContentOptions } from './types'
 import { markdownLanguage, editorTheme, getWordCount } from './extensions'
 import { livePreviewPlugin, registerBuiltinRenderers } from './livePreview'
 import {
@@ -41,6 +41,54 @@ const editableCompartment = new Compartment()
  * Allows runtime theme switching without recreating the editor.
  */
 const themeCompartment = new Compartment()
+
+/**
+ * Compartment for live preview.
+ * Allows disabling live preview in diff mode where it's confusing.
+ */
+const livePreviewCompartment = new Compartment()
+
+/**
+ * Annotation to suppress onChange callback for specific transactions.
+ * Used by setContent({ emitChange: false }) for server hydration.
+ */
+const suppressOnChange = Annotation.define<boolean>()
+
+// ============================================================================
+// DISPATCH HELPERS (DRY: used by both useImperativeHandle and onReady)
+// ============================================================================
+
+/**
+ * Dispatches a setContent transaction with optional history/onChange control.
+ */
+function dispatchSetContent(view: EditorView, content: string, options?: SetContentOptions) {
+  const addToHistory = options?.addToHistory !== false
+  const emitChange = options?.emitChange !== false
+
+  const annotations: Annotation<unknown>[] = []
+  if (!addToHistory) {
+    annotations.push(Transaction.addToHistory.of(false))
+  }
+  if (!emitChange) {
+    annotations.push(suppressOnChange.of(true))
+  }
+
+  view.dispatch({
+    changes: { from: 0, to: view.state.doc.length, insert: content },
+    annotations: annotations.length > 0 ? annotations : undefined,
+    // Hydration/refresh may need to replace marker ranges; bypass filters.
+    filter: addToHistory === false ? false : undefined,
+  })
+}
+
+/**
+ * Dispatches a live preview toggle via compartment reconfiguration.
+ */
+function dispatchLivePreviewToggle(view: EditorView, enabled: boolean) {
+  view.dispatch({
+    effects: livePreviewCompartment.reconfigure(enabled ? livePreviewPlugin : []),
+  })
+}
 
 // ============================================================================
 // KEYMAP TUNING
@@ -90,13 +138,8 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, CodeMirrorEditor
         getContent() {
           return viewRef.current?.state.doc.toString() ?? ''
         },
-        setContent(content: string) {
-          const view = viewRef.current
-          if (view) {
-            view.dispatch({
-              changes: { from: 0, to: view.state.doc.length, insert: content },
-            })
-          }
+        setContent(content: string, options?: SetContentOptions) {
+          if (viewRef.current) dispatchSetContent(viewRef.current, content, options)
         },
         focus() {
           viewRef.current?.focus()
@@ -153,6 +196,9 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, CodeMirrorEditor
             effects: themeCompartment.reconfigure(theme),
           })
         },
+        setLivePreviewEnabled(enabled: boolean) {
+          if (viewRef.current) dispatchLivePreviewToggle(viewRef.current, enabled)
+        },
       }),
       []
     )
@@ -165,7 +211,12 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, CodeMirrorEditor
       initializeRenderers()
 
       const updateListener = EditorView.updateListener.of(update => {
-        if (update.docChanged && onChange) {
+        // Check if any transaction has the suppressOnChange annotation
+        const shouldSuppress = update.transactions.some(
+          tr => tr.annotation(suppressOnChange) === true
+        )
+
+        if (!shouldSuppress && update.docChanged && onChange) {
           onChange(update.state.doc.toString())
         }
       })
@@ -188,8 +239,8 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, CodeMirrorEditor
         // Markdown
         markdownLanguage,
 
-        // Live preview
-        livePreviewPlugin,
+        // Live preview (wrapped in compartment for diff mode toggle)
+        livePreviewCompartment.of(livePreviewPlugin),
 
         // Theming (wrapped in compartment for runtime switching)
         themeCompartment.of(editorTheme),
@@ -266,11 +317,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, CodeMirrorEditor
       if (onReady) {
         onReady({
           getContent: () => view.state.doc.toString(),
-          setContent: (content: string) => {
-            view.dispatch({
-              changes: { from: 0, to: view.state.doc.length, insert: content },
-            })
-          },
+          setContent: (content: string, options?: SetContentOptions) => dispatchSetContent(view, content, options),
           focus: () => view.focus(),
           getView: () => view,
           toggleBold: () => toggleBold(view),
@@ -292,6 +339,7 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, CodeMirrorEditor
               effects: themeCompartment.reconfigure(theme),
             })
           },
+          setLivePreviewEnabled: (enabled: boolean) => dispatchLivePreviewToggle(view, enabled),
         })
       }
 

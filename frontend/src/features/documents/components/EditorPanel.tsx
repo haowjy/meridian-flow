@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { CodeMirrorEditor, EditorContextMenu, type CodeMirrorEditorRef } from '@/core/editor/codemirror'
 import { useEditorStore } from '@/core/stores/useEditorStore'
-import { useDebounce } from '@/core/hooks/useDebounce'
+import { useDebounce, useLatestRef } from '@/core/hooks'
 import { documentSyncService } from '@/core/services/documentSyncService'
 import { EditorHeader } from './EditorHeader'
 import { Skeleton } from '@/shared/components/ui/skeleton'
@@ -48,32 +48,16 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   const [localContent, setLocalContent] = useState('')
   const [hasUserEdit, setHasUserEdit] = useState(false)
   const [isInitialized, setIsInitialized] = useState(false)
-  const initializedRef = useRef(false)
-  useEffect(() => {
-    initializedRef.current = isInitialized
-  }, [isInitialized])
   const debouncedContent = useDebounce(localContent, 1000) // 1 second trailing edge
 
   // CodeMirror editor ref
   const editorRef = useRef<CodeMirrorEditorRef | null>(null)
 
   // Refs for "flush on navigate/unmount" without stale closures
-  const localContentRef = useRef(localContent)
-  const hasUserEditRef = useRef(hasUserEdit)
-  const activeDocumentRef = useRef(activeDocument)
-  useEffect(() => {
-    localContentRef.current = localContent
-  }, [localContent])
-  useEffect(() => {
-    hasUserEditRef.current = hasUserEdit
-  }, [hasUserEdit])
-  useEffect(() => {
-    activeDocumentRef.current = activeDocument
-  }, [activeDocument])
-
-  // Flag to track programmatic content changes (e.g., setContent during mode switch)
-  // Prevents triggering hasUserEdit and auto-save for non-user changes
-  const isProgrammaticChange = useRef(false)
+  const initializedRef = useLatestRef(isInitialized)
+  const localContentRef = useLatestRef(localContent)
+  const hasUserEditRef = useLatestRef(hasUserEdit)
+  const activeDocumentRef = useLatestRef(activeDocument)
 
   // AI diff computation - compute hunks between user content and AI suggestion
   // (hunks used by future floating pill for navigation)
@@ -85,23 +69,24 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   const hasAISuggestions = !!aiVersion
   const baseline = activeDocument?.content ?? ''
 
+  // Determine editable state early (needed by sync effect below)
+  const isEditable = isInitialized && activeDocument?.id === documentId && !isLoading
+
   // Handle content changes from the editor (unified for normal and merge modes)
   // In both modes, changes trigger debounced auto-save
   // In merge mode, this allows per-hunk accept/reject to persist
-  const handleChange = useCallback((content: string) => {
-    // Ignore changes before initialization
-    if (!initializedRef.current) {
-      return
-    }
-    // Ignore programmatic content changes (e.g., setContent during mode switch)
-    // These shouldn't trigger hasUserEdit or auto-save
-    if (isProgrammaticChange.current) {
-      setLocalContent(content) // Still update local state for consistency
-      return
-    }
-    setLocalContent(content)
-    setHasUserEdit(true)
-  }, [])
+  const handleChange = useCallback(
+    (content: string) => {
+      // Ignore changes before initialization
+      if (!initializedRef.current) {
+        return
+      }
+      setLocalContent(content)
+      setHasUserEdit(true)
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initializedRef is stable (ref identity never changes)
+    []
+  )
 
   // Handle editor ready
   const handleReady = useCallback((ref: CodeMirrorEditorRef) => {
@@ -120,16 +105,14 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     const abortController = new AbortController()
 
     // Reset local editor state on document change
-    const resetEditorState = () => {
-      setIsInitialized(false)
-      initializedRef.current = false
-      setHasUserEdit(false)
-    }
-    resetEditorState()
+    setIsInitialized(false)
+    setHasUserEdit(false)
 
     loadDocument(documentId, abortController.signal)
 
     // Cleanup: abort request if component unmounts or documentId changes
+    // useLatestRef pattern: we intentionally read .current at cleanup time to get latest values
+    /* eslint-disable react-hooks/exhaustive-deps */
     return () => {
       // Flush any unsaved edits when navigating away or switching documents.
       // We don't block navigation—this is best-effort and relies on the existing
@@ -147,30 +130,17 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
       }
       abortController.abort()
     }
+    /* eslint-enable react-hooks/exhaustive-deps */
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentId, loadDocument])
 
   // Initialize local content when document loads
+  // Note: No setContent call needed - editor mounts fresh with initialContent via key={documentId}
   useEffect(() => {
     if (activeDocument && activeDocument.id === documentId) {
       const serverContent = activeDocument.content ?? ''
       setLocalContent(serverContent)
       setHasUserEdit(false)
-
-      // Update editor content if ref is available and content differs
-      // Skip if content is identical (e.g., after auto-save) to preserve cursor position
-      if (editorRef.current) {
-        const currentContent = editorRef.current.getContent()
-        if (currentContent !== serverContent) {
-          // Mark as programmatic to prevent triggering auto-save
-          isProgrammaticChange.current = true
-          editorRef.current.setContent(serverContent)
-          setTimeout(() => {
-            isProgrammaticChange.current = false
-          }, 0)
-        }
-      }
-
       setIsInitialized(true)
     }
   }, [activeDocument, documentId])
@@ -191,6 +161,15 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
       saveDocument(documentId, debouncedContent)
     }
   }, [isInitialized, hasUserEdit, debouncedContent, localContent, documentId, activeDocument?.content, saveDocument])
+
+  // Sync editable state to editor when it changes.
+  // Required because CodeMirror only reads `editable` prop at initialization,
+  // but isEditable transitions false→true after document loads.
+  useEffect(() => {
+    if (editorRef.current) {
+      editorRef.current.setEditable(isEditable)
+    }
+  }, [isEditable])
 
   // Determine the best available source for header metadata
   const headerDocument =
@@ -273,9 +252,6 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   // Editor is ready when we have activeDocument for this documentId
   const isContentLoading = activeDocument?.id !== documentId || !isInitialized
 
-  // Determine editable state: editable once initialized
-  const isEditable = isInitialized && activeDocument?.id === documentId && !isLoading
-
   return (
     <div className="flex h-full flex-col">
       {/* Single scroll container - scrollbar extends to top */}
@@ -305,6 +281,7 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
             <EditorContextMenu editorRef={editorRef.current}>
               <div className={`relative pt-1 flex-1 ${hasAISuggestions ? 'ai-editor-container' : ''}`}>
                 <CodeMirrorEditor
+                  key={documentId}
                   initialContent={localContent}
                   editable={isEditable}
                   placeholder="Start writing..."
