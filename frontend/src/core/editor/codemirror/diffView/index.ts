@@ -14,6 +14,7 @@ import type { Extension } from '@codemirror/state'
 import { diffViewPlugin } from './plugin'
 import { diffEditFilter } from './editFilter'
 import { createBlockedEditListener, type BlockedEditCallback } from './blockedEditListener'
+import { clipboardExtension } from './clipboard'
 
 // =============================================================================
 // RE-EXPORTS
@@ -23,6 +24,7 @@ export { diffViewPlugin } from './plugin'
 export { diffEditFilter } from './editFilter'
 export { blockedEditEffect, type BlockedEditReason } from './blockedEditEffect'
 export { createBlockedEditListener, type BlockedEditCallback } from './blockedEditListener'
+export { clipboardExtension } from './clipboard'
 
 // =============================================================================
 // TYPES
@@ -68,6 +70,7 @@ export function createDiffViewExtension(options?: DiffViewExtensionOptions): Ext
   const extensions: Extension[] = [
     diffViewPlugin,
     diffEditFilter,
+    clipboardExtension,
     // Keymap with callbacks added in Phase 5
   ]
 
