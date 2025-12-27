@@ -5,8 +5,8 @@
  * - Hides PUA markers from display
  * - Styles deletion regions as red strikethrough
  * - Styles insertion regions as green underline
- * - Blocks edits in deletion regions
+ * - Blocks edits in deletion regions (Phase 3)
  */
 
-// Extensions will be added in subsequent phases
-// export { createDiffViewExtension } from './plugin'
+// Plugin and extension
+export { diffViewPlugin, createDiffViewExtension } from './plugin'
