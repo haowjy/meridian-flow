@@ -844,4 +844,99 @@ body.preload * {
     margin: 1em 0;
   }
 
+  /* ============================================================================
+     AI DIFF VIEW DECORATIONS
+     PUA marker-based inline diff styling for AI suggestions
+     ============================================================================ */
+
+  /**
+   * Deleted text - shown as red strikethrough
+   * This is original content that AI wants to replace
+   */
+  .cm-ai-deletion {
+    text-decoration: line-through;
+    color: var(--error, #C4785A);
+    background-color: color-mix(in srgb, var(--error, #C4785A) 10%, transparent);
+    border-radius: 2px;
+  }
+
+  /**
+   * Inserted text - shown as green underline
+   * This is AI-suggested replacement text
+   */
+  .cm-ai-insertion {
+    text-decoration: underline;
+    text-decoration-color: hsl(142.1 76.2% 36.3%); /* green-600 */
+    text-decoration-thickness: 2px;
+    text-underline-offset: 2px;
+    background-color: hsl(142.1 76.2% 36.3% / 0.1);
+    border-radius: 2px;
+  }
+
+  /**
+   * PUA markers - hidden from display
+   * These are replaced with zero-width spans by the ViewPlugin
+   */
+  .cm-pua-marker {
+    display: none;
+  }
+
+  /**
+   * Currently focused hunk (for navigation)
+   * Used in Phase 5 for keyboard navigation
+   */
+  .cm-ai-hunk-focused {
+    outline: 2px solid hsl(var(--primary));
+    outline-offset: 1px;
+  }
+
+  /**
+   * Hunk action buttons container (Phase 5)
+   */
+  .cm-hunk-actions {
+    display: inline-flex;
+    gap: 2px;
+    margin-left: 4px;
+    vertical-align: middle;
+    opacity: 0;
+    transition: opacity 150ms ease-in-out;
+  }
+
+  /* Show on line hover */
+  .cm-line:hover .cm-hunk-actions {
+    opacity: 1;
+  }
+
+  /* Always show for focused hunk */
+  .cm-hunk-actions[data-focused="true"] {
+    opacity: 1;
+  }
+
+  .cm-hunk-actions button {
+    padding: 2px 6px;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: opacity 150ms;
+  }
+
+  .cm-hunk-accept {
+    background: hsl(142.1 76.2% 36.3%);
+    color: white;
+  }
+
+  .cm-hunk-accept:hover {
+    background: hsl(142.1 76.2% 30%);
+  }
+
+  .cm-hunk-reject {
+    background: var(--error);
+    color: var(--error-foreground);
+  }
+
+  .cm-hunk-reject:hover {
+    opacity: 0.9;
+  }
+
 }
