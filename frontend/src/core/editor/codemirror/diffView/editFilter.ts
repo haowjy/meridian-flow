@@ -17,6 +17,7 @@ import {
   MARKERS,
   extractHunks,
 } from '@/features/documents/utils/mergedDocument'
+import { blockedEditEffect, type BlockedEditReason } from './blockedEditEffect'
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -71,6 +72,7 @@ export const diffEditFilter = EditorState.transactionFilter.of((tr) => {
   // We derive hunks from document content, not from React state.
   const hunks = extractHunks(doc)
   let shouldBlock = false
+  let blockReason: BlockedEditReason = 'del_region'
 
   // Check each change in the transaction
   tr.changes.iterChanges((fromA, toA, _fromB, _toB, _inserted) => {
@@ -84,6 +86,7 @@ export const diffEditFilter = EditorState.transactionFilter.of((tr) => {
     // Markers are hidden visually but still exist in the document.
     if (containsAnyMarker(replacedText) || containsAnyMarker(insertedText)) {
       shouldBlock = true
+      blockReason = 'marker_touched'
       return
     }
 
@@ -93,6 +96,7 @@ export const diffEditFilter = EditorState.transactionFilter.of((tr) => {
       // Check overlap: edit range [fromA, toA) vs DEL region [delStart, delEnd]
       if (fromA <= hunk.delEnd && toA >= hunk.delStart) {
         shouldBlock = true
+        blockReason = 'del_region'
         return
       }
 
@@ -101,14 +105,18 @@ export const diffEditFilter = EditorState.transactionFilter.of((tr) => {
       // between them would break hunk structure and validateMarkerStructure().
       if (fromA === toA && fromA === hunk.insStart) {
         shouldBlock = true
+        blockReason = 'marker_touched'
         return
       }
     }
   })
 
   // Block if any edit touched a protected region
+  // Return transaction with effect (no changes) so listeners can show feedback
   if (shouldBlock) {
-    return [] // Cancel the transaction
+    return {
+      effects: blockedEditEffect.of({ reason: blockReason }),
+    }
   }
 
   return tr
