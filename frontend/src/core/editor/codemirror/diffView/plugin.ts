@@ -19,7 +19,7 @@ import {
   type ViewUpdate,
   WidgetType,
 } from '@codemirror/view'
-import { RangeSetBuilder, type Extension } from '@codemirror/state'
+import { RangeSetBuilder } from '@codemirror/state'
 import {
   extractHunks,
   type MergedHunk,
@@ -194,35 +194,3 @@ export const diffViewPlugin = ViewPlugin.fromClass(DiffViewPluginClass, {
   decorations: (v) => v.decorations,
 })
 
-// =============================================================================
-// EXTENSION BUNDLE
-// =============================================================================
-
-/**
- * Create the diff view extension bundle.
- *
- * OCP: Signature designed for future extension with keymap callbacks (Phase 5).
- *
- * @returns Extension array with view plugin
- *
- * @example
- * ```typescript
- * // In EditorPanel, wrap in a Compartment for dynamic reconfiguration
- * const diffCompartment = new Compartment()
- *
- * // Initial: empty
- * extensions: [diffCompartment.of([])]
- *
- * // Enable diff view:
- * view.dispatch({
- *   effects: diffCompartment.reconfigure(createDiffViewExtension())
- * })
- * ```
- */
-export function createDiffViewExtension(): Extension {
-  return [
-    diffViewPlugin,
-    // Edit filter added in Phase 3
-    // Keymap with callbacks added in Phase 5
-  ]
-}
