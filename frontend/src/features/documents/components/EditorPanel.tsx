@@ -11,6 +11,7 @@
  * - useDocumentContent: Loading, hydration, local state
  * - useDocumentSync: Debounced save, flush on unmount
  * - useDiffView: Diff extension, hunk navigation
+ * - useDocumentPolling: Detect background AI updates (polls while AI session active)
  *
  * @see `_docs/plans/ai-editing/inline-suggestions-impl-2/06-integration.md`
  */
@@ -30,7 +31,7 @@ import { CompactBreadcrumb } from '@/shared/components/ui/CompactBreadcrumb'
 import { Button } from '@/shared/components/ui/button'
 import { ChevronLeft } from 'lucide-react'
 import { AIHunkNavigator } from './AIHunkNavigator'
-import { useDocumentContent, useDocumentSync, useDiffView } from '../hooks'
+import { useDocumentContent, useDocumentSync, useDiffView, useDocumentPolling } from '../hooks'
 
 // =============================================================================
 // TYPES
@@ -104,6 +105,41 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     isEditorReady,
     setHasUserEdit,
   })
+
+  // 4. Document polling (detects background AI updates)
+  // Polls for aiVersionRev changes when document is open and not being edited.
+  // Note: Polls always (not just when AI session active) to detect new AI edits.
+  useDocumentPolling(
+    {
+      documentId,
+      currentAIVersionRev: syncContext.aiVersionBaseRevRef.current,
+      hasUserEdit,
+      intervalMs: 5000,
+    },
+    {
+      onAIVersionChanged: (doc) => {
+        // If user has pending edits, stash the update for later
+        // Otherwise, hydrate immediately
+        if (hasUserEdit) {
+          syncContext.setPendingServerSnapshot({
+            content: doc.content ?? '',
+            aiVersion: doc.aiVersion,
+            aiVersionRev: doc.aiVersionRev,
+          })
+        } else {
+          hydrateDocument({
+            content: doc.content ?? '',
+            aiVersion: doc.aiVersion,
+            aiVersionRev: doc.aiVersionRev,
+          })
+        }
+      },
+      onError: (error) => {
+        // Log but don't disrupt the user - polling will retry
+        console.warn('[DocumentPolling] Error:', error.message)
+      },
+    }
+  )
 
   // ---------------------------------------------------------------------------
   // CALLBACKS
