@@ -1,7 +1,8 @@
 /**
- * HTML ↔ Markdown conversion utilities.
+ * HTML <-> Markdown conversion utilities.
  *
- * SRP: This module ONLY converts between formats. No detection or clipboard handling.
+ * SRP: This module ONLY converts between formats.
+ * Used by clipboard operations, chat rendering, etc.
  */
 
 /**
@@ -27,9 +28,7 @@ function nodeToMarkdown(node: Node): string {
 
   const el = node as HTMLElement
   const tag = el.tagName.toLowerCase()
-  const children = Array.from(el.childNodes)
-    .map(nodeToMarkdown)
-    .join('')
+  const children = Array.from(el.childNodes).map(nodeToMarkdown).join('')
 
   switch (tag) {
     case 'p':
@@ -75,10 +74,12 @@ function nodeToMarkdown(node: Node): string {
     case 'li':
       return children
     case 'blockquote':
-      return children
-        .split('\n')
-        .map((line) => `> ${line}`)
-        .join('\n') + '\n\n'
+      return (
+        children
+          .split('\n')
+          .map((line) => `> ${line}`)
+          .join('\n') + '\n\n'
+      )
     case 'img': {
       const src = el.getAttribute('src') || ''
       const alt = el.getAttribute('alt') || ''
