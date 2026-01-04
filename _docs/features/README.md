@@ -12,9 +12,9 @@ This directory contains detailed documentation for all features in Meridian, org
 
 ## Status Icons
 
-- âœ… **Complete** - Fully implemented + polished (where applicable)
-- ðŸŸ¡ **Partial** - Functional but incomplete/ugly
-- âŒ **Missing** - Not implemented
+- [x] **Complete** - Fully implemented + polished (where applicable)
+- [-] **Partial** - Functional but incomplete/ugly
+- [ ] **Missing** - Not implemented
 
 ---
 
@@ -22,19 +22,19 @@ This directory contains detailed documentation for all features in Meridian, org
 
 | Feature | Stack | Backend | Frontend | Notes |
 |---------|-------|---------|----------|-------|
-| **Authentication** | Both | âœ… Complete | âœ… Complete | JWT validation, Google OAuth only, protected routes, resource authorization |
-| **User Settings** | Both | âœ… Complete | ðŸŸ¡ Partial | Profile UI complete, preferences API complete, preferences UI missing |
-| **Document Editor** | Frontend | N/A | âœ… Complete | CodeMirror, auto-save, markdown, caching |
-| **File System** | Both | âœ… Complete | âœ… Complete | CRUD, tree view, context menus; Search UI non-functional |
-| **Document Import** | Both | âœ… Complete | âœ… Complete | Multi-format (.zip, .md, .txt, .html), XSS sanitization, drag-drop |
-| **Context Menus** | Frontend | N/A | âœ… Complete | Right-click actions for tree (create, rename, delete, import) |
-| **Chat/LLM** | Both | âœ… Complete | âœ… Complete | Turn branching, streaming, 3 providers working |
-| **Streaming (SSE)** | Both | âœ… Complete | âœ… Complete | Catchup, reconnection, race-free |
+| **Authentication** | Both | [x] Complete | [x] Complete | JWT validation, Google OAuth only, protected routes, resource authorization |
+| **User Settings** | Both | [x] Complete | [-] Partial | Profile UI complete, preferences API complete, preferences UI missing |
+| **Document Editor** | Frontend | N/A | [x] Complete | CodeMirror, auto-save, markdown, caching |
+| **File System** | Both | [x] Complete | [x] Complete | CRUD, tree view, context menus; Search UI non-functional |
+| **Document Import** | Both | [x] Complete | [x] Complete | Multi-format (.zip, .md, .txt, .html), XSS sanitization, drag-drop |
+| **Context Menus** | Frontend | N/A | [x] Complete | Right-click actions for tree (create, rename, delete, import) |
+| **Chat/LLM** | Both | [x] Complete | [x] Complete | Turn branching, streaming, 3 providers working |
+| **Streaming (SSE)** | Both | [x] Complete | [x] Complete | Catchup, reconnection, race-free |
 | **Tool Calling** | Backend | ✅ Complete | N/A | Auto-mapping, 3 built-in + 4 custom tools |
-| **AI Editing** | Both | 🟡 Partial | ❌ Missing | Backend complete (ai_version + doc_edit); Frontend diff UI pending |
-| **State Management** | Frontend | N/A | âœ… Complete | Zustand, IndexedDB, optimistic updates, retry queue |
-| **UI Components** | Frontend | N/A | âœ… Complete | shadcn/ui, custom components, high polish |
-| **Infrastructure** | Both | âœ… Complete | âœ… Complete | Errors, DB features, routing, logging, deployment |
+| **AI Editing** | Both | ✅ Complete | ✅ Complete | Inline suggestions, accept/reject, CAS concurrency |
+| **State Management** | Frontend | N/A | [x] Complete | Zustand, IndexedDB, optimistic updates, retry queue |
+| **UI Components** | Frontend | N/A | [x] Complete | shadcn/ui, custom components, high polish |
+| **Infrastructure** | Both | [x] Complete | [x] Complete | Errors, DB features, routing, logging, deployment |
 
 ---
 
@@ -49,9 +49,9 @@ This directory contains detailed documentation for all features in Meridian, org
 
 ### [fb-user-settings/](fb-user-settings/)
 **User profile display and preferences configuration**
-- Profile UI: avatar, user menu, settings page (frontend âœ…)
-- Preferences API: JSONB storage, 5 categories (backend âœ…)
-- Preferences UI: not yet implemented (frontend âŒ)
+- Profile UI: avatar, user menu, settings page (frontend [x])
+- Preferences API: JSONB storage, 5 categories (backend [x])
+- Preferences UI: not yet implemented (frontend [ ])
 
 ### [f-document-editor/](f-document-editor/)
 **CodeMirror markdown editor with auto-save and caching**
@@ -64,9 +64,9 @@ This directory contains detailed documentation for all features in Meridian, org
 **Project/folder/document management + import**
 - Backend: CRUD APIs, validation, path resolution, full-text search, multi-format import
 - Frontend: Tree view, context menus, navigation, import dialog
-- âœ… Full CRUD operations via context menus
-- âœ… Multi-format import (.zip, .md, .txt, .html) with system file filtering
-- ðŸŸ¡ Search UI present but non-functional (backend working)
+- [x] Full CRUD operations via context menus
+- [x] Multi-format import (.zip, .md, .txt, .html) with system file filtering
+- [-] Search UI present but non-functional (backend working)
 
 ### [f-context-menus/](f-context-menus/)
 **Right-click context menus for file tree** âœ¨ NEW
@@ -80,7 +80,7 @@ This directory contains detailed documentation for all features in Meridian, org
 - Backend: Turn management, block types, 3 providers (Anthropic, OpenRouter, Lorem)
 - Frontend: Chat UI, message rendering, model selection, reasoning levels
 - Turn branching/sibling navigation, token tracking
-- âŒ System prompt UI missing (backend supports it)
+- [ ] System prompt UI missing (backend supports it)
 
 ### [fb-streaming/](fb-streaming/)
 **Server-Sent Events for real-time LLM responses**
@@ -94,6 +94,13 @@ This directory contains detailed documentation for all features in Meridian, org
 - Built-in tools: web_search (server), bash (client), text_editor (client)
 - Custom tools: doc_view, doc_tree, doc_search, doc_edit
 - Multi-turn tool continuation
+
+### [fb-ai-editing/](fb-ai-editing/)
+**Inline AI suggestions with accept/reject UI**
+- Backend: `ai_version` storage, CAS concurrency (`ai_version_rev`), tri-state PATCH
+- Frontend: Merged document with PUA markers, diff decorations, edit protection
+- Accept/reject are CM6 transactions (undoable via Cmd+Z)
+- Conflict detection via polling + 409 responses
 
 ### [f-state-management/](f-state-management/)
 **Frontend state and caching**
@@ -118,11 +125,11 @@ This directory contains detailed documentation for all features in Meridian, org
 
 ## Overall Assessment
 
-**Backend**: âœ… **Feature-complete for MVP.** All core systems working (auth, file management, document import, chat/LLM, streaming, tool calling). Main gaps: vector search, additional LLM providers, RBAC/team permissions.
+**Backend**: [x] **Feature-complete for MVP.** All core systems working (auth, file management, document import, chat/LLM, streaming, tool calling). Main gaps: vector search, additional LLM providers, RBAC/team permissions.
 
-**Frontend**: âœ… **Feature-complete for MVP with high UI polish.** All core features fully implemented and polished, including new document import and context menu systems. Main gaps: settings UI, theme toggle, search UI functionality, advanced keyboard shortcuts.
+**Frontend**: [x] **Feature-complete for MVP with high UI polish.** All core features fully implemented and polished, including new document import and context menu systems. Main gaps: settings UI, theme toggle, search UI functionality, advanced keyboard shortcuts.
 
-**Integration**: âœ… **Backend and frontend are fully integrated** for all implemented features. API coverage: ~35 endpoints, all functional.
+**Integration**: [x] **Backend and frontend are fully integrated** for all implemented features. API coverage: ~35 endpoints, all functional.
 
 ### Recent Additions (h/bet-ui branch)
 - âœ¨ **Document Import System**: Multi-format support with XSS protection

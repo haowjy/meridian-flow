@@ -50,10 +50,11 @@ feature: "Document Editor"
 - Links rendered with hover preview
 
 ### AI Editing Interface
-**Status**: ✅ Available
-- `AIEditorRef` interface for AI suggestions
-- Decoration support for suggestions, accepted, rejected states
-- Programmatic text manipulation via editor commands
+**Status**: ✅ Complete
+- Inline diff view with accept/reject buttons
+- PUA markers for embedded diffs
+- Full undo/redo support (Cmd+Z)
+- See [../fb-ai-editing/](../fb-ai-editing/) for details
 
 ---
 
@@ -111,4 +112,6 @@ feature: "Document Editor"
 
 ## Related
 
-- See `/_docs/technical/frontend/README.md` for frontend overview
+- [../fb-ai-editing/](../fb-ai-editing/) - AI inline suggestions feature
+- `/_docs/technical/frontend/README.md` - Frontend overview
+- `/_docs/technical/frontend/inline-editing/` - Inline editing architecture
