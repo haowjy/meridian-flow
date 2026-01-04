@@ -9,5 +9,8 @@ export { useDocumentSync } from './useDocumentSync'
 // Visualization hooks
 export { useDiffView, type UseDiffViewOptions, type UseDiffViewResult } from './useDiffView'
 
+// Polling hooks
+export { useDocumentPolling, type UseDocumentPollingOptions, type UseDocumentPollingHandlers } from './useDocumentPolling'
+
 // UI utility hooks
 export { useThumbFollow } from './useThumbFollow'
