@@ -317,16 +317,48 @@ if (content !== undefined) { ... }
 if (content) { ... }
 ```
 
-## Future Improvements
+## Document Editor Hooks
 
-### Hook Extraction from EditorPanel
+EditorPanel uses 3 composable hooks for separation of concerns:
 
-EditorPanel (~650 LOC) handles multiple concerns. Future refactoring should extract:
+```
+EditorPanel (~250 LOC)
+├── useDocumentContent (documentId, editorRef)
+│   ├── Loading, hydration, local state
+│   ├── Returns: localDocument, isInitialized, syncContext
+│   └── ~230 LOC
+│
+├── useDocumentSync (documentId, syncContext, editorRef, hydrateDocument)
+│   ├── Debounced save, CAS tokens, flush on unmount
+│   ├── Pure effect (no return)
+│   └── ~120 LOC
+│
+└── useDiffView ({ localDocument, editorRef, isEditorReady, setHasUserEdit })
+    ├── Compartment config, hunk navigation
+    ├── Returns: hunks, hasAISuggestions, initialExtensions, callbacks
+    └── ~150 LOC
+```
 
-1. `useDocumentContent` - Content loading, local state, dirty tracking
-2. `useEditorSync` - Sync with server, retry, conflict handling
-3. `useDiffView` - Compartment config, hunk navigation
+### Composition Pattern
 
-These hooks could be reused for:
-- Comment annotations (user/AI comments without direct doc modification)
-- Preview editor boxes (like VSCode's "jump to definition")
+```typescript
+// Main editor uses all 3 hooks
+const content = useDocumentContent(documentId, editorRef)
+useDocumentSync(documentId, content.syncContext, editorRef, content.hydrateDocument)
+const diff = useDiffView({ localDocument: content.localDocument, ... })
+
+// Comment annotations (future) - full editing with comment overlay
+const content = useDocumentContent(documentId, editorRef)
+useDocumentSync(documentId, content.syncContext, ...)
+const comments = useCommentView({ localDocument: content.localDocument, ... })
+
+// Preview boxes (future) - inline editing, syncs back to source
+const content = useDocumentContent(previewDocumentId, editorRef)
+useDocumentSync(previewDocumentId, content.syncContext, ...)
+```
+
+### Key Design Decisions
+
+1. **syncContext object**: Allows `useDocumentSync` to access refs from `useDocumentContent`
+2. **Store access internal**: Hooks access Zustand stores internally (pragmatic for Meridian)
+3. **Pure effect hook**: `useDocumentSync` returns nothing, just adds save behavior
