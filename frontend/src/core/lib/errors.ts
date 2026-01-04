@@ -3,6 +3,9 @@
  */
 
 import { toast } from 'sonner'
+import type { DocumentDto } from '@/types/api'
+import { fromDocumentDto } from '@/types/api'
+import type { Document } from '@/features/documents/types/document'
 
 /**
  * Application error types for categorizing errors.
@@ -144,6 +147,27 @@ export function isAppError(error: unknown): error is AppError<unknown> {
 
   const candidate = error as { name?: unknown; message?: unknown }
   return candidate.name === 'AppError' && typeof candidate.message === 'string'
+}
+
+/**
+ * Check if error is a 409 Conflict (e.g., ai_version_rev mismatch).
+ */
+export function isConflictError(error: unknown): error is AppError<unknown> {
+  return isAppError(error) && error.type === ErrorType.Conflict
+}
+
+/**
+ * Extract server document from 409 Conflict error.
+ * The resource is a raw DTO from the backend, so we map it to Document.
+ * Returns undefined if not a conflict or no resource attached.
+ */
+export function extractDocumentFromConflict(
+  error: unknown
+): Document | undefined {
+  if (!isConflictError(error)) return undefined
+  const dto = error.resource as DocumentDto | undefined
+  if (!dto) return undefined
+  return fromDocumentDto(dto)
 }
 
 /**

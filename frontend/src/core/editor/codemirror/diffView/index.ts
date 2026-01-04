@@ -6,6 +6,8 @@
  * - Styles deletion regions as red strikethrough
  * - Styles insertion regions as green underline
  * - Blocks edits in deletion regions
+ * - Accept/reject as CM6 transactions (undoable!)
+ * - Focused hunk highlighting and navigation
  *
  * Entry point for diff view functionality.
  */
@@ -15,6 +17,9 @@ import { diffViewPlugin } from './plugin'
 import { diffEditFilter } from './editFilter'
 import { createBlockedEditListener, type BlockedEditCallback } from './blockedEditListener'
 import { clipboardExtension } from './clipboard'
+import { focusedHunkIndexField } from './focus'
+import { hunkHoverPlugin } from './hoverManager'
+import { hunkRegionsField } from './hunkRegionsField'
 
 // =============================================================================
 // RE-EXPORTS
@@ -25,6 +30,29 @@ export { diffEditFilter } from './editFilter'
 export { blockedEditEffect, type BlockedEditReason } from './blockedEditEffect'
 export { createBlockedEditListener, type BlockedEditCallback } from './blockedEditListener'
 export { clipboardExtension } from './clipboard'
+
+// Transactions (accept/reject)
+export {
+  acceptHunk,
+  rejectHunk,
+  acceptHunkAtPosition,
+  rejectHunkAtPosition,
+  acceptAll,
+  rejectAll,
+  getHunks,
+} from './transactions'
+
+// Focus state
+export { setFocusedHunkIndexEffect, focusedHunkIndexField } from './focus'
+
+// Widget (for advanced use cases)
+export { HunkActionWidget } from './HunkActionWidget'
+
+// Hover manager (JS-based hover for multiple hunks per line)
+export { hunkHoverPlugin } from './hoverManager'
+
+// Hunk regions (for live preview integration)
+export { hunkRegionsField, overlapsHunkRegion, type HunkRegion } from './hunkRegionsField'
 
 // =============================================================================
 // TYPES
@@ -68,10 +96,12 @@ export interface DiffViewExtensionOptions {
  */
 export function createDiffViewExtension(options?: DiffViewExtensionOptions): Extension {
   const extensions: Extension[] = [
+    hunkRegionsField, // Must be first - live preview reads this field
+    focusedHunkIndexField, // Must be before diffViewPlugin (plugin reads this field)
     diffViewPlugin,
     diffEditFilter,
     clipboardExtension,
-    // Keymap with callbacks added in Phase 5
+    hunkHoverPlugin, // JS-based hover visibility for action buttons
   ]
 
   if (options?.onBlockedEdit) {

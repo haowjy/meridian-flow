@@ -17,6 +17,7 @@ import {
 import { RangeSetBuilder, type EditorState } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
 import type { NodeRenderer, DecorationRange, RenderContext } from './types'
+import { hunkRegionsField, overlapsHunkRegion } from '../diffView/hunkRegionsField'
 
 // ============================================================================
 // RENDERER REGISTRY (OCP: Open for Extension)
@@ -170,6 +171,10 @@ class LivePreviewPlugin {
     const { state } = view
     const decorations: DecorationRange[] = []
 
+    // Get hunk regions (empty array if diff view not active)
+    // The `false` param means don't throw if field doesn't exist
+    const hunkRegions = state.field(hunkRegionsField, false) ?? []
+
     // Pre-compute cursor word bounds for performance
     const cursorWords = state.selection.ranges.map(range =>
       getWordBounds(state, range.head)
@@ -185,6 +190,12 @@ class LivePreviewPlugin {
         from,
         to,
         enter(node) {
+          // Skip nodes inside hunk regions - show raw markdown there
+          // This allows diff view styling to take precedence
+          if (hunkRegions.length > 0 && overlapsHunkRegion(hunkRegions, node.from, node.to)) {
+            return
+          }
+
           // Get renderers for this node type
           const nodeRenderers = getRenderers(node.name)
 

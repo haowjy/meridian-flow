@@ -882,61 +882,78 @@ body.preload * {
   }
 
   /**
-   * Currently focused hunk (for navigation)
-   * Used in Phase 5 for keyboard navigation
+   * Focused hunk highlight
+   * Extra highlight when navigating between hunks
+   * Uses a subtle background tint on top of the insertion styling
    */
   .cm-ai-hunk-focused {
-    outline: 2px solid hsl(var(--primary));
-    outline-offset: 1px;
+    background-color: color-mix(in srgb, hsl(142.1 76.2% 36.3%) 20%, transparent);
   }
 
   /**
-   * Hunk action buttons container (Phase 5)
+   * Hunk action buttons - floating above hunk
+   *
+   * Floats above the hunk end. Height constrained to line height.
+   * JS (hoverManager.ts) adds .visible class on hover.
    */
   .cm-hunk-actions {
-    display: inline-flex;
+    /* Hidden by default */
+    display: none;
+
+    /* Fixed positioning escapes stacking context - appears above sticky header */
+    position: fixed;
+    z-index: 50;
+
+    /* Constrain to line height */
+    max-height: 1lh;
+    padding: 0;
     gap: 2px;
-    margin-left: 4px;
-    vertical-align: middle;
-    opacity: 0;
-    transition: opacity 150ms ease-in-out;
+
+    /* Compact styling */
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
   }
 
-  /* Show on line hover */
-  .cm-line:hover .cm-hunk-actions {
-    opacity: 1;
+  /* JS adds .visible class via hoverManager.ts */
+  .cm-hunk-actions.visible {
+    display: inline-flex;
+    align-items: center;
   }
 
-  /* Always show for focused hunk */
-  .cm-hunk-actions[data-focused="true"] {
-    opacity: 1;
+  /* Invisible bridge to allow mouse to reach buttons from text below */
+  .cm-hunk-actions::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    height: 8px;
   }
 
+  /* Buttons sized to fill line height */
   .cm-hunk-actions button {
-    padding: 2px 6px;
+    padding: 4px 8px;
     border: none;
     border-radius: 4px;
     font-size: 12px;
+    line-height: 1;
     cursor: pointer;
-    transition: opacity 150ms;
-  }
-
-  .cm-hunk-accept {
-    background: hsl(142.1 76.2% 36.3%);
-    color: white;
-  }
-
-  .cm-hunk-accept:hover {
-    background: hsl(142.1 76.2% 30%);
-  }
-
-  .cm-hunk-reject {
-    background: var(--error);
-    color: var(--error-foreground);
+    transition: background 150ms, color 150ms;
+    white-space: nowrap;
+    background: transparent;
+    color: var(--muted-foreground);
   }
 
   .cm-hunk-reject:hover {
-    opacity: 0.9;
+    background: hsl(0 50% 92%);
+    color: hsl(0 70% 35%);
+  }
+
+  .cm-hunk-accept:hover {
+    background: hsl(142 50% 90%);
+    color: hsl(142 70% 30%);
   }
 
 }

@@ -598,15 +598,25 @@ export const api = {
      * - undefined: omit field (no change to ai_version)
      * - null: clear ai_version
      * - string (including ""): set ai_version
+     *
+     * Concurrency: when aiVersion is provided, aiVersionBaseRev is required
+     * for compare-and-swap (CAS) to prevent overwriting unseen server updates.
      */
     update: async (
       id: string,
-      updates: { content?: string; aiVersion?: string | null },
+      updates: { content?: string; aiVersion?: string | null; aiVersionBaseRev?: number },
       options?: { signal?: AbortSignal }
     ): Promise<Document> => {
       const body: Record<string, unknown> = {}
       if (updates.content !== undefined) body.content = updates.content
-      if (updates.aiVersion !== undefined) body.ai_version = updates.aiVersion
+      if (updates.aiVersion !== undefined) {
+        // Enforce CAS requirement: backend returns 400 if ai_version_base_rev is missing
+        if (updates.aiVersionBaseRev === undefined) {
+          throw new Error('aiVersionBaseRev is required when aiVersion is provided')
+        }
+        body.ai_version = updates.aiVersion
+        body.ai_version_base_rev = updates.aiVersionBaseRev
+      }
 
       const data = await fetchAPI<DocumentDto>(`/api/documents/${id}`, {
         method: 'PATCH',

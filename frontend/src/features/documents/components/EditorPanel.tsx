@@ -1,9 +1,24 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+/**
+ * EditorPanel - CodeMirror 6 markdown editor with AI diff view support.
+ *
+ * Key architecture:
+ * - Merged document is source of truth (content + aiVersion combined with PUA markers)
+ * - Accept/reject are CM6 transactions (undoable via Cmd+Z)
+ * - Compartment-based diff extension for dynamic enable/disable
+ * - Debounced save parses merged doc back to content + aiVersion
+ *
+ * @see `_docs/plans/ai-editing/inline-suggestions-impl-2/06-integration.md`
+ */
+
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { Compartment } from '@codemirror/state'
+import { EditorView } from '@codemirror/view'
 import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { CodeMirrorEditor, EditorContextMenu, type CodeMirrorEditorRef } from '@/core/editor/codemirror'
 import { useEditorStore } from '@/core/stores/useEditorStore'
-import { useDebounce, useLatestRef } from '@/core/hooks'
+import { useLatestRef } from '@/core/hooks'
 import { documentSyncService } from '@/core/services/documentSyncService'
+import { saveMergedDocument } from '@/core/services/saveMergedDocument'
 import { EditorHeader } from './EditorHeader'
 import { Skeleton } from '@/shared/components/ui/skeleton'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
@@ -14,20 +29,45 @@ import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
 import { CompactBreadcrumb } from '@/shared/components/ui/CompactBreadcrumb'
 import { Button } from '@/shared/components/ui/button'
 import { ChevronLeft } from 'lucide-react'
-import { useAIDiff } from '../hooks/useAIDiff'
-import { AIToolbar } from './AIToolbar'
-import { OriginalOverlay } from './OriginalOverlay'
+import { AIHunkNavigator } from './AIHunkNavigator'
+import {
+  buildMergedDocument,
+  extractHunks,
+  hasAnyMarker,
+  parseMergedDocument,
+  DiffMarkersCorruptedError,
+} from '@/core/lib/mergedDocument'
+import {
+  createDiffViewExtension,
+  acceptAll,
+  rejectAll,
+  setFocusedHunkIndexEffect,
+} from '@/core/editor/codemirror/diffView'
+
+// =============================================================================
+// TYPES
+// =============================================================================
 
 interface EditorPanelProps {
   documentId: string
 }
 
+// =============================================================================
+// COMPONENT
+// =============================================================================
+
 /**
- * CodeMirror 6 markdown editor panel.
- * Integrates: Document loading, auto-save.
- * Uses two-state pattern for instant typing + debounced auto-save.
+ * CodeMirror 6 markdown editor panel with AI diff view support.
+ *
+ * Uses merged document pattern:
+ * - On load: buildMergedDocument(content, aiVersion) → editor
+ * - During editing: editor shows merged document with diff decorations
+ * - On save: parseMergedDocument() → API (content + aiVersion)
  */
 export function EditorPanel({ documentId }: EditorPanelProps) {
+  // ---------------------------------------------------------------------------
+  // STORE STATE
+  // ---------------------------------------------------------------------------
   const {
     activeDocument,
     _activeDocumentId,
@@ -36,67 +76,197 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     status,
     lastSaved,
     loadDocument,
-    saveDocument,
-    aiEditorMode,
+    focusedHunkIndex,
+    setFocusedHunkIndex,
+    navigateHunk,
   } = useEditorStore()
 
   // Get document metadata from tree (available immediately, no need to wait for content)
   const documents = useTreeStore((state) => state.documents)
   const documentMetadata = documents.find((doc) => doc.id === documentId)
 
-  // Two-state pattern: local state for instant updates, debounced for saves
-  const [localContent, setLocalContent] = useState('')
+  // ---------------------------------------------------------------------------
+  // LOCAL STATE
+  // ---------------------------------------------------------------------------
+
+  // Single merged document (source of truth)
+  const [localDocument, setLocalDocument] = useState('')
   const [hasUserEdit, setHasUserEdit] = useState(false)
   const [isInitialized, setIsInitialized] = useState(false)
-  const debouncedContent = useDebounce(localContent, 1000) // 1 second trailing edge
+
+  // CAS token for ai_version updates
+  const lastHydratedDocIdRef = useRef<string | null>(null)
+  const aiVersionBaseRevRef = useRef<number | null>(null)
+  // Track if server had an AI version (for flush-on-unmount)
+  const serverHasAIVersionRef = useRef(false)
+
+  /**
+   * Pending server snapshot - stashed when server update arrives while user has edits.
+   *
+   * State machine:
+   * - null: No pending update (normal state)
+   * - {content, aiVersion, aiVersionRev}: Server update waiting to be applied
+   *
+   * Transitions:
+   * - Server update arrives + hasUserEdit=true → store snapshot, don't apply
+   * - User saves document → clear pendingServerSnapshot after save succeeds
+   * - User switches to different document → flush changes, clear snapshot
+   *
+   * TODO: Add UI for conflict resolution (show diff, let user choose).
+   * Currently, pending snapshots are silently overwritten when user saves.
+   */
+  const [pendingServerSnapshot, setPendingServerSnapshot] = useState<{
+    content: string
+    aiVersion: string | null | undefined
+    aiVersionRev: number | null | undefined
+  } | null>(null)
 
   // CodeMirror editor ref
   const editorRef = useRef<CodeMirrorEditorRef | null>(null)
 
+  // Editor ready state (for compartment effects)
+  const [isEditorReady, setIsEditorReady] = useState(false)
+
+  // Compartment for diff view extension
+  const diffCompartmentRef = useRef<Compartment | null>(null)
+  if (!diffCompartmentRef.current) {
+    diffCompartmentRef.current = new Compartment()
+  }
+  const diffCompartment = diffCompartmentRef.current
+  const diffEnabledRef = useRef(false)
+
   // Refs for "flush on navigate/unmount" without stale closures
   const initializedRef = useLatestRef(isInitialized)
-  const localContentRef = useLatestRef(localContent)
+  const localDocumentRef = useLatestRef(localDocument)
   const hasUserEditRef = useLatestRef(hasUserEdit)
   const activeDocumentRef = useLatestRef(activeDocument)
 
-  // AI diff computation - compute hunks between user content and AI suggestion
-  // (hunks used by future floating pill for navigation)
-  const aiVersion = activeDocument?.aiVersion
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _hunks = useAIDiff(localContent, aiVersion)
+  // Save timer ref
+  const saveTimerRef = useRef<number | null>(null)
 
-  // AI suggestions state (for custom diff solution - to be implemented)
-  const hasAISuggestions = !!aiVersion
-  const baseline = activeDocument?.content ?? ''
+  // ---------------------------------------------------------------------------
+  // DERIVED STATE
+  // ---------------------------------------------------------------------------
+
+  // Computed hunks from current document
+  const hunks = useMemo(() => extractHunks(localDocument), [localDocument])
+
+  // Diff mode active = markers exist (NOT based on aiVersion from server)
+  const hasAISuggestions = hasAnyMarker(localDocument)
 
   // Determine editable state early (needed by sync effect below)
   const isEditable = isInitialized && activeDocument?.id === documentId && !isLoading
 
-  // Handle content changes from the editor (unified for normal and merge modes)
-  // In both modes, changes trigger debounced auto-save
-  // In merge mode, this allows per-hunk accept/reject to persist
-  const handleChange = useCallback(
+  // Initial extension array (empty diff compartment)
+  const initialExtensions = useMemo(() => [diffCompartment.of([])], [diffCompartment])
+
+  // ---------------------------------------------------------------------------
+  // CALLBACKS
+  // ---------------------------------------------------------------------------
+
+  // Handle content changes from the editor
+  const handleContentChange = useCallback(
     (content: string) => {
       // Ignore changes before initialization
       if (!initializedRef.current) {
         return
       }
-      setLocalContent(content)
+      setLocalDocument(content)
       setHasUserEdit(true)
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- initializedRef is stable (ref identity never changes)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initializedRef is stable
     []
   )
 
   // Handle editor ready
-  const handleReady = useCallback((ref: CodeMirrorEditorRef) => {
+  const handleEditorReady = useCallback((ref: CodeMirrorEditorRef) => {
     editorRef.current = ref
-  }, [])
+    setIsEditorReady(true)
+
+    // Enable diff view if needed (initial load with aiVersion)
+    const view = ref.getView()
+    if (!view) return
+
+    // Check if we should enable diff mode based on current localDocument
+    // This handles the case where document is loaded before editor is ready
+    const shouldEnable = hasAnyMarker(localDocumentRef.current)
+    if (shouldEnable && !diffEnabledRef.current) {
+      view.dispatch({
+        effects: diffCompartment.reconfigure(createDiffViewExtension()),
+      })
+      diffEnabledRef.current = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diffCompartment])
+
+  // Navigation callbacks
+  const handlePrevHunk = useCallback(() => {
+    navigateHunk('prev', hunks.length)
+  }, [navigateHunk, hunks.length])
+
+  const handleNextHunk = useCallback(() => {
+    navigateHunk('next', hunks.length)
+  }, [navigateHunk, hunks.length])
+
+  // Bulk operations (via CM6 transactions)
+  const handleAcceptAll = useCallback(() => {
+    const view = editorRef.current?.getView()
+    if (!view) return
+
+    acceptAll(view)
+    setHasUserEdit(true)
+    setFocusedHunkIndex(0)
+  }, [setFocusedHunkIndex])
+
+  const handleRejectAll = useCallback(() => {
+    const view = editorRef.current?.getView()
+    if (!view) return
+
+    rejectAll(view)
+    setHasUserEdit(true)
+    setFocusedHunkIndex(0)
+  }, [setFocusedHunkIndex])
+
+  /**
+   * Hydrate editor with document data from server.
+   * Used by both initialization and corruption repair.
+   * SRP: Single function for all hydration logic.
+   */
+  const hydrateDocument = useCallback(
+    (doc: {
+      content: string
+      aiVersion: string | null | undefined
+      aiVersionRev: number | null | undefined
+    }) => {
+      const content = doc.content
+      const aiVersion = doc.aiVersion
+      const merged = aiVersion ? buildMergedDocument(content, aiVersion) : content
+
+      setLocalDocument(merged)
+      aiVersionBaseRevRef.current = doc.aiVersionRev ?? null
+      serverHasAIVersionRef.current = aiVersion != null
+      setHasUserEdit(false)
+
+      if (editorRef.current) {
+        editorRef.current.setContent(merged, { addToHistory: false, emitChange: false })
+      }
+    },
+    []
+  )
+
+  // Handle back button click
+  const handleBackClick = () => {
+    const store = useUIStore.getState()
+    store.setRightPanelState('documents')
+  }
+
+  // ---------------------------------------------------------------------------
+  // EFFECTS
+  // ---------------------------------------------------------------------------
 
   // Load document on mount or when documentId changes
   useEffect(() => {
     // Prevent duplicate loads from React Strict Mode double-mounting
-    // Skip if we're already loading this exact document
     if (_activeDocumentId === documentId && isLoading) {
       return
     }
@@ -107,24 +277,37 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     // Reset local editor state on document change
     setIsInitialized(false)
     setHasUserEdit(false)
+    setPendingServerSnapshot(null)
 
     loadDocument(documentId, abortController.signal)
 
     // Cleanup: abort request if component unmounts or documentId changes
-    // useLatestRef pattern: we intentionally read .current at cleanup time to get latest values
+    // Flush any unsaved edits when navigating away
     /* eslint-disable react-hooks/exhaustive-deps */
     return () => {
-      // Flush any unsaved edits when navigating away or switching documents.
-      // We don't block navigation—this is best-effort and relies on the existing
-      // optimistic IndexedDB update + retry-on-network-failure behavior.
       if (initializedRef.current && hasUserEditRef.current) {
         const doc = activeDocumentRef.current
         const docId = doc?.id ?? documentId
-        const serverContent = doc?.content ?? ''
-        const editorContent = editorRef.current?.getContent() ?? localContentRef.current
+        const editorContent = editorRef.current?.getContent() ?? localDocumentRef.current
 
-        // Treat empty string "" as valid content
-        if (editorContent !== serverContent) {
+        // For merged documents, use saveMergedDocument to preserve aiVersion
+        // This fixes the bug where quick navigation after accept/reject would lose AI state
+        if (hasAnyMarker(editorContent)) {
+          const baseRev = aiVersionBaseRevRef.current
+          if (baseRev != null) {
+            // Best-effort save - don't block navigation
+            void saveMergedDocument(docId, editorContent, {
+              aiVersionBaseRev: baseRev,
+              serverHasAIVersion: serverHasAIVersionRef.current,
+            }).catch(() => {
+              // On error (corrupted markers, etc), fallback to content-only save
+              void documentSyncService.save(docId, editorContent, doc ?? undefined)
+            })
+          } else {
+            // No CAS token - can't save aiVersion, fall back to content-only
+            void documentSyncService.save(docId, editorContent, doc ?? undefined)
+          }
+        } else {
           void documentSyncService.save(docId, editorContent, doc ?? undefined)
         }
       }
@@ -134,54 +317,223 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentId, loadDocument])
 
-  // Initialize local content when document loads
-  // Note: No setContent call needed - editor mounts fresh with initialContent via key={documentId}
+  // Initialize local document when activeDocument loads
   useEffect(() => {
-    if (activeDocument && activeDocument.id === documentId) {
-      const serverContent = activeDocument.content ?? ''
-      setLocalContent(serverContent)
-      setHasUserEdit(false)
-      setIsInitialized(true)
+    if (!activeDocument) return
+    if (activeDocument.id !== documentId) return
+
+    const docChanged = lastHydratedDocIdRef.current !== activeDocument.id
+
+    // If not a new doc and we have user edits, stash incoming update
+    if (!docChanged && hasUserEdit) {
+      setPendingServerSnapshot({
+        content: activeDocument.content ?? '',
+        aiVersion: activeDocument.aiVersion,
+        aiVersionRev: activeDocument.aiVersionRev,
+      })
+      return
     }
-  }, [activeDocument, documentId])
 
-  // TODO: Custom diff solution - mode switching and auto-clear will be implemented here
+    // If we already have a pending snapshot and this isn't a new doc, skip
+    if (!docChanged && pendingServerSnapshot) {
+      return
+    }
 
-  // Auto-save when debounced content changes (only in edit mode AFTER init)
-  // Treat empty string "" as valid content (do not use falsy checks)
-  // Note: ai_version is auto-cleared when all chunks resolved (effect above)
-  // or manually via Accept All / Reject All buttons
+    // Initialize the document
+    lastHydratedDocIdRef.current = activeDocument.id
+    setPendingServerSnapshot(null)
+
+    hydrateDocument({
+      content: activeDocument.content ?? '',
+      aiVersion: activeDocument.aiVersion,
+      aiVersionRev: activeDocument.aiVersionRev,
+    })
+
+    setIsInitialized(true)
+  }, [activeDocument, documentId, hasUserEdit, hydrateDocument, pendingServerSnapshot])
+
+  // Enable/disable diff extension when hasAISuggestions changes
   useEffect(() => {
-    // Only save if debounce has "settled" (caught up to localContent)
-    // This prevents saving stale debounced values during initialization
-    if (debouncedContent !== localContent) return
+    if (!isEditorReady) return
+    const view = editorRef.current?.getView()
+    if (!view) return
 
-    if (isInitialized && hasUserEdit && debouncedContent !== activeDocument?.content) {
-      // Save the document content
-      saveDocument(documentId, debouncedContent)
+    const shouldEnable = hasAISuggestions
+
+    if (shouldEnable && !diffEnabledRef.current) {
+      view.dispatch({
+        effects: diffCompartment.reconfigure(createDiffViewExtension()),
+      })
+      diffEnabledRef.current = true
+    } else if (!shouldEnable && diffEnabledRef.current) {
+      view.dispatch({
+        effects: diffCompartment.reconfigure([]),
+      })
+      diffEnabledRef.current = false
     }
-  }, [isInitialized, hasUserEdit, debouncedContent, localContent, documentId, activeDocument?.content, saveDocument])
+  }, [isEditorReady, hasAISuggestions, diffCompartment])
 
-  // Sync editable state to editor when it changes.
-  // Required because CodeMirror only reads `editable` prop at initialization,
-  // but isEditable transitions false→true after document loads.
+  // Sync focused hunk index to CM6 for decoration highlighting.
+  // This SHOULD run on hunks change (decorations need current hunk positions).
+  useEffect(() => {
+    if (!isEditorReady || hunks.length === 0) return
+    const view = editorRef.current?.getView()
+    if (!view) return
+
+    view.dispatch({
+      effects: setFocusedHunkIndexEffect.of(focusedHunkIndex),
+    })
+  }, [focusedHunkIndex, hunks, isEditorReady])
+
+  // Navigate cursor to focused hunk (only on index change, not on typing).
+  // Intentionally omits hunks from deps to prevent cursor jump on every keystroke.
+  useEffect(() => {
+    if (!isEditorReady) return
+    const view = editorRef.current?.getView()
+    if (!view) return
+
+    const hunk = hunks[focusedHunkIndex]
+    if (hunk) {
+      view.dispatch({
+        selection: { anchor: hunk.from },
+        effects: EditorView.scrollIntoView(hunk.from, { y: 'center' }),
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally omit hunks to prevent cursor jump on typing
+  }, [focusedHunkIndex, isEditorReady])
+
+  // Clamp focusedHunkIndex when hunks are removed
+  useEffect(() => {
+    if (hunks.length === 0) {
+      if (focusedHunkIndex !== 0) {
+        setFocusedHunkIndex(0)
+      }
+    } else if (focusedHunkIndex >= hunks.length) {
+      setFocusedHunkIndex(hunks.length - 1)
+    }
+  }, [hunks.length, focusedHunkIndex, setFocusedHunkIndex])
+
+  // Debounced save effect
+  useEffect(() => {
+    if (!activeDocument) return
+    if (!hasUserEdit) return
+    if (pendingServerSnapshot) return // Don't save if conflict pending
+
+    // Clear existing timer
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current)
+    }
+
+    // Capture values for closure
+    const saveDocumentId = activeDocument.id
+
+    saveTimerRef.current = window.setTimeout(() => {
+      const baseRev = aiVersionBaseRevRef.current
+
+      // Validate marker structure before saving
+      try {
+        void parseMergedDocument(localDocument)
+      } catch (err) {
+        if (err instanceof DiffMarkersCorruptedError) {
+          // Log error for debugging - this indicates a bug in our transaction logic
+          console.error('[EditorPanel] BUG: Marker structure corrupted. Auto-repairing.', {
+            error: err.message,
+            documentId: activeDocument.id,
+          })
+
+          // Repair using shared hydration logic
+          hydrateDocument({
+            content: activeDocument.content ?? '',
+            aiVersion: activeDocument.aiVersion,
+            aiVersionRev: activeDocument.aiVersionRev,
+          })
+
+          return // Don't continue with save
+        }
+        throw err
+      }
+
+      // Decide save type
+      const hasMarkers = hasAnyMarker(localDocument)
+      const serverHasAIVersion =
+        activeDocument.aiVersion !== null && activeDocument.aiVersion !== undefined
+
+      if (!hasMarkers && !serverHasAIVersion) {
+        // Content-only save (no AI markers, server has no aiVersion)
+        documentSyncService.save(saveDocumentId, localDocument, activeDocument, {
+          onServerSaved: (doc) => {
+            const currentDocId = useEditorStore.getState()._activeDocumentId
+            if (currentDocId !== saveDocumentId) return
+            useEditorStore.getState().updateActiveDocument(doc)
+            setHasUserEdit(false)
+          },
+        })
+        return
+      }
+
+      // Need to save with ai_version handling
+      if (baseRev === null) {
+        // No base rev known - require refresh
+        setPendingServerSnapshot({
+          content: activeDocument.content ?? '',
+          aiVersion: activeDocument.aiVersion,
+          aiVersionRev: activeDocument.aiVersionRev,
+        })
+        return
+      }
+
+      // Merged save with CAS
+      documentSyncService.saveMerged(
+        saveDocumentId,
+        localDocument,
+        {
+          aiVersionBaseRev: baseRev,
+          serverHasAIVersion,
+        },
+        {
+          onServerSaved: (result) => {
+            const currentDocId = useEditorStore.getState()._activeDocumentId
+            if (currentDocId !== saveDocumentId) return
+
+            useEditorStore.getState().updateActiveDocument(result.document)
+            aiVersionBaseRevRef.current = result.document.aiVersionRev ?? null
+            setHasUserEdit(false)
+          },
+          onAIVersionConflict: (serverDocument) => {
+            const latest = serverDocument ?? useEditorStore.getState().activeDocument
+            if (!latest) return
+
+            setPendingServerSnapshot({
+              content: latest.content ?? '',
+              aiVersion: latest.aiVersion,
+              aiVersionRev: latest.aiVersionRev,
+            })
+          },
+        }
+      )
+    }, 1000)
+
+    return () => {
+      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
+    }
+  }, [activeDocument, hasUserEdit, hydrateDocument, localDocument, pendingServerSnapshot])
+
+  // Sync editable state to editor when it changes
   useEffect(() => {
     if (editorRef.current) {
       editorRef.current.setEditable(isEditable)
     }
   }, [isEditable])
 
+  // ---------------------------------------------------------------------------
+  // RENDER HELPERS
+  // ---------------------------------------------------------------------------
+
   // Determine the best available source for header metadata
   const headerDocument =
     documentMetadata || (activeDocument?.id === documentId ? activeDocument : null)
 
-  const handleBackClick = () => {
-    // Only swap the right panel back to the tree view without changing URL.
-    const store = useUIStore.getState()
-    store.setRightPanelState('documents')
-  }
-
-  // Get word count from editor ref (updates on re-render)
+  // Get word count from editor ref
   const wordCount = editorRef.current?.getWordCount().words ?? 0
 
   const header = headerDocument ? (
@@ -211,11 +563,10 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     />
   )
 
-  // No inline rename handler here; breadcrumb rename to be added later.
+  // ---------------------------------------------------------------------------
+  // ERROR STATE
+  // ---------------------------------------------------------------------------
 
-  // Error state - keep workspace header so user can navigate away
-  // Note: onRetry doesn't pass signal, which is fine for manual retries
-  // The AbortController in the useEffect will handle cleanup if user navigates away
   if (error) {
     return (
       <div className="flex h-full flex-col">
@@ -231,7 +582,10 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     )
   }
 
-  // If we don't yet have header metadata or the active document, show a lightweight skeleton
+  // ---------------------------------------------------------------------------
+  // LOADING STATE
+  // ---------------------------------------------------------------------------
+
   if (!headerDocument) {
     return (
       <div className="flex h-full flex-col">
@@ -247,30 +601,24 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     )
   }
 
-  // Show header and title immediately (metadata available from tree)
-  // Show skeleton only for editor content while loading
-  // Editor is ready when we have activeDocument for this documentId
   const isContentLoading = activeDocument?.id !== documentId || !isInitialized
+
+  // ---------------------------------------------------------------------------
+  // MAIN RENDER
+  // ---------------------------------------------------------------------------
 
   return (
     <div className="flex h-full flex-col">
       {/* Single scroll container - scrollbar extends to top */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
-        {/* Sticky Header + AI Toolbar */}
+        {/* Sticky Header */}
         <div className="sticky top-0 z-20 bg-background relative">
           {header}
-          {hasAISuggestions && <AIToolbar />}
           <HeaderGradientFade />
         </div>
 
-        {/* Content area - shows skeleton while loading */}
+        {/* Content area */}
         <div className="relative flex-1">
-          {/* Original mode overlay - shows read-only baseline content */}
-          {/* Keeps main editor mounted underneath to preserve state */}
-          {aiEditorMode === 'original' && hasAISuggestions && (
-            <OriginalOverlay content={baseline} />
-          )}
-
           {isContentLoading ? (
             <div className="p-8 space-y-4">
               <Skeleton className="h-6 w-3/4" />
@@ -282,13 +630,25 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
               <div className={`relative pt-1 flex-1 ${hasAISuggestions ? 'ai-editor-container' : ''}`}>
                 <CodeMirrorEditor
                   key={documentId}
-                  initialContent={localContent}
+                  initialContent={localDocument}
                   editable={isEditable}
                   placeholder="Start writing..."
-                  onChange={handleChange}
-                  onReady={handleReady}
+                  onChange={handleContentChange}
+                  onReady={handleEditorReady}
+                  extensions={initialExtensions}
                   className="min-h-full"
                 />
+                {/* Floating navigator pill - positioned relative to this container */}
+                {hasAISuggestions && hunks.length > 0 && (
+                  <AIHunkNavigator
+                    hunks={hunks}
+                    currentIndex={focusedHunkIndex}
+                    onPrevious={handlePrevHunk}
+                    onNext={handleNextHunk}
+                    onAcceptAll={handleAcceptAll}
+                    onRejectAll={handleRejectAll}
+                  />
+                )}
               </div>
             </EditorContextMenu>
           )}

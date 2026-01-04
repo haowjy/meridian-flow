@@ -23,7 +23,9 @@ import { RangeSetBuilder } from '@codemirror/state'
 import {
   extractHunks,
   type MergedHunk,
-} from '@/features/documents/utils/mergedDocument'
+} from '@/core/lib/mergedDocument'
+import { HunkActionWidget } from './HunkActionWidget'
+import { focusedHunkIndexField, setFocusedHunkIndexEffect } from './focus'
 
 // =============================================================================
 // MARKER HIDING WIDGET
@@ -58,15 +60,27 @@ const markerWidget = new MarkerWidget()
  * Create decorations for a single hunk.
  *
  * SRP: Only responsible for building decorations for one hunk.
- * Adds 4 replace decorations (hide markers) + 2 mark decorations (style regions).
+ * Adds:
+ * - 4 replace decorations (hide markers)
+ * - 2 mark decorations (style regions)
+ * - 1 widget decoration (action buttons)
+ * - 1 focus mark if this is the focused hunk
  *
  * @param hunk - The hunk to decorate
  * @param builder - RangeSetBuilder to add decorations to
+ * @param view - EditorView for widget callbacks
+ * @param hunkIndex - Index of this hunk (for focus comparison)
+ * @param focusedIndex - Currently focused hunk index
  */
 function createHunkDecorations(
   hunk: MergedHunk,
-  builder: RangeSetBuilder<Decoration>
+  builder: RangeSetBuilder<Decoration>,
+  view: EditorView,
+  hunkIndex: number,
+  focusedIndex: number
 ): void {
+  const isFocused = hunkIndex === focusedIndex
+
   // 1. Hide DEL_START marker
   builder.add(
     hunk.delStart,
@@ -79,7 +93,10 @@ function createHunkDecorations(
     builder.add(
       hunk.delStart + 1, // After DEL_START
       hunk.delEnd, // Before DEL_END
-      Decoration.mark({ class: 'cm-ai-deletion' })
+      Decoration.mark({
+        class: 'cm-ai-deletion',
+        attributes: { 'data-hunk-id': hunk.id },
+      })
     )
   }
 
@@ -98,11 +115,16 @@ function createHunkDecorations(
   )
 
   // 5. Style insertion content (if any)
+  // Add focus highlight class if this is the focused hunk
   if (hunk.insertedText.length > 0) {
+    const classes = isFocused ? 'cm-ai-insertion cm-ai-hunk-focused' : 'cm-ai-insertion'
     builder.add(
       hunk.insStart + 1, // After INS_START
       hunk.insEnd, // Before INS_END
-      Decoration.mark({ class: 'cm-ai-insertion' })
+      Decoration.mark({
+        class: classes,
+        attributes: { 'data-hunk-id': hunk.id },
+      })
     )
   }
 
@@ -112,6 +134,16 @@ function createHunkDecorations(
     hunk.insEnd + 1,
     Decoration.replace({ widget: markerWidget })
   )
+
+  // 7. Add action widget after the hunk
+  builder.add(
+    hunk.to,
+    hunk.to,
+    Decoration.widget({
+      widget: new HunkActionWidget(hunk.id, view),
+      side: 1, // After the position
+    })
+  )
 }
 
 // =============================================================================
@@ -119,10 +151,16 @@ function createHunkDecorations(
 // =============================================================================
 
 /**
- * Viewport buffer for decoration building.
- * Prevents marker flash during fast scrolling by decorating beyond visible area.
+ * Viewport buffer for decoration building (in characters).
+ *
+ * Why 2000: Empirically tuned to cover ~2-3 screen heights of content at
+ * typical document widths. This prevents PUA marker characters from briefly
+ * appearing during fast scrolling before decorations are rebuilt.
+ *
+ * Trade-off: Larger buffer = smoother scrolling but more decorations to rebuild.
+ * 2000 chars balances scroll smoothness with rebuild performance.
  */
-const VIEWPORT_BUFFER = 2000 // characters
+const VIEWPORT_BUFFER = 2000
 
 /**
  * ViewPlugin implementation for diff view decorations.
@@ -141,7 +179,11 @@ class DiffViewPluginClass {
     // Rebuild decorations when:
     // - Document changes (hunk positions shift)
     // - Viewport changes (scrolling can reveal un-decorated markers)
-    if (update.docChanged || update.viewportChanged) {
+    // - Focused hunk changes (focus styling + widget focused state)
+    const hasFocusEffect = update.transactions.some((tr) =>
+      tr.effects.some((e) => e.is(setFocusedHunkIndexEffect))
+    )
+    if (update.docChanged || update.viewportChanged || hasFocusEffect) {
       this.decorations = this.buildDecorations(update.view)
     }
   }
@@ -160,6 +202,8 @@ class DiffViewPluginClass {
       return Decoration.none
     }
 
+    // Read focused hunk index from CM6 state (synced from React store)
+    const focusedIndex = view.state.field(focusedHunkIndexField)
     const builder = new RangeSetBuilder<Decoration>()
 
     // Use extended viewport with buffer to prevent marker flash on scroll
@@ -167,14 +211,14 @@ class DiffViewPluginClass {
     const viewTo = Math.min(doc.length, view.viewport.to + VIEWPORT_BUFFER)
 
     // Process each hunk (they're already sorted by position from extractHunks)
-    for (const hunk of hunks) {
+    hunks.forEach((hunk, index) => {
       // Skip hunks outside extended viewport for performance
       if (hunk.to < viewFrom || hunk.from > viewTo) {
-        continue
+        return
       }
 
-      createHunkDecorations(hunk, builder)
-    }
+      createHunkDecorations(hunk, builder, view, index, focusedIndex)
+    })
 
     return builder.finish()
   }
