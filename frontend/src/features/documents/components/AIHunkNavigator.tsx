@@ -4,7 +4,8 @@
  * SRP: Navigation UI only. Doesn't manage state or dispatch transactions.
  * Parent component (EditorPanel) handles state and wires up callbacks.
  *
- * Positioned at bottom-center of the editor container.
+ * Rendered inside a sticky bottom wrapper by EditorPanel, so it floats
+ * at the bottom of the viewport while scrolling.
  * Shows: change counter, prev/next nav, reject/accept all buttons.
  */
 
@@ -38,18 +39,15 @@ interface AIHunkNavigatorProps {
 /**
  * Floating navigation pill for diff hunks.
  *
- * Usage:
+ * Usage (rendered inside a sticky wrapper at end of scroll container):
  * ```tsx
- * <div className="relative">
+ * <div className="overflow-y-auto">
  *   <CodeMirrorEditor ... />
- *   <AIHunkNavigator
- *     hunks={hunks}
- *     currentIndex={focusedHunkIndex}
- *     onPrevious={() => navigateHunk('prev', hunks.length)}
- *     onNext={() => navigateHunk('next', hunks.length)}
- *     onAcceptAll={() => acceptAll(editorView)}
- *     onRejectAll={() => rejectAll(editorView)}
- *   />
+ *   {hasAISuggestions && (
+ *     <div className="sticky bottom-0 pointer-events-none">
+ *       <AIHunkNavigator hunks={hunks} currentIndex={idx} ... />
+ *     </div>
+ *   )}
  * </div>
  * ```
  */
@@ -65,7 +63,7 @@ export function AIHunkNavigator({
   if (hunks.length === 0) return null
 
   return (
-    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+    <div className="flex justify-center pb-4 pointer-events-none">
       <div
         className="flex items-center gap-1 bg-background/95 backdrop-blur
                    border rounded-lg px-2 py-0.5 shadow-lg pointer-events-auto"
