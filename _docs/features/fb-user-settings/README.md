@@ -12,8 +12,8 @@ feature: "User Settings"
 
 | Component | Backend | Frontend |
 |-----------|---------|----------|
-| Profile UI | N/A | ✅ Complete |
-| Preferences API | ✅ Complete | ❌ Missing |
+| Profile UI | N/A | [x] Complete |
+| Preferences API | [x] Complete | [ ] Missing |
 
 ---
 

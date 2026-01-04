@@ -39,6 +39,7 @@ Core patterns and system design:
 
 - [Editor Caching](editor-caching.md) - Document caching strategy with IndexedDB
 - [Editor UI Overview](editor-ui-overview.md) - CodeMirror editor UI components
+- [Inline Editing](inline-editing/) - AI suggestions with accept/reject (merged document pattern)
 
 ### Chat UI
 
