@@ -25,6 +25,12 @@ import {
 } from '@/core/editor/codemirror/diffView'
 import type { CodeMirrorEditorRef } from '@/core/editor/codemirror'
 
+/**
+ * Content attribute extension that adds a class to .cm-content when diff mode is active.
+ * Used for scroll padding so user can scroll past the floating AIHunkNavigator.
+ */
+const diffModeContentClass = EditorView.contentAttributes.of({ class: 'cm-diff-mode-active' })
+
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -142,8 +148,12 @@ export function useDiffView({
     const shouldEnable = hasAISuggestions
 
     if (shouldEnable && !diffEnabledRef.current) {
+      // Enable diff view decorations + content class for scroll padding
       view.dispatch({
-        effects: diffCompartment.reconfigure(createDiffViewExtension()),
+        effects: diffCompartment.reconfigure([
+          createDiffViewExtension(),
+          diffModeContentClass,
+        ]),
       })
       diffEnabledRef.current = true
     } else if (!shouldEnable && diffEnabledRef.current) {

@@ -257,7 +257,7 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
           ) : (
             // eslint-disable-next-line react-hooks/refs -- editorRef is stable, passed for context menu operations
             <EditorContextMenu editorRef={editorRef.current}>
-              <div className={`relative pt-1 flex-1 ${hasAISuggestions ? 'ai-editor-container' : ''}`}>
+              <div className="relative pt-1 flex-1">
                 <CodeMirrorEditor
                   key={documentId}
                   initialContent={localDocument}
@@ -268,21 +268,24 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
                   extensions={initialExtensions}
                   className="min-h-full"
                 />
-                {/* Floating navigator pill - positioned relative to this container */}
-                {hasAISuggestions && hunks.length > 0 && (
-                  <AIHunkNavigator
-                    hunks={hunks}
-                    currentIndex={focusedHunkIndex}
-                    onPrevious={handlePrevHunk}
-                    onNext={handleNextHunk}
-                    onAcceptAll={handleAcceptAll}
-                    onRejectAll={handleRejectAll}
-                  />
-                )}
               </div>
             </EditorContextMenu>
           )}
         </div>
+
+        {/* Sticky navigator wrapper - stays at bottom of viewport while scrolling */}
+        {hasAISuggestions && hunks.length > 0 && (
+          <div className="sticky bottom-0 z-20 pointer-events-none">
+            <AIHunkNavigator
+              hunks={hunks}
+              currentIndex={focusedHunkIndex}
+              onPrevious={handlePrevHunk}
+              onNext={handleNextHunk}
+              onAcceptAll={handleAcceptAll}
+              onRejectAll={handleRejectAll}
+            />
+          </div>
+        )}
       </div>
     </div>
   )

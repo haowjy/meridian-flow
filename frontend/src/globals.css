@@ -891,6 +891,15 @@ body.preload * {
   }
 
   /**
+   * Diff mode scroll padding
+   * Added via EditorView.contentAttributes when diff mode is active.
+   * Allows scrolling past the floating AIHunkNavigator at bottom.
+   */
+  .cm-diff-mode-active {
+    padding-bottom: 80px !important;
+  }
+
+  /**
    * Hunk action buttons - floating above hunk
    *
    * Floats above the hunk end. Height constrained to line height.
