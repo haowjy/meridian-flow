@@ -11,7 +11,7 @@ import { history, historyKeymap, defaultKeymap } from '@codemirror/commands'
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
 
 import type { CodeMirrorEditorRef, CodeMirrorEditorOptions, FormatType, SetContentOptions } from './types'
-import { markdownLanguage, editorTheme, getWordCount } from './extensions'
+import { markdownLanguage, editorTheme, getWordCount, scrollMarginsExtension } from './extensions'
 import { livePreviewPlugin, registerBuiltinRenderers } from './livePreview'
 import {
   toggleBold,
@@ -250,6 +250,9 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, CodeMirrorEditor
 
         // Line wrapping
         EditorView.lineWrapping,
+
+        // Scroll margins (accounts for sticky header in EditorPanel)
+        scrollMarginsExtension,
 
         // Editable state (wrapped in compartment for dynamic toggling)
         editableCompartment.of(EditorView.editable.of(editable)),
