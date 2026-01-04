@@ -39,6 +39,7 @@ export interface DocumentDto {
   word_count?: number
   updated_at: string
   ai_version?: string | null
+  ai_version_rev?: number  // CAS revision counter for ai_version
 }
 
 export interface FolderDto {
@@ -87,6 +88,7 @@ export function fromDocumentDto(dto: DocumentDto): Document {
     wordCount: dto.word_count,
     updatedAt: new Date(dto.updated_at),
     aiVersion: dto.ai_version ?? null,
+    aiVersionRev: dto.ai_version_rev,
   }
 }
 

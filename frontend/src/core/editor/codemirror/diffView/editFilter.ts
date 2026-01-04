@@ -16,7 +16,7 @@ import { EditorState } from '@codemirror/state'
 import {
   MARKERS,
   extractHunks,
-} from '@/features/documents/utils/mergedDocument'
+} from '@/core/lib/mergedDocument'
 import { blockedEditEffect, type BlockedEditReason } from './blockedEditEffect'
 
 // =============================================================================

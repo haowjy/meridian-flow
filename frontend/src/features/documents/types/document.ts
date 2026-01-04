@@ -21,6 +21,12 @@ export interface Document {
    * null/undefined means no pending AI suggestions.
    */
   aiVersion?: string | null
+  /**
+   * Revision counter for ai_version (compare-and-swap token).
+   * Used to prevent client saves from overwriting unseen server AI updates.
+   * Must be included as ai_version_base_rev when PATCHing ai_version.
+   */
+  aiVersionRev?: number
 }
 
 export interface DocumentTree {
