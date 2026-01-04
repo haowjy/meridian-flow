@@ -230,6 +230,7 @@ func main() {
 	mux.HandleFunc("POST /api/documents", newDocHandler.CreateDocument)
 	mux.HandleFunc("GET /api/documents/search", newDocHandler.SearchDocuments) // Must come before {id} route
 	mux.HandleFunc("GET /api/documents/{id}", newDocHandler.GetDocument)
+	mux.HandleFunc("GET /api/documents/{id}/ai-status", newDocHandler.GetAIStatus) // Lightweight polling endpoint
 	mux.HandleFunc("PATCH /api/documents/{id}", newDocHandler.UpdateDocument)
 	mux.HandleFunc("DELETE /api/documents/{id}", newDocHandler.DeleteDocument)
 	// Note: ai_version is now handled via PATCH /api/documents/{id} with tri-state semantics

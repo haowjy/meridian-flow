@@ -304,6 +304,15 @@ export interface ImportResponse {
   documents: Array<{ id: string; path: string; name: string; action: string }>
 }
 
+/**
+ * Lightweight AI status response for efficient polling (~100 bytes vs ~50KB full document).
+ * Backend: GET /api/documents/{id}/ai-status
+ */
+export interface AIStatusResponse {
+  hasAiVersion: boolean
+  aiVersionRev: number | null
+}
+
 type SendTurnOptions = {
   chatId?: string           // Optional - if not provided with projectId, creates new chat
   projectId?: string        // Required if chatId is not provided (for cold start)
@@ -582,6 +591,15 @@ export const api = {
         signal: options?.signal,
       })
       return fromDocumentDto(data)
+    },
+    /**
+     * Lightweight AI status check for polling (~100 bytes vs ~50KB full document).
+     * Used by useDocumentPolling to efficiently detect AI version changes.
+     */
+    getAIStatus: async (id: string, options?: { signal?: AbortSignal }): Promise<AIStatusResponse> => {
+      return fetchAPI<AIStatusResponse>(`/api/documents/${id}/ai-status`, {
+        signal: options?.signal,
+      })
     },
     create: async (projectId: string, folderId: string | null, name: string, options?: { signal?: AbortSignal }): Promise<Document> => {
       const data = await fetchAPI<DocumentDto>('/api/documents', {

@@ -218,18 +218,20 @@ export function useDocumentContent(
 
     const docChanged = lastHydratedDocIdRef.current !== activeDocument.id
 
-    // If not a new doc and we have user edits, stash incoming update
+    // IMPORTANT: Check for existing snapshot FIRST to prevent infinite loop.
+    // If we checked hasUserEdit first, we'd create a new pendingServerSnapshot object,
+    // which triggers this effect again (it's in deps), creating another object → infinite loop.
+    if (!docChanged && pendingServerSnapshot) {
+      return
+    }
+
+    // If not a new doc and we have user edits, stash incoming update (runs once)
     if (!docChanged && hasUserEdit) {
       setPendingServerSnapshot({
         content: activeDocument.content ?? '',
         aiVersion: activeDocument.aiVersion,
         aiVersionRev: activeDocument.aiVersionRev,
       })
-      return
-    }
-
-    // If we already have a pending snapshot and this isn't a new doc, skip
-    if (!docChanged && pendingServerSnapshot) {
       return
     }
 

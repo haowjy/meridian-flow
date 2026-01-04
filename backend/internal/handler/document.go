@@ -238,6 +238,43 @@ func (h *DocumentHandler) SearchDocuments(w http.ResponseWriter, r *http.Request
 	httputil.RespondJSON(w, http.StatusOK, results)
 }
 
+// GetAIStatus returns lightweight AI version status for polling.
+// GET /api/documents/{id}/ai-status
+//
+// Returns ~100 bytes instead of full document (~50KB), enabling efficient
+// polling to detect AI version changes. Frontend polls this endpoint every
+// 5s and only fetches full document when status indicates a change.
+func (h *DocumentHandler) GetAIStatus(w http.ResponseWriter, r *http.Request) {
+	id, ok := PathParam(w, r, "id", "Document ID")
+	if !ok {
+		return
+	}
+
+	userID := httputil.GetUserID(r)
+
+	doc, err := h.docService.GetDocument(r.Context(), userID, id)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	// Return only AI status fields (lightweight ~100 bytes vs ~50KB full document)
+	response := struct {
+		HasAIVersion bool `json:"hasAiVersion"`
+		AIVersionRev *int `json:"aiVersionRev"`
+	}{
+		HasAIVersion: doc.AIVersion != nil,
+		AIVersionRev: nil, // Will be set below if doc has AI version
+	}
+
+	// Only include rev if document has AI version
+	if doc.AIVersion != nil {
+		response.AIVersionRev = &doc.AIVersionRev
+	}
+
+	httputil.RespondJSON(w, http.StatusOK, response)
+}
+
 // HealthCheck is a simple health check endpoint
 func (h *DocumentHandler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	httputil.RespondJSON(w, http.StatusOK, map[string]interface{}{
