@@ -91,6 +91,9 @@
   --spacing-5: 32px;
   --spacing-6: 48px;
 
+  /* === Editor Layout === */
+  --editor-header-height: 3rem; /* 48px - sticky header in EditorPanel */
+
   /* === Shadows (multi-layer) === */
   --shadow-1: var(--shadow-1-value);
   --shadow-2: var(--shadow-2-value);
