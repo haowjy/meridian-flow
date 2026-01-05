@@ -2,8 +2,7 @@
  * useDiffView - Diff view extension management and hunk navigation.
  *
  * This hook handles:
- * - CodeMirror compartment for diff extension
- * - Enable/disable diff decorations based on marker presence
+ * - CodeMirror compartment for diff extension (always-on for timing safety)
  * - Focus sync between React store and CM6 state
  * - Cursor navigation to focused hunk
  * - Hunk clamping when hunks are removed
@@ -36,6 +35,7 @@ const diffModeContentClass = EditorView.contentAttributes.of({ class: 'cm-diff-m
 // =============================================================================
 
 export interface UseDiffViewOptions {
+  documentId: string
   localDocument: string
   editorRef: React.MutableRefObject<CodeMirrorEditorRef | null>
   isEditorReady: boolean
@@ -64,6 +64,7 @@ export interface UseDiffViewResult {
 // =============================================================================
 
 export function useDiffView({
+  documentId,
   localDocument,
   editorRef,
   isEditorReady,
@@ -82,13 +83,22 @@ export function useDiffView({
   // COMPARTMENT STATE
   // ---------------------------------------------------------------------------
 
-  // Compartment for diff view extension
+  // Compartment for diff view extension.
+  // CRITICAL: We must create a NEW compartment when the document changes because
+  // CodeMirror Compartment's `of()` method creates an Extension that can only be
+  // used once per editor instance. When documentId changes, CodeMirrorEditor
+  // remounts (via key={documentId}), but this hook persists. Reusing the same
+  // compartment.of() result with a new editor causes reconfigure to fail silently.
   const diffCompartmentRef = useRef<Compartment | null>(null)
-  if (!diffCompartmentRef.current) {
+  const compartmentDocIdRef = useRef<string | null>(null)
+
+  // Reset compartment when document changes to ensure fresh extension for new editor
+  if (compartmentDocIdRef.current !== documentId) {
     diffCompartmentRef.current = new Compartment()
+    compartmentDocIdRef.current = documentId
   }
-  const diffCompartment = diffCompartmentRef.current
-  const diffEnabledRef = useRef(false)
+
+  const diffCompartment = diffCompartmentRef.current!
 
   // ---------------------------------------------------------------------------
   // DERIVED STATE
@@ -100,8 +110,17 @@ export function useDiffView({
   // Diff mode active = markers exist (NOT based on aiVersion from server)
   const hasAISuggestions = hasAnyMarker(localDocument)
 
-  // Initial extension array (empty diff compartment)
-  const initialExtensions = useMemo(() => [diffCompartment.of([])], [diffCompartment])
+  // Initial extension array - ALWAYS include diff view extensions.
+  // The plugin handles empty documents gracefully (no markers = no decorations).
+  // This eliminates timing issues with dynamic enable/disable via reconfigure.
+  const initialExtensions = useMemo(
+    () => [diffCompartment.of([
+      createDiffViewExtension(),
+      diffModeContentClass,
+    ])],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- diffCompartment is reset when documentId changes
+    [documentId]
+  )
 
   // ---------------------------------------------------------------------------
   // CALLBACKS
@@ -139,30 +158,8 @@ export function useDiffView({
   // EFFECTS
   // ---------------------------------------------------------------------------
 
-  // Enable/disable diff extension when hasAISuggestions changes
-  useEffect(() => {
-    if (!isEditorReady) return
-    const view = editorRef.current?.getView()
-    if (!view) return
-
-    const shouldEnable = hasAISuggestions
-
-    if (shouldEnable && !diffEnabledRef.current) {
-      // Enable diff view decorations + content class for scroll padding
-      view.dispatch({
-        effects: diffCompartment.reconfigure([
-          createDiffViewExtension(),
-          diffModeContentClass,
-        ]),
-      })
-      diffEnabledRef.current = true
-    } else if (!shouldEnable && diffEnabledRef.current) {
-      view.dispatch({
-        effects: diffCompartment.reconfigure([]),
-      })
-      diffEnabledRef.current = false
-    }
-  }, [isEditorReady, hasAISuggestions, diffCompartment, editorRef])
+  // No enable/disable effect needed - diff extension is always on.
+  // The plugin handles empty documents gracefully (no markers = no decorations).
 
   // Sync focused hunk index to CM6 for decoration highlighting.
   // This SHOULD run on hunks change (decorations need current hunk positions).
