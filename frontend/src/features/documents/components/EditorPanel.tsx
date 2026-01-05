@@ -100,6 +100,7 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     handleAcceptAll,
     handleRejectAll,
   } = useDiffView({
+    documentId,
     localDocument,
     editorRef,
     isEditorReady,
