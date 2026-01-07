@@ -73,7 +73,7 @@ Search supports configurable fields (`name`, `content`) with weighted ranking:
 
 ```sql
 -- Example: Searching both name and content fields
-SELECT id, project_id, folder_id, name, content, word_count, created_at, updated_at,
+SELECT id, project_id, folder_id, name, extension, content, metadata, created_at, updated_at,
        (ts_rank(to_tsvector($1, name), websearch_to_tsquery($1, $2)) * 2.0 +
         ts_rank(to_tsvector($1, content), websearch_to_tsquery($1, $2))) AS rank_score
 FROM documents

@@ -34,8 +34,8 @@ func NewDocumentRepository(config *postgres.RepositoryConfig) docsysRepo.Documen
 // Create creates a new document
 func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *models.Document) error {
 	query := fmt.Sprintf(`
-		INSERT INTO %s (project_id, folder_id, name, content, word_count, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO %s (project_id, folder_id, name, extension, content, metadata, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, created_at, updated_at
 	`, r.tables.Documents)
 
@@ -44,8 +44,9 @@ func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *models.Doc
 		doc.ProjectID,
 		doc.FolderID,
 		doc.Name,
+		doc.Extension,
 		doc.Content,
-		doc.WordCount,
+		doc.Metadata,
 		doc.CreatedAt,
 		doc.UpdatedAt,
 	).Scan(&doc.ID, &doc.CreatedAt, &doc.UpdatedAt)
@@ -53,15 +54,15 @@ func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *models.Doc
 	if err != nil {
 		if postgres.IsPgDuplicateError(err) {
 			// Query for the existing document to get its ID
-			existingID, queryErr := r.getExistingDocumentID(ctx, doc.ProjectID, doc.FolderID, doc.Name)
+			existingID, queryErr := r.getExistingDocumentID(ctx, doc.ProjectID, doc.FolderID, doc.Name, doc.Extension)
 			if queryErr != nil {
 				// Fallback to generic conflict error if we can't find the existing document
-				return fmt.Errorf("document '%s' already exists in this location: %w", doc.Name, domain.ErrConflict)
+				return fmt.Errorf("document '%s' already exists in this location: %w", doc.Filename(), domain.ErrConflict)
 			}
 
 			// Return structured conflict error with resource ID
 			return &domain.ConflictError{
-				Message:      fmt.Sprintf("document '%s' already exists in this location", doc.Name),
+				Message:      fmt.Sprintf("document '%s' already exists in this location", doc.Filename()),
 				ResourceType: "document",
 				ResourceID:   existingID,
 			}
@@ -79,14 +80,14 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 
 	if projectID != "" {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, folder_id, name, content, ai_version, ai_version_rev, word_count, created_at, updated_at
+			SELECT id, project_id, folder_id, name, extension, content, ai_version, ai_version_rev, metadata, created_at, updated_at
 			FROM %s
 			WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
 		`, r.tables.Documents)
 		args = []interface{}{id, projectID}
 	} else {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, folder_id, name, content, ai_version, ai_version_rev, word_count, created_at, updated_at
+			SELECT id, project_id, folder_id, name, extension, content, ai_version, ai_version_rev, metadata, created_at, updated_at
 			FROM %s
 			WHERE id = $1 AND deleted_at IS NULL
 		`, r.tables.Documents)
@@ -100,10 +101,11 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 		&doc.ProjectID,
 		&doc.FolderID,
 		&doc.Name,
+		&doc.Extension,
 		&doc.Content,
 		&doc.AIVersion,
 		&doc.AIVersionRev,
-		&doc.WordCount,
+		&doc.Metadata,
 		&doc.CreatedAt,
 		&doc.UpdatedAt,
 	)
@@ -115,6 +117,7 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 		return nil, fmt.Errorf("get document: %w", err)
 	}
 
+	doc.EnsureMetadata()
 	return &doc, nil
 }
 
@@ -122,7 +125,7 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 // Use when authorization is handled separately (e.g., by ResourceAuthorizer)
 func (r *PostgresDocumentRepository) GetByIDOnly(ctx context.Context, id string) (*models.Document, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, folder_id, name, content, ai_version, ai_version_rev, word_count, created_at, updated_at
+		SELECT id, project_id, folder_id, name, extension, content, ai_version, ai_version_rev, metadata, created_at, updated_at
 		FROM %s
 		WHERE id = $1 AND deleted_at IS NULL
 	`, r.tables.Documents)
@@ -134,10 +137,11 @@ func (r *PostgresDocumentRepository) GetByIDOnly(ctx context.Context, id string)
 		&doc.ProjectID,
 		&doc.FolderID,
 		&doc.Name,
+		&doc.Extension,
 		&doc.Content,
 		&doc.AIVersion,
 		&doc.AIVersionRev,
-		&doc.WordCount,
+		&doc.Metadata,
 		&doc.CreatedAt,
 		&doc.UpdatedAt,
 	)
@@ -149,10 +153,12 @@ func (r *PostgresDocumentRepository) GetByIDOnly(ctx context.Context, id string)
 		return nil, fmt.Errorf("get document: %w", err)
 	}
 
+	doc.EnsureMetadata()
 	return &doc, nil
 }
 
 // GetByPath retrieves a document by its path (e.g., ".skills/cw-prose-writing/SKILL.md")
+// The path includes the full filename with extension
 func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string, projectID string) (*models.Document, error) {
 	// Split path into parts
 	parts := strings.Split(strings.Trim(path, "/"), "/")
@@ -160,9 +166,21 @@ func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string,
 		return nil, fmt.Errorf("invalid path: %w", domain.ErrNotFound)
 	}
 
-	// Last part is the document name
-	docName := parts[len(parts)-1]
+	// Last part is the filename (name + extension)
+	filename := parts[len(parts)-1]
 	folderParts := parts[:len(parts)-1]
+
+	// Split filename into name and extension
+	// Handle edge cases: "file.md", "file.tar.gz" (take last extension), "file" (no extension)
+	lastDot := strings.LastIndex(filename, ".")
+	var docName, extension string
+	if lastDot > 0 {
+		docName = filename[:lastDot]
+		extension = filename[lastDot:] // includes the dot
+	} else {
+		docName = filename
+		extension = ".md" // default extension
+	}
 
 	// Find the folder by walking the path
 	var folderID *string
@@ -176,16 +194,16 @@ func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string,
 
 	// Query for the document in the final folder
 	query := fmt.Sprintf(`
-		SELECT id, project_id, folder_id, name, content, ai_version, ai_version_rev, word_count, created_at, updated_at
+		SELECT id, project_id, folder_id, name, extension, content, ai_version, ai_version_rev, metadata, created_at, updated_at
 		FROM %s
-		WHERE project_id = $1 AND name = $2 AND deleted_at IS NULL
+		WHERE project_id = $1 AND name = $2 AND extension = $3 AND deleted_at IS NULL
 	`, r.tables.Documents)
 
-	args := []interface{}{projectID, docName}
+	args := []interface{}{projectID, docName, extension}
 
 	// Add folder_id condition
 	if folderID != nil {
-		query += ` AND folder_id = $3`
+		query += ` AND folder_id = $4`
 		args = append(args, *folderID)
 	} else {
 		query += ` AND folder_id IS NULL`
@@ -198,10 +216,11 @@ func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string,
 		&doc.ProjectID,
 		&doc.FolderID,
 		&doc.Name,
+		&doc.Extension,
 		&doc.Content,
 		&doc.AIVersion,
 		&doc.AIVersionRev,
-		&doc.WordCount,
+		&doc.Metadata,
 		&doc.CreatedAt,
 		&doc.UpdatedAt,
 	)
@@ -213,6 +232,7 @@ func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string,
 		return nil, fmt.Errorf("get document by path: %w", err)
 	}
 
+	doc.EnsureMetadata()
 	return &doc, nil
 }
 
@@ -262,14 +282,15 @@ func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Doc
 	if doc.ProjectID != "" {
 		query = fmt.Sprintf(`
 			UPDATE %s
-			SET folder_id = $1, name = $2, content = $3, word_count = $4, updated_at = $5
-			WHERE id = $6 AND project_id = $7 AND deleted_at IS NULL
+			SET folder_id = $1, name = $2, extension = $3, content = $4, metadata = $5, updated_at = $6
+			WHERE id = $7 AND project_id = $8 AND deleted_at IS NULL
 		`, r.tables.Documents)
 		args = []interface{}{
 			doc.FolderID,
 			doc.Name,
+			doc.Extension,
 			doc.Content,
-			doc.WordCount,
+			doc.Metadata,
 			doc.UpdatedAt,
 			doc.ID,
 			doc.ProjectID,
@@ -277,14 +298,15 @@ func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Doc
 	} else {
 		query = fmt.Sprintf(`
 			UPDATE %s
-			SET folder_id = $1, name = $2, content = $3, word_count = $4, updated_at = $5
-			WHERE id = $6 AND deleted_at IS NULL
+			SET folder_id = $1, name = $2, extension = $3, content = $4, metadata = $5, updated_at = $6
+			WHERE id = $7 AND deleted_at IS NULL
 		`, r.tables.Documents)
 		args = []interface{}{
 			doc.FolderID,
 			doc.Name,
+			doc.Extension,
 			doc.Content,
-			doc.WordCount,
+			doc.Metadata,
 			doc.UpdatedAt,
 			doc.ID,
 		}
@@ -296,15 +318,15 @@ func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Doc
 	if err != nil {
 		if postgres.IsPgDuplicateError(err) {
 			// Query for the existing document to get its ID
-			existingID, queryErr := r.getExistingDocumentID(ctx, doc.ProjectID, doc.FolderID, doc.Name)
+			existingID, queryErr := r.getExistingDocumentID(ctx, doc.ProjectID, doc.FolderID, doc.Name, doc.Extension)
 			if queryErr != nil {
 				// Fallback to generic conflict error if we can't find the existing document
-				return fmt.Errorf("document '%s' already exists in this location: %w", doc.Name, domain.ErrConflict)
+				return fmt.Errorf("document '%s' already exists in this location: %w", doc.Filename(), domain.ErrConflict)
 			}
 
 			// Return structured conflict error with resource ID
 			return &domain.ConflictError{
-				Message:      fmt.Sprintf("document '%s' already exists in this location", doc.Name),
+				Message:      fmt.Sprintf("document '%s' already exists in this location", doc.Filename()),
 				ResourceType: "document",
 				ResourceID:   existingID,
 			}
@@ -431,18 +453,18 @@ func (r *PostgresDocumentRepository) ListByFolder(ctx context.Context, folderID 
 
 	if folderID == nil {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, folder_id, name, word_count, updated_at
+			SELECT id, project_id, folder_id, name, extension, metadata, updated_at
 			FROM %s
 			WHERE project_id = $1 AND folder_id IS NULL AND deleted_at IS NULL
-			ORDER BY name ASC
+			ORDER BY name ASC, extension ASC
 		`, r.tables.Documents)
 		args = append(args, projectID)
 	} else {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, folder_id, name, word_count, updated_at
+			SELECT id, project_id, folder_id, name, extension, metadata, updated_at
 			FROM %s
 			WHERE project_id = $1 AND folder_id = $2 AND deleted_at IS NULL
-			ORDER BY name ASC
+			ORDER BY name ASC, extension ASC
 		`, r.tables.Documents)
 		args = append(args, projectID, *folderID)
 	}
@@ -462,12 +484,14 @@ func (r *PostgresDocumentRepository) ListByFolder(ctx context.Context, folderID 
 			&doc.ProjectID,
 			&doc.FolderID,
 			&doc.Name,
-			&doc.WordCount,
+			&doc.Extension,
+			&doc.Metadata,
 			&doc.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan document: %w", err)
 		}
+		doc.EnsureMetadata()
 		documents = append(documents, doc)
 	}
 
@@ -486,7 +510,7 @@ func (r *PostgresDocumentRepository) ListByFolder(ctx context.Context, folderID 
 // GetAllMetadataByProject retrieves all document metadata in a project (no content)
 func (r *PostgresDocumentRepository) GetAllMetadataByProject(ctx context.Context, projectID string) ([]models.Document, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, folder_id, name, word_count, updated_at
+		SELECT id, project_id, folder_id, name, extension, metadata, updated_at
 		FROM %s
 		WHERE project_id = $1 AND deleted_at IS NULL
 		ORDER BY updated_at DESC
@@ -507,12 +531,14 @@ func (r *PostgresDocumentRepository) GetAllMetadataByProject(ctx context.Context
 			&doc.ProjectID,
 			&doc.FolderID,
 			&doc.Name,
-			&doc.WordCount,
+			&doc.Extension,
+			&doc.Metadata,
 			&doc.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan document: %w", err)
 		}
+		doc.EnsureMetadata()
 		documents = append(documents, doc)
 	}
 
@@ -528,11 +554,11 @@ func (r *PostgresDocumentRepository) GetAllMetadataByProject(ctx context.Context
 	return documents, nil
 }
 
-// GetPath computes the full display path for a document (folder path + document name)
+// GetPath computes the full display path for a document (folder path + filename)
 func (r *PostgresDocumentRepository) GetPath(ctx context.Context, doc *models.Document) (string, error) {
 	if doc.FolderID == nil {
-		// Root level document - path is just the document name
-		return doc.Name, nil
+		// Root level document - path is just the filename (name + extension)
+		return doc.Filename(), nil
 	}
 
 	// Get folder's full path using recursive CTE
@@ -557,19 +583,19 @@ func (r *PostgresDocumentRepository) GetPath(ctx context.Context, doc *models.Do
 	err := executor.QueryRow(ctx, query, *doc.FolderID, doc.ProjectID).Scan(&folderPath)
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			// Folder not found, return just document name
-			return doc.Name, nil
+			// Folder not found, return just filename
+			return doc.Filename(), nil
 		}
 		return "", fmt.Errorf("get folder path: %w", err)
 	}
 
-	// Append document name to folder path
-	return folderPath + "/" + doc.Name, nil
+	// Append filename to folder path
+	return folderPath + "/" + doc.Filename(), nil
 }
 
 // getExistingDocumentID queries for an existing document by unique constraint fields
 // Returns the document ID if found, error otherwise
-func (r *PostgresDocumentRepository) getExistingDocumentID(ctx context.Context, projectID string, folderID *string, name string) (string, error) {
+func (r *PostgresDocumentRepository) getExistingDocumentID(ctx context.Context, projectID string, folderID *string, name string, extension string) (string, error) {
 	var id string
 	executor := postgres.GetExecutor(ctx, r.pool)
 
@@ -578,16 +604,16 @@ func (r *PostgresDocumentRepository) getExistingDocumentID(ctx context.Context, 
 		// Query for root-level document (folder_id IS NULL)
 		query := fmt.Sprintf(`
 			SELECT id FROM %s
-			WHERE project_id = $1 AND folder_id IS NULL AND name = $2 AND deleted_at IS NULL
+			WHERE project_id = $1 AND folder_id IS NULL AND name = $2 AND extension = $3 AND deleted_at IS NULL
 		`, r.tables.Documents)
-		err = executor.QueryRow(ctx, query, projectID, name).Scan(&id)
+		err = executor.QueryRow(ctx, query, projectID, name, extension).Scan(&id)
 	} else {
 		// Query for document in specific folder
 		query := fmt.Sprintf(`
 			SELECT id FROM %s
-			WHERE project_id = $1 AND folder_id = $2 AND name = $3 AND deleted_at IS NULL
+			WHERE project_id = $1 AND folder_id = $2 AND name = $3 AND extension = $4 AND deleted_at IS NULL
 		`, r.tables.Documents)
-		err = executor.QueryRow(ctx, query, projectID, *folderID, name).Scan(&id)
+		err = executor.QueryRow(ctx, query, projectID, *folderID, name, extension).Scan(&id)
 	}
 
 	if err != nil {
@@ -663,10 +689,10 @@ func (r *PostgresDocumentRepository) fullTextSearch(ctx context.Context, opts *m
 	rankExpression := strings.Join(rankExpressions, " + ")
 
 	baseQuery := fmt.Sprintf(`
-		SELECT id, project_id, folder_id, name,
+		SELECT id, project_id, folder_id, name, extension,
 		       ts_headline($1, content, websearch_to_tsquery($1, $2),
 		                   'MaxWords=50, MinWords=20, MaxFragments=1') AS content,
-		       word_count, created_at, updated_at,
+		       metadata, created_at, updated_at,
 		       (%s) AS rank_score
 		FROM %s
 		WHERE deleted_at IS NULL
@@ -716,8 +742,9 @@ func (r *PostgresDocumentRepository) fullTextSearch(ctx context.Context, opts *m
 			&doc.ProjectID,
 			&doc.FolderID,
 			&doc.Name,
+			&doc.Extension,
 			&doc.Content,
-			&doc.WordCount,
+			&doc.Metadata,
 			&doc.CreatedAt,
 			&doc.UpdatedAt,
 			&score,
@@ -725,6 +752,7 @@ func (r *PostgresDocumentRepository) fullTextSearch(ctx context.Context, opts *m
 		if err != nil {
 			return nil, fmt.Errorf("scan search result: %w", err)
 		}
+		doc.EnsureMetadata()
 
 		searchResults = append(searchResults, models.SearchResult{
 			Document: doc,

@@ -111,16 +111,21 @@ func (s *documentService) CreateDocument(ctx context.Context, req *CreateDocumen
         return nil, err
     }
 
-    // 3. Word counting
-    wordCount := s.contentAnalyzer.CountWords(req.Content)
+    // 3. Format-specific metadata (e.g., markdown word count)
+    metadata := models.DocumentMetadata{
+        Markdown: &models.MarkdownMetadata{
+            WordCount: s.contentAnalyzer.CountWords(req.Content),
+        },
+    }
 
     // 4. Build domain model
     doc := &models.Document{
         ProjectID: req.ProjectID,
         FolderID:  folderID,
         Name:      req.Name,
+        Extension: ".md",
         Content:   req.Content,
-        WordCount: wordCount,
+        Metadata:  metadata,
     }
 
     // 5. Persist via repository
@@ -156,8 +161,8 @@ func (s *documentService) CreateDocument(ctx context.Context, req *CreateDocumen
 func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *models.Document) error {
     // Build SQL with dynamic table name
     query := fmt.Sprintf(`
-        INSERT INTO %s (project_id, folder_id, name, content, word_count, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO %s (project_id, folder_id, name, extension, content, metadata, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING id, created_at, updated_at
     `, r.tables.Documents)
 
@@ -166,8 +171,9 @@ func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *models.Doc
         doc.ProjectID,
         doc.FolderID,
         doc.Name,
+        doc.Extension,
         doc.Content,
-        doc.WordCount,
+        doc.Metadata,
         time.Now(),
         time.Now(),
     ).Scan(&doc.ID, &doc.CreatedAt, &doc.UpdatedAt)
