@@ -18,6 +18,13 @@ type DocumentRepository interface {
 	// Use when authorization is handled separately (e.g., by ResourceAuthorizer)
 	GetByIDOnly(ctx context.Context, id string) (*docsystem.Document, error)
 
+	// GetBySlug retrieves a document by slug (unique per project)
+	GetBySlug(ctx context.Context, slug, projectID string) (*docsystem.Document, error)
+
+	// SlugExists checks if a slug is already used by another document in this project
+	// excludeID allows excluding a specific document (for updates)
+	SlugExists(ctx context.Context, slug, projectID string, excludeID *string) (bool, error)
+
 	// GetByPath retrieves a document by its path (e.g., ".skills/cw-prose-writing/SKILL.md")
 	GetByPath(ctx context.Context, path string, projectID string) (*docsystem.Document, error)
 
@@ -51,6 +58,14 @@ type DocumentRepository interface {
 	// Currently supports only full-text search (SearchStrategyFullText)
 	// Future: Will support vector search and hybrid search strategies
 	SearchDocuments(ctx context.Context, options *docsystem.SearchOptions) (*docsystem.SearchResults, error)
+
+	// GetAllByFolderRecursive returns all documents in a folder and all its descendant folders.
+	// Used for cascade operations when folder is renamed/moved.
+	GetAllByFolderRecursive(ctx context.Context, folderID, projectID string) ([]docsystem.Document, error)
+
+	// UpdateSlug updates only the slug field for a document.
+	// Used for cascade slug updates when parent folder changes.
+	UpdateSlug(ctx context.Context, id, slug string) error
 }
 
 // UpdateWithAIVersionParams contains parameters for atomic ai_version update with CAS.

@@ -52,6 +52,7 @@ var (
 	ErrNotFound     = errors.New("not found")
 	ErrConflict     = errors.New("already exists")
 	ErrValidation   = errors.New("validation failed")
+	ErrBadRequest   = errors.New("bad request")
 	ErrUnauthorized = errors.New("unauthorized")
 	ErrForbidden    = errors.New("forbidden")
 )

@@ -15,8 +15,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects/index'
-import { Route as AuthenticatedProjectsIdRouteImport } from './routes/_authenticated/projects/$id'
-import { Route as AuthenticatedProjectsIdDocumentsDocumentIdRouteImport } from './routes/_authenticated/projects/$id/documents/$documentId'
+import { Route as AuthenticatedProjectsSlugRouteImport } from './routes/_authenticated/projects/$slug'
+import { Route as AuthenticatedProjectsSlugDocumentsSplatRouteImport } from './routes/_authenticated/projects/$slug/documents/$'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -48,16 +48,17 @@ const AuthenticatedProjectsIndexRoute =
     path: '/projects/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedProjectsIdRoute = AuthenticatedProjectsIdRouteImport.update({
-  id: '/projects/$id',
-  path: '/projects/$id',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-const AuthenticatedProjectsIdDocumentsDocumentIdRoute =
-  AuthenticatedProjectsIdDocumentsDocumentIdRouteImport.update({
-    id: '/documents/$documentId',
-    path: '/documents/$documentId',
-    getParentRoute: () => AuthenticatedProjectsIdRoute,
+const AuthenticatedProjectsSlugRoute =
+  AuthenticatedProjectsSlugRouteImport.update({
+    id: '/projects/$slug',
+    path: '/projects/$slug',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedProjectsSlugDocumentsSplatRoute =
+  AuthenticatedProjectsSlugDocumentsSplatRouteImport.update({
+    id: '/documents/$',
+    path: '/documents/$',
+    getParentRoute: () => AuthenticatedProjectsSlugRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -65,18 +66,18 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/projects/$id': typeof AuthenticatedProjectsIdRouteWithChildren
+  '/projects/$slug': typeof AuthenticatedProjectsSlugRouteWithChildren
   '/projects': typeof AuthenticatedProjectsIndexRoute
-  '/projects/$id/documents/$documentId': typeof AuthenticatedProjectsIdDocumentsDocumentIdRoute
+  '/projects/$slug/documents/$': typeof AuthenticatedProjectsSlugDocumentsSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/projects/$id': typeof AuthenticatedProjectsIdRouteWithChildren
+  '/projects/$slug': typeof AuthenticatedProjectsSlugRouteWithChildren
   '/projects': typeof AuthenticatedProjectsIndexRoute
-  '/projects/$id/documents/$documentId': typeof AuthenticatedProjectsIdDocumentsDocumentIdRoute
+  '/projects/$slug/documents/$': typeof AuthenticatedProjectsSlugDocumentsSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -85,9 +86,9 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/_authenticated/projects/$id': typeof AuthenticatedProjectsIdRouteWithChildren
+  '/_authenticated/projects/$slug': typeof AuthenticatedProjectsSlugRouteWithChildren
   '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
-  '/_authenticated/projects/$id/documents/$documentId': typeof AuthenticatedProjectsIdDocumentsDocumentIdRoute
+  '/_authenticated/projects/$slug/documents/$': typeof AuthenticatedProjectsSlugDocumentsSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -96,18 +97,18 @@ export interface FileRouteTypes {
     | '/login'
     | '/settings'
     | '/auth/callback'
-    | '/projects/$id'
+    | '/projects/$slug'
     | '/projects'
-    | '/projects/$id/documents/$documentId'
+    | '/projects/$slug/documents/$'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login'
     | '/settings'
     | '/auth/callback'
-    | '/projects/$id'
+    | '/projects/$slug'
     | '/projects'
-    | '/projects/$id/documents/$documentId'
+    | '/projects/$slug/documents/$'
   id:
     | '__root__'
     | '/'
@@ -115,9 +116,9 @@ export interface FileRouteTypes {
     | '/login'
     | '/_authenticated/settings'
     | '/auth/callback'
-    | '/_authenticated/projects/$id'
+    | '/_authenticated/projects/$slug'
     | '/_authenticated/projects/'
-    | '/_authenticated/projects/$id/documents/$documentId'
+    | '/_authenticated/projects/$slug/documents/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -171,47 +172,47 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProjectsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/projects/$id': {
-      id: '/_authenticated/projects/$id'
-      path: '/projects/$id'
-      fullPath: '/projects/$id'
-      preLoaderRoute: typeof AuthenticatedProjectsIdRouteImport
+    '/_authenticated/projects/$slug': {
+      id: '/_authenticated/projects/$slug'
+      path: '/projects/$slug'
+      fullPath: '/projects/$slug'
+      preLoaderRoute: typeof AuthenticatedProjectsSlugRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/projects/$id/documents/$documentId': {
-      id: '/_authenticated/projects/$id/documents/$documentId'
-      path: '/documents/$documentId'
-      fullPath: '/projects/$id/documents/$documentId'
-      preLoaderRoute: typeof AuthenticatedProjectsIdDocumentsDocumentIdRouteImport
-      parentRoute: typeof AuthenticatedProjectsIdRoute
+    '/_authenticated/projects/$slug/documents/$': {
+      id: '/_authenticated/projects/$slug/documents/$'
+      path: '/documents/$'
+      fullPath: '/projects/$slug/documents/$'
+      preLoaderRoute: typeof AuthenticatedProjectsSlugDocumentsSplatRouteImport
+      parentRoute: typeof AuthenticatedProjectsSlugRoute
     }
   }
 }
 
-interface AuthenticatedProjectsIdRouteChildren {
-  AuthenticatedProjectsIdDocumentsDocumentIdRoute: typeof AuthenticatedProjectsIdDocumentsDocumentIdRoute
+interface AuthenticatedProjectsSlugRouteChildren {
+  AuthenticatedProjectsSlugDocumentsSplatRoute: typeof AuthenticatedProjectsSlugDocumentsSplatRoute
 }
 
-const AuthenticatedProjectsIdRouteChildren: AuthenticatedProjectsIdRouteChildren =
+const AuthenticatedProjectsSlugRouteChildren: AuthenticatedProjectsSlugRouteChildren =
   {
-    AuthenticatedProjectsIdDocumentsDocumentIdRoute:
-      AuthenticatedProjectsIdDocumentsDocumentIdRoute,
+    AuthenticatedProjectsSlugDocumentsSplatRoute:
+      AuthenticatedProjectsSlugDocumentsSplatRoute,
   }
 
-const AuthenticatedProjectsIdRouteWithChildren =
-  AuthenticatedProjectsIdRoute._addFileChildren(
-    AuthenticatedProjectsIdRouteChildren,
+const AuthenticatedProjectsSlugRouteWithChildren =
+  AuthenticatedProjectsSlugRoute._addFileChildren(
+    AuthenticatedProjectsSlugRouteChildren,
   )
 
 interface AuthenticatedRouteChildren {
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
-  AuthenticatedProjectsIdRoute: typeof AuthenticatedProjectsIdRouteWithChildren
+  AuthenticatedProjectsSlugRoute: typeof AuthenticatedProjectsSlugRouteWithChildren
   AuthenticatedProjectsIndexRoute: typeof AuthenticatedProjectsIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
-  AuthenticatedProjectsIdRoute: AuthenticatedProjectsIdRouteWithChildren,
+  AuthenticatedProjectsSlugRoute: AuthenticatedProjectsSlugRouteWithChildren,
   AuthenticatedProjectsIndexRoute: AuthenticatedProjectsIndexRoute,
 }
 

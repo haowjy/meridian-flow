@@ -16,7 +16,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
   }
 
   return (
-    <LinkCard to={`/projects/${project.id}`} onClick={handleClick}>
+    <LinkCard to={`/projects/${project.slug}`} onClick={handleClick}>
       <CardHeader>
         <CardTitle>{project.name}</CardTitle>
       </CardHeader>

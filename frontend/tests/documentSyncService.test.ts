@@ -34,7 +34,7 @@ describe('DocumentSyncService.save', () => {
 
   it('optimistically updates DB and applies server doc on success', async () => {
     const onServerSaved = vi.fn()
-    await documentSyncService.save('d1', '<p>x</p>', { id: 'd1', projectId: 'p', folderId: null, name: 'n', extension: '.md', filename: 'n.md', fileType: 'markdown', content: '', updatedAt: new Date() }, { onServerSaved })
+    await documentSyncService.save('d1', '<p>x</p>', { id: 'd1', projectId: 'p', folderId: null, name: 'n', slug: 'n', extension: '.md', filename: 'n.md', fileType: 'markdown', content: '', updatedAt: new Date() }, { onServerSaved })
 
     expect(cancelRetry).toHaveBeenCalledWith('d1')
     expect(db.documents.update).toHaveBeenCalled()
@@ -49,7 +49,7 @@ describe('DocumentSyncService.save', () => {
     })
 
     const onRetryScheduled = vi.fn()
-    await documentSyncService.save('d2', '<p>y</p>', { id: 'd2', projectId: 'p', folderId: null, name: 'n', extension: '.md', filename: 'n.md', fileType: 'markdown', content: '', updatedAt: new Date() }, { onRetryScheduled })
+    await documentSyncService.save('d2', '<p>y</p>', { id: 'd2', projectId: 'p', folderId: null, name: 'n', slug: 'n', extension: '.md', filename: 'n.md', fileType: 'markdown', content: '', updatedAt: new Date() }, { onRetryScheduled })
 
     expect(addRetryOperation).toHaveBeenCalled()
     expect(onRetryScheduled).toHaveBeenCalled()
@@ -62,7 +62,7 @@ describe('DocumentSyncService.save', () => {
     })
 
     await expect(
-      documentSyncService.save('d3', '<p>z</p>', { id: 'd3', projectId: 'p', folderId: null, name: 'n', extension: '.md', filename: 'n.md', fileType: 'markdown', content: '', updatedAt: new Date() })
+      documentSyncService.save('d3', '<p>z</p>', { id: 'd3', projectId: 'p', folderId: null, name: 'n', slug: 'n', extension: '.md', filename: 'n.md', fileType: 'markdown', content: '', updatedAt: new Date() })
     ).rejects.toBeInstanceOf(AppError)
   })
 })

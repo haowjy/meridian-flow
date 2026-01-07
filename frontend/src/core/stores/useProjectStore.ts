@@ -147,6 +147,7 @@ export const useProjectStore = create<ProjectStore>()(
     }),
     {
       name: 'project-store',
+      version: 1, // Bump to clear old cache missing slug field
       partialize: (state) => ({
         currentProjectId: state.currentProjectId,
         projects: state.projects, // Cache projects list for instant load

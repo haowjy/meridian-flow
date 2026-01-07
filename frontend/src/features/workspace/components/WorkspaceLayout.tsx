@@ -15,11 +15,15 @@ import { makeLogger } from '@/core/lib/logger'
 const logger = makeLogger('workspace-layout')
 
 interface WorkspaceLayoutProps {
-  projectId: string
-  initialDocumentId?: string
+  /** Project identifier - can be UUID or slug (backend resolver handles both) */
+  projectIdentifier: string
+  /** Document slug from URL - resolved to ID once tree is loaded */
+  initialDocumentSlug?: string
 }
 
-export default function WorkspaceLayout({ projectId, initialDocumentId }: WorkspaceLayoutProps) {
+export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug }: WorkspaceLayoutProps) {
+  // Resolved project ID (UUID) - set once project is fetched/found
+  const [projectId, setProjectId] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
   const previousDocumentIdRef = useRef<string | undefined>(undefined)
   const previousProjectIdRef = useRef<string | undefined>(undefined)
@@ -64,54 +68,71 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
 
   const location = useLocation()
 
-  // Derive the document ID from the current URL path.
+  // Derive the document slug from the current URL path.
   // This is intentionally decoupled from route components so that:
   // - Direct URL navigation (deep links)
   // - Browser back/forward
   // still drive the editor/tree state correctly even if the document route
   // component itself does not render (e.g., due to nesting or Outlet usage).
-  const urlDocumentId = useMemo(() => {
+  //
+  // Path-based slugs: captures ALL segments after /documents/ and joins them.
+  // Example: /documents/characters/heroes/aria → "characters/heroes/aria"
+  const urlDocumentSlug = useMemo(() => {
     const segments = location.pathname.split('/').filter(Boolean)
     const documentsIndex = segments.indexOf('documents')
     if (documentsIndex === -1) return undefined
-    const id = segments[documentsIndex + 1]
-    return id || undefined
+    // Get ALL segments after 'documents', join with '/' for path-based slugs
+    const pathSegments = segments.slice(documentsIndex + 1)
+    return pathSegments.length > 0 ? pathSegments.join('/') : undefined
   }, [location.pathname])
 
   // Prefer explicit prop when provided (e.g., from a dedicated document route),
   // but fall back to URL parsing so that deep links and browser navigation
   // still work correctly.
-  const effectiveDocumentId = initialDocumentId ?? urlDocumentId
+  const effectiveDocumentSlug = initialDocumentSlug ?? urlDocumentSlug
 
-  // Ensure the workspace has the current project set and present in the store
+  // Resolve document slug to document ID using the tree store
+  // Returns the UUID if found by slug (or ID for backwards compat), undefined otherwise
+  const effectiveDocumentId = useMemo(() => {
+    if (!effectiveDocumentSlug) return undefined
+    // Try to find document by slug first, then by ID (for backwards compatibility)
+    const doc = documents.find((d) => d.slug === effectiveDocumentSlug || d.id === effectiveDocumentSlug)
+    return doc?.id
+  }, [effectiveDocumentSlug, documents])
+
+  // Resolve project identifier (UUID or slug) to actual project
+  // Sets projectId state once resolved
   useEffect(() => {
-    // Prevent duplicate work for the same project id
-    if (previousProjectIdRef.current === projectId) return
-    previousProjectIdRef.current = projectId
+    // Prevent duplicate work for the same identifier
+    if (previousProjectIdRef.current === projectIdentifier) return
+    previousProjectIdRef.current = projectIdentifier
 
     let ignore = false
     const abortController = new AbortController()
 
-    async function ensureProject() {
-      // Try to find the project in the existing list first
-      const existing = projects.find((p) => p.id === projectId)
+    async function resolveProject() {
+      // Try to find the project in the existing list first (by ID or slug)
+      const existing = projects.find((p) => p.id === projectIdentifier || p.slug === projectIdentifier)
 
       let project = existing
       if (!project) {
         try {
-          project = await api.projects.get(projectId, { signal: abortController.signal })
+          // API accepts both UUID and slug (backend resolver handles it)
+          project = await api.projects.get(projectIdentifier, { signal: abortController.signal })
         } catch (error) {
           // Non-fatal for the layout; header will fallback until projects page refreshes.
           // Errors are surfaced elsewhere when listing projects; we still log for debuggability.
           if ((error as Error)?.name === 'AbortError') {
             logger.debug('Project fetch aborted in workspace layout (expected during unmount/StrictMode)')
           } else {
-            logger.warn('Failed to ensure project in workspace layout', error)
+            logger.warn('Failed to resolve project in workspace layout', error)
           }
         }
       }
 
       if (!ignore && project) {
+        // Set resolved project ID for use in child components
+        setProjectId(project.id)
         // Switch context only if different to avoid unnecessary editor cache clears
         if (currentProjectId !== project.id) {
           setCurrentProject(project)
@@ -119,14 +140,16 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
       }
     }
 
-    ensureProject()
+    resolveProject()
     return () => {
       ignore = true
       abortController.abort()
+      // Reset ref so StrictMode re-mount can retry the API call
+      previousProjectIdRef.current = undefined
     }
-    // Intentionally depend only on projectId and stable setters to avoid constant re-runs
+    // Intentionally depend only on projectIdentifier and stable setters to avoid constant re-runs
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId])
+  }, [projectIdentifier])
 
   // Reset UI state when project changes to prevent context leakage
   useEffect(() => {
@@ -192,14 +215,16 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
   }, [effectiveDocumentId])
 
   // For deep links: load the tree once in the background if empty
+  // Uses effectiveDocumentSlug (not effectiveDocumentId) since we need tree loaded to resolve slug → ID
   useEffect(() => {
-    if (!effectiveDocumentId) return
+    if (!effectiveDocumentSlug) return
+    if (!projectId) return // Wait for project to be resolved
     if (documentsCount !== 0 || isTreeLoading) return
 
     const abortController = new AbortController()
     loadTree(projectId, abortController.signal)
     return () => abortController.abort()
-  }, [projectId, effectiveDocumentId, documentsCount, isTreeLoading, loadTree])
+  }, [projectId, effectiveDocumentSlug, documentsCount, isTreeLoading, loadTree])
 
   // After the tree loads, ensure the active document selection reflects the tree entry
   useEffect(() => {
@@ -214,7 +239,8 @@ export default function WorkspaceLayout({ projectId, initialDocumentId }: Worksp
     }
   }, [documentsCount, documents, effectiveDocumentId])
 
-  if (!mounted) {
+  // Wait for mount and project resolution before rendering workspace
+  if (!mounted || !projectId) {
     return <div className="h-screen w-full bg-background" />
   }
 

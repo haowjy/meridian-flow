@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { useShallow } from 'zustand/react/shallow'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { useUIStore } from '@/core/stores/useUIStore'
+import { useProjectStore } from '@/core/stores/useProjectStore'
 import { closeEditor } from '@/core/lib/panelHelpers'
 
 /**
@@ -42,6 +43,12 @@ export function useResourceOperations(projectId: string) {
   const navigate = useNavigate()
   const activeDocumentId = useUIStore((s) => s.activeDocumentId)
 
+  // Get project slug for URL navigation
+  const projectSlug = useProjectStore((s) => {
+    const project = s.projects.find((p) => p.id === projectId) || s.currentProject()
+    return project?.slug ?? projectId // Fallback to ID for backwards compat
+  })
+
   const { documents, folders, deleteDocument, deleteFolder } = useTreeStore(
     useShallow((s) => ({
       documents: s.documents,
@@ -58,11 +65,11 @@ export function useResourceOperations(projectId: string) {
     async (documentId: string) => {
       // Navigate away FIRST if deleting the active document
       if (activeDocumentId === documentId) {
-        closeEditor(projectId, navigate)
+        closeEditor(projectSlug, navigate)
       }
       await deleteDocument(documentId, projectId)
     },
-    [activeDocumentId, projectId, navigate, deleteDocument]
+    [activeDocumentId, projectId, projectSlug, navigate, deleteDocument]
   )
 
   /**
@@ -75,11 +82,11 @@ export function useResourceOperations(projectId: string) {
         activeDocumentId &&
         isDocumentInFolder(activeDocumentId, folderId, documents, folders)
       ) {
-        closeEditor(projectId, navigate)
+        closeEditor(projectSlug, navigate)
       }
       await deleteFolder(folderId, projectId)
     },
-    [activeDocumentId, projectId, navigate, deleteFolder, documents, folders]
+    [activeDocumentId, projectId, projectSlug, navigate, deleteFolder, documents, folders]
   )
 
   return {
