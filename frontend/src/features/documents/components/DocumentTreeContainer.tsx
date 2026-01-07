@@ -329,10 +329,13 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
         </FolderTreeItem>
       )
     } else {
-      // Placeholder document data
+      // Placeholder document data (default to markdown for new documents)
       const placeholderDocument = {
         id: pendingItem.tempId,
         name: defaultName,
+        extension: '.md',
+        filename: defaultName + '.md',
+        fileType: 'markdown' as const,
         projectId: projectId,
         folderId: parentId,
         content: '',

@@ -9,3 +9,6 @@ go.work.sum
 __debug_bin*
 
 tmp/
+
+# Local Go build cache (when GOCACHE is pointed inside repo for sandboxed runs)
+backend/.gocache/

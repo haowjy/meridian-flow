@@ -45,8 +45,9 @@ erDiagram
         uuid project_id FK
         uuid folder_id FK "nullable"
         text name
+        text extension
         text content "markdown"
-        int word_count
+        jsonb metadata
         timestamptz created_at
         timestamptz updated_at
     }
@@ -138,20 +139,21 @@ Hierarchical folder structure using adjacency list pattern (self-referencing tre
 
 #### `documents`
 
-Content documents (leaf nodes in hierarchy). Store markdown content.
+Content documents (leaf nodes in hierarchy). Store text-based content in `content` and format-specific stats in `metadata`.
 
 **Columns:**
 - `id` (UUID, PK) - Auto-generated
 - `project_id` (UUID, FK → projects) - Parent project
 - `folder_id` (UUID, FK → folders, nullable) - Parent folder (NULL = root level)
 - `name` (TEXT) - Document name (no slashes allowed, filesystem semantics)
-- `content` (TEXT) - Markdown content (canonical storage format)
-- `word_count` (INTEGER) - Computed from markdown on create/update
+- `extension` (TEXT) - File extension with leading dot (e.g. `.md`, `.excalidraw`)
+- `content` (TEXT) - Content for text-based formats (e.g. markdown, mermaid, excalidraw JSON)
+- `metadata` (JSONB) - Format-specific stats (e.g. `metadata.markdown.wordCount`)
 - `created_at`, `updated_at` (TIMESTAMPTZ) - Timestamps
 - `deleted_at` (TIMESTAMPTZ, nullable) - Soft delete timestamp
 
 **Constraints:**
-- `UNIQUE(project_id, folder_id, name)` - No duplicate names in same folder
+- `UNIQUE(project_id, folder_id, name, extension)` - No duplicate filenames in same folder
 
 **Deletion Behavior:**
 - SET NULL when folder deleted (document moves to root, preserves content)
@@ -160,17 +162,17 @@ Content documents (leaf nodes in hierarchy). Store markdown content.
 **Indexes:**
 - `idx_documents_project_id` on `project_id` - Fast project queries
 - `idx_documents_project_folder` on `(project_id, folder_id)` - Fast folder queries
-- `idx_documents_root_unique` on `(project_id, name) WHERE folder_id IS NULL` - Root uniqueness
+- `idx_documents_root_unique` on `(project_id, name, extension) WHERE folder_id IS NULL` - Root uniqueness
 
 ### Content Storage
 
-**Format:** Markdown (TEXT)
+**Format:** Text-based formats (TEXT)
 
-Documents store content as plain markdown. Frontend editor (CodeMirror) works directly with markdown.
+Documents store text-based content in a single `content` TEXT column; file type is determined by `extension`.
 
-**Why markdown?**
+**Why text-based first?**
 - Single source of truth
-- Word counting, search indexing
+- Search indexing
 - Human-readable backups
 - Import/export compatibility
 

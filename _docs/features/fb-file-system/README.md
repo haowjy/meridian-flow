@@ -19,9 +19,15 @@ feature: "File System"
 #### CRUD Operations
 - Projects: Create, Read, Update, Delete (soft-delete)
 - Folders: Nested hierarchy, path resolution
-- Documents: Markdown storage, word count tracking
-- **Unique names enforced**: No duplicate names in same folder (HTTP 409 on conflict)
+- Documents: Multi-format storage with extension support
+- **Unique names enforced**: No duplicate filenames in same folder (HTTP 409 on conflict)
 - See [backend-api.md](backend-api.md)
+
+#### Multi-Format Support
+- **Extensions**: `.md`, `.markdown`, `.txt` (markdown family), `.excalidraw`, `.mermaid`
+- **Metadata**: Format-specific stats in JSONB (e.g., `metadata.markdown.wordCount`)
+- **Uniqueness**: `(project_id, folder_id, name, extension)` - allows same name with different extensions
+- See [file-types.md](file-types.md) for complete reference
 
 #### Full-Text Search
 - PostgreSQL FTS with `websearch_to_tsquery`

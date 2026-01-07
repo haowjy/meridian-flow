@@ -30,14 +30,14 @@ export function EditorHeader({ document, wordCount, status, lastSaved }: EditorH
     s.projects.find((p) => p.id === document.projectId)?.name || s.currentProject()?.name || 'Project'
   )
 
-  // Build full folder path; we'll display as: Project / ... / Last Folder / File
+  // Build full folder path; we'll display as: Project / ... / Last Folder / File.ext
   const fullFolderPath = buildBreadcrumbs(document.folderId, folders, 99)
-  const fullPathTitle = [projectName, ...fullFolderPath.map((s) => s.name), document.name].join(' / ')
+  const fullPathTitle = [projectName, ...fullFolderPath.map((s) => s.name), document.filename].join(' / ')
 
-  // User requested to show only the document name to save space.
+  // User requested to show only the document filename to save space.
   // We still build the full path for the tooltip.
   const segments: BreadcrumbSegment[] = [
-    { label: document.name }
+    { label: document.filename }
   ]
 
   const handleBackClick = () => {

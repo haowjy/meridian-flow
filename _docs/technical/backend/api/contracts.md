@@ -73,17 +73,19 @@ audience: developer
   "folders": [
     {
       "id": "folder-uuid",
+      "project_id": "project-uuid",
       "name": "Characters",
-      "path": "Characters",
       "folder_id": null,
       "created_at": "2025-11-02T10:00:00Z",
+      "updated_at": "2025-11-02T10:00:00Z",
       "folders": [
         {
           "id": "subfolder-uuid",
+          "project_id": "project-uuid",
           "name": "Heroes",
-          "path": "Characters/Heroes",
           "folder_id": "folder-uuid",
           "created_at": "2025-11-02T10:05:00Z",
+          "updated_at": "2025-11-02T10:05:00Z",
           "folders": [],
           "documents": []
         }
@@ -92,9 +94,9 @@ audience: developer
         {
           "id": "doc-uuid",
           "name": "Aria Moonwhisper",
-          "path": "Characters/Aria Moonwhisper",
+          "project_id": "project-uuid",
           "folder_id": "folder-uuid",
-          "word_count": 312,
+          "extension": ".md",
           "updated_at": "2025-11-02T12:03:45Z"
         }
       ]
@@ -104,9 +106,9 @@ audience: developer
     {
       "id": "root-doc-uuid",
       "name": "Quick Notes",
-      "path": "Quick Notes",
+      "project_id": "project-uuid",
       "folder_id": null,
-      "word_count": 57,
+      "extension": ".md",
       "updated_at": "2025-11-02T11:47:12Z"
     }
   ]
@@ -114,7 +116,7 @@ audience: developer
 ```
 
 Notes:
-- This structure mirrors `TreeNode`/`FolderTreeNode`/`DocumentTreeNode` in the backend domain models.
+- Documents include `extension` but omit `content` (fetch content via `GET /api/documents/:id`).
 - Designed for fast navigation; individual document content is fetched via `GET /api/documents/:id`.
 
 ## Folder Operations
@@ -378,8 +380,11 @@ Full-text search across documents with multi-field support and weighted ranking.
         "project_id": "project-uuid",
         "folder_id": "folder-uuid",
         "name": "Dragon Lore",
+        "extension": ".md",
         "content": "# Dragon Lore\n\nDragons are ancient...",
-        "word_count": 312,
+        "metadata": {
+          "markdown": { "wordCount": 312 }
+        },
         "path": "World Building/Creatures/Dragon Lore",
         "created_at": "2025-01-15T10:00:00Z",
         "updated_at": "2025-01-15T10:05:00Z"

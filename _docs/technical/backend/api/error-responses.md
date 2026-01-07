@@ -155,8 +155,9 @@ For **CREATE operations only**, includes the full existing resource:
     "id": "abc123",
     "name": "Chapter 1",
     "folder_id": "folder-xyz",
+    "extension": ".md",
     "content": "...",
-    "word_count": 1000,
+    "metadata": { "markdown": { "wordCount": 1000 } },
     "created_at": "2025-11-08T10:00:00Z",
     "updated_at": "2025-11-08T10:00:00Z"
   }

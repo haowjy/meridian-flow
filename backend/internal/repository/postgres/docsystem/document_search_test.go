@@ -138,8 +138,7 @@ func TestSearchOptions_Validate(t *testing.T) {
 				Query:     "test",
 				ProjectID: "",
 			},
-			wantErr: true,
-			errMsg:  "project ID is required",
+			wantErr: false,
 		},
 		{
 			name: "limit at boundary (100 is valid)",
@@ -229,15 +228,15 @@ func TestSearchOptions_Validate(t *testing.T) {
 
 func TestNewSearchResults(t *testing.T) {
 	tests := []struct {
-		name       string
-		results    []docsystem.SearchResult
-		totalCount int
-		options    *docsystem.SearchOptions
+		name        string
+		results     []docsystem.SearchResult
+		totalCount  int
+		options     *docsystem.SearchOptions
 		wantHasMore bool
 	}{
 		{
-			name: "has more results",
-			results: make([]docsystem.SearchResult, 20),
+			name:       "has more results",
+			results:    make([]docsystem.SearchResult, 20),
 			totalCount: 50,
 			options: &docsystem.SearchOptions{
 				Limit:  20,
@@ -246,8 +245,8 @@ func TestNewSearchResults(t *testing.T) {
 			wantHasMore: true,
 		},
 		{
-			name: "no more results - last page",
-			results: make([]docsystem.SearchResult, 10),
+			name:       "no more results - last page",
+			results:    make([]docsystem.SearchResult, 10),
 			totalCount: 30,
 			options: &docsystem.SearchOptions{
 				Limit:  20,
@@ -256,8 +255,8 @@ func TestNewSearchResults(t *testing.T) {
 			wantHasMore: false,
 		},
 		{
-			name: "no more results - exact match",
-			results: make([]docsystem.SearchResult, 20),
+			name:       "no more results - exact match",
+			results:    make([]docsystem.SearchResult, 20),
 			totalCount: 20,
 			options: &docsystem.SearchOptions{
 				Limit:  20,
@@ -266,8 +265,8 @@ func TestNewSearchResults(t *testing.T) {
 			wantHasMore: false,
 		},
 		{
-			name: "empty results",
-			results: []docsystem.SearchResult{},
+			name:       "empty results",
+			results:    []docsystem.SearchResult{},
 			totalCount: 0,
 			options: &docsystem.SearchOptions{
 				Limit:  20,

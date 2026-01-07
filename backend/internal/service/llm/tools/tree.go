@@ -154,7 +154,7 @@ func (t *TreeTool) buildTree(ctx context.Context, folderID *string, maxDepth, cu
 		docList[i] = map[string]interface{}{
 			"id":         doc.ID,
 			"name":       doc.Name,
-			"word_count": doc.WordCount,
+			"word_count": doc.WordCount(),
 			"updated_at": doc.UpdatedAt,
 		}
 	}

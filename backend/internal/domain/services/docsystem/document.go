@@ -35,7 +35,8 @@ type CreateDocumentRequest struct {
 	UserID     string  `json:"-"` // Set by handler from auth context, not from request body
 	FolderPath *string `json:"folder_path,omitempty"` // Folder path (e.g., "Characters/Aria" or "Characters" or "" for root)
 	FolderID   *string `json:"folder_id,omitempty"`   // Direct folder assignment (alternative to FolderPath)
-	Name       string  `json:"name"`                  // Document name (required)
+	Name       string  `json:"name"`                  // Document name without extension (required)
+	Extension  string  `json:"extension"`             // File extension with leading dot (e.g., ".md"), defaults to ".md" if empty
 	Content    string  `json:"content"`               // Markdown content
 }
 
@@ -55,6 +56,7 @@ type OptionalAIVersion struct {
 type UpdateDocumentRequest struct {
 	ProjectID  string           `json:"project_id"`
 	Name       *string          `json:"name,omitempty"`
+	Extension  *string          `json:"extension,omitempty"`   // Optional extension change (e.g., ".md" -> ".txt")
 	FolderPath *string          `json:"folder_path,omitempty"` // Move to folder path (resolve/auto-create)
 	FolderID   OptionalFolderID // Tri-state: absent=don't change, null=root, value=folder (no json tag - mapped from handler DTO)
 	Content    *string          `json:"content,omitempty"`
