@@ -7,6 +7,8 @@ export interface Document {
   folderId: string | null
   /** Display name without extension: "Chapter 5" */
   name: string
+  /** URL-friendly identifier, unique per project */
+  slug: string
   /** File extension with leading dot: ".md", ".excalidraw" */
   extension: string
   /** Full filename (name + extension): "Chapter 5.md" */

@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"meridian/internal/domain/models/docsystem"
+	identifierSvc "meridian/internal/domain/services/identifier"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	"meridian/internal/httputil"
 )
@@ -12,13 +13,15 @@ import (
 // ProjectHandler handles project HTTP requests
 type ProjectHandler struct {
 	projectService docsysSvc.ProjectService
+	resolver       identifierSvc.Resolver
 	logger         *slog.Logger
 }
 
 // NewProjectHandler creates a new project handler
-func NewProjectHandler(projectService docsysSvc.ProjectService, logger *slog.Logger) *ProjectHandler {
+func NewProjectHandler(projectService docsysSvc.ProjectService, resolver identifierSvc.Resolver, logger *slog.Logger) *ProjectHandler {
 	return &ProjectHandler{
 		projectService: projectService,
+		resolver:       resolver,
 		logger:         logger,
 	}
 }
@@ -66,16 +69,24 @@ func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	httputil.RespondJSON(w, http.StatusCreated, project)
 }
 
-// GetProject retrieves a project by ID
+// GetProject retrieves a project by ID or slug
 // GET /api/projects/{id}
 func (h *ProjectHandler) GetProject(w http.ResponseWriter, r *http.Request) {
-	id, ok := PathParam(w, r, "id", "Project ID")
+	identifier, ok := PathParam(w, r, "id", "Project ID or slug")
 	if !ok {
 		return
 	}
 
 	userID := httputil.GetUserID(r)
-	project, err := h.projectService.GetProject(r.Context(), id, userID)
+
+	// Resolve identifier (UUID or slug) to project UUID
+	projectID, err := h.resolver.ResolveProject(r.Context(), identifier, userID)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	project, err := h.projectService.GetProject(r.Context(), projectID, userID)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -87,19 +98,27 @@ func (h *ProjectHandler) GetProject(w http.ResponseWriter, r *http.Request) {
 // UpdateProject updates a project
 // PATCH /api/projects/{id}
 func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
-	id, ok := PathParam(w, r, "id", "Project ID")
+	identifier, ok := PathParam(w, r, "id", "Project ID or slug")
 	if !ok {
 		return
 	}
 
 	userID := httputil.GetUserID(r)
+
+	// Resolve identifier (UUID or slug) to project UUID
+	projectID, err := h.resolver.ResolveProject(r.Context(), identifier, userID)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
 	var req docsysSvc.UpdateProjectRequest
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
-	project, err := h.projectService.UpdateProject(r.Context(), id, userID, &req)
+	project, err := h.projectService.UpdateProject(r.Context(), projectID, userID, &req)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -111,13 +130,21 @@ func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 // DeleteProject soft-deletes a project and returns it with deleted_at timestamp
 // DELETE /api/projects/{id}
 func (h *ProjectHandler) DeleteProject(w http.ResponseWriter, r *http.Request) {
-	id, ok := PathParam(w, r, "id", "Project ID")
+	identifier, ok := PathParam(w, r, "id", "Project ID or slug")
 	if !ok {
 		return
 	}
 
 	userID := httputil.GetUserID(r)
-	project, err := h.projectService.DeleteProject(r.Context(), id, userID)
+
+	// Resolve identifier (UUID or slug) to project UUID
+	projectID, err := h.resolver.ResolveProject(r.Context(), identifier, userID)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	project, err := h.projectService.DeleteProject(r.Context(), projectID, userID)
 	if err != nil {
 		handleError(w, err)
 		return

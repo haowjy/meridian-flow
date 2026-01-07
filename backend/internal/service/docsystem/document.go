@@ -14,6 +14,7 @@ import (
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	"meridian/internal/domain/services"
 	docsysSvc "meridian/internal/domain/services/docsystem"
+	"meridian/internal/service/identifier"
 )
 
 // documentService implements the DocumentService interface
@@ -49,6 +50,34 @@ func NewDocumentService(
 		authorizer:      authorizer,
 		logger:          logger,
 	}
+}
+
+// generateDocumentPathSlug generates a unique path-based slug for a document.
+// The slug includes the folder path: "characters/heroes/aria" for nested docs,
+// or just "readme" for root-level docs.
+//
+// excludeDocID can be passed to exclude an existing document from uniqueness check (for updates).
+func (s *documentService) generateDocumentPathSlug(ctx context.Context, projectID string, folderID *string, docName string, excludeDocID *string) (string, error) {
+	// Get folder path (returns "" for root level)
+	folderPath, err := s.folderRepo.GetPath(ctx, folderID, projectID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get folder path: %w", err)
+	}
+	slugifiedFolderPath := identifier.SlugifyPath(folderPath)
+
+	// Generate base slug from document name
+	baseSlug := identifier.GenerateSlug(docName)
+
+	// Combine folder path with doc slug
+	fullPathSlug := identifier.GeneratePathSlug(slugifiedFolderPath, baseSlug)
+
+	// Ensure uniqueness (appends -2, -3, etc. if collision)
+	slug := identifier.EnsureUniqueSlug(fullPathSlug, func(testSlug string) bool {
+		exists, _ := s.docRepo.SlugExists(ctx, testSlug, projectID, excludeDocID)
+		return exists
+	})
+
+	return slug, nil
 }
 
 // CreateDocument creates a new document with priority-based folder resolution
@@ -116,11 +145,18 @@ func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.Cre
 		}
 	}
 
+	// Generate path-based slug: "folder/subfolder/doc-slug" for nested docs
+	slug, err := s.generateDocumentPathSlug(ctx, req.ProjectID, folderID, docName, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create document
 	doc := &models.Document{
 		ProjectID: req.ProjectID,
 		FolderID:  folderID,
 		Name:      docName,
+		Slug:      slug,
 		Extension: extension,
 		Content:   req.Content,
 		Metadata:  models.DocumentMetadata{},
@@ -150,6 +186,7 @@ func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.Cre
 	s.logger.Info("document created",
 		"id", doc.ID,
 		"name", doc.Name,
+		"slug", doc.Slug,
 		"extension", doc.Extension,
 		"project_id", req.ProjectID,
 		"folder_id", folderID,
@@ -200,12 +237,19 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 		return nil, err
 	}
 
+	// Track changes that require slug regeneration
+	nameChanged := false
+	folderChanged := false
+
 	// Update fields
 	if req.Name != nil {
 		trimmedName := strings.TrimSpace(*req.Name)
 		// Validate name doesn't contain slashes
 		if strings.Contains(trimmedName, "/") {
 			return nil, fmt.Errorf("%w: document name cannot contain slashes", domain.ErrValidation)
+		}
+		if trimmedName != doc.Name {
+			nameChanged = true
 		}
 		doc.Name = trimmedName
 	}
@@ -233,6 +277,7 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 	// 1. Try folder_id first (tri-state: absent=don't change, null=root, value=folder)
 	// 2. Fall back to folder_path (external AI - resolve/auto-create)
 	// 3. Neither = don't move document
+	originalFolderID := doc.FolderID
 	if req.FolderID.Present {
 		if req.FolderID.Value != nil {
 			// Move to specified folder - validate it exists and is not deleted
@@ -258,7 +303,20 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 		}
 		doc.FolderID = resolvedFolder
 	}
-	// If neither provided: keep current folder location
+	// Track if folder changed (comparing pointer values and dereferenced values)
+	if (originalFolderID == nil) != (doc.FolderID == nil) ||
+		(originalFolderID != nil && doc.FolderID != nil && *originalFolderID != *doc.FolderID) {
+		folderChanged = true
+	}
+
+	// Regenerate slug if name or folder changed (path-based slugs include folder path)
+	if nameChanged || folderChanged {
+		newSlug, err := s.generateDocumentPathSlug(ctx, doc.ProjectID, doc.FolderID, doc.Name, &doc.ID)
+		if err != nil {
+			return nil, err
+		}
+		doc.Slug = newSlug
+	}
 
 	if req.Content != nil {
 		doc.Content = *req.Content

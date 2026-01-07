@@ -91,6 +91,7 @@ func (s *treeService) GetProjectTree(ctx context.Context, userID, projectID stri
 			ID:        doc.ID,
 			ProjectID: doc.ProjectID,
 			Name:      doc.Name,
+			Slug:      doc.Slug,
 			FolderID:  doc.FolderID,
 			Extension: doc.Extension,
 			UpdatedAt: doc.UpdatedAt,

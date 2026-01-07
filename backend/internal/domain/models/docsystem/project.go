@@ -8,6 +8,7 @@ type Project struct {
 	ID           string     `json:"id" db:"id"`
 	UserID       string     `json:"user_id" db:"user_id"`
 	Name         string     `json:"name" db:"name"`
+	Slug         string     `json:"slug" db:"slug"` // URL-friendly identifier, unique per user
 	SystemPrompt *string    `json:"system_prompt,omitempty" db:"system_prompt"`
 	CreatedAt    time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at" db:"updated_at"`

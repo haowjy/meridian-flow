@@ -32,6 +32,7 @@ type TreeDocument struct {
 	ProjectID string
 	FolderID  *string // Parent folder ID (nil = root)
 	Name      string
+	Slug      string
 	Extension string
 	UpdatedAt time.Time
 }

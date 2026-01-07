@@ -14,6 +14,13 @@ type ProjectRepository interface {
 	// GetByID retrieves a project by ID
 	GetByID(ctx context.Context, id, userID string) (*docsystem.Project, error)
 
+	// GetBySlug retrieves a project by slug (unique per user)
+	GetBySlug(ctx context.Context, slug, userID string) (*docsystem.Project, error)
+
+	// SlugExists checks if a slug is already used by another project for this user
+	// excludeID allows excluding a specific project (for updates)
+	SlugExists(ctx context.Context, slug, userID string, excludeID *string) (bool, error)
+
 	// List retrieves all projects for a user, ordered by updated_at DESC
 	List(ctx context.Context, userID string) ([]docsystem.Project, error)
 

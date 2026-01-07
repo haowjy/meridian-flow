@@ -22,6 +22,7 @@ import (
 	serviceAuth "meridian/internal/service/auth"
 	serviceDocsys "meridian/internal/service/docsystem"
 	"meridian/internal/service/docsystem/converter"
+	"meridian/internal/service/identifier"
 	serviceLLM "meridian/internal/service/llm"
 	domainLLM "meridian/internal/domain/services/llm"
 
@@ -149,6 +150,9 @@ func main() {
 		log.Fatalf("Failed to setup LLM services: %v", err)
 	}
 
+	// Create identifier resolver (for UUID/slug resolution)
+	identifierResolver := identifier.NewResolver(projectRepo, docRepo)
+
 	// Create document services
 	contentAnalyzer := serviceDocsys.NewContentAnalyzer()
 	pathResolver := serviceDocsys.NewPathResolver(folderRepo, txManager)
@@ -174,10 +178,10 @@ func main() {
 	userPrefsService := service.NewUserPreferencesService(userPrefsRepo, logger)
 
 	// Create new handlers
-	projectHandler := handler.NewProjectHandler(projectService, logger)
-	newDocHandler := handler.NewDocumentHandler(docService, logger)
+	projectHandler := handler.NewProjectHandler(projectService, identifierResolver, logger)
+	newDocHandler := handler.NewDocumentHandler(docService, identifierResolver, logger)
 	newFolderHandler := handler.NewFolderHandler(folderService, logger)
-	newTreeHandler := handler.NewTreeHandler(treeService, logger)
+	newTreeHandler := handler.NewTreeHandler(treeService, identifierResolver, logger)
 	importHandler := handler.NewImportHandler(importService, authorizer, logger)
 
 	// Chat handlers (follows Clean Architecture - no repository access)

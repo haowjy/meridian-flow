@@ -15,6 +15,7 @@ import (
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	"meridian/internal/domain/services"
 	docsysSvc "meridian/internal/domain/services/docsystem"
+	"meridian/internal/service/identifier"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 )
@@ -162,6 +163,7 @@ func (s *folderService) GetFolder(ctx context.Context, userID, folderID string) 
 
 // UpdateFolder updates a folder (rename or move)
 // Authorization is checked first via the injected authorizer
+// When folder is renamed or moved, cascades slug updates to all descendant documents.
 func (s *folderService) UpdateFolder(ctx context.Context, userID, folderID string, req *docsysSvc.UpdateFolderRequest) (*models.Folder, error) {
 	// Authorize: check user can access this folder
 	if err := s.authorizer.CanAccessFolder(ctx, userID, folderID); err != nil {
@@ -178,6 +180,10 @@ func (s *folderService) UpdateFolder(ctx context.Context, userID, folderID strin
 	if err != nil {
 		return nil, err
 	}
+
+	// Track changes that require cascade slug updates
+	originalName := folder.Name
+	originalParentID := folder.ParentID
 
 	// Update fields
 	if req.Name != nil {
@@ -229,9 +235,38 @@ func (s *folderService) UpdateFolder(ctx context.Context, userID, folderID strin
 
 	folder.UpdatedAt = time.Now()
 
-	// Update in database
-	if err := s.folderRepo.Update(ctx, folder); err != nil {
-		return nil, err
+	// Detect if folder path changed (name or parent changed)
+	nameChanged := folder.Name != originalName
+	parentChanged := (originalParentID == nil) != (folder.ParentID == nil) ||
+		(originalParentID != nil && folder.ParentID != nil && *originalParentID != *folder.ParentID)
+	pathChanged := nameChanged || parentChanged
+
+	// If path changed, use transaction to ensure folder update + cascade are atomic
+	if pathChanged {
+		var result *models.Folder
+		err := s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
+			// Update folder in database
+			if err := s.folderRepo.Update(txCtx, folder); err != nil {
+				return err
+			}
+
+			// Cascade slug updates to all descendant documents
+			if err := s.updateDescendantSlugs(txCtx, folder.ID, folder.ProjectID); err != nil {
+				return fmt.Errorf("cascade slug updates: %w", err)
+			}
+
+			result = folder
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		folder = result
+	} else {
+		// No path change - simple update without transaction
+		if err := s.folderRepo.Update(ctx, folder); err != nil {
+			return nil, err
+		}
 	}
 
 	// Compute display path
@@ -248,9 +283,68 @@ func (s *folderService) UpdateFolder(ctx context.Context, userID, folderID strin
 		"name", folder.Name,
 		"folder_id", folder.ParentID,
 		"path", folder.Path,
+		"path_changed", pathChanged,
 	)
 
 	return folder, nil
+}
+
+// updateDescendantSlugs regenerates path slugs for all documents in a folder subtree.
+// Called when a folder is renamed or moved to update the path-based slugs of descendant documents.
+func (s *folderService) updateDescendantSlugs(ctx context.Context, folderID, projectID string) error {
+	// Get all documents in this folder and all descendant folders
+	docs, err := s.docRepo.GetAllByFolderRecursive(ctx, folderID, projectID)
+	if err != nil {
+		return fmt.Errorf("get descendant documents: %w", err)
+	}
+
+	if len(docs) == 0 {
+		return nil // No documents to update
+	}
+
+	s.logger.Debug("cascading slug updates to descendant documents",
+		"folder_id", folderID,
+		"document_count", len(docs),
+	)
+
+	// Update each document's slug based on its new folder path
+	for _, doc := range docs {
+		// Get the document's folder path (now reflects the renamed/moved parent)
+		folderPath, err := s.folderRepo.GetPath(ctx, doc.FolderID, projectID)
+		if err != nil {
+			return fmt.Errorf("get folder path for doc %s: %w", doc.ID, err)
+		}
+		slugifiedFolderPath := identifier.SlugifyPath(folderPath)
+
+		// Generate base slug from document name
+		baseSlug := identifier.GenerateSlug(doc.Name)
+
+		// Combine folder path with doc slug
+		newSlug := identifier.GeneratePathSlug(slugifiedFolderPath, baseSlug)
+
+		// Ensure uniqueness (excluding this document)
+		finalSlug := identifier.EnsureUniqueSlug(newSlug, func(testSlug string) bool {
+			// Skip if same as current slug (already unique)
+			if testSlug == doc.Slug {
+				return false
+			}
+			exists, _ := s.docRepo.SlugExists(ctx, testSlug, projectID, &doc.ID)
+			return exists
+		})
+
+		// Update slug in database
+		if err := s.docRepo.UpdateSlug(ctx, doc.ID, finalSlug); err != nil {
+			return fmt.Errorf("update slug for doc %s: %w", doc.ID, err)
+		}
+
+		s.logger.Debug("updated document slug",
+			"doc_id", doc.ID,
+			"old_slug", doc.Slug,
+			"new_slug", finalSlug,
+		)
+	}
+
+	return nil
 }
 
 // DeleteFolder deletes a folder and all its contents (documents and subfolders) recursively.

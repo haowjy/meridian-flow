@@ -119,6 +119,27 @@ feature: "File System"
 
 ---
 
+## Document URLs
+
+Documents use path-based slugs for semantic navigation:
+
+| Location | URL Example |
+|----------|------------|
+| Root | `/projects/my-novel/documents/readme` |
+| Nested | `/projects/my-novel/documents/characters/heroes/aria` |
+
+**Benefits:**
+- Semantic URLs reveal document location
+- Natural disambiguation (`docs/readme` vs `src/readme`)
+- Self-documenting bookmarks
+
+**Implementation:**
+- Frontend: TanStack Router splat route (`$.tsx`) captures all path segments
+- Resolution: WorkspaceLayout resolves slug → UUID via tree store
+- Cascade: Folder rename/move regenerates descendant document slugs
+
+---
+
 ## Known Gaps & Future Enhancements
 
 ### Current Gaps

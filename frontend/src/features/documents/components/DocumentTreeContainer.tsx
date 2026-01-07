@@ -43,6 +43,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
   const navigate = useNavigate()
   const {
     tree,
+    documents,
     expandedFolders,
     status,
     error,
@@ -54,6 +55,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
   } = useTreeStore(
     useShallow((s) => ({
       tree: s.tree,
+      documents: s.documents,
       expandedFolders: s.expandedFolders,
       status: s.status,
       error: s.error,
@@ -69,10 +71,12 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
   // Navigation-aware delete operations (handles "navigate away first" pattern)
   const { deleteDocument, deleteFolder } = useResourceOperations(projectId)
 
-  // Read project name from store for header title (centralized approach)
-  const projectName = useProjectStore((s) =>
-    s.projects.find((p) => p.id === projectId)?.name || s.currentProject()?.name || undefined
+  // Read project from store for header title and slug (centralized approach)
+  const project = useProjectStore((s) =>
+    s.projects.find((p) => p.id === projectId) || s.currentProject()
   )
+  const projectName = project?.name
+  const projectSlug = project?.slug ?? projectId // Fallback to ID for backwards compat
 
   const [searchQuery, setSearchQuery] = useState('')
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
@@ -118,7 +122,14 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
 
   // Handle document click
   const handleDocumentClick = (documentId: string) => {
-    openDocument(documentId, projectId, navigate)
+    // Find document to get its slug for URL
+    const doc = documents.find((d) => d.id === documentId)
+    if (!doc?.slug) {
+      // All documents should have slugs - this indicates a data integrity issue
+      console.error('Document missing slug:', documentId)
+      return
+    }
+    openDocument(documentId, doc.slug, projectSlug, navigate)
   }
 
   // Handle delete document
@@ -333,6 +344,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
       const placeholderDocument = {
         id: pendingItem.tempId,
         name: defaultName,
+        slug: '', // Placeholder - actual slug generated on server
         extension: '.md',
         filename: defaultName + '.md',
         fileType: 'markdown' as const,

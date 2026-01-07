@@ -30,8 +30,8 @@ func NewProjectRepository(config *postgres.RepositoryConfig) docsysRepo.ProjectR
 // Create creates a new project
 func (r *PostgresProjectRepository) Create(ctx context.Context, project *models.Project) error {
 	query := fmt.Sprintf(`
-		INSERT INTO %s (user_id, name, created_at, updated_at)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO %s (user_id, name, slug, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, created_at, updated_at
 	`, r.tables.Projects)
 
@@ -39,6 +39,7 @@ func (r *PostgresProjectRepository) Create(ctx context.Context, project *models.
 	err := executor.QueryRow(ctx, query,
 		project.UserID,
 		project.Name,
+		project.Slug,
 		project.CreatedAt,
 		project.UpdatedAt,
 	).Scan(&project.ID, &project.CreatedAt, &project.UpdatedAt)
@@ -68,7 +69,7 @@ func (r *PostgresProjectRepository) Create(ctx context.Context, project *models.
 // GetByID retrieves a project by ID
 func (r *PostgresProjectRepository) GetByID(ctx context.Context, id, userID string) (*models.Project, error) {
 	query := fmt.Sprintf(`
-		SELECT id, user_id, name, created_at, updated_at
+		SELECT id, user_id, name, slug, created_at, updated_at
 		FROM %s
 		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 	`, r.tables.Projects)
@@ -79,6 +80,7 @@ func (r *PostgresProjectRepository) GetByID(ctx context.Context, id, userID stri
 		&project.ID,
 		&project.UserID,
 		&project.Name,
+		&project.Slug,
 		&project.CreatedAt,
 		&project.UpdatedAt,
 	)
@@ -93,10 +95,72 @@ func (r *PostgresProjectRepository) GetByID(ctx context.Context, id, userID stri
 	return &project, nil
 }
 
+// GetBySlug retrieves a project by slug (unique per user)
+func (r *PostgresProjectRepository) GetBySlug(ctx context.Context, slug, userID string) (*models.Project, error) {
+	query := fmt.Sprintf(`
+		SELECT id, user_id, name, slug, created_at, updated_at
+		FROM %s
+		WHERE slug = $1 AND user_id = $2 AND deleted_at IS NULL
+	`, r.tables.Projects)
+
+	var project models.Project
+	executor := postgres.GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, query, slug, userID).Scan(
+		&project.ID,
+		&project.UserID,
+		&project.Name,
+		&project.Slug,
+		&project.CreatedAt,
+		&project.UpdatedAt,
+	)
+
+	if err != nil {
+		if postgres.IsPgNoRowsError(err) {
+			return nil, fmt.Errorf("project with slug '%s': %w", slug, domain.ErrNotFound)
+		}
+		return nil, fmt.Errorf("get project by slug: %w", err)
+	}
+
+	return &project, nil
+}
+
+// SlugExists checks if a slug is already used by another project for this user
+func (r *PostgresProjectRepository) SlugExists(ctx context.Context, slug, userID string, excludeID *string) (bool, error) {
+	var query string
+	var args []interface{}
+
+	if excludeID != nil {
+		query = fmt.Sprintf(`
+			SELECT EXISTS(
+				SELECT 1 FROM %s
+				WHERE slug = $1 AND user_id = $2 AND id != $3 AND deleted_at IS NULL
+			)
+		`, r.tables.Projects)
+		args = []interface{}{slug, userID, *excludeID}
+	} else {
+		query = fmt.Sprintf(`
+			SELECT EXISTS(
+				SELECT 1 FROM %s
+				WHERE slug = $1 AND user_id = $2 AND deleted_at IS NULL
+			)
+		`, r.tables.Projects)
+		args = []interface{}{slug, userID}
+	}
+
+	var exists bool
+	executor := postgres.GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, query, args...).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check slug exists: %w", err)
+	}
+
+	return exists, nil
+}
+
 // List retrieves all projects for a user, ordered by updated_at DESC
 func (r *PostgresProjectRepository) List(ctx context.Context, userID string) ([]models.Project, error) {
 	query := fmt.Sprintf(`
-		SELECT id, user_id, name, created_at, updated_at
+		SELECT id, user_id, name, slug, created_at, updated_at
 		FROM %s
 		WHERE user_id = $1 AND deleted_at IS NULL
 		ORDER BY updated_at DESC
@@ -116,6 +180,7 @@ func (r *PostgresProjectRepository) List(ctx context.Context, userID string) ([]
 			&project.ID,
 			&project.UserID,
 			&project.Name,
+			&project.Slug,
 			&project.CreatedAt,
 			&project.UpdatedAt,
 		)
@@ -137,17 +202,18 @@ func (r *PostgresProjectRepository) List(ctx context.Context, userID string) ([]
 	return projects, nil
 }
 
-// Update updates a project's name and updated_at timestamp
+// Update updates a project's name, slug, and updated_at timestamp
 func (r *PostgresProjectRepository) Update(ctx context.Context, project *models.Project) error {
 	query := fmt.Sprintf(`
 		UPDATE %s
-		SET name = $1, updated_at = $2
-		WHERE id = $3 AND user_id = $4 AND deleted_at IS NULL
+		SET name = $1, slug = $2, updated_at = $3
+		WHERE id = $4 AND user_id = $5 AND deleted_at IS NULL
 	`, r.tables.Projects)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
 	result, err := executor.Exec(ctx, query,
 		project.Name,
+		project.Slug,
 		project.UpdatedAt,
 		project.ID,
 		project.UserID,
@@ -185,7 +251,7 @@ func (r *PostgresProjectRepository) Delete(ctx context.Context, id, userID strin
 		UPDATE %s
 		SET deleted_at = NOW()
 		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
-		RETURNING id, user_id, name, created_at, updated_at, deleted_at
+		RETURNING id, user_id, name, slug, created_at, updated_at, deleted_at
 	`, r.tables.Projects)
 
 	var project models.Project
@@ -194,6 +260,7 @@ func (r *PostgresProjectRepository) Delete(ctx context.Context, id, userID strin
 		&project.ID,
 		&project.UserID,
 		&project.Name,
+		&project.Slug,
 		&project.CreatedAt,
 		&project.UpdatedAt,
 		&project.DeletedAt,

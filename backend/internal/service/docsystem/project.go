@@ -12,6 +12,7 @@ import (
 	models "meridian/internal/domain/models/docsystem"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	docsysSvc "meridian/internal/domain/services/docsystem"
+	"meridian/internal/service/identifier"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 )
@@ -43,10 +44,18 @@ func (s *projectService) CreateProject(ctx context.Context, req *docsysSvc.Creat
 	// Trim and normalize name
 	name := strings.TrimSpace(req.Name)
 
+	// Generate unique slug from name
+	baseSlug := identifier.GenerateSlug(name)
+	slug := identifier.EnsureUniqueSlug(baseSlug, func(testSlug string) bool {
+		exists, _ := s.projectRepo.SlugExists(ctx, testSlug, req.UserID, nil)
+		return exists
+	})
+
 	// Create project
 	project := &models.Project{
 		UserID:    req.UserID,
 		Name:      name,
+		Slug:      slug,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -58,6 +67,7 @@ func (s *projectService) CreateProject(ctx context.Context, req *docsysSvc.Creat
 	s.logger.Info("project created",
 		"id", project.ID,
 		"name", project.Name,
+		"slug", project.Slug,
 		"user_id", req.UserID,
 	)
 
@@ -100,6 +110,15 @@ func (s *projectService) UpdateProject(ctx context.Context, id, userID string, r
 	// Trim and normalize name
 	name := strings.TrimSpace(req.Name)
 
+	// Regenerate slug if name changed (mutable slugs)
+	if name != project.Name {
+		baseSlug := identifier.GenerateSlug(name)
+		project.Slug = identifier.EnsureUniqueSlug(baseSlug, func(testSlug string) bool {
+			exists, _ := s.projectRepo.SlugExists(ctx, testSlug, userID, &project.ID)
+			return exists
+		})
+	}
+
 	// Update fields
 	project.Name = name
 	project.UpdatedAt = time.Now()
@@ -111,6 +130,7 @@ func (s *projectService) UpdateProject(ctx context.Context, id, userID string, r
 	s.logger.Info("project updated",
 		"id", project.ID,
 		"name", project.Name,
+		"slug", project.Slug,
 		"user_id", userID,
 	)
 
