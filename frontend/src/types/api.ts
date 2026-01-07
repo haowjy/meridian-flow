@@ -16,6 +16,7 @@ export interface ProjectDto {
   id: string
   user_id: string
   name: string
+  slug: string  // URL-friendly identifier, unique per user
   created_at: string  // ISO date string
   updated_at: string  // ISO date string
 }
@@ -45,6 +46,7 @@ export interface DocumentDto {
   project_id: string
   folder_id: string | null
   name: string
+  slug: string  // URL-friendly identifier, unique per project
   extension: string  // File extension with leading dot: ".md", ".excalidraw"
   content?: string
   metadata?: DocumentMetadataDto  // Format-specific stats (replaces word_count)
@@ -67,6 +69,7 @@ export interface TreeDocumentDto {
   project_id: string
   folder_id: string | null
   name: string
+  slug: string  // URL-friendly identifier, unique per project
   extension: string
   updated_at: string
 }
@@ -92,6 +95,7 @@ export function fromProjectDto(dto: ProjectDto): Project {
   return {
     id: dto.id,
     name: dto.name,
+    slug: dto.slug,
     createdAt: new Date(dto.created_at),
     updatedAt: new Date(dto.updated_at),
   }
@@ -119,6 +123,7 @@ export function fromDocumentDto(dto: DocumentDto): Document {
     projectId: dto.project_id,
     folderId: dto.folder_id,
     name: dto.name,
+    slug: dto.slug,
     extension: dto.extension,
     filename,
     fileType,
@@ -149,6 +154,7 @@ export function fromTreeDocumentDto(dto: TreeDocumentDto): Document {
     projectId: dto.project_id,
     folderId: dto.folder_id,
     name: dto.name,
+    slug: dto.slug,
     extension: dto.extension,
     filename,
     fileType,
