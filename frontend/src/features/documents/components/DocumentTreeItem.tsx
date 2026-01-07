@@ -129,11 +129,11 @@ export function DocumentTreeItem({
           'hover:bg-hover',
           isActive && 'bg-sidebar-accent/50 font-medium'
         )}
-        aria-label={`Open document: ${document.name}`}
+        aria-label={`Open document: ${document.filename}`}
         aria-current={isActive ? 'page' : undefined}
       >
         <FileText className="size-3.5 flex-shrink-0" />
-        <span className="truncate flex-1">{document.name}</span>
+        <span className="truncate flex-1">{document.filename}</span>
 
         {/* "..." button - visible on hover */}
         {hasMenuItems && (

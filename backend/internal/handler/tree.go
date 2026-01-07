@@ -41,5 +41,5 @@ func (h *TreeHandler) GetTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httputil.RespondJSON(w, http.StatusOK, tree)
+	httputil.RespondJSON(w, http.StatusOK, toTreeResponseDTO(tree))
 }

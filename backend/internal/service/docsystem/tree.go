@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 
-	models "meridian/internal/domain/models/docsystem"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	"meridian/internal/domain/services"
 	docsysSvc "meridian/internal/domain/services/docsystem"
@@ -35,7 +34,7 @@ func NewTreeService(
 
 // GetProjectTree builds and returns the nested folder/document tree for a project
 // Authorization is checked first via the injected authorizer
-func (s *treeService) GetProjectTree(ctx context.Context, userID, projectID string) (*models.TreeNode, error) {
+func (s *treeService) GetProjectTree(ctx context.Context, userID, projectID string) (*docsysSvc.ProjectTree, error) {
 	// Authorize: check user can access this project
 	if err := s.authorizer.CanAccessProject(ctx, userID, projectID); err != nil {
 		return nil, err
@@ -54,18 +53,20 @@ func (s *treeService) GetProjectTree(ctx context.Context, userID, projectID stri
 	}
 
 	// Build folder hierarchy using 3-pass algorithm
-	folderMap := make(map[string]*models.FolderTreeNode)
+	folderMap := make(map[string]*docsysSvc.TreeFolder)
 	var rootFolderIDs []string
 
 	// First pass: create all folder nodes
 	for _, folder := range allFolders {
-		folderMap[folder.ID] = &models.FolderTreeNode{
+		folderMap[folder.ID] = &docsysSvc.TreeFolder{
 			ID:        folder.ID,
+			ProjectID: folder.ProjectID,
+			FolderID:  folder.ParentID,
 			Name:      folder.Name,
-			ParentID:  folder.ParentID,
 			CreatedAt: folder.CreatedAt,
-			Folders:   []*models.FolderTreeNode{},
-			Documents: []models.DocumentTreeNode{},
+			UpdatedAt: folder.UpdatedAt,
+			Folders:   []*docsysSvc.TreeFolder{},
+			Documents: []docsysSvc.TreeDocument{},
 		}
 	}
 
@@ -84,13 +85,14 @@ func (s *treeService) GetProjectTree(ctx context.Context, userID, projectID stri
 	}
 
 	// Third pass: add documents to their folders
-	rootDocuments := make([]models.DocumentTreeNode, 0)
+	rootDocuments := make([]docsysSvc.TreeDocument, 0)
 	for _, doc := range allDocuments {
-		docNode := models.DocumentTreeNode{
+		docNode := docsysSvc.TreeDocument{
 			ID:        doc.ID,
+			ProjectID: doc.ProjectID,
 			Name:      doc.Name,
 			FolderID:  doc.FolderID,
-			WordCount: doc.WordCount,
+			Extension: doc.Extension,
 			UpdatedAt: doc.UpdatedAt,
 		}
 
@@ -106,14 +108,14 @@ func (s *treeService) GetProjectTree(ctx context.Context, userID, projectID stri
 	}
 
 	// Build final tree using root folder pointers
-	rootFolders := make([]*models.FolderTreeNode, 0)
+	rootFolders := make([]*docsysSvc.TreeFolder, 0)
 	for _, folderID := range rootFolderIDs {
 		if node, exists := folderMap[folderID]; exists {
 			rootFolders = append(rootFolders, node)
 		}
 	}
 
-	tree := &models.TreeNode{
+	tree := &docsysSvc.ProjectTree{
 		Folders:   rootFolders,
 		Documents: rootDocuments,
 	}

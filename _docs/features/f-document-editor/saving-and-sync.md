@@ -101,7 +101,7 @@ feature: "Saving and Sync"
 - `folderId` - Parent folder ID
 - `projectId` - Parent project ID
 - `updatedAt` - Server timestamp
-- `wordCount` - Calculated word count
+- `wordCount` - Calculated word count (from `metadata.markdown.wordCount`)
 
 **File**: `/Users/jimmyyao/gitrepos/meridian/frontend/src/core/lib/db.ts`
 

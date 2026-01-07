@@ -121,7 +121,7 @@ func (t *ViewTool) formatDocument(ctx context.Context, doc *docsystem.Document) 
 		"name":          doc.Name,
 		"path":          path,
 		"content":       content,
-		"word_count":    doc.WordCount,
+		"word_count":    doc.WordCount(),
 		"was_truncated": wasTruncated,
 	}, nil
 }
@@ -146,7 +146,7 @@ func (t *ViewTool) listFolderContents(ctx context.Context, folderID *string, fol
 		docList[i] = map[string]interface{}{
 			"id":         doc.ID,
 			"name":       doc.Name,
-			"word_count": doc.WordCount,
+			"word_count": doc.WordCount(),
 			"updated_at": doc.UpdatedAt,
 		}
 	}

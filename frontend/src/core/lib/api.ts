@@ -601,10 +601,10 @@ export const api = {
         signal: options?.signal,
       })
     },
-    create: async (projectId: string, folderId: string | null, name: string, options?: { signal?: AbortSignal }): Promise<Document> => {
+    create: async (projectId: string, folderId: string | null, name: string, extension = '.md', options?: { signal?: AbortSignal }): Promise<Document> => {
       const data = await fetchAPI<DocumentDto>('/api/documents', {
         method: 'POST',
-        body: JSON.stringify({ project_id: projectId, folder_id: folderId, name }),
+        body: JSON.stringify({ project_id: projectId, folder_id: folderId, name, extension }),
         signal: options?.signal,
       })
       return fromDocumentDto(data)

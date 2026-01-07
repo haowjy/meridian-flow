@@ -343,7 +343,7 @@ project_id: UUID
 folder_id: UUID (nullable, for folder hierarchy)
 name: string (e.g., "Elara")
 content: text (Markdown - single source of truth)
-word_count: int (computed from markdown)
+metadata: jsonb (e.g., metadata.markdown.wordCount)
 created_at: timestamp
 updated_at: timestamp
 ```

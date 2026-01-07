@@ -92,14 +92,22 @@ func (p *individualFileProcessor) Process(
 		return result, nil
 	}
 
-	// Extract document name (filename without extension)
+	// Extract document name and extension
 	baseName := filepath.Base(filename)
-	ext := filepath.Ext(baseName)
-	docName := strings.TrimSuffix(baseName, ext)
+	ext := strings.ToLower(filepath.Ext(baseName))
+	docName := strings.TrimSuffix(baseName, filepath.Ext(baseName))
 	docName = SanitizeDocName(docName) // Replace invalid characters
 
-	// Check for existing document with same name in target folder
-	existingDoc, err := p.findExistingDocument(ctx, projectID, folderPath, docName)
+	// Determine target extension:
+	// - Keep original if it's a valid markdown extension (.md, .markdown, .txt)
+	// - Default to .md for converted files (e.g., .html → .md)
+	targetExt := ".md" // default for conversions
+	if docsysModels.IsValidExtension(ext) {
+		targetExt = ext
+	}
+
+	// Check for existing document with same name+extension in target folder
+	existingDoc, err := p.findExistingDocument(ctx, projectID, folderPath, docName, targetExt)
 	if err != nil {
 		result.Summary.Failed = 1
 		result.Errors = append(result.Errors, docsysSvc.ImportError{
@@ -131,7 +139,7 @@ func (p *individualFileProcessor) Process(
 			result.Documents = append(result.Documents, docsysSvc.ImportDocument{
 				ID:     doc.ID,
 				Path:   doc.Path,
-				Name:   doc.Name,
+				Name:   doc.Filename(),
 				Action: "updated",
 			})
 
@@ -142,11 +150,12 @@ func (p *individualFileProcessor) Process(
 			)
 		} else {
 			// Skip duplicate - document already exists and overwrite is false
+			filename := docName + targetExt
 			result.Summary.Skipped = 1
 			result.Documents = append(result.Documents, docsysSvc.ImportDocument{
 				ID:     existingDoc.ID,
-				Path:   BuildFullPath(folderPath, docName),
-				Name:   docName,
+				Path:   BuildFullPath(folderPath, filename),
+				Name:   filename,
 				Action: "skipped",
 			})
 
@@ -164,6 +173,7 @@ func (p *individualFileProcessor) Process(
 		UserID:     userID,
 		FolderPath: &folderPath, // Use provided folder path (empty string = root)
 		Name:       docName,
+		Extension:  targetExt,
 		Content:    markdown,
 	})
 
@@ -182,7 +192,7 @@ func (p *individualFileProcessor) Process(
 	result.Documents = append(result.Documents, docsysSvc.ImportDocument{
 		ID:     doc.ID,
 		Path:   doc.Path,
-		Name:   doc.Name,
+		Name:   doc.Filename(),
 		Action: "created",
 	})
 
@@ -195,11 +205,11 @@ func (p *individualFileProcessor) Process(
 	return result, nil
 }
 
-// findExistingDocument checks if a document with the given name exists in the target folder.
+// findExistingDocument checks if a document with the given name+extension exists in the target folder.
 //
 // Performance Note: This scans ALL documents in the project (O(n) where n = document count).
 // Acceptable for projects with < 1000 documents. For larger projects, consider:
-//   - Adding a database index on (project_id, folder_path, name)
+//   - Adding a database index on (project_id, folder_path, name, extension)
 //   - Caching the document map across multiple imports
 //   - Using a single bulk lookup at the start (like ZipFileProcessor does)
 func (p *individualFileProcessor) findExistingDocument(
@@ -207,6 +217,7 @@ func (p *individualFileProcessor) findExistingDocument(
 	projectID string,
 	folderPath string,
 	docName string,
+	extension string,
 ) (*docsysModels.Document, error) {
 	// Fetch all documents - see Performance Note above
 	docs, err := p.docRepo.GetAllMetadataByProject(ctx, projectID)
@@ -215,8 +226,10 @@ func (p *individualFileProcessor) findExistingDocument(
 	}
 
 	// Build target lookup key using the same format as docMap in ZipFileProcessor
-	targetPath := BuildFullPath(folderPath, docName)
-	targetKey := BuildLookupKey(targetPath, docName)
+	// Include extension in the filename for proper matching
+	filename := docName + extension
+	targetPath := BuildFullPath(folderPath, filename)
+	targetKey := BuildLookupKey(targetPath, filename)
 
 	for _, doc := range docs {
 		path, err := p.docRepo.GetPath(ctx, &doc)
@@ -224,7 +237,8 @@ func (p *individualFileProcessor) findExistingDocument(
 			continue
 		}
 
-		if BuildLookupKey(path, doc.Name) == targetKey {
+		// Use Filename() to include extension in comparison
+		if BuildLookupKey(path, doc.Filename()) == targetKey {
 			return &doc, nil
 		}
 	}

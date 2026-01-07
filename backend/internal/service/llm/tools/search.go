@@ -130,7 +130,7 @@ func (t *SearchTool) Execute(ctx context.Context, input map[string]interface{}) 
 			"name":       result.Document.Name,
 			"path":       result.Document.Path,
 			"score":      result.Score,
-			"word_count": result.Document.WordCount,
+			"word_count": result.Document.WordCount(),
 			"updated_at": result.Document.UpdatedAt,
 			"preview":    preview,
 		}
