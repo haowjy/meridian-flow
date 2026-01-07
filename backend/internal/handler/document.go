@@ -83,6 +83,7 @@ func (h *DocumentHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 type updateDocumentDTO struct {
 	ProjectID        string                  `json:"project_id"`
 	Name             *string                 `json:"name,omitempty"`
+	Extension        *string                 `json:"extension,omitempty"`   // Optional extension change (e.g., ".md" -> ".txt")
 	FolderPath       *string                 `json:"folder_path,omitempty"`
 	FolderID         httputil.OptionalString `json:"folder_id"`
 	Content          *string                 `json:"content,omitempty"`
@@ -120,6 +121,7 @@ func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request)
 	req := &docsysSvc.UpdateDocumentRequest{
 		ProjectID:  dto.ProjectID,
 		Name:       dto.Name,
+		Extension:  dto.Extension,
 		FolderPath: dto.FolderPath,
 		FolderID: docsysSvc.OptionalFolderID{
 			Present: dto.FolderID.Present,

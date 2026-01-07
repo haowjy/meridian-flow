@@ -25,9 +25,10 @@ feature: "File System Backend API"
 - Name validation (no `/` allowed)
 - Files: `backend/internal/{handler,service,repository}/*/folder.go`
 
-**Documents** - Markdown content
-- Markdown storage (TEXT field)
-- Word count tracking
+**Documents** - Multi-format content
+- Content storage (TEXT field for text-based formats)
+- Extension-based file types (`.md`, `.excalidraw`, `.mermaid`, etc.)
+- Format-specific metadata (e.g., `metadata.markdown.wordCount` for markdown files)
 - Folder placement
 - Files: `backend/internal/{handler,service,repository}/*/document.go`
 

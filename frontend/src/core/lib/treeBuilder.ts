@@ -1,6 +1,6 @@
 import type { Folder } from '@/features/folders/types/folder'
 import type { Document } from '@/features/documents/types/document'
-import type { FolderDto, DocumentDto } from '@/types/api'
+import { type TreeFolderDto, type TreeDocumentDto, fromTreeDocumentDto } from '@/types/api'
 
 /**
  * Hierarchical tree node for rendering folder/document structure.
@@ -34,8 +34,8 @@ export type TreeNode =
  * @returns TreeNode array ready for rendering
  */
 export function convertNestedToTreeNodes(
-  foldersDto: FolderDto[],
-  documentsDto: DocumentDto[]
+  foldersDto: TreeFolderDto[],
+  documentsDto: TreeDocumentDto[]
 ): TreeNode[] {
   const nodes: TreeNode[] = []
 
@@ -66,20 +66,12 @@ export function convertNestedToTreeNodes(
 
   // Convert documents at this level
   for (const docDto of documentsDto) {
-    const document: Document = {
-      id: docDto.id,
-      projectId: docDto.project_id,
-      folderId: docDto.folder_id,
-      name: docDto.name,
-      content: docDto.content,
-      wordCount: docDto.word_count,
-      updatedAt: new Date(docDto.updated_at),
-    }
+    const document: Document = fromTreeDocumentDto(docDto)
 
     nodes.push({
       type: 'document',
       id: document.id,
-      name: document.name,
+      name: document.filename, // Display full filename with extension
       data: document,
     })
   }
@@ -131,7 +123,7 @@ export function buildTree(folders: Folder[], documents: Document[]): TreeNode[] 
       .map((doc) => ({
         type: 'document' as const,
         id: doc.id,
-        name: doc.name,
+        name: doc.filename, // Display full filename with extension
         data: doc,
       }))
 

@@ -53,13 +53,20 @@ func NewDocumentService(
 
 // CreateDocument creates a new document with priority-based folder resolution
 // Supports Unix-style path notation in name field:
-//   - "name.md" → create document with given name at folder_id
-//   - "a/b/c.md" → auto-create intermediate folders (a, b) and document (c.md) at folder_id
-//   - "/a/b/c.md" → absolute path from root (ignore folder_id)
+//   - "name" → create document with given name at folder_id
+//   - "a/b/c" → auto-create intermediate folders (a, b) and document (c) at folder_id
+//   - "/a/b/c" → absolute path from root (ignore folder_id)
 func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.CreateDocumentRequest) (*models.Document, error) {
 	// Normalize empty string folder_id to nil for root-level documents
 	if req.FolderID != nil && *req.FolderID == "" {
 		req.FolderID = nil
+	}
+
+	// Normalize and validate extension
+	extension := models.NormalizeExtension(req.Extension)
+	if !models.IsValidExtension(extension) {
+		return nil, fmt.Errorf("%w: unsupported file extension %q (supported: %v)",
+			domain.ErrValidation, extension, models.ValidExtensions())
 	}
 
 	// Validate parent resources are not deleted
@@ -90,36 +97,41 @@ func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.Cre
 	s.logger.Debug("path notation resolved",
 		"original_name", req.Name,
 		"final_name", docName,
+		"extension", extension,
 		"folder_id", folderID,
 	)
 
-	// Check for duplicate name in target folder
+	// Check for duplicate name+extension in target folder
 	siblings, err := s.docRepo.ListByFolder(ctx, folderID, req.ProjectID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check for duplicate names: %w", err)
 	}
 	for _, sibling := range siblings {
-		if sibling.Name == docName {
+		if sibling.Name == docName && sibling.Extension == extension {
 			return nil, &domain.ConflictError{
-				Message:      fmt.Sprintf("a document named %q already exists in this folder", docName),
+				Message:      fmt.Sprintf("a document named %q already exists in this folder", docName+extension),
 				ResourceType: "document",
 				ResourceID:   sibling.ID,
 			}
 		}
 	}
 
-	// Count words (business logic)
-	wordCount := s.contentAnalyzer.CountWords(req.Content)
-
 	// Create document
 	doc := &models.Document{
 		ProjectID: req.ProjectID,
 		FolderID:  folderID,
 		Name:      docName,
+		Extension: extension,
 		Content:   req.Content,
-		WordCount: wordCount,
+		Metadata:  models.DocumentMetadata{},
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
+	}
+
+	// Compute format-specific metadata based on file category
+	// Only markdown-family files get word count
+	if models.IsMarkdownExtension(extension) {
+		doc.SetMarkdownWordCount(s.contentAnalyzer.CountWords(req.Content))
 	}
 
 	if err := s.docRepo.Create(ctx, doc); err != nil {
@@ -130,7 +142,7 @@ func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.Cre
 	path, err := s.docRepo.GetPath(ctx, doc)
 	if err != nil {
 		s.logger.Warn("failed to compute path", "doc_id", doc.ID, "error", err)
-		doc.Path = docName
+		doc.Path = doc.Filename()
 	} else {
 		doc.Path = path
 	}
@@ -138,9 +150,10 @@ func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.Cre
 	s.logger.Info("document created",
 		"id", doc.ID,
 		"name", doc.Name,
+		"extension", doc.Extension,
 		"project_id", req.ProjectID,
 		"folder_id", folderID,
-		"word_count", wordCount,
+		"word_count", doc.WordCount(),
 		"path_notation", IsPathNotation(req.Name),
 	)
 
@@ -165,7 +178,7 @@ func (s *documentService) GetDocument(ctx context.Context, userID, documentID st
 	path, err := s.docRepo.GetPath(ctx, doc)
 	if err != nil {
 		s.logger.Warn("failed to compute path", "doc_id", doc.ID, "error", err)
-		doc.Path = doc.Name
+		doc.Path = doc.Filename()
 	} else {
 		doc.Path = path
 	}
@@ -195,6 +208,25 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 			return nil, fmt.Errorf("%w: document name cannot contain slashes", domain.ErrValidation)
 		}
 		doc.Name = trimmedName
+	}
+
+	// Update extension if provided
+	if req.Extension != nil {
+		extension := models.NormalizeExtension(*req.Extension)
+		if !models.IsValidExtension(extension) {
+			return nil, fmt.Errorf("%w: unsupported file extension %q (supported: %v)",
+				domain.ErrValidation, extension, models.ValidExtensions())
+		}
+		doc.Extension = extension
+
+		// Keep metadata consistent with the file format.
+		// If switching to a markdown-family extension, recompute word count from current content.
+		// If switching away, remove markdown-specific metadata.
+		if models.IsMarkdownExtension(doc.Extension) {
+			doc.SetMarkdownWordCount(s.contentAnalyzer.CountWords(doc.Content))
+		} else {
+			doc.ClearMarkdownMetadata()
+		}
 	}
 
 	// Priority-based folder resolution for moving documents:
@@ -230,20 +262,24 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 
 	if req.Content != nil {
 		doc.Content = *req.Content
-		// Recalculate word count
-		doc.WordCount = s.contentAnalyzer.CountWords(doc.Content)
+		// Recalculate word count for markdown-family files
+		if models.IsMarkdownExtension(doc.Extension) {
+			doc.SetMarkdownWordCount(s.contentAnalyzer.CountWords(doc.Content))
+		} else {
+			doc.ClearMarkdownMetadata()
+		}
 	}
 
-	// Check for duplicate name in target folder (if name or folder changed)
-	if req.Name != nil || req.FolderID.Present || req.FolderPath != nil {
+	// Check for duplicate name+extension in target folder (if name, extension, or folder changed)
+	if req.Name != nil || req.Extension != nil || req.FolderID.Present || req.FolderPath != nil {
 		siblings, err := s.docRepo.ListByFolder(ctx, doc.FolderID, doc.ProjectID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check for duplicate names: %w", err)
 		}
 		for _, sibling := range siblings {
-			if sibling.ID != doc.ID && sibling.Name == doc.Name {
+			if sibling.ID != doc.ID && sibling.Name == doc.Name && sibling.Extension == doc.Extension {
 				return nil, &domain.ConflictError{
-					Message:      fmt.Sprintf("a document named %q already exists in this folder", doc.Name),
+					Message:      fmt.Sprintf("a document named %q already exists in this folder", doc.Filename()),
 					ResourceType: "document",
 					ResourceID:   sibling.ID,
 				}
@@ -301,7 +337,7 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 		path, err := s.docRepo.GetPath(ctx, result)
 		if err != nil {
 			s.logger.Warn("failed to compute path", "doc_id", result.ID, "error", err)
-			result.Path = result.Name
+			result.Path = result.Filename()
 		} else {
 			result.Path = path
 		}
@@ -328,7 +364,7 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 	path, err := s.docRepo.GetPath(ctx, doc)
 	if err != nil {
 		s.logger.Warn("failed to compute path", "doc_id", doc.ID, "error", err)
-		doc.Path = doc.Name
+		doc.Path = doc.Filename()
 	} else {
 		doc.Path = path
 	}
@@ -366,7 +402,7 @@ func (s *documentService) UpdateAIVersion(ctx context.Context, userID, documentI
 	path, err := s.docRepo.GetPath(ctx, doc)
 	if err != nil {
 		s.logger.Warn("failed to compute path", "doc_id", doc.ID, "error", err)
-		doc.Path = doc.Name
+		doc.Path = doc.Filename()
 	} else {
 		doc.Path = path
 	}
@@ -469,7 +505,7 @@ func (s *documentService) SearchDocuments(ctx context.Context, userID string, re
 				"doc_id", doc.ID,
 				"error", err,
 			)
-			doc.Path = doc.Name // Fallback to just the name
+			doc.Path = doc.Filename() // Fallback to just the name
 		} else {
 			doc.Path = path
 		}
