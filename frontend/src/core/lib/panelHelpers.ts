@@ -12,7 +12,7 @@ type NavigateFunction = ReturnType<typeof useNavigate>
  * when switching between chats, documents, and editor.
  *
  * Navigation:
- * - URL reflects document state (shareable, bookmarkable, refresh-safe)
+ * - URLs use path-based slugs (/projects/my-novel/documents/characters/heroes/aria)
  * - Browser back/forward handles all navigation (standard behavior)
  * - UI state synced by WorkspaceLayout when URL changes
  */
@@ -23,28 +23,31 @@ type NavigateFunction = ReturnType<typeof useNavigate>
  * - Navigates to document URL via navigate()
  * - WorkspaceLayout effect will also sync if URL actually changes
  *
- * @param documentId - The ID of the document to open
- * @param projectId - The current project ID
+ * @param documentId - The UUID of the document to open (for UI state)
+ * @param documentSlug - The path-based slug of the document (e.g., "characters/heroes/aria")
+ * @param projectSlug - The project slug (for URL)
  * @param navigate - TanStack Router navigate function from useNavigate()
  */
 export function openDocument(
   documentId: string,
-  projectId: string,
+  documentSlug: string,
+  projectSlug: string,
   navigate: NavigateFunction
 ) {
   const store = useUIStore.getState()
 
   // Set UI state directly (needed when clicking current document after manual toggle)
-  logger.debug('openDocument:', documentId)
+  logger.debug('openDocument:', documentId, 'slug:', documentSlug)
   store.setActiveDocument(documentId)
   store.setRightPanelState('editor')
   store.setRightPanelCollapsed(false)
 
-  // Navigate to document URL (updates browser history)
+  // Navigate to document URL using path-based slug (updates browser history)
+  // Splat route captures all segments: /documents/characters/heroes/aria
   // If URL is already this document, router won't navigate, but state is already set above
   navigate({
-    to: '/projects/$id/documents/$documentId',
-    params: { id: projectId, documentId },
+    to: '/projects/$slug/documents/$',
+    params: { slug: projectSlug, _splat: documentSlug },
   })
 }
 
@@ -54,10 +57,10 @@ export function openDocument(
  * - Navigates to project tree URL via navigate()
  * - WorkspaceLayout effect will also sync if URL actually changes
  *
- * @param projectId - The current project ID
+ * @param projectSlug - The project slug (for URL)
  * @param navigate - TanStack Router navigate function from useNavigate()
  */
-export function closeEditor(projectId: string, navigate: NavigateFunction) {
+export function closeEditor(projectSlug: string, navigate: NavigateFunction) {
   const store = useUIStore.getState()
 
   // Set UI state directly
@@ -65,10 +68,10 @@ export function closeEditor(projectId: string, navigate: NavigateFunction) {
   store.setActiveDocument(null)
   store.setRightPanelState('documents')
 
-  // Navigate to tree URL (updates browser history)
+  // Navigate to tree URL using slug (updates browser history)
   navigate({
-    to: '/projects/$id',
-    params: { id: projectId },
+    to: '/projects/$slug',
+    params: { slug: projectSlug },
   })
 }
 

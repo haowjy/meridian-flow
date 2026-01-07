@@ -11,19 +11,22 @@ import (
 	"meridian/internal/domain"
 	docsystem "meridian/internal/domain/models/docsystem"
 	docsysSvc "meridian/internal/domain/services/docsystem"
+	identifierSvc "meridian/internal/domain/services/identifier"
 	"meridian/internal/httputil"
 )
 
 // DocumentHandler handles document HTTP requests
 type DocumentHandler struct {
 	docService docsysSvc.DocumentService
+	resolver   identifierSvc.Resolver // Interface for identifier resolution (DIP)
 	logger     *slog.Logger
 }
 
 // NewDocumentHandler creates a new document handler
-func NewDocumentHandler(docService docsysSvc.DocumentService, logger *slog.Logger) *DocumentHandler {
+func NewDocumentHandler(docService docsysSvc.DocumentService, resolver identifierSvc.Resolver, logger *slog.Logger) *DocumentHandler {
 	return &DocumentHandler{
 		docService: docService,
+		resolver:   resolver,
 		logger:     logger,
 	}
 }
@@ -56,17 +59,32 @@ func (h *DocumentHandler) CreateDocument(w http.ResponseWriter, r *http.Request)
 	httputil.RespondJSON(w, http.StatusCreated, doc)
 }
 
-// GetDocument retrieves a document by ID
+// GetDocument retrieves a document by ID or slug
 // GET /api/documents/{id}
+// Note: Slug resolution requires project context. For standalone document endpoints,
+// only UUIDs work. Slugs return 400 with helpful error message.
 func (h *DocumentHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
-	id, ok := PathParam(w, r, "id", "Document ID")
+	identifier, ok := PathParam(w, r, "id", "Document identifier")
 	if !ok {
+		return
+	}
+
+	// Resolve identifier (UUID works, slug returns helpful error)
+	documentID, err := h.resolver.ResolveDocumentIDOnly(r.Context(), identifier)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			httputil.RespondError(w, http.StatusNotFound, "Document not found")
+		} else if errors.Is(err, domain.ErrBadRequest) {
+			httputil.RespondError(w, http.StatusBadRequest, err.Error())
+		} else {
+			httputil.RespondError(w, http.StatusInternalServerError, "Failed to resolve document")
+		}
 		return
 	}
 
 	userID := httputil.GetUserID(r)
 
-	doc, err := h.docService.GetDocument(r.Context(), userID, id)
+	doc, err := h.docService.GetDocument(r.Context(), userID, documentID)
 	if err != nil {
 		handleError(w, err)
 		return
@@ -94,8 +112,21 @@ type updateDocumentDTO struct {
 // UpdateDocument updates a document
 // PATCH /api/documents/{id}
 func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request) {
-	id, ok := PathParam(w, r, "id", "Document ID")
+	identifier, ok := PathParam(w, r, "id", "Document identifier")
 	if !ok {
+		return
+	}
+
+	// Resolve identifier (UUID works, slug returns helpful error)
+	documentID, err := h.resolver.ResolveDocumentIDOnly(r.Context(), identifier)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			httputil.RespondError(w, http.StatusNotFound, "Document not found")
+		} else if errors.Is(err, domain.ErrBadRequest) {
+			httputil.RespondError(w, http.StatusBadRequest, err.Error())
+		} else {
+			httputil.RespondError(w, http.StatusInternalServerError, "Failed to resolve document")
+		}
 		return
 	}
 
@@ -142,7 +173,7 @@ func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request)
 	// Get userID from context (set by auth middleware)
 	userID := httputil.GetUserID(r)
 
-	doc, err := h.docService.UpdateDocument(r.Context(), userID, id, req)
+	doc, err := h.docService.UpdateDocument(r.Context(), userID, documentID, req)
 	if err != nil {
 		// Special handling for AI version conflict - include document in RFC 7807 response
 		var aiConflict *domain.AIVersionConflictError
@@ -172,14 +203,27 @@ func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request)
 // DeleteDocument deletes a document
 // DELETE /api/documents/{id}
 func (h *DocumentHandler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
-	id, ok := PathParam(w, r, "id", "Document ID")
+	identifier, ok := PathParam(w, r, "id", "Document identifier")
 	if !ok {
+		return
+	}
+
+	// Resolve identifier (UUID works, slug returns helpful error)
+	documentID, err := h.resolver.ResolveDocumentIDOnly(r.Context(), identifier)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			httputil.RespondError(w, http.StatusNotFound, "Document not found")
+		} else if errors.Is(err, domain.ErrBadRequest) {
+			httputil.RespondError(w, http.StatusBadRequest, err.Error())
+		} else {
+			httputil.RespondError(w, http.StatusInternalServerError, "Failed to resolve document")
+		}
 		return
 	}
 
 	userID := httputil.GetUserID(r)
 
-	if err := h.docService.DeleteDocument(r.Context(), userID, id); err != nil {
+	if err := h.docService.DeleteDocument(r.Context(), userID, documentID); err != nil {
 		handleError(w, err)
 		return
 	}
@@ -247,14 +291,27 @@ func (h *DocumentHandler) SearchDocuments(w http.ResponseWriter, r *http.Request
 // polling to detect AI version changes. Frontend polls this endpoint every
 // 5s and only fetches full document when status indicates a change.
 func (h *DocumentHandler) GetAIStatus(w http.ResponseWriter, r *http.Request) {
-	id, ok := PathParam(w, r, "id", "Document ID")
+	identifier, ok := PathParam(w, r, "id", "Document identifier")
 	if !ok {
+		return
+	}
+
+	// Resolve identifier (UUID works, slug returns helpful error)
+	documentID, err := h.resolver.ResolveDocumentIDOnly(r.Context(), identifier)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			httputil.RespondError(w, http.StatusNotFound, "Document not found")
+		} else if errors.Is(err, domain.ErrBadRequest) {
+			httputil.RespondError(w, http.StatusBadRequest, err.Error())
+		} else {
+			httputil.RespondError(w, http.StatusInternalServerError, "Failed to resolve document")
+		}
 		return
 	}
 
 	userID := httputil.GetUserID(r)
 
-	doc, err := h.docService.GetDocument(r.Context(), userID, id)
+	doc, err := h.docService.GetDocument(r.Context(), userID, documentID)
 	if err != nil {
 		handleError(w, err)
 		return

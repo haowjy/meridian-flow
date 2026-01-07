@@ -61,7 +61,7 @@ useEffect(() => {
 ```mermaid
 flowchart LR
     subgraph "URL (source of truth)"
-        URL["/projects/x/documents/A"]
+        URL["/projects/x/documents/chars/heroes/aria"]
     end
 
     subgraph "useUIStore"
@@ -77,6 +77,8 @@ flowchart LR
     style URL fill:#2d5f8d,stroke:#1b3a56,color:#fff
     style Panel fill:#8d5d2d,stroke:#5a3a1e,color:#fff
 ```
+
+**Path-based slugs:** URLs include folder path (`chars/heroes/aria`). Splat route (`$.tsx`) captures all segments after `/documents/`. WorkspaceLayout resolves slug → UUID via tree store.
 
 **Why rightPanelState isn't persisted:** URL is source of truth; effect syncs it on mount.
 

@@ -266,6 +266,40 @@ Bulk import documents from zip file(s) in replace mode. **Deletes all existing d
 
 ## Document Operations
 
+### Identifier Resolution
+
+Projects and documents support both UUIDs and slugs:
+
+| Resource | Endpoint Pattern | UUID | Slug |
+|----------|-----------------|------|------|
+| Project | `/api/projects/:id` | ✅ | ✅ |
+| Document | `/api/documents/:id` | ✅ | ❌ |
+
+**Why documents don't support slugs directly:**
+Document slugs are unique per-project (not globally). Standalone document endpoints
+like `/api/documents/:id` lack project context needed for slug resolution.
+
+**Slug access patterns:**
+- **Projects**: Use UUID or slug in `/api/projects/:id`
+- **Documents**: Use UUID in `/api/documents/:id`, or use tree endpoint with project context
+
+**Document Slug Format (Path-Based):**
+Document slugs include folder paths for semantic URLs and disambiguation:
+- Root documents: `readme`, `chapter-1`
+- Nested documents: `characters/heroes/aria`, `locations/cities/stormhaven`
+
+Slugs are URL-friendly (lowercase, hyphens for spaces) and unique per project. When a document is moved or its folder is renamed, the slug is regenerated to reflect the new path.
+
+**Error response when document slug provided:**
+```json
+{
+  "type": "https://datatracker.ietf.org/doc/html/rfc7231#section-6.5.1",
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "document slugs require project context"
+}
+```
+
 ### Create Document (POST /api/documents)
 
 **Request Body:**

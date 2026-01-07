@@ -133,6 +133,10 @@ Document and panel navigation uses a **two-pronged approach**:
 1. **Direct state updates** via `panelHelpers` (instant feedback, handles same-URL clicks)
 2. **URL sync effect** in `WorkspaceLayout` (syncs UI to URL on back/forward/refresh)
 
+**URL Format:** Documents use path-based slugs: `/projects/{project}/documents/{folder/path/docname}`
+- Splat route (`$.tsx`) captures all segments after `/documents/`
+- WorkspaceLayout resolves slug → UUID via tree store
+
 **Key pattern**: Use `getState()` in effects to read state without subscribing:
 - Prevents unnecessary effect re-runs when state changes
 - Allows independent effects (document URL vs chat query params)
