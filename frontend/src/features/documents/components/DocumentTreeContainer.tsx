@@ -15,7 +15,6 @@ import { ImportDocumentDialog } from './ImportDocumentDialog'
 import { DeleteFolderDialog } from './DeleteFolderDialog'
 import { Skeleton } from '@/shared/components/ui/skeleton'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
-import { useProjectStore } from '@/core/stores/useProjectStore'
 import type { Folder } from '@/features/folders/types/folder'
 
 // Tracks which tree item is being edited (existing items only)
@@ -33,13 +32,15 @@ interface PendingItem {
 
 interface DocumentTreeContainerProps {
   projectId: string
+  projectSlug: string
+  projectName: string | null
 }
 
 /**
  * Data layer for document tree.
  * Fetches data, handles events, renders tree structure recursively.
  */
-export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps) {
+export function DocumentTreeContainer({ projectId, projectSlug, projectName }: DocumentTreeContainerProps) {
   const navigate = useNavigate()
   const {
     tree,
@@ -70,13 +71,6 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
 
   // Navigation-aware delete operations (handles "navigate away first" pattern)
   const { deleteDocument, deleteFolder } = useResourceOperations(projectId)
-
-  // Read project from store for header title and slug (centralized approach)
-  const project = useProjectStore((s) =>
-    s.projects.find((p) => p.id === projectId) || s.currentProject()
-  )
-  const projectName = project?.name
-  const projectSlug = project?.slug ?? projectId // Fallback to ID for backwards compat
 
   const [searchQuery, setSearchQuery] = useState('')
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
@@ -462,7 +456,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
   if (status === 'error' && tree.length === 0) {
     return (
       <DocumentTreePanel
-        title={projectName || undefined}
+        title={projectName ?? undefined}
         onCreateDocument={handleCreateRootDocumentInline}
         onCreateFolder={handleCreateRootFolderInline}
         onImport={handleImportRoot}
@@ -487,7 +481,7 @@ export function DocumentTreeContainer({ projectId }: DocumentTreeContainerProps)
   return (
     <>
       <DocumentTreePanel
-        title={projectName || undefined}
+        title={projectName ?? undefined}
         onCreateDocument={handleCreateRootDocumentInline}
         onCreateFolder={handleCreateRootFolderInline}
         onImport={handleImportRoot}

@@ -899,6 +899,8 @@ body.preload * {
    * Allows scrolling past the floating AIHunkNavigator at bottom.
    */
   .cm-diff-mode-active {
+    /* Anchor absolute-positioned hunk action pills to the editor content. */
+    position: relative;
     padding-bottom: 80px !important;
   }
 
@@ -912,8 +914,8 @@ body.preload * {
     /* Hidden by default */
     display: none;
 
-    /* Fixed positioning escapes stacking context - appears above sticky header */
-    position: fixed;
+    /* Absolute positioning keeps the pill anchored to the hunk while scrolling */
+    position: absolute;
     z-index: 50;
 
     /* Constrain to line height */
@@ -968,4 +970,57 @@ body.preload * {
     color: hsl(142 70% 30%);
   }
 
+}
+
+/* ============================================================================
+   MOBILE / TOUCH OPTIMIZATIONS
+   ============================================================================
+   - Touch-friendly hover alternatives
+   - Safe area handling for notched devices
+   - Minimum touch target sizes
+   ============================================================================ */
+
+/* On touch devices without hover capability, show hover-dependent elements by default */
+@media (hover: none), (pointer: coarse) {
+  /* Make hidden-on-hover action buttons always visible on touch devices */
+  .group .opacity-0.group-hover\:opacity-100 {
+    opacity: 1 !important;
+  }
+
+  /* Ensure minimum touch target size (44x44px) */
+  button,
+  [role="button"],
+  [role="menuitem"],
+  [role="tab"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Smaller buttons that are part of inline UI can be smaller but still touch-friendly */
+  .touch-target-sm {
+    min-height: 32px;
+    min-width: 32px;
+  }
+}
+
+/* Dynamic viewport height utility - accounts for mobile browser chrome */
+.h-dvh {
+  height: 100dvh;
+}
+
+/* Safe area inset utilities for notched devices (iPhone X+, etc.) */
+.safe-area-inset-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.safe-area-inset-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.safe-area-inset-left {
+  padding-left: env(safe-area-inset-left);
+}
+
+.safe-area-inset-right {
+  padding-right: env(safe-area-inset-right);
 }
