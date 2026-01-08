@@ -49,16 +49,16 @@ func NewEditTool(
 //   - insert_line (integer): For insert - line number to insert after (0 = start)
 //   - file_text (string): For create - initial document content
 func (t *EditTool) Execute(ctx context.Context, input map[string]interface{}) (interface{}, error) {
-	// Extract and validate command
+	// Extract and validate command (recoverable error - LLM can retry)
 	command, ok := input["command"].(string)
 	if !ok || command == "" {
-		return nil, errors.New("missing required parameter: command")
+		return ErrorResult(ErrMissingParam, "Missing required parameter", map[string]any{"param": "command"}), nil
 	}
 
-	// Extract and validate path
+	// Extract and validate path (recoverable error - LLM can retry)
 	path, ok := input["path"].(string)
 	if !ok || path == "" {
-		return nil, errors.New("missing required parameter: path")
+		return ErrorResult(ErrMissingParam, "Missing required parameter", map[string]any{"param": "path"}), nil
 	}
 
 	// Normalize path
@@ -75,17 +75,21 @@ func (t *EditTool) Execute(ctx context.Context, input map[string]interface{}) (i
 	case "create":
 		return t.executeCreate(ctx, path, input)
 	default:
-		return nil, fmt.Errorf("unknown command: %s (expected: str_replace, insert, append, create)", command)
+		// Recoverable error - LLM can retry with valid command
+		return ErrorResult(ErrInvalidInput, "Unknown command", map[string]any{
+			"value":   command,
+			"allowed": []string{"str_replace", "insert", "append", "create"},
+		}), nil
 	}
 }
 
 // executeStrReplace handles the str_replace command.
 // Replaces exact text in the document's ai_version (or content if no ai_version).
 func (t *EditTool) executeStrReplace(ctx context.Context, path string, input map[string]interface{}) (interface{}, error) {
-	// Extract parameters
+	// Extract parameters (recoverable error - LLM can retry)
 	oldStr, ok := input["old_str"].(string)
 	if !ok || oldStr == "" {
-		return nil, errors.New("str_replace requires old_str parameter")
+		return ErrorResult(ErrMissingParam, "str_replace requires old_str parameter", map[string]any{"param": "old_str"}), nil
 	}
 	newStr, _ := input["new_str"].(string) // Can be empty string (deletion)
 
@@ -93,7 +97,7 @@ func (t *EditTool) executeStrReplace(ctx context.Context, path string, input map
 	doc, err := t.documentRepo.GetByPath(ctx, path, t.projectID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			return errorResult("DOC_NOT_FOUND", fmt.Sprintf("Document not found: %s", path)), nil
+			return ErrorResult(ErrDocNotFound, "Document not found", map[string]any{"path": path}), nil
 		}
 		return nil, fmt.Errorf("failed to get document: %w", err)
 	}
@@ -103,12 +107,12 @@ func (t *EditTool) executeStrReplace(ctx context.Context, path string, input map
 
 	// Validate old_str exists in base
 	if !strings.Contains(base, oldStr) {
-		return errorResult("NO_MATCH", "Text not found in document. Use doc_view to see current content and try again."), nil
+		return ErrorResult(ErrNoMatch, "Text not found in document. Use doc_view to see current content and try again.", nil), nil
 	}
 
 	// Check for ambiguous match (multiple occurrences)
 	if strings.Count(base, oldStr) > 1 {
-		return errorResult("AMBIGUOUS_MATCH", fmt.Sprintf("Text appears %d times. Provide more surrounding context to make the match unique.", strings.Count(base, oldStr))), nil
+		return ErrorResult(ErrAmbiguousMatch, "Multiple matches found", map[string]any{"count": strings.Count(base, oldStr)}), nil
 	}
 
 	// Apply replacement
@@ -119,29 +123,32 @@ func (t *EditTool) executeStrReplace(ctx context.Context, path string, input map
 		return nil, fmt.Errorf("failed to save ai_version: %w", err)
 	}
 
-	return successResult(path, "Suggested text replacement"), nil
+	return map[string]interface{}{
+		"path":    path,
+		"message": "Suggested text replacement",
+	}, nil
 }
 
 // executeInsert handles the insert command.
 // Inserts new text after a specific line number.
 func (t *EditTool) executeInsert(ctx context.Context, path string, input map[string]interface{}) (interface{}, error) {
-	// Extract parameters
+	// Extract parameters (recoverable error - LLM can retry)
 	insertLineFloat, ok := input["insert_line"].(float64) // JSON numbers are float64
 	if !ok {
-		return nil, errors.New("insert requires insert_line parameter (integer)")
+		return ErrorResult(ErrMissingParam, "insert requires insert_line parameter (integer)", map[string]any{"param": "insert_line"}), nil
 	}
 	insertLine := int(insertLineFloat)
 
 	newStr, ok := input["new_str"].(string)
 	if !ok {
-		return nil, errors.New("insert requires new_str parameter")
+		return ErrorResult(ErrMissingParam, "insert requires new_str parameter", map[string]any{"param": "new_str"}), nil
 	}
 
 	// Get document
 	doc, err := t.documentRepo.GetByPath(ctx, path, t.projectID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			return errorResult("DOC_NOT_FOUND", fmt.Sprintf("Document not found: %s", path)), nil
+			return ErrorResult(ErrDocNotFound, "Document not found", map[string]any{"path": path}), nil
 		}
 		return nil, fmt.Errorf("failed to get document: %w", err)
 	}
@@ -152,7 +159,7 @@ func (t *EditTool) executeInsert(ctx context.Context, path string, input map[str
 
 	// Validate line number (0 = insert at beginning, len(lines) = insert at end)
 	if insertLine < 0 || insertLine > len(lines) {
-		return errorResult("INVALID_LINE", fmt.Sprintf("Line %d out of range. Document has %d lines (valid range: 0-%d).", insertLine, len(lines), len(lines))), nil
+		return ErrorResult(ErrInvalidLine, "Line out of range", map[string]any{"line": insertLine, "max": len(lines)}), nil
 	}
 
 	// Insert after line N
@@ -169,23 +176,26 @@ func (t *EditTool) executeInsert(ctx context.Context, path string, input map[str
 		return nil, fmt.Errorf("failed to save ai_version: %w", err)
 	}
 
-	return successResult(path, fmt.Sprintf("Suggested insertion after line %d", insertLine)), nil
+	return map[string]interface{}{
+		"path":    path,
+		"message": fmt.Sprintf("Suggested insertion after line %d", insertLine),
+	}, nil
 }
 
 // executeAppend handles the append command.
 // Adds text to the end of the document.
 func (t *EditTool) executeAppend(ctx context.Context, path string, input map[string]interface{}) (interface{}, error) {
-	// Extract parameters
+	// Extract parameters (recoverable error - LLM can retry)
 	newStr, ok := input["new_str"].(string)
 	if !ok || newStr == "" {
-		return nil, errors.New("append requires new_str parameter")
+		return ErrorResult(ErrMissingParam, "append requires new_str parameter", map[string]any{"param": "new_str"}), nil
 	}
 
 	// Get document
 	doc, err := t.documentRepo.GetByPath(ctx, path, t.projectID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			return errorResult("DOC_NOT_FOUND", fmt.Sprintf("Document not found: %s", path)), nil
+			return ErrorResult(ErrDocNotFound, "Document not found", map[string]any{"path": path}), nil
 		}
 		return nil, fmt.Errorf("failed to get document: %w", err)
 	}
@@ -203,22 +213,25 @@ func (t *EditTool) executeAppend(ctx context.Context, path string, input map[str
 		return nil, fmt.Errorf("failed to save ai_version: %w", err)
 	}
 
-	return successResult(path, "Suggested appending text to document"), nil
+	return map[string]interface{}{
+		"path":    path,
+		"message": "Suggested appending text to document",
+	}, nil
 }
 
 // executeCreate handles the create command.
 // Creates a new document (immediately, not as ai_version suggestion).
 func (t *EditTool) executeCreate(ctx context.Context, path string, input map[string]interface{}) (interface{}, error) {
-	// Extract parameters
+	// Extract parameters (recoverable error - LLM can retry)
 	fileText, ok := input["file_text"].(string)
 	if !ok {
-		return nil, errors.New("create requires file_text parameter")
+		return ErrorResult(ErrMissingParam, "create requires file_text parameter", map[string]any{"param": "file_text"}), nil
 	}
 
 	// Check if document already exists
 	_, err := t.documentRepo.GetByPath(ctx, path, t.projectID)
 	if err == nil {
-		return errorResult("ALREADY_EXISTS", fmt.Sprintf("Document already exists: %s. Use str_replace, insert, or append to modify it.", path)), nil
+		return ErrorResult(ErrDocAlreadyExists, "Document already exists", map[string]any{"path": path}), nil
 	}
 	if !errors.Is(err, domain.ErrNotFound) {
 		return nil, fmt.Errorf("failed to check document existence: %w", err)
@@ -244,7 +257,10 @@ func (t *EditTool) executeCreate(ctx context.Context, path string, input map[str
 		return nil, fmt.Errorf("failed to create document: %w", err)
 	}
 
-	return successResult(path, "Created new document"), nil
+	return map[string]interface{}{
+		"path":    path,
+		"message": "Created new document",
+	}, nil
 }
 
 // resolveOrCreateFolder ensures the folder path exists, creating folders as needed.
@@ -317,21 +333,3 @@ func splitDocPath(path string) (folderPath, docName string) {
 	return "/" + path[:lastSlash], path[lastSlash+1:]
 }
 
-// successResult creates a successful tool result.
-func successResult(path, message string) map[string]interface{} {
-	return map[string]interface{}{
-		"success": true,
-		"path":    path,
-		"message": message,
-	}
-}
-
-// errorResult creates an error tool result (returned, not thrown).
-// Error codes help the LLM understand what went wrong and how to recover.
-func errorResult(code, message string) map[string]interface{} {
-	return map[string]interface{}{
-		"success":    false,
-		"error_code": code,
-		"message":    message,
-	}
-}

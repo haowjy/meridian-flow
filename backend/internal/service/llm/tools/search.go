@@ -50,7 +50,7 @@ func (t *SearchTool) Execute(ctx context.Context, input map[string]interface{}) 
 	// Validate and extract query
 	query, ok := input["query"].(string)
 	if !ok || strings.TrimSpace(query) == "" {
-		return nil, errors.New("missing required parameter: query (string)")
+		return ErrorResult(ErrMissingParam, "Missing required parameter", map[string]any{"param": "query"}), nil
 	}
 
 	query = strings.TrimSpace(query)
@@ -63,7 +63,7 @@ func (t *SearchTool) Execute(ctx context.Context, input map[string]interface{}) 
 			resolvedID, _, err := t.pathResolver.ResolveFolderPath(ctx, folderPath)
 			if err != nil {
 				if errors.Is(err, domain.ErrNotFound) {
-					return nil, fmt.Errorf("folder not found: %s", folderPath)
+					return ErrorResult(ErrNotFound, "Folder not found", map[string]any{"path": folderPath}), nil
 				}
 				return nil, fmt.Errorf("failed to resolve folder path: %w", err)
 			}
