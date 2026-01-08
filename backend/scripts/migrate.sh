@@ -188,6 +188,7 @@ if [ "$USE_DIRECT" = true ]; then
     DB_URL=$(echo "$DB_URL" | sed 's/:6543/:5432/')
 fi
 
+
 if [ -z "$DB_URL" ]; then
     echo -e "${RED}Error: SUPABASE_DB_URL not set${NC}"
     exit 1
@@ -259,10 +260,15 @@ show_header() {
     echo -e "${BLUE}=== Meridian Database Migration ===${NC}"
     echo -e "Database: ${YELLOW}$MASKED_URL${NC}"
     echo -e "Table prefix: ${YELLOW}${TABLE_PREFIX:-<none>}${NC}"
-    if [ "$USE_DIRECT" = true ]; then
-        echo -e "Connection: ${GREEN}direct${NC} (port 5432)"
+    # Detect connection type from URL
+    if echo "$DB_URL" | grep -q "pooler\.supabase\.com"; then
+        if echo "$DB_URL" | grep -q ":5432"; then
+            echo -e "Connection: ${GREEN}pooler session${NC} (port 5432)"
+        else
+            echo -e "Connection: ${YELLOW}pooler transaction${NC} (port 6543)"
+        fi
     else
-        echo -e "Connection: ${YELLOW}pooler${NC} (port 6543)"
+        echo -e "Connection: ${GREEN}direct${NC}"
     fi
     if [ "$USE_GOOSE" = true ]; then
         echo -e "Execution: ${GREEN}goose${NC} (tracking: ${TRACKING_TABLE})"
@@ -459,7 +465,7 @@ execute_migration() {
                 ;;
             baseline)
                 echo -e "${GREEN}Creating baseline: marking all migrations as applied...${NC}"
-                # Create tracking table if it doesn't exist
+                # Create tracking table if it doesn't exist (matches goose's expected schema)
                 psql "$DB_URL" -c "CREATE TABLE IF NOT EXISTS $TRACKING_TABLE (
                     id SERIAL PRIMARY KEY,
                     version_id BIGINT NOT NULL,
@@ -558,7 +564,7 @@ else
     # Interactive mode - loop until quit or action executed
     while true; do
         echo -e "${BLUE}Options:${NC}"
-        echo "  e) Switch environment (dev/staging/prod)"
+        echo "  e) Switch environment (dev/test/prod)"
         echo "  d) Change database URL"
         echo "  p) Change table prefix"
         echo "  m) Toggle execution mode (goose ↔ SQL)"

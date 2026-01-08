@@ -50,7 +50,7 @@ BEGIN
     FOR proj IN
         SELECT id, user_id, name
         FROM ${TABLE_PREFIX}projects
-        WHERE slug IS NULL AND deleted_at IS NULL
+        WHERE slug IS NULL
     LOOP
         base_slug := ${TABLE_PREFIX}generate_slug(proj.name);
         final_slug := base_slug;
@@ -102,7 +102,7 @@ BEGIN
     FOR doc IN
         SELECT id, project_id, name
         FROM ${TABLE_PREFIX}documents
-        WHERE slug IS NULL AND deleted_at IS NULL
+        WHERE slug IS NULL
     LOOP
         base_slug := ${TABLE_PREFIX}generate_slug(doc.name);
         final_slug := base_slug;
