@@ -35,6 +35,7 @@ This directory contains detailed documentation for all features in Meridian, org
 | **State Management** | Frontend | N/A | [x] Complete | Zustand, IndexedDB, optimistic updates, retry queue |
 | **UI Components** | Frontend | N/A | [x] Complete | shadcn/ui, custom components, high polish |
 | **Infrastructure** | Both | [x] Complete | [x] Complete | Errors, DB features, routing, logging, deployment |
+| **Mobile Responsive** | Frontend | N/A | [x] Complete | Responsive layouts, bottom nav, 768px breakpoint |
 
 ---
 
@@ -121,6 +122,11 @@ This directory contains detailed documentation for all features in Meridian, org
 - Frontend: TanStack Router (file-based routing), logging, dev tools
 - Deployment: Railway (backend), Vercel (frontend)
 
+### [f-mobile-responsive/](f-mobile-responsive/)
+**Responsive layouts for mobile and desktop viewports**
+- Strategy pattern: MobileTabLayout (< 768px) vs ThreePanelLayout (≥ 768px)
+- Bottom tab nav (3 tabs), touch-friendly, deep-linking support
+
 ---
 
 ## Overall Assessment
@@ -131,11 +137,12 @@ This directory contains detailed documentation for all features in Meridian, org
 
 **Integration**: [x] **Backend and frontend are fully integrated** for all implemented features. API coverage: ~35 endpoints, all functional.
 
-### Recent Additions (h/bet-ui branch)
-- âœ¨ **Document Import System**: Multi-format support with XSS protection
-- âœ¨ **Context Menu System**: Right-click actions for file tree
-- âœ¨ **Folder Management UI**: Complete via context menus
-- ðŸŽ¨ **Auth Simplification**: Google OAuth only (intentional)
+### Recent Additions
+- **Mobile Responsive Layout**: Strategy pattern for mobile/desktop, bottom tab nav (h/edit-tools)
+- **Document Import System**: Multi-format support with XSS protection (h/bet-ui)
+- **Context Menu System**: Right-click actions for file tree (h/bet-ui)
+- **Folder Management UI**: Complete via context menus (h/bet-ui)
+- **Auth Simplification**: Google OAuth only (h/bet-ui)
 
 ---
 

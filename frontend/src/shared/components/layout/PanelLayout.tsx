@@ -30,8 +30,6 @@ export function PanelLayout({
   onRightCollapse,
   className,
 }: PanelLayoutProps) {
-
-
   // Keep three resizable panels consistently mounted and use
   // programmatic collapse/expand to reflect Zustand booleans.
   const leftRef = useRef<ImperativePanelHandle | null>(null)
@@ -111,7 +109,6 @@ export function PanelLayout({
           {!rightCollapsed && right}
         </ResizablePanel>
       </ResizablePanelGroup>
-
     </div>
   )
 }

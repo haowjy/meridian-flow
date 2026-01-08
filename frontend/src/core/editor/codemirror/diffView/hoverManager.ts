@@ -1,7 +1,7 @@
 /**
  * Hunk Hover Manager
  *
- * SRP: Only responsible for showing/hiding hunk action buttons on hover.
+ * SRP: Only responsible for showing/hiding + positioning the hunk action pill.
  * Uses event delegation on the editor content to track mouse enter/leave
  * on elements with [data-hunk-id] attributes.
  *
@@ -21,10 +21,13 @@ import { ViewPlugin, type EditorView, type ViewUpdate } from '@codemirror/view'
  * ViewPlugin that manages hover visibility for hunk action buttons.
  *
  * Listens for mouseenter/mouseleave on [data-hunk-id] elements and
- * adds/removes the .visible class on the matching .cm-hunk-actions widget.
+ * adds/removes the .visible class on the matching .cm-hunk-actions widget,
+ * while keeping the pill positioned above the current hunk.
  */
 class HunkHoverManager {
   private currentHunkId: string | null = null
+  private currentAnchorEl: HTMLElement | null = null
+  private pendingRepositionFrame: number | null = null
 
   constructor(private view: EditorView) {
     this.setupListeners()
@@ -38,6 +41,11 @@ class HunkHoverManager {
       this.hideActions(this.currentHunkId)
       this.currentHunkId = null
     }
+
+    // Keep the pill aligned on layout changes (e.g., wrapping on resize).
+    if ((update.geometryChanged || update.viewportChanged) && this.currentHunkId) {
+      this.requestReposition()
+    }
   }
 
   private setupListeners() {
@@ -47,6 +55,8 @@ class HunkHoverManager {
     content.addEventListener('mouseenter', this.handleEnter, true)
     content.addEventListener('mouseleave', this.handleLeave, true)
     content.addEventListener('mousemove', this.handleMove, true)
+
+    window.addEventListener('resize', this.handleResize, { passive: true })
   }
 
   /**
@@ -72,6 +82,7 @@ class HunkHoverManager {
     }
 
     // Show actions positioned near the hovered element
+    this.currentAnchorEl = hunkElement
     this.showActionsNear(hunkId, hunkElement)
   }
 
@@ -111,20 +122,79 @@ class HunkHoverManager {
 
     if (!hunkElement || hunkElement.getAttribute('data-hunk-id') !== this.currentHunkId) return
 
-    // Update horizontal position based on mouse X (fixed positioning uses viewport coords)
+    this.currentAnchorEl = hunkElement
+
+    // Update horizontal position based on mouse X.
     const actions = this.view.contentDOM.querySelector(
       `.cm-hunk-actions[data-hunk-id="${this.currentHunkId}"]`
     ) as HTMLElement | null
 
     if (!actions) return
 
+    const container = (actions.offsetParent ?? this.view.contentDOM) as HTMLElement
+    const containerRect = container.getBoundingClientRect()
     const centerOffset = actions.offsetWidth / 2
-    actions.style.left = `${e.clientX - centerOffset}px`
+    actions.style.left = `${e.clientX - containerRect.left - centerOffset}px`
+  }
+
+  private handleResize = () => {
+    if (!this.currentHunkId) return
+    this.requestReposition()
+  }
+
+  private requestReposition() {
+    if (this.pendingRepositionFrame !== null) return
+    this.pendingRepositionFrame = window.requestAnimationFrame(() => {
+      this.pendingRepositionFrame = null
+      this.repositionCurrent()
+    })
+  }
+
+  private repositionCurrent() {
+    if (!this.currentHunkId) return
+
+    const actions = this.view.contentDOM.querySelector(
+      `.cm-hunk-actions[data-hunk-id="${this.currentHunkId}"]`
+    ) as HTMLElement | null
+
+    if (!actions) return
+
+    if (!actions.classList.contains('visible')) return
+
+    const anchor =
+      this.currentAnchorEl ??
+      (this.view.contentDOM.querySelector(
+        `[data-hunk-id="${this.currentHunkId}"]`
+      ) as HTMLElement | null)
+
+    if (!anchor) {
+      this.hideActions(this.currentHunkId)
+      this.currentHunkId = null
+      return
+    }
+
+    const container = (actions.offsetParent ?? this.view.contentDOM) as HTMLElement
+    const containerRect = container.getBoundingClientRect()
+    const rect = anchor.getBoundingClientRect()
+
+    // If the anchor is fully off-screen, hiding avoids a "detached" pill.
+    if (rect.bottom < containerRect.top || rect.top > containerRect.bottom) {
+      this.hideActions(this.currentHunkId)
+      this.currentHunkId = null
+      return
+    }
+
+    const centerOffset = actions.offsetWidth / 2
+    const spanCenterX = rect.left + rect.width / 2 - containerRect.left
+    const anchorTop = rect.top - containerRect.top
+
+    actions.style.left = `${spanCenterX - centerOffset}px`
+    actions.style.top = `${anchorTop - actions.offsetHeight}px`
   }
 
   /**
    * Show actions positioned above the hovered element.
-   * Uses fixed positioning with viewport coordinates.
+   * Uses absolute positioning within the editor content DOM.
    */
   private showActionsNear(hunkId: string, nearElement: HTMLElement) {
     const actions = this.view.contentDOM.querySelector(
@@ -134,15 +204,11 @@ class HunkHoverManager {
     if (!actions) return
 
     this.currentHunkId = hunkId
+    this.currentAnchorEl = nearElement
     actions.classList.add('visible')
 
-    // Position fixed relative to viewport (centered above span)
-    const rect = nearElement.getBoundingClientRect()
-    const centerOffset = actions.offsetWidth / 2
-    const spanCenterX = rect.left + rect.width / 2
-
-    actions.style.left = `${spanCenterX - centerOffset}px`
-    actions.style.top = `${rect.top - actions.offsetHeight}px`
+    // Defer positioning until after the element is visible so measurements are correct.
+    this.requestReposition()
   }
 
   private hideActions(hunkId: string) {
@@ -155,12 +221,19 @@ class HunkHoverManager {
       actions.style.left = ''
       actions.style.top = ''
     }
+
+    this.currentAnchorEl = null
+    if (this.pendingRepositionFrame !== null) {
+      window.cancelAnimationFrame(this.pendingRepositionFrame)
+      this.pendingRepositionFrame = null
+    }
   }
 
   destroy() {
     this.view.contentDOM.removeEventListener('mouseenter', this.handleEnter, true)
     this.view.contentDOM.removeEventListener('mouseleave', this.handleLeave, true)
     this.view.contentDOM.removeEventListener('mousemove', this.handleMove, true)
+    window.removeEventListener('resize', this.handleResize)
   }
 }
 

@@ -1,8 +1,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react'
 import { useLocation } from '@tanstack/react-router'
 import { useShallow } from 'zustand/react/shallow'
-import { PanelLayout } from '@/shared/components/layout/PanelLayout'
-import { CollapsiblePanel } from '@/shared/components/layout/CollapsiblePanel'
+import { useLayoutStrategy } from '@/core/hooks/useLayoutStrategy'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { DocumentPanel } from '@/features/documents/components/DocumentPanel'
 import { ChatListPanel } from '@/features/chats/components/ChatListPanel'
@@ -11,6 +10,7 @@ import { useTreeStore } from '@/core/stores/useTreeStore'
 import { useProjectStore } from '@/core/stores/useProjectStore'
 import { api } from '@/core/lib/api'
 import { makeLogger } from '@/core/lib/logger'
+import type { PanelDefinitions } from '@/shared/components/layout/types'
 
 const logger = makeLogger('workspace-layout')
 
@@ -22,26 +22,17 @@ interface WorkspaceLayoutProps {
 }
 
 export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug }: WorkspaceLayoutProps) {
-  // Resolved project ID (UUID) - set once project is fetched/found
+  // Resolved project ID (UUID) and slug - set once project is fetched/found
   const [projectId, setProjectId] = useState<string | null>(null)
+  const [projectSlug, setProjectSlug] = useState<string | null>(null)
+  const [projectName, setProjectName] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
   const previousDocumentIdRef = useRef<string | undefined>(undefined)
   const previousProjectIdRef = useRef<string | undefined>(undefined)
   const isFirstMountRef = useRef(true)
 
-  // Subscribe only to panel collapse state (needed for PanelLayout props)
-  // Use getState() in effects to read other values without subscribing
-  const {
-    leftPanelCollapsed,
-    rightPanelCollapsed,
-    toggleLeftPanel,
-    toggleRightPanel,
-  } = useUIStore(useShallow((s) => ({
-    leftPanelCollapsed: s.leftPanelCollapsed,
-    rightPanelCollapsed: s.rightPanelCollapsed,
-    toggleLeftPanel: s.toggleLeftPanel,
-    toggleRightPanel: s.toggleRightPanel,
-  })))
+  // Get layout strategy based on viewport (ThreePanelLayout for desktop, MobileTabLayout for mobile)
+  const LayoutStrategy = useLayoutStrategy()
 
   // Ensure document tree is loaded when deep-linking to a document URL
   const { isTreeLoading, documentsCount, documents, loadTree } = useTreeStore(useShallow((s) => ({
@@ -131,8 +122,10 @@ export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug
       }
 
       if (!ignore && project) {
-        // Set resolved project ID for use in child components
+        // Set resolved project ID and slug for use in child components
         setProjectId(project.id)
+        setProjectSlug(project.slug)
+        setProjectName(project.name)
         // Switch context only if different to avoid unnecessary editor cache clears
         if (currentProjectId !== project.id) {
           setCurrentProject(project)
@@ -201,6 +194,12 @@ export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug
         logger.debug('Expanding right panel')
         store.setRightPanelCollapsed(false)
       }
+      // Mobile: On first mount, default to document tab for document deep-links.
+      // After that, keep the user's current tab even if the document changes.
+      if (isFirstMount && store.mobileActivePanel !== 'document') {
+        logger.debug('Setting mobile panel: document (first mount)')
+        store.setMobileActivePanel('document')
+      }
     } else {
       // Tree URL - show tree view
       if (store.activeDocumentId !== null) {
@@ -218,7 +217,7 @@ export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug
   // Uses effectiveDocumentSlug (not effectiveDocumentId) since we need tree loaded to resolve slug → ID
   useEffect(() => {
     if (!effectiveDocumentSlug) return
-    if (!projectId) return // Wait for project to be resolved
+    if (projectId === null) return // Wait for project to be resolved
     if (documentsCount !== 0 || isTreeLoading) return
 
     const abortController = new AbortController()
@@ -240,38 +239,26 @@ export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug
   }, [documentsCount, documents, effectiveDocumentId])
 
   // Wait for mount and project resolution before rendering workspace
-  if (!mounted || !projectId) {
-    return <div className="h-screen w-full bg-background" />
+  if (!mounted || projectId === null || projectSlug === null) {
+    return <div className="h-dvh w-full bg-background" />
+  }
+
+  // Define panel content (what to show) - layout strategy decides how to arrange them
+  const panels: PanelDefinitions = {
+    chatList: <ChatListPanel projectId={projectId} />,
+    activeChat: <ActiveChatView projectId={projectId} />,
+    documentPanel: (
+      <DocumentPanel
+        projectId={projectId}
+        projectSlug={projectSlug}
+        projectName={projectName}
+      />
+    ),
   }
 
   return (
-    <div className="h-screen w-full overflow-hidden">
-      <PanelLayout
-        leftCollapsed={leftPanelCollapsed}
-        rightCollapsed={rightPanelCollapsed}
-        onLeftCollapse={toggleLeftPanel}
-        onRightCollapse={toggleRightPanel}
-        left={
-          <CollapsiblePanel
-            side="left"
-            collapsed={leftPanelCollapsed}
-            onToggle={toggleLeftPanel}
-          >
-            {/* Chat list / navigation lives entirely in the left panel */}
-            <ChatListPanel projectId={projectId} />
-          </CollapsiblePanel>
-        }
-        center={<ActiveChatView projectId={projectId} />}
-        right={
-          <CollapsiblePanel
-            side="right"
-            collapsed={rightPanelCollapsed}
-            onToggle={toggleRightPanel}
-          >
-            <DocumentPanel projectId={projectId} />
-          </CollapsiblePanel>
-        }
-      />
+    <div className="h-dvh w-full overflow-hidden">
+      <LayoutStrategy panels={panels} />
     </div>
   )
 }

@@ -10,8 +10,15 @@ import { persist } from 'zustand/middleware'
 export type RightPanelState = 'documents' | 'editor' | null
 
 /**
+ * Active panel for mobile single-panel mode.
+ * Only one panel is visible at a time on mobile.
+ */
+export type MobileActivePanel = 'chatList' | 'activeChat' | 'document'
+
+/**
  * UI state store for workspace layout and panel management.
- * All state is persisted to localStorage except rightPanelState (resets to 'documents' on reload).
+ * Persisted to localStorage: leftPanelCollapsed, rightPanelCollapsed, activeDocumentId, activeChatId.
+ * Not persisted: rightPanelState (resets to 'documents'), chatFocusVersion.
  */
 interface UIStore {
   /**
@@ -59,6 +66,13 @@ interface UIStore {
    */
   chatFocusVersion: number
 
+  /**
+   * Active panel for mobile single-panel mode.
+   * Determines which panel is visible when viewport < 768px.
+   * Persisted across sessions.
+   * @default 'activeChat' (first run only)
+   */
+  mobileActivePanel: MobileActivePanel
 
   /** Toggles left panel collapsed/expanded state */
   toggleLeftPanel: () => void
@@ -91,6 +105,11 @@ interface UIStore {
   /** Bumps chatFocusVersion to request chat input focus. */
   bumpChatFocusVersion: () => void
 
+  /**
+   * Sets active panel for mobile layout.
+   * Use for tab navigation on mobile viewport.
+   */
+  setMobileActivePanel: (panel: MobileActivePanel) => void
 }
 
 export const useUIStore = create<UIStore>()(
@@ -102,7 +121,7 @@ export const useUIStore = create<UIStore>()(
       activeDocumentId: null,
       activeChatId: null,
       chatFocusVersion: 0,
-
+      mobileActivePanel: 'activeChat',
 
       toggleLeftPanel: () =>
         set((state) => ({ leftPanelCollapsed: !state.leftPanelCollapsed })),
@@ -118,7 +137,8 @@ export const useUIStore = create<UIStore>()(
         set({ activeChatId: id }),
       bumpChatFocusVersion: () =>
         set((state) => ({ chatFocusVersion: state.chatFocusVersion + 1 })),
-
+      setMobileActivePanel: (panel) =>
+        set({ mobileActivePanel: panel }),
     }),
     {
       name: 'ui-store',
@@ -127,6 +147,7 @@ export const useUIStore = create<UIStore>()(
         rightPanelCollapsed: state.rightPanelCollapsed,
         activeDocumentId: state.activeDocumentId,
         activeChatId: state.activeChatId,
+        mobileActivePanel: state.mobileActivePanel,
         // chatFocusVersion is ephemeral and not persisted
 
         // rightPanelState excluded - always resets to 'documents' on page load
