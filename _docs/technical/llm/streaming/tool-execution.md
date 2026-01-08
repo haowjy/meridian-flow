@@ -172,31 +172,55 @@ Default: nil is treated as `"server"` (backend-side)
 
 ## Error Handling
 
-### Tool Execution Fails
+Tool errors follow a two-tier model:
+
+### Recoverable Errors (LLM Can Retry)
+
+Use `ErrorResult()` for errors the LLM can act on:
 
 ```go
-// Tool returns error
-result := &ToolResult{
-    ToolUseID: toolUseID,
-    Content:   "",
-    IsError:   true,
-    Error:     "File not found: /path/to/file.txt",
-}
+// Missing parameter
+return ErrorResult(ErrMissingParam, "Missing required parameter", map[string]any{"param": "path"}), nil
 
-// Still create tool_result block
-block := TurnBlock{
-    BlockType: "tool_result",
-    Content: map[string]interface{}{
-        "tool_use_id": result.ToolUseID,
-        "is_error":    true,
-        "content":     result.Error,
-    },
+// Document not found
+return ErrorResult(ErrDocNotFound, "Document not found", map[string]any{"path": path}), nil
+
+// No match for search/replace
+return ErrorResult(ErrNoMatch, "Text not found in document", nil), nil
+```
+
+**Error codes** (defined in `tools/errors.go`):
+- Generic: `ErrMissingParam`, `ErrNotFound`, `ErrInvalidInput`
+- Document: `ErrDocNotFound`, `ErrDocAlreadyExists`, `ErrNoMatch`, `ErrAmbiguousMatch`, `ErrInvalidLine`
+
+**Response format** (sent to LLM as tool_result):
+```json
+{
+  "success": false,
+  "error_code": "NO_MATCH",
+  "message": "Text not found in document",
+  "error_data": {"path": "/chapter-1.md"}
 }
 ```
 
-LLM receives error and can adjust response.
+LLM receives structured error and can retry with different input.
+
+### System Errors (Terminates Stream)
+
+Use `return nil, err` for unrecoverable errors:
+
+```go
+// Database failure - can't recover
+if err != nil {
+    return nil, fmt.Errorf("failed to get document: %w", err)
+}
+```
+
+System errors propagate up and terminate the stream with `turn_error`.
 
 ### Tool Timeout
+
+Timeouts are system errors (not recoverable):
 
 ```go
 ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -204,13 +228,8 @@ defer cancel()
 
 result, err := tool.ExecuteWithContext(ctx, input)
 if err != nil {
-    if ctx.Err() == context.DeadlineExceeded {
-        return &ToolResult{
-            IsError: true,
-            Error:   "Tool execution timed out after 30s",
-        }, nil
-    }
-    return nil, err
+    // Timeout terminates the stream
+    return nil, fmt.Errorf("tool execution failed: %w", err)
 }
 ```
 

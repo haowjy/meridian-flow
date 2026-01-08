@@ -50,7 +50,7 @@ func (t *ViewTool) Execute(ctx context.Context, input map[string]interface{}) (i
 	// Validate and extract path
 	path, ok := input["path"].(string)
 	if !ok || path == "" {
-		return nil, errors.New("missing required parameter: path (string)")
+		return ErrorResult(ErrMissingParam, "Missing required parameter", map[string]any{"param": "path"}), nil
 	}
 
 	// Normalize path (trim whitespace, ensure it starts with /)
@@ -84,7 +84,7 @@ func (t *ViewTool) Execute(ctx context.Context, input map[string]interface{}) (i
 	folderID, folderPath, err := t.pathResolver.ResolveFolderPath(ctx, path)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			return nil, fmt.Errorf("path not found: %s (tried as both document and folder)", path)
+			return ErrorResult(ErrNotFound, "Path not found", map[string]any{"path": path}), nil
 		}
 		return nil, fmt.Errorf("failed to resolve folder path: %w", err)
 	}

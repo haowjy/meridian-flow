@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -42,7 +41,7 @@ func (t *WebSearchTool) Execute(ctx context.Context, input map[string]interface{
 	// Validate and extract query
 	query, ok := input["query"].(string)
 	if !ok || strings.TrimSpace(query) == "" {
-		return nil, errors.New("missing required parameter: query (string)")
+		return ErrorResult(ErrMissingParam, "Missing required parameter", map[string]any{"param": "query"}), nil
 	}
 
 	query = strings.TrimSpace(query)
@@ -67,7 +66,10 @@ func (t *WebSearchTool) Execute(ctx context.Context, input map[string]interface{
 			topic = strings.TrimSpace(topicStr)
 			// Validate topic is one of the allowed values
 			if topic != "" && topic != "general" && topic != "news" && topic != "finance" {
-				return nil, fmt.Errorf("invalid topic '%s': must be 'general', 'news', or 'finance'", topic)
+				return ErrorResult(ErrInvalidInput, "Invalid topic", map[string]any{
+					"value":   topic,
+					"allowed": []string{"general", "news", "finance"},
+				}), nil
 			}
 		}
 	}

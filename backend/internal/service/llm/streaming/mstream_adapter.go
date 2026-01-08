@@ -33,6 +33,7 @@ type StreamExecutor struct {
 	turnReader       llmRepo.TurnReader        // For loading turn blocks during continuation
 	messageBuilder   domainllm.MessageBuilder  // For building messages from conversation history
 	collectedTools   []tools.ToolCall          // tool_use blocks collected during streaming
+	toolResultIDs    map[string]bool           // tool_use_ids that already have tool_results (from provider decode errors)
 	toolIteration    int                       // current tool round (0 = initial, 1+ = continuations)
 	maxToolRounds    int                       // maximum number of tool execution rounds (default: 5)
 	maxBlockSequence int                       // highest block sequence number persisted (for tool_result sequencing)
@@ -72,6 +73,7 @@ func NewStreamExecutor(
 		turnNavigator:  turnNavigator,
 		turnReader:     turnReader,
 		messageBuilder: messageBuilder,
+		toolResultIDs:  make(map[string]bool),
 		toolIteration:  0,
 		maxToolRounds:  maxToolRounds,
 	}
@@ -310,6 +312,14 @@ func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(ms
 	// Track max sequence for tool_result block sequencing
 	if block.Sequence > se.maxBlockSequence {
 		se.maxBlockSequence = block.Sequence
+	}
+
+	// Track tool_result IDs from provider (e.g., decode error results)
+	// This prevents backend from executing tools that already have results
+	if block.BlockType == llmModels.BlockTypeToolResult {
+		if toolUseID, ok := block.Content["tool_use_id"].(string); ok {
+			se.toolResultIDs[toolUseID] = true
+		}
 	}
 
 	// Send accumulated JSON as complete delta (if any)
@@ -616,11 +626,26 @@ func (se *StreamExecutor) collectToolUse(block *llmModels.TurnBlock) {
 // executeToolsAndContinue executes the collected tools in parallel, persists the results,
 // and continues streaming with the tool results.
 func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func(mstream.Event)) error {
-	// Execute all collected tools in parallel
-	toolResults := se.toolRegistry.ExecuteParallel(ctx, se.collectedTools)
+	// Filter out tools that already have results (from provider decode errors)
+	// This prevents duplicate tool_result blocks for the same tool_use_id
+	var toolsToExecute []tools.ToolCall
+	for _, tc := range se.collectedTools {
+		if !se.toolResultIDs[tc.ID] {
+			toolsToExecute = append(toolsToExecute, tc)
+		} else {
+			se.logger.Debug("skipping tool execution - result already exists",
+				"tool_use_id", tc.ID,
+				"tool_name", tc.Name,
+			)
+		}
+	}
+
+	// Execute filtered tools in parallel
+	toolResults := se.toolRegistry.ExecuteParallel(ctx, toolsToExecute)
 
 	se.logger.Info("tool execution completed",
 		"tool_count", len(toolResults),
+		"skipped_count", len(se.collectedTools)-len(toolsToExecute),
 		"iteration", se.toolIteration,
 	)
 
@@ -755,6 +780,7 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 
 	// 9. Reset tool collection for next iteration
 	se.collectedTools = nil
+	se.toolResultIDs = make(map[string]bool)
 
 	// 10. Process continuation stream (recursive call)
 	// maxBlockSequence will be updated by processProviderStream -> processCompleteBlock
@@ -848,6 +874,7 @@ func (se *StreamExecutor) persistErrorToolResults(ctx context.Context, send func
 
 	// Clear collected tools after persisting error results
 	se.collectedTools = nil
+	se.toolResultIDs = make(map[string]bool)
 
 	return nil
 }
@@ -938,6 +965,7 @@ func (se *StreamExecutor) executeToolsAndContinueWithLimit(ctx context.Context, 
 
 	// 6. Reset tool collection (no more tool rounds allowed)
 	se.collectedTools = nil
+	se.toolResultIDs = make(map[string]bool)
 
 	// 7. Process final stream (will complete with end_turn stop_reason)
 	return se.processProviderStream(ctx, contStreamChan, send)

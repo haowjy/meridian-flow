@@ -65,7 +65,7 @@ func (t *TreeTool) Execute(ctx context.Context, input map[string]interface{}) (i
 	if depthVal, exists := input["depth"]; exists {
 		depthFloat, ok := depthVal.(float64)
 		if !ok {
-			return nil, errors.New("depth must be a number")
+			return ErrorResult(ErrInvalidInput, "Invalid input", map[string]any{"param": "depth", "expected": "number"}), nil
 		}
 		depth = int(depthFloat)
 	}
@@ -87,7 +87,7 @@ func (t *TreeTool) Execute(ctx context.Context, input map[string]interface{}) (i
 		resolvedID, resolvedPathStr, err := t.pathResolver.ResolveFolderPath(ctx, folderPath)
 		if err != nil {
 			if errors.Is(err, domain.ErrNotFound) {
-				return nil, fmt.Errorf("folder not found: %s", folderPath)
+				return ErrorResult(ErrNotFound, "Folder not found", map[string]any{"path": folderPath}), nil
 			}
 			return nil, fmt.Errorf("failed to resolve folder path: %w", err)
 		}
