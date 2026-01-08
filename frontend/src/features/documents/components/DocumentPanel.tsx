@@ -5,6 +5,8 @@ import { EditorPanel } from './EditorPanel'
 
 interface DocumentPanelProps {
   projectId: string
+  projectSlug: string
+  projectName: string | null
 }
 
 /**
@@ -12,7 +14,7 @@ interface DocumentPanelProps {
  * Shows either document tree (for browsing) or editor (for editing).
  * View determined by UIStore.rightPanelState.
  */
-export function DocumentPanel({ projectId }: DocumentPanelProps) {
+export function DocumentPanel({ projectId, projectSlug, projectName }: DocumentPanelProps) {
   const { rightPanelState, activeDocumentId } = useUIStore(useShallow((s) => ({
     rightPanelState: s.rightPanelState,
     activeDocumentId: s.activeDocumentId,
@@ -24,5 +26,11 @@ export function DocumentPanel({ projectId }: DocumentPanelProps) {
   }
 
   // Default view: Show document tree
-  return <DocumentTreeContainer projectId={projectId} />
+  return (
+    <DocumentTreeContainer
+      projectId={projectId}
+      projectSlug={projectSlug}
+      projectName={projectName}
+    />
+  )
 }

@@ -1,2 +1,6 @@
 export { PanelLayout } from './PanelLayout'
 export { CollapsiblePanel } from './CollapsiblePanel'
+export { ThreePanelLayout } from './ThreePanelLayout'
+export { MobileTabLayout } from './MobileTabLayout'
+export { MobileBottomNav } from './MobileBottomNav'
+export type { PanelDefinitions, LayoutStrategyProps, LayoutStrategyComponent } from './types'
