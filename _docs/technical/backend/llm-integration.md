@@ -325,6 +325,8 @@ func (s *LLMService) executeTools(ctx context.Context, calls []ToolCall) ([]*llm
 }
 ```
 
+> **Note:** The actual implementation uses `ErrorResult()` with structured error codes for recoverable errors. See `internal/service/llm/tools/errors.go` and [Tool Execution](../llm/streaming/tool-execution.md#error-handling) for the two-tier error model.
+
 **Tool Auto-Mapping:**
 
 Built-in tools (`web_search`, `bash`, `text_editor`) can be specified with just `{Name: "tool_name"}` - the library automatically maps them to provider-specific implementations.

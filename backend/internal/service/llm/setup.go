@@ -123,6 +123,7 @@ func SetupServices(
 	formatterRegistry.Register("doc_search", &formatting.DocSearchFormatter{})
 	formatterRegistry.Register("doc_view", &formatting.DocViewFormatter{})
 	formatterRegistry.Register("doc_tree", formatting.NewDocTreeFormatter())
+	formatterRegistry.Register("doc_edit", &formatting.DocEditFormatter{})
 
 	// Create MessageBuilder service (pure conversion, no data loading)
 	messageBuilder := conversation.NewMessageBuilderService(
