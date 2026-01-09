@@ -26,20 +26,6 @@ export function MobileTabLayout({ panels, className }: LayoutStrategyProps) {
     }))
   )
 
-  // Render the active panel
-  const renderActivePanel = () => {
-    switch (mobileActivePanel) {
-      case 'chatList':
-        return panels.chatList
-      case 'activeChat':
-        return panels.activeChat
-      case 'document':
-        return panels.documentPanel
-      default:
-        return panels.activeChat
-    }
-  }
-
   return (
     <div
       className={cn(
@@ -48,13 +34,38 @@ export function MobileTabLayout({ panels, className }: LayoutStrategyProps) {
       )}
     >
       {/* Panel content area */}
-      <div
-        id={`panel-${mobileActivePanel}`}
-        role="tabpanel"
-        aria-labelledby={`tab-${mobileActivePanel}`}
-        className="flex-1 overflow-hidden"
-      >
-        {renderActivePanel()}
+      <div className="flex-1 overflow-hidden">
+        {/* Keep chat panels mounted to prevent re-fetch/reload when switching tabs on mobile. */}
+        <div
+          id="panel-chatList"
+          role="tabpanel"
+          aria-labelledby="tab-chatList"
+          hidden={mobileActivePanel !== 'chatList'}
+          className="h-full overflow-hidden"
+        >
+          {panels.chatList}
+        </div>
+
+        <div
+          id="panel-activeChat"
+          role="tabpanel"
+          aria-labelledby="tab-activeChat"
+          hidden={mobileActivePanel !== 'activeChat'}
+          className="h-full overflow-hidden"
+        >
+          {panels.activeChat}
+        </div>
+
+        {/* Documents can be heavier (tree + editor). Mount content only when active. */}
+        <div
+          id="panel-document"
+          role="tabpanel"
+          aria-labelledby="tab-document"
+          hidden={mobileActivePanel !== 'document'}
+          className="h-full overflow-hidden"
+        >
+          {mobileActivePanel === 'document' ? panels.documentPanel : null}
+        </div>
       </div>
 
       {/* Bottom navigation */}

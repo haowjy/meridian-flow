@@ -42,6 +42,9 @@ export function openDocument(
   store.setRightPanelState('editor')
   store.setRightPanelCollapsed(false)
 
+  // Mobile: swap to document panel
+  store.setMobileActivePanel('document')
+
   // Navigate to document URL using path-based slug (updates browser history)
   // Splat route captures all segments: /documents/characters/heroes/aria
   // If URL is already this document, router won't navigate, but state is already set above

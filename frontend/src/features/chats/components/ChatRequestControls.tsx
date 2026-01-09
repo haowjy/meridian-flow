@@ -11,11 +11,8 @@ import {
   DropdownMenuTrigger,
 } from '@/shared/components/ui/dropdown-menu'
 import type { ChatRequestOptions, ReasoningLevel } from '@/features/chats/types'
+import { DEFAULT_CHAT_REQUEST_OPTIONS } from '@/features/chats/types'
 import { useModelCapabilities } from '@/features/chats/hooks/useModelCapabilities'
-
-const DEFAULT_MODEL_ID = 'moonshotai/kimi-k2-thinking'
-const DEFAULT_MODEL_LABEL = 'Kimi K2 Thinking'
-const DEFAULT_PROVIDER_ID = 'openrouter'
 
 interface ChatRequestControlsProps {
   options: ChatRequestOptions
@@ -25,6 +22,8 @@ interface ChatRequestControlsProps {
   rightContent?: ReactNode
   isStreaming?: boolean
   onStop?: () => void
+  /** When false, hides the send/stop button area (useful for compact mobile composer). */
+  showSend?: boolean
 }
 
 export function ChatRequestControls({
@@ -35,6 +34,7 @@ export function ChatRequestControls({
   rightContent,
   isStreaming,
   onStop,
+  showSend = true,
 }: ChatRequestControlsProps) {
   const { providers } = useModelCapabilities()
 
@@ -101,7 +101,7 @@ export function ChatRequestControls({
           requiresThinking={requiresThinking}
         />
       </div>
-      {(onSend || rightContent) && (
+      {showSend && (onSend || rightContent) && (
         <div className="flex items-center gap-1">
           {rightContent}
           {onSend && (
@@ -182,16 +182,16 @@ function ModelSelector({
           <DropdownMenuItem
             onSelect={() =>
               onSelectModel(
-                DEFAULT_MODEL_ID,
-                DEFAULT_MODEL_LABEL,
-                DEFAULT_PROVIDER_ID,
+                DEFAULT_CHAT_REQUEST_OPTIONS.modelId,
+                DEFAULT_CHAT_REQUEST_OPTIONS.modelLabel,
+                DEFAULT_CHAT_REQUEST_OPTIONS.providerId,
                 true, // default model supports thinking
                 true, // default model requires thinking (kimi-k2-thinking)
               )
             }
             className="text-[0.7rem] sm:text-xs"
           >
-            {DEFAULT_MODEL_LABEL}
+            {DEFAULT_CHAT_REQUEST_OPTIONS.modelLabel}
           </DropdownMenuItem>
         )}
         {groups.map(([providerId, group], index) => (
@@ -291,4 +291,3 @@ function ReasoningDropdown({
     </DropdownMenu>
   )
 }
-

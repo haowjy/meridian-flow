@@ -1,14 +1,36 @@
 import React, { useCallback } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import type { Turn } from '@/features/chats/types'
+import type { Turn, TurnBlock, ToolBlockContent } from '@/features/chats/types'
 import { useChatStore } from '@/core/stores/useChatStore'
 import { TurnActionBar } from './TurnActionBar'
 import { BlockRenderer } from './blocks'
 import { makeLogger } from '@/core/lib/logger'
 import { buildAssistantRenderItems } from '@/features/chats/utils/toolGrouping'
-import { ToolInteractionBlock } from './blocks/ToolInteractionBlock'
+import { getToolRenderer } from './blocks/toolRegistry'
 
 const log = makeLogger('AssistantTurn')
+
+// =============================================================================
+// HELPERS
+// =============================================================================
+
+/**
+ * Extract tool name from tool_use or tool_result block.
+ * Used to route to appropriate custom tool UI via registry.
+ */
+function getToolName(
+  toolUse: TurnBlock | null,
+  toolResult: TurnBlock | null
+): string | null {
+  const source = toolUse ?? toolResult
+  if (!source?.content) return null
+  const content = source.content as ToolBlockContent
+  return typeof content.tool_name === 'string' ? content.tool_name : null
+}
+
+// =============================================================================
+// COMPONENT
+// =============================================================================
 
 interface AssistantTurnProps {
   turn: Turn
@@ -60,12 +82,15 @@ export const AssistantTurn = React.memo(function AssistantTurn({ turn }: Assista
             return <BlockRenderer key={item.block.id} block={item.block} />
           }
 
+          // Route to custom tool UI via registry (extensible pattern)
+          const toolName = getToolName(item.toolUse, item.toolResult)
+          const render = getToolRenderer(toolName)
+          const key = item.toolUse?.id ?? item.toolResult?.id ?? `tool-${index}`
+
           return (
-            <ToolInteractionBlock
-              key={item.toolUse?.id ?? item.toolResult?.id ?? `tool-${index}`}
-              toolUse={item.toolUse}
-              toolResult={item.toolResult}
-            />
+            <React.Fragment key={key}>
+              {render(item.toolUse, item.toolResult)}
+            </React.Fragment>
           )
         })}
       </div>

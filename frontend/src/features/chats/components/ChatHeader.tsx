@@ -27,7 +27,7 @@ export function ChatHeader({ chat, projectName }: ChatHeaderProps) {
   })))
 
   return (
-    <div className="chat-main-header h-12 px-3 flex items-center justify-between">
+    <div className="chat-main-header h-10 px-2 sm:h-12 sm:px-3 flex items-center justify-between">
       <div className="flex items-center gap-2 min-w-0 flex-1">
         {/* Left Toggle: Only show if left panel is collapsed */}
         {leftPanelCollapsed && (
@@ -45,7 +45,7 @@ export function ChatHeader({ chat, projectName }: ChatHeaderProps) {
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7"
+            className="h-7 w-7 sm:h-7 sm:w-7"
             aria-label="Chat menu"
           >
             <MoreHorizontal className="size-3" />
