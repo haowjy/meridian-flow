@@ -64,4 +64,4 @@ feature: "Chat/LLM System"
 ## Related
 
 - See [../fb-streaming/](../fb-streaming/) for SSE implementation
-- See [../b-tool-calling/](../b-tool-calling/) for tool integration
+- See [../fb-tool-calling/](../fb-tool-calling/) for tool integration

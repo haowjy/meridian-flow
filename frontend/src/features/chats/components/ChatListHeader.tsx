@@ -13,7 +13,7 @@ interface ChatListHeaderProps {
  */
 export function ChatListHeader({ onBrandClick }: ChatListHeaderProps) {
   return (
-    <div className="chat-pane-header flex h-12 items-center px-3">
+    <div className="chat-pane-header flex h-10 items-center px-2 sm:h-12 sm:px-3">
       {/* Left: Toggle Sidebar */}
       <SidebarToggle side="left" />
 
