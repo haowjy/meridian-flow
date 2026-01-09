@@ -50,6 +50,7 @@ export function useDocumentSync(
     serverHasAIVersionRef,
     pendingServerSnapshot,
     setPendingServerSnapshot,
+    setHasUserEdit,
     localDocumentRef,
     hasUserEditRef,
     initializedRef,
@@ -118,7 +119,7 @@ export function useDocumentSync(
             const currentDocId = useEditorStore.getState()._activeDocumentId
             if (currentDocId !== saveDocumentId) return
             useEditorStore.getState().updateActiveDocument(doc)
-            // Note: hasUserEdit is reset by the component/content hook
+            setHasUserEdit(false)
           },
         })
         return
@@ -150,7 +151,7 @@ export function useDocumentSync(
 
             useEditorStore.getState().updateActiveDocument(result.document)
             aiVersionBaseRevRef.current = result.document.aiVersionRev ?? null
-            // Note: hasUserEdit is reset by the component/content hook
+            setHasUserEdit(false)
           },
           onAIVersionConflict: (serverDocument) => {
             const latest = serverDocument ?? useEditorStore.getState().activeDocument
@@ -177,6 +178,7 @@ export function useDocumentSync(
     hydrateDocument,
     aiVersionBaseRevRef,
     setPendingServerSnapshot,
+    setHasUserEdit,
   ])
 
   // ---------------------------------------------------------------------------

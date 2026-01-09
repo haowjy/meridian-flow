@@ -20,6 +20,7 @@ import { acceptHunk, rejectHunk } from './transactions'
  *
  * CSS classes:
  * - .cm-hunk-actions: Container (hidden by default, shown on hover via JS)
+ * - .cm-hunk-actions.cm-hunk-focused-visible: Visible when hunk is focused (for mobile)
  * - .cm-hunk-accept: Accept button (green on hover)
  * - .cm-hunk-reject: Reject button (red on hover)
  *
@@ -32,14 +33,18 @@ import { acceptHunk, rejectHunk } from './transactions'
 export class HunkActionWidget extends WidgetType {
   constructor(
     private readonly hunkId: string,
-    private readonly view: EditorView
+    private readonly view: EditorView,
+    private readonly isFocused: boolean = false
   ) {
     super()
   }
 
   toDOM(): HTMLElement {
     const container = document.createElement('span')
-    container.className = 'cm-hunk-actions'
+    // Add focused class for auto-visibility on focused hunk (critical for mobile/touch)
+    container.className = this.isFocused
+      ? 'cm-hunk-actions cm-hunk-focused-visible'
+      : 'cm-hunk-actions'
     container.dataset.hunkId = this.hunkId
 
     // Reject button (first, matching floating pill order)
@@ -77,10 +82,10 @@ export class HunkActionWidget extends WidgetType {
 
   /**
    * Widget equality check.
-   * Returns false if hunkId differs, triggering re-render.
+   * Returns false if hunkId or isFocused differs, triggering re-render.
    */
   eq(other: HunkActionWidget): boolean {
-    return other.hunkId === this.hunkId
+    return other.hunkId === this.hunkId && other.isFocused === this.isFocused
   }
 
   /**
