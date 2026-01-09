@@ -447,7 +447,9 @@ export const useChatStore = create<ChatStore>()(
       openChat: async (chatId: string, initialTurnId?: string, signal?: AbortSignal) => {
         const log = makeLogger('chat-store')
         log.debug('openChat:start', { chatId, initialTurnId })
-        set({ isLoadingTurns: true, error: null })
+        // Set chatId immediately so remounts can detect in-flight loads and avoid
+        // redundant re-fetches that cause "progressive reload" UI.
+        set({ chatId, isLoadingTurns: true, error: null })
         try {
           const { turns, hasMoreBefore, hasMoreAfter } = await api.turns.paginate(chatId, {
             fromTurnId: initialTurnId,

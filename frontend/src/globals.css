@@ -622,7 +622,7 @@ body.preload * {
 
   /* Chat input */
   .chat-input-shell {
-    @apply bg-background/95 px-4 pb-2;
+    @apply bg-background/95 px-2 pb-2 sm:px-4;
   }
 
   .chat-input {
