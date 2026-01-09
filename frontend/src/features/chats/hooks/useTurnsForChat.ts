@@ -33,6 +33,19 @@ export function useTurnsForChat(chatId: string | null) {
     const log = makeLogger('useTurnsForChat')
     log.debug('effect:start', { chatId })
 
+    // If we already have turns for this chat (or a load is already in-flight),
+    // don't re-fetch on remount / tab switches. This prevents "progressive reload"
+    // when navigating away and back.
+    const state = useChatStore.getState()
+    if (state.chatId === chatId && (state.turns.length > 0 || state.isLoadingTurns)) {
+      log.debug('effect:skip', {
+        chatId,
+        turns: state.turns.length,
+        isLoadingTurns: state.isLoadingTurns,
+      })
+      return
+    }
+
     // Cancel any in-flight request before starting a new one
     if (abortRef.current) {
       abortRef.current.abort()

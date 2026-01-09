@@ -40,20 +40,20 @@ export function MobileBottomNav({ activePanel, onPanelChange, className }: Mobil
             type="button"
             role="tab"
             aria-selected={isActive}
-            {...(isActive ? { 'aria-controls': `panel-${tab.id}` } : {})}
+            aria-controls={`panel-${tab.id}`}
             onClick={() => onPanelChange(tab.id)}
             className={cn(
-              'flex flex-1 flex-col items-center justify-center gap-0.5 py-2',
+              'flex flex-1 flex-col items-center justify-center gap-0.5 py-1',
               // Minimum touch target 44px
-              'min-h-[56px]',
+              'min-h-[44px]',
               'transition-colors',
               isActive
                 ? 'text-primary'
                 : 'text-muted-foreground hover:text-foreground'
             )}
           >
-            <Icon className="h-5 w-5" />
-            <span className="text-xs font-medium">{tab.label}</span>
+            <Icon className="h-4 w-4" />
+            <span className="text-[10px] font-medium leading-none">{tab.label}</span>
           </button>
         )
       })}

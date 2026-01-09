@@ -1,14 +1,14 @@
 ---
-stack: backend
+stack: both
 status: complete
 feature: "Tool Calling"
 ---
 
 # Tool Calling
 
-**Tool calling system with auto-mapping and read-only document access.**
+**Tool calling system with auto-mapping, document tools, and custom tool UIs.**
 
-## Status: ✅ Complete (Backend Only)
+## Status: ✅ Complete (Backend + Frontend)
 
 ---
 
@@ -26,11 +26,15 @@ feature: "Tool Calling"
 **Tool Continuation** - Multi-turn tool use until `end_turn`
 - See [continuation.md](continuation.md)
 
+**Tool UI Components** - Extensible registry for custom tool block renderers
+- See [frontend-tool-ui.md](frontend-tool-ui.md)
+
 ---
 
 ## Implementation
 
-**Files**: `backend/internal/service/llm/tools/`, `backend/internal/service/llm/adapters/conversion.go`
+**Backend**: `backend/internal/service/llm/tools/`, `backend/internal/service/llm/adapters/conversion.go`
+**Frontend**: `frontend/src/features/chats/components/blocks/toolRegistry.ts`
 
 ---
 
