@@ -21,7 +21,9 @@ interface EditorStore {
   hasUserEdit: boolean
 
   // Hunk navigation state (for AI diff review)
-  focusedHunkIndex: number
+  focusedHunkIndex: number // -1 = no visual focus, 0+ = highlighted hunk
+  navigatorPosition: number // Navigator display position (never -1, for "Change X/Y" display)
+  navigatorPositionByDoc: Record<string, number> // Per-doc persistence for navigator position
 
   loadDocument: (documentId: string, signal?: AbortSignal) => Promise<void>
   saveDocument: (documentId: string, content: string) => Promise<void>
@@ -32,8 +34,10 @@ interface EditorStore {
   refreshDocument: (documentId: string) => Promise<void>
   /** Set the focused hunk index for keyboard navigation */
   setFocusedHunkIndex: (index: number) => void
-  /** Navigate to next/previous hunk (clamps to bounds, does not wrap) */
+  /** Navigate to next/previous hunk (wraps around) */
   navigateHunk: (direction: 'next' | 'prev', totalHunks: number) => void
+  /** Clamp navigator position when hunks are removed (called by useDiffView) */
+  clampNavigatorPosition: (totalHunks: number) => void
 }
 
 export const useEditorStore = create<EditorStore>()((set, get) => ({
@@ -44,17 +48,22 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
   isLoading: false,
   error: null,
   hasUserEdit: false,
-  focusedHunkIndex: 0, // Default to first hunk
+  focusedHunkIndex: -1, // -1 = no visual focus, 0+ = highlighted hunk
+  navigatorPosition: 0, // Navigator display position (never -1)
+  navigatorPositionByDoc: {}, // Per-doc persistence for navigator position
 
   loadDocument: async (documentId: string, signal?: AbortSignal) => {
     // CRITICAL: Set expected document ID FIRST (synchronous, before any await)
     // This prevents race conditions when user rapidly switches documents
+    // Restore navigator position from per-document map, or default to 0
+    const savedPosition = get().navigatorPositionByDoc[documentId] ?? 0
     set({
       _activeDocumentId: documentId,
       isLoading: true,
       error: null,
       hasUserEdit: false, // Reset edit flag when switching docs
-      focusedHunkIndex: 0, // Reset hunk navigation when switching docs
+      focusedHunkIndex: -1, // Start without visual focus
+      navigatorPosition: savedPosition, // Restore navigator position from per-doc map
     })
 
     logger.debug(`Starting load for document ${documentId}`)
@@ -196,21 +205,81 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
     }
   },
 
-  setFocusedHunkIndex: (index) => set({ focusedHunkIndex: index }),
+  setFocusedHunkIndex: (index) => {
+    const docId = get()._activeDocumentId
+    if (index === -1) {
+      // Click outside: only remove visual focus, keep navigator position
+      set({ focusedHunkIndex: -1 })
+    } else {
+      // Click inside or navigate: update both visual focus and navigator position
+      set({
+        focusedHunkIndex: index,
+        navigatorPosition: index,
+        // Also persist navigator position to per-document map
+        ...(docId && {
+          navigatorPositionByDoc: {
+            ...get().navigatorPositionByDoc,
+            [docId]: index,
+          },
+        }),
+      })
+    }
+  },
 
   navigateHunk: (direction, totalHunks) => {
     if (totalHunks === 0) return
 
+    const docId = get()._activeDocumentId
     set((state) => {
-      const current = state.focusedHunkIndex
+      // Use navigatorPosition as starting point (always valid, never -1)
+      const current = state.navigatorPosition
 
-      // Clamp to bounds - don't wrap around
+      // Wrap around using modulo (cycle first↔last)
       const next =
         direction === 'next'
-          ? Math.min(current + 1, totalHunks - 1)
-          : Math.max(current - 1, 0)
+          ? (current + 1) % totalHunks // 2 → 0 when total=3
+          : (current - 1 + totalHunks) % totalHunks // 0 → 2 when total=3
 
-      return { focusedHunkIndex: next }
+      // Update BOTH: visual focus returns, navigator moves
+      return {
+        focusedHunkIndex: next,
+        navigatorPosition: next,
+        // Also persist navigator position to per-document map
+        ...(docId && {
+          navigatorPositionByDoc: {
+            ...state.navigatorPositionByDoc,
+            [docId]: next,
+          },
+        }),
+      }
+    })
+  },
+
+  clampNavigatorPosition: (totalHunks) => {
+    const docId = get()._activeDocumentId
+    set((state) => {
+      // No hunks: reset to 0
+      if (totalHunks === 0) {
+        return { navigatorPosition: 0 }
+      }
+
+      // Navigator position out of bounds: clamp to last hunk
+      if (state.navigatorPosition >= totalHunks) {
+        const clamped = totalHunks - 1
+        return {
+          navigatorPosition: clamped,
+          // Also persist clamped position
+          ...(docId && {
+            navigatorPositionByDoc: {
+              ...state.navigatorPositionByDoc,
+              [docId]: clamped,
+            },
+          }),
+        }
+      }
+
+      // Already in bounds: no change
+      return {}
     })
   },
 }))
