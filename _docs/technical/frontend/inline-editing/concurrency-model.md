@@ -88,6 +88,10 @@ Frontend polls `/api/documents/{id}/ai-status` every 2 seconds:
 
 "Dirty" means: editor has unsaved changes (`hasUserEdit === true`).
 
+**`hasUserEdit` Lifecycle:**
+- Set `true` by: user typing, accept/reject operations (via `onContentChanged` callback)
+- Set `false` by: `hydrateDocument()` and `onServerSaved` callbacks after successful save
+
 **Rule**: Never update editor underneath an active user.
 
 ```mermaid

@@ -62,7 +62,7 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   // ---------------------------------------------------------------------------
   // STORE STATE (for UI that's not in hooks)
   // ---------------------------------------------------------------------------
-  const { error, status, lastSaved, loadDocument, focusedHunkIndex } = useEditorStore()
+  const { error, status, lastSaved, loadDocument, navigatorPosition } = useEditorStore()
   const activeDocument = useEditorStore((s) => s.activeDocument)
 
   // Get document metadata from tree (available immediately, no need to wait for content)
@@ -76,6 +76,7 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   // 1. Document content (loading, hydration, local state)
   const {
     localDocument,
+    setLocalDocument,
     isInitialized,
     isEditable,
     isEditorReady,
@@ -105,6 +106,7 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     editorRef,
     isEditorReady,
     setHasUserEdit,
+    setLocalDocument,
   })
 
   // 4. Document polling (detects background AI updates)
@@ -279,7 +281,7 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
           <div className="sticky bottom-0 z-20 pointer-events-none">
             <AIHunkNavigator
               hunks={hunks}
-              currentIndex={focusedHunkIndex}
+              currentIndex={navigatorPosition}
               onPrevious={handlePrevHunk}
               onNext={handleNextHunk}
               onAcceptAll={handleAcceptAll}

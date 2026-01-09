@@ -81,6 +81,22 @@ function createHunkDecorations(
 ): void {
   const isFocused = hunkIndex === focusedIndex
 
+  // IMPORTANT: RangeSetBuilder requires decorations in ascending position order.
+  // For focused hunks, we add widget at delStart (before markers).
+  // For non-focused, we add at hunk.to (after all markers).
+
+  // For focused hunk: add widget FIRST at delStart (above deletion)
+  if (isFocused) {
+    builder.add(
+      hunk.delStart,
+      hunk.delStart,
+      Decoration.widget({
+        widget: new HunkActionWidget(hunk.id, view, true),
+        side: -1, // Before the position (above the text)
+      })
+    )
+  }
+
   // 1. Hide DEL_START marker
   builder.add(
     hunk.delStart,
@@ -135,15 +151,17 @@ function createHunkDecorations(
     Decoration.replace({ widget: markerWidget })
   )
 
-  // 7. Add action widget after the hunk
-  builder.add(
-    hunk.to,
-    hunk.to,
-    Decoration.widget({
-      widget: new HunkActionWidget(hunk.id, view),
-      side: 1, // After the position
-    })
-  )
+  // 7. For non-focused hunk: add widget at end (for hover tracking)
+  if (!isFocused) {
+    builder.add(
+      hunk.to,
+      hunk.to,
+      Decoration.widget({
+        widget: new HunkActionWidget(hunk.id, view, false),
+        side: 1, // After the position
+      })
+    )
+  }
 }
 
 // =============================================================================

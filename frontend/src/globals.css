@@ -887,10 +887,12 @@ body.preload * {
   /**
    * Focused hunk highlight
    * Extra highlight when navigating between hunks
-   * Uses a subtle background tint on top of the insertion styling
+   * Multiple visual cues: stronger background, bold text, left border effect
    */
   .cm-ai-hunk-focused {
-    background-color: color-mix(in srgb, hsl(142.1 76.2% 36.3%) 20%, transparent);
+    background-color: color-mix(in srgb, hsl(142.1 76.2% 36.3%) 35%, transparent);
+    font-weight: 600;
+    box-shadow: -3px 0 0 0 hsl(142.1 76.2% 36.3%); /* Left border effect */
   }
 
   /**
@@ -934,6 +936,16 @@ body.preload * {
   .cm-hunk-actions.visible {
     display: inline-flex;
     align-items: center;
+  }
+
+  /* Auto-show buttons on focused hunk - critical for mobile/touch where hover doesn't exist */
+  /* Float above the text so hunk content remains visible */
+  .cm-hunk-actions.cm-hunk-focused-visible {
+    display: inline-flex;
+    align-items: center;
+    position: absolute;
+    transform: translateY(-100%);
+    margin-top: -4px; /* Small gap above text */
   }
 
   /* Invisible bridge to allow mouse to reach buttons from text below */

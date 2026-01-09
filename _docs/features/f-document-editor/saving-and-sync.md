@@ -16,7 +16,7 @@ feature: "Saving and Sync"
 
 **Debounce**: 1 second (trailing edge)
 
-**Trigger**: Any content change in editor
+**Trigger**: Any content change in editor (typing, accept/reject AI suggestions)
 
 **Flow**:
 1. User types � debounce timer starts
@@ -26,7 +26,7 @@ feature: "Saving and Sync"
 5. On success: Show "Saved" + timestamp
 6. On error: Show error icon + retry
 
-**File**: `/Users/jimmyyao/gitrepos/meridian/frontend/src/features/documents/components/EditorPanel.tsx:169-175`
+**File**: `frontend/src/features/documents/hooks/useDocumentSync.ts`
 
 ---
 

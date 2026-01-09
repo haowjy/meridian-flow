@@ -60,8 +60,17 @@ const suppressOnChange = Annotation.define<boolean>()
 
 /**
  * Dispatches a setContent transaction with optional history/onChange control.
+ *
+ * IDEMPOTENT: Skips if content is identical to current state.
+ * This prevents cursor jumps when hydration is called with unchanged content
+ * (e.g., after save responses where server echoes the same content back).
  */
 function dispatchSetContent(view: EditorView, content: string, options?: SetContentOptions) {
+  // Idempotent: skip if content is identical (preserves cursor position)
+  if (view.state.doc.toString() === content) {
+    return
+  }
+
   const addToHistory = options?.addToHistory !== false
   const emitChange = options?.emitChange !== false
 

@@ -63,6 +63,8 @@ class HunkHoverManager {
    * Handle mouseenter on any element.
    * If the element (or its ancestor) has [data-hunk-id], show that hunk's actions
    * positioned above the hovered span.
+   *
+   * BOUNDARY: Skips focused widgets entirely - they're handled by CodeMirror.
    */
   private handleEnter = (e: Event) => {
     const target = e.target as HTMLElement
@@ -75,6 +77,13 @@ class HunkHoverManager {
     if (!hunkElement) return
 
     const hunkId = hunkElement.getAttribute('data-hunk-id')!
+
+    // Check if this hunk's widget is focused - if so, skip entirely
+    // Focused widgets are positioned inline by CodeMirror, not by hover manager
+    const actions = this.view.contentDOM.querySelector(
+      `.cm-hunk-actions[data-hunk-id="${hunkId}"]`
+    ) as HTMLElement | null
+    if (actions?.classList.contains('cm-hunk-focused-visible')) return
 
     // Hide previous hunk's actions (if different hunk)
     if (this.currentHunkId && this.currentHunkId !== hunkId) {
@@ -109,6 +118,9 @@ class HunkHoverManager {
 
   /**
    * Handle mousemove to update position as cursor moves within hunk.
+   * Updates both horizontal (follows mouse X) and vertical (follows anchor element).
+   *
+   * BOUNDARY: Skips focused widgets - they're handled by CodeMirror.
    */
   private handleMove = (e: MouseEvent) => {
     if (!this.currentHunkId) return
@@ -122,6 +134,8 @@ class HunkHoverManager {
 
     if (!hunkElement || hunkElement.getAttribute('data-hunk-id') !== this.currentHunkId) return
 
+    // Track if anchor changed (for vertical repositioning)
+    const anchorChanged = this.currentAnchorEl !== hunkElement
     this.currentAnchorEl = hunkElement
 
     // Update horizontal position based on mouse X.
@@ -131,10 +145,19 @@ class HunkHoverManager {
 
     if (!actions) return
 
+    // Skip focused widgets - they might have become focused after hover started
+    if (actions.classList.contains('cm-hunk-focused-visible')) return
+
     const container = (actions.offsetParent ?? this.view.contentDOM) as HTMLElement
     const containerRect = container.getBoundingClientRect()
     const centerOffset = actions.offsetWidth / 2
     actions.style.left = `${e.clientX - containerRect.left - centerOffset}px`
+
+    // Also update vertical position when anchor element changes
+    // This ensures buttons follow cursor vertically in large multi-line hunks
+    if (anchorChanged) {
+      this.requestReposition()
+    }
   }
 
   private handleResize = () => {
@@ -158,6 +181,9 @@ class HunkHoverManager {
     ) as HTMLElement | null
 
     if (!actions) return
+
+    // Skip focused widgets - they're positioned inline by CodeMirror
+    if (actions.classList.contains('cm-hunk-focused-visible')) return
 
     if (!actions.classList.contains('visible')) return
 
@@ -195,6 +221,9 @@ class HunkHoverManager {
   /**
    * Show actions positioned above the hovered element.
    * Uses absolute positioning within the editor content DOM.
+   *
+   * BOUNDARY: Skips focused widgets - they're positioned inline by CodeMirror
+   * and should not be touched by the hover manager.
    */
   private showActionsNear(hunkId: string, nearElement: HTMLElement) {
     const actions = this.view.contentDOM.querySelector(
@@ -202,6 +231,9 @@ class HunkHoverManager {
     ) as HTMLElement | null
 
     if (!actions) return
+
+    // Skip focused widgets - they're positioned inline by CodeMirror
+    if (actions.classList.contains('cm-hunk-focused-visible')) return
 
     this.currentHunkId = hunkId
     this.currentAnchorEl = nearElement

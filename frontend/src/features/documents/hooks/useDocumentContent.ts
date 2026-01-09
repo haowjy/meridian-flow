@@ -44,6 +44,7 @@ export interface DocumentSyncContext {
   serverHasAIVersionRef: React.MutableRefObject<boolean>
   pendingServerSnapshot: PendingSnapshot | null
   setPendingServerSnapshot: (snapshot: PendingSnapshot | null) => void
+  setHasUserEdit: (value: boolean) => void
   // Refs for cleanup effects (stale closure prevention)
   localDocumentRef: React.MutableRefObject<string>
   hasUserEditRef: React.MutableRefObject<boolean>
@@ -54,6 +55,7 @@ export interface DocumentSyncContext {
 export interface UseDocumentContentResult {
   // Content state
   localDocument: string
+  setLocalDocument: (content: string) => void
   isInitialized: boolean
   isEditable: boolean
   isEditorReady: boolean
@@ -104,6 +106,8 @@ export function useDocumentContent(
   const aiVersionBaseRevRef = useRef<number | null>(null)
   // Track if server had an AI version (for flush-on-unmount)
   const serverHasAIVersionRef = useRef(false)
+  // Track the last seen activeDocument reference to detect server updates vs local state changes
+  const lastActiveDocumentRef = useRef<typeof activeDocument>(null)
 
   /**
    * Pending server snapshot - stashed when server update arrives while user has edits.
@@ -218,6 +222,19 @@ export function useDocumentContent(
 
     const docChanged = lastHydratedDocIdRef.current !== activeDocument.id
 
+    // Detect if the SERVER sent a new document (activeDocument reference changed)
+    // vs just local React state changes (hasUserEdit changed).
+    // This prevents incorrectly setting pendingServerSnapshot when user makes local edits.
+    const serverSentNewDoc = lastActiveDocumentRef.current !== activeDocument
+    lastActiveDocumentRef.current = activeDocument
+
+    // If same document and no server update, nothing to do.
+    // This prevents re-hydration when only hasUserEdit/pendingServerSnapshot changed,
+    // which would revert the editor to old content after accept/reject.
+    if (!docChanged && !serverSentNewDoc) {
+      return
+    }
+
     // IMPORTANT: Check for existing snapshot FIRST to prevent infinite loop.
     // If we checked hasUserEdit first, we'd create a new pendingServerSnapshot object,
     // which triggers this effect again (it's in deps), creating another object → infinite loop.
@@ -225,8 +242,9 @@ export function useDocumentContent(
       return
     }
 
-    // If not a new doc and we have user edits, stash incoming update (runs once)
-    if (!docChanged && hasUserEdit) {
+    // If server sent a new doc for the SAME document ID while user has edits, stash it.
+    // Only do this when serverSentNewDoc=true (server update), not when local state changes.
+    if (!docChanged && serverSentNewDoc && hasUserEdit) {
       setPendingServerSnapshot({
         content: activeDocument.content ?? '',
         aiVersion: activeDocument.aiVersion,
@@ -235,7 +253,7 @@ export function useDocumentContent(
       return
     }
 
-    // Initialize the document
+    // Initialize the document (new doc or no user edits)
     lastHydratedDocIdRef.current = activeDocument.id
     setPendingServerSnapshot(null)
 
@@ -278,6 +296,7 @@ export function useDocumentContent(
     serverHasAIVersionRef,
     pendingServerSnapshot,
     setPendingServerSnapshot,
+    setHasUserEdit,
     localDocumentRef,
     hasUserEditRef,
     initializedRef,
@@ -290,6 +309,7 @@ export function useDocumentContent(
 
   return {
     localDocument,
+    setLocalDocument,
     isInitialized,
     isEditable,
     isEditorReady,
