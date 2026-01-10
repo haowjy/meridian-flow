@@ -20,7 +20,7 @@ import (
 //
 // It mirrors the logic used by CreateTurn + startStreamingExecution:
 //   - Validates the request
-//   - Validates the chat exists
+//   - Validates the thread exists
 //   - Parses and normalizes request_params → RequestParams struct
 //   - Resolves the final model
 //   - Loads the conversation path from prev_turn_id (if provided)
@@ -38,13 +38,13 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
 	}
 
-	// Debug endpoint requires chat_id (comes from path param)
-	if req.ChatID == nil {
-		return nil, fmt.Errorf("%w: chat_id is required for debug endpoint", domain.ErrValidation)
+	// Debug endpoint requires thread_id (comes from path param)
+	if req.ThreadID == nil {
+		return nil, fmt.Errorf("%w: thread_id is required for debug endpoint", domain.ErrValidation)
 	}
 
-	// Validate chat exists and is not deleted
-	if err := s.validator.ValidateChat(ctx, *req.ChatID, req.UserID); err != nil {
+	// Validate thread exists and is not deleted
+	if err := s.validator.ValidateThread(ctx, *req.ThreadID, req.UserID); err != nil {
 		return nil, err
 	}
 
@@ -95,9 +95,9 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 		}
 	}
 
-	// Resolve system prompt from user, project, chat, and selected skills (mirror CreateTurn)
+	// Resolve system prompt from user, project, thread, and selected skills (mirror CreateTurn)
 	// Always resolve if skills are selected, or if no user system prompt provided
-	if err := s.resolveSystemPromptForParams(ctx, *req.ChatID, req.UserID, params, req.SelectedSkills); err != nil {
+	if err := s.resolveSystemPromptForParams(ctx, *req.ThreadID, req.UserID, params, req.SelectedSkills); err != nil {
 		s.logger.Error("failed to resolve system prompt for debug", "error", err)
 		return nil, err
 	}

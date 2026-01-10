@@ -90,12 +90,12 @@ class ProjectListScreen(Screen):
             self.app.notify(f"Error loading projects: {e}", severity="error", markup=False)
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
-        """Navigate to chat list for selected project"""
+        """Navigate to thread list for selected project"""
         if hasattr(event.item, "project_data"):
             project = event.item.project_data
             logger.info(f"Selected project: {project.name} (id={project.id})")
             self.app.current_project_id = project.id
-            self.app.push_screen("chat_list")
+            self.app.push_screen("thread_list")
 
     async def action_new_project(self) -> None:
         """Show dialog for creating new project"""

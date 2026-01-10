@@ -45,7 +45,7 @@ sequenceDiagram
     participant Supabase as Supabase Client
     participant Backend as Go Backend
 
-    Component->>API: GET /chats/123
+    Component->>API: GET /threads/123
     API->>Supabase: getSession()
     Supabase-->>API: Session {access_token}
     API->>API: Add Authorization header
@@ -197,7 +197,7 @@ API calls automatically include JWT - no action required:
 import { api } from '@/core/lib/api'
 
 // JWT is automatically injected by api.ts
-const chats = await api.chats.list(projectId)
+const threads = await api.threads.list(projectId)
 ```
 
 ## Security Considerations

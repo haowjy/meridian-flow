@@ -34,7 +34,7 @@ feature: "Tool Calling"
 ## Implementation
 
 **Backend**: `backend/internal/service/llm/tools/`, `backend/internal/service/llm/adapters/conversion.go`
-**Frontend**: `frontend/src/features/chats/components/blocks/toolRegistry.ts`
+**Frontend**: `frontend/src/features/threads/components/blocks/toolRegistry.ts`
 
 ---
 

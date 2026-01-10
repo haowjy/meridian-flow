@@ -13,10 +13,10 @@ Real-time LLM response delivery via Server-Sent Events (SSE) with turn block acc
 
 ## Quick Links
 
-**First time?** → [Streaming Architecture](../../backend/architecture/streaming-architecture.md)
-**API integration?** → [API Endpoints](api-endpoints.md)
-**Tool calling?** → [Tool Execution](tool-execution.md)
-**Troubleshooting?** → [Edge Cases](edge-cases.md)
+**First time?** -> [Streaming Architecture](../../backend/architecture/streaming-architecture.md)
+**API integration?** -> [API Endpoints](api-endpoints.md)
+**Tool calling?** -> [Tool Execution](tool-execution.md)
+**Troubleshooting?** -> [Edge Cases](edge-cases.md)
 
 ---
 
@@ -32,7 +32,7 @@ graph TB
     Provider[LLM Provider<br/>via meridian-llm-go]
     DB[(PostgreSQL<br/>Turn Blocks)]
 
-    Client -->|POST /chats/:id/turns| Stream
+    Client -->|POST /threads/:id/turns| Stream
     Stream -->|Create StreamExecutor<br/>+ mstream.Stream| MStream
 
     Client -->|GET /turns/:id/stream| SSE
@@ -155,7 +155,7 @@ graph TB
 
 ### Creating a Turn (User Sends Message)
 
-1. **Client** → POST `/api/chats/:id/turns` with user message
+1. **Client** -> POST `/api/threads/:id/turns` with user message
 2. **StreamingService** creates user turn + assistant turn (`status="streaming"`)
 3. **StreamingService** creates `StreamExecutor` + `mstream.Stream` and registers it in the `mstream.Registry`
 4. **StreamExecutor** calls LLM provider (`StreamResponse`) via `meridian-llm-go`
@@ -167,7 +167,7 @@ graph TB
 
 ### Streaming Events (SSE)
 
-1. **Client** → GET `/api/turns/:id/stream`
+1. **Client** -> GET `/api/turns/:id/stream`
 2. **SSE Handler** gets `mstream.Stream` from the registry and replays catchup events (if reconnecting)
 3. **StreamExecutor** pushes new events into `mstream.Stream`
 4. **mstream.Stream** broadcasts SSE events (`block_*`, `turn_*`) to all connected clients
@@ -186,7 +186,7 @@ graph TB
 - `internal/service/llm/streaming/response_generator.go` - LLM coordination
 
 **Handlers:**
-- `internal/handler/chat.go:346-350` - StreamTurn endpoint
+- `internal/handler/thread.go:346-350` - StreamTurn endpoint
 - `internal/handler/sse_handler.go` - SSE connection handling
 
 **Models:**
@@ -210,7 +210,7 @@ graph TB
 ### Status Lifecycle
 
 ```
-pending → streaming → complete
+pending -> streaming -> complete
         ↓           ↓
     cancelled    error
 ```
@@ -220,6 +220,6 @@ pending → streaming → complete
 ## Related Documentation
 
 - [Service Layer Architecture](../architecture/service-layer.md) - 3-service split
-- [Chat Domain Model](../chat/overview.md) - Turn and block concepts
-- [LLM Providers](../chat/llm-providers.md) - Provider abstraction
+- [Thread Domain Model](../thread/overview.md) - Turn and block concepts
+- [LLM Providers](../thread/llm-providers.md) - Provider abstraction
 - [API Contracts](../api/contracts.md) - HTTP endpoints

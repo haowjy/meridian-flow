@@ -23,21 +23,21 @@ Features and improvements to consider post-MVP.
 - [Incremental Loading](./performance/incremental-loading.md) - Progressive data loading
 - [Offline Support](./performance/offline-support.md) - Offline-first capabilities
 
-### Chat UI
-- [AI Auto-Titling](./chat-ui/ai-auto-titling.md)
-- [Copy-Paste Detection & Custom Blocks](./chat-ui/copy-paste-detection.md)
-- [Auto-Collapse Large Messages](./chat-ui/auto-collapse.md)
-- [Message Search](./chat-ui/message-search.md)
-- [Keyboard Shortcuts](./chat-ui/keyboard-shortcuts.md)
-- [Export Conversation](./chat-ui/export-conversation.md)
-- [Message Threads & Branching](./chat-ui/message-threads.md)
+### Thread UI
+- [AI Auto-Titling](./thread-ui/ai-auto-titling.md)
+- [Copy-Paste Detection & Custom Blocks](./thread-ui/copy-paste-detection.md)
+- [Auto-Collapse Large Messages](./thread-ui/auto-collapse.md)
+- [Message Search](./thread-ui/message-search.md)
+- [Keyboard Shortcuts](./thread-ui/keyboard-shortcuts.md)
+- [Export Conversation](./thread-ui/export-conversation.md)
+- [Message Threads & Branching](./thread-ui/message-threads.md)
 
 ### Document Integration
 - [Document Reference Blocks](./document-integration/reference-blocks.md)
 - [Automatic Context Detection](./document-integration/auto-context.md)
 
 ### Collaborative Features
-- [Multi-User Chats](./collaborative/multi-user-chats.md)
+- [Multi-User Threads](./collaborative/multi-user-threads.md)
 - [Shared Context](./collaborative/shared-context.md)
 
 ### AI Provider Features
@@ -55,9 +55,9 @@ Features and improvements to consider post-MVP.
 - [Image Support](./multimodal/image-support.md)
 
 ### Organization & Management
-- [Chat Folders](./organization/chat-folders.md)
-- [Chat Tags](./organization/chat-tags.md)
-- [Chat Templates](./organization/chat-templates.md)
+- [Thread Folders](./organization/thread-folders.md)
+- [Thread Tags](./organization/thread-tags.md)
+- [Thread Templates](./organization/thread-templates.md)
 
 ### Analytics & Insights
 - [Usage Statistics](./analytics/usage-statistics.md)
@@ -71,7 +71,7 @@ Features and improvements to consider post-MVP.
 - [Public API](./integrations/public-api.md)
 
 ### Monetization
-- [Premium Chat Features](./monetization/premium-features.md)
+- [Premium Thread Features](./monetization/premium-features.md)
 
 ### Accessibility
 - [Screen Reader Optimization](./accessibility/screen-reader.md)
@@ -83,24 +83,24 @@ Features and improvements to consider post-MVP.
 |---------|----------|------------|--------|-----------|
 | Vector Search | High | Medium | High | Search |
 | Consistency Checking | High | High | High | AI Behaviors |
-| AI Auto-Titling | High | Low | High | Chat UI |
+| AI Auto-Titling | High | Low | High | Thread UI |
 | Proactive Assistance | Medium | High | High | AI Behaviors |
-| Message Search | High | Medium | High | Chat UI |
+| Message Search | High | Medium | High | Thread UI |
 | Document References | High | Medium | High | Document Integration |
 | Hybrid Search | Medium | Medium | Medium | Search |
 | Retry Strategies | Medium | Low | Medium | Infrastructure |
 | AI Suggestions (3-Way Merge) | Medium | High | High | AI Behaviors |
-| Keyboard Shortcuts | Medium | Low | Medium | Chat UI |
+| Keyboard Shortcuts | Medium | Low | Medium | Thread UI |
 | Redis Streaming | Low | Medium | Low | Infrastructure |
-| Copy-Paste Detection | Medium | Medium | Medium | Chat UI |
-| Export Conversation | Medium | Low | Medium | Chat UI |
+| Copy-Paste Detection | Medium | Medium | Medium | Thread UI |
+| Export Conversation | Medium | Low | Medium | Thread UI |
 | Frontend Optimization | Medium | Medium | Medium | Performance |
 | Multi-Provider UI | Medium | Low | High | AI Providers |
-| Message Threads | Low | High | Medium | Chat UI |
-| Multi-User Chats | Low | High | High | Collaborative |
+| Message Threads | Low | High | Medium | Thread UI |
+| Multi-User Threads | Low | High | High | Collaborative |
 | Virtual Scrolling | Low | Medium | Low | Performance |
 | Voice Input | Low | Medium | Medium | Multimodal |
-| Chat Folders | Medium | Low | Medium | Organization |
+| Thread Folders | Medium | Low | Medium | Organization |
 | Analytics | Low | Medium | Low | Analytics |
 | Mobile App | Low | High | High | Mobile |
 

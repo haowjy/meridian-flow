@@ -32,7 +32,7 @@ class TurnBrowserScreen(Screen):
 
     def __init__(self):
         super().__init__()
-        self.chat_id = None
+        self.thread_id = None
         self._navigation_task: asyncio.Task | None = None
 
     def compose(self) -> ComposeResult:
@@ -44,14 +44,14 @@ class TurnBrowserScreen(Screen):
         yield Footer()
 
     async def on_mount(self) -> None:
-        """Initial load: GET /api/chats/{chat_id}/turns?limit=1&direction=after"""
-        self.chat_id = self.app.current_chat_id
-        logger.info(f"TurnBrowser mounted for chat_id={self.chat_id}")
+        """Initial load: GET /api/threads/{thread_id}/turns?limit=1&direction=after"""
+        self.thread_id = self.app.current_thread_id
+        logger.info(f"TurnBrowser mounted for thread_id={self.thread_id}")
 
         try:
             # Load first turn
             response = await self.app.api_client.get_turns(
-                self.chat_id, limit=1, direction="after"
+                self.thread_id, limit=1, direction="after"
             )
 
             if response.turns:
@@ -60,9 +60,9 @@ class TurnBrowserScreen(Screen):
                 self.current_turn = response.turns[0]
                 self.update_display()
             else:
-                logger.debug("No turns in chat - showing empty state")
+                logger.debug("No turns in thread - showing empty state")
                 display = self.query_one("#display-box", RichLog)
-                display.write("[dim]No turns in this chat yet. Start typing below![/dim]")
+                display.write("[dim]No turns in this thread yet. Start typing below![/dim]")
 
             # Focus input box by default
             self.query_one("#input-box", SubmittableTextArea).focus()
@@ -179,7 +179,7 @@ class TurnBrowserScreen(Screen):
         """Internal: Perform the actual navigation"""
         try:
             response = await self.app.api_client.get_turns(
-                self.chat_id, from_turn_id=turn_id, limit=1, direction="after"
+                self.thread_id, from_turn_id=turn_id, limit=1, direction="after"
             )
 
             if response.turns:
@@ -230,7 +230,7 @@ class TurnBrowserScreen(Screen):
         self.screen.focus_next()
 
     def action_go_back(self) -> None:
-        """ESC key: Go back to chat list"""
+        """ESC key: Go back to thread list"""
         self.app.pop_screen()
 
     def action_quit(self) -> None:
@@ -284,7 +284,7 @@ class TurnBrowserScreen(Screen):
             # Create user turn (backend creates both user and assistant turns)
             prev_turn_id = self.current_turn.id if self.current_turn else None
             create_response = await self.app.api_client.create_turn(
-                self.chat_id, prev_turn_id, content, self.app.current_params
+                self.thread_id, prev_turn_id, content, self.app.current_params
             )
 
             logger.debug(f"Created turns - user: {create_response.user_turn.id}, assistant: {create_response.assistant_turn.id}")

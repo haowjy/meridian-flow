@@ -7,25 +7,25 @@ import (
 	llmRepo "meridian/internal/domain/repositories/llm"
 )
 
-// ChatValidator validates that chats are not soft-deleted
+// ThreadValidator validates that threads are not soft-deleted
 // before allowing operations on them or their turns
-type ChatValidator struct {
-	chatRepo llmRepo.ChatRepository
+type ThreadValidator struct {
+	threadRepo llmRepo.ThreadRepository
 }
 
-// NewChatValidator creates a new chat validator
-func NewChatValidator(chatRepo llmRepo.ChatRepository) *ChatValidator {
-	return &ChatValidator{
-		chatRepo: chatRepo,
+// NewThreadValidator creates a new thread validator
+func NewThreadValidator(threadRepo llmRepo.ThreadRepository) *ThreadValidator {
+	return &ThreadValidator{
+		threadRepo: threadRepo,
 	}
 }
 
-// ValidateChat ensures a chat exists and is not soft-deleted
-// Returns domain.ErrNotFound if chat is deleted or doesn't exist
-func (v *ChatValidator) ValidateChat(ctx context.Context, chatID, userID string) error {
-	_, err := v.chatRepo.GetChat(ctx, chatID, userID)
+// ValidateThread ensures a thread exists and is not soft-deleted
+// Returns domain.ErrNotFound if thread is deleted or doesn't exist
+func (v *ThreadValidator) ValidateThread(ctx context.Context, threadID, userID string) error {
+	_, err := v.threadRepo.GetThread(ctx, threadID, userID)
 	if err != nil {
-		return fmt.Errorf("invalid chat: %w", err)
+		return fmt.Errorf("invalid thread: %w", err)
 	}
 	return nil
 }

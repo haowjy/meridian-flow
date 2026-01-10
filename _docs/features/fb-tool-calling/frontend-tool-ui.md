@@ -18,7 +18,7 @@ feature: "Tool UI Components"
 
 **Pattern**: `getToolRenderer(toolName)` - registered tools get custom UI, others use `ToolInteractionBlock`.
 
-**File**: `frontend/src/features/chats/components/blocks/toolRegistry.ts`
+**File**: `frontend/src/features/threads/components/blocks/toolRegistry.ts`
 
 **Adding a Custom Tool UI**:
 1. Create component in `blocks/YourToolBlock/`
@@ -37,8 +37,8 @@ feature: "Tool UI Components"
 - Error messages and warnings
 
 **Files**:
-- `frontend/src/features/chats/components/blocks/DocEditBlock/`
-- `frontend/src/features/chats/utils/docPathResolver.ts`
+- `frontend/src/features/threads/components/blocks/DocEditBlock/`
+- `frontend/src/features/threads/utils/docPathResolver.ts`
 
 ---
 
@@ -53,7 +53,7 @@ feature: "Tool UI Components"
 - Word count and truncation warnings
 
 **Files**:
-- `frontend/src/features/chats/components/blocks/DocViewBlock/`
+- `frontend/src/features/threads/components/blocks/DocViewBlock/`
 
 ---
 
@@ -67,7 +67,7 @@ feature: "Tool UI Components"
 - Click to navigate to documents
 
 **Files**:
-- `frontend/src/features/chats/components/blocks/DocTreeBlock/`
+- `frontend/src/features/threads/components/blocks/DocTreeBlock/`
 
 ---
 
@@ -80,7 +80,7 @@ feature: "Tool UI Components"
 **Used by**: DocViewBlock, DocTreeBlock
 
 **Files**:
-- `frontend/src/features/chats/components/blocks/shared/FolderTreeView.tsx`
+- `frontend/src/features/threads/components/blocks/shared/FolderTreeView.tsx`
 
 ---
 

@@ -70,7 +70,7 @@ func (r *PostgresTurnRepository) CreateTurn(ctx context.Context, turn *llmModels
 
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
-			chat_id, prev_turn_id, role, status, error,
+			thread_id, prev_turn_id, role, status, error,
 			model, input_tokens, output_tokens, created_at, completed_at,
 			request_params, stop_reason, response_metadata
 		)
@@ -80,7 +80,7 @@ func (r *PostgresTurnRepository) CreateTurn(ctx context.Context, turn *llmModels
 
 	executor := postgres.GetExecutor(ctx, r.pool)
 	err := executor.QueryRow(ctx, query,
-		turn.ChatID,
+		turn.ThreadID,
 		turn.PrevTurnID,
 		turn.Role,
 		turn.Status,
@@ -97,7 +97,7 @@ func (r *PostgresTurnRepository) CreateTurn(ctx context.Context, turn *llmModels
 
 	if err != nil {
 		if postgres.IsPgForeignKeyError(err) {
-			return fmt.Errorf("chat %s: %w", turn.ChatID, domain.ErrNotFound)
+			return fmt.Errorf("thread %s: %w", turn.ThreadID, domain.ErrNotFound)
 		}
 		return fmt.Errorf("create turn: %w", err)
 	}
@@ -131,7 +131,7 @@ func (r *PostgresTurnRepository) scanTurnRow(row scanner) (*llmModels.Turn, erro
 	var turn llmModels.Turn
 	err := row.Scan(
 		&turn.ID,
-		&turn.ChatID,
+		&turn.ThreadID,
 		&turn.PrevTurnID,
 		&turn.Role,
 		&turn.Status,
@@ -154,7 +154,7 @@ func (r *PostgresTurnRepository) scanTurnRow(row scanner) (*llmModels.Turn, erro
 // GetTurn retrieves a turn by ID
 func (r *PostgresTurnRepository) GetTurn(ctx context.Context, turnID string) (*llmModels.Turn, error) {
 	query := fmt.Sprintf(`
-		SELECT id, chat_id, prev_turn_id, role, status, error,
+		SELECT id, thread_id, prev_turn_id, role, status, error,
 		       model, input_tokens, output_tokens, created_at, completed_at,
 		       request_params, stop_reason, response_metadata
 		FROM %s
@@ -180,7 +180,7 @@ func (r *PostgresTurnRepository) GetTurnPath(ctx context.Context, turnID string)
 	query := fmt.Sprintf(`
 		WITH RECURSIVE turn_path AS (
 			-- Base case: start with the specified turn
-			SELECT id, chat_id, prev_turn_id, role, status, error,
+			SELECT id, thread_id, prev_turn_id, role, status, error,
 			       model, input_tokens, output_tokens, created_at, completed_at,
 			       request_params, stop_reason, response_metadata, 1 as depth
 			FROM %s
@@ -189,14 +189,14 @@ func (r *PostgresTurnRepository) GetTurnPath(ctx context.Context, turnID string)
 			UNION ALL
 
 			-- Recursive case: get prev turns
-			SELECT t.id, t.chat_id, t.prev_turn_id, t.role, t.status, t.error,
+			SELECT t.id, t.thread_id, t.prev_turn_id, t.role, t.status, t.error,
 			       t.model, t.input_tokens, t.output_tokens, t.created_at, t.completed_at,
 			       t.request_params, t.stop_reason, t.response_metadata, tp.depth + 1
 			FROM %s t
 			INNER JOIN turn_path tp ON t.id = tp.prev_turn_id
 			WHERE tp.depth < %d  -- Prevent infinite recursion
 		)
-		SELECT id, chat_id, prev_turn_id, role, status, error,
+		SELECT id, thread_id, prev_turn_id, role, status, error,
 		       model, input_tokens, output_tokens, created_at, completed_at,
 		       request_params, stop_reason, response_metadata
 		FROM turn_path
@@ -237,15 +237,15 @@ func (r *PostgresTurnRepository) GetTurnPath(ctx context.Context, turnID string)
 func (r *PostgresTurnRepository) GetTurnSiblings(ctx context.Context, turnID string) ([]llmModels.Turn, error) {
 	executor := postgres.GetExecutor(ctx, r.pool)
 
-	// First get the turn's prev_turn_id and chat_id
+	// First get the turn's prev_turn_id and thread_id
 	var prevTurnID *string
-	var chatID string
+	var threadID string
 	query := fmt.Sprintf(`
-		SELECT prev_turn_id, chat_id
+		SELECT prev_turn_id, thread_id
 		FROM %s
 		WHERE id = $1
 	`, r.tables.Turns)
-	err := executor.QueryRow(ctx, query, turnID).Scan(&prevTurnID, &chatID)
+	err := executor.QueryRow(ctx, query, turnID).Scan(&prevTurnID, &threadID)
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
 			return nil, fmt.Errorf("turn %s: %w", turnID, domain.ErrNotFound)
@@ -258,20 +258,20 @@ func (r *PostgresTurnRepository) GetTurnSiblings(ctx context.Context, turnID str
 	var rows pgx.Rows
 
 	if prevTurnID == nil {
-		// Root turn - get all root turns for this chat
+		// Root turn - get all root turns for this thread
 		siblingsQuery = fmt.Sprintf(`
-			SELECT id, chat_id, prev_turn_id, role, status, error,
+			SELECT id, thread_id, prev_turn_id, role, status, error,
 			       model, input_tokens, output_tokens, created_at, completed_at,
 			       request_params, stop_reason, response_metadata
 			FROM %s
-			WHERE chat_id = $1 AND prev_turn_id IS NULL
+			WHERE thread_id = $1 AND prev_turn_id IS NULL
 			ORDER BY created_at
 		`, r.tables.Turns)
-		rows, err = executor.Query(ctx, siblingsQuery, chatID)
+		rows, err = executor.Query(ctx, siblingsQuery, threadID)
 	} else {
 		// Non-root - get all turns with same prev_turn_id
 		siblingsQuery = fmt.Sprintf(`
-			SELECT id, chat_id, prev_turn_id, role, status, error,
+			SELECT id, thread_id, prev_turn_id, role, status, error,
 			       model, input_tokens, output_tokens, created_at, completed_at,
 			       request_params, stop_reason, response_metadata
 			FROM %s
@@ -328,19 +328,19 @@ func (r *PostgresTurnRepository) GetTurnSiblings(ctx context.Context, turnID str
 	return turns, nil
 }
 
-// GetRootTurns retrieves all root turns for a specific chat
-func (r *PostgresTurnRepository) GetRootTurns(ctx context.Context, chatID string) ([]llmModels.Turn, error) {
+// GetRootTurns retrieves all root turns for a specific thread
+func (r *PostgresTurnRepository) GetRootTurns(ctx context.Context, threadID string) ([]llmModels.Turn, error) {
 	query := fmt.Sprintf(`
-		SELECT id, chat_id, prev_turn_id, role, status, error,
+		SELECT id, thread_id, prev_turn_id, role, status, error,
 		       model, input_tokens, output_tokens, created_at, completed_at,
 		       request_params, stop_reason, response_metadata
 		FROM %s
-		WHERE chat_id = $1 AND prev_turn_id IS NULL
+		WHERE thread_id = $1 AND prev_turn_id IS NULL
 		ORDER BY created_at
 	`, r.tables.Turns)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
-	rows, err := executor.Query(ctx, query, chatID)
+	rows, err := executor.Query(ctx, query, threadID)
 	if err != nil {
 		return nil, fmt.Errorf("get root turns: %w", err)
 	}
@@ -767,10 +767,10 @@ func (r *PostgresTurnRepository) GetSiblingsForTurns(
 
 	// Query to find siblings for each turn
 	// For each turn, find all turns with the same prev_turn_id (including self)
-	// CRITICAL: Must filter by chat_id to prevent cross-chat contamination
+	// CRITICAL: Must filter by thread_id to prevent cross-thread contamination
 	query := fmt.Sprintf(`
 		WITH turn_parents AS (
-			SELECT id, prev_turn_id, chat_id
+			SELECT id, prev_turn_id, thread_id
 			FROM %s
 			WHERE id = ANY($1)
 		)
@@ -779,7 +779,7 @@ func (r *PostgresTurnRepository) GetSiblingsForTurns(
 			array_remove(array_agg(t.id ORDER BY t.created_at), NULL) as sibling_ids
 		FROM turn_parents tp
 		LEFT JOIN %s t ON t.prev_turn_id IS NOT DISTINCT FROM tp.prev_turn_id
-			AND t.chat_id = tp.chat_id
+			AND t.thread_id = tp.thread_id
 		GROUP BY tp.id
 	`, r.tables.Turns, r.tables.Turns)
 
@@ -817,7 +817,7 @@ func (r *PostgresTurnRepository) GetSiblingsForTurns(
 // GetPaginatedTurns retrieves turns and blocks in paginated fashion using path-based navigation
 func (r *PostgresTurnRepository) GetPaginatedTurns(
 	ctx context.Context,
-	chatID, userID string,
+	threadID, userID string,
 	fromTurnID *string,
 	limit int,
 	direction string,
@@ -825,45 +825,45 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 ) (*llmModels.PaginatedTurnsResponse, error) {
 	executor := postgres.GetExecutor(ctx, r.pool)
 
-	// Verify chat exists and user has access
-	chatQuery := fmt.Sprintf(`
+	// Verify thread exists and user has access
+	threadQuery := fmt.Sprintf(`
 		SELECT id, last_viewed_turn_id
 		FROM %s
 		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
-	`, r.tables.Chats)
+	`, r.tables.Threads)
 
-	var chatExists string
+	var threadExists string
 	var lastViewedTurnID *string
-	err := executor.QueryRow(ctx, chatQuery, chatID, userID).Scan(&chatExists, &lastViewedTurnID)
+	err := executor.QueryRow(ctx, threadQuery, threadID, userID).Scan(&threadExists, &lastViewedTurnID)
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return nil, fmt.Errorf("chat %s: %w", chatID, domain.ErrNotFound)
+			return nil, fmt.Errorf("thread %s: %w", threadID, domain.ErrNotFound)
 		}
-		return nil, fmt.Errorf("verify chat access: %w", err)
+		return nil, fmt.Errorf("verify thread access: %w", err)
 	}
 
-	// Validate last_viewed_turn_id belongs to this chat
-	// If invalid (deleted, wrong chat, etc.), reset to NULL to trigger fallback logic
+	// Validate last_viewed_turn_id belongs to this thread
+	// If invalid (deleted, wrong thread, etc.), reset to NULL to trigger fallback logic
 	var needsReset bool
 	var invalidTurnID string
 	if lastViewedTurnID != nil {
-		var belongsToChat bool
+		var belongsToThread bool
 		validateQuery := fmt.Sprintf(`
 			SELECT EXISTS(
 				SELECT 1 FROM %s
-				WHERE id = $1 AND chat_id = $2
+				WHERE id = $1 AND thread_id = $2
 			)
 		`, r.tables.Turns)
 
-		err := executor.QueryRow(ctx, validateQuery, *lastViewedTurnID, chatID).Scan(&belongsToChat)
+		err := executor.QueryRow(ctx, validateQuery, *lastViewedTurnID, threadID).Scan(&belongsToThread)
 		if err != nil {
 			return nil, fmt.Errorf("validate last_viewed_turn_id: %w", err)
 		}
 
-		if !belongsToChat {
+		if !belongsToThread {
 			// Invalid reference - will reset after determining final start turn
 			r.logger.Warn("detected invalid last_viewed_turn_id, will reset to NULL",
-				"chat_id", chatID,
+				"thread_id", threadID,
 				"invalid_turn_id", *lastViewedTurnID,
 			)
 			needsReset = true
@@ -897,18 +897,18 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 		startTurnID = lastViewedTurnID
 	}
 	if startTurnID == nil {
-		// No starting point - get the most recent turn in the chat
+		// No starting point - get the most recent turn in the thread
 		mostRecentQuery := fmt.Sprintf(`
 			SELECT id FROM %s
-			WHERE chat_id = $1
+			WHERE thread_id = $1
 			ORDER BY created_at DESC
 			LIMIT 1
 		`, r.tables.Turns)
 		var mostRecent string
-		err := executor.QueryRow(ctx, mostRecentQuery, chatID).Scan(&mostRecent)
+		err := executor.QueryRow(ctx, mostRecentQuery, threadID).Scan(&mostRecent)
 		if err != nil {
 			if postgres.IsPgNoRowsError(err) {
-				// No turns in chat - return empty response
+				// No turns in thread - return empty response
 				return &llmModels.PaginatedTurnsResponse{
 					Turns:         []llmModels.Turn{},
 					HasMoreBefore: false,
@@ -922,7 +922,7 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 
 	// CRITICAL: Leaf resolution ONLY when fromTurnID is nil (cold start)
 	// This is the key difference between cache mode and leaf resolution mode:
-	// - Cold start (fromTurnID == nil): User opening chat fresh → resolve to leaf (end of active branch)
+	// - Cold start (fromTurnID == nil): User opening thread fresh → resolve to leaf (end of active branch)
 	// - Active session (fromTurnID != nil): User scrolling → use exact position (can be mid-tree)
 	if fromTurnID == nil {
 		leaf, err := r.findMostRecentLeaf(ctx, *startTurnID)
@@ -939,19 +939,19 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 			UPDATE %s
 			SET last_viewed_turn_id = NULL
 			WHERE id = $1 AND last_viewed_turn_id = $2
-		`, r.tables.Chats)
+		`, r.tables.Threads)
 
-		_, err := executor.Exec(ctx, resetQuery, chatID, invalidTurnID)
+		_, err := executor.Exec(ctx, resetQuery, threadID, invalidTurnID)
 		if err != nil {
 			// Log but don't fail - pagination can still proceed
 			r.logger.Error("failed to reset invalid last_viewed_turn_id",
-				"chat_id", chatID,
+				"thread_id", threadID,
 				"invalid_turn_id", invalidTurnID,
 				"error", err,
 			)
 		} else {
 			r.logger.Info("successfully reset invalid last_viewed_turn_id",
-				"chat_id", chatID,
+				"thread_id", threadID,
 				"invalid_turn_id", invalidTurnID,
 			)
 		}
@@ -963,8 +963,8 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 			UPDATE %s
 			SET last_viewed_turn_id = $1
 			WHERE id = $2
-		`, r.tables.Chats)
-		_, err = executor.Exec(ctx, updateQuery, *startTurnID, chatID)
+		`, r.tables.Threads)
+		_, err = executor.Exec(ctx, updateQuery, *startTurnID, threadID)
 		if err != nil {
 			// Log error but don't fail the request
 			// If update fails, pagination succeeds but cache becomes stale
@@ -1113,7 +1113,7 @@ func (r *PostgresTurnRepository) fetchTurnsBefore(ctx context.Context, startTurn
 	query := fmt.Sprintf(`
 		WITH RECURSIVE turn_path AS (
 			-- Base case: get the prev turn of start turn
-			SELECT t.id, t.chat_id, t.prev_turn_id, t.role, t.status, t.error,
+			SELECT t.id, t.thread_id, t.prev_turn_id, t.role, t.status, t.error,
 			       t.model, t.input_tokens, t.output_tokens, t.created_at, t.completed_at,
 			       t.request_params, t.stop_reason, t.response_metadata, 1 as depth
 			FROM %s t
@@ -1123,14 +1123,14 @@ func (r *PostgresTurnRepository) fetchTurnsBefore(ctx context.Context, startTurn
 			UNION ALL
 
 			-- Recursive case: follow prev_turn_id chain
-			SELECT t.id, t.chat_id, t.prev_turn_id, t.role, t.status, t.error,
+			SELECT t.id, t.thread_id, t.prev_turn_id, t.role, t.status, t.error,
 			       t.model, t.input_tokens, t.output_tokens, t.created_at, t.completed_at,
 			       t.request_params, t.stop_reason, t.response_metadata, tp.depth + 1
 			FROM %s t
 			INNER JOIN turn_path tp ON t.id = tp.prev_turn_id
 			WHERE tp.depth < $2
 		)
-		SELECT id, chat_id, prev_turn_id, role, status, error,
+		SELECT id, thread_id, prev_turn_id, role, status, error,
 		       model, input_tokens, output_tokens, created_at, completed_at,
 		       request_params, stop_reason, response_metadata
 		FROM turn_path
@@ -1168,7 +1168,7 @@ func (r *PostgresTurnRepository) fetchTurnsAfter(ctx context.Context, startTurnI
 	query := fmt.Sprintf(`
 		WITH RECURSIVE turn_path AS (
 			-- Base case: get the most recent child of start turn
-			SELECT t.id, t.chat_id, t.prev_turn_id, t.role, t.status, t.error,
+			SELECT t.id, t.thread_id, t.prev_turn_id, t.role, t.status, t.error,
 			       t.model, t.input_tokens, t.output_tokens, t.created_at, t.completed_at,
 			       t.request_params, t.stop_reason, t.response_metadata, 1 as depth
 			FROM %s t
@@ -1183,7 +1183,7 @@ func (r *PostgresTurnRepository) fetchTurnsAfter(ctx context.Context, startTurnI
 			UNION ALL
 
 			-- Recursive case: follow most recent child
-			SELECT t.id, t.chat_id, t.prev_turn_id, t.role, t.status, t.error,
+			SELECT t.id, t.thread_id, t.prev_turn_id, t.role, t.status, t.error,
 			       t.model, t.input_tokens, t.output_tokens, t.created_at, t.completed_at,
 			       t.request_params, t.stop_reason, t.response_metadata, tp.depth + 1
 			FROM %s t
@@ -1196,7 +1196,7 @@ func (r *PostgresTurnRepository) fetchTurnsAfter(ctx context.Context, startTurnI
 			    LIMIT 1
 			  )
 		)
-		SELECT id, chat_id, prev_turn_id, role, status, error,
+		SELECT id, thread_id, prev_turn_id, role, status, error,
 		       model, input_tokens, output_tokens, created_at, completed_at,
 		       request_params, stop_reason, response_metadata
 		FROM turn_path

@@ -5,19 +5,19 @@ audience: developer
 
 # Service Layer Architecture: LLM Services
 
-The LLM service layer is organized into 3 focused services following SOLID principles, replacing a monolithic ChatService that previously contained 1500+ lines.
+The LLM service layer is organized into 3 focused services following SOLID principles, replacing a monolithic ThreadService that previously contained 1500+ lines.
 
 ## Overview
 
 ```mermaid
 graph TB
-    Handler[Handler Layer<br/>chat.go]
+    Handler[Handler Layer<br/>thread.go]
 
-    ChatSvc[ChatService<br/>CRUD Operations]
+    ThreadSvc[ThreadService<br/>CRUD Operations]
     ConvoSvc[ConversationService<br/>History & Navigation]
     StreamSvc[StreamingService<br/>Turn Creation & Streaming]
 
-    ChatRepo[(ChatRepository)]
+    ThreadRepo[(ThreadRepository)]
     TurnRepo[(TurnRepository)]
     ProjectRepo[(ProjectRepository)]
 
@@ -25,14 +25,14 @@ graph TB
     Generator[ResponseGenerator<br/>LLM Orchestration]
     Registry[StreamRegistry<br/>Active Streams (mstream)]
 
-    Handler --> ChatSvc
+    Handler --> ThreadSvc
     Handler --> ConvoSvc
     Handler --> StreamSvc
 
-    ChatSvc --> ChatRepo
-    ChatSvc --> ProjectRepo
+    ThreadSvc --> ThreadRepo
+    ThreadSvc --> ProjectRepo
 
-    ConvoSvc --> ChatRepo
+    ConvoSvc --> ThreadRepo
     ConvoSvc --> TurnRepo
 
     StreamSvc --> TurnRepo
@@ -42,7 +42,7 @@ graph TB
     Registry --> Executor
     Generator --> Provider[LLM Provider]
 
-    style ChatSvc fill:#2d7d7d
+    style ThreadSvc fill:#2d7d7d
     style ConvoSvc fill:#2d7d7d
     style StreamSvc fill:#2d7d7d
     style Executor fill:#7d4d4d
@@ -51,28 +51,28 @@ graph TB
 
 ## The Three Services
 
-### 1. ChatService (`internal/service/llm/chat/service.go`)
+### 1. ThreadService (`internal/service/llm/thread/service.go`)
 
-**Single Responsibility:** Chat session management (CRUD only)
+**Single Responsibility:** Thread session management (CRUD only)
 
 **Methods:**
-- `CreateChat(ctx, req) (*Chat, error)` - Create new chat session
-- `GetChat(ctx, chatID, userID) (*Chat, error)` - Retrieve chat by ID
-- `ListChats(ctx, projectID, userID) ([]Chat, error)` - List user's chats
-- `UpdateChat(ctx, chatID, userID, req) (*Chat, error)` - Update chat title
-- `DeleteChat(ctx, chatID, userID) (*Chat, error)` - Soft-delete chat
+- `CreateThread(ctx, req) (*Thread, error)` - Create new thread session
+- `GetThread(ctx, threadID, userID) (*Thread, error)` - Retrieve thread by ID
+- `ListThreads(ctx, projectID, userID) ([]Thread, error)` - List user's threads
+- `UpdateThread(ctx, threadID, userID, req) (*Thread, error)` - Update thread title
+- `DeleteThread(ctx, threadID, userID) (*Thread, error)` - Soft-delete thread
 
 **Dependencies:**
-- `ChatRepository` - Chat data access
+- `ThreadRepository` - Thread data access
 - `ProjectRepository` - Verify project exists
 
 **Why Separate?**
-- **Single Responsibility**: Only manages chat sessions
+- **Single Responsibility**: Only manages thread sessions
 - **No knowledge** of turns, streaming, or LLM interactions
-- **Independent use**: Can be used standalone for chat list UI
-- **Clear boundaries**: Chat lifecycle is distinct from conversation flow
+- **Independent use**: Can be used standalone for thread list UI
+- **Clear boundaries**: Thread lifecycle is distinct from conversation flow
 
-**File:** `internal/service/llm/chat/service.go` (~150 lines)
+**File:** `internal/service/llm/thread/service.go` (~150 lines)
 
 ---
 
@@ -83,11 +83,11 @@ graph TB
 **Methods:**
 - `GetTurnPath(ctx, turnID) ([]Turn, error)` - Get path from root to turn
 - `GetTurnSiblings(ctx, turnID) ([]Turn, error)` - Get all siblings (branching)
-- `GetChatTree(ctx, chatID, userID) (*ChatTree, error)` - Get lightweight tree structure
-- `GetPaginatedTurns(ctx, chatID, userID, fromTurnID, limit, direction) (*PaginatedTurnsResponse, error)` - Paginated turn loading
+- `GetThreadTree(ctx, threadID, userID) (*ThreadTree, error)` - Get lightweight tree structure
+- `GetPaginatedTurns(ctx, threadID, userID, fromTurnID, limit, direction) (*PaginatedTurnsResponse, error)` - Paginated turn loading
 
 **Dependencies:**
-- `ChatRepository` - Verify chat ownership
+- `ThreadRepository` - Verify thread ownership
 - `TurnRepository` - Turn navigation queries
 
 **Why Separate?**
@@ -110,7 +110,7 @@ graph TB
 
 **Dependencies:**
 - `TurnRepository` - Turn persistence
-- `ChatValidator` - Validate chat exists and ownership
+- `ThreadValidator` - Validate thread exists and ownership
 - `ResponseGenerator` - LLM response orchestration
 - `*mstream.Registry` - Manage active streaming streams (SSE fan-out + catchup)
 - `TransactionManager` - Atomic user+assistant turn creation
@@ -124,7 +124,7 @@ graph TB
 **File:** `internal/service/llm/streaming/service.go` (~280 lines)
 
 **Supporting Components:**
-- `mstream_adapter.go` - StreamExecutor (adapts meridian-llm-go → TurnBlockDelta/TurnBlock + mstream.Stream)
+- `mstream_adapter.go` - StreamExecutor (adapts meridian-llm-go -> TurnBlockDelta/TurnBlock + mstream.Stream)
 - `catchup.go` - DB-backed catchup for reconnection
 - `debug.go` - Debug helpers for internal streaming flows
 - `response_generator.go` - LLM provider orchestration
@@ -138,7 +138,7 @@ graph TB
 ```mermaid
 sequenceDiagram
     participant Client
-    participant Handler as ChatHandler
+    participant Handler as ThreadHandler
     participant Stream as StreamingService
     participant Turn as TurnRepository
     participant Registry as StreamRegistry
@@ -146,7 +146,7 @@ sequenceDiagram
     participant Generator as ResponseGenerator
     participant Provider as LLM Provider
 
-    Client->>Handler: POST /api/chats/:id/turns
+    Client->>Handler: POST /api/threads/:id/turns
     Handler->>Stream: CreateTurn(req)
 
     Stream->>Turn: CreateTurn(user turn)
@@ -177,17 +177,17 @@ sequenceDiagram
     Executor->>Registry: Send turn_complete
 ```
 
-### Flow: User Views Chat History
+### Flow: User Views Thread History
 
 ```mermaid
 sequenceDiagram
     participant Client
-    participant Handler as ChatHandler
+    participant Handler as ThreadHandler
     participant Convo as ConversationService
     participant Turn as TurnRepository
 
-    Client->>Handler: GET /api/chats/:id/turns?direction=both&limit=100
-    Handler->>Convo: GetPaginatedTurns(chatID, ...)
+    Client->>Handler: GET /api/threads/:id/turns?direction=both&limit=100
+    Handler->>Convo: GetPaginatedTurns(threadID, ...)
 
     Convo->>Turn: GetPaginatedTurns(fromTurnID, direction, limit)
     Turn-->>Convo: {turns, blocks, has_more_before, has_more_after}
@@ -202,8 +202,8 @@ sequenceDiagram
 
 ### Single Responsibility Principle (SRP) ✅
 
-**Before (Monolithic ChatService):**
-- Chat CRUD
+**Before (Monolithic ThreadService):**
+- Thread CRUD
 - Turn operations
 - Conversation navigation
 - Streaming coordination
@@ -211,7 +211,7 @@ sequenceDiagram
 - **Result:** 1500+ lines, multiple reasons to change
 
 **After (3 Services):**
-- `ChatService`: Chat CRUD only (150 lines)
+- `ThreadService`: Thread CRUD only (150 lines)
 - `ConversationService`: Navigation only (90 lines)
 - `StreamingService`: Streaming only (280 lines)
 - **Result:** Each service has one reason to change
@@ -228,9 +228,9 @@ providerRegistry.RegisterProvider(newProvider)
 ```
 
 **New features:**
-- Add new chat metadata field → Only update ChatService
-- Add new navigation query → Only update ConversationService
-- Add new streaming event type → Only update StreamingService
+- Add new thread metadata field -> Only update ThreadService
+- Add new navigation query -> Only update ConversationService
+- Add new streaming event type -> Only update StreamingService
 
 ---
 
@@ -238,34 +238,34 @@ providerRegistry.RegisterProvider(newProvider)
 
 **All services implement domain interfaces:**
 ```go
-// Domain interface (internal/domain/services/llm/chat.go)
-type ChatService interface {
-    CreateChat(ctx context.Context, req *CreateChatRequest) (*Chat, error)
+// Domain interface (internal/domain/services/llm/thread.go)
+type ThreadService interface {
+    CreateThread(ctx context.Context, req *CreateThreadRequest) (*Thread, error)
     // ...
 }
 
-// Implementation (internal/service/llm/chat/service.go)
+// Implementation (internal/service/llm/thread/service.go)
 type Service struct {
-    chatRepo    llmRepo.ChatRepository
+    threadRepo  llmRepo.ThreadRepository
     projectRepo docsysRepo.ProjectRepository
     logger      *slog.Logger
 }
 
-func (s *Service) CreateChat(...) (*Chat, error) {
+func (s *Service) CreateThread(...) (*Thread, error) {
     // Implementation
 }
 ```
 
 **Mock for testing:**
 ```go
-type MockChatService struct{}
+type MockThreadService struct{}
 
-func (m *MockChatService) CreateChat(...) (*Chat, error) {
-    return &Chat{ID: "test-id"}, nil
+func (m *MockThreadService) CreateThread(...) (*Thread, error) {
+    return &Thread{ID: "test-id"}, nil
 }
 
 // Can substitute real service with mock
-handler := NewChatHandler(mockChatService, ..., logger)
+handler := NewThreadHandler(mockThreadService, ..., logger)
 ```
 
 ---
@@ -275,16 +275,16 @@ handler := NewChatHandler(mockChatService, ..., logger)
 **Before:** Fat interface with 11 methods
 ```go
 // Old monolithic interface
-type ChatService interface {
-    CreateChat(...)
-    GetChat(...)
-    ListChats(...)
-    UpdateChat(...)
-    DeleteChat(...)
+type ThreadService interface {
+    CreateThread(...)
+    GetThread(...)
+    ListThreads(...)
+    UpdateThread(...)
+    DeleteThread(...)
     CreateTurn(...)
     GetTurnPath(...)
     GetTurnSiblings(...)
-    GetChatTree(...)
+    GetThreadTree(...)
     GetPaginatedTurns(...)
     // ... even more methods
 }
@@ -292,20 +292,20 @@ type ChatService interface {
 
 **After:** 3 focused interfaces
 ```go
-// Chat CRUD (5 methods)
-type ChatService interface {
-    CreateChat(...)
-    GetChat(...)
-    ListChats(...)
-    UpdateChat(...)
-    DeleteChat(...)
+// Thread CRUD (5 methods)
+type ThreadService interface {
+    CreateThread(...)
+    GetThread(...)
+    ListThreads(...)
+    UpdateThread(...)
+    DeleteThread(...)
 }
 
 // Conversation navigation (4 methods)
 type ConversationService interface {
     GetTurnPath(...)
     GetTurnSiblings(...)
-    GetChatTree(...)
+    GetThreadTree(...)
     GetPaginatedTurns(...)
 }
 
@@ -328,9 +328,9 @@ type StreamingService interface {
 **Services depend on abstractions:**
 ```mermaid
 graph TB
-    Service[ChatService<br/>implementation]
-    Interface[ChatRepository<br/>interface]
-    Postgres[PostgresChatRepository<br/>implementation]
+    Service[ThreadService<br/>implementation]
+    Interface[ThreadRepository<br/>interface]
+    Postgres[PostgresThreadRepository<br/>implementation]
 
     Service -.depends on.-> Interface
     Postgres -.implements.-> Interface
@@ -342,15 +342,15 @@ graph TB
 ```go
 // Service depends on interface (domain)
 type Service struct {
-    chatRepo llmRepo.ChatRepository  // Interface!
+    threadRepo llmRepo.ThreadRepository  // Interface!
 }
 
 // Repository implements interface
-type PostgresChatRepository struct {
+type PostgresThreadRepository struct {
     pool *pgxpool.Pool
 }
 
-func (r *PostgresChatRepository) Create(...) error {
+func (r *PostgresThreadRepository) Create(...) error {
     // PostgreSQL-specific implementation
 }
 ```
@@ -397,18 +397,18 @@ func (s *DocumentService) GetDocument(ctx context.Context, userID, docID string)
 internal/
 ├── domain/
 │   ├── services/llm/
-│   │   ├── chat.go                 # ChatService interface
+│   │   ├── thread.go               # ThreadService interface
 │   │   ├── conversation.go         # ConversationService interface
 │   │   ├── streaming.go            # StreamingService interface
 │   │   └── provider.go             # LLMProvider interface
 │   │
 │   └── repositories/llm/
-│       ├── chat.go                 # ChatRepository interface
+│       ├── thread.go               # ThreadRepository interface
 │       └── turn.go                 # TurnRepository interface
 │
 ├── service/llm/
-│   ├── chat/
-│   │   └── service.go              # ChatService implementation
+│   ├── thread/
+│   │   └── service.go              # ThreadService implementation
 │   │
 │   ├── conversation/
 │   │   └── service.go              # ConversationService implementation
@@ -428,16 +428,16 @@ internal/
 │   │   └── lorem/                  # Mock provider (dev/test)
 │   │
 │   ├── registry.go                 # Provider registry
-│   ├── validation.go               # ChatValidator
+│   ├── validation.go               # ThreadValidator
 │   └── setup.go                    # Dependency injection helper
 │
 ├── handler/
-│   ├── chat.go                     # ChatHandler (uses all 3 services)
-│   ├── chat_debug.go               # Debug endpoints
+│   ├── thread.go                   # ThreadHandler (uses all 3 services)
+│   ├── thread_debug.go             # Debug endpoints
 │   └── sse_handler.go              # SSE streaming handler
 │
 └── repository/postgres/llm/
-    ├── chat.go                     # PostgresChatRepository
+    ├── thread.go                   # PostgresThreadRepository
     └── turn.go                     # PostgresTurnRepository
 ```
 
@@ -450,14 +450,14 @@ internal/
 ```go
 // Services struct holds all 3 services
 type Services struct {
-    Chat         llmSvc.ChatService
+    Thread       llmSvc.ThreadService
     Conversation llmSvc.ConversationService
     Streaming    llmSvc.StreamingService
 }
 
 // SetupServices initializes all LLM services with proper dependency injection
 func SetupServices(
-    chatRepo llmRepo.ChatRepository,
+    threadRepo llmRepo.ThreadRepository,
     turnRepo llmRepo.TurnRepository,
     projectRepo docsysRepo.ProjectRepository,
     providerRegistry *ProviderRegistry,
@@ -466,7 +466,7 @@ func SetupServices(
     logger *slog.Logger,
 ) (*Services, *mstream.Registry, error) {
     // Create shared validator
-    validator := NewChatValidator(chatRepo)
+    validator := NewThreadValidator(threadRepo)
 
     // Create mstream registry (for SSE streaming)
     streamRegistry := mstream.NewRegistry()
@@ -477,16 +477,16 @@ func SetupServices(
     // Create response generator
     responseGenerator := streaming.NewResponseGenerator(providerRegistry, turnRepo, logger)
 
-    // Create chat service (CRUD only)
-    chatService := chat.NewService(
-        chatRepo,
+    // Create thread service (CRUD only)
+    threadService := thread.NewService(
+        threadRepo,
         projectRepo,
         logger,
     )
 
     // Create conversation service (history/navigation)
     conversationService := conversation.NewService(
-        chatRepo,
+        threadRepo,
         turnRepo,
     )
 
@@ -502,7 +502,7 @@ func SetupServices(
     )
 
     return &Services{
-        Chat:         chatService,
+        Thread:       threadService,
         Conversation: conversationService,
         Streaming:    streamingService,
     }, streamRegistry, nil
@@ -514,7 +514,7 @@ func SetupServices(
 ```go
 // Setup LLM services
 llmServices, streamRegistry, err := serviceLLM.SetupServices(
-    chatRepo,
+    threadRepo,
     turnRepo,
     projectRepo,
     providerRegistry,
@@ -538,24 +538,24 @@ sseHandler := handler.NewSSEHandler(
 
 ## Migration: Before vs After
 
-### Before: Monolithic ChatService
+### Before: Monolithic ThreadService
 
-**File:** `internal/service/llm/chat.go` (1500+ lines, deleted)
+**File:** `internal/service/llm/thread.go` (1500+ lines, deleted)
 
 **Problems:**
 - 11+ methods mixing different responsibilities
 - Hard to test (large surface area)
 - Difficult to navigate
-- Changes to streaming affect chat CRUD
+- Changes to streaming affect thread CRUD
 - Unclear dependencies
 
 **Structure:**
 ```go
-type ChatService struct {
-    chatRepo        ChatRepository
+type ThreadService struct {
+    threadRepo      ThreadRepository
     turnRepo        TurnRepository
     projectRepo     ProjectRepository
-    validator       ChatValidator
+    validator       ThreadValidator
     providerRegistry *ProviderRegistry
     executorRegistry *ExecutorRegistry
     responseGenerator *ResponseGenerator
@@ -564,21 +564,21 @@ type ChatService struct {
     logger           *slog.Logger
 }
 
-// Chat CRUD
-func (s *ChatService) CreateChat(...)
-func (s *ChatService) GetChat(...)
-func (s *ChatService) ListChats(...)
-func (s *ChatService) UpdateChat(...)
-func (s *ChatService) DeleteChat(...)
+// Thread CRUD
+func (s *ThreadService) CreateThread(...)
+func (s *ThreadService) GetThread(...)
+func (s *ThreadService) ListThreads(...)
+func (s *ThreadService) UpdateThread(...)
+func (s *ThreadService) DeleteThread(...)
 
 // Turn operations
-func (s *ChatService) CreateTurn(...)
+func (s *ThreadService) CreateTurn(...)
 
 // Navigation
-func (s *ChatService) GetTurnPath(...)
-func (s *ChatService) GetTurnSiblings(...)
-func (s *ChatService) GetChatTree(...)
-func (s *ChatService) GetPaginatedTurns(...)
+func (s *ThreadService) GetTurnPath(...)
+func (s *ThreadService) GetTurnSiblings(...)
+func (s *ThreadService) GetThreadTree(...)
+func (s *ThreadService) GetPaginatedTurns(...)
 
 // ... more methods
 ```
@@ -589,31 +589,31 @@ func (s *ChatService) GetPaginatedTurns(...)
 
 **Total Lines:** ~520 (vs 1500+)
 
-**ChatService** (`chat/service.go` - 150 lines)
+**ThreadService** (`thread/service.go` - 150 lines)
 ```go
 type Service struct {
-    chatRepo    llmRepo.ChatRepository
+    threadRepo  llmRepo.ThreadRepository
     projectRepo docsysRepo.ProjectRepository
     logger      *slog.Logger
 }
 
-func (s *Service) CreateChat(...)
-func (s *Service) GetChat(...)
-func (s *Service) ListChats(...)
-func (s *Service) UpdateChat(...)
-func (s *Service) DeleteChat(...)
+func (s *Service) CreateThread(...)
+func (s *Service) GetThread(...)
+func (s *Service) ListThreads(...)
+func (s *Service) UpdateThread(...)
+func (s *Service) DeleteThread(...)
 ```
 
 **ConversationService** (`conversation/service.go` - 90 lines)
 ```go
 type Service struct {
-    chatRepo llmRepo.ChatRepository
+    threadRepo llmRepo.ThreadRepository
     turnRepo llmRepo.TurnRepository
 }
 
 func (s *Service) GetTurnPath(...)
 func (s *Service) GetTurnSiblings(...)
-func (s *Service) GetChatTree(...)
+func (s *Service) GetThreadTree(...)
 func (s *Service) GetPaginatedTurns(...)
 ```
 
@@ -621,7 +621,7 @@ func (s *Service) GetPaginatedTurns(...)
 ```go
 type Service struct {
     turnRepo          llmRepo.TurnRepository
-    validator         ChatValidator
+    validator         ThreadValidator
     responseGenerator *ResponseGenerator
     registry          *mstream.Registry
     config            *config.Config
@@ -641,7 +641,7 @@ func (s *Service) CreateAssistantTurnDebug(...)
 
 **Before:** Mock 10+ dependencies for any test
 ```go
-// Testing chat CRUD required mocking streaming components too
+// Testing thread CRUD required mocking streaming components too
 mockProviderRegistry := &MockProviderRegistry{}
 mockExecutorRegistry := &MockExecutorRegistry{}
 mockResponseGenerator := &MockResponseGenerator{}
@@ -650,10 +650,10 @@ mockResponseGenerator := &MockResponseGenerator{}
 
 **After:** Mock only what you need
 ```go
-// Testing chat CRUD
-mockChatRepo := &MockChatRepository{}
+// Testing thread CRUD
+mockThreadRepo := &MockThreadRepository{}
 mockProjectRepo := &MockProjectRepository{}
-chatService := chat.NewService(mockChatRepo, mockProjectRepo, logger)
+threadService := thread.NewService(mockThreadRepo, mockProjectRepo, logger)
 // Only 3 dependencies!
 ```
 
@@ -662,7 +662,7 @@ chatService := chat.NewService(mockChatRepo, mockProjectRepo, logger)
 ### 2. Clear Responsibilities
 
 Each service answers one question:
-- **ChatService:** "How do I manage chat sessions?"
+- **ThreadService:** "How do I manage thread sessions?"
 - **ConversationService:** "How do I navigate conversation history?"
 - **StreamingService:** "How do I create turns and stream responses?"
 
@@ -676,7 +676,7 @@ Each service answers one question:
 - N+1 query elimination in pagination
 - No overhead from unused streaming infrastructure
 
-**Before:** All chat operations carried streaming overhead
+**Before:** All thread operations carried streaming overhead
 **After:** Only streaming operations use streaming infrastructure
 
 ---
@@ -684,7 +684,7 @@ Each service answers one question:
 ### 4. Independent Development
 
 **Teams can work in parallel:**
-- Team A: Add chat metadata features (ChatService)
+- Team A: Add thread metadata features (ThreadService)
 - Team B: Optimize pagination (ConversationService)
 - Team C: Implement tool execution (StreamingService)
 
@@ -695,7 +695,7 @@ Each service answers one question:
 ### 5. Easier to Understand
 
 **New developer onboarding:**
-- Want to understand chat CRUD? Read 150 lines (chat/service.go)
+- Want to understand thread CRUD? Read 150 lines (thread/service.go)
 - Want to understand pagination? Read 90 lines (conversation/service.go)
 - Want to understand streaming? Read 280 lines (streaming/service.go)
 
@@ -707,15 +707,15 @@ Each service answers one question:
 
 ### Unit Testing Services
 
-**ChatService tests:**
+**ThreadService tests:**
 ```go
-func TestChatService_CreateChat(t *testing.T) {
-    mockChatRepo := &MockChatRepository{}
+func TestThreadService_CreateThread(t *testing.T) {
+    mockThreadRepo := &MockThreadRepository{}
     mockProjectRepo := &MockProjectRepository{}
-    service := chat.NewService(mockChatRepo, mockProjectRepo, logger)
+    service := thread.NewService(mockThreadRepo, mockProjectRepo, logger)
 
-    // Test only chat creation logic
-    chat, err := service.CreateChat(ctx, &req)
+    // Test only thread creation logic
+    thread, err := service.CreateThread(ctx, &req)
     // ...
 }
 ```
@@ -723,9 +723,9 @@ func TestChatService_CreateChat(t *testing.T) {
 **ConversationService tests:**
 ```go
 func TestConversationService_GetPaginatedTurns(t *testing.T) {
-    mockChatRepo := &MockChatRepository{}
+    mockThreadRepo := &MockThreadRepository{}
     mockTurnRepo := &MockTurnRepository{}
-    service := conversation.NewService(mockChatRepo, mockTurnRepo)
+    service := conversation.NewService(mockThreadRepo, mockTurnRepo)
 
     // Test only pagination logic
     response, err := service.GetPaginatedTurns(ctx, ...)
@@ -737,7 +737,7 @@ func TestConversationService_GetPaginatedTurns(t *testing.T) {
 ```go
 func TestStreamingService_CreateTurn(t *testing.T) {
     mockTurnRepo := &MockTurnRepository{}
-    mockValidator := &MockChatValidator{}
+    mockValidator := &MockThreadValidator{}
     mockGenerator := &MockResponseGenerator{}
     mockRegistry := &MockExecutorRegistry{}
 
@@ -763,13 +763,13 @@ func TestStreamingService_CreateTurn(t *testing.T) {
 
 **Test service interactions:**
 ```go
-func TestChatFlow_CreateAndStream(t *testing.T) {
+func TestThreadFlow_CreateAndStream(t *testing.T) {
     // Use real services with test database
-    chatService := chat.NewService(chatRepo, projectRepo, logger)
+    threadService := thread.NewService(threadRepo, projectRepo, logger)
     streamingService := streaming.NewService(...)
 
-    // Create chat
-    chat, err := chatService.CreateChat(ctx, &req)
+    // Create thread
+    thread, err := threadService.CreateThread(ctx, &req)
     require.NoError(t, err)
 
     // Create turn (triggers streaming)
@@ -791,7 +791,7 @@ All services use domain errors:
 ```go
 // Service layer
 if !exists {
-    return nil, fmt.Errorf("chat %s: %w", chatID, domain.ErrNotFound)
+    return nil, fmt.Errorf("thread %s: %w", threadID, domain.ErrNotFound)
 }
 
 // Handler layer maps to HTTP
@@ -806,18 +806,18 @@ if errors.Is(err, domain.ErrNotFound) {
 
 All services respect context cancellation:
 ```go
-func (s *Service) CreateChat(ctx context.Context, req *CreateChatRequest) (*Chat, error) {
+func (s *Service) CreateThread(ctx context.Context, req *CreateThreadRequest) (*Thread, error) {
     // Check context before expensive operations
     if err := ctx.Err(); err != nil {
         return nil, err
     }
 
     // Repository calls pass context through
-    if err := s.chatRepo.Create(ctx, chat); err != nil {
+    if err := s.threadRepo.Create(ctx, thread); err != nil {
         return nil, err
     }
 
-    return chat, nil
+    return thread, nil
 }
 ```
 
@@ -858,12 +858,12 @@ func (s *Service) CreateTurn(ctx context.Context, req *CreateTurnRequest) (*Crea
 ## References
 
 **Domain Interfaces:**
-- `internal/domain/services/llm/chat.go`
+- `internal/domain/services/llm/thread.go`
 - `internal/domain/services/llm/conversation.go`
 - `internal/domain/services/llm/streaming.go`
 
 **Implementations:**
-- `internal/service/llm/chat/service.go`
+- `internal/service/llm/thread/service.go`
 - `internal/service/llm/conversation/service.go`
 - `internal/service/llm/streaming/service.go`
 
@@ -878,11 +878,11 @@ func (s *Service) CreateTurn(ctx context.Context, req *CreateTurnRequest) (*Crea
 - `cmd/server/main.go:85-128` - Service wiring
 
 **Handlers:**
-- `internal/handler/chat.go` - ChatHandler using all 3 services
-- `internal/handler/chat_debug.go` - Debug endpoints
+- `internal/handler/thread.go` - ThreadHandler using all 3 services
+- `internal/handler/thread_debug.go` - Debug endpoints
 
 **Related Documentation:**
 - [Clean Architecture Overview](overview.md)
 - [Streaming Architecture](streaming-architecture.md)
-- [Chat Domain Model](../chat/overview.md)
-- [Pagination Guide](../chat/pagination.md)
+- [Thread Domain Model](../thread/overview.md)
+- [Pagination Guide](../thread/pagination.md)

@@ -11,13 +11,13 @@ Meridian backend uses Clean Architecture (also called Hexagonal Architecture) wi
 
 > **Business logic doesn't depend on external details like databases or HTTP frameworks.**
 
-Dependencies point **inward**: Handler → Service → Repository → Database
+Dependencies point **inward**: Handler -> Service -> Repository -> Database
 
 ## Quick Navigation
 
-- **Layer details?** → [Layers Guide](layers.md)
-- **Request flow?** → [Request Lifecycle](request-lifecycle.md)
-- **Go patterns?** → [Go Patterns](go-patterns.md)
+- **Layer details?** -> [Layers Guide](layers.md)
+- **Request flow?** -> [Request Lifecycle](request-lifecycle.md)
+- **Go patterns?** -> [Go Patterns](go-patterns.md)
 
 ## Architecture Diagram
 
@@ -84,7 +84,7 @@ func (h *DocumentHandler) CreateDocument(c *fiber.Ctx) error {
 
 **Does:**
 - Validate business rules (ozzo-validation)
-- Validate parent resources exist and aren't soft-deleted (ResourceValidator, ChatValidator)
+- Validate parent resources exist and aren't soft-deleted (ResourceValidator, ThreadValidator)
 - Coordinate multiple repositories
 - Transform data (word counting, path resolution)
 - Enforce application rules
@@ -200,38 +200,38 @@ The LLM service layer demonstrates advanced Clean Architecture with a **3-servic
 
 ### Why Split Services?
 
-A monolithic ChatService (1500+ lines) was split into 3 focused services:
+A monolithic ThreadService (1500+ lines) was split into 3 focused services:
 
 ```mermaid
 graph TB
-    Handler[ChatHandler]
+    Handler[ThreadHandler]
 
-    Chat[ChatService<br/>Session CRUD]
+    Thread[ThreadService<br/>Session CRUD]
     Convo[ConversationService<br/>History & Navigation]
     Stream[StreamingService<br/>Turn Creation & Streaming]
 
-    Handler --> Chat
+    Handler --> Thread
     Handler --> Convo
     Handler --> Stream
 
-    style Chat fill:#2d7d7d
+    style Thread fill:#2d7d7d
     style Convo fill:#2d7d7d
     style Stream fill:#2d7d7d
 ```
 
 ### Service Responsibilities
 
-**ChatService** (`service/llm/chat/`)
-- Create/Read/Update/Delete chat sessions
+**ThreadService** (`service/llm/thread/`)
+- Create/Read/Update/Delete thread sessions
 - 5 methods, 150 lines
-- Dependencies: ChatRepository, ProjectRepository
+- Dependencies: ThreadRepository, ProjectRepository
 
 **ConversationService** (`service/llm/conversation/`)
 - Get turn path (root to leaf)
 - Get turn siblings (branching)
 - Paginated turn loading
 - 4 methods, 90 lines
-- Dependencies: ChatRepository, TurnRepository
+- Dependencies: ThreadRepository, TurnRepository
 
 **StreamingService** (`service/llm/streaming/`)
 - Create turn (user + assistant)
@@ -251,8 +251,8 @@ See [Service Layer Architecture](service-layer.md) for detailed explanation.
 
 ```
 internal/service/llm/
-├── chat/
-│   └── service.go              # ChatService implementation
+├── thread/
+│   └── service.go              # ThreadService implementation
 ├── conversation/
 │   └── service.go              # ConversationService implementation
 ├── streaming/
@@ -335,14 +335,14 @@ backend/
 │   │   ├── folder.go           # Folder CRUD endpoints
 │   │   ├── tree.go             # Tree endpoint
 │   │   ├── import.go           # Import endpoints
-│   │   └── errors.go           # Error mapping (domain → HTTP)
+│   │   └── errors.go           # Error mapping (domain -> HTTP)
 │   │
 │   ├── service/                # Business logic implementations
 │   │   ├── document.go         # Document service
 │   │   ├── folder.go           # Folder service
 │   │   ├── tree.go             # Tree building
 │   │   ├── import.go           # Import processing
-│   │   ├── path_resolver.go   # Path → folder resolution
+│   │   ├── path_resolver.go   # Path -> folder resolution
 │   │   └── content_analyzer.go # Word counting
 │   │
 │   ├── repository/postgres/    # PostgreSQL implementations
@@ -402,7 +402,7 @@ providerRegistry, err := serviceLLM.SetupProviders(cfg, logger)
 
 // Setup all 3 LLM services at once
 llmServices, executorRegistry, err := serviceLLM.SetupServices(
-    chatRepo,
+    threadRepo,
     turnRepo,
     projectRepo,
     providerRegistry,
@@ -412,8 +412,8 @@ llmServices, executorRegistry, err := serviceLLM.SetupServices(
 )
 
 // Create handler with all 3 services
-chatHandler := handler.NewChatHandler(
-    llmServices.Chat,          // ChatService
+threadHandler := handler.NewThreadHandler(
+    llmServices.Thread,          // ThreadService
     llmServices.Conversation,  // ConversationService
     llmServices.Streaming,     // StreamingService
     turnRepo,
@@ -424,7 +424,7 @@ chatHandler := handler.NewChatHandler(
 
 See `internal/service/llm/setup.go` for implementation.
 
-**Flow:** Database → Repository → Service → Handler → HTTP
+**Flow:** Database -> Repository -> Service -> Handler -> HTTP
 
 ## Adding New Features
 
@@ -432,10 +432,10 @@ See `internal/service/llm/setup.go` for implementation.
 
 Where does X belong?
 
-- **HTTP concerns** (parsing, status codes, headers) → `handler/`
-- **Business rules** (validation, authorization, orchestration) → `service/`
-- **Data access** (SQL queries, DB operations) → `repository/`
-- **Cross-cutting** (logging, auth, rate limiting) → `middleware/`
+- **HTTP concerns** (parsing, status codes, headers) -> `handler/`
+- **Business rules** (validation, authorization, orchestration) -> `service/`
+- **Data access** (SQL queries, DB operations) -> `repository/`
+- **Cross-cutting** (logging, auth, rate limiting) -> `middleware/`
 
 ### Implementation Pattern
 

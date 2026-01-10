@@ -74,7 +74,7 @@ This design provides:
 ### Key Relationship
 
 - The LLM library (`meridian-llm-go`) does **all accumulation**:
-  - Provider deltas → provider‑agnostic `BlockDelta` → complete `Block` structs.
+  - Provider deltas -> provider‑agnostic `BlockDelta` -> complete `Block` structs.
 - The backend:
   - Streams `TurnBlockDelta` over SSE for **live UI**.
   - Persists complete `TurnBlock`s to PostgreSQL when the library tells us a block is complete.
@@ -327,7 +327,7 @@ Tool execution is modeled entirely in terms of blocks:
 
 Streaming behavior:
 - Tool‑related blocks follow the same event pattern:
-  - `block_start` → `block_delta` (including `json_delta` for structured content) → `block_stop`.
+  - `block_start` -> `block_delta` (including `json_delta` for structured content) -> `block_stop`.
 - For `web_search_result`, the library:
   - Emits `tool_result_start` + `json_delta` as described in
     `_docs/technical/llm/streaming/block-types-reference.md`.
@@ -372,7 +372,7 @@ For details, see:
 
 ### 2. Multiple Clients Streaming Same Turn
 
-**Scenario:** User opens same conversation in multiple tabs.
+**Scenario:** User opens same thread in multiple tabs.
 
 **Behavior:**
 - ✅ Each tab maintains separate SSE connection
@@ -392,7 +392,7 @@ For details, see:
 - ✅ Update turn status to "error"
 -- ✅ Error stored on turn record for debugging
 
-**Implementation:** `StreamExecutor.handleError` → `UpdateTurnError` + `turn_error` SSE event
+**Implementation:** `StreamExecutor.handleError` -> `UpdateTurnError` + `turn_error` SSE event
 
 ### 4. LLM Provider Error
 

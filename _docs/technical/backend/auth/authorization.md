@@ -27,8 +27,8 @@ graph TB
         Project -->|"user_id"| User[User]
         Folder[Folder] -->|"project_id"| Project
         Document[Document] -->|"project_id"| Project
-        Chat[Chat] -->|"project_id"| Project
-        Turn[Turn] -->|"chat_id"| Chat
+        Thread[Thread] -->|"project_id"| Project
+        Turn[Turn] -->|"thread_id"| Thread
     end
 
     style Authorizer fill:#2d7d2d
@@ -44,7 +44,7 @@ type ResourceAuthorizer interface {
     CanAccessProject(ctx context.Context, userID, projectID string) error
     CanAccessFolder(ctx context.Context, userID, folderID string) error
     CanAccessDocument(ctx context.Context, userID, documentID string) error
-    CanAccessChat(ctx context.Context, userID, chatID string) error
+    CanAccessThread(ctx context.Context, userID, threadID string) error
     CanAccessTurn(ctx context.Context, userID, turnID string) error
 }
 ```
@@ -60,17 +60,17 @@ type ResourceAuthorizer interface {
 
 **File:** `internal/service/auth/owner_based_authorizer.go`
 
-Simple ownership-based authorization: user owns project → owns all resources within.
+Simple ownership-based authorization: user owns project -> owns all resources within.
 
 ### Ownership Chain
 
 | Resource | Lookup | Chain |
 |----------|--------|-------|
 | Project | `projectRepo.GetByID(projectID)` | `project.UserID == userID` |
-| Folder | `folderRepo.GetByIDOnly(folderID)` | `folder.ProjectID` → Project → User |
-| Document | `docRepo.GetByIDOnly(documentID)` | `document.ProjectID` → Project → User |
-| Chat | `chatRepo.GetChatByIDOnly(chatID)` | `chat.ProjectID` → Project → User |
-| Turn | `turnRepo.GetTurnByIDOnly(turnID)` | `turn.ChatID` → Chat → Project → User |
+| Folder | `folderRepo.GetByIDOnly(folderID)` | `folder.ProjectID` -> Project -> User |
+| Document | `docRepo.GetByIDOnly(documentID)` | `document.ProjectID` -> Project -> User |
+| Thread | `threadRepo.GetThreadByIDOnly(threadID)` | `thread.ProjectID` -> Project -> User |
+| Turn | `turnRepo.GetTurnByIDOnly(turnID)` | `turn.ThreadID` -> Thread -> Project -> User |
 
 ### Dependencies
 
@@ -79,7 +79,7 @@ type OwnerBasedAuthorizer struct {
     projectRepo docsysRepo.ProjectRepository
     folderRepo  docsysRepo.FolderRepository
     docRepo     docsysRepo.DocumentRepository
-    chatRepo    llmRepo.ChatRepository
+    threadRepo  llmRepo.ThreadRepository
     turnRepo    llmRepo.TurnRepository
 }
 ```
@@ -114,7 +114,7 @@ func (s *documentService) GetDocument(ctx context.Context, userID, documentID st
 Some handlers need direct auth checks (e.g., SSE streams):
 
 ```go
-func (h *ChatHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
+func (h *ThreadHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
     turnID, ok := PathParam(w, r, "id", "Turn ID")
     if !ok {
         return
@@ -152,11 +152,11 @@ All modifying and read operations are protected:
 | `GET /api/projects/{id}/tree` | Project | `CanAccessProject` |
 | `POST /api/import` | Project | `CanAccessProject` |
 | `POST /api/import/replace` | Project | `CanAccessProject` |
-| `GET /api/chats/{id}` | Chat | `CanAccessChat` |
-| `PATCH /api/chats/{id}` | Chat | `CanAccessChat` |
-| `DELETE /api/chats/{id}` | Chat | `CanAccessChat` |
-| `GET /api/chats/{id}/turns` | Chat | `CanAccessChat` |
-| `POST /api/chats/{id}/turns` | Chat | `CanAccessChat` |
+| `GET /api/threads/{id}` | Thread | `CanAccessThread` |
+| `PATCH /api/threads/{id}` | Thread | `CanAccessThread` |
+| `DELETE /api/threads/{id}` | Thread | `CanAccessThread` |
+| `GET /api/threads/{id}/turns` | Thread | `CanAccessThread` |
+| `POST /api/threads/{id}/turns` | Thread | `CanAccessThread` |
 | `GET /api/turns/{id}/stream` | Turn | `CanAccessTurn` |
 | `GET /api/turns/{id}/path` | Turn | `CanAccessTurn` |
 | `GET /api/turns/{id}/siblings` | Turn | `CanAccessTurn` |
@@ -171,7 +171,7 @@ All modifying and read operations are protected:
 ```go
 // Create authorizer
 authorizer := serviceAuth.NewOwnerBasedAuthorizer(
-    projectRepo, folderRepo, docRepo, chatRepo, turnRepo,
+    projectRepo, folderRepo, docRepo, threadRepo, turnRepo,
 )
 
 // Inject into services

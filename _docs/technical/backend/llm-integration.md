@@ -106,7 +106,7 @@ models:
 ### Generate Response
 
 ```go
-func (s *LLMService) GenerateTurn(ctx context.Context, chatID, userMessage string) (*Turn, error) {
+func (s *LLMService) GenerateTurn(ctx context.Context, threadID, userMessage string) (*Turn, error) {
     // Build library request
     req := &llm.GenerateRequest{
         Model: "claude-sonnet-4-5",
@@ -132,7 +132,7 @@ func (s *LLMService) GenerateTurn(ctx context.Context, chatID, userMessage strin
     }
 
     // Convert library blocks to domain Turn
-    return s.convertToTurn(chatID, resp), nil
+    return s.convertToTurn(threadID, resp), nil
 }
 ```
 
@@ -154,7 +154,7 @@ func (s *LLMService) GenerateTurnStream(ctx context.Context, req *TurnRequest) (
 
     return &StreamHandle{
         libraryStream: stream,
-        chatID:        req.ChatID,
+        threadID:      req.ThreadID,
     }, nil
 }
 ```
@@ -261,7 +261,7 @@ func (s *LLMService) GenerateTurnWithTools(ctx context.Context, req *TurnRequest
         toolCalls := s.extractToolCalls(resp.Blocks)
         if len(toolCalls) == 0 {
             // No tool calls - done!
-            return s.convertToTurn(req.ChatID, resp), nil
+            return s.convertToTurn(req.ThreadID, resp), nil
         }
 
         // Execute tools
@@ -396,13 +396,13 @@ For detailed retry strategy implementation plans, see: [`../../future/ideas/infr
 Backend routes requests to providers via **smart defaults**:
 
 ```
-Request: {model: "claude-haiku-4-5"} → Model Mapping → {provider: "anthropic"} → Factory → Anthropic Provider
-Request: {provider: "openrouter", model: "moonshotai/kimi-k2"} → Factory → OpenRouter Provider
+Request: {model: "claude-haiku-4-5"} -> Model Mapping -> {provider: "anthropic"} -> Factory -> Anthropic Provider
+Request: {provider: "openrouter", model: "moonshotai/kimi-k2"} -> Factory -> OpenRouter Provider
 ```
 
 **Selection Priority:**
 1. **Explicit provider** in `request_params.provider` (highest priority)
-2. **Model prefix mapping** via `GetProviderForModel()` (e.g., `claude-*` → `anthropic`)
+2. **Model prefix mapping** via `GetProviderForModel()` (e.g., `claude-*` -> `anthropic`)
 3. **OpenRouter fallback** (default when no match found)
 
 **Supported Providers:**
@@ -435,12 +435,12 @@ func (s *LLMService) SelectProvider(req *TurnRequest) (string, error) {
 
 ## Conversion Helpers
 
-### Domain Models ↔ Library Blocks
+### Domain Models <-> Library Blocks
 
 ```go
-func (s *LLMService) convertToTurn(chatID string, resp *llm.Response) *Turn {
+func (s *LLMService) convertToTurn(threadID string, resp *llm.Response) *Turn {
     turn := &Turn{
-        ChatID:    chatID,
+        ThreadID:  threadID,
         Role:      "assistant",
         Blocks:    make([]*TurnBlock, len(resp.Blocks)),
         CreatedAt: time.Now(),
@@ -519,7 +519,7 @@ func TestGenerateTurn(t *testing.T) {
         }, nil)
 
     // Test
-    turn, err := service.GenerateTurn(context.Background(), "chat-123", "Hi")
+    turn, err := service.GenerateTurn(context.Background(), "thread-123", "Hi")
     require.NoError(t, err)
     assert.Equal(t, "Hello!", turn.Blocks[0].Content["text"])
 }
@@ -531,7 +531,7 @@ func TestGenerateTurn(t *testing.T) {
 
 **Backend responsibilities:**
 1. Initialize library client with configs
-2. Convert domain models ↔ library blocks
+2. Convert domain models <-> library blocks
 3. Implement custom tool executors
 4. Handle tool execution loop (Pattern A)
 5. Apply business logic (provider selection, retry strategies)
@@ -539,7 +539,7 @@ func TestGenerateTurn(t *testing.T) {
 
 **Library responsibilities:**
 1. Provider abstraction and switching
-2. Format translation (Block ↔ provider format)
+2. Format translation (Block <-> provider format)
 3. Streaming infrastructure
 4. Error normalization
 5. Capability validation

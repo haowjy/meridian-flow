@@ -14,7 +14,7 @@ interface UseIsNearBottomReturn {
  * Reusable hook for tracking scroll position relative to bottom.
  *
  * Use cases:
- * - Chat auto-scroll during streaming
+ * - Thread auto-scroll during streaming
  * - "New messages" indicator
  * - Infinite scroll pagination
  */

@@ -213,7 +213,7 @@ Tables created:
   prod_projects
   prod_folders
   prod_documents
-  prod_chats
+  prod_threads
   prod_turns
   prod_turn_blocks
   prod_user_preferences

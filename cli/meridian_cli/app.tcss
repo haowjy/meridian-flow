@@ -76,11 +76,11 @@ Screen {
 }
 
 /* List screens */
-.project-item, .chat-item {
+.project-item, .thread-item {
     padding: 1;
 }
 
-.project-item:hover, .chat-item:hover {
+.project-item:hover, .thread-item:hover {
     background: $primary-lighten-1;
 }
 

@@ -28,7 +28,7 @@ This directory contains detailed documentation for all features in Meridian, org
 | **File System** | Both | [x] Complete | [x] Complete | CRUD, tree view, context menus; Search UI non-functional |
 | **Document Import** | Both | [x] Complete | [x] Complete | Multi-format (.zip, .md, .txt, .html), XSS sanitization, drag-drop |
 | **Context Menus** | Frontend | N/A | [x] Complete | Right-click actions for tree (create, rename, delete, import) |
-| **Chat/LLM** | Both | [x] Complete | [x] Complete | Turn branching, streaming, 3 providers working |
+| **Thread/LLM** | Both | [x] Complete | [x] Complete | Turn branching, streaming, 3 providers working |
 | **Streaming (SSE)** | Both | [x] Complete | [x] Complete | Catchup, reconnection, race-free |
 | **Tool Calling** | Backend | ✅ Complete | N/A | Auto-mapping, 3 built-in + 4 custom tools |
 | **AI Editing** | Both | ✅ Complete | ✅ Complete | Inline suggestions, accept/reject, CAS concurrency |
@@ -46,7 +46,7 @@ This directory contains detailed documentation for all features in Meridian, org
 - Backend: JWT verification (JWKS), user context injection, RLS policies, ResourceAuthorizer
 - Frontend: **Google OAuth only**, session management, route protection
 - Design decision: Google OAuth only for simplified auth flow
-- Authorization: OwnerBasedAuthorizer protects all endpoints (project â†’ resource ownership)
+- Authorization: OwnerBasedAuthorizer protects all endpoints (project -> resource ownership)
 
 ### [fb-user-settings/](fb-user-settings/)
 **User profile display and preferences configuration**
@@ -70,28 +70,28 @@ This directory contains detailed documentation for all features in Meridian, org
 - [-] Search UI present but non-functional (backend working)
 
 ### [f-context-menus/](f-context-menus/)
-**Right-click context menus for file tree** âœ¨ NEW
+**Right-click context menus for file tree** ✨ NEW
 - Reusable TreeItemWithContextMenu component
 - Menu builders for documents, folders, and root
 - Actions: Create, Rename, Delete, Import
 - Radix UI integration with keyboard navigation
 
-### [fb-chat-llm/](fb-chat-llm/)
-**Multi-turn chat with LLM providers**
+### [fb-thread-llm/](fb-thread-llm/)
+**Multi-turn thread with LLM providers**
 - Backend: Turn management, block types, 3 providers (Anthropic, OpenRouter, Lorem)
-- Frontend: Chat UI, message rendering, model selection, reasoning levels
+- Frontend: Thread UI, message rendering, model selection, reasoning levels
 - Turn branching/sibling navigation, token tracking
 - [ ] System prompt UI missing (backend supports it)
 
 ### [fb-streaming/](fb-streaming/)
 **Server-Sent Events for real-time LLM responses**
 - Backend: SSE implementation, event types, buffer management
-- Frontend: useChatSSE hook, 50ms buffered rendering, stop button
+- Frontend: useThreadSSE hook, 50ms buffered rendering, stop button
 - Catchup mechanism, reconnection handling, race-free persistence
 
 ### [b-tool-calling/](b-tool-calling/)
 **Tool calling system for LLM interactions**
-- Auto-mapping: Minimal definitions → provider-specific
+- Auto-mapping: Minimal definitions -> provider-specific
 - Built-in tools: web_search (server), bash (client), text_editor (client)
 - Custom tools: doc_view, doc_tree, doc_search, doc_edit
 - Multi-turn tool continuation
@@ -105,8 +105,8 @@ This directory contains detailed documentation for all features in Meridian, org
 
 ### [f-state-management/](f-state-management/)
 **Frontend state and caching**
-- 5 Zustand stores (Project, Tree, Chat, UI, Editor)
-- IndexedDB via Dexie (documents, chats, messages)
+- 5 Zustand stores (Project, Tree, Thread, UI, Editor)
+- IndexedDB via Dexie (documents, threads, messages)
 - Optimistic updates, in-memory retry queue
 - Cache strategies: Reconcile-Newest, Network-First
 
@@ -131,7 +131,7 @@ This directory contains detailed documentation for all features in Meridian, org
 
 ## Overall Assessment
 
-**Backend**: [x] **Feature-complete for MVP.** All core systems working (auth, file management, document import, chat/LLM, streaming, tool calling). Main gaps: vector search, additional LLM providers, RBAC/team permissions.
+**Backend**: [x] **Feature-complete for MVP.** All core systems working (auth, file management, document import, thread/LLM, streaming, tool calling). Main gaps: vector search, additional LLM providers, RBAC/team permissions.
 
 **Frontend**: [x] **Feature-complete for MVP with high UI polish.** All core features fully implemented and polished, including new document import and context menu systems. Main gaps: settings UI, theme toggle, search UI functionality, advanced keyboard shortcuts.
 

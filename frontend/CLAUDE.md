@@ -47,8 +47,8 @@ const { data: { session } } = await supabase.auth.getSession()
 
 Routes use TanStack Router's `beforeLoad` hooks for authentication checks.
 
-- Unauthenticated users → Redirect to `/login`
-- Authenticated users on `/login` or `/` → Redirect to `/projects`
+- Unauthenticated users -> Redirect to `/login`
+- Authenticated users on `/login` or `/` -> Redirect to `/projects`
 
 ### API Calls
 
@@ -58,7 +58,7 @@ Routes use TanStack Router's `beforeLoad` hooks for authentication checks.
 import { api } from '@/core/lib/api'
 
 // JWT automatically added to Authorization header
-const chats = await api.chats.list(projectId)
+const threads = await api.threads.list(projectId)
 ```
 
 Implementation: `src/core/lib/api.ts:21-27` extracts JWT from session and adds to every request.
@@ -96,11 +96,11 @@ Three distinct caching patterns based on data characteristics:
 - **Implementation**: `useEditorStore.ts`
 - **Utilities**: `loadWithPolicy(new ReconcileNewestPolicy())` in `core/lib/cache.ts`
 
-#### 2. Chats/Messages (Network-First)
+#### 2. Threads/Messages (Network-First)
 **Pattern**: Server is source of truth.
 - Fetch from API first
 - No local caching (Dexie) currently implemented
-- **Implementation**: `useChatStore.ts`
+- **Implementation**: `useThreadStore.ts`
 
 #### 3. Metadata (Persist Middleware)
 **Pattern**: Small data, synchronous access via localStorage
@@ -115,13 +115,13 @@ Three distinct caching patterns based on data characteristics:
 
 All stores use Zustand. Key conventions:
 - **Abort controllers**: Cancel previous requests when user switches views
-- **Loading flags**: Separate flags for different operations (e.g., `isLoadingChats`, `isLoadingMessages`)
+- **Loading flags**: Separate flags for different operations (e.g., `isLoadingThreads`, `isLoadingMessages`)
 - **Error handling**: Silent abort errors, show others to user
 - **Optimistic updates**: Update local state immediately, sync to server in background
 
 **Stores**:
 - `useEditorStore.ts` - Document editing (cache-first)
-- `useChatStore.ts` - Chats and messages (network-first with windowing)
+- `useThreadStore.ts` - Threads and messages (network-first with windowing)
 - `useProjectStore.ts` - Project list (persist middleware)
 - `useTreeStore.ts` - Document tree structure (network-first, bulk cache)
 - `useUIStore.ts` - UI state (persist middleware)
@@ -135,12 +135,12 @@ Document and panel navigation uses a **two-pronged approach**:
 
 **URL Format:** Documents use path-based slugs: `/projects/{project}/documents/{folder/path/docname}`
 - Splat route (`$.tsx`) captures all segments after `/documents/`
-- WorkspaceLayout resolves slug → UUID via tree store
+- WorkspaceLayout resolves slug -> UUID via tree store
 
 **Key pattern**: Use `getState()` in effects to read state without subscribing:
 - Prevents unnecessary effect re-runs when state changes
-- Allows independent effects (document URL vs chat query params)
-- Essential for future chat integration (chat persists across document navigation)
+- Allows independent effects (document URL vs thread query params)
+- Essential for future thread integration (thread persists across document navigation)
 
 **Implementation:**
 - Navigation helpers: `frontend/src/core/lib/panelHelpers.ts`
@@ -153,7 +153,7 @@ Document and panel navigation uses a **two-pronged approach**:
 - UI-free orchestration service: `frontend/src/core/services/documentSyncService.ts`
 
 Flow (documents):
-1) Optimistic write to IndexedDB → 2) direct PATCH to API → 3) apply server doc (server timestamps become canonical once applied). On network/5xx, enqueue in-memory retry (jittered backoff; max 3 attempts). 4xx bubbles to UI for manual retry.
+1) Optimistic write to IndexedDB -> 2) direct PATCH to API -> 3) apply server doc (server timestamps become canonical once applied). On network/5xx, enqueue in-memory retry (jittered backoff; max 3 attempts). 4xx bubbles to UI for manual retry.
 
 Background: only the retry scheduler (ticked in `SyncProvider`). No visibility/online listeners.
 
@@ -169,19 +169,19 @@ Current version: 4
 
 **Tables**:
 - `documents`: Full documents with content (cache-first)
-- `chats`: Chat metadata (network-first)
-- `messages`: Chat messages (network-first, windowed to 100)
+- `threads`: Thread metadata (network-first)
+- `messages`: Thread messages (network-first, windowed to 100)
 
 **Indexes**:
 - `documents`: `id, projectId, folderId, updatedAt`
-- `chats`: `id, projectId, createdAt`
-- `messages`: `id, chatId, createdAt, lastAccessedAt`
+- `threads`: `id, projectId, createdAt`
+- `messages`: `id, threadId, createdAt, lastAccessedAt`
 
 **Auto-eviction**: Not implemented yet (YAGNI). Add only when quota issues appear.
 
 ### Logging
 
-- Use `frontend/src/core/lib/logger.ts` → `makeLogger('namespace')` with `debug/info/warn/error`.
+- Use `frontend/src/core/lib/logger.ts` -> `makeLogger('namespace')` with `debug/info/warn/error`.
 - Defaults: `debug` in development, `info` in production. Override via `VITE_LOG_LEVEL`.
 
 ### Testing
@@ -200,14 +200,14 @@ Meridian's UI serves the writer's creative process. Everything else is secondary
 ### Core Principles
 
 1. **Content gets the most space** - Writing is the star, UI supports it
-2. **AI assists, doesn't overwhelm** - Chat is present but compact
+2. **AI assists, doesn't overwhelm** - Thread is present but compact
 3. **Minimal distractions** - Compact controls, calm aesthetic
 4. **Flow-supporting design** - Nothing interrupts creative momentum
 
 ### Practical Guidelines
 
 - **Compact over spacious**: Use smaller padding/gaps for UI chrome (e.g., `px-1.5 py-1` not `px-4 py-3`)
-- **Hierarchy matters**: Content > Chat > Navigation > Settings
+- **Hierarchy matters**: Content > Thread > Navigation > Settings
 - **Progressive disclosure**: Show less by default, reveal on interaction
 
 ### Theme System
@@ -344,7 +344,7 @@ frontend/src/
 │   │   └── sync.ts             # Sync system
 │   └── stores/                 # Zustand stores
 ├── features/
-│   ├── chats/                  # Chat feature
+│   ├── threads/                # Thread feature
 │   ├── documents/              # Document feature
 │   └── projects/               # Project feature
 ├── shared/

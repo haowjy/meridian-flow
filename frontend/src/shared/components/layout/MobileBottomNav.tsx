@@ -9,14 +9,14 @@ interface MobileBottomNavProps {
 }
 
 const tabs: { id: MobileActivePanel; label: string; icon: typeof MessageSquare }[] = [
-  { id: 'chatList', label: 'Chats', icon: List },
-  { id: 'activeChat', label: 'Chat', icon: MessageSquare },
+  { id: 'threadList', label: 'Threads', icon: List },
+  { id: 'activeThread', label: 'Thread', icon: MessageSquare },
   { id: 'document', label: 'Document', icon: FileText },
 ]
 
 /**
  * Bottom tab navigation for mobile layout.
- * Switches between chat list, active chat, and document panels.
+ * Switches between thread list, active thread, and document panels.
  */
 export function MobileBottomNav({ activePanel, onPanelChange, className }: MobileBottomNavProps) {
   return (

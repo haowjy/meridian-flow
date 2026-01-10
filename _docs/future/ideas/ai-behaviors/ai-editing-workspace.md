@@ -92,8 +92,8 @@ flowchart TB
    - Before overwriting `ai_version`, can warn: "Chat B has pending suggestions"
    - User decides whether to merge, replace, or cancel
 
-4. **Shared context across chats**
-   - All chats in a project share the workspace
+4. **Shared context across threads**
+   - All threads in a project share the workspace
    - AI in Chat B knows what AI in Chat A suggested
    - Enables collaborative multi-chat workflows
 
@@ -118,5 +118,5 @@ flowchart TB
 - After baseline AI inline editing is stable and we see:
   - Repeated tool failures due to stale `old_str` patterns, or
   - Significant token use from large `view` outputs in conversation history.
-  - Confusion from multiple chats editing same documents.
+  - Confusion from multiple threads editing same documents.
 

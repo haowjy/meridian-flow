@@ -3,7 +3,7 @@
  *
  * Three caching patterns:
  * 1. Cache-first: Documents (local = source of truth, background refresh)
- * 2. Network-first: Chats/Projects (server = source of truth, cache fallback)
+ * 2. Network-first: Threads/Projects (server = source of truth, cache fallback)
  * 3. Windowed: Messages (only cache recent N items)
  */
 import type { Table } from 'dexie'
@@ -26,7 +26,7 @@ const log = makeLogger('cache')
 /**
  * Network-first load pattern.
  *
- * Use for: Chats, Projects where server is source of truth
+ * Use for: Threads, Projects where server is source of truth
  *
  * Flow:
  * 1. Fetch from API (prefer fresh data)
@@ -40,7 +40,7 @@ const log = makeLogger('cache')
 /**
  * Bulk cache update for lists.
  *
- * Use for: Document trees, chat lists, project lists
+ * Use for: Document trees, thread lists, project lists
  */
 export async function bulkCacheUpdate<T extends { id: string }>(
   table: Table<T, string>,
@@ -58,14 +58,14 @@ export async function bulkCacheUpdate<T extends { id: string }>(
 /**
  * Windowed cache update - only keeps most recent N items.
  *
- * Use for: Chat messages (prevent unbounded growth)
+ * Use for: Thread messages (prevent unbounded growth)
  *
  * Sorts by createdAt (newest first) and caches only the window size.
  * Adds lastAccessedAt for future eviction (not implemented yet).
  */
 export async function windowedCacheUpdate<T extends { id: string; createdAt: Date }>(
   table: Table<T, string>,
-  parentKey: string, // e.g., 'chat-123' for logging
+  parentKey: string, // e.g., 'thread-123' for logging
   items: T[],
   windowSize: number = 100
 ): Promise<void> {

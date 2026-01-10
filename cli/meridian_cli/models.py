@@ -16,7 +16,7 @@ class TurnBlock(BaseModel):
 class Turn(BaseModel):
     """Represents a single turn in a conversation"""
     id: str
-    chat_id: str
+    thread_id: str
     prev_turn_id: str | None
     role: str  # "user" | "assistant"
     status: str  # "pending" | "streaming" | "completed" | "failed"
@@ -52,21 +52,21 @@ class Turn(BaseModel):
 
 
 class CreateTurnResponse(BaseModel):
-    """Response from POST /api/chats/{id}/turns"""
+    """Response from POST /api/threads/{id}/turns"""
     user_turn: Turn
     assistant_turn: Turn
     stream_url: str
 
 
 class PaginatedTurnsResponse(BaseModel):
-    """Response from GET /api/chats/{id}/turns"""
+    """Response from GET /api/threads/{id}/turns"""
     turns: list[Turn]
     has_more_before: bool
     has_more_after: bool
 
 
-class Chat(BaseModel):
-    """Represents a chat/conversation"""
+class Thread(BaseModel):
+    """Represents a thread/conversation"""
     id: str
     title: str
     project_id: str

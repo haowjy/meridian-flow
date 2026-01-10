@@ -251,14 +251,6 @@ import cycle not allowed
 2. Use `test_*` tables
 3. Clear test data between runs: `make seed-clear` (in test environment)
 
-### Insomnia Collection Not Working
-
-**Check:**
-1. Server running: `make run`
-2. Correct base URL: `http://localhost:8080`
-3. Project ID matches test project
-4. Import latest collection: `tests/insomnia-collection.json`
-
 ## Performance Issues
 
 ### Slow Tree Endpoint

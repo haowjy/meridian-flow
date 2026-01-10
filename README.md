@@ -120,7 +120,7 @@ See `frontend/README.md` for detailed documentation.
 ### Phase 2 (Future)
 - 🔮 AI context building
 - 🔮 Semantic search
-- 🔮 Chat interface
+- 🔮 Thread interface
 - 🔮 Full-text search
 - 🔮 User authentication
 - 🔮 Multiple projects

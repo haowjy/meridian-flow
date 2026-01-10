@@ -18,9 +18,9 @@ type ResourceAuthorizer interface {
 	// CanAccessDocument checks if user can access a document (via its project)
 	CanAccessDocument(ctx context.Context, userID, documentID string) error
 
-	// CanAccessChat checks if user can access a chat (via its project)
-	CanAccessChat(ctx context.Context, userID, chatID string) error
+	// CanAccessThread checks if user can access a thread (via its project)
+	CanAccessThread(ctx context.Context, userID, threadID string) error
 
-	// CanAccessTurn checks if user can access a turn (via its chat's project)
+	// CanAccessTurn checks if user can access a turn (via its thread's project)
 	CanAccessTurn(ctx context.Context, userID, turnID string) error
 }

@@ -6,7 +6,7 @@ from textual.binding import Binding
 from .api_client import APIClient
 from .screens import (
     ProjectListScreen,
-    ChatListScreen,
+    ThreadListScreen,
     TurnBrowserScreen,
 )
 
@@ -24,7 +24,7 @@ class MeridianCLI(App):
 
     SCREENS = {
         "project_list": ProjectListScreen,
-        "chat_list": ChatListScreen,
+        "thread_list": ThreadListScreen,
         "turn_browser": TurnBrowserScreen,
         # ConfirmationScreen and ParamsEditorScreen are instantiated directly
         # since they require parameters
@@ -37,7 +37,7 @@ class MeridianCLI(App):
 
         # Global state
         self.current_project_id: str | None = None
-        self.current_chat_id: str | None = None
+        self.current_thread_id: str | None = None
         self.current_params = {
             "provider": "lorem",
             "model": "lorem-slow",

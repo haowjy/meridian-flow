@@ -67,7 +67,20 @@ export const useProjectStore = create<ProjectStore>()(
         if (prevId && prevId !== nextId) {
           editorCache.clear()
         }
-        set({ currentProjectId: nextId })
+
+        if (project) {
+          // Ensure project is in the projects array (upsert) so it persists
+          // and is available for lookups after page refresh
+          set((state) => {
+            const exists = state.projects.some((p) => p.id === project.id)
+            const projects = exists
+              ? state.projects.map((p) => p.id === project.id ? project : p)
+              : [...state.projects, project]
+            return { currentProjectId: nextId, projects }
+          })
+        } else {
+          set({ currentProjectId: null })
+        }
       },
 
       loadProjects: async () => {

@@ -1,6 +1,6 @@
 # Backend Testing
 
-[Nothing to see here yet], there are manual insomnia tests elsewhere
+[Nothing to see here yet], there are manual curl tests elsewhere
 
 ## Manual Testing with curl
 

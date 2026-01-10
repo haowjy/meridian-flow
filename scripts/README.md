@@ -296,7 +296,7 @@ Tables created:
   test_projects
   test_folders
   test_documents
-  test_chats
+  test_threads
   test_turns
   test_turn_blocks
   test_user_preferences

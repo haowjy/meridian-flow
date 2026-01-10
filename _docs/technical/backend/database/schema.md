@@ -5,7 +5,7 @@ audience: developer
 
 # Database Schema
 
-Complete PostgreSQL database schema for Meridian: file management + LLM chat system.
+Complete PostgreSQL database schema for Meridian: file management + LLM thread system.
 
 ## System Overview
 
@@ -15,11 +15,11 @@ Complete PostgreSQL database schema for Meridian: file management + LLM chat sys
 erDiagram
     projects ||--o{ folders : "has many"
     projects ||--o{ documents : "has many"
-    projects ||--o{ chats : "has many"
+    projects ||--o{ threads : "has many"
     folders ||--o{ folders : "has children"
     folders ||--o{ documents : "contains"
-    chats ||--o{ turns : "has many"
-    chats }o--|| turns : "last viewed"
+    threads ||--o{ turns : "has many"
+    threads }o--|| turns : "last viewed"
     turns ||--o{ turns : "branches from"
     turns ||--o{ turn_blocks : "has many"
 
@@ -52,7 +52,7 @@ erDiagram
         timestamptz updated_at
     }
 
-    chats {
+    threads {
         uuid id PK
         uuid project_id FK
         uuid user_id
@@ -64,7 +64,7 @@ erDiagram
 
     turns {
         uuid id PK
-        uuid chat_id FK
+        uuid thread_id FK
         uuid prev_turn_id FK "nullable, self-ref"
         text role "user|assistant"
         text status
@@ -95,7 +95,7 @@ Hierarchical file organization with folders and markdown content.
 
 #### `projects`
 
-Top-level container for all user content (documents + chats).
+Top-level container for all user content (documents + threads).
 
 **Columns:**
 - `id` (UUID, PK) - Auto-generated
@@ -108,7 +108,7 @@ Top-level container for all user content (documents + chats).
 - `UNIQUE(user_id, name)` - No duplicate project names per user
 
 **Deletion Behavior:**
-- CASCADE to folders and chats
+- CASCADE to folders and threads
 - RESTRICT on documents (must delete documents first)
 
 #### `folders`
@@ -119,8 +119,8 @@ Hierarchical folder structure using adjacency list pattern (self-referencing tre
 
 **Columns:**
 - `id` (UUID, PK) - Auto-generated
-- `project_id` (UUID, FK → projects) - Parent project
-- `parent_id` (UUID, FK → folders, nullable) - Parent folder (NULL = root level)
+- `project_id` (UUID, FK -> projects) - Parent project
+- `parent_id` (UUID, FK -> folders, nullable) - Parent folder (NULL = root level)
 - `name` (TEXT) - Folder name (no slashes allowed)
 - `created_at`, `updated_at` (TIMESTAMPTZ) - Timestamps
 - `deleted_at` (TIMESTAMPTZ, nullable) - Soft delete timestamp
@@ -143,8 +143,8 @@ Content documents (leaf nodes in hierarchy). Store text-based content in `conten
 
 **Columns:**
 - `id` (UUID, PK) - Auto-generated
-- `project_id` (UUID, FK → projects) - Parent project
-- `folder_id` (UUID, FK → folders, nullable) - Parent folder (NULL = root level)
+- `project_id` (UUID, FK -> projects) - Parent project
+- `folder_id` (UUID, FK -> folders, nullable) - Parent folder (NULL = root level)
 - `name` (TEXT) - Document name (no slashes allowed, filesystem semantics)
 - `extension` (TEXT) - File extension with leading dot (e.g. `.md`, `.excalidraw`)
 - `content` (TEXT) - Content for text-based formats (e.g. markdown, mermaid, excalidraw JSON)
@@ -196,13 +196,13 @@ Uses **adjacency list pattern**: each folder has a `parent_id` pointing to its p
 
 **Circular prevention:** Backend validates folder moves. See `internal/service/docsystem/folder.go:validateNoCircularReference()`
 
-## Chat System
+## Thread System
 
-LLM-powered chat sessions with tree-structured conversations and unified JSONB content blocks.
+LLM-powered thread sessions with tree-structured conversations and unified JSONB content blocks.
 
 ```mermaid
 graph TB
-    chat[Chat Session]
+    thread[Thread Session]
     turn1[Turn 1<br/>user]
     turn2[Turn 2<br/>assistant<br/>model: claude-haiku-4-5]
     turn3a[Turn 3a<br/>user]
@@ -212,7 +212,7 @@ graph TB
     cb2_think[Block 0<br/>type: thinking<br/>JSONB: signature]
     cb2_text[Block 1<br/>type: text]
 
-    chat --> turn1
+    thread --> turn1
     turn1 --> turn2
     turn2 --> turn3a
     turn2 -.branch.-> turn3b
@@ -221,7 +221,7 @@ graph TB
     turn2 --> cb2_think
     turn2 --> cb2_text
 
-    style chat fill:#2d5a7d
+    style thread fill:#2d5a7d
     style turn1 fill:#2d7d2d
     style turn2 fill:#7d2d5a
     style turn3a fill:#2d7d2d
@@ -234,16 +234,16 @@ graph TB
 
 ### Tables
 
-#### `chats`
+#### `threads`
 
-Chat sessions scoped to projects.
+Thread sessions scoped to projects.
 
 **Columns:**
 - `id` (UUID, PK) - Auto-generated
-- `project_id` (UUID, FK → projects) - Parent project
+- `project_id` (UUID, FK -> projects) - Parent project
 - `user_id` (UUID) - Owner
-- `title` (TEXT) - Chat title
-- `last_viewed_turn_id` (UUID, FK → turns, nullable) - Last turn viewed by user (for UI navigation)
+- `title` (TEXT) - Thread title
+- `last_viewed_turn_id` (UUID, FK -> turns, nullable) - Last turn viewed by user (for UI navigation)
 - `created_at`, `updated_at` (TIMESTAMPTZ) - Timestamps
 - `deleted_at` (TIMESTAMPTZ, nullable) - Soft delete timestamp
 
@@ -253,9 +253,9 @@ Chat sessions scoped to projects.
 - SET NULL on last_viewed_turn_id when referenced turn deleted
 
 **Indexes:**
-- `idx_chats_project` on `project_id` - Fast project queries
-- `idx_chats_user` on `user_id` - Fast user queries
-- `idx_chats_last_viewed` on `last_viewed_turn_id` - Fast navigation queries
+- `idx_threads_project` on `project_id` - Fast project queries
+- `idx_threads_user` on `user_id` - Fast user queries
+- `idx_threads_last_viewed` on `last_viewed_turn_id` - Fast navigation queries
 
 #### `turns`
 
@@ -263,8 +263,8 @@ Conversation tree structure. Each turn is either a user message or assistant res
 
 **Columns:**
 - `id` (UUID, PK) - Auto-generated
-- `chat_id` (UUID, FK → chats) - Parent chat session
-- `prev_turn_id` (UUID, FK → turns, nullable) - Previous turn in conversation (NULL = first turn)
+- `thread_id` (UUID, FK -> threads) - Parent thread session
+- `prev_turn_id` (UUID, FK -> turns, nullable) - Previous turn in conversation (NULL = first turn)
 - `role` (TEXT) - `'user'` or `'assistant'`
 - `status` (TEXT) - One of: `'pending'`, `'streaming'`, `'waiting_subagents'`, `'complete'`, `'cancelled'`, `'error'`
 - `error` (TEXT, nullable) - Error message if status = `'error'`
@@ -278,7 +278,7 @@ Conversation tree structure. Each turn is either a user message or assistant res
 System prompts are NOT stored per-turn. They are resolved at request time from:
 1. `request_params.system` (user-provided)
 2. `project.system_prompt` (project settings)
-3. `chat.system_prompt` (chat settings)
+3. `thread.system_prompt` (thread settings)
 4. Selected skills (from `.skills/` folder)
 
 See migration `00003_remove_turn_system_prompt.sql` for details.
@@ -289,12 +289,12 @@ See migration `00003_remove_turn_system_prompt.sql` for details.
 - Self-referencing FK enables tree structure (branching conversations)
 
 **Deletion Behavior:**
-- CASCADE when prev turn or chat deleted
+- CASCADE when prev turn or thread deleted
 - CASCADE to child turns (deletes entire conversation branch)
 - CASCADE to turn_blocks
 
 **Indexes:**
-- `idx_turns_chat` on `chat_id` - Fast chat queries
+- `idx_turns_thread` on `thread_id` - Fast thread queries
 - `idx_turns_prev` on `prev_turn_id` - Fast tree traversal
 
 #### `turn_blocks`
@@ -303,7 +303,7 @@ Unified multimodal content for both user and assistant turns. Uses JSONB for typ
 
 **Columns:**
 - `id` (UUID, PK) - Auto-generated
-- `turn_id` (UUID, FK → turns) - Parent turn
+- `turn_id` (UUID, FK -> turns) - Parent turn
 - `block_type` (TEXT) - One of: `'text'`, `'thinking'`, `'tool_use'`, `'tool_result'`, `'image'`, `'reference'`, `'partial_reference'`
 - `sequence` (INT) - Order within turn (0-indexed)
 - `text_content` (TEXT, nullable) - Plain text content (for text, thinking, tool_result blocks)
@@ -324,7 +324,7 @@ Unified multimodal content for both user and assistant turns. Uses JSONB for typ
 | `tool_use` | `null` | `{"tool_use_id": "toolu_...", "tool_name": "...", "input": {...}}` | LLM tool invocation |
 | `tool_result` | Result text | `{"tool_use_id": "toolu_...", "is_error": false}` | Tool execution result |
 | `image` | `null` | `{"url": "...", "mime_type": "...", "alt_text": "..."}` | Image attachment |
-| `reference` | `null` | `{"ref_id": "...", "ref_type": "document\|image\|s3_document", "version_timestamp": "...", "selection_start": 0, "selection_end": 100}` | Document reference |
+| `reference` | `null` | `{"ref_id": "...", "ref_type": "document|image|s3_document", "version_timestamp": "...", "selection_start": 0, "selection_end": 100}` | Document reference |
 | `partial_reference` | `null` | `{"ref_id": "...", "ref_type": "document", "selection_start": 0, "selection_end": 100}` | Text selection reference |
 
 **Constraints:**
@@ -355,7 +355,7 @@ Turn 1 (user: "Write a story")
 
 Each branch can continue independently. This allows users to explore alternative conversation paths.
 
-**Root turns:** `prev_turn_id IS NULL` (first message in chat)
+**Root turns:** `prev_turn_id IS NULL` (first message in thread)
 **Nested turns:** `prev_turn_id = <previous-turn-id>`
 
 ### Content Block Sequencing
@@ -406,7 +406,7 @@ Content blocks can **reference documents** using the JSONB `content` field:
 - `'reference'` - Full document reference ("Review this entire document")
 - `'partial_reference'` - Text selection ("Review lines 10-50")
 
-This enables context-aware chat where LLM can access document content.
+This enables context-aware thread where LLM can access document content.
 
 ## Cross-System Features
 
@@ -416,9 +416,9 @@ Tables use environment-specific prefixes to enable multiple environments in same
 
 | Environment | Prefix | Example |
 |-------------|--------|---------|
-| dev | `dev_` | `dev_projects`, `dev_chats` |
-| test | `test_` | `test_projects`, `test_chats` |
-| prod | `prod_` | `prod_projects`, `prod_chats` |
+| dev | `dev_` | `dev_projects`, `dev_threads` |
+| test | `test_` | `test_projects`, `test_threads` |
+| prod | `prod_` | `prod_projects`, `prod_threads` |
 
 **Configured via:** `ENVIRONMENT` environment variable
 **Implementation:** See `internal/repository/postgres/connection.go`
@@ -447,7 +447,7 @@ query := "SELECT * FROM documents WHERE id = $1"
 
 ### Soft Delete System
 
-Primary resources (projects, folders, documents, chats) support soft deletion via `deleted_at` timestamp.
+Primary resources (projects, folders, documents, threads) support soft deletion via `deleted_at` timestamp.
 
 **Behavior:**
 - Soft-deleted resources return 404 (treated as non-existent)
@@ -470,14 +470,14 @@ Primary resources (projects, folders, documents, chats) support soft deletion vi
 | `idx_documents_project_folder` | `(project_id, folder_id)` | BTREE | Fast folder document queries |
 | `idx_documents_root_unique` | `(project_id, name) WHERE folder_id IS NULL` | UNIQUE PARTIAL | Root-level document uniqueness |
 
-### Chat System
+### Thread System
 
 | Index | Columns | Type | Purpose |
 |-------|---------|------|---------|
-| `idx_chats_project` | `project_id` | BTREE | Fast project chat queries |
-| `idx_chats_user` | `user_id` | BTREE | Fast user chat queries |
-| `idx_chats_last_viewed` | `last_viewed_turn_id` | BTREE | Fast navigation queries |
-| `idx_turns_chat` | `chat_id` | BTREE | Fast chat turn queries |
+| `idx_threads_project` | `project_id` | BTREE | Fast project thread queries |
+| `idx_threads_user` | `user_id` | BTREE | Fast user thread queries |
+| `idx_threads_last_viewed` | `last_viewed_turn_id` | BTREE | Fast navigation queries |
+| `idx_turns_thread` | `thread_id` | BTREE | Fast thread turn queries |
 | `idx_turns_prev` | `prev_turn_id` | BTREE | Fast tree traversal |
 | `idx_turn_blocks_turn_sequence` | `(turn_id, sequence)` | BTREE | Fast ordered block retrieval |
 | `idx_turn_blocks_turn_type` | `(turn_id, block_type)` | BTREE | Filter blocks by type |
@@ -499,20 +499,20 @@ Primary resources (projects, folders, documents, chats) support soft deletion vi
 - RESTRICT for documents: Prevent accidental data loss (must explicitly delete documents first)
 - SET NULL for document folders: Preserve content (deleting folder moves documents to root)
 
-### Chat System
+### Thread System
 
 | Parent | Child | FK Column | ON DELETE |
 |--------|-------|-----------|-----------|
-| projects | chats | project_id | CASCADE |
-| chats | turns | chat_id | CASCADE |
+| projects | threads | project_id | CASCADE |
+| threads | turns | thread_id | CASCADE |
 | turns (prev) | turns (child) | prev_turn_id | CASCADE |
-| turns | chats | last_viewed_turn_id | SET NULL |
+| turns | threads | last_viewed_turn_id | SET NULL |
 | turns | turn_blocks | turn_id | CASCADE |
 
 **Rationale:**
-- All CASCADE: Chat data is transient/ephemeral (no accidental data loss concerns)
+- All CASCADE: Thread data is transient/ephemeral (no accidental data loss concerns)
 - Deleting a turn deletes entire conversation branch
-- SET NULL for last_viewed_turn_id: Chat persists even if last viewed turn is deleted
+- SET NULL for last_viewed_turn_id: Thread persists even if last viewed turn is deleted
 
 ## Setup
 

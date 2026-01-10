@@ -1,7 +1,7 @@
 [project]
 name = "meridian-cli"
 version = "0.1.0"
-description = "Terminal UI for browsing Meridian chat conversations"
+description = "Terminal UI for browsing Meridian thread conversations"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

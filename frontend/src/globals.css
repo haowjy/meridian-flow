@@ -512,55 +512,55 @@ body.preload * {
     letter-spacing: 0.5em;
   }
 
-  /* === Chat Pane (Left Sidebar) === */
+  /* === Thread Pane (Left Sidebar) === */
 
-  .chat-pane {
+  .thread-pane {
     @apply bg-sidebar text-sidebar-foreground;
   }
 
-  .chat-pane-header {
+  .thread-pane-header {
     @apply bg-sidebar/80;
   }
 
-  .chat-pane-body {
+  .thread-pane-body {
     @apply overflow-hidden;
   }
 
-  .chat-pane-scroll {
+  .thread-pane-scroll {
     @apply h-full;
   }
 
-  .chat-pane-empty {
+  .thread-pane-empty {
     @apply text-xs text-sidebar-foreground/70;
   }
 
-  .chat-list-item {
+  .thread-list-item {
     @apply cursor-pointer text-xs transition-colors duration-[--duration-fast];
     @apply hover:bg-sidebar-accent/20;
   }
 
-  /* Active chat styling (background handled by Tailwind in component) */
-  .chat-list-item--active {
+  /* Active thread styling (background handled by Tailwind in component) */
+  .thread-list-item--active {
     @apply font-semibold;
   }
 
   /* Sidebar icons use DARK JADE in light mode */
-  .chat-pane [data-icon] {
+  .thread-pane [data-icon] {
     color: var(--sidebar-icon);
   }
 
-  /* === Chat Main Panel === */
+  /* === Thread Main Panel === */
 
-  .chat-main {
+  .thread-main {
     @apply flex h-full flex-col bg-background min-w-0 relative;
   }
 
-  .chat-main-header {
+  .thread-main-header {
     @apply flex items-center justify-between px-4 py-2;
   }
 
   /* Scroll container for messages + sticky input */
-  .chat-scroll-container {
+  .thread-scroll-container {
     @apply flex-1 overflow-y-auto overflow-x-hidden min-w-0;
   }
 
@@ -580,58 +580,58 @@ body.preload * {
     pointer-events: auto;
   }
 
-  .chat-main-empty {
+  .thread-main-empty {
     @apply flex h-full flex-col items-center justify-center px-4 text-center text-sm text-muted-foreground;
   }
 
-  /* Chat messages - spec: pure white user, jade rim AI */
-  .chat-message {
+  /* Thread messages - spec: pure white user, jade rim AI */
+  .thread-message {
     border-radius: var(--radius-lg);
     transition: box-shadow var(--duration-medium) var(--easing-default);
   }
 
-  .chat-message:hover {
+  .thread-message:hover {
     box-shadow: var(--shadow-2);
   }
 
   /* User messages: PURE WHITE fill in light mode, Slate 700 in dark */
-  .chat-message--user {
+  .thread-message--user {
     @apply bg-card text-card-foreground;
     border: 1px solid var(--border);
   }
 
   /* AI messages: jade border in light, GLOW JADE rim in dark */
-  .chat-message--ai {
+  .thread-message--ai {
     @apply bg-card text-card-foreground;
   }
 
-  .chat-message--ai {
+  .thread-message--ai {
     border: 1px solid var(--jade-primary);
   }
 
-  .dark .chat-message--ai {
+  .dark .thread-message--ai {
     border: 1px solid var(--glow-jade);
     border-opacity: 0.3;
   }
 
   /* Code blocks in messages: Neutral 100 in light, Jade Black in dark */
-  .chat-message code,
-  .chat-message pre {
+  .thread-message code,
+  .thread-message pre {
     background: var(--muted);
   }
 
-  /* Chat input */
-  .chat-input-shell {
+  /* Thread input */
+  .thread-input-shell {
     @apply bg-background/95 px-2 pb-2 sm:px-4;
   }
 
-  .chat-input {
+  .thread-input {
     @apply w-full resize-none rounded border bg-card px-3 py-2 text-sm outline-none ring-offset-0;
     box-shadow: var(--shadow-1);
     transition: box-shadow var(--duration-fast) var(--easing-default);
   }
 
-  .chat-input:focus-visible {
+  .thread-input:focus-visible {
     outline: 3px solid var(--focus-ring-outer);
     outline-offset: 0;
     box-shadow:
@@ -639,7 +639,7 @@ body.preload * {
       0 0 0 2px var(--focus-ring-inner);
   }
 
-  .chat-input-row {
+  .thread-input-row {
     @apply flex items-center gap-2;
   }
 

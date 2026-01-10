@@ -141,7 +141,7 @@ func (s *projectService) UpdateProject(ctx context.Context, id, userID string, r
 // Returns the deleted project with deleted_at set
 // TODO: Implement background cleanup job to permanently delete soft-deleted items
 //       - Suggested retention period: 30 days after soft delete
-//       - Should cleanup projects, folders, documents, and chats
+//       - Should cleanup projects, folders, documents, and threads
 //       - Can be implemented as a cron job or background worker
 //       - Consider adding a "restore" API endpoint before implementing hard delete
 func (s *projectService) DeleteProject(ctx context.Context, id, userID string) (*models.Project, error) {

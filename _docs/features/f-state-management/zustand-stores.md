@@ -22,9 +22,9 @@ feature: "Zustand Stores"
 - Folder/document tree, expanded folders
 - `frontend/src/core/stores/useTreeStore.ts`
 
-**useChatStore** (persist, but turns excluded)
+**useThreadStore** (persist, but turns excluded)
 - Chat list, active chat, turns (not persisted)
-- `frontend/src/core/stores/useChatStore.ts`
+- `frontend/src/core/stores/useThreadStore.ts`
 
 **useUIStore** (persist middleware)
 - UI state (panel visibility, etc.)

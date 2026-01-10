@@ -13,16 +13,16 @@ export type RightPanelState = 'documents' | 'editor' | null
  * Active panel for mobile single-panel mode.
  * Only one panel is visible at a time on mobile.
  */
-export type MobileActivePanel = 'chatList' | 'activeChat' | 'document'
+export type MobileActivePanel = 'threadList' | 'activeThread' | 'document'
 
 /**
  * UI state store for workspace layout and panel management.
- * Persisted to localStorage: leftPanelCollapsed, rightPanelCollapsed, activeDocumentId, activeChatId.
- * Not persisted: rightPanelState (resets to 'documents'), chatFocusVersion.
+ * Persisted to localStorage: leftPanelCollapsed, rightPanelCollapsed, activeDocumentId, activeThreadId.
+ * Not persisted: rightPanelState (resets to 'documents'), threadFocusVersion.
  */
 interface UIStore {
   /**
-   * Controls left panel (chat list) visibility.
+   * Controls left panel (thread list) visibility.
    * Persisted across sessions.
    * @default false
    */
@@ -52,25 +52,25 @@ interface UIStore {
   activeDocumentId: string | null
 
   /**
-   * ID of currently active chat (for highlighting in chat list).
+   * ID of currently active thread (for highlighting in thread list).
    * Persisted across sessions.
-   * Null if no chat is active.
+   * Null if no thread is active.
    * @default null
    */
-  activeChatId: string | null
+  activeThreadId: string | null
 
   /**
-   * Monotonic counter used to drive chat input auto-focus.
-   * Incremented when "New Chat" is pressed so the input refocuses even if
-   * the activeChatId does not change (e.g., cold-start state).
+   * Monotonic counter used to drive thread input auto-focus.
+   * Incremented when "New Thread" is pressed so the input refocuses even if
+   * the activeThreadId does not change (e.g., cold-start state).
    */
-  chatFocusVersion: number
+  threadFocusVersion: number
 
   /**
    * Active panel for mobile single-panel mode.
    * Determines which panel is visible when viewport < 768px.
    * Persisted across sessions.
-   * @default 'activeChat' (first run only)
+   * @default 'activeThread' (first run only)
    */
   mobileActivePanel: MobileActivePanel
 
@@ -97,13 +97,13 @@ interface UIStore {
   setActiveDocument: (id: string | null) => void
 
   /**
-   * Sets active chat ID.
-   * Use panelHelpers.switchChat() for semantic clarity.
+   * Sets active thread ID.
+   * Use panelHelpers.switchThread() for semantic clarity.
    */
-  setActiveChat: (id: string | null) => void
+  setActiveThread: (id: string | null) => void
 
-  /** Bumps chatFocusVersion to request chat input focus. */
-  bumpChatFocusVersion: () => void
+  /** Bumps threadFocusVersion to request thread input focus. */
+  bumpThreadFocusVersion: () => void
 
   /**
    * Sets active panel for mobile layout.
@@ -119,9 +119,9 @@ export const useUIStore = create<UIStore>()(
       rightPanelCollapsed: true,
       rightPanelState: 'documents',
       activeDocumentId: null,
-      activeChatId: null,
-      chatFocusVersion: 0,
-      mobileActivePanel: 'activeChat',
+      activeThreadId: null,
+      threadFocusVersion: 0,
+      mobileActivePanel: 'activeThread',
 
       toggleLeftPanel: () =>
         set((state) => ({ leftPanelCollapsed: !state.leftPanelCollapsed })),
@@ -133,10 +133,10 @@ export const useUIStore = create<UIStore>()(
         set({ rightPanelCollapsed: collapsed }),
       setActiveDocument: (id) =>
         set({ activeDocumentId: id }),
-      setActiveChat: (id) =>
-        set({ activeChatId: id }),
-      bumpChatFocusVersion: () =>
-        set((state) => ({ chatFocusVersion: state.chatFocusVersion + 1 })),
+      setActiveThread: (id) =>
+        set({ activeThreadId: id }),
+      bumpThreadFocusVersion: () =>
+        set((state) => ({ threadFocusVersion: state.threadFocusVersion + 1 })),
       setMobileActivePanel: (panel) =>
         set({ mobileActivePanel: panel }),
     }),
@@ -146,9 +146,9 @@ export const useUIStore = create<UIStore>()(
         leftPanelCollapsed: state.leftPanelCollapsed,
         rightPanelCollapsed: state.rightPanelCollapsed,
         activeDocumentId: state.activeDocumentId,
-        activeChatId: state.activeChatId,
+        activeThreadId: state.activeThreadId,
         mobileActivePanel: state.mobileActivePanel,
-        // chatFocusVersion is ephemeral and not persisted
+        // threadFocusVersion is ephemeral and not persisted
 
         // rightPanelState excluded - always resets to 'documents' on page load
       }),

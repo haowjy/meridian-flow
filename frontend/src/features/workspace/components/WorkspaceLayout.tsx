@@ -4,8 +4,8 @@ import { useShallow } from 'zustand/react/shallow'
 import { useLayoutStrategy } from '@/core/hooks/useLayoutStrategy'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { DocumentPanel } from '@/features/documents/components/DocumentPanel'
-import { ChatListPanel } from '@/features/chats/components/ChatListPanel'
-import { ActiveChatView } from '@/features/chats/components/ActiveChatView'
+import { ThreadListPanel } from '@/features/threads/components/ThreadListPanel'
+import { ActiveThreadView } from '@/features/threads/components/ActiveThreadView'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { useProjectStore } from '@/core/stores/useProjectStore'
 import { api } from '@/core/lib/api'
@@ -155,7 +155,7 @@ export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug
   // Sync URL document ID to UI state (for direct URL navigation, bookmarks, browser back/forward)
   // Uses getState() to read current values without subscribing (prevents unnecessary re-runs)
   // Effect only runs when document URL param changes, not when UI state changes
-  // This allows future chat effects to run independently without interfering
+  // This allows future thread effects to run independently without interfering
   useEffect(() => {
     logger.debug('URL sync effect triggered', {
       previousDocId: previousDocumentIdRef.current,
@@ -245,8 +245,8 @@ export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug
 
   // Define panel content (what to show) - layout strategy decides how to arrange them
   const panels: PanelDefinitions = {
-    chatList: <ChatListPanel projectId={projectId} />,
-    activeChat: <ActiveChatView projectId={projectId} />,
+    threadList: <ThreadListPanel projectId={projectId} />,
+    activeThread: <ActiveThreadView projectId={projectId} />,
     documentPanel: (
       <DocumentPanel
         projectId={projectId}

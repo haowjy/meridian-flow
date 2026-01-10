@@ -11,7 +11,7 @@
 ## Benefits
 - Faster initial load
 - Lower bandwidth
-- Better UX for large chats
+- Better UX for large threads
 
 ## Priority
 **Medium** - Useful for performance optimization

@@ -12,11 +12,11 @@ import (
 	llmSvc "meridian/internal/domain/services/llm"
 )
 
-// systemPromptResolver builds the final system prompt from project, chat, and skills
+// systemPromptResolver builds the final system prompt from project, thread, and skills
 // Implements llmSvc.SystemPromptResolver interface
 type systemPromptResolver struct {
 	projectRepo  docsysRepo.ProjectRepository
-	chatRepo     llmRepo.ChatRepository
+	threadRepo   llmRepo.ThreadRepository
 	documentRepo docsysRepo.DocumentRepository
 	logger       *slog.Logger
 }
@@ -24,13 +24,13 @@ type systemPromptResolver struct {
 // NewSystemPromptResolver creates a new system prompt resolver
 func NewSystemPromptResolver(
 	projectRepo docsysRepo.ProjectRepository,
-	chatRepo llmRepo.ChatRepository,
+	threadRepo llmRepo.ThreadRepository,
 	documentRepo docsysRepo.DocumentRepository,
 	logger *slog.Logger,
 ) llmSvc.SystemPromptResolver {
 	return &systemPromptResolver{
 		projectRepo:  projectRepo,
-		chatRepo:     chatRepo,
+		threadRepo:   threadRepo,
 		documentRepo: documentRepo,
 		logger:       logger,
 	}
@@ -39,26 +39,26 @@ func NewSystemPromptResolver(
 // Resolve builds the final system prompt by concatenating:
 // 1. user-provided system prompt (from request_params.system)
 // 2. project.system_prompt
-// 3. chat.system_prompt
+// 3. thread.system_prompt
 // 4. Content of each skill's SKILL.md file from .skills/{skill_name}/SKILL.md
 func (r *systemPromptResolver) Resolve(
 	ctx context.Context,
-	chatID string,
+	threadID string,
 	userID string,
 	userSystem *string,
 	selectedSkills []string,
 ) (*string, error) {
 	r.logger.Info("resolving system prompt",
-		"chat_id", chatID,
+		"thread_id", threadID,
 		"user_id", userID,
 		"user_system_provided", userSystem != nil,
 		"selected_skills", selectedSkills,
 	)
 
-	// For cold start (new chat), chatID is empty - skip chat/project system prompt loading
-	// since the chat doesn't exist yet. Just return user-provided system prompt if any.
-	if chatID == "" {
-		r.logger.Info("cold start detected (empty chatID), skipping chat/project system prompt")
+	// For cold start (new thread), threadID is empty - skip thread/project system prompt loading
+	// since the thread doesn't exist yet. Just return user-provided system prompt if any.
+	if threadID == "" {
+		r.logger.Info("cold start detected (empty threadID), skipping thread/project system prompt")
 		if userSystem != nil && *userSystem != "" {
 			return userSystem, nil
 		}
@@ -73,14 +73,14 @@ func (r *systemPromptResolver) Resolve(
 		parts = append(parts, *userSystem)
 	}
 
-	// 2. Load chat to get project ID
-	chat, err := r.chatRepo.GetChat(ctx, chatID, userID)
+	// 2. Load thread to get project ID
+	thread, err := r.threadRepo.GetThread(ctx, threadID, userID)
 	if err != nil {
-		return nil, fmt.Errorf("load chat: %w", err)
+		return nil, fmt.Errorf("load thread: %w", err)
 	}
 
 	// 3. Load project system prompt
-	project, err := r.projectRepo.GetByID(ctx, chat.ProjectID, userID)
+	project, err := r.projectRepo.GetByID(ctx, thread.ProjectID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("load project: %w", err)
 	}
@@ -89,15 +89,15 @@ func (r *systemPromptResolver) Resolve(
 		parts = append(parts, *project.SystemPrompt)
 	}
 
-	// 4. Load chat system prompt
-	if chat.SystemPrompt != nil && *chat.SystemPrompt != "" {
-		r.logger.Info("chat system prompt found", "length", len(*chat.SystemPrompt))
-		parts = append(parts, *chat.SystemPrompt)
+	// 4. Load thread system prompt
+	if thread.SystemPrompt != nil && *thread.SystemPrompt != "" {
+		r.logger.Info("thread system prompt found", "length", len(*thread.SystemPrompt))
+		parts = append(parts, *thread.SystemPrompt)
 	}
 
 	// 5. Load selected skills
 	if len(selectedSkills) > 0 {
-		skillsContent, err := r.loadSkills(ctx, chat.ProjectID, selectedSkills)
+		skillsContent, err := r.loadSkills(ctx, thread.ProjectID, selectedSkills)
 		if err != nil {
 			return nil, fmt.Errorf("load skills: %w", err)
 		}

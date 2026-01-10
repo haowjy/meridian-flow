@@ -13,10 +13,10 @@ type TurnReader interface {
 	// Returns domain.ErrNotFound if not found
 	GetTurn(ctx context.Context, turnID string) (*llm.Turn, error)
 
-	// GetRootTurns retrieves all root turns for a specific chat
+	// GetRootTurns retrieves all root turns for a specific thread
 	// Root turns are turns where prev_turn_id IS NULL
 	// Returns empty slice if no root turns found
-	GetRootTurns(ctx context.Context, chatID string) ([]llm.Turn, error)
+	GetRootTurns(ctx context.Context, threadID string) ([]llm.Turn, error)
 
 	// GetTurnBlocks retrieves all turn blocks for a turn
 	// Returns blocks ordered by sequence

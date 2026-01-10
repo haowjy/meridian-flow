@@ -6,7 +6,7 @@ status: complete
 
 # Authentication Architecture
 
-Complete authentication flow across the Meridian stack: Frontend (Vite + TanStack Router) → Supabase Auth → Backend (Go).
+Complete authentication flow across the Meridian stack: Frontend (Vite + TanStack Router) -> Supabase Auth -> Backend (Go).
 
 ## System Overview
 
@@ -114,20 +114,20 @@ sequenceDiagram
     participant JWKS as Supabase JWKS
     participant DB as PostgreSQL
 
-    Component->>API: api.chats.list(projectId)
+    Component->>API: api.threads.list(projectId)
     API->>Cookie: getSession()
     Cookie-->>API: Session {access_token: JWT}
     API->>API: Add Authorization header
-    API->>Backend: GET /chats?project=123<br/>Authorization: Bearer <JWT>
+    API->>Backend: GET /api/threads?project_id=123<br/>Authorization: Bearer <JWT>
 
     Backend->>Backend: Extract JWT from header
     Backend->>JWKS: Fetch public key (cached)
     JWKS-->>Backend: RS256 public key
     Backend->>Backend: Verify signature<br/>Extract user_id from claims
-    Backend->>DB: Query chats WHERE user_id=...
-    DB-->>Backend: Chat records
+    Backend->>DB: Query threads WHERE user_id=...
+    DB-->>Backend: Thread records
     Backend-->>API: 200 OK + JSON
-    API-->>Component: Chat data
+    API-->>Component: Thread data
 ```
 
 ### 3. Route Protection Flow (TanStack Router)
@@ -228,13 +228,13 @@ SUPABASE_KEY=<service-role-key>
 1. **Login**: Google OAuth works
 2. **Session Persistence**: Refresh page, still logged in
 3. **API Calls**: Authenticated requests return 200 (not 401)
-4. **Route Protection**: `/projects` without session → redirects to `/login`
+4. **Route Protection**: `/projects` without session -> redirects to `/login`
 5. **Logout**: Session cleared, redirected to `/login`
 
 ### Backend JWT Validation Test (When Implemented)
 ```bash
 # Get JWT from frontend session
-curl -H "Authorization: Bearer <JWT>" http://localhost:8080/chats?project=123
+curl -H "Authorization: Bearer <JWT>" http://localhost:8080/api/threads?project_id=123
 
 # Expected: 200 OK (not 401 Unauthorized)
 ```

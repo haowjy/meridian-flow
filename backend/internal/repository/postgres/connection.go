@@ -23,8 +23,8 @@ type TableNames struct {
 	Folders   string
 	Documents string
 
-	// Chat system tables
-	Chats              string
+	// Thread system tables
+	Threads            string
 	Turns              string
 	TurnBlocks         string
 	AssistantResponses string
@@ -40,8 +40,8 @@ func NewTableNames(prefix string) *TableNames {
 		Folders:   fmt.Sprintf("%sfolders", prefix),
 		Documents: fmt.Sprintf("%sdocuments", prefix),
 
-		// Chat system tables
-		Chats:              fmt.Sprintf("%schats", prefix),
+		// Thread system tables
+		Threads:            fmt.Sprintf("%sthreads", prefix),
 		Turns:              fmt.Sprintf("%sturns", prefix),
 		TurnBlocks:         fmt.Sprintf("%sturn_blocks", prefix),
 		AssistantResponses: fmt.Sprintf("%sassistant_responses", prefix),

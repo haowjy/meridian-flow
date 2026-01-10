@@ -94,7 +94,7 @@ func (s *Service) buildMessagesFromPath(ctx context.Context, path []*models.Turn
 
 ### API Changes
 
-**Create Turn Endpoint** (`POST /api/chats/:chatId/turns`):
+**Create Turn Endpoint** (`POST /api/threads/:threadId/turns`):
 
 Add optional field:
 ```json
@@ -108,7 +108,7 @@ Add optional field:
 
 **Branching Flow:**
 1. User clicks "Branch from here" on Block 2 in Turn 1
-2. Frontend calls `POST /api/chats/:chatId/turns/branch`:
+2. Frontend calls `POST /api/threads/:threadId/turns/branch`:
    ```json
    {
      "source_turn_id": "turn-1",
@@ -140,7 +140,7 @@ Add "Branch from here" button to each block:
 
 ### Turn Navigation
 
-Update `useChatStore` to handle forked turns:
+Update `useThreadStore` to handle forked turns:
 
 ```typescript
 // When building turn path, respect branch_from_block_id
@@ -188,12 +188,12 @@ const buildTurnPath = (turn: Turn): Turn[] => {
 
 ## Open Questions
 
-1. **UI/UX:** How to visually show forked turns in chat history?
+1. **UI/UX:** How to visually show forked turns in thread history?
 2. **Permissions:** Can users branch from other users' assistant turns?
 3. **Limits:** Should there be a max fork depth to prevent tree explosion?
 4. **Optimization:** Should we deduplicate blocks across forked turns?
 
 ## Related Docs
 
-- `_docs/technical/backend/chat/turn-navigation.md` - Turn path traversal
-- `_docs/technical/backend/chat/llm-providers.md` - Message building
+- `_docs/technical/backend/thread/turn-navigation.md` - Turn path traversal
+- `_docs/technical/backend/thread/llm-providers.md` - Message building

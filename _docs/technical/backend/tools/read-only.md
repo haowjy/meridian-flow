@@ -8,7 +8,7 @@
 
 ## Context & Problem Statement
 
-Meridian is a cloud-based writing application where users organize their creative work into projects containing documents and folders. We're adding AI chat capabilities where the LLM assistant needs to access and understand the user's document structure and content.
+Meridian is a cloud-based writing application where users organize their creative work into projects containing documents and folders. We're adding AI thread capabilities where the LLM assistant needs to access and understand the user's document structure and content.
 
 **The Challenge:**  
 How should the LLM view and navigate the user's documents? We need to balance:
@@ -53,7 +53,7 @@ These map to how users naturally ask questions about their content.
 **Decision:** Tools don't require `project_id` parameter.
 
 **Why:**
-- Chats are scoped to projects (`chat.project_id`)
+- Threads are scoped to projects (`thread.project_id`)
 - Backend already knows project context
 - Reduces parameter count (simpler for LLM)
 - Prevents errors (can't accidentally query wrong project)
@@ -355,9 +355,9 @@ LLM: view(path="Characters/Kael Stormborn")
 - Future: Add `view_range` or chunking if documents exceed token limits
 
 ### Multi-Project Operations
-- Tools work within single project context (from chat)
+- Tools work within single project context (from thread)
 - No cross-project search or viewing
-- Each chat is scoped to one project
+- Each thread is scoped to one project
 
 ---
 
@@ -412,7 +412,7 @@ LLM: view(path="Characters/Kael Stormborn")
 
 **Core principles:**
 - Path-centric (matches user mental model)
-- Project context implicit (from chat)
+- Project context implicit (from thread)
 - Semantic clarity (each tool has distinct purpose)
 - Start simple, add complexity when needed
 

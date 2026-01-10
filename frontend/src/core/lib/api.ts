@@ -1,15 +1,15 @@
 import { Project } from '@/features/projects/types/project'
-import { Chat, Turn, type ChatRequestOptions, DEFAULT_CHAT_REQUEST_OPTIONS, DEFAULT_TOOLS } from '@/features/chats/types'
+import { Thread, Turn, type ThreadRequestOptions, DEFAULT_THREAD_REQUEST_OPTIONS, DEFAULT_TOOLS } from '@/features/threads/types'
 import { Document, DocumentTree } from '@/features/documents/types/document'
 import { Folder } from '@/features/folders/types/folder'
 import {
   ProjectDto,
-  ChatDto,
+  ThreadDto,
   DocumentDto,
   DocumentTreeDto,
   FolderDto,
   fromProjectDto,
-  fromChatDto,
+  fromThreadDto,
   fromDocumentDto,
   fromDocumentTreeDto,
   fromFolderDto,
@@ -202,7 +202,7 @@ type TurnBlockDto = {
 
 type TurnDto = {
   id: string
-  chat_id: string
+  thread_id: string
   prev_turn_id?: string | null
   status: string
   error?: string | null
@@ -224,10 +224,10 @@ type TurnDto = {
  * Use extractTextContent() from turnHelpers for UI-specific text extraction.
  */
 function turnDtoToTurn(turn: TurnDto): Turn {
-  const blocks = (turn.blocks ?? []).map((b): import('@/features/chats/types').TurnBlock => ({
+  const blocks = (turn.blocks ?? []).map((b): import('@/features/threads/types').TurnBlock => ({
     id: b.id,
     turnId: b.turn_id,
-    blockType: b.block_type as import('@/features/chats/types').BlockType,
+    blockType: b.block_type as import('@/features/threads/types').BlockType,
     sequence: b.sequence,
     textContent: b.text_content ?? undefined,
     content: b.content ?? undefined,
@@ -236,7 +236,7 @@ function turnDtoToTurn(turn: TurnDto): Turn {
 
   return {
     id: turn.id,
-    chatId: turn.chat_id,
+    threadId: turn.thread_id,
     prevTurnId: turn.prev_turn_id ?? null,
     role: turn.role,
     status: turn.status,
@@ -248,11 +248,11 @@ function turnDtoToTurn(turn: TurnDto): Turn {
     completedAt: turn.completed_at ? new Date(turn.completed_at) : undefined,
     blocks,
     siblingIds: turn.sibling_ids ?? [],
-    requestParams: turn.request_params as import('@/features/chats/types').RequestParams | undefined,
+    requestParams: turn.request_params as import('@/features/threads/types').RequestParams | undefined,
   }
 }
 
-// Model capabilities (used for chat model selection)
+// Model capabilities (used for thread model selection)
 type ModelCapabilityDto = {
   id: string
   display_name: string
@@ -314,17 +314,17 @@ export interface AIStatusResponse {
 }
 
 type SendTurnOptions = {
-  chatId?: string           // Optional - if not provided with projectId, creates new chat
-  projectId?: string        // Required if chatId is not provided (for cold start)
+  threadId?: string         // Optional - if not provided with projectId, creates new thread
+  projectId?: string        // Required if threadId is not provided (for cold start)
   prevTurnId?: string | null
   signal?: AbortSignal
-  requestOptions?: ChatRequestOptions
+  requestOptions?: ThreadRequestOptions
 }
 
-function buildRequestParamsFromChatOptions(
-  options?: ChatRequestOptions
+function buildRequestParamsFromThreadOptions(
+  options?: ThreadRequestOptions
 ): Record<string, unknown> {
-  const resolved = options ?? DEFAULT_CHAT_REQUEST_OPTIONS
+  const resolved = options ?? DEFAULT_THREAD_REQUEST_OPTIONS
 
   // When reasoning is 'off', disable thinking entirely
   // Otherwise, enable thinking with the specified level
@@ -402,39 +402,39 @@ export const api = {
     },
   },
 
-  chats: {
-    list: async (projectId: string, options?: { signal?: AbortSignal }): Promise<Chat[]> => {
-      const data = await fetchAPI<ChatDto[]>(`/api/chats?project_id=${encodeURIComponent(projectId)}`, {
+  threads: {
+    list: async (projectId: string, options?: { signal?: AbortSignal }): Promise<Thread[]> => {
+      const data = await fetchAPI<ThreadDto[]>(`/api/threads?project_id=${encodeURIComponent(projectId)}`, {
         signal: options?.signal,
       })
-      return data.map(fromChatDto)
+      return data.map(fromThreadDto)
     },
-    get: async (id: string, options?: { signal?: AbortSignal }): Promise<Chat> => {
-      const data = await fetchAPI<ChatDto>(`/api/chats/${id}`, {
+    get: async (id: string, options?: { signal?: AbortSignal }): Promise<Thread> => {
+      const data = await fetchAPI<ThreadDto>(`/api/threads/${id}`, {
         signal: options?.signal,
       })
-      return fromChatDto(data)
+      return fromThreadDto(data)
     },
-    create: async (projectId: string, title: string, options?: { signal?: AbortSignal }): Promise<Chat> => {
-      const data = await fetchAPI<ChatDto>('/api/chats', {
+    create: async (projectId: string, title: string, options?: { signal?: AbortSignal }): Promise<Thread> => {
+      const data = await fetchAPI<ThreadDto>('/api/threads', {
         method: 'POST',
         body: JSON.stringify({ project_id: projectId, title }),
         signal: options?.signal,
       })
-      return fromChatDto(data)
+      return fromThreadDto(data)
     },
-    update: async (id: string, title: string, options?: { signal?: AbortSignal }): Promise<Chat> => {
-      const data = await fetchAPI<ChatDto>(`/api/chats/${id}`, {
+    update: async (id: string, title: string, options?: { signal?: AbortSignal }): Promise<Thread> => {
+      const data = await fetchAPI<ThreadDto>(`/api/threads/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ title }),
         signal: options?.signal,
       })
-      return fromChatDto(data)
+      return fromThreadDto(data)
     },
     delete: (id: string, options?: { signal?: AbortSignal }) =>
-      fetchAPI<void>(`/api/chats/${id}`, { method: 'DELETE', signal: options?.signal }),
-    updateLastViewedTurn: async (chatId: string, turnId: string, options?: { signal?: AbortSignal }): Promise<void> => {
-      await fetchAPI<void>(`/api/chats/${chatId}/last-viewed-turn`, {
+      fetchAPI<void>(`/api/threads/${id}`, { method: 'DELETE', signal: options?.signal }),
+    updateLastViewedTurn: async (threadId: string, turnId: string, options?: { signal?: AbortSignal }): Promise<void> => {
+      await fetchAPI<void>(`/api/threads/${threadId}/last-viewed-turn`, {
         method: 'PATCH',
         body: JSON.stringify({ turn_id: turnId }),
         signal: options?.signal,
@@ -444,7 +444,7 @@ export const api = {
 
   turns: {
     paginate: async (
-      chatId: string,
+      threadId: string,
       options?: {
         fromTurnId?: string
         direction?: 'before' | 'after' | 'both' | ''
@@ -467,7 +467,7 @@ export const api = {
       if (options?.updateLastViewed) params.set('update_last_viewed', String(options.updateLastViewed))
 
       const query = params.toString()
-      const endpoint = `/api/chats/${chatId}/turns${query ? `?${query}` : ''}`
+      const endpoint = `/api/threads/${threadId}/turns${query ? `?${query}` : ''}`
 
       const data = await fetchAPI<PaginatedTurnsDto>(endpoint, { signal: options?.signal })
 
@@ -479,20 +479,20 @@ export const api = {
     },
 
     // Send a message to create a new turn.
-    // Uses POST /api/turns with chat resolution:
-    // 1. If prevTurnId provided → infer chat from that turn
-    // 2. Else if chatId provided → use that chat
-    // 3. Else if projectId provided → create new chat (cold start)
+    // Uses POST /api/turns with thread resolution:
+    // 1. If prevTurnId provided → infer thread from that turn
+    // 2. Else if threadId provided → use that thread
+    // 3. Else if projectId provided → create new thread (cold start)
     //
-    // Returns the created turns and optionally the new chat if cold start.
+    // Returns the created turns and optionally the new thread if cold start.
     send: async (
       message: string,
       options: SendTurnOptions
-    ): Promise<import('@/features/chats/types').SendTurnResponse> => {
-      const requestParams = buildRequestParamsFromChatOptions(options?.requestOptions)
+    ): Promise<import('@/features/threads/types').SendTurnResponse> => {
+      const requestParams = buildRequestParamsFromThreadOptions(options?.requestOptions)
 
       const response = await fetchAPI<{
-        chat?: ChatDto // Only present on cold start
+        thread?: ThreadDto // Only present on cold start
         user_turn: TurnDto
         assistant_turn: TurnDto
         stream_url: string
@@ -501,7 +501,7 @@ export const api = {
         {
           method: 'POST',
           body: JSON.stringify({
-            chat_id: options.chatId ?? null,
+            thread_id: options.threadId ?? null,
             project_id: options.projectId ?? null,
             role: 'user',
             turn_blocks: [
@@ -518,14 +518,14 @@ export const api = {
         }
       )
       return {
-        chat: response.chat ? fromChatDto(response.chat) : undefined,
+        thread: response.thread ? fromThreadDto(response.thread) : undefined,
         userTurn: turnDtoToTurn(response.user_turn),
         assistantTurn: turnDtoToTurn(response.assistant_turn),
         streamUrl: response.stream_url,
       }
     },
 
-    getBranch: async (chatId: string, turnId: string, options?: { signal?: AbortSignal }): Promise<Turn[]> => {
+    getBranch: async (threadId: string, turnId: string, options?: { signal?: AbortSignal }): Promise<Turn[]> => {
       const data = await fetchAPI<TurnDto[]>(`/api/turns/${turnId}/path`, {
         signal: options?.signal,
       })
@@ -539,18 +539,18 @@ export const api = {
       return (data ?? []).map((t) => t.id)
     },
 
-    getContinuation: async (chatId: string, fromTurnId: string, options?: { signal?: AbortSignal }): Promise<Turn[]> => {
+    getContinuation: async (threadId: string, fromTurnId: string, options?: { signal?: AbortSignal }): Promise<Turn[]> => {
       type PaginatedTurnsDto = {
         turns: TurnDto[]
       }
       const data = await fetchAPI<PaginatedTurnsDto>(
-        `/api/chats/${chatId}/turns?from_turn_id=${fromTurnId}&limit=100&direction=after`,
+        `/api/threads/${threadId}/turns?from_turn_id=${fromTurnId}&limit=100&direction=after`,
         { signal: options?.signal }
       )
       return (data.turns ?? []).map(turnDtoToTurn)
     },
 
-    getBlocks: async (turnId: string, options?: { signal?: AbortSignal }): Promise<import('@/features/chats/types').TurnBlock[]> => {
+    getBlocks: async (turnId: string, options?: { signal?: AbortSignal }): Promise<import('@/features/threads/types').TurnBlock[]> => {
       type GetTurnBlocksResponseDto = {
         turn_id: string
         status: string
@@ -563,7 +563,7 @@ export const api = {
       return (data.blocks ?? []).map((b) => ({
         id: b.id,
         turnId: b.turn_id,
-        blockType: b.block_type as import('@/features/chats/types').BlockType,
+        blockType: b.block_type as import('@/features/threads/types').BlockType,
         sequence: b.sequence,
         textContent: b.text_content ?? undefined,
         content: b.content ?? undefined,

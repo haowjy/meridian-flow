@@ -90,7 +90,7 @@ flowchart LR
 
     subgraph "Independent Effects"
         DocEffect["Document effect\n[initialDocumentId]"]
-        ChatEffect["Chat effect\n[chatId]"]
+        ChatEffect["Chat effect\n[threadId]"]
     end
 
     URL -->|"Doc param changes"| DocEffect

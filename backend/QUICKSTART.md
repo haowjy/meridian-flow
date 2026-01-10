@@ -110,7 +110,6 @@ Tree is always scoped to a project. The legacy `/api/tree` path has been removed
 ## Next Steps
 
 Once the server is running:
-- ✅ Test with Insomnia: `backend/tests/README.md`
 - 🧪 Manual API testing (curl): `_docs/technical/backend/development/testing.md`
 - 📖 Docs index: `_docs/technical/`
 

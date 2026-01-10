@@ -13,7 +13,7 @@ Complete technical reference for Meridian frontend (Vite + TanStack Router + Typ
 **Architecture?** → [Architecture Overview](#architecture)
 **Auth?** → [Auth Implementation](auth-implementation.md) ⭐
 **Editor?** → [Editor Caching](editor-caching.md)
-**Chat UI?** → [Chat Rendering Guide](chat-rendering-guide.md)
+**Thread UI?** → [Thread Rendering Guide](thread-rendering-guide.md)
 
 ## Getting Started
 
@@ -41,12 +41,12 @@ Core patterns and system design:
 - [Editor UI Overview](editor-ui-overview.md) - CodeMirror editor UI components
 - [Inline Editing](inline-editing/) - AI suggestions with accept/reject (merged document pattern)
 
-### Chat UI
+### Thread UI
 
-- [Chat Rendering Guide](chat-rendering-guide.md) - Chat UI rendering patterns (primary reference)
-- [Chat Rendering](chat-rendering.md) - Earlier chat rendering documentation
-- [Chat Pagination Guide](chat-pagination-guide.md) - Turn pagination and infinite scroll
-- [Chat Rendering Research](architecture/chat-rendering-research.md) - Chat rendering exploration
+- [Thread Rendering Guide](thread-rendering-guide.md) - Thread UI rendering patterns (primary reference)
+- [Thread Rendering](thread-rendering.md) - Earlier thread rendering documentation
+- [Thread Pagination Guide](thread-pagination-guide.md) - Turn pagination and infinite scroll
+- [Thread Rendering Research](architecture/thread-rendering-research.md) - Thread rendering exploration
 
 ### State Management
 
