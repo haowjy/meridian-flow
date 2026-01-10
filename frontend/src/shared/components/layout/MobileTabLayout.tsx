@@ -1,30 +1,24 @@
-import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/core/stores/useUIStore'
-import { MobileBottomNav } from './MobileBottomNav'
 import type { LayoutStrategyProps } from './types'
 
 /**
- * Mobile tab layout strategy.
- * Shows one panel at a time with bottom tab navigation.
+ * Mobile layout strategy.
+ * Shows one panel at a time, full screen.
+ * Navigation is handled via header buttons in each panel.
  *
  * Layout:
  * ┌─────────────────────────────┐
- * │      [Active Panel]         │
- * │                             │
+ * │  [Header with nav buttons]  │
  * ├─────────────────────────────┤
- * │  Threads | Thread | Document    │
+ * │      [Active Panel]         │
+ * │      (full height)          │
  * └─────────────────────────────┘
  *
  * Uses mobileActivePanel from UIStore to track which panel is visible.
  */
 export function MobileTabLayout({ panels, className }: LayoutStrategyProps) {
-  const { mobileActivePanel, setMobileActivePanel } = useUIStore(
-    useShallow((s) => ({
-      mobileActivePanel: s.mobileActivePanel,
-      setMobileActivePanel: s.setMobileActivePanel,
-    }))
-  )
+  const mobileActivePanel = useUIStore((s) => s.mobileActivePanel)
 
   return (
     <div
@@ -67,12 +61,6 @@ export function MobileTabLayout({ panels, className }: LayoutStrategyProps) {
           {mobileActivePanel === 'document' ? panels.documentPanel : null}
         </div>
       </div>
-
-      {/* Bottom navigation */}
-      <MobileBottomNav
-        activePanel={mobileActivePanel}
-        onPanelChange={setMobileActivePanel}
-      />
     </div>
   )
 }

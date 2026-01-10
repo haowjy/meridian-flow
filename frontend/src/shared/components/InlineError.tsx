@@ -49,9 +49,9 @@ export function InlineError({
       {onDismiss && (
         <Button
           variant="ghost"
-          size="icon"
+          size="icon-xs"
           onClick={onDismiss}
-          className="h-6 w-6 hover:bg-error/20"
+          className="hover:bg-error/20"
           aria-label="Dismiss error"
         >
           <X className="h-3.5 w-3.5" />

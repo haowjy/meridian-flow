@@ -9,6 +9,7 @@ import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { ThreadHeader } from './ThreadHeader'
 import { TurnList } from './TurnList'
 import { TurnInput } from './TurnInput'
+import { DeleteThreadDialog } from './DeleteThreadDialog'
 import { ScrollToBottomButton } from './ScrollToBottomButton'
 import { useStreamingAutoScroll } from '@/features/threads/hooks/useStreamingAutoScroll'
 import { UserMessageSkeleton } from './skeletons/UserMessageSkeleton'
@@ -34,17 +35,21 @@ interface ActiveThreadViewProps {
  */
 export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
   const [showSkeleton, setShowSkeleton] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const { activeThreadId, threadFocusVersion } = useUIStore(useShallow((s) => ({
     activeThreadId: s.activeThreadId,
     threadFocusVersion: s.threadFocusVersion,
   })))
 
-  const { threads, currentTurnId, streamingTurnId, setCurrentTurnId } = useThreadStore(useShallow((s) => ({
+  const { threads, currentTurnId, streamingTurnId, setCurrentTurnId, renameThread, deleteThread } = useThreadStore(useShallow((s) => ({
     threads: s.threads,
     currentTurnId: s.currentTurnId,
     streamingTurnId: s.streamingTurnId,
     setCurrentTurnId: s.setCurrentTurnId,
+    renameThread: s.renameThread,
+    deleteThread: s.deleteThread,
   })))
 
   // Only need projectName for display - projectId comes from prop (avoids async race)
@@ -92,6 +97,25 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
 
   const activeThread = threads.find((t) => t.id === activeThreadId) || null
 
+  // Handlers for thread actions
+  const handleRename = useCallback((title: string) => {
+    if (activeThread) {
+      void renameThread(activeThread.id, title)
+    }
+  }, [activeThread, renameThread])
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (activeThread) {
+      setIsDeleting(true)
+      try {
+        await deleteThread(activeThread.id)
+        setShowDeleteDialog(false)
+      } finally {
+        setIsDeleting(false)
+      }
+    }
+  }, [activeThread, deleteThread])
+
   // Cold start: no thread selected but projectId available
   // Uses simpler flex layout without scroll container (no scrolling needed)
   if (!activeThread) {
@@ -131,7 +155,12 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
       <div ref={setScrollContainer} className="thread-scroll-container">
         {/* Sticky Header */}
         <div className="sticky top-0 z-10 bg-background relative">
-          <ThreadHeader thread={activeThread} projectName={projectName} />
+          <ThreadHeader
+            thread={activeThread}
+            projectName={projectName}
+            onRename={handleRename}
+            onDelete={() => setShowDeleteDialog(true)}
+          />
           <HeaderGradientFade />
         </div>
 
@@ -167,6 +196,15 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
           </div>
         </div>
       </div>
+
+      {/* Delete confirmation dialog */}
+      <DeleteThreadDialog
+        thread={activeThread}
+        open={showDeleteDialog}
+        onOpenChange={setShowDeleteDialog}
+        onConfirm={handleDeleteConfirm}
+        isDeleting={isDeleting}
+      />
     </div>
   )
 }

@@ -1,5 +1,7 @@
 import { Logo } from '@/shared/components'
 import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
+import { MobileNavButton } from '@/shared/components/layout/MobileNavButton'
+import { useUIStore } from '@/core/stores/useUIStore'
 
 interface ThreadListHeaderProps {
   onBrandClick?: () => void
@@ -12,9 +14,11 @@ interface ThreadListHeaderProps {
  * - Render sidebar toggle + centered logo.
  */
 export function ThreadListHeader({ onBrandClick }: ThreadListHeaderProps) {
+  const setMobileActivePanel = useUIStore((s) => s.setMobileActivePanel)
+
   return (
     <div className="thread-pane-header flex h-10 items-center px-2 sm:h-12 sm:px-3">
-      {/* Left: Toggle Sidebar */}
+      {/* Left: Toggle Sidebar (desktop only, hidden on mobile via SidebarToggle) */}
       <SidebarToggle side="left" />
 
       {/* Center: Logo (takes remaining space, centered) */}
@@ -33,8 +37,13 @@ export function ThreadListHeader({ onBrandClick }: ThreadListHeaderProps) {
         )}
       </div>
 
-      {/* Right spacer to balance the toggle */}
-      <div className="size-8" />
+      {/* Right: Mobile nav to chat, desktop spacer */}
+      <MobileNavButton
+        icon="chat"
+        onClick={() => setMobileActivePanel('activeThread')}
+      />
+      {/* Desktop spacer to balance the toggle (hidden on mobile via md:block) */}
+      <div className="hidden size-8 md:block" />
     </div>
   )
 }

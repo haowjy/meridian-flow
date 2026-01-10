@@ -15,7 +15,9 @@ import { TreeItemWithContextMenu } from '@/shared/components/TreeItemWithContext
 import { createRootMenuItems } from '../utils/menuBuilders'
 import { DocumentHeaderBar } from './DocumentHeaderBar'
 import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
+import { MobileNavButton } from '@/shared/components/layout/MobileNavButton'
 import { CompactBreadcrumb } from '@/shared/components/ui/CompactBreadcrumb'
+import { useUIStore } from '@/core/stores/useUIStore'
 
 interface DocumentTreePanelProps {
   children: ReactNode
@@ -43,6 +45,7 @@ export function DocumentTreePanel({
   isEmpty = false,
   title,
 }: DocumentTreePanelProps) {
+  const setMobileActivePanel = useUIStore((s) => s.setMobileActivePanel)
   const [searchQuery, setSearchQuery] = useState('')
   const [isDragOver, setIsDragOver] = useState(false)
   const [pendingRootAction, setPendingRootAction] = useState<(() => void) | null>(null)
@@ -92,6 +95,12 @@ export function DocumentTreePanel({
         {/* Sticky Header */}
         <div className="sticky top-0 z-20 bg-background">
           <DocumentHeaderBar
+            leading={
+              <MobileNavButton
+                icon="chat"
+                onClick={() => setMobileActivePanel('activeThread')}
+              />
+            }
             title={<CompactBreadcrumb segments={[{ label: title ?? 'Project', title }]} singleSegmentVariant="nonLast" />}
             ariaLabel="Documents explorer header"
             showDivider={false}

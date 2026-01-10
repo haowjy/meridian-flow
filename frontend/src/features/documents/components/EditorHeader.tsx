@@ -6,6 +6,7 @@ import { DocumentHeaderBar } from './DocumentHeaderBar'
 import { DocumentStatus } from './DocumentStatus'
 import { useProjectStore } from '@/core/stores/useProjectStore'
 import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
+import { MobileNavButton } from '@/shared/components/layout/MobileNavButton'
 import { CompactBreadcrumb, type BreadcrumbSegment } from '@/shared/components/ui/CompactBreadcrumb'
 import { ChevronLeft } from 'lucide-react'
 import { Button } from '@/shared/components/ui/button'
@@ -47,18 +48,31 @@ export function EditorHeader({ document, wordCount, status, lastSaved }: EditorH
     store.setRightPanelState('documents')
   }
 
+  const handleBackToChat = () => {
+    const store = useUIStore.getState()
+    store.setMobileActivePanel('activeThread')
+  }
+
   return (
     <DocumentHeaderBar
       leading={
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 -ml-1"
-          onClick={handleBackClick}
-          aria-label="Back to documents"
-        >
-          <ChevronLeft className="size-3" />
-        </Button>
+        <div className="flex items-center">
+          {/* Mobile: Back to chat (leftmost for quick access) */}
+          <MobileNavButton
+            icon="chat"
+            onClick={handleBackToChat}
+          />
+          {/* Back to document tree */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="-ml-2 md:ml-0"
+            onClick={handleBackClick}
+            aria-label="Back to documents"
+          >
+            <ChevronLeft className="size-4.5" />
+          </Button>
+        </div>
       }
       title={
         <div title={fullPathTitle}>

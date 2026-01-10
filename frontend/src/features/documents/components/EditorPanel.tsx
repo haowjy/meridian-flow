@@ -182,7 +182,7 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 -ml-1"
+          className="-ml-1"
           onClick={handleBackClick}
           aria-label="Back to documents"
         >
