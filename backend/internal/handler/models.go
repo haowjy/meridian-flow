@@ -43,8 +43,9 @@ type ModelResponse struct {
 
 // CapabilitiesInfo represents model capabilities
 type CapabilitiesInfo struct {
-	ToolCalls        string `json:"tool_calls"`  // excellent, good, fair, poor
-	ImageInput       bool   `json:"image_input"` // Vision
+	SupportsTools    bool   `json:"supports_tools"`    // Whether model supports tool calling
+	ToolCalls        string `json:"tool_calls"`        // Tool call quality: excellent, good, fair, poor
+	ImageInput       bool   `json:"image_input"`       // Vision
 	ImageGeneration  bool   `json:"image_generation"`
 	Streaming        bool   `json:"streaming"`
 	Thinking         bool   `json:"thinking"`
@@ -127,6 +128,7 @@ func (h *ModelsHandler) convertProvider(id, name string, models []capabilities.M
 			DisplayName:   modelCap.DisplayName,
 			ContextWindow: modelCap.ContextWindow,
 			Capabilities: CapabilitiesInfo{
+				SupportsTools:    modelCap.SupportsTools,
 				ToolCalls:        string(modelCap.ToolCallQuality),
 				ImageInput:       modelCap.SupportsVision,
 				ImageGeneration:  modelCap.ImageGeneration != capabilities.ImageGenerationNone,

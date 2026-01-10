@@ -268,6 +268,7 @@ type ModelCapabilityDto = {
   display_name: string
   context_window: number
   capabilities: {
+    supports_tools?: boolean
     tool_calls?: string
     image_input?: boolean
     image_generation?: boolean
@@ -298,6 +299,7 @@ export type ModelCapabilitiesProvider = {
     contextWindow: number
     supportsThinking: boolean
     requiresThinking: boolean
+    supportsTools: boolean
   }[]
 }
 
@@ -346,7 +348,8 @@ function buildRequestParamsFromThreadOptions(
     // NOTE: max_tokens and lorem_max are left to backend defaults for now.
     thinking_enabled: thinkingEnabled,
     thinking_level: thinkingEnabled ? resolved.reasoning : null,
-    tools: DEFAULT_TOOLS, // Always use system defaults; future: filter by disabledTools
+    // Only include tools if model supports them (prevents errors for models like DeepSeek)
+    tools: resolved.supportsTools ? DEFAULT_TOOLS : [],
   }
 
   return requestParams
@@ -407,6 +410,7 @@ export const api = {
           contextWindow: model.context_window,
           supportsThinking: !!model.capabilities?.thinking,
           requiresThinking: !!model.capabilities?.requires_thinking,
+          supportsTools: model.capabilities?.supports_tools !== false,
         })),
       }))
     },
