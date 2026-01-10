@@ -1,15 +1,7 @@
-import { useState, useRef, useEffect } from 'react'
 import { MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
 import type { Thread } from '@/features/threads/types'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/shared/components/ui/dropdown-menu'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -17,6 +9,8 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/shared/components/ui/context-menu'
+import { ThreadTitleMenu } from './ThreadTitleMenu'
+import { ThreadTitleEditor } from './ThreadTitleEditor'
 
 interface ThreadListItemProps {
   thread: Thread
@@ -51,62 +45,30 @@ export function ThreadListItem({
   onRenameCancel,
   onDelete,
 }: ThreadListItemProps) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const [dropdownOpen, setDropdownOpen] = useState(false)
-
-  // Focus and select input when entering rename mode
-  useEffect(() => {
-    if (isRenaming && inputRef.current) {
-      inputRef.current.focus()
-      inputRef.current.select()
-    }
-  }, [isRenaming])
-
-  const handleSubmit = () => {
-    const trimmed = inputRef.current?.value.trim() || ''
-    if (trimmed && trimmed !== thread.title) {
-      onRenameSubmit?.(trimmed)
-    } else {
-      onRenameCancel?.()
-    }
+  const handleRenameSubmit = (title: string) => {
+    onRenameSubmit?.(title)
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      handleSubmit()
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      onRenameCancel?.()
-    }
+  const handleRenameCancel = () => {
+    onRenameCancel?.()
   }
 
-  // Shared menu items for both dropdown and context menu
-  const menuItems = (
-    <>
-      <DropdownMenuItem onClick={onRename}>
-        <Pencil className="size-3.5" />
-        Rename
-      </DropdownMenuItem>
-      <DropdownMenuSeparator />
-      <DropdownMenuItem variant="destructive" onClick={onDelete}>
-        <Trash2 className="size-3.5" />
-        Delete
-      </DropdownMenuItem>
-    </>
-  )
-
+  // Context menu items (for right-click)
   const contextMenuItems = (
     <>
-      <ContextMenuItem onClick={onRename}>
-        <Pencil className="size-3.5" />
-        Rename
-      </ContextMenuItem>
-      <ContextMenuSeparator />
-      <ContextMenuItem variant="destructive" onClick={onDelete}>
-        <Trash2 className="size-3.5" />
-        Delete
-      </ContextMenuItem>
+      {onRename && (
+        <ContextMenuItem onClick={onRename}>
+          <Pencil className="size-3.5" />
+          Rename
+        </ContextMenuItem>
+      )}
+      {onRename && onDelete && <ContextMenuSeparator />}
+      {onDelete && (
+        <ContextMenuItem variant="destructive" onClick={onDelete}>
+          <Trash2 className="size-3.5" />
+          Delete
+        </ContextMenuItem>
+      )}
     </>
   )
 
@@ -130,15 +92,12 @@ export function ThreadListItem({
     >
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         {isRenaming ? (
-          <input
+          <ThreadTitleEditor
             key={`rename-${thread.id}`}
-            ref={inputRef}
-            type="text"
-            defaultValue={thread.title || ''}
-            onBlur={handleSubmit}
-            onKeyDown={handleKeyDown}
-            className="w-full bg-transparent font-medium outline-none border-b border-accent focus:border-accent-foreground"
-            onClick={(e) => e.stopPropagation()}
+            initialValue={thread.title || ''}
+            onSubmit={handleRenameSubmit}
+            onCancel={handleRenameCancel}
+            className="text-sm font-medium"
           />
         ) : (
           <span className="truncate font-medium">
@@ -149,26 +108,25 @@ export function ThreadListItem({
 
       {/* "..." button - visible on hover or when dropdown is open */}
       {!isRenaming && (onRename || onDelete) && (
-        <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
-          <DropdownMenuTrigger asChild>
+        <ThreadTitleMenu
+          trigger={
             <Button
               variant="ghost"
               size="icon"
               onClick={(e) => e.stopPropagation()}
               className={cn(
                 'flex-shrink-0 h-4 w-4 p-0 rounded-sm hover:bg-sidebar-accent transition-opacity',
-                'opacity-0 group-hover:opacity-100 focus:opacity-100',
-                dropdownOpen && 'opacity-100'
+                'opacity-0 group-hover:opacity-100 focus:opacity-100'
               )}
               aria-label="Thread options"
             >
               <MoreHorizontal className="h-4.5 w-4.5" />
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" side="bottom">
-            {menuItems}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          }
+          onRename={onRename}
+          onDelete={onDelete}
+          align="end"
+        />
       )}
     </div>
   )

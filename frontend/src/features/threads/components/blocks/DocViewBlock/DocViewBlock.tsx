@@ -9,7 +9,7 @@
  * Uses the tool registry pattern for extensibility.
  */
 
-import React, { useState, useCallback } from 'react'
+import React, { useState } from 'react'
 import { useNavigate, useLocation } from '@tanstack/react-router'
 import { useShallow } from 'zustand/react/shallow'
 import { FileText, FolderOpen, ExternalLink, AlertCircle, AlertTriangle } from 'lucide-react'
@@ -176,6 +176,10 @@ export const DocViewBlock = React.memo(function DocViewBlock({
     ? findDocumentByPath(input.path, documents, folders)
     : null
 
+  // Extract primitives for callback dependencies (React Compiler safe)
+  const resolvedDocId = resolvedDocument?.id ?? null
+  const resolvedDocSlug = resolvedDocument?.slug ?? null
+
   // Resolve folder from tree store (for folder results)
   // Returns: Folder object, null (root), or undefined (not found)
   const resolvedFolder = result && isFolderResult(result)
@@ -188,17 +192,19 @@ export const DocViewBlock = React.memo(function DocViewBlock({
     : resolvedFolder?.id ?? null
 
   // Handle "View" navigation for header button
-  const handleViewInEditor = useCallback((e: React.MouseEvent) => {
+  // No manual useCallback - React Compiler handles memoization
+  const handleViewInEditor = (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!resolvedDocument || !projectSlug) return
-    openDocument(resolvedDocument.id, resolvedDocument.slug, projectSlug, navigate)
-  }, [resolvedDocument, projectSlug, navigate])
+    if (!resolvedDocId || !resolvedDocSlug || !projectSlug) return
+    openDocument(resolvedDocId, resolvedDocSlug, projectSlug, navigate)
+  }
 
   // Handle document click in folder tree - navigate to editor
-  const handleDocumentClick = useCallback((doc: Document) => {
+  // No manual useCallback - React Compiler handles memoization
+  const handleDocumentClick = (doc: Document) => {
     if (!projectSlug) return
     openDocument(doc.id, doc.slug, projectSlug, navigate)
-  }, [projectSlug, navigate])
+  }
 
   // Parse path for display
   const parsedPath = input ? parseDocEditPath(input.path) : null
@@ -207,7 +213,7 @@ export const DocViewBlock = React.memo(function DocViewBlock({
   const Icon = isFolder ? FolderOpen : FileText
 
   // Check if document no longer exists (for document results)
-  const documentNoLongerExists = isDocument && !resolvedDocument
+  const documentNoLongerExists = isDocument && !resolvedDocId
 
   // Status styling - use theme semantic colors for proper contrast
   let statusLabel: string
@@ -268,7 +274,7 @@ export const DocViewBlock = React.memo(function DocViewBlock({
             </span>
 
             {/* View button - only show if document exists in tree */}
-            {resolvedDocument && projectSlug && (
+            {resolvedDocId && resolvedDocSlug && projectSlug && (
               <Button
                 variant="ghost"
                 size="sm"

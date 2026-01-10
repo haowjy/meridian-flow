@@ -80,7 +80,7 @@ export function CollapsiblePanelProvider({
         variant="ghost"
         size="icon"
         onClick={onToggle}
-        className="size-8 flex-shrink-0"
+        className="flex-shrink-0"
         aria-label={ariaLabel}
         aria-expanded={!collapsed}
         title={ariaLabel}
