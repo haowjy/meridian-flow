@@ -137,17 +137,15 @@ export const DocTreeBlock = React.memo(function DocTreeBlock({
   // Get depth from result or input
   const depth = result?.depth ?? input?.depth ?? 2
 
-  // Status styling
+  // Status styling - use theme semantic colors for proper contrast
   let statusLabel: string
   let statusClass: string
   if (isError) {
     statusLabel = 'Error'
-    statusClass =
-      'bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700'
+    statusClass = 'bg-error/15 text-error border-error/30'
   } else if (hasResult) {
     statusLabel = 'Traversed'
-    statusClass =
-      'bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700'
+    statusClass = 'bg-success/15 text-success border-success/30'
   } else {
     statusLabel = 'Pending...'
     statusClass = 'bg-muted text-muted-foreground border-muted-foreground/30'
@@ -211,7 +209,7 @@ export const DocTreeBlock = React.memo(function DocTreeBlock({
                 className={cn(
                   'flex items-start gap-2',
                   'text-xs p-2.5 rounded-md',
-                  'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
+                  'bg-error/15 text-error'
                 )}
               >
                 <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />

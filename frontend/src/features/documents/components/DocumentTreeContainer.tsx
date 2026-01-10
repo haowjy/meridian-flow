@@ -7,7 +7,7 @@ import { openDocument } from '@/core/lib/panelHelpers'
 import { useResourceOperations } from '@/core/hooks'
 import { filterTree, TreeNode, generateUniqueName, getNodeNames, getFolderChildNames } from '@/core/lib/treeBuilder'
 import { api } from '@/core/lib/api'
-import { handleApiError } from '@/core/lib/errors'
+import { getErrorMessageWithFallback } from '@/core/lib/errors'
 import { DocumentTreePanel } from './DocumentTreePanel'
 import { FolderTreeItem } from './FolderTreeItem'
 import { DocumentTreeItem } from './DocumentTreeItem'
@@ -15,6 +15,7 @@ import { ImportDocumentDialog } from './ImportDocumentDialog'
 import { DeleteFolderDialog } from './DeleteFolderDialog'
 import { Skeleton } from '@/shared/components/ui/skeleton'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
+import { InlineError } from '@/shared/components/InlineError'
 import type { Folder } from '@/features/folders/types/folder'
 
 // Tracks which tree item is being edited (existing items only)
@@ -53,6 +54,7 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
     expandFolder,
     renameDocument,
     renameFolder,
+    clearError,
   } = useTreeStore(
     useShallow((s) => ({
       tree: s.tree,
@@ -65,6 +67,7 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
       expandFolder: s.expandFolder,
       renameDocument: s.renameDocument,
       renameFolder: s.renameFolder,
+      clearError: s.clearError,
     }))
   )
   const activeDocumentId = useUIStore((state) => state.activeDocumentId)
@@ -221,7 +224,9 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
       }
       await loadTree(projectId)
     } catch (error) {
-      handleApiError(error, `Failed to create ${pendingItem.type}`)
+      // Set error in tree store for inline display
+      const message = getErrorMessageWithFallback(error, `Failed to create ${pendingItem.type}`)
+      useTreeStore.setState({ error: message })
     } finally {
       setPendingItem(null)
       setEditingItem(null)
@@ -478,6 +483,10 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
   // the inline editor can be rendered instead of the zero-state panel.
   const isEmpty = tree.length === 0 && !pendingItem
 
+  // Show inline error for operations that failed (e.g., create/rename/delete)
+  // but only when we have tree data (otherwise full ErrorPanel shown above)
+  const hasOperationError = error && tree.length > 0
+
   return (
     <>
       <DocumentTreePanel
@@ -489,6 +498,11 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
         onSearch={setSearchQuery}
         isEmpty={isEmpty}
       >
+        {hasOperationError && (
+          <div className="mb-2">
+            <InlineError message={error} onDismiss={clearError} />
+          </div>
+        )}
         {renderTree(filteredTree)}
       </DocumentTreePanel>
 

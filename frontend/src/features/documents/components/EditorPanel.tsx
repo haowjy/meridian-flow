@@ -16,13 +16,14 @@
  * @see `_docs/plans/ai-editing/inline-suggestions-impl-2/06-integration.md`
  */
 
-import { useRef } from 'react'
+import { useRef, useCallback } from 'react'
 import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { CodeMirrorEditor, EditorContextMenu, type CodeMirrorEditorRef } from '@/core/editor/codemirror'
 import { useEditorStore } from '@/core/stores/useEditorStore'
 import { EditorHeader } from './EditorHeader'
 import { Skeleton } from '@/shared/components/ui/skeleton'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
+import { InlineError } from '@/shared/components/InlineError'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { DocumentHeaderBar } from './DocumentHeaderBar'
@@ -62,7 +63,7 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   // ---------------------------------------------------------------------------
   // STORE STATE (for UI that's not in hooks)
   // ---------------------------------------------------------------------------
-  const { error, status, lastSaved, loadDocument, navigatorPosition } = useEditorStore()
+  const { error, status, lastSaved, loadDocument, saveDocument, clearError, navigatorPosition } = useEditorStore()
   const activeDocument = useEditorStore((s) => s.activeDocument)
 
   // Get document metadata from tree (available immediately, no need to wait for content)
@@ -199,7 +200,19 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   // ERROR STATE
   // ---------------------------------------------------------------------------
 
-  if (error) {
+  // Determine if this is a load error (document hasn't loaded yet) or save error (document loaded but save failed)
+  const isLoadError = error && activeDocument?.id !== documentId
+  const isSaveError = error && activeDocument?.id === documentId && status === 'error'
+
+  // Handle retry for save errors
+  const handleRetry = useCallback(() => {
+    if (isSaveError && activeDocument?.content !== undefined) {
+      saveDocument(documentId, activeDocument.content)
+    }
+  }, [isSaveError, activeDocument?.content, saveDocument, documentId])
+
+  // Full error panel for load errors (document couldn't be loaded at all)
+  if (isLoadError) {
     return (
       <div className="flex h-full flex-col">
         {header}
@@ -248,6 +261,17 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
           {header}
           <HeaderGradientFade />
         </div>
+
+        {/* Inline error banner for save failures (document is still visible) */}
+        {isSaveError && error && (
+          <div className="px-4 py-2">
+            <InlineError
+              message={error}
+              onRetry={handleRetry}
+              onDismiss={clearError}
+            />
+          </div>
+        )}
 
         {/* Content area */}
         <div className="relative flex-1">

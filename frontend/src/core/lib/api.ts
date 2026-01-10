@@ -19,29 +19,39 @@ import { httpErrorToAppError } from '@/core/lib/errors'
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080'
 export const API_BASE_URL = API_BASE
 
+// Guard against concurrent 401 handling (multiple requests failing simultaneously)
+let isHandlingUnauthorized = false
+
 /**
  * Handles 401 Unauthorized errors by attempting session refresh.
- * If refresh fails, redirects to root (middleware will then redirect to /login).
+ * If refresh fails, shows SessionExpiredModal (user must sign in again).
  * @returns true if session was refreshed successfully (caller should retry request)
  */
 async function handleUnauthorized(): Promise<boolean> {
-  const { createClient } = await import('@/core/supabase/client')
-  const supabase = createClient()
+  // Prevent concurrent refresh attempts - only the first caller handles it
+  if (isHandlingUnauthorized) return false
+  isHandlingUnauthorized = true
 
-  // Attempt to refresh the session
-  const { data, error } = await supabase.auth.refreshSession()
+  try {
+    const { createClient } = await import('@/core/supabase/client')
+    const supabase = createClient()
 
-  if (error || !data.session) {
-    // Refresh failed - redirect to root
-    // Middleware will detect no session and redirect to /login
-    if (typeof window !== 'undefined') {
-      window.location.href = '/'
+    // Attempt to refresh the session
+    const { data, error } = await supabase.auth.refreshSession()
+
+    if (error || !data.session) {
+      // Refresh failed - show session expired modal
+      // User must sign in again to continue
+      const { useErrorStore } = await import('@/core/stores/useErrorStore')
+      useErrorStore.getState().setSessionExpired(true)
+      return false
     }
-    return false
-  }
 
-  // Refresh succeeded - caller should retry the request with new token
-  return true
+    // Refresh succeeded - caller should retry the request with new token
+    return true
+  } finally {
+    isHandlingUnauthorized = false
+  }
 }
 
 export async function fetchAPI<T>(
@@ -550,7 +560,11 @@ export const api = {
       return (data.turns ?? []).map(turnDtoToTurn)
     },
 
-    getBlocks: async (turnId: string, options?: { signal?: AbortSignal }): Promise<import('@/features/threads/types').TurnBlock[]> => {
+    getBlocks: async (turnId: string, options?: { signal?: AbortSignal }): Promise<{
+      blocks: import('@/features/threads/types').TurnBlock[]
+      error?: string
+      status: string
+    }> => {
       type GetTurnBlocksResponseDto = {
         turn_id: string
         status: string
@@ -560,15 +574,19 @@ export const api = {
       const data = await fetchAPI<GetTurnBlocksResponseDto>(`/api/turns/${turnId}/blocks`, {
         signal: options?.signal,
       })
-      return (data.blocks ?? []).map((b) => ({
-        id: b.id,
-        turnId: b.turn_id,
-        blockType: b.block_type as import('@/features/threads/types').BlockType,
-        sequence: b.sequence,
-        textContent: b.text_content ?? undefined,
-        content: b.content ?? undefined,
-        createdAt: new Date(b.created_at),
-      }))
+      return {
+        blocks: (data.blocks ?? []).map((b) => ({
+          id: b.id,
+          turnId: b.turn_id,
+          blockType: b.block_type as import('@/features/threads/types').BlockType,
+          sequence: b.sequence,
+          textContent: b.text_content ?? undefined,
+          content: b.content ?? undefined,
+          createdAt: new Date(b.created_at),
+        })),
+        error: data.error ?? undefined,
+        status: data.status,
+      }
     },
 
     interrupt: async (turnId: string, options?: { signal?: AbortSignal }): Promise<void> => {

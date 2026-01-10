@@ -3,7 +3,7 @@ import { Document } from '@/features/documents/types/document'
 import { Folder } from '@/features/folders/types/folder'
 import { buildTree, TreeNode } from '@/core/lib/treeBuilder'
 import { api } from '@/core/lib/api'
-import { getErrorMessage, handleApiError, isAbortError } from '@/core/lib/errors'
+import { getErrorMessageWithFallback, isAbortError } from '@/core/lib/errors'
 import { db } from '@/core/lib/db'
 import { cancelRetry } from '@/core/lib/sync'
 
@@ -30,6 +30,7 @@ interface TreeStore {
   deleteFolder: (id: string, projectId: string) => Promise<void>
   renameDocument: (id: string, name: string, projectId: string) => Promise<void>
   renameFolder: (id: string, name: string, projectId: string) => Promise<void>
+  clearError: () => void
 }
 
 export const useTreeStore = create<TreeStore>()((set, get) => ({
@@ -82,12 +83,11 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
         return
       }
 
-      const message = getErrorMessage(error) || 'Failed to load documents'
+      const message = getErrorMessageWithFallback(error, 'Failed to load documents')
       // If we have cached tree data, keep status as 'success', otherwise set to 'error'
       const currentTree = get().tree
       const errorStatus = currentTree.length > 0 ? 'success' : 'error'
       set({ error: message, status: errorStatus, isFetching: false })
-      handleApiError(error, 'Failed to load documents')
     }
   },
 
@@ -113,28 +113,33 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
   },
 
   createDocument: async (projectId, folderId, name) => {
+    set({ error: null })
     try {
       await api.documents.create(projectId, folderId, name)
       // Reload tree to reflect new document
       await useTreeStore.getState().loadTree(projectId)
     } catch (error) {
-      handleApiError(error, 'Failed to create document')
+      const message = getErrorMessageWithFallback(error, 'Failed to create document')
+      set({ error: message })
       throw error
     }
   },
 
   createFolder: async (projectId, parentId, name) => {
+    set({ error: null })
     try {
       await api.folders.create(projectId, parentId, name)
       // Reload tree to reflect new folder
       await useTreeStore.getState().loadTree(projectId)
     } catch (error) {
-      handleApiError(error, 'Failed to create folder')
+      const message = getErrorMessageWithFallback(error, 'Failed to create folder')
+      set({ error: message })
       throw error
     }
   },
 
   deleteDocument: async (id, projectId) => {
+    set({ error: null })
     try {
       // Cancel any pending retries FIRST to prevent stale content from being re-synced
       // after we delete the document from cache and server
@@ -147,41 +152,50 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
       // Reload tree to reflect deletion
       await useTreeStore.getState().loadTree(projectId)
     } catch (error) {
-      handleApiError(error, 'Failed to delete document')
+      const message = getErrorMessageWithFallback(error, 'Failed to delete document')
+      set({ error: message })
       throw error
     }
   },
 
   deleteFolder: async (id, projectId) => {
+    set({ error: null })
     try {
       await api.folders.delete(id)
       // Reload tree to reflect deletion
       await useTreeStore.getState().loadTree(projectId)
     } catch (error) {
-      handleApiError(error, 'Failed to delete folder')
+      const message = getErrorMessageWithFallback(error, 'Failed to delete folder')
+      set({ error: message })
       throw error
     }
   },
 
   renameDocument: async (id, name, projectId) => {
+    set({ error: null })
     try {
       await api.documents.rename(id, projectId, name)
       // Reload tree to reflect rename
       await useTreeStore.getState().loadTree(projectId)
     } catch (error) {
-      handleApiError(error, 'Failed to rename document')
+      const message = getErrorMessageWithFallback(error, 'Failed to rename document')
+      set({ error: message })
       throw error
     }
   },
 
   renameFolder: async (id, name, projectId) => {
+    set({ error: null })
     try {
       await api.folders.rename(id, projectId, name)
       // Reload tree to reflect rename
       await useTreeStore.getState().loadTree(projectId)
     } catch (error) {
-      handleApiError(error, 'Failed to rename folder')
+      const message = getErrorMessageWithFallback(error, 'Failed to rename folder')
+      set({ error: message })
       throw error
     }
   },
+
+  clearError: () => set({ error: null }),
 }))

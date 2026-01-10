@@ -2,7 +2,6 @@
  * Error handling utilities for consistent error processing.
  */
 
-import { toast } from 'sonner'
 import type { DocumentDto } from '@/types/api'
 import { fromDocumentDto } from '@/types/api'
 import type { Document } from '@/features/documents/types/document'
@@ -171,21 +170,27 @@ export function extractDocumentFromConflict(
 }
 
 /**
- * Centralized error handler that shows toast and extracts user-friendly message.
- * Use this in store catch blocks to standardize error UX.
+ * Extract error message from an error, with fallback.
+ *
+ * Use this in store catch blocks to get the message for error state.
+ * Components should read error state and display inline errors.
  *
  * @param error - The caught error (AppError, Error, or unknown)
- * @param fallbackMessage - Message to show if error can't be parsed
+ * @param fallbackMessage - Message to return if error can't be parsed
+ * @returns User-friendly error message
  *
  * @example
  * try {
  *   await api.threads.create(projectId, title)
  * } catch (error) {
- *   handleApiError(error, 'Failed to create thread')
+ *   const message = getErrorMessageWithFallback(error, 'Failed to create thread')
+ *   set({ error: message })
  *   throw error
  * }
  */
-export function handleApiError(error: unknown, fallbackMessage: string): void {
-  const message = getErrorMessage(error) || fallbackMessage
-  toast.error(message)
+export function getErrorMessageWithFallback(
+  error: unknown,
+  fallbackMessage: string
+): string {
+  return getErrorMessage(error) || fallbackMessage
 }

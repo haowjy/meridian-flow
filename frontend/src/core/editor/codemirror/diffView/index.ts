@@ -166,7 +166,7 @@ function createHunkFocusChangeListener(callback: HunkFocusChangeCallback): Exten
  * // Enable diff view with feedback:
  * view.dispatch({
  *   effects: diffCompartment.reconfigure(createDiffViewExtension({
- *     onBlockedEdit: (reason) => toast.info('Cannot edit here')
+ *     onBlockedEdit: (reason) => console.log('Cannot edit here:', reason)
  *   }))
  * })
  * ```
