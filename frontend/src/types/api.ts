@@ -1,5 +1,5 @@
 import { Project } from '@/features/projects/types/project'
-import { Chat } from '@/features/chats/types'
+import { Thread } from '@/features/threads/types'
 import { Document, DocumentTree } from '@/features/documents/types/document'
 import { Folder } from '@/features/folders/types/folder'
 import { detectEditorType } from '@/core/editor/types/editorRegistry'
@@ -21,8 +21,8 @@ export interface ProjectDto {
   updated_at: string  // ISO date string
 }
 
-// Chat DTOs
-export interface ChatDto {
+// Thread DTOs
+export interface ThreadDto {
   id: string
   project_id: string
   title: string
@@ -101,7 +101,7 @@ export function fromProjectDto(dto: ProjectDto): Project {
   }
 }
 
-export function fromChatDto(dto: ChatDto): Chat {
+export function fromThreadDto(dto: ThreadDto): Thread {
   return {
     id: dto.id,
     projectId: dto.project_id,

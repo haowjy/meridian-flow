@@ -150,7 +150,7 @@ func (h *FolderHandler) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 // ListChildren lists all child folders and documents in a folder
 // GET /api/folders/{id}/children?project_id=xxx
 func (h *FolderHandler) ListChildren(w http.ResponseWriter, r *http.Request) {
-	// Get project_id from query parameter (consistent with import, search, ListChats)
+	// Get project_id from query parameter (consistent with import, search, ListThreads)
 	projectID := r.URL.Query().Get("project_id")
 	if projectID == "" {
 		httputil.RespondError(w, http.StatusBadRequest, "project_id query parameter is required")

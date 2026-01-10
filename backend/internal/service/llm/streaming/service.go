@@ -22,9 +22,9 @@ import (
 	"meridian/internal/service/llm/tools/external"
 )
 
-// ChatValidator is shared validation logic for chat operations
-type ChatValidator interface {
-	ValidateChat(ctx context.Context, chatID, userID string) error
+// ThreadValidator is shared validation logic for thread operations
+type ThreadValidator interface {
+	ValidateThread(ctx context.Context, threadID, userID string) error
 }
 
 // LLMProviderGetter provides access to LLM providers by model name
@@ -39,11 +39,11 @@ type Service struct {
 	turnWriter           llmRepo.TurnWriter
 	turnReader           llmRepo.TurnReader
 	turnNavigator        llmRepo.TurnNavigator
-	chatRepo             llmRepo.ChatRepository
+	threadRepo           llmRepo.ThreadRepository
 	projectRepo          docsysRepo.ProjectRepository // For validating project access on cold start
 	documentRepo         docsysRepo.DocumentRepository
 	folderRepo           docsysRepo.FolderRepository
-	validator            ChatValidator
+	validator            ThreadValidator
 	providerGetter       LLMProviderGetter
 	registry             *mstream.Registry
 	config               *config.Config
@@ -60,11 +60,11 @@ func NewService(
 	turnWriter           llmRepo.TurnWriter,
 	turnReader           llmRepo.TurnReader,
 	turnNavigator        llmRepo.TurnNavigator,
-	chatRepo             llmRepo.ChatRepository,
+	threadRepo           llmRepo.ThreadRepository,
 	projectRepo          docsysRepo.ProjectRepository,
 	documentRepo         docsysRepo.DocumentRepository,
 	folderRepo           docsysRepo.FolderRepository,
-	validator            ChatValidator,
+	validator            ThreadValidator,
 	providerGetter       LLMProviderGetter,
 	registry             *mstream.Registry,
 	cfg                  *config.Config,
@@ -79,7 +79,7 @@ func NewService(
 		turnWriter:           turnWriter,
 		turnReader:           turnReader,
 		turnNavigator:        turnNavigator,
-		chatRepo:             chatRepo,
+		threadRepo:           threadRepo,
 		projectRepo:          projectRepo,
 		documentRepo:         documentRepo,
 		folderRepo:           folderRepo,
@@ -99,18 +99,18 @@ func NewService(
 // CreateTurn creates a new user turn and triggers assistant streaming response.
 // Returns both the user turn and the assistant turn for client to connect to SSE stream.
 //
-// Chat resolution priority:
-// 1. If PrevTurnID provided → lookup its chat_id from DB (ignores ChatID/ProjectID)
-// 2. Else if ChatID provided → use that chat
-// 3. Else if ProjectID provided → create new chat (cold start, title from first text block)
+// Thread resolution priority:
+// 1. If PrevTurnID provided → lookup its thread_id from DB (ignores ThreadID/ProjectID)
+// 2. Else if ThreadID provided → use that thread
+// 3. Else if ProjectID provided → create new thread (cold start, title from first text block)
 // 4. Else → validation error
 func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest) (*llmSvc.CreateTurnResponse, error) {
 	// Normalize empty strings to nil
 	if req.PrevTurnID != nil && *req.PrevTurnID == "" {
 		req.PrevTurnID = nil
 	}
-	if req.ChatID != nil && *req.ChatID == "" {
-		req.ChatID = nil
+	if req.ThreadID != nil && *req.ThreadID == "" {
+		req.ThreadID = nil
 	}
 	if req.ProjectID != nil && *req.ProjectID == "" {
 		req.ProjectID = nil
@@ -121,8 +121,8 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
 	}
 
-	// Resolve chat context: determine chatID, projectID, and whether we need to create a new chat
-	chatContext, err := s.resolveChatContext(ctx, req)
+	// Resolve thread context: determine threadID, projectID, and whether we need to create a new thread
+	threadContext, err := s.resolveThreadContext(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -194,41 +194,41 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		)
 	}
 
-	// Resolve system prompt from user, project, chat, and selected skills
-	// For new chat (cold start), chatContext.chatID will be empty - resolver handles this gracefully
-	if err := s.resolveSystemPromptForParams(ctx, chatContext.chatID, req.UserID, params, req.SelectedSkills); err != nil {
+	// Resolve system prompt from user, project, thread, and selected skills
+	// For new thread (cold start), threadContext.threadID will be empty - resolver handles this gracefully
+	if err := s.resolveSystemPromptForParams(ctx, threadContext.threadID, req.UserID, params, req.SelectedSkills); err != nil {
 		s.logger.Error("failed to resolve system prompt", "error", err)
 		return nil, err
 	}
 
 	// Create user turn + blocks and assistant turn atomically in a transaction
-	// If cold start, also create the chat in the same transaction
+	// If cold start, also create the thread in the same transaction
 	var turn *llmModels.Turn
 	var assistantTurn *llmModels.Turn
-	var createdChat *llmModels.Chat // Only set if we created a new chat
+	var createdThread *llmModels.Thread // Only set if we created a new thread
 	now := time.Now()
 
 	err = s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
-		// If cold start, create the chat first
-		if chatContext.isNewChat {
+		// If cold start, create the thread first
+		if threadContext.isNewThread {
 			title := deriveTitleFromTurnBlocks(req.TurnBlocks)
-			createdChat = &llmModels.Chat{
-				ProjectID: chatContext.projectID,
+			createdThread = &llmModels.Thread{
+				ProjectID: threadContext.projectID,
 				UserID:    req.UserID,
 				Title:     title,
 				CreatedAt: now,
 				UpdatedAt: now,
 			}
-			if err := s.chatRepo.CreateChat(txCtx, createdChat); err != nil {
-				return fmt.Errorf("failed to create chat: %w", err)
+			if err := s.threadRepo.CreateThread(txCtx, createdThread); err != nil {
+				return fmt.Errorf("failed to create thread: %w", err)
 			}
-			// Update chatContext with the new chat ID
-			chatContext.chatID = createdChat.ID
+			// Update threadContext with the new thread ID
+			threadContext.threadID = createdThread.ID
 
-			s.logger.Info("chat created (cold start)",
-				"id", createdChat.ID,
-				"title", createdChat.Title,
-				"project_id", chatContext.projectID,
+			s.logger.Info("thread created (cold start)",
+				"id", createdThread.ID,
+				"title", createdThread.Title,
+				"project_id", threadContext.projectID,
 				"user_id", req.UserID,
 			)
 		}
@@ -236,7 +236,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		// Create user turn
 		// Store request_params on user turn so it's available when editing
 		turn = &llmModels.Turn{
-			ChatID:        chatContext.chatID,
+			ThreadID:      threadContext.threadID,
 			PrevTurnID:    req.PrevTurnID,
 			Role:          req.Role,
 			Status:        "complete", // User turn is immediately complete
@@ -272,7 +272,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 
 		// Create assistant turn with status="streaming"
 		assistantTurn = &llmModels.Turn{
-			ChatID:        chatContext.chatID,
+			ThreadID:      threadContext.threadID,
 			PrevTurnID:    &turn.ID, // Assistant turn follows user turn
 			Role:          "assistant",
 			Status:        "streaming",
@@ -294,11 +294,11 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 
 	s.logger.Info("user turn created",
 		"id", turn.ID,
-		"chat_id", chatContext.chatID,
+		"thread_id", threadContext.threadID,
 		"role", req.Role,
 		"prev_turn_id", req.PrevTurnID,
 		"turn_blocks", len(req.TurnBlocks),
-		"is_cold_start", chatContext.isNewChat,
+		"is_cold_start", threadContext.isNewThread,
 	)
 
 	s.logger.Info("assistant turn created with streaming status",
@@ -308,31 +308,31 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		"provider", provider,
 	)
 
-	// Get chat to extract project_id for tools
-	// If we just created the chat (cold start), use createdChat; otherwise fetch it
-	var chat *llmModels.Chat
-	if createdChat != nil {
-		chat = createdChat
+	// Get thread to extract project_id for tools
+	// If we just created the thread (cold start), use createdThread; otherwise fetch it
+	var thread *llmModels.Thread
+	if createdThread != nil {
+		thread = createdThread
 	} else {
-		var chatErr error
-		chat, chatErr = s.chatRepo.GetChat(ctx, chatContext.chatID, req.UserID)
-		if chatErr != nil {
-			s.logger.Error("failed to get chat for tools",
-				"error", chatErr,
-				"chat_id", chatContext.chatID,
+		var threadErr error
+		thread, threadErr = s.threadRepo.GetThread(ctx, threadContext.threadID, req.UserID)
+		if threadErr != nil {
+			s.logger.Error("failed to get thread for tools",
+				"error", threadErr,
+				"thread_id", threadContext.threadID,
 				"user_id", req.UserID,
 			)
 			// Update turn to error status
-			if updateErr := s.turnWriter.UpdateTurnError(ctx, assistantTurn.ID, fmt.Sprintf("failed to get chat: %v", chatErr)); updateErr != nil {
+			if updateErr := s.turnWriter.UpdateTurnError(ctx, assistantTurn.ID, fmt.Sprintf("failed to get thread: %v", threadErr)); updateErr != nil {
 				s.logger.Error("failed to update turn error", "error", updateErr)
 			}
-			return nil, fmt.Errorf("failed to get chat for tools: %w", chatErr)
+			return nil, fmt.Errorf("failed to get thread for tools: %w", threadErr)
 		}
 	}
 
 	// Create per-request tool registry with project-specific tools
 	builder := tools.NewToolRegistryBuilder().
-		WithDocumentTools(chat.ProjectID, s.documentRepo, s.folderRepo)
+		WithDocumentTools(thread.ProjectID, s.documentRepo, s.folderRepo)
 
 	// Add web search tool if requested via provider-specific tool name
 	var hasWebSearch bool
@@ -365,8 +365,8 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	toolRegistry := builder.Build()
 
 	s.logger.Info("per-request tool registry created",
-		"project_id", chat.ProjectID,
-		"chat_id", chatContext.chatID,
+		"project_id", thread.ProjectID,
+		"thread_id", threadContext.threadID,
 		"assistant_turn_id", assistantTurn.ID,
 		"web_search_enabled", hasWebSearch,
 		"web_search_provider", webSearchProvider,
@@ -434,10 +434,10 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	go s.startStreamingExecution(context.Background(), assistantTurn.ID, turn.ID, executor, params)
 
 	// Return both turns and stream URL
-	// If cold start, also return the created chat
+	// If cold start, also return the created thread
 	streamURL := fmt.Sprintf("/api/turns/%s/stream", assistantTurn.ID)
 	return &llmSvc.CreateTurnResponse{
-		Chat:          createdChat, // Only populated on cold start
+		Thread:        createdThread, // Only populated on cold start
 		UserTurn:      turn,
 		AssistantTurn: assistantTurn,
 		StreamURL:     streamURL,
@@ -527,7 +527,7 @@ func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, 
 //
 // Usage:
 //
-//	turn, err := s.CreateAssistantTurnDebug(ctx, chatID, userTurnID, blocks, "claude-haiku-4-5-20251001")
+//	turn, err := s.CreateAssistantTurnDebug(ctx, threadID, userTurnID, blocks, "claude-haiku-4-5-20251001")
 //
 // The ResponseGenerator should:
 // 1. Call this to create assistant turn with status="streaming"
@@ -535,14 +535,14 @@ func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, 
 // 3. Update turn status to "complete" when done
 func (s *Service) CreateAssistantTurnDebug(
 	ctx context.Context,
-	chatID string,
+	threadID string,
 	userID string,
 	prevTurnID *string,
 	contentBlocks []llmSvc.TurnBlockInput,
 	model string,
 ) (*llmModels.Turn, error) {
-	// Validate chat exists and is not deleted
-	if err := s.validator.ValidateChat(ctx, chatID, userID); err != nil {
+	// Validate thread exists and is not deleted
+	if err := s.validator.ValidateThread(ctx, threadID, userID); err != nil {
 		return nil, err
 	}
 
@@ -557,7 +557,7 @@ func (s *Service) CreateAssistantTurnDebug(
 	// Create assistant turn
 	now := time.Now()
 	turn := &llmModels.Turn{
-		ChatID:     chatID,
+		ThreadID:   threadID,
 		PrevTurnID: prevTurnID,
 		Role:       "assistant",
 		Status:     "streaming", // Start as streaming
@@ -592,7 +592,7 @@ func (s *Service) CreateAssistantTurnDebug(
 
 	s.logger.Info("assistant turn created (internal)",
 		"id", turn.ID,
-		"chat_id", chatID,
+		"thread_id", threadID,
 		"prev_turn_id", prevTurnID,
 		"model", model,
 		"turn_blocks", len(contentBlocks),
@@ -607,7 +607,7 @@ func (s *Service) CreateAssistantTurnDebug(
 // Resolution order:
 // 1. User-provided system prompt (from params.System)
 // 2. Project system prompt
-// 3. Chat system prompt
+// 3. Thread system prompt
 // 4. Selected skills (from .skills/{skillName}/SKILL documents)
 //
 // The method only resolves when:
@@ -615,13 +615,13 @@ func (s *Service) CreateAssistantTurnDebug(
 // - No user system prompt is provided (params.System == nil)
 func (s *Service) resolveSystemPromptForParams(
 	ctx context.Context,
-	chatID string,
+	threadID string,
 	userID string,
 	params *llmModels.RequestParams,
 	selectedSkills []string,
 ) error {
 	if len(selectedSkills) > 0 || params.System == nil {
-		systemPrompt, err := s.systemPromptResolver.Resolve(ctx, chatID, userID, params.System, selectedSkills)
+		systemPrompt, err := s.systemPromptResolver.Resolve(ctx, threadID, userID, params.System, selectedSkills)
 		if err != nil {
 			return fmt.Errorf("failed to resolve system prompt: %w", err)
 		}
@@ -633,68 +633,68 @@ func (s *Service) resolveSystemPromptForParams(
 	return nil
 }
 
-// Chat resolution types and methods
+// Thread resolution types and methods
 
-// chatContext holds resolved chat information for turn creation
-type chatContext struct {
-	chatID    string // Resolved chat ID (may be empty if isNewChat=true until chat is created)
-	projectID string // Project ID (always set)
-	isNewChat bool   // True if we need to create a new chat (cold start)
+// threadContext holds resolved thread information for turn creation
+type threadContext struct {
+	threadID    string // Resolved thread ID (may be empty if isNewThread=true until thread is created)
+	projectID   string // Project ID (always set)
+	isNewThread bool   // True if we need to create a new thread (cold start)
 }
 
-// resolveChatContext determines which chat to use for turn creation.
+// resolveThreadContext determines which thread to use for turn creation.
 //
 // Priority:
-// 1. If PrevTurnID provided → lookup its chat from DB (ignores ChatID/ProjectID params)
-// 2. Else if ChatID provided → validate and use that chat
-// 3. Else if ProjectID provided → cold start (will create new chat)
+// 1. If PrevTurnID provided → lookup its thread from DB (ignores ThreadID/ProjectID params)
+// 2. Else if ThreadID provided → validate and use that thread
+// 3. Else if ProjectID provided → cold start (will create new thread)
 // 4. Else → validation error
-func (s *Service) resolveChatContext(ctx context.Context, req *llmSvc.CreateTurnRequest) (*chatContext, error) {
-	// Case 1: PrevTurnID provided - infer chat from the turn
+func (s *Service) resolveThreadContext(ctx context.Context, req *llmSvc.CreateTurnRequest) (*threadContext, error) {
+	// Case 1: PrevTurnID provided - infer thread from the turn
 	if req.PrevTurnID != nil {
 		prevTurn, err := s.turnReader.GetTurn(ctx, *req.PrevTurnID)
 		if err != nil {
 			return nil, fmt.Errorf("prev_turn_id references non-existent turn: %w", err)
 		}
 
-		// Validate user has access to this chat
-		if err := s.validator.ValidateChat(ctx, prevTurn.ChatID, req.UserID); err != nil {
+		// Validate user has access to this thread
+		if err := s.validator.ValidateThread(ctx, prevTurn.ThreadID, req.UserID); err != nil {
 			return nil, err
 		}
 
-		// Get project ID from chat
-		chat, err := s.chatRepo.GetChat(ctx, prevTurn.ChatID, req.UserID)
+		// Get project ID from thread
+		thread, err := s.threadRepo.GetThread(ctx, prevTurn.ThreadID, req.UserID)
 		if err != nil {
 			return nil, err
 		}
 
-		return &chatContext{
-			chatID:    prevTurn.ChatID,
-			projectID: chat.ProjectID,
-			isNewChat: false,
+		return &threadContext{
+			threadID:    prevTurn.ThreadID,
+			projectID:   thread.ProjectID,
+			isNewThread: false,
 		}, nil
 	}
 
-	// Case 2: ChatID provided - validate and use it
-	if req.ChatID != nil {
-		if err := s.validator.ValidateChat(ctx, *req.ChatID, req.UserID); err != nil {
+	// Case 2: ThreadID provided - validate and use it
+	if req.ThreadID != nil {
+		if err := s.validator.ValidateThread(ctx, *req.ThreadID, req.UserID); err != nil {
 			return nil, err
 		}
 
-		// Get project ID from chat
-		chat, err := s.chatRepo.GetChat(ctx, *req.ChatID, req.UserID)
+		// Get project ID from thread
+		thread, err := s.threadRepo.GetThread(ctx, *req.ThreadID, req.UserID)
 		if err != nil {
 			return nil, err
 		}
 
-		return &chatContext{
-			chatID:    *req.ChatID,
-			projectID: chat.ProjectID,
-			isNewChat: false,
+		return &threadContext{
+			threadID:    *req.ThreadID,
+			projectID:   thread.ProjectID,
+			isNewThread: false,
 		}, nil
 	}
 
-	// Case 3: ProjectID provided - cold start (create new chat)
+	// Case 3: ProjectID provided - cold start (create new thread)
 	if req.ProjectID != nil {
 		// Validate user has access to project
 		_, err := s.projectRepo.GetByID(ctx, *req.ProjectID, req.UserID)
@@ -702,21 +702,21 @@ func (s *Service) resolveChatContext(ctx context.Context, req *llmSvc.CreateTurn
 			return nil, fmt.Errorf("project_id references inaccessible project: %w", err)
 		}
 
-		return &chatContext{
-			chatID:    "", // Will be set after chat creation
-			projectID: *req.ProjectID,
-			isNewChat: true,
+		return &threadContext{
+			threadID:    "", // Will be set after thread creation
+			projectID:   *req.ProjectID,
+			isNewThread: true,
 		}, nil
 	}
 
 	// Case 4: None provided - error
-	return nil, fmt.Errorf("%w: must provide chat_id, project_id, or prev_turn_id", domain.ErrValidation)
+	return nil, fmt.Errorf("%w: must provide thread_id, project_id, or prev_turn_id", domain.ErrValidation)
 }
 
 // Validation methods
 
 func (s *Service) validateCreateTurnRequest(req *llmSvc.CreateTurnRequest) error {
-	// Note: ChatID validation is handled by resolveChatContext, not here
+	// Note: ThreadID validation is handled by resolveThreadContext, not here
 	return validation.ValidateStruct(req,
 		validation.Field(&req.Role,
 			validation.Required,
@@ -813,8 +813,8 @@ func contains(slice []string, item string) bool {
 }
 
 // deriveTitleFromTurnBlocks extracts a title from the first text block content.
-// Used for cold start chat creation where title is derived from user's first message.
-// Returns first N words (default 6), truncated at MaxChatTitleLength if needed.
+// Used for cold start thread creation where title is derived from user's first message.
+// Returns first N words (default 6), truncated at MaxThreadTitleLength if needed.
 const defaultTitleMaxWords = 6
 
 func deriveTitleFromTurnBlocks(blocks []llmSvc.TurnBlockInput) string {
@@ -827,7 +827,7 @@ func deriveTitleFromTurnBlocks(blocks []llmSvc.TurnBlockInput) string {
 			}
 		}
 	}
-	return "New Chat"
+	return "New Thread"
 }
 
 // truncateTitleFromText extracts first N words and truncates to max length
@@ -840,8 +840,8 @@ func truncateTitleFromText(text string) string {
 	title := strings.Join(words, " ")
 
 	// Truncate if exceeds max length
-	if len(title) > config.MaxChatTitleLength {
-		title = title[:config.MaxChatTitleLength-3] + "..."
+	if len(title) > config.MaxThreadTitleLength {
+		title = title[:config.MaxThreadTitleLength-3] + "..."
 	}
 
 	return title

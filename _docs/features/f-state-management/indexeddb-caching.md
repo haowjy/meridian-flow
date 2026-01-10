@@ -6,7 +6,7 @@ feature: "IndexedDB Caching"
 
 # IndexedDB Caching
 
-**Dexie for persistent caching of documents, chats, and messages.**
+**Dexie for persistent caching of documents, threads, and messages.**
 
 ## Status: ✅ Complete
 
@@ -18,17 +18,17 @@ feature: "IndexedDB Caching"
 
 **Tables**:
 - `documents` - Full documents with content (cache-first)
-- `chats` - Chat metadata (network-first)
-- `messages` - Chat messages (network-first, prepared for windowing)
+- `threads` - Thread metadata (network-first)
+- `messages` - Thread messages (network-first, prepared for windowing)
 
-**Note**: Chat/turn Dexie caching intentionally disabled for MVP (TODO in useChatStore.ts:15-21)
+**Note**: Thread/turn Dexie caching intentionally disabled for MVP (TODO in useThreadStore.ts:15-21)
 
 ---
 
 ## Cache Strategies
 
 **Documents**: Reconcile-Newest (cache-first with server reconciliation)
-**Chats**: Network-First
+**Threads**: Network-First
 **Projects**: Persist Middleware (localStorage)
 
 **File**: `frontend/src/core/lib/cache.ts`

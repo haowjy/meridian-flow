@@ -32,7 +32,7 @@ tracked: true
 Writer opens Meridian
 ├── Sees document tree (left)
 ├── Edits document (center)
-└── Chats with AI (right)
+└── Threads with AI (right)
 
 Writer creates documents:
 ├── Characters/Elara
@@ -58,7 +58,7 @@ Writer asks AI:
 AI:
 ├── Creates version snapshot
 ├── Suggests edits to dialogue
-└── Shows suggestion in chat
+└── Shows suggestion in thread
 
 Writer:
 ├── Clicks "Review" → sees diff
@@ -100,7 +100,7 @@ Writer: "This is magical."
 
 **What users see:**
 - Type naturally in any document
-- Ask AI questions in chat
+- Ask AI questions in thread
 - AI responds with knowledge of entire project
 - Optional: Context panel showing what AI loaded
 
@@ -176,7 +176,7 @@ AI:
 3. Returns version for review
 
 User sees:
-- Suggestion card in chat
+- Suggestion card in thread
 - Click "Review" → opens diff view
 - Accept → document updated
 - OR: "Make it shorter too"
@@ -217,7 +217,7 @@ User sees:
 - ✅ Multi-provider AI interface (LLMProvider abstraction)
 - ✅ Provider registry system
 - ✅ Claude provider implementation (Anthropic)
-- ✅ Chat CRUD operations (create, read, update, delete)
+- ✅ Thread CRUD operations (create, read, update, delete)
 - ✅ Turn tree structure with branching support
 - ✅ JSONB content blocks (text, thinking, tool_use, references)
 - ✅ Request parameters (temperature, thinking, top-k, model)
@@ -229,15 +229,15 @@ User sees:
 - ❌ Simple context builder (full-text search integration) (planned)
 
 **Frontend:** ❌ Not Started
-- ❌ Chat panel component
+- ❌ Thread panel component
 - ❌ Provider selector
 - ❌ Skill selector
 - ❌ Message display
 - ❌ SSE streaming client
 
-**Current Status:** Backend chat system fully functional with streaming LLM responses. Frontend chat UI pending.
+**Current Status:** Backend thread system fully functional with streaming LLM responses. Frontend thread UI pending.
 
-**Deliverable:** ✅ Backend complete with streaming. Frontend chat UI pending.
+**Deliverable:** ✅ Backend complete with streaming. Frontend thread UI pending.
 
 **Test:** 
 - Write about "Elara" in one document
@@ -429,13 +429,13 @@ Body: { query, projectId }
 Returns: ranked document IDs
 ```
 
-### Chat
+### Thread
 ```
-POST   /api/chat
+POST   /api/threads
 Body: { message, provider, skill, documentId }
 Returns: { sessionId }
 
-GET    /api/chat/:sessionId/stream
+GET    /api/threads/:sessionId/stream
 Returns: SSE stream
 ```
 
@@ -506,7 +506,7 @@ GET    /api/versions/:id
 - Frontend reference handling (@-reference syntax - backend supports it, no UI yet)
 - Manual context additions (drag docs into chat)
 - RAG/embeddings (full-text search sufficient for MVP)
-- Multiple chat threads
+- Multiple threads
 - Collaboration (multi-user)
 - Full version history (only AI suggestions versioned, not all user edits)
 - Export functionality
@@ -538,7 +538,7 @@ GET    /api/versions/:id
 4. Writer asks AI to improve writing
    ├─ AI creates version snapshot
    ├─ AI suggests edits (suggest_document_edits tool)
-   └─ AI shows suggestion in chat
+   └─ AI shows suggestion in thread
 5. Writer reviews suggestion
    ├─ Opens diff viewer (side-by-side comparison)
    ├─ Accepts → document updated

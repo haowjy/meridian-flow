@@ -13,7 +13,7 @@ audience: backend developers
 
 The Meridian backend uses the `meridian-llm-go` library to provide:
 
-1. **Multi-provider chat** - Anthropic, OpenRouter (working); OpenAI, Gemini (planned)
+1. **Multi-provider thread** - Anthropic, OpenRouter (working); OpenAI, Gemini (planned)
 2. **Real-time streaming** - SSE with catchup for reconnections
 3. **Tool execution** - Server-side web search, client-side bash/editor
 4. **Turn persistence** - PostgreSQL storage with block accumulation
@@ -69,7 +69,7 @@ graph TB
     Lib[meridian-llm-go<br/>Provider Abstraction]
     DB[(PostgreSQL)]
 
-    Client -->|POST /chats/:id/turns| Handler
+    Client -->|POST /threads/:id/turns| Handler
     Client -->|GET /turns/:id/stream| Handler
 
     Handler --> StreamSvc
@@ -114,7 +114,7 @@ See [architecture.md](./architecture.md) for details.
 
 **Implementation files:**
 - Service: `backend/internal/service/llm/`
-- Handlers: `backend/internal/handler/chat.go`, `backend/internal/handler/sse_handler.go`
+- Handlers: `backend/internal/handler/thread.go`, `backend/internal/handler/sse_handler.go`
 - Models: `backend/internal/domain/models/llm/`
 - Repository: `backend/internal/repository/postgres/llm/`
 

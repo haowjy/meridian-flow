@@ -24,11 +24,11 @@ type TurnNavigator interface {
 	// Siblings are other turns that share the same prev_turn_id (alternative conversation branches)
 	GetSiblingsForTurns(ctx context.Context, turnIDs []string) (map[string][]string, error)
 
-	// GetPaginatedTurns retrieves turns and blocks for a chat in paginated fashion
+	// GetPaginatedTurns retrieves turns and blocks for a thread in paginated fashion
 	// Follows path-based navigation (prev_turn_id chains)
 	// Direction: "before" (follow prev_turn_id backwards), "after" (follow children forward), "both" (split limit)
 	// When direction is "after" and multiple children exist, follows the most recent child (latest created_at)
-	// fromTurnID: starting point (optional - defaults to chat.last_viewed_turn_id)
+	// fromTurnID: starting point (optional - defaults to thread.last_viewed_turn_id)
 	// Returns turns with blocks in a single response, plus has_more flags for pagination
-	GetPaginatedTurns(ctx context.Context, chatID, userID string, fromTurnID *string, limit int, direction string, updateLastViewed bool) (*llm.PaginatedTurnsResponse, error)
+	GetPaginatedTurns(ctx context.Context, threadID, userID string, fromTurnID *string, limit int, direction string, updateLastViewed bool) (*llm.PaginatedTurnsResponse, error)
 }

@@ -8,8 +8,8 @@ HANDLERS=(
     "document.go"
     "folder.go"
     "import.go"
-    "chat.go"
-    "chat_debug.go"
+    "thread.go"
+    "thread_debug.go"
 )
 
 cd "$(dirname "$0")/../internal/handler"

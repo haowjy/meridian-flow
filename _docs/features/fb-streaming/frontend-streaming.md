@@ -6,7 +6,7 @@ feature: "Frontend Streaming"
 
 # Frontend Streaming
 
-**useChatSSE hook with buffered rendering and stop button.**
+**useThreadSSE hook with buffered rendering and stop button.**
 
 ## Status: ✅ Complete
 
@@ -14,7 +14,7 @@ feature: "Frontend Streaming"
 
 ## Implementation
 
-**Hook**: `frontend/src/features/chats/hooks/useChatSSE.ts`
+**Hook**: `frontend/src/features/threads/hooks/useThreadSSE.ts`
 
 **Library**: `@microsoft/fetch-event-source`
 
@@ -24,7 +24,7 @@ feature: "Frontend Streaming"
 
 **50ms Buffered Rendering**: Text deltas buffered for smooth rendering (avoids jank)
 
-**Buffer Hook**: `frontend/src/features/chats/hooks/useStreamingBuffer.ts`
+**Buffer Hook**: `frontend/src/features/threads/hooks/useStreamingBuffer.ts`
 
 **Stop Button**: Cancels streaming via AbortController
 

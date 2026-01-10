@@ -21,7 +21,7 @@ audience: developer
 - `WorkspaceLayout` (`frontend/src/features/workspace/components/WorkspaceLayout.tsx`):
   - Connects `useUIStore` to `PanelLayout` (passes collapse booleans, sizes, and `setPanelLayout`).
   - Wraps left/right content in `CollapsiblePanel`:
-    - Left: `CollapsiblePanel side="left"` + `ChatListPanel`.
+    - Left: `CollapsiblePanel side="left"` + `ThreadListPanel`.
     - Right: `CollapsiblePanel side="right"` + `DocumentPanel`.
   - Uses effects to ensure:
     - Left panel is forced open on mount (migrating older persisted collapsed state).
@@ -34,7 +34,7 @@ audience: developer
   - Provides context via `CollapsiblePanelProvider`; no floating chevrons anymore—the Flow/Docs headers own the toggles explicitly.
 
 - Explicit edge toggles:
-  - `FlowEdgeToggle` (`frontend/src/features/chats/components/FlowEdgeToggle.tsx`):
+  - `FlowEdgeToggle` (`frontend/src/features/threads/components/FlowEdgeToggle.tsx`):
     - Reads `leftPanelCollapsed` from `useUIStore`.
     - Calls `toggleLeftPanel()` on click.
     - Renders a `MessagesSquare` button that swaps between `ghost`/`outline` while staying anchored at the far-left rail.
@@ -44,11 +44,11 @@ audience: developer
     - Renders a `Folder` button anchored on the far-right rail.
 
 - Explicit toggle components (center header today):
-  - `ChatsToggleButton` (`frontend/src/features/chats/components/ChatsToggleButton.tsx`):
+  - `ThreadsToggleButton` (`frontend/src/features/threads/components/ThreadsToggleButton.tsx`):
     - Reads `leftPanelCollapsed` from `useUIStore`.
     - Calls `toggleLeftPanel()` on click.
     - Renders `MessagesSquare` icon in a `Button` (variant = `ghost` when open, `outline` when collapsed).
-  - `DocumentsToggleButton` (`frontend/src/features/chats/components/DocumentsToggleButton.tsx`):
+  - `DocumentsToggleButton` (`frontend/src/features/threads/components/DocumentsToggleButton.tsx`):
     - Reads `rightPanelCollapsed` from `useUIStore`.
     - Calls `toggleRightPanel()` on click.
     - Renders `Folder` icon in a `Button` (same open/collapsed variants).
@@ -56,18 +56,18 @@ audience: developer
 ## Header Renderers by Column
 
 - Left / Flow column:
-  - `ChatListPanel` (`frontend/src/features/chats/components/ChatListPanel.tsx`):
-    - Keeps `ChatListHeader` mounted at all times; hides the list body when `leftPanelCollapsed` is true.
-  - `ChatListHeader` (`frontend/src/features/chats/components/ChatListHeader.tsx`):
-    - Absolute layout: Flow edge toggle pinned to `left-3`, logo centered, “New Chat” button pinned to `right-3`.
+  - `ThreadListPanel` (`frontend/src/features/threads/components/ThreadListPanel.tsx`):
+    - Keeps `ThreadListHeader` mounted at all times; hides the list body when `leftPanelCollapsed` is true.
+  - `ThreadListHeader` (`frontend/src/features/threads/components/ThreadListHeader.tsx`):
+    - Absolute layout: Flow edge toggle pinned to `left-3`, logo centered, "New Thread" button pinned to `right-3`.
     - When collapsed, only the `[ 💬 ]` button renders; center/right affordances hide to create the slim rail.
 
-- Center / Chat column:
-  - `ActiveChatView` (`frontend/src/features/chats/components/ActiveChatView.tsx`):
-    - Header now shows only breadcrumbs + chat actions; collapse toggles live exclusively in Flow/Docs columns.
-  - `ActiveChatHeader` (`frontend/src/features/chats/components/ActiveChatHeader.tsx`):
-    - Left cluster: `ChatBreadcrumb`.
-    - Right cluster: future chat actions (placeholder menu button).
+- Center / Thread column:
+  - `ActiveThreadView` (`frontend/src/features/threads/components/ActiveThreadView.tsx`):
+    - Header now shows only breadcrumbs + thread actions; collapse toggles live exclusively in Flow/Docs columns.
+  - `ThreadHeader` (`frontend/src/features/threads/components/ThreadHeader.tsx`):
+    - Left cluster: `ThreadBreadcrumb`.
+    - Right cluster: future thread actions (placeholder menu button).
 
 - Right / Docs column:
   - `DocumentPanel` (`frontend/src/features/documents/components/DocumentPanel.tsx`):
@@ -86,8 +86,8 @@ audience: developer
   - `frontend/src/globals.css` defines `--header-height: 2.75rem;` inside `@theme inline`.
 - Utility:
   - Tailwind height utility `h-header` is used on:
-    - Flow header root: `ChatListHeader` (`chat-pane-header h-header ...`).
-    - Chat header root(s): `ActiveChatHeader` and the empty-state header in `ActiveChatView` (`chat-main-header h-header`).
+    - Flow header root: `ThreadListHeader` (`thread-pane-header h-header ...`).
+    - Thread header root(s): `ThreadHeader` and the empty-state header in `ActiveThreadView` (`thread-main-header h-header`).
     - Docs header base: `DocumentHeaderBar` root (`h-header flex items-center ...`).
 - Result:
   - All three header segments share the same height token and align in a single visual top rail when rendered side by side.

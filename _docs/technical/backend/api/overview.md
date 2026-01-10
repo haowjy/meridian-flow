@@ -1,4 +1,4 @@
----
+--- 
 detail: minimal
 audience: developer
 ---
@@ -9,9 +9,8 @@ High-level overview of the Meridian REST API.
 
 ## Quick Reference
 
-**Full contracts?** → [contracts.md](contracts.md)
-**Error handling?** → [../api-contracts.md#error-responses](../api-contracts.md#error-responses)
-**Testing?** → `backend/tests/insomnia-collection.json`
+**Full contracts?** -> [contracts.md](contracts.md)
+**Error handling?** -> [../api-contracts.md#error-responses](../api-contracts.md#error-responses)
 
 ## Base URL
 
@@ -157,17 +156,17 @@ All three are equivalent.
 
 **Document System:** No pagination (returns all data)
 
-**Chat System:** ✅ Implemented direction-based pagination for large conversations
+**Thread System:** ✅ Implemented direction-based pagination for large conversations
 
-- **Tree Endpoint:** ⚠️ `GET /debug/api/chats/:id/tree` (debug-only) - Lightweight structure for cache validation
-- **Pagination Endpoint:** ✅ `GET /api/chats/:id/turns` (production) - Direction-based turn loading
+- **Tree Endpoint:** ⚠️ `GET /debug/api/threads/:id/tree` (debug-only) - Lightweight structure for cache validation
+- **Pagination Endpoint:** ✅ `GET /api/threads/:id/turns` (production) - Direction-based turn loading
   - Query params: `from_turn_id`, `limit` (max 200), `direction` (before/after/both)
   - Returns full Turn objects with nested blocks
   - Supports infinite scroll and context windows
   - Uses 25%/75% split for "both" direction (favors future context)
 
-**Backend:** [Pagination Guide](../chat/pagination.md)
-**Frontend:** `_docs/technical/frontend/chat-pagination-guide.md`
+**Backend:** [Pagination Guide](../thread/pagination.md)
+**Frontend:** `_docs/technical/frontend/thread-pagination-guide.md`
 
 ### Filtering
 
@@ -294,18 +293,6 @@ All three are equivalent.
 
 **Future:** Version in URL path (e.g., `/api/v2/...`) or header
 
-## Testing
-
-### Insomnia Collection
-
-Pre-built API collection: `backend/tests/insomnia-collection.json`
-
-**Import:**
-1. Open Insomnia
-2. Import → `backend/tests/insomnia-collection.json`
-3. Set environment base URL
-4. Start testing
-
 ### Manual curl
 
 ```bash
@@ -330,6 +317,6 @@ curl -X POST http://localhost:8080/api/documents \
 
 ## Next Steps
 
-**Detailed contracts?** → [contracts.md](contracts.md)
-**Error details?** → [contracts.md#error-responses](../api-contracts.md#error-responses)
-**Setup API testing?** → [../development/testing.md](../development/testing.md)
+**Detailed contracts?** -> [contracts.md](contracts.md)
+**Error details?** -> [contracts.md#error-responses](../api-contracts.md#error-responses)
+**Setup API testing?** -> [../development/testing.md](../development/testing.md)

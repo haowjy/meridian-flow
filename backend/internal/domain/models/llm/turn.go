@@ -8,7 +8,7 @@ import (
 // Turns form a tree structure via prev_turn_id for branching conversations
 type Turn struct {
 	ID           string     `json:"id" db:"id"`
-	ChatID       string     `json:"chat_id" db:"chat_id"`
+	ThreadID     string     `json:"thread_id" db:"thread_id"`
 	PrevTurnID   *string    `json:"prev_turn_id" db:"prev_turn_id"`
 	Role         string     `json:"role" db:"role"` // "user" or "assistant"
 	Status       string     `json:"status" db:"status"` // "pending", "streaming", "waiting_subagents", "complete", "cancelled", "error"

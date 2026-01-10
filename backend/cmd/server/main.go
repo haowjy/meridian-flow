@@ -104,8 +104,8 @@ func main() {
 	folderRepo := postgresDocsys.NewFolderRepository(repoConfig)
 	txManager := postgres.NewTransactionManager(pool)
 
-	// Chat repositories
-	chatRepo := postgresLLM.NewChatRepository(repoConfig)
+	// Thread repositories
+	threadRepo := postgresLLM.NewThreadRepository(repoConfig)
 	turnRepo := postgresLLM.NewTurnRepository(repoConfig)
 
 	// User preferences repository
@@ -115,8 +115,8 @@ func main() {
 	docsysValidator := serviceDocsys.NewResourceValidator(projectRepo, folderRepo)
 
 	// Create authorizer (ownership-based, swappable for role-based later)
-	// Needs all repositories for checking ownership chains (turn → chat → project → user)
-	authorizer := serviceAuth.NewOwnerBasedAuthorizer(projectRepo, folderRepo, docRepo, chatRepo, turnRepo)
+	// Needs all repositories for checking ownership chains (turn → thread → project → user)
+	authorizer := serviceAuth.NewOwnerBasedAuthorizer(projectRepo, folderRepo, docRepo, threadRepo, turnRepo)
 
 	// Setup LLM providers
 	providerRegistry, err := serviceLLM.SetupProviders(cfg, logger)
@@ -131,9 +131,9 @@ func main() {
 	}
 	logger.Info("capability registry initialized")
 
-	// Setup LLM services (chat, conversation, streaming)
+	// Setup LLM services (thread, thread history, streaming)
 	llmServices, streamRegistry, err := serviceLLM.SetupServices(
-		chatRepo,
+		threadRepo,
 		turnRepo,
 		projectRepo,
 		docRepo,
@@ -184,10 +184,10 @@ func main() {
 	newTreeHandler := handler.NewTreeHandler(treeService, identifierResolver, logger)
 	importHandler := handler.NewImportHandler(importService, authorizer, logger)
 
-	// Chat handlers (follows Clean Architecture - no repository access)
-	chatHandler := handler.NewChatHandler(
-		llmServices.Chat,
-		llmServices.Conversation,
+	// Thread handlers (follows Clean Architecture - no repository access)
+	threadHandler := handler.NewThreadHandler(
+		llmServices.Thread,
+		llmServices.ThreadHistory,
 		llmServices.Streaming,
 		streamRegistry,
 		authorizer,
@@ -199,9 +199,9 @@ func main() {
 	userPrefsHandler := handler.NewUserPreferencesHandler(userPrefsService, logger)
 
 	// Debug handlers (only in dev environment)
-	var chatDebugHandler *handler.ChatDebugHandler
+	var threadDebugHandler *handler.ThreadDebugHandler
 	if cfg.Environment == "dev" {
-		chatDebugHandler = handler.NewChatDebugHandler(llmServices.Conversation, llmServices.Streaming, cfg)
+		threadDebugHandler = handler.NewThreadDebugHandler(llmServices.ThreadHistory, llmServices.Streaming, cfg)
 		logger.Warn("DEBUG MODE: Debug endpoints enabled (NEVER use in production!)")
 	}
 
@@ -250,33 +250,33 @@ func main() {
 	mux.HandleFunc("GET /api/users/me/preferences", userPrefsHandler.GetPreferences)
 	mux.HandleFunc("PATCH /api/users/me/preferences", userPrefsHandler.UpdatePreferences)
 
-	// Chat routes
-	mux.HandleFunc("POST /api/chats", chatHandler.CreateChat)
-	mux.HandleFunc("GET /api/chats", chatHandler.ListChats)
-	mux.HandleFunc("GET /api/chats/{id}", chatHandler.GetChat)
-	mux.HandleFunc("PATCH /api/chats/{id}", chatHandler.UpdateChat)
-	mux.HandleFunc("PATCH /api/chats/{id}/last-viewed-turn", chatHandler.UpdateLastViewedTurn)
-	mux.HandleFunc("DELETE /api/chats/{id}", chatHandler.DeleteChat)
-	mux.HandleFunc("GET /api/chats/{id}/turns", chatHandler.GetPaginatedTurns)
-	mux.HandleFunc("POST /api/chats/{id}/turns", chatHandler.CreateTurn) // Deprecated: use POST /api/turns
-	mux.HandleFunc("POST /api/turns", chatHandler.CreateTurnV2)          // New: chat_id/project_id in body
-	mux.HandleFunc("GET /api/turns/{id}/path", chatHandler.GetTurnPath)
-	mux.HandleFunc("GET /api/turns/{id}/siblings", chatHandler.GetTurnSiblings)
+	// Thread routes
+	mux.HandleFunc("POST /api/threads", threadHandler.CreateThread)
+	mux.HandleFunc("GET /api/threads", threadHandler.ListThreads)
+	mux.HandleFunc("GET /api/threads/{id}", threadHandler.GetThread)
+	mux.HandleFunc("PATCH /api/threads/{id}", threadHandler.UpdateThread)
+	mux.HandleFunc("PATCH /api/threads/{id}/last-viewed-turn", threadHandler.UpdateLastViewedTurn)
+	mux.HandleFunc("DELETE /api/threads/{id}", threadHandler.DeleteThread)
+	mux.HandleFunc("GET /api/threads/{id}/turns", threadHandler.GetPaginatedTurns)
+	mux.HandleFunc("POST /api/threads/{id}/turns", threadHandler.CreateTurn) // Deprecated: use POST /api/turns
+	mux.HandleFunc("POST /api/turns", threadHandler.CreateTurnV2)            // New: thread_id/project_id in body
+	mux.HandleFunc("GET /api/turns/{id}/path", threadHandler.GetTurnPath)
+	mux.HandleFunc("GET /api/turns/{id}/siblings", threadHandler.GetTurnSiblings)
 
 	// Streaming routes
-	mux.HandleFunc("GET /api/turns/{id}/stream", chatHandler.StreamTurn)            // SSE streaming endpoint
-	mux.HandleFunc("GET /api/turns/{id}/blocks", chatHandler.GetTurnBlocks)         // Get completed blocks
-	mux.HandleFunc("GET /api/turns/{id}/token-usage", chatHandler.GetTurnTokenUsage) // Get token usage stats
-	mux.HandleFunc("POST /api/turns/{id}/interrupt", chatHandler.InterruptTurn)     // Cancel streaming turn
+	mux.HandleFunc("GET /api/turns/{id}/stream", threadHandler.StreamTurn)            // SSE streaming endpoint
+	mux.HandleFunc("GET /api/turns/{id}/blocks", threadHandler.GetTurnBlocks)         // Get completed blocks
+	mux.HandleFunc("GET /api/turns/{id}/token-usage", threadHandler.GetTurnTokenUsage) // Get token usage stats
+	mux.HandleFunc("POST /api/turns/{id}/interrupt", threadHandler.InterruptTurn)     // Cancel streaming turn
 
 	// Debug routes (only in dev environment)
-	if cfg.Environment == "dev" && chatDebugHandler != nil {
-		mux.HandleFunc("POST /debug/api/chats/{id}/turns", chatDebugHandler.CreateAssistantTurn)
-		mux.HandleFunc("GET /debug/api/chats/{id}/tree", chatDebugHandler.GetChatTree)
-		mux.HandleFunc("POST /debug/api/chats/{id}/llm-request", chatDebugHandler.BuildProviderRequest)
-		logger.Warn("Debug route registered: POST /debug/api/chats/:id/turns (assistant turn creation)")
-		logger.Warn("Debug route registered: GET /debug/api/chats/:id/tree (full conversation tree - use pagination in production)")
-		logger.Warn("Debug route registered: POST /debug/api/chats/:id/llm-request (LLM provider request preview)")
+	if cfg.Environment == "dev" && threadDebugHandler != nil {
+		mux.HandleFunc("POST /debug/api/threads/{id}/turns", threadDebugHandler.CreateAssistantTurn)
+		mux.HandleFunc("GET /debug/api/threads/{id}/tree", threadDebugHandler.GetThreadTree)
+		mux.HandleFunc("POST /debug/api/threads/{id}/llm-request", threadDebugHandler.BuildProviderRequest)
+		logger.Warn("Debug route registered: POST /debug/api/threads/:id/turns (assistant turn creation)")
+		logger.Warn("Debug route registered: GET /debug/api/threads/:id/tree (full conversation tree - use pagination in production)")
+		logger.Warn("Debug route registered: POST /debug/api/threads/:id/llm-request (LLM provider request preview)")
 	}
 
 	// Build middleware chain

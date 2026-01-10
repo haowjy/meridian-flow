@@ -42,8 +42,6 @@ make seed-clear   # Clear data (keep schema)
 
 ## API Testing
 
-**Manual testing:** Import Insomnia collections from `tests/insomnia/` (see collection list below)
-
 **Automated testing:** Claude can run curl:
 ```bash
 curl http://localhost:8080/health
@@ -51,15 +49,6 @@ curl http://localhost:8080/api/projects
 curl http://localhost:8080/api/projects/<PROJECT_ID>/tree
 curl http://localhost:8080/api/documents/:id
 ```
-
-**Insomnia test collections:** Import from `tests/insomnia/`:
-- `00-health.json` - Server health check (1 request)
-- `01-file-system-crud.json` - Core CRUD operations (25 requests)
-- `02-file-system-import.json` - Bulk import testing (10 requests)
-- `03-file-system-advanced.json` - Integration tests and workflows (27 requests)
-- `04-chat.json` - Complete chat and LLM testing (29 requests)
-
-See `tests/insomnia/README.md` for detailed collection guide.
 
 ## Architecture
 
@@ -206,7 +195,6 @@ See `_docs/technical/backend/database-connections.md`
 
 - **Technical docs**: `_docs/technical/backend/`
 - **Environment setup**: `ENVIRONMENTS.md`
-- **API examples**: `tests/insomnia-collection.json`
 - **Seeding**: `scripts/README.md`
 
 ## Server Configuration
@@ -297,12 +285,6 @@ stream.ClearBuffer()
   }
   // Result: Lorem tries to generate 150 words but cuts off at 100 (stop_reason: "max_tokens")
   ```
-
-**Insomnia Environment Variables:**
-- `llm_model`: Default model for non-streaming requests (default: `lorem-fast`)
-- `llm_max_tokens`: Max tokens for non-streaming (default: 200)
-- `llm_model_streaming`: Model for streaming requests (default: `lorem-slow`)
-- `llm_max_tokens_streaming`: Max tokens for streaming (default: 500)
 
 ### Documentation
 

@@ -9,11 +9,11 @@ Complete technical reference for the Meridian backend (Go + net/http + PostgreSQ
 
 ## Quick Links
 
-**First time?** → [Getting Started](#getting-started)
-**API Reference?** → [API Contracts](api/contracts.md)
-**Architecture?** → [Architecture Overview](architecture/overview.md)
-**Database?** → [Schema](database/schema.md)
-**Troubleshooting?** → [Debugging Guide](development/debugging.md)
+**First time?** -> [Getting Started](#getting-started)
+**API Reference?** -> [API Contracts](api/contracts.md)
+**Architecture?** -> [Architecture Overview](architecture/overview.md)
+**Database?** -> [Schema](database/schema.md)
+**Troubleshooting?** -> [Debugging Guide](development/debugging.md)
 
 ## Getting Started
 
@@ -90,19 +90,18 @@ JWT-based authentication with Supabase Auth integration:
 
 **Current state:** Backend uses JWT validation via Supabase JWKS endpoint (RS256/ES256). Frontend auth is complete with Supabase integration, middleware, and automatic JWT injection. Both frontend and backend are production-ready.
 
-## Chat System
+## Thread System
 
 **Status:** ✅ Complete (multi-turn, streaming, catchup working)
 
 Multi-turn LLM conversations with SOLID-compliant service architecture:
 
-- Domain model: [chat/overview.md](chat/overview.md)
+- Domain model: [thread/overview.md](thread/overview.md)
 - Service layer: [architecture/service-layer.md](architecture/service-layer.md)
-- Pagination: [chat/pagination.md](chat/pagination.md)
-- LLM providers: [chat/llm-providers.md](chat/llm-providers.md)
-- Turn blocks: [chat/turn-blocks.md](chat/turn-blocks.md)
-- Schema: [database/schema.md](database/schema.md#chat-system)
-- Testing: 29 Insomnia test requests
+- Pagination: [thread/pagination.md](thread/pagination.md)
+- LLM providers: [thread/llm-providers.md](thread/llm-providers.md)
+- Turn blocks: [thread/turn-blocks.md](thread/turn-blocks.md)
+- Schema: [database/schema.md](database/schema.md#thread-system)
 
 ## Streaming System
 

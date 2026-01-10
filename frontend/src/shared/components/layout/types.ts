@@ -5,10 +5,10 @@ import type { ComponentType, ReactNode } from 'react'
  * Content components are layout-agnostic - they don't know how they'll be arranged.
  */
 export interface PanelDefinitions {
-  /** Chat list panel (left in desktop three-panel, tab in mobile) */
-  chatList: ReactNode
-  /** Active chat/conversation panel (center in desktop, tab in mobile) */
-  activeChat: ReactNode
+  /** Thread list panel (left in desktop three-panel, tab in mobile) */
+  threadList: ReactNode
+  /** Active thread panel (center in desktop, tab in mobile) */
+  activeThread: ReactNode
   /** Document panel - tree or editor (right in desktop, tab in mobile) */
   documentPanel: ReactNode
 }

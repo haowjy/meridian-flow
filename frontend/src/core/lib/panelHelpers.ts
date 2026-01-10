@@ -9,7 +9,7 @@ type NavigateFunction = ReturnType<typeof useNavigate>
 /**
  * Panel coordination helpers for managing workspace state.
  * These functions orchestrate routing and ensure panels stay in sync
- * when switching between chats, documents, and editor.
+ * when switching between threads, documents, and editor.
  *
  * Navigation:
  * - URLs use path-based slugs (/projects/my-novel/documents/characters/heroes/aria)
@@ -79,14 +79,14 @@ export function closeEditor(projectSlug: string, navigate: NavigateFunction) {
 }
 
 /**
- * Switches to a different chat in the active chat panel.
- * - Sets the active chat ID
+ * Switches to a different thread in the active thread panel.
+ * - Sets the active thread ID
  * - Does not affect panel collapse states
  *
- * @param chatId - The ID of the chat to switch to
+ * @param threadId - The ID of the thread to switch to
  */
-export function switchChat(chatId: string) {
+export function switchThread(threadId: string) {
   const store = useUIStore.getState()
 
-  store.setActiveChat(chatId)
+  store.setActiveThread(threadId)
 }

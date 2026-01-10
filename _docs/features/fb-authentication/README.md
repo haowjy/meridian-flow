@@ -34,13 +34,13 @@ All authentication features are fully implemented and production-ready.
 
 #### RLS Policies
 **Status**: [x] Complete
-- Enabled on all tables (projects, folders, documents, chats, turns, etc.)
+- Enabled on all tables (projects, folders, documents, threads, turns, etc.)
 - `block_postgrest` policy blocks direct PostgREST access
 - Backend bypasses RLS (uses postgres superuser credentials)
 
 #### Resource Authorization
 **Status**: [x] Complete
-- [x] `ResourceAuthorizer` interface with 5 methods (Project, Folder, Document, Chat, Turn)
+- [x] `ResourceAuthorizer` interface with 5 methods (Project, Folder, Document, Thread, Turn)
 - [x] `OwnerBasedAuthorizer` implementation checking ownership chains
 - [x] All endpoints protected (GET, PATCH, DELETE, import, streaming)
 - [x] Service-layer authorization (consistent across all entry points)

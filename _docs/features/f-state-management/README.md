@@ -14,10 +14,10 @@ feature: "State Management"
 
 ## Features
 
-**Zustand Stores** - 5 stores (Project, Tree, Chat, UI, Editor)
+**Zustand Stores** - 5 stores (Project, Tree, Thread, UI, Editor)
 - See [zustand-stores.md](zustand-stores.md)
 
-**IndexedDB Caching** - Dexie (documents, chats, messages)
+**IndexedDB Caching** - Dexie (documents, threads, messages)
 - See [indexeddb-caching.md](indexeddb-caching.md)
 
 **Optimistic Updates** - Write to cache immediately, sync to server

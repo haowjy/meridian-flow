@@ -1,7 +1,7 @@
 # Virtual Scrolling
 
 **Current**: All messages rendered
-**Future**: Virtual scrolling for large chats
+**Future**: Virtual scrolling for large threads
 
 **Trigger**: >200 messages in viewport
 **Library**: @tanstack/react-virtual

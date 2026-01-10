@@ -114,15 +114,15 @@ func main() {
 	folderRepo := postgresDocsys.NewFolderRepository(repoConfig)
 	txManager := postgres.NewTransactionManager(pool)
 
-	// Chat/turn repos for authorizer (needed for auth chain: turn → chat → project → user)
-	chatRepo := postgresLLM.NewChatRepository(repoConfig)
+	// Thread/turn repos for authorizer (needed for auth chain: turn → thread → project → user)
+	threadRepo := postgresLLM.NewThreadRepository(repoConfig)
 	turnRepo := postgresLLM.NewTurnRepository(repoConfig)
 
 	// Create validator for soft-delete validation
 	docsysValidator := serviceDocsys.NewResourceValidator(projectRepo, folderRepo)
 
 	// Create authorizer (ownership-based)
-	authorizer := serviceAuth.NewOwnerBasedAuthorizer(projectRepo, folderRepo, docRepo, chatRepo, turnRepo)
+	authorizer := serviceAuth.NewOwnerBasedAuthorizer(projectRepo, folderRepo, docRepo, threadRepo, turnRepo)
 
 	// Create services for document seeding
 	contentAnalyzer := serviceDocsys.NewContentAnalyzer()
@@ -176,13 +176,13 @@ func main() {
 
 	log.Println("🎉 Seeding complete!")
 
-	// Seed chat data
-	log.Println("💬 Seeding chat data...")
+	// Seed thread data
+	log.Println("💬 Seeding thread data...")
 	llmSeeder := seed.NewLLMSeeder(pool, tables, logger)
-	if err := llmSeeder.SeedChatData(ctx, projectID, userID); err != nil {
-		log.Fatalf("Failed to seed chat data: %v", err)
+	if err := llmSeeder.SeedThreadData(ctx, projectID, userID); err != nil {
+		log.Fatalf("Failed to seed thread data: %v", err)
 	}
-	log.Println("✅ Chat data seeded")
+	log.Println("✅ Thread data seeded")
 }
 
 // ensureTestProject creates a test project if it doesn't exist

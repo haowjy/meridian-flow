@@ -143,14 +143,14 @@ The `name` field now supports Unix-style path notation for creating nested folde
   "name": "Characters/Villains",
   "folder_id": null
 }
-// Creates: Characters (parent) → Villains (child)
+// Creates: Characters (parent) -> Villains (child)
 
 // Absolute path - ignores folder_id, creates from root
 {
   "name": "/Magic/Spells",
   "folder_id": "some-folder-id"
 }
-// Creates: Magic (root) → Spells (child), folder_id is ignored
+// Creates: Magic (root) -> Spells (child), folder_id is ignored
 ```
 
 **Path Notation Rules:**
@@ -161,11 +161,11 @@ The `name` field now supports Unix-style path notation for creating nested folde
 - **Final segment**: The last segment becomes the actual folder name
 
 **Path Validation (Strict):**
-- ❌ No consecutive slashes: `a//b` → 400 error
-- ❌ No trailing slashes: `a/` → 400 error
+- ❌ No consecutive slashes: `a//b` -> 400 error
+- ❌ No trailing slashes: `a/` -> 400 error
 - ❌ No empty segments
 - ✅ Each segment must be valid folder name (alphanumeric, spaces, hyphens, underscores)
-- ✅ Each segment length ≤ `config.MaxFolderNameLength`
+- ✅ Each segment length <= `config.MaxFolderNameLength`
 
 **Root-level convention:**
 - Use `""` (empty string), `null`, or omit `folder_id` for root-level folders
@@ -325,7 +325,7 @@ Similar to folders, the `name` field now supports Unix-style path notation for c
   "folder_id": null,
   "content": "# Stormhaven\n\nA coastal city..."
 }
-// Creates: Locations → Cities → Document "Stormhaven"
+// Creates: Locations -> Cities -> Document "Stormhaven"
 
 // Absolute path - ignores folder_id, creates from root
 {
@@ -333,7 +333,7 @@ Similar to folders, the `name` field now supports Unix-style path notation for c
   "folder_id": "some-folder-id",
   "content": "# Timeline\n\nHistory..."
 }
-// Creates: Worldbuilding (root) → Document "timeline", folder_id is ignored
+// Creates: Worldbuilding (root) -> Document "timeline", folder_id is ignored
 ```
 
 **Path Notation Rules:**
@@ -465,26 +465,26 @@ GET /api/documents/search?query=dragón&language=spanish
 
 **Implementation:** See `_docs/technical/backend/search-architecture.md` for PostgreSQL full-text search details, indexing strategy, and future vector search plans.
 
-## Chat Operations
+## Thread Operations
 
-Chat system provides multi-turn LLM conversations with branching, streaming, and efficient pagination.
+Thread system provides multi-turn LLM conversations with branching, streaming, and efficient pagination.
 
-### List Chats (GET /api/chats?project_id=:id)
+### List Threads (GET /api/threads?project_id=:id)
 
-Returns all chats for a given project belonging to the authenticated user.
+Returns all threads for a given project belonging to the authenticated user.
 
 - Requires `project_id` query parameter (400 if missing).
-- Only returns chats where the project belongs to the current user.
-- Soft-deleted chats (with `deleted_at` set) are excluded.
+- Only returns threads where the project belongs to the current user.
+- Soft-deleted threads (with `deleted_at` set) are excluded.
 - Ordered by `updated_at DESC` (most recently updated first).
-- Returns empty array `[]` if no chats exist for the project.
+- Returns empty array `[]` if no threads exist for the project.
 
-**Response:** Array of Chat objects
+**Response:** Array of Thread objects
 
 ```json
 [
   {
-    "id": "chat-uuid",
+    "id": "thread-uuid",
     "project_id": "project-uuid",
     "user_id": "user-uuid",
     "title": "Brainstorm: Act 1",
@@ -495,9 +495,9 @@ Returns all chats for a given project belonging to the authenticated user.
 ]
 ```
 
-### Create Chat (POST /api/chats)
+### Create Thread (POST /api/threads)
 
-Creates a new chat session within a project.
+Creates a new thread session within a project.
 
 **Request Body:**
 ```json
@@ -510,17 +510,17 @@ Creates a new chat session within a project.
 **Validation:**
 - `project_id` required (must reference an existing project owned by the user).
 - `title` required.
-- `title` length: 1–255 characters (see `config.MaxChatTitleLength`).
+- `title` length: 1-255 characters (see `config.MaxThreadTitleLength`).
 
 **Conflict Handling (409):**
-- If a chat with a conflicting title already exists (according to domain rules), returns:
+- If a thread with a conflicting title already exists (according to domain rules), returns:
   - HTTP 409 with error message.
-  - Response body includes the existing `Chat` resource to allow the frontend to offer “Open existing” flows.
+  - Response body includes the existing `Thread` resource to allow the frontend to offer "Open existing" flows.
 
 **Response (201 Created):**
 ```json
 {
-  "id": "chat-uuid",
+  "id": "thread-uuid",
   "project_id": "project-uuid",
   "user_id": "user-uuid",
   "title": "Brainstorm: Act 1",
@@ -530,18 +530,18 @@ Creates a new chat session within a project.
 }
 ```
 
-### Get Chat (GET /api/chats/:id)
+### Get Thread (GET /api/threads/:id)
 
-Returns a single chat by ID for the authenticated user.
+Returns a single thread by ID for the authenticated user.
 
-- Validates that the chat exists and belongs to a project owned by the user.
+- Validates that the thread exists and belongs to a project owned by the user.
 - Returns 404 if not found or not accessible.
 
-**Response:** Chat object (same shape as Create Chat response).
+**Response:** Thread object (same shape as Create Thread response).
 
-### Update Chat (PATCH /api/chats/:id)
+### Update Thread (PATCH /api/threads/:id)
 
-Updates a chat’s title.
+Updates a thread's title.
 
 **Request Body:**
 ```json
@@ -552,22 +552,22 @@ Updates a chat’s title.
 
 **Validation:**
 - `title` required.
-- `title` length: 1–255 characters (`config.MaxChatTitleLength`).
+- `title` length: 1-255 characters (`config.MaxThreadTitleLength`).
 
-**Response (200 OK):** Updated Chat object with new `title` and `updated_at`.
+**Response (200 OK):** Updated Thread object with new `title` and `updated_at`.
 
-### Delete Chat (DELETE /api/chats/:id)
+### Delete Thread (DELETE /api/threads/:id)
 
-Soft-deletes a chat and returns the deleted chat object.
+Soft-deletes a thread and returns the deleted thread object.
 
 - Marks `deleted_at` timestamp instead of hard-deleting.
-- Deleted chats are excluded from `GET /api/chats` and from conversation operations.
-- Returns 404 if chat not found or not accessible.
+- Deleted threads are excluded from `GET /api/threads` and from conversation operations.
+- Returns 404 if thread not found or not accessible.
 
 **Response (200 OK):**
 ```json
 {
-  "id": "chat-uuid",
+  "id": "thread-uuid",
   "project_id": "project-uuid",
   "user_id": "user-uuid",
   "title": "Brainstorm: Act 1",
@@ -578,9 +578,9 @@ Soft-deletes a chat and returns the deleted chat object.
 }
 ```
 
-### Create Turn (POST /api/chats/:chatId/turns)
+### Create Turn (POST /api/threads/:threadId/turns)
 
-Creates a new **user** turn in a chat and triggers an assistant streaming response.
+Creates a new **user** turn in a thread and triggers an assistant streaming response.
 
 **Request Body:**
 ```json
@@ -611,19 +611,19 @@ Creates a new **user** turn in a chat and triggers an assistant streaming respon
 System prompts are resolved hierarchically at request time from:
 1. `request_params.system` - User-provided system prompt (optional)
 2. `project.system_prompt` - Project-level system prompt
-3. `chat.system_prompt` - Chat-level system prompt
+3. `thread.system_prompt` - Thread-level system prompt
 4. `selected_skills` - Skills loaded from `.skills/{skill_name}/SKILL`
 
 All parts are concatenated with `\n\n` separator.
 
 **Validation:**
-- `chatId` path parameter required and must reference a chat owned by the user.
+- `threadId` path parameter required and must reference a thread owned by the user.
 - `role` must be `"user"` (assistant turns are created internally).
 - `turn_blocks`:
   - Each block requires `block_type`.
   - Supported types: `text`, `thinking`, `tool_use`, `tool_result`, `image`, `reference`, `partial_reference`.
   - `content` must pass type-specific validation (see `turn-blocks.md`).
-- `prev_turn_id` (if provided) must belong to the same chat.
+- `prev_turn_id` (if provided) must belong to the same thread.
 
 **Response (201 Created):**
 
@@ -633,7 +633,7 @@ Returns both the user turn and the assistant turn that will stream, plus a conve
 {
   "user_turn": {
     "id": "user-turn-uuid",
-    "chat_id": "chat-uuid",
+    "thread_id": "thread-uuid",
     "prev_turn_id": "prev-turn-uuid-or-null",
     "role": "user",
     "status": "complete",
@@ -651,7 +651,7 @@ Returns both the user turn and the assistant turn that will stream, plus a conve
   },
   "assistant_turn": {
     "id": "assistant-turn-uuid",
-    "chat_id": "chat-uuid",
+    "thread_id": "thread-uuid",
     "prev_turn_id": "user-turn-uuid",
     "role": "assistant",
     "status": "streaming",
@@ -673,9 +673,9 @@ Returns both the user turn and the assistant turn that will stream, plus a conve
 **Tree Endpoint** - Lightweight structure for cache validation (~2KB for 1000 turns)
 **Pagination Endpoint** - Full Turn objects with nested blocks
 
-### Get Chat Tree (GET /api/chats/:id/tree)
+### Get Thread Tree (GET /api/threads/:id/tree)
 
-⚠️ **Status:** Currently implemented but **debug-only**. Available at `GET /debug/api/chats/:id/tree` in development mode. Not yet exposed as a production API.
+⚠️ **Status:** Currently implemented but **debug-only**. Available at `GET /debug/api/threads/:id/tree` in development mode. Not yet exposed as a production API.
 
 Returns lightweight conversation structure with IDs and relationships only (no turn content).
 
@@ -687,7 +687,7 @@ Returns lightweight conversation structure with IDs and relationships only (no t
 **Response:**
 ```json
 {
-  "chat_id": "chat-uuid",
+  "thread_id": "thread-uuid",
   "turns": [
     {
       "id": "turn-1-uuid",
@@ -722,7 +722,7 @@ Returns lightweight conversation structure with IDs and relationships only (no t
 - Multiple turns can reference the same `prev_turn_id` (branching)
 - Root turns have `prev_turn_id: null`
 
-### Get Paginated Turns (GET /api/chats/:id/turns)
+### Get Paginated Turns (GET /api/threads/:id/turns)
 
 Returns full Turn objects with nested turn blocks for efficient pagination.
 
@@ -752,14 +752,14 @@ Returns full Turn objects with nested turn blocks for efficient pagination.
   - 25% for history (older turns)
   - 75% for continuation (newer turns)
   - Centers view around `from_turn_id`
-  - Use case: Opening chat to last viewed turn
+  - Use case: Opening thread to last viewed turn
   - **Rationale:** Users typically care more about seeing the continuation than past history
 
 **Validation:**
-- `limit` must be ≤ 200 (see `MaxPaginationLimit`)
+- `limit` must be <= 200 (see `MaxPaginationLimit`)
 - `direction` must be one of: `before`, `after`, `both`
-- `from_turn_id` must exist in the chat (if provided)
-- If `from_turn_id` omitted, uses `chat.last_viewed_turn_id`
+- `from_turn_id` must exist in the thread (if provided)
+- If `from_turn_id` omitted, uses `thread.last_viewed_turn_id`
 
 **Response:**
 ```json
@@ -767,7 +767,7 @@ Returns full Turn objects with nested turn blocks for efficient pagination.
   "turns": [
     {
       "id": "turn-uuid",
-      "chat_id": "chat-uuid",
+      "thread_id": "thread-uuid",
       "prev_turn_id": "prev-turn-uuid",
       "role": "user",
       "status": "complete",
@@ -789,7 +789,7 @@ Returns full Turn objects with nested turn blocks for efficient pagination.
     },
     {
       "id": "turn-2-uuid",
-      "chat_id": "chat-uuid",
+      "thread_id": "thread-uuid",
       "prev_turn_id": "turn-uuid",
       "role": "assistant",
       "status": "complete",
@@ -843,22 +843,22 @@ Returns full Turn objects with nested turn blocks for efficient pagination.
 - `thinking` - Extended thinking (Claude only)
 - `tool_use` - Tool invocation request
 
-See [turn-blocks.md](../chat/turn-blocks.md) for detailed JSONB schemas.
+See [turn-blocks.md](../thread/turn-blocks.md) for detailed JSONB schemas.
 
 **Example Requests:**
 
 ```bash
 # Initial load - get 50 turns around last viewed position
-GET /api/chats/abc-123/turns
+GET /api/threads/abc-123/turns
 
 # Load 100 more history turns
-GET /api/chats/abc-123/turns?from_turn_id=turn-xyz&limit=100&direction=before
+GET /api/threads/abc-123/turns?from_turn_id=turn-xyz&limit=100&direction=before
 
 # Load next 50 turns in conversation
-GET /api/chats/abc-123/turns?from_turn_id=turn-xyz&limit=50&direction=after
+GET /api/threads/abc-123/turns?from_turn_id=turn-xyz&limit=50&direction=after
 
 # Get 200 turns centered around specific turn
-GET /api/chats/abc-123/turns?from_turn_id=turn-xyz&limit=200&direction=both
+GET /api/threads/abc-123/turns?from_turn_id=turn-xyz&limit=200&direction=both
 ```
 
 **Performance Optimization:**
@@ -869,7 +869,7 @@ Backend avoids N+1 queries by:
 3. Bulk loading all turn blocks in single query (sorted by turn_id, block_index)
 4. Assembling in-memory
 
-See [pagination.md](../chat/pagination.md) for backend implementation details.
+See [pagination.md](../thread/pagination.md) for backend implementation details.
 
 ## Validation Rules Summary
 
@@ -945,11 +945,11 @@ Both folders and documents include a computed `path` field in responses.
 
 **What the path contains:**
 - **Folders:** Full hierarchical path including the folder's own name
-  - Example: Folder "Cities" in "World Building/Locations" → `path: "World Building/Locations/Cities"`
-  - Root folder "Characters" → `path: "Characters"`
+  - Example: Folder "Cities" in "World Building/Locations" -> `path: "World Building/Locations/Cities"`
+  - Root folder "Characters" -> `path: "Characters"`
 - **Documents:** Full hierarchical path including the document's own name
-  - Example: Document "Eldergrove" in "World Building/Locations/Cities" → `path: "World Building/Locations/Cities/Eldergrove"`
-  - Root document "Quick Notes" → `path: "Quick Notes"`
+  - Example: Document "Eldergrove" in "World Building/Locations/Cities" -> `path: "World Building/Locations/Cities/Eldergrove"`
+  - Root document "Quick Notes" -> `path: "Quick Notes"`
 
 **Path format:**
 - Uses `/` as separator

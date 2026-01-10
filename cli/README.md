@@ -1,10 +1,10 @@
 # Meridian CLI
 
-Terminal UI for browsing and interacting with Meridian chat conversations.
+Terminal UI for browsing and interacting with Meridian thread conversations.
 
 ## Features
 
-- Browse projects and chats
+- Browse projects and threads
 - Navigate conversation trees with arrow keys
 - View turn content with block labels (thinking, text)
 - Create new messages with LLM streaming
@@ -52,10 +52,10 @@ Default: `http://localhost:8080`
 
 ### Navigation
 
-**Project/Chat Lists:**
+**Project/Thread Lists:**
 - `↑/↓` - Navigate list
 - `Enter` - Select item
-- `n` - Create new project/chat
+- `n` - Create new project/thread
 - `q` - Quit
 
 **Turn Browser:**
@@ -103,7 +103,7 @@ cli/
 │   ├── app.tcss            # Textual CSS styling
 │   └── screens/
 │       ├── project_list.py
-│       ├── chat_list.py
+│       ├── thread_list.py
 │       ├── turn_browser.py
 │       ├── confirmation.py
 │       └── params_editor.py
@@ -135,7 +135,7 @@ cli/
 - Check `MERIDIAN_BASE_URL` environment variable
 
 **Streaming not working:**
-- Verify `/api/turns/{id}/stream` endpoint is accessible
+- Verify `/api/threads/{id}/stream` endpoint is accessible
 - Check backend logs for SSE errors
 
 **Layout issues:**

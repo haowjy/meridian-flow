@@ -1,6 +1,6 @@
 # Shared Context
 
-**Current**: Each user has separate chats
+**Current**: Each user has separate threads
 
 **Future**: Shared knowledge base
 

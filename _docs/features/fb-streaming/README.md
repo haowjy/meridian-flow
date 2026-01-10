@@ -17,7 +17,7 @@ feature: "Streaming (SSE)"
 **Backend SSE** - Event types, buffer management, PersistAndClear pattern
 - See [backend-sse.md](backend-sse.md)
 
-**Frontend Streaming** - useChatSSE hook, 50ms buffering, stop button
+**Frontend Streaming** - useThreadSSE hook, 50ms buffering, stop button
 - See [frontend-streaming.md](frontend-streaming.md)
 
 **Catchup/Reconnection** - `Last-Event-ID` header, replay missed events
@@ -41,7 +41,7 @@ feature: "Streaming (SSE)"
 ## Files
 
 **Backend**: `backend/internal/service/llm/streaming/`, `meridian-stream-go/`
-**Frontend**: `frontend/src/features/chats/hooks/useChatSSE.ts`
+**Frontend**: `frontend/src/features/threads/hooks/useThreadSSE.ts`
 
 ---
 

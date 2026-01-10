@@ -8,11 +8,11 @@ import (
 
 // StreamingService defines the business logic for turn creation and streaming orchestration
 // This service handles creating turns and coordinating streaming responses
-// For chat session management, see ChatService
-// For reading conversation history, see ConversationService
+// For thread session management, see ThreadService
+// For reading thread history, see ThreadHistoryService
 type StreamingService interface {
 	// CreateTurn creates a new user turn and triggers assistant streaming response
-	// Validates chat exists, prev turn exists if provided
+	// Validates thread exists, prev turn exists if provided
 	// Creates turn with turn blocks
 	// Returns both the user turn and the created assistant turn for streaming
 	// Note: Only accepts "user" role. Assistant turns are created internally
@@ -23,7 +23,7 @@ type StreamingService interface {
 	// - Debug handlers (when ENVIRONMENT=dev)
 	// - Internal LLM response generator (Phase 2)
 	// DO NOT expose this to public API endpoints
-	CreateAssistantTurnDebug(ctx context.Context, chatID string, userID string, prevTurnID *string, contentBlocks []TurnBlockInput, model string) (*llm.Turn, error)
+	CreateAssistantTurnDebug(ctx context.Context, threadID string, userID string, prevTurnID *string, contentBlocks []TurnBlockInput, model string) (*llm.Turn, error)
 
 	// BuildDebugProviderRequest builds the provider-facing request payload for a hypothetical
 	// user turn without executing it (DEBUG/INTERNAL USE ONLY).
@@ -39,14 +39,14 @@ type StreamingService interface {
 
 // CreateTurnRequest is the DTO for creating a new turn
 //
-// Chat resolution priority:
-// 1. If PrevTurnID provided → lookup its chat_id from DB (ignores ChatID/ProjectID)
-// 2. Else if ChatID provided → use that chat
-// 3. Else if ProjectID provided → create new chat (cold start, title from first text block)
+// Thread resolution priority:
+// 1. If PrevTurnID provided → lookup its thread_id from DB (ignores ThreadID/ProjectID)
+// 2. Else if ThreadID provided → use that thread
+// 3. Else if ProjectID provided → create new thread (cold start, title from first text block)
 // 4. Else → validation error
 type CreateTurnRequest struct {
-	ChatID         *string                `json:"chat_id,omitempty"`    // Optional - if nil with ProjectID, creates new chat
-	ProjectID      *string                `json:"project_id,omitempty"` // Required if ChatID is nil (for new chat creation)
+	ThreadID       *string                `json:"thread_id,omitempty"`  // Optional - if nil with ProjectID, creates new thread
+	ProjectID      *string                `json:"project_id,omitempty"` // Required if ThreadID is nil (for new thread creation)
 	UserID         string                 `json:"-"`                    // Set by handler from auth context, not from request body
 	PrevTurnID     *string                `json:"prev_turn_id,omitempty"`
 	Role           string                 `json:"role"`                      // "user" only (backend generates assistant turns)
@@ -64,10 +64,10 @@ type TurnBlockInput struct {
 
 // CreateTurnResponse is the response DTO for CreateTurn
 // Returns both the user turn and the assistant turn that was created for streaming
-// If a new chat was created (cold start), the Chat field is populated
+// If a new thread was created (cold start), the Thread field is populated
 type CreateTurnResponse struct {
-	Chat          *llm.Chat `json:"chat,omitempty"` // Populated when new chat was created (cold start)
-	UserTurn      *llm.Turn `json:"user_turn"`
-	AssistantTurn *llm.Turn `json:"assistant_turn"`
-	StreamURL     string    `json:"stream_url"` // Convenience URL for SSE streaming
+	Thread        *llm.Thread `json:"thread,omitempty"` // Populated when new thread was created (cold start)
+	UserTurn      *llm.Turn   `json:"user_turn"`
+	AssistantTurn *llm.Turn   `json:"assistant_turn"`
+	StreamURL     string      `json:"stream_url"` // Convenience URL for SSE streaming
 }

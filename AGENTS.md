@@ -7,8 +7,8 @@ This file provides guidance when working with the code in this repository.
 Meridian is a file management system for creative writers, starting with fiction writers who manage 100+ chapter web serials.
 
 **Current Status:**
-- ✅ Backend (Go + net/http + PostgreSQL): File system complete, Auth complete (JWT/JWKS), Chat/LLM in progress (Anthropic provider working, streaming complete)
-- ✅ Frontend (Vite + TanStack Router + CodeMirror): Document editor complete, Chat UI complete
+- ✅ Backend (Go + net/http + PostgreSQL): File system complete, Auth complete (JWT/JWKS), Thread/LLM in progress (Anthropic provider working, streaming complete)
+- ✅ Frontend (Vite + TanStack Router + CodeMirror): Document editor complete, Thread UI complete
 
 For product details, see `_docs/high-level/1-overview.md`.
 
@@ -85,7 +85,7 @@ Then, these principles can also help you make architectural decisions and other 
   - **Overview**: `_docs/features/README.md` - Complete feature inventory with status
   - **Authentication**: `_docs/features/fb-authentication/` - JWT validation, Supabase integration
   - **Document Editor**: `_docs/features/f-document-editor/` - CodeMirror, auto-save, caching
-  - **Chat/LLM**: `_docs/features/fb-chat-llm/` - Turn branching, providers, streaming
+  - **Thread/LLM**: `_docs/features/fb-thread-llm/` - Turn branching, providers, streaming
   - **File System**: `_docs/features/fb-file-system/` - CRUD operations, tree structure
 - **Product/high-level**: `_docs/high-level/` - Product vision, MVP specs, user stories
 - **Technical details**: `_docs/technical/` - Deep-dive architecture, implementation specifics
@@ -126,7 +126,7 @@ This applies to both Claude and human developers:
 - Significantly changing existing feature behavior
 - Changing feature status (e.g., from 🟡 partial to ✅ complete)
 - Adding/removing major functionality
-- Changing stack requirements (e.g., backend-only → full-stack)
+- Changing stack requirements (e.g., backend-only -> full-stack)
 
 **Workflow:**
 1. Implement the feature/update
@@ -156,7 +156,7 @@ _docs/
 │   ├── fb-authentication/  # Both stacks
 │   ├── f-document-editor/  # Frontend only
 │   ├── fb-file-system/     # Both stacks
-│   ├── fb-chat-llm/        # Both stacks
+│   ├── fb-thread-llm/      # Both stacks
 │   └── ...                 # Other features
 ├── high-level/             # Product docs
 └── technical/              # Deep-dive technical docs
@@ -186,7 +186,7 @@ _docs/
    - ❌ Pasting 50 lines of existing code
 
 4. **Split by purpose, not size** - Each doc should have a single, clear purpose
-   - If covering multiple distinct topics → split into separate docs
+   - If covering multiple distinct topics -> split into separate docs
    - Organize related docs into folders (e.g., `features/fb-authentication/`, `technical/backend/`)
    - Update index/README to maintain discoverability
    - Guideline: If someone asks "where's the X doc?" and you can't point to one file, structure is wrong

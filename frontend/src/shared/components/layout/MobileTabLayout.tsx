@@ -13,7 +13,7 @@ import type { LayoutStrategyProps } from './types'
  * │      [Active Panel]         │
  * │                             │
  * ├─────────────────────────────┤
- * │  Chats | Chat | Document    │
+ * │  Threads | Thread | Document    │
  * └─────────────────────────────┘
  *
  * Uses mobileActivePanel from UIStore to track which panel is visible.
@@ -35,25 +35,25 @@ export function MobileTabLayout({ panels, className }: LayoutStrategyProps) {
     >
       {/* Panel content area */}
       <div className="flex-1 overflow-hidden">
-        {/* Keep chat panels mounted to prevent re-fetch/reload when switching tabs on mobile. */}
+        {/* Keep thread panels mounted to prevent re-fetch/reload when switching tabs on mobile. */}
         <div
-          id="panel-chatList"
+          id="panel-threadList"
           role="tabpanel"
-          aria-labelledby="tab-chatList"
-          hidden={mobileActivePanel !== 'chatList'}
+          aria-labelledby="tab-threadList"
+          hidden={mobileActivePanel !== 'threadList'}
           className="h-full overflow-hidden"
         >
-          {panels.chatList}
+          {panels.threadList}
         </div>
 
         <div
-          id="panel-activeChat"
+          id="panel-activeThread"
           role="tabpanel"
-          aria-labelledby="tab-activeChat"
-          hidden={mobileActivePanel !== 'activeChat'}
+          aria-labelledby="tab-activeThread"
+          hidden={mobileActivePanel !== 'activeThread'}
           className="h-full overflow-hidden"
         >
-          {panels.activeChat}
+          {panels.activeThread}
         </div>
 
         {/* Documents can be heavier (tree + editor). Mount content only when active. */}

@@ -15,7 +15,7 @@ interface PanelLayoutProps {
 }
 
 /**
- * Three-panel layout for workspace (Chat List | Active Chat | Documents).
+ * Three-panel layout for workspace (Thread List | Active Thread | Documents).
  * Handles panel collapsing and responsive sizing.
  *
  * Layout: 25% | 50% | 25% (when all expanded)
@@ -53,7 +53,7 @@ export function PanelLayout({
           ref={leftRef}
           className="workspace-panel-left"
           // IMPORTANT:
-          // - When expanded, enforce a minimum pixel width so the chat list
+          // - When expanded, enforce a minimum pixel width so the thread list
           //   never becomes unusably narrow.
           // - When collapsed, remove the minWidth constraint so the panel
           //   can truly shrink to `collapsedSize={0}`.

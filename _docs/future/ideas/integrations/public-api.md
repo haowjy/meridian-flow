@@ -4,7 +4,7 @@
 **Future**: RESTful API for developers
 
 ## Features
-- CRUD for chats/messages
+- CRUD for threads/messages
 - Webhook support
 - API keys
 - Rate limiting

@@ -179,9 +179,9 @@ export function extractDocumentFromConflict(
  *
  * @example
  * try {
- *   await api.chats.create(projectId, title)
+ *   await api.threads.create(projectId, title)
  * } catch (error) {
- *   handleApiError(error, 'Failed to create chat')
+ *   handleApiError(error, 'Failed to create thread')
  *   throw error
  * }
  */

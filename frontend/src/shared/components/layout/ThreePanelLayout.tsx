@@ -6,7 +6,7 @@ import type { LayoutStrategyProps } from './types'
 
 /**
  * Three-panel desktop layout strategy.
- * Renders: [Chat List | Active Chat | Documents/Editor]
+ * Renders: [Thread List | Active Thread | Documents/Editor]
  *
  * Uses react-resizable-panels for adjustable widths.
  * Default sizes: 22% | 56% | 22% (when all expanded)
@@ -34,7 +34,7 @@ export function ThreePanelLayout({ panels, className }: LayoutStrategyProps) {
       collapsed={leftPanelCollapsed}
       onToggle={toggleLeftPanel}
     >
-      {panels.chatList}
+      {panels.threadList}
     </CollapsiblePanel>
   )
 
@@ -52,7 +52,7 @@ export function ThreePanelLayout({ panels, className }: LayoutStrategyProps) {
     <PanelLayout
       className={className}
       left={left}
-      center={panels.activeChat}
+      center={panels.activeThread}
       right={right}
       leftCollapsed={leftPanelCollapsed}
       rightCollapsed={rightPanelCollapsed}

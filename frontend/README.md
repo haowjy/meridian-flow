@@ -40,7 +40,7 @@ frontend/src/
 ├── core/                   # Core utilities, stores, hooks
 │   ├── lib/                # API, cache, DB, sync
 │   └── stores/             # Zustand state management
-├── features/               # Feature modules (chats, documents, projects)
+├── features/               # Feature modules (threads, documents, projects)
 └── shared/                 # Shared UI components
 ```
 

@@ -11,7 +11,7 @@ HTTP and SSE endpoints for real-time LLM response streaming.
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/chats/:id/turns` | POST | Create turn, initiate streaming |
+| `/api/threads/:id/turns` | POST | Create turn, initiate streaming |
 | `/api/turns/:id/stream` | GET | SSE stream of delta events |
 | `/api/turns/:id/blocks` | GET | Get completed blocks (reconnection) |
 | `/api/turns/:id/token-usage` | GET | Get token usage statistics |
@@ -21,7 +21,7 @@ HTTP and SSE endpoints for real-time LLM response streaming.
 
 ## 1. Create Turn & Start Streaming
 
-**Endpoint:** `POST /api/chats/:chatId/turns`
+**Endpoint:** `POST /api/threads/:threadId/turns`
 
 **Purpose:** Create user turn and initiate assistant response streaming
 
@@ -45,7 +45,7 @@ HTTP and SSE endpoints for real-time LLM response streaming.
     "id": "uuid-user-turn",
     "role": "user",
     "status": "complete",
-    "turn_blocks": [...]
+    "turn_blocks": [...] 
   },
   "assistant_turn": {
     "id": "uuid-assistant-turn",
@@ -59,10 +59,10 @@ HTTP and SSE endpoints for real-time LLM response streaming.
 **Status Codes:**
 - `201 Created` - Turns created, streaming started
 - `400 Bad Request` - Invalid request body
-- `404 Not Found` - Chat not found
-- `401 Unauthorized` - Chat doesn't belong to user
+- `404 Not Found` - Thread not found
+- `401 Unauthorized` - Thread doesn't belong to user
 
-**Implementation:** `internal/handler/chat.go:181-211`
+**Implementation:** `internal/handler/thread.go:181-211`
 
 ---
 
@@ -173,7 +173,7 @@ data: {"turn_id": "uuid-123", "stop_reason": "end_turn", "input_tokens": 150, "o
 - `404 Not Found` - Turn not found
 - `401 Unauthorized` - Unauthorized access
 
-**Implementation:** `internal/handler/chat.go:286-308`
+**Implementation:** `internal/handler/thread.go:286-308`
 
 ---
 
@@ -217,7 +217,7 @@ data: {"turn_id": "uuid-123", "stop_reason": "end_turn", "input_tokens": 150, "o
 - Token counts are `null` for turns still streaming (populated on completion)
 - For error/cancelled turns, counts reflect tokens used before interruption
 
-**Implementation:** `internal/handler/chat.go:369-393`
+**Implementation:** `internal/handler/thread.go:369-393`
 
 ---
 
@@ -248,7 +248,7 @@ data: {"turn_id": "uuid-123", "stop_reason": "end_turn", "input_tokens": 150, "o
 - `404 Not Found` - Turn not streaming
 - `400 Bad Request` - Invalid turn ID
 
-**Implementation:** `internal/handler/chat.go:310-344`
+**Implementation:** `internal/handler/thread.go:310-344`
 
 ---
 
@@ -322,8 +322,7 @@ data: {"turn_id": "uuid-123", "stop_reason": "end_turn", "input_tokens": 150, "o
   "turn_id": "uuid-123",
   "stop_reason": "end_turn",
   "input_tokens": 150,
-  "output_tokens": 420
-}
+  "output_tokens": 420}
 ```
 
 ### turn_error
@@ -432,7 +431,7 @@ async function connectToStream(turnId: string) {
 
 **Implementation:**
 - SSE handler: `internal/handler/sse_handler.go`
-- Turn handler: `internal/handler/chat.go:181-344`
+- Turn handler: `internal/handler/thread.go:181-344`
 - Executor: `internal/service/llm/streaming/executor.go`
 
 **Related:**

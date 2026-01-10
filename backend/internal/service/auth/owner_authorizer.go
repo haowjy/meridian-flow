@@ -21,7 +21,7 @@ type OwnerBasedAuthorizer struct {
 	projectRepo docsystemRepo.ProjectRepository
 	folderRepo  docsystemRepo.FolderRepository
 	docRepo     docsystemRepo.DocumentRepository
-	chatRepo    llmRepo.ChatRepository
+	threadRepo  llmRepo.ThreadRepository
 	turnRepo    llmRepo.TurnReader
 }
 
@@ -30,14 +30,14 @@ func NewOwnerBasedAuthorizer(
 	projectRepo docsystemRepo.ProjectRepository,
 	folderRepo docsystemRepo.FolderRepository,
 	docRepo docsystemRepo.DocumentRepository,
-	chatRepo llmRepo.ChatRepository,
+	threadRepo llmRepo.ThreadRepository,
 	turnRepo llmRepo.TurnReader,
 ) *OwnerBasedAuthorizer {
 	return &OwnerBasedAuthorizer{
 		projectRepo: projectRepo,
 		folderRepo:  folderRepo,
 		docRepo:     docRepo,
-		chatRepo:    chatRepo,
+		threadRepo:  threadRepo,
 		turnRepo:    turnRepo,
 	}
 }
@@ -80,19 +80,19 @@ func (a *OwnerBasedAuthorizer) CanAccessDocument(ctx context.Context, userID, do
 	return a.CanAccessProject(ctx, userID, doc.ProjectID)
 }
 
-// CanAccessChat checks if user can access a chat (via its project)
-func (a *OwnerBasedAuthorizer) CanAccessChat(ctx context.Context, userID, chatID string) error {
-	// Get chat by UUID only (no user scoping)
-	chat, err := a.chatRepo.GetChatByIDOnly(ctx, chatID)
+// CanAccessThread checks if user can access a thread (via its project)
+func (a *OwnerBasedAuthorizer) CanAccessThread(ctx context.Context, userID, threadID string) error {
+	// Get thread by UUID only (no user scoping)
+	thread, err := a.threadRepo.GetThreadByIDOnly(ctx, threadID)
 	if err != nil {
-		return fmt.Errorf("get chat for auth: %w", err)
+		return fmt.Errorf("get thread for auth: %w", err)
 	}
 
-	// Check user owns the chat's project
-	return a.CanAccessProject(ctx, userID, chat.ProjectID)
+	// Check user owns the thread's project
+	return a.CanAccessProject(ctx, userID, thread.ProjectID)
 }
 
-// CanAccessTurn checks if user can access a turn (via its chat's project)
+// CanAccessTurn checks if user can access a turn (via its thread's project)
 func (a *OwnerBasedAuthorizer) CanAccessTurn(ctx context.Context, userID, turnID string) error {
 	// Get turn by UUID only
 	turn, err := a.turnRepo.GetTurn(ctx, turnID)
@@ -100,6 +100,6 @@ func (a *OwnerBasedAuthorizer) CanAccessTurn(ctx context.Context, userID, turnID
 		return fmt.Errorf("get turn for auth: %w", err)
 	}
 
-	// Check user can access the turn's chat
-	return a.CanAccessChat(ctx, userID, turn.ChatID)
+	// Check user can access the turn's thread
+	return a.CanAccessThread(ctx, userID, turn.ThreadID)
 }

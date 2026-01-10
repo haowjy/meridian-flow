@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// LLMSeeder handles seeding of LLM-related data (chats, turns, content blocks, responses)
+// LLMSeeder handles seeding of LLM-related data (threads, turns, content blocks, responses)
 type LLMSeeder struct {
 	pool   *pgxpool.Pool
 	tables *postgres.TableNames
@@ -26,16 +26,16 @@ func NewLLMSeeder(pool *pgxpool.Pool, tables *postgres.TableNames, logger *slog.
 	}
 }
 
-// SeedChatData creates sample chat data demonstrating tree structure and branching
-func (s *LLMSeeder) SeedChatData(ctx context.Context, projectID, userID string) error {
+// SeedThreadData creates sample thread data demonstrating tree structure and branching
+func (s *LLMSeeder) SeedThreadData(ctx context.Context, projectID, userID string) error {
 	now := time.Now()
 
-	// Create a sample chat
-	chatID := "11111111-1111-1111-1111-111111111111"
-	query := `INSERT INTO ` + s.tables.Chats + ` (id, project_id, user_id, title, created_at, updated_at)
+	// Create a sample thread
+	threadID := "11111111-1111-1111-1111-111111111111"
+	query := `INSERT INTO ` + s.tables.Threads + ` (id, project_id, user_id, title, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (id) DO NOTHING`
-	_, err := s.pool.Exec(ctx, query, chatID, projectID, userID, "Sample Chat - Story Analysis", now, now)
+	_, err := s.pool.Exec(ctx, query, threadID, projectID, userID, "Sample Thread - Story Analysis", now, now)
 	if err != nil {
 		return err
 	}
@@ -51,7 +51,7 @@ func (s *LLMSeeder) SeedChatData(ctx context.Context, projectID, userID string) 
 
 	// Turn 1: User message
 	turn1ID := "22222222-2222-2222-2222-222222222221"
-	if err := s.insertTurn(ctx, turn1ID, chatID, nil, "user", "complete", nil, nil, now); err != nil {
+	if err := s.insertTurn(ctx, turn1ID, threadID, nil, "user", "complete", nil, nil, now); err != nil {
 		return err
 	}
 	// Add content blocks for turn 1 (text + reference)
@@ -68,7 +68,7 @@ func (s *LLMSeeder) SeedChatData(ctx context.Context, projectID, userID string) 
 	turn2ID := "22222222-2222-2222-2222-222222222222"
 	model := "claude-haiku-4-5-20251001"
 	tokenCount := 150
-	if err := s.insertTurn(ctx, turn2ID, chatID, &turn1ID, "assistant", "complete", &model, &tokenCount, now.Add(1*time.Second)); err != nil {
+	if err := s.insertTurn(ctx, turn2ID, threadID, &turn1ID, "assistant", "complete", &model, &tokenCount, now.Add(1*time.Second)); err != nil {
 		return err
 	}
 	// Assistant response as content blocks (thinking + text)
@@ -81,7 +81,7 @@ func (s *LLMSeeder) SeedChatData(ctx context.Context, projectID, userID string) 
 
 	// Turn 3: User branches to ask about antagonist (prev = turn 2)
 	turn3ID := "22222222-2222-2222-2222-222222222223"
-	if err := s.insertTurn(ctx, turn3ID, chatID, &turn2ID, "user", "complete", nil, nil, now.Add(2*time.Second)); err != nil {
+	if err := s.insertTurn(ctx, turn3ID, threadID, &turn2ID, "user", "complete", nil, nil, now.Add(2*time.Second)); err != nil {
 		return err
 	}
 	if err := s.insertTextBlock(ctx, turn3ID, 0, "text", "What about the antagonist?", now.Add(2*time.Second)); err != nil {
@@ -91,7 +91,7 @@ func (s *LLMSeeder) SeedChatData(ctx context.Context, projectID, userID string) 
 	// Turn 4: Assistant response about antagonist
 	turn4ID := "22222222-2222-2222-2222-222222222224"
 	tokenCount4 := 120
-	if err := s.insertTurn(ctx, turn4ID, chatID, &turn3ID, "assistant", "complete", &model, &tokenCount4, now.Add(3*time.Second)); err != nil {
+	if err := s.insertTurn(ctx, turn4ID, threadID, &turn3ID, "assistant", "complete", &model, &tokenCount4, now.Add(3*time.Second)); err != nil {
 		return err
 	}
 	if err := s.insertTextBlock(ctx, turn4ID, 0, "thinking", "Now analyzing the antagonist based on the established protagonist analysis.", now.Add(3*time.Second)); err != nil {
@@ -103,7 +103,7 @@ func (s *LLMSeeder) SeedChatData(ctx context.Context, projectID, userID string) 
 
 	// Turn 3': Alternative branch from turn 2 (demonstrates branching!)
 	turn3AltID := "22222222-2222-2222-2222-222222222233"
-	if err := s.insertTurn(ctx, turn3AltID, chatID, &turn2ID, "user", "complete", nil, nil, now.Add(4*time.Second)); err != nil {
+	if err := s.insertTurn(ctx, turn3AltID, threadID, &turn2ID, "user", "complete", nil, nil, now.Add(4*time.Second)); err != nil {
 		return err
 	}
 	if err := s.insertTextBlock(ctx, turn3AltID, 0, "text", "How does this compare to Chapter 2?", now.Add(4*time.Second)); err != nil {
@@ -113,7 +113,7 @@ func (s *LLMSeeder) SeedChatData(ctx context.Context, projectID, userID string) 
 	// Turn 4': Assistant response on alternative branch
 	turn4AltID := "22222222-2222-2222-2222-222222222244"
 	tokenCount4Alt := 140
-	if err := s.insertTurn(ctx, turn4AltID, chatID, &turn3AltID, "assistant", "complete", &model, &tokenCount4Alt, now.Add(5*time.Second)); err != nil {
+	if err := s.insertTurn(ctx, turn4AltID, threadID, &turn3AltID, "assistant", "complete", &model, &tokenCount4Alt, now.Add(5*time.Second)); err != nil {
 		return err
 	}
 	if err := s.insertTextBlock(ctx, turn4AltID, 0, "thinking", "Comparing character development across chapters.", now.Add(5*time.Second)); err != nil {
@@ -126,12 +126,12 @@ func (s *LLMSeeder) SeedChatData(ctx context.Context, projectID, userID string) 
 	return nil
 }
 
-// Helper functions for inserting chat data
-func (s *LLMSeeder) insertTurn(ctx context.Context, turnID, chatID string, prevTurnID *string, role, status string, model *string, tokenCount *int, createdAt time.Time) error {
-	query := `INSERT INTO ` + s.tables.Turns + ` (id, chat_id, prev_turn_id, role, status, model, input_tokens, output_tokens, created_at, completed_at)
+// Helper functions for inserting thread data
+func (s *LLMSeeder) insertTurn(ctx context.Context, turnID, threadID string, prevTurnID *string, role, status string, model *string, tokenCount *int, createdAt time.Time) error {
+	query := `INSERT INTO ` + s.tables.Turns + ` (id, thread_id, prev_turn_id, role, status, model, input_tokens, output_tokens, created_at, completed_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (id) DO NOTHING`
-	_, err := s.pool.Exec(ctx, query, turnID, chatID, prevTurnID, role, status, model, tokenCount, tokenCount, createdAt, createdAt)
+	_, err := s.pool.Exec(ctx, query, turnID, threadID, prevTurnID, role, status, model, tokenCount, tokenCount, createdAt, createdAt)
 	return err
 }
 

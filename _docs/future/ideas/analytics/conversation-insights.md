@@ -5,7 +5,7 @@
 
 ## Features
 - Identify recurring themes
-- Suggest related chats
+- Suggest related threads
 - Extract action items
 - Summarize conversations
 

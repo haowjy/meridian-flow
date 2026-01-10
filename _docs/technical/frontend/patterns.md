@@ -17,7 +17,7 @@ frontend/src/
 │   └── theme/      # Theme system
 ├── features/       # Feature modules (can import from core/)
 │   ├── auth/
-│   ├── chats/
+│   ├── threads/
 │   ├── documents/
 │   ├── folders/
 │   ├── projects/

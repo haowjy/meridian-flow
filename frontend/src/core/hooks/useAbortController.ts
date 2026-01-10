@@ -9,13 +9,13 @@ import { useEffect, useMemo } from 'react'
  *
  * @example
  * ```tsx
- * function TurnList({ chatId }: { chatId: string }) {
- *   const signal = useAbortController([chatId])
+ * function TurnList({ threadId }: { threadId: string }) {
+ *   const signal = useAbortController([threadId])
  *   const [turns, setTurns] = useState([])
  *
  *   useEffect(() => {
- *     // Fetch will be aborted if component unmounts or chatId changes
- *     fetch(`/api/chats/${chatId}/turns`, { signal })
+ *     // Fetch will be aborted if component unmounts or threadId changes
+ *     fetch(`/api/threads/${threadId}/turns`, { signal })
  *       .then(res => res.json())
  *       .then(setTurns)
  *       .catch(err => {
@@ -23,7 +23,7 @@ import { useEffect, useMemo } from 'react'
  *           console.error('Fetch failed:', err)
  *         }
  *       })
- *   }, [chatId, signal])
+ *   }, [threadId, signal])
  *
  *   return <div>{turns.map(...)}</div>
  * }

@@ -2,7 +2,7 @@ import httpx
 import json
 import logging
 from typing import AsyncIterator
-from .models import Project, Chat, Turn, PaginatedTurnsResponse, CreateTurnResponse
+from .models import Project, Thread, Turn, PaginatedTurnsResponse, CreateTurnResponse
 
 logger = logging.getLogger("meridian_cli.api_client")
 
@@ -41,45 +41,45 @@ class APIClient:
         logger.debug(f"API Response: 200 OK (created project id={project.id})")
         return project
 
-    # Chat endpoints
-    async def get_chats(self, project_id: str) -> list[Chat]:
-        """GET /api/chats?project_id={project_id}"""
-        logger.debug(f"API Request: GET /api/chats?project_id={project_id}")
+    # Thread endpoints
+    async def get_threads(self, project_id: str) -> list[Thread]:
+        """GET /api/threads?project_id={project_id}"""
+        logger.debug(f"API Request: GET /api/threads?project_id={project_id}")
         response = await self.client.get(
-            f"{self.base_url}/api/chats", params={"project_id": project_id}
+            f"{self.base_url}/api/threads", params={"project_id": project_id}
         )
         response.raise_for_status()
-        chats = [Chat(**c) for c in response.json()]
-        logger.debug(f"API Response: 200 OK ({len(chats)} chats)")
-        return chats
+        threads = [Thread(**c) for c in response.json()]
+        logger.debug(f"API Response: 200 OK ({len(threads)} threads)")
+        return threads
 
-    async def create_chat(self, project_id: str, title: str) -> Chat:
-        """POST /api/chats"""
-        logger.debug(f"API Request: POST /api/chats (project_id={project_id}, title={title})")
+    async def create_thread(self, project_id: str, title: str) -> Thread:
+        """POST /api/threads"""
+        logger.debug(f"API Request: POST /api/threads (project_id={project_id}, title={title})")
         response = await self.client.post(
-            f"{self.base_url}/api/chats", json={"project_id": project_id, "title": title}
+            f"{self.base_url}/api/threads", json={"project_id": project_id, "title": title}
         )
         response.raise_for_status()
-        chat = Chat(**response.json())
-        logger.debug(f"API Response: 200 OK (created chat id={chat.id})")
-        return chat
+        thread = Thread(**response.json())
+        logger.debug(f"API Response: 200 OK (created thread id={thread.id})")
+        return thread
 
     # Turn endpoints
     async def get_turns(
         self,
-        chat_id: str,
+        thread_id: str,
         from_turn_id: str | None = None,
         limit: int = 1,
         direction: str = "after",
     ) -> PaginatedTurnsResponse:
-        """GET /api/chats/{chat_id}/turns with pagination"""
+        """GET /api/threads/{thread_id}/turns with pagination"""
         params = {"limit": limit, "direction": direction}
         if from_turn_id:
             params["from_turn_id"] = from_turn_id
 
-        logger.debug(f"API Request: GET /api/chats/{chat_id}/turns (params={params})")
+        logger.debug(f"API Request: GET /api/threads/{thread_id}/turns (params={params})")
         response = await self.client.get(
-            f"{self.base_url}/api/chats/{chat_id}/turns", params=params
+            f"{self.base_url}/api/threads/{thread_id}/turns", params=params
         )
         response.raise_for_status()
         result = PaginatedTurnsResponse(**response.json())
@@ -88,15 +88,15 @@ class APIClient:
 
     async def create_turn(
         self,
-        chat_id: str,
+        thread_id: str,
         prev_turn_id: str | None,
         content: str,
         params: dict,
     ) -> CreateTurnResponse:
-        """POST /api/chats/{chat_id}/turns to create a new user turn and assistant turn"""
-        logger.debug(f"API Request: POST /api/chats/{chat_id}/turns (prev_turn_id={prev_turn_id}, content_len={len(content)})")
+        """POST /api/threads/{thread_id}/turns to create a new user turn and assistant turn"""
+        logger.debug(f"API Request: POST /api/threads/{thread_id}/turns (prev_turn_id={prev_turn_id}, content_len={len(content)})")
         response = await self.client.post(
-            f"{self.base_url}/api/chats/{chat_id}/turns",
+            f"{self.base_url}/api/threads/{thread_id}/turns",
             json={
                 "prev_turn_id": prev_turn_id,
                 "role": "user",

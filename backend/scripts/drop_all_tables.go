@@ -38,7 +38,7 @@ func main() {
 	dropSQL := fmt.Sprintf(`
 		DROP TABLE IF EXISTS %sturn_blocks CASCADE;
 		DROP TABLE IF EXISTS %sturns CASCADE;
-		DROP TABLE IF EXISTS %schats CASCADE;
+		DROP TABLE IF EXISTS %sthreads CASCADE;
 		DROP TABLE IF EXISTS %sdocuments CASCADE;
 		DROP TABLE IF EXISTS %sfolders CASCADE;
 		DROP TABLE IF EXISTS %sprojects CASCADE;

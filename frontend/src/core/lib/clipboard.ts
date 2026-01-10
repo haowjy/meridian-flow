@@ -2,7 +2,7 @@
  * HTML <-> Markdown conversion utilities.
  *
  * SRP: This module ONLY converts between formats.
- * Used by clipboard operations, chat rendering, etc.
+ * Used by clipboard operations, thread rendering, etc.
  */
 
 /**

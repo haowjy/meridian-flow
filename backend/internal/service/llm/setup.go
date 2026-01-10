@@ -14,10 +14,10 @@ import (
 	llmRepo "meridian/internal/domain/repositories/llm"
 	"meridian/internal/domain/services"
 	llmSvc "meridian/internal/domain/services/llm"
-	"meridian/internal/service/llm/chat"
-	"meridian/internal/service/llm/conversation"
+	threadhistory "meridian/internal/service/llm/thread_history"
 	"meridian/internal/service/llm/formatting"
 	"meridian/internal/service/llm/streaming"
+	"meridian/internal/service/llm/thread"
 )
 
 // SetupProviders initializes the provider factory and registry for routing.
@@ -57,14 +57,14 @@ func SetupProviders(cfg *config.Config, logger *slog.Logger) (*ProviderRegistry,
 
 // Services holds all LLM-related services
 type Services struct {
-	Chat         llmSvc.ChatService
-	Conversation llmSvc.ConversationService
-	Streaming    llmSvc.StreamingService
+	Thread        llmSvc.ThreadService
+	ThreadHistory llmSvc.ThreadHistoryService
+	Streaming     llmSvc.StreamingService
 }
 
 // SetupServices initializes all LLM services with proper dependency injection
 func SetupServices(
-	chatRepo llmRepo.ChatRepository,
+	threadRepo llmRepo.ThreadRepository,
 	turnRepo llmRepo.TurnRepository,
 	projectRepo docsysRepo.ProjectRepository,
 	documentRepo docsysRepo.DocumentRepository,
@@ -78,7 +78,7 @@ func SetupServices(
 	logger *slog.Logger,
 ) (*Services, *mstream.Registry, error) {
 	// Create shared validator
-	validator := NewChatValidator(chatRepo)
+	validator := NewThreadValidator(threadRepo)
 
 	// Create mstream registry (for SSE streaming)
 	streamRegistry := mstream.NewRegistry()
@@ -94,16 +94,16 @@ func SetupServices(
 		logger,
 	)
 
-	// Create chat service (CRUD only)
-	chatService := chat.NewService(
-		chatRepo,
+	// Create thread service (CRUD only)
+	threadService := thread.NewService(
+		threadRepo,
 		projectRepo,
 		logger,
 	)
 
-	// Create conversation service (uses TurnReader + TurnNavigator for ISP compliance)
-	conversationService := conversation.NewService(
-		chatRepo,
+	// Create thread history service (uses TurnReader + TurnNavigator for ISP compliance)
+	threadHistoryService := threadhistory.NewService(
+		threadRepo,
 		turnRepo, // TurnReader
 		turnRepo, // TurnNavigator (same repo implements both)
 		capabilityRegistry,
@@ -113,7 +113,7 @@ func SetupServices(
 	// Create system prompt resolver
 	systemPromptResolver := streaming.NewSystemPromptResolver(
 		projectRepo,
-		chatRepo,
+		threadRepo,
 		documentRepo,
 		logger,
 	)
@@ -126,7 +126,7 @@ func SetupServices(
 	formatterRegistry.Register("doc_edit", &formatting.DocEditFormatter{})
 
 	// Create MessageBuilder service (pure conversion, no data loading)
-	messageBuilder := conversation.NewMessageBuilderService(
+	messageBuilder := threadhistory.NewMessageBuilderService(
 		formatterRegistry,
 		capabilityRegistry,
 		logger,
@@ -139,7 +139,7 @@ func SetupServices(
 		turnRepo, // TurnWriter
 		turnRepo, // TurnReader
 		turnRepo, // TurnNavigator (same repo implements all three)
-		chatRepo,
+		threadRepo,
 		projectRepo, // For validating project access on cold start
 		documentRepo,
 		folderRepo,
@@ -156,8 +156,8 @@ func SetupServices(
 	)
 
 	return &Services{
-		Chat:         chatService,
-		Conversation: conversationService,
-		Streaming:    streamingService,
+		Thread:        threadService,
+		ThreadHistory: threadHistoryService,
+		Streaming:     streamingService,
 	}, streamRegistry, nil
 }
