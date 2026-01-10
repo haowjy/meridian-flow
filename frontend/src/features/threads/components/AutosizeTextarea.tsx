@@ -65,7 +65,9 @@ export function AutosizeTextarea({
             ref={ref}
             rows={1}
             className={cn(
-                "w-full resize-none bg-transparent px-2 pt-1 pb-1 text-sm outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus:ring-offset-0",
+                "w-full resize-none bg-transparent px-2 py-1.5 text-sm",
+                "placeholder:text-muted-foreground/60",
+                "outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus:ring-offset-0",
                 className
             )}
             style={{ minHeight: typeof minHeight === 'number' ? `${minHeight}px` : minHeight }}

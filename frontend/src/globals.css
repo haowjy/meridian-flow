@@ -622,7 +622,8 @@ body.preload * {
 
   /* Thread input */
   .thread-input-shell {
-    @apply bg-background/95 px-2 pb-2 sm:px-4;
+    @apply bg-background/95 px-2 pb-3 pt-1 sm:px-4;
+    backdrop-filter: blur(8px);
   }
 
   .thread-input {
