@@ -38,7 +38,7 @@ models:
         output_price:
           text: 2.50
 
-  x-ai/grok-4.1-fast:free:
+  x-ai/grok-4.1-fast:
     display_name: "Grok 4.1 Fast"
     description: "Grok's fast model"
     supports_tools: true

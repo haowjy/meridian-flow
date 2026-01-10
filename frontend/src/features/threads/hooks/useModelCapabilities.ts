@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, type ModelCapabilitiesProvider } from '@/core/lib/api'
-import { handleApiError } from '@/core/lib/errors'
+import { getErrorMessageWithFallback } from '@/core/lib/errors'
 
 interface UseModelCapabilitiesResult {
   providers: ModelCapabilitiesProvider[]
@@ -24,10 +24,8 @@ export function useModelCapabilities(): UseModelCapabilitiesResult {
       } catch (err) {
         if (!isMounted) return
         setIsLoading(false)
-        const message =
-          err instanceof Error ? err.message : 'Failed to load model capabilities'
+        const message = getErrorMessageWithFallback(err, 'Failed to load model capabilities')
         setError(message)
-        handleApiError(err, 'Failed to load model capabilities')
       }
     }
 

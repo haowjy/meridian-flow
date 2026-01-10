@@ -8,7 +8,7 @@ import {
 } from '@/features/threads/types'
 import { DEFAULT_THREAD_REQUEST_OPTIONS, requestParamsToOptions } from '@/features/threads/types'
 import { api } from '@/core/lib/api'
-import { handleApiError } from '@/core/lib/errors'
+import { getErrorMessageWithFallback } from '@/core/lib/errors'
 import { makeLogger } from '@/core/lib/logger'
 
 /**
@@ -84,6 +84,7 @@ interface ThreadStore {
   editTurn: (threadId: string, parentTurnId: string | undefined, content: string, options?: ThreadRequestOptions) => Promise<void>
   regenerateTurn: (threadId: string, parentTurnId: string) => Promise<void>
   refreshTurn: (threadId: string, turnId: string) => Promise<void>
+  clearError: () => void
 }
 
 /**
@@ -146,17 +147,21 @@ export const useThreadStore = create<ThreadStore>()(
       },
 
       refreshTurn: async (threadId: string, turnId: string) => {
+        set({ error: null })
         try {
-          const blocks = await api.turns.getBlocks(turnId)
-          set((state) => {
-            const turns = state.turns.map((turn) => {
-              if (turn.id !== turnId) return turn
-              return { ...turn, blocks }
-            })
-            return { turns }
-          })
+          const { blocks, error: turnError, status } = await api.turns.getBlocks(turnId)
+          set((state) => ({
+            turns: state.turns.map((turn) =>
+              turn.id !== turnId ? turn : {
+                ...turn,
+                blocks,
+                error: turnError,
+                status,
+              }
+            ),
+          }))
         } catch (error) {
-          handleApiError(error, 'Failed to refresh turn')
+          set({ error: getErrorMessageWithFallback(error, 'Failed to refresh turn') })
         }
       },
 
@@ -177,12 +182,11 @@ export const useThreadStore = create<ThreadStore>()(
             return
           }
 
-          const message = error instanceof Error ? error.message : 'Failed to load threads'
+          const message = getErrorMessageWithFallback(error, 'Failed to load threads')
           // If we have cached threads, keep status as 'success', otherwise set to 'error'
           const currentThreads = get().threads
           const errorStatus = currentThreads.length > 0 ? 'success' : 'error'
           set({ error: message, statusThreads: errorStatus, isFetchingThreads: false })
-          handleApiError(error, 'Failed to load threads')
         }
       },
 
@@ -204,14 +208,14 @@ export const useThreadStore = create<ThreadStore>()(
           }))
           return thread
         } catch (error) {
-          const message = error instanceof Error ? error.message : 'Failed to create thread'
+          const message = getErrorMessageWithFallback(error, 'Failed to create thread')
           set({ error: message, isLoadingThreads: false })
-          handleApiError(error, 'Failed to create thread')
           throw error
         }
       },
 
       renameThread: async (threadId: string, title: string) => {
+        set({ error: null })
         try {
           const updated = await api.threads.update(threadId, title)
 
@@ -219,13 +223,14 @@ export const useThreadStore = create<ThreadStore>()(
             threads: state.threads.map((c) => (c.id === threadId ? updated : c)),
           }))
         } catch (error) {
-          handleApiError(error, 'Failed to rename thread')
+          set({ error: getErrorMessageWithFallback(error, 'Failed to rename thread') })
           throw error
         }
       },
 
       createTurn: async (threadId: string, messageText: string, options: ThreadRequestOptions) => {
         // Skeleton - optimistic updates implemented in Phase 4 Task 4.7
+        set({ error: null })
         try {
           // Determine prevTurnId from the last turn in the current list
           const currentTurns = get().turns
@@ -253,7 +258,7 @@ export const useThreadStore = create<ThreadStore>()(
           // Update bookmark to the new assistant turn
           await updateLastViewedTurnBookmark(threadId, assistantTurn.id)
         } catch (error) {
-          handleApiError(error, 'Failed to send message')
+          set({ error: getErrorMessageWithFallback(error, 'Failed to send message') })
           throw error
         }
       },
@@ -264,6 +269,7 @@ export const useThreadStore = create<ThreadStore>()(
         options: ThreadRequestOptions
       ): Promise<Thread> => {
         // Cold-start: atomically create thread + first turn in one request
+        set({ error: null })
         try {
           const { thread, userTurn, assistantTurn, streamUrl } = await api.turns.send(messageText, {
             projectId,
@@ -286,12 +292,13 @@ export const useThreadStore = create<ThreadStore>()(
 
           return thread
         } catch (error) {
-          handleApiError(error, 'Failed to start new thread')
+          set({ error: getErrorMessageWithFallback(error, 'Failed to start new thread') })
           throw error
         }
       },
 
       deleteThread: async (threadId: string) => {
+        set({ error: null })
         try {
           await api.threads.delete(threadId)
 
@@ -300,7 +307,7 @@ export const useThreadStore = create<ThreadStore>()(
             turns: state.turns.filter((t) => t.threadId !== threadId),
           }))
         } catch (error) {
-          handleApiError(error, 'Failed to delete thread')
+          set({ error: getErrorMessageWithFallback(error, 'Failed to delete thread') })
           throw error
         }
       },
@@ -315,6 +322,7 @@ export const useThreadStore = create<ThreadStore>()(
           return
         }
 
+        set({ error: null })
         log.debug('interruptStreamingTurn:start', { turnId, threadId })
 
         try {
@@ -325,7 +333,7 @@ export const useThreadStore = create<ThreadStore>()(
             await state.refreshTurn(threadId, turnId)
           }
         } catch (error) {
-          handleApiError(error, 'Failed to interrupt streaming turn')
+          set({ error: getErrorMessageWithFallback(error, 'Failed to interrupt streaming turn') })
         }
       },
 
@@ -487,8 +495,7 @@ export const useThreadStore = create<ThreadStore>()(
             return
           }
           log.error('openThread:error', error)
-          set({ error: 'Failed to open thread', isLoadingTurns: false })
-          handleApiError(error, 'Failed to open thread')
+          set({ error: getErrorMessageWithFallback(error, 'Failed to open thread'), isLoadingTurns: false })
         }
       },
 
@@ -502,7 +509,7 @@ export const useThreadStore = create<ThreadStore>()(
         }
         const log = makeLogger('thread-store')
         log.debug('paginateBefore:start', { threadId: state.threadId, fromTurnId: top.id })
-        set({ isLoadingTurns: true })
+        set({ isLoadingTurns: true, error: null })
         try {
           const { turns, hasMoreBefore } = await api.turns.paginate(state.threadId, {
             fromTurnId: top.id,
@@ -534,8 +541,7 @@ export const useThreadStore = create<ThreadStore>()(
             return
           }
           log.error('paginateBefore:error', error)
-          set({ error: 'Failed to load older messages', isLoadingTurns: false })
-          handleApiError(error, 'Failed to load older messages')
+          set({ error: getErrorMessageWithFallback(error, 'Failed to load older messages'), isLoadingTurns: false })
         }
       },
 
@@ -549,7 +555,7 @@ export const useThreadStore = create<ThreadStore>()(
         }
         const log = makeLogger('thread-store')
         log.debug('paginateAfter:start', { threadId: state.threadId, fromTurnId: bottom.id })
-        set({ isLoadingTurns: true })
+        set({ isLoadingTurns: true, error: null })
         try {
           const { turns, hasMoreAfter } = await api.turns.paginate(state.threadId, {
             fromTurnId: bottom.id,
@@ -582,8 +588,7 @@ export const useThreadStore = create<ThreadStore>()(
             return
           }
           log.error('paginateAfter:error', error)
-          set({ error: 'Failed to load newer messages', isLoadingTurns: false })
-          handleApiError(error, 'Failed to load newer messages')
+          set({ error: getErrorMessageWithFallback(error, 'Failed to load newer messages'), isLoadingTurns: false })
         }
       },
 
@@ -599,7 +604,7 @@ export const useThreadStore = create<ThreadStore>()(
         }
 
         const controller = new AbortController()
-        set({ navigationAbortController: controller, isLoadingTurns: true })
+        set({ navigationAbortController: controller, isLoadingTurns: true, error: null })
 
         try {
           const { turns, hasMoreBefore, hasMoreAfter } = await api.turns.paginate(threadId, {
@@ -641,13 +646,12 @@ export const useThreadStore = create<ThreadStore>()(
             return
           }
           log.error('switchSibling:error', error)
-          set({ error: 'Failed to navigate', isLoadingTurns: false, navigationAbortController: null })
-          handleApiError(error, 'Failed to navigate')
+          set({ error: getErrorMessageWithFallback(error, 'Failed to navigate'), isLoadingTurns: false, navigationAbortController: null })
         }
       },
 
       editTurn: async (threadId: string, turnId: string | undefined, messageText: string, options?: ThreadRequestOptions) => {
-        set({ isLoadingTurns: true })
+        set({ isLoadingTurns: true, error: null })
         try {
           // Find the original turn to get its prevTurnId
           // If turnId is undefined, we assume we are editing a root turn (or creating a new one?)
@@ -669,13 +673,12 @@ export const useThreadStore = create<ThreadStore>()(
           // This ensures pagination includes the full thread context
           await get().switchSibling(threadId, assistantTurn.id)
         } catch (error) {
-          set({ error: 'Failed to edit turn', isLoadingTurns: false })
-          handleApiError(error, 'Failed to edit turn')
+          set({ error: getErrorMessageWithFallback(error, 'Failed to edit turn'), isLoadingTurns: false })
         }
       },
 
       regenerateTurn: async (threadId: string, assistantTurnId: string) => {
-        set({ isLoadingTurns: true })
+        set({ isLoadingTurns: true, error: null })
         try {
           const currentTurns = get().turns
           const assistantTurn = currentTurns.find((t) => t.id === assistantTurnId)
@@ -715,10 +718,11 @@ export const useThreadStore = create<ThreadStore>()(
           // Navigate to the new branch
           await get().switchSibling(threadId, newUserTurn.id)
         } catch (error) {
-          set({ error: 'Failed to regenerate', isLoadingTurns: false })
-          handleApiError(error, 'Failed to regenerate')
+          set({ error: getErrorMessageWithFallback(error, 'Failed to regenerate'), isLoadingTurns: false })
         }
       },
+
+      clearError: () => set({ error: null }),
     }),
     {
       name: 'thread-store',

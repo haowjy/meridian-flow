@@ -9,8 +9,8 @@ import { ImportResponse } from '@/core/lib/api'
  * Extensible: add new actions here when backend adds new action types.
  */
 const ACTION_CONFIG: Record<string, { icon: LucideIcon; className: string }> = {
-  created: { icon: Check, className: 'text-green-500' },
-  updated: { icon: AlertTriangle, className: 'text-yellow-500' },
+  created: { icon: Check, className: 'text-success' },
+  updated: { icon: AlertTriangle, className: 'text-warning' },
   skipped: { icon: Minus, className: 'text-muted-foreground' },
   failed: { icon: X, className: 'text-destructive' },
 } as const

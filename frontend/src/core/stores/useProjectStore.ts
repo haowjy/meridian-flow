@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { Project } from '@/features/projects/types/project'
 import { api } from '@/core/lib/api'
-import { handleApiError } from '@/core/lib/errors'
+import { getErrorMessageWithFallback } from '@/core/lib/errors'
 import { editorCache } from '@/core/editor/cache'
 
 type LoadStatus = 'idle' | 'loading' | 'success' | 'error'
@@ -23,6 +23,7 @@ interface ProjectStore {
   createProject: (name: string) => Promise<Project>
   updateProject: (id: string, name: string) => Promise<void>
   deleteProject: (id: string) => Promise<void>
+  clearError: () => void
 }
 
 /**
@@ -108,12 +109,11 @@ export const useProjectStore = create<ProjectStore>()(
             return
           }
 
-          const message = error instanceof Error ? error.message : 'Failed to load projects'
+          const message = getErrorMessageWithFallback(error, 'Failed to load projects. Please check your connection.')
           // If we have cached data, keep status as 'success', otherwise set to 'error'
           const currentProjects = get().projects
           const errorStatus = currentProjects.length > 0 ? 'success' : 'error'
           set({ error: message, status: errorStatus, isFetching: false })
-          handleApiError(error, 'Failed to load projects. Please check your connection.')
         }
       },
 
@@ -126,26 +126,28 @@ export const useProjectStore = create<ProjectStore>()(
           }))
           return project
         } catch (error) {
-          const message = error instanceof Error ? error.message : 'Failed to create project'
+          const message = getErrorMessageWithFallback(error, 'Failed to create project')
           set({ error: message })
-          handleApiError(error, 'Failed to create project')
           throw error
         }
       },
 
       updateProject: async (id, name) => {
+        set({ error: null })
         try {
           const updated = await api.projects.update(id, name)
           set((state) => ({
             projects: state.projects.map((p) => (p.id === id ? updated : p)),
           }))
         } catch (error) {
-          handleApiError(error, 'Failed to update project')
+          const message = getErrorMessageWithFallback(error, 'Failed to update project')
+          set({ error: message })
           throw error
         }
       },
 
       deleteProject: async (id) => {
+        set({ error: null })
         try {
           await api.projects.delete(id)
           set((state) => ({
@@ -153,10 +155,13 @@ export const useProjectStore = create<ProjectStore>()(
             currentProjectId: state.currentProjectId === id ? null : state.currentProjectId,
           }))
         } catch (error) {
-          handleApiError(error, 'Failed to delete project')
+          const message = getErrorMessageWithFallback(error, 'Failed to delete project')
+          set({ error: message })
           throw error
         }
       },
+
+      clearError: () => set({ error: null }),
     }),
     {
       name: 'project-store',

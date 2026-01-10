@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useCallback } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { toast } from 'sonner'
 import { useThreadStore } from '@/core/stores/useThreadStore'
 import { useEditorStore } from '@/core/stores/useEditorStore'
 import { useStreamingBuffer } from './useStreamingBuffer'
@@ -255,18 +254,15 @@ export function useThreadSSE() {
                 try {
                   const data = JSON.parse(msg.data) as TurnErrorEvent
 
-                  // Only show error toast for real errors, not user cancellations
+                  // Log error (non-cancellation) or debug (cancellation)
                   if (!data.is_cancelled) {
                     logger.error('sse:turn_error', data)
-                    toast.error('Streaming Error', {
-                      description: data.error || 'An error occurred while generating the response.',
-                      duration: 5000,
-                    })
                   } else {
                     logger.debug('sse:turn_cancelled', data)
                   }
 
-                  // Refresh the turn to ensure we have the final state (partial blocks)
+                  // Refresh the turn to ensure we have the final state (partial blocks + error field)
+                  // The inline error will be displayed via Turn.error in AssistantTurn component
                   if (threadId && data.turn_id) {
                     refreshTurn(threadId, data.turn_id).catch(err =>
                       logger.error('sse:turn_error:refresh_error', err)

@@ -1,9 +1,11 @@
 import { createRootRoute, Outlet } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
-import { Toaster } from '@/shared/components/ui/sonner'
 import { PreloadRemover } from '@/core/components/PreloadRemover'
 import { SyncProvider } from '@/core/components/SyncProvider'
+import { ErrorProvider } from '@/core/components/ErrorProvider'
 import { DevRetryPanel } from '@/core/components/DevRetryPanel'
+import { NetworkStatusBanner } from '@/shared/components/NetworkStatusBanner'
+import { SessionExpiredModal } from '@/shared/components/SessionExpiredModal'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -15,8 +17,10 @@ function RootLayout() {
     <>
       <PreloadRemover />
       <SyncProvider />
+      <ErrorProvider />
+      <NetworkStatusBanner />
+      <SessionExpiredModal />
       <Outlet />
-      <Toaster />
       {import.meta.env.VITE_DEV_TOOLS === '1' && <DevRetryPanel />}
       {import.meta.env.DEV && <TanStackRouterDevtools />}
     </>

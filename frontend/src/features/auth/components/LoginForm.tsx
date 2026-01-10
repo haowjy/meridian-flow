@@ -2,8 +2,9 @@ import { createClient } from '@/core/supabase/client'
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
+import { InlineError } from '@/shared/components/InlineError'
+import { CheckCircle } from 'lucide-react'
 import { FormEvent, useState } from 'react'
-import { toast } from 'sonner'
 
 export function LoginForm() {
     const supabase = createClient()
@@ -11,24 +12,27 @@ export function LoginForm() {
     const [password, setPassword] = useState('')
     const [isLoading, setIsLoading] = useState(false)
     const [isSignUp, setIsSignUp] = useState(false)
+    const [error, setError] = useState<string | null>(null)
+    const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
     const handleEmailLogin = async (e: FormEvent) => {
         e.preventDefault()
+        setError(null)
         setIsLoading(true)
         try {
-            const { error } = await supabase.auth.signInWithPassword({
+            const { error: authError } = await supabase.auth.signInWithPassword({
                 email,
                 password,
             })
-            if (error) {
-                toast.error(error.message)
+            if (authError) {
+                setError(authError.message)
             } else {
                 // Supabase sets session cookies automatically
                 window.location.href = '/projects'
             }
-        } catch (error) {
-            console.error('Email login failed', error)
-            toast.error('An unexpected error occurred')
+        } catch (err) {
+            console.error('Email login failed', err)
+            setError('An unexpected error occurred')
         } finally {
             setIsLoading(false)
         }
@@ -36,44 +40,55 @@ export function LoginForm() {
 
     const handleEmailSignUp = async (e: FormEvent) => {
         e.preventDefault()
+        setError(null)
+        setSuccessMessage(null)
         setIsLoading(true)
         try {
-            const { error } = await supabase.auth.signUp({
+            const { error: authError } = await supabase.auth.signUp({
                 email,
                 password,
             })
-            if (error) {
-                toast.error(error.message)
+            if (authError) {
+                setError(authError.message)
             } else {
-                toast.success('Check your email for a confirmation link!')
+                setSuccessMessage('Check your email for a confirmation link!')
                 setEmail('')
                 setPassword('')
                 setIsSignUp(false)
             }
-        } catch (error) {
-            console.error('Email sign up failed', error)
-            toast.error('An unexpected error occurred')
+        } catch (err) {
+            console.error('Email sign up failed', err)
+            setError('An unexpected error occurred')
         } finally {
             setIsLoading(false)
         }
     }
 
     const handleGoogleLogin = async () => {
+        setError(null)
+        setSuccessMessage(null)
         try {
-            const { error } = await supabase.auth.signInWithOAuth({
+            const { error: authError } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
                 options: {
                     redirectTo: `${window.location.origin}/auth/callback`,
                 },
             })
 
-            if (error) {
-                toast.error(error.message)
+            if (authError) {
+                setError(authError.message)
             }
-        } catch (error) {
-            console.error('Google login failed', error)
-            toast.error('An unexpected error occurred')
+        } catch (err) {
+            console.error('Google login failed', err)
+            setError('An unexpected error occurred')
         }
+    }
+
+    // Clear messages when switching between sign in/sign up
+    const handleToggleMode = (signUp: boolean) => {
+        setError(null)
+        setSuccessMessage(null)
+        setIsSignUp(signUp)
     }
 
     return (
@@ -92,6 +107,21 @@ export function LoginForm() {
                         }
                     </p>
                 </div>
+
+                {/* Success message */}
+                {successMessage && (
+                    <div className="mb-4 flex items-center gap-2 rounded-lg border border-success/50 bg-success/10 px-3 py-2" role="status">
+                        <CheckCircle className="h-4 w-4 shrink-0 text-success" />
+                        <span className="text-sm text-success">{successMessage}</span>
+                    </div>
+                )}
+
+                {/* Error message */}
+                {error && (
+                    <div className="mb-4">
+                        <InlineError message={error} onDismiss={() => setError(null)} />
+                    </div>
+                )}
 
                 {/* Google button */}
                 <Button
@@ -182,7 +212,7 @@ export function LoginForm() {
                             <button
                                 type="button"
                                 className="font-medium text-foreground hover:text-primary transition-colors"
-                                onClick={() => setIsSignUp(false)}
+                                onClick={() => handleToggleMode(false)}
                             >
                                 Sign in
                             </button>
@@ -193,7 +223,7 @@ export function LoginForm() {
                             <button
                                 type="button"
                                 className="font-medium text-foreground hover:text-primary transition-colors"
-                                onClick={() => setIsSignUp(true)}
+                                onClick={() => handleToggleMode(true)}
                             >
                                 Sign up
                             </button>

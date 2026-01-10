@@ -34,13 +34,16 @@ const modernLiterary: ThemePreset = {
       primary: '#C8973E',
       primaryForeground: '#2C2418',
 
-      // Feedback
+      // Feedback colors - usage guide:
+      // - bg-X/10-20 (tinted bg) → use text-X (the color itself)
+      // - bg-X (full bg) → use text-X-foreground (contrasting text)
+      // Example: bg-error/10 + text-error ✓ | bg-error + text-error-foreground ✓
       success: '#2D5A47',
-      successForeground: '#FFFFFF',
+      successForeground: '#FFFFFF',  // Use ON bg-success (full background)
       warning: '#DB9A30',
-      warningForeground: '#2C2418',
-      error: '#C4785A',
-      errorForeground: '#FFFFFF',
+      warningForeground: '#2C2418',  // Use ON bg-warning (full background)
+      error: '#B54425',              // Warm terracotta red, 5.3:1 contrast on #F9F6F0
+      errorForeground: '#FFFFFF',    // Use ON bg-error (full background)
 
       // Focus rings
       focusRingOuter: 'rgba(200, 151, 62, 0.35)',
@@ -79,13 +82,13 @@ const modernLiterary: ThemePreset = {
       primary: '#E4B866',
       primaryForeground: '#1C1917',
 
-      // Feedback
+      // Feedback colors (see light mode for usage guide)
       success: '#4A8F72',
-      successForeground: '#1C1917',
+      successForeground: '#1C1917',  // Use ON bg-success (full background)
       warning: '#F0B042',
-      warningForeground: '#1C1917',
-      error: '#D4896B',
-      errorForeground: '#1C1917',
+      warningForeground: '#1C1917',  // Use ON bg-warning (full background)
+      error: '#E8735A',              // Coral red, 5.8:1 contrast on #1C1917
+      errorForeground: '#1C1917',    // Use ON bg-error (full background)
 
       // Focus rings
       focusRingOuter: 'rgba(228, 184, 102, 0.30)',
@@ -163,13 +166,13 @@ const classicJade: ThemePreset = {
       primary: '#356e5b',
       primaryForeground: '#FFFFFF',
 
-      // Feedback
+      // Feedback colors (see Modern Literary for usage guide)
       success: '#356e5b',
-      successForeground: '#FFFFFF',
+      successForeground: '#FFFFFF',  // Use ON bg-success (full background)
       warning: '#EBA868',
-      warningForeground: '#1C1A18',
-      error: '#EBA868',
-      errorForeground: '#1C1A18',
+      warningForeground: '#1C1A18',  // Use ON bg-warning (full background)
+      error: '#C65D3D',              // Burnt sienna, 4.7:1 contrast on #F7F3EB
+      errorForeground: '#FFFFFF',    // Use ON bg-error (full background)
 
       // Focus rings
       focusRingOuter: 'rgba(53, 110, 91, 0.28)',
@@ -208,13 +211,13 @@ const classicJade: ThemePreset = {
       primary: '#3CC8B4',
       primaryForeground: '#2f2f2f',
 
-      // Feedback
+      // Feedback colors (see Modern Literary for usage guide)
       success: '#3CC8B4',
-      successForeground: '#EAEAE7',
+      successForeground: '#EAEAE7',  // Use ON bg-success (full background)
       warning: '#E0A15F',
-      warningForeground: '#2f2f2f',
-      error: '#E0A15F',
-      errorForeground: '#2f2f2f',
+      warningForeground: '#2f2f2f',  // Use ON bg-warning (full background)
+      error: '#E8735A',              // Coral red, 4.5:1 contrast on #2f2f2f
+      errorForeground: '#2f2f2f',    // Use ON bg-error (full background)
 
       // Focus rings
       focusRingOuter: 'rgba(60, 200, 180, 0.22)',

@@ -4,6 +4,7 @@ import type { Turn, TurnBlock, ToolBlockContent } from '@/features/threads/types
 import { useThreadStore } from '@/core/stores/useThreadStore'
 import { TurnActionBar } from './TurnActionBar'
 import { BlockRenderer } from './blocks'
+import { InlineError } from '@/shared/components/InlineError'
 import { makeLogger } from '@/core/lib/logger'
 import { buildAssistantRenderItems } from '@/features/threads/utils/toolGrouping'
 import { getToolRenderer } from './blocks/toolRegistry'
@@ -93,6 +94,11 @@ export const AssistantTurn = React.memo(function AssistantTurn({ turn }: Assista
             </React.Fragment>
           )
         })}
+
+        {/* Show turn-level error inline (no retry - most turn errors are config issues, not transient) */}
+        {turn.error && (
+          <InlineError message={turn.error} />
+        )}
       </div>
 
       <TurnActionBar

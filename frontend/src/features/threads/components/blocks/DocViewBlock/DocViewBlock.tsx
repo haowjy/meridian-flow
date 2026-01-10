@@ -209,15 +209,15 @@ export const DocViewBlock = React.memo(function DocViewBlock({
   // Check if document no longer exists (for document results)
   const documentNoLongerExists = isDocument && !resolvedDocument
 
-  // Status styling
+  // Status styling - use theme semantic colors for proper contrast
   let statusLabel: string
   let statusClass: string
   if (isError) {
     statusLabel = 'Error'
-    statusClass = 'bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700'
+    statusClass = 'bg-error/15 text-error border-error/30'
   } else if (hasResult) {
     statusLabel = 'Read'
-    statusClass = 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700'
+    statusClass = 'bg-success/15 text-success border-success/30'
   } else {
     statusLabel = 'Pending...'
     statusClass = 'bg-muted text-muted-foreground border-muted-foreground/30'
@@ -291,7 +291,7 @@ export const DocViewBlock = React.memo(function DocViewBlock({
                 className={cn(
                   'flex items-start gap-2',
                   'text-xs p-2.5 rounded-md',
-                  'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
+                  'bg-error/15 text-error'
                 )}
               >
                 <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />

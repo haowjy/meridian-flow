@@ -5,8 +5,7 @@ import { api } from '@/core/lib/api'
 import { db } from '@/core/lib/db'
 import { loadWithPolicy, ReconcileNewestPolicy, ICacheRepo, IRemoteRepo } from '@/core/lib/cache'
 import { documentSyncService } from '@/core/services/documentSyncService'
-import { handleApiError, isAbortError } from '@/core/lib/errors'
-import { toast } from 'sonner'
+import { getErrorMessageWithFallback, isAbortError } from '@/core/lib/errors'
 import { makeLogger } from '@/core/lib/logger'
 
 const logger = makeLogger('editor-store')
@@ -38,6 +37,8 @@ interface EditorStore {
   navigateHunk: (direction: 'next' | 'prev', totalHunks: number) => void
   /** Clamp navigator position when hunks are removed (called by useDiffView) */
   clampNavigatorPosition: (totalHunks: number) => void
+  /** Clear the error state */
+  clearError: () => void
 }
 
 export const useEditorStore = create<EditorStore>()((set, get) => ({
@@ -106,9 +107,8 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
             set({ isLoading: false })
             return
           }
-          const message = error instanceof Error ? error.message : 'Failed to load document'
+          const message = getErrorMessageWithFallback(error, 'Failed to load document')
           set({ error: message, isLoading: false })
-          handleApiError(error, 'Failed to load document')
         })
     } catch (error) {
       // Handle AbortError silently (expected when user switches documents)
@@ -118,48 +118,38 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
         return
       }
 
-      // Real errors: show to user
-      const message = error instanceof Error ? error.message : 'Failed to load document'
+      // Real errors: set error state for inline display
+      const message = getErrorMessageWithFallback(error, 'Failed to load document')
       logger.error(`Failed to load document ${documentId}:`, error)
       set({ error: message, isLoading: false })
-      handleApiError(error, 'Failed to load document')
     }
   },
 
   saveDocument: async (documentId: string, content: string) => {
     logger.info('saveDocument called', { documentId, contentLength: content.length })
-    set({ status: 'saving' })
+    set({ status: 'saving', error: null })
     const currentDoc = get().activeDocument
     try {
       await documentSyncService.save(documentId, content, currentDoc ?? undefined, {
         onServerSaved: (serverDoc) => {
           if (get()._activeDocumentId === documentId) {
-            set({ activeDocument: serverDoc, status: 'saved', lastSaved: serverDoc.updatedAt })
+            set({ activeDocument: serverDoc, status: 'saved', lastSaved: serverDoc.updatedAt, error: null })
           }
         },
         onRetryScheduled: () => {
           // Keep showing "saving" status while retry is pending
-          toast.info('Syncing changes...', { duration: 2000 })
+          // Status badge will show 'saving' state
+          logger.debug('Save retry scheduled, keeping saving status')
         },
         onPermanentFailure: (err) => {
-          set({ status: 'error' })
           const message = err instanceof Error ? err.message : 'Failed to sync after retries'
-          toast.error(message, { duration: 10000 })
+          set({ status: 'error', error: message })
         },
       })
     } catch (error) {
       // Client/validation errors (no retry)
-      set({ status: 'error' })
-      const message = error instanceof Error ? error.message : 'Failed to save document'
-      toast.error(`Save failed: ${message}`, {
-        duration: 10000,
-        action: {
-          label: 'Retry',
-          onClick: () => get().saveDocument(documentId, content),
-        },
-      })
-      // Also funnel through centralized handler for consistency/logging
-      handleApiError(error, 'Failed to save document')
+      const message = getErrorMessageWithFallback(error, 'Failed to save document')
+      set({ status: 'error', error: message })
     }
   },
 
@@ -282,4 +272,6 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
       return {}
     })
   },
+
+  clearError: () => set({ error: null }),
 }))
