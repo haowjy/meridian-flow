@@ -59,7 +59,7 @@ export function EditTurnDialog({
   if (!isOpen) return null
 
   return (
-    <div className="flex flex-col w-full rounded-xl bg-card px-3 py-2 shadow-md">
+    <div className="flex flex-col w-full rounded-lg bg-card px-3 py-2" style={{ boxShadow: 'var(--shadow-2)' }}>
       <AutosizeTextarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
@@ -81,16 +81,16 @@ export function EditTurnDialog({
           <>
             <Button
               variant="outline"
+              size="sm"
               onClick={onClose}
               disabled={isSaving}
-              className="px-3 py-1 text-xs sm:text-sm"
             >
               Cancel
             </Button>
             <Button
+              size="sm"
               onClick={handleSave}
               disabled={isSaving || !content.trim()}
-              className="px-3 py-1 text-xs sm:text-sm"
             >
               {isSaving ? 'Saving...' : 'Save'}
             </Button>

@@ -84,7 +84,7 @@ export function ThreadRequestControls({
   const showStop = Boolean(isStreaming && onStop)
 
   return (
-    <div className="flex items-center gap-2 pt-1 text-[0.7rem] sm:text-xs">
+    <div className="flex items-center gap-2 pt-1.5 text-xs">
       <div className="flex flex-1 flex-wrap items-center gap-2">
         <ModelSelector
           models={allModels}
@@ -101,6 +101,12 @@ export function ThreadRequestControls({
           requiresThinking={requiresThinking}
         />
       </div>
+      {isStreaming && (
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+          <span className="hidden sm:inline">Responding</span>
+        </span>
+      )}
       {showSend && (onSend || rightContent) && (
         <div className="flex items-center gap-1">
           {rightContent}
@@ -108,7 +114,7 @@ export function ThreadRequestControls({
             <Button
               type="button"
               size="icon"
-              className="shrink-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="shrink-0 transition-transform hover:scale-105 active:scale-95 disabled:hover:scale-100 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
               disabled={showStop ? false : isSendDisabled}
               onClick={showStop && onStop ? onStop : onSend}
               aria-label={showStop ? 'Stop response' : 'Send message'}
@@ -171,7 +177,7 @@ function ModelSelector({
           type="button"
           variant="ghost"
           size="sm"
-          className="flex items-center gap-1 px-2 py-1 text-[0.7rem] sm:text-xs"
+          className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
           <span className="font-medium">{modelLabel}</span>
           <ChevronDown className="size-3" />
@@ -189,21 +195,21 @@ function ModelSelector({
                 true, // default model requires thinking (kimi-k2-thinking)
               )
             }
-            className="text-[0.7rem] sm:text-xs"
+            className="text-xs"
           >
             {DEFAULT_THREAD_REQUEST_OPTIONS.modelLabel}
           </DropdownMenuItem>
         )}
         {groups.map(([providerId, group], index) => (
           <div key={providerId}>
-            <DropdownMenuLabel className="mt-1 text-[0.65rem] font-normal text-muted-foreground sm:text-[0.7rem]">
+            <DropdownMenuLabel className="mt-1 text-[10px] font-normal text-muted-foreground sm:text-xs">
               {group.providerName}
             </DropdownMenuLabel>
             {group.items.map((model) => (
               <DropdownMenuItem
                 key={model.id}
                 className={cn(
-                  "flex items-center gap-2 text-[0.7rem] sm:text-xs",
+                  "flex items-center gap-2 text-xs",
                   model.id === selectedModelId && "bg-muted"
                 )}
                 onSelect={() =>
@@ -257,16 +263,14 @@ function ReasoningDropdown({
         <Button
           type="button"
           size="sm"
-          variant="outline"
+          variant="ghost"
           disabled={disabled}
           className={cn(
-            "flex items-center gap-1 px-2 py-1 text-[0.7rem] sm:text-xs",
-            // Off state: white/card background to blend with message input
-            !isActive && "bg-card",
-            // Active state: subtle jade background tint
-            isActive && "bg-primary/10",
+            "flex items-center gap-1 px-2 py-1 text-xs transition-colors",
+            // Active state: primary text color
+            isActive ? "text-primary" : "text-muted-foreground hover:text-foreground",
             // Disabled state: muted appearance
-            disabled && "text-muted-foreground opacity-50"
+            disabled && "opacity-50"
           )}
         >
           <Brain className="size-3" />
@@ -279,7 +283,7 @@ function ReasoningDropdown({
           <DropdownMenuItem
             key={level}
             onSelect={() => onChange(level)}
-            className="flex items-center gap-2 text-[0.7rem] sm:text-xs"
+            className="flex items-center gap-2 text-xs"
           >
             <Brain className="size-3" />
             <span className={value === level ? 'font-medium' : undefined}>
