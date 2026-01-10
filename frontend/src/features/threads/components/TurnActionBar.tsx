@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, Edit2, RefreshCw, Copy, Check, Info } from '
 import { cn } from '@/lib/utils'
 import { makeLogger } from '@/core/lib/logger'
 import { extractTextContent } from '@/features/threads/utils/turnHelpers'
-import { DebugInfoDialog } from '@/core/components/DebugInfoDialog'
+import { TurnDebugDialog } from '@/core/components/DebugInfoDialog'
 
 const log = makeLogger('TurnActionBar')
 
@@ -75,23 +75,6 @@ export const TurnActionBar = React.memo(function TurnActionBar({
         }
     }, [currentIndex, siblingCount, siblingList, onNavigate])
 
-    // Prepare debug metadata
-    const debugData = useMemo(() => ({
-        id: turn.id,
-        threadId: turn.threadId,
-        prevTurnId: turn.prevTurnId,
-        role: turn.role,
-        status: turn.status,
-        error: turn.error,
-        model: turn.model,
-        inputTokens: turn.inputTokens,
-        outputTokens: turn.outputTokens,
-        createdAt: turn.createdAt.toISOString(),
-        completedAt: turn.completedAt?.toISOString(),
-        lastAccessedAt: turn.lastAccessedAt?.toISOString(),
-        siblingIds: turn.siblingIds,
-        blockCount: turn.blocks.length,
-    }), [turn])
 
     return (
         <div className={cn('flex items-center gap-2 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity duration-200', className)}>
@@ -160,11 +143,10 @@ export const TurnActionBar = React.memo(function TurnActionBar({
             )}
 
             {isDevMode && (
-                <DebugInfoDialog
+                <TurnDebugDialog
                     isOpen={showDebug}
                     onClose={() => setShowDebug(false)}
-                    title={`Turn Debug: ${turn.role}`}
-                    data={debugData}
+                    turn={turn}
                 />
             )}
         </div>
