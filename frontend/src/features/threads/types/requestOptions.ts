@@ -7,7 +7,9 @@ export interface ThreadRequestOptions {
   modelLabel: string
   providerId: string
   reasoning: ReasoningLevel
-  // Note: tools are NOT user-configurable here - always uses DEFAULT_TOOLS
+  /** Whether the selected model supports tool calling (doc_edit, doc_view, etc.) */
+  supportsTools: boolean
+  // Note: tools are NOT user-configurable here - always uses DEFAULT_TOOLS when supportsTools is true
   // Future: add disabledTools: string[] for opt-out of specific tools
 }
 
@@ -24,6 +26,7 @@ export const DEFAULT_THREAD_REQUEST_OPTIONS: ThreadRequestOptions = {
   modelLabel: 'Kimi K2 Thinking',
   providerId: 'openrouter',
   reasoning: 'low', // Default model (kimi-k2-thinking) requires thinking
+  supportsTools: true, // Default model supports tools
 }
 
 /**
@@ -44,6 +47,7 @@ export function requestParamsToOptions(params?: RequestParams | null): ThreadReq
     modelLabel: params.model ?? DEFAULT_THREAD_REQUEST_OPTIONS.modelLabel, // Will be overwritten by ThreadRequestControls if needed
     providerId: params.provider ?? DEFAULT_THREAD_REQUEST_OPTIONS.providerId,
     reasoning,
-    // Note: tools not included - always uses DEFAULT_TOOLS via api.ts
+    // Default to true - will be corrected when model capabilities are loaded
+    supportsTools: DEFAULT_THREAD_REQUEST_OPTIONS.supportsTools,
   }
 }

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ArrowUp, Brain, ChevronDown, StopCircle } from 'lucide-react'
+import { ArrowUp, Brain, ChevronDown, StopCircle, Wrench } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
 import {
@@ -10,6 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/shared/components/ui/dropdown-menu'
+import { SimpleTooltip } from '@/shared/components/ui/tooltip'
 import type { ThreadRequestOptions, ReasoningLevel } from '@/features/threads/types'
 import { DEFAULT_THREAD_REQUEST_OPTIONS } from '@/features/threads/types'
 import { useModelCapabilities } from '@/features/threads/hooks/useModelCapabilities'
@@ -45,8 +46,10 @@ export function ThreadRequestControls({
         providerName: provider.name,
         id: model.id,
         displayName: model.displayName,
+        contextWindow: model.contextWindow,
         supportsThinking: model.supportsThinking,
         requiresThinking: model.requiresThinking,
+        supportsTools: model.supportsTools,
       })),
     ) ?? []
 
@@ -61,6 +64,7 @@ export function ThreadRequestControls({
     providerId: string,
     modelSupportsThinking: boolean,
     modelRequiresThinking: boolean,
+    modelSupportsTools: boolean,
   ) => {
     // Determine appropriate reasoning level based on model capabilities
     let reasoning = options.reasoning
@@ -78,6 +82,7 @@ export function ThreadRequestControls({
       modelLabel,
       providerId,
       reasoning,
+      supportsTools: modelSupportsTools,
     })
   }
 
@@ -119,7 +124,7 @@ export function ThreadRequestControls({
               onClick={showStop && onStop ? onStop : onSend}
               aria-label={showStop ? 'Stop response' : 'Send message'}
             >
-              {showStop ? <StopCircle className="size-4" /> : <ArrowUp className="size-4" />}
+              {showStop ? <StopCircle className="size-3" /> : <ArrowUp className="size-3" />}
             </Button>
           )}
         </div>
@@ -134,8 +139,10 @@ interface ModelSelectorProps {
     providerName: string
     id: string
     displayName: string
+    contextWindow: number
     supportsThinking: boolean
     requiresThinking: boolean
+    supportsTools: boolean
   }[]
   selectedModelId: string
   modelLabel: string
@@ -145,7 +152,14 @@ interface ModelSelectorProps {
     providerId: string,
     supportsThinking: boolean,
     requiresThinking: boolean,
+    supportsTools: boolean,
   ) => void
+}
+
+/** Format context window tokens as human-readable string (e.g., 200K, 1M) */
+function formatContext(tokens: number): string {
+  if (tokens >= 1_000_000) return `${Math.round(tokens / 1_000_000)}M`
+  return `${Math.round(tokens / 1_000)}K`
 }
 
 function ModelSelector({
@@ -154,17 +168,38 @@ function ModelSelector({
   modelLabel,
   onSelectModel,
 }: ModelSelectorProps) {
+  // Look up proper display name (modelLabel may be the raw model ID from backend)
+  const selectedModel = models.find((m) => m.id === selectedModelId)
+  const displayLabel = selectedModel?.displayName ?? modelLabel
+
   const grouped = models.reduce<
     Record<
       string,
-      { providerName: string; items: { id: string; displayName: string; supportsThinking: boolean; requiresThinking: boolean }[] }
+      {
+        providerName: string
+        items: {
+          id: string
+          displayName: string
+          contextWindow: number
+          supportsThinking: boolean
+          requiresThinking: boolean
+          supportsTools: boolean
+        }[]
+      }
     >
   >((acc, model) => {
     const key = model.providerId
     if (!acc[key]) {
       acc[key] = { providerName: model.providerName, items: [] }
     }
-    acc[key].items.push({ id: model.id, displayName: model.displayName, supportsThinking: model.supportsThinking, requiresThinking: model.requiresThinking })
+    acc[key].items.push({
+      id: model.id,
+      displayName: model.displayName,
+      contextWindow: model.contextWindow,
+      supportsThinking: model.supportsThinking,
+      requiresThinking: model.requiresThinking,
+      supportsTools: model.supportsTools,
+    })
     return acc
   }, {})
 
@@ -179,7 +214,7 @@ function ModelSelector({
           size="sm"
           className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
-          <span className="font-medium">{modelLabel}</span>
+          <span className="font-medium">{displayLabel}</span>
           <ChevronDown className="size-3" />
         </Button>
       </DropdownMenuTrigger>
@@ -193,6 +228,7 @@ function ModelSelector({
                 DEFAULT_THREAD_REQUEST_OPTIONS.providerId,
                 true, // default model supports thinking
                 true, // default model requires thinking (kimi-k2-thinking)
+                DEFAULT_THREAD_REQUEST_OPTIONS.supportsTools, // default model supports tools
               )
             }
             className="text-xs"
@@ -213,12 +249,39 @@ function ModelSelector({
                   model.id === selectedModelId && "bg-muted"
                 )}
                 onSelect={() =>
-                  onSelectModel(model.id, model.displayName, providerId, model.supportsThinking, model.requiresThinking)
+                  onSelectModel(model.id, model.displayName, providerId, model.supportsThinking, model.requiresThinking, model.supportsTools)
                 }
               >
-                <span className={model.id === selectedModelId ? 'font-medium' : undefined}>
+                <span
+                  className={cn(
+                    "flex-1",
+                    model.id === selectedModelId ? "font-medium" : undefined,
+                    !model.supportsTools && "text-muted-foreground"
+                  )}
+                >
                   {model.displayName}
                 </span>
+                <SimpleTooltip content="Context window" side="top">
+                  <span className="w-10 text-right font-mono text-[10px] text-muted-foreground">
+                    {formatContext(model.contextWindow)}
+                  </span>
+                </SimpleTooltip>
+                <div className="flex w-8 justify-end gap-1">
+                  {model.requiresThinking && (
+                    <SimpleTooltip content="Thinking" side="top">
+                      <span className="inline-flex">
+                        <Brain className="size-3 text-muted-foreground" />
+                      </span>
+                    </SimpleTooltip>
+                  )}
+                  {model.supportsTools && (
+                    <SimpleTooltip content="Tools" side="top">
+                      <span className="inline-flex">
+                        <Wrench className="size-3 text-muted-foreground" />
+                      </span>
+                    </SimpleTooltip>
+                  )}
+                </div>
               </DropdownMenuItem>
             ))}
             {index < groups.length - 1 && <DropdownMenuSeparator />}

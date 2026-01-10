@@ -6,6 +6,7 @@ import { ErrorProvider } from '@/core/components/ErrorProvider'
 import { DevRetryPanel } from '@/core/components/DevRetryPanel'
 import { NetworkStatusBanner } from '@/shared/components/NetworkStatusBanner'
 import { SessionExpiredModal } from '@/shared/components/SessionExpiredModal'
+import { TooltipProvider } from '@/shared/components/ui/tooltip'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -14,7 +15,7 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   return (
-    <>
+    <TooltipProvider>
       <PreloadRemover />
       <SyncProvider />
       <ErrorProvider />
@@ -23,7 +24,7 @@ function RootLayout() {
       <Outlet />
       {import.meta.env.VITE_DEV_TOOLS === '1' && <DevRetryPanel />}
       {import.meta.env.DEV && <TanStackRouterDevtools />}
-    </>
+    </TooltipProvider>
   )
 }
 
