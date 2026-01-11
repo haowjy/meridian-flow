@@ -77,6 +77,10 @@ func (m *mockTurnWriter) UpsertPartialTextBlock(ctx context.Context, block *llmM
 	return nil
 }
 
+func (m *mockTurnWriter) AccumulateTokensAndUpdateMetadata(ctx context.Context, turnID string, inputTokens, outputTokens int, model, stopReason string, responseMetadata map[string]interface{}) error {
+	return nil
+}
+
 func (m *mockTurnWriter) GetPersistedBlocks() []*llmModels.TurnBlock {
 	m.mu.Lock()
 	defer m.mu.Unlock()

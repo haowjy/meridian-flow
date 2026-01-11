@@ -448,6 +448,38 @@ func (r *PostgresTurnRepository) UpdateTurnError(ctx context.Context, turnID, er
 	return nil
 }
 
+// AccumulateTokensAndUpdateMetadata atomically accumulates tokens and updates completion metadata
+// Single SQL statement ensures consistency - tokens and metadata update together or not at all
+func (r *PostgresTurnRepository) AccumulateTokensAndUpdateMetadata(
+	ctx context.Context,
+	turnID string,
+	inputTokens, outputTokens int,
+	model, stopReason string,
+	responseMetadata map[string]interface{},
+) error {
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET input_tokens = COALESCE(input_tokens, 0) + $2,
+		    output_tokens = COALESCE(output_tokens, 0) + $3,
+		    model = $4,
+		    stop_reason = $5,
+		    response_metadata = $6
+		WHERE id = $1
+	`, r.tables.Turns)
+
+	executor := postgres.GetExecutor(ctx, r.pool)
+	result, err := executor.Exec(ctx, query, turnID, inputTokens, outputTokens, model, stopReason, responseMetadata)
+	if err != nil {
+		return fmt.Errorf("accumulate tokens and update metadata: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("turn %s: %w", turnID, domain.ErrNotFound)
+	}
+
+	return nil
+}
+
 // UpdateTurnMetadata updates a turn's metadata fields (model, tokens, stop_reason, etc.)
 func (r *PostgresTurnRepository) UpdateTurnMetadata(ctx context.Context, turnID string, metadata map[string]interface{}) error {
 	// Validate metadata map is not nil
