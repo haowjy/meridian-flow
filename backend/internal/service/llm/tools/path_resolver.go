@@ -7,24 +7,28 @@ import (
 
 	"meridian/internal/domain"
 	"meridian/internal/domain/models/docsystem"
-	docsystemRepo "meridian/internal/domain/repositories/docsystem"
+	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
 // PathResolver handles resolution of folder paths to folder IDs.
-// Extracted from duplicate logic in SearchTool and ViewTool.
+// Uses FolderService for all data access (SOLID: DIP - depends on service interface).
 type PathResolver struct {
-	projectID  string
-	FolderRepo docsystemRepo.FolderRepository // Exported for use by tools
+	projectID string
+	userID    string
+	folderSvc docsysSvc.FolderService
 }
 
 // NewPathResolver creates a new PathResolver instance.
+// Uses service interface for all data access (SOLID: DIP - depends on interfaces, not concretions).
 func NewPathResolver(
 	projectID string,
-	folderRepo docsystemRepo.FolderRepository,
+	userID string,
+	folderSvc docsysSvc.FolderService,
 ) *PathResolver {
 	return &PathResolver{
-		projectID:  projectID,
-		FolderRepo: folderRepo,
+		projectID: projectID,
+		userID:    userID,
+		folderSvc: folderSvc,
 	}
 }
 
@@ -73,15 +77,16 @@ func (r *PathResolver) ResolveFolderPath(ctx context.Context, path string) (*str
 }
 
 // findFolderByName finds a folder by name within a parent folder.
+// Uses FolderService.ListChildren which returns both folders and documents.
 func (r *PathResolver) findFolderByName(ctx context.Context, parentID *string, name string) (*docsystem.Folder, error) {
-	// Get all child folders
-	folders, err := r.FolderRepo.ListChildren(ctx, parentID, r.projectID)
+	// Get folder contents using service layer (returns both folders and documents)
+	contents, err := r.folderSvc.ListChildren(ctx, r.userID, parentID, r.projectID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list folders: %w", err)
 	}
 
 	// Find folder with matching name
-	for _, folder := range folders {
+	for _, folder := range contents.Folders {
 		if folder.Name == name {
 			return &folder, nil
 		}

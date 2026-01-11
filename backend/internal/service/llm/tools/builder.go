@@ -1,9 +1,12 @@
 package tools
 
 import (
-	docsystemRepo "meridian/internal/domain/repositories/docsystem"
+	docsysSvc "meridian/internal/domain/services/docsystem"
 	"meridian/internal/service/llm/tools/external"
 )
+
+// Note: All tools now use service layer exclusively (Phase 4 complete).
+// No repository dependencies remain in the tools package.
 
 // ToolRegistryBuilder provides a fluent API for building tool registries.
 // This follows the Builder pattern and adheres to the Open/Closed Principle:
@@ -33,15 +36,18 @@ func (b *ToolRegistryBuilder) WithConfig(config *ToolConfig) *ToolRegistryBuilde
 
 // WithDocumentTools registers all document-related tools (doc_view, doc_search, doc_tree, doc_edit).
 // These tools operate on the project's document system.
+// All tools use services for data access (SOLID: DIP - depends on interfaces).
 func (b *ToolRegistryBuilder) WithDocumentTools(
 	projectID string,
-	documentRepo docsystemRepo.DocumentRepository,
-	folderRepo docsystemRepo.FolderRepository,
+	userID string,
+	documentSvc docsysSvc.DocumentService,
+	folderSvc docsysSvc.FolderService,
 ) *ToolRegistryBuilder {
-	viewTool := NewViewTool(projectID, documentRepo, folderRepo, b.config)
-	treeTool := NewTreeTool(projectID, documentRepo, folderRepo, b.config)
-	searchTool := NewSearchTool(projectID, documentRepo, folderRepo, b.config)
-	editTool := NewEditTool(projectID, documentRepo, folderRepo, b.config)
+	// All tools use service layer for data access (Phase 4: zero repo dependencies)
+	viewTool := NewViewTool(projectID, userID, documentSvc, folderSvc, b.config)
+	treeTool := NewTreeTool(projectID, userID, folderSvc, b.config)
+	searchTool := NewSearchTool(projectID, userID, documentSvc, folderSvc, b.config)
+	editTool := NewEditTool(projectID, userID, documentSvc, folderSvc, b.config)
 
 	b.registry.Register("doc_view", viewTool)
 	b.registry.Register("doc_tree", treeTool)
@@ -70,11 +76,12 @@ func (b *ToolRegistryBuilder) Build() *ToolRegistry {
 // Equivalent to: NewToolRegistryBuilder().WithDocumentTools(...).Build()
 func BuildWithDefaults(
 	projectID string,
-	documentRepo docsystemRepo.DocumentRepository,
-	folderRepo docsystemRepo.FolderRepository,
+	userID string,
+	documentSvc docsysSvc.DocumentService,
+	folderSvc docsysSvc.FolderService,
 ) *ToolRegistry {
 	return NewToolRegistryBuilder().
-		WithDocumentTools(projectID, documentRepo, folderRepo).
+		WithDocumentTools(projectID, userID, documentSvc, folderSvc).
 		Build()
 }
 
@@ -82,12 +89,13 @@ func BuildWithDefaults(
 // Equivalent to: NewToolRegistryBuilder().WithDocumentTools(...).WithWebSearch(...).Build()
 func BuildWithWebSearch(
 	projectID string,
-	documentRepo docsystemRepo.DocumentRepository,
-	folderRepo docsystemRepo.FolderRepository,
+	userID string,
+	documentSvc docsysSvc.DocumentService,
+	folderSvc docsysSvc.FolderService,
 	searchClient external.SearchClient,
 ) *ToolRegistry {
 	return NewToolRegistryBuilder().
-		WithDocumentTools(projectID, documentRepo, folderRepo).
+		WithDocumentTools(projectID, userID, documentSvc, folderSvc).
 		WithWebSearch(searchClient).
 		Build()
 }

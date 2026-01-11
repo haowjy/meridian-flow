@@ -571,3 +571,30 @@ func (s *documentService) SearchDocuments(ctx context.Context, userID string, re
 
 	return results, nil
 }
+
+// GetDocumentByPath retrieves a document by its Unix-style path within a project.
+// userID is required for authorization - verifies user can access the project.
+// path is the Unix-style document path (e.g., "/Characters/Aria.md").
+func (s *documentService) GetDocumentByPath(ctx context.Context, userID, path, projectID string) (*models.Document, error) {
+	// Authorize: check user can access this project
+	if err := s.authorizer.CanAccessProject(ctx, userID, projectID); err != nil {
+		return nil, err
+	}
+
+	// Get document by path (repo call)
+	doc, err := s.docRepo.GetByPath(ctx, path, projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Compute display path
+	docPath, err := s.docRepo.GetPath(ctx, doc)
+	if err != nil {
+		s.logger.Warn("failed to compute path", "doc_id", doc.ID, "error", err)
+		doc.Path = doc.Filename()
+	} else {
+		doc.Path = docPath
+	}
+
+	return doc, nil
+}

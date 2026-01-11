@@ -18,6 +18,7 @@ import (
 	"meridian/internal/domain/repositories"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	llmRepo "meridian/internal/domain/repositories/llm"
+	docsysSvc "meridian/internal/domain/services/docsystem"
 	llmSvc "meridian/internal/domain/services/llm"
 	"meridian/internal/service/llm/tokens"
 	"meridian/internal/service/llm/tools"
@@ -72,8 +73,8 @@ type Service struct {
 	turnNavigator        llmRepo.TurnNavigator
 	threadRepo           llmRepo.ThreadRepository
 	projectRepo          docsysRepo.ProjectRepository // For validating project access on cold start
-	documentRepo         docsysRepo.DocumentRepository
-	folderRepo           docsysRepo.FolderRepository
+	documentSvc          docsysSvc.DocumentService    // For tool operations (SOLID: DIP)
+	folderSvc            docsysSvc.FolderService      // For tool operations (SOLID: DIP)
 	validator            ThreadValidator
 	providerGetter       LLMProviderGetter
 	registry             *mstream.Registry
@@ -95,8 +96,8 @@ func NewService(
 	turnNavigator llmRepo.TurnNavigator,
 	threadRepo llmRepo.ThreadRepository,
 	projectRepo docsysRepo.ProjectRepository,
-	documentRepo docsysRepo.DocumentRepository,
-	folderRepo docsysRepo.FolderRepository,
+	documentSvc docsysSvc.DocumentService,
+	folderSvc docsysSvc.FolderService,
 	validator ThreadValidator,
 	providerGetter LLMProviderGetter,
 	registry *mstream.Registry,
@@ -115,8 +116,8 @@ func NewService(
 		turnNavigator:        turnNavigator,
 		threadRepo:           threadRepo,
 		projectRepo:          projectRepo,
-		documentRepo:         documentRepo,
-		folderRepo:           folderRepo,
+		documentSvc:          documentSvc,
+		folderSvc:            folderSvc,
 		validator:            validator,
 		providerGetter:       providerGetter,
 		registry:             registry,
@@ -367,8 +368,9 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	}
 
 	// Create per-request tool registry with project-specific tools
+	// All tools use service layer (SOLID compliance, Phase 4: zero repo dependencies)
 	builder := tools.NewToolRegistryBuilder().
-		WithDocumentTools(thread.ProjectID, s.documentRepo, s.folderRepo)
+		WithDocumentTools(thread.ProjectID, req.UserID, s.documentSvc, s.folderSvc)
 
 	// Add web search tool if requested via provider-specific tool name
 	var hasWebSearch bool

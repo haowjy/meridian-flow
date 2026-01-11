@@ -173,7 +173,9 @@ func (r *systemPromptResolver) loadSkills(
 	return strings.Join(parts, "\n\n"), nil
 }
 
-// getSkillDocument retrieves the SKILL.md document for a given skill
+// getSkillDocument retrieves the SKILL.md document for a given skill.
+// TODO: When adding skill management UI, consider migrating to a SkillService
+// that abstracts skill document loading (currently uses documentRepo directly).
 func (r *systemPromptResolver) getSkillDocument(
 	ctx context.Context,
 	projectID string,
