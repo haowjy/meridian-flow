@@ -230,6 +230,8 @@ const { themeId, setThemeId, isDark, setMode } = useThemeContext();
 
 **Full docs**: `_docs/technical/frontend/themes/README.md`
 
+**Tailwind patterns**: `_docs/technical/frontend/tailwind-strategies.md`
+
 ## Key Conventions
 
 ### Empty Content Handling
