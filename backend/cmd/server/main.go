@@ -118,6 +118,14 @@ func main() {
 	// Needs all repositories for checking ownership chains (turn → thread → project → user)
 	authorizer := serviceAuth.NewOwnerBasedAuthorizer(projectRepo, folderRepo, docRepo, threadRepo, turnRepo)
 
+	// Create document services (needed by LLM tools for write operations)
+	// Moved before SetupServices for proper dependency injection
+	contentAnalyzer := serviceDocsys.NewContentAnalyzer()
+	pathResolver := serviceDocsys.NewPathResolver(folderRepo, txManager)
+	projectService := serviceDocsys.NewProjectService(projectRepo, logger)
+	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, docsysValidator, authorizer, logger)
+	folderService := serviceDocsys.NewFolderService(folderRepo, docRepo, docService, pathResolver, txManager, docsysValidator, authorizer, logger)
+
 	// Setup LLM providers
 	providerRegistry, err := serviceLLM.SetupProviders(cfg, logger)
 	if err != nil {
@@ -132,12 +140,15 @@ func main() {
 	logger.Info("capability registry initialized")
 
 	// Setup LLM services (thread, thread history, streaming)
+	// docService and folderService are passed for tool write operations (SOLID: DIP)
 	llmServices, streamRegistry, err := serviceLLM.SetupServices(
 		threadRepo,
 		turnRepo,
 		projectRepo,
 		docRepo,
 		folderRepo,
+		docService,    // For tool write operations
+		folderService, // For tool write operations
 		providerRegistry,
 		cfg,
 		txManager,
@@ -152,13 +163,6 @@ func main() {
 
 	// Create identifier resolver (for UUID/slug resolution)
 	identifierResolver := identifier.NewResolver(projectRepo, docRepo)
-
-	// Create document services
-	contentAnalyzer := serviceDocsys.NewContentAnalyzer()
-	pathResolver := serviceDocsys.NewPathResolver(folderRepo, txManager)
-	projectService := serviceDocsys.NewProjectService(projectRepo, logger)
-	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, docsysValidator, authorizer, logger)
-	folderService := serviceDocsys.NewFolderService(folderRepo, docRepo, docService, pathResolver, txManager, docsysValidator, authorizer, logger)
 	treeService := serviceDocsys.NewTreeService(folderRepo, docRepo, authorizer, logger)
 	converterRegistry := converter.NewConverterRegistry()
 

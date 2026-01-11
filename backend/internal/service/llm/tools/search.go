@@ -7,23 +7,26 @@ import (
 	"strings"
 
 	"meridian/internal/domain"
-	"meridian/internal/domain/models/docsystem"
-	docsystemRepo "meridian/internal/domain/repositories/docsystem"
+	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
 // SearchTool implements the 'search' tool for full-text search across documents.
+// Uses service layer for all data access (SOLID: DIP - depends on interfaces).
 type SearchTool struct {
 	projectID    string
-	documentRepo docsystemRepo.DocumentRepository
-	pathResolver *PathResolver
+	userID       string                       // Required for service layer authorization
+	documentSvc  docsysSvc.DocumentService    // For search operations (replaces documentRepo)
+	pathResolver *PathResolver                // For folder path resolution
 	config       *ToolConfig
 }
 
 // NewSearchTool creates a new SearchTool instance.
+// Uses service interfaces for all data access (SOLID: DIP - depends on interfaces, not concretions).
 func NewSearchTool(
 	projectID string,
-	documentRepo docsystemRepo.DocumentRepository,
-	folderRepo docsystemRepo.FolderRepository,
+	userID string,
+	documentSvc docsysSvc.DocumentService,
+	folderSvc docsysSvc.FolderService, // For PathResolver
 	config *ToolConfig,
 ) *SearchTool {
 	if config == nil {
@@ -31,8 +34,9 @@ func NewSearchTool(
 	}
 	return &SearchTool{
 		projectID:    projectID,
-		documentRepo: documentRepo,
-		pathResolver: NewPathResolver(projectID, folderRepo),
+		userID:       userID,
+		documentSvc:  documentSvc,
+		pathResolver: NewPathResolver(projectID, userID, folderSvc),
 		config:       config,
 	}
 }
@@ -95,8 +99,8 @@ func (t *SearchTool) Execute(ctx context.Context, input map[string]interface{}) 
 		}
 	}
 
-	// Build search options
-	searchOpts := &docsystem.SearchOptions{
+	// Build search request for service layer
+	searchReq := &docsysSvc.SearchDocumentsRequest{
 		Query:     query,
 		ProjectID: t.projectID,
 		Limit:     limit,
@@ -104,14 +108,8 @@ func (t *SearchTool) Execute(ctx context.Context, input map[string]interface{}) 
 		FolderID:  folderID,
 	}
 
-	// Apply defaults and validate
-	searchOpts.ApplyDefaults()
-	if err := searchOpts.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid search options: %w", err)
-	}
-
-	// Execute search
-	results, err := t.documentRepo.SearchDocuments(ctx, searchOpts)
+	// Execute search using service layer (handles authorization + path computation)
+	results, err := t.documentSvc.SearchDocuments(ctx, t.userID, searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}

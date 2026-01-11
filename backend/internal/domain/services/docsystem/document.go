@@ -15,6 +15,11 @@ type DocumentService interface {
 	// userID is used for authorization check
 	GetDocument(ctx context.Context, userID, documentID string) (*docsystem.Document, error)
 
+	// GetDocumentByPath retrieves a document by its Unix-style path within a project
+	// userID is used for authorization check (validates project access)
+	// path is the Unix-style path (e.g., "/Characters/Aria.md")
+	GetDocumentByPath(ctx context.Context, userID, path, projectID string) (*docsystem.Document, error)
+
 	// UpdateDocument updates a document
 	// userID is used for authorization check
 	// AIVersion field supports tri-state: absent=don't change, null=clear, value=set
@@ -27,6 +32,11 @@ type DocumentService interface {
 	// SearchDocuments performs full-text search across documents
 	// userID is used to filter results to user's accessible projects
 	SearchDocuments(ctx context.Context, userID string, req *SearchDocumentsRequest) (*docsystem.SearchResults, error)
+
+	// UpdateAIVersion updates only the ai_version field for a document
+	// This is a convenience method for LLM tools that only need to update ai_version
+	// userID is used for authorization check
+	UpdateAIVersion(ctx context.Context, userID, documentID string, aiVersion *string) (*docsystem.Document, error)
 }
 
 // CreateDocumentRequest represents a document creation request

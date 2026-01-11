@@ -4,28 +4,34 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"meridian/internal/domain"
 	"meridian/internal/domain/models/docsystem"
-	docsystemRepo "meridian/internal/domain/repositories/docsystem"
+	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
 // EditTool implements the 'doc_edit' tool for editing document content.
 // Edits are written to documents.ai_version for user review before acceptance.
 type EditTool struct {
 	projectID    string
-	documentRepo docsystemRepo.DocumentRepository
-	folderRepo   docsystemRepo.FolderRepository
+	userID       string                     // Required for service layer authorization
+	documentSvc  docsysSvc.DocumentService  // For all document operations (DIP: interface, not concrete)
+	folderSvc    docsysSvc.FolderService    // For folder operations (DIP: interface, not concrete)
 	pathResolver *PathResolver
 	config       *ToolConfig
 }
 
 // NewEditTool creates a new EditTool instance.
+// All document operations go through DocumentService (DIP: depends on interfaces).
+// - DIP: Depends on interfaces (DocumentService, FolderService), not concrete implementations
+// - SRP: Services handle business logic, tool handles execution
 func NewEditTool(
 	projectID string,
-	documentRepo docsystemRepo.DocumentRepository,
-	folderRepo docsystemRepo.FolderRepository,
+	userID string,
+	documentSvc docsysSvc.DocumentService,
+	folderSvc docsysSvc.FolderService,
 	config *ToolConfig,
 ) *EditTool {
 	if config == nil {
@@ -33,9 +39,10 @@ func NewEditTool(
 	}
 	return &EditTool{
 		projectID:    projectID,
-		documentRepo: documentRepo,
-		folderRepo:   folderRepo,
-		pathResolver: NewPathResolver(projectID, folderRepo),
+		userID:       userID,
+		documentSvc:  documentSvc,
+		folderSvc:    folderSvc,
+		pathResolver: NewPathResolver(projectID, userID, folderSvc),
 		config:       config,
 	}
 }
@@ -93,8 +100,8 @@ func (t *EditTool) executeStrReplace(ctx context.Context, path string, input map
 	}
 	newStr, _ := input["new_str"].(string) // Can be empty string (deletion)
 
-	// Get document
-	doc, err := t.documentRepo.GetByPath(ctx, path, t.projectID)
+	// Get document using service layer (handles authorization + path computation)
+	doc, err := t.documentSvc.GetDocumentByPath(ctx, t.userID, path, t.projectID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return ErrorResult(ErrDocNotFound, "Document not found", map[string]any{"path": path}), nil
@@ -118,8 +125,8 @@ func (t *EditTool) executeStrReplace(ctx context.Context, path string, input map
 	// Apply replacement
 	newVersion := strings.Replace(base, oldStr, newStr, 1)
 
-	// Save to ai_version
-	if err := t.documentRepo.UpdateAIVersion(ctx, doc.ID, &newVersion); err != nil {
+	// Save to ai_version using service layer (includes authorization)
+	if _, err := t.documentSvc.UpdateAIVersion(ctx, t.userID, doc.ID, &newVersion); err != nil {
 		return nil, fmt.Errorf("failed to save ai_version: %w", err)
 	}
 
@@ -144,8 +151,8 @@ func (t *EditTool) executeInsert(ctx context.Context, path string, input map[str
 		return ErrorResult(ErrMissingParam, "insert requires new_str parameter", map[string]any{"param": "new_str"}), nil
 	}
 
-	// Get document
-	doc, err := t.documentRepo.GetByPath(ctx, path, t.projectID)
+	// Get document using service layer (handles authorization + path computation)
+	doc, err := t.documentSvc.GetDocumentByPath(ctx, t.userID, path, t.projectID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return ErrorResult(ErrDocNotFound, "Document not found", map[string]any{"path": path}), nil
@@ -171,8 +178,8 @@ func (t *EditTool) executeInsert(ctx context.Context, path string, input map[str
 	newLines = append(newLines, lines[insertLine:]...)
 	newVersion := strings.Join(newLines, "\n")
 
-	// Save to ai_version
-	if err := t.documentRepo.UpdateAIVersion(ctx, doc.ID, &newVersion); err != nil {
+	// Save to ai_version using service layer (includes authorization)
+	if _, err := t.documentSvc.UpdateAIVersion(ctx, t.userID, doc.ID, &newVersion); err != nil {
 		return nil, fmt.Errorf("failed to save ai_version: %w", err)
 	}
 
@@ -191,8 +198,8 @@ func (t *EditTool) executeAppend(ctx context.Context, path string, input map[str
 		return ErrorResult(ErrMissingParam, "append requires new_str parameter", map[string]any{"param": "new_str"}), nil
 	}
 
-	// Get document
-	doc, err := t.documentRepo.GetByPath(ctx, path, t.projectID)
+	// Get document using service layer (handles authorization + path computation)
+	doc, err := t.documentSvc.GetDocumentByPath(ctx, t.userID, path, t.projectID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return ErrorResult(ErrDocNotFound, "Document not found", map[string]any{"path": path}), nil
@@ -208,8 +215,8 @@ func (t *EditTool) executeAppend(ctx context.Context, path string, input map[str
 	}
 	newVersion += newStr
 
-	// Save to ai_version
-	if err := t.documentRepo.UpdateAIVersion(ctx, doc.ID, &newVersion); err != nil {
+	// Save to ai_version using service layer (includes authorization)
+	if _, err := t.documentSvc.UpdateAIVersion(ctx, t.userID, doc.ID, &newVersion); err != nil {
 		return nil, fmt.Errorf("failed to save ai_version: %w", err)
 	}
 
@@ -221,6 +228,7 @@ func (t *EditTool) executeAppend(ctx context.Context, path string, input map[str
 
 // executeCreate handles the create command.
 // Creates a new document (immediately, not as ai_version suggestion).
+// Uses DocumentService which handles: Metadata init, Slug generation, Extension validation, timestamps.
 func (t *EditTool) executeCreate(ctx context.Context, path string, input map[string]interface{}) (interface{}, error) {
 	// Extract parameters (recoverable error - LLM can retry)
 	fileText, ok := input["file_text"].(string)
@@ -228,8 +236,8 @@ func (t *EditTool) executeCreate(ctx context.Context, path string, input map[str
 		return ErrorResult(ErrMissingParam, "create requires file_text parameter", map[string]any{"param": "file_text"}), nil
 	}
 
-	// Check if document already exists
-	_, err := t.documentRepo.GetByPath(ctx, path, t.projectID)
+	// Check if document already exists using service layer
+	_, err := t.documentSvc.GetDocumentByPath(ctx, t.userID, path, t.projectID)
 	if err == nil {
 		return ErrorResult(ErrDocAlreadyExists, "Document already exists", map[string]any{"path": path}), nil
 	}
@@ -237,62 +245,49 @@ func (t *EditTool) executeCreate(ctx context.Context, path string, input map[str
 		return nil, fmt.Errorf("failed to check document existence: %w", err)
 	}
 
-	// Parse path into folder path and document name
-	folderPath, docName := splitDocPath(path)
+	// Parse path into folder path and document name (with extension)
+	// e.g., "/chapters/ch1.md" → folderPath="/chapters", fullName="ch1.md"
+	folderPath, fullName := splitDocPath(path)
 
-	// Resolve or create the folder hierarchy
-	folderID, err := t.resolveOrCreateFolder(ctx, folderPath)
+	// Split filename into name and extension
+	// e.g., "ch1.md" → name="ch1", ext=".md"
+	ext := filepath.Ext(fullName)
+	name := strings.TrimSuffix(fullName, ext)
+	if ext == "" {
+		ext = docsystem.DefaultExtension // Default to .md
+	}
+
+	// Prepare folder path for service (nil for root, else the path string)
+	var folderPathPtr *string
+	if folderPath != "/" && folderPath != "" {
+		// Remove leading slash for service - it expects "Characters/Aria" not "/Characters/Aria"
+		cleanPath := strings.TrimPrefix(folderPath, "/")
+		folderPathPtr = &cleanPath
+	}
+
+	// Use DocumentService to create document
+	// Service handles: Metadata initialization, Slug generation, Extension validation, timestamps
+	// FolderPath triggers auto-creation of intermediate folders
+	createReq := &docsysSvc.CreateDocumentRequest{
+		ProjectID:  t.projectID,
+		UserID:     t.userID,
+		FolderPath: folderPathPtr,
+		Name:       name,
+		Extension:  ext,
+		Content:    fileText,
+	}
+	doc, err := t.documentSvc.CreateDocument(ctx, createReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve folder path: %w", err)
-	}
-
-	// Create the document
-	doc := &docsystem.Document{
-		ProjectID: t.projectID,
-		FolderID:  folderID,
-		Name:      docName,
-		Content:   fileText,
-	}
-	if err := t.documentRepo.Create(ctx, doc); err != nil {
 		return nil, fmt.Errorf("failed to create document: %w", err)
 	}
 
 	return map[string]interface{}{
-		"path":    path,
-		"message": "Created new document",
+		"path":       path,
+		"message":    "Created new document",
+		"documentId": doc.ID,
 	}, nil
 }
 
-// resolveOrCreateFolder ensures the folder path exists, creating folders as needed.
-// Returns the folder ID (or nil for root).
-func (t *EditTool) resolveOrCreateFolder(ctx context.Context, folderPath string) (*string, error) {
-	// Handle root folder
-	if folderPath == "/" || folderPath == "" {
-		return nil, nil
-	}
-
-	// Parse path into segments
-	folderPath = strings.Trim(folderPath, "/")
-	segments := strings.Split(folderPath, "/")
-
-	// Walk/create each segment
-	var currentFolderID *string
-	for _, segment := range segments {
-		segment = strings.TrimSpace(segment)
-		if segment == "" {
-			continue
-		}
-
-		// Create folder if it doesn't exist
-		folder, err := t.folderRepo.CreateIfNotExists(ctx, t.projectID, currentFolderID, segment)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create folder '%s': %w", segment, err)
-		}
-		currentFolderID = &folder.ID
-	}
-
-	return currentFolderID, nil
-}
 
 // Helper functions
 

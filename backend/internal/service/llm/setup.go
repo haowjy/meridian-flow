@@ -13,11 +13,12 @@ import (
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	llmRepo "meridian/internal/domain/repositories/llm"
 	"meridian/internal/domain/services"
+	docsysSvc "meridian/internal/domain/services/docsystem"
 	llmSvc "meridian/internal/domain/services/llm"
 	"meridian/internal/service/llm/formatting"
 	"meridian/internal/service/llm/streaming"
-	threadhistory "meridian/internal/service/llm/thread_history"
 	"meridian/internal/service/llm/thread"
+	threadhistory "meridian/internal/service/llm/thread_history"
 	"meridian/internal/service/llm/tokens"
 )
 
@@ -70,6 +71,8 @@ func SetupServices(
 	projectRepo docsysRepo.ProjectRepository,
 	documentRepo docsysRepo.DocumentRepository,
 	folderRepo docsysRepo.FolderRepository,
+	documentSvc docsysSvc.DocumentService, // For tool write operations (SOLID: DIP)
+	folderSvc docsysSvc.FolderService,     // For tool write operations (SOLID: DIP)
 	providerRegistry *ProviderRegistry,
 	cfg *config.Config,
 	txManager repositories.TransactionManager,
@@ -169,8 +172,8 @@ func SetupServices(
 		turnRepo, // TurnNavigator (same repo implements all three)
 		threadRepo,
 		projectRepo, // For validating project access on cold start
-		documentRepo,
-		folderRepo,
+		documentSvc, // For tool operations (SOLID: DIP)
+		folderSvc,   // For tool operations (SOLID: DIP)
 		validator,
 		responseGenerator,
 		streamRegistry,
@@ -178,9 +181,9 @@ func SetupServices(
 		txManager,
 		systemPromptResolver,
 		messageBuilder,
-		toolLimitResolver,    // Tool round limit resolver (tier-ready)
-		capabilityRegistry,   // For checking model capabilities (e.g., supports_tools)
-		tokenFinalizer,       // For finalizing tokens on completion/interruption
+		toolLimitResolver,  // Tool round limit resolver (tier-ready)
+		capabilityRegistry, // For checking model capabilities (e.g., supports_tools)
+		tokenFinalizer,     // For finalizing tokens on completion/interruption
 		logger,
 	)
 

@@ -8,23 +8,27 @@ import (
 
 	"meridian/internal/domain"
 	"meridian/internal/domain/models/docsystem"
-	docsystemRepo "meridian/internal/domain/repositories/docsystem"
+	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
 // ViewTool implements the 'view' tool for reading document content or listing folder contents.
+// Uses service layer for all data access (SOLID: DIP - depends on interfaces).
 type ViewTool struct {
 	projectID    string
-	documentRepo docsystemRepo.DocumentRepository
-	folderRepo   docsystemRepo.FolderRepository
-	pathResolver *PathResolver
+	userID       string                        // Required for service layer authorization
+	documentSvc  docsysSvc.DocumentService     // For document operations (replaces documentRepo)
+	folderSvc    docsysSvc.FolderService       // For folder operations (replaces folderRepo)
+	pathResolver *PathResolver                 // For folder path resolution
 	config       *ToolConfig
 }
 
 // NewViewTool creates a new ViewTool instance.
+// Uses service interfaces for all data access (SOLID: DIP - depends on interfaces, not concretions).
 func NewViewTool(
 	projectID string,
-	documentRepo docsystemRepo.DocumentRepository,
-	folderRepo docsystemRepo.FolderRepository,
+	userID string,
+	documentSvc docsysSvc.DocumentService,
+	folderSvc docsysSvc.FolderService,
 	config *ToolConfig,
 ) *ViewTool {
 	if config == nil {
@@ -32,9 +36,10 @@ func NewViewTool(
 	}
 	return &ViewTool{
 		projectID:    projectID,
-		documentRepo: documentRepo,
-		folderRepo:   folderRepo,
-		pathResolver: NewPathResolver(projectID, folderRepo),
+		userID:       userID,
+		documentSvc:  documentSvc,
+		folderSvc:    folderSvc,
+		pathResolver: NewPathResolver(projectID, userID, folderSvc),
 		config:       config,
 	}
 }
@@ -67,11 +72,11 @@ func (t *ViewTool) Execute(ctx context.Context, input map[string]interface{}) (i
 		return t.listFolderContents(ctx, nil, "/")
 	}
 
-	// Try to get as document first
-	doc, err := t.documentRepo.GetByPath(ctx, path, t.projectID)
+	// Try to get as document first (using service layer)
+	doc, err := t.documentSvc.GetDocumentByPath(ctx, t.userID, path, t.projectID)
 	if err == nil {
-		// Found a document
-		return t.formatDocument(ctx, doc)
+		// Found a document - path is already computed by service
+		return t.formatDocument(doc)
 	}
 
 	// If not found as document, try as folder
@@ -89,18 +94,13 @@ func (t *ViewTool) Execute(ctx context.Context, input map[string]interface{}) (i
 		return nil, fmt.Errorf("failed to resolve folder path: %w", err)
 	}
 
-	// List folder contents
+	// List folder contents (using service layer)
 	return t.listFolderContents(ctx, folderID, folderPath)
 }
 
 // formatDocument converts a document to the tool result format.
-func (t *ViewTool) formatDocument(ctx context.Context, doc *docsystem.Document) (interface{}, error) {
-	// Compute path for the document
-	path, err := t.documentRepo.GetPath(ctx, doc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compute document path: %w", err)
-	}
-
+// Note: doc.Path is expected to be already computed by the service layer.
+func (t *ViewTool) formatDocument(doc *docsystem.Document) (interface{}, error) {
 	// AI sees ai_version if it exists (includes AI's pending suggestions)
 	// Otherwise sees user's content
 	content := doc.Content
@@ -119,7 +119,7 @@ func (t *ViewTool) formatDocument(ctx context.Context, doc *docsystem.Document) 
 		"type":          "document",
 		"id":            doc.ID,
 		"name":          doc.Name,
-		"path":          path,
+		"path":          doc.Path, // Path already computed by service
 		"content":       content,
 		"word_count":    doc.WordCount(),
 		"was_truncated": wasTruncated,
@@ -127,22 +127,17 @@ func (t *ViewTool) formatDocument(ctx context.Context, doc *docsystem.Document) 
 }
 
 // listFolderContents lists documents and subfolders in a folder.
+// Uses FolderService.ListChildren which returns both folders and documents.
 func (t *ViewTool) listFolderContents(ctx context.Context, folderID *string, folderPath string) (interface{}, error) {
-	// Get documents in this folder
-	documents, err := t.documentRepo.ListByFolder(ctx, folderID, t.projectID)
+	// Get folder contents using service layer (returns both folders and documents)
+	contents, err := t.folderSvc.ListChildren(ctx, t.userID, folderID, t.projectID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list documents: %w", err)
-	}
-
-	// Get child folders
-	folders, err := t.folderRepo.ListChildren(ctx, folderID, t.projectID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list folders: %w", err)
+		return nil, fmt.Errorf("failed to list folder contents: %w", err)
 	}
 
 	// Format documents (metadata only, no content)
-	docList := make([]map[string]interface{}, len(documents))
-	for i, doc := range documents {
+	docList := make([]map[string]interface{}, len(contents.Documents))
+	for i, doc := range contents.Documents {
 		docList[i] = map[string]interface{}{
 			"id":         doc.ID,
 			"name":       doc.Name,
@@ -152,8 +147,8 @@ func (t *ViewTool) listFolderContents(ctx context.Context, folderID *string, fol
 	}
 
 	// Format folders
-	folderList := make([]map[string]interface{}, len(folders))
-	for i, folder := range folders {
+	folderList := make([]map[string]interface{}, len(contents.Folders))
+	for i, folder := range contents.Folders {
 		folderList[i] = map[string]interface{}{
 			"id":   folder.ID,
 			"name": folder.Name,

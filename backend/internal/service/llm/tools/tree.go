@@ -7,22 +7,25 @@ import (
 	"strings"
 
 	"meridian/internal/domain"
-	docsystemRepo "meridian/internal/domain/repositories/docsystem"
+	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
 // TreeTool implements the 'tree' tool for showing hierarchical structure of folders and documents.
+// Uses service layer for all data access (SOLID: DIP - depends on interfaces).
 type TreeTool struct {
 	projectID    string
-	documentRepo docsystemRepo.DocumentRepository
-	pathResolver *PathResolver
+	userID       string                     // Required for service layer authorization
+	folderSvc    docsysSvc.FolderService    // For folder and document listing (replaces documentRepo + folderRepo)
+	pathResolver *PathResolver              // For folder path resolution
 	config       *ToolConfig
 }
 
 // NewTreeTool creates a new TreeTool instance.
+// Uses service interfaces for all data access (SOLID: DIP - depends on interfaces, not concretions).
 func NewTreeTool(
 	projectID string,
-	documentRepo docsystemRepo.DocumentRepository,
-	folderRepo docsystemRepo.FolderRepository,
+	userID string,
+	folderSvc docsysSvc.FolderService,
 	config *ToolConfig,
 ) *TreeTool {
 	if config == nil {
@@ -30,8 +33,9 @@ func NewTreeTool(
 	}
 	return &TreeTool{
 		projectID:    projectID,
-		documentRepo: documentRepo,
-		pathResolver: NewPathResolver(projectID, folderRepo),
+		userID:       userID,
+		folderSvc:    folderSvc,
+		pathResolver: NewPathResolver(projectID, userID, folderSvc),
 		config:       config,
 	}
 }
@@ -110,6 +114,7 @@ func (t *TreeTool) Execute(ctx context.Context, input map[string]interface{}) (i
 }
 
 // buildTree recursively builds the tree structure up to the specified depth.
+// Uses FolderService.ListChildren which returns both folders and documents.
 func (t *TreeTool) buildTree(ctx context.Context, folderID *string, maxDepth, currentDepth int) (map[string]interface{}, error) {
 	if currentDepth >= maxDepth {
 		// Reached max depth, don't traverse deeper
@@ -119,21 +124,15 @@ func (t *TreeTool) buildTree(ctx context.Context, folderID *string, maxDepth, cu
 		}, nil
 	}
 
-	// Get child folders
-	folders, err := t.pathResolver.FolderRepo.ListChildren(ctx, folderID, t.projectID)
+	// Get folder contents using service layer (returns both folders and documents)
+	contents, err := t.folderSvc.ListChildren(ctx, t.userID, folderID, t.projectID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list folders: %w", err)
-	}
-
-	// Get documents in this folder
-	documents, err := t.documentRepo.ListByFolder(ctx, folderID, t.projectID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list documents: %w", err)
+		return nil, fmt.Errorf("failed to list folder contents: %w", err)
 	}
 
 	// Format folders (with recursive subtrees if within depth limit)
-	folderList := make([]map[string]interface{}, len(folders))
-	for i, folder := range folders {
+	folderList := make([]map[string]interface{}, len(contents.Folders))
+	for i, folder := range contents.Folders {
 		// Recursively build subtree for this folder
 		subtree, err := t.buildTree(ctx, &folder.ID, maxDepth, currentDepth+1)
 		if err != nil {
@@ -149,8 +148,8 @@ func (t *TreeTool) buildTree(ctx context.Context, folderID *string, maxDepth, cu
 	}
 
 	// Format documents (metadata only)
-	docList := make([]map[string]interface{}, len(documents))
-	for i, doc := range documents {
+	docList := make([]map[string]interface{}, len(contents.Documents))
+	for i, doc := range contents.Documents {
 		docList[i] = map[string]interface{}{
 			"id":         doc.ID,
 			"name":       doc.Name,
