@@ -93,9 +93,9 @@ function StrReplaceDiff({
             className={cn(
               // Deletion: red background with strikethrough
               op === -1 &&
-                'bg-red-500/20 text-red-700 dark:text-red-400 line-through decoration-red-500/60',
+                'bg-error/20 text-error line-through decoration-error/60',
               // Insertion: green background
-              op === 1 && 'bg-green-500/20 text-green-700 dark:text-green-400',
+              op === 1 && 'bg-success/20 text-success',
               // Equal: no styling
               op === 0 && 'text-foreground/80'
             )}
@@ -124,7 +124,7 @@ function InsertPreview({
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2 text-[11px]">
-        <span className="text-green-600 dark:text-green-400 font-medium">
+        <span className="text-success font-medium">
           + Insert
         </span>
         <span className="text-muted-foreground">{lineLabel}</span>
@@ -132,10 +132,10 @@ function InsertPreview({
       <pre
         className={cn(
           'text-xs whitespace-pre-wrap font-mono',
-          'bg-green-500/10 border-l-2 border-green-500/50',
+          'bg-success/10 border-l-2 border-success/50',
           'rounded-md px-3 py-2',
           'overflow-auto max-h-48',
-          'text-green-700 dark:text-green-400',
+          'text-success',
           'leading-relaxed'
         )}
       >
@@ -153,7 +153,7 @@ function AppendPreview({ newStr }: { newStr: string }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2 text-[11px]">
-        <span className="text-green-600 dark:text-green-400 font-medium">
+        <span className="text-success font-medium">
           + Append
         </span>
         <span className="text-muted-foreground">to end of document</span>
@@ -161,10 +161,10 @@ function AppendPreview({ newStr }: { newStr: string }) {
       <pre
         className={cn(
           'text-xs whitespace-pre-wrap font-mono',
-          'bg-green-500/10 border-l-2 border-green-500/50',
+          'bg-success/10 border-l-2 border-success/50',
           'rounded-md px-3 py-2',
           'overflow-auto max-h-48',
-          'text-green-700 dark:text-green-400',
+          'text-success',
           'leading-relaxed'
         )}
       >
@@ -188,7 +188,7 @@ function CreatePreview({ fileText }: { fileText: string }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2 text-[11px]">
-        <span className="text-green-600 dark:text-green-400 font-medium">
+        <span className="text-success font-medium">
           + Create
         </span>
         <span className="text-muted-foreground">
@@ -201,10 +201,10 @@ function CreatePreview({ fileText }: { fileText: string }) {
       <pre
         className={cn(
           'text-xs whitespace-pre-wrap font-mono',
-          'bg-green-500/10 border-l-2 border-green-500/50',
+          'bg-success/10 border-l-2 border-success/50',
           'rounded-md px-3 py-2',
           'overflow-auto max-h-48',
-          'text-green-700 dark:text-green-400',
+          'text-success',
           'leading-relaxed'
         )}
       >
