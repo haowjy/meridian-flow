@@ -870,10 +870,10 @@ body.preload * {
    */
   .cm-ai-insertion {
     text-decoration: underline;
-    text-decoration-color: hsl(142.1 76.2% 36.3%); /* green-600 */
+    text-decoration-color: var(--success);
     text-decoration-thickness: 2px;
     text-underline-offset: 2px;
-    background-color: hsl(142.1 76.2% 36.3% / 0.1);
+    background-color: color-mix(in srgb, var(--success) 10%, transparent);
     border-radius: 2px;
   }
 
@@ -891,9 +891,9 @@ body.preload * {
    * Multiple visual cues: stronger background, bold text, left border effect
    */
   .cm-ai-hunk-focused {
-    background-color: color-mix(in srgb, hsl(142.1 76.2% 36.3%) 35%, transparent);
+    background-color: color-mix(in srgb, var(--success) 35%, transparent);
     font-weight: 600;
-    box-shadow: -3px 0 0 0 hsl(142.1 76.2% 36.3%); /* Left border effect */
+    box-shadow: -3px 0 0 0 var(--success); /* Left border effect */
   }
 
   /**
@@ -974,13 +974,13 @@ body.preload * {
   }
 
   .cm-hunk-reject:hover {
-    background: hsl(0 50% 92%);
-    color: hsl(0 70% 35%);
+    background: color-mix(in srgb, var(--error) 15%, transparent);
+    color: var(--error);
   }
 
   .cm-hunk-accept:hover {
-    background: hsl(142 50% 90%);
-    color: hsl(142 70% 30%);
+    background: color-mix(in srgb, var(--success) 15%, transparent);
+    color: var(--success);
   }
 
 }

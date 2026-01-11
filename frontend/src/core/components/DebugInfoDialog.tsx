@@ -156,7 +156,7 @@ function BlockItem({ block, index }: { block: TurnBlock; index: number }) {
           {block.id}
         </span>
         {block.status === 'partial' && (
-          <span className="text-orange-500 text-[10px]">partial</span>
+          <span className="text-warning text-[10px]">partial</span>
         )}
       </div>
 

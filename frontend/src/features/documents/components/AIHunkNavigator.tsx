@@ -99,7 +99,7 @@ export function AIHunkNavigator({
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 text-xs px-2 text-red-600/70 hover:text-red-700 hover:bg-red-50"
+          className="h-7 text-xs px-2 text-error/70 hover:text-error hover:bg-error/10"
           onClick={onRejectAll}
           title="Reject all changes"
         >
@@ -109,7 +109,7 @@ export function AIHunkNavigator({
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 text-xs px-2 text-green-600/70 hover:text-green-700 hover:bg-green-50"
+          className="h-7 text-xs px-2 text-success/70 hover:text-success hover:bg-success/10"
           onClick={onAcceptAll}
           title="Accept all changes"
         >
