@@ -45,6 +45,20 @@ flowchart TD
 | `IsFinal` | bool | `true` if from provider/API, `false` if estimated |
 | `Source` | string | `"provider"` \| `"openrouter_api"` \| `"estimator"` \| `"none"` |
 
+## Token Accumulation
+
+When a turn involves multiple LLM requests (e.g., tool continuation), tokens are **accumulated** rather than overwritten:
+
+| Request | Input Tokens | Output Tokens | Turn Total |
+|---------|--------------|---------------|------------|
+| Initial | 1000 | 200 | 1200 |
+| Tool continuation | 1500 | 150 | 2850 (cumulative) |
+| Final response | 2000 | 100 | 4950 (cumulative) |
+
+This ensures the turn's `input_tokens` and `output_tokens` reflect the **total cost** across all LLM requests.
+
+**Implementation**: `AccumulateTokensAndUpdateMetadata()` in `turn.go` uses `COALESCE(input_tokens, 0) + $2` for atomic accumulation.
+
 ## Token Estimator
 
 The estimator supports:

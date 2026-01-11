@@ -1023,18 +1023,16 @@ func (se *StreamExecutor) sendEvent(send func(mstream.Event), eventType string, 
 }
 
 // updateTurnMetadata updates the turn with final metadata
+// Accumulates tokens (adds to existing) and overwrites other metadata atomically
 func (se *StreamExecutor) updateTurnMetadata(ctx context.Context, metadata *domainllm.StreamMetadata) error {
-	return se.turnRepo.UpdateTurnMetadata(ctx, se.turnID, map[string]interface{}{
-		"model":             metadata.Model,
-		"input_tokens":      metadata.InputTokens,
-		"output_tokens":     metadata.OutputTokens,
-		"stop_reason":       metadata.StopReason,
-		"response_metadata": metadata.ResponseMetadata,
-	})
+	return se.turnRepo.AccumulateTokensAndUpdateMetadata(ctx, se.turnID,
+		metadata.InputTokens, metadata.OutputTokens,
+		metadata.Model, metadata.StopReason, metadata.ResponseMetadata)
 }
 
-// persistTokenMetadata is a helper to atomically persist token counts from TokenFinalizer.
+// persistTokenMetadata is a helper to persist token counts from TokenFinalizer.
 // It centralizes the response_metadata structure and reason handling across timeout/error paths.
+// Accumulates tokens (adds to existing) atomically with metadata update.
 // For normal completion, use updateTurnMetadata() which handles full StreamMetadata.
 func (se *StreamExecutor) persistTokenMetadata(ctx context.Context, result *tokens.TokenResult, reason string) error {
 	if result == nil || (result.InputTokens == 0 && result.OutputTokens == 0) {
@@ -1051,12 +1049,10 @@ func (se *StreamExecutor) persistTokenMetadata(ctx context.Context, result *toke
 		responseMeta["reason"] = reason
 	}
 
-	return se.turnRepo.UpdateTurnMetadata(ctx, se.turnID, map[string]interface{}{
-		"model":             se.model,
-		"input_tokens":      result.InputTokens,
-		"output_tokens":     result.OutputTokens,
-		"response_metadata": responseMeta,
-	})
+	// Atomically accumulate tokens and update metadata
+	return se.turnRepo.AccumulateTokensAndUpdateMetadata(ctx, se.turnID,
+		result.InputTokens, result.OutputTokens,
+		se.model, "", responseMeta)
 }
 
 // collectToolUse extracts tool use information from a tool_use block and adds it to the collection.

@@ -37,6 +37,11 @@ type TurnWriter interface {
 	// Used when streaming completes to store final metadata
 	UpdateTurnMetadata(ctx context.Context, turnID string, metadata map[string]interface{}) error
 
+	// AccumulateTokensAndUpdateMetadata atomically accumulates tokens and updates completion metadata
+	// Single SQL statement ensures consistency - tokens and metadata update together or not at all
+	// Used during tool continuation to sum tokens across multiple LLM requests
+	AccumulateTokensAndUpdateMetadata(ctx context.Context, turnID string, inputTokens, outputTokens int, model, stopReason string, responseMetadata map[string]interface{}) error
+
 	// UpsertPartialTextBlock creates or updates a partial text block
 	// Used during streaming interruption to persist accumulated text
 	// Uses ON CONFLICT to handle both insert (first partial) and update (more text accumulated)
