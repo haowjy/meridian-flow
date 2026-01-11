@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { Card } from '@/shared/components/ui/card'
 import { Button } from '@/shared/components/ui/button'
+import { cn } from '@/lib/utils'
 import { AutosizeTextarea } from '@/features/threads/components/AutosizeTextarea'
+import { userTurnCardBase } from './styles'
 import { ThreadRequestControls } from '@/features/threads/components/ThreadRequestControls'
 import type { ThreadRequestOptions, RequestParams } from '@/features/threads/types'
 import { requestParamsToOptions } from '@/features/threads/types'
@@ -58,8 +61,10 @@ export function EditTurnDialog({
 
   if (!isOpen) return null
 
+  // Card styling synced with UserTurn via userTurnCardBase
+  // gap-2 overrides Card's gap-6, w-full for textarea width
   return (
-    <div className="flex flex-col w-full rounded-lg bg-card px-3 py-2" style={{ boxShadow: 'var(--shadow-2)' }}>
+    <Card className={cn(userTurnCardBase, 'gap-2 w-full')}>
       <AutosizeTextarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
@@ -67,6 +72,7 @@ export function EditTurnDialog({
         autoFocus
         maxHeight="50vh"
         minHeight="auto"
+        className="px-0 py-0"  // Card px-3 py-2 handles padding
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
             event.preventDefault()
@@ -97,6 +103,6 @@ export function EditTurnDialog({
           </>
         }
       />
-    </div>
+    </Card>
   )
 }

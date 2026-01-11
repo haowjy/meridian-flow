@@ -45,8 +45,8 @@ export const ThinkingBlock = React.memo(function ThinkingBlock({ block }: Thinki
         )}
         Thinking...
       </summary>
-      <div className="mt-1 px-3 pb-3 whitespace-pre-wrap">
-        <Streamdown rehypePlugins={rehypePlugins}>{text}</Streamdown>
+      <div className="mt-1 px-3 pb-3 whitespace-pre-wrap break-words">
+        <Streamdown className="whitespace-pre-wrap break-words" rehypePlugins={rehypePlugins}>{text}</Streamdown>
       </div>
     </details>
   )

@@ -1,7 +1,6 @@
 import React, { useState, useCallback } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { Turn, ThreadRequestOptions } from '@/features/threads/types'
-import { cn } from '@/lib/utils'
 import { Card } from '@/shared/components/ui/card'
 import { TurnActionBar } from './TurnActionBar'
 import { EditTurnDialog } from './EditTurnDialog'
@@ -9,6 +8,7 @@ import { BlockRenderer } from './blocks'
 import { useThreadStore } from '@/core/stores/useThreadStore'
 import { makeLogger } from '@/core/lib/logger'
 import { extractTextContent } from '@/features/threads/utils/turnHelpers'
+import { userTurnCardBase } from './styles'
 
 const log = makeLogger('UserTurn')
 
@@ -75,7 +75,8 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
         />
       ) : (
         <>
-          <Card className={cn('px-3 py-2', 'thread-message thread-message--user')}>
+          {/* Card styling synced with EditTurnDialog via userTurnCardBase */}
+          <Card className={userTurnCardBase}>
             {turn.blocks.map((block) => (
               <BlockRenderer key={block.id} block={block} />
             ))}
