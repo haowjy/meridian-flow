@@ -749,7 +749,7 @@ func (se *StreamExecutor) handleSoftCancel(send func(mstream.Event)) {
 	}
 
 	// Persist whatever text the user already saw.
-	se.persistPartialTextBlocks(persistCtx)
+	se.persistPartialBlocks(persistCtx)
 
 	// Clear JSON accumulator too (no longer useful after cancel).
 	se.jsonAccumulator = nil
@@ -888,14 +888,20 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 	return se.completeTurn(ctx, send, metadata.StopReason, metadata)
 }
 
-// persistPartialTextBlocks saves any accumulated text blocks as partial blocks
-// Called during error/interruption handling to preserve partial LLM responses
-func (se *StreamExecutor) persistPartialTextBlocks(ctx context.Context) {
+// canPersistPartialBlock returns true for block types that are useful when partial.
+// Text and thinking are human-readable; tool_use JSON is unparseable when incomplete.
+func canPersistPartialBlock(blockType string) bool {
+	return blockType == llmModels.BlockTypeText || blockType == llmModels.BlockTypeThinking
+}
+
+// persistPartialBlocks saves any accumulated text/thinking blocks as partial blocks.
+// Called during error/interruption handling to preserve partial LLM responses.
+func (se *StreamExecutor) persistPartialBlocks(ctx context.Context) {
 	if len(se.textAccumulator) == 0 {
 		return
 	}
 
-	se.logger.Info("persisting partial text blocks",
+	se.logger.Info("persisting partial blocks",
 		"turn_id", se.turnID,
 		"block_count", len(se.textAccumulator),
 	)
@@ -905,15 +911,15 @@ func (se *StreamExecutor) persistPartialTextBlocks(ctx context.Context) {
 			continue
 		}
 
-		// Only persist text blocks - other types (thinking, tool_use, etc.) require complete structure
+		// Only persist text/thinking blocks - tool_use JSON is unparseable when partial
 		blockType := llmModels.BlockTypeText // default to text
 		if bt, exists := se.blockTypes[providerBlockIndex]; exists {
 			blockType = bt
 		}
 
-		// Skip non-text blocks - they're invalid when partial
-		if blockType != llmModels.BlockTypeText {
-			se.logger.Debug("skipping partial non-text block",
+		// Skip blocks that aren't useful when partial (e.g., tool_use with incomplete JSON)
+		if !canPersistPartialBlock(blockType) {
+			se.logger.Debug("skipping partial block (not text/thinking)",
 				"block_type", blockType,
 				"provider_index", providerBlockIndex,
 			)
@@ -935,7 +941,7 @@ func (se *StreamExecutor) persistPartialTextBlocks(ctx context.Context) {
 		}
 
 		// Persist the partial block
-		if err := se.turnRepo.UpsertPartialTextBlock(ctx, partialBlock); err != nil {
+		if err := se.turnRepo.UpsertPartialBlock(ctx, partialBlock); err != nil {
 			se.logger.Error("failed to persist partial text block",
 				"error", err,
 				"sequence", turnSequence,
@@ -1008,7 +1014,7 @@ func (se *StreamExecutor) handleError(_ context.Context, send func(mstream.Event
 	}
 
 	// Persist any accumulated partial text blocks BEFORE marking turn as error
-	se.persistPartialTextBlocks(persistCtx)
+	se.persistPartialBlocks(persistCtx)
 
 	// Detect if this is a user cancellation (don't show error toast for these)
 	// Check both: state-based (wasCancelled) and error-based (context.Canceled)

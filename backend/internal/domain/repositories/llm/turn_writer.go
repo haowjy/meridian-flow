@@ -42,8 +42,8 @@ type TurnWriter interface {
 	// Used during tool continuation to sum tokens across multiple LLM requests
 	AccumulateTokensAndUpdateMetadata(ctx context.Context, turnID string, inputTokens, outputTokens int, model, stopReason string, responseMetadata map[string]interface{}) error
 
-	// UpsertPartialTextBlock creates or updates a partial text block
-	// Used during streaming interruption to persist accumulated text
-	// Uses ON CONFLICT to handle both insert (first partial) and update (more text accumulated)
-	UpsertPartialTextBlock(ctx context.Context, block *llm.TurnBlock) error
+	// UpsertPartialBlock creates or updates a partial block (text or thinking).
+	// Used during streaming interruption to persist accumulated content.
+	// Uses ON CONFLICT to handle both insert (first partial) and update (more content accumulated).
+	UpsertPartialBlock(ctx context.Context, block *llm.TurnBlock) error
 }

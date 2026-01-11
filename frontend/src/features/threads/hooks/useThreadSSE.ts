@@ -71,6 +71,7 @@ export function useThreadSSE() {
     refreshTurn,
     setStreamingBlockInfo,
     updateToolState,
+    notifyStreamEnded,
   } = useThreadStore(
     useShallow((s) => ({
       threadId: s.threadId,
@@ -82,6 +83,7 @@ export function useThreadSSE() {
       refreshTurn: s.refreshTurn,
       setStreamingBlockInfo: s.setStreamingBlockInfo,
       updateToolState: s.updateToolState,
+      notifyStreamEnded: s.notifyStreamEnded,
     }))
   )
 
@@ -299,6 +301,9 @@ export function useThreadSSE() {
                   const data = JSON.parse(msg.data) as TurnCompleteEvent
                   logger.debug('sse:turn_complete', data)
 
+                  // Notify waiters that stream has ended (for cancel coordination)
+                  notifyStreamEnded(data.turn_id)
+
                   // Refresh the turn to ensure we have the final state (including any missing blocks or metadata)
                   if (threadId && data.turn_id) {
                     refreshTurn(threadId, data.turn_id).catch(err =>
@@ -339,6 +344,9 @@ export function useThreadSSE() {
                     logger.debug('sse:turn_cancelled', data)
                   }
 
+                  // Notify waiters that stream has ended (for cancel coordination)
+                  notifyStreamEnded(data.turn_id)
+
                   // Refresh the turn to ensure we have the final state (partial blocks + error field)
                   // The inline error will be displayed via Turn.error in AssistantTurn component
                   if (threadId && data.turn_id) {
@@ -369,12 +377,18 @@ export function useThreadSSE() {
             }
 
             logger.debug('sse:closed')
+
+            // Notify waiters that stream has ended (for cancel coordination)
+            const currentTurnId = currentTurnIdRef.current
+            if (currentTurnId) {
+              notifyStreamEnded(currentTurnId)
+            }
+
             flush()
             clearStreamingStream()
             jsonBufferRef.current = ''
             setStreamingBlockInfo(null, null)
 
-            const currentTurnId = currentTurnIdRef.current
             if (threadId && currentTurnId) {
               refreshTurn(threadId, currentTurnId).catch(err =>
                 logger.error('sse:closed:refresh_error', err)
@@ -433,5 +447,6 @@ export function useThreadSSE() {
     logger,
     setStreamingBlockInfo,
     updateToolState,
+    notifyStreamEnded,
   ])
 }

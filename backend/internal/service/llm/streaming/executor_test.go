@@ -73,7 +73,7 @@ func (m *mockTurnWriter) UpdateTurnError(ctx context.Context, turnID string, err
 	return nil
 }
 
-func (m *mockTurnWriter) UpsertPartialTextBlock(ctx context.Context, block *llmModels.TurnBlock) error {
+func (m *mockTurnWriter) UpsertPartialBlock(ctx context.Context, block *llmModels.TurnBlock) error {
 	return nil
 }
 

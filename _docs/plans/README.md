@@ -14,36 +14,21 @@ Each plan document includes:
 
 ## Active Plans
 
-### [Streaming Tool Call Display](./streaming-tool-call-display.md)
-**Status:** Ready to implement
-**Priority:** High
-**Effort:** 4-6 hours
-
-Fix "Unknown" tool call display during streaming. Show progressive state: writing → path → executing → complete.
-
-### [AI Editing MVP0](./ai-editing-mvp0.md)
-**Status:** In progress
-**Priority:** High
-**Effort:** TBD
-
-See existing plan document for details.
-
-### [Streaming Cleanup: Token Persistence Helper + Less-Flaky Tests](./streaming-cleanup-token-helper-and-tests.md)
-**Status:** In planning
-**Priority:** Medium
-**Effort:** Small
+None currently.
 
 ## Implemented Plans
 
-### [Soft Cancel v2 (Hard-like UX, Background Token Finalization)](./soft-cancel-v2-hardlike.md)
-**Status:** Implemented
-**Priority:** High
-**Effort:** Small/Medium
+### Streaming Cancel: Race Condition Fix + Partial Thinking Persistence
+**Implemented:** 2026-01-11
 
-### [Remove Stream “Idle Guard” (Defer For Subagents)](./remove-stream-idle-guard.md)
-**Status:** Implemented
-**Priority:** Medium
-**Effort:** Small
+Consolidated two related plans into one implementation:
+1. **Backend-Controlled Shutdown**: Frontend waits for SSE terminal event before refreshing
+2. **Partial Thinking Persistence**: `persistPartialBlocks()` now saves both `text` and `thinking` blocks
+
+Key files modified:
+- `backend/internal/service/llm/streaming/mstream_adapter.go` - `canPersistPartialBlock()`, `persistPartialBlocks()`
+- `frontend/src/core/stores/useThreadStore.ts` - `waitForStreamEnd()`, `notifyStreamEnded()`
+- `frontend/src/features/threads/hooks/useThreadSSE.ts` - terminal event notifications
 
 ---
 

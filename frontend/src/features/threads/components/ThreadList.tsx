@@ -1,4 +1,3 @@
-import { ScrollArea } from '@/shared/components/ui/scroll-area'
 import type { Thread } from '@/features/threads/types'
 import { ThreadListItem } from './ThreadListItem'
 
@@ -32,25 +31,24 @@ export function ThreadList({
   onRenameCancel,
   onDelete,
 }: ThreadListProps) {
+  // Parent (ThreadListPanel) handles scrolling via overflow-y-auto
   return (
-    <ScrollArea className="thread-pane-scroll h-full">
-      <div className="flex flex-col gap-1 p-1">
-        {threads.map((thread) => (
-          <ThreadListItem
-            key={thread.id}
-            thread={thread}
-            isActive={thread.id === activeThreadId}
-            isDisabled={isLoading}
-            isRenaming={thread.id === renamingThreadId}
-            onClick={() => onSelectThread(thread.id)}
-            onRename={() => onRename(thread.id)}
-            onRenameSubmit={(newTitle) => onRenameSubmit(thread.id, newTitle)}
-            onRenameCancel={onRenameCancel}
-            onDelete={() => onDelete(thread)}
-          />
-        ))}
-      </div>
-    </ScrollArea>
+    <div className="flex flex-col gap-1 p-1">
+      {threads.map((thread) => (
+        <ThreadListItem
+          key={thread.id}
+          thread={thread}
+          isActive={thread.id === activeThreadId}
+          isDisabled={isLoading}
+          isRenaming={thread.id === renamingThreadId}
+          onClick={() => onSelectThread(thread.id)}
+          onRename={() => onRename(thread.id)}
+          onRenameSubmit={(newTitle) => onRenameSubmit(thread.id, newTitle)}
+          onRenameCancel={onRenameCancel}
+          onDelete={() => onDelete(thread)}
+        />
+      ))}
+    </div>
   )
 }
 

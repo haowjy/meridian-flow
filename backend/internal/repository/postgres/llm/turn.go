@@ -639,9 +639,9 @@ func (r *PostgresTurnRepository) CreateTurnBlocks(ctx context.Context, blocks []
 	return nil
 }
 
-// UpsertPartialTextBlock creates or updates a partial text block
-// Used during streaming interruption to persist accumulated text
-func (r *PostgresTurnRepository) UpsertPartialTextBlock(ctx context.Context, block *llmModels.TurnBlock) error {
+// UpsertPartialBlock creates or updates a partial block (text or thinking).
+// Used during streaming interruption to persist accumulated content.
+func (r *PostgresTurnRepository) UpsertPartialBlock(ctx context.Context, block *llmModels.TurnBlock) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
 			turn_id, block_type, sequence, text_content, status, created_at, updated_at
@@ -669,7 +669,7 @@ func (r *PostgresTurnRepository) UpsertPartialTextBlock(ctx context.Context, blo
 		if postgres.IsPgForeignKeyError(err) {
 			return fmt.Errorf("turn not found: %w", domain.ErrNotFound)
 		}
-		return fmt.Errorf("upsert partial text block: %w", err)
+		return fmt.Errorf("upsert partial block: %w", err)
 	}
 
 	return nil
