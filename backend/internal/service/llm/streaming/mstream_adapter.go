@@ -6,14 +6,25 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
+	"strings"
+	"sync"
+	"time"
 
 	mstream "github.com/haowjy/meridian-stream-go"
 
 	llmModels "meridian/internal/domain/models/llm"
 	llmRepo "meridian/internal/domain/repositories/llm"
 	domainllm "meridian/internal/domain/services/llm"
+	"meridian/internal/service/llm/tokens"
 	"meridian/internal/service/llm/tools"
 )
+
+// dbWriteDeadline is the maximum time to wait for database writes during cleanup.
+// This prevents the executor from blocking forever if the database is slow or unresponsive.
+// Used in cancel/timeout paths where we use context.Background() to ensure cleanup
+// completes even if the original context is cancelled.
+const dbWriteDeadline = 30 * time.Second
 
 // StreamExecutor wraps mstream.Stream and manages LLM streaming for a turn.
 // It adapts the existing TurnExecutor logic to work with mstream's architecture.
@@ -29,14 +40,14 @@ type StreamExecutor struct {
 
 	// Tool execution support
 	toolRegistry     *tools.ToolRegistry
-	turnNavigator    llmRepo.TurnNavigator     // For loading conversation path during continuation
-	turnReader       llmRepo.TurnReader        // For loading turn blocks during continuation
-	messageBuilder   domainllm.MessageBuilder  // For building messages from conversation history
-	collectedTools   []tools.ToolCall          // tool_use blocks collected during streaming
-	toolResultIDs    map[string]bool           // tool_use_ids that already have tool_results (from provider decode errors)
-	toolIteration    int                       // current tool round (0 = initial, 1+ = continuations)
-	maxToolRounds    int                       // maximum number of tool execution rounds (default: 5)
-	maxBlockSequence int                       // highest block sequence number persisted (for tool_result sequencing)
+	turnNavigator    llmRepo.TurnNavigator    // For loading conversation path during continuation
+	turnReader       llmRepo.TurnReader       // For loading turn blocks during continuation
+	messageBuilder   domainllm.MessageBuilder // For building messages from conversation history
+	collectedTools   []tools.ToolCall         // tool_use blocks collected during streaming
+	toolResultIDs    map[string]bool          // tool_use_ids that already have tool_results (from provider decode errors)
+	toolIteration    int                      // current tool round (0 = initial, 1+ = continuations)
+	maxToolRounds    int                      // maximum number of tool execution rounds (default: 5)
+	maxBlockSequence int                      // highest block sequence number persisted (for tool_result sequencing)
 
 	// JSON delta accumulation (for complete block deltas)
 	// Partial JSON deltas are useless - accumulate and send complete JSON once
@@ -46,6 +57,33 @@ type StreamExecutor struct {
 	// Text deltas are sent immediately to SSE, but also accumulated here in case of interruption
 	textAccumulator map[int]string // blockIndex -> accumulated text
 	blockTypes      map[int]string // blockIndex -> block type (for filtering on persistence)
+
+	// Actor pattern state management
+	// Only the streaming goroutine transitions state; others send commands via ctrlCh.
+	state   ExecutorState   // Current state (only streaming goroutine mutates)
+	stateMu sync.RWMutex    // Protects state reads from other goroutines
+	ctrlCh  chan controlMsg // Command channel for cancel requests (buffered, size 1)
+
+	// Token finalization (replaces scattered token logic)
+	tokenFinalizer tokens.TokenFinalizer
+
+	// Soft cancel timeout: if provider doesn't finish within this duration after cancel,
+	// force cleanup and estimate tokens from the snapshot taken at cancel time.
+	softCancelTimeout  time.Duration // Timeout duration (from config, default: 5 minutes)
+	cancelTextSnapshot string        // Text accumulated at the moment of cancel (for timeout estimation)
+
+	// OpenRouter generation ID: captured from streaming metadata for token finalization
+	generationID string       // Captured from streaming metadata (OpenRouter only)
+	generationMu sync.RWMutex // Protects generationID (read by timeout goroutine)
+
+	// Persistence guard: atomic flag to prevent race condition where cancel is
+	// requested but block persistence is already in PersistAndClear callback.
+	// Disarmed IMMEDIATELY on cancel request, before queueing command.
+	persistenceGuard *PersistenceGuard
+
+	// Cleanup callback - called when streaming completes/errors
+	// Used by service layer to clean up executor registry
+	onCleanup func()
 }
 
 // NewStreamExecutor creates a new mstream-based executor for a turn.
@@ -62,20 +100,28 @@ func NewStreamExecutor(
 	logger *slog.Logger,
 	maxToolRounds int,
 	debugMode bool,
+	tokenFinalizer tokens.TokenFinalizer,
+	softCancelTimeoutSeconds int,
 ) *StreamExecutor {
 	se := &StreamExecutor{
-		turnID:         turnID,
-		model:          model,
-		turnRepo:       turnWriter,
-		provider:       provider,
-		logger:         logger,
-		toolRegistry:   toolRegistry,
-		turnNavigator:  turnNavigator,
-		turnReader:     turnReader,
-		messageBuilder: messageBuilder,
-		toolResultIDs:  make(map[string]bool),
-		toolIteration:  0,
-		maxToolRounds:  maxToolRounds,
+		turnID:            turnID,
+		model:             model,
+		turnRepo:          turnWriter,
+		provider:          provider,
+		logger:            logger,
+		toolRegistry:      toolRegistry,
+		turnNavigator:     turnNavigator,
+		turnReader:        turnReader,
+		messageBuilder:    messageBuilder,
+		toolResultIDs:     make(map[string]bool),
+		toolIteration:     0,
+		maxToolRounds:     maxToolRounds,
+		maxBlockSequence:  -1, // No blocks persisted yet (so first block is sequence 0)
+		state:             StateStreaming,
+		ctrlCh:            make(chan controlMsg, 1), // Buffered for non-blocking sends
+		tokenFinalizer:    tokenFinalizer,
+		softCancelTimeout: time.Duration(softCancelTimeoutSeconds) * time.Second,
+		persistenceGuard:  NewPersistenceGuard(), // Armed initially, disarmed on cancel
 	}
 
 	// Create catchup function for database-backed event replay (needs TurnReader)
@@ -97,6 +143,146 @@ func NewStreamExecutor(
 // GetStream returns the underlying mstream.Stream
 func (se *StreamExecutor) GetStream() *mstream.Stream {
 	return se.stream
+}
+
+// getState returns the current executor state (thread-safe for reads from other goroutines).
+func (se *StreamExecutor) getState() ExecutorState {
+	se.stateMu.RLock()
+	defer se.stateMu.RUnlock()
+	return se.state
+}
+
+// transitionTo changes the executor state. Only call from the streaming goroutine.
+// Logs the transition for debugging.
+func (se *StreamExecutor) transitionTo(newState ExecutorState) {
+	oldState := se.state
+	se.stateMu.Lock()
+	se.state = newState
+	se.stateMu.Unlock()
+
+	se.logger.Info("executor state transition",
+		"turn_id", se.turnID,
+		"from", oldState.String(),
+		"to", newState.String(),
+	)
+}
+
+// RequestSoftCancel requests a "hard-like" cancel UX while allowing the provider stream
+// to continue in background for accurate final token metadata.
+//
+// This sends a command to the streaming goroutine via ctrlCh. The streaming goroutine
+// will persist partial text blocks, emit a cancellation SSE event, then disconnect clients.
+//
+// Idempotent: multiple calls are safe (buffered channel drops duplicates).
+func (se *StreamExecutor) RequestSoftCancel() {
+	// CRITICAL: Disarm persistence guard FIRST for immediate visibility.
+	// This prevents the race condition where cancel is requested but
+	// PersistAndClear callback has already passed the state check.
+	// The atomic store is immediately visible to all goroutines.
+	se.persistenceGuard.Disarm()
+
+	select {
+	case se.ctrlCh <- controlMsg{cmd: CmdSoftCancel}:
+		se.logger.Debug("soft cancel command queued", "turn_id", se.turnID)
+	default:
+		// Channel full - cancel already requested (idempotent)
+		se.logger.Debug("soft cancel command already queued (idempotent)", "turn_id", se.turnID)
+	}
+}
+
+// RequestHardCancel requests immediate cancellation (for Anthropic models that support it).
+// This sends a command to the streaming goroutine which will cancel the context.
+func (se *StreamExecutor) RequestHardCancel() {
+	// CRITICAL: Disarm persistence guard FIRST for immediate visibility.
+	// Same protection as RequestSoftCancel - prevents race condition.
+	se.persistenceGuard.Disarm()
+
+	select {
+	case se.ctrlCh <- controlMsg{cmd: CmdHardCancel}:
+		se.logger.Debug("hard cancel command queued", "turn_id", se.turnID)
+	default:
+		// Channel full - cancel already requested (idempotent)
+		se.logger.Debug("hard cancel command already queued (idempotent)", "turn_id", se.turnID)
+	}
+}
+
+// handleTimeoutInStreamingGoroutine processes the timeout command.
+// MUST be called from the streaming goroutine to preserve actor pattern.
+// Returns an error to signal the streaming loop should exit.
+func (se *StreamExecutor) handleTimeoutInStreamingGoroutine(send func(mstream.Event)) error {
+	// Only process timeout if we're still draining metadata
+	if se.state != StateDrainMetadata {
+		se.logger.Debug("timeout command ignored (not in DrainMetadata state)",
+			"turn_id", se.turnID,
+			"current_state", se.state.String(),
+		)
+		return nil
+	}
+
+	// Transition to TimedOut state
+	se.transitionTo(StateTimedOut)
+
+	// CRITICAL: Cancel the provider stream to stop the HTTP connection.
+	// Without this, the provider keeps streaming (goroutine leak + billing).
+	se.stream.Cancel()
+
+	se.logger.Warn("soft cancel timeout fired, forcing cleanup",
+		"turn_id", se.turnID,
+		"timeout", se.softCancelTimeout,
+		"generation_id", se.getGenerationID(),
+		"snapshot_length", len(se.cancelTextSnapshot),
+	)
+
+	// Use deadline to prevent blocking if DB is slow/unresponsive
+	ctx, cancel := context.WithTimeout(context.Background(), dbWriteDeadline)
+	defer cancel()
+
+	// Use TokenFinalizer to get best-effort tokens
+	if se.tokenFinalizer != nil {
+		result, err := se.tokenFinalizer.Finalize(ctx, tokens.FinalizeRequest{
+			TurnID:         se.turnID,
+			Model:          se.model,
+			GenerationID:   se.getGenerationID(),
+			CancelSnapshot: se.cancelTextSnapshot,
+			Reason:         tokens.ReasonSoftCancelTimeout,
+			ProviderTokens: nil, // No provider tokens on timeout
+		})
+		if err != nil {
+			se.logger.Warn("token finalization failed on timeout",
+				"turn_id", se.turnID,
+				"error", err,
+			)
+		} else if updateErr := se.persistTokenMetadata(ctx, result, "soft_cancel_timeout"); updateErr != nil {
+			se.logger.Warn("failed to save tokens on timeout",
+				"turn_id", se.turnID,
+				"error", updateErr,
+			)
+		}
+	}
+
+	// Transition to Errored state (terminal)
+	se.transitionTo(StateErrored)
+
+	// Send error event to any remaining clients
+	se.sendEvent(send, llmModels.SSEEventTurnError, llmModels.TurnErrorEvent{
+		TurnID:      se.turnID,
+		Error:       "timeout waiting for provider metadata",
+		IsCancelled: true, // Timeout after cancel is still a cancel
+	})
+
+	// Cleanup executor
+	if se.onCleanup != nil {
+		se.onCleanup()
+	}
+
+	// Return error to exit streaming loop
+	return fmt.Errorf("soft cancel timeout")
+}
+
+// SetCleanupCallback sets a function to be called when streaming completes or errors.
+// Used by service layer to clean up executor registry.
+func (se *StreamExecutor) SetCleanupCallback(fn func()) {
+	se.onCleanup = fn
 }
 
 // Start begins streaming execution
@@ -154,10 +340,55 @@ func (se *StreamExecutor) processProviderStream(
 	// Track current block index for delta events (-1 means no block started yet)
 	currentBlockIndex := -1
 
+	// Drain timeout is only used after soft cancel (DrainMetadata).
+	// We intentionally do not treat "no provider bytes" as an error during normal streaming,
+	// because long-running tool execution/subagents can legitimately pause provider output for a long time.
+	var drainTimer *time.Timer
+	var drainTimerCh <-chan time.Time
+	defer func() {
+		if drainTimer != nil {
+			drainTimer.Stop()
+		}
+	}()
+
 	for {
 		select {
+		case <-drainTimerCh:
+			// Drain timeout after soft cancel - force cleanup and estimate tokens.
+			// handleTimeoutInStreamingGoroutine transitions to StateErrored and returns error.
+			return se.handleTimeoutInStreamingGoroutine(send)
+
+		case cmd := <-se.ctrlCh:
+			// Handle control commands from service layer
+			switch cmd.cmd {
+			case CmdSoftCancel:
+				if se.state == StateStreaming {
+					se.transitionTo(StateDrainMetadata)
+					se.handleSoftCancel(send)
+
+					// Start drain timeout to prevent leaked executors if provider never finishes.
+					if se.softCancelTimeout > 0 && drainTimer == nil {
+						drainTimer = time.NewTimer(se.softCancelTimeout)
+						drainTimerCh = drainTimer.C
+						se.logger.Info("soft cancel drain timeout started",
+							"turn_id", se.turnID,
+							"timeout", se.softCancelTimeout,
+							"snapshot_length", len(se.cancelTextSnapshot),
+						)
+					}
+				}
+			case CmdHardCancel:
+				if se.state == StateStreaming || se.state == StateDrainMetadata {
+					se.transitionTo(StateHardCancelled)
+					err := fmt.Errorf("hard cancelled by user")
+					se.handleError(ctx, send, err)
+					return err
+				}
+			}
+
 		case <-ctx.Done():
 			// Context cancelled - handle graceful shutdown
+			se.transitionTo(StateErrored)
 			err := fmt.Errorf("streaming interrupted: %w", ctx.Err())
 			se.handleError(ctx, send, err)
 			return err
@@ -165,6 +396,7 @@ func (se *StreamExecutor) processProviderStream(
 		case streamEvent, ok := <-streamChan:
 			if !ok {
 				// Stream channel closed without metadata - unexpected
+				se.transitionTo(StateErrored)
 				err := fmt.Errorf("stream closed without metadata")
 				se.handleError(ctx, send, err)
 				return err
@@ -172,6 +404,7 @@ func (se *StreamExecutor) processProviderStream(
 
 			// Check for errors
 			if streamEvent.Error != nil {
+				se.transitionTo(StateErrored)
 				se.handleError(ctx, send, streamEvent.Error)
 				return streamEvent.Error
 			}
@@ -179,6 +412,7 @@ func (se *StreamExecutor) processProviderStream(
 			// Process delta (for real-time UI updates)
 			if streamEvent.Delta != nil {
 				if err := se.processDelta(ctx, send, streamEvent.Delta, &currentBlockIndex, streamStartSequence); err != nil {
+					se.transitionTo(StateErrored)
 					se.handleError(ctx, send, err)
 					return err
 				}
@@ -187,6 +421,7 @@ func (se *StreamExecutor) processProviderStream(
 			// Process complete block (for database persistence)
 			if streamEvent.Block != nil {
 				if err := se.processCompleteBlock(ctx, send, streamEvent.Block, streamStartSequence); err != nil {
+					se.transitionTo(StateErrored)
 					se.handleError(ctx, send, err)
 					return err
 				}
@@ -205,7 +440,13 @@ func (se *StreamExecutor) processProviderStream(
 // - JSON deltas are accumulated (partial JSON is unparseable/useless, send complete JSON later)
 // - Text deltas are also accumulated for partial block persistence on interruption
 // streamStartSequence is used to remap provider block indices to turn-level sequences
-func (se *StreamExecutor) processDelta(ctx context.Context, send func(mstream.Event), delta *llmModels.TurnBlockDelta, currentBlockIndex *int, streamStartSequence int) error {
+func (se *StreamExecutor) processDelta(_ context.Context, send func(mstream.Event), delta *llmModels.TurnBlockDelta, currentBlockIndex *int, streamStartSequence int) error {
+	// After soft cancel (DrainMetadata state), we keep draining the provider stream for metadata,
+	// but we stop emitting SSE events and stop accumulating deltas.
+	if !se.state.AllowsSSE() {
+		return nil
+	}
+
 	// Detect new block start
 	if delta.BlockIndex != *currentBlockIndex {
 		// CRITICAL: Remap provider block index to turn-level sequence for SSE event
@@ -283,6 +524,22 @@ func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(ms
 	// Continuation: streamStartSequence = 3, provider block 0 → sequence 3
 	block.Sequence = streamStartSequence + providerBlockIndex
 
+	// If not in Streaming state, skip all persistence/tool collection and SSE.
+	// Partial text (accumulated before cancel) is persisted by handleSoftCancel().
+	if !se.state.AllowsPersistence() {
+		// Best-effort cleanup for this block index to avoid unbounded memory growth.
+		if se.jsonAccumulator != nil {
+			delete(se.jsonAccumulator, providerBlockIndex)
+		}
+		if se.textAccumulator != nil {
+			delete(se.textAccumulator, providerBlockIndex)
+		}
+		if se.blockTypes != nil {
+			delete(se.blockTypes, providerBlockIndex)
+		}
+		return nil
+	}
+
 	// Collect BACKEND-SIDE tool_use blocks for execution (if tool registry is available)
 	// Provider-side tools (e.g., Anthropic's built-in web_search) are already executed by the provider
 	// Backend-side tools (e.g., Tavily web search, doc_view, doc_tree) need backend execution
@@ -299,14 +556,52 @@ func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(ms
 	// Even if context is cancelled (e.g., client disconnect, server shutdown),
 	// we want to persist LLM responses to avoid losing data. This ensures
 	// graceful shutdown and allows users to retrieve responses later via catchup.
+	persisted := false
 	if err := se.stream.PersistAndClear(func(events []mstream.Event) error {
+		// CRITICAL: Use PersistenceGuard as primary check.
+		// The guard is disarmed IMMEDIATELY when cancel is requested (atomic store),
+		// so this check is race-free. The state check alone has a race window because
+		// state only changes when the select loop processes the command.
+		if !se.persistenceGuard.IsArmed() {
+			se.logger.Debug("skipping block persistence (guard disarmed)",
+				"block_type", block.BlockType,
+				"sequence", block.Sequence,
+			)
+			return nil
+		}
+
+		// Belt-and-suspenders: Also check state (should be redundant now)
+		if se.getState() != StateStreaming {
+			se.logger.Debug("skipping block persistence in callback (not streaming)",
+				"block_type", block.BlockType,
+				"sequence", block.Sequence,
+				"state", se.getState().String(),
+			)
+			return nil
+		}
+
 		// Persist the block to database
 		if err := se.turnRepo.CreateTurnBlock(ctx, block); err != nil {
 			return fmt.Errorf("create turn block: %w", err)
 		}
+		persisted = true
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to persist block %d: %w", block.Sequence, err)
+	}
+
+	// If we didn't persist (due to interruption), clean up and return early without SSE events.
+	if !persisted {
+		if se.jsonAccumulator != nil {
+			delete(se.jsonAccumulator, providerBlockIndex)
+		}
+		if se.textAccumulator != nil {
+			delete(se.textAccumulator, providerBlockIndex)
+		}
+		if se.blockTypes != nil {
+			delete(se.blockTypes, providerBlockIndex)
+		}
+		return nil
 	}
 
 	// Track max sequence for tool_result block sequencing
@@ -356,6 +651,41 @@ func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(ms
 	return nil
 }
 
+// handleSoftCancel performs "hard-like" cancellation behavior for the client:
+// - Persist any accumulated partial text blocks (so refresh shows what user saw)
+// - Emit a cancellation SSE event (turn_error with is_cancelled)
+// - Disconnect SSE clients via SoftCancel()
+//
+// The provider stream continues running in the background and will still produce
+// final token metadata, which handleCompletion persists even when interrupted.
+func (se *StreamExecutor) handleSoftCancel(send func(mstream.Event)) {
+	// Use deadline to prevent blocking if DB is slow/unresponsive during partial block persistence
+	persistCtx, cancel := context.WithTimeout(context.Background(), dbWriteDeadline)
+	defer cancel()
+
+	// Snapshot accumulated text at cancel time for timeout/token estimation.
+	// IMPORTANT: This must run on the streaming goroutine to avoid concurrent map access.
+	if se.cancelTextSnapshot == "" {
+		se.cancelTextSnapshot = se.getAccumulatedText()
+	}
+
+	// Persist whatever text the user already saw.
+	se.persistPartialTextBlocks(persistCtx)
+
+	// Clear JSON accumulator too (no longer useful after cancel).
+	se.jsonAccumulator = nil
+
+	// Tell the frontend to stop streaming immediately (hard-cancel UX).
+	se.sendEvent(send, llmModels.SSEEventTurnError, llmModels.TurnErrorEvent{
+		TurnID:      se.turnID,
+		Error:       "cancelled",
+		IsCancelled: true,
+	})
+
+	// Disconnect SSE clients. Provider stream continues; executor keeps draining for metadata.
+	se.stream.SoftCancel()
+}
+
 // handleCompletion handles successful stream completion
 func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstream.Event), metadata *domainllm.StreamMetadata) error {
 	// No need to finalize accumulator - complete blocks are received directly from library
@@ -367,10 +697,77 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 		metadata.Model = se.model
 	}
 
-	// Update turn with metadata
+	// Capture generation ID for potential token stats query on timeout
+	// OpenRouter provides this in streaming metadata for querying native token counts
+	if metadata.GenerationID != "" {
+		se.setGenerationID(metadata.GenerationID)
+	}
+
+	// Use TokenFinalizer to get the best available tokens
+	// This handles: provider tokens, OpenRouter API fallback, estimator fallback
+	currentState := se.getState()
+	isDraining := currentState == StateDrainMetadata
+
+	if se.tokenFinalizer != nil {
+		var reason tokens.FinalizeReason
+		if isDraining {
+			reason = tokens.ReasonSoftCancel
+		} else {
+			reason = tokens.ReasonCompletion
+		}
+
+		result, err := se.tokenFinalizer.Finalize(ctx, tokens.FinalizeRequest{
+			TurnID:         se.turnID,
+			Model:          metadata.Model,
+			GenerationID:   se.getGenerationID(),
+			CancelSnapshot: se.cancelTextSnapshot,
+			Reason:         reason,
+			ProviderTokens: &tokens.ProviderTokens{
+				InputTokens:  metadata.InputTokens,
+				OutputTokens: metadata.OutputTokens,
+			},
+		})
+		if err == nil {
+			metadata.InputTokens = result.InputTokens
+			metadata.OutputTokens = result.OutputTokens
+			if !result.IsFinal {
+				se.logger.Info("using finalized tokens",
+					"turn_id", se.turnID,
+					"input_tokens", result.InputTokens,
+					"output_tokens", result.OutputTokens,
+					"source", result.Source,
+				)
+			}
+		}
+	}
+
+	// Always save token metadata (even for cancelled streams)
+	// This ensures accurate billing even when user cancels mid-stream
 	if err := se.updateTurnMetadata(ctx, metadata); err != nil {
 		se.handleError(ctx, send, fmt.Errorf("failed to update turn metadata: %w", err))
 		return err
+	}
+
+	// If in DrainMetadata state (soft cancel), skip tool continuation - just cleanup
+	// Turn status is already "cancelled" (set by InterruptTurn)
+	// Token metadata was saved above by updateTurnMetadata()
+	// Client was already notified + disconnected by handleSoftCancel(); no completion SSE event needed
+	if isDraining {
+		// Transition to Completed state
+		se.transitionTo(StateCompleted)
+
+		se.logger.Info("stream completed after soft cancel, tokens saved",
+			"turn_id", se.turnID,
+			"input_tokens", metadata.InputTokens,
+			"output_tokens", metadata.OutputTokens,
+		)
+
+		// Call cleanup callback if registered
+		if se.onCleanup != nil {
+			se.onCleanup()
+		}
+
+		return nil
 	}
 
 	// Check if we have collected tools to execute
@@ -479,18 +876,82 @@ func (se *StreamExecutor) persistPartialTextBlocks(ctx context.Context) {
 }
 
 // handleError handles streaming errors
-func (se *StreamExecutor) handleError(ctx context.Context, send func(mstream.Event), err error) {
+func (se *StreamExecutor) handleError(_ context.Context, send func(mstream.Event), err error) {
+	// Use deadline to prevent blocking if DB is slow/unresponsive during cleanup
+	// Background context because original context may already be cancelled
+	persistCtx, cancel := context.WithTimeout(context.Background(), dbWriteDeadline)
+	defer cancel()
+
+	// Check if we were in a cancel state
+	currentState := se.getState()
+	wasCancelled := currentState == StateDrainMetadata || currentState == StateHardCancelled
+
+	// Use TokenFinalizer to estimate tokens for any interruption (cancel, error, timeout)
+	// Do this BEFORE persisting partial blocks to capture all accumulated text
+	if se.tokenFinalizer != nil {
+		accumulatedText := se.getAccumulatedText()
+		// Use cancel-time snapshot if accumulator was cleared by handleSoftCancel
+		if accumulatedText == "" && se.cancelTextSnapshot != "" {
+			accumulatedText = se.cancelTextSnapshot
+		}
+
+		var reason tokens.FinalizeReason
+		if wasCancelled {
+			reason = tokens.ReasonHardCancel
+		} else {
+			reason = tokens.ReasonError
+		}
+
+		result, finalizeErr := se.tokenFinalizer.Finalize(persistCtx, tokens.FinalizeRequest{
+			TurnID:         se.turnID,
+			Model:          se.model,
+			GenerationID:   se.getGenerationID(),
+			CancelSnapshot: accumulatedText,
+			Reason:         reason,
+			ProviderTokens: nil, // No provider tokens on error
+		})
+		if finalizeErr != nil {
+			se.logger.Warn("failed to finalize tokens for interrupted stream",
+				"error", finalizeErr,
+			)
+		} else if updateErr := se.persistTokenMetadata(persistCtx, result, ""); updateErr != nil {
+			se.logger.Warn("failed to save finalized tokens",
+				"error", updateErr,
+			)
+		} else if result != nil && (result.InputTokens > 0 || result.OutputTokens > 0) {
+			se.logger.Info("finalized tokens for interrupted stream",
+				"input_tokens", result.InputTokens,
+				"output_tokens", result.OutputTokens,
+				"source", result.Source,
+				"error", err.Error(),
+			)
+		}
+	}
+
 	// Persist any accumulated partial text blocks BEFORE marking turn as error
-	// Use a background context since the original may be cancelled
-	persistCtx := context.Background()
 	se.persistPartialTextBlocks(persistCtx)
 
 	// Detect if this is a user cancellation (don't show error toast for these)
-	isCancelled := errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+	// Check both: state-based (wasCancelled) and error-based (context.Canceled)
+	// Bug fix: Previously only error-based check was used for SSE event, causing
+	// hard cancel ("hard cancelled by user" error) to be misclassified as non-cancel
+	isContextCancelled := errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+	isCancelled := wasCancelled || isContextCancelled
 
 	// Update turn status in database
-	if updateErr := se.turnRepo.UpdateTurnError(persistCtx, se.turnID, err.Error()); updateErr != nil {
-		se.logger.Error("failed to update turn error", "error", updateErr)
+	// IMPORTANT: Skip UpdateTurnError if cancelled (soft/hard cancel case)
+	// InterruptTurn already set status to "cancelled" - don't override it with "error"
+	if isCancelled {
+		se.logger.Info("skipping UpdateTurnError for cancelled stream (status already cancelled)",
+			"turn_id", se.turnID,
+			"was_cancelled_state", wasCancelled,
+			"context_cancelled", isContextCancelled,
+		)
+	} else {
+		// Only update turn status to "error" for actual errors (not user cancellations)
+		if updateErr := se.turnRepo.UpdateTurnError(persistCtx, se.turnID, err.Error()); updateErr != nil {
+			se.logger.Error("failed to update turn error", "error", updateErr)
+		}
 	}
 
 	// Send turn_error event
@@ -502,9 +963,49 @@ func (se *StreamExecutor) handleError(ctx context.Context, send func(mstream.Eve
 	se.sendEvent(send, llmModels.SSEEventTurnError, llmModels.TurnErrorEvent{
 		TurnID:         se.turnID,
 		Error:          errorMsg,
-		IsCancelled:    isCancelled,
-		LastBlockIndex: nil, // Could be determined from DB if needed
+		IsCancelled:    isCancelled, // Now correctly true for both state-based and error-based cancels
+		LastBlockIndex: nil,         // Could be determined from DB if needed
 	})
+
+	// Call cleanup callback if registered
+	if se.onCleanup != nil {
+		se.onCleanup()
+	}
+}
+
+// getAccumulatedText returns all accumulated text from the text accumulator.
+// Used for token estimation on interruption.
+func (se *StreamExecutor) getAccumulatedText() string {
+	if len(se.textAccumulator) == 0 {
+		return ""
+	}
+
+	// Deterministic ordering: map iteration is randomized.
+	// Token estimation should use content in provider block order.
+	blockIndexes := make([]int, 0, len(se.textAccumulator))
+	for idx := range se.textAccumulator {
+		blockIndexes = append(blockIndexes, idx)
+	}
+	sort.Ints(blockIndexes)
+
+	// Use strings.Builder for O(n) concatenation instead of O(n²) with +=
+	var builder strings.Builder
+	for _, idx := range blockIndexes {
+		builder.WriteString(se.textAccumulator[idx])
+	}
+	return builder.String()
+}
+
+func (se *StreamExecutor) setGenerationID(id string) {
+	se.generationMu.Lock()
+	se.generationID = id
+	se.generationMu.Unlock()
+}
+
+func (se *StreamExecutor) getGenerationID() string {
+	se.generationMu.RLock()
+	defer se.generationMu.RUnlock()
+	return se.generationID
 }
 
 // sendEvent sends an event via mstream.
@@ -529,6 +1030,32 @@ func (se *StreamExecutor) updateTurnMetadata(ctx context.Context, metadata *doma
 		"output_tokens":     metadata.OutputTokens,
 		"stop_reason":       metadata.StopReason,
 		"response_metadata": metadata.ResponseMetadata,
+	})
+}
+
+// persistTokenMetadata is a helper to atomically persist token counts from TokenFinalizer.
+// It centralizes the response_metadata structure and reason handling across timeout/error paths.
+// For normal completion, use updateTurnMetadata() which handles full StreamMetadata.
+func (se *StreamExecutor) persistTokenMetadata(ctx context.Context, result *tokens.TokenResult, reason string) error {
+	if result == nil || (result.InputTokens == 0 && result.OutputTokens == 0) {
+		return nil // Skip if no tokens to persist
+	}
+
+	// Build response_metadata with consistent fields
+	responseMeta := map[string]interface{}{
+		"token_metadata_final": result.IsFinal,
+		"token_source":         result.Source,
+	}
+	// Only include reason if non-empty (avoids empty "reason":"" in JSON)
+	if reason != "" {
+		responseMeta["reason"] = reason
+	}
+
+	return se.turnRepo.UpdateTurnMetadata(ctx, se.turnID, map[string]interface{}{
+		"model":             se.model,
+		"input_tokens":      result.InputTokens,
+		"output_tokens":     result.OutputTokens,
+		"response_metadata": responseMeta,
 	})
 }
 
@@ -727,7 +1254,7 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 	if se.toolIteration >= softLimit {
 		notificationText := fmt.Sprintf(
 			"You've exceeded the recommended tool usage limit of %d rounds. "+
-			"Please consider providing your final answer based on the information you've gathered.",
+				"Please consider providing your final answer based on the information you've gathered.",
 			softLimit,
 		)
 
@@ -943,7 +1470,7 @@ func (se *StreamExecutor) executeToolsAndContinueWithLimit(ctx context.Context, 
 	}
 
 	contReq := &domainllm.GenerateRequest{
-		Messages: messages,           // Contains limit note in last tool_result (Layer 2)
+		Messages: messages, // Contains limit note in last tool_result (Layer 2)
 		Model:    se.req.Model,
 		Params:   &paramsWithoutTools, // Tools kept + limit instruction (Layer 1)
 	}
@@ -1040,6 +1567,11 @@ func (se *StreamExecutor) completeTurn(
 
 	// Send turn_complete SSE event
 	se.sendEvent(send, llmModels.SSEEventTurnComplete, completeEvent)
+
+	// Call cleanup callback if registered
+	if se.onCleanup != nil {
+		se.onCleanup()
+	}
 
 	return nil
 }

@@ -57,9 +57,9 @@ export function EditorHeader({ document, wordCount, status, lastSaved }: EditorH
     <DocumentHeaderBar
       leading={
         <div className="flex items-center">
-          {/* Mobile: Back to chat (leftmost for quick access) */}
+          {/* Mobile: Back to thread (leftmost for quick access) */}
           <MobileNavButton
-            icon="chat"
+            icon="thread"
             onClick={handleBackToChat}
           />
           {/* Back to document tree */}

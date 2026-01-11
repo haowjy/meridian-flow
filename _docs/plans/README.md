@@ -21,6 +21,23 @@ Each plan document includes:
 
 See existing plan document for details.
 
+### [Streaming Cleanup: Token Persistence Helper + Less-Flaky Tests](./streaming-cleanup-token-helper-and-tests.md)
+**Status:** In planning
+**Priority:** Medium
+**Effort:** Small
+
+## Implemented Plans
+
+### [Soft Cancel v2 (Hard-like UX, Background Token Finalization)](./soft-cancel-v2-hardlike.md)
+**Status:** Implemented
+**Priority:** High
+**Effort:** Small/Medium
+
+### [Remove Stream “Idle Guard” (Defer For Subagents)](./remove-stream-idle-guard.md)
+**Status:** Implemented
+**Priority:** Medium
+**Effort:** Small
+
 ---
 
 ## Plan Template

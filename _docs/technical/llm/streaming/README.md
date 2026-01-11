@@ -108,6 +108,16 @@ graph TB
 
 ### Specialized Topics
 
+**[Executor State Machine](executor-state-machine.md)** (~100 lines)
+- Actor pattern and state transitions
+- Soft cancel vs hard cancel flows
+- Command channel (`CmdSoftCancel`, `CmdHardCancel`)
+- State behaviors (AllowsPersistence, AllowsSSE)
+
+**When to read:** Understanding cancellation, debugging state issues
+
+---
+
 **[Race Conditions](race-conditions.md)** (~180 lines)
 - Buffer clear race condition & fix
 - Catchup coordination mutex
@@ -222,4 +232,5 @@ pending -> streaming -> complete
 - [Service Layer Architecture](../architecture/service-layer.md) - 3-service split
 - [Thread Domain Model](../thread/overview.md) - Turn and block concepts
 - [LLM Providers](../thread/llm-providers.md) - Provider abstraction
+- [Token Finalization](../tokens/README.md) - Token estimation strategy chain
 - [API Contracts](../api/contracts.md) - HTTP endpoints

@@ -31,10 +31,12 @@ type StreamingService interface {
 	// the underlying LLM provider library for a CreateTurn request.
 	BuildDebugProviderRequest(ctx context.Context, req *CreateTurnRequest) (map[string]interface{}, error)
 
-	// TODO: Phase 2 - Additional streaming methods
-	// Future methods to add:
-	// - GetTurnExecutor(turnID string) (*TurnExecutor, error) - Get executor for SSE connection
-	// - InterruptTurn(ctx, turnID) error - Cancel streaming turn
+	// InterruptTurn cancels a streaming turn.
+	// Behavior depends on the model's supports_streaming_cancel capability:
+	// - true (Anthropic): Hard cancel (stops provider, uses token count API)
+	// - false (some providers): Soft cancel (provider continues for accurate metadata, but stops persistence)
+	// Returns nil if turn is not currently streaming.
+	InterruptTurn(ctx context.Context, turnID string) error
 }
 
 // CreateTurnRequest is the DTO for creating a new turn

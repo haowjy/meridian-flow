@@ -67,7 +67,7 @@ flowchart TD
 ## Streaming
 - Accumulate deltas deterministically; preserve block ordering.
 - Treat stream interruptions as first-class errors; clean up goroutines.
-- Timeouts: distinguish idle stream timeout vs overall request timeout.
+- Timeouts: distinguish soft-cancel drain timeout (cleanup/billing) vs overall request timeout.
 
 ## Testing & Conformance
 - Test invariants (tool loop semantics, error categories, ordering), not exact text parity across providers.

@@ -328,6 +328,10 @@ export const useThreadStore = create<ThreadStore>()(
         try {
           await api.turns.interrupt(turnId)
 
+          // Hard-like UX: stop the local stream immediately so the user can continue.
+          // Backend soft-cancel may keep running for token metadata.
+          get().clearStreamingStream()
+
           // Best-effort refresh so UI sees partial content and updated status.
           if (threadId) {
             await state.refreshTurn(threadId, turnId)

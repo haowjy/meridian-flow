@@ -118,6 +118,11 @@ type StreamMetadata struct {
 	// StopReason indicates why generation stopped (e.g., "end_turn", "max_tokens", "tool_use")
 	StopReason string
 
+	// GenerationID is the unique identifier for this generation (provider-specific)
+	// Used for querying generation stats after cancel/timeout.
+	// OpenRouter: Can be used with GET /api/v1/generation?id={GenerationID} to get native token counts.
+	GenerationID string
+
 	// ResponseMetadata contains provider-specific response data
 	ResponseMetadata map[string]interface{}
 }

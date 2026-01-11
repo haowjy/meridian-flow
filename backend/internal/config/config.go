@@ -19,7 +19,8 @@ type Config struct {
 	OpenRouterAPIKey string
 	DefaultProvider  string
 	DefaultModel     string
-	MaxToolRounds    int    // Fallback limit if resolver fails (default: 10)
+	MaxToolRounds            int // Fallback limit if resolver fails (default: 10)
+	SoftCancelTimeoutSeconds int // Timeout for soft cancel before forced cleanup (default: 300 = 5 minutes)
 	// Search API Configuration (optional - for web_search tool)
 	SearchAPIKey      string // API key for external search provider
 	SearchAPIProvider string // Provider name: "tavily", "brave", "serper", etc.
@@ -51,12 +52,13 @@ func Load() *Config {
 		// LLM Configuration
 		AnthropicAPIKey:  getEnv("ANTHROPIC_API_KEY", ""),
 		OpenRouterAPIKey: getEnv("OPENROUTER_API_KEY", ""),
-		DefaultProvider:  getEnv("DEFAULT_PROVIDER", "openrouter"),
-		DefaultModel:     getEnv("DEFAULT_MODEL", "moonshotai/kimi-k2-thinking"),
-		MaxToolRounds:    getEnvInt("MAX_TOOL_ROUNDS", 10),
-		// Search API Configuration (optional)
-		SearchAPIKey:      getEnv("SEARCH_API_KEY", ""),
-		SearchAPIProvider: getEnv("SEARCH_API_PROVIDER", "tavily"),
+			DefaultProvider:  getEnv("DEFAULT_PROVIDER", "openrouter"),
+			DefaultModel:     getEnv("DEFAULT_MODEL", "moonshotai/kimi-k2-thinking"),
+			MaxToolRounds:            getEnvInt("MAX_TOOL_ROUNDS", 10),
+			SoftCancelTimeoutSeconds: getEnvInt("SOFT_CANCEL_TIMEOUT_SECONDS", 300), // 5 minutes default
+			// Search API Configuration (optional)
+			SearchAPIKey:      getEnv("SEARCH_API_KEY", ""),
+			SearchAPIProvider: getEnv("SEARCH_API_PROVIDER", "tavily"),
 		// Debug flags - default to true in dev/test, false in production
 		Debug: getEnv("DEBUG", getDefaultDebug(env)) == "true",
 		// Logging configuration
