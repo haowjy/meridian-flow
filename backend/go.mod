@@ -5,11 +5,12 @@ go 1.25.3
 require (
 	github.com/JohannesKaufmann/html-to-markdown v1.6.0
 	github.com/MicahParks/keyfunc/v3 v3.7.0
+	github.com/anthropics/anthropic-sdk-go v1.17.0
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
-	github.com/haowjy/meridian-llm-go v0.0.8
-	github.com/haowjy/meridian-stream-go v0.0.4
+	github.com/haowjy/meridian-llm-go v0.0.9
+	github.com/haowjy/meridian-stream-go v0.0.5
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/joho/godotenv v1.5.1
 	github.com/microcosm-cc/bluemonday v1.0.27
@@ -22,7 +23,6 @@ require (
 	github.com/MicahParks/jwkset v0.11.0 // indirect
 	github.com/PuerkitoBio/goquery v1.9.2 // indirect
 	github.com/andybalholm/cascadia v1.3.2 // indirect
-	github.com/anthropics/anthropic-sdk-go v1.17.0 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/bozaro/golorem v0.0.0-20170501165920-50e5b610280b // indirect
 	github.com/gorilla/css v1.0.1 // indirect

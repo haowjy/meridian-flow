@@ -97,7 +97,7 @@ export function DocumentTreePanel({
           <DocumentHeaderBar
             leading={
               <MobileNavButton
-                icon="chat"
+                icon="thread"
                 onClick={() => setMobileActivePanel('activeThread')}
               />
             }

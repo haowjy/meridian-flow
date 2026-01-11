@@ -421,10 +421,14 @@ For details, see:
 **Scenario:** User clicks "Stop" button during streaming.
 
 **Behavior:**
-- (Planned) Use context cancellation to stop provider stream
-- (Planned) Update turn status to "cancelled" and stop emitting events
+- ✅ `POST /api/turns/:id/interrupt` triggers cancellation
+- ✅ **Soft cancel** (most providers): SSE stops immediately, provider continues for token metadata (5m timeout)
+- ✅ **Hard cancel** (Anthropic): Context cancelled, tokens estimated from accumulated text
+- ✅ Partial text persisted at cancel time
+- ✅ Turn status set to "cancelled"
+- ✅ SSE clients receive `turn_error` with `is_cancelled: true`
 
-**Note:** Exact interrupt semantics are still evolving; see API docs for up‑to‑date behavior.
+**State Machine:** See [`executor-state-machine.md`](../../llm/streaming/executor-state-machine.md) for detailed state transitions.
 
 ### 6. Orphaned Streaming Goroutines
 

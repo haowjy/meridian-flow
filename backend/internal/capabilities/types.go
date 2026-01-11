@@ -55,6 +55,11 @@ type ModelCapabilities struct {
 
 	// Pricing (per million tokens, supports tiers and modalities)
 	PricingTiers []PricingTier `yaml:"pricing_tiers" json:"pricing_tiers"`
+
+	// SupportsStreamingCancel indicates if cancellation stops provider billing.
+	// true = cancellation saves money (Anthropic), use token count API for accuracy
+	// false = provider continues processing anyway, wait for final metadata
+	SupportsStreamingCancel bool `yaml:"supports_streaming_cancel" json:"supports_streaming_cancel"`
 }
 
 // ProviderCapabilities represents all models for a provider

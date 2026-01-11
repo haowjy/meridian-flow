@@ -3,7 +3,7 @@ import { Button } from '@/shared/components/ui/button'
 import { useIsMobile } from '@/core/hooks/useIsMobile'
 
 /** Icon types for mobile navigation */
-type MobileNavIcon = 'threads' | 'chat' | 'document'
+type MobileNavIcon = 'threads' | 'thread' | 'document'
 
 interface MobileNavButtonProps {
   /** Icon to display */
@@ -17,14 +17,14 @@ interface MobileNavButtonProps {
 /** Map icon names to lucide-react components */
 const iconMap = {
   threads: List,
-  chat: MessageSquare,
+  thread: MessageSquare,
   document: FileText,
 } as const
 
 /** Aria labels for accessibility */
 const ariaLabelMap = {
   threads: 'Go to thread list',
-  chat: 'Go to chat',
+  thread: 'Go to thread',
   document: 'Go to documents',
 } as const
 

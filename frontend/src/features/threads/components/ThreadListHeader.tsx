@@ -37,9 +37,9 @@ export function ThreadListHeader({ onBrandClick }: ThreadListHeaderProps) {
         )}
       </div>
 
-      {/* Right: Mobile nav to chat, desktop spacer */}
+      {/* Right: Mobile nav to thread, desktop spacer */}
       <MobileNavButton
-        icon="chat"
+        icon="thread"
         onClick={() => setMobileActivePanel('activeThread')}
       />
       {/* Desktop spacer to balance the toggle (hidden on mobile via md:block) */}

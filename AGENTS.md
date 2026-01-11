@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file provides guidance when working with the code in this repository.
+This file provides guidance when working with the code in this repository. ALWAYS PLAN FIRST BEFORE WRITING CODE. AFTER WRITING A PLAN, MAKE SURE THE DEVELOPER REVIEW THE PLAN AND APPROVE IT BEFORE WRITING ANY CODE THAT ISN'T 1 or 2 LINES OF CODE.
 
 ## Project Overview
 

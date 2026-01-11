@@ -283,6 +283,27 @@ export function useThreadSSE() {
             }
           },
 
+          onclose() {
+            // Server closed the stream without an explicit terminal event.
+            // Treat this as a best-effort end-of-stream and reconcile state via refresh.
+            if (ctrl.signal.aborted) {
+              return
+            }
+
+            logger.debug('sse:closed')
+            flush()
+            clearStreamingStream()
+            jsonBufferRef.current = ''
+            setStreamingBlockInfo(null, null)
+
+            const currentTurnId = currentTurnIdRef.current
+            if (threadId && currentTurnId) {
+              refreshTurn(threadId, currentTurnId).catch(err =>
+                logger.error('sse:closed:refresh_error', err)
+              )
+            }
+          },
+
           onerror(err: unknown) {
             // If aborted, ignore
             if (ctrl.signal.aborted) {

@@ -385,6 +385,10 @@ func (h *ThreadHandler) GetTurnTokenUsage(w http.ResponseWriter, r *http.Request
 
 // InterruptTurn cancels a streaming turn
 // POST /api/turns/{id}/interrupt
+//
+// Behavior depends on the model's supports_streaming_cancel capability:
+// - true (Anthropic): Hard cancel (stops provider, estimates tokens)
+// - false (some providers): Soft cancel (provider continues for accurate metadata)
 func (h *ThreadHandler) InterruptTurn(w http.ResponseWriter, r *http.Request) {
 	turnID, ok := PathParam(w, r, "id", "Turn ID")
 	if !ok {
@@ -405,15 +409,23 @@ func (h *ThreadHandler) InterruptTurn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get stream from registry
+	// Check if stream exists
 	stream := h.registry.Get(turnID)
 	if stream == nil {
 		httputil.RespondError(w, http.StatusNotFound, "Turn is not currently streaming")
 		return
 	}
 
-	// Cancel the stream (executor will update turn status in database)
-	stream.Cancel()
+	// Delegate to streaming service for proper cancel handling
+	// Service handles capability check and soft/hard cancel decision
+	if err := h.streamingService.InterruptTurn(r.Context(), turnID); err != nil {
+		h.logger.Error("failed to interrupt turn",
+			"turn_id", turnID,
+			"error", err,
+		)
+		httputil.RespondError(w, http.StatusInternalServerError, "Failed to interrupt turn")
+		return
+	}
 
 	httputil.RespondJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,

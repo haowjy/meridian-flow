@@ -177,6 +177,7 @@ func convertFromLibraryEvent(event llmprovider.StreamEvent) domainllm.StreamEven
 			InputTokens:      event.Metadata.InputTokens,
 			OutputTokens:     event.Metadata.OutputTokens,
 			StopReason:       event.Metadata.StopReason,
+			GenerationID:     event.Metadata.GenerationID,
 			ResponseMetadata: event.Metadata.ResponseMetadata,
 		}
 	}

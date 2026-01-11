@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
@@ -18,9 +19,39 @@ import (
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	llmRepo "meridian/internal/domain/repositories/llm"
 	llmSvc "meridian/internal/domain/services/llm"
+	"meridian/internal/service/llm/tokens"
 	"meridian/internal/service/llm/tools"
 	"meridian/internal/service/llm/tools/external"
 )
+
+// ExecutorRegistry tracks StreamExecutors by turn ID for interruption handling.
+// This allows the service to find and interrupt executors when cancel is requested.
+type ExecutorRegistry struct {
+	executors sync.Map // map[turnID]*StreamExecutor
+}
+
+// NewExecutorRegistry creates a new executor registry.
+func NewExecutorRegistry() *ExecutorRegistry {
+	return &ExecutorRegistry{}
+}
+
+// Register adds an executor to the registry.
+func (r *ExecutorRegistry) Register(turnID string, executor *StreamExecutor) {
+	r.executors.Store(turnID, executor)
+}
+
+// Get retrieves an executor by turn ID.
+func (r *ExecutorRegistry) Get(turnID string) *StreamExecutor {
+	if v, ok := r.executors.Load(turnID); ok {
+		return v.(*StreamExecutor)
+	}
+	return nil
+}
+
+// Remove removes an executor from the registry.
+func (r *ExecutorRegistry) Remove(turnID string) {
+	r.executors.Delete(turnID)
+}
 
 // ThreadValidator is shared validation logic for thread operations
 type ThreadValidator interface {
@@ -46,34 +77,37 @@ type Service struct {
 	validator            ThreadValidator
 	providerGetter       LLMProviderGetter
 	registry             *mstream.Registry
+	executorRegistry     *ExecutorRegistry // Tracks StreamExecutors by turn ID for interruption
 	config               *config.Config
 	txManager            repositories.TransactionManager
 	systemPromptResolver llmSvc.SystemPromptResolver
 	messageBuilder       llmSvc.MessageBuilder
-	toolLimitResolver    llmSvc.ToolLimitResolver   // Resolves tool round limits (tier-ready)
-	capabilityRegistry   *capabilities.Registry     // For checking model capabilities (e.g., supports_tools)
+	toolLimitResolver    llmSvc.ToolLimitResolver // Resolves tool round limits (tier-ready)
+	capabilityRegistry   *capabilities.Registry   // For checking model capabilities (e.g., supports_tools)
+	tokenFinalizer       tokens.TokenFinalizer    // For finalizing tokens on completion/interruption
 	logger               *slog.Logger
 }
 
 // NewService creates a new streaming service
 func NewService(
-	turnWriter           llmRepo.TurnWriter,
-	turnReader           llmRepo.TurnReader,
-	turnNavigator        llmRepo.TurnNavigator,
-	threadRepo           llmRepo.ThreadRepository,
-	projectRepo          docsysRepo.ProjectRepository,
-	documentRepo         docsysRepo.DocumentRepository,
-	folderRepo           docsysRepo.FolderRepository,
-	validator            ThreadValidator,
-	providerGetter       LLMProviderGetter,
-	registry             *mstream.Registry,
-	cfg                  *config.Config,
-	txManager            repositories.TransactionManager,
+	turnWriter llmRepo.TurnWriter,
+	turnReader llmRepo.TurnReader,
+	turnNavigator llmRepo.TurnNavigator,
+	threadRepo llmRepo.ThreadRepository,
+	projectRepo docsysRepo.ProjectRepository,
+	documentRepo docsysRepo.DocumentRepository,
+	folderRepo docsysRepo.FolderRepository,
+	validator ThreadValidator,
+	providerGetter LLMProviderGetter,
+	registry *mstream.Registry,
+	cfg *config.Config,
+	txManager repositories.TransactionManager,
 	systemPromptResolver llmSvc.SystemPromptResolver,
-	messageBuilder       llmSvc.MessageBuilder,
-	toolLimitResolver    llmSvc.ToolLimitResolver,
-	capabilityRegistry   *capabilities.Registry,
-	logger               *slog.Logger,
+	messageBuilder llmSvc.MessageBuilder,
+	toolLimitResolver llmSvc.ToolLimitResolver,
+	capabilityRegistry *capabilities.Registry,
+	tokenFinalizer tokens.TokenFinalizer,
+	logger *slog.Logger,
 ) llmSvc.StreamingService {
 	return &Service{
 		turnWriter:           turnWriter,
@@ -86,12 +120,14 @@ func NewService(
 		validator:            validator,
 		providerGetter:       providerGetter,
 		registry:             registry,
+		executorRegistry:     NewExecutorRegistry(),
 		config:               cfg,
 		txManager:            txManager,
 		systemPromptResolver: systemPromptResolver,
 		messageBuilder:       messageBuilder,
 		toolLimitResolver:    toolLimitResolver,
 		capabilityRegistry:   capabilityRegistry,
+		tokenFinalizer:       tokenFinalizer,
 		logger:               logger,
 	}
 }
@@ -407,13 +443,15 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		model,            // Pure model name (no provider prefix)
 		s.turnWriter,     // TurnWriter
 		s.turnReader,     // TurnReader
-		s.turnNavigator,       // TurnNavigator (for continuation path loading)
-		llmProvider,           // Provider adapter
-		toolRegistry,          // Per-request ToolRegistry with project-specific tools
-		s.messageBuilder,      // MessageBuilder (for continuation message building)
+		s.turnNavigator,  // TurnNavigator (for continuation path loading)
+		llmProvider,      // Provider adapter
+		toolRegistry,     // Per-request ToolRegistry with project-specific tools
+		s.messageBuilder, // MessageBuilder (for continuation message building)
 		s.logger,
-		toolRoundLimit,        // Per-user tool round limit (tier-ready)
-		s.config.Debug,        // Pass DEBUG flag for optional event IDs
+		toolRoundLimit,                          // Per-user tool round limit (tier-ready)
+		s.config.Debug,                          // Pass DEBUG flag for optional event IDs
+		s.tokenFinalizer,                        // For finalizing tokens on completion/interruption
+		s.config.SoftCancelTimeoutSeconds,       // Timeout for soft cancel cleanup (default: 5 minutes)
 	)
 
 	// Register stream in registry IMMEDIATELY
@@ -422,6 +460,17 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	if err := s.registry.Register(stream); err != nil {
 		s.logger.Warn("failed to register stream", "turn_id", assistantTurn.ID, "error", err)
 	}
+
+	// Set cleanup callback BEFORE registering executor
+	// This ensures executor is removed from registry when streaming completes/errors
+	turnID := assistantTurn.ID // Capture for closure
+	executor.SetCleanupCallback(func() {
+		s.executorRegistry.Remove(turnID)
+		s.logger.Debug("executor cleaned up from registry", "turn_id", turnID)
+	})
+
+	// Register executor for interruption handling
+	s.executorRegistry.Register(assistantTurn.ID, executor)
 
 	s.logger.Info("stream registered, starting background streaming",
 		"assistant_turn_id", assistantTurn.ID,
@@ -515,7 +564,6 @@ func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, 
 	// - Update turn status on completion/error
 	// - Registry will clean up stream after retention period
 }
-
 
 // CreateAssistantTurnDebug creates an assistant turn (DEBUG/INTERNAL USE ONLY)
 //
@@ -845,4 +893,101 @@ func truncateTitleFromText(text string) string {
 	}
 
 	return title
+}
+
+// InterruptTurn cancels a streaming turn.
+// Behavior depends on the model's supports_streaming_cancel capability:
+// - true (Anthropic): Hard cancel (stops provider, uses token count API)
+// - false (some providers): Soft cancel (provider continues for accurate metadata, but stops persistence)
+func (s *Service) InterruptTurn(ctx context.Context, turnID string) error {
+	// Get stream from mstream registry
+	stream := s.registry.Get(turnID)
+	if stream == nil {
+		// Stream not found - may already be complete or never started
+		return nil
+	}
+
+	// Get executor for this turn
+	executor := s.executorRegistry.Get(turnID)
+	if executor == nil {
+		// No executor found - just cancel the stream
+		stream.Cancel()
+		return nil
+	}
+
+	// Get the turn to find the model
+	turn, err := s.turnReader.GetTurn(ctx, turnID)
+	if err != nil {
+		s.logger.Warn("failed to get turn for interrupt, using soft cancel (keep provider running for metadata)",
+			"turn_id", turnID,
+			"error", err,
+		)
+		// Default to soft cancel if we can't determine model capabilities.
+		// This preserves accurate token metadata when the provider ignores cancellation.
+		executor.RequestSoftCancel()
+
+		// Update turn status to cancelled (best-effort)
+		if err := s.turnWriter.UpdateTurnStatus(ctx, turnID, "cancelled", nil); err != nil {
+			s.logger.Warn("failed to update turn status to cancelled",
+				"turn_id", turnID,
+				"error", err,
+			)
+		}
+		return nil
+	}
+
+	// Check model capability
+	supportsCancel := false // Default to soft cancel for unknown models (token accuracy)
+	if turn.Model != nil {
+		// Determine provider from model name
+		provider := s.getProviderFromModel(*turn.Model)
+		caps, capErr := s.capabilityRegistry.GetModelCapabilities(provider, *turn.Model)
+		if capErr == nil && caps != nil {
+			supportsCancel = caps.SupportsStreamingCancel
+		}
+	}
+
+	// Update turn status to cancelled
+	if err := s.turnWriter.UpdateTurnStatus(ctx, turnID, "cancelled", nil); err != nil {
+		s.logger.Warn("failed to update turn status to cancelled",
+			"turn_id", turnID,
+			"error", err,
+		)
+	}
+
+	// Cancel based on capability
+	if supportsCancel {
+		// Hard cancel - stops provider stream, triggers token estimation in handleError
+		s.logger.Info("hard cancel (provider supports cancellation)",
+			"turn_id", turnID,
+			"model", turn.Model,
+		)
+		executor.RequestHardCancel()
+		stream.Cancel()
+	} else {
+		// Soft cancel - provider continues for accurate token metadata
+		// Executor will persist partial text blocks and disconnect SSE clients.
+		s.logger.Info("soft cancel (provider continues for metadata)",
+			"turn_id", turnID,
+			"model", turn.Model,
+		)
+		executor.RequestSoftCancel()
+	}
+
+	return nil
+}
+
+// getProviderFromModel determines the provider from a model name.
+// Used for capability lookup during interruption.
+func (s *Service) getProviderFromModel(model string) string {
+	// Claude models are from Anthropic
+	if strings.HasPrefix(model, "claude-") {
+		return "anthropic"
+	}
+	// Lorem models are internal test models
+	if strings.HasPrefix(model, "lorem-") {
+		return "lorem"
+	}
+	// Default to openrouter for other models
+	return "openrouter"
 }

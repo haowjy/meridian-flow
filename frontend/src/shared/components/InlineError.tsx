@@ -13,7 +13,7 @@ interface InlineErrorProps {
  * Compact inline error component for contextual error display.
  *
  * Use this for errors that should appear near where they occurred
- * (e.g., save failures in editor, LLM errors in chat).
+ * (e.g., save failures in editor, LLM errors in thread).
  *
  * For full-page errors, use ErrorPanel instead.
  */

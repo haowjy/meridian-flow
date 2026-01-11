@@ -14,10 +14,11 @@ import (
 	llmRepo "meridian/internal/domain/repositories/llm"
 	"meridian/internal/domain/services"
 	llmSvc "meridian/internal/domain/services/llm"
-	threadhistory "meridian/internal/service/llm/thread_history"
 	"meridian/internal/service/llm/formatting"
 	"meridian/internal/service/llm/streaming"
+	threadhistory "meridian/internal/service/llm/thread_history"
 	"meridian/internal/service/llm/thread"
+	"meridian/internal/service/llm/tokens"
 )
 
 // SetupProviders initializes the provider factory and registry for routing.
@@ -132,6 +133,33 @@ func SetupServices(
 		logger,
 	)
 
+	// Create token estimator registry for interruption token estimation
+	// Note: OpenRouter models use the Generation Stats API instead of token estimation
+	tokenEstimatorRegistry := tokens.NewEstimatorRegistry()
+
+	// Register Anthropic estimator if API key is available (uses token counting API)
+	if cfg.AnthropicAPIKey != "" {
+		anthropicEstimator, err := tokens.NewAnthropicEstimator(cfg.AnthropicAPIKey)
+		if err != nil {
+			logger.Warn("failed to create Anthropic token estimator",
+				"error", err,
+			)
+		} else {
+			tokenEstimatorRegistry.Register(anthropicEstimator)
+			logger.Info("Anthropic token estimator registered")
+		}
+	}
+
+	// Create TokenFinalizer that wraps the estimator registry
+	// This centralizes token acquisition strategy (provider tokens -> OpenRouter API -> estimator)
+	tokenFinalizer := tokens.NewDefaultTokenFinalizer(
+		tokenEstimatorRegistry,
+		cfg.OpenRouterAPIKey,
+		logger,
+	)
+
+	logger.Info("token finalizer initialized")
+
 	// Create streaming service (turn creation/orchestration)
 	// Tools are created per-request with project-specific context
 	// Uses minimal interfaces (ISP compliance)
@@ -152,6 +180,7 @@ func SetupServices(
 		messageBuilder,
 		toolLimitResolver,    // Tool round limit resolver (tier-ready)
 		capabilityRegistry,   // For checking model capabilities (e.g., supports_tools)
+		tokenFinalizer,       // For finalizing tokens on completion/interruption
 		logger,
 	)
 
