@@ -7,13 +7,22 @@ import (
 
 // SSE event type constants
 const (
-	SSEEventTurnStart    = "turn_start"    // Turn streaming has begun
-	SSEEventBlockStart   = "block_start"   // New block started
-	SSEEventBlockDelta   = "block_delta"   // Incremental block content
-	SSEEventBlockStop    = "block_stop"    // Block finished
-	SSEEventBlockCatchup = "block_catchup" // Replaying completed block (reconnection)
-	SSEEventTurnComplete = "turn_complete" // Turn finished successfully
-	SSEEventTurnError    = "turn_error"    // Turn encountered error
+	SSEEventTurnStart       = "turn_start"        // Turn streaming has begun
+	SSEEventBlockStart      = "block_start"       // New block started
+	SSEEventBlockDelta      = "block_delta"       // Incremental block content
+	SSEEventBlockStop       = "block_stop"        // Block finished
+	SSEEventBlockCatchup    = "block_catchup"     // Replaying completed block (reconnection)
+	SSEEventTurnComplete    = "turn_complete"     // Turn finished successfully
+	SSEEventTurnError       = "turn_error"        // Turn encountered error
+	SSEEventToolInputUpdate = "tool_input_update" // Progressive tool input during streaming
+	SSEEventToolExecuting   = "tool_executing"    // Tool execution has started
+)
+
+// Tool stream state constants (used in tool_input_update events)
+const (
+	ToolStatePreparing = "preparing" // LLM streaming tool input
+	ToolStateReady     = "ready"     // Input complete, about to execute
+	ToolStateExecuting = "executing" // Tool is running
 )
 
 // SSEEvent represents a Server-Sent Event for turn streaming
@@ -33,8 +42,10 @@ type TurnStartEvent struct {
 
 // BlockStartEvent signals that a new block has started
 type BlockStartEvent struct {
-	BlockIndex int     `json:"block_index"`           // 0-indexed sequence
-	BlockType  *string `json:"block_type,omitempty"` // "text", "thinking", "tool_use" (optional)
+	BlockIndex int     `json:"block_index"`            // 0-indexed sequence
+	BlockType  *string `json:"block_type,omitempty"`   // "text", "thinking", "tool_use" (optional)
+	ToolName   *string `json:"tool_name,omitempty"`    // Tool name for tool_use blocks (e.g., "doc_view")
+	ToolUseID  *string `json:"tool_use_id,omitempty"`  // Unique ID for this tool invocation
 }
 
 // BlockDeltaEvent contains incremental content for the current block
@@ -49,6 +60,25 @@ type BlockDeltaEvent struct {
 // BlockStopEvent signals that a block has finished
 type BlockStopEvent struct {
 	BlockIndex int `json:"block_index"` // Which block finished
+}
+
+// ToolInputUpdateEvent provides progressive tool input updates during streaming.
+// Sent periodically as JSON deltas are parsed, throttled to prevent excessive events.
+// State transitions: ToolStatePreparing (input being streamed) -> ToolStateReady (input finished)
+type ToolInputUpdateEvent struct {
+	BlockIndex int                    `json:"block_index"`       // Which block this update is for
+	ToolUseID  string                 `json:"tool_use_id"`       // Tool use ID for correlation
+	ToolName   string                 `json:"tool_name"`         // Tool name (e.g., "doc_view") for display
+	State      string                 `json:"state"`             // ToolStatePreparing | ToolStateReady
+	Input      map[string]interface{} `json:"input,omitempty"`   // Extracted input fields so far
+}
+
+// ToolExecutingEvent signals that tool execution has started.
+// Sent before calling the tool registry to execute the tool.
+type ToolExecutingEvent struct {
+	BlockIndex int    `json:"block_index"` // Which block this is for
+	ToolUseID  string `json:"tool_use_id"` // Tool use ID for correlation
+	ToolName   string `json:"tool_name"`   // Tool name (e.g., "doc_view")
 }
 
 // BlockCatchupEvent replays a completed block (for reconnection)

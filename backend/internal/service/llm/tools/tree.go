@@ -147,12 +147,13 @@ func (t *TreeTool) buildTree(ctx context.Context, folderID *string, maxDepth, cu
 		}
 	}
 
-	// Format documents (metadata only)
+	// Format documents (metadata only, with full filename including extension)
 	docList := make([]map[string]interface{}, len(contents.Documents))
 	for i, doc := range contents.Documents {
 		docList[i] = map[string]interface{}{
 			"id":         doc.ID,
-			"name":       doc.Name,
+			"name":       doc.Filename(),  // Full filename with extension (e.g., "README.md")
+			"extension":  doc.Extension,   // Extension only (e.g., ".md") for format detection
 			"word_count": doc.WordCount(),
 			"updated_at": doc.UpdatedAt,
 		}

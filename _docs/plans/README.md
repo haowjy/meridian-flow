@@ -14,6 +14,13 @@ Each plan document includes:
 
 ## Active Plans
 
+### [Streaming Tool Call Display](./streaming-tool-call-display.md)
+**Status:** Ready to implement
+**Priority:** High
+**Effort:** 4-6 hours
+
+Fix "Unknown" tool call display during streaming. Show progressive state: writing → path → executing → complete.
+
 ### [AI Editing MVP0](./ai-editing-mvp0.md)
 **Status:** In progress
 **Priority:** High

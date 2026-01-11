@@ -84,6 +84,22 @@ type StreamExecutor struct {
 	// Cleanup callback - called when streaming completes/errors
 	// Used by service layer to clean up executor registry
 	onCleanup func()
+
+	// Tool streaming state components (SOLID: SRP - separate extraction and state tracking)
+	toolInputExtractor *ToolInputExtractor // Extracts fields from partial JSON
+	toolStateTracker   *ToolStateTracker   // Manages state and throttles SSE emissions
+
+	// Track current tool metadata per block (needed for tool_input_update events)
+	currentToolMeta map[int]toolMeta // providerBlockIndex -> tool metadata
+
+	// Track tool_use_id to block sequence mapping (for tool_executing events)
+	toolUseIDToSequence map[string]int // tool_use_id -> block sequence
+}
+
+// toolMeta holds tool metadata for a streaming block
+type toolMeta struct {
+	toolName  string
+	toolUseID string
 }
 
 // NewStreamExecutor creates a new mstream-based executor for a turn.
@@ -104,24 +120,28 @@ func NewStreamExecutor(
 	softCancelTimeoutSeconds int,
 ) *StreamExecutor {
 	se := &StreamExecutor{
-		turnID:            turnID,
-		model:             model,
-		turnRepo:          turnWriter,
-		provider:          provider,
-		logger:            logger,
-		toolRegistry:      toolRegistry,
-		turnNavigator:     turnNavigator,
-		turnReader:        turnReader,
-		messageBuilder:    messageBuilder,
-		toolResultIDs:     make(map[string]bool),
-		toolIteration:     0,
-		maxToolRounds:     maxToolRounds,
-		maxBlockSequence:  -1, // No blocks persisted yet (so first block is sequence 0)
-		state:             StateStreaming,
-		ctrlCh:            make(chan controlMsg, 1), // Buffered for non-blocking sends
-		tokenFinalizer:    tokenFinalizer,
-		softCancelTimeout: time.Duration(softCancelTimeoutSeconds) * time.Second,
-		persistenceGuard:  NewPersistenceGuard(), // Armed initially, disarmed on cancel
+		turnID:             turnID,
+		model:              model,
+		turnRepo:           turnWriter,
+		provider:           provider,
+		logger:             logger,
+		toolRegistry:       toolRegistry,
+		turnNavigator:      turnNavigator,
+		turnReader:         turnReader,
+		messageBuilder:     messageBuilder,
+		toolResultIDs:      make(map[string]bool),
+		toolIteration:      0,
+		maxToolRounds:      maxToolRounds,
+		maxBlockSequence:   -1, // No blocks persisted yet (so first block is sequence 0)
+		state:              StateStreaming,
+		ctrlCh:             make(chan controlMsg, 1), // Buffered for non-blocking sends
+		tokenFinalizer:     tokenFinalizer,
+		softCancelTimeout:  time.Duration(softCancelTimeoutSeconds) * time.Second,
+		persistenceGuard:   NewPersistenceGuard(), // Armed initially, disarmed on cancel
+		toolInputExtractor:  NewToolInputExtractor(),
+		toolStateTracker:    NewToolStateTracker(100 * time.Millisecond), // 100ms throttle
+		currentToolMeta:     make(map[int]toolMeta),
+		toolUseIDToSequence: make(map[string]int),
 	}
 
 	// Create catchup function for database-backed event replay (needs TurnReader)
@@ -453,11 +473,21 @@ func (se *StreamExecutor) processDelta(_ context.Context, send func(mstream.Even
 		// Provider always sends indices 0, 1, 2... but continuation streams need 3, 4, 5...
 		turnLevelSequence := streamStartSequence + delta.BlockIndex
 
-		// Send block_start for new block
+		// Send block_start for new block (including tool metadata for tool_use blocks)
 		se.sendEvent(send, llmModels.SSEEventBlockStart, llmModels.BlockStartEvent{
 			BlockIndex: turnLevelSequence,
 			BlockType:  delta.BlockType,
+			ToolName:   delta.ToolCallName, // NEW: Tool name for progressive display
+			ToolUseID:  delta.ToolCallID,   // NEW: Tool use ID for correlation
 		})
+
+		// Track tool metadata for this block (needed for tool_input_update events)
+		if delta.ToolCallName != nil && delta.ToolCallID != nil {
+			se.currentToolMeta[delta.BlockIndex] = toolMeta{
+				toolName:  *delta.ToolCallName,
+				toolUseID: *delta.ToolCallID,
+			}
+		}
 
 		// Track block type for partial block persistence (only text blocks are persisted)
 		if delta.BlockType != nil {
@@ -470,14 +500,39 @@ func (se *StreamExecutor) processDelta(_ context.Context, send func(mstream.Even
 		*currentBlockIndex = delta.BlockIndex
 	}
 
-	// Accumulate JSON deltas instead of sending (partial JSON is useless)
+	// Accumulate JSON deltas and emit tool_input_update events for progressive display
 	// NOTE: Use provider's block index as map key (not remapped sequence)
 	if delta.JSONDelta != nil && *delta.JSONDelta != "" {
 		if se.jsonAccumulator == nil {
 			se.jsonAccumulator = make(map[int]string)
 		}
 		se.jsonAccumulator[delta.BlockIndex] += *delta.JSONDelta
-		// Don't send - partial JSON is unparseable
+
+		// NEW: Extract fields and emit tool_input_update if we have tool metadata
+		if meta, ok := se.currentToolMeta[delta.BlockIndex]; ok {
+			accumulated := se.jsonAccumulator[delta.BlockIndex]
+			extractedInput := se.toolInputExtractor.Extract(meta.toolName, accumulated)
+
+			state := &ToolStreamState{
+				ToolName:  meta.toolName,
+				ToolUseID: meta.toolUseID,
+				State:     llmModels.ToolStatePreparing,
+				Input:     extractedInput,
+			}
+
+			// Only emit if not throttled (100ms interval)
+			turnLevelSequence := streamStartSequence + delta.BlockIndex
+			if se.toolStateTracker.UpdateState(delta.BlockIndex, state) {
+				se.sendEvent(send, llmModels.SSEEventToolInputUpdate, llmModels.ToolInputUpdateEvent{
+					BlockIndex: turnLevelSequence,
+					ToolUseID:  meta.toolUseID,
+					ToolName:   meta.toolName, // Always include toolName for frontend display
+					State:      llmModels.ToolStatePreparing,
+					Input:      extractedInput,
+				})
+			}
+		}
+
 		return nil
 	}
 
@@ -627,6 +682,30 @@ func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(ms
 			JSONDelta:  &accumulatedJSON,
 		})
 		delete(se.jsonAccumulator, providerBlockIndex) // Cleanup using provider index
+	}
+
+	// NEW: Send tool_input_update with state="complete" for tool_use blocks
+	// This signals that all input has been received and tool is ready for execution
+	if meta, ok := se.currentToolMeta[providerBlockIndex]; ok {
+		// Extract final input from block content
+		var finalInput map[string]interface{}
+		if block.Content != nil {
+			if input, ok := block.Content["input"].(map[string]interface{}); ok {
+				finalInput = input
+			}
+		}
+
+		se.sendEvent(send, llmModels.SSEEventToolInputUpdate, llmModels.ToolInputUpdateEvent{
+			BlockIndex: block.Sequence,
+			ToolUseID:  meta.toolUseID,
+			ToolName:   meta.toolName, // Always include toolName for frontend display
+			State:      llmModels.ToolStateReady,
+			Input:      finalInput,
+		})
+
+		// Clean up tool state tracker
+		se.toolStateTracker.Clear(providerBlockIndex)
+		delete(se.currentToolMeta, providerBlockIndex)
 	}
 
 	// Clear text accumulator for this completed block (no longer needed for partial persistence)
@@ -1144,6 +1223,9 @@ func (se *StreamExecutor) collectToolUse(block *llmModels.TurnBlock) {
 	}
 
 	se.collectedTools = append(se.collectedTools, toolCall)
+
+	// Track tool_use_id to block sequence mapping (for tool_executing events)
+	se.toolUseIDToSequence[toolUseID] = block.Sequence
 }
 
 // executeToolsAndContinue executes the collected tools in parallel, persists the results,
@@ -1161,6 +1243,20 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 				"tool_name", tc.Name,
 			)
 		}
+	}
+
+	// NEW: Send tool_executing events before execution
+	// This allows frontend to show "Running..." state during execution
+	for _, tc := range toolsToExecute {
+		blockSequence := -1 // Default if not found
+		if seq, ok := se.toolUseIDToSequence[tc.ID]; ok {
+			blockSequence = seq
+		}
+		se.sendEvent(send, llmModels.SSEEventToolExecuting, llmModels.ToolExecutingEvent{
+			BlockIndex: blockSequence,
+			ToolUseID:  tc.ID,
+			ToolName:   tc.Name,
+		})
 	}
 
 	// Execute filtered tools in parallel
@@ -1304,6 +1400,8 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 	// 9. Reset tool collection for next iteration
 	se.collectedTools = nil
 	se.toolResultIDs = make(map[string]bool)
+	se.toolUseIDToSequence = make(map[string]int) // Reset tool_use_id -> sequence mapping
+	se.currentToolMeta = make(map[int]toolMeta)   // Reset tool metadata per block
 
 	// 10. Process continuation stream (recursive call)
 	// maxBlockSequence will be updated by processProviderStream -> processCompleteBlock
@@ -1398,6 +1496,8 @@ func (se *StreamExecutor) persistErrorToolResults(ctx context.Context, send func
 	// Clear collected tools after persisting error results
 	se.collectedTools = nil
 	se.toolResultIDs = make(map[string]bool)
+	se.toolUseIDToSequence = make(map[string]int) // Reset tool_use_id -> sequence mapping
+	se.currentToolMeta = make(map[int]toolMeta)   // Reset tool metadata per block
 
 	return nil
 }
@@ -1489,6 +1589,8 @@ func (se *StreamExecutor) executeToolsAndContinueWithLimit(ctx context.Context, 
 	// 6. Reset tool collection (no more tool rounds allowed)
 	se.collectedTools = nil
 	se.toolResultIDs = make(map[string]bool)
+	se.toolUseIDToSequence = make(map[string]int) // Reset tool_use_id -> sequence mapping
+	se.currentToolMeta = make(map[int]toolMeta)   // Reset tool metadata per block
 
 	// 7. Process final stream (will complete with end_turn stop_reason)
 	return se.processProviderStream(ctx, contStreamChan, send)

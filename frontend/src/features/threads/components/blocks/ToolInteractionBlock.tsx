@@ -1,18 +1,26 @@
 import React, { useState } from 'react'
 import type { ToolBlockContent, TurnBlock } from '@/features/threads/types'
+import { useThreadStore, ToolStreamState, type StreamingToolState } from '@/core/stores/useThreadStore'
 
 interface ToolInteractionBlockProps {
   toolUse: TurnBlock | null
   toolResult: TurnBlock | null
 }
 
-function getToolMeta(toolUse: TurnBlock | null, toolResult: TurnBlock | null) {
+function getToolMeta(
+  toolUse: TurnBlock | null,
+  toolResult: TurnBlock | null,
+  streamingState?: StreamingToolState
+) {
   const source = toolResult ?? toolUse
   const content = (source?.content ?? {}) as ToolBlockContent
-  const toolName =
-    typeof content.tool_name === 'string' ? content.tool_name : 'Tool'
-  const toolUseId =
-    typeof content.tool_use_id === 'string' ? content.tool_use_id : null
+
+  // Prefer streaming state, fallback to block content
+  // Return null if no tool name available (will show "Pending" state)
+  const toolName = streamingState?.toolName
+    ?? (typeof content.tool_name === 'string' ? content.tool_name : null)
+  const toolUseId = streamingState?.toolUseId
+    ?? (typeof content.tool_use_id === 'string' ? content.tool_use_id : null)
   const isError = typeof content.is_error === 'boolean' ? content.is_error : false
 
   return { toolName, toolUseId, isError }
@@ -21,11 +29,13 @@ function getToolMeta(toolUse: TurnBlock | null, toolResult: TurnBlock | null) {
 function buildCallPreview(
   toolName: string,
   toolUse: TurnBlock | null,
-  toolResult: TurnBlock | null
+  toolResult: TurnBlock | null,
+  streamingInput?: Record<string, unknown>
 ): string | null {
   const source = toolUse ?? toolResult
   const content = (source?.content ?? {}) as ToolBlockContent
-  const input = content.input
+  // Use streaming input if available, fallback to block content
+  const input = streamingInput ?? content.input
 
   if (!input || typeof input !== 'object') {
     return null
@@ -68,22 +78,40 @@ export const ToolInteractionBlock = React.memo(function ToolInteractionBlock({
   toolUse,
   toolResult,
 }: ToolInteractionBlockProps) {
-  const { toolName, toolUseId, isError } = getToolMeta(toolUse, toolResult)
+  // Get streaming state from store based on block sequence
+  const streamingState = useThreadStore((state) =>
+    toolUse?.sequence != null
+      ? state.streamingToolStates[toolUse.sequence]
+      : undefined
+  )
+
+  const { toolName, toolUseId, isError } = getToolMeta(toolUse, toolResult, streamingState)
   const hasResult = !!toolResult
 
+  // If no tool name yet, show pending state instead of "unknown"
+  const isPending = !toolName
+  const displayName = toolName ?? 'Tool'
+
   const shortId = toolUseId ? `${toolUseId.slice(0, 8)}…` : null
-  const callPreview = buildCallPreview(toolName, toolUse, toolResult)
-  const title = callPreview ?? (shortId ? `${toolName} (${shortId})` : toolName)
+  const callPreview = isPending ? null : buildCallPreview(displayName, toolUse, toolResult, streamingState?.input)
+  const title = isPending ? 'Pending...' : (callPreview ?? (shortId ? `${displayName} (${shortId})` : displayName))
 
   const [isExpanded, setIsExpanded] = useState(false)
 
+  // Determine status based on streaming state, then fallback to block state
   let statusLabel: string
   if (isError) {
     statusLabel = 'Error'
+  } else if (streamingState?.state === ToolStreamState.EXECUTING) {
+    statusLabel = 'Running...'
+  } else if (streamingState?.state === ToolStreamState.PREPARING) {
+    statusLabel = 'Preparing...'
+  } else if (streamingState?.state === ToolStreamState.READY) {
+    statusLabel = 'Ready'
   } else if (hasResult) {
     statusLabel = 'Success'
   } else {
-    statusLabel = 'Waiting for result…'
+    statusLabel = 'Preparing...'  // Default fallback
   }
 
   return (

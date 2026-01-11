@@ -16,7 +16,6 @@ import { FileEdit, ExternalLink, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { TurnBlock, ToolBlockContent } from '@/features/threads/types'
 import { useTreeStore } from '@/core/stores/useTreeStore'
-import { Button } from '@/shared/components/ui/button'
 import { DocEditDiffPreview } from './DocEditDiffPreview'
 import {
   parseDocEditPath,
@@ -169,15 +168,14 @@ export const DocEditBlock = React.memo(function DocEditBlock({
       statusBadge={<ToolStatusBadge status={status} label={statusLabel} />}
       actions={
         input?.path && projectSlug ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-5 px-1.5 gap-0.5 text-xs shrink-0"
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
             onClick={handleViewInEditor}
           >
             <ExternalLink className="size-3" />
             View
-          </Button>
+          </button>
         ) : undefined
       }
       isExpanded={isExpanded}
@@ -194,22 +192,6 @@ export const DocEditBlock = React.memo(function DocEditBlock({
         >
           <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
           <span className="leading-relaxed">{message}</span>
-        </div>
-      )}
-
-      {/* Document not found warning (except for create command) */}
-      {!resolvedDocument && input?.command !== 'create' && (
-        <div
-          className={cn(
-            'flex items-start gap-2',
-            'text-xs p-2.5 rounded-md',
-            'bg-warning/10 text-warning-foreground'
-          )}
-        >
-          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-          <span className="leading-relaxed">
-            Document not found in project tree
-          </span>
         </div>
       )}
 

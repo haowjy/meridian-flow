@@ -6,6 +6,25 @@ import {
   type BlockType,
   type ThreadRequestOptions,
 } from '@/features/threads/types'
+
+// Tool stream state constants (must match backend sse_events.go)
+export const ToolStreamState = {
+  PREPARING: 'preparing',
+  READY: 'ready',
+  EXECUTING: 'executing',
+  COMPLETE: 'complete',
+  ERROR: 'error',
+} as const
+
+export type ToolStreamStateValue = typeof ToolStreamState[keyof typeof ToolStreamState]
+
+// Streaming tool state for progressive display during LLM streaming
+export type StreamingToolState = {
+  state: ToolStreamStateValue
+  toolName: string
+  toolUseId?: string
+  input?: Record<string, unknown>
+}
 import { DEFAULT_THREAD_REQUEST_OPTIONS, requestParamsToOptions } from '@/features/threads/types'
 import { api } from '@/core/lib/api'
 import { getErrorMessageWithFallback } from '@/core/lib/errors'
@@ -44,6 +63,9 @@ interface ThreadStore {
   streamingBlockIndex: number | null
   streamingBlockType: BlockType | null
 
+  // Streaming tool state per block index (for progressive tool display)
+  streamingToolStates: Record<number, StreamingToolState>
+
   loadThreads: (projectId: string, signal?: AbortSignal) => Promise<void>
   // Legacy shape retained; internally calls openThread
   loadTurns: (threadId: string, signal?: AbortSignal) => Promise<void>
@@ -73,6 +95,9 @@ interface ThreadStore {
     blockType: BlockType | null
   ) => void
   setCurrentTurnId: (turnId: string) => void
+
+  // Streaming tool state actions
+  updateToolState: (blockIndex: number, update: Partial<StreamingToolState>) => void
 
   interruptStreamingTurn: () => Promise<void>
 
@@ -138,8 +163,9 @@ export const useThreadStore = create<ThreadStore>()(
       navigationAbortController: null,
       streamingTurnId: null,
       streamingUrl: null,
-       streamingBlockIndex: null,
-       streamingBlockType: null,
+      streamingBlockIndex: null,
+      streamingBlockType: null,
+      streamingToolStates: {},
 
       // Computed getter for backwards compatibility
       get isLoadingThreads() {
@@ -439,7 +465,28 @@ export const useThreadStore = create<ThreadStore>()(
           streamingUrl: null,
           streamingBlockIndex: null,
           streamingBlockType: null,
+          streamingToolStates: {}, // Clear tool states when stream ends
         }))
+      },
+
+      updateToolState: (blockIndex: number, update: Partial<StreamingToolState>) => {
+        set((state) => {
+          const existing = state.streamingToolStates[blockIndex] || {}
+          // Filter out undefined values from update to preserve existing values
+          // This ensures partial updates don't overwrite existing fields with undefined
+          const filtered = Object.fromEntries(
+            Object.entries(update).filter(([, v]) => v !== undefined)
+          )
+          return {
+            streamingToolStates: {
+              ...state.streamingToolStates,
+              [blockIndex]: {
+                ...existing,
+                ...filtered,
+              } as StreamingToolState,
+            },
+          }
+        })
       },
 
       setStreamingBlockInfo: (

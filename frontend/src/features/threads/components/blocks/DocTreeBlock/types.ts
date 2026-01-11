@@ -1,8 +1,8 @@
 /**
  * Types for doc_tree tool blocks
  *
- * The doc_tree tool returns a recursive tree structure from the backend,
- * but we use the tree store for rendering (consistent with DocViewBlock).
+ * The doc_tree tool returns a recursive tree structure from the backend.
+ * We hydrate the tree store from this data so FolderTreeView can render it.
  */
 
 // =============================================================================
@@ -17,8 +17,27 @@ export interface DocTreeInput {
 }
 
 // =============================================================================
-// RESULT TYPES
+// RESULT TYPES (Nested structure from backend)
 // =============================================================================
+
+/** Document info in tool result (subset of full Document type) */
+export interface DocTreeDocument {
+  id: string
+  /** Full name with extension (e.g., "README.md") */
+  name: string
+  /** File extension with dot (e.g., ".md") */
+  extension: string
+  word_count: number
+  updated_at: string
+}
+
+/** Folder info in tool result (recursive structure) */
+export interface DocTreeFolder {
+  id: string
+  name: string
+  folders: DocTreeFolder[]
+  documents: DocTreeDocument[]
+}
 
 export interface DocTreeResult {
   type: 'tree'
@@ -26,6 +45,8 @@ export interface DocTreeResult {
   path: string
   /** Actual depth traversed */
   depth: number
-  // Note: Backend also returns folders/documents recursively,
-  // but we use tree store for rendering consistency
+  /** Nested folders at this level */
+  folders: DocTreeFolder[]
+  /** Documents at this level */
+  documents: DocTreeDocument[]
 }
