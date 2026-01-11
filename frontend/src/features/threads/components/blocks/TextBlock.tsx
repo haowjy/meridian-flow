@@ -28,7 +28,7 @@ export const TextBlock = React.memo(function TextBlock({ block }: TextBlockProps
   return (
     <div
       className={cn(
-        'whitespace-pre-wrap overflow-hidden break-words',
+        'whitespace-pre-wrap break-words',
         isPartial && 'border-l-2 border-amber-500 pl-2'
       )}
     >
@@ -37,7 +37,7 @@ export const TextBlock = React.memo(function TextBlock({ block }: TextBlockProps
           Response was interrupted
         </div>
       )}
-      <Streamdown rehypePlugins={rehypePlugins}>{text}</Streamdown>
+      <Streamdown className="whitespace-pre-wrap break-words" rehypePlugins={rehypePlugins}>{text}</Streamdown>
     </div>
   )
 })
