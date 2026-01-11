@@ -17,11 +17,6 @@ import { cn } from '@/lib/utils'
 import type { TurnBlock, ToolBlockContent } from '@/features/threads/types'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { Button } from '@/shared/components/ui/button'
-import {
-  Collapsible,
-  CollapsibleTrigger,
-  CollapsibleContent,
-} from '@/shared/components/ui/collapsible'
 import { DocEditDiffPreview } from './DocEditDiffPreview'
 import {
   parseDocEditPath,
@@ -30,6 +25,11 @@ import {
 import { openDocument } from '@/core/lib/panelHelpers'
 import type { DocEditInput } from './types'
 import { COMMAND_LABELS } from './types'
+import {
+  CollapsibleToolBlock,
+  ToolStatusBadge,
+  type ToolStatus,
+} from '../shared'
 
 // =============================================================================
 // TYPES
@@ -141,117 +141,80 @@ export const DocEditBlock = React.memo(function DocEditBlock({
     ? COMMAND_LABELS[input.command] || input.command
     : 'Edit'
 
-  // Status styling - use theme semantic colors for proper contrast
+  // Determine status for badge
+  let status: ToolStatus
   let statusLabel: string
-  let statusClass: string
   if (isError) {
+    status = 'error'
     statusLabel = 'Error'
-    statusClass = 'bg-error/15 text-error border-error/30'
   } else if (hasResult) {
+    status = 'success'
     statusLabel = 'Applied'
-    statusClass = 'bg-success/15 text-success border-success/30'
   } else {
+    status = 'pending'
     statusLabel = 'Pending...'
-    statusClass = 'bg-muted text-muted-foreground border-muted-foreground/30'
   }
 
   return (
-    <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
-      <div
-        className={cn(
-          'rounded-lg border',
-          'bg-card/50 hover:bg-card/80',
-          'transition-colors duration-150',
-          'overflow-hidden'
-        )}
-      >
-        {/* Header - clickable to expand/collapse */}
-        <CollapsibleTrigger asChild>
-          <button
-            type="button"
-            className={cn(
-              'flex w-full items-center gap-2 px-3 py-2',
-              'text-left cursor-pointer',
-              'hover:bg-muted/50 transition-colors'
-            )}
+    <CollapsibleToolBlock
+      icon={FileEdit}
+      label={
+        <span className="text-sm font-medium text-foreground/90 truncate">
+          {commandLabel}:{' '}
+          <span className="text-muted-foreground font-normal">
+            {parsedPath?.displayName || input?.path || 'Unknown'}
+          </span>
+        </span>
+      }
+      statusBadge={<ToolStatusBadge status={status} label={statusLabel} />}
+      actions={
+        input?.path && projectSlug ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-5 px-1.5 gap-0.5 text-xs shrink-0"
+            onClick={handleViewInEditor}
           >
-            {/* Icon */}
-            <FileEdit className="h-3 w-3 shrink-0 text-muted-foreground/70" />
+            <ExternalLink className="size-3" />
+            View
+          </Button>
+        ) : undefined
+      }
+      isExpanded={isExpanded}
+      onExpandedChange={setIsExpanded}
+    >
+      {/* Error message */}
+      {isError && message && (
+        <div
+          className={cn(
+            'flex items-start gap-2',
+            'text-xs p-2.5 rounded-md',
+            'bg-error/15 text-error'
+          )}
+        >
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <span className="leading-relaxed">{message}</span>
+        </div>
+      )}
 
-            {/* Command and path */}
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <span className="text-sm font-medium text-foreground/90 truncate">
-                {commandLabel}:{' '}
-                <span className="text-muted-foreground font-normal">
-                  {parsedPath?.displayName || input?.path || 'Unknown'}
-                </span>
-              </span>
-            </div>
+      {/* Document not found warning (except for create command) */}
+      {!resolvedDocument && input?.command !== 'create' && (
+        <div
+          className={cn(
+            'flex items-start gap-2',
+            'text-xs p-2.5 rounded-md',
+            'bg-warning/10 text-warning-foreground'
+          )}
+        >
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <span className="leading-relaxed">
+            Document not found in project tree
+          </span>
+        </div>
+      )}
 
-            {/* Status badge */}
-            <span
-              className={cn(
-                'shrink-0 text-[11px] font-medium',
-                'px-2 py-0.5 rounded-full border',
-                statusClass
-              )}
-            >
-              {statusLabel}
-            </span>
-
-            {/* View button - show if we have path and project context */}
-            {input?.path && projectSlug && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-5 px-1.5 gap-0.5 text-xs shrink-0 -my-2"
-                onClick={handleViewInEditor}
-              >
-                <ExternalLink className="size-3" />
-                View
-              </Button>
-            )}
-          </button>
-        </CollapsibleTrigger>
-
-        {/* Expanded content - diff preview */}
-        <CollapsibleContent>
-          <div className="border-t px-3 py-3 space-y-2">
-            {/* Error message */}
-            {isError && message && (
-              <div
-                className={cn(
-                  'flex items-start gap-2',
-                  'text-xs p-2.5 rounded-md',
-                  'bg-error/15 text-error'
-                )}
-              >
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                <span className="leading-relaxed">{message}</span>
-              </div>
-            )}
-
-            {/* Document not found warning (except for create command) */}
-            {!resolvedDocument && input?.command !== 'create' && (
-              <div
-                className={cn(
-                  'flex items-start gap-2',
-                  'text-xs p-2.5 rounded-md',
-                  'bg-warning/10 text-warning-foreground'
-                )}
-              >
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                <span className="leading-relaxed">
-                  Document not found in project tree
-                </span>
-              </div>
-            )}
-
-            {/* Diff preview */}
-            {input && <DocEditDiffPreview input={input} />}
-          </div>
-        </CollapsibleContent>
-      </div>
-    </Collapsible>
+      {/* Diff preview */}
+      {input && <DocEditDiffPreview input={input} />}
+    </CollapsibleToolBlock>
   )
 })

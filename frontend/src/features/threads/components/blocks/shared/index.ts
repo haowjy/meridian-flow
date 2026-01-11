@@ -7,3 +7,9 @@
 
 export { FolderTreeView } from './FolderTreeView'
 export type { FolderTreeViewProps } from './FolderTreeView'
+
+export { CollapsibleToolBlock } from './CollapsibleToolBlock'
+export type { CollapsibleToolBlockProps } from './CollapsibleToolBlock'
+
+export { ToolStatusBadge } from './ToolStatusBadge'
+export type { ToolStatus, ToolStatusBadgeProps } from './ToolStatusBadge'
