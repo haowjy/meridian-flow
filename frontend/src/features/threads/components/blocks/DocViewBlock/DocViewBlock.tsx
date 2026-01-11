@@ -171,10 +171,13 @@ export const DocViewBlock = React.memo(function DocViewBlock({
   const isFolder = result && isFolderResult(result)
 
   // Hydrate tree store when folder result arrives (so FolderTreeView can render)
+  // NOTE: Use getState().folders instead of reactive `folders` to avoid infinite loop.
+  // This effect UPDATES folders, so it must READ via getState(), not subscribe.
   useEffect(() => {
     if (result && isFolderResult(result) && !isError) {
-      // Resolve parent folder ID from path
-      const parentFolder = findFolderByPath(result.path, folders)
+      // Resolve parent folder ID from path (read from store without subscribing)
+      const currentFolders = useTreeStore.getState().folders
+      const parentFolder = findFolderByPath(result.path, currentFolders)
       const parentFolderId = parentFolder === null ? null : parentFolder?.id ?? null
 
       useTreeStore.getState().hydrateFromFolderView(
@@ -183,7 +186,7 @@ export const DocViewBlock = React.memo(function DocViewBlock({
         result.documents
       )
     }
-  }, [result, isError, folders])
+  }, [result, isError])
 
   // Resolve document from tree store (for correct slug)
   const resolvedDocument = input?.path

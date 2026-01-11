@@ -126,6 +126,29 @@ All stores use Zustand. Key conventions:
 - `useTreeStore.ts` - Document tree structure (network-first, bulk cache)
 - `useUIStore.ts` - UI state (persist middleware)
 
+#### Subscribe for Display, Read for Action
+
+**Critical pattern to avoid infinite loops:**
+
+- **Subscribe** (useStore selector in component) = component needs to RE-RENDER when state changes
+- **Read** (`getState()`) = effect/action needs current value without triggering re-runs
+
+If an effect **updates** store state, it must **read** that state via `getState()`, not subscribe:
+
+```tsx
+// ❌ BAD: Creates infinite loop
+const { items } = useStore((s) => ({ items: s.items }))
+useEffect(() => {
+  useStore.getState().updateItems(...)  // Updates items
+}, [someCondition, items])  // items in deps → effect re-runs → loop!
+
+// ✅ GOOD: Read inside effect
+useEffect(() => {
+  const items = useStore.getState().items  // Read without subscribing
+  useStore.getState().updateItems(...)
+}, [someCondition])  // No items in deps
+```
+
 ### Navigation Pattern
 
 Document and panel navigation uses a **two-pronged approach**:

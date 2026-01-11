@@ -30,6 +30,11 @@ import { api } from '@/core/lib/api'
 import { getErrorMessageWithFallback } from '@/core/lib/errors'
 import { makeLogger } from '@/core/lib/logger'
 
+// Stream-end coordination for cancel flow.
+// Stored outside Zustand since it contains non-serializable data (functions, timers).
+type StreamEndWaiter = { resolve: () => void; timeoutId: ReturnType<typeof setTimeout> }
+const streamEndWaiters = new Map<string, StreamEndWaiter>()
+
 /**
  * TODO(DEXIE CACHING) - High Priority Follow-up:
  * Implement windowed Dexie caching for thread turns (last ~100 items) and re-enable
@@ -100,6 +105,10 @@ interface ThreadStore {
   updateToolState: (blockIndex: number, update: Partial<StreamingToolState>) => void
 
   interruptStreamingTurn: () => Promise<void>
+
+  // Stream-end coordination (used by cancel flow)
+  waitForStreamEnd: (turnId: string, timeoutMs?: number) => Promise<void>
+  notifyStreamEnded: (turnId: string) => void
 
   // Pagination & navigation (server-driven)
   openThread: (threadId: string, initialTurnId?: string, signal?: AbortSignal) => Promise<void>
@@ -352,18 +361,67 @@ export const useThreadStore = create<ThreadStore>()(
         log.debug('interruptStreamingTurn:start', { turnId, threadId })
 
         try {
+          // 1. Start waiting BEFORE interrupt request (prevents missing fast closes)
+          const streamEndPromise = state.waitForStreamEnd(turnId, 3000)
+
+          // 2. Request interrupt from backend
           await api.turns.interrupt(turnId)
 
-          // Hard-like UX: stop the local stream immediately so the user can continue.
-          // Backend soft-cancel may keep running for token metadata.
+          // 3. Wait for SSE to actually end (or timeout)
+          await streamEndPromise
+          log.debug('interruptStreamingTurn:streamEnded', { turnId })
+
+          // 4. Clear local state (SSE hook may have already done this)
           get().clearStreamingStream()
 
-          // Best-effort refresh so UI sees partial content and updated status.
+          // 5. Refresh to get final state with partial blocks
           if (threadId) {
             await state.refreshTurn(threadId, turnId)
           }
         } catch (error) {
           set({ error: getErrorMessageWithFallback(error, 'Failed to interrupt streaming turn') })
+        }
+      },
+
+      waitForStreamEnd: (turnId: string, timeoutMs = 3000): Promise<void> => {
+        const log = makeLogger('thread-store')
+
+        // If there's already a waiter for this turn, return the existing promise
+        // (shouldn't happen in normal flow, but defensive)
+        const existing = streamEndWaiters.get(turnId)
+        if (existing) {
+          log.debug('waitForStreamEnd:existingWaiter', { turnId })
+          return new Promise((resolve) => {
+            const oldResolve = existing.resolve
+            existing.resolve = () => {
+              oldResolve()
+              resolve()
+            }
+          })
+        }
+
+        return new Promise((resolve) => {
+          const timeoutId = setTimeout(() => {
+            log.debug('waitForStreamEnd:timeout', { turnId, timeoutMs })
+            streamEndWaiters.delete(turnId)
+            resolve()
+          }, timeoutMs)
+
+          streamEndWaiters.set(turnId, { resolve, timeoutId })
+          log.debug('waitForStreamEnd:registered', { turnId, timeoutMs })
+        })
+      },
+
+      notifyStreamEnded: (turnId: string) => {
+        const log = makeLogger('thread-store')
+        const waiter = streamEndWaiters.get(turnId)
+        if (waiter) {
+          log.debug('notifyStreamEnded:resolving', { turnId })
+          clearTimeout(waiter.timeoutId)
+          streamEndWaiters.delete(turnId)
+          waiter.resolve()
+        } else {
+          log.debug('notifyStreamEnded:noWaiter', { turnId })
         }
       },
 
