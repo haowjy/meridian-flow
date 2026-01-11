@@ -9,14 +9,13 @@
  * Uses the tool registry pattern for extensibility.
  */
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from '@tanstack/react-router'
 import { useShallow } from 'zustand/react/shallow'
 import { FileText, FolderOpen, ExternalLink, AlertCircle, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { TurnBlock, ToolBlockContent } from '@/features/threads/types'
 import { useTreeStore } from '@/core/stores/useTreeStore'
-import { Button } from '@/shared/components/ui/button'
 import {
   parseDocEditPath,
   findDocumentByPath,
@@ -171,14 +170,37 @@ export const DocViewBlock = React.memo(function DocViewBlock({
   const isDocument = result && isDocumentResult(result)
   const isFolder = result && isFolderResult(result)
 
+  // Hydrate tree store when folder result arrives (so FolderTreeView can render)
+  useEffect(() => {
+    if (result && isFolderResult(result) && !isError) {
+      // Resolve parent folder ID from path
+      const parentFolder = findFolderByPath(result.path, folders)
+      const parentFolderId = parentFolder === null ? null : parentFolder?.id ?? null
+
+      useTreeStore.getState().hydrateFromFolderView(
+        parentFolderId,
+        result.folders,
+        result.documents
+      )
+    }
+  }, [result, isError, folders])
+
   // Resolve document from tree store (for correct slug)
   const resolvedDocument = input?.path
     ? findDocumentByPath(input.path, documents, folders)
     : null
 
-  // Extract primitives for callback dependencies (React Compiler safe)
-  const resolvedDocId = resolvedDocument?.id ?? null
-  const resolvedDocSlug = resolvedDocument?.slug ?? null
+  // For document results, use result data directly (works even if tree store empty)
+  // Fall back to tree store resolution for non-document results or when result not available
+  const docId = (result && isDocumentResult(result))
+    ? result.id
+    : resolvedDocument?.id ?? null
+
+  // Derive slug from result.path for document results
+  // Path format: "/folder/document-name.md" → slug is the path without leading slash
+  const docSlug = (result && isDocumentResult(result))
+    ? result.path.replace(/^\//, '')
+    : resolvedDocument?.slug ?? null
 
   // Resolve folder from tree store (for folder results)
   // Returns: Folder object, null (root), or undefined (not found)
@@ -195,8 +217,8 @@ export const DocViewBlock = React.memo(function DocViewBlock({
   // No manual useCallback - React Compiler handles memoization
   const handleViewInEditor = (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!resolvedDocId || !resolvedDocSlug || !projectSlug) return
-    openDocument(resolvedDocId, resolvedDocSlug, projectSlug, navigate)
+    if (!docId || !docSlug || !projectSlug) return
+    openDocument(docId, docSlug, projectSlug, navigate)
   }
 
   // Handle document click in folder tree - navigate to editor
@@ -213,7 +235,8 @@ export const DocViewBlock = React.memo(function DocViewBlock({
   const Icon = isFolder ? FolderOpen : FileText
 
   // Check if document no longer exists (for document results)
-  const documentNoLongerExists = isDocument && !resolvedDocId
+  // Use docId which comes from result.id when available
+  const documentNoLongerExists = isDocument && !docId
 
   // Determine status for badge
   let status: ToolStatus
@@ -242,16 +265,15 @@ export const DocViewBlock = React.memo(function DocViewBlock({
       }
       statusBadge={<ToolStatusBadge status={status} label={statusLabel} />}
       actions={
-        resolvedDocId && resolvedDocSlug && projectSlug ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-5 px-1.5 gap-0.5 text-xs shrink-0"
+        docId && docSlug && projectSlug ? (
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
             onClick={handleViewInEditor}
           >
             <ExternalLink className="size-3" />
             View
-          </Button>
+          </button>
         ) : undefined
       }
       isExpanded={isExpanded}

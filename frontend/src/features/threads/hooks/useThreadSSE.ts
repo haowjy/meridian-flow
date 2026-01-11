@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useCallback } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { useThreadStore } from '@/core/stores/useThreadStore'
+import { useThreadStore, ToolStreamState } from '@/core/stores/useThreadStore'
 import { useEditorStore } from '@/core/stores/useEditorStore'
 import { useStreamingBuffer } from './useStreamingBuffer'
 import type { BlockType } from '@/features/threads/types'
@@ -13,6 +13,24 @@ type DeltaType = 'text_delta' | 'thinking_delta' | 'signature_delta' | 'json_del
 interface BlockStartEvent {
   block_index: number
   block_type?: BlockType
+  tool_name?: string    // Tool name for tool_use blocks
+  tool_use_id?: string  // Unique ID for this tool invocation
+}
+
+// Progressive tool input updates during streaming
+interface ToolInputUpdateEvent {
+  block_index: number
+  tool_use_id: string
+  tool_name: string // Tool name (e.g., "doc_view") for display
+  state: 'preparing' | 'ready' // Must match backend ToolStatePreparing/ToolStateReady
+  input?: Record<string, unknown>
+}
+
+// Tool execution started event
+interface ToolExecutingEvent {
+  block_index: number
+  tool_use_id: string
+  tool_name: string
 }
 
 interface BlockDeltaEvent {
@@ -52,6 +70,7 @@ export function useThreadSSE() {
     clearStreamingStream,
     refreshTurn,
     setStreamingBlockInfo,
+    updateToolState,
   } = useThreadStore(
     useShallow((s) => ({
       threadId: s.threadId,
@@ -62,6 +81,7 @@ export function useThreadSSE() {
       clearStreamingStream: s.clearStreamingStream,
       refreshTurn: s.refreshTurn,
       setStreamingBlockInfo: s.setStreamingBlockInfo,
+      updateToolState: s.updateToolState,
     }))
   )
 
@@ -160,6 +180,27 @@ export function useThreadSSE() {
                   setStreamingBlockInfo(data.block_index, blockType)
                   // Clear JSON buffer for new block to prevent concatenation errors
                   jsonBufferRef.current = ''
+
+                  // Initialize tool state if tool metadata present
+                  if (data.tool_name) {
+                    updateToolState(data.block_index, {
+                      state: ToolStreamState.PREPARING,
+                      toolName: data.tool_name,
+                      toolUseId: data.tool_use_id,
+                    })
+
+                    // Create skeleton block IMMEDIATELY for tool_use so existing rendering pipeline works
+                    // This populates block.content.tool_name and block.content.tool_use_id
+                    // Without this, the block isn't added to turn.blocks until block_stop (too late!)
+                    const turnId = currentTurnIdRef.current
+                    if (turnId && blockType === 'tool_use') {
+                      setStreamingBlockContent(turnId, data.block_index, blockType, {
+                        tool_name: data.tool_name,
+                        tool_use_id: data.tool_use_id,
+                        input: {},  // Will be updated progressively via tool_input_update
+                      })
+                    }
+                  }
                 } catch (error) {
                   logger.error('sse:block_start:parse_error', error)
                 }
@@ -213,6 +254,43 @@ export function useThreadSSE() {
                 currentBlockIndexRef.current = null
                 currentBlockTypeRef.current = null
                 setStreamingBlockInfo(null, null)
+                break
+              }
+
+              // Progressive tool input updates during streaming
+              case 'tool_input_update': {
+                try {
+                  const data = JSON.parse(msg.data) as ToolInputUpdateEvent
+                  updateToolState(data.block_index, {
+                    state: data.state === 'ready' ? ToolStreamState.READY : ToolStreamState.PREPARING,
+                    toolName: data.tool_name, // Always update toolName for display
+                    input: data.input,
+                  })
+
+                  // Also update the block content so existing rendering pipeline sees the input
+                  // This allows custom tool blocks (DocViewBlock, etc.) to display input progressively
+                  const turnId = currentTurnIdRef.current
+                  if (turnId && data.input) {
+                    setStreamingBlockContent(turnId, data.block_index, 'tool_use', {
+                      tool_name: data.tool_name,
+                      tool_use_id: data.tool_use_id,
+                      input: data.input,
+                    })
+                  }
+                } catch (error) {
+                  logger.error('sse:tool_input_update:parse_error', error)
+                }
+                break
+              }
+
+              // Tool execution started
+              case 'tool_executing': {
+                try {
+                  const data = JSON.parse(msg.data) as ToolExecutingEvent
+                  updateToolState(data.block_index, { state: ToolStreamState.EXECUTING })
+                } catch (error) {
+                  logger.error('sse:tool_executing:parse_error', error)
+                }
                 break
               }
 
@@ -354,5 +432,6 @@ export function useThreadSSE() {
     refreshTurn,
     logger,
     setStreamingBlockInfo,
+    updateToolState,
   ])
 }

@@ -9,7 +9,7 @@
  * Uses the same FolderTreeView component as DocViewBlock for consistency.
  */
 
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import { useNavigate, useLocation } from '@tanstack/react-router'
 import { useShallow } from 'zustand/react/shallow'
 import { FolderTree, AlertCircle } from 'lucide-react'
@@ -110,6 +110,16 @@ export const DocTreeBlock = React.memo(function DocTreeBlock({
   const input = getDocTreeInput(toolUse)
   const { result, isError, errorMessage } = getDocTreeResult(toolResult)
   const hasResult = !!toolResult
+
+  // Hydrate tree store when result arrives (so FolderTreeView can render)
+  useEffect(() => {
+    if (result && !isError && result.folders && result.documents) {
+      useTreeStore.getState().hydrateFromToolResult(
+        result.folders,
+        result.documents
+      )
+    }
+  }, [result, isError])
 
   // Resolve folder from tree store
   // Use result.path (resolved path) if available, otherwise input.folder

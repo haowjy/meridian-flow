@@ -6,6 +6,8 @@ import { api } from '@/core/lib/api'
 import { getErrorMessageWithFallback, isAbortError } from '@/core/lib/errors'
 import { db } from '@/core/lib/db'
 import { cancelRetry } from '@/core/lib/sync'
+import type { DocTreeFolder, DocTreeDocument } from '@/features/threads/components/blocks/DocTreeBlock/types'
+import { flattenToolTree } from '@/features/threads/utils/flattenToolTree'
 
 type LoadStatus = 'idle' | 'loading' | 'success' | 'error'
 
@@ -31,6 +33,24 @@ interface TreeStore {
   renameDocument: (id: string, name: string, projectId: string) => Promise<void>
   renameFolder: (id: string, name: string, projectId: string) => Promise<void>
   clearError: () => void
+  /**
+   * Hydrate tree store from doc_tree tool result.
+   * Flattens recursive structure and merges with existing data.
+   * Tool results have partial data, so we only update/add, never remove.
+   */
+  hydrateFromToolResult: (
+    folders: DocTreeFolder[],
+    documents: DocTreeDocument[]
+  ) => void
+  /**
+   * Hydrate tree store from doc_view folder result.
+   * Handles flat folder listing (immediate children only).
+   */
+  hydrateFromFolderView: (
+    parentFolderId: string | null,
+    folders: Array<{ id: string; name: string }>,
+    documents: Array<{ id: string; name: string; word_count: number; updated_at?: string }>
+  ) => void
 }
 
 export const useTreeStore = create<TreeStore>()((set, get) => ({
@@ -198,4 +218,124 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  hydrateFromToolResult: (toolFolders, toolDocuments) => {
+    // Flatten the recursive structure
+    const { folders: flatFolders, documents: flatDocuments } = flattenToolTree(
+      toolFolders,
+      toolDocuments,
+      null // Root level
+    )
+
+    set((state) => {
+      // Merge folders: add new, update existing (by id)
+      const folderMap = new Map(state.folders.map((f) => [f.id, f]))
+      for (const folder of flatFolders) {
+        const existing = folderMap.get(folder.id)
+        if (existing) {
+          // Update existing folder with new data
+          folderMap.set(folder.id, { ...existing, ...folder })
+        } else {
+          // Add new folder (partial data, will be completed on full tree load)
+          folderMap.set(folder.id, folder as Folder)
+        }
+      }
+
+      // Merge documents: add new, update existing (by id)
+      const docMap = new Map(state.documents.map((d) => [d.id, d]))
+      for (const doc of flatDocuments) {
+        const existing = docMap.get(doc.id)
+        if (existing) {
+          // Update existing document with new data (preserve fields not in tool result)
+          docMap.set(doc.id, { ...existing, ...doc })
+        } else {
+          // Add new document (partial data, will be completed on full tree load)
+          docMap.set(doc.id, doc as Document)
+        }
+      }
+
+      const mergedFolders = Array.from(folderMap.values())
+      const mergedDocuments = Array.from(docMap.values())
+
+      // Rebuild tree from merged data
+      const tree = buildTree(mergedFolders, mergedDocuments)
+
+      return {
+        folders: mergedFolders,
+        documents: mergedDocuments,
+        tree,
+        // Set status to success if we have data (tool result hydrated it)
+        status: tree.length > 0 ? 'success' : state.status,
+      }
+    })
+  },
+
+  hydrateFromFolderView: (parentFolderId, viewFolders, viewDocuments) => {
+    set((state) => {
+      // Merge folders: add new, update existing (by id)
+      const folderMap = new Map(state.folders.map((f) => [f.id, f]))
+      for (const folder of viewFolders) {
+        const existing = folderMap.get(folder.id)
+        if (existing) {
+          // Update name if changed
+          folderMap.set(folder.id, { ...existing, name: folder.name, parentId: parentFolderId })
+        } else {
+          // Add new folder (partial data)
+          folderMap.set(folder.id, {
+            id: folder.id,
+            name: folder.name,
+            parentId: parentFolderId,
+          } as Folder)
+        }
+      }
+
+      // Merge documents: add new, update existing (by id)
+      const docMap = new Map(state.documents.map((d) => [d.id, d]))
+      for (const doc of viewDocuments) {
+        // Derive extension and name from full filename
+        const lastDot = doc.name.lastIndexOf('.')
+        const extension = lastDot > 0 ? doc.name.slice(lastDot) : '.md'
+        const name = lastDot > 0 ? doc.name.slice(0, lastDot) : doc.name
+        const filename = doc.name
+
+        const existing = docMap.get(doc.id)
+        if (existing) {
+          // Update existing document
+          docMap.set(doc.id, {
+            ...existing,
+            name,
+            filename,
+            extension,
+            folderId: parentFolderId,
+            wordCount: doc.word_count,
+            updatedAt: doc.updated_at ? new Date(doc.updated_at) : existing.updatedAt,
+          })
+        } else {
+          // Add new document (partial data)
+          docMap.set(doc.id, {
+            id: doc.id,
+            name,
+            filename,
+            extension,
+            folderId: parentFolderId,
+            wordCount: doc.word_count,
+            updatedAt: doc.updated_at ? new Date(doc.updated_at) : new Date(),
+          } as Document)
+        }
+      }
+
+      const mergedFolders = Array.from(folderMap.values())
+      const mergedDocuments = Array.from(docMap.values())
+
+      // Rebuild tree from merged data
+      const tree = buildTree(mergedFolders, mergedDocuments)
+
+      return {
+        folders: mergedFolders,
+        documents: mergedDocuments,
+        tree,
+        status: tree.length > 0 ? 'success' : state.status,
+      }
+    })
+  },
 }))

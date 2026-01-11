@@ -74,8 +74,21 @@ export function CollapsibleToolBlock({
             </button>
           </CollapsibleTrigger>
 
-          {/* ACTION ZONE - separate from trigger, no nested buttons */}
-          {actions && <div className="shrink-0 pr-2">{actions}</div>}
+          {/* ACTION ZONE - styled segment matching trigger hover behavior */}
+          {actions && (
+            <div
+              className={cn(
+                'shrink-0 flex items-center self-stretch',
+                'relative',
+                'before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2',
+                'before:h-4 before:w-px before:bg-muted-foreground/15',
+                'px-3',
+                'hover:bg-muted/50 transition-colors duration-150'
+              )}
+            >
+              {actions}
+            </div>
+          )}
         </div>
 
         {/* Expanded content */}

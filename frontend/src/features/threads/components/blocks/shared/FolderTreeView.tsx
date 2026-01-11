@@ -141,7 +141,7 @@ function TreeNode({
           style={{ paddingLeft: `${depth * 12 + 6 + 16}px` }} // Extra indent to align with folder names
         >
           <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
-          <span className="text-foreground/90 truncate">{doc.name}</span>
+          <span className="text-foreground/90 truncate">{doc.filename}</span>
           {showWordCount && doc.wordCount !== undefined && (
             <span className="text-muted-foreground ml-auto shrink-0">
               ({doc.wordCount.toLocaleString()} words)
