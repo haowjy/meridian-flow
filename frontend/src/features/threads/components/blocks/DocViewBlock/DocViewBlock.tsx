@@ -216,16 +216,13 @@ export const DocViewBlock = React.memo(function DocViewBlock({
     ? null // Root folder
     : resolvedFolder?.id ?? null
 
-  // Handle "View" navigation for header button
-  // No manual useCallback - React Compiler handles memoization
+  // Event handlers: React Compiler handles memoization (no manual useCallback needed)
   const handleViewInEditor = (e: React.MouseEvent) => {
     e.stopPropagation()
     if (!docId || !docSlug || !projectSlug) return
     openDocument(docId, docSlug, projectSlug, navigate)
   }
 
-  // Handle document click in folder tree - navigate to editor
-  // No manual useCallback - React Compiler handles memoization
   const handleDocumentClick = (doc: Document) => {
     if (!projectSlug) return
     openDocument(doc.id, doc.slug, projectSlug, navigate)
@@ -262,7 +259,7 @@ export const DocViewBlock = React.memo(function DocViewBlock({
         <span className="text-sm font-medium text-foreground/90 truncate">
           View:{' '}
           <span className="text-muted-foreground font-normal">
-            {parsedPath?.displayName || input?.path || 'Unknown'}
+            {parsedPath?.displayName || input?.path || ''}
           </span>
         </span>
       }

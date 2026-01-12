@@ -124,6 +124,13 @@ func (mb *MessageBuilderService) formatToolResultBlock(block *llmModels.TurnBloc
 	// Apply formatting
 	formattedResult := mb.formatterRegistry.Format(toolName, result)
 
+	// If this is a structured tool error and the tool-specific formatter didn't
+	// already collapse it, format it using the shared tool error formatter.
+	// This ensures all tools have consistent, recovery-friendly error messages.
+	if formattedError, ok := formatting.TryFormatToolError(formattedResult); ok {
+		formattedResult = formattedError
+	}
+
 	// Replace result with formatted version in-place
 	block.Content["result"] = formattedResult
 }

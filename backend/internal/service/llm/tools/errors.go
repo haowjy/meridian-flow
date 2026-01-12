@@ -1,5 +1,7 @@
 package tools
 
+import "fmt"
+
 // Tool Error Handling
 //
 // This file defines error codes and helpers for TOOL-LEVEL errors (execution layer).
@@ -36,6 +38,14 @@ const (
 //
 //	return ErrorResult(ErrNotFound, "Document not found", map[string]any{"path": path}), nil
 func ErrorResult(code, message string, data map[string]any) map[string]interface{} {
+	// Make missing-param errors self-healing for LLMs even if error_data is lost later.
+	// Many tools use the generic message "Missing required parameter"; enrich it with the param.
+	if code == ErrMissingParam && message == "Missing required parameter" && data != nil {
+		if param, ok := data["param"].(string); ok && param != "" {
+			message = fmt.Sprintf("Missing required parameter: %s", param)
+		}
+	}
+
 	result := map[string]interface{}{
 		"success":    false,
 		"error_code": code,
@@ -46,4 +56,3 @@ func ErrorResult(code, message string, data map[string]any) map[string]interface
 	}
 	return result
 }
-

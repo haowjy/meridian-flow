@@ -51,6 +51,27 @@ interface TurnErrorEvent {
   is_cancelled?: boolean // User cancelled streaming (don't show error toast)
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+export function buildToolUseContentFromJSONDelta(
+  existingContent: unknown,
+  parsed: unknown
+): Record<string, unknown> {
+  const base = isPlainObject(existingContent) ? existingContent : {}
+  const parsedObj = isPlainObject(parsed) ? parsed : undefined
+
+  const looksLikeFullToolContent =
+    !!parsedObj && ('tool_name' in parsedObj || 'tool_use_id' in parsedObj || 'input' in parsedObj)
+
+  if (looksLikeFullToolContent) {
+    return parsedObj as Record<string, unknown>
+  }
+
+  return { ...base, input: parsed }
+}
+
 /**
  * Hook that connects to the backend SSE stream for the currently streaming
  * assistant turn (if any) and applies text/thinking deltas to the thread store.
@@ -241,8 +262,28 @@ export function useThreadSSE() {
                 // If we collected JSON input for tool blocks, parse once and set content
                 if (turnId && blockIndex != null && jsonBufferRef.current) {
                     try {
-                      const parsed = JSON.parse(jsonBufferRef.current) as Record<string, unknown>
-                      setStreamingBlockContent(turnId, blockIndex, blockType, parsed)
+                      const parsed = JSON.parse(jsonBufferRef.current) as unknown
+
+                      // Backend `json_delta` is tool input JSON for `tool_use` blocks, not full block content.
+                      // If we set the parsed JSON as the entire content, we overwrite `{tool_name, tool_use_id, input}`
+                      // and break custom tool rendering (e.g., DocEditBlock expects `content.input.path`).
+                      if (blockType === 'tool_use') {
+                        const existingContent = useThreadStore.getState().turns
+                          .find((t) => t.id === turnId)
+                          ?.blocks.find((b) => b.sequence === blockIndex)
+                          ?.content
+
+                        setStreamingBlockContent(
+                          turnId,
+                          blockIndex,
+                          blockType,
+                          buildToolUseContentFromJSONDelta(existingContent, parsed)
+                        )
+                      } else {
+                        if (isPlainObject(parsed)) {
+                          setStreamingBlockContent(turnId, blockIndex, blockType, parsed)
+                        }
+                      }
                     } catch (error) {
                       logger.error('sse:block_stop:json_parse_error', error, {
                         buffer: jsonBufferRef.current,

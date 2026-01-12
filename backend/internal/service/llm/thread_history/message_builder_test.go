@@ -212,6 +212,60 @@ func TestBuildMessages_ToolContinuation(t *testing.T) {
 	}
 }
 
+func TestBuildMessages_FormatsStructuredToolErrors(t *testing.T) {
+	// Create service
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	formatterRegistry := formatting.NewFormatterRegistry()
+	capabilityRegistry, err := capabilities.NewRegistry()
+	if err != nil {
+		t.Fatalf("Failed to create capability registry: %v", err)
+	}
+	service := NewMessageBuilderService(formatterRegistry, capabilityRegistry, logger)
+
+	path := []llmModels.Turn{
+		{
+			ID:   "turn-1",
+			Role: "assistant",
+			Blocks: []llmModels.TurnBlock{
+				{
+					Sequence:  0,
+					BlockType: llmModels.BlockTypeToolResult,
+					Content: map[string]interface{}{
+						"tool_use_id": "call-1",
+						"tool_name":   "doc_view",
+						"result": map[string]interface{}{
+							"success":    false,
+							"error_code": "MISSING_PARAM",
+							"message":    "Missing required parameter",
+							"error_data": map[string]any{"param": "path"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	messages, err := service.BuildMessages(context.Background(), path)
+	if err != nil {
+		t.Fatalf("BuildMessages failed: %v", err)
+	}
+
+	if len(messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(messages))
+	}
+	if len(messages[0].Content) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(messages[0].Content))
+	}
+
+	result, ok := messages[0].Content[0].Content["result"]
+	if !ok {
+		t.Fatalf("expected tool_result to contain result")
+	}
+	if result != "MISSING_PARAM:path" {
+		t.Fatalf("result=%v, want %v", result, "MISSING_PARAM:path")
+	}
+}
+
 // TestBuildMessages_EmptyTurn tests that empty turns are skipped
 func TestBuildMessages_EmptyTurn(t *testing.T) {
 	// Create service

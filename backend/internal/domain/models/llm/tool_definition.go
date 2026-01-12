@@ -7,10 +7,11 @@ import (
 )
 
 // FunctionDetails represents the function definition (OpenAI format)
+// Uses the library's typed ToolInputSchema for type safety.
 type FunctionDetails struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description,omitempty"`
-	Parameters  map[string]interface{} `json:"parameters"`
+	Name        string                    `json:"name"`
+	Description string                    `json:"description,omitempty"`
+	Parameters  llmprovider.ToolInputSchema `json:"parameters"`
 }
 
 // ToolDefinition represents a tool definition as received from HTTP JSON.
@@ -58,11 +59,8 @@ func (td *ToolDefinition) ToLibraryTool() (*llmprovider.Tool, error) {
 		if td.Function.Name == "" {
 			return nil, fmt.Errorf("function name is required")
 		}
-		if td.Function.Parameters == nil {
-			return nil, fmt.Errorf("function parameters are required")
-		}
 
-		// Custom tool - use library constructor with OpenAI format
+		// Custom tool - use library constructor with typed schema
 		tool, err := llmprovider.NewCustomTool(
 			td.Function.Name,
 			td.Function.Description,
@@ -161,21 +159,19 @@ func GetAllToolDefinitions(includeWebSearch bool) []ToolDefinition {
 // getViewToolDefinition returns the schema for the 'doc_view' tool.
 // This tool reads a document's content or lists a folder's contents.
 func getViewToolDefinition() ToolDefinition {
+	schema := llmprovider.NewToolInputSchema()
+	schema.AddProperty("path", llmprovider.PropertySchema{
+		Type:        "string",
+		Description: "The Unix-style path to the document or folder (e.g., '/chapter-1.txt', '/drafts/outline.md', '/drafts'). Use '/' for the root folder.",
+	}, -1)
+	schema.AddRequired("path")
+
 	return ToolDefinition{
 		Type: "function",
 		Function: &FunctionDetails{
 			Name:        "doc_view",
 			Description: "Read the contents of a document or list the contents of a folder. Use this to access files in the user's document repository.",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"path": map[string]interface{}{
-						"type":        "string",
-						"description": "The Unix-style path to the document or folder (e.g., '/chapter-1.txt', '/drafts/outline.md', '/drafts'). Use '/' for the root folder.",
-					},
-				},
-				"required": []string{"path"},
-			},
+			Parameters:  schema,
 		},
 	}
 }
@@ -183,27 +179,24 @@ func getViewToolDefinition() ToolDefinition {
 // getTreeToolDefinition returns the schema for the 'doc_tree' tool.
 // This tool shows the hierarchical structure of folders and documents.
 func getTreeToolDefinition() ToolDefinition {
+	schema := llmprovider.NewToolInputSchema()
+	schema.AddProperty("folder", llmprovider.PropertySchema{
+		Type:        "string",
+		Description: "The Unix-style path to the folder (e.g., '/drafts', '/chapters'). Defaults to '/' (root folder) if not provided.",
+	}, -1)
+	schema.AddProperty("depth", llmprovider.PropertySchema{
+		Type:        "integer",
+		Description: "How many levels deep to traverse (default: 2, max: 5). Higher values show more of the hierarchy.",
+		Minimum:     llmprovider.IntPtr(1),
+		Maximum:     llmprovider.IntPtr(5),
+	}, -1)
+
 	return ToolDefinition{
 		Type: "function",
 		Function: &FunctionDetails{
 			Name:        "doc_tree",
 			Description: "Show the hierarchical structure of folders and documents starting from a given folder. Returns metadata only (no content). Useful for understanding the organization of the user's document repository.",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"folder": map[string]interface{}{
-						"type":        "string",
-						"description": "The Unix-style path to the folder (e.g., '/drafts', '/chapters'). Defaults to '/' (root folder) if not provided.",
-					},
-					"depth": map[string]interface{}{
-						"type":        "integer",
-						"description": "How many levels deep to traverse (default: 2, max: 5). Higher values show more of the hierarchy.",
-						"minimum":     1,
-						"maximum":     5,
-					},
-				},
-				"required": []string{},
-			},
+			Parameters:  schema,
 		},
 	}
 }
@@ -211,36 +204,34 @@ func getTreeToolDefinition() ToolDefinition {
 // getSearchToolDefinition returns the schema for the 'doc_search' tool.
 // This tool performs full-text search across documents.
 func getSearchToolDefinition() ToolDefinition {
+	schema := llmprovider.NewToolInputSchema()
+	schema.AddProperty("query", llmprovider.PropertySchema{
+		Type:        "string",
+		Description: "The search query. Supports Google-like syntax: 'word1 OR word2' (either term), 'word1 -word2' (exclude word2), '\"exact phrase\"' (phrase match), or combinations like '\"exact phrase\" OR keyword -excluded'.",
+	}, -1)
+	schema.AddProperty("folder", llmprovider.PropertySchema{
+		Type:        "string",
+		Description: "Optional: limit search to documents within this folder path (e.g., '/drafts'). Omit to search all documents.",
+	}, -1)
+	schema.AddProperty("limit", llmprovider.PropertySchema{
+		Type:        "integer",
+		Description: "Optional: maximum number of results to return (default: 5, max: 20).",
+		Minimum:     llmprovider.IntPtr(1),
+		Maximum:     llmprovider.IntPtr(20),
+	}, -1)
+	schema.AddProperty("offset", llmprovider.PropertySchema{
+		Type:        "integer",
+		Description: "Optional: number of results to skip for pagination (default: 0).",
+		Minimum:     llmprovider.IntPtr(0),
+	}, -1)
+	schema.AddRequired("query")
+
 	return ToolDefinition{
 		Type: "function",
 		Function: &FunctionDetails{
 			Name:        "doc_search",
 			Description: "Search for documents by content or name using full-text search. Returns up to 'limit' results (default: 5) with matched content snippets. Use 'offset' to paginate through results. Check 'has_more' to see if additional pages exist. Supports advanced search syntax: use OR for alternatives (e.g., 'dragon OR knight'), minus sign to exclude terms (e.g., 'dragon -fire'), and double quotes for exact phrases (e.g., '\"dark knight\"'). You can combine these (e.g., '\"dragon rider\" OR knight -villain').",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"query": map[string]interface{}{
-						"type":        "string",
-						"description": "The search query. Supports Google-like syntax: 'word1 OR word2' (either term), 'word1 -word2' (exclude word2), '\"exact phrase\"' (phrase match), or combinations like '\"exact phrase\" OR keyword -excluded'.",
-					},
-					"folder": map[string]interface{}{
-						"type":        "string",
-						"description": "Optional: limit search to documents within this folder path (e.g., '/drafts'). Omit to search all documents.",
-					},
-					"limit": map[string]interface{}{
-						"type":        "integer",
-						"description": "Optional: maximum number of results to return (default: 5, max: 20).",
-						"minimum":     1,
-						"maximum":     20,
-					},
-					"offset": map[string]interface{}{
-						"type":        "integer",
-						"description": "Optional: number of results to skip for pagination (default: 0).",
-						"minimum":     0,
-					},
-				},
-				"required": []string{"query"},
-			},
+			Parameters:  schema,
 		},
 	}
 }
@@ -248,6 +239,45 @@ func getSearchToolDefinition() ToolDefinition {
 // getEditToolDefinition returns the schema for the 'doc_edit' tool.
 // This tool edits documents by writing to ai_version for user review.
 func getEditToolDefinition() ToolDefinition {
+	// NOTE: We intentionally control the textual order of `properties` for `doc_edit`.
+	// Some providers (notably Anthropic) may stream tool input keys following the schema's
+	// property order. If "file_text" appears before "path", the UI may not be able to
+	// display the destination file path until very late in the stream.
+	//
+	// The library's OrderedProperties handles this via the Order slice.
+	schema := llmprovider.NewToolInputSchema()
+
+	// Add properties in the order we want them to appear in JSON
+	// This ensures "path" appears before "file_text" in streamed output
+	schema.AddProperty("command", llmprovider.PropertySchema{
+		Type:        "string",
+		Enum:        []string{"str_replace", "insert", "append", "create"},
+		Description: "The editing command to execute",
+	}, -1)
+	schema.AddProperty("path", llmprovider.PropertySchema{
+		Type:        "string",
+		Description: "Unix-style path to document (e.g., '/Chapter 5.md', '/characters/hero.md')",
+	}, -1)
+	schema.AddProperty("file_text", llmprovider.PropertySchema{
+		Type:        "string",
+		Description: "For create: initial content for the new document.",
+	}, -1)
+	schema.AddProperty("old_str", llmprovider.PropertySchema{
+		Type:        "string",
+		Description: "For str_replace: exact text to find and replace. Must match exactly, including whitespace and newlines.",
+	}, -1)
+	schema.AddProperty("new_str", llmprovider.PropertySchema{
+		Type:        "string",
+		Description: "For str_replace/insert/append: new text to insert. Can be empty string for str_replace (deletion).",
+	}, -1)
+	schema.AddProperty("insert_line", llmprovider.PropertySchema{
+		Type:        "integer",
+		Description: "For insert: line number to insert after (0 = insert at start of document, before line 1).",
+	}, -1)
+
+	schema.AddRequired("command")
+	schema.AddRequired("path")
+
 	return ToolDefinition{
 		Type: "function",
 		Function: &FunctionDetails{
@@ -260,38 +290,11 @@ Commands:
 - append: Add text to end of document
 - create: Create a new document
 
-Changes are suggested to the user for review before being applied. Always use doc_view first to see the current content before making edits.`,
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"command": map[string]interface{}{
-						"type":        "string",
-						"enum":        []string{"str_replace", "insert", "append", "create"},
-						"description": "The editing command to execute",
-					},
-					"path": map[string]interface{}{
-						"type":        "string",
-						"description": "Unix-style path to document (e.g., '/Chapter 5.md', '/characters/hero.md')",
-					},
-					"old_str": map[string]interface{}{
-						"type":        "string",
-						"description": "For str_replace: exact text to find and replace. Must match exactly, including whitespace and newlines.",
-					},
-					"new_str": map[string]interface{}{
-						"type":        "string",
-						"description": "For str_replace/insert/append: new text to insert. Can be empty string for str_replace (deletion).",
-					},
-					"insert_line": map[string]interface{}{
-						"type":        "integer",
-						"description": "For insert: line number to insert after (0 = insert at start of document, before line 1).",
-					},
-					"file_text": map[string]interface{}{
-						"type":        "string",
-						"description": "For create: initial content for the new document.",
-					},
-				},
-				"required": []string{"command", "path"},
-			},
+Notes:
+- For create: ALWAYS include both path and file_text (file_text may be empty string ""). This avoids needing follow-up edits.
+- For create (streaming UX): output path BEFORE file_text. file_text can be very long; path should be emitted early so the UI can show ` + "`Create: /file.md`" + ` while the content streams.
+- Changes are suggested to the user for review before being applied. Always use doc_view first to see the current content before making edits.`,
+			Parameters: schema,
 		},
 	}
 }
@@ -299,32 +302,30 @@ Changes are suggested to the user for review before being applied. Always use do
 // getWebSearchToolDefinition returns the schema for the 'web_search' tool.
 // This tool searches the web using external APIs (Tavily, Brave, Serper, etc.).
 func getWebSearchToolDefinition() ToolDefinition {
+	schema := llmprovider.NewToolInputSchema()
+	schema.AddProperty("query", llmprovider.PropertySchema{
+		Type:        "string",
+		Description: "The search query. Be specific and use relevant keywords for best results.",
+	}, -1)
+	schema.AddProperty("max_results", llmprovider.PropertySchema{
+		Type:        "integer",
+		Description: "Optional: maximum number of results to return (default: 5, max: 10).",
+		Minimum:     llmprovider.IntPtr(1),
+		Maximum:     llmprovider.IntPtr(10),
+	}, -1)
+	schema.AddProperty("topic", llmprovider.PropertySchema{
+		Type:        "string",
+		Enum:        []string{"general", "news", "finance"},
+		Description: "Optional: search category that optimizes the search algorithm. 'general' for all web content (tutorials, docs, articles), 'news' for recent news articles, 'finance' for financial data and market information. Default: general.",
+	}, -1)
+	schema.AddRequired("query")
+
 	return ToolDefinition{
 		Type: "function",
 		Function: &FunctionDetails{
 			Name:        "web_search",
 			Description: "Search the web for current information using an external search API. Returns up to 'max_results' web pages with titles, URLs, and content snippets. Use this to find recent news, facts, or information not in your training data or the user's documents.",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"query": map[string]interface{}{
-						"type":        "string",
-						"description": "The search query. Be specific and use relevant keywords for best results.",
-					},
-					"max_results": map[string]interface{}{
-						"type":        "integer",
-						"description": "Optional: maximum number of results to return (default: 5, max: 10).",
-						"minimum":     1,
-						"maximum":     10,
-					},
-					"topic": map[string]interface{}{
-						"type":        "string",
-						"enum":        []string{"general", "news", "finance"},
-						"description": "Optional: search category that optimizes the search algorithm. 'general' for all web content (tutorials, docs, articles), 'news' for recent news articles, 'finance' for financial data and market information. Default: general.",
-					},
-				},
-				"required": []string{"query"},
-			},
+			Parameters:  schema,
 		},
 	}
 }
