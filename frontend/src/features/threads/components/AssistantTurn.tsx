@@ -50,13 +50,16 @@ interface AssistantTurnProps {
  * Performance: Memoized to prevent unnecessary re-renders when turn data unchanged.
  */
 export const AssistantTurn = React.memo(function AssistantTurn({ turn }: AssistantTurnProps) {
-  const { switchSibling, regenerateTurn, isLoadingTurns } = useThreadStore(
+  const { switchSibling, regenerateTurn, isLoadingTurns, streamingTurnId } = useThreadStore(
     useShallow((s) => ({
       switchSibling: s.switchSibling,
       regenerateTurn: s.regenerateTurn,
       isLoadingTurns: s.isLoadingTurns,
+      streamingTurnId: s.streamingTurnId,
     }))
   )
+
+  const isStreaming = streamingTurnId === turn.id
 
   log.debug('render', { id: turn.id, prevTurnId: turn.prevTurnId, blocks: turn.blocks.length })
 
@@ -94,6 +97,15 @@ export const AssistantTurn = React.memo(function AssistantTurn({ turn }: Assista
             </React.Fragment>
           )
         })}
+
+        {/* Still processing indicator - shows while streaming is active */}
+        {isStreaming && (
+          <div className="flex items-center gap-1.5 py-2 text-muted-foreground">
+            <span className="animate-processing-dot h-1.5 w-1.5 rounded-full bg-current" />
+            <span className="animate-processing-dot h-1.5 w-1.5 rounded-full bg-current" />
+            <span className="animate-processing-dot h-1.5 w-1.5 rounded-full bg-current" />
+          </div>
+        )}
 
         {/* Show turn-level error inline (no retry - most turn errors are config issues, not transient) */}
         {turn.error && (

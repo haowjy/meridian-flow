@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { cn } from '@/lib/utils'
 import type { ToolBlockContent, TurnBlock } from '@/features/threads/types'
 import { useThreadStore, ToolStreamState, type StreamingToolState } from '@/core/stores/useThreadStore'
 
@@ -114,8 +115,14 @@ export const ToolInteractionBlock = React.memo(function ToolInteractionBlock({
     statusLabel = 'Preparing...'  // Default fallback
   }
 
+  // Determine if tool is actively generating (pending/preparing/executing)
+  const isGenerating = !hasResult && !isError
+
   return (
-    <div className="my-1 rounded border border-dashed border-muted-foreground/40 bg-muted/40 text-xs flex flex-col">
+    <div className={cn(
+      "my-1 rounded border border-dashed bg-muted/40 text-xs flex flex-col",
+      isGenerating ? "animate-generating-border-shimmer" : "border-muted-foreground/40"
+    )}>
       <button
         type="button"
         className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left cursor-pointer hover:bg-muted/60 transition-colors"
@@ -129,7 +136,13 @@ export const ToolInteractionBlock = React.memo(function ToolInteractionBlock({
             </span>
           </div>
           <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground/80">
-            <span className={isError ? 'text-destructive' : undefined}>{statusLabel}</span>
+            <span className={cn(
+              isError && 'text-destructive',
+              // Animate for pending/preparing states (not error, not completed)
+              !isError && !hasResult && 'animate-generating-shimmer'
+            )}>
+              {statusLabel}
+            </span>
           </div>
         </div>
 

@@ -3,6 +3,7 @@
  *
  * Displays a styled badge showing the current status of a tool operation.
  * Uses semantic theme colors for proper contrast in light/dark modes.
+ * Animates with shimmer effect when in pending state.
  */
 
 import { cn } from '@/lib/utils'
@@ -21,12 +22,16 @@ const STATUS_STYLES: Record<ToolStatus, string> = {
 }
 
 export function ToolStatusBadge({ status, label }: ToolStatusBadgeProps) {
+  const isPending = status === 'pending'
+
   return (
     <span
       className={cn(
         'shrink-0 text-[11px] font-medium',
         'px-2 py-0.5 rounded-full border',
-        STATUS_STYLES[status]
+        STATUS_STYLES[status],
+        // Apply shimmer animation when pending
+        isPending && 'animate-generating-shimmer'
       )}
     >
       {label}

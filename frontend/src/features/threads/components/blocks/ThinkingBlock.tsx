@@ -1,6 +1,6 @@
 import React from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { Loader2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import type { TurnBlock } from '@/features/threads/types'
 import { useThreadStore } from '@/core/stores/useThreadStore'
 import { Streamdown, defaultRehypePlugins } from 'streamdown'
@@ -38,12 +38,14 @@ export const ThinkingBlock = React.memo(function ThinkingBlock({ block }: Thinki
     streamingBlockIndex === block.sequence
 
   return (
-    <details className="my-2 border-l-2 border-muted-foreground/30 bg-muted/30 rounded text-sm text-muted-foreground">
+    <details className={cn(
+      "my-2 border-l-2 bg-muted/30 rounded text-sm text-muted-foreground",
+      isStreamingThinking ? "animate-generating-border-shimmer" : "border-muted-foreground/30"
+    )}>
       <summary className="cursor-pointer font-medium px-3 py-2">
-        {isStreamingThinking && (
-          <Loader2 className="mr-2 inline-block h-3 w-3 animate-spin" />
-        )}
-        Thinking...
+        <span className={isStreamingThinking ? 'animate-generating-shimmer' : undefined}>
+          Thinking...
+        </span>
       </summary>
       <div className="mt-1 px-3 pb-3 whitespace-pre-wrap break-words">
         <Streamdown className="whitespace-pre-wrap break-words" rehypePlugins={rehypePlugins}>{text}</Streamdown>
