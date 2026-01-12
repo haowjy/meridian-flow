@@ -231,9 +231,18 @@ func (t *EditTool) executeAppend(ctx context.Context, path string, input map[str
 // Uses DocumentService which handles: Metadata init, Slug generation, Extension validation, timestamps.
 func (t *EditTool) executeCreate(ctx context.Context, path string, input map[string]interface{}) (interface{}, error) {
 	// Extract parameters (recoverable error - LLM can retry)
-	fileText, ok := input["file_text"].(string)
-	if !ok {
-		return ErrorResult(ErrMissingParam, "create requires file_text parameter", map[string]any{"param": "file_text"}), nil
+	// NOTE: We allow missing file_text and default to empty document content.
+	// This reduces wasted tool rounds when the LLM omits file_text, while we still
+	// recommend providing it in the tool schema to avoid follow-up edits.
+	var fileText string
+	if raw, exists := input["file_text"]; !exists {
+		fileText = ""
+	} else {
+		var ok bool
+		fileText, ok = raw.(string)
+		if !ok {
+			return ErrorResult(ErrInvalidInput, "file_text must be a string", map[string]any{"param": "file_text"}), nil
+		}
 	}
 
 	// Check if document already exists using service layer
@@ -327,4 +336,3 @@ func splitDocPath(path string) (folderPath, docName string) {
 	}
 	return "/" + path[:lastSlash], path[lastSlash+1:]
 }
-

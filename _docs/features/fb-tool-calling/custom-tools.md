@@ -73,6 +73,7 @@ feature: "Custom Tools"
 - Unix-style path resolution
 - Edits go to `ai_version` (user review before accepting)
 - Accumulative: multiple edits build on previous `ai_version`
+- `create` defaults missing `file_text` to empty string (recommended: include `file_text` in the tool call to avoid follow-up edits)
 
 **File**: `backend/internal/service/llm/tools/doc_edit.go`
 

@@ -24,11 +24,31 @@ func TestDocEditFormatter_Format(t *testing.T) {
 				"message": "Suggested text replacement",
 			},
 		},
-		{
-			name: "NO_MATCH returns NO_MATCH",
-			input: map[string]interface{}{
-				"success":    false,
-				"error_code": "NO_MATCH",
+			{
+				name: "MISSING_PARAM includes param from error_data",
+				input: map[string]interface{}{
+					"success":    false,
+					"error_code": "MISSING_PARAM",
+					"message":    "create requires file_text parameter",
+					"error_data": map[string]any{"param": "file_text"},
+				},
+				expected: "MISSING_PARAM:file_text",
+			},
+			{
+				name: "INVALID_INPUT includes param from error_data",
+				input: map[string]interface{}{
+					"success":    false,
+					"error_code": "INVALID_INPUT",
+					"message":    "file_text must be a string",
+					"error_data": map[string]any{"param": "file_text"},
+				},
+				expected: "INVALID_INPUT:file_text",
+			},
+			{
+				name: "NO_MATCH returns NO_MATCH",
+				input: map[string]interface{}{
+					"success":    false,
+					"error_code": "NO_MATCH",
 				"message":    "Text not found in document.",
 			},
 			expected: "NO_MATCH",
@@ -130,49 +150,6 @@ func TestDocEditFormatter_Format(t *testing.T) {
 			result := formatter.Format(tt.input)
 			if !reflect.DeepEqual(result, tt.expected) {
 				t.Errorf("Format() = %v, want %v", result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestGetErrorData(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    map[string]interface{}
-		expected map[string]any
-	}{
-		{
-			name: "extracts error_data when present",
-			input: map[string]interface{}{
-				"error_data": map[string]any{"path": "/test"},
-			},
-			expected: map[string]any{"path": "/test"},
-		},
-		{
-			name:     "returns nil when error_data missing",
-			input:    map[string]interface{}{},
-			expected: nil,
-		},
-		{
-			name: "returns nil when error_data is wrong type",
-			input: map[string]interface{}{
-				"error_data": "not a map",
-			},
-			expected: nil,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := getErrorData(tt.input)
-			if tt.expected == nil {
-				if result != nil {
-					t.Errorf("getErrorData() = %v, want nil", result)
-				}
-			} else {
-				if result == nil {
-					t.Errorf("getErrorData() = nil, want %v", tt.expected)
-				}
 			}
 		})
 	}

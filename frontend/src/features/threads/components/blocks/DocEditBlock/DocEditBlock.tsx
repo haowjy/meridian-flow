@@ -161,7 +161,7 @@ export const DocEditBlock = React.memo(function DocEditBlock({
         <span className="text-sm font-medium text-foreground/90 truncate">
           {commandLabel}:{' '}
           <span className="text-muted-foreground font-normal">
-            {parsedPath?.displayName || input?.path || 'Unknown'}
+            {parsedPath?.displayName || input?.path || ''}
           </span>
         </span>
       }
