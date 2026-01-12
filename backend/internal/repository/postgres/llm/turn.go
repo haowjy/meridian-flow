@@ -724,7 +724,7 @@ func (r *PostgresTurnRepository) GetTurnBlocks(ctx context.Context, turnID strin
 		blocks = []llmModels.TurnBlock{}
 	}
 
-	return blocks, nil
+	return llmModels.FilterWhitespaceOnlyThinkingBlocks(blocks), nil
 }
 
 // GetTurnBlocksForTurns retrieves blocks for multiple turns in a single query
@@ -781,6 +781,12 @@ func (r *PostgresTurnRepository) GetTurnBlocksForTurns(
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate turn blocks: %w", err)
+	}
+
+	// Filter out whitespace-only thinking blocks for all turns.
+	// This prevents confusing "empty thinking" history on reload without requiring DB cleanup.
+	for turnID, blocks := range blocksByTurn {
+		blocksByTurn[turnID] = llmModels.FilterWhitespaceOnlyThinkingBlocks(blocks)
 	}
 
 	return blocksByTurn, nil

@@ -2,6 +2,7 @@ package llm
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -39,11 +40,11 @@ type TurnBlock struct {
 	BlockType     string                 `json:"block_type" db:"block_type"`
 	Sequence      int                    `json:"sequence" db:"sequence"`
 	TextContent   *string                `json:"text_content,omitempty" db:"text_content"`
-	Content       map[string]interface{} `json:"content,omitempty" db:"content"`                      // JSONB for type-specific data
+	Content       map[string]interface{} `json:"content,omitempty" db:"content"` // JSONB for type-specific data
 	Provider      *string                `json:"provider,omitempty" db:"provider"`
-	ProviderData  json.RawMessage        `json:"provider_data,omitempty" db:"provider_data"`          // JSONB for raw provider-specific data (opaque bytes)
-	ExecutionSide *string                `json:"execution_side,omitempty" db:"execution_side"`        // "provider", "server", or "client" for tool_use blocks
-	Status        string                 `json:"status,omitempty" db:"status"`                        // "complete" or "partial" (for interrupted streams)
+	ProviderData  json.RawMessage        `json:"provider_data,omitempty" db:"provider_data"`   // JSONB for raw provider-specific data (opaque bytes)
+	ExecutionSide *string                `json:"execution_side,omitempty" db:"execution_side"` // "provider", "server", or "client" for tool_use blocks
+	Status        string                 `json:"status,omitempty" db:"status"`                 // "complete" or "partial" (for interrupted streams)
 	CreatedAt     time.Time              `json:"created_at" db:"created_at"`
 	UpdatedAt     *time.Time             `json:"updated_at,omitempty" db:"updated_at"`
 }
@@ -103,4 +104,35 @@ func (tb *TurnBlock) IsPartial() bool {
 // IsComplete returns true if this block finished normally (or status is unset for backwards compatibility)
 func (tb *TurnBlock) IsComplete() bool {
 	return tb.Status == "" || tb.Status == "complete"
+}
+
+// IsWhitespaceOnlyThinking returns true when a thinking block has no meaningful content.
+// Some providers/models may emit placeholder reasoning like "\n", which is useless and can
+// create confusing "empty thinking" blocks in persisted history. We treat these as invalid
+// and filter them out on load/serialization.
+func (tb *TurnBlock) IsWhitespaceOnlyThinking() bool {
+	if tb.BlockType != BlockTypeThinking {
+		return false
+	}
+	if tb.TextContent == nil {
+		return true
+	}
+	return strings.TrimSpace(*tb.TextContent) == ""
+}
+
+// FilterWhitespaceOnlyThinkingBlocks removes thinking blocks with nil/whitespace-only text.
+// Order and sequences are preserved (no renumbering).
+func FilterWhitespaceOnlyThinkingBlocks(blocks []TurnBlock) []TurnBlock {
+	if len(blocks) == 0 {
+		return blocks
+	}
+
+	filtered := make([]TurnBlock, 0, len(blocks))
+	for _, b := range blocks {
+		if b.IsWhitespaceOnlyThinking() {
+			continue
+		}
+		filtered = append(filtered, b)
+	}
+	return filtered
 }
