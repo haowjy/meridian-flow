@@ -72,7 +72,9 @@ export function CollapsibleToolBlock({
             >
               <Icon className="h-3 w-3 shrink-0 text-muted-foreground/70" />
               <div className="flex min-w-0 flex-1 items-center gap-2">
-                {label}
+                <span className={isGenerating ? 'animate-generating-shimmer' : undefined}>
+                  {label}
+                </span>
               </div>
               {statusBadge}
             </button>

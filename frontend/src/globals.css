@@ -991,8 +991,9 @@ body.preload * {
 
   /* Shimmer keyframe: horizontal sweep */
   @keyframes meridian-shimmer {
-    0% { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
+    0% { background-position: -100% 0; }
+    50% { background-position: 0% 0; }
+    100% { background-position: 100% 0; }
   }
 
   /* Border shimmer keyframe: traveling highlight via box-shadow */
@@ -1006,9 +1007,9 @@ body.preload * {
   .animate-generating-shimmer {
     background: linear-gradient(
       90deg,
-      var(--muted-foreground) 0%,
+      color-mix(in srgb, var(--theme-accent) 30%, transparent) 0%,
       var(--theme-accent) 50%,
-      var(--muted-foreground) 100%
+      color-mix(in srgb, var(--theme-accent) 30%, transparent) 100%
     );
     background-size: 200% 100%;
     animation: meridian-shimmer 2s cubic-bezier(0.25, 1, 0.5, 1) infinite;
@@ -1042,7 +1043,7 @@ body.preload * {
 
   /* Processing dot - each dot bounces and shimmers with staggered delay */
   .animate-processing-dot {
-    animation: meridian-bounce-shimmer 1.4s ease-in-out infinite;
+    animation: meridian-bounce-shimmer 2s ease-in-out infinite;
   }
   .animate-processing-dot:nth-child(1) { animation-delay: 0s; }
   .animate-processing-dot:nth-child(2) { animation-delay: 0.16s; }
