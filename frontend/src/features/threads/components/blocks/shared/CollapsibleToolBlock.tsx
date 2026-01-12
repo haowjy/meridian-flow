@@ -33,6 +33,8 @@ export interface CollapsibleToolBlockProps {
   onExpandedChange: (expanded: boolean) => void
   /** Content to show when expanded */
   children: React.ReactNode
+  /** Whether the tool is actively generating (shows border animation) */
+  isGenerating?: boolean
 }
 
 export function CollapsibleToolBlock({
@@ -43,6 +45,7 @@ export function CollapsibleToolBlock({
   isExpanded,
   onExpandedChange,
   children,
+  isGenerating,
 }: CollapsibleToolBlockProps) {
   return (
     <Collapsible open={isExpanded} onOpenChange={onExpandedChange}>
@@ -51,7 +54,8 @@ export function CollapsibleToolBlock({
           'rounded-lg border',
           'bg-card/50 hover:bg-card/80',
           'transition-colors duration-150',
-          'overflow-hidden'
+          'overflow-hidden',
+          isGenerating && 'animate-generating-border-shimmer'
         )}
       >
         {/* Header row - split into trigger zone and action zone */}
@@ -82,7 +86,7 @@ export function CollapsibleToolBlock({
                 'relative',
                 'before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2',
                 'before:h-4 before:w-px before:bg-muted-foreground/15',
-                'px-3',
+                'px-2',
                 'hover:bg-muted/50 transition-colors duration-150'
               )}
             >

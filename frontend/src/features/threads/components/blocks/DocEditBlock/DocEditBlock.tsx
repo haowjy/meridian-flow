@@ -170,7 +170,7 @@ export const DocEditBlock = React.memo(function DocEditBlock({
         input?.path && projectSlug ? (
           <button
             type="button"
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="flex items-center justify-center gap-1 w-full h-full text-xs text-muted-foreground hover:text-foreground transition-colors"
             onClick={handleViewInEditor}
           >
             <ExternalLink className="size-3" />
@@ -180,6 +180,7 @@ export const DocEditBlock = React.memo(function DocEditBlock({
       }
       isExpanded={isExpanded}
       onExpandedChange={setIsExpanded}
+      isGenerating={!hasResult && !isError}
     >
       {/* Error message */}
       {isError && message && (

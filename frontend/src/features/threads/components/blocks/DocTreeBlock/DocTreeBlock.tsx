@@ -16,14 +16,14 @@ import { FolderTree, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { TurnBlock, ToolBlockContent } from '@/features/threads/types'
 import { useTreeStore } from '@/core/stores/useTreeStore'
-import {
-  Collapsible,
-  CollapsibleTrigger,
-  CollapsibleContent,
-} from '@/shared/components/ui/collapsible'
 import { findFolderByPath } from '@/features/threads/utils/docPathResolver'
 import { openDocument } from '@/core/lib/panelHelpers'
-import { FolderTreeView } from '../shared'
+import {
+  CollapsibleToolBlock,
+  ToolStatusBadge,
+  FolderTreeView,
+  type ToolStatus,
+} from '../shared'
 import type { Document } from '@/features/documents/types/document'
 import type { DocTreeInput, DocTreeResult } from './types'
 
@@ -147,106 +147,70 @@ export const DocTreeBlock = React.memo(function DocTreeBlock({
   // Get depth from result or input
   const depth = result?.depth ?? input?.depth ?? 2
 
-  // Status styling - use theme semantic colors for proper contrast
+  // Determine status for badge
+  let status: ToolStatus
   let statusLabel: string
-  let statusClass: string
   if (isError) {
+    status = 'error'
     statusLabel = 'Error'
-    statusClass = 'bg-error/15 text-error border-error/30'
   } else if (hasResult) {
+    status = 'success'
     statusLabel = 'Traversed'
-    statusClass = 'bg-success/15 text-success border-success/30'
   } else {
+    status = 'pending'
     statusLabel = 'Pending...'
-    statusClass = 'bg-muted text-muted-foreground border-muted-foreground/30'
   }
 
   return (
-    <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
-      <div
-        className={cn(
-          'rounded-lg border',
-          'bg-card/50 hover:bg-card/80',
-          'transition-colors duration-150',
-          'overflow-hidden'
-        )}
-      >
-        {/* Header - clickable to expand/collapse */}
-        <CollapsibleTrigger asChild>
-          <button
-            type="button"
-            className={cn(
-              'flex w-full items-center gap-2 px-3 py-2',
-              'text-left cursor-pointer',
-              'hover:bg-muted/50 transition-colors'
-            )}
-          >
-            {/* Icon */}
-            <FolderTree className="h-3 w-3 shrink-0 text-muted-foreground/70" />
+    <CollapsibleToolBlock
+      icon={FolderTree}
+      label={
+        <span className="text-sm font-medium text-foreground/90 truncate">
+          Tree:{' '}
+          <span className="text-muted-foreground font-normal">
+            {displayPath}
+          </span>
+          <span className="text-muted-foreground/60 font-normal text-xs ml-1">
+            (depth: {depth})
+          </span>
+        </span>
+      }
+      statusBadge={<ToolStatusBadge status={status} label={statusLabel} />}
+      isExpanded={isExpanded}
+      onExpandedChange={setIsExpanded}
+      isGenerating={!hasResult && !isError}
+    >
+      {/* Error message */}
+      {isError && errorMessage && (
+        <div
+          className={cn(
+            'flex items-start gap-2',
+            'text-xs p-2.5 rounded-md',
+            'bg-error/15 text-error'
+          )}
+        >
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <span className="leading-relaxed">{errorMessage}</span>
+        </div>
+      )}
 
-            {/* Path and depth info */}
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <span className="text-sm font-medium text-foreground/90 truncate">
-                Tree:{' '}
-                <span className="text-muted-foreground font-normal">
-                  {displayPath}
-                </span>
-                <span className="text-muted-foreground/60 font-normal text-xs ml-1">
-                  (depth: {depth})
-                </span>
-              </span>
-            </div>
+      {/* Folder tree view */}
+      {hasResult && !isError && (
+        <FolderTreeView
+          rootFolderId={rootFolderId}
+          folders={folders}
+          documents={documents}
+          onDocumentClick={handleDocumentClick}
+          showWordCount={true}
+        />
+      )}
 
-            {/* Status badge */}
-            <span
-              className={cn(
-                'shrink-0 text-[11px] font-medium',
-                'px-2 py-0.5 rounded-full border',
-                statusClass
-              )}
-            >
-              {statusLabel}
-            </span>
-          </button>
-        </CollapsibleTrigger>
-
-        {/* Expanded content */}
-        <CollapsibleContent>
-          <div className="border-t px-3 py-3 space-y-2">
-            {/* Error message */}
-            {isError && errorMessage && (
-              <div
-                className={cn(
-                  'flex items-start gap-2',
-                  'text-xs p-2.5 rounded-md',
-                  'bg-error/15 text-error'
-                )}
-              >
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                <span className="leading-relaxed">{errorMessage}</span>
-              </div>
-            )}
-
-            {/* Folder tree view */}
-            {hasResult && !isError && (
-              <FolderTreeView
-                rootFolderId={rootFolderId}
-                folders={folders}
-                documents={documents}
-                onDocumentClick={handleDocumentClick}
-                showWordCount={true}
-              />
-            )}
-
-            {/* Pending state */}
-            {!hasResult && !isError && (
-              <div className="text-xs text-muted-foreground italic py-2">
-                Loading tree...
-              </div>
-            )}
-          </div>
-        </CollapsibleContent>
-      </div>
-    </Collapsible>
+      {/* Pending state */}
+      {!hasResult && !isError && (
+        <div className="text-xs text-muted-foreground italic py-2">
+          Loading tree...
+        </div>
+      )}
+    </CollapsibleToolBlock>
   )
 })
