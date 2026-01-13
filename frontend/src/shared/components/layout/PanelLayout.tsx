@@ -30,17 +30,30 @@ export function PanelLayout({
   onRightCollapse,
   className,
 }: PanelLayoutProps) {
-  // Keep three resizable panels consistently mounted and use
-  // programmatic collapse/expand to reflect Zustand booleans.
+  // Keep three resizable panels consistently mounted.
+  // Uses bidirectional sync: UIStore ↔ Library via imperative API + callbacks.
+  // This is the intended pattern for react-resizable-panels (no declarative collapse prop exists).
+  //
+  // IMPORTANT: Each panel has explicit `id` and `order` props to stabilize identity
+  // across re-renders. Panel sizing uses percentage-based `minSize` only - no CSS minWidth.
+  // Mixing CSS constraints with the library's flex-based constraints causes drag bugs.
+  // See: https://github.com/bvaughn/react-resizable-panels/issues/142
   const leftRef = useRef<ImperativePanelHandle | null>(null)
   const rightRef = useRef<ImperativePanelHandle | null>(null)
+  const isDraggingRef = useRef(false)
 
   useEffect(() => {
+    // Skip imperative calls during active drag to prevent race condition
+    if (isDraggingRef.current) return
+
     if (leftCollapsed) leftRef.current?.collapse()
     else leftRef.current?.expand()
   }, [leftCollapsed])
 
   useEffect(() => {
+    // Skip imperative calls during active drag to prevent race condition
+    if (isDraggingRef.current) return
+
     if (rightCollapsed) rightRef.current?.collapse()
     else rightRef.current?.expand()
   }, [rightCollapsed])
@@ -50,16 +63,10 @@ export function PanelLayout({
       <ResizablePanelGroup direction="horizontal" autoSaveId="workspace:panels:v1">
         {/* Left Panel */}
         <ResizablePanel
+          id="workspace-panel-left"
+          order={1}
           ref={leftRef}
           className="workspace-panel-left"
-          // IMPORTANT:
-          // - When expanded, enforce a minimum pixel width so the thread list
-          //   never becomes unusably narrow.
-          // - When collapsed, remove the minWidth constraint so the panel
-          //   can truly shrink to `collapsedSize={0}`.
-          //   Otherwise the CSS min-width would keep reserving space and
-          //   leave an empty slab on the left while “collapsed”.
-          style={{ minWidth: leftCollapsed ? 0 : 250 }}
           collapsible
           collapsedSize={0}
           minSize={12}
@@ -71,14 +78,18 @@ export function PanelLayout({
             if (leftCollapsed) onLeftCollapse?.()
           }}
         >
-          {/* When collapsed, CollapsiblePanel hides content; width goes to 0 via collapsedSize. */}
-          {!leftCollapsed && left}
+          {left}
         </ResizablePanel>
 
-        <ResizableHandle className="after:!bg-sidebar-border" />
+        <ResizableHandle
+          className="after:!bg-sidebar-border"
+          onDragging={(isDragging) => {
+            isDraggingRef.current = isDragging
+          }}
+        />
 
         {/* Center Panel */}
-        <ResizablePanel minSize={30} defaultSize={56} className="min-w-0">
+        <ResizablePanel id="workspace-panel-center" order={2} minSize={20} defaultSize={56} className="min-w-0">
           <div
             id="center-panel-layout"
             role="region"
@@ -89,10 +100,16 @@ export function PanelLayout({
           </div>
         </ResizablePanel>
 
-        <ResizableHandle />
+        <ResizableHandle
+          onDragging={(isDragging) => {
+            isDraggingRef.current = isDragging
+          }}
+        />
 
         {/* Right Panel */}
         <ResizablePanel
+          id="workspace-panel-right"
+          order={3}
           ref={rightRef}
           className="workspace-panel-right"
           collapsible
@@ -106,7 +123,7 @@ export function PanelLayout({
             if (rightCollapsed) onRightCollapse?.()
           }}
         >
-          {!rightCollapsed && right}
+          {right}
         </ResizablePanel>
       </ResizablePanelGroup>
     </div>
