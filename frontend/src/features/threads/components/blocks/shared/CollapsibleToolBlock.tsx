@@ -67,16 +67,21 @@ export function CollapsibleToolBlock({
               className={cn(
                 'flex flex-1 min-w-0 items-center gap-2 px-3 py-2',
                 'text-left cursor-pointer',
-                'hover:bg-muted/50 transition-colors'
+                'hover:bg-muted/50 transition-colors',
+                '@container'
               )}
+              style={{ containerType: 'inline-size' }}
             >
               <Icon className="h-3 w-3 shrink-0 text-muted-foreground/70" />
-              <div className="flex min-w-0 flex-1 items-center gap-2">
-                <span className={isGenerating ? 'animate-generating-shimmer' : undefined}>
-                  {label}
-                </span>
+              <div
+                className={cn(
+                  'flex min-w-0 flex-1 items-center gap-2',
+                  isGenerating && 'animate-generating-shimmer'
+                )}
+              >
+                {label}
               </div>
-              {statusBadge}
+              <div className="shrink-0 @[300px]:block hidden">{statusBadge}</div>
             </button>
           </CollapsibleTrigger>
 

@@ -165,15 +165,15 @@ export const DocTreeBlock = React.memo(function DocTreeBlock({
     <CollapsibleToolBlock
       icon={FolderTree}
       label={
-        <span className="text-sm font-medium text-foreground/90 truncate">
-          Tree:{' '}
-          <span className="text-muted-foreground font-normal">
+        <>
+          <span className="text-sm font-medium text-foreground/90 shrink-0">Tree</span>
+          <span className="text-sm font-normal text-muted-foreground truncate min-w-0 @[200px]:inline hidden">
             {displayPath}
           </span>
-          <span className="text-muted-foreground/60 font-normal text-xs ml-1">
+          <span className="ml-1 text-xs text-muted-foreground/60 shrink-0 @[250px]:inline hidden">
             (depth: {depth})
           </span>
-        </span>
+        </>
       }
       statusBadge={<ToolStatusBadge status={status} label={statusLabel} />}
       isExpanded={isExpanded}

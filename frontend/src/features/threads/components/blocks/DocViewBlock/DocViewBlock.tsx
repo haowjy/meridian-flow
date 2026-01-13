@@ -256,12 +256,12 @@ export const DocViewBlock = React.memo(function DocViewBlock({
     <CollapsibleToolBlock
       icon={Icon}
       label={
-        <span className="text-sm font-medium text-foreground/90 truncate">
-          View:{' '}
-          <span className="text-muted-foreground font-normal">
+        <>
+          <span className="text-sm font-medium text-foreground/90 shrink-0">View</span>
+          <span className="text-sm font-normal text-muted-foreground truncate min-w-0 @[200px]:inline hidden">
             {parsedPath?.displayName || input?.path || ''}
           </span>
-        </span>
+        </>
       }
       statusBadge={<ToolStatusBadge status={status} label={statusLabel} />}
       actions={

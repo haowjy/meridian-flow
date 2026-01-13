@@ -158,12 +158,14 @@ export const DocEditBlock = React.memo(function DocEditBlock({
     <CollapsibleToolBlock
       icon={FileEdit}
       label={
-        <span className="text-sm font-medium text-foreground/90 truncate">
-          {commandLabel}:{' '}
-          <span className="text-muted-foreground font-normal">
+        <>
+          <span className="text-sm font-medium text-foreground/90 shrink-0">
+            {commandLabel}
+          </span>
+          <span className="text-sm font-normal text-muted-foreground truncate min-w-0 @[200px]:inline hidden">
             {parsedPath?.displayName || input?.path || ''}
           </span>
-        </span>
+        </>
       }
       statusBadge={<ToolStatusBadge status={status} label={statusLabel} />}
       actions={
