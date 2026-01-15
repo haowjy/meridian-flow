@@ -17,7 +17,7 @@ Purpose: provide only the initial environment setup and run commands. The UI is 
 ## Environment
 
 - Set `VITE_API_URL` to your backend (e.g., `http://localhost:8080`).
-- Optional: `VITE_DEV_TOOLS=1` to enable the Retry panel and Router devtools.
+- Optional: `VITE_DEV_TOOLS=1` to enable extra debug UI (e.g., turn debug dialog).
 
 ## Commands
 
@@ -43,14 +43,12 @@ flowchart LR
     subgraph "Browser (Dev)"
       UI["Vite App (localhost:3000)"]
       IDB["IndexedDB (Dexie)"]
-      Retry["Retry Panel (dev)"]
     end
 
     API["Backend API (VITE_API_URL)"]
 
     UI -->|"fetch JSON"| API
     UI <-->|"cache/read/write"| IDB
-    Retry -.->|"inspect retries"| UI
 
     classDef primary fill:#2d7d2d,stroke:#1e4d1e,color:#fff
     classDef storage fill:#2d5f8d,stroke:#1b3a56,color:#fff
@@ -59,6 +57,5 @@ flowchart LR
 
     class UI primary
     class IDB storage
-    class Retry dev
     class API backend
 ```

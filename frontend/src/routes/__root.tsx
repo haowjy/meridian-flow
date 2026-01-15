@@ -1,9 +1,7 @@
 import { createRootRoute, Outlet } from '@tanstack/react-router'
-import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 import { PreloadRemover } from '@/core/components/PreloadRemover'
 import { SyncProvider } from '@/core/components/SyncProvider'
 import { ErrorProvider } from '@/core/components/ErrorProvider'
-import { DevRetryPanel } from '@/core/components/DevRetryPanel'
 import { NetworkStatusBanner } from '@/shared/components/NetworkStatusBanner'
 import { SessionExpiredModal } from '@/shared/components/SessionExpiredModal'
 import { TooltipProvider } from '@/shared/components/ui/tooltip'
@@ -22,8 +20,8 @@ function RootLayout() {
       <NetworkStatusBanner />
       <SessionExpiredModal />
       <Outlet />
-      {import.meta.env.VITE_DEV_TOOLS === '1' && <DevRetryPanel />}
-      {import.meta.env.DEV && <TanStackRouterDevtools />}
+      {/* Devtools intentionally disabled (enable locally when needed) */}
+      {/* {import.meta.env.DEV && <TanStackRouterDevtools />} */}
     </TooltipProvider>
   )
 }

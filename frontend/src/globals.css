@@ -559,6 +559,21 @@ body.preload * {
     @apply flex items-center justify-between px-4 py-2;
   }
 
+  /* Thread text scaling for mobile - prevents iOS zoom and maintains consistency */
+  @media (max-width: 639px) {
+    .thread-main .text-sm {
+      font-size: 1rem; /* 16px */
+    }
+
+    .thread-main .text-xs {
+      font-size: 0.875rem; /* 14px */
+    }
+
+    .thread-main .text-\[10px\] {
+      font-size: 0.75rem; /* 12px */
+    }
+  }
+
   /* Floating scroll-to-bottom button - positioned above sticky input wrapper */
   .scroll-to-bottom-button {
     @apply absolute left-1/2 -translate-x-1/2 z-20 rounded-full shadow-md;
@@ -622,7 +637,7 @@ body.preload * {
   }
 
   .thread-input {
-    @apply w-full resize-none rounded border bg-card px-3 py-2 text-base outline-none ring-offset-0;
+    @apply w-full resize-none rounded border bg-card px-3 py-2 text-base md:text-sm outline-none ring-offset-0;
     box-shadow: var(--shadow-1);
     transition: box-shadow var(--duration-fast) var(--easing-default);
   }

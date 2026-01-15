@@ -33,9 +33,7 @@ feature: "Frontend Infrastructure"
 
 ## Dev Tools
 
-**Dev Retry Panel**: Shows retry queue state
 **Debug Info Dialog**: Shows turn metadata (tokens, status)
-**TanStack Router Devtools**: Router state inspection
 
 **Toggle**: `VITE_DEV_TOOLS=1`
 
