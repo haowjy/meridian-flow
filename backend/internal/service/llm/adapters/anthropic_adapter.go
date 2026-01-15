@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"fmt"
 
 	llmprovider "github.com/haowjy/meridian-llm-go"
 	"github.com/haowjy/meridian-llm-go/providers/anthropic"
@@ -102,6 +103,12 @@ func (a *AnthropicAdapter) BuildDebugProviderRequest(ctx context.Context, req *d
 		return nil, err
 	}
 
-	// Build provider-specific params JSON using library helper
-	return anthropic.BuildMessageParamsDebug(libReq)
+	// Cast provider to Anthropic-specific type to access debug method
+	anthropicProvider, ok := a.provider.(*anthropic.Provider)
+	if !ok {
+		return nil, fmt.Errorf("provider is not an Anthropic provider")
+	}
+
+	// Build provider-specific params JSON using library helper method
+	return anthropicProvider.BuildMessageParamsDebug(libReq)
 }

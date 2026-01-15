@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -30,7 +31,7 @@ func (tm *TransactionManager) ExecTx(ctx context.Context, fn repositories.TxFn) 
 	defer func() {
 		if err := tx.Rollback(ctx); err != nil && err != pgx.ErrTxClosed {
 			// Log rollback failure but don't return error (commit might have succeeded)
-			fmt.Printf("rollback failed: %v\n", err)
+			slog.Error("rollback failed", "error", err)
 		}
 	}()
 

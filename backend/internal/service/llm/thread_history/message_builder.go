@@ -56,7 +56,7 @@ func (mb *MessageBuilderService) BuildMessages(
 		// Get content blocks for this turn
 		if len(turn.Blocks) == 0 {
 			// Empty turn - skip it
-			mb.logger.Warn("skipping turn with no content blocks", "turn_id", turn.ID)
+			mb.logger.Debug("skipping turn with no content blocks", "turn_id", turn.ID)
 			continue
 		}
 
@@ -65,7 +65,7 @@ func (mb *MessageBuilderService) BuildMessages(
 		validBlocks := mb.sanitizeTurnBlocks(turn)
 
 		if len(validBlocks) == 0 {
-			mb.logger.Warn("skipping turn after filtering dangling blocks", "turn_id", turn.ID)
+			mb.logger.Debug("skipping turn after filtering dangling blocks", "turn_id", turn.ID)
 			continue
 		}
 
@@ -88,7 +88,7 @@ func (mb *MessageBuilderService) BuildMessages(
 	// Optional: Inject token limit warning if last assistant turn is approaching limit
 	// TODO: Experiment with system prompt injection instead of user message
 	if err := mb.injectTokenLimitWarningIfNeeded(path, &messages); err != nil {
-		mb.logger.Warn("failed to inject token limit warning", "error", err)
+		mb.logger.Debug("failed to inject token limit warning", "error", err)
 		// Don't fail the request if warning injection fails
 	}
 
@@ -209,7 +209,7 @@ func (mb *MessageBuilderService) injectTokenLimitWarningIfNeeded(path []llmModel
 			Content: []*llmModels.TurnBlock{warningBlock},
 		})
 
-		mb.logger.Info("injected token limit warning",
+		mb.logger.Debug("injected token limit warning",
 			"usage_percent", usagePercent,
 			"total_tokens", totalTokens,
 			"context_limit", modelCap.ContextWindow,

@@ -77,7 +77,11 @@ func (m *mockTurnWriter) UpsertPartialBlock(ctx context.Context, block *llmModel
 	return nil
 }
 
-func (m *mockTurnWriter) AccumulateTokensAndUpdateMetadata(ctx context.Context, turnID string, inputTokens, outputTokens int, model, stopReason string, responseMetadata map[string]interface{}) error {
+func (m *mockTurnWriter) AccumulateTokensAndUpdateMetadata(ctx context.Context, turnID string, tokens *llmRepo.TurnTokenUpdate, completion *llmRepo.TurnCompletionUpdate) error {
+	return nil
+}
+
+func (m *mockTurnWriter) AppendGenerationRecord(ctx context.Context, turnID string, record *llmModels.GenerationRecord) error {
 	return nil
 }
 
@@ -464,6 +468,7 @@ func TestStreamExecutor_SoftCancelDrainTimeoutStopsProvider(t *testing.T) {
 		5,     // maxToolRounds
 		false, // debugMode
 		&mockTokenFinalizer{},
+		nil,                 // jobQueue (nil for tests)
 		shortTimeoutSeconds, // Very short soft cancel timeout
 	)
 
@@ -517,6 +522,7 @@ func TestStreamExecutor_IdempotentCancel(t *testing.T) {
 		5,
 		false,
 		&mockTokenFinalizer{},
+		nil, // jobQueue (nil for tests)
 		300, // softCancelTimeoutSeconds
 	)
 
@@ -562,6 +568,7 @@ func TestStreamExecutor_HardCancelIdempotent(t *testing.T) {
 		5,
 		false,
 		&mockTokenFinalizer{},
+		nil, // jobQueue (nil for tests)
 		300, // softCancelTimeoutSeconds
 	)
 

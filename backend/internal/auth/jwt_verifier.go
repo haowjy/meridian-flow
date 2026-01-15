@@ -48,13 +48,15 @@ func (v *SupabaseJWTVerifier) VerifyToken(tokenString string) (*models.SupabaseC
 	// Parse and validate the token
 	token, err := jwt.ParseWithClaims(tokenString, &models.SupabaseClaims{}, v.jwks.Keyfunc)
 	if err != nil {
-		v.logger.Error("🔍 DEBUG: Token parse failed", "error", err.Error())
+		// Invalid/expired tokens are expected in normal operation (e.g., client refresh, bad auth header).
+		// Avoid logging at ERROR to prevent noisy logs and accidental PII exposure.
+		v.logger.Debug("jwt parse failed", "error", err)
 		return nil, domain.ErrUnauthorized
 	}
 
 	// Validate token is valid and signed correctly
 	if !token.Valid {
-		v.logger.Error("🔍 DEBUG: Token is invalid after parsing")
+		v.logger.Debug("jwt token invalid after parsing")
 		return nil, domain.ErrUnauthorized
 	}
 
@@ -70,7 +72,7 @@ func (v *SupabaseJWTVerifier) VerifyToken(tokenString string) (*models.SupabaseC
 	// Extract claims
 	claims, ok := token.Claims.(*models.SupabaseClaims)
 	if !ok {
-		v.logger.Error("Failed to extract claims from token")
+		v.logger.Debug("failed to extract claims from token")
 		return nil, domain.ErrUnauthorized
 	}
 
@@ -82,11 +84,10 @@ func (v *SupabaseJWTVerifier) VerifyToken(tokenString string) (*models.SupabaseC
 
 	// Validate role is "authenticated" (reject anonymous tokens)
 	if claims.Role != "authenticated" {
-		v.logger.Error("🔍 DEBUG: Token has invalid role",
+		v.logger.Debug("jwt token has invalid role",
 			"role", claims.Role,
 			"expected", "authenticated",
-			"user_id", claims.Subject,
-			"email", claims.Email)
+		)
 		return nil, domain.ErrUnauthorized
 	}
 
@@ -97,6 +98,6 @@ func (v *SupabaseJWTVerifier) VerifyToken(tokenString string) (*models.SupabaseC
 // In keyfunc v3, the library manages its own resources based on HTTP cache headers,
 // so this is a no-op for graceful shutdown compatibility.
 func (v *SupabaseJWTVerifier) Close() error {
-	v.logger.Info("JWT verifier closed")
+	v.logger.Debug("JWT verifier closed")
 	return nil
 }

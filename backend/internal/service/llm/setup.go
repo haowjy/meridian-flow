@@ -15,6 +15,7 @@ import (
 	"meridian/internal/domain/services"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	llmSvc "meridian/internal/domain/services/llm"
+	"meridian/internal/jobs"
 	"meridian/internal/service/llm/formatting"
 	"meridian/internal/service/llm/streaming"
 	"meridian/internal/service/llm/thread"
@@ -26,7 +27,7 @@ import (
 // Returns a configured ProviderRegistry or an error if setup fails.
 func SetupProviders(cfg *config.Config, logger *slog.Logger) (*ProviderRegistry, error) {
 	// Create provider factory with config (manages API keys, creates providers)
-	providerFactory := NewProviderFactory(cfg)
+	providerFactory := NewProviderFactory(cfg, logger)
 
 	// Create adapter factory (maps provider names to adapter constructors)
 	// Enables adding new providers without modifying existing code (OCP compliance)
@@ -42,9 +43,9 @@ func SetupProviders(cfg *config.Config, logger *slog.Logger) (*ProviderRegistry,
 
 	// Log available providers based on config
 	if cfg.AnthropicAPIKey != "" {
-		logger.Info("provider available", "name", "anthropic", "models", "claude-*")
+		logger.Debug("provider available", "name", "anthropic", "models", "claude-*")
 	} else {
-		logger.Warn("ANTHROPIC_API_KEY not set - Anthropic provider not available")
+		logger.Info("ANTHROPIC_API_KEY not set - Anthropic provider not available")
 	}
 
 	// Future: Log other providers when added
@@ -72,13 +73,14 @@ func SetupServices(
 	documentRepo docsysRepo.DocumentRepository,
 	folderRepo docsysRepo.FolderRepository,
 	documentSvc docsysSvc.DocumentService, // For tool write operations (SOLID: DIP)
-	folderSvc docsysSvc.FolderService,     // For tool write operations (SOLID: DIP)
+	folderSvc docsysSvc.FolderService, // For tool write operations (SOLID: DIP)
 	providerRegistry *ProviderRegistry,
 	cfg *config.Config,
 	txManager repositories.TransactionManager,
 	capabilityRegistry *capabilities.Registry,
 	authorizer services.ResourceAuthorizer,
 	toolLimitResolver llmSvc.ToolLimitResolver,
+	jobQueue jobs.JobQueue,
 	logger *slog.Logger,
 ) (*Services, *mstream.Registry, error) {
 	// Create shared validator
@@ -136,27 +138,10 @@ func SetupServices(
 		logger,
 	)
 
-	// Create token estimator registry for interruption token estimation
-	// Note: OpenRouter models use the Generation Stats API instead of token estimation
-	tokenEstimatorRegistry := tokens.NewEstimatorRegistry()
-
-	// Register Anthropic estimator if API key is available (uses token counting API)
-	if cfg.AnthropicAPIKey != "" {
-		anthropicEstimator, err := tokens.NewAnthropicEstimator(cfg.AnthropicAPIKey)
-		if err != nil {
-			logger.Warn("failed to create Anthropic token estimator",
-				"error", err,
-			)
-		} else {
-			tokenEstimatorRegistry.Register(anthropicEstimator)
-			logger.Info("Anthropic token estimator registered")
-		}
-	}
-
-	// Create TokenFinalizer that wraps the estimator registry
-	// This centralizes token acquisition strategy (provider tokens -> OpenRouter API -> estimator)
+	// Create TokenFinalizer
+	// Centralizes token acquisition strategy: provider tokens -> OpenRouter API -> fallback to 0
+	// Background enrichment job will update turn tokens asynchronously for cancellations
 	tokenFinalizer := tokens.NewDefaultTokenFinalizer(
-		tokenEstimatorRegistry,
 		cfg.OpenRouterAPIKey,
 		logger,
 	)
@@ -184,6 +169,7 @@ func SetupServices(
 		toolLimitResolver,  // Tool round limit resolver (tier-ready)
 		capabilityRegistry, // For checking model capabilities (e.g., supports_tools)
 		tokenFinalizer,     // For finalizing tokens on completion/interruption
+		jobQueue,           // Phase 2: Background job queue for async generation enrichment
 		logger,
 	)
 

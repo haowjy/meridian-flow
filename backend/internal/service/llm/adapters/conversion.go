@@ -182,6 +182,15 @@ func convertFromLibraryEvent(event llmprovider.StreamEvent) domainllm.StreamEven
 		}
 	}
 
+	// Convert GenerationIDDiscovered event
+	if event.GenerationIDDiscovered != nil {
+		backendEvent.GenerationIDDiscovered = &domainllm.GenerationIDEvent{
+			GenerationID: event.GenerationIDDiscovered.GenerationID,
+			Model:        event.GenerationIDDiscovered.Model,
+			Provider:     event.GenerationIDDiscovered.Provider,
+		}
+	}
+
 	return backendEvent
 }
 

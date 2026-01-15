@@ -18,12 +18,9 @@ flowchart TD
     Q --> S2a{"API success?"}
     S2a -->|Yes| R2["Return: source=openrouter_api, IsFinal=true"]
     S2a -->|No| S3
-    S2 -->|No| S3{"Estimator available\n+ CancelSnapshot?"}
-    S3 -->|Yes| E["EstimateOutputTokens(model, text)"]
-    E --> S3a{"Estimate success?"}
-    S3a -->|Yes| R3["Return: source=estimator, IsFinal=false"]
-    S3a -->|No| S4
-    S3 -->|No| S4["Return: source=none, IsFinal=false, tokens=0"]
+    S2 -->|No| S3["Return: source=none, IsFinal=false, tokens=0"]
+
+    S3 -.->|Background enrichment| BG["EnrichGenerationJob\nretries API query"]
 ```
 
 ## When Finalization is Called
@@ -32,18 +29,18 @@ flowchart TD
 |--------|---------|------------------|
 | `completion` | Provider sends metadata | Provider tokens (strategy 1) |
 | `soft_cancel` | Provider finishes after cancel | Provider tokens or OpenRouter API |
-| `hard_cancel` | Context cancelled (Anthropic) | Estimator (strategy 3) |
-| `error` | Provider errors / stream ends unexpectedly | OpenRouter API or estimator |
-| `soft_cancel_timeout` | 5m timeout fires | Estimator (strategy 3) |
+| `hard_cancel` | Context cancelled (Anthropic) | Returns 0, background enrichment fills in later |
+| `error` | Provider errors / stream ends unexpectedly | OpenRouter API or returns 0 |
+| `soft_cancel_timeout` | 5m timeout fires | Returns 0, background enrichment fills in later |
 
 ## Result Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `InputTokens` | int | Input token count (0 if only output estimated) |
-| `OutputTokens` | int | Output token count |
-| `IsFinal` | bool | `true` if from provider/API, `false` if estimated |
-| `Source` | string | `"provider"` \| `"openrouter_api"` \| `"estimator"` \| `"none"` |
+| `InputTokens` | int | Input token count (0 if not available yet) |
+| `OutputTokens` | int | Output token count (0 if not available yet) |
+| `IsFinal` | bool | `true` if from provider/API, `false` if pending enrichment |
+| `Source` | string | `"provider"` \| `"openrouter_api"` \| `"token_counter"` \| `"none"` |
 
 ## Token Accumulation
 
@@ -57,21 +54,61 @@ When a turn involves multiple LLM requests (e.g., tool continuation), tokens are
 
 This ensures the turn's `input_tokens` and `output_tokens` reflect the **total cost** across all LLM requests.
 
-**Implementation**: `AccumulateTokensAndUpdateMetadata()` in `turn.go` uses `COALESCE(input_tokens, 0) + $2` for atomic accumulation.
+**Implementation**: `AccumulateTokensAndUpdateMetadata()` in `turn.go` uses structured types (`TurnTokenUpdate`, `TurnCompletionUpdate`) for atomic accumulation with pointer semantics for conditional updates.
 
-## Token Estimator
+## Reasoning/Thinking Tokens
 
-The estimator supports:
-- **Anthropic models**: Uses Anthropic's tokenization API for accurate counts
-- **Other models**: No estimator by default (tokens may be 0 unless provider metadata or OpenRouter generation stats are available)
+**Design Decision:** `output_tokens` is INCLUSIVE - it includes both completion and reasoning/thinking tokens.
 
-See `tokens/anthropic.go` for Anthropic tokenizer implementation.
+```mermaid
+flowchart LR
+    A["Stream completes"] --> B["output_tokens = completion only<br/>(reasoning not yet available)"]
+    B --> C["Background enrichment job<br/>(200ms - 8.5min)"]
+    C --> D["output_tokens = completion + reasoning<br/>(complete and accurate)"]
+
+    style B fill:#9d8d2d
+    style D fill:#2d7d2d
+```
+
+**Why inclusive design:**
+- Simpler billing/tracking (one number for total cost)
+- Provider-agnostic (works for OpenRouter, Gemini, future providers)
+- Transparent cost (users see full billable output at a glance)
+- Detailed breakdown preserved in `response_metadata` for analytics
+
+**Race Window (Expected Behavior):**
+
+For reasoning-capable models (o1, Grok, DeepSeek-R1), there's a brief window where `output_tokens` is incomplete:
+
+1. Stream completes → `output_tokens` set from streaming metadata (NO reasoning tokens)
+2. Background job runs (200ms - 8.5 min later) → adds reasoning tokens
+3. `output_tokens` now complete (completion + reasoning)
+
+This is **acceptable** for backend tracking:
+- Final token counts are eventually consistent
+- Generation metadata always preserved with full details
+- UI can poll or show "finalizing..." during enrichment
+
+**Implementation:**
+- Repository: `internal/repository/postgres/llm/turn.go:452` (AccumulateTokensAndUpdateMetadata with structured types)
+- Enrichment: `internal/jobs/enrich_generation.go:279` (updateTurnTokens with reasoning inclusion)
+- Streaming: `internal/service/llm/streaming/mstream_adapter.go:1275` (updateTurnMetadata)
+
+## Token Counter (Optional)
+
+The token counter provides exact counts using provider APIs:
+- **Anthropic models**: Uses Anthropic's `/messages/count_tokens` API for exact counts
+- **Other models**: No token counter by default (tokens are 0 until background enrichment completes)
+
+**Note**: Token counter is currently NOT USED in production. All models rely on background enrichment for authoritative tokens.
+
+See `tokens/anthropic.go` for Anthropic token counter implementation.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `tokens/finalizer.go` | `TokenFinalizer` interface and `DefaultTokenFinalizer` |
-| `tokens/estimator.go` | `TokenEstimator` interface |
-| `tokens/anthropic.go` | Anthropic tokenizer implementation |
-| `tokens/registry.go` | Model-to-estimator mapping |
+| `tokens/token_counter.go` | `TokenCounter` interface (currently unused) |
+| `tokens/anthropic.go` | Anthropic token counter implementation (currently unused) |
+| `tokens/registry.go` | Token counter registry (currently unused) |

@@ -16,20 +16,6 @@ Each plan document includes:
 
 None currently.
 
-## Implemented Plans
-
-### Streaming Cancel: Race Condition Fix + Partial Thinking Persistence
-**Implemented:** 2026-01-11
-
-Consolidated two related plans into one implementation:
-1. **Backend-Controlled Shutdown**: Frontend waits for SSE terminal event before refreshing
-2. **Partial Thinking Persistence**: `persistPartialBlocks()` now saves both `text` and `thinking` blocks
-
-Key files modified:
-- `backend/internal/service/llm/streaming/mstream_adapter.go` - `canPersistPartialBlock()`, `persistPartialBlocks()`
-- `frontend/src/core/stores/useThreadStore.ts` - `waitForStreamEnd()`, `notifyStreamEnded()`
-- `frontend/src/features/threads/hooks/useThreadSSE.ts` - terminal event notifications
-
 ---
 
 ## Plan Template

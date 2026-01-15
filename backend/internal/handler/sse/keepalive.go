@@ -60,7 +60,7 @@ func (k *TickerKeepAlive) Start(writer KeepAliveWriter, logger *slog.Logger) <-c
 				// Attempt to write keep-alive
 				if err := writer.WriteKeepAlive(); err != nil {
 					// Connection dropped or write failed - stop keep-alive
-					logger.Warn("keep-alive write failed, stopping",
+					logger.Debug("keep-alive write failed, stopping",
 						"error", err,
 					)
 					return

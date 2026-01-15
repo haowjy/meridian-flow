@@ -48,7 +48,7 @@ func (r *systemPromptResolver) Resolve(
 	userSystem *string,
 	selectedSkills []string,
 ) (*string, error) {
-	r.logger.Info("resolving system prompt",
+	r.logger.Debug("resolving system prompt",
 		"thread_id", threadID,
 		"user_id", userID,
 		"user_system_provided", userSystem != nil,
@@ -58,7 +58,7 @@ func (r *systemPromptResolver) Resolve(
 	// For cold start (new thread), threadID is empty - skip thread/project system prompt loading
 	// since the thread doesn't exist yet. Just return user-provided system prompt if any.
 	if threadID == "" {
-		r.logger.Info("cold start detected (empty threadID), skipping thread/project system prompt")
+		r.logger.Debug("cold start detected (empty threadID), skipping thread/project system prompt")
 		if userSystem != nil && *userSystem != "" {
 			return userSystem, nil
 		}
@@ -69,7 +69,7 @@ func (r *systemPromptResolver) Resolve(
 
 	// 1. User-provided system prompt (highest priority)
 	if userSystem != nil && *userSystem != "" {
-		r.logger.Info("user system prompt found", "length", len(*userSystem))
+		r.logger.Debug("user system prompt found", "length", len(*userSystem))
 		parts = append(parts, *userSystem)
 	}
 
@@ -85,13 +85,13 @@ func (r *systemPromptResolver) Resolve(
 		return nil, fmt.Errorf("load project: %w", err)
 	}
 	if project.SystemPrompt != nil && *project.SystemPrompt != "" {
-		r.logger.Info("project system prompt found", "length", len(*project.SystemPrompt))
+		r.logger.Debug("project system prompt found", "length", len(*project.SystemPrompt))
 		parts = append(parts, *project.SystemPrompt)
 	}
 
 	// 4. Load thread system prompt
 	if thread.SystemPrompt != nil && *thread.SystemPrompt != "" {
-		r.logger.Info("thread system prompt found", "length", len(*thread.SystemPrompt))
+		r.logger.Debug("thread system prompt found", "length", len(*thread.SystemPrompt))
 		parts = append(parts, *thread.SystemPrompt)
 	}
 
@@ -108,12 +108,12 @@ func (r *systemPromptResolver) Resolve(
 
 	// Concatenate all parts
 	if len(parts) == 0 {
-		r.logger.Info("no system prompt parts found, returning nil")
+		r.logger.Debug("no system prompt parts found, returning nil")
 		return nil, nil
 	}
 
 	result := strings.Join(parts, "\n\n")
-	r.logger.Info("system prompt resolved",
+	r.logger.Debug("system prompt resolved",
 		"total_length", len(result),
 		"parts_count", len(parts),
 	)
@@ -126,7 +126,7 @@ func (r *systemPromptResolver) loadSkills(
 	projectID string,
 	selectedSkills []string,
 ) (string, error) {
-	r.logger.Info("loading skills",
+	r.logger.Debug("loading skills",
 		"project_id", projectID,
 		"skills_count", len(selectedSkills),
 		"skills", selectedSkills,
@@ -152,7 +152,7 @@ func (r *systemPromptResolver) loadSkills(
 			continue
 		}
 
-		r.logger.Info("skill loaded successfully",
+		r.logger.Debug("skill loaded successfully",
 			"skill", skillName,
 			"content_length", len(doc.Content),
 		)
@@ -164,7 +164,7 @@ func (r *systemPromptResolver) loadSkills(
 		parts = append(parts, skillFormatted)
 	}
 
-	r.logger.Info("skills loading complete",
+	r.logger.Debug("skills loading complete",
 		"requested", len(selectedSkills),
 		"loaded", loadedCount,
 		"failed", len(selectedSkills)-loadedCount,

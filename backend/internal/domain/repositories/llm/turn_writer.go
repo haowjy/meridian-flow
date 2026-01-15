@@ -6,6 +6,34 @@ import (
 	"meridian/internal/domain/models/llm"
 )
 
+// TurnTokenUpdate encapsulates token counts for accumulation
+// Used when updating turn-level token totals across multiple LLM requests
+type TurnTokenUpdate struct {
+	// InputTokens is the number of input tokens to add to the turn total
+	InputTokens int
+
+	// OutputTokens is the number of output tokens to add to the turn total
+	// For reasoning-capable models, this includes both completion and reasoning tokens
+	OutputTokens int
+}
+
+// TurnCompletionUpdate encapsulates completion metadata for turn updates
+// Uses pointers to distinguish between "update to this value" vs "don't update"
+// nil pointer = skip update, non-nil = update to this value (even if empty string)
+type TurnCompletionUpdate struct {
+	// Model is the model that was used (e.g., "claude-3-5-sonnet-20241022")
+	// nil = keep existing value, non-nil = update to this value
+	Model *string
+
+	// StopReason indicates why generation stopped (e.g., "end_turn", "max_tokens", "tool_use")
+	// nil = keep existing value, non-nil = update to this value (empty string intentional for partial updates)
+	StopReason *string
+
+	// ResponseMetadata contains provider-specific response data to merge with existing metadata
+	// nil = skip JSONB merge, non-nil = merge this map into existing response_metadata
+	ResponseMetadata map[string]interface{}
+}
+
 // TurnWriter defines write operations for turn data access
 // Used by components that only need to create or update turns/blocks
 type TurnWriter interface {
@@ -40,10 +68,22 @@ type TurnWriter interface {
 	// AccumulateTokensAndUpdateMetadata atomically accumulates tokens and updates completion metadata
 	// Single SQL statement ensures consistency - tokens and metadata update together or not at all
 	// Used during tool continuation to sum tokens across multiple LLM requests
-	AccumulateTokensAndUpdateMetadata(ctx context.Context, turnID string, inputTokens, outputTokens int, model, stopReason string, responseMetadata map[string]interface{}) error
+	//
+	// tokens: Token counts to add to turn totals (required)
+	// completion: Completion metadata to update (required, but individual fields can be nil to skip update)
+	//   - Model/StopReason: nil = keep existing, non-nil = update to this value
+	//   - ResponseMetadata: nil = skip JSONB merge, non-nil = merge into existing
+	AccumulateTokensAndUpdateMetadata(ctx context.Context, turnID string, tokens *TurnTokenUpdate, completion *TurnCompletionUpdate) error
 
 	// UpsertPartialBlock creates or updates a partial block (text or thinking).
 	// Used during streaming interruption to persist accumulated content.
 	// Uses ON CONFLICT to handle both insert (first partial) and update (more content accumulated).
 	UpsertPartialBlock(ctx context.Context, block *llm.TurnBlock) error
+
+	// AppendGenerationRecord atomically appends or updates a generation record
+	// in response_metadata.openrouter.generations[] array.
+	// Uses JSONB upsert-by-id: if a record with the same generation ID exists, it's replaced;
+	// otherwise the new record is appended.
+	// This supports both sync enrichment (complete record) and async enrichment (partial→full).
+	AppendGenerationRecord(ctx context.Context, turnID string, record *llm.GenerationRecord) error
 }

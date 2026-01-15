@@ -20,6 +20,7 @@ import (
 	llmRepo "meridian/internal/domain/repositories/llm"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	llmSvc "meridian/internal/domain/services/llm"
+	"meridian/internal/jobs"
 	"meridian/internal/service/llm/tokens"
 	"meridian/internal/service/llm/tools"
 	"meridian/internal/service/llm/tools/external"
@@ -86,6 +87,7 @@ type Service struct {
 	toolLimitResolver    llmSvc.ToolLimitResolver // Resolves tool round limits (tier-ready)
 	capabilityRegistry   *capabilities.Registry   // For checking model capabilities (e.g., supports_tools)
 	tokenFinalizer       tokens.TokenFinalizer    // For finalizing tokens on completion/interruption
+	jobQueue             jobs.JobQueue            // NEW: Phase 2 - background job queue for async operations
 	logger               *slog.Logger
 }
 
@@ -108,6 +110,7 @@ func NewService(
 	toolLimitResolver llmSvc.ToolLimitResolver,
 	capabilityRegistry *capabilities.Registry,
 	tokenFinalizer tokens.TokenFinalizer,
+	jobQueue jobs.JobQueue,
 	logger *slog.Logger,
 ) llmSvc.StreamingService {
 	return &Service{
@@ -129,6 +132,7 @@ func NewService(
 		toolLimitResolver:    toolLimitResolver,
 		capabilityRegistry:   capabilityRegistry,
 		tokenFinalizer:       tokenFinalizer,
+		jobQueue:             jobQueue,
 		logger:               logger,
 	}
 }
@@ -213,7 +217,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	// This prevents "No endpoints found that support tool use" errors from providers
 	if modelCap, err := s.capabilityRegistry.GetModelCapabilities(provider, model); err == nil {
 		if !modelCap.SupportsTools && params.Tools != nil && len(params.Tools) > 0 {
-			s.logger.Info("filtering out tools - model doesn't support tools",
+			s.logger.Debug("filtering out tools - model doesn't support tools",
 				"provider", provider,
 				"model", model,
 				"tools_count", len(params.Tools),
@@ -262,7 +266,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 			// Update threadContext with the new thread ID
 			threadContext.threadID = createdThread.ID
 
-			s.logger.Info("thread created (cold start)",
+			s.logger.Debug("thread created (cold start)",
 				"id", createdThread.ID,
 				"title", createdThread.Title,
 				"project_id", threadContext.projectID,
@@ -402,7 +406,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 
 	toolRegistry := builder.Build()
 
-	s.logger.Info("per-request tool registry created",
+	s.logger.Debug("per-request tool registry created",
 		"project_id", thread.ProjectID,
 		"thread_id", threadContext.threadID,
 		"assistant_turn_id", assistantTurn.ID,
@@ -453,6 +457,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		toolRoundLimit,                          // Per-user tool round limit (tier-ready)
 		s.config.Debug,                          // Pass DEBUG flag for optional event IDs
 		s.tokenFinalizer,                        // For finalizing tokens on completion/interruption
+		s.jobQueue,                              // Phase 2: Background job queue for async generation enrichment
 		s.config.SoftCancelTimeoutSeconds,       // Timeout for soft cancel cleanup (default: 5 minutes)
 	)
 
@@ -474,7 +479,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	// Register executor for interruption handling
 	s.executorRegistry.Register(assistantTurn.ID, executor)
 
-	s.logger.Info("stream registered, starting background streaming",
+	s.logger.Debug("stream registered, starting background streaming",
 		"assistant_turn_id", assistantTurn.ID,
 		"model", model,
 	)
@@ -499,7 +504,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 // This runs in a background goroutine and prepares the request before starting the stream.
 // The executor is already created and registered before this function is called.
 func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, userTurnID string, executor *StreamExecutor, params *llmModels.RequestParams) {
-	s.logger.Info("preparing streaming request",
+	s.logger.Debug("preparing streaming request",
 		"assistant_turn_id", assistantTurnID,
 	)
 
@@ -640,7 +645,7 @@ func (s *Service) CreateAssistantTurnDebug(
 		turn.Blocks = blocks
 	}
 
-	s.logger.Info("assistant turn created (internal)",
+	s.logger.Debug("assistant turn created (internal)",
 		"id", turn.ID,
 		"thread_id", threadID,
 		"prev_turn_id", prevTurnID,
@@ -959,8 +964,8 @@ func (s *Service) InterruptTurn(ctx context.Context, turnID string) error {
 
 	// Cancel based on capability
 	if supportsCancel {
-		// Hard cancel - stops provider stream, triggers token estimation in handleError
-		s.logger.Info("hard cancel (provider supports cancellation)",
+		// Hard cancel - stops provider stream, triggers token counting in handleError
+		s.logger.Debug("hard cancel (provider supports cancellation)",
 			"turn_id", turnID,
 			"model", turn.Model,
 		)
@@ -969,7 +974,7 @@ func (s *Service) InterruptTurn(ctx context.Context, turnID string) error {
 	} else {
 		// Soft cancel - provider continues for accurate token metadata
 		// Executor will persist partial text blocks and disconnect SSE clients.
-		s.logger.Info("soft cancel (provider continues for metadata)",
+		s.logger.Debug("soft cancel (provider continues for metadata)",
 			"turn_id", turnID,
 			"model", turn.Model,
 		)

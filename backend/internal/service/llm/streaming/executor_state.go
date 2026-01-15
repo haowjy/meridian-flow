@@ -19,7 +19,7 @@ const (
 	StateHardCancelled
 
 	// StateTimedOut is entered when soft cancel timeout fires before provider finishes.
-	// Tokens are estimated from the cancel snapshot.
+	// Tokens are counted from the cancel snapshot.
 	//
 	// TODO(observability): Emit a structured metric/log/event for this transition so we can
 	// alert on providers that frequently fail to send final metadata within the drain window.

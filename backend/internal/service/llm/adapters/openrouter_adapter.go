@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"fmt"
 
 	llmprovider "github.com/haowjy/meridian-llm-go"
 	"github.com/haowjy/meridian-llm-go/providers/openrouter"
@@ -102,6 +103,71 @@ func (a *OpenRouterAdapter) BuildDebugProviderRequest(ctx context.Context, req *
 		return nil, err
 	}
 
-	// Build provider-specific params JSON using library helper
-	return openrouter.BuildChatCompletionRequestDebug(libReq)
+	// Cast provider to OpenRouter-specific type to access debug method
+	openrouterProvider, ok := a.provider.(*openrouter.Provider)
+	if !ok {
+		return nil, fmt.Errorf("provider is not an OpenRouter provider")
+	}
+
+	// Build provider-specific params JSON using library helper method
+	return openrouterProvider.BuildChatCompletionRequestDebug(libReq)
+}
+
+// QueryGenerationStats implements GenerationStatsQuerier interface.
+// Queries OpenRouter's /generation API and converts library type to domain type.
+// This allows StreamExecutor to query generation stats without depending on concrete types (DIP compliance).
+func (a *OpenRouterAdapter) QueryGenerationStats(ctx context.Context, generationID string) (*domainllm.GenerationStats, error) {
+	// Type assert to OpenRouter provider
+	// This assertion stays in the adapter layer where it belongs
+	orProvider, ok := a.provider.(*openrouter.Provider)
+	if !ok {
+		return nil, fmt.Errorf("provider is not OpenRouter provider")
+	}
+
+	// Query library provider
+	libStats, err := orProvider.GetGenerationStats(ctx, generationID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert library type (openrouter.GenerationStats) to domain type (domainllm.GenerationStats)
+	// This decouples high-level code from library-specific types
+	return &domainllm.GenerationStats{
+		ID:                     libStats.ID,
+		Model:                  libStats.Model,
+		ProviderName:           libStats.ProviderName,
+		NativeTokensPrompt:     libStats.NativeTokensPrompt,
+		NativeTokensCompletion: libStats.NativeTokensCompletion,
+		NativeTokensReasoning:  libStats.NativeTokensReasoning,
+		NativeTokensCached:     libStats.NativeTokensCached,
+		TotalCost:              libStats.TotalCost,
+		FinishReason:           libStats.FinishReason,
+		CreatedAt:              libStats.CreatedAt,
+		UpstreamID:             libStats.UpstreamID,
+		Latency:                libStats.Latency,
+		Cancelled:              libStats.Cancelled,
+		AdditionalFields:       libStats.AdditionalFields,
+	}, nil
+}
+
+// CancelGeneration implements GenerationCanceller interface.
+// Attempts to cancel an ongoing OpenRouter generation via API.
+// This allows StreamExecutor to cancel generations without depending on concrete types (DIP compliance).
+//
+// Note: Success depends on whether the upstream provider supports cancellation.
+// - If upstream supports cancel: billing stops immediately
+// - If upstream doesn't support cancel: returns error, billing continues
+//
+// The caller should ALWAYS continue with normal flow (query GenerationStats for actual usage)
+// regardless of whether this cancel succeeds or fails.
+func (a *OpenRouterAdapter) CancelGeneration(ctx context.Context, generationID string) error {
+	// Type assert to OpenRouter provider
+	// This assertion stays in the adapter layer where it belongs
+	orProvider, ok := a.provider.(*openrouter.Provider)
+	if !ok {
+		return fmt.Errorf("provider is not OpenRouter provider")
+	}
+
+	// Call library provider cancel method
+	return orProvider.CancelGeneration(ctx, generationID)
 }

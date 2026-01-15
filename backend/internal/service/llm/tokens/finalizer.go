@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/haowjy/meridian-llm-go/providers/openrouter"
 )
 
 // FinalizeReason indicates why token finalization is being requested.
@@ -41,7 +43,7 @@ type FinalizeRequest struct {
 	TurnID         string          // Turn ID (for logging)
 	Model          string          // Model ID being used
 	GenerationID   string          // OpenRouter generation ID (for stats API query)
-	CancelSnapshot string          // Accumulated text at cancel time (for estimation)
+	CancelSnapshot string          // Accumulated text at cancel time (for token counting)
 	Reason         FinalizeReason  // Why finalization is being requested
 	ProviderTokens *ProviderTokens // Token counts from provider metadata (may be nil or zero)
 }
@@ -50,8 +52,8 @@ type FinalizeRequest struct {
 type TokenResult struct {
 	InputTokens  int
 	OutputTokens int
-	IsFinal      bool   // True if tokens came from provider/API, false if estimated
-	Source       string // "provider" | "openrouter_api" | "estimator" | "none"
+	IsFinal      bool   // True if tokens came from provider/API, false if counted
+	Source       string // "provider" | "openrouter_api" | "token_counter" | "none"
 }
 
 // TokenFinalizer determines the final token counts for a turn using a strategy chain.
@@ -61,27 +63,23 @@ type TokenFinalizer interface {
 	// Strategy chain:
 	//   1. If ProviderTokens present and non-zero -> use directly
 	//   2. If OpenRouter model + GenerationID -> query stats API
-	//   3. If estimator supports model + CancelSnapshot present -> estimate
-	//   4. Fallback -> return 0 with IsFinal=false
+	//   3. Fallback -> return 0 with IsFinal=false (background enrichment will update later)
 	Finalize(ctx context.Context, req FinalizeRequest) (*TokenResult, error)
 }
 
 // DefaultTokenFinalizer implements TokenFinalizer with the standard strategy chain.
 type DefaultTokenFinalizer struct {
-	estimator        TokenEstimator // For estimating tokens from text
-	openRouterAPIKey string         // For querying OpenRouter generation stats
-	httpClient       *http.Client   // Reused HTTP client for connection pooling
+	openRouterAPIKey string       // For querying OpenRouter generation stats
+	httpClient       *http.Client // Reused HTTP client for connection pooling
 	logger           *slog.Logger
 }
 
 // NewDefaultTokenFinalizer creates a new TokenFinalizer with the given dependencies.
 func NewDefaultTokenFinalizer(
-	estimator TokenEstimator,
 	openRouterAPIKey string,
 	logger *slog.Logger,
 ) *DefaultTokenFinalizer {
 	return &DefaultTokenFinalizer{
-		estimator:        estimator,
 		openRouterAPIKey: openRouterAPIKey,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
@@ -116,23 +114,25 @@ func (f *DefaultTokenFinalizer) Finalize(ctx context.Context, req FinalizeReques
 	// Strategy 2: Query OpenRouter generation stats API if available
 	if f.openRouterAPIKey != "" && req.GenerationID != "" {
 		stats, err := f.queryOpenRouterGenerationStats(ctx, req.GenerationID)
-		if err == nil && (stats.InputTokens > 0 || stats.OutputTokens > 0) {
-			f.logger.Info("using OpenRouter generation stats",
+		if err == nil && (stats.NativeTokensPrompt > 0 || stats.NativeTokensCompletion > 0) {
+			f.logger.Debug("using OpenRouter generation stats",
 				"turn_id", req.TurnID,
-				"input_tokens", stats.InputTokens,
-				"output_tokens", stats.OutputTokens,
+				"input_tokens", stats.NativeTokensPrompt,
+				"output_tokens", stats.NativeTokensCompletion,
 				"generation_id", req.GenerationID,
+				"model", stats.Model,
+				"provider_name", stats.ProviderName,
 				"reason", req.Reason,
 			)
 			return &TokenResult{
-				InputTokens:  stats.InputTokens,
-				OutputTokens: stats.OutputTokens,
+				InputTokens:  stats.NativeTokensPrompt,
+				OutputTokens: stats.NativeTokensCompletion,
 				IsFinal:      true,
 				Source:       "openrouter_api",
 			}, nil
 		}
 		if err != nil {
-			f.logger.Warn("OpenRouter generation stats query failed, falling back to estimator",
+			f.logger.Debug("OpenRouter generation stats query failed (will retry via background job)",
 				"turn_id", req.TurnID,
 				"generation_id", req.GenerationID,
 				"error", err,
@@ -140,34 +140,8 @@ func (f *DefaultTokenFinalizer) Finalize(ctx context.Context, req FinalizeReques
 		}
 	}
 
-	// Strategy 3: Use token estimator if we have a cancel snapshot
-	if f.estimator != nil && req.CancelSnapshot != "" {
-		outputTokens, err := f.estimator.EstimateOutputTokens(ctx, req.Model, req.CancelSnapshot)
-		if err == nil && outputTokens > 0 {
-			f.logger.Info("using estimated tokens",
-				"turn_id", req.TurnID,
-				"output_tokens", outputTokens,
-				"model", req.Model,
-				"snapshot_length", len(req.CancelSnapshot),
-				"reason", req.Reason,
-			)
-			return &TokenResult{
-				InputTokens:  0, // Estimation only covers output tokens
-				OutputTokens: outputTokens,
-				IsFinal:      false,
-				Source:       "estimator",
-			}, nil
-		}
-		if err != nil {
-			f.logger.Warn("token estimation failed",
-				"turn_id", req.TurnID,
-				"model", req.Model,
-				"error", err,
-			)
-		}
-	}
-
-	// Strategy 4: Fallback - no tokens available
+	// Strategy 3: Fallback - no tokens available
+	// For cancellations, background enrichment job will update turn tokens later
 	f.logger.Debug("no token data available",
 		"turn_id", req.TurnID,
 		"model", req.Model,
@@ -183,14 +157,9 @@ func (f *DefaultTokenFinalizer) Finalize(ctx context.Context, req FinalizeReques
 	}, nil
 }
 
-// openRouterGenerationStats represents the response from OpenRouter's generation stats endpoint.
-type openRouterGenerationStats struct {
-	InputTokens  int `json:"native_tokens_prompt"`
-	OutputTokens int `json:"native_tokens_completion"`
-}
-
 // queryOpenRouterGenerationStats queries OpenRouter's generation stats API for native token counts.
-func (f *DefaultTokenFinalizer) queryOpenRouterGenerationStats(ctx context.Context, generationID string) (*openRouterGenerationStats, error) {
+// Uses the library's GenerationStats struct to ensure consistency.
+func (f *DefaultTokenFinalizer) queryOpenRouterGenerationStats(ctx context.Context, generationID string) (*openrouter.GenerationStats, error) {
 	if f.openRouterAPIKey == "" {
 		return nil, fmt.Errorf("OpenRouter API key not configured")
 	}
@@ -223,10 +192,11 @@ func (f *DefaultTokenFinalizer) queryOpenRouterGenerationStats(ctx context.Conte
 		return nil, fmt.Errorf("generation stats error (HTTP %d): %s", resp.StatusCode, string(body))
 	}
 
-	var stats openRouterGenerationStats
-	if err := json.Unmarshal(body, &stats); err != nil {
+	// Parse response (unwrap from {data:{...}} wrapper)
+	var response openrouter.GenerationResponse
+	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, fmt.Errorf("failed to parse generation stats: %w", err)
 	}
 
-	return &stats, nil
+	return &response.Data, nil
 }
