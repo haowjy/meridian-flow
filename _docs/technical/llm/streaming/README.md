@@ -232,5 +232,5 @@ pending -> streaming -> complete
 - [Service Layer Architecture](../architecture/service-layer.md) - 3-service split
 - [Thread Domain Model](../thread/overview.md) - Turn and block concepts
 - [LLM Providers](../thread/llm-providers.md) - Provider abstraction
-- [Token Finalization](../tokens/README.md) - Token estimation strategy chain
+- [Token Finalization](../tokens/README.md) - Token finalization strategy chain
 - [API Contracts](../api/contracts.md) - HTTP endpoints

@@ -127,7 +127,7 @@ func (s *Service) UpdateThread(ctx context.Context, threadID, userID string, req
 		return nil, err
 	}
 
-	s.logger.Info("thread updated",
+	s.logger.Debug("thread updated",
 		"id", thread.ID,
 		"title", thread.Title,
 		"user_id", userID,

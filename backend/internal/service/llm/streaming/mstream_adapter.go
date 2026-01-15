@@ -16,6 +16,7 @@ import (
 	llmModels "meridian/internal/domain/models/llm"
 	llmRepo "meridian/internal/domain/repositories/llm"
 	domainllm "meridian/internal/domain/services/llm"
+	"meridian/internal/jobs"
 	"meridian/internal/service/llm/tokens"
 	"meridian/internal/service/llm/tools"
 )
@@ -46,6 +47,7 @@ type StreamExecutor struct {
 	collectedTools   []tools.ToolCall         // tool_use blocks collected during streaming
 	toolResultIDs    map[string]bool          // tool_use_ids that already have tool_results (from provider decode errors)
 	toolIteration    int                      // current tool round (0 = initial, 1+ = continuations)
+	requestIndex     int                      // current LLM request index (0 = initial, 1+ = continuations)
 	maxToolRounds    int                      // maximum number of tool execution rounds (default: 5)
 	maxBlockSequence int                      // highest block sequence number persisted (for tool_result sequencing)
 
@@ -67,10 +69,13 @@ type StreamExecutor struct {
 	// Token finalization (replaces scattered token logic)
 	tokenFinalizer tokens.TokenFinalizer
 
+	// Phase 2: Background job queue for async generation enrichment
+	jobQueue jobs.JobQueue // nil for non-OpenRouter deployments
+
 	// Soft cancel timeout: if provider doesn't finish within this duration after cancel,
-	// force cleanup and estimate tokens from the snapshot taken at cancel time.
+	// force cleanup and count tokens from the snapshot taken at cancel time.
 	softCancelTimeout  time.Duration // Timeout duration (from config, default: 5 minutes)
-	cancelTextSnapshot string        // Text accumulated at the moment of cancel (for timeout estimation)
+	cancelTextSnapshot string        // Text accumulated at the moment of cancel (for timeout token counting)
 
 	// OpenRouter generation ID: captured from streaming metadata for token finalization
 	generationID string       // Captured from streaming metadata (OpenRouter only)
@@ -117,27 +122,30 @@ func NewStreamExecutor(
 	maxToolRounds int,
 	debugMode bool,
 	tokenFinalizer tokens.TokenFinalizer,
+	jobQueue jobs.JobQueue, // NEW: Phase 2 parameter
 	softCancelTimeoutSeconds int,
 ) *StreamExecutor {
 	se := &StreamExecutor{
-		turnID:             turnID,
-		model:              model,
-		turnRepo:           turnWriter,
-		provider:           provider,
-		logger:             logger,
-		toolRegistry:       toolRegistry,
-		turnNavigator:      turnNavigator,
-		turnReader:         turnReader,
-		messageBuilder:     messageBuilder,
-		toolResultIDs:      make(map[string]bool),
-		toolIteration:      0,
-		maxToolRounds:      maxToolRounds,
-		maxBlockSequence:   -1, // No blocks persisted yet (so first block is sequence 0)
-		state:              StateStreaming,
-		ctrlCh:             make(chan controlMsg, 1), // Buffered for non-blocking sends
-		tokenFinalizer:     tokenFinalizer,
-		softCancelTimeout:  time.Duration(softCancelTimeoutSeconds) * time.Second,
-		persistenceGuard:   NewPersistenceGuard(), // Armed initially, disarmed on cancel
+		turnID:              turnID,
+		model:               model,
+		turnRepo:            turnWriter,
+		provider:            provider,
+		logger:              logger,
+		toolRegistry:        toolRegistry,
+		turnNavigator:       turnNavigator,
+		turnReader:          turnReader,
+		messageBuilder:      messageBuilder,
+		toolResultIDs:       make(map[string]bool),
+		toolIteration:       0,
+		requestIndex:        0, // Initial request (increments with each tool continuation)
+		maxToolRounds:       maxToolRounds,
+		maxBlockSequence:    -1, // No blocks persisted yet (so first block is sequence 0)
+		state:               StateStreaming,
+		ctrlCh:              make(chan controlMsg, 1), // Buffered for non-blocking sends
+		tokenFinalizer:      tokenFinalizer,
+		jobQueue:            jobQueue, // NEW: Phase 2 field
+		softCancelTimeout:   time.Duration(softCancelTimeoutSeconds) * time.Second,
+		persistenceGuard:    NewPersistenceGuard(), // Armed initially, disarmed on cancel
 		toolInputExtractor:  NewToolInputExtractor(),
 		toolStateTracker:    NewToolStateTracker(100 * time.Millisecond), // 100ms throttle
 		currentToolMeta:     make(map[int]toolMeta),
@@ -180,7 +188,7 @@ func (se *StreamExecutor) transitionTo(newState ExecutorState) {
 	se.state = newState
 	se.stateMu.Unlock()
 
-	se.logger.Info("executor state transition",
+	se.logger.Debug("executor state transition",
 		"turn_id", se.turnID,
 		"from", oldState.String(),
 		"to", newState.String(),
@@ -374,7 +382,7 @@ func (se *StreamExecutor) processProviderStream(
 	for {
 		select {
 		case <-drainTimerCh:
-			// Drain timeout after soft cancel - force cleanup and estimate tokens.
+			// Drain timeout after soft cancel - force cleanup and count tokens.
 			// handleTimeoutInStreamingGoroutine transitions to StateErrored and returns error.
 			return se.handleTimeoutInStreamingGoroutine(send)
 
@@ -390,7 +398,7 @@ func (se *StreamExecutor) processProviderStream(
 					if se.softCancelTimeout > 0 && drainTimer == nil {
 						drainTimer = time.NewTimer(se.softCancelTimeout)
 						drainTimerCh = drainTimer.C
-						se.logger.Info("soft cancel drain timeout started",
+						se.logger.Debug("soft cancel drain timeout started",
 							"turn_id", se.turnID,
 							"timeout", se.softCancelTimeout,
 							"snapshot_length", len(se.cancelTextSnapshot),
@@ -400,6 +408,42 @@ func (se *StreamExecutor) processProviderStream(
 			case CmdHardCancel:
 				if se.state == StateStreaming || se.state == StateDrainMetadata {
 					se.transitionTo(StateHardCancelled)
+
+					// Phase 4: Try OpenRouter API cancel (best-effort, upstream-dependent)
+					// This attempts to stop the provider's upstream request to reduce billing costs.
+					// If the upstream supports cancel: billing stops immediately
+					// If the upstream doesn't support cancel: API returns error, we continue anyway
+					// We ALWAYS query /generation API later for authoritative token usage (primary goal)
+					canceller, ok := se.provider.(domainllm.GenerationCanceller)
+					if ok {
+						generationID := se.getGenerationID()
+						if generationID != "" {
+							// Non-blocking: call in background, don't wait for response
+							// We want to stop the stream immediately (done above via state transition)
+							go func() {
+								cancelCtx, cancelCancel := context.WithTimeout(context.Background(), 5*time.Second)
+								defer cancelCancel()
+
+								if err := canceller.CancelGeneration(cancelCtx, generationID); err != nil {
+									se.logger.Warn("OpenRouter cancel API failed (upstream may not support it)",
+										"turn_id", se.turnID,
+										"generation_id", generationID,
+										"error", err,
+									)
+								} else {
+									se.logger.Debug("OpenRouter cancel API succeeded",
+										"turn_id", se.turnID,
+										"generation_id", generationID,
+									)
+								}
+							}()
+						} else {
+							se.logger.Debug("cancel before generation ID discovered, skipping API call",
+								"turn_id", se.turnID,
+							)
+						}
+					}
+
 					err := fmt.Errorf("hard cancelled by user")
 					se.handleError(ctx, send, err)
 					return err
@@ -444,6 +488,19 @@ func (se *StreamExecutor) processProviderStream(
 					se.transitionTo(StateErrored)
 					se.handleError(ctx, send, err)
 					return err
+				}
+			}
+
+			// Process early generation ID discovery (for partial record persistence)
+			if streamEvent.GenerationIDDiscovered != nil {
+				if err := se.processGenerationIDDiscovered(ctx, streamEvent.GenerationIDDiscovered); err != nil {
+					// Don't fail stream - best-effort persistence
+					// Log warning and continue streaming
+					se.logger.Warn("failed to persist early generation ID",
+						"turn_id", se.turnID,
+						"generation_id", streamEvent.GenerationIDDiscovered.GenerationID,
+						"error", err,
+					)
 				}
 			}
 
@@ -730,6 +787,59 @@ func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(ms
 	return nil
 }
 
+// processGenerationIDDiscovered handles early generation ID discovery event.
+// This is emitted on the first chunk from the provider, allowing us to persist
+// a partial GenerationRecord early in the stream. This enables background
+// enrichment even if the stream is cancelled before completion.
+//
+// This is a non-terminal event - streaming continues after this event.
+// Failures are logged but don't stop the stream (best-effort persistence).
+func (se *StreamExecutor) processGenerationIDDiscovered(
+	ctx context.Context,
+	event *domainllm.GenerationIDEvent,
+) error {
+	// Capture generation ID for later use (thread-safe via mutex)
+	// This allows cancel strategies to access the ID when needed
+	se.setGenerationID(event.GenerationID)
+
+	// Log discovery for observability
+	se.logger.Debug("generation ID discovered",
+		"turn_id", se.turnID,
+		"generation_id", event.GenerationID,
+		"model", event.Model,
+		"provider", event.Provider,
+		"request_index", se.requestIndex,
+		"tool_iteration", se.toolIteration,
+	)
+
+	// Determine phase based on tool iteration
+	// Initial request: toolIteration = 0, phase = "initial"
+	// Tool continuations: toolIteration > 0, phase = "tool_continue"
+	phase := "initial"
+	if se.toolIteration > 0 {
+		phase = "tool_continue"
+	}
+
+	// Build partial GenerationRecord (only ID + metadata fields)
+	// This will be enriched later via background job when stream completes/cancels
+	partialRecord := &llmModels.GenerationRecord{
+		ID:           event.GenerationID,
+		RequestIndex: se.requestIndex,
+		Phase:        phase,
+		Model:        event.Model,
+		Finalized:    false, // Will be enriched via background job
+	}
+
+	// Persist partial record to database (upsert-by-id)
+	// If this fails, log but don't stop stream - enrichment can still happen
+	// via final metadata event as fallback
+	if err := se.turnRepo.AppendGenerationRecord(ctx, se.turnID, partialRecord); err != nil {
+		return fmt.Errorf("append partial generation record: %w", err)
+	}
+
+	return nil
+}
+
 // handleSoftCancel performs "hard-like" cancellation behavior for the client:
 // - Persist any accumulated partial text blocks (so refresh shows what user saw)
 // - Emit a cancellation SSE event (turn_error with is_cancelled)
@@ -742,7 +852,7 @@ func (se *StreamExecutor) handleSoftCancel(send func(mstream.Event)) {
 	persistCtx, cancel := context.WithTimeout(context.Background(), dbWriteDeadline)
 	defer cancel()
 
-	// Snapshot accumulated text at cancel time for timeout/token estimation.
+	// Snapshot accumulated text at cancel time for timeout/token counting.
 	// IMPORTANT: This must run on the streaming goroutine to avoid concurrent map access.
 	if se.cancelTextSnapshot == "" {
 		se.cancelTextSnapshot = se.getAccumulatedText()
@@ -783,7 +893,7 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 	}
 
 	// Use TokenFinalizer to get the best available tokens
-	// This handles: provider tokens, OpenRouter API fallback, estimator fallback
+	// This handles: provider tokens, OpenRouter API fallback, token counter fallback
 	currentState := se.getState()
 	isDraining := currentState == StateDrainMetadata
 
@@ -810,7 +920,7 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 			metadata.InputTokens = result.InputTokens
 			metadata.OutputTokens = result.OutputTokens
 			if !result.IsFinal {
-				se.logger.Info("using finalized tokens",
+				se.logger.Debug("using finalized tokens",
 					"turn_id", se.turnID,
 					"input_tokens", result.InputTokens,
 					"output_tokens", result.OutputTokens,
@@ -825,6 +935,17 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 	if err := se.updateTurnMetadata(ctx, metadata); err != nil {
 		se.handleError(ctx, send, fmt.Errorf("failed to update turn metadata: %w", err))
 		return err
+	}
+
+	// Persist OpenRouter generation record (if applicable)
+	// This captures provider name, native tokens, and cost for each LLM request
+	if err := se.persistOpenRouterGenerationRecord(ctx, metadata); err != nil {
+		// Log error but don't fail the request - generation metadata is supplemental
+		se.logger.Warn("failed to persist OpenRouter generation record",
+			"error", err,
+			"turn_id", se.turnID,
+			"generation_id", se.getGenerationID(),
+		)
 	}
 
 	// If in DrainMetadata state (soft cancel), skip tool continuation - just cleanup
@@ -901,7 +1022,7 @@ func (se *StreamExecutor) persistPartialBlocks(ctx context.Context) {
 		return
 	}
 
-	se.logger.Info("persisting partial blocks",
+	se.logger.Debug("persisting partial blocks",
 		"turn_id", se.turnID,
 		"block_count", len(se.textAccumulator),
 	)
@@ -948,7 +1069,7 @@ func (se *StreamExecutor) persistPartialBlocks(ctx context.Context) {
 				"text_length", len(textContent),
 			)
 		} else {
-			se.logger.Info("persisted partial text block",
+			se.logger.Debug("persisted partial text block",
 				"sequence", turnSequence,
 				"text_length", len(textContent),
 			)
@@ -971,7 +1092,7 @@ func (se *StreamExecutor) handleError(_ context.Context, send func(mstream.Event
 	currentState := se.getState()
 	wasCancelled := currentState == StateDrainMetadata || currentState == StateHardCancelled
 
-	// Use TokenFinalizer to estimate tokens for any interruption (cancel, error, timeout)
+	// Use TokenFinalizer to count tokens for any interruption (cancel, error, timeout)
 	// Do this BEFORE persisting partial blocks to capture all accumulated text
 	if se.tokenFinalizer != nil {
 		accumulatedText := se.getAccumulatedText()
@@ -1004,7 +1125,7 @@ func (se *StreamExecutor) handleError(_ context.Context, send func(mstream.Event
 				"error", updateErr,
 			)
 		} else if result != nil && (result.InputTokens > 0 || result.OutputTokens > 0) {
-			se.logger.Info("finalized tokens for interrupted stream",
+			se.logger.Debug("finalized tokens for interrupted stream",
 				"input_tokens", result.InputTokens,
 				"output_tokens", result.OutputTokens,
 				"source", result.Source,
@@ -1015,6 +1136,50 @@ func (se *StreamExecutor) handleError(_ context.Context, send func(mstream.Event
 
 	// Persist any accumulated partial text blocks BEFORE marking turn as error
 	se.persistPartialBlocks(persistCtx)
+
+	// For OpenRouter: Enqueue /generation query for authoritative tokens (even on cancel)
+	// This is critical because token counting may not be available immediately
+	// Only do this for cancellations (hard-cancel or soft-cancel drain metadata)
+	isCancelState := currentState == StateHardCancelled || currentState == StateDrainMetadata
+	if isCancelState {
+		generationID := se.getGenerationID()
+		if generationID != "" && se.jobQueue != nil {
+			querier, ok := se.provider.(domainllm.GenerationStatsQuerier)
+			if ok {
+				// Determine phase based on request index
+				phase := "initial"
+				if se.requestIndex > 0 {
+					phase = "tool_continue"
+				}
+
+				// Create and enqueue enrichment job (isCancelled: true for longer retry window)
+				job := jobs.NewEnrichGenerationJob(
+					se.turnID,
+					generationID,
+					se.requestIndex,
+					phase,
+					se.model,
+					se.turnRepo,
+					querier,
+					se.logger,
+					true, // isCancelled: true (use longer retry window)
+				)
+
+				if err := se.jobQueue.Enqueue(job); err != nil {
+					se.logger.Error("failed to enqueue generation enrichment job after cancel",
+						"turn_id", se.turnID,
+						"generation_id", generationID,
+						"error", err,
+					)
+				} else {
+					se.logger.Debug("enqueued generation enrichment job after cancel",
+						"turn_id", se.turnID,
+						"generation_id", generationID,
+					)
+				}
+			}
+		}
+	}
 
 	// Detect if this is a user cancellation (don't show error toast for these)
 	// Check both: state-based (wasCancelled) and error-based (context.Canceled)
@@ -1027,7 +1192,7 @@ func (se *StreamExecutor) handleError(_ context.Context, send func(mstream.Event
 	// IMPORTANT: Skip UpdateTurnError if cancelled (soft/hard cancel case)
 	// InterruptTurn already set status to "cancelled" - don't override it with "error"
 	if isCancelled {
-		se.logger.Info("skipping UpdateTurnError for cancelled stream (status already cancelled)",
+		se.logger.Debug("skipping UpdateTurnError for cancelled stream (status already cancelled)",
 			"turn_id", se.turnID,
 			"was_cancelled_state", wasCancelled,
 			"context_cancelled", isContextCancelled,
@@ -1059,14 +1224,14 @@ func (se *StreamExecutor) handleError(_ context.Context, send func(mstream.Event
 }
 
 // getAccumulatedText returns all accumulated text from the text accumulator.
-// Used for token estimation on interruption.
+// Used for token counting on interruption.
 func (se *StreamExecutor) getAccumulatedText() string {
 	if len(se.textAccumulator) == 0 {
 		return ""
 	}
 
 	// Deterministic ordering: map iteration is randomized.
-	// Token estimation should use content in provider block order.
+	// Token counting should use content in provider block order.
 	blockIndexes := make([]int, 0, len(se.textAccumulator))
 	for idx := range se.textAccumulator {
 		blockIndexes = append(blockIndexes, idx)
@@ -1111,8 +1276,16 @@ func (se *StreamExecutor) sendEvent(send func(mstream.Event), eventType string, 
 // Accumulates tokens (adds to existing) and overwrites other metadata atomically
 func (se *StreamExecutor) updateTurnMetadata(ctx context.Context, metadata *domainllm.StreamMetadata) error {
 	return se.turnRepo.AccumulateTokensAndUpdateMetadata(ctx, se.turnID,
-		metadata.InputTokens, metadata.OutputTokens,
-		metadata.Model, metadata.StopReason, metadata.ResponseMetadata)
+		&llmRepo.TurnTokenUpdate{
+			InputTokens:  metadata.InputTokens,
+			OutputTokens: metadata.OutputTokens,
+		},
+		&llmRepo.TurnCompletionUpdate{
+			Model:            &metadata.Model,
+			StopReason:       &metadata.StopReason,
+			ResponseMetadata: metadata.ResponseMetadata,
+		},
+	)
 }
 
 // persistTokenMetadata is a helper to persist token counts from TokenFinalizer.
@@ -1135,9 +1308,178 @@ func (se *StreamExecutor) persistTokenMetadata(ctx context.Context, result *toke
 	}
 
 	// Atomically accumulate tokens and update metadata
+	// Note: StopReason is nil (keep existing) since this is partial/error recovery
+	// Model is updated to ensure it's captured even on early termination
+	model := se.model
 	return se.turnRepo.AccumulateTokensAndUpdateMetadata(ctx, se.turnID,
-		result.InputTokens, result.OutputTokens,
-		se.model, "", responseMeta)
+		&llmRepo.TurnTokenUpdate{
+			InputTokens:  result.InputTokens,
+			OutputTokens: result.OutputTokens,
+		},
+		&llmRepo.TurnCompletionUpdate{
+			Model:            &model,
+			StopReason:       nil, // Keep existing stop_reason (intentional)
+			ResponseMetadata: responseMeta,
+		},
+	)
+}
+
+// persistOpenRouterGenerationRecord persists an OpenRouter generation record to response_metadata.
+// This captures provider name, native tokens, and cost for each LLM request (initial + tool continuations).
+// Generation records are stored in response_metadata.openrouter.generations[] array.
+func (se *StreamExecutor) persistOpenRouterGenerationRecord(ctx context.Context, metadata *domainllm.StreamMetadata) error {
+	// Check if we have a generation ID
+	generationID := se.getGenerationID()
+	if generationID == "" {
+		return nil // Not OpenRouter or no generation ID captured
+	}
+
+	// Determine phase based on tool iteration (0 = initial, 1+ = tool_continue)
+	phase := "initial"
+	if se.toolIteration > 0 {
+		phase = "tool_continue"
+	}
+
+	// Try to query generation stats if provider supports it (capability interface)
+	// This follows DIP - we depend on interface, not concrete type
+	statsQuerier, ok := se.provider.(domainllm.GenerationStatsQuerier)
+	if !ok {
+		// Provider doesn't support stats API - finalize with available metadata
+		// This ensures records are always finalized, even without enrichment
+		basicRecord := &llmModels.GenerationRecord{
+			ID:           generationID,
+			RequestIndex: se.requestIndex,
+			Phase:        phase,
+			Model:        metadata.Model,
+			Finalized:    true, // Finalized without enrichment
+		}
+
+		if err := se.turnRepo.AppendGenerationRecord(ctx, se.turnID, basicRecord); err != nil {
+			return fmt.Errorf("failed to append basic generation record: %w", err)
+		}
+
+		se.logger.Debug("persisted basic generation record (no stats API)",
+			"turn_id", se.turnID,
+			"generation_id", generationID,
+			"request_index", se.requestIndex,
+			"phase", phase,
+			"model", metadata.Model,
+		)
+		return nil
+	}
+
+	// Provider supports stats API - query with timeout
+	// Use tight timeout to avoid blocking tool continuations
+	apiCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	stats, err := statsQuerier.QueryGenerationStats(apiCtx, generationID)
+	if err != nil {
+		// Check if this is a 404 "not found" error (OpenRouter eventual consistency)
+		if strings.Contains(err.Error(), "HTTP 404") || strings.Contains(err.Error(), "not found") {
+			se.logger.Debug("generation stats not yet available, enqueuing background job",
+				"turn_id", se.turnID,
+				"generation_id", generationID,
+				"request_index", se.requestIndex,
+				"phase", phase,
+				"model", metadata.Model,
+				"error", err,
+			)
+
+			// Enqueue background job for retry with exponential backoff
+			if se.jobQueue != nil { // nil check for backward compatibility
+				job := jobs.NewEnrichGenerationJob(
+					se.turnID,
+					generationID,
+					se.requestIndex,
+					phase,
+					metadata.Model,
+					se.turnRepo,
+					statsQuerier,
+					se.logger,
+					false, // isCancelled: false for normal completion
+				)
+				if err := se.jobQueue.Enqueue(job); err != nil {
+					se.logger.Error("failed to enqueue generation enrichment job",
+						"error", err,
+						"turn_id", se.turnID,
+						"generation_id", generationID,
+					)
+				}
+			}
+
+			// Note: Partial record already exists from processGenerationIDDiscovered()
+			// Job will upgrade it to finalized=true when successful
+			return nil
+		}
+
+		// Other errors (auth, network, etc.) - finalize immediately with error
+		basicRecord := &llmModels.GenerationRecord{
+			ID:                generationID,
+			RequestIndex:      se.requestIndex,
+			Phase:             phase,
+			Model:             metadata.Model,
+			Finalized:         true,
+			FinalizeAttempts:  1,
+			FinalizeLastError: err.Error(),
+		}
+
+		if err := se.turnRepo.AppendGenerationRecord(ctx, se.turnID, basicRecord); err != nil {
+			return fmt.Errorf("failed to append basic generation record: %w", err)
+		}
+
+		se.logger.Warn("non-retryable error querying generation stats",
+			"error", err,
+			"turn_id", se.turnID,
+			"generation_id", generationID,
+			"request_index", se.requestIndex,
+			"phase", phase,
+			"model", metadata.Model,
+		)
+		return nil
+	}
+
+	// Success - enrich and finalize with complete API data
+	enrichedRecord := &llmModels.GenerationRecord{
+		ID:                     stats.ID,
+		RequestIndex:           se.requestIndex,
+		Phase:                  phase,
+		Model:                  stats.Model,
+		ProviderName:           stats.ProviderName,
+		NativeTokensPrompt:     stats.NativeTokensPrompt,
+		NativeTokensCompletion: stats.NativeTokensCompletion,
+		NativeTokensReasoning:  stats.NativeTokensReasoning,
+		NativeTokensCached:     stats.NativeTokensCached,
+		TotalCost:              stats.TotalCost,
+		FinishReason:           stats.FinishReason,
+		CreatedAt:              stats.CreatedAt,
+		UpstreamID:             stats.UpstreamID,
+		Latency:                stats.Latency,
+		Cancelled:              stats.Cancelled,
+		Finalized:              true,                   // Successfully enriched with API data
+		AdditionalFields:       stats.AdditionalFields, // Forward compatibility: preserve unknown fields
+	}
+
+	// Persist to database (atomic JSONB upsert-by-id)
+	if err := se.turnRepo.AppendGenerationRecord(ctx, se.turnID, enrichedRecord); err != nil {
+		return fmt.Errorf("failed to append enriched generation record: %w", err)
+	}
+
+	se.logger.Debug("persisted enriched OpenRouter generation record",
+		"turn_id", se.turnID,
+		"generation_id", stats.ID,
+		"request_index", se.requestIndex,
+		"phase", phase,
+		"provider_name", stats.ProviderName,
+		"native_tokens_prompt", stats.NativeTokensPrompt,
+		"native_tokens_completion", stats.NativeTokensCompletion,
+		"native_tokens_reasoning", stats.NativeTokensReasoning,
+		"native_tokens_cached", stats.NativeTokensCached,
+		"total_cost", stats.TotalCost,
+		"latency_ms", stats.Latency,
+	)
+
+	return nil
 }
 
 // collectToolUse extracts tool use information from a tool_use block and adds it to the collection.
@@ -1309,6 +1651,7 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 
 	// 4. Check iteration limit with tiered approach
 	se.toolIteration++
+	se.requestIndex++ // Increment request index for next LLM request (for generation metadata tracking)
 
 	softLimit := se.maxToolRounds
 	hardLimit := se.maxToolRounds * 2
@@ -1513,6 +1856,8 @@ func (se *StreamExecutor) persistErrorToolResults(ctx context.Context, send func
 // a limit note into the last tool_result, and streams one final LLM response.
 // This allows graceful completion where the LLM synthesizes findings instead of abrupt cutoff.
 func (se *StreamExecutor) executeToolsAndContinueWithLimit(ctx context.Context, send func(mstream.Event)) error {
+	se.requestIndex++ // Increment request index for graceful completion LLM request (for generation metadata tracking)
+
 	se.logger.Info("graceful completion: injecting limit note for final LLM response",
 		"iteration", se.toolIteration,
 		"max_rounds", se.maxToolRounds,
@@ -1683,8 +2028,9 @@ func (se *StreamExecutor) completeTurn(
 // logContinuationRequest logs detailed information about the continuation request
 // to help diagnose 400 errors from OpenRouter.
 func (se *StreamExecutor) logContinuationRequest(req *domainllm.GenerateRequest) {
-	// Log basic info
-	se.logger.Info("continuation request structure",
+	// NOTE: Do not log full request JSON here. It may contain user content, tool inputs,
+	// and other large payloads that clutter logs and risk leaking sensitive text.
+	se.logger.Debug("continuation request structure",
 		"message_count", len(req.Messages),
 		"model", req.Model,
 	)
@@ -1695,19 +2041,11 @@ func (se *StreamExecutor) logContinuationRequest(req *domainllm.GenerateRequest)
 		for j, block := range msg.Content {
 			blockTypes[j] = block.BlockType
 		}
-		se.logger.Info("continuation message",
+		se.logger.Debug("continuation message",
 			"index", i,
 			"role", msg.Role,
 			"block_count", len(msg.Content),
 			"block_types", blockTypes,
 		)
-	}
-
-	// Log full request as JSON for debugging (use DEBUG level to avoid spamming)
-	reqJSON, err := json.MarshalIndent(req, "", "  ")
-	if err != nil {
-		se.logger.Warn("failed to marshal continuation request for logging", "error", err)
-	} else {
-		se.logger.Debug("continuation request JSON", "request", string(reqJSON))
 	}
 }

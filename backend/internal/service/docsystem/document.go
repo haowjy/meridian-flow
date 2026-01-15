@@ -371,7 +371,7 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 				// Fetch current doc to include in conflict response
 				currentDoc, fetchErr := s.docRepo.GetByIDOnly(txCtx, documentID)
 				if fetchErr != nil {
-					s.logger.Warn("failed to fetch doc for conflict response", "doc_id", documentID, "error", fetchErr)
+					s.logger.Debug("failed to fetch doc for conflict response", "doc_id", documentID, "error", fetchErr)
 				}
 				return &domain.AIVersionConflictError{
 					Message:  "ai_version was modified since last fetch",
@@ -404,7 +404,7 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 		if req.AIVersion.Value == nil {
 			action = "cleared"
 		}
-		s.logger.Info("document updated with ai_version "+action,
+		s.logger.Debug("document updated with ai_version "+action,
 			"id", result.ID,
 			"name", result.Name,
 			"project_id", result.ProjectID,
@@ -427,7 +427,7 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 		doc.Path = path
 	}
 
-	s.logger.Info("document updated",
+	s.logger.Debug("document updated",
 		"id", doc.ID,
 		"name", doc.Name,
 		"project_id", doc.ProjectID,
@@ -469,7 +469,7 @@ func (s *documentService) UpdateAIVersion(ctx context.Context, userID, documentI
 	if aiVersion == nil {
 		action = "cleared"
 	}
-	s.logger.Info("document ai_version "+action,
+	s.logger.Debug("document ai_version "+action,
 		"id", doc.ID,
 		"project_id", doc.ProjectID,
 	)
@@ -559,7 +559,7 @@ func (s *documentService) SearchDocuments(ctx context.Context, userID string, re
 		path, err := s.docRepo.GetPath(ctx, doc)
 		if err != nil {
 			// Log warning but don't fail the entire search
-			s.logger.Warn("failed to compute path for search result",
+			s.logger.Debug("failed to compute path for search result",
 				"doc_id", doc.ID,
 				"error", err,
 			)

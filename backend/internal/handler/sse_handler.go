@@ -68,14 +68,14 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 	turnID := r.PathValue("id")
 	clientIP := r.RemoteAddr
 
-	h.logger.Info("SSE connection request",
+	h.logger.Debug("SSE connection request",
 		"turn_id", turnID,
 		"client_ip", clientIP,
 	)
 
 	// Validate turn ID
 	if _, err := uuid.Parse(turnID); err != nil {
-		h.logger.Warn("invalid turn ID format",
+		h.logger.Debug("invalid turn ID format",
 			"turn_id", turnID,
 			"error", err,
 		)
@@ -102,13 +102,13 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 	// Get Stream from registry
 	stream := h.registry.Get(turnID)
 	if stream == nil {
-		h.logger.Warn("stream not found for SSE connection",
+		h.logger.Debug("stream not found for SSE connection",
 			"turn_id", turnID,
 			"client_ip", clientIP,
 		)
 		// Don't return early - establish SSE connection first, then send error
 	} else {
-		h.logger.Info("stream found for SSE connection",
+		h.logger.Debug("stream found for SSE connection",
 			"turn_id", turnID,
 			"client_ip", clientIP,
 		)
@@ -142,7 +142,7 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 			// Client disconnected, error already logged
 			return
 		}
-		h.logger.Info("sent error event for missing stream, closing stream",
+		h.logger.Debug("sent error event for missing stream, closing stream",
 			"turn_id", turnID,
 			"client_id", clientID,
 		)

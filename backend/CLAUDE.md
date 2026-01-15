@@ -172,9 +172,11 @@ LLM Configuration (at least one required):
 - `OPENROUTER_API_KEY` - For multiple providers via OpenRouter
 
 Optional (Logging):
-- `LOG_TO_FILE` - Enable file logging (default: false)
+- `LOG_LEVEL` - `debug|info|warn|error` (default: `debug` in `ENVIRONMENT=dev`, otherwise `info`)
+- `LOG_TO_FILE` - When true, logs to both stdout and a session file (default: false)
 - `LOG_DIR` - Log directory (default: ./logs)
 - `LOG_MAX_FILES` - Max session log files to keep (default: 10)
+- `LLM_STREAM_DEBUG_LOGS` - Enables very verbose (redacted) provider streaming logs (default: false)
 
 See `.env.example` for development and `.env.production.example` for deployment.
 

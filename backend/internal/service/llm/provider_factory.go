@@ -2,6 +2,7 @@ package llm
 
 import (
 	"fmt"
+	"log/slog"
 
 	llmprovider "github.com/haowjy/meridian-llm-go"
 	"github.com/haowjy/meridian-llm-go/providers/anthropic"
@@ -14,12 +15,17 @@ import (
 // ProviderFactory creates and manages LLM provider instances
 type ProviderFactory struct {
 	config *config.Config
+	logger *slog.Logger
 }
 
 // NewProviderFactory creates a new provider factory
-func NewProviderFactory(cfg *config.Config) *ProviderFactory {
+func NewProviderFactory(cfg *config.Config, logger *slog.Logger) *ProviderFactory {
+	// Add component field for better log filtering
+	providerLogger := logger.With("component", "llm_provider")
+
 	return &ProviderFactory{
 		config: cfg,
+		logger: providerLogger,
 	}
 }
 
@@ -62,7 +68,14 @@ func (f *ProviderFactory) createAnthropicProvider() (llmprovider.Provider, error
 		return nil, fmt.Errorf("ANTHROPIC_API_KEY environment variable not set")
 	}
 
-	provider, err := anthropic.NewProvider(f.config.AnthropicAPIKey)
+	// Add provider-specific field for better log filtering
+	providerLogger := f.logger.With("provider", "anthropic")
+
+	provider, err := anthropic.NewProvider(
+		f.config.AnthropicAPIKey,
+		anthropic.WithLogger(providerLogger),
+		anthropic.WithDebugStreamLogs(f.config.LLMStreamDebugLogs),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Anthropic provider: %w", err)
 	}
@@ -73,7 +86,13 @@ func (f *ProviderFactory) createAnthropicProvider() (llmprovider.Provider, error
 // createLoremProvider creates a Lorem mock provider instance
 // Lorem requires no API key - it's a testing provider that generates lorem ipsum text
 func (f *ProviderFactory) createLoremProvider() (llmprovider.Provider, error) {
-	provider := lorem.NewProvider()
+	// Add provider-specific field for better log filtering
+	providerLogger := f.logger.With("provider", "lorem")
+
+	provider := lorem.NewProvider(
+		lorem.WithLogger(providerLogger),
+		lorem.WithDebugStreamLogs(f.config.LLMStreamDebugLogs),
+	)
 	return provider, nil
 }
 
@@ -83,7 +102,14 @@ func (f *ProviderFactory) createOpenRouterProvider() (llmprovider.Provider, erro
 		return nil, fmt.Errorf("OPENROUTER_API_KEY environment variable not set")
 	}
 
-	provider, err := openrouter.NewProvider(f.config.OpenRouterAPIKey)
+	// Add provider-specific field for better log filtering
+	providerLogger := f.logger.With("provider", "openrouter")
+
+	provider, err := openrouter.NewProvider(
+		f.config.OpenRouterAPIKey,
+		openrouter.WithLogger(providerLogger),
+		openrouter.WithDebugStreamLogs(f.config.LLMStreamDebugLogs),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OpenRouter provider: %w", err)
 	}

@@ -9,29 +9,29 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
-// AnthropicEstimator uses Anthropic's token counting API for accurate counts.
-// This estimator makes an API call to count tokens, which is free but rate-limited.
-type AnthropicEstimator struct {
+// AnthropicTokenCounter uses Anthropic's token counting API for exact counts.
+// This counter makes an API call to count tokens, which is free but rate-limited.
+type AnthropicTokenCounter struct {
 	client *anthropic.Client
 }
 
-// NewAnthropicEstimator creates a new Anthropic token estimator.
+// NewAnthropicTokenCounter creates a new Anthropic token counter.
 // apiKey is the Anthropic API key used to authenticate with the token counting endpoint.
-func NewAnthropicEstimator(apiKey string) (*AnthropicEstimator, error) {
+func NewAnthropicTokenCounter(apiKey string) (*AnthropicTokenCounter, error) {
 	if apiKey == "" {
-		return nil, fmt.Errorf("anthropic API key is required for token estimation")
+		return nil, fmt.Errorf("anthropic API key is required for token counting")
 	}
 
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))
 
-	return &AnthropicEstimator{
+	return &AnthropicTokenCounter{
 		client: &client,
 	}, nil
 }
 
-// EstimateOutputTokens uses Anthropic's token counting API for accurate counts.
+// CountOutputTokens uses Anthropic's token counting API for exact counts.
 // The content is sent as an assistant message to count output tokens.
-func (e *AnthropicEstimator) EstimateOutputTokens(ctx context.Context, model string, content string) (int, error) {
+func (c *AnthropicTokenCounter) CountOutputTokens(ctx context.Context, model string, content string) (int, error) {
 	if content == "" {
 		return 0, nil
 	}
@@ -41,8 +41,8 @@ func (e *AnthropicEstimator) EstimateOutputTokens(ctx context.Context, model str
 	apiModel := normalizeModelForAnthropicAPI(model)
 
 	// Anthropic's count_tokens endpoint requires a valid model
-	// We count the content as an assistant message to estimate output tokens
-	resp, err := e.client.Messages.CountTokens(ctx, anthropic.MessageCountTokensParams{
+	// We count the content as an assistant message to get exact output token counts
+	resp, err := c.client.Messages.CountTokens(ctx, anthropic.MessageCountTokensParams{
 		Model: anthropic.Model(apiModel),
 		Messages: []anthropic.MessageParam{
 			anthropic.NewAssistantMessage(anthropic.NewTextBlock(content)),
@@ -57,7 +57,7 @@ func (e *AnthropicEstimator) EstimateOutputTokens(ctx context.Context, model str
 
 // SupportsModel returns true for Claude models.
 // Handles both direct Anthropic (claude-*) and OpenRouter-routed (anthropic/claude-*) models.
-func (e *AnthropicEstimator) SupportsModel(model string) bool {
+func (c *AnthropicTokenCounter) SupportsModel(model string) bool {
 	// Direct Anthropic models: claude-3-5-sonnet-latest, claude-haiku-4-5, etc.
 	// OpenRouter-routed: anthropic/claude-3.5-sonnet, anthropic/claude-3-opus, etc.
 	return strings.HasPrefix(model, "claude-") || strings.Contains(model, "claude")

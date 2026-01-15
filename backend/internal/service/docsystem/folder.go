@@ -278,7 +278,7 @@ func (s *folderService) UpdateFolder(ctx context.Context, userID, folderID strin
 		folder.Path = path
 	}
 
-	s.logger.Info("folder updated",
+	s.logger.Debug("folder updated",
 		"id", folder.ID,
 		"name", folder.Name,
 		"folder_id", folder.ParentID,

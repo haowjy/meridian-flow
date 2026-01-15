@@ -127,7 +127,7 @@ func (s *projectService) UpdateProject(ctx context.Context, id, userID string, r
 		return nil, err
 	}
 
-	s.logger.Info("project updated",
+	s.logger.Debug("project updated",
 		"id", project.ID,
 		"name", project.Name,
 		"slug", project.Slug,

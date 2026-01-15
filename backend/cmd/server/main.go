@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -13,7 +13,9 @@ import (
 	"meridian/internal/auth"
 	"meridian/internal/capabilities"
 	"meridian/internal/config"
+	domainLLM "meridian/internal/domain/services/llm"
 	"meridian/internal/handler"
+	"meridian/internal/jobs"
 	"meridian/internal/middleware"
 	"meridian/internal/repository/postgres"
 	postgresDocsys "meridian/internal/repository/postgres/docsystem"
@@ -24,7 +26,6 @@ import (
 	"meridian/internal/service/docsystem/converter"
 	"meridian/internal/service/identifier"
 	serviceLLM "meridian/internal/service/llm"
-	domainLLM "meridian/internal/domain/services/llm"
 
 	"github.com/joho/godotenv"
 	"github.com/rs/cors"
@@ -43,20 +44,18 @@ func main() {
 	toolLimitResolver := domainLLM.NewConfigToolLimitResolver(cfg.MaxToolRounds)
 
 	// Setup structured logging
-	logLevel := slog.LevelInfo
-	if cfg.Environment == "dev" {
-		logLevel = slog.LevelDebug
-	}
+	logLevel := config.ParseLogLevel(cfg.LogLevel)
 
 	// Determine log output destination
 	var logOutput io.Writer = os.Stdout
 	if cfg.LogToFile {
 		f, err := config.SetupLogFile(cfg.LogDir, cfg.LogMaxFiles)
 		if err != nil {
-			log.Fatalf("failed to setup log file: %v", err)
+			fmt.Fprintf(os.Stderr, "failed to setup log file: %v\n", err)
+			os.Exit(1)
 		}
 		defer func() { _ = f.Close() }() // Error ignored: program exiting
-		logOutput = f
+		logOutput = io.MultiWriter(os.Stdout, f)
 	}
 
 	logger := slog.New(slog.NewJSONHandler(logOutput, &slog.HandlerOptions{
@@ -68,12 +67,15 @@ func main() {
 		"environment", cfg.Environment,
 		"port", cfg.Port,
 		"table_prefix", cfg.TablePrefix,
+		"log_level", cfg.LogLevel,
+		"log_to_file", cfg.LogToFile,
 	)
 
 	// Create JWT verifier for Supabase authentication
 	jwtVerifier, err := auth.NewJWTVerifier(cfg.SupabaseJWKSURL, logger)
 	if err != nil {
-		log.Fatalf("Failed to create JWT verifier: %v", err)
+		logger.Error("failed to create JWT verifier", "error", err)
+		os.Exit(1)
 	}
 	defer func() { _ = jwtVerifier.Close() }() // Error ignored: program exiting
 
@@ -81,7 +83,8 @@ func main() {
 	ctx := context.Background()
 	pool, err := postgres.CreateConnectionPool(ctx, cfg.SupabaseDBURL)
 	if err != nil {
-		log.Fatalf("Failed to create connection pool: %v", err)
+		logger.Error("failed to create connection pool", "error", err)
+		os.Exit(1)
 	}
 	defer pool.Close()
 
@@ -129,15 +132,37 @@ func main() {
 	// Setup LLM providers
 	providerRegistry, err := serviceLLM.SetupProviders(cfg, logger)
 	if err != nil {
-		log.Fatalf("Failed to setup LLM providers: %v", err)
+		logger.Error("failed to setup LLM providers", "error", err)
+		os.Exit(1)
 	}
 
 	// Initialize capability registry
 	capabilityRegistry, err := capabilities.NewRegistry()
 	if err != nil {
-		log.Fatalf("Failed to initialize capability registry: %v", err)
+		logger.Error("failed to initialize capability registry", "error", err)
+		os.Exit(1)
 	}
 	logger.Info("capability registry initialized")
+
+	// Initialize background job queue for async operations (Phase 2)
+	jobQueue := jobs.NewInMemoryQueue(
+		5,    // worker pool size
+		1000, // queue capacity (bounded channel for backpressure)
+		logger,
+	)
+
+	// Start queue in background goroutine
+	queueCtx := context.Background()
+	go func() {
+		if err := jobQueue.Start(queueCtx); err != nil {
+			logger.Error("job queue stopped", "error", err)
+		}
+	}()
+
+	logger.Info("job queue started",
+		"worker_pool_size", 5,
+		"queue_capacity", 1000,
+	)
 
 	// Setup LLM services (thread, thread history, streaming)
 	// docService and folderService are passed for tool write operations (SOLID: DIP)
@@ -155,10 +180,12 @@ func main() {
 		capabilityRegistry,
 		authorizer,
 		toolLimitResolver,
+		jobQueue, // Phase 2: Background job queue for async generation enrichment
 		logger,
 	)
 	if err != nil {
-		log.Fatalf("Failed to setup LLM services: %v", err)
+		logger.Error("failed to setup LLM services", "error", err)
+		os.Exit(1)
 	}
 
 	// Create identifier resolver (for UUID/slug resolution)
@@ -268,19 +295,24 @@ func main() {
 	mux.HandleFunc("GET /api/turns/{id}/siblings", threadHandler.GetTurnSiblings)
 
 	// Streaming routes
-	mux.HandleFunc("GET /api/turns/{id}/stream", threadHandler.StreamTurn)            // SSE streaming endpoint
-	mux.HandleFunc("GET /api/turns/{id}/blocks", threadHandler.GetTurnBlocks)         // Get completed blocks
+	mux.HandleFunc("GET /api/turns/{id}/stream", threadHandler.StreamTurn)             // SSE streaming endpoint
+	mux.HandleFunc("GET /api/turns/{id}/blocks", threadHandler.GetTurnBlocks)          // Get completed blocks
 	mux.HandleFunc("GET /api/turns/{id}/token-usage", threadHandler.GetTurnTokenUsage) // Get token usage stats
-	mux.HandleFunc("POST /api/turns/{id}/interrupt", threadHandler.InterruptTurn)     // Cancel streaming turn
+	mux.HandleFunc("POST /api/turns/{id}/interrupt", threadHandler.InterruptTurn)      // Cancel streaming turn
 
 	// Debug routes (only in dev environment)
 	if cfg.Environment == "dev" && threadDebugHandler != nil {
 		mux.HandleFunc("POST /debug/api/threads/{id}/turns", threadDebugHandler.CreateAssistantTurn)
 		mux.HandleFunc("GET /debug/api/threads/{id}/tree", threadDebugHandler.GetThreadTree)
 		mux.HandleFunc("POST /debug/api/threads/{id}/llm-request", threadDebugHandler.BuildProviderRequest)
-		logger.Warn("Debug route registered: POST /debug/api/threads/:id/turns (assistant turn creation)")
-		logger.Warn("Debug route registered: GET /debug/api/threads/:id/tree (full conversation tree - use pagination in production)")
-		logger.Warn("Debug route registered: POST /debug/api/threads/:id/llm-request (LLM provider request preview)")
+		logger.Debug("debug endpoints registered",
+			"count", 3,
+			"routes", []string{
+				"POST /debug/api/threads/:id/turns",
+				"GET /debug/api/threads/:id/tree",
+				"POST /debug/api/threads/:id/llm-request",
+			},
+		)
 	}
 
 	// Build middleware chain
@@ -309,9 +341,23 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// Setup graceful shutdown for job queue
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		logger.Info("shutting down job queue...")
+		if err := jobQueue.Stop(shutdownCtx); err != nil {
+			logger.Error("job queue shutdown error", "error", err)
+		} else {
+			logger.Info("job queue stopped gracefully")
+		}
+	}()
+
 	// Start server
 	logger.Info("server starting", "port", cfg.Port)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("Failed to start server: %v", err)
+		logger.Error("failed to start server", "error", err)
+		os.Exit(1)
 	}
 }

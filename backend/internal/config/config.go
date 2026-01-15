@@ -15,10 +15,10 @@ type Config struct {
 	CORSOrigins     string
 	TablePrefix     string
 	// LLM Configuration
-	AnthropicAPIKey  string
-	OpenRouterAPIKey string
-	DefaultProvider  string
-	DefaultModel     string
+	AnthropicAPIKey          string
+	OpenRouterAPIKey         string
+	DefaultProvider          string
+	DefaultModel             string
 	MaxToolRounds            int // Fallback limit if resolver fails (default: 10)
 	SoftCancelTimeoutSeconds int // Timeout for soft cancel before forced cleanup (default: 300 = 5 minutes)
 	// Search API Configuration (optional - for web_search tool)
@@ -27,9 +27,11 @@ type Config struct {
 	// Debug flags
 	Debug bool // Enables DEBUG features like SSE event IDs
 	// Logging configuration
-	LogToFile   bool   // Enable file logging instead of stdout
-	LogDir      string // Directory for log files
-	LogMaxFiles int    // Max session log files to keep
+	LogLevel           string // debug|info|warn|error (default varies by environment)
+	LogToFile          bool   // When enabled, logs to both stdout and a session file
+	LogDir             string // Directory for log files
+	LogMaxFiles        int    // Max session log files to keep
+	LLMStreamDebugLogs bool   // Enables very verbose provider streaming logs (redacted)
 }
 
 func Load() *Config {
@@ -50,21 +52,23 @@ func Load() *Config {
 		CORSOrigins:     getEnv("CORS_ORIGINS", "http://localhost:3000"),
 		TablePrefix:     tablePrefix,
 		// LLM Configuration
-		AnthropicAPIKey:  getEnv("ANTHROPIC_API_KEY", ""),
-		OpenRouterAPIKey: getEnv("OPENROUTER_API_KEY", ""),
-			DefaultProvider:  getEnv("DEFAULT_PROVIDER", "openrouter"),
-			DefaultModel:     getEnv("DEFAULT_MODEL", "moonshotai/kimi-k2-thinking"),
-			MaxToolRounds:            getEnvInt("MAX_TOOL_ROUNDS", 10),
-			SoftCancelTimeoutSeconds: getEnvInt("SOFT_CANCEL_TIMEOUT_SECONDS", 300), // 5 minutes default
-			// Search API Configuration (optional)
-			SearchAPIKey:      getEnv("SEARCH_API_KEY", ""),
-			SearchAPIProvider: getEnv("SEARCH_API_PROVIDER", "tavily"),
+		AnthropicAPIKey:          getEnv("ANTHROPIC_API_KEY", ""),
+		OpenRouterAPIKey:         getEnv("OPENROUTER_API_KEY", ""),
+		DefaultProvider:          getEnv("DEFAULT_PROVIDER", "openrouter"),
+		DefaultModel:             getEnv("DEFAULT_MODEL", "moonshotai/kimi-k2-thinking"),
+		MaxToolRounds:            getEnvInt("MAX_TOOL_ROUNDS", 10),
+		SoftCancelTimeoutSeconds: getEnvInt("SOFT_CANCEL_TIMEOUT_SECONDS", 300), // 5 minutes default
+		// Search API Configuration (optional)
+		SearchAPIKey:      getEnv("SEARCH_API_KEY", ""),
+		SearchAPIProvider: getEnv("SEARCH_API_PROVIDER", "tavily"),
 		// Debug flags - default to true in dev/test, false in production
 		Debug: getEnv("DEBUG", getDefaultDebug(env)) == "true",
 		// Logging configuration
-		LogToFile:   getEnv("LOG_TO_FILE", "false") == "true",
-		LogDir:      getEnv("LOG_DIR", "./logs"),
-		LogMaxFiles: getEnvInt("LOG_MAX_FILES", 10),
+		LogLevel:           getEnv("LOG_LEVEL", getDefaultLogLevel(env)),
+		LogToFile:          getEnv("LOG_TO_FILE", "false") == "true",
+		LogDir:             getEnv("LOG_DIR", "./logs"),
+		LogMaxFiles:        getEnvInt("LOG_MAX_FILES", 10),
+		LLMStreamDebugLogs: getEnv("LLM_STREAM_DEBUG_LOGS", "false") == "true",
 	}
 }
 
@@ -74,6 +78,13 @@ func getDefaultDebug(env string) string {
 		return "false"
 	}
 	return "true" // Enable DEBUG in dev/test by default
+}
+
+func getDefaultLogLevel(env string) string {
+	if env == "dev" {
+		return "debug"
+	}
+	return "info"
 }
 
 // getTablePrefix returns the table prefix based on environment

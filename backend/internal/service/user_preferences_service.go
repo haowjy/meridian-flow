@@ -124,7 +124,7 @@ func (s *UserPreferencesService) UpdatePreferences(ctx context.Context, userID u
 		return nil, fmt.Errorf("upsert preferences: %w", err)
 	}
 
-	s.logger.Info("user preferences updated",
+	s.logger.Debug("user preferences updated",
 		"user_id", userID,
 		"has_models", req.Models != nil,
 		"has_ui", req.UI != nil,

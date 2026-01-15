@@ -5,47 +5,47 @@ import (
 	"sync"
 )
 
-// EstimatorRegistry manages token estimators and selects the appropriate one.
-// Follows Open/Closed Principle: add new estimators without modifying existing code.
+// TokenCounterRegistry manages token counters and selects the appropriate one.
+// Follows Open/Closed Principle: add new token counters without modifying existing code.
 //
-// The registry checks estimators in order of registration - register more specific
-// estimators first (e.g., Anthropic).
+// The registry checks token counters in order of registration - register more specific
+// counters first (e.g., Anthropic).
 //
-// Note: OpenRouter models should use the Generation Stats API instead of token estimation.
-// The token estimator is primarily for Anthropic direct API calls.
-type EstimatorRegistry struct {
-	estimators []TokenEstimator
-	mu         sync.RWMutex
+// Note: OpenRouter models should use the Generation Stats API instead of token counting.
+// The token counter is primarily for Anthropic direct API calls.
+type TokenCounterRegistry struct {
+	counters []TokenCounter
+	mu       sync.RWMutex
 }
 
-// NewEstimatorRegistry creates a new estimator registry.
+// NewTokenCounterRegistry creates a new token counter registry.
 // Unlike before, there is no fallback - unsupported models return 0 tokens.
 // OpenRouter models should use the Generation Stats API instead.
-func NewEstimatorRegistry() *EstimatorRegistry {
-	return &EstimatorRegistry{
-		estimators: make([]TokenEstimator, 0),
+func NewTokenCounterRegistry() *TokenCounterRegistry {
+	return &TokenCounterRegistry{
+		counters: make([]TokenCounter, 0),
 	}
 }
 
-// Register adds an estimator to the registry.
-// Estimators are checked in order - register more specific ones first.
+// Register adds a token counter to the registry.
+// Token counters are checked in order - register more specific ones first.
 //
 // Example registration order:
-//  1. AnthropicEstimator (specific: handles claude-* models)
-//  2. OpenRouterEstimator (fallback: handles all other models)
-func (r *EstimatorRegistry) Register(e TokenEstimator) {
+//  1. AnthropicTokenCounter (specific: handles claude-* models)
+//  2. Other provider counters (if added in the future)
+func (r *TokenCounterRegistry) Register(c TokenCounter) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.estimators = append(r.estimators, e)
+	r.counters = append(r.counters, c)
 }
 
-// EstimateOutputTokens finds the appropriate estimator and estimates tokens.
-// Returns (0, nil) if content is empty or no estimator supports the model.
+// CountOutputTokens finds the appropriate token counter and counts tokens.
+// Returns (0, nil) if content is empty or no token counter supports the model.
 //
 // Selection logic:
-//  1. Find first registered estimator that supports the model
-//  2. If no estimator found, return 0 (caller should use provider-specific API like OpenRouter Generation Stats)
-func (r *EstimatorRegistry) EstimateOutputTokens(ctx context.Context, model string, content string) (int, error) {
+//  1. Find first registered token counter that supports the model
+//  2. If no counter found, return 0 (caller should use provider-specific API like OpenRouter Generation Stats)
+func (r *TokenCounterRegistry) CountOutputTokens(ctx context.Context, model string, content string) (int, error) {
 	if content == "" {
 		return 0, nil
 	}
@@ -53,25 +53,25 @@ func (r *EstimatorRegistry) EstimateOutputTokens(ctx context.Context, model stri
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	// Find first estimator that supports this model
-	for _, e := range r.estimators {
-		if e.SupportsModel(model) {
-			return e.EstimateOutputTokens(ctx, model, content)
+	// Find first token counter that supports this model
+	for _, c := range r.counters {
+		if c.SupportsModel(model) {
+			return c.CountOutputTokens(ctx, model, content)
 		}
 	}
 
-	// No estimator found - return 0
+	// No token counter found - return 0
 	// Caller should use provider-specific API (e.g., OpenRouter Generation Stats)
 	return 0, nil
 }
 
-// SupportsModel returns true if any registered estimator supports the model.
-func (r *EstimatorRegistry) SupportsModel(model string) bool {
+// SupportsModel returns true if any registered token counter supports the model.
+func (r *TokenCounterRegistry) SupportsModel(model string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	for _, e := range r.estimators {
-		if e.SupportsModel(model) {
+	for _, c := range r.counters {
+		if c.SupportsModel(model) {
 			return true
 		}
 	}

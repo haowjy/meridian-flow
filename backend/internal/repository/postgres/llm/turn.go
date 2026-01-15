@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -450,25 +451,57 @@ func (r *PostgresTurnRepository) UpdateTurnError(ctx context.Context, turnID, er
 
 // AccumulateTokensAndUpdateMetadata atomically accumulates tokens and updates completion metadata
 // Single SQL statement ensures consistency - tokens and metadata update together or not at all
+//
+// Uses pointer semantics for completion fields:
+//   - nil Model/StopReason = keep existing value (no update)
+//   - non-nil Model/StopReason = update to this value (even if empty string)
+//   - nil ResponseMetadata = skip JSONB merge (no update)
+//   - non-nil ResponseMetadata = merge into existing metadata
 func (r *PostgresTurnRepository) AccumulateTokensAndUpdateMetadata(
 	ctx context.Context,
 	turnID string,
-	inputTokens, outputTokens int,
-	model, stopReason string,
-	responseMetadata map[string]interface{},
+	tokens *llmRepo.TurnTokenUpdate,
+	completion *llmRepo.TurnCompletionUpdate,
 ) error {
+	// Validate inputs
+	if tokens == nil {
+		return fmt.Errorf("tokens cannot be nil")
+	}
+	if completion == nil {
+		return fmt.Errorf("completion cannot be nil")
+	}
+
+	// Build SQL query with conditional updates
+	// COALESCE(field, field) keeps existing value when parameter is NULL
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET input_tokens = COALESCE(input_tokens, 0) + $2,
 		    output_tokens = COALESCE(output_tokens, 0) + $3,
-		    model = $4,
-		    stop_reason = $5,
-		    response_metadata = $6
+		    model = COALESCE($4, model),
+		    stop_reason = COALESCE($5, stop_reason),
+		    response_metadata = COALESCE(response_metadata, '{}'::jsonb) || COALESCE($6::jsonb, '{}'::jsonb)
 		WHERE id = $1
 	`, r.tables.Turns)
 
+	// Marshal ResponseMetadata to JSONB if provided
+	var metadataJSON []byte
+	if completion.ResponseMetadata != nil {
+		var err error
+		metadataJSON, err = json.Marshal(completion.ResponseMetadata)
+		if err != nil {
+			return fmt.Errorf("failed to marshal response metadata: %w", err)
+		}
+	}
+
 	executor := postgres.GetExecutor(ctx, r.pool)
-	result, err := executor.Exec(ctx, query, turnID, inputTokens, outputTokens, model, stopReason, responseMetadata)
+	result, err := executor.Exec(ctx, query,
+		turnID,
+		tokens.InputTokens,
+		tokens.OutputTokens,
+		completion.Model,        // nil = keep existing
+		completion.StopReason,   // nil = keep existing
+		metadataJSON,            // nil = skip merge (COALESCE handles)
+	)
 	if err != nil {
 		return fmt.Errorf("accumulate tokens and update metadata: %w", err)
 	}
@@ -988,7 +1021,7 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 				"error", err,
 			)
 		} else {
-			r.logger.Info("successfully reset invalid last_viewed_turn_id",
+			r.logger.Warn("successfully reset invalid last_viewed_turn_id",
 				"thread_id", threadID,
 				"invalid_turn_id", invalidTurnID,
 			)
@@ -1311,4 +1344,61 @@ func (r *PostgresTurnRepository) findMostRecentLeaf(ctx context.Context, startTu
 	}
 
 	return leafID, nil
+}
+
+// AppendGenerationRecord atomically appends or updates a generation record
+// in response_metadata.openrouter.generations[] array using JSONB operations.
+//
+// Implementation strategy:
+//  1. Initialize response_metadata and openrouter if missing
+//  2. Filter out any existing record with the same ID (deduplication)
+//  3. Append the new record to the generations array
+//
+// This supports both:
+//   - Initial insertion (complete record with Finalized=true)
+//   - Upsert for enrichment (replace partial record with enriched version)
+func (r *PostgresTurnRepository) AppendGenerationRecord(ctx context.Context, turnID string, record *llmModels.GenerationRecord) error {
+	// Marshal the generation record to JSONB
+	recordJSON, err := json.Marshal(record)
+	if err != nil {
+		return fmt.Errorf("marshal generation record: %w", err)
+	}
+
+	// SQL query using JSONB operators for atomic upsert-by-id
+	// Strategy: Remove existing record with same ID, then append new record
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET response_metadata =
+			COALESCE(response_metadata, '{}'::jsonb) ||
+			jsonb_build_object(
+				'openrouter',
+				COALESCE(response_metadata->'openrouter', '{}'::jsonb) ||
+				jsonb_build_object(
+					'generations',
+					-- Remove existing record with same ID (if exists), then append new
+					-- ORDER BY ensures array stays sorted by request_index
+					COALESCE(
+						(SELECT jsonb_agg(elem ORDER BY (elem->>'request_index')::int)
+						 FROM jsonb_array_elements(
+							COALESCE(response_metadata->'openrouter'->'generations', '[]'::jsonb)
+						 ) elem
+						 WHERE elem->>'id' != $2),
+						'[]'::jsonb
+					) || $3::jsonb
+				)
+			)
+		WHERE id = $1
+	`, r.tables.Turns)
+
+	executor := postgres.GetExecutor(ctx, r.pool)
+	result, err := executor.Exec(ctx, query, turnID, record.ID, recordJSON)
+	if err != nil {
+		return fmt.Errorf("append generation record: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("turn %s not found: %w", turnID, domain.ErrNotFound)
+	}
+
+	return nil
 }

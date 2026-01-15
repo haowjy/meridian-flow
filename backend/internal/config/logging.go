@@ -2,9 +2,11 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -32,6 +34,21 @@ func SetupLogFile(dir string, maxFiles int) (*os.File, error) {
 	}
 
 	return f, nil
+}
+
+func ParseLogLevel(level string) slog.Level {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "debug":
+		return slog.LevelDebug
+	case "info":
+		return slog.LevelInfo
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }
 
 // cleanupOldLogs removes oldest log files when count exceeds maxFiles.

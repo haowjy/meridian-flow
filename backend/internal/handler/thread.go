@@ -387,7 +387,7 @@ func (h *ThreadHandler) GetTurnTokenUsage(w http.ResponseWriter, r *http.Request
 // POST /api/turns/{id}/interrupt
 //
 // Behavior depends on the model's supports_streaming_cancel capability:
-// - true (Anthropic): Hard cancel (stops provider, estimates tokens)
+// - true (Anthropic): Hard cancel (stops provider, counts tokens)
 // - false (some providers): Soft cancel (provider continues for accurate metadata)
 func (h *ThreadHandler) InterruptTurn(w http.ResponseWriter, r *http.Request) {
 	turnID, ok := PathParam(w, r, "id", "Turn ID")

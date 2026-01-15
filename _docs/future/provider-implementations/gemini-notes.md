@@ -1,5 +1,22 @@
 # Gemini Provider Implementation Notes
 
+## Token Usage + Post-Hoc Retrieval (Provider Comparison)
+
+Goal: decide how to get **authoritative tokens/cost** for normal completion and for **user cancel**.
+
+| Provider | “Lookup stats later by ID” API? | What to persist on completion | If user hard-cancels mid-stream |
+|----------|----------------------------------|------------------------------|---------------------------------|
+| OpenRouter | ✅ `GET /api/v1/generation?id=gen-...` | Store `generation_id` and enrich via `/generation` (provider_name, total_cost, native tokens, etc.) | Cancel stream immediately, then query `/generation` with retries/backoff |
+| Google Gemini (Gemini API / Vertex) | ❌ No OpenRouter-like "GET by responseId" documented | Persist `usageMetadata` from the final response | Treat as **not hard-cancellable** for token-accuracy: if you cancel before the final response, you likely lose authoritative usage; fallback to soft cancel or 0 tokens with external billing reconciliation |
+| Anthropic | ❌ No OpenRouter-like per-request lookup endpoint | Persist `usage` from final response/metadata | If you cancel early, use token counter (via `/messages/count_tokens` API) or soft cancel to capture final metadata |
+| OpenAI | ⚠️ Retrieval exists only if you opt into storage (`store: true`) | Persist usage from final response/metadata | If you cancel early, use token counter or soft cancel unless you used a stored/retrievable mode |
+
+Notes:
+- Gemini may include a `responseId`, but this appears to be an identifier for tracing/analytics rather than a retrievable resource.
+- For Gemini, we should default to **soft cancel** semantics if we care about token accuracy (disconnect the client UX, but let the request finish to capture `usageMetadata`).
+- For Meridian’s cancel UX, “soft cancel” is only needed when we must keep the provider request running to eventually receive usage; if the provider has a post-hoc lookup (OpenRouter), we can hard-cancel and finalize later.
+- Implementation detail: set `supports_streaming_cancel: false` for Gemini models in capabilities (so `InterruptTurn` chooses soft cancel by default).
+
 ## Thinking Block Signature Handling
 
 ### Critical Pattern (Applied in Anthropic)
