@@ -55,11 +55,7 @@ Newer content wins.
 
 ## Dev Tools
 
-**Retry Panel**: Shows queue state, manual retry trigger
-
-**Toggle**: `VITE_DEV_TOOLS=1`
-
-**File**: `frontend/src/core/components/DevRetryPanel.tsx`
+No UI panel (use console logs when retries are scheduled/executed).
 
 ---
 

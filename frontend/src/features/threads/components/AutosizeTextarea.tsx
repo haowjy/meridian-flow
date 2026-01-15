@@ -65,7 +65,7 @@ export function AutosizeTextarea({
             ref={ref}
             rows={1}
             className={cn(
-                "w-full resize-none bg-transparent px-2 py-1.5 text-sm",
+                "w-full resize-none bg-transparent px-2 py-1.5 text-base md:text-sm",
                 "placeholder:text-muted-foreground/60",
                 "outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus:ring-offset-0",
                 className
