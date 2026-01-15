@@ -122,9 +122,12 @@ export function useStreamingAutoScroll({
     }, 100)
   }, [scrollToBottomBase, scrollContainer, onScrollToBottom])
 
-  // Show button when not at bottom (anytime, not just during streaming)
-  // isNearBottom changes will trigger re-render from useIsNearBottom's useState
-  const showScrollButton = !isNearBottom
+  // Show button when not at bottom AND there's scrollable content
+  // Check if scroll is needed: scrollHeight > clientHeight
+  const isScrollable = scrollContainer
+    ? scrollContainer.scrollHeight > scrollContainer.clientHeight
+    : false
+  const showScrollButton = !isNearBottom && isScrollable
 
   return { showScrollButton, scrollToBottom }
 }
