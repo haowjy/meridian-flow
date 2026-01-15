@@ -379,8 +379,20 @@ func (se *StreamExecutor) processProviderStream(
 		}
 	}()
 
+	// Keep-alive ticker to prevent frontend from appearing frozen
+	// Sends SSE comments every 5 seconds while waiting for provider events
+	keepAliveTicker := time.NewTicker(5 * time.Second)
+	defer keepAliveTicker.Stop()
+
 	for {
 		select {
+		case <-keepAliveTicker.C:
+			// Send keep-alive event to prevent connection timeout
+			// Frontend ignores events without recognized types
+			// This keeps the HTTP connection alive during long provider response times
+			keepAliveData := []byte("{}")
+			send(mstream.NewEvent(keepAliveData).WithType("keepalive"))
+
 		case <-drainTimerCh:
 			// Drain timeout after soft cancel - force cleanup and count tokens.
 			// handleTimeoutInStreamingGoroutine transitions to StateErrored and returns error.
@@ -1185,7 +1197,9 @@ func (se *StreamExecutor) handleError(_ context.Context, send func(mstream.Event
 	// Check both: state-based (wasCancelled) and error-based (context.Canceled)
 	// Bug fix: Previously only error-based check was used for SSE event, causing
 	// hard cancel ("hard cancelled by user" error) to be misclassified as non-cancel
-	isContextCancelled := errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+	// IMPORTANT: context.DeadlineExceeded is a TIMEOUT ERROR, not user cancellation
+	// Only context.Canceled indicates user-initiated cancellation
+	isContextCancelled := errors.Is(err, context.Canceled)
 	isCancelled := wasCancelled || isContextCancelled
 
 	// Update turn status in database

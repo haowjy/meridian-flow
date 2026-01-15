@@ -62,6 +62,22 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
   // allowing effects to run with the actual element (useRef doesn't trigger re-renders)
   const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(null)
 
+  // Measure header and input heights for scroll-padding and content min-height calculation
+  const [headerHeight, setHeaderHeight] = useState(0)
+  const [inputHeight, setInputHeight] = useState(0)
+
+  const headerRef = useCallback((node: HTMLDivElement | null) => {
+    if (node) {
+      setHeaderHeight(node.offsetHeight)
+    }
+  }, [])
+
+  const inputRef = useCallback((node: HTMLDivElement | null) => {
+    if (node) {
+      setInputHeight(node.offsetHeight)
+    }
+  }, [])
+
   // Always call hooks unconditionally to respect Rules of Hooks.
   useThreadSSE()
   const { turns, isLoading } = useTurnsForThread(activeThreadId)
@@ -152,9 +168,16 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
   return (
     <div className="thread-main">
       {/* Single scroll container - scrollbar extends to top */}
-      <div ref={setScrollContainer} className="thread-scroll-container">
-        {/* Sticky Header */}
-        <div className="sticky top-0 z-10 bg-background relative">
+      <div
+        ref={setScrollContainer}
+        className="flex-1 overflow-y-auto overflow-x-hidden min-h-0"
+        style={{
+          scrollPaddingTop: `${headerHeight}px`,
+          scrollPaddingBottom: `${inputHeight}px`,
+        }}
+      >
+        {/* Sticky header INSIDE scroll */}
+        <div ref={headerRef} className="sticky top-0 z-10 bg-background relative">
           <ThreadHeader
             thread={activeThread}
             projectName={projectName}
@@ -164,7 +187,13 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
           <HeaderGradientFade />
         </div>
 
-        <div className="relative min-h-full min-w-0 flex flex-col pt-3">
+        {/* Content wrapper - calc-based min-height accounts for header/input */}
+        <div
+          className="relative min-w-0 flex flex-col pt-3"
+          style={{
+            minHeight: `calc(100% - ${headerHeight}px - ${inputHeight}px)`,
+          }}
+        >
           {/* Show skeleton thread for cold loads (no cached turns) */}
           {isLoading && turns.length === 0 && showSkeleton ? (
             <div className="flex flex-col gap-4 p-4 flex-1">
@@ -179,21 +208,22 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
                   Loading…
                 </div>
               )}
-              {/* Messages take remaining space, pushing input to bottom when few messages */}
+              {/* Messages take remaining space */}
               <div className="flex-1">
                 <TurnList turns={turns} scrollToTurnId={currentTurnId} isLoading={isLoading} />
               </div>
             </>
           )}
-          {/* Sticky input at bottom of scroll area */}
-          <div className="sticky bottom-0 bg-background relative">
-            {/* Floating scroll-to-bottom button - positioned above input */}
-            <ScrollToBottomButton visible={showScrollButton} onClick={scrollToBottom} />
-            <TurnInput
-              threadId={activeThread.id}
-              focusKey={`${activeThreadId ?? 'none'}:${threadFocusVersion}`}
-            />
-          </div>
+        </div>
+
+        {/* Sticky input INSIDE scroll at bottom */}
+        <div ref={inputRef} className="sticky bottom-0 bg-background relative">
+          {/* Floating scroll-to-bottom button - positioned above input */}
+          <ScrollToBottomButton visible={showScrollButton} onClick={scrollToBottom} />
+          <TurnInput
+            threadId={activeThread.id}
+            focusKey={`${activeThreadId ?? 'none'}:${threadFocusVersion}`}
+          />
         </div>
       </div>
 

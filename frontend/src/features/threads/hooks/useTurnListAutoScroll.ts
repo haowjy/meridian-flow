@@ -85,8 +85,15 @@ export function useTurnListAutoScroll({
           turns.some((t) => t.prevTurnId === scrollToTurnId)
 
         if (!hasChild && viewport) {
-          // Leaf turn → scroll thread all the way to the bottom of the viewport.
-          viewport.scrollTop = viewport.scrollHeight
+          // Leaf turn → scroll to bottom ONLY if content exceeds viewport height.
+          // When content fits, don't scroll - let justify-end handle visual alignment.
+          const isScrollable = viewport.scrollHeight > viewport.clientHeight
+
+          if (isScrollable) {
+            // Content is taller than viewport - scroll to show latest messages
+            viewport.scrollTop = viewport.scrollHeight
+          }
+          // If not scrollable: scrollTop stays at 0, justify-end aligns content to bottom
         } else {
           // Parent turn (has child in window) or no viewport found →
           // scroll this turn into view with its top near the top.
