@@ -6,8 +6,9 @@ import { api } from '@/core/lib/api'
 import { getErrorMessageWithFallback, isAbortError } from '@/core/lib/errors'
 import { db } from '@/core/lib/db'
 import { cancelRetry } from '@/core/lib/sync'
-import type { DocTreeFolder, DocTreeDocument } from '@/features/threads/components/blocks/DocTreeBlock/types'
-import { flattenToolTree } from '@/features/threads/utils/flattenToolTree'
+import { getDescendantDocumentIds } from '@/core/lib/treeUtils'
+import type { DocTreeFolder, DocTreeDocument } from '@/types/docTree'
+import { flattenToolTree } from '@/core/lib/flattenToolTree'
 
 type LoadStatus = 'idle' | 'loading' | 'success' | 'error'
 
@@ -19,6 +20,9 @@ interface TreeStore {
   status: LoadStatus
   isFetching: boolean
   error: string | null
+
+  // Multi-select state
+  selectedIds: Set<string>
 
   // Computed getter for backwards compatibility
   isLoading: boolean
@@ -33,6 +37,11 @@ interface TreeStore {
   renameDocument: (id: string, name: string, projectId: string) => Promise<void>
   renameFolder: (id: string, name: string, projectId: string) => Promise<void>
   clearError: () => void
+
+  // Multi-select actions
+  toggleSelection: (id: string) => void
+  selectAll: () => void
+  clearSelection: () => void
   /**
    * Hydrate tree store from doc_tree tool result.
    * Flattens recursive structure and merges with existing data.
@@ -61,6 +70,9 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
   status: 'idle' as LoadStatus,
   isFetching: false,
   error: null,
+
+  // Multi-select state
+  selectedIds: new Set(),
 
   // Computed getter for backwards compatibility
   get isLoading() {
@@ -181,6 +193,15 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
   deleteFolder: async (id, projectId) => {
     set({ error: null })
     try {
+      // Cleanup before delete: cancel retries and clear IndexedDB cache for all
+      // descendant documents. The backend will cascade-delete them, but we need
+      // to prevent stale retry attempts and clear local cache to avoid 404s.
+      const descendantDocIds = getDescendantDocumentIds(get().tree, id)
+      for (const docId of descendantDocIds) {
+        cancelRetry(docId)
+        await db.documents.delete(docId)
+      }
+
       await api.folders.delete(id)
       // Reload tree to reflect deletion
       await useTreeStore.getState().loadTree(projectId)
@@ -337,5 +358,41 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
         status: tree.length > 0 ? 'success' : state.status,
       }
     })
+  },
+
+  // Multi-select actions
+  toggleSelection: (id) => {
+    set((state) => {
+      const selected = new Set(state.selectedIds)
+      if (selected.has(id)) {
+        selected.delete(id)
+      } else {
+        selected.add(id)
+      }
+      return { selectedIds: selected }
+    })
+  },
+
+  selectAll: () => {
+    set((state) => {
+      // Helper to recursively collect all node IDs from tree
+      const collectIds = (nodes: TreeNode[]): string[] => {
+        const ids: string[] = []
+        for (const node of nodes) {
+          ids.push(node.id)
+          if (node.type === 'folder' && node.children) {
+            ids.push(...collectIds(node.children))
+          }
+        }
+        return ids
+      }
+
+      const allIds = collectIds(state.tree)
+      return { selectedIds: new Set(allIds) }
+    })
+  },
+
+  clearSelection: () => {
+    set({ selectedIds: new Set() })
   },
 }))

@@ -1,72 +1,42 @@
-import { useRef, useEffect } from 'react'
-import { cn } from '@/lib/utils'
+import { InlineEditor } from '@/shared/components/InlineEditor'
 
 interface ThreadTitleEditorProps {
   initialValue: string
   onSubmit: (title: string) => void
   onCancel: () => void
-  className?: string
+  widthClass?: string
 }
 
 /**
  * Inline input for editing thread titles.
  *
- * Single Responsibility: Handles text input with keyboard shortcuts.
- * - Enter: Submit if valid (non-empty, different from initial)
- * - Escape: Cancel
- * - Blur: Submit if valid, cancel otherwise
+ * Wrapper around shared InlineEditor component with thread-specific defaults:
+ * - Medium font weight (500) for header/list prominence
+ * - Allows duplicates (threads can have same titles)
+ * - No validation beyond empty check
  *
- * Used by: ThreadListItem (sidebar), ThreadHeader (center panel)
+ * Visual upgrade from previous underline implementation:
+ * - Box border with rounded-sm (more crafted feel)
+ * - Focus ring for clear affordance
+ * - Hover-reveal Check/Cancel buttons
+ *
+ * Usage: ThreadListItem (sidebar), ThreadHeader (center panel)
  */
 export function ThreadTitleEditor({
   initialValue,
   onSubmit,
   onCancel,
-  className,
+  widthClass,
 }: ThreadTitleEditorProps) {
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  // Auto-focus and select all text on mount
-  useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.focus()
-      inputRef.current.select()
-    }
-  }, [])
-
-  const handleSubmit = () => {
-    const trimmed = inputRef.current?.value.trim() || ''
-    if (trimmed && trimmed !== initialValue) {
-      onSubmit(trimmed)
-    } else {
-      onCancel()
-    }
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      handleSubmit()
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      onCancel()
-    }
-  }
-
   return (
-    <input
-      ref={inputRef}
-      type="text"
-      defaultValue={initialValue}
-      onKeyDown={handleKeyDown}
-      onBlur={handleSubmit}
-      onClick={(e) => e.stopPropagation()}
-      className={cn(
-        'w-full bg-transparent outline-none',
-        'border-b border-primary focus:border-primary',
-        'font-medium',
-        className
-      )}
+    <InlineEditor
+      value={initialValue}
+      onSubmit={onSubmit}
+      onCancel={onCancel}
+      fontWeight="medium"
+      allowDuplicates
+      widthClass={widthClass}
+      className="h-7 text-sm"
     />
   )
 }

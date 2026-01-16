@@ -1,18 +1,13 @@
 import { useState } from 'react'
-import { ChevronDown } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import type { Thread } from '@/features/threads/types'
 import { useUIStore } from '@/core/stores/useUIStore'
-import { Button } from '@/shared/components/ui/button'
 import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
 import { MobileNavButton } from '@/shared/components/layout/MobileNavButton'
-import { ThreadBreadcrumb } from './ThreadBreadcrumb'
-import { ThreadTitleMenu } from './ThreadTitleMenu'
-import { ThreadTitleEditor } from './ThreadTitleEditor'
+import { ProgressiveBreadcrumb } from './ProgressiveBreadcrumb'
 
 interface ThreadHeaderProps {
   thread?: Thread | null
-  projectName?: string | null
   onRename?: (title: string) => void
   onDelete?: () => void
 }
@@ -25,7 +20,6 @@ interface ThreadHeaderProps {
  */
 export function ThreadHeader({
   thread,
-  projectName,
   onRename,
   onDelete,
 }: ThreadHeaderProps) {
@@ -49,7 +43,7 @@ export function ThreadHeader({
   const threadTitle = thread?.title || null
 
   return (
-    <div className="thread-main-header h-10 px-2 sm:h-12 sm:px-3 flex items-center justify-between">
+    <div className="flex items-center justify-between px-2 sm:px-3 h-[var(--thread-header-height)]">
       <div className="flex items-center gap-2 min-w-0 flex-1">
         {/* Mobile: Navigate to Thread List */}
         <MobileNavButton
@@ -62,37 +56,18 @@ export function ThreadHeader({
           <SidebarToggle side="left" className="shrink-0" />
         )}
 
-        <div className="min-w-0 flex-1 flex items-center gap-1">
-          {isRenaming && thread ? (
-            <ThreadTitleEditor
-              initialValue={thread.title}
-              onSubmit={handleRenameSubmit}
-              onCancel={handleRenameCancel}
-              className="text-sm"
-            />
-          ) : (
-            <>
-              <ThreadBreadcrumb projectName={projectName} threadTitle={threadTitle} />
-              {thread && (onRename || onDelete) && (
-                <ThreadTitleMenu
-                  trigger={
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      className="shrink-0"
-                      aria-label="Thread options"
-                    >
-                      <ChevronDown className="size-3" />
-                    </Button>
-                  }
-                  onRename={onRename ? () => setIsRenaming(true) : undefined}
-                  onDelete={onDelete}
-                  align="start"
-                />
-              )}
-            </>
-          )}
-        </div>
+        {/* Thread title breadcrumb - single source of truth for view and edit modes */}
+        {thread && (
+          <ProgressiveBreadcrumb
+            threadTitle={threadTitle}
+            isEditing={isRenaming}
+            onStartEdit={() => setIsRenaming(true)}
+            onSubmitEdit={handleRenameSubmit}
+            onCancelEdit={handleRenameCancel}
+            onRename={onRename ? () => setIsRenaming(true) : undefined}
+            onDelete={onDelete}
+          />
+        )}
       </div>
 
       <div className="flex items-center gap-1 shrink-0">

@@ -4,6 +4,7 @@ import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
+import { useTreeSelection } from '../hooks/useTreeSelection'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +19,12 @@ import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
 import { MobileNavButton } from '@/shared/components/layout/MobileNavButton'
 import { CompactBreadcrumb } from '@/shared/components/ui/CompactBreadcrumb'
 import { useUIStore } from '@/core/stores/useUIStore'
+import { BatchActionsBar } from './BatchActionsBar'
+import { useTreeStore } from '@/core/stores/useTreeStore'
+import { BulkDeleteOperation } from '../operations/bulkDelete'
+import type { TreeNode } from '@/core/lib/treeBuilder'
+import { canonicalizeSelection } from '@/core/lib/treeUtils'
+import type { BulkOperation } from '../operations/types'
 
 interface DocumentTreePanelProps {
   children: ReactNode
@@ -28,6 +35,12 @@ interface DocumentTreePanelProps {
   onSearch?: (query: string) => void
   isEmpty?: boolean
   title?: string
+  projectId: string
+  onBulkOperationComplete?: () => void
+  // Safe delete callbacks from useResourceOperations
+  // Handle navigation-away, cache cleanup, and retry cancellation
+  deleteDocument: (id: string) => Promise<void>
+  deleteFolder: (id: string) => Promise<void>
 }
 
 /**
@@ -44,11 +57,32 @@ export function DocumentTreePanel({
   onSearch,
   isEmpty = false,
   title,
+  projectId,
+  onBulkOperationComplete,
+  deleteDocument,
+  deleteFolder,
 }: DocumentTreePanelProps) {
   const setMobileActivePanel = useUIStore((s) => s.setMobileActivePanel)
+  const { selectedIds } = useTreeSelection()
+  const tree = useTreeStore((s) => s.tree)
   const [searchQuery, setSearchQuery] = useState('')
   const [isDragOver, setIsDragOver] = useState(false)
   const [pendingRootAction, setPendingRootAction] = useState<(() => void) | null>(null)
+
+  // Get canonicalized selection: only items where no ancestor is also selected.
+  // This prevents double-counting and 404 errors when bulk deleting a folder
+  // and its contents (the folder delete will cascade to children).
+  const getSelectedItems = (): TreeNode[] => {
+    return canonicalizeSelection(tree, selectedIds)
+  }
+
+  // Register bulk operations
+  const bulkOperations: BulkOperation[] = [
+    new BulkDeleteOperation(),
+    // Add more operations here as they're implemented
+  ]
+
+  const selectedItems = getSelectedItems()
 
   const handleSearchChange = (value: string) => {
     setSearchQuery(value)
@@ -109,7 +143,7 @@ export function DocumentTreePanel({
         </div>
 
         {/* Sticky Search Bar */}
-        <div className="sticky top-12 z-10 flex items-center gap-2 px-2 py-1 bg-background relative">
+        <div className="sticky top-12 z-10 flex items-center gap-2 px-2 py-1.5 bg-background relative">
           <Input
             type="search"
             placeholder="Search documents..."
@@ -121,7 +155,7 @@ export function DocumentTreePanel({
           <DropdownMenu onOpenChange={handleRootMenuOpenChange}>
             <DropdownMenuTrigger asChild>
               <Button size="icon" aria-label="Create new item">
-                <Plus className="size-3" />
+                <Plus className="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" onCloseAutoFocus={(e) => e.preventDefault()}>
@@ -187,6 +221,22 @@ export function DocumentTreePanel({
           </TreeItemWithContextMenu>
         )}
       </div>
+
+      {/* Batch Actions Bar - shown when items are selected */}
+      {selectedItems.length > 0 && (
+        <BatchActionsBar
+          operations={bulkOperations}
+          selectedItems={selectedItems}
+          context={{
+            projectId,
+            deleteDocument,
+            deleteFolder,
+          }}
+          onComplete={() => {
+            onBulkOperationComplete?.()
+          }}
+        />
+      )}
     </div>
   )
 }

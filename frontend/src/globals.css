@@ -445,6 +445,16 @@
   [role="menuitem"][aria-disabled="true"] {
     cursor: not-allowed;
   }
+
+  /* Thread header height - responsive, single source of truth */
+  :root {
+    --thread-header-height: 2.5rem; /* 40px = h-10 */
+  }
+  @media (min-width: 640px) {
+    :root {
+      --thread-header-height: 3rem; /* 48px = h-12 = sm:h-12 */
+    }
+  }
 }
 
 /* Prevent animations during initial page load / hydration */
@@ -553,10 +563,6 @@ body.preload * {
 
   .thread-main {
     @apply flex h-full flex-col bg-background min-w-0 relative;
-  }
-
-  .thread-main-header {
-    @apply flex items-center justify-between px-4 py-2;
   }
 
   /* Thread text scaling for mobile - prevents iOS zoom and maintains consistency */

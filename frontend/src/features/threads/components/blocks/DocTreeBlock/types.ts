@@ -5,6 +5,9 @@
  * We hydrate the tree store from this data so FolderTreeView can render it.
  */
 
+// Re-export shared types for backwards compatibility
+export type { DocTreeDocument, DocTreeFolder } from '@/types/docTree'
+
 // =============================================================================
 // INPUT TYPES
 // =============================================================================
@@ -20,24 +23,8 @@ export interface DocTreeInput {
 // RESULT TYPES (Nested structure from backend)
 // =============================================================================
 
-/** Document info in tool result (subset of full Document type) */
-export interface DocTreeDocument {
-  id: string
-  /** Full name with extension (e.g., "README.md") */
-  name: string
-  /** File extension with dot (e.g., ".md") */
-  extension: string
-  word_count: number
-  updated_at: string
-}
-
-/** Folder info in tool result (recursive structure) */
-export interface DocTreeFolder {
-  id: string
-  name: string
-  folders: DocTreeFolder[]
-  documents: DocTreeDocument[]
-}
+// Import for use in DocTreeResult
+import type { DocTreeFolder, DocTreeDocument } from '@/types/docTree'
 
 export interface DocTreeResult {
   type: 'tree'

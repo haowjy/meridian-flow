@@ -71,6 +71,8 @@ export interface Turn {
   lastAccessedAt?: Date
   /** Original request params used for this turn (provider, model, thinking, etc.) */
   requestParams?: RequestParams | null
+  /** Response metadata from the LLM provider (upstream_provider, stop_reason, cache tokens, etc.) */
+  responseMetadata?: Record<string, unknown>
 }
 
 /**
