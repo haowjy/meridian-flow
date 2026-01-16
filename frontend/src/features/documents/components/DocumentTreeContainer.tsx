@@ -11,6 +11,7 @@ import { getErrorMessageWithFallback } from '@/core/lib/errors'
 import { DocumentTreePanel } from './DocumentTreePanel'
 import { FolderTreeItem } from './FolderTreeItem'
 import { DocumentTreeItem } from './DocumentTreeItem'
+import { SelectableTreeItem } from './SelectableTreeItem'
 import { ImportDocumentDialog } from './ImportDocumentDialog'
 import { DeleteFolderDialog } from './DeleteFolderDialog'
 import { Skeleton } from '@/shared/components/ui/skeleton'
@@ -373,6 +374,15 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
   }
 
   // Render tree recursively
+  // Helper functions for folder metadata
+  const countDocuments = (children?: TreeNode[]): number => {
+    return children?.filter(c => c.type === 'document').length || 0
+  }
+
+  const countFolders = (children?: TreeNode[]): number => {
+    return children?.filter(c => c.type === 'folder').length || 0
+  }
+
   const renderTree = (nodes: TreeNode[], parentId: string | null = null) => {
     // Compute sibling names for duplicate validation
     const siblingNames = nodes.map((n) => n.data.name)
@@ -385,45 +395,55 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
         // Check if there's a pending item inside this folder
         const hasPendingChild = pendingItem?.parentId === node.id
 
+        // Calculate folder metadata
+        const childCount = node.children?.length || 0
+        const documentCount = countDocuments(node.children)
+        const folderCount = countFolders(node.children)
+
         return (
-          <FolderTreeItem
-            key={node.id}
-            folder={node.data}
-            isExpanded={isExpanded || hasPendingChild}
-            onToggle={() => toggleFolder(node.id)}
-            onCreateDocument={() => handleCreateDocumentInFolderInline(node.id)}
-            onCreateFolder={() => handleCreateFolderInFolderInline(node.id)}
-            onImport={() => handleImportInFolder(node.id)}
-            onRename={() => startRenameFolder(node.id)}
-            onDelete={() => handleDeleteFolder(node.data)}
-            isEditing={isEditingFolder}
-            onSubmitName={(name) => handleRenameFolderInline(node.id, name)}
-            onCancelEdit={handleCancelEdit}
-            existingNames={siblingNames}
-          >
-            {/* Render pending item first if inside this folder */}
-            {renderPendingItem(node.id, node.children ? getNodeNames(node.children) : [])}
-            {node.children && node.children.length > 0 && (
-              <>{renderTree(node.children, node.id)}</>
-            )}
-          </FolderTreeItem>
+          <SelectableTreeItem key={node.id} id={node.id}>
+            <FolderTreeItem
+              folder={node.data}
+              isExpanded={isExpanded || hasPendingChild}
+              onToggle={() => toggleFolder(node.id)}
+              onCreateDocument={() => handleCreateDocumentInFolderInline(node.id)}
+              onCreateFolder={() => handleCreateFolderInFolderInline(node.id)}
+              onImport={() => handleImportInFolder(node.id)}
+              onRename={() => startRenameFolder(node.id)}
+              onDelete={() => handleDeleteFolder(node.data)}
+              isEditing={isEditingFolder}
+              onSubmitName={(name) => handleRenameFolderInline(node.id, name)}
+              onCancelEdit={handleCancelEdit}
+              existingNames={siblingNames}
+              childCount={childCount}
+              documentCount={documentCount}
+              folderCount={folderCount}
+            >
+              {/* Render pending item first if inside this folder */}
+              {renderPendingItem(node.id, node.children ? getNodeNames(node.children) : [])}
+              {node.children && node.children.length > 0 && (
+                <>{renderTree(node.children, node.id)}</>
+              )}
+            </FolderTreeItem>
+          </SelectableTreeItem>
         )
       } else {
         const isEditingDocument = editingItem?.type === 'document' && editingItem.id === node.id
 
         return (
-          <DocumentTreeItem
-            key={node.id}
-            document={node.data}
-            isActive={activeDocumentId === node.id}
-            onClick={() => handleDocumentClick(node.id)}
-            onRename={() => startRenameDocument(node.id)}
-            onDelete={() => handleDeleteDocument(node.id)}
-            isEditing={isEditingDocument}
-            onSubmitName={(name) => handleRenameDocumentInline(node.id, name)}
-            onCancelEdit={handleCancelEdit}
-            existingNames={siblingNames}
-          />
+          <SelectableTreeItem key={node.id} id={node.id}>
+            <DocumentTreeItem
+              document={node.data}
+              isActive={activeDocumentId === node.id}
+              onClick={() => handleDocumentClick(node.id)}
+              onRename={() => startRenameDocument(node.id)}
+              onDelete={() => handleDeleteDocument(node.id)}
+              isEditing={isEditingDocument}
+              onSubmitName={(name) => handleRenameDocumentInline(node.id, name)}
+              onCancelEdit={handleCancelEdit}
+              existingNames={siblingNames}
+            />
+          </SelectableTreeItem>
         )
       }
     })
@@ -467,6 +487,10 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
         onImport={handleImportRoot}
         onSearch={setSearchQuery}
         isEmpty={false}
+        projectId={projectId}
+        onBulkOperationComplete={() => loadTree(projectId)}
+        deleteDocument={deleteDocument}
+        deleteFolder={deleteFolder}
       >
         <ErrorPanel
           title="Failed to load documents"
@@ -497,6 +521,10 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
         onFileDrop={handleFileDrop}
         onSearch={setSearchQuery}
         isEmpty={isEmpty}
+        projectId={projectId}
+        onBulkOperationComplete={() => loadTree(projectId)}
+        deleteDocument={deleteDocument}
+        deleteFolder={deleteFolder}
       >
         {hasOperationError && (
           <div className="mb-2">

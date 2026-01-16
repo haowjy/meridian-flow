@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { useTurnsForThread } from '@/features/threads/hooks/useTurnsForThread'
@@ -14,7 +14,33 @@ import { ScrollToBottomButton } from './ScrollToBottomButton'
 import { useStreamingAutoScroll } from '@/features/threads/hooks/useStreamingAutoScroll'
 import { UserMessageSkeleton } from './skeletons/UserMessageSkeleton'
 import { AIMessageSkeleton } from './skeletons/AIMessageSkeleton'
-import { useProjectStore } from '@/core/stores/useProjectStore'
+
+/**
+ * Measures an element's height via callback ref, only updating state when changed.
+ * Prevents unnecessary re-renders that can cause scroll position issues.
+ *
+ * @param threshold - Minimum height change (in px) to trigger state update.
+ *                    Defaults to 2px to ignore micro layout shifts from focus rings,
+ *                    sub-pixel rendering differences, etc.
+ */
+function useElementHeight(threshold = 2) {
+  const [height, setHeight] = useState(0)
+  const heightRef = useRef(0) // Track current height without causing re-renders
+
+  const ref = useCallback((node: HTMLDivElement | null) => {
+    if (node) {
+      const measured = node.getBoundingClientRect().height
+      // Only update if change exceeds threshold to prevent scroll jumps
+      // from micro layout shifts (focus rings, sub-pixel differences)
+      if (Math.abs(measured - heightRef.current) > threshold) {
+        heightRef.current = measured
+        setHeight(measured)
+      }
+    }
+  }, [threshold])
+
+  return [height, ref] as const
+}
 
 interface ActiveThreadViewProps {
   /** Project ID passed directly from route - avoids async store race condition */
@@ -52,31 +78,14 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
     deleteThread: s.deleteThread,
   })))
 
-  // Only need projectName for display - projectId comes from prop (avoids async race)
-  const projectName = useProjectStore((state) => {
-    const project = state.projects.find((p) => p.id === projectId)
-    return project?.name ?? null
-  })
 
   // Callback ref pattern: useState triggers re-render when element is assigned,
   // allowing effects to run with the actual element (useRef doesn't trigger re-renders)
   const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(null)
 
-  // Measure header and input heights for scroll-padding and content min-height calculation
-  const [headerHeight, setHeaderHeight] = useState(0)
-  const [inputHeight, setInputHeight] = useState(0)
-
-  const headerRef = useCallback((node: HTMLDivElement | null) => {
-    if (node) {
-      setHeaderHeight(node.offsetHeight)
-    }
-  }, [])
-
-  const inputRef = useCallback((node: HTMLDivElement | null) => {
-    if (node) {
-      setInputHeight(node.offsetHeight)
-    }
-  }, [])
+  // Measure input height for content minHeight calculation.
+  // Header height is a CSS variable (--thread-header-height) - no measurement needed.
+  const [inputHeight, inputRef] = useElementHeight()
 
   // Always call hooks unconditionally to respect Rules of Hooks.
   useThreadSSE()
@@ -133,20 +142,28 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
   }, [activeThread, deleteThread])
 
   // Cold start: no thread selected but projectId available
-  // Uses simpler flex layout without scroll container (no scrolling needed)
+  // Uses sticky header inside scroll container
   if (!activeThread) {
     return (
       <div className="thread-main">
-        {/* Header - not sticky, just at top */}
-        <div className="bg-background relative">
-          <ThreadHeader thread={null} projectName={projectName} />
-          <HeaderGradientFade />
-        </div>
+        <div
+          className="h-full overflow-y-auto scroll-pt-[var(--thread-header-height)]"
+          style={{
+            scrollPaddingBottom: `${inputHeight}px`,
+            overflowAnchor: 'none', // Disable browser scroll anchoring to prevent scroll jumps during header edits
+          }}
+        >
+          {/* Sticky header at top of scroll container */}
+          <div className="sticky top-0 z-10 bg-background">
+            <ThreadHeader thread={null} />
+            <HeaderGradientFade />
+          </div>
 
-        {/* Content fills remaining space - flex-1 works because thread-main is flex col */}
-        <div className="flex-1 flex flex-col min-w-0 pt-3">
-          {/* Welcome centered in available space */}
-          <div className="flex-1 flex items-center justify-center">
+          {/* Welcome message centered */}
+          <div
+            className="flex-1 flex items-center justify-center pt-3"
+            style={{ minHeight: `calc(100% - var(--thread-header-height) - ${inputHeight}px)` }}
+          >
             <div className="text-center text-muted-foreground">
               <Sparkles className="mx-auto mb-2 size-6" />
               <p>Start a new thread</p>
@@ -154,7 +171,7 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
           </div>
 
           {/* Input at bottom */}
-          <div className="bg-background">
+          <div ref={inputRef} className="bg-background">
             <TurnInput
               projectId={projectId}
               focusKey={`${activeThreadId ?? 'none'}:${threadFocusVersion}`}
@@ -167,31 +184,30 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
 
   return (
     <div className="thread-main">
-      {/* Single scroll container - scrollbar extends to top */}
+      {/* Single scroll container with everything inside */}
       <div
         ref={setScrollContainer}
-        className="flex-1 overflow-y-auto overflow-x-hidden min-h-0"
+        className="h-full overflow-y-auto overflow-x-hidden scroll-pt-[var(--thread-header-height)]"
         style={{
-          scrollPaddingTop: `${headerHeight}px`,
           scrollPaddingBottom: `${inputHeight}px`,
+          overflowAnchor: 'none', // Disable browser scroll anchoring to prevent scroll jumps during header edits
         }}
       >
-        {/* Sticky header INSIDE scroll */}
-        <div ref={headerRef} className="sticky top-0 z-10 bg-background relative">
+        {/* Sticky header at top of scroll container */}
+        <div className="sticky top-0 z-10 bg-background">
           <ThreadHeader
             thread={activeThread}
-            projectName={projectName}
             onRename={handleRename}
             onDelete={() => setShowDeleteDialog(true)}
           />
           <HeaderGradientFade />
         </div>
 
-        {/* Content wrapper - calc-based min-height accounts for header/input */}
+        {/* Content wrapper - calc-based min-height accounts for header and input */}
         <div
           className="relative min-w-0 flex flex-col pt-3"
           style={{
-            minHeight: `calc(100% - ${headerHeight}px - ${inputHeight}px)`,
+            minHeight: `calc(100% - var(--thread-header-height) - ${inputHeight}px)`,
           }}
         >
           {/* Show skeleton thread for cold loads (no cached turns) */}
@@ -216,7 +232,7 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
           )}
         </div>
 
-        {/* Sticky input INSIDE scroll at bottom */}
+        {/* Sticky input at bottom of scroll container */}
         <div ref={inputRef} className="sticky bottom-0 bg-background relative">
           {/* Floating scroll-to-bottom button - positioned above input */}
           <ScrollToBottomButton visible={showScrollButton} onClick={scrollToBottom} />

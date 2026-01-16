@@ -5,6 +5,7 @@ export interface BreadcrumbSegment {
     label: string
     onClick?: () => void
     title?: string
+    className?: string
 }
 
 type SingleSegmentVariant = 'last' | 'nonLast'
@@ -63,7 +64,8 @@ export function CompactBreadcrumb({ segments, className, singleSegmentVariant = 
                                 onClick={segment.onClick}
                                 className={cn(
                                     "cursor-pointer truncate hover:underline focus-visible:underline focus:outline-none",
-                                    segmentTone
+                                    segmentTone,
+                                    segment.className
                                 )}
                                 title={segment.title}
                             >
@@ -71,7 +73,7 @@ export function CompactBreadcrumb({ segments, className, singleSegmentVariant = 
                             </button>
                         ) : (
                             <span
-                                className={cn("truncate", segmentTone)}
+                                className={cn("truncate", segmentTone, segment.className)}
                                 title={segment.title}
                             >
                                 {segment.label}

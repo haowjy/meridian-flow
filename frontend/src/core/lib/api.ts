@@ -225,6 +225,7 @@ type TurnDto = {
   blocks?: TurnBlockDto[]
   sibling_ids?: string[]
   request_params?: Record<string, unknown> | null
+  response_metadata?: Record<string, unknown> | null
 }
 
 /**
@@ -259,6 +260,7 @@ function turnDtoToTurn(turn: TurnDto): Turn {
     blocks,
     siblingIds: turn.sibling_ids ?? [],
     requestParams: turn.request_params as import('@/features/threads/types').RequestParams | undefined,
+    responseMetadata: turn.response_metadata as Record<string, unknown> | undefined,
   }
 }
 

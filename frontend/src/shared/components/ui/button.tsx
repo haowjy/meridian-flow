@@ -16,9 +16,9 @@ const buttonVariants = cva(
           "focus-visible:shadow-[0_0_0_2px_var(--focus-ring-inner)] " +
           "disabled:opacity-[--opacity-disabled]",
 
-        // Accent: Gold outline on jade-black (dark mode pattern can work in light too)
+        // Accent: Background with accent color text
         accent:
-          "border-2 border-accent text-accent hover:bg-accent/[--opacity-hover] " +
+          "bg-accent/10 text-accent hover:bg-accent/20 " +
           "focus-visible:outline-[3px] focus-visible:outline-[var(--focus-ring-outer)] focus-visible:outline-offset-2 " +
           "focus-visible:shadow-[0_0_0_2px_var(--focus-ring-inner)] " +
           "disabled:opacity-[--opacity-disabled]",

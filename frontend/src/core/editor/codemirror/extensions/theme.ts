@@ -60,7 +60,7 @@ export const livePreviewTheme = EditorView.theme({
     lineHeight: '1.6',
   },
   '.cm-cursor': {
-    borderLeftColor: 'var(--theme-accent, #d97706)',
+    borderLeftColor: 'var(--theme-text, #2C2418)',
     borderLeftWidth: '2px',
   },
   '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
@@ -135,7 +135,7 @@ export const livePreviewTheme = EditorView.theme({
 
   // Blockquotes
   '.cm-blockquote': {
-    borderLeft: '3px solid var(--theme-accent, #d97706)',
+    borderLeft: '3px solid var(--theme-border, #E5DFD4)',
     paddingLeft: '1em',
     color: 'var(--theme-text-muted, #78716c)',
     fontStyle: 'italic',

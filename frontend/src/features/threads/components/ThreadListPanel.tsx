@@ -44,10 +44,11 @@ export function ThreadListPanel({ projectId }: ThreadListPanelProps) {
     renameThread: s.renameThread,
   })))
 
-  const { activeThreadId, setActiveThread, bumpThreadFocusVersion } = useUIStore(useShallow((s) => ({
+  const { activeThreadId, setActiveThread, bumpThreadFocusVersion, setMobileActivePanel } = useUIStore(useShallow((s) => ({
     activeThreadId: s.activeThreadId,
     setActiveThread: s.setActiveThread,
     bumpThreadFocusVersion: s.bumpThreadFocusVersion,
+    setMobileActivePanel: s.setMobileActivePanel,
   })))
 
   // User profile for bottom menu
@@ -77,6 +78,7 @@ export function ThreadListPanel({ projectId }: ThreadListPanelProps) {
 
   const handleSelectThread = (threadId: string) => {
     setActiveThread(threadId)
+    setMobileActivePanel('activeThread') // Navigate to thread view on mobile
     // Actual turns/streaming load lives in center/ActiveThreadView, not here.
   }
 

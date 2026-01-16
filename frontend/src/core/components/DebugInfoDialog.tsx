@@ -73,13 +73,12 @@ export function TurnDebugDialog({ isOpen, onClose, turn }: TurnDebugDialogProps)
           {/* Token Details */}
           <Section title="Tokens">
             <Row label="Model" value={turn.model ?? '—'} />
-            {turn.responseMetadata?.upstream_provider && (
-              <Row
-                label="Upstream"
-                value={String(turn.responseMetadata.upstream_provider)}
-                mono
-              />
-            )}
+            {(() => {
+              const upstreamProvider = turn.responseMetadata?.upstream_provider
+              return upstreamProvider ? (
+                <Row label="Upstream" value={String(upstreamProvider)} mono />
+              ) : null
+            })()}
             <Row label="Input" value={formatNumber(turn.inputTokens)} mono />
             <Row label="Output" value={formatNumber(turn.outputTokens)} mono />
             <Row label="Total" value={formatNumber(totalTokens)} mono />

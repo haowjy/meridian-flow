@@ -90,14 +90,13 @@ export function ThreadListItem({
         isDisabled && 'opacity-60 pointer-events-none'
       )}
     >
-      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+      <div className="flex flex-1 flex-col min-w-0">
         {isRenaming ? (
           <ThreadTitleEditor
             key={`rename-${thread.id}`}
             initialValue={thread.title || ''}
             onSubmit={handleRenameSubmit}
             onCancel={handleRenameCancel}
-            className="text-sm font-medium"
           />
         ) : (
           <span className="truncate font-medium">
