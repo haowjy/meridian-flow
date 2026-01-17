@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useRef } from 'react'
+import { ReactNode, useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/shared/components/ui/resizable'
 import type { ImperativePanelHandle } from 'react-resizable-panels'
@@ -41,6 +41,9 @@ export function PanelLayout({
   const leftRef = useRef<ImperativePanelHandle | null>(null)
   const rightRef = useRef<ImperativePanelHandle | null>(null)
   const isDraggingRef = useRef(false)
+  // Track resizing state for conditional animations - only animate when NOT dragging
+  // This prevents CSS transitions from interfering with manual drag operations
+  const [isResizing, setIsResizing] = useState(false)
 
   useEffect(() => {
     // Skip imperative calls during active drag to prevent race condition
@@ -66,7 +69,7 @@ export function PanelLayout({
           id="workspace-panel-left"
           order={1}
           ref={leftRef}
-          className="workspace-panel-left"
+          className={cn('workspace-panel-left', !isResizing && 'transition-all duration-200 ease-out')}
           collapsible
           collapsedSize={0}
           minSize={12}
@@ -85,6 +88,7 @@ export function PanelLayout({
           className="after:!bg-sidebar-border"
           onDragging={(isDragging) => {
             isDraggingRef.current = isDragging
+            setIsResizing(isDragging)
           }}
         />
 
@@ -103,6 +107,7 @@ export function PanelLayout({
         <ResizableHandle
           onDragging={(isDragging) => {
             isDraggingRef.current = isDragging
+            setIsResizing(isDragging)
           }}
         />
 
@@ -111,7 +116,7 @@ export function PanelLayout({
           id="workspace-panel-right"
           order={3}
           ref={rightRef}
-          className="workspace-panel-right"
+          className={cn('workspace-panel-right', !isResizing && 'transition-all duration-200 ease-out')}
           collapsible
           collapsedSize={0}
           minSize={16}

@@ -155,7 +155,7 @@ export function DocumentTreePanel({
           <DropdownMenu onOpenChange={handleRootMenuOpenChange}>
             <DropdownMenuTrigger asChild>
               <Button size="icon" aria-label="Create new item">
-                <Plus className="size-4" />
+                <Plus className="size-4 md:size-3" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" onCloseAutoFocus={(e) => e.preventDefault()}>

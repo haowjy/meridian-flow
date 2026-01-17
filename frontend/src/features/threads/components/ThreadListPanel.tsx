@@ -1,16 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useShallow } from 'zustand/react/shallow'
 import { Plus } from 'lucide-react'
 import { useThreadStore } from '@/core/stores/useThreadStore'
 import { useUIStore } from '@/core/stores/useUIStore'
+import { useLoadingView } from '@/core/hooks'
 import { useThreadsForProject } from '@/features/threads/hooks/useThreadsForProject'
 import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { Button } from '@/shared/components/ui/button'
 import { ThreadListHeader } from './ThreadListHeader'
 import { ThreadList } from './ThreadList'
 import { ThreadListEmpty } from './ThreadListEmpty'
-import { ThreadListItemSkeleton } from './ThreadListItemSkeleton'
 import { DeleteThreadDialog } from './DeleteThreadDialog'
 import { useUserProfile, useAuthActions, UserMenuButton } from '@/features/auth'
 import type { Thread } from '@/features/threads/types'
@@ -32,7 +32,7 @@ interface ThreadListPanelProps {
 export function ThreadListPanel({ projectId }: ThreadListPanelProps) {
   const navigate = useNavigate()
   const { threads, status, isLoading } = useThreadsForProject(projectId)
-  const [showSkeleton, setShowSkeleton] = useState(false)
+  const view = useLoadingView({ status, hasData: threads.length > 0 })
 
   // State for delete dialog and rename mode
   const [threadToDelete, setThreadToDelete] = useState<Thread | null>(null)
@@ -54,20 +54,6 @@ export function ThreadListPanel({ projectId }: ThreadListPanelProps) {
   // User profile for bottom menu
   const { profile, status: profileStatus } = useUserProfile()
   const { signOut } = useAuthActions()
-
-  // Skeleton delay: only show skeleton after 150ms if still loading
-  useEffect(() => {
-    let timer: NodeJS.Timeout | null = null
-
-    if (status === 'loading') {
-      timer = setTimeout(() => setShowSkeleton(true), 150)
-    }
-
-    return () => {
-      if (timer) clearTimeout(timer)
-      setShowSkeleton(false)
-    }
-  }, [status])
 
   const handleNewThread = () => {
     // Clear active thread to show cold start UI - thread is created atomically with first message
@@ -120,8 +106,6 @@ export function ThreadListPanel({ projectId }: ThreadListPanelProps) {
     }
   }
 
-  const hasThreads = threads.length > 0
-
   const handleBrandClick = () => {
     navigate({ to: '/projects' })
   }
@@ -151,14 +135,7 @@ export function ThreadListPanel({ projectId }: ThreadListPanelProps) {
 
         {/* Thread List Content */}
         <div className="thread-pane-body pt-3">
-          {/* Show skeleton only for true cold loads (no cached threads) */}
-          {status === 'loading' && showSkeleton ? (
-            <div className="thread-pane-scroll p-2 space-y-1">
-              <ThreadListItemSkeleton />
-              <ThreadListItemSkeleton />
-              <ThreadListItemSkeleton />
-            </div>
-          ) : hasThreads ? (
+          {view === 'content' && (
             <ThreadList
               threads={threads}
               activeThreadId={activeThreadId}
@@ -170,7 +147,8 @@ export function ThreadListPanel({ projectId }: ThreadListPanelProps) {
               onRenameCancel={handleRenameCancel}
               onDelete={handleDeleteClick}
             />
-          ) : (
+          )}
+          {view === 'empty' && (
             <ThreadListEmpty onNewThread={handleNewThread} />
           )}
         </div>

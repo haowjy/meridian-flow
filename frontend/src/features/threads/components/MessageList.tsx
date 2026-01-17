@@ -8,6 +8,8 @@ interface TurnListProps {
   turns: Turn[]
   scrollToTurnId?: string | null
   isLoading?: boolean
+  /** Called after initial scroll completes - use to reveal content that was rendering invisibly */
+  onScrollComplete?: () => void
 }
 
 /**
@@ -20,7 +22,7 @@ interface TurnListProps {
  *
  * Note: Parent (ActiveThreadView) handles scrolling - this component just renders content.
  */
-export function TurnList({ turns, scrollToTurnId, isLoading }: TurnListProps) {
+export function TurnList({ turns, scrollToTurnId, isLoading, onScrollComplete }: TurnListProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
   useTurnListAutoScroll({
@@ -28,6 +30,7 @@ export function TurnList({ turns, scrollToTurnId, isLoading }: TurnListProps) {
     turns,
     scrollToTurnId,
     isLoading,
+    onScrollComplete,
   })
 
   return (

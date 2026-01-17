@@ -21,7 +21,6 @@ import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { CodeMirrorEditor, EditorContextMenu, type CodeMirrorEditorRef } from '@/core/editor/codemirror'
 import { useEditorStore } from '@/core/stores/useEditorStore'
 import { EditorHeader } from './EditorHeader'
-import { Skeleton } from '@/shared/components/ui/skeleton'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { InlineError } from '@/shared/components/InlineError'
 import { useTreeStore } from '@/core/stores/useTreeStore'
@@ -232,18 +231,7 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   // ---------------------------------------------------------------------------
 
   if (!headerDocument) {
-    return (
-      <div className="flex h-full flex-col">
-        <div className="px-3 py-2">
-          <Skeleton className="h-8 w-48" />
-        </div>
-        <div className="flex-1 p-8 space-y-4">
-          <Skeleton className="h-6 w-3/4" />
-          <Skeleton className="h-6 w-full" />
-          <Skeleton className="h-6 w-5/6" />
-        </div>
-      </div>
-    )
+    return <div className="flex h-full flex-col" />
   }
 
   const isContentLoading = activeDocument?.id !== documentId || !isInitialized
@@ -276,11 +264,7 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
         {/* Content area */}
         <div className="relative flex-1">
           {isContentLoading ? (
-            <div className="p-8 space-y-4">
-              <Skeleton className="h-6 w-3/4" />
-              <Skeleton className="h-6 w-full" />
-              <Skeleton className="h-6 w-5/6" />
-            </div>
+            <div className="flex-1" />
           ) : (
             // eslint-disable-next-line react-hooks/refs -- editorRef is stable, passed for context menu operations
             <EditorContextMenu editorRef={editorRef.current}>
