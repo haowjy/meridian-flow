@@ -1,6 +1,10 @@
 import { PanelLeft, PanelRight } from 'lucide-react'
 import { Button } from '@/shared/components/ui/button'
-import { useUIStore } from '@/core/stores/useUIStore'
+import {
+  useUIStore,
+  selectEffectiveLeftCollapsed,
+  selectEffectiveRightCollapsed,
+} from '@/core/stores/useUIStore'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@/lib/utils'
 
@@ -15,7 +19,9 @@ interface SidebarToggleProps {
  */
 export function SidebarToggle({ side, className }: SidebarToggleProps) {
   const { isCollapsed, toggle } = useUIStore(useShallow((s) => ({
-    isCollapsed: side === 'left' ? s.leftPanelCollapsed : s.rightPanelCollapsed,
+    isCollapsed: side === 'left'
+      ? selectEffectiveLeftCollapsed(s)
+      : selectEffectiveRightCollapsed(s),
     toggle: side === 'left' ? s.toggleLeftPanel : s.toggleRightPanel,
   })))
 

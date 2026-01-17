@@ -1,9 +1,12 @@
+import { useState, useEffect } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { CollapsiblePanel } from './CollapsiblePanel'
 import { PanelLayout } from './PanelLayout'
-import { useUIStore } from '@/core/stores/useUIStore'
-import { useThreadStore } from '@/core/stores/useThreadStore'
-import { useTreeStore } from '@/core/stores/useTreeStore'
+import {
+  useUIStore,
+  selectEffectiveLeftCollapsed,
+  selectEffectiveRightCollapsed,
+} from '@/core/stores/useUIStore'
 import type { LayoutStrategyProps } from './types'
 
 /**
@@ -16,38 +19,39 @@ import type { LayoutStrategyProps } from './types'
  * This component is a LayoutStrategy implementation - it receives panel content
  * and decides how to arrange them. It reads collapse state from useUIStore.
  *
- * Loading behavior:
- * - Sidebars start collapsed during initial load (when status is 'idle' or 'loading')
- * - Auto-expand when data loads (status becomes 'success' or 'error')
- * - User can click expand button to force-show panel even during loading
+ * Panel visibility behavior:
+ * - Waits for localStorage hydration before computing state (prevents flicker)
+ * - Auto: collapsed while data is loading, auto-expands when ready
+ * - User override takes precedence (can expand during loading or collapse after ready)
+ * - Ready state is set by data loaders (useThreadsForProject, useTreeStore.loadTree)
  */
 export function ThreePanelLayout({ panels, className }: LayoutStrategyProps) {
-  // Subscribe to collapse state for this layout
+  // Track hydration state using Zustand's built-in persist API
+  // This prevents flash of wrong panel state before localStorage values are loaded
+  const [hasHydrated, setHasHydrated] = useState(useUIStore.persist.hasHydrated())
+
+  useEffect(() => {
+    // Subscribe to hydration completion
+    const unsub = useUIStore.persist.onFinishHydration(() => {
+      setHasHydrated(true)
+    })
+    return unsub
+  }, [])
+
+  // Subscribe to effective collapsed state (handles ready state + user override)
   const {
-    leftPanelCollapsed,
-    rightPanelCollapsed,
+    effectiveLeftCollapsed,
+    effectiveRightCollapsed,
     toggleLeftPanel,
     toggleRightPanel,
   } = useUIStore(useShallow((s) => ({
-    leftPanelCollapsed: s.leftPanelCollapsed,
-    rightPanelCollapsed: s.rightPanelCollapsed,
+    // Before hydration: default to collapsed to prevent jitter
+    // After hydration: use the computed effective state
+    effectiveLeftCollapsed: hasHydrated ? selectEffectiveLeftCollapsed(s) : true,
+    effectiveRightCollapsed: hasHydrated ? selectEffectiveRightCollapsed(s) : true,
     toggleLeftPanel: s.toggleLeftPanel,
     toggleRightPanel: s.toggleRightPanel,
   })))
-
-  // Get loading states to determine if panels are ready
-  const threadStatus = useThreadStore((s) => s.statusThreads)
-  const treeStatus = useTreeStore((s) => s.status)
-
-  // Panel is ready when not idle/loading (data has arrived or errored)
-  const leftReady = threadStatus === 'success' || threadStatus === 'error'
-  const rightReady = treeStatus === 'success' || treeStatus === 'error'
-
-  // Effective collapsed = user collapsed OR not ready yet
-  // When user manually expands (toggles), leftPanelCollapsed becomes false,
-  // which overrides the loading state and expands the panel
-  const effectiveLeftCollapsed = leftPanelCollapsed || !leftReady
-  const effectiveRightCollapsed = rightPanelCollapsed || !rightReady
 
   const left = (
     <CollapsiblePanel

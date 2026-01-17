@@ -1,7 +1,7 @@
 import { Folder } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { Button } from '@/shared/components/ui/button'
-import { useUIStore } from '@/core/stores/useUIStore'
+import { useUIStore, selectEffectiveRightCollapsed } from '@/core/stores/useUIStore'
 
 /**
  * Edge toggle for the Documents panel.
@@ -9,20 +9,20 @@ import { useUIStore } from '@/core/stores/useUIStore'
  */
 export function DocsEdgeToggle() {
   const {
-    rightPanelCollapsed,
+    isCollapsed,
     toggleRightPanel,
   } = useUIStore(useShallow((s) => ({
-    rightPanelCollapsed: s.rightPanelCollapsed,
+    isCollapsed: selectEffectiveRightCollapsed(s),
     toggleRightPanel: s.toggleRightPanel,
   })))
 
   return (
     <Button
-      variant={rightPanelCollapsed ? 'outline' : 'ghost'}
+      variant={isCollapsed ? 'outline' : 'ghost'}
       size="icon"
       onClick={toggleRightPanel}
-      aria-pressed={!rightPanelCollapsed}
-      aria-label={rightPanelCollapsed ? 'Show documents panel' : 'Hide documents panel'}
+      aria-pressed={!isCollapsed}
+      aria-label={isCollapsed ? 'Show documents panel' : 'Hide documents panel'}
     >
       <Folder className="size-4" />
     </Button>
