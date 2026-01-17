@@ -76,7 +76,14 @@
   --font-serif: var(--font-body);
   --font-mono: ui-monospace, monospace;
 
+  /* === Component Heights (consistent sizing scale) === */
+  --component-height-xs: 24px;  /* Compact inline controls */
+  --component-height-sm: 32px;  /* Small buttons, inputs */
+  --component-height-md: 36px;  /* Default buttons, inputs (h-9) */
+  --component-height-lg: 40px;  /* Large/prominent buttons, auth forms (h-10) */
+
   /* === Border Radius === */
+  /* NOTE: Tailwind's rounded-sm is 4px. Use rounded-[--radius-sm] for 6px, or use rounded directly. */
   --radius-sm: 6px;
   --radius: 8px;
   --radius-md: 10px;
@@ -446,14 +453,9 @@
     cursor: not-allowed;
   }
 
-  /* Thread header height - responsive, single source of truth */
+  /* Thread header height - unified across all viewports (48px = h-12) */
   :root {
-    --thread-header-height: 2.5rem; /* 40px = h-10 */
-  }
-  @media (min-width: 640px) {
-    :root {
-      --thread-header-height: 3rem; /* 48px = h-12 = sm:h-12 */
-    }
+    --thread-header-height: 3rem;
   }
 }
 
@@ -468,6 +470,30 @@ body.preload * {
    ============================================================================ */
 
 @layer components {
+  /* === Focus Ring Utility ===
+     Extracted from button variants to ensure consistent focus treatment.
+     Use: Apply `.focus-ring` to interactive elements needing custom focus styling.
+     Note: Most elements get focus rings automatically from @layer base rules.
+  */
+  .focus-ring {
+    @apply outline-none;
+  }
+  .focus-ring:focus-visible {
+    outline: 3px solid var(--focus-ring-outer);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 2px var(--focus-ring-inner);
+  }
+
+  /* Input variant without outline offset (inset focus) */
+  .focus-ring-inset {
+    @apply outline-none;
+  }
+  .focus-ring-inset:focus-visible {
+    outline: 3px solid var(--focus-ring-outer);
+    outline-offset: 0;
+    box-shadow: 0 0 0 2px var(--focus-ring-inner);
+  }
+
   /* === Typography Utilities (shared front + workspace) === */
 
   .type-display {
@@ -554,6 +580,68 @@ body.preload * {
     @apply font-semibold;
   }
 
+  /* === List Item Base Pattern ===
+     Consistent base for tree/list items across the app.
+     Usage: Apply appropriate variant class based on context.
+
+     Standard paddings:
+     - Sidebar items (document tree, thread list): px-2.5 py-1.5 gap-2
+     - Compact items: px-2 py-1 gap-1.5
+  */
+  .list-item-base {
+    @apply flex w-full items-center rounded-sm text-left text-sm transition-colors cursor-pointer;
+    /* Default: sidebar item spacing */
+    @apply gap-2 px-2.5;
+    /* Responsive padding: larger touch targets on mobile */
+    @apply py-2 md:py-1.5;
+  }
+
+  .list-item-base:hover {
+    @apply bg-hover;
+  }
+
+  .list-item-base--active {
+    @apply bg-sidebar-accent/50 font-medium;
+  }
+
+  /* Compact variant for dense lists */
+  .list-item-compact {
+    @apply flex w-full items-center rounded-sm text-left text-sm transition-colors cursor-pointer;
+    @apply gap-1.5 px-2 py-1;
+  }
+
+  /* List item action button - "..." menu triggers */
+  .list-item-action-button {
+    @apply flex-shrink-0 p-0 rounded-sm transition-opacity;
+    /* Responsive size: larger on mobile for touch */
+    @apply h-7 w-7 md:h-5 md:w-5;
+    /* Hide on desktop, show on hover/focus */
+    @apply opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100;
+  }
+
+  /* === Panel Header Pattern ===
+     Consistent header bars for panels.
+     Usage: Apply .panel-header with a height variable.
+  */
+  .panel-header {
+    @apply flex items-center px-3;
+    /* Standard gap for header items */
+    gap: var(--spacing-1); /* 4px - tight for header controls */
+  }
+
+  /* Responsive variant - tighter padding on mobile */
+  .panel-header-responsive {
+    @apply flex items-center;
+    @apply px-2 sm:px-3;
+    gap: var(--spacing-1);
+  }
+
+  /* Header with space-between layout (left/right groups) */
+  .panel-header-split {
+    @apply flex items-center justify-between;
+    @apply px-2 sm:px-3;
+  }
+
   /* Sidebar icons use DARK JADE in light mode */
   .thread-pane [data-icon] {
     color: var(--sidebar-icon);
@@ -638,7 +726,7 @@ body.preload * {
 
   /* Thread input */
   .thread-input-shell {
-    @apply bg-background/95 px-2 pb-3 pt-1 sm:px-4;
+    @apply bg-background/95 px-1 pb-2.5 pt-0.5 sm:px-1.5;
     backdrop-filter: blur(8px);
   }
 
@@ -1095,6 +1183,12 @@ body.preload * {
   .touch-target-sm {
     min-height: 32px;
     min-width: 32px;
+  }
+
+  /* Inline action buttons that rely on natural padding - no minimum touch target */
+  .touch-target-inline {
+    min-height: unset;
+    min-width: unset;
   }
 }
 

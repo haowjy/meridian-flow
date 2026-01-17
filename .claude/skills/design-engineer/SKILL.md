@@ -14,6 +14,8 @@ Build interfaces with intention, consistency, and memory. This skill helps you e
 ### Step 1: Determine Mode
 
 **Check for `.design-engineer/system.md`:**
+
+> **Meridian**: System file is at `frontend/.design-engineer/system.md`
 - **Exists?** → **APPLY MODE** (use existing system)
 - **Doesn't exist?** → Check project type:
   - Has `package.json` or `.git`? → **ESTABLISH MODE** (create system)

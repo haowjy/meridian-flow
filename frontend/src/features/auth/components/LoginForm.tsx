@@ -174,7 +174,7 @@ export function LoginForm() {
                             placeholder="you@example.com"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
-                            className="h-10"
+                            size="lg"
                             required
                         />
                     </div>
@@ -188,7 +188,7 @@ export function LoginForm() {
                             placeholder="••••••••"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            className="h-10"
+                            size="lg"
                             required
                         />
                     </div>

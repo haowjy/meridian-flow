@@ -32,6 +32,14 @@ export function ThreadTitleMenu({
 }: ThreadTitleMenuProps) {
   const [open, setOpen] = useState(false)
 
+  // Close menu and execute action SYNCHRONOUSLY.
+  // The click guard in ThreadListItem prevents ghost clicks from causing navigation.
+  // Action must run before ghost click fires so the guard is set in time.
+  const handleAction = (action?: () => void) => () => {
+    setOpen(false)
+    action?.()
+  }
+
   // Don't render if no actions provided
   if (!onRename && !onDelete) {
     return null
@@ -44,14 +52,14 @@ export function ThreadTitleMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align={align}>
         {onRename && (
-          <DropdownMenuItem onClick={onRename}>
+          <DropdownMenuItem onClick={handleAction(onRename)}>
             <Pencil className="size-3.5" />
             Rename
           </DropdownMenuItem>
         )}
         {onRename && onDelete && <DropdownMenuSeparator />}
         {onDelete && (
-          <DropdownMenuItem variant="destructive" onClick={onDelete}>
+          <DropdownMenuItem variant="destructive" onClick={handleAction(onDelete)}>
             <Trash2 className="size-3.5" />
             Delete
           </DropdownMenuItem>

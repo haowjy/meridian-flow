@@ -80,11 +80,11 @@ export function TurnInput({ threadId, projectId, focusKey }: TurnInputProps) {
   }
 
   // Unified layout for both mobile and desktop
-  // Responsive padding: px-2.5 on mobile, px-3 on sm+
+  // Responsive padding: px-3 on mobile, px-3.5 on sm+
   return (
     <div className="thread-input-shell">
       <div className="mx-auto w-full max-w-3xl">
-        <div className="flex flex-col rounded-lg border border-border/60 bg-card px-2.5 py-2 shadow-sm transition-shadow focus-within:border-border focus-within:shadow-md sm:px-3 sm:py-2.5">
+        <div className="flex flex-col rounded-lg border border-border/60 bg-card px-2 py-1.5 shadow-sm transition-shadow focus-within:border-border focus-within:shadow-md sm:px-2.5 sm:py-2">
           <AutosizeTextarea
             value={value}
             onChange={(e) => setValue(e.target.value)}
