@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useMemo } from 'react'
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useShallow } from 'zustand/react/shallow'
 import { useLayoutStrategy } from '@/core/hooks/useLayoutStrategy'
-import { useUIStore } from '@/core/stores/useUIStore'
+import { useUIStore, selectEffectiveRightCollapsed } from '@/core/stores/useUIStore'
 import { DocumentPanel } from '@/features/documents/components/DocumentPanel'
 import { ThreadListPanel } from '@/features/threads/components/ThreadListPanel'
 import { ActiveThreadView } from '@/features/threads/components/ActiveThreadView'
@@ -151,6 +151,10 @@ export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug
     const store = useUIStore.getState()
     store.setActiveDocument(null)
     store.setRightPanelState('documents')
+    // Reset panel ready state for new project - panels will collapse until new data loads
+    store.setLeftPanelReady(false)
+    store.setRightPanelReady(false)
+    // Note: Do NOT reset userOverride - user's collapse/expand preference should persist across projects
     previousDocumentIdRef.current = undefined // Reset ref so next URL is treated as changed
   }, [projectId])
 
@@ -192,7 +196,8 @@ export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug
         logger.debug('Setting panel state: editor')
         store.setRightPanelState('editor')
       }
-      if (store.rightPanelCollapsed) {
+      // Check effective collapsed state (considers ready state + user override)
+      if (selectEffectiveRightCollapsed(store)) {
         logger.debug('Expanding right panel')
         store.setRightPanelCollapsed(false)
       }

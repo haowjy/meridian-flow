@@ -1,7 +1,11 @@
 import { useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { Thread } from '@/features/threads/types'
-import { useUIStore } from '@/core/stores/useUIStore'
+import {
+  useUIStore,
+  selectEffectiveLeftCollapsed,
+  selectEffectiveRightCollapsed,
+} from '@/core/stores/useUIStore'
 import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
 import { MobileNavButton } from '@/shared/components/layout/MobileNavButton'
 import { ProgressiveBreadcrumb } from './ProgressiveBreadcrumb'
@@ -26,8 +30,8 @@ export function ThreadHeader({
   const [isRenaming, setIsRenaming] = useState(false)
 
   const { leftPanelCollapsed, rightPanelCollapsed, setMobileActivePanel } = useUIStore(useShallow((s) => ({
-    leftPanelCollapsed: s.leftPanelCollapsed,
-    rightPanelCollapsed: s.rightPanelCollapsed,
+    leftPanelCollapsed: selectEffectiveLeftCollapsed(s),
+    rightPanelCollapsed: selectEffectiveRightCollapsed(s),
     setMobileActivePanel: s.setMobileActivePanel,
   })))
 

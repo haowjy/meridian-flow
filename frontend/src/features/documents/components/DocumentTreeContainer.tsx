@@ -105,6 +105,13 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
     }
   }, [projectId, loadTree])
 
+  // Signal right panel readiness when tree data is loaded or errors
+  // This allows the layout to auto-expand the panel when data is ready
+  useEffect(() => {
+    const isReady = status === 'success' || status === 'error'
+    useUIStore.getState().setRightPanelReady(isReady)
+  }, [status])
+
   // Handle document click
   const handleDocumentClick = (documentId: string) => {
     // Find document to get its slug for URL

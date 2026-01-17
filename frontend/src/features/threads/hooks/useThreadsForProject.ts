@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useThreadStore } from '@/core/stores/useThreadStore'
+import { useUIStore } from '@/core/stores/useUIStore'
 import { Thread } from '@/features/threads/types'
 
 type LoadStatus = 'idle' | 'loading' | 'success' | 'error'
@@ -18,6 +19,7 @@ interface UseThreadsForProjectResult {
  * Responsibilities:
  * - Orchestrate calling useThreadStore.loadThreads(projectId, signal)
  * - Manage AbortController lifecycle when projectId changes or component unmounts
+ * - Signal left panel readiness to useUIStore when data is loaded
  *
  * It does NOT:
  * - Decide which thread is active (owned by useUIStore)
@@ -55,6 +57,13 @@ export function useThreadsForProject(projectId: string): UseThreadsForProjectRes
     // as a dependency to prevent effect churn.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
+
+  // Signal left panel readiness when thread data is loaded or errors
+  // This allows the layout to auto-expand the panel when data is ready
+  useEffect(() => {
+    const isReady = statusThreads === 'success' || statusThreads === 'error'
+    useUIStore.getState().setLeftPanelReady(isReady)
+  }, [statusThreads])
 
   return {
     threads,
