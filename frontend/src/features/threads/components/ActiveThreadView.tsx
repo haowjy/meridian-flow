@@ -4,6 +4,7 @@ import { useUIStore } from '@/core/stores/useUIStore'
 import { useTurnsForThread } from '@/features/threads/hooks/useTurnsForThread'
 import { useThreadStore } from '@/core/stores/useThreadStore'
 import { useThreadSSE } from '@/features/threads/hooks/useThreadSSE'
+import { useLoadingView } from '@/core/hooks'
 import { Sparkles } from 'lucide-react'
 import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { ThreadHeader } from './ThreadHeader'
@@ -12,8 +13,6 @@ import { TurnInput } from './TurnInput'
 import { DeleteThreadDialog } from './DeleteThreadDialog'
 import { ScrollToBottomButton } from './ScrollToBottomButton'
 import { useStreamingAutoScroll } from '@/features/threads/hooks/useStreamingAutoScroll'
-import { UserMessageSkeleton } from './skeletons/UserMessageSkeleton'
-import { AIMessageSkeleton } from './skeletons/AIMessageSkeleton'
 
 /**
  * Measures an element's height via callback ref, only updating state when changed.
@@ -60,7 +59,9 @@ interface ActiveThreadViewProps {
  * - Contain SSE/EventSource details (delegated to useThreadSSE)
  */
 export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
-  const [showSkeleton, setShowSkeleton] = useState(false)
+  // Content ready = TurnList has rendered, layout is stable, and scroll is complete
+  // Until ready, keep TurnList invisible (blank screen during load)
+  const [isContentReady, setIsContentReady] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
 
@@ -69,8 +70,9 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
     threadFocusVersion: s.threadFocusVersion,
   })))
 
-  const { threads, currentTurnId, streamingTurnId, setCurrentTurnId, renameThread, deleteThread } = useThreadStore(useShallow((s) => ({
+  const { threads, statusThreads, currentTurnId, streamingTurnId, setCurrentTurnId, renameThread, deleteThread } = useThreadStore(useShallow((s) => ({
     threads: s.threads,
+    statusThreads: s.statusThreads,
     currentTurnId: s.currentTurnId,
     streamingTurnId: s.streamingTurnId,
     setCurrentTurnId: s.setCurrentTurnId,
@@ -100,27 +102,30 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
   }, [turns, setCurrentTurnId])
 
   // Auto-scroll management during streaming
-  const { showScrollButton, scrollToBottom } = useStreamingAutoScroll({
+  // Suppress scroll button during initial load (before content is ready)
+  const { showScrollButton: rawShowScrollButton, scrollToBottom } = useStreamingAutoScroll({
     scrollContainer,
     isStreaming: streamingTurnId !== null,
     onScrollToBottom: handleScrollToBottom,
   })
+  const showScrollButton = rawShowScrollButton && isContentReady
 
-  // Skeleton delay: only show skeleton after 150ms if still loading with no turns
+  // Reset content ready state when thread changes
   useEffect(() => {
-    let timer: NodeJS.Timeout | null = null
+    setIsContentReady(false)
+  }, [activeThreadId])
 
-    if (isLoading && turns.length === 0) {
-      timer = setTimeout(() => setShowSkeleton(true), 150)
-    }
 
-    return () => {
-      if (timer) clearTimeout(timer)
-      setShowSkeleton(false)
-    }
-  }, [isLoading, turns.length])
+  // Callback when TurnList has scrolled to position - reveal content
+  const handleScrollComplete = useCallback(() => {
+    setIsContentReady(true)
+  }, [])
 
   const activeThread = threads.find((t) => t.id === activeThreadId) || null
+
+  // Derive whether to show skeleton or empty state during cold start
+  // (when threads are loading, show skeleton; when loaded with no thread, show empty state)
+  const coldStartView = useLoadingView({ status: statusThreads, hasData: !!activeThread })
 
   // Handlers for thread actions
   const handleRename = useCallback((title: string) => {
@@ -142,8 +147,41 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
   }, [activeThread, deleteThread])
 
   // Cold start: no thread selected but projectId available
-  // Uses sticky header inside scroll container
   if (!activeThread) {
+    // Show empty area + input while threads are loading (sidebars are collapsed)
+    // This provides a cleaner initial load without jarring skeleton UI
+    if (coldStartView === 'skeleton') {
+      return (
+        <div className="thread-main">
+          <div
+            className="h-full overflow-y-auto scroll-pt-[var(--thread-header-height)]"
+            style={{
+              scrollPaddingBottom: `${inputHeight}px`,
+              overflowAnchor: 'none',
+            }}
+          >
+            <div className="sticky top-0 z-10 bg-background">
+              <ThreadHeader thread={null} />
+              <HeaderGradientFade />
+            </div>
+            {/* Empty content area - user sees calm empty space during load */}
+            <div
+              className="flex-1"
+              style={{ minHeight: `calc(100% - var(--thread-header-height) - ${inputHeight}px)` }}
+            />
+            {/* Input ready at bottom for immediate use */}
+            <div ref={inputRef} className="bg-background">
+              <TurnInput
+                projectId={projectId}
+                focusKey={`${activeThreadId ?? 'none'}:${threadFocusVersion}`}
+              />
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    // Empty state - threads loaded, none selected
     return (
       <div className="thread-main">
         <div
@@ -210,26 +248,24 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
             minHeight: `calc(100% - var(--thread-header-height) - ${inputHeight}px)`,
           }}
         >
-          {/* Show skeleton thread for cold loads (no cached turns) */}
-          {isLoading && turns.length === 0 && showSkeleton ? (
-            <div className="flex flex-col gap-4 p-4 flex-1">
-              <UserMessageSkeleton />
-              <AIMessageSkeleton />
+          {/* Show minimal loading badge when paginating/refreshing with existing turns */}
+          {isLoading && turns.length > 0 && (
+            <div className="absolute inset-x-0 top-2 z-10 mx-auto w-max rounded border bg-popover px-2 py-1 text-xs text-popover-foreground">
+              Loading…
             </div>
-          ) : (
-            <>
-              {/* Show minimal loading badge when paginating/refreshing with existing turns */}
-              {isLoading && turns.length > 0 && (
-                <div className="absolute inset-x-0 top-2 z-10 mx-auto w-max rounded border bg-popover px-2 py-1 text-xs text-popover-foreground">
-                  Loading…
-                </div>
-              )}
-              {/* Messages take remaining space */}
-              <div className="flex-1">
-                <TurnList turns={turns} scrollToTurnId={currentTurnId} isLoading={isLoading} />
-              </div>
-            </>
           )}
+
+          {/* TurnList always renders (allows layout to stabilize and scroll to happen invisibly).
+              Made invisible until scroll completes, then revealed. */}
+          <div className={`flex-1 ${isContentReady ? '' : 'opacity-0 pointer-events-none'}`}>
+            <TurnList
+              turns={turns}
+              scrollToTurnId={currentTurnId}
+              isLoading={isLoading}
+              onScrollComplete={handleScrollComplete}
+            />
+          </div>
+
         </div>
 
         {/* Sticky input at bottom of scroll container */}

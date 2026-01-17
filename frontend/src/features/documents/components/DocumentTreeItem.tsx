@@ -74,7 +74,7 @@ export function DocumentTreeItem({
           isActive && 'bg-sidebar-accent/50'
         )}
       >
-        <FileText className="size-4 flex-shrink-0" />
+        <FileText className="size-4 md:size-3.5 flex-shrink-0" />
         <InlineNameEditor
           initialValue={document.name}
           existingNames={existingNames}
@@ -149,7 +149,7 @@ export function DocumentTreeItem({
         aria-label={`Open document: ${document.filename}`}
         aria-current={isActive ? 'page' : undefined}
       >
-        <FileText className="size-4 flex-shrink-0" />
+        <FileText className="size-4 md:size-3.5 flex-shrink-0" />
         <span className="truncate flex-1">{document.filename}</span>
 
         {/* Metadata - word count, last edited */}

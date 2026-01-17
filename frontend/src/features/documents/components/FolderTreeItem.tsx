@@ -120,7 +120,7 @@ export function FolderTreeItem({
             'group flex w-full items-center gap-1.5 rounded-sm px-2.5 py-2 md:py-1 text-left text-sm'
           )}
         >
-          <FolderIcon className="size-4 flex-shrink-0" />
+          <FolderIcon className="size-4 md:size-3.5 flex-shrink-0" />
           <InlineNameEditor
             initialValue={folder.name}
             existingNames={existingNames}
@@ -171,7 +171,7 @@ export function FolderTreeItem({
           aria-label={`${isExpanded ? 'Collapse' : 'Expand'} folder: ${folder.name}`}
           aria-expanded={isExpanded}
         >
-          <FolderIcon className="size-4 flex-shrink-0" />
+          <FolderIcon className="size-4 md:size-3.5 flex-shrink-0" />
           <span className="truncate font-medium flex-1">{folder.name}</span>
 
           {/* Metadata - child count */}

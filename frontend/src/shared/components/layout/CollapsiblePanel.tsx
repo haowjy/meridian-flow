@@ -29,17 +29,16 @@ export function CollapsiblePanel({
       side={side}
     >
       <div className={cn('relative flex h-full flex-col', className)}>
-        {/* Panel Content */}
-        {!collapsed && (
-          <div
-            id={`${side}-panel`}
-            role="region"
-            aria-label={`${side} panel`}
-            className="flex h-full flex-col overflow-hidden"
-          >
-            <div className="flex-1 overflow-auto">{children}</div>
-          </div>
-        )}
+        {/* Panel Content - always mounted so data loading hooks run, but hidden when collapsed */}
+        <div
+          id={`${side}-panel`}
+          role="region"
+          aria-label={`${side} panel`}
+          className="flex h-full flex-col overflow-hidden"
+          style={{ display: collapsed ? 'none' : undefined }}
+        >
+          <div className="flex-1 overflow-auto">{children}</div>
+        </div>
       </div>
     </CollapsiblePanelProvider>
   )

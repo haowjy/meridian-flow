@@ -3,9 +3,8 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { ProjectList, CreateProjectDialog } from '@/features/projects'
 import { useProjectStore } from '@/core/stores/useProjectStore'
+import { useLoadingView } from '@/core/hooks'
 import { useUserProfile, useAuthActions, UserMenuButton } from '@/features/auth'
-import { CardSkeleton } from '@/shared/components/ui/card'
-import { CardGrid } from '@/shared/components/CardGrid'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { Logo } from '@/shared/components'
 
@@ -19,42 +18,30 @@ function ProjectsPage() {
   const { profile, status: profileStatus } = useUserProfile()
   const { signOut } = useAuthActions()
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [showSkeleton, setShowSkeleton] = useState(false)
+
+  // Derive loading view state (skeleton shows immediately on cold start)
+  const view = useLoadingView({ status, hasData: projects.length > 0 })
 
   useEffect(() => {
     loadProjects()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Skeleton delay: only show skeleton after 150ms if still loading
-  useEffect(() => {
-    if (status === 'loading') {
-      const timer = setTimeout(() => setShowSkeleton(true), 150)
-      return () => clearTimeout(timer)
-    } else {
-      setShowSkeleton(false)
-    }
-  }, [status])
-
-  // Show skeleton only for true cold loads (no cached data)
-  if (status === 'loading' && showSkeleton) {
+  // Show empty container for cold loads (no cached data)
+  if (view === 'skeleton') {
     return (
       <div className="container mx-auto max-w-6xl p-8">
         <div className="mb-4">
           <Logo size={24} />
           <p className="mt-1 type-body text-muted-foreground">File management for creative writers</p>
         </div>
-        <CardGrid>
-          {Array.from({ length: 3 }).map((_, i) => (
-            <CardSkeleton key={i} />
-          ))}
-        </CardGrid>
+        {/* Empty during load */}
       </div>
     )
   }
 
-  // Only show error when we have no cached projects to display
-  if (status === 'error' && projects.length === 0) {
+  // Only show full error panel when we have no cached projects to display
+  if (view === 'error') {
     return (
       <div className="container mx-auto max-w-6xl p-8">
         <ErrorPanel

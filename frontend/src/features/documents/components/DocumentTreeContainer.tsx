@@ -4,7 +4,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { openDocument } from '@/core/lib/panelHelpers'
-import { useResourceOperations } from '@/core/hooks'
+import { useResourceOperations, useLoadingView } from '@/core/hooks'
 import { filterTree, TreeNode, generateUniqueName, getNodeNames, getFolderChildNames } from '@/core/lib/treeBuilder'
 import { api } from '@/core/lib/api'
 import { getErrorMessageWithFallback } from '@/core/lib/errors'
@@ -14,7 +14,6 @@ import { DocumentTreeItem } from './DocumentTreeItem'
 import { SelectableTreeItem } from './SelectableTreeItem'
 import { ImportDocumentDialog } from './ImportDocumentDialog'
 import { DeleteFolderDialog } from './DeleteFolderDialog'
-import { Skeleton } from '@/shared/components/ui/skeleton'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { InlineError } from '@/shared/components/InlineError'
 import type { Folder } from '@/features/folders/types/folder'
@@ -80,12 +79,14 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [importTargetFolderId, setImportTargetFolderId] = useState<string | null>(null)
   const [droppedFiles, setDroppedFiles] = useState<File[]>([])
-  const [showSkeleton, setShowSkeleton] = useState(false)
   const [editingItem, setEditingItem] = useState<EditingItem | null>(null)
   const [pendingItem, setPendingItem] = useState<PendingItem | null>(null)
   // Folder deletion confirmation state
   const [folderToDelete, setFolderToDelete] = useState<Folder | null>(null)
   const [isDeletingFolder, setIsDeletingFolder] = useState(false)
+
+  // Derive loading view state (skeleton shows immediately on cold start)
+  const view = useLoadingView({ status, hasData: tree.length > 0 })
 
   // Load tree on mount
   useEffect(() => {
@@ -103,20 +104,6 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
       abortController.abort()
     }
   }, [projectId, loadTree])
-
-  // Skeleton delay: only show skeleton after 150ms if still loading
-  useEffect(() => {
-    let timer: NodeJS.Timeout | null = null
-
-    if (status === 'loading') {
-      timer = setTimeout(() => setShowSkeleton(true), 150)
-    }
-
-    return () => {
-      if (timer) clearTimeout(timer)
-      setShowSkeleton(false)
-    }
-  }, [status])
 
   // Handle document click
   const handleDocumentClick = (documentId: string) => {
@@ -461,24 +448,13 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
     return renderedNodes
   }
 
-  // Loading state - show skeleton only for true cold loads (no cached data)
-  if (status === 'loading' && showSkeleton) {
-    return (
-      <div className="flex h-full flex-col">
-        <div className="px-3 py-2">
-          <Skeleton className="h-8 w-32" />
-        </div>
-        <div className="space-y-2 p-4">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-8 w-40" />
-          <Skeleton className="h-8 w-56" />
-        </div>
-      </div>
-    )
+  // Loading state - show empty container for cold loads (no cached data)
+  if (view === 'skeleton') {
+    return <div className="flex h-full flex-col" />
   }
 
-  // Error state - only show error when we have no cached tree to display
-  if (status === 'error' && tree.length === 0) {
+  // Error state - only show full error panel when we have no cached tree to display
+  if (view === 'error') {
     return (
       <DocumentTreePanel
         title={projectName ?? undefined}

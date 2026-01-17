@@ -2,7 +2,6 @@ import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { ArrowLeft, LogOut } from 'lucide-react'
 import { useUserProfile, useAuthActions, UserAvatar } from '@/features/auth'
 import { Button } from '@/shared/components/ui/button'
-import { Skeleton } from '@/shared/components/ui/skeleton'
 
 export const Route = createFileRoute('/_authenticated/settings')({
   component: SettingsPage,
@@ -13,22 +12,9 @@ function SettingsPage() {
   const { profile, status } = useUserProfile()
   const { signOut } = useAuthActions()
 
-  // Loading state
+  // Loading state - show empty container
   if (status === 'loading') {
-    return (
-      <div className="container mx-auto max-w-2xl p-8">
-        <div className="mb-8">
-          <Skeleton className="h-6 w-32" />
-        </div>
-        <div className="flex items-center gap-4">
-          <Skeleton className="size-16 rounded-full" />
-          <div className="space-y-2">
-            <Skeleton className="h-6 w-48" />
-            <Skeleton className="h-4 w-32" />
-          </div>
-        </div>
-      </div>
-    )
+    return <div className="container mx-auto max-w-2xl p-8" />
   }
 
   // Should not happen if auth guard is working, but handle gracefully

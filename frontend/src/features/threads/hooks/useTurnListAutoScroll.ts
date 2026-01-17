@@ -7,6 +7,8 @@ interface UseTurnListAutoScrollParams {
   turns: Turn[]
   scrollToTurnId?: string | null
   isLoading?: boolean
+  /** Called after initial scroll completes - use to reveal content that was rendering invisibly */
+  onScrollComplete?: () => void
 }
 
 /**
@@ -28,8 +30,16 @@ export function useTurnListAutoScroll({
   turns,
   scrollToTurnId,
   isLoading,
+  onScrollComplete,
 }: UseTurnListAutoScrollParams) {
   const hasScrolledRef = useRef(false)
+  // Keep a stable reference to the callback to avoid re-triggering the effect
+  const onScrollCompleteRef = useRef(onScrollComplete)
+
+  // Update the ref when callback changes (must be in effect, not during render)
+  useEffect(() => {
+    onScrollCompleteRef.current = onScrollComplete
+  }, [onScrollComplete])
 
   useEffect(() => {
     if (!scrollToTurnId || hasScrolledRef.current || turns.length === 0 || isLoading) {
@@ -74,37 +84,31 @@ export function useTurnListAutoScroll({
       if (turnElement && stableFrames >= STABLE_FRAMES) {
         const viewport = container.closest<HTMLElement>('[data-slot="scroll-area-viewport"]')
 
-        // Determine whether this turn has a child (continuation) in the
-        // current window. If it does, we scroll to the TOP of the turn so
-        // the user can read it from the beginning. If it does not, we treat
-        // it as a leaf and scroll the entire thread to the bottom so there is
-        // no tiny remaining scroll.
-        const targetIndex = turns.findIndex((t) => t.id === scrollToTurnId)
-        const hasChild =
-          targetIndex !== -1 &&
-          turns.some((t) => t.prevTurnId === scrollToTurnId)
+        // Check if this is the last turn in the current window.
+        // If it is, scroll to absolute bottom. Otherwise, scroll so the
+        // BOTTOM of the turn is visible (user sees where they left off).
+        const isLastTurn = turns[turns.length - 1]?.id === scrollToTurnId
 
-        if (!hasChild && viewport) {
-          // Leaf turn → scroll to bottom ONLY if content exceeds viewport height.
-          // When content fits, don't scroll - let justify-end handle visual alignment.
+        if (isLastTurn && viewport) {
+          // Last turn → scroll to absolute bottom to eliminate any remaining scroll
           const isScrollable = viewport.scrollHeight > viewport.clientHeight
-
           if (isScrollable) {
-            // Content is taller than viewport - scroll to show latest messages
             viewport.scrollTop = viewport.scrollHeight
           }
           // If not scrollable: scrollTop stays at 0, justify-end aligns content to bottom
         } else {
-          // Parent turn (has child in window) or no viewport found →
-          // scroll this turn into view with its top near the top.
+          // Non-last turn → scroll so bottom of turn is at viewport bottom.
+          // User sees where they left off and can scroll up to re-read.
           turnElement.scrollIntoView({
             behavior: 'auto',
-            block: 'start',
+            block: 'end',
             inline: 'nearest',
           })
         }
 
         hasScrolledRef.current = true
+        // Notify that scroll is complete - content can now be revealed
+        onScrollCompleteRef.current?.()
         return
       }
 

@@ -282,7 +282,7 @@ export function InlineEditor({
           className={actionButtonClass}
           aria-label="Confirm"
         >
-          <Check className="size-4" />
+          <Check className="size-4 md:size-3" />
         </button>
         <button
           type="button"
@@ -290,7 +290,7 @@ export function InlineEditor({
           className={actionButtonClass}
           aria-label="Cancel"
         >
-          <X className="size-4" />
+          <X className="size-4 md:size-3" />
         </button>
       </div>
       {error && (
