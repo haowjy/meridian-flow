@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useMemo } from 'react'
-import { useLocation } from '@tanstack/react-router'
+import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useShallow } from 'zustand/react/shallow'
 import { useLayoutStrategy } from '@/core/hooks/useLayoutStrategy'
 import { useUIStore } from '@/core/stores/useUIStore'
@@ -22,6 +22,7 @@ interface WorkspaceLayoutProps {
 }
 
 export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug }: WorkspaceLayoutProps) {
+  const navigate = useNavigate()
   // Resolved project ID (UUID) and slug - set once project is fetched/found
   const [projectId, setProjectId] = useState<string | null>(null)
   const [projectSlug, setProjectSlug] = useState<string | null>(null)
@@ -117,6 +118,7 @@ export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug
             logger.debug('Project fetch aborted in workspace layout (expected during unmount/StrictMode)')
           } else {
             logger.warn('Failed to resolve project in workspace layout', error)
+            navigate({ to: '/projects' })
           }
         }
       }
