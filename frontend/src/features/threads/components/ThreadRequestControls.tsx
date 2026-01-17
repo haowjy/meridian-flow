@@ -89,7 +89,7 @@ export function ThreadRequestControls({
   const showStop = Boolean(isStreaming && onStop)
 
   return (
-    <div className="flex items-center gap-2 pt-1.5 text-xs">
+    <div className="flex items-center gap-2 pt-1 text-xs">
       <div className="flex flex-1 flex-wrap items-center gap-2">
         <ModelSelector
           models={allModels}

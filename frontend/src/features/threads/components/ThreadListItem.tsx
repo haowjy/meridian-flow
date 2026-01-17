@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
@@ -45,6 +46,21 @@ export function ThreadListItem({
   onRenameCancel,
   onDelete,
 }: ThreadListItemProps) {
+  // Click guard to prevent ghost clicks on mobile.
+  // When dropdown/context menu closes, browser may fire synthetic click on underlying element.
+  // By setting this ref SYNCHRONOUSLY when menu action is clicked (before ghost click fires),
+  // we can ignore the subsequent ghost click. See: https://github.com/radix-ui/primitives/issues/1242
+  const ignoreClicksUntil = useRef(0)
+
+  // Wrapper sets guard SYNCHRONOUSLY before calling the action
+  const withClickGuard = (fn?: () => void) => {
+    if (!fn) return undefined
+    return () => {
+      ignoreClicksUntil.current = Date.now() + 300
+      fn()
+    }
+  }
+
   const handleRenameSubmit = (title: string) => {
     onRenameSubmit?.(title)
   }
@@ -53,18 +69,18 @@ export function ThreadListItem({
     onRenameCancel?.()
   }
 
-  // Context menu items (for right-click)
+  // Context menu items (for right-click) - wrapped with click guard
   const contextMenuItems = (
     <>
       {onRename && (
-        <ContextMenuItem onClick={onRename}>
+        <ContextMenuItem onClick={withClickGuard(onRename)}>
           <Pencil className="size-3.5" />
           Rename
         </ContextMenuItem>
       )}
       {onRename && onDelete && <ContextMenuSeparator />}
       {onDelete && (
-        <ContextMenuItem variant="destructive" onClick={onDelete}>
+        <ContextMenuItem variant="destructive" onClick={withClickGuard(onDelete)}>
           <Trash2 className="size-3.5" />
           Delete
         </ContextMenuItem>
@@ -76,7 +92,11 @@ export function ThreadListItem({
     <div
       role="button"
       tabIndex={isRenaming ? -1 : 0}
-      onClick={isRenaming ? undefined : onClick}
+      onClick={isRenaming ? undefined : () => {
+        // Ignore ghost clicks from dropdown/context menu actions
+        if (Date.now() < ignoreClicksUntil.current) return
+        onClick()
+      }}
       onKeyDown={isRenaming ? undefined : (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
@@ -122,8 +142,8 @@ export function ThreadListItem({
               <MoreHorizontal className="h-4.5 w-4.5" />
             </Button>
           }
-          onRename={onRename}
-          onDelete={onDelete}
+          onRename={withClickGuard(onRename)}
+          onDelete={withClickGuard(onDelete)}
           align="end"
         />
       )}
