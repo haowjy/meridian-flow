@@ -109,6 +109,7 @@ func (f *ProviderFactory) createOpenRouterProvider() (llmprovider.Provider, erro
 		f.config.OpenRouterAPIKey,
 		openrouter.WithLogger(providerLogger),
 		openrouter.WithDebugStreamLogs(f.config.LLMStreamDebugLogs),
+		// WithResponsesAPI(true) - disabled until Responses API is debugged
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OpenRouter provider: %w", err)

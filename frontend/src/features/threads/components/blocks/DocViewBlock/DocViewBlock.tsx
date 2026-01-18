@@ -26,8 +26,10 @@ import {
   FolderTreeView,
   CollapsibleToolBlock,
   ToolStatusBadge,
+  useToolStreamingState,
   type ToolStatus,
 } from '../shared'
+import { ToolStreamState } from '@/features/threads/stores/useToolStreamStore'
 import type { Document } from '@/features/documents/types/document'
 import type { DocViewInput, DocViewResult, DocViewDocumentResult, DocViewFolderResult } from './types'
 
@@ -161,6 +163,11 @@ export const DocViewBlock = React.memo(function DocViewBlock({
   const location = useLocation()
   const projectSlug = location.pathname.match(/^\/projects\/([^/]+)/)?.[1] || null
 
+  // Get streaming state for animation control via dedicated hook
+  const { isGenerating: toolIsGenerating, state: toolState } = useToolStreamingState({
+    blockContent: toolUse?.content as ToolBlockContent | undefined,
+  })
+
   // Parse input and result
   const input = getDocViewInput(toolUse)
   const { result, isError, errorMessage } = getDocViewResult(toolResult)
@@ -278,7 +285,11 @@ export const DocViewBlock = React.memo(function DocViewBlock({
       }
       isExpanded={isExpanded}
       onExpandedChange={setIsExpanded}
-      isGenerating={!hasResult && !isError}
+      // Animation: shimmer during PREPARING (args streaming) or when pending (no state yet)
+      // Stops when tool args are complete (state becomes 'ready') or result arrives
+      isGenerating={!hasResult && !isError && (toolState === null || toolIsGenerating)}
+      // Pulse animation during EXECUTING (tool running server-side)
+      isExecuting={!hasResult && !isError && toolState === ToolStreamState.EXECUTING}
     >
       {/* Error message */}
       {isError && errorMessage && (
@@ -317,8 +328,8 @@ export const DocViewBlock = React.memo(function DocViewBlock({
         />
       )}
 
-      {/* Pending state */}
-      {!hasResult && !isError && (
+      {/* Pending state - only show before streaming starts */}
+      {!hasResult && !isError && toolState === null && (
         <div className="text-xs text-muted-foreground italic py-2">
           Loading...
         </div>

@@ -120,9 +120,7 @@ export const livePreviewTheme = EditorView.theme({
   },
   '.cm-list-number-widget': {
     display: 'inline-block',
-    width: '1.5em',
     color: 'var(--theme-text-muted, #78716c)',
-    textAlign: 'right',
     paddingRight: '0.25em',
   },
 

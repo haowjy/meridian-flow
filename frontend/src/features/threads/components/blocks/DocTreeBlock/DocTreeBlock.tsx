@@ -22,8 +22,10 @@ import {
   CollapsibleToolBlock,
   ToolStatusBadge,
   FolderTreeView,
+  useToolStreamingState,
   type ToolStatus,
 } from '../shared'
+import { ToolStreamState } from '@/features/threads/stores/useToolStreamStore'
 import type { Document } from '@/features/documents/types/document'
 import type { DocTreeInput, DocTreeResult } from './types'
 
@@ -106,6 +108,11 @@ export const DocTreeBlock = React.memo(function DocTreeBlock({
   const location = useLocation()
   const projectSlug = location.pathname.match(/^\/projects\/([^/]+)/)?.[1] || null
 
+  // Get streaming state for animation control via dedicated hook
+  const { isGenerating: toolIsGenerating, state: toolState } = useToolStreamingState({
+    blockContent: toolUse?.content as ToolBlockContent | undefined,
+  })
+
   // Parse input and result
   const input = getDocTreeInput(toolUse)
   const { result, isError, errorMessage } = getDocTreeResult(toolResult)
@@ -178,7 +185,11 @@ export const DocTreeBlock = React.memo(function DocTreeBlock({
       statusBadge={<ToolStatusBadge status={status} label={statusLabel} />}
       isExpanded={isExpanded}
       onExpandedChange={setIsExpanded}
-      isGenerating={!hasResult && !isError}
+      // Animation: shimmer during PREPARING (args streaming) or when pending (no state yet)
+      // Stops when tool args are complete (state becomes 'ready') or result arrives
+      isGenerating={!hasResult && !isError && (toolState === null || toolIsGenerating)}
+      // Pulse animation during EXECUTING (tool running server-side)
+      isExecuting={!hasResult && !isError && toolState === ToolStreamState.EXECUTING}
     >
       {/* Error message */}
       {isError && errorMessage && (
@@ -205,8 +216,8 @@ export const DocTreeBlock = React.memo(function DocTreeBlock({
         />
       )}
 
-      {/* Pending state */}
-      {!hasResult && !isError && (
+      {/* Pending state - only show before streaming starts */}
+      {!hasResult && !isError && toolState === null && (
         <div className="text-xs text-muted-foreground italic py-2">
           Loading tree...
         </div>

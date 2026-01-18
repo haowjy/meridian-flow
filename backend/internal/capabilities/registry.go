@@ -65,9 +65,14 @@ func (r *Registry) GetModelCapabilities(provider, model string) (*ModelCapabilit
 		return nil, fmt.Errorf("unknown provider: %s", provider)
 	}
 
-	for i := range providerCaps.Models {
-		if providerCaps.Models[i].ID == model {
-			return &providerCaps.Models[i], nil
+	// Some providers report model variants at runtime that won't match the stable
+	// capability IDs (e.g. OpenRouter appends -YYYY-MM-DD or uses :online).
+	// Try ordered candidates before failing.
+	for _, candidate := range ModelIDCandidates(provider, model) {
+		for i := range providerCaps.Models {
+			if providerCaps.Models[i].ID == candidate {
+				return &providerCaps.Models[i], nil
+			}
 		}
 	}
 

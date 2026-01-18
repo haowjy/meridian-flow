@@ -87,9 +87,15 @@ type GenerateResponse struct {
 }
 
 // StreamEvent represents a single event in a streaming response.
-// Each event contains either a delta, a complete block, metadata (completion), or an error.
+// Each event contains either a delta, a complete block, metadata (completion), an AG-UI event, or an error.
+//
+// AG-UI events (via AGUIEvent field) are the new protocol and will eventually replace Delta events.
+// During the transition period, both may be emitted. The streaming executor should:
+// 1. Check AGUIEvent first - if set, emit directly as SSE (new path)
+// 2. Fall back to Delta processing for non-AG-UI events (legacy path)
 type StreamEvent struct {
 	// Delta contains incremental block content for real-time UI updates (nil if block/metadata/error)
+	// LEGACY: Will be deprecated in favor of AGUIEvent for streaming content
 	Delta *llm.TurnBlockDelta
 
 	// Block contains a complete block when a block finishes streaming (nil if delta/metadata/error)
@@ -105,8 +111,20 @@ type StreamEvent struct {
 	// This is separate from Metadata which is the final event
 	GenerationIDDiscovered *GenerationIDEvent
 
+	// AGUIEvent contains an AG-UI protocol event from the library.
+	// When set, this event should be serialized and emitted directly via SSE.
+	// Type: events.Event from github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events
+	// Use type assertion to access specific event types (e.g., *events.TextMessageContentEvent)
+	// NEW: This is the preferred path for streaming events (AG-UI protocol compliant)
+	AGUIEvent any
+
 	// Error contains any error that occurred during streaming (nil if successful)
 	Error error
+}
+
+// HasAGUIEvent returns true if this StreamEvent contains an AG-UI event.
+func (e *StreamEvent) HasAGUIEvent() bool {
+	return e.AGUIEvent != nil
 }
 
 // StreamMetadata contains completion information sent when streaming finishes.

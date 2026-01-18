@@ -5,11 +5,12 @@ go 1.25.3
 require (
 	github.com/JohannesKaufmann/html-to-markdown v1.6.0
 	github.com/MicahParks/keyfunc/v3 v3.7.0
+	github.com/ag-ui-protocol/ag-ui/sdks/community/go v0.0.0-20260117220954-5dcb78c9722d
 	github.com/anthropics/anthropic-sdk-go v1.17.0
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
-	github.com/haowjy/meridian-llm-go v0.0.14
+	github.com/haowjy/meridian-llm-go v0.0.16
 	github.com/haowjy/meridian-stream-go v0.0.5
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/joho/godotenv v1.5.1
@@ -31,6 +32,7 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
+	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
@@ -38,6 +40,7 @@ require (
 	golang.org/x/crypto v0.42.0 // indirect
 	golang.org/x/net v0.43.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect
+	golang.org/x/sys v0.36.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
 )
 

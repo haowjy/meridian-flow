@@ -4,23 +4,24 @@ models:
   # OpenRouter's reasoning_details format loses Anthropic's cryptographic signatures.
   # Use direct Anthropic API instead for Claude models.
 
-  openai/gpt-5-mini:
-    display_name: "GPT-5 Mini"
-    description: "Fast, affordable multimodal model"
-    supports_tools: true
-    supports_thinking: true
-    supports_vision: true
-    supports_streaming_cancel: true  # Generation ID in first SSE event, can hard-cancel
-    tool_call_quality: excellent
-    image_generation: none
-    context_window: 400000
-    max_output: 128000
-    pricing_tiers:
-      - threshold: null
-        input_price:
-          text: 0.25
-        output_price:
-          text: 2.00
+	  # TODO(_docs/future/bugs/openrouter-openai-gpt-tool-args-stall.md): Disabled due to tool-call args stalling (infinite whitespace) on some OpenRouter OpenAI GPT runs; revisit via Responses API or force-finalize/repair.
+  # openai/gpt-5-mini:
+  #   display_name: "GPT-5 Mini"
+  #   description: "Fast, affordable multimodal model"
+  #   supports_tools: true
+  #   supports_thinking: true
+  #   supports_vision: true
+  #   supports_streaming_cancel: true  # Generation ID in first SSE event, can hard-cancel
+  #   tool_call_quality: excellent
+  #   image_generation: none
+  #   context_window: 400000
+  #   max_output: 128000
+  #   pricing_tiers:
+  #     - threshold: null
+  #       input_price:
+  #         text: 0.25
+  #       output_price:
+  #         text: 2.00
 
   google/gemini-2.5-flash:
     display_name: "Gemini 2.5 Flash"
@@ -63,23 +64,23 @@ models:
         output_price:
           text: 1.00
 
-  moonshotai/kimi-k2-0905:
-    display_name: "Kimi K2"
-    description: "Kimi's flagship model"
-    supports_tools: true
-    supports_thinking: false
-    supports_vision: false
-    supports_streaming_cancel: true  # Generation ID in first SSE event, can hard-cancel
-    tool_call_quality: excellent
-    image_generation: none
-    context_window: 262144
-    max_output: 262144
-    pricing_tiers:
-      - threshold: null
-        input_price:
-          text: 0.60
-        output_price:
-          text: 3.00
+  # moonshotai/kimi-k2-0905:
+  #   display_name: "Kimi K2"
+  #   description: "Kimi's flagship model"
+  #   supports_tools: true
+  #   supports_thinking: false
+  #   supports_vision: false
+  #   supports_streaming_cancel: true  # Generation ID in first SSE event, can hard-cancel
+  #   tool_call_quality: excellent
+  #   image_generation: none
+  #   context_window: 262144
+  #   max_output: 262144
+  #   pricing_tiers:
+  #     - threshold: null
+  #       input_price:
+  #         text: 0.60
+  #       output_price:
+  #         text: 3.00
 
   moonshotai/kimi-k2-thinking:
     display_name: "Kimi K2 Thinking"

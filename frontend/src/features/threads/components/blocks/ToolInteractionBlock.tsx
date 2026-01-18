@@ -1,7 +1,27 @@
+/**
+ * ToolInteractionBlock - Generic visual for tool_use + tool_result blocks
+ *
+ * Combined representation for tool interactions with:
+ * - Collapsible header showing tool name and call preview
+ * - Status badge (Preparing/Running/Success/Error)
+ * - Expandable content showing call input and result
+ *
+ * Uses CollapsibleToolBlock for consistent styling with other tool blocks.
+ */
+
 import React, { useState } from 'react'
+import { Wrench, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ToolBlockContent, TurnBlock } from '@/features/threads/types'
-import { useThreadStore, ToolStreamState, type StreamingToolState } from '@/core/stores/useThreadStore'
+import { ToolStreamState } from '@/features/threads/stores/useToolStreamStore'
+import { normalizeToolCallId } from '@/features/threads/utils/normalizeToolCallId'
+import { safeJsonStringify } from '@/features/threads/utils/safeJsonStringify'
+import {
+  CollapsibleToolBlock,
+  ToolStatusBadge,
+  useToolStreamingState,
+  type ToolStatus,
+} from './shared'
 
 interface ToolInteractionBlockProps {
   toolUse: TurnBlock | null
@@ -11,17 +31,19 @@ interface ToolInteractionBlockProps {
 function getToolMeta(
   toolUse: TurnBlock | null,
   toolResult: TurnBlock | null,
-  streamingState?: StreamingToolState
+  streamingToolName?: string | null,
+  streamingToolUseId?: string
 ) {
   const source = toolResult ?? toolUse
   const content = (source?.content ?? {}) as ToolBlockContent
 
   // Prefer streaming state, fallback to block content
   // Return null if no tool name available (will show "Pending" state)
-  const toolName = streamingState?.toolName
+  const toolName = streamingToolName
     ?? (typeof content.tool_name === 'string' ? content.tool_name : null)
-  const toolUseId = streamingState?.toolUseId
+  const toolUseIdRaw = streamingToolUseId
     ?? (typeof content.tool_use_id === 'string' ? content.tool_use_id : null)
+  const toolUseId = typeof toolUseIdRaw === 'string' ? normalizeToolCallId(toolUseIdRaw) : toolUseIdRaw
   const isError = typeof content.is_error === 'boolean' ? content.is_error : false
 
   return { toolName, toolUseId, isError }
@@ -69,24 +91,35 @@ function buildCallPreview(
   return raw.length > limit ? `${raw.slice(0, limit - 1)}…` : raw
 }
 
-/**
- * Combined visual for tool_use + tool_result with the same tool_use_id.
- *
- * Phase 1: compact header-only representation so tool interactions
- * don't dominate the thread. Details/JSON can be added in a future expansion.
- */
 export const ToolInteractionBlock = React.memo(function ToolInteractionBlock({
   toolUse,
   toolResult,
 }: ToolInteractionBlockProps) {
-  // Get streaming state from store based on block sequence
-  const streamingState = useThreadStore((state) =>
-    toolUse?.sequence != null
-      ? state.streamingToolStates[toolUse.sequence]
-      : undefined
-  )
+  const [isExpanded, setIsExpanded] = useState(false)
 
-  const { toolName, toolUseId, isError } = getToolMeta(toolUse, toolResult, streamingState)
+  // Get streaming state via dedicated hook
+  const {
+    state: toolState,
+    toolName: streamingToolName,
+    input: streamingInput,
+    argsTotalBytes,
+    activeArgKey,
+    activeArgChars,
+    activeArgPreviewHead,
+    activeArgPreviewTail,
+  } = useToolStreamingState({
+    blockContent: toolUse?.content as ToolBlockContent | undefined,
+  })
+
+  // Get tool_use_id from block content for display
+  const blockToolUseId = (toolUse?.content as ToolBlockContent)?.tool_use_id
+
+  const { toolName, toolUseId, isError } = getToolMeta(
+    toolUse,
+    toolResult,
+    streamingToolName,
+    typeof blockToolUseId === 'string' ? blockToolUseId : undefined
+  )
   const hasResult = !!toolResult
 
   // If no tool name yet, show pending state instead of "unknown"
@@ -94,84 +127,131 @@ export const ToolInteractionBlock = React.memo(function ToolInteractionBlock({
   const displayName = toolName ?? 'Tool'
 
   const shortId = toolUseId ? `${toolUseId.slice(0, 8)}…` : null
-  const callPreview = isPending ? null : buildCallPreview(displayName, toolUse, toolResult, streamingState?.input)
+  const callPreview = isPending ? null : buildCallPreview(displayName, toolUse, toolResult, streamingInput ?? undefined)
   const title = isPending ? 'Pending...' : (callPreview ?? (shortId ? `${displayName} (${shortId})` : displayName))
 
-  const [isExpanded, setIsExpanded] = useState(false)
+  // Get error message from result
+  const errorMessage = isError && toolResult
+    ? (typeof (toolResult.content as ToolBlockContent)?.message === 'string'
+      ? (toolResult.content as ToolBlockContent).message as string
+      : typeof (toolResult.content as ToolBlockContent)?.error === 'string'
+        ? (toolResult.content as ToolBlockContent).error as string
+        : undefined)
+    : undefined
 
-  // Determine status based on streaming state, then fallback to block state
+  // Determine status and label
+  let status: ToolStatus
   let statusLabel: string
   if (isError) {
+    status = 'error'
     statusLabel = 'Error'
-  } else if (streamingState?.state === ToolStreamState.EXECUTING) {
-    statusLabel = 'Running...'
-  } else if (streamingState?.state === ToolStreamState.PREPARING) {
-    statusLabel = 'Preparing...'
-  } else if (streamingState?.state === ToolStreamState.READY) {
-    statusLabel = 'Ready'
   } else if (hasResult) {
+    status = 'success'
     statusLabel = 'Success'
+  } else if (toolState === ToolStreamState.EXECUTING) {
+    status = 'pending'
+    statusLabel = 'Running...'
+  } else if (toolState === ToolStreamState.PREPARING) {
+    status = 'pending'
+    statusLabel = 'Preparing...'
+  } else if (toolState === ToolStreamState.READY) {
+    status = 'pending'
+    statusLabel = 'Ready'
   } else {
-    statusLabel = 'Preparing...'  // Default fallback
+    status = 'pending'
+    statusLabel = 'Pending...'
   }
 
-  // Determine if tool is actively generating (pending/preparing/executing)
-  const isGenerating = !hasResult && !isError
+  // Determine animation states
+  // isGenerating: shimmer during PREPARING (args streaming) or when pending (no state yet)
+  const isGenerating = !hasResult && !isError && (toolState === null || toolState === ToolStreamState.PREPARING)
+  // isExecuting: pulse during EXECUTING (tool running server-side)
+  const isExecuting = !hasResult && !isError && toolState === ToolStreamState.EXECUTING
+
+  const formatBytes = (bytes: number): string => {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+    if (bytes < 1024) return `${bytes} B`
+    const kb = bytes / 1024
+    if (kb < 1024) return `${kb.toFixed(1)} KB`
+    const mb = kb / 1024
+    return `${mb.toFixed(1)} MB`
+  }
 
   return (
-    <div className={cn(
-      "my-1 rounded border border-dashed bg-muted/40 text-xs flex flex-col",
-      isGenerating ? "animate-generating-border-shimmer" : "border-muted-foreground/40"
-    )}>
-      <button
-        type="button"
-        className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left cursor-pointer hover:bg-muted/60 transition-colors"
-        onClick={() => setIsExpanded((prev) => !prev)}
-        aria-expanded={isExpanded}
-      >
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="truncate font-medium text-muted-foreground">
-              {title}
-            </span>
-          </div>
-          <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground/80">
-            <span className={cn(
-              isError && 'text-destructive',
-              // Animate for pending/preparing states (not error, not completed)
-              !isError && !hasResult && 'animate-generating-shimmer'
-            )}>
-              {statusLabel}
-            </span>
-          </div>
-        </div>
-
-        <span className="shrink-0 rounded bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground/80">
-          Tool
+    <CollapsibleToolBlock
+      icon={Wrench}
+      label={
+        <span className="text-sm font-medium text-foreground/90 truncate min-w-0">
+          {title}
         </span>
-      </button>
-
-      {isExpanded && (
-        <div className="border-t border-muted-foreground/20 px-3 py-1.5 space-y-1.5 text-[11px] text-muted-foreground">
-          {toolUse && (toolUse.content as ToolBlockContent)?.input && (
-            <div>
-              <div className="mb-0.5 font-medium text-muted-foreground/80">Call</div>
-              <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-background/60 px-2 py-1">
-                {JSON.stringify((toolUse.content as ToolBlockContent).input ?? {}, null, 2)}
-              </pre>
+      }
+      statusBadge={<ToolStatusBadge status={status} label={statusLabel} />}
+      isExpanded={isExpanded}
+      onExpandedChange={setIsExpanded}
+      isGenerating={isGenerating}
+      isExecuting={isExecuting}
+    >
+      {/* Streaming arg progress (best-effort) */}
+      {!hasResult && !isError && toolState === ToolStreamState.PREPARING && activeArgKey && (
+        <div className="rounded-md border bg-muted/20 px-2.5 py-2 text-xs">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 truncate">
+              Streaming <span className="font-medium">{activeArgKey}</span>
+              {typeof activeArgChars === 'number' ? (
+                <span className="text-muted-foreground/80"> ({activeArgChars.toLocaleString()} chars)</span>
+              ) : null}
             </div>
-          )}
-
-          {toolResult && (
-            <div>
-              <div className="mb-0.5 font-medium text-muted-foreground/80">Result</div>
-              <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-background/60 px-2 py-1">
-                {JSON.stringify(toolResult.content ?? {}, null, 2)}
-              </pre>
+            <div className="shrink-0 text-muted-foreground/80">
+              {typeof argsTotalBytes === 'number' ? formatBytes(argsTotalBytes) : null}
             </div>
+          </div>
+          {(activeArgPreviewHead || activeArgPreviewTail) && (
+            <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap rounded-md bg-muted/30 px-2 py-1.5 text-xs">
+              {activeArgPreviewHead}
+              {activeArgPreviewTail && activeArgPreviewTail !== activeArgPreviewHead ? (
+                <>
+                  {'\n…\n'}
+                  {activeArgPreviewTail}
+                </>
+              ) : null}
+            </pre>
           )}
         </div>
       )}
-    </div>
+
+      {/* Error message */}
+      {isError && errorMessage && (
+        <div
+          className={cn(
+            'flex items-start gap-2',
+            'text-xs p-2.5 rounded-md',
+            'bg-error/15 text-error'
+          )}
+        >
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <span className="leading-relaxed">{errorMessage}</span>
+        </div>
+      )}
+
+      {/* Tool call input */}
+      {toolUse && (toolUse.content as ToolBlockContent)?.input && (
+        <div>
+          <div className="mb-1 text-xs font-medium text-muted-foreground/80">Call</div>
+          <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md border bg-muted/30 px-2.5 py-2 text-xs">
+            {safeJsonStringify((toolUse.content as ToolBlockContent).input ?? {})}
+          </pre>
+        </div>
+      )}
+
+      {/* Tool result */}
+      {toolResult && (
+        <div>
+          <div className="mb-1 text-xs font-medium text-muted-foreground/80">Result</div>
+          <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md border bg-muted/30 px-2.5 py-2 text-xs">
+            {safeJsonStringify(toolResult.content ?? {})}
+          </pre>
+        </div>
+      )}
+    </CollapsibleToolBlock>
   )
 })

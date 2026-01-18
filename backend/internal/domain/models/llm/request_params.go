@@ -42,8 +42,8 @@ type RequestParams struct {
 	// ThinkingEnabled enables extended thinking mode (Claude only)
 	ThinkingEnabled *bool `json:"thinking_enabled,omitempty"`
 
-	// ThinkingLevel sets the thinking budget: "low", "medium", "high"
-	// Maps to token budgets: low=2000, medium=5000, high=12000
+	// ThinkingLevel sets the thinking budget: "low", "medium", "high", "xhigh"
+	// Uses ratio-based calculation: low=20%, medium=50%, high=80%, xhigh=95% of max_tokens
 	ThinkingLevel *string `json:"thinking_level,omitempty"`
 
 	// System prompt override (can also be set per turn)
@@ -175,9 +175,9 @@ func ValidateRequestParams(params map[string]interface{}) error {
 	}
 
 	if rp.ThinkingLevel != nil {
-		validLevels := map[string]bool{"low": true, "medium": true, "high": true}
+		validLevels := map[string]bool{"low": true, "medium": true, "high": true, "xhigh": true}
 		if !validLevels[*rp.ThinkingLevel] {
-			return fmt.Errorf("thinking_level must be 'low', 'medium', or 'high', got '%s'", *rp.ThinkingLevel)
+			return fmt.Errorf("thinking_level must be 'low', 'medium', 'high', or 'xhigh', got '%s'", *rp.ThinkingLevel)
 		}
 	}
 
@@ -254,23 +254,29 @@ func (rp *RequestParams) GetTemperature(defaultValue float64) float64 {
 	return defaultValue
 }
 
-// GetThinkingBudgetTokens converts thinking_level to token budget
-// low = 2000, medium = 5000, high = 12000
-func (rp *RequestParams) GetThinkingBudgetTokens() int {
+// GetThinkingBudgetTokens converts thinking_level to token budget using ratio-based calculation.
+// Uses ratios: low=20%, medium=50%, high=80%, xhigh=95% of maxTokens.
+// This ensures the Anthropic constraint (max_tokens > budget_tokens) is satisfied by design.
+func (rp *RequestParams) GetThinkingBudgetTokens(maxTokens int) int {
 	if rp.ThinkingLevel == nil {
 		return 0 // Thinking not enabled
 	}
 
+	var ratio float64
 	switch *rp.ThinkingLevel {
 	case "low":
-		return 2000
+		ratio = 0.20
 	case "medium":
-		return 5000
+		ratio = 0.50
 	case "high":
-		return 12000
+		ratio = 0.80
+	case "xhigh":
+		ratio = 0.95
 	default:
 		return 0
 	}
+
+	return int(float64(maxTokens) * ratio)
 }
 
 // GetLoremMax returns lorem_max with default fallback

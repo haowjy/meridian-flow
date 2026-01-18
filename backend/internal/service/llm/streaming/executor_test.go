@@ -140,7 +140,6 @@ var _ llmRepo.TurnNavigator = (*mockTurnNavigator)(nil)
 // mockProvider simulates LLM streaming with controllable behavior
 type mockProvider struct {
 	cancelCount atomic.Int32
-	mu          sync.Mutex
 	ctx         context.Context
 	cancelFunc  context.CancelFunc
 	cancelled   chan struct{}
@@ -457,6 +456,7 @@ func TestStreamExecutor_SoftCancelDrainTimeoutStopsProvider(t *testing.T) {
 	// Create executor with short timeout
 	executor := NewStreamExecutor(
 		"test-turn-456",
+		"test-thread-456", // Thread ID for AG-UI events
 		"test-model",
 		turnWriter,
 		&mockTurnReader{},
@@ -511,6 +511,7 @@ func TestStreamExecutor_IdempotentCancel(t *testing.T) {
 
 	executor := NewStreamExecutor(
 		"test-turn-789",
+		"test-thread-789", // Thread ID for AG-UI events
 		"test-model",
 		turnWriter,
 		&mockTurnReader{},
@@ -557,6 +558,7 @@ func TestStreamExecutor_HardCancelIdempotent(t *testing.T) {
 
 	executor := NewStreamExecutor(
 		"test-turn-abc",
+		"test-thread-abc", // Thread ID for AG-UI events
 		"test-model",
 		turnWriter,
 		&mockTurnReader{},

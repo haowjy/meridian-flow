@@ -50,11 +50,8 @@ func (m *mockTool) getExecCount() int {
 
 func TestNewToolRegistry(t *testing.T) {
 	registry := NewToolRegistry()
-	if registry == nil {
-		t.Fatal("NewToolRegistry returned nil")
-	}
-	if registry.executors == nil {
-		t.Fatal("registry.executors is nil")
+	if registry == nil || registry.executors == nil {
+		t.Fatal("NewToolRegistry returned nil or registry.executors is nil")
 	}
 }
 

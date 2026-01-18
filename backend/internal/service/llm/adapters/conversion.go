@@ -126,29 +126,19 @@ func convertFromLibraryResponse(resp *llmprovider.GenerateResponse) *domainllm.G
 	}
 }
 
-// convertFromLibraryEvent converts library StreamEvent to backend StreamEvent
+// convertFromLibraryEvent converts library StreamEvent to backend StreamEvent.
+// The library now emits AG-UI events (Event field) instead of Delta events.
+// AG-UI events are forwarded directly to SSE; the backend no longer needs Delta conversion.
 func convertFromLibraryEvent(event llmprovider.StreamEvent) domainllm.StreamEvent {
 	backendEvent := domainllm.StreamEvent{
 		Error: event.Error,
 	}
 
-	if event.Delta != nil {
-		backendEvent.Delta = &llm.TurnBlockDelta{
-			BlockIndex:        event.Delta.BlockIndex,
-			BlockType:         event.Delta.BlockType,
-			DeltaType:         event.Delta.DeltaType,
-			TextDelta:         event.Delta.TextDelta,
-			SignatureDelta:    event.Delta.SignatureDelta,
-			JSONDelta:         event.Delta.JSONDelta,
-			ToolCallID:        event.Delta.ToolCallID,
-			ToolCallName:      event.Delta.ToolCallName,
-			ToolUseID:         event.Delta.ToolUseID,         // Legacy
-			ToolName:          event.Delta.ToolName,          // Legacy
-			ThinkingSignature: event.Delta.ThinkingSignature, // Legacy
-			InputTokens:       event.Delta.InputTokens,
-			OutputTokens:      event.Delta.OutputTokens,
-			ThinkingTokens:    event.Delta.ThinkingTokens,
-		}
+	// Forward AG-UI events directly (new protocol path)
+	// These are emitted by the library's EventEmitter and should be forwarded to SSE as-is
+	// AG-UI events include: TEXT_MESSAGE_START/CONTENT/END, THINKING_*, TOOL_CALL_*, etc.
+	if event.Event != nil {
+		backendEvent.AGUIEvent = event.Event
 	}
 
 	if event.Block != nil {

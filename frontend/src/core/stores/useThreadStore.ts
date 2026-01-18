@@ -7,24 +7,6 @@ import {
   type ThreadRequestOptions,
 } from '@/features/threads/types'
 
-// Tool stream state constants (must match backend sse_events.go)
-export const ToolStreamState = {
-  PREPARING: 'preparing',
-  READY: 'ready',
-  EXECUTING: 'executing',
-  COMPLETE: 'complete',
-  ERROR: 'error',
-} as const
-
-export type ToolStreamStateValue = typeof ToolStreamState[keyof typeof ToolStreamState]
-
-// Streaming tool state for progressive display during LLM streaming
-export type StreamingToolState = {
-  state: ToolStreamStateValue
-  toolName: string
-  toolUseId?: string
-  input?: Record<string, unknown>
-}
 import { DEFAULT_THREAD_REQUEST_OPTIONS, requestParamsToOptions } from '@/features/threads/types'
 import { api } from '@/core/lib/api'
 import { getErrorMessageWithFallback } from '@/core/lib/errors'
@@ -32,7 +14,11 @@ import { makeLogger } from '@/core/lib/logger'
 
 // Stream-end coordination for cancel flow.
 // Stored outside Zustand since it contains non-serializable data (functions, timers).
-type StreamEndWaiter = { resolve: () => void; timeoutId: ReturnType<typeof setTimeout> }
+// Uses Set<resolver> to allow multiple waiters per turnId without orphaned promises.
+type StreamEndWaiter = {
+  resolvers: Set<() => void>
+  timeoutId: ReturnType<typeof setTimeout>
+}
 const streamEndWaiters = new Map<string, StreamEndWaiter>()
 
 /**
@@ -68,9 +54,6 @@ interface ThreadStore {
   streamingBlockIndex: number | null
   streamingBlockType: BlockType | null
 
-  // Streaming tool state per block index (for progressive tool display)
-  streamingToolStates: Record<number, StreamingToolState>
-
   loadThreads: (projectId: string, signal?: AbortSignal) => Promise<void>
   // Legacy shape retained; internally calls openThread
   loadTurns: (threadId: string, signal?: AbortSignal) => Promise<void>
@@ -100,9 +83,6 @@ interface ThreadStore {
     blockType: BlockType | null
   ) => void
   setCurrentTurnId: (turnId: string) => void
-
-  // Streaming tool state actions
-  updateToolState: (blockIndex: number, update: Partial<StreamingToolState>) => void
 
   interruptStreamingTurn: () => Promise<void>
 
@@ -174,7 +154,6 @@ export const useThreadStore = create<ThreadStore>()(
       streamingUrl: null,
       streamingBlockIndex: null,
       streamingBlockType: null,
-      streamingToolStates: {},
 
       // Computed getter for backwards compatibility
       get isLoadingThreads() {
@@ -385,29 +364,26 @@ export const useThreadStore = create<ThreadStore>()(
 
       waitForStreamEnd: (turnId: string, timeoutMs = 3000): Promise<void> => {
         const log = makeLogger('thread-store')
-
-        // If there's already a waiter for this turn, return the existing promise
-        // (shouldn't happen in normal flow, but defensive)
         const existing = streamEndWaiters.get(turnId)
+
         if (existing) {
+          // SOLID S: Single responsibility - just add to existing resolver set
           log.debug('waitForStreamEnd:existingWaiter', { turnId })
           return new Promise((resolve) => {
-            const oldResolve = existing.resolve
-            existing.resolve = () => {
-              oldResolve()
-              resolve()
-            }
+            existing.resolvers.add(resolve)
           })
         }
 
+        // Create new waiter with resolver Set
         return new Promise((resolve) => {
+          const resolvers = new Set<() => void>([resolve])
           const timeoutId = setTimeout(() => {
             log.debug('waitForStreamEnd:timeout', { turnId, timeoutMs })
             streamEndWaiters.delete(turnId)
-            resolve()
+            resolvers.forEach((r) => r()) // Resolve all waiting promises
           }, timeoutMs)
 
-          streamEndWaiters.set(turnId, { resolve, timeoutId })
+          streamEndWaiters.set(turnId, { resolvers, timeoutId })
           log.debug('waitForStreamEnd:registered', { turnId, timeoutMs })
         })
       },
@@ -415,11 +391,12 @@ export const useThreadStore = create<ThreadStore>()(
       notifyStreamEnded: (turnId: string) => {
         const log = makeLogger('thread-store')
         const waiter = streamEndWaiters.get(turnId)
+
         if (waiter) {
           log.debug('notifyStreamEnded:resolving', { turnId })
           clearTimeout(waiter.timeoutId)
-          streamEndWaiters.delete(turnId)
-          waiter.resolve()
+          streamEndWaiters.delete(turnId) // Clean up BEFORE resolving
+          waiter.resolvers.forEach((r) => r()) // Resolve all waiting promises
         } else {
           log.debug('notifyStreamEnded:noWaiter', { turnId })
         }
@@ -523,28 +500,7 @@ export const useThreadStore = create<ThreadStore>()(
           streamingUrl: null,
           streamingBlockIndex: null,
           streamingBlockType: null,
-          streamingToolStates: {}, // Clear tool states when stream ends
         }))
-      },
-
-      updateToolState: (blockIndex: number, update: Partial<StreamingToolState>) => {
-        set((state) => {
-          const existing = state.streamingToolStates[blockIndex] || {}
-          // Filter out undefined values from update to preserve existing values
-          // This ensures partial updates don't overwrite existing fields with undefined
-          const filtered = Object.fromEntries(
-            Object.entries(update).filter(([, v]) => v !== undefined)
-          )
-          return {
-            streamingToolStates: {
-              ...state.streamingToolStates,
-              [blockIndex]: {
-                ...existing,
-                ...filtered,
-              } as StreamingToolState,
-            },
-          }
-        })
       },
 
       setStreamingBlockInfo: (

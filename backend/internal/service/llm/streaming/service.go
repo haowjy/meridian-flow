@@ -446,13 +446,14 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	// This ensures SSE clients can connect while we're preparing the request
 	executor := NewStreamExecutor(
 		assistantTurn.ID,
-		model,            // Pure model name (no provider prefix)
-		s.turnWriter,     // TurnWriter
-		s.turnReader,     // TurnReader
-		s.turnNavigator,  // TurnNavigator (for continuation path loading)
-		llmProvider,      // Provider adapter
-		toolRegistry,     // Per-request ToolRegistry with project-specific tools
-		s.messageBuilder, // MessageBuilder (for continuation message building)
+		threadContext.threadID,                  // Thread ID for AG-UI events
+		model,                                   // Pure model name (no provider prefix)
+		s.turnWriter,                            // TurnWriter
+		s.turnReader,                            // TurnReader
+		s.turnNavigator,                         // TurnNavigator (for continuation path loading)
+		llmProvider,                             // Provider adapter
+		toolRegistry,                            // Per-request ToolRegistry with project-specific tools
+		s.messageBuilder,                        // MessageBuilder (for continuation message building)
 		s.logger,
 		toolRoundLimit,                          // Per-user tool round limit (tier-ready)
 		s.config.Debug,                          // Pass DEBUG flag for optional event IDs
