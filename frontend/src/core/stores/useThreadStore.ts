@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 import {
   Thread,
   Turn,
+  type TurnBlock,
   type BlockType,
   type ThreadRequestOptions,
 } from '@/features/threads/types'
@@ -11,6 +12,7 @@ import { DEFAULT_THREAD_REQUEST_OPTIONS, requestParamsToOptions } from '@/featur
 import { api } from '@/core/lib/api'
 import { getErrorMessageWithFallback } from '@/core/lib/errors'
 import { makeLogger } from '@/core/lib/logger'
+import { getTurnBlockIdentity } from '@/features/threads/utils/blockIdentity'
 
 // Stream-end coordination for cancel flow.
 // Stored outside Zustand since it contains non-serializable data (functions, timers).
@@ -136,6 +138,43 @@ const updateLastViewedTurnBookmark = async (threadId: string, turnId: string) =>
   }
 }
 
+function reconcileTurnBlocks(
+  prevBlocks: TurnBlock[],
+  nextBlocks: TurnBlock[]
+): TurnBlock[] {
+  if (nextBlocks.length === 0) return prevBlocks
+
+  const prevByIdentity = new Map<string, TurnBlock>()
+  for (const b of prevBlocks) {
+    prevByIdentity.set(getTurnBlockIdentity(b), b)
+  }
+
+  return nextBlocks.map((next) => {
+    const prev = prevByIdentity.get(getTurnBlockIdentity(next))
+    if (!prev) return next
+
+    // Preserve object identity when nothing relevant changed.
+    // This reduces unnecessary rerenders/flicker for memoized block renderers.
+    const prevContent = prev.content
+    const nextContent = next.content
+    const contentEqual =
+      prevContent === nextContent ||
+      (prevContent == null && nextContent == null)
+
+    if (
+      prev.blockType === next.blockType &&
+      prev.sequence === next.sequence &&
+      prev.textContent === next.textContent &&
+      prev.status === next.status &&
+      contentEqual
+    ) {
+      return prev
+    }
+
+    return next
+  })
+}
+
 export const useThreadStore = create<ThreadStore>()(
   persist(
     (set, get) => ({
@@ -168,7 +207,7 @@ export const useThreadStore = create<ThreadStore>()(
             turns: state.turns.map((turn) =>
               turn.id !== turnId ? turn : {
                 ...turn,
-                blocks,
+                blocks: reconcileTurnBlocks(turn.blocks, blocks),
                 error: turnError,
                 status,
               }

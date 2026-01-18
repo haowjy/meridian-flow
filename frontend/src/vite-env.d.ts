@@ -5,6 +5,7 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_PUBLISHABLE_KEY: string
   readonly VITE_API_URL?: string
   readonly VITE_DEV_TOOLS?: string
+  readonly VITE_DEBUG_SCROLL?: string
   readonly VITE_LOG_LEVEL?: string
   readonly MODE: string
   readonly DEV: boolean

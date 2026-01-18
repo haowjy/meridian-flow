@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react'
+import React, { useCallback, useEffect } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { Turn, TurnBlock, ToolBlockContent } from '@/features/threads/types'
 import { useThreadStore } from '@/core/stores/useThreadStore'
@@ -8,8 +8,10 @@ import { InlineError } from '@/shared/components/InlineError'
 import { makeLogger } from '@/core/lib/logger'
 import { buildAssistantRenderItems } from '@/features/threads/utils/toolGrouping'
 import { getToolRenderer } from './blocks/toolRegistry'
+import { getToolInteractionReactKey, getTurnBlockReactKey } from '@/features/threads/utils/blockIdentity'
 
 const log = makeLogger('AssistantTurn')
+const DEBUG_SCROLL = import.meta.env.VITE_DEBUG_SCROLL === '1'
 
 // =============================================================================
 // HELPERS
@@ -63,6 +65,11 @@ export const AssistantTurn = React.memo(function AssistantTurn({ turn }: Assista
 
   log.debug('render', { id: turn.id, prevTurnId: turn.prevTurnId, blocks: turn.blocks.length })
 
+  useEffect(() => {
+    if (!DEBUG_SCROLL) return
+    console.debug('[render] AssistantTurn:isStreaming', { t: Date.now(), turnId: turn.id, isStreaming })
+  }, [turn.id, isStreaming])
+
   const handleNavigate = useCallback(
     (turnId: string) => {
       switchSibling(turn.threadId, turnId)
@@ -83,13 +90,13 @@ export const AssistantTurn = React.memo(function AssistantTurn({ turn }: Assista
       <div className="w-full space-y-2 min-w-0 overflow-hidden">
         {items.map((item, index) => {
           if (item.kind === 'block') {
-            return <BlockRenderer key={item.block.id} block={item.block} />
+            return <BlockRenderer key={getTurnBlockReactKey(item.block)} block={item.block} />
           }
 
           // Route to custom tool UI via registry (extensible pattern)
           const toolName = getToolName(item.toolUse, item.toolResult)
           const render = getToolRenderer(toolName)
-          const key = item.toolUse?.id ?? item.toolResult?.id ?? `tool-${index}`
+          const key = getToolInteractionReactKey(turn.id, item.toolUse, item.toolResult) ?? `tool-${index}`
 
           return (
             <React.Fragment key={key}>
