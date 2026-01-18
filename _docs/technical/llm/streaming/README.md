@@ -14,6 +14,7 @@ Real-time LLM response delivery via Server-Sent Events (SSE) with turn block acc
 ## Quick Links
 
 **First time?** -> [Streaming Architecture](../../backend/architecture/streaming-architecture.md)
+**AG-UI protocol?** -> [AG-UI Protocol Reference](ag-ui-protocol.md) | [Meridian Bridge](meridian-agui-bridge.md)
 **API integration?** -> [API Endpoints](api-endpoints.md)
 **Tool calling?** -> [Tool Execution](tool-execution.md)
 **Troubleshooting?** -> [Edge Cases](edge-cases.md)
@@ -75,6 +76,28 @@ graph TB
 - The library emits complete `Block` structs when a provider block finishes.
 - Backend persists those blocks as `TurnBlock`s and only uses deltas for real-time UI.
 
+### Tool Input Streaming Limitations
+
+Anthropic's API **intentionally buffers tool input JSON** before sending `input_json_delta` events. From Anthropic's docs:
+
+> "Our current models only support emitting one complete key and value property from input at a time. As such, when using tools, there may be delays between streaming events while the model is working."
+
+**Observed behavior:**
+- Keep-alive events arrive every 5 seconds during buffering
+- Tool args (`input_json_delta`) arrive in bursts after buffering
+- This is especially noticeable for large args like `doc_edit` content
+
+**This is expected behavior, not a bug.**
+
+**OpenRouter note:** When using OpenRouter, this buffering behavior depends on the underlying provider. Some providers may buffer tool inputs similarly; others may stream more granularly.
+
+#### Future Option
+
+Anthropic offers a beta feature (`fine-grained-tool-streaming-2025-05-14` header) that disables buffering, but:
+- May produce invalid/partial JSON
+- Requires additional error handling
+- Still in beta as of May 2025
+
 ---
 
 ## Documentation
@@ -103,6 +126,28 @@ graph TB
 - Meridian extensions vs library types
 
 **When to read:** Implementing UI for blocks, parsing SSE events, understanding content schemas
+
+---
+
+### AG-UI Protocol
+
+**[AG-UI Protocol Reference](ag-ui-protocol.md)** (~150 lines)
+- AG-UI event types (text, thinking, tool, lifecycle)
+- ID semantics (runId, messageId, toolCallId, etc.)
+- Event flow diagrams
+- SSE format specification
+
+**When to read:** Understanding the streaming event protocol, debugging event correlation
+
+---
+
+**[Meridian AG-UI Bridge](meridian-agui-bridge.md)** (~200 lines)
+- Full-stack integration (Library → Backend → Frontend)
+- IDFactory and Emitter components
+- BlockTracker for frontend correlation
+- Meridian-specific extensions (turn_complete, turn_error)
+
+**When to read:** Understanding cross-layer event flow, implementing new event types
 
 ---
 

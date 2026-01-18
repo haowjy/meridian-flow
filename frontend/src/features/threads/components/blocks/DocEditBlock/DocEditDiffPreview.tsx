@@ -19,6 +19,8 @@ import type { DocEditInput } from './types'
 
 interface DocEditDiffPreviewProps {
   input: DocEditInput
+  /** Whether the tool is still streaming (state === 'preparing') */
+  isStreaming?: boolean
 }
 
 // =============================================================================
@@ -33,21 +35,29 @@ const dmp = new DiffMatchPatch()
 
 export const DocEditDiffPreview = React.memo(function DocEditDiffPreview({
   input,
+  isStreaming = false,
 }: DocEditDiffPreviewProps) {
-  const { command, old_str, new_str, file_text, insert_line } = input
+  const { command, old_str, new_str, file_text } = input
+  const insert_line = input.insert_line // Keep separate to avoid destructuring unused var warning
 
   switch (command) {
     case 'str_replace':
-      return <StrReplaceDiff oldStr={old_str || ''} newStr={new_str || ''} />
+      return (
+        <StrReplaceDiff
+          oldStr={old_str || ''}
+          newStr={new_str || ''}
+          isStreaming={isStreaming}
+        />
+      )
 
     case 'insert':
-      return <InsertPreview newStr={new_str || ''} line={insert_line} />
+      return <InsertPreview newStr={new_str || ''} line={insert_line} isStreaming={isStreaming} />
 
     case 'append':
-      return <AppendPreview newStr={new_str || ''} />
+      return <AppendPreview newStr={new_str || ''} isStreaming={isStreaming} />
 
     case 'create':
-      return <CreatePreview fileText={file_text || ''} />
+      return <CreatePreview fileText={file_text || ''} isStreaming={isStreaming} />
 
     default:
       return (
@@ -69,9 +79,11 @@ export const DocEditDiffPreview = React.memo(function DocEditDiffPreview({
 function StrReplaceDiff({
   oldStr,
   newStr,
+  isStreaming = false,
 }: {
   oldStr: string
   newStr: string
+  isStreaming?: boolean
 }) {
   // Compute diff between old and new
   const diffs = dmp.diff_main(oldStr, newStr)
@@ -103,6 +115,9 @@ function StrReplaceDiff({
             {text}
           </span>
         ))}
+        {isStreaming && (
+          <span className="animate-pulse ml-1">▊</span>
+        )}
       </pre>
     </div>
   )
@@ -115,9 +130,11 @@ function StrReplaceDiff({
 function InsertPreview({
   newStr,
   line,
+  isStreaming = false,
 }: {
   newStr: string
   line?: number
+  isStreaming?: boolean
 }) {
   const lineLabel = line !== undefined ? `at line ${line}` : 'at position'
 
@@ -140,6 +157,7 @@ function InsertPreview({
         )}
       >
         {newStr}
+        {isStreaming && <span className="animate-pulse ml-1">▊</span>}
       </pre>
     </div>
   )
@@ -149,7 +167,7 @@ function InsertPreview({
  * Preview for append command.
  * Shows green block indicating content added to end.
  */
-function AppendPreview({ newStr }: { newStr: string }) {
+function AppendPreview({ newStr, isStreaming = false }: { newStr: string; isStreaming?: boolean }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2 text-[11px]">
@@ -169,6 +187,7 @@ function AppendPreview({ newStr }: { newStr: string }) {
         )}
       >
         {newStr}
+        {isStreaming && <span className="animate-pulse ml-1">▊</span>}
       </pre>
     </div>
   )
@@ -178,7 +197,7 @@ function AppendPreview({ newStr }: { newStr: string }) {
  * Preview for create command.
  * Shows truncated preview of new file content.
  */
-function CreatePreview({ fileText }: { fileText: string }) {
+function CreatePreview({ fileText, isStreaming = false }: { fileText: string; isStreaming?: boolean }) {
   const maxLength = 500
   const truncated = fileText.length > maxLength
   const displayText = truncated
@@ -209,6 +228,7 @@ function CreatePreview({ fileText }: { fileText: string }) {
         )}
       >
         {displayText}
+        {isStreaming && <span className="animate-pulse ml-1">▊</span>}
       </pre>
     </div>
   )

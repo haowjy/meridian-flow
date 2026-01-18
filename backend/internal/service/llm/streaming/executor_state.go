@@ -52,11 +52,6 @@ func (s ExecutorState) String() string {
 	}
 }
 
-// IsTerminal returns true if this is a terminal state (no further transitions possible).
-func (s ExecutorState) IsTerminal() bool {
-	return s == StateCompleted || s == StateErrored
-}
-
 // AllowsPersistence returns true if blocks should be persisted in this state.
 func (s ExecutorState) AllowsPersistence() bool {
 	return s == StateStreaming

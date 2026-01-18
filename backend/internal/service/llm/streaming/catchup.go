@@ -15,7 +15,11 @@ import (
 // buildCatchupFunc creates a catchup function that retrieves events from the database.
 // This function is used by mstream to replay missed events during reconnection or first connection.
 // Uses TurnReader interface for better ISP compliance (only needs read operations)
-func buildCatchupFunc(turnRepo llmRepo.TurnReader, serializer *llmModels.BlockSerializer, logger *slog.Logger) mstream.CatchupFunc {
+//
+// NOTE: Legacy block events have been removed - frontend now uses AG-UI protocol exclusively.
+// Catchup only emits turn_start for basic reconnection support. The frontend handles
+// block catchup via API queries when needed.
+func buildCatchupFunc(turnRepo llmRepo.TurnReader, logger *slog.Logger) mstream.CatchupFunc {
 	return func(streamID string, lastEventID string) ([]mstream.Event, error) {
 		ctx := context.Background()
 		turnID := streamID // streamID is the turnID
@@ -30,20 +34,10 @@ func buildCatchupFunc(turnRepo llmRepo.TurnReader, serializer *llmModels.BlockSe
 			return nil, fmt.Errorf("failed to get turn: %w", err)
 		}
 
-		// Get all TurnBlocks from database
-		blocks, err := turnRepo.GetTurnBlocks(ctx, turnID)
-		if err != nil {
-			logger.Error("failed to get turn blocks for catchup",
-				"turn_id", turnID,
-				"error", err,
-			)
-			return nil, fmt.Errorf("failed to get turn blocks: %w", err)
-		}
-
 		// Convert to mstream.Events
 		var events []mstream.Event
 
-		// ALWAYS emit turn_start (even if no blocks yet)
+		// Emit turn_start (basic reconnection support)
 		// Library will add event IDs if DEBUG mode enabled
 		model := ""
 		if turn.Model != nil {
@@ -55,12 +49,6 @@ func buildCatchupFunc(turnRepo llmRepo.TurnReader, serializer *llmModels.BlockSe
 		})
 		events = append(events, mstream.NewEvent(turnStartData).
 			WithType(llmModels.SSEEventTurnStart))
-
-		// Emit block events with full content using BlockSerializer
-		for i, block := range blocks {
-			blockEvents := serializer.BlockToSSEEvents(&block, i)
-			events = append(events, blockEvents...)
-		}
 
 		return events, nil
 	}

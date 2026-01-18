@@ -13,3 +13,5 @@ export type { CollapsibleToolBlockProps } from './CollapsibleToolBlock'
 
 export { ToolStatusBadge } from './ToolStatusBadge'
 export type { ToolStatus, ToolStatusBadgeProps } from './ToolStatusBadge'
+
+export { useToolStreamingState } from './useToolStreamingState'

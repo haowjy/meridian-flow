@@ -131,7 +131,7 @@ func TestPersistenceGuard_DisarmImmediatelyVisibleDuringPersist(t *testing.T) {
 
 	go func() {
 		// Simulate persistence callback
-		guard.TryPersist(func() error {
+		_, _ = guard.TryPersist(func() error {
 			// Signal that we're in the persistence callback
 			close(inPersist)
 

@@ -22,13 +22,15 @@ import {
   findDocumentByPath,
 } from '@/features/threads/utils/docPathResolver'
 import { openDocument } from '@/core/lib/panelHelpers'
-import type { DocEditInput } from './types'
+import type { DocEditInput, DocEditCommand } from './types'
 import { COMMAND_LABELS } from './types'
 import {
   CollapsibleToolBlock,
   ToolStatusBadge,
+  useToolStreamingState,
   type ToolStatus,
 } from '../shared'
+import { ToolStreamState } from '@/features/threads/stores/useToolStreamStore'
 
 // =============================================================================
 // TYPES
@@ -42,17 +44,6 @@ interface DocEditBlockProps {
 // =============================================================================
 // HELPERS
 // =============================================================================
-
-/**
- * Extract DocEditInput from tool_use block.
- */
-function getDocEditInput(toolUse: TurnBlock | null): DocEditInput | null {
-  if (!toolUse) return null
-  const content = toolUse.content as ToolBlockContent
-  const input = content?.input as DocEditInput | undefined
-  if (!input || !input.command || !input.path) return null
-  return input
-}
 
 /**
  * Extract result status from tool_result block.
@@ -97,12 +88,41 @@ export const DocEditBlock = React.memo(function DocEditBlock({
     }))
   )
 
+  // Get streaming state for progressive field display via dedicated hook
+  const { input: streamingInput, isGenerating: toolIsGenerating, state: toolState } = useToolStreamingState({
+    blockContent: toolUse?.content as ToolBlockContent | undefined,
+  })
+
   // Get project slug from URL for navigation
   const location = useLocation()
   const projectSlug = location.pathname.match(/^\/projects\/([^/]+)/)?.[1] || null
 
-  // Parse input and resolve document
-  const input = getDocEditInput(toolUse)
+  // Parse input - prefer streaming input state over block content (progressive display)
+  const content = toolUse?.content as ToolBlockContent | undefined
+  const fallbackInput = content?.input as DocEditInput | undefined
+
+  // Read from streaming input (AG-UI) instead of legacy fields
+  const path = (streamingInput?.path as string | undefined)
+    ?? fallbackInput?.path
+  const command = (streamingInput?.command as DocEditCommand | undefined)
+    ?? fallbackInput?.command
+  const oldStr = (streamingInput?.old_str as string | undefined)
+    ?? fallbackInput?.old_str
+  const newStr = (streamingInput?.new_str as string | undefined)
+    ?? fallbackInput?.new_str
+  const fileText = (streamingInput?.file_text as string | undefined)
+    ?? fallbackInput?.file_text
+  const insertLine = (streamingInput?.insert_line as number | undefined)
+    ?? fallbackInput?.insert_line
+
+  // Use the hook's isGenerating flag to determine if args are still streaming
+  const isStreaming = toolIsGenerating
+
+  // Construct input object from extracted fields
+  const input: DocEditInput | null =
+    command && path
+      ? { command, path, old_str: oldStr, new_str: newStr, file_text: fileText, insert_line: insertLine }
+      : null
   const { isError, message } = getResultStatus(toolResult)
   const hasResult = !!toolResult
 
@@ -182,7 +202,11 @@ export const DocEditBlock = React.memo(function DocEditBlock({
       }
       isExpanded={isExpanded}
       onExpandedChange={setIsExpanded}
-      isGenerating={!hasResult && !isError}
+      // Animation: shimmer during PREPARING (args streaming) or when pending (no state yet)
+      // Stops when tool args are complete (state becomes 'ready') or result arrives
+      isGenerating={!hasResult && !isError && (toolState === null || toolIsGenerating)}
+      // Pulse animation during EXECUTING (tool running server-side)
+      isExecuting={!hasResult && !isError && toolState === ToolStreamState.EXECUTING}
     >
       {/* Error message */}
       {isError && message && (
@@ -199,7 +223,12 @@ export const DocEditBlock = React.memo(function DocEditBlock({
       )}
 
       {/* Diff preview */}
-      {input && <DocEditDiffPreview input={input} />}
+      {input && (
+        <DocEditDiffPreview
+          input={input}
+          isStreaming={isStreaming}
+        />
+      )}
     </CollapsibleToolBlock>
   )
 })
