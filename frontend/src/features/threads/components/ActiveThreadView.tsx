@@ -14,6 +14,8 @@ import { DeleteThreadDialog } from './DeleteThreadDialog'
 import { ScrollToBottomButton } from './ScrollToBottomButton'
 import { useStreamingAutoScroll } from '@/features/threads/hooks/useStreamingAutoScroll'
 
+const DEBUG_SCROLL = import.meta.env.VITE_DEBUG_SCROLL === '1'
+
 /**
  * Measures an element's height via callback ref, only updating state when changed.
  * Prevents unnecessary re-renders that can cause scroll position issues.
@@ -115,6 +117,43 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
     setIsContentReady(false)
   }, [activeThreadId])
 
+  useEffect(() => {
+    if (!DEBUG_SCROLL || !scrollContainer) return
+
+    const readMetrics = () => {
+      const scrollTop = scrollContainer.scrollTop
+      const scrollHeight = scrollContainer.scrollHeight
+      const clientHeight = scrollContainer.clientHeight
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight
+      return { scrollTop, scrollHeight, clientHeight, distanceFromBottom }
+    }
+
+    let lastLogAt = 0
+    const onScroll = () => {
+      const now = Date.now()
+      if (now - lastLogAt < 200) return
+      lastLogAt = now
+      console.debug('[scroll] ActiveThreadView:scroll', { t: now, ...readMetrics() })
+    }
+
+    console.debug('[scroll] ActiveThreadView:attach', { t: Date.now(), ...readMetrics() })
+    scrollContainer.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      scrollContainer.removeEventListener('scroll', onScroll)
+      console.debug('[scroll] ActiveThreadView:detach', { t: Date.now() })
+    }
+  }, [scrollContainer])
+
+  useEffect(() => {
+    if (!DEBUG_SCROLL || !scrollContainer) return
+    console.debug('[scroll] ActiveThreadView:streamingTurnId', {
+      t: Date.now(),
+      streamingTurnId,
+      scrollTop: scrollContainer.scrollTop,
+      scrollHeight: scrollContainer.scrollHeight,
+      clientHeight: scrollContainer.clientHeight,
+    })
+  }, [streamingTurnId, scrollContainer])
 
   // Callback when TurnList has scrolled to position - reveal content
   const handleScrollComplete = useCallback(() => {
@@ -225,6 +264,7 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
       {/* Single scroll container with everything inside */}
       <div
         ref={setScrollContainer}
+        data-thread-scroll-container="1"
         className="h-full overflow-y-auto overflow-x-hidden scroll-pt-[var(--thread-header-height)]"
         style={{
           scrollPaddingBottom: `${inputHeight}px`,

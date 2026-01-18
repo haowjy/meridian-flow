@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react'
 import type { RefObject } from 'react'
 import type { Turn } from '@/features/threads/types'
 
+const DEBUG_SCROLL = import.meta.env.VITE_DEBUG_SCROLL === '1'
+
 interface UseTurnListAutoScrollParams {
   containerRef: RefObject<HTMLDivElement | null>
   turns: Turn[]
@@ -82,12 +84,27 @@ export function useTurnListAutoScroll({
       )
 
       if (turnElement && stableFrames >= STABLE_FRAMES) {
-        const viewport = container.closest<HTMLElement>('[data-slot="scroll-area-viewport"]')
+        // This view uses a plain overflow container (not Radix ScrollArea).
+        // Prefer the explicit scroll container marker to avoid brittle DOM assumptions.
+        const viewport =
+          container.closest<HTMLElement>('[data-thread-scroll-container]') ??
+          container.closest<HTMLElement>('[data-slot="scroll-area-viewport"]')
 
         // Check if this is the last turn in the current window.
         // If it is, scroll to absolute bottom. Otherwise, scroll so the
         // BOTTOM of the turn is visible (user sees where they left off).
         const isLastTurn = turns[turns.length - 1]?.id === scrollToTurnId
+
+        if (DEBUG_SCROLL) {
+          console.debug('[scroll] useTurnListAutoScroll:execute', {
+            t: Date.now(),
+            scrollToTurnId,
+            isLastTurn,
+            hasViewport: Boolean(viewport),
+            containerScrollHeight: container.scrollHeight,
+            containerClientHeight: container.clientHeight,
+          })
+        }
 
         if (isLastTurn && viewport) {
           // Last turn → scroll to absolute bottom to eliminate any remaining scroll

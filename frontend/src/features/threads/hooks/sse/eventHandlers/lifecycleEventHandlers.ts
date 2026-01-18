@@ -48,8 +48,8 @@ export function handleTurnComplete(
   // to ensure tool_result blocks are fetched before clearing streaming state
   const runCleanup = () => {
     buffer.flush()
+    logger.debug('sse:turn_complete:cleanup', { turnId })
     actions.clearStreamingStream()
-    actions.clearToolStates()
     tracker.clear()
     actions.setStreamingBlockInfo(null, null)
     // Stop the stream
@@ -115,7 +115,6 @@ export function handleTurnError(
   // Cleanup
   buffer.flush()
   actions.clearStreamingStream()
-  actions.clearToolStates()
   tracker.clear()
   actions.setStreamingBlockInfo(null, null)
   // Stop the stream

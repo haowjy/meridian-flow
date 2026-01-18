@@ -9,6 +9,7 @@ import { useThreadStore } from '@/core/stores/useThreadStore'
 import { makeLogger } from '@/core/lib/logger'
 import { extractTextContent } from '@/features/threads/utils/turnHelpers'
 import { userTurnCardBase } from './styles'
+import { getTurnBlockReactKey } from '@/features/threads/utils/blockIdentity'
 
 const log = makeLogger('UserTurn')
 
@@ -78,7 +79,7 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
           {/* Card styling synced with EditTurnDialog via userTurnCardBase */}
           <Card className={userTurnCardBase}>
             {turn.blocks.map((block) => (
-              <BlockRenderer key={block.id} block={block} />
+              <BlockRenderer key={getTurnBlockReactKey(block)} block={block} />
             ))}
           </Card>
 

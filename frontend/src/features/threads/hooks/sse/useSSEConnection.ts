@@ -122,6 +122,10 @@ export function useThreadSSE() {
       clearToolStates: useToolStreamStore.getState().clearAll,
     }
 
+    // New stream: clear previous tool streaming UI state.
+    // We avoid clearing on stream end so tool/thinking blocks don't collapse when refreshTurn swaps blocks.
+    actions.clearToolStates()
+
     const connect = async () => {
       try {
         // Get session token
@@ -135,7 +139,6 @@ export function useThreadSSE() {
         if (!token) {
           logger.error('sse:error:no_token', 'No auth token available')
           clearStreamingStream()
-          actions.clearToolStates()
           return
         }
 
@@ -195,7 +198,6 @@ export function useThreadSSE() {
 
             flush()
             clearStreamingStream()
-            actions.clearToolStates()
             trackerRef.current.clear()
             setStreamingBlockInfo(null, null)
 
@@ -214,7 +216,6 @@ export function useThreadSSE() {
             logger.error('sse:error', err)
             flush()
             clearStreamingStream()
-            actions.clearToolStates()
             setStreamingBlockInfo(null, null)
             throw err
           },
@@ -223,7 +224,6 @@ export function useThreadSSE() {
         if (!ctrl.signal.aborted) {
           logger.error('sse:connect_error', err)
           clearStreamingStream()
-          actions.clearToolStates()
           setStreamingBlockInfo(null, null)
         }
       }
