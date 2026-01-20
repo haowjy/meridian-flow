@@ -59,6 +59,8 @@ export function useChatScroller({
   const prevScrollToTurnIdRef = useRef<string | undefined>(undefined)
   const initialScrolledRef = useRef(false)
   const listRef = useRef<HTMLDivElement | null>(null)
+  // Track previous streaming state to detect transition
+  const prevIsStreamingRef = useRef(false)
 
   // Reset state when THREAD changes (content gating for thread switch)
   useEffect(() => {
@@ -278,14 +280,21 @@ export function useChatScroller({
     }
   }, [isStreaming, scrollContainer])
 
-  // Reset follow state when streaming starts
+  // Set follow state on transition to streaming (not during streaming)
   useEffect(() => {
-    if (isStreaming) {
-      // If at bottom when streaming starts, follow; otherwise pause
-      const atBottom = distanceFromBottom() <= nearBottomThreshold
-      isFollowingOutputRef.current = atBottom
+    const wasStreaming = prevIsStreamingRef.current
+    prevIsStreamingRef.current = isStreaming
+
+    // Only act on transition: not-streaming → streaming
+    if (isStreaming && !wasStreaming && scrollContainer) {
+      // isAtBottom reflects pre-DOM-update position (scroll event hasn't fired yet
+      // because scroll events fire on scrollTop changes, not scrollHeight changes)
+      isFollowingOutputRef.current = isAtBottom
+      if (isAtBottom) {
+        scrollContainer.scrollTo({ top: scrollContainer.scrollHeight })
+      }
     }
-  }, [isStreaming, distanceFromBottom, nearBottomThreshold])
+  }, [isStreaming, isAtBottom, scrollContainer])
 
   const scrollToBottom = useCallback(() => {
     if (!scrollContainer) return

@@ -12,7 +12,7 @@ const buttonVariants = cva(
         // PRIMARY: Dark warm ink fill, light text, pill shape
         // Use for: Main CTAs ("New project", "Sign in", "Send")
         default:
-          "bg-foreground text-background rounded-full hover:opacity-90 " +
+          "bg-foreground text-background rounded-md hover:opacity-90 " +
           "focus-visible:outline-[3px] focus-visible:outline-[var(--focus-ring-outer)] focus-visible:outline-offset-2 " +
           "focus-visible:shadow-[0_0_0_2px_var(--focus-ring-inner)] " +
           "disabled:opacity-[--opacity-disabled]",
@@ -20,7 +20,7 @@ const buttonVariants = cva(
         // SECONDARY: Subtle border, warm ink text
         // Use for: Secondary actions ("Cancel", "Back")
         secondary:
-          "border border-border text-foreground rounded-full hover:bg-[var(--hover)] " +
+          "border border-border text-foreground rounded-md hover:bg-[var(--hover)] " +
           "focus-visible:outline-[3px] focus-visible:outline-[var(--focus-ring-outer)] focus-visible:outline-offset-2 " +
           "focus-visible:shadow-[0_0_0_2px_var(--focus-ring-inner)] " +
           "disabled:opacity-[--opacity-disabled]",
@@ -28,7 +28,7 @@ const buttonVariants = cva(
         // OUTLINE: Same as secondary but with background
         // Use for: Standalone secondary buttons
         outline:
-          "border border-border bg-background rounded-full hover:bg-[var(--hover)] " +
+          "border border-border bg-background rounded-md hover:bg-[var(--hover)] " +
           "focus-visible:outline-[3px] focus-visible:outline-[var(--focus-ring-outer)] focus-visible:outline-offset-2 " +
           "focus-visible:shadow-[0_0_0_2px_var(--focus-ring-inner)] " +
           "disabled:opacity-[--opacity-disabled]",
@@ -43,13 +43,13 @@ const buttonVariants = cva(
 
         // DESTRUCTIVE: Red fill for dangerous actions
         destructive:
-          "bg-error text-error-foreground rounded-full hover:opacity-90 " +
+          "bg-error text-error-foreground rounded-md hover:opacity-90 " +
           "focus-visible:outline-[3px] focus-visible:outline-error focus-visible:outline-offset-2 " +
           "disabled:opacity-[--opacity-disabled]",
 
         // ACCENT: Background with accent color text
         accent:
-          "bg-accent/10 text-accent rounded-full hover:bg-accent/20 " +
+          "bg-accent/10 text-accent rounded-md hover:bg-accent/20 " +
           "focus-visible:outline-[3px] focus-visible:outline-[var(--focus-ring-outer)] focus-visible:outline-offset-2 " +
           "focus-visible:shadow-[0_0_0_2px_var(--focus-ring-inner)] " +
           "disabled:opacity-[--opacity-disabled]",
@@ -63,12 +63,12 @@ const buttonVariants = cva(
       },
       size: {
         // Standard sizes - pill shape with icon scaling
-        default: "h-9 px-5 py-2 rounded-full [&_svg]:size-4",
-        sm: "h-8 px-4 gap-1.5 rounded-full [&_svg]:size-3.5",
-        lg: "h-10 px-6 rounded-full [&_svg]:size-5",
+        default: "h-9 px-5 py-2 rounded-md [&_svg]:size-4",
+        sm: "h-8 px-4 gap-1.5 rounded-md [&_svg]:size-3.5",
+        lg: "h-10 px-6 rounded-md [&_svg]:size-5",
 
         // Compact for inline controls (dropdowns, toolbars)
-        xs: "h-7 px-3 gap-1 text-xs rounded-full [&_svg]:size-3",
+        xs: "h-7 px-3 gap-1 text-xs rounded-md [&_svg]:size-3",
 
         // Icon buttons - subtle rounded squares with proportional icons
         "icon-xs": "size-6 rounded [&_svg]:size-3",

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ArrowUp, Brain, ChevronDown, StopCircle, Wrench } from 'lucide-react'
+import { ArrowUp, Brain, Check, ChevronDown, StopCircle, Wrench } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
 import {
@@ -25,6 +25,8 @@ interface ThreadRequestControlsProps {
   onStop?: () => void
   /** When false, hides the send/stop button area (useful for compact mobile composer). */
   showSend?: boolean
+  /** When true, show Check icon instead of ArrowUp (for edit/save vs send). */
+  saveIcon?: boolean
 }
 
 export function ThreadRequestControls({
@@ -36,6 +38,7 @@ export function ThreadRequestControls({
   isStreaming,
   onStop,
   showSend = true,
+  saveIcon = false,
 }: ThreadRequestControlsProps) {
   const { providers } = useModelCapabilities()
 
@@ -90,7 +93,7 @@ export function ThreadRequestControls({
 
   return (
     <div className="flex items-center gap-2 pt-1 text-xs">
-      <div className="flex flex-1 flex-wrap items-center gap-2">
+      <div className="@container flex flex-1 items-center gap-1">
         <ModelSelector
           models={allModels}
           selectedModelId={options.modelId}
@@ -107,10 +110,7 @@ export function ThreadRequestControls({
         />
       </div>
       {isStreaming && (
-        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-          <span className="hidden sm:inline">Responding</span>
-        </span>
+        <span className="size-1.5 animate-pulse rounded-full bg-primary" />
       )}
       {showSend && (onSend || rightContent) && (
         <div className="flex items-center gap-1">
@@ -122,9 +122,9 @@ export function ThreadRequestControls({
               className="transition-transform hover:scale-105 active:scale-95 disabled:hover:scale-100"
               disabled={showStop ? false : isSendDisabled}
               onClick={showStop && onStop ? onStop : onSend}
-              aria-label={showStop ? 'Stop response' : 'Send message'}
+              aria-label={showStop ? 'Stop response' : saveIcon ? 'Save' : 'Send message'}
             >
-              {showStop ? <StopCircle /> : <ArrowUp />}
+              {showStop ? <StopCircle /> : saveIcon ? <Check /> : <ArrowUp />}
             </Button>
           )}
         </div>
@@ -212,10 +212,10 @@ function ModelSelector({
           type="button"
           variant="ghost"
           size="xs"
-          className="text-muted-foreground hover:text-foreground"
+          className="min-w-0 !shrink px-1.5 text-muted-foreground hover:text-foreground"
         >
-          <span className="font-medium">{displayLabel}</span>
-          <ChevronDown />
+          <span className="max-w-24 truncate font-medium">{displayLabel}</span>
+          <ChevronDown className="shrink-0" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
@@ -329,15 +329,13 @@ function ReasoningDropdown({
           variant="ghost"
           disabled={disabled}
           className={cn(
-            // Active state: primary text color
+            "px-1.5",
             isActive ? "text-primary" : "text-muted-foreground hover:text-foreground",
-            // Disabled state: muted appearance
             disabled && "opacity-50"
           )}
         >
           <Brain />
-          <span>{REASONING_LABELS[value]}</span>
-          <ChevronDown />
+          <span className="hidden @[200px]:inline">{REASONING_LABELS[value]}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
