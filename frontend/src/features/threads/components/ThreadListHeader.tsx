@@ -17,7 +17,7 @@ export function ThreadListHeader({ onBrandClick }: ThreadListHeaderProps) {
   const setMobileActivePanel = useUIStore((s) => s.setMobileActivePanel)
 
   return (
-    <div className="thread-pane-header flex h-12 items-center px-2 sm:px-3">
+    <div className="thread-pane-header flex h-[var(--panel-header-height)] items-center px-2 sm:px-3">
       {/* Left: Toggle Sidebar (desktop only, hidden on mobile via SidebarToggle) */}
       <SidebarToggle side="left" />
 

@@ -1,31 +1,31 @@
-import { useState } from 'react'
+import { useState, memo } from 'react'
 import { FileText, MoreHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
+import { TreeItemMenuItems } from '@/shared/components/TreeItemMenuItems'
 import { TreeItemWithContextMenu } from '@/shared/components/TreeItemWithContextMenu'
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/shared/components/ui/dropdown-menu'
 import { createDocumentMenuItems } from '../utils/menuBuilders'
 import { InlineNameEditor } from './InlineNameEditor'
-import { TreeItemMetadata } from './TreeItemMetadata'
 import { useTreeSelection } from '../hooks/useTreeSelection'
 import type { Document } from '../types/document'
 
 interface DocumentTreeItemProps {
   document: Document
   isActive: boolean
-  onClick: () => void
-  onDelete?: () => void
-  onRename?: () => void
-  onAddAsReference?: () => void
+  // Callbacks accept documentId for stable references (no inline arrows in parent)
+  onClick: (documentId: string) => void
+  onDelete?: (documentId: string) => void
+  onRename?: (documentId: string) => void
+  onShowDetails?: (documentId: string, document: Document) => void
+  onAddAsReference?: (documentId: string) => void
   // Inline editing props
   isEditing?: boolean
-  onSubmitName?: (name: string) => void
+  onSubmitName?: (documentId: string, name: string) => void
   onCancelEdit?: () => void
   existingNames?: string[]
   /**
@@ -40,13 +40,17 @@ interface DocumentTreeItemProps {
  * Clickable document leaf node in tree.
  * Highlights when active, shows document icon.
  * Right-click for context menu with actions.
+ *
+ * Memoized to prevent re-renders when parent tree re-renders.
+ * Callbacks accept document.id as first param for stable references.
  */
-export function DocumentTreeItem({
+export const DocumentTreeItem = memo(function DocumentTreeItem({
   document,
   isActive,
   onClick,
   onDelete,
   onRename,
+  onShowDetails,
   onAddAsReference,
   isEditing,
   onSubmitName,
@@ -55,12 +59,15 @@ export function DocumentTreeItem({
   editorMode = 'rename',
 }: DocumentTreeItemProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [contextMenuOpen, setContextMenuOpen] = useState(false)
   const { toggleSelection, clearSelection } = useTreeSelection()
 
+  // Wrap callbacks to pass document.id - these are only created when menu opens
   const menuItems = createDocumentMenuItems({
-    onRename,
-    onDelete,
-    onAddAsReference,
+    onDetails: onShowDetails ? () => onShowDetails(document.id, document) : undefined,
+    onRename: onRename ? () => onRename(document.id) : undefined,
+    onDelete: onDelete ? () => onDelete(document.id) : undefined,
+    onAddAsReference: onAddAsReference ? () => onAddAsReference(document.id) : undefined,
   })
 
   const hasMenuItems = menuItems.length > 0
@@ -78,7 +85,7 @@ export function DocumentTreeItem({
         <InlineNameEditor
           initialValue={document.name}
           existingNames={existingNames}
-          onSubmit={onSubmitName}
+          onSubmit={(name) => onSubmitName(document.id, name)}
           onCancel={onCancelEdit}
           mode={editorMode}
           extension={document.extension}
@@ -87,88 +94,61 @@ export function DocumentTreeItem({
     )
   }
 
-  // Render dropdown menu items
-  const renderDropdownItems = () => (
-    <>
-      {menuItems.map((item, index) => {
-        const showSeparatorBefore =
-          item.separator === 'before' || item.separator === 'both'
-        const showSeparatorAfter =
-          item.separator === 'after' || item.separator === 'both'
-
-        return (
-          <div key={item.id}>
-            {showSeparatorBefore && index > 0 && <DropdownMenuSeparator />}
-            <DropdownMenuItem
-              onSelect={item.onSelect}
-              variant={item.variant}
-              disabled={item.disabled}
-            >
-              {item.icon}
-              {item.label}
-            </DropdownMenuItem>
-            {showSeparatorAfter && index < menuItems.length - 1 && (
-              <DropdownMenuSeparator />
-            )}
-          </div>
-        )
-      })}
-    </>
-  )
-
   return (
-    <TreeItemWithContextMenu menuItems={menuItems}>
+    <TreeItemWithContextMenu
+      menuItems={menuItems}
+      onOpenChange={(open) => {
+        setContextMenuOpen(open)
+        if (open) setDropdownOpen(false)
+      }}
+    >
       <div
-        role="button"
-        tabIndex={0}
-        onClick={(e) => {
-          // Modifier key pressed → toggle selection
-          if (e.metaKey || e.ctrlKey) {
-            e.preventDefault()
-            e.stopPropagation()
-            toggleSelection(document.id)
-            return
-          }
-
-          // No modifier → clear selection and navigate
-          clearSelection()
-          onClick()
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            clearSelection()
-            onClick()
-          }
-        }}
         className={cn(
-          'group flex w-full items-center gap-2 rounded-sm px-2.5 py-2 md:py-1 text-left text-sm transition-colors',
+          'group flex w-full items-center rounded-sm text-left text-sm transition-colors',
           'hover:bg-hover',
           isActive && 'bg-sidebar-accent/50 font-medium'
         )}
-        aria-label={`Open document: ${document.filename}`}
-        aria-current={isActive ? 'page' : undefined}
       >
-        <FileText className="size-4 md:size-3.5 flex-shrink-0" />
-        <span className="truncate flex-1">{document.filename}</span>
+        <button
+          type="button"
+          onClick={(e) => {
+            // Modifier key pressed → toggle selection
+            if (e.metaKey || e.ctrlKey) {
+              e.preventDefault()
+              toggleSelection(document.id)
+              return
+            }
 
-        {/* Metadata - word count, last edited */}
-        <TreeItemMetadata
-          type="document"
-          wordCount={document.wordCount}
-          updatedAt={document.updatedAt}
-        />
+            // No modifier → clear selection and navigate
+            clearSelection()
+            onClick(document.id)
+          }}
+          className={cn(
+            'flex flex-1 min-w-0 items-center gap-2 px-2.5 py-2 md:py-1',
+            'cursor-default appearance-none bg-transparent border-none m-0 font-inherit text-inherit text-left'
+          )}
+          aria-label={`Open document: ${document.filename}`}
+          aria-current={isActive ? 'page' : undefined}
+        >
+          <FileText className="size-4 md:size-3.5 flex-shrink-0" />
+          <span className="truncate">{document.filename}</span>
+        </button>
 
         {/* "..." button - visible on hover or always on mobile */}
         {hasMenuItems && (
-          <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
+          <DropdownMenu
+            open={dropdownOpen}
+            onOpenChange={(open) => {
+              setDropdownOpen(open)
+            }}
+          >
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={(e) => e.stopPropagation()}
+                disabled={contextMenuOpen}
                 className={cn(
-                  'flex-shrink-0 h-7 w-7 md:h-4 md:w-4 p-0 rounded-sm transition-opacity',
+                  'flex-shrink-0 h-7 w-9 md:h-4 md:w-7 p-0 rounded-sm transition-opacity',
                   'opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100',
                   dropdownOpen && 'opacity-100'
                 )}
@@ -178,11 +158,11 @@ export function DocumentTreeItem({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" side="bottom">
-              {renderDropdownItems()}
+              <TreeItemMenuItems items={menuItems} variant="dropdown" />
             </DropdownMenuContent>
           </DropdownMenu>
         )}
       </div>
     </TreeItemWithContextMenu>
   )
-}
+})

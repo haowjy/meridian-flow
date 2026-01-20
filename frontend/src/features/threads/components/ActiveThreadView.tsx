@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { useTurnsForThread } from '@/features/threads/hooks/useTurnsForThread'
@@ -12,36 +12,9 @@ import { TurnList } from './TurnList'
 import { TurnInput } from './TurnInput'
 import { DeleteThreadDialog } from './DeleteThreadDialog'
 import { ScrollToBottomButton } from './ScrollToBottomButton'
-import { useStreamingAutoScroll } from '@/features/threads/hooks/useStreamingAutoScroll'
+import { useChatScroller } from '@/features/threads/hooks/useChatScroller'
 
 const DEBUG_SCROLL = import.meta.env.VITE_DEBUG_SCROLL === '1'
-
-/**
- * Measures an element's height via callback ref, only updating state when changed.
- * Prevents unnecessary re-renders that can cause scroll position issues.
- *
- * @param threshold - Minimum height change (in px) to trigger state update.
- *                    Defaults to 2px to ignore micro layout shifts from focus rings,
- *                    sub-pixel rendering differences, etc.
- */
-function useElementHeight(threshold = 2) {
-  const [height, setHeight] = useState(0)
-  const heightRef = useRef(0) // Track current height without causing re-renders
-
-  const ref = useCallback((node: HTMLDivElement | null) => {
-    if (node) {
-      const measured = node.getBoundingClientRect().height
-      // Only update if change exceeds threshold to prevent scroll jumps
-      // from micro layout shifts (focus rings, sub-pixel differences)
-      if (Math.abs(measured - heightRef.current) > threshold) {
-        heightRef.current = measured
-        setHeight(measured)
-      }
-    }
-  }, [threshold])
-
-  return [height, ref] as const
-}
 
 interface ActiveThreadViewProps {
   /** Project ID passed directly from route - avoids async store race condition */
@@ -61,9 +34,6 @@ interface ActiveThreadViewProps {
  * - Contain SSE/EventSource details (delegated to useThreadSSE)
  */
 export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
-  // Content ready = TurnList has rendered, layout is stable, and scroll is complete
-  // Until ready, keep TurnList invisible (blank screen during load)
-  const [isContentReady, setIsContentReady] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
 
@@ -87,35 +57,28 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
   // allowing effects to run with the actual element (useRef doesn't trigger re-renders)
   const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(null)
 
-  // Measure input height for content minHeight calculation.
-  // Header height is a CSS variable (--thread-header-height) - no measurement needed.
-  const [inputHeight, inputRef] = useElementHeight()
-
   // Always call hooks unconditionally to respect Rules of Hooks.
   useThreadSSE()
-  const { turns, isLoading } = useTurnsForThread(activeThreadId)
+  const { turnIds, isLoading } = useTurnsForThread(activeThreadId)
 
   // Callback to update currentTurnId when scrolling to bottom
   const handleScrollToBottom = useCallback(() => {
-    const latestTurn = turns[turns.length - 1]
-    if (latestTurn) {
-      setCurrentTurnId(latestTurn.id)
+    const latestTurnId = turnIds[turnIds.length - 1]
+    if (latestTurnId) {
+      setCurrentTurnId(latestTurnId)
     }
-  }, [turns, setCurrentTurnId])
+  }, [turnIds, setCurrentTurnId])
 
-  // Auto-scroll management during streaming
-  // Suppress scroll button during initial load (before content is ready)
-  const { showScrollButton: rawShowScrollButton, scrollToBottom } = useStreamingAutoScroll({
+  // Simplified scroll controller - fixed-height composer eliminates need for height measurement
+  const { isContentReady, showScrollButton, scrollToBottom, listRef } = useChatScroller({
+    resetKey: activeThreadId,
     scrollContainer,
+    turnIds,
+    scrollToTurnId: currentTurnId ?? undefined,
+    isLoading,
     isStreaming: streamingTurnId !== null,
     onScrollToBottom: handleScrollToBottom,
   })
-  const showScrollButton = rawShowScrollButton && isContentReady
-
-  // Reset content ready state when thread changes
-  useEffect(() => {
-    setIsContentReady(false)
-  }, [activeThreadId])
 
   useEffect(() => {
     if (!DEBUG_SCROLL || !scrollContainer) return
@@ -155,11 +118,6 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
     })
   }, [streamingTurnId, scrollContainer])
 
-  // Callback when TurnList has scrolled to position - reveal content
-  const handleScrollComplete = useCallback(() => {
-    setIsContentReady(true)
-  }, [])
-
   const activeThread = threads.find((t) => t.id === activeThreadId) || null
 
   // Derive whether to show skeleton or empty state during cold start
@@ -192,13 +150,7 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
     if (coldStartView === 'skeleton') {
       return (
         <div className="thread-main">
-          <div
-            className="h-full overflow-y-auto scroll-pt-[var(--thread-header-height)]"
-            style={{
-              scrollPaddingBottom: `${inputHeight}px`,
-              overflowAnchor: 'none',
-            }}
-          >
+          <div className="h-full overflow-y-auto scroll-pt-[var(--panel-header-height)]">
             <div className="sticky top-0 z-10 bg-background">
               <ThreadHeader thread={null} />
               <HeaderGradientFade />
@@ -206,15 +158,18 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
             {/* Empty content area - user sees calm empty space during load */}
             <div
               className="flex-1"
-              style={{ minHeight: `calc(100% - var(--thread-header-height) - ${inputHeight}px)` }}
+              style={{
+                minHeight: 'calc(100% - var(--panel-header-height))',
+                paddingBottom: 'var(--thread-composer-max-height)',
+              }}
             />
-            {/* Input ready at bottom for immediate use */}
-            <div ref={inputRef} className="bg-background">
-              <TurnInput
-                projectId={projectId}
-                focusKey={`${activeThreadId ?? 'none'}:${threadFocusVersion}`}
-              />
-            </div>
+          </div>
+          {/* Input ready at bottom for immediate use */}
+          <div className="absolute bottom-0 inset-x-0 z-20">
+            <TurnInput
+              projectId={projectId}
+              focusKey={`${activeThreadId ?? 'none'}:${threadFocusVersion}`}
+            />
           </div>
         </div>
       )
@@ -223,13 +178,7 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
     // Empty state - threads loaded, none selected
     return (
       <div className="thread-main">
-        <div
-          className="h-full overflow-y-auto scroll-pt-[var(--thread-header-height)]"
-          style={{
-            scrollPaddingBottom: `${inputHeight}px`,
-            overflowAnchor: 'none', // Disable browser scroll anchoring to prevent scroll jumps during header edits
-          }}
-        >
+        <div className="h-full overflow-y-auto scroll-pt-[var(--panel-header-height)]">
           {/* Sticky header at top of scroll container */}
           <div className="sticky top-0 z-10 bg-background">
             <ThreadHeader thread={null} />
@@ -239,21 +188,24 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
           {/* Welcome message centered */}
           <div
             className="flex-1 flex items-center justify-center pt-3"
-            style={{ minHeight: `calc(100% - var(--thread-header-height) - ${inputHeight}px)` }}
+            style={{
+              minHeight: 'calc(100% - var(--panel-header-height))',
+              paddingBottom: 'var(--thread-composer-max-height)',
+            }}
           >
             <div className="text-center text-muted-foreground">
               <Sparkles className="mx-auto mb-2 size-6" />
               <p>Start a new thread</p>
             </div>
           </div>
+        </div>
 
-          {/* Input at bottom */}
-          <div ref={inputRef} className="bg-background">
-            <TurnInput
-              projectId={projectId}
-              focusKey={`${activeThreadId ?? 'none'}:${threadFocusVersion}`}
-            />
-          </div>
+        {/* Input at bottom - absolute positioned */}
+        <div className="absolute bottom-0 inset-x-0 z-20">
+          <TurnInput
+            projectId={projectId}
+            focusKey={`${activeThreadId ?? 'none'}:${threadFocusVersion}`}
+          />
         </div>
       </div>
     )
@@ -261,15 +213,11 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
 
   return (
     <div className="thread-main">
-      {/* Single scroll container with everything inside */}
+      {/* Scroll container - full height, scrollbar extends full panel */}
       <div
         ref={setScrollContainer}
         data-thread-scroll-container="1"
-        className="h-full overflow-y-auto overflow-x-hidden scroll-pt-[var(--thread-header-height)]"
-        style={{
-          scrollPaddingBottom: `${inputHeight}px`,
-          overflowAnchor: 'none', // Disable browser scroll anchoring to prevent scroll jumps during header edits
-        }}
+        className="h-full overflow-y-auto overflow-x-hidden scroll-pt-[var(--panel-header-height)]"
       >
         {/* Sticky header at top of scroll container */}
         <div className="sticky top-0 z-10 bg-background">
@@ -281,15 +229,17 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
           <HeaderGradientFade />
         </div>
 
-        {/* Content wrapper - calc-based min-height accounts for header and input */}
+        {/* Content wrapper - padding-bottom ensures last turn isn't hidden behind composer */}
         <div
+          ref={listRef}
           className="relative min-w-0 flex flex-col pt-3"
           style={{
-            minHeight: `calc(100% - var(--thread-header-height) - ${inputHeight}px)`,
+            minHeight: 'calc(100% - var(--panel-header-height))',
+            paddingBottom: 'var(--thread-composer-max-height)',
           }}
         >
           {/* Show minimal loading badge when paginating/refreshing with existing turns */}
-          {isLoading && turns.length > 0 && (
+          {isLoading && turnIds.length > 0 && (
             <div className="absolute inset-x-0 top-2 z-10 mx-auto w-max rounded border bg-popover px-2 py-1 text-xs text-popover-foreground">
               Loading…
             </div>
@@ -299,24 +249,21 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
               Made invisible until scroll completes, then revealed. */}
           <div className={`flex-1 ${isContentReady ? '' : 'opacity-0 pointer-events-none'}`}>
             <TurnList
-              turns={turns}
-              scrollToTurnId={currentTurnId}
-              isLoading={isLoading}
-              onScrollComplete={handleScrollComplete}
+              turnIds={turnIds}
             />
           </div>
 
         </div>
+      </div>
 
-        {/* Sticky input at bottom of scroll container */}
-        <div ref={inputRef} className="sticky bottom-0 bg-background relative">
-          {/* Floating scroll-to-bottom button - positioned above input */}
-          <ScrollToBottomButton visible={showScrollButton} onClick={scrollToBottom} />
-          <TurnInput
-            threadId={activeThread.id}
-            focusKey={`${activeThreadId ?? 'none'}:${threadFocusVersion}`}
-          />
-        </div>
+      {/* Composer OUTSIDE scroll - absolute positioned at bottom (floats over scroll container) */}
+      <div className="absolute bottom-0 inset-x-0 z-20">
+        {/* Floating scroll-to-bottom button - positioned above composer */}
+        <ScrollToBottomButton visible={showScrollButton} onClick={scrollToBottom} />
+        <TurnInput
+          threadId={activeThread.id}
+          focusKey={`${activeThreadId ?? 'none'}:${threadFocusVersion}`}
+        />
       </div>
 
       {/* Delete confirmation dialog */}

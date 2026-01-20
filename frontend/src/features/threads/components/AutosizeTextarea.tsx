@@ -1,24 +1,36 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { cn } from '@/lib/utils'
+
+const MIN_HEIGHT = 48  // ~2 lines
+const MAX_HEIGHT = 200 // ~8 lines, then internal scroll
 
 interface AutosizeTextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
     value: string
     onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
     onSubmit?: () => void
     canSend?: boolean
-    maxHeight?: number | string
+    /** Optional override for autosize clamp. Defaults to MIN_HEIGHT. */
     minHeight?: number | string
+    /** Optional override for autosize clamp. Defaults to MAX_HEIGHT. */
+    maxHeight?: number | string
     /** When this value changes, focus the textarea. Parent controls timing, component handles mechanics. */
     focusKey?: string | null
 }
 
+/**
+ * Auto-expanding textarea with min/max height constraints.
+ *
+ * Expands as the user types, up to MAX_HEIGHT. Beyond that, content scrolls internally.
+ * Works with absolute-positioned composer (outside scroll container) to prevent
+ * browser caret-tracking from affecting the thread scroll position.
+ */
 export function AutosizeTextarea({
     value,
     onChange,
     onSubmit,
     canSend = true,
-    maxHeight = 240,
-    minHeight = '3rem',
+    minHeight = MIN_HEIGHT,
+    maxHeight = MAX_HEIGHT,
     focusKey,
     className,
     ...props
@@ -28,49 +40,46 @@ export function AutosizeTextarea({
     // Focus when focusKey changes (parent controls timing, component handles mechanics)
     useEffect(() => {
         requestAnimationFrame(() => {
-            ref.current?.focus()
+            try {
+                ref.current?.focus({ preventScroll: true })
+            } catch {
+                // Older browsers may not support preventScroll
+                ref.current?.focus()
+            }
         })
     }, [focusKey])
 
-    useEffect(() => {
+    const minPx = typeof minHeight === 'number' ? minHeight : MIN_HEIGHT
+    const maxPx = typeof maxHeight === 'number' ? maxHeight : MAX_HEIGHT
+
+    // Auto-resize based on content, clamped between minPx and maxPx.
+    // Only numeric maxHeight participates in JS clamping; string maxHeight relies on CSS.
+    useLayoutEffect(() => {
         const el = ref.current
         if (!el) return
 
+        // Reset height to auto to measure actual scrollHeight
         el.style.height = 'auto'
-
-        // Handle numeric or string max-height
-        let limitPx = Infinity
-        if (typeof maxHeight === 'number') {
-            limitPx = maxHeight
-        } else if (typeof maxHeight === 'string' && maxHeight.endsWith('px')) {
-            limitPx = parseInt(maxHeight, 10)
-        } else if (typeof maxHeight === 'string' && maxHeight.endsWith('vh')) {
-            // Approximate vh to px for calculation if needed, or rely on CSS max-height
-            // For scrollHeight calculation, we need a pixel limit to know when to stop growing.
-            // If it's vh, we can check window.innerHeight
-            const vh = parseInt(maxHeight, 10)
-            limitPx = (window.innerHeight * vh) / 100
-        }
-
-        const next = Math.min(el.scrollHeight, limitPx)
+        const next = Math.min(Math.max(el.scrollHeight, minPx), maxPx)
         el.style.height = `${next}px`
-
-        // Also set max-height style to ensure CSS overflow kicks in if we hit the limit
-        el.style.maxHeight = typeof maxHeight === 'number' ? `${maxHeight}px` : maxHeight
-
-    }, [value, maxHeight])
+    }, [value, minPx, maxPx])
 
     return (
         <textarea
             ref={ref}
             rows={1}
             className={cn(
-                "w-full resize-none bg-transparent px-2 py-1.5 text-base md:text-sm",
+                // Auto-expanding with max height - scrolls internally when exceeded
+                "overflow-y-auto",
+                "w-full flex-1 resize-none bg-transparent px-2 py-1.5 text-base md:text-sm",
                 "placeholder:text-muted-foreground/60",
                 "outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus:ring-offset-0",
                 className
             )}
-            style={{ minHeight: typeof minHeight === 'number' ? `${minHeight}px` : minHeight }}
+            style={{
+                minHeight: typeof minHeight === 'number' ? minHeight : undefined,
+                maxHeight: typeof maxHeight === 'number' ? maxHeight : maxHeight,
+            }}
             value={value}
             onChange={onChange}
             onKeyDown={(event) => {

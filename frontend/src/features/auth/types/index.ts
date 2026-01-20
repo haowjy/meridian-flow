@@ -35,7 +35,7 @@ export interface AuthActions {
 
 /**
  * Menu item configuration - extensible menu system (Open/Closed).
- * Same structure as ContextMenuItemConfig for consistency.
+ * Same structure as `TreeMenuItemConfig` for consistency.
  */
 export interface UserMenuItemConfig {
   id: string

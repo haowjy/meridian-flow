@@ -26,7 +26,7 @@ export function DocumentHeaderBar({
       role="region"
       aria-label={ariaLabel}
       className={cn('flex items-center gap-1 px-3', showDivider && 'border-b')}
-      style={{ height: 'var(--editor-header-height)' }}
+      style={{ height: 'var(--panel-header-height)' }}
     >
       {leading}
       <div className="min-w-0 flex-1">{title}</div>

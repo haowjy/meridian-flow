@@ -194,12 +194,13 @@ describe('tool content merging', () => {
     content: Record<string, unknown>
   ) {
     mockGetState.mockReturnValue({
-      turns: [
-        {
+      turnIds: [turnId],
+      turnById: {
+        [turnId]: {
           id: turnId,
           blocks: [{ sequence: blockIndex, content }],
         },
-      ],
+      },
     } as ReturnType<typeof useThreadStore.getState>)
   }
 
@@ -270,12 +271,13 @@ describe('tool content merging', () => {
 
     // Mock with undefined content (edge case)
     mockGetState.mockReturnValue({
-      turns: [
-        {
+      turnIds: ['turn-1'],
+      turnById: {
+        'turn-1': {
           id: 'turn-1',
           blocks: [{ sequence: 0, content: undefined }],
         },
-      ],
+      },
     } as unknown as ReturnType<typeof useThreadStore.getState>)
 
     // Send args

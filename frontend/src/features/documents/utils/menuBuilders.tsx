@@ -1,5 +1,5 @@
-import { FileText, Folder, Upload, Pencil, Trash2, BookOpen } from 'lucide-react'
-import type { ContextMenuItemConfig } from '@/shared/components/TreeItemWithContextMenu'
+import { FileText, Folder, Upload, Pencil, Trash2, BookOpen, Info } from 'lucide-react'
+import type { TreeMenuItemConfig } from '@/shared/components/TreeItemWithContextMenu'
 
 /**
  * Menu builder utilities for document tree context menus.
@@ -11,6 +11,7 @@ interface DocumentMenuHandlers {
   onRename?: () => void
   onDelete?: () => void
   onAddAsReference?: () => void
+  onDetails?: () => void
 }
 
 interface FolderMenuHandlers {
@@ -19,6 +20,7 @@ interface FolderMenuHandlers {
   onImport?: () => void
   onRename?: () => void
   onDelete?: () => void
+  onDetails?: () => void
 }
 
 interface RootMenuHandlers {
@@ -37,8 +39,18 @@ interface RootMenuHandlers {
  */
 export function createDocumentMenuItems(
   handlers: DocumentMenuHandlers
-): ContextMenuItemConfig[] {
-  const items: ContextMenuItemConfig[] = []
+): TreeMenuItemConfig[] {
+  const items: TreeMenuItemConfig[] = []
+
+  if (handlers.onDetails) {
+    items.push({
+      id: 'details',
+      label: 'Details',
+      icon: <Info className="size-3.5" />,
+      onSelect: handlers.onDetails,
+      separator: 'after',
+    })
+  }
 
   if (handlers.onAddAsReference) {
     items.push({
@@ -46,7 +58,6 @@ export function createDocumentMenuItems(
       label: 'Add as reference',
       icon: <BookOpen className="size-3.5" />,
       onSelect: handlers.onAddAsReference,
-      separator: 'after',
     })
   }
 
@@ -66,7 +77,6 @@ export function createDocumentMenuItems(
       icon: <Trash2 className="size-3.5" />,
       onSelect: handlers.onDelete,
       variant: 'destructive',
-      separator: 'before',
     })
   }
 
@@ -86,13 +96,27 @@ export function createDocumentMenuItems(
  */
 export function createFolderMenuItems(
   handlers: FolderMenuHandlers
-): ContextMenuItemConfig[] {
-  const items: ContextMenuItemConfig[] = []
+): TreeMenuItemConfig[] {
+  const items: TreeMenuItemConfig[] = []
 
-  const hasCreateActions = handlers.onCreateDocument || handlers.onCreateFolder || handlers.onImport
+  const hasCreateActions =
+    handlers.onCreateDocument || handlers.onCreateFolder || handlers.onImport
+  const hasBottomActions = handlers.onRename || handlers.onDelete
+
+  if (handlers.onDetails) {
+    items.push({
+      id: 'details',
+      label: 'Details',
+      icon: <Info className="size-3.5" />,
+      onSelect: handlers.onDetails,
+      separator: hasCreateActions || hasBottomActions ? 'after' : undefined,
+    })
+  }
+
+  const createItems: TreeMenuItemConfig[] = []
 
   if (handlers.onCreateDocument) {
-    items.push({
+    createItems.push({
       id: 'new-document',
       label: 'New Document',
       icon: <FileText className="size-3.5" />,
@@ -101,7 +125,7 @@ export function createFolderMenuItems(
   }
 
   if (handlers.onCreateFolder) {
-    items.push({
+    createItems.push({
       id: 'new-folder',
       label: 'New Folder',
       icon: <Folder className="size-3.5" />,
@@ -110,12 +134,18 @@ export function createFolderMenuItems(
   }
 
   if (handlers.onImport) {
-    items.push({
+    createItems.push({
       id: 'import-documents',
       label: 'Import Documents',
       icon: <Upload className="size-3.5" />,
       onSelect: handlers.onImport,
     })
+  }
+
+  if (createItems.length > 0) {
+    const lastIndex = createItems.length - 1
+    createItems[lastIndex]!.separator = hasBottomActions ? 'after' : undefined
+    items.push(...createItems)
   }
 
   if (handlers.onRename) {
@@ -124,7 +154,6 @@ export function createFolderMenuItems(
       label: 'Rename',
       icon: <Pencil className="size-3.5" />,
       onSelect: handlers.onRename,
-      separator: hasCreateActions ? 'before' : undefined,
     })
   }
 
@@ -135,7 +164,6 @@ export function createFolderMenuItems(
       icon: <Trash2 className="size-3.5" />,
       onSelect: handlers.onDelete,
       variant: 'destructive',
-      separator: 'before',
     })
   }
 
@@ -151,8 +179,8 @@ export function createFolderMenuItems(
  */
 export function createRootMenuItems(
   handlers: RootMenuHandlers
-): ContextMenuItemConfig[] {
-  const items: ContextMenuItemConfig[] = []
+): TreeMenuItemConfig[] {
+  const items: TreeMenuItemConfig[] = []
 
   if (handlers.onCreateDocument) {
     items.push({
