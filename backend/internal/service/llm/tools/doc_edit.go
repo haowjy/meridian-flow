@@ -227,7 +227,7 @@ func (t *EditTool) executeAppend(ctx context.Context, path string, input map[str
 }
 
 // executeCreate handles the create command.
-// Creates a new document (immediately, not as ai_version suggestion).
+// Creates a new document with empty content, storing AI-generated content in ai_version for human review.
 // Uses DocumentService which handles: Metadata init, Slug generation, Extension validation, timestamps.
 func (t *EditTool) executeCreate(ctx context.Context, path string, input map[string]interface{}) (interface{}, error) {
 	// Extract parameters (recoverable error - LLM can retry)
@@ -274,7 +274,7 @@ func (t *EditTool) executeCreate(ctx context.Context, path string, input map[str
 		folderPathPtr = &cleanPath
 	}
 
-	// Use DocumentService to create document
+	// Use DocumentService to create document with empty content
 	// Service handles: Metadata initialization, Slug generation, Extension validation, timestamps
 	// FolderPath triggers auto-creation of intermediate folders
 	createReq := &docsysSvc.CreateDocumentRequest{
@@ -283,16 +283,23 @@ func (t *EditTool) executeCreate(ctx context.Context, path string, input map[str
 		FolderPath: folderPathPtr,
 		Name:       name,
 		Extension:  ext,
-		Content:    fileText,
+		Content:    "", // Empty content - AI content goes to ai_version for review
 	}
 	doc, err := t.documentSvc.CreateDocument(ctx, createReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create document: %w", err)
 	}
 
+	// Set AI-generated content as ai_version for human review (if not empty)
+	if fileText != "" {
+		if _, err := t.documentSvc.UpdateAIVersion(ctx, t.userID, doc.ID, &fileText); err != nil {
+			return nil, fmt.Errorf("failed to save ai_version: %w", err)
+		}
+	}
+
 	return map[string]interface{}{
 		"path":       path,
-		"message":    "Created new document",
+		"message":    "Created new document with suggested content",
 		"documentId": doc.ID,
 	}, nil
 }
