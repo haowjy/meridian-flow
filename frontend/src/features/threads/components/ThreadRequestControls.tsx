@@ -119,12 +119,12 @@ export function ThreadRequestControls({
             <Button
               type="button"
               size="icon"
-              className="shrink-0 transition-transform hover:scale-105 active:scale-95 disabled:hover:scale-100 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="transition-transform hover:scale-105 active:scale-95 disabled:hover:scale-100"
               disabled={showStop ? false : isSendDisabled}
               onClick={showStop && onStop ? onStop : onSend}
               aria-label={showStop ? 'Stop response' : 'Send message'}
             >
-              {showStop ? <StopCircle className="size-3" /> : <ArrowUp className="size-3" />}
+              {showStop ? <StopCircle /> : <ArrowUp />}
             </Button>
           )}
         </div>
@@ -211,11 +211,11 @@ function ModelSelector({
         <Button
           type="button"
           variant="ghost"
-          size="sm"
-          className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          size="xs"
+          className="text-muted-foreground hover:text-foreground"
         >
           <span className="font-medium">{displayLabel}</span>
-          <ChevronDown className="size-3" />
+          <ChevronDown />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
@@ -325,20 +325,19 @@ function ReasoningDropdown({
       <DropdownMenuTrigger asChild disabled={disabled}>
         <Button
           type="button"
-          size="sm"
+          size="xs"
           variant="ghost"
           disabled={disabled}
           className={cn(
-            "flex items-center gap-1 px-2 py-1 text-xs transition-colors",
             // Active state: primary text color
             isActive ? "text-primary" : "text-muted-foreground hover:text-foreground",
             // Disabled state: muted appearance
             disabled && "opacity-50"
           )}
         >
-          <Brain className="size-3" />
+          <Brain />
           <span>{REASONING_LABELS[value]}</span>
-          <ChevronDown className="size-3" />
+          <ChevronDown />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">

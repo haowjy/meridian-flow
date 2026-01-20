@@ -77,43 +77,45 @@ export const TurnActionBar = React.memo(function TurnActionBar({
 
 
     return (
-        <div className={cn('flex items-center gap-1 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity duration-200', className)}>
+        <div className={cn('flex items-center gap-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity duration-200', className)}>
             <div className="flex items-center gap-1">
                 <button
                     onClick={handleCopy}
-                    className="touch-target-inline p-1 rounded cursor-pointer hover:bg-muted hover:text-foreground transition-colors flex items-center justify-center"
+                    className="p-1 touch-target-inline rounded hover:bg-muted hover:text-foreground transition-colors"
                     aria-label="Copy text"
                 >
-                    {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
                 </button>
 
                 {onEdit && (
                     <button
                         onClick={onEdit}
-                        className="touch-target-inline p-1 rounded cursor-pointer hover:bg-muted hover:text-foreground transition-colors flex items-center justify-center"
+                        disabled={isLoading}
+                        className="p-1 touch-target-inline rounded hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                         aria-label="Edit message"
                     >
-                        <Edit2 className="w-3.5 h-3.5" />
+                        <Edit2 className="size-3" />
                     </button>
                 )}
 
                 {onRegenerate && (
                     <button
                         onClick={onRegenerate}
-                        className="touch-target-inline p-1 rounded cursor-pointer hover:bg-muted hover:text-foreground transition-colors flex items-center justify-center"
+                        disabled={isLoading}
+                        className="p-1 touch-target-inline rounded hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                         aria-label="Regenerate response"
                     >
-                        <RefreshCw className="w-3.5 h-3.5" />
+                        <RefreshCw className="size-3" />
                     </button>
                 )}
 
                 {isDevMode && (
                     <button
                         onClick={() => setShowDebug(true)}
-                        className="touch-target-inline p-1 rounded cursor-pointer hover:bg-muted hover:text-foreground transition-colors flex items-center justify-center"
+                        className="p-1 touch-target-inline rounded hover:bg-muted hover:text-foreground transition-colors"
                         aria-label="Debug info"
                     >
-                        <Info className="w-3.5 h-3.5" />
+                        <Info className="size-3" />
                     </button>
                 )}
             </div>
@@ -123,21 +125,21 @@ export const TurnActionBar = React.memo(function TurnActionBar({
                     <button
                         onClick={handlePrev}
                         disabled={currentIndex === 0 || isLoading}
-                        className="touch-target-inline px-0.5 py-0.5 rounded cursor-pointer hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+                        className="p-0.5 sm:p-1 touch-target-inline rounded hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                         aria-label="Previous version"
                     >
-                        <ChevronLeft className="w-3.5 h-3.5" />
+                        <ChevronLeft className="size-3" />
                     </button>
-                    <span className="px-0 text-xs font-medium text-center select-none">
+                    <span className="text-[10px] font-medium text-center select-none">
                         {currentNumber}/{siblingCount}
                     </span>
                     <button
                         onClick={handleNext}
                         disabled={currentIndex === siblingCount - 1 || isLoading}
-                        className="touch-target-inline px-0.5 py-0.5 rounded cursor-pointer hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+                        className="p-0.5 sm:p-1 touch-target-inline rounded hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                         aria-label="Next version"
                     >
-                        <ChevronRight className="w-3.5 h-3.5" />
+                        <ChevronRight className="size-3" />
                     </button>
                 </div>
             )}

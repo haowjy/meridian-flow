@@ -126,7 +126,8 @@ export function LoginForm() {
                 {/* Google button */}
                 <Button
                     variant="outline"
-                    className="w-full h-10 bg-card hover:bg-muted/50 border-border/80"
+                    size="lg"
+                    className="w-full"
                     onClick={handleGoogleLogin}
                 >
                     <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
@@ -194,7 +195,8 @@ export function LoginForm() {
                     </div>
                     <Button
                         type="submit"
-                        className="w-full h-10 mt-2"
+                        size="lg"
+                        className="w-full mt-2"
                         disabled={isLoading}
                     >
                         {isLoading

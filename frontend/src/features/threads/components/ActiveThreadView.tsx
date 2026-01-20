@@ -73,7 +73,7 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
 
   // Simplified scroll controller - fixed-height composer eliminates need for height measurement
   const { isContentReady, showScrollButton, scrollToBottom, listRef } = useChatScroller({
-    resetKey: activeThreadId,
+    threadResetKey: activeThreadId, // Only thread changes trigger content gating
     scrollContainer,
     turnIds,
     scrollToTurnId: currentTurnId ?? undefined,
@@ -241,13 +241,6 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
             paddingBottom: composerHeight + 16, // actual height + small buffer
           }}
         >
-          {/* Show minimal loading badge when paginating/refreshing with existing turns */}
-          {isLoading && turnIds.length > 0 && (
-            <div className="absolute inset-x-0 top-2 z-10 mx-auto w-max rounded border bg-popover px-2 py-1 text-xs text-popover-foreground">
-              Loading…
-            </div>
-          )}
-
           {/* TurnList always renders (allows layout to stabilize and scroll to happen invisibly).
               Made invisible until scroll completes, then revealed. */}
           <div className={`flex-1 ${isContentReady ? '' : 'opacity-0 pointer-events-none'}`}>

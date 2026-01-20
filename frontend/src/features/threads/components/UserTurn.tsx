@@ -31,13 +31,17 @@ interface UserTurnProps {
  */
 export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
   const [isEditing, setIsEditing] = useState(false)
-  const { switchSibling, editTurn, isLoadingTurns } = useThreadStore(
+  const { switchSibling, editTurn, isLoadingTurns, isSwitchingSibling, streamingTurnId } = useThreadStore(
     useShallow((s) => ({
       switchSibling: s.switchSibling,
       editTurn: s.editTurn,
       isLoadingTurns: s.isLoadingTurns,
+      isSwitchingSibling: s.isSwitchingSibling,
+      streamingTurnId: s.streamingTurnId,
     }))
   )
+
+  const isStreaming = streamingTurnId !== null
 
   log.debug('render', { id: turn.id, prevTurnId: turn.prevTurnId, blocks: turn.blocks.length })
 
@@ -85,7 +89,7 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
 
           <TurnActionBar
             turn={turn}
-            isLoading={isLoadingTurns}
+            isLoading={isLoadingTurns || isSwitchingSibling || isStreaming}
             onNavigate={handleNavigate}
             onEdit={handleEdit}
             className="mr-1"

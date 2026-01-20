@@ -47,6 +47,8 @@ interface ThreadStore {
   statusThreads: LoadStatus
   isFetchingThreads: boolean
   isLoadingTurns: boolean
+  /** Flag for sibling navigation (disables buttons but doesn't trigger loading UI) */
+  isSwitchingSibling: boolean
   error: string | null
   navigationAbortController: AbortController | null
 
@@ -219,6 +221,7 @@ export const useThreadStore = create<ThreadStore>()(
       statusThreads: 'idle' as LoadStatus,
       isFetchingThreads: false,
       isLoadingTurns: false,
+      isSwitchingSibling: false,
       error: null,
       navigationAbortController: null,
       streamingTurnId: null,
@@ -757,7 +760,8 @@ export const useThreadStore = create<ThreadStore>()(
         }
 
         const controller = new AbortController()
-        set({ navigationAbortController: controller, isLoadingTurns: true, error: null })
+        // Use isSwitchingSibling instead of isLoadingTurns to avoid skeleton UI during sibling nav
+        set({ navigationAbortController: controller, isSwitchingSibling: true, error: null })
 
         try {
           const { turns, hasMoreBefore, hasMoreAfter } = await api.turns.paginate(threadId, {
@@ -778,17 +782,20 @@ export const useThreadStore = create<ThreadStore>()(
 
           // Only update if not aborted
           if (!controller.signal.aborted) {
-            set({
+            // Merge turnById instead of replacing to prevent brief undefined flash
+            // during React reconciliation. Old turns remain in memory but won't render
+            // (not in turnIds) and will be garbage collected when no longer referenced.
+            set((state) => ({
               threadId,
               turnIds,
-              turnById,
+              turnById: { ...state.turnById, ...turnById },
               currentTurnId: targetTurnId,
               hasMoreBefore,
               hasMoreAfter,
-              isLoadingTurns: false,
+              isSwitchingSibling: false,
               navigationAbortController: null, // Clear after success
               ...detectStreamingState(turnIds, turnById),
-            })
+            }))
             log.debug('switchSibling:set', { threadId, currentTurnId: targetTurnId, total: turnIds.length })
           }
         } catch (error) {
@@ -797,7 +804,7 @@ export const useThreadStore = create<ThreadStore>()(
             return
           }
           log.error('switchSibling:error', error)
-          set({ error: getErrorMessageWithFallback(error, 'Failed to navigate'), isLoadingTurns: false, navigationAbortController: null })
+          set({ error: getErrorMessageWithFallback(error, 'Failed to navigate'), isSwitchingSibling: false, navigationAbortController: null })
         }
       },
 
@@ -823,6 +830,7 @@ export const useThreadStore = create<ThreadStore>()(
           // Navigate to the new branch (the assistant turn leaf)
           // This ensures pagination includes the full thread context
           await get().switchSibling(threadId, assistantTurn.id)
+          set({ isLoadingTurns: false })
         } catch (error) {
           set({ error: getErrorMessageWithFallback(error, 'Failed to edit turn'), isLoadingTurns: false })
         }
@@ -868,6 +876,7 @@ export const useThreadStore = create<ThreadStore>()(
 
           // Navigate to the new branch
           await get().switchSibling(threadId, newUserTurn.id)
+          set({ isLoadingTurns: false })
         } catch (error) {
           set({ error: getErrorMessageWithFallback(error, 'Failed to regenerate'), isLoadingTurns: false })
         }

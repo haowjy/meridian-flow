@@ -131,15 +131,14 @@ export function ThreadListItem({
           trigger={
             <Button
               variant="ghost"
-              size="icon"
               onClick={(e) => e.stopPropagation()}
               className={cn(
-                'flex-shrink-0 h-4 w-4 p-0 rounded-sm hover:bg-sidebar-accent transition-opacity',
+                'size-5 p-0 rounded-sm hover:bg-sidebar-accent transition-opacity',
                 'opacity-0 group-hover:opacity-100 focus:opacity-100'
               )}
               aria-label="Thread options"
             >
-              <MoreHorizontal className="h-4.5 w-4.5" />
+              <MoreHorizontal className="size-4" />
             </Button>
           }
           onRename={withClickGuard(onRename)}

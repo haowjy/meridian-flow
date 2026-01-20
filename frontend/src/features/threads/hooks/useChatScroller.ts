@@ -3,10 +3,11 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 const DEBUG_SCROLL = import.meta.env.VITE_DEBUG_SCROLL === '1'
 
 interface UseChatScrollerProps {
-  /** Change this to reset initial scroll + content gating (typically activeThreadId). */
-  resetKey: string | null
+  /** Thread-level reset key - triggers content gating (hide → scroll → reveal). */
+  threadResetKey: string | null
   scrollContainer: HTMLElement | null
   turnIds: string[]
+  /** Turn to scroll to. Changes within same thread scroll without hiding. */
   scrollToTurnId: string | undefined
   isLoading: boolean
   isStreaming: boolean
@@ -39,7 +40,7 @@ interface UseChatScrollerReturn {
  * 4. Scroll-to-bottom button visibility
  */
 export function useChatScroller({
-  resetKey,
+  threadResetKey,
   scrollContainer,
   turnIds,
   scrollToTurnId,
@@ -54,14 +55,15 @@ export function useChatScroller({
 
   // Whether we're auto-following streaming output
   const isFollowingOutputRef = useRef(true)
-  const prevResetKeyRef = useRef<string | null>(null)
+  const prevThreadKeyRef = useRef<string | null>(null)
+  const prevScrollToTurnIdRef = useRef<string | undefined>(undefined)
   const initialScrolledRef = useRef(false)
   const listRef = useRef<HTMLDivElement | null>(null)
 
-  // Reset state when thread changes
+  // Reset state when THREAD changes (content gating for thread switch)
   useEffect(() => {
-    if (prevResetKeyRef.current === resetKey) return
-    prevResetKeyRef.current = resetKey
+    if (prevThreadKeyRef.current === threadResetKey) return
+    prevThreadKeyRef.current = threadResetKey
     initialScrolledRef.current = false
     isFollowingOutputRef.current = true
     // Hide content during thread switch to prevent flash at wrong scroll position
@@ -70,7 +72,7 @@ export function useChatScroller({
       setIsAtBottom(true)
       setIsContentReady(false)
     })
-  }, [resetKey])
+  }, [threadResetKey])
 
   // Calculate distance from bottom
   const distanceFromBottom = useCallback(() => {
@@ -78,7 +80,8 @@ export function useChatScroller({
     return scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight
   }, [scrollContainer])
 
-  // Initial scroll to bookmarked turn, then reveal content
+  // Initial scroll to bookmarked turn on thread load, then reveal content
+  // This only runs when thread changes (initialScrolledRef is reset by thread effect)
   useEffect(() => {
     if (!scrollContainer) return
     if (isLoading) return
@@ -116,7 +119,7 @@ export function useChatScroller({
         if (DEBUG_SCROLL) {
           console.debug('[scroll] useChatScroller:initial', {
             t: Date.now(),
-            resetKey,
+            threadResetKey,
             scrollToTurnId,
             isLastTurn,
             scrollHeight: scrollContainer.scrollHeight,
@@ -135,6 +138,8 @@ export function useChatScroller({
         }
 
         initialScrolledRef.current = true
+        // Track the turn we scrolled to for sibling navigation detection
+        prevScrollToTurnIdRef.current = scrollToTurnId
         queueMicrotask(() => setIsContentReady(true))
         return
       }
@@ -150,7 +155,79 @@ export function useChatScroller({
       cancelled = true
       if (frameId != null) cancelAnimationFrame(frameId)
     }
-  }, [resetKey, scrollContainer, isLoading, scrollToTurnId, turnIds, initialStableFrames])
+  }, [threadResetKey, scrollContainer, isLoading, scrollToTurnId, turnIds, initialStableFrames])
+
+  // Sibling navigation: scroll to new turn WITHOUT hiding content
+  // Only runs after initial scroll is complete and when scrollToTurnId changes
+  // Uses same layout stability pattern as initial scroll to avoid jumping
+  useEffect(() => {
+    // Skip if initial scroll hasn't happened yet (thread is still loading)
+    if (!initialScrolledRef.current) return
+    // Skip if scrollToTurnId is unchanged
+    if (prevScrollToTurnIdRef.current === scrollToTurnId) return
+    // Skip if no scroll target
+    if (!scrollToTurnId) return
+    if (!scrollContainer) return
+
+    prevScrollToTurnIdRef.current = scrollToTurnId
+
+    // Wait for layout stability before scrolling (same pattern as initial scroll)
+    let cancelled = false
+    let frameId: number | null = null
+    let lastHeight = 0
+    let stableFrames = 0
+    let frames = 0
+    const MAX_FRAMES = 60 // Less than initial (240) since content mostly exists
+
+    const tick = () => {
+      if (cancelled) return
+      frames += 1
+
+      const h = scrollContainer.scrollHeight
+      if (h !== lastHeight) {
+        lastHeight = h
+        stableFrames = 0
+      } else {
+        stableFrames += 1
+      }
+
+      const turnElement = scrollContainer.querySelector<HTMLElement>(
+        `[data-turn-id="${scrollToTurnId}"]`
+      )
+
+      if (turnElement && stableFrames >= initialStableFrames) {
+        if (DEBUG_SCROLL) {
+          console.debug('[scroll] useChatScroller:sibling', {
+            t: Date.now(),
+            scrollToTurnId,
+            frames,
+            stableFrames,
+          })
+        }
+
+        const isLastTurn = turnIds[turnIds.length - 1] === scrollToTurnId
+        if (isLastTurn) {
+          scrollContainer.scrollTo({ top: scrollContainer.scrollHeight })
+          isFollowingOutputRef.current = true
+        } else {
+          turnElement.scrollIntoView({ behavior: 'auto', block: 'start', inline: 'nearest' })
+          isFollowingOutputRef.current = false
+        }
+        return
+      }
+
+      if (frames < MAX_FRAMES) {
+        frameId = requestAnimationFrame(tick)
+      }
+    }
+
+    frameId = requestAnimationFrame(tick)
+
+    return () => {
+      cancelled = true
+      if (frameId != null) cancelAnimationFrame(frameId)
+    }
+  }, [scrollContainer, scrollToTurnId, turnIds, initialStableFrames])
 
   // Track scroll position to detect when user scrolls away from bottom
   useEffect(() => {

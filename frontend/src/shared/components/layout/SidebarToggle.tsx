@@ -32,14 +32,14 @@ export function SidebarToggle({ side, className }: SidebarToggleProps) {
   return (
     <Button
       variant="ghost"
-      size="icon"
+      size="icon-sm"
       onClick={toggle}
       // Mobile uses tab navigation (no sidebars).
       className={cn('hidden md:inline-flex', className)}
       aria-label={label}
       title={label}
     >
-      <Icon className="size-4.5" />
+      <Icon />
     </Button>
   )
 }
