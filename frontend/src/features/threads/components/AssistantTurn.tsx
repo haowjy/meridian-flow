@@ -52,16 +52,20 @@ interface AssistantTurnProps {
  * Performance: Memoized to prevent unnecessary re-renders when turn data unchanged.
  */
 export const AssistantTurn = React.memo(function AssistantTurn({ turn }: AssistantTurnProps) {
-  const { switchSibling, regenerateTurn, isLoadingTurns, streamingTurnId } = useThreadStore(
+  const { switchSibling, regenerateTurn, isLoadingTurns, isSwitchingSibling, streamingTurnId } = useThreadStore(
     useShallow((s) => ({
       switchSibling: s.switchSibling,
       regenerateTurn: s.regenerateTurn,
       isLoadingTurns: s.isLoadingTurns,
+      isSwitchingSibling: s.isSwitchingSibling,
       streamingTurnId: s.streamingTurnId,
     }))
   )
 
-  const isStreaming = streamingTurnId === turn.id
+  // true if ANY turn is streaming (disables actions globally)
+  const isStreaming = streamingTurnId !== null
+  // true if THIS turn is streaming (shows dots indicator)
+  const isStreamingThisTurn = streamingTurnId === turn.id
 
   log.debug('render', { id: turn.id, prevTurnId: turn.prevTurnId, blocks: turn.blocks.length })
 
@@ -79,9 +83,9 @@ export const AssistantTurn = React.memo(function AssistantTurn({ turn }: Assista
 
   const handleRegenerate = useCallback(() => {
     if (turn.prevTurnId) {
-      regenerateTurn(turn.threadId, turn.prevTurnId)
+      regenerateTurn(turn.threadId, turn.id)
     }
-  }, [regenerateTurn, turn.threadId, turn.prevTurnId])
+  }, [regenerateTurn, turn.threadId, turn.prevTurnId, turn.id])
 
   const items = buildAssistantRenderItems(turn.blocks)
 
@@ -105,8 +109,8 @@ export const AssistantTurn = React.memo(function AssistantTurn({ turn }: Assista
           )
         })}
 
-        {/* Still processing indicator - shows while streaming is active */}
-        {isStreaming && (
+        {/* Still processing indicator - shows only on the actively streaming turn */}
+        {isStreamingThisTurn && (
           <div className="flex items-center gap-1.5 py-2 text-accent">
             <span className="animate-processing-dot h-1.5 w-1.5 rounded-full bg-current" />
             <span className="animate-processing-dot h-1.5 w-1.5 rounded-full bg-current" />
@@ -122,7 +126,7 @@ export const AssistantTurn = React.memo(function AssistantTurn({ turn }: Assista
 
       <TurnActionBar
         turn={turn}
-        isLoading={isLoadingTurns}
+        isLoading={isLoadingTurns || isSwitchingSibling || isStreaming}
         onNavigate={handleNavigate}
         onRegenerate={turn.prevTurnId ? handleRegenerate : undefined}
         className="ml-0"

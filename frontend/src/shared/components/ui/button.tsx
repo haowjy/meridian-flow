@@ -5,52 +5,56 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-all disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none font-sans has-[>svg]:gap-1.5",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-all disabled:pointer-events-none [&_svg]:pointer-events-none shrink-0 [&_svg]:shrink-0 outline-none font-sans",
   {
     variants: {
       variant: {
-        // Primary: Dark jade fill (#2F7F72) with white text
+        // PRIMARY: Dark warm ink fill, light text, pill shape
+        // Use for: Main CTAs ("New project", "Sign in", "Send")
         default:
-          "bg-primary text-primary-foreground hover:opacity-90 " +
+          "bg-foreground text-background rounded-full hover:opacity-90 " +
           "focus-visible:outline-[3px] focus-visible:outline-[var(--focus-ring-outer)] focus-visible:outline-offset-2 " +
           "focus-visible:shadow-[0_0_0_2px_var(--focus-ring-inner)] " +
           "disabled:opacity-[--opacity-disabled]",
 
-        // Accent: Background with accent color text
-        accent:
-          "bg-accent/10 text-accent hover:bg-accent/20 " +
+        // SECONDARY: Subtle border, warm ink text
+        // Use for: Secondary actions ("Cancel", "Back")
+        secondary:
+          "border border-border text-foreground rounded-full hover:bg-[var(--hover)] " +
           "focus-visible:outline-[3px] focus-visible:outline-[var(--focus-ring-outer)] focus-visible:outline-offset-2 " +
           "focus-visible:shadow-[0_0_0_2px_var(--focus-ring-inner)] " +
           "disabled:opacity-[--opacity-disabled]",
 
-        // Destructive/Warning: Amber
+        // OUTLINE: Same as secondary but with background
+        // Use for: Standalone secondary buttons
+        outline:
+          "border border-border bg-background rounded-full hover:bg-[var(--hover)] " +
+          "focus-visible:outline-[3px] focus-visible:outline-[var(--focus-ring-outer)] focus-visible:outline-offset-2 " +
+          "focus-visible:shadow-[0_0_0_2px_var(--focus-ring-inner)] " +
+          "disabled:opacity-[--opacity-disabled]",
+
+        // GHOST: Invisible until hover, text-like
+        // Use for: Toolbar controls, dropdown triggers
+        ghost:
+          "rounded-md hover:bg-[var(--hover)] hover:text-foreground " +
+          "focus-visible:outline-[3px] focus-visible:outline-[var(--focus-ring-outer)] focus-visible:outline-offset-2 " +
+          "focus-visible:shadow-[0_0_0_2px_var(--focus-ring-inner)] " +
+          "disabled:opacity-[--opacity-disabled]",
+
+        // DESTRUCTIVE: Red fill for dangerous actions
         destructive:
-          "bg-error text-error-foreground hover:opacity-90 " +
+          "bg-error text-error-foreground rounded-full hover:opacity-90 " +
           "focus-visible:outline-[3px] focus-visible:outline-error focus-visible:outline-offset-2 " +
           "disabled:opacity-[--opacity-disabled]",
 
-        // Secondary: Dark jade outline
-        secondary:
-          "border-2 border-primary text-primary hover:bg-[var(--hover)] " +
+        // ACCENT: Background with accent color text
+        accent:
+          "bg-accent/10 text-accent rounded-full hover:bg-accent/20 " +
           "focus-visible:outline-[3px] focus-visible:outline-[var(--focus-ring-outer)] focus-visible:outline-offset-2 " +
           "focus-visible:shadow-[0_0_0_2px_var(--focus-ring-inner)] " +
           "disabled:opacity-[--opacity-disabled]",
 
-        // Outline: Border with hover wash
-        outline:
-          "border border-border bg-background hover:bg-[var(--hover)] " +
-          "focus-visible:outline-[3px] focus-visible:outline-[var(--focus-ring-outer)] focus-visible:outline-offset-2 " +
-          "focus-visible:shadow-[0_0_0_2px_var(--focus-ring-inner)] " +
-          "disabled:opacity-[--opacity-disabled]",
-
-        // Ghost: Minimal with hover
-        ghost:
-          "hover:bg-[var(--hover)] hover:text-foreground " +
-          "focus-visible:outline-[3px] focus-visible:outline-[var(--focus-ring-outer)] focus-visible:outline-offset-2 " +
-          "focus-visible:shadow-[0_0_0_2px_var(--focus-ring-inner)] " +
-          "disabled:opacity-[--opacity-disabled]",
-
-        // Link: Jade text with gold hover
+        // LINK: Underline on hover
         link:
           "text-primary underline-offset-4 hover:underline hover:text-accent " +
           "focus-visible:outline-[3px] focus-visible:outline-[var(--focus-ring-outer)] focus-visible:outline-offset-2 " +
@@ -58,13 +62,19 @@ const buttonVariants = cva(
           "disabled:opacity-[--opacity-disabled]",
       },
       size: {
-        default: "h-9 px-4 py-2 rounded",
-        sm: "h-8 gap-1.5 px-3 rounded-sm",
-        lg: "h-10 px-6 rounded",
-        "icon-xs": "size-6 rounded",
-        "icon-sm": "size-7 rounded",
-        icon: "size-8 rounded",
-        "icon-lg": "size-9 rounded",
+        // Standard sizes - pill shape with icon scaling
+        default: "h-9 px-5 py-2 rounded-full [&_svg]:size-4",
+        sm: "h-8 px-4 gap-1.5 rounded-full [&_svg]:size-3.5",
+        lg: "h-10 px-6 rounded-full [&_svg]:size-5",
+
+        // Compact for inline controls (dropdowns, toolbars)
+        xs: "h-7 px-3 gap-1 text-xs rounded-full [&_svg]:size-3",
+
+        // Icon buttons - subtle rounded squares with proportional icons
+        "icon-xs": "size-6 rounded [&_svg]:size-3",
+        "icon-sm": "size-7 rounded [&_svg]:size-3.5",
+        icon: "size-8 rounded [&_svg]:size-4",
+        "icon-lg": "size-9 rounded [&_svg]:size-5",
       },
     },
     defaultVariants: {

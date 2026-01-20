@@ -29,11 +29,12 @@
 ### Border Radius
 | Token | Value | Usage |
 |-------|-------|-------|
-| sm | 6px | Inputs, small buttons |
-| default | 8px | Cards, medium buttons |
+| sm | 6px | Inputs, ghost buttons |
+| default | 8px | Cards |
 | md | 10px | Medium elements |
 | lg | 12px | Large cards, modals, messages |
 | xl | 16px | Extra large containers |
+| full | 9999px | Pill buttons (primary, secondary, outline) |
 
 ### Shadows (3 levels)
 - **shadow-1**: Subtle (cards, list items) - dual layer warm
@@ -50,18 +51,36 @@
 
 ## Patterns
 
-### Button Primary
-- Height: 36px (md)
-- Padding: 16px horizontal
-- Radius: 8px
-- Font: 14px, 500 weight, sans (Manrope)
-- Focus: 3px outer + 2px inner ring (gold-tinted)
+### Button System (Claude-style Modern)
 
-### Button Small
-- Height: 32px (sm)
-- Padding: 12px horizontal
-- Radius: 4px
-- Font: 14px, 500 weight
+**Variants:**
+| Variant | Fill | Text | Shape | Use Case |
+|---------|------|------|-------|----------|
+| default | `bg-foreground` | `text-background` | pill | Main CTAs (Sign in, Send, Create) |
+| secondary | `border` | `text-foreground` | pill | Secondary actions (Cancel, Back) |
+| outline | `border + bg` | `text-foreground` | pill | Standalone secondary |
+| ghost | transparent | `text-foreground` | rounded-md | Toolbars, dropdown triggers |
+| destructive | `bg-error` | `text-error-fg` | pill | Dangerous actions (Delete) |
+
+**Sizes:**
+| Size | Height | Padding | Icon | Use Case |
+|------|--------|---------|------|----------|
+| xs | 28px | 12px | 12px | Compact inline (dropdown triggers) |
+| sm | 32px | 16px | 14px | Small buttons |
+| default | 36px | 20px | 16px | Standard buttons |
+| lg | 40px | 24px | 20px | Prominent actions, auth forms |
+| icon-xs | 24px | - | 12px | Minimal icon buttons (rounded square) |
+| icon-sm | 28px | - | 14px | Small icon buttons (rounded square) |
+| icon | 32px | - | 16px | Standard icon buttons (rounded square) |
+| icon-lg | 36px | - | 20px | Large icon buttons (rounded square) |
+
+**Focus:** 3px outer + 2px inner ring (gold-tinted)
+
+### Inline Toolbar Buttons (TurnActionBar)
+- Use raw `<button>` not `<Button>` component
+- Minimal: `p-1 rounded hover:bg-muted`
+- Icons: 14px (`size-3.5`)
+- No visible background until hover
 
 ### Input Default
 - Height: 36px (md)
