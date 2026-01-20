@@ -1,4 +1,7 @@
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/shared/components/ui/hover-card'
+import { HoverCard, HoverCardContent, HoverCardTrigger as RadixHoverCardTrigger } from '@/shared/components/ui/hover-card'
+
+// Re-export for use with triggerWrapper pattern
+export { RadixHoverCardTrigger as HoverCardTrigger }
 import { TreeItemInfoContent } from './TreeItemInfoContent'
 import type { Folder } from '@/features/folders/types/folder'
 import type { Document } from '@/features/documents/types/document'
@@ -29,7 +32,8 @@ export function TreeItemInfoHoverCard(props: TreeItemInfoHoverCardProps) {
 
   return (
     <HoverCard openDelay={300} closeDelay={100}>
-      <HoverCardTrigger asChild>{children}</HoverCardTrigger>
+      {/* Children should contain a HoverCardTrigger via the triggerWrapper pattern */}
+      {children}
       <HoverCardContent
         side="left"
         align="start"

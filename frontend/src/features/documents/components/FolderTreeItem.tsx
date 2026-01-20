@@ -10,6 +10,7 @@ import {
 } from '@/shared/components/ui/dropdown-menu'
 import { createFolderMenuItems } from '../utils/menuBuilders'
 import { InlineNameEditor } from './InlineNameEditor'
+import { TreeItemInfoHoverCard, HoverCardTrigger } from './tree-item-info/TreeItemInfoHoverCard'
 import { useTreeSelection } from '../hooks/useTreeSelection'
 import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
@@ -115,74 +116,77 @@ export const FolderTreeItem = memo(function FolderTreeItem({
 
   return (
     <Collapsible open={isExpanded} onOpenChange={() => onToggle(folder.id)}>
-      <TreeItemWithContextMenu
-        menuItems={menuItems}
-        onOpenChange={(open) => {
-          setContextMenuOpen(open)
-          if (open) setDropdownOpen(false)
-        }}
-      >
-        <div
-          className={cn(
-            'group flex w-full items-center rounded-sm text-left text-sm transition-colors',
-            'hover:bg-hover',
-          )}
+      <TreeItemInfoHoverCard type="folder" item={folder} documentCount={documentCount} folderCount={folderCount}>
+        <TreeItemWithContextMenu
+          menuItems={menuItems}
+          onOpenChange={(open) => {
+            setContextMenuOpen(open)
+            if (open) setDropdownOpen(false)
+          }}
+          triggerWrapper={(children) => <HoverCardTrigger asChild>{children}</HoverCardTrigger>}
         >
-          <button
-            type="button"
-            onClick={(e) => {
-              // Modifier key pressed → toggle selection
-              if (e.metaKey || e.ctrlKey) {
-                e.preventDefault()
-                toggleSelection(folder.id)
-                return
-              }
-
-              // No modifier → clear selection and toggle folder
-              clearSelection()
-              onToggle(folder.id)
-            }}
+          <div
             className={cn(
-              'flex flex-1 min-w-0 items-center gap-1.5 px-2.5 py-2 md:py-1',
-              'cursor-default appearance-none bg-transparent border-none m-0 font-inherit text-inherit text-left'
+              'group flex w-full items-center rounded-sm text-left text-sm transition-colors',
+              'hover:bg-hover',
             )}
-            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} folder: ${folder.name}`}
-            aria-expanded={isExpanded}
           >
-            <FolderIcon className="size-4 md:size-3.5 flex-shrink-0" />
-            <span className="truncate font-medium">{folder.name}</span>
-          </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                // Modifier key pressed → toggle selection
+                if (e.metaKey || e.ctrlKey) {
+                  e.preventDefault()
+                  toggleSelection(folder.id)
+                  return
+                }
 
-          {/* "..." button - visible on hover or always on mobile */}
-          {hasMenuItems && (
-            <DropdownMenu
-              open={dropdownOpen}
-              onOpenChange={(open) => {
-                setDropdownOpen(open)
+                // No modifier → clear selection and toggle folder
+                clearSelection()
+                onToggle(folder.id)
               }}
+              className={cn(
+                'flex flex-1 min-w-0 items-center gap-1.5 px-2.5 py-2 md:py-1',
+                'cursor-default appearance-none bg-transparent border-none m-0 font-inherit text-inherit text-left'
+              )}
+              aria-label={`${isExpanded ? 'Collapse' : 'Expand'} folder: ${folder.name}`}
+              aria-expanded={isExpanded}
             >
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  disabled={contextMenuOpen}
-                  className={cn(
-                    'flex-shrink-0 h-7 w-9 md:h-4 md:w-7 p-0 rounded-sm transition-opacity',
-                    'opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100',
-                    dropdownOpen && 'opacity-100'
-                  )}
-                  aria-label="Folder options"
-                >
-                  <MoreHorizontal className="size-4.5 md:size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" side="bottom">
-                <TreeItemMenuItems items={menuItems} variant="dropdown" />
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
-      </TreeItemWithContextMenu>
+              <FolderIcon className="size-4 md:size-3.5 flex-shrink-0" />
+              <span className="truncate font-medium">{folder.name}</span>
+            </button>
+
+            {/* "..." button - visible on hover or always on mobile */}
+            {hasMenuItems && (
+              <DropdownMenu
+                open={dropdownOpen}
+                onOpenChange={(open) => {
+                  setDropdownOpen(open)
+                }}
+              >
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={contextMenuOpen}
+                    className={cn(
+                      'flex-shrink-0 h-7 w-9 md:h-4 md:w-7 p-0 rounded-sm transition-opacity',
+                      'opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100',
+                      dropdownOpen && 'opacity-100'
+                    )}
+                    aria-label="Folder options"
+                  >
+                    <MoreHorizontal className="size-4.5 md:size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" side="bottom">
+                  <TreeItemMenuItems items={menuItems} variant="dropdown" />
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+        </TreeItemWithContextMenu>
+      </TreeItemInfoHoverCard>
 
       <CollapsibleContent className="overflow-hidden">
         <div className="tree-children">{children}</div>
