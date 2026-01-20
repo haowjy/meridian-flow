@@ -71,7 +71,7 @@ export function AutosizeTextarea({
             className={cn(
                 // Auto-expanding with max height - scrolls internally when exceeded
                 "overflow-y-auto",
-                "w-full flex-1 resize-none bg-transparent px-2 py-1.5 text-base md:text-sm",
+                "w-full resize-none bg-transparent px-2 py-1.5 text-base md:text-sm",
                 "placeholder:text-muted-foreground/60",
                 "outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus:ring-offset-0",
                 className
