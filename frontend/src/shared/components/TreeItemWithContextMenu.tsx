@@ -28,6 +28,12 @@ interface TreeItemWithContextMenuProps {
    * so we never show two menus at once.
    */
   onOpenChange?: (open: boolean) => void
+  /**
+   * Optional wrapper to inject between ContextMenuTrigger and children.
+   * Useful for composing with HoverCardTrigger or other Radix primitives
+   * that need to attach to the actual DOM element.
+   */
+  triggerWrapper?: (children: ReactElement) => ReactElement
 }
 
 /**
@@ -48,14 +54,18 @@ export function TreeItemWithContextMenu({
   children,
   menuItems,
   onOpenChange,
+  triggerWrapper,
 }: TreeItemWithContextMenuProps) {
+  // Apply wrapper if provided (e.g., HoverCardTrigger)
+  const wrappedChildren = triggerWrapper ? triggerWrapper(children) : children
+
   if (menuItems.length === 0) {
-    return <>{children}</>
+    return <>{wrappedChildren}</>
   }
 
   return (
     <ContextMenu onOpenChange={onOpenChange}>
-      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuTrigger asChild>{wrappedChildren}</ContextMenuTrigger>
       <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
         <TreeItemMenuItems items={menuItems} variant="context" />
       </ContextMenuContent>
