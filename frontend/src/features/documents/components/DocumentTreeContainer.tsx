@@ -14,9 +14,11 @@ import { DocumentTreeItem } from './DocumentTreeItem'
 import { SelectableTreeItem } from './SelectableTreeItem'
 import { ImportDocumentDialog } from './ImportDocumentDialog'
 import { DeleteFolderDialog } from './DeleteFolderDialog'
+import { TreeItemInfoDialog } from './tree-item-info'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { InlineError } from '@/shared/components/InlineError'
 import type { Folder } from '@/features/folders/types/folder'
+import type { Document } from '../types/document'
 
 // Tracks which tree item is being edited (existing items only)
 interface EditingItem {
@@ -30,6 +32,11 @@ interface PendingItem {
   parentId: string | null  // null = root level
   tempId: string           // for React key
 }
+
+// Info dialog state - single dialog lifted to container level
+type InfoDialogItem =
+  | { type: 'folder'; item: Folder; documentCount?: number; folderCount?: number }
+  | { type: 'document'; item: Document }
 
 interface DocumentTreeContainerProps {
   projectId: string
@@ -85,6 +92,9 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
   const [folderToDelete, setFolderToDelete] = useState<Folder | null>(null)
   const [isDeletingFolder, setIsDeletingFolder] = useState(false)
 
+  // Info dialog state (lifted to container - single dialog for all tree items)
+  const [infoDialogItem, setInfoDialogItem] = useState<InfoDialogItem | null>(null)
+
   // Derive loading view state (skeleton shows immediately on cold start)
   const view = useLoadingView({ status, hasData: tree.length > 0 })
 
@@ -112,8 +122,15 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
     useUIStore.getState().setRightPanelReady(isReady)
   }, [status])
 
-  // Handle document click
-  const handleDocumentClick = (documentId: string) => {
+  // --- Stable callbacks for tree items (accept id as parameter for memoization) ---
+
+  // Handle toggle folder - stable callback for FolderTreeItem
+  const handleToggleFolder = useCallback((folderId: string) => {
+    toggleFolder(folderId)
+  }, [toggleFolder])
+
+  // Handle document click - stable callback for DocumentTreeItem
+  const handleDocumentClick = useCallback((documentId: string) => {
     // Find document to get its slug for URL
     const doc = documents.find((d) => d.id === documentId)
     if (!doc?.slug) {
@@ -122,21 +139,27 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
       return
     }
     openDocument(documentId, doc.slug, projectSlug, navigate)
-  }
+  }, [documents, projectSlug, navigate])
 
-  // Handle delete document
-  const handleDeleteDocument = async (documentId: string) => {
+  // Handle delete document - stable callback for DocumentTreeItem
+  const handleDeleteDocument = useCallback(async (documentId: string) => {
     try {
       await deleteDocument(documentId) // Hook handles navigation if needed
     } catch {
       // Error already handled by store
     }
-  }
+  }, [deleteDocument])
 
-  // Handle delete folder - show confirmation dialog
-  const handleDeleteFolder = (folder: Folder) => {
-    setFolderToDelete(folder)
-  }
+  // Handle delete folder - show confirmation dialog (accepts id, looks up folder)
+  const handleDeleteFolder = useCallback((folderId: string, folderData: Folder) => {
+    setFolderToDelete(folderData)
+  }, [])
+
+  // Handle import in folder - stable callback for FolderTreeItem
+  const handleImportInFolder = useCallback((folderId: string) => {
+    setImportTargetFolderId(folderId)
+    setIsImportDialogOpen(true)
+  }, [])
 
   // Confirm folder deletion - actually delete
   const handleConfirmDeleteFolder = async () => {
@@ -260,17 +283,21 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
     expandFolder(parentId)
   }, [expandFolder])
 
-  // Handle import documents in folder
-  const handleImportInFolder = (folderId: string) => {
-    setImportTargetFolderId(folderId)
-    setIsImportDialogOpen(true)
-  }
-
   // Handle import documents at root level
   const handleImportRoot = () => {
     setImportTargetFolderId(null)
     setIsImportDialogOpen(true)
   }
+
+  // Show details dialog for a folder - accepts id + data for stable callback
+  const showFolderDetails = useCallback((folderId: string, folder: Folder, documentCount?: number, folderCount?: number) => {
+    setInfoDialogItem({ type: 'folder', item: folder, documentCount, folderCount })
+  }, [])
+
+  // Show details dialog for a document - accepts id + data for stable callback
+  const showDocumentDetails = useCallback((documentId: string, document: Document) => {
+    setInfoDialogItem({ type: 'document', item: document })
+  }, [])
 
   // Handle files dropped on empty state
   const handleFileDrop = (files: File[]) => {
@@ -390,7 +417,6 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
         const hasPendingChild = pendingItem?.parentId === node.id
 
         // Calculate folder metadata
-        const childCount = node.children?.length || 0
         const documentCount = countDocuments(node.children)
         const folderCount = countFolders(node.children)
 
@@ -399,19 +425,19 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
             <FolderTreeItem
               folder={node.data}
               isExpanded={isExpanded || hasPendingChild}
-              onToggle={() => toggleFolder(node.id)}
-              onCreateDocument={() => handleCreateDocumentInFolderInline(node.id)}
-              onCreateFolder={() => handleCreateFolderInFolderInline(node.id)}
-              onImport={() => handleImportInFolder(node.id)}
-              onRename={() => startRenameFolder(node.id)}
-              onDelete={() => handleDeleteFolder(node.data)}
-              isEditing={isEditingFolder}
-              onSubmitName={(name) => handleRenameFolderInline(node.id, name)}
-              onCancelEdit={handleCancelEdit}
-              existingNames={siblingNames}
-              childCount={childCount}
+              onToggle={handleToggleFolder}
+              onCreateDocument={handleCreateDocumentInFolderInline}
+              onCreateFolder={handleCreateFolderInFolderInline}
+              onImport={handleImportInFolder}
+              onRename={startRenameFolder}
+              onDelete={handleDeleteFolder}
+              onShowDetails={showFolderDetails}
               documentCount={documentCount}
               folderCount={folderCount}
+              isEditing={isEditingFolder}
+              onSubmitName={handleRenameFolderInline}
+              onCancelEdit={handleCancelEdit}
+              existingNames={siblingNames}
             >
               {/* Render pending item first if inside this folder */}
               {renderPendingItem(node.id, node.children ? getNodeNames(node.children) : [])}
@@ -429,11 +455,12 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
             <DocumentTreeItem
               document={node.data}
               isActive={activeDocumentId === node.id}
-              onClick={() => handleDocumentClick(node.id)}
-              onRename={() => startRenameDocument(node.id)}
-              onDelete={() => handleDeleteDocument(node.id)}
+              onClick={handleDocumentClick}
+              onRename={startRenameDocument}
+              onDelete={handleDeleteDocument}
+              onShowDetails={showDocumentDetails}
               isEditing={isEditingDocument}
-              onSubmitName={(name) => handleRenameDocumentInline(node.id, name)}
+              onSubmitName={handleRenameDocumentInline}
               onCancelEdit={handleCancelEdit}
               existingNames={siblingNames}
             />
@@ -533,6 +560,26 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
         onConfirm={handleConfirmDeleteFolder}
         isDeleting={isDeletingFolder}
       />
+
+      {/* Single info dialog for all tree items (lifted to container level for performance) */}
+      {infoDialogItem?.type === 'folder' && (
+        <TreeItemInfoDialog
+          open={true}
+          onOpenChange={(open) => !open && setInfoDialogItem(null)}
+          item={infoDialogItem.item}
+          type="folder"
+          documentCount={infoDialogItem.documentCount}
+          folderCount={infoDialogItem.folderCount}
+        />
+      )}
+      {infoDialogItem?.type === 'document' && (
+        <TreeItemInfoDialog
+          open={true}
+          onOpenChange={(open) => !open && setInfoDialogItem(null)}
+          item={infoDialogItem.item}
+          type="document"
+        />
+      )}
     </>
   )
 }

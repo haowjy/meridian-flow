@@ -1,17 +1,15 @@
-import { ReactNode, useState } from 'react'
+import { ReactNode, useState, memo } from 'react'
 import { Folder, FolderOpen, MoreHorizontal } from 'lucide-react'
 import { Collapsible, CollapsibleContent } from '@/shared/components/ui/collapsible'
+import { TreeItemMenuItems } from '@/shared/components/TreeItemMenuItems'
 import { TreeItemWithContextMenu } from '@/shared/components/TreeItemWithContextMenu'
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/shared/components/ui/dropdown-menu'
 import { createFolderMenuItems } from '../utils/menuBuilders'
 import { InlineNameEditor } from './InlineNameEditor'
-import { TreeItemMetadata } from './TreeItemMetadata'
 import { useTreeSelection } from '../hooks/useTreeSelection'
 import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
@@ -20,16 +18,21 @@ import type { Folder as FolderType } from '@/features/folders/types/folder'
 interface FolderTreeItemProps {
   folder: FolderType
   isExpanded: boolean
-  onToggle: () => void
   children: ReactNode
-  onCreateDocument?: () => void
-  onCreateFolder?: () => void
-  onImport?: () => void
-  onDelete?: () => void
-  onRename?: () => void
+  // Callbacks accept folderId for stable references (no inline arrows in parent)
+  onToggle: (folderId: string) => void
+  onCreateDocument?: (folderId: string) => void
+  onCreateFolder?: (parentId: string) => void
+  onImport?: (folderId: string) => void
+  onRename?: (folderId: string) => void
+  onDelete?: (folderId: string, folder: FolderType) => void
+  onShowDetails?: (folderId: string, folder: FolderType, documentCount?: number, folderCount?: number) => void
+  // Metadata for details dialog (passed through for stable callback)
+  documentCount?: number
+  folderCount?: number
   // Inline editing props
   isEditing?: boolean
-  onSubmitName?: (name: string) => void
+  onSubmitName?: (folderId: string, name: string) => void
   onCancelEdit?: () => void
   existingNames?: string[]
   /**
@@ -38,18 +41,17 @@ interface FolderTreeItemProps {
    * - 'create': new, temporary folder being created.
    */
   editorMode?: 'rename' | 'create'
-  // Metadata props
-  childCount?: number
-  documentCount?: number
-  folderCount?: number
 }
 
 /**
  * Recursive collapsible folder component.
  * Can contain other FolderTreeItems or DocumentTreeItems as children.
  * Right-click for context menu with create/manage actions.
+ *
+ * Memoized to prevent re-renders when parent tree re-renders.
+ * Callbacks accept folder.id as first param for stable references.
  */
-export function FolderTreeItem({
+export const FolderTreeItem = memo(function FolderTreeItem({
   folder,
   isExpanded,
   onToggle,
@@ -59,62 +61,36 @@ export function FolderTreeItem({
   onImport,
   onDelete,
   onRename,
+  onShowDetails,
+  documentCount,
+  folderCount,
   isEditing,
   onSubmitName,
   onCancelEdit,
   existingNames = [],
   editorMode = 'rename',
-  childCount,
-  documentCount,
-  folderCount,
 }: FolderTreeItemProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [contextMenuOpen, setContextMenuOpen] = useState(false)
   const { toggleSelection, clearSelection } = useTreeSelection()
 
+  // Wrap callbacks to pass folder.id - these are only created when menu opens
   const menuItems = createFolderMenuItems({
-    onCreateDocument,
-    onCreateFolder,
-    onImport,
-    onRename,
-    onDelete,
+    onDetails: onShowDetails ? () => onShowDetails(folder.id, folder, documentCount, folderCount) : undefined,
+    onCreateDocument: onCreateDocument ? () => onCreateDocument(folder.id) : undefined,
+    onCreateFolder: onCreateFolder ? () => onCreateFolder(folder.id) : undefined,
+    onImport: onImport ? () => onImport(folder.id) : undefined,
+    onRename: onRename ? () => onRename(folder.id) : undefined,
+    onDelete: onDelete ? () => onDelete(folder.id, folder) : undefined,
   })
 
   const hasMenuItems = menuItems.length > 0
   const FolderIcon = isExpanded ? FolderOpen : Folder
 
-  // Render dropdown menu items
-  const renderDropdownItems = () => (
-    <>
-      {menuItems.map((item, index) => {
-        const showSeparatorBefore =
-          item.separator === 'before' || item.separator === 'both'
-        const showSeparatorAfter =
-          item.separator === 'after' || item.separator === 'both'
-
-        return (
-          <div key={item.id}>
-            {showSeparatorBefore && index > 0 && <DropdownMenuSeparator />}
-            <DropdownMenuItem
-              onSelect={item.onSelect}
-              variant={item.variant}
-              disabled={item.disabled}
-            >
-              {item.icon}
-              {item.label}
-            </DropdownMenuItem>
-            {showSeparatorAfter && index < menuItems.length - 1 && (
-              <DropdownMenuSeparator />
-            )}
-          </div>
-        )
-      })}
-    </>
-  )
-
   // When editing, render inline editor without context menu or collapsible trigger
   if (isEditing && onSubmitName && onCancelEdit) {
     return (
-      <Collapsible open={isExpanded} onOpenChange={onToggle}>
+      <Collapsible open={isExpanded} onOpenChange={() => onToggle(folder.id)}>
         <div
           className={cn(
             'group flex w-full items-center gap-1.5 rounded-sm px-2.5 py-2 md:py-1 text-left text-sm'
@@ -124,13 +100,13 @@ export function FolderTreeItem({
           <InlineNameEditor
             initialValue={folder.name}
             existingNames={existingNames}
-            onSubmit={onSubmitName}
+            onSubmit={(name) => onSubmitName(folder.id, name)}
             onCancel={onCancelEdit}
             mode={editorMode}
           />
         </div>
 
-        <CollapsibleContent className="overflow-hidden transition-all data-[state=open]:animate-accordion-down data-[state=closed]:animate-accordion-up">
+        <CollapsibleContent className="overflow-hidden">
           <div className="tree-children">{children}</div>
         </CollapsibleContent>
       </Collapsible>
@@ -138,62 +114,60 @@ export function FolderTreeItem({
   }
 
   return (
-    <Collapsible open={isExpanded} onOpenChange={onToggle}>
-      <TreeItemWithContextMenu menuItems={menuItems}>
+    <Collapsible open={isExpanded} onOpenChange={() => onToggle(folder.id)}>
+      <TreeItemWithContextMenu
+        menuItems={menuItems}
+        onOpenChange={(open) => {
+          setContextMenuOpen(open)
+          if (open) setDropdownOpen(false)
+        }}
+      >
         <div
-          role="button"
-          tabIndex={0}
-          onClick={(e) => {
-            // Modifier key pressed → toggle selection
-            if (e.metaKey || e.ctrlKey) {
-              e.preventDefault()
-              e.stopPropagation()
-              toggleSelection(folder.id)
-              return
-            }
-
-            // No modifier → clear selection and toggle folder
-            clearSelection()
-            onToggle()
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault()
-              clearSelection()
-              onToggle()
-            }
-          }}
           className={cn(
-            'flex w-full items-center gap-1.5 rounded-sm px-2.5 py-2 md:py-1 text-left text-sm transition-colors',
+            'group flex w-full items-center rounded-sm text-left text-sm transition-colors',
             'hover:bg-hover',
-            'group'
           )}
-          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} folder: ${folder.name}`}
-          aria-expanded={isExpanded}
         >
-          <FolderIcon className="size-4 md:size-3.5 flex-shrink-0" />
-          <span className="truncate font-medium flex-1">{folder.name}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              // Modifier key pressed → toggle selection
+              if (e.metaKey || e.ctrlKey) {
+                e.preventDefault()
+                toggleSelection(folder.id)
+                return
+              }
 
-          {/* Metadata - child count */}
-          {childCount !== undefined && (
-            <TreeItemMetadata
-              type="folder"
-              childCount={childCount}
-              documentCount={documentCount}
-              folderCount={folderCount}
-            />
-          )}
+              // No modifier → clear selection and toggle folder
+              clearSelection()
+              onToggle(folder.id)
+            }}
+            className={cn(
+              'flex flex-1 min-w-0 items-center gap-1.5 px-2.5 py-2 md:py-1',
+              'cursor-default appearance-none bg-transparent border-none m-0 font-inherit text-inherit text-left'
+            )}
+            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} folder: ${folder.name}`}
+            aria-expanded={isExpanded}
+          >
+            <FolderIcon className="size-4 md:size-3.5 flex-shrink-0" />
+            <span className="truncate font-medium">{folder.name}</span>
+          </button>
 
           {/* "..." button - visible on hover or always on mobile */}
           {hasMenuItems && (
-            <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
+            <DropdownMenu
+              open={dropdownOpen}
+              onOpenChange={(open) => {
+                setDropdownOpen(open)
+              }}
+            >
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={(e) => e.stopPropagation()}
+                  disabled={contextMenuOpen}
                   className={cn(
-                    'flex-shrink-0 h-7 w-7 md:h-4 md:w-4 p-0 rounded-sm transition-opacity',
+                    'flex-shrink-0 h-7 w-9 md:h-4 md:w-7 p-0 rounded-sm transition-opacity',
                     'opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100',
                     dropdownOpen && 'opacity-100'
                   )}
@@ -203,16 +177,16 @@ export function FolderTreeItem({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" side="bottom">
-                {renderDropdownItems()}
+                <TreeItemMenuItems items={menuItems} variant="dropdown" />
               </DropdownMenuContent>
             </DropdownMenu>
           )}
         </div>
       </TreeItemWithContextMenu>
 
-      <CollapsibleContent className="overflow-hidden transition-all data-[state=open]:animate-accordion-down data-[state=closed]:animate-accordion-up">
+      <CollapsibleContent className="overflow-hidden">
         <div className="tree-children">{children}</div>
       </CollapsibleContent>
     </Collapsible>
   )
-}
+})

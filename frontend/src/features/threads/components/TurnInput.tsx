@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useThreadStore } from '@/core/stores/useThreadStore'
 import { useThreadPrefsStore } from '@/core/stores/useThreadPrefsStore'
@@ -20,14 +20,13 @@ export function TurnInput({ threadId, projectId, focusKey }: TurnInputProps) {
   // Thread preferences from dedicated store (persisted globally, session-aware)
   const { currentOptions, initOptionsForThread, updateOptionsManually } = useThreadPrefsStore()
 
-  const { createTurn, startNewThread, isLoadingTurns, streamingTurnId, interruptStreamingTurn, turns } = useThreadStore(
+  const { createTurn, startNewThread, isLoadingTurns, streamingTurnId, interruptStreamingTurn } = useThreadStore(
     useShallow((s) => ({
       createTurn: s.createTurn,
       startNewThread: s.startNewThread,
       isLoadingTurns: s.isLoadingTurns,
       streamingTurnId: s.streamingTurnId,
       interruptStreamingTurn: s.interruptStreamingTurn,
-      turns: s.turns,
     })),
   )
 
@@ -35,17 +34,18 @@ export function TurnInput({ threadId, projectId, focusKey }: TurnInputProps) {
     setActiveThread: s.setActiveThread,
   })))
 
-  // Get last turn's request params (for per-thread preference)
-  const lastTurnParams = useMemo(() => {
-    if (!turns || turns.length === 0) return null
-    // Find the last turn with requestParams (usually the last user turn)
-    for (let i = turns.length - 1; i >= 0; i--) {
-      if (turns[i]?.requestParams) {
-        return turns[i]?.requestParams
-      }
+  // Get last turn's request params (for per-thread preference).
+  // Selector returns a stable reference unless requestParams actually changes,
+  // avoiding re-renders on high-frequency streaming deltas.
+  const lastTurnParams = useThreadStore((s) => {
+    for (let i = s.turnIds.length - 1; i >= 0; i--) {
+      const id = s.turnIds[i]
+      if (!id) continue
+      const t = s.turnById[id]
+      if (t?.requestParams) return t.requestParams
     }
     return null
-  }, [turns])
+  })
 
   // Re-initialize options when thread changes or on mount
   // Store handles new-thread vs existing-thread logic internally
@@ -80,7 +80,7 @@ export function TurnInput({ threadId, projectId, focusKey }: TurnInputProps) {
   }
 
   // Unified layout for both mobile and desktop
-  // Responsive padding: px-3 on mobile, px-3.5 on sm+
+  // Auto-expanding composer - textarea grows up to max height, then scrolls internally
   return (
     <div className="thread-input-shell">
       <div className="mx-auto w-full max-w-3xl">

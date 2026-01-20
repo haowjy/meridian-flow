@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { useTreeSelection } from '../hooks/useTreeSelection'
 import { cn } from '@/lib/utils'
 
@@ -8,6 +9,8 @@ import { cn } from '@/lib/utils'
  *
  * Tree items handle their own clicks and selection logic (via Cmd+Click).
  * This wrapper only adds visual highlight when item is selected.
+ *
+ * Memoized to prevent re-renders when parent tree re-renders.
  *
  * @example
  * <SelectableTreeItem id={document.id}>
@@ -20,7 +23,7 @@ interface SelectableTreeItemProps {
   children: React.ReactNode
 }
 
-export function SelectableTreeItem({ id, children }: SelectableTreeItemProps) {
+export const SelectableTreeItem = memo(function SelectableTreeItem({ id, children }: SelectableTreeItemProps) {
   const { isSelected } = useTreeSelection()
   const selected = isSelected(id)
 
@@ -34,4 +37,4 @@ export function SelectableTreeItem({ id, children }: SelectableTreeItemProps) {
       <div className="flex-1 min-w-0">{children}</div>
     </div>
   )
-}
+})

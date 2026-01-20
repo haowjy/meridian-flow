@@ -47,7 +47,7 @@ export function ThreadHeader({
   const threadTitle = thread?.title || null
 
   return (
-    <div className="flex items-center justify-between px-2 sm:px-3 h-[var(--thread-header-height)]">
+    <div className="flex items-center justify-between px-2 sm:px-3 h-[var(--panel-header-height)]">
       <div className="flex items-center gap-2 min-w-0 flex-1">
         {/* Mobile: Navigate to Thread List */}
         <MobileNavButton

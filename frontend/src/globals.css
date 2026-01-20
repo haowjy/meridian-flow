@@ -98,8 +98,9 @@
   --spacing-5: 32px;
   --spacing-6: 48px;
 
-  /* === Editor Layout === */
-  --editor-header-height: 3rem; /* 48px - sticky header in EditorPanel */
+  /* === Panel Layout === */
+  --panel-header-height: 3rem;      /* 48px - all panel headers (thread, document, sidebar) */
+  --thread-composer-max-height: 240px; /* Max height before internal scroll - used for content padding-bottom */
 
   /* === Shadows (multi-layer) === */
   --shadow-1: var(--shadow-1-value);
@@ -141,7 +142,7 @@
   --theme-accent-foreground: #2C2418;
   --theme-primary: #C8973E;      /* Antique gold */
   --theme-primary-foreground: #2C2418;
-  --theme-success: #2D5A47;
+  --theme-success: #3D8B5F;
   --theme-success-foreground: #FFFFFF;
   --theme-warning: #DB9A30;
   --theme-warning-foreground: #2C2418;
@@ -261,7 +262,7 @@
   --theme-accent-foreground: #1C1917;
   --theme-primary: #E4B866;      /* Warm amber */
   --theme-primary-foreground: #1C1917;
-  --theme-success: #4A8F72;
+  --theme-success: #5CB87A;
   --theme-success-foreground: #1C1917;
   --theme-warning: #F0B042;
   --theme-warning-foreground: #1C1917;
@@ -451,11 +452,6 @@
   [role="button"]:disabled,
   [role="menuitem"][aria-disabled="true"] {
     cursor: not-allowed;
-  }
-
-  /* Thread header height - unified across all viewports (48px = h-12) */
-  :root {
-    --thread-header-height: 3rem;
   }
 }
 
@@ -668,11 +664,12 @@ body.preload * {
     }
   }
 
-  /* Floating scroll-to-bottom button - positioned above sticky input wrapper */
+  /* Floating scroll-to-bottom button - positioned above composer (which is absolute positioned) */
   .scroll-to-bottom-button {
     @apply absolute left-1/2 -translate-x-1/2 z-20 rounded-full shadow-md;
-    /* Position above the sticky wrapper using negative top */
-    top: -48px;
+    /* Position above the composer content */
+    bottom: 100%;
+    margin-bottom: 8px;
     /* Fade animation */
     opacity: 0;
     pointer-events: none;
@@ -726,8 +723,7 @@ body.preload * {
 
   /* Thread input */
   .thread-input-shell {
-    @apply bg-background/95 px-1 pb-2.5 pt-0.5 sm:px-1.5;
-    backdrop-filter: blur(8px);
+    @apply mx-3 mb-2.5 mt-0.5 sm:mx-2;
   }
 
   .thread-input {

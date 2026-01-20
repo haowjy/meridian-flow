@@ -6,6 +6,7 @@ This directory contains documentation for future features, enhancements, and ide
 
 - **Root level** - Fully designed future features with clear implementation paths
 - `ideas/` - Raw ideas, brainstorms, exploratory concepts
+- `process/` - DevOps, CI/CD, and workflow improvements
 - `provider-implementations/` - Provider-specific features and integrations
 - `optimizations.md` - Performance and efficiency improvements
 - `published-content-access.md` - Public content sharing features

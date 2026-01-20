@@ -119,7 +119,7 @@ export function PanelLayout({
           className={cn('workspace-panel-right', !isResizing && 'transition-all duration-200 ease-out')}
           collapsible
           collapsedSize={0}
-          minSize={16}
+          minSize={20}
           defaultSize={22}
           onCollapse={() => {
             if (!rightCollapsed) onRightCollapse?.()

@@ -1,15 +1,9 @@
-import { useRef } from 'react'
-import type { Turn } from '@/features/threads/types'
 import { UserTurn } from './UserTurn'
 import { AssistantTurn } from './AssistantTurn'
-import { useTurnListAutoScroll } from '@/features/threads/hooks/useTurnListAutoScroll'
+import { useThreadStore } from '@/core/stores/useThreadStore'
 
 interface TurnListProps {
-  turns: Turn[]
-  scrollToTurnId?: string | null
-  isLoading?: boolean
-  /** Called after initial scroll completes - use to reveal content that was rendering invisibly */
-  onScrollComplete?: () => void
+  turnIds: string[]
 }
 
 /**
@@ -22,26 +16,18 @@ interface TurnListProps {
  *
  * Note: Parent (ActiveThreadView) handles scrolling - this component just renders content.
  */
-export function TurnList({ turns, scrollToTurnId, isLoading, onScrollComplete }: TurnListProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
+function TurnRow({ turnId }: { turnId: string }) {
+  const turn = useThreadStore((s) => s.turnById[turnId])
+  if (!turn) return null
+  return turn.role === 'user' ? <UserTurn turn={turn} /> : <AssistantTurn turn={turn} />
+}
 
-  useTurnListAutoScroll({
-    containerRef,
-    turns,
-    scrollToTurnId,
-    isLoading,
-    onScrollComplete,
-  })
-
+export function TurnList({ turnIds }: TurnListProps) {
   return (
-    <div ref={containerRef} className="flex flex-col gap-3 py-3 px-6 w-full max-w-3xl mx-auto min-w-0 overflow-hidden">
-      {turns.map((turn) =>
-        turn.role === 'user' ? (
-          <UserTurn key={turn.id} turn={turn} />
-        ) : (
-          <AssistantTurn key={turn.id} turn={turn} />
-        )
-      )}
+    <div className="flex flex-col gap-3 py-3 px-6 w-full max-w-3xl mx-auto min-w-0 overflow-hidden">
+      {turnIds.map((turnId) => (
+        <TurnRow key={turnId} turnId={turnId} />
+      ))}
     </div>
   )
 }

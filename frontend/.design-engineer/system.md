@@ -124,7 +124,7 @@
 | Text Muted | #6B5D4D |
 | Border | #E5DFD4 |
 | Accent | #C8973E |
-| Success | #2D5A47 |
+| Success | #3D8B5F |
 | Warning | #DB9A30 |
 | Error | #B54425 |
 
@@ -137,7 +137,7 @@
 | Text Muted | #A89E8E |
 | Border | #3A3530 |
 | Accent | #E4B866 |
-| Success | #4A8F72 |
+| Success | #5CB87A |
 | Warning | #F0B042 |
 | Error | #E8735A |
 

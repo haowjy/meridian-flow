@@ -129,7 +129,7 @@ export function handleToolCallArgs(
     Object.keys(parsed as object).length > 0
   ) {
     // Get existing block content to preserve tool metadata
-    const turn = useThreadStore.getState().turns.find((t) => t.id === ctx.turnId)
+    const turn = useThreadStore.getState().turnById[ctx.turnId]
     const block = turn?.blocks.find((b) => b.sequence === blockIndex)
 
     // SOLID: Defensive - block may not exist yet in race conditions
@@ -170,7 +170,7 @@ export function handleToolCallEnd(
   if (finalBuffer && !wasTruncated) {
     try {
       const parsed = JSON.parse(finalBuffer) as Record<string, unknown>
-      const turn = useThreadStore.getState().turns.find((t) => t.id === ctx.turnId)
+      const turn = useThreadStore.getState().turnById[ctx.turnId]
       const block = turn?.blocks.find((b) => b.sequence === blockIndex)
 
       // Defensive: preserve existing content or use defaults

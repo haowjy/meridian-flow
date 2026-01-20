@@ -20,7 +20,11 @@ export default defineConfig({
   plugins: [
     nodePolyfills(),
     TanStackRouterVite(),
-    react(),
+    react({
+      babel: {
+        plugins: ['babel-plugin-react-compiler'],
+      },
+    }),
   ],
   resolve: {
     alias: {

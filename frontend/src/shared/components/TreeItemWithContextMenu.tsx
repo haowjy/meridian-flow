@@ -1,13 +1,12 @@
-import { ReactNode } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 import {
   ContextMenu,
   ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
   ContextMenuTrigger,
 } from './ui/context-menu'
+import { TreeItemMenuItems } from './TreeItemMenuItems'
 
-export interface ContextMenuItemConfig {
+export interface TreeMenuItemConfig {
   id: string
   label: string
   onSelect: () => void
@@ -19,8 +18,16 @@ export interface ContextMenuItemConfig {
 }
 
 interface TreeItemWithContextMenuProps {
-  children: ReactNode
-  menuItems: ContextMenuItemConfig[]
+  /**
+   * Must be a single React element because Radix `asChild` uses `React.Children.only`.
+   */
+  children: ReactElement
+  menuItems: TreeMenuItemConfig[]
+  /**
+   * Optional hook to coordinate with other overlays (e.g. the "..." dropdown)
+   * so we never show two menus at once.
+   */
+  onOpenChange?: (open: boolean) => void
 }
 
 /**
@@ -40,43 +47,17 @@ interface TreeItemWithContextMenuProps {
 export function TreeItemWithContextMenu({
   children,
   menuItems,
+  onOpenChange,
 }: TreeItemWithContextMenuProps) {
   if (menuItems.length === 0) {
     return <>{children}</>
   }
 
   return (
-    <ContextMenu>
+    <ContextMenu onOpenChange={onOpenChange}>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
-        {menuItems.map((item, index) => {
-          const showSeparatorBefore =
-            item.separator === 'before' || item.separator === 'both'
-          const showSeparatorAfter =
-            item.separator === 'after' || item.separator === 'both'
-
-          return (
-            <div key={item.id}>
-              {showSeparatorBefore && index > 0 && <ContextMenuSeparator />}
-              <ContextMenuItem
-                onSelect={item.onSelect}
-                variant={item.variant}
-                disabled={item.disabled}
-              >
-                {item.icon && <span className="mr-2">{item.icon}</span>}
-                <span>{item.label}</span>
-                {item.shortcut && (
-                  <span className="ml-auto text-xs text-muted-foreground">
-                    {item.shortcut}
-                  </span>
-                )}
-              </ContextMenuItem>
-              {showSeparatorAfter && index < menuItems.length - 1 && (
-                <ContextMenuSeparator />
-              )}
-            </div>
-          )
-        })}
+        <TreeItemMenuItems items={menuItems} variant="context" />
       </ContextMenuContent>
     </ContextMenu>
   )

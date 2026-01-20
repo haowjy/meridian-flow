@@ -11,11 +11,12 @@ import { makeLogger } from '@/core/lib/logger'
  * the richer Turn model (with blocks/metadata).
  */
 export function useTurnsForThread(threadId: string | null) {
-  const { turns, isLoadingTurns, error, loadTurns } = useThreadStore(useShallow((s) => ({
-    turns: s.turns,
+  const { turnIds, isLoadingTurns, error, loadTurns, storeThreadId } = useThreadStore(useShallow((s) => ({
+    turnIds: s.turnIds,
     isLoadingTurns: s.isLoadingTurns,
     error: s.error,
     loadTurns: s.loadTurns,
+    storeThreadId: s.threadId,
   })))
 
   const abortRef = useRef<AbortController | null>(null)
@@ -37,10 +38,10 @@ export function useTurnsForThread(threadId: string | null) {
     // don't re-fetch on remount / tab switches. This prevents "progressive reload"
     // when navigating away and back.
     const state = useThreadStore.getState()
-    if (state.threadId === threadId && (state.turns.length > 0 || state.isLoadingTurns)) {
+    if (state.threadId === threadId && (state.turnIds.length > 0 || state.isLoadingTurns)) {
       log.debug('effect:skip', {
         threadId,
-        turns: state.turns.length,
+        turns: state.turnIds.length,
         isLoadingTurns: state.isLoadingTurns,
       })
       return
@@ -65,15 +66,14 @@ export function useTurnsForThread(threadId: string | null) {
 
   useEffect(() => {
     const log = makeLogger('useTurnsForThread')
-    log.debug('state:update', { threadId, turns: turns.length, isLoadingTurns, error })
-  }, [threadId, turns.length, isLoadingTurns, error])
+    log.debug('state:update', { threadId, turns: turnIds.length, isLoadingTurns, error })
+  }, [threadId, turnIds.length, isLoadingTurns, error])
 
-  // Filter turns client-side to prevent showing stale data during thread transitions
-  // (store may briefly contain turns from previous threadId before new data loads)
-  const scoped = threadId ? turns.filter((t) => t.threadId === threadId) : []
+  // Prevent showing stale data during thread transitions.
+  const scopedIds = threadId && storeThreadId === threadId ? turnIds : []
 
   return {
-    turns: scoped,
+    turnIds: scopedIds,
     isLoading: isLoadingTurns,
     error,
   }

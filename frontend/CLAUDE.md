@@ -101,6 +101,8 @@ Three distinct caching patterns based on data characteristics:
 - Fetch from API first
 - No local caching (Dexie) currently implemented
 - **Implementation**: `useThreadStore.ts`
+- **Rendering**: prefer `turnIds` + `turnById` (normalized) so streaming updates only re-render the affected turn row
+- **Scrolling**: `useThreadScrollController.ts` owns initial scroll-to-bookmark, streaming follow/pause + settle, and sticky-composer resize anchor preservation
 
 #### 3. Metadata (Persist Middleware)
 **Pattern**: Small data, synchronous access via localStorage
