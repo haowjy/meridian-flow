@@ -65,12 +65,12 @@ export function EditorHeader({ document, wordCount, status, lastSaved }: EditorH
           {/* Back to document tree */}
           <Button
             variant="ghost"
-            size="icon"
+            size="icon-sm"
             className="-ml-2 md:ml-0"
             onClick={handleBackClick}
             aria-label="Back to documents"
           >
-            <ChevronLeft className="size-4.5" />
+            <ChevronLeft />
           </Button>
         </div>
       }

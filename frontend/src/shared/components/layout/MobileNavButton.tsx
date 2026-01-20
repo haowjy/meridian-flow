@@ -49,12 +49,12 @@ export function MobileNavButton({
   return (
     <Button
       variant="ghost"
-      size="icon"
+      size="icon-sm"
       onClick={onClick}
       className={className}
       aria-label={ariaLabel}
     >
-      <Icon className="size-4.5" />
+      <Icon />
     </Button>
   )
 }

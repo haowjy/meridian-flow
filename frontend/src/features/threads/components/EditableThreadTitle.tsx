@@ -50,11 +50,11 @@ export function EditableThreadTitle({
           trigger={
             <Button
               variant="ghost"
-              size="icon"
+              size="icon-sm"
               className="shrink-0 h-8 w-8 rounded-l-none rounded-r hover:bg-hover group-hover:bg-hover/50"
               aria-label="Thread options"
             >
-              <ChevronDown className="size-3.5" />
+              <ChevronDown />
             </Button>
           }
           onRename={onRename}
