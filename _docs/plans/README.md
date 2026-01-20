@@ -14,7 +14,8 @@ Each plan document includes:
 
 ## Active Plans
 
-None currently.
+- `fb-event-driven-refresh-framework.md` - Event-driven refresh + 30s polling fallback.
+- `fb-tree-ai-suggestions-banner-accept-all.md` - Tree banner listing AI suggestions + project-wide accept all.
 
 ---
 
