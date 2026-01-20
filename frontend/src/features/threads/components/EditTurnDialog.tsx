@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { Card } from '@/shared/components/ui/card'
-import { Button } from '@/shared/components/ui/button'
 import { cn } from '@/lib/utils'
 import { AutosizeTextarea } from '@/features/threads/components/AutosizeTextarea'
 import { userTurnCardBase } from './styles'
@@ -83,25 +82,9 @@ export function EditTurnDialog({
       <ThreadRequestControls
         options={options}
         onOptionsChange={setOptions}
-        rightContent={
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onClose}
-              disabled={isSaving}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSave}
-              disabled={isSaving || !content.trim()}
-            >
-              {isSaving ? 'Saving...' : 'Save'}
-            </Button>
-          </>
-        }
+        onSend={handleSave}
+        isSendDisabled={isSaving || !content.trim()}
+        saveIcon
       />
     </Card>
   )
