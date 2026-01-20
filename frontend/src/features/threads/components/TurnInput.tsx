@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useThreadStore } from '@/core/stores/useThreadStore'
 import { useThreadPrefsStore } from '@/core/stores/useThreadPrefsStore'
@@ -11,11 +11,26 @@ interface TurnInputProps {
   projectId?: string   // Cold start (no thread yet)
   /** When this value changes, focus the input. Parent controls timing, component handles mechanics. */
   focusKey?: string | null
+  /** Callback when composer height changes (for dynamic padding in parent) */
+  onHeightChange?: (height: number) => void
 }
 
-export function TurnInput({ threadId, projectId, focusKey }: TurnInputProps) {
+export function TurnInput({ threadId, projectId, focusKey, onHeightChange }: TurnInputProps) {
   const [value, setValue] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Measure and report height to parent for dynamic padding
+  useLayoutEffect(() => {
+    if (!containerRef.current || !onHeightChange) return
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) {
+        onHeightChange(entry.contentRect.height)
+      }
+    })
+    observer.observe(containerRef.current)
+    return () => observer.disconnect()
+  }, [onHeightChange])
 
   // Thread preferences from dedicated store (persisted globally, session-aware)
   const { currentOptions, initOptionsForThread, updateOptionsManually } = useThreadPrefsStore()
@@ -82,7 +97,7 @@ export function TurnInput({ threadId, projectId, focusKey }: TurnInputProps) {
   // Unified layout for both mobile and desktop
   // Auto-expanding composer - textarea grows up to max height, then scrolls internally
   return (
-    <div className="thread-input-shell">
+    <div ref={containerRef} className="thread-input-shell">
       <div className="mx-auto w-full max-w-3xl">
         <div className="flex flex-col rounded-lg border border-border/60 bg-card px-2 py-1.5 shadow-sm transition-shadow focus-within:border-border focus-within:shadow-md sm:px-2.5 sm:py-2">
           <AutosizeTextarea

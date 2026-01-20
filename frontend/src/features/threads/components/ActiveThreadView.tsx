@@ -36,6 +36,8 @@ interface ActiveThreadViewProps {
 export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  // Dynamic composer height for scroll padding - avoids static 240px gap
+  const [composerHeight, setComposerHeight] = useState(100)
 
   const { activeThreadId, threadFocusVersion } = useUIStore(useShallow((s) => ({
     activeThreadId: s.activeThreadId,
@@ -160,7 +162,7 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
               className="flex-1"
               style={{
                 minHeight: 'calc(100% - var(--panel-header-height))',
-                paddingBottom: 'var(--thread-composer-max-height)',
+                paddingBottom: composerHeight + 16,
               }}
             />
           </div>
@@ -169,6 +171,7 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
             <TurnInput
               projectId={projectId}
               focusKey={`${activeThreadId ?? 'none'}:${threadFocusVersion}`}
+              onHeightChange={setComposerHeight}
             />
           </div>
         </div>
@@ -190,7 +193,7 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
             className="flex-1 flex items-center justify-center pt-3"
             style={{
               minHeight: 'calc(100% - var(--panel-header-height))',
-              paddingBottom: 'var(--thread-composer-max-height)',
+              paddingBottom: composerHeight + 16,
             }}
           >
             <div className="text-center text-muted-foreground">
@@ -205,6 +208,7 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
           <TurnInput
             projectId={projectId}
             focusKey={`${activeThreadId ?? 'none'}:${threadFocusVersion}`}
+            onHeightChange={setComposerHeight}
           />
         </div>
       </div>
@@ -234,8 +238,7 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
           ref={listRef}
           className="relative min-w-0 flex flex-col pt-3"
           style={{
-            minHeight: 'calc(100% - var(--panel-header-height))',
-            paddingBottom: 'var(--thread-composer-max-height)',
+            paddingBottom: composerHeight + 16, // actual height + small buffer
           }}
         >
           {/* Show minimal loading badge when paginating/refreshing with existing turns */}
@@ -263,6 +266,7 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
         <TurnInput
           threadId={activeThread.id}
           focusKey={`${activeThreadId ?? 'none'}:${threadFocusVersion}`}
+          onHeightChange={setComposerHeight}
         />
       </div>
 
