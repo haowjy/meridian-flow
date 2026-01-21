@@ -30,9 +30,9 @@ func NewProjectRepository(config *postgres.RepositoryConfig) docsysRepo.ProjectR
 // Create creates a new project
 func (r *PostgresProjectRepository) Create(ctx context.Context, project *models.Project) error {
 	query := fmt.Sprintf(`
-		INSERT INTO %s (user_id, name, slug, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, created_at, updated_at
+		INSERT INTO %s (user_id, name, slug, created_at, updated_at, last_activity_at)
+		VALUES ($1, $2, $3, $4, $5, $5)
+		RETURNING id, created_at, updated_at, last_activity_at
 	`, r.tables.Projects)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
@@ -42,7 +42,7 @@ func (r *PostgresProjectRepository) Create(ctx context.Context, project *models.
 		project.Slug,
 		project.CreatedAt,
 		project.UpdatedAt,
-	).Scan(&project.ID, &project.CreatedAt, &project.UpdatedAt)
+	).Scan(&project.ID, &project.CreatedAt, &project.UpdatedAt, &project.LastActivityAt)
 
 	if err != nil {
 		if postgres.IsPgDuplicateError(err) {
@@ -66,13 +66,15 @@ func (r *PostgresProjectRepository) Create(ctx context.Context, project *models.
 	return nil
 }
 
-// GetByID retrieves a project by ID
+// GetByID retrieves a project by ID with favorite status
 func (r *PostgresProjectRepository) GetByID(ctx context.Context, id, userID string) (*models.Project, error) {
 	query := fmt.Sprintf(`
-		SELECT id, user_id, name, slug, created_at, updated_at
-		FROM %s
-		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
-	`, r.tables.Projects)
+		SELECT p.id, p.user_id, p.name, p.slug, p.last_activity_at, p.created_at, p.updated_at,
+		       (f.user_id IS NOT NULL) AS is_favorite
+		FROM %s p
+		LEFT JOIN %s f ON p.id = f.project_id AND f.user_id = $2
+		WHERE p.id = $1 AND p.user_id = $2 AND p.deleted_at IS NULL
+	`, r.tables.Projects, r.tables.UserProjectFavorites)
 
 	var project models.Project
 	executor := postgres.GetExecutor(ctx, r.pool)
@@ -81,8 +83,10 @@ func (r *PostgresProjectRepository) GetByID(ctx context.Context, id, userID stri
 		&project.UserID,
 		&project.Name,
 		&project.Slug,
+		&project.LastActivityAt,
 		&project.CreatedAt,
 		&project.UpdatedAt,
+		&project.IsFavorite,
 	)
 
 	if err != nil {
@@ -95,13 +99,15 @@ func (r *PostgresProjectRepository) GetByID(ctx context.Context, id, userID stri
 	return &project, nil
 }
 
-// GetBySlug retrieves a project by slug (unique per user)
+// GetBySlug retrieves a project by slug (unique per user) with favorite status
 func (r *PostgresProjectRepository) GetBySlug(ctx context.Context, slug, userID string) (*models.Project, error) {
 	query := fmt.Sprintf(`
-		SELECT id, user_id, name, slug, created_at, updated_at
-		FROM %s
-		WHERE slug = $1 AND user_id = $2 AND deleted_at IS NULL
-	`, r.tables.Projects)
+		SELECT p.id, p.user_id, p.name, p.slug, p.last_activity_at, p.created_at, p.updated_at,
+		       (f.user_id IS NOT NULL) AS is_favorite
+		FROM %s p
+		LEFT JOIN %s f ON p.id = f.project_id AND f.user_id = $2
+		WHERE p.slug = $1 AND p.user_id = $2 AND p.deleted_at IS NULL
+	`, r.tables.Projects, r.tables.UserProjectFavorites)
 
 	var project models.Project
 	executor := postgres.GetExecutor(ctx, r.pool)
@@ -110,8 +116,10 @@ func (r *PostgresProjectRepository) GetBySlug(ctx context.Context, slug, userID 
 		&project.UserID,
 		&project.Name,
 		&project.Slug,
+		&project.LastActivityAt,
 		&project.CreatedAt,
 		&project.UpdatedAt,
+		&project.IsFavorite,
 	)
 
 	if err != nil {
@@ -157,14 +165,16 @@ func (r *PostgresProjectRepository) SlugExists(ctx context.Context, slug, userID
 	return exists, nil
 }
 
-// List retrieves all projects for a user, ordered by updated_at DESC
+// List retrieves all projects for a user with favorite status, ordered by last_activity_at DESC
 func (r *PostgresProjectRepository) List(ctx context.Context, userID string) ([]models.Project, error) {
 	query := fmt.Sprintf(`
-		SELECT id, user_id, name, slug, created_at, updated_at
-		FROM %s
-		WHERE user_id = $1 AND deleted_at IS NULL
-		ORDER BY updated_at DESC
-	`, r.tables.Projects)
+		SELECT p.id, p.user_id, p.name, p.slug, p.last_activity_at, p.created_at, p.updated_at,
+		       (f.user_id IS NOT NULL) AS is_favorite
+		FROM %s p
+		LEFT JOIN %s f ON p.id = f.project_id AND f.user_id = $1
+		WHERE p.user_id = $1 AND p.deleted_at IS NULL
+		ORDER BY p.last_activity_at DESC
+	`, r.tables.Projects, r.tables.UserProjectFavorites)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
 	rows, err := executor.Query(ctx, query, userID)
@@ -181,8 +191,10 @@ func (r *PostgresProjectRepository) List(ctx context.Context, userID string) ([]
 			&project.UserID,
 			&project.Name,
 			&project.Slug,
+			&project.LastActivityAt,
 			&project.CreatedAt,
 			&project.UpdatedAt,
+			&project.IsFavorite,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan project: %w", err)
@@ -251,7 +263,7 @@ func (r *PostgresProjectRepository) Delete(ctx context.Context, id, userID strin
 		UPDATE %s
 		SET deleted_at = NOW()
 		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
-		RETURNING id, user_id, name, slug, created_at, updated_at, deleted_at
+		RETURNING id, user_id, name, slug, last_activity_at, created_at, updated_at, deleted_at
 	`, r.tables.Projects)
 
 	var project models.Project
@@ -261,6 +273,7 @@ func (r *PostgresProjectRepository) Delete(ctx context.Context, id, userID strin
 		&project.UserID,
 		&project.Name,
 		&project.Slug,
+		&project.LastActivityAt,
 		&project.CreatedAt,
 		&project.UpdatedAt,
 		&project.DeletedAt,
@@ -274,6 +287,27 @@ func (r *PostgresProjectRepository) Delete(ctx context.Context, id, userID strin
 	}
 
 	return &project, nil
+}
+
+// TouchLastActivityAt updates the last_activity_at timestamp to NOW()
+func (r *PostgresProjectRepository) TouchLastActivityAt(ctx context.Context, projectID string) error {
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET last_activity_at = NOW()
+		WHERE id = $1 AND deleted_at IS NULL
+	`, r.tables.Projects)
+
+	executor := postgres.GetExecutor(ctx, r.pool)
+	result, err := executor.Exec(ctx, query, projectID)
+	if err != nil {
+		return fmt.Errorf("touch last_activity_at: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("project %s: %w", projectID, domain.ErrNotFound)
+	}
+
+	return nil
 }
 
 // getExistingProjectID queries for an existing project by user_id and name

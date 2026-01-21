@@ -81,7 +81,7 @@ func main() {
 
 	// Create pgx connection pool
 	ctx := context.Background()
-	pool, err := postgres.CreateConnectionPool(ctx, cfg.SupabaseDBURL)
+	pool, err := postgres.CreateConnectionPool(ctx, cfg.SupabaseDBURL, cfg.DBMaxConns, cfg.DBMinConns)
 	if err != nil {
 		logger.Error("failed to create connection pool", "error", err)
 		os.Exit(1)
@@ -89,8 +89,8 @@ func main() {
 	defer pool.Close()
 
 	logger.Info("database connected",
-		"max_conns", 25,
-		"min_conns", 5,
+		"max_conns", cfg.DBMaxConns,
+		"min_conns", cfg.DBMinConns,
 	)
 
 	// Create table names
@@ -121,13 +121,17 @@ func main() {
 	// Needs all repositories for checking ownership chains (turn → thread → project → user)
 	authorizer := serviceAuth.NewOwnerBasedAuthorizer(projectRepo, folderRepo, docRepo, threadRepo, turnRepo)
 
+	// Create favorite repository
+	favoriteRepo := postgresDocsys.NewFavoriteRepository(repoConfig)
+
 	// Create document services (needed by LLM tools for write operations)
 	// Moved before SetupServices for proper dependency injection
 	contentAnalyzer := serviceDocsys.NewContentAnalyzer()
 	pathResolver := serviceDocsys.NewPathResolver(folderRepo, txManager)
 	projectService := serviceDocsys.NewProjectService(projectRepo, logger)
-	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, docsysValidator, authorizer, logger)
-	folderService := serviceDocsys.NewFolderService(folderRepo, docRepo, docService, pathResolver, txManager, docsysValidator, authorizer, logger)
+	favoriteService := serviceDocsys.NewFavoriteService(favoriteRepo, projectRepo, logger)
+	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, projectRepo, txManager, contentAnalyzer, pathResolver, docsysValidator, authorizer, logger)
+	folderService := serviceDocsys.NewFolderService(folderRepo, docRepo, projectRepo, docService, pathResolver, txManager, docsysValidator, authorizer, logger)
 
 	// Setup LLM providers
 	providerRegistry, err := serviceLLM.SetupProviders(cfg, logger)
@@ -209,7 +213,7 @@ func main() {
 	userPrefsService := service.NewUserPreferencesService(userPrefsRepo, logger)
 
 	// Create new handlers
-	projectHandler := handler.NewProjectHandler(projectService, identifierResolver, logger)
+	projectHandler := handler.NewProjectHandler(projectService, favoriteService, identifierResolver, logger)
 	newDocHandler := handler.NewDocumentHandler(docService, identifierResolver, logger)
 	newFolderHandler := handler.NewFolderHandler(folderService, logger)
 	newTreeHandler := handler.NewTreeHandler(treeService, identifierResolver, logger)
@@ -248,6 +252,8 @@ func main() {
 	mux.HandleFunc("GET /api/projects", projectHandler.ListProjects)
 	mux.HandleFunc("POST /api/projects", projectHandler.CreateProject)
 	mux.HandleFunc("GET /api/projects/{id}", projectHandler.GetProject)
+	mux.HandleFunc("POST /api/projects/{id}/favorite", projectHandler.AddFavorite)      // Add favorite
+	mux.HandleFunc("DELETE /api/projects/{id}/favorite", projectHandler.RemoveFavorite) // Remove favorite
 	mux.HandleFunc("PATCH /api/projects/{id}", projectHandler.UpdateProject)
 	mux.HandleFunc("DELETE /api/projects/{id}", projectHandler.DeleteProject)
 

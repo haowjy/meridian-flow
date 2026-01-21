@@ -17,6 +17,8 @@ export interface ProjectDto {
   user_id: string
   name: string
   slug: string  // URL-friendly identifier, unique per user
+  is_favorite: boolean  // User's favorite status for quick access (from junction table)
+  last_activity_at: string  // ISO date string - last content activity
   created_at: string  // ISO date string
   updated_at: string  // ISO date string
 }
@@ -96,6 +98,8 @@ export function fromProjectDto(dto: ProjectDto): Project {
     id: dto.id,
     name: dto.name,
     slug: dto.slug,
+    isFavorite: dto.is_favorite,
+    lastActivityAt: new Date(dto.last_activity_at),
     createdAt: new Date(dto.created_at),
     updatedAt: new Date(dto.updated_at),
   }

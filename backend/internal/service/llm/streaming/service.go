@@ -326,6 +326,14 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 			return fmt.Errorf("failed to create assistant turn: %w", err)
 		}
 
+		// Touch project activity (non-fatal - don't fail turn creation for metadata updates)
+		if err := s.projectRepo.TouchLastActivityAt(txCtx, threadContext.projectID); err != nil {
+			s.logger.Warn("failed to touch project activity",
+				"project_id", threadContext.projectID,
+				"error", err,
+			)
+		}
+
 		return nil
 	})
 

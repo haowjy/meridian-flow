@@ -67,6 +67,14 @@ func (s *Service) CreateThread(ctx context.Context, req *llmSvc.CreateThreadRequ
 		return nil, err
 	}
 
+	// Touch project activity (non-fatal)
+	if err := s.projectRepo.TouchLastActivityAt(ctx, req.ProjectID); err != nil {
+		s.logger.Warn("failed to touch project activity",
+			"project_id", req.ProjectID,
+			"error", err,
+		)
+	}
+
 	s.logger.Info("thread created",
 		"id", thread.ID,
 		"title", thread.Title,
@@ -169,6 +177,14 @@ func (s *Service) DeleteThread(ctx context.Context, threadID, userID string) (*l
 	deletedThread, err := s.threadRepo.DeleteThread(ctx, threadID, userID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Touch project activity (non-fatal)
+	if err := s.projectRepo.TouchLastActivityAt(ctx, deletedThread.ProjectID); err != nil {
+		s.logger.Warn("failed to touch project activity",
+			"project_id", deletedThread.ProjectID,
+			"error", err,
+		)
 	}
 
 	s.logger.Info("thread deleted",

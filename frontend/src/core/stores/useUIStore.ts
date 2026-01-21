@@ -16,6 +16,11 @@ export type RightPanelState = 'documents' | 'editor' | null
 export type MobileActivePanel = 'threadList' | 'activeThread' | 'document'
 
 /**
+ * Project list sort options.
+ */
+export type ProjectSortOrder = 'updated' | 'name-asc' | 'name-desc' | 'created-newest' | 'created-oldest'
+
+/**
  * User's explicit panel override choice.
  * - 'expanded': User explicitly expanded the panel
  * - 'collapsed': User explicitly collapsed the panel
@@ -104,7 +109,23 @@ interface UIStore {
    */
   mobileActivePanel: MobileActivePanel
 
-  /** Toggles left panel collapsed/expanded state (sets user override) */
+  /**
+   * Current sort order for the projects list.
+   * Persisted across sessions.
+   * @default 'updated' (most recently updated first)
+   */
+  projectSortOrder: ProjectSortOrder
+
+  /**
+   * Current search query for filtering projects.
+   * NOT persisted (ephemeral).
+   * @default ''
+   */
+  projectSearchQuery: string
+
+  /**
+   * Toggles left panel collapsed/expanded state (sets user override)
+   */
   toggleLeftPanel: () => void
 
   /** Toggles right panel collapsed/expanded state (sets user override) */
@@ -152,6 +173,12 @@ interface UIStore {
    * Use for tab navigation on mobile viewport.
    */
   setMobileActivePanel: (panel: MobileActivePanel) => void
+
+  /** Sets the project list sort order (persisted) */
+  setProjectSortOrder: (order: ProjectSortOrder) => void
+
+  /** Sets the project search query (not persisted) */
+  setProjectSearchQuery: (query: string) => void
 }
 
 /**
@@ -184,6 +211,8 @@ export const useUIStore = create<UIStore>()(
       activeThreadId: null,
       threadFocusVersion: 0,
       mobileActivePanel: 'activeThread',
+      projectSortOrder: 'updated',
+      projectSearchQuery: '',
 
       toggleLeftPanel: () => {
         const currentlyCollapsed = selectEffectiveLeftCollapsed(get())
@@ -213,10 +242,14 @@ export const useUIStore = create<UIStore>()(
         set((state) => ({ threadFocusVersion: state.threadFocusVersion + 1 })),
       setMobileActivePanel: (panel) =>
         set({ mobileActivePanel: panel }),
+      setProjectSortOrder: (order) =>
+        set({ projectSortOrder: order }),
+      setProjectSearchQuery: (query) =>
+        set({ projectSearchQuery: query }),
     }),
     {
       name: 'ui-store',
-      version: 2,
+      version: 3,
       partialize: (state) => ({
         // Persist user's explicit panel override choice (expanded/collapsed/null)
         leftPanelUserOverride: state.leftPanelUserOverride,
@@ -224,8 +257,10 @@ export const useUIStore = create<UIStore>()(
         activeDocumentId: state.activeDocumentId,
         activeThreadId: state.activeThreadId,
         mobileActivePanel: state.mobileActivePanel,
+        // Projects page preferences
+        projectSortOrder: state.projectSortOrder,
         // NOT persisted: leftPanelReady, rightPanelReady (session-scoped, set by data loaders)
-        // NOT persisted: threadFocusVersion, rightPanelState (ephemeral)
+        // NOT persisted: threadFocusVersion, rightPanelState, projectSearchQuery (ephemeral)
       }),
       // Migrate from v1 (boolean collapsed) to v2 (user override system)
       migrate: (persisted: unknown, version: number) => {

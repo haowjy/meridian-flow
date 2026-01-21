@@ -23,6 +23,7 @@ import (
 type folderService struct {
 	folderRepo   docsysRepo.FolderRepository
 	docRepo      docsysRepo.DocumentRepository
+	projectRepo  docsysRepo.ProjectRepository
 	docService   docsysSvc.DocumentService // For delegating document deletion (SRP)
 	pathResolver docsysSvc.PathResolver
 	txManager    repositories.TransactionManager
@@ -35,6 +36,7 @@ type folderService struct {
 func NewFolderService(
 	folderRepo docsysRepo.FolderRepository,
 	docRepo docsysRepo.DocumentRepository,
+	projectRepo docsysRepo.ProjectRepository,
 	docService docsysSvc.DocumentService, // For delegating document deletion (SRP)
 	pathResolver docsysSvc.PathResolver,
 	txManager repositories.TransactionManager,
@@ -45,6 +47,7 @@ func NewFolderService(
 	return &folderService{
 		folderRepo:   folderRepo,
 		docRepo:      docRepo,
+		projectRepo:  projectRepo,
 		docService:   docService,
 		pathResolver: pathResolver,
 		txManager:    txManager,
@@ -113,6 +116,14 @@ func (s *folderService) CreateFolder(ctx context.Context, req *docsysSvc.CreateF
 
 	if err := s.folderRepo.Create(ctx, folder); err != nil {
 		return nil, err
+	}
+
+	// Touch project activity (non-fatal)
+	if err := s.projectRepo.TouchLastActivityAt(ctx, req.ProjectID); err != nil {
+		s.logger.Warn("failed to touch project activity",
+			"project_id", req.ProjectID,
+			"error", err,
+		)
 	}
 
 	// Compute display path
@@ -269,6 +280,14 @@ func (s *folderService) UpdateFolder(ctx context.Context, userID, folderID strin
 		}
 	}
 
+	// Touch project activity (non-fatal)
+	if err := s.projectRepo.TouchLastActivityAt(ctx, folder.ProjectID); err != nil {
+		s.logger.Warn("failed to touch project activity",
+			"project_id", folder.ProjectID,
+			"error", err,
+		)
+	}
+
 	// Compute display path
 	path, err := s.folderRepo.GetPath(ctx, &folder.ID, folder.ProjectID)
 	if err != nil {
@@ -369,6 +388,14 @@ func (s *folderService) DeleteFolder(ctx context.Context, userID, folderID strin
 	// Delete the folder itself
 	if err := s.folderRepo.Delete(ctx, folderID, folder.ProjectID); err != nil {
 		return err
+	}
+
+	// Touch project activity (non-fatal)
+	if err := s.projectRepo.TouchLastActivityAt(ctx, folder.ProjectID); err != nil {
+		s.logger.Warn("failed to touch project activity",
+			"project_id", folder.ProjectID,
+			"error", err,
+		)
 	}
 
 	s.logger.Info("folder deleted",

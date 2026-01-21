@@ -23,6 +23,7 @@ interface ProjectStore {
   createProject: (name: string) => Promise<Project>
   updateProject: (id: string, name: string) => Promise<void>
   deleteProject: (id: string) => Promise<void>
+  toggleFavorite: (id: string) => Promise<void>
   clearError: () => void
 }
 
@@ -161,11 +162,45 @@ export const useProjectStore = create<ProjectStore>()(
         }
       },
 
+      toggleFavorite: async (id) => {
+        const project = get().projects.find((p) => p.id === id)
+        if (!project) return
+
+        // Optimistic update
+        const newFavoriteState = !project.isFavorite
+        set((state) => ({
+          projects: state.projects.map((p) =>
+            p.id === id ? { ...p, isFavorite: newFavoriteState } : p
+          ),
+        }))
+
+        try {
+          // Use add/remove endpoints based on new state
+          const updated = newFavoriteState
+            ? await api.projects.addFavorite(id)
+            : await api.projects.removeFavorite(id)
+          // Update with server response to ensure consistency
+          set((state) => ({
+            projects: state.projects.map((p) => (p.id === id ? updated : p)),
+          }))
+        } catch (error) {
+          // Revert optimistic update on failure
+          set((state) => ({
+            projects: state.projects.map((p) =>
+              p.id === id ? { ...p, isFavorite: !newFavoriteState } : p
+            ),
+          }))
+          const message = getErrorMessageWithFallback(error, 'Failed to update favorite')
+          set({ error: message })
+          throw error
+        }
+      },
+
       clearError: () => set({ error: null }),
     }),
     {
       name: 'project-store',
-      version: 1, // Bump to clear old cache missing slug field
+      version: 2, // Bump to clear old cache missing isFavorite field
       partialize: (state) => ({
         currentProjectId: state.currentProjectId,
         projects: state.projects, // Cache projects list for instant load
