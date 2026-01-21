@@ -38,12 +38,12 @@ export function ProjectSearchInput({ autoFocus, onRequestClose }: ProjectSearchI
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={handleKeyDown}
-        className="pl-9 pr-9"
+        className="pl-10 pr-9 placeholder:opacity-50"
       />
       {query && (
         <button
           onClick={handleClear}
-          className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-muted transition-colors"
+          className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-[var(--hover)] transition-colors"
           aria-label="Clear search"
         >
           <X className="size-3.5 text-muted-foreground" />

@@ -47,7 +47,7 @@ export function ProjectCardFeatured({ project, onFavoriteToggle, className }: Pr
           aria-label={project.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
         >
           <Star
-            className="size-4"
+            className="size-4.5"
             fill={project.isFavorite ? 'currentColor' : 'none'}
           />
         </button>

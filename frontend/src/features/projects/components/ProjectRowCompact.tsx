@@ -53,7 +53,7 @@ export function ProjectRowCompact({
         aria-label={project.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
       >
         <Star
-          className="size-4"
+          className="size-4.5"
           fill={project.isFavorite ? 'currentColor' : 'none'}
         />
       </button>
@@ -76,25 +76,25 @@ export function ProjectRowCompact({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="shrink-0 p-1 rounded hover:bg-muted transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+            className="shrink-0 p-1 rounded hover:bg-[var(--hover)] transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
             aria-label="Project actions"
           >
-            <MoreHorizontal className="size-4 text-muted-foreground" />
+            <MoreHorizontal className="size-4.5 text-muted-foreground" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem asChild>
             <Link to={`/projects/${project.slug}`} onClick={handleClick}>
-              <FolderOpen className="size-4" />
+              <FolderOpen className="size-4.5" />
               Open
             </Link>
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => onRename?.(project)}>
-            <Pencil className="size-4" />
+            <Pencil className="size-4.5" />
             Rename
           </DropdownMenuItem>
           <DropdownMenuItem onClick={handleFavoriteClick}>
-            <Star className="size-4" fill={project.isFavorite ? 'currentColor' : 'none'} />
+            <Star className="size-4.5" fill={project.isFavorite ? 'currentColor' : 'none'} />
             {project.isFavorite ? 'Unfavorite' : 'Favorite'}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
@@ -102,7 +102,7 @@ export function ProjectRowCompact({
             variant="destructive"
             onClick={() => onDelete?.(project)}
           >
-            <Trash2 className="size-4" />
+            <Trash2 className="size-4.5" />
             Delete
           </DropdownMenuItem>
         </DropdownMenuContent>

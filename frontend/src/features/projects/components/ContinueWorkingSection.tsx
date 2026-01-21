@@ -22,7 +22,7 @@ export function ContinueWorkingSection({
   return (
     <section>
       <ProjectSectionHeader
-        icon={<Clock className="size-4 text-muted-foreground" />}
+        icon={<Clock className="size-4.5 text-muted-foreground" />}
         title="Continue Working"
       />
       <ProjectFeaturedCardList
