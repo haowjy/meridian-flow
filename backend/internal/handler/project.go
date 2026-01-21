@@ -12,17 +12,24 @@ import (
 
 // ProjectHandler handles project HTTP requests
 type ProjectHandler struct {
-	projectService docsysSvc.ProjectService
-	resolver       identifierSvc.Resolver
-	logger         *slog.Logger
+	projectService  docsysSvc.ProjectService
+	favoriteService docsysSvc.FavoriteService
+	resolver        identifierSvc.Resolver
+	logger          *slog.Logger
 }
 
 // NewProjectHandler creates a new project handler
-func NewProjectHandler(projectService docsysSvc.ProjectService, resolver identifierSvc.Resolver, logger *slog.Logger) *ProjectHandler {
+func NewProjectHandler(
+	projectService docsysSvc.ProjectService,
+	favoriteService docsysSvc.FavoriteService,
+	resolver identifierSvc.Resolver,
+	logger *slog.Logger,
+) *ProjectHandler {
 	return &ProjectHandler{
-		projectService: projectService,
-		resolver:       resolver,
-		logger:         logger,
+		projectService:  projectService,
+		favoriteService: favoriteService,
+		resolver:        resolver,
+		logger:          logger,
 	}
 }
 
@@ -145,6 +152,70 @@ func (h *ProjectHandler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	project, err := h.projectService.DeleteProject(r.Context(), projectID, userID)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	httputil.RespondJSON(w, http.StatusOK, project)
+}
+
+// AddFavorite marks a project as favorite for the user
+// POST /api/projects/{id}/favorite
+func (h *ProjectHandler) AddFavorite(w http.ResponseWriter, r *http.Request) {
+	identifier, ok := PathParam(w, r, "id", "Project ID or slug")
+	if !ok {
+		return
+	}
+
+	userID := httputil.GetUserID(r)
+
+	// Resolve identifier (UUID or slug) to project UUID
+	projectID, err := h.resolver.ResolveProject(r.Context(), identifier, userID)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	if err := h.favoriteService.AddFavorite(r.Context(), userID, projectID); err != nil {
+		handleError(w, err)
+		return
+	}
+
+	// Return updated project with is_favorite=true
+	project, err := h.projectService.GetProject(r.Context(), projectID, userID)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	httputil.RespondJSON(w, http.StatusOK, project)
+}
+
+// RemoveFavorite unmarks a project as favorite for the user
+// DELETE /api/projects/{id}/favorite
+func (h *ProjectHandler) RemoveFavorite(w http.ResponseWriter, r *http.Request) {
+	identifier, ok := PathParam(w, r, "id", "Project ID or slug")
+	if !ok {
+		return
+	}
+
+	userID := httputil.GetUserID(r)
+
+	// Resolve identifier (UUID or slug) to project UUID
+	projectID, err := h.resolver.ResolveProject(r.Context(), identifier, userID)
+	if err != nil {
+		handleError(w, err)
+		return
+	}
+
+	if err := h.favoriteService.RemoveFavorite(r.Context(), userID, projectID); err != nil {
+		handleError(w, err)
+		return
+	}
+
+	// Return updated project with is_favorite=false
+	project, err := h.projectService.GetProject(r.Context(), projectID, userID)
 	if err != nil {
 		handleError(w, err)
 		return

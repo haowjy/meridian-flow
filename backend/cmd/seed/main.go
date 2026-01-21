@@ -55,7 +55,7 @@ func main() {
 
 	// Create database connection pool
 	ctx := context.Background()
-	pool, err := postgres.CreateConnectionPool(ctx, cfg.SupabaseDBURL)
+	pool, err := postgres.CreateConnectionPool(ctx, cfg.SupabaseDBURL, cfg.DBMaxConns, cfg.DBMinConns)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -127,7 +127,7 @@ func main() {
 	// Create services for document seeding
 	contentAnalyzer := serviceDocsys.NewContentAnalyzer()
 	pathResolver := serviceDocsys.NewPathResolver(folderRepo, txManager)
-	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, txManager, contentAnalyzer, pathResolver, docsysValidator, authorizer, logger)
+	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, projectRepo, txManager, contentAnalyzer, pathResolver, docsysValidator, authorizer, logger)
 	converterRegistry := converter.NewConverterRegistry()
 
 	// Create file processor registry

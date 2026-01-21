@@ -389,6 +389,20 @@ export const api = {
     },
     delete: (id: string, options?: { signal?: AbortSignal }) =>
       fetchAPI<void>(`/api/projects/${id}`, { method: 'DELETE', signal: options?.signal }),
+    addFavorite: async (id: string, options?: { signal?: AbortSignal }): Promise<Project> => {
+      const data = await fetchAPI<ProjectDto>(`/api/projects/${id}/favorite`, {
+        method: 'POST',
+        signal: options?.signal,
+      })
+      return fromProjectDto(data)
+    },
+    removeFavorite: async (id: string, options?: { signal?: AbortSignal }): Promise<Project> => {
+      const data = await fetchAPI<ProjectDto>(`/api/projects/${id}/favorite`, {
+        method: 'DELETE',
+        signal: options?.signal,
+      })
+      return fromProjectDto(data)
+    },
   },
 
   models: {

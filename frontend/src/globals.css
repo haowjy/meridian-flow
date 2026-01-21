@@ -1164,6 +1164,20 @@ body.preload * {
     animation: meridian-pulse 1.5s ease-in-out infinite;
   }
 
+  /* ============================================================================
+     SCROLLBAR HIDE UTILITY
+     Hide scrollbar while maintaining scroll functionality
+     ============================================================================ */
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
 }
 
 /* ============================================================================

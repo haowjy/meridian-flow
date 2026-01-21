@@ -31,6 +31,9 @@ type TableNames struct {
 
 	// User preferences
 	UserPreferences string
+
+	// User project favorites (junction table)
+	UserProjectFavorites string
 }
 
 // NewTableNames creates table names with the given prefix
@@ -48,6 +51,9 @@ func NewTableNames(prefix string) *TableNames {
 
 		// User preferences
 		UserPreferences: fmt.Sprintf("%suser_preferences", prefix),
+
+		// User project favorites (junction table)
+		UserProjectFavorites: fmt.Sprintf("%suser_project_favorites", prefix),
 	}
 }
 
@@ -84,15 +90,26 @@ func NewTableNames(prefix string) *TableNames {
 // References:
 // - Supabase connection docs: https://supabase.com/docs/guides/database/connecting-to-postgres
 // - pgx QueryExecMode: https://pkg.go.dev/github.com/jackc/pgx/v5#QueryExecMode
-func CreateConnectionPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+func CreateConnectionPool(ctx context.Context, databaseURL string, maxConns, minConns int) (*pgxpool.Pool, error) {
 	config, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse connection string: %w", err)
 	}
 
 	// Configure pool size
-	config.MaxConns = 25
-	config.MinConns = 5
+	// If unset/misconfigured, fall back to previous defaults.
+	if maxConns < 1 {
+		maxConns = 25
+	}
+	if minConns < 0 {
+		minConns = 5
+	}
+	if minConns > maxConns {
+		minConns = maxConns
+	}
+
+	config.MaxConns = int32(maxConns)
+	config.MinConns = int32(minConns)
 
 	// Auto-detect PgBouncer (port 6543) and configure appropriate query execution mode
 	// Port 6543 is Supabase's transaction pooler which doesn't support prepared statements

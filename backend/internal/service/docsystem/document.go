@@ -21,6 +21,7 @@ import (
 type documentService struct {
 	docRepo         docsysRepo.DocumentRepository
 	folderRepo      docsysRepo.FolderRepository
+	projectRepo     docsysRepo.ProjectRepository
 	txManager       repositories.TransactionManager
 	contentAnalyzer docsysSvc.ContentAnalyzer
 	pathResolver    docsysSvc.PathResolver
@@ -33,6 +34,7 @@ type documentService struct {
 func NewDocumentService(
 	docRepo docsysRepo.DocumentRepository,
 	folderRepo docsysRepo.FolderRepository,
+	projectRepo docsysRepo.ProjectRepository,
 	txManager repositories.TransactionManager,
 	contentAnalyzer docsysSvc.ContentAnalyzer,
 	pathResolver docsysSvc.PathResolver,
@@ -43,6 +45,7 @@ func NewDocumentService(
 	return &documentService{
 		docRepo:         docRepo,
 		folderRepo:      folderRepo,
+		projectRepo:     projectRepo,
 		txManager:       txManager,
 		contentAnalyzer: contentAnalyzer,
 		pathResolver:    pathResolver,
@@ -172,6 +175,14 @@ func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.Cre
 
 	if err := s.docRepo.Create(ctx, doc); err != nil {
 		return nil, err
+	}
+
+	// Touch project activity (non-fatal - don't fail document creation for metadata updates)
+	if err := s.projectRepo.TouchLastActivityAt(ctx, req.ProjectID); err != nil {
+		s.logger.Warn("failed to touch project activity",
+			"project_id", req.ProjectID,
+			"error", err,
+		)
 	}
 
 	// Compute display path
@@ -391,6 +402,16 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 			return nil, err
 		}
 
+		// Touch project activity when content changes (non-fatal, outside tx)
+		if req.Content != nil {
+			if err := s.projectRepo.TouchLastActivityAt(ctx, result.ProjectID); err != nil {
+				s.logger.Warn("failed to touch project activity",
+					"project_id", result.ProjectID,
+					"error", err,
+				)
+			}
+		}
+
 		// Compute display path (outside tx, non-critical)
 		path, err := s.docRepo.GetPath(ctx, result)
 		if err != nil {
@@ -416,6 +437,16 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 	// Non-transactional path (no ai_version change)
 	if err := s.docRepo.Update(ctx, doc); err != nil {
 		return nil, err
+	}
+
+	// Touch project activity when content changes (non-fatal)
+	if req.Content != nil {
+		if err := s.projectRepo.TouchLastActivityAt(ctx, doc.ProjectID); err != nil {
+			s.logger.Warn("failed to touch project activity",
+				"project_id", doc.ProjectID,
+				"error", err,
+			)
+		}
 	}
 
 	// Compute display path
@@ -493,6 +524,14 @@ func (s *documentService) DeleteDocument(ctx context.Context, userID, documentID
 
 	if err := s.docRepo.Delete(ctx, documentID, doc.ProjectID); err != nil {
 		return err
+	}
+
+	// Touch project activity (non-fatal)
+	if err := s.projectRepo.TouchLastActivityAt(ctx, doc.ProjectID); err != nil {
+		s.logger.Warn("failed to touch project activity",
+			"project_id", doc.ProjectID,
+			"error", err,
+		)
 	}
 
 	s.logger.Info("document deleted",

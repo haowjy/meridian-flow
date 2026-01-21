@@ -30,4 +30,8 @@ type ProjectRepository interface {
 	// Delete soft-deletes a project by setting deleted_at timestamp
 	// Returns the deleted project with deleted_at set
 	Delete(ctx context.Context, id, userID string) (*docsystem.Project, error)
+
+	// TouchLastActivityAt updates the last_activity_at timestamp to NOW()
+	// Called when content activity occurs (document/folder/thread changes)
+	TouchLastActivityAt(ctx context.Context, projectID string) error
 }

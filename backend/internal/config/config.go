@@ -14,6 +14,9 @@ type Config struct {
 	SupabaseJWKSURL string // Constructed from SupabaseURL + /auth/v1/.well-known/jwks.json
 	CORSOrigins     string
 	TablePrefix     string
+	// Database pool configuration (pgxpool)
+	DBMaxConns int
+	DBMinConns int
 	// LLM Configuration
 	AnthropicAPIKey          string
 	OpenRouterAPIKey         string
@@ -51,6 +54,8 @@ func Load() *Config {
 		SupabaseJWKSURL: jwksURL,
 		CORSOrigins:     getEnv("CORS_ORIGINS", "http://localhost:3000"),
 		TablePrefix:     tablePrefix,
+		DBMaxConns:      getEnvInt("DB_MAX_CONNS", 25),
+		DBMinConns:      getEnvInt("DB_MIN_CONNS", 5),
 		// LLM Configuration
 		AnthropicAPIKey:          getEnv("ANTHROPIC_API_KEY", ""),
 		OpenRouterAPIKey:         getEnv("OPENROUTER_API_KEY", ""),
