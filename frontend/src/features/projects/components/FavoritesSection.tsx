@@ -22,7 +22,7 @@ export function FavoritesSection({ projects, onFavoriteToggle }: FavoritesSectio
   return (
     <section className="min-w-0">
       <ProjectSectionHeader
-        icon={<Star className="size-4 text-accent" fill="currentColor" />}
+        icon={<Star className="size-4.5 text-accent" fill="currentColor" />}
         title="Favorites"
         count={projects.length}
       />

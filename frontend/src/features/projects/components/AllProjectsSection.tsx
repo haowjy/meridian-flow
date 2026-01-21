@@ -54,7 +54,7 @@ export function AllProjectsSection({
   return (
     <section>
       <ProjectSectionHeader
-        icon={<FolderOpen className="size-4 text-muted-foreground" />}
+        icon={<FolderOpen className="size-4.5 text-muted-foreground" />}
         title="All Projects"
         count={projects.length}
         right={<ProjectSortDropdown />}

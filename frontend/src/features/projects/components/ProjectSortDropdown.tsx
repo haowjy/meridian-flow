@@ -27,7 +27,7 @@ export function ProjectSortDropdown() {
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" className="gap-1.5">
           <span className="type-label">Sort: {currentOption.label}</span>
-          <ChevronDown className="size-3.5" />
+          <ChevronDown className="size-4.5" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-[160px]">
@@ -39,7 +39,7 @@ export function ProjectSortDropdown() {
           >
             <span>{option.label}</span>
             {sortOrder === option.value && (
-              <Check className="size-4 text-accent" />
+              <Check className="size-4.5 text-accent" />
             )}
           </DropdownMenuItem>
         ))}
