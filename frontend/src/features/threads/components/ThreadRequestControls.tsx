@@ -122,7 +122,7 @@ export function ThreadRequestControls({
               aria-label={showStop ? 'Stop response' : saveIcon ? 'Save' : 'Send message'}
             >
               {showStop ? (
-                <span className="size-2 animate-processing-pulse rounded-full bg-accent" />
+                <span className="size-2.5 animate-processing-pulse rounded-full bg-current" />
               ) : saveIcon ? (
                 <Check />
               ) : (
