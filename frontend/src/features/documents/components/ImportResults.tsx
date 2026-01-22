@@ -30,7 +30,7 @@ export function ImportResults({
 
   return (
     <>
-      <div className="grid gap-4 py-4">
+      <div className="grid gap-3 py-2">
         {/* Summary Stats */}
         <div className="grid grid-cols-4 gap-2 text-center">
           <StatBadge

@@ -22,7 +22,7 @@ export function ScrollToBottomButton({
   return (
     <Button
       variant="outline"
-      size="icon-lg"
+      size="icon"
       onClick={onClick}
       aria-label="Scroll to bottom"
       className={cn(

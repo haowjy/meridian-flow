@@ -167,7 +167,7 @@ export const FolderTreeItem = memo(function FolderTreeItem({
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"
-                    size="icon-lg"
+                    size="icon"
                     disabled={contextMenuOpen}
                     className={cn(
                       'flex-shrink-0 h-7 w-9 md:h-4 md:w-7 p-0 rounded-sm transition-opacity',

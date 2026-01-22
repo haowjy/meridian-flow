@@ -9,6 +9,7 @@
  */
 
 import { EditorSelection } from '@codemirror/state'
+import { syntaxTree } from '@codemirror/language'
 import { keymap, type EditorView } from '@codemirror/view'
 import { insertNewline } from '@codemirror/commands'
 
@@ -139,6 +140,32 @@ const blockquoteHandler: LineHandler = {
 const handlers: LineHandler[] = [bulletHandler, orderedHandler, blockquoteHandler]
 
 // ============================================================================
+// THEMATIC BREAK (HR) DETECTION
+// ============================================================================
+
+const thematicBreakCandidatePattern = /^\s{0,3}([*_-])(?:\s*\1){2,}\s*$/
+
+function isHorizontalRuleLine(view: EditorView, line: { from: number; to: number; text: string }): boolean {
+  // Avoid treating list items like "- --" as HR unless the parser agrees.
+  if (!thematicBreakCandidatePattern.test(line.text)) {
+    return false
+  }
+
+  let found = false
+  syntaxTree(view.state).iterate({
+    from: line.from,
+    to: line.to,
+    enter(node) {
+      if (node.name === 'HorizontalRule') {
+        found = true
+      }
+    },
+  })
+
+  return found
+}
+
+// ============================================================================
 // MAIN COMMAND
 // ============================================================================
 
@@ -160,6 +187,13 @@ export function markdownEnter(view: EditorView): boolean {
 
   // If cursor is before end of text, do normal split
   if (cursorOffset < lineText.trimEnd().length) {
+    return insertNewline(view)
+  }
+
+  // Thematic breaks like "---" and "***" are parsed as HorizontalRule nodes, but
+  // they also resemble list items (leading "-" / "*"). Never continue list
+  // markup when the line is actually a horizontal rule.
+  if (isHorizontalRuleLine(view, { from: line.from, to: line.to, text: lineText })) {
     return insertNewline(view)
   }
 

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ArrowUp, Brain, Check, ChevronDown, StopCircle, Wrench } from 'lucide-react'
+import { ArrowUp, Brain, Check, ChevronDown, Wrench } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
 import {
@@ -109,22 +109,25 @@ export function ThreadRequestControls({
           requiresThinking={requiresThinking}
         />
       </div>
-      {isStreaming && (
-        <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-      )}
       {showSend && (onSend || rightContent) && (
         <div className="flex items-center gap-1">
           {rightContent}
           {onSend && (
             <Button
               type="button"
-              size="icon-lg"
+              size="icon"
               className="transition-transform hover:scale-105 active:scale-95 disabled:hover:scale-100"
               disabled={showStop ? false : isSendDisabled}
               onClick={showStop && onStop ? onStop : onSend}
               aria-label={showStop ? 'Stop response' : saveIcon ? 'Save' : 'Send message'}
             >
-              {showStop ? <StopCircle /> : saveIcon ? <Check /> : <ArrowUp />}
+              {showStop ? (
+                <span className="size-2 animate-processing-pulse rounded-full bg-accent" />
+              ) : saveIcon ? (
+                <Check />
+              ) : (
+                <ArrowUp />
+              )}
             </Button>
           )}
         </div>

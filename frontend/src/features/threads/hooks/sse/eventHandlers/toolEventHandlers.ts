@@ -6,9 +6,10 @@
  */
 
 import { parse as parsePartialJson, STR, OBJ, ARR, NUM } from 'partial-json'
-import { ToolStreamState } from '@/features/threads/stores/useToolStreamStore'
+import { ToolStreamState, useToolStreamStore } from '@/features/threads/stores/useToolStreamStore'
 import { useThreadStore } from '@/core/stores/useThreadStore'
 import { normalizeToolCallId } from '@/features/threads/utils/normalizeToolCallId'
+import { executeToolResultSideEffects } from '../toolResultSideEffects'
 import type { SSEDispatchContext, SSEStoreActions } from '../types'
 import type {
   ToolCallStartEvent,
@@ -253,4 +254,10 @@ export function handleToolCallResult(
     blockIndex,
     isError,
   })
+
+  // Execute tool-specific side effects (document refresh, tree hydration)
+  const toolData = useToolStreamStore.getState().tools[toolCallId]
+  if (toolData?.toolName) {
+    executeToolResultSideEffects(toolData.toolName, content, isError, toolData.input)
+  }
 }

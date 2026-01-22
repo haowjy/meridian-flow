@@ -63,7 +63,7 @@ const buttonVariants = cva(
       },
       size: {
         // Standard sizes - pill shape with icon scaling
-        default: "h-9 px-5 py-2 rounded-md [&_svg]:size-4",
+        default: "h-9 px-4 py-2 rounded-md [&_svg]:size-4",
         sm: "h-8 px-4 gap-1.5 rounded-md [&_svg]:size-3.5",
         lg: "h-10 px-6 rounded-md [&_svg]:size-5",
 

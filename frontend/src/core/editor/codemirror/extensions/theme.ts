@@ -143,8 +143,13 @@ export const livePreviewTheme = EditorView.theme({
   '.cm-hr-widget': {
     display: 'block',
     width: '100%',
-    height: '2px',
-    backgroundColor: 'var(--theme-border, #e5e5e5)',
+    height: '0',
+    backgroundColor: 'transparent',
+    backgroundImage:
+      'linear-gradient(var(--theme-border, #e5e5e5), var(--theme-border, #e5e5e5))',
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'center',
+    backgroundSize: '100% 2px',
     padding: '1em 0', // Use padding instead of margin to avoid breaking CM6 hit testing
   },
 
