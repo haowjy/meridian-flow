@@ -217,15 +217,14 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 		se.aguiEmitter.EmitStepStarted()
 	}
 
-	softLimit := se.maxToolRounds
-	hardLimit := se.maxToolRounds * 2
+	// Warning threshold: 5 rounds before limit (skip if maxToolRounds <= 5)
+	warnThreshold := se.maxToolRounds - 5
 
-	// HARD LIMIT: Force graceful completion (safety backstop against infinite loops)
-	if se.toolIteration >= hardLimit {
-		se.logger.Warn("hard limit reached, forcing graceful completion",
+	// HARD LIMIT: Error at maxToolRounds (no doubling)
+	if se.toolIteration >= se.maxToolRounds {
+		se.logger.Warn("tool round limit reached, forcing graceful completion",
 			"iterations", se.toolIteration,
-			"soft_limit", softLimit,
-			"hard_limit", hardLimit,
+			"max_rounds", se.maxToolRounds,
 		)
 		return se.executeToolsAndContinueWithLimit(ctx, send)
 	}
@@ -254,13 +253,14 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 		return fmt.Errorf("failed to build continuation messages: %w", err)
 	}
 
-	// 6a. SOFT LIMIT: Inject user notification message if above soft limit
+	// 6a. WARNING: Inject notification if at or past warn threshold (only if maxToolRounds > 5)
 	// This gives the LLM a gentle reminder to wrap up, but still allows tool use if critical
-	if se.toolIteration >= softLimit {
+	if se.maxToolRounds > 5 && se.toolIteration >= warnThreshold {
+		remainingRounds := se.maxToolRounds - se.toolIteration
 		notificationText := fmt.Sprintf(
-			"You've exceeded the recommended tool usage limit of %d rounds. "+
-				"Please consider providing your final answer based on the information you've gathered.",
-			softLimit,
+			"You have %d tool rounds remaining (limit: %d). "+
+				"Please consider wrapping up or providing your final answer soon.",
+			remainingRounds, se.maxToolRounds,
 		)
 
 		notificationMsg := domainllm.Message{
@@ -276,10 +276,11 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 		// Prepend notification so LLM sees it first
 		messages = append([]domainllm.Message{notificationMsg}, messages...)
 
-		se.logger.Info("soft limit reached, injected user notification",
+		se.logger.Info("warning threshold reached, injected notification",
 			"iterations", se.toolIteration,
-			"soft_limit", softLimit,
-			"hard_limit", hardLimit,
+			"warn_threshold", warnThreshold,
+			"max_rounds", se.maxToolRounds,
+			"remaining", remainingRounds,
 		)
 	}
 

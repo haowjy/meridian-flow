@@ -110,19 +110,17 @@ func (se *StreamExecutor) handleCompletion(ctx context.Context, send func(mstrea
 
 	// Check if we have collected tools to execute
 	if len(se.collectedTools) > 0 && se.toolRegistry != nil {
-		// Check hard limit to prevent infinite loops
-		// (soft limit will be handled in executeToolsAndContinue via user message)
-		hardLimit := se.maxToolRounds * 2
-		if se.toolIteration >= hardLimit {
-			se.logger.Warn("hard limit reached, creating error tool_results and allowing final response",
+		// Check hard limit to prevent infinite loops (no doubling - error at maxToolRounds)
+		if se.toolIteration >= se.maxToolRounds {
+			se.logger.Warn("tool round limit reached, creating error tool_results and allowing final response",
 				"tool_iteration", se.toolIteration,
-				"hard_limit", hardLimit,
+				"max_rounds", se.maxToolRounds,
 				"collected_tools", len(se.collectedTools),
 			)
 
 			// Create error tool_result blocks for each pending tool_use
 			// This ensures every tool_use has a corresponding tool_result (required by Claude API)
-			errMsg := fmt.Sprintf("Tool execution limit reached (%d rounds). Please provide your final answer based on the information gathered so far.", hardLimit)
+			errMsg := fmt.Sprintf("Tool execution limit reached (%d rounds). Please provide your final answer based on the information gathered so far.", se.maxToolRounds)
 			if err := se.persistErrorToolResults(ctx, send, errMsg); err != nil {
 				se.handleError(ctx, send, fmt.Errorf("failed to persist error tool results at hard limit: %w", err))
 				return err
