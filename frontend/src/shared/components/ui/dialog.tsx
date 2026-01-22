@@ -62,10 +62,10 @@ function DialogContent({
           // Base layout
           "fixed top-[50%] left-[50%] z-50 translate-x-[-50%] translate-y-[-50%]",
           "w-full max-w-[calc(100%-2rem)] sm:max-w-lg",
-          // Surface styling (per design system: 12px radius for modals, 24px padding)
-          "bg-popover text-popover-foreground border border-border rounded-xl p-6",
-          // Content layout with 24px gap between sections (per design system)
-          "grid gap-6",
+          // Surface styling (writer-first density: tighter modal chrome to leave more room for content)
+          "bg-popover text-popover-foreground border border-border rounded-xl p-4",
+          // Content layout with tighter section spacing
+          "grid gap-4",
           // Animation
           "data-[state=open]:animate-in data-[state=closed]:animate-out",
           "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
@@ -82,9 +82,9 @@ function DialogContent({
             data-slot="dialog-close"
             className={cn(
               // Position in top-right with matching padding offset
-              "absolute top-5 right-5",
-              // Size and shape (icon-xs: 24px per design system)
-              "size-6 rounded-md",
+              "absolute top-4 right-4",
+              // Size and shape (writer-first density: keep chrome small on desktop)
+              "size-5 rounded-md",
               // Centered icon
               "inline-flex items-center justify-center",
               // Color and interaction
@@ -96,7 +96,7 @@ function DialogContent({
               "disabled:pointer-events-none disabled:opacity-50"
             )}
           >
-            <XIcon className="size-4" />
+            <XIcon className="size-3.5" />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>
         )}
@@ -128,8 +128,8 @@ function DialogFooter({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="dialog-footer"
       className={cn(
-        // Row layout with 12px gap between buttons
-        "flex flex-col-reverse gap-3 sm:flex-row sm:justify-end",
+        // Row layout with tight spacing between buttons (writer-first density)
+        "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
         className
       )}
       {...props}

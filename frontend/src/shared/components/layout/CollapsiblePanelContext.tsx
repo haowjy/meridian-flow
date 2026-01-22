@@ -78,7 +78,7 @@ export function CollapsiblePanelProvider({
     return (
       <Button
         variant="ghost"
-        size="icon-lg"
+        size="icon"
         onClick={onToggle}
         className="flex-shrink-0"
         aria-label={ariaLabel}

@@ -93,7 +93,7 @@ export function ProjectSettingsDialog({
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
-          <div className="grid gap-4 py-4">
+          <div className="grid gap-3 py-2">
             <div className="grid gap-2">
               <Label htmlFor="instructions">Instructions</Label>
               <textarea

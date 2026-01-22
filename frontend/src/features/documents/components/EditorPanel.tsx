@@ -180,7 +180,7 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
       leading={
         <Button
           variant="ghost"
-          size="icon-lg"
+          size="icon"
           className="-ml-1"
           onClick={handleBackClick}
           aria-label="Back to documents"
