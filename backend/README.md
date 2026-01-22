@@ -1,6 +1,6 @@
 # Meridian Backend
 
-Go REST API for the Meridian file management system.
+Go REST API for the Meridian file management system and agentic tools.
 
 ## Quick Start
 

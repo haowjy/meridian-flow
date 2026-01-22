@@ -1,6 +1,6 @@
 # Meridian
 
-AI Writing Assistant — a file management system for writers.
+AI Writing Assistant - a agentic writing system.
 
 ## Project Status (Nov 29, 2025)
 
