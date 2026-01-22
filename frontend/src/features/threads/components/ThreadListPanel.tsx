@@ -10,7 +10,6 @@ import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { Button } from '@/shared/components/ui/button'
 import { ThreadListHeader } from './ThreadListHeader'
 import { ThreadList } from './ThreadList'
-import { ThreadListEmpty } from './ThreadListEmpty'
 import { DeleteThreadDialog } from './DeleteThreadDialog'
 import { useUserProfile, useAuthActions, UserMenuButton } from '@/features/auth'
 import type { Thread } from '@/features/threads/types'
@@ -147,9 +146,6 @@ export function ThreadListPanel({ projectId }: ThreadListPanelProps) {
               onRenameCancel={handleRenameCancel}
               onDelete={handleDeleteClick}
             />
-          )}
-          {view === 'empty' && (
-            <ThreadListEmpty onNewThread={handleNewThread} />
           )}
         </div>
       </div>

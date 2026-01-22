@@ -118,7 +118,7 @@ export function ThreadRequestControls({
           {onSend && (
             <Button
               type="button"
-              size="icon"
+              size="icon-lg"
               className="transition-transform hover:scale-105 active:scale-95 disabled:hover:scale-100"
               disabled={showStop ? false : isSendDisabled}
               onClick={showStop && onStop ? onStop : onSend}

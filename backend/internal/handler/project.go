@@ -5,9 +5,10 @@ import (
 	"net/http"
 
 	"meridian/internal/domain/models/docsystem"
-	identifierSvc "meridian/internal/domain/services/identifier"
 	docsysSvc "meridian/internal/domain/services/docsystem"
+	identifierSvc "meridian/internal/domain/services/identifier"
 	"meridian/internal/httputil"
+	"meridian/internal/optional"
 )
 
 // ProjectHandler handles project HTTP requests
@@ -102,6 +103,16 @@ func (h *ProjectHandler) GetProject(w http.ResponseWriter, r *http.Request) {
 	httputil.RespondJSON(w, http.StatusOK, project)
 }
 
+// updateProjectDTO is the transport-layer request for PATCH /api/projects/{id}.
+// Uses optional.Optional[string] for system_prompt to support tri-state PATCH semantics (RFC 7396):
+//   - field absent = don't change
+//   - field null = clear
+//   - field has value = set
+type updateProjectDTO struct {
+	Name         *string                   `json:"name,omitempty"`
+	SystemPrompt optional.Optional[string] `json:"system_prompt"`
+}
+
 // UpdateProject updates a project
 // PATCH /api/projects/{id}
 func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
@@ -119,13 +130,20 @@ func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req docsysSvc.UpdateProjectRequest
-	if err := httputil.ParseJSON(w, r, &req); err != nil {
+	// Parse request into transport DTO
+	var dto updateProjectDTO
+	if err := httputil.ParseJSON(w, r, &dto); err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
-	project, err := h.projectService.UpdateProject(r.Context(), projectID, userID, &req)
+	// Map transport DTO to service request
+	req := &docsysSvc.UpdateProjectRequest{
+		Name:         dto.Name,
+		SystemPrompt: dto.SystemPrompt,
+	}
+
+	project, err := h.projectService.UpdateProject(r.Context(), projectID, userID, req)
 	if err != nil {
 		handleError(w, err)
 		return

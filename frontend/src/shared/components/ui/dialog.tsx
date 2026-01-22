@@ -59,7 +59,18 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "bg-popover text-popover-foreground border border-border data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 p-6 duration-[--duration-medium] sm:max-w-lg rounded-lg",
+          // Base layout
+          "fixed top-[50%] left-[50%] z-50 translate-x-[-50%] translate-y-[-50%]",
+          "w-full max-w-[calc(100%-2rem)] sm:max-w-lg",
+          // Surface styling (per design system: 12px radius for modals, 24px padding)
+          "bg-popover text-popover-foreground border border-border rounded-xl p-6",
+          // Content layout with 24px gap between sections (per design system)
+          "grid gap-6",
+          // Animation
+          "data-[state=open]:animate-in data-[state=closed]:animate-out",
+          "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+          "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+          "duration-[--duration-medium]",
           className
         )}
         style={{ boxShadow: "var(--shadow-3)" }}
@@ -69,9 +80,23 @@ function DialogContent({
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            className="absolute top-4 right-4 rounded-sm opacity-70 transition-opacity duration-[--duration-fast] hover:opacity-100 hover:bg-hover focus-visible:outline-[3px] focus-visible:outline-accent focus-visible:outline-offset-2 disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+            className={cn(
+              // Position in top-right with matching padding offset
+              "absolute top-5 right-5",
+              // Size and shape (icon-xs: 24px per design system)
+              "size-6 rounded-md",
+              // Centered icon
+              "inline-flex items-center justify-center",
+              // Color and interaction
+              "text-muted-foreground hover:text-foreground hover:bg-hover",
+              "transition-colors duration-[--duration-fast]",
+              // Focus ring per design system
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+              // Disabled state
+              "disabled:pointer-events-none disabled:opacity-50"
+            )}
           >
-            <XIcon />
+            <XIcon className="size-4" />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>
         )}
@@ -84,7 +109,15 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-2 text-center sm:text-left", className)}
+      className={cn(
+        // Stack with 8px gap between title and description
+        "flex flex-col gap-2",
+        // Left-align on all sizes (more professional)
+        "text-left",
+        // Add right padding to avoid close button overlap
+        "pr-8",
+        className
+      )}
       {...props}
     />
   )
@@ -95,7 +128,8 @@ function DialogFooter({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="dialog-footer"
       className={cn(
-        "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
+        // Row layout with 12px gap between buttons
+        "flex flex-col-reverse gap-3 sm:flex-row sm:justify-end",
         className
       )}
       {...props}
@@ -110,7 +144,11 @@ function DialogTitle({
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("text-lg leading-none font-semibold", className)}
+      className={cn(
+        // Typography per design system (type-section: 18px, 600 weight)
+        "text-lg font-semibold leading-tight tracking-tight",
+        className
+      )}
       {...props}
     />
   )
@@ -123,7 +161,11 @@ function DialogDescription({
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"
-      className={cn("text-muted-foreground text-sm", className)}
+      className={cn(
+        // Typography per design system (type-body: 15px but using sm for consistency)
+        "text-sm text-muted-foreground leading-relaxed",
+        className
+      )}
       {...props}
     />
   )

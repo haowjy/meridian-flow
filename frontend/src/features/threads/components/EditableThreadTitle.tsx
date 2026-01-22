@@ -50,7 +50,7 @@ export function EditableThreadTitle({
           trigger={
             <Button
               variant="ghost"
-              size="icon-sm"
+              size="icon"
               className="shrink-0 h-8 w-8 rounded-l-none rounded-r hover:bg-hover group-hover:bg-hover/50"
               aria-label="Thread options"
             >

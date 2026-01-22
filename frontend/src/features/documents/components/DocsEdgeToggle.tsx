@@ -19,7 +19,7 @@ export function DocsEdgeToggle() {
   return (
     <Button
       variant={isCollapsed ? 'outline' : 'ghost'}
-      size="icon-sm"
+      size="icon"
       onClick={toggleRightPanel}
       aria-pressed={!isCollapsed}
       aria-label={isCollapsed ? 'Show documents panel' : 'Hide documents panel'}

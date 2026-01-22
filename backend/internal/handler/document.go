@@ -13,6 +13,7 @@ import (
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	identifierSvc "meridian/internal/domain/services/identifier"
 	"meridian/internal/httputil"
+	"meridian/internal/optional"
 )
 
 // DocumentHandler handles document HTTP requests
@@ -94,19 +95,19 @@ func (h *DocumentHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 }
 
 // updateDocumentDTO is the transport-layer request for PATCH /api/documents/{id}.
-// Uses httputil.OptionalString for folder_id and ai_version to support tri-state PATCH semantics (RFC 7396):
+// Uses optional.Optional[string] for folder_id and ai_version to support tri-state PATCH semantics (RFC 7396):
 //   - field absent = don't change
 //   - field null = clear (ai_version) / move to root (folder_id)
 //   - field has value = set
 type updateDocumentDTO struct {
-	ProjectID        string                  `json:"project_id"`
-	Name             *string                 `json:"name,omitempty"`
-	Extension        *string                 `json:"extension,omitempty"`   // Optional extension change (e.g., ".md" -> ".txt")
-	FolderPath       *string                 `json:"folder_path,omitempty"`
-	FolderID         httputil.OptionalString `json:"folder_id"`
-	Content          *string                 `json:"content,omitempty"`
-	AIVersion        httputil.OptionalString `json:"ai_version"`
-	AIVersionBaseRev *int                    `json:"ai_version_base_rev,omitempty"` // Required when ai_version is present (CAS)
+	ProjectID        string                    `json:"project_id"`
+	Name             *string                   `json:"name,omitempty"`
+	Extension        *string                   `json:"extension,omitempty"` // Optional extension change (e.g., ".md" -> ".txt")
+	FolderPath       *string                   `json:"folder_path,omitempty"`
+	FolderID         optional.Optional[string] `json:"folder_id"`
+	Content          *string                   `json:"content,omitempty"`
+	AIVersion        optional.Optional[string] `json:"ai_version"`
+	AIVersionBaseRev *int                      `json:"ai_version_base_rev,omitempty"` // Required when ai_version is present (CAS)
 }
 
 // UpdateDocument updates a document
@@ -154,15 +155,9 @@ func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request)
 		Name:       dto.Name,
 		Extension:  dto.Extension,
 		FolderPath: dto.FolderPath,
-		FolderID: docsysSvc.OptionalFolderID{
-			Present: dto.FolderID.Present,
-			Value:   dto.FolderID.Value,
-		},
-		Content: dto.Content,
-		AIVersion: docsysSvc.OptionalAIVersion{
-			Present: dto.AIVersion.Present,
-			Value:   dto.AIVersion.Value,
-		},
+		FolderID:   dto.FolderID,
+		Content:    dto.Content,
+		AIVersion:  dto.AIVersion,
 	}
 
 	// Map ai_version_base_rev when ai_version is being updated
@@ -258,7 +253,7 @@ func (h *DocumentHandler) SearchDocuments(w http.ResponseWriter, r *http.Request
 	}
 
 	// Parse optional limit/offset parameters
-	req.Limit = QueryInt(r, "limit", 0, 1, 1000)   // 0 = use service default
+	req.Limit = QueryInt(r, "limit", 0, 1, 1000) // 0 = use service default
 	req.Offset = QueryInt(r, "offset", 0, 0, math.MaxInt)
 
 	// Parse optional language parameter (default handled by service/repository)

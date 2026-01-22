@@ -7,6 +7,7 @@ import (
 	"meridian/internal/domain/models"
 	"meridian/internal/domain/services"
 	"meridian/internal/httputil"
+	"meridian/internal/optional"
 )
 
 // UserPreferencesHandler handles user preferences HTTP requests
@@ -47,7 +48,7 @@ func (h *UserPreferencesHandler) GetPreferences(w http.ResponseWriter, r *http.R
 }
 
 // updatePreferencesDTO is the transport-layer request for PATCH /api/users/me/preferences.
-// Uses httputil.OptionalString for system_instructions to support tri-state PATCH semantics (RFC 7396):
+// Uses optional.Optional[string] for system_instructions to support tri-state PATCH semantics (RFC 7396):
 //   - field absent = don't change
 //   - field null = clear
 //   - field has value = set
@@ -55,7 +56,7 @@ type updatePreferencesDTO struct {
 	Models             *models.ModelsPreferences       `json:"models"`
 	UI                 *models.UIPreferences           `json:"ui"`
 	Editor             *models.EditorPreferences       `json:"editor"`
-	SystemInstructions httputil.OptionalString         `json:"system_instructions"`
+	SystemInstructions optional.Optional[string]       `json:"system_instructions"`
 	Notifications      *models.NotificationPreferences `json:"notifications"`
 }
 
@@ -81,14 +82,11 @@ func (h *UserPreferencesHandler) UpdatePreferences(w http.ResponseWriter, r *htt
 
 	// Map transport DTO to service request
 	req := &models.UpdatePreferencesRequest{
-		Models:        dto.Models,
-		UI:            dto.UI,
-		Editor:        dto.Editor,
-		Notifications: dto.Notifications,
-		SystemInstructions: models.OptionalSystemInstructions{
-			Present: dto.SystemInstructions.Present,
-			Value:   dto.SystemInstructions.Value,
-		},
+		Models:             dto.Models,
+		UI:                 dto.UI,
+		Editor:             dto.Editor,
+		Notifications:      dto.Notifications,
+		SystemInstructions: dto.SystemInstructions,
 	}
 
 	// Update preferences

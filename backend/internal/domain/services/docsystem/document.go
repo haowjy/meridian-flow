@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"meridian/internal/domain/models/docsystem"
+	"meridian/internal/optional"
 )
 
 // DocumentService handles document business logic
@@ -42,7 +43,7 @@ type DocumentService interface {
 // CreateDocumentRequest represents a document creation request
 type CreateDocumentRequest struct {
 	ProjectID  string  `json:"project_id"`
-	UserID     string  `json:"-"` // Set by handler from auth context, not from request body
+	UserID     string  `json:"-"`                     // Set by handler from auth context, not from request body
 	FolderPath *string `json:"folder_path,omitempty"` // Folder path (e.g., "Characters/Aria" or "Characters" or "" for root)
 	FolderID   *string `json:"folder_id,omitempty"`   // Direct folder assignment (alternative to FolderPath)
 	Name       string  `json:"name"`                  // Document name without extension (required)
@@ -50,27 +51,16 @@ type CreateDocumentRequest struct {
 	Content    string  `json:"content"`               // Markdown content
 }
 
-// OptionalAIVersion tracks tri-state semantics for ai_version updates (RFC 7396 PATCH).
-// This is transport-agnostic (no JSON tags) - handler maps from httputil.OptionalString.
-//   - Present=false: field absent from request (don't change)
-//   - Present=true, Value=nil: field is null (clear/set to NULL)
-//   - Present=true, Value=&"": field is empty string
-//   - Present=true, Value=&"text": field has value
-type OptionalAIVersion struct {
-	Present bool    // true if field was in request
-	Value   *string // nil = clear, non-nil = set (including empty string)
-}
-
 // UpdateDocumentRequest represents a document update request
-// Uses OptionalFolderID from folder.go (same package) for folder_id tri-state semantics
+// Uses optional.Optional[string] for FolderID and AIVersion tri-state semantics (RFC 7396 PATCH)
 type UpdateDocumentRequest struct {
-	ProjectID  string           `json:"project_id"`
-	Name       *string          `json:"name,omitempty"`
-	Extension  *string          `json:"extension,omitempty"`   // Optional extension change (e.g., ".md" -> ".txt")
-	FolderPath *string          `json:"folder_path,omitempty"` // Move to folder path (resolve/auto-create)
-	FolderID   OptionalFolderID // Tri-state: absent=don't change, null=root, value=folder (no json tag - mapped from handler DTO)
-	Content    *string          `json:"content,omitempty"`
-	AIVersion  OptionalAIVersion // Tri-state: absent=don't change, null=clear, value=set
+	ProjectID  string
+	Name       *string
+	Extension  *string                   // Optional extension change (e.g., ".md" -> ".txt")
+	FolderPath *string                   // Move to folder path (resolve/auto-create)
+	FolderID   optional.Optional[string] // Tri-state: absent=don't change, null=root, value=folder
+	Content    *string
+	AIVersion  optional.Optional[string] // Tri-state: absent=don't change, null=clear, value=set
 	// AIVersionBaseRev is the client's last-seen ai_version_rev.
 	// Required when AIVersion.Present is true. Used for CAS (compare-and-swap) check.
 	AIVersionBaseRev int

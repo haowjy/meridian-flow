@@ -94,7 +94,8 @@ func (s *projectService) ListProjects(ctx context.Context, userID string) ([]mod
 	return projects, nil
 }
 
-// UpdateProject updates a project's name
+// UpdateProject updates a project's fields (name, system_prompt).
+// Only provided fields are updated - nil fields are left unchanged.
 func (s *projectService) UpdateProject(ctx context.Context, id, userID string, req *docsysSvc.UpdateProjectRequest) (*models.Project, error) {
 	// Validate request
 	if err := s.validateUpdateRequest(req); err != nil {
@@ -107,20 +108,36 @@ func (s *projectService) UpdateProject(ctx context.Context, id, userID string, r
 		return nil, err
 	}
 
-	// Trim and normalize name
-	name := strings.TrimSpace(req.Name)
-
-	// Regenerate slug if name changed (mutable slugs)
-	if name != project.Name {
-		baseSlug := identifier.GenerateSlug(name)
-		project.Slug = identifier.EnsureUniqueSlug(baseSlug, func(testSlug string) bool {
-			exists, _ := s.projectRepo.SlugExists(ctx, testSlug, userID, &project.ID)
-			return exists
-		})
+	// Update name if provided
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		// Regenerate slug if name changed (mutable slugs)
+		if name != project.Name {
+			baseSlug := identifier.GenerateSlug(name)
+			project.Slug = identifier.EnsureUniqueSlug(baseSlug, func(testSlug string) bool {
+				exists, _ := s.projectRepo.SlugExists(ctx, testSlug, userID, &project.ID)
+				return exists
+			})
+		}
+		project.Name = name
 	}
 
-	// Update fields
-	project.Name = name
+	// Update system_prompt if present (tri-state: absent=don't change, null=clear, value=set)
+	if req.SystemPrompt.Present {
+		if req.SystemPrompt.Value == nil {
+			// null = clear the prompt
+			project.SystemPrompt = nil
+		} else {
+			// value = set to trimmed value (empty string after trimming clears it)
+			trimmed := strings.TrimSpace(*req.SystemPrompt.Value)
+			if trimmed == "" {
+				project.SystemPrompt = nil
+			} else {
+				project.SystemPrompt = &trimmed
+			}
+		}
+	}
+
 	project.UpdatedAt = time.Now()
 
 	if err := s.projectRepo.Update(ctx, project); err != nil {
@@ -131,6 +148,7 @@ func (s *projectService) UpdateProject(ctx context.Context, id, userID string, r
 		"id", project.ID,
 		"name", project.Name,
 		"slug", project.Slug,
+		"has_system_prompt", project.SystemPrompt != nil,
 		"user_id", userID,
 	)
 
@@ -179,13 +197,18 @@ func (s *projectService) validateCreateRequest(req *docsysSvc.CreateProjectReque
 
 // validateUpdateRequest validates an update project request
 func (s *projectService) validateUpdateRequest(req *docsysSvc.UpdateProjectRequest) error {
-	return validation.ValidateStruct(req,
-		validation.Field(&req.Name,
+	// Name is optional but if provided, must be valid
+	if req.Name != nil {
+		if err := validation.Validate(req.Name,
 			validation.Required,
 			validation.Length(1, config.MaxProjectNameLength),
 			validation.By(s.validateProjectName),
-		),
-	)
+		); err != nil {
+			return err
+		}
+	}
+	// system_prompt has no validation - any string is valid (nil clears it)
+	return nil
 }
 
 // validateProjectName validates a project name

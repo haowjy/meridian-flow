@@ -179,7 +179,7 @@ export function ProjectFeaturedCardList({
           <div className="pointer-events-none absolute inset-y-0 -left-3 flex items-center">
             <Button
               variant="ghost"
-              size="icon-sm"
+              size="icon"
               className="pointer-events-auto bg-background/70 backdrop-blur-sm border border-border"
               onClick={() => scroll('left')}
               aria-label={`Scroll ${ariaLabel} left`}
@@ -193,7 +193,7 @@ export function ProjectFeaturedCardList({
           <div className="pointer-events-none absolute inset-y-0 -right-3 flex items-center">
             <Button
               variant="ghost"
-              size="icon-sm"
+              size="icon"
               className="pointer-events-auto bg-background/70 backdrop-blur-sm border border-border"
               onClick={() => scroll('right')}
               aria-label={`Scroll ${ariaLabel} right`}

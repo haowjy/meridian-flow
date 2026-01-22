@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"meridian/internal/domain/models/docsystem"
+	"meridian/internal/optional"
 )
 
 // CreateProjectRequest represents a request to create a project
@@ -12,9 +13,12 @@ type CreateProjectRequest struct {
 	Name   string `json:"name"`
 }
 
-// UpdateProjectRequest represents a request to update a project
+// UpdateProjectRequest represents a request to update a project.
+// All fields are optional - only provided fields are updated.
+// SystemPrompt uses tri-state: absent=don't change, null=clear, value=set.
 type UpdateProjectRequest struct {
-	Name string `json:"name"`
+	Name         *string
+	SystemPrompt optional.Optional[string]
 }
 
 // ProjectService defines business logic operations for projects

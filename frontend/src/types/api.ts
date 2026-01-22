@@ -18,6 +18,7 @@ export interface ProjectDto {
   name: string
   slug: string  // URL-friendly identifier, unique per user
   is_favorite: boolean  // User's favorite status for quick access (from junction table)
+  system_prompt?: string | null  // Custom AI instructions for the project
   last_activity_at: string  // ISO date string - last content activity
   created_at: string  // ISO date string
   updated_at: string  // ISO date string
@@ -99,6 +100,7 @@ export function fromProjectDto(dto: ProjectDto): Project {
     name: dto.name,
     slug: dto.slug,
     isFavorite: dto.is_favorite,
+    systemPrompt: dto.system_prompt,
     lastActivityAt: new Date(dto.last_activity_at),
     createdAt: new Date(dto.created_at),
     updatedAt: new Date(dto.updated_at),

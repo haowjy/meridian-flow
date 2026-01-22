@@ -1,5 +1,5 @@
 import { useState, ReactNode, DragEvent, Fragment } from 'react'
-import { FileText, Plus, Upload } from 'lucide-react'
+import { FileText, Plus, Settings, Upload } from 'lucide-react'
 import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
@@ -37,6 +37,7 @@ interface DocumentTreePanelProps {
   title?: string
   projectId: string
   onBulkOperationComplete?: () => void
+  onOpenSettings?: () => void
   // Safe delete callbacks from useResourceOperations
   // Handle navigation-away, cache cleanup, and retry cancellation
   deleteDocument: (id: string) => Promise<void>
@@ -61,6 +62,7 @@ export function DocumentTreePanel({
   onBulkOperationComplete,
   deleteDocument,
   deleteFolder,
+  onOpenSettings,
 }: DocumentTreePanelProps) {
   const setMobileActivePanel = useUIStore((s) => s.setMobileActivePanel)
   const { selectedIds } = useTreeSelection()
@@ -138,7 +140,21 @@ export function DocumentTreePanel({
             title={<CompactBreadcrumb segments={[{ label: title ?? 'Project', title }]} singleSegmentVariant="nonLast" />}
             ariaLabel="Documents explorer header"
             showDivider={false}
-            trailing={<SidebarToggle side="right" />}
+            trailing={
+              <>
+                {onOpenSettings && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={onOpenSettings}
+                    aria-label="Project settings"
+                  >
+                    <Settings />
+                  </Button>
+                )}
+                <SidebarToggle side="right" />
+              </>
+            }
           />
         </div>
 
@@ -154,7 +170,7 @@ export function DocumentTreePanel({
           />
           <DropdownMenu onOpenChange={handleRootMenuOpenChange}>
             <DropdownMenuTrigger asChild>
-              <Button size="icon" aria-label="Create new item">
+              <Button size="icon-lg" aria-label="Create new item">
                 <Plus className="size-4 md:size-3" />
               </Button>
             </DropdownMenuTrigger>

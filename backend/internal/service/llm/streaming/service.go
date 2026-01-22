@@ -668,15 +668,15 @@ func (s *Service) CreateAssistantTurnDebug(
 // resolveSystemPromptForParams resolves system prompt from multiple sources and updates params.
 // This consolidates logic shared between CreateTurn and BuildDebugProviderRequest.
 //
-// Resolution order:
-// 1. User-provided system prompt (from params.System)
-// 2. Project system prompt
-// 3. Thread system prompt
-// 4. Selected skills (from .skills/{skillName}/SKILL documents)
+// Resolution order (all concatenated):
+// 1. Base prompt (Meridian identity, tool introduction)
+// 2. User-provided system prompt (from params.System)
+// 3. Project system prompt
+// 4. Thread system prompt
+// 5. Selected skills (from .skills/{skillName}/SKILL documents)
 //
-// The method only resolves when:
-// - Skills are selected (len(selectedSkills) > 0), OR
-// - No user system prompt is provided (params.System == nil)
+// This method ALWAYS calls the resolver to ensure base/project/thread prompts
+// are included even when a user system prompt is provided.
 func (s *Service) resolveSystemPromptForParams(
 	ctx context.Context,
 	threadID string,
@@ -684,15 +684,18 @@ func (s *Service) resolveSystemPromptForParams(
 	params *llmModels.RequestParams,
 	selectedSkills []string,
 ) error {
-	if len(selectedSkills) > 0 || params.System == nil {
-		systemPrompt, err := s.systemPromptResolver.Resolve(ctx, threadID, userID, params.System, selectedSkills)
-		if err != nil {
-			return fmt.Errorf("failed to resolve system prompt: %w", err)
-		}
-		// Set resolved system prompt in params (concatenated result)
-		if systemPrompt != nil {
-			params.System = systemPrompt
-		}
+	// Always resolve to include base + project + thread system prompts
+	// The resolver handles concatenation: base + user + project + thread + skills
+	systemPrompt, err := s.systemPromptResolver.Resolve(ctx, threadID, userID, params.System, selectedSkills)
+	if err != nil {
+		return fmt.Errorf("failed to resolve system prompt: %w", err)
+	}
+	// Set resolved system prompt in params (concatenated result)
+	if systemPrompt != nil {
+		s.logger.Debug("final system prompt for LLM",
+			"length", len(*systemPrompt),
+		)
+		params.System = systemPrompt
 	}
 	return nil
 }

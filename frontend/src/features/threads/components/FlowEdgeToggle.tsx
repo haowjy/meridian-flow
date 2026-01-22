@@ -19,7 +19,7 @@ export function FlowEdgeToggle() {
   return (
     <Button
       variant={isCollapsed ? 'outline' : 'ghost'}
-      size="icon-sm"
+      size="icon"
       onClick={toggleLeftPanel}
       aria-pressed={!isCollapsed}
       aria-label={isCollapsed ? 'Show thread list' : 'Hide thread list'}
