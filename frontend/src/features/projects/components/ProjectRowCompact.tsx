@@ -60,7 +60,8 @@ export function ProjectRowCompact({
 
       {/* Project name (clickable link) */}
       <Link
-        to={`/projects/${project.slug}`}
+        to="/projects/$slug"
+        params={{ slug: project.slug }}
         onClick={handleClick}
         className="flex-1 min-w-0 type-body text-foreground hover:text-accent transition-colors truncate"
       >
@@ -84,7 +85,7 @@ export function ProjectRowCompact({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem asChild>
-            <Link to={`/projects/${project.slug}`} onClick={handleClick}>
+            <Link to="/projects/$slug" params={{ slug: project.slug }} onClick={handleClick}>
               <FolderOpen className="size-4.5" />
               Open
             </Link>

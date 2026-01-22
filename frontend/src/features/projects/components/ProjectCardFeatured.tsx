@@ -28,7 +28,8 @@ export function ProjectCardFeatured({ project, onFavoriteToggle, className }: Pr
 
   return (
     <Link
-      to={`/projects/${project.slug}`}
+      to="/projects/$slug"
+      params={{ slug: project.slug }}
       onClick={handleClick}
       className={cn("group block cursor-pointer", className)}
     >

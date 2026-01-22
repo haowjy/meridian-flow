@@ -20,7 +20,7 @@ export function ProjectSortDropdown() {
   const sortOrder = useUIStore((state) => state.projectSortOrder)
   const setSortOrder = useUIStore((state) => state.setProjectSortOrder)
 
-  const currentOption = SORT_OPTIONS.find((opt) => opt.value === sortOrder) || SORT_OPTIONS[0]
+  const currentOption = SORT_OPTIONS.find((opt) => opt.value === sortOrder) ?? SORT_OPTIONS[0]!
 
   return (
     <DropdownMenu>
