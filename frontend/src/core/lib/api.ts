@@ -379,10 +379,19 @@ export const api = {
       })
       return fromProjectDto(data)
     },
-    update: async (id: string, name: string, options?: { signal?: AbortSignal }): Promise<Project> => {
+    update: async (
+      id: string,
+      updates: { name?: string; systemPrompt?: string | null },
+      options?: { signal?: AbortSignal }
+    ): Promise<Project> => {
+      // Build request body, mapping to snake_case for API
+      const body: Record<string, unknown> = {}
+      if (updates.name !== undefined) body.name = updates.name
+      if (updates.systemPrompt !== undefined) body.system_prompt = updates.systemPrompt
+
       const data = await fetchAPI<ProjectDto>(`/api/projects/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ name }),
+        body: JSON.stringify(body),
         signal: options?.signal,
       })
       return fromProjectDto(data)

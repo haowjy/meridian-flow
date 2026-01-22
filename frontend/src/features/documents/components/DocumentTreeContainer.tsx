@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { useShallow } from 'zustand/react/shallow'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { useUIStore } from '@/core/stores/useUIStore'
+import { useProjectStore } from '@/core/stores/useProjectStore'
 import { openDocument } from '@/core/lib/panelHelpers'
 import { useResourceOperations, useLoadingView } from '@/core/hooks'
 import { filterTree, TreeNode, generateUniqueName, getNodeNames, getFolderChildNames } from '@/core/lib/treeBuilder'
@@ -15,6 +16,7 @@ import { SelectableTreeItem } from './SelectableTreeItem'
 import { ImportDocumentDialog } from './ImportDocumentDialog'
 import { DeleteFolderDialog } from './DeleteFolderDialog'
 import { TreeItemInfoDialog } from './tree-item-info'
+import { ProjectSettingsDialog } from '@/features/projects/components/ProjectSettingsDialog'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { InlineError } from '@/shared/components/InlineError'
 import type { Folder } from '@/features/folders/types/folder'
@@ -94,6 +96,16 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
 
   // Info dialog state (lifted to container - single dialog for all tree items)
   const [infoDialogItem, setInfoDialogItem] = useState<InfoDialogItem | null>(null)
+
+  // Project settings dialog state
+  const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false)
+  const { currentProject, updateProject } = useProjectStore(
+    useShallow((s) => ({
+      currentProject: s.currentProject,
+      updateProject: s.updateProject,
+    }))
+  )
+  const project = currentProject()
 
   // Derive loading view state (skeleton shows immediately on cold start)
   const view = useLoadingView({ status, hasData: tree.length > 0 })
@@ -175,6 +187,12 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
       setIsDeletingFolder(false)
     }
   }
+
+  // Handle project settings update
+  const handleSettingsSubmit = useCallback(async (systemPrompt: string | null) => {
+    if (!project) return
+    await updateProject(project.id, { systemPrompt })
+  }, [project, updateProject])
 
   // --- Inline rename handlers ---
 
@@ -490,24 +508,34 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
   // Error state - only show full error panel when we have no cached tree to display
   if (view === 'error') {
     return (
-      <DocumentTreePanel
-        title={projectName ?? undefined}
-        onCreateDocument={handleCreateRootDocumentInline}
-        onCreateFolder={handleCreateRootFolderInline}
-        onImport={handleImportRoot}
-        onSearch={setSearchQuery}
-        isEmpty={false}
-        projectId={projectId}
-        onBulkOperationComplete={() => loadTree(projectId)}
-        deleteDocument={deleteDocument}
-        deleteFolder={deleteFolder}
-      >
-        <ErrorPanel
-          title="Failed to load documents"
-          message={error || 'Unknown error'}
-          onRetry={() => loadTree(projectId)}
+      <>
+        <DocumentTreePanel
+          title={projectName ?? undefined}
+          onCreateDocument={handleCreateRootDocumentInline}
+          onCreateFolder={handleCreateRootFolderInline}
+          onImport={handleImportRoot}
+          onSearch={setSearchQuery}
+          isEmpty={false}
+          projectId={projectId}
+          onBulkOperationComplete={() => loadTree(projectId)}
+          deleteDocument={deleteDocument}
+          deleteFolder={deleteFolder}
+          onOpenSettings={() => setIsSettingsDialogOpen(true)}
+        >
+          <ErrorPanel
+            title="Failed to load documents"
+            message={error || 'Unknown error'}
+            onRetry={() => loadTree(projectId)}
+          />
+        </DocumentTreePanel>
+
+        <ProjectSettingsDialog
+          project={project}
+          open={isSettingsDialogOpen}
+          onOpenChange={setIsSettingsDialogOpen}
+          onSubmit={handleSettingsSubmit}
         />
-      </DocumentTreePanel>
+      </>
     )
   }
 
@@ -535,6 +563,7 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
         onBulkOperationComplete={() => loadTree(projectId)}
         deleteDocument={deleteDocument}
         deleteFolder={deleteFolder}
+        onOpenSettings={() => setIsSettingsDialogOpen(true)}
       >
         {hasOperationError && (
           <div className="mb-2">
@@ -580,6 +609,13 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
           type="document"
         />
       )}
+
+      <ProjectSettingsDialog
+        project={project}
+        open={isSettingsDialogOpen}
+        onOpenChange={setIsSettingsDialogOpen}
+        onSubmit={handleSettingsSubmit}
+      />
     </>
   )
 }

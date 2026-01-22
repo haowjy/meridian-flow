@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"meridian/internal/domain/models/docsystem"
+	"meridian/internal/optional"
 )
 
 // FolderService handles folder business logic
@@ -37,21 +38,12 @@ type CreateFolderRequest struct {
 	FolderPath *string `json:"folder_path,omitempty"` // Alternative: resolve path to folder
 }
 
-// OptionalFolderID tracks tri-state semantics for folder_id updates (RFC 7396 PATCH).
-// This is transport-agnostic (no JSON tags) - handler maps from httputil.OptionalString.
-//   - Present=false: field absent from request (don't change)
-//   - Present=true, Value=nil: field is null (move to root)
-//   - Present=true, Value=&"uuid": move to specified folder
-type OptionalFolderID struct {
-	Present bool    // true if field was in request
-	Value   *string // nil = move to root, non-nil = move to folder UUID
-}
-
 // UpdateFolderRequest represents a folder update request
+// Uses optional.Optional[string] for FolderID tri-state semantics (RFC 7396 PATCH)
 type UpdateFolderRequest struct {
-	ProjectID string           `json:"project_id"`
-	Name      *string          `json:"name,omitempty"` // rename
-	FolderID  OptionalFolderID // Tri-state: absent=don't change, null=root, value=folder (no json tag - mapped from handler DTO)
+	ProjectID string
+	Name      *string                   // rename
+	FolderID  optional.Optional[string] // Tri-state: absent=don't change, null=root, value=folder
 }
 
 // FolderContents represents a folder with its children

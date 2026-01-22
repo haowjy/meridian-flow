@@ -65,7 +65,7 @@ export function EditorHeader({ document, wordCount, status, lastSaved }: EditorH
           {/* Back to document tree */}
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icon"
             className="-ml-2 md:ml-0"
             onClick={handleBackClick}
             aria-label="Back to documents"

@@ -7,6 +7,7 @@ import (
 	docsystem "meridian/internal/domain/models/docsystem"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	"meridian/internal/httputil"
+	"meridian/internal/optional"
 )
 
 // FolderHandler handles folder HTTP requests
@@ -76,14 +77,14 @@ func (h *FolderHandler) GetFolder(w http.ResponseWriter, r *http.Request) {
 }
 
 // updateFolderDTO is the transport-layer request for PATCH /api/folders/{id}.
-// Uses httputil.OptionalString for folder_id to support tri-state PATCH semantics (RFC 7396):
+// Uses optional.Optional[string] for folder_id to support tri-state PATCH semantics (RFC 7396):
 //   - field absent = don't change
 //   - field null = move to root
 //   - field has value = move to folder
 type updateFolderDTO struct {
-	ProjectID string                  `json:"project_id"`
-	Name      *string                 `json:"name,omitempty"`
-	FolderID  httputil.OptionalString `json:"folder_id"`
+	ProjectID string                    `json:"project_id"`
+	Name      *string                   `json:"name,omitempty"`
+	FolderID  optional.Optional[string] `json:"folder_id"`
 }
 
 // UpdateFolder updates a folder (rename or move)
@@ -111,10 +112,7 @@ func (h *FolderHandler) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 	req := &docsysSvc.UpdateFolderRequest{
 		ProjectID: dto.ProjectID,
 		Name:      dto.Name,
-		FolderID: docsysSvc.OptionalFolderID{
-			Present: dto.FolderID.Present,
-			Value:   dto.FolderID.Value,
-		},
+		FolderID:  dto.FolderID,
 	}
 
 	// Get userID from context (set by auth middleware)

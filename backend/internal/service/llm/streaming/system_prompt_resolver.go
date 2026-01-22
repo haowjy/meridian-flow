@@ -12,6 +12,22 @@ import (
 	llmSvc "meridian/internal/domain/services/llm"
 )
 
+// baseSystemPrompt is the foundational prompt prepended to all conversations.
+// It establishes Meridian's identity and introduces the available document tools.
+const baseSystemPrompt = `You are Meridian, an AI assistant with access to the user's document repository.
+
+Available tools:
+- doc_tree: See the project structure (folders and documents)
+- doc_view: Read any document or list folder contents
+- doc_search: Search across all documents by content
+- doc_edit: Suggest edits to documents (user reviews before applying)
+
+Guidelines:
+- Use doc_tree("/") early to understand what the user is working on
+- When the user asks about their project, search or read relevant documents
+- Before suggesting edits, use doc_view to see current content
+- Be helpful and proactive based on what you discover in their documents`
+
 // systemPromptResolver builds the final system prompt from project, thread, and skills
 // Implements llmSvc.SystemPromptResolver interface
 type systemPromptResolver struct {
@@ -37,10 +53,11 @@ func NewSystemPromptResolver(
 }
 
 // Resolve builds the final system prompt by concatenating:
-// 1. user-provided system prompt (from request_params.system)
-// 2. project.system_prompt
-// 3. thread.system_prompt
-// 4. Content of each skill's SKILL.md file from .skills/{skill_name}/SKILL.md
+// 1. Base system prompt (always included - Meridian identity + tool introduction)
+// 2. user-provided system prompt (from request_params.system)
+// 3. project.system_prompt
+// 4. thread.system_prompt
+// 5. Content of each skill's SKILL.md file from .skills/{skill_name}/SKILL.md
 func (r *systemPromptResolver) Resolve(
 	ctx context.Context,
 	threadID string,
@@ -55,19 +72,22 @@ func (r *systemPromptResolver) Resolve(
 		"selected_skills", selectedSkills,
 	)
 
+	// Always start with base system prompt (Meridian identity + tool introduction)
+	var parts []string
+	parts = append(parts, baseSystemPrompt)
+
 	// For cold start (new thread), threadID is empty - skip thread/project system prompt loading
-	// since the thread doesn't exist yet. Just return user-provided system prompt if any.
+	// since the thread doesn't exist yet. Return base + user-provided system prompt.
 	if threadID == "" {
 		r.logger.Debug("cold start detected (empty threadID), skipping thread/project system prompt")
 		if userSystem != nil && *userSystem != "" {
-			return userSystem, nil
+			parts = append(parts, *userSystem)
 		}
-		return nil, nil
+		result := strings.Join(parts, "\n\n")
+		return &result, nil
 	}
 
-	var parts []string
-
-	// 1. User-provided system prompt (highest priority)
+	// 1. User-provided system prompt (highest priority after base)
 	if userSystem != nil && *userSystem != "" {
 		r.logger.Debug("user system prompt found", "length", len(*userSystem))
 		parts = append(parts, *userSystem)
@@ -79,7 +99,7 @@ func (r *systemPromptResolver) Resolve(
 		return nil, fmt.Errorf("load thread: %w", err)
 	}
 
-	// 3. Load project system prompt
+	// 3. Load project system prompt (user-configured project instructions)
 	project, err := r.projectRepo.GetByID(ctx, thread.ProjectID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("load project: %w", err)
@@ -106,12 +126,7 @@ func (r *systemPromptResolver) Resolve(
 		}
 	}
 
-	// Concatenate all parts
-	if len(parts) == 0 {
-		r.logger.Debug("no system prompt parts found, returning nil")
-		return nil, nil
-	}
-
+	// Concatenate all parts (always has at least base prompt)
 	result := strings.Join(parts, "\n\n")
 	r.logger.Debug("system prompt resolved",
 		"total_length", len(result),

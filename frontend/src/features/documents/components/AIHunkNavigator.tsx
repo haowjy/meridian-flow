@@ -70,7 +70,7 @@ export function AIHunkNavigator({
       >
         {/* Navigation controls */}
         <Button
-          size="icon-sm"
+          size="icon"
           variant="ghost"
           onClick={onPrevious}
           title="Previous change"
@@ -84,7 +84,7 @@ export function AIHunkNavigator({
         </span>
 
         <Button
-          size="icon-sm"
+          size="icon"
           variant="ghost"
           onClick={onNext}
           title="Next change"

@@ -21,7 +21,7 @@ interface ProjectStore {
   setCurrentProject: (project: Project | null) => void
   loadProjects: () => Promise<void>
   createProject: (name: string) => Promise<Project>
-  updateProject: (id: string, name: string) => Promise<void>
+  updateProject: (id: string, updates: { name?: string; systemPrompt?: string | null }) => Promise<void>
   deleteProject: (id: string) => Promise<void>
   toggleFavorite: (id: string) => Promise<void>
   clearError: () => void
@@ -133,10 +133,10 @@ export const useProjectStore = create<ProjectStore>()(
         }
       },
 
-      updateProject: async (id, name) => {
+      updateProject: async (id, updates) => {
         set({ error: null })
         try {
-          const updated = await api.projects.update(id, name)
+          const updated = await api.projects.update(id, updates)
           set((state) => ({
             projects: state.projects.map((p) => (p.id === id ? updated : p)),
           }))

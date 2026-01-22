@@ -32,7 +32,7 @@ export function SidebarToggle({ side, className }: SidebarToggleProps) {
   return (
     <Button
       variant="ghost"
-      size="icon-sm"
+      size="icon"
       onClick={toggle}
       // Mobile uses tab navigation (no sidebars).
       className={cn('hidden md:inline-flex', className)}

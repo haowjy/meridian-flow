@@ -87,7 +87,7 @@ export function BatchActionsBar({ operations, selectedItems, context, onComplete
       <div className="sticky bottom-0 border-t bg-background/95 backdrop-blur-sm p-2 flex items-center gap-2 z-10 shadow-lg">
         {/* Close button */}
         <Button
-          size="icon-sm"
+          size="icon"
           variant="ghost"
           onClick={() => clearSelection()}
           disabled={isExecuting}

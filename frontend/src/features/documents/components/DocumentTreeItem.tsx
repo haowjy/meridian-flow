@@ -148,7 +148,7 @@ export const DocumentTreeItem = memo(function DocumentTreeItem({
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
-                  size="icon"
+                  size="icon-lg"
                   disabled={contextMenuOpen}
                   className={cn(
                     'flex-shrink-0 h-7 w-9 md:h-4 md:w-7 p-0 rounded-sm transition-opacity',

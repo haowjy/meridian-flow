@@ -74,7 +74,7 @@ function ProjectsPage() {
 
   const handleRenameSubmit = useCallback(async (name: string) => {
     if (renameProject) {
-      await updateProject(renameProject.id, name)
+      await updateProject(renameProject.id, { name })
       setRenameProject(null)
     }
   }, [renameProject, updateProject])

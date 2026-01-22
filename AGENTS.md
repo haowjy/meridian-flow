@@ -4,7 +4,7 @@ This file provides guidance when working with the code in this repository. ALWAY
 
 ## Project Overview
 
-Meridian is a file management system for creative writers, starting with fiction writers who manage 100+ chapter web serials.
+Meridian is a Agentic writing platform for writers, starting with fiction writers who manage 100+ chapter web serials, but being inclusive for any kind of writer.
 
 **Current Status:**
 - ✅ Backend (Go + net/http + PostgreSQL): File system complete, Auth complete (JWT/JWKS), Thread/LLM in progress (Anthropic provider working, streaming complete)
@@ -14,7 +14,7 @@ For product details, see `_docs/high-level/1-overview.md`.
 
 ## Product Philosophy
 
-**Writer-first**: Meridian exists to serve the creative writer. Every feature, UI element, and AI interaction should support—not distract from—the writing process.
+**Writer-first**: Meridian exists to serve the writer. Every feature, UI element, and AI interaction should support—not distract from—the writing process.
 
 See `frontend/CLAUDE.md` for UI-specific implementation of this philosophy.
 

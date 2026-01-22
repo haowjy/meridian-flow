@@ -71,10 +71,10 @@ const buttonVariants = cva(
         xs: "h-7 px-3 gap-1 text-xs rounded-md [&_svg]:size-3",
 
         // Icon buttons - subtle rounded squares with proportional icons
-        "icon-xs": "size-6 rounded [&_svg]:size-3",
-        "icon-sm": "size-7 rounded [&_svg]:size-3.5",
-        icon: "size-8 rounded [&_svg]:size-4",
-        "icon-lg": "size-9 rounded [&_svg]:size-5",
+        "icon-xs": "size-5 rounded [&_svg]:size-2.5",
+        "icon-sm": "size-6 rounded [&_svg]:size-3",
+        icon: "size-7 rounded [&_svg]:size-3.5",
+        "icon-lg": "size-8 rounded [&_svg]:size-4",
       },
     },
     defaultVariants: {

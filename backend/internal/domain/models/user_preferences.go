@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"meridian/internal/optional"
 )
 
 // ProviderModel represents a provider/model pair for unambiguous model selection
@@ -41,15 +42,15 @@ type UIPreferences struct {
 
 // EditorPreferences represents the editor namespace in preferences
 type EditorPreferences struct {
-	AutoSave   *bool `json:"auto_save"`   // Pointer to allow null
-	WordWrap   *bool `json:"word_wrap"`   // Pointer to allow null
-	Spellcheck *bool `json:"spellcheck"`  // Pointer to allow null
+	AutoSave   *bool `json:"auto_save"`  // Pointer to allow null
+	WordWrap   *bool `json:"word_wrap"`  // Pointer to allow null
+	Spellcheck *bool `json:"spellcheck"` // Pointer to allow null
 }
 
 // NotificationPreferences represents the notifications namespace in preferences
 type NotificationPreferences struct {
-	EmailUpdates *bool `json:"email_updates"`  // Pointer to allow null
-	InAppAlerts  *bool `json:"in_app_alerts"`  // Pointer to allow null
+	EmailUpdates *bool `json:"email_updates"` // Pointer to allow null
+	InAppAlerts  *bool `json:"in_app_alerts"` // Pointer to allow null
 }
 
 // GetModels extracts the models namespace from preferences with type safety
@@ -174,23 +175,13 @@ func (up *UserPreferences) SetSystemInstructions(instructions *string) {
 	}
 }
 
-// OptionalSystemInstructions tracks tri-state semantics for system_instructions updates (RFC 7396 PATCH).
-// This is transport-agnostic (no JSON tags) - handler maps from httputil.OptionalString.
-//   - Present=false: field absent from request (don't change)
-//   - Present=true, Value=nil: field is null (clear)
-//   - Present=true, Value=&"": field is empty string
-//   - Present=true, Value=&"text": field has value
-type OptionalSystemInstructions struct {
-	Present bool    // true if field was in request
-	Value   *string // nil = clear, non-nil = set (including empty string)
-}
-
 // UpdatePreferencesRequest represents the request to update user preferences
 // Supports partial updates via pointers - only provided fields are updated
+// SystemInstructions uses tri-state: absent=don't change, null=clear, value=set.
 type UpdatePreferencesRequest struct {
-	Models             *ModelsPreferences          `json:"models"`        // Update entire models namespace
-	UI                 *UIPreferences              `json:"ui"`            // Update entire ui namespace
-	Editor             *EditorPreferences          `json:"editor"`        // Update entire editor namespace
-	SystemInstructions OptionalSystemInstructions  // Tri-state: absent=don't change, null=clear, value=set (no json tag - mapped from handler DTO)
-	Notifications      *NotificationPreferences    `json:"notifications"` // Update entire notifications namespace
+	Models             *ModelsPreferences
+	UI                 *UIPreferences
+	Editor             *EditorPreferences
+	SystemInstructions optional.Optional[string] // Tri-state: absent=don't change, null=clear, value=set
+	Notifications      *NotificationPreferences
 }
