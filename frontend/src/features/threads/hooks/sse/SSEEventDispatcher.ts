@@ -4,6 +4,8 @@
  * Routes incoming SSE events to their appropriate handlers.
  * This module follows the Single Responsibility Principle (SRP) by only
  * handling event routing, not the actual event processing logic.
+ *
+ * All events are AG-UI protocol compliant with Meridian extensions.
  */
 
 import { SSE_EVENTS } from '../sseEventTypes'
@@ -24,10 +26,7 @@ import {
   handleThinkingTextMessageContent,
   handleThinkingTextMessageEnd,
   handleThinkingEnd,
-  // Meridian lifecycle handlers
-  handleTurnComplete,
-  handleTurnError,
-  // AG-UI lifecycle handlers
+  // AG-UI lifecycle handlers (with Meridian extensions)
   handleRunStarted,
   handleRunFinished,
   handleRunError,
@@ -138,25 +137,8 @@ export function dispatchSSEEvent(
       }
 
       // ============================================================
-      // Meridian-specific Turn Lifecycle Events
-      // ============================================================
-
-      case SSE_EVENTS.TURN_COMPLETE: {
-        const parsed = JSON.parse(data)
-        handleTurnComplete(parsed, ctx, actions)
-        break
-      }
-
-      case SSE_EVENTS.TURN_ERROR: {
-        logger.debug('sse:turn_error:raw', { data })
-        const parsed = JSON.parse(data)
-        handleTurnError(parsed, ctx, actions)
-        break
-      }
-
-      // ============================================================
-      // AG-UI Lifecycle Events
-      // Run and step management for tool loops
+      // AG-UI Lifecycle Events (with Meridian extensions)
+      // These are the primary lifecycle events for run/step management
       // ============================================================
 
       case SSE_EVENTS.RUN_STARTED: {

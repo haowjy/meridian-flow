@@ -48,6 +48,15 @@ export class BlockTracker {
   // ============================================================================
 
   /**
+   * Initialize the block index from a known sequence number.
+   * Used on reconnection when RUN_STARTED includes lastBlockSequence.
+   * New blocks will start from lastSequence + 1.
+   */
+  initializeFromSequence(lastSequence: number): void {
+    this.currentBlockIndex = lastSequence
+  }
+
+  /**
    * Get the next block index and set it as current.
    * Call this when starting a new block (TEXT_MESSAGE_START, TOOL_CALL_START, etc.)
    */
