@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	llmprovider "github.com/haowjy/meridian-llm-go"
 	"github.com/haowjy/meridian-llm-go/providers/anthropic"
@@ -74,14 +75,18 @@ func (f *ProviderFactory) createAnthropicProvider() (llmprovider.Provider, error
 
 	// Disable HTTP client timeout for streaming responses.
 	// Long-running LLM streams can exceed fixed timeouts even when data is flowing.
-	// Stall detection is handled by streaming idle timeout (2 min) in mstream_adapter.
+	// Stall detection is handled by streaming idle timeout (configurable via LLM_IDLE_TIMEOUT_SECONDS).
 	httpClient := &http.Client{Timeout: 0}
+
+	// Convert config seconds to time.Duration
+	idleTimeout := time.Duration(f.config.LLMIdleTimeoutSeconds) * time.Second
 
 	provider, err := anthropic.NewProvider(
 		f.config.AnthropicAPIKey,
 		anthropic.WithHTTPClient(httpClient),
 		anthropic.WithLogger(providerLogger),
 		anthropic.WithDebugStreamLogs(f.config.LLMStreamDebugLogs),
+		anthropic.WithStreamingIdleTimeout(idleTimeout),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Anthropic provider: %w", err)
@@ -114,14 +119,18 @@ func (f *ProviderFactory) createOpenRouterProvider() (llmprovider.Provider, erro
 
 	// Disable HTTP client timeout for streaming responses.
 	// Long-running LLM streams can exceed fixed timeouts even when data is flowing.
-	// Stall detection is handled by streaming idle timeout (2 min) in mstream_adapter.
+	// Stall detection is handled by streaming idle timeout (configurable via LLM_IDLE_TIMEOUT_SECONDS).
 	httpClient := &http.Client{Timeout: 0}
+
+	// Convert config seconds to time.Duration
+	idleTimeout := time.Duration(f.config.LLMIdleTimeoutSeconds) * time.Second
 
 	provider, err := openrouter.NewProvider(
 		f.config.OpenRouterAPIKey,
 		openrouter.WithHTTPClient(httpClient),
 		openrouter.WithLogger(providerLogger),
 		openrouter.WithDebugStreamLogs(f.config.LLMStreamDebugLogs),
+		openrouter.WithStreamingIdleTimeout(idleTimeout),
 		// WithResponsesAPI(true) - disabled until Responses API is debugged
 	)
 	if err != nil {
