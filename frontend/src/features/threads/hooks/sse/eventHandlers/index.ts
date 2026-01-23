@@ -28,10 +28,7 @@ export {
   handleThinkingEnd,
 } from './thinkingEventHandlers'
 
-// Lifecycle events (Meridian-specific)
-export { handleTurnComplete, handleTurnError } from './lifecycleEventHandlers'
-
-// AG-UI lifecycle events
+// AG-UI lifecycle events (with Meridian extensions)
 export {
   handleRunStarted,
   handleRunFinished,

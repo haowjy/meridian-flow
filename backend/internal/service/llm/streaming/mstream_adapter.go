@@ -223,7 +223,9 @@ func (se *StreamExecutor) workFunc(ctx context.Context, send func(mstream.Event)
 
 	// Emit AG-UI RUN_STARTED event at the beginning of streaming
 	// This signals to AG-UI compliant frontends that a new run has begun
-	se.aguiEmitter.EmitRunStarted()
+	// For first connection (workFunc), lastBlockSequence is nil (no blocks yet)
+	// Reconnection uses catchup which includes lastBlockSequence
+	se.aguiEmitter.EmitRunStarted(nil)
 	se.aguiEmitter.EmitStepStarted() // Initial LLM request step
 
 	// Update turn status to "streaming"
