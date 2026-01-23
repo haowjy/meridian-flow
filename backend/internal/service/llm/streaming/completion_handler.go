@@ -7,7 +7,6 @@ import (
 
 	mstream "github.com/haowjy/meridian-stream-go"
 
-	llmModels "meridian/internal/domain/models/llm"
 	domainllm "meridian/internal/domain/services/llm"
 	"meridian/internal/jobs"
 	"meridian/internal/service/llm/tokens"
@@ -270,23 +269,16 @@ func (se *StreamExecutor) handleError(_ context.Context, send func(mstream.Event
 		}
 	}
 
-	// Emit AG-UI RUN_ERROR event before turn_error
-	// This signals to AG-UI compliant frontends that the run encountered an error
+	// Emit AG-UI RUN_ERROR event with isCancelled flag
+	// This is the primary error event - frontend uses this for cleanup and error handling
+	// isCancelled distinguishes user cancellation (no error toast) from actual errors
 	errorMsg := err.Error()
 	if errorMsg == "" {
 		errorMsg = "Unknown error occurred"
 	}
 	if se.aguiEmitter != nil {
-		se.aguiEmitter.EmitRunError(errorMsg)
+		se.aguiEmitter.EmitRunError(errorMsg, isCancelled)
 	}
-
-	// Send turn_error event (legacy protocol - kept for backward compatibility)
-	se.sendEvent(send, llmModels.SSEEventTurnError, llmModels.TurnErrorEvent{
-		TurnID:         se.turnID,
-		Error:          errorMsg,
-		IsCancelled:    isCancelled, // Now correctly true for both state-based and error-based cancels
-		LastBlockIndex: nil,         // Could be determined from DB if needed
-	})
 
 	// Call cleanup callback if registered
 	if se.onCleanup != nil {
@@ -317,29 +309,22 @@ func (se *StreamExecutor) completeTurn(
 		// Continue despite error - SSE event is more important
 	}
 
-	// Emit AG-UI lifecycle events before turn_complete
+	// Emit AG-UI lifecycle events
 	// STEP_FINISHED signals the end of the current LLM request step
-	// RUN_FINISHED signals successful completion of the entire run/turn
+	// RUN_FINISHED signals successful completion with LLM metadata
 	if se.aguiEmitter != nil {
 		se.aguiEmitter.EmitStepFinished()
-		se.aguiEmitter.EmitRunFinished()
-	}
 
-	// Build completion event
-	completeEvent := llmModels.TurnCompleteEvent{
-		TurnID:     se.turnID,
-		StopReason: stopReason,
-	}
+		// Extract token counts from metadata if available
+		var inputTokens, outputTokens int
+		if metadata != nil {
+			inputTokens = metadata.InputTokens
+			outputTokens = metadata.OutputTokens
+		}
 
-	// Add metadata if available (may be nil for max_tool_rounds)
-	if metadata != nil {
-		completeEvent.InputTokens = metadata.InputTokens
-		completeEvent.OutputTokens = metadata.OutputTokens
-		completeEvent.ResponseMetadata = metadata.ResponseMetadata
+		// RUN_FINISHED includes stopReason and token counts for frontend display/tracking
+		se.aguiEmitter.EmitRunFinished(stopReason, inputTokens, outputTokens)
 	}
-
-	// Send turn_complete SSE event (legacy protocol - kept for backward compatibility)
-	se.sendEvent(send, llmModels.SSEEventTurnComplete, completeEvent)
 
 	// Call cleanup callback if registered
 	if se.onCleanup != nil {

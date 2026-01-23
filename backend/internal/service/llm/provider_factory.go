@@ -3,6 +3,7 @@ package llm
 import (
 	"fmt"
 	"log/slog"
+	"net/http"
 
 	llmprovider "github.com/haowjy/meridian-llm-go"
 	"github.com/haowjy/meridian-llm-go/providers/anthropic"
@@ -71,8 +72,14 @@ func (f *ProviderFactory) createAnthropicProvider() (llmprovider.Provider, error
 	// Add provider-specific field for better log filtering
 	providerLogger := f.logger.With("provider", "anthropic")
 
+	// Disable HTTP client timeout for streaming responses.
+	// Long-running LLM streams can exceed fixed timeouts even when data is flowing.
+	// Stall detection is handled by streaming idle timeout (2 min) in mstream_adapter.
+	httpClient := &http.Client{Timeout: 0}
+
 	provider, err := anthropic.NewProvider(
 		f.config.AnthropicAPIKey,
+		anthropic.WithHTTPClient(httpClient),
 		anthropic.WithLogger(providerLogger),
 		anthropic.WithDebugStreamLogs(f.config.LLMStreamDebugLogs),
 	)
@@ -105,8 +112,14 @@ func (f *ProviderFactory) createOpenRouterProvider() (llmprovider.Provider, erro
 	// Add provider-specific field for better log filtering
 	providerLogger := f.logger.With("provider", "openrouter")
 
+	// Disable HTTP client timeout for streaming responses.
+	// Long-running LLM streams can exceed fixed timeouts even when data is flowing.
+	// Stall detection is handled by streaming idle timeout (2 min) in mstream_adapter.
+	httpClient := &http.Client{Timeout: 0}
+
 	provider, err := openrouter.NewProvider(
 		f.config.OpenRouterAPIKey,
+		openrouter.WithHTTPClient(httpClient),
 		openrouter.WithLogger(providerLogger),
 		openrouter.WithDebugStreamLogs(f.config.LLMStreamDebugLogs),
 		// WithResponsesAPI(true) - disabled until Responses API is debugged

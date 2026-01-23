@@ -10,7 +10,7 @@ require (
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
-	github.com/haowjy/meridian-llm-go v0.0.17
+	github.com/haowjy/meridian-llm-go v0.0.18
 	github.com/haowjy/meridian-stream-go v0.0.5
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/joho/godotenv v1.5.1
