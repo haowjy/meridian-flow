@@ -114,6 +114,10 @@ func (m *mockTurnReader) GetTurnBlocksForTurns(ctx context.Context, turnIDs []st
 	return nil, nil
 }
 
+func (m *mockTurnReader) GetLastBlockSequence(ctx context.Context, turnID string) (int, error) {
+	return -1, nil
+}
+
 var _ llmRepo.TurnReader = (*mockTurnReader)(nil)
 
 // mockTurnNavigator provides minimal TurnNavigator implementation

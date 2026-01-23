@@ -8,23 +8,24 @@ import (
 
 	mstream "github.com/haowjy/meridian-stream-go"
 
-	llmModels "meridian/internal/domain/models/llm"
 	llmRepo "meridian/internal/domain/repositories/llm"
+	"meridian/internal/service/llm/streaming/agui"
 )
 
 // buildCatchupFunc creates a catchup function that retrieves events from the database.
 // This function is used by mstream to replay missed events during reconnection or first connection.
 // Uses TurnReader interface for better ISP compliance (only needs read operations)
 //
-// NOTE: Legacy block events have been removed - frontend now uses AG-UI protocol exclusively.
-// Catchup only emits turn_start for basic reconnection support. The frontend handles
-// block catchup via API queries when needed.
+// Catchup emits RUN_STARTED with lastBlockSequence for reconnection support:
+// - lastBlockSequence tells the frontend where to start indexing new blocks
+// - Frontend fetches existing blocks via REST API, then continues from lastBlockSequence+1
+// - This prevents duplicate/out-of-order blocks on reconnection
 func buildCatchupFunc(turnRepo llmRepo.TurnReader, logger *slog.Logger) mstream.CatchupFunc {
 	return func(streamID string, lastEventID string) ([]mstream.Event, error) {
 		ctx := context.Background()
 		turnID := streamID // streamID is the turnID
 
-		// Get turn metadata for model info
+		// Get turn metadata for thread ID
 		turn, err := turnRepo.GetTurn(ctx, turnID)
 		if err != nil {
 			logger.Error("failed to get turn for catchup",
@@ -34,21 +35,40 @@ func buildCatchupFunc(turnRepo llmRepo.TurnReader, logger *slog.Logger) mstream.
 			return nil, fmt.Errorf("failed to get turn: %w", err)
 		}
 
+		// Get last block sequence for reconnection support
+		// This tells the frontend where to start indexing new blocks
+		lastBlockSeq, err := turnRepo.GetLastBlockSequence(ctx, turnID)
+		if err != nil {
+			logger.Warn("failed to get last block sequence for catchup, continuing without it",
+				"turn_id", turnID,
+				"error", err,
+			)
+			// Continue without lastBlockSequence - behaves like first connection
+			lastBlockSeq = -1
+		}
+
 		// Convert to mstream.Events
 		var events []mstream.Event
 
-		// Emit turn_start (basic reconnection support)
-		// Library will add event IDs if DEBUG mode enabled
-		model := ""
-		if turn.Model != nil {
-			model = *turn.Model
+		// Emit RUN_STARTED with lastBlockSequence for reconnection support
+		// Only include lastBlockSequence if blocks exist (>= 0)
+		var lastBlockSeqPtr *int
+		if lastBlockSeq >= 0 {
+			lastBlockSeqPtr = &lastBlockSeq
 		}
-		turnStartData, _ := json.Marshal(llmModels.TurnStartEvent{
-			TurnID: turnID,
-			Model:  model,
-		})
-		events = append(events, mstream.NewEvent(turnStartData).
-			WithType(llmModels.SSEEventTurnStart))
+
+		// runID follows AG-UI convention: "run_{turnId}"
+		runID := "run_" + turnID
+		runStarted := agui.NewMeridianRunStartedEvent(turn.ThreadID, runID, turnID, lastBlockSeqPtr)
+		runStartedData, _ := json.Marshal(runStarted)
+		events = append(events, mstream.NewEvent(runStartedData).
+			WithType(string(runStarted.Type)))
+
+		logger.Debug("catchup: emitting RUN_STARTED",
+			"turn_id", turnID,
+			"thread_id", turn.ThreadID,
+			"last_block_sequence", lastBlockSeq,
+		)
 
 		return events, nil
 	}

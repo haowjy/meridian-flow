@@ -26,4 +26,9 @@ type TurnReader interface {
 	// Returns a map of turn ID to blocks, ordered by sequence within each turn
 	// This eliminates N+1 query problems when loading many turns with their blocks
 	GetTurnBlocksForTurns(ctx context.Context, turnIDs []string) (map[string][]llm.TurnBlock, error)
+
+	// GetLastBlockSequence retrieves the highest block sequence number for a turn.
+	// Returns -1 if no blocks exist for the turn.
+	// Used by SSE catchup to tell reconnecting clients where to start indexing new blocks.
+	GetLastBlockSequence(ctx context.Context, turnID string) (int, error)
 }

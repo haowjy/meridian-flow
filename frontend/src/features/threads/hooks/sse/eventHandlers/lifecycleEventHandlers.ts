@@ -1,133 +1,28 @@
 /**
  * Lifecycle Event Handlers
  *
- * Handles AG-UI lifecycle events (RUN_*, STEP_*) and Meridian-specific events (TURN_*).
+ * Handles AG-UI lifecycle events (RUN_*, STEP_*) with Meridian extensions.
  *
- * AG-UI events:
- * - RUN_STARTED: Beginning of a run (one run may contain multiple steps)
+ * AG-UI events (with Meridian extensions):
+ * - RUN_STARTED: Beginning of a run + turnId + lastBlockSequence for reconnection
  * - STEP_STARTED: Beginning of a step (tool loop iteration)
  * - STEP_FINISHED: End of a step
- * - RUN_FINISHED: Run completed successfully
- * - RUN_ERROR: Run terminated with error
- *
- * Meridian events (do the heavy lifting):
- * - TURN_COMPLETE: Refresh turn, cleanup streaming state
- * - TURN_ERROR: Handle errors, cleanup streaming state
+ * - RUN_FINISHED: Run completed + turnId + stopReason, inputTokens, outputTokens
+ * - RUN_ERROR: Error/cancel + turnId + isCancelled flag
  */
 
 import { useEditorStore } from '@/core/stores/useEditorStore'
 import type { SSEDispatchContext, SSEStoreActions } from '../types'
 import type {
-  TurnCompleteEvent,
-  TurnErrorEvent,
-  RunStartedEvent,
-  RunFinishedEvent,
-  RunErrorEvent,
+  MeridianRunStartedEvent,
+  MeridianRunFinishedEvent,
+  MeridianRunErrorEvent,
   StepStartedEvent,
   StepFinishedEvent,
 } from '../../sseEventTypes'
 
-/**
- * Handle TURN_COMPLETE event.
- * Refreshes turn, refreshes active document, and cleans up streaming state.
- */
-export function handleTurnComplete(
-  data: TurnCompleteEvent,
-  ctx: SSEDispatchContext,
-  actions: SSEStoreActions
-): void {
-  const { tracker, logger, buffer, ctrl, threadId } = ctx
-  const turnId = data.turn_id
-
-  logger.debug('sse:turn_complete', data)
-
-  // Notify waiters that stream has ended (for cancel coordination)
-  actions.notifyStreamEnded(turnId)
-
-  // Helper to run cleanup - must run AFTER refreshTurn completes
-  // to ensure tool_result blocks are fetched before clearing streaming state
-  const runCleanup = () => {
-    buffer.flush()
-    logger.debug('sse:turn_complete:cleanup', { turnId })
-    actions.clearStreamingStream()
-    tracker.clear()
-    actions.setStreamingBlockInfo(null, null)
-    // Stop the stream
-    ctrl.abort()
-  }
-
-  // Chain refreshTurn -> document refresh -> cleanup
-  // Cleanup runs in .finally() to ensure it always executes, even on error
-  if (threadId && turnId) {
-    actions
-      .refreshTurn(threadId, turnId)
-      .then(() => {
-        // Refresh active document in case AI edited it via doc_edit tool
-        // This ensures ai_version changes are reflected in the editor
-        // Fire-and-forget - document refresh shouldn't block cleanup
-        const activeDocId = useEditorStore.getState()._activeDocumentId
-        if (activeDocId) {
-          useEditorStore
-            .getState()
-            .refreshDocument(activeDocId)
-            .catch((err) =>
-              logger.error('sse:turn_complete:document_refresh_error', err)
-            )
-        }
-      })
-      .catch((err) => logger.error('sse:turn_complete:refresh_error', err))
-      .finally(runCleanup)
-  } else {
-    // No turn to refresh - cleanup immediately
-    runCleanup()
-  }
-}
-
-/**
- * Handle TURN_ERROR event.
- * Refreshes turn to get final state (partial blocks + error field) and cleans up.
- */
-export function handleTurnError(
-  data: TurnErrorEvent,
-  ctx: SSEDispatchContext,
-  actions: SSEStoreActions
-): void {
-  const { tracker, logger, buffer, ctrl, threadId } = ctx
-
-  // Log error (non-cancellation) or debug (cancellation)
-  if (!data.is_cancelled) {
-    logger.error('sse:turn_error', data)
-  } else {
-    logger.debug('sse:turn_cancelled', data)
-  }
-
-  // Notify waiters that stream has ended (for cancel coordination)
-  actions.notifyStreamEnded(data.turn_id)
-
-  // Refresh the turn to ensure we have the final state (partial blocks + error field)
-  // The inline error will be displayed via Turn.error in AssistantTurn component
-  if (threadId && data.turn_id) {
-    actions.refreshTurn(threadId, data.turn_id).catch((err) =>
-      logger.error('sse:turn_error:refresh_error', err)
-    )
-  }
-
-  // Cleanup
-  buffer.flush()
-  actions.clearStreamingStream()
-  tracker.clear()
-  actions.setStreamingBlockInfo(null, null)
-  // Stop the stream
-  ctrl.abort()
-}
-
 // ============================================================================
 // AG-UI Lifecycle Handlers
-//
-// These events are part of the AG-UI SDK protocol. The heavy lifting (cleanup,
-// refresh) is done by turn_complete/turn_error. These handlers provide:
-// - Logging for debugging/observability
-// - Future extensibility (e.g., step progress UI)
 // ============================================================================
 
 /**
@@ -135,17 +30,29 @@ export function handleTurnError(
  * Signals the beginning of a streaming run. One run may contain multiple steps
  * (tool loop iterations).
  *
- * Note: Cleanup is done in turn_complete/turn_error, not here, because a new
- * run for the same turn would have already triggered those events.
+ * On reconnection, lastBlockSequence tells the frontend where to start indexing
+ * new blocks to avoid duplicates.
  */
 export function handleRunStarted(
-  data: RunStartedEvent,
+  data: MeridianRunStartedEvent,
   ctx: SSEDispatchContext,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Matches SSEEventHandler signature for consistency
   _actions: SSEStoreActions
 ): void {
-  const { logger } = ctx
-  logger.debug('sse:run_started', { runId: data.runId, threadId: data.threadId })
+  const { logger, tracker } = ctx
+
+  // Initialize BlockTracker from lastBlockSequence on reconnection
+  // This ensures new blocks start from lastBlockSequence + 1, avoiding duplicates
+  if (data.lastBlockSequence !== undefined && data.lastBlockSequence >= 0) {
+    tracker.initializeFromSequence(data.lastBlockSequence)
+    logger.debug('sse:run_started:reconnection', {
+      runId: data.runId,
+      threadId: data.threadId,
+      lastBlockSequence: data.lastBlockSequence,
+    })
+  } else {
+    logger.debug('sse:run_started', { runId: data.runId, threadId: data.threadId })
+  }
 }
 
 /**
@@ -180,35 +87,109 @@ export function handleStepFinished(
 /**
  * Handle RUN_FINISHED event.
  * Signals successful completion of the run.
+ * Refreshes turn, refreshes active document, and cleans up streaming state.
  *
- * Note: The actual cleanup is done by turn_complete which fires after this.
- * This handler exists for AG-UI protocol completeness and future extensibility.
+ * Meridian extension: includes turnId, stopReason, inputTokens, outputTokens.
  */
 export function handleRunFinished(
-  data: RunFinishedEvent,
+  data: MeridianRunFinishedEvent,
   ctx: SSEDispatchContext,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Matches SSEEventHandler signature for consistency
-  _actions: SSEStoreActions
+  actions: SSEStoreActions
 ): void {
-  const { logger } = ctx
-  logger.debug('sse:run_finished', { runId: data.runId })
+  const { tracker, logger, buffer, ctrl, threadId } = ctx
+  // Use turnId directly from Meridian extension (avoids parsing runId)
+  const turnId = data.turnId || null
+
+  logger.debug('sse:run_finished', {
+    turnId,
+    stopReason: data.stopReason,
+    inputTokens: data.inputTokens,
+    outputTokens: data.outputTokens,
+  })
+
+  // Notify waiters that stream has ended (for cancel coordination)
+  if (turnId) {
+    actions.notifyStreamEnded(turnId)
+  }
+
+  // Helper to run cleanup - must run AFTER refreshTurn completes
+  // to ensure tool_result blocks are fetched before clearing streaming state
+  const runCleanup = () => {
+    buffer.flush()
+    logger.debug('sse:run_finished:cleanup', { turnId })
+    actions.clearStreamingStream()
+    tracker.clear()
+    actions.setStreamingBlockInfo(null, null)
+    // Stop the stream
+    ctrl.abort()
+  }
+
+  // Chain refreshTurn -> document refresh -> cleanup
+  // Cleanup runs in .finally() to ensure it always executes, even on error
+  if (threadId && turnId) {
+    actions
+      .refreshTurn(threadId, turnId)
+      .then(() => {
+        // Refresh active document in case AI edited it via doc_edit tool
+        // This ensures ai_version changes are reflected in the editor
+        // Fire-and-forget - document refresh shouldn't block cleanup
+        const activeDocId = useEditorStore.getState()._activeDocumentId
+        if (activeDocId) {
+          useEditorStore
+            .getState()
+            .refreshDocument(activeDocId)
+            .catch((err) => logger.error('sse:run_finished:document_refresh_error', err))
+        }
+      })
+      .catch((err) => logger.error('sse:run_finished:refresh_error', err))
+      .finally(runCleanup)
+  } else {
+    // No turn to refresh - cleanup immediately
+    runCleanup()
+  }
 }
 
 /**
  * Handle RUN_ERROR event.
- * Signals the run terminated with an error.
+ * Signals the run terminated with an error or cancellation.
+ * Refreshes turn to get final state (partial blocks + error field) and cleans up.
  *
- * Note: The actual error handling and cleanup is done by turn_error which
- * fires after this. This handler exists for AG-UI protocol completeness.
+ * Meridian extension: turnId + isCancelled distinguishes user cancel from actual error.
  */
 export function handleRunError(
-  data: RunErrorEvent,
+  data: MeridianRunErrorEvent,
   ctx: SSEDispatchContext,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Matches SSEEventHandler signature for consistency
-  _actions: SSEStoreActions
+  actions: SSEStoreActions
 ): void {
-  const { logger } = ctx
-  // Log as debug, not error - turn_error handles the actual error logging
-  // Note: AG-UI spec uses 'message' field (not 'error') for error description
-  logger.debug('sse:run_error', { runId: data.runId, message: data.message })
+  const { tracker, logger, buffer, ctrl, threadId } = ctx
+  // Use turnId directly from Meridian extension (avoids parsing runId)
+  const turnId = data.turnId || null
+
+  // Log error (non-cancellation) or debug (cancellation)
+  if (!data.isCancelled) {
+    logger.error('sse:run_error', { turnId, message: data.message })
+  } else {
+    logger.debug('sse:run_cancelled', { turnId, message: data.message })
+  }
+
+  // Notify waiters that stream has ended (for cancel coordination)
+  if (turnId) {
+    actions.notifyStreamEnded(turnId)
+  }
+
+  // Refresh the turn to ensure we have the final state (partial blocks + error field)
+  // The inline error will be displayed via Turn.error in AssistantTurn component
+  if (threadId && turnId) {
+    actions
+      .refreshTurn(threadId, turnId)
+      .catch((err) => logger.error('sse:run_error:refresh_error', err))
+  }
+
+  // Cleanup
+  buffer.flush()
+  actions.clearStreamingStream()
+  tracker.clear()
+  actions.setStreamingBlockInfo(null, null)
+  // Stop the stream
+  ctrl.abort()
 }

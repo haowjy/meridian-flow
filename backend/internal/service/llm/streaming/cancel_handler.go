@@ -6,7 +6,6 @@ import (
 
 	mstream "github.com/haowjy/meridian-stream-go"
 
-	llmModels "meridian/internal/domain/models/llm"
 	"meridian/internal/service/llm/tokens"
 )
 
@@ -106,12 +105,11 @@ func (se *StreamExecutor) handleTimeoutInStreamingGoroutine(send func(mstream.Ev
 	// Transition to Errored state (terminal)
 	se.transitionTo(StateErrored)
 
-	// Send error event to any remaining clients
-	se.sendEvent(send, llmModels.SSEEventTurnError, llmModels.TurnErrorEvent{
-		TurnID:      se.turnID,
-		Error:       "timeout waiting for provider metadata",
-		IsCancelled: true, // Timeout after cancel is still a cancel
-	})
+	// Emit AG-UI RUN_ERROR event for any remaining clients
+	// isCancelled=true because timeout after cancel is still a cancel (not an error)
+	if se.aguiEmitter != nil {
+		se.aguiEmitter.EmitRunError("timeout waiting for provider metadata", true)
+	}
 
 	// Cleanup executor
 	if se.onCleanup != nil {
@@ -147,17 +145,10 @@ func (se *StreamExecutor) handleSoftCancel(send func(mstream.Event)) {
 	se.jsonAccumulator = nil
 
 	// Emit AG-UI RUN_ERROR event for AG-UI compliant frontends
+	// isCancelled=true tells frontend this is a user cancel, not an error
 	if se.aguiEmitter != nil {
-		se.aguiEmitter.EmitRunError("cancelled")
+		se.aguiEmitter.EmitRunError("cancelled", true)
 	}
-
-	// Tell the frontend to stop streaming immediately (hard-cancel UX).
-	// Legacy turn_error kept for backward compatibility during transition
-	se.sendEvent(send, llmModels.SSEEventTurnError, llmModels.TurnErrorEvent{
-		TurnID:      se.turnID,
-		Error:       "cancelled",
-		IsCancelled: true,
-	})
 
 	// Disconnect SSE clients. Provider stream continues; executor keeps draining for metadata.
 	se.stream.SoftCancel()

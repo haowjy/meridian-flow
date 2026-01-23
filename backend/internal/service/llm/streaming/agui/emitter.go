@@ -65,16 +65,47 @@ func (e *Emitter) EmitAGUIEvent(evt events.Event) error {
 	return nil
 }
 
+// emitMeridianEvent serializes a Meridian-extended event and sends it via SSE.
+// This is similar to EmitAGUIEvent but works with our custom event structs
+// that don't implement the events.Event interface.
+func (e *Emitter) emitMeridianEvent(eventType string, evt any) error {
+	if evt == nil {
+		return fmt.Errorf("cannot emit nil Meridian event")
+	}
+
+	// Serialize event to JSON
+	data, err := json.Marshal(evt)
+	if err != nil {
+		e.logger.Error("failed to marshal Meridian event",
+			"event_type", eventType,
+			"error", err,
+		)
+		return fmt.Errorf("marshal Meridian event: %w", err)
+	}
+
+	// Create mstream event with AG-UI event type and JSON data
+	event := mstream.NewEvent(data).WithType(eventType)
+	e.send(event)
+
+	return nil
+}
+
 // EmitRunStarted sends a RUN_STARTED event at the beginning of streaming.
 // This signals to the frontend that a new run/turn has begun.
-func (e *Emitter) EmitRunStarted() {
+//
+// lastBlockSequence is optional:
+//   - nil on first connection (no blocks exist yet)
+//   - pointer to last persisted sequence on reconnection (for block index continuity)
+func (e *Emitter) EmitRunStarted(lastBlockSequence *int) {
 	threadID := e.idFactory.ThreadID()
 	runID := e.idFactory.RunID()
+	turnID := e.idFactory.TurnID()
 
-	evt := events.NewRunStartedEvent(threadID, runID)
-	if err := e.EmitAGUIEvent(evt); err != nil {
+	// Use Meridian-extended event with lastBlockSequence for reconnection support
+	evt := NewMeridianRunStartedEvent(threadID, runID, turnID, lastBlockSequence)
+	if err := e.emitMeridianEvent(string(evt.Type), evt); err != nil {
 		e.logger.Warn("failed to emit RUN_STARTED",
-			"turn_id", e.idFactory.TurnID(),
+			"turn_id", turnID,
 			"error", err,
 		)
 	}
@@ -82,14 +113,18 @@ func (e *Emitter) EmitRunStarted() {
 
 // EmitRunFinished sends a RUN_FINISHED event on successful completion.
 // This signals that the turn completed without errors.
-func (e *Emitter) EmitRunFinished() {
+//
+// Includes LLM metadata: stopReason, inputTokens, outputTokens.
+func (e *Emitter) EmitRunFinished(stopReason string, inputTokens, outputTokens int) {
 	threadID := e.idFactory.ThreadID()
 	runID := e.idFactory.RunID()
+	turnID := e.idFactory.TurnID()
 
-	evt := events.NewRunFinishedEvent(threadID, runID)
-	if err := e.EmitAGUIEvent(evt); err != nil {
+	// Use Meridian-extended event with LLM metadata
+	evt := NewMeridianRunFinishedEvent(threadID, runID, turnID, stopReason, inputTokens, outputTokens)
+	if err := e.emitMeridianEvent(string(evt.Type), evt); err != nil {
 		e.logger.Warn("failed to emit RUN_FINISHED",
-			"turn_id", e.idFactory.TurnID(),
+			"turn_id", turnID,
 			"error", err,
 		)
 	}
@@ -97,13 +132,20 @@ func (e *Emitter) EmitRunFinished() {
 
 // EmitRunError sends a RUN_ERROR event on failure or cancellation.
 // This signals that the turn encountered an error or was cancelled.
-func (e *Emitter) EmitRunError(errMsg string) {
+//
+// isCancelled distinguishes user cancellation from actual errors:
+//   - true: User cancelled streaming, don't show error toast in UI
+//   - false: Actual error occurred, show error toast
+func (e *Emitter) EmitRunError(errMsg string, isCancelled bool) {
+	threadID := e.idFactory.ThreadID()
 	runID := e.idFactory.RunID()
+	turnID := e.idFactory.TurnID()
 
-	evt := events.NewRunErrorEvent(errMsg, events.WithRunID(runID))
-	if err := e.EmitAGUIEvent(evt); err != nil {
+	// Use Meridian-extended event with cancellation flag
+	evt := NewMeridianRunErrorEvent(threadID, runID, turnID, errMsg, isCancelled)
+	if err := e.emitMeridianEvent(string(evt.Type), evt); err != nil {
 		e.logger.Warn("failed to emit RUN_ERROR",
-			"turn_id", e.idFactory.TurnID(),
+			"turn_id", turnID,
 			"original_error", errMsg,
 			"emit_error", err,
 		)

@@ -825,6 +825,26 @@ func (r *PostgresTurnRepository) GetTurnBlocksForTurns(
 	return blocksByTurn, nil
 }
 
+// GetLastBlockSequence retrieves the highest block sequence number for a turn.
+// Returns -1 if no blocks exist for the turn.
+// Used by SSE catchup to tell reconnecting clients where to start indexing new blocks.
+func (r *PostgresTurnRepository) GetLastBlockSequence(ctx context.Context, turnID string) (int, error) {
+	query := fmt.Sprintf(`
+		SELECT COALESCE(MAX(sequence), -1)
+		FROM %s
+		WHERE turn_id = $1
+	`, r.tables.TurnBlocks)
+
+	executor := postgres.GetExecutor(ctx, r.pool)
+	var lastSequence int
+	err := executor.QueryRow(ctx, query, turnID).Scan(&lastSequence)
+	if err != nil {
+		return -1, fmt.Errorf("get last block sequence: %w", err)
+	}
+
+	return lastSequence, nil
+}
+
 // GetSiblingsForTurns retrieves sibling turn IDs for multiple turns in a single query
 // Siblings are turns that share the same prev_turn_id (alternative conversation branches)
 func (r *PostgresTurnRepository) GetSiblingsForTurns(

@@ -24,6 +24,7 @@ type Config struct {
 	DefaultModel             string
 	MaxToolRounds            int // Fallback limit if resolver fails (default: 10)
 	SoftCancelTimeoutSeconds int // Timeout for soft cancel before forced cleanup (default: 300 = 5 minutes)
+	LLMIdleTimeoutSeconds    int // Streaming idle timeout in seconds (default: 120 = 2 minutes)
 	// Search API Configuration (optional - for web_search tool)
 	SearchAPIKey      string // API key for external search provider
 	SearchAPIProvider string // Provider name: "tavily", "brave", "serper", etc.
@@ -63,6 +64,7 @@ func Load() *Config {
 		DefaultModel:             getEnv("DEFAULT_MODEL", "moonshotai/kimi-k2-thinking"),
 		MaxToolRounds:            getEnvInt("MAX_TOOL_ROUNDS", 10),
 		SoftCancelTimeoutSeconds: getEnvInt("SOFT_CANCEL_TIMEOUT_SECONDS", 300), // 5 minutes default
+		LLMIdleTimeoutSeconds:    getEnvInt("LLM_IDLE_TIMEOUT_SECONDS", 120),    // 2 minutes default
 		// Search API Configuration (optional)
 		SearchAPIKey:      getEnv("SEARCH_API_KEY", ""),
 		SearchAPIProvider: getEnv("SEARCH_API_PROVIDER", "tavily"),

@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	mstream "github.com/haowjy/meridian-stream-go"
 
-	llmModels "meridian/internal/domain/models/llm"
 	"meridian/internal/handler/sse"
 	"meridian/internal/httputil"
 )
@@ -127,22 +126,24 @@ func (h *SSEHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If no stream, send error event and close gracefully
+	// If no stream, send RUN_ERROR event and close gracefully
 	// This is not a real error - stream may have finished or never existed
+	// isCancelled=true prevents error toast in UI
 	if stream == nil {
-		errorData, _ := json.Marshal(llmModels.TurnErrorEvent{
-			TurnID:      turnID,
-			Error:       "streaming not active for this turn",
-			IsCancelled: true, // Don't show error toast for this
+		errorData, _ := json.Marshal(map[string]interface{}{
+			"type":        "RUN_ERROR",
+			"runId":       turnID,
+			"message":     "streaming not active for this turn",
+			"isCancelled": true,
 		})
-		if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", llmModels.SSEEventTurnError, string(errorData)); err != nil {
+		if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", "RUN_ERROR", string(errorData)); err != nil {
 			return // Client disconnected
 		}
 		if err := h.safeFlush(w, flusher, turnID, clientID); err != nil {
 			// Client disconnected, error already logged
 			return
 		}
-		h.logger.Debug("sent error event for missing stream, closing stream",
+		h.logger.Debug("sent RUN_ERROR event for missing stream, closing stream",
 			"turn_id", turnID,
 			"client_id", clientID,
 		)
