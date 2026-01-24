@@ -58,7 +58,7 @@ function TermsPage() {
             <ul className="list-disc pl-6 space-y-2">
               <li>AI-generated suggestions are provided as-is and may not always be accurate or appropriate</li>
               <li>You are responsible for reviewing and editing any AI-generated content before use</li>
-              <li>Content you submit to AI features may be processed by third-party AI providers (Anthropic)</li>
+              <li>Content you submit to AI features may be processed by third-party AI providers</li>
             </ul>
           </section>
 
