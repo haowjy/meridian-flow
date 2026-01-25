@@ -49,9 +49,10 @@ func (a *OwnerBasedAuthorizer) CanAccessProject(ctx context.Context, userID, pro
 	_, err := a.projectRepo.GetByID(ctx, projectID, userID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			return fmt.Errorf("access denied to project %s: %w", projectID, domain.ErrForbidden)
+			// Security: don't expose whether project exists - return Forbidden instead
+			return domain.NewForbiddenError(fmt.Sprintf("access denied to project %s", projectID))
 		}
-		return fmt.Errorf("check project access: %w", err)
+		return err // Pass through HTTPError directly
 	}
 	return nil
 }
@@ -61,7 +62,7 @@ func (a *OwnerBasedAuthorizer) CanAccessFolder(ctx context.Context, userID, fold
 	// Get folder by UUID only (no project scoping)
 	folder, err := a.folderRepo.GetByIDOnly(ctx, folderID)
 	if err != nil {
-		return fmt.Errorf("get folder for auth: %w", err)
+		return err // Pass through HTTPError directly
 	}
 
 	// Check user owns the folder's project
@@ -73,7 +74,7 @@ func (a *OwnerBasedAuthorizer) CanAccessDocument(ctx context.Context, userID, do
 	// Get document by UUID only (no project scoping)
 	doc, err := a.docRepo.GetByIDOnly(ctx, documentID)
 	if err != nil {
-		return fmt.Errorf("get document for auth: %w", err)
+		return err // Pass through HTTPError directly
 	}
 
 	// Check user owns the document's project
@@ -85,7 +86,7 @@ func (a *OwnerBasedAuthorizer) CanAccessThread(ctx context.Context, userID, thre
 	// Get thread by UUID only (no user scoping)
 	thread, err := a.threadRepo.GetThreadByIDOnly(ctx, threadID)
 	if err != nil {
-		return fmt.Errorf("get thread for auth: %w", err)
+		return err // Pass through HTTPError directly
 	}
 
 	// Check user owns the thread's project
@@ -97,7 +98,7 @@ func (a *OwnerBasedAuthorizer) CanAccessTurn(ctx context.Context, userID, turnID
 	// Get turn by UUID only
 	turn, err := a.turnRepo.GetTurn(ctx, turnID)
 	if err != nil {
-		return fmt.Errorf("get turn for auth: %w", err)
+		return err // Pass through HTTPError directly
 	}
 
 	// Check user can access the turn's thread

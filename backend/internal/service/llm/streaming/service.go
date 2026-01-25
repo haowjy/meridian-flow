@@ -20,6 +20,7 @@ import (
 	llmRepo "meridian/internal/domain/repositories/llm"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	llmSvc "meridian/internal/domain/services/llm"
+	skillSvc "meridian/internal/domain/services/skill"
 	"meridian/internal/jobs"
 	"meridian/internal/service/llm/tokens"
 	"meridian/internal/service/llm/tools"
@@ -73,9 +74,11 @@ type Service struct {
 	turnReader           llmRepo.TurnReader
 	turnNavigator        llmRepo.TurnNavigator
 	threadRepo           llmRepo.ThreadRepository
-	projectRepo          docsysRepo.ProjectRepository // For validating project access on cold start
-	documentSvc          docsysSvc.DocumentService    // For tool operations (SOLID: DIP)
-	folderSvc            docsysSvc.FolderService      // For tool operations (SOLID: DIP)
+	projectRepo          docsysRepo.ProjectRepository  // For validating project access on cold start
+	documentSvc          docsysSvc.DocumentService     // For tool operations (SOLID: DIP)
+	folderSvc            docsysSvc.FolderService       // For tool operations (SOLID: DIP)
+	namespaceSvc         docsysSvc.NamespaceService    // For namespace routing in tools
+	skillService         skillSvc.ProjectSkillService  // For skill_invoke/skill_list tools
 	validator            ThreadValidator
 	providerGetter       LLMProviderGetter
 	registry             *mstream.Registry
@@ -100,6 +103,8 @@ func NewService(
 	projectRepo docsysRepo.ProjectRepository,
 	documentSvc docsysSvc.DocumentService,
 	folderSvc docsysSvc.FolderService,
+	namespaceSvc docsysSvc.NamespaceService,
+	skillService skillSvc.ProjectSkillService,
 	validator ThreadValidator,
 	providerGetter LLMProviderGetter,
 	registry *mstream.Registry,
@@ -121,6 +126,8 @@ func NewService(
 		projectRepo:          projectRepo,
 		documentSvc:          documentSvc,
 		folderSvc:            folderSvc,
+		namespaceSvc:         namespaceSvc,
+		skillService:         skillService,
 		validator:            validator,
 		providerGetter:       providerGetter,
 		registry:             registry,
@@ -159,7 +166,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 
 	// Validate basic request fields (role, turn blocks)
 	if err := s.validateCreateTurnRequest(req); err != nil {
-		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
+		return nil, domain.NewValidationError(fmt.Sprintf("validation failed: %v", err))
 	}
 
 	// Resolve thread context: determine threadID, projectID, and whether we need to create a new thread
@@ -408,7 +415,9 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	// Create per-request tool registry with project-specific tools
 	// All tools use service layer (SOLID compliance, Phase 4: zero repo dependencies)
 	builder := tools.NewToolRegistryBuilder().
-		WithDocumentTools(thread.ProjectID, req.UserID, s.documentSvc, s.folderSvc)
+		WithNamespaceService(s.namespaceSvc).
+		WithDocumentTools(thread.ProjectID, req.UserID, s.documentSvc, s.folderSvc).
+		WithSkillTools(thread.ProjectID, req.UserID, s.skillService, false) // false = model invocation, not user slash command
 
 	// Add web search tool if requested via provider-specific tool name
 	var hasWebSearch bool
@@ -803,7 +812,7 @@ func (s *Service) resolveThreadContext(ctx context.Context, req *llmSvc.CreateTu
 	}
 
 	// Case 4: None provided - error
-	return nil, fmt.Errorf("%w: must provide thread_id, project_id, or prev_turn_id", domain.ErrValidation)
+	return nil, domain.NewValidationError("must provide thread_id, project_id, or prev_turn_id")
 }
 
 // Validation methods

@@ -3,7 +3,6 @@ package identifier
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/google/uuid"
 
@@ -109,7 +108,7 @@ func (r *ChainedResolver) ResolveDocumentIDOnly(ctx context.Context, identifier 
 	}
 
 	// Not a UUID - likely a slug, which requires project context
-	return "", fmt.Errorf("%w: document slugs require project context", domain.ErrBadRequest)
+	return "", domain.NewValidationError("document slugs require project context")
 }
 
 // isUUID checks if the given string is a valid UUID format.

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, KeyboardEvent, ChangeEvent, PointerEvent } from 'react'
 import { Check, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { validateName, type ValidationType } from '@/core/lib/nameValidation'
 
 interface InlineEditorProps {
   value: string
@@ -10,6 +11,8 @@ interface InlineEditorProps {
   // Validation
   existingNames?: string[]
   allowDuplicates?: boolean
+  type?: ValidationType  // NEW: 'folder' | 'document' for validation
+  isRootLevel?: boolean  // NEW: whether this is at root level
 
   // Display
   suffix?: string              // e.g., ".md" for documents
@@ -50,6 +53,8 @@ export function InlineEditor({
   onCancel,
   existingNames = [],
   allowDuplicates = false,
+  type,        // NEW
+  isRootLevel, // NEW
   suffix,
   fontWeight = 'normal',
   className,
@@ -80,23 +85,13 @@ export function InlineEditor({
   }, [])
 
   const validate = (name: string): string | null => {
-    const trimmed = name.trim()
-    if (!trimmed) {
-      return 'Name cannot be empty'
-    }
-    // Only enforce duplicate checks if not explicitly allowed
-    if (!allowDuplicates) {
-      // Check for duplicates (case-insensitive, excluding current name)
-      const isDuplicate = existingNames.some(
-        (existing) =>
-          existing.toLowerCase() === trimmed.toLowerCase() &&
-          existing.toLowerCase() !== initialValue.toLowerCase()
-      )
-      if (isDuplicate) {
-        return 'A file or folder with this name already exists'
-      }
-    }
-    return null
+    return validateName(name, {
+      type,
+      isRootLevel,
+      existingNames,
+      currentName: initialValue,
+      allowDuplicates,
+    })
   }
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -105,10 +100,9 @@ export function InlineEditor({
     if (!hasUserEdited) {
       setHasUserEdited(true)
     }
-    // Clear error on change, will re-validate on submit
-    if (error) {
-      setError(null)
-    }
+    // Run validation on every keystroke for instant feedback
+    const validationError = validate(newValue)
+    setError(validationError)
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {

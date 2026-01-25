@@ -16,12 +16,14 @@ type HTTPError interface {
 type (
 	// NotFoundError indicates a resource was not found
 	NotFoundError struct {
-		Message string
+		Message      string
+		ResourceType string // Type of resource (document, folder, project, etc.)
 	}
 
 	// ValidationError indicates invalid input
 	ValidationError struct {
 		Message string
+		Field   string // Optional field that failed validation
 	}
 
 	// UnauthorizedError indicates authentication failure
@@ -101,4 +103,74 @@ func (e *AIVersionConflictError) StatusCode() int {
 // Is allows errors.Is() to match against ErrConflict
 func (e *AIVersionConflictError) Is(target error) bool {
 	return target == ErrConflict
+}
+
+// ConstraintViolationError indicates data violated a database constraint
+type ConstraintViolationError struct {
+	Message        string // User-friendly message
+	ConstraintType string // "NOT NULL", "CHECK", "UNIQUE", "FOREIGN KEY"
+	ColumnName     string // Column that failed constraint (if available)
+	ConstraintName string // Constraint name (if available)
+	InternalDetail string // Full error details (dev mode only)
+}
+
+func (e *ConstraintViolationError) Error() string {
+	return e.Message
+}
+
+func (e *ConstraintViolationError) StatusCode() int {
+	return http.StatusBadRequest // Client provided invalid data
+}
+
+// Is allows errors.Is() to match against ErrValidation
+func (e *ConstraintViolationError) Is(target error) bool {
+	return target == ErrValidation
+}
+
+// Helper functions for creating structured errors
+
+// NewNotFoundError creates a structured NotFoundError
+func NewNotFoundError(resourceType, message string) *NotFoundError {
+	return &NotFoundError{
+		Message:      message,
+		ResourceType: resourceType,
+	}
+}
+
+// NewConflictError creates a structured ConflictError with resource ID
+func NewConflictError(resourceType, resourceID, message string) *ConflictError {
+	return &ConflictError{
+		Message:      message,
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
+	}
+}
+
+// NewValidationError creates a structured ValidationError
+func NewValidationError(message string) *ValidationError {
+	return &ValidationError{
+		Message: message,
+	}
+}
+
+// NewValidationErrorWithField creates a structured ValidationError with field
+func NewValidationErrorWithField(message, field string) *ValidationError {
+	return &ValidationError{
+		Message: message,
+		Field:   field,
+	}
+}
+
+// NewForbiddenError creates a structured ForbiddenError
+func NewForbiddenError(message string) *ForbiddenError {
+	return &ForbiddenError{
+		Message: message,
+	}
+}
+
+// NewUnauthorizedError creates a structured UnauthorizedError
+func NewUnauthorizedError(message string) *UnauthorizedError {
+	return &UnauthorizedError{
+		Message: message,
+	}
 }

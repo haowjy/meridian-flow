@@ -21,6 +21,7 @@ import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { InlineError } from '@/shared/components/InlineError'
 import type { Folder } from '@/features/folders/types/folder'
 import type { Document } from '../types/document'
+import type { PanelTab } from './DocumentPanel'
 
 // Tracks which tree item is being edited (existing items only)
 interface EditingItem {
@@ -44,13 +45,15 @@ interface DocumentTreeContainerProps {
   projectId: string
   projectSlug: string
   projectName: string | null
+  activeTab: PanelTab
+  onTabChange: (tab: PanelTab) => void
 }
 
 /**
  * Data layer for document tree.
  * Fetches data, handles events, renders tree structure recursively.
  */
-export function DocumentTreeContainer({ projectId, projectSlug, projectName }: DocumentTreeContainerProps) {
+export function DocumentTreeContainer({ projectId, projectSlug, projectName, activeTab, onTabChange }: DocumentTreeContainerProps) {
   const navigate = useNavigate()
   const {
     tree,
@@ -235,7 +238,9 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
   }, [])
 
   // Submit new item - create in backend with entered name
-  const handleSubmitNewItem = useCallback(async (name: string) => {
+  const handleSubmitNewItem = useCallback(async (_itemId: string, name: string) => {
+    // Note: _itemId is the temporary pending ID (e.g., "pending-1705123456789")
+    // We ignore it and use only the user-entered name for creation
     if (!pendingItem) return
 
     const trimmedName = name.trim()
@@ -374,6 +379,7 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
           onCancelEdit={handleCancelEdit}
           existingNames={siblingNames}
           editorMode="create"
+          isRootLevel={!pendingItem.parentId}  // NEW: root if no parent
         >
           {null}
         </FolderTreeItem>
@@ -456,6 +462,7 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
               onSubmitName={handleRenameFolderInline}
               onCancelEdit={handleCancelEdit}
               existingNames={siblingNames}
+              isRootLevel={parentId === null}
             >
               {/* Render pending item first if inside this folder */}
               {renderPendingItem(node.id, node.children ? getNodeNames(node.children) : [])}
@@ -521,6 +528,8 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
           deleteDocument={deleteDocument}
           deleteFolder={deleteFolder}
           onOpenSettings={() => setIsSettingsDialogOpen(true)}
+          activeTab={activeTab}
+          onTabChange={onTabChange}
         >
           <ErrorPanel
             title="Failed to load documents"
@@ -564,6 +573,8 @@ export function DocumentTreeContainer({ projectId, projectSlug, projectName }: D
         deleteDocument={deleteDocument}
         deleteFolder={deleteFolder}
         onOpenSettings={() => setIsSettingsDialogOpen(true)}
+        activeTab={activeTab}
+        onTabChange={onTabChange}
       >
         {hasOperationError && (
           <div className="mb-2">
