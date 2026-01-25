@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"meridian/internal/config"
 	"meridian/internal/domain"
 	docsystem "meridian/internal/domain/models/docsystem"
 	docsysSvc "meridian/internal/domain/services/docsystem"
@@ -21,14 +22,16 @@ type DocumentHandler struct {
 	docService docsysSvc.DocumentService
 	resolver   identifierSvc.Resolver // Interface for identifier resolution (DIP)
 	logger     *slog.Logger
+	config     *config.Config
 }
 
 // NewDocumentHandler creates a new document handler
-func NewDocumentHandler(docService docsysSvc.DocumentService, resolver identifierSvc.Resolver, logger *slog.Logger) *DocumentHandler {
+func NewDocumentHandler(docService docsysSvc.DocumentService, resolver identifierSvc.Resolver, logger *slog.Logger, cfg *config.Config) *DocumentHandler {
 	return &DocumentHandler{
 		docService: docService,
 		resolver:   resolver,
 		logger:     logger,
+		config:     cfg,
 	}
 }
 
@@ -51,7 +54,7 @@ func (h *DocumentHandler) CreateDocument(w http.ResponseWriter, r *http.Request)
 	// Call service (all business logic is here)
 	doc, err := h.docService.CreateDocument(r.Context(), &req)
 	if err != nil {
-		HandleCreateConflict(w, err, func(id string) (*docsystem.Document, error) {
+		HandleCreateConflict(w, err, h.config, func(id string) (*docsystem.Document, error) {
 			return h.docService.GetDocument(r.Context(), userID, id)
 		})
 		return
@@ -87,7 +90,7 @@ func (h *DocumentHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 
 	doc, err := h.docService.GetDocument(r.Context(), userID, documentID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -188,7 +191,7 @@ func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request)
 				})
 			return
 		}
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -219,7 +222,7 @@ func (h *DocumentHandler) DeleteDocument(w http.ResponseWriter, r *http.Request)
 	userID := httputil.GetUserID(r)
 
 	if err := h.docService.DeleteDocument(r.Context(), userID, documentID); err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -272,7 +275,7 @@ func (h *DocumentHandler) SearchDocuments(w http.ResponseWriter, r *http.Request
 	// Call service
 	results, err := h.docService.SearchDocuments(r.Context(), userID, req)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -308,7 +311,7 @@ func (h *DocumentHandler) GetAIStatus(w http.ResponseWriter, r *http.Request) {
 
 	doc, err := h.docService.GetDocument(r.Context(), userID, documentID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 

@@ -49,16 +49,14 @@ func (r *PostgresProjectRepository) Create(ctx context.Context, project *models.
 			// Query for the existing project to get its ID
 			existingID, queryErr := r.getExistingProjectID(ctx, project.UserID, project.Name)
 			if queryErr != nil {
-				// Fallback to generic conflict error if we can't find the existing project
-				return fmt.Errorf("project '%s' already exists: %w", project.Name, domain.ErrConflict)
+				// Fallback to conflict error without ID if we can't find the existing project
+				return domain.NewConflictError("project", "",
+					fmt.Sprintf("project '%s' already exists", project.Name))
 			}
 
 			// Return structured conflict error with resource ID
-			return &domain.ConflictError{
-				Message:      fmt.Sprintf("project '%s' already exists", project.Name),
-				ResourceType: "project",
-				ResourceID:   existingID,
-			}
+			return domain.NewConflictError("project", existingID,
+				fmt.Sprintf("project '%s' already exists", project.Name))
 		}
 		return fmt.Errorf("create project: %w", err)
 	}
@@ -92,7 +90,8 @@ func (r *PostgresProjectRepository) GetByID(ctx context.Context, id, userID stri
 
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return nil, fmt.Errorf("project %s: %w", id, domain.ErrNotFound)
+			return nil, domain.NewNotFoundError("project",
+				fmt.Sprintf("project %s not found", id))
 		}
 		return nil, fmt.Errorf("get project: %w", err)
 	}
@@ -126,7 +125,8 @@ func (r *PostgresProjectRepository) GetBySlug(ctx context.Context, slug, userID 
 
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return nil, fmt.Errorf("project with slug '%s': %w", slug, domain.ErrNotFound)
+			return nil, domain.NewNotFoundError("project",
+				fmt.Sprintf("project with slug '%s' not found", slug))
 		}
 		return nil, fmt.Errorf("get project by slug: %w", err)
 	}
@@ -240,22 +240,21 @@ func (r *PostgresProjectRepository) Update(ctx context.Context, project *models.
 			// Query for the existing project to get its ID
 			existingID, queryErr := r.getExistingProjectID(ctx, project.UserID, project.Name)
 			if queryErr != nil {
-				// Fallback to generic conflict error if we can't find the existing project
-				return fmt.Errorf("project name '%s' already exists: %w", project.Name, domain.ErrConflict)
+				// Fallback to conflict error without ID if we can't find the existing project
+				return domain.NewConflictError("project", "",
+					fmt.Sprintf("project name '%s' already exists", project.Name))
 			}
 
 			// Return structured conflict error with resource ID
-			return &domain.ConflictError{
-				Message:      fmt.Sprintf("project name '%s' already exists", project.Name),
-				ResourceType: "project",
-				ResourceID:   existingID,
-			}
+			return domain.NewConflictError("project", existingID,
+				fmt.Sprintf("project name '%s' already exists", project.Name))
 		}
 		return fmt.Errorf("update project: %w", err)
 	}
 
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("project %s: %w", project.ID, domain.ErrNotFound)
+		return domain.NewNotFoundError("project",
+			fmt.Sprintf("project %s not found", project.ID))
 	}
 
 	return nil
@@ -286,7 +285,8 @@ func (r *PostgresProjectRepository) Delete(ctx context.Context, id, userID strin
 
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return nil, fmt.Errorf("project %s: %w", id, domain.ErrNotFound)
+			return nil, domain.NewNotFoundError("project",
+				fmt.Sprintf("project %s not found", id))
 		}
 		return nil, fmt.Errorf("delete project: %w", err)
 	}
@@ -309,7 +309,8 @@ func (r *PostgresProjectRepository) TouchLastActivityAt(ctx context.Context, pro
 	}
 
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("project %s: %w", projectID, domain.ErrNotFound)
+		return domain.NewNotFoundError("project",
+			fmt.Sprintf("project %s not found", projectID))
 	}
 
 	return nil

@@ -20,12 +20,14 @@ import (
 	"meridian/internal/repository/postgres"
 	postgresDocsys "meridian/internal/repository/postgres/docsystem"
 	postgresLLM "meridian/internal/repository/postgres/llm"
+	postgresSkill "meridian/internal/repository/postgres/skill"
 	"meridian/internal/service"
 	serviceAuth "meridian/internal/service/auth"
 	serviceDocsys "meridian/internal/service/docsystem"
 	"meridian/internal/service/docsystem/converter"
 	"meridian/internal/service/identifier"
 	serviceLLM "meridian/internal/service/llm"
+	serviceSkill "meridian/internal/service/skill"
 
 	"github.com/joho/godotenv"
 	"github.com/rs/cors"
@@ -111,6 +113,9 @@ func main() {
 	threadRepo := postgresLLM.NewThreadRepository(repoConfig)
 	turnRepo := postgresLLM.NewTurnRepository(repoConfig)
 
+	// Skill repository
+	skillRepo := postgresSkill.NewProjectSkillRepository(repoConfig)
+
 	// User preferences repository
 	userPrefsRepo := postgres.NewUserPreferencesRepository(repoConfig)
 
@@ -168,6 +173,22 @@ func main() {
 		"queue_capacity", 1000,
 	)
 
+	// Create namespace service (for skill service path operations)
+	// Must be created before skill service and LLM services
+	namespaceSvc := serviceDocsys.NewNamespaceService(folderRepo, logger)
+
+	// Create skill service (needed by LLM streaming service for skill tools)
+	// Must be created before SetupServices
+	skillService := serviceSkill.NewProjectSkillService(
+		skillRepo,
+		folderRepo,
+		docRepo,
+		namespaceSvc,
+		authorizer,
+		txManager,
+		logger,
+	)
+
 	// Setup LLM services (thread, thread history, streaming)
 	// docService and folderService are passed for tool write operations (SOLID: DIP)
 	llmServices, streamRegistry, err := serviceLLM.SetupServices(
@@ -178,6 +199,8 @@ func main() {
 		folderRepo,
 		docService,    // For tool write operations
 		folderService, // For tool write operations
+		skillRepo,     // For skill metadata in system prompt
+		skillService,  // For skill_invoke/skill_list tools
 		providerRegistry,
 		cfg,
 		txManager,
@@ -213,11 +236,11 @@ func main() {
 	userPrefsService := service.NewUserPreferencesService(userPrefsRepo, logger)
 
 	// Create new handlers
-	projectHandler := handler.NewProjectHandler(projectService, favoriteService, identifierResolver, logger)
-	newDocHandler := handler.NewDocumentHandler(docService, identifierResolver, logger)
-	newFolderHandler := handler.NewFolderHandler(folderService, logger)
-	newTreeHandler := handler.NewTreeHandler(treeService, identifierResolver, logger)
-	importHandler := handler.NewImportHandler(importService, authorizer, logger)
+	projectHandler := handler.NewProjectHandler(projectService, favoriteService, identifierResolver, logger, cfg)
+	newDocHandler := handler.NewDocumentHandler(docService, identifierResolver, logger, cfg)
+	newFolderHandler := handler.NewFolderHandler(folderService, logger, cfg)
+	newTreeHandler := handler.NewTreeHandler(treeService, identifierResolver, logger, cfg)
+	importHandler := handler.NewImportHandler(importService, authorizer, logger, cfg)
 
 	// Thread handlers (follows Clean Architecture - no repository access)
 	threadHandler := handler.NewThreadHandler(
@@ -227,11 +250,15 @@ func main() {
 		streamRegistry,
 		authorizer,
 		logger,
+		cfg,
 	)
+
+	// Skill handler
+	skillHandler := handler.NewProjectSkillHandler(skillService, logger, cfg)
 
 	// Model capabilities and user preferences handlers
 	modelsHandler := handler.NewModelsHandler(cfg, logger, capabilityRegistry)
-	userPrefsHandler := handler.NewUserPreferencesHandler(userPrefsService, logger)
+	userPrefsHandler := handler.NewUserPreferencesHandler(userPrefsService, logger, cfg)
 
 	// Debug handlers (only in dev environment)
 	var threadDebugHandler *handler.ThreadDebugHandler
@@ -259,6 +286,14 @@ func main() {
 
 	// Project tree endpoint
 	mux.HandleFunc("GET /api/projects/{id}/tree", newTreeHandler.GetTree)
+
+	// Project skill routes (reorder must come before {skillId} to avoid pattern conflict)
+	mux.HandleFunc("GET /api/projects/{projectId}/skills", skillHandler.ListSkills)
+	mux.HandleFunc("POST /api/projects/{projectId}/skills", skillHandler.CreateSkill)
+	mux.HandleFunc("PUT /api/projects/{projectId}/skills/reorder", skillHandler.ReorderSkills)
+	mux.HandleFunc("GET /api/projects/{projectId}/skills/{skillId}", skillHandler.GetSkill)
+	mux.HandleFunc("PUT /api/projects/{projectId}/skills/{skillId}", skillHandler.UpdateSkill)
+	mux.HandleFunc("DELETE /api/projects/{projectId}/skills/{skillId}", skillHandler.DeleteSkill)
 
 	// Folder routes
 	mux.HandleFunc("POST /api/folders", newFolderHandler.CreateFolder)

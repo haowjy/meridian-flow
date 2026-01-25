@@ -14,11 +14,13 @@ import (
 
 // EditTool implements the 'doc_edit' tool for editing document content.
 // Edits are written to documents.ai_version for user review before acceptance.
+// Access to /.meridian/** is DENIED - use dedicated skill editor API instead.
 type EditTool struct {
 	projectID    string
-	userID       string                     // Required for service layer authorization
-	documentSvc  docsysSvc.DocumentService  // For all document operations (DIP: interface, not concrete)
-	folderSvc    docsysSvc.FolderService    // For folder operations (DIP: interface, not concrete)
+	userID       string                        // Required for service layer authorization
+	documentSvc  docsysSvc.DocumentService     // For all document operations (DIP: interface, not concrete)
+	folderSvc    docsysSvc.FolderService       // For folder operations (DIP: interface, not concrete)
+	namespaceSvc docsysSvc.NamespaceService    // For namespace routing (optional)
 	pathResolver *PathResolver
 	config       *ToolConfig
 }
@@ -32,6 +34,7 @@ func NewEditTool(
 	userID string,
 	documentSvc docsysSvc.DocumentService,
 	folderSvc docsysSvc.FolderService,
+	namespaceSvc docsysSvc.NamespaceService,
 	config *ToolConfig,
 ) *EditTool {
 	if config == nil {
@@ -42,6 +45,7 @@ func NewEditTool(
 		userID:       userID,
 		documentSvc:  documentSvc,
 		folderSvc:    folderSvc,
+		namespaceSvc: namespaceSvc,
 		pathResolver: NewPathResolver(projectID, userID, folderSvc),
 		config:       config,
 	}
@@ -70,6 +74,21 @@ func (t *EditTool) Execute(ctx context.Context, input map[string]interface{}) (i
 
 	// Normalize path
 	path = normalizePath(path)
+
+	// Check namespace access - doc_edit DENIED for /.meridian/**
+	if t.namespaceSvc != nil {
+		namespace, _, err := t.namespaceSvc.ParsePath(path)
+		if err == nil && namespace == docsysSvc.NamespaceMeridian {
+			return ErrorResult(ErrInvalidInput, "doc_edit cannot modify /.meridian/ paths - use skill editor API instead", map[string]any{
+				"path": path,
+			}), nil
+		}
+		if err == nil && namespace == docsysSvc.NamespaceSession {
+			return ErrorResult(ErrInvalidInput, "doc_edit cannot modify /.session/ paths", map[string]any{
+				"path": path,
+			}), nil
+		}
+	}
 
 	// Execute the appropriate command
 	switch command {

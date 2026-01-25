@@ -56,7 +56,7 @@ func (s *UserPreferencesService) getDefaultPreferences(userID uuid.UUID) *models
 func (s *UserPreferencesService) GetPreferences(ctx context.Context, userID uuid.UUID) (*models.UserPreferences, error) {
 	prefs, err := s.prefsRepo.GetByUserID(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("get preferences: %w", err)
+		return nil, err // Pass through HTTPError directly
 	}
 
 	// If no preferences exist yet, return default/empty preferences
@@ -73,7 +73,7 @@ func (s *UserPreferencesService) UpdatePreferences(ctx context.Context, userID u
 	// Get existing preferences or create new ones
 	existing, err := s.prefsRepo.GetByUserID(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("get existing preferences: %w", err)
+		return nil, err // Pass through HTTPError directly
 	}
 
 	// If no existing preferences, start with defaults
@@ -121,7 +121,7 @@ func (s *UserPreferencesService) UpdatePreferences(ctx context.Context, userID u
 
 	// Persist changes
 	if err := s.prefsRepo.Upsert(ctx, existing); err != nil {
-		return nil, fmt.Errorf("upsert preferences: %w", err)
+		return nil, err // Pass through HTTPError directly
 	}
 
 	s.logger.Debug("user preferences updated",

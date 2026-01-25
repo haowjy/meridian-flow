@@ -131,7 +131,7 @@ func (p *zipFileProcessor) Process(
 	// This enables O(1) lookup during import instead of querying for each file.
 	existingDocs, err := p.docRepo.GetAllMetadataByProject(ctx, projectID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get existing documents: %w", err)
+		return nil, err // Pass through HTTPError directly
 	}
 
 	// Build lookup map for deduplication: "path|filename" → document_id

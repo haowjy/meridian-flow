@@ -2,10 +2,13 @@ package handler
 
 import (
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/google/uuid"
+	"meridian/internal/config"
 	"meridian/internal/domain"
 	"meridian/internal/httputil"
 )
@@ -35,11 +38,21 @@ func QueryInt(r *http.Request, name string, defaultVal, min, max int) int {
 // handleError converts domain errors to HTTP responses.
 // Uses HTTPError interface for extensible error handling (OCP compliance).
 // New error types can be added by implementing HTTPError interface without modifying this function.
-func handleError(w http.ResponseWriter, err error) {
+func handleError(w http.ResponseWriter, err error, cfg *config.Config) {
 	// Try to use HTTPError interface (supports new error types without modification)
 	var httpErr domain.HTTPError
 	if errors.As(err, &httpErr) {
-		httputil.RespondError(w, httpErr.StatusCode(), httpErr.Error())
+		message := httpErr.Error()
+
+		// In dev/test, add internal details for ConstraintViolationError
+		if cfg.Environment != "prod" {
+			var constraintErr *domain.ConstraintViolationError
+			if errors.As(err, &constraintErr) && constraintErr.InternalDetail != "" {
+				message = fmt.Sprintf("%s (debug: %s)", message, constraintErr.InternalDetail)
+			}
+		}
+
+		httputil.RespondError(w, httpErr.StatusCode(), message)
 		return
 	}
 
@@ -54,25 +67,36 @@ func handleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, domain.ErrForbidden):
 		httputil.RespondError(w, http.StatusForbidden, err.Error())
 	default:
-		httputil.RespondError(w, http.StatusInternalServerError, "internal server error")
+		// Log unhandled error for debugging
+		slog.Error("unhandled error in handleError",
+			"error", err,
+			"error_type", fmt.Sprintf("%T", err),
+		)
+
+		// In dev/test, expose error type to help debugging
+		message := "internal server error"
+		if cfg.Environment != "prod" {
+			message = fmt.Sprintf("internal server error (type: %T, error: %v)", err, err)
+		}
+		httputil.RespondError(w, http.StatusInternalServerError, message)
 	}
 }
 
 // HandleCreateConflict handles conflicts during creation by returning the existing resource with 409.
 // If the error is a ConflictError, extracts the resourceID and calls fetchByID to retrieve the existing resource.
 // Returns RFC 7807 Problem Details format with `resource` field for frontend compatibility.
-func HandleCreateConflict[T any](w http.ResponseWriter, err error, fetchByID func(resourceID string) (*T, error)) {
+func HandleCreateConflict[T any](w http.ResponseWriter, err error, cfg *config.Config, fetchByID func(resourceID string) (*T, error)) {
 	var conflictErr *domain.ConflictError
 	if !errors.As(err, &conflictErr) {
 		// Not a conflict error, handle normally
-		handleError(w, err)
+		handleError(w, err, cfg)
 		return
 	}
 
 	// Try to fetch existing resource by ID from conflict error
 	existing, fetchErr := fetchByID(conflictErr.ResourceID)
 	if fetchErr != nil {
-		handleError(w, fetchErr)
+		handleError(w, fetchErr, cfg)
 		return
 	}
 

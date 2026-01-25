@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"meridian/internal/config"
 	"meridian/internal/domain/models"
 	"meridian/internal/domain/services"
 	"meridian/internal/httputil"
@@ -14,13 +15,15 @@ import (
 type UserPreferencesHandler struct {
 	service services.UserPreferencesService
 	logger  *slog.Logger
+	config  *config.Config
 }
 
 // NewUserPreferencesHandler creates a new user preferences handler
-func NewUserPreferencesHandler(service services.UserPreferencesService, logger *slog.Logger) *UserPreferencesHandler {
+func NewUserPreferencesHandler(service services.UserPreferencesService, logger *slog.Logger, cfg *config.Config) *UserPreferencesHandler {
 	return &UserPreferencesHandler{
 		service: service,
 		logger:  logger,
+		config:  cfg,
 	}
 }
 
@@ -40,7 +43,7 @@ func (h *UserPreferencesHandler) GetPreferences(w http.ResponseWriter, r *http.R
 	// Get preferences
 	prefs, err := h.service.GetPreferences(r.Context(), uuid)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -92,7 +95,7 @@ func (h *UserPreferencesHandler) UpdatePreferences(w http.ResponseWriter, r *htt
 	// Update preferences
 	prefs, err := h.service.UpdatePreferences(r.Context(), uuid, req)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 

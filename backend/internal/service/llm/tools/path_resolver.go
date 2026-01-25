@@ -92,5 +92,6 @@ func (r *PathResolver) findFolderByName(ctx context.Context, parentID *string, n
 		}
 	}
 
-	return nil, fmt.Errorf("folder '%s': %w", name, domain.ErrNotFound)
+	return nil, domain.NewNotFoundError("folder",
+		fmt.Sprintf("folder '%s' not found", name))
 }
