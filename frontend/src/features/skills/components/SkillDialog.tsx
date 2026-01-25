@@ -123,7 +123,6 @@ export function SkillDialog({ projectId, skill, open, onOpenChange }: SkillDialo
     try {
       if (isEditMode && skill) {
         await updateSkill(projectId, skill.id, {
-          name: identifier,
           displayName: name.trim(),
           description: description.trim(),
           content: content.trim() || undefined,
