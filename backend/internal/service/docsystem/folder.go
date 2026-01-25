@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -19,6 +20,21 @@ import (
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 )
+
+// Reserved folder names that cannot be created at root level
+// These align with system namespaces defined in namespace.go
+var reservedRootFolderNames = []string{".meridian", ".session"}
+
+// isReservedRootName checks if a folder name is reserved at root level
+func isReservedRootName(name string, parentID *string) bool {
+	// Only block at root level (parentID == nil)
+	if parentID != nil {
+		return false
+	}
+
+	nameLower := strings.ToLower(name)
+	return slices.Contains(reservedRootFolderNames, nameLower)
+}
 
 type folderService struct {
 	folderRepo   docsysRepo.FolderRepository
@@ -87,13 +103,20 @@ func (s *folderService) CreateFolder(ctx context.Context, req *docsysSvc.CreateF
 		MaxNameLength: config.MaxFolderNameLength,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
+		return nil, domain.NewValidationError(fmt.Sprintf("path resolution failed: %v", err))
+	}
+
+	// Block reserved folder names at root level
+	if isReservedRootName(result.FinalName, result.ResolvedFolderID) {
+		return nil, domain.NewValidationErrorWithField(
+			fmt.Sprintf("'%s' is a reserved folder name and cannot be created at root level", result.FinalName),
+			"name")
 	}
 
 	// Check for duplicate name in target folder
 	siblingFolders, err := s.folderRepo.ListChildren(ctx, result.ResolvedFolderID, req.ProjectID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check for duplicate names: %w", err)
+		return nil, err // Pass through HTTPError directly
 	}
 	for _, sibling := range siblingFolders {
 		if sibling.Name == result.FinalName {
@@ -110,12 +133,13 @@ func (s *folderService) CreateFolder(ctx context.Context, req *docsysSvc.CreateF
 		ProjectID: req.ProjectID,
 		ParentID:  result.ResolvedFolderID,
 		Name:      result.FinalName,
+		IsHidden:  false, // Explicit initialization per CLAUDE.md principle #4
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
 
 	if err := s.folderRepo.Create(ctx, folder); err != nil {
-		return nil, err
+		return nil, err // Pass through HTTPError directly
 	}
 
 	// Touch project activity (non-fatal)
@@ -183,7 +207,7 @@ func (s *folderService) UpdateFolder(ctx context.Context, userID, folderID strin
 
 	// Validate request
 	if err := s.validateUpdateRequest(req); err != nil {
-		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
+		return nil, domain.NewValidationError(fmt.Sprintf("validation failed: %v", err))
 	}
 
 	// Get existing folder (authorization already done, use GetByIDOnly)
@@ -207,7 +231,7 @@ func (s *folderService) UpdateFolder(ctx context.Context, userID, folderID strin
 			// Move to specified folder
 			parent, err := s.folderRepo.GetByID(ctx, *req.FolderID.Value, folder.ProjectID)
 			if err != nil {
-				return nil, fmt.Errorf("parent folder not found: %w", err)
+				return nil, err // Pass through HTTPError directly
 			}
 
 			// Prevent circular references (can't move folder to be a child of itself or its descendants)
@@ -231,7 +255,7 @@ func (s *folderService) UpdateFolder(ctx context.Context, userID, folderID strin
 	if req.Name != nil || req.FolderID.Present {
 		siblingFolders, err := s.folderRepo.ListChildren(ctx, folder.ParentID, folder.ProjectID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to check for duplicate names: %w", err)
+			return nil, err // Pass through HTTPError directly
 		}
 		for _, sibling := range siblingFolders {
 			if sibling.ID != folder.ID && sibling.Name == folder.Name {
@@ -263,7 +287,7 @@ func (s *folderService) UpdateFolder(ctx context.Context, userID, folderID strin
 
 			// Cascade slug updates to all descendant documents
 			if err := s.updateDescendantSlugs(txCtx, folder.ID, folder.ProjectID); err != nil {
-				return fmt.Errorf("cascade slug updates: %w", err)
+				return err // Pass through HTTPError directly
 			}
 
 			result = folder
@@ -314,7 +338,7 @@ func (s *folderService) updateDescendantSlugs(ctx context.Context, folderID, pro
 	// Get all documents in this folder and all descendant folders
 	docs, err := s.docRepo.GetAllByFolderRecursive(ctx, folderID, projectID)
 	if err != nil {
-		return fmt.Errorf("get descendant documents: %w", err)
+		return err // Pass through HTTPError directly
 	}
 
 	if len(docs) == 0 {
@@ -331,7 +355,7 @@ func (s *folderService) updateDescendantSlugs(ctx context.Context, folderID, pro
 		// Get the document's folder path (now reflects the renamed/moved parent)
 		folderPath, err := s.folderRepo.GetPath(ctx, doc.FolderID, projectID)
 		if err != nil {
-			return fmt.Errorf("get folder path for doc %s: %w", doc.ID, err)
+			return err // Pass through HTTPError directly
 		}
 		slugifiedFolderPath := identifier.SlugifyPath(folderPath)
 
@@ -353,7 +377,7 @@ func (s *folderService) updateDescendantSlugs(ctx context.Context, folderID, pro
 
 		// Update slug in database
 		if err := s.docRepo.UpdateSlug(ctx, doc.ID, finalSlug); err != nil {
-			return fmt.Errorf("update slug for doc %s: %w", doc.ID, err)
+			return err // Pass through HTTPError directly
 		}
 
 		s.logger.Debug("updated document slug",
@@ -413,7 +437,7 @@ func (s *folderService) deleteDescendants(ctx context.Context, userID, folderID,
 	// 1. Get and recursively delete child folders
 	childFolders, err := s.folderRepo.ListChildren(ctx, &folderID, projectID)
 	if err != nil {
-		return fmt.Errorf("failed to list child folders: %w", err)
+		return err // Pass through HTTPError directly
 	}
 
 	for _, child := range childFolders {
@@ -423,7 +447,7 @@ func (s *folderService) deleteDescendants(ctx context.Context, userID, folderID,
 		}
 		// Then delete the child folder itself
 		if err := s.folderRepo.Delete(ctx, child.ID, projectID); err != nil {
-			return fmt.Errorf("failed to delete child folder %q: %w", child.Name, err)
+			return err // Pass through HTTPError directly
 		}
 		s.logger.Debug("deleted child folder", "id", child.ID, "name", child.Name)
 	}
@@ -431,12 +455,12 @@ func (s *folderService) deleteDescendants(ctx context.Context, userID, folderID,
 	// 2. Delete all documents in this folder via DocumentService (SRP: delegate to owner)
 	docs, err := s.docRepo.ListByFolder(ctx, &folderID, projectID)
 	if err != nil {
-		return fmt.Errorf("failed to list documents: %w", err)
+		return err // Pass through HTTPError directly
 	}
 
 	for _, doc := range docs {
 		if err := s.docService.DeleteDocument(ctx, userID, doc.ID); err != nil {
-			return fmt.Errorf("failed to delete document %q: %w", doc.Name, err)
+			return err // Pass through HTTPError directly
 		}
 		s.logger.Debug("deleted document", "id", doc.ID, "name", doc.Name)
 	}
@@ -474,13 +498,13 @@ func (s *folderService) ListChildren(ctx context.Context, userID string, folderI
 	// Get child folders
 	childFolders, err := s.folderRepo.ListChildren(ctx, folderID, projectID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list child folders: %w", err)
+		return nil, err // Pass through HTTPError directly
 	}
 
 	// Get documents in this folder
 	docs, err := s.docRepo.ListByFolder(ctx, folderID, projectID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list documents: %w", err)
+		return nil, err // Pass through HTTPError directly
 	}
 
 	// Compute paths for all documents
@@ -532,7 +556,7 @@ func (s *folderService) validateUpdateRequest(req *docsysSvc.UpdateFolderRequest
 func (s *folderService) validateNoCircularReference(ctx context.Context, folderID, newParentID, projectID string) error {
 	// Can't move folder to be its own parent
 	if folderID == newParentID {
-		return fmt.Errorf("%w: cannot move folder to be its own parent", domain.ErrValidation)
+		return domain.NewValidationError("cannot move folder to be its own parent")
 	}
 
 	// Check if newParentID is a descendant of folderID
@@ -549,7 +573,7 @@ func (s *folderService) validateNoCircularReference(ctx context.Context, folderI
 		}
 
 		if *parent.ParentID == folderID {
-			return fmt.Errorf("%w: cannot move folder to be a child of its own descendant", domain.ErrValidation)
+			return domain.NewValidationError("cannot move folder to be a child of its own descendant")
 		}
 
 		currentID = *parent.ParentID

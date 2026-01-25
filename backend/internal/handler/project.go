@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"meridian/internal/config"
 	"meridian/internal/domain/models/docsystem"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	identifierSvc "meridian/internal/domain/services/identifier"
@@ -17,6 +18,7 @@ type ProjectHandler struct {
 	favoriteService docsysSvc.FavoriteService
 	resolver        identifierSvc.Resolver
 	logger          *slog.Logger
+	config          *config.Config
 }
 
 // NewProjectHandler creates a new project handler
@@ -25,12 +27,14 @@ func NewProjectHandler(
 	favoriteService docsysSvc.FavoriteService,
 	resolver identifierSvc.Resolver,
 	logger *slog.Logger,
+	cfg *config.Config,
 ) *ProjectHandler {
 	return &ProjectHandler{
 		projectService:  projectService,
 		favoriteService: favoriteService,
 		resolver:        resolver,
 		logger:          logger,
+		config:          cfg,
 	}
 }
 
@@ -43,7 +47,7 @@ func (h *ProjectHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	// Call service
 	projects, err := h.projectService.ListProjects(r.Context(), userID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -68,7 +72,7 @@ func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	// Call service (all business logic is here)
 	project, err := h.projectService.CreateProject(r.Context(), &req)
 	if err != nil {
-		HandleCreateConflict(w, err, func(id string) (*docsystem.Project, error) {
+		HandleCreateConflict(w, err, h.config, func(id string) (*docsystem.Project, error) {
 			return h.projectService.GetProject(r.Context(), id, userID)
 		})
 		return
@@ -90,13 +94,13 @@ func (h *ProjectHandler) GetProject(w http.ResponseWriter, r *http.Request) {
 	// Resolve identifier (UUID or slug) to project UUID
 	projectID, err := h.resolver.ResolveProject(r.Context(), identifier, userID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
 	project, err := h.projectService.GetProject(r.Context(), projectID, userID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -126,7 +130,7 @@ func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	// Resolve identifier (UUID or slug) to project UUID
 	projectID, err := h.resolver.ResolveProject(r.Context(), identifier, userID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -145,7 +149,7 @@ func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 
 	project, err := h.projectService.UpdateProject(r.Context(), projectID, userID, req)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -165,13 +169,13 @@ func (h *ProjectHandler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 	// Resolve identifier (UUID or slug) to project UUID
 	projectID, err := h.resolver.ResolveProject(r.Context(), identifier, userID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
 	project, err := h.projectService.DeleteProject(r.Context(), projectID, userID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -191,19 +195,19 @@ func (h *ProjectHandler) AddFavorite(w http.ResponseWriter, r *http.Request) {
 	// Resolve identifier (UUID or slug) to project UUID
 	projectID, err := h.resolver.ResolveProject(r.Context(), identifier, userID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
 	if err := h.favoriteService.AddFavorite(r.Context(), userID, projectID); err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
 	// Return updated project with is_favorite=true
 	project, err := h.projectService.GetProject(r.Context(), projectID, userID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -223,19 +227,19 @@ func (h *ProjectHandler) RemoveFavorite(w http.ResponseWriter, r *http.Request) 
 	// Resolve identifier (UUID or slug) to project UUID
 	projectID, err := h.resolver.ResolveProject(r.Context(), identifier, userID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
 	if err := h.favoriteService.RemoveFavorite(r.Context(), userID, projectID); err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
 	// Return updated project with is_favorite=false
 	project, err := h.projectService.GetProject(r.Context(), projectID, userID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 

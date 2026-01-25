@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 
+	models "meridian/internal/domain/models/docsystem"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	"meridian/internal/domain/services"
 	docsysSvc "meridian/internal/domain/services/docsystem"
@@ -33,15 +34,24 @@ func NewTreeService(
 }
 
 // GetProjectTree builds and returns the nested folder/document tree for a project
-// Authorization is checked first via the injected authorizer
+// Default: excludes hidden folders. Use GetProjectTreeWithOptions for control.
 func (s *treeService) GetProjectTree(ctx context.Context, userID, projectID string) (*docsysSvc.ProjectTree, error) {
+	return s.GetProjectTreeWithOptions(ctx, userID, projectID, docsysSvc.TreeOptions{
+		IncludeHidden: false, // Default: exclude hidden folders
+	})
+}
+
+// GetProjectTreeWithOptions builds tree with explicit options
+func (s *treeService) GetProjectTreeWithOptions(ctx context.Context, userID, projectID string, opts docsysSvc.TreeOptions) (*docsysSvc.ProjectTree, error) {
 	// Authorize: check user can access this project
 	if err := s.authorizer.CanAccessProject(ctx, userID, projectID); err != nil {
 		return nil, err
 	}
 
-	// Get all folders in the project
-	allFolders, err := s.folderRepo.GetAllByProject(ctx, projectID)
+	// Get folders with filtering
+	allFolders, err := s.folderRepo.GetAllByProjectFiltered(ctx, projectID, docsysRepo.FolderFilterOptions{
+		IncludeHidden: opts.IncludeHidden,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -52,17 +62,21 @@ func (s *treeService) GetProjectTree(ctx context.Context, userID, projectID stri
 		return nil, err
 	}
 
-	// Build folder hierarchy using 3-pass algorithm
+	// Build folder hierarchy using 4-pass algorithm (added path computation)
 	folderMap := make(map[string]*docsysSvc.TreeFolder)
+	folderModelMap := make(map[string]*models.Folder) // For path computation
 	var rootFolderIDs []string
 
-	// First pass: create all folder nodes
-	for _, folder := range allFolders {
+	// First pass: create all folder nodes and index models
+	for i := range allFolders {
+		folder := &allFolders[i]
+		folderModelMap[folder.ID] = folder
 		folderMap[folder.ID] = &docsysSvc.TreeFolder{
 			ID:        folder.ID,
 			ProjectID: folder.ProjectID,
 			FolderID:  folder.ParentID,
 			Name:      folder.Name,
+			IsHidden:  folder.IsHidden,
 			CreatedAt: folder.CreatedAt,
 			UpdatedAt: folder.UpdatedAt,
 			Folders:   []*docsysSvc.TreeFolder{},
@@ -70,7 +84,12 @@ func (s *treeService) GetProjectTree(ctx context.Context, userID, projectID stri
 		}
 	}
 
-	// Second pass: nest folders by connecting children to parents
+	// Second pass: compute folder paths (bottom-up traversal)
+	for id, node := range folderMap {
+		node.Path = s.computeFolderPath(id, folderModelMap)
+	}
+
+	// Third pass: nest folders by connecting children to parents
 	for _, folder := range allFolders {
 		node := folderMap[folder.ID]
 		if folder.ParentID == nil {
@@ -84,9 +103,42 @@ func (s *treeService) GetProjectTree(ctx context.Context, userID, projectID stri
 		}
 	}
 
-	// Third pass: add documents to their folders
+	// Build hidden folder set to filter documents in hidden folders
+	hiddenFolderIDs := make(map[string]bool)
+	if !opts.IncludeHidden {
+		// Since we filtered folders already, we need to get the full list to know
+		// which folders are hidden for document filtering
+		allFoldersUnfiltered, err := s.folderRepo.GetAllByProject(ctx, projectID)
+		if err != nil {
+			return nil, err
+		}
+		for _, folder := range allFoldersUnfiltered {
+			if folder.IsHidden || s.isInHiddenFolder(folder.ID, allFoldersUnfiltered) {
+				hiddenFolderIDs[folder.ID] = true
+			}
+		}
+	}
+
+	// Fourth pass: add documents to their folders
 	rootDocuments := make([]docsysSvc.TreeDocument, 0)
 	for _, doc := range allDocuments {
+		// Skip documents in hidden folders when not including hidden
+		if !opts.IncludeHidden && doc.FolderID != nil && hiddenFolderIDs[*doc.FolderID] {
+			continue
+		}
+
+		// Compute document path
+		var docPath string
+		if doc.FolderID == nil {
+			// Root level document
+			docPath = doc.Name + doc.Extension
+		} else if folder, exists := folderMap[*doc.FolderID]; exists {
+			docPath = folder.Path + "/" + doc.Name + doc.Extension
+		} else {
+			// Folder not in tree (filtered out), skip document
+			continue
+		}
+
 		docNode := docsysSvc.TreeDocument{
 			ID:        doc.ID,
 			ProjectID: doc.ProjectID,
@@ -94,6 +146,7 @@ func (s *treeService) GetProjectTree(ctx context.Context, userID, projectID stri
 			Slug:      doc.Slug,
 			FolderID:  doc.FolderID,
 			Extension: doc.Extension,
+			Path:      docPath,
 			UpdatedAt: doc.UpdatedAt,
 		}
 
@@ -122,4 +175,56 @@ func (s *treeService) GetProjectTree(ctx context.Context, userID, projectID stri
 	}
 
 	return tree, nil
+}
+
+// computeFolderPath builds path by walking up parent chain
+func (s *treeService) computeFolderPath(folderID string, folderMap map[string]*models.Folder) string {
+	var segments []string
+	currentID := folderID
+
+	for {
+		folder, exists := folderMap[currentID]
+		if !exists {
+			break
+		}
+		segments = append([]string{folder.Name}, segments...)
+		if folder.ParentID == nil {
+			break
+		}
+		currentID = *folder.ParentID
+	}
+
+	// Join without leading slash (normalized path)
+	path := ""
+	for i, seg := range segments {
+		if i > 0 {
+			path += "/"
+		}
+		path += seg
+	}
+	return path
+}
+
+// isInHiddenFolder checks if a folder is inside a hidden parent folder
+func (s *treeService) isInHiddenFolder(folderID string, allFolders []models.Folder) bool {
+	folderMap := make(map[string]*models.Folder)
+	for i := range allFolders {
+		folderMap[allFolders[i].ID] = &allFolders[i]
+	}
+
+	currentID := folderID
+	for {
+		folder, exists := folderMap[currentID]
+		if !exists {
+			break
+		}
+		if folder.IsHidden {
+			return true
+		}
+		if folder.ParentID == nil {
+			break
+		}
+		currentID = *folder.ParentID
+	}
+	return false
 }

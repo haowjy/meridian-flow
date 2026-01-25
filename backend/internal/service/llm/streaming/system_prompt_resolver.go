@@ -9,6 +9,7 @@ import (
 	docsysModels "meridian/internal/domain/models/docsystem"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	llmRepo "meridian/internal/domain/repositories/llm"
+	skillRepo "meridian/internal/domain/repositories/skill"
 	llmSvc "meridian/internal/domain/services/llm"
 )
 
@@ -21,11 +22,13 @@ Available tools:
 - doc_view: Read any document or list folder contents
 - doc_search: Search across all documents by content
 - doc_edit: Suggest edits to documents (user reviews before applying)
+- skill_invoke: Load skill instructions on-demand (when skills are available)
 
 Guidelines:
 - Use doc_tree("/") early to understand what the user is working on
 - When the user asks about their project, search or read relevant documents
 - Before suggesting edits, use doc_view to see current content
+- Use skill_invoke when a task matches an available skill
 - Be helpful and proactive based on what you discover in their documents`
 
 // systemPromptResolver builds the final system prompt from project, thread, and skills
@@ -34,6 +37,7 @@ type systemPromptResolver struct {
 	projectRepo  docsysRepo.ProjectRepository
 	threadRepo   llmRepo.ThreadRepository
 	documentRepo docsysRepo.DocumentRepository
+	skillRepo    skillRepo.ProjectSkillRepository // For loading skill metadata
 	logger       *slog.Logger
 }
 
@@ -42,12 +46,14 @@ func NewSystemPromptResolver(
 	projectRepo docsysRepo.ProjectRepository,
 	threadRepo llmRepo.ThreadRepository,
 	documentRepo docsysRepo.DocumentRepository,
+	skillRepo skillRepo.ProjectSkillRepository,
 	logger *slog.Logger,
 ) llmSvc.SystemPromptResolver {
 	return &systemPromptResolver{
 		projectRepo:  projectRepo,
 		threadRepo:   threadRepo,
 		documentRepo: documentRepo,
+		skillRepo:    skillRepo,
 		logger:       logger,
 	}
 }
@@ -115,7 +121,17 @@ func (r *systemPromptResolver) Resolve(
 		parts = append(parts, *thread.SystemPrompt)
 	}
 
-	// 5. Load selected skills
+	// 5. Build skills metadata section (names/descriptions only, for all available skills)
+	// Full skill content is loaded on-demand via skill_invoke tool
+	skillsMetadata, err := r.buildSkillsMetadata(ctx, thread.ProjectID)
+	if err != nil {
+		r.logger.Warn("failed to load skills metadata", "error", err)
+		// Continue without skills metadata
+	} else if skillsMetadata != "" {
+		parts = append(parts, skillsMetadata)
+	}
+
+	// 6. Load selected skills (full content for explicit selection - backwards compatibility)
 	if len(selectedSkills) > 0 {
 		skillsContent, err := r.loadSkills(ctx, thread.ProjectID, selectedSkills)
 		if err != nil {
@@ -210,4 +226,38 @@ func (r *systemPromptResolver) getSkillDocument(
 	}
 
 	return doc, nil
+}
+
+// buildSkillsMetadata builds the skills metadata section (names/descriptions only)
+// Full skill content is loaded on-demand via skill_invoke tool
+func (r *systemPromptResolver) buildSkillsMetadata(ctx context.Context, projectID string) (string, error) {
+	// Skip if no skill repository configured
+	if r.skillRepo == nil {
+		return "", nil
+	}
+
+	skills, err := r.skillRepo.ListByProject(ctx, projectID)
+	if err != nil {
+		return "", err
+	}
+
+	if len(skills) == 0 {
+		return "", nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("## Available Skills\n\n")
+	sb.WriteString("Use `skill_invoke` to load a skill's full instructions.\n\n")
+
+	for _, skill := range skills {
+		// Skip skills that can't be model-invoked
+		meta := skill.GetMetadata()
+		if meta.DisableModelInvocation {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("- **%s** (`%s`): %s\n",
+			skill.DisplayName, skill.Name, skill.Description))
+	}
+
+	return sb.String(), nil
 }

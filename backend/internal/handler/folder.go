@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"meridian/internal/config"
 	docsystem "meridian/internal/domain/models/docsystem"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	"meridian/internal/httputil"
@@ -14,13 +15,15 @@ import (
 type FolderHandler struct {
 	folderService docsysSvc.FolderService
 	logger        *slog.Logger
+	config        *config.Config
 }
 
 // NewFolderHandler creates a new folder handler
-func NewFolderHandler(folderService docsysSvc.FolderService, logger *slog.Logger) *FolderHandler {
+func NewFolderHandler(folderService docsysSvc.FolderService, logger *slog.Logger, cfg *config.Config) *FolderHandler {
 	return &FolderHandler{
 		folderService: folderService,
 		logger:        logger,
+		config:        cfg,
 	}
 }
 
@@ -48,7 +51,7 @@ func (h *FolderHandler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 	// Call service
 	folder, err := h.folderService.CreateFolder(r.Context(), &req)
 	if err != nil {
-		HandleCreateConflict(w, err, func(id string) (*docsystem.Folder, error) {
+		HandleCreateConflict(w, err, h.config, func(id string) (*docsystem.Folder, error) {
 			return h.folderService.GetFolder(r.Context(), userID, id)
 		})
 		return
@@ -69,7 +72,7 @@ func (h *FolderHandler) GetFolder(w http.ResponseWriter, r *http.Request) {
 
 	folder, err := h.folderService.GetFolder(r.Context(), userID, id)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -120,7 +123,7 @@ func (h *FolderHandler) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 
 	folder, err := h.folderService.UpdateFolder(r.Context(), userID, id, req)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -138,7 +141,7 @@ func (h *FolderHandler) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 	userID := httputil.GetUserID(r)
 
 	if err := h.folderService.DeleteFolder(r.Context(), userID, id); err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -166,7 +169,7 @@ func (h *FolderHandler) ListChildren(w http.ResponseWriter, r *http.Request) {
 
 	contents, err := h.folderService.ListChildren(r.Context(), userID, folderID, projectID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 

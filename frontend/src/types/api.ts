@@ -2,6 +2,7 @@ import { Project } from '@/features/projects/types/project'
 import { Thread } from '@/features/threads/types'
 import { Document, DocumentTree } from '@/features/documents/types/document'
 import { Folder } from '@/features/folders/types/folder'
+import { Skill, SkillWithContent, SkillSyncState } from '@/features/skills/types/skill'
 import { detectEditorType } from '@/core/editor/types/editorRegistry'
 
 // API Error Types
@@ -91,6 +92,31 @@ export interface TreeFolderDto {
 export interface DocumentTreeDto {
   folders: TreeFolderDto[]      // Root folders (can contain nested folders/documents)
   documents: TreeDocumentDto[]  // Root-level documents only
+}
+
+// Skill DTOs
+export interface SkillDto {
+  id: string
+  project_id: string
+  name: string              // Internal identifier (e.g., "writing-coach")
+  display_name: string      // User-facing display name
+  description: string
+  position: number          // Sort order for display
+  disable_model_invocation: boolean
+  user_invocable: boolean
+  sync_state: string        // 'detached' | 'synced' | 'outdated'
+  is_dirty: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface SkillWithContentDto extends SkillDto {
+  content: string           // Full SKILL.md content
+}
+
+export interface SkillListResponseDto {
+  skills: SkillDto[]
+  count: number
 }
 
 // DTO Mappers
@@ -224,5 +250,29 @@ export function fromDocumentTreeDto(dto: DocumentTreeDto): DocumentTree {
   return {
     folders: flattenFoldersDto(dto.folders),
     documents: flattenDocumentsDto(dto.folders, dto.documents),
+  }
+}
+
+export function fromSkillDto(dto: SkillDto): Skill {
+  return {
+    id: dto.id,
+    projectId: dto.project_id,
+    name: dto.name,
+    displayName: dto.display_name,
+    description: dto.description,
+    position: dto.position,
+    disableModelInvocation: dto.disable_model_invocation,
+    userInvocable: dto.user_invocable,
+    syncState: dto.sync_state as SkillSyncState,
+    isDirty: dto.is_dirty,
+    createdAt: new Date(dto.created_at),
+    updatedAt: new Date(dto.updated_at),
+  }
+}
+
+export function fromSkillWithContentDto(dto: SkillWithContentDto): SkillWithContent {
+  return {
+    ...fromSkillDto(dto),
+    content: dto.content,
   }
 }

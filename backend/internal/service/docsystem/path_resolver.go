@@ -58,7 +58,7 @@ func (s *pathResolverService) ResolveFolderPath(ctx context.Context, projectID, 
 			// Create folder if it doesn't exist
 			folder, err := s.folderRepo.CreateIfNotExists(txCtx, projectID, currentParentID, segment)
 			if err != nil {
-				return fmt.Errorf("failed to create/get folder '%s': %w", segment, err)
+				return err // Pass through HTTPError directly
 			}
 
 			// Move to next level
@@ -136,7 +136,7 @@ func (s *pathResolverService) ResolvePathNotation(ctx context.Context, req *docs
 			// Priority 2: Resolve folder_path
 			resolved, err := s.ResolveFolderPath(ctx, req.ProjectID, *req.FolderPath)
 			if err != nil {
-				return nil, fmt.Errorf("failed to resolve folder_path: %w", err)
+				return nil, err // Pass through HTTPError directly
 			}
 			resolvedFolderID = resolved
 		} else {
@@ -170,7 +170,7 @@ func (s *pathResolverService) ResolvePathNotation(ctx context.Context, req *docs
 			// Priority 2: Resolve folder_path
 			resolved, err := s.ResolveFolderPath(ctx, req.ProjectID, *req.FolderPath)
 			if err != nil {
-				return nil, fmt.Errorf("failed to resolve folder_path for relative path notation: %w", err)
+				return nil, err // Pass through HTTPError directly
 			}
 			baseParentID = resolved
 		} else {
@@ -194,7 +194,7 @@ func (s *pathResolverService) ResolvePathNotation(ctx context.Context, req *docs
 			// Create folder if it doesn't exist (idempotent)
 			intermediateFolder, err := s.folderRepo.CreateIfNotExists(txCtx, req.ProjectID, currentParentID, segment)
 			if err != nil {
-				return fmt.Errorf("failed to create intermediate folder '%s': %w", segment, err)
+				return err // Pass through HTTPError directly
 			}
 
 			// Move to next level

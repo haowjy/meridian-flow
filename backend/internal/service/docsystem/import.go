@@ -2,7 +2,6 @@ package docsystem
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
@@ -36,7 +35,7 @@ func (s *importService) DeleteAllDocuments(ctx context.Context, projectID string
 			"project_id", projectID,
 			"error", err,
 		)
-		return fmt.Errorf("failed to delete all documents: %w", err)
+		return err // Pass through HTTPError directly
 	}
 
 	s.logger.Info("deleted all documents",
@@ -74,7 +73,7 @@ func (s *importService) ProcessFiles(ctx context.Context, projectID, userID stri
 		// Process file with matched processor
 		result, err := processor.Process(ctx, projectID, userID, file.Content, file.Filename, folderPath, overwrite)
 		if err != nil {
-			return nil, fmt.Errorf("processor %s failed for file %s: %w", processor.Name(), file.Filename, err)
+			return nil, err // Pass through HTTPError directly
 		}
 
 		// Aggregate results

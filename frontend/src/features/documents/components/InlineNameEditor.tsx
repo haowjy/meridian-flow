@@ -21,6 +21,8 @@ interface InlineNameEditorProps {
    */
   extension?: string
   className?: string
+  type?: 'folder' | 'document'  // NEW: item type
+  isRootLevel?: boolean          // NEW: whether at root level
 }
 
 /**
@@ -41,6 +43,8 @@ export function InlineNameEditor({
   mode = 'rename',
   extension,
   className,
+  type,        // NEW
+  isRootLevel, // NEW
 }: InlineNameEditorProps) {
   return (
     <InlineEditor
@@ -53,6 +57,8 @@ export function InlineNameEditor({
       allowDuplicates={mode === 'create'}
       fontWeight="normal"
       className={className}
+      type={type}
+      isRootLevel={isRootLevel}
     />
   )
 }
