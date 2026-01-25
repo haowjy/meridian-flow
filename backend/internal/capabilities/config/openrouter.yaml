@@ -100,6 +100,10 @@ models:
           text: 0.50
         output_price:
           text: 2.50
+    provider_routing:
+      order: ["google-vertex","moonshotai/int4"] # Prefer Google provider to fix tool call corruption
+      ignore: ["deepinfra/fp4"]   # DeepInfra causes malformed JSON
+      allow_fallbacks: true
 
   deepseek/deepseek-r1-0528:
     display_name: "DeepSeek R1 05/28"
