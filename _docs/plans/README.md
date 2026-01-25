@@ -16,6 +16,9 @@ Each plan document includes:
 
 - `fb-event-driven-refresh-framework.md` - Event-driven refresh + 30s polling fallback.
 - `fb-tree-ai-suggestions-banner-accept-all.md` - Tree banner listing AI suggestions + project-wide accept all.
+- `fb-artifact-templates-and-project-instances.md` - Templates (public/user) copied into project-owned instances for shared-safe runtime loading.
+- `fb-project-skills-v1-and-artifact-foundations.md` - Project skills now, with schema/namespaces ready for sessions/personas/agents and exports.
+- `fb-remove-document-slugs.md` - Cleanup: move to exact path addressing and delete `documents.slug` once unused.
 
 ---
 

@@ -20,6 +20,15 @@ const (
 	ImageGenerationHD       ImageGeneration = "hd"
 )
 
+// ProviderRouting controls which providers serve a model (OpenRouter)
+type ProviderRouting struct {
+	Order          []string `yaml:"order" json:"order,omitempty"`
+	Only           []string `yaml:"only" json:"only,omitempty"`
+	Ignore         []string `yaml:"ignore" json:"ignore,omitempty"`
+	AllowFallbacks *bool    `yaml:"allow_fallbacks" json:"allow_fallbacks,omitempty"`
+	Sort           *string  `yaml:"sort" json:"sort,omitempty"`
+}
+
 // PricingTier represents a pricing tier based on context window usage
 type PricingTier struct {
 	Threshold   *int               `yaml:"threshold" json:"threshold"`       // null = unlimited
@@ -60,6 +69,9 @@ type ModelCapabilities struct {
 	// true = cancellation saves money (Anthropic), use token count API for accuracy
 	// false = provider continues processing anyway, wait for final metadata
 	SupportsStreamingCancel bool `yaml:"supports_streaming_cancel" json:"supports_streaming_cancel"`
+
+	// ProviderRouting controls which providers serve this model (OpenRouter)
+	ProviderRouting *ProviderRouting `yaml:"provider_routing" json:"provider_routing,omitempty"`
 }
 
 // ProviderCapabilities represents all models for a provider

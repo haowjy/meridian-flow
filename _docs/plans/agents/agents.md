@@ -90,8 +90,9 @@ These are valuable standalone improvements that can ship without committing to t
 ┌─────────────────────────────────────────────────────────────┐
 │                         PROJECT                              │
 │  ┌────────────────┐  ┌────────────────┐  ┌───────────────┐  │
-│  │   Documents    │  │    .skills/    │  │   .session/   │  │
-│  │  (workspace)   │  │  (LLM-editable)│  │  (virtual)    │  │
+│  │   Documents    │  │  .meridian/**  │  │   .session/   │  │
+│  │  (workspace)   │  │ (Meridian-owned│  │  (mounted,    │  │
+│  │                │  │  project state)│  │ thread-owned) │  │
 │  └────────────────┘  └────────────────┘  └───────────────┘  │
 └─────────────────────────────────────────────────────────────┘
            │                    │                   │
@@ -132,9 +133,20 @@ These are valuable standalone improvements that can ship without committing to t
 ### Session
 - Shared scratch space for thread family
 - LLM sees `.session/` virtual path
-- Stored separately from document tree
+- Mounted per `session_id` (not stored under `.meridian/**` in the project tree)
+- AI can create files/folders in `.session/**` via the same tool surface
 - Enables agent-to-agent handoff via files
 - **Lifecycle**: Persistent working state. Agents discover `.session/` fresh each conversation unless they have prior context. Deleted when all threads in session are deleted (cascade).
+
+### Meridian-owned Project State (`.meridian/**`)
+
+`.meridian/**` is reserved for Meridian-owned project state (skills/personas/agents instances, manifests, etc.). It must be:
+- **Hidden from the writer file tree UI** (always)
+- **Gated from LLM tools by default** (not discoverable via `doc_tree`/`doc_search`, not editable via `doc_edit` unless explicitly enabled)
+- **Editable only through dedicated UIs** (Skill Editor, Persona Editor, etc.) and explicit approval flows
+
+Runtime behavior:
+- Prompt resolver / agent runner loads only the specific configured instances it needs (e.g., the project’s selected skills), not “scan all of `.meridian/**`”.
 
 ### Subagent
 - Child thread with `parent_thread_id`
@@ -143,8 +155,9 @@ These are valuable standalone improvements that can ship without committing to t
 - Result flows back as tool_result
 
 ### Skills
-- Instruction bundles in `.skills/` folder
+- Instruction bundles as project-owned instances under `.meridian/skills/**`
 - SKILL.md with frontmatter (name, description) + instructions
+- Instance folder names are human-facing project-unique names (not slugs). Stability comes from IDs stored in metadata (e.g., `meta.json` inside the instance folder).
 - Progressive loading: metadata → instructions → resources
 - Edited via dedicated UI (not exposed as a normal folder in the writer file tree)
 - **Skills ARE the system prompt** (in modular, composable pieces)
@@ -235,17 +248,20 @@ Skills follow a create → use → share lifecycle:
 ```
 Create (UI editor OR LLM via "skill-creator" meta-skill)
         ↓
-Use (per-project in .skills/, versioned, AI-editable with approval flow)
+Use (per-project instance in .meridian/skills/, versioned, AI-editable with approval flow)
         ↓
 Share (import/export between users - v1)
         ↓
 Discover (public sharing marketplace - deferred)
 ```
 
+**Shared-project constraint**: projects must only load skills/personas/agents from **project-owned instances** (copies) to keep runtime deterministic and collaborator-safe. See:
+- `_docs/plans/fb-artifact-templates-and-project-instances.md`
+
 | Type | User Library | Project Level | Sharing | Status |
 |------|-------------|---------------|---------|--------|
 | Personas | Database (user-defined) | Per-thread selection | Import/export (v1) | v1 |
-| Skills | Database | `.skills/` folder (LLM-editable) | Import/export (v1), public (later) | v1 |
+| Skills | Database | `.meridian/skills/` instances (LLM-editable) | Import/export (v1), public (later) | v1 |
 | Agents | — | Built-in only | — | v1 (user-defined deferred) |
 | Tools | — | Built-in only | — | v1 (custom tools deferred) |
 
@@ -362,7 +378,7 @@ Turn: complete
 - Implement “Independent Tasks (Product-Wide)” and/or “Independent Tasks (Agent Framework Foundation)” as desired
 
 ### Phase 1: Skills
-- `.skills/` folder handling
+- `.meridian/skills/` instance folder handling
 - Skill loading pipeline
 - User skill library
 - Skill CRUD tools (for LLM to create/edit skills via meta-skill pattern)
@@ -417,6 +433,19 @@ Turn: complete
 | **Subagent UI** | Inline collapsed block, expandable to see subagent's thinking/progress. Alternative: popup modal. (It's a full thread, should be viewable.) |
 | **Branch modes** | Two types: (1) Branch from turn → copies turns up to that point, (2) Branch with session only → no turn history, just `.session/` access. No "summary" mode for now. |
 | **User-defined agents/tools** | Deferred. Custom agents need custom tools to be useful. Built-in only for v1. |
+
+---
+
+## Exports (Project + Sessions)
+
+When exporting an entire project, include *both* project files and conversation/session data. Keep namespaces separate so they’re easy to reason about and don’t collide with writer content.
+
+| Export root | Contains | Notes |
+|---|---|---|
+| `workspace/**` | Writer-visible project files | Equivalent to “project root” content |
+| `.meridian/**` | Meridian-owned project state | Skill/persona/agent instances, manifests, etc. |
+| `sessions/<session_id>/threads/**` | Thread/turn history | Prefer JSON; optional MD rendering |
+| `sessions/<session_id>/session_fs/**` | Snapshot of mounted `.session/**` | Copy at export time; `.session/**` remains virtual at runtime |
 
 ---
 

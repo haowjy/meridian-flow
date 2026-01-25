@@ -213,6 +213,13 @@ func convertToLibraryParams(params *llm.RequestParams, model string) (*llmprovid
 		ThinkingLevel:   params.ThinkingLevel,
 		Tools:           libraryTools,      // Converted from ToolDefinition[]
 		ToolChoice:      params.ToolChoice, // Direct copy (same library type)
+
+		// Provider routing (OpenRouter)
+		ProviderOrder:  params.ProviderOrder,
+		ProviderOnly:   params.ProviderOnly,
+		ProviderIgnore: params.ProviderIgnore,
+		AllowFallbacks: params.AllowFallbacks,
+		ProviderSort:   params.ProviderSort,
 	}
 
 	// Apply lorem_max override for lorem models (debug/testing feature)
