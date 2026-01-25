@@ -34,6 +34,9 @@ type TableNames struct {
 
 	// User project favorites (junction table)
 	UserProjectFavorites string
+
+	// Skills system tables
+	ProjectSkills string
 }
 
 // NewTableNames creates table names with the given prefix
@@ -54,6 +57,9 @@ func NewTableNames(prefix string) *TableNames {
 
 		// User project favorites (junction table)
 		UserProjectFavorites: fmt.Sprintf("%suser_project_favorites", prefix),
+
+		// Skills system tables
+		ProjectSkills: fmt.Sprintf("%sproject_skills", prefix),
 	}
 }
 

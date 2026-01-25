@@ -42,6 +42,7 @@ interface FolderTreeItemProps {
    * - 'create': new, temporary folder being created.
    */
   editorMode?: 'rename' | 'create'
+  isRootLevel?: boolean  // NEW: whether this folder is at root level
 }
 
 /**
@@ -70,6 +71,7 @@ export const FolderTreeItem = memo(function FolderTreeItem({
   onCancelEdit,
   existingNames = [],
   editorMode = 'rename',
+  isRootLevel,  // NEW
 }: FolderTreeItemProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [contextMenuOpen, setContextMenuOpen] = useState(false)
@@ -104,6 +106,8 @@ export const FolderTreeItem = memo(function FolderTreeItem({
             onSubmit={(name) => onSubmitName(folder.id, name)}
             onCancel={onCancelEdit}
             mode={editorMode}
+            type="folder"          // NEW
+            isRootLevel={isRootLevel}  // NEW
           />
         </div>
 

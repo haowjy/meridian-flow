@@ -42,7 +42,7 @@ func NewService(
 func (s *Service) CreateThread(ctx context.Context, req *llmSvc.CreateThreadRequest) (*llmModels.Thread, error) {
 	// Validate request
 	if err := s.validateCreateThreadRequest(req); err != nil {
-		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
+		return nil, domain.NewValidationError(fmt.Sprintf("validation failed: %v", err))
 	}
 
 	// Verify project exists and user has access
@@ -115,7 +115,7 @@ func (s *Service) ListThreads(ctx context.Context, projectID, userID string) ([]
 func (s *Service) UpdateThread(ctx context.Context, threadID, userID string, req *llmSvc.UpdateThreadRequest) (*llmModels.Thread, error) {
 	// Validate request
 	if err := s.validateUpdateThreadRequest(req); err != nil {
-		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
+		return nil, domain.NewValidationError(fmt.Sprintf("validation failed: %v", err))
 	}
 
 	// Get existing thread
@@ -148,13 +148,13 @@ func (s *Service) UpdateThread(ctx context.Context, threadID, userID string, req
 func (s *Service) UpdateLastViewedTurn(ctx context.Context, threadID, userID, turnID string) error {
 	// Validate input
 	if threadID == "" {
-		return fmt.Errorf("%w: thread ID is required", domain.ErrValidation)
+		return domain.NewValidationErrorWithField("thread ID is required", "thread_id")
 	}
 	if userID == "" {
-		return fmt.Errorf("%w: user ID is required", domain.ErrValidation)
+		return domain.NewValidationErrorWithField("user ID is required", "user_id")
 	}
 	if turnID == "" {
-		return fmt.Errorf("%w: turn ID is required", domain.ErrValidation)
+		return domain.NewValidationErrorWithField("turn ID is required", "turn_id")
 	}
 
 	// Update the last_viewed_turn_id

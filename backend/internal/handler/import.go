@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"meridian/internal/config"
 	"meridian/internal/domain/services"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	"meridian/internal/httputil"
@@ -19,14 +20,16 @@ type ImportHandler struct {
 	importService docsysSvc.ImportService
 	authorizer    services.ResourceAuthorizer
 	logger        *slog.Logger
+	config        *config.Config
 }
 
 // NewImportHandler creates a new import handler
-func NewImportHandler(importService docsysSvc.ImportService, authorizer services.ResourceAuthorizer, logger *slog.Logger) *ImportHandler {
+func NewImportHandler(importService docsysSvc.ImportService, authorizer services.ResourceAuthorizer, logger *slog.Logger, cfg *config.Config) *ImportHandler {
 	return &ImportHandler{
 		importService: importService,
 		authorizer:    authorizer,
 		logger:        logger,
+		config:        cfg,
 	}
 }
 
@@ -87,7 +90,7 @@ func (h *ImportHandler) processImportRequest(w http.ResponseWriter, r *http.Requ
 
 	// Verify user owns the project before importing
 	if err := h.authorizer.CanAccessProject(r.Context(), userID, projectID); err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -128,7 +131,7 @@ func (h *ImportHandler) processImportRequest(w http.ResponseWriter, r *http.Requ
 				"project_id", projectID,
 				"error", err,
 			)
-			handleError(w, err)
+			handleError(w, err, h.config)
 			return
 		}
 		h.logger.Info("deleted all documents", "project_id", projectID)

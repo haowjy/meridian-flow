@@ -12,10 +12,13 @@ import (
 	"meridian/internal/domain/repositories"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	llmRepo "meridian/internal/domain/repositories/llm"
+	skillRepoIF "meridian/internal/domain/repositories/skill"
 	"meridian/internal/domain/services"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	llmSvc "meridian/internal/domain/services/llm"
+	skillSvc "meridian/internal/domain/services/skill"
 	"meridian/internal/jobs"
+	docsysSvcImpl "meridian/internal/service/docsystem"
 	"meridian/internal/service/llm/formatting"
 	"meridian/internal/service/llm/streaming"
 	"meridian/internal/service/llm/thread"
@@ -74,6 +77,8 @@ func SetupServices(
 	folderRepo docsysRepo.FolderRepository,
 	documentSvc docsysSvc.DocumentService, // For tool write operations (SOLID: DIP)
 	folderSvc docsysSvc.FolderService, // For tool write operations (SOLID: DIP)
+	skillRepo skillRepoIF.ProjectSkillRepository, // For skill metadata in system prompt
+	skillService skillSvc.ProjectSkillService, // For skill_invoke/skill_list tools
 	providerRegistry *ProviderRegistry,
 	cfg *config.Config,
 	txManager repositories.TransactionManager,
@@ -121,6 +126,7 @@ func SetupServices(
 		projectRepo,
 		threadRepo,
 		documentRepo,
+		skillRepo,
 		logger,
 	)
 
@@ -148,6 +154,9 @@ func SetupServices(
 
 	logger.Info("token finalizer initialized")
 
+	// Create namespace service for document tool routing
+	namespaceSvc := docsysSvcImpl.NewNamespaceService(folderRepo, logger)
+
 	// Create streaming service (turn creation/orchestration)
 	// Tools are created per-request with project-specific context
 	// Uses minimal interfaces (ISP compliance)
@@ -156,9 +165,11 @@ func SetupServices(
 		turnRepo, // TurnReader
 		turnRepo, // TurnNavigator (same repo implements all three)
 		threadRepo,
-		projectRepo, // For validating project access on cold start
-		documentSvc, // For tool operations (SOLID: DIP)
-		folderSvc,   // For tool operations (SOLID: DIP)
+		projectRepo,  // For validating project access on cold start
+		documentSvc,  // For tool operations (SOLID: DIP)
+		folderSvc,    // For tool operations (SOLID: DIP)
+		namespaceSvc, // For namespace routing in tools
+		skillService, // For skill_invoke/skill_list tools
 		validator,
 		responseGenerator,
 		streamRegistry,

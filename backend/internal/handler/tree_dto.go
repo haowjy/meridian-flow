@@ -19,6 +19,8 @@ type treeFolderDTO struct {
 	ProjectID string            `json:"project_id"`
 	FolderID  *string           `json:"folder_id"`
 	Name      string            `json:"name"`
+	Path      string            `json:"path"`      // Normalized path (e.g., "Characters/Heroes")
+	IsHidden  bool              `json:"is_hidden"` // Hidden folders (e.g., .meridian)
 	CreatedAt time.Time         `json:"created_at"`
 	UpdatedAt time.Time         `json:"updated_at"`
 	Folders   []*treeFolderDTO  `json:"folders"`
@@ -32,6 +34,7 @@ type treeDocumentDTO struct {
 	Name      string    `json:"name"`
 	Slug      string    `json:"slug"`
 	Extension string    `json:"extension"`
+	Path      string    `json:"path"` // Normalized path with extension (e.g., "Characters/Heroes/Aria.md")
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
@@ -82,6 +85,8 @@ func toTreeFolderDTO(folder *docsysSvc.TreeFolder) *treeFolderDTO {
 		ProjectID: folder.ProjectID,
 		FolderID:  folder.FolderID,
 		Name:      folder.Name,
+		Path:      folder.Path,
+		IsHidden:  folder.IsHidden,
 		CreatedAt: folder.CreatedAt,
 		UpdatedAt: folder.UpdatedAt,
 		Folders:   children,
@@ -97,6 +102,7 @@ func toTreeDocumentDTO(doc docsysSvc.TreeDocument) treeDocumentDTO {
 		Name:      doc.Name,
 		Slug:      doc.Slug,
 		Extension: doc.Extension,
+		Path:      doc.Path,
 		UpdatedAt: doc.UpdatedAt,
 	}
 }

@@ -12,11 +12,13 @@ import (
 
 // SearchTool implements the 'search' tool for full-text search across documents.
 // Uses service layer for all data access (SOLID: DIP - depends on interfaces).
+// Access to /.meridian/** is DENIED - skills are not searchable via doc tools.
 type SearchTool struct {
 	projectID    string
-	userID       string                       // Required for service layer authorization
-	documentSvc  docsysSvc.DocumentService    // For search operations (replaces documentRepo)
-	pathResolver *PathResolver                // For folder path resolution
+	userID       string                        // Required for service layer authorization
+	documentSvc  docsysSvc.DocumentService     // For search operations (replaces documentRepo)
+	namespaceSvc docsysSvc.NamespaceService    // For namespace routing (optional)
+	pathResolver *PathResolver                 // For folder path resolution
 	config       *ToolConfig
 }
 
@@ -27,6 +29,7 @@ func NewSearchTool(
 	userID string,
 	documentSvc docsysSvc.DocumentService,
 	folderSvc docsysSvc.FolderService, // For PathResolver
+	namespaceSvc docsysSvc.NamespaceService,
 	config *ToolConfig,
 ) *SearchTool {
 	if config == nil {
@@ -36,6 +39,7 @@ func NewSearchTool(
 		projectID:    projectID,
 		userID:       userID,
 		documentSvc:  documentSvc,
+		namespaceSvc: namespaceSvc,
 		pathResolver: NewPathResolver(projectID, userID, folderSvc),
 		config:       config,
 	}
@@ -63,6 +67,21 @@ func (t *SearchTool) Execute(ctx context.Context, input map[string]interface{}) 
 	var folderID *string
 	if folderPathVal, exists := input["folder"]; exists {
 		if folderPath, ok := folderPathVal.(string); ok && folderPath != "" {
+			// Check namespace access - doc_search DENIED for /.meridian/**
+			if t.namespaceSvc != nil {
+				namespace, _, err := t.namespaceSvc.ParsePath(folderPath)
+				if err == nil && namespace == docsysSvc.NamespaceMeridian {
+					return ErrorResult(ErrInvalidInput, "doc_search cannot access /.meridian/ paths - skills are not searchable", map[string]any{
+						"path": folderPath,
+					}), nil
+				}
+				if err == nil && namespace == docsysSvc.NamespaceSession {
+					return ErrorResult(ErrInvalidInput, "doc_search cannot access /.session/ paths", map[string]any{
+						"path": folderPath,
+					}), nil
+				}
+			}
+
 			// Resolve folder path to folder ID
 			resolvedID, _, err := t.pathResolver.ResolveFolderPath(ctx, folderPath)
 			if err != nil {

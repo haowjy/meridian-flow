@@ -57,8 +57,12 @@ func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *models.Doc
 			// Query for the existing document to get its ID
 			existingID, queryErr := r.getExistingDocumentID(ctx, doc.ProjectID, doc.FolderID, doc.Name, doc.Extension)
 			if queryErr != nil {
-				// Fallback to generic conflict error if we can't find the existing document
-				return fmt.Errorf("document '%s' already exists in this location: %w", doc.Filename(), domain.ErrConflict)
+				// Return ConflictError directly (query failed - document may be soft-deleted)
+				return &domain.ConflictError{
+					Message:      fmt.Sprintf("document '%s' already exists in this location", doc.Filename()),
+					ResourceType: "document",
+					ResourceID:   "", // Unknown ID since query failed
+				}
 			}
 
 			// Return structured conflict error with resource ID
@@ -68,6 +72,30 @@ func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *models.Doc
 				ResourceID:   existingID,
 			}
 		}
+
+		// Handle NOT NULL violations
+		if postgres.IsPgNotNullError(err) {
+			code, msg, detail, column, constraint := postgres.GetPgErrorDetails(err)
+			return &domain.ConstraintViolationError{
+				Message:        fmt.Sprintf("Missing required field: %s", column),
+				ConstraintType: "NOT NULL",
+				ColumnName:     column,
+				ConstraintName: constraint,
+				InternalDetail: fmt.Sprintf("%s: %s (detail: %s)", code, msg, detail),
+			}
+		}
+
+		// Handle CHECK constraint violations
+		if postgres.IsPgCheckConstraintError(err) {
+			code, msg, detail, _, constraint := postgres.GetPgErrorDetails(err)
+			return &domain.ConstraintViolationError{
+				Message:        "Data violates business rules",
+				ConstraintType: "CHECK",
+				ConstraintName: constraint,
+				InternalDetail: fmt.Sprintf("%s: %s (detail: %s)", code, msg, detail),
+			}
+		}
+
 		return fmt.Errorf("create document: %w", err)
 	}
 
@@ -114,7 +142,8 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return nil, fmt.Errorf("document %s: %w", id, domain.ErrNotFound)
+			return nil, domain.NewNotFoundError("document",
+				fmt.Sprintf("document %s not found", id))
 		}
 		return nil, fmt.Errorf("get document: %w", err)
 	}
@@ -151,7 +180,8 @@ func (r *PostgresDocumentRepository) GetByIDOnly(ctx context.Context, id string)
 
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return nil, fmt.Errorf("document %s: %w", id, domain.ErrNotFound)
+			return nil, domain.NewNotFoundError("document",
+				fmt.Sprintf("document %s not found", id))
 		}
 		return nil, fmt.Errorf("get document: %w", err)
 	}
@@ -187,7 +217,8 @@ func (r *PostgresDocumentRepository) GetBySlug(ctx context.Context, slug, projec
 
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return nil, fmt.Errorf("document with slug '%s': %w", slug, domain.ErrNotFound)
+			return nil, domain.NewNotFoundError("document",
+				fmt.Sprintf("document with slug '%s' not found", slug))
 		}
 		return nil, fmt.Errorf("get document by slug: %w", err)
 	}
@@ -235,7 +266,7 @@ func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string,
 	// Split path into parts
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) == 0 {
-		return nil, fmt.Errorf("invalid path: %w", domain.ErrNotFound)
+		return nil, domain.NewValidationError("invalid path: path cannot be empty")
 	}
 
 	// Last part is the filename (name + extension)
@@ -300,7 +331,8 @@ func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string,
 
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return nil, fmt.Errorf("document at path '%s': %w", path, domain.ErrNotFound)
+			return nil, domain.NewNotFoundError("document",
+				fmt.Sprintf("document at path '%s' not found", path))
 		}
 		return nil, fmt.Errorf("get document by path: %w", err)
 	}
@@ -340,7 +372,8 @@ func (r *PostgresDocumentRepository) findFolderByName(ctx context.Context, proje
 
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return nil, fmt.Errorf("folder '%s': %w", name, domain.ErrNotFound)
+			return nil, domain.NewNotFoundError("folder",
+				fmt.Sprintf("folder '%s' not found", name))
 		}
 		return nil, fmt.Errorf("find folder by name: %w", err)
 	}
@@ -395,8 +428,12 @@ func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Doc
 			// Query for the existing document to get its ID
 			existingID, queryErr := r.getExistingDocumentID(ctx, doc.ProjectID, doc.FolderID, doc.Name, doc.Extension)
 			if queryErr != nil {
-				// Fallback to generic conflict error if we can't find the existing document
-				return fmt.Errorf("document '%s' already exists in this location: %w", doc.Filename(), domain.ErrConflict)
+				// Return ConflictError directly (query failed - document may be soft-deleted)
+				return &domain.ConflictError{
+					Message:      fmt.Sprintf("document '%s' already exists in this location", doc.Filename()),
+					ResourceType: "document",
+					ResourceID:   "", // Unknown ID since query failed
+				}
 			}
 
 			// Return structured conflict error with resource ID
@@ -406,11 +443,36 @@ func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Doc
 				ResourceID:   existingID,
 			}
 		}
+
+		// Handle NOT NULL violations
+		if postgres.IsPgNotNullError(err) {
+			code, msg, detail, column, constraint := postgres.GetPgErrorDetails(err)
+			return &domain.ConstraintViolationError{
+				Message:        fmt.Sprintf("Missing required field: %s", column),
+				ConstraintType: "NOT NULL",
+				ColumnName:     column,
+				ConstraintName: constraint,
+				InternalDetail: fmt.Sprintf("%s: %s (detail: %s)", code, msg, detail),
+			}
+		}
+
+		// Handle CHECK constraint violations
+		if postgres.IsPgCheckConstraintError(err) {
+			code, msg, detail, _, constraint := postgres.GetPgErrorDetails(err)
+			return &domain.ConstraintViolationError{
+				Message:        "Data violates business rules",
+				ConstraintType: "CHECK",
+				ConstraintName: constraint,
+				InternalDetail: fmt.Sprintf("%s: %s (detail: %s)", code, msg, detail),
+			}
+		}
+
 		return fmt.Errorf("update document: %w", err)
 	}
 
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("document %s: %w", doc.ID, domain.ErrNotFound)
+		return domain.NewNotFoundError("document",
+			fmt.Sprintf("document %s not found", doc.ID))
 	}
 
 	return nil
@@ -432,7 +494,8 @@ func (r *PostgresDocumentRepository) UpdateAIVersion(ctx context.Context, id str
 	}
 
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("document %s: %w", id, domain.ErrNotFound)
+		return domain.NewNotFoundError("document",
+			fmt.Sprintf("document %s not found", id))
 	}
 
 	return nil
@@ -498,7 +561,8 @@ func (r *PostgresDocumentRepository) Delete(ctx context.Context, id, projectID s
 	}
 
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("document %s: %w", id, domain.ErrNotFound)
+		return domain.NewNotFoundError("document",
+			fmt.Sprintf("document %s not found", id))
 	}
 
 	return nil

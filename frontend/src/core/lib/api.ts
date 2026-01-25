@@ -8,12 +8,18 @@ import {
   DocumentDto,
   DocumentTreeDto,
   FolderDto,
+  SkillDto,
+  SkillWithContentDto,
+  SkillListResponseDto,
   fromProjectDto,
   fromThreadDto,
   fromDocumentDto,
   fromDocumentTreeDto,
   fromFolderDto,
+  fromSkillDto,
+  fromSkillWithContentDto,
 } from '@/types/api'
+import type { Skill, SkillWithContent, CreateSkillRequest, UpdateSkillRequest } from '@/features/skills/types/skill'
 import { httpErrorToAppError } from '@/core/lib/errors'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080'
@@ -781,5 +787,59 @@ export const api = {
     },
     delete: (id: string, options?: { signal?: AbortSignal }) =>
       fetchAPI<void>(`/api/folders/${id}`, { method: 'DELETE', signal: options?.signal }),
+  },
+
+  skills: {
+    list: async (projectId: string, options?: { signal?: AbortSignal }): Promise<Skill[]> => {
+      const data = await fetchAPI<SkillListResponseDto>(`/api/projects/${projectId}/skills`, {
+        signal: options?.signal,
+      })
+      return data.skills.map(fromSkillDto)
+    },
+    get: async (projectId: string, skillId: string, options?: { signal?: AbortSignal }): Promise<SkillWithContent> => {
+      const data = await fetchAPI<SkillWithContentDto>(`/api/projects/${projectId}/skills/${skillId}`, {
+        signal: options?.signal,
+      })
+      return fromSkillWithContentDto(data)
+    },
+    create: async (projectId: string, skill: CreateSkillRequest, options?: { signal?: AbortSignal }): Promise<Skill> => {
+      const data = await fetchAPI<SkillDto>(`/api/projects/${projectId}/skills`, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: skill.name,
+          display_name: skill.displayName,
+          description: skill.description,
+          content: skill.content,
+          disable_model_invocation: skill.disableModelInvocation,
+          user_invocable: skill.userInvocable,
+        }),
+        signal: options?.signal,
+      })
+      return fromSkillDto(data)
+    },
+    update: async (projectId: string, skillId: string, updates: UpdateSkillRequest, options?: { signal?: AbortSignal }): Promise<Skill> => {
+      const body: Record<string, unknown> = {}
+      if (updates.displayName !== undefined) body.display_name = updates.displayName
+      if (updates.description !== undefined) body.description = updates.description
+      if (updates.content !== undefined) body.content = updates.content
+      if (updates.disableModelInvocation !== undefined) body.disable_model_invocation = updates.disableModelInvocation
+      if (updates.userInvocable !== undefined) body.user_invocable = updates.userInvocable
+
+      const data = await fetchAPI<SkillDto>(`/api/projects/${projectId}/skills/${skillId}`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+        signal: options?.signal,
+      })
+      return fromSkillDto(data)
+    },
+    delete: (projectId: string, skillId: string, options?: { signal?: AbortSignal }) =>
+      fetchAPI<void>(`/api/projects/${projectId}/skills/${skillId}`, { method: 'DELETE', signal: options?.signal }),
+    reorder: async (projectId: string, skillIds: string[], options?: { signal?: AbortSignal }): Promise<void> => {
+      await fetchAPI<void>(`/api/projects/${projectId}/skills/reorder`, {
+        method: 'PUT',
+        body: JSON.stringify({ skill_ids: skillIds }),
+        signal: options?.signal,
+      })
+    },
   },
 }

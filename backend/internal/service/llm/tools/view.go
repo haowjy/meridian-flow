@@ -13,11 +13,13 @@ import (
 
 // ViewTool implements the 'view' tool for reading document content or listing folder contents.
 // Uses service layer for all data access (SOLID: DIP - depends on interfaces).
+// Supports namespace routing: doc_view CAN read /.meridian/** paths for reference materials.
 type ViewTool struct {
 	projectID    string
 	userID       string                        // Required for service layer authorization
 	documentSvc  docsysSvc.DocumentService     // For document operations (replaces documentRepo)
 	folderSvc    docsysSvc.FolderService       // For folder operations (replaces folderRepo)
+	namespaceSvc docsysSvc.NamespaceService    // For namespace routing (optional)
 	pathResolver *PathResolver                 // For folder path resolution
 	config       *ToolConfig
 }
@@ -29,6 +31,7 @@ func NewViewTool(
 	userID string,
 	documentSvc docsysSvc.DocumentService,
 	folderSvc docsysSvc.FolderService,
+	namespaceSvc docsysSvc.NamespaceService,
 	config *ToolConfig,
 ) *ViewTool {
 	if config == nil {
@@ -39,6 +42,7 @@ func NewViewTool(
 		userID:       userID,
 		documentSvc:  documentSvc,
 		folderSvc:    folderSvc,
+		namespaceSvc: namespaceSvc,
 		pathResolver: NewPathResolver(projectID, userID, folderSvc),
 		config:       config,
 	}

@@ -29,7 +29,7 @@ func NewFolderRepository(config *postgres.RepositoryConfig) docsysRepo.FolderRep
 	}
 }
 
-// Create creates a new folder
+// Create creates a new folder (is_hidden defaults to false)
 func (r *PostgresFolderRepository) Create(ctx context.Context, folder *models.Folder) error {
 	// Guard against duplicates at the application level
 	existing, err := r.getFolderByNameAndParent(ctx, folder.ProjectID, folder.Name, folder.ParentID)
@@ -46,9 +46,9 @@ func (r *PostgresFolderRepository) Create(ctx context.Context, folder *models.Fo
 	}
 
 	query := fmt.Sprintf(`
-		INSERT INTO %s (project_id, parent_id, name, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, created_at, updated_at
+		INSERT INTO %s (project_id, parent_id, name, is_hidden, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, is_hidden, created_at, updated_at
 	`, r.tables.Folders)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
@@ -56,36 +56,65 @@ func (r *PostgresFolderRepository) Create(ctx context.Context, folder *models.Fo
 		folder.ProjectID,
 		folder.ParentID,
 		folder.Name,
+		folder.IsHidden,
 		folder.CreatedAt,
 		folder.UpdatedAt,
-	).Scan(&folder.ID, &folder.CreatedAt, &folder.UpdatedAt)
+	).Scan(&folder.ID, &folder.IsHidden, &folder.CreatedAt, &folder.UpdatedAt)
 
 	if err != nil {
 		if postgres.IsPgDuplicateError(err) {
 			// Fallback: query for existing folder if database detected duplicate
 			existing, queryErr := r.getFolderByNameAndParent(ctx, folder.ProjectID, folder.Name, folder.ParentID)
 			if queryErr != nil || existing == nil {
-				// Can't find existing folder, return generic conflict
-				return fmt.Errorf("folder '%s' already exists at this level: %w", folder.Name, domain.ErrConflict)
+				// Can't find existing folder, return conflict error without ID
+				return domain.NewConflictError("folder", "",
+					fmt.Sprintf("folder '%s' already exists at this level", folder.Name))
 			}
 
-			// Return structured conflict error
-			return &domain.ConflictError{
-				Message:      fmt.Sprintf("folder '%s' already exists at this level", folder.Name),
-				ResourceType: "folder",
-				ResourceID:   existing.ID,
+			// Return structured conflict error with resource ID
+			return domain.NewConflictError("folder", existing.ID,
+				fmt.Sprintf("folder '%s' already exists at this level", folder.Name))
+		}
+
+		// Handle NOT NULL violations
+		if postgres.IsPgNotNullError(err) {
+			code, msg, detail, column, constraint := postgres.GetPgErrorDetails(err)
+			return &domain.ConstraintViolationError{
+				Message:        fmt.Sprintf("Missing required field: %s", column),
+				ConstraintType: "NOT NULL",
+				ColumnName:     column,
+				ConstraintName: constraint,
+				InternalDetail: fmt.Sprintf("%s: %s (detail: %s)", code, msg, detail),
 			}
 		}
+
+		// Handle CHECK constraint violations
+		if postgres.IsPgCheckConstraintError(err) {
+			code, msg, detail, _, constraint := postgres.GetPgErrorDetails(err)
+			return &domain.ConstraintViolationError{
+				Message:        "Data violates business rules",
+				ConstraintType: "CHECK",
+				ConstraintName: constraint,
+				InternalDetail: fmt.Sprintf("%s: %s (detail: %s)", code, msg, detail),
+			}
+		}
+
 		return fmt.Errorf("create folder: %w", err)
 	}
 
 	return nil
 }
 
+// CreateHidden creates a new hidden folder (e.g., for /.meridian/)
+func (r *PostgresFolderRepository) CreateHidden(ctx context.Context, folder *models.Folder) error {
+	folder.IsHidden = true
+	return r.Create(ctx, folder)
+}
+
 // GetByID retrieves a folder by ID
 func (r *PostgresFolderRepository) GetByID(ctx context.Context, id, projectID string) (*models.Folder, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, parent_id, name, created_at, updated_at
+		SELECT id, project_id, parent_id, name, is_hidden, created_at, updated_at
 		FROM %s
 		WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
 	`, r.tables.Folders)
@@ -97,13 +126,15 @@ func (r *PostgresFolderRepository) GetByID(ctx context.Context, id, projectID st
 		&folder.ProjectID,
 		&folder.ParentID,
 		&folder.Name,
+		&folder.IsHidden,
 		&folder.CreatedAt,
 		&folder.UpdatedAt,
 	)
 
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return nil, fmt.Errorf("folder %s: %w", id, domain.ErrNotFound)
+			return nil, domain.NewNotFoundError("folder",
+				fmt.Sprintf("folder %s not found", id))
 		}
 		return nil, fmt.Errorf("get folder: %w", err)
 	}
@@ -115,7 +146,7 @@ func (r *PostgresFolderRepository) GetByID(ctx context.Context, id, projectID st
 // Use when authorization is handled separately (e.g., by ResourceAuthorizer)
 func (r *PostgresFolderRepository) GetByIDOnly(ctx context.Context, id string) (*models.Folder, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, parent_id, name, created_at, updated_at
+		SELECT id, project_id, parent_id, name, is_hidden, created_at, updated_at
 		FROM %s
 		WHERE id = $1 AND deleted_at IS NULL
 	`, r.tables.Folders)
@@ -127,13 +158,15 @@ func (r *PostgresFolderRepository) GetByIDOnly(ctx context.Context, id string) (
 		&folder.ProjectID,
 		&folder.ParentID,
 		&folder.Name,
+		&folder.IsHidden,
 		&folder.CreatedAt,
 		&folder.UpdatedAt,
 	)
 
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return nil, fmt.Errorf("folder %s: %w", id, domain.ErrNotFound)
+			return nil, domain.NewNotFoundError("folder",
+				fmt.Sprintf("folder %s not found", id))
 		}
 		return nil, fmt.Errorf("get folder: %w", err)
 	}
@@ -163,22 +196,45 @@ func (r *PostgresFolderRepository) Update(ctx context.Context, folder *models.Fo
 			// Query for existing folder
 			existing, queryErr := r.getFolderByNameAndParent(ctx, folder.ProjectID, folder.Name, folder.ParentID)
 			if queryErr != nil || existing == nil {
-				// Can't find existing folder, return generic conflict
-				return fmt.Errorf("folder '%s' already exists at this level: %w", folder.Name, domain.ErrConflict)
+				// Can't find existing folder, return conflict error without ID
+				return domain.NewConflictError("folder", "",
+					fmt.Sprintf("folder '%s' already exists at this level", folder.Name))
 			}
 
-			// Return structured conflict error
-			return &domain.ConflictError{
-				Message:      fmt.Sprintf("folder '%s' already exists at this level", folder.Name),
-				ResourceType: "folder",
-				ResourceID:   existing.ID,
+			// Return structured conflict error with resource ID
+			return domain.NewConflictError("folder", existing.ID,
+				fmt.Sprintf("folder '%s' already exists at this level", folder.Name))
+		}
+
+		// Handle NOT NULL violations
+		if postgres.IsPgNotNullError(err) {
+			code, msg, detail, column, constraint := postgres.GetPgErrorDetails(err)
+			return &domain.ConstraintViolationError{
+				Message:        fmt.Sprintf("Missing required field: %s", column),
+				ConstraintType: "NOT NULL",
+				ColumnName:     column,
+				ConstraintName: constraint,
+				InternalDetail: fmt.Sprintf("%s: %s (detail: %s)", code, msg, detail),
 			}
 		}
+
+		// Handle CHECK constraint violations
+		if postgres.IsPgCheckConstraintError(err) {
+			code, msg, detail, _, constraint := postgres.GetPgErrorDetails(err)
+			return &domain.ConstraintViolationError{
+				Message:        "Data violates business rules",
+				ConstraintType: "CHECK",
+				ConstraintName: constraint,
+				InternalDetail: fmt.Sprintf("%s: %s (detail: %s)", code, msg, detail),
+			}
+		}
+
 		return fmt.Errorf("update folder: %w", err)
 	}
 
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("folder %s: %w", folder.ID, domain.ErrNotFound)
+		return domain.NewNotFoundError("folder",
+			fmt.Sprintf("folder %s not found", folder.ID))
 	}
 
 	return nil
@@ -199,7 +255,8 @@ func (r *PostgresFolderRepository) Delete(ctx context.Context, id, projectID str
 	}
 
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("folder %s: %w", id, domain.ErrNotFound)
+		return domain.NewNotFoundError("folder",
+			fmt.Sprintf("folder %s not found", id))
 	}
 
 	return nil
@@ -212,7 +269,7 @@ func (r *PostgresFolderRepository) ListChildren(ctx context.Context, folderID *s
 
 	if folderID == nil {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, parent_id, name, created_at, updated_at
+			SELECT id, project_id, parent_id, name, is_hidden, created_at, updated_at
 			FROM %s
 			WHERE project_id = $1 AND parent_id IS NULL AND deleted_at IS NULL
 			ORDER BY name ASC
@@ -220,7 +277,7 @@ func (r *PostgresFolderRepository) ListChildren(ctx context.Context, folderID *s
 		args = append(args, projectID)
 	} else {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, parent_id, name, created_at, updated_at
+			SELECT id, project_id, parent_id, name, is_hidden, created_at, updated_at
 			FROM %s
 			WHERE project_id = $1 AND parent_id = $2 AND deleted_at IS NULL
 			ORDER BY name ASC
@@ -243,6 +300,7 @@ func (r *PostgresFolderRepository) ListChildren(ctx context.Context, folderID *s
 			&folder.ProjectID,
 			&folder.ParentID,
 			&folder.Name,
+			&folder.IsHidden,
 			&folder.CreatedAt,
 			&folder.UpdatedAt,
 		)
@@ -276,6 +334,36 @@ func (r *PostgresFolderRepository) CreateIfNotExists(ctx context.Context, projec
 		ProjectID: projectID,
 		ParentID:  parentID,
 		Name:      name,
+		IsHidden:  false,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	if err := r.Create(ctx, folder); err != nil {
+		return nil, err
+	}
+
+	return folder, nil
+}
+
+// CreateHiddenIfNotExists creates a hidden folder only if it doesn't exist
+func (r *PostgresFolderRepository) CreateHiddenIfNotExists(ctx context.Context, projectID string, parentID *string, name string) (*models.Folder, error) {
+	// Check if folder already exists
+	existing, err := r.getFolderByNameAndParent(ctx, projectID, name, parentID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil // Already exists, return it
+	}
+
+	// Create new hidden folder
+	now := time.Now()
+	folder := &models.Folder{
+		ProjectID: projectID,
+		ParentID:  parentID,
+		Name:      name,
+		IsHidden:  true,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -314,7 +402,8 @@ func (r *PostgresFolderRepository) GetPath(ctx context.Context, folderID *string
 	err := executor.QueryRow(ctx, query, *folderID, projectID).Scan(&path)
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
-			return "", fmt.Errorf("folder %s: %w", *folderID, domain.ErrNotFound)
+			return "", domain.NewNotFoundError("folder",
+				fmt.Sprintf("folder %s not found", *folderID))
 		}
 		return "", fmt.Errorf("get folder path: %w", err)
 	}
@@ -322,10 +411,10 @@ func (r *PostgresFolderRepository) GetPath(ctx context.Context, folderID *string
 	return path, nil
 }
 
-// GetAllByProject retrieves all folders in a project (flat list)
+// GetAllByProject retrieves all folders in a project (flat list, includes hidden)
 func (r *PostgresFolderRepository) GetAllByProject(ctx context.Context, projectID string) ([]models.Folder, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, parent_id, name, created_at, updated_at
+		SELECT id, project_id, parent_id, name, is_hidden, created_at, updated_at
 		FROM %s
 		WHERE project_id = $1 AND deleted_at IS NULL
 		ORDER BY created_at ASC
@@ -346,6 +435,52 @@ func (r *PostgresFolderRepository) GetAllByProject(ctx context.Context, projectI
 			&folder.ProjectID,
 			&folder.ParentID,
 			&folder.Name,
+			&folder.IsHidden,
+			&folder.CreatedAt,
+			&folder.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan folder: %w", err)
+		}
+		folders = append(folders, folder)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate folders: %w", err)
+	}
+
+	return folders, nil
+}
+
+// GetAllByProjectFiltered retrieves folders with filtering options
+func (r *PostgresFolderRepository) GetAllByProjectFiltered(ctx context.Context, projectID string, opts docsysRepo.FolderFilterOptions) ([]models.Folder, error) {
+	query := fmt.Sprintf(`
+		SELECT id, project_id, parent_id, name, is_hidden, created_at, updated_at
+		FROM %s
+		WHERE project_id = $1 AND deleted_at IS NULL
+	`, r.tables.Folders)
+
+	if !opts.IncludeHidden {
+		query += ` AND is_hidden = false`
+	}
+	query += ` ORDER BY created_at ASC`
+
+	executor := postgres.GetExecutor(ctx, r.pool)
+	rows, err := executor.Query(ctx, query, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("get all folders filtered: %w", err)
+	}
+	defer rows.Close()
+
+	var folders []models.Folder
+	for rows.Next() {
+		var folder models.Folder
+		err := rows.Scan(
+			&folder.ID,
+			&folder.ProjectID,
+			&folder.ParentID,
+			&folder.Name,
+			&folder.IsHidden,
 			&folder.CreatedAt,
 			&folder.UpdatedAt,
 		)
@@ -366,7 +501,7 @@ func (r *PostgresFolderRepository) GetAllByProject(ctx context.Context, projectI
 func (r *PostgresFolderRepository) GetByPath(ctx context.Context, projectID string, path string) (*models.Folder, error) {
 	segments := strings.Split(strings.Trim(path, "/"), "/")
 	if len(segments) == 0 || (len(segments) == 1 && segments[0] == "") {
-		return nil, fmt.Errorf("invalid path: %w", domain.ErrValidation)
+		return nil, domain.NewValidationError("invalid path: path cannot be empty")
 	}
 
 	var currentParentID *string
@@ -378,13 +513,15 @@ func (r *PostgresFolderRepository) GetByPath(ctx context.Context, projectID stri
 			return nil, err
 		}
 		if folder == nil {
-			return nil, fmt.Errorf("folder at path '%s': %w", path, domain.ErrNotFound)
+			return nil, domain.NewNotFoundError("folder",
+				fmt.Sprintf("folder at path '%s' not found", path))
 		}
 		currentParentID = &folder.ID
 	}
 
 	if currentParentID == nil {
-		return nil, fmt.Errorf("folder at path '%s': %w", path, domain.ErrNotFound)
+		return nil, domain.NewNotFoundError("folder",
+			fmt.Sprintf("folder at path '%s' not found", path))
 	}
 
 	return r.GetByID(ctx, *currentParentID, projectID)
@@ -397,14 +534,14 @@ func (r *PostgresFolderRepository) getFolderByNameAndParent(ctx context.Context,
 
 	if parentID == nil {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, parent_id, name, created_at, updated_at
+			SELECT id, project_id, parent_id, name, is_hidden, created_at, updated_at
 			FROM %s
 			WHERE project_id = $1 AND name = $2 AND parent_id IS NULL AND deleted_at IS NULL
 		`, r.tables.Folders)
 		args = append(args, projectID, name)
 	} else {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, parent_id, name, created_at, updated_at
+			SELECT id, project_id, parent_id, name, is_hidden, created_at, updated_at
 			FROM %s
 			WHERE project_id = $1 AND name = $2 AND parent_id = $3 AND deleted_at IS NULL
 		`, r.tables.Folders)
@@ -418,6 +555,7 @@ func (r *PostgresFolderRepository) getFolderByNameAndParent(ctx context.Context,
 		&folder.ProjectID,
 		&folder.ParentID,
 		&folder.Name,
+		&folder.IsHidden,
 		&folder.CreatedAt,
 		&folder.UpdatedAt,
 	)

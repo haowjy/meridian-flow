@@ -79,7 +79,7 @@ func (h *ThreadDebugHandler) CreateAssistantTurn(w http.ResponseWriter, r *http.
 	}
 	turn, err := h.streamingService.CreateAssistantTurnDebug(r.Context(), threadID, userID, req.PrevTurnID, req.TurnBlocks, model)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -122,7 +122,7 @@ func (h *ThreadDebugHandler) BuildProviderRequest(w http.ResponseWriter, r *http
 	// Delegate to streaming service debug builder
 	debugReq, err := h.streamingService.BuildDebugProviderRequest(r.Context(), &req)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -155,7 +155,7 @@ func (h *ThreadDebugHandler) GetThreadTree(w http.ResponseWriter, r *http.Reques
 	userID := httputil.GetUserID(r)
 	tree, err := h.threadHistoryService.GetThreadTree(r.Context(), threadID, userID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 

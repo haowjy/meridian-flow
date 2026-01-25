@@ -64,7 +64,7 @@ func (s *documentService) generateDocumentPathSlug(ctx context.Context, projectI
 	// Get folder path (returns "" for root level)
 	folderPath, err := s.folderRepo.GetPath(ctx, folderID, projectID)
 	if err != nil {
-		return "", fmt.Errorf("failed to get folder path: %w", err)
+		return "", err // Pass through HTTPError directly
 	}
 	slugifiedFolderPath := identifier.SlugifyPath(folderPath)
 
@@ -120,7 +120,7 @@ func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.Cre
 		MaxNameLength: config.MaxDocumentNameLength,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", domain.ErrValidation, err)
+		return nil, domain.NewValidationError(fmt.Sprintf("path resolution failed: %v", err))
 	}
 
 	folderID := result.ResolvedFolderID
@@ -136,7 +136,7 @@ func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.Cre
 	// Check for duplicate name+extension in target folder
 	siblings, err := s.docRepo.ListByFolder(ctx, folderID, req.ProjectID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check for duplicate names: %w", err)
+		return nil, err // Pass through HTTPError directly
 	}
 	for _, sibling := range siblings {
 		if sibling.Name == docName && sibling.Extension == extension {
@@ -257,7 +257,8 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 		trimmedName := strings.TrimSpace(*req.Name)
 		// Validate name doesn't contain slashes
 		if strings.Contains(trimmedName, "/") {
-			return nil, fmt.Errorf("%w: document name cannot contain slashes", domain.ErrValidation)
+			return nil, domain.NewValidationErrorWithField(
+				"document name cannot contain slashes", "name")
 		}
 		if trimmedName != doc.Name {
 			nameChanged = true
@@ -343,7 +344,7 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 	if req.Name != nil || req.Extension != nil || req.FolderID.Present || req.FolderPath != nil {
 		siblings, err := s.docRepo.ListByFolder(ctx, doc.FolderID, doc.ProjectID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to check for duplicate names: %w", err)
+			return nil, err // Pass through HTTPError directly
 		}
 		for _, sibling := range siblings {
 			if sibling.ID != doc.ID && sibling.Name == doc.Name && sibling.Extension == doc.Extension {
@@ -547,12 +548,14 @@ func (s *documentService) DeleteDocument(ctx context.Context, userID, documentID
 func (s *documentService) SearchDocuments(ctx context.Context, userID string, req *docsysSvc.SearchDocumentsRequest) (*models.SearchResults, error) {
 	// Validate request
 	if req.Query == "" {
-		return nil, fmt.Errorf("%w: search query cannot be empty", domain.ErrValidation)
+		return nil, domain.NewValidationErrorWithField(
+			"search query cannot be empty", "query")
 	}
 
 	// Require projectID for authorization (cross-project search not yet supported)
 	if req.ProjectID == "" {
-		return nil, fmt.Errorf("%w: project_id is required for search", domain.ErrValidation)
+		return nil, domain.NewValidationErrorWithField(
+			"project_id is required for search", "project_id")
 	}
 
 	// Verify user has access to this project
@@ -569,7 +572,8 @@ func (s *documentService) SearchDocuments(ctx context.Context, userID string, re
 		case "content":
 			fields = append(fields, models.SearchFieldContent)
 		default:
-			return nil, fmt.Errorf("%w: invalid search field %q (supported: name, content)", domain.ErrValidation, f)
+			return nil, domain.NewValidationErrorWithField(
+				fmt.Sprintf("invalid search field %q (supported: name, content)", f), "fields")
 		}
 	}
 

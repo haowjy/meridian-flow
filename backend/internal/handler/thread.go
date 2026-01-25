@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	mstream "github.com/haowjy/meridian-stream-go"
 
+	"meridian/internal/config"
 	llmModels "meridian/internal/domain/models/llm"
 	"meridian/internal/domain/services"
 	llmSvc "meridian/internal/domain/services/llm"
@@ -25,6 +26,7 @@ type ThreadHandler struct {
 	registry             *mstream.Registry
 	authorizer           services.ResourceAuthorizer
 	logger               *slog.Logger
+	config               *config.Config
 }
 
 // NewThreadHandler creates a new thread handler
@@ -35,6 +37,7 @@ func NewThreadHandler(
 	registry *mstream.Registry,
 	authorizer services.ResourceAuthorizer,
 	logger *slog.Logger,
+	cfg *config.Config,
 ) *ThreadHandler {
 	return &ThreadHandler{
 		threadService:        threadService,
@@ -43,6 +46,7 @@ func NewThreadHandler(
 		registry:             registry,
 		authorizer:           authorizer,
 		logger:               logger,
+		config:               cfg,
 	}
 }
 
@@ -64,7 +68,7 @@ func (h *ThreadHandler) CreateThread(w http.ResponseWriter, r *http.Request) {
 	// Call service
 	thread, err := h.threadService.CreateThread(r.Context(), &req)
 	if err != nil {
-		HandleCreateConflict(w, err, func(id string) (*llmModels.Thread, error) {
+		HandleCreateConflict(w, err, h.config, func(id string) (*llmModels.Thread, error) {
 			return h.threadService.GetThread(r.Context(), id, userID)
 		})
 		return
@@ -89,7 +93,7 @@ func (h *ThreadHandler) ListThreads(w http.ResponseWriter, r *http.Request) {
 	// Call service
 	threads, err := h.threadService.ListThreads(r.Context(), projectID, userID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -107,7 +111,7 @@ func (h *ThreadHandler) GetThread(w http.ResponseWriter, r *http.Request) {
 	userID := httputil.GetUserID(r)
 	thread, err := h.threadService.GetThread(r.Context(), threadID, userID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -132,7 +136,7 @@ func (h *ThreadHandler) UpdateThread(w http.ResponseWriter, r *http.Request) {
 	// Call service
 	thread, err := h.threadService.UpdateThread(r.Context(), threadID, userID, &req)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -158,7 +162,7 @@ func (h *ThreadHandler) UpdateLastViewedTurn(w http.ResponseWriter, r *http.Requ
 
 	// Call service (all validation handled by service layer)
 	if err := h.threadService.UpdateLastViewedTurn(r.Context(), threadID, userID, req.TurnID); err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -177,7 +181,7 @@ func (h *ThreadHandler) DeleteThread(w http.ResponseWriter, r *http.Request) {
 	userID := httputil.GetUserID(r)
 	deletedThread, err := h.threadService.DeleteThread(r.Context(), threadID, userID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -203,7 +207,7 @@ func (h *ThreadHandler) CreateTurnV2(w http.ResponseWriter, r *http.Request) {
 	// Call service - thread_id, project_id, prev_turn_id come from body
 	response, err := h.streamingService.CreateTurn(r.Context(), &req)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -231,7 +235,7 @@ func (h *ThreadHandler) CreateTurn(w http.ResponseWriter, r *http.Request) {
 	// Call service
 	response, err := h.streamingService.CreateTurn(r.Context(), &req)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -249,7 +253,7 @@ func (h *ThreadHandler) GetTurnPath(w http.ResponseWriter, r *http.Request) {
 	userID := httputil.GetUserID(r)
 	turns, err := h.threadHistoryService.GetTurnPath(r.Context(), userID, turnID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -267,7 +271,7 @@ func (h *ThreadHandler) GetTurnSiblings(w http.ResponseWriter, r *http.Request) 
 	userID := httputil.GetUserID(r)
 	siblings, err := h.threadHistoryService.GetTurnSiblings(r.Context(), userID, turnID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -307,7 +311,7 @@ func (h *ThreadHandler) GetPaginatedTurns(w http.ResponseWriter, r *http.Request
 	// Call service
 	response, err := h.threadHistoryService.GetPaginatedTurns(r.Context(), threadID, userID, fromTurnID, limit, direction, updateLastViewed)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -342,7 +346,7 @@ func (h *ThreadHandler) GetTurnBlocks(w http.ResponseWriter, r *http.Request) {
 	// Get turn with blocks from service (follows Clean Architecture)
 	turn, err := h.threadHistoryService.GetTurnWithBlocks(r.Context(), userID, turnID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -376,7 +380,7 @@ func (h *ThreadHandler) GetTurnTokenUsage(w http.ResponseWriter, r *http.Request
 	// Get token usage from service
 	tokenUsage, err := h.threadHistoryService.GetTurnTokenUsage(r.Context(), userID, turnID)
 	if err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -405,7 +409,7 @@ func (h *ThreadHandler) InterruptTurn(w http.ResponseWriter, r *http.Request) {
 
 	// Authorize: check user can access this turn
 	if err := h.authorizer.CanAccessTurn(r.Context(), userID, turnID); err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 
@@ -446,7 +450,7 @@ func (h *ThreadHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 
 	// Authorize: check user can access this turn
 	if err := h.authorizer.CanAccessTurn(r.Context(), userID, turnID); err != nil {
-		handleError(w, err)
+		handleError(w, err, h.config)
 		return
 	}
 

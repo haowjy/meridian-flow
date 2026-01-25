@@ -12,11 +12,13 @@ import (
 
 // TreeTool implements the 'tree' tool for showing hierarchical structure of folders and documents.
 // Uses service layer for all data access (SOLID: DIP - depends on interfaces).
+// Access to /.meridian/** is DENIED - use dedicated skill list API instead.
 type TreeTool struct {
 	projectID    string
-	userID       string                     // Required for service layer authorization
-	folderSvc    docsysSvc.FolderService    // For folder and document listing (replaces documentRepo + folderRepo)
-	pathResolver *PathResolver              // For folder path resolution
+	userID       string                        // Required for service layer authorization
+	folderSvc    docsysSvc.FolderService       // For folder and document listing (replaces documentRepo + folderRepo)
+	namespaceSvc docsysSvc.NamespaceService    // For namespace routing (optional)
+	pathResolver *PathResolver                 // For folder path resolution
 	config       *ToolConfig
 }
 
@@ -26,6 +28,7 @@ func NewTreeTool(
 	projectID string,
 	userID string,
 	folderSvc docsysSvc.FolderService,
+	namespaceSvc docsysSvc.NamespaceService,
 	config *ToolConfig,
 ) *TreeTool {
 	if config == nil {
@@ -35,6 +38,7 @@ func NewTreeTool(
 		projectID:    projectID,
 		userID:       userID,
 		folderSvc:    folderSvc,
+		namespaceSvc: namespaceSvc,
 		pathResolver: NewPathResolver(projectID, userID, folderSvc),
 		config:       config,
 	}
@@ -62,6 +66,21 @@ func (t *TreeTool) Execute(ctx context.Context, input map[string]interface{}) (i
 	}
 	if !strings.HasPrefix(folderPath, "/") {
 		folderPath = "/" + folderPath
+	}
+
+	// Check namespace access - doc_tree DENIED for /.meridian/**
+	if t.namespaceSvc != nil {
+		namespace, _, err := t.namespaceSvc.ParsePath(folderPath)
+		if err == nil && namespace == docsysSvc.NamespaceMeridian {
+			return ErrorResult(ErrInvalidInput, "doc_tree cannot access /.meridian/ paths - use skill_list API instead", map[string]any{
+				"path": folderPath,
+			}), nil
+		}
+		if err == nil && namespace == docsysSvc.NamespaceSession {
+			return ErrorResult(ErrInvalidInput, "doc_tree cannot access /.session/ paths", map[string]any{
+				"path": folderPath,
+			}), nil
+		}
 	}
 
 	// Extract and validate depth (JSON numbers are float64)

@@ -90,6 +90,7 @@ export const DocumentTreeItem = memo(function DocumentTreeItem({
           onCancel={onCancelEdit}
           mode={editorMode}
           extension={document.extension}
+          type="document"  // NEW: enables slash/length validation for documents
         />
       </div>
     )

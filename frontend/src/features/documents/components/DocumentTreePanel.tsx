@@ -1,5 +1,5 @@
 import { useState, ReactNode, DragEvent, Fragment } from 'react'
-import { FileText, Plus, Settings, Upload } from 'lucide-react'
+import { FileText, Plus, Settings, Sparkles, Upload } from 'lucide-react'
 import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
@@ -25,6 +25,7 @@ import { BulkDeleteOperation } from '../operations/bulkDelete'
 import type { TreeNode } from '@/core/lib/treeBuilder'
 import { canonicalizeSelection } from '@/core/lib/treeUtils'
 import type { BulkOperation } from '../operations/types'
+import type { PanelTab } from './DocumentPanel'
 
 interface DocumentTreePanelProps {
   children: ReactNode
@@ -42,6 +43,9 @@ interface DocumentTreePanelProps {
   // Handle navigation-away, cache cleanup, and retry cancellation
   deleteDocument: (id: string) => Promise<void>
   deleteFolder: (id: string) => Promise<void>
+  // Tab switching
+  activeTab: PanelTab
+  onTabChange: (tab: PanelTab) => void
 }
 
 /**
@@ -63,6 +67,8 @@ export function DocumentTreePanel({
   deleteDocument,
   deleteFolder,
   onOpenSettings,
+  activeTab,
+  onTabChange,
 }: DocumentTreePanelProps) {
   const setMobileActivePanel = useUIStore((s) => s.setMobileActivePanel)
   const { selectedIds } = useTreeSelection()
@@ -158,8 +164,24 @@ export function DocumentTreePanel({
           />
         </div>
 
+        {/* Tab Bar */}
+        <div className="sticky top-12 z-15 flex items-center gap-1 px-2 py-1.5 bg-background border-b">
+          <TabButton
+            active={activeTab === 'documents'}
+            onClick={() => onTabChange('documents')}
+            icon={<FileText className="size-3.5" />}
+            label="Docs"
+          />
+          <TabButton
+            active={activeTab === 'skills'}
+            onClick={() => onTabChange('skills')}
+            icon={<Sparkles className="size-3.5" />}
+            label="Skills"
+          />
+        </div>
+
         {/* Sticky Search Bar */}
-        <div className="sticky top-12 z-10 flex items-center gap-2 px-2 py-1.5 bg-background relative">
+        <div className="sticky top-[76px] z-10 flex items-center gap-2 px-2 py-1.5 bg-background relative">
           <Input
             type="search"
             placeholder="Search documents..."
@@ -254,5 +276,29 @@ export function DocumentTreePanel({
         />
       )}
     </div>
+  )
+}
+
+interface TabButtonProps {
+  active: boolean
+  onClick: () => void
+  icon: React.ReactNode
+  label: string
+}
+
+function TabButton({ active, onClick, icon, label }: TabButtonProps) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
+        active
+          ? "bg-accent text-foreground"
+          : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+      )}
+    >
+      {icon}
+      {label}
+    </button>
   )
 }

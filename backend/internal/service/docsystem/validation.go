@@ -2,7 +2,6 @@ package docsystem
 
 import (
 	"context"
-	"fmt"
 
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 )
@@ -30,7 +29,7 @@ func NewResourceValidator(
 func (v *ResourceValidator) ValidateProject(ctx context.Context, projectID, userID string) error {
 	_, err := v.projectRepo.GetByID(ctx, projectID, userID)
 	if err != nil {
-		return fmt.Errorf("invalid project: %w", err)
+		return err // Pass through HTTPError directly
 	}
 	return nil
 }
@@ -45,7 +44,7 @@ func (v *ResourceValidator) ValidateFolder(ctx context.Context, folderID, projec
 
 	_, err := v.folderRepo.GetByID(ctx, folderID, projectID)
 	if err != nil {
-		return fmt.Errorf("invalid folder: %w", err)
+		return err // Pass through HTTPError directly
 	}
 	return nil
 }
