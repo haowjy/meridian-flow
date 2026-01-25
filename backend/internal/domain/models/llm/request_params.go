@@ -100,8 +100,12 @@ type RequestParams struct {
 	// If not specified, provider is inferred from model name or defaults to "openrouter"
 	Provider *string `json:"provider,omitempty"`
 
-	// FallbackModels lists alternative models if primary fails
-	FallbackModels []string `json:"fallback_models,omitempty"`
+	// Provider routing (OpenRouter)
+	ProviderOrder      []string `json:"provider_order,omitempty"`
+	ProviderOnly       []string `json:"provider_only,omitempty"`
+	ProviderIgnore     []string `json:"provider_ignore,omitempty"`
+	AllowFallbacks     *bool    `json:"allow_fallbacks,omitempty"`
+	ProviderSort       *string  `json:"provider_sort,omitempty"`
 
 	// ===== Debug Parameters (Only Active When DEBUG=true) =====
 
