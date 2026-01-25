@@ -226,6 +226,32 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 			// Also remove from requestParams to keep them in sync
 			delete(requestParams, "tools")
 		}
+
+		// Apply provider routing from capabilities (OpenRouter)
+		// Only apply if user hasn't explicitly set provider routing in the request
+		if modelCap.ProviderRouting != nil {
+			// Only apply if not already set by user
+			if params.ProviderOrder == nil && len(modelCap.ProviderRouting.Order) > 0 {
+				params.ProviderOrder = modelCap.ProviderRouting.Order
+				requestParams["provider_order"] = modelCap.ProviderRouting.Order
+			}
+			if params.ProviderIgnore == nil && len(modelCap.ProviderRouting.Ignore) > 0 {
+				params.ProviderIgnore = modelCap.ProviderRouting.Ignore
+				requestParams["provider_ignore"] = modelCap.ProviderRouting.Ignore
+			}
+			if params.ProviderOnly == nil && len(modelCap.ProviderRouting.Only) > 0 {
+				params.ProviderOnly = modelCap.ProviderRouting.Only
+				requestParams["provider_only"] = modelCap.ProviderRouting.Only
+			}
+			if params.AllowFallbacks == nil && modelCap.ProviderRouting.AllowFallbacks != nil {
+				params.AllowFallbacks = modelCap.ProviderRouting.AllowFallbacks
+				requestParams["allow_fallbacks"] = *modelCap.ProviderRouting.AllowFallbacks
+			}
+			if params.ProviderSort == nil && modelCap.ProviderRouting.Sort != nil {
+				params.ProviderSort = modelCap.ProviderRouting.Sort
+				requestParams["provider_sort"] = *modelCap.ProviderRouting.Sort
+			}
+		}
 	} else {
 		// Model not found in registry - log warning but continue (fail-open)
 		s.logger.Warn("model not found in capability registry, skipping tool filter",
