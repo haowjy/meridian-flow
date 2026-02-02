@@ -115,7 +115,7 @@ export function ThreadListPanel({ projectId, onThreadSelected }: ThreadListPanel
     if (!searchQuery.trim()) return nodes
     const query = searchQuery.toLowerCase()
     return nodes.filter(node =>
-      node.title?.toLowerCase().includes(query)
+      node.thread.title?.toLowerCase().includes(query)
     )
   }, [nodes, searchQuery])
 
