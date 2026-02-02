@@ -29,9 +29,10 @@ export const SelectableTreeItem = memo(function SelectableTreeItem({ id, childre
 
   return (
     <div
+      data-tree-item-id={id}
       className={cn(
         'flex items-center',
-        selected && 'bg-accent/10 rounded-sm'
+        selected && 'bg-primary/10 rounded-sm'
       )}
     >
       <div className="flex-1 min-w-0">{children}</div>

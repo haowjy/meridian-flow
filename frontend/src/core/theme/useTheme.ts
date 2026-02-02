@@ -7,10 +7,9 @@
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import type { ThemeColors, ThemeMode, ThemePreset } from './types';
-import { DEFAULT_THEME_ID, getThemePreset, THEME_PRESETS } from './themes';
+import { DEFAULT_THEME_ID, getThemePreset } from './themes';
 import { loadThemeFonts } from './fonts';
 
-const STORAGE_KEY_THEME = 'meridian-theme-id';
 const STORAGE_KEY_MODE = 'meridian-theme-mode';
 
 /**
@@ -43,10 +42,10 @@ function applyThemeColors(colors: ThemeColors, mode: 'light' | 'dark'): void {
   root.style.setProperty('--theme-text-muted', colors.textMuted);
   root.style.setProperty('--theme-border', colors.border);
 
-  // Accent
-  root.style.setProperty('--theme-accent', colors.accent);
-  root.style.setProperty('--theme-accent-hover', colors.accentHover);
-  root.style.setProperty('--theme-accent-foreground', colors.accentForeground);
+  // Favorite
+  root.style.setProperty('--theme-favorite', colors.favorite);
+  root.style.setProperty('--theme-favorite-hover', colors.favoriteHover);
+  root.style.setProperty('--theme-favorite-foreground', colors.favoriteForeground);
 
   // Primary
   root.style.setProperty('--theme-primary', colors.primary);
@@ -110,11 +109,8 @@ function applyThemeRadius(radius: number): void {
  * Main theme hook
  */
 export function useTheme() {
-  // Theme ID state
-  const [themeId, setThemeIdState] = useState<string>(() => {
-    if (typeof window === 'undefined') return DEFAULT_THEME_ID;
-    return localStorage.getItem(STORAGE_KEY_THEME) ?? DEFAULT_THEME_ID;
-  });
+  // Theme ID state - always use Modern Literary (single theme)
+  const [themeId] = useState<string>(DEFAULT_THEME_ID);
 
   // Mode state
   const [mode, setModeState] = useState<ThemeMode>(() => {
@@ -135,15 +131,15 @@ export function useTheme() {
   // Get current theme preset
   const theme = useMemo(() => getThemePreset(themeId), [themeId]);
 
-  // Set theme ID (with persistence)
-  const setThemeId = useCallback((id: string) => {
-    if (!THEME_PRESETS[id]) {
-      console.warn(`Unknown theme ID: ${id}, falling back to default`);
-      id = DEFAULT_THEME_ID;
-    }
-    localStorage.setItem(STORAGE_KEY_THEME, id);
-    setThemeIdState(id);
-  }, []);
+  // Set theme ID - no-op (single theme architecture)
+  const setThemeId = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    (_id: string) => {
+      console.warn('Theme switching is disabled. Only Modern Literary theme is available.');
+      // No-op: always use Modern Literary
+    },
+    []
+  );
 
   // Set mode (with persistence)
   const setMode = useCallback((newMode: ThemeMode) => {

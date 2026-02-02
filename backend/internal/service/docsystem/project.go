@@ -138,6 +138,11 @@ func (s *projectService) UpdateProject(ctx context.Context, id, userID string, r
 		}
 	}
 
+	// Update preferences if provided (replaces entire preferences object)
+	if req.Preferences != nil {
+		project.Preferences = req.Preferences
+	}
+
 	project.UpdatedAt = time.Now()
 
 	if err := s.projectRepo.Update(ctx, project); err != nil {

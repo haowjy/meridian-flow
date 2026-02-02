@@ -237,17 +237,43 @@ Meridian's UI serves the writer's creative process. Everything else is secondary
 
 ### Theme System
 
-Flexible theming with runtime switching. Default theme is **Modern Literary** (Slate + Amber).
-
-**Available themes**: `modern-literary` (default), `classic-jade`, `academic`
+Single theme architecture using **Modern Literary** (Warm Paper + Sage + Gold). Users can toggle between light/dark modes, but theme switching is disabled.
 
 **Usage**:
 ```typescript
 import { useThemeContext } from '@/core/theme';
-const { themeId, setThemeId, isDark, setMode } = useThemeContext();
+const { isDark, setMode } = useThemeContext();
+// setMode('light' | 'dark' | 'system')
+// Note: setThemeId is available but disabled (single theme)
 ```
 
-**Key CSS variables**: `--theme-bg`, `--theme-surface`, `--theme-text`, `--theme-accent`, `--theme-font-display`, `--theme-font-body`, `--theme-font-ui`
+#### Color Philosophy
+
+The theme system uses semantic color naming (v3+) with clear intent:
+
+**Interactive Elements** - Use `primary` (sage green: #5F8575)
+- Buttons, focus rings, hover states, selection
+- "This is the main action color"
+
+**Special Emphasis** - Use `favorite` (gold: #F4B41A)
+- Stars, bookmarks, featured content
+- "I want this to stand out as special"
+
+**Foundation Colors**
+- `background`: Base page background
+- `surface`: Card/panel background (elevated from background)
+- `text`: Primary text color
+- `muted`: Secondary text and disabled states
+
+**Feedback Colors** - `success/warning/error`
+- Use with `-foreground` variants on solid backgrounds for proper contrast
+- Example: `bg-success` + `text-success-foreground` ensures readability
+
+**Migration Note (v2 → v3)**: The legacy `accent` color was split for clearer intent:
+- `accent` → `favorite` for starred items, special markings
+- `accent` → `primary` for interactive UI elements
+
+**Key CSS variables**: `--theme-bg`, `--theme-surface`, `--theme-text`, `--theme-primary`, `--theme-favorite`, `--theme-font-display`, `--theme-font-body`, `--theme-font-ui`
 
 **Spacing**: 8pt grid (`gap-2` = 8px standard)
 
@@ -256,6 +282,28 @@ const { themeId, setThemeId, isDark, setMode } = useThemeContext();
 **Full docs**: `_docs/technical/frontend/themes/README.md`
 
 **Tailwind patterns**: `_docs/technical/frontend/tailwind-strategies.md`
+
+### Layout System
+
+Responsive layouts using the Strategy Pattern (mobile tabs vs desktop panels).
+
+**Desktop TwoPanelLayout** (≥768px):
+- **Chat: 42% (left)** - Primary AI interaction surface, prominent position
+- **Documents: 58% (right)** - Unified workspace (tree + editor)
+
+**Panel Sizing Philosophy:**
+- 42% chat (vs 35% before): Substantial space without dominating, emphasizes AI-native nature
+- 58% docs (vs 65% before): Still ample room for writing, not cramped
+- User can resize (25-60% chat range) or collapse chat for distraction-free editing
+- Collapsible chat: Can hide for distraction-free editing
+
+**Design principle**: Chat is the "special thing" (AI-native focus), but documents need real space (writer-first philosophy). Left position gives chat appropriate visual prominence while unified right-side workspace emphasizes document editing as primary activity.
+
+**Mobile MobileTabLayout** (<768px):
+- Full-screen tabs, one at a time
+- Bottom tab nav (3 tabs): Thread List, Active Thread, Documents
+
+**Full documentation**: `_docs/technical/frontend/architecture/layout-system.md`
 
 ## Key Conventions
 

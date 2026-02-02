@@ -9,6 +9,7 @@ import (
 	mstream "github.com/haowjy/meridian-stream-go"
 
 	llmModels "meridian/internal/domain/models/llm"
+	"meridian/internal/pkg/sliceutil"
 	domainllm "meridian/internal/domain/services/llm"
 	"meridian/internal/service/llm/tools"
 )
@@ -24,15 +25,6 @@ func (se *StreamExecutor) collectToolUse(block *llmModels.TurnBlock) {
 		return
 	}
 
-	// Helper to get map keys for debugging
-	getKeys := func(m map[string]interface{}) []string {
-		keys := make([]string, 0, len(m))
-		for k := range m {
-			keys = append(keys, k)
-		}
-		return keys
-	}
-
 	// Extract tool_use_id (string)
 	toolUseID, ok := block.Content["tool_use_id"].(string)
 	if !ok {
@@ -42,7 +34,7 @@ func (se *StreamExecutor) collectToolUse(block *llmModels.TurnBlock) {
 		} else {
 			se.logger.Warn("tool_use block missing tool_use_id",
 				"sequence", block.Sequence,
-				"available_keys", getKeys(block.Content))
+				"available_keys", sliceutil.Keys(block.Content))
 			return
 		}
 	}
@@ -56,7 +48,7 @@ func (se *StreamExecutor) collectToolUse(block *llmModels.TurnBlock) {
 		} else {
 			se.logger.Warn("tool_use block missing tool_name",
 				"sequence", block.Sequence,
-				"available_keys", getKeys(block.Content))
+				"available_keys", sliceutil.Keys(block.Content))
 			return
 		}
 	}
@@ -67,7 +59,7 @@ func (se *StreamExecutor) collectToolUse(block *llmModels.TurnBlock) {
 	if !exists {
 		se.logger.Warn("tool_use block missing input field",
 			"sequence", block.Sequence,
-			"available_keys", getKeys(block.Content))
+			"available_keys", sliceutil.Keys(block.Content))
 		return
 	}
 

@@ -107,6 +107,11 @@ func (h *ProjectHandler) GetProject(w http.ResponseWriter, r *http.Request) {
 	httputil.RespondJSON(w, http.StatusOK, project)
 }
 
+// preferencesDTO is the request body for project preferences
+type preferencesDTO struct {
+	DisabledTools []string `json:"disabled_tools,omitempty"` // snake_case for API
+}
+
 // updateProjectDTO is the transport-layer request for PATCH /api/projects/{id}.
 // Uses optional.Optional[string] for system_prompt to support tri-state PATCH semantics (RFC 7396):
 //   - field absent = don't change
@@ -115,6 +120,7 @@ func (h *ProjectHandler) GetProject(w http.ResponseWriter, r *http.Request) {
 type updateProjectDTO struct {
 	Name         *string                   `json:"name,omitempty"`
 	SystemPrompt optional.Optional[string] `json:"system_prompt"`
+	Preferences  *preferencesDTO           `json:"preferences,omitempty"` // If provided, replaces preferences
 }
 
 // UpdateProject updates a project
@@ -145,6 +151,13 @@ func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	req := &docsysSvc.UpdateProjectRequest{
 		Name:         dto.Name,
 		SystemPrompt: dto.SystemPrompt,
+	}
+
+	// Map preferences DTO to JSONMap if provided
+	if dto.Preferences != nil {
+		req.Preferences = docsystem.JSONMap{
+			"disabled_tools": dto.Preferences.DisabledTools,
+		}
 	}
 
 	project, err := h.projectService.UpdateProject(r.Context(), projectID, userID, req)

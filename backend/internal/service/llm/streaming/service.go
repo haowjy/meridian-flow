@@ -22,6 +22,7 @@ import (
 	llmSvc "meridian/internal/domain/services/llm"
 	skillSvc "meridian/internal/domain/services/skill"
 	"meridian/internal/jobs"
+	"meridian/internal/pkg/sliceutil"
 	"meridian/internal/service/llm/tokens"
 	"meridian/internal/service/llm/tools"
 	"meridian/internal/service/llm/tools/external"
@@ -74,11 +75,11 @@ type Service struct {
 	turnReader           llmRepo.TurnReader
 	turnNavigator        llmRepo.TurnNavigator
 	threadRepo           llmRepo.ThreadRepository
-	projectRepo          docsysRepo.ProjectRepository  // For validating project access on cold start
-	documentSvc          docsysSvc.DocumentService     // For tool operations (SOLID: DIP)
-	folderSvc            docsysSvc.FolderService       // For tool operations (SOLID: DIP)
-	namespaceSvc         docsysSvc.NamespaceService    // For namespace routing in tools
-	skillService         skillSvc.ProjectSkillService  // For skill_invoke/skill_list tools
+	projectRepo          docsysRepo.ProjectRepository // For validating project access on cold start
+	documentSvc          docsysSvc.DocumentService    // For tool operations (SOLID: DIP)
+	folderSvc            docsysSvc.FolderService      // For tool operations (SOLID: DIP)
+	namespaceSvc         docsysSvc.NamespaceService   // For namespace routing in tools
+	skillService         skillSvc.ProjectSkillService // For skill_invoke/skill_list tools
 	validator            ThreadValidator
 	providerGetter       LLMProviderGetter
 	registry             *mstream.Registry
@@ -181,6 +182,23 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		requestParams = make(map[string]interface{})
 	}
 
+	// Server-side tool policy enforcement:
+	// - Treat project preferences as the source of truth for tool availability.
+	// - Ignore any client-sent request_params.tools (no backwards-compat requirement).
+	// - Web search is only included if configured on the server.
+	project, err := s.projectRepo.GetByID(ctx, threadContext.projectID, req.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load project for tool policy: %w", err)
+	}
+
+	disabled := parseDisabledTools(project.Preferences)
+	toolNames := resolveServerToolNames(s.config.SearchAPIKey != "", disabled)
+	toolsParam, err := toolNamesToRequestParamsTools(toolNames)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build tools for request params: %w", err)
+	}
+	requestParams["tools"] = toolsParam
+
 	// Validate request params first
 	if err := llmModels.ValidateRequestParams(requestParams); err != nil {
 		s.logger.Error("invalid request params", "error", err)
@@ -268,9 +286,24 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		)
 	}
 
+	// Extract enabled tools from requestParams for tool registration
+	enabledTools := extractToolNames(requestParams)
+
+	// Build tool registry FIRST to generate tool section for system prompt (OCP compliance)
+	// Tools self-describe via metadata, registry generates the section dynamically
+	tempToolRegistry := tools.NewToolRegistryBuilder().
+		WithNamespaceService(s.namespaceSvc).
+		WithEnabledDocumentTools(enabledTools, threadContext.projectID, req.UserID, s.documentSvc, s.folderSvc).
+		WithEnabledSkillTools(enabledTools, threadContext.projectID, req.UserID, s.skillService, false).
+		Build()
+
+	// Get tool section from registry (OCP compliance - tools describe themselves)
+	toolSection := tempToolRegistry.BuildSystemPromptSection()
+
 	// Resolve system prompt from user, project, thread, and selected skills
 	// For new thread (cold start), threadContext.threadID will be empty - resolver handles this gracefully
-	if err := s.resolveSystemPromptForParams(ctx, threadContext.threadID, req.UserID, params, req.SelectedSkills); err != nil {
+	// Pass toolSection so the system prompt only mentions tools the LLM can actually use
+	if err := s.resolveSystemPromptForParams(ctx, threadContext.threadID, req.UserID, params, req.SelectedSkills, toolSection); err != nil {
 		s.logger.Error("failed to resolve system prompt", "error", err)
 		return nil, err
 	}
@@ -414,20 +447,21 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 
 	// Create per-request tool registry with project-specific tools
 	// All tools use service layer (SOLID compliance, Phase 4: zero repo dependencies)
+	// Use filtered builder methods to only register tools that are actually enabled
 	builder := tools.NewToolRegistryBuilder().
 		WithNamespaceService(s.namespaceSvc).
-		WithDocumentTools(thread.ProjectID, req.UserID, s.documentSvc, s.folderSvc).
-		WithSkillTools(thread.ProjectID, req.UserID, s.skillService, false) // false = model invocation, not user slash command
+		WithEnabledDocumentTools(enabledTools, thread.ProjectID, req.UserID, s.documentSvc, s.folderSvc).
+		WithEnabledSkillTools(enabledTools, thread.ProjectID, req.UserID, s.skillService, false) // false = model invocation, not user slash command
 
 	// Add web search tool if requested via provider-specific tool name
 	var hasWebSearch bool
 	var webSearchProvider string
 
-	// Extract tools from request params
-	requestedTools := extractToolNames(requestParams)
+	// requestedTools already extracted as enabledTools above
+	requestedTools := enabledTools
 
 	// Check for provider-specific web search tools
-	if contains(requestedTools, "tavily_web_search") {
+	if sliceutil.Contains(requestedTools, "tavily_web_search") {
 		if s.config.SearchAPIKey != "" {
 			searchClient := external.NewTavilyClient(s.config.SearchAPIKey)
 			builder.WithWebSearch(searchClient)
@@ -436,13 +470,13 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 		} else {
 			s.logger.Warn("tavily_web_search requested but SEARCH_API_KEY not configured")
 		}
-	} else if contains(requestedTools, "brave_web_search") {
+	} else if sliceutil.Contains(requestedTools, "brave_web_search") {
 		// Future: Brave implementation
 		s.logger.Warn("brave_web_search requested but not yet implemented")
-	} else if contains(requestedTools, "serper_web_search") {
+	} else if sliceutil.Contains(requestedTools, "serper_web_search") {
 		// Future: Serper implementation
 		s.logger.Warn("serper_web_search requested but not yet implemented")
-	} else if contains(requestedTools, "exa_web_search") {
+	} else if sliceutil.Contains(requestedTools, "exa_web_search") {
 		// Future: Exa implementation
 		s.logger.Warn("exa_web_search requested but not yet implemented")
 	}
@@ -489,20 +523,20 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	// This ensures SSE clients can connect while we're preparing the request
 	executor := NewStreamExecutor(
 		assistantTurn.ID,
-		threadContext.threadID,                  // Thread ID for AG-UI events
-		model,                                   // Pure model name (no provider prefix)
-		s.turnWriter,                            // TurnWriter
-		s.turnReader,                            // TurnReader
-		s.turnNavigator,                         // TurnNavigator (for continuation path loading)
-		llmProvider,                             // Provider adapter
-		toolRegistry,                            // Per-request ToolRegistry with project-specific tools
-		s.messageBuilder,                        // MessageBuilder (for continuation message building)
+		threadContext.threadID, // Thread ID for AG-UI events
+		model,                  // Pure model name (no provider prefix)
+		s.turnWriter,           // TurnWriter
+		s.turnReader,           // TurnReader
+		s.turnNavigator,        // TurnNavigator (for continuation path loading)
+		llmProvider,            // Provider adapter
+		toolRegistry,           // Per-request ToolRegistry with project-specific tools
+		s.messageBuilder,       // MessageBuilder (for continuation message building)
 		s.logger,
-		toolRoundLimit,                          // Per-user tool round limit (tier-ready)
-		s.config.Debug,                          // Pass DEBUG flag for optional event IDs
-		s.tokenFinalizer,                        // For finalizing tokens on completion/interruption
-		s.jobQueue,                              // Phase 2: Background job queue for async generation enrichment
-		s.config.SoftCancelTimeoutSeconds,       // Timeout for soft cancel cleanup (default: 5 minutes)
+		toolRoundLimit,                    // Per-user tool round limit (tier-ready)
+		s.config.Debug,                    // Pass DEBUG flag for optional event IDs
+		s.tokenFinalizer,                  // For finalizing tokens on completion/interruption
+		s.jobQueue,                        // Phase 2: Background job queue for async generation enrichment
+		s.config.SoftCancelTimeoutSeconds, // Timeout for soft cancel cleanup (default: 5 minutes)
 	)
 
 	// Register stream in registry IMMEDIATELY
@@ -704,7 +738,7 @@ func (s *Service) CreateAssistantTurnDebug(
 // This consolidates logic shared between CreateTurn and BuildDebugProviderRequest.
 //
 // Resolution order (all concatenated):
-// 1. Base prompt (Meridian identity, tool introduction)
+// 1. Base prompt (Meridian identity) + tool section (from toolSection parameter)
 // 2. User-provided system prompt (from params.System)
 // 3. Project system prompt
 // 4. Thread system prompt
@@ -712,16 +746,21 @@ func (s *Service) CreateAssistantTurnDebug(
 //
 // This method ALWAYS calls the resolver to ensure base/project/thread prompts
 // are included even when a user system prompt is provided.
+//
+// toolSection is a pre-built string describing available tools and guidelines.
+// This is generated by ToolRegistry.BuildSystemPromptSection() to enable OCP compliance:
+// tools self-describe via metadata, and the registry generates the section dynamically.
 func (s *Service) resolveSystemPromptForParams(
 	ctx context.Context,
 	threadID string,
 	userID string,
 	params *llmModels.RequestParams,
 	selectedSkills []string,
+	toolSection string,
 ) error {
 	// Always resolve to include base + project + thread system prompts
-	// The resolver handles concatenation: base + user + project + thread + skills
-	systemPrompt, err := s.systemPromptResolver.Resolve(ctx, threadID, userID, params.System, selectedSkills)
+	// The resolver handles concatenation: base (with tool section) + user + project + thread + skills
+	systemPrompt, err := s.systemPromptResolver.Resolve(ctx, threadID, userID, params.System, selectedSkills, toolSection)
 	if err != nil {
 		return fmt.Errorf("failed to resolve system prompt: %w", err)
 	}
@@ -729,6 +768,7 @@ func (s *Service) resolveSystemPromptForParams(
 	if systemPrompt != nil {
 		s.logger.Debug("final system prompt for LLM",
 			"length", len(*systemPrompt),
+			"tool_section_length", len(toolSection),
 		)
 		params.System = systemPrompt
 	}
@@ -902,16 +942,6 @@ func extractToolNames(requestParams map[string]interface{}) []string {
 	}
 
 	return toolNames
-}
-
-// contains checks if a slice contains a string
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
 }
 
 // deriveTitleFromTurnBlocks extracts a title from the first text block content.

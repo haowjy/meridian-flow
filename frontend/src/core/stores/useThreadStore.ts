@@ -36,6 +36,8 @@ type LoadStatus = 'idle' | 'loading' | 'success' | 'error'
 
 interface ThreadStore {
   threads: Thread[]
+  /** Project ID for the currently cached threads (enables stale-while-revalidate) */
+  threadsProjectId: string | null
   /** Ordered IDs for the currently loaded turn window (active thread only). */
   turnIds: string[]
   /** Normalized turn entities for the active thread window. */
@@ -212,6 +214,7 @@ export const useThreadStore = create<ThreadStore>()(
   persist(
     (set, get) => ({
       threads: [],
+      threadsProjectId: null,
       turnIds: [],
       turnById: {},
       threadId: null,
@@ -257,15 +260,26 @@ export const useThreadStore = create<ThreadStore>()(
       },
 
       loadThreads: async (projectId: string, signal?: AbortSignal) => {
-        // Set loading state based on whether we have cached thread data
-        const currentState = get()
-        const status = currentState.threads.length === 0 ? 'loading' : 'success'
-        set({ statusThreads: status, isFetchingThreads: true, error: null })
+        const state = get()
+        // Stale-while-revalidate: show cached data immediately if same project
+        const hasCachedData = state.threads.length > 0 && state.threadsProjectId === projectId
+
+        if (!hasCachedData) {
+          // No cache or different project: show loading state
+          set({ statusThreads: 'loading', isFetchingThreads: true, error: null, threadsProjectId: projectId })
+        } else {
+          // Has cache for same project: keep showing cached data, fetch in background
+          set({ isFetchingThreads: true, error: null })
+        }
 
         try {
-          // Network-first for threads; keep Dexie for threads if needed in future
           const data = await api.threads.list(projectId, { signal })
-          set({ threads: data, statusThreads: 'success', isFetchingThreads: false })
+          set({
+            threads: data,
+            statusThreads: 'success',
+            isFetchingThreads: false,
+            threadsProjectId: projectId,
+          })
         } catch (error) {
           // Handle AbortError silently
           if (error instanceof Error && error.name === 'AbortError') {
@@ -274,10 +288,13 @@ export const useThreadStore = create<ThreadStore>()(
           }
 
           const message = getErrorMessageWithFallback(error, 'Failed to load threads')
-          // If we have cached threads, keep status as 'success', otherwise set to 'error'
-          const currentThreads = get().threads
-          const errorStatus = currentThreads.length > 0 ? 'success' : 'error'
-          set({ error: message, statusThreads: errorStatus, isFetchingThreads: false })
+          // On error with cached data for same project, keep showing cached data
+          const hasData = get().threads.length > 0 && get().threadsProjectId === projectId
+          set({
+            error: message,
+            statusThreads: hasData ? 'success' : 'error',
+            isFetchingThreads: false,
+          })
         }
       },
 

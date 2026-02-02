@@ -16,13 +16,13 @@ feature: "Tool Continuation"
 
 **Flow**:
 1. LLM returns tool_use blocks + `stop_reason: "tool_use"`
-2. Backend executes backend-side tools (doc_search, web_search via Tavily)
+2. Backend executes local tools (doc_search, web_search via Tavily)
 3. Backend creates follow-up assistant turn with tool results
 4. Sends to LLM again
 5. Repeat until `stop_reason: "end_turn"`
 
 **File**: `backend/internal/service/llm/streaming/mstream_adapter.go:272`
-**Check**: `block.IsBackendSideTool()` determines which tools to execute
+**Check**: `block.IsLocalTool()` determines which tools to execute
 
 ---
 

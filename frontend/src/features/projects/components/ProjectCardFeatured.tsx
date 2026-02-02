@@ -42,7 +42,7 @@ export function ProjectCardFeatured({ project, onFavoriteToggle, className }: Pr
           className={cn(
             'absolute top-3 right-3 p-1 rounded transition-colors',
             project.isFavorite
-              ? 'text-accent hover:text-accent/80'
+              ? 'text-favorite hover:text-favorite/80'
               : 'text-muted-foreground/40 hover:text-muted-foreground opacity-0 group-hover:opacity-100'
           )}
           aria-label={project.isFavorite ? 'Remove from favorites' : 'Add to favorites'}

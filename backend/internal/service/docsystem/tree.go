@@ -143,7 +143,6 @@ func (s *treeService) GetProjectTreeWithOptions(ctx context.Context, userID, pro
 			ID:        doc.ID,
 			ProjectID: doc.ProjectID,
 			Name:      doc.Name,
-			Slug:      doc.Slug,
 			FolderID:  doc.FolderID,
 			Extension: doc.Extension,
 			Path:      docPath,

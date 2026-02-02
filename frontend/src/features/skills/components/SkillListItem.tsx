@@ -23,14 +23,14 @@ export function SkillListItem({ skill, isSelected, onSelect, onEdit, onDelete }:
     <div
       className={cn(
         'group flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors',
-        'hover:bg-accent/50',
-        isSelected && 'bg-accent'
+        'hover:bg-primary/50',
+        isSelected && 'bg-primary'
       )}
       onClick={onSelect}
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className="font-medium truncate">{skill.displayName}</span>
+          <span className="font-medium truncate">{skill.name}</span>
           {skill.disableModelInvocation && (
             <Tooltip>
               <TooltipTrigger asChild>

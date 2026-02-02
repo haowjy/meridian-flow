@@ -58,9 +58,10 @@ export function handleToolCallStart(
   })
 
   // Create skeleton block for tool_use so rendering pipeline works
+  // Note: We store camelCase properties in the block content for frontend consistency
   actions.setStreamingBlockContent(ctx.turnId, blockIndex, 'tool_use', {
-    tool_name: data.toolCallName,
-    tool_use_id: toolCallId,
+    toolName: data.toolCallName,
+    toolUseId: toolCallId,
     input: {},
   })
 
@@ -136,8 +137,8 @@ export function handleToolCallArgs(
     // SOLID: Defensive - block may not exist yet in race conditions
     const existingContent = block?.content as Record<string, unknown> | undefined
     actions.setStreamingBlockContent(ctx.turnId, blockIndex, 'tool_use', {
-      tool_name: existingContent?.tool_name ?? data.toolCallName ?? '',
-      tool_use_id: existingContent?.tool_use_id ?? toolCallId,
+      toolName: existingContent?.toolName ?? data.toolCallName ?? '',
+      toolUseId: existingContent?.toolUseId ?? toolCallId,
       input: parsed as Record<string, unknown>,
     })
 
@@ -177,8 +178,8 @@ export function handleToolCallEnd(
       // Defensive: preserve existing content or use defaults
       const existingContent = block?.content as Record<string, unknown> | undefined
       actions.setStreamingBlockContent(ctx.turnId, blockIndex, 'tool_use', {
-        tool_name: existingContent?.tool_name ?? '',
-        tool_use_id: existingContent?.tool_use_id ?? toolCallId,
+        toolName: existingContent?.toolName ?? '',
+        toolUseId: existingContent?.toolUseId ?? toolCallId,
         input: parsed,
       })
 
@@ -228,17 +229,25 @@ export function handleToolCallResult(
   const toolCallId = normalizeToolCallId(data.toolCallId)
 
   // Backend emits `content` as a JSON string; parse for block content.
-  let content: Record<string, unknown> = {}
+  let rawContent: Record<string, unknown> = {}
   try {
     const parsed = JSON.parse(data.content) as Record<string, unknown>
     if (parsed && typeof parsed === 'object') {
-      content = parsed
+      rawContent = parsed
     }
   } catch {
-    content = { raw: data.content }
+    rawContent = { raw: data.content }
   }
 
-  const isError = typeof content.is_error === 'boolean' ? content.is_error : false
+  // Convert snake_case fields from backend to camelCase for frontend consistency
+  const isError = typeof rawContent.is_error === 'boolean' ? rawContent.is_error : false
+  const { tool_use_id, tool_name, is_error, ...rest } = rawContent
+  const content: Record<string, unknown> = {
+    ...rest,
+    toolUseId: tool_use_id,
+    toolName: tool_name,
+    isError: is_error,
+  }
 
   // Allocate a new block index for the tool_result.
   // Note: Results may arrive after subsequent blocks; pairing is by tool_use_id.

@@ -23,7 +23,6 @@ interface SkillStoreState {
   createSkill: (projectId: string, data: CreateSkillRequest) => Promise<Skill>
   updateSkill: (projectId: string, skillId: string, data: UpdateSkillRequest) => Promise<Skill>
   deleteSkill: (projectId: string, skillId: string) => Promise<void>
-  reorderSkills: (projectId: string, skillIds: string[]) => Promise<void>
   setSelectedSkillId: (skillId: string | null) => void
   clearSkills: () => void
 }
@@ -40,7 +39,17 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
   isLoadingSelectedSkill: false,
 
   loadSkills: async (projectId: string, signal: AbortSignal) => {
-    set({ skillsStatus: 'loading', isLoadingSkills: true, error: null, currentProjectId: projectId })
+    const state = get()
+    // Stale-while-revalidate: show cached data immediately if same project
+    const hasCachedData = state.skills.length > 0 && state.currentProjectId === projectId
+
+    if (!hasCachedData) {
+      // No cache or different project: show loading state
+      set({ skillsStatus: 'loading', isLoadingSkills: true, error: null, currentProjectId: projectId })
+    } else {
+      // Has cache for same project: keep showing cached data, fetch in background
+      set({ isLoadingSkills: true, error: null })
+    }
 
     try {
       const skills = await api.skills.list(projectId, { signal })
@@ -52,8 +61,10 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
       if (error instanceof Error && error.name === 'AbortError') {
         return
       }
+      // On error with cached data for same project, keep showing cached data
+      const hasData = get().skills.length > 0 && get().currentProjectId === projectId
       set({
-        skillsStatus: 'error',
+        skillsStatus: hasData ? 'success' : 'error',
         isLoadingSkills: false,
         error: error instanceof Error ? error.message : 'Failed to load skills',
       })
@@ -110,19 +121,6 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
       skills: state.skills.filter((s) => s.id !== skillId),
       selectedSkillId: state.selectedSkillId === skillId ? null : state.selectedSkillId,
       selectedSkillContent: state.selectedSkillContent?.id === skillId ? null : state.selectedSkillContent,
-    }))
-  },
-
-  reorderSkills: async (projectId: string, skillIds: string[]) => {
-    await api.skills.reorder(projectId, skillIds)
-
-    // Update local positions
-    set((state) => ({
-      skills: skillIds.map((id, index) => {
-        const skill = state.skills.find((s) => s.id === id)
-        if (!skill) return null
-        return { ...skill, position: index }
-      }).filter((s): s is Skill => s !== null),
     }))
   },
 

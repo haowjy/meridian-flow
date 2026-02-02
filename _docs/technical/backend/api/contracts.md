@@ -268,37 +268,28 @@ Bulk import documents from zip file(s) in replace mode. **Deletes all existing d
 
 ### Identifier Resolution
 
-Projects and documents support both UUIDs and slugs:
+Projects and documents support different identifier types:
 
 | Resource | Endpoint Pattern | UUID | Slug |
 |----------|-----------------|------|------|
 | Project | `/api/projects/:id` | ✅ | ✅ |
 | Document | `/api/documents/:id` | ✅ | ❌ |
 
-**Why documents don't support slugs directly:**
-Document slugs are unique per-project (not globally). Standalone document endpoints
-like `/api/documents/:id` lack project context needed for slug resolution.
+**Why documents only support UUIDs directly:**
+Documents are identified by their project-relative path, which requires project context.
+Standalone document endpoints like `/api/documents/:id` only accept UUIDs.
 
-**Slug access patterns:**
+**Access patterns:**
 - **Projects**: Use UUID or slug in `/api/projects/:id`
 - **Documents**: Use UUID in `/api/documents/:id`, or use tree endpoint with project context
 
-**Document Slug Format (Path-Based):**
-Document slugs include folder paths for semantic URLs and disambiguation:
+**Document Path Format:**
+Documents use project-relative paths for URL routing:
 - Root documents: `readme`, `chapter-1`
 - Nested documents: `characters/heroes/aria`, `locations/cities/stormhaven`
 
-Slugs are URL-friendly (lowercase, hyphens for spaces) and unique per project. When a document is moved or its folder is renamed, the slug is regenerated to reflect the new path.
-
-**Error response when document slug provided:**
-```json
-{
-  "type": "https://datatracker.ietf.org/doc/html/rfc7231#section-6.5.1",
-  "title": "Bad Request",
-  "status": 400,
-  "detail": "document slugs require project context"
-}
-```
+Paths are derived from folder structure and document names. Frontend uses splat routes
+to capture the full path and resolves to UUID via the tree store.
 
 ### Create Document (POST /api/documents)
 

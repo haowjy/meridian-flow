@@ -15,7 +15,7 @@ The Meridian backend uses the `meridian-llm-go` library to provide:
 
 1. **Multi-provider thread** - Anthropic, OpenRouter (working); OpenAI, Gemini (planned)
 2. **Real-time streaming** - SSE with catchup for reconnections
-3. **Tool execution** - Server-side web search, client-side bash/editor
+3. **Tool execution** - Local (Tavily) or provider-side (Anthropic) web search, client-side bash/editor
 4. **Turn persistence** - PostgreSQL storage with block accumulation
 5. **Provider routing** - Model-based provider selection
 

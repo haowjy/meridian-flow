@@ -149,21 +149,21 @@ export function findFolderByPath(
 }
 
 // =============================================================================
-// SLUG BUILDING
+// PATH BUILDING
 // =============================================================================
 
 /**
- * Build document slug for navigation.
+ * Build document path for navigation.
  *
- * Document slugs already contain the full path (folder/docname format),
- * so we just return the slug directly.
+ * Document paths already contain the full path with extension,
+ * so we just return the path directly.
  *
  * @example
- * // Document with slug "characters/hero" in folder "Characters"
- * buildDocumentSlug(document)
- * // => "characters/hero"
+ * // Document with path "Characters/Hero.md" in folder "Characters"
+ * buildDocumentPath(document)
+ * // => "Characters/Hero.md"
  */
-export function buildDocumentSlug(document: Document): string {
-  // Slug already contains full path (e.g., "chapters/readme")
-  return document.slug
+export function buildDocumentPath(document: Document): string {
+  // Path already contains full path with extension (e.g., "Chapters/README.md")
+  return document.path
 }

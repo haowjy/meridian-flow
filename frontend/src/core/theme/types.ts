@@ -13,10 +13,10 @@ export interface ThemeColors {
   textMuted: string;
   border: string;
 
-  // Accent
-  accent: string;
-  accentHover: string;
-  accentForeground: string;
+  // Favorite (for starred/favorited items)
+  favorite: string;
+  favoriteHover: string;
+  favoriteForeground: string;
 
   // Primary (for buttons, interactive elements)
   primary: string;

@@ -11,7 +11,7 @@ import type { ToolBlockContent } from '@/features/threads/types'
 import { normalizeToolCallId } from '@/features/threads/utils/normalizeToolCallId'
 
 interface UseToolStreamingStateOptions {
-  /** The block content containing tool_use_id */
+  /** The block content containing toolUseId */
   blockContent?: ToolBlockContent
   /** Direct tool call ID (alternative to blockContent) */
   toolCallId?: string
@@ -63,7 +63,7 @@ export function useToolStreamingState(
   opts: UseToolStreamingStateOptions
 ): ToolStreamingStateResult {
   // Resolve toolCallId from either direct prop or block content
-  const rawToolCallId = opts.toolCallId ?? opts.blockContent?.tool_use_id
+  const rawToolCallId = opts.toolCallId ?? opts.blockContent?.toolUseId
   const toolCallId = typeof rawToolCallId === 'string' ? normalizeToolCallId(rawToolCallId) : rawToolCallId
 
   // Subscribe to the specific tool's state

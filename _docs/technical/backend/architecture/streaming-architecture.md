@@ -68,7 +68,7 @@ This design provides:
   - `text_content`: Plain text for `text`, `thinking`, `tool_result` (optional).
   - `content` (JSONB): Type‑specific structured data.
   - `provider`, `provider_data`: Raw provider information (opaque, used for replay/debug).
-  - `execution_side`: `"server"` vs `"client"` for tool blocks.
+  - `execution_side`: `"provider"`, `"local"`, or `"client"` for tool blocks.
 - Canonical definition: `backend/internal/domain/models/llm/turn_block.go`.
 
 ### Key Relationship
@@ -323,7 +323,7 @@ Tool execution is modeled entirely in terms of blocks:
   - `web_search_result` blocks for provider‑executed web search results.
 - Execution side:
   - `execution_side = "client"` for tools the consumer must execute.
-  - `execution_side = "server"` for provider‑executed tools (e.g., Anthropic web search).
+  - `execution_side = "provider"` for provider‑executed tools (e.g., Anthropic web search).
 
 Streaming behavior:
 - Tool‑related blocks follow the same event pattern:

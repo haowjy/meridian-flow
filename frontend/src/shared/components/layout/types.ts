@@ -11,6 +11,8 @@ export interface PanelDefinitions {
   activeThread: ReactNode
   /** Document panel - tree or editor (right in desktop, tab in mobile) */
   documentPanel: ReactNode
+  /** Project settings panel (left panel view option) */
+  projectSettings?: ReactNode
 }
 
 /**
@@ -22,6 +24,8 @@ export interface LayoutStrategyProps {
   panels: PanelDefinitions
   /** Additional className for root element */
   className?: string
+  /** Left panel view state (chat, thread list, or project settings) - Phase 3 rail navigation */
+  leftPanelView?: 'chat' | 'threads' | 'projectSettings'
 }
 
 /**

@@ -9,9 +9,8 @@ const (
 	DeltaTypeJSON          = "json_delta"        // Incremental JSON content (tool input, tool results, etc.)
 	DeltaTypeUsage         = "usage_delta"       // Token usage updates
 
-	// Legacy aliases for backwards compatibility
-	DeltaTypeTextDelta      = DeltaTypeText
-	DeltaTypeInputJSONDelta = DeltaTypeJSON // DEPRECATED: use DeltaTypeJSON
+	// Legacy alias for backwards compatibility
+	DeltaTypeTextDelta = DeltaTypeText
 )
 
 // TurnBlockDelta represents an incremental update to a turn block during streaming

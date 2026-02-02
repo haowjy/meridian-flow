@@ -182,7 +182,6 @@ func main() {
 	skillService := serviceSkill.NewProjectSkillService(
 		skillRepo,
 		folderRepo,
-		docRepo,
 		namespaceSvc,
 		authorizer,
 		txManager,
@@ -330,8 +329,7 @@ func main() {
 	mux.HandleFunc("PATCH /api/threads/{id}/last-viewed-turn", threadHandler.UpdateLastViewedTurn)
 	mux.HandleFunc("DELETE /api/threads/{id}", threadHandler.DeleteThread)
 	mux.HandleFunc("GET /api/threads/{id}/turns", threadHandler.GetPaginatedTurns)
-	mux.HandleFunc("POST /api/threads/{id}/turns", threadHandler.CreateTurn) // Deprecated: use POST /api/turns
-	mux.HandleFunc("POST /api/turns", threadHandler.CreateTurnV2)            // New: thread_id/project_id in body
+	mux.HandleFunc("POST /api/turns", threadHandler.CreateTurnV2)
 	mux.HandleFunc("GET /api/turns/{id}/path", threadHandler.GetTurnPath)
 	mux.HandleFunc("GET /api/turns/{id}/siblings", threadHandler.GetTurnSiblings)
 

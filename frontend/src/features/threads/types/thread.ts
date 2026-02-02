@@ -19,12 +19,43 @@ export type BlockType =
   | 'web_search_use'
   | 'web_search_result'
 
-export interface ToolBlockContent {
+/**
+ * DTO matching backend response (snake_case).
+ * Used in SSE event handlers when receiving data from the server.
+ */
+export interface ToolBlockContentDto {
   tool_use_id?: string
   tool_name?: string
   input?: Record<string, unknown>
   is_error?: boolean
   [key: string]: unknown
+}
+
+/**
+ * Internal type (camelCase) for frontend usage.
+ * All component code should use this type.
+ */
+export interface ToolBlockContent {
+  toolUseId?: string
+  toolName?: string
+  input?: Record<string, unknown>
+  isError?: boolean
+  [key: string]: unknown
+}
+
+/**
+ * Maps backend DTO to internal camelCase type.
+ * Call this in SSE event handlers when receiving tool block content.
+ */
+export function fromToolBlockContentDto(dto: ToolBlockContentDto): ToolBlockContent {
+  // Spread to copy any additional properties, then override with camelCase versions
+  const { tool_use_id, tool_name, is_error, ...rest } = dto
+  return {
+    ...rest,
+    toolUseId: tool_use_id,
+    toolName: tool_name,
+    isError: is_error,
+  }
 }
 
 export interface TurnBlock {

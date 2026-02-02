@@ -12,6 +12,7 @@ import { createFolderMenuItems } from '../utils/menuBuilders'
 import { InlineNameEditor } from './InlineNameEditor'
 import { TreeItemInfoHoverCard, HoverCardTrigger } from './tree-item-info/TreeItemInfoHoverCard'
 import { useTreeSelection } from '../hooks/useTreeSelection'
+import { useUIStore } from '@/core/stores/useUIStore'
 import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
 import type { Folder as FolderType } from '@/features/folders/types/folder'
@@ -76,6 +77,8 @@ export const FolderTreeItem = memo(function FolderTreeItem({
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [contextMenuOpen, setContextMenuOpen] = useState(false)
   const { toggleSelection, clearSelection } = useTreeSelection()
+  const recentlyCreatedFolderId = useUIStore((s) => s.recentlyCreatedFolderId)
+  const isRecentlyCreated = folder.id === recentlyCreatedFolderId
 
   // Wrap callbacks to pass folder.id - these are only created when menu opens
   const menuItems = createFolderMenuItems({
@@ -96,10 +99,10 @@ export const FolderTreeItem = memo(function FolderTreeItem({
       <Collapsible open={isExpanded} onOpenChange={() => onToggle(folder.id)}>
         <div
           className={cn(
-            'group flex w-full items-center gap-1.5 rounded-sm px-2.5 py-2 md:py-1 text-left text-sm'
+            'group flex w-full items-center gap-2 rounded-sm px-2.5 py-2 md:py-1 text-left text-sm'
           )}
         >
-          <FolderIcon className="size-4 md:size-3.5 flex-shrink-0" />
+          <FolderIcon className="size-5 md:size-4 flex-shrink-0" />
           <InlineNameEditor
             initialValue={folder.name}
             existingNames={existingNames}
@@ -133,6 +136,8 @@ export const FolderTreeItem = memo(function FolderTreeItem({
             className={cn(
               'group flex w-full items-center rounded-sm text-left text-sm transition-colors',
               'hover:bg-hover',
+              // Briefly highlight newly created folders so user can see where it appeared
+              isRecentlyCreated && 'bg-primary/20 animate-pulse',
             )}
           >
             <button
@@ -150,13 +155,13 @@ export const FolderTreeItem = memo(function FolderTreeItem({
                 onToggle(folder.id)
               }}
               className={cn(
-                'flex flex-1 min-w-0 items-center gap-1.5 px-2.5 py-2 md:py-1',
-                'cursor-default appearance-none bg-transparent border-none m-0 font-inherit text-inherit text-left'
+                'flex flex-1 min-w-0 items-center gap-2 px-2.5 py-2 md:py-1',
+                'cursor-pointer appearance-none bg-transparent border-none m-0 font-inherit text-inherit text-left'
               )}
               aria-label={`${isExpanded ? 'Collapse' : 'Expand'} folder: ${folder.name}`}
               aria-expanded={isExpanded}
             >
-              <FolderIcon className="size-4 md:size-3.5 flex-shrink-0" />
+              <FolderIcon className="size-5 md:size-4 flex-shrink-0" />
               <span className="truncate font-medium">{folder.name}</span>
             </button>
 

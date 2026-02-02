@@ -13,6 +13,7 @@ import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
 import type { CodeMirrorEditorRef, CodeMirrorEditorOptions, FormatType, SetContentOptions } from './types'
 import { markdownLanguage, editorTheme, getWordCount, scrollMarginsExtension } from './extensions'
 import { livePreviewPlugin, registerBuiltinRenderers } from './livePreview'
+import { createParentScrollExtension } from './extensions/parentScrollExtension'
 import {
   toggleBold,
   toggleItalic,
@@ -233,6 +234,9 @@ export const CodeMirrorEditor = forwardRef<CodeMirrorEditorRef, CodeMirrorEditor
       const extensions = [
         // Core
         history(),
+
+        // Parent scroll container support (fixes coordinate calculations)
+        createParentScrollExtension(),
 
         // Key handling (high priority)
         Prec.highest(markdownEnterKeymap),

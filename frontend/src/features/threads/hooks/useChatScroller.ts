@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 
-const DEBUG_SCROLL = import.meta.env.VITE_DEBUG_SCROLL === '1'
-
 interface UseChatScrollerProps {
   /** Thread-level reset key - triggers content gating (hide → scroll → reveal). */
   threadResetKey: string | null
@@ -118,17 +116,6 @@ export function useChatScroller({
       if (turnElement && stableFrames >= initialStableFrames) {
         const isLastTurn = turnIds[turnIds.length - 1] === scrollToTurnId
 
-        if (DEBUG_SCROLL) {
-          console.debug('[scroll] useChatScroller:initial', {
-            t: Date.now(),
-            threadResetKey,
-            scrollToTurnId,
-            isLastTurn,
-            scrollHeight: scrollContainer.scrollHeight,
-            clientHeight: scrollContainer.clientHeight,
-          })
-        }
-
         if (isLastTurn) {
           // Scroll to bottom for last turn
           scrollContainer.scrollTo({ top: scrollContainer.scrollHeight })
@@ -198,15 +185,6 @@ export function useChatScroller({
       )
 
       if (turnElement && stableFrames >= initialStableFrames) {
-        if (DEBUG_SCROLL) {
-          console.debug('[scroll] useChatScroller:sibling', {
-            t: Date.now(),
-            scrollToTurnId,
-            frames,
-            stableFrames,
-          })
-        }
-
         const isLastTurn = turnIds[turnIds.length - 1] === scrollToTurnId
         if (isLastTurn) {
           scrollContainer.scrollTo({ top: scrollContainer.scrollHeight })
