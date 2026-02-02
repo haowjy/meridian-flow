@@ -86,8 +86,15 @@ export function useChatScroller({
     if (!scrollContainer) return
     if (isLoading) return
     if (initialScrolledRef.current) return
-    if (!scrollToTurnId) return
     if (turnIds.length === 0) return
+
+    // Fallback: No specific turn to scroll to, but we have turns to display.
+    // Immediately reveal content (no scroll needed for bookmarked position).
+    if (!scrollToTurnId) {
+      initialScrolledRef.current = true
+      queueMicrotask(() => setIsContentReady(true))
+      return
+    }
 
     let cancelled = false
     let frameId: number | null = null

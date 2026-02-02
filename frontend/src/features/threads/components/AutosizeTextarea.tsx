@@ -38,14 +38,21 @@ export function AutosizeTextarea({
     const ref = useRef<HTMLTextAreaElement | null>(null)
 
     // Focus when focusKey changes (parent controls timing, component handles mechanics)
+    // Positions cursor at end of text for better UX when editing existing content
     useEffect(() => {
+        if (!focusKey) return  // Only focus when focusKey is truthy
         requestAnimationFrame(() => {
+            const el = ref.current
+            if (!el) return
             try {
-                ref.current?.focus({ preventScroll: true })
+                el.focus({ preventScroll: true })
             } catch {
                 // Older browsers may not support preventScroll
-                ref.current?.focus()
+                el.focus()
             }
+            // Position cursor at end of text
+            const len = el.value.length
+            el.setSelectionRange(len, len)
         })
     }, [focusKey])
 
