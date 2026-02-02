@@ -11,7 +11,6 @@ import { createUserMenuItems } from '../utils/menuBuilders'
  */
 interface UserMenuButtonProps {
   profile: UserProfile
-  onSettings: () => void
   onSignOut: () => void
   menuSide?: 'top' | 'bottom' | 'right' | 'left'
   showName?: boolean
@@ -27,16 +26,16 @@ interface UserMenuButtonProps {
  */
 export function UserMenuButton({
   profile,
-  onSettings,
   onSignOut,
   menuSide = 'top',
   showName = true,
   className,
 }: UserMenuButtonProps) {
   // Build menu items from handlers - extensible
+  // Note: Settings uses href (Link) in menuBuilders, not a callback
   const menuItems = useMemo(
-    () => createUserMenuItems({ onSettings, onSignOut }),
-    [onSettings, onSignOut]
+    () => createUserMenuItems({ onSignOut }),
+    [onSignOut]
   )
 
   return (
