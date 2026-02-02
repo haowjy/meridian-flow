@@ -1,4 +1,4 @@
-import { createFileRoute, useRouter, Link } from '@tanstack/react-router'
+import { createFileRoute, useRouter, useCanGoBack, Link } from '@tanstack/react-router'
 import { ArrowLeft, LogOut } from 'lucide-react'
 import { useUserProfile, useAuthActions, UserAvatar } from '@/features/auth'
 import { Button } from '@/shared/components/ui/button'
@@ -9,6 +9,7 @@ export const Route = createFileRoute('/_authenticated/settings')({
 
 function SettingsPage() {
   const router = useRouter()
+  const canGoBack = useCanGoBack()
   const { profile, status } = useUserProfile()
   const { signOut } = useAuthActions()
 
@@ -31,9 +32,10 @@ function SettingsPage() {
       {/* Back button - respects navigation history */}
       <button
         onClick={() => {
-          if (window.history.length > 1) {
+          if (canGoBack) {
             router.history.back()
           } else {
+            // Fallback to /projects since / redirects there anyway
             router.navigate({ to: '/projects' })
           }
         }}

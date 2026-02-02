@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Link } from '@tanstack/react-router'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,14 +48,24 @@ export function UserMenu({
           return (
             <div key={item.id}>
               {showSeparatorBefore && index > 0 && <DropdownMenuSeparator />}
-              <DropdownMenuItem
-                onSelect={item.onSelect}
-                variant={item.variant}
-                disabled={item.disabled}
-              >
-                {item.icon && <span className="mr-2">{item.icon}</span>}
-                <span>{item.label}</span>
-              </DropdownMenuItem>
+              {item.href ? (
+                // Use Link for proper router history integration (enables useCanGoBack)
+                <DropdownMenuItem asChild variant={item.variant} disabled={item.disabled}>
+                  <Link to={item.href}>
+                    {item.icon && <span className="mr-2">{item.icon}</span>}
+                    <span>{item.label}</span>
+                  </Link>
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem
+                  onSelect={item.onSelect}
+                  variant={item.variant}
+                  disabled={item.disabled}
+                >
+                  {item.icon && <span className="mr-2">{item.icon}</span>}
+                  <span>{item.label}</span>
+                </DropdownMenuItem>
+              )}
               {showSeparatorAfter && index < items.length - 1 && (
                 <DropdownMenuSeparator />
               )}

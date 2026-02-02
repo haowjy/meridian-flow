@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, useRouter, useCanGoBack } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 
 export const Route = createFileRoute('/privacy')({
@@ -6,17 +6,26 @@ export const Route = createFileRoute('/privacy')({
 })
 
 function PrivacyPage() {
+  const router = useRouter()
+  const canGoBack = useCanGoBack()
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto max-w-2xl px-6 py-8">
-        {/* Back button */}
-        <Link
-          to="/"
+        {/* Back button - respects navigation history */}
+        <button
+          onClick={() => {
+            if (canGoBack) {
+              router.history.back()
+            } else {
+              router.navigate({ to: '/' })
+            }
+          }}
           className="mb-8 inline-flex items-center gap-2 type-label text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="size-4" />
           Back
-        </Link>
+        </button>
 
         {/* Page title */}
         <h1 className="mb-8 type-display">Privacy Policy</h1>

@@ -139,7 +139,6 @@ export function WorkspaceRail({
         {status === 'authenticated' && profile && (
           <UserMenuButton
             profile={profile}
-            onSettings={() => navigate({ to: '/settings' })}
             onSignOut={signOut}
             menuSide="right"
             showName={false}

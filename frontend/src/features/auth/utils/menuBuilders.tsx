@@ -6,7 +6,6 @@ import type { UserMenuItemConfig } from '../types'
  * Open/Closed: Add new handlers without modifying consumers.
  */
 interface UserMenuHandlers {
-  onSettings?: () => void
   onSignOut?: () => void
 }
 
@@ -24,14 +23,13 @@ export function createUserMenuItems(
 ): UserMenuItemConfig[] {
   const items: UserMenuItemConfig[] = []
 
-  if (handlers.onSettings) {
-    items.push({
-      id: 'settings',
-      label: 'Settings',
-      icon: <Settings className="size-3.5" />,
-      onSelect: handlers.onSettings,
-    })
-  }
+  // Settings uses Link (href) for proper TanStack Router history integration
+  items.push({
+    id: 'settings',
+    label: 'Settings',
+    icon: <Settings className="size-3.5" />,
+    href: '/settings',
+  })
 
   if (handlers.onSignOut) {
     items.push({

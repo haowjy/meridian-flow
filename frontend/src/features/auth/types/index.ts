@@ -41,7 +41,8 @@ export interface UserMenuItemConfig {
   id: string
   label: string
   icon?: ReactNode
-  onSelect: () => void
+  onSelect?: () => void  // Optional when href is provided
+  href?: string          // Link navigation (uses TanStack Router's Link)
   variant?: 'default' | 'destructive'
   separator?: 'before' | 'after' | 'both'
   disabled?: boolean
