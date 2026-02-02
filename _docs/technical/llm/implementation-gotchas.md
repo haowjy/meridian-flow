@@ -30,7 +30,7 @@ flowchart TB
 ## Tools & Execution Side
 - Adapters must tag blocks with `ExecutionSide` when decoding.
 - Fallback order to detect side: Block tag → streaming event → capability default.
-- Server-executed tools: don’t execute locally; results arrive in response blocks.
+- Provider-executed tools: don't execute locally; results arrive in response blocks.
 - Client-executed tools: sandbox strictly; never shell out unsafely; enforce timeouts.
 - Limit tool loop iterations (e.g., 10) and surface an explicit error on cap.
 - Decode tool inputs into typed structs; avoid unsafe type assertions that can panic.
@@ -91,7 +91,7 @@ flowchart TD
 - Using `supported` instead of `native_support` in capability YAML.
 - Assuming streaming is required to infer execution side (set the block tag instead).
 - Unsafe `.(type)` assertions on tool inputs.
-- Executing server-side tools locally (duplicate work and inconsistent state).
+- Executing provider-side tools locally (duplicate work and inconsistent state).
 - Over-validating requests and drifting from provider behavior.
 
 ## Pre‑PR Checklist

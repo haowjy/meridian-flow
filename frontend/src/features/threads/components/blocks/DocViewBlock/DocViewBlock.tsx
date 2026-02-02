@@ -69,7 +69,7 @@ function getDocViewResult(toolResult: TurnBlock | null): {
   const content = toolResult.content as ToolBlockContent
 
   // Check for error
-  if (content?.is_error) {
+  if (content?.isError) {
     const message = typeof content.message === 'string'
       ? content.message
       : typeof content.error === 'string'
@@ -195,7 +195,7 @@ export const DocViewBlock = React.memo(function DocViewBlock({
     }
   }, [result, isError])
 
-  // Resolve document from tree store (for correct slug)
+  // Resolve document from tree store (for correct path)
   const resolvedDocument = input?.path
     ? findDocumentByPath(input.path, documents, folders)
     : null
@@ -206,11 +206,11 @@ export const DocViewBlock = React.memo(function DocViewBlock({
     ? result.id
     : resolvedDocument?.id ?? null
 
-  // Derive slug from result.path for document results
-  // Path format: "/folder/document-name.md" → slug is the path without leading slash
-  const docSlug = (result && isDocumentResult(result))
+  // Derive path from result.path for document results
+  // Path format: "/folder/document-name.md" → path is the full path without leading slash
+  const docPath = (result && isDocumentResult(result))
     ? result.path.replace(/^\//, '')
-    : resolvedDocument?.slug ?? null
+    : resolvedDocument?.path ?? null
 
   // Resolve folder from tree store (for folder results)
   // Returns: Folder object, null (root), or undefined (not found)
@@ -226,13 +226,13 @@ export const DocViewBlock = React.memo(function DocViewBlock({
   // Event handlers: React Compiler handles memoization (no manual useCallback needed)
   const handleViewInEditor = (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!docId || !docSlug || !projectSlug) return
-    openDocument(docId, docSlug, projectSlug, navigate)
+    if (!docId || !docPath || !projectSlug) return
+    openDocument(docId, docPath, projectSlug, navigate)
   }
 
   const handleDocumentClick = (doc: Document) => {
     if (!projectSlug) return
-    openDocument(doc.id, doc.slug, projectSlug, navigate)
+    openDocument(doc.id, doc.path, projectSlug, navigate)
   }
 
   // Parse path for display
@@ -272,7 +272,7 @@ export const DocViewBlock = React.memo(function DocViewBlock({
       }
       statusBadge={<ToolStatusBadge status={status} label={statusLabel} />}
       actions={
-        docId && docSlug && projectSlug ? (
+        docId && docPath && projectSlug ? (
           <button
             type="button"
             className="flex items-center justify-center gap-1 w-full h-full text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -288,7 +288,7 @@ export const DocViewBlock = React.memo(function DocViewBlock({
       // Animation: shimmer during PREPARING (args streaming) or when pending (no state yet)
       // Stops when tool args are complete (state becomes 'ready') or result arrives
       isGenerating={!hasResult && !isError && (toolState === null || toolIsGenerating)}
-      // Pulse animation during EXECUTING (tool running server-side)
+      // Pulse animation during EXECUTING (tool running on backend)
       isExecuting={!hasResult && !isError && toolState === ToolStreamState.EXECUTING}
     >
       {/* Error message */}

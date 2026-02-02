@@ -1,12 +1,4 @@
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/shared/components/ui/dialog'
-import { Button } from '@/shared/components/ui/button'
+import { DeleteConfirmationDialog } from '@/shared/components/ui/delete-confirmation-dialog'
 import type { Thread } from '@/features/threads/types'
 
 interface DeleteThreadDialogProps {
@@ -29,37 +21,14 @@ export function DeleteThreadDialog({
   onConfirm,
   isDeleting,
 }: DeleteThreadDialogProps) {
-  const handleConfirm = () => {
-    onConfirm()
-  }
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Delete Thread</DialogTitle>
-          <DialogDescription>
-            Are you sure you want to delete &quot;{thread?.title || 'Untitled Thread'}&quot;?
-            This action cannot be undone.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={isDeleting}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="destructive"
-            onClick={handleConfirm}
-            disabled={isDeleting}
-          >
-            {isDeleting ? 'Deleting...' : 'Delete'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <DeleteConfirmationDialog
+      title="Delete Thread"
+      itemName={thread?.title || 'Untitled Thread'}
+      open={open}
+      onOpenChange={onOpenChange}
+      onConfirm={onConfirm}
+      isDeleting={isDeleting}
+    />
   )
 }

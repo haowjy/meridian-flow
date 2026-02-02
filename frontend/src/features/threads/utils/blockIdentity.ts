@@ -2,7 +2,7 @@ import type { ToolBlockContent, TurnBlock } from '@/features/threads/types'
 import { normalizeToolCallId } from '@/features/threads/utils/normalizeToolCallId'
 
 function getToolUseId(block: TurnBlock): string | null {
-  const raw = (block.content as ToolBlockContent | undefined)?.tool_use_id
+  const raw = (block.content as ToolBlockContent | undefined)?.toolUseId
   return typeof raw === 'string' ? normalizeToolCallId(raw) : null
 }
 

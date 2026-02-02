@@ -1,5 +1,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { makeLogger } from '@/core/lib/logger'
+
+const logger = makeLogger('ui-store')
 
 /**
  * Represents the current view mode of the right panel.
@@ -8,12 +11,6 @@ import { persist } from 'zustand/middleware'
  * - null: No specific mode (initial state)
  */
 export type RightPanelState = 'documents' | 'editor' | null
-
-/**
- * Active panel for mobile single-panel mode.
- * Only one panel is visible at a time on mobile.
- */
-export type MobileActivePanel = 'threadList' | 'activeThread' | 'document'
 
 /**
  * Project list sort options.
@@ -29,15 +26,55 @@ export type ProjectSortOrder = 'updated' | 'name-asc' | 'name-desc' | 'created-n
 export type PanelUserOverride = 'expanded' | 'collapsed' | null
 
 /**
+ * Mobile tab type for bottom navigation.
+ * State-driven (not URL-driven) to preserve scroll position and component state.
+ */
+export type MobileTab = 'threads' | 'chat' | 'documents' | 'projectSettings'
+
+/**
  * UI state store for workspace layout and panel management.
  *
- * Persisted to localStorage: leftPanelUserOverride, rightPanelUserOverride, activeDocumentId, activeThreadId, mobileActivePanel.
+ * Persisted to localStorage: leftPanelUserOverride, rightPanelUserOverride, activeDocumentId, activeThreadId, documentTreeCollapsed.
  * Not persisted (session-scoped): rightPanelState, threadFocusVersion, leftPanelReady, rightPanelReady.
  *
- * Panel visibility logic:
- * - Use selectEffectiveLeftCollapsed/selectEffectiveRightCollapsed selectors
- * - User override takes precedence over auto behavior (and persists across sessions)
- * - Auto (when override is null): collapsed if data not ready, expanded when ready
+ * ## Panel Collapse State Machine
+ *
+ * Three possible states for each panel's user override:
+ * 1. **null** (default): Follow auto behavior
+ *    - Collapsed when !ready (data not loaded yet)
+ *    - Expanded when ready (data loaded successfully)
+ * 2. **'collapsed'**: User explicitly collapsed the panel
+ *    - Stay collapsed regardless of ready state
+ *    - Persists across sessions
+ * 3. **'expanded'**: User explicitly expanded the panel
+ *    - Stay expanded regardless of ready state
+ *    - Persists across sessions
+ *
+ * ## State Transitions
+ *
+ * **Auto behavior (userOverride = null):**
+ * - Initial: collapsed (ready = false)
+ * - After data loads: expanded (ready = true)
+ *
+ * **User manually collapses:**
+ * - Sets userOverride = 'collapsed'
+ * - Panel stays collapsed even after data loads
+ *
+ * **User manually expands:**
+ * - Sets userOverride = 'expanded'
+ * - Panel stays expanded even during loading
+ *
+ * **Reset to auto behavior:**
+ * - Set userOverride = null (not currently implemented in UI)
+ * - Returns to auto collapse/expand based on ready state
+ *
+ * ## Implementation Notes
+ *
+ * - Use `selectEffectiveLeftCollapsed` / `selectEffectiveRightCollapsed` selectors
+ *   to compute the final collapsed state (considers both ready + override)
+ * - User override takes precedence over auto behavior
+ * - Ready state is session-scoped, override is persisted
+ * - On project switch: reset ready state but preserve user override
  */
 interface UIStore {
   /**
@@ -82,9 +119,19 @@ interface UIStore {
    * ID of currently active document (for highlighting in tree + editor).
    * Persisted across sessions.
    * Null if no document is active.
+   * Mutually exclusive with activeSkillId.
    * @default null
    */
   activeDocumentId: string | null
+
+  /**
+   * ID of currently active skill (for highlighting in tree + editor).
+   * Persisted across sessions.
+   * Null if no skill is active.
+   * Mutually exclusive with activeDocumentId.
+   * @default null
+   */
+  activeSkillId: string | null
 
   /**
    * ID of currently active thread (for highlighting in thread list).
@@ -102,14 +149,6 @@ interface UIStore {
   threadFocusVersion: number
 
   /**
-   * Active panel for mobile single-panel mode.
-   * Determines which panel is visible when viewport < 768px.
-   * Persisted across sessions.
-   * @default 'activeThread' (first run only)
-   */
-  mobileActivePanel: MobileActivePanel
-
-  /**
    * Current sort order for the projects list.
    * Persisted across sessions.
    * @default 'updated' (most recently updated first)
@@ -122,6 +161,40 @@ interface UIStore {
    * @default ''
    */
   projectSearchQuery: string
+
+  /**
+   * Whether the document tree sidebar is collapsed when viewing editor.
+   * Controls tree visibility in split layout (tree + editor side-by-side).
+   * Persisted across sessions.
+   * @default false (tree visible by default)
+   */
+  documentTreeCollapsed: boolean
+
+  /**
+   * Current view of left panel in workspace.
+   * 'chat': Show active thread view
+   * 'threads': Show thread list
+   * 'projectSettings': Show project settings panel
+   * Persisted across sessions.
+   * @default 'chat'
+   */
+  leftPanelView: 'chat' | 'threads' | 'projectSettings'
+
+  /**
+   * Active tab for mobile bottom navigation.
+   * State-driven (not URL-driven) to preserve scroll position and component state.
+   * NOT persisted - derives initial value from URL on page load.
+   * @default 'chat'
+   */
+  mobileActiveTab: MobileTab
+
+  /**
+   * ID of a recently created folder (for temporary highlight animation).
+   * Cleared automatically after a brief delay.
+   * NOT persisted.
+   * @default null
+   */
+  recentlyCreatedFolderId: string | null
 
   /**
    * Toggles left panel collapsed/expanded state (sets user override)
@@ -154,10 +227,16 @@ interface UIStore {
   setRightPanelCollapsed: (collapsed: boolean) => void
 
   /**
-   * Sets active document ID.
+   * Sets active document ID (clears activeSkillId for mutual exclusivity).
    * Use panelHelpers.openDocument() to also open editor and expand panel.
    */
   setActiveDocument: (id: string | null) => void
+
+  /**
+   * Sets active skill ID (clears activeDocumentId for mutual exclusivity).
+   * Use panelHelpers.openSkill() to also open editor and expand panel.
+   */
+  setActiveSkill: (id: string | null) => void
 
   /**
    * Sets active thread ID.
@@ -168,17 +247,26 @@ interface UIStore {
   /** Bumps threadFocusVersion to request thread input focus. */
   bumpThreadFocusVersion: () => void
 
-  /**
-   * Sets active panel for mobile layout.
-   * Use for tab navigation on mobile viewport.
-   */
-  setMobileActivePanel: (panel: MobileActivePanel) => void
-
   /** Sets the project list sort order (persisted) */
   setProjectSortOrder: (order: ProjectSortOrder) => void
 
   /** Sets the project search query (not persisted) */
   setProjectSearchQuery: (query: string) => void
+
+  /** Toggles document tree sidebar collapsed/expanded state */
+  toggleDocumentTree: () => void
+
+  /** Sets document tree collapsed state (persisted) */
+  setDocumentTreeCollapsed: (collapsed: boolean) => void
+
+  /** Sets left panel view (chat, threads, or projectSettings) */
+  setLeftPanelView: (view: 'chat' | 'threads' | 'projectSettings') => void
+
+  /** Sets mobile active tab (threads, chat, or documents) */
+  setMobileActiveTab: (tab: MobileTab) => void
+
+  /** Sets recently created folder ID (for highlight animation) */
+  setRecentlyCreatedFolderId: (id: string | null) => void
 }
 
 /**
@@ -208,11 +296,15 @@ export const useUIStore = create<UIStore>()(
       rightPanelUserOverride: null,
       rightPanelState: 'documents',
       activeDocumentId: null,
+      activeSkillId: null,
       activeThreadId: null,
       threadFocusVersion: 0,
-      mobileActivePanel: 'activeThread',
       projectSortOrder: 'updated',
       projectSearchQuery: '',
+      documentTreeCollapsed: false,
+      leftPanelView: 'chat',
+      mobileActiveTab: 'chat',
+      recentlyCreatedFolderId: null,
 
       toggleLeftPanel: () => {
         const currentlyCollapsed = selectEffectiveLeftCollapsed(get())
@@ -228,45 +320,82 @@ export const useUIStore = create<UIStore>()(
       setRightPanelReady: (ready) => set({ rightPanelReady: ready }),
       setLeftPanelUserOverride: (override) => set({ leftPanelUserOverride: override }),
       setRightPanelUserOverride: (override) => set({ rightPanelUserOverride: override }),
-      setRightPanelState: (state) =>
-        set({ rightPanelState: state }),
+      setRightPanelState: (state) => {
+        const stack = new Error().stack?.split('\n').slice(2, 6).join('\n') || 'no stack'
+        logger.debug('[SKILL-DEEPLINK] setRightPanelState called', {
+          state,
+          prevState: get().rightPanelState,
+          stack
+        })
+        set({ rightPanelState: state })
+      },
       // Sets user override to force panel expanded/collapsed state
-      // Used by URL navigation to expand panel when opening documents
+      // Used by URL navigation to expand panel when opening documents/skills
       setRightPanelCollapsed: (collapsed) =>
         set({ rightPanelUserOverride: collapsed ? 'collapsed' : 'expanded' }),
-      setActiveDocument: (id) =>
-        set({ activeDocumentId: id }),
+      setActiveDocument: (id) => {
+        const stack = new Error().stack?.split('\n').slice(2, 6).join('\n') || 'no stack'
+        logger.debug('[SKILL-DEEPLINK] setActiveDocument called', {
+          id,
+          prevId: get().activeDocumentId,
+          stack
+        })
+        set({ activeDocumentId: id, activeSkillId: null })
+      },
+      setActiveSkill: (id) => {
+        const stack = new Error().stack?.split('\n').slice(2, 6).join('\n') || 'no stack'
+        logger.debug('[SKILL-DEEPLINK] setActiveSkill called', {
+          id,
+          prevId: get().activeSkillId,
+          stack
+        })
+        set({ activeSkillId: id, activeDocumentId: null })
+      },
       setActiveThread: (id) =>
         set({ activeThreadId: id }),
       bumpThreadFocusVersion: () =>
         set((state) => ({ threadFocusVersion: state.threadFocusVersion + 1 })),
-      setMobileActivePanel: (panel) =>
-        set({ mobileActivePanel: panel }),
       setProjectSortOrder: (order) =>
         set({ projectSortOrder: order }),
       setProjectSearchQuery: (query) =>
         set({ projectSearchQuery: query }),
+      toggleDocumentTree: () =>
+        set((state) => ({ documentTreeCollapsed: !state.documentTreeCollapsed })),
+      setDocumentTreeCollapsed: (collapsed) =>
+        set({ documentTreeCollapsed: collapsed }),
+      setLeftPanelView: (view) =>
+        set({ leftPanelView: view }),
+      setMobileActiveTab: (tab) =>
+        set({ mobileActiveTab: tab }),
+      setRecentlyCreatedFolderId: (id) =>
+        set({ recentlyCreatedFolderId: id }),
     }),
     {
       name: 'ui-store',
-      version: 3,
+      version: 5, // Bumped from 4 to add leftPanelView
       partialize: (state) => ({
         // Persist user's explicit panel override choice (expanded/collapsed/null)
         leftPanelUserOverride: state.leftPanelUserOverride,
         rightPanelUserOverride: state.rightPanelUserOverride,
         activeDocumentId: state.activeDocumentId,
+        activeSkillId: state.activeSkillId,
         activeThreadId: state.activeThreadId,
-        mobileActivePanel: state.mobileActivePanel,
         // Projects page preferences
         projectSortOrder: state.projectSortOrder,
+        // Document tree state
+        documentTreeCollapsed: state.documentTreeCollapsed,
+        // Workspace state
+        leftPanelView: state.leftPanelView,
         // NOT persisted: leftPanelReady, rightPanelReady (session-scoped, set by data loaders)
         // NOT persisted: threadFocusVersion, rightPanelState, projectSearchQuery (ephemeral)
+        // REMOVED in v4: mobileActivePanel (new mobile layout uses local state)
       }),
-      // Migrate from v1 (boolean collapsed) to v2 (user override system)
+      // Migrate from older versions
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>
+
+        // v1 → v2: Convert boolean collapsed to override system
         if (version < 2) {
-          // Convert old boolean collapsed fields to new override system
           if (state.leftPanelCollapsed !== undefined) {
             state.leftPanelUserOverride = state.leftPanelCollapsed ? 'collapsed' : 'expanded'
             delete state.leftPanelCollapsed
@@ -276,6 +405,12 @@ export const useUIStore = create<UIStore>()(
             delete state.rightPanelCollapsed
           }
         }
+
+        // v3 → v4: Remove mobileActivePanel
+        if (version < 4) {
+          delete state.mobileActivePanel
+        }
+
         return state
       },
     }

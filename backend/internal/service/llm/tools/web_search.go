@@ -8,6 +8,16 @@ import (
 	"meridian/internal/service/llm/tools/external"
 )
 
+// WebSearchToolMetadata returns metadata for the web_search tool.
+// This enables OCP compliance - tool self-describes for system prompt generation.
+func WebSearchToolMetadata() *ToolMetadata {
+	return &ToolMetadata{
+		Name:        "web_search",
+		Description: "Search the web for current information",
+		Guideline:   "", // No specific guideline needed
+	}
+}
+
 // WebSearchTool implements the 'web_search' tool for searching the web via external APIs.
 // Uses the SearchClient abstraction to support multiple providers (Tavily, Brave, Serper, etc.).
 type WebSearchTool struct {

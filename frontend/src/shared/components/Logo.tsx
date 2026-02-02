@@ -25,7 +25,7 @@ export function Logo({
   className,
 }: LogoProps) {
   // Theme-aware colors via CSS variables
-  const ACCENT = 'var(--theme-accent)'
+  const ACCENT = 'var(--theme-favorite)'
   const RING_COLOR = 'var(--muted-foreground)'
 
   return (

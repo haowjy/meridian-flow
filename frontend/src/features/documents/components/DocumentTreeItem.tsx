@@ -23,7 +23,6 @@ interface DocumentTreeItemProps {
   onDelete?: (documentId: string) => void
   onRename?: (documentId: string) => void
   onShowDetails?: (documentId: string, document: Document) => void
-  onAddAsReference?: (documentId: string) => void
   // Inline editing props
   isEditing?: boolean
   onSubmitName?: (documentId: string, name: string) => void
@@ -52,7 +51,6 @@ export const DocumentTreeItem = memo(function DocumentTreeItem({
   onDelete,
   onRename,
   onShowDetails,
-  onAddAsReference,
   isEditing,
   onSubmitName,
   onCancelEdit,
@@ -68,7 +66,6 @@ export const DocumentTreeItem = memo(function DocumentTreeItem({
     onDetails: onShowDetails ? () => onShowDetails(document.id, document) : undefined,
     onRename: onRename ? () => onRename(document.id) : undefined,
     onDelete: onDelete ? () => onDelete(document.id) : undefined,
-    onAddAsReference: onAddAsReference ? () => onAddAsReference(document.id) : undefined,
   })
 
   const hasMenuItems = menuItems.length > 0
@@ -82,7 +79,7 @@ export const DocumentTreeItem = memo(function DocumentTreeItem({
           isActive && 'bg-sidebar-accent/50'
         )}
       >
-        <FileText className="size-4 md:size-3.5 flex-shrink-0" />
+        <FileText className="size-5 md:size-4 flex-shrink-0" />
         <InlineNameEditor
           initialValue={document.name}
           existingNames={existingNames}
@@ -129,12 +126,12 @@ export const DocumentTreeItem = memo(function DocumentTreeItem({
             }}
             className={cn(
               'flex flex-1 min-w-0 items-center gap-2 px-2.5 py-2 md:py-1',
-              'cursor-default appearance-none bg-transparent border-none m-0 font-inherit text-inherit text-left'
+              'cursor-pointer appearance-none bg-transparent border-none m-0 font-inherit text-inherit text-left'
             )}
             aria-label={`Open document: ${document.filename}`}
             aria-current={isActive ? 'page' : undefined}
           >
-            <FileText className="size-4 md:size-3.5 flex-shrink-0" />
+            <FileText className="size-5 md:size-4 flex-shrink-0" />
             <span className="truncate">{document.filename}</span>
           </button>
 

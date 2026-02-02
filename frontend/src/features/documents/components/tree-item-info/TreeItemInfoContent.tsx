@@ -1,8 +1,13 @@
 import { TreeItemInfoHeader } from './TreeItemInfoHeader'
 import { TreeItemInfoMeta } from './TreeItemInfoMeta'
+import { formatRelativeTime } from '@/core/lib/formatters'
 import type { Folder } from '@/features/folders/types/folder'
 import type { Document } from '@/features/documents/types/document'
-import { FileText, Folder as FolderIcon } from 'lucide-react'
+import type { Skill } from '@/features/skills/types/skill'
+import { FileText, Folder as FolderIcon, Sparkles } from 'lucide-react'
+
+/** Max characters for skill description in hover card before truncating */
+const SKILL_DESCRIPTION_MAX_CHARS = 100
 
 // TODO: Future enhancements for TreeItemInfoContent:
 // - TreeItemInfoSummary: AI-generated summary (read-only display)
@@ -22,7 +27,12 @@ interface DocumentContentProps {
   item: Document
 }
 
-type TreeItemInfoContentProps = (FolderContentProps | DocumentContentProps) & {
+interface SkillContentProps {
+  type: 'skill'
+  item: Skill
+}
+
+type TreeItemInfoContentProps = (FolderContentProps | DocumentContentProps | SkillContentProps) & {
   /**
    * - `hover`: compact, preview-like (no filename; avoids covering list scanning).
    * - `dialog`: full details, including name header.
@@ -38,6 +48,31 @@ export function TreeItemInfoContent(props: TreeItemInfoContentProps) {
   const variant = props.variant ?? 'hover'
 
   if (variant === 'hover') {
+    // Skill hover has custom rendering (description + modified time)
+    if (props.type === 'skill') {
+      const { item } = props
+      const description = item.description.length > SKILL_DESCRIPTION_MAX_CHARS
+        ? `${item.description.slice(0, SKILL_DESCRIPTION_MAX_CHARS).trim()}…`
+        : item.description
+
+      return (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Sparkles className="size-3.5 flex-shrink-0 text-amber-500" />
+            <span>/{item.name}</span>
+          </div>
+          {description && (
+            <div className="text-sm text-foreground">{description}</div>
+          )}
+          {item.updatedAt && (
+            <div className="text-xs text-muted-foreground">
+              Modified {formatRelativeTime(item.updatedAt)}
+            </div>
+          )}
+        </div>
+      )
+    }
+
     const Icon = props.type === 'folder' ? FolderIcon : FileText
     const label = props.type === 'folder' ? 'Folder' : 'Document'
 
@@ -77,12 +112,18 @@ export function TreeItemInfoContent(props: TreeItemInfoContentProps) {
     )
   }
 
-  return (
-    <div className="space-y-3">
-      <TreeItemInfoHeader name={props.item.filename} type="document" />
-      <TreeItemInfoMeta type="document" item={props.item} />
-      {/* Future: <TreeItemInfoSummary /> */}
-      {/* Future: <TreeItemInfoTags /> */}
-    </div>
-  )
+  if (props.type === 'document') {
+    return (
+      <div className="space-y-3">
+        <TreeItemInfoHeader name={props.item.filename} type="document" />
+        <TreeItemInfoMeta type="document" item={props.item} />
+        {/* Future: <TreeItemInfoSummary /> */}
+        {/* Future: <TreeItemInfoTags /> */}
+      </div>
+    )
+  }
+
+  // Skill dialog variant: not yet implemented.
+  // When skills need a details dialog, add TreeItemInfoHeader + meta here.
+  return null
 }

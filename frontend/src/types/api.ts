@@ -12,27 +12,36 @@ export interface ApiErrorResponse {
   code?: string
 }
 
-// DTO Types (snake_case from backend)
+// NOTE: All DTO types use camelCase because fetchAPI auto-converts snake_case from backend.
+// This is the single gateway for case normalization.
+
+// Project Preferences DTO
+export interface ProjectPreferencesDto {
+  disabledTools?: string[]
+}
+
+// DTO Types (camelCase - auto-converted from backend's snake_case by fetchAPI)
 export interface ProjectDto {
   id: string
-  user_id: string
+  userId: string
   name: string
   slug: string  // URL-friendly identifier, unique per user
-  is_favorite: boolean  // User's favorite status for quick access (from junction table)
-  system_prompt?: string | null  // Custom AI instructions for the project
-  last_activity_at: string  // ISO date string - last content activity
-  created_at: string  // ISO date string
-  updated_at: string  // ISO date string
+  isFavorite: boolean  // User's favorite status for quick access (from junction table)
+  systemPrompt?: string | null  // Custom AI instructions for the project
+  preferences?: ProjectPreferencesDto | null  // Project-level settings
+  lastActivityAt: string  // ISO date string - last content activity
+  createdAt: string  // ISO date string
+  updatedAt: string  // ISO date string
 }
 
 // Thread DTOs
 export interface ThreadDto {
   id: string
-  project_id: string
+  projectId: string
   title: string
-  last_viewed_turn_id: string | null
-  created_at: string
-  updated_at: string
+  lastViewedTurnId: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 // Document metadata structure (format-specific stats)
@@ -47,44 +56,44 @@ export interface DocumentMetadataDto {
 // Document DTOs
 export interface DocumentDto {
   id: string
-  project_id: string
-  folder_id: string | null
+  projectId: string
+  folderId: string | null
   name: string
-  slug: string  // URL-friendly identifier, unique per project
+  path: string  // Display path with extension: "Characters/Heroes/Aria.md"
   extension: string  // File extension with leading dot: ".md", ".excalidraw"
   content?: string
   metadata?: DocumentMetadataDto  // Format-specific stats (replaces word_count)
-  updated_at: string
-  ai_version?: string | null
-  ai_version_rev?: number  // CAS revision counter for ai_version
+  updatedAt: string
+  aiVersion?: string | null
+  aiVersionRev?: number  // CAS revision counter for ai_version
 }
 
 export interface FolderDto {
   id: string
-  project_id: string
-  folder_id: string | null  // Parent folder ID (renamed from parent_id for API consistency)
+  projectId: string
+  folderId: string | null  // Parent folder ID (renamed from parent_id for API consistency)
   name: string
-  created_at: string
+  createdAt: string
 }
 
 // Tree DTOs (metadata-only, no document content)
 export interface TreeDocumentDto {
   id: string
-  project_id: string
-  folder_id: string | null
+  projectId: string
+  folderId: string | null
   name: string
-  slug: string  // URL-friendly identifier, unique per project
+  path: string  // Display path with extension: "Characters/Heroes/Aria.md"
   extension: string
-  updated_at: string
+  updatedAt: string
 }
 
 export interface TreeFolderDto {
   id: string
-  project_id: string
-  folder_id: string | null
+  projectId: string
+  folderId: string | null
   name: string
-  created_at: string
-  updated_at: string
+  createdAt: string
+  updatedAt: string
   folders?: TreeFolderDto[]
   documents?: TreeDocumentDto[]
 }
@@ -97,17 +106,17 @@ export interface DocumentTreeDto {
 // Skill DTOs
 export interface SkillDto {
   id: string
-  project_id: string
+  projectId: string
   name: string              // Internal identifier (e.g., "writing-coach")
-  display_name: string      // User-facing display name
   description: string
   position: number          // Sort order for display
-  disable_model_invocation: boolean
-  user_invocable: boolean
-  sync_state: string        // 'detached' | 'synced' | 'outdated'
-  is_dirty: boolean
-  created_at: string
-  updated_at: string
+  enabled: boolean          // Whether skill is active
+  disableModelInvocation: boolean
+  userInvocable: boolean
+  syncState: string        // 'detached' | 'synced' | 'outdated'
+  isDirty: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 export interface SkillWithContentDto extends SkillDto {
@@ -120,27 +129,31 @@ export interface SkillListResponseDto {
 }
 
 // DTO Mappers
+// NOTE: With fetchAPI's auto-conversion, these now mainly handle Date conversions.
 export function fromProjectDto(dto: ProjectDto): Project {
   return {
     id: dto.id,
     name: dto.name,
     slug: dto.slug,
-    isFavorite: dto.is_favorite,
-    systemPrompt: dto.system_prompt,
-    lastActivityAt: new Date(dto.last_activity_at),
-    createdAt: new Date(dto.created_at),
-    updatedAt: new Date(dto.updated_at),
+    isFavorite: dto.isFavorite,
+    systemPrompt: dto.systemPrompt,
+    preferences: dto.preferences ? {
+      disabledTools: dto.preferences.disabledTools,
+    } : undefined,
+    lastActivityAt: new Date(dto.lastActivityAt),
+    createdAt: new Date(dto.createdAt),
+    updatedAt: new Date(dto.updatedAt),
   }
 }
 
 export function fromThreadDto(dto: ThreadDto): Thread {
   return {
     id: dto.id,
-    projectId: dto.project_id,
+    projectId: dto.projectId,
     title: dto.title,
-    lastViewedTurnId: dto.last_viewed_turn_id,
-    createdAt: new Date(dto.created_at),
-    updatedAt: new Date(dto.updated_at),
+    lastViewedTurnId: dto.lastViewedTurnId,
+    createdAt: new Date(dto.createdAt),
+    updatedAt: new Date(dto.updatedAt),
   }
 }
 
@@ -152,28 +165,28 @@ export function fromDocumentDto(dto: DocumentDto): Document {
 
   return {
     id: dto.id,
-    projectId: dto.project_id,
-    folderId: dto.folder_id,
+    projectId: dto.projectId,
+    folderId: dto.folderId,
     name: dto.name,
-    slug: dto.slug,
+    path: dto.path,
     extension: dto.extension,
     filename,
     fileType,
     content: dto.content,
     wordCount: dto.metadata?.markdown?.wordCount,  // Extract from metadata.markdown
-    updatedAt: new Date(dto.updated_at),
-    aiVersion: dto.ai_version ?? null,
-    aiVersionRev: dto.ai_version_rev,
+    updatedAt: new Date(dto.updatedAt),
+    aiVersion: dto.aiVersion ?? null,
+    aiVersionRev: dto.aiVersionRev,
   }
 }
 
 export function fromFolderDto(dto: FolderDto): Folder {
   return {
     id: dto.id,
-    projectId: dto.project_id,
-    parentId: dto.folder_id,
+    projectId: dto.projectId,
+    parentId: dto.folderId,
     name: dto.name,
-    createdAt: new Date(dto.created_at),
+    createdAt: new Date(dto.createdAt),
   }
 }
 
@@ -183,24 +196,24 @@ export function fromTreeDocumentDto(dto: TreeDocumentDto): Document {
 
   return {
     id: dto.id,
-    projectId: dto.project_id,
-    folderId: dto.folder_id,
+    projectId: dto.projectId,
+    folderId: dto.folderId,
     name: dto.name,
-    slug: dto.slug,
+    path: dto.path,
     extension: dto.extension,
     filename,
     fileType,
-    updatedAt: new Date(dto.updated_at),
+    updatedAt: new Date(dto.updatedAt),
   }
 }
 
 export function fromTreeFolderDto(dto: TreeFolderDto): Folder {
   return {
     id: dto.id,
-    projectId: dto.project_id,
-    parentId: dto.folder_id,
+    projectId: dto.projectId,
+    parentId: dto.folderId,
     name: dto.name,
-    createdAt: new Date(dto.created_at),
+    createdAt: new Date(dto.createdAt),
   }
 }
 
@@ -256,17 +269,17 @@ export function fromDocumentTreeDto(dto: DocumentTreeDto): DocumentTree {
 export function fromSkillDto(dto: SkillDto): Skill {
   return {
     id: dto.id,
-    projectId: dto.project_id,
+    projectId: dto.projectId,
     name: dto.name,
-    displayName: dto.display_name,
     description: dto.description,
     position: dto.position,
-    disableModelInvocation: dto.disable_model_invocation,
-    userInvocable: dto.user_invocable,
-    syncState: dto.sync_state as SkillSyncState,
-    isDirty: dto.is_dirty,
-    createdAt: new Date(dto.created_at),
-    updatedAt: new Date(dto.updated_at),
+    enabled: dto.enabled,
+    disableModelInvocation: dto.disableModelInvocation,
+    userInvocable: dto.userInvocable,
+    syncState: dto.syncState as SkillSyncState,
+    isDirty: dto.isDirty,
+    createdAt: new Date(dto.createdAt),
+    updatedAt: new Date(dto.updatedAt),
   }
 }
 

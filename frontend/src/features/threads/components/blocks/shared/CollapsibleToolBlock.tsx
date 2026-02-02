@@ -35,7 +35,7 @@ export interface CollapsibleToolBlockProps {
   children: React.ReactNode
   /** Whether the tool is preparing/streaming args (shows shimmer animation) */
   isGenerating?: boolean
-  /** Whether the tool is executing server-side (shows pulse animation) */
+  /** Whether the tool is executing on the backend (shows pulse animation) */
   isExecuting?: boolean
 }
 

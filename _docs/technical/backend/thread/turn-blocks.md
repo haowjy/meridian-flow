@@ -32,8 +32,8 @@ Content blocks use **two fields** for storage:
 | image | ✅ | ❌ | null | Image data |
 | reference | ✅ | ❌ | null | Doc reference |
 | partial_reference | ✅ | ❌ | null | Selection reference |
-| web_search_use | ❌ | ✅ | null | Server-side web search invocation |
-| web_search_result | ❌ | ✅ | null | Server-side web search result payload |
+| web_search_use | ❌ | ✅ | null | Provider-side web search invocation |
+| web_search_result | ❌ | ✅ | null | Provider-side web search result payload |
 
 ## Block Types (DB View)
 
@@ -47,7 +47,7 @@ From the backend/DB perspective:
 - `tool_result`: `text_content` is optional human-readable output; `content.tool_use_id` + `content.is_error` describe status.
 - `image`: `content` holds `{url, mime_type, alt_text?}`; `text_content` is `null`.
 - `reference` / `partial_reference`: `content` holds document reference and optional selection offsets; `text_content` is `null`.
-- `web_search_use`: server-side tool invocation (`tool_use_id`, `tool_name: "web_search"`, `input.query`, `execution_side: "server"`).
+- `web_search_use`: provider-side tool invocation (`tool_use_id`, `tool_name: "web_search"`, `input.query`, `execution_side: "provider"`).
 - `web_search_result`: normalized provider search result or error payload; `text_content` is `null`; `content.tool_use_id` links back to `web_search_use`.
 
 Backend code that enforces these shapes:

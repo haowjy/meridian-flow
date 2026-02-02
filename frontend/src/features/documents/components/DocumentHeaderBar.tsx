@@ -1,5 +1,6 @@
 import { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 
 interface DocumentHeaderBarProps {
   leading?: ReactNode
@@ -25,12 +26,15 @@ export function DocumentHeaderBar({
     <div
       role="region"
       aria-label={ariaLabel}
-      className={cn('flex items-center gap-1 px-3', showDivider && 'border-b')}
-      style={{ height: 'var(--panel-header-height)' }}
+      className={cn(
+        'flex items-center gap-1 px-3 relative h-14 md:h-[var(--panel-header-height)]',
+        showDivider && 'border-b border-border/70'
+      )}
     >
       {leading}
       <div className="min-w-0 flex-1">{title}</div>
       {trailing}
+      <HeaderGradientFade />
     </div>
   )
 }

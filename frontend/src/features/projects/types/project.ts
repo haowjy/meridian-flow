@@ -1,3 +1,11 @@
+/**
+ * Project-level preferences stored in JSONB
+ */
+export interface ProjectPreferences {
+  /** Tools disabled for this project (e.g., 'web_search', 'doc_edit') */
+  disabledTools?: string[]
+}
+
 export interface Project {
   id: string
   name: string
@@ -7,6 +15,8 @@ export interface Project {
   isFavorite: boolean
   /** Custom AI instructions for the project */
   systemPrompt?: string | null
+  /** Project-level settings (disabled tools, etc.) */
+  preferences?: ProjectPreferences | null
   /** Last content activity timestamp (documents, folders, threads) */
   lastActivityAt: Date
   createdAt: Date

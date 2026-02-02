@@ -64,7 +64,7 @@ function getDocTreeResult(toolResult: TurnBlock | null): {
   const content = toolResult.content as ToolBlockContent
 
   // Check for error
-  if (content?.is_error) {
+  if (content?.isError) {
     const message =
       typeof content.message === 'string'
         ? content.message
@@ -143,7 +143,7 @@ export const DocTreeBlock = React.memo(function DocTreeBlock({
   const handleDocumentClick = useCallback(
     (doc: Document) => {
       if (!projectSlug) return
-      openDocument(doc.id, doc.slug, projectSlug, navigate)
+      openDocument(doc.id, doc.path, projectSlug, navigate)
     },
     [projectSlug, navigate]
   )
@@ -188,7 +188,7 @@ export const DocTreeBlock = React.memo(function DocTreeBlock({
       // Animation: shimmer during PREPARING (args streaming) or when pending (no state yet)
       // Stops when tool args are complete (state becomes 'ready') or result arrives
       isGenerating={!hasResult && !isError && (toolState === null || toolIsGenerating)}
-      // Pulse animation during EXECUTING (tool running server-side)
+      // Pulse animation during EXECUTING (tool running on backend)
       isExecuting={!hasResult && !isError && toolState === ToolStreamState.EXECUTING}
     >
       {/* Error message */}

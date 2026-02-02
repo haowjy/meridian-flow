@@ -6,8 +6,10 @@ import { useUIStore, selectEffectiveRightCollapsed } from '@/core/stores/useUISt
 import { DocumentPanel } from '@/features/documents/components/DocumentPanel'
 import { ThreadListPanel } from '@/features/threads/components/ThreadListPanel'
 import { ActiveThreadView } from '@/features/threads/components/ActiveThreadView'
+import { ProjectSettingsPanel } from '@/features/projects/components/ProjectSettingsPanel'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { useProjectStore } from '@/core/stores/useProjectStore'
+import { useSkillStore } from '@/core/stores/useSkillStore'
 import { api } from '@/core/lib/api'
 import { makeLogger } from '@/core/lib/logger'
 import type { PanelDefinitions } from '@/shared/components/layout/types'
@@ -17,22 +19,28 @@ const logger = makeLogger('workspace-layout')
 interface WorkspaceLayoutProps {
   /** Project identifier - can be UUID or slug (backend resolver handles both) */
   projectIdentifier: string
-  /** Document slug from URL - resolved to ID once tree is loaded */
-  initialDocumentSlug?: string
+  /** Document path from URL - resolved to ID once tree is loaded */
+  initialDocumentPath?: string
+  /** Skill name from URL - resolved to ID once skills are loaded */
+  initialSkillName?: string
 }
 
-export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug }: WorkspaceLayoutProps) {
+export default function WorkspaceLayout({ projectIdentifier, initialDocumentPath, initialSkillName }: WorkspaceLayoutProps) {
   const navigate = useNavigate()
   // Resolved project ID (UUID) and slug - set once project is fetched/found
   const [projectId, setProjectId] = useState<string | null>(null)
   const [projectSlug, setProjectSlug] = useState<string | null>(null)
-  const [projectName, setProjectName] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
   const previousDocumentIdRef = useRef<string | undefined>(undefined)
   const previousProjectIdRef = useRef<string | undefined>(undefined)
   const isFirstMountRef = useRef(true)
+  const previousResolvedProjectIdRef = useRef<string | null>(null)
 
-  // Get layout strategy based on viewport (ThreePanelLayout for desktop, MobileTabLayout for mobile)
+  // Get left panel view from store (set by WorkspaceRail in _authenticated.tsx)
+  const leftPanelView = useUIStore((s) => s.leftPanelView)
+  const activeSkillId = useUIStore((s) => s.activeSkillId)
+
+  // Get layout strategy based on viewport (TwoPanelLayout for desktop, MobileLayout for mobile)
   const LayoutStrategy = useLayoutStrategy()
 
   // Ensure document tree is loaded when deep-linking to a document URL
@@ -41,6 +49,14 @@ export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug
     documentsCount: s.documents.length,
     documents: s.documents,
     loadTree: s.loadTree,
+  })))
+
+  // Ensure skills are loaded when deep-linking to a skill URL
+  const { skills, isLoadingSkills, loadSkills, skillsStatus } = useSkillStore(useShallow((s) => ({
+    skills: s.skills,
+    isLoadingSkills: s.isLoadingSkills,
+    loadSkills: s.loadSkills,
+    skillsStatus: s.skillsStatus,
   })))
 
   // Projects store to centralize current project for the workspace
@@ -60,37 +76,78 @@ export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug
 
   const location = useLocation()
 
-  // Derive the document slug from the current URL path.
+  // Derive the document path from the current URL.
   // This is intentionally decoupled from route components so that:
   // - Direct URL navigation (deep links)
   // - Browser back/forward
   // still drive the editor/tree state correctly even if the document route
   // component itself does not render (e.g., due to nesting or Outlet usage).
   //
-  // Path-based slugs: captures ALL segments after /documents/ and joins them.
-  // Example: /documents/characters/heroes/aria → "characters/heroes/aria"
-  const urlDocumentSlug = useMemo(() => {
+  // Path format: captures ALL segments after /documents/ and decodes them.
+  // Example: /documents/Characters/Heroes/Aria.md → "Characters/Heroes/Aria.md"
+  const urlDocumentPath = useMemo(() => {
     const segments = location.pathname.split('/').filter(Boolean)
     const documentsIndex = segments.indexOf('documents')
     if (documentsIndex === -1) return undefined
-    // Get ALL segments after 'documents', join with '/' for path-based slugs
+    // Get ALL segments after 'documents', decode each and join with '/'
     const pathSegments = segments.slice(documentsIndex + 1)
-    return pathSegments.length > 0 ? pathSegments.join('/') : undefined
+    if (pathSegments.length === 0) return undefined
+    // Decode URL-encoded segments to get actual path
+    return pathSegments.map(decodeURIComponent).join('/')
   }, [location.pathname])
 
   // Prefer explicit prop when provided (e.g., from a dedicated document route),
   // but fall back to URL parsing so that deep links and browser navigation
   // still work correctly.
-  const effectiveDocumentSlug = initialDocumentSlug ?? urlDocumentSlug
+  const effectiveDocumentPath = initialDocumentPath ?? urlDocumentPath
 
-  // Resolve document slug to document ID using the tree store
-  // Returns the UUID if found by slug (or ID for backwards compat), undefined otherwise
+  // Resolve document path to document ID using the tree store
+  // Returns the UUID if found by path (or ID for backwards compat), undefined otherwise
   const effectiveDocumentId = useMemo(() => {
-    if (!effectiveDocumentSlug) return undefined
-    // Try to find document by slug first, then by ID (for backwards compatibility)
-    const doc = documents.find((d) => d.slug === effectiveDocumentSlug || d.id === effectiveDocumentSlug)
+    if (!effectiveDocumentPath) return undefined
+    // Try to find document by path first, then by ID (for backwards compatibility)
+    const doc = documents.find((d) => d.path === effectiveDocumentPath || d.id === effectiveDocumentPath)
     return doc?.id
-  }, [effectiveDocumentSlug, documents])
+  }, [effectiveDocumentPath, documents])
+
+  // Parse skill name from URL (similar to document path parsing)
+  // Path: /projects/{slug}/skills/{skillName}
+  const urlSkillName = useMemo(() => {
+    const segments = location.pathname.split('/').filter(Boolean)
+    const skillsIndex = segments.indexOf('skills')
+    if (skillsIndex === -1 || skillsIndex === segments.length - 1) return undefined
+    const skillSegment = segments[skillsIndex + 1]
+    // Decode URL-encoded skill name (handles special chars like spaces, ampersands)
+    return skillSegment ? decodeURIComponent(skillSegment) : undefined
+  }, [location.pathname])
+
+  const effectiveSkillName = initialSkillName ?? urlSkillName
+
+  // ADD THIS LOG
+  logger.debug('[SKILL-DEEPLINK] effectiveSkillName parsed from URL', {
+    effectiveSkillName,
+    urlSkillName,
+    initialSkillName,
+    pathname: location.pathname,
+  })
+
+  // Resolve skill name to skill ID using the skill store
+  // Returns the UUID if found by name, undefined otherwise
+  const effectiveSkillId = useMemo(() => {
+    if (!effectiveSkillName) {
+      logger.debug('[SKILL-DEEPLINK] effectiveSkillId memo: no skill name in URL')
+      return undefined
+    }
+    const skill = skills.find((s) => s.name === effectiveSkillName)
+    logger.debug('[SKILL-DEEPLINK] effectiveSkillId memo recalculated', {
+      effectiveSkillName,
+      skillsCount: skills.length,
+      foundSkill: skill ? { id: skill.id, name: skill.name } : null,
+      effectiveSkillId: skill?.id,
+      allSkillNames: skills.map(s => s.name),
+    })
+    return skill?.id
+  }, [effectiveSkillName, skills])
 
   // Resolve project identifier (UUID or slug) to actual project
   // Sets projectId state once resolved
@@ -127,7 +184,6 @@ export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug
         // Set resolved project ID and slug for use in child components
         setProjectId(project.id)
         setProjectSlug(project.slug)
-        setProjectName(project.name)
         // Switch context only if different to avoid unnecessary editor cache clears
         if (currentProjectId !== project.id) {
           setCurrentProject(project)
@@ -146,16 +202,45 @@ export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectIdentifier])
 
-  // Reset UI state when project changes to prevent context leakage
+  // Reset UI state when switching between projects to prevent context leakage
+  // Skip on first project load (null → UUID) to preserve deep-link state
   useEffect(() => {
+    logger.debug('[SKILL-DEEPLINK] Project reset effect triggered', {
+      projectId,
+      previousResolvedProjectId: previousResolvedProjectIdRef.current,
+      isFirstLoad: previousResolvedProjectIdRef.current === null && projectId !== null,
+      willSkipReset: previousResolvedProjectIdRef.current === null && projectId !== null,
+    })
+
     const store = useUIStore.getState()
-    store.setActiveDocument(null)
-    store.setRightPanelState('documents')
-    // Reset panel ready state for new project - panels will collapse until new data loads
-    store.setLeftPanelReady(false)
-    store.setRightPanelReady(false)
-    // Note: Do NOT reset userOverride - user's collapse/expand preference should persist across projects
-    previousDocumentIdRef.current = undefined // Reset ref so next URL is treated as changed
+
+    // First project load: projectId goes from null to a UUID
+    // Skip reset - no previous project to leak state from, sync effects will set initial state
+    if (previousResolvedProjectIdRef.current === null && projectId !== null) {
+      logger.debug('[SKILL-DEEPLINK] Skipping reset - first project load')
+      previousResolvedProjectIdRef.current = projectId
+      return
+    }
+
+    // Project switch: projectId changes from one UUID to another
+    // Run reset to prevent state leakage from previous project
+    if (projectId !== null && projectId !== previousResolvedProjectIdRef.current) {
+      logger.debug('[SKILL-DEEPLINK] Running reset - project switched', {
+        from: previousResolvedProjectIdRef.current,
+        to: projectId,
+      })
+      store.setActiveDocument(null)
+      store.setActiveSkill(null)
+      useSkillStore.getState().clearSkills() // Clear stale skills from previous project
+      store.setRightPanelState('documents')
+      // Reset panel ready state for new project - panels will collapse until new data loads
+      store.setLeftPanelReady(false)
+      store.setRightPanelReady(false)
+      // Note: Do NOT reset userOverride - user's collapse/expand preference should persist across projects
+      previousDocumentIdRef.current = undefined // Reset ref so next URL is treated as changed
+      previousResolvedProjectIdRef.current = projectId
+      logger.debug('[SKILL-DEEPLINK] Reset complete')
+    }
   }, [projectId])
 
   // Sync URL document ID to UI state (for direct URL navigation, bookmarks, browser back/forward)
@@ -163,10 +248,11 @@ export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug
   // Effect only runs when document URL param changes, not when UI state changes
   // This allows future thread effects to run independently without interfering
   useEffect(() => {
-    logger.debug('URL sync effect triggered', {
+    logger.debug('[SKILL-DEEPLINK] Document sync effect triggered', {
+      effectiveDocumentId,
       previousDocId: previousDocumentIdRef.current,
-      currentDocId: effectiveDocumentId,
       isFirstMount: isFirstMountRef.current,
+      pathname: location.pathname,
     })
 
     const urlChanged = previousDocumentIdRef.current !== effectiveDocumentId
@@ -201,12 +287,6 @@ export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug
         logger.debug('Expanding right panel')
         store.setRightPanelCollapsed(false)
       }
-      // Mobile: On first mount, default to document tab for document deep-links.
-      // After that, keep the user's current tab even if the document changes.
-      if (isFirstMount && store.mobileActivePanel !== 'document') {
-        logger.debug('Setting mobile panel: document (first mount)')
-        store.setMobileActivePanel('document')
-      }
     } else {
       // Tree URL - show tree view
       if (store.activeDocumentId !== null) {
@@ -218,19 +298,21 @@ export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug
         store.setRightPanelState('documents')
       }
     }
+    // location.pathname is only used for debug logging, intentionally not in deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveDocumentId])
 
   // For deep links: load the tree once in the background if empty
-  // Uses effectiveDocumentSlug (not effectiveDocumentId) since we need tree loaded to resolve slug → ID
+  // Uses effectiveDocumentPath (not effectiveDocumentId) since we need tree loaded to resolve path → ID
   useEffect(() => {
-    if (!effectiveDocumentSlug) return
+    if (!effectiveDocumentPath) return
     if (projectId === null) return // Wait for project to be resolved
     if (documentsCount !== 0 || isTreeLoading) return
 
     const abortController = new AbortController()
     loadTree(projectId, abortController.signal)
     return () => abortController.abort()
-  }, [projectId, effectiveDocumentSlug, documentsCount, isTreeLoading, loadTree])
+  }, [projectId, effectiveDocumentPath, documentsCount, isTreeLoading, loadTree])
 
   // After the tree loads, ensure the active document selection reflects the tree entry
   useEffect(() => {
@@ -245,12 +327,111 @@ export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug
     }
   }, [documentsCount, documents, effectiveDocumentId])
 
+  // For deep links: load skills once in the background if empty
+  // Uses effectiveSkillName (not effectiveSkillId) since we need skills loaded to resolve name → ID
+  useEffect(() => {
+    logger.debug('[SKILL-DEEPLINK] Skill loading effect check', {
+      effectiveSkillName,
+      projectId,
+      skillsCount: skills.length,
+      isLoadingSkills,
+      willLoadSkills: effectiveSkillName && projectId && skills.length === 0 && !isLoadingSkills,
+    })
+
+    if (!effectiveSkillName) return
+    if (projectId === null) return // Wait for project to be resolved
+    if (skills.length !== 0 || isLoadingSkills) return
+
+    logger.debug('[SKILL-DEEPLINK] Loading skills for deep-link...')
+    const abortController = new AbortController()
+    loadSkills(projectId, abortController.signal)
+    return () => abortController.abort()
+  }, [projectId, effectiveSkillName, skills.length, isLoadingSkills, loadSkills])
+
+  // Sync URL skill ID to UI state (for direct URL navigation, bookmarks, browser back/forward)
+  // Uses getState() to read current values without subscribing (prevents unnecessary re-runs)
+  useEffect(() => {
+    const store = useUIStore.getState()
+
+    logger.debug('[SKILL-DEEPLINK] Skill sync effect triggered', {
+      effectiveSkillId,
+      currentActiveSkillId: store.activeSkillId,
+      currentActiveDocumentId: store.activeDocumentId,
+      currentRightPanelState: store.rightPanelState,
+      willSetSkill: !!effectiveSkillId,
+    })
+
+    if (!effectiveSkillId) {
+      logger.debug('[SKILL-DEEPLINK] No effectiveSkillId, skipping sync')
+      return
+    }
+
+    logger.debug('[SKILL-DEEPLINK] Setting active skill and opening editor...')
+
+    if (store.activeSkillId !== effectiveSkillId) {
+      logger.debug('[SKILL-DEEPLINK] Calling setActiveSkill', { effectiveSkillId })
+      store.setActiveSkill(effectiveSkillId)
+    }
+    // Note: setActiveSkill already clears activeDocumentId for mutual exclusivity
+    store.setRightPanelState('editor')
+    store.setRightPanelCollapsed(false)
+
+    logger.debug('[SKILL-DEEPLINK] After setting state', {
+      activeSkillId: useUIStore.getState().activeSkillId,
+      activeDocumentId: useUIStore.getState().activeDocumentId,
+      rightPanelState: useUIStore.getState().rightPanelState,
+    })
+  }, [effectiveSkillId])
+
+  // Handle skill not found
+  useEffect(() => {
+    // Guard against project not yet resolved
+    if (!projectSlug) return
+
+    // 'new' is a reserved name for skill creation - skip lookup
+    if (effectiveSkillName === 'new') return
+
+    if (effectiveSkillName && !effectiveSkillId && skillsStatus === 'success') {
+      // If we have an active skill ID, check if it's still valid
+      if (activeSkillId) {
+        const activeSkill = skills.find((s) => s.id === activeSkillId)
+        if (activeSkill) {
+          // Active skill exists - check if URL needs correction (rename case)
+          if (activeSkill.name !== effectiveSkillName) {
+            logger.debug('[SKILL-DEEPLINK] Skill URL stale, replacing', {
+              effectiveSkillName,
+              activeSkillId,
+              activeSkillName: activeSkill.name,
+            })
+            navigate({
+              to: '/projects/$slug/skills/$skillName',
+              params: { slug: projectSlug, skillName: activeSkill.name },
+              replace: true,
+            })
+          }
+          // Either way (rename or re-click), we have a valid active skill - don't clear
+          // This handles re-clicking the same skill where timing can cause effectiveSkillId
+          // to briefly be undefined during memo recalculation
+          return
+        }
+      }
+
+      // Skill name in URL but not found in loaded skills
+      logger.warn('Skill not found:', effectiveSkillName)
+      useUIStore.getState().setActiveSkill(null)
+      navigate({ to: '/projects/$slug', params: { slug: projectSlug } })
+    }
+  }, [activeSkillId, effectiveSkillName, effectiveSkillId, skills, skillsStatus, navigate, projectSlug])
+
   // Wait for mount and project resolution before rendering workspace
   if (!mounted || projectId === null || projectSlug === null) {
     return <div className="h-dvh w-full bg-background" />
   }
 
   // Define panel content (what to show) - layout strategy decides how to arrange them
+  // Layout Philosophy (Desktop TwoPanelLayout):
+  // - LEFT (42%): Thread panel - Primary AI interaction, prominent position emphasizes AI-native nature
+  // - RIGHT (58%): Document workspace - Tree + Editor unified, substantial space for writing
   const panels: PanelDefinitions = {
     threadList: <ThreadListPanel projectId={projectId} />,
     activeThread: <ActiveThreadView projectId={projectId} />,
@@ -258,14 +439,14 @@ export default function WorkspaceLayout({ projectIdentifier, initialDocumentSlug
       <DocumentPanel
         projectId={projectId}
         projectSlug={projectSlug}
-        projectName={projectName}
+        isLoadingSkills={isLoadingSkills}
+        effectiveSkillName={effectiveSkillName}
       />
     ),
+    projectSettings: <ProjectSettingsPanel projectId={projectId} />,
   }
 
   return (
-    <div className="h-dvh w-full overflow-hidden">
-      <LayoutStrategy panels={panels} />
-    </div>
+    <LayoutStrategy panels={panels} leftPanelView={leftPanelView} />
   )
 }

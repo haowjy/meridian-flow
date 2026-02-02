@@ -120,8 +120,8 @@ DELETE /api/documents/:id
 
 Content documents (markdown). Can be at root or in folders.
 
-**Identifier:** `:id` must be a UUID. Document slugs require project context
-(use tree endpoint `/api/projects/:id/tree` for slug-based lookups).
+**Identifier:** `:id` must be a UUID. Document paths require project context
+(use tree endpoint `/api/projects/:id/tree` for path-based lookups).
 
 **Alias:** `POST /api/projects/:id/documents` (same as `/api/documents`)
 
