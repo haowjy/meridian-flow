@@ -30,14 +30,17 @@ export const DEFAULT_THREAD_REQUEST_OPTIONS: ThreadRequestOptions = {
 /**
  * Converts backend RequestParams to frontend ThreadRequestOptions.
  * Falls back to defaults for missing fields.
+ *
+ * Note: RequestParams uses camelCase because fetchAPI's convertKeysToCamelCase
+ * transforms all keys from the backend's snake_case (thinking_enabled -> thinkingEnabled).
  */
 export function requestParamsToOptions(params?: RequestParams | null): ThreadRequestOptions {
   if (!params) return { ...DEFAULT_THREAD_REQUEST_OPTIONS }
 
-  // Map thinking_level to reasoning, defaulting to 'low' if thinking is enabled but no level set
+  // Map thinkingLevel to reasoning, defaulting to 'low' if thinking is enabled but no level set
   let reasoning: ReasoningLevel = 'off'
-  if (params.thinking_enabled || params.thinking_level) {
-    reasoning = (params.thinking_level as ReasoningLevel) ?? 'low'
+  if (params.thinkingEnabled || params.thinkingLevel) {
+    reasoning = (params.thinkingLevel as ReasoningLevel) ?? 'low'
   }
 
   return {
