@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useEffect } from 'react'
 import { ArrowUp, Brain, Check, ChevronDown, Wrench } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
@@ -60,6 +61,14 @@ export function ThreadRequestControls({
   const selectedModel = allModels.find((m) => m.id === options.modelId)
   const supportsThinking = selectedModel?.supportsThinking ?? true
   const requiresThinking = selectedModel?.requiresThinking ?? false
+
+  // Auto-correct reasoning level if model requires thinking but current value is 'off'
+  // This handles edge cases like model switching or initial load before capabilities are fetched.
+  useEffect(() => {
+    if (requiresThinking && options.reasoning === 'off') {
+      onOptionsChange({ ...options, reasoning: 'low' })
+    }
+  }, [requiresThinking, options, onOptionsChange])
 
   const handleSelectModel = (
     modelId: string,
