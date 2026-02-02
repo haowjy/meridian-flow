@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { createFileRoute, redirect, Link } from '@tanstack/react-router'
 import { createClient } from '@/core/supabase/client'
 import { LoginForm } from '@/features/auth/components/LoginForm'
 import { Logo } from '@/shared/components'
@@ -31,6 +31,15 @@ function LoginPage() {
       <p className="mt-5 text-xs text-muted-foreground">
         Your writing workspace
       </p>
+      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+        <Link to="/privacy" className="hover:text-foreground transition-colors">
+          Privacy
+        </Link>
+        <span>·</span>
+        <Link to="/terms" className="hover:text-foreground transition-colors">
+          Terms
+        </Link>
+      </div>
     </div>
   )
 }
