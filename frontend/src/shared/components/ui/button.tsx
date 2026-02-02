@@ -5,7 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-all disabled:pointer-events-none [&_svg]:pointer-events-none shrink-0 [&_svg]:shrink-0 outline-none font-sans",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-all cursor-pointer disabled:pointer-events-none disabled:cursor-not-allowed [&_svg]:pointer-events-none shrink-0 [&_svg]:shrink-0 outline-none font-sans relative after:absolute after:-inset-2 after:content-['']",
   {
     variants: {
       variant: {
@@ -47,28 +47,28 @@ const buttonVariants = cva(
           "focus-visible:outline-[3px] focus-visible:outline-error focus-visible:outline-offset-2 " +
           "disabled:opacity-[--opacity-disabled]",
 
-        // ACCENT: Background with accent color text
+        // ACCENT: Background with primary color text
         accent:
-          "bg-accent/10 text-accent rounded-md hover:bg-accent/20 " +
+          "bg-primary/10 text-primary rounded-md hover:bg-primary/20 " +
           "focus-visible:outline-[3px] focus-visible:outline-[var(--focus-ring-outer)] focus-visible:outline-offset-2 " +
           "focus-visible:shadow-[0_0_0_2px_var(--focus-ring-inner)] " +
           "disabled:opacity-[--opacity-disabled]",
 
         // LINK: Underline on hover
         link:
-          "text-primary underline-offset-4 hover:underline hover:text-accent " +
+          "text-primary underline-offset-4 hover:underline " +
           "focus-visible:outline-[3px] focus-visible:outline-[var(--focus-ring-outer)] focus-visible:outline-offset-2 " +
           "focus-visible:shadow-[0_0_0_2px_var(--focus-ring-inner)] " +
           "disabled:opacity-[--opacity-disabled]",
       },
       size: {
         // Standard sizes - pill shape with icon scaling
-        default: "h-9 px-4 py-2 rounded-md [&_svg]:size-4",
-        sm: "h-8 px-4 gap-1.5 rounded-md [&_svg]:size-3.5",
-        lg: "h-10 px-6 rounded-md [&_svg]:size-5",
+        default: "h-9 px-3 py-2 rounded-md [&_svg]:size-4",
+        sm: "h-8 px-2.5 gap-1.5 rounded-md [&_svg]:size-3.5",
+        lg: "h-10 px-4 rounded-md [&_svg]:size-5",
 
         // Compact for inline controls (dropdowns, toolbars)
-        xs: "h-7 px-3 gap-1 text-xs rounded-md [&_svg]:size-3",
+        xs: "h-7 px-2 gap-1 text-xs rounded-md [&_svg]:size-3",
 
         // Icon buttons - subtle rounded squares with proportional icons
         "icon-xs": "size-5 rounded [&_svg]:size-2.5",

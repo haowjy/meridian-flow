@@ -5,9 +5,9 @@ export interface Skill {
   id: string
   projectId: string
   name: string // Internal identifier (e.g., "writing-coach")
-  displayName: string // User-facing display name
   description: string
   position: number // Sort order for display
+  enabled: boolean // Whether skill is active (default true)
   disableModelInvocation: boolean // If true, only user can invoke
   userInvocable: boolean // If true, user can invoke via slash command
   syncState: SkillSyncState
@@ -33,7 +33,6 @@ export type SkillSyncState = 'detached' | 'synced' | 'outdated' | 'modified'
  */
 export interface CreateSkillRequest {
   name: string
-  displayName: string
   description: string
   content?: string // Optional initial SKILL.md content
   disableModelInvocation?: boolean
@@ -41,13 +40,10 @@ export interface CreateSkillRequest {
 }
 
 export interface UpdateSkillRequest {
-  displayName?: string
+  name?: string
   description?: string
   content?: string
+  enabled?: boolean
   disableModelInvocation?: boolean
   userInvocable?: boolean
-}
-
-export interface ReorderSkillsRequest {
-  skillIds: string[]
 }

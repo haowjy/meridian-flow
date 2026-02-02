@@ -46,6 +46,7 @@ func (b *ToolRegistryBuilder) WithNamespaceService(namespaceSvc docsysSvc.Namesp
 // WithDocumentTools registers all document-related tools (doc_view, doc_search, doc_tree, doc_edit).
 // These tools operate on the project's document system.
 // All tools use services for data access (SOLID: DIP - depends on interfaces).
+// Tools are registered with metadata for dynamic system prompt generation (SOLID: OCP compliance).
 func (b *ToolRegistryBuilder) WithDocumentTools(
 	projectID string,
 	userID string,
@@ -53,31 +54,72 @@ func (b *ToolRegistryBuilder) WithDocumentTools(
 	folderSvc docsysSvc.FolderService,
 ) *ToolRegistryBuilder {
 	// All tools use service layer for data access (Phase 4: zero repo dependencies)
+	// Tools self-describe via metadata for system prompt generation (OCP compliance)
 	viewTool := NewViewTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
 	treeTool := NewTreeTool(projectID, userID, folderSvc, b.namespaceSvc, b.config)
 	searchTool := NewSearchTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
 	editTool := NewEditTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
 
-	b.registry.Register("doc_view", viewTool)
-	b.registry.Register("doc_tree", treeTool)
-	b.registry.Register("doc_search", searchTool)
-	b.registry.Register("doc_edit", editTool)
+	b.registry.RegisterWithMetadata("doc_view", viewTool, ViewToolMetadata())
+	b.registry.RegisterWithMetadata("doc_tree", treeTool, TreeToolMetadata())
+	b.registry.RegisterWithMetadata("doc_search", searchTool, SearchToolMetadata())
+	b.registry.RegisterWithMetadata("doc_edit", editTool, EditToolMetadata())
+
+	return b
+}
+
+// WithEnabledDocumentTools registers only the specified document tools.
+// enabledTools is the list of tool names to register (e.g., ["doc_view", "doc_tree"]).
+// This allows frontend to control which tools the LLM can use.
+// Tools are registered with metadata for dynamic system prompt generation (SOLID: OCP compliance).
+func (b *ToolRegistryBuilder) WithEnabledDocumentTools(
+	enabledTools []string,
+	projectID string,
+	userID string,
+	documentSvc docsysSvc.DocumentService,
+	folderSvc docsysSvc.FolderService,
+) *ToolRegistryBuilder {
+	// Build set of enabled tools for O(1) lookup
+	toolSet := make(map[string]bool)
+	for _, t := range enabledTools {
+		toolSet[t] = true
+	}
+
+	// Register only enabled document tools with metadata (OCP compliance)
+	if toolSet["doc_view"] {
+		viewTool := NewViewTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
+		b.registry.RegisterWithMetadata("doc_view", viewTool, ViewToolMetadata())
+	}
+	if toolSet["doc_tree"] {
+		treeTool := NewTreeTool(projectID, userID, folderSvc, b.namespaceSvc, b.config)
+		b.registry.RegisterWithMetadata("doc_tree", treeTool, TreeToolMetadata())
+	}
+	if toolSet["doc_search"] {
+		searchTool := NewSearchTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
+		b.registry.RegisterWithMetadata("doc_search", searchTool, SearchToolMetadata())
+	}
+	if toolSet["doc_edit"] {
+		editTool := NewEditTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
+		b.registry.RegisterWithMetadata("doc_edit", editTool, EditToolMetadata())
+	}
 
 	return b
 }
 
 // WithWebSearch registers the web_search tool using an external search client.
 // Only registers if a valid client is provided.
+// Tool is registered with metadata for dynamic system prompt generation (SOLID: OCP compliance).
 func (b *ToolRegistryBuilder) WithWebSearch(client external.SearchClient) *ToolRegistryBuilder {
 	if client != nil {
 		webSearchTool := NewWebSearchTool(client, b.config)
-		b.registry.Register("web_search", webSearchTool)
+		b.registry.RegisterWithMetadata("web_search", webSearchTool, WebSearchToolMetadata())
 	}
 	return b
 }
 
 // WithSkillTools registers skill-related tools (skill_invoke, skill_list).
 // Only registers if a valid skill service is provided.
+// Tools are registered with metadata for dynamic system prompt generation (SOLID: OCP compliance).
 func (b *ToolRegistryBuilder) WithSkillTools(
 	projectID string,
 	userID string,
@@ -88,9 +130,43 @@ func (b *ToolRegistryBuilder) WithSkillTools(
 		invokeTool := NewSkillInvokeTool(projectID, userID, skillService, isUserInvocation, b.config)
 		listTool := NewSkillListTool(projectID, userID, skillService, b.config)
 
-		b.registry.Register("skill_invoke", invokeTool)
-		b.registry.Register("skill_list", listTool)
+		b.registry.RegisterWithMetadata("skill_invoke", invokeTool, SkillInvokeToolMetadata())
+		b.registry.RegisterWithMetadata("skill_list", listTool, SkillListToolMetadata())
 	}
+	return b
+}
+
+// WithEnabledSkillTools registers only the specified skill tools.
+// enabledTools is the list of tool names to register (e.g., ["skill_invoke"]).
+// This allows frontend to control which tools the LLM can use.
+// Tools are registered with metadata for dynamic system prompt generation (SOLID: OCP compliance).
+func (b *ToolRegistryBuilder) WithEnabledSkillTools(
+	enabledTools []string,
+	projectID string,
+	userID string,
+	skillService skillSvc.ProjectSkillService,
+	isUserInvocation bool,
+) *ToolRegistryBuilder {
+	if skillService == nil {
+		return b
+	}
+
+	// Build set of enabled tools for O(1) lookup
+	toolSet := make(map[string]bool)
+	for _, t := range enabledTools {
+		toolSet[t] = true
+	}
+
+	// Register only enabled skill tools with metadata (OCP compliance)
+	if toolSet["skill_invoke"] {
+		invokeTool := NewSkillInvokeTool(projectID, userID, skillService, isUserInvocation, b.config)
+		b.registry.RegisterWithMetadata("skill_invoke", invokeTool, SkillInvokeToolMetadata())
+	}
+	if toolSet["skill_list"] {
+		listTool := NewSkillListTool(projectID, userID, skillService, b.config)
+		b.registry.RegisterWithMetadata("skill_list", listTool, SkillListToolMetadata())
+	}
+
 	return b
 }
 

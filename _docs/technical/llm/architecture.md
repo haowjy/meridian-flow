@@ -524,7 +524,7 @@ built_in_tools:
   search:
     native_name: web_search_20250305
     native_support: true
-    execution_side: server
+    execution_side: local
     requires_version: true
     per_request_cost: 0.01  # $10 per 1K searches
     parameters:

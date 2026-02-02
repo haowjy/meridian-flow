@@ -4,6 +4,9 @@
 @source "../../node_modules/streamdown/dist/index.js";
 
 @custom-variant dark (&:is(.dark *));
+@custom-variant data-checked (&[data-state="checked"]);
+@custom-variant data-unchecked (&[data-state="unchecked"]);
+@custom-variant data-disabled (&:is(:disabled, [data-disabled]));
 
 /* ============================================================================
    MERIDIAN DESIGN SYSTEM - Themeable Architecture
@@ -28,8 +31,8 @@
   --color-foreground: var(--foreground);
   --color-primary: var(--jade-primary);
   --color-primary-foreground: var(--jade-foreground);
-  --color-accent: var(--gold);
-  --color-accent-foreground: var(--gold-foreground);
+  --color-favorite: var(--gold-favorite);
+  --color-favorite-foreground: var(--gold-favorite-foreground);
   --color-border: var(--border);
   --color-input: var(--input-border);
   --color-ring: var(--focus-ring);
@@ -41,6 +44,8 @@
   --color-warning-foreground: var(--warning-foreground);
   --color-error: var(--error);
   --color-error-foreground: var(--error-foreground);
+  --color-destructive: var(--error);
+  --color-destructive-foreground: var(--error-foreground);
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
 
@@ -99,8 +104,13 @@
   --spacing-6: 48px;
 
   /* === Panel Layout === */
+  --workspace-rail-width: 48px;     /* Vertical navigation rail (desktop only) */
   --panel-header-height: 3rem;      /* 48px - all panel headers (thread, document, sidebar) */
   --thread-composer-max-height: 240px; /* Max height before internal scroll - used for content padding-bottom */
+
+  /* === Mobile Layout === */
+  --mobile-top-header-height: 56px;   /* Mobile top header (project selector + menu) - h-14 */
+  --mobile-bottom-bar-height: 48px;   /* Mobile bottom navigation bar (base height) - 3rem */
 
   /* === Shadows (multi-layer) === */
   --shadow-1: var(--shadow-1-value);
@@ -122,6 +132,9 @@
   /* === Focus Ring Opacities === */
   --focus-outer-opacity: 0.28;
   --focus-inner-opacity: 0.12;
+
+  /* === Editor Form Inputs (transparent style for workspace contexts) === */
+  --color-editor-input-border: var(--editor-input-border);
 }
 
 /* ============================================================================
@@ -130,37 +143,37 @@
    ============================================================================ */
 
 :root {
-  /* === Theme Variable Fallbacks (Modern Literary Light) === */
+  /* === Theme Variable Fallbacks (Modern Literary Light - Enhanced Contrast) === */
   /* Colors from: _docs/technical/frontend/themes/modern-literary.md */
-  --theme-bg: #F9F6F0;           /* Warm paper */
-  --theme-surface: #FFFDF8;      /* Off-white surface */
-  --theme-text: #2C2418;         /* Warm ink */
-  --theme-text-muted: #6B5D4D;   /* Warm muted brown */
-  --theme-border: #E5DFD4;       /* Warm border */
-  --theme-accent: #C8973E;       /* Antique gold */
-  --theme-accent-hover: #B8872E;
-  --theme-accent-foreground: #2C2418;
-  --theme-primary: #C8973E;      /* Antique gold */
-  --theme-primary-foreground: #2C2418;
+  --theme-bg: #F6F2EA;           /* Warmer, more distinguishable from white */
+  --theme-surface: #FAF7F2;      /* Distinct from pure white */
+  --theme-text: #1F1A12;         /* Darker for better contrast */
+  --theme-text-muted: #5A4D3F;   /* Slightly darker muted text */
+  --theme-border: #D8D0C2;       /* More visible borders */
+  --theme-favorite: #F4B41A;     /* Gold */
+  --theme-favorite-hover: #E0A410;
+  --theme-favorite-foreground: #1C1A18;
+  --theme-primary: #4A7A68;      /* Deeper, more confident sage green */
+  --theme-primary-foreground: #FFFFFF;
   --theme-success: #3D8B5F;
   --theme-success-foreground: #FFFFFF;
   --theme-warning: #DB9A30;
-  --theme-warning-foreground: #2C2418;
+  --theme-warning-foreground: #1F1A12;
   --theme-error: #C4785A;
   --theme-error-foreground: #FFFFFF;
-  --theme-focus-ring-outer: rgba(200, 151, 62, 0.35);
-  --theme-focus-ring-inner: rgba(200, 151, 62, 0.15);
-  --theme-sidebar: #F3EFE7;      /* Warm sidebar */
-  --theme-sidebar-foreground: #2C2418;
-  --theme-sidebar-icon: #6B5D4D;
-  --theme-sidebar-accent: #EDE8DE;
-  --theme-sidebar-border: #E5DFD4;
-  /* Warm lamp-like shadows */
-  --theme-shadow-1: rgba(44, 36, 24, 0.06) 0px 1px 2px, rgba(44, 36, 24, 0.04) 0px 2px 6px;
-  --theme-shadow-2: rgba(44, 36, 24, 0.08) 0px 4px 12px, rgba(44, 36, 24, 0.04) 0px 1px 3px;
-  --theme-shadow-3: rgba(44, 36, 24, 0.12) 0px 8px 24px, rgba(44, 36, 24, 0.06) 0px 2px 8px;
-  --theme-selection-bg: rgba(200, 151, 62, 0.25);
-  --theme-selection-fg: #2C2418;
+  --theme-focus-ring-outer: rgba(74, 122, 104, 0.35);
+  --theme-focus-ring-inner: rgba(74, 122, 104, 0.15);
+  --theme-sidebar: #F0EBE2;      /* Warm sidebar (slightly warmer to match new bg) */
+  --theme-sidebar-foreground: #1F1A12;
+  --theme-sidebar-icon: #5A4D3F;
+  --theme-sidebar-accent: #E8E3D9;
+  --theme-sidebar-border: #D8D0C2;
+  /* More visible shadows with increased opacity */
+  --theme-shadow-1: 0 1px 3px rgba(44, 36, 24, 0.12), 0 1px 2px rgba(44, 36, 24, 0.08);
+  --theme-shadow-2: 0 4px 12px rgba(44, 36, 24, 0.15), 0 2px 4px rgba(44, 36, 24, 0.10);
+  --theme-shadow-3: 0 10px 25px rgba(44, 36, 24, 0.18), 0 4px 10px rgba(44, 36, 24, 0.12);
+  --theme-selection-bg: rgba(74, 122, 104, 0.25);
+  --theme-selection-fg: #1F1A12;
   /* Typography: Cormorant Garamond (display), Source Serif 4 (body), Manrope (UI) */
   --theme-font-display: 'Cormorant Garamond', Georgia, serif;
   --theme-font-body: 'Source Serif 4', Georgia, serif;
@@ -169,7 +182,14 @@
 
   /* Paper grain texture (subtle noise for light mode, disabled in dark) */
   --texture-grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-  --texture-opacity: 0.03;
+  --texture-opacity: 0.06;       /* Increased from 0.03 for subtle but perceptible grain */
+
+  /* Editor form inputs: full opacity border for visibility */
+  --editor-input-border: var(--theme-border);
+
+  /* Editor inset styling: "pressed into paper" depth effect */
+  --editor-inset-shadow: inset 0 2px 4px rgba(44, 36, 24, 0.06);
+  --editor-inset-bg: color-mix(in srgb, var(--theme-bg) 92%, var(--theme-border) 8%);
 
   /* === Semantic Variables (bridge to theme system) === */
 
@@ -181,12 +201,12 @@
   --jade-primary: var(--theme-primary);
   --jade-foreground: var(--theme-primary-foreground);
 
-  /* Accent */
-  --gold: var(--theme-accent);
-  --gold-foreground: var(--theme-accent-foreground);
+  /* Favorite */
+  --gold-favorite: var(--theme-favorite);
+  --gold-favorite-foreground: var(--theme-favorite-foreground);
 
-  /* Interactive States */
-  --hover: color-mix(in srgb, var(--theme-accent) 8%, transparent);
+  /* Interactive States - increased hover visibility from 8% to 14% */
+  --hover: color-mix(in srgb, var(--theme-primary) 14%, transparent);
   --active: var(--theme-primary);
   --disabled: #9A958A;
 
@@ -232,7 +252,7 @@
   --sidebar-accent: var(--theme-sidebar-accent);
   --sidebar-accent-foreground: var(--theme-sidebar-foreground);
   --sidebar-border: var(--theme-sidebar-border);
-  --sidebar-ring: var(--theme-accent);
+  --sidebar-ring: var(--theme-primary);
 
   /* Shadows */
   --shadow-1-value: var(--theme-shadow-1);
@@ -250,17 +270,17 @@
    ============================================================================ */
 
 .dark {
-  /* === Theme Variable Fallbacks (Modern Literary Dark) === */
+  /* === Theme Variable Fallbacks (Modern Literary Dark - Enhanced) === */
   /* Colors from: _docs/technical/frontend/themes/modern-literary.md */
   --theme-bg: #1C1917;           /* Espresso/ink */
-  --theme-surface: #252220;      /* Warm charcoal */
+  --theme-surface: #2A2724;      /* Slightly lighter for better contrast */
   --theme-text: #F0EBE3;         /* Warm cream */
   --theme-text-muted: #A89E8E;   /* Warm muted */
   --theme-border: #3A3530;       /* Warm border */
-  --theme-accent: #E4B866;       /* Warm amber */
-  --theme-accent-hover: #F0C87A;
-  --theme-accent-foreground: #1C1917;
-  --theme-primary: #E4B866;      /* Warm amber */
+  --theme-favorite: #E3C169;     /* Warm gold for dark mode */
+  --theme-favorite-hover: #F0D080;
+  --theme-favorite-foreground: #2f2f2f;
+  --theme-primary: #8FB9A4;      /* Brighter, more vibrant sage */
   --theme-primary-foreground: #1C1917;
   --theme-success: #5CB87A;
   --theme-success-foreground: #1C1917;
@@ -268,22 +288,29 @@
   --theme-warning-foreground: #1C1917;
   --theme-error: #D4896B;
   --theme-error-foreground: #1C1917;
-  --theme-focus-ring-outer: rgba(228, 184, 102, 0.30);
-  --theme-focus-ring-inner: rgba(228, 184, 102, 0.12);
+  --theme-focus-ring-outer: rgba(143, 185, 164, 0.30);
+  --theme-focus-ring-inner: rgba(143, 185, 164, 0.12);
   --theme-sidebar: #14120F;      /* Deep sidebar */
   --theme-sidebar-foreground: #F0EBE3;
   --theme-sidebar-icon: #A89E8E;
   --theme-sidebar-accent: #2A2724;
   --theme-sidebar-border: #3A3530;
-  /* Reading lamp glow shadows */
-  --theme-shadow-1: rgba(0, 0, 0, 0.30) 0px 1px 2px, rgba(228, 184, 102, 0.03) 0px 1px 0px inset;
-  --theme-shadow-2: rgba(0, 0, 0, 0.40) 0px 4px 16px, rgba(228, 184, 102, 0.05) 0px 0px 0px 1px;
-  --theme-shadow-3: rgba(0, 0, 0, 0.50) 0px 8px 32px, rgba(228, 184, 102, 0.08) 0px 0px 24px;
-  --theme-selection-bg: rgba(228, 184, 102, 0.35);
+  /* More visible shadows with subtle sage glow */
+  --theme-shadow-1: 0 1px 3px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  --theme-shadow-2: 0 4px 16px rgba(0, 0, 0, 0.45), 0 0 1px rgba(143, 185, 164, 0.08);
+  --theme-shadow-3: 0 10px 30px rgba(0, 0, 0, 0.50), 0 0 20px rgba(143, 185, 164, 0.06);
+  --theme-selection-bg: rgba(143, 185, 164, 0.35);
   --theme-selection-fg: #F0EBE3;
 
   /* Disable paper grain in dark mode */
   --texture-opacity: 0;
+
+  /* Editor form inputs: full opacity border for visibility */
+  --editor-input-border: var(--theme-border);
+
+  /* Editor inset styling: "pressed into paper" depth effect (darker for dark mode) */
+  --editor-inset-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.15);
+  --editor-inset-bg: color-mix(in srgb, var(--theme-bg) 85%, var(--theme-border) 15%);
 
   /* === Semantic Variables (same bridge as light, but referencing updated --theme-* values) === */
 
@@ -295,15 +322,15 @@
   --jade-primary: var(--theme-primary);
   --jade-foreground: var(--theme-primary-foreground);
 
-  /* Accent */
-  --gold: var(--theme-accent);
-  --gold-foreground: var(--theme-accent-foreground);
+  /* Favorite */
+  --gold-favorite: var(--theme-favorite);
+  --gold-favorite-foreground: var(--theme-favorite-foreground);
 
   /* Glow accent for AI elements in dark mode */
-  --glow-jade: var(--theme-accent);
+  --glow-jade: var(--theme-primary);
 
-  /* Interactive States */
-  --hover: color-mix(in srgb, var(--theme-accent) 8%, transparent);
+  /* Interactive States - increased hover visibility from 8% to 14% */
+  --hover: color-mix(in srgb, var(--theme-primary) 14%, transparent);
   --active: var(--theme-primary);
   --disabled: #7E857F;
 
@@ -349,7 +376,7 @@
   --sidebar-accent: var(--theme-sidebar-accent);
   --sidebar-accent-foreground: var(--theme-sidebar-foreground);
   --sidebar-border: var(--theme-sidebar-border);
-  --sidebar-ring: var(--theme-accent);
+  --sidebar-ring: var(--theme-primary);
 
   /* Shadows */
   --shadow-1-value: var(--theme-shadow-1);
@@ -453,6 +480,12 @@
   [role="menuitem"][aria-disabled="true"] {
     cursor: not-allowed;
   }
+
+  /* Text cursor for form inputs */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not(:disabled),
+  textarea:not(:disabled) {
+    cursor: text;
+  }
 }
 
 /* Prevent animations during initial page load / hydration */
@@ -533,13 +566,13 @@ body.preload * {
     line-height: 0.8;
     padding-right: 0.1em;
     padding-top: 0.1em;
-    color: var(--theme-accent);
+    color: var(--theme-favorite);
   }
 
   /* Scene break decoration (· · ·) */
   .scene-break {
     @apply text-center my-8;
-    color: var(--theme-accent);
+    color: var(--theme-favorite);
     font-family: var(--font-display);
     letter-spacing: 0.5em;
   }
@@ -547,11 +580,11 @@ body.preload * {
   /* === Thread Pane (Left Sidebar) === */
 
   .thread-pane {
-    @apply bg-sidebar text-sidebar-foreground;
+    @apply bg-background text-foreground;
   }
 
   .thread-pane-header {
-    @apply bg-sidebar/80;
+    @apply bg-background/80;
   }
 
   .thread-pane-body {
@@ -566,16 +599,6 @@ body.preload * {
     @apply text-xs text-sidebar-foreground/70;
   }
 
-  .thread-list-item {
-    @apply cursor-pointer text-xs transition-colors duration-[--duration-fast];
-    @apply hover:bg-sidebar-accent/20;
-  }
-
-  /* Active thread styling (background handled by Tailwind in component) */
-  .thread-list-item--active {
-    @apply font-semibold;
-  }
-
   /* === List Item Base Pattern ===
      Consistent base for tree/list items across the app.
      Usage: Apply appropriate variant class based on context.
@@ -585,25 +608,37 @@ body.preload * {
      - Compact items: px-2 py-1 gap-1.5
   */
   .list-item-base {
-    @apply flex w-full items-center rounded-sm text-left text-sm transition-colors cursor-pointer;
+    @apply flex w-full items-center rounded-sm text-left text-sm cursor-pointer;
     /* Default: sidebar item spacing */
     @apply gap-2 px-2.5;
     /* Responsive padding: larger touch targets on mobile */
     @apply py-2 md:py-1.5;
+    /* Enhanced hover with micro-movement */
+    transition: transform 150ms ease, background 150ms ease;
   }
 
   .list-item-base:hover {
     @apply bg-hover;
+    transform: translateX(2px);
   }
 
   .list-item-base--active {
     @apply bg-sidebar-accent/50 font-medium;
+    /* Visible left border accent for active state */
+    border-left: 2px solid var(--theme-favorite);
+    padding-left: calc(0.625rem - 2px); /* Compensate for border width (px-2.5 = 0.625rem) */
   }
 
   /* Compact variant for dense lists */
   .list-item-compact {
-    @apply flex w-full items-center rounded-sm text-left text-sm transition-colors cursor-pointer;
+    @apply flex w-full items-center rounded-sm text-left text-sm cursor-pointer;
     @apply gap-1.5 px-2 py-1;
+    transition: transform 150ms ease, background 150ms ease;
+  }
+
+  .list-item-compact:hover {
+    @apply bg-hover;
+    transform: translateX(2px);
   }
 
   /* List item action button - "..." menu triggers */
@@ -649,21 +684,6 @@ body.preload * {
     @apply flex h-full flex-col bg-background min-w-0 relative;
   }
 
-  /* Thread text scaling for mobile - prevents iOS zoom and maintains consistency */
-  @media (max-width: 639px) {
-    .thread-main .text-sm {
-      font-size: 1rem; /* 16px */
-    }
-
-    .thread-main .text-xs {
-      font-size: 0.875rem; /* 14px */
-    }
-
-    .thread-main .text-\[10px\] {
-      font-size: 0.75rem; /* 12px */
-    }
-  }
-
   /* Floating scroll-to-bottom button - positioned above composer (which is absolute positioned) */
   .scroll-to-bottom-button {
     @apply absolute left-1/2 -translate-x-1/2 z-20 rounded-full shadow-md;
@@ -688,6 +708,8 @@ body.preload * {
   /* Thread messages - spec: pure white user, jade rim AI */
   .thread-message {
     border-radius: var(--radius-lg);
+    /* Add visible shadow for elevation/depth */
+    box-shadow: var(--shadow-1);
     transition: box-shadow var(--duration-medium) var(--easing-default);
   }
 
@@ -746,21 +768,19 @@ body.preload * {
 
   /* === Workspace Panel Shells (left/right slabs) === */
 
+  /* Left panel (chat zone) - Base layer.
+     Lower z-index allows right panel's shadow to extend over it. */
   .workspace-panel-left {
     position: relative;
-    box-shadow: var(--shadow-1);
-    z-index: 5;
+    z-index: 1;
   }
 
+  /* Right panel (document zone) - Base layer (elevated via utility classes).
+     Higher z-index (applied via class) ensures shadow extends over the left panel. */
   .workspace-panel-right {
     position: relative;
-    z-index: 10;
-    border-left: 1px solid var(--border);
-    /* Subtle, directional shadow so the right panel floats
-       above the center content without feeling heavy. */
-    box-shadow:
-      -6px 0 16px rgba(28, 26, 24, 0.12),
-      -2px 0 6px rgba(28, 26, 24, 0.08);
+    z-index: 1;
+    /* Shadow and elevation handled in TwoPanelLayout.tsx */
   }
 
   /* === Special UI Elements === */
@@ -810,6 +830,24 @@ body.preload * {
     bottom: 0.25rem;
     border-left: 1px solid var(--border);
     opacity: var(--opacity-subtle);
+    pointer-events: none;
+  }
+
+  /* Compact skills section - reduced indentation */
+  .tree-children-compact {
+    position: relative;
+    margin-left: 0.5rem;   /* 8px (was 12px) */
+    padding-left: 0.5rem;  /* 8px (was 12px) */
+  }
+
+  .tree-children-compact::before {
+    content: "";
+    position: absolute;
+    inset-inline-start: 0.25rem;  /* 4px from left */
+    top: 0.25rem;
+    bottom: 0.25rem;
+    border-left: 1px solid var(--border);
+    opacity: var(--opacity-subtle);  /* 20% opacity */
     pointer-events: none;
   }
 
@@ -1098,18 +1136,18 @@ body.preload * {
 
   /* Border shimmer keyframe: traveling highlight via box-shadow */
   @keyframes meridian-border-shimmer {
-    0% { box-shadow: inset -100% 0 0 0 color-mix(in srgb, var(--theme-accent) 30%, transparent); }
-    50% { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-accent) 50%, transparent); }
-    100% { box-shadow: inset 100% 0 0 0 color-mix(in srgb, var(--theme-accent) 30%, transparent); }
+    0% { box-shadow: inset -100% 0 0 0 color-mix(in srgb, var(--theme-primary) 30%, transparent); }
+    50% { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-primary) 50%, transparent); }
+    100% { box-shadow: inset 100% 0 0 0 color-mix(in srgb, var(--theme-primary) 30%, transparent); }
   }
 
   /* Text shimmer - gradient sweep across text */
   .animate-generating-shimmer {
     background: linear-gradient(
       90deg,
-      color-mix(in srgb, var(--theme-accent) 30%, transparent) 0%,
-      var(--theme-accent) 50%,
-      color-mix(in srgb, var(--theme-accent) 30%, transparent) 100%
+      color-mix(in srgb, var(--theme-primary) 30%, transparent) 0%,
+      var(--theme-primary) 50%,
+      color-mix(in srgb, var(--theme-primary) 30%, transparent) 100%
     );
     background-size: 200% 100%;
     animation: meridian-shimmer 2s cubic-bezier(0.25, 1, 0.5, 1) infinite;
@@ -1165,7 +1203,7 @@ body.preload * {
 
   /* ============================================================================
      EXECUTING STATE ANIMATION (PULSE)
-     Subtle pulse effect for EXECUTING state (tool running server-side).
+     Subtle pulse effect for EXECUTING state (tool running on backend).
      Distinct from PREPARING shimmer - this shows the tool is actively running.
      ============================================================================ */
 
@@ -1210,6 +1248,8 @@ body.preload * {
   }
 
   /* Ensure minimum touch target size (44x44px) */
+  /* disabled: global rule breaks layout. Components manage their own hit areas. */
+  /*
   button,
   [role="button"],
   [role="menuitem"],
@@ -1217,6 +1257,7 @@ body.preload * {
     min-height: 44px;
     min-width: 44px;
   }
+  */
 
   /* Smaller buttons that are part of inline UI can be smaller but still touch-friendly */
   .touch-target-sm {
@@ -1251,4 +1292,49 @@ body.preload * {
 
 .safe-area-inset-right {
   padding-right: env(safe-area-inset-right);
+}
+
+/* ============================================================================
+   MOBILE LAYOUT STYLES
+   ============================================================================ */
+
+/* Prevent zoom on input focus (iOS Safari zooms when input font-size < 16px) */
+@media (max-width: 767px) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}
+
+/* === Mobile Typography Scaling ===
+   Increases font sizes on mobile for better readability.
+   Best practice: Mobile body text should be 18-20px.
+*/
+@media (max-width: 767px) {
+  .type-body {
+    font-size: 18px;
+  }
+
+  .type-label {
+    font-size: 15px;
+  }
+
+  .type-meta {
+    font-size: 14px;
+  }
+
+  /* List items use text-sm (14px) - bump to 17px on mobile */
+  .list-item-base,
+  .list-item-compact {
+    font-size: 1.0625rem; /* 17px */
+  }
+
+  /* CodeMirror editor - larger text for mobile readability */
+  .cm-editor {
+    font-size: 18px !important;
+  }
+
+  /* Global text-sm scaling - 14px → 16px for mobile readability */
+  .text-sm {
+    font-size: 1rem !important;
+  }
 }

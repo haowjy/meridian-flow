@@ -4,6 +4,7 @@ import { type TreeFolderDto, type TreeDocumentDto, fromTreeDocumentDto } from '@
 
 /**
  * Hierarchical tree node for rendering folder/document structure.
+ * Skills are rendered separately in CollapsibleSkillsSection, NOT in the tree.
  * Folders have children (recursive), documents are leaf nodes.
  *
  * This is a discriminated union - TypeScript can narrow the type based on the `type` field:
@@ -43,10 +44,10 @@ export function convertNestedToTreeNodes(
   for (const folderDto of foldersDto) {
     const folder: Folder = {
       id: folderDto.id,
-      projectId: folderDto.project_id,
-      parentId: folderDto.folder_id,
+      projectId: folderDto.projectId,
+      parentId: folderDto.folderId,
       name: folderDto.name,
-      createdAt: new Date(folderDto.created_at),
+      createdAt: new Date(folderDto.createdAt),
     }
 
     // Recursively convert nested children
@@ -88,6 +89,9 @@ export function convertNestedToTreeNodes(
 /**
  * Builds hierarchical tree structure from flat folder/document arrays.
  *
+ * NOTE: Skills are NOT included in the tree - they are rendered separately
+ * in CollapsibleSkillsSection.
+ *
  * Algorithm:
  * 1. Start with root items (parentId/folderId === null)
  * 2. Recursively find children for each folder
@@ -127,15 +131,17 @@ export function buildTree(folders: Folder[], documents: Document[]): TreeNode[] 
         data: doc,
       }))
 
-    // Combine and sort: folders first, then alphabetically by name
+    // Combine and sort: folders → documents, alphabetically within each type
+    // Note: Skills are handled separately in CollapsibleSkillsSection
     const combined = [...childFolders, ...childDocuments]
 
     return combined.sort((a, b) => {
-      // Folders before documents
+      // Type-based sorting: folder < document
       if (a.type !== b.type) {
-        return a.type === 'folder' ? -1 : 1
+        const typeOrder = { folder: 0, document: 1 }
+        return typeOrder[a.type] - typeOrder[b.type]
       }
-      // Alphabetical by name
+      // Alphabetical by name within same type
       return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
     })
   }
@@ -160,7 +166,7 @@ export function filterTree(tree: TreeNode[], query: string): TreeNode[] {
   const lowerQuery = query.toLowerCase()
 
   function filterNode(node: TreeNode): TreeNode | null {
-    // Documents: match by name
+    // Leaf nodes (documents): match by name
     if (node.type === 'document') {
       return node.name.toLowerCase().includes(lowerQuery) ? node : null
     }

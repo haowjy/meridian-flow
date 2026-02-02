@@ -1,14 +1,16 @@
 import { useState } from 'react'
-import { Plus, Sparkles, Loader2 } from 'lucide-react'
+import { useNavigate, useParams } from '@tanstack/react-router'
+import { Plus, Sparkles } from 'lucide-react'
 import { useSkillStore } from '@/core/stores/useSkillStore'
 import { useSkillsForProject } from '../hooks/useSkillsForProject'
+import { makeLogger } from '@/core/lib/logger'
 import { Button } from '@/shared/components/ui/button'
 import { SkillList } from './SkillList'
-import { SkillDialog } from './SkillDialog'
 import { DeleteSkillDialog } from './DeleteSkillDialog'
 import { getErrorMessage } from '@/core/lib/errors'
-import { api } from '@/core/lib/api'
-import type { Skill, SkillWithContent } from '../types/skill'
+import type { Skill } from '../types/skill'
+
+const log = makeLogger('skill-list-panel')
 
 interface SkillListPanelProps {
   projectId: string
@@ -17,8 +19,12 @@ interface SkillListPanelProps {
 /**
  * Skills panel for viewing and managing project skills.
  * Can be used in a sidebar or as a standalone panel.
+ * Navigates to SkillEditorPanel for editing skills.
  */
 export function SkillListPanel({ projectId }: SkillListPanelProps) {
+  const navigate = useNavigate()
+  const { slug: projectSlug } = useParams({ strict: false })
+
   const {
     skills,
     status,
@@ -29,10 +35,7 @@ export function SkillListPanel({ projectId }: SkillListPanelProps) {
 
   const deleteSkill = useSkillStore((s) => s.deleteSkill)
 
-  // Dialog states
-  const [createDialogOpen, setCreateDialogOpen] = useState(false)
-  const [skillToEdit, setSkillToEdit] = useState<SkillWithContent | null>(null)
-  const [isLoadingSkill, setIsLoadingSkill] = useState(false)
+  // Delete dialog state
   const [skillToDelete, setSkillToDelete] = useState<Skill | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
@@ -40,16 +43,22 @@ export function SkillListPanel({ projectId }: SkillListPanelProps) {
     setSelectedSkillId(skillId === selectedSkillId ? null : skillId)
   }
 
-  const handleEditSkill = async (skill: Skill) => {
-    setIsLoadingSkill(true)
-    try {
-      const fullSkill = await api.skills.get(projectId, skill.id)
-      setSkillToEdit(fullSkill)
-    } catch (error) {
-      console.error('Failed to load skill:', getErrorMessage(error))
-    } finally {
-      setIsLoadingSkill(false)
-    }
+  // Navigate to skill editor instead of opening dialog
+  const handleEditSkill = (skill: Skill) => {
+    if (!projectSlug) return
+    navigate({
+      to: '/projects/$slug/skills/$skillName',
+      params: { slug: projectSlug, skillName: skill.name },
+    })
+  }
+
+  // Navigate to create new skill
+  const handleCreateSkill = () => {
+    if (!projectSlug) return
+    navigate({
+      to: '/projects/$slug/skills/$skillName',
+      params: { slug: projectSlug, skillName: 'new' },
+    })
   }
 
   const handleDeleteClick = (skill: Skill) => {
@@ -64,7 +73,7 @@ export function SkillListPanel({ projectId }: SkillListPanelProps) {
       await deleteSkill(projectId, skillToDelete.id)
       setSkillToDelete(null)
     } catch (error) {
-      console.error('Failed to delete skill:', getErrorMessage(error))
+      log.error('Failed to delete skill:', getErrorMessage(error))
     } finally {
       setIsDeleting(false)
     }
@@ -85,7 +94,7 @@ export function SkillListPanel({ projectId }: SkillListPanelProps) {
           size="sm"
           variant="ghost"
           className="size-7 p-0"
-          onClick={() => setCreateDialogOpen(true)}
+          onClick={handleCreateSkill}
           disabled={isLoading}
         >
           <Plus className="size-4" />
@@ -117,29 +126,7 @@ export function SkillListPanel({ projectId }: SkillListPanelProps) {
         )}
       </div>
 
-      {/* Loading overlay for skill fetch */}
-      {isLoadingSkill && (
-        <div className="absolute inset-0 bg-background/50 flex items-center justify-center">
-          <Loader2 className="size-5 animate-spin text-muted-foreground" />
-        </div>
-      )}
-
-      {/* Dialogs */}
-      <SkillDialog
-        projectId={projectId}
-        open={createDialogOpen}
-        onOpenChange={setCreateDialogOpen}
-      />
-
-      <SkillDialog
-        projectId={projectId}
-        skill={skillToEdit}
-        open={skillToEdit !== null}
-        onOpenChange={(open) => {
-          if (!open) setSkillToEdit(null)
-        }}
-      />
-
+      {/* Delete dialog */}
       <DeleteSkillDialog
         skill={skillToDelete}
         open={skillToDelete !== null}

@@ -10,6 +10,8 @@ import {
 
 interface ThreadTitleMenuProps {
   trigger: React.ReactNode
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
   onRename?: () => void
   onDelete?: () => void
   align?: 'start' | 'end'
@@ -22,18 +24,24 @@ interface ThreadTitleMenuProps {
  * Single Responsibility: Renders the dropdown menu with action items.
  * Callbacks are provided by parent - this component doesn't know about stores.
  *
- * Used by: ThreadListItem (sidebar), ThreadHeader (center panel)
+ * Used by: ThreadRow (sidebar), ThreadHeader (center panel)
  */
 export function ThreadTitleMenu({
   trigger,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
   onRename,
   onDelete,
   align = 'end',
 }: ThreadTitleMenuProps) {
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
+
+  // Use controlled state if provided, otherwise use internal state
+  const open = controlledOpen !== undefined ? controlledOpen : internalOpen
+  const setOpen = controlledOnOpenChange || setInternalOpen
 
   // Close menu and execute action SYNCHRONOUSLY.
-  // The click guard in ThreadListItem prevents ghost clicks from causing navigation.
+  // The click guard in ThreadRow prevents ghost clicks from causing navigation.
   // Action must run before ghost click fires so the guard is set in time.
   const handleAction = (action?: () => void) => () => {
     setOpen(false)

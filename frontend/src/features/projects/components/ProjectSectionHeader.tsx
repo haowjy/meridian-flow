@@ -9,7 +9,7 @@ interface ProjectSectionHeaderProps {
 
 export function ProjectSectionHeader({ icon, title, count, right }: ProjectSectionHeaderProps) {
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
+    <div className="flex items-center justify-between gap-2 mb-4">
       <div className="flex items-center gap-2">
         {icon}
         <h2 className="type-label uppercase tracking-wide text-muted-foreground">
@@ -22,7 +22,7 @@ export function ProjectSectionHeader({ icon, title, count, right }: ProjectSecti
         )}
       </div>
       {right && (
-        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+        <div className="flex items-center gap-2 shrink-0">
           {right}
         </div>
       )}

@@ -11,7 +11,6 @@ import (
 // CreateSkillRequest is the request body for creating a skill
 type CreateSkillRequest struct {
 	Name                   string `json:"name"`
-	DisplayName            string `json:"display_name"`
 	Description            string `json:"description"`
 	Content                string `json:"content,omitempty"` // SKILL.md content
 	DisableModelInvocation *bool  `json:"disable_model_invocation,omitempty"`
@@ -20,9 +19,10 @@ type CreateSkillRequest struct {
 
 // UpdateSkillRequest is the request body for updating a skill
 type UpdateSkillRequest struct {
-	DisplayName            *string `json:"display_name,omitempty"`
+	Name                   *string `json:"name,omitempty"`
 	Description            *string `json:"description,omitempty"`
 	Content                *string `json:"content,omitempty"` // SKILL.md content
+	Enabled                *bool   `json:"enabled,omitempty"` // Enable/disable skill
 	DisableModelInvocation *bool   `json:"disable_model_invocation,omitempty"`
 	UserInvocable          *bool   `json:"user_invocable,omitempty"`
 }
@@ -40,9 +40,9 @@ type SkillResponse struct {
 	ID                     string    `json:"id"`
 	ProjectID              string    `json:"project_id"`
 	Name                   string    `json:"name"`
-	DisplayName            string    `json:"display_name"`
 	Description            string    `json:"description"`
 	Position               int       `json:"position"`
+	Enabled                bool      `json:"enabled"` // Whether skill is active
 	DisableModelInvocation bool      `json:"disable_model_invocation"`
 	UserInvocable          bool      `json:"user_invocable"`
 	SyncState              string    `json:"sync_state"`
@@ -73,9 +73,9 @@ func toSkillResponse(skill *skillModels.ProjectSkill) SkillResponse {
 		ID:                     skill.ID,
 		ProjectID:              skill.ProjectID,
 		Name:                   skill.Name,
-		DisplayName:            skill.DisplayName,
 		Description:            skill.Description,
 		Position:               skill.Position,
+		Enabled:                skill.Enabled,
 		DisableModelInvocation: meta.DisableModelInvocation,
 		UserInvocable:          meta.UserInvocable,
 		SyncState:              string(skill.SyncState),
@@ -85,10 +85,10 @@ func toSkillResponse(skill *skillModels.ProjectSkill) SkillResponse {
 	}
 }
 
-// toSkillWithContentResponse converts a ProjectSkillWithContent model to a response DTO
-func toSkillWithContentResponse(skill *skillModels.ProjectSkillWithContent) SkillWithContentResponse {
+// toSkillWithContentResponse converts a ProjectSkill model to a response DTO with content
+func toSkillWithContentResponse(skill *skillModels.ProjectSkill) SkillWithContentResponse {
 	return SkillWithContentResponse{
-		SkillResponse: toSkillResponse(&skill.ProjectSkill),
+		SkillResponse: toSkillResponse(skill),
 		Content:       skill.Content,
 	}
 }

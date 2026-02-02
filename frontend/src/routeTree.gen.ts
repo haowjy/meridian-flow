@@ -16,8 +16,12 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
 import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects/index'
 import { Route as AuthenticatedProjectsSlugRouteImport } from './routes/_authenticated/projects/$slug'
+import { Route as AuthenticatedProjectsSlugTreeRouteImport } from './routes/_authenticated/projects/$slug/tree'
+import { Route as AuthenticatedProjectsSlugThreadsRouteImport } from './routes/_authenticated/projects/$slug/threads'
+import { Route as AuthenticatedProjectsSlugSkillsSkillNameRouteImport } from './routes/_authenticated/projects/$slug/skills/$skillName'
 import { Route as AuthenticatedProjectsSlugDocumentsSplatRouteImport } from './routes/_authenticated/projects/$slug/documents/$'
 
 const TermsRoute = TermsRouteImport.update({
@@ -54,17 +58,40 @@ const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedProjectsRoute = AuthenticatedProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedProjectsIndexRoute =
   AuthenticatedProjectsIndexRouteImport.update({
-    id: '/projects/',
-    path: '/projects/',
-    getParentRoute: () => AuthenticatedRoute,
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedProjectsRoute,
   } as any)
 const AuthenticatedProjectsSlugRoute =
   AuthenticatedProjectsSlugRouteImport.update({
-    id: '/projects/$slug',
-    path: '/projects/$slug',
-    getParentRoute: () => AuthenticatedRoute,
+    id: '/$slug',
+    path: '/$slug',
+    getParentRoute: () => AuthenticatedProjectsRoute,
+  } as any)
+const AuthenticatedProjectsSlugTreeRoute =
+  AuthenticatedProjectsSlugTreeRouteImport.update({
+    id: '/tree',
+    path: '/tree',
+    getParentRoute: () => AuthenticatedProjectsSlugRoute,
+  } as any)
+const AuthenticatedProjectsSlugThreadsRoute =
+  AuthenticatedProjectsSlugThreadsRouteImport.update({
+    id: '/threads',
+    path: '/threads',
+    getParentRoute: () => AuthenticatedProjectsSlugRoute,
+  } as any)
+const AuthenticatedProjectsSlugSkillsSkillNameRoute =
+  AuthenticatedProjectsSlugSkillsSkillNameRouteImport.update({
+    id: '/skills/$skillName',
+    path: '/skills/$skillName',
+    getParentRoute: () => AuthenticatedProjectsSlugRoute,
   } as any)
 const AuthenticatedProjectsSlugDocumentsSplatRoute =
   AuthenticatedProjectsSlugDocumentsSplatRouteImport.update({
@@ -78,11 +105,15 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
+  '/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/projects/$slug': typeof AuthenticatedProjectsSlugRouteWithChildren
-  '/projects': typeof AuthenticatedProjectsIndexRoute
+  '/projects/': typeof AuthenticatedProjectsIndexRoute
+  '/projects/$slug/threads': typeof AuthenticatedProjectsSlugThreadsRoute
+  '/projects/$slug/tree': typeof AuthenticatedProjectsSlugTreeRoute
   '/projects/$slug/documents/$': typeof AuthenticatedProjectsSlugDocumentsSplatRoute
+  '/projects/$slug/skills/$skillName': typeof AuthenticatedProjectsSlugSkillsSkillNameRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -93,7 +124,10 @@ export interface FileRoutesByTo {
   '/auth/callback': typeof AuthCallbackRoute
   '/projects/$slug': typeof AuthenticatedProjectsSlugRouteWithChildren
   '/projects': typeof AuthenticatedProjectsIndexRoute
+  '/projects/$slug/threads': typeof AuthenticatedProjectsSlugThreadsRoute
+  '/projects/$slug/tree': typeof AuthenticatedProjectsSlugTreeRoute
   '/projects/$slug/documents/$': typeof AuthenticatedProjectsSlugDocumentsSplatRoute
+  '/projects/$slug/skills/$skillName': typeof AuthenticatedProjectsSlugSkillsSkillNameRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -102,11 +136,15 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
+  '/_authenticated/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/_authenticated/projects/$slug': typeof AuthenticatedProjectsSlugRouteWithChildren
   '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
+  '/_authenticated/projects/$slug/threads': typeof AuthenticatedProjectsSlugThreadsRoute
+  '/_authenticated/projects/$slug/tree': typeof AuthenticatedProjectsSlugTreeRoute
   '/_authenticated/projects/$slug/documents/$': typeof AuthenticatedProjectsSlugDocumentsSplatRoute
+  '/_authenticated/projects/$slug/skills/$skillName': typeof AuthenticatedProjectsSlugSkillsSkillNameRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -115,11 +153,15 @@ export interface FileRouteTypes {
     | '/login'
     | '/privacy'
     | '/terms'
+    | '/projects'
     | '/settings'
     | '/auth/callback'
     | '/projects/$slug'
-    | '/projects'
+    | '/projects/'
+    | '/projects/$slug/threads'
+    | '/projects/$slug/tree'
     | '/projects/$slug/documents/$'
+    | '/projects/$slug/skills/$skillName'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -130,7 +172,10 @@ export interface FileRouteTypes {
     | '/auth/callback'
     | '/projects/$slug'
     | '/projects'
+    | '/projects/$slug/threads'
+    | '/projects/$slug/tree'
     | '/projects/$slug/documents/$'
+    | '/projects/$slug/skills/$skillName'
   id:
     | '__root__'
     | '/'
@@ -138,11 +183,15 @@ export interface FileRouteTypes {
     | '/login'
     | '/privacy'
     | '/terms'
+    | '/_authenticated/projects'
     | '/_authenticated/settings'
     | '/auth/callback'
     | '/_authenticated/projects/$slug'
     | '/_authenticated/projects/'
+    | '/_authenticated/projects/$slug/threads'
+    | '/_authenticated/projects/$slug/tree'
     | '/_authenticated/projects/$slug/documents/$'
+    | '/_authenticated/projects/$slug/skills/$skillName'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -205,19 +254,47 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/projects/': {
-      id: '/_authenticated/projects/'
+    '/_authenticated/projects': {
+      id: '/_authenticated/projects'
       path: '/projects'
       fullPath: '/projects'
-      preLoaderRoute: typeof AuthenticatedProjectsIndexRouteImport
+      preLoaderRoute: typeof AuthenticatedProjectsRouteImport
       parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/projects/': {
+      id: '/_authenticated/projects/'
+      path: '/'
+      fullPath: '/projects/'
+      preLoaderRoute: typeof AuthenticatedProjectsIndexRouteImport
+      parentRoute: typeof AuthenticatedProjectsRoute
     }
     '/_authenticated/projects/$slug': {
       id: '/_authenticated/projects/$slug'
-      path: '/projects/$slug'
+      path: '/$slug'
       fullPath: '/projects/$slug'
       preLoaderRoute: typeof AuthenticatedProjectsSlugRouteImport
-      parentRoute: typeof AuthenticatedRoute
+      parentRoute: typeof AuthenticatedProjectsRoute
+    }
+    '/_authenticated/projects/$slug/tree': {
+      id: '/_authenticated/projects/$slug/tree'
+      path: '/tree'
+      fullPath: '/projects/$slug/tree'
+      preLoaderRoute: typeof AuthenticatedProjectsSlugTreeRouteImport
+      parentRoute: typeof AuthenticatedProjectsSlugRoute
+    }
+    '/_authenticated/projects/$slug/threads': {
+      id: '/_authenticated/projects/$slug/threads'
+      path: '/threads'
+      fullPath: '/projects/$slug/threads'
+      preLoaderRoute: typeof AuthenticatedProjectsSlugThreadsRouteImport
+      parentRoute: typeof AuthenticatedProjectsSlugRoute
+    }
+    '/_authenticated/projects/$slug/skills/$skillName': {
+      id: '/_authenticated/projects/$slug/skills/$skillName'
+      path: '/skills/$skillName'
+      fullPath: '/projects/$slug/skills/$skillName'
+      preLoaderRoute: typeof AuthenticatedProjectsSlugSkillsSkillNameRouteImport
+      parentRoute: typeof AuthenticatedProjectsSlugRoute
     }
     '/_authenticated/projects/$slug/documents/$': {
       id: '/_authenticated/projects/$slug/documents/$'
@@ -230,13 +307,21 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedProjectsSlugRouteChildren {
+  AuthenticatedProjectsSlugThreadsRoute: typeof AuthenticatedProjectsSlugThreadsRoute
+  AuthenticatedProjectsSlugTreeRoute: typeof AuthenticatedProjectsSlugTreeRoute
   AuthenticatedProjectsSlugDocumentsSplatRoute: typeof AuthenticatedProjectsSlugDocumentsSplatRoute
+  AuthenticatedProjectsSlugSkillsSkillNameRoute: typeof AuthenticatedProjectsSlugSkillsSkillNameRoute
 }
 
 const AuthenticatedProjectsSlugRouteChildren: AuthenticatedProjectsSlugRouteChildren =
   {
+    AuthenticatedProjectsSlugThreadsRoute:
+      AuthenticatedProjectsSlugThreadsRoute,
+    AuthenticatedProjectsSlugTreeRoute: AuthenticatedProjectsSlugTreeRoute,
     AuthenticatedProjectsSlugDocumentsSplatRoute:
       AuthenticatedProjectsSlugDocumentsSplatRoute,
+    AuthenticatedProjectsSlugSkillsSkillNameRoute:
+      AuthenticatedProjectsSlugSkillsSkillNameRoute,
   }
 
 const AuthenticatedProjectsSlugRouteWithChildren =
@@ -244,16 +329,29 @@ const AuthenticatedProjectsSlugRouteWithChildren =
     AuthenticatedProjectsSlugRouteChildren,
   )
 
-interface AuthenticatedRouteChildren {
-  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+interface AuthenticatedProjectsRouteChildren {
   AuthenticatedProjectsSlugRoute: typeof AuthenticatedProjectsSlugRouteWithChildren
   AuthenticatedProjectsIndexRoute: typeof AuthenticatedProjectsIndexRoute
 }
 
-const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
-  AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+const AuthenticatedProjectsRouteChildren: AuthenticatedProjectsRouteChildren = {
   AuthenticatedProjectsSlugRoute: AuthenticatedProjectsSlugRouteWithChildren,
   AuthenticatedProjectsIndexRoute: AuthenticatedProjectsIndexRoute,
+}
+
+const AuthenticatedProjectsRouteWithChildren =
+  AuthenticatedProjectsRoute._addFileChildren(
+    AuthenticatedProjectsRouteChildren,
+  )
+
+interface AuthenticatedRouteChildren {
+  AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRouteWithChildren
+  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+}
+
+const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedProjectsRoute: AuthenticatedProjectsRouteWithChildren,
+  AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

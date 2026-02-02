@@ -122,20 +122,6 @@ type ResponseFormat struct {
 	JSONSchema interface{} `json:"json_schema,omitempty"` // Schema for structured output
 }
 
-// LegacyTool represents a function the model can call (OpenAI format)
-// DEPRECATED: Use llmprovider.Tool for new code
-type LegacyTool struct {
-	Type     string       `json:"type"` // "function"
-	Function ToolFunction `json:"function"`
-}
-
-// ToolFunction defines a callable function (legacy OpenAI format)
-type ToolFunction struct {
-	Name        string      `json:"name"`
-	Description string      `json:"description,omitempty"`
-	Parameters  interface{} `json:"parameters,omitempty"` // JSON schema for parameters
-}
-
 // ValidateRequestParams validates request parameters
 func ValidateRequestParams(params map[string]interface{}) error {
 	if params == nil {

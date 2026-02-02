@@ -5,7 +5,7 @@ audience: developer
 
 # Theme System
 
-Flexible theming system with runtime theme switching via presets for colors, typography, and fonts.
+Single theme architecture with **Modern Literary** as the only theme. Users can toggle between light/dark modes, but cannot switch theme presets.
 
 ## Architecture
 
@@ -22,6 +22,80 @@ ThemeProvider (React Context)
 
 **Implementation**: `frontend/src/core/theme/`
 
+## Design System Overview
+
+### Color Hierarchy
+
+```mermaid
+flowchart TB
+    subgraph Foundation["Foundation Colors"]
+        direction LR
+        bg["background<br/>#F9F6F0 / #1C1917"]
+        surface["surface<br/>#FFFDF8 / #252220"]
+        text["text<br/>#2C2418 / #F0EBE3"]
+        border["border<br/>#E5DFD4 / #3A3530"]
+    end
+
+    subgraph Interactive["Interactive Colors"]
+        direction LR
+        primary["primary (sage)<br/>#5F8575 / #7BA391"]
+        favorite["favorite (gold)<br/>#F4B41A / #E3C169"]
+    end
+
+    subgraph Feedback["Feedback Colors"]
+        direction LR
+        success["success<br/>#3D8B5F / #5CB87A"]
+        warning["warning<br/>#DB9A30 / #F0B042"]
+        error["error<br/>#B54425 / #E8735A"]
+    end
+
+    style Foundation fill:#2d5a4a,color:#fff
+    style Interactive fill:#5a4a3a,color:#fff
+    style Feedback fill:#6a5a2a,color:#fff
+```
+
+### Spacing Scale (8pt Grid)
+
+```mermaid
+flowchart LR
+    S1["4px<br/>spacing-1"]
+    S2["8px<br/>spacing-2"]
+    S3["16px<br/>spacing-3"]
+    S4["24px<br/>spacing-4"]
+    S5["32px<br/>spacing-5"]
+    S6["48px<br/>spacing-6"]
+
+    S1 --> S2 --> S3 --> S4 --> S5 --> S6
+
+    style S2 fill:#5F8575,color:#fff
+```
+
+**Standard unit**: 8px (`spacing-2`). All spacing should be multiples of 4px.
+
+### Typography Stack
+
+| Role | Font | Usage | Fallback |
+|------|------|-------|----------|
+| Display | Cormorant Garamond | Headings, titles | Georgia, serif |
+| Body | Source Serif 4 | Document content | Georgia, serif |
+| UI | Manrope | Buttons, labels, nav | system-ui, sans-serif |
+
+### Shadow Elevation
+
+| Level | Name | Usage |
+|-------|------|-------|
+| 1 | `shadow-sm` | Subtle lift (cards at rest) |
+| 2 | `shadow-md` | Interactive hover states |
+| 3 | `shadow-lg` | Modals, dropdowns, overlays |
+
+### Component Heights
+
+| Component | Height |
+|-----------|--------|
+| WorkspaceRail | 48px width |
+| MobileBottomBar | 64px |
+| Touch targets | min 44px |
+
 ## Quick Start
 
 ### Using Theme in Components
@@ -30,21 +104,20 @@ ThemeProvider (React Context)
 import { useThemeContext } from '@/core/theme';
 
 function MyComponent() {
-  const { themeId, setThemeId, isDark, setMode } = useThemeContext();
-
-  // Switch theme
-  setThemeId('classic-jade');
+  const { isDark, setMode } = useThemeContext();
 
   // Switch mode: 'light' | 'dark' | 'system'
   setMode('dark');
+
+  // Note: setThemeId is available but disabled (single theme)
 }
 ```
 
 ### Available Themes
 
-- [`modern-literary`](./modern-literary.md) - Default. Warm paper + antique gold, Cormorant Garamond/Source Serif 4/Manrope
-- [`classic-jade`](./classic-jade.md) - Jade + gold on parchment, Literata/Inter
-- [`academic`](./academic.md) - Scholarly typography, EB Garamond/Spectral/DM Sans
+- [`modern-literary`](./modern-literary.md) - Only theme. Warm paper + sage green + gold, Cormorant Garamond/Source Serif 4/Manrope
+
+**Design Decision**: Single theme simplifies the UX and ensures consistent visual identity. Theme switching can be re-enabled in the future if needed by reversing these changes.
 
 ## CSS Variables
 
@@ -56,14 +129,28 @@ Theme system sets `--theme-*` variables on `:root`. Key variables:
 | `--theme-surface` | Card/panel background |
 | `--theme-text` | Primary text |
 | `--theme-text-muted` | Secondary text |
-| `--theme-accent` | Accent color (amber) |
-| `--theme-primary` | Primary action color |
+| `--theme-favorite` | Favorite/special marking color (gold) |
+| `--theme-primary` | Primary action/interactive color (sage) |
 | `--theme-sidebar` | Sidebar background |
 | `--theme-font-display` | Heading font family |
 | `--theme-font-body` | Body text font family |
 | `--theme-font-ui` | UI element font family |
 
-Full reference: `_docs/hidden/handoffs/design-system-theme-architecture.md`
+## Color Semantics
+
+Theme v3+ uses semantic color naming with clear intent:
+
+**`favorite`** (#F4B41A gold): Special markings
+- Stars, bookmarks, featured content
+- "I want this to stand out as special"
+
+**`primary`** (#5F8575 sage): Interactive UI elements
+- Buttons, focus rings, hover states, selection
+- "This is the main action color"
+
+**Migration from v2**: The legacy `accent` color was split for clearer intent:
+- `accent` → `favorite` for starred items, special markings
+- `accent` → `primary` for interactive UI elements
 
 ## Adding New Themes
 
@@ -75,9 +162,9 @@ Detailed guide: `_docs/hidden/handoffs/design-system-theme-architecture.md`
 
 ## Persistence
 
-- Theme ID: `localStorage` key `meridian-theme-id`
 - Mode: `localStorage` key `meridian-theme-mode`
 - System preference detected via `prefers-color-scheme`
+- Theme ID persistence removed (single theme architecture)
 
 ## File Structure
 

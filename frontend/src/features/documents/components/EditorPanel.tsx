@@ -17,9 +17,9 @@
  */
 
 import { useRef, useCallback } from 'react'
-import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { CodeMirrorEditor, EditorContextMenu, type CodeMirrorEditorRef } from '@/core/editor/codemirror'
 import { useEditorStore } from '@/core/stores/useEditorStore'
+import { makeLogger } from '@/core/lib/logger'
 import { EditorHeader } from './EditorHeader'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { InlineError } from '@/shared/components/InlineError'
@@ -32,6 +32,9 @@ import { Button } from '@/shared/components/ui/button'
 import { ChevronLeft } from 'lucide-react'
 import { AIHunkNavigator } from './AIHunkNavigator'
 import { useDocumentContent, useDocumentSync, useDiffView, useDocumentPolling } from '../hooks'
+import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
+
+const log = makeLogger('editor-panel')
 
 // =============================================================================
 // TYPES
@@ -39,6 +42,8 @@ import { useDocumentContent, useDocumentSync, useDiffView, useDocumentPolling } 
 
 interface EditorPanelProps {
   documentId: string
+  // Mobile navigation: back button (passed through to EditorHeader)
+  mobileBackButton?: React.ReactNode
 }
 
 // =============================================================================
@@ -53,7 +58,7 @@ interface EditorPanelProps {
  * - During editing: editor shows merged document with diff decorations
  * - On save: parseMergedDocument() → API (content + aiVersion)
  */
-export function EditorPanel({ documentId }: EditorPanelProps) {
+export function EditorPanel({ documentId, mobileBackButton }: EditorPanelProps) {
   // ---------------------------------------------------------------------------
   // REFS
   // ---------------------------------------------------------------------------
@@ -73,6 +78,9 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
   // HOOKS (composed)
   // ---------------------------------------------------------------------------
 
+  // Get file extension for adapter selection (default to .md if not available yet)
+  const extension = activeDocument?.extension ?? documentMetadata?.extension ?? '.md'
+
   // 1. Document content (loading, hydration, local state)
   const {
     localDocument,
@@ -80,21 +88,22 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
     isInitialized,
     isEditable,
     isEditorReady,
+    hasAISuggestions,
     hasUserEdit,
     setHasUserEdit,
     handleEditorReady,
     handleContentChange,
     hydrateDocument,
     syncContext,
-  } = useDocumentContent(documentId, editorRef)
+  } = useDocumentContent(documentId, extension, editorRef)
 
   // 2. Document sync (save, flush) - pure effect, no return
-  useDocumentSync(documentId, syncContext, localDocument, hasUserEdit, editorRef, hydrateDocument)
+  useDocumentSync(documentId, extension, syncContext, localDocument, hasUserEdit, editorRef, hydrateDocument)
 
   // 3. Diff view (markers, navigation)
   const {
     hunks,
-    hasAISuggestions,
+    // Note: hasAISuggestions from useDiffView is not used - we use the adapter-based one from useDocumentContent
     initialExtensions,
     handlePrevHunk,
     handleNextHunk,
@@ -139,7 +148,7 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
       },
       onError: (error) => {
         // Log but don't disrupt the user - polling will retry
-        console.warn('[DocumentPolling] Error:', error.message)
+        log.warn('[DocumentPolling] Error:', error.message)
       },
     }
   )
@@ -174,6 +183,7 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
       wordCount={wordCount}
       status={status}
       lastSaved={lastSaved}
+      mobileBackButton={mobileBackButton}
     />
   ) : (
     <DocumentHeaderBar
@@ -242,9 +252,9 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Single scroll container - scrollbar extends to top */}
+      {/* Parent scroll container - provides sticky header behavior */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
-        {/* Sticky Header */}
+        {/* Sticky header - scrolls away when scrolling down, sticks at top when scrolling back up */}
         <div className="sticky top-0 z-20 bg-background relative">
           {header}
           <HeaderGradientFade />
@@ -261,32 +271,30 @@ export function EditorPanel({ documentId }: EditorPanelProps) {
           </div>
         )}
 
-        {/* Content area */}
-        <div className="relative flex-1">
+        {/* Editor content - scrolls with parent container */}
+        <div className="my-2 relative flex-1">
           {isContentLoading ? (
             <div className="flex-1" />
           ) : (
             // eslint-disable-next-line react-hooks/refs -- editorRef is stable, passed for context menu operations
             <EditorContextMenu editorRef={editorRef.current}>
-              <div className="relative pt-1 flex-1">
-                <CodeMirrorEditor
-                  key={documentId}
-                  initialContent={localDocument}
-                  editable={isEditable}
-                  placeholder="Start writing..."
-                  onChange={handleContentChange}
-                  onReady={handleEditorReady}
-                  extensions={initialExtensions}
-                  className="min-h-full"
-                />
-              </div>
+              <CodeMirrorEditor
+                key={documentId}
+                initialContent={localDocument}
+                editable={isEditable}
+                placeholder="Start writing..."
+                onChange={handleContentChange}
+                onReady={handleEditorReady}
+                extensions={initialExtensions}
+                className="min-h-full"
+              />
             </EditorContextMenu>
           )}
         </div>
 
-        {/* Sticky navigator wrapper - stays at bottom of viewport while scrolling */}
+        {/* AI navigator - sticky at bottom of viewport */}
         {hasAISuggestions && hunks.length > 0 && (
-          <div className="sticky bottom-0 z-20 pointer-events-none">
+          <div className="sticky bottom-0 left-0 right-0 z-20 pointer-events-none">
             <AIHunkNavigator
               hunks={hunks}
               currentIndex={navigatorPosition}

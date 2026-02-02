@@ -10,7 +10,7 @@ func TestGetModelCapabilities_OpenRouterVariantMatchesBase(t *testing.T) {
 
 	// OpenRouter can report a versioned model ID at runtime.
 	// Our capability registry stores stable IDs without the -YYYY-MM-DD suffix.
-	caps, err := r.GetModelCapabilities("openrouter", "openai/gpt-5-mini-2025-08-07")
+	caps, err := r.GetModelCapabilities("openrouter", "google/gemini-2.5-flash-2025-08-07")
 	if err != nil {
 		t.Fatalf("GetModelCapabilities() error: %v", err)
 	}

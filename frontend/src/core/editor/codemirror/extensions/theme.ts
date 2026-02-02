@@ -19,11 +19,8 @@ import { EditorView } from '@codemirror/view'
 
 export const baseTheme = EditorView.baseTheme({
   '&.cm-editor': {
-    // Use height: auto so the editor sizes to content, then content uses min-height
-    // to fill the viewport. height: 100% doesn't work reliably with flexbox containers.
-    // See: https://github.com/codemirror/dev/issues/472
     height: 'auto',
-    outline: 'none', // Prevent global outline style from showing on focus
+    outline: 'none',
   },
   '.cm-scroller': {
     overflow: 'auto',
@@ -48,10 +45,8 @@ export const livePreviewTheme = EditorView.theme({
     paddingBottom: '20px',
     paddingLeft: 'max(20px, calc((100% - 720px) / 2))',
     paddingRight: 'max(20px, calc((100% - 720px) / 2))',
-    // Use viewport-based min-height so clicking below content works.
-    // 120px accounts for header (~40px), AI toolbar (~40px), and buffer (~40px).
-    // This works because .cm-editor uses height: auto (see baseTheme).
     minHeight: 'calc(100vh - 120px)',
+    cursor: 'text', // Show I-beam cursor to indicate text input area
   },
   '.cm-gutter': {
     minHeight: 'calc(100vh - 120px)', // Match content height
@@ -88,7 +83,7 @@ export const livePreviewTheme = EditorView.theme({
 
   // Links
   '.cm-link': {
-    color: 'var(--theme-accent, #d97706)',
+    color: 'var(--theme-primary, #5F8575)',
     textDecoration: 'underline',
     textUnderlineOffset: '2px',
   },

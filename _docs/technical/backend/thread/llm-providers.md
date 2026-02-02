@@ -437,7 +437,7 @@ tools := []llm.Tool{
         Type:          llm.ToolTypeCustom,
         Name:          "get_document",
         Category:      llm.ToolCategoryCustom,
-        ExecutionSide: llm.ExecutionSideClient,
+        ExecutionSide: "client", // Backend uses string values: "provider", "local", or "client"
         Config: &llm.CustomToolConfig{
             Description: "Retrieve a document by ID",
             InputSchema: map[string]interface{}{

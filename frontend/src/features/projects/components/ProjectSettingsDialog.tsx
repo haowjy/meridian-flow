@@ -9,9 +9,9 @@ import {
 } from '@/shared/components/ui/dialog'
 import { Button } from '@/shared/components/ui/button'
 import { Label } from '@/shared/components/ui/label'
+import { Textarea } from '@/shared/components/ui/textarea'
 import { Loader2 } from 'lucide-react'
 import { Project } from '../types/project'
-import { cn } from '@/lib/utils'
 
 interface ProjectSettingsDialogProps {
   project: Project | null
@@ -73,16 +73,6 @@ export function ProjectSettingsDialog({
     }
   }
 
-  // Textarea styling matching Input component
-  const textareaClasses = cn(
-    // Base styles from Input
-    'placeholder:text-muted-foreground bg-card border-input w-full min-w-0 rounded-sm border px-3 py-2 text-base transition-[color,box-shadow] outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-[--opacity-disabled] md:text-sm font-sans',
-    // Focus ring
-    'focus-visible:outline-[3px] focus-visible:outline-[var(--focus-ring-outer)] focus-visible:outline-offset-0 focus-visible:border-transparent focus-visible:shadow-[0_0_0_2px_var(--focus-ring-inner)]',
-    // Textarea-specific
-    'resize-none min-h-[120px]'
-  )
-
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
@@ -96,14 +86,13 @@ export function ProjectSettingsDialog({
           <div className="grid gap-3 py-2">
             <div className="grid gap-2">
               <Label htmlFor="instructions">Instructions</Label>
-              <textarea
+              <Textarea
                 id="instructions"
                 value={instructions}
                 onChange={(e) => setInstructions(e.target.value)}
                 placeholder="Give the AI context about this project..."
                 disabled={isSubmitting}
-                className={textareaClasses}
-                style={{ boxShadow: 'var(--shadow-1)' }}
+                className="resize-none min-h-[120px]"
                 autoFocus
               />
               <p className="text-xs text-muted-foreground">

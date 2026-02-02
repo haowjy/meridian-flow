@@ -25,6 +25,7 @@ This directory contains detailed documentation for all features in Meridian, org
 | **Authentication** | Both | [x] Complete | [x] Complete | JWT validation, Google OAuth only, protected routes, resource authorization |
 | **User Settings** | Both | [x] Complete | [-] Partial | Profile UI complete, preferences API complete, preferences UI missing |
 | **Document Editor** | Frontend | N/A | [x] Complete | CodeMirror, auto-save, markdown, caching |
+| **Multi-Editor** | Both | N/A | [-] Partial | Adapter foundation complete, editor components pending (LaTeX, images) |
 | **File System** | Both | [x] Complete | [x] Complete | CRUD, tree view, context menus; Search UI non-functional |
 | **Document Import** | Both | [x] Complete | [x] Complete | Multi-format (.zip, .md, .txt, .html), XSS sanitization, drag-drop |
 | **Context Menus** | Frontend | N/A | [x] Complete | Right-click actions for tree (create, rename, delete, import) |
@@ -34,6 +35,7 @@ This directory contains detailed documentation for all features in Meridian, org
 | **AI Editing** | Both | ✅ Complete | ✅ Complete | Inline suggestions, accept/reject, CAS concurrency |
 | **State Management** | Frontend | N/A | [x] Complete | Zustand, IndexedDB, optimistic updates, retry queue |
 | **UI Components** | Frontend | N/A | [x] Complete | shadcn/ui, custom components, high polish |
+| **Skills** | Both | [x] Complete | [x] Complete | Custom AI commands, tree integration, auto-save editor |
 | **Infrastructure** | Both | [x] Complete | [x] Complete | Errors, DB features, routing, logging, deployment |
 | **Mobile Responsive** | Frontend | N/A | [x] Complete | Responsive layouts, bottom nav, 768px breakpoint |
 
@@ -60,6 +62,13 @@ This directory contains detailed documentation for all features in Meridian, org
 - Auto-save (1s debounce), no format conversion needed
 - IndexedDB caching with Reconcile-Newest strategy
 - Word count, save status UI
+
+### [fb-multi-editor/](fb-multi-editor/)
+**Content Adapter Pattern for multiple file types** ✨ NEW (h/skills)
+- Adapter foundation: markdown, LaTeX, plaintext adapters
+- Generalized hooks: `useDocumentContent`, `useDocumentSync` use adapters
+- Backend unchanged (Phases 1-3), ready for LaTeX/images
+- [-] Editor components pending (LaTeX, images, factory pattern)
 
 ### [fb-file-system/](fb-file-system/)
 **Project/folder/document management + import**
@@ -116,6 +125,14 @@ This directory contains detailed documentation for all features in Meridian, org
 - Custom components: TreeItemWithContextMenu, StatusBadge, etc.
 - Loading states, error boundaries, high polish
 
+### [fb-skills/](fb-skills/)
+**Custom AI commands for writers** ✨ NEW (h/skills)
+- Backend: CRUD API, validation, unique names per project
+- Frontend: Tree integration, modal dialog, full-screen editor
+- Auto-save with status indicator (1s debounce)
+- Deep linking support (`/projects/{slug}/skills/{name}`)
+- [ ] Skill invocation in chat (not yet implemented)
+
 ### [fb-infrastructure/](fb-infrastructure/)
 **Core infrastructure**
 - Backend: Error handling, DB features (soft delete, RLS, transactions), CORS
@@ -124,8 +141,14 @@ This directory contains detailed documentation for all features in Meridian, org
 
 ### [f-mobile-responsive/](f-mobile-responsive/)
 **Responsive layouts for mobile and desktop viewports**
-- Strategy pattern: MobileTabLayout (< 768px) vs ThreePanelLayout (≥ 768px)
+- Strategy pattern: MobileTabLayout (< 768px) vs TwoPanelLayout (≥ 768px)
 - Bottom tab nav (3 tabs), touch-friendly, deep-linking support
+
+**Layout Strategy (Desktop)**
+- **LEFT (42%)**: Thread panel - Primary AI interaction, prominent position emphasizes AI-native nature
+- **RIGHT (58%)**: Document workspace - Tree + Editor unified, substantial space for writing
+- Design emphasizes AI conversation as "the special thing" while giving documents ample room
+- User can resize (25-60% chat range) or collapse chat for distraction-free editing
 
 ---
 
@@ -138,6 +161,9 @@ This directory contains detailed documentation for all features in Meridian, org
 **Integration**: [x] **Backend and frontend are fully integrated** for all implemented features. API coverage: ~35 endpoints, all functional.
 
 ### Recent Additions
+- **Skills System**: Custom AI commands with tree integration and editor (h/skills) ✨ NEW
+- **Layout Refactor**: Strategy pattern, responsive two-panel desktop layout (h/skills)
+- **Theme Refactor**: accent → favorite/primary semantic split (h/skills)
 - **Mobile Responsive Layout**: Strategy pattern for mobile/desktop, bottom tab nav (h/edit-tools)
 - **Document Import System**: Multi-format support with XSS protection (h/bet-ui)
 - **Context Menu System**: Right-click actions for file tree (h/bet-ui)
