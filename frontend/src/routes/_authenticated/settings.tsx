@@ -1,4 +1,4 @@
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, useRouter, Link } from '@tanstack/react-router'
 import { ArrowLeft, LogOut } from 'lucide-react'
 import { useUserProfile, useAuthActions, UserAvatar } from '@/features/auth'
 import { Button } from '@/shared/components/ui/button'
@@ -30,7 +30,13 @@ function SettingsPage() {
     <div className="container mx-auto max-w-2xl p-8">
       {/* Back button - respects navigation history */}
       <button
-        onClick={() => router.history.back()}
+        onClick={() => {
+          if (window.history.length > 1) {
+            router.history.back()
+          } else {
+            router.navigate({ to: '/projects' })
+          }
+        }}
         className="mb-8 inline-flex items-center gap-2 type-label text-muted-foreground hover:text-foreground transition-colors"
       >
         <ArrowLeft className="size-4" />
@@ -75,6 +81,30 @@ function SettingsPage() {
             <LogOut className="size-4" />
             Sign out
           </Button>
+        </div>
+      </section>
+
+      {/* Legal section */}
+      <section
+        className="mt-6 rounded-lg border border-border bg-card p-6"
+        style={{ boxShadow: 'var(--shadow-1)' }}
+      >
+        <h2 className="mb-4 type-label uppercase tracking-wide text-muted-foreground">
+          Legal
+        </h2>
+        <div className="flex flex-col gap-2">
+          <Link
+            to="/privacy"
+            className="type-body text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Privacy Policy
+          </Link>
+          <Link
+            to="/terms"
+            className="type-body text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Terms of Service
+          </Link>
         </div>
       </section>
     </div>
