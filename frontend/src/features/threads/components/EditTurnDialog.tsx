@@ -71,7 +71,7 @@ export function EditTurnDialog({
         value={content}
         onChange={(e) => setContent(e.target.value)}
         placeholder="Edit your message..."
-        autoFocus
+        focusKey={isOpen ? 'edit' : null}
         maxHeight="50vh"
         minHeight="auto"
         className="px-0 py-0"  // Card px-3 py-2 handles padding
