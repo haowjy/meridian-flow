@@ -11,7 +11,7 @@ export const Route = createFileRoute('/_authenticated/projects/$slug/documents/$
 
 function DocumentWorkspace() {
   const { slug, _splat } = Route.useParams()
-  // _splat contains the full path-based slug (e.g., "characters/heroes/aria")
+  // _splat contains the full document path (e.g., "Characters/Heroes/Aria.md")
   // WorkspaceLayout resolves it to document UUID
-  return <WorkspaceLayout key={`project-${slug}`} projectIdentifier={slug} initialDocumentSlug={_splat} />
+  return <WorkspaceLayout key={`project-${slug}`} projectIdentifier={slug} initialDocumentPath={_splat} />
 }

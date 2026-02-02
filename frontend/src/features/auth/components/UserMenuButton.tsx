@@ -1,5 +1,4 @@
 import { useMemo } from 'react'
-import { ChevronUp, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { UserProfile } from '../types'
 import { UserAvatar } from './UserAvatar'
@@ -14,7 +13,7 @@ interface UserMenuButtonProps {
   profile: UserProfile
   onSettings: () => void
   onSignOut: () => void
-  menuSide?: 'top' | 'bottom'
+  menuSide?: 'top' | 'bottom' | 'right' | 'left'
   showName?: boolean
   className?: string
 }
@@ -40,8 +39,6 @@ export function UserMenuButton({
     [onSettings, onSignOut]
   )
 
-  const ChevronIcon = menuSide === 'top' ? ChevronUp : ChevronDown
-
   return (
     <UserMenu trigger={
       <button
@@ -63,7 +60,6 @@ export function UserMenuButton({
             {profile.name ?? profile.email}
           </span>
         )}
-        <ChevronIcon className="size-3 text-muted-foreground" />
       </button>
     } items={menuItems} side={menuSide} align="start" />
   )

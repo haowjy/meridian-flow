@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react'
 import { useSkillStore } from '@/core/stores/useSkillStore'
 import { useShallow } from 'zustand/react/shallow'
+import { useAbortableEffect } from '@/core/hooks'
 import type { Skill, SkillWithContent } from '../types/skill'
 
 export interface UseSkillsForProjectResult {
@@ -45,46 +45,23 @@ export function useSkillsForProject(projectId: string | null): UseSkillsForProje
     }))
   )
 
-  const abortRef = useRef<AbortController | null>(null)
-  const contentAbortRef = useRef<AbortController | null>(null)
-
   // Load skills when projectId changes
-  useEffect(() => {
-    if (!projectId) return
-
-    // Cancel previous request
-    if (abortRef.current) {
-      abortRef.current.abort()
-    }
-
-    const abortController = new AbortController()
-    abortRef.current = abortController
-
-    void loadSkills(projectId, abortController.signal)
-
-    return () => {
-      abortController.abort()
-    }
-  }, [projectId, loadSkills])
+  useAbortableEffect(
+    (signal) => {
+      if (!projectId) return
+      void loadSkills(projectId, signal)
+    },
+    [projectId, loadSkills]
+  )
 
   // Load skill content when selectedSkillId changes
-  useEffect(() => {
-    if (!projectId || !selectedSkillId) return
-
-    // Cancel previous content request
-    if (contentAbortRef.current) {
-      contentAbortRef.current.abort()
-    }
-
-    const abortController = new AbortController()
-    contentAbortRef.current = abortController
-
-    void loadSkillContent(projectId, selectedSkillId, abortController.signal)
-
-    return () => {
-      abortController.abort()
-    }
-  }, [projectId, selectedSkillId, loadSkillContent])
+  useAbortableEffect(
+    (signal) => {
+      if (!projectId || !selectedSkillId) return
+      void loadSkillContent(projectId, selectedSkillId, signal)
+    },
+    [projectId, selectedSkillId, loadSkillContent]
+  )
 
   return {
     skills,

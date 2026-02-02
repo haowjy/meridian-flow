@@ -56,7 +56,7 @@ function getResultStatus(toolResult: TurnBlock | null): {
   const content = toolResult.content as ToolBlockContent
 
   // Check for error in content
-  const isError = !!content?.is_error
+  const isError = !!content?.isError
 
   // Try to extract message from result
   let message: string | undefined
@@ -138,16 +138,17 @@ export const DocEditBlock = React.memo(function DocEditBlock({
 
     // Use openDocument() when we have resolved document (handles mobile swap)
     if (resolvedDocument) {
-      openDocument(resolvedDocument.id, resolvedDocument.slug, projectSlug, navigate)
+      openDocument(resolvedDocument.id, resolvedDocument.path, projectSlug, navigate)
       return
     }
 
     // Fallback for documents not in tree (e.g., newly created)
+    // Use the path from tool input directly (it includes the extension)
     if (input?.path) {
-      const docPath = input.path.replace(/^\//, '').replace(/\.md$/, '')
+      const docPath = input.path.replace(/^\//, '')
       navigate({
         to: '/projects/$slug/documents/$',
-        params: { slug: projectSlug, _splat: docPath },
+        params: { slug: projectSlug, _splat: encodeURIComponent(docPath).split('%2F').join('/') },
       })
     }
   }
@@ -205,7 +206,7 @@ export const DocEditBlock = React.memo(function DocEditBlock({
       // Animation: shimmer during PREPARING (args streaming) or when pending (no state yet)
       // Stops when tool args are complete (state becomes 'ready') or result arrives
       isGenerating={!hasResult && !isError && (toolState === null || toolIsGenerating)}
-      // Pulse animation during EXECUTING (tool running server-side)
+      // Pulse animation during EXECUTING (tool running on backend)
       isExecuting={!hasResult && !isError && toolState === ToolStreamState.EXECUTING}
     >
       {/* Error message */}

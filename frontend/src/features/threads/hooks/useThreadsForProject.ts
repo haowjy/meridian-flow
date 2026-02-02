@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { useShallow } from 'zustand/react/shallow'
+import { useAbortableEffect } from '@/core/hooks'
 import { useThreadStore } from '@/core/stores/useThreadStore'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { Thread } from '@/features/threads/types'
@@ -34,29 +35,13 @@ export function useThreadsForProject(projectId: string): UseThreadsForProjectRes
     loadThreads: s.loadThreads,
   })))
 
-  const abortRef = useRef<AbortController | null>(null)
-
-  useEffect(() => {
-    if (!projectId) return
-
-    // Cancel any in-flight request before starting a new one to prevent race condition:
-    // If projectId changes rapidly, previous request should not overwrite newer data
-    if (abortRef.current) {
-      abortRef.current.abort()
-    }
-
-    const abortController = new AbortController()
-    abortRef.current = abortController
-
-    void loadThreads(projectId, abortController.signal)
-
-    return () => {
-      abortController.abort()
-    }
-    // loadThreads is stable from Zustand; we intentionally avoid adding it
-    // as a dependency to prevent effect churn.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId])
+  useAbortableEffect(
+    (signal) => {
+      if (!projectId) return
+      void loadThreads(projectId, signal)
+    },
+    [projectId, loadThreads]
+  )
 
   // Signal left panel readiness when thread data is loaded or errors
   // This allows the layout to auto-expand the panel when data is ready

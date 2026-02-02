@@ -7,7 +7,6 @@ import {
   selectEffectiveRightCollapsed,
 } from '@/core/stores/useUIStore'
 import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
-import { MobileNavButton } from '@/shared/components/layout/MobileNavButton'
 import { ProgressiveBreadcrumb } from './ProgressiveBreadcrumb'
 
 interface ThreadHeaderProps {
@@ -29,10 +28,9 @@ export function ThreadHeader({
 }: ThreadHeaderProps) {
   const [isRenaming, setIsRenaming] = useState(false)
 
-  const { leftPanelCollapsed, rightPanelCollapsed, setMobileActivePanel } = useUIStore(useShallow((s) => ({
+  const { leftPanelCollapsed, rightPanelCollapsed } = useUIStore(useShallow((s) => ({
     leftPanelCollapsed: selectEffectiveLeftCollapsed(s),
     rightPanelCollapsed: selectEffectiveRightCollapsed(s),
-    setMobileActivePanel: s.setMobileActivePanel,
   })))
 
   const handleRenameSubmit = (title: string) => {
@@ -49,12 +47,6 @@ export function ThreadHeader({
   return (
     <div className="flex items-center justify-between px-2 sm:px-3 h-[var(--panel-header-height)]">
       <div className="flex items-center gap-2 min-w-0 flex-1">
-        {/* Mobile: Navigate to Thread List */}
-        <MobileNavButton
-          icon="threads"
-          onClick={() => setMobileActivePanel('threadList')}
-        />
-
         {/* Desktop: Only show if left panel is collapsed */}
         {leftPanelCollapsed && (
           <SidebarToggle side="left" className="shrink-0" />
@@ -75,12 +67,6 @@ export function ThreadHeader({
       </div>
 
       <div className="flex items-center gap-1 shrink-0">
-        {/* Mobile: Navigate to Document panel */}
-        <MobileNavButton
-          icon="document"
-          onClick={() => setMobileActivePanel('document')}
-        />
-
         {/* Desktop: Only show if right panel is collapsed */}
         {rightPanelCollapsed && (
           <SidebarToggle side="right" className="shrink-0" />

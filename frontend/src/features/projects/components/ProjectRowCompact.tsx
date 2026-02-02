@@ -47,7 +47,7 @@ export function ProjectRowCompact({
         className={cn(
           'shrink-0 p-0.5 rounded transition-colors',
           project.isFavorite
-            ? 'text-accent hover:text-accent/80'
+            ? 'text-favorite hover:text-favorite/80'
             : 'text-muted-foreground/40 hover:text-muted-foreground'
         )}
         aria-label={project.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
@@ -63,7 +63,7 @@ export function ProjectRowCompact({
         to="/projects/$slug"
         params={{ slug: project.slug }}
         onClick={handleClick}
-        className="flex-1 min-w-0 type-body text-foreground hover:text-accent transition-colors truncate"
+        className="flex-1 min-w-0 type-body text-foreground hover:text-primary transition-colors truncate"
       >
         {project.name}
       </Link>

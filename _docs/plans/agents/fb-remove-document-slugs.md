@@ -4,9 +4,8 @@ audience: developer
 ---
 # Remove Document Slugs (Move to Exact Path Addressing)
 
-**Status:** In planning  
-**Priority:** Medium (cleanup after path routing is stable)  
-**Estimated effort:** 0.5–2 days (full-stack, breaking-risk if rushed)
+**Status:** ✅ Complete
+**Completed:** 2026-02-01
 
 ## Problem Statement (WHY)
 
@@ -69,9 +68,9 @@ In that world, `documents.slug` becomes redundant and actively confusing.
 
 ## Success Criteria
 
-- [ ] Document routing works with exact decoded paths including spaces/special chars.
-- [ ] No code path depends on `documents.slug`.
-- [ ] `documents.slug` and related DB/index/repo code removed cleanly.
+- [x] Document routing works with exact decoded paths including spaces/special chars.
+- [x] No code path depends on `documents.slug`.
+- [x] `documents.slug` and related DB/index/repo code removed cleanly.
 
 ## Related Documentation
 

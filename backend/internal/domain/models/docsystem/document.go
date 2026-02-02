@@ -20,9 +20,8 @@ type Document struct {
 	ProjectID    string           `json:"project_id" db:"project_id"`
 	FolderID     *string          `json:"folder_id" db:"folder_id"`             // NULL = root level
 	Name         string           `json:"name" db:"name"`                       // Display name: "Chapter 5" (no extension)
-	Slug         string           `json:"slug" db:"slug"`                       // URL-friendly identifier, unique per project
 	Extension    string           `json:"extension" db:"extension"`             // File extension: ".md", ".excalidraw", etc.
-	Path         string           `json:"path,omitempty"`                       // Computed display path, not stored in DB
+	Path         string           `json:"path,omitempty"`                       // Computed display path with extension, not stored in DB
 	Content      string           `json:"content" db:"content"`                 // Markdown content (for text-based files)
 	AIVersion    *string          `json:"ai_version,omitempty" db:"ai_version"` // AI's suggested version (nullable)
 	AIVersionRev int              `json:"ai_version_rev" db:"ai_version_rev"`   // Revision counter for CAS

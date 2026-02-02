@@ -16,19 +16,6 @@ type AnthropicAdapter struct {
 	provider llmprovider.Provider
 }
 
-// NewAnthropicAdapter creates a new Anthropic adapter using the library's provider.
-// DEPRECATED: Use NewAnthropicAdapterWithProvider for factory-based creation
-func NewAnthropicAdapter(apiKey string) (*AnthropicAdapter, error) {
-	provider, err := anthropic.NewProvider(apiKey)
-	if err != nil {
-		return nil, err
-	}
-
-	return &AnthropicAdapter{
-		provider: provider,
-	}, nil
-}
-
 // NewAnthropicAdapterWithProvider creates a new Anthropic adapter from an existing provider.
 // Used by provider factory for dynamic provider creation.
 func NewAnthropicAdapterWithProvider(provider llmprovider.Provider) *AnthropicAdapter {

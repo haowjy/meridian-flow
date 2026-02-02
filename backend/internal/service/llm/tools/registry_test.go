@@ -50,8 +50,8 @@ func (m *mockTool) getExecCount() int {
 
 func TestNewToolRegistry(t *testing.T) {
 	registry := NewToolRegistry()
-	if registry == nil || registry.executors == nil {
-		t.Fatal("NewToolRegistry returned nil or registry.executors is nil")
+	if registry == nil || registry.tools == nil {
+		t.Fatal("NewToolRegistry returned nil or registry.tools is nil")
 	}
 }
 
@@ -60,7 +60,7 @@ func TestToolRegistry_RegisterAndGet(t *testing.T) {
 	tool := &mockTool{name: "test_tool"}
 
 	// Register the tool
-	registry.Register("test_tool", tool)
+	registry.RegisterWithMetadata("test_tool", tool, nil)
 
 	// Retrieve the tool
 	retrieved := registry.Get("test_tool")
@@ -84,7 +84,7 @@ func TestToolRegistry_Execute(t *testing.T) {
 
 	t.Run("successful execution", func(t *testing.T) {
 		tool := &mockTool{name: "success_tool"}
-		registry.Register("success_tool", tool)
+		registry.RegisterWithMetadata("success_tool", tool, nil)
 
 		call := ToolCall{
 			ID:    "call_1",
@@ -126,7 +126,7 @@ func TestToolRegistry_Execute(t *testing.T) {
 
 	t.Run("tool execution failure", func(t *testing.T) {
 		tool := &mockTool{name: "fail_tool", shouldFail: true}
-		registry.Register("fail_tool", tool)
+		registry.RegisterWithMetadata("fail_tool", tool, nil)
 
 		call := ToolCall{
 			ID:   "call_3",
@@ -145,7 +145,7 @@ func TestToolRegistry_Execute(t *testing.T) {
 
 	t.Run("context cancellation", func(t *testing.T) {
 		tool := &mockTool{name: "slow_tool", delay: 500 * time.Millisecond}
-		registry.Register("slow_tool", tool)
+		registry.RegisterWithMetadata("slow_tool", tool, nil)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // Cancel immediately
@@ -179,7 +179,7 @@ func TestToolRegistry_ExecuteParallel(t *testing.T) {
 	t.Run("single tool", func(t *testing.T) {
 		registry := NewToolRegistry()
 		tool := &mockTool{name: "single_tool"}
-		registry.Register("single_tool", tool)
+		registry.RegisterWithMetadata("single_tool", tool, nil)
 
 		calls := []ToolCall{
 			{ID: "call_1", Name: "single_tool", Input: map[string]interface{}{"x": 1}},
@@ -204,7 +204,7 @@ func TestToolRegistry_ExecuteParallel(t *testing.T) {
 				name:  fmt.Sprintf("tool_%d", i),
 				delay: 100 * time.Millisecond,
 			}
-			registry.Register(fmt.Sprintf("tool_%d", i), tool)
+			registry.RegisterWithMetadata(fmt.Sprintf("tool_%d", i), tool, nil)
 		}
 
 		calls := []ToolCall{
@@ -249,7 +249,7 @@ func TestToolRegistry_ExecuteParallel(t *testing.T) {
 				name:  fmt.Sprintf("tool_%d", i),
 				delay: delay,
 			}
-			registry.Register(fmt.Sprintf("tool_%d", i), tool)
+			registry.RegisterWithMetadata(fmt.Sprintf("tool_%d", i), tool, nil)
 		}
 
 		calls := []ToolCall{
@@ -297,7 +297,7 @@ func TestToolRegistry_ExecuteParallel(t *testing.T) {
 				name:  fmt.Sprintf("tool_%d", i),
 				delay: 500 * time.Millisecond,
 			}
-			registry.Register(fmt.Sprintf("tool_%d", i), tool)
+			registry.RegisterWithMetadata(fmt.Sprintf("tool_%d", i), tool, nil)
 		}
 
 		calls := []ToolCall{
@@ -325,8 +325,8 @@ func TestToolRegistry_ExecuteParallel(t *testing.T) {
 	t.Run("mixed success and failure", func(t *testing.T) {
 		registry := NewToolRegistry()
 
-		registry.Register("success_tool", &mockTool{name: "success_tool"})
-		registry.Register("fail_tool", &mockTool{name: "fail_tool", shouldFail: true})
+		registry.RegisterWithMetadata("success_tool", &mockTool{name: "success_tool"}, nil)
+		registry.RegisterWithMetadata("fail_tool", &mockTool{name: "fail_tool", shouldFail: true}, nil)
 
 		calls := []ToolCall{
 			{ID: "call_0", Name: "success_tool"},
@@ -367,7 +367,7 @@ func TestToolRegistry_ExecuteParallel(t *testing.T) {
 
 		// Register a single tool that will be called many times concurrently
 		tool := &mockTool{name: "concurrent_tool"}
-		registry.Register("concurrent_tool", tool)
+		registry.RegisterWithMetadata("concurrent_tool", tool, nil)
 
 		// Create 100 concurrent calls
 		calls := make([]ToolCall, 100)
@@ -415,7 +415,7 @@ func TestToolRegistry_ConcurrentRegisterAndGet(t *testing.T) {
 		go func(index int) {
 			defer wg.Done()
 			tool := &mockTool{name: fmt.Sprintf("tool_%d", index)}
-			registry.Register(fmt.Sprintf("tool_%d", index), tool)
+			registry.RegisterWithMetadata(fmt.Sprintf("tool_%d", index), tool, nil)
 		}(i)
 
 		// Get
@@ -435,4 +435,185 @@ func TestToolRegistry_ConcurrentRegisterAndGet(t *testing.T) {
 			t.Errorf("tool_%d not found after concurrent registration", i)
 		}
 	}
+}
+
+func TestToolRegistry_RegisterWithMetadata(t *testing.T) {
+	registry := NewToolRegistry()
+	tool := &mockTool{name: "test_tool"}
+	metadata := &ToolMetadata{
+		Name:        "test_tool",
+		Description: "Test tool description",
+		Guideline:   "Test guideline",
+	}
+
+	// Register with metadata
+	registry.RegisterWithMetadata("test_tool", tool, metadata)
+
+	// Verify executor is retrievable
+	retrieved := registry.Get("test_tool")
+	if retrieved == nil {
+		t.Fatal("Get returned nil for registered tool")
+	}
+	if retrieved != tool {
+		t.Error("Get returned different tool instance")
+	}
+
+	// Verify metadata is retrievable
+	retrievedMeta := registry.GetMetadata("test_tool")
+	if retrievedMeta == nil {
+		t.Fatal("GetMetadata returned nil for registered tool")
+	}
+	if retrievedMeta.Name != metadata.Name {
+		t.Errorf("metadata.Name = %s, want %s", retrievedMeta.Name, metadata.Name)
+	}
+	if retrievedMeta.Description != metadata.Description {
+		t.Errorf("metadata.Description = %s, want %s", retrievedMeta.Description, metadata.Description)
+	}
+	if retrievedMeta.Guideline != metadata.Guideline {
+		t.Errorf("metadata.Guideline = %s, want %s", retrievedMeta.Guideline, metadata.Guideline)
+	}
+}
+
+func TestToolRegistry_GetMetadata_NotFound(t *testing.T) {
+	registry := NewToolRegistry()
+
+	// Get metadata for non-existent tool
+	metadata := registry.GetMetadata("non_existent")
+	if metadata != nil {
+		t.Error("GetMetadata returned non-nil for non-existent tool")
+	}
+}
+
+func TestToolRegistry_GetRegisteredToolNames(t *testing.T) {
+	registry := NewToolRegistry()
+
+	// Register some tools
+	registry.RegisterWithMetadata("charlie", &mockTool{name: "charlie"}, &ToolMetadata{Name: "charlie"})
+	registry.RegisterWithMetadata("alpha", &mockTool{name: "alpha"}, &ToolMetadata{Name: "alpha"})
+	registry.RegisterWithMetadata("bravo", &mockTool{name: "bravo"}, &ToolMetadata{Name: "bravo"})
+
+	// Get names
+	names := registry.GetRegisteredToolNames()
+
+	// Verify order is sorted
+	if len(names) != 3 {
+		t.Fatalf("expected 3 names, got %d", len(names))
+	}
+	expectedOrder := []string{"alpha", "bravo", "charlie"}
+	for i, name := range names {
+		if name != expectedOrder[i] {
+			t.Errorf("names[%d] = %s, want %s", i, name, expectedOrder[i])
+		}
+	}
+}
+
+func TestToolRegistry_BuildSystemPromptSection(t *testing.T) {
+	t.Run("empty registry", func(t *testing.T) {
+		registry := NewToolRegistry()
+		section := registry.BuildSystemPromptSection()
+		if section != "" {
+			t.Errorf("expected empty string for empty registry, got %q", section)
+		}
+	})
+
+	t.Run("tools without metadata", func(t *testing.T) {
+		registry := NewToolRegistry()
+		registry.RegisterWithMetadata("tool_without_metadata", &mockTool{name: "tool_without_metadata"}, nil)
+		section := registry.BuildSystemPromptSection()
+		if section != "" {
+			t.Errorf("expected empty string for tools without metadata, got %q", section)
+		}
+	})
+
+	t.Run("single tool with metadata", func(t *testing.T) {
+		registry := NewToolRegistry()
+		registry.RegisterWithMetadata("doc_view", &mockTool{name: "doc_view"}, &ToolMetadata{
+			Name:        "doc_view",
+			Description: "View documents",
+			Guideline:   "Use doc_view first",
+		})
+
+		section := registry.BuildSystemPromptSection()
+
+		// Check for description
+		if !contains(section, "doc_view: View documents") {
+			t.Errorf("section missing tool description: %q", section)
+		}
+		// Check for guideline
+		if !contains(section, "Use doc_view first") {
+			t.Errorf("section missing guideline: %q", section)
+		}
+		// Check for "Available tools:" header
+		if !contains(section, "Available tools:") {
+			t.Errorf("section missing 'Available tools:' header: %q", section)
+		}
+		// Check for "Guidelines:" header
+		if !contains(section, "Guidelines:") {
+			t.Errorf("section missing 'Guidelines:' header: %q", section)
+		}
+	})
+
+	t.Run("multiple tools sorted", func(t *testing.T) {
+		registry := NewToolRegistry()
+		registry.RegisterWithMetadata("doc_edit", &mockTool{name: "doc_edit"}, &ToolMetadata{
+			Name:        "doc_edit",
+			Description: "Edit documents",
+		})
+		registry.RegisterWithMetadata("doc_view", &mockTool{name: "doc_view"}, &ToolMetadata{
+			Name:        "doc_view",
+			Description: "View documents",
+		})
+		registry.RegisterWithMetadata("doc_search", &mockTool{name: "doc_search"}, &ToolMetadata{
+			Name:        "doc_search",
+			Description: "Search documents",
+		})
+
+		section := registry.BuildSystemPromptSection()
+
+		// Verify tools appear in sorted order (doc_edit, doc_search, doc_view)
+		editIdx := indexOf(section, "doc_edit:")
+		searchIdx := indexOf(section, "doc_search:")
+		viewIdx := indexOf(section, "doc_view:")
+
+		if editIdx == -1 || searchIdx == -1 || viewIdx == -1 {
+			t.Fatalf("missing tool descriptions in section: %q", section)
+		}
+		if !(editIdx < searchIdx && searchIdx < viewIdx) {
+			t.Errorf("tools not in sorted order: edit=%d, search=%d, view=%d", editIdx, searchIdx, viewIdx)
+		}
+	})
+
+	t.Run("tool without guideline", func(t *testing.T) {
+		registry := NewToolRegistry()
+		registry.RegisterWithMetadata("doc_edit", &mockTool{name: "doc_edit"}, &ToolMetadata{
+			Name:        "doc_edit",
+			Description: "Edit documents",
+			Guideline:   "", // No guideline
+		})
+
+		section := registry.BuildSystemPromptSection()
+
+		// Check for description
+		if !contains(section, "doc_edit: Edit documents") {
+			t.Errorf("section missing tool description: %q", section)
+		}
+		// Should not have Guidelines section since no guidelines
+		if contains(section, "Guidelines:") {
+			t.Errorf("section should not have Guidelines header when no guidelines exist: %q", section)
+		}
+	})
+}
+
+// Helper functions for tests
+func contains(s, substr string) bool {
+	return indexOf(s, substr) != -1
+}
+
+func indexOf(s, substr string) int {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return i
+		}
+	}
+	return -1
 }

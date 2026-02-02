@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { useTurnsForThread } from '@/features/threads/hooks/useTurnsForThread'
@@ -7,14 +7,11 @@ import { useThreadSSE } from '@/features/threads/hooks/useThreadSSE'
 import { useLoadingView } from '@/core/hooks'
 import { Sparkles } from 'lucide-react'
 import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
-import { ThreadHeader } from './ThreadHeader'
+import { ChatHeader } from './ChatHeader'
 import { TurnList } from './TurnList'
 import { TurnInput } from './TurnInput'
-import { DeleteThreadDialog } from './DeleteThreadDialog'
 import { ScrollToBottomButton } from './ScrollToBottomButton'
 import { useChatScroller } from '@/features/threads/hooks/useChatScroller'
-
-const DEBUG_SCROLL = import.meta.env.VITE_DEBUG_SCROLL === '1'
 
 interface ActiveThreadViewProps {
   /** Project ID passed directly from route - avoids async store race condition */
@@ -22,20 +19,17 @@ interface ActiveThreadViewProps {
 }
 
 /**
- * Center panel thread view.
+ * Chat panel view for the two-panel layout.
  *
  * Responsibilities:
  * - Read activeThreadId from UI store
- * - Select the corresponding Thread from useThreadStore
- * - Render header, turn/message list, and input
+ * - Render chat header, turn/message list, and input
  *
  * It does NOT:
- * - Know how threads are loaded (left panel concern)
+ * - Manage thread selection (ChatHeader handles that)
  * - Contain SSE/EventSource details (delegated to useThreadSSE)
  */
 export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-  const [isDeleting, setIsDeleting] = useState(false)
   // Dynamic composer height for scroll padding - avoids static 240px gap
   const [composerHeight, setComposerHeight] = useState(100)
 
@@ -44,16 +38,13 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
     threadFocusVersion: s.threadFocusVersion,
   })))
 
-  const { threads, statusThreads, currentTurnId, streamingTurnId, setCurrentTurnId, renameThread, deleteThread } = useThreadStore(useShallow((s) => ({
+  const { threads, statusThreads, currentTurnId, streamingTurnId, setCurrentTurnId } = useThreadStore(useShallow((s) => ({
     threads: s.threads,
     statusThreads: s.statusThreads,
     currentTurnId: s.currentTurnId,
     streamingTurnId: s.streamingTurnId,
     setCurrentTurnId: s.setCurrentTurnId,
-    renameThread: s.renameThread,
-    deleteThread: s.deleteThread,
   })))
-
 
   // Callback ref pattern: useState triggers re-render when element is assigned,
   // allowing effects to run with the actual element (useRef doesn't trigger re-renders)
@@ -82,68 +73,11 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
     onScrollToBottom: handleScrollToBottom,
   })
 
-  useEffect(() => {
-    if (!DEBUG_SCROLL || !scrollContainer) return
-
-    const readMetrics = () => {
-      const scrollTop = scrollContainer.scrollTop
-      const scrollHeight = scrollContainer.scrollHeight
-      const clientHeight = scrollContainer.clientHeight
-      const distanceFromBottom = scrollHeight - scrollTop - clientHeight
-      return { scrollTop, scrollHeight, clientHeight, distanceFromBottom }
-    }
-
-    let lastLogAt = 0
-    const onScroll = () => {
-      const now = Date.now()
-      if (now - lastLogAt < 200) return
-      lastLogAt = now
-      console.debug('[scroll] ActiveThreadView:scroll', { t: now, ...readMetrics() })
-    }
-
-    console.debug('[scroll] ActiveThreadView:attach', { t: Date.now(), ...readMetrics() })
-    scrollContainer.addEventListener('scroll', onScroll, { passive: true })
-    return () => {
-      scrollContainer.removeEventListener('scroll', onScroll)
-      console.debug('[scroll] ActiveThreadView:detach', { t: Date.now() })
-    }
-  }, [scrollContainer])
-
-  useEffect(() => {
-    if (!DEBUG_SCROLL || !scrollContainer) return
-    console.debug('[scroll] ActiveThreadView:streamingTurnId', {
-      t: Date.now(),
-      streamingTurnId,
-      scrollTop: scrollContainer.scrollTop,
-      scrollHeight: scrollContainer.scrollHeight,
-      clientHeight: scrollContainer.clientHeight,
-    })
-  }, [streamingTurnId, scrollContainer])
-
   const activeThread = threads.find((t) => t.id === activeThreadId) || null
 
   // Derive whether to show skeleton or empty state during cold start
   // (when threads are loading, show skeleton; when loaded with no thread, show empty state)
   const coldStartView = useLoadingView({ status: statusThreads, hasData: !!activeThread })
-
-  // Handlers for thread actions
-  const handleRename = useCallback((title: string) => {
-    if (activeThread) {
-      void renameThread(activeThread.id, title)
-    }
-  }, [activeThread, renameThread])
-
-  const handleDeleteConfirm = useCallback(async () => {
-    if (activeThread) {
-      setIsDeleting(true)
-      try {
-        await deleteThread(activeThread.id)
-        setShowDeleteDialog(false)
-      } finally {
-        setIsDeleting(false)
-      }
-    }
-  }, [activeThread, deleteThread])
 
   // Cold start: no thread selected but projectId available
   if (!activeThread) {
@@ -153,8 +87,9 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
       return (
         <div className="thread-main">
           <div className="h-full overflow-y-auto scroll-pt-[var(--panel-header-height)]">
-            <div className="sticky top-0 z-10 bg-background">
-              <ThreadHeader thread={null} />
+            {/* Desktop-only header - mobile uses MobileActiveThreadView's MobileHeader */}
+            <div className="sticky top-0 z-10 bg-background hidden md:block">
+              <ChatHeader projectId={projectId} />
               <HeaderGradientFade />
             </div>
             {/* Empty content area - user sees calm empty space during load */}
@@ -182,9 +117,9 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
     return (
       <div className="thread-main">
         <div className="h-full overflow-y-auto scroll-pt-[var(--panel-header-height)]">
-          {/* Sticky header at top of scroll container */}
-          <div className="sticky top-0 z-10 bg-background">
-            <ThreadHeader thread={null} />
+          {/* Desktop-only header - mobile uses MobileActiveThreadView's MobileHeader */}
+          <div className="sticky top-0 z-10 bg-background hidden md:block">
+            <ChatHeader projectId={projectId} />
             <HeaderGradientFade />
           </div>
 
@@ -198,7 +133,8 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
           >
             <div className="text-center text-muted-foreground">
               <Sparkles className="mx-auto mb-2 size-6" />
-              <p>Start a new thread</p>
+              <p className="text-sm">Start a conversation</p>
+              <p className="text-xs mt-1">Ask questions, brainstorm ideas, or get help with your writing.</p>
             </div>
           </div>
         </div>
@@ -223,13 +159,9 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
         data-thread-scroll-container="1"
         className="h-full overflow-y-auto overflow-x-hidden scroll-pt-[var(--panel-header-height)]"
       >
-        {/* Sticky header at top of scroll container */}
-        <div className="sticky top-0 z-10 bg-background">
-          <ThreadHeader
-            thread={activeThread}
-            onRename={handleRename}
-            onDelete={() => setShowDeleteDialog(true)}
-          />
+        {/* Desktop-only header - mobile uses MobileActiveThreadView's MobileHeader */}
+        <div className="sticky top-0 z-10 bg-background hidden md:block">
+          <ChatHeader projectId={projectId} />
           <HeaderGradientFade />
         </div>
 
@@ -258,19 +190,11 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
         <ScrollToBottomButton visible={showScrollButton} onClick={scrollToBottom} />
         <TurnInput
           threadId={activeThread.id}
+          projectId={projectId}
           focusKey={`${activeThreadId ?? 'none'}:${threadFocusVersion}`}
           onHeightChange={setComposerHeight}
         />
       </div>
-
-      {/* Delete confirmation dialog */}
-      <DeleteThreadDialog
-        thread={activeThread}
-        open={showDeleteDialog}
-        onOpenChange={setShowDeleteDialog}
-        onConfirm={handleDeleteConfirm}
-        isDeleting={isDeleting}
-      />
     </div>
   )
 }

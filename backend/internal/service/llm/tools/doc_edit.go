@@ -12,6 +12,16 @@ import (
 	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
+// EditToolMetadata returns metadata for the doc_edit tool.
+// This enables OCP compliance - tool self-describes for system prompt generation.
+func EditToolMetadata() *ToolMetadata {
+	return &ToolMetadata{
+		Name:        "doc_edit",
+		Description: "Suggest edits to documents (user reviews before applying)",
+		Guideline:   "", // No specific guideline - doc_view guideline covers this
+	}
+}
+
 // EditTool implements the 'doc_edit' tool for editing document content.
 // Edits are written to documents.ai_version for user review before acceptance.
 // Access to /.meridian/** is DENIED - use dedicated skill editor API instead.

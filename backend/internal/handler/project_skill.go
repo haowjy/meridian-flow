@@ -44,10 +44,6 @@ func (h *ProjectSkillHandler) CreateSkill(w http.ResponseWriter, r *http.Request
 		httputil.RespondError(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	if req.DisplayName == "" {
-		httputil.RespondError(w, http.StatusBadRequest, "display_name is required")
-		return
-	}
 	if req.Description == "" {
 		httputil.RespondError(w, http.StatusBadRequest, "description is required")
 		return
@@ -69,7 +65,6 @@ func (h *ProjectSkillHandler) CreateSkill(w http.ResponseWriter, r *http.Request
 	svcReq := skillSvc.CreateSkillRequest{
 		ProjectID:              projectID,
 		Name:                   req.Name,
-		DisplayName:            req.DisplayName,
 		Description:            req.Description,
 		Content:                req.Content,
 		DisableModelInvocation: disableModelInvocation,
@@ -155,9 +150,10 @@ func (h *ProjectSkillHandler) UpdateSkill(w http.ResponseWriter, r *http.Request
 
 	// Convert to service request
 	svcReq := skillSvc.UpdateSkillRequest{
-		DisplayName:            req.DisplayName,
+		Name:                   req.Name,
 		Description:            req.Description,
 		Content:                req.Content,
+		Enabled:                req.Enabled,
 		DisableModelInvocation: req.DisableModelInvocation,
 		UserInvocable:          req.UserInvocable,
 	}

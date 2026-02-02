@@ -43,7 +43,7 @@ type TurnBlock struct {
 	Content       map[string]interface{} `json:"content,omitempty" db:"content"` // JSONB for type-specific data
 	Provider      *string                `json:"provider,omitempty" db:"provider"`
 	ProviderData  json.RawMessage        `json:"provider_data,omitempty" db:"provider_data"`   // JSONB for raw provider-specific data (opaque bytes)
-	ExecutionSide *string                `json:"execution_side,omitempty" db:"execution_side"` // "provider", "server", or "client" for tool_use blocks
+	ExecutionSide *string                `json:"execution_side,omitempty" db:"execution_side"` // "provider", "local", or "client" for tool_use blocks
 	Status        string                 `json:"status,omitempty" db:"status"`                 // "complete" or "partial" (for interrupted streams)
 	CreatedAt     time.Time              `json:"created_at" db:"created_at"`
 	UpdatedAt     *time.Time             `json:"updated_at,omitempty" db:"updated_at"`
@@ -80,20 +80,15 @@ func (tb *TurnBlock) IsProviderSideTool() bool {
 	return tb.BlockType == BlockTypeToolUse && tb.ExecutionSide != nil && *tb.ExecutionSide == "provider"
 }
 
-// IsBackendSideTool returns true if this is a backend-side tool_use block (e.g., Tavily, bash, custom tools)
-// Treats nil ExecutionSide as backend-side (default)
-func (tb *TurnBlock) IsBackendSideTool() bool {
-	return tb.BlockType == BlockTypeToolUse && (tb.ExecutionSide == nil || *tb.ExecutionSide == "server")
+// IsLocalTool returns true if this is a locally-executed tool_use block (e.g., Tavily, bash, custom tools)
+// Treats nil ExecutionSide as local (default). "local" means non-provider execution (stop/execute/resume cycle).
+func (tb *TurnBlock) IsLocalTool() bool {
+	return tb.BlockType == BlockTypeToolUse && (tb.ExecutionSide == nil || *tb.ExecutionSide == "local")
 }
 
 // IsClientSideTool returns true if this is a client-side tool_use block (frontend execution)
 func (tb *TurnBlock) IsClientSideTool() bool {
 	return tb.BlockType == BlockTypeToolUse && tb.ExecutionSide != nil && *tb.ExecutionSide == "client"
-}
-
-// Deprecated: Use IsProviderSideTool instead
-func (tb *TurnBlock) IsServerSideTool() bool {
-	return tb.IsProviderSideTool()
 }
 
 // IsPartial returns true if this block was interrupted during streaming

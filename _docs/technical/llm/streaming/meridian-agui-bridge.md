@@ -107,7 +107,7 @@ emitter.EmitStepStarted()   // STEP_STARTED
 emitter.EmitStepFinished()  // STEP_FINISHED
 emitter.EmitRunFinished()   // RUN_FINISHED
 emitter.EmitRunError(msg)   // RUN_ERROR
-emitter.EmitToolCallResult(messageId, toolCallId, contentJSON) // TOOL_CALL_RESULT (backend-side tools)
+emitter.EmitToolCallResult(messageId, toolCallId, contentJSON) // TOOL_CALL_RESULT (local tools)
 
 // Content events (pass-through from library)
 emitter.EmitAGUIEvent(textMessageContentEvent)

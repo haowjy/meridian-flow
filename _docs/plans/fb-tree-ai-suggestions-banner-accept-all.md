@@ -124,7 +124,7 @@ Banner behavior:
 - Hidden when count is 0.
 - Shows: `AI suggestions in N files`.
 - Dropdown list of affected docs:
-  - Uses tree metadata (`useTreeStore.documents`) for display label + slug
+  - Uses tree metadata (`useTreeStore.documents`) for display label + path
   - Clicking opens the doc via existing navigation helpers (`openDocument(...)`)
 
 Optional (later):

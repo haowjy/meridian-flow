@@ -16,8 +16,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useEditorStore } from '@/core/stores/useEditorStore'
 import { useLatestRef } from '@/core/hooks'
-import { buildMergedDocument } from '@/core/lib/mergedDocument'
-import type { CodeMirrorEditorRef } from '@/core/editor/codemirror'
+import { getAdapter } from '@/core/editor/adapters'
+import { detectEditorType } from '@/core/editor/types/editorRegistry'
+import type { BaseEditorRef } from '@/core/editor/types/editorRegistry'
 
 // =============================================================================
 // TYPES
@@ -38,49 +39,73 @@ interface PendingSnapshot {
 /**
  * Context passed to useDocumentSync for composition.
  * Contains refs and state needed for save/flush logic.
+ *
+ * @template TEditor - Editor content type (generic to support different editor formats)
  */
-export interface DocumentSyncContext {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface DocumentSyncContext<TEditor = any> {
   aiVersionBaseRevRef: React.MutableRefObject<number | null>
   serverHasAIVersionRef: React.MutableRefObject<boolean>
   pendingServerSnapshot: PendingSnapshot | null
   setPendingServerSnapshot: (snapshot: PendingSnapshot | null) => void
   setHasUserEdit: (value: boolean) => void
   // Refs for cleanup effects (stale closure prevention)
-  localDocumentRef: React.MutableRefObject<string>
+  localDocumentRef: React.MutableRefObject<TEditor>
   hasUserEditRef: React.MutableRefObject<boolean>
   initializedRef: React.MutableRefObject<boolean>
   activeDocumentRef: React.MutableRefObject<ReturnType<typeof useEditorStore.getState>['activeDocument']>
 }
 
-export interface UseDocumentContentResult {
+/**
+ * Result of useDocumentContent hook.
+ *
+ * @template TEditor - Editor content type (generic to support different editor formats)
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface UseDocumentContentResult<TEditor = any> {
   // Content state
-  localDocument: string
-  setLocalDocument: (content: string) => void
+  localDocument: TEditor
+  setLocalDocument: (content: TEditor) => void
   isInitialized: boolean
   isEditable: boolean
   isEditorReady: boolean
+  hasAISuggestions: boolean
 
   // Dirty tracking
   hasUserEdit: boolean
   setHasUserEdit: (value: boolean) => void
 
   // Editor lifecycle
-  handleEditorReady: (ref: CodeMirrorEditorRef) => void
-  handleContentChange: (content: string) => void
+  handleEditorReady: (ref: BaseEditorRef<TEditor>) => void
+  handleContentChange: (content: TEditor) => void
   hydrateDocument: (doc: HydrationInput) => void
 
   // For composition (sync hook needs these)
-  syncContext: DocumentSyncContext
+  syncContext: DocumentSyncContext<TEditor>
 }
 
 // =============================================================================
 // HOOK
 // =============================================================================
 
-export function useDocumentContent(
+/**
+ * Document content hook - Adapter-based multi-editor support.
+ *
+ * @template TEditor - Editor content type (inferred from extension)
+ * @param documentId - Document ID to load
+ * @param extension - File extension (used to determine adapter)
+ * @param editorRef - Editor reference for programmatic access
+ * @returns Document content state and sync context
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function useDocumentContent<TEditor = any>(
   documentId: string,
-  editorRef: React.MutableRefObject<CodeMirrorEditorRef | null>
-): UseDocumentContentResult {
+  extension: string,
+  editorRef: React.MutableRefObject<BaseEditorRef<TEditor> | null>
+): UseDocumentContentResult<TEditor> {
+  // Detect editor type and get adapter
+  const editorType = detectEditorType(extension)
+  const adapter = getAdapter(editorType)
   // ---------------------------------------------------------------------------
   // STORE STATE
   // ---------------------------------------------------------------------------
@@ -95,8 +120,12 @@ export function useDocumentContent(
   // LOCAL STATE
   // ---------------------------------------------------------------------------
 
-  // Single merged document (source of truth)
-  const [localDocument, setLocalDocument] = useState('')
+  // Single document (generic type based on adapter)
+  // For string-based editors (markdown, latex, plaintext), default to empty string
+  // For object-based editors, default to empty object
+  const [localDocument, setLocalDocument] = useState<TEditor>(() => {
+    return (adapter.capabilities.contentFormat === 'string' ? '' : {}) as TEditor
+  })
   const [hasUserEdit, setHasUserEdit] = useState(false)
   const [isInitialized, setIsInitialized] = useState(false)
   const [isEditorReady, setIsEditorReady] = useState(false)
@@ -132,10 +161,6 @@ export function useDocumentContent(
   const hasUserEditRef = useLatestRef(hasUserEdit)
   const activeDocumentRef = useLatestRef(activeDocument)
 
-  // ---------------------------------------------------------------------------
-  // DERIVED STATE
-  // ---------------------------------------------------------------------------
-
   // Determine editable state early (needed by sync effect below)
   const isEditable = isInitialized && activeDocument?.id === documentId && !isLoading
 
@@ -146,29 +171,31 @@ export function useDocumentContent(
   /**
    * Hydrate editor with document data from server.
    * Used by both initialization and corruption repair.
+   * Uses adapter to transform storage → editor format.
    * SRP: Single function for all hydration logic.
    */
   const hydrateDocument = useCallback(
     (doc: HydrationInput) => {
       const content = doc.content
       const aiVersion = doc.aiVersion
-      const merged = aiVersion ? buildMergedDocument(content, aiVersion) : content
+      // Use adapter to transform storage → editor format
+      const editorContent = adapter.toEditor(content, aiVersion) as TEditor
 
-      setLocalDocument(merged)
+      setLocalDocument(editorContent)
       aiVersionBaseRevRef.current = doc.aiVersionRev ?? null
       serverHasAIVersionRef.current = aiVersion != null
       setHasUserEdit(false)
 
       if (editorRef.current) {
-        editorRef.current.setContent(merged, { addToHistory: false, emitChange: false })
+        editorRef.current.setContent(editorContent, { addToHistory: false, emitChange: false })
       }
     },
-    [editorRef]
+    [adapter, editorRef]
   )
 
   // Handle content changes from the editor
   const handleContentChange = useCallback(
-    (content: string) => {
+    (content: TEditor) => {
       // Ignore changes before initialization
       if (!initializedRef.current) {
         return
@@ -181,10 +208,13 @@ export function useDocumentContent(
   )
 
   // Handle editor ready
-  const handleEditorReady = useCallback((ref: CodeMirrorEditorRef) => {
-    editorRef.current = ref
-    setIsEditorReady(true)
-  }, [editorRef])
+  const handleEditorReady = useCallback(
+    (ref: BaseEditorRef<TEditor>) => {
+      editorRef.current = ref
+      setIsEditorReady(true)
+    },
+    [editorRef]
+  )
 
   // ---------------------------------------------------------------------------
   // EFFECTS
@@ -288,10 +318,18 @@ export function useDocumentContent(
   }, [isEditable, editorRef])
 
   // ---------------------------------------------------------------------------
+  // DERIVED STATE
+  // ---------------------------------------------------------------------------
+
+  // Check for AI suggestions using adapter
+  // Type assertion safe: all current text-based adapters expect string
+  const hasAISuggestions = adapter.hasAISuggestions(localDocument as string)
+
+  // ---------------------------------------------------------------------------
   // SYNC CONTEXT (for composition with useDocumentSync)
   // ---------------------------------------------------------------------------
 
-  const syncContext: DocumentSyncContext = {
+  const syncContext: DocumentSyncContext<TEditor> = {
     aiVersionBaseRevRef,
     serverHasAIVersionRef,
     pendingServerSnapshot,
@@ -313,6 +351,7 @@ export function useDocumentContent(
     isInitialized,
     isEditable,
     isEditorReady,
+    hasAISuggestions,
     hasUserEdit,
     setHasUserEdit,
     handleEditorReady,

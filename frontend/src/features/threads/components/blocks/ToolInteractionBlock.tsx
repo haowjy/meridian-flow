@@ -40,11 +40,11 @@ function getToolMeta(
   // Prefer streaming state, fallback to block content
   // Return null if no tool name available (will show "Pending" state)
   const toolName = streamingToolName
-    ?? (typeof content.tool_name === 'string' ? content.tool_name : null)
+    ?? (typeof content.toolName === 'string' ? content.toolName : null)
   const toolUseIdRaw = streamingToolUseId
-    ?? (typeof content.tool_use_id === 'string' ? content.tool_use_id : null)
+    ?? (typeof content.toolUseId === 'string' ? content.toolUseId : null)
   const toolUseId = typeof toolUseIdRaw === 'string' ? normalizeToolCallId(toolUseIdRaw) : toolUseIdRaw
-  const isError = typeof content.is_error === 'boolean' ? content.is_error : false
+  const isError = typeof content.isError === 'boolean' ? content.isError : false
 
   return { toolName, toolUseId, isError }
 }
@@ -111,8 +111,8 @@ export const ToolInteractionBlock = React.memo(function ToolInteractionBlock({
     blockContent: toolUse?.content as ToolBlockContent | undefined,
   })
 
-  // Get tool_use_id from block content for display
-  const blockToolUseId = (toolUse?.content as ToolBlockContent)?.tool_use_id
+  // Get toolUseId from block content for display
+  const blockToolUseId = (toolUse?.content as ToolBlockContent)?.toolUseId
 
   const { toolName, toolUseId, isError } = getToolMeta(
     toolUse,
@@ -165,7 +165,7 @@ export const ToolInteractionBlock = React.memo(function ToolInteractionBlock({
   // Determine animation states
   // isGenerating: shimmer during PREPARING (args streaming) or when pending (no state yet)
   const isGenerating = !hasResult && !isError && (toolState === null || toolState === ToolStreamState.PREPARING)
-  // isExecuting: pulse during EXECUTING (tool running server-side)
+  // isExecuting: pulse during EXECUTING (tool running on backend)
   const isExecuting = !hasResult && !isError && toolState === ToolStreamState.EXECUTING
 
   const formatBytes = (bytes: number): string => {

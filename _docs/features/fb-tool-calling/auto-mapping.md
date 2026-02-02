@@ -32,7 +32,7 @@ feature: "Tool Auto-Mapping"
       "topic": {...}
     }
   },
-  "ExecutionSide": "server"  // Backend executes via Tavily
+  "ExecutionSide": "local"  // Backend executes via Tavily
 }
 ```
 
@@ -47,7 +47,7 @@ if tool has Function field:
     → Custom tool (pass through as-is)
 elif tool has Name field:
     if isWebSearchVariant(Name):  // tavily_web_search, brave_web_search, etc.
-        → Create custom web_search tool with ExecutionSide: Server
+        → Create custom web_search tool with ExecutionSide: Local
     else:
         → Auto-map to built-in via MapToolByName()
 else:

@@ -6,11 +6,11 @@ export type AssistantRenderItem =
   | { kind: 'toolInteraction'; toolUse: TurnBlock | null; toolResult: TurnBlock | null }
 
 /**
- * Extract tool_use_id from a block, normalized for consistent comparison.
+ * Extract toolUseId from a block, normalized for consistent comparison.
  */
 function getToolUseId(block: TurnBlock): string | null {
   if (!block.content) return null
-  const value = (block.content as ToolBlockContent).tool_use_id
+  const value = (block.content as ToolBlockContent).toolUseId
   return typeof value === 'string' ? normalizeToolCallId(value) : null
 }
 

@@ -63,7 +63,7 @@ func (h *DocumentHandler) CreateDocument(w http.ResponseWriter, r *http.Request)
 	httputil.RespondJSON(w, http.StatusCreated, doc)
 }
 
-// GetDocument retrieves a document by ID or slug
+// GetDocument retrieves a document by ID (UUID only)
 // GET /api/documents/{id}
 // Note: Slug resolution requires project context. For standalone document endpoints,
 // only UUIDs work. Slugs return 400 with helpful error message.

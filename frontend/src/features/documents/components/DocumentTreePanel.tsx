@@ -1,5 +1,5 @@
-import { useState, ReactNode, DragEvent, Fragment } from 'react'
-import { FileText, Plus, Settings, Sparkles, Upload } from 'lucide-react'
+import { useState, ReactNode, DragEvent } from 'react'
+import { FileText, Folder, Plus, Upload, PanelLeft } from 'lucide-react'
 import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
@@ -14,18 +14,13 @@ import {
 } from '@/shared/components/ui/dropdown-menu'
 import { TreeItemWithContextMenu } from '@/shared/components/TreeItemWithContextMenu'
 import { createRootMenuItems } from '../utils/menuBuilders'
-import { DocumentHeaderBar } from './DocumentHeaderBar'
-import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
-import { MobileNavButton } from '@/shared/components/layout/MobileNavButton'
-import { CompactBreadcrumb } from '@/shared/components/ui/CompactBreadcrumb'
-import { useUIStore } from '@/core/stores/useUIStore'
 import { BatchActionsBar } from './BatchActionsBar'
 import { useTreeStore } from '@/core/stores/useTreeStore'
+import { useUIStore } from '@/core/stores/useUIStore'
 import { BulkDeleteOperation } from '../operations/bulkDelete'
 import type { TreeNode } from '@/core/lib/treeBuilder'
 import { canonicalizeSelection } from '@/core/lib/treeUtils'
 import type { BulkOperation } from '../operations/types'
-import type { PanelTab } from './DocumentPanel'
 
 interface DocumentTreePanelProps {
   children: ReactNode
@@ -35,22 +30,19 @@ interface DocumentTreePanelProps {
   onFileDrop?: (files: File[]) => void
   onSearch?: (query: string) => void
   isEmpty?: boolean
-  title?: string
   projectId: string
   onBulkOperationComplete?: () => void
-  onOpenSettings?: () => void
   // Safe delete callbacks from useResourceOperations
   // Handle navigation-away, cache cleanup, and retry cancellation
   deleteDocument: (id: string) => Promise<void>
   deleteFolder: (id: string) => Promise<void>
-  // Tab switching
-  activeTab: PanelTab
-  onTabChange: (tab: PanelTab) => void
+  // Mobile navigation: hamburger menu trigger (shown before "Documents" label on mobile)
+  mobileMenuTrigger?: ReactNode
 }
 
 /**
  * Document tree presentation component.
- * Shows header, search bar, scrollable tree, and empty state.
+ * Shows header with search/add, optional skills section, scrollable tree, and empty state.
  * Tree content passed as children (built by DocumentTreeContainer).
  */
 export function DocumentTreePanel({
@@ -61,18 +53,15 @@ export function DocumentTreePanel({
   onFileDrop,
   onSearch,
   isEmpty = false,
-  title,
   projectId,
   onBulkOperationComplete,
   deleteDocument,
   deleteFolder,
-  onOpenSettings,
-  activeTab,
-  onTabChange,
+  mobileMenuTrigger,
 }: DocumentTreePanelProps) {
-  const setMobileActivePanel = useUIStore((s) => s.setMobileActivePanel)
   const { selectedIds } = useTreeSelection()
   const tree = useTreeStore((s) => s.tree)
+  const documentTreeCollapsed = useUIStore((s) => s.documentTreeCollapsed)
   const [searchQuery, setSearchQuery] = useState('')
   const [isDragOver, setIsDragOver] = useState(false)
   const [pendingRootAction, setPendingRootAction] = useState<(() => void) | null>(null)
@@ -134,86 +123,73 @@ export function DocumentTreePanel({
     <div className="flex h-full flex-col">
       {/* Single scroll container - scrollbar extends to top */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
-        {/* Sticky Header */}
-        <div className="sticky top-0 z-20 bg-background">
-          <DocumentHeaderBar
-            leading={
-              <MobileNavButton
-                icon="thread"
-                onClick={() => setMobileActivePanel('activeThread')}
-              />
-            }
-            title={<CompactBreadcrumb segments={[{ label: title ?? 'Project', title }]} singleSegmentVariant="nonLast" />}
-            ariaLabel="Documents explorer header"
-            showDivider={false}
-            trailing={
-              <>
-                {onOpenSettings && (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={onOpenSettings}
-                    aria-label="Project settings"
-                  >
-                    <Settings />
-                  </Button>
-                )}
-                <SidebarToggle side="right" />
-              </>
-            }
-          />
-        </div>
+        {/* Two-row sticky header: label+collapse top, search+create bottom */}
+        <div className="sticky top-0 z-10 bg-background border-b border-border/50">
+          {/* Row 1: Section label + collapse toggle (mobile: hamburger before label)
+              Uses consistent h-14, px-3, gap-2 to match MobileHeader specs */}
+          <div className="flex items-center h-14 px-3 gap-2 md:h-auto md:px-2 md:py-1.5">
+            {/* Desktop collapse toggle on left - hidden on mobile */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => useUIStore.getState().toggleDocumentTree()}
+              aria-label={documentTreeCollapsed ? 'Show file explorer' : 'Hide file explorer'}
+              className="shrink-0 size-8 hidden md:flex"
+            >
+              <PanelLeft className="size-4" />
+            </Button>
 
-        {/* Tab Bar */}
-        <div className="sticky top-12 z-15 flex items-center gap-1 px-2 py-1.5 bg-background border-b">
-          <TabButton
-            active={activeTab === 'documents'}
-            onClick={() => onTabChange('documents')}
-            icon={<FileText className="size-3.5" />}
-            label="Docs"
-          />
-          <TabButton
-            active={activeTab === 'skills'}
-            onClick={() => onTabChange('skills')}
-            icon={<Sparkles className="size-3.5" />}
-            label="Skills"
-          />
-        </div>
+            <div className="flex items-center gap-2 md:gap-1">
+              {/* Mobile hamburger menu trigger */}
+              {mobileMenuTrigger && (
+                <div className="md:hidden shrink-0">{mobileMenuTrigger}</div>
+              )}
+              <span className="font-medium text-sm">Documents</span>
+            </div>
+          </div>
 
-        {/* Sticky Search Bar */}
-        <div className="sticky top-[76px] z-10 flex items-center gap-2 px-2 py-1.5 bg-background relative">
-          <Input
-            type="search"
-            placeholder="Search documents..."
-            value={searchQuery}
-            onChange={(e) => handleSearchChange(e.target.value)}
-            className="flex-1"
-            aria-label="Search documents by name"
-          />
-          <DropdownMenu onOpenChange={handleRootMenuOpenChange}>
-            <DropdownMenuTrigger asChild>
-              <Button size="icon" aria-label="Create new item">
-                <Plus className="size-4 md:size-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" onCloseAutoFocus={(e) => e.preventDefault()}>
-              {rootMenuItems.map((item, index) => (
-                <Fragment key={item.id}>
-                  {item.separator === 'before' && index > 0 && <DropdownMenuSeparator />}
-                  <DropdownMenuItem
-                    onClick={() => setPendingRootAction(() => item.onSelect)}
-                    className={item.variant === 'destructive' ? 'text-destructive' : ''}
-                  >
-                    {item.icon && <span className="mr-1">{item.icon}</span>}
-                    {item.label}
+          {/* Row 2: Search + action buttons (search → create flow) */}
+          <div className="flex items-center gap-1.5 px-2 pb-1.5">
+            <Input
+              type="search"
+              placeholder="Search files..."
+              value={searchQuery}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              size="sm"
+              className="flex-1"
+              aria-label="Search documents by name"
+            />
+
+            <DropdownMenu onOpenChange={handleRootMenuOpenChange}>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon" aria-label="Create new item" className="shrink-0">
+                  <Plus className="size-4 md:size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" onCloseAutoFocus={(e) => e.preventDefault()}>
+                <DropdownMenuItem onClick={() => setPendingRootAction(() => onCreateDocument)}>
+                  <FileText className="size-3.5 mr-2" />
+                  New Document
+                </DropdownMenuItem>
+                {onCreateFolder && (
+                  <DropdownMenuItem onClick={() => setPendingRootAction(() => onCreateFolder)}>
+                    <Folder className="size-3.5 mr-2" />
+                    New Folder
                   </DropdownMenuItem>
-                  {item.separator === 'after' && index < rootMenuItems.length - 1 && (
+                )}
+                {onImport && (
+                  <>
                     <DropdownMenuSeparator />
-                  )}
-                </Fragment>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                    <DropdownMenuItem onClick={() => setPendingRootAction(() => onImport)}>
+                      <Upload className="size-3.5 mr-2" />
+                      Import Files...
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
           <HeaderGradientFade />
         </div>
 
@@ -255,7 +231,7 @@ export function DocumentTreePanel({
           </div>
         ) : (
           <TreeItemWithContextMenu menuItems={rootMenuItems}>
-            <div className="space-y-0.5 px-2 pt-3 pb-[50vh]">{children}</div>
+            <div className="space-y-0.5 px-2 pt-2 pb-[50vh]">{children}</div>
           </TreeItemWithContextMenu>
         )}
       </div>
@@ -276,29 +252,5 @@ export function DocumentTreePanel({
         />
       )}
     </div>
-  )
-}
-
-interface TabButtonProps {
-  active: boolean
-  onClick: () => void
-  icon: React.ReactNode
-  label: string
-}
-
-function TabButton({ active, onClick, icon, label }: TabButtonProps) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
-        active
-          ? "bg-accent text-foreground"
-          : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-      )}
-    >
-      {icon}
-      {label}
-    </button>
   )
 }

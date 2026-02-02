@@ -15,13 +15,10 @@ import { useEffect, useRef } from 'react'
 import { useEditorStore } from '@/core/stores/useEditorStore'
 import { documentSyncService } from '@/core/services/documentSyncService'
 import { saveMergedDocument } from '@/core/services/saveMergedDocument'
-import {
-  hasAnyMarker,
-  parseMergedDocument,
-  DiffMarkersCorruptedError,
-} from '@/core/lib/mergedDocument'
+import { getAdapter } from '@/core/editor/adapters'
+import { detectEditorType } from '@/core/editor/types/editorRegistry'
 import type { DocumentSyncContext } from './useDocumentContent'
-import type { CodeMirrorEditorRef } from '@/core/editor/codemirror'
+import type { BaseEditorRef } from '@/core/editor/types/editorRegistry'
 
 // =============================================================================
 // TYPES
@@ -37,14 +34,31 @@ interface HydrationInput {
 // HOOK
 // =============================================================================
 
-export function useDocumentSync(
+/**
+ * Document sync hook - Adapter-based multi-editor support.
+ *
+ * @template TEditor - Editor content type (inferred from extension)
+ * @param documentId - Document ID to sync
+ * @param extension - File extension (used to determine adapter)
+ * @param syncContext - Sync context from useDocumentContent
+ * @param localDocument - Local editor content
+ * @param hasUserEdit - Whether user has made edits
+ * @param editorRef - Editor reference for programmatic access
+ * @param hydrateDocument - Hydration function for corruption repair
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function useDocumentSync<TEditor = any>(
   documentId: string,
-  syncContext: DocumentSyncContext,
-  localDocument: string,
+  extension: string,
+  syncContext: DocumentSyncContext<TEditor>,
+  localDocument: TEditor,
   hasUserEdit: boolean,
-  editorRef: React.MutableRefObject<CodeMirrorEditorRef | null>,
+  editorRef: React.MutableRefObject<BaseEditorRef<TEditor> | null>,
   hydrateDocument: (doc: HydrationInput) => void
 ): void {
+  // Detect editor type and get adapter
+  const editorType = detectEditorType(extension)
+  const adapter = getAdapter(editorType)
   const {
     aiVersionBaseRevRef,
     serverHasAIVersionRef,
@@ -84,37 +98,39 @@ export function useDocumentSync(
     saveTimerRef.current = window.setTimeout(() => {
       const baseRev = aiVersionBaseRevRef.current
 
-      // Validate marker structure before saving
+      // Use adapter to convert editor format → storage format
+      let storageContent: string
+
       try {
-        void parseMergedDocument(localDoc)
+        // Type assertion safe: all current text-based adapters expect string
+        const storageData = adapter.toStorage(localDoc as string)
+        storageContent = storageData.content as string
       } catch (err) {
-        if (err instanceof DiffMarkersCorruptedError) {
-          // Log error for debugging - this indicates a bug in our transaction logic
-          console.error('[useDocumentSync] BUG: Marker structure corrupted. Auto-repairing.', {
-            error: err.message,
-            documentId: activeDocument.id,
-          })
+        // Log error for debugging - this indicates a bug in our transaction logic
+        console.error('[useDocumentSync] BUG: Adapter conversion failed. Auto-repairing.', {
+          error: err instanceof Error ? err.message : String(err),
+          documentId: activeDocument.id,
+        })
 
-          // Repair using shared hydration logic
-          hydrateDocument({
-            content: activeDocument.content ?? '',
-            aiVersion: activeDocument.aiVersion,
-            aiVersionRev: activeDocument.aiVersionRev,
-          })
+        // Repair using shared hydration logic
+        hydrateDocument({
+          content: activeDocument.content ?? '',
+          aiVersion: activeDocument.aiVersion,
+          aiVersionRev: activeDocument.aiVersionRev,
+        })
 
-          return // Don't continue with save
-        }
-        throw err
+        return // Don't continue with save
       }
 
       // Decide save type
-      const hasMarkers = hasAnyMarker(localDoc)
+      // Type assertion safe: all current text-based adapters expect string
+      const hasAISuggestions = adapter.hasAISuggestions(localDoc as string)
       const serverHasAIVersion =
         activeDocument.aiVersion !== null && activeDocument.aiVersion !== undefined
 
-      if (!hasMarkers && !serverHasAIVersion) {
-        // Content-only save (no AI markers, server has no aiVersion)
-        documentSyncService.save(saveDocumentId, localDoc, activeDocument, {
+      if (!hasAISuggestions && !serverHasAIVersion) {
+        // Content-only save (no AI suggestions, server has no aiVersion)
+        documentSyncService.save(saveDocumentId, storageContent, activeDocument, {
           onServerSaved: (doc) => {
             const currentDocId = useEditorStore.getState()._activeDocumentId
             if (currentDocId !== saveDocumentId) return
@@ -139,7 +155,7 @@ export function useDocumentSync(
       // Merged save with CAS
       documentSyncService.saveMerged(
         saveDocumentId,
-        localDoc,
+        localDoc as string, // saveMergedDocument expects merged string (PUA markers)
         {
           aiVersionBaseRev: baseRev,
           serverHasAIVersion,
@@ -179,6 +195,7 @@ export function useDocumentSync(
     aiVersionBaseRevRef,
     setPendingServerSnapshot,
     setHasUserEdit,
+    adapter,
   ])
 
   // ---------------------------------------------------------------------------
@@ -196,29 +213,54 @@ export function useDocumentSync(
         const docId = doc?.id ?? documentId
         const editorContent = editorRef.current?.getContent() ?? localDocumentRef.current
 
-        // For merged documents, use saveMergedDocument to preserve aiVersion
+        // Check if editor content has AI suggestions using adapter
+        // Type assertion safe: all current text-based adapters expect string
+        const hasAISuggestions = adapter.hasAISuggestions(editorContent as string)
+
+        // For documents with AI suggestions, use saveMergedDocument to preserve aiVersion
         // This fixes the bug where quick navigation after accept/reject would lose AI state
-        if (hasAnyMarker(editorContent)) {
+        if (hasAISuggestions) {
           const baseRev = aiVersionBaseRevRef.current
           if (baseRev != null) {
             // Best-effort save - don't block navigation
-            void saveMergedDocument(docId, editorContent, {
+            void saveMergedDocument(docId, editorContent as string, {
               aiVersionBaseRev: baseRev,
               serverHasAIVersion: serverHasAIVersionRef.current,
             }).catch(() => {
               // On error (corrupted markers, etc), fallback to content-only save
-              void documentSyncService.save(docId, editorContent, doc ?? undefined)
+              // Use adapter to convert editor → storage format
+              // Type assertion safe: all current text-based adapters expect string
+              try {
+                const storageData = adapter.toStorage(editorContent as string)
+                void documentSyncService.save(docId, storageData.content as string, doc ?? undefined)
+              } catch {
+                // If adapter fails, save raw content as fallback
+                void documentSyncService.save(docId, editorContent as string, doc ?? undefined)
+              }
             })
           } else {
             // No CAS token - can't save aiVersion, fall back to content-only
-            void documentSyncService.save(docId, editorContent, doc ?? undefined)
+            // Type assertion safe: all current text-based adapters expect string
+            try {
+              const storageData = adapter.toStorage(editorContent as string)
+              void documentSyncService.save(docId, storageData.content as string, doc ?? undefined)
+            } catch {
+              void documentSyncService.save(docId, editorContent as string, doc ?? undefined)
+            }
           }
         } else {
-          void documentSyncService.save(docId, editorContent, doc ?? undefined)
+          // No AI suggestions - simple content-only save
+          // Type assertion safe: all current text-based adapters expect string
+          try {
+            const storageData = adapter.toStorage(editorContent as string)
+            void documentSyncService.save(docId, storageData.content as string, doc ?? undefined)
+          } catch {
+            void documentSyncService.save(docId, editorContent as string, doc ?? undefined)
+          }
         }
       }
     }
     /* eslint-enable react-hooks/exhaustive-deps */
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refs are stable, documentId triggers re-subscription
-  }, [documentId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refs are stable, documentId/adapter trigger re-subscription
+  }, [documentId, adapter])
 }

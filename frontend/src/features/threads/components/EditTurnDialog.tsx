@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { Card } from '@/shared/components/ui/card'
 import { cn } from '@/lib/utils'
+import { makeLogger } from '@/core/lib/logger'
 import { AutosizeTextarea } from '@/features/threads/components/AutosizeTextarea'
 import { userTurnCardBase } from './styles'
 import { ThreadRequestControls } from '@/features/threads/components/ThreadRequestControls'
 import type { ThreadRequestOptions, RequestParams } from '@/features/threads/types'
 import { requestParamsToOptions } from '@/features/threads/types'
+
+const log = makeLogger('edit-turn-dialog')
 
 interface EditTurnDialogProps {
   isOpen: boolean
@@ -52,7 +55,7 @@ export function EditTurnDialog({
       await onSave(content, options)
       onClose()
     } catch (error) {
-      console.error('Failed to save turn:', error)
+      log.error('Failed to save turn:', error)
     } finally {
       setIsSaving(false)
     }

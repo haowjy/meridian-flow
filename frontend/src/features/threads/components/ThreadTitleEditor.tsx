@@ -20,7 +20,7 @@ interface ThreadTitleEditorProps {
  * - Focus ring for clear affordance
  * - Hover-reveal Check/Cancel buttons
  *
- * Usage: ThreadListItem (sidebar), ThreadHeader (center panel)
+ * Usage: ThreadRow (sidebar), ThreadHeader (center panel)
  */
 export function ThreadTitleEditor({
   initialValue,

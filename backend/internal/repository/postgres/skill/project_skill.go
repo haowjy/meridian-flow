@@ -32,11 +32,11 @@ func NewProjectSkillRepository(config *postgres.RepositoryConfig) skillRepo.Proj
 func (r *PostgresProjectSkillRepository) Create(ctx context.Context, skill *models.ProjectSkill) error {
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
-			project_id, instance_folder_id, name, display_name, description, position,
+			project_id, instance_folder_id, name, description, content, position, enabled,
 			metadata,
 			source_template_version_id, sync_state, is_dirty, last_synced_at,
 			created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING id, created_at, updated_at
 	`, r.tables.ProjectSkills)
 
@@ -45,9 +45,10 @@ func (r *PostgresProjectSkillRepository) Create(ctx context.Context, skill *mode
 		skill.ProjectID,
 		skill.InstanceFolderID,
 		skill.Name,
-		skill.DisplayName,
 		skill.Description,
+		skill.Content,
 		skill.Position,
+		skill.Enabled, // enabled defaults to true via DB constraint
 		skill.Metadata, // pgx handles map[string]interface{} → JSONB automatically
 		skill.SourceTemplateVersionID,
 		skill.SyncState,
@@ -98,7 +99,7 @@ func (r *PostgresProjectSkillRepository) Create(ctx context.Context, skill *mode
 // GetByID retrieves a skill by ID with project scoping
 func (r *PostgresProjectSkillRepository) GetByID(ctx context.Context, id, projectID string) (*models.ProjectSkill, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, instance_folder_id, name, display_name, description, position,
+		SELECT id, project_id, instance_folder_id, name, description, content, position, enabled,
 			   metadata,
 			   source_template_version_id, sync_state, is_dirty, last_synced_at,
 			   created_at, updated_at
@@ -113,9 +114,10 @@ func (r *PostgresProjectSkillRepository) GetByID(ctx context.Context, id, projec
 		&skill.ProjectID,
 		&skill.InstanceFolderID,
 		&skill.Name,
-		&skill.DisplayName,
 		&skill.Description,
+		&skill.Content,
 		&skill.Position,
+		&skill.Enabled,
 		&skill.Metadata,
 		&skill.SourceTemplateVersionID,
 		&skill.SyncState,
@@ -139,7 +141,7 @@ func (r *PostgresProjectSkillRepository) GetByID(ctx context.Context, id, projec
 // GetByName retrieves a skill by name with project scoping
 func (r *PostgresProjectSkillRepository) GetByName(ctx context.Context, name, projectID string) (*models.ProjectSkill, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, instance_folder_id, name, display_name, description, position,
+		SELECT id, project_id, instance_folder_id, name, description, content, position, enabled,
 			   metadata,
 			   source_template_version_id, sync_state, is_dirty, last_synced_at,
 			   created_at, updated_at
@@ -154,9 +156,10 @@ func (r *PostgresProjectSkillRepository) GetByName(ctx context.Context, name, pr
 		&skill.ProjectID,
 		&skill.InstanceFolderID,
 		&skill.Name,
-		&skill.DisplayName,
 		&skill.Description,
+		&skill.Content,
 		&skill.Position,
+		&skill.Enabled,
 		&skill.Metadata,
 		&skill.SourceTemplateVersionID,
 		&skill.SyncState,
@@ -180,7 +183,7 @@ func (r *PostgresProjectSkillRepository) GetByName(ctx context.Context, name, pr
 // ListByProject lists all skills for a project (ordered by position)
 func (r *PostgresProjectSkillRepository) ListByProject(ctx context.Context, projectID string) ([]*models.ProjectSkill, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, instance_folder_id, name, display_name, description, position,
+		SELECT id, project_id, instance_folder_id, name, description, content, position, enabled,
 			   metadata,
 			   source_template_version_id, sync_state, is_dirty, last_synced_at,
 			   created_at, updated_at
@@ -204,9 +207,10 @@ func (r *PostgresProjectSkillRepository) ListByProject(ctx context.Context, proj
 			&skill.ProjectID,
 			&skill.InstanceFolderID,
 			&skill.Name,
-			&skill.DisplayName,
 			&skill.Description,
+			&skill.Content,
 			&skill.Position,
+			&skill.Enabled,
 			&skill.Metadata,
 			&skill.SourceTemplateVersionID,
 			&skill.SyncState,
@@ -234,19 +238,20 @@ func (r *PostgresProjectSkillRepository) Update(ctx context.Context, skill *mode
 
 	query := fmt.Sprintf(`
 		UPDATE %s
-		SET name = $1, display_name = $2, description = $3, position = $4,
-			metadata = $5,
-			source_template_version_id = $6, sync_state = $7, is_dirty = $8, last_synced_at = $9,
-			updated_at = $10
-		WHERE id = $11 AND project_id = $12 AND deleted_at IS NULL
+		SET name = $1, description = $2, content = $3, position = $4, enabled = $5,
+			metadata = $6,
+			source_template_version_id = $7, sync_state = $8, is_dirty = $9, last_synced_at = $10,
+			updated_at = $11
+		WHERE id = $12 AND project_id = $13 AND deleted_at IS NULL
 	`, r.tables.ProjectSkills)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
 	result, err := executor.Exec(ctx, query,
 		skill.Name,
-		skill.DisplayName,
 		skill.Description,
+		skill.Content,
 		skill.Position,
+		skill.Enabled,
 		skill.Metadata,
 		skill.SourceTemplateVersionID,
 		skill.SyncState,

@@ -1,6 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useEffect, useState, useMemo, useCallback } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useState, useMemo, useCallback } from 'react'
 import {
   CreateProjectDialog,
   FavoritesSection,
@@ -10,11 +9,9 @@ import {
 import { Project } from '@/features/projects/types/project'
 import { useProjectStore } from '@/core/stores/useProjectStore'
 import { useLoadingView } from '@/core/hooks'
-import { useUserProfile, useAuthActions, UserMenuButton } from '@/features/auth'
 import { ErrorPanel } from '@/shared/components/ErrorPanel'
-import { Logo } from '@/shared/components'
-import { Link } from '@tanstack/react-router'
 import { EmptyState } from '@/shared/components/EmptyState'
+import { MobileTopHeader } from '@/shared/components/layout'
 import { FileText, Plus } from 'lucide-react'
 import { RenameProjectDialog } from '@/features/projects/components/RenameProjectDialog'
 import { DeleteProjectDialog } from '@/features/projects/components/DeleteProjectDialog'
@@ -24,21 +21,8 @@ export const Route = createFileRoute('/_authenticated/projects/')({
   component: ProjectsPage,
 })
 
-/**
- * Get time-based greeting
- */
-function getGreeting(): string {
-  const hour = new Date().getHours()
-  if (hour < 12) return 'Good morning'
-  if (hour < 17) return 'Good afternoon'
-  return 'Good evening'
-}
-
 function ProjectsPage() {
-  const navigate = useNavigate()
-  const { projects, status, error, loadProjects, toggleFavorite, deleteProject, updateProject } = useProjectStore()
-  const { profile, status: profileStatus } = useUserProfile()
-  const { signOut } = useAuthActions()
+  const { projects, status, error, toggleFavorite, deleteProject, updateProject } = useProjectStore()
 
   // Dialog states
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -47,11 +31,6 @@ function ProjectsPage() {
 
   // Derive loading view state (skeleton shows immediately on cold start)
   const view = useLoadingView({ status, hasData: projects.length > 0 })
-
-  useEffect(() => {
-    loadProjects()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   // Separate favorites from non-favorites
   const favoriteProjects = useMemo(
@@ -86,20 +65,11 @@ function ProjectsPage() {
     }
   }, [deleteProjectTarget, deleteProject])
 
-  // Get first name for greeting
-  const firstName = profile?.name?.split(' ')[0] ?? ''
-  const greeting = getGreeting()
-
   // Show empty container for cold loads (no cached data)
   if (view === 'skeleton') {
     return (
       <div className="container mx-auto max-w-6xl px-6 py-8">
-        <div className="mb-8">
-          <Link to="/projects">
-            <Logo size={40} />
-          </Link>
-        </div>
-        {/* Empty during load */}
+        {/* Empty during load - GlobalHeader provides context */}
       </div>
     )
   }
@@ -111,49 +81,26 @@ function ProjectsPage() {
         <ErrorPanel
           title="Failed to load projects"
           message={error || 'Unknown error'}
-          onRetry={() => loadProjects()}
+          onRetry={() => useProjectStore.getState().loadProjects()}
         />
       </div>
     )
   }
 
+  // New Project button shown in section header
+  const newProjectButton = (
+    <Button onClick={() => setCreateDialogOpen(true)} size="sm">
+      <Plus className="size-4" />
+      <span className="hidden sm:inline">New Project</span>
+      <span className="sm:hidden">New</span>
+    </Button>
+  )
+
   return (
-    <div className="relative min-h-screen">
-      <div className="container mx-auto max-w-6xl px-6 py-8">
-        {/* Header */}
-        <header className="flex items-start justify-between gap-4 mb-8">
-          <div>
-            <Link to="/projects">
-              <Logo size={40} />
-            </Link>
-            {/* Personalized greeting */}
-            {profileStatus === 'authenticated' && firstName && (
-              <h1 className="mt-6 type-display text-foreground">
-                {greeting}, {firstName}
-              </h1>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <Button onClick={() => setCreateDialogOpen(true)} size="sm">
-              <Plus className="size-4" />
-              <span className="hidden sm:inline">New Project</span>
-              <span className="sm:hidden">New</span>
-            </Button>
-
-            {/* User menu */}
-            {profileStatus === 'authenticated' && profile && (
-              <UserMenuButton
-                profile={profile}
-                onSettings={() => navigate({ to: '/settings' })}
-                onSignOut={signOut}
-                menuSide="bottom"
-                showName={false}
-              />
-            )}
-          </div>
-        </header>
-
+    <div className="relative flex flex-col h-full">
+      <MobileTopHeader inWorkspace={false} />
+      <div className="flex-1 overflow-y-auto">
+        <div className="container mx-auto max-w-6xl px-6 py-8">
         {/* Empty state when no projects at all */}
         {projects.length === 0 ? (
           <EmptyState
@@ -170,6 +117,7 @@ function ProjectsPage() {
             <ContinueWorkingSection
               projects={projects}
               onFavoriteToggle={handleFavoriteToggle}
+              action={newProjectButton}
             />
             <FavoritesSection
               projects={favoriteProjects}
@@ -183,6 +131,7 @@ function ProjectsPage() {
             />
           </div>
         )}
+        </div>
       </div>
 
       {/* Dialogs */}

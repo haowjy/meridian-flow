@@ -1,10 +1,11 @@
-import { HoverCard, HoverCardContent, HoverCardTrigger as RadixHoverCardTrigger } from '@/shared/components/ui/hover-card'
+import { HoverCard, HoverCardContent, HoverCardTrigger as RadixHoverCardTrigger, HoverCardArrow } from '@/shared/components/ui/hover-card'
 
 // Re-export for use with triggerWrapper pattern
 export { RadixHoverCardTrigger as HoverCardTrigger }
 import { TreeItemInfoContent } from './TreeItemInfoContent'
 import type { Folder } from '@/features/folders/types/folder'
 import type { Document } from '@/features/documents/types/document'
+import type { Skill } from '@/features/skills/types/skill'
 import type { ReactElement } from 'react'
 
 interface FolderHoverCardProps {
@@ -21,7 +22,13 @@ interface DocumentHoverCardProps {
   type: 'document'
 }
 
-type TreeItemInfoHoverCardProps = FolderHoverCardProps | DocumentHoverCardProps
+interface SkillHoverCardProps {
+  children: ReactElement
+  item: Skill
+  type: 'skill'
+}
+
+type TreeItemInfoHoverCardProps = FolderHoverCardProps | DocumentHoverCardProps | SkillHoverCardProps
 
 /**
  * HoverCard wrapper for hover-triggered info display (desktop).
@@ -38,15 +45,10 @@ export function TreeItemInfoHoverCard(props: TreeItemInfoHoverCardProps) {
         side="left"
         align="start"
         sideOffset={12}
-        className={[
-          'relative w-64 p-3',
-          // CSS arrow (border + fill) to avoid seam between card border and SVG arrow.
-          // Points toward the trigger when the content is rendered on the left.
-          "before:content-[''] before:absolute before:top-2 before:right-[-10px] before:border-t-[7px] before:border-b-[7px] before:border-l-[10px] before:border-t-transparent before:border-b-transparent before:border-l-border",
-          "after:content-[''] after:absolute after:top-2 after:right-[-9px] after:border-t-[6px] after:border-b-[6px] after:border-l-[9px] after:border-t-transparent after:border-b-transparent after:border-l-popover",
-        ].join(' ')}
+        className="w-64 p-3 bg-popover border-0 shadow-md"
       >
-        {type === 'folder' ? (
+        <HoverCardArrow className="fill-popover stroke-none" />
+        {type === 'folder' && (
           <TreeItemInfoContent
             variant="hover"
             type="folder"
@@ -54,8 +56,12 @@ export function TreeItemInfoHoverCard(props: TreeItemInfoHoverCardProps) {
             documentCount={props.documentCount}
             folderCount={props.folderCount}
           />
-        ) : (
+        )}
+        {type === 'document' && (
           <TreeItemInfoContent variant="hover" type="document" item={props.item} />
+        )}
+        {type === 'skill' && (
+          <TreeItemInfoContent variant="hover" type="skill" item={props.item} />
         )}
       </HoverCardContent>
     </HoverCard>

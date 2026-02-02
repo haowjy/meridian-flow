@@ -10,6 +10,16 @@ import (
 	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
+// SearchToolMetadata returns metadata for the doc_search tool.
+// This enables OCP compliance - tool self-describes for system prompt generation.
+func SearchToolMetadata() *ToolMetadata {
+	return &ToolMetadata{
+		Name:        "doc_search",
+		Description: "Search across all documents by content",
+		Guideline:   "When the user asks about their project, search or read relevant documents",
+	}
+}
+
 // SearchTool implements the 'search' tool for full-text search across documents.
 // Uses service layer for all data access (SOLID: DIP - depends on interfaces).
 // Access to /.meridian/** is DENIED - skills are not searchable via doc tools.

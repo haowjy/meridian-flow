@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react'
+import React, { useCallback } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { Turn, TurnBlock, ToolBlockContent } from '@/features/threads/types'
 import { useThreadStore } from '@/core/stores/useThreadStore'
@@ -11,7 +11,6 @@ import { getToolRenderer } from './blocks/toolRegistry'
 import { getToolInteractionReactKey, getTurnBlockReactKey } from '@/features/threads/utils/blockIdentity'
 
 const log = makeLogger('AssistantTurn')
-const DEBUG_SCROLL = import.meta.env.VITE_DEBUG_SCROLL === '1'
 
 // =============================================================================
 // HELPERS
@@ -28,7 +27,7 @@ function getToolName(
   const source = toolUse ?? toolResult
   if (!source?.content) return null
   const content = source.content as ToolBlockContent
-  return typeof content.tool_name === 'string' ? content.tool_name : null
+  return typeof content.toolName === 'string' ? content.toolName : null
 }
 
 // =============================================================================
@@ -69,11 +68,6 @@ export const AssistantTurn = React.memo(function AssistantTurn({ turn }: Assista
 
   log.debug('render', { id: turn.id, prevTurnId: turn.prevTurnId, blocks: turn.blocks.length })
 
-  useEffect(() => {
-    if (!DEBUG_SCROLL) return
-    console.debug('[render] AssistantTurn:isStreaming', { t: Date.now(), turnId: turn.id, isStreaming })
-  }, [turn.id, isStreaming])
-
   const handleNavigate = useCallback(
     (turnId: string) => {
       switchSibling(turn.threadId, turnId)
@@ -111,7 +105,7 @@ export const AssistantTurn = React.memo(function AssistantTurn({ turn }: Assista
 
         {/* Still processing indicator - shows only on the actively streaming turn */}
         {isStreamingThisTurn && (
-          <div className="flex items-center gap-1.5 py-2 text-accent">
+          <div className="flex items-center gap-1.5 py-2 text-primary">
             <span className="animate-processing-dot h-1.5 w-1.5 rounded-full bg-current" />
             <span className="animate-processing-dot h-1.5 w-1.5 rounded-full bg-current" />
             <span className="animate-processing-dot h-1.5 w-1.5 rounded-full bg-current" />

@@ -8,6 +8,26 @@ import (
 	skillSvc "meridian/internal/domain/services/skill"
 )
 
+// SkillInvokeToolMetadata returns metadata for the skill_invoke tool.
+// This enables OCP compliance - tool self-describes for system prompt generation.
+func SkillInvokeToolMetadata() *ToolMetadata {
+	return &ToolMetadata{
+		Name:        "skill_invoke",
+		Description: "Load skill instructions on-demand (when skills are available)",
+		Guideline:   "Use skill_invoke when a task matches an available skill",
+	}
+}
+
+// SkillListToolMetadata returns metadata for the skill_list tool.
+// This enables OCP compliance - tool self-describes for system prompt generation.
+func SkillListToolMetadata() *ToolMetadata {
+	return &ToolMetadata{
+		Name:        "skill_list",
+		Description: "List available skills for this project",
+		Guideline:   "", // No specific guideline needed
+	}
+}
+
 // SkillInvokeTool implements the 'skill_invoke' tool for loading skill instructions on-demand.
 // Claude sees skill metadata in system prompt, but full content is only loaded when invoked.
 type SkillInvokeTool struct {
@@ -73,9 +93,9 @@ func (t *SkillInvokeTool) Execute(ctx context.Context, input map[string]any) (an
 	meta := skill.GetMetadata()
 	if meta.DisableModelInvocation && !t.isUserInvocation {
 		return ErrorResult(ErrInvalidInput, "This skill can only be invoked manually by the user", map[string]any{
-			"skill_name":  skillName,
-			"reason":      "disable_model_invocation is true",
-			"suggestion":  "User can invoke with /" + skillName,
+			"skill_name": skillName,
+			"reason":     "disable_model_invocation is true",
+			"suggestion": "User can invoke with /" + skillName,
 		}), nil
 	}
 
@@ -92,10 +112,9 @@ func (t *SkillInvokeTool) Execute(ctx context.Context, input map[string]any) (an
 
 	// Return the skill content as a formatted response
 	return map[string]any{
-		"type":         "skill",
-		"skill_name":   skill.Name,
-		"display_name": skill.DisplayName,
-		"content":      content,
+		"type":       "skill",
+		"skill_name": skill.Name,
+		"content":    content,
 	}, nil
 }
 
@@ -142,9 +161,8 @@ func (t *SkillListTool) Execute(ctx context.Context, input map[string]any) (any,
 			continue
 		}
 		skillList = append(skillList, map[string]any{
-			"name":         skill.Name,
-			"display_name": skill.DisplayName,
-			"description":  skill.Description,
+			"name":        skill.Name,
+			"description": skill.Description,
 		})
 	}
 

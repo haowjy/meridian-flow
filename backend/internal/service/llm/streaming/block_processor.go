@@ -184,14 +184,14 @@ func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(ms
 		return nil
 	}
 
-	// Collect BACKEND-SIDE tool_use blocks for execution (if tool registry is available)
+	// Collect LOCAL tool_use blocks for execution (if tool registry is available)
 	// Provider-side tools (e.g., Anthropic's built-in web_search) are already executed by the provider
-	// Backend-side tools (e.g., Tavily web search, doc_view, doc_tree) need backend execution
+	// Local tools (e.g., Tavily web search, doc_view, doc_tree) need backend execution
 	// TODO: Optimization - start executing tools in background goroutine immediately upon collection
 	// instead of waiting for stream completion. This would overlap tool execution with provider
 	// streaming, reducing total latency. Currently: collect → stream finishes → execute → stream results.
 	// Optimized: collect + execute in background → stream finishes → wait for execution → stream results.
-	if se.toolRegistry != nil && block.IsBackendSideTool() {
+	if se.toolRegistry != nil && block.IsLocalTool() {
 		se.collectToolUse(block)
 	}
 

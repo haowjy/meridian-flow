@@ -10,8 +10,8 @@ type Resolver interface {
 	// Returns the project UUID if found, or domain.ErrNotFound if the identifier doesn't match any project.
 	ResolveProject(ctx context.Context, identifier, userID string) (uuid string, err error)
 
-	// ResolveDocument resolves an identifier (UUID or slug) to a document UUID.
-	// Requires projectID for slug resolution (slugs are unique per project).
+	// ResolveDocument resolves an identifier (UUID or path) to a document UUID.
+	// Requires projectID for path resolution (paths are unique per project).
 	// Returns the document UUID if found, or domain.ErrNotFound if the identifier doesn't match any document.
 	ResolveDocument(ctx context.Context, identifier, projectID string) (uuid string, err error)
 

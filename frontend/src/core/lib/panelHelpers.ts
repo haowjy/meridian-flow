@@ -12,10 +12,29 @@ type NavigateFunction = ReturnType<typeof useNavigate>
  * when switching between threads, documents, and editor.
  *
  * Navigation:
- * - URLs use path-based slugs (/projects/my-novel/documents/characters/heroes/aria)
+ * - URLs use document path with extension (/projects/my-novel/documents/Characters/Heroes/Aria.md)
+ * - Path segments are URL-encoded to handle special characters (spaces, etc.)
  * - Browser back/forward handles all navigation (standard behavior)
  * - UI state synced by WorkspaceLayout when URL changes
  */
+
+/**
+ * Encodes a document path for use in URLs.
+ * Each segment is URL-encoded to handle special characters (spaces, etc.).
+ * Example: "Chapter 1/Scene 2.md" → "Chapter%201/Scene%202.md"
+ */
+export function encodeDocumentPath(path: string): string {
+  return path.split('/').map(encodeURIComponent).join('/')
+}
+
+/**
+ * Decodes a URL path back to a document path.
+ * Reverses the encoding done by encodeDocumentPath.
+ * Example: "Chapter%201/Scene%202.md" → "Chapter 1/Scene 2.md"
+ */
+export function decodeDocumentPath(urlPath: string): string {
+  return urlPath.split('/').map(decodeURIComponent).join('/')
+}
 
 /**
  * Opens a document in the editor.
@@ -24,33 +43,31 @@ type NavigateFunction = ReturnType<typeof useNavigate>
  * - WorkspaceLayout effect will also sync if URL actually changes
  *
  * @param documentId - The UUID of the document to open (for UI state)
- * @param documentSlug - The path-based slug of the document (e.g., "characters/heroes/aria")
+ * @param documentPath - The display path of the document (e.g., "Characters/Heroes/Aria.md")
  * @param projectSlug - The project slug (for URL)
  * @param navigate - TanStack Router navigate function from useNavigate()
  */
 export function openDocument(
   documentId: string,
-  documentSlug: string,
+  documentPath: string,
   projectSlug: string,
   navigate: NavigateFunction
 ) {
   const store = useUIStore.getState()
 
   // Set UI state directly (needed when clicking current document after manual toggle)
-  logger.debug('openDocument:', documentId, 'slug:', documentSlug)
+  logger.debug('openDocument:', documentId, 'path:', documentPath)
   store.setActiveDocument(documentId)
   store.setRightPanelState('editor')
   store.setRightPanelCollapsed(false)
 
-  // Mobile: swap to document panel
-  store.setMobileActivePanel('document')
-
-  // Navigate to document URL using path-based slug (updates browser history)
-  // Splat route captures all segments: /documents/characters/heroes/aria
+  // Navigate to document URL using path (updates browser history)
+  // Splat route captures all segments: /documents/Characters/Heroes/Aria.md
+  // Path is URL-encoded to handle special characters (spaces, etc.)
   // If URL is already this document, router won't navigate, but state is already set above
   navigate({
     to: '/projects/$slug/documents/$',
-    params: { slug: projectSlug, _splat: documentSlug },
+    params: { slug: projectSlug, _splat: encodeDocumentPath(documentPath) },
   })
 }
 
@@ -75,6 +92,39 @@ export function closeEditor(projectSlug: string, navigate: NavigateFunction) {
   navigate({
     to: '/projects/$slug',
     params: { slug: projectSlug },
+  })
+}
+
+/**
+ * Opens a skill in the editor.
+ * - Directly sets UI state to show editor (handles same-skill clicks)
+ * - Navigates to skill URL via navigate()
+ * - WorkspaceLayout effect will also sync if URL actually changes
+ *
+ * @param skillId - The UUID of the skill to open (for UI state)
+ * @param skillName - The skill name identifier (e.g., "writing-coach") for URL
+ * @param projectSlug - The project slug (for URL)
+ * @param navigate - TanStack Router navigate function from useNavigate()
+ */
+export function openSkill(
+  skillId: string,
+  skillName: string,
+  projectSlug: string,
+  navigate: NavigateFunction
+) {
+  const store = useUIStore.getState()
+
+  // Set UI state directly (needed when clicking current skill after manual toggle)
+  logger.debug('openSkill:', skillId, 'name:', skillName)
+  store.setActiveSkill(skillId) // Already clears activeDocumentId for mutual exclusivity
+  store.setRightPanelState('editor')
+  store.setRightPanelCollapsed(false)
+
+  // Navigate to skill URL using name identifier
+  // If URL is already this skill, router won't navigate, but state is already set above
+  navigate({
+    to: '/projects/$slug/skills/$skillName',
+    params: { slug: projectSlug, skillName },
   })
 }
 

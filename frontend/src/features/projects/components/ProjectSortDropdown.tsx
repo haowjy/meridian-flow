@@ -39,7 +39,7 @@ export function ProjectSortDropdown() {
           >
             <span>{option.label}</span>
             {sortOrder === option.value && (
-              <Check className="size-4.5 text-accent" />
+              <Check className="size-4.5 text-primary" />
             )}
           </DropdownMenuItem>
         ))}

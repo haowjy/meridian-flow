@@ -32,7 +32,6 @@ type treeDocumentDTO struct {
 	ProjectID string    `json:"project_id"`
 	FolderID  *string   `json:"folder_id"`
 	Name      string    `json:"name"`
-	Slug      string    `json:"slug"`
 	Extension string    `json:"extension"`
 	Path      string    `json:"path"` // Normalized path with extension (e.g., "Characters/Heroes/Aria.md")
 	UpdatedAt time.Time `json:"updated_at"`
@@ -100,7 +99,6 @@ func toTreeDocumentDTO(doc docsysSvc.TreeDocument) treeDocumentDTO {
 		ProjectID: doc.ProjectID,
 		FolderID:  doc.FolderID,
 		Name:      doc.Name,
-		Slug:      doc.Slug,
 		Extension: doc.Extension,
 		Path:      doc.Path,
 		UpdatedAt: doc.UpdatedAt,

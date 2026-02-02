@@ -10,35 +10,36 @@ import (
 type CreateSkillRequest struct {
 	ProjectID              string
 	Name                   string
-	DisplayName            string
 	Description            string
-	Content                string // SKILL.md content
+	Content                string // Skill content (stored in DB)
 	DisableModelInvocation bool
 	UserInvocable          bool
 }
 
 // UpdateSkillRequest contains the parameters for updating a skill
 type UpdateSkillRequest struct {
-	DisplayName            *string
+	Name                   *string
 	Description            *string
-	Content                *string // SKILL.md content
+	Content                *string // Skill content (stored in DB)
+	Enabled                *bool   // Enable/disable skill
 	DisableModelInvocation *bool
 	UserInvocable          *bool
 }
 
 // ProjectSkillService defines business logic operations for project skills
 type ProjectSkillService interface {
-	// CreateSkill creates a new skill with its folder structure and SKILL.md
+	// CreateSkill creates a new skill with its folder structure
+	// Content is stored in DB, folder exists for references/export
 	CreateSkill(ctx context.Context, userID string, req CreateSkillRequest) (*models.ProjectSkill, error)
 
-	// ListSkills lists all skills for a project (metadata only)
+	// ListSkills lists all skills for a project
 	ListSkills(ctx context.Context, userID, projectID string) ([]*models.ProjectSkill, error)
 
-	// GetSkill retrieves a skill by ID with content
-	GetSkill(ctx context.Context, userID, projectID, skillID string) (*models.ProjectSkillWithContent, error)
+	// GetSkill retrieves a skill by ID (content included in model)
+	GetSkill(ctx context.Context, userID, projectID, skillID string) (*models.ProjectSkill, error)
 
-	// GetSkillByName retrieves a skill by name with content
-	GetSkillByName(ctx context.Context, userID, projectID, name string) (*models.ProjectSkillWithContent, error)
+	// GetSkillByName retrieves a skill by name (content included in model)
+	GetSkillByName(ctx context.Context, userID, projectID, name string) (*models.ProjectSkill, error)
 
 	// UpdateSkill updates a skill's metadata and/or content
 	UpdateSkill(ctx context.Context, userID, projectID, skillID string, req UpdateSkillRequest) (*models.ProjectSkill, error)
@@ -49,6 +50,6 @@ type ProjectSkillService interface {
 	// DeleteSkill soft-deletes a skill
 	DeleteSkill(ctx context.Context, userID, projectID, skillID string) error
 
-	// LoadSkillContent loads the content of a skill's SKILL.md file
+	// LoadSkillContent loads the content of a skill (from DB)
 	LoadSkillContent(ctx context.Context, userID, projectID, name string) (string, error)
 }

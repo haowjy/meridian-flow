@@ -1,5 +1,5 @@
 import { Project } from '@/features/projects/types/project'
-import { Thread, Turn, type ThreadRequestOptions, DEFAULT_THREAD_REQUEST_OPTIONS, DEFAULT_TOOLS } from '@/features/threads/types'
+import { Thread, Turn, type ThreadRequestOptions, DEFAULT_THREAD_REQUEST_OPTIONS } from '@/features/threads/types'
 import { Document, DocumentTree } from '@/features/documents/types/document'
 import { Folder } from '@/features/folders/types/folder'
 import {
@@ -21,6 +21,7 @@ import {
 } from '@/types/api'
 import type { Skill, SkillWithContent, CreateSkillRequest, UpdateSkillRequest } from '@/features/skills/types/skill'
 import { httpErrorToAppError } from '@/core/lib/errors'
+import { convertKeysToCamelCase } from './caseConvert'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080'
 export const API_BASE_URL = API_BASE
@@ -135,7 +136,9 @@ export async function fetchAPI<T>(
     if (contentType.includes('application/json') || contentType.includes('application/problem+json')) {
       const raw = await response.text()
       try {
-        return JSON.parse(raw) as T
+        const parsed = JSON.parse(raw)
+        // Convert snake_case keys to camelCase (backend uses snake_case, frontend uses camelCase)
+        return convertKeysToCamelCase(parsed) as T
       } catch (e) {
         const { ErrorType, AppError } = await import('./errors')
         const snippet = raw ? raw.slice(0, 180) : ''
@@ -206,32 +209,33 @@ export async function fetchAPI<T>(
 }
 
 // Shared types and utilities for Turn API
+// NOTE: These types use camelCase because fetchAPI auto-converts snake_case from backend
 type TurnBlockDto = {
   id: string
-  turn_id: string
-  block_type: string
+  turnId: string
+  blockType: string
   sequence: number
-  text_content?: string | null
+  textContent?: string | null
   content?: Record<string, unknown> | null
-  created_at: string
+  createdAt: string
 }
 
 type TurnDto = {
   id: string
-  thread_id: string
-  prev_turn_id?: string | null
+  threadId: string
+  prevTurnId?: string | null
   status: string
   error?: string | null
   model?: string | null
-  input_tokens?: number | null
-  output_tokens?: number | null
+  inputTokens?: number | null
+  outputTokens?: number | null
   role: 'user' | 'assistant'
-  created_at: string
-  completed_at?: string | null
+  createdAt: string
+  completedAt?: string | null
   blocks?: TurnBlockDto[]
-  sibling_ids?: string[]
-  request_params?: Record<string, unknown> | null
-  response_metadata?: Record<string, unknown> | null
+  siblingIds?: string[]
+  requestParams?: Record<string, unknown> | null
+  responseMetadata?: Record<string, unknown> | null
 }
 
 /**
@@ -239,55 +243,59 @@ type TurnDto = {
  *
  * Pure data transformation - no presentation logic.
  * Use extractTextContent() from turnHelpers for UI-specific text extraction.
+ *
+ * NOTE: TurnDto is already camelCase (auto-converted by fetchAPI gateway).
+ * This function mainly handles Date conversions.
  */
 function turnDtoToTurn(turn: TurnDto): Turn {
   const blocks = (turn.blocks ?? []).map((b): import('@/features/threads/types').TurnBlock => ({
     id: b.id,
-    turnId: b.turn_id,
-    blockType: b.block_type as import('@/features/threads/types').BlockType,
+    turnId: b.turnId,
+    blockType: b.blockType as import('@/features/threads/types').BlockType,
     sequence: b.sequence,
-    textContent: b.text_content ?? undefined,
+    textContent: b.textContent ?? undefined,
     content: b.content ?? undefined,
-    createdAt: new Date(b.created_at),
+    createdAt: new Date(b.createdAt),
   }))
 
   return {
     id: turn.id,
-    threadId: turn.thread_id,
-    prevTurnId: turn.prev_turn_id ?? null,
+    threadId: turn.threadId,
+    prevTurnId: turn.prevTurnId ?? null,
     role: turn.role,
     status: turn.status,
     error: turn.error ?? undefined,
     model: turn.model ?? undefined,
-    inputTokens: turn.input_tokens ?? undefined,
-    outputTokens: turn.output_tokens ?? undefined,
-    createdAt: new Date(turn.created_at),
-    completedAt: turn.completed_at ? new Date(turn.completed_at) : undefined,
+    inputTokens: turn.inputTokens ?? undefined,
+    outputTokens: turn.outputTokens ?? undefined,
+    createdAt: new Date(turn.createdAt),
+    completedAt: turn.completedAt ? new Date(turn.completedAt) : undefined,
     blocks,
-    siblingIds: turn.sibling_ids ?? [],
-    requestParams: turn.request_params as import('@/features/threads/types').RequestParams | undefined,
-    responseMetadata: turn.response_metadata as Record<string, unknown> | undefined,
+    siblingIds: turn.siblingIds ?? [],
+    requestParams: turn.requestParams as import('@/features/threads/types').RequestParams | undefined,
+    responseMetadata: turn.responseMetadata as Record<string, unknown> | undefined,
   }
 }
 
 // Model capabilities (used for thread model selection)
+// NOTE: These types use camelCase because fetchAPI auto-converts snake_case from backend
 type ModelCapabilityDto = {
   id: string
-  display_name: string
-  context_window: number
+  displayName: string
+  contextWindow: number
   capabilities: {
-    supports_tools?: boolean
-    tool_calls?: string
-    image_input?: boolean
-    image_generation?: boolean
+    supportsTools?: boolean
+    toolCalls?: string
+    imageInput?: boolean
+    imageGeneration?: boolean
     streaming?: boolean
     thinking?: boolean
-    requires_thinking?: boolean
+    requiresThinking?: boolean
     [key: string]: unknown
   }
   pricing?: {
-    input_per_1m?: number
-    output_per_1m?: number
+    inputPer1m?: number
+    outputPer1m?: number
     [key: string]: unknown
   }
 }
@@ -311,6 +319,7 @@ export type ModelCapabilitiesProvider = {
   }[]
 }
 
+// NOTE: Uses camelCase because fetchAPI auto-converts snake_case from backend
 export interface ImportResponse {
   success: boolean
   summary: {
@@ -318,7 +327,7 @@ export interface ImportResponse {
     updated: number
     skipped: number
     failed: number
-    total_files: number
+    totalFiles: number
   }
   errors: Array<{ file: string; error: string }>
   documents: Array<{ id: string; path: string; name: string; action: string }>
@@ -346,6 +355,10 @@ function buildRequestParamsFromThreadOptions(
 ): Record<string, unknown> {
   const resolved = options ?? DEFAULT_THREAD_REQUEST_OPTIONS
 
+  console.debug('[buildRequestParamsFromThreadOptions]', {
+    supportsTools: resolved.supportsTools,
+  })
+
   // When reasoning is 'off', disable thinking entirely
   // Otherwise, enable thinking with the specified level
   const thinkingEnabled = resolved.reasoning !== 'off'
@@ -356,8 +369,6 @@ function buildRequestParamsFromThreadOptions(
     // NOTE: max_tokens and lorem_max are left to backend defaults for now.
     thinking_enabled: thinkingEnabled,
     thinking_level: thinkingEnabled ? resolved.reasoning : null,
-    // Only include tools if model supports them (prevents errors for models like DeepSeek)
-    tools: resolved.supportsTools ? DEFAULT_TOOLS : [],
   }
 
   return requestParams
@@ -387,13 +398,18 @@ export const api = {
     },
     update: async (
       id: string,
-      updates: { name?: string; systemPrompt?: string | null },
+      updates: { name?: string; systemPrompt?: string | null; preferences?: { disabledTools?: string[] } },
       options?: { signal?: AbortSignal }
     ): Promise<Project> => {
       // Build request body, mapping to snake_case for API
       const body: Record<string, unknown> = {}
       if (updates.name !== undefined) body.name = updates.name
       if (updates.systemPrompt !== undefined) body.system_prompt = updates.systemPrompt
+      if (updates.preferences !== undefined) {
+        body.preferences = {
+          disabled_tools: updates.preferences.disabledTools,
+        }
+      }
 
       const data = await fetchAPI<ProjectDto>(`/api/projects/${id}`, {
         method: 'PATCH',
@@ -437,11 +453,11 @@ export const api = {
         name: provider.name,
         models: (provider.models ?? []).map((model) => ({
           id: model.id,
-          displayName: model.display_name,
-          contextWindow: model.context_window,
+          displayName: model.displayName,
+          contextWindow: model.contextWindow,
           supportsThinking: !!model.capabilities?.thinking,
-          requiresThinking: !!model.capabilities?.requires_thinking,
-          supportsTools: model.capabilities?.supports_tools !== false,
+          requiresThinking: !!model.capabilities?.requiresThinking,
+          supportsTools: model.capabilities?.supportsTools !== false,
         })),
       }))
     },
@@ -498,10 +514,11 @@ export const api = {
         signal?: AbortSignal
       }
     ): Promise<{ turns: Turn[]; hasMoreBefore: boolean; hasMoreAfter: boolean }> => {
+      // NOTE: Uses camelCase because fetchAPI auto-converts snake_case from backend
       type PaginatedTurnsDto = {
         turns: TurnDto[]
-        has_more_before: boolean
-        has_more_after: boolean
+        hasMoreBefore: boolean
+        hasMoreAfter: boolean
       }
 
       const params = new URLSearchParams()
@@ -518,8 +535,8 @@ export const api = {
 
       return {
         turns: (data.turns ?? []).map(turnDtoToTurn),
-        hasMoreBefore: !!data.has_more_before,
-        hasMoreAfter: !!data.has_more_after,
+        hasMoreBefore: !!data.hasMoreBefore,
+        hasMoreAfter: !!data.hasMoreAfter,
       }
     },
 
@@ -536,11 +553,12 @@ export const api = {
     ): Promise<import('@/features/threads/types').SendTurnResponse> => {
       const requestParams = buildRequestParamsFromThreadOptions(options?.requestOptions)
 
+      // NOTE: Response uses camelCase because fetchAPI auto-converts snake_case from backend
       const response = await fetchAPI<{
         thread?: ThreadDto // Only present on cold start
-        user_turn: TurnDto
-        assistant_turn: TurnDto
-        stream_url: string
+        userTurn: TurnDto
+        assistantTurn: TurnDto
+        streamUrl: string
       }>(
         '/api/turns',
         {
@@ -564,9 +582,9 @@ export const api = {
       )
       return {
         thread: response.thread ? fromThreadDto(response.thread) : undefined,
-        userTurn: turnDtoToTurn(response.user_turn),
-        assistantTurn: turnDtoToTurn(response.assistant_turn),
-        streamUrl: response.stream_url,
+        userTurn: turnDtoToTurn(response.userTurn),
+        assistantTurn: turnDtoToTurn(response.assistantTurn),
+        streamUrl: response.streamUrl,
       }
     },
 
@@ -600,8 +618,9 @@ export const api = {
       error?: string
       status: string
     }> => {
+      // NOTE: Uses camelCase because fetchAPI auto-converts snake_case from backend
       type GetTurnBlocksResponseDto = {
-        turn_id: string
+        turnId: string
         status: string
         error?: string | null
         blocks: TurnBlockDto[]
@@ -612,12 +631,12 @@ export const api = {
       return {
         blocks: (data.blocks ?? []).map((b) => ({
           id: b.id,
-          turnId: b.turn_id,
-          blockType: b.block_type as import('@/features/threads/types').BlockType,
+          turnId: b.turnId,
+          blockType: b.blockType as import('@/features/threads/types').BlockType,
           sequence: b.sequence,
-          textContent: b.text_content ?? undefined,
+          textContent: b.textContent ?? undefined,
           content: b.content ?? undefined,
-          createdAt: new Date(b.created_at),
+          createdAt: new Date(b.createdAt),
         })),
         error: data.error ?? undefined,
         status: data.status,
@@ -807,7 +826,6 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({
           name: skill.name,
-          display_name: skill.displayName,
           description: skill.description,
           content: skill.content,
           disable_model_invocation: skill.disableModelInvocation,
@@ -819,9 +837,10 @@ export const api = {
     },
     update: async (projectId: string, skillId: string, updates: UpdateSkillRequest, options?: { signal?: AbortSignal }): Promise<Skill> => {
       const body: Record<string, unknown> = {}
-      if (updates.displayName !== undefined) body.display_name = updates.displayName
+      if (updates.name !== undefined) body.name = updates.name
       if (updates.description !== undefined) body.description = updates.description
       if (updates.content !== undefined) body.content = updates.content
+      if (updates.enabled !== undefined) body.enabled = updates.enabled
       if (updates.disableModelInvocation !== undefined) body.disable_model_invocation = updates.disableModelInvocation
       if (updates.userInvocable !== undefined) body.user_invocable = updates.userInvocable
 
@@ -834,12 +853,5 @@ export const api = {
     },
     delete: (projectId: string, skillId: string, options?: { signal?: AbortSignal }) =>
       fetchAPI<void>(`/api/projects/${projectId}/skills/${skillId}`, { method: 'DELETE', signal: options?.signal }),
-    reorder: async (projectId: string, skillIds: string[], options?: { signal?: AbortSignal }): Promise<void> => {
-      await fetchAPI<void>(`/api/projects/${projectId}/skills/reorder`, {
-        method: 'PUT',
-        body: JSON.stringify({ skill_ids: skillIds }),
-        signal: options?.signal,
-      })
-    },
   },
 }

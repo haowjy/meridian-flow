@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS ${TABLE_PREFIX}turn_blocks (
     content JSONB,  -- Type-specific structured data
     provider TEXT,  -- LLM provider that generated this block (e.g., "anthropic", "openai")
     provider_data JSONB,  -- Raw provider-specific block data for replay (opaque)
-    execution_side TEXT,  -- For tool_use blocks: "server" (provider executes) or "client" (consumer executes)
+    execution_side TEXT,  -- For tool_use blocks: "provider" | "local" | "client" (provider=LLM provider executes, local=non-provider execution, client=frontend)
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(turn_id, sequence)  -- Prevent duplicate sequences within a turn
 );

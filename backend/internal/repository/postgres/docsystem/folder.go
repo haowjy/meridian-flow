@@ -263,7 +263,14 @@ func (r *PostgresFolderRepository) Delete(ctx context.Context, id, projectID str
 }
 
 // ListChildren lists immediate child folders
-func (r *PostgresFolderRepository) ListChildren(ctx context.Context, folderID *string, projectID string) ([]models.Folder, error) {
+// If opts is nil, uses default options (IncludeHidden: false)
+func (r *PostgresFolderRepository) ListChildren(ctx context.Context, folderID *string, projectID string, opts *docsysRepo.FolderFilterOptions) ([]models.Folder, error) {
+	// Default: exclude hidden folders (e.g., .meridian)
+	includeHidden := false
+	if opts != nil {
+		includeHidden = opts.IncludeHidden
+	}
+
 	var query string
 	var args []interface{}
 
@@ -272,7 +279,6 @@ func (r *PostgresFolderRepository) ListChildren(ctx context.Context, folderID *s
 			SELECT id, project_id, parent_id, name, is_hidden, created_at, updated_at
 			FROM %s
 			WHERE project_id = $1 AND parent_id IS NULL AND deleted_at IS NULL
-			ORDER BY name ASC
 		`, r.tables.Folders)
 		args = append(args, projectID)
 	} else {
@@ -280,10 +286,15 @@ func (r *PostgresFolderRepository) ListChildren(ctx context.Context, folderID *s
 			SELECT id, project_id, parent_id, name, is_hidden, created_at, updated_at
 			FROM %s
 			WHERE project_id = $1 AND parent_id = $2 AND deleted_at IS NULL
-			ORDER BY name ASC
 		`, r.tables.Folders)
 		args = append(args, projectID, *folderID)
 	}
+
+	// Filter hidden folders unless explicitly included
+	if !includeHidden {
+		query += ` AND is_hidden = false`
+	}
+	query += ` ORDER BY name ASC`
 
 	executor := postgres.GetExecutor(ctx, r.pool)
 	rows, err := executor.Query(ctx, query, args...)

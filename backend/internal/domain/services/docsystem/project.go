@@ -19,6 +19,7 @@ type CreateProjectRequest struct {
 type UpdateProjectRequest struct {
 	Name         *string
 	SystemPrompt optional.Optional[string]
+	Preferences  docsystem.JSONMap // If provided, replaces preferences (nil = don't change)
 }
 
 // ProjectService defines business logic operations for projects

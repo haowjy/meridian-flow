@@ -40,7 +40,7 @@ export function ThreadRequestControls({
   showSend = true,
   saveIcon = false,
 }: ThreadRequestControlsProps) {
-  const { providers } = useModelCapabilities()
+  const { providers, isLoading } = useModelCapabilities()
 
   const allModels =
     providers.flatMap((provider) =>
@@ -105,7 +105,7 @@ export function ThreadRequestControls({
           onChange={(reasoning) =>
             onOptionsChange({ ...options, reasoning })
           }
-          disabled={!supportsThinking}
+          disabled={!supportsThinking || isLoading}
           requiresThinking={requiresThinking}
         />
       </div>

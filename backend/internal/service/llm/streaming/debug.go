@@ -13,6 +13,7 @@ import (
 	llmModels "meridian/internal/domain/models/llm"
 	llmSvc "meridian/internal/domain/services/llm"
 	"meridian/internal/service/llm/adapters"
+	"meridian/internal/service/llm/tools"
 )
 
 // BuildDebugProviderRequest builds the provider-facing request payload for a hypothetical
@@ -95,9 +96,43 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 		}
 	}
 
+	// Extract enabled tools from requestParams for tool registration
+	enabledTools := extractToolNames(requestParams)
+
+	// Get thread to get project_id for tool registry
+	thread, err := s.threadRepo.GetThread(ctx, *req.ThreadID, req.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get thread for debug: %w", err)
+	}
+
+	// Mirror production tool policy: server decides which tools are available.
+	project, err := s.projectRepo.GetByID(ctx, thread.ProjectID, req.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load project for tool policy (debug): %w", err)
+	}
+	disabled := parseDisabledTools(project.Preferences)
+	toolNames := resolveServerToolNames(s.config.SearchAPIKey != "", disabled)
+	toolsParam, err := toolNamesToRequestParamsTools(toolNames)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build tools for request params (debug): %w", err)
+	}
+	requestParams["tools"] = toolsParam
+
+	// Build tool registry to generate tool section for system prompt (OCP compliance)
+	// Tools self-describe via metadata, registry generates the section dynamically
+	tempToolRegistry := tools.NewToolRegistryBuilder().
+		WithNamespaceService(s.namespaceSvc).
+		WithEnabledDocumentTools(enabledTools, thread.ProjectID, req.UserID, s.documentSvc, s.folderSvc).
+		WithEnabledSkillTools(enabledTools, thread.ProjectID, req.UserID, s.skillService, false).
+		Build()
+
+	// Get tool section from registry (OCP compliance - tools describe themselves)
+	toolSection := tempToolRegistry.BuildSystemPromptSection()
+
 	// Resolve system prompt from user, project, thread, and selected skills (mirror CreateTurn)
 	// Always resolve if skills are selected, or if no user system prompt provided
-	if err := s.resolveSystemPromptForParams(ctx, *req.ThreadID, req.UserID, params, req.SelectedSkills); err != nil {
+	// Pass toolSection so the system prompt only mentions tools the LLM can actually use
+	if err := s.resolveSystemPromptForParams(ctx, *req.ThreadID, req.UserID, params, req.SelectedSkills, toolSection); err != nil {
 		s.logger.Error("failed to resolve system prompt for debug", "error", err)
 		return nil, err
 	}

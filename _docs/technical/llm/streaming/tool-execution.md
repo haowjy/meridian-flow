@@ -7,6 +7,11 @@ audience: developer
 
 How LLM tool calling works in the streaming system.
 
+## Tool Availability (Source of Truth)
+
+- The backend computes `request_params.tools` on the backend (project preferences + server config + model capabilities).
+- The client should not send `request_params.tools` as an authoritative list.
+
 ## Complete Tool Call Cycle
 
 ```mermaid
@@ -116,10 +121,10 @@ Provider streams `tool_use` block:
 
 - `StreamExecutor.processCompleteBlock` persists the `tool_use` `TurnBlock` when the library emits a complete Block.
 
-### 3. Backend Executes Tool (Backend-Side Tools)
+### 3. Backend Executes Tool (Local Tools)
 
-- For backend-executed tools (e.g., `doc_search`, `doc_view`, `web_search` via Tavily), the backend:
-  - Checks `block.IsBackendSideTool()` (ExecutionSide: `"server"` or nil)
+- For locally-executed tools (e.g., `doc_search`, `doc_view`, `web_search` via Tavily), the backend:
+  - Checks `block.IsLocalTool()` (ExecutionSide: `"local"` or nil)
   - Executes the corresponding tool in application code
   - Writes a `tool_result` block with `content.tool_use_id` and `is_error`
 
@@ -133,13 +138,20 @@ Provider streams `tool_use` block:
 
 ### ExecutionSide Values
 
+**Library (`meridian-llm-go`)** - 2 values (behavioral distinction):
 | Value | Who Executes | Examples |
 |-------|--------------|----------|
 | `"provider"` | LLM provider (Anthropic, OpenRouter) | Anthropic's built-in web_search |
-| `"server"` | Meridian backend | Tavily, doc_search, custom tools |
+| `"local"` | Non-provider (stop/execute/resume cycle) | Tavily, doc_search, custom tools |
+
+**Backend (Meridian)** - 3 values (routing distinction):
+| Value | Who Executes | Examples |
+|-------|--------------|----------|
+| `"provider"` | LLM provider | Anthropic's built-in web_search |
+| `"local"` | Backend | Tavily, doc_search, custom tools |
 | `"client"` | Frontend/browser | (Rarely used) |
 
-Default: nil is treated as `"server"` (backend-side)
+Default: nil is treated as `"local"` (non-provider execution)
 
 ---
 

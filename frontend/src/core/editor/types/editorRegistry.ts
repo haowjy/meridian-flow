@@ -16,7 +16,12 @@
  * Supported editor types.
  * Extensible - add new types as needed.
  */
-export type EditorType = 'markdown' | 'excalidraw' | 'mermaid'
+export type EditorType =
+  | 'markdown'
+  | 'latex'
+  | 'plaintext'
+  | 'excalidraw'
+  | 'mermaid'
 
 // ============================================================================
 // BASE INTERFACES
@@ -26,16 +31,22 @@ export type EditorType = 'markdown' | 'excalidraw' | 'mermaid'
  * Base interface that all editors must implement.
  * Minimal contract for content access and focus management.
  *
- * Content type is flexible:
+ * @template TContent - Editor content type (string for markdown/latex, object for excalidraw, etc.)
+ *
+ * Content type examples:
  * - markdown: string
+ * - latex: string
+ * - plaintext: string
  * - excalidraw: object (Excalidraw scene JSON)
  * - mermaid: string (Mermaid syntax)
  */
-export interface BaseEditorRef {
+export interface BaseEditorRef<TContent = string | object> {
   /** Get current content (format depends on editor type) */
-  getContent(): string | object
+  getContent(): TContent
   /** Set content (format depends on editor type) */
-  setContent(content: string | object): void
+  setContent(content: TContent, options?: { addToHistory?: boolean; emitChange?: boolean }): void
+  /** Set editable state (read-only vs editable) */
+  setEditable(editable: boolean): void
   /** Focus the editor */
   focus(): void
 }
@@ -70,6 +81,8 @@ export interface EditorDefinition {
  *
  * @example
  * detectEditorType('chapter1.md') // 'markdown'
+ * detectEditorType('paper.tex') // 'latex'
+ * detectEditorType('notes.txt') // 'plaintext'
  * detectEditorType('diagram.excalidraw') // 'excalidraw'
  * detectEditorType('flowchart.mmd') // 'mermaid'
  */
@@ -82,8 +95,16 @@ export function detectEditorType(filename: string): EditorType {
     case 'mmd':
     case 'mermaid':
       return 'mermaid'
+    case 'tex':
+    case 'latex':
+      return 'latex'
+    case 'txt':
+      return 'plaintext'
+    case 'md':
+    case 'markdown':
+      return 'markdown'
     default:
-      // Default to markdown for .md, .markdown, .txt, or any unknown extension
+      // Default to markdown for unknown extensions
       return 'markdown'
   }
 }

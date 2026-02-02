@@ -5,11 +5,13 @@ import { cn } from "@/lib/utils"
 
 const inputVariants = cva(
   // Base styles
-  "file:text-foreground placeholder:text-muted-foreground bg-card border-input w-full min-w-0 rounded-sm border px-3 py-1 text-base transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-[--opacity-disabled] md:text-sm font-sans " +
-  // Focus ring
-  "focus-visible:outline-[3px] focus-visible:outline-[var(--focus-ring-outer)] focus-visible:outline-offset-0 focus-visible:border-transparent focus-visible:shadow-[0_0_0_2px_var(--focus-ring-inner)] " +
+  "file:text-foreground placeholder:text-muted-foreground bg-card border-editor-input-border w-full min-w-0 rounded-sm border px-3 py-1 text-base transition-all outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-[--opacity-disabled] md:text-sm font-sans " +
+  // Hover state
+  "hover:border-primary/30 " +
+  // Focus state (green border)
+  "focus-visible:border-primary focus-visible:outline-none " +
   // Error state
-  "aria-invalid:outline-[3px] aria-invalid:outline-error aria-invalid:border-error",
+  "aria-invalid:border-error aria-invalid:hover:border-error aria-invalid:focus-visible:border-error",
   {
     variants: {
       size: {
@@ -35,7 +37,7 @@ function Input({
       type={type}
       data-slot="input"
       className={cn(inputVariants({ size, className }))}
-      style={{ boxShadow: "var(--shadow-1)" }}
+      style={{ boxShadow: "var(--editor-inset-shadow)" }}
       {...props}
     />
   )

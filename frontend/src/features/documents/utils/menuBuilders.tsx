@@ -1,4 +1,4 @@
-import { FileText, Folder, Upload, Pencil, Trash2, BookOpen, Info } from 'lucide-react'
+import { FileText, Folder, Upload, Pencil, Trash2, Info } from 'lucide-react'
 import type { TreeMenuItemConfig } from '@/shared/components/TreeItemWithContextMenu'
 
 /**
@@ -10,7 +10,6 @@ import type { TreeMenuItemConfig } from '@/shared/components/TreeItemWithContext
 interface DocumentMenuHandlers {
   onRename?: () => void
   onDelete?: () => void
-  onAddAsReference?: () => void
   onDetails?: () => void
 }
 
@@ -49,15 +48,6 @@ export function createDocumentMenuItems(
       icon: <Info className="size-3.5" />,
       onSelect: handlers.onDetails,
       separator: 'after',
-    })
-  }
-
-  if (handlers.onAddAsReference) {
-    items.push({
-      id: 'add-reference',
-      label: 'Add as reference',
-      icon: <BookOpen className="size-3.5" />,
-      onSelect: handlers.onAddAsReference,
     })
   }
 

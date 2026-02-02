@@ -10,6 +10,16 @@ import (
 	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
+// TreeToolMetadata returns metadata for the doc_tree tool.
+// This enables OCP compliance - tool self-describes for system prompt generation.
+func TreeToolMetadata() *ToolMetadata {
+	return &ToolMetadata{
+		Name:        "doc_tree",
+		Description: "See the project structure (folders and documents)",
+		Guideline:   "Use doc_tree(\"/\") early to understand what the user is working on",
+	}
+}
+
 // TreeTool implements the 'tree' tool for showing hierarchical structure of folders and documents.
 // Uses service layer for all data access (SOLID: DIP - depends on interfaces).
 // Access to /.meridian/** is DENIED - use dedicated skill list API instead.

@@ -121,7 +121,7 @@ function PrivacyPage() {
               For privacy-related questions or requests, contact us at{' '}
               <a
                 href="mailto:dev.jimm.py@gmail.com"
-                className="text-accent hover:underline"
+                className="text-primary hover:underline"
               >
                 dev.jimm.py@gmail.com
               </a>

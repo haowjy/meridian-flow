@@ -9,8 +9,6 @@ export interface ThreadRequestOptions {
   reasoning: ReasoningLevel
   /** Whether the selected model supports tool calling (doc_edit, doc_view, etc.) */
   supportsTools: boolean
-  // Note: tools are NOT user-configurable here - always uses DEFAULT_TOOLS when supportsTools is true
-  // Future: add disabledTools: string[] for opt-out of specific tools
 }
 
 export const DEFAULT_TOOLS = [

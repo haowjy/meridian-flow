@@ -33,7 +33,8 @@ type FolderRepository interface {
 	Delete(ctx context.Context, id, projectID string) error
 
 	// ListChildren lists immediate child folders
-	ListChildren(ctx context.Context, folderID *string, projectID string) ([]docsystem.Folder, error)
+	// If opts is nil, uses default options (IncludeHidden: false)
+	ListChildren(ctx context.Context, folderID *string, projectID string, opts *FolderFilterOptions) ([]docsystem.Folder, error)
 
 	// CreateIfNotExists creates a folder only if it doesn't exist
 	CreateIfNotExists(ctx context.Context, projectID string, parentID *string, name string) (*docsystem.Folder, error)

@@ -25,6 +25,45 @@ feature: "UI Components"
 
 ---
 
+## Component Inventory
+
+**Location**: `frontend/src/shared/components/ui/`
+
+| Component | Purpose | Variants | Status |
+|-----------|---------|----------|--------|
+| Alert Dialog | Modal confirmations | - | ✅ |
+| Button | Interactive buttons | default, destructive, outline, ghost, link, primary | ✅ |
+| Card | Content containers | - | ✅ |
+| Checkbox | Toggle inputs | - | ✅ |
+| Collapsible | Expandable sections | - | ✅ |
+| Context Menu | Right-click menus | - | ✅ |
+| Dialog | Modal dialogs | - | ✅ |
+| Dropdown Menu | Action menus | - | ✅ |
+| Hover Card | Hover tooltips | - | ✅ |
+| Input | Single-line text input | - | ✅ |
+| Label | Form labels | default, editorial | ✅ |
+| Resizable | Resizable panels | - | ✅ |
+| Scroll Area | Custom scrollbars | - | ✅ |
+| Switch | Toggle switches | - | ✅ |
+| Textarea | Multi-line text input | - | ✅ |
+| Tooltip | Hover hints | - | ✅ |
+| **Custom:** CompactBreadcrumb | Breadcrumb navigation | - | ✅ |
+| **Custom:** StatusBadge | Save status indicator | Saved, Saving, Error | ✅ |
+
+**Total**: 18 components (16 shadcn/ui + 2 custom)
+
+---
+
+## Recent Changes
+
+**Theme v3 Migration** (h/skills branch):
+- Button: `accent` variant → `primary` variant (uses sage green)
+- Label: Added `editorial` variant (uppercase, tracking-wide)
+- Textarea: New component added for multi-line input
+- Color semantics: `primary` (sage) for interactive, `favorite` (gold) for special emphasis
+
+---
+
 ## Files
 
 **shadcn/ui**: `frontend/src/shared/components/ui/`

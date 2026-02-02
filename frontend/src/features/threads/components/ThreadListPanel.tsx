@@ -1,21 +1,23 @@
-import { useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useState, useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { Plus } from 'lucide-react'
+import { Plus, Search } from 'lucide-react'
 import { useThreadStore } from '@/core/stores/useThreadStore'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { useLoadingView } from '@/core/hooks'
 import { useThreadsForProject } from '@/features/threads/hooks/useThreadsForProject'
-import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { Button } from '@/shared/components/ui/button'
-import { ThreadListHeader } from './ThreadListHeader'
-import { ThreadList } from './ThreadList'
+import { Input } from '@/shared/components/ui/input'
+import { LeftPanelHeader } from '@/shared/components/layout'
+import { buildThreadTree } from '../utils/buildThreadTree'
+import { ThreadTree } from './ThreadTree'
 import { DeleteThreadDialog } from './DeleteThreadDialog'
-import { useUserProfile, useAuthActions, UserMenuButton } from '@/features/auth'
+import { ThreadListEmpty } from './ThreadListEmpty'
 import type { Thread } from '@/features/threads/types'
 
 interface ThreadListPanelProps {
   projectId: string
+  /** Callback after selecting a thread (e.g., for mobile navigation) */
+  onThreadSelected?: () => void
 }
 
 /**
@@ -28,12 +30,12 @@ interface ThreadListPanelProps {
  * - Know about turn/streaming details (center panel concern).
  * - Render thread contents (delegated to ActiveThreadView).
  */
-export function ThreadListPanel({ projectId }: ThreadListPanelProps) {
-  const navigate = useNavigate()
+export function ThreadListPanel({ projectId, onThreadSelected }: ThreadListPanelProps) {
   const { threads, status, isLoading } = useThreadsForProject(projectId)
   const view = useLoadingView({ status, hasData: threads.length > 0 })
 
-  // State for delete dialog and rename mode
+  // State for search, delete dialog, and rename mode
+  const [searchQuery, setSearchQuery] = useState('')
   const [threadToDelete, setThreadToDelete] = useState<Thread | null>(null)
   const [renamingThreadId, setRenamingThreadId] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -43,28 +45,30 @@ export function ThreadListPanel({ projectId }: ThreadListPanelProps) {
     renameThread: s.renameThread,
   })))
 
-  const { activeThreadId, setActiveThread, bumpThreadFocusVersion, setMobileActivePanel } = useUIStore(useShallow((s) => ({
+  const { activeThreadId, setActiveThread, bumpThreadFocusVersion, setLeftPanelView } = useUIStore(useShallow((s) => ({
     activeThreadId: s.activeThreadId,
     setActiveThread: s.setActiveThread,
     bumpThreadFocusVersion: s.bumpThreadFocusVersion,
-    setMobileActivePanel: s.setMobileActivePanel,
+    setLeftPanelView: s.setLeftPanelView,
   })))
-
-  // User profile for bottom menu
-  const { profile, status: profileStatus } = useUserProfile()
-  const { signOut } = useAuthActions()
 
   const handleNewThread = () => {
     // Clear active thread to show cold start UI - thread is created atomically with first message
     setActiveThread(null)
+    // Always switch to chat view so the composer is visible after clicking "+"/New.
+    // The rail owns navigation between "threads" and "chat".
+    setLeftPanelView('chat')
     // Always refocus thread input, even if already in cold-start state.
     bumpThreadFocusVersion()
   }
 
   const handleSelectThread = (threadId: string) => {
     setActiveThread(threadId)
-    setMobileActivePanel('activeThread') // Navigate to thread view on mobile
+    // Selecting a thread should immediately show the active chat.
+    setLeftPanelView('chat')
     // Actual turns/streaming load lives in center/ActiveThreadView, not here.
+    // On mobile, navigate to chat tab after selection
+    onThreadSelected?.()
   }
 
   // Rename handlers
@@ -104,39 +108,63 @@ export function ThreadListPanel({ projectId }: ThreadListPanelProps) {
       setIsDeleting(false)
     }
   }
+  const nodes = buildThreadTree(threads)
 
-  const handleBrandClick = () => {
-    navigate({ to: '/projects' })
-  }
+  // Filter nodes based on search query
+  const filteredNodes = useMemo(() => {
+    if (!searchQuery.trim()) return nodes
+    const query = searchQuery.toLowerCase()
+    return nodes.filter(node =>
+      node.title?.toLowerCase().includes(query)
+    )
+  }, [nodes, searchQuery])
+
+  // Title as leading content
+  const titleContent = (
+    <span className="font-medium text-sm">Threads</span>
+  )
 
   return (
-    <div className="thread-pane flex h-full flex-col bg-sidebar text-sidebar-foreground">
-      {/* Single scroll container - scrollbar extends to top */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
-        {/* Sticky Header + New Thread Button */}
-        <div className="sticky top-0 z-10 bg-sidebar relative">
-          <ThreadListHeader onBrandClick={handleBrandClick} />
+    <div className="thread-pane flex h-full flex-col bg-background text-foreground">
+      {/* Header with title only - search and new button moved to content area */}
+      <div className="shrink-0 border-b">
+        <LeftPanelHeader
+          leading={titleContent}
+        />
+      </div>
 
-          {/* New Thread Button */}
-          <div className="px-3 pt-2">
+      {/* Single scroll container */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
+        {/* Max-width wrapper for readability when panel is wide */}
+        <div className="w-full max-w-3xl mx-auto">
+          {/* Search + New Thread row - sticky within content area */}
+          <div className="flex items-center gap-2 px-3 py-2 sticky top-0 bg-background z-10">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+              <Input
+                type="search"
+                placeholder="Search threads..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-8 h-8 text-sm"
+              />
+            </div>
             <Button
-              className="w-full"
+              size="icon"
+              aria-label="New thread"
               disabled={isLoading}
               onClick={handleNewThread}
+              className="shrink-0 size-8"
             >
-              <Plus className="size-4 mr-2" />
-              New Thread
+              <Plus className="size-4 md:size-3.5" />
             </Button>
           </div>
 
-          <HeaderGradientFade variant="sidebar" />
-        </div>
-
-        {/* Thread List Content */}
-        <div className="thread-pane-body pt-3">
+          {/* Thread List Content */}
+          <div className="thread-pane-body">
           {view === 'content' && (
-            <ThreadList
-              threads={threads}
+            <ThreadTree
+              nodes={filteredNodes}
               activeThreadId={activeThreadId}
               isLoading={isLoading}
               renamingThreadId={renamingThreadId}
@@ -147,20 +175,19 @@ export function ThreadListPanel({ projectId }: ThreadListPanelProps) {
               onDelete={handleDeleteClick}
             />
           )}
+
+          {view === 'empty' && (
+            <ThreadListEmpty onNewThread={handleNewThread} />
+          )}
+
+          {view === 'error' && (
+            <div className="p-4 text-sm text-muted-foreground">
+              Failed to load threads.
+            </div>
+          )}
+        </div>
         </div>
       </div>
-
-      {/* User profile menu at bottom of sidebar */}
-      {profileStatus === 'authenticated' && profile && (
-        <div className="shrink-0 border-t border-border p-2">
-          <UserMenuButton
-            profile={profile}
-            onSettings={() => navigate({ to: '/settings' })}
-            onSignOut={signOut}
-            menuSide="top"
-          />
-        </div>
-      )}
 
       {/* Delete confirmation dialog */}
       <DeleteThreadDialog

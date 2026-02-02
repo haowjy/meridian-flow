@@ -16,19 +16,6 @@ type OpenRouterAdapter struct {
 	provider llmprovider.Provider
 }
 
-// NewOpenRouterAdapter creates a new OpenRouter adapter using the library's provider.
-// DEPRECATED: Use NewOpenRouterAdapterWithProvider for factory-based creation
-func NewOpenRouterAdapter(apiKey string) (*OpenRouterAdapter, error) {
-	provider, err := openrouter.NewProvider(apiKey)
-	if err != nil {
-		return nil, err
-	}
-
-	return &OpenRouterAdapter{
-		provider: provider,
-	}, nil
-}
-
 // NewOpenRouterAdapterWithProvider creates a new OpenRouter adapter from an existing provider.
 // Used by provider factory for dynamic provider creation.
 func NewOpenRouterAdapterWithProvider(provider llmprovider.Provider) *OpenRouterAdapter {

@@ -75,7 +75,7 @@ func (td *ToolDefinition) ToLibraryTool() (*llmprovider.Tool, error) {
 	// Minimal format: {"name": "web_search"}
 	if td.Name != "" {
 		// Check if this is a web search variant (tavily_web_search, brave_web_search, etc.)
-		// These should be treated as custom backend tools with ExecutionSide: Server
+		// These should be treated as custom local tools with ExecutionSide: Local
 		if isWebSearchVariant(td.Name) {
 			// Get the full tool definition (all variants map to same web_search schema)
 			fullDef := GetToolDefinitionByName(td.Name)
@@ -332,7 +332,7 @@ func getWebSearchToolDefinition() ToolDefinition {
 
 // isWebSearchVariant returns true if the tool name is a web search provider variant.
 // Web search variants (tavily_web_search, brave_web_search, etc.) should be treated
-// as custom backend tools with ExecutionSide: Server, not provider-side tools.
+// as custom local tools with ExecutionSide: Local, not provider-side tools.
 func isWebSearchVariant(name string) bool {
 	switch name {
 	case "tavily_web_search", "brave_web_search", "serper_web_search", "exa_web_search":

@@ -1,10 +1,13 @@
 import { createClient } from '@/core/supabase/client'
+import { makeLogger } from '@/core/lib/logger'
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import { InlineError } from '@/shared/components/InlineError'
 import { CheckCircle } from 'lucide-react'
 import { FormEvent, useState } from 'react'
+
+const log = makeLogger('login-form')
 
 export function LoginForm() {
     const supabase = createClient()
@@ -31,7 +34,7 @@ export function LoginForm() {
                 window.location.href = '/projects'
             }
         } catch (err) {
-            console.error('Email login failed', err)
+            log.error('Email login failed', err)
             setError('An unexpected error occurred')
         } finally {
             setIsLoading(false)
@@ -57,7 +60,7 @@ export function LoginForm() {
                 setIsSignUp(false)
             }
         } catch (err) {
-            console.error('Email sign up failed', err)
+            log.error('Email sign up failed', err)
             setError('An unexpected error occurred')
         } finally {
             setIsLoading(false)
@@ -79,7 +82,7 @@ export function LoginForm() {
                 setError(authError.message)
             }
         } catch (err) {
-            console.error('Google login failed', err)
+            log.error('Google login failed', err)
             setError('An unexpected error occurred')
         }
     }

@@ -34,7 +34,6 @@ type TreeDocument struct {
 	ProjectID string
 	FolderID  *string // Parent folder ID (nil = root)
 	Name      string
-	Slug      string
 	Extension string
 	Path      string // Normalized path with extension (e.g., "Characters/Heroes/Aria.md")
 	UpdatedAt time.Time

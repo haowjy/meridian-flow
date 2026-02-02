@@ -5,7 +5,6 @@ export type {
   SkillSyncState,
   CreateSkillRequest,
   UpdateSkillRequest,
-  ReorderSkillsRequest,
 } from './types'
 
 // Hooks
@@ -16,6 +15,5 @@ export {
   SkillListPanel,
   SkillList,
   SkillListItem,
-  SkillDialog,
   DeleteSkillDialog,
 } from './components'

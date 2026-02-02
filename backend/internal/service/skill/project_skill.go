@@ -2,29 +2,26 @@ package skill
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
-	"strings"
 	"time"
 
 	"meridian/internal/domain"
-	docsysModels "meridian/internal/domain/models/docsystem"
 	models "meridian/internal/domain/models/skill"
-	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	"meridian/internal/domain/repositories"
+	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	skillRepo "meridian/internal/domain/repositories/skill"
 	"meridian/internal/domain/services"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	skillSvc "meridian/internal/domain/services/skill"
-	"meridian/internal/service/identifier"
 )
 
 // projectSkillService implements the ProjectSkillService interface
 type projectSkillService struct {
 	skillRepo    skillRepo.ProjectSkillRepository
 	folderRepo   docsysRepo.FolderRepository
-	documentRepo docsysRepo.DocumentRepository
 	namespaceSvc docsysSvc.NamespaceService
 	authorizer   services.ResourceAuthorizer
 	txManager    repositories.TransactionManager
@@ -35,7 +32,6 @@ type projectSkillService struct {
 func NewProjectSkillService(
 	skillRepo skillRepo.ProjectSkillRepository,
 	folderRepo docsysRepo.FolderRepository,
-	documentRepo docsysRepo.DocumentRepository,
 	namespaceSvc docsysSvc.NamespaceService,
 	authorizer services.ResourceAuthorizer,
 	txManager repositories.TransactionManager,
@@ -44,7 +40,6 @@ func NewProjectSkillService(
 	return &projectSkillService{
 		skillRepo:    skillRepo,
 		folderRepo:   folderRepo,
-		documentRepo: documentRepo,
 		namespaceSvc: namespaceSvc,
 		authorizer:   authorizer,
 		txManager:    txManager,
@@ -52,18 +47,14 @@ func NewProjectSkillService(
 	}
 }
 
-// skillMDPath returns the standard path to a skill's SKILL.md file
-func skillMDPath(name string) string {
-	return fmt.Sprintf(".meridian/skills/%s/SKILL.md", name)
-}
-
 // validateSkillName validates the skill name format
 func validateSkillName(name string) error {
 	// Skill names should be URL-safe identifiers
-	// Allowed: lowercase letters, numbers, hyphens
-	matched, _ := regexp.MatchString(`^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$`, name)
+	// Allowed: letters (mixed case), numbers, hyphens
+	// Must start and end with alphanumeric (not hyphen)
+	matched, _ := regexp.MatchString(`^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$`, name)
 	if !matched {
-		return fmt.Errorf("invalid skill name: must be lowercase alphanumeric with hyphens, e.g., 'writing-coach'")
+		return fmt.Errorf("invalid skill name: must be alphanumeric with hyphens, cannot start or end with hyphen, e.g., 'WritingCoach' or 'my-skill'")
 	}
 	if len(name) < 1 || len(name) > 50 {
 		return fmt.Errorf("skill name must be between 1 and 50 characters")
@@ -71,7 +62,8 @@ func validateSkillName(name string) error {
 	return nil
 }
 
-// CreateSkill creates a new skill with its folder structure and SKILL.md
+// CreateSkill creates a new skill with its folder structure
+// Content is stored in DB, folder exists for references/export
 func (s *projectSkillService) CreateSkill(ctx context.Context, userID string, req skillSvc.CreateSkillRequest) (*models.ProjectSkill, error) {
 	// Validate skill name
 	if err := validateSkillName(req.Name); err != nil {
@@ -104,44 +96,36 @@ func (s *projectSkillService) CreateSkill(ctx context.Context, userID string, re
 	}
 	nextPosition := len(existingSkills)
 
+	// Generate default content if not provided
+	content := req.Content
+	if content == "" {
+		content = fmt.Sprintf("# %s\n\n<!-- Add your skill instructions here -->\n", req.Name)
+	}
+
 	var skill *models.ProjectSkill
 
 	// Use transaction for atomicity
 	err = s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
-		// 1. Ensure /.meridian/skills/ exists
-		skillsFolder, err := s.namespaceSvc.EnsureMeridianSubfolder(txCtx, req.ProjectID, "skills")
+		// 1. Create skill folder (/.meridian/skills/<name>/) using shared helper
+		// Folder exists for future reference documents and export functionality
+		skillFolderID, err := s.ensureSkillFolder(txCtx, &models.ProjectSkill{
+			ProjectID: req.ProjectID,
+			Name:      req.Name,
+		})
 		if err != nil {
-			return err // Pass through HTTPError directly
+			return err
 		}
 
-		// 2. Create skill folder (/.meridian/skills/<name>/)
+		// 2. Create DB record with content (no SKILL.md document)
 		now := time.Now()
-		skillFolder, err := s.folderRepo.CreateHiddenIfNotExists(txCtx, req.ProjectID, &skillsFolder.ID, req.Name)
-		if err != nil {
-			return err // Pass through HTTPError directly
-		}
-
-		// 3. Create SKILL.md document (content only, no frontmatter - metadata is in DB)
-		content := generateSkillContent(req)
-		doc, err := s.createSkillDocument(txCtx, req.ProjectID, skillFolder.ID, content, now)
-		if err != nil {
-			return err // Pass through HTTPError directly
-		}
-
-		s.logger.Debug("created SKILL.md document",
-			"project_id", req.ProjectID,
-			"document_id", doc.ID,
-			"skill_name", req.Name,
-		)
-
-		// 4. Create DB record with metadata
 		skill = &models.ProjectSkill{
 			ProjectID:        req.ProjectID,
-			InstanceFolderID: skillFolder.ID,
+			InstanceFolderID: skillFolderID,
 			Name:             req.Name,
-			DisplayName:      req.DisplayName,
 			Description:      req.Description,
+			Content:          content,
 			Position:         nextPosition,
+			Enabled:          true, // Skills are enabled by default
 			SyncState:        models.SyncStateDetached,
 			IsDirty:          false,
 			CreatedAt:        now,
@@ -179,44 +163,6 @@ func (s *projectSkillService) CreateSkill(ctx context.Context, userID string, re
 	return skill, nil
 }
 
-// generateSkillContent generates the SKILL.md content (body only, no frontmatter)
-// Metadata is stored in the DB's JSONB column, not in the file
-func generateSkillContent(req skillSvc.CreateSkillRequest) string {
-	// Content (if provided) or default template
-	if req.Content != "" {
-		return req.Content
-	}
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("# %s\n\n", req.DisplayName))
-	sb.WriteString("<!-- Add your skill instructions here -->\n")
-	return sb.String()
-}
-
-// createSkillDocument creates the SKILL.md document in the skill folder
-func (s *projectSkillService) createSkillDocument(ctx context.Context, projectID, folderID, content string, now time.Time) (*docsysModels.Document, error) {
-	// Create the SKILL.md document directly via repository
-	// This is acceptable within a transaction context
-	doc := &docsysModels.Document{
-		ProjectID: projectID,
-		FolderID:  &folderID,
-		Name:      "SKILL",
-		Extension: ".md",
-		Content:   content,
-		Metadata:  docsysModels.DocumentMetadata{}, // Satisfies NOT NULL constraint
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-
-	// Generate proper slug using identifier package (consistent with document service)
-	doc.Slug = identifier.GenerateSlug("SKILL")
-
-	if err := s.documentRepo.Create(ctx, doc); err != nil {
-		return nil, err
-	}
-
-	return doc, nil
-}
 
 // ListSkills lists all skills for a project (metadata only)
 func (s *projectSkillService) ListSkills(ctx context.Context, userID, projectID string) ([]*models.ProjectSkill, error) {
@@ -228,72 +174,26 @@ func (s *projectSkillService) ListSkills(ctx context.Context, userID, projectID 
 	return s.skillRepo.ListByProject(ctx, projectID)
 }
 
-// GetSkill retrieves a skill by ID with content
-func (s *projectSkillService) GetSkill(ctx context.Context, userID, projectID, skillID string) (*models.ProjectSkillWithContent, error) {
+// GetSkill retrieves a skill by ID (content included in model)
+func (s *projectSkillService) GetSkill(ctx context.Context, userID, projectID, skillID string) (*models.ProjectSkill, error) {
 	// Authorize
 	if err := s.authorizer.CanAccessProject(ctx, userID, projectID); err != nil {
 		return nil, err
 	}
 
-	skill, err := s.skillRepo.GetByID(ctx, skillID, projectID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Load content from SKILL.md
-	content, err := s.loadContent(ctx, skill)
-	if err != nil {
-		s.logger.Warn("failed to load skill content",
-			"skill_id", skillID,
-			"error", err,
-		)
-		content = "" // Continue without content
-	}
-
-	return &models.ProjectSkillWithContent{
-		ProjectSkill: *skill,
-		Content:      content,
-	}, nil
+	return s.skillRepo.GetByID(ctx, skillID, projectID)
 }
 
-// GetSkillByName retrieves a skill by name with content
-func (s *projectSkillService) GetSkillByName(ctx context.Context, userID, projectID, name string) (*models.ProjectSkillWithContent, error) {
+// GetSkillByName retrieves a skill by name (content included in model)
+func (s *projectSkillService) GetSkillByName(ctx context.Context, userID, projectID, name string) (*models.ProjectSkill, error) {
 	// Authorize
 	if err := s.authorizer.CanAccessProject(ctx, userID, projectID); err != nil {
 		return nil, err
 	}
 
-	skill, err := s.skillRepo.GetByName(ctx, name, projectID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Load content from SKILL.md
-	content, err := s.loadContent(ctx, skill)
-	if err != nil {
-		s.logger.Warn("failed to load skill content",
-			"skill_name", name,
-			"error", err,
-		)
-		content = ""
-	}
-
-	return &models.ProjectSkillWithContent{
-		ProjectSkill: *skill,
-		Content:      content,
-	}, nil
+	return s.skillRepo.GetByName(ctx, name, projectID)
 }
 
-// loadContent loads the SKILL.md content for a skill
-func (s *projectSkillService) loadContent(ctx context.Context, skill *models.ProjectSkill) (string, error) {
-	path := skillMDPath(skill.Name)
-	doc, err := s.documentRepo.GetByPath(ctx, path, skill.ProjectID)
-	if err != nil {
-		return "", err
-	}
-
-	return doc.Content, nil
-}
 
 // UpdateSkill updates a skill's metadata and/or content
 func (s *projectSkillService) UpdateSkill(ctx context.Context, userID, projectID, skillID string, req skillSvc.UpdateSkillRequest) (*models.ProjectSkill, error) {
@@ -307,12 +207,37 @@ func (s *projectSkillService) UpdateSkill(ctx context.Context, userID, projectID
 		return nil, err
 	}
 
+	// Track name change BEFORE updating skill.Name (used later for folder rename)
+	nameChanged := req.Name != nil && *req.Name != skill.Name
+
 	// Update basic fields if provided
-	if req.DisplayName != nil {
-		skill.DisplayName = *req.DisplayName
+	if nameChanged {
+		if err := validateSkillName(*req.Name); err != nil {
+			return nil, err
+		}
+
+		// Enforce uniqueness per project (active skills only).
+		existingSkill, err := s.skillRepo.GetByName(ctx, *req.Name, projectID)
+		if err == nil && existingSkill != nil && existingSkill.ID != skill.ID {
+			return nil, &domain.ConflictError{
+				Message:      fmt.Sprintf("a skill named %q already exists in this project", *req.Name),
+				ResourceType: "skill",
+				ResourceID:   existingSkill.ID,
+			}
+		}
+
+		skill.Name = *req.Name
 	}
 	if req.Description != nil {
 		skill.Description = *req.Description
+	}
+	if req.Content != nil {
+		skill.Content = *req.Content
+		skill.IsDirty = true
+		skill.SyncState = models.SyncStateModified
+	}
+	if req.Enabled != nil {
+		skill.Enabled = *req.Enabled
 	}
 
 	// Update metadata fields using getter/setter pattern
@@ -325,30 +250,44 @@ func (s *projectSkillService) UpdateSkill(ctx context.Context, userID, projectID
 	}
 	skill.SetMetadata(meta)
 
-	// Mark dirty when content changes (before update, so single write)
-	if req.Content != nil {
-		skill.IsDirty = true
-		skill.SyncState = models.SyncStateModified
-	}
-
-	// Use transaction for atomicity of skill + document updates
+	// Use transaction for atomicity of skill + folder updates
 	err = s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
-		// Update skill record
-		if err := s.skillRepo.Update(txCtx, skill); err != nil {
-			return err
+		// If the skill's name changed, rename the instance folder to keep the structure
+		// consistent: /.meridian/skills/<name>/.
+		// NOTE: Only attempt folder lookup/rename when name actually changed, not just when
+		// name is provided. Frontend always sends name on every save.
+		if nameChanged {
+			folder, err := s.folderRepo.GetByID(txCtx, skill.InstanceFolderID, projectID)
+			if err != nil {
+				// Folder missing (corrupted/legacy data) - recreate it with the new name
+				var notFoundErr *domain.NotFoundError
+				if errors.As(err, &notFoundErr) {
+					s.logger.Warn("skill folder missing, recreating",
+						"skill_id", skill.ID,
+						"skill_name", skill.Name,
+						"missing_folder_id", skill.InstanceFolderID,
+					)
+					newFolderID, err := s.ensureSkillFolder(txCtx, skill)
+					if err != nil {
+						return err
+					}
+					skill.InstanceFolderID = newFolderID
+				} else {
+					return err
+				}
+			} else if folder.Name != skill.Name {
+				// Folder exists - rename it
+				folder.Name = skill.Name
+				folder.UpdatedAt = time.Now()
+				if err := s.folderRepo.Update(txCtx, folder); err != nil {
+					return err
+				}
+			}
 		}
 
-		// Update SKILL.md content if provided
-		if req.Content != nil {
-			path := skillMDPath(skill.Name)
-			doc, err := s.documentRepo.GetByPath(txCtx, path, skill.ProjectID)
-			if err != nil {
-				return err
-			}
-			doc.Content = *req.Content
-			if err := s.documentRepo.Update(txCtx, doc); err != nil {
-				return err
-			}
+		// Update skill record (content is stored in DB)
+		if err := s.skillRepo.Update(txCtx, skill); err != nil {
+			return err
 		}
 
 		return nil
@@ -366,6 +305,24 @@ func (s *projectSkillService) UpdateSkill(ctx context.Context, userID, projectID
 	return skill, nil
 }
 
+// ensureSkillFolder ensures the skill's instance folder exists, creating it if missing.
+// Returns the folder ID (may be new if recreated).
+func (s *projectSkillService) ensureSkillFolder(ctx context.Context, skill *models.ProjectSkill) (string, error) {
+	// 1. Ensure /.meridian/skills/ exists
+	skillsFolder, err := s.namespaceSvc.EnsureMeridianSubfolder(ctx, skill.ProjectID, "skills")
+	if err != nil {
+		return "", err
+	}
+
+	// 2. Create skill folder (/.meridian/skills/<name>/)
+	newFolder, err := s.folderRepo.CreateHiddenIfNotExists(ctx, skill.ProjectID, &skillsFolder.ID, skill.Name)
+	if err != nil {
+		return "", err
+	}
+
+	return newFolder.ID, nil
+}
+
 // ReorderSkills updates the positions of skills
 func (s *projectSkillService) ReorderSkills(ctx context.Context, userID, projectID string, skillIDs []string) error {
 	// Authorize
@@ -376,7 +333,7 @@ func (s *projectSkillService) ReorderSkills(ctx context.Context, userID, project
 	return s.skillRepo.UpdatePositions(ctx, projectID, skillIDs)
 }
 
-// DeleteSkill soft-deletes a skill and its associated folder/documents
+// DeleteSkill soft-deletes a skill and its associated folder
 func (s *projectSkillService) DeleteSkill(ctx context.Context, userID, projectID, skillID string) error {
 	// Authorize
 	if err := s.authorizer.CanAccessProject(ctx, userID, projectID); err != nil {
@@ -391,45 +348,36 @@ func (s *projectSkillService) DeleteSkill(ctx context.Context, userID, projectID
 
 	// Use transaction to ensure atomicity of skill + folder deletion
 	return s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
-		// 1. Soft-delete the skill record first
+		// 1. Soft-delete the skill record first (source of truth)
 		if err := s.skillRepo.Delete(txCtx, skillID, projectID); err != nil {
 			return err
 		}
 
-		// 2. Soft-delete all documents in the skill folder
-		docs, err := s.documentRepo.ListByFolder(txCtx, &skill.InstanceFolderID, projectID)
-		if err != nil {
-			return err
-		}
-
-		for _, doc := range docs {
-			if err := s.documentRepo.Delete(txCtx, doc.ID, projectID); err != nil {
-				s.logger.Warn("failed to delete skill document",
-					"skill_id", skillID,
-					"document_id", doc.ID,
-					"error", err,
-				)
-				// Continue deleting other documents
-			}
-		}
-
-		// 3. Soft-delete the skill folder
+		// 2. Soft-delete the skill folder (content is in DB, folder is for references)
+		// Handle missing folder gracefully - skill record is source of truth
 		if err := s.folderRepo.Delete(txCtx, skill.InstanceFolderID, projectID); err != nil {
-			return err
+			var notFoundErr *domain.NotFoundError
+			if !errors.As(err, &notFoundErr) {
+				return err // Unexpected error - fail
+			}
+			// Folder missing (corrupted/legacy data) - log but continue
+			s.logger.Warn("skill folder missing during deletion, proceeding",
+				"skill_id", skillID,
+				"folder_id", skill.InstanceFolderID,
+			)
 		}
 
-		s.logger.Info("skill deleted with folder and documents",
+		s.logger.Info("skill deleted",
 			"skill_id", skillID,
 			"project_id", projectID,
 			"folder_id", skill.InstanceFolderID,
-			"documents_deleted", len(docs),
 		)
 
 		return nil
 	})
 }
 
-// LoadSkillContent loads the content of a skill's SKILL.md file
+// LoadSkillContent loads the content of a skill (from DB)
 // This is used by the skill_invoke tool
 func (s *projectSkillService) LoadSkillContent(ctx context.Context, userID, projectID, name string) (string, error) {
 	// Authorize
@@ -442,11 +390,5 @@ func (s *projectSkillService) LoadSkillContent(ctx context.Context, userID, proj
 		return "", err
 	}
 
-	content, err := s.loadContent(ctx, skill)
-	if err != nil {
-		return "", err
-	}
-
-	// Content no longer has frontmatter, return as-is
-	return content, nil
+	return skill.Content, nil
 }

@@ -11,6 +11,16 @@ import (
 	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
+// ViewToolMetadata returns metadata for the doc_view tool.
+// This enables OCP compliance - tool self-describes for system prompt generation.
+func ViewToolMetadata() *ToolMetadata {
+	return &ToolMetadata{
+		Name:        "doc_view",
+		Description: "Read any document or list folder contents",
+		Guideline:   "Before suggesting edits, use doc_view to see current content",
+	}
+}
+
 // ViewTool implements the 'view' tool for reading document content or listing folder contents.
 // Uses service layer for all data access (SOLID: DIP - depends on interfaces).
 // Supports namespace routing: doc_view CAN read /.meridian/** paths for reference materials.

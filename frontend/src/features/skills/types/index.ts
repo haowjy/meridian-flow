@@ -4,5 +4,4 @@ export type {
   SkillSyncState,
   CreateSkillRequest,
   UpdateSkillRequest,
-  ReorderSkillsRequest,
 } from './skill'
