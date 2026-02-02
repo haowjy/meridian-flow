@@ -73,14 +73,18 @@ export interface TurnBlock {
 /**
  * Request parameters stored with each turn.
  * Used to restore original settings when editing/regenerating turns.
+ *
+ * Note: Backend sends snake_case (thinking_enabled, thinking_level, max_tokens),
+ * but fetchAPI's convertKeysToCamelCase transforms all keys. This interface
+ * uses camelCase to match what the frontend actually receives.
  */
 export interface RequestParams {
   provider?: string
   model?: string
   temperature?: number
-  max_tokens?: number
-  thinking_enabled?: boolean
-  thinking_level?: 'low' | 'medium' | 'high'
+  maxTokens?: number
+  thinkingEnabled?: boolean
+  thinkingLevel?: 'low' | 'medium' | 'high'
   // Additional params can be accessed via the Record type
   [key: string]: unknown
 }
