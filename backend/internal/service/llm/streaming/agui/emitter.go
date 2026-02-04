@@ -210,3 +210,36 @@ func (e *Emitter) EmitToolCallResult(messageID, toolCallID, contentJSON string) 
 func (e *Emitter) IDFactory() *IDFactory {
 	return e.idFactory
 }
+
+// EmitInterjectionUpdated sends an INTERJECTION_UPDATED event when the buffer changes.
+// This allows the frontend to display the current interjection content.
+func (e *Emitter) EmitInterjectionUpdated(content string, length int) {
+	turnID := e.idFactory.TurnID()
+
+	evt := NewMeridianInterjectionUpdatedEvent(turnID, content, length)
+	if err := e.emitMeridianEvent(MeridianEventTypeInterjectionUpdated, evt); err != nil {
+		e.logger.Warn("failed to emit INTERJECTION_UPDATED",
+			"turn_id", turnID,
+			"error", err,
+		)
+	}
+}
+
+// EmitStreamSwitch sends a STREAM_SWITCH event when an interjection triggers a new stream.
+// Frontend should merge the turns, update streaming state, and reconnect to the new stream.
+func (e *Emitter) EmitStreamSwitch(
+	prevAssistantTurnID string,
+	reason StreamSwitchReason,
+	userTurn any,
+	assistantTurn any,
+	streamURL string,
+) {
+	evt := NewMeridianStreamSwitchEvent(prevAssistantTurnID, reason, userTurn, assistantTurn, streamURL)
+	if err := e.emitMeridianEvent(MeridianEventTypeStreamSwitch, evt); err != nil {
+		e.logger.Warn("failed to emit STREAM_SWITCH",
+			"prev_turn_id", prevAssistantTurnID,
+			"reason", reason,
+			"error", err,
+		)
+	}
+}
