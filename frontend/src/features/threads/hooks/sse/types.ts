@@ -4,7 +4,7 @@
  * Shared types for the SSE event handling system.
  */
 
-import type { BlockType } from '@/features/threads/types'
+import type { BlockType, Turn } from '@/features/threads/types'
 import type { BlockTracker } from '../blockTracker'
 
 /**
@@ -54,6 +54,15 @@ export interface SSEStoreActions {
     blockType: BlockType | null
   ) => void
   notifyStreamEnded: (turnId: string) => void
+
+  // Interjection support
+  setInterjectionContent: (content: string | null) => void
+  applyStreamSwitch: (
+    prevTurnId: string,
+    userTurn: Turn,
+    assistantTurn: Turn,
+    streamUrl: string
+  ) => void
 
   // Tool stream store actions
   updateToolState: (

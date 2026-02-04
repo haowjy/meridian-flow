@@ -80,3 +80,77 @@ func NewMeridianRunErrorEvent(threadID, runID, turnID, message string, isCancell
 		IsCancelled: isCancelled,
 	}
 }
+
+// ============================================================================
+// Meridian Interjection Events
+//
+// These custom events support the interjection feature where users can
+// submit messages while an assistant turn is streaming.
+// ============================================================================
+
+// MeridianEventTypeInterjectionUpdated is emitted when an interjection buffer is updated.
+const MeridianEventTypeInterjectionUpdated = "INTERJECTION_UPDATED"
+
+// MeridianEventTypeStreamSwitch is emitted when an interjection triggers a stream switch.
+const MeridianEventTypeStreamSwitch = "STREAM_SWITCH"
+
+// MeridianInterjectionUpdatedEvent is sent when interjection content is updated.
+// Frontend uses this to display the pending interjection to the user.
+type MeridianInterjectionUpdatedEvent struct {
+	Type    string `json:"type"`
+	TurnID  string `json:"turnId"`            // The assistant turn this interjection targets
+	Content string `json:"content"`           // Current interjection buffer content
+	Length  int    `json:"length"`            // Buffer length in bytes
+}
+
+// NewMeridianInterjectionUpdatedEvent creates an INTERJECTION_UPDATED event.
+func NewMeridianInterjectionUpdatedEvent(turnID, content string, length int) *MeridianInterjectionUpdatedEvent {
+	return &MeridianInterjectionUpdatedEvent{
+		Type:    MeridianEventTypeInterjectionUpdated,
+		TurnID:  turnID,
+		Content: content,
+		Length:  length,
+	}
+}
+
+// StreamSwitchReason describes why a stream switch occurred.
+type StreamSwitchReason string
+
+const (
+	// StreamSwitchReasonToolBoundary indicates switch after tool execution.
+	StreamSwitchReasonToolBoundary StreamSwitchReason = "tool_boundary"
+	// StreamSwitchReasonNoToolsCompletion indicates switch at stream end without tools.
+	StreamSwitchReasonNoToolsCompletion StreamSwitchReason = "no_tools_completion"
+)
+
+// MeridianStreamSwitchEvent is sent when an interjection is injected and streaming
+// switches to a new assistant turn. Frontend should:
+// 1. Merge userTurn and assistantTurn into store
+// 2. Update streamingTurnId/streamingUrl
+// 3. Abort current SSE connection to trigger reconnect
+type MeridianStreamSwitchEvent struct {
+	Type                string             `json:"type"`
+	PrevAssistantTurnID string             `json:"prevAssistantTurnId"` // Turn that was streaming
+	Reason              StreamSwitchReason `json:"reason"`              // Why switch happened
+	UserTurn            any                `json:"userTurn"`            // Persisted user turn (interjection)
+	AssistantTurn       any                `json:"assistantTurn"`       // New streaming assistant turn
+	StreamURL           string             `json:"streamUrl"`           // URL for new SSE stream
+}
+
+// NewMeridianStreamSwitchEvent creates a STREAM_SWITCH event.
+func NewMeridianStreamSwitchEvent(
+	prevAssistantTurnID string,
+	reason StreamSwitchReason,
+	userTurn any,
+	assistantTurn any,
+	streamURL string,
+) *MeridianStreamSwitchEvent {
+	return &MeridianStreamSwitchEvent{
+		Type:                MeridianEventTypeStreamSwitch,
+		PrevAssistantTurnID: prevAssistantTurnID,
+		Reason:              reason,
+		UserTurn:            userTurn,
+		AssistantTurn:       assistantTurn,
+		StreamURL:           streamURL,
+	}
+}
