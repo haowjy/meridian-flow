@@ -17,9 +17,9 @@ func TestParseDisabledTools(t *testing.T) {
 
 	t.Run("string slice", func(t *testing.T) {
 		got := parseDisabledTools(docsystem.JSONMap{
-			"disabled_tools": []string{"doc_edit", "tavily_web_search"},
+			"disabled_tools": []string{"str_replace_based_edit_tool", "tavily_web_search"},
 		})
-		if !got["doc_edit"] || !got["tavily_web_search"] {
+		if !got["str_replace_based_edit_tool"] || !got["tavily_web_search"] {
 			t.Fatalf("expected disabled tools to be present, got %v", got)
 		}
 	})
@@ -35,18 +35,19 @@ func TestParseDisabledTools(t *testing.T) {
 }
 
 func TestResolveServerToolNames(t *testing.T) {
+	// Test with str_replace_based_edit_tool disabled
 	disabled := map[string]bool{
-		"doc_edit": true,
+		"str_replace_based_edit_tool": true,
 	}
 	got := resolveServerToolNames(true, disabled)
-	want := []string{"doc_view", "doc_search", "doc_tree", "tavily_web_search"}
+	want := []string{"doc_search", "doc_tree", "tavily_web_search"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("resolveServerToolNames mismatch\nwant=%v\ngot =%v", want, got)
 	}
 }
 
 func TestToolNamesToRequestParamsTools(t *testing.T) {
-	tools, err := toolNamesToRequestParamsTools([]string{"doc_view", "tavily_web_search"})
+	tools, err := toolNamesToRequestParamsTools([]string{"str_replace_based_edit_tool", "tavily_web_search"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -58,7 +59,7 @@ func TestToolNamesToRequestParamsTools(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected map tool definition, got %T", tools[0])
 	}
-	if first["name"] != "doc_view" {
-		t.Fatalf("expected first tool name doc_view, got %v", first["name"])
+	if first["name"] != "str_replace_based_edit_tool" {
+		t.Fatalf("expected first tool name str_replace_based_edit_tool, got %v", first["name"])
 	}
 }

@@ -31,6 +31,7 @@ This directory contains detailed documentation for all features in Meridian, org
 | **Context Menus** | Frontend | N/A | [x] Complete | Right-click actions for tree (create, rename, delete, import) |
 | **Thread/LLM** | Both | [x] Complete | [x] Complete | Turn branching, streaming, 3 providers working |
 | **Streaming (SSE)** | Both | [x] Complete | [x] Complete | Catchup, reconnection, race-free |
+| **Interjection** | Both | [x] Complete | [x] Complete | Send messages during streaming, stream switch |
 | **Tool Calling** | Backend | ✅ Complete | N/A | Auto-mapping, 3 built-in + 4 custom tools |
 | **AI Editing** | Both | ✅ Complete | ✅ Complete | Inline suggestions, accept/reject, CAS concurrency |
 | **State Management** | Frontend | N/A | [x] Complete | Zustand, IndexedDB, optimistic updates, retry queue |
@@ -97,6 +98,12 @@ This directory contains detailed documentation for all features in Meridian, org
 - Backend: SSE implementation, event types, buffer management
 - Frontend: useThreadSSE hook, 50ms buffered rendering, stop button
 - Catchup mechanism, reconnection handling, race-free persistence
+
+### [fb-interjection/](fb-interjection/)
+**Send messages while LLM is streaming**
+- Backend: Buffer management, injection at safe boundaries, stream switch
+- Frontend: Pending indicator, SSE event handling, automatic reconnection
+- Safe boundaries: after tool execution or at stream completion
 
 ### [b-tool-calling/](b-tool-calling/)
 **Tool calling system for LLM interactions**

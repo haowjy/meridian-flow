@@ -22,6 +22,7 @@ import { ToolInteractionBlock } from './ToolInteractionBlock'
 import { DocEditBlock } from './DocEditBlock'
 import { DocViewBlock } from './DocViewBlock'
 import { DocTreeBlock } from './DocTreeBlock'
+import { TextEditorBlock } from './TextEditorBlock'
 
 // =============================================================================
 // TYPES
@@ -44,10 +45,15 @@ export type ToolRendererFn = (
  * Registry of tool name to custom renderer.
  *
  * Pattern:
- * - Key: tool name from backend (e.g., 'doc_edit', 'doc_read')
+ * - Key: tool name from backend (e.g., 'str_replace_based_edit_tool', 'doc_tree')
  * - Value: Function that creates the component
  */
 const TOOL_RENDERERS: Record<string, ToolRendererFn> = {
+  // Unified text editor tool (matches Anthropic's text_editor_20250728)
+  str_replace_based_edit_tool: (toolUse, toolResult) =>
+    React.createElement(TextEditorBlock, { toolUse, toolResult }),
+
+  // Legacy tool names for backward compatibility
   doc_edit: (toolUse, toolResult) =>
     React.createElement(DocEditBlock, { toolUse, toolResult }),
 

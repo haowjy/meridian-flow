@@ -131,11 +131,11 @@ func SetupServices(
 	)
 
 	// Create formatter registry and register doc tool formatters
+	// str_replace_based_edit_tool is the unified view/edit tool matching Anthropic's text_editor_20250728
 	formatterRegistry := formatting.NewFormatterRegistry()
 	formatterRegistry.Register("doc_search", &formatting.DocSearchFormatter{})
-	formatterRegistry.Register("doc_view", &formatting.DocViewFormatter{})
+	formatterRegistry.Register("str_replace_based_edit_tool", &formatting.TextEditorFormatter{})
 	formatterRegistry.Register("doc_tree", formatting.NewDocTreeFormatter())
-	formatterRegistry.Register("doc_edit", &formatting.DocEditFormatter{})
 
 	// Create MessageBuilder service (pure conversion, no data loading)
 	messageBuilder := threadhistory.NewMessageBuilderService(

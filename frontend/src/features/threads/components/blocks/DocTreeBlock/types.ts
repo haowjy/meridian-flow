@@ -14,6 +14,8 @@ export type { DocTreeDocument, DocTreeFolder } from '@/types/docTree'
 
 export interface DocTreeInput {
   /** Unix-style folder path (default: "/") */
+  path?: string
+  /** Legacy parameter name for backward compatibility */
   folder?: string
   /** Depth to traverse (default: 2, max: 5) */
   depth?: number

@@ -11,11 +11,12 @@ import (
 //
 // NOTE: Web search routing uses the *requested* tool name "tavily_web_search" while
 // the actual function name exposed to providers is "web_search".
+//
+// str_replace_based_edit_tool is the unified view/edit tool matching Anthropic's text_editor_20250728.
 var serverDefaultToolOrder = []string{
-	"doc_view",
+	"str_replace_based_edit_tool",
 	"doc_search",
 	"doc_tree",
-	"doc_edit",
 }
 
 func parseDisabledTools(preferences docsystem.JSONMap) map[string]bool {

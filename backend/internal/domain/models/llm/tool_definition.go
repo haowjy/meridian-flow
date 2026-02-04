@@ -127,20 +127,18 @@ func ToLibraryTools(definitions []ToolDefinition) ([]llmprovider.Tool, error) {
 // These tools allow the LLM to explore the user's document repository.
 func GetReadOnlyToolDefinitions() []ToolDefinition {
 	return []ToolDefinition{
-		getViewToolDefinition(),
 		getTreeToolDefinition(),
 		getSearchToolDefinition(),
 	}
 }
 
 // GetDocumentToolDefinitions returns all document tool definitions (read + edit).
-// Includes both read-only tools (view, tree, search) and edit tools (doc_edit).
+// Includes text editor (unified view/edit), tree, and search tools.
 func GetDocumentToolDefinitions() []ToolDefinition {
 	return []ToolDefinition{
-		getViewToolDefinition(),
+		getTextEditorToolDefinition(),
 		getTreeToolDefinition(),
 		getSearchToolDefinition(),
-		getEditToolDefinition(),
 	}
 }
 
@@ -156,22 +154,74 @@ func GetAllToolDefinitions(includeWebSearch bool) []ToolDefinition {
 	return tools
 }
 
-// getViewToolDefinition returns the schema for the 'doc_view' tool.
-// This tool reads a document's content or lists a folder's contents.
-func getViewToolDefinition() ToolDefinition {
+// getTextEditorToolDefinition returns the schema for the 'str_replace_based_edit_tool' tool.
+// This is a unified tool that combines view and edit operations, matching Anthropic's text_editor_20250728 API.
+// For Anthropic provider, this maps directly to the native text_editor tool.
+//
+// Schema matches Anthropic's text_editor_20250728:
+// https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool
+func getTextEditorToolDefinition() ToolDefinition {
+	// NOTE: We intentionally control the textual order of `properties`.
+	// Some providers (notably Anthropic) may stream tool input keys following the schema's
+	// property order. If "file_text" appears before "path", the UI may not be able to
+	// display the destination file path until very late in the stream.
+	//
+	// The library's OrderedProperties handles this via the Order slice.
 	schema := llmprovider.NewToolInputSchema()
+
+	// Add properties in the order we want them to appear in JSON
+	// This ensures "path" appears before "file_text" in streamed output
+	schema.AddProperty("command", llmprovider.PropertySchema{
+		Type:        "string",
+		Enum:        []string{"view", "str_replace", "create", "insert"},
+		Description: "The command to execute: 'view' to read content, 'str_replace' to replace text, 'create' to make new file, 'insert' to add text at line",
+	}, -1)
 	schema.AddProperty("path", llmprovider.PropertySchema{
 		Type:        "string",
-		Description: "The Unix-style path to the document or folder (e.g., '/chapter-1.txt', '/drafts/outline.md', '/drafts'). Use '/' for the root folder.",
+		Description: "Unix-style path to document or folder (e.g., '/Chapter 5.md', '/characters/hero.md', '/drafts')",
 	}, -1)
+	schema.AddProperty("view_range", llmprovider.PropertySchema{
+		Type:        "array",
+		Description: "For view: optional [start_line, end_line] range. Use -1 for end_line to read to end of file.",
+	}, -1)
+	schema.AddProperty("file_text", llmprovider.PropertySchema{
+		Type:        "string",
+		Description: "For create: initial content for the new document",
+	}, -1)
+	schema.AddProperty("old_str", llmprovider.PropertySchema{
+		Type:        "string",
+		Description: "For str_replace: exact text to find and replace. Must match exactly, including whitespace and newlines.",
+	}, -1)
+	schema.AddProperty("new_str", llmprovider.PropertySchema{
+		Type:        "string",
+		Description: "For str_replace/insert: replacement or insertion text. Can be empty string for str_replace (deletion).",
+	}, -1)
+	schema.AddProperty("insert_line", llmprovider.PropertySchema{
+		Type:        "integer",
+		Description: "For insert: line number to insert after (0 = insert at start of document, before line 1)",
+	}, -1)
+
+	schema.AddRequired("command")
 	schema.AddRequired("path")
 
 	return ToolDefinition{
 		Type: "function",
 		Function: &FunctionDetails{
-			Name:        "doc_view",
-			Description: "Read the contents of a document or list the contents of a folder. Use this to access files in the user's document repository.",
-			Parameters:  schema,
+			Name: "str_replace_based_edit_tool",
+			Description: `View or edit documents in the user's project.
+
+Commands:
+- view: Read file contents (returns line-numbered content). For folders, lists contents.
+- str_replace: Replace exact text (must match exactly, use view first)
+- create: Create a new document with initial content
+- insert: Insert new text after a specific line number
+
+Notes:
+- Always use 'view' first to see current content before editing
+- For create: ALWAYS include both path and file_text (file_text may be empty "")
+- For create (streaming UX): output path BEFORE file_text
+- Changes are suggested to the user for review before being applied`,
+			Parameters: schema,
 		},
 	}
 }
@@ -180,7 +230,7 @@ func getViewToolDefinition() ToolDefinition {
 // This tool shows the hierarchical structure of folders and documents.
 func getTreeToolDefinition() ToolDefinition {
 	schema := llmprovider.NewToolInputSchema()
-	schema.AddProperty("folder", llmprovider.PropertySchema{
+	schema.AddProperty("path", llmprovider.PropertySchema{
 		Type:        "string",
 		Description: "The Unix-style path to the folder (e.g., '/drafts', '/chapters'). Defaults to '/' (root folder) if not provided.",
 	}, -1)
@@ -343,25 +393,29 @@ func isWebSearchVariant(name string) bool {
 }
 
 // GetToolDefinitionByName returns the full tool definition for a given tool name.
-// This is used to resolve minimal format {"name": "doc_view"} to full schemas.
-// Returns nil if the tool name is not recognized as a custom read-only tool.
+// This is used to resolve minimal format {"name": "str_replace_based_edit_tool"} to full schemas.
+// Returns nil if the tool name is not recognized as a custom tool.
 //
 // Provider-specific web search variants (tavily_web_search, brave_web_search, etc.)
 // all map to the same web_search tool definition. The actual provider implementation
 // is determined by the backend based on which variant was requested.
 func GetToolDefinitionByName(name string) *ToolDefinition {
 	switch name {
-	case "doc_view":
-		def := getViewToolDefinition()
+	// Unified text editor tool (view + edit combined)
+	case "str_replace_based_edit_tool":
+		def := getTextEditorToolDefinition()
 		return &def
+
+	// Legacy tool names - map to text editor for backward compatibility
+	case "doc_view", "doc_edit":
+		def := getTextEditorToolDefinition()
+		return &def
+
 	case "doc_tree":
 		def := getTreeToolDefinition()
 		return &def
 	case "doc_search":
 		def := getSearchToolDefinition()
-		return &def
-	case "doc_edit":
-		def := getEditToolDefinition()
 		return &def
 
 	// Provider-specific web search tools

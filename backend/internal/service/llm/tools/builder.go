@@ -43,10 +43,13 @@ func (b *ToolRegistryBuilder) WithNamespaceService(namespaceSvc docsysSvc.Namesp
 	return b
 }
 
-// WithDocumentTools registers all document-related tools (doc_view, doc_search, doc_tree, doc_edit).
+// WithDocumentTools registers all document-related tools (str_replace_based_edit_tool, doc_search, doc_tree).
 // These tools operate on the project's document system.
 // All tools use services for data access (SOLID: DIP - depends on interfaces).
 // Tools are registered with metadata for dynamic system prompt generation (SOLID: OCP compliance).
+//
+// The str_replace_based_edit_tool is a unified tool that combines view and edit operations,
+// matching Anthropic's text_editor_20250728 API for seamless provider mapping.
 func (b *ToolRegistryBuilder) WithDocumentTools(
 	projectID string,
 	userID string,
@@ -55,23 +58,23 @@ func (b *ToolRegistryBuilder) WithDocumentTools(
 ) *ToolRegistryBuilder {
 	// All tools use service layer for data access (Phase 4: zero repo dependencies)
 	// Tools self-describe via metadata for system prompt generation (OCP compliance)
-	viewTool := NewViewTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
+	textEditorTool := NewTextEditorTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
 	treeTool := NewTreeTool(projectID, userID, folderSvc, b.namespaceSvc, b.config)
 	searchTool := NewSearchTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
-	editTool := NewEditTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
 
-	b.registry.RegisterWithMetadata("doc_view", viewTool, ViewToolMetadata())
+	b.registry.RegisterWithMetadata("str_replace_based_edit_tool", textEditorTool, TextEditorToolMetadata())
 	b.registry.RegisterWithMetadata("doc_tree", treeTool, TreeToolMetadata())
 	b.registry.RegisterWithMetadata("doc_search", searchTool, SearchToolMetadata())
-	b.registry.RegisterWithMetadata("doc_edit", editTool, EditToolMetadata())
 
 	return b
 }
 
 // WithEnabledDocumentTools registers only the specified document tools.
-// enabledTools is the list of tool names to register (e.g., ["doc_view", "doc_tree"]).
+// enabledTools is the list of tool names to register (e.g., ["str_replace_based_edit_tool", "doc_tree"]).
 // This allows frontend to control which tools the LLM can use.
 // Tools are registered with metadata for dynamic system prompt generation (SOLID: OCP compliance).
+//
+// Legacy tool names (doc_view, doc_edit) are mapped to str_replace_based_edit_tool for backward compatibility.
 func (b *ToolRegistryBuilder) WithEnabledDocumentTools(
 	enabledTools []string,
 	projectID string,
@@ -85,22 +88,21 @@ func (b *ToolRegistryBuilder) WithEnabledDocumentTools(
 		toolSet[t] = true
 	}
 
-	// Register only enabled document tools with metadata (OCP compliance)
-	if toolSet["doc_view"] {
-		viewTool := NewViewTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
-		b.registry.RegisterWithMetadata("doc_view", viewTool, ViewToolMetadata())
+	// Register text editor if str_replace_based_edit_tool or legacy names (doc_view/doc_edit) are enabled
+	// This provides backward compatibility during migration
+	if toolSet["str_replace_based_edit_tool"] || toolSet["doc_view"] || toolSet["doc_edit"] {
+		textEditorTool := NewTextEditorTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
+		b.registry.RegisterWithMetadata("str_replace_based_edit_tool", textEditorTool, TextEditorToolMetadata())
 	}
+
 	if toolSet["doc_tree"] {
 		treeTool := NewTreeTool(projectID, userID, folderSvc, b.namespaceSvc, b.config)
 		b.registry.RegisterWithMetadata("doc_tree", treeTool, TreeToolMetadata())
 	}
+
 	if toolSet["doc_search"] {
 		searchTool := NewSearchTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
 		b.registry.RegisterWithMetadata("doc_search", searchTool, SearchToolMetadata())
-	}
-	if toolSet["doc_edit"] {
-		editTool := NewEditTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
-		b.registry.RegisterWithMetadata("doc_edit", editTool, EditToolMetadata())
 	}
 
 	return b
