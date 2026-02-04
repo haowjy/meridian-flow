@@ -12,10 +12,9 @@ export interface ThreadRequestOptions {
 }
 
 export const DEFAULT_TOOLS = [
-  { name: 'doc_view' },
+  { name: 'str_replace_based_edit_tool' },
   { name: 'doc_search' },
   { name: 'doc_tree' },
-  { name: 'doc_edit' },
   { name: 'tavily_web_search' },
 ]
 

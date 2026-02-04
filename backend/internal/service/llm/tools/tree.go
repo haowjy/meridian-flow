@@ -56,15 +56,21 @@ func NewTreeTool(
 
 // Execute implements ToolExecutor interface.
 // Input parameters:
-//   - folder (string, required): Unix-style path to folder
+//   - path (string, optional): Unix-style path to folder. Defaults to "/" (root folder).
 //   - depth (number, optional, default: 2, max: 5): How many levels deep to traverse
 //
 // Returns:
 //   - {type: "tree", path, folders: [...], documents: [...]}
 func (t *TreeTool) Execute(ctx context.Context, input map[string]interface{}) (interface{}, error) {
 	// Extract folder path (default to root)
+	// Accept both "path" (new) and "folder" (legacy) parameters for backward compatibility
 	folderPath := "/" // default
-	if folderVal, exists := input["folder"]; exists {
+	if pathVal, exists := input["path"]; exists {
+		if fp, ok := pathVal.(string); ok && strings.TrimSpace(fp) != "" {
+			folderPath = strings.TrimSpace(fp)
+		}
+	} else if folderVal, exists := input["folder"]; exists {
+		// Legacy parameter support
 		if fp, ok := folderVal.(string); ok && strings.TrimSpace(fp) != "" {
 			folderPath = strings.TrimSpace(fp)
 		}
