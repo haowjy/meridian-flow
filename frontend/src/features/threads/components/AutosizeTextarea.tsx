@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, forwardRef, useImperativeHandle } from 'react'
 import { cn } from '@/lib/utils'
 
 const MIN_HEIGHT = 48  // ~2 lines
@@ -7,8 +7,6 @@ const MAX_HEIGHT = 200 // ~8 lines, then internal scroll
 interface AutosizeTextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
     value: string
     onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
-    onSubmit?: () => void
-    canSend?: boolean
     /** Optional override for autosize clamp. Defaults to MIN_HEIGHT. */
     minHeight?: number | string
     /** Optional override for autosize clamp. Defaults to MAX_HEIGHT. */
@@ -24,18 +22,19 @@ interface AutosizeTextareaProps extends React.TextareaHTMLAttributes<HTMLTextAre
  * Works with absolute-positioned composer (outside scroll container) to prevent
  * browser caret-tracking from affecting the thread scroll position.
  */
-export function AutosizeTextarea({
+export const AutosizeTextarea = forwardRef<HTMLTextAreaElement, AutosizeTextareaProps>(function AutosizeTextarea({
     value,
     onChange,
-    onSubmit,
-    canSend = true,
     minHeight = MIN_HEIGHT,
     maxHeight = MAX_HEIGHT,
     focusKey,
     className,
     ...props
-}: AutosizeTextareaProps) {
+}, forwardedRef) {
     const ref = useRef<HTMLTextAreaElement | null>(null)
+
+    // Expose the internal ref to the parent component
+    useImperativeHandle(forwardedRef, () => ref.current!, [])
 
     // Focus when focusKey changes (parent controls timing, component handles mechanics)
     // Positions cursor at end of text for better UX when editing existing content
@@ -89,14 +88,7 @@ export function AutosizeTextarea({
             }}
             value={value}
             onChange={onChange}
-            onKeyDown={(event) => {
-                if (onSubmit && event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault()
-                    if (canSend) onSubmit()
-                }
-                props.onKeyDown?.(event)
-            }}
             {...props}
         />
     )
-}
+})

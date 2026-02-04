@@ -474,6 +474,8 @@ func TestStreamExecutor_SoftCancelDrainTimeoutStopsProvider(t *testing.T) {
 		&mockTokenFinalizer{},
 		nil,                 // jobQueue (nil for tests)
 		shortTimeoutSeconds, // Very short soft cancel timeout
+		nil,                 // interjectionBuffer (nil for tests)
+		nil,                 // streamSwitchFn (nil for tests)
 	)
 
 	// Start streaming
@@ -529,6 +531,8 @@ func TestStreamExecutor_IdempotentCancel(t *testing.T) {
 		&mockTokenFinalizer{},
 		nil, // jobQueue (nil for tests)
 		300, // softCancelTimeoutSeconds
+		nil, // interjectionBuffer (nil for tests)
+		nil, // streamSwitchFn (nil for tests)
 	)
 
 	// Start streaming
@@ -576,6 +580,8 @@ func TestStreamExecutor_HardCancelIdempotent(t *testing.T) {
 		&mockTokenFinalizer{},
 		nil, // jobQueue (nil for tests)
 		300, // softCancelTimeoutSeconds
+		nil, // interjectionBuffer (nil for tests)
+		nil, // streamSwitchFn (nil for tests)
 	)
 
 	// Start streaming
