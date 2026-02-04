@@ -129,8 +129,8 @@ export const DocTreeBlock = React.memo(function DocTreeBlock({
   }, [result, isError])
 
   // Resolve folder from tree store
-  // Use result.path (resolved path) if available, otherwise input.folder
-  const folderPath = result?.path ?? input?.folder ?? '/'
+  // Use result.path (resolved path) if available, otherwise input.path or legacy input.folder
+  const folderPath = result?.path ?? input?.path ?? input?.folder ?? '/'
   const resolvedFolder = findFolderByPath(folderPath, folders)
 
   // Get folder ID for FolderTreeView (null = root, string = folder ID)
