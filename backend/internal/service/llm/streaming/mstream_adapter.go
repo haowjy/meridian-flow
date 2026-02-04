@@ -98,13 +98,31 @@ type StreamExecutor struct {
 	// can be emitted with a stable messageId.
 	toolCallParentMessageIDs map[string]string // toolCallId -> parentMessageId
 	lastAssistantMessageID   string            // fallback for missing parentMessageId
+
+	// Interjection support: allows users to inject messages during streaming.
+	// Buffer is managed by the service layer, accessed here for injection points.
+	interjectionBuffer mstream.InterjectionBuffer
+	streamSwitchFn     StreamSwitchFn // Callback to create new turns when injecting interjection
+}
+
+// StreamSwitchFn is called when an interjection triggers a stream switch.
+// It creates a new user turn (with interjection content) and a new assistant turn,
+// then starts streaming for the new assistant turn.
+// Returns the created turns and the URL for the new stream.
+type StreamSwitchFn func(ctx context.Context, currentAssistantTurnID string, interjection string, reason string) (*StreamSwitchResult, error)
+
+// StreamSwitchResult contains the newly created turns from an interjection injection.
+type StreamSwitchResult struct {
+	UserTurn      any    // The persisted user turn containing the interjection
+	AssistantTurn any    // The new assistant turn (streaming)
+	StreamURL     string // URL for the new SSE stream
 }
 
 // NewStreamExecutor creates a new mstream-based executor for a turn.
 // Accepts minimal interfaces for better ISP compliance: TurnWriter for writes, TurnReader for block reads and catchup
 func NewStreamExecutor(
 	turnID string,
-	threadID string, // NEW: Thread ID for AG-UI events
+	threadID string, // Thread ID for AG-UI events
 	model string,
 	turnWriter llmRepo.TurnWriter,
 	turnReader llmRepo.TurnReader,
@@ -118,6 +136,8 @@ func NewStreamExecutor(
 	tokenFinalizer tokens.TokenFinalizer,
 	jobQueue jobs.JobQueue,
 	softCancelTimeoutSeconds int,
+	interjectionBuffer mstream.InterjectionBuffer, // For buffering user interjections during streaming
+	streamSwitchFn StreamSwitchFn, // Callback for creating new turns on interjection injection
 ) *StreamExecutor {
 	// Create AG-UI IDFactory for stable ID generation
 	idFactory := agui.NewIDFactory(turnID, threadID)
@@ -142,9 +162,11 @@ func NewStreamExecutor(
 		ctrlCh:              make(chan controlMsg, 1), // Buffered for non-blocking sends
 		tokenFinalizer:      tokenFinalizer,
 		jobQueue:            jobQueue,
-		softCancelTimeout:  time.Duration(softCancelTimeoutSeconds) * time.Second,
-		persistenceGuard:   NewPersistenceGuard(), // Armed initially, disarmed on cancel
-		idFactory:          idFactory,             // AG-UI ID generation
+		softCancelTimeout:   time.Duration(softCancelTimeoutSeconds) * time.Second,
+		persistenceGuard:    NewPersistenceGuard(), // Armed initially, disarmed on cancel
+		idFactory:           idFactory,             // AG-UI ID generation
+		interjectionBuffer:  interjectionBuffer,    // For user interjections
+		streamSwitchFn:      streamSwitchFn,        // For stream switch on interjection
 		// aguiEmitter initialized in workFunc when send function is available
 
 		toolCallParentMessageIDs: make(map[string]string),

@@ -37,6 +37,21 @@ type StreamingService interface {
 	// - false (some providers): Soft cancel (provider continues for accurate metadata, but stops persistence)
 	// Returns nil if turn is not currently streaming.
 	InterruptTurn(ctx context.Context, turnID string) error
+
+	// UpsertInterjection adds or updates an interjection for a streaming assistant turn.
+	// If the turn is actively streaming, the interjection is buffered and will be
+	// injected at the next safe boundary (after tool execution or at completion).
+	// If the turn is not streaming (race condition), falls back to creating a
+	// follow-up user turn and starting a new assistant stream.
+	UpsertInterjection(ctx context.Context, assistantTurnID string, content string, mode string) (*UpsertInterjectionResponse, error)
+
+	// GetInterjection retrieves the current interjection state for an assistant turn.
+	// Returns empty content if no interjection is buffered or turn is not streaming.
+	GetInterjection(ctx context.Context, assistantTurnID string) (*GetInterjectionResponse, error)
+
+	// ClearInterjection removes any buffered interjection for an assistant turn.
+	// No-op if turn is not streaming or no interjection exists.
+	ClearInterjection(ctx context.Context, assistantTurnID string) error
 }
 
 // CreateTurnRequest is the DTO for creating a new turn
@@ -72,4 +87,27 @@ type CreateTurnResponse struct {
 	UserTurn      *llm.Turn   `json:"user_turn"`
 	AssistantTurn *llm.Turn   `json:"assistant_turn"`
 	StreamURL     string      `json:"stream_url"` // Convenience URL for SSE streaming
+}
+
+// UpsertInterjectionResponse is the response for UpsertInterjection.
+// Mode indicates whether the interjection was queued (streaming) or created (fallback).
+type UpsertInterjectionResponse struct {
+	Mode string `json:"mode"` // "queued" if buffered, "created" if fallback
+
+	// Fields for mode="queued" (interjection buffered while streaming)
+	AssistantTurnID string `json:"assistantTurnId,omitempty"`
+	Content         string `json:"content,omitempty"`
+	Length          int    `json:"length,omitempty"`
+
+	// Fields for mode="created" (fallback: turn not streaming, created new turns)
+	UserTurn      *llm.Turn `json:"userTurn,omitempty"`
+	NewAssistantTurn *llm.Turn `json:"assistantTurn,omitempty"`
+	StreamURL     string    `json:"streamUrl,omitempty"`
+}
+
+// GetInterjectionResponse is the response for GetInterjection.
+type GetInterjectionResponse struct {
+	AssistantTurnID string `json:"assistantTurnId"`
+	IsStreaming     bool   `json:"isStreaming"`
+	Content         string `json:"content"`
 }

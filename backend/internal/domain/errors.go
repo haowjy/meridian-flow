@@ -49,6 +49,12 @@ func (e *ValidationError) StatusCode() int    { return http.StatusBadRequest }
 func (e *UnauthorizedError) StatusCode() int  { return http.StatusUnauthorized }
 func (e *ForbiddenError) StatusCode() int     { return http.StatusForbidden }
 
+// Is implementations for errors.Is() support with sentinel errors
+func (e *NotFoundError) Is(target error) bool     { return target == ErrNotFound }
+func (e *ValidationError) Is(target error) bool   { return target == ErrValidation }
+func (e *UnauthorizedError) Is(target error) bool { return target == ErrUnauthorized }
+func (e *ForbiddenError) Is(target error) bool    { return target == ErrForbidden }
+
 // Sentinel errors for backwards compatibility - use with errors.Is()
 var (
 	ErrNotFound     = errors.New("not found")

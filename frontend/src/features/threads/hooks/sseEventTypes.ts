@@ -9,6 +9,7 @@
  *
  * Thinking events are also extended with thinkingId for tracking.
  */
+import type { TurnDto } from '@/core/lib/api'
 import {
   EventType,
   type TextMessageStartEvent as AGUITextMessageStartEvent,
@@ -116,6 +117,10 @@ export const SSE_EVENTS = {
   STEP_STARTED: EventType.STEP_STARTED,
   STEP_FINISHED: EventType.STEP_FINISHED,
 
+  // Meridian Interjection Events
+  INTERJECTION_UPDATED: 'INTERJECTION_UPDATED' as const,
+  STREAM_SWITCH: 'STREAM_SWITCH' as const,
+
   // DEPRECATED: Legacy Meridian events - removed from backend, kept for reference
   // TURN_COMPLETE: 'turn_complete', // Use RUN_FINISHED instead
   // TURN_ERROR: 'turn_error',       // Use RUN_ERROR instead
@@ -148,5 +153,47 @@ export interface ThinkingTextMessageEndEvent extends AGUIThinkingTextMessageEndE
 
 export interface ThinkingEndEvent extends AGUIThinkingEndEvent {
   thinkingId: string
+}
+
+// ============================================================================
+// Meridian Interjection Events
+//
+// These events support the interjection feature where users can submit
+// messages while an assistant turn is streaming.
+// ============================================================================
+
+/**
+ * INTERJECTION_UPDATED event sent when interjection content is updated.
+ * Allows frontend to display the pending interjection to the user.
+ */
+export interface InterjectionUpdatedEvent {
+  type: 'INTERJECTION_UPDATED'
+  turnId: string      // The assistant turn this interjection targets
+  content: string     // Current interjection buffer content
+  length: number      // Buffer length in bytes
+}
+
+/**
+ * Reason why a stream switch occurred.
+ */
+export type StreamSwitchReason = 'tool_boundary' | 'no_tools_completion'
+
+/**
+ * STREAM_SWITCH event sent when an interjection triggers a new stream.
+ * Frontend should:
+ * 1. Merge userTurn and assistantTurn into store
+ * 2. Update streamingTurnId/streamingUrl
+ * 3. Abort current SSE connection to trigger reconnect
+ *
+ * NOTE: userTurn and assistantTurn are TurnDto (camelCase after SSE parsing).
+ * Handler must convert them to Turn via turnDtoToTurn() for date conversion.
+ */
+export interface StreamSwitchEvent {
+  type: 'STREAM_SWITCH'
+  prevAssistantTurnId: string           // Turn that was streaming
+  reason: StreamSwitchReason            // Why switch happened
+  userTurn: TurnDto                     // Persisted user turn (interjection) - needs date conversion
+  assistantTurn: TurnDto                // New streaming assistant turn - needs date conversion
+  streamUrl: string                     // URL for new SSE stream
 }
 

@@ -123,19 +123,26 @@ func (t *ViewTool) formatDocument(doc *docsystem.Document) (interface{}, error) 
 	}
 	wasTruncated := false
 
-	// Truncate content if too large
+	// Truncate content if too large (don't embed message - rely on was_truncated flag)
 	if len(content) > t.config.MaxContentSize {
-		content = content[:t.config.MaxContentSize] + "\n\n[Content truncated - too large to display fully]"
+		content = content[:t.config.MaxContentSize]
 		wasTruncated = true
+	}
+
+	// Compute word count on-the-fly if not in metadata (old docs may have 0)
+	wordCount := doc.WordCount()
+	if wordCount == 0 && len(content) > 0 {
+		// Fallback: simple word count from content
+		wordCount = len(strings.Fields(content))
 	}
 
 	return map[string]interface{}{
 		"type":          "document",
 		"id":            doc.ID,
-		"name":          doc.Name,
+		"name":          doc.Filename(),
 		"path":          doc.Path, // Path already computed by service
 		"content":       content,
-		"word_count":    doc.WordCount(),
+		"word_count":    wordCount,
 		"was_truncated": wasTruncated,
 	}, nil
 }
@@ -154,7 +161,7 @@ func (t *ViewTool) listFolderContents(ctx context.Context, folderID *string, fol
 	for i, doc := range contents.Documents {
 		docList[i] = map[string]interface{}{
 			"id":         doc.ID,
-			"name":       doc.Name,
+			"name":       doc.Filename(),
 			"word_count": doc.WordCount(),
 			"updated_at": doc.UpdatedAt,
 		}

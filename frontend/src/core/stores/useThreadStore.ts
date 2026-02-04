@@ -63,6 +63,9 @@ interface ThreadStore {
   streamingBlockIndex: number | null
   streamingBlockType: BlockType | null
 
+  // Interjection state (user message submitted while streaming)
+  interjectionContent: string | null
+
   loadThreads: (projectId: string, signal?: AbortSignal) => Promise<void>
   // Legacy shape retained; internally calls openThread
   loadTurns: (threadId: string, signal?: AbortSignal) => Promise<void>
@@ -98,6 +101,17 @@ interface ThreadStore {
   // Stream-end coordination (used by cancel flow)
   waitForStreamEnd: (turnId: string, timeoutMs?: number) => Promise<void>
   notifyStreamEnded: (turnId: string) => void
+
+  // Interjection support (submit message while streaming)
+  setInterjectionContent: (content: string | null) => void
+  submitInterjection: (turnId: string, content: string, mode?: 'append' | 'replace') => Promise<void>
+  clearInterjection: (turnId: string) => Promise<void>
+  applyStreamSwitch: (
+    prevTurnId: string,
+    userTurn: Turn,
+    assistantTurn: Turn,
+    streamUrl: string
+  ) => void
 
   // Pagination & navigation (server-driven)
   openThread: (threadId: string, initialTurnId?: string, signal?: AbortSignal) => Promise<void>
@@ -231,6 +245,7 @@ export const useThreadStore = create<ThreadStore>()(
       streamingUrl: null,
       streamingBlockIndex: null,
       streamingBlockType: null,
+      interjectionContent: null,
 
       // Computed getter for backwards compatibility
       get isLoadingThreads() {
@@ -605,6 +620,7 @@ export const useThreadStore = create<ThreadStore>()(
           streamingUrl: null,
           streamingBlockIndex: null,
           streamingBlockType: null,
+          interjectionContent: null,
         }))
       },
 
@@ -620,6 +636,100 @@ export const useThreadStore = create<ThreadStore>()(
 
       setCurrentTurnId: (turnId: string) => {
         set(() => ({ currentTurnId: turnId }))
+      },
+
+      // Interjection support
+      setInterjectionContent: (content: string | null) => {
+        set(() => ({ interjectionContent: content }))
+      },
+
+      submitInterjection: async (turnId: string, content: string, mode: 'append' | 'replace' = 'append') => {
+        const log = makeLogger('thread-store')
+        log.debug('submitInterjection:start', { turnId, mode, contentLength: content.length })
+
+        try {
+          const response = await api.turns.submitInterjection(turnId, content, mode)
+
+          if (response.mode === 'queued') {
+            // Interjection was buffered - update local state
+            set(() => ({ interjectionContent: response.content }))
+            log.debug('submitInterjection:queued', { turnId, length: response.length })
+          } else if (response.mode === 'created') {
+            // Fallback path: turn wasn't streaming, new turns were created
+            // Merge the new turns into state and update streaming
+            const state = get()
+            const { userTurn, assistantTurn, streamUrl } = response
+            if (userTurn && assistantTurn) {
+              const { turnById: incomingById } = normalizeTurnWindow([userTurn as Turn, assistantTurn as Turn])
+              set({
+                turnIds: mergeTurnIds([...state.turnIds, userTurn.id, assistantTurn.id]),
+                turnById: { ...state.turnById, ...incomingById },
+                streamingTurnId: assistantTurn.id,
+                streamingUrl: streamUrl ?? null,
+                interjectionContent: null,
+              })
+            }
+            log.debug('submitInterjection:created', { userTurnId: userTurn?.id, assistantTurnId: assistantTurn?.id })
+          }
+        } catch (error) {
+          log.error('submitInterjection:error', error)
+          set({ error: getErrorMessageWithFallback(error, 'Failed to submit interjection') })
+          throw error
+        }
+      },
+
+      clearInterjection: async (turnId: string) => {
+        const log = makeLogger('thread-store')
+        log.debug('clearInterjection:start', { turnId })
+
+        try {
+          await api.turns.clearInterjection(turnId)
+          set(() => ({ interjectionContent: null }))
+          log.debug('clearInterjection:success', { turnId })
+        } catch (error) {
+          log.error('clearInterjection:error', error)
+          // Don't throw - clearing is best-effort; user can retry
+          // Still clear local state on error (server may have succeeded)
+          set(() => ({ interjectionContent: null }))
+        }
+      },
+
+      applyStreamSwitch: (
+        prevTurnId: string,
+        userTurn: Turn,
+        assistantTurn: Turn,
+        streamUrl: string
+      ) => {
+        const log = makeLogger('thread-store')
+        log.info('applyStreamSwitch', { prevTurnId, streamUrl })
+
+        const state = get()
+
+        // Turns are already converted from TurnDto by the SSE handler
+        // No need for unsafe casts - they're properly typed Turn objects
+        if (!userTurn || !assistantTurn) {
+          log.error('applyStreamSwitch:missingTurns', { userTurn, assistantTurn })
+          return
+        }
+
+        // Merge new turns into state
+        const { turnById: incomingById } = normalizeTurnWindow([userTurn, assistantTurn])
+
+        // Update streaming to point to new assistant turn
+        set({
+          turnIds: mergeTurnIds([...state.turnIds, userTurn.id, assistantTurn.id]),
+          turnById: { ...state.turnById, ...incomingById },
+          streamingTurnId: assistantTurn.id,
+          streamingUrl: streamUrl,
+          interjectionContent: null, // Clear - it's now persisted as userTurn
+          currentTurnId: assistantTurn.id,
+        })
+
+        log.info('applyStreamSwitch:complete', {
+          newUserTurnId: userTurn.id,
+          newAssistantTurnId: assistantTurn.id,
+          streamUrl,
+        })
       },
 
       openThread: async (threadId: string, initialTurnId?: string, signal?: AbortSignal) => {

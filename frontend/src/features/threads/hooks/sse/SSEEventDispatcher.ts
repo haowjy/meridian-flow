@@ -10,6 +10,7 @@
 
 import { SSE_EVENTS } from '../sseEventTypes'
 import type { SSEDispatchContext, SSEStoreActions } from './types'
+import { parseSSEEvent } from './sseEventParser'
 import {
   // Tool handlers
   handleToolCallStart,
@@ -32,6 +33,9 @@ import {
   handleRunError,
   handleStepStarted,
   handleStepFinished,
+  // Interjection handlers
+  handleInterjectionUpdated,
+  handleStreamSwitch,
 } from './eventHandlers'
 
 /**
@@ -50,136 +54,143 @@ export function dispatchSSEEvent(
 ): void {
   const { logger } = ctx
 
-  try {
-    switch (eventType) {
-      // ============================================================
-      // AG-UI Tool Call Events
-      // Native AG-UI protocol for streaming tool calls
-      // ============================================================
-
-      case SSE_EVENTS.TOOL_CALL_START: {
-        const parsed = JSON.parse(data)
-        handleToolCallStart(parsed, ctx, actions)
-        break
-      }
-
-      case SSE_EVENTS.TOOL_CALL_ARGS: {
-        const parsed = JSON.parse(data)
-        handleToolCallArgs(parsed, ctx, actions)
-        break
-      }
-
-      case SSE_EVENTS.TOOL_CALL_END: {
-        const parsed = JSON.parse(data)
-        handleToolCallEnd(parsed, ctx, actions)
-        break
-      }
-
-      case SSE_EVENTS.TOOL_CALL_RESULT: {
-        const parsed = JSON.parse(data)
-        handleToolCallResult(parsed, ctx, actions)
-        break
-      }
-
-      // ============================================================
-      // AG-UI Text Message Events
-      // ============================================================
-
-      case SSE_EVENTS.TEXT_MESSAGE_START: {
-        const parsed = JSON.parse(data)
-        handleTextMessageStart(parsed, ctx, actions)
-        break
-      }
-
-      case SSE_EVENTS.TEXT_MESSAGE_CONTENT: {
-        const parsed = JSON.parse(data)
-        handleTextMessageContent(parsed, ctx, actions)
-        break
-      }
-
-      case SSE_EVENTS.TEXT_MESSAGE_END: {
-        const parsed = JSON.parse(data)
-        handleTextMessageEnd(parsed, ctx, actions)
-        break
-      }
-
-      // ============================================================
-      // AG-UI Thinking Events
-      // Nested structure: THINKING_START → TEXT_MESSAGE_* → THINKING_END
-      // ============================================================
-
-      case SSE_EVENTS.THINKING_START: {
-        const parsed = JSON.parse(data)
-        handleThinkingStart(parsed, ctx, actions)
-        break
-      }
-
-      case SSE_EVENTS.THINKING_TEXT_MESSAGE_START: {
-        handleThinkingTextMessageStart(undefined, ctx, actions)
-        break
-      }
-
-      case SSE_EVENTS.THINKING_TEXT_MESSAGE_CONTENT: {
-        const parsed = JSON.parse(data)
-        handleThinkingTextMessageContent(parsed, ctx, actions)
-        break
-      }
-
-      case SSE_EVENTS.THINKING_TEXT_MESSAGE_END: {
-        handleThinkingTextMessageEnd(undefined, ctx, actions)
-        break
-      }
-
-      case SSE_EVENTS.THINKING_END: {
-        const parsed = JSON.parse(data)
-        handleThinkingEnd(parsed, ctx, actions)
-        break
-      }
-
-      // ============================================================
-      // AG-UI Lifecycle Events (with Meridian extensions)
-      // These are the primary lifecycle events for run/step management
-      // ============================================================
-
-      case SSE_EVENTS.RUN_STARTED: {
-        const parsed = JSON.parse(data)
-        handleRunStarted(parsed, ctx, actions)
-        break
-      }
-
-      case SSE_EVENTS.RUN_FINISHED: {
-        const parsed = JSON.parse(data)
-        handleRunFinished(parsed, ctx, actions)
-        break
-      }
-
-      case SSE_EVENTS.RUN_ERROR: {
-        const parsed = JSON.parse(data)
-        handleRunError(parsed, ctx, actions)
-        break
-      }
-
-      case SSE_EVENTS.STEP_STARTED: {
-        const parsed = JSON.parse(data)
-        handleStepStarted(parsed, ctx, actions)
-        break
-      }
-
-      case SSE_EVENTS.STEP_FINISHED: {
-        const parsed = JSON.parse(data)
-        handleStepFinished(parsed, ctx, actions)
-        break
-      }
-
-      default:
-        // Unknown event type - log for debugging
-        logger.debug('sse:unknown_event', { eventType, data })
+  // Helper to parse JSON (with camelCase conversion) and invoke handler with separate error tracking
+  const parseAndHandle = <T>(
+    handler: (data: T, ctx: SSEDispatchContext, actions: SSEStoreActions) => void
+  ) => {
+    let parsed: T
+    try {
+      // Use SSE gateway parser for consistent snake_case → camelCase conversion
+      parsed = parseSSEEvent<T>(data)
+    } catch (parseError) {
+      logger.error(`sse:${eventType}:parse_error`, {
+        error: parseError,
+        rawData: data.slice(0, 500), // Truncate to avoid log spam
+      })
+      return
     }
-  } catch (error) {
-    // AG-UI: Log raw data (truncated) for debugging malformed events
-    logger.error(`sse:${eventType}:parse_error`, {
-      error,
-      rawData: data.slice(0, 500), // Truncate to avoid log spam
-    })
+    try {
+      handler(parsed, ctx, actions)
+    } catch (handlerError) {
+      logger.error(`sse:${eventType}:handler_error`, {
+        error: handlerError,
+        parsed,
+      })
+    }
+  }
+
+  switch (eventType) {
+    // ============================================================
+    // AG-UI Tool Call Events
+    // Native AG-UI protocol for streaming tool calls
+    // ============================================================
+
+    case SSE_EVENTS.TOOL_CALL_START:
+      parseAndHandle(handleToolCallStart)
+      break
+
+    case SSE_EVENTS.TOOL_CALL_ARGS:
+      parseAndHandle(handleToolCallArgs)
+      break
+
+    case SSE_EVENTS.TOOL_CALL_END:
+      parseAndHandle(handleToolCallEnd)
+      break
+
+    case SSE_EVENTS.TOOL_CALL_RESULT:
+      parseAndHandle(handleToolCallResult)
+      break
+
+    // ============================================================
+    // AG-UI Text Message Events
+    // ============================================================
+
+    case SSE_EVENTS.TEXT_MESSAGE_START:
+      parseAndHandle(handleTextMessageStart)
+      break
+
+    case SSE_EVENTS.TEXT_MESSAGE_CONTENT:
+      parseAndHandle(handleTextMessageContent)
+      break
+
+    case SSE_EVENTS.TEXT_MESSAGE_END:
+      parseAndHandle(handleTextMessageEnd)
+      break
+
+    // ============================================================
+    // AG-UI Thinking Events
+    // Nested structure: THINKING_START → TEXT_MESSAGE_* → THINKING_END
+    // ============================================================
+
+    case SSE_EVENTS.THINKING_START:
+      parseAndHandle(handleThinkingStart)
+      break
+
+    case SSE_EVENTS.THINKING_TEXT_MESSAGE_START:
+      // No data to parse for this event
+      try {
+        handleThinkingTextMessageStart(undefined, ctx, actions)
+      } catch (handlerError) {
+        logger.error(`sse:${eventType}:handler_error`, { error: handlerError })
+      }
+      break
+
+    case SSE_EVENTS.THINKING_TEXT_MESSAGE_CONTENT:
+      parseAndHandle(handleThinkingTextMessageContent)
+      break
+
+    case SSE_EVENTS.THINKING_TEXT_MESSAGE_END:
+      // No data to parse for this event
+      try {
+        handleThinkingTextMessageEnd(undefined, ctx, actions)
+      } catch (handlerError) {
+        logger.error(`sse:${eventType}:handler_error`, { error: handlerError })
+      }
+      break
+
+    case SSE_EVENTS.THINKING_END:
+      parseAndHandle(handleThinkingEnd)
+      break
+
+    // ============================================================
+    // AG-UI Lifecycle Events (with Meridian extensions)
+    // These are the primary lifecycle events for run/step management
+    // ============================================================
+
+    case SSE_EVENTS.RUN_STARTED:
+      parseAndHandle(handleRunStarted)
+      break
+
+    case SSE_EVENTS.RUN_FINISHED:
+      parseAndHandle(handleRunFinished)
+      break
+
+    case SSE_EVENTS.RUN_ERROR:
+      parseAndHandle(handleRunError)
+      break
+
+    case SSE_EVENTS.STEP_STARTED:
+      parseAndHandle(handleStepStarted)
+      break
+
+    case SSE_EVENTS.STEP_FINISHED:
+      parseAndHandle(handleStepFinished)
+      break
+
+    // ============================================================
+    // Meridian Interjection Events
+    // ============================================================
+
+    case SSE_EVENTS.INTERJECTION_UPDATED:
+      parseAndHandle(handleInterjectionUpdated)
+      break
+
+    case SSE_EVENTS.STREAM_SWITCH:
+      parseAndHandle(handleStreamSwitch)
+      break
+
+    default:
+      // Unknown event type - log for debugging
+      logger.debug('sse:unknown_event', { eventType, data })
   }
 }

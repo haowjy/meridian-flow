@@ -154,7 +154,7 @@ func (t *SearchTool) Execute(ctx context.Context, input map[string]interface{}) 
 
 		resultList[i] = map[string]interface{}{
 			"id":         result.Document.ID,
-			"name":       result.Document.Name,
+			"name":       result.Document.Filename(),
 			"path":       result.Document.Path,
 			"score":      result.Score,
 			"word_count": result.Document.WordCount(),

@@ -111,13 +111,23 @@ function isFolderResult(result: DocViewResult): result is DocViewFolderResult {
  * Document content preview.
  */
 function DocumentPreview({ result }: { result: DocViewDocumentResult }) {
+  // Strip backend's embedded truncation message from display (legacy cleanup)
+  // The was_truncated flag is the source of truth, not embedded text
+  const TRUNCATION_MARKER = '\n\n[Content truncated - too large to display fully]'
+  const displayContent = result.was_truncated
+    ? result.content.replace(TRUNCATION_MARKER, '')
+    : result.content
+
   return (
     <div className="space-y-2">
       {/* Word count and truncation warning */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span>{result.word_count.toLocaleString()} words</span>
+        {/* Only show word count if > 0 (old docs may have 0 due to missing metadata) */}
+        {result.word_count !== undefined && result.word_count > 0 && (
+          <span>{result.word_count.toLocaleString()} words</span>
+        )}
         {result.was_truncated && (
-          <span className="flex items-center gap-1 text-warning-foreground">
+          <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-warning/15 text-warning">
             <AlertTriangle className="h-3 w-3" />
             Content truncated
           </span>
@@ -133,7 +143,7 @@ function DocumentPreview({ result }: { result: DocViewDocumentResult }) {
           'text-foreground/80'
         )}
       >
-        {result.content}
+        {displayContent}
       </div>
     </div>
   )

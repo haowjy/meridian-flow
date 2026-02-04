@@ -36,3 +36,9 @@ export {
   handleStepStarted,
   handleStepFinished,
 } from './lifecycleEventHandlers'
+
+// Interjection events
+export {
+  handleInterjectionUpdated,
+  handleStreamSwitch,
+} from './interjectionEventHandlers'

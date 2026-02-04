@@ -210,7 +210,8 @@ export async function fetchAPI<T>(
 
 // Shared types and utilities for Turn API
 // NOTE: These types use camelCase because fetchAPI auto-converts snake_case from backend
-type TurnBlockDto = {
+// Exported for SSE gateway layer to reuse (SSE also receives camelCase after parsing)
+export type TurnBlockDto = {
   id: string
   turnId: string
   blockType: string
@@ -220,7 +221,7 @@ type TurnBlockDto = {
   createdAt: string
 }
 
-type TurnDto = {
+export type TurnDto = {
   id: string
   threadId: string
   prevTurnId?: string | null
@@ -244,10 +245,12 @@ type TurnDto = {
  * Pure data transformation - no presentation logic.
  * Use extractTextContent() from turnHelpers for UI-specific text extraction.
  *
- * NOTE: TurnDto is already camelCase (auto-converted by fetchAPI gateway).
+ * NOTE: TurnDto is already camelCase (auto-converted by fetchAPI gateway or SSE parser).
  * This function mainly handles Date conversions.
+ *
+ * Exported for SSE gateway layer to reuse - SSE events also need date conversion.
  */
-function turnDtoToTurn(turn: TurnDto): Turn {
+export function turnDtoToTurn(turn: TurnDto): Turn {
   const blocks = (turn.blocks ?? []).map((b): import('@/features/threads/types').TurnBlock => ({
     id: b.id,
     turnId: b.turnId,
@@ -648,6 +651,82 @@ export const api = {
         method: 'POST',
         signal: options?.signal,
       })
+    },
+
+    /**
+     * Submit an interjection while an assistant turn is streaming.
+     *
+     * Returns one of two modes:
+     * - "queued": Interjection is buffered for injection at safe boundary
+     * - "created": Turn was not streaming; new user + assistant turns created immediately
+     */
+    submitInterjection: async (
+      assistantTurnId: string,
+      content: string,
+      mode: 'append' | 'replace',
+      options?: { signal?: AbortSignal }
+    ): Promise<{
+      mode: 'queued' | 'created'
+      assistantTurnId: string
+      content?: string
+      length?: number
+      // Only present when mode === 'created'
+      userTurn?: Turn
+      assistantTurn?: Turn
+      streamUrl?: string
+    }> => {
+      // NOTE: Response uses camelCase because fetchAPI auto-converts snake_case from backend
+      const response = await fetchAPI<{
+        mode: 'queued' | 'created'
+        assistantTurnId: string
+        content?: string
+        length?: number
+        userTurn?: TurnDto
+        assistantTurn?: TurnDto
+        streamUrl?: string
+      }>(`/api/turns/${assistantTurnId}/interjection`, {
+        method: 'POST',
+        body: JSON.stringify({ mode, content }),
+        signal: options?.signal,
+      })
+
+      return {
+        mode: response.mode,
+        assistantTurnId: response.assistantTurnId,
+        content: response.content,
+        length: response.length,
+        userTurn: response.userTurn ? turnDtoToTurn(response.userTurn) : undefined,
+        assistantTurn: response.assistantTurn ? turnDtoToTurn(response.assistantTurn) : undefined,
+        streamUrl: response.streamUrl,
+      }
+    },
+
+    /**
+     * Clear a queued interjection for an assistant turn.
+     * No-op if no interjection is queued or turn is not streaming.
+     */
+    clearInterjection: async (
+      assistantTurnId: string,
+      options?: { signal?: AbortSignal }
+    ): Promise<void> => {
+      await fetchAPI<void>(`/api/turns/${assistantTurnId}/interjection`, {
+        method: 'DELETE',
+        signal: options?.signal,
+      })
+    },
+
+    /**
+     * Get current interjection state for an assistant turn.
+     * Used on SSE reconnect to fetch live state instead of stale buffered events.
+     */
+    getInterjection: async (
+      assistantTurnId: string,
+      options?: { signal?: AbortSignal }
+    ): Promise<{ content: string | null; isStreaming: boolean }> => {
+      return fetchAPI<{ content: string | null; isStreaming: boolean }>(
+        `/api/turns/${assistantTurnId}/interjection`,
+        { signal: options?.signal }
+      )
     },
   },
 

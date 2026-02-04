@@ -28,6 +28,8 @@ interface ThreadRequestControlsProps {
   showSend?: boolean
   /** When true, show Check icon instead of ArrowUp (for edit/save vs send). */
   saveIcon?: boolean
+  /** When true, user is typing an interjection while streaming (changes button style) */
+  isInterjectionMode?: boolean
 }
 
 export function ThreadRequestControls({
@@ -40,6 +42,7 @@ export function ThreadRequestControls({
   onStop,
   showSend = true,
   saveIcon = false,
+  isInterjectionMode = false,
 }: ThreadRequestControlsProps) {
   const { providers, isLoading } = useModelCapabilities()
 
@@ -98,7 +101,9 @@ export function ThreadRequestControls({
     })
   }
 
-  const showStop = Boolean(isStreaming && onStop)
+  // Show stop button when streaming AND not in interjection mode
+  // When interjecting, we want to show the send/interject button instead
+  const showStop = Boolean(isStreaming && onStop && !isInterjectionMode)
 
   return (
     <div className="flex items-center gap-2 pt-1 text-xs">
@@ -128,10 +133,10 @@ export function ThreadRequestControls({
               className="transition-transform hover:scale-105 active:scale-95 disabled:hover:scale-100"
               disabled={showStop ? false : isSendDisabled}
               onClick={showStop && onStop ? onStop : onSend}
-              aria-label={showStop ? 'Stop response' : saveIcon ? 'Save' : 'Send message'}
+              aria-label={showStop ? 'Stop response' : isInterjectionMode ? 'Send interjection' : saveIcon ? 'Save' : 'Send message'}
             >
               {showStop ? (
-                <span className="size-2.5 animate-processing-pulse rounded-full bg-current" />
+                <span className="size-3.5 animate-processing-pulse rounded-full bg-current" />
               ) : saveIcon ? (
                 <Check />
               ) : (

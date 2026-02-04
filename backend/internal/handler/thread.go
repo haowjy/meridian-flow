@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 	mstream "github.com/haowjy/meridian-stream-go"
@@ -458,4 +459,139 @@ func (h *ThreadHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 	// TODO: Consider injecting SSE config at ThreadHandler creation time for better testability
 	sseConfig := sse.DefaultConfig()
 	NewSSEHandler(h.registry, h.logger, sseConfig).StreamTurn(w, r)
+}
+
+// UpsertInterjectionRequest is the request body for POST /api/turns/{id}/interjection
+type UpsertInterjectionRequest struct {
+	Mode    string `json:"mode"`    // "append" or "replace"
+	Content string `json:"content"` // interjection text
+}
+
+// UpsertInterjection adds or updates an interjection for a streaming assistant turn
+// POST /api/turns/{id}/interjection
+//
+// If the turn is actively streaming, buffers the interjection for injection at
+// the next safe boundary (after tool execution or at stream completion).
+// If the turn is not streaming, falls back to creating a follow-up turn.
+func (h *ThreadHandler) UpsertInterjection(w http.ResponseWriter, r *http.Request) {
+	turnID, ok := PathParam(w, r, "id", "Turn ID")
+	if !ok {
+		return
+	}
+
+	// Validate turn ID format
+	if _, err := uuid.Parse(turnID); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Invalid turn ID format")
+		return
+	}
+
+	userID := httputil.GetUserID(r)
+
+	// Authorize: check user can access this turn
+	if err := h.authorizer.CanAccessTurn(r.Context(), userID, turnID); err != nil {
+		handleError(w, err, h.config)
+		return
+	}
+
+	// Parse request body
+	var req UpsertInterjectionRequest
+	if err := httputil.ParseJSON(w, r, &req); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	// Validate content is not empty
+	if strings.TrimSpace(req.Content) == "" {
+		httputil.RespondError(w, http.StatusBadRequest, "Interjection content cannot be empty")
+		return
+	}
+
+	// Default mode to "append"
+	if req.Mode == "" {
+		req.Mode = "append"
+	}
+
+	// Validate mode
+	if req.Mode != "append" && req.Mode != "replace" {
+		httputil.RespondError(w, http.StatusBadRequest, "Mode must be 'append' or 'replace'")
+		return
+	}
+
+	// Call service
+	response, err := h.streamingService.UpsertInterjection(r.Context(), turnID, req.Content, req.Mode)
+	if err != nil {
+		handleError(w, err, h.config)
+		return
+	}
+
+	// Return appropriate status based on mode
+	if response.Mode == "queued" {
+		httputil.RespondJSON(w, http.StatusAccepted, response)
+	} else {
+		// mode == "created" (fallback path)
+		httputil.RespondJSON(w, http.StatusCreated, response)
+	}
+}
+
+// GetInterjection retrieves the current interjection state for an assistant turn
+// GET /api/turns/{id}/interjection
+func (h *ThreadHandler) GetInterjection(w http.ResponseWriter, r *http.Request) {
+	turnID, ok := PathParam(w, r, "id", "Turn ID")
+	if !ok {
+		return
+	}
+
+	// Validate turn ID format
+	if _, err := uuid.Parse(turnID); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Invalid turn ID format")
+		return
+	}
+
+	userID := httputil.GetUserID(r)
+
+	// Authorize: check user can access this turn
+	if err := h.authorizer.CanAccessTurn(r.Context(), userID, turnID); err != nil {
+		handleError(w, err, h.config)
+		return
+	}
+
+	// Call service
+	response, err := h.streamingService.GetInterjection(r.Context(), turnID)
+	if err != nil {
+		handleError(w, err, h.config)
+		return
+	}
+
+	httputil.RespondJSON(w, http.StatusOK, response)
+}
+
+// ClearInterjection removes any buffered interjection for an assistant turn
+// DELETE /api/turns/{id}/interjection
+func (h *ThreadHandler) ClearInterjection(w http.ResponseWriter, r *http.Request) {
+	turnID, ok := PathParam(w, r, "id", "Turn ID")
+	if !ok {
+		return
+	}
+
+	// Validate turn ID format
+	if _, err := uuid.Parse(turnID); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Invalid turn ID format")
+		return
+	}
+
+	userID := httputil.GetUserID(r)
+
+	// Authorize: check user can access this turn
+	if err := h.authorizer.CanAccessTurn(r.Context(), userID, turnID); err != nil {
+		handleError(w, err, h.config)
+		return
+	}
+
+	// Call service
+	if err := h.streamingService.ClearInterjection(r.Context(), turnID); err != nil {
+		handleError(w, err, h.config)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

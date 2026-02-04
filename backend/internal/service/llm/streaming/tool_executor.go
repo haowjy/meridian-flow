@@ -11,6 +11,7 @@ import (
 	llmModels "meridian/internal/domain/models/llm"
 	"meridian/internal/pkg/sliceutil"
 	domainllm "meridian/internal/domain/services/llm"
+	"meridian/internal/service/llm/streaming/agui"
 	"meridian/internal/service/llm/tools"
 )
 
@@ -194,6 +195,49 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 					"tool_name", toolResult.Name,
 				)
 			}
+		}
+	}
+
+	// INTERJECTION POINT A: Check for interjection after tool results are persisted.
+	// If user submitted an interjection during tool execution, inject it now by
+	// creating a new user turn and switching to a new assistant stream.
+	if se.interjectionBuffer != nil && se.streamSwitchFn != nil {
+		if interjection, ok := se.interjectionBuffer.DrainAndClear(); ok {
+			se.logger.Info("interjection detected at tool boundary, triggering stream switch",
+				"turn_id", se.turnID,
+				"interjection_length", len(interjection),
+			)
+
+			// Call stream switch to create new turns and start new stream
+			result, err := se.streamSwitchFn(ctx, se.turnID, interjection, "tool_boundary")
+			if err != nil {
+				se.logger.Error("stream switch failed at tool boundary",
+					"turn_id", se.turnID,
+					"error", err,
+				)
+				// Emit error and return - don't continue with current stream
+				se.handleError(ctx, send, fmt.Errorf("interjection stream switch failed: %w", err))
+				return fmt.Errorf("interjection stream switch failed: %w", err)
+			}
+
+			// Emit STREAM_SWITCH event so frontend can reconnect to new stream
+			if se.aguiEmitter != nil {
+				se.aguiEmitter.EmitStreamSwitch(
+					se.turnID,
+					agui.StreamSwitchReasonToolBoundary,
+					result.UserTurn,
+					result.AssistantTurn,
+					result.StreamURL,
+				)
+			}
+
+			// End current stream cleanly - frontend will connect to new stream
+			// Return nil to complete this stream without error
+			se.logger.Info("stream switch completed, ending current stream",
+				"prev_turn_id", se.turnID,
+				"stream_url", result.StreamURL,
+			)
+			return nil
 		}
 	}
 

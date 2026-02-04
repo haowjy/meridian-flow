@@ -76,6 +76,14 @@ export function EditTurnDialog({
         minHeight="auto"
         className="px-0 py-0"  // Card px-3 py-2 handles padding
         onKeyDown={(event) => {
+          // Enter → save (consistent with TurnInput)
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault()
+            if (!isSaving && content.trim()) handleSave()
+            return
+          }
+
+          // Escape → close
           if (event.key === 'Escape') {
             event.preventDefault()
             if (!isSaving) onClose()

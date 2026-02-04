@@ -339,6 +339,11 @@ func main() {
 	mux.HandleFunc("GET /api/turns/{id}/token-usage", threadHandler.GetTurnTokenUsage) // Get token usage stats
 	mux.HandleFunc("POST /api/turns/{id}/interrupt", threadHandler.InterruptTurn)      // Cancel streaming turn
 
+	// Interjection routes (submit messages while streaming)
+	mux.HandleFunc("POST /api/turns/{id}/interjection", threadHandler.UpsertInterjection)   // Add/update interjection
+	mux.HandleFunc("GET /api/turns/{id}/interjection", threadHandler.GetInterjection)       // Get interjection state
+	mux.HandleFunc("DELETE /api/turns/{id}/interjection", threadHandler.ClearInterjection)  // Clear interjection
+
 	// Debug routes (only in dev environment)
 	if cfg.Environment == "dev" && threadDebugHandler != nil {
 		mux.HandleFunc("POST /debug/api/threads/{id}/turns", threadDebugHandler.CreateAssistantTurn)

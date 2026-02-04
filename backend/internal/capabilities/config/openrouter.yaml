@@ -101,7 +101,30 @@ models:
         output_price:
           text: 2.50
     provider_routing:
-      order: ["google-vertex","moonshotai/int4"] # Prefer Google provider to fix tool call corruption
+      order: ["moonshotai/int4", "siliconflow/fp8"]
+      ignore: ["deepinfra/fp4"]   # DeepInfra causes malformed JSON
+      allow_fallbacks: true
+  
+  moonshotai/kimi-k2.5:
+    display_name: "Kimi K2.5"
+    description: "Kimi's model"
+    supports_tools: true
+    supports_thinking: true
+    requires_thinking: false
+    supports_vision: false
+    supports_streaming_cancel: true  # Generation ID in first SSE event, can hard-cancel
+    tool_call_quality: good
+    image_generation: none
+    context_window: 262144
+    max_output: 262144
+    pricing_tiers:
+      - threshold: null
+        input_price:
+          text: 0.60
+        output_price:
+          text: 3.00
+    provider_routing:
+      order: ["moonshotai"] 
       ignore: ["deepinfra/fp4"]   # DeepInfra causes malformed JSON
       allow_fallbacks: true
 

@@ -89,7 +89,16 @@ export const DocEditBlock = React.memo(function DocEditBlock({
   )
 
   // Get streaming state for progressive field display via dedicated hook
-  const { input: streamingInput, isGenerating: toolIsGenerating, state: toolState } = useToolStreamingState({
+  const {
+    input: streamingInput,
+    isGenerating: toolIsGenerating,
+    state: toolState,
+    argsJsonTruncated,
+    activeArgKey,
+    activeArgChars,
+    activeArgPreviewHead,
+    activeArgPreviewTail,
+  } = useToolStreamingState({
     blockContent: toolUse?.content as ToolBlockContent | undefined,
   })
 
@@ -223,11 +232,18 @@ export const DocEditBlock = React.memo(function DocEditBlock({
         </div>
       )}
 
-      {/* Diff preview */}
-      {input && (
+      {/* Diff preview - hide on error to avoid showing partial/empty state */}
+      {input && !isError && (
         <DocEditDiffPreview
           input={input}
           isStreaming={isStreaming}
+          truncationMeta={argsJsonTruncated ? {
+            isTruncated: true,
+            activeKey: activeArgKey,
+            charCount: activeArgChars,
+            previewHead: activeArgPreviewHead,
+            previewTail: activeArgPreviewTail,
+          } : undefined}
         />
       )}
     </CollapsibleToolBlock>

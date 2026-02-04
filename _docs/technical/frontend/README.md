@@ -26,6 +26,7 @@ Core patterns and system design:
 
 - [Navigation Pattern](architecture/navigation-pattern.md) - Routing and navigation structure
 - [Sync System](architecture/sync-system.md) - Client-server synchronization
+- [Multi-Stream SSE](architecture/multi-stream-sse.md) - Concurrent streaming architecture (main + tool/agent streams)
 - [Workspace Rail Layout](architecture/workspace-rail-layout.md) - Main UI layout architecture
 - [Workspace Rail Audit](architecture/workspace-rail-audit.md) - Layout implementation review
 

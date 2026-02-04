@@ -20,7 +20,7 @@ import { useStreamingBuffer } from '../useStreamingBuffer'
 import { BlockTracker } from '../blockTracker'
 import { dispatchSSEEvent } from './SSEEventDispatcher'
 import type { SSEDispatchContext, SSEStoreActions } from './types'
-import { API_BASE_URL } from '@/core/lib/api'
+import { API_BASE_URL, api } from '@/core/lib/api'
 import { makeLogger } from '@/core/lib/logger'
 
 /**
@@ -39,6 +39,8 @@ export function useThreadSSE() {
     refreshTurn,
     setStreamingBlockInfo,
     notifyStreamEnded,
+    setInterjectionContent,
+    applyStreamSwitch,
   } = useThreadStore(
     useShallow((s) => ({
       threadId: s.threadId,
@@ -50,6 +52,8 @@ export function useThreadSSE() {
       refreshTurn: s.refreshTurn,
       setStreamingBlockInfo: s.setStreamingBlockInfo,
       notifyStreamEnded: s.notifyStreamEnded,
+      setInterjectionContent: s.setInterjectionContent,
+      applyStreamSwitch: s.applyStreamSwitch,
     }))
   )
 
@@ -118,6 +122,8 @@ export function useThreadSSE() {
       refreshTurn,
       setStreamingBlockInfo,
       notifyStreamEnded,
+      setInterjectionContent,
+      applyStreamSwitch,
       updateToolState: useToolStreamStore.getState().updateToolState,
       clearToolStates: useToolStreamStore.getState().clearAll,
     }
@@ -153,6 +159,25 @@ export function useThreadSSE() {
           async onopen(response: Response) {
             if (response.ok) {
               logger.debug('sse:connected')
+
+              // Fetch live interjection state on connect/reconnect.
+              // This avoids stale state from buffered SSE events being replayed.
+              const turnId = currentTurnIdRef.current
+              if (turnId) {
+                api.turns
+                  .getInterjection(turnId, { signal: ctrl.signal })
+                  .then((res) => {
+                    if (res.content) {
+                      setInterjectionContent(res.content)
+                    } else {
+                      // Clear any stale interjection content
+                      setInterjectionContent(null)
+                    }
+                  })
+                  .catch(() => {
+                    // Ignore - interjection fetch is best-effort
+                  })
+              }
               return
             }
 
@@ -253,5 +278,7 @@ export function useThreadSSE() {
     logger,
     setStreamingBlockInfo,
     notifyStreamEnded,
+    setInterjectionContent,
+    applyStreamSwitch,
   ])
 }
