@@ -26,34 +26,20 @@ feature: "Tool UI Components"
 
 ---
 
-## DocEditBlock
+## TextEditorBlock
 
-**Purpose**: Specialized UI for `doc_edit` tool interactions.
-
-**Features**:
-- Collapsible diff preview
-- Status badges: Pending → Applied/Error
-- "View" button to navigate to document
-- Error messages and warnings
-
-**Files**:
-- `frontend/src/features/threads/components/blocks/DocEditBlock/`
-- `frontend/src/features/threads/utils/docPathResolver.ts`
-
----
-
-## DocViewBlock
-
-**Purpose**: Specialized UI for `doc_view` tool interactions.
+**Purpose**: Specialized UI for `str_replace_based_edit_tool` interactions.
 
 **Features**:
+- Handles all commands: view, str_replace, create, insert
 - Collapsible content preview (documents) or folder listing (folders)
-- Status badges: Pending → Read/Error
+- Collapsible diff preview for edit commands
+- Status badges: Pending → Read/Applied/Error
 - "View" button to navigate to document
-- Word count and truncation warnings
 
 **Files**:
-- `frontend/src/features/threads/components/blocks/DocViewBlock/`
+- `frontend/src/features/threads/components/blocks/TextEditorBlock/`
+- `frontend/src/features/threads/types/textEditor.ts`
 
 ---
 
@@ -77,7 +63,7 @@ feature: "Tool UI Components"
 
 **Purpose**: Reusable tree rendering component.
 
-**Used by**: DocViewBlock, DocTreeBlock
+**Used by**: TextEditorBlock (folder view), DocTreeBlock
 
 **Files**:
 - `frontend/src/features/threads/components/blocks/shared/FolderTreeView.tsx`

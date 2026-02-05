@@ -44,3 +44,19 @@ export function getToolInteractionReactKey(
   return `tool:${turnId}:seq:${source.sequence}`
 }
 
+/**
+ * Generate a stable React key for a thinking group.
+ * The groupId is already stable (based on first item's sequence).
+ */
+export function getThinkingGroupReactKey(groupId: string): string {
+  return groupId
+}
+
+/**
+ * Generate a stable React key for a tool group.
+ * The groupId is already stable (based on first tool's sequence).
+ */
+export function getToolGroupReactKey(groupId: string): string {
+  return groupId
+}
+

@@ -338,11 +338,9 @@ export const DocViewBlock = React.memo(function DocViewBlock({
         />
       )}
 
-      {/* Pending state - only show before streaming starts */}
+      {/* Blank space during pending state (before streaming starts) for consistent UX */}
       {!hasResult && !isError && toolState === null && (
-        <div className="text-xs text-muted-foreground italic py-2">
-          Loading...
-        </div>
+        <div className="py-2" />
       )}
     </CollapsibleToolBlock>
   )
