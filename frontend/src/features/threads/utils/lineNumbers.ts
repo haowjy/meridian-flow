@@ -72,7 +72,7 @@ export function parseLineNumberedContent(content: string): ParsedLineNumberedCon
 
   // Extract start line from first line's prefix
   const firstMatch = lines[0]?.match(LINE_NUMBER_PREFIX)
-  if (firstMatch) {
+  if (firstMatch && firstMatch[1] !== undefined) {
     startLine = parseInt(firstMatch[1], 10)
   }
 
