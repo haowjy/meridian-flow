@@ -65,7 +65,7 @@ function RecentDocumentsSection({ projectId, projectSlug }: ProjectHomeViewProps
   }
 
   return (
-    <div className="px-3 pt-1 pb-3">
+    <div className="px-3 py-3">
       <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide px-1.5 mb-2">
         Recently Viewed
       </h3>

@@ -175,12 +175,14 @@ export function DocumentPanel({ projectId, projectSlug, isLoadingSkills, effecti
                 </div>
               ) : (
                 <div className="flex flex-col h-full bg-background">
-                  {/* Consistent header using DocumentHeaderBar */}
-                  <DocumentHeaderBar
-                    leading={documentTreeCollapsed ? <DocumentTreeToggle /> : undefined}
-                    ariaLabel="Project home"
-                    showDivider={false}
-                  />
+                  {/* Only show header when tree is collapsed (for toggle button) */}
+                  {documentTreeCollapsed && (
+                    <DocumentHeaderBar
+                      leading={<DocumentTreeToggle />}
+                      ariaLabel="Project home"
+                      showDivider={false}
+                    />
+                  )}
                   {/* Project home content */}
                   <ProjectHomeView projectId={projectId} projectSlug={projectSlug} />
                 </div>
