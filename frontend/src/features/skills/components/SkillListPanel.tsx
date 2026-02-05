@@ -103,10 +103,9 @@ export function SkillListPanel({ projectId }: SkillListPanelProps) {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto py-2">
+        {/* Blank space during loading for consistent UX */}
         {status === 'loading' && (
-          <div className="px-3 py-8 text-center text-muted-foreground text-sm">
-            Loading skills...
-          </div>
+          <div className="px-3 py-8" />
         )}
 
         {status === 'error' && (

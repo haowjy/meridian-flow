@@ -1,9 +1,19 @@
 import type { ToolBlockContent, TurnBlock } from '@/features/threads/types'
 import { normalizeToolCallId } from '@/features/threads/utils/normalizeToolCallId'
 
+/**
+ * A tool interaction represents a paired tool_use and tool_result block.
+ */
+export interface ToolInteraction {
+  toolUse: TurnBlock | null
+  toolResult: TurnBlock | null
+}
+
 export type AssistantRenderItem =
   | { kind: 'block'; block: TurnBlock }
   | { kind: 'toolInteraction'; toolUse: TurnBlock | null; toolResult: TurnBlock | null }
+  | { kind: 'thinkingGroup'; groupId: string; items: Array<{ kind: 'thinking'; block: TurnBlock } | { kind: 'tool'; interaction: ToolInteraction }> }
+  | { kind: 'toolGroup'; groupId: string; items: ToolInteraction[] }
 
 /**
  * Extract toolUseId from a block, normalized for consistent comparison.
@@ -90,4 +100,140 @@ export function buildAssistantRenderItems(blocks: TurnBlock[]): AssistantRenderI
   }
 
   return items
+}
+
+/**
+ * Groups consecutive thinking blocks and tool interactions into a single
+ * collapsible "thinking group" for cleaner UI presentation.
+ *
+ * Pattern recognized: thinking → tool → thinking → tool → ...
+ * Groups break when a non-thinking/non-tool item (e.g., text block) appears.
+ *
+ * This is a second pass over the already-grouped render items.
+ */
+export function groupThinkingAndTools(
+  items: AssistantRenderItem[],
+  turnId: string
+): AssistantRenderItem[] {
+  const result: AssistantRenderItem[] = []
+
+  // Items that can be part of a thinking group
+  type ThinkingGroupItem =
+    | { kind: 'thinking'; block: TurnBlock }
+    | { kind: 'tool'; interaction: ToolInteraction }
+
+  let currentGroup: ThinkingGroupItem[] = []
+  let groupCounter = 0
+
+  const flushGroup = () => {
+    if (currentGroup.length === 0) return
+
+    // Create a stable groupId based on the first item in the group
+    const firstItem = currentGroup[0]
+    if (!firstItem) return // Safety check
+
+    let groupId: string
+    if (firstItem.kind === 'thinking') {
+      groupId = `thinking-group:${turnId}:${firstItem.block.sequence}`
+    } else {
+      const source = firstItem.interaction.toolUse ?? firstItem.interaction.toolResult
+      groupId = `thinking-group:${turnId}:tool:${source?.sequence ?? groupCounter}`
+    }
+
+    result.push({
+      kind: 'thinkingGroup',
+      groupId,
+      items: [...currentGroup],
+    })
+    currentGroup = []
+    groupCounter++
+  }
+
+  for (const item of items) {
+    if (item.kind === 'block' && item.block.blockType === 'thinking') {
+      // Thinking block -> add to current group
+      currentGroup.push({ kind: 'thinking', block: item.block })
+    } else if (item.kind === 'toolInteraction') {
+      // Only group tools with thinking if the group actually has thinking content
+      // Otherwise, a standalone tool after text would get incorrectly grouped
+      const hasThinkingInGroup = currentGroup.some((i) => i.kind === 'thinking')
+      if (hasThinkingInGroup) {
+        currentGroup.push({ kind: 'tool', interaction: item })
+      } else {
+        // No thinking started this group - render tool standalone
+        flushGroup()
+        result.push(item)
+      }
+    } else {
+      // Non-thinking/non-tool item -> flush current group and add item as-is
+      flushGroup()
+      result.push(item)
+    }
+  }
+
+  // Flush any remaining group
+  flushGroup()
+
+  return result
+}
+
+/**
+ * Groups consecutive standalone tool interactions (not in a thinking group)
+ * into a single collapsible "tool group" for cleaner UI presentation.
+ *
+ * Only groups if 2+ consecutive tools exist. Single standalone tools stay as-is.
+ *
+ * This is a third pass over the already-grouped render items.
+ */
+export function groupStandaloneTools(
+  items: AssistantRenderItem[],
+  turnId: string
+): AssistantRenderItem[] {
+  const result: AssistantRenderItem[] = []
+  let currentToolRun: ToolInteraction[] = []
+
+  const flushToolRun = () => {
+    if (currentToolRun.length === 0) return
+
+    if (currentToolRun.length === 1) {
+      // Single tool stays standalone
+      const tool = currentToolRun[0]!
+      result.push({
+        kind: 'toolInteraction',
+        toolUse: tool.toolUse,
+        toolResult: tool.toolResult,
+      })
+    } else {
+      // 2+ tools get grouped
+      const firstTool = currentToolRun[0]!
+      const source = firstTool.toolUse ?? firstTool.toolResult
+      const groupId = `tool-group:${turnId}:${source?.sequence ?? 0}`
+
+      result.push({
+        kind: 'toolGroup',
+        groupId,
+        items: [...currentToolRun],
+      })
+    }
+    currentToolRun = []
+  }
+
+  for (const item of items) {
+    if (item.kind === 'toolInteraction') {
+      // Accumulate consecutive tool interactions
+      currentToolRun.push({
+        toolUse: item.toolUse,
+        toolResult: item.toolResult,
+      })
+    } else {
+      // Non-tool item: flush accumulated tools and pass through
+      flushToolRun()
+      result.push(item)
+    }
+  }
+
+  // Flush any remaining tools at the end
+  flushToolRun()
+
+  return result
 }

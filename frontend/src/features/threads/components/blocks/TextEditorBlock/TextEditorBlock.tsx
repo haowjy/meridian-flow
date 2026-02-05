@@ -8,7 +8,7 @@
  * Uses the tool registry pattern for extensibility.
  */
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useLocation } from '@tanstack/react-router'
 import { useShallow } from 'zustand/react/shallow'
 import { FileEdit, FileText, FolderOpen, ExternalLink, AlertCircle, AlertTriangle } from 'lucide-react'
@@ -39,10 +39,12 @@ import {
   CollapsibleToolBlock,
   ToolStatusBadge,
   useToolStreamingState,
+  CodeMirrorPreview,
   type ToolStatus,
 } from '../shared'
 import { ToolStreamState } from '@/features/threads/stores/useToolStreamStore'
 import type { Document } from '@/features/documents/types/document'
+import { parseLineNumberedContent } from '@/features/threads/utils/lineNumbers'
 
 // =============================================================================
 // TYPES
@@ -106,7 +108,10 @@ function getViewResult(toolResult: TurnBlock | null): TextEditorDocumentResult |
 // =============================================================================
 
 /**
- * Document content preview with line numbers.
+ * Document content preview with CodeMirror and line numbers in gutter.
+ * Strips line number prefixes from content so users can copy-paste cleanly.
+ *
+ * SRP: Handles UI chrome (metadata row) and delegates CodeMirror to shared component.
  */
 function DocumentPreview({ result }: { result: TextEditorDocumentResult }) {
   // Strip backend's embedded truncation message from display (legacy cleanup)
@@ -114,6 +119,12 @@ function DocumentPreview({ result }: { result: TextEditorDocumentResult }) {
   const displayContent = result.was_truncated
     ? result.content.replace(TRUNCATION_MARKER, '')
     : result.content
+
+  // Parse line-numbered content - strip prefixes, extract start line
+  const parsed = useMemo(() => parseLineNumberedContent(displayContent), [displayContent])
+
+  // Determine starting line number from view_range or parsed content
+  const startLine = result.view_range?.[0] ?? parsed.startLine
 
   return (
     <div className="space-y-2">
@@ -138,17 +149,8 @@ function DocumentPreview({ result }: { result: TextEditorDocumentResult }) {
         )}
       </div>
 
-      {/* Content preview (already has line numbers from backend) */}
-      <div
-        className={cn(
-          'max-h-48 overflow-y-auto',
-          'rounded-md border bg-muted/30 p-3',
-          'text-xs font-mono whitespace-pre-wrap',
-          'text-foreground/80'
-        )}
-      >
-        {displayContent}
-      </div>
+      {/* CodeMirror preview with line numbers in gutter */}
+      <CodeMirrorPreview content={parsed.rawContent} startLine={startLine} />
     </div>
   )
 }
@@ -262,9 +264,10 @@ export const TextEditorBlock = React.memo(function TextEditorBlock({
     // Fallback for documents not in tree
     if (input?.path) {
       const pathSegment = input.path.replace(/^\//, '')
+      // Let TanStack Router handle URL encoding - don't pre-encode
       navigate({
         to: '/projects/$slug/documents/$',
-        params: { slug: projectSlug, _splat: encodeURIComponent(pathSegment).split('%2F').join('/') },
+        params: { slug: projectSlug, _splat: pathSegment },
       })
     }
   }
@@ -395,11 +398,9 @@ export const TextEditorBlock = React.memo(function TextEditorBlock({
         />
       )}
 
-      {/* Pending state - only show before streaming starts */}
+      {/* Blank space during pending state (before streaming starts) for consistent UX */}
       {!hasResult && !isError && toolState === null && input && isViewCommand(input.command) && (
-        <div className="text-xs text-muted-foreground italic py-2">
-          Loading...
-        </div>
+        <div className="py-2" />
       )}
     </CollapsibleToolBlock>
   )

@@ -220,10 +220,11 @@ export function SkillEditorPanel({ skillId, projectId, projectSlug, onBackToTree
     setTouchedFields((prev) => new Set(prev).add('content'))
   }, [])
 
+  // Blank space during loading (matches EditorPanel pattern for consistent UX)
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-muted-foreground">Loading skill...</p>
+      <div className="flex flex-col h-full bg-background">
+        <div className="flex-1" />
       </div>
     )
   }

@@ -11,6 +11,7 @@ import { SkillEditorPanel, SkillCreatePanel } from '@/features/skills/components
 import { DocumentHeaderBar } from './DocumentHeaderBar'
 import { DocumentTreeToggle } from '@/shared/components/layout'
 import { ProjectHeader } from './ProjectHeader'
+import { ProjectHomeView } from './ProjectHomeView'
 
 const logger = makeLogger('document-panel')
 
@@ -19,6 +20,8 @@ interface DocumentPanelProps {
   projectSlug: string
   isLoadingSkills?: boolean
   effectiveSkillName?: string
+  /** True when URL has a document path but ID hasn't resolved yet (tree loading) */
+  isResolvingDocument?: boolean
 }
 
 /**
@@ -34,7 +37,7 @@ interface DocumentPanelProps {
  * - Shows document, skill, or welcome message based on activeDocumentId/activeSkillId
  * - Shows loading skeleton when skill is being resolved from URL
  */
-export function DocumentPanel({ projectId, projectSlug, isLoadingSkills, effectiveSkillName }: DocumentPanelProps) {
+export function DocumentPanel({ projectId, projectSlug, isLoadingSkills, effectiveSkillName, isResolvingDocument }: DocumentPanelProps) {
   const { documentTreeCollapsed, activeDocumentId, activeSkillId } = useUIStore(useShallow((s) => ({
     documentTreeCollapsed: s.documentTreeCollapsed,
     activeDocumentId: s.activeDocumentId,
@@ -89,7 +92,7 @@ export function DocumentPanel({ projectId, projectSlug, isLoadingSkills, effecti
   return (
     <div className="flex h-full flex-col">
       {/* Project Header - unified header for the entire document zone */}
-      <ProjectHeader projectId={projectId} />
+      <ProjectHeader projectId={projectId} projectSlug={projectSlug} />
 
       {/* Document Workspace - Tree + Editor */}
       <div className="flex flex-1 overflow-hidden border-r border-border/50">
@@ -146,30 +149,40 @@ export function DocumentPanel({ projectId, projectSlug, isLoadingSkills, effecti
               {/* Skill creation mode - URL is /skills/new */}
               {isCreatingNewSkill ? (
                 <SkillCreatePanel projectId={projectId} projectSlug={projectSlug} />
-              ) : /* Show loading skeleton if skill is being resolved from URL */
+              ) : /* Blank space while skill is being resolved from URL (tree loading) */
               isLoadingSkills && effectiveSkillName && !activeSkillId ? (
-                <div className="flex h-full items-center justify-center">
-                  <p className="text-muted-foreground">Loading skill...</p>
+                <div className="flex flex-col h-full bg-background">
+                  <DocumentHeaderBar
+                    leading={documentTreeCollapsed ? <DocumentTreeToggle /> : undefined}
+                    ariaLabel="Skill editor"
+                    showDivider={false}
+                  />
+                  <div className="flex-1" />
                 </div>
               ) : activeSkillId ? (
                 <SkillEditorPanel skillId={activeSkillId} projectId={projectId} projectSlug={projectSlug} />
               ) : activeDocumentId ? (
                 <EditorPanel documentId={activeDocumentId} />
+              ) : isResolvingDocument ? (
+                /* Blank state while document path is resolving to ID (tree loading) */
+                <div className="flex flex-col h-full bg-background">
+                  <DocumentHeaderBar
+                    leading={documentTreeCollapsed ? <DocumentTreeToggle /> : undefined}
+                    ariaLabel="Document editor"
+                    showDivider={false}
+                  />
+                  <div className="flex-1" />
+                </div>
               ) : (
                 <div className="flex flex-col h-full bg-background">
                   {/* Consistent header using DocumentHeaderBar */}
                   <DocumentHeaderBar
                     leading={documentTreeCollapsed ? <DocumentTreeToggle /> : undefined}
-                    title={
-                      <span className="text-sm text-muted-foreground">
-                        No document selected
-                      </span>
-                    }
-                    ariaLabel="Document editor"
+                    ariaLabel="Project home"
                     showDivider={false}
                   />
-                  {/* Empty content area */}
-                  <div className="flex-1" />
+                  {/* Project home content */}
+                  <ProjectHomeView projectId={projectId} projectSlug={projectSlug} />
                 </div>
               )}
             </div>

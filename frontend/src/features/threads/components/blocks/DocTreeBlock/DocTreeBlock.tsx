@@ -216,11 +216,9 @@ export const DocTreeBlock = React.memo(function DocTreeBlock({
         />
       )}
 
-      {/* Pending state - only show before streaming starts */}
+      {/* Blank space during pending state (before streaming starts) for consistent UX */}
       {!hasResult && !isError && toolState === null && (
-        <div className="text-xs text-muted-foreground italic py-2">
-          Loading tree...
-        </div>
+        <div className="py-2" />
       )}
     </CollapsibleToolBlock>
   )

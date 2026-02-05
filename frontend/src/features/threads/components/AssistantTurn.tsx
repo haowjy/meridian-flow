@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react'
+import React, { useCallback, useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { Turn, TurnBlock, ToolBlockContent } from '@/features/threads/types'
 import { useThreadStore } from '@/core/stores/useThreadStore'
@@ -6,9 +6,11 @@ import { TurnActionBar } from './TurnActionBar'
 import { BlockRenderer } from './blocks'
 import { InlineError } from '@/shared/components/InlineError'
 import { makeLogger } from '@/core/lib/logger'
-import { buildAssistantRenderItems } from '@/features/threads/utils/toolGrouping'
+import { buildAssistantRenderItems, groupThinkingAndTools, groupStandaloneTools } from '@/features/threads/utils/toolGrouping'
 import { getToolRenderer } from './blocks/toolRegistry'
-import { getToolInteractionReactKey, getTurnBlockReactKey } from '@/features/threads/utils/blockIdentity'
+import { getToolInteractionReactKey, getTurnBlockReactKey, getThinkingGroupReactKey, getToolGroupReactKey } from '@/features/threads/utils/blockIdentity'
+import { ThinkingGroupBlock } from './blocks/ThinkingGroupBlock'
+import { ToolGroupBlock } from './blocks/ToolGroupBlock'
 
 const log = makeLogger('AssistantTurn')
 
@@ -81,7 +83,12 @@ export const AssistantTurn = React.memo(function AssistantTurn({ turn }: Assista
     }
   }, [regenerateTurn, turn.threadId, turn.prevTurnId, turn.id])
 
-  const items = buildAssistantRenderItems(turn.blocks)
+  // Build and group render items
+  const items = useMemo(() => {
+    const rawItems = buildAssistantRenderItems(turn.blocks)
+    const withThinkingGroups = groupThinkingAndTools(rawItems, turn.id)
+    return groupStandaloneTools(withThinkingGroups, turn.id)
+  }, [turn.blocks, turn.id])
 
   return (
     <div className="flex flex-col items-stretch gap-1 group text-sm min-w-0" data-turn-id={turn.id}>
@@ -89,6 +96,28 @@ export const AssistantTurn = React.memo(function AssistantTurn({ turn }: Assista
         {items.map((item, index) => {
           if (item.kind === 'block') {
             return <BlockRenderer key={getTurnBlockReactKey(item.block)} block={item.block} />
+          }
+
+          if (item.kind === 'thinkingGroup') {
+            return (
+              <ThinkingGroupBlock
+                key={getThinkingGroupReactKey(item.groupId)}
+                groupId={item.groupId}
+                items={item.items}
+                turnId={turn.id}
+              />
+            )
+          }
+
+          if (item.kind === 'toolGroup') {
+            return (
+              <ToolGroupBlock
+                key={getToolGroupReactKey(item.groupId)}
+                groupId={item.groupId}
+                items={item.items}
+                turnId={turn.id}
+              />
+            )
           }
 
           // Route to custom tool UI via registry (extensible pattern)
@@ -105,7 +134,7 @@ export const AssistantTurn = React.memo(function AssistantTurn({ turn }: Assista
 
         {/* Still processing indicator - shows only on the actively streaming turn */}
         {isStreamingThisTurn && (
-          <div className="flex items-center gap-1.5 py-2 text-primary">
+          <div className="flex items-center gap-1.5 py-2 text-favorite">
             <span className="animate-processing-dot h-1.5 w-1.5 rounded-full bg-current" />
             <span className="animate-processing-dot h-1.5 w-1.5 rounded-full bg-current" />
             <span className="animate-processing-dot h-1.5 w-1.5 rounded-full bg-current" />

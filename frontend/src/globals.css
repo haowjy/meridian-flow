@@ -31,8 +31,8 @@
   --color-foreground: var(--foreground);
   --color-primary: var(--jade-primary);
   --color-primary-foreground: var(--jade-foreground);
-  --color-favorite: var(--gold-favorite);
-  --color-favorite-foreground: var(--gold-favorite-foreground);
+  --color-favorite: var(--gold-favorite, #DB9A30);
+  --color-favorite-foreground: var(--gold-favorite-foreground, #1C1A18);
   --color-border: var(--border);
   --color-input: var(--input-border);
   --color-ring: var(--focus-ring);
@@ -150,8 +150,8 @@
   --theme-text: #1F1A12;         /* Darker for better contrast */
   --theme-text-muted: #5A4D3F;   /* Slightly darker muted text */
   --theme-border: #D8D0C2;       /* More visible borders */
-  --theme-favorite: #F4B41A;     /* Gold */
-  --theme-favorite-hover: #E0A410;
+  --theme-favorite: #DB9A30;     /* Amber gold */
+  --theme-favorite-hover: #C88A20;
   --theme-favorite-foreground: #1C1A18;
   --theme-primary: #4A7A68;      /* Deeper, more confident sage green */
   --theme-primary-foreground: #FFFFFF;
@@ -277,9 +277,9 @@
   --theme-text: #F0EBE3;         /* Warm cream */
   --theme-text-muted: #A89E8E;   /* Warm muted */
   --theme-border: #3A3530;       /* Warm border */
-  --theme-favorite: #E3C169;     /* Warm gold for dark mode */
-  --theme-favorite-hover: #F0D080;
-  --theme-favorite-foreground: #2f2f2f;
+  --theme-favorite: #F0B042;     /* Amber gold for dark mode */
+  --theme-favorite-hover: #F5C060;
+  --theme-favorite-foreground: #1C1917;
   --theme-primary: #8FB9A4;      /* Brighter, more vibrant sage */
   --theme-primary-foreground: #1C1917;
   --theme-success: #5CB87A;
@@ -1136,18 +1136,18 @@ body.preload * {
 
   /* Border shimmer keyframe: traveling highlight via box-shadow */
   @keyframes meridian-border-shimmer {
-    0% { box-shadow: inset -100% 0 0 0 color-mix(in srgb, var(--theme-primary) 30%, transparent); }
-    50% { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-primary) 50%, transparent); }
-    100% { box-shadow: inset 100% 0 0 0 color-mix(in srgb, var(--theme-primary) 30%, transparent); }
+    0% { box-shadow: inset -100% 0 0 0 color-mix(in srgb, var(--theme-favorite) 30%, transparent); }
+    50% { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-favorite) 50%, transparent); }
+    100% { box-shadow: inset 100% 0 0 0 color-mix(in srgb, var(--theme-favorite) 30%, transparent); }
   }
 
   /* Text shimmer - gradient sweep across text */
   .animate-generating-shimmer {
     background: linear-gradient(
       90deg,
-      color-mix(in srgb, var(--theme-primary) 30%, transparent) 0%,
-      var(--theme-primary) 50%,
-      color-mix(in srgb, var(--theme-primary) 30%, transparent) 100%
+      color-mix(in srgb, var(--theme-favorite) 30%, transparent) 0%,
+      var(--theme-favorite) 50%,
+      color-mix(in srgb, var(--theme-favorite) 30%, transparent) 100%
     );
     background-size: 200% 100%;
     animation: meridian-shimmer 2s cubic-bezier(0.25, 1, 0.5, 1) infinite;

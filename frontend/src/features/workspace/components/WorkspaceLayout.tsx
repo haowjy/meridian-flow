@@ -12,6 +12,7 @@ import { useProjectStore } from '@/core/stores/useProjectStore'
 import { useSkillStore } from '@/core/stores/useSkillStore'
 import { api } from '@/core/lib/api'
 import { makeLogger } from '@/core/lib/logger'
+import { decodeDocumentPath } from '@/core/lib/panelHelpers'
 import type { PanelDefinitions } from '@/shared/components/layout/types'
 
 const logger = makeLogger('workspace-layout')
@@ -89,11 +90,11 @@ export default function WorkspaceLayout({ projectIdentifier, initialDocumentPath
     const segments = location.pathname.split('/').filter(Boolean)
     const documentsIndex = segments.indexOf('documents')
     if (documentsIndex === -1) return undefined
-    // Get ALL segments after 'documents', decode each and join with '/'
+    // Get ALL segments after 'documents' and join with '/'
     const pathSegments = segments.slice(documentsIndex + 1)
     if (pathSegments.length === 0) return undefined
-    // Decode URL-encoded segments to get actual path
-    return pathSegments.map(decodeURIComponent).join('/')
+    // Use decodeDocumentPath for robust decoding (handles double-encoded URLs)
+    return decodeDocumentPath(pathSegments.join('/'))
   }, [location.pathname])
 
   // Prefer explicit prop when provided (e.g., from a dedicated document route),
@@ -441,6 +442,7 @@ export default function WorkspaceLayout({ projectIdentifier, initialDocumentPath
         projectSlug={projectSlug}
         isLoadingSkills={isLoadingSkills}
         effectiveSkillName={effectiveSkillName}
+        isResolvingDocument={!!effectiveDocumentPath && !effectiveDocumentId}
       />
     ),
     projectSettings: <ProjectSettingsPanel projectId={projectId} />,
