@@ -20,7 +20,7 @@ feature: "Tool Calling"
 **Built-in Tools** - web_search (backend via Tavily), bash (client), text_editor (client)
 - See [builtin-tools.md](builtin-tools.md)
 
-**Custom Tools** - doc_view, doc_tree, doc_search, doc_edit
+**Custom Tools** - str_replace_based_edit_tool, doc_tree, doc_search
 - See [custom-tools.md](custom-tools.md)
 
 **Tool Continuation** - Multi-turn tool use until `end_turn`

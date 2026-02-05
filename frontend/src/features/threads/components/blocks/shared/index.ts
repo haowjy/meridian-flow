@@ -15,3 +15,6 @@ export { ToolStatusBadge } from './ToolStatusBadge'
 export type { ToolStatus, ToolStatusBadgeProps } from './ToolStatusBadge'
 
 export { useToolStreamingState } from './useToolStreamingState'
+
+export { CodeMirrorPreview } from './CodeMirrorPreview'
+export type { CodeMirrorPreviewProps } from './CodeMirrorPreview'

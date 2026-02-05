@@ -197,6 +197,22 @@ interface UIStore {
   recentlyCreatedFolderId: string | null
 
   /**
+   * Set of thinking group IDs that the user has explicitly expanded.
+   * Thinking groups default to collapsed, but user's expand choice is remembered.
+   * NOT persisted (session-scoped - doesn't make sense to persist across refreshes).
+   * @default new Set()
+   */
+  expandedThinkingGroups: Set<string>
+
+  /**
+   * Set of tool group IDs that the user has explicitly expanded.
+   * Tool groups default to collapsed, but user's expand choice is remembered.
+   * NOT persisted (session-scoped - doesn't make sense to persist across refreshes).
+   * @default new Set()
+   */
+  expandedToolGroups: Set<string>
+
+  /**
    * Toggles left panel collapsed/expanded state (sets user override)
    */
   toggleLeftPanel: () => void
@@ -267,6 +283,24 @@ interface UIStore {
 
   /** Sets recently created folder ID (for highlight animation) */
   setRecentlyCreatedFolderId: (id: string | null) => void
+
+  /** Toggle thinking group expanded state */
+  toggleThinkingGroup: (groupId: string) => void
+
+  /** Check if a thinking group is expanded */
+  isThinkingGroupExpanded: (groupId: string) => boolean
+
+  /** Clear all expanded thinking groups (e.g., on thread change) */
+  clearExpandedThinkingGroups: () => void
+
+  /** Toggle tool group expanded state */
+  toggleToolGroup: (groupId: string) => void
+
+  /** Check if a tool group is expanded */
+  isToolGroupExpanded: (groupId: string) => boolean
+
+  /** Clear all expanded tool groups (e.g., on thread change) */
+  clearExpandedToolGroups: () => void
 }
 
 /**
@@ -305,6 +339,8 @@ export const useUIStore = create<UIStore>()(
       leftPanelView: 'chat',
       mobileActiveTab: 'chat',
       recentlyCreatedFolderId: null,
+      expandedThinkingGroups: new Set<string>(),
+      expandedToolGroups: new Set<string>(),
 
       toggleLeftPanel: () => {
         const currentlyCollapsed = selectEffectiveLeftCollapsed(get())
@@ -369,6 +405,32 @@ export const useUIStore = create<UIStore>()(
         set({ mobileActiveTab: tab }),
       setRecentlyCreatedFolderId: (id) =>
         set({ recentlyCreatedFolderId: id }),
+      toggleThinkingGroup: (groupId) =>
+        set((state) => {
+          const newSet = new Set(state.expandedThinkingGroups)
+          if (newSet.has(groupId)) {
+            newSet.delete(groupId)
+          } else {
+            newSet.add(groupId)
+          }
+          return { expandedThinkingGroups: newSet }
+        }),
+      isThinkingGroupExpanded: (groupId) => get().expandedThinkingGroups.has(groupId),
+      clearExpandedThinkingGroups: () =>
+        set({ expandedThinkingGroups: new Set<string>() }),
+      toggleToolGroup: (groupId) =>
+        set((state) => {
+          const newSet = new Set(state.expandedToolGroups)
+          if (newSet.has(groupId)) {
+            newSet.delete(groupId)
+          } else {
+            newSet.add(groupId)
+          }
+          return { expandedToolGroups: newSet }
+        }),
+      isToolGroupExpanded: (groupId) => get().expandedToolGroups.has(groupId),
+      clearExpandedToolGroups: () =>
+        set({ expandedToolGroups: new Set<string>() }),
     }),
     {
       name: 'ui-store',
