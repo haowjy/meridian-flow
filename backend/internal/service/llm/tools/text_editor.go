@@ -12,6 +12,7 @@ import (
 	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
+
 // TextEditorToolMetadata returns metadata for the str_replace_based_edit_tool tool.
 // This unified tool replaces both doc_view and doc_edit.
 // This enables OCP compliance - tool self-describes for system prompt generation.
@@ -39,6 +40,7 @@ type TextEditorTool struct {
 	namespaceSvc docsysSvc.NamespaceService    // For namespace routing (optional)
 	pathResolver *PathResolver                 // For folder path resolution
 	config       *ToolConfig
+	normalizers  []TextNormalizer              // For str_replace text normalization (OCP)
 }
 
 // NewTextEditorTool creates a new TextEditorTool instance.
@@ -62,6 +64,7 @@ func NewTextEditorTool(
 		namespaceSvc: namespaceSvc,
 		pathResolver: NewPathResolver(projectID, userID, folderSvc),
 		config:       config,
+		normalizers:  DefaultNormalizers(), // OCP: extensible without modifying str_replace logic
 	}
 }
 
@@ -255,6 +258,10 @@ func (t *TextEditorTool) listFolderContents(ctx context.Context, folderID *strin
 
 // executeStrReplace handles the str_replace command.
 // Replaces exact text in the document's ai_version (or content if no ai_version).
+//
+// Smart text normalization: Uses the normalizer chain (OCP) to handle common LLM mistakes
+// like including line number prefixes from view output. Normalizers are tried in order
+// until a match is found, allowing easy extension without modifying this function.
 func (t *TextEditorTool) executeStrReplace(ctx context.Context, path string, input map[string]interface{}) (interface{}, error) {
 	// Check namespace access - edit DENIED for /.meridian/**
 	if err := t.checkEditNamespaceAccess(path); err != nil {
@@ -280,27 +287,40 @@ func (t *TextEditorTool) executeStrReplace(ctx context.Context, path string, inp
 	// Get base content (ai_version if exists, else content)
 	base := getBase(doc)
 
-	// Validate old_str exists in base
-	if !strings.Contains(base, oldStr) {
-		return ErrorResult(ErrNoMatch, "Text not found in document. Use view command to see current content and try again.", nil), nil
+	// Try to match using normalizer chain (OCP: extensible without modifying this function)
+	result, errMsg := tryMatchWithNormalizers(base, oldStr, newStr, t.normalizers)
+	if result == nil {
+		return ErrorResult(ErrNoMatch, errMsg, nil), nil
 	}
 
 	// Check for ambiguous match (multiple occurrences)
-	if strings.Count(base, oldStr) > 1 {
-		return ErrorResult(ErrAmbiguousMatch, "Multiple matches found", map[string]any{"count": strings.Count(base, oldStr)}), nil
+	if strings.Count(base, result.matchedOld) > 1 {
+		msg := "Multiple matches found"
+		if result.appliedNorm != "" {
+			msg += " after applying " + result.appliedNorm + " normalization"
+		}
+		return ErrorResult(ErrAmbiguousMatch, msg, map[string]any{
+			"count": strings.Count(base, result.matchedOld),
+		}), nil
 	}
 
 	// Apply replacement
-	newVersion := strings.Replace(base, oldStr, newStr, 1)
+	newVersion := strings.Replace(base, result.matchedOld, result.normalizedNew, 1)
 
 	// Save to ai_version
 	if _, err := t.documentSvc.UpdateAIVersion(ctx, t.userID, doc.ID, &newVersion); err != nil {
 		return nil, fmt.Errorf("failed to save ai_version: %w", err)
 	}
 
+	// Build response message
+	message := "Suggested text replacement"
+	if result.appliedNorm != "" {
+		message += " (" + result.appliedNorm + " normalization applied)"
+	}
+
 	return map[string]interface{}{
 		"path":    path,
-		"message": "Suggested text replacement",
+		"message": message,
 	}, nil
 }
 

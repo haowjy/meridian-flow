@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import WorkspaceLayout from '@/features/workspace/components/WorkspaceLayout'
+import { decodeDocumentPath } from '@/core/lib/panelHelpers'
 
 // Splat route: catches all segments after /documents/
 // Examples:
@@ -11,7 +12,9 @@ export const Route = createFileRoute('/_authenticated/projects/$slug/documents/$
 
 function DocumentWorkspace() {
   const { slug, _splat } = Route.useParams()
-  // _splat contains the full document path (e.g., "Characters/Heroes/Aria.md")
-  // WorkspaceLayout resolves it to document UUID
-  return <WorkspaceLayout key={`project-${slug}`} projectIdentifier={slug} initialDocumentPath={_splat} />
+  // _splat is URL-encoded by the router; decode to get actual document path
+  // decodeDocumentPath handles both single and double-encoded URLs
+  const decodedPath = _splat ? decodeDocumentPath(_splat) : undefined
+  // WorkspaceLayout resolves the path to document UUID
+  return <WorkspaceLayout key={`project-${slug}`} projectIdentifier={slug} initialDocumentPath={decodedPath} />
 }

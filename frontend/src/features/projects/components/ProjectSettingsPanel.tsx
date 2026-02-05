@@ -466,10 +466,8 @@ export function ProjectSettingsPanelContent({ projectId }: ProjectSettingsPanelC
         <CollapsibleContent>
           <div className="pb-1">
             {isLoadingSkills && skills.length === 0 ? (
-              <div className="px-3 py-4 flex items-center justify-center text-muted-foreground">
-                <Loader2 className="size-4 animate-spin mr-2" />
-                Loading skills...
-              </div>
+              // Blank space during loading for consistent UX (no spinner/text)
+              <div className="px-3 py-4" />
             ) : skills.length === 0 ? (
               <div className="px-3 py-4 text-center text-sm text-muted-foreground">
                 No skills yet

@@ -214,79 +214,82 @@ export function TurnInput({ threadId, projectId, focusKey, onHeightChange }: Tur
   return (
     <div ref={containerRef} className="thread-input-shell">
       <div className="mx-auto w-full max-w-3xl">
-        <div className="flex flex-col rounded-lg border border-border/60 bg-card shadow-sm transition-shadow focus-within:border-border focus-within:shadow-md" style={{ boxShadow: 'var(--shadow-1)' }}>
-          {/* Queued interjection indicator - inside composer, shows pending message */}
-          {/* Collapsed: 2-line preview, click anywhere to expand, icons centered */}
-          {/* Expanded: full content inline (scrollable), only chevron collapses, icons at top */}
-          {showInterjectionIndicator && (
-            <div className="border-b border-border/40">
-              {/* Single row layout - icons float to top when expanded */}
-              <div className={cn(
-                "flex gap-1 px-2 py-1.5",
-                queueExpanded ? "items-start" : "items-center"
-              )}>
-                {/* Chevron - always clickable to toggle */}
+        {/* Queued interjection indicator - ABOVE composer, visually connected */}
+        {/* Collapsed: 2-line preview, click anywhere to expand, icons centered */}
+        {/* Expanded: full content inline (scrollable), only chevron collapses, icons at top */}
+        {showInterjectionIndicator && (
+          <div className="mx-2 rounded-t-lg border border-b-0 border-border/60 bg-muted py-0.5">
+            {/* Single row layout - icons float to top when expanded */}
+            <div className={cn(
+              "flex gap-1 px-2 py-1.5",
+              queueExpanded ? "items-start" : "items-center"
+            )}>
+              {/* Chevron - always clickable to toggle */}
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="shrink-0 [&_svg]:size-3"
+                onClick={() => setQueueExpanded((v) => !v)}
+                title={queueExpanded ? "Collapse" : "Expand"}
+              >
+                <ChevronDown className={cn(
+                  "transition-transform duration-150",
+                  !queueExpanded && "rotate-180"
+                )} />
+              </Button>
+
+              {/* Content area - clickable only when collapsed, selectable when expanded */}
+              <div
+                onClick={queueExpanded ? undefined : () => setQueueExpanded(true)}
+                className={cn(
+                  "relative min-w-0 flex-1",
+                  !queueExpanded && "cursor-pointer"
+                )}
+                title={queueExpanded ? undefined : "Expand"}
+              >
+                <div
+                  ref={queueExpanded ? expandedContentRef : collapsedPreviewRef}
+                  className={cn(
+                    "whitespace-pre-wrap break-words text-sm text-muted-foreground",
+                    queueExpanded ? "max-h-24 overflow-y-auto" : "line-clamp-2"
+                  )}
+                >
+                  {interjectionContent}
+                </div>
+                {/* Gradient fade indicates more content is hidden */}
+                {isTruncated && (
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-4 bg-gradient-to-t from-muted/30 to-transparent" />
+                )}
+              </div>
+
+              {/* Action icons - float to top when expanded */}
+              <div className="flex shrink-0 items-center gap-0.5">
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  className="shrink-0 [&_svg]:size-3"
-                  onClick={() => setQueueExpanded((v) => !v)}
-                  title={queueExpanded ? "Collapse" : "Expand"}
+                  className="[&_svg]:size-3"
+                  onClick={loadInterjectionForEdit}
+                  title="Edit"
                 >
-                  <ChevronDown className={cn(
-                    "transition-transform duration-150",
-                    !queueExpanded && "rotate-180"
-                  )} />
+                  <Pencil />
                 </Button>
-
-                {/* Content area - clickable only when collapsed, selectable when expanded */}
-                <div
-                  onClick={queueExpanded ? undefined : () => setQueueExpanded(true)}
-                  className={cn(
-                    "relative min-w-0 flex-1",
-                    !queueExpanded && "cursor-pointer"
-                  )}
-                  title={queueExpanded ? undefined : "Expand"}
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="[&_svg]:size-3"
+                  onClick={handleClearInterjection}
+                  title="Delete (Esc)"
                 >
-                  <div
-                    ref={queueExpanded ? expandedContentRef : collapsedPreviewRef}
-                    className={cn(
-                      "whitespace-pre-wrap break-words text-sm text-muted-foreground",
-                      queueExpanded ? "max-h-24 overflow-y-auto" : "line-clamp-2"
-                    )}
-                  >
-                    {interjectionContent}
-                  </div>
-                  {/* Gradient fade indicates more content is hidden */}
-                  {isTruncated && (
-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-4 bg-gradient-to-t from-card to-transparent" />
-                  )}
-                </div>
-
-                {/* Action icons - float to top when expanded */}
-                <div className="flex shrink-0 items-center gap-0.5">
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    className="[&_svg]:size-3"
-                    onClick={loadInterjectionForEdit}
-                    title="Edit"
-                  >
-                    <Pencil />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    className="[&_svg]:size-3"
-                    onClick={handleClearInterjection}
-                    title="Delete (Esc)"
-                  >
-                    <Trash2 />
-                  </Button>
-                </div>
+                  <Trash2 />
+                </Button>
               </div>
             </div>
-          )}
+          </div>
+        )}
+        <div className={cn(
+          "flex flex-col border border-border/60 bg-card shadow-sm transition-shadow focus-within:border-border focus-within:shadow-md",
+          showInterjectionIndicator ? "rounded-b-lg" : "rounded-lg"
+        )} style={{ boxShadow: 'var(--shadow-1)' }}>
           <div className="px-2 py-1.5 sm:px-2.5 sm:py-2">
             <AutosizeTextarea
             ref={textareaRef}

@@ -7,6 +7,7 @@ import { loadWithPolicy, ReconcileNewestPolicy, ICacheRepo, IRemoteRepo } from '
 import { documentSyncService } from '@/core/services/documentSyncService'
 import { getErrorMessageWithFallback, isAbortError } from '@/core/lib/errors'
 import { makeLogger } from '@/core/lib/logger'
+import { useRecentDocumentsStore } from './useRecentDocumentsStore'
 
 const logger = makeLogger('editor-store')
 
@@ -101,6 +102,8 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
         .then((final) => {
           if (get()._activeDocumentId !== documentId) return
           set({ activeDocument: final.data, status: 'saved', isLoading: false })
+          // Track recent document access (document has projectId from API response)
+          useRecentDocumentsStore.getState().addRecent(final.data.projectId, documentId)
         })
         .catch((error) => {
           if (isAbortError(error)) {

@@ -6,28 +6,44 @@ feature: "Custom Tools"
 
 # Custom Tools
 
-**Four custom tools for document access and editing: doc_view, doc_tree, doc_search, doc_edit.**
+**Three custom tools for document access and editing: str_replace_based_edit_tool, doc_tree, doc_search.**
 
 ## Status: ✅ Complete
 
 ---
 
-## doc_view
+## str_replace_based_edit_tool
 
-**Purpose**: Read document content or list folder contents
+**Purpose**: View or edit documents (unified tool matching Anthropic's text_editor_20250728)
+
+**Reference**: [Anthropic Text Editor Tool Docs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool)
+
+**Commands**:
+- `view`: Read document content (with line numbers) or list folder contents
+- `str_replace`: Find and replace exact text
+- `create`: Create new document
+- `insert`: Insert text at specific line
 
 **Features**:
-- Path resolution (Unix-style paths)
-- Content truncation (20k chars max)
-- Returns: `{type: "document|folder", content, documents, folders}`
+- Unix-style path resolution
+- Line-numbered output for view (`1: line1\n2: line2...`)
+- View pagination via `view_range: [start, end]`
+- Edits go to `ai_version` (user review before accepting)
+- Accumulative: multiple edits build on previous `ai_version`
+- Backward compatible with legacy `doc_view`/`doc_edit` tool names
 
-**File**: `backend/internal/service/llm/tools/view.go`
+**File**: `backend/internal/service/llm/tools/text_editor.go`
 
 ---
 
 ## doc_tree
 
 **Purpose**: Show hierarchical structure of folders/documents
+
+**Parameters**:
+- `path` (string, optional): Unix-style path to folder. Defaults to "/" (root)
+- `depth` (number, optional): How many levels deep (default: 2, max: 5)
+- `folder` (string, optional): Legacy alias for `path` (backward compat)
 
 **Features**:
 - Metadata only (no content)
@@ -56,26 +72,6 @@ feature: "Custom Tools"
 **Error Handling**: Per-tool error tracking
 
 **File**: `backend/internal/service/llm/tools/registry.go`
-
----
-
-## doc_edit
-
-**Purpose**: Edit document content via AI suggestions (writes to `ai_version` column)
-
-**Commands**:
-- `str_replace`: Find and replace exact text
-- `insert`: Insert text at specific line
-- `append`: Add text at end
-- `create`: Create new document
-
-**Features**:
-- Unix-style path resolution
-- Edits go to `ai_version` (user review before accepting)
-- Accumulative: multiple edits build on previous `ai_version`
-- `create` defaults missing `file_text` to empty string (recommended: include `file_text` in the tool call to avoid follow-up edits)
-
-**File**: `backend/internal/service/llm/tools/doc_edit.go`
 
 ---
 

@@ -1,8 +1,11 @@
+import { useNavigate } from '@tanstack/react-router'
 import { useProjectStore } from '@/core/stores/useProjectStore'
 import { DocumentsToggle } from '@/shared/components/layout/DocumentsToggle'
+import { closeEditor } from '@/core/lib/panelHelpers'
 
 interface ProjectHeaderProps {
   projectId: string
+  projectSlug: string
 }
 
 /**
@@ -17,13 +20,20 @@ interface ProjectHeaderProps {
  * - Documents toggle appears here (far right) when docs panel is expanded
  * - Clicking closes docs and returns focus to chat
  * - ProjectHeader only renders when docs panel is visible, so no conditional needed
+ * - Clicking project name navigates to project home (clears active document)
  */
-export function ProjectHeader({ projectId }: ProjectHeaderProps) {
+export function ProjectHeader({ projectId, projectSlug }: ProjectHeaderProps) {
+  const navigate = useNavigate()
+
   // Get project name from store
   const projectName = useProjectStore((s) => {
     const project = s.projects.find((p) => p.id === projectId)
     return project?.name ?? 'Untitled Project'
   })
+
+  const handleProjectClick = () => {
+    closeEditor(projectSlug, navigate)
+  }
 
   return (
     <div
@@ -33,9 +43,13 @@ export function ProjectHeader({ projectId }: ProjectHeaderProps) {
       style={{ height: 'var(--panel-header-height)' }}
     >
       <div className="min-w-0 flex-1">
-        <span className="font-medium text-sm truncate">
+        <button
+          type="button"
+          onClick={handleProjectClick}
+          className="font-medium text-sm truncate hover:text-foreground/80 transition-colors"
+        >
           {projectName}
-        </span>
+        </button>
       </div>
       {/* Documents toggle - closes docs and returns to chat */}
       <DocumentsToggle direction="left" />
