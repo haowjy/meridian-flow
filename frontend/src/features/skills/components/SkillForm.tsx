@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { Label } from '@/shared/components/ui/label'
 import {
@@ -6,10 +6,15 @@ import {
   EditorFormInput,
   EditorFormTextarea,
 } from '@/shared/components/ui/editor-form'
-import { CodeMirrorEditor } from '@/core/editor/codemirror'
+import { CodeMirrorEditor, type CodeMirrorEditorRef } from '@/core/editor/codemirror'
 import { normalizeSkillName } from '../lib/skillValidation'
 
 export interface SkillFormProps {
+  // Inline header (replaces DocumentHeaderBar)
+  headerLeading?: ReactNode
+  headerTitle?: ReactNode
+  headerTrailing?: ReactNode
+
   // Form values
   name: string
   description: string
@@ -43,6 +48,9 @@ export interface SkillFormProps {
  * - Instructions: CodeMirror editor for markdown content
  */
 export function SkillForm({
+  headerLeading,
+  headerTitle,
+  headerTrailing,
   name,
   description,
   content,
@@ -56,6 +64,7 @@ export function SkillForm({
   disabled = false,
 }: SkillFormProps) {
   const nameInputRef = useRef<HTMLInputElement>(null)
+  const editorRef = useRef<CodeMirrorEditorRef>(null)
 
   // Normalize name input immediately on keystroke with cursor position preservation
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -81,8 +90,22 @@ export function SkillForm({
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 pt-2.5 pb-4 flex flex-col h-full gap-2.5">
-      {/* Command Name */}
+    <div className="px-3 pt-2 pb-4 flex flex-col h-full gap-2.5">
+      {/* Inline header - min-h-8 matches button height to prevent layout shift */}
+      {(headerLeading || headerTitle || headerTrailing) && (
+        <div className="flex items-center gap-2 min-h-8">
+          {headerLeading}
+          <div className="min-w-0 flex-1 truncate">
+            {headerTitle}
+          </div>
+          {/* Always render trailing container to prevent layout shift */}
+          <div className="shrink-0">
+            {headerTrailing}
+          </div>
+        </div>
+      )}
+
+      {/* Command Name - fixed height, outside resizable panels */}
       <EditorFormField
         label="Command Name"
         htmlFor="skill-name"
@@ -102,34 +125,49 @@ export function SkillForm({
         />
       </EditorFormField>
 
-      {/* Description */}
+      {/* Description - native resize with character counter */}
       <EditorFormField
         label="Description"
         htmlFor="skill-description"
         error={descriptionError}
       >
-        <EditorFormTextarea
-          id="skill-description"
-          value={description}
-          onChange={(e) => onDescriptionChange(e.target.value)}
-          placeholder="Brief description of this skill..."
-          className="min-h-[60px] max-h-[140px] overflow-y-auto"
-          state={descriptionError ? 'error' : 'default'}
-          disabled={disabled}
-        />
+        <div className="relative">
+          <EditorFormTextarea
+            id="skill-description"
+            value={description}
+            onChange={(e) => onDescriptionChange(e.target.value)}
+            placeholder="Brief description of this skill..."
+            className="min-h-[80px] resize-y overflow-y-auto pb-6"
+            state={descriptionError ? 'error' : 'default'}
+            disabled={disabled}
+          />
+          <div
+            className={cn(
+              "absolute bottom-1.5 right-2 text-xs pointer-events-none",
+              description.length > 280 ? "text-destructive" : "text-muted-foreground"
+            )}
+          >
+            {description.length}/280
+          </div>
+        </div>
       </EditorFormField>
 
-      {/* Instructions - CodeMirror Editor fills remaining space */}
-      <div className="flex-1 flex flex-col min-h-0 space-y-1.5">
-        <div className="flex items-center justify-between">
+      {/* Instructions - fills remaining space */}
+      <div className="flex-1 min-h-0 flex flex-col space-y-1">
+        <div className="flex items-baseline gap-1">
           <Label htmlFor="skill-content" variant="editorial">Instructions (Markdown)</Label>
-          {contentError && (
-            <span className="text-xs text-destructive">{contentError}</span>
-          )}
+          {/* Always render span to prevent vertical shift - invisible when no error */}
+          <span className={cn("text-xs", contentError ? "text-destructive" : "invisible")}>
+            {contentError || '\u00A0'}
+          </span>
         </div>
+        {/* Click-anywhere-to-write wrapper: clickBelowContentExtension handles clicks in empty area */}
         <div
           className={cn(
-            "border rounded-md overflow-hidden flex-1 bg-card transition-all",
+            "border rounded-md overflow-hidden flex-1 bg-card transition-all cursor-text",
+            // Override CodeMirror's default height:auto to make it fill container and scroll
+            // h-full on scroller ensures clickBelowContentExtension receives clicks below content
+            "[&_.cm-editor]:!h-full [&_.cm-scroller]:!h-full [&_.cm-scroller]:!overflow-auto",
             contentError
               ? 'border-destructive'
               : 'border-editor-input-border hover:border-primary/30 focus-within:border-primary'
@@ -137,6 +175,7 @@ export function SkillForm({
           style={{ boxShadow: 'var(--editor-inset-shadow)' }}
         >
           <CodeMirrorEditor
+            ref={editorRef}
             initialContent={content}
             onChange={onContentChange}
             editable={!disabled}

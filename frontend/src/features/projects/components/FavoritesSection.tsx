@@ -1,7 +1,7 @@
 import { Star } from 'lucide-react'
 import { Project } from '../types/project'
 import { ProjectFeaturedCardList } from './ProjectFeaturedCardList'
-import { ProjectSectionHeader } from './ProjectSectionHeader'
+import { SectionHeader } from '@/shared/components/SectionHeader'
 
 interface FavoritesSectionProps {
   projects: Project[]
@@ -21,10 +21,11 @@ export function FavoritesSection({ projects, onFavoriteToggle }: FavoritesSectio
 
   return (
     <section className="min-w-0">
-      <ProjectSectionHeader
+      <SectionHeader
         icon={<Star className="size-4.5 text-favorite" fill="currentColor" />}
         title="Favorites"
         count={projects.length}
+        size="compact"
       />
       <ProjectFeaturedCardList
         projects={sortedFavorites}

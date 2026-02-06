@@ -130,7 +130,10 @@ export function ThreadRequestControls({
             <Button
               type="button"
               size="icon"
-              className="transition-transform hover:scale-105 active:scale-95 disabled:hover:scale-100"
+              className={cn(
+                "transition-transform hover:scale-105 active:scale-95 disabled:hover:scale-100",
+                isInterjectionMode && "bg-favorite text-favorite-foreground hover:bg-favorite/90"
+              )}
               disabled={showStop ? false : isSendDisabled}
               onClick={showStop && onStop ? onStop : onSend}
               aria-label={showStop ? 'Stop response' : isInterjectionMode ? 'Send interjection' : saveIcon ? 'Save' : 'Send message'}

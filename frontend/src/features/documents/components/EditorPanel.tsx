@@ -25,14 +25,13 @@ import { ErrorPanel } from '@/shared/components/ErrorPanel'
 import { InlineError } from '@/shared/components/InlineError'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { useUIStore } from '@/core/stores/useUIStore'
-import { DocumentHeaderBar } from './DocumentHeaderBar'
+import { PanelHeader, HeaderGradientFade } from '@/shared/components/layout/headers'
 import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
 import { CompactBreadcrumb } from '@/shared/components/ui/CompactBreadcrumb'
 import { Button } from '@/shared/components/ui/button'
 import { ChevronLeft } from 'lucide-react'
 import { AIHunkNavigator } from './AIHunkNavigator'
 import { useDocumentContent, useDocumentSync, useDiffView, useDocumentPolling } from '../hooks'
-import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 
 const log = makeLogger('editor-panel')
 
@@ -186,21 +185,23 @@ export function EditorPanel({ documentId, mobileBackButton }: EditorPanelProps) 
       mobileBackButton={mobileBackButton}
     />
   ) : (
-    <DocumentHeaderBar
+    <PanelHeader
       leading={
-        <Button
-          variant="ghost"
-          size="icon"
-          className="-ml-1"
-          onClick={handleBackClick}
-          aria-label="Back to documents"
-        >
-          <ChevronLeft className="size-3" />
-        </Button>
+        <>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="-ml-1"
+            onClick={handleBackClick}
+            aria-label="Back to documents"
+          >
+            <ChevronLeft className="size-3" />
+          </Button>
+          <CompactBreadcrumb segments={[{ label: 'Document' }]} />
+        </>
       }
-      title={<CompactBreadcrumb segments={[{ label: 'Document' }]} />}
       ariaLabel="Document header"
-      showDivider={false}
+      showGradient={false}
       trailing={<SidebarToggle side="right" />}
     />
   )

@@ -4,7 +4,7 @@ import { ProjectRowCompact } from './ProjectRowCompact'
 import { ProjectSortDropdown } from './ProjectSortDropdown'
 import { useUIStore, type ProjectSortOrder } from '@/core/stores/useUIStore'
 import { useMemo } from 'react'
-import { ProjectSectionHeader } from './ProjectSectionHeader'
+import { SectionHeader } from '@/shared/components/SectionHeader'
 
 interface AllProjectsSectionProps {
   projects: Project[]
@@ -53,11 +53,12 @@ export function AllProjectsSection({
 
   return (
     <section>
-      <ProjectSectionHeader
+      <SectionHeader
         icon={<FolderOpen className="size-4.5 text-muted-foreground" />}
         title="All Projects"
         count={projects.length}
-        right={<ProjectSortDropdown />}
+        action={<ProjectSortDropdown />}
+        size="compact"
       />
 
       {/* Content */}

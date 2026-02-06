@@ -6,7 +6,6 @@ import { useThreadStore } from '@/core/stores/useThreadStore'
 import { useThreadSSE } from '@/features/threads/hooks/useThreadSSE'
 import { useLoadingView } from '@/core/hooks'
 import { Sparkles } from 'lucide-react'
-import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
 import { ChatHeader } from './ChatHeader'
 import { TurnList } from './TurnList'
 import { TurnInput } from './TurnInput'
@@ -88,10 +87,7 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
         <div className="thread-main">
           <div className="h-full overflow-y-auto scroll-pt-[var(--panel-header-height)]">
             {/* Desktop-only header - mobile uses MobileActiveThreadView's MobileHeader */}
-            <div className="sticky top-0 z-10 bg-background hidden md:block">
-              <ChatHeader projectId={projectId} />
-              <HeaderGradientFade />
-            </div>
+            <ChatHeader projectId={projectId} sticky />
             {/* Empty content area - user sees calm empty space during load */}
             <div
               className="flex-1"
@@ -118,10 +114,7 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
       <div className="thread-main">
         <div className="h-full overflow-y-auto scroll-pt-[var(--panel-header-height)]">
           {/* Desktop-only header - mobile uses MobileActiveThreadView's MobileHeader */}
-          <div className="sticky top-0 z-10 bg-background hidden md:block">
-            <ChatHeader projectId={projectId} />
-            <HeaderGradientFade />
-          </div>
+          <ChatHeader projectId={projectId} sticky />
 
           {/* Welcome message centered */}
           <div
@@ -160,10 +153,7 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
         className="h-full overflow-y-auto overflow-x-hidden scroll-pt-[var(--panel-header-height)]"
       >
         {/* Desktop-only header - mobile uses MobileActiveThreadView's MobileHeader */}
-        <div className="sticky top-0 z-10 bg-background hidden md:block">
-          <ChatHeader projectId={projectId} />
-          <HeaderGradientFade />
-        </div>
+        <ChatHeader projectId={projectId} sticky />
 
         {/* Content wrapper - padding-bottom ensures last turn isn't hidden behind composer */}
         <div

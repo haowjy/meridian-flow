@@ -94,6 +94,7 @@ export async function fetchAPI<T>(
       // Parse RFC 7807 Problem Details response (backend standard)
       let errorMessage = response.statusText
       let resource: T | undefined
+      let field: string | undefined
 
       try {
         const errorBody = await response.json()
@@ -104,6 +105,11 @@ export async function fetchAPI<T>(
         // Preserve resource for 409 Conflict to offer actionable UI (e.g., Open existing)
         if (response.status === 409 && errorBody.resource) {
           resource = errorBody.resource as T
+        }
+
+        // Extract field hint for validation errors (backend ValidationError.Field)
+        if (response.status === 400 && errorBody.field) {
+          field = errorBody.field as string
         }
       } catch {
         // JSON parse failed; keep statusText fallback
@@ -120,8 +126,8 @@ export async function fetchAPI<T>(
         // Fall through to throw error for proper cleanup
       }
 
-      // Minimal mapping: status + message (+ optional resource)
-      throw httpErrorToAppError(response.status, errorMessage, resource)
+      // Minimal mapping: status + message (+ optional resource/field)
+      throw httpErrorToAppError(response.status, errorMessage, resource, undefined, field)
     }
 
     // Handle no content (e.g., 204 No Content from DELETE operations)

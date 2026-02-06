@@ -578,7 +578,7 @@ func TestToolRegistry_BuildSystemPromptSection(t *testing.T) {
 		if editIdx == -1 || searchIdx == -1 || viewIdx == -1 {
 			t.Fatalf("missing tool descriptions in section: %q", section)
 		}
-		if !(editIdx < searchIdx && searchIdx < viewIdx) {
+		if editIdx >= searchIdx || searchIdx >= viewIdx {
 			t.Errorf("tools not in sorted order: edit=%d, search=%d, view=%d", editIdx, searchIdx, viewIdx)
 		}
 	})

@@ -92,12 +92,13 @@ function EditorFormField({
         <Label htmlFor={htmlFor} variant="editorial">
           {label}
         </Label>
-        {hint && !error && (
-          <span className="text-xs text-muted-foreground/70">{hint}</span>
-        )}
-        {error && (
-          <span className="text-xs text-destructive">{error}</span>
-        )}
+        {/* Always render span to prevent vertical shift - invisible when no content */}
+        <span className={cn(
+          "text-xs",
+          error ? "text-destructive" : hint ? "text-muted-foreground/70" : "invisible"
+        )}>
+          {error || hint || '\u00A0'}
+        </span>
       </div>
       {leading ? (
         <div className="flex items-center gap-2">

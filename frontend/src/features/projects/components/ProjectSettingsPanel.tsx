@@ -7,7 +7,9 @@ import { useIsMobile } from '@/core/hooks'
 import { Button } from '@/shared/components/ui/button'
 import { Textarea } from '@/shared/components/ui/textarea'
 import { Switch } from '@/shared/components/ui/switch'
-import { LeftPanelHeader } from '@/shared/components/layout'
+import { PanelHeader } from '@/shared/components/layout/headers'
+import { DocumentsToggle } from '@/shared/components/layout/DocumentsToggle'
+import { selectEffectiveRightCollapsed, useUIStore } from '@/core/stores/useUIStore'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/shared/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 import type { Skill } from '@/features/skills/types/skill'
@@ -554,23 +556,34 @@ export function ProjectSettingsPanelContent({ projectId }: ProjectSettingsPanelC
 
 /**
  * Desktop panel wrapper for project settings.
- * Uses LeftPanelHeader for consistent layout with other left panel views.
+ * Uses PanelHeader for consistent layout with other panel views.
  */
 export function ProjectSettingsPanel({ projectId }: ProjectSettingsPanelProps) {
+  const isDocsCollapsed = useUIStore(selectEffectiveRightCollapsed)
+
   // Title as leading content
   const titleContent = (
     <span className="font-medium text-sm">Project Settings</span>
   )
 
+  // Documents toggle as trailing content
+  const trailingContent = (
+    <>
+      {isDocsCollapsed && <DocumentsToggle direction="right" />}
+    </>
+  )
+
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
-      {/* Header with title and documents toggle */}
-      <div className="shrink-0 border-b">
-        <LeftPanelHeader leading={titleContent} />
-      </div>
-
-      {/* Scrollable Content */}
+      {/* Scrollable Content - content scrolls into the sticky header */}
       <div className="flex-1 overflow-y-auto min-h-0">
+        {/* Header with title and documents toggle - desktop only */}
+        {/* Sticky must be on wrapper div, not PanelHeader - CSS sticky requires the
+            sticky element to be a direct child of the scrolling container */}
+        <div className="hidden md:block sticky top-0 z-20 bg-background">
+          <PanelHeader leading={titleContent} trailing={trailingContent} />
+        </div>
+
         <ProjectSettingsPanelContent projectId={projectId} />
       </div>
     </div>

@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"time"
 
+	"meridian/internal/config"
 	"meridian/internal/domain"
 	models "meridian/internal/domain/models/skill"
 	"meridian/internal/domain/repositories"
@@ -54,10 +55,24 @@ func validateSkillName(name string) error {
 	// Must start and end with alphanumeric (not hyphen)
 	matched, _ := regexp.MatchString(`^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$`, name)
 	if !matched {
-		return fmt.Errorf("invalid skill name: must be alphanumeric with hyphens, cannot start or end with hyphen, e.g., 'WritingCoach' or 'my-skill'")
+		return domain.NewValidationErrorWithField(
+			"invalid skill name: must be alphanumeric with hyphens, cannot start or end with hyphen, e.g., 'WritingCoach' or 'my-skill'",
+			"name")
 	}
 	if len(name) < 1 || len(name) > 50 {
-		return fmt.Errorf("skill name must be between 1 and 50 characters")
+		return domain.NewValidationErrorWithField(
+			"skill name must be between 1 and 50 characters",
+			"name")
+	}
+	return nil
+}
+
+// validateSkillDescription validates the skill description length
+func validateSkillDescription(description string) error {
+	if len(description) > config.MaxSkillDescriptionLength {
+		return domain.NewValidationErrorWithField(
+			fmt.Sprintf("description must be %d characters or less", config.MaxSkillDescriptionLength),
+			"description")
 	}
 	return nil
 }
@@ -67,6 +82,11 @@ func validateSkillName(name string) error {
 func (s *projectSkillService) CreateSkill(ctx context.Context, userID string, req skillSvc.CreateSkillRequest) (*models.ProjectSkill, error) {
 	// Validate skill name
 	if err := validateSkillName(req.Name); err != nil {
+		return nil, err
+	}
+
+	// Validate skill description
+	if err := validateSkillDescription(req.Description); err != nil {
 		return nil, err
 	}
 
@@ -229,6 +249,9 @@ func (s *projectSkillService) UpdateSkill(ctx context.Context, userID, projectID
 		skill.Name = *req.Name
 	}
 	if req.Description != nil {
+		if err := validateSkillDescription(*req.Description); err != nil {
+			return nil, err
+		}
 		skill.Description = *req.Description
 	}
 	if req.Content != nil {

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useUIStore } from '@/core/stores/useUIStore'
-import { MobileHeader, MobileMenuSheet } from '@/shared/components/layout'
+import { MobilePanelHeader, MobileMenuSheet } from '@/shared/components/layout'
 import { ThreadListPanel } from './ThreadListPanel'
 
 interface MobileThreadsViewProps {
@@ -27,7 +27,7 @@ export function MobileThreadsView({ projectId }: MobileThreadsViewProps) {
     <>
       <div className="flex h-full flex-col bg-background">
         {/* Mobile header with hamburger menu */}
-        <MobileHeader
+        <MobilePanelHeader
           title="Threads"
           onMenuOpen={() => setMobileMenuOpen(true)}
         />

@@ -2,7 +2,7 @@ import { ReactNode } from 'react'
 import { Clock } from 'lucide-react'
 import { Project } from '../types/project'
 import { ProjectFeaturedCardList } from './ProjectFeaturedCardList'
-import { ProjectSectionHeader } from './ProjectSectionHeader'
+import { SectionHeader } from '@/shared/components/SectionHeader'
 
 interface ContinueWorkingSectionProps {
   projects: Project[]
@@ -25,10 +25,11 @@ export function ContinueWorkingSection({
 
   return (
     <section>
-      <ProjectSectionHeader
+      <SectionHeader
         icon={<Clock className="size-4.5 text-muted-foreground" />}
         title="Continue Working"
-        right={action}
+        action={action}
+        size="compact"
       />
       <ProjectFeaturedCardList
         projects={sortedByActivity}

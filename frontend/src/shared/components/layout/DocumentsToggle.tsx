@@ -34,7 +34,6 @@ export function DocumentsToggle({ className, direction = 'right' }: DocumentsTog
       variant="ghost"
       size="icon"
       onClick={toggle}
-      // Mobile uses tab navigation (no sidebars).
       className={cn('hidden md:inline-flex', className)}
       aria-label={label}
       title={label}
