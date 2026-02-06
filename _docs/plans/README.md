@@ -14,12 +14,13 @@ Each plan document includes:
 
 ## Active Plans
 
+- `fb-document-history-v1.md` - Per-document snapshots + thread “touched docs” review.
 - `fb-event-driven-refresh-framework.md` - Event-driven refresh + 30s polling fallback.
 - `fb-tree-ai-suggestions-banner-accept-all.md` - Tree banner listing AI suggestions + project-wide accept all.
 - `fb-wikilinks-and-internal-links.md` - Wikilinks + markdownlink interop + `@` insertion + LLM edit-tool guidance.
-- `fb-artifact-templates-and-project-instances.md` - Templates (public/user) copied into project-owned instances for shared-safe runtime loading.
-- `fb-project-skills-v1-and-artifact-foundations.md` - Project skills now, with schema/namespaces ready for sessions/personas/agents and exports.
-- `fb-remove-document-slugs.md` - ✅ Complete: Documents now use exact path addressing (slug column removed).
+- `agents/fb-artifact-templates-and-project-instances.md` - Templates copied into project-owned instances.
+- `agents/archive/fb-project-skills-v1-and-artifact-foundations.md` - Archived project skills plan.
+- `agents/fb-remove-document-slugs.md` - ✅ Complete: Documents now use exact path addressing (slug column removed).
 
 ---
 
