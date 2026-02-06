@@ -52,6 +52,15 @@ func handleError(w http.ResponseWriter, err error, cfg *config.Config) {
 			}
 		}
 
+		// For ValidationError with field, include field in response extras for frontend routing
+		var validationErr *domain.ValidationError
+		if errors.As(err, &validationErr) && validationErr.Field != "" {
+			httputil.RespondErrorWithExtras(w, httpErr.StatusCode(), message, map[string]interface{}{
+				"field": validationErr.Field,
+			})
+			return
+		}
+
 		httputil.RespondError(w, httpErr.StatusCode(), message)
 		return
 	}

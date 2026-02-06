@@ -1,12 +1,11 @@
 import { useState, useCallback } from 'react'
 import { ChevronLeft } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
-import { getErrorMessage } from '@/core/lib/errors'
+import { getErrorMessage, AppError } from '@/core/lib/errors'
 import { makeLogger } from '@/core/lib/logger'
 import { Button } from '@/shared/components/ui/button'
 import { useSkillStore } from '@/core/stores/useSkillStore'
 import { useUIStore } from '@/core/stores/useUIStore'
-import { DocumentHeaderBar } from '@/features/documents/components/DocumentHeaderBar'
 import { DocumentTreeToggle } from '@/shared/components/layout'
 import { normalizeSkillName, validateSkillName } from '../lib/skillValidation'
 import { SkillForm } from './SkillForm'
@@ -40,7 +39,8 @@ export function SkillCreatePanel({ projectId, projectSlug, onBackToTree }: Skill
 
   // Submission state
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [nameError, setNameError] = useState<string | null>(null)
+  const [descriptionApiError, setDescriptionApiError] = useState<string | null>(null)
 
   // Derive validation state
   const nameValidation = validateSkillName(name)
@@ -64,12 +64,13 @@ export function SkillCreatePanel({ projectId, projectSlug, onBackToTree }: Skill
   // Handle field changes with touched tracking
   const handleNameChange = useCallback((value: string) => {
     setName(value)
-    setSubmitError(null)  // Clear API error when user tries again
+    setNameError(null)  // Clear API error when user tries again
   }, [])
 
   const handleDescriptionChange = useCallback((value: string) => {
     setDescription(value)
     setTouchedFields((prev) => new Set(prev).add('description'))
+    setDescriptionApiError(null)  // Clear API error when user tries again
   }, [])
 
   const handleContentChange = useCallback((value: string) => {
@@ -82,7 +83,8 @@ export function SkillCreatePanel({ projectId, projectSlug, onBackToTree }: Skill
     if (!canCreate) return
 
     setIsSubmitting(true)
-    setSubmitError(null)
+    setNameError(null)
+    setDescriptionApiError(null)
 
     try {
       const normalizedName = normalizeSkillName(name)
@@ -101,7 +103,15 @@ export function SkillCreatePanel({ projectId, projectSlug, onBackToTree }: Skill
     } catch (err) {
       const message = getErrorMessage(err)
       log.error('Failed to create skill:', message)
-      setSubmitError(message)
+
+      // Route error to correct field based on backend ValidationError.Field
+      const field = err instanceof AppError ? err.field : undefined
+      if (field === 'description') {
+        setDescriptionApiError(message)
+      } else {
+        // Default to name field for name errors or unknown errors
+        setNameError(message)
+      }
       setIsSubmitting(false)
     }
   }, [canCreate, name, description, content, projectId, createSkill, navigate, projectSlug])
@@ -144,28 +154,18 @@ export function SkillCreatePanel({ projectId, projectSlug, onBackToTree }: Skill
     : undefined
 
   return (
-    <div className="flex h-full flex-col bg-background">
-      {/* Header */}
-      <DocumentHeaderBar
-        leading={hasLeadingContent ? leadingContent : undefined}
-        title={
+    <div className="flex h-full flex-col bg-background overflow-hidden">
+      <SkillForm
+        headerLeading={hasLeadingContent ? leadingContent : undefined}
+        headerTitle={
           <span className="text-sm font-medium text-muted-foreground">
             /new-skill
           </span>
         }
-        trailing={
+        headerTrailing={
           <div className="flex items-center gap-2">
-            {/* API error */}
-            {submitError && (
-              <span
-                className="text-sm text-destructive max-w-[200px] truncate"
-                title={submitError}
-              >
-                {submitError}
-              </span>
-            )}
             {/* Validation hint (only when fields are touched) */}
-            {!submitError && touchedFields.size > 0 && headerValidationError && (
+            {touchedFields.size > 0 && headerValidationError && (
               <span className="text-sm text-destructive">
                 {headerValidationError}
               </span>
@@ -187,26 +187,18 @@ export function SkillCreatePanel({ projectId, projectSlug, onBackToTree }: Skill
             </Button>
           </div>
         }
-        ariaLabel="Create new skill"
-        showDivider={false}
+        name={name}
+        description={description}
+        content={content}
+        onNameChange={handleNameChange}
+        onDescriptionChange={handleDescriptionChange}
+        onContentChange={handleContentChange}
+        nameError={nameValidation.error || nameError || undefined}
+        descriptionError={descriptionError || descriptionApiError || undefined}
+        contentError={contentError}
+        showNameHint={true}
+        disabled={isSubmitting}
       />
-
-      {/* Content area - uses shared SkillForm */}
-      <div className="flex-1 overflow-hidden">
-        <SkillForm
-          name={name}
-          description={description}
-          content={content}
-          onNameChange={handleNameChange}
-          onDescriptionChange={handleDescriptionChange}
-          onContentChange={handleContentChange}
-          nameError={nameValidation.error || submitError || undefined}
-          descriptionError={descriptionError}
-          contentError={contentError}
-          showNameHint={true}
-          disabled={isSubmitting}
-        />
-      </div>
     </div>
   )
 }

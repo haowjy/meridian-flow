@@ -8,7 +8,7 @@ import type { ImperativePanelHandle } from 'react-resizable-panels'
 import { DocumentTreeContainer } from './DocumentTreeContainer'
 import { EditorPanel } from './EditorPanel'
 import { SkillEditorPanel, SkillCreatePanel } from '@/features/skills/components'
-import { DocumentHeaderBar } from './DocumentHeaderBar'
+import { PanelHeader } from '@/shared/components/layout/headers'
 import { DocumentTreeToggle } from '@/shared/components/layout'
 import { ProjectHeader } from './ProjectHeader'
 import { ProjectHomeView } from './ProjectHomeView'
@@ -152,10 +152,10 @@ export function DocumentPanel({ projectId, projectSlug, isLoadingSkills, effecti
               ) : /* Blank space while skill is being resolved from URL (tree loading) */
               isLoadingSkills && effectiveSkillName && !activeSkillId ? (
                 <div className="flex flex-col h-full bg-background">
-                  <DocumentHeaderBar
+                  <PanelHeader
                     leading={documentTreeCollapsed ? <DocumentTreeToggle /> : undefined}
                     ariaLabel="Skill editor"
-                    showDivider={false}
+                    showGradient={false}
                   />
                   <div className="flex-1" />
                 </div>
@@ -166,10 +166,10 @@ export function DocumentPanel({ projectId, projectSlug, isLoadingSkills, effecti
               ) : isResolvingDocument ? (
                 /* Blank state while document path is resolving to ID (tree loading) */
                 <div className="flex flex-col h-full bg-background">
-                  <DocumentHeaderBar
+                  <PanelHeader
                     leading={documentTreeCollapsed ? <DocumentTreeToggle /> : undefined}
                     ariaLabel="Document editor"
-                    showDivider={false}
+                    showGradient={false}
                   />
                   <div className="flex-1" />
                 </div>
@@ -177,10 +177,10 @@ export function DocumentPanel({ projectId, projectSlug, isLoadingSkills, effecti
                 <div className="flex flex-col h-full bg-background">
                   {/* Only show header when tree is collapsed (for toggle button) */}
                   {documentTreeCollapsed && (
-                    <DocumentHeaderBar
+                    <PanelHeader
                       leading={<DocumentTreeToggle />}
                       ariaLabel="Project home"
-                      showDivider={false}
+                      showGradient={false}
                     />
                   )}
                   {/* Project home content */}

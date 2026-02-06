@@ -13,7 +13,7 @@ export function HeaderGradientFade({ variant = 'background' }: HeaderGradientFad
 
   return (
     <div
-      className={`pointer-events-none absolute inset-x-0 bottom-0 h-3 translate-y-full bg-gradient-to-b ${colorClasses}`}
+      className={`pointer-events-none absolute inset-x-0 bottom-0 h-2 translate-y-full bg-gradient-to-b ${colorClasses}`}
     />
   )
 }

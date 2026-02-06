@@ -190,11 +190,15 @@ export function TurnInput({ threadId, projectId, focusKey, onHeightChange }: Tur
       return
     }
 
-    // Escape key handling:
-    // - If interjection queued → clear it
-    // - Else if streaming → stop streaming
+    // Escape key handling (prioritized):
+    // 1. If textarea has content → clear it
+    // 2. Else if interjection queued → clear it
+    // 3. Else if streaming → stop streaming
     if (e.key === 'Escape') {
-      if (interjectionContent && streamingTurnId) {
+      if (value.length > 0) {
+        e.preventDefault()
+        setValue('')
+      } else if (interjectionContent && streamingTurnId) {
         e.preventDefault()
         handleClearInterjection()
       } else if (isStreaming) {
@@ -250,7 +254,7 @@ export function TurnInput({ threadId, projectId, focusKey, onHeightChange }: Tur
                 <div
                   ref={queueExpanded ? expandedContentRef : collapsedPreviewRef}
                   className={cn(
-                    "whitespace-pre-wrap break-words text-sm text-muted-foreground",
+                    "whitespace-pre-wrap break-words text-sm md:text-xs text-muted-foreground",
                     queueExpanded ? "max-h-24 overflow-y-auto" : "line-clamp-2"
                   )}
                 >

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { Plus } from 'lucide-react'
 import { Button } from '@/shared/components/ui/button'
-import { MobileHeader, MobileMenuSheet } from '@/shared/components/layout'
+import { MobilePanelHeader, MobileMenuSheet } from '@/shared/components/layout'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { useThreadStore } from '@/core/stores/useThreadStore'
 import { useThreadsForProject } from '@/features/threads/hooks/useThreadsForProject'
@@ -119,7 +119,7 @@ export function MobileActiveThreadView({ projectId }: MobileActiveThreadViewProp
     <>
       <div className="flex h-full flex-col bg-background">
         {/* Mobile header with hamburger + ThreadSelector + new thread button */}
-        <MobileHeader
+        <MobilePanelHeader
           leading={threadSelector}
           trailing={newThreadButton}
           onMenuOpen={() => setMobileMenuOpen(true)}

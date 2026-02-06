@@ -1,5 +1,6 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useProjectStore } from '@/core/stores/useProjectStore'
+import { PanelHeader } from '@/shared/components/layout/headers'
 import { DocumentsToggle } from '@/shared/components/layout/DocumentsToggle'
 import { closeEditor } from '@/core/lib/panelHelpers'
 
@@ -35,24 +36,27 @@ export function ProjectHeader({ projectId, projectSlug }: ProjectHeaderProps) {
     closeEditor(projectSlug, navigate)
   }
 
-  return (
-    <div
-      role="region"
-      aria-label="Project header"
-      className="flex items-center gap-1 px-3 relative z-10 border-b border-border/50 bg-background"
-      style={{ height: 'var(--panel-header-height)' }}
+  // Project name button as leading content
+  const leadingContent = (
+    <button
+      type="button"
+      onClick={handleProjectClick}
+      className="font-medium text-sm truncate hover:text-foreground/80 transition-colors"
     >
-      <div className="min-w-0 flex-1">
-        <button
-          type="button"
-          onClick={handleProjectClick}
-          className="font-medium text-sm truncate hover:text-foreground/80 transition-colors"
-        >
-          {projectName}
-        </button>
-      </div>
-      {/* Documents toggle - closes docs and returns to chat */}
-      <DocumentsToggle direction="left" />
-    </div>
+      {projectName}
+    </button>
+  )
+
+  // Documents toggle as trailing content - closes docs and returns to chat
+  const trailingContent = <DocumentsToggle direction="left" />
+
+  return (
+    <PanelHeader
+      leading={leadingContent}
+      trailing={trailingContent}
+      showGradient={false}
+      showBorder={true}
+      ariaLabel="Project header"
+    />
   )
 }

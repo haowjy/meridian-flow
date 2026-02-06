@@ -1,9 +1,14 @@
 import { useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { Plus } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
-import { LeftPanelHeader } from '@/shared/components/layout'
-import { useUIStore } from '@/core/stores/useUIStore'
+import { PanelHeader } from '@/shared/components/layout/headers'
+import { DocumentsToggle } from '@/shared/components/layout/DocumentsToggle'
+import {
+  useUIStore,
+  selectEffectiveRightCollapsed,
+} from '@/core/stores/useUIStore'
 import { useThreadStore } from '@/core/stores/useThreadStore'
 import { useThreadsForProject } from '@/features/threads/hooks/useThreadsForProject'
 import { ThreadSelector } from './ThreadSelector'
@@ -12,6 +17,8 @@ import type { Thread } from '@/features/threads/types'
 
 interface ChatHeaderProps {
   projectId: string
+  /** Make header sticky at top of scroll container (default: false) */
+  sticky?: boolean
 }
 
 /**
@@ -22,13 +29,14 @@ interface ChatHeaderProps {
  * - New thread button (right) - start a new conversation
  * - Documents toggle (far right) - show/hide documents panel
  *
- * Uses LeftPanelHeader for consistent layout across all left panel views.
+ * Uses PanelHeader for consistent layout across all panel views.
  */
-export function ChatHeader({ projectId }: ChatHeaderProps) {
+export function ChatHeader({ projectId, sticky = false }: ChatHeaderProps) {
   const [threadToDelete, setThreadToDelete] = useState<Thread | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
   const { threads, isLoading } = useThreadsForProject(projectId)
+  const isDocsCollapsed = useUIStore(selectEffectiveRightCollapsed)
 
   const {
     activeThreadId,
@@ -100,26 +108,38 @@ export function ChatHeader({ projectId }: ChatHeaderProps) {
     />
   )
 
-  // New thread button as trailing content
-  const newThreadButton = (
-    <Button
-      variant="ghost"
-      size="icon"
-      onClick={handleNewThread}
-      disabled={isLoading}
-      aria-label="New thread"
-      title="New thread"
-    >
-      <Plus className="size-4" />
-    </Button>
+  // New thread button + Documents toggle as trailing content
+  const trailingContent = (
+    <>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={handleNewThread}
+        disabled={isLoading}
+        aria-label="New thread"
+        title="New thread"
+      >
+        <Plus className="size-4" />
+      </Button>
+      {/* Show toggle only when docs are collapsed - clicking opens docs on right */}
+      {isDocsCollapsed && <DocumentsToggle direction="right" />}
+    </>
   )
 
   return (
     <>
-      <LeftPanelHeader
-        leading={threadSelector}
-        trailing={newThreadButton}
-      />
+      {/* Desktop header only - mobile views provide their own headers */}
+      {/* Sticky must be on wrapper div, not PanelHeader - CSS sticky requires the
+          sticky element to be a direct child of the scrolling container */}
+      <div className={cn(
+        'hidden md:block',
+        sticky && 'sticky top-0 z-20 bg-background'
+      )}>
+        <PanelHeader
+          leading={threadSelector}
+          trailing={trailingContent}
+        />
+      </div>
 
       {/* Delete confirmation dialog */}
       <DeleteThreadDialog

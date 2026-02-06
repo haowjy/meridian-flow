@@ -7,7 +7,9 @@ import { useLoadingView } from '@/core/hooks'
 import { useThreadsForProject } from '@/features/threads/hooks/useThreadsForProject'
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
-import { LeftPanelHeader } from '@/shared/components/layout'
+import { PanelHeader, MultiRowHeader } from '@/shared/components/layout/headers'
+import { DocumentsToggle } from '@/shared/components/layout/DocumentsToggle'
+import { selectEffectiveRightCollapsed } from '@/core/stores/useUIStore'
 import { buildThreadTree } from '../utils/buildThreadTree'
 import { ThreadTree } from './ThreadTree'
 import { DeleteThreadDialog } from './DeleteThreadDialog'
@@ -33,6 +35,7 @@ interface ThreadListPanelProps {
 export function ThreadListPanel({ projectId, onThreadSelected }: ThreadListPanelProps) {
   const { threads, status, isLoading } = useThreadsForProject(projectId)
   const view = useLoadingView({ status, hasData: threads.length > 0 })
+  const isDocsCollapsed = useUIStore(selectEffectiveRightCollapsed)
 
   // State for search, delete dialog, and rename mode
   const [searchQuery, setSearchQuery] = useState('')
@@ -119,26 +122,31 @@ export function ThreadListPanel({ projectId, onThreadSelected }: ThreadListPanel
     )
   }, [nodes, searchQuery])
 
-  // Title as leading content
+  // Title + Documents toggle as trailing content for header
   const titleContent = (
     <span className="font-medium text-sm">Threads</span>
   )
 
+  const trailingContent = (
+    <>
+      {isDocsCollapsed && <DocumentsToggle direction="right" />}
+    </>
+  )
+
   return (
     <div className="thread-pane flex h-full flex-col bg-background text-foreground">
-      {/* Header with title only - search and new button moved to content area */}
-      <div className="shrink-0 border-b">
-        <LeftPanelHeader
-          leading={titleContent}
-        />
-      </div>
-
-      {/* Single scroll container */}
+      {/* Single scroll container - content scrolls into the sticky desktop header */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
-        {/* Max-width wrapper for readability when panel is wide */}
-        <div className="w-full max-w-3xl mx-auto">
-          {/* Search + New Thread row - sticky within content area */}
-          <div className="flex items-center gap-2 px-3 py-2 sticky top-0 bg-background z-10">
+        {/* Desktop: Combined sticky header + search with gradient below */}
+        <MultiRowHeader className="hidden md:block">
+          <PanelHeader
+            leading={titleContent}
+            trailing={trailingContent}
+            showGradient={false}
+          />
+
+          {/* Search + New Thread row */}
+          <div className="flex items-center gap-2 px-3 py-2 max-w-3xl mx-auto">
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
               <Input
@@ -159,33 +167,60 @@ export function ThreadListPanel({ projectId, onThreadSelected }: ThreadListPanel
               <Plus className="size-4 md:size-3.5" />
             </Button>
           </div>
+        </MultiRowHeader>
+
+        {/* Mobile: Search + New Thread row - sticky at top */}
+        <div className="flex items-center gap-2 px-3 py-2 sticky top-0 bg-background z-10 md:hidden">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              type="search"
+              placeholder="Search threads..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-8 h-8 text-sm"
+            />
+          </div>
+          <Button
+            size="icon"
+            aria-label="New thread"
+            disabled={isLoading}
+            onClick={handleNewThread}
+            className="shrink-0 size-8"
+          >
+            <Plus className="size-4 md:size-3.5" />
+          </Button>
+        </div>
+
+        {/* Max-width wrapper for readability when panel is wide */}
+        <div className="w-full max-w-3xl mx-auto">
 
           {/* Thread List Content */}
           <div className="thread-pane-body">
-          {view === 'content' && (
-            <ThreadTree
-              nodes={filteredNodes}
-              activeThreadId={activeThreadId}
-              isLoading={isLoading}
-              renamingThreadId={renamingThreadId}
-              onSelectThread={handleSelectThread}
-              onRename={handleRename}
-              onRenameSubmit={handleRenameSubmit}
-              onRenameCancel={handleRenameCancel}
-              onDelete={handleDeleteClick}
-            />
-          )}
+            {view === 'content' && (
+              <ThreadTree
+                nodes={filteredNodes}
+                activeThreadId={activeThreadId}
+                isLoading={isLoading}
+                renamingThreadId={renamingThreadId}
+                onSelectThread={handleSelectThread}
+                onRename={handleRename}
+                onRenameSubmit={handleRenameSubmit}
+                onRenameCancel={handleRenameCancel}
+                onDelete={handleDeleteClick}
+              />
+            )}
 
-          {view === 'empty' && (
-            <ThreadListEmpty onNewThread={handleNewThread} />
-          )}
+            {view === 'empty' && (
+              <ThreadListEmpty onNewThread={handleNewThread} />
+            )}
 
-          {view === 'error' && (
-            <div className="p-4 text-sm text-muted-foreground">
-              Failed to load threads.
-            </div>
-          )}
-        </div>
+            {view === 'error' && (
+              <div className="p-4 text-sm text-muted-foreground">
+                Failed to load threads.
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

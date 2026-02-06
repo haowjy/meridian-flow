@@ -1,6 +1,6 @@
 import { useState, ReactNode, DragEvent } from 'react'
 import { FileText, Folder, Plus, Upload, PanelLeft } from 'lucide-react'
-import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
+import { MultiRowHeader } from '@/shared/components/layout/headers'
 import { cn } from '@/lib/utils'
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
@@ -124,17 +124,17 @@ export function DocumentTreePanel({
       {/* Single scroll container - scrollbar extends to top */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
         {/* Two-row sticky header: label+collapse top, search+create bottom */}
-        <div className="sticky top-0 z-10 bg-background border-b border-border/50">
+        <MultiRowHeader>
           {/* Row 1: Section label + collapse toggle (mobile: hamburger before label)
               Uses consistent h-14, px-3, gap-2 to match MobileHeader specs */}
-          <div className="flex items-center h-14 px-3 gap-2 md:h-auto md:px-2 md:py-1.5">
+          <div className="flex items-center h-14 px-3 gap-2 md:h-[var(--panel-header-height)] md:px-3">
             {/* Desktop collapse toggle on left - hidden on mobile */}
             <Button
               variant="ghost"
               size="icon"
               onClick={() => useUIStore.getState().toggleDocumentTree()}
               aria-label={documentTreeCollapsed ? 'Show file explorer' : 'Hide file explorer'}
-              className="shrink-0 size-8 hidden md:flex"
+              className="shrink-0 hidden md:flex"
             >
               <PanelLeft className="size-4" />
             </Button>
@@ -189,9 +189,7 @@ export function DocumentTreePanel({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-
-          <HeaderGradientFade />
-        </div>
+        </MultiRowHeader>
 
         {/* Tree Content */}
         {isEmpty ? (
