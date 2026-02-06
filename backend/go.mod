@@ -11,7 +11,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
 	github.com/haowjy/meridian-llm-go v0.0.23
-	github.com/haowjy/meridian-stream-go v0.0.5
+	github.com/haowjy/meridian-stream-go v0.0.6
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/joho/godotenv v1.5.1
 	github.com/microcosm-cc/bluemonday v1.0.27
