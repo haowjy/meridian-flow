@@ -1,16 +1,21 @@
 ---
 title: MVP Specification
-description: What We're Building and How
+description: What We're Building and How (Historical Document)
 created_at: 2025-10-30
-updated_at: 2025-10-30
+updated_at: 2026-02-05
 author: Jimmy Yao
 category: high-level
 tracked: true
+status: historical
 ---
 
 # Meridian: MVP Specification
 
-**What We're Building and How**
+> **Note:** This document was created in October 2025 during initial planning. As of February 2026, the MVP is complete. This document is preserved as a historical record of development phases.
+>
+> **For current product status**, see [Product Overview](./1-overview.md) and [Features README](../features/README.md).
+
+**What We Built and How**
 
 ---
 
@@ -211,12 +216,14 @@ User sees:
 
 **Deliverable:** ✅ Backend: Can create, organize, and edit documents. Frontend in progress.
 
-### Phase 2: AI Integration (Week 3-4) ✅ Backend Complete | ❌ Frontend Not Started
+### Phase 2: AI Integration (Week 3-4) ✅ Complete
 
 **Backend:** ✅ Complete
 - ✅ Multi-provider AI interface (LLMProvider abstraction)
 - ✅ Provider registry system
 - ✅ Claude provider implementation (Anthropic)
+- ✅ OpenRouter provider implementation (multiple models)
+- ✅ Lorem provider implementation (testing)
 - ✅ Thread CRUD operations (create, read, update, delete)
 - ✅ Turn tree structure with branching support
 - ✅ JSONB content blocks (text, thinking, tool_use, references)
@@ -224,20 +231,16 @@ User sees:
 - ✅ Streaming endpoint (SSE) with multi-client support
 - ✅ Real-time delta events via Server-Sent Events
 - ✅ TurnBlockDelta accumulation and TurnBlock persistence
-- ❌ OpenAI provider implementation (planned)
-- ❌ Google Gemini provider implementation (planned)
-- ❌ Simple context builder (full-text search integration) (planned)
+- ✅ Full-text search integration for context discovery
 
-**Frontend:** ❌ Not Started
-- ❌ Thread panel component
-- ❌ Provider selector
-- ❌ Skill selector
-- ❌ Message display
-- ❌ SSE streaming client
+**Frontend:** ✅ Complete
+- ✅ Thread panel component
+- ✅ Provider selector
+- ✅ Skill selector
+- ✅ Message display with block rendering
+- ✅ SSE streaming client with buffering
 
-**Current Status:** Backend thread system fully functional with streaming LLM responses. Frontend thread UI pending.
-
-**Deliverable:** ✅ Backend complete with streaming. Frontend thread UI pending.
+**Deliverable:** ✅ Complete with streaming and full UI.
 
 **Test:** 
 - Write about "Elara" in one document
@@ -245,7 +248,7 @@ User sees:
 - Ask AI about Elara
 - Verify AI loaded Characters/Elara via search
 
-### Phase 3: Persistent Streaming (Week 4-5) ✅ Backend Complete | ❌ Frontend Not Started
+### Phase 3: Persistent Streaming (Week 4-5) ✅ Complete
 
 **Backend:** ✅ Complete
 - ✅ Stream manager with goroutines (TurnExecutor + Registry)
@@ -256,34 +259,35 @@ User sees:
 - ✅ Race condition fixes (atomic PersistAndClear, catchup mutex)
 - ✅ Multi-client support (one stream → many SSE connections)
 
-**Frontend:** ❌ Not Started
-- ❌ Store session IDs
-- ❌ Reconnection handling
-- ❌ Resume from catchup
-- ❌ Show stream status
+**Frontend:** ✅ Complete
+- ✅ Store session IDs
+- ✅ Reconnection handling
+- ✅ Resume from catchup
+- ✅ Show stream status
 
-**Deliverable:** ✅ Backend complete with catchup working. Frontend reconnection UI pending.
+**Deliverable:** ✅ Complete with working catchup and reconnection.
 
-**Note:** Backend streaming architecture complete and verified working ("IT WORKS CATCHUP WORKS TOO!").
+### Phase 4: Polish & Testing (Week 5-6) ✅ Complete
 
-### Phase 4: Polish & Testing (Week 5-6)
+**Completed:**
+- ✅ Performance tuning
+- ✅ UX polish (loading states, errors, confirmations)
+- ✅ Bug fixes and edge cases
+- ✅ Mobile responsive layout
+- ✅ Context menus for file operations
+- ✅ Document import system
+- ✅ Skills system with tree integration
+- ✅ AI editing with inline diff view
+- ✅ Interjection feature
 
-**Focus areas:**
-- Performance tuning
-- UX polish (loading states, errors, confirmations)
-- Search relevance tuning
-- Bug fixes
-- Edge cases
+**Deliverable:** ✅ Polished, reliable product.
 
-**Deliverable:** Polished, reliable product ready for beta.
+### Phase 5: Beta Testing (Week 7-8) ⏳ Upcoming
 
-### Phase 5: Beta Testing (Week 7-8)
-
-- 5 writers from Royal Road
-- Real usage for 2 weeks
-- Daily feedback
-- Iterate on critical issues
-- Make launch decision
+- Planned beta testing with writers
+- Real usage validation
+- Feedback collection
+- Final polish based on feedback
 
 ---
 

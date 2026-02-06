@@ -1,20 +1,20 @@
 ---
 title: Vision Document
-description: Core Principles and Potential Directions
+description: Where Meridian is heading - agents, marketplace, publishing
 created_at: 2025-10-30
-updated_at: 2025-10-30
+updated_at: 2026-02-05
 author: Jimmy Yao
 category: high-level
 tracked: true
 ---
 
-# Meridian: Vision Document
+# Meridian: Vision
 
-## The Core Insight
+## Core Thesis
 
-**"Agentic coding" (like Claude Code, Cursor) revolutionized software development. The same patterns can transform creative writing.**
+**"Agentic coding" (like Claude Code, Cursor) revolutionized software development. The same patterns will transform creative writing.**
 
-### Agentic Writing: The Concept
+### The Agentic Pattern
 
 **Agentic Coding:**
 - AI explores codebase autonomously
@@ -22,35 +22,301 @@ tracked: true
 - Developer reviews and approves
 - Iterative refinement until code works
 
-**Agentic Writing (Our Vision):**
+**Agentic Writing:**
 - AI explores creative project autonomously
-- AI suggests edits across multiple documents (lore + chapters)
+- AI suggests edits across multiple documents
 - Writer reviews and approves
 - Iterative refinement until story works
 
 **The pattern:** AI handles structure, consistency, and drafting. Human provides creative vision and final approval.
 
-**We're building this infrastructure for creative writing. The market will tell us where it's most valuable.**
+**We're building this infrastructure for creative writing.**
 
 ---
 
-## Starting Hypothesis: Fiction Writers
+## The Agent Framework Vision
+
+### Why Agents Matter
+
+> "One agent mapping relationships, one helping with the current chapter, one for a random conversation I wanted to have." - User feedback
+
+This is **generic productivity value** (not fiction-specific), delivered through a writer-first UI.
+
+### Key Capabilities (Planned)
+
+#### Parallel Specialized Work
+
+**Thread Branching** - Independent work streams running simultaneously:
+
+```
+Session: "My Fantasy Novel"
+├─ Thread A (root): Story development conversation
+├─ Thread B (branch): "What if" exploration from Turn 12
+└─ Thread C (subagent): Character consistency check (spawned by A)
+
+All three share the same .session/ workspace
+```
+
+**Use cases:**
+- Work on multiple chapters simultaneously
+- Explore alternative plot directions
+- Run background research while writing
+- Delegate fact-checking to subagent
+
+#### Subagents - Delegated Subtasks
+
+**AI spawns specialized workers:**
+
+```
+You: "Check this chapter for consistency across the entire series"
+
+Main Agent:
+├─ Spawns subagent with task: "Search all chapters for character mentions"
+├─ Spawns subagent with task: "Analyze timeline consistency"
+└─ Waits for results → synthesizes → responds
+
+You see: Collapsed blocks in main thread, expandable to view subagent work
+```
+
+**Benefits:**
+- Parallel work (faster results)
+- Specialized focus (better results)
+- Transparent delegation (you can inspect what subagents did)
+
+#### Shared Session Artifacts
+
+**`.session/` directory** - Scratch space shared by all threads in a session:
+
+```
+.session/
+├─ character_timeline.md     (built by research thread)
+├─ plot_analysis.md          (built by planning thread)
+└─ consistency_issues.md     (built by critique thread)
+
+All threads can read and write these shared artifacts
+```
+
+**Enables:**
+- Agent-to-agent handoff via files
+- Persistent intermediate work
+- Coordination across parallel threads
+
+### Skills, Personas, and Agents
+
+**Skills** - Instruction bundles (system prompt modules):
+- Project-owned instances in `.meridian/skills/`
+- Full-screen markdown editor
+- AI-editable with approval flows
+- Sharable between users (import/export)
+
+**Personas** - User-facing master agents:
+- **Persona = Model + Reasoning + System Prompt + Skills + Available Agents**
+- Examples: "Planner", "Editor", "Brainstorm", "Research"
+- User-defined personas (you can create custom personas)
+- Single dropdown replaces model + reasoning + system prompt controls
+
+**Agents** - Task-specific workers:
+- **Agent = Skills + Tools** (for specific delegated tasks)
+- Examples: "Explore" agent, "Edit Plan" agent, "Lint" agent
+- Not directly user-selectable - orchestrated by Personas
+- Built-in only (v1)
+
+**How it works together:**
+
+```
+You select: "Editor" Persona
+           ↓
+Persona can spawn: ["Explore", "Lint", "Fact-Check"] agents
+           ↓
+During conversation, Persona decides: "I need to check facts"
+           ↓
+Spawns: "Fact-Check" agent with specific tools + skills
+           ↓
+Agent completes → result flows back to Persona → Persona responds to you
+```
+
+### Prerequisites
+
+Before shipping the agent framework:
+
+| Prerequisite | Why |
+|--------------|-----|
+| **PAYG billing** | Users pay for LLM usage. Can't ship subagents without it. |
+| **Usage limits + budgets** | Prevent runaway cost/latency (especially async subagents). |
+| **Audit/debug trace** | Make agent behavior explainable + reversible. |
+| **Sessions + `.session/`** | Shared persistent artifacts across thread family. |
+
+**For full design details**, see [`_docs/plans/agents/agents.md`](../../plans/agents/agents.md).
+
+---
+
+## The Marketplace Vision
+
+### Skill Sharing
+
+**Create → Use → Share lifecycle:**
+
+```
+Create (via UI editor or AI)
+        ↓
+Use (in your project, versioned, AI-editable with approval)
+        ↓
+Share (import/export between users - v1)
+        ↓
+Discover (public marketplace - future)
+```
+
+**v1 (Ship gate):**
+- Import/export skills between users
+- Personal skill library
+- Project-owned instances (copies)
+
+**Future:**
+- Public skill discovery/marketplace
+- Ratings and reviews
+- Community-curated collections
+
+### Template Projects
+
+**Pre-configured project templates:**
+- Genre-specific setups (fantasy novel, screenplay, game design)
+- Starter skills and folder structures
+- Sample documents showing patterns
+- Shareable starter kits
+
+**Examples:**
+- "Epic Fantasy Novel" - Character templates, world-building docs, chapter structure
+- "Web Serial" - Volume/Arc/Chapter hierarchy, posting schedule tracker
+- "Game Design" - NPCs, items, quests, mechanics folders
+
+---
+
+## The Publishing Vision
+
+### Direct Publishing Integration
+
+**Royal Road integration** (priority 1):
+- One-click chapter publishing
+- Sync published chapters with local documents
+- Version control for published content
+- Update tracking (local edits → pending sync status)
+
+**Other platforms:**
+- Wattpad, Webnovel, Scribble Hub, etc.
+- Platform-specific formatting rules
+- Automated metadata (tags, genre, content warnings)
+
+### Export Formats
+
+**EPUB generation:**
+- Convert project to publication-ready EPUB
+- Respect formatting (italics, bold, scene breaks)
+- Table of contents from chapter structure
+- Cover art integration
+
+**PDF with formatting:**
+- Print-ready manuscript format
+- Standard manuscript styles (Shunn, etc.)
+- Custom formatting options
+
+**Platform-specific exports:**
+- Royal Road markdown
+- Wattpad HTML
+- Standard manuscript format (.docx)
+
+---
+
+## Other Future Directions
+
+### Multi-Document Batch Editing
+
+**One creative direction → many document updates:**
+
+```
+You: "Make Elara more cynical"
+
+AI updates atomically:
+├─ Characters/Elara.md (personality)
+├─ Chapter 1 (dialogue)
+├─ Chapter 5 (inner monologue)
+├─ Chapter 12 (reaction to betrayal)
+└─ Characters/Marcus.md (relationship notes)
+
+You: Review all 5 changes
+├─ Accept all → atomic commit
+├─ Accept some → selective application
+└─ Refine → AI iterates
+```
+
+**Like git commits for creative work.**
+
+### Advanced Context Discovery
+
+**Beyond full-text search:**
+- RAG with embeddings (semantic search)
+- Better entity extraction (understand "she" = "Elara")
+- Learning from usage patterns
+- Context ranking improvements
+
+**Current MVP uses full-text search** - good enough to validate. These improvements come later.
+
+### Proactive AI Behaviors
+
+**AI notices issues and suggests fixes:**
+
+- **Consistency monitoring** - "Her eyes were blue in Ch 1, green in Ch 5"
+- **Missing documentation** - "You mention 'The Council' in 3 chapters but have no lore doc"
+- **Context optimization** - "Add Characters/Elara as reference to this chapter"
+- **Stale content alerts** - "This chapter contradicts updated character wiki"
+
+**All suggestions require user approval** - AI never modifies without permission.
+
+### Compaction
+
+**Long conversations stay usable:**
+- Summary turns for long threads
+- AI context starts from most recent compaction
+- Old turns still searchable via tool
+- Configurable summarization model
+
+---
+
+## Market Discovery
+
+### Starting Hypothesis: Fiction Writers
 
 **Why test with fiction first:**
-- We have direct access (Royal Road audience)
-- We understand the pain personally
+- Direct access (Royal Road audience)
+- Personal pain point (founder is a writer)
 - Clear use case to validate
-- Can reach them and get feedback fast
+- Fast feedback loop
 
 **But this is a hypothesis, not a commitment.**
 
-If fiction writers don't convert but game developers do → pivot to game dev
-If neither works but technical writers love it → pivot to docs
-If enterprise product teams want it → pivot to B2B
+If fiction writers don't convert but game developers do → pivot to game dev.
+If neither works but technical writers love it → pivot to docs.
+If enterprise product teams want it → pivot to B2B.
 
 **We're optimizing for learning, not a specific market.**
 
-The technology (file system, AI context discovery, persistent streaming) works for any domain. We're figuring out where it provides the most value.
+### Potential Markets (Ordered by Validation Speed)
+
+**1. Fiction Writers** (fastest to validate)
+- 100+ chapters, lose track of details
+- ChatGPT forgets everything
+- Manual search through old chapters
+
+**2. Game Developers** (high potential)
+- Hundreds of NPCs, items, mechanics
+- Spreadsheets everywhere
+- No good documentation tools
+
+**3. Technical Writers** (B2B potential)
+- API docs across multiple products
+- Manual cross-referencing
+- Version confusion
+
+**And more markets to discover...**
 
 ---
 
@@ -60,515 +326,89 @@ These principles guide every decision, regardless of which market we serve:
 
 ### 1. Documents, Not Files
 
-**Clean, natural document names. No extensions.**
+Clean, natural document names. No extensions.
 
 ```
 ✓ Elara
 ✓ Chapter 1
 ✓ Combat System
-✓ API Authentication
 
 ✗ elara.md
 ✗ chapter_01.txt
 ✗ combat_system.doc
 ```
 
-**Why:** People think in documents, not files. Keep it natural.
-
-### 2. References Are Mostly Implicit
-
-**Write naturally. AI figures it out.**
-
-```
-Writer types:
-"Elara walked through the capital to find Marcus"
-
-AI automatically:
-- Detects: Elara, capital, Marcus
-- Searches: All documents
-- Finds: Characters/Elara, Locations/The Capital, Characters/Marcus
-- Loads: Those documents into context
-- Understands: The full context for this prose
-```
-
-**No special syntax needed. Just write.**
-
-**Optional @-references for explicit control:**
-- When you want to be clear: `@[Characters/Elara]`
-- When AI needs help: `@[that old tavern scene]`
-- For efficiency: AI sees @ and directly loads that document tree
-- But 90% of the time? Natural writing, AI discovers context
-
-**Why this matters:**
-- Writers write naturally
-- No cognitive overhead
-- AI does the work
-- Explicit references when you need them
-- Best of both worlds
-
-### 3. Context Is Both Automatic and Manual
-
-**Automatic:** AI discovers mentions → searches → loads documents
-**Manual:** Add specific documents or folders when needed
-**Together:** Smart AI + full control
-
-**Why:** Convenience for common cases, power for complex ones.
-
-### 4. AI Assists, Humans Decide
+### 2. AI Assists, Humans Decide
 
 AI suggests, users approve. Always visible, always controllable, always overrideable.
 
-**Why:** Amplify creativity, don't replace it.
+### 3. Privacy and Ownership First
 
-### 5. Privacy and Ownership First
+BYOK option (future). Easy export. Encrypted keys. No lock-in.
 
-BYOK option. Easy export. Encrypted keys. No lock-in.
-
-**Why:** Trust is essential for adoption, especially for creators with unpublished work.
-
-### 6. Multi-Provider by Default
+### 4. Multi-Provider by Default
 
 Support multiple AI providers. Make adding new ones easy. Let users choose.
 
-**Why:** Avoid dependency on single company, enable cost optimization, respect user preferences.
-
-### 7. Performance Matters
+### 5. Performance Matters
 
 Zero lag. Instant switching. Smooth streaming. Fast search.
 
-**Why:** Slow tools break flow state. Creators need speed.
-
-### 8. Persistent Streaming
+### 6. Persistent Streaming
 
 AI continues working server-side even if user disconnects.
 
-**Why:** Respects user workflow, feels magical, differentiates from web-only tools.
+---
+
+## Implementation Priority
+
+**Phase 0: Foundations** (Independent tasks)
+- PAYG billing
+- Usage metering + limits
+- Audit/debug trace
+- Sessions + `.session/`
+
+**Phase 1: Skills**
+- `.meridian/skills/` instance handling
+- Skill loading pipeline
+- User skill library
+- Skill CRUD tools (for AI to create/edit skills)
+- Import/export (cross-user sharing)
+
+**Phase 2: Personas**
+- Persona data model + CRUD
+- Pre-made personas (Planner, Editor, Brainstorm)
+- User-defined persona creation UI
+- Persona selector (replaces model + reasoning dropdowns)
+
+**Phase 3: Agents**
+- Built-in agent definitions
+- Agent composition (prompt + skills + tools)
+- Persona → Agent spawning
+
+**Phase 4: Subagents**
+- `spawn_agent` tool
+- Child thread creation
+- Subagent streaming + result return
+- Depth limit enforcement
+
+**Phase 5: Compaction**
+- Compaction turn creation
+- `conversation_search` tool
+- Auto-compact + model selection
+
+**For detailed implementation phases**, see [`_docs/plans/agents/agents.md`](../../plans/agents/agents.md).
 
 ---
 
-## How the Reference System Actually Works
+## Success Metrics
 
-### The Magic: AI Discovery
-
-**User workflow:**
-1. Write naturally in any document
-2. AI reads what you write
-3. AI identifies entities (names, places, concepts)
-4. AI searches across all documents
-5. AI finds relevant documents
-6. AI loads them into context automatically
-
-**Example:**
-```
-Document: "Chapter 15"
-
-User writes:
-"Elara entered the throne room where King Aldric 
- was meeting with the Council of Seven. She remembered 
- her training with Master Chen and knew this was the 
- moment everything would change."
-
-AI automatically detects and searches for:
-- Elara → finds Characters/Elara
-- King Aldric → finds Characters/King Aldric
-- throne room → finds Locations/Throne Room
-- Council of Seven → finds Factions/Council of Seven
-- Master Chen → finds Characters/Master Chen
-- training → finds Events/Training Arc
-
-AI loads all into context without user doing anything.
-```
-
-**This is the core value: Write naturally, AI understands everything.**
-
-### Optional Explicit References
-
-**Sometimes you want to be explicit:**
-
-```
-In brainstorming notes:
-"What if @[Characters/Elara] discovers she's related 
- to @[Characters/King Aldric]? This would change 
- everything about @[Plot/The Succession Crisis]."
-```
-
-**Why use @:**
-- Forces AI to load specific document
-- When AI might miss the connection
-- For documents with common names
-- For faster AI context loading (direct tree pull)
-- Personal preference for being explicit
-
-**But it's optional, not required.**
-
-### Manual Context Addition
-
-**When automatic isn't enough:**
-
-```
-Chat: "Compare this chapter to all previous chapters 
-      about Elara"
-
-User: [manually adds Chapters 1, 5, 8, 12, 15 to context]
-
-AI: Now has current + those specific chapters
-```
-
-**Or:** "Analyze the entire magic system across all documents"
-**User:** [manually adds Worldbuilding/ folder]
-
-**Three layers working together:**
-1. Implicit discovery (AI finds mentions)
-2. Explicit @ (when you want to be clear)
-3. Manual additions (when you need specific context)
-
-### How AI Discovers Context
-
-**Natural Language Processing:**
-- Named entity recognition
-- Coreference resolution
-- Semantic search across documents
-- Pattern matching
-- Learning from document structure
-
-**Example processing:**
-```
-Input: "She walked through the capital"
-
-AI analysis:
-- "She" → resolves to "Elara" (from context)
-- "capital" → searches for "capital" mentions
-- Finds: Locations/The Capital (high confidence)
-- Loads: Characters/Elara, Locations/The Capital
-```
-
-**Smart enough to understand:**
-- Pronouns and references
-- Synonyms and variations
-- Context clues
-- Document relationships
-
-**This is what makes it magical.**
-
----
-
-## Potential Markets (Ordered by Validation Speed)
-
-### 1. Fiction Writers (Fastest to Validate)
-
-**The problem:**
-- 100+ chapters, lose track of details
-- "What color were her eyes again?"
-- Manual search through old chapters
-- ChatGPT forgets everything
-
-**How Meridian helps:**
-```
-Writer: "Is this dialogue consistent with Marcus's character?"
-
-AI automatically:
-- Detects: Marcus mentioned
-- Loads: Characters/Marcus document
-- Loads: All previous chapters mentioning Marcus
-- Analyzes: Dialogue patterns
-- Responds: With full context
-```
-
-**Why test first:** Direct access, personal pain, fast feedback
-
-**Success looks like:** 10 writers say "I can't write without this"
-
-### 2. Game Developers (High Potential)
-
-**The problem:**
-- Hundreds of NPCs, items, mechanics
-- "Did I already give this weapon to another quest?"
-- Spreadsheets everywhere
-- No good documentation tools
-
-**How Meridian helps:**
-```
-Writer: "Design a quest in the Frozen Peaks"
-
-AI automatically:
-- Detects: Frozen Peaks
-- Loads: Locations/Frozen Peaks
-- Loads: Related quests, NPCs, items
-- Suggests: Contextually appropriate quest
-```
-
-### 3. Technical Writers (B2B Potential)
-
-**The problem:**
-- API docs across multiple products
-- "Did we document this endpoint consistently?"
-- Manual cross-referencing
-- Version confusion
-
-**How Meridian helps:**
-```
-Writer: "Document the new authentication flow"
-
-AI automatically:
-- Detects: authentication
-- Loads: Existing auth docs
-- Loads: Related security docs
-- Suggests: Consistent patterns
-```
-
-**And more markets to discover...**
-
----
-
-## AI Intelligence Is The Product
-
-**Not manual tagging. Not explicit linking. AI that understands.**
-
-**The vision:**
-```
-Writer writes naturally
-↓
-AI reads in real-time
-↓
-AI identifies entities and concepts
-↓
-AI searches across all documents
-↓
-AI loads relevant context
-↓
-AI provides informed assistance
-↓
-Writer never leaves flow state
-```
-
-**This requires:**
-- Fast search (< 100ms)
-- Smart entity recognition
-- Semantic understanding
-- Context ranking (most relevant first)
-- Efficient document loading
-
-**This is technically hard. This is the moat.**
-
----
-
-## Optional @-References: When and Why
-
-**Use @ when:**
-1. **Disambiguation needed:** `@[Characters/Marcus]` not `@[Locations/Marcus Street]`
-2. **Forcing inclusion:** AI might miss it, you know it matters
-3. **Efficiency:** Direct tree loading, faster than search
-4. **Personal preference:** You like being explicit
-
-**Don't need @ when:**
-1. **Writing prose:** Natural mentions work fine
-2. **Common entities:** AI will find "Elara" easily
-3. **Trust AI:** It's usually smart enough
-
-**Example when @ helps:**
-```
-"She thought about the incident"
-
-AI might not know which incident.
-
-"She thought about @[Events/The Betrayal]"
-
-Now AI definitely loads that document.
-```
-
-**But most of the time, natural writing works.**
-
----
-
-## The Agentic Vision: Full Roadmap
-
-**AI doesn't just respond when asked. It actively collaborates on your creative project.**
-
-### Multi-Document Batch Editing
-
-**The capability:**
-
-```
-Writer: "Make Elara more cynical"
-
-AI updates in one batch:
-├─ Characters/Elara.md (update personality)
-├─ Chapter 1 (rewrite dialogue)
-├─ Chapter 5 (adjust inner monologue)
-├─ Chapter 12 (change reaction to betrayal)
-└─ Characters/Marcus.md (update relationship notes)
-
-Writer: Reviews all 5 changes
-├─ Accept all → atomic commit
-├─ Accept some → selective application
-└─ Refine → AI iterates on feedback
-```
-
-**Why this matters:**
-- Consistency across entire project
-- One creative direction → many document updates
-- Like git commits for creative work
-- Review all changes before applying
-
-**Technical requirements:**
-- Multi-document version management
-- Atomic batch commits
-- Bulk accept/reject UI
-- Cross-document consistency analysis
-
-### Skills System: Different AI Behaviors
-
-**The concept:** Different "skills" for different creative tasks, each with specialized behavior.
-
-**Potential skills:**
-
-**cw-brainstorming:**
-- Captures messy creative notes
-- Minimal structure, maximum freedom
-- Identifies entities and themes
-- Suggests lore document creation
-
-**cw-lore-builder:**
-- Transforms brainstorm into structured wikis
-- Creates character profiles, world docs, faction pages
-- Maintains consistent formatting
-- Links related lore documents
-
-**cw-prose-writing:**
-- Drafts chapters based on lore
-- Follows established character voices
-- Incorporates world-building details
-- Maintains tone and style consistency
-
-**cw-editor:**
-- Suggests prose improvements
-- Focuses on style, pacing, clarity
-- Preserves author voice
-- Iterative refinement workflow
-
-**cw-consistency-checker:**
-- Analyzes project for contradictions
-- Flags timeline issues
-- Detects character inconsistencies
-- Suggests fixes across multiple documents
-
-**How it works:**
-- User selects skill when starting chat
-- Skill provides specialized system prompt
-- AI behavior adapts to task
-- Same underlying model, different expertise
-
-### Ideas → Lore → Story Pipeline
-
-**The three-phase workflow automated:**
-
-**Phase 1: Brain Dump**
-```
-Skill: cw-brainstorming
-Input: Stream-of-consciousness creative ideas
-Output: Structured brainstorming doc + entity list
-```
-
-**Phase 2: Lore Generation**
-```
-Skill: cw-lore-builder
-Input: Brainstorming doc + entity list
-Process:
-  - Create Characters/[name].md for each character
-  - Create World/[concept].md for world elements
-  - Create Factions/[group].md for organizations
-  - Link related documents
-Output: Structured wiki of project lore
-```
-
-**Phase 3: Story Drafting**
-```
-Skill: cw-prose-writing
-Input: Lore docs + plot outline
-Process:
-  - Load relevant lore into context
-  - Draft chapter incorporating world details
-  - Maintain character voices
-  - Follow established canon
-Output: Chapter draft referencing lore
-```
-
-**The vision:** Type creative ideas → AI structures → AI drafts → You refine.
-
-### Proactive AI Behaviors (Future Exploration)
-
-**Potential autonomous actions:**
-
-**Consistency Monitoring:**
-- AI notices: "You said her eyes were blue in Ch 1, green in Ch 5"
-- Suggests: Fix in one chapter or update both
-- User: Approves or dismisses
-
-**Missing Documentation Detection:**
-- AI notices: "You mention 'The Council' in 3 chapters but have no lore doc"
-- Suggests: Create Factions/The-Council.md
-- User: Accepts → AI drafts initial version
-
-**Context Optimization:**
-- AI suggests: "Add Characters/Elara as reference to this chapter"
-- User: Accepts with one click
-- Better AI responses without manual work
-
-**Stale Content Alerts:**
-- AI notices: "This chapter contradicts updated character wiki"
-- Suggests: Review or update chapter
-- Prevents drift between lore and prose
-
-**All suggestions require user approval** - AI never modifies without permission.
-
-**For detailed implementation ideas**, see: [`_docs/future/ideas/ai-behaviors/proactive-assistance.md`](../../future/ideas/ai-behaviors/proactive-assistance.md)
-
----
-
-## Discovery Strategy
-
-**Phase 1: Fiction Writers (8 weeks)**
-- Build MVP with implicit reference discovery
-- Test with 10 writers
-- Measure: Does AI context actually help?
-
-**Key questions:**
-- Does implicit discovery work well enough?
-- Do writers trust AI to find relevant documents?
-- Or do they want more explicit control?
-- Is @-reference feature used? How often?
-
-**Phase 2: Learn and Adapt (Week 9)**
-
-**If discovery works great:** Double down on AI intelligence
-**If discovery is spotty:** Add more explicit control options
-**If fiction doesn't work:** Pivot to different market
-
-**Stay flexible. Follow the data.**
-
----
-
-## Why Go Despite Python Experience
-
-**Persistent streaming is valuable across all markets.**
-
-User starts analysis → closes browser → AI continues → returns to completed work.
-
-**Only practical in Go:**
-- Lightweight goroutines
-- Natural concurrency
-- Low resource usage
-
-**Worth the learning curve.**
-
----
-
-## Success Metrics (Discovering What Matters)
+**Discovery mindset** - Follow the strongest signal. Build what people will pay for.
 
 **For fiction:**
 - Do they use it regularly?
-- Does implicit discovery work?
-- Do they value the AI context?
+- Does context discovery work?
+- Do they value the AI assistance?
 - Will they pay?
 
 **For other markets:**
@@ -578,12 +418,17 @@ User starts analysis → closes browser → AI continues → returns to complete
 
 ---
 
-## Core Thesis
+## The Opportunity
+
+**Creative documentation is universal.** Fiction writing is just the wedge:
+
+- $10B+ fiction market
+- Exploding web serial growth
+- No good tools exist
+- Pattern applies to game dev, screenwriting, docs, product specs
 
 **AI that automatically understands your entire project by reading what you write is valuable.**
 
 **Where it's most valuable is what we're discovering.**
 
-**Fiction writers are the hypothesis, not the answer.**
-
-**Stay flexible. Follow the strongest signal. Build what people will pay for.**
+**Stay flexible. Follow the strongest signal.**
