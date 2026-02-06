@@ -1,5 +1,11 @@
-import { FileText, FileType, Folder, FolderOpen, type LucideIcon } from 'lucide-react'
-import type { TreeNode } from '@/core/lib/treeBuilder'
+import {
+  FileText,
+  FileType,
+  Folder,
+  FolderOpen,
+  type LucideIcon,
+} from "lucide-react";
+import type { TreeNode } from "@/core/lib/treeBuilder";
 
 /**
  * Pure function to resolve file extension to icon.
@@ -15,15 +21,15 @@ import type { TreeNode } from '@/core/lib/treeBuilder'
  */
 export function getFileIcon(extension: string): LucideIcon {
   const iconMap: Record<string, LucideIcon> = {
-    '.md': FileText,
-    '.txt': FileType,
+    ".md": FileText,
+    ".txt": FileType,
     // Easy to extend with more file types:
     // '.json': FileCode,
     // '.pdf': FileType,
     // etc.
-  }
+  };
 
-  return iconMap[extension] || FileText // Default fallback
+  return iconMap[extension] || FileText; // Default fallback
 }
 
 /**
@@ -41,9 +47,12 @@ export function getFileIcon(extension: string): LucideIcon {
  * // For folder
  * const Icon = getTreeNodeIcon({ type: 'folder', ... }, isExpanded)
  */
-export function getTreeNodeIcon(node: TreeNode, isExpanded?: boolean): LucideIcon {
-  if (node.type === 'folder') {
-    return isExpanded ? FolderOpen : Folder
+export function getTreeNodeIcon(
+  node: TreeNode,
+  isExpanded?: boolean,
+): LucideIcon {
+  if (node.type === "folder") {
+    return isExpanded ? FolderOpen : Folder;
   }
-  return getFileIcon(node.data.extension)
+  return getFileIcon(node.data.extension);
 }

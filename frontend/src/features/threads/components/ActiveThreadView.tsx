@@ -1,20 +1,20 @@
-import { useCallback, useState } from 'react'
-import { useShallow } from 'zustand/react/shallow'
-import { useUIStore } from '@/core/stores/useUIStore'
-import { useTurnsForThread } from '@/features/threads/hooks/useTurnsForThread'
-import { useThreadStore } from '@/core/stores/useThreadStore'
-import { useThreadSSE } from '@/features/threads/hooks/useThreadSSE'
-import { useLoadingView } from '@/core/hooks'
-import { Sparkles } from 'lucide-react'
-import { ChatHeader } from './ChatHeader'
-import { TurnList } from './TurnList'
-import { TurnInput } from './TurnInput'
-import { ScrollToBottomButton } from './ScrollToBottomButton'
-import { useChatScroller } from '@/features/threads/hooks/useChatScroller'
+import { useCallback, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { useUIStore } from "@/core/stores/useUIStore";
+import { useTurnsForThread } from "@/features/threads/hooks/useTurnsForThread";
+import { useThreadStore } from "@/core/stores/useThreadStore";
+import { useThreadSSE } from "@/features/threads/hooks/useThreadSSE";
+import { useLoadingView } from "@/core/hooks";
+import { Sparkles } from "lucide-react";
+import { ChatHeader } from "./ChatHeader";
+import { TurnList } from "./TurnList";
+import { TurnInput } from "./TurnInput";
+import { ScrollToBottomButton } from "./ScrollToBottomButton";
+import { useChatScroller } from "@/features/threads/hooks/useChatScroller";
 
 interface ActiveThreadViewProps {
   /** Project ID passed directly from route - avoids async store race condition */
-  projectId: string
+  projectId: string;
 }
 
 /**
@@ -30,118 +30,136 @@ interface ActiveThreadViewProps {
  */
 export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
   // Dynamic composer height for scroll padding - avoids static 240px gap
-  const [composerHeight, setComposerHeight] = useState(100)
+  const [composerHeight, setComposerHeight] = useState(100);
 
-  const { activeThreadId, threadFocusVersion } = useUIStore(useShallow((s) => ({
-    activeThreadId: s.activeThreadId,
-    threadFocusVersion: s.threadFocusVersion,
-  })))
+  const { activeThreadId, threadFocusVersion } = useUIStore(
+    useShallow((s) => ({
+      activeThreadId: s.activeThreadId,
+      threadFocusVersion: s.threadFocusVersion,
+    })),
+  );
 
-  const { threads, statusThreads, currentTurnId, streamingTurnId, setCurrentTurnId } = useThreadStore(useShallow((s) => ({
-    threads: s.threads,
-    statusThreads: s.statusThreads,
-    currentTurnId: s.currentTurnId,
-    streamingTurnId: s.streamingTurnId,
-    setCurrentTurnId: s.setCurrentTurnId,
-  })))
+  const {
+    threads,
+    statusThreads,
+    currentTurnId,
+    streamingTurnId,
+    setCurrentTurnId,
+  } = useThreadStore(
+    useShallow((s) => ({
+      threads: s.threads,
+      statusThreads: s.statusThreads,
+      currentTurnId: s.currentTurnId,
+      streamingTurnId: s.streamingTurnId,
+      setCurrentTurnId: s.setCurrentTurnId,
+    })),
+  );
 
   // Callback ref pattern: useState triggers re-render when element is assigned,
   // allowing effects to run with the actual element (useRef doesn't trigger re-renders)
-  const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(null)
+  const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(
+    null,
+  );
 
   // Always call hooks unconditionally to respect Rules of Hooks.
-  useThreadSSE()
-  const { turnIds, isLoading } = useTurnsForThread(activeThreadId)
+  useThreadSSE();
+  const { turnIds, isLoading } = useTurnsForThread(activeThreadId);
 
   // Callback to update currentTurnId when scrolling to bottom
   const handleScrollToBottom = useCallback(() => {
-    const latestTurnId = turnIds[turnIds.length - 1]
+    const latestTurnId = turnIds[turnIds.length - 1];
     if (latestTurnId) {
-      setCurrentTurnId(latestTurnId)
+      setCurrentTurnId(latestTurnId);
     }
-  }, [turnIds, setCurrentTurnId])
+  }, [turnIds, setCurrentTurnId]);
 
   // Simplified scroll controller - fixed-height composer eliminates need for height measurement
-  const { isContentReady, showScrollButton, scrollToBottom, listRef } = useChatScroller({
-    threadResetKey: activeThreadId, // Only thread changes trigger content gating
-    scrollContainer,
-    turnIds,
-    scrollToTurnId: currentTurnId ?? undefined,
-    isLoading,
-    isStreaming: streamingTurnId !== null,
-    onScrollToBottom: handleScrollToBottom,
-  })
+  const { isContentReady, showScrollButton, scrollToBottom, listRef } =
+    useChatScroller({
+      threadResetKey: activeThreadId, // Only thread changes trigger content gating
+      scrollContainer,
+      turnIds,
+      scrollToTurnId: currentTurnId ?? undefined,
+      isLoading,
+      isStreaming: streamingTurnId !== null,
+      onScrollToBottom: handleScrollToBottom,
+    });
 
-  const activeThread = threads.find((t) => t.id === activeThreadId) || null
+  const activeThread = threads.find((t) => t.id === activeThreadId) || null;
 
   // Derive whether to show skeleton or empty state during cold start
   // (when threads are loading, show skeleton; when loaded with no thread, show empty state)
-  const coldStartView = useLoadingView({ status: statusThreads, hasData: !!activeThread })
+  const coldStartView = useLoadingView({
+    status: statusThreads,
+    hasData: !!activeThread,
+  });
 
   // Cold start: no thread selected but projectId available
   if (!activeThread) {
     // Show empty area + input while threads are loading (sidebars are collapsed)
     // This provides a cleaner initial load without jarring skeleton UI
-    if (coldStartView === 'skeleton') {
+    if (coldStartView === "skeleton") {
       return (
         <div className="thread-main">
-          <div className="h-full overflow-y-auto scroll-pt-[var(--panel-header-height)]">
+          <div className="h-full scroll-pt-[var(--panel-header-height)] overflow-y-auto">
             {/* Desktop-only header - mobile uses MobileActiveThreadView's MobileHeader */}
             <ChatHeader projectId={projectId} sticky />
             {/* Empty content area - user sees calm empty space during load */}
             <div
               className="flex-1"
               style={{
-                minHeight: 'calc(100% - var(--panel-header-height))',
+                minHeight: "calc(100% - var(--panel-header-height))",
                 paddingBottom: composerHeight + 16,
               }}
             />
           </div>
           {/* Input ready at bottom for immediate use */}
-          <div className="absolute bottom-0 inset-x-0 z-20">
+          <div className="absolute inset-x-0 bottom-0 z-20">
             <TurnInput
               projectId={projectId}
-              focusKey={`${activeThreadId ?? 'none'}:${threadFocusVersion}`}
+              focusKey={`${activeThreadId ?? "none"}:${threadFocusVersion}`}
               onHeightChange={setComposerHeight}
             />
           </div>
         </div>
-      )
+      );
     }
 
     // Empty state - threads loaded, none selected
     return (
       <div className="thread-main">
-        <div className="h-full overflow-y-auto scroll-pt-[var(--panel-header-height)]">
+        <div className="h-full scroll-pt-[var(--panel-header-height)] overflow-y-auto">
           {/* Desktop-only header - mobile uses MobileActiveThreadView's MobileHeader */}
           <ChatHeader projectId={projectId} sticky />
 
           {/* Welcome message centered */}
           <div
-            className="flex-1 flex items-center justify-center pt-3"
+            className="flex flex-1 items-center justify-center pt-3"
             style={{
-              minHeight: 'calc(100% - var(--panel-header-height))',
+              minHeight: "calc(100% - var(--panel-header-height))",
               paddingBottom: composerHeight + 16,
             }}
           >
-            <div className="text-center text-muted-foreground">
+            <div className="text-muted-foreground text-center">
               <Sparkles className="mx-auto mb-2 size-6" />
               <p className="text-sm">Start a conversation</p>
-              <p className="text-xs mt-1">Ask questions, brainstorm ideas, or get help with your writing.</p>
+              <p className="mt-1 text-xs">
+                Ask questions, brainstorm ideas, or get help with your writing.
+              </p>
             </div>
           </div>
         </div>
 
         {/* Input at bottom - absolute positioned */}
-        <div className="absolute bottom-0 inset-x-0 z-20">
+        <div className="absolute inset-x-0 bottom-0 z-20">
           <TurnInput
             projectId={projectId}
-            focusKey={`${activeThreadId ?? 'none'}:${threadFocusVersion}`}
+            focusKey={`${activeThreadId ?? "none"}:${threadFocusVersion}`}
             onHeightChange={setComposerHeight}
           />
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -150,7 +168,7 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
       <div
         ref={setScrollContainer}
         data-thread-scroll-container="1"
-        className="h-full overflow-y-auto overflow-x-hidden scroll-pt-[var(--panel-header-height)]"
+        className="h-full scroll-pt-[var(--panel-header-height)] overflow-x-hidden overflow-y-auto"
       >
         {/* Desktop-only header - mobile uses MobileActiveThreadView's MobileHeader */}
         <ChatHeader projectId={projectId} sticky />
@@ -158,33 +176,35 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
         {/* Content wrapper - padding-bottom ensures last turn isn't hidden behind composer */}
         <div
           ref={listRef}
-          className="relative min-w-0 flex flex-col pt-3"
+          className="relative flex min-w-0 flex-col pt-3"
           style={{
             paddingBottom: composerHeight + 16, // actual height + small buffer
           }}
         >
           {/* TurnList always renders (allows layout to stabilize and scroll to happen invisibly).
               Made invisible until scroll completes, then revealed. */}
-          <div className={`flex-1 ${isContentReady ? '' : 'opacity-0 pointer-events-none'}`}>
-            <TurnList
-              turnIds={turnIds}
-            />
+          <div
+            className={`flex-1 ${isContentReady ? "" : "pointer-events-none opacity-0"}`}
+          >
+            <TurnList turnIds={turnIds} />
           </div>
-
         </div>
       </div>
 
       {/* Composer OUTSIDE scroll - absolute positioned at bottom (floats over scroll container) */}
-      <div className="absolute bottom-0 inset-x-0 z-20">
+      <div className="absolute inset-x-0 bottom-0 z-20">
         {/* Floating scroll-to-bottom button - positioned above composer */}
-        <ScrollToBottomButton visible={showScrollButton} onClick={scrollToBottom} />
+        <ScrollToBottomButton
+          visible={showScrollButton}
+          onClick={scrollToBottom}
+        />
         <TurnInput
           threadId={activeThread.id}
           projectId={projectId}
-          focusKey={`${activeThreadId ?? 'none'}:${threadFocusVersion}`}
+          focusKey={`${activeThreadId ?? "none"}:${threadFocusVersion}`}
           onHeightChange={setComposerHeight}
         />
       </div>
     </div>
-  )
+  );
 }

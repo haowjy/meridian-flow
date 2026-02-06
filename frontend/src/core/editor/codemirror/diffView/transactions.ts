@@ -7,8 +7,8 @@
  * Key insight: These are CM6 transactions, so Cmd+Z undoes them!
  */
 
-import type { EditorView } from '@codemirror/view'
-import { Transaction } from '@codemirror/state'
+import type { EditorView } from "@codemirror/view";
+import { Transaction } from "@codemirror/state";
 import {
   extractHunks,
   getAcceptReplacement,
@@ -16,10 +16,10 @@ import {
   acceptAllHunks,
   rejectAllHunks,
   type MergedHunk,
-} from '@/core/lib/mergedDocument'
-import { makeLogger } from '@/core/lib/logger'
+} from "@/core/lib/mergedDocument";
+import { makeLogger } from "@/core/lib/logger";
 
-const logger = makeLogger('diff-transactions')
+const logger = makeLogger("diff-transactions");
 
 // =============================================================================
 // SINGLE HUNK OPERATIONS
@@ -32,26 +32,26 @@ const logger = makeLogger('diff-transactions')
  * Returns true if the hunk was found and accepted.
  */
 export function acceptHunk(view: EditorView, hunkId: string): boolean {
-  const doc = view.state.doc.toString()
-  const hunks = extractHunks(doc)
-  const hunk = hunks.find((h) => h.id === hunkId)
+  const doc = view.state.doc.toString();
+  const hunks = extractHunks(doc);
+  const hunk = hunks.find((h) => h.id === hunkId);
 
   if (!hunk) {
-    logger.warn(`Hunk not found: ${hunkId}`)
-    return false
+    logger.warn(`Hunk not found: ${hunkId}`);
+    return false;
   }
 
-  const replacement = getAcceptReplacement(hunk)
+  const replacement = getAcceptReplacement(hunk);
 
   view.dispatch({
     changes: { from: hunk.from, to: hunk.to, insert: replacement },
     // Bypass transaction filters - we intentionally delete/replace marker ranges
     filter: false,
-    annotations: Transaction.userEvent.of('ai.diff.accept'),
-  })
+    annotations: Transaction.userEvent.of("ai.diff.accept"),
+  });
 
-  logger.debug(`Accepted hunk ${hunkId}`)
-  return true
+  logger.debug(`Accepted hunk ${hunkId}`);
+  return true;
 }
 
 /**
@@ -61,25 +61,25 @@ export function acceptHunk(view: EditorView, hunkId: string): boolean {
  * Returns true if the hunk was found and rejected.
  */
 export function rejectHunk(view: EditorView, hunkId: string): boolean {
-  const doc = view.state.doc.toString()
-  const hunks = extractHunks(doc)
-  const hunk = hunks.find((h) => h.id === hunkId)
+  const doc = view.state.doc.toString();
+  const hunks = extractHunks(doc);
+  const hunk = hunks.find((h) => h.id === hunkId);
 
   if (!hunk) {
-    logger.warn(`Hunk not found: ${hunkId}`)
-    return false
+    logger.warn(`Hunk not found: ${hunkId}`);
+    return false;
   }
 
-  const replacement = getRejectReplacement(hunk)
+  const replacement = getRejectReplacement(hunk);
 
   view.dispatch({
     changes: { from: hunk.from, to: hunk.to, insert: replacement },
     filter: false,
-    annotations: Transaction.userEvent.of('ai.diff.reject'),
-  })
+    annotations: Transaction.userEvent.of("ai.diff.reject"),
+  });
 
-  logger.debug(`Rejected hunk ${hunkId}`)
-  return true
+  logger.debug(`Rejected hunk ${hunkId}`);
+  return true;
 }
 
 // =============================================================================
@@ -92,13 +92,13 @@ export function rejectHunk(view: EditorView, hunkId: string): boolean {
  * Used for keyboard shortcut (accept hunk at cursor).
  */
 export function acceptHunkAtPosition(view: EditorView, pos: number): boolean {
-  const doc = view.state.doc.toString()
-  const hunks = extractHunks(doc)
-  const hunk = hunks.find((h) => pos >= h.from && pos <= h.to)
+  const doc = view.state.doc.toString();
+  const hunks = extractHunks(doc);
+  const hunk = hunks.find((h) => pos >= h.from && pos <= h.to);
 
-  if (!hunk) return false
+  if (!hunk) return false;
 
-  return acceptHunk(view, hunk.id)
+  return acceptHunk(view, hunk.id);
 }
 
 /**
@@ -107,13 +107,13 @@ export function acceptHunkAtPosition(view: EditorView, pos: number): boolean {
  * Used for keyboard shortcut (reject hunk at cursor).
  */
 export function rejectHunkAtPosition(view: EditorView, pos: number): boolean {
-  const doc = view.state.doc.toString()
-  const hunks = extractHunks(doc)
-  const hunk = hunks.find((h) => pos >= h.from && pos <= h.to)
+  const doc = view.state.doc.toString();
+  const hunks = extractHunks(doc);
+  const hunk = hunks.find((h) => pos >= h.from && pos <= h.to);
 
-  if (!hunk) return false
+  if (!hunk) return false;
 
-  return rejectHunk(view, hunk.id)
+  return rejectHunk(view, hunk.id);
 }
 
 // =============================================================================
@@ -126,16 +126,16 @@ export function rejectHunkAtPosition(view: EditorView, pos: number): boolean {
  * Replaces the entire document with the AI version (all insertions kept).
  */
 export function acceptAll(view: EditorView): void {
-  const doc = view.state.doc.toString()
-  const accepted = acceptAllHunks(doc)
+  const doc = view.state.doc.toString();
+  const accepted = acceptAllHunks(doc);
 
   view.dispatch({
     changes: { from: 0, to: doc.length, insert: accepted },
     filter: false,
-    annotations: Transaction.userEvent.of('ai.diff.acceptAll'),
-  })
+    annotations: Transaction.userEvent.of("ai.diff.acceptAll"),
+  });
 
-  logger.debug('Accepted all hunks')
+  logger.debug("Accepted all hunks");
 }
 
 /**
@@ -144,16 +144,16 @@ export function acceptAll(view: EditorView): void {
  * Replaces the entire document with the original version (all deletions kept).
  */
 export function rejectAll(view: EditorView): void {
-  const doc = view.state.doc.toString()
-  const rejected = rejectAllHunks(doc)
+  const doc = view.state.doc.toString();
+  const rejected = rejectAllHunks(doc);
 
   view.dispatch({
     changes: { from: 0, to: doc.length, insert: rejected },
     filter: false,
-    annotations: Transaction.userEvent.of('ai.diff.rejectAll'),
-  })
+    annotations: Transaction.userEvent.of("ai.diff.rejectAll"),
+  });
 
-  logger.debug('Rejected all hunks')
+  logger.debug("Rejected all hunks");
 }
 
 // =============================================================================
@@ -166,5 +166,5 @@ export function rejectAll(view: EditorView): void {
  * Convenience function for UI components.
  */
 export function getHunks(view: EditorView): MergedHunk[] {
-  return extractHunks(view.state.doc.toString())
+  return extractHunks(view.state.doc.toString());
 }

@@ -7,7 +7,7 @@
  * visible within the unobstructed viewport area.
  */
 
-import { EditorView } from '@codemirror/view'
+import { EditorView } from "@codemirror/view";
 
 /**
  * Creates a scroll margins extension with the given top margin.
@@ -16,8 +16,8 @@ import { EditorView } from '@codemirror/view'
 export function createScrollMarginsExtension(topMargin: number) {
   return EditorView.scrollMargins.of(() => ({
     top: topMargin,
-  }))
+  }));
 }
 
 // Default: matches --editor-header-height (48px = 3rem)
-export const scrollMarginsExtension = createScrollMarginsExtension(48)
+export const scrollMarginsExtension = createScrollMarginsExtension(48);

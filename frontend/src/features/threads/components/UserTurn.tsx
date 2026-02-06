@@ -1,20 +1,20 @@
-import React, { useState, useCallback } from 'react'
-import { useShallow } from 'zustand/react/shallow'
-import type { Turn, ThreadRequestOptions } from '@/features/threads/types'
-import { Card } from '@/shared/components/ui/card'
-import { TurnActionBar } from './TurnActionBar'
-import { EditTurnDialog } from './EditTurnDialog'
-import { BlockRenderer } from './blocks'
-import { useThreadStore } from '@/core/stores/useThreadStore'
-import { makeLogger } from '@/core/lib/logger'
-import { extractTextContent } from '@/features/threads/utils/turnHelpers'
-import { userTurnCardBase } from './styles'
-import { getTurnBlockReactKey } from '@/features/threads/utils/blockIdentity'
+import React, { useState, useCallback } from "react";
+import { useShallow } from "zustand/react/shallow";
+import type { Turn, ThreadRequestOptions } from "@/features/threads/types";
+import { Card } from "@/shared/components/ui/card";
+import { TurnActionBar } from "./TurnActionBar";
+import { EditTurnDialog } from "./EditTurnDialog";
+import { BlockRenderer } from "./blocks";
+import { useThreadStore } from "@/core/stores/useThreadStore";
+import { makeLogger } from "@/core/lib/logger";
+import { extractTextContent } from "@/features/threads/utils/turnHelpers";
+import { userTurnCardBase } from "./styles";
+import { getTurnBlockReactKey } from "@/features/threads/utils/blockIdentity";
 
-const log = makeLogger('UserTurn')
+const log = makeLogger("UserTurn");
 
 interface UserTurnProps {
-  turn: Turn
+  turn: Turn;
 }
 
 /**
@@ -30,46 +30,59 @@ interface UserTurnProps {
  * Performance: Memoized to prevent unnecessary re-renders when turn data unchanged.
  */
 export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
-  const [isEditing, setIsEditing] = useState(false)
-  const { switchSibling, editTurn, isLoadingTurns, isSwitchingSibling, streamingTurnId } = useThreadStore(
+  const [isEditing, setIsEditing] = useState(false);
+  const {
+    switchSibling,
+    editTurn,
+    isLoadingTurns,
+    isSwitchingSibling,
+    streamingTurnId,
+  } = useThreadStore(
     useShallow((s) => ({
       switchSibling: s.switchSibling,
       editTurn: s.editTurn,
       isLoadingTurns: s.isLoadingTurns,
       isSwitchingSibling: s.isSwitchingSibling,
       streamingTurnId: s.streamingTurnId,
-    }))
-  )
+    })),
+  );
 
-  const isStreaming = streamingTurnId !== null
+  const isStreaming = streamingTurnId !== null;
 
-  log.debug('render', { id: turn.id, prevTurnId: turn.prevTurnId, blocks: turn.blocks.length })
+  log.debug("render", {
+    id: turn.id,
+    prevTurnId: turn.prevTurnId,
+    blocks: turn.blocks.length,
+  });
 
   const handleNavigate = useCallback(
     (turnId: string) => {
-      switchSibling(turn.threadId, turnId)
+      switchSibling(turn.threadId, turnId);
     },
-    [switchSibling, turn.threadId]
-  )
+    [switchSibling, turn.threadId],
+  );
 
   const handleSaveEdit = useCallback(
     async (newMessageText: string, options: ThreadRequestOptions) => {
-      await editTurn(turn.threadId, turn.id, newMessageText, options)
-      setIsEditing(false)
+      await editTurn(turn.threadId, turn.id, newMessageText, options);
+      setIsEditing(false);
     },
-    [editTurn, turn.threadId, turn.id]
-  )
+    [editTurn, turn.threadId, turn.id],
+  );
 
   const handleEdit = useCallback(() => {
-    setIsEditing(true)
-  }, [])
+    setIsEditing(true);
+  }, []);
 
   const handleCloseEdit = useCallback(() => {
-    setIsEditing(false)
-  }, [])
+    setIsEditing(false);
+  }, []);
 
   return (
-    <div className="group flex flex-col items-end gap-1 text-sm min-w-0" data-turn-id={turn.id}>
+    <div
+      className="group flex min-w-0 flex-col items-end gap-1 text-sm"
+      data-turn-id={turn.id}
+    >
       {isEditing ? (
         <EditTurnDialog
           isOpen={isEditing}
@@ -97,5 +110,5 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
         </>
       )}
     </div>
-  )
-})
+  );
+});

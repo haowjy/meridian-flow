@@ -1,12 +1,14 @@
-import React from 'react'
-import type { TurnBlock } from '@/features/threads/types'
-import { getBlockRenderer } from './registry'
+import React from "react";
+import type { TurnBlock } from "@/features/threads/types";
+import { getBlockRenderer } from "./registry";
 
 interface BlockRendererProps {
-  block: TurnBlock
+  block: TurnBlock;
 }
 
-export const BlockRenderer = React.memo(function BlockRenderer({ block }: BlockRendererProps) {
-  const renderBlock = getBlockRenderer(block.blockType)
-  return renderBlock(block)
-})
+export const BlockRenderer = React.memo(function BlockRenderer({
+  block,
+}: BlockRendererProps) {
+  const renderBlock = getBlockRenderer(block.blockType);
+  return renderBlock(block);
+});

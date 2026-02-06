@@ -1,17 +1,17 @@
-import { ThreadRow } from './ThreadRow'
-import type { Thread } from '@/features/threads/types'
-import type { ThreadNode } from '../utils/buildThreadTree'
+import { ThreadRow } from "./ThreadRow";
+import type { Thread } from "@/features/threads/types";
+import type { ThreadNode } from "../utils/buildThreadTree";
 
 interface ThreadTreeProps {
-  nodes: ThreadNode[]
-  activeThreadId: string | null
-  isLoading: boolean
-  renamingThreadId: string | null
-  onSelectThread: (threadId: string) => void
-  onRename: (threadId: string) => void
-  onRenameSubmit: (threadId: string, newTitle: string) => void
-  onRenameCancel: () => void
-  onDelete: (thread: Thread) => void
+  nodes: ThreadNode[];
+  activeThreadId: string | null;
+  isLoading: boolean;
+  renamingThreadId: string | null;
+  onSelectThread: (threadId: string) => void;
+  onRename: (threadId: string) => void;
+  onRenameSubmit: (threadId: string, newTitle: string) => void;
+  onRenameCancel: () => void;
+  onDelete: (thread: Thread) => void;
 }
 
 /**
@@ -51,12 +51,9 @@ export function ThreadTree({
 
       {node.children.length > 0 && node.children.map(renderNode)}
     </div>
-  )
+  );
 
   return (
-    <div className="space-y-0.5 px-2 pt-2 pb-2">
-      {nodes.map(renderNode)}
-    </div>
-  )
+    <div className="space-y-0.5 px-2 pt-2 pb-2">{nodes.map(renderNode)}</div>
+  );
 }
-

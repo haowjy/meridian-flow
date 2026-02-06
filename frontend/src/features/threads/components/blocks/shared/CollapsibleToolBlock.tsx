@@ -10,33 +10,33 @@
  * from action buttons, following SRP (Single Responsibility Principle).
  */
 
-import type { LucideIcon } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import type { LucideIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   Collapsible,
   CollapsibleTrigger,
   CollapsibleContent,
-} from '@/shared/components/ui/collapsible'
+} from "@/shared/components/ui/collapsible";
 
 export interface CollapsibleToolBlockProps {
   /** Icon component to display in header */
-  icon: LucideIcon
+  icon: LucideIcon;
   /** Main label content (e.g., command + path) */
-  label: React.ReactNode
+  label: React.ReactNode;
   /** Status badge component */
-  statusBadge: React.ReactNode
+  statusBadge: React.ReactNode;
   /** Optional action buttons - rendered OUTSIDE trigger to avoid nested buttons */
-  actions?: React.ReactNode
+  actions?: React.ReactNode;
   /** Controlled expanded state */
-  isExpanded: boolean
+  isExpanded: boolean;
   /** Callback when expanded state changes */
-  onExpandedChange: (expanded: boolean) => void
+  onExpandedChange: (expanded: boolean) => void;
   /** Content to show when expanded */
-  children: React.ReactNode
+  children: React.ReactNode;
   /** Whether the tool is preparing/streaming args (shows shimmer animation) */
-  isGenerating?: boolean
+  isGenerating?: boolean;
   /** Whether the tool is executing on the backend (shows pulse animation) */
-  isExecuting?: boolean
+  isExecuting?: boolean;
 }
 
 export function CollapsibleToolBlock({
@@ -54,13 +54,13 @@ export function CollapsibleToolBlock({
     <Collapsible open={isExpanded} onOpenChange={onExpandedChange}>
       <div
         className={cn(
-          'rounded-lg border',
-          'bg-card/50 hover:bg-card/80',
-          'transition-colors duration-150',
-          'overflow-hidden',
+          "rounded-lg border",
+          "bg-card/50 hover:bg-card/80",
+          "transition-colors duration-150",
+          "overflow-hidden",
           // Shimmer during PREPARING (args streaming), pulse during EXECUTING (running)
-          isGenerating && 'animate-generating-border-shimmer',
-          isExecuting && !isGenerating && 'animate-executing-pulse'
+          isGenerating && "animate-generating-border-shimmer",
+          isExecuting && !isGenerating && "animate-executing-pulse",
         )}
       >
         {/* Header row - split into trigger zone and action zone */}
@@ -70,23 +70,25 @@ export function CollapsibleToolBlock({
             <button
               type="button"
               className={cn(
-                'flex flex-1 min-w-0 items-center gap-2 px-3 py-2',
-                'text-left cursor-pointer',
-                'hover:bg-muted/50 transition-colors',
-                '@container'
+                "flex min-w-0 flex-1 items-center gap-2 px-3 py-2",
+                "cursor-pointer text-left",
+                "hover:bg-muted/50 transition-colors",
+                "@container",
               )}
-              style={{ containerType: 'inline-size' }}
+              style={{ containerType: "inline-size" }}
             >
-              <Icon className="h-3 w-3 shrink-0 text-muted-foreground/70" />
+              <Icon className="text-muted-foreground/70 h-3 w-3 shrink-0" />
               <div
                 className={cn(
-                  'flex min-w-0 flex-1 items-center gap-2',
-                  isGenerating && 'animate-generating-shimmer'
+                  "flex min-w-0 flex-1 items-center gap-2",
+                  isGenerating && "animate-generating-shimmer",
                 )}
               >
                 {label}
               </div>
-              <div className="shrink-0 @[300px]:block hidden">{statusBadge}</div>
+              <div className="hidden shrink-0 @[300px]:block">
+                {statusBadge}
+              </div>
             </button>
           </CollapsibleTrigger>
 
@@ -94,12 +96,12 @@ export function CollapsibleToolBlock({
           {actions && (
             <div
               className={cn(
-                'shrink-0 flex items-center self-stretch',
-                'relative',
-                'before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2',
-                'before:h-4 before:w-px before:bg-muted-foreground/15',
-                'px-2',
-                'hover:bg-muted/50 transition-colors duration-150'
+                "flex shrink-0 items-center self-stretch",
+                "relative",
+                "before:absolute before:top-1/2 before:left-0 before:-translate-y-1/2",
+                "before:bg-muted-foreground/15 before:h-4 before:w-px",
+                "px-2",
+                "hover:bg-muted/50 transition-colors duration-150",
               )}
             >
               {actions}
@@ -109,9 +111,9 @@ export function CollapsibleToolBlock({
 
         {/* Expanded content */}
         <CollapsibleContent>
-          <div className="border-t px-3 py-3 space-y-2">{children}</div>
+          <div className="space-y-2 border-t px-3 py-3">{children}</div>
         </CollapsibleContent>
       </div>
     </Collapsible>
-  )
+  );
 }

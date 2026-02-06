@@ -6,10 +6,10 @@
  * 2. Network-first: Threads/Projects (server = source of truth, cache fallback)
  * 3. Windowed: Messages (only cache recent N items)
  */
-import type { Table } from 'dexie'
-import { makeLogger } from '@/core/lib/logger'
+import type { Table } from "dexie";
+import { makeLogger } from "@/core/lib/logger";
 
-const log = makeLogger('cache')
+const log = makeLogger("cache");
 
 /**
  * Cache-first load pattern.
@@ -45,13 +45,13 @@ const log = makeLogger('cache')
 export async function bulkCacheUpdate<T extends { id: string }>(
   table: Table<T, string>,
   items: T[],
-  filterFn?: (item: T) => boolean
+  filterFn?: (item: T) => boolean,
 ): Promise<void> {
-  const toCache = filterFn ? items.filter(filterFn) : items
+  const toCache = filterFn ? items.filter(filterFn) : items;
 
   if (toCache.length > 0) {
-    await table.bulkPut(toCache)
-    log.info(`bulk cached`, toCache.length, 'items')
+    await table.bulkPut(toCache);
+    log.info(`bulk cached`, toCache.length, "items");
   }
 }
 
@@ -63,26 +63,35 @@ export async function bulkCacheUpdate<T extends { id: string }>(
  * Sorts by createdAt (newest first) and caches only the window size.
  * Adds lastAccessedAt for future eviction (not implemented yet).
  */
-export async function windowedCacheUpdate<T extends { id: string; createdAt: Date }>(
+export async function windowedCacheUpdate<
+  T extends { id: string; createdAt: Date },
+>(
   table: Table<T, string>,
   parentKey: string, // e.g., 'thread-123' for logging
   items: T[],
-  windowSize: number = 100
+  windowSize: number = 100,
 ): Promise<void> {
   // Sort by createdAt (newest first)
-  const sorted = [...items].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+  const sorted = [...items].sort(
+    (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+  );
 
   // Take only the most recent N
-  const toCache = sorted.slice(0, windowSize)
+  const toCache = sorted.slice(0, windowSize);
 
   // Add timestamp for future eviction tracking
   const withTimestamp = toCache.map((item) => ({
     ...item,
     lastAccessedAt: new Date(),
-  }))
+  }));
 
-  await table.bulkPut(withTimestamp)
-  log.info(`windowed cache`, `${toCache.length}/${items.length}`, 'for', parentKey)
+  await table.bulkPut(withTimestamp);
+  log.info(
+    `windowed cache`,
+    `${toCache.length}/${items.length}`,
+    "for",
+    parentKey,
+  );
 }
 
 /**
@@ -91,71 +100,74 @@ export async function windowedCacheUpdate<T extends { id: string; createdAt: Dat
  * Use for: Optional cache invalidation logic
  * Currently not used - implement when auto-eviction is needed.
  */
-export function isCacheStale(lastAccessedAt: Date, maxAgeMs: number = 30 * 24 * 60 * 60 * 1000): boolean {
-  return Date.now() - lastAccessedAt.getTime() > maxAgeMs
+export function isCacheStale(
+  lastAccessedAt: Date,
+  maxAgeMs: number = 30 * 24 * 60 * 60 * 1000,
+): boolean {
+  return Date.now() - lastAccessedAt.getTime() > maxAgeMs;
 }
 
 // =============================
 // Policy-based cache loader (SOLID-friendly)
 // =============================
 
-export type LoadSource = 'server' | 'cache'
+export type LoadSource = "server" | "cache";
 
 export type LoadResult<T> = {
-  data: T
-  source: LoadSource
-  isFinal: boolean
-}
+  data: T;
+  source: LoadSource;
+  isFinal: boolean;
+};
 
 export interface ICacheRepo<T> {
-  get(): Promise<T | undefined>
-  put(data: T): Promise<void>
+  get(): Promise<T | undefined>;
+  put(data: T): Promise<void>;
 }
 
 export interface IRemoteRepo<T> {
-  fetch(signal?: AbortSignal): Promise<T>
+  fetch(signal?: AbortSignal): Promise<T>;
 }
 
-export type IComparer<T> = (a: T, b: T) => number
+export type IComparer<T> = (a: T, b: T) => number;
 
 export interface LoadPolicyArgs<T> {
-  cacheRepo: ICacheRepo<T>
-  remoteRepo: IRemoteRepo<T>
-  compare?: IComparer<T>
-  onIntermediate?: (r: LoadResult<T>) => void
-  signal?: AbortSignal
+  cacheRepo: ICacheRepo<T>;
+  remoteRepo: IRemoteRepo<T>;
+  compare?: IComparer<T>;
+  onIntermediate?: (r: LoadResult<T>) => void;
+  signal?: AbortSignal;
 }
 
 export interface LoadPolicy<T> {
-  run(args: LoadPolicyArgs<T>): Promise<LoadResult<T>>
+  run(args: LoadPolicyArgs<T>): Promise<LoadResult<T>>;
 }
 
 // Helper to safely get timestamp from Date or ISO string
 // IndexedDB may serialize Date objects to strings, so we need to handle both
 // Returns NaN for missing/invalid timestamps (not 0/epoch) to distinguish "unknown" from "very old"
 function getTimestamp(value: Date | string | undefined): number {
-  if (!value) return NaN  // Missing = unknown, not epoch
-  if (value instanceof Date) return value.getTime()
+  if (!value) return NaN; // Missing = unknown, not epoch
+  if (value instanceof Date) return value.getTime();
   // Handle ISO string (e.g., from IndexedDB serialization)
-  const parsed = new Date(value)
-  return parsed.getTime()  // Returns NaN if invalid
+  const parsed = new Date(value);
+  return parsed.getTime(); // Returns NaN if invalid
 }
 
 // Default comparer: compare updatedAt if present, else treat as equal (local wins on tie)
 // Handles both Date objects and ISO strings (from IndexedDB serialization)
 // When timestamps are missing (NaN), returns 0 so local wins by tie-breaker
 function defaultCompare<T>(a: T, b: T): number {
-  const aWithUpdatedAt = a as { updatedAt?: Date | string } | undefined
-  const bWithUpdatedAt = b as { updatedAt?: Date | string } | undefined
+  const aWithUpdatedAt = a as { updatedAt?: Date | string } | undefined;
+  const bWithUpdatedAt = b as { updatedAt?: Date | string } | undefined;
 
-  const aTime = getTimestamp(aWithUpdatedAt?.updatedAt)
-  const bTime = getTimestamp(bWithUpdatedAt?.updatedAt)
+  const aTime = getTimestamp(aWithUpdatedAt?.updatedAt);
+  const bTime = getTimestamp(bWithUpdatedAt?.updatedAt);
 
   // If either timestamp is missing (NaN), treat as equal
   // Local wins on tie in ReconcileNewestPolicy (server must be strictly newer)
-  if (isNaN(aTime) || isNaN(bTime)) return 0
+  if (isNaN(aTime) || isNaN(bTime)) return 0;
 
-  return aTime - bTime
+  return aTime - bTime;
 }
 
 /**
@@ -167,50 +179,56 @@ function defaultCompare<T>(a: T, b: T): number {
  * - On abort/network error: return cache if available, else throw
  */
 export class ReconcileNewestPolicy<T> implements LoadPolicy<T> {
-  async run({ cacheRepo, remoteRepo, compare = defaultCompare, onIntermediate, signal }: LoadPolicyArgs<T>): Promise<LoadResult<T>> {
-    const cachePromise = cacheRepo.get()
-    const remotePromise = remoteRepo.fetch(signal)
+  async run({
+    cacheRepo,
+    remoteRepo,
+    compare = defaultCompare,
+    onIntermediate,
+    signal,
+  }: LoadPolicyArgs<T>): Promise<LoadResult<T>> {
+    const cachePromise = cacheRepo.get();
+    const remotePromise = remoteRepo.fetch(signal);
 
-    let cached: T | undefined
+    let cached: T | undefined;
 
     try {
-      cached = await cachePromise
+      cached = await cachePromise;
       if (cached) {
-        onIntermediate?.({ data: cached, source: 'cache', isFinal: false })
+        onIntermediate?.({ data: cached, source: "cache", isFinal: false });
       }
     } catch {
       // cache read failure → ignore, rely on server
     }
 
     try {
-      const server = await remotePromise
+      const server = await remotePromise;
 
       if (!cached) {
         // No cache → server wins, update cache
-        await cacheRepo.put(server)
-        return { data: server, source: 'server', isFinal: true }
+        await cacheRepo.put(server);
+        return { data: server, source: "server", isFinal: true };
       }
 
       // Compare; local wins on tie (server must be strictly newer)
-      const cmp = compare(cached, server)
+      const cmp = compare(cached, server);
       if (cmp < 0) {
-        await cacheRepo.put(server)
-        return { data: server, source: 'server', isFinal: true }
+        await cacheRepo.put(server);
+        return { data: server, source: "server", isFinal: true };
       }
-      return { data: cached, source: 'cache', isFinal: true }
+      return { data: cached, source: "cache", isFinal: true };
     } catch (err: unknown) {
       // Abort: if we emitted cache, use it; else rethrow
-      if (err instanceof Error && err.name === 'AbortError') {
+      if (err instanceof Error && err.name === "AbortError") {
         if (cached) {
-          return { data: cached, source: 'cache', isFinal: true }
+          return { data: cached, source: "cache", isFinal: true };
         }
-        throw err
+        throw err;
       }
       // Network failure: fallback to cache if we have it
       if (cached) {
-        return { data: cached, source: 'cache', isFinal: true }
+        return { data: cached, source: "cache", isFinal: true };
       }
-      throw err
+      throw err;
     }
   }
 }
@@ -221,18 +239,23 @@ export class ReconcileNewestPolicy<T> implements LoadPolicy<T> {
  * - On abort/network error: fallback to cache if present; else throw
  */
 export class NetworkFirstPolicy<T> implements LoadPolicy<T> {
-  async run({ cacheRepo, remoteRepo, onIntermediate, signal }: LoadPolicyArgs<T>): Promise<LoadResult<T>> {
+  async run({
+    cacheRepo,
+    remoteRepo,
+    onIntermediate,
+    signal,
+  }: LoadPolicyArgs<T>): Promise<LoadResult<T>> {
     try {
-      const data = await remoteRepo.fetch(signal)
-      await cacheRepo.put(data)
-      return { data, source: 'server', isFinal: true }
+      const data = await remoteRepo.fetch(signal);
+      await cacheRepo.put(data);
+      return { data, source: "server", isFinal: true };
     } catch (err: unknown) {
-      const cached = await cacheRepo.get().catch(() => undefined)
+      const cached = await cacheRepo.get().catch(() => undefined);
       if (cached) {
-        onIntermediate?.({ data: cached, source: 'cache', isFinal: true })
-        return { data: cached, source: 'cache', isFinal: true }
+        onIntermediate?.({ data: cached, source: "cache", isFinal: true });
+        return { data: cached, source: "cache", isFinal: true };
       }
-      throw err
+      throw err;
     }
   }
 }
@@ -246,82 +269,86 @@ export class NetworkFirstPolicy<T> implements LoadPolicy<T> {
  * - On abort/network error: return cache if available, else throw
  */
 export class StaleWhileRevalidatePolicy<T> implements LoadPolicy<T> {
-  async run({ cacheRepo, remoteRepo, onIntermediate, signal }: LoadPolicyArgs<T>): Promise<LoadResult<T>> {
-    const cachePromise = cacheRepo.get()
-    const remotePromise = remoteRepo.fetch(signal)
+  async run({
+    cacheRepo,
+    remoteRepo,
+    onIntermediate,
+    signal,
+  }: LoadPolicyArgs<T>): Promise<LoadResult<T>> {
+    const cachePromise = cacheRepo.get();
+    const remotePromise = remoteRepo.fetch(signal);
 
-    let cached: T | undefined
+    let cached: T | undefined;
 
     try {
-      cached = await cachePromise
+      cached = await cachePromise;
       if (cached) {
-        onIntermediate?.({ data: cached, source: 'cache', isFinal: false })
+        onIntermediate?.({ data: cached, source: "cache", isFinal: false });
       }
     } catch {
       // cache read failure → ignore, rely on server
     }
 
     try {
-      const server = await remotePromise
-      await cacheRepo.put(server)
-      return { data: server, source: 'server', isFinal: true }
+      const server = await remotePromise;
+      await cacheRepo.put(server);
+      return { data: server, source: "server", isFinal: true };
     } catch (err: unknown) {
       // Abort: if we emitted cache, use it; else rethrow
-      if (err instanceof Error && err.name === 'AbortError') {
+      if (err instanceof Error && err.name === "AbortError") {
         if (cached) {
-          return { data: cached, source: 'cache', isFinal: true }
+          return { data: cached, source: "cache", isFinal: true };
         }
-        throw err
+        throw err;
       }
       // Network failure: fallback to cache if we have it
       if (cached) {
-        return { data: cached, source: 'cache', isFinal: true }
+        return { data: cached, source: "cache", isFinal: true };
       }
-      throw err
+      throw err;
     }
   }
 }
 
-export async function loadWithPolicy<T>(policy: LoadPolicy<T>, args: LoadPolicyArgs<T>): Promise<LoadResult<T>> {
-  return policy.run(args)
+export async function loadWithPolicy<T>(
+  policy: LoadPolicy<T>,
+  args: LoadPolicyArgs<T>,
+): Promise<LoadResult<T>> {
+  return policy.run(args);
 }
 
 // Backward-compatible wrappers (migration path)
 
-export async function loadNewestByUpdatedAt<T extends { id: string; updatedAt: Date }>(options: {
-  cacheKey: string
-  cacheLookup: () => Promise<T | undefined>
-  apiFetch: (signal?: AbortSignal) => Promise<T>
-  cacheUpdate: (data: T) => Promise<void>
-  signal?: AbortSignal
+export async function loadNewestByUpdatedAt<
+  T extends { id: string; updatedAt: Date },
+>(options: {
+  cacheKey: string;
+  cacheLookup: () => Promise<T | undefined>;
+  apiFetch: (signal?: AbortSignal) => Promise<T>;
+  cacheUpdate: (data: T) => Promise<void>;
+  signal?: AbortSignal;
 }): Promise<T> {
-  const result = await loadWithPolicy<T>(
-    new ReconcileNewestPolicy<T>(),
-    {
-      cacheRepo: { get: options.cacheLookup, put: options.cacheUpdate },
-      remoteRepo: { fetch: options.apiFetch },
-      signal: options.signal,
-    }
-  )
-  return result.data
+  const result = await loadWithPolicy<T>(new ReconcileNewestPolicy<T>(), {
+    cacheRepo: { get: options.cacheLookup, put: options.cacheUpdate },
+    remoteRepo: { fetch: options.apiFetch },
+    signal: options.signal,
+  });
+  return result.data;
 }
 
 // Re-implement loadNetworkFirst wrapper using NetworkFirstPolicy (non-breaking)
 // Note: Keep signature to avoid touching callers during migration
 export async function loadNetworkFirstPolicy<T>(options: {
-  cacheKey: string
-  cacheLookup: () => Promise<T | undefined>
-  apiFetch: (signal?: AbortSignal) => Promise<T>
-  cacheUpdate: (data: T) => Promise<void>
-  signal?: AbortSignal
+  cacheKey: string;
+  cacheLookup: () => Promise<T | undefined>;
+  apiFetch: (signal?: AbortSignal) => Promise<T>;
+  cacheUpdate: (data: T) => Promise<void>;
+  signal?: AbortSignal;
 }): Promise<T> {
-  const result = await loadWithPolicy<T>(
-    new NetworkFirstPolicy<T>(),
-    {
-      cacheRepo: { get: options.cacheLookup, put: options.cacheUpdate },
-      remoteRepo: { fetch: options.apiFetch },
-      signal: options.signal,
-    }
-  )
-  return result.data
+  const result = await loadWithPolicy<T>(new NetworkFirstPolicy<T>(), {
+    cacheRepo: { get: options.cacheLookup, put: options.cacheUpdate },
+    remoteRepo: { fetch: options.apiFetch },
+    signal: options.signal,
+  });
+  return result.data;
 }

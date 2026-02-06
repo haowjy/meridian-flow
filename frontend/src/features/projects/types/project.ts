@@ -3,22 +3,22 @@
  */
 export interface ProjectPreferences {
   /** Tools disabled for this project (e.g., 'web_search', 'doc_edit') */
-  disabledTools?: string[]
+  disabledTools?: string[];
 }
 
 export interface Project {
-  id: string
-  name: string
+  id: string;
+  name: string;
   /** URL-friendly identifier, unique per user */
-  slug: string
+  slug: string;
   /** Whether the project is marked as a favorite for quick access */
-  isFavorite: boolean
+  isFavorite: boolean;
   /** Custom AI instructions for the project */
-  systemPrompt?: string | null
+  systemPrompt?: string | null;
   /** Project-level settings (disabled tools, etc.) */
-  preferences?: ProjectPreferences | null
+  preferences?: ProjectPreferences | null;
   /** Last content activity timestamp (documents, folders, threads) */
-  lastActivityAt: Date
-  createdAt: Date
-  updatedAt: Date
+  lastActivityAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }

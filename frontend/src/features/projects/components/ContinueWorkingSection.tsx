@@ -1,14 +1,14 @@
-import { ReactNode } from 'react'
-import { Clock } from 'lucide-react'
-import { Project } from '../types/project'
-import { ProjectFeaturedCardList } from './ProjectFeaturedCardList'
-import { SectionHeader } from '@/shared/components/SectionHeader'
+import { ReactNode } from "react";
+import { Clock } from "lucide-react";
+import { Project } from "../types/project";
+import { ProjectFeaturedCardList } from "./ProjectFeaturedCardList";
+import { SectionHeader } from "@/shared/components/SectionHeader";
 
 interface ContinueWorkingSectionProps {
-  projects: Project[]
-  onFavoriteToggle?: (id: string) => void
+  projects: Project[];
+  onFavoriteToggle?: (id: string) => void;
   /** Optional action element (e.g., "+ New" button) displayed in section header */
-  action?: ReactNode
+  action?: ReactNode;
 }
 
 export function ContinueWorkingSection({
@@ -16,17 +16,20 @@ export function ContinueWorkingSection({
   onFavoriteToggle,
   action,
 }: ContinueWorkingSectionProps) {
-  const sortedByActivity = [...projects]
-    .sort((a, b) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime())
+  const sortedByActivity = [...projects].sort(
+    (a, b) =>
+      new Date(b.lastActivityAt).getTime() -
+      new Date(a.lastActivityAt).getTime(),
+  );
 
   if (sortedByActivity.length === 0) {
-    return null
+    return null;
   }
 
   return (
     <section>
       <SectionHeader
-        icon={<Clock className="size-4.5 text-muted-foreground" />}
+        icon={<Clock className="text-muted-foreground size-4.5" />}
         title="Continue Working"
         action={action}
         size="compact"
@@ -37,5 +40,5 @@ export function ContinueWorkingSection({
         ariaLabel="continue working projects"
       />
     </section>
-  )
+  );
 }

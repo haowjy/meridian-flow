@@ -9,10 +9,10 @@
  */
 
 // Main component
-export { CodeMirrorEditor } from './CodeMirrorEditor'
+export { CodeMirrorEditor } from "./CodeMirrorEditor";
 
 // Components
-export { EditorContextMenu } from './components'
+export { EditorContextMenu } from "./components";
 
 // Types
 export type {
@@ -25,7 +25,7 @@ export type {
   ListRef,
   FormatDetectionRef,
   WordCountRef,
-} from './types'
+} from "./types";
 
 // Commands (for external use)
 export {
@@ -37,11 +37,15 @@ export {
   toggleBulletList,
   toggleOrderedList,
   isFormatActive,
-} from './commands'
+} from "./commands";
 
 // Extensions (for custom configurations)
-export { markdownLanguage, editorTheme, getWordCount } from './extensions'
+export { markdownLanguage, editorTheme, getWordCount } from "./extensions";
 
 // Live preview (for extending with custom renderers)
-export { registerRenderer, livePreviewPlugin } from './livePreview'
-export type { NodeRenderer, RenderContext, DecorationRange } from './livePreview'
+export { registerRenderer, livePreviewPlugin } from "./livePreview";
+export type {
+  NodeRenderer,
+  RenderContext,
+  DecorationRange,
+} from "./livePreview";

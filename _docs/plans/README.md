@@ -14,10 +14,12 @@ Each plan document includes:
 
 ## Active Plans
 
-- `fb-document-history-v1.md` - Per-document snapshots + thread “touched docs” review.
+- `fb-wikilinks-and-internal-links.md` - Editor-only: wikilink tokens, CM6 pill rendering, `@` autocomplete, click-to-navigate, LLM prompt guidance.
+- `fb-at-references.md` - Thread `@`-file insertion, reference blocks, `BlockTransformer` pipeline, `ReferenceTransformer`. Depends on wikilinks Phase 1.
+- `fb-compaction.md` - Context window management: `is_compaction` turns, auto/user/LLM triggers, `conversation_search` tool, tool result summarization. Depends on at-references Phase 2.
+- `fb-document-history-v1.md` - Per-document snapshots + thread "touched docs" review.
 - `fb-event-driven-refresh-framework.md` - Event-driven refresh + 30s polling fallback.
 - `fb-tree-ai-suggestions-banner-accept-all.md` - Tree banner listing AI suggestions + project-wide accept all.
-- `fb-wikilinks-and-internal-links.md` - Wikilinks + markdownlink interop + `@` insertion + LLM edit-tool guidance.
 - `agents/fb-artifact-templates-and-project-instances.md` - Templates copied into project-owned instances.
 - `agents/archive/fb-project-skills-v1-and-artifact-foundations.md` - Archived project skills plan.
 - `agents/fb-remove-document-slugs.md` - ✅ Complete: Documents now use exact path addressing (slug column removed).

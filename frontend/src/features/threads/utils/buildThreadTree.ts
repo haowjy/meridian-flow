@@ -1,6 +1,6 @@
-import type { Thread } from '@/features/threads/types'
+import type { Thread } from "@/features/threads/types";
 
-export type ThreadNodeType = 'root' | 'branch' | 'subagent'
+export type ThreadNodeType = "root" | "branch" | "subagent";
 
 /**
  * View model for rendering threads as a tree.
@@ -10,10 +10,10 @@ export type ThreadNodeType = 'root' | 'branch' | 'subagent'
  * we can update only the builder without forcing UI refactors.
  */
 export interface ThreadNode {
-  thread: Thread
-  children: ThreadNode[]
-  level: number
-  nodeType: ThreadNodeType
+  thread: Thread;
+  children: ThreadNode[];
+  level: number;
+  nodeType: ThreadNodeType;
 }
 
 /**
@@ -25,7 +25,6 @@ export function buildThreadTree(threads: Thread[]): ThreadNode[] {
     thread,
     children: [],
     level: 0,
-    nodeType: 'root',
-  }))
+    nodeType: "root",
+  }));
 }
-

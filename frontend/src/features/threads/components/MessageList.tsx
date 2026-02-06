@@ -1,9 +1,9 @@
-import { UserTurn } from './UserTurn'
-import { AssistantTurn } from './AssistantTurn'
-import { useThreadStore } from '@/core/stores/useThreadStore'
+import { UserTurn } from "./UserTurn";
+import { AssistantTurn } from "./AssistantTurn";
+import { useThreadStore } from "@/core/stores/useThreadStore";
 
 interface TurnListProps {
-  turnIds: string[]
+  turnIds: string[];
 }
 
 /**
@@ -17,17 +17,21 @@ interface TurnListProps {
  * Note: Parent (ActiveThreadView) handles scrolling - this component just renders content.
  */
 function TurnRow({ turnId }: { turnId: string }) {
-  const turn = useThreadStore((s) => s.turnById[turnId])
-  if (!turn) return null
-  return turn.role === 'user' ? <UserTurn turn={turn} /> : <AssistantTurn turn={turn} />
+  const turn = useThreadStore((s) => s.turnById[turnId]);
+  if (!turn) return null;
+  return turn.role === "user" ? (
+    <UserTurn turn={turn} />
+  ) : (
+    <AssistantTurn turn={turn} />
+  );
 }
 
 export function TurnList({ turnIds }: TurnListProps) {
   return (
-    <div className="flex flex-col gap-3 py-3 px-6 w-full max-w-3xl mx-auto min-w-0 overflow-hidden">
+    <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-3 overflow-hidden px-6 py-3">
       {turnIds.map((turnId) => (
         <TurnRow key={turnId} turnId={turnId} />
       ))}
     </div>
-  )
+  );
 }

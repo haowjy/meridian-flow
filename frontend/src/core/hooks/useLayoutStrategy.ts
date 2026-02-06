@@ -1,7 +1,7 @@
-import { useIsMobile } from './useIsMobile'
-import { TwoPanelLayout } from '@/shared/components/layout/TwoPanelLayout'
-import { MobileLayout } from '@/shared/components/layout/MobileLayout'
-import type { LayoutStrategyComponent } from '@/shared/components/layout/types'
+import { useIsMobile } from "./useIsMobile";
+import { TwoPanelLayout } from "@/shared/components/layout/TwoPanelLayout";
+import { MobileLayout } from "@/shared/components/layout/MobileLayout";
+import type { LayoutStrategyComponent } from "@/shared/components/layout/types";
 
 /**
  * Hook that returns the appropriate layout strategy based on viewport.
@@ -17,11 +17,11 @@ import type { LayoutStrategyComponent } from '@/shared/components/layout/types'
  * pass panel content to whatever strategy is appropriate.
  */
 export function useLayoutStrategy(): LayoutStrategyComponent {
-  const isMobile = useIsMobile()
+  const isMobile = useIsMobile();
 
   if (isMobile) {
-    return MobileLayout
+    return MobileLayout;
   }
 
-  return TwoPanelLayout
+  return TwoPanelLayout;
 }

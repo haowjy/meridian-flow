@@ -6,7 +6,7 @@
  */
 
 // Re-export shared types for backwards compatibility
-export type { DocTreeDocument, DocTreeFolder } from '@/types/docTree'
+export type { DocTreeDocument, DocTreeFolder } from "@/types/docTree";
 
 // =============================================================================
 // INPUT TYPES
@@ -14,11 +14,11 @@ export type { DocTreeDocument, DocTreeFolder } from '@/types/docTree'
 
 export interface DocTreeInput {
   /** Unix-style folder path (default: "/") */
-  path?: string
+  path?: string;
   /** Legacy parameter name for backward compatibility */
-  folder?: string
+  folder?: string;
   /** Depth to traverse (default: 2, max: 5) */
-  depth?: number
+  depth?: number;
 }
 
 // =============================================================================
@@ -26,16 +26,16 @@ export interface DocTreeInput {
 // =============================================================================
 
 // Import for use in DocTreeResult
-import type { DocTreeFolder, DocTreeDocument } from '@/types/docTree'
+import type { DocTreeFolder, DocTreeDocument } from "@/types/docTree";
 
 export interface DocTreeResult {
-  type: 'tree'
+  type: "tree";
   /** Resolved folder path */
-  path: string
+  path: string;
   /** Actual depth traversed */
-  depth: number
+  depth: number;
   /** Nested folders at this level */
-  folders: DocTreeFolder[]
+  folders: DocTreeFolder[];
   /** Documents at this level */
-  documents: DocTreeDocument[]
+  documents: DocTreeDocument[];
 }

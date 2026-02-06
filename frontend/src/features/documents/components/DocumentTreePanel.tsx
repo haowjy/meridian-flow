@@ -1,43 +1,43 @@
-import { useState, ReactNode, DragEvent } from 'react'
-import { FileText, Folder, Plus, Upload, PanelLeft } from 'lucide-react'
-import { MultiRowHeader } from '@/shared/components/layout/headers'
-import { cn } from '@/lib/utils'
-import { Button } from '@/shared/components/ui/button'
-import { Input } from '@/shared/components/ui/input'
-import { useTreeSelection } from '../hooks/useTreeSelection'
+import { useState, ReactNode, DragEvent } from "react";
+import { FileText, Folder, Plus, Upload, PanelLeft } from "lucide-react";
+import { MultiRowHeader } from "@/shared/components/layout/headers";
+import { cn } from "@/lib/utils";
+import { Button } from "@/shared/components/ui/button";
+import { Input } from "@/shared/components/ui/input";
+import { useTreeSelection } from "../hooks/useTreeSelection";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/shared/components/ui/dropdown-menu'
-import { TreeItemWithContextMenu } from '@/shared/components/TreeItemWithContextMenu'
-import { createRootMenuItems } from '../utils/menuBuilders'
-import { BatchActionsBar } from './BatchActionsBar'
-import { useTreeStore } from '@/core/stores/useTreeStore'
-import { useUIStore } from '@/core/stores/useUIStore'
-import { BulkDeleteOperation } from '../operations/bulkDelete'
-import type { TreeNode } from '@/core/lib/treeBuilder'
-import { canonicalizeSelection } from '@/core/lib/treeUtils'
-import type { BulkOperation } from '../operations/types'
+} from "@/shared/components/ui/dropdown-menu";
+import { TreeItemWithContextMenu } from "@/shared/components/TreeItemWithContextMenu";
+import { createRootMenuItems } from "../utils/menuBuilders";
+import { BatchActionsBar } from "./BatchActionsBar";
+import { useTreeStore } from "@/core/stores/useTreeStore";
+import { useUIStore } from "@/core/stores/useUIStore";
+import { BulkDeleteOperation } from "../operations/bulkDelete";
+import type { TreeNode } from "@/core/lib/treeBuilder";
+import { canonicalizeSelection } from "@/core/lib/treeUtils";
+import type { BulkOperation } from "../operations/types";
 
 interface DocumentTreePanelProps {
-  children: ReactNode
-  onCreateDocument: () => void
-  onCreateFolder?: () => void
-  onImport?: () => void
-  onFileDrop?: (files: File[]) => void
-  onSearch?: (query: string) => void
-  isEmpty?: boolean
-  projectId: string
-  onBulkOperationComplete?: () => void
+  children: ReactNode;
+  onCreateDocument: () => void;
+  onCreateFolder?: () => void;
+  onImport?: () => void;
+  onFileDrop?: (files: File[]) => void;
+  onSearch?: (query: string) => void;
+  isEmpty?: boolean;
+  projectId: string;
+  onBulkOperationComplete?: () => void;
   // Safe delete callbacks from useResourceOperations
   // Handle navigation-away, cache cleanup, and retry cancellation
-  deleteDocument: (id: string) => Promise<void>
-  deleteFolder: (id: string) => Promise<void>
+  deleteDocument: (id: string) => Promise<void>;
+  deleteFolder: (id: string) => Promise<void>;
   // Mobile navigation: hamburger menu trigger (shown before "Documents" label on mobile)
-  mobileMenuTrigger?: ReactNode
+  mobileMenuTrigger?: ReactNode;
 }
 
 /**
@@ -59,82 +59,88 @@ export function DocumentTreePanel({
   deleteFolder,
   mobileMenuTrigger,
 }: DocumentTreePanelProps) {
-  const { selectedIds } = useTreeSelection()
-  const tree = useTreeStore((s) => s.tree)
-  const documentTreeCollapsed = useUIStore((s) => s.documentTreeCollapsed)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [isDragOver, setIsDragOver] = useState(false)
-  const [pendingRootAction, setPendingRootAction] = useState<(() => void) | null>(null)
+  const { selectedIds } = useTreeSelection();
+  const tree = useTreeStore((s) => s.tree);
+  const documentTreeCollapsed = useUIStore((s) => s.documentTreeCollapsed);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [pendingRootAction, setPendingRootAction] = useState<
+    (() => void) | null
+  >(null);
 
   // Get canonicalized selection: only items where no ancestor is also selected.
   // This prevents double-counting and 404 errors when bulk deleting a folder
   // and its contents (the folder delete will cascade to children).
   const getSelectedItems = (): TreeNode[] => {
-    return canonicalizeSelection(tree, selectedIds)
-  }
+    return canonicalizeSelection(tree, selectedIds);
+  };
 
   // Register bulk operations
   const bulkOperations: BulkOperation[] = [
     new BulkDeleteOperation(),
     // Add more operations here as they're implemented
-  ]
+  ];
 
-  const selectedItems = getSelectedItems()
+  const selectedItems = getSelectedItems();
 
   const handleSearchChange = (value: string) => {
-    setSearchQuery(value)
-    onSearch?.(value)
-  }
+    setSearchQuery(value);
+    onSearch?.(value);
+  };
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    setIsDragOver(true)
-  }
+    e.preventDefault();
+    setIsDragOver(true);
+  };
 
   const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    setIsDragOver(false)
-  }
+    e.preventDefault();
+    setIsDragOver(false);
+  };
 
   const handleDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    setIsDragOver(false)
-    const files = Array.from(e.dataTransfer.files)
+    e.preventDefault();
+    setIsDragOver(false);
+    const files = Array.from(e.dataTransfer.files);
     if (files.length > 0 && onFileDrop) {
-      onFileDrop(files)
+      onFileDrop(files);
     }
-  }
+  };
 
   const rootMenuItems = createRootMenuItems({
     onCreateDocument,
     onCreateFolder,
     onImport,
-  })
+  });
 
   const handleRootMenuOpenChange = (open: boolean) => {
     if (!open && pendingRootAction) {
-      const action = pendingRootAction
-      setPendingRootAction(null)
-      action()
+      const action = pendingRootAction;
+      setPendingRootAction(null);
+      action();
     }
-  }
+  };
 
   return (
     <div className="flex h-full flex-col">
       {/* Single scroll container - scrollbar extends to top */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
+      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
         {/* Two-row sticky header: label+collapse top, search+create bottom */}
         <MultiRowHeader>
           {/* Row 1: Section label + collapse toggle (mobile: hamburger before label)
               Uses consistent h-14, px-3, gap-2 to match MobileHeader specs */}
-          <div className="flex items-center h-14 px-3 gap-2 md:h-[var(--panel-header-height)] md:px-3">
+          <div className="flex h-14 items-center gap-2 px-3 md:h-[var(--panel-header-height)] md:px-3">
             {/* Desktop collapse toggle on left - hidden on mobile */}
             <Button
               variant="ghost"
               size="icon"
               onClick={() => useUIStore.getState().toggleDocumentTree()}
-              aria-label={documentTreeCollapsed ? 'Show file explorer' : 'Hide file explorer'}
-              className="shrink-0 hidden md:flex"
+              aria-label={
+                documentTreeCollapsed
+                  ? "Show file explorer"
+                  : "Hide file explorer"
+              }
+              className="hidden shrink-0 md:flex"
             >
               <PanelLeft className="size-4" />
             </Button>
@@ -142,9 +148,9 @@ export function DocumentTreePanel({
             <div className="flex items-center gap-2 md:gap-1">
               {/* Mobile hamburger menu trigger */}
               {mobileMenuTrigger && (
-                <div className="md:hidden shrink-0">{mobileMenuTrigger}</div>
+                <div className="shrink-0 md:hidden">{mobileMenuTrigger}</div>
               )}
-              <span className="font-medium text-sm">Documents</span>
+              <span className="text-sm font-medium">Documents</span>
             </div>
           </div>
 
@@ -162,26 +168,39 @@ export function DocumentTreePanel({
 
             <DropdownMenu onOpenChange={handleRootMenuOpenChange}>
               <DropdownMenuTrigger asChild>
-                <Button size="icon" aria-label="Create new item" className="shrink-0">
+                <Button
+                  size="icon"
+                  aria-label="Create new item"
+                  className="shrink-0"
+                >
                   <Plus className="size-4 md:size-3.5" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" onCloseAutoFocus={(e) => e.preventDefault()}>
-                <DropdownMenuItem onClick={() => setPendingRootAction(() => onCreateDocument)}>
-                  <FileText className="size-3.5 mr-2" />
+              <DropdownMenuContent
+                align="end"
+                onCloseAutoFocus={(e) => e.preventDefault()}
+              >
+                <DropdownMenuItem
+                  onClick={() => setPendingRootAction(() => onCreateDocument)}
+                >
+                  <FileText className="mr-2 size-3.5" />
                   New Document
                 </DropdownMenuItem>
                 {onCreateFolder && (
-                  <DropdownMenuItem onClick={() => setPendingRootAction(() => onCreateFolder)}>
-                    <Folder className="size-3.5 mr-2" />
+                  <DropdownMenuItem
+                    onClick={() => setPendingRootAction(() => onCreateFolder)}
+                  >
+                    <Folder className="mr-2 size-3.5" />
                     New Folder
                   </DropdownMenuItem>
                 )}
                 {onImport && (
                   <>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => setPendingRootAction(() => onImport)}>
-                      <Upload className="size-3.5 mr-2" />
+                    <DropdownMenuItem
+                      onClick={() => setPendingRootAction(() => onImport)}
+                    >
+                      <Upload className="mr-2 size-3.5" />
                       Import Files...
                     </DropdownMenuItem>
                   </>
@@ -193,7 +212,7 @@ export function DocumentTreePanel({
 
         {/* Tree Content */}
         {isEmpty ? (
-          <div className="flex flex-col items-center px-4 pt-4 gap-4">
+          <div className="flex flex-col items-center gap-4 px-4 pt-4">
             {/* Dropzone */}
             <div
               onDragOver={handleDragOver}
@@ -201,24 +220,24 @@ export function DocumentTreePanel({
               onDrop={handleDrop}
               onClick={onImport}
               className={cn(
-                'flex flex-col items-center justify-center gap-2 p-6 rounded-lg cursor-pointer transition-colors w-full',
-                'border-2 border-dashed',
+                "flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg p-6 transition-colors",
+                "border-2 border-dashed",
                 isDragOver
-                  ? 'border-primary bg-primary/5'
-                  : 'border-muted-foreground/25 hover:border-muted-foreground/50 hover:bg-muted/30'
+                  ? "border-primary bg-primary/5"
+                  : "border-muted-foreground/25 hover:border-muted-foreground/50 hover:bg-muted/30",
               )}
             >
-              <Upload className="size-6 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground text-center">
+              <Upload className="text-muted-foreground size-6" />
+              <p className="text-muted-foreground text-center text-sm">
                 Drop files to import
               </p>
             </div>
 
             {/* Divider with "or" */}
-            <div className="flex items-center gap-3 w-full">
-              <div className="flex-1 h-px bg-border" />
-              <span className="text-xs text-muted-foreground">or</span>
-              <div className="flex-1 h-px bg-border" />
+            <div className="flex w-full items-center gap-3">
+              <div className="bg-border h-px flex-1" />
+              <span className="text-muted-foreground text-xs">or</span>
+              <div className="bg-border h-px flex-1" />
             </div>
 
             {/* Create document button */}
@@ -245,10 +264,10 @@ export function DocumentTreePanel({
             deleteFolder,
           }}
           onComplete={() => {
-            onBulkOperationComplete?.()
+            onBulkOperationComplete?.();
           }}
         />
       )}
     </div>
-  )
+  );
 }

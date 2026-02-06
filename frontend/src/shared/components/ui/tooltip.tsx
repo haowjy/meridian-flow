@@ -1,7 +1,7 @@
-import * as React from "react"
-import * as TooltipPrimitive from "@radix-ui/react-tooltip"
+import * as React from "react";
+import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 /**
  * TooltipProvider wraps a section of your app to control tooltip delay behavior.
@@ -22,23 +22,19 @@ function TooltipProvider({
       skipDelayDuration={skipDelayDuration}
       {...props}
     />
-  )
+  );
 }
 
 function Tooltip({
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
-  return (
-    <TooltipPrimitive.Root data-slot="tooltip" {...props} />
-  )
+  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />;
 }
 
 function TooltipTrigger({
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
-  return (
-    <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
-  )
+  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;
 }
 
 function TooltipContent({
@@ -66,12 +62,12 @@ function TooltipContent({
           "data-[side=left]:slide-in-from-right-2",
           "data-[side=right]:slide-in-from-left-2",
           "data-[side=top]:slide-in-from-bottom-2",
-          className
+          className,
         )}
         {...props}
       />
     </TooltipPrimitive.Portal>
-  )
+  );
 }
 
 /**
@@ -91,15 +87,15 @@ function TooltipContent({
  */
 interface SimpleTooltipProps {
   /** The tooltip text or React node */
-  content: React.ReactNode
+  content: React.ReactNode;
   /** Which side the tooltip appears on */
-  side?: "top" | "right" | "bottom" | "left"
+  side?: "top" | "right" | "bottom" | "left";
   /** The element that triggers the tooltip */
-  children: React.ReactNode
+  children: React.ReactNode;
   /** Additional className for TooltipContent */
-  className?: string
+  className?: string;
   /** Whether to use asChild on trigger (default: true for icon-only elements) */
-  asChild?: boolean
+  asChild?: boolean;
 }
 
 function SimpleTooltip({
@@ -111,14 +107,12 @@ function SimpleTooltip({
 }: SimpleTooltipProps) {
   return (
     <Tooltip>
-      <TooltipTrigger asChild={asChild}>
-        {children}
-      </TooltipTrigger>
+      <TooltipTrigger asChild={asChild}>{children}</TooltipTrigger>
       <TooltipContent side={side} className={className}>
         {content}
       </TooltipContent>
     </Tooltip>
-  )
+  );
 }
 
 export {
@@ -127,4 +121,4 @@ export {
   TooltipTrigger,
   TooltipContent,
   SimpleTooltip,
-}
+};

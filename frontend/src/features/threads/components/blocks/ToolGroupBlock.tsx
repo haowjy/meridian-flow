@@ -11,30 +11,30 @@
  * - Aggregate status display (completed, streaming, error)
  */
 
-import React, { useMemo } from 'react'
-import { Wrench, ChevronDown, AlertTriangle, Check } from 'lucide-react'
-import { useShallow } from 'zustand/react/shallow'
-import { cn } from '@/lib/utils'
-import type { ToolBlockContent } from '@/features/threads/types'
-import type { ToolInteraction } from '@/features/threads/utils/toolGrouping'
-import { useUIStore } from '@/core/stores/useUIStore'
-import { useIsGroupStreaming } from '@/features/threads/hooks/useIsGroupStreaming'
+import React, { useMemo } from "react";
+import { Wrench, ChevronDown, AlertTriangle, Check } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
+import { cn } from "@/lib/utils";
+import type { ToolBlockContent } from "@/features/threads/types";
+import type { ToolInteraction } from "@/features/threads/utils/toolGrouping";
+import { useUIStore } from "@/core/stores/useUIStore";
+import { useIsGroupStreaming } from "@/features/threads/hooks/useIsGroupStreaming";
 import {
   Collapsible,
   CollapsibleTrigger,
   CollapsibleContent,
-} from '@/shared/components/ui/collapsible'
-import { getToolRenderer } from './toolRegistry'
-import { getToolInteractionReactKey } from '@/features/threads/utils/blockIdentity'
+} from "@/shared/components/ui/collapsible";
+import { getToolRenderer } from "./toolRegistry";
+import { getToolInteractionReactKey } from "@/features/threads/utils/blockIdentity";
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
 interface ToolGroupBlockProps {
-  groupId: string
-  items: ToolInteraction[]
-  turnId: string
+  groupId: string;
+  items: ToolInteraction[];
+  turnId: string;
 }
 
 // =============================================================================
@@ -45,40 +45,40 @@ interface ToolGroupBlockProps {
  * Extract tool name from a tool interaction for routing to registry.
  */
 function getToolName(interaction: ToolInteraction): string | null {
-  const source = interaction.toolUse ?? interaction.toolResult
-  if (!source?.content) return null
-  const content = source.content as ToolBlockContent
-  return typeof content.toolName === 'string' ? content.toolName : null
+  const source = interaction.toolUse ?? interaction.toolResult;
+  if (!source?.content) return null;
+  const content = source.content as ToolBlockContent;
+  return typeof content.toolName === "string" ? content.toolName : null;
 }
 
 /**
  * Check if a tool interaction has an error.
  */
 function hasToolError(interaction: ToolInteraction): boolean {
-  if (!interaction.toolResult?.content) return false
-  const content = interaction.toolResult.content as ToolBlockContent
-  return content.isError === true
+  if (!interaction.toolResult?.content) return false;
+  const content = interaction.toolResult.content as ToolBlockContent;
+  return content.isError === true;
 }
 
 /**
  * Check if a tool interaction is complete (has a result).
  */
 function isToolComplete(interaction: ToolInteraction): boolean {
-  return interaction.toolResult !== null
+  return interaction.toolResult !== null;
 }
 
 /**
  * Check if any tool in the group has an error.
  */
 function hasAnyError(items: ToolInteraction[]): boolean {
-  return items.some(hasToolError)
+  return items.some(hasToolError);
 }
 
 /**
  * Check if all tools in the group are complete.
  */
 function areAllToolsComplete(items: ToolInteraction[]): boolean {
-  return items.every(isToolComplete)
+  return items.every(isToolComplete);
 }
 
 // =============================================================================
@@ -95,45 +95,51 @@ export const ToolGroupBlock = React.memo(function ToolGroupBlock({
     useShallow((s) => ({
       toggleToolGroup: s.toggleToolGroup,
       expandedToolGroups: s.expandedToolGroups,
-    }))
-  )
-  const isExpanded = expandedToolGroups.has(groupId)
+    })),
+  );
+  const isExpanded = expandedToolGroups.has(groupId);
 
   // Get sequence numbers for all tool blocks in this group
   const toolBlockSequences = useMemo(
     () =>
       items
-        .flatMap((interaction) => [interaction.toolUse?.sequence, interaction.toolResult?.sequence])
+        .flatMap((interaction) => [
+          interaction.toolUse?.sequence,
+          interaction.toolResult?.sequence,
+        ])
         .filter((seq): seq is number => seq !== undefined),
-    [items]
-  )
+    [items],
+  );
 
   // Use shared hook for streaming detection
-  const isStreaming = useIsGroupStreaming(turnId, toolBlockSequences, ['tool_use', 'tool_result'])
+  const isStreaming = useIsGroupStreaming(turnId, toolBlockSequences, [
+    "tool_use",
+    "tool_result",
+  ]);
 
   // Compute other derived values
   const { hasError, allComplete } = useMemo(() => {
     return {
       hasError: hasAnyError(items),
       allComplete: areAllToolsComplete(items),
-    }
-  }, [items])
+    };
+  }, [items]);
 
   const handleToggle = () => {
-    toggleToolGroup(groupId)
-  }
+    toggleToolGroup(groupId);
+  };
 
-  const toolCount = items.length
+  const toolCount = items.length;
 
   return (
     <Collapsible open={isExpanded} onOpenChange={handleToggle}>
       <div
         className={cn(
-          'rounded-lg border',
-          'bg-card/50 hover:bg-card/80',
-          'transition-colors duration-150',
-          'overflow-hidden',
-          isStreaming && 'animate-generating-border-shimmer'
+          "rounded-lg border",
+          "bg-card/50 hover:bg-card/80",
+          "transition-colors duration-150",
+          "overflow-hidden",
+          isStreaming && "animate-generating-border-shimmer",
         )}
       >
         {/* Header */}
@@ -141,46 +147,46 @@ export const ToolGroupBlock = React.memo(function ToolGroupBlock({
           <button
             type="button"
             className={cn(
-              'flex w-full items-center gap-2 px-3 py-2',
-              'text-left cursor-pointer',
-              'hover:bg-muted/40 transition-colors'
+              "flex w-full items-center gap-2 px-3 py-2",
+              "cursor-pointer text-left",
+              "hover:bg-muted/40 transition-colors",
             )}
           >
             {/* Wrench icon */}
-            <Wrench className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+            <Wrench className="text-muted-foreground/70 h-3.5 w-3.5 shrink-0" />
 
             {/* Tool count label */}
             <span
               className={cn(
-                'flex-1 min-w-0 text-sm text-muted-foreground',
-                isStreaming && 'animate-generating-shimmer'
+                "text-muted-foreground min-w-0 flex-1 text-sm",
+                isStreaming && "animate-generating-shimmer",
               )}
             >
-              {toolCount} {toolCount === 1 ? 'tool' : 'tools'}
+              {toolCount} {toolCount === 1 ? "tool" : "tools"}
             </span>
 
             {/* Status indicator */}
-            <span className="shrink-0 flex items-center gap-1">
+            <span className="flex shrink-0 items-center gap-1">
               {hasError ? (
-                <AlertTriangle className="h-3.5 w-3.5 text-error" />
+                <AlertTriangle className="text-error h-3.5 w-3.5" />
               ) : isStreaming ? (
                 <span className="flex items-center gap-0.5">
-                  <span className="animate-processing-dot h-1 w-1 rounded-full bg-favorite" />
-                  <span className="animate-processing-dot h-1 w-1 rounded-full bg-favorite" />
-                  <span className="animate-processing-dot h-1 w-1 rounded-full bg-favorite" />
+                  <span className="animate-processing-dot bg-favorite h-1 w-1 rounded-full" />
+                  <span className="animate-processing-dot bg-favorite h-1 w-1 rounded-full" />
+                  <span className="animate-processing-dot bg-favorite h-1 w-1 rounded-full" />
                 </span>
               ) : allComplete ? (
-                <Check className="h-3.5 w-3.5 text-success" />
+                <Check className="text-success h-3.5 w-3.5" />
               ) : (
-                <span className="text-[11px] text-muted-foreground">...</span>
+                <span className="text-muted-foreground text-[11px]">...</span>
               )}
             </span>
 
             {/* Chevron */}
             <ChevronDown
               className={cn(
-                'h-3.5 w-3.5 shrink-0 text-muted-foreground/50 transition-transform duration-200',
-                isExpanded && 'rotate-180'
+                "text-muted-foreground/50 h-3.5 w-3.5 shrink-0 transition-transform duration-200",
+                isExpanded && "rotate-180",
               )}
             />
           </button>
@@ -188,26 +194,26 @@ export const ToolGroupBlock = React.memo(function ToolGroupBlock({
 
         {/* Expanded content */}
         <CollapsibleContent>
-          <div className="border-t px-3 py-3 space-y-2">
+          <div className="space-y-2 border-t px-3 py-3">
             {items.map((interaction, index) => {
-              const toolName = getToolName(interaction)
-              const render = getToolRenderer(toolName)
+              const toolName = getToolName(interaction);
+              const render = getToolRenderer(toolName);
               const key =
                 getToolInteractionReactKey(
                   turnId,
                   interaction.toolUse,
-                  interaction.toolResult
-                ) ?? `tool-${index}`
+                  interaction.toolResult,
+                ) ?? `tool-${index}`;
 
               return (
                 <React.Fragment key={key}>
                   {render(interaction.toolUse, interaction.toolResult)}
                 </React.Fragment>
-              )
+              );
             })}
           </div>
         </CollapsibleContent>
       </div>
     </Collapsible>
-  )
-})
+  );
+});

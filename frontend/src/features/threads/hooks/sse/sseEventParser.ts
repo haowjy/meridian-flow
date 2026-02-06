@@ -10,7 +10,7 @@
  * - Return typed object ready for handlers
  */
 
-import { convertKeysToCamelCase } from '@/core/lib/caseConvert'
+import { convertKeysToCamelCase } from "@/core/lib/caseConvert";
 
 /**
  * Parse and convert SSE event data.
@@ -20,6 +20,6 @@ import { convertKeysToCamelCase } from '@/core/lib/caseConvert'
  * @throws SyntaxError if JSON parsing fails
  */
 export function parseSSEEvent<T>(data: string): T {
-  const parsed = JSON.parse(data)
-  return convertKeysToCamelCase(parsed) as T
+  const parsed = JSON.parse(data);
+  return convertKeysToCamelCase(parsed) as T;
 }

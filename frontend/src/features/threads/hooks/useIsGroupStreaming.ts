@@ -5,9 +5,9 @@
  * to determine if they should show streaming indicators (shimmer, dots, etc.).
  */
 
-import { useMemo } from 'react'
-import { useShallow } from 'zustand/react/shallow'
-import { useThreadStore } from '@/core/stores/useThreadStore'
+import { useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { useThreadStore } from "@/core/stores/useThreadStore";
 
 /**
  * Hook to determine if a group of blocks is currently streaming.
@@ -20,24 +20,35 @@ import { useThreadStore } from '@/core/stores/useThreadStore'
 export function useIsGroupStreaming(
   turnId: string,
   blockSequences: number[],
-  validBlockTypes: string[]
+  validBlockTypes: string[],
 ): boolean {
-  const { streamingTurnId, streamingBlockType, streamingBlockIndex } = useThreadStore(
-    useShallow((s) => ({
-      streamingTurnId: s.streamingTurnId,
-      streamingBlockType: s.streamingBlockType,
-      streamingBlockIndex: s.streamingBlockIndex,
-    }))
-  )
+  const { streamingTurnId, streamingBlockType, streamingBlockIndex } =
+    useThreadStore(
+      useShallow((s) => ({
+        streamingTurnId: s.streamingTurnId,
+        streamingBlockType: s.streamingBlockType,
+        streamingBlockIndex: s.streamingBlockIndex,
+      })),
+    );
 
   return useMemo(() => {
     // Must be streaming in this turn
-    if (streamingTurnId !== turnId) return false
+    if (streamingTurnId !== turnId) return false;
 
     // Must be streaming a valid block type for this group
-    if (!validBlockTypes.includes(streamingBlockType ?? '')) return false
+    if (!validBlockTypes.includes(streamingBlockType ?? "")) return false;
 
     // Check if the streaming block is in this group
-    return streamingBlockIndex !== null && blockSequences.includes(streamingBlockIndex)
-  }, [streamingTurnId, streamingBlockType, streamingBlockIndex, turnId, blockSequences, validBlockTypes])
+    return (
+      streamingBlockIndex !== null &&
+      blockSequences.includes(streamingBlockIndex)
+    );
+  }, [
+    streamingTurnId,
+    streamingBlockType,
+    streamingBlockIndex,
+    turnId,
+    blockSequences,
+    validBlockTypes,
+  ]);
 }

@@ -1,7 +1,7 @@
-export { SkillListPanel } from './SkillListPanel'
-export { SkillList } from './SkillList'
-export { SkillListItem } from './SkillListItem'
-export { DeleteSkillDialog } from './DeleteSkillDialog'
-export { SkillEditorPanel } from './SkillEditorPanel'
-export { SkillCreatePanel } from './SkillCreatePanel'
-export { SkillForm } from './SkillForm'
+export { SkillListPanel } from "./SkillListPanel";
+export { SkillList } from "./SkillList";
+export { SkillListItem } from "./SkillListItem";
+export { DeleteSkillDialog } from "./DeleteSkillDialog";
+export { SkillEditorPanel } from "./SkillEditorPanel";
+export { SkillCreatePanel } from "./SkillCreatePanel";
+export { SkillForm } from "./SkillForm";

@@ -1,19 +1,19 @@
-import { useState } from 'react'
-import { useShallow } from 'zustand/react/shallow'
-import type { Thread } from '@/features/threads/types'
+import { useState } from "react";
+import { useShallow } from "zustand/react/shallow";
+import type { Thread } from "@/features/threads/types";
 import {
   useUIStore,
   selectEffectiveLeftCollapsed,
   selectEffectiveRightCollapsed,
-} from '@/core/stores/useUIStore'
-import { PanelHeader } from '@/shared/components/layout/headers'
-import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
-import { ProgressiveBreadcrumb } from './ProgressiveBreadcrumb'
+} from "@/core/stores/useUIStore";
+import { PanelHeader } from "@/shared/components/layout/headers";
+import { SidebarToggle } from "@/shared/components/layout/SidebarToggle";
+import { ProgressiveBreadcrumb } from "./ProgressiveBreadcrumb";
 
 interface ThreadHeaderProps {
-  thread?: Thread | null
-  onRename?: (title: string) => void
-  onDelete?: () => void
+  thread?: Thread | null;
+  onRename?: (title: string) => void;
+  onDelete?: () => void;
 }
 
 /**
@@ -27,31 +27,31 @@ export function ThreadHeader({
   onRename,
   onDelete,
 }: ThreadHeaderProps) {
-  const [isRenaming, setIsRenaming] = useState(false)
+  const [isRenaming, setIsRenaming] = useState(false);
 
-  const { leftPanelCollapsed, rightPanelCollapsed } = useUIStore(useShallow((s) => ({
-    leftPanelCollapsed: selectEffectiveLeftCollapsed(s),
-    rightPanelCollapsed: selectEffectiveRightCollapsed(s),
-  })))
+  const { leftPanelCollapsed, rightPanelCollapsed } = useUIStore(
+    useShallow((s) => ({
+      leftPanelCollapsed: selectEffectiveLeftCollapsed(s),
+      rightPanelCollapsed: selectEffectiveRightCollapsed(s),
+    })),
+  );
 
   const handleRenameSubmit = (title: string) => {
-    onRename?.(title)
-    setIsRenaming(false)
-  }
+    onRename?.(title);
+    setIsRenaming(false);
+  };
 
   const handleRenameCancel = () => {
-    setIsRenaming(false)
-  }
+    setIsRenaming(false);
+  };
 
-  const threadTitle = thread?.title || null
+  const threadTitle = thread?.title || null;
 
   // Leading: sidebar toggle (when collapsed) + breadcrumb
   const leadingContent = (
     <>
       {/* Desktop: Only show if left panel is collapsed */}
-      {leftPanelCollapsed && (
-        <SidebarToggle side="left" className="shrink-0" />
-      )}
+      {leftPanelCollapsed && <SidebarToggle side="left" className="shrink-0" />}
 
       {/* Thread title breadcrumb - single source of truth for view and edit modes */}
       {thread && (
@@ -66,12 +66,12 @@ export function ThreadHeader({
         />
       )}
     </>
-  )
+  );
 
   // Trailing: right sidebar toggle (when collapsed)
   const trailingContent = rightPanelCollapsed ? (
     <SidebarToggle side="right" className="shrink-0" />
-  ) : null
+  ) : null;
 
   return (
     <PanelHeader
@@ -80,5 +80,5 @@ export function ThreadHeader({
       showGradient={false}
       className="px-2 sm:px-3"
     />
-  )
+  );
 }

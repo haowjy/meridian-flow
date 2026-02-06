@@ -8,6 +8,11 @@
  * @see toolRegistry.ts for the registration pattern
  */
 
-export { DocEditBlock } from './DocEditBlock'
-export type { DocEditInput, DocEditCommand, DocEditSuccessResult, DocEditErrorResult } from './types'
-export { COMMAND_LABELS } from './types'
+export { DocEditBlock } from "./DocEditBlock";
+export type {
+  DocEditInput,
+  DocEditCommand,
+  DocEditSuccessResult,
+  DocEditErrorResult,
+} from "./types";
+export { COMMAND_LABELS } from "./types";

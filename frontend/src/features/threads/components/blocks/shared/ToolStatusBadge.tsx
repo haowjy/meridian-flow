@@ -6,35 +6,35 @@
  * Animates with shimmer effect when in pending state.
  */
 
-import { cn } from '@/lib/utils'
+import { cn } from "@/lib/utils";
 
-export type ToolStatus = 'pending' | 'success' | 'error'
+export type ToolStatus = "pending" | "success" | "error";
 
 export interface ToolStatusBadgeProps {
-  status: ToolStatus
-  label: string
+  status: ToolStatus;
+  label: string;
 }
 
 const STATUS_STYLES: Record<ToolStatus, string> = {
-  pending: 'bg-muted text-muted-foreground border-muted-foreground/30',
-  success: 'bg-success/15 text-success border-success/30',
-  error: 'bg-error/15 text-error border-error/30',
-}
+  pending: "bg-muted text-muted-foreground border-muted-foreground/30",
+  success: "bg-success/15 text-success border-success/30",
+  error: "bg-error/15 text-error border-error/30",
+};
 
 export function ToolStatusBadge({ status, label }: ToolStatusBadgeProps) {
-  const isPending = status === 'pending'
+  const isPending = status === "pending";
 
   return (
     <span
       className={cn(
-        'shrink-0 text-[11px] font-medium',
-        'px-2 py-0.5 rounded-full border',
+        "shrink-0 text-[11px] font-medium",
+        "rounded-full border px-2 py-0.5",
         STATUS_STYLES[status],
         // Apply shimmer animation when pending
-        isPending && 'animate-generating-shimmer'
+        isPending && "animate-generating-shimmer",
       )}
     >
       {label}
     </span>
-  )
+  );
 }

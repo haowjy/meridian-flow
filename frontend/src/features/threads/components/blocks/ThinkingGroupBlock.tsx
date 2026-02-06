@@ -11,41 +11,44 @@
  * - Error badge when any nested tool has an error
  */
 
-import React, { useMemo } from 'react'
-import { Brain, ChevronDown, AlertTriangle } from 'lucide-react'
-import { useShallow } from 'zustand/react/shallow'
-import { Streamdown, defaultRehypePlugins } from 'streamdown'
-import { cn } from '@/lib/utils'
-import type { TurnBlock, ToolBlockContent } from '@/features/threads/types'
-import type { ToolInteraction } from '@/features/threads/utils/toolGrouping'
-import { useUIStore } from '@/core/stores/useUIStore'
-import { useIsGroupStreaming } from '@/features/threads/hooks/useIsGroupStreaming'
+import React, { useMemo } from "react";
+import { Brain, ChevronDown, AlertTriangle } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
+import { Streamdown, defaultRehypePlugins } from "streamdown";
+import { cn } from "@/lib/utils";
+import type { TurnBlock, ToolBlockContent } from "@/features/threads/types";
+import type { ToolInteraction } from "@/features/threads/utils/toolGrouping";
+import { useUIStore } from "@/core/stores/useUIStore";
+import { useIsGroupStreaming } from "@/features/threads/hooks/useIsGroupStreaming";
 import {
   Collapsible,
   CollapsibleTrigger,
   CollapsibleContent,
-} from '@/shared/components/ui/collapsible'
-import { getToolRenderer } from './toolRegistry'
-import { getToolInteractionReactKey, getTurnBlockReactKey } from '@/features/threads/utils/blockIdentity'
+} from "@/shared/components/ui/collapsible";
+import { getToolRenderer } from "./toolRegistry";
+import {
+  getToolInteractionReactKey,
+  getTurnBlockReactKey,
+} from "@/features/threads/utils/blockIdentity";
 
 // Omit rehype-raw to prevent XML tags from being interpreted as HTML elements
 const rehypePlugins = [
   defaultRehypePlugins.katex,
   defaultRehypePlugins.harden,
-].filter(Boolean) as NonNullable<typeof defaultRehypePlugins.katex>[]
+].filter(Boolean) as NonNullable<typeof defaultRehypePlugins.katex>[];
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
 type ThinkingGroupItem =
-  | { kind: 'thinking'; block: TurnBlock }
-  | { kind: 'tool'; interaction: ToolInteraction }
+  | { kind: "thinking"; block: TurnBlock }
+  | { kind: "tool"; interaction: ToolInteraction };
 
 interface ThinkingGroupBlockProps {
-  groupId: string
-  items: ThinkingGroupItem[]
-  turnId: string
+  groupId: string;
+  items: ThinkingGroupItem[];
+  turnId: string;
 }
 
 // =============================================================================
@@ -56,19 +59,19 @@ interface ThinkingGroupBlockProps {
  * Extract tool name from a tool interaction for routing to registry.
  */
 function getToolName(interaction: ToolInteraction): string | null {
-  const source = interaction.toolUse ?? interaction.toolResult
-  if (!source?.content) return null
-  const content = source.content as ToolBlockContent
-  return typeof content.toolName === 'string' ? content.toolName : null
+  const source = interaction.toolUse ?? interaction.toolResult;
+  if (!source?.content) return null;
+  const content = source.content as ToolBlockContent;
+  return typeof content.toolName === "string" ? content.toolName : null;
 }
 
 /**
  * Check if a tool interaction has an error.
  */
 function hasToolError(interaction: ToolInteraction): boolean {
-  if (!interaction.toolResult?.content) return false
-  const content = interaction.toolResult.content as ToolBlockContent
-  return content.isError === true
+  if (!interaction.toolResult?.content) return false;
+  const content = interaction.toolResult.content as ToolBlockContent;
+  return content.isError === true;
 }
 
 /**
@@ -77,36 +80,38 @@ function hasToolError(interaction: ToolInteraction): boolean {
 function getThinkingPreview(items: ThinkingGroupItem[]): string | null {
   // Find the last thinking block with content
   for (let i = items.length - 1; i >= 0; i--) {
-    const item = items[i]
-    if (!item) continue
-    if (item.kind === 'thinking' && item.block.textContent) {
-      const text = item.block.textContent.trim()
-      if (text.length === 0) continue
+    const item = items[i];
+    if (!item) continue;
+    if (item.kind === "thinking" && item.block.textContent) {
+      const text = item.block.textContent.trim();
+      if (text.length === 0) continue;
       // Get last ~50 chars, breaking at word boundary if possible
-      if (text.length <= 50) return text
-      const truncated = text.slice(-50)
-      const spaceIndex = truncated.indexOf(' ')
+      if (text.length <= 50) return text;
+      const truncated = text.slice(-50);
+      const spaceIndex = truncated.indexOf(" ");
       if (spaceIndex > 0 && spaceIndex < 20) {
-        return '...' + truncated.slice(spaceIndex + 1)
+        return "..." + truncated.slice(spaceIndex + 1);
       }
-      return '...' + truncated
+      return "..." + truncated;
     }
   }
-  return null
+  return null;
 }
 
 /**
  * Count tool interactions in the group.
  */
 function countTools(items: ThinkingGroupItem[]): number {
-  return items.filter((item) => item.kind === 'tool').length
+  return items.filter((item) => item.kind === "tool").length;
 }
 
 /**
  * Check if any tool in the group has an error.
  */
 function hasAnyError(items: ThinkingGroupItem[]): boolean {
-  return items.some((item) => item.kind === 'tool' && hasToolError(item.interaction))
+  return items.some(
+    (item) => item.kind === "tool" && hasToolError(item.interaction),
+  );
 }
 
 // =============================================================================
@@ -123,21 +128,26 @@ export const ThinkingGroupBlock = React.memo(function ThinkingGroupBlock({
     useShallow((s) => ({
       toggleThinkingGroup: s.toggleThinkingGroup,
       expandedThinkingGroups: s.expandedThinkingGroups,
-    }))
-  )
-  const isExpanded = expandedThinkingGroups.has(groupId)
+    })),
+  );
+  const isExpanded = expandedThinkingGroups.has(groupId);
 
   // Get sequence numbers for thinking blocks in this group
   const thinkingBlockSequences = useMemo(
     () =>
       items
-        .filter((item): item is { kind: 'thinking'; block: TurnBlock } => item.kind === 'thinking')
+        .filter(
+          (item): item is { kind: "thinking"; block: TurnBlock } =>
+            item.kind === "thinking",
+        )
         .map((item) => item.block.sequence),
-    [items]
-  )
+    [items],
+  );
 
   // Use shared hook for streaming detection
-  const isStreaming = useIsGroupStreaming(turnId, thinkingBlockSequences, ['thinking'])
+  const isStreaming = useIsGroupStreaming(turnId, thinkingBlockSequences, [
+    "thinking",
+  ]);
 
   // Compute other derived values
   const { preview, toolCount, hasError } = useMemo(() => {
@@ -145,22 +155,22 @@ export const ThinkingGroupBlock = React.memo(function ThinkingGroupBlock({
       preview: getThinkingPreview(items),
       toolCount: countTools(items),
       hasError: hasAnyError(items),
-    }
-  }, [items])
+    };
+  }, [items]);
 
   const handleToggle = () => {
-    toggleThinkingGroup(groupId)
-  }
+    toggleThinkingGroup(groupId);
+  };
 
   return (
     <Collapsible open={isExpanded} onOpenChange={handleToggle}>
       <div
         className={cn(
-          'rounded-lg border',
-          'bg-muted/20 hover:bg-muted/30',
-          'transition-colors duration-150',
-          'overflow-hidden',
-          isStreaming && 'animate-generating-border-shimmer'
+          "rounded-lg border",
+          "bg-muted/20 hover:bg-muted/30",
+          "transition-colors duration-150",
+          "overflow-hidden",
+          isStreaming && "animate-generating-border-shimmer",
         )}
       >
         {/* Header */}
@@ -168,51 +178,51 @@ export const ThinkingGroupBlock = React.memo(function ThinkingGroupBlock({
           <button
             type="button"
             className={cn(
-              'flex w-full items-center gap-2 px-3 py-2',
-              'text-left cursor-pointer',
-              'hover:bg-muted/40 transition-colors'
+              "flex w-full items-center gap-2 px-3 py-2",
+              "cursor-pointer text-left",
+              "hover:bg-muted/40 transition-colors",
             )}
           >
             {/* Brain icon */}
-            <Brain className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+            <Brain className="text-muted-foreground/70 h-3.5 w-3.5 shrink-0" />
 
             {/* Preview text */}
             <span
               className={cn(
-                'flex-1 min-w-0 truncate text-sm text-muted-foreground',
-                isStreaming && 'animate-generating-shimmer'
+                "text-muted-foreground min-w-0 flex-1 truncate text-sm",
+                isStreaming && "animate-generating-shimmer",
               )}
             >
-              {preview ?? 'Thinking...'}
+              {preview ?? "Thinking..."}
             </span>
 
             {/* Tool count badge */}
             {toolCount > 0 && (
-              <span className="shrink-0 text-[11px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                {toolCount} {toolCount === 1 ? 'tool' : 'tools'}
+              <span className="bg-muted text-muted-foreground shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium">
+                {toolCount} {toolCount === 1 ? "tool" : "tools"}
               </span>
             )}
 
             {/* Status indicator: checkmark only when tools present (tools have success/fail semantics) */}
-            <span className="shrink-0 flex items-center gap-1">
+            <span className="flex shrink-0 items-center gap-1">
               {hasError ? (
-                <AlertTriangle className="h-3.5 w-3.5 text-error" />
+                <AlertTriangle className="text-error h-3.5 w-3.5" />
               ) : isStreaming ? (
                 <span className="flex items-center gap-0.5">
-                  <span className="animate-processing-dot h-1 w-1 rounded-full bg-favorite" />
-                  <span className="animate-processing-dot h-1 w-1 rounded-full bg-favorite" />
-                  <span className="animate-processing-dot h-1 w-1 rounded-full bg-favorite" />
+                  <span className="animate-processing-dot bg-favorite h-1 w-1 rounded-full" />
+                  <span className="animate-processing-dot bg-favorite h-1 w-1 rounded-full" />
+                  <span className="animate-processing-dot bg-favorite h-1 w-1 rounded-full" />
                 </span>
               ) : toolCount > 0 ? (
-                <span className="text-[11px] text-success">✓</span>
+                <span className="text-success text-[11px]">✓</span>
               ) : null}
             </span>
 
             {/* Chevron */}
             <ChevronDown
               className={cn(
-                'h-3.5 w-3.5 shrink-0 text-muted-foreground/50 transition-transform duration-200',
-                isExpanded && 'rotate-180'
+                "text-muted-foreground/50 h-3.5 w-3.5 shrink-0 transition-transform duration-200",
+                isExpanded && "rotate-180",
               )}
             />
           </button>
@@ -220,42 +230,45 @@ export const ThinkingGroupBlock = React.memo(function ThinkingGroupBlock({
 
         {/* Expanded content */}
         <CollapsibleContent>
-          <div className="border-t px-3 py-3 space-y-2">
+          <div className="space-y-2 border-t px-3 py-3">
             {items.map((item, index) => {
-              if (item.kind === 'thinking') {
+              if (item.kind === "thinking") {
                 // Render thinking content as plain text (not ThinkingBlock)
                 // since the outer ThinkingGroupBlock is already collapsible
                 return (
                   <div
                     key={getTurnBlockReactKey(item.block)}
-                    className="text-sm text-muted-foreground whitespace-pre-wrap break-words"
+                    className="text-muted-foreground text-sm break-words whitespace-pre-wrap"
                   >
                     <Streamdown rehypePlugins={rehypePlugins}>
-                      {item.block.textContent ?? ''}
+                      {item.block.textContent ?? ""}
                     </Streamdown>
                   </div>
-                )
+                );
               }
 
               // Tool interaction
-              const toolName = getToolName(item.interaction)
-              const render = getToolRenderer(toolName)
+              const toolName = getToolName(item.interaction);
+              const render = getToolRenderer(toolName);
               const key =
                 getToolInteractionReactKey(
                   turnId,
                   item.interaction.toolUse,
-                  item.interaction.toolResult
-                ) ?? `tool-${index}`
+                  item.interaction.toolResult,
+                ) ?? `tool-${index}`;
 
               return (
                 <React.Fragment key={key}>
-                  {render(item.interaction.toolUse, item.interaction.toolResult)}
+                  {render(
+                    item.interaction.toolUse,
+                    item.interaction.toolResult,
+                  )}
                 </React.Fragment>
-              )
+              );
             })}
           </div>
         </CollapsibleContent>
       </div>
     </Collapsible>
-  )
-})
+  );
+});

@@ -16,33 +16,45 @@
  * @see `_docs/plans/ai-editing/inline-suggestions-impl-2/06-integration.md`
  */
 
-import { useRef, useCallback } from 'react'
-import { CodeMirrorEditor, EditorContextMenu, type CodeMirrorEditorRef } from '@/core/editor/codemirror'
-import { useEditorStore } from '@/core/stores/useEditorStore'
-import { makeLogger } from '@/core/lib/logger'
-import { EditorHeader } from './EditorHeader'
-import { ErrorPanel } from '@/shared/components/ErrorPanel'
-import { InlineError } from '@/shared/components/InlineError'
-import { useTreeStore } from '@/core/stores/useTreeStore'
-import { useUIStore } from '@/core/stores/useUIStore'
-import { PanelHeader, HeaderGradientFade } from '@/shared/components/layout/headers'
-import { SidebarToggle } from '@/shared/components/layout/SidebarToggle'
-import { CompactBreadcrumb } from '@/shared/components/ui/CompactBreadcrumb'
-import { Button } from '@/shared/components/ui/button'
-import { ChevronLeft } from 'lucide-react'
-import { AIHunkNavigator } from './AIHunkNavigator'
-import { useDocumentContent, useDocumentSync, useDiffView, useDocumentPolling } from '../hooks'
+import { useRef, useCallback } from "react";
+import {
+  CodeMirrorEditor,
+  EditorContextMenu,
+  type CodeMirrorEditorRef,
+} from "@/core/editor/codemirror";
+import { useEditorStore } from "@/core/stores/useEditorStore";
+import { makeLogger } from "@/core/lib/logger";
+import { EditorHeader } from "./EditorHeader";
+import { ErrorPanel } from "@/shared/components/ErrorPanel";
+import { InlineError } from "@/shared/components/InlineError";
+import { useTreeStore } from "@/core/stores/useTreeStore";
+import { useUIStore } from "@/core/stores/useUIStore";
+import {
+  PanelHeader,
+  HeaderGradientFade,
+} from "@/shared/components/layout/headers";
+import { SidebarToggle } from "@/shared/components/layout/SidebarToggle";
+import { CompactBreadcrumb } from "@/shared/components/ui/CompactBreadcrumb";
+import { Button } from "@/shared/components/ui/button";
+import { ChevronLeft } from "lucide-react";
+import { AIHunkNavigator } from "./AIHunkNavigator";
+import {
+  useDocumentContent,
+  useDocumentSync,
+  useDiffView,
+  useDocumentPolling,
+} from "../hooks";
 
-const log = makeLogger('editor-panel')
+const log = makeLogger("editor-panel");
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
 interface EditorPanelProps {
-  documentId: string
+  documentId: string;
   // Mobile navigation: back button (passed through to EditorHeader)
-  mobileBackButton?: React.ReactNode
+  mobileBackButton?: React.ReactNode;
 }
 
 // =============================================================================
@@ -57,28 +69,40 @@ interface EditorPanelProps {
  * - During editing: editor shows merged document with diff decorations
  * - On save: parseMergedDocument() → API (content + aiVersion)
  */
-export function EditorPanel({ documentId, mobileBackButton }: EditorPanelProps) {
+export function EditorPanel({
+  documentId,
+  mobileBackButton,
+}: EditorPanelProps) {
   // ---------------------------------------------------------------------------
   // REFS
   // ---------------------------------------------------------------------------
-  const editorRef = useRef<CodeMirrorEditorRef | null>(null)
+  const editorRef = useRef<CodeMirrorEditorRef | null>(null);
 
   // ---------------------------------------------------------------------------
   // STORE STATE (for UI that's not in hooks)
   // ---------------------------------------------------------------------------
-  const { error, status, lastSaved, loadDocument, saveDocument, clearError, navigatorPosition } = useEditorStore()
-  const activeDocument = useEditorStore((s) => s.activeDocument)
+  const {
+    error,
+    status,
+    lastSaved,
+    loadDocument,
+    saveDocument,
+    clearError,
+    navigatorPosition,
+  } = useEditorStore();
+  const activeDocument = useEditorStore((s) => s.activeDocument);
 
   // Get document metadata from tree (available immediately, no need to wait for content)
-  const documents = useTreeStore((state) => state.documents)
-  const documentMetadata = documents.find((doc) => doc.id === documentId)
+  const documents = useTreeStore((state) => state.documents);
+  const documentMetadata = documents.find((doc) => doc.id === documentId);
 
   // ---------------------------------------------------------------------------
   // HOOKS (composed)
   // ---------------------------------------------------------------------------
 
   // Get file extension for adapter selection (default to .md if not available yet)
-  const extension = activeDocument?.extension ?? documentMetadata?.extension ?? '.md'
+  const extension =
+    activeDocument?.extension ?? documentMetadata?.extension ?? ".md";
 
   // 1. Document content (loading, hydration, local state)
   const {
@@ -94,10 +118,18 @@ export function EditorPanel({ documentId, mobileBackButton }: EditorPanelProps) 
     handleContentChange,
     hydrateDocument,
     syncContext,
-  } = useDocumentContent(documentId, extension, editorRef)
+  } = useDocumentContent(documentId, extension, editorRef);
 
   // 2. Document sync (save, flush) - pure effect, no return
-  useDocumentSync(documentId, extension, syncContext, localDocument, hasUserEdit, editorRef, hydrateDocument)
+  useDocumentSync(
+    documentId,
+    extension,
+    syncContext,
+    localDocument,
+    hasUserEdit,
+    editorRef,
+    hydrateDocument,
+  );
 
   // 3. Diff view (markers, navigation)
   const {
@@ -115,7 +147,7 @@ export function EditorPanel({ documentId, mobileBackButton }: EditorPanelProps) 
     isEditorReady,
     setHasUserEdit,
     setLocalDocument,
-  })
+  });
 
   // 4. Document polling (detects background AI updates)
   // Polls for aiVersionRev changes when document is open and not being edited.
@@ -133,24 +165,24 @@ export function EditorPanel({ documentId, mobileBackButton }: EditorPanelProps) 
         // Otherwise, hydrate immediately
         if (hasUserEdit) {
           syncContext.setPendingServerSnapshot({
-            content: doc.content ?? '',
+            content: doc.content ?? "",
             aiVersion: doc.aiVersion,
             aiVersionRev: doc.aiVersionRev,
-          })
+          });
         } else {
           hydrateDocument({
-            content: doc.content ?? '',
+            content: doc.content ?? "",
             aiVersion: doc.aiVersion,
             aiVersionRev: doc.aiVersionRev,
-          })
+          });
         }
       },
       onError: (error) => {
         // Log but don't disrupt the user - polling will retry
-        log.warn('[DocumentPolling] Error:', error.message)
+        log.warn("[DocumentPolling] Error:", error.message);
       },
-    }
-  )
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // CALLBACKS
@@ -158,9 +190,9 @@ export function EditorPanel({ documentId, mobileBackButton }: EditorPanelProps) 
 
   // Handle back button click
   const handleBackClick = () => {
-    const store = useUIStore.getState()
-    store.setRightPanelState('documents')
-  }
+    const store = useUIStore.getState();
+    store.setRightPanelState("documents");
+  };
 
   // ---------------------------------------------------------------------------
   // RENDER HELPERS
@@ -168,13 +200,14 @@ export function EditorPanel({ documentId, mobileBackButton }: EditorPanelProps) 
 
   // Determine the best available source for header metadata
   const headerDocument =
-    documentMetadata || (activeDocument?.id === documentId ? activeDocument : null)
+    documentMetadata ||
+    (activeDocument?.id === documentId ? activeDocument : null);
 
   // Get word count from editor ref
   // Note: This ref access during render is intentional - wordCount is a display-only value
   // that updates on re-render. The ref is stable and always points to our editor instance.
   // eslint-disable-next-line react-hooks/refs
-  const wordCount = editorRef.current?.getWordCount().words ?? 0
+  const wordCount = editorRef.current?.getWordCount().words ?? 0;
 
   const header = headerDocument ? (
     <EditorHeader
@@ -197,36 +230,37 @@ export function EditorPanel({ documentId, mobileBackButton }: EditorPanelProps) 
           >
             <ChevronLeft className="size-3" />
           </Button>
-          <CompactBreadcrumb segments={[{ label: 'Document' }]} />
+          <CompactBreadcrumb segments={[{ label: "Document" }]} />
         </>
       }
       ariaLabel="Document header"
       showGradient={false}
       trailing={<SidebarToggle side="right" />}
     />
-  )
+  );
 
   // ---------------------------------------------------------------------------
   // ERROR STATE
   // ---------------------------------------------------------------------------
 
   // Determine if this is a load error (document hasn't loaded yet) or save error (document loaded but save failed)
-  const isLoadError = error && activeDocument?.id !== documentId
-  const isSaveError = error && activeDocument?.id === documentId && status === 'error'
+  const isLoadError = error && activeDocument?.id !== documentId;
+  const isSaveError =
+    error && activeDocument?.id === documentId && status === "error";
 
   // Handle retry for save errors
   const handleRetry = useCallback(() => {
     if (isSaveError && activeDocument?.content !== undefined) {
-      saveDocument(documentId, activeDocument.content)
+      saveDocument(documentId, activeDocument.content);
     }
-  }, [isSaveError, activeDocument?.content, saveDocument, documentId])
+  }, [isSaveError, activeDocument?.content, saveDocument, documentId]);
 
   // Full error panel for load errors (document couldn't be loaded at all)
   if (isLoadError) {
     return (
       <div className="flex h-full flex-col">
         {header}
-        <div className="flex-1 p-8 flex items-center justify-center">
+        <div className="flex flex-1 items-center justify-center p-8">
           <ErrorPanel
             title="Failed to load document"
             message={error}
@@ -234,7 +268,7 @@ export function EditorPanel({ documentId, mobileBackButton }: EditorPanelProps) 
           />
         </div>
       </div>
-    )
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -242,10 +276,10 @@ export function EditorPanel({ documentId, mobileBackButton }: EditorPanelProps) 
   // ---------------------------------------------------------------------------
 
   if (!headerDocument) {
-    return <div className="flex h-full flex-col" />
+    return <div className="flex h-full flex-col" />;
   }
 
-  const isContentLoading = activeDocument?.id !== documentId || !isInitialized
+  const isContentLoading = activeDocument?.id !== documentId || !isInitialized;
 
   // ---------------------------------------------------------------------------
   // MAIN RENDER
@@ -254,9 +288,9 @@ export function EditorPanel({ documentId, mobileBackButton }: EditorPanelProps) 
   return (
     <div className="flex h-full flex-col">
       {/* Parent scroll container - provides sticky header behavior */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
+      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
         {/* Sticky header - scrolls away when scrolling down, sticks at top when scrolling back up */}
-        <div className="sticky top-0 z-20 bg-background relative">
+        <div className="bg-background relative sticky top-0 z-20">
           {header}
           <HeaderGradientFade />
         </div>
@@ -273,7 +307,7 @@ export function EditorPanel({ documentId, mobileBackButton }: EditorPanelProps) 
         )}
 
         {/* Editor content - scrolls with parent container */}
-        <div className="my-2 relative flex-1">
+        <div className="relative my-2 flex-1">
           {isContentLoading ? (
             <div className="flex-1" />
           ) : (
@@ -295,7 +329,7 @@ export function EditorPanel({ documentId, mobileBackButton }: EditorPanelProps) 
 
         {/* AI navigator - sticky at bottom of viewport */}
         {hasAISuggestions && hunks.length > 0 && (
-          <div className="sticky bottom-0 left-0 right-0 z-20 pointer-events-none">
+          <div className="pointer-events-none sticky right-0 bottom-0 left-0 z-20">
             <AIHunkNavigator
               hunks={hunks}
               currentIndex={navigatorPosition}
@@ -308,5 +342,5 @@ export function EditorPanel({ documentId, mobileBackButton }: EditorPanelProps) 
         )}
       </div>
     </div>
-  )
+  );
 }

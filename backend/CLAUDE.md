@@ -1,6 +1,6 @@
-# Backend - Claude Instructions
+# Backend - Agent Instructions
 
-Backend-specific guidance for Claude Code. For general project info, see `/CLAUDE.md`.
+Backend-specific guidance for Agents. For general project info, see `/AGENTS.md`.
 
 ## Quick Start
 

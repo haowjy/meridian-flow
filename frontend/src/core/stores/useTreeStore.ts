@@ -1,47 +1,59 @@
-import { create } from 'zustand'
-import { Document } from '@/features/documents/types/document'
-import { Folder } from '@/features/folders/types/folder'
-import { buildTree, TreeNode } from '@/core/lib/treeBuilder'
-import { api } from '@/core/lib/api'
-import { getErrorMessageWithFallback, isAbortError } from '@/core/lib/errors'
-import { db } from '@/core/lib/db'
-import { cancelRetry } from '@/core/lib/sync'
-import { getDescendantDocumentIds } from '@/core/lib/treeUtils'
-import type { DocTreeFolder, DocTreeDocument } from '@/types/docTree'
-import { flattenToolTree } from '@/core/lib/flattenToolTree'
+import { create } from "zustand";
+import { Document } from "@/features/documents/types/document";
+import { Folder } from "@/features/folders/types/folder";
+import { buildTree, TreeNode } from "@/core/lib/treeBuilder";
+import { api } from "@/core/lib/api";
+import { getErrorMessageWithFallback, isAbortError } from "@/core/lib/errors";
+import { db } from "@/core/lib/db";
+import { cancelRetry } from "@/core/lib/sync";
+import { getDescendantDocumentIds } from "@/core/lib/treeUtils";
+import type { DocTreeFolder, DocTreeDocument } from "@/types/docTree";
+import { flattenToolTree } from "@/core/lib/flattenToolTree";
 
-type LoadStatus = 'idle' | 'loading' | 'success' | 'error'
+type LoadStatus = "idle" | "loading" | "success" | "error";
 
 interface TreeStore {
-  documents: Document[]
-  folders: Folder[]
-  tree: TreeNode[]
-  expandedFolders: Set<string>
-  status: LoadStatus
-  isFetching: boolean
-  error: string | null
+  documents: Document[];
+  folders: Folder[];
+  tree: TreeNode[];
+  expandedFolders: Set<string>;
+  status: LoadStatus;
+  isFetching: boolean;
+  error: string | null;
 
   // Multi-select state
-  selectedIds: Set<string>
+  selectedIds: Set<string>;
 
   // Computed getter for backwards compatibility
-  isLoading: boolean
+  isLoading: boolean;
 
-  loadTree: (projectId: string, signal?: AbortSignal) => Promise<void>
-  toggleFolder: (folderId: string) => void
-  expandFolder: (folderId: string) => void
-  createDocument: (projectId: string, folderId: string | null, name: string) => Promise<void>
-  createFolder: (projectId: string, parentId: string | null, name: string) => Promise<void>
-  deleteDocument: (id: string, projectId: string) => Promise<void>
-  deleteFolder: (id: string, projectId: string) => Promise<void>
-  renameDocument: (id: string, name: string, projectId: string) => Promise<void>
-  renameFolder: (id: string, name: string, projectId: string) => Promise<void>
-  clearError: () => void
+  loadTree: (projectId: string, signal?: AbortSignal) => Promise<void>;
+  toggleFolder: (folderId: string) => void;
+  expandFolder: (folderId: string) => void;
+  createDocument: (
+    projectId: string,
+    folderId: string | null,
+    name: string,
+  ) => Promise<void>;
+  createFolder: (
+    projectId: string,
+    parentId: string | null,
+    name: string,
+  ) => Promise<void>;
+  deleteDocument: (id: string, projectId: string) => Promise<void>;
+  deleteFolder: (id: string, projectId: string) => Promise<void>;
+  renameDocument: (
+    id: string,
+    name: string,
+    projectId: string,
+  ) => Promise<void>;
+  renameFolder: (id: string, name: string, projectId: string) => Promise<void>;
+  clearError: () => void;
 
   // Multi-select actions
-  toggleSelection: (id: string) => void
-  selectAll: () => void
-  clearSelection: () => void
+  toggleSelection: (id: string) => void;
+  selectAll: () => void;
+  clearSelection: () => void;
   /**
    * Hydrate tree store from doc_tree tool result.
    * Flattens recursive structure and merges with existing data.
@@ -49,8 +61,8 @@ interface TreeStore {
    */
   hydrateFromToolResult: (
     folders: DocTreeFolder[],
-    documents: DocTreeDocument[]
-  ) => void
+    documents: DocTreeDocument[],
+  ) => void;
   /**
    * Hydrate tree store from doc_view folder result.
    * Handles flat folder listing (immediate children only).
@@ -58,8 +70,13 @@ interface TreeStore {
   hydrateFromFolderView: (
     parentFolderId: string | null,
     folders: Array<{ id: string; name: string }>,
-    documents: Array<{ id: string; name: string; word_count: number; updated_at?: string }>
-  ) => void
+    documents: Array<{
+      id: string;
+      name: string;
+      word_count: number;
+      updated_at?: string;
+    }>,
+  ) => void;
 }
 
 export const useTreeStore = create<TreeStore>()((set, get) => ({
@@ -67,7 +84,7 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
   folders: [],
   tree: [],
   expandedFolders: new Set(),
-  status: 'idle' as LoadStatus,
+  status: "idle" as LoadStatus,
   isFetching: false,
   error: null,
 
@@ -76,28 +93,29 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
 
   // Computed getter for backwards compatibility
   get isLoading() {
-    return get().status === 'loading'
+    return get().status === "loading";
   },
 
   loadTree: async (projectId: string, signal?: AbortSignal) => {
     // Set loading state based on whether we have cached tree data
-    const currentState = get()
-    const status = currentState.tree.length === 0 ? 'loading' : 'success'
-    set({ status, isFetching: true, error: null })
+    const currentState = get();
+    const status = currentState.tree.length === 0 ? "loading" : "success";
+    set({ status, isFetching: true, error: null });
 
     try {
       // Fetch tree from backend (already flattened by fromDocumentTreeDto mapper)
-      const response = await api.documents.getTree(projectId, { signal })
+      const response = await api.documents.getTree(projectId, { signal });
 
       // Build hierarchical tree structure from flat arrays
-      const tree = buildTree(response.folders, response.documents)
+      const tree = buildTree(response.folders, response.documents);
 
       // Cache full documents in IndexedDB (only those with content)
-      const fullDocuments = response.documents.filter((doc): doc is Document & { content: string } =>
-        doc.content !== undefined
-      )
+      const fullDocuments = response.documents.filter(
+        (doc): doc is Document & { content: string } =>
+          doc.content !== undefined,
+      );
       if (fullDocuments.length > 0) {
-        await Promise.all(fullDocuments.map((doc) => db.documents.put(doc)))
+        await Promise.all(fullDocuments.map((doc) => db.documents.put(doc)));
       }
 
       // Update store
@@ -105,136 +123,157 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
         folders: response.folders,
         documents: response.documents,
         tree,
-        status: 'success',
+        status: "success",
         isFetching: false,
-      })
+      });
     } catch (error) {
       // Handle AbortError silently (expected when loading new project)
       if (isAbortError(error)) {
-        set({ isFetching: false })
-        return
+        set({ isFetching: false });
+        return;
       }
 
-      const message = getErrorMessageWithFallback(error, 'Failed to load documents')
+      const message = getErrorMessageWithFallback(
+        error,
+        "Failed to load documents",
+      );
       // If we have cached tree data, keep status as 'success', otherwise set to 'error'
-      const currentTree = get().tree
-      const errorStatus = currentTree.length > 0 ? 'success' : 'error'
-      set({ error: message, status: errorStatus, isFetching: false })
+      const currentTree = get().tree;
+      const errorStatus = currentTree.length > 0 ? "success" : "error";
+      set({ error: message, status: errorStatus, isFetching: false });
     }
   },
 
   toggleFolder: (folderId) => {
     set((state) => {
-      const expanded = new Set(state.expandedFolders)
+      const expanded = new Set(state.expandedFolders);
       if (expanded.has(folderId)) {
-        expanded.delete(folderId)
+        expanded.delete(folderId);
       } else {
-        expanded.add(folderId)
+        expanded.add(folderId);
       }
-      return { expandedFolders: expanded }
-    })
+      return { expandedFolders: expanded };
+    });
   },
 
   expandFolder: (folderId) => {
     set((state) => {
-      if (state.expandedFolders.has(folderId)) return state
-      const expanded = new Set(state.expandedFolders)
-      expanded.add(folderId)
-      return { expandedFolders: expanded }
-    })
+      if (state.expandedFolders.has(folderId)) return state;
+      const expanded = new Set(state.expandedFolders);
+      expanded.add(folderId);
+      return { expandedFolders: expanded };
+    });
   },
 
   createDocument: async (projectId, folderId, name) => {
-    set({ error: null })
+    set({ error: null });
     try {
-      await api.documents.create(projectId, folderId, name)
+      await api.documents.create(projectId, folderId, name);
       // Reload tree to reflect new document
-      await useTreeStore.getState().loadTree(projectId)
+      await useTreeStore.getState().loadTree(projectId);
     } catch (error) {
-      const message = getErrorMessageWithFallback(error, 'Failed to create document')
-      set({ error: message })
-      throw error
+      const message = getErrorMessageWithFallback(
+        error,
+        "Failed to create document",
+      );
+      set({ error: message });
+      throw error;
     }
   },
 
   createFolder: async (projectId, parentId, name) => {
-    set({ error: null })
+    set({ error: null });
     try {
-      await api.folders.create(projectId, parentId, name)
+      await api.folders.create(projectId, parentId, name);
       // Reload tree to reflect new folder
-      await useTreeStore.getState().loadTree(projectId)
+      await useTreeStore.getState().loadTree(projectId);
     } catch (error) {
-      const message = getErrorMessageWithFallback(error, 'Failed to create folder')
-      set({ error: message })
-      throw error
+      const message = getErrorMessageWithFallback(
+        error,
+        "Failed to create folder",
+      );
+      set({ error: message });
+      throw error;
     }
   },
 
   deleteDocument: async (id, projectId) => {
-    set({ error: null })
+    set({ error: null });
     try {
       // Cancel any pending retries FIRST to prevent stale content from being re-synced
       // after we delete the document from cache and server
-      cancelRetry(id)
+      cancelRetry(id);
 
       // Clear from IndexedDB cache to prevent race conditions
       // where URL sync might try to load a deleted document
-      await db.documents.delete(id)
-      await api.documents.delete(id)
+      await db.documents.delete(id);
+      await api.documents.delete(id);
       // Reload tree to reflect deletion
-      await useTreeStore.getState().loadTree(projectId)
+      await useTreeStore.getState().loadTree(projectId);
     } catch (error) {
-      const message = getErrorMessageWithFallback(error, 'Failed to delete document')
-      set({ error: message })
-      throw error
+      const message = getErrorMessageWithFallback(
+        error,
+        "Failed to delete document",
+      );
+      set({ error: message });
+      throw error;
     }
   },
 
   deleteFolder: async (id, projectId) => {
-    set({ error: null })
+    set({ error: null });
     try {
       // Cleanup before delete: cancel retries and clear IndexedDB cache for all
       // descendant documents. The backend will cascade-delete them, but we need
       // to prevent stale retry attempts and clear local cache to avoid 404s.
-      const descendantDocIds = getDescendantDocumentIds(get().tree, id)
+      const descendantDocIds = getDescendantDocumentIds(get().tree, id);
       for (const docId of descendantDocIds) {
-        cancelRetry(docId)
-        await db.documents.delete(docId)
+        cancelRetry(docId);
+        await db.documents.delete(docId);
       }
 
-      await api.folders.delete(id)
+      await api.folders.delete(id);
       // Reload tree to reflect deletion
-      await useTreeStore.getState().loadTree(projectId)
+      await useTreeStore.getState().loadTree(projectId);
     } catch (error) {
-      const message = getErrorMessageWithFallback(error, 'Failed to delete folder')
-      set({ error: message })
-      throw error
+      const message = getErrorMessageWithFallback(
+        error,
+        "Failed to delete folder",
+      );
+      set({ error: message });
+      throw error;
     }
   },
 
   renameDocument: async (id, name, projectId) => {
-    set({ error: null })
+    set({ error: null });
     try {
-      await api.documents.rename(id, projectId, name)
+      await api.documents.rename(id, projectId, name);
       // Reload tree to reflect rename
-      await useTreeStore.getState().loadTree(projectId)
+      await useTreeStore.getState().loadTree(projectId);
     } catch (error) {
-      const message = getErrorMessageWithFallback(error, 'Failed to rename document')
-      set({ error: message })
-      throw error
+      const message = getErrorMessageWithFallback(
+        error,
+        "Failed to rename document",
+      );
+      set({ error: message });
+      throw error;
     }
   },
 
   renameFolder: async (id, name, projectId) => {
-    set({ error: null })
+    set({ error: null });
     try {
-      await api.folders.rename(id, projectId, name)
+      await api.folders.rename(id, projectId, name);
       // Reload tree to reflect rename
-      await useTreeStore.getState().loadTree(projectId)
+      await useTreeStore.getState().loadTree(projectId);
     } catch (error) {
-      const message = getErrorMessageWithFallback(error, 'Failed to rename folder')
-      set({ error: message })
-      throw error
+      const message = getErrorMessageWithFallback(
+        error,
+        "Failed to rename folder",
+      );
+      set({ error: message });
+      throw error;
     }
   },
 
@@ -245,81 +284,85 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
     const { folders: flatFolders, documents: flatDocuments } = flattenToolTree(
       toolFolders,
       toolDocuments,
-      null // Root level
-    )
+      null, // Root level
+    );
 
     set((state) => {
       // Merge folders: add new, update existing (by id)
-      const folderMap = new Map(state.folders.map((f) => [f.id, f]))
+      const folderMap = new Map(state.folders.map((f) => [f.id, f]));
       for (const folder of flatFolders) {
-        const existing = folderMap.get(folder.id)
+        const existing = folderMap.get(folder.id);
         if (existing) {
           // Update existing folder with new data
-          folderMap.set(folder.id, { ...existing, ...folder })
+          folderMap.set(folder.id, { ...existing, ...folder });
         } else {
           // Add new folder (partial data, will be completed on full tree load)
-          folderMap.set(folder.id, folder as Folder)
+          folderMap.set(folder.id, folder as Folder);
         }
       }
 
       // Merge documents: add new, update existing (by id)
-      const docMap = new Map(state.documents.map((d) => [d.id, d]))
+      const docMap = new Map(state.documents.map((d) => [d.id, d]));
       for (const doc of flatDocuments) {
-        const existing = docMap.get(doc.id)
+        const existing = docMap.get(doc.id);
         if (existing) {
           // Update existing document with new data (preserve fields not in tool result)
-          docMap.set(doc.id, { ...existing, ...doc })
+          docMap.set(doc.id, { ...existing, ...doc });
         } else {
           // Add new document (partial data, will be completed on full tree load)
-          docMap.set(doc.id, doc as Document)
+          docMap.set(doc.id, doc as Document);
         }
       }
 
-      const mergedFolders = Array.from(folderMap.values())
-      const mergedDocuments = Array.from(docMap.values())
+      const mergedFolders = Array.from(folderMap.values());
+      const mergedDocuments = Array.from(docMap.values());
 
       // Rebuild tree from merged data
-      const tree = buildTree(mergedFolders, mergedDocuments)
+      const tree = buildTree(mergedFolders, mergedDocuments);
 
       return {
         folders: mergedFolders,
         documents: mergedDocuments,
         tree,
         // Set status to success if we have data (tool result hydrated it)
-        status: tree.length > 0 ? 'success' : state.status,
-      }
-    })
+        status: tree.length > 0 ? "success" : state.status,
+      };
+    });
   },
 
   hydrateFromFolderView: (parentFolderId, viewFolders, viewDocuments) => {
     set((state) => {
       // Merge folders: add new, update existing (by id)
-      const folderMap = new Map(state.folders.map((f) => [f.id, f]))
+      const folderMap = new Map(state.folders.map((f) => [f.id, f]));
       for (const folder of viewFolders) {
-        const existing = folderMap.get(folder.id)
+        const existing = folderMap.get(folder.id);
         if (existing) {
           // Update name if changed
-          folderMap.set(folder.id, { ...existing, name: folder.name, parentId: parentFolderId })
+          folderMap.set(folder.id, {
+            ...existing,
+            name: folder.name,
+            parentId: parentFolderId,
+          });
         } else {
           // Add new folder (partial data)
           folderMap.set(folder.id, {
             id: folder.id,
             name: folder.name,
             parentId: parentFolderId,
-          } as Folder)
+          } as Folder);
         }
       }
 
       // Merge documents: add new, update existing (by id)
-      const docMap = new Map(state.documents.map((d) => [d.id, d]))
+      const docMap = new Map(state.documents.map((d) => [d.id, d]));
       for (const doc of viewDocuments) {
         // Derive extension and name from full filename
-        const lastDot = doc.name.lastIndexOf('.')
-        const extension = lastDot > 0 ? doc.name.slice(lastDot) : '.md'
-        const name = lastDot > 0 ? doc.name.slice(0, lastDot) : doc.name
-        const filename = doc.name
+        const lastDot = doc.name.lastIndexOf(".");
+        const extension = lastDot > 0 ? doc.name.slice(lastDot) : ".md";
+        const name = lastDot > 0 ? doc.name.slice(0, lastDot) : doc.name;
+        const filename = doc.name;
 
-        const existing = docMap.get(doc.id)
+        const existing = docMap.get(doc.id);
         if (existing) {
           // Update existing document
           docMap.set(doc.id, {
@@ -329,8 +372,10 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
             extension,
             folderId: parentFolderId,
             wordCount: doc.word_count,
-            updatedAt: doc.updated_at ? new Date(doc.updated_at) : existing.updatedAt,
-          })
+            updatedAt: doc.updated_at
+              ? new Date(doc.updated_at)
+              : existing.updatedAt,
+          });
         } else {
           // Add new document (partial data)
           docMap.set(doc.id, {
@@ -341,58 +386,58 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
             folderId: parentFolderId,
             wordCount: doc.word_count,
             updatedAt: doc.updated_at ? new Date(doc.updated_at) : new Date(),
-          } as Document)
+          } as Document);
         }
       }
 
-      const mergedFolders = Array.from(folderMap.values())
-      const mergedDocuments = Array.from(docMap.values())
+      const mergedFolders = Array.from(folderMap.values());
+      const mergedDocuments = Array.from(docMap.values());
 
       // Rebuild tree from merged data
-      const tree = buildTree(mergedFolders, mergedDocuments)
+      const tree = buildTree(mergedFolders, mergedDocuments);
 
       return {
         folders: mergedFolders,
         documents: mergedDocuments,
         tree,
-        status: tree.length > 0 ? 'success' : state.status,
-      }
-    })
+        status: tree.length > 0 ? "success" : state.status,
+      };
+    });
   },
 
   // Multi-select actions
   toggleSelection: (id) => {
     set((state) => {
-      const selected = new Set(state.selectedIds)
+      const selected = new Set(state.selectedIds);
       if (selected.has(id)) {
-        selected.delete(id)
+        selected.delete(id);
       } else {
-        selected.add(id)
+        selected.add(id);
       }
-      return { selectedIds: selected }
-    })
+      return { selectedIds: selected };
+    });
   },
 
   selectAll: () => {
     set((state) => {
       // Helper to recursively collect all node IDs from tree
       const collectIds = (nodes: TreeNode[]): string[] => {
-        const ids: string[] = []
+        const ids: string[] = [];
         for (const node of nodes) {
-          ids.push(node.id)
-          if (node.type === 'folder' && node.children) {
-            ids.push(...collectIds(node.children))
+          ids.push(node.id);
+          if (node.type === "folder" && node.children) {
+            ids.push(...collectIds(node.children));
           }
         }
-        return ids
-      }
+        return ids;
+      };
 
-      const allIds = collectIds(state.tree)
-      return { selectedIds: new Set(allIds) }
-    })
+      const allIds = collectIds(state.tree);
+      return { selectedIds: new Set(allIds) };
+    });
   },
 
   clearSelection: () => {
-    set({ selectedIds: new Set() })
+    set({ selectedIds: new Set() });
   },
-}))
+}));

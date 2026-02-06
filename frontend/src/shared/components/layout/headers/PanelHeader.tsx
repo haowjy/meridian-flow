@@ -1,24 +1,24 @@
-import { ReactNode } from 'react'
-import { cn } from '@/lib/utils'
-import { HeaderGradientFade } from './HeaderGradientFade'
+import { ReactNode } from "react";
+import { cn } from "@/lib/utils";
+import { HeaderGradientFade } from "./HeaderGradientFade";
 
 interface PanelHeaderProps {
   /** Content for the leading area (left side) */
-  leading?: ReactNode
+  leading?: ReactNode;
   /** Content for the trailing area (right side) */
-  trailing?: ReactNode
+  trailing?: ReactNode;
   /** Show gradient fade below header (default: true) */
-  showGradient?: boolean
+  showGradient?: boolean;
   /** Show bottom border (default: false) */
-  showBorder?: boolean
+  showBorder?: boolean;
   /** Size variant: 'panel' = 48/56px, 'compact' = 36px (default: 'panel') */
-  size?: 'panel' | 'compact'
+  size?: "panel" | "compact";
   /** Make header sticky at top of scroll container (default: false) */
-  sticky?: boolean
+  sticky?: boolean;
   /** Additional CSS classes */
-  className?: string
+  className?: string;
   /** Accessibility label for the header region */
-  ariaLabel?: string
+  ariaLabel?: string;
 }
 
 /**
@@ -42,37 +42,33 @@ export function PanelHeader({
   trailing,
   showGradient = true,
   showBorder = false,
-  size = 'panel',
+  size = "panel",
   sticky = false,
   className,
   ariaLabel,
 }: PanelHeaderProps) {
   return (
     <div
-      role={ariaLabel ? 'region' : undefined}
+      role={ariaLabel ? "region" : undefined}
       aria-label={ariaLabel}
       className={cn(
-        'flex items-center gap-1 px-3 relative',
-        size === 'panel' && 'h-14 md:h-[var(--panel-header-height)]',
-        size === 'compact' && 'h-9',
-        sticky && 'sticky top-0 z-20 bg-background',
-        showBorder && 'border-b border-border/50',
-        className
+        "relative flex items-center gap-1 px-3",
+        size === "panel" && "h-14 md:h-[var(--panel-header-height)]",
+        size === "compact" && "h-9",
+        sticky && "bg-background sticky top-0 z-20",
+        showBorder && "border-border/50 border-b",
+        className,
       )}
     >
       {/* Leading content (selector, title, toggle, etc.) */}
-      <div className="flex items-center gap-1 min-w-0 flex-1">
-        {leading}
-      </div>
+      <div className="flex min-w-0 flex-1 items-center gap-1">{leading}</div>
 
       {/* Trailing actions */}
       {trailing && (
-        <div className="flex items-center gap-1 shrink-0">
-          {trailing}
-        </div>
+        <div className="flex shrink-0 items-center gap-1">{trailing}</div>
       )}
 
       {showGradient && <HeaderGradientFade />}
     </div>
-  )
+  );
 }

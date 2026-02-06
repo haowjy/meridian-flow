@@ -5,7 +5,7 @@
  * Each editor type has its own adapter to handle format-specific logic.
  */
 
-import type { EditorType } from '../types/editorRegistry'
+import type { EditorType } from "../types/editorRegistry";
 
 /**
  * Capabilities of an editor type.
@@ -13,16 +13,16 @@ import type { EditorType } from '../types/editorRegistry'
  */
 export interface EditorCapabilities {
   /** Can show inline AI diff view (PUA markers or similar) */
-  supportsAIDiff: boolean
+  supportsAIDiff: boolean;
 
   /** Can track content versions (separate content + aiVersion) */
-  supportsVersioning: boolean
+  supportsVersioning: boolean;
 
   /** Storage format type */
-  contentFormat: 'string' | 'object' | 'binary'
+  contentFormat: "string" | "object" | "binary";
 
   /** Can be edited (vs read-only) */
-  editable: boolean
+  editable: boolean;
 }
 
 /**
@@ -33,19 +33,19 @@ export interface EditorCapabilities {
  */
 export interface ContentAdapter<TStorage, TEditor> {
   /** Editor type this adapter serves */
-  editorType: EditorType
+  editorType: EditorType;
 
   /** Transform storage format → editor format */
-  toEditor(storage: TStorage, aiVersion?: TStorage | null): TEditor
+  toEditor(storage: TStorage, aiVersion?: TStorage | null): TEditor;
 
   /** Transform editor format → storage format */
-  toStorage(editor: TEditor): { content: TStorage; aiVersion: TStorage | null }
+  toStorage(editor: TEditor): { content: TStorage; aiVersion: TStorage | null };
 
   /** Check if editor content has AI suggestions */
-  hasAISuggestions(editor: TEditor): boolean
+  hasAISuggestions(editor: TEditor): boolean;
 
   /** Capabilities of this editor */
-  capabilities: EditorCapabilities
+  capabilities: EditorCapabilities;
 }
 
 /**
@@ -53,27 +53,27 @@ export interface ContentAdapter<TStorage, TEditor> {
  * Used for type-safe adapter implementations.
  */
 export type EditorContentMap = {
-  markdown: string
-  latex: string
-  plaintext: string
+  markdown: string;
+  latex: string;
+  plaintext: string;
   // Future additions:
   // image: ImageEditorFormat
   // excalidraw: ExcalidrawScene
-}
+};
 
 /**
  * Get editor content type from editor type.
  * Provides type safety for adapter implementations.
  */
-export type EditorContent<T extends EditorType> = T extends keyof EditorContentMap
-  ? EditorContentMap[T]
-  : unknown
+export type EditorContent<T extends EditorType> =
+  T extends keyof EditorContentMap ? EditorContentMap[T] : unknown;
 
 /**
  * Strongly-typed adapter interface.
  * Ensures adapter types match the editor content map.
  */
-export interface TypedContentAdapter<T extends EditorType>
-  extends ContentAdapter<string, EditorContent<T>> {
-  editorType: T
+export interface TypedContentAdapter<
+  T extends EditorType,
+> extends ContentAdapter<string, EditorContent<T>> {
+  editorType: T;
 }

@@ -1,4 +1,4 @@
-import type { Turn, TurnBlock } from '@/features/threads/types'
+import type { Turn, TurnBlock } from "@/features/threads/types";
 
 /**
  * Extracts plain text content from a turn's blocks.
@@ -13,7 +13,7 @@ import type { Turn, TurnBlock } from '@/features/threads/types'
  * @returns Plain text content, or empty string if no text blocks
  */
 export function extractTextContent(turn: Turn): string {
-  return extractTextFromBlocks(turn.blocks)
+  return extractTextFromBlocks(turn.blocks);
 }
 
 /**
@@ -24,7 +24,7 @@ export function extractTextContent(turn: Turn): string {
  */
 export function extractTextFromBlocks(blocks: TurnBlock[]): string {
   return blocks
-    .filter((b) => b.blockType === 'text')
-    .map((b) => b.textContent ?? '')
-    .join('\n\n')
+    .filter((b) => b.blockType === "text")
+    .map((b) => b.textContent ?? "")
+    .join("\n\n");
 }

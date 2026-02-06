@@ -4,8 +4,8 @@
  * Shared types for the SSE event handling system.
  */
 
-import type { BlockType, Turn } from '@/features/threads/types'
-import type { BlockTracker } from '../blockTracker'
+import type { BlockType, Turn } from "@/features/threads/types";
+import type { BlockTracker } from "../blockTracker";
 
 /**
  * Context passed to all SSE event handlers.
@@ -13,20 +13,20 @@ import type { BlockTracker } from '../blockTracker'
  */
 export interface SSEDispatchContext {
   /** Current turn ID being streamed */
-  turnId: string
+  turnId: string;
   /** Thread ID for refresh operations */
-  threadId: string | null
+  threadId: string | null;
   /** Block index/type tracker */
-  tracker: BlockTracker
+  tracker: BlockTracker;
   /** Streaming text buffer */
   buffer: {
-    append: (blockIndex: number, blockType: string, text: string) => void
-    flush: () => void
-  }
+    append: (blockIndex: number, blockType: string, text: string) => void;
+    flush: () => void;
+  };
   /** Logger instance */
-  logger: ReturnType<typeof import('@/core/lib/logger').makeLogger>
+  logger: ReturnType<typeof import("@/core/lib/logger").makeLogger>;
   /** Abort controller for this stream */
-  ctrl: AbortController
+  ctrl: AbortController;
 }
 
 /**
@@ -39,37 +39,37 @@ export interface SSEStoreActions {
     turnId: string,
     blockIndex: number,
     blockType: string,
-    delta: string
-  ) => void
+    delta: string,
+  ) => void;
   setStreamingBlockContent: (
     turnId: string,
     blockIndex: number,
     blockType: string,
-    content: Record<string, unknown>
-  ) => void
-  clearStreamingStream: () => void
-  refreshTurn: (threadId: string, turnId: string) => Promise<void>
+    content: Record<string, unknown>,
+  ) => void;
+  clearStreamingStream: () => void;
+  refreshTurn: (threadId: string, turnId: string) => Promise<void>;
   setStreamingBlockInfo: (
     blockIndex: number | null,
-    blockType: BlockType | null
-  ) => void
-  notifyStreamEnded: (turnId: string) => void
+    blockType: BlockType | null,
+  ) => void;
+  notifyStreamEnded: (turnId: string) => void;
 
   // Interjection support
-  setInterjectionContent: (content: string | null) => void
+  setInterjectionContent: (content: string | null) => void;
   applyStreamSwitch: (
     prevTurnId: string,
     userTurn: Turn,
     assistantTurn: Turn,
-    streamUrl: string
-  ) => void
+    streamUrl: string,
+  ) => void;
 
   // Tool stream store actions
   updateToolState: (
     toolCallId: string,
-    update: Record<string, unknown>
-  ) => void
-  clearToolStates: () => void
+    update: Record<string, unknown>,
+  ) => void;
+  clearToolStates: () => void;
 }
 
 /**
@@ -78,5 +78,5 @@ export interface SSEStoreActions {
 export type SSEEventHandler<T = unknown> = (
   data: T,
   ctx: SSEDispatchContext,
-  actions: SSEStoreActions
-) => void
+  actions: SSEStoreActions,
+) => void;

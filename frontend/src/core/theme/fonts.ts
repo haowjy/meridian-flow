@@ -5,9 +5,9 @@
  * Uses link preload for critical fonts and cleanup of unused fonts.
  */
 
-import type { ThemeFontConfig } from './types';
+import type { ThemeFontConfig } from "./types";
 
-const FONT_LINK_PREFIX = 'meridian-theme-font-';
+const FONT_LINK_PREFIX = "meridian-theme-font-";
 
 /**
  * Load fonts for a theme
@@ -15,14 +15,16 @@ const FONT_LINK_PREFIX = 'meridian-theme-font-';
  */
 export function loadThemeFonts(fonts: ThemeFontConfig[]): void {
   // Remove existing theme font links
-  const existingLinks = document.querySelectorAll(`link[id^="${FONT_LINK_PREFIX}"]`);
+  const existingLinks = document.querySelectorAll(
+    `link[id^="${FONT_LINK_PREFIX}"]`,
+  );
   existingLinks.forEach((link) => link.remove());
 
   // Add new font links
   fonts.forEach((font, index) => {
-    const link = document.createElement('link');
+    const link = document.createElement("link");
     link.id = `${FONT_LINK_PREFIX}${index}`;
-    link.rel = 'stylesheet';
+    link.rel = "stylesheet";
     link.href = font.url;
     document.head.appendChild(link);
   });
@@ -34,9 +36,9 @@ export function loadThemeFonts(fonts: ThemeFontConfig[]): void {
  */
 export function preloadThemeFonts(fonts: ThemeFontConfig[]): void {
   fonts.forEach((font) => {
-    const link = document.createElement('link');
-    link.rel = 'preload';
-    link.as = 'style';
+    const link = document.createElement("link");
+    link.rel = "preload";
+    link.as = "style";
     link.href = font.url;
     document.head.appendChild(link);
   });
@@ -68,7 +70,9 @@ export async function waitForFonts(fonts: ThemeFontConfig[]): Promise<void> {
  */
 export function getFontFamilyWithFallbacks(
   primary: string,
-  fallbacks: string[] = ['Georgia', 'serif']
+  fallbacks: string[] = ["Georgia", "serif"],
 ): string {
-  return [primary, ...fallbacks].map((f) => (f.includes(' ') ? `'${f}'` : f)).join(', ');
+  return [primary, ...fallbacks]
+    .map((f) => (f.includes(" ") ? `'${f}'` : f))
+    .join(", ");
 }

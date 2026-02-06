@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { useErrorStore } from '@/core/stores/useErrorStore'
+import { useEffect } from "react";
+import { useErrorStore } from "@/core/stores/useErrorStore";
 
 /**
  * Provider component that initializes global error handling.
@@ -12,11 +12,11 @@ import { useErrorStore } from '@/core/stores/useErrorStore'
 export function ErrorProvider() {
   useEffect(() => {
     // Initialize network listeners
-    const cleanup = useErrorStore.getState().initNetworkListeners()
+    const cleanup = useErrorStore.getState().initNetworkListeners();
 
-    return cleanup
-  }, [])
+    return cleanup;
+  }, []);
 
   // This component doesn't render anything
-  return null
+  return null;
 }

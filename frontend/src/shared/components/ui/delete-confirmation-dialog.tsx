@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -8,27 +8,27 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/shared/components/ui/alert-dialog'
-import { Loader2 } from 'lucide-react'
+} from "@/shared/components/ui/alert-dialog";
+import { Loader2 } from "lucide-react";
 
 interface DeleteConfirmationDialogProps {
   /** Dialog title (e.g., "Delete Project") */
-  title: string
+  title: string;
   /** Name of the item being deleted (displayed in bold) */
-  itemName: string | undefined
+  itemName: string | undefined;
   /** Additional warning text after the item name. Defaults to "This action cannot be undone." */
-  warningText?: ReactNode
+  warningText?: ReactNode;
   /** Whether the dialog is open */
-  open: boolean
+  open: boolean;
   /** Callback when dialog open state changes */
-  onOpenChange: (open: boolean) => void
+  onOpenChange: (open: boolean) => void;
   /** Callback when delete is confirmed. Can be sync or async. */
-  onConfirm: () => void | Promise<void>
+  onConfirm: () => void | Promise<void>;
   /**
    * External loading state (controlled mode).
    * If not provided, the dialog manages its own loading state (uncontrolled mode).
    */
-  isDeleting?: boolean
+  isDeleting?: boolean;
 }
 
 /**
@@ -62,30 +62,30 @@ interface DeleteConfirmationDialogProps {
 export function DeleteConfirmationDialog({
   title,
   itemName,
-  warningText = 'This action cannot be undone.',
+  warningText = "This action cannot be undone.",
   open,
   onOpenChange,
   onConfirm,
   isDeleting: externalIsDeleting,
 }: DeleteConfirmationDialogProps) {
-  const [internalIsDeleting, setInternalIsDeleting] = useState(false)
+  const [internalIsDeleting, setInternalIsDeleting] = useState(false);
 
   // Use external state if provided (controlled), otherwise internal (uncontrolled)
-  const isControlled = externalIsDeleting !== undefined
-  const isDeleting = isControlled ? externalIsDeleting : internalIsDeleting
+  const isControlled = externalIsDeleting !== undefined;
+  const isDeleting = isControlled ? externalIsDeleting : internalIsDeleting;
 
   const handleConfirm = async () => {
     if (!isControlled) {
-      setInternalIsDeleting(true)
+      setInternalIsDeleting(true);
     }
     try {
-      await onConfirm()
+      await onConfirm();
     } finally {
       if (!isControlled) {
-        setInternalIsDeleting(false)
+        setInternalIsDeleting(false);
       }
     }
-  }
+  };
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -93,7 +93,7 @@ export function DeleteConfirmationDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>
-            Are you sure you want to delete <strong>{itemName}</strong>?{' '}
+            Are you sure you want to delete <strong>{itemName}</strong>?{" "}
             {warningText}
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -110,5 +110,5 @@ export function DeleteConfirmationDialog({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  )
+  );
 }

@@ -1,12 +1,12 @@
-import { OctagonX, X, RotateCcw } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { Button } from './ui/button'
+import { OctagonX, X, RotateCcw } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button } from "./ui/button";
 
 interface InlineErrorProps {
-  message: string
-  onRetry?: () => void
-  onDismiss?: () => void
-  className?: string
+  message: string;
+  onRetry?: () => void;
+  onDismiss?: () => void;
+  className?: string;
 }
 
 /**
@@ -26,21 +26,19 @@ export function InlineError({
   return (
     <div
       className={cn(
-        'flex items-center gap-2 rounded-lg border border-error/50 bg-error/10 px-3 py-2',
-        className
+        "border-error/50 bg-error/10 flex items-center gap-2 rounded-lg border px-3 py-2",
+        className,
       )}
       role="alert"
     >
-      <OctagonX className="h-3 w-3 shrink-0 text-error" />
-      <span className="flex-1 text-sm text-error select-all">
-        {message}
-      </span>
+      <OctagonX className="text-error h-3 w-3 shrink-0" />
+      <span className="text-error flex-1 text-sm select-all">{message}</span>
       {onRetry && (
         <Button
           variant="ghost"
           size="sm"
           onClick={onRetry}
-          className="h-7 px-2 text-xs hover:bg-error/20"
+          className="hover:bg-error/20 h-7 px-2 text-xs"
         >
           <RotateCcw className="mr-1 h-3 w-3" />
           Retry
@@ -58,5 +56,5 @@ export function InlineError({
         </Button>
       )}
     </div>
-  )
+  );
 }

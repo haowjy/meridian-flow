@@ -15,7 +15,7 @@
  */
 export interface DocViewInput {
   /** Unix-style path to document or folder */
-  path: string
+  path: string;
 }
 
 // =============================================================================
@@ -27,31 +27,31 @@ export interface DocViewInput {
  * Returned when path resolves to a document.
  */
 export interface DocViewDocumentResult {
-  type: 'document'
-  id: string
-  name: string
-  path: string
-  content: string
-  word_count: number
-  was_truncated?: boolean
+  type: "document";
+  id: string;
+  name: string;
+  path: string;
+  content: string;
+  word_count: number;
+  was_truncated?: boolean;
 }
 
 /**
  * Document metadata in folder listing.
  */
 export interface DocViewFolderDocument {
-  id: string
-  name: string
-  word_count: number
-  updated_at?: string
+  id: string;
+  name: string;
+  word_count: number;
+  updated_at?: string;
 }
 
 /**
  * Folder metadata in folder listing.
  */
 export interface DocViewFolderChild {
-  id: string
-  name: string
+  id: string;
+  name: string;
 }
 
 /**
@@ -59,13 +59,13 @@ export interface DocViewFolderChild {
  * Returned when path resolves to a folder.
  */
 export interface DocViewFolderResult {
-  type: 'folder'
-  path: string
-  documents: DocViewFolderDocument[]
-  folders: DocViewFolderChild[]
+  type: "folder";
+  path: string;
+  documents: DocViewFolderDocument[];
+  folders: DocViewFolderChild[];
 }
 
 /**
  * Union type for doc_view results.
  */
-export type DocViewResult = DocViewDocumentResult | DocViewFolderResult
+export type DocViewResult = DocViewDocumentResult | DocViewFolderResult;

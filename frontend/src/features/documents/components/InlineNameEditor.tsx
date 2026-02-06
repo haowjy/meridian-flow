@@ -1,10 +1,10 @@
-import { InlineEditor } from '@/shared/components/InlineEditor'
+import { InlineEditor } from "@/shared/components/InlineEditor";
 
 interface InlineNameEditorProps {
-  initialValue: string
-  existingNames: string[]
-  onSubmit: (name: string) => void
-  onCancel: () => void
+  initialValue: string;
+  existingNames: string[];
+  onSubmit: (name: string) => void;
+  onCancel: () => void;
   /**
    * Mode affects validation + blur behavior:
    * - 'rename' (default): used for existing items, enforces duplicate checks and
@@ -13,16 +13,16 @@ interface InlineNameEditorProps {
    *   (uniqueness handled by caller) and blur only submits if the user actually
    *   changed the name from its initial value. Otherwise blur cancels.
    */
-  mode?: 'rename' | 'create'
+  mode?: "rename" | "create";
   /**
    * Optional file extension to display (read-only) next to the input.
    * Shows the extension that will be appended to the name on submit.
    * Helps prevent visual jump between view and edit modes.
    */
-  extension?: string
-  className?: string
-  type?: 'folder' | 'document'  // NEW: item type
-  isRootLevel?: boolean          // NEW: whether at root level
+  extension?: string;
+  className?: string;
+  type?: "folder" | "document"; // NEW: item type
+  isRootLevel?: boolean; // NEW: whether at root level
 }
 
 /**
@@ -40,10 +40,10 @@ export function InlineNameEditor({
   existingNames,
   onSubmit,
   onCancel,
-  mode = 'rename',
+  mode = "rename",
   extension,
   className,
-  type,        // NEW
+  type, // NEW
   isRootLevel, // NEW
 }: InlineNameEditorProps) {
   return (
@@ -54,11 +54,11 @@ export function InlineNameEditor({
       onCancel={onCancel}
       mode={mode}
       suffix={extension}
-      allowDuplicates={mode === 'create'}
+      allowDuplicates={mode === "create"}
       fontWeight="normal"
       className={className}
       type={type}
       isRootLevel={isRootLevel}
     />
-  )
+  );
 }

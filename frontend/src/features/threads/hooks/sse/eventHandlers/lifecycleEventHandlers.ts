@@ -11,15 +11,15 @@
  * - RUN_ERROR: Error/cancel + turnId + isCancelled flag
  */
 
-import { useEditorStore } from '@/core/stores/useEditorStore'
-import type { SSEDispatchContext, SSEStoreActions } from '../types'
+import { useEditorStore } from "@/core/stores/useEditorStore";
+import type { SSEDispatchContext, SSEStoreActions } from "../types";
 import type {
   MeridianRunStartedEvent,
   MeridianRunFinishedEvent,
   MeridianRunErrorEvent,
   StepStartedEvent,
   StepFinishedEvent,
-} from '../../sseEventTypes'
+} from "../../sseEventTypes";
 
 // ============================================================================
 // AG-UI Lifecycle Handlers
@@ -37,21 +37,24 @@ export function handleRunStarted(
   data: MeridianRunStartedEvent,
   ctx: SSEDispatchContext,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Matches SSEEventHandler signature for consistency
-  _actions: SSEStoreActions
+  _actions: SSEStoreActions,
 ): void {
-  const { logger, tracker } = ctx
+  const { logger, tracker } = ctx;
 
   // Initialize BlockTracker from lastBlockSequence on reconnection
   // This ensures new blocks start from lastBlockSequence + 1, avoiding duplicates
   if (data.lastBlockSequence !== undefined && data.lastBlockSequence >= 0) {
-    tracker.initializeFromSequence(data.lastBlockSequence)
-    logger.debug('sse:run_started:reconnection', {
+    tracker.initializeFromSequence(data.lastBlockSequence);
+    logger.debug("sse:run_started:reconnection", {
       runId: data.runId,
       threadId: data.threadId,
       lastBlockSequence: data.lastBlockSequence,
-    })
+    });
   } else {
-    logger.debug('sse:run_started', { runId: data.runId, threadId: data.threadId })
+    logger.debug("sse:run_started", {
+      runId: data.runId,
+      threadId: data.threadId,
+    });
   }
 }
 
@@ -64,10 +67,10 @@ export function handleStepStarted(
   data: StepStartedEvent,
   ctx: SSEDispatchContext,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Matches SSEEventHandler signature for consistency
-  _actions: SSEStoreActions
+  _actions: SSEStoreActions,
 ): void {
-  const { logger } = ctx
-  logger.debug('sse:step_started', { stepName: data.stepName })
+  const { logger } = ctx;
+  logger.debug("sse:step_started", { stepName: data.stepName });
 }
 
 /**
@@ -78,10 +81,10 @@ export function handleStepFinished(
   data: StepFinishedEvent,
   ctx: SSEDispatchContext,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Matches SSEEventHandler signature for consistency
-  _actions: SSEStoreActions
+  _actions: SSEStoreActions,
 ): void {
-  const { logger } = ctx
-  logger.debug('sse:step_finished', { stepName: data.stepName })
+  const { logger } = ctx;
+  logger.debug("sse:step_finished", { stepName: data.stepName });
 }
 
 /**
@@ -94,35 +97,35 @@ export function handleStepFinished(
 export function handleRunFinished(
   data: MeridianRunFinishedEvent,
   ctx: SSEDispatchContext,
-  actions: SSEStoreActions
+  actions: SSEStoreActions,
 ): void {
-  const { tracker, logger, buffer, ctrl, threadId } = ctx
+  const { tracker, logger, buffer, ctrl, threadId } = ctx;
   // Use turnId directly from Meridian extension (avoids parsing runId)
-  const turnId = data.turnId || null
+  const turnId = data.turnId || null;
 
-  logger.debug('sse:run_finished', {
+  logger.debug("sse:run_finished", {
     turnId,
     stopReason: data.stopReason,
     inputTokens: data.inputTokens,
     outputTokens: data.outputTokens,
-  })
+  });
 
   // Notify waiters that stream has ended (for cancel coordination)
   if (turnId) {
-    actions.notifyStreamEnded(turnId)
+    actions.notifyStreamEnded(turnId);
   }
 
   // Helper to run cleanup - must run AFTER refreshTurn completes
   // to ensure tool_result blocks are fetched before clearing streaming state
   const runCleanup = () => {
-    buffer.flush()
-    logger.debug('sse:run_finished:cleanup', { turnId })
-    actions.clearStreamingStream()
-    tracker.clear()
-    actions.setStreamingBlockInfo(null, null)
+    buffer.flush();
+    logger.debug("sse:run_finished:cleanup", { turnId });
+    actions.clearStreamingStream();
+    tracker.clear();
+    actions.setStreamingBlockInfo(null, null);
     // Stop the stream
-    ctrl.abort()
-  }
+    ctrl.abort();
+  };
 
   // Chain refreshTurn -> document refresh -> cleanup
   // Cleanup runs in .finally() to ensure it always executes, even on error
@@ -133,19 +136,21 @@ export function handleRunFinished(
         // Refresh active document in case AI edited it via doc_edit tool
         // This ensures ai_version changes are reflected in the editor
         // Fire-and-forget - document refresh shouldn't block cleanup
-        const activeDocId = useEditorStore.getState()._activeDocumentId
+        const activeDocId = useEditorStore.getState()._activeDocumentId;
         if (activeDocId) {
           useEditorStore
             .getState()
             .refreshDocument(activeDocId)
-            .catch((err) => logger.error('sse:run_finished:document_refresh_error', err))
+            .catch((err) =>
+              logger.error("sse:run_finished:document_refresh_error", err),
+            );
         }
       })
-      .catch((err) => logger.error('sse:run_finished:refresh_error', err))
-      .finally(runCleanup)
+      .catch((err) => logger.error("sse:run_finished:refresh_error", err))
+      .finally(runCleanup);
   } else {
     // No turn to refresh - cleanup immediately
-    runCleanup()
+    runCleanup();
   }
 }
 
@@ -159,22 +164,22 @@ export function handleRunFinished(
 export function handleRunError(
   data: MeridianRunErrorEvent,
   ctx: SSEDispatchContext,
-  actions: SSEStoreActions
+  actions: SSEStoreActions,
 ): void {
-  const { tracker, logger, buffer, ctrl, threadId } = ctx
+  const { tracker, logger, buffer, ctrl, threadId } = ctx;
   // Use turnId directly from Meridian extension (avoids parsing runId)
-  const turnId = data.turnId || null
+  const turnId = data.turnId || null;
 
   // Log error (non-cancellation) or debug (cancellation)
   if (!data.isCancelled) {
-    logger.error('sse:run_error', { turnId, message: data.message })
+    logger.error("sse:run_error", { turnId, message: data.message });
   } else {
-    logger.debug('sse:run_cancelled', { turnId, message: data.message })
+    logger.debug("sse:run_cancelled", { turnId, message: data.message });
   }
 
   // Notify waiters that stream has ended (for cancel coordination)
   if (turnId) {
-    actions.notifyStreamEnded(turnId)
+    actions.notifyStreamEnded(turnId);
   }
 
   // Refresh the turn to ensure we have the final state (partial blocks + error field)
@@ -182,14 +187,14 @@ export function handleRunError(
   if (threadId && turnId) {
     actions
       .refreshTurn(threadId, turnId)
-      .catch((err) => logger.error('sse:run_error:refresh_error', err))
+      .catch((err) => logger.error("sse:run_error:refresh_error", err));
   }
 
   // Cleanup
-  buffer.flush()
-  actions.clearStreamingStream()
-  tracker.clear()
-  actions.setStreamingBlockInfo(null, null)
+  buffer.flush();
+  actions.clearStreamingStream();
+  tracker.clear();
+  actions.setStreamingBlockInfo(null, null);
   // Stop the stream
-  ctrl.abort()
+  ctrl.abort();
 }

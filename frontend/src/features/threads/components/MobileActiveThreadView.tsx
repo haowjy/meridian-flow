@@ -1,18 +1,18 @@
-import { useState } from 'react'
-import { useShallow } from 'zustand/react/shallow'
-import { Plus } from 'lucide-react'
-import { Button } from '@/shared/components/ui/button'
-import { MobilePanelHeader, MobileMenuSheet } from '@/shared/components/layout'
-import { useUIStore } from '@/core/stores/useUIStore'
-import { useThreadStore } from '@/core/stores/useThreadStore'
-import { useThreadsForProject } from '@/features/threads/hooks/useThreadsForProject'
-import { ThreadSelector } from './ThreadSelector'
-import { DeleteThreadDialog } from './DeleteThreadDialog'
-import { ActiveThreadView } from './ActiveThreadView'
-import type { Thread } from '@/features/threads/types'
+import { useState } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { Plus } from "lucide-react";
+import { Button } from "@/shared/components/ui/button";
+import { MobilePanelHeader, MobileMenuSheet } from "@/shared/components/layout";
+import { useUIStore } from "@/core/stores/useUIStore";
+import { useThreadStore } from "@/core/stores/useThreadStore";
+import { useThreadsForProject } from "@/features/threads/hooks/useThreadsForProject";
+import { ThreadSelector } from "./ThreadSelector";
+import { DeleteThreadDialog } from "./DeleteThreadDialog";
+import { ActiveThreadView } from "./ActiveThreadView";
+import type { Thread } from "@/features/threads/types";
 
 interface MobileActiveThreadViewProps {
-  projectId: string
+  projectId: string;
 }
 
 /**
@@ -26,66 +26,69 @@ interface MobileActiveThreadViewProps {
  * The desktop ChatHeader is hidden on mobile (via ActiveThreadView's responsive classes),
  * so this component provides the mobile-specific header with the same functionality.
  */
-export function MobileActiveThreadView({ projectId }: MobileActiveThreadViewProps) {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [threadToDelete, setThreadToDelete] = useState<Thread | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
+export function MobileActiveThreadView({
+  projectId,
+}: MobileActiveThreadViewProps) {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [threadToDelete, setThreadToDelete] = useState<Thread | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const { threads, isLoading } = useThreadsForProject(projectId)
+  const { threads, isLoading } = useThreadsForProject(projectId);
 
-  const {
-    activeThreadId,
-    setActiveThread,
-    bumpThreadFocusVersion,
-  } = useUIStore(useShallow((s) => ({
-    activeThreadId: s.activeThreadId,
-    setActiveThread: s.setActiveThread,
-    bumpThreadFocusVersion: s.bumpThreadFocusVersion,
-  })))
+  const { activeThreadId, setActiveThread, bumpThreadFocusVersion } =
+    useUIStore(
+      useShallow((s) => ({
+        activeThreadId: s.activeThreadId,
+        setActiveThread: s.setActiveThread,
+        bumpThreadFocusVersion: s.bumpThreadFocusVersion,
+      })),
+    );
 
-  const { renameThread, deleteThread } = useThreadStore(useShallow((s) => ({
-    renameThread: s.renameThread,
-    deleteThread: s.deleteThread,
-  })))
+  const { renameThread, deleteThread } = useThreadStore(
+    useShallow((s) => ({
+      renameThread: s.renameThread,
+      deleteThread: s.deleteThread,
+    })),
+  );
 
-  const activeThread = threads.find((t) => t.id === activeThreadId) ?? null
+  const activeThread = threads.find((t) => t.id === activeThreadId) ?? null;
 
   const handleNewThread = () => {
-    setActiveThread(null)
-    bumpThreadFocusVersion()
-  }
+    setActiveThread(null);
+    bumpThreadFocusVersion();
+  };
 
   const handleSelectThread = (threadId: string) => {
-    setActiveThread(threadId)
-  }
+    setActiveThread(threadId);
+  };
 
   const handleRename = async (threadId: string) => {
-    const thread = threads.find((t) => t.id === threadId)
-    if (!thread) return
-    const newTitle = window.prompt('Rename thread', thread.title)
+    const thread = threads.find((t) => t.id === threadId);
+    if (!thread) return;
+    const newTitle = window.prompt("Rename thread", thread.title);
     if (newTitle && newTitle.trim() !== thread.title) {
-      await renameThread(threadId, newTitle.trim())
+      await renameThread(threadId, newTitle.trim());
     }
-  }
+  };
 
   const handleDeleteClick = (thread: Thread) => {
-    setThreadToDelete(thread)
-  }
+    setThreadToDelete(thread);
+  };
 
   const handleDeleteConfirm = async () => {
-    if (!threadToDelete) return
+    if (!threadToDelete) return;
 
-    setIsDeleting(true)
+    setIsDeleting(true);
     try {
-      await deleteThread(threadToDelete.id)
+      await deleteThread(threadToDelete.id);
       if (activeThreadId === threadToDelete.id) {
-        setActiveThread(null)
+        setActiveThread(null);
       }
-      setThreadToDelete(null)
+      setThreadToDelete(null);
     } finally {
-      setIsDeleting(false)
+      setIsDeleting(false);
     }
-  }
+  };
 
   // Thread selector as leading content (same as desktop ChatHeader)
   const threadSelector = (
@@ -99,7 +102,7 @@ export function MobileActiveThreadView({ projectId }: MobileActiveThreadViewProp
       onRename={handleRename}
       onDelete={handleDeleteClick}
     />
-  )
+  );
 
   // New thread button as trailing content
   const newThreadButton = (
@@ -113,11 +116,11 @@ export function MobileActiveThreadView({ projectId }: MobileActiveThreadViewProp
     >
       <Plus className="size-4" />
     </Button>
-  )
+  );
 
   return (
     <>
-      <div className="flex h-full flex-col bg-background">
+      <div className="bg-background flex h-full flex-col">
         {/* Mobile header with hamburger + ThreadSelector + new thread button */}
         <MobilePanelHeader
           leading={threadSelector}
@@ -131,18 +134,22 @@ export function MobileActiveThreadView({ projectId }: MobileActiveThreadViewProp
         </div>
       </div>
 
-      <MobileMenuSheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen} inWorkspace />
+      <MobileMenuSheet
+        open={mobileMenuOpen}
+        onOpenChange={setMobileMenuOpen}
+        inWorkspace
+      />
 
       {/* Delete confirmation dialog */}
       <DeleteThreadDialog
         thread={threadToDelete}
         open={threadToDelete !== null}
         onOpenChange={(open) => {
-          if (!open) setThreadToDelete(null)
+          if (!open) setThreadToDelete(null);
         }}
         onConfirm={handleDeleteConfirm}
         isDeleting={isDeleting}
       />
     </>
-  )
+  );
 }

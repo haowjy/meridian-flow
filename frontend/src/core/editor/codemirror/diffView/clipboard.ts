@@ -6,9 +6,9 @@
  * - Paste: Strips PUA markers (safety)
  */
 
-import { EditorView } from '@codemirror/view'
-import { stripMarkers, MARKERS } from '@/core/lib/mergedDocument'
-import { markdownToHtml } from '@/core/lib/clipboard'
+import { EditorView } from "@codemirror/view";
+import { stripMarkers, MARKERS } from "@/core/lib/mergedDocument";
+import { markdownToHtml } from "@/core/lib/clipboard";
 
 // =============================================================================
 // FORMATTING
@@ -23,10 +23,10 @@ import { markdownToHtml } from '@/core/lib/clipboard'
  */
 export function formatDiffForClipboard(text: string): string {
   return text
-    .replace(new RegExp(MARKERS.DEL_START, 'g'), '~~')
-    .replace(new RegExp(MARKERS.DEL_END, 'g'), '~~')
-    .replace(new RegExp(MARKERS.INS_START, 'g'), '')
-    .replace(new RegExp(MARKERS.INS_END, 'g'), '')
+    .replace(new RegExp(MARKERS.DEL_START, "g"), "~~")
+    .replace(new RegExp(MARKERS.DEL_END, "g"), "~~")
+    .replace(new RegExp(MARKERS.INS_START, "g"), "")
+    .replace(new RegExp(MARKERS.INS_END, "g"), "");
 }
 
 // =============================================================================
@@ -39,48 +39,48 @@ export function formatDiffForClipboard(text: string): string {
  */
 const copyHandler = EditorView.domEventHandlers({
   copy(event: ClipboardEvent, view: EditorView) {
-    const clipboard = event.clipboardData
-    if (!clipboard) return false
+    const clipboard = event.clipboardData;
+    if (!clipboard) return false;
 
-    const { from, to } = view.state.selection.main
-    if (from === to) return false
+    const { from, to } = view.state.selection.main;
+    if (from === to) return false;
 
     // Get selected text and format for clipboard
-    const raw = view.state.sliceDoc(from, to)
-    const markdown = formatDiffForClipboard(raw)
-    const html = markdownToHtml(markdown)
+    const raw = view.state.sliceDoc(from, to);
+    const markdown = formatDiffForClipboard(raw);
+    const html = markdownToHtml(markdown);
 
-    clipboard.setData('text/plain', markdown)
-    clipboard.setData('text/html', html)
+    clipboard.setData("text/plain", markdown);
+    clipboard.setData("text/html", html);
 
-    event.preventDefault()
-    return true
+    event.preventDefault();
+    return true;
   },
 
   cut(event: ClipboardEvent, view: EditorView) {
-    const clipboard = event.clipboardData
-    if (!clipboard) return false
+    const clipboard = event.clipboardData;
+    if (!clipboard) return false;
 
-    const { from, to } = view.state.selection.main
-    if (from === to) return false
+    const { from, to } = view.state.selection.main;
+    if (from === to) return false;
 
-    const raw = view.state.sliceDoc(from, to)
-    const markdown = formatDiffForClipboard(raw)
-    const html = markdownToHtml(markdown)
+    const raw = view.state.sliceDoc(from, to);
+    const markdown = formatDiffForClipboard(raw);
+    const html = markdownToHtml(markdown);
 
-    clipboard.setData('text/plain', markdown)
-    clipboard.setData('text/html', html)
+    clipboard.setData("text/plain", markdown);
+    clipboard.setData("text/html", html);
 
     // Delete selection (respects edit filter - won't delete DEL regions)
     view.dispatch({
-      changes: { from, to, insert: '' },
+      changes: { from, to, insert: "" },
       selection: { anchor: from },
-    })
+    });
 
-    event.preventDefault()
-    return true
+    event.preventDefault();
+    return true;
   },
-})
+});
 
 // =============================================================================
 // INPUT FILTER
@@ -91,8 +91,8 @@ const copyHandler = EditorView.domEventHandlers({
  * Prevents PUA markers from spreading.
  */
 export const clipboardInputFilter = EditorView.clipboardInputFilter.of((text) =>
-  stripMarkers(text)
-)
+  stripMarkers(text),
+);
 
 // =============================================================================
 // COMBINED EXTENSION
@@ -101,4 +101,4 @@ export const clipboardInputFilter = EditorView.clipboardInputFilter.of((text) =>
 /**
  * Combined clipboard extension for the diff view.
  */
-export const clipboardExtension = [copyHandler, clipboardInputFilter]
+export const clipboardExtension = [copyHandler, clipboardInputFilter];

@@ -1,12 +1,12 @@
-import { DeleteConfirmationDialog } from '@/shared/components/ui/delete-confirmation-dialog'
-import type { Thread } from '@/features/threads/types'
+import { DeleteConfirmationDialog } from "@/shared/components/ui/delete-confirmation-dialog";
+import type { Thread } from "@/features/threads/types";
 
 interface DeleteThreadDialogProps {
-  thread: Thread | null
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onConfirm: () => void
-  isDeleting?: boolean
+  thread: Thread | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  isDeleting?: boolean;
 }
 
 /**
@@ -24,11 +24,11 @@ export function DeleteThreadDialog({
   return (
     <DeleteConfirmationDialog
       title="Delete Thread"
-      itemName={thread?.title || 'Untitled Thread'}
+      itemName={thread?.title || "Untitled Thread"}
       open={open}
       onOpenChange={onOpenChange}
       onConfirm={onConfirm}
       isDeleting={isDeleting}
     />
-  )
+  );
 }

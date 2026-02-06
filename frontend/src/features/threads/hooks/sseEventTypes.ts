@@ -9,7 +9,7 @@
  *
  * Thinking events are also extended with thinkingId for tracking.
  */
-import type { TurnDto } from '@/core/lib/api'
+import type { TurnDto } from "@/core/lib/api";
 import {
   EventType,
   type TextMessageStartEvent as AGUITextMessageStartEvent,
@@ -29,7 +29,7 @@ import {
   type ThinkingTextMessageStartEvent as AGUIThinkingTextMessageStartEvent,
   type ThinkingTextMessageContentEvent as AGUIThinkingTextMessageContentEvent,
   type ThinkingTextMessageEndEvent as AGUIThinkingTextMessageEndEvent,
-} from '@ag-ui/core'
+} from "@ag-ui/core";
 
 // Re-export official types
 export type {
@@ -39,7 +39,7 @@ export type {
   ToolCallResultEvent,
   StepStartedEvent,
   StepFinishedEvent,
-}
+};
 
 // ============================================================================
 // Meridian-Extended AG-UI Lifecycle Events
@@ -55,8 +55,8 @@ export type {
  * turnId is provided directly to avoid parsing runId.
  */
 export interface MeridianRunStartedEvent extends RunStartedEvent {
-  turnId?: string // Raw turn ID (avoids parsing "run_{turnId}")
-  lastBlockSequence?: number // Omitted on first connection, present on reconnection
+  turnId?: string; // Raw turn ID (avoids parsing "run_{turnId}")
+  lastBlockSequence?: number; // Omitted on first connection, present on reconnection
 }
 
 /**
@@ -65,10 +65,10 @@ export interface MeridianRunStartedEvent extends RunStartedEvent {
  * turnId is provided directly to avoid parsing runId.
  */
 export interface MeridianRunFinishedEvent extends RunFinishedEvent {
-  turnId?: string // Raw turn ID (avoids parsing "run_{turnId}")
-  stopReason?: string
-  inputTokens?: number
-  outputTokens?: number
+  turnId?: string; // Raw turn ID (avoids parsing "run_{turnId}")
+  stopReason?: string;
+  inputTokens?: number;
+  outputTokens?: number;
 }
 
 /**
@@ -77,14 +77,14 @@ export interface MeridianRunFinishedEvent extends RunFinishedEvent {
  * turnId is provided directly to avoid parsing runId.
  */
 export interface MeridianRunErrorEvent extends RunErrorEvent {
-  turnId?: string // Raw turn ID (avoids parsing "run_{turnId}")
-  isCancelled?: boolean
+  turnId?: string; // Raw turn ID (avoids parsing "run_{turnId}")
+  isCancelled?: boolean;
 }
 
 // Re-export text message types (official types, no extensions needed)
-export type TextMessageStartEvent = AGUITextMessageStartEvent
-export type TextMessageContentEvent = AGUITextMessageContentEvent
-export type TextMessageEndEvent = AGUITextMessageEndEvent
+export type TextMessageStartEvent = AGUITextMessageStartEvent;
+export type TextMessageContentEvent = AGUITextMessageContentEvent;
+export type TextMessageEndEvent = AGUITextMessageEndEvent;
 
 // ============================================================================
 // SSE Event Constants
@@ -118,15 +118,15 @@ export const SSE_EVENTS = {
   STEP_FINISHED: EventType.STEP_FINISHED,
 
   // Meridian Interjection Events
-  INTERJECTION_UPDATED: 'INTERJECTION_UPDATED' as const,
-  STREAM_SWITCH: 'STREAM_SWITCH' as const,
+  INTERJECTION_UPDATED: "INTERJECTION_UPDATED" as const,
+  STREAM_SWITCH: "STREAM_SWITCH" as const,
 
   // DEPRECATED: Legacy Meridian events - removed from backend, kept for reference
   // TURN_COMPLETE: 'turn_complete', // Use RUN_FINISHED instead
   // TURN_ERROR: 'turn_error',       // Use RUN_ERROR instead
-} as const
+} as const;
 
-export type SSEEventType = (typeof SSE_EVENTS)[keyof typeof SSE_EVENTS]
+export type SSEEventType = (typeof SSE_EVENTS)[keyof typeof SSE_EVENTS];
 
 // ============================================================================
 // Thinking Events with thinkingId
@@ -136,23 +136,23 @@ export type SSEEventType = (typeof SSE_EVENTS)[keyof typeof SSE_EVENTS]
 // ============================================================================
 
 export interface ThinkingStartEvent extends AGUIThinkingStartEvent {
-  thinkingId: string
+  thinkingId: string;
 }
 
 export interface ThinkingTextMessageStartEvent extends AGUIThinkingTextMessageStartEvent {
-  thinkingId: string
+  thinkingId: string;
 }
 
 export interface ThinkingTextMessageContentEvent extends AGUIThinkingTextMessageContentEvent {
-  thinkingId?: string // Optional: some providers may omit this field
+  thinkingId?: string; // Optional: some providers may omit this field
 }
 
 export interface ThinkingTextMessageEndEvent extends AGUIThinkingTextMessageEndEvent {
-  thinkingId: string
+  thinkingId: string;
 }
 
 export interface ThinkingEndEvent extends AGUIThinkingEndEvent {
-  thinkingId: string
+  thinkingId: string;
 }
 
 // ============================================================================
@@ -167,16 +167,16 @@ export interface ThinkingEndEvent extends AGUIThinkingEndEvent {
  * Allows frontend to display the pending interjection to the user.
  */
 export interface InterjectionUpdatedEvent {
-  type: 'INTERJECTION_UPDATED'
-  turnId: string      // The assistant turn this interjection targets
-  content: string     // Current interjection buffer content
-  length: number      // Buffer length in bytes
+  type: "INTERJECTION_UPDATED";
+  turnId: string; // The assistant turn this interjection targets
+  content: string; // Current interjection buffer content
+  length: number; // Buffer length in bytes
 }
 
 /**
  * Reason why a stream switch occurred.
  */
-export type StreamSwitchReason = 'tool_boundary' | 'no_tools_completion'
+export type StreamSwitchReason = "tool_boundary" | "no_tools_completion";
 
 /**
  * STREAM_SWITCH event sent when an interjection triggers a new stream.
@@ -189,11 +189,10 @@ export type StreamSwitchReason = 'tool_boundary' | 'no_tools_completion'
  * Handler must convert them to Turn via turnDtoToTurn() for date conversion.
  */
 export interface StreamSwitchEvent {
-  type: 'STREAM_SWITCH'
-  prevAssistantTurnId: string           // Turn that was streaming
-  reason: StreamSwitchReason            // Why switch happened
-  userTurn: TurnDto                     // Persisted user turn (interjection) - needs date conversion
-  assistantTurn: TurnDto                // New streaming assistant turn - needs date conversion
-  streamUrl: string                     // URL for new SSE stream
+  type: "STREAM_SWITCH";
+  prevAssistantTurnId: string; // Turn that was streaming
+  reason: StreamSwitchReason; // Why switch happened
+  userTurn: TurnDto; // Persisted user turn (interjection) - needs date conversion
+  assistantTurn: TurnDto; // New streaming assistant turn - needs date conversion
+  streamUrl: string; // URL for new SSE stream
 }
-

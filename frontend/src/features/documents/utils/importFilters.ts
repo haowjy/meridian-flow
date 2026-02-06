@@ -8,11 +8,11 @@
 /** Pattern definition for ignored files/directories */
 export interface IgnorePattern {
   /** Pattern to match (exact name or prefix) */
-  pattern: string
+  pattern: string;
   /** Type of match: 'directory' matches path segments, 'file' matches filename, 'prefix' matches filename start */
-  type: 'directory' | 'file' | 'prefix'
+  type: "directory" | "file" | "prefix";
   /** Human-readable reason for UI display */
-  reason: string
+  reason: string;
 }
 
 /**
@@ -21,32 +21,48 @@ export interface IgnorePattern {
  */
 export const DEFAULT_IGNORE_PATTERNS: IgnorePattern[] = [
   // Version control
-  { pattern: '.git', type: 'directory', reason: 'Git version control' },
-  { pattern: '.svn', type: 'directory', reason: 'SVN version control' },
-  { pattern: '.hg', type: 'directory', reason: 'Mercurial version control' },
+  { pattern: ".git", type: "directory", reason: "Git version control" },
+  { pattern: ".svn", type: "directory", reason: "SVN version control" },
+  { pattern: ".hg", type: "directory", reason: "Mercurial version control" },
 
   // macOS
-  { pattern: '__MACOSX', type: 'directory', reason: 'macOS archive artifact' },
-  { pattern: '.DS_Store', type: 'file', reason: 'macOS folder metadata' },
-  { pattern: '.AppleDouble', type: 'directory', reason: 'macOS resource forks' },
+  { pattern: "__MACOSX", type: "directory", reason: "macOS archive artifact" },
+  { pattern: ".DS_Store", type: "file", reason: "macOS folder metadata" },
+  {
+    pattern: ".AppleDouble",
+    type: "directory",
+    reason: "macOS resource forks",
+  },
 
   // Windows
-  { pattern: 'Thumbs.db', type: 'file', reason: 'Windows thumbnail cache' },
-  { pattern: 'desktop.ini', type: 'file', reason: 'Windows folder config' },
+  { pattern: "Thumbs.db", type: "file", reason: "Windows thumbnail cache" },
+  { pattern: "desktop.ini", type: "file", reason: "Windows folder config" },
 
   // Dependencies/build
-  { pattern: 'node_modules', type: 'directory', reason: 'Node.js dependencies' },
-  { pattern: '.venv', type: 'directory', reason: 'Python virtual environment' },
-  { pattern: 'venv', type: 'directory', reason: 'Python virtual environment' },
-  { pattern: '__pycache__', type: 'directory', reason: 'Python bytecode cache' },
+  {
+    pattern: "node_modules",
+    type: "directory",
+    reason: "Node.js dependencies",
+  },
+  { pattern: ".venv", type: "directory", reason: "Python virtual environment" },
+  { pattern: "venv", type: "directory", reason: "Python virtual environment" },
+  {
+    pattern: "__pycache__",
+    type: "directory",
+    reason: "Python bytecode cache",
+  },
 
   // IDE/editor
-  { pattern: '.vscode', type: 'directory', reason: 'VS Code settings' },
-  { pattern: '.idea', type: 'directory', reason: 'JetBrains IDE settings' },
+  { pattern: ".vscode", type: "directory", reason: "VS Code settings" },
+  { pattern: ".idea", type: "directory", reason: "JetBrains IDE settings" },
 
   // Environment (security risk)
-  { pattern: '.env', type: 'prefix', reason: 'Environment variables (security)' },
-]
+  {
+    pattern: ".env",
+    type: "prefix",
+    reason: "Environment variables (security)",
+  },
+];
 
 /**
  * Check if a file path matches any ignore pattern.
@@ -57,37 +73,37 @@ export const DEFAULT_IGNORE_PATTERNS: IgnorePattern[] = [
  */
 export function shouldIgnoreFile(
   path: string,
-  patterns: IgnorePattern[] = DEFAULT_IGNORE_PATTERNS
+  patterns: IgnorePattern[] = DEFAULT_IGNORE_PATTERNS,
 ): boolean {
-  const segments = path.split('/')
-  const filename = segments[segments.length - 1] ?? ''
+  const segments = path.split("/");
+  const filename = segments[segments.length - 1] ?? "";
 
   for (const { pattern, type } of patterns) {
     switch (type) {
-      case 'directory':
+      case "directory":
         // Check if any path segment matches the directory pattern
         if (segments.some((seg) => seg === pattern)) {
-          return true
+          return true;
         }
-        break
+        break;
 
-      case 'file':
+      case "file":
         // Check if the filename exactly matches
         if (filename === pattern) {
-          return true
+          return true;
         }
-        break
+        break;
 
-      case 'prefix':
+      case "prefix":
         // Check if the filename starts with the pattern
         if (filename.startsWith(pattern)) {
-          return true
+          return true;
         }
-        break
+        break;
     }
   }
 
-  return false
+  return false;
 }
 
 /**
@@ -99,34 +115,34 @@ export function shouldIgnoreFile(
  */
 export function getIgnoreReason(
   path: string,
-  patterns: IgnorePattern[] = DEFAULT_IGNORE_PATTERNS
+  patterns: IgnorePattern[] = DEFAULT_IGNORE_PATTERNS,
 ): string | null {
-  const segments = path.split('/')
-  const filename = segments[segments.length - 1] ?? ''
+  const segments = path.split("/");
+  const filename = segments[segments.length - 1] ?? "";
 
   for (const { pattern, type, reason } of patterns) {
     switch (type) {
-      case 'directory':
+      case "directory":
         if (segments.some((seg) => seg === pattern)) {
-          return reason
+          return reason;
         }
-        break
+        break;
 
-      case 'file':
+      case "file":
         if (filename === pattern) {
-          return reason
+          return reason;
         }
-        break
+        break;
 
-      case 'prefix':
+      case "prefix":
         if (filename.startsWith(pattern)) {
-          return reason
+          return reason;
         }
-        break
+        break;
     }
   }
 
-  return null
+  return null;
 }
 
 /**
@@ -141,31 +157,31 @@ export function getIgnoreReason(
  */
 export function getIgnoredRoot(
   path: string,
-  patterns: IgnorePattern[] = DEFAULT_IGNORE_PATTERNS
+  patterns: IgnorePattern[] = DEFAULT_IGNORE_PATTERNS,
 ): string | null {
-  const segments = path.split('/')
-  const filename = segments[segments.length - 1] ?? ''
+  const segments = path.split("/");
+  const filename = segments[segments.length - 1] ?? "";
 
   // Check directory patterns - return path up to the ignored directory
   for (const { pattern, type } of patterns) {
-    if (type === 'directory') {
-      const matchIndex = segments.findIndex((seg) => seg === pattern)
+    if (type === "directory") {
+      const matchIndex = segments.findIndex((seg) => seg === pattern);
       if (matchIndex !== -1) {
         // Return path including the matched directory
-        return segments.slice(0, matchIndex + 1).join('/')
+        return segments.slice(0, matchIndex + 1).join("/");
       }
     }
   }
 
   // For file matches, return just the filename (or full path if nested)
   for (const { pattern, type } of patterns) {
-    if (type === 'file' && filename === pattern) {
-      return path
+    if (type === "file" && filename === pattern) {
+      return path;
     }
-    if (type === 'prefix' && filename.startsWith(pattern)) {
-      return path
+    if (type === "prefix" && filename.startsWith(pattern)) {
+      return path;
     }
   }
 
-  return null
+  return null;
 }

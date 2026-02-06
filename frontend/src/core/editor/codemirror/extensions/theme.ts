@@ -11,21 +11,21 @@
  * - Blockquotes, horizontal rules, tables
  */
 
-import { EditorView } from '@codemirror/view'
+import { EditorView } from "@codemirror/view";
 
 // ============================================================================
 // BASE THEME (structural defaults)
 // ============================================================================
 
 export const baseTheme = EditorView.baseTheme({
-  '&.cm-editor': {
-    height: 'auto',
-    outline: 'none',
+  "&.cm-editor": {
+    height: "auto",
+    outline: "none",
   },
-  '.cm-scroller': {
-    overflow: 'auto',
+  ".cm-scroller": {
+    overflow: "auto",
   },
-})
+});
 
 // ============================================================================
 // LIVE PREVIEW THEME
@@ -33,139 +33,142 @@ export const baseTheme = EditorView.baseTheme({
 
 export const livePreviewTheme = EditorView.theme({
   // Base editor styling
-  '&': {
-    fontSize: '16px',
-    fontFamily: 'Georgia, serif',
+  "&": {
+    fontSize: "16px",
+    fontFamily: "Georgia, serif",
   },
-  '.cm-content': {
+  ".cm-content": {
     // IMPORTANT: Keep `.cm-content` full-width so clicking in the left/right
     // whitespace still updates the cursor position (CM hit-testing is based on
     // coords inside the content DOM).
-    paddingTop: '20px',
-    paddingBottom: '20px',
-    paddingLeft: 'max(20px, calc((100% - 720px) / 2))',
-    paddingRight: 'max(20px, calc((100% - 720px) / 2))',
-    minHeight: 'calc(100vh - 120px)',
-    cursor: 'text', // Show I-beam cursor to indicate text input area
+    paddingTop: "20px",
+    paddingBottom: "20px",
+    paddingLeft: "max(20px, calc((100% - 720px) / 2))",
+    paddingRight: "max(20px, calc((100% - 720px) / 2))",
+    minHeight: "calc(100vh - 120px)",
+    cursor: "text", // Show I-beam cursor to indicate text input area
   },
-  '.cm-gutter': {
-    minHeight: 'calc(100vh - 120px)', // Match content height
+  ".cm-gutter": {
+    minHeight: "calc(100vh - 120px)", // Match content height
   },
-  '.cm-line': {
-    lineHeight: '1.6',
+  ".cm-line": {
+    lineHeight: "1.6",
   },
-  '.cm-cursor': {
-    borderLeftColor: 'var(--theme-text, #2C2418)',
-    borderLeftWidth: '2px',
+  ".cm-cursor": {
+    borderLeftColor: "var(--theme-text, #2C2418)",
+    borderLeftWidth: "2px",
   },
-  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
-    backgroundColor: 'rgba(217, 119, 6, 0.2)',
+  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
+    backgroundColor: "rgba(217, 119, 6, 0.2)",
   },
 
   // Bold
-  '.cm-strong': {
-    fontWeight: 'bold',
+  ".cm-strong": {
+    fontWeight: "bold",
   },
 
   // Italic
-  '.cm-em': {
-    fontStyle: 'italic',
+  ".cm-em": {
+    fontStyle: "italic",
   },
 
   // Inline code
-  '.cm-inline-code': {
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-    fontSize: '0.9em',
-    backgroundColor: 'var(--theme-surface, #f5f5f5)',
-    padding: '2px 6px',
-    borderRadius: '4px',
+  ".cm-inline-code": {
+    fontFamily:
+      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    fontSize: "0.9em",
+    backgroundColor: "var(--theme-surface, #f5f5f5)",
+    padding: "2px 6px",
+    borderRadius: "4px",
   },
 
   // Links
-  '.cm-link': {
-    color: 'var(--theme-primary, #5F8575)',
-    textDecoration: 'underline',
-    textUnderlineOffset: '2px',
+  ".cm-link": {
+    color: "var(--theme-primary, #5F8575)",
+    textDecoration: "underline",
+    textUnderlineOffset: "2px",
   },
 
   // Headings
-  '.cm-heading': {
-    fontWeight: 'bold',
-    fontFamily: 'var(--theme-font-display, Georgia, serif)',
+  ".cm-heading": {
+    fontWeight: "bold",
+    fontFamily: "var(--theme-font-display, Georgia, serif)",
   },
-  '.cm-heading-1': {
-    fontSize: '2em',
-    lineHeight: '1.3',
+  ".cm-heading-1": {
+    fontSize: "2em",
+    lineHeight: "1.3",
   },
-  '.cm-heading-2': {
-    fontSize: '1.5em',
-    lineHeight: '1.4',
+  ".cm-heading-2": {
+    fontSize: "1.5em",
+    lineHeight: "1.4",
   },
-  '.cm-heading-3': {
-    fontSize: '1.25em',
-    lineHeight: '1.5',
+  ".cm-heading-3": {
+    fontSize: "1.25em",
+    lineHeight: "1.5",
   },
 
   // List widgets
-  '.cm-list-bullet-widget': {
-    display: 'inline-block',
-    width: '1.5em',
-    color: 'var(--theme-text-muted, #78716c)',
-    textAlign: 'center',
+  ".cm-list-bullet-widget": {
+    display: "inline-block",
+    width: "1.5em",
+    color: "var(--theme-text-muted, #78716c)",
+    textAlign: "center",
   },
-  '.cm-list-number-widget': {
-    display: 'inline-block',
-    color: 'var(--theme-text-muted, #78716c)',
-    paddingRight: '0.25em',
+  ".cm-list-number-widget": {
+    display: "inline-block",
+    color: "var(--theme-text-muted, #78716c)",
+    paddingRight: "0.25em",
   },
 
   // Code blocks
-  '.cm-code-block': {
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-    fontSize: '0.9em',
-    backgroundColor: 'var(--theme-surface, #f5f5f5)',
+  ".cm-code-block": {
+    fontFamily:
+      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    fontSize: "0.9em",
+    backgroundColor: "var(--theme-surface, #f5f5f5)",
   },
 
   // Blockquotes
-  '.cm-blockquote': {
-    borderLeft: '3px solid var(--theme-border, #E5DFD4)',
-    paddingLeft: '1em',
-    color: 'var(--theme-text-muted, #78716c)',
-    fontStyle: 'italic',
+  ".cm-blockquote": {
+    borderLeft: "3px solid var(--theme-border, #E5DFD4)",
+    paddingLeft: "1em",
+    color: "var(--theme-text-muted, #78716c)",
+    fontStyle: "italic",
   },
 
   // Horizontal rule
-  '.cm-hr-widget': {
-    display: 'block',
-    width: '100%',
-    height: '0',
-    backgroundColor: 'transparent',
+  ".cm-hr-widget": {
+    display: "block",
+    width: "100%",
+    height: "0",
+    backgroundColor: "transparent",
     backgroundImage:
-      'linear-gradient(var(--theme-border, #e5e5e5), var(--theme-border, #e5e5e5))',
-    backgroundRepeat: 'no-repeat',
-    backgroundPosition: 'center',
-    backgroundSize: '100% 2px',
-    padding: '1em 0', // Use padding instead of margin to avoid breaking CM6 hit testing
+      "linear-gradient(var(--theme-border, #e5e5e5), var(--theme-border, #e5e5e5))",
+    backgroundRepeat: "no-repeat",
+    backgroundPosition: "center",
+    backgroundSize: "100% 2px",
+    padding: "1em 0", // Use padding instead of margin to avoid breaking CM6 hit testing
   },
 
   // Strikethrough
-  '.cm-strikethrough': {
-    textDecoration: 'line-through',
-    color: 'var(--theme-text-muted, #78716c)',
+  ".cm-strikethrough": {
+    textDecoration: "line-through",
+    color: "var(--theme-text-muted, #78716c)",
   },
 
   // Tables
-  '.cm-table-row': {
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-    fontSize: '0.9em',
+  ".cm-table-row": {
+    fontFamily:
+      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    fontSize: "0.9em",
   },
-  '.cm-table-header': {
-    fontWeight: 'bold',
+  ".cm-table-header": {
+    fontWeight: "bold",
   },
-})
+});
 
 // ============================================================================
 // COMBINED THEME EXTENSION
 // ============================================================================
 
-export const editorTheme = [baseTheme, livePreviewTheme]
+export const editorTheme = [baseTheme, livePreviewTheme];

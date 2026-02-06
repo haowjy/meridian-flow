@@ -11,4 +11,4 @@ export {
   setGhostEffect,
   clearGhostEffect,
   type GhostState,
-} from './ghostState'
+} from "./ghostState";

@@ -5,16 +5,16 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/shared/components/ui/dialog'
-import { Button } from '@/shared/components/ui/button'
-import type { Folder } from '@/features/folders/types/folder'
+} from "@/shared/components/ui/dialog";
+import { Button } from "@/shared/components/ui/button";
+import type { Folder } from "@/features/folders/types/folder";
 
 interface DeleteFolderDialogProps {
-  folder: Folder | null
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onConfirm: () => void
-  isDeleting?: boolean
+  folder: Folder | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  isDeleting?: boolean;
 }
 
 /**
@@ -30,8 +30,8 @@ export function DeleteFolderDialog({
   isDeleting,
 }: DeleteFolderDialogProps) {
   const handleConfirm = () => {
-    onConfirm()
-  }
+    onConfirm();
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -39,9 +39,10 @@ export function DeleteFolderDialog({
         <DialogHeader>
           <DialogTitle>Delete Folder</DialogTitle>
           <DialogDescription>
-            Are you sure you want to delete &quot;{folder?.name || 'Untitled Folder'}&quot;
-            and all its contents? This will permanently delete all documents and
-            subfolders inside. This action cannot be undone.
+            Are you sure you want to delete &quot;
+            {folder?.name || "Untitled Folder"}&quot; and all its contents? This
+            will permanently delete all documents and subfolders inside. This
+            action cannot be undone.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -57,10 +58,10 @@ export function DeleteFolderDialog({
             onClick={handleConfirm}
             disabled={isDeleting}
           >
-            {isDeleting ? 'Deleting...' : 'Delete'}
+            {isDeleting ? "Deleting..." : "Delete"}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

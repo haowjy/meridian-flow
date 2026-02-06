@@ -7,8 +7,8 @@
  * Path format: "/FolderName/SubFolder/Document.md" or "/Document.md"
  */
 
-import type { Document } from '@/features/documents/types/document'
-import type { Folder } from '@/features/folders/types/folder'
+import type { Document } from "@/features/documents/types/document";
+import type { Folder } from "@/features/folders/types/folder";
 
 // =============================================================================
 // TYPES
@@ -16,11 +16,11 @@ import type { Folder } from '@/features/folders/types/folder'
 
 export interface ParsedDocPath {
   /** Folder path segments (empty for root documents) */
-  folderPath: string[]
+  folderPath: string[];
   /** Filename with extension (e.g., "Hero.md") */
-  filename: string
+  filename: string;
   /** Full display path without leading slash (e.g., "Characters/Hero.md") */
-  displayName: string
+  displayName: string;
 }
 
 // =============================================================================
@@ -39,15 +39,15 @@ export interface ParsedDocPath {
  */
 export function parseDocEditPath(path: string): ParsedDocPath {
   // Remove leading slash if present
-  const normalizedPath = path.startsWith('/') ? path.slice(1) : path
-  const segments = normalizedPath.split('/')
-  const filename = segments.pop() || ''
+  const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
+  const segments = normalizedPath.split("/");
+  const filename = segments.pop() || "";
 
   return {
     folderPath: segments,
     filename,
     displayName: normalizedPath,
-  }
+  };
 }
 
 // =============================================================================
@@ -65,36 +65,36 @@ export function parseDocEditPath(path: string): ParsedDocPath {
 export function findDocumentByPath(
   path: string,
   documents: Document[],
-  folders: Folder[]
+  folders: Folder[],
 ): Document | null {
-  const parsed = parseDocEditPath(path)
+  const parsed = parseDocEditPath(path);
 
   // Build folder ID chain from path
-  let currentFolderId: string | null = null
+  let currentFolderId: string | null = null;
 
   for (const folderName of parsed.folderPath) {
     const folder = folders.find(
-      (f) => f.name === folderName && f.parentId === currentFolderId
-    )
+      (f) => f.name === folderName && f.parentId === currentFolderId,
+    );
     if (!folder) {
       // Folder not found in path - document doesn't exist
-      return null
+      return null;
     }
-    currentFolderId = folder.id
+    currentFolderId = folder.id;
   }
 
   // Find document in target folder by filename
   // If no extension provided, try with .md (matching backend behavior)
-  let searchFilename = parsed.filename
-  if (!searchFilename.includes('.')) {
-    searchFilename = `${searchFilename}.md`
+  let searchFilename = parsed.filename;
+  if (!searchFilename.includes(".")) {
+    searchFilename = `${searchFilename}.md`;
   }
 
   return (
     documents.find(
-      (d) => d.filename === searchFilename && d.folderId === currentFolderId
+      (d) => d.filename === searchFilename && d.folderId === currentFolderId,
     ) || null
-  )
+  );
 }
 
 // =============================================================================
@@ -118,34 +118,34 @@ export function findDocumentByPath(
  */
 export function findFolderByPath(
   path: string,
-  folders: Folder[]
+  folders: Folder[],
 ): Folder | null | undefined {
   // Normalize path
-  const normalizedPath = path.startsWith('/') ? path.slice(1) : path
+  const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
 
   // Root folder case
-  if (!normalizedPath || normalizedPath === '') {
-    return null // null means "root" (no folder ID)
+  if (!normalizedPath || normalizedPath === "") {
+    return null; // null means "root" (no folder ID)
   }
 
-  const segments = normalizedPath.split('/').filter(Boolean)
+  const segments = normalizedPath.split("/").filter(Boolean);
 
   // Walk folder hierarchy
-  let currentFolderId: string | null = null
-  let currentFolder: Folder | undefined
+  let currentFolderId: string | null = null;
+  let currentFolder: Folder | undefined;
 
   for (const folderName of segments) {
     currentFolder = folders.find(
-      (f) => f.name === folderName && f.parentId === currentFolderId
-    )
+      (f) => f.name === folderName && f.parentId === currentFolderId,
+    );
     if (!currentFolder) {
       // Folder not found
-      return undefined
+      return undefined;
     }
-    currentFolderId = currentFolder.id
+    currentFolderId = currentFolder.id;
   }
 
-  return currentFolder ?? null
+  return currentFolder ?? null;
 }
 
 // =============================================================================
@@ -165,5 +165,5 @@ export function findFolderByPath(
  */
 export function buildDocumentPath(document: Document): string {
   // Path already contains full path with extension (e.g., "Chapters/README.md")
-  return document.path
+  return document.path;
 }

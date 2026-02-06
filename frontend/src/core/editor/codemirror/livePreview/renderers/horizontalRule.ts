@@ -8,10 +8,10 @@
  * - Replaces with styled <hr> widget when cursor outside
  */
 
-import { Decoration, WidgetType } from '@codemirror/view'
-import type { SyntaxNode } from '@lezer/common'
-import type { NodeRenderer, DecorationRange, RenderContext } from '../types'
-import { selectionOverlapsRange } from '../plugin'
+import { Decoration, WidgetType } from "@codemirror/view";
+import type { SyntaxNode } from "@lezer/common";
+import type { NodeRenderer, DecorationRange, RenderContext } from "../types";
+import { selectionOverlapsRange } from "../plugin";
 
 // ============================================================================
 // WIDGET
@@ -22,9 +22,9 @@ import { selectionOverlapsRange } from '../plugin'
  */
 class HorizontalRuleWidget extends WidgetType {
   toDOM(): HTMLElement {
-    const hr = document.createElement('div')
-    hr.className = 'cm-hr-widget'
-    return hr
+    const hr = document.createElement("div");
+    hr.className = "cm-hr-widget";
+    return hr;
   }
 }
 
@@ -33,17 +33,17 @@ class HorizontalRuleWidget extends WidgetType {
 // ============================================================================
 
 export const horizontalRuleRenderer: NodeRenderer = {
-  nodeTypes: ['HorizontalRule'],
+  nodeTypes: ["HorizontalRule"],
 
   render(node: SyntaxNode, ctx: RenderContext): DecorationRange[] {
-    const decorations: DecorationRange[] = []
-    const { state } = ctx
+    const decorations: DecorationRange[] = [];
+    const { state } = ctx;
 
-    const line = state.doc.lineAt(node.from)
+    const line = state.doc.lineAt(node.from);
 
     // Don't replace if cursor is on this line
     if (selectionOverlapsRange(state, line.from, line.to + 1)) {
-      return decorations
+      return decorations;
     }
 
     // Replace entire line content with hr widget
@@ -51,8 +51,8 @@ export const horizontalRuleRenderer: NodeRenderer = {
       from: node.from,
       to: node.to,
       deco: Decoration.replace({ widget: new HorizontalRuleWidget() }),
-    })
+    });
 
-    return decorations
+    return decorations;
   },
-}
+};

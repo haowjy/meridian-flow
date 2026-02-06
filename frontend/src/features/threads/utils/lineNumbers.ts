@@ -13,23 +13,23 @@
  */
 export interface ParsedLineNumberedContent {
   /** Content with line number prefixes stripped */
-  rawContent: string
+  rawContent: string;
   /** Whether the content had line number prefixes */
-  hasLineNumbers: boolean
+  hasLineNumbers: boolean;
   /** The starting line number (from first line's prefix) */
-  startLine: number
+  startLine: number;
 }
 
 /**
  * Pattern to detect line number prefix at start of line
  * Matches: "1: ", "42: ", "999: ", etc.
  */
-const LINE_NUMBER_PREFIX = /^(\d+): /
+const LINE_NUMBER_PREFIX = /^(\d+): /;
 
 /**
  * Pattern to detect if content has line number format (at least one line)
  */
-const HAS_LINE_NUMBERS = /^\d+: /m
+const HAS_LINE_NUMBERS = /^\d+: /m;
 
 /**
  * Parses content with line number prefixes (from backend view output).
@@ -57,37 +57,39 @@ const HAS_LINE_NUMBERS = /^\d+: /m
  * parseLineNumberedContent("Hello\nWorld")
  * // => { rawContent: "Hello\nWorld", hasLineNumbers: false, startLine: 1 }
  */
-export function parseLineNumberedContent(content: string): ParsedLineNumberedContent {
+export function parseLineNumberedContent(
+  content: string,
+): ParsedLineNumberedContent {
   // Quick check - if no line numbers detected, return early
   if (!HAS_LINE_NUMBERS.test(content)) {
     return {
       rawContent: content,
       hasLineNumbers: false,
       startLine: 1,
-    }
+    };
   }
 
-  const lines = content.split('\n')
-  let startLine = 1
+  const lines = content.split("\n");
+  let startLine = 1;
 
   // Extract start line from first line's prefix
-  const firstMatch = lines[0]?.match(LINE_NUMBER_PREFIX)
+  const firstMatch = lines[0]?.match(LINE_NUMBER_PREFIX);
   if (firstMatch && firstMatch[1] !== undefined) {
-    startLine = parseInt(firstMatch[1], 10)
+    startLine = parseInt(firstMatch[1], 10);
   }
 
   // Strip prefixes from all lines
-  const strippedLines = lines.map(line => {
-    const match = line.match(LINE_NUMBER_PREFIX)
+  const strippedLines = lines.map((line) => {
+    const match = line.match(LINE_NUMBER_PREFIX);
     if (match) {
-      return line.slice(match[0].length)
+      return line.slice(match[0].length);
     }
-    return line
-  })
+    return line;
+  });
 
   return {
-    rawContent: strippedLines.join('\n'),
+    rawContent: strippedLines.join("\n"),
     hasLineNumbers: true,
     startLine,
-  }
+  };
 }

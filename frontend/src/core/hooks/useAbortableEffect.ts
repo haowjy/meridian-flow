@@ -1,4 +1,4 @@
-import { useEffect, useRef, type DependencyList } from 'react'
+import { useEffect, useRef, type DependencyList } from "react";
 
 /**
  * A hook for managing async effects with automatic AbortController lifecycle.
@@ -32,25 +32,25 @@ import { useEffect, useRef, type DependencyList } from 'react'
  */
 export function useAbortableEffect(
   effect: (signal: AbortSignal) => void,
-  deps: DependencyList
+  deps: DependencyList,
 ): void {
-  const abortRef = useRef<AbortController | null>(null)
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     // Cancel any in-flight request before starting a new one to prevent race conditions:
     // If deps change rapidly, previous request should not overwrite newer data
     if (abortRef.current) {
-      abortRef.current.abort()
+      abortRef.current.abort();
     }
 
-    const abortController = new AbortController()
-    abortRef.current = abortController
+    const abortController = new AbortController();
+    abortRef.current = abortController;
 
-    effect(abortController.signal)
+    effect(abortController.signal);
 
     return () => {
-      abortController.abort()
-    }
+      abortController.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps)
+  }, deps);
 }

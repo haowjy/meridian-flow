@@ -83,7 +83,7 @@ export interface ThemePreset {
   radius: number;
 }
 
-export type ThemeMode = 'light' | 'dark' | 'system';
+export type ThemeMode = "light" | "dark" | "system";
 
 export interface ThemeState {
   /** Current theme preset ID */
@@ -91,5 +91,5 @@ export interface ThemeState {
   /** Light/dark/system mode */
   mode: ThemeMode;
   /** Resolved mode (light or dark, after system preference) */
-  resolvedMode: 'light' | 'dark';
+  resolvedMode: "light" | "dark";
 }

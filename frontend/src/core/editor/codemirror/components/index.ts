@@ -2,4 +2,4 @@
  * CodeMirror Components Exports
  */
 
-export { EditorContextMenu } from './EditorContextMenu'
+export { EditorContextMenu } from "./EditorContextMenu";

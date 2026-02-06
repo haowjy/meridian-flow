@@ -1,14 +1,14 @@
-import { ReactNode } from 'react'
-import { cn } from '@/lib/utils'
-import { HeaderGradientFade } from './HeaderGradientFade'
+import { ReactNode } from "react";
+import { cn } from "@/lib/utils";
+import { HeaderGradientFade } from "./HeaderGradientFade";
 
 interface MultiRowHeaderProps {
   /** Header rows as children */
-  children: ReactNode
+  children: ReactNode;
   /** Show gradient fade below header (default: true) */
-  showGradient?: boolean
+  showGradient?: boolean;
   /** Additional CSS classes */
-  className?: string
+  className?: string;
 }
 
 /**
@@ -28,9 +28,9 @@ export function MultiRowHeader({
   className,
 }: MultiRowHeaderProps) {
   return (
-    <div className={cn('sticky top-0 z-20 bg-background', className)}>
+    <div className={cn("bg-background sticky top-0 z-20", className)}>
       {children}
       {showGradient && <HeaderGradientFade />}
     </div>
-  )
+  );
 }

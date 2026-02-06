@@ -1,6 +1,6 @@
-import { memo } from 'react'
-import { useTreeSelection } from '../hooks/useTreeSelection'
-import { cn } from '@/lib/utils'
+import { memo } from "react";
+import { useTreeSelection } from "../hooks/useTreeSelection";
+import { cn } from "@/lib/utils";
 
 /**
  * Wraps any tree item with selection highlight.
@@ -19,23 +19,26 @@ import { cn } from '@/lib/utils'
  */
 
 interface SelectableTreeItemProps {
-  id: string
-  children: React.ReactNode
+  id: string;
+  children: React.ReactNode;
 }
 
-export const SelectableTreeItem = memo(function SelectableTreeItem({ id, children }: SelectableTreeItemProps) {
-  const { isSelected } = useTreeSelection()
-  const selected = isSelected(id)
+export const SelectableTreeItem = memo(function SelectableTreeItem({
+  id,
+  children,
+}: SelectableTreeItemProps) {
+  const { isSelected } = useTreeSelection();
+  const selected = isSelected(id);
 
   return (
     <div
       data-tree-item-id={id}
       className={cn(
-        'flex items-center',
-        selected && 'bg-primary/10 rounded-sm'
+        "flex items-center",
+        selected && "bg-primary/10 rounded-sm",
       )}
     >
-      <div className="flex-1 min-w-0">{children}</div>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
-  )
-})
+  );
+});

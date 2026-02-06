@@ -5,14 +5,14 @@
  * Pattern follows ghostState.ts StateEffect conventions.
  */
 
-import { StateEffect } from '@codemirror/state'
+import { StateEffect } from "@codemirror/state";
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
 /** Reason why an edit was blocked. */
-export type BlockedEditReason = 'del_region' | 'marker_touched'
+export type BlockedEditReason = "del_region" | "marker_touched";
 
 // =============================================================================
 // STATE EFFECT
@@ -23,5 +23,5 @@ export type BlockedEditReason = 'del_region' | 'marker_touched'
  * Listeners can show user feedback (toast, shake, etc.)
  */
 export const blockedEditEffect = StateEffect.define<{
-  reason: BlockedEditReason
-}>()
+  reason: BlockedEditReason;
+}>();

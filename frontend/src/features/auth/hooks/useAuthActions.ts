@@ -1,6 +1,6 @@
-import { useCallback } from 'react'
-import { createClient } from '@/core/supabase/client'
-import type { AuthActions } from '../types'
+import { useCallback } from "react";
+import { createClient } from "@/core/supabase/client";
+import type { AuthActions } from "../types";
 
 /**
  * Hook for auth actions.
@@ -11,11 +11,11 @@ import type { AuthActions } from '../types'
  */
 export function useAuthActions(): AuthActions {
   const signOut = useCallback(async () => {
-    const supabase = createClient()
-    await supabase.auth.signOut()
+    const supabase = createClient();
+    await supabase.auth.signOut();
     // Use window.location for full page reload to clear all client state
-    window.location.href = '/login'
-  }, [])
+    window.location.href = "/login";
+  }, []);
 
-  return { signOut }
+  return { signOut };
 }

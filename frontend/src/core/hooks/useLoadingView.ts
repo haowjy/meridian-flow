@@ -6,12 +6,12 @@
  * network request takes.
  */
 
-export type LoadingStatus = 'idle' | 'loading' | 'success' | 'error'
-export type LoadingView = 'skeleton' | 'content' | 'empty' | 'error'
+export type LoadingStatus = "idle" | "loading" | "success" | "error";
+export type LoadingView = "skeleton" | "content" | "empty" | "error";
 
 interface UseLoadingViewParams {
-  status: LoadingStatus
-  hasData: boolean
+  status: LoadingStatus;
+  hasData: boolean;
 }
 
 /**
@@ -34,14 +34,17 @@ interface UseLoadingViewParams {
  * {view === 'empty' && <EmptyState />}
  * {view === 'error' && <ErrorPanel />}
  */
-export function useLoadingView({ status, hasData }: UseLoadingViewParams): LoadingView {
+export function useLoadingView({
+  status,
+  hasData,
+}: UseLoadingViewParams): LoadingView {
   // Have data → always show content (even during background refresh)
-  if (hasData) return 'content'
+  if (hasData) return "content";
 
   // No data - determine what to show
-  if (status === 'loading' || status === 'idle') return 'skeleton'
-  if (status === 'error') return 'error'
+  if (status === "loading" || status === "idle") return "skeleton";
+  if (status === "error") return "error";
 
   // status === 'success' with no data
-  return 'empty'
+  return "empty";
 }

@@ -5,45 +5,48 @@
  * Components should use this hook instead of directly accessing the store.
  */
 
-import { useMemo } from 'react'
-import { useToolStreamStore, ToolStreamState } from '@/features/threads/stores/useToolStreamStore'
-import type { ToolBlockContent } from '@/features/threads/types'
-import { normalizeToolCallId } from '@/features/threads/utils/normalizeToolCallId'
+import { useMemo } from "react";
+import {
+  useToolStreamStore,
+  ToolStreamState,
+} from "@/features/threads/stores/useToolStreamStore";
+import type { ToolBlockContent } from "@/features/threads/types";
+import { normalizeToolCallId } from "@/features/threads/utils/normalizeToolCallId";
 
 interface UseToolStreamingStateOptions {
   /** The block content containing toolUseId */
-  blockContent?: ToolBlockContent
+  blockContent?: ToolBlockContent;
   /** Direct tool call ID (alternative to blockContent) */
-  toolCallId?: string
+  toolCallId?: string;
 }
 
 interface ToolStreamingStateResult {
   /** Current state string (preparing, ready, executing, complete, error) */
-  state: string | null
+  state: string | null;
   /** Tool name from streaming state */
-  toolName: string | null
+  toolName: string | null;
   /** Accumulated input from JSON deltas */
-  input: Record<string, unknown> | null
+  input: Record<string, unknown> | null;
   /** Total bytes received for TOOL_CALL_ARGS (best-effort) */
-  argsTotalBytes: number | null
+  argsTotalBytes: number | null;
   /** True when args JSON buffer was truncated (UI safety) */
-  argsJsonTruncated: boolean
+  argsJsonTruncated: boolean;
   /** Best-effort currently streaming top-level arg key (string values only) */
-  activeArgKey: string | null
+  activeArgKey: string | null;
   /** Best-effort chars received for the active arg value */
-  activeArgChars: number | null
+  activeArgChars: number | null;
   /** Small head preview of the active arg value */
-  activeArgPreviewHead: string | null
+  activeArgPreviewHead: string | null;
   /** Small tail preview of the active arg value */
-  activeArgPreviewTail: string | null
+  activeArgPreviewTail: string | null;
   /** True if tool is in any streaming state (preparing or ready, not yet complete) */
-  isStreaming: boolean
+  isStreaming: boolean;
   /** True if args are still being generated (preparing state) */
-  isGenerating: boolean
+  isGenerating: boolean;
   /** True if tool has completed */
-  isComplete: boolean
+  isComplete: boolean;
   /** Error message if in error state */
-  error: string | null
+  error: string | null;
 }
 
 /**
@@ -60,16 +63,19 @@ interface ToolStreamingStateResult {
  * ```
  */
 export function useToolStreamingState(
-  opts: UseToolStreamingStateOptions
+  opts: UseToolStreamingStateOptions,
 ): ToolStreamingStateResult {
   // Resolve toolCallId from either direct prop or block content
-  const rawToolCallId = opts.toolCallId ?? opts.blockContent?.toolUseId
-  const toolCallId = typeof rawToolCallId === 'string' ? normalizeToolCallId(rawToolCallId) : rawToolCallId
+  const rawToolCallId = opts.toolCallId ?? opts.blockContent?.toolUseId;
+  const toolCallId =
+    typeof rawToolCallId === "string"
+      ? normalizeToolCallId(rawToolCallId)
+      : rawToolCallId;
 
   // Subscribe to the specific tool's state
   const toolData = useToolStreamStore((s) =>
-    typeof toolCallId === 'string' ? s.tools[toolCallId] : undefined
-  )
+    typeof toolCallId === "string" ? s.tools[toolCallId] : undefined,
+  );
 
   // Derive computed values
   return useMemo(() => {
@@ -88,34 +94,49 @@ export function useToolStreamingState(
         isGenerating: false,
         isComplete: false,
         error: null,
-      }
+      };
     }
 
     const isStreaming =
       toolData.state === ToolStreamState.PREPARING ||
       toolData.state === ToolStreamState.READY ||
-      toolData.state === ToolStreamState.EXECUTING
+      toolData.state === ToolStreamState.EXECUTING;
 
-    const isGenerating = toolData.state === ToolStreamState.PREPARING
+    const isGenerating = toolData.state === ToolStreamState.PREPARING;
 
     const isComplete =
       toolData.state === ToolStreamState.COMPLETE ||
-      toolData.state === ToolStreamState.ERROR
+      toolData.state === ToolStreamState.ERROR;
 
     return {
       state: toolData.state,
       toolName: toolData.toolName,
       input: toolData.input ?? null,
-      argsTotalBytes: typeof toolData.argsTotalBytes === 'number' ? toolData.argsTotalBytes : null,
+      argsTotalBytes:
+        typeof toolData.argsTotalBytes === "number"
+          ? toolData.argsTotalBytes
+          : null,
       argsJsonTruncated: toolData.argsJsonTruncated === true,
-      activeArgKey: typeof toolData.activeArgKey === 'string' ? toolData.activeArgKey : null,
-      activeArgChars: typeof toolData.activeArgChars === 'number' ? toolData.activeArgChars : null,
-      activeArgPreviewHead: typeof toolData.activeArgPreviewHead === 'string' ? toolData.activeArgPreviewHead : null,
-      activeArgPreviewTail: typeof toolData.activeArgPreviewTail === 'string' ? toolData.activeArgPreviewTail : null,
+      activeArgKey:
+        typeof toolData.activeArgKey === "string"
+          ? toolData.activeArgKey
+          : null,
+      activeArgChars:
+        typeof toolData.activeArgChars === "number"
+          ? toolData.activeArgChars
+          : null,
+      activeArgPreviewHead:
+        typeof toolData.activeArgPreviewHead === "string"
+          ? toolData.activeArgPreviewHead
+          : null,
+      activeArgPreviewTail:
+        typeof toolData.activeArgPreviewTail === "string"
+          ? toolData.activeArgPreviewTail
+          : null,
       isStreaming,
       isGenerating,
       isComplete,
       error: toolData.error ?? null,
-    }
-  }, [toolData])
+    };
+  }, [toolData]);
 }

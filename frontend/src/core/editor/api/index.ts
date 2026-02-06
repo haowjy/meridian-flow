@@ -3,7 +3,7 @@ export type {
   DecorationAttrs,
   DecorationHandle,
   DecorationInfo,
-} from './types'
+} from "./types";
 
-export { createAIEditorRef } from './ref'
-export { aiDecorations } from './decorations'
+export { createAIEditorRef } from "./ref";
+export { aiDecorations } from "./decorations";

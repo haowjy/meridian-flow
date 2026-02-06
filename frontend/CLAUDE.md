@@ -1,8 +1,8 @@
-# Frontend CLAUDE.md
+# Frontend AGENTS.md
 
-Instructions for Claude Code when working with the Meridian frontend.
+Instructions for Agents when working with the Meridian frontend.
 
-See main `CLAUDE.md` for general principles. This document focuses on frontend-specific patterns.
+See main `AGENTS.md` for general principles. This document focuses on frontend-specific patterns.
 
 ## Tech Stack
 
@@ -19,6 +19,8 @@ See main `CLAUDE.md` for general principles. This document focuses on frontend-s
 pnpm run dev          # Start dev server (http://localhost:3000)
 pnpm run build        # Production build
 pnpm run lint         # ESLint
+pnpm run format       # Prettier write (including Tailwind class sorting)
+pnpm run format:check # Prettier check-only
 pnpm run test         # Vitest unit tests (core libs + services)
 pnpm run test:watch   # Vitest in watch mode
 ```
@@ -36,10 +38,12 @@ pnpm run test:watch   # Vitest in watch mode
 ### Accessing User Session
 
 ```typescript
-import { createClient } from '@/core/supabase/client'
+import { createClient } from "@/core/supabase/client";
 
-const supabase = createClient()
-const { data: { session } } = await supabase.auth.getSession()
+const supabase = createClient();
+const {
+  data: { session },
+} = await supabase.auth.getSession();
 // session?.user.id, session?.user.email
 ```
 
@@ -55,10 +59,10 @@ Routes use TanStack Router's `beforeLoad` hooks for authentication checks.
 **JWT injection is automatic**. No action needed in components:
 
 ```typescript
-import { api } from '@/core/lib/api'
+import { api } from "@/core/lib/api";
 
 // JWT automatically added to Authorization header
-const threads = await api.threads.list(projectId)
+const threads = await api.threads.list(projectId);
 ```
 
 Implementation: `src/core/lib/api.ts:21-27` extracts JWT from session and adds to every request.
@@ -74,6 +78,7 @@ Implementation: `src/core/lib/api.ts:21-27` extracts JWT from session and adds t
 ### Environment Variables
 
 Required in `.env.local`:
+
 ```bash
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-anon-key
@@ -90,14 +95,18 @@ See `frontend/.env.example` for template.
 Three distinct caching patterns based on data characteristics:
 
 #### 1. Documents (Reconcile-Newest)
+
 **Pattern**: Always fetch server; compare with cache by `updatedAt`; render newest (local wins on tie)
+
 - Emit cached content immediately if present (read-only), reconcile with server
 - Optimistic updates + retry on network failure
 - **Implementation**: `useEditorStore.ts`
 - **Utilities**: `loadWithPolicy(new ReconcileNewestPolicy())` in `core/lib/cache.ts`
 
 #### 2. Threads/Messages (Network-First)
+
 **Pattern**: Server is source of truth.
+
 - Fetch from API first
 - No local caching (Dexie) currently implemented
 - **Implementation**: `useThreadStore.ts`
@@ -105,7 +114,9 @@ Three distinct caching patterns based on data characteristics:
 - **Scrolling**: `useThreadScrollController.ts` owns initial scroll-to-bookmark, streaming follow/pause + settle, and sticky-composer resize anchor preservation
 
 #### 3. Metadata (Persist Middleware)
+
 **Pattern**: Small data, synchronous access via localStorage
+
 - Project list, active IDs, UI state
 - Uses Zustand `persist` middleware
 - No IndexedDB needed (< 5MB localStorage limit)
@@ -116,12 +127,14 @@ Three distinct caching patterns based on data characteristics:
 **Location**: `frontend/src/core/stores/`
 
 All stores use Zustand. Key conventions:
+
 - **Abort controllers**: Cancel previous requests when user switches views
 - **Loading flags**: Separate flags for different operations (e.g., `isLoadingThreads`, `isLoadingMessages`)
 - **Error handling**: Silent abort errors, show others to user
 - **Optimistic updates**: Update local state immediately, sync to server in background
 
 **Stores**:
+
 - `useEditorStore.ts` - Document editing (cache-first)
 - `useThreadStore.ts` - Threads and messages (network-first with windowing)
 - `useProjectStore.ts` - Project list (persist middleware)
@@ -159,15 +172,18 @@ Document and panel navigation uses a **two-pronged approach**:
 2. **URL sync effect** in `WorkspaceLayout` (syncs UI to URL on back/forward/refresh)
 
 **URL Format:** Documents use path-based slugs: `/projects/{project}/documents/{folder/path/docname}`
+
 - Splat route (`$.tsx`) captures all segments after `/documents/`
 - WorkspaceLayout resolves slug -> UUID via tree store
 
 **Key pattern**: Use `getState()` in effects to read state without subscribing:
+
 - Prevents unnecessary effect re-runs when state changes
 - Allows independent effects (document URL vs thread query params)
 - Essential for future thread integration (thread persists across document navigation)
 
 **Implementation:**
+
 - Navigation helpers: `frontend/src/core/lib/panelHelpers.ts`
 - URL sync effect: `frontend/src/features/workspace/components/WorkspaceLayout.tsx`
 - **See**: `_docs/technical/frontend/architecture/navigation-pattern.md` for comprehensive guide
@@ -178,7 +194,8 @@ Document and panel navigation uses a **two-pronged approach**:
 - UI-free orchestration service: `frontend/src/core/services/documentSyncService.ts`
 
 Flow (documents):
-1) Optimistic write to IndexedDB -> 2) direct PATCH to API -> 3) apply server doc (server timestamps become canonical once applied). On network/5xx, enqueue in-memory retry (jittered backoff; max 3 attempts). 4xx bubbles to UI for manual retry.
+
+1. Optimistic write to IndexedDB -> 2) direct PATCH to API -> 3) apply server doc (server timestamps become canonical once applied). On network/5xx, enqueue in-memory retry (jittered backoff; max 3 attempts). 4xx bubbles to UI for manual retry.
 
 Background: only the retry scheduler (ticked in `SyncProvider`). No visibility/online listeners.
 
@@ -193,11 +210,13 @@ Dev: optional retry inspector in dev builds — set `VITE_DEV_TOOLS=1` to enable
 Current version: 4
 
 **Tables**:
+
 - `documents`: Full documents with content (cache-first)
 - `threads`: Thread metadata (network-first)
 - `messages`: Thread messages (network-first, windowed to 100)
 
 **Indexes**:
+
 - `documents`: `id, projectId, folderId, updatedAt`
 - `threads`: `id, projectId, createdAt`
 - `messages`: `id, threadId, createdAt, lastAccessedAt`
@@ -240,8 +259,9 @@ Meridian's UI serves the writer's creative process. Everything else is secondary
 Single theme architecture using **Modern Literary** (Warm Paper + Sage + Gold). Users can toggle between light/dark modes, but theme switching is disabled.
 
 **Usage**:
+
 ```typescript
-import { useThemeContext } from '@/core/theme';
+import { useThemeContext } from "@/core/theme";
 const { isDark, setMode } = useThemeContext();
 // setMode('light' | 'dark' | 'system')
 // Note: setThemeId is available but disabled (single theme)
@@ -252,24 +272,29 @@ const { isDark, setMode } = useThemeContext();
 The theme system uses semantic color naming (v3+) with clear intent:
 
 **Interactive Elements** - Use `primary` (sage green: #5F8575)
+
 - Buttons, focus rings, hover states, selection
 - "This is the main action color"
 
 **Special Emphasis** - Use `favorite` (gold: #F4B41A)
+
 - Stars, bookmarks, featured content
 - "I want this to stand out as special"
 
 **Foundation Colors**
+
 - `background`: Base page background
 - `surface`: Card/panel background (elevated from background)
 - `text`: Primary text color
 - `muted`: Secondary text and disabled states
 
 **Feedback Colors** - `success/warning/error`
+
 - Use with `-foreground` variants on solid backgrounds for proper contrast
 - Example: `bg-success` + `text-success-foreground` ensures readability
 
 **Migration Note (v2 → v3)**: The legacy `accent` color was split for clearer intent:
+
 - `accent` → `favorite` for starred items, special markings
 - `accent` → `primary` for interactive UI elements
 
@@ -288,10 +313,12 @@ The theme system uses semantic color naming (v3+) with clear intent:
 Responsive layouts using the Strategy Pattern (mobile tabs vs desktop panels).
 
 **Desktop TwoPanelLayout** (≥768px):
+
 - **Chat: 42% (left)** - Primary AI interaction surface, prominent position
 - **Documents: 58% (right)** - Unified workspace (tree + editor)
 
 **Panel Sizing Philosophy:**
+
 - 42% chat (vs 35% before): Substantial space without dominating, emphasizes AI-native nature
 - 58% docs (vs 65% before): Still ample room for writing, not cramped
 - User can resize (25-60% chat range) or collapse chat for distraction-free editing
@@ -300,6 +327,7 @@ Responsive layouts using the Strategy Pattern (mobile tabs vs desktop panels).
 **Design principle**: Chat is the "special thing" (AI-native focus), but documents need real space (writer-first philosophy). Left position gives chat appropriate visual prominence while unified right-side workspace emphasizes document editing as primary activity.
 
 **Mobile MobileTabLayout** (<768px):
+
 - Full-screen tabs, one at a time
 - Bottom tab nav (3 tabs): Thread List, Active Thread, Documents
 
@@ -308,6 +336,7 @@ Responsive layouts using the Strategy Pattern (mobile tabs vs desktop panels).
 ## Key Conventions
 
 ### Empty Content Handling
+
 Empty string `""` is valid data. Always check `!== undefined`, never falsy checks:
 
 ```typescript
@@ -319,6 +348,7 @@ if (content) { ... }  // Fails for empty strings
 ```
 
 ### Race Condition Prevention
+
 - Use AbortController for all async loads
 - Cancel stale operations proactively
 - Guard background operations with intent flags (e.g., `hasUserEdit`)
@@ -326,42 +356,50 @@ if (content) { ... }  // Fails for empty strings
 ### CodeMirror Editor
 
 **Content Format**:
+
 - **Storage & Editor**: Markdown (native format throughout)
 - **No conversion needed**: Unlike TipTap, CodeMirror works directly with markdown
 
 **Component**: `CodeMirrorEditor` from `core/editor/codemirror`
+
 - `initialContent`: Initial markdown string
 - `onChange`: Callback for content changes
 - `onReady`: Returns `CodeMirrorEditorRef` for programmatic access
 - `editable`: Control read-only state
 
 **Programmatic Access** via `CodeMirrorEditorRef`:
+
 - `getContent()`: Get current markdown
 - `setContent(markdown)`: Replace content
 - `focus()`: Focus editor
 - Formatting commands: `toggleBold()`, `toggleItalic()`, `toggleHeading(level)`, etc.
 
 **Keyboard shortcuts (writer-first):**
+
 - We intentionally **do not** bind `Cmd-[` / `Cmd-]` (browser/app back/forward) inside CodeMirror.
   - CodeMirror’s default keymap uses `Mod-[` / `Mod-]` for indentation, which prevents navigation shortcuts while the editor is focused.
   - See `frontend/src/core/editor/codemirror/CodeMirrorEditor.tsx`.
 
 **Autosave on navigation:**
+
 - `EditorPanel` does a best-effort flush on unmount/document switch (skip debounce) to reduce the chance of losing a last-second edit.
   - This relies on the existing optimistic IndexedDB update + retry-on-network-failure behavior.
   - See `frontend/src/features/documents/components/EditorPanel.tsx`.
 
 **AI Integration** via `AIEditorRef` (from `core/editor/api`):
+
 - `addSuggestion(range, text)`: Add AI suggestion decoration
 - `acceptSuggestion(id)`: Accept suggestion
 - `rejectSuggestion(id)`: Reject suggestion
 
 ### Error Handling
+
 - Network errors (5xx, timeout, fetch fail): Automatic retry
 - Client errors (4xx, validation): Show error, manual retry only
 - Abort errors: Silent (user cancelled operation)
 
 Conventions:
+
 - Use `handleApiError(error, fallback)` from `core/lib/errors.ts` in UI/store catch blocks for consistent toasts.
 - Use `isAbortError(error)` for early returns on cancelled requests.
 - Error boundaries handle global errors and log via `makeLogger()`.
@@ -371,11 +409,13 @@ Conventions:
 Backend returns RFC 7807 Problem Details. The API client (`core/lib/api.ts`) extracts:
 
 **Message extraction** (in order of priority):
+
 ```typescript
-errorBody.detail || errorBody.title || errorBody.message || errorBody.error
+errorBody.detail || errorBody.title || errorBody.message || errorBody.error;
 ```
 
 **409 Conflict resource**:
+
 ```typescript
 if (response.status === 409 && errorBody.resource) {
   // errorBody.resource contains existing/conflicting resource
@@ -383,8 +423,9 @@ if (response.status === 409 && errorBody.resource) {
 ```
 
 **AppError for conflicts**:
+
 ```typescript
-throw new AppError(ErrorType.Conflict, message, undefined, resource)
+throw new AppError(ErrorType.Conflict, message, undefined, resource);
 // Access via: error.resource
 ```
 
@@ -393,15 +434,18 @@ throw new AppError(ErrorType.Conflict, message, undefined, resource)
 Global CSS in `globals.css` applies `cursor: pointer` to all buttons and menu items (Tailwind v4 changed buttons to `cursor: default`).
 
 **Automatic** (no action needed):
+
 - `<button>` elements
 - `[role="button"]` elements (Radix primitives)
 - `[role="menuitem"]` elements (Dropdown/Context menu items)
 
 **Manual** (add `cursor-pointer` class):
+
 - `<a>` / `<Link>` with custom styling
 - Clickable `<div>` elements (without menu role)
 
 **Never use**:
+
 - `cursor-default` on clickable elements (overrides global rule)
 
 ## File Structure

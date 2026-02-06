@@ -5,7 +5,7 @@
  * Shows keyboard shortcuts inline for discoverability.
  */
 
-import { ReactNode } from 'react'
+import { ReactNode } from "react";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -13,55 +13,67 @@ import {
   ContextMenuSeparator,
   ContextMenuShortcut,
   ContextMenuTrigger,
-} from '@/shared/components/ui/context-menu'
-import { Bold, Italic, Code, Heading1, Heading2, List, ListOrdered } from 'lucide-react'
-import type { CodeMirrorEditorRef } from '../types'
+} from "@/shared/components/ui/context-menu";
+import {
+  Bold,
+  Italic,
+  Code,
+  Heading1,
+  Heading2,
+  List,
+  ListOrdered,
+} from "lucide-react";
+import type { CodeMirrorEditorRef } from "../types";
 
 interface EditorContextMenuProps {
-  children: ReactNode
-  editorRef: CodeMirrorEditorRef | null
+  children: ReactNode;
+  editorRef: CodeMirrorEditorRef | null;
 }
 
 // Detect OS for shortcut display
-const isMac = typeof navigator !== 'undefined' && navigator.platform.includes('Mac')
-const modSymbol = isMac ? '\u2318' : 'Ctrl+'
-const shiftSymbol = isMac ? '\u21E7' : 'Shift+'
+const isMac =
+  typeof navigator !== "undefined" && navigator.platform.includes("Mac");
+const modSymbol = isMac ? "\u2318" : "Ctrl+";
+const shiftSymbol = isMac ? "\u21E7" : "Shift+";
 
-export function EditorContextMenu({ children, editorRef }: EditorContextMenuProps) {
+export function EditorContextMenu({
+  children,
+  editorRef,
+}: EditorContextMenuProps) {
   const handleBold = () => {
-    editorRef?.toggleBold()
-    editorRef?.focus()
-  }
+    editorRef?.toggleBold();
+    editorRef?.focus();
+  };
 
   const handleItalic = () => {
-    editorRef?.toggleItalic()
-    editorRef?.focus()
-  }
+    editorRef?.toggleItalic();
+    editorRef?.focus();
+  };
 
   const handleCode = () => {
-    editorRef?.toggleInlineCode()
-    editorRef?.focus()
-  }
+    editorRef?.toggleInlineCode();
+    editorRef?.focus();
+  };
 
   const handleHeading1 = () => {
-    editorRef?.toggleHeading(1)
-    editorRef?.focus()
-  }
+    editorRef?.toggleHeading(1);
+    editorRef?.focus();
+  };
 
   const handleHeading2 = () => {
-    editorRef?.toggleHeading(2)
-    editorRef?.focus()
-  }
+    editorRef?.toggleHeading(2);
+    editorRef?.focus();
+  };
 
   const handleBulletList = () => {
-    editorRef?.toggleBulletList()
-    editorRef?.focus()
-  }
+    editorRef?.toggleBulletList();
+    editorRef?.focus();
+  };
 
   const handleOrderedList = () => {
-    editorRef?.toggleOrderedList()
-    editorRef?.focus()
-  }
+    editorRef?.toggleOrderedList();
+    editorRef?.focus();
+  };
 
   return (
     <ContextMenu>
@@ -89,13 +101,11 @@ export function EditorContextMenu({ children, editorRef }: EditorContextMenuProp
         {/* Headings */}
         <ContextMenuItem onSelect={handleHeading1}>
           <Heading1 className="mr-2 size-4" />
-          Heading 1
-          <ContextMenuShortcut>{modSymbol}1</ContextMenuShortcut>
+          Heading 1<ContextMenuShortcut>{modSymbol}1</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem onSelect={handleHeading2}>
           <Heading2 className="mr-2 size-4" />
-          Heading 2
-          <ContextMenuShortcut>{modSymbol}2</ContextMenuShortcut>
+          Heading 2<ContextMenuShortcut>{modSymbol}2</ContextMenuShortcut>
         </ContextMenuItem>
 
         <ContextMenuSeparator />
@@ -104,14 +114,20 @@ export function EditorContextMenu({ children, editorRef }: EditorContextMenuProp
         <ContextMenuItem onSelect={handleBulletList}>
           <List className="mr-2 size-4" />
           Bullet List
-          <ContextMenuShortcut>{modSymbol}{shiftSymbol}8</ContextMenuShortcut>
+          <ContextMenuShortcut>
+            {modSymbol}
+            {shiftSymbol}8
+          </ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem onSelect={handleOrderedList}>
           <ListOrdered className="mr-2 size-4" />
           Numbered List
-          <ContextMenuShortcut>{modSymbol}{shiftSymbol}7</ContextMenuShortcut>
+          <ContextMenuShortcut>
+            {modSymbol}
+            {shiftSymbol}7
+          </ContextMenuShortcut>
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
-  )
+  );
 }

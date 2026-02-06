@@ -11,11 +11,11 @@
  * - DIP: Depends on props, not internal stores
  */
 
-import React, { useState, useCallback } from 'react'
-import { ChevronRight, FolderOpen, Folder, FileText } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import type { Document } from '@/features/documents/types/document'
-import type { Folder as FolderType } from '@/features/folders/types/folder'
+import React, { useState, useCallback } from "react";
+import { ChevronRight, FolderOpen, Folder, FileText } from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { Document } from "@/features/documents/types/document";
+import type { Folder as FolderType } from "@/features/folders/types/folder";
 
 // =============================================================================
 // TYPES
@@ -23,30 +23,30 @@ import type { Folder as FolderType } from '@/features/folders/types/folder'
 
 export interface FolderTreeViewProps {
   /** Starting folder ID (null = project root) */
-  rootFolderId: string | null
+  rootFolderId: string | null;
   /** All folders in the project */
-  folders: FolderType[]
+  folders: FolderType[];
   /** All documents in the project */
-  documents: Document[]
+  documents: Document[];
   /** Callback when document is clicked */
-  onDocumentClick: (doc: Document) => void
+  onDocumentClick: (doc: Document) => void;
   /** Optional: Show word count for documents */
-  showWordCount?: boolean
+  showWordCount?: boolean;
   /** Optional: Initially expanded folder IDs */
-  initialExpanded?: Set<string>
+  initialExpanded?: Set<string>;
   /** Optional: Class name for root container */
-  className?: string
+  className?: string;
 }
 
 interface TreeNodeProps {
-  parentId: string | null
-  depth: number
-  folders: FolderType[]
-  documents: Document[]
-  expanded: Set<string>
-  onToggle: (id: string) => void
-  onDocumentClick: (doc: Document) => void
-  showWordCount?: boolean
+  parentId: string | null;
+  depth: number;
+  folders: FolderType[];
+  documents: Document[];
+  expanded: Set<string>;
+  onToggle: (id: string) => void;
+  onDocumentClick: (doc: Document) => void;
+  showWordCount?: boolean;
 }
 
 // =============================================================================
@@ -64,21 +64,21 @@ function TreeNode({
   showWordCount,
 }: TreeNodeProps) {
   // Filter children for this parent
-  const childFolders = folders.filter((f) => f.parentId === parentId)
-  const childDocs = documents.filter((d) => d.folderId === parentId)
+  const childFolders = folders.filter((f) => f.parentId === parentId);
+  const childDocs = documents.filter((d) => d.folderId === parentId);
 
   if (childFolders.length === 0 && childDocs.length === 0) {
-    return null
+    return null;
   }
 
   return (
     <div className="space-y-0.5">
       {/* Folders first */}
       {childFolders.map((folder) => {
-        const isExpanded = expanded.has(folder.id)
+        const isExpanded = expanded.has(folder.id);
         const hasChildren =
           folders.some((f) => f.parentId === folder.id) ||
-          documents.some((d) => d.folderId === folder.id)
+          documents.some((d) => d.folderId === folder.id);
 
         return (
           <div key={folder.id}>
@@ -87,28 +87,30 @@ function TreeNode({
               type="button"
               onClick={() => onToggle(folder.id)}
               className={cn(
-                'flex w-full items-center gap-1 text-xs py-1 px-1.5 rounded',
-                'hover:bg-muted/50 transition-colors cursor-pointer text-left',
-                'group'
+                "flex w-full items-center gap-1 rounded px-1.5 py-1 text-xs",
+                "hover:bg-muted/50 cursor-pointer text-left transition-colors",
+                "group",
               )}
               style={{ paddingLeft: `${depth * 12 + 6}px` }}
             >
               {/* Expand indicator */}
               <ChevronRight
                 className={cn(
-                  'h-3 w-3 shrink-0 text-muted-foreground/50 transition-transform',
-                  isExpanded && 'rotate-90',
-                  !hasChildren && 'invisible'
+                  "text-muted-foreground/50 h-3 w-3 shrink-0 transition-transform",
+                  isExpanded && "rotate-90",
+                  !hasChildren && "invisible",
                 )}
               />
               {/* Folder icon */}
               {isExpanded ? (
-                <FolderOpen className="h-3 w-3 text-muted-foreground shrink-0" />
+                <FolderOpen className="text-muted-foreground h-3 w-3 shrink-0" />
               ) : (
-                <Folder className="h-3 w-3 text-muted-foreground shrink-0" />
+                <Folder className="text-muted-foreground h-3 w-3 shrink-0" />
               )}
               {/* Folder name */}
-              <span className="text-foreground/90 truncate">{folder.name}/</span>
+              <span className="text-foreground/90 truncate">
+                {folder.name}/
+              </span>
             </button>
 
             {/* Children (recursive) */}
@@ -125,7 +127,7 @@ function TreeNode({
               />
             )}
           </div>
-        )
+        );
       })}
 
       {/* Documents */}
@@ -135,12 +137,12 @@ function TreeNode({
           type="button"
           onClick={() => onDocumentClick(doc)}
           className={cn(
-            'flex w-full items-center gap-1 text-xs py-1 px-1.5 rounded',
-            'hover:bg-muted/50 transition-colors cursor-pointer text-left'
+            "flex w-full items-center gap-1 rounded px-1.5 py-1 text-xs",
+            "hover:bg-muted/50 cursor-pointer text-left transition-colors",
           )}
           style={{ paddingLeft: `${depth * 12 + 6 + 16}px` }} // Extra indent to align with folder names
         >
-          <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
+          <FileText className="text-muted-foreground h-3 w-3 shrink-0" />
           <span className="text-foreground/90 truncate">{doc.filename}</span>
           {showWordCount && doc.wordCount !== undefined && (
             <span className="text-muted-foreground ml-auto shrink-0">
@@ -150,7 +152,7 @@ function TreeNode({
         </button>
       ))}
     </div>
-  )
+  );
 }
 
 // =============================================================================
@@ -168,33 +170,35 @@ export function FolderTreeView({
 }: FolderTreeViewProps) {
   // Track expanded folders
   const [expanded, setExpanded] = useState<Set<string>>(
-    () => initialExpanded ?? new Set()
-  )
+    () => initialExpanded ?? new Set(),
+  );
 
   // Toggle folder expansion
   const handleToggle = useCallback((folderId: string) => {
     setExpanded((prev) => {
-      const next = new Set(prev)
+      const next = new Set(prev);
       if (next.has(folderId)) {
-        next.delete(folderId)
+        next.delete(folderId);
       } else {
-        next.add(folderId)
+        next.add(folderId);
       }
-      return next
-    })
-  }, [])
+      return next;
+    });
+  }, []);
 
   // Check if tree is empty
   const hasContent =
     folders.some((f) => f.parentId === rootFolderId) ||
-    documents.some((d) => d.folderId === rootFolderId)
+    documents.some((d) => d.folderId === rootFolderId);
 
   if (!hasContent) {
     return (
-      <div className={cn('text-xs text-muted-foreground italic py-2', className)}>
+      <div
+        className={cn("text-muted-foreground py-2 text-xs italic", className)}
+      >
         Empty folder
       </div>
-    )
+    );
   }
 
   return (
@@ -210,5 +214,5 @@ export function FolderTreeView({
         showWordCount={showWordCount}
       />
     </div>
-  )
+  );
 }

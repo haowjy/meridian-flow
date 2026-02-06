@@ -6,10 +6,10 @@
  * NEW: This was not in the old implementation - ported from test editor
  */
 
-import { Decoration, WidgetType } from '@codemirror/view'
-import type { SyntaxNode } from '@lezer/common'
-import type { NodeRenderer, DecorationRange, RenderContext } from '../types'
-import { selectionOverlapsRange } from '../plugin'
+import { Decoration, WidgetType } from "@codemirror/view";
+import type { SyntaxNode } from "@lezer/common";
+import type { NodeRenderer, DecorationRange, RenderContext } from "../types";
+import { selectionOverlapsRange } from "../plugin";
 
 // ============================================================================
 // WIDGETS
@@ -20,10 +20,10 @@ import { selectionOverlapsRange } from '../plugin'
  */
 class BulletWidget extends WidgetType {
   toDOM(): HTMLElement {
-    const span = document.createElement('span')
-    span.className = 'cm-list-bullet-widget'
-    span.textContent = '•'
-    return span
+    const span = document.createElement("span");
+    span.className = "cm-list-bullet-widget";
+    span.textContent = "•";
+    return span;
   }
 }
 
@@ -32,18 +32,18 @@ class BulletWidget extends WidgetType {
  */
 class NumberWidget extends WidgetType {
   constructor(readonly num: string) {
-    super()
+    super();
   }
 
   eq(other: NumberWidget): boolean {
-    return this.num === other.num
+    return this.num === other.num;
   }
 
   toDOM(): HTMLElement {
-    const span = document.createElement('span')
-    span.className = 'cm-list-number-widget'
-    span.textContent = this.num
-    return span
+    const span = document.createElement("span");
+    span.className = "cm-list-number-widget";
+    span.textContent = this.num;
+    return span;
   }
 }
 
@@ -52,44 +52,46 @@ class NumberWidget extends WidgetType {
 // ============================================================================
 
 export const listItemRenderer: NodeRenderer = {
-  nodeTypes: ['ListItem'],
+  nodeTypes: ["ListItem"],
 
   render(node: SyntaxNode, ctx: RenderContext): DecorationRange[] {
-    const decorations: DecorationRange[] = []
-    const { state } = ctx
+    const decorations: DecorationRange[] = [];
+    const { state } = ctx;
 
-    const line = state.doc.lineAt(node.from)
-    const parent = node.parent
-    const isOrdered = parent?.name === 'OrderedList'
+    const line = state.doc.lineAt(node.from);
+    const parent = node.parent;
+    const isOrdered = parent?.name === "OrderedList";
 
     // Find ListMark child
-    const cursor = node.cursor()
-    if (!cursor.firstChild()) return decorations
+    const cursor = node.cursor();
+    if (!cursor.firstChild()) return decorations;
 
     do {
-      if (cursor.name === 'ListMark') {
+      if (cursor.name === "ListMark") {
         // Use line-based detection (like headings) - show raw syntax when cursor on line
         if (selectionOverlapsRange(state, line.from, line.to + 1)) {
-          return decorations
+          return decorations;
         }
 
         // Get the marker text (e.g., "-", "*", "1.", "2.")
-        const markerText = state.doc.sliceString(cursor.from, cursor.to)
+        const markerText = state.doc.sliceString(cursor.from, cursor.to);
 
         // Create appropriate widget
-        const widget = isOrdered ? new NumberWidget(markerText) : new BulletWidget()
+        const widget = isOrdered
+          ? new NumberWidget(markerText)
+          : new BulletWidget();
 
         // Replace marker + trailing space with widget
-        const hideEnd = Math.min(cursor.to + 1, line.to)
+        const hideEnd = Math.min(cursor.to + 1, line.to);
         decorations.push({
           from: cursor.from,
           to: hideEnd,
           deco: Decoration.replace({ widget }),
-        })
-        break
+        });
+        break;
       }
-    } while (cursor.nextSibling())
+    } while (cursor.nextSibling());
 
-    return decorations
+    return decorations;
   },
-}
+};

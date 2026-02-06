@@ -5,9 +5,9 @@
  * Wrap your app with this to enable theme switching.
  */
 
-import { createContext, useContext, type ReactNode } from 'react';
-import { useTheme } from './useTheme';
-import type { ThemeMode, ThemePreset } from './types';
+import { createContext, useContext, type ReactNode } from "react";
+import { useTheme } from "./useTheme";
+import type { ThemeMode, ThemePreset } from "./types";
 
 interface ThemeContextValue {
   /** Current theme preset ID */
@@ -15,7 +15,7 @@ interface ThemeContextValue {
   /** Current mode setting (light/dark/system) */
   mode: ThemeMode;
   /** Resolved mode after system preference (light/dark only) */
-  resolvedMode: 'light' | 'dark';
+  resolvedMode: "light" | "dark";
   /** Current theme preset object */
   theme: ThemePreset;
   /** Set theme by ID */
@@ -41,7 +41,9 @@ interface ThemeProviderProps {
 export function ThemeProvider({ children }: ThemeProviderProps) {
   const themeState = useTheme();
 
-  return <ThemeContext.Provider value={themeState}>{children}</ThemeContext.Provider>;
+  return (
+    <ThemeContext.Provider value={themeState}>{children}</ThemeContext.Provider>
+  );
 }
 
 /**
@@ -51,7 +53,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
 export function useThemeContext(): ThemeContextValue {
   const context = useContext(ThemeContext);
   if (!context) {
-    throw new Error('useThemeContext must be used within a ThemeProvider');
+    throw new Error("useThemeContext must be used within a ThemeProvider");
   }
   return context;
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -6,18 +6,18 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/shared/components/ui/dialog'
-import { Input } from '@/shared/components/ui/input'
-import { Button } from '@/shared/components/ui/button'
-import { Field } from '@/shared/components/Field'
-import { Loader2 } from 'lucide-react'
-import { Project } from '../types/project'
+} from "@/shared/components/ui/dialog";
+import { Input } from "@/shared/components/ui/input";
+import { Button } from "@/shared/components/ui/button";
+import { Field } from "@/shared/components/Field";
+import { Loader2 } from "lucide-react";
+import { Project } from "../types/project";
 
 interface RenameProjectDialogProps {
-  project: Project | null
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onSubmit: (name: string) => Promise<void>
+  project: Project | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (name: string) => Promise<void>;
 }
 
 export function RenameProjectDialog({
@@ -26,59 +26,59 @@ export function RenameProjectDialog({
   onOpenChange,
   onSubmit,
 }: RenameProjectDialogProps) {
-  const [name, setName] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [name, setName] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Reset form when project changes
   useEffect(() => {
     if (project) {
-      setName(project.name)
-      setError(null)
+      setName(project.name);
+      setError(null);
     }
-  }, [project])
+  }, [project]);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
+    e.preventDefault();
+    setError(null);
 
     // Validation
     if (!name.trim()) {
-      setError('Project name is required')
-      return
+      setError("Project name is required");
+      return;
     }
 
     if (name.length > 255) {
-      setError('Project name must be 255 characters or less')
-      return
+      setError("Project name must be 255 characters or less");
+      return;
     }
 
     // No change
     if (name.trim() === project?.name) {
-      onOpenChange(false)
-      return
+      onOpenChange(false);
+      return;
     }
 
-    setIsSubmitting(true)
+    setIsSubmitting(true);
     try {
-      await onSubmit(name.trim())
-      onOpenChange(false)
+      await onSubmit(name.trim());
+      onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to rename project')
+      setError(err instanceof Error ? err.message : "Failed to rename project");
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
-  }
+  };
 
   const handleOpenChange = (newOpen: boolean) => {
     if (!isSubmitting) {
-      onOpenChange(newOpen)
+      onOpenChange(newOpen);
       if (!newOpen) {
-        setName('')
-        setError(null)
+        setName("");
+        setError(null);
       }
     }
-  }
+  };
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -123,5 +123,5 @@ export function RenameProjectDialog({
         </form>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

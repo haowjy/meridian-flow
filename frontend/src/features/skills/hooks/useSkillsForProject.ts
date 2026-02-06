@@ -1,24 +1,26 @@
-import { useSkillStore } from '@/core/stores/useSkillStore'
-import { useShallow } from 'zustand/react/shallow'
-import { useAbortableEffect } from '@/core/hooks'
-import type { Skill, SkillWithContent } from '../types/skill'
+import { useSkillStore } from "@/core/stores/useSkillStore";
+import { useShallow } from "zustand/react/shallow";
+import { useAbortableEffect } from "@/core/hooks";
+import type { Skill, SkillWithContent } from "../types/skill";
 
 export interface UseSkillsForProjectResult {
-  skills: Skill[]
-  status: 'idle' | 'loading' | 'success' | 'error'
-  isLoading: boolean
-  error: string | null
-  selectedSkillId: string | null
-  selectedSkillContent: SkillWithContent | null
-  isLoadingSelectedSkill: boolean
-  setSelectedSkillId: (skillId: string | null) => void
+  skills: Skill[];
+  status: "idle" | "loading" | "success" | "error";
+  isLoading: boolean;
+  error: string | null;
+  selectedSkillId: string | null;
+  selectedSkillContent: SkillWithContent | null;
+  isLoadingSelectedSkill: boolean;
+  setSelectedSkillId: (skillId: string | null) => void;
 }
 
 /**
  * Hook to load and manage skills for a project.
  * Handles abort controller lifecycle and data loading.
  */
-export function useSkillsForProject(projectId: string | null): UseSkillsForProjectResult {
+export function useSkillsForProject(
+  projectId: string | null,
+): UseSkillsForProjectResult {
   const {
     skills,
     skillsStatus,
@@ -42,26 +44,26 @@ export function useSkillsForProject(projectId: string | null): UseSkillsForProje
       loadSkills: s.loadSkills,
       loadSkillContent: s.loadSkillContent,
       setSelectedSkillId: s.setSelectedSkillId,
-    }))
-  )
+    })),
+  );
 
   // Load skills when projectId changes
   useAbortableEffect(
     (signal) => {
-      if (!projectId) return
-      void loadSkills(projectId, signal)
+      if (!projectId) return;
+      void loadSkills(projectId, signal);
     },
-    [projectId, loadSkills]
-  )
+    [projectId, loadSkills],
+  );
 
   // Load skill content when selectedSkillId changes
   useAbortableEffect(
     (signal) => {
-      if (!projectId || !selectedSkillId) return
-      void loadSkillContent(projectId, selectedSkillId, signal)
+      if (!projectId || !selectedSkillId) return;
+      void loadSkillContent(projectId, selectedSkillId, signal);
     },
-    [projectId, selectedSkillId, loadSkillContent]
-  )
+    [projectId, selectedSkillId, loadSkillContent],
+  );
 
   return {
     skills,
@@ -72,5 +74,5 @@ export function useSkillsForProject(projectId: string | null): UseSkillsForProje
     selectedSkillContent,
     isLoadingSelectedSkill,
     setSelectedSkillId,
-  }
+  };
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -6,60 +6,63 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/shared/components/ui/dialog'
-import { Input } from '@/shared/components/ui/input'
-import { Button } from '@/shared/components/ui/button'
-import { Field } from '@/shared/components/Field'
-import { useProjectStore } from '@/core/stores/useProjectStore'
-import { Loader2 } from 'lucide-react'
+} from "@/shared/components/ui/dialog";
+import { Input } from "@/shared/components/ui/input";
+import { Button } from "@/shared/components/ui/button";
+import { Field } from "@/shared/components/Field";
+import { useProjectStore } from "@/core/stores/useProjectStore";
+import { Loader2 } from "lucide-react";
 
 interface CreateProjectDialogProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
-export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogProps) {
-  const [name, setName] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const createProject = useProjectStore((state) => state.createProject)
+export function CreateProjectDialog({
+  open,
+  onOpenChange,
+}: CreateProjectDialogProps) {
+  const [name, setName] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const createProject = useProjectStore((state) => state.createProject);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
+    e.preventDefault();
+    setError(null);
 
     // Validation
     if (!name.trim()) {
-      setError('Project name is required')
-      return
+      setError("Project name is required");
+      return;
     }
 
     if (name.length > 255) {
-      setError('Project name must be 255 characters or less')
-      return
+      setError("Project name must be 255 characters or less");
+      return;
     }
 
-    setIsSubmitting(true)
+    setIsSubmitting(true);
     try {
-      await createProject(name.trim())
-      setName('')
-      onOpenChange(false)
+      await createProject(name.trim());
+      setName("");
+      onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create project')
+      setError(err instanceof Error ? err.message : "Failed to create project");
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
-  }
+  };
 
   const handleOpenChange = (newOpen: boolean) => {
     if (!isSubmitting) {
-      onOpenChange(newOpen)
+      onOpenChange(newOpen);
       if (!newOpen) {
-        setName('')
-        setError(null)
+        setName("");
+        setError(null);
       }
     }
-  }
+  };
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -104,5 +107,5 @@ export function CreateProjectDialog({ open, onOpenChange }: CreateProjectDialogP
         </form>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

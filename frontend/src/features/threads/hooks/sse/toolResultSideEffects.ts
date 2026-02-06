@@ -8,21 +8,24 @@
  * SOLID: Single Responsibility - each handler does exactly one thing.
  */
 
-import { useEditorStore } from '@/core/stores/useEditorStore'
-import { useProjectStore } from '@/core/stores/useProjectStore'
-import { useTreeStore } from '@/core/stores/useTreeStore'
-import { findDocumentByPath, findFolderByPath } from '@/features/threads/utils/docPathResolver'
-import type { DocTreeFolder, DocTreeDocument } from '@/types/docTree'
+import { useEditorStore } from "@/core/stores/useEditorStore";
+import { useProjectStore } from "@/core/stores/useProjectStore";
+import { useTreeStore } from "@/core/stores/useTreeStore";
+import {
+  findDocumentByPath,
+  findFolderByPath,
+} from "@/features/threads/utils/docPathResolver";
+import type { DocTreeFolder, DocTreeDocument } from "@/types/docTree";
 
 interface ToolResultContext {
-  toolName: string
-  content: Record<string, unknown>
-  isError: boolean
+  toolName: string;
+  content: Record<string, unknown>;
+  isError: boolean;
   /** Tool input arguments (from LLM's tool call) */
-  input?: Record<string, unknown>
+  input?: Record<string, unknown>;
 }
 
-type ToolResultHandler = (ctx: ToolResultContext) => void
+type ToolResultHandler = (ctx: ToolResultContext) => void;
 
 // =============================================================================
 // HANDLERS
@@ -36,51 +39,61 @@ type ToolResultHandler = (ctx: ToolResultContext) => void
  * - For edit operations: Refreshes the edited document if it's currently active
  */
 function handleTextEditorResult(ctx: ToolResultContext): void {
-  if (ctx.isError) return
+  if (ctx.isError) return;
 
-  const command = ctx.input?.command as string | undefined
+  const command = ctx.input?.command as string | undefined;
 
   // Handle view command (folder results only - document content handled by component)
-  if (command === 'view') {
-    const type = ctx.content.type as string | undefined
-    if (type !== 'folder') return
+  if (command === "view") {
+    const type = ctx.content.type as string | undefined;
+    if (type !== "folder") return;
 
-    const path = ctx.content.path as string | undefined
-    const viewFolders = ctx.content.folders as Array<{ id: string; name: string }> | undefined
+    const path = ctx.content.path as string | undefined;
+    const viewFolders = ctx.content.folders as
+      | Array<{ id: string; name: string }>
+      | undefined;
     const viewDocuments = ctx.content.documents as
-      | Array<{ id: string; name: string; word_count: number; updated_at?: string }>
-      | undefined
+      | Array<{
+          id: string;
+          name: string;
+          word_count: number;
+          updated_at?: string;
+        }>
+      | undefined;
 
-    if (!viewFolders || !viewDocuments) return
+    if (!viewFolders || !viewDocuments) return;
 
-    const { folders: currentFolders } = useTreeStore.getState()
-    const parentFolder = findFolderByPath(path ?? '/', currentFolders)
-    const parentFolderId = parentFolder === null ? null : parentFolder?.id ?? null
+    const { folders: currentFolders } = useTreeStore.getState();
+    const parentFolder = findFolderByPath(path ?? "/", currentFolders);
+    const parentFolderId =
+      parentFolder === null ? null : (parentFolder?.id ?? null);
 
-    useTreeStore.getState().hydrateFromFolderView(parentFolderId, viewFolders, viewDocuments)
-    return
+    useTreeStore
+      .getState()
+      .hydrateFromFolderView(parentFolderId, viewFolders, viewDocuments);
+    return;
   }
 
   // Handle edit commands (same logic as legacy doc_edit)
-  const path = ctx.input?.path as string | undefined
-  if (!path) return
+  const path = ctx.input?.path as string | undefined;
+  if (!path) return;
 
   // For create command, reload the entire tree to show new document
-  if (command === 'create') {
-    const projectId = useProjectStore.getState().currentProjectId
+  if (command === "create") {
+    const projectId = useProjectStore.getState().currentProjectId;
     if (projectId) {
-      void useTreeStore.getState().loadTree(projectId)
+      void useTreeStore.getState().loadTree(projectId);
     }
-    return
+    return;
   }
 
   // For edit operations (str_replace, insert), refresh document if currently active
-  const { refreshDocument, _activeDocumentId } = useEditorStore.getState()
-  const { documents, folders } = useTreeStore.getState()
+  const { refreshDocument, _activeDocumentId } = useEditorStore.getState();
+  const { documents, folders } = useTreeStore.getState();
 
-  const resolvedDoc = findDocumentByPath(path, documents, folders)
+  const resolvedDoc = findDocumentByPath(path, documents, folders);
   if (resolvedDoc && resolvedDoc.id === _activeDocumentId) {
-    void refreshDocument(resolvedDoc.id)
+    void refreshDocument(resolvedDoc.id);
   }
 }
 
@@ -90,30 +103,30 @@ function handleTextEditorResult(ctx: ToolResultContext): void {
  * - For edit operations: Refreshes the edited document if it's currently active
  */
 function handleDocEditResult(ctx: ToolResultContext): void {
-  if (ctx.isError) return
+  if (ctx.isError) return;
 
   // Path is ALWAYS in the tool INPUT (LLM's request), not the tool RESULT
-  const path = ctx.input?.path as string | undefined
-  if (!path) return
+  const path = ctx.input?.path as string | undefined;
+  if (!path) return;
 
-  const command = ctx.input?.command as string | undefined
+  const command = ctx.input?.command as string | undefined;
 
   // For create command, reload the entire tree to show new document
-  if (command === 'create') {
-    const projectId = useProjectStore.getState().currentProjectId
+  if (command === "create") {
+    const projectId = useProjectStore.getState().currentProjectId;
     if (projectId) {
-      void useTreeStore.getState().loadTree(projectId)
+      void useTreeStore.getState().loadTree(projectId);
     }
-    return
+    return;
   }
 
   // For edit operations (str_replace, insert, append), refresh document if currently active
-  const { refreshDocument, _activeDocumentId } = useEditorStore.getState()
-  const { documents, folders } = useTreeStore.getState()
+  const { refreshDocument, _activeDocumentId } = useEditorStore.getState();
+  const { documents, folders } = useTreeStore.getState();
 
-  const resolvedDoc = findDocumentByPath(path, documents, folders)
+  const resolvedDoc = findDocumentByPath(path, documents, folders);
   if (resolvedDoc && resolvedDoc.id === _activeDocumentId) {
-    void refreshDocument(resolvedDoc.id)
+    void refreshDocument(resolvedDoc.id);
   }
 }
 
@@ -122,15 +135,19 @@ function handleDocEditResult(ctx: ToolResultContext): void {
  * Hydrates tree store with returned folder/document structure.
  */
 function handleDocTreeResult(ctx: ToolResultContext): void {
-  if (ctx.isError) return
+  if (ctx.isError) return;
 
   // Tool result may have nested `result` object or flat structure
-  const result = ctx.content.result as Record<string, unknown> | undefined
-  const folders = (result?.folders ?? ctx.content.folders) as DocTreeFolder[] | undefined
-  const documents = (result?.documents ?? ctx.content.documents) as DocTreeDocument[] | undefined
+  const result = ctx.content.result as Record<string, unknown> | undefined;
+  const folders = (result?.folders ?? ctx.content.folders) as
+    | DocTreeFolder[]
+    | undefined;
+  const documents = (result?.documents ?? ctx.content.documents) as
+    | DocTreeDocument[]
+    | undefined;
 
   if (folders && documents) {
-    useTreeStore.getState().hydrateFromToolResult(folders, documents)
+    useTreeStore.getState().hydrateFromToolResult(folders, documents);
   }
 }
 
@@ -139,31 +156,41 @@ function handleDocTreeResult(ctx: ToolResultContext): void {
  * Hydrates tree store with folder contents when viewing a folder.
  */
 function handleDocViewResult(ctx: ToolResultContext): void {
-  if (ctx.isError) return
+  if (ctx.isError) return;
 
   // Only handle folder results (not document content)
-  const type = ctx.content.type as string | undefined
-  if (type !== 'folder') return
+  const type = ctx.content.type as string | undefined;
+  if (type !== "folder") return;
 
-  const path = ctx.content.path as string | undefined
-  const viewFolders = ctx.content.folders as Array<{ id: string; name: string }> | undefined
+  const path = ctx.content.path as string | undefined;
+  const viewFolders = ctx.content.folders as
+    | Array<{ id: string; name: string }>
+    | undefined;
   const viewDocuments = ctx.content.documents as
-    | Array<{ id: string; name: string; word_count: number; updated_at?: string }>
-    | undefined
+    | Array<{
+        id: string;
+        name: string;
+        word_count: number;
+        updated_at?: string;
+      }>
+    | undefined;
 
-  if (!viewFolders || !viewDocuments) return
+  if (!viewFolders || !viewDocuments) return;
 
   // Resolve parent folder ID from path
-  const { folders: currentFolders } = useTreeStore.getState()
-  const parentFolder = findFolderByPath(path ?? '/', currentFolders)
+  const { folders: currentFolders } = useTreeStore.getState();
+  const parentFolder = findFolderByPath(path ?? "/", currentFolders);
 
   // findFolderByPath returns:
   // - null for root ("/")
   // - undefined if not found
   // - Folder object if found
-  const parentFolderId = parentFolder === null ? null : parentFolder?.id ?? null
+  const parentFolderId =
+    parentFolder === null ? null : (parentFolder?.id ?? null);
 
-  useTreeStore.getState().hydrateFromFolderView(parentFolderId, viewFolders, viewDocuments)
+  useTreeStore
+    .getState()
+    .hydrateFromFolderView(parentFolderId, viewFolders, viewDocuments);
 }
 
 // =============================================================================
@@ -182,7 +209,7 @@ const TOOL_RESULT_HANDLERS: Record<string, ToolResultHandler> = {
   doc_edit: handleDocEditResult,
   doc_tree: handleDocTreeResult,
   doc_view: handleDocViewResult,
-}
+};
 
 // =============================================================================
 // EXPORTS
@@ -201,10 +228,10 @@ export function executeToolResultSideEffects(
   toolName: string,
   content: Record<string, unknown>,
   isError: boolean,
-  input?: Record<string, unknown>
+  input?: Record<string, unknown>,
 ): void {
-  const handler = TOOL_RESULT_HANDLERS[toolName]
+  const handler = TOOL_RESULT_HANDLERS[toolName];
   if (handler) {
-    handler({ toolName, content, isError, input })
+    handler({ toolName, content, isError, input });
   }
 }

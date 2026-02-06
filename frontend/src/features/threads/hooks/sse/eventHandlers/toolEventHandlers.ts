@@ -5,21 +5,24 @@
  * These events stream tool call arguments progressively from the LLM.
  */
 
-import { parse as parsePartialJson, STR, OBJ, ARR, NUM } from 'partial-json'
-import { ToolStreamState, useToolStreamStore } from '@/features/threads/stores/useToolStreamStore'
-import { useThreadStore } from '@/core/stores/useThreadStore'
-import { normalizeToolCallId } from '@/features/threads/utils/normalizeToolCallId'
-import { executeToolResultSideEffects } from '../toolResultSideEffects'
-import type { SSEDispatchContext, SSEStoreActions } from '../types'
+import { parse as parsePartialJson, STR, OBJ, ARR, NUM } from "partial-json";
+import {
+  ToolStreamState,
+  useToolStreamStore,
+} from "@/features/threads/stores/useToolStreamStore";
+import { useThreadStore } from "@/core/stores/useThreadStore";
+import { normalizeToolCallId } from "@/features/threads/utils/normalizeToolCallId";
+import { executeToolResultSideEffects } from "../toolResultSideEffects";
+import type { SSEDispatchContext, SSEStoreActions } from "../types";
 import type {
   ToolCallStartEvent,
   ToolCallArgsEvent,
   ToolCallEndEvent,
   ToolCallResultEvent,
-} from '../../sseEventTypes'
+} from "../../sseEventTypes";
 
-const MAX_TOOL_JSON_BUFFER_CHARS = 64_000
-const MAX_TOOL_ARGS_PARSE_CHARS = 16_000
+const MAX_TOOL_JSON_BUFFER_CHARS = 64_000;
+const MAX_TOOL_ARGS_PARSE_CHARS = 16_000;
 
 /**
  * Handle TOOL_CALL_START event.
@@ -28,19 +31,19 @@ const MAX_TOOL_ARGS_PARSE_CHARS = 16_000
 export function handleToolCallStart(
   data: ToolCallStartEvent,
   ctx: SSEDispatchContext,
-  actions: SSEStoreActions
+  actions: SSEStoreActions,
 ): void {
-  const { tracker, logger, buffer } = ctx
-  const toolCallId = normalizeToolCallId(data.toolCallId)
+  const { tracker, logger, buffer } = ctx;
+  const toolCallId = normalizeToolCallId(data.toolCallId);
 
   // Tool calls can start before TEXT_MESSAGE_END arrives. Flush any buffered text/thinking
   // so the UI reflects "text finished" before the tool block appears.
-  buffer.flush()
+  buffer.flush();
 
   // Get next block index and register the tool call
-  const blockIndex = tracker.nextBlockIndex()
-  tracker.setCurrentBlockType('tool_use')
-  tracker.registerToolCall(toolCallId, blockIndex)
+  const blockIndex = tracker.nextBlockIndex();
+  tracker.setCurrentBlockType("tool_use");
+  tracker.registerToolCall(toolCallId, blockIndex);
 
   // Initialize streaming tool state (keyed by toolCallId for stable lookup)
   actions.updateToolState(toolCallId, {
@@ -53,26 +56,26 @@ export function handleToolCallStart(
     argsJsonTruncated: false,
     activeArgKey: null,
     activeArgChars: 0,
-    activeArgPreviewHead: '',
-    activeArgPreviewTail: '',
-  })
+    activeArgPreviewHead: "",
+    activeArgPreviewTail: "",
+  });
 
   // Create skeleton block for tool_use so rendering pipeline works
   // Note: We store camelCase properties in the block content for frontend consistency
-  actions.setStreamingBlockContent(ctx.turnId, blockIndex, 'tool_use', {
+  actions.setStreamingBlockContent(ctx.turnId, blockIndex, "tool_use", {
     toolName: data.toolCallName,
     toolUseId: toolCallId,
     input: {},
-  })
+  });
 
   // Update streaming block info
-  actions.setStreamingBlockInfo(blockIndex, 'tool_use')
+  actions.setStreamingBlockInfo(blockIndex, "tool_use");
 
-  logger.debug('sse:TOOL_CALL_START', {
+  logger.debug("sse:TOOL_CALL_START", {
     toolCallId,
     toolName: data.toolCallName,
     blockIndex,
-  })
+  });
 }
 
 /**
@@ -82,19 +85,19 @@ export function handleToolCallStart(
 export function handleToolCallArgs(
   data: ToolCallArgsEvent,
   ctx: SSEDispatchContext,
-  actions: SSEStoreActions
+  actions: SSEStoreActions,
 ): void {
-  const { tracker, logger } = ctx
-  const toolCallId = normalizeToolCallId(data.toolCallId)
+  const { tracker, logger } = ctx;
+  const toolCallId = normalizeToolCallId(data.toolCallId);
 
-  const blockIndex = tracker.getToolCallBlockIndex(toolCallId)
+  const blockIndex = tracker.getToolCallBlockIndex(toolCallId);
   if (blockIndex === undefined) {
-    logger.warn('sse:TOOL_CALL_ARGS:no_block', { toolCallId })
-    return
+    logger.warn("sse:TOOL_CALL_ARGS:no_block", { toolCallId });
+    return;
   }
 
   // Update lightweight streaming metadata (active arg key + preview) without parsing full JSON
-  const streamMeta = tracker.appendToolArgsDelta(toolCallId, data.delta)
+  const streamMeta = tracker.appendToolArgsDelta(toolCallId, data.delta);
   if (streamMeta) {
     actions.updateToolState(toolCallId, {
       argsTotalBytes: streamMeta.totalBytes,
@@ -102,16 +105,20 @@ export function handleToolCallArgs(
       activeArgChars: streamMeta.activeArgChars,
       activeArgPreviewHead: streamMeta.previewHead,
       activeArgPreviewTail: streamMeta.previewTail,
-    })
+    });
   }
 
   // Accumulate JSON delta (capped) for best-effort partial parsing.
   // For huge args (e.g., doc_create.content), we intentionally stop parsing to avoid UI jank.
-  const { json: newBuffer, truncated } = tracker.appendToolJson(toolCallId, data.delta, {
-    maxChars: MAX_TOOL_JSON_BUFFER_CHARS,
-  })
+  const { json: newBuffer, truncated } = tracker.appendToolJson(
+    toolCallId,
+    data.delta,
+    {
+      maxChars: MAX_TOOL_JSON_BUFFER_CHARS,
+    },
+  );
   if (truncated) {
-    actions.updateToolState(toolCallId, { argsJsonTruncated: true })
+    actions.updateToolState(toolCallId, { argsJsonTruncated: true });
   }
 
   // Parse partial JSON for progressive display only while:
@@ -119,31 +126,39 @@ export function handleToolCallArgs(
   // - we are not currently inside a large string value (activeArgKey)
   //
   // For long string payloads, UI should rely on the lightweight metadata instead.
-  if (truncated || newBuffer.length > MAX_TOOL_ARGS_PARSE_CHARS || streamMeta?.activeArgKey) {
-    return
+  if (
+    truncated ||
+    newBuffer.length > MAX_TOOL_ARGS_PARSE_CHARS ||
+    streamMeta?.activeArgKey
+  ) {
+    return;
   }
 
   // partial-json handles incomplete JSON fragments from LLM streaming
-  const parsed = parsePartialJson(newBuffer, STR | OBJ | ARR | NUM)
+  const parsed = parsePartialJson(newBuffer, STR | OBJ | ARR | NUM);
   if (
     parsed &&
-    typeof parsed === 'object' &&
+    typeof parsed === "object" &&
     Object.keys(parsed as object).length > 0
   ) {
     // Get existing block content to preserve tool metadata
-    const turn = useThreadStore.getState().turnById[ctx.turnId]
-    const block = turn?.blocks.find((b) => b.sequence === blockIndex)
+    const turn = useThreadStore.getState().turnById[ctx.turnId];
+    const block = turn?.blocks.find((b) => b.sequence === blockIndex);
 
     // SOLID: Defensive - block may not exist yet in race conditions
-    const existingContent = block?.content as Record<string, unknown> | undefined
-    actions.setStreamingBlockContent(ctx.turnId, blockIndex, 'tool_use', {
-      toolName: existingContent?.toolName ?? data.toolCallName ?? '',
+    const existingContent = block?.content as
+      | Record<string, unknown>
+      | undefined;
+    actions.setStreamingBlockContent(ctx.turnId, blockIndex, "tool_use", {
+      toolName: existingContent?.toolName ?? data.toolCallName ?? "",
       toolUseId: existingContent?.toolUseId ?? toolCallId,
       input: parsed as Record<string, unknown>,
-    })
+    });
 
     // Update tool state with parsed input (keyed by toolCallId)
-    actions.updateToolState(toolCallId, { input: parsed as Record<string, unknown> })
+    actions.updateToolState(toolCallId, {
+      input: parsed as Record<string, unknown>,
+    });
   }
 }
 
@@ -154,66 +169,68 @@ export function handleToolCallArgs(
 export function handleToolCallEnd(
   data: ToolCallEndEvent,
   ctx: SSEDispatchContext,
-  actions: SSEStoreActions
+  actions: SSEStoreActions,
 ): void {
-  const { tracker, logger } = ctx
-  const toolCallId = normalizeToolCallId(data.toolCallId)
+  const { tracker, logger } = ctx;
+  const toolCallId = normalizeToolCallId(data.toolCallId);
 
-  const blockIndex = tracker.getToolCallBlockIndex(toolCallId)
+  const blockIndex = tracker.getToolCallBlockIndex(toolCallId);
   if (blockIndex === undefined) {
-    logger.warn('sse:TOOL_CALL_END:no_block', { toolCallId })
-    return
+    logger.warn("sse:TOOL_CALL_END:no_block", { toolCallId });
+    return;
   }
 
-  const wasTruncated = tracker.isToolJsonTruncated(toolCallId)
+  const wasTruncated = tracker.isToolJsonTruncated(toolCallId);
 
   // Final parse of accumulated JSON
-  const finalBuffer = tracker.removeToolCall(toolCallId)
+  const finalBuffer = tracker.removeToolCall(toolCallId);
   if (finalBuffer && !wasTruncated) {
     try {
-      const parsed = JSON.parse(finalBuffer) as Record<string, unknown>
-      const turn = useThreadStore.getState().turnById[ctx.turnId]
-      const block = turn?.blocks.find((b) => b.sequence === blockIndex)
+      const parsed = JSON.parse(finalBuffer) as Record<string, unknown>;
+      const turn = useThreadStore.getState().turnById[ctx.turnId];
+      const block = turn?.blocks.find((b) => b.sequence === blockIndex);
 
       // Defensive: preserve existing content or use defaults
-      const existingContent = block?.content as Record<string, unknown> | undefined
-      actions.setStreamingBlockContent(ctx.turnId, blockIndex, 'tool_use', {
-        toolName: existingContent?.toolName ?? '',
+      const existingContent = block?.content as
+        | Record<string, unknown>
+        | undefined;
+      actions.setStreamingBlockContent(ctx.turnId, blockIndex, "tool_use", {
+        toolName: existingContent?.toolName ?? "",
         toolUseId: existingContent?.toolUseId ?? toolCallId,
         input: parsed,
-      })
+      });
 
       // Update tool state: args complete, ready for execution (keyed by toolCallId)
       actions.updateToolState(toolCallId, {
         state: ToolStreamState.EXECUTING,
         input: parsed,
         activeArgKey: null,
-      })
+      });
     } catch (parseError) {
-      logger.error('sse:TOOL_CALL_END:final_parse_error', parseError, {
+      logger.error("sse:TOOL_CALL_END:final_parse_error", parseError, {
         toolCallId,
         buffer: finalBuffer,
-      })
+      });
       actions.updateToolState(toolCallId, {
         state: ToolStreamState.EXECUTING,
         activeArgKey: null,
-      })
+      });
     }
   } else {
     // Truncated or empty buffer: still advance the state machine so the tool can execute.
     actions.updateToolState(toolCallId, {
       state: ToolStreamState.EXECUTING,
       activeArgKey: null,
-    })
+    });
   }
 
   // Reset current block tracking (tool block is complete)
-  tracker.setCurrentBlockType(null)
+  tracker.setCurrentBlockType(null);
 
-  logger.debug('sse:TOOL_CALL_END', {
+  logger.debug("sse:TOOL_CALL_END", {
     toolCallId,
     blockIndex,
-  })
+  });
 }
 
 /**
@@ -223,50 +240,61 @@ export function handleToolCallEnd(
 export function handleToolCallResult(
   data: ToolCallResultEvent,
   ctx: SSEDispatchContext,
-  actions: SSEStoreActions
+  actions: SSEStoreActions,
 ): void {
-  const { tracker, logger } = ctx
-  const toolCallId = normalizeToolCallId(data.toolCallId)
+  const { tracker, logger } = ctx;
+  const toolCallId = normalizeToolCallId(data.toolCallId);
 
   // Backend emits `content` as a JSON string; parse for block content.
-  let rawContent: Record<string, unknown> = {}
+  let rawContent: Record<string, unknown> = {};
   try {
-    const parsed = JSON.parse(data.content) as Record<string, unknown>
-    if (parsed && typeof parsed === 'object') {
-      rawContent = parsed
+    const parsed = JSON.parse(data.content) as Record<string, unknown>;
+    if (parsed && typeof parsed === "object") {
+      rawContent = parsed;
     }
   } catch {
-    rawContent = { raw: data.content }
+    rawContent = { raw: data.content };
   }
 
   // Convert snake_case fields from backend to camelCase for frontend consistency
-  const isError = typeof rawContent.is_error === 'boolean' ? rawContent.is_error : false
-  const { tool_use_id, tool_name, is_error, ...rest } = rawContent
+  const isError =
+    typeof rawContent.is_error === "boolean" ? rawContent.is_error : false;
+  const { tool_use_id, tool_name, is_error, ...rest } = rawContent;
   const content: Record<string, unknown> = {
     ...rest,
     toolUseId: tool_use_id,
     toolName: tool_name,
     isError: is_error,
-  }
+  };
 
   // Allocate a new block index for the tool_result.
   // Note: Results may arrive after subsequent blocks; pairing is by tool_use_id.
-  const blockIndex = tracker.nextBlockIndex()
-  actions.setStreamingBlockContent(ctx.turnId, blockIndex, 'tool_result', content)
+  const blockIndex = tracker.nextBlockIndex();
+  actions.setStreamingBlockContent(
+    ctx.turnId,
+    blockIndex,
+    "tool_result",
+    content,
+  );
 
   actions.updateToolState(toolCallId, {
     state: isError ? ToolStreamState.ERROR : ToolStreamState.COMPLETE,
-  })
+  });
 
-  logger.debug('sse:TOOL_CALL_RESULT', {
+  logger.debug("sse:TOOL_CALL_RESULT", {
     toolCallId,
     blockIndex,
     isError,
-  })
+  });
 
   // Execute tool-specific side effects (document refresh, tree hydration)
-  const toolData = useToolStreamStore.getState().tools[toolCallId]
+  const toolData = useToolStreamStore.getState().tools[toolCallId];
   if (toolData?.toolName) {
-    executeToolResultSideEffects(toolData.toolName, content, isError, toolData.input)
+    executeToolResultSideEffects(
+      toolData.toolName,
+      content,
+      isError,
+      toolData.input,
+    );
   }
 }

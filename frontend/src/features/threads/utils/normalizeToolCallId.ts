@@ -6,6 +6,5 @@
  * bugs across streaming state, persisted blocks, and render grouping.
  */
 export function normalizeToolCallId(id: string): string {
-  return id.trim()
+  return id.trim();
 }
-

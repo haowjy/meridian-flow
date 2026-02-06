@@ -1,12 +1,12 @@
-import type { Skill } from '../types/skill'
-import { SkillListItem } from './SkillListItem'
+import type { Skill } from "../types/skill";
+import { SkillListItem } from "./SkillListItem";
 
 interface SkillListProps {
-  skills: Skill[]
-  selectedSkillId: string | null
-  onSelectSkill: (skillId: string) => void
-  onEditSkill: (skill: Skill) => void
-  onDeleteSkill: (skill: Skill) => void
+  skills: Skill[];
+  selectedSkillId: string | null;
+  onSelectSkill: (skillId: string) => void;
+  onEditSkill: (skill: Skill) => void;
+  onDeleteSkill: (skill: Skill) => void;
 }
 
 export function SkillList({
@@ -18,11 +18,11 @@ export function SkillList({
 }: SkillListProps) {
   if (skills.length === 0) {
     return (
-      <div className="px-3 py-8 text-center text-muted-foreground">
+      <div className="text-muted-foreground px-3 py-8 text-center">
         <p className="text-sm">No skills yet.</p>
-        <p className="text-xs mt-1">Create your first skill to get started.</p>
+        <p className="mt-1 text-xs">Create your first skill to get started.</p>
       </div>
-    )
+    );
   }
 
   return (
@@ -38,5 +38,5 @@ export function SkillList({
         />
       ))}
     </div>
-  )
+  );
 }

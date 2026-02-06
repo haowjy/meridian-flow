@@ -16,13 +16,13 @@
  * Unregistered tools fall back to generic ToolInteractionBlock.
  */
 
-import React from 'react'
-import type { TurnBlock } from '@/features/threads/types'
-import { ToolInteractionBlock } from './ToolInteractionBlock'
-import { DocEditBlock } from './DocEditBlock'
-import { DocViewBlock } from './DocViewBlock'
-import { DocTreeBlock } from './DocTreeBlock'
-import { TextEditorBlock } from './TextEditorBlock'
+import React from "react";
+import type { TurnBlock } from "@/features/threads/types";
+import { ToolInteractionBlock } from "./ToolInteractionBlock";
+import { DocEditBlock } from "./DocEditBlock";
+import { DocViewBlock } from "./DocViewBlock";
+import { DocTreeBlock } from "./DocTreeBlock";
+import { TextEditorBlock } from "./TextEditorBlock";
 
 // =============================================================================
 // TYPES
@@ -34,8 +34,8 @@ import { TextEditorBlock } from './TextEditorBlock'
  */
 export type ToolRendererFn = (
   toolUse: TurnBlock | null,
-  toolResult: TurnBlock | null
-) => React.ReactElement
+  toolResult: TurnBlock | null,
+) => React.ReactElement;
 
 // =============================================================================
 // REGISTRY
@@ -66,14 +66,14 @@ const TOOL_RENDERERS: Record<string, ToolRendererFn> = {
   // Future custom tool UIs can be registered here:
   // web_search: (toolUse, toolResult) =>
   //   React.createElement(WebSearchBlock, { toolUse, toolResult }),
-}
+};
 
 /**
  * Default renderer for unregistered tools.
  * Uses generic ToolInteractionBlock with JSON display.
  */
 const DEFAULT_RENDERER: ToolRendererFn = (toolUse, toolResult) =>
-  React.createElement(ToolInteractionBlock, { toolUse, toolResult })
+  React.createElement(ToolInteractionBlock, { toolUse, toolResult });
 
 // =============================================================================
 // PUBLIC API
@@ -88,9 +88,9 @@ const DEFAULT_RENDERER: ToolRendererFn = (toolUse, toolResult) =>
  */
 export function getToolRenderer(toolName: string | null): ToolRendererFn {
   if (toolName && TOOL_RENDERERS[toolName]) {
-    return TOOL_RENDERERS[toolName]
+    return TOOL_RENDERERS[toolName];
   }
-  return DEFAULT_RENDERER
+  return DEFAULT_RENDERER;
 }
 
 /**
@@ -106,9 +106,9 @@ export function getToolRenderer(toolName: string | null): ToolRendererFn {
  */
 export function registerToolRenderer(
   toolName: string,
-  renderer: ToolRendererFn
+  renderer: ToolRendererFn,
 ): void {
-  TOOL_RENDERERS[toolName] = renderer
+  TOOL_RENDERERS[toolName] = renderer;
 }
 
 /**
@@ -116,5 +116,5 @@ export function registerToolRenderer(
  * Useful for debugging or listing available custom tool UIs.
  */
 export function getRegisteredToolNames(): string[] {
-  return Object.keys(TOOL_RENDERERS)
+  return Object.keys(TOOL_RENDERERS);
 }

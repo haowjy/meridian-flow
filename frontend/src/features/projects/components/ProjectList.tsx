@@ -1,13 +1,13 @@
-import { ProjectCard } from './ProjectCard'
-import { Project } from '../types/project'
-import { Button } from '@/shared/components/ui/button'
-import { EmptyState } from '@/shared/components/EmptyState'
-import { CardGrid } from '@/shared/components/CardGrid'
-import { Plus } from 'lucide-react'
+import { ProjectCard } from "./ProjectCard";
+import { Project } from "../types/project";
+import { Button } from "@/shared/components/ui/button";
+import { EmptyState } from "@/shared/components/EmptyState";
+import { CardGrid } from "@/shared/components/CardGrid";
+import { Plus } from "lucide-react";
 
 interface ProjectListProps {
-  projects: Project[]
-  onCreateClick: () => void
+  projects: Project[];
+  onCreateClick: () => void;
 }
 
 export function ProjectList({ projects, onCreateClick }: ProjectListProps) {
@@ -17,12 +17,12 @@ export function ProjectList({ projects, onCreateClick }: ProjectListProps) {
         title="No projects yet"
         description="Create your first project to get started!"
         action={{
-          label: 'Create Project',
-          onClick: onCreateClick
+          label: "Create Project",
+          onClick: onCreateClick,
         }}
-        icon={<Plus className="size-12 text-muted-foreground" />}
+        icon={<Plus className="text-muted-foreground size-12" />}
       />
-    )
+    );
   }
 
   return (
@@ -40,5 +40,5 @@ export function ProjectList({ projects, onCreateClick }: ProjectListProps) {
         ))}
       </CardGrid>
     </div>
-  )
+  );
 }

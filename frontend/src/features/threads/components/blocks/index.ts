@@ -5,12 +5,12 @@
  * of content blocks within thread turns (text, thinking, tool use, etc.).
  */
 
-export { BlockRenderer } from './BlockRenderer'
-export { TextBlock } from './TextBlock'
-export { ThinkingBlock } from './ThinkingBlock'
+export { BlockRenderer } from "./BlockRenderer";
+export { TextBlock } from "./TextBlock";
+export { ThinkingBlock } from "./ThinkingBlock";
 export {
   getBlockRenderer,
   registerBlockRenderer,
   getRegisteredBlockTypes,
   type BlockRendererFn,
-} from './registry'
+} from "./registry";

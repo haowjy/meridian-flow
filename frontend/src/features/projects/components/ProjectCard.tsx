@@ -1,19 +1,23 @@
-import { CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
-import { LinkCard } from '@/shared/components/LinkCard'
-import { Project } from '../types/project'
-import { format } from 'date-fns'
-import { useProjectStore } from '@/core/stores/useProjectStore'
+import {
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/shared/components/ui/card";
+import { LinkCard } from "@/shared/components/LinkCard";
+import { Project } from "../types/project";
+import { format } from "date-fns";
+import { useProjectStore } from "@/core/stores/useProjectStore";
 
 interface ProjectCardProps {
-  project: Project
+  project: Project;
 }
 
 export function ProjectCard({ project }: ProjectCardProps) {
-  const setCurrentProject = useProjectStore((state) => state.setCurrentProject)
+  const setCurrentProject = useProjectStore((state) => state.setCurrentProject);
 
   const handleClick = () => {
-    setCurrentProject(project)
-  }
+    setCurrentProject(project);
+  };
 
   return (
     <LinkCard to={`/projects/${project.slug}`} onClick={handleClick}>
@@ -21,10 +25,10 @@ export function ProjectCard({ project }: ProjectCardProps) {
         <CardTitle>{project.name}</CardTitle>
       </CardHeader>
       <CardContent>
-        <p className="text-sm text-muted-foreground">
-          Created {format(new Date(project.createdAt), 'MMM d, yyyy')}
+        <p className="text-muted-foreground text-sm">
+          Created {format(new Date(project.createdAt), "MMM d, yyyy")}
         </p>
       </CardContent>
     </LinkCard>
-  )
+  );
 }

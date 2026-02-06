@@ -10,10 +10,15 @@ export type {
   EditorContentMap,
   EditorContent,
   TypedContentAdapter,
-} from './types'
+} from "./types";
 
-export { getAdapter, getCapabilities, hasAdapter, registerAdapter } from './registry'
+export {
+  getAdapter,
+  getCapabilities,
+  hasAdapter,
+  registerAdapter,
+} from "./registry";
 
-export { markdownAdapter } from './markdownAdapter'
-export { latexAdapter } from './latexAdapter'
-export { plaintextAdapter } from './plaintextAdapter'
+export { markdownAdapter } from "./markdownAdapter";
+export { latexAdapter } from "./latexAdapter";
+export { plaintextAdapter } from "./plaintextAdapter";

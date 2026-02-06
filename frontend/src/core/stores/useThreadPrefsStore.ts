@@ -1,16 +1,22 @@
-import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
-import type { ThreadRequestOptions, RequestParams } from '@/features/threads/types'
-import { DEFAULT_THREAD_REQUEST_OPTIONS, requestParamsToOptions } from '@/features/threads/types'
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import type {
+  ThreadRequestOptions,
+  RequestParams,
+} from "@/features/threads/types";
+import {
+  DEFAULT_THREAD_REQUEST_OPTIONS,
+  requestParamsToOptions,
+} from "@/features/threads/types";
 
 interface ThreadPrefsState {
   // Global default (persisted to localStorage)
   // Used when starting new threads or when thread has no history
-  globalOptions: ThreadRequestOptions
+  globalOptions: ThreadRequestOptions;
 
   // Current session options (for the active input)
   // Not persisted - reset on page reload, then re-initialized from thread history
-  currentOptions: ThreadRequestOptions
+  currentOptions: ThreadRequestOptions;
 
   /**
    * Initialize options for a thread. Priority:
@@ -21,13 +27,16 @@ interface ThreadPrefsState {
    * @param threadId - undefined for new threads (always uses global)
    * @param lastTurnParams - from thread history
    */
-  initOptionsForThread: (threadId: string | undefined, lastTurnParams?: RequestParams | null) => void
+  initOptionsForThread: (
+    threadId: string | undefined,
+    lastTurnParams?: RequestParams | null,
+  ) => void;
 
   /**
    * Update options from manual user selection (dropdown).
    * Saves to both current AND global (persists preference).
    */
-  updateOptionsManually: (options: ThreadRequestOptions) => void
+  updateOptionsManually: (options: ThreadRequestOptions) => void;
 }
 
 export const useThreadPrefsStore = create<ThreadPrefsState>()(
@@ -39,29 +48,30 @@ export const useThreadPrefsStore = create<ThreadPrefsState>()(
       initOptionsForThread: (threadId, lastTurnParams) => {
         // New thread (no threadId) - always use global, ignore stale turns data
         if (!threadId) {
-          set({ currentOptions: get().globalOptions })
-          return
+          set({ currentOptions: get().globalOptions });
+          return;
         }
 
         // Existing thread - use thread history if available, else global
         const resolved = lastTurnParams
           ? requestParamsToOptions(lastTurnParams)
-          : get().globalOptions
-        set({ currentOptions: resolved })
+          : get().globalOptions;
+        set({ currentOptions: resolved });
       },
 
-      updateOptionsManually: (options) => set({
-        currentOptions: options,
-        globalOptions: options,
-      }),
+      updateOptionsManually: (options) =>
+        set({
+          currentOptions: options,
+          globalOptions: options,
+        }),
     }),
     {
-      name: 'thread-prefs',
+      name: "thread-prefs",
       // Only persist globalOptions - currentOptions is session-only
       // Exclude tools from persistence - always use DEFAULT_TOOLS to ensure new tools appear
       partialize: (state) => ({
-        globalOptions: { ...state.globalOptions, tools: undefined }
+        globalOptions: { ...state.globalOptions, tools: undefined },
       }),
-    }
-  )
-)
+    },
+  ),
+);

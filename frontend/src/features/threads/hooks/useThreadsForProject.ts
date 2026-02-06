@@ -1,17 +1,17 @@
-import { useEffect } from 'react'
-import { useShallow } from 'zustand/react/shallow'
-import { useAbortableEffect } from '@/core/hooks'
-import { useThreadStore } from '@/core/stores/useThreadStore'
-import { useUIStore } from '@/core/stores/useUIStore'
-import { Thread } from '@/features/threads/types'
+import { useEffect } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { useAbortableEffect } from "@/core/hooks";
+import { useThreadStore } from "@/core/stores/useThreadStore";
+import { useUIStore } from "@/core/stores/useUIStore";
+import { Thread } from "@/features/threads/types";
 
-type LoadStatus = 'idle' | 'loading' | 'success' | 'error'
+type LoadStatus = "idle" | "loading" | "success" | "error";
 
 interface UseThreadsForProjectResult {
-  threads: Thread[]
-  status: LoadStatus
-  isLoading: boolean
-  error: string | null
+  threads: Thread[];
+  status: LoadStatus;
+  isLoading: boolean;
+  error: string | null;
 }
 
 /**
@@ -26,35 +26,39 @@ interface UseThreadsForProjectResult {
  * - Decide which thread is active (owned by useUIStore)
  * - Create / rename / delete threads (call store methods directly where needed)
  */
-export function useThreadsForProject(projectId: string): UseThreadsForProjectResult {
-  const { threads, statusThreads, isLoadingThreads, error, loadThreads } = useThreadStore(useShallow((s) => ({
-    threads: s.threads,
-    statusThreads: s.statusThreads,
-    isLoadingThreads: s.isLoadingThreads,
-    error: s.error,
-    loadThreads: s.loadThreads,
-  })))
+export function useThreadsForProject(
+  projectId: string,
+): UseThreadsForProjectResult {
+  const { threads, statusThreads, isLoadingThreads, error, loadThreads } =
+    useThreadStore(
+      useShallow((s) => ({
+        threads: s.threads,
+        statusThreads: s.statusThreads,
+        isLoadingThreads: s.isLoadingThreads,
+        error: s.error,
+        loadThreads: s.loadThreads,
+      })),
+    );
 
   useAbortableEffect(
     (signal) => {
-      if (!projectId) return
-      void loadThreads(projectId, signal)
+      if (!projectId) return;
+      void loadThreads(projectId, signal);
     },
-    [projectId, loadThreads]
-  )
+    [projectId, loadThreads],
+  );
 
   // Signal left panel readiness when thread data is loaded or errors
   // This allows the layout to auto-expand the panel when data is ready
   useEffect(() => {
-    const isReady = statusThreads === 'success' || statusThreads === 'error'
-    useUIStore.getState().setLeftPanelReady(isReady)
-  }, [statusThreads])
+    const isReady = statusThreads === "success" || statusThreads === "error";
+    useUIStore.getState().setLeftPanelReady(isReady);
+  }, [statusThreads]);
 
   return {
     threads,
     status: statusThreads,
     isLoading: isLoadingThreads,
     error,
-  }
+  };
 }
-
