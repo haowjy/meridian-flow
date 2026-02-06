@@ -45,7 +45,7 @@ We will introduce a project-scoped “AI suggestions index” (read model) and a
   - `content = ai_version`
   - `ai_version = NULL`
   - bump `ai_version_rev` so concurrency remains consistent
-- Undo is not supported (until document versioning/snapshots exist).
+- Undo is not supported until document history snapshots exist (see `_docs/plans/fb-document-history-v1.md`).
 
 ## Proposed Architecture
 
