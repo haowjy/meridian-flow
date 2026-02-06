@@ -11,51 +11,51 @@
 /** Filtered system file entry for display */
 export interface FilteredSystemFile {
   /** Display name (e.g., ".git" not ".git/objects/abc") */
-  name: string
+  name: string;
   /** Human-readable reason for filtering */
-  reason: string
+  reason: string;
 }
 
 /** Categorized import items after selection */
 export interface ImportSelection {
   /** Individual .md/.txt/.html files - sent as multipart to target root */
-  individualFiles: File[]
+  individualFiles: File[];
 
   /** Files from folder selection - will be zipped to preserve structure */
-  folderFiles: File[]
+  folderFiles: File[];
 
   /** Root folder name if folder selected (extracted from webkitRelativePath) */
-  folderName: string | null
+  folderName: string | null;
 
   /** .zip files - sent as-is */
-  zipFiles: File[]
+  zipFiles: File[];
 
   /** Unsupported file names for warning display */
-  skippedFiles: string[]
+  skippedFiles: string[];
 
   /** System files that were filtered out (deduplicated by root) */
-  filteredSystemFiles: FilteredSystemFile[]
+  filteredSystemFiles: FilteredSystemFile[];
 }
 
 /** Item for preview display */
 export interface PreviewItem {
   /** Display name */
-  name: string
+  name: string;
 
   /** File size in bytes */
-  size: number
+  size: number;
 
   /** Type for display grouping */
-  type: 'file' | 'folder' | 'zip'
+  type: "file" | "folder" | "zip";
 
   /** Relative path within folder (for folder items) */
-  relativePath?: string
+  relativePath?: string;
 }
 
 /** Folder tree node for preview display */
 export interface FolderTreeNode {
-  name: string
-  type: 'file' | 'folder'
-  children?: FolderTreeNode[]
-  size?: number
+  name: string;
+  type: "file" | "folder";
+  children?: FolderTreeNode[];
+  size?: number;
 }

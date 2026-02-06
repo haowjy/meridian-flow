@@ -5,6 +5,6 @@
  * This module is the public API for SSE functionality.
  */
 
-export { useThreadSSE } from './useSSEConnection'
-export { dispatchSSEEvent } from './SSEEventDispatcher'
-export type { SSEDispatchContext, SSEStoreActions } from './types'
+export { useThreadSSE } from "./useSSEConnection";
+export { dispatchSSEEvent } from "./SSEEventDispatcher";
+export type { SSEDispatchContext, SSEStoreActions } from "./types";

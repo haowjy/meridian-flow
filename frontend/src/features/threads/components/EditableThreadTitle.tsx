@@ -1,12 +1,12 @@
-import { ChevronDown } from 'lucide-react'
-import { Button } from '@/shared/components/ui/button'
-import { ThreadTitleMenu } from './ThreadTitleMenu'
+import { ChevronDown } from "lucide-react";
+import { Button } from "@/shared/components/ui/button";
+import { ThreadTitleMenu } from "./ThreadTitleMenu";
 
 interface EditableThreadTitleProps {
-  threadTitle: string | null
-  onEdit: () => void
-  onRename?: () => void
-  onDelete?: () => void
+  threadTitle: string | null;
+  onEdit: () => void;
+  onRename?: () => void;
+  onDelete?: () => void;
 }
 
 /**
@@ -25,19 +25,19 @@ export function EditableThreadTitle({
   onDelete,
 }: EditableThreadTitleProps) {
   return (
-    <div className="group flex items-center min-w-0">
+    <div className="group flex min-w-0 items-center">
       {/* Title button - rounded left only */}
       <button
         type="button"
         onClick={(e) => {
-          e.stopPropagation()
-          onEdit()
+          e.stopPropagation();
+          onEdit();
         }}
-        className="min-w-0 flex items-center text-left px-1.5 h-8 rounded-l hover:bg-hover group-hover:bg-hover/50 transition-colors"
+        className="hover:bg-hover group-hover:bg-hover/50 flex h-8 min-w-0 items-center rounded-l px-1.5 text-left transition-colors"
         style={{ scrollMargin: 0 }}
       >
-        <span className="truncate font-medium text-foreground text-sm leading-none">
-          {threadTitle ?? 'Untitled Thread'}
+        <span className="text-foreground truncate text-sm leading-none font-medium">
+          {threadTitle ?? "Untitled Thread"}
         </span>
       </button>
 
@@ -51,7 +51,7 @@ export function EditableThreadTitle({
             <Button
               variant="ghost"
               size="icon"
-              className="shrink-0 h-8 w-8 rounded-l-none rounded-r hover:bg-hover group-hover:bg-hover/50"
+              className="hover:bg-hover group-hover:bg-hover/50 h-8 w-8 shrink-0 rounded-l-none rounded-r"
               aria-label="Thread options"
             >
               <ChevronDown />
@@ -63,5 +63,5 @@ export function EditableThreadTitle({
         />
       )}
     </div>
-  )
+  );
 }

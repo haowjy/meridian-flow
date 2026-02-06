@@ -15,8 +15,8 @@
  * formatWordCount(12000)   // "12k words"
  */
 export function formatWordCount(count: number): string {
-  if (count < 1000) return `${count} words`
-  return `${(count / 1000).toFixed(1)}k words`
+  if (count < 1000) return `${count} words`;
+  return `${(count / 1000).toFixed(1)}k words`;
 }
 
 /**
@@ -31,18 +31,18 @@ export function formatWordCount(count: number): string {
  * formatRelativeTime(new Date('2024-01-05'))                     // "Jan 5"
  */
 export function formatRelativeTime(date: Date): string {
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-  if (diffHours < 1) return 'Just now'
-  if (diffHours < 24) return `${diffHours}h ago`
-  if (diffDays === 1) return 'Yesterday'
-  if (diffDays < 7) return `${diffDays} days ago`
+  if (diffHours < 1) return "Just now";
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays} days ago`;
 
   // Format as "Jan 5" for older dates
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 /**
@@ -57,7 +57,7 @@ export function formatRelativeTime(date: Date): string {
  * formatFileSize(3670016)   // "3.5 MB"
  */
 export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} bytes`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes < 1024) return `${bytes} bytes`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

@@ -15,22 +15,22 @@
  * - Easy to swap for SSE later (same callback interface)
  */
 
-import { api, type AIStatusResponse } from '@/core/lib/api'
-import { useLatestRef, useResourcePolling } from '@/core/hooks'
-import type { Document } from '../types/document'
+import { api, type AIStatusResponse } from "@/core/lib/api";
+import { useLatestRef, useResourcePolling } from "@/core/hooks";
+import type { Document } from "../types/document";
 
 /**
  * Options for document polling.
  */
 export interface UseDocumentPollingOptions {
   /** Document ID to poll. Polling disabled if undefined. */
-  documentId: string | undefined
+  documentId: string | undefined;
   /** Current aiVersionRev (CAS token). Used to detect changes. */
-  currentAIVersionRev: number | null
+  currentAIVersionRev: number | null;
   /** Whether user has pending edits. Polling paused when true. */
-  hasUserEdit: boolean
+  hasUserEdit: boolean;
   /** Polling interval in ms. Default: 5000 */
-  intervalMs?: number
+  intervalMs?: number;
 }
 
 /**
@@ -38,9 +38,9 @@ export interface UseDocumentPollingOptions {
  */
 export interface UseDocumentPollingHandlers {
   /** Called when server has newer aiVersion. Receives the updated document. */
-  onAIVersionChanged: (document: Document) => void
+  onAIVersionChanged: (document: Document) => void;
   /** Called on fetch errors (optional). */
-  onError?: (error: Error) => void
+  onError?: (error: Error) => void;
 }
 
 /**
@@ -76,18 +76,18 @@ export interface UseDocumentPollingHandlers {
  */
 export function useDocumentPolling(
   options: UseDocumentPollingOptions,
-  handlers: UseDocumentPollingHandlers
+  handlers: UseDocumentPollingHandlers,
 ): void {
   const {
     documentId,
     currentAIVersionRev,
     hasUserEdit,
     intervalMs = 5000,
-  } = options
+  } = options;
 
   // Use latest refs for values that change frequently but shouldn't restart interval
-  const currentRevRef = useLatestRef(currentAIVersionRev)
-  const handlersRef = useLatestRef(handlers)
+  const currentRevRef = useLatestRef(currentAIVersionRev);
+  const handlersRef = useLatestRef(handlers);
 
   useResourcePolling<AIStatusResponse>({
     // Always poll when document is open (removed hasAIVersion condition)
@@ -100,31 +100,32 @@ export function useDocumentPolling(
 
     // Determine if AI version changed
     shouldUpdate: (status) => {
-      const newRev = status.aiVersionRev
-      const currentRev = currentRevRef.current
+      const newRev = status.aiVersionRev;
+      const currentRev = currentRevRef.current;
 
       // Case 1: AI version appeared for first time (was null, now has value)
-      if (currentRev === null && newRev !== null) return true
+      if (currentRev === null && newRev !== null) return true;
 
       // Case 2: Rev incremented (existing AI version updated)
-      if (newRev !== null && currentRev !== null && newRev !== currentRev) return true
+      if (newRev !== null && currentRev !== null && newRev !== currentRev)
+        return true;
 
-      return false
+      return false;
     },
 
     // Phase 2: On change, fetch full document then call handler
     onUpdate: async () => {
       try {
-        const doc = await api.documents.get(documentId!)
+        const doc = await api.documents.get(documentId!);
 
         // Call handler (will stash or hydrate based on hasUserEdit in caller)
         // Double-check hasn't started editing during the fetch
-        handlersRef.current.onAIVersionChanged(doc)
+        handlersRef.current.onAIVersionChanged(doc);
       } catch (err) {
-        handlersRef.current.onError?.(err as Error)
+        handlersRef.current.onError?.(err as Error);
       }
     },
 
     onError: handlers.onError,
-  })
+  });
 }

@@ -8,8 +8,13 @@
  * If the user types other content, the ghost becomes real.
  */
 
-import { StateField, StateEffect, type EditorState, type Transaction } from '@codemirror/state'
-import type { EditorView } from '@codemirror/view'
+import {
+  StateField,
+  StateEffect,
+  type EditorState,
+  type Transaction,
+} from "@codemirror/state";
+import type { EditorView } from "@codemirror/view";
 
 // ============================================================================
 // TYPES
@@ -17,9 +22,9 @@ import type { EditorView } from '@codemirror/view'
 
 export interface GhostState {
   /** Position where ghost starts (cursor position) */
-  pos: number
+  pos: number;
   /** The ghost characters (e.g., "`", "]", "]]") */
-  chars: string
+  chars: string;
 }
 
 // ============================================================================
@@ -27,10 +32,10 @@ export interface GhostState {
 // ============================================================================
 
 /** Set ghost state */
-export const setGhostEffect = StateEffect.define<GhostState | null>()
+export const setGhostEffect = StateEffect.define<GhostState | null>();
 
 /** Clear ghost state (when document changes from non-handler input) */
-export const clearGhostEffect = StateEffect.define<void>()
+export const clearGhostEffect = StateEffect.define<void>();
 
 // ============================================================================
 // STATE FIELD
@@ -41,41 +46,41 @@ export const clearGhostEffect = StateEffect.define<void>()
  */
 export const ghostField = StateField.define<GhostState | null>({
   create() {
-    return null
+    return null;
   },
 
   update(value, tr: Transaction) {
     // Check for explicit set/clear effects
     for (const effect of tr.effects) {
       if (effect.is(setGhostEffect)) {
-        return effect.value
+        return effect.value;
       }
       if (effect.is(clearGhostEffect)) {
-        return null
+        return null;
       }
     }
 
     // If document changed without our effects, clear ghost
     // (user typed something other than our handler)
-    if (tr.docChanged && !tr.effects.some(e => e.is(setGhostEffect))) {
+    if (tr.docChanged && !tr.effects.some((e) => e.is(setGhostEffect))) {
       // Check if any of our effects are present (handler dispatch)
       const hasHandlerEffect = tr.effects.some(
-        e => e.is(setGhostEffect) || e.is(clearGhostEffect)
-      )
+        (e) => e.is(setGhostEffect) || e.is(clearGhostEffect),
+      );
       if (!hasHandlerEffect) {
-        return null
+        return null;
       }
     }
 
     // Adjust position if document changed
     if (value && tr.docChanged) {
-      const newPos = tr.changes.mapPos(value.pos)
-      return { ...value, pos: newPos }
+      const newPos = tr.changes.mapPos(value.pos);
+      return { ...value, pos: newPos };
     }
 
-    return value
+    return value;
   },
-})
+});
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -85,7 +90,7 @@ export const ghostField = StateField.define<GhostState | null>({
  * Get current ghost state from editor state
  */
 export function getGhost(state: EditorState): GhostState | null {
-  return state.field(ghostField)
+  return state.field(ghostField);
 }
 
 /**
@@ -94,7 +99,7 @@ export function getGhost(state: EditorState): GhostState | null {
 export function setGhost(view: EditorView, ghost: GhostState | null): void {
   view.dispatch({
     effects: setGhostEffect.of(ghost),
-  })
+  });
 }
 
 /**
@@ -103,7 +108,7 @@ export function setGhost(view: EditorView, ghost: GhostState | null): void {
 export function clearGhost(view: EditorView): void {
   view.dispatch({
     effects: clearGhostEffect.of(undefined),
-  })
+  });
 }
 
 /**
@@ -112,20 +117,22 @@ export function clearGhost(view: EditorView): void {
  */
 export function dispatchWithGhost(
   view: EditorView,
-  changes: Parameters<EditorView['dispatch']>[0],
-  ghost: GhostState | null
+  changes: Parameters<EditorView["dispatch"]>[0],
+  ghost: GhostState | null,
 ): void {
-  const ghostEffect = ghost ? setGhostEffect.of(ghost) : clearGhostEffect.of(undefined)
+  const ghostEffect = ghost
+    ? setGhostEffect.of(ghost)
+    : clearGhostEffect.of(undefined);
 
   // Handle effects which can be a single effect or an array
   const existingEffects = changes.effects
     ? Array.isArray(changes.effects)
       ? changes.effects
       : [changes.effects]
-    : []
+    : [];
 
   view.dispatch({
     ...changes,
     effects: [...existingEffects, ghostEffect],
-  })
+  });
 }

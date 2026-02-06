@@ -10,7 +10,7 @@
 // =============================================================================
 
 /** Available doc_edit commands */
-export type DocEditCommand = 'str_replace' | 'insert' | 'append' | 'create'
+export type DocEditCommand = "str_replace" | "insert" | "append" | "create";
 
 /**
  * Input schema for doc_edit tool.
@@ -18,17 +18,17 @@ export type DocEditCommand = 'str_replace' | 'insert' | 'append' | 'create'
  */
 export interface DocEditInput {
   /** The edit command type */
-  command: DocEditCommand
+  command: DocEditCommand;
   /** Unix-style document path (e.g., "/Chapter 5.md", "/Characters/Hero.md") */
-  path: string
+  path: string;
   /** Text to find and replace (str_replace only) */
-  old_str?: string
+  old_str?: string;
   /** New text to insert/replace with (str_replace, insert, append) */
-  new_str?: string
+  new_str?: string;
   /** Line number for insertion (insert only, 0 = start of file) */
-  insert_line?: number
+  insert_line?: number;
   /** Full file content (create only) */
-  file_text?: string
+  file_text?: string;
 }
 
 // =============================================================================
@@ -39,28 +39,28 @@ export interface DocEditInput {
  * Success result from doc_edit tool.
  */
 export interface DocEditSuccessResult {
-  path: string
-  message: string
+  path: string;
+  message: string;
 }
 
 /**
  * Error codes returned by doc_edit tool.
  */
 export type DocEditErrorCode =
-  | 'NO_MATCH'
-  | 'AMBIGUOUS_MATCH'
-  | 'DOC_NOT_FOUND'
-  | 'INVALID_LINE'
-  | 'ALREADY_EXISTS'
+  | "NO_MATCH"
+  | "AMBIGUOUS_MATCH"
+  | "DOC_NOT_FOUND"
+  | "INVALID_LINE"
+  | "ALREADY_EXISTS";
 
 /**
  * Error result from doc_edit tool.
  */
 export interface DocEditErrorResult {
-  success: false
-  error_code: DocEditErrorCode
-  message: string
-  error_data?: Record<string, unknown>
+  success: false;
+  error_code: DocEditErrorCode;
+  message: string;
+  error_data?: Record<string, unknown>;
 }
 
 // =============================================================================
@@ -69,8 +69,8 @@ export interface DocEditErrorResult {
 
 /** Human-readable labels for each command type */
 export const COMMAND_LABELS: Record<DocEditCommand, string> = {
-  str_replace: 'Replace',
-  insert: 'Insert',
-  append: 'Append',
-  create: 'Create',
-}
+  str_replace: "Replace",
+  insert: "Insert",
+  append: "Append",
+  create: "Create",
+};

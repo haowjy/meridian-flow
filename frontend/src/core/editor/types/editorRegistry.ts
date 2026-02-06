@@ -17,11 +17,11 @@
  * Extensible - add new types as needed.
  */
 export type EditorType =
-  | 'markdown'
-  | 'latex'
-  | 'plaintext'
-  | 'excalidraw'
-  | 'mermaid'
+  | "markdown"
+  | "latex"
+  | "plaintext"
+  | "excalidraw"
+  | "mermaid";
 
 // ============================================================================
 // BASE INTERFACES
@@ -42,13 +42,16 @@ export type EditorType =
  */
 export interface BaseEditorRef<TContent = string | object> {
   /** Get current content (format depends on editor type) */
-  getContent(): TContent
+  getContent(): TContent;
   /** Set content (format depends on editor type) */
-  setContent(content: TContent, options?: { addToHistory?: boolean; emitChange?: boolean }): void
+  setContent(
+    content: TContent,
+    options?: { addToHistory?: boolean; emitChange?: boolean },
+  ): void;
   /** Set editable state (read-only vs editable) */
-  setEditable(editable: boolean): void
+  setEditable(editable: boolean): void;
   /** Focus the editor */
-  focus(): void
+  focus(): void;
 }
 
 // ============================================================================
@@ -61,11 +64,11 @@ export interface BaseEditorRef<TContent = string | object> {
  */
 export interface EditorDefinition {
   /** Editor type identifier */
-  type: EditorType
+  type: EditorType;
   /** Human-readable label */
-  label: string
+  label: string;
   /** File extensions this editor handles (e.g., ['.md', '.markdown']) */
-  extensions: string[]
+  extensions: string[];
   // Component and toolbar will be added when implementing specific editors
 }
 
@@ -87,25 +90,25 @@ export interface EditorDefinition {
  * detectEditorType('flowchart.mmd') // 'mermaid'
  */
 export function detectEditorType(filename: string): EditorType {
-  const ext = filename.split('.').pop()?.toLowerCase()
+  const ext = filename.split(".").pop()?.toLowerCase();
 
   switch (ext) {
-    case 'excalidraw':
-      return 'excalidraw'
-    case 'mmd':
-    case 'mermaid':
-      return 'mermaid'
-    case 'tex':
-    case 'latex':
-      return 'latex'
-    case 'txt':
-      return 'plaintext'
-    case 'md':
-    case 'markdown':
-      return 'markdown'
+    case "excalidraw":
+      return "excalidraw";
+    case "mmd":
+    case "mermaid":
+      return "mermaid";
+    case "tex":
+    case "latex":
+      return "latex";
+    case "txt":
+      return "plaintext";
+    case "md":
+    case "markdown":
+      return "markdown";
     default:
       // Default to markdown for unknown extensions
-      return 'markdown'
+      return "markdown";
   }
 }
 

@@ -1,18 +1,24 @@
-import { useEffect, useLayoutEffect, useRef, forwardRef, useImperativeHandle } from 'react'
-import { cn } from '@/lib/utils'
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
+import { cn } from "@/lib/utils";
 
-const MIN_HEIGHT = 48  // ~2 lines
-const MAX_HEIGHT = 200 // ~8 lines, then internal scroll
+const MIN_HEIGHT = 48; // ~2 lines
+const MAX_HEIGHT = 200; // ~8 lines, then internal scroll
 
 interface AutosizeTextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
-    value: string
-    onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
-    /** Optional override for autosize clamp. Defaults to MIN_HEIGHT. */
-    minHeight?: number | string
-    /** Optional override for autosize clamp. Defaults to MAX_HEIGHT. */
-    maxHeight?: number | string
-    /** When this value changes, focus the textarea. Parent controls timing, component handles mechanics. */
-    focusKey?: string | null
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  /** Optional override for autosize clamp. Defaults to MIN_HEIGHT. */
+  minHeight?: number | string;
+  /** Optional override for autosize clamp. Defaults to MAX_HEIGHT. */
+  maxHeight?: number | string;
+  /** When this value changes, focus the textarea. Parent controls timing, component handles mechanics. */
+  focusKey?: string | null;
 }
 
 /**
@@ -22,7 +28,11 @@ interface AutosizeTextareaProps extends React.TextareaHTMLAttributes<HTMLTextAre
  * Works with absolute-positioned composer (outside scroll container) to prevent
  * browser caret-tracking from affecting the thread scroll position.
  */
-export const AutosizeTextarea = forwardRef<HTMLTextAreaElement, AutosizeTextareaProps>(function AutosizeTextarea({
+export const AutosizeTextarea = forwardRef<
+  HTMLTextAreaElement,
+  AutosizeTextareaProps
+>(function AutosizeTextarea(
+  {
     value,
     onChange,
     minHeight = MIN_HEIGHT,
@@ -30,65 +40,67 @@ export const AutosizeTextarea = forwardRef<HTMLTextAreaElement, AutosizeTextarea
     focusKey,
     className,
     ...props
-}, forwardedRef) {
-    const ref = useRef<HTMLTextAreaElement | null>(null)
+  },
+  forwardedRef,
+) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
 
-    // Expose the internal ref to the parent component
-    useImperativeHandle(forwardedRef, () => ref.current!, [])
+  // Expose the internal ref to the parent component
+  useImperativeHandle(forwardedRef, () => ref.current!, []);
 
-    // Focus when focusKey changes (parent controls timing, component handles mechanics)
-    // Positions cursor at end of text for better UX when editing existing content
-    useEffect(() => {
-        if (!focusKey) return  // Only focus when focusKey is truthy
-        requestAnimationFrame(() => {
-            const el = ref.current
-            if (!el) return
-            try {
-                el.focus({ preventScroll: true })
-            } catch {
-                // Older browsers may not support preventScroll
-                el.focus()
-            }
-            // Position cursor at end of text
-            const len = el.value.length
-            el.setSelectionRange(len, len)
-        })
-    }, [focusKey])
+  // Focus when focusKey changes (parent controls timing, component handles mechanics)
+  // Positions cursor at end of text for better UX when editing existing content
+  useEffect(() => {
+    if (!focusKey) return; // Only focus when focusKey is truthy
+    requestAnimationFrame(() => {
+      const el = ref.current;
+      if (!el) return;
+      try {
+        el.focus({ preventScroll: true });
+      } catch {
+        // Older browsers may not support preventScroll
+        el.focus();
+      }
+      // Position cursor at end of text
+      const len = el.value.length;
+      el.setSelectionRange(len, len);
+    });
+  }, [focusKey]);
 
-    const minPx = typeof minHeight === 'number' ? minHeight : MIN_HEIGHT
-    const maxPx = typeof maxHeight === 'number' ? maxHeight : MAX_HEIGHT
+  const minPx = typeof minHeight === "number" ? minHeight : MIN_HEIGHT;
+  const maxPx = typeof maxHeight === "number" ? maxHeight : MAX_HEIGHT;
 
-    // Auto-resize based on content, clamped between minPx and maxPx.
-    // Only numeric maxHeight participates in JS clamping; string maxHeight relies on CSS.
-    useLayoutEffect(() => {
-        const el = ref.current
-        if (!el) return
+  // Auto-resize based on content, clamped between minPx and maxPx.
+  // Only numeric maxHeight participates in JS clamping; string maxHeight relies on CSS.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
 
-        // Reset height to auto to measure actual scrollHeight
-        el.style.height = 'auto'
-        const next = Math.min(Math.max(el.scrollHeight, minPx), maxPx)
-        el.style.height = `${next}px`
-    }, [value, minPx, maxPx])
+    // Reset height to auto to measure actual scrollHeight
+    el.style.height = "auto";
+    const next = Math.min(Math.max(el.scrollHeight, minPx), maxPx);
+    el.style.height = `${next}px`;
+  }, [value, minPx, maxPx]);
 
-    return (
-        <textarea
-            ref={ref}
-            rows={1}
-            className={cn(
-                // Auto-expanding with max height - scrolls internally when exceeded
-                "overflow-y-auto",
-                "w-full resize-none bg-transparent px-2 py-1.5 text-base md:text-sm",
-                "placeholder:text-muted-foreground/60",
-                "outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus:ring-offset-0",
-                className
-            )}
-            style={{
-                minHeight: typeof minHeight === 'number' ? minHeight : undefined,
-                maxHeight: typeof maxHeight === 'number' ? maxHeight : maxHeight,
-            }}
-            value={value}
-            onChange={onChange}
-            {...props}
-        />
-    )
-})
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      className={cn(
+        // Auto-expanding with max height - scrolls internally when exceeded
+        "overflow-y-auto",
+        "w-full resize-none bg-transparent px-2 py-1.5 text-base md:text-sm",
+        "placeholder:text-muted-foreground/60",
+        "outline-none focus:ring-0 focus:ring-offset-0 focus:outline-none focus-visible:outline-none",
+        className,
+      )}
+      style={{
+        minHeight: typeof minHeight === "number" ? minHeight : undefined,
+        maxHeight: typeof maxHeight === "number" ? maxHeight : maxHeight,
+      }}
+      value={value}
+      onChange={onChange}
+      {...props}
+    />
+  );
+});

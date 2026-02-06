@@ -1,7 +1,7 @@
-import * as React from "react"
-import { cva, type VariantProps } from "class-variance-authority"
-import { cn } from "@/lib/utils"
-import { Label } from "./label"
+import * as React from "react";
+import { cva, type VariantProps } from "class-variance-authority";
+import { cn } from "@/lib/utils";
+import { Label } from "./label";
 
 /**
  * EditorForm - Reusable form components for editor/workspace contexts.
@@ -29,9 +29,9 @@ import { Label } from "./label"
 
 interface EditorFormSectionProps {
   /** Optional title displayed above the section */
-  title?: string
-  className?: string
-  children: React.ReactNode
+  title?: string;
+  className?: string;
+  children: React.ReactNode;
 }
 
 /**
@@ -46,13 +46,13 @@ function EditorFormSection({
   return (
     <div className={cn("space-y-4", className)}>
       {title && (
-        <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        <h3 className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
           {title}
         </h3>
       )}
       {children}
     </div>
-  )
+  );
 }
 
 // =============================================================================
@@ -61,17 +61,17 @@ function EditorFormSection({
 
 interface EditorFormFieldProps {
   /** Label text displayed above the input */
-  label: string
+  label: string;
   /** ID of the input element for label association */
-  htmlFor: string
+  htmlFor: string;
   /** Optional hint text displayed below the label */
-  hint?: string
+  hint?: string;
   /** Optional validation error message */
-  error?: string
+  error?: string;
   /** Optional leading element (e.g., "/" prefix for commands) */
-  leading?: React.ReactNode
-  className?: string
-  children: React.ReactNode
+  leading?: React.ReactNode;
+  className?: string;
+  children: React.ReactNode;
 }
 
 /**
@@ -93,11 +93,17 @@ function EditorFormField({
           {label}
         </Label>
         {/* Always render span to prevent vertical shift - invisible when no content */}
-        <span className={cn(
-          "text-xs",
-          error ? "text-destructive" : hint ? "text-muted-foreground/70" : "invisible"
-        )}>
-          {error || hint || '\u00A0'}
+        <span
+          className={cn(
+            "text-xs",
+            error
+              ? "text-destructive"
+              : hint
+                ? "text-muted-foreground/70"
+                : "invisible",
+          )}
+        >
+          {error || hint || "\u00A0"}
         </span>
       </div>
       {leading ? (
@@ -109,7 +115,7 @@ function EditorFormField({
         children
       )}
     </div>
-  )
+  );
 }
 
 // =============================================================================
@@ -141,7 +147,8 @@ const editorInputVariants = cva(
       },
       state: {
         default: "",
-        error: "border-destructive hover:border-destructive focus-visible:border-destructive",
+        error:
+          "border-destructive hover:border-destructive focus-visible:border-destructive",
       },
     },
     defaultVariants: {
@@ -149,11 +156,12 @@ const editorInputVariants = cva(
       accent: "none",
       state: "default",
     },
-  }
-)
+  },
+);
 
 interface EditorFormInputProps
-  extends Omit<React.ComponentProps<"input">, "size">,
+  extends
+    Omit<React.ComponentProps<"input">, "size">,
     VariantProps<typeof editorInputVariants> {}
 
 /**
@@ -161,31 +169,35 @@ interface EditorFormInputProps
  * Uses bg-card background with inner shadow for "pressed in" depth effect.
  * Optional left accent border for hero fields.
  */
-const EditorFormInput = React.forwardRef<HTMLInputElement, EditorFormInputProps>(
-  ({ className, size, accent, state, type, ...props }, ref) => {
-    return (
-      <input
-        ref={ref}
-        type={type}
-        data-slot="editor-input"
-        className={cn("bg-card", editorInputVariants({ size, accent, state, className }))}
-        style={{
-          // Inset shadow for depth (well effect)
-          boxShadow: 'var(--editor-inset-shadow)',
-        }}
-        {...props}
-      />
-    )
-  }
-)
-EditorFormInput.displayName = 'EditorFormInput'
+const EditorFormInput = React.forwardRef<
+  HTMLInputElement,
+  EditorFormInputProps
+>(({ className, size, accent, state, type, ...props }, ref) => {
+  return (
+    <input
+      ref={ref}
+      type={type}
+      data-slot="editor-input"
+      className={cn(
+        "bg-card",
+        editorInputVariants({ size, accent, state, className }),
+      )}
+      style={{
+        // Inset shadow for depth (well effect)
+        boxShadow: "var(--editor-inset-shadow)",
+      }}
+      {...props}
+    />
+  );
+});
+EditorFormInput.displayName = "EditorFormInput";
 
 // =============================================================================
 // EditorFormTextarea
 // =============================================================================
 
 interface EditorFormTextareaProps extends React.ComponentProps<"textarea"> {
-  state?: 'default' | 'error'
+  state?: "default" | "error";
 }
 
 /**
@@ -195,7 +207,7 @@ interface EditorFormTextareaProps extends React.ComponentProps<"textarea"> {
  */
 function EditorFormTextarea({
   className,
-  state = 'default',
+  state = "default",
   ...props
 }: EditorFormTextareaProps) {
   return (
@@ -203,26 +215,32 @@ function EditorFormTextarea({
       data-slot="editor-textarea"
       className={cn(
         // Base styles: inset well effect with bg-card background
-        "w-full min-w-0 placeholder:text-muted-foreground bg-card",
-        "border border-editor-input-border rounded-md",
+        "placeholder:text-muted-foreground bg-card w-full min-w-0",
+        "border-editor-input-border rounded-md border",
         "px-3 py-2 text-base transition-all outline-none",
         "disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-[--opacity-disabled]",
-        "md:text-sm font-sans resize-none",
+        "resize-none font-sans md:text-sm",
         // Hover: subtle border enhancement
         "hover:border-primary/30",
         // Focus: primary border (green/sage highlight)
         "focus-visible:border-primary focus-visible:outline-none",
         // Error state
-        state === 'error' && "border-destructive hover:border-destructive focus-visible:border-destructive",
-        className
+        state === "error" &&
+          "border-destructive hover:border-destructive focus-visible:border-destructive",
+        className,
       )}
       style={{
         // Inset shadow for depth (well effect)
-        boxShadow: 'var(--editor-inset-shadow)',
+        boxShadow: "var(--editor-inset-shadow)",
       }}
       {...props}
     />
-  )
+  );
 }
 
-export { EditorFormField, EditorFormInput, EditorFormTextarea, EditorFormSection }
+export {
+  EditorFormField,
+  EditorFormInput,
+  EditorFormTextarea,
+  EditorFormSection,
+};

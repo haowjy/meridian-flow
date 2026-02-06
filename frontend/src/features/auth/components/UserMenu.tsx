@@ -1,23 +1,23 @@
-import type { ReactNode } from 'react'
-import { Link } from '@tanstack/react-router'
+import type { ReactNode } from "react";
+import { Link } from "@tanstack/react-router";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/shared/components/ui/dropdown-menu'
-import type { UserMenuItemConfig } from '../types'
+} from "@/shared/components/ui/dropdown-menu";
+import type { UserMenuItemConfig } from "../types";
 
 /**
  * Props receive menu items - Open/Closed principle.
  * Add new items by passing different array, not modifying this component.
  */
 interface UserMenuProps {
-  trigger: ReactNode
-  items: UserMenuItemConfig[]
-  side?: 'top' | 'bottom' | 'left' | 'right'
-  align?: 'start' | 'center' | 'end'
+  trigger: ReactNode;
+  items: UserMenuItemConfig[];
+  side?: "top" | "bottom" | "left" | "right";
+  align?: "start" | "center" | "end";
 }
 
 /**
@@ -28,11 +28,11 @@ interface UserMenuProps {
 export function UserMenu({
   trigger,
   items,
-  side = 'top',
-  align = 'start',
+  side = "top",
+  align = "start",
 }: UserMenuProps) {
   if (items.length === 0) {
-    return <>{trigger}</>
+    return <>{trigger}</>;
   }
 
   return (
@@ -41,16 +41,20 @@ export function UserMenu({
       <DropdownMenuContent side={side} align={align}>
         {items.map((item, index) => {
           const showSeparatorBefore =
-            item.separator === 'before' || item.separator === 'both'
+            item.separator === "before" || item.separator === "both";
           const showSeparatorAfter =
-            item.separator === 'after' || item.separator === 'both'
+            item.separator === "after" || item.separator === "both";
 
           return (
             <div key={item.id}>
               {showSeparatorBefore && index > 0 && <DropdownMenuSeparator />}
               {item.href ? (
                 // Use Link for proper router history integration (enables useCanGoBack)
-                <DropdownMenuItem asChild variant={item.variant} disabled={item.disabled}>
+                <DropdownMenuItem
+                  asChild
+                  variant={item.variant}
+                  disabled={item.disabled}
+                >
                   <Link to={item.href}>
                     {item.icon && <span className="mr-2">{item.icon}</span>}
                     <span>{item.label}</span>
@@ -70,9 +74,9 @@ export function UserMenu({
                 <DropdownMenuSeparator />
               )}
             </div>
-          )
+          );
         })}
       </DropdownMenuContent>
     </DropdownMenu>
-  )
+  );
 }

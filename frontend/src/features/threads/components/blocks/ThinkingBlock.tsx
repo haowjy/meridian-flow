@@ -1,18 +1,18 @@
-import React from 'react'
-import { useShallow } from 'zustand/react/shallow'
-import { cn } from '@/lib/utils'
-import type { TurnBlock } from '@/features/threads/types'
-import { useThreadStore } from '@/core/stores/useThreadStore'
-import { Streamdown, defaultRehypePlugins } from 'streamdown'
+import React from "react";
+import { useShallow } from "zustand/react/shallow";
+import { cn } from "@/lib/utils";
+import type { TurnBlock } from "@/features/threads/types";
+import { useThreadStore } from "@/core/stores/useThreadStore";
+import { Streamdown, defaultRehypePlugins } from "streamdown";
 
 // Omit rehype-raw to prevent XML tags from being interpreted as HTML elements
 const rehypePlugins = [
   defaultRehypePlugins.katex,
   defaultRehypePlugins.harden,
-].filter(Boolean) as NonNullable<typeof defaultRehypePlugins.katex>[]
+].filter(Boolean) as NonNullable<typeof defaultRehypePlugins.katex>[];
 
 interface ThinkingBlockProps {
-  block: TurnBlock
+  block: TurnBlock;
 }
 
 /**
@@ -21,35 +21,51 @@ interface ThinkingBlockProps {
  * TODO: Implement collapsible thinking blocks for Claude's reasoning process.
  * This is a placeholder for future extended thinking feature.
  */
-export const ThinkingBlock = React.memo(function ThinkingBlock({ block }: ThinkingBlockProps) {
-  const text = block.textContent ?? ''
+export const ThinkingBlock = React.memo(function ThinkingBlock({
+  block,
+}: ThinkingBlockProps) {
+  const text = block.textContent ?? "";
 
-  const { streamingTurnId, streamingBlockIndex, streamingBlockType } = useThreadStore(
-    useShallow((s) => ({
-      streamingTurnId: s.streamingTurnId,
-      streamingBlockIndex: s.streamingBlockIndex,
-      streamingBlockType: s.streamingBlockType,
-    }))
-  )
+  const { streamingTurnId, streamingBlockIndex, streamingBlockType } =
+    useThreadStore(
+      useShallow((s) => ({
+        streamingTurnId: s.streamingTurnId,
+        streamingBlockIndex: s.streamingBlockIndex,
+        streamingBlockType: s.streamingBlockType,
+      })),
+    );
 
   const isStreamingThinking =
     streamingTurnId === block.turnId &&
-    streamingBlockType === 'thinking' &&
-    streamingBlockIndex === block.sequence
+    streamingBlockType === "thinking" &&
+    streamingBlockIndex === block.sequence;
 
   return (
-    <details className={cn(
-      "my-2 border-l-2 bg-muted/30 rounded text-sm text-muted-foreground",
-      isStreamingThinking ? "animate-generating-border-shimmer" : "border-muted-foreground/30"
-    )}>
-      <summary className="cursor-pointer font-medium px-3 py-2">
-        <span className={isStreamingThinking ? 'animate-generating-shimmer' : undefined}>
+    <details
+      className={cn(
+        "bg-muted/30 text-muted-foreground my-2 rounded border-l-2 text-sm",
+        isStreamingThinking
+          ? "animate-generating-border-shimmer"
+          : "border-muted-foreground/30",
+      )}
+    >
+      <summary className="cursor-pointer px-3 py-2 font-medium">
+        <span
+          className={
+            isStreamingThinking ? "animate-generating-shimmer" : undefined
+          }
+        >
           Thinking...
         </span>
       </summary>
-      <div className="mt-1 px-3 pb-3 whitespace-pre-wrap break-words">
-        <Streamdown className="whitespace-pre-wrap break-words" rehypePlugins={rehypePlugins}>{text}</Streamdown>
+      <div className="mt-1 px-3 pb-3 break-words whitespace-pre-wrap">
+        <Streamdown
+          className="break-words whitespace-pre-wrap"
+          rehypePlugins={rehypePlugins}
+        >
+          {text}
+        </Streamdown>
       </div>
     </details>
-  )
-})
+  );
+});

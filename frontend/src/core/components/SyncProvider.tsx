@@ -1,5 +1,8 @@
-import { useEffect } from 'react'
-import { initializeRetryProcessor, cleanupRetryProcessor } from '@/core/lib/sync'
+import { useEffect } from "react";
+import {
+  initializeRetryProcessor,
+  cleanupRetryProcessor,
+} from "@/core/lib/sync";
 
 /**
  * Provider component that initializes the retry processor.
@@ -13,14 +16,14 @@ import { initializeRetryProcessor, cleanupRetryProcessor } from '@/core/lib/sync
 export function SyncProvider() {
   useEffect(() => {
     // Initialize retry processor when component mounts
-    initializeRetryProcessor()
+    initializeRetryProcessor();
 
     // Cleanup on unmount
     return () => {
-      cleanupRetryProcessor()
-    }
-  }, [])
+      cleanupRetryProcessor();
+    };
+  }, []);
 
   // This component doesn't render anything
-  return null
+  return null;
 }

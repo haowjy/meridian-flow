@@ -7,17 +7,17 @@
  */
 
 // Constants synced with backend
-export const RESERVED_ROOT_FOLDER_NAMES = ['.meridian', '.session'] as const
-export const MAX_NAME_LENGTH = 255
+export const RESERVED_ROOT_FOLDER_NAMES = [".meridian", ".session"] as const;
+export const MAX_NAME_LENGTH = 255;
 
-export type ValidationType = 'folder' | 'document'
+export type ValidationType = "folder" | "document";
 
 export interface ValidationOptions {
-  type?: ValidationType
-  isRootLevel?: boolean
-  existingNames?: string[]
-  currentName?: string  // For rename validation (exclude self from duplicate check)
-  allowDuplicates?: boolean
+  type?: ValidationType;
+  isRootLevel?: boolean;
+  existingNames?: string[];
+  currentName?: string; // For rename validation (exclude self from duplicate check)
+  allowDuplicates?: boolean;
 }
 
 /**
@@ -25,9 +25,9 @@ export interface ValidationOptions {
  */
 export function validateNotEmpty(name: string): string | null {
   if (!name.trim()) {
-    return 'Name cannot be empty'
+    return "Name cannot be empty";
   }
-  return null
+  return null;
 }
 
 /**
@@ -35,10 +35,10 @@ export function validateNotEmpty(name: string): string | null {
  * Matches backend regex: ^[^/]+$
  */
 export function validateNoSlashes(name: string): string | null {
-  if (name.includes('/')) {
-    return 'Name cannot contain slashes'
+  if (name.includes("/")) {
+    return "Name cannot contain slashes";
   }
-  return null
+  return null;
 }
 
 /**
@@ -47,9 +47,9 @@ export function validateNoSlashes(name: string): string | null {
  */
 export function validateMaxLength(name: string): string | null {
   if (name.length > MAX_NAME_LENGTH) {
-    return `Name cannot exceed ${MAX_NAME_LENGTH} characters`
+    return `Name cannot exceed ${MAX_NAME_LENGTH} characters`;
   }
-  return null
+  return null;
 }
 
 /**
@@ -59,17 +59,17 @@ export function validateMaxLength(name: string): string | null {
  */
 export function validateNotReserved(
   name: string,
-  options: Pick<ValidationOptions, 'type' | 'isRootLevel'>
+  options: Pick<ValidationOptions, "type" | "isRootLevel">,
 ): string | null {
-  if (options.type === 'folder' && options.isRootLevel) {
+  if (options.type === "folder" && options.isRootLevel) {
     const isReserved = RESERVED_ROOT_FOLDER_NAMES.some(
-      reserved => reserved.toLowerCase() === name.toLowerCase()
-    )
+      (reserved) => reserved.toLowerCase() === name.toLowerCase(),
+    );
     if (isReserved) {
-      return `'${name}' is a reserved folder name and cannot be created at root level`
+      return `'${name}' is a reserved folder name and cannot be created at root level`;
     }
   }
-  return null
+  return null;
 }
 
 /**
@@ -78,26 +78,29 @@ export function validateNotReserved(
  */
 export function validateNotDuplicate(
   name: string,
-  options: Pick<ValidationOptions, 'existingNames' | 'currentName' | 'allowDuplicates'>
+  options: Pick<
+    ValidationOptions,
+    "existingNames" | "currentName" | "allowDuplicates"
+  >,
 ): string | null {
   if (options.allowDuplicates) {
-    return null
+    return null;
   }
 
-  const existingNames = options.existingNames ?? []
-  const currentName = options.currentName ?? ''
+  const existingNames = options.existingNames ?? [];
+  const currentName = options.currentName ?? "";
 
   const isDuplicate = existingNames.some(
     (existing) =>
       existing.toLowerCase() === name.toLowerCase() &&
-      existing.toLowerCase() !== currentName.toLowerCase()
-  )
+      existing.toLowerCase() !== currentName.toLowerCase(),
+  );
 
   if (isDuplicate) {
-    return 'A file or folder with this name already exists'
+    return "A file or folder with this name already exists";
   }
 
-  return null
+  return null;
 }
 
 /**
@@ -106,9 +109,9 @@ export function validateNotDuplicate(
  */
 export function validateName(
   name: string,
-  options: ValidationOptions = {}
+  options: ValidationOptions = {},
 ): string | null {
-  const trimmed = name.trim()
+  const trimmed = name.trim();
 
   // Run validators in order (fail fast)
   const error =
@@ -116,7 +119,7 @@ export function validateName(
     validateNoSlashes(trimmed) ||
     validateMaxLength(trimmed) ||
     validateNotReserved(trimmed, options) ||
-    validateNotDuplicate(trimmed, options)
+    validateNotDuplicate(trimmed, options);
 
-  return error
+  return error;
 }

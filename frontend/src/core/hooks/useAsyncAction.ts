@@ -1,12 +1,12 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useState } from "react";
 
 /**
  * State for an async action.
  */
 export interface AsyncActionState<T> {
-  data: T | null
-  loading: boolean
-  error: Error | null
+  data: T | null;
+  loading: boolean;
+  error: Error | null;
 }
 
 /**
@@ -28,31 +28,31 @@ export interface AsyncActionState<T> {
  * ```
  */
 export function useAsyncAction<T, Args extends unknown[]>(
-  action: (...args: Args) => Promise<T>
+  action: (...args: Args) => Promise<T>,
 ): [AsyncActionState<T>, (...args: Args) => Promise<void>] {
   const [state, setState] = useState<AsyncActionState<T>>({
     data: null,
     loading: false,
     error: null,
-  })
+  });
 
   const execute = useCallback(
     async (...args: Args) => {
-      setState({ data: null, loading: true, error: null })
+      setState({ data: null, loading: true, error: null });
 
       try {
-        const result = await action(...args)
-        setState({ data: result, loading: false, error: null })
+        const result = await action(...args);
+        setState({ data: result, loading: false, error: null });
       } catch (error) {
         setState({
           data: null,
           loading: false,
-          error: error instanceof Error ? error : new Error('Unknown error'),
-        })
+          error: error instanceof Error ? error : new Error("Unknown error"),
+        });
       }
     },
-    [action]
-  )
+    [action],
+  );
 
-  return [state, execute]
+  return [state, execute];
 }

@@ -13,27 +13,27 @@
  * - Preview boxes (with useDocumentSync, VSCode peek-style)
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { useEditorStore } from '@/core/stores/useEditorStore'
-import { useLatestRef } from '@/core/hooks'
-import { getAdapter } from '@/core/editor/adapters'
-import { detectEditorType } from '@/core/editor/types/editorRegistry'
-import type { BaseEditorRef } from '@/core/editor/types/editorRegistry'
+import { useEffect, useRef, useState, useCallback } from "react";
+import { useEditorStore } from "@/core/stores/useEditorStore";
+import { useLatestRef } from "@/core/hooks";
+import { getAdapter } from "@/core/editor/adapters";
+import { detectEditorType } from "@/core/editor/types/editorRegistry";
+import type { BaseEditorRef } from "@/core/editor/types/editorRegistry";
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
 interface HydrationInput {
-  content: string
-  aiVersion: string | null | undefined
-  aiVersionRev: number | null | undefined
+  content: string;
+  aiVersion: string | null | undefined;
+  aiVersionRev: number | null | undefined;
 }
 
 interface PendingSnapshot {
-  content: string
-  aiVersion: string | null | undefined
-  aiVersionRev: number | null | undefined
+  content: string;
+  aiVersion: string | null | undefined;
+  aiVersionRev: number | null | undefined;
 }
 
 /**
@@ -44,16 +44,18 @@ interface PendingSnapshot {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface DocumentSyncContext<TEditor = any> {
-  aiVersionBaseRevRef: React.MutableRefObject<number | null>
-  serverHasAIVersionRef: React.MutableRefObject<boolean>
-  pendingServerSnapshot: PendingSnapshot | null
-  setPendingServerSnapshot: (snapshot: PendingSnapshot | null) => void
-  setHasUserEdit: (value: boolean) => void
+  aiVersionBaseRevRef: React.MutableRefObject<number | null>;
+  serverHasAIVersionRef: React.MutableRefObject<boolean>;
+  pendingServerSnapshot: PendingSnapshot | null;
+  setPendingServerSnapshot: (snapshot: PendingSnapshot | null) => void;
+  setHasUserEdit: (value: boolean) => void;
   // Refs for cleanup effects (stale closure prevention)
-  localDocumentRef: React.MutableRefObject<TEditor>
-  hasUserEditRef: React.MutableRefObject<boolean>
-  initializedRef: React.MutableRefObject<boolean>
-  activeDocumentRef: React.MutableRefObject<ReturnType<typeof useEditorStore.getState>['activeDocument']>
+  localDocumentRef: React.MutableRefObject<TEditor>;
+  hasUserEditRef: React.MutableRefObject<boolean>;
+  initializedRef: React.MutableRefObject<boolean>;
+  activeDocumentRef: React.MutableRefObject<
+    ReturnType<typeof useEditorStore.getState>["activeDocument"]
+  >;
 }
 
 /**
@@ -64,24 +66,24 @@ export interface DocumentSyncContext<TEditor = any> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface UseDocumentContentResult<TEditor = any> {
   // Content state
-  localDocument: TEditor
-  setLocalDocument: (content: TEditor) => void
-  isInitialized: boolean
-  isEditable: boolean
-  isEditorReady: boolean
-  hasAISuggestions: boolean
+  localDocument: TEditor;
+  setLocalDocument: (content: TEditor) => void;
+  isInitialized: boolean;
+  isEditable: boolean;
+  isEditorReady: boolean;
+  hasAISuggestions: boolean;
 
   // Dirty tracking
-  hasUserEdit: boolean
-  setHasUserEdit: (value: boolean) => void
+  hasUserEdit: boolean;
+  setHasUserEdit: (value: boolean) => void;
 
   // Editor lifecycle
-  handleEditorReady: (ref: BaseEditorRef<TEditor>) => void
-  handleContentChange: (content: TEditor) => void
-  hydrateDocument: (doc: HydrationInput) => void
+  handleEditorReady: (ref: BaseEditorRef<TEditor>) => void;
+  handleContentChange: (content: TEditor) => void;
+  hydrateDocument: (doc: HydrationInput) => void;
 
   // For composition (sync hook needs these)
-  syncContext: DocumentSyncContext<TEditor>
+  syncContext: DocumentSyncContext<TEditor>;
 }
 
 // =============================================================================
@@ -101,20 +103,16 @@ export interface UseDocumentContentResult<TEditor = any> {
 export function useDocumentContent<TEditor = any>(
   documentId: string,
   extension: string,
-  editorRef: React.MutableRefObject<BaseEditorRef<TEditor> | null>
+  editorRef: React.MutableRefObject<BaseEditorRef<TEditor> | null>,
 ): UseDocumentContentResult<TEditor> {
   // Detect editor type and get adapter
-  const editorType = detectEditorType(extension)
-  const adapter = getAdapter(editorType)
+  const editorType = detectEditorType(extension);
+  const adapter = getAdapter(editorType);
   // ---------------------------------------------------------------------------
   // STORE STATE
   // ---------------------------------------------------------------------------
-  const {
-    activeDocument,
-    _activeDocumentId,
-    isLoading,
-    loadDocument,
-  } = useEditorStore()
+  const { activeDocument, _activeDocumentId, isLoading, loadDocument } =
+    useEditorStore();
 
   // ---------------------------------------------------------------------------
   // LOCAL STATE
@@ -124,19 +122,21 @@ export function useDocumentContent<TEditor = any>(
   // For string-based editors (markdown, latex, plaintext), default to empty string
   // For object-based editors, default to empty object
   const [localDocument, setLocalDocument] = useState<TEditor>(() => {
-    return (adapter.capabilities.contentFormat === 'string' ? '' : {}) as TEditor
-  })
-  const [hasUserEdit, setHasUserEdit] = useState(false)
-  const [isInitialized, setIsInitialized] = useState(false)
-  const [isEditorReady, setIsEditorReady] = useState(false)
+    return (
+      adapter.capabilities.contentFormat === "string" ? "" : {}
+    ) as TEditor;
+  });
+  const [hasUserEdit, setHasUserEdit] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [isEditorReady, setIsEditorReady] = useState(false);
 
   // CAS token for ai_version updates
-  const lastHydratedDocIdRef = useRef<string | null>(null)
-  const aiVersionBaseRevRef = useRef<number | null>(null)
+  const lastHydratedDocIdRef = useRef<string | null>(null);
+  const aiVersionBaseRevRef = useRef<number | null>(null);
   // Track if server had an AI version (for flush-on-unmount)
-  const serverHasAIVersionRef = useRef(false)
+  const serverHasAIVersionRef = useRef(false);
   // Track the last seen activeDocument reference to detect server updates vs local state changes
-  const lastActiveDocumentRef = useRef<typeof activeDocument>(null)
+  const lastActiveDocumentRef = useRef<typeof activeDocument>(null);
 
   /**
    * Pending server snapshot - stashed when server update arrives while user has edits.
@@ -153,16 +153,18 @@ export function useDocumentContent<TEditor = any>(
    * TODO: Add UI for conflict resolution (show diff, let user choose).
    * Currently, pending snapshots are silently overwritten when user saves.
    */
-  const [pendingServerSnapshot, setPendingServerSnapshot] = useState<PendingSnapshot | null>(null)
+  const [pendingServerSnapshot, setPendingServerSnapshot] =
+    useState<PendingSnapshot | null>(null);
 
   // Refs for "flush on navigate/unmount" without stale closures
-  const initializedRef = useLatestRef(isInitialized)
-  const localDocumentRef = useLatestRef(localDocument)
-  const hasUserEditRef = useLatestRef(hasUserEdit)
-  const activeDocumentRef = useLatestRef(activeDocument)
+  const initializedRef = useLatestRef(isInitialized);
+  const localDocumentRef = useLatestRef(localDocument);
+  const hasUserEditRef = useLatestRef(hasUserEdit);
+  const activeDocumentRef = useLatestRef(activeDocument);
 
   // Determine editable state early (needed by sync effect below)
-  const isEditable = isInitialized && activeDocument?.id === documentId && !isLoading
+  const isEditable =
+    isInitialized && activeDocument?.id === documentId && !isLoading;
 
   // ---------------------------------------------------------------------------
   // CALLBACKS
@@ -176,45 +178,48 @@ export function useDocumentContent<TEditor = any>(
    */
   const hydrateDocument = useCallback(
     (doc: HydrationInput) => {
-      const content = doc.content
-      const aiVersion = doc.aiVersion
+      const content = doc.content;
+      const aiVersion = doc.aiVersion;
       // Use adapter to transform storage → editor format
-      const editorContent = adapter.toEditor(content, aiVersion) as TEditor
+      const editorContent = adapter.toEditor(content, aiVersion) as TEditor;
 
-      setLocalDocument(editorContent)
-      aiVersionBaseRevRef.current = doc.aiVersionRev ?? null
-      serverHasAIVersionRef.current = aiVersion != null
-      setHasUserEdit(false)
+      setLocalDocument(editorContent);
+      aiVersionBaseRevRef.current = doc.aiVersionRev ?? null;
+      serverHasAIVersionRef.current = aiVersion != null;
+      setHasUserEdit(false);
 
       if (editorRef.current) {
-        editorRef.current.setContent(editorContent, { addToHistory: false, emitChange: false })
+        editorRef.current.setContent(editorContent, {
+          addToHistory: false,
+          emitChange: false,
+        });
       }
     },
-    [adapter, editorRef]
-  )
+    [adapter, editorRef],
+  );
 
   // Handle content changes from the editor
   const handleContentChange = useCallback(
     (content: TEditor) => {
       // Ignore changes before initialization
       if (!initializedRef.current) {
-        return
+        return;
       }
-      setLocalDocument(content)
-      setHasUserEdit(true)
+      setLocalDocument(content);
+      setHasUserEdit(true);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initializedRef is stable
-    []
-  )
+    [],
+  );
 
   // Handle editor ready
   const handleEditorReady = useCallback(
     (ref: BaseEditorRef<TEditor>) => {
-      editorRef.current = ref
-      setIsEditorReady(true)
+      editorRef.current = ref;
+      setIsEditorReady(true);
     },
-    [editorRef]
-  )
+    [editorRef],
+  );
 
   // ---------------------------------------------------------------------------
   // EFFECTS
@@ -225,97 +230,106 @@ export function useDocumentContent<TEditor = any>(
   useEffect(() => {
     // Prevent duplicate loads from React Strict Mode double-mounting
     if (_activeDocumentId === documentId && isLoading) {
-      return
+      return;
     }
 
     // Create AbortController for this load operation
-    const abortController = new AbortController()
+    const abortController = new AbortController();
 
     // Reset local editor state on document change
-    setIsInitialized(false)
-    setHasUserEdit(false)
-    setPendingServerSnapshot(null)
+    setIsInitialized(false);
+    setHasUserEdit(false);
+    setPendingServerSnapshot(null);
 
-    loadDocument(documentId, abortController.signal)
+    loadDocument(documentId, abortController.signal);
 
     // Cleanup: abort request if component unmounts or documentId changes
     return () => {
-      abortController.abort()
-    }
+      abortController.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally omit _activeDocumentId and isLoading to prevent infinite loop
-  }, [documentId, loadDocument])
+  }, [documentId, loadDocument]);
 
   // Initialize local document when activeDocument loads
   useEffect(() => {
-    if (!activeDocument) return
-    if (activeDocument.id !== documentId) return
+    if (!activeDocument) return;
+    if (activeDocument.id !== documentId) return;
 
-    const docChanged = lastHydratedDocIdRef.current !== activeDocument.id
+    const docChanged = lastHydratedDocIdRef.current !== activeDocument.id;
 
     // Detect if the SERVER sent a new document (activeDocument reference changed)
     // vs just local React state changes (hasUserEdit changed).
     // This prevents incorrectly setting pendingServerSnapshot when user makes local edits.
-    const serverSentNewDoc = lastActiveDocumentRef.current !== activeDocument
-    lastActiveDocumentRef.current = activeDocument
+    const serverSentNewDoc = lastActiveDocumentRef.current !== activeDocument;
+    lastActiveDocumentRef.current = activeDocument;
 
     // If same document and no server update, nothing to do.
     // This prevents re-hydration when only hasUserEdit/pendingServerSnapshot changed,
     // which would revert the editor to old content after accept/reject.
     if (!docChanged && !serverSentNewDoc) {
-      return
+      return;
     }
 
     // IMPORTANT: Check for existing snapshot FIRST to prevent infinite loop.
     // If we checked hasUserEdit first, we'd create a new pendingServerSnapshot object,
     // which triggers this effect again (it's in deps), creating another object → infinite loop.
     if (!docChanged && pendingServerSnapshot) {
-      return
+      return;
     }
 
     // If server sent a new doc for the SAME document ID while user has edits, stash it.
     // Only do this when serverSentNewDoc=true (server update), not when local state changes.
     if (!docChanged && serverSentNewDoc && hasUserEdit) {
       setPendingServerSnapshot({
-        content: activeDocument.content ?? '',
+        content: activeDocument.content ?? "",
         aiVersion: activeDocument.aiVersion,
         aiVersionRev: activeDocument.aiVersionRev,
-      })
-      return
+      });
+      return;
     }
 
     // Initialize the document (new doc or no user edits)
-    lastHydratedDocIdRef.current = activeDocument.id
-    setPendingServerSnapshot(null)
+    lastHydratedDocIdRef.current = activeDocument.id;
+    setPendingServerSnapshot(null);
 
     hydrateDocument({
-      content: activeDocument.content ?? '',
+      content: activeDocument.content ?? "",
       aiVersion: activeDocument.aiVersion,
       aiVersionRev: activeDocument.aiVersionRev,
-    })
+    });
 
-    setIsInitialized(true)
-  }, [activeDocument, documentId, hasUserEdit, hydrateDocument, pendingServerSnapshot])
+    setIsInitialized(true);
+  }, [
+    activeDocument,
+    documentId,
+    hasUserEdit,
+    hydrateDocument,
+    pendingServerSnapshot,
+  ]);
 
   // Enable diff mode when editor becomes ready (if document has markers)
   // Note: Actual diff extension toggle is handled by useDiffView
   // This effect just ensures editor content is set if loaded before editor ready
   useEffect(() => {
-    if (!isEditorReady || !isInitialized) return
+    if (!isEditorReady || !isInitialized) return;
 
     // If editor just became ready but content was already loaded,
     // ensure editor has the correct content
-    const currentEditorContent = editorRef.current?.getContent()
+    const currentEditorContent = editorRef.current?.getContent();
     if (currentEditorContent !== localDocument && localDocument) {
-      editorRef.current?.setContent(localDocument, { addToHistory: false, emitChange: false })
+      editorRef.current?.setContent(localDocument, {
+        addToHistory: false,
+        emitChange: false,
+      });
     }
-  }, [isEditorReady, isInitialized, localDocument, editorRef])
+  }, [isEditorReady, isInitialized, localDocument, editorRef]);
 
   // Sync editable state to editor when it changes
   useEffect(() => {
     if (editorRef.current) {
-      editorRef.current.setEditable(isEditable)
+      editorRef.current.setEditable(isEditable);
     }
-  }, [isEditable, editorRef])
+  }, [isEditable, editorRef]);
 
   // ---------------------------------------------------------------------------
   // DERIVED STATE
@@ -323,7 +337,7 @@ export function useDocumentContent<TEditor = any>(
 
   // Check for AI suggestions using adapter
   // Type assertion safe: all current text-based adapters expect string
-  const hasAISuggestions = adapter.hasAISuggestions(localDocument as string)
+  const hasAISuggestions = adapter.hasAISuggestions(localDocument as string);
 
   // ---------------------------------------------------------------------------
   // SYNC CONTEXT (for composition with useDocumentSync)
@@ -339,7 +353,7 @@ export function useDocumentContent<TEditor = any>(
     hasUserEditRef,
     initializedRef,
     activeDocumentRef,
-  }
+  };
 
   // ---------------------------------------------------------------------------
   // RETURN
@@ -358,5 +372,5 @@ export function useDocumentContent<TEditor = any>(
     handleContentChange,
     hydrateDocument,
     syncContext,
-  }
+  };
 }

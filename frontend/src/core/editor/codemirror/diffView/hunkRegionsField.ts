@@ -5,8 +5,8 @@
  * Used by live preview to skip decoration inside diff regions.
  */
 
-import { StateField } from '@codemirror/state'
-import { extractHunks, hasAnyMarker } from '@/core/lib/mergedDocument'
+import { StateField } from "@codemirror/state";
+import { extractHunks, hasAnyMarker } from "@/core/lib/mergedDocument";
 
 // =============================================================================
 // TYPES
@@ -14,9 +14,9 @@ import { extractHunks, hasAnyMarker } from '@/core/lib/mergedDocument'
 
 export interface HunkRegion {
   /** Start of hunk (DEL_START marker position) */
-  from: number
+  from: number;
   /** End of hunk (after INS_END marker) */
-  to: number
+  to: number;
 }
 
 // =============================================================================
@@ -30,17 +30,17 @@ export interface HunkRegion {
  */
 export const hunkRegionsField = StateField.define<HunkRegion[]>({
   create(state) {
-    const doc = state.doc.toString()
-    if (!hasAnyMarker(doc)) return []
-    return extractHunks(doc).map(h => ({ from: h.from, to: h.to }))
+    const doc = state.doc.toString();
+    if (!hasAnyMarker(doc)) return [];
+    return extractHunks(doc).map((h) => ({ from: h.from, to: h.to }));
   },
   update(value, tr) {
-    if (!tr.docChanged) return value
-    const doc = tr.state.doc.toString()
-    if (!hasAnyMarker(doc)) return []
-    return extractHunks(doc).map(h => ({ from: h.from, to: h.to }))
+    if (!tr.docChanged) return value;
+    const doc = tr.state.doc.toString();
+    if (!hasAnyMarker(doc)) return [];
+    return extractHunks(doc).map((h) => ({ from: h.from, to: h.to }));
   },
-})
+});
 
 // =============================================================================
 // HELPERS
@@ -54,12 +54,12 @@ export const hunkRegionsField = StateField.define<HunkRegion[]>({
 export function overlapsHunkRegion(
   regions: HunkRegion[],
   from: number,
-  to: number
+  to: number,
 ): boolean {
   for (const region of regions) {
     if (from < region.to && to > region.from) {
-      return true
+      return true;
     }
   }
-  return false
+  return false;
 }

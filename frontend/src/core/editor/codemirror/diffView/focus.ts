@@ -10,7 +10,7 @@
  * - DiffViewPlugin reads focusedHunkIndexField to render focused state
  */
 
-import { StateEffect, StateField } from '@codemirror/state'
+import { StateEffect, StateField } from "@codemirror/state";
 
 // =============================================================================
 // STATE EFFECT
@@ -29,7 +29,7 @@ import { StateEffect, StateField } from '@codemirror/state'
  * })
  * ```
  */
-export const setFocusedHunkIndexEffect = StateEffect.define<number>()
+export const setFocusedHunkIndexEffect = StateEffect.define<number>();
 
 // =============================================================================
 // STATE FIELD
@@ -47,9 +47,9 @@ export const focusedHunkIndexField = StateField.define<number>({
   update: (value, tr) => {
     for (const e of tr.effects) {
       if (e.is(setFocusedHunkIndexEffect)) {
-        return e.value
+        return e.value;
       }
     }
-    return value
+    return value;
   },
-})
+});

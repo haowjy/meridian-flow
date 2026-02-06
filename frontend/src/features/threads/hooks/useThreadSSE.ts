@@ -11,4 +11,4 @@
  */
 
 // Re-export the main hook
-export { useThreadSSE } from './sse'
+export { useThreadSSE } from "./sse";

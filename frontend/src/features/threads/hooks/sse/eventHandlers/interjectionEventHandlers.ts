@@ -5,12 +5,12 @@
  * messages while an assistant turn is actively streaming.
  */
 
-import { turnDtoToTurn } from '@/core/lib/api'
-import type { SSEDispatchContext, SSEStoreActions } from '../types'
+import { turnDtoToTurn } from "@/core/lib/api";
+import type { SSEDispatchContext, SSEStoreActions } from "../types";
 import type {
   InterjectionUpdatedEvent,
   StreamSwitchEvent,
-} from '../../sseEventTypes'
+} from "../../sseEventTypes";
 
 /**
  * Handle INTERJECTION_UPDATED event.
@@ -19,14 +19,14 @@ import type {
 export function handleInterjectionUpdated(
   data: InterjectionUpdatedEvent,
   ctx: SSEDispatchContext,
-  actions: SSEStoreActions
+  actions: SSEStoreActions,
 ): void {
-  ctx.logger.debug('sse:interjection_updated', {
+  ctx.logger.debug("sse:interjection_updated", {
     turnId: data.turnId,
     length: data.length,
-  })
+  });
 
-  actions.setInterjectionContent(data.content)
+  actions.setInterjectionContent(data.content);
 }
 
 /**
@@ -37,36 +37,36 @@ export function handleInterjectionUpdated(
 export function handleStreamSwitch(
   data: StreamSwitchEvent,
   ctx: SSEDispatchContext,
-  actions: SSEStoreActions
+  actions: SSEStoreActions,
 ): void {
-  ctx.logger.info('sse:stream_switch', {
+  ctx.logger.info("sse:stream_switch", {
     prevTurnId: data.prevAssistantTurnId,
     reason: data.reason,
     newStreamUrl: data.streamUrl,
-  })
+  });
 
   // Convert TurnDto → Turn (dates become Date objects)
   // SSE parser already converted snake_case → camelCase, but dates are still strings
-  const userTurn = turnDtoToTurn(data.userTurn)
-  const assistantTurn = turnDtoToTurn(data.assistantTurn)
+  const userTurn = turnDtoToTurn(data.userTurn);
+  const assistantTurn = turnDtoToTurn(data.assistantTurn);
 
   // Apply the stream switch - this merges turns and updates streaming state
   actions.applyStreamSwitch(
     data.prevAssistantTurnId,
     userTurn,
     assistantTurn,
-    data.streamUrl
-  )
+    data.streamUrl,
+  );
 
   // Clear interjection content (it's now persisted as a user turn)
-  actions.setInterjectionContent(null)
+  actions.setInterjectionContent(null);
 
   // Abort the current SSE connection to trigger reconnect with new stream
   // The useThreadSSE hook will detect the new streamingUrl and connect
-  ctx.ctrl.abort()
+  ctx.ctrl.abort();
 
-  ctx.logger.info('sse:stream_switch_complete', {
+  ctx.logger.info("sse:stream_switch_complete", {
     aborted: true,
     newStreamUrl: data.streamUrl,
-  })
+  });
 }

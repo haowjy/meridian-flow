@@ -1,22 +1,30 @@
-import type { Document } from '@/features/documents/types/document'
-import { db } from '@/core/lib/db'
-import { addRetryOperation, cancelRetry, syncDocument } from '@/core/lib/sync'
-import { isNetworkError, isAbortError, isConflictError, extractDocumentFromConflict } from '@/core/lib/errors'
-import type { RetryCallbacks } from '@/core/lib/retry'
-import { saveMergedDocument, type SaveMergedResult } from '@/core/services/saveMergedDocument'
+import type { Document } from "@/features/documents/types/document";
+import { db } from "@/core/lib/db";
+import { addRetryOperation, cancelRetry, syncDocument } from "@/core/lib/sync";
+import {
+  isNetworkError,
+  isAbortError,
+  isConflictError,
+  extractDocumentFromConflict,
+} from "@/core/lib/errors";
+import type { RetryCallbacks } from "@/core/lib/retry";
+import {
+  saveMergedDocument,
+  type SaveMergedResult,
+} from "@/core/services/saveMergedDocument";
 
 export type SaveCallbacks = {
-  onServerSaved?: (doc: Document) => void
-  onRetryScheduled?: () => void
-  onPermanentFailure?: (error: unknown) => void
-}
+  onServerSaved?: (doc: Document) => void;
+  onRetryScheduled?: () => void;
+  onPermanentFailure?: (error: unknown) => void;
+};
 
 export type SaveMergedCallbacks = {
-  onServerSaved?: (result: SaveMergedResult) => void
-  onAIVersionConflict?: (serverDocument?: Document) => void
-  onRetryScheduled?: () => void
-  onError?: (error: Error) => void
-}
+  onServerSaved?: (result: SaveMergedResult) => void;
+  onAIVersionConflict?: (serverDocument?: Document) => void;
+  onRetryScheduled?: () => void;
+  onError?: (error: Error) => void;
+};
 
 export class DocumentSyncService {
   /**
@@ -27,52 +35,69 @@ export class DocumentSyncService {
     documentId: string,
     content: string,
     currentDoc?: Document,
-    cbs?: SaveCallbacks
+    cbs?: SaveCallbacks,
   ): Promise<void> {
     // Cancel pending retry for this document (newer content wins)
-    cancelRetry(documentId)
+    cancelRetry(documentId);
 
-    const now = new Date()
+    const now = new Date();
 
     // Optimistic update in IndexedDB
     const updated = await db.documents.update(documentId, {
       content,
       updatedAt: now,
-    })
+    });
 
     if (updated === 0 && currentDoc && currentDoc.id === documentId) {
-      await db.documents.put({ ...currentDoc, content, updatedAt: now })
+      await db.documents.put({ ...currentDoc, content, updatedAt: now });
     }
 
     try {
-      const serverDoc = await syncDocument(documentId, content)
-      cbs?.onServerSaved?.(serverDoc)
+      const serverDoc = await syncDocument(documentId, content);
+      cbs?.onServerSaved?.(serverDoc);
     } catch (error) {
       if (isNetworkError(error)) {
         // Schedule retry with mapped callbacks
         const callbacks: RetryCallbacks<Document> = {
           onSuccess: (doc) => cbs?.onServerSaved?.(doc),
           onPermanentFailure: (err) => cbs?.onPermanentFailure?.(err),
-        }
+        };
         addRetryOperation(
-          { entityType: 'document', entityId: documentId, content, attemptCount: 0 },
-          callbacks
-        )
-        cbs?.onRetryScheduled?.()
-        return
+          {
+            entityType: "document",
+            entityId: documentId,
+            content,
+            attemptCount: 0,
+          },
+          callbacks,
+        );
+        cbs?.onRetryScheduled?.();
+        return;
       }
 
       // Client/validation errors bubble to caller
-      throw error
+      throw error;
     }
   }
 
-  queueRetry(documentId: string, content: string, cbs?: RetryCallbacks<Document>) {
-    addRetryOperation({ entityType: 'document', entityId: documentId, content, attemptCount: 0 }, cbs)
+  queueRetry(
+    documentId: string,
+    content: string,
+    cbs?: RetryCallbacks<Document>,
+  ) {
+    addRetryOperation(
+      {
+        entityType: "document",
+        entityId: documentId,
+        content,
+        attemptCount: 0,
+      },
+      cbs,
+    );
   }
 
   cancelRetry(documentId: string) {
-    cancelRetry(documentId)
+    cancelRetry(documentId);
   }
 
   /**
@@ -91,39 +116,38 @@ export class DocumentSyncService {
     documentId: string,
     merged: string,
     options: { aiVersionBaseRev: number; serverHasAIVersion: boolean },
-    cbs?: SaveMergedCallbacks
+    cbs?: SaveMergedCallbacks,
   ): Promise<void> {
     // Cancel any pending retries (newer content wins)
-    cancelRetry(documentId)
+    cancelRetry(documentId);
 
     try {
-      const result = await saveMergedDocument(documentId, merged, options)
-      cbs?.onServerSaved?.(result)
+      const result = await saveMergedDocument(documentId, merged, options);
+      cbs?.onServerSaved?.(result);
     } catch (error) {
       if (isAbortError(error)) {
         // Cancelled by user (e.g., switched documents), no action needed
-        return
+        return;
       }
 
       if (isNetworkError(error)) {
         // For now, just report error. Full retry support can be added later.
         // The merged document is already in IndexedDB for recovery.
-        cbs?.onRetryScheduled?.()
-        return
+        cbs?.onRetryScheduled?.();
+        return;
       }
 
       if (isConflictError(error)) {
         // ai_version_rev mismatch: server has a newer ai_version than the client saw.
         // Do not retry blindly; surface to UI so user can refresh from server.
-        cbs?.onAIVersionConflict?.(extractDocumentFromConflict(error))
-        return
+        cbs?.onAIVersionConflict?.(extractDocumentFromConflict(error));
+        return;
       }
 
-      cbs?.onError?.(error as Error)
-      throw error
+      cbs?.onError?.(error as Error);
+      throw error;
     }
   }
 }
 
-export const documentSyncService = new DocumentSyncService()
-
+export const documentSyncService = new DocumentSyncService();

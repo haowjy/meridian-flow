@@ -4,14 +4,14 @@
  * SRP: Creates a listener extension for blocked edit effects.
  */
 
-import { EditorView } from '@codemirror/view'
-import { blockedEditEffect, type BlockedEditReason } from './blockedEditEffect'
+import { EditorView } from "@codemirror/view";
+import { blockedEditEffect, type BlockedEditReason } from "./blockedEditEffect";
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
-export type BlockedEditCallback = (reason: BlockedEditReason) => void
+export type BlockedEditCallback = (reason: BlockedEditReason) => void;
 
 // =============================================================================
 // LISTENER EXTENSION
@@ -27,9 +27,9 @@ export function createBlockedEditListener(callback: BlockedEditCallback) {
     for (const tr of update.transactions) {
       for (const effect of tr.effects) {
         if (effect.is(blockedEditEffect)) {
-          callback(effect.value.reason)
+          callback(effect.value.reason);
         }
       }
     }
-  })
+  });
 }

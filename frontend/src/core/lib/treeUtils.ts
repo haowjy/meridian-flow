@@ -2,7 +2,7 @@
  * Tree utility functions for selection and traversal operations.
  */
 
-import type { TreeNode } from './treeBuilder'
+import type { TreeNode } from "./treeBuilder";
 
 /**
  * Returns canonical selection: items where no ancestor is also selected.
@@ -17,28 +17,28 @@ import type { TreeNode } from './treeBuilder'
  */
 export function canonicalizeSelection(
   tree: TreeNode[],
-  selectedIds: Set<string>
+  selectedIds: Set<string>,
 ): TreeNode[] {
-  const result: TreeNode[] = []
+  const result: TreeNode[] = [];
 
   const collect = (nodes: TreeNode[], ancestorSelected: boolean) => {
     for (const node of nodes) {
-      const isSelected = selectedIds.has(node.id)
+      const isSelected = selectedIds.has(node.id);
 
       // Only include if selected AND no ancestor is selected
       if (isSelected && !ancestorSelected) {
-        result.push(node)
+        result.push(node);
       }
 
       // Recurse into folder children
-      if (node.type === 'folder' && node.children) {
-        collect(node.children, ancestorSelected || isSelected)
+      if (node.type === "folder" && node.children) {
+        collect(node.children, ancestorSelected || isSelected);
       }
     }
-  }
+  };
 
-  collect(tree, false)
-  return result
+  collect(tree, false);
+  return result;
 }
 
 /**
@@ -53,45 +53,45 @@ export function canonicalizeSelection(
  */
 export function getDescendantDocumentIds(
   tree: TreeNode[],
-  folderId: string
+  folderId: string,
 ): string[] {
-  const documentIds: string[] = []
+  const documentIds: string[] = [];
 
   // First, find the folder node
   const findFolder = (nodes: TreeNode[]): TreeNode | null => {
     for (const node of nodes) {
-      if (node.type === 'folder') {
+      if (node.type === "folder") {
         if (node.id === folderId) {
-          return node
+          return node;
         }
         if (node.children) {
-          const found = findFolder(node.children)
-          if (found) return found
+          const found = findFolder(node.children);
+          if (found) return found;
         }
       }
     }
-    return null
-  }
+    return null;
+  };
 
-  const folder = findFolder(tree)
-  if (!folder || folder.type !== 'folder') {
-    return documentIds
+  const folder = findFolder(tree);
+  if (!folder || folder.type !== "folder") {
+    return documentIds;
   }
 
   // Collect all document IDs recursively from the folder's children
   const collectDocuments = (nodes: TreeNode[]) => {
     for (const node of nodes) {
-      if (node.type === 'document') {
-        documentIds.push(node.id)
-      } else if (node.type === 'folder' && node.children) {
-        collectDocuments(node.children)
+      if (node.type === "document") {
+        documentIds.push(node.id);
+      } else if (node.type === "folder" && node.children) {
+        collectDocuments(node.children);
       }
     }
-  }
+  };
 
   if (folder.children) {
-    collectDocuments(folder.children)
+    collectDocuments(folder.children);
   }
 
-  return documentIds
+  return documentIds;
 }

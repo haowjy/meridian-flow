@@ -1,10 +1,10 @@
-import { InlineEditor } from '@/shared/components/InlineEditor'
+import { InlineEditor } from "@/shared/components/InlineEditor";
 
 interface ThreadTitleEditorProps {
-  initialValue: string
-  onSubmit: (title: string) => void
-  onCancel: () => void
-  widthClass?: string
+  initialValue: string;
+  onSubmit: (title: string) => void;
+  onCancel: () => void;
+  widthClass?: string;
 }
 
 /**
@@ -38,5 +38,5 @@ export function ThreadTitleEditor({
       widthClass={widthClass}
       className="h-7 text-sm"
     />
-  )
+  );
 }

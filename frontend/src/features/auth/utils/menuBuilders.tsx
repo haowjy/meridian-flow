@@ -1,12 +1,12 @@
-import { Settings, LogOut } from 'lucide-react'
-import type { UserMenuItemConfig } from '../types'
+import { Settings, LogOut } from "lucide-react";
+import type { UserMenuItemConfig } from "../types";
 
 /**
  * Handler interface for user menu actions.
  * Open/Closed: Add new handlers without modifying consumers.
  */
 interface UserMenuHandlers {
-  onSignOut?: () => void
+  onSignOut?: () => void;
 }
 
 /**
@@ -19,27 +19,27 @@ interface UserMenuHandlers {
  * - Sign out (destructive)
  */
 export function createUserMenuItems(
-  handlers: UserMenuHandlers
+  handlers: UserMenuHandlers,
 ): UserMenuItemConfig[] {
-  const items: UserMenuItemConfig[] = []
+  const items: UserMenuItemConfig[] = [];
 
   // Settings uses Link (href) for proper TanStack Router history integration
   items.push({
-    id: 'settings',
-    label: 'Settings',
+    id: "settings",
+    label: "Settings",
     icon: <Settings className="size-3.5" />,
-    href: '/settings',
-  })
+    href: "/settings",
+  });
 
   if (handlers.onSignOut) {
     items.push({
-      id: 'sign-out',
-      label: 'Sign out',
+      id: "sign-out",
+      label: "Sign out",
       icon: <LogOut className="size-3.5" />,
       onSelect: handlers.onSignOut,
-      separator: 'before',
-    })
+      separator: "before",
+    });
   }
 
-  return items
+  return items;
 }

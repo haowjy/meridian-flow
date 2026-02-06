@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect } from "react";
 
 /** Mobile breakpoint - phones only (<768px) */
-const MOBILE_BREAKPOINT = 768
+const MOBILE_BREAKPOINT = 768;
 
 /**
  * Hook to detect if viewport is mobile-sized.
@@ -12,22 +12,22 @@ const MOBILE_BREAKPOINT = 768
 export function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = useState(() => {
     // SSR-safe: default to false, will be corrected on mount
-    if (typeof window === 'undefined') return false
-    return window.innerWidth < MOBILE_BREAKPOINT
-  })
+    if (typeof window === "undefined") return false;
+    return window.innerWidth < MOBILE_BREAKPOINT;
+  });
 
   useEffect(() => {
     const checkMobile = () => {
-      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
-    }
+      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    };
 
     // Check immediately in case SSR default was wrong
-    checkMobile()
+    checkMobile();
 
     // Listen for resize
-    window.addEventListener('resize', checkMobile)
-    return () => window.removeEventListener('resize', checkMobile)
-  }, [])
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
-  return isMobile
+  return isMobile;
 }

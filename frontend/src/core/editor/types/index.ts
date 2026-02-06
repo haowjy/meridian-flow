@@ -4,4 +4,4 @@
  * Shared types for the editor system.
  */
 
-export * from './editorRegistry'
+export * from "./editorRegistry";

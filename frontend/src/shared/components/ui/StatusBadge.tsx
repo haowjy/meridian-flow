@@ -1,11 +1,11 @@
-import { Loader2, Cloud, CheckCircle2, AlertCircle } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { Loader2, Cloud, CheckCircle2, AlertCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-export type SaveStatus = 'saving' | 'local' | 'saved' | 'error'
+export type SaveStatus = "saving" | "local" | "saved" | "error";
 
 interface StatusBadgeProps {
-  status: SaveStatus
-  className?: string
+  status: SaveStatus;
+  className?: string;
 }
 
 /**
@@ -19,43 +19,43 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
   const configs = {
     saving: {
       icon: Loader2,
-      label: 'Saving...',
-      className: 'text-warning-foreground bg-warning/10 border-warning',
-      iconClassName: 'animate-spin',
+      label: "Saving...",
+      className: "text-warning-foreground bg-warning/10 border-warning",
+      iconClassName: "animate-spin",
     },
     local: {
       icon: Cloud,
-      label: 'Saved locally',
-      className: 'text-warning-foreground bg-warning/10 border-warning',
-      iconClassName: '',
+      label: "Saved locally",
+      className: "text-warning-foreground bg-warning/10 border-warning",
+      iconClassName: "",
     },
     saved: {
       icon: CheckCircle2,
-      label: 'Saved',
-      className: 'text-success-foreground bg-success/10 border-success',
-      iconClassName: '',
+      label: "Saved",
+      className: "text-success-foreground bg-success/10 border-success",
+      iconClassName: "",
     },
     error: {
       icon: AlertCircle,
-      label: 'Save failed',
-      className: 'text-error-foreground bg-error/10 border-error',
-      iconClassName: '',
+      label: "Save failed",
+      className: "text-error-foreground bg-error/10 border-error",
+      iconClassName: "",
     },
-  }
+  };
 
-  const config = configs[status]
-  const Icon = config.icon
+  const config = configs[status];
+  const Icon = config.icon;
 
   return (
     <div
       className={cn(
-        'inline-flex items-center gap-1.5 border px-2.5 py-1 text-xs font-medium font-sans rounded-lg',
+        "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-sans text-xs font-medium",
         config.className,
-        className
+        className,
       )}
     >
-      <Icon className={cn('h-3 w-3', config.iconClassName)} />
+      <Icon className={cn("h-3 w-3", config.iconClassName)} />
       <span>{config.label}</span>
     </div>
-  )
+  );
 }

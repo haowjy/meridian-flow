@@ -1,9 +1,9 @@
-import type { ToolBlockContent, TurnBlock } from '@/features/threads/types'
-import { normalizeToolCallId } from '@/features/threads/utils/normalizeToolCallId'
+import type { ToolBlockContent, TurnBlock } from "@/features/threads/types";
+import { normalizeToolCallId } from "@/features/threads/utils/normalizeToolCallId";
 
 function getToolUseId(block: TurnBlock): string | null {
-  const raw = (block.content as ToolBlockContent | undefined)?.toolUseId
-  return typeof raw === 'string' ? normalizeToolCallId(raw) : null
+  const raw = (block.content as ToolBlockContent | undefined)?.toolUseId;
+  return typeof raw === "string" ? normalizeToolCallId(raw) : null;
 }
 
 /**
@@ -17,31 +17,31 @@ function getToolUseId(block: TurnBlock): string | null {
  */
 export function getTurnBlockIdentity(block: TurnBlock): string {
   // Tool blocks: prefer tool_use_id which is stable across tool_use/tool_result pairing.
-  if (block.blockType === 'tool_use' || block.blockType === 'tool_result') {
-    const toolUseId = getToolUseId(block)
-    if (toolUseId) return `tool:${toolUseId}:${block.blockType}`
+  if (block.blockType === "tool_use" || block.blockType === "tool_result") {
+    const toolUseId = getToolUseId(block);
+    if (toolUseId) return `tool:${toolUseId}:${block.blockType}`;
   }
 
   // Default: sequence+type is stable within a turn.
-  return `seq:${block.sequence}:${block.blockType}`
+  return `seq:${block.sequence}:${block.blockType}`;
 }
 
 export function getTurnBlockReactKey(block: TurnBlock): string {
-  return `turn:${block.turnId}:${getTurnBlockIdentity(block)}`
+  return `turn:${block.turnId}:${getTurnBlockIdentity(block)}`;
 }
 
 export function getToolInteractionReactKey(
   turnId: string,
   toolUse: TurnBlock | null,
-  toolResult: TurnBlock | null
+  toolResult: TurnBlock | null,
 ): string {
-  const source = toolUse ?? toolResult
-  if (!source) return `tool:${turnId}:unknown`
+  const source = toolUse ?? toolResult;
+  if (!source) return `tool:${turnId}:unknown`;
 
-  const toolUseId = getToolUseId(source)
-  if (toolUseId) return `tool:${turnId}:${toolUseId}`
+  const toolUseId = getToolUseId(source);
+  if (toolUseId) return `tool:${turnId}:${toolUseId}`;
 
-  return `tool:${turnId}:seq:${source.sequence}`
+  return `tool:${turnId}:seq:${source.sequence}`;
 }
 
 /**
@@ -49,7 +49,7 @@ export function getToolInteractionReactKey(
  * The groupId is already stable (based on first item's sequence).
  */
 export function getThinkingGroupReactKey(groupId: string): string {
-  return groupId
+  return groupId;
 }
 
 /**
@@ -57,6 +57,5 @@ export function getThinkingGroupReactKey(groupId: string): string {
  * The groupId is already stable (based on first tool's sequence).
  */
 export function getToolGroupReactKey(groupId: string): string {
-  return groupId
+  return groupId;
 }
-

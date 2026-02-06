@@ -1,8 +1,8 @@
-import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
-import { makeLogger } from '@/core/lib/logger'
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import { makeLogger } from "@/core/lib/logger";
 
-const logger = makeLogger('ui-store')
+const logger = makeLogger("ui-store");
 
 /**
  * Represents the current view mode of the right panel.
@@ -10,12 +10,17 @@ const logger = makeLogger('ui-store')
  * - 'editor': Shows document editor
  * - null: No specific mode (initial state)
  */
-export type RightPanelState = 'documents' | 'editor' | null
+export type RightPanelState = "documents" | "editor" | null;
 
 /**
  * Project list sort options.
  */
-export type ProjectSortOrder = 'updated' | 'name-asc' | 'name-desc' | 'created-newest' | 'created-oldest'
+export type ProjectSortOrder =
+  | "updated"
+  | "name-asc"
+  | "name-desc"
+  | "created-newest"
+  | "created-oldest";
 
 /**
  * User's explicit panel override choice.
@@ -23,13 +28,13 @@ export type ProjectSortOrder = 'updated' | 'name-asc' | 'name-desc' | 'created-n
  * - 'collapsed': User explicitly collapsed the panel
  * - null: No override, follow auto behavior (collapsed if not ready, expanded if ready)
  */
-export type PanelUserOverride = 'expanded' | 'collapsed' | null
+export type PanelUserOverride = "expanded" | "collapsed" | null;
 
 /**
  * Mobile tab type for bottom navigation.
  * State-driven (not URL-driven) to preserve scroll position and component state.
  */
-export type MobileTab = 'threads' | 'chat' | 'documents' | 'projectSettings'
+export type MobileTab = "threads" | "chat" | "documents" | "projectSettings";
 
 /**
  * UI state store for workspace layout and panel management.
@@ -82,14 +87,14 @@ interface UIStore {
    * Set by data loaders, NOT persisted.
    * @default false
    */
-  leftPanelReady: boolean
+  leftPanelReady: boolean;
 
   /**
    * Whether right panel data is ready (document tree loaded).
    * Set by data loaders, NOT persisted.
    * @default false
    */
-  rightPanelReady: boolean
+  rightPanelReady: boolean;
 
   /**
    * User's explicit override for left panel visibility.
@@ -97,7 +102,7 @@ interface UIStore {
    * Persisted across sessions - user's collapse/expand choice is remembered.
    * @default null (follow auto behavior: collapsed until ready, then expanded)
    */
-  leftPanelUserOverride: PanelUserOverride
+  leftPanelUserOverride: PanelUserOverride;
 
   /**
    * User's explicit override for right panel visibility.
@@ -105,7 +110,7 @@ interface UIStore {
    * Persisted across sessions - user's collapse/expand choice is remembered.
    * @default null (follow auto behavior: collapsed until ready, then expanded)
    */
-  rightPanelUserOverride: PanelUserOverride
+  rightPanelUserOverride: PanelUserOverride;
 
   /**
    * Determines right panel content: 'documents' (tree view) or 'editor'.
@@ -113,7 +118,7 @@ interface UIStore {
    * Use panelHelpers.openDocument() to coordinate opening editor.
    * @default 'documents'
    */
-  rightPanelState: RightPanelState
+  rightPanelState: RightPanelState;
 
   /**
    * ID of currently active document (for highlighting in tree + editor).
@@ -122,7 +127,7 @@ interface UIStore {
    * Mutually exclusive with activeSkillId.
    * @default null
    */
-  activeDocumentId: string | null
+  activeDocumentId: string | null;
 
   /**
    * ID of currently active skill (for highlighting in tree + editor).
@@ -131,7 +136,7 @@ interface UIStore {
    * Mutually exclusive with activeDocumentId.
    * @default null
    */
-  activeSkillId: string | null
+  activeSkillId: string | null;
 
   /**
    * ID of currently active thread (for highlighting in thread list).
@@ -139,28 +144,28 @@ interface UIStore {
    * Null if no thread is active.
    * @default null
    */
-  activeThreadId: string | null
+  activeThreadId: string | null;
 
   /**
    * Monotonic counter used to drive thread input auto-focus.
    * Incremented when "New Thread" is pressed so the input refocuses even if
    * the activeThreadId does not change (e.g., cold-start state).
    */
-  threadFocusVersion: number
+  threadFocusVersion: number;
 
   /**
    * Current sort order for the projects list.
    * Persisted across sessions.
    * @default 'updated' (most recently updated first)
    */
-  projectSortOrder: ProjectSortOrder
+  projectSortOrder: ProjectSortOrder;
 
   /**
    * Current search query for filtering projects.
    * NOT persisted (ephemeral).
    * @default ''
    */
-  projectSearchQuery: string
+  projectSearchQuery: string;
 
   /**
    * Whether the document tree sidebar is collapsed when viewing editor.
@@ -168,7 +173,7 @@ interface UIStore {
    * Persisted across sessions.
    * @default false (tree visible by default)
    */
-  documentTreeCollapsed: boolean
+  documentTreeCollapsed: boolean;
 
   /**
    * Current view of left panel in workspace.
@@ -178,7 +183,7 @@ interface UIStore {
    * Persisted across sessions.
    * @default 'chat'
    */
-  leftPanelView: 'chat' | 'threads' | 'projectSettings'
+  leftPanelView: "chat" | "threads" | "projectSettings";
 
   /**
    * Active tab for mobile bottom navigation.
@@ -186,7 +191,7 @@ interface UIStore {
    * NOT persisted - derives initial value from URL on page load.
    * @default 'chat'
    */
-  mobileActiveTab: MobileTab
+  mobileActiveTab: MobileTab;
 
   /**
    * ID of a recently created folder (for temporary highlight animation).
@@ -194,7 +199,7 @@ interface UIStore {
    * NOT persisted.
    * @default null
    */
-  recentlyCreatedFolderId: string | null
+  recentlyCreatedFolderId: string | null;
 
   /**
    * Set of thinking group IDs that the user has explicitly expanded.
@@ -202,7 +207,7 @@ interface UIStore {
    * NOT persisted (session-scoped - doesn't make sense to persist across refreshes).
    * @default new Set()
    */
-  expandedThinkingGroups: Set<string>
+  expandedThinkingGroups: Set<string>;
 
   /**
    * Set of tool group IDs that the user has explicitly expanded.
@@ -210,97 +215,97 @@ interface UIStore {
    * NOT persisted (session-scoped - doesn't make sense to persist across refreshes).
    * @default new Set()
    */
-  expandedToolGroups: Set<string>
+  expandedToolGroups: Set<string>;
 
   /**
    * Toggles left panel collapsed/expanded state (sets user override)
    */
-  toggleLeftPanel: () => void
+  toggleLeftPanel: () => void;
 
   /** Toggles right panel collapsed/expanded state (sets user override) */
-  toggleRightPanel: () => void
+  toggleRightPanel: () => void;
 
   /** Sets left panel ready state (called by data loaders) */
-  setLeftPanelReady: (ready: boolean) => void
+  setLeftPanelReady: (ready: boolean) => void;
 
   /** Sets right panel ready state (called by data loaders) */
-  setRightPanelReady: (ready: boolean) => void
+  setRightPanelReady: (ready: boolean) => void;
 
   /** Explicitly sets left panel user override (persisted) */
-  setLeftPanelUserOverride: (override: PanelUserOverride) => void
+  setLeftPanelUserOverride: (override: PanelUserOverride) => void;
 
   /** Explicitly sets right panel user override (persisted) */
-  setRightPanelUserOverride: (override: PanelUserOverride) => void
+  setRightPanelUserOverride: (override: PanelUserOverride) => void;
 
   /**
    * Sets right panel view mode.
    * Use panelHelpers.openDocument() for opening documents (navigates URL).
    * Call directly with 'documents' to show tree view without navigating.
    */
-  setRightPanelState: (state: RightPanelState) => void
+  setRightPanelState: (state: RightPanelState) => void;
 
   /** Directly sets right panel collapsed state (prefer toggleRightPanel) */
-  setRightPanelCollapsed: (collapsed: boolean) => void
+  setRightPanelCollapsed: (collapsed: boolean) => void;
 
   /**
    * Sets active document ID (clears activeSkillId for mutual exclusivity).
    * Use panelHelpers.openDocument() to also open editor and expand panel.
    */
-  setActiveDocument: (id: string | null) => void
+  setActiveDocument: (id: string | null) => void;
 
   /**
    * Sets active skill ID (clears activeDocumentId for mutual exclusivity).
    * Use panelHelpers.openSkill() to also open editor and expand panel.
    */
-  setActiveSkill: (id: string | null) => void
+  setActiveSkill: (id: string | null) => void;
 
   /**
    * Sets active thread ID.
    * Use panelHelpers.switchThread() for semantic clarity.
    */
-  setActiveThread: (id: string | null) => void
+  setActiveThread: (id: string | null) => void;
 
   /** Bumps threadFocusVersion to request thread input focus. */
-  bumpThreadFocusVersion: () => void
+  bumpThreadFocusVersion: () => void;
 
   /** Sets the project list sort order (persisted) */
-  setProjectSortOrder: (order: ProjectSortOrder) => void
+  setProjectSortOrder: (order: ProjectSortOrder) => void;
 
   /** Sets the project search query (not persisted) */
-  setProjectSearchQuery: (query: string) => void
+  setProjectSearchQuery: (query: string) => void;
 
   /** Toggles document tree sidebar collapsed/expanded state */
-  toggleDocumentTree: () => void
+  toggleDocumentTree: () => void;
 
   /** Sets document tree collapsed state (persisted) */
-  setDocumentTreeCollapsed: (collapsed: boolean) => void
+  setDocumentTreeCollapsed: (collapsed: boolean) => void;
 
   /** Sets left panel view (chat, threads, or projectSettings) */
-  setLeftPanelView: (view: 'chat' | 'threads' | 'projectSettings') => void
+  setLeftPanelView: (view: "chat" | "threads" | "projectSettings") => void;
 
   /** Sets mobile active tab (threads, chat, or documents) */
-  setMobileActiveTab: (tab: MobileTab) => void
+  setMobileActiveTab: (tab: MobileTab) => void;
 
   /** Sets recently created folder ID (for highlight animation) */
-  setRecentlyCreatedFolderId: (id: string | null) => void
+  setRecentlyCreatedFolderId: (id: string | null) => void;
 
   /** Toggle thinking group expanded state */
-  toggleThinkingGroup: (groupId: string) => void
+  toggleThinkingGroup: (groupId: string) => void;
 
   /** Check if a thinking group is expanded */
-  isThinkingGroupExpanded: (groupId: string) => boolean
+  isThinkingGroupExpanded: (groupId: string) => boolean;
 
   /** Clear all expanded thinking groups (e.g., on thread change) */
-  clearExpandedThinkingGroups: () => void
+  clearExpandedThinkingGroups: () => void;
 
   /** Toggle tool group expanded state */
-  toggleToolGroup: (groupId: string) => void
+  toggleToolGroup: (groupId: string) => void;
 
   /** Check if a tool group is expanded */
-  isToolGroupExpanded: (groupId: string) => boolean
+  isToolGroupExpanded: (groupId: string) => boolean;
 
   /** Clear all expanded tool groups (e.g., on thread change) */
-  clearExpandedToolGroups: () => void
+  clearExpandedToolGroups: () => void;
 }
 
 /**
@@ -309,8 +314,8 @@ interface UIStore {
  */
 export const selectEffectiveLeftCollapsed = (s: UIStore): boolean =>
   s.leftPanelUserOverride !== null
-    ? s.leftPanelUserOverride === 'collapsed'
-    : !s.leftPanelReady // Auto: collapsed if not ready
+    ? s.leftPanelUserOverride === "collapsed"
+    : !s.leftPanelReady; // Auto: collapsed if not ready
 
 /**
  * Selector: Compute effective right panel collapsed state.
@@ -318,8 +323,8 @@ export const selectEffectiveLeftCollapsed = (s: UIStore): boolean =>
  */
 export const selectEffectiveRightCollapsed = (s: UIStore): boolean =>
   s.rightPanelUserOverride !== null
-    ? s.rightPanelUserOverride === 'collapsed'
-    : !s.rightPanelReady // Auto: collapsed if not ready
+    ? s.rightPanelUserOverride === "collapsed"
+    : !s.rightPanelReady; // Auto: collapsed if not ready
 
 export const useUIStore = create<UIStore>()(
   persist(
@@ -328,112 +333,118 @@ export const useUIStore = create<UIStore>()(
       rightPanelReady: false,
       leftPanelUserOverride: null,
       rightPanelUserOverride: null,
-      rightPanelState: 'documents',
+      rightPanelState: "documents",
       activeDocumentId: null,
       activeSkillId: null,
       activeThreadId: null,
       threadFocusVersion: 0,
-      projectSortOrder: 'updated',
-      projectSearchQuery: '',
+      projectSortOrder: "updated",
+      projectSearchQuery: "",
       documentTreeCollapsed: false,
-      leftPanelView: 'chat',
-      mobileActiveTab: 'chat',
+      leftPanelView: "chat",
+      mobileActiveTab: "chat",
       recentlyCreatedFolderId: null,
       expandedThinkingGroups: new Set<string>(),
       expandedToolGroups: new Set<string>(),
 
       toggleLeftPanel: () => {
-        const currentlyCollapsed = selectEffectiveLeftCollapsed(get())
+        const currentlyCollapsed = selectEffectiveLeftCollapsed(get());
         // Toggle sets user override to opposite of current effective state
-        set({ leftPanelUserOverride: currentlyCollapsed ? 'expanded' : 'collapsed' })
+        set({
+          leftPanelUserOverride: currentlyCollapsed ? "expanded" : "collapsed",
+        });
       },
       toggleRightPanel: () => {
-        const currentlyCollapsed = selectEffectiveRightCollapsed(get())
+        const currentlyCollapsed = selectEffectiveRightCollapsed(get());
         // Toggle sets user override to opposite of current effective state
-        set({ rightPanelUserOverride: currentlyCollapsed ? 'expanded' : 'collapsed' })
+        set({
+          rightPanelUserOverride: currentlyCollapsed ? "expanded" : "collapsed",
+        });
       },
       setLeftPanelReady: (ready) => set({ leftPanelReady: ready }),
       setRightPanelReady: (ready) => set({ rightPanelReady: ready }),
-      setLeftPanelUserOverride: (override) => set({ leftPanelUserOverride: override }),
-      setRightPanelUserOverride: (override) => set({ rightPanelUserOverride: override }),
+      setLeftPanelUserOverride: (override) =>
+        set({ leftPanelUserOverride: override }),
+      setRightPanelUserOverride: (override) =>
+        set({ rightPanelUserOverride: override }),
       setRightPanelState: (state) => {
-        const stack = new Error().stack?.split('\n').slice(2, 6).join('\n') || 'no stack'
-        logger.debug('[SKILL-DEEPLINK] setRightPanelState called', {
+        const stack =
+          new Error().stack?.split("\n").slice(2, 6).join("\n") || "no stack";
+        logger.debug("[SKILL-DEEPLINK] setRightPanelState called", {
           state,
           prevState: get().rightPanelState,
-          stack
-        })
-        set({ rightPanelState: state })
+          stack,
+        });
+        set({ rightPanelState: state });
       },
       // Sets user override to force panel expanded/collapsed state
       // Used by URL navigation to expand panel when opening documents/skills
       setRightPanelCollapsed: (collapsed) =>
-        set({ rightPanelUserOverride: collapsed ? 'collapsed' : 'expanded' }),
+        set({ rightPanelUserOverride: collapsed ? "collapsed" : "expanded" }),
       setActiveDocument: (id) => {
-        const stack = new Error().stack?.split('\n').slice(2, 6).join('\n') || 'no stack'
-        logger.debug('[SKILL-DEEPLINK] setActiveDocument called', {
+        const stack =
+          new Error().stack?.split("\n").slice(2, 6).join("\n") || "no stack";
+        logger.debug("[SKILL-DEEPLINK] setActiveDocument called", {
           id,
           prevId: get().activeDocumentId,
-          stack
-        })
-        set({ activeDocumentId: id, activeSkillId: null })
+          stack,
+        });
+        set({ activeDocumentId: id, activeSkillId: null });
       },
       setActiveSkill: (id) => {
-        const stack = new Error().stack?.split('\n').slice(2, 6).join('\n') || 'no stack'
-        logger.debug('[SKILL-DEEPLINK] setActiveSkill called', {
+        const stack =
+          new Error().stack?.split("\n").slice(2, 6).join("\n") || "no stack";
+        logger.debug("[SKILL-DEEPLINK] setActiveSkill called", {
           id,
           prevId: get().activeSkillId,
-          stack
-        })
-        set({ activeSkillId: id, activeDocumentId: null })
+          stack,
+        });
+        set({ activeSkillId: id, activeDocumentId: null });
       },
-      setActiveThread: (id) =>
-        set({ activeThreadId: id }),
+      setActiveThread: (id) => set({ activeThreadId: id }),
       bumpThreadFocusVersion: () =>
         set((state) => ({ threadFocusVersion: state.threadFocusVersion + 1 })),
-      setProjectSortOrder: (order) =>
-        set({ projectSortOrder: order }),
-      setProjectSearchQuery: (query) =>
-        set({ projectSearchQuery: query }),
+      setProjectSortOrder: (order) => set({ projectSortOrder: order }),
+      setProjectSearchQuery: (query) => set({ projectSearchQuery: query }),
       toggleDocumentTree: () =>
-        set((state) => ({ documentTreeCollapsed: !state.documentTreeCollapsed })),
+        set((state) => ({
+          documentTreeCollapsed: !state.documentTreeCollapsed,
+        })),
       setDocumentTreeCollapsed: (collapsed) =>
         set({ documentTreeCollapsed: collapsed }),
-      setLeftPanelView: (view) =>
-        set({ leftPanelView: view }),
-      setMobileActiveTab: (tab) =>
-        set({ mobileActiveTab: tab }),
-      setRecentlyCreatedFolderId: (id) =>
-        set({ recentlyCreatedFolderId: id }),
+      setLeftPanelView: (view) => set({ leftPanelView: view }),
+      setMobileActiveTab: (tab) => set({ mobileActiveTab: tab }),
+      setRecentlyCreatedFolderId: (id) => set({ recentlyCreatedFolderId: id }),
       toggleThinkingGroup: (groupId) =>
         set((state) => {
-          const newSet = new Set(state.expandedThinkingGroups)
+          const newSet = new Set(state.expandedThinkingGroups);
           if (newSet.has(groupId)) {
-            newSet.delete(groupId)
+            newSet.delete(groupId);
           } else {
-            newSet.add(groupId)
+            newSet.add(groupId);
           }
-          return { expandedThinkingGroups: newSet }
+          return { expandedThinkingGroups: newSet };
         }),
-      isThinkingGroupExpanded: (groupId) => get().expandedThinkingGroups.has(groupId),
+      isThinkingGroupExpanded: (groupId) =>
+        get().expandedThinkingGroups.has(groupId),
       clearExpandedThinkingGroups: () =>
         set({ expandedThinkingGroups: new Set<string>() }),
       toggleToolGroup: (groupId) =>
         set((state) => {
-          const newSet = new Set(state.expandedToolGroups)
+          const newSet = new Set(state.expandedToolGroups);
           if (newSet.has(groupId)) {
-            newSet.delete(groupId)
+            newSet.delete(groupId);
           } else {
-            newSet.add(groupId)
+            newSet.add(groupId);
           }
-          return { expandedToolGroups: newSet }
+          return { expandedToolGroups: newSet };
         }),
       isToolGroupExpanded: (groupId) => get().expandedToolGroups.has(groupId),
       clearExpandedToolGroups: () =>
         set({ expandedToolGroups: new Set<string>() }),
     }),
     {
-      name: 'ui-store',
+      name: "ui-store",
       version: 5, // Bumped from 4 to add leftPanelView
       partialize: (state) => ({
         // Persist user's explicit panel override choice (expanded/collapsed/null)
@@ -454,27 +465,31 @@ export const useUIStore = create<UIStore>()(
       }),
       // Migrate from older versions
       migrate: (persisted: unknown, version: number) => {
-        const state = persisted as Record<string, unknown>
+        const state = persisted as Record<string, unknown>;
 
         // v1 → v2: Convert boolean collapsed to override system
         if (version < 2) {
           if (state.leftPanelCollapsed !== undefined) {
-            state.leftPanelUserOverride = state.leftPanelCollapsed ? 'collapsed' : 'expanded'
-            delete state.leftPanelCollapsed
+            state.leftPanelUserOverride = state.leftPanelCollapsed
+              ? "collapsed"
+              : "expanded";
+            delete state.leftPanelCollapsed;
           }
           if (state.rightPanelCollapsed !== undefined) {
-            state.rightPanelUserOverride = state.rightPanelCollapsed ? 'collapsed' : 'expanded'
-            delete state.rightPanelCollapsed
+            state.rightPanelUserOverride = state.rightPanelCollapsed
+              ? "collapsed"
+              : "expanded";
+            delete state.rightPanelCollapsed;
           }
         }
 
         // v3 → v4: Remove mobileActivePanel
         if (version < 4) {
-          delete state.mobileActivePanel
+          delete state.mobileActivePanel;
         }
 
-        return state
+        return state;
       },
-    }
-  )
-)
+    },
+  ),
+);

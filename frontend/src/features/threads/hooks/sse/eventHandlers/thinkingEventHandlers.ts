@@ -7,12 +7,12 @@
  * Structure: THINKING_START → TEXT_MESSAGE_* → THINKING_END
  */
 
-import type { SSEDispatchContext, SSEStoreActions } from '../types'
+import type { SSEDispatchContext, SSEStoreActions } from "../types";
 import type {
   ThinkingStartEvent,
   ThinkingTextMessageContentEvent,
   ThinkingEndEvent,
-} from '../../sseEventTypes'
+} from "../../sseEventTypes";
 
 /**
  * Handle THINKING_START event.
@@ -21,21 +21,21 @@ import type {
 export function handleThinkingStart(
   data: ThinkingStartEvent,
   ctx: SSEDispatchContext,
-  actions: SSEStoreActions
+  actions: SSEStoreActions,
 ): void {
-  const { tracker, logger } = ctx
+  const { tracker, logger } = ctx;
 
   // Get next block index and register the thinking block
-  const blockIndex = tracker.nextBlockIndex()
-  tracker.setCurrentBlockType('thinking')
-  tracker.registerThinking(data.thinkingId, blockIndex)
+  const blockIndex = tracker.nextBlockIndex();
+  tracker.setCurrentBlockType("thinking");
+  tracker.registerThinking(data.thinkingId, blockIndex);
 
-  actions.setStreamingBlockInfo(blockIndex, 'thinking')
+  actions.setStreamingBlockInfo(blockIndex, "thinking");
 
-  logger.debug('sse:THINKING_START', {
+  logger.debug("sse:THINKING_START", {
     thinkingId: data.thinkingId,
     blockIndex,
-  })
+  });
 }
 
 /**
@@ -46,9 +46,9 @@ export function handleThinkingTextMessageStart(
   _data: unknown,
   ctx: SSEDispatchContext,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _actions: SSEStoreActions
+  _actions: SSEStoreActions,
 ): void {
-  ctx.logger.debug('sse:THINKING_TEXT_MESSAGE_START')
+  ctx.logger.debug("sse:THINKING_TEXT_MESSAGE_START");
 }
 
 /**
@@ -59,22 +59,23 @@ export function handleThinkingTextMessageContent(
   data: ThinkingTextMessageContentEvent,
   ctx: SSEDispatchContext,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _actions: SSEStoreActions
+  _actions: SSEStoreActions,
 ): void {
-  if (!data.delta) return
+  if (!data.delta) return;
 
   // Some providers omit thinkingId on THINKING_TEXT_MESSAGE_CONTENT; fall back to the
   // currently active thinking block (tracked on THINKING_START).
   const blockIndex = data.thinkingId
     ? ctx.tracker.getThinkingBlockIndex(data.thinkingId)
-    : ctx.tracker.getActiveThinkingBlockIndex() ?? ctx.tracker.getCurrentBlockIndex()
+    : (ctx.tracker.getActiveThinkingBlockIndex() ??
+      ctx.tracker.getCurrentBlockIndex());
 
   if (blockIndex === undefined || blockIndex === null) {
-    ctx.logger.warn('sse:THINKING_TEXT_MESSAGE_CONTENT:no_block')
-    return
+    ctx.logger.warn("sse:THINKING_TEXT_MESSAGE_CONTENT:no_block");
+    return;
   }
 
-  ctx.buffer.append(blockIndex, 'thinking', data.delta)
+  ctx.buffer.append(blockIndex, "thinking", data.delta);
 }
 
 /**
@@ -85,9 +86,9 @@ export function handleThinkingTextMessageEnd(
   _data: unknown,
   ctx: SSEDispatchContext,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _actions: SSEStoreActions
+  _actions: SSEStoreActions,
 ): void {
-  ctx.logger.debug('sse:THINKING_TEXT_MESSAGE_END')
+  ctx.logger.debug("sse:THINKING_TEXT_MESSAGE_END");
 }
 
 /**
@@ -97,26 +98,26 @@ export function handleThinkingTextMessageEnd(
 export function handleThinkingEnd(
   data: ThinkingEndEvent,
   ctx: SSEDispatchContext,
-  actions: SSEStoreActions
+  actions: SSEStoreActions,
 ): void {
-  const { tracker, logger, buffer } = ctx
+  const { tracker, logger, buffer } = ctx;
 
-  buffer.flush()
+  buffer.flush();
 
-  const endBlockIndex = tracker.getThinkingBlockIndex(data.thinkingId)
+  const endBlockIndex = tracker.getThinkingBlockIndex(data.thinkingId);
   const shouldClearCurrent =
-    tracker.getCurrentBlockType() === 'thinking' &&
+    tracker.getCurrentBlockType() === "thinking" &&
     endBlockIndex !== undefined &&
-    endBlockIndex === tracker.getCurrentBlockIndex()
+    endBlockIndex === tracker.getCurrentBlockIndex();
 
-  tracker.removeThinking(data.thinkingId)
+  tracker.removeThinking(data.thinkingId);
   if (shouldClearCurrent) {
-    tracker.setCurrentBlockType(null)
-    actions.setStreamingBlockInfo(null, null)
+    tracker.setCurrentBlockType(null);
+    actions.setStreamingBlockInfo(null, null);
   }
 
-  logger.debug('sse:THINKING_END', {
+  logger.debug("sse:THINKING_END", {
     thinkingId: data.thinkingId,
     clearedCurrent: shouldClearCurrent,
-  })
+  });
 }

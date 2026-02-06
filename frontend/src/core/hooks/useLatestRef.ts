@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect } from "react";
 
 /**
  * Hook that keeps a ref always in sync with the latest value.
@@ -16,11 +16,11 @@ import { useRef, useEffect } from 'react'
  * }, []) // No need to include count in deps
  */
 export function useLatestRef<T>(value: T) {
-  const ref = useRef(value)
+  const ref = useRef(value);
 
   useEffect(() => {
-    ref.current = value
-  }, [value])
+    ref.current = value;
+  }, [value]);
 
-  return ref
+  return ref;
 }

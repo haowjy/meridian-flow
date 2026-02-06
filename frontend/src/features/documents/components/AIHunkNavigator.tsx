@@ -9,9 +9,9 @@
  * Shows: change counter, prev/next nav, reject/accept all buttons.
  */
 
-import { ChevronUp, ChevronDown } from 'lucide-react'
-import { Button } from '@/shared/components/ui/button'
-import type { MergedHunk } from '@/core/lib/mergedDocument'
+import { ChevronUp, ChevronDown } from "lucide-react";
+import { Button } from "@/shared/components/ui/button";
+import type { MergedHunk } from "@/core/lib/mergedDocument";
 
 // =============================================================================
 // TYPES
@@ -19,17 +19,17 @@ import type { MergedHunk } from '@/core/lib/mergedDocument'
 
 interface AIHunkNavigatorProps {
   /** All hunks in the document */
-  hunks: MergedHunk[]
+  hunks: MergedHunk[];
   /** Currently focused hunk index (0-based) */
-  currentIndex: number
+  currentIndex: number;
   /** Navigate to previous hunk */
-  onPrevious: () => void
+  onPrevious: () => void;
   /** Navigate to next hunk */
-  onNext: () => void
+  onNext: () => void;
   /** Accept all changes (dispatches CM6 transaction) */
-  onAcceptAll: () => void
+  onAcceptAll: () => void;
   /** Reject all changes (dispatches CM6 transaction) */
-  onRejectAll: () => void
+  onRejectAll: () => void;
 }
 
 // =============================================================================
@@ -60,14 +60,11 @@ export function AIHunkNavigator({
   onRejectAll,
 }: AIHunkNavigatorProps) {
   // Don't render if no hunks (no AI changes)
-  if (hunks.length === 0) return null
+  if (hunks.length === 0) return null;
 
   return (
-    <div className="flex justify-center pb-4 pointer-events-none">
-      <div
-        className="flex items-center gap-1 bg-background/95 backdrop-blur
-                   border rounded-lg px-2 py-0.5 shadow-lg pointer-events-auto"
-      >
+    <div className="pointer-events-none flex justify-center pb-4">
+      <div className="bg-background/95 pointer-events-auto flex items-center gap-1 rounded-lg border px-2 py-0.5 shadow-lg backdrop-blur">
         {/* Navigation controls */}
         <Button
           size="icon"
@@ -79,7 +76,7 @@ export function AIHunkNavigator({
         </Button>
 
         {/* Change counter */}
-        <span className="text-sm text-muted-foreground min-w-[5rem] text-center tabular-nums">
+        <span className="text-muted-foreground min-w-[5rem] text-center text-sm tabular-nums">
           Change {currentIndex + 1} / {hunks.length}
         </span>
 
@@ -93,13 +90,13 @@ export function AIHunkNavigator({
         </Button>
 
         {/* Separator */}
-        <div className="w-px h-5 bg-border mx-1" />
+        <div className="bg-border mx-1 h-5 w-px" />
 
         {/* Bulk actions */}
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 text-xs px-2 text-error/70 hover:text-error hover:bg-error/10"
+          className="text-error/70 hover:text-error hover:bg-error/10 h-7 px-2 text-xs"
           onClick={onRejectAll}
           title="Reject all changes"
         >
@@ -109,7 +106,7 @@ export function AIHunkNavigator({
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 text-xs px-2 text-success/70 hover:text-success hover:bg-success/10"
+          className="text-success/70 hover:text-success hover:bg-success/10 h-7 px-2 text-xs"
           onClick={onAcceptAll}
           title="Accept all changes"
         >
@@ -117,5 +114,5 @@ export function AIHunkNavigator({
         </Button>
       </div>
     </div>
-  )
+  );
 }

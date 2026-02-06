@@ -1,10 +1,10 @@
-import { useState } from 'react'
-import { MobilePanelHeader } from '@/shared/components/layout/headers'
-import { MobileMenuSheet } from '@/shared/components/layout/MobileMenuSheet'
-import { ProjectSettingsPanelContent } from './ProjectSettingsPanel'
+import { useState } from "react";
+import { MobilePanelHeader } from "@/shared/components/layout/headers";
+import { MobileMenuSheet } from "@/shared/components/layout/MobileMenuSheet";
+import { ProjectSettingsPanelContent } from "./ProjectSettingsPanel";
 
 interface MobileProjectSettingsViewProps {
-  projectId: string
+  projectId: string;
 }
 
 /**
@@ -12,8 +12,10 @@ interface MobileProjectSettingsViewProps {
  * Provides mobile-appropriate header (hamburger menu) and renders
  * the settings content without the desktop SidebarToggle.
  */
-export function MobileProjectSettingsView({ projectId }: MobileProjectSettingsViewProps) {
-  const [menuOpen, setMenuOpen] = useState(false)
+export function MobileProjectSettingsView({
+  projectId,
+}: MobileProjectSettingsViewProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <div className="flex h-full flex-col">
@@ -26,9 +28,9 @@ export function MobileProjectSettingsView({ projectId }: MobileProjectSettingsVi
       <MobileMenuSheet open={menuOpen} onOpenChange={setMenuOpen} inWorkspace />
 
       {/* Settings content */}
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         <ProjectSettingsPanelContent projectId={projectId} />
       </div>
     </div>
-  )
+  );
 }

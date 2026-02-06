@@ -8,22 +8,28 @@
  * Placed in core layer to be used by useTreeStore without DIP violation.
  */
 
-import type { Document } from '@/features/documents/types/document'
-import type { Folder } from '@/features/folders/types/folder'
-import type { DocTreeFolder, DocTreeDocument } from '@/types/docTree'
+import type { Document } from "@/features/documents/types/document";
+import type { Folder } from "@/features/folders/types/folder";
+import type { DocTreeFolder, DocTreeDocument } from "@/types/docTree";
 
 /** Partial document with fields from tool result */
 export type PartialDocument = Pick<
   Document,
-  'id' | 'name' | 'filename' | 'extension' | 'folderId' | 'wordCount' | 'updatedAt'
->
+  | "id"
+  | "name"
+  | "filename"
+  | "extension"
+  | "folderId"
+  | "wordCount"
+  | "updatedAt"
+>;
 
 /** Partial folder with fields from tool result */
-export type PartialFolder = Pick<Folder, 'id' | 'name' | 'parentId'>
+export type PartialFolder = Pick<Folder, "id" | "name" | "parentId">;
 
 export interface FlattenResult {
-  documents: PartialDocument[]
-  folders: PartialFolder[]
+  documents: PartialDocument[];
+  folders: PartialFolder[];
 }
 
 /**
@@ -41,18 +47,18 @@ export interface FlattenResult {
 export function flattenToolTree(
   folders: DocTreeFolder[],
   documents: DocTreeDocument[],
-  parentId: string | null = null
+  parentId: string | null = null,
 ): FlattenResult {
-  const result: FlattenResult = { documents: [], folders: [] }
+  const result: FlattenResult = { documents: [], folders: [] };
 
   // Process documents at this level
   for (const doc of documents) {
-    const extension = doc.extension || '.md'
-    const filename = doc.name
+    const extension = doc.extension || ".md";
+    const filename = doc.name;
     // Strip extension from name if present
     const name = filename.endsWith(extension)
       ? filename.slice(0, -extension.length)
-      : filename
+      : filename;
 
     result.documents.push({
       id: doc.id,
@@ -62,7 +68,7 @@ export function flattenToolTree(
       folderId: parentId,
       wordCount: doc.word_count,
       updatedAt: new Date(doc.updated_at),
-    })
+    });
   }
 
   // Process folders recursively
@@ -71,17 +77,17 @@ export function flattenToolTree(
       id: folder.id,
       name: folder.name,
       parentId,
-    })
+    });
 
     // Recurse into children
     const childResult = flattenToolTree(
       folder.folders || [],
       folder.documents || [],
-      folder.id
-    )
-    result.documents.push(...childResult.documents)
-    result.folders.push(...childResult.folders)
+      folder.id,
+    );
+    result.documents.push(...childResult.documents);
+    result.folders.push(...childResult.folders);
   }
 
-  return result
+  return result;
 }

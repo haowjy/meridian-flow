@@ -4,17 +4,17 @@
  * SOLID: Interface Segregation - Small, focused interfaces
  */
 
-import type { EditorView } from '@codemirror/view'
-import type { Extension } from '@codemirror/state'
+import type { EditorView } from "@codemirror/view";
+import type { Extension } from "@codemirror/state";
 
 // ============================================================================
 // WORD COUNT
 // ============================================================================
 
 export interface WordCount {
-  words: number
-  characters: number
-  paragraphs: number
+  words: number;
+  characters: number;
+  paragraphs: number;
 }
 
 // ============================================================================
@@ -31,57 +31,57 @@ export interface SetContentOptions {
    * Use for server hydration/refresh.
    * Default: true
    */
-  addToHistory?: boolean
+  addToHistory?: boolean;
 
   /**
    * If false, do not call the React onChange callback.
    * Use for hydration/refresh (server → editor), not for user actions.
    * Default: true
    */
-  emitChange?: boolean
+  emitChange?: boolean;
 }
 
 /**
  * Core editor operations
  */
 export interface EditorRef {
-  getContent(): string
-  setContent(content: string, options?: SetContentOptions): void
-  focus(): void
-  getView(): EditorView | null
+  getContent(): string;
+  setContent(content: string, options?: SetContentOptions): void;
+  focus(): void;
+  getView(): EditorView | null;
 }
 
 /**
  * Text formatting operations
  */
 export interface FormattingRef {
-  toggleBold(): void
-  toggleItalic(): void
-  toggleInlineCode(): void
-  toggleHeading(level: 1 | 2 | 3): void
-  insertLink(url: string, text?: string): void
+  toggleBold(): void;
+  toggleItalic(): void;
+  toggleInlineCode(): void;
+  toggleHeading(level: 1 | 2 | 3): void;
+  insertLink(url: string, text?: string): void;
 }
 
 /**
  * List operations
  */
 export interface ListRef {
-  toggleBulletList(): void
-  toggleOrderedList(): void
+  toggleBulletList(): void;
+  toggleOrderedList(): void;
 }
 
 /**
  * Format detection for toolbar state
  */
 export interface FormatDetectionRef {
-  isFormatActive(format: FormatType): boolean
+  isFormatActive(format: FormatType): boolean;
 }
 
 /**
  * Word counting
  */
 export interface WordCountRef {
-  getWordCount(): WordCount
+  getWordCount(): WordCount;
 }
 
 /**
@@ -90,18 +90,19 @@ export interface WordCountRef {
  */
 export interface ConfigurationRef {
   /** Set editable state dynamically (via compartment reconfiguration) */
-  setEditable(editable: boolean): void
+  setEditable(editable: boolean): void;
   /** Set theme dynamically (via compartment reconfiguration) */
-  setTheme(theme: Extension): void
+  setTheme(theme: Extension): void;
   /** Enable/disable live preview (for diff mode where preview is confusing) */
-  setLivePreviewEnabled(enabled: boolean): void
+  setLivePreviewEnabled(enabled: boolean): void;
 }
 
 /**
  * Combined editor ref - implements all interfaces
  */
 export interface CodeMirrorEditorRef
-  extends EditorRef,
+  extends
+    EditorRef,
     FormattingRef,
     ListRef,
     FormatDetectionRef,
@@ -113,15 +114,15 @@ export interface CodeMirrorEditorRef
 // ============================================================================
 
 export type FormatType =
-  | 'bold'
-  | 'italic'
-  | 'inlineCode'
-  | 'heading1'
-  | 'heading2'
-  | 'heading3'
-  | 'bulletList'
-  | 'orderedList'
-  | 'link'
+  | "bold"
+  | "italic"
+  | "inlineCode"
+  | "heading1"
+  | "heading2"
+  | "heading3"
+  | "bulletList"
+  | "orderedList"
+  | "link";
 
 // ============================================================================
 // EDITOR OPTIONS
@@ -129,19 +130,19 @@ export type FormatType =
 
 export interface CodeMirrorEditorOptions {
   /** Initial markdown content */
-  initialContent?: string
+  initialContent?: string;
   /** Called when content changes */
-  onChange?: (content: string) => void
+  onChange?: (content: string) => void;
   /** Called when editor is ready with ref */
-  onReady?: (ref: CodeMirrorEditorRef) => void
+  onReady?: (ref: CodeMirrorEditorRef) => void;
   /** Whether editor is editable */
-  editable?: boolean
+  editable?: boolean;
   /** Placeholder text when empty */
-  placeholder?: string
+  placeholder?: string;
   /** Auto-focus on mount */
-  autoFocus?: boolean
+  autoFocus?: boolean;
   /** Additional CSS class for the container */
-  className?: string
+  className?: string;
   /**
    * Extra extensions to append to the base editor configuration.
    * Use this for merge view, additional keymaps, or other extensions.
@@ -160,5 +161,5 @@ export interface CodeMirrorEditorOptions {
    * <CodeMirrorEditor extensions={[compartment.of(changesExtensions(baseline))]} />
    * ```
    */
-  extensions?: Extension[]
+  extensions?: Extension[];
 }

@@ -4,4 +4,4 @@ export type {
   SkillSyncState,
   CreateSkillRequest,
   UpdateSkillRequest,
-} from './skill'
+} from "./skill";

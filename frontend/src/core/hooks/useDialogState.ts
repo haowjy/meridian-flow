@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState } from "react";
 
 /**
  * Generic hook for managing dialog state with optional associated data.
@@ -13,18 +13,18 @@ import { useState } from 'react'
  * ```
  */
 export function useDialogState<T = void>() {
-  const [isOpen, setIsOpen] = useState(false)
-  const [item, setItem] = useState<T | null>(null)
+  const [isOpen, setIsOpen] = useState(false);
+  const [item, setItem] = useState<T | null>(null);
 
   const open = (data?: T) => {
-    setItem((data ?? null) as T | null)
-    setIsOpen(true)
-  }
+    setItem((data ?? null) as T | null);
+    setIsOpen(true);
+  };
 
   const close = () => {
-    setIsOpen(false)
-    setItem(null)
-  }
+    setIsOpen(false);
+    setItem(null);
+  };
 
-  return { isOpen, item, open, close }
+  return { isOpen, item, open, close };
 }

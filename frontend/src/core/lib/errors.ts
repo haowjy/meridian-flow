@@ -2,29 +2,29 @@
  * Error handling utilities for consistent error processing.
  */
 
-import type { DocumentDto } from '@/types/api'
-import { fromDocumentDto } from '@/types/api'
-import type { Document } from '@/features/documents/types/document'
+import type { DocumentDto } from "@/types/api";
+import { fromDocumentDto } from "@/types/api";
+import type { Document } from "@/features/documents/types/document";
 
 /**
  * Application error types for categorizing errors.
  */
 export enum ErrorType {
-  Network = 'NETWORK_ERROR',
-  Validation = 'VALIDATION_ERROR',
-  NotFound = 'NOT_FOUND',
-  Unauthorized = 'UNAUTHORIZED',
-  Conflict = 'CONFLICT',
-  ServerError = 'SERVER_ERROR',
-  Unknown = 'UNKNOWN_ERROR',
+  Network = "NETWORK_ERROR",
+  Validation = "VALIDATION_ERROR",
+  NotFound = "NOT_FOUND",
+  Unauthorized = "UNAUTHORIZED",
+  Conflict = "CONFLICT",
+  ServerError = "SERVER_ERROR",
+  Unknown = "UNKNOWN_ERROR",
 }
 
 /**
  * Field-level validation error (RFC 7807 invalid_params)
  */
 export interface FieldError {
-  name: string   // Field name
-  reason: string // Why it's invalid
+  name: string; // Field name
+  reason: string; // Why it's invalid
 }
 
 /**
@@ -40,10 +40,10 @@ export class AppError<TResource = unknown> extends Error {
     public resource?: TResource,
     public fieldErrors?: FieldError[],
     /** Single field that caused the error (from backend ValidationError.Field) */
-    public field?: string
+    public field?: string,
   ) {
-    super(message)
-    this.name = 'AppError'
+    super(message);
+    this.name = "AppError";
   }
 }
 
@@ -52,18 +52,18 @@ export class AppError<TResource = unknown> extends Error {
  */
 export function getErrorMessage(error: unknown): string {
   if (error instanceof AppError) {
-    return error.message
+    return error.message;
   }
 
   if (error instanceof Error) {
-    return error.message
+    return error.message;
   }
 
-  if (typeof error === 'string') {
-    return error
+  if (typeof error === "string") {
+    return error;
   }
 
-  return 'An unexpected error occurred'
+  return "An unexpected error occurred";
 }
 
 /**
@@ -74,47 +74,47 @@ export function httpErrorToAppError<TResource = unknown>(
   message?: string,
   resource?: TResource,
   fieldErrors?: FieldError[],
-  field?: string
+  field?: string,
 ): AppError<TResource> {
   switch (status) {
     case 400:
       return new AppError<TResource>(
         ErrorType.Validation,
-        message || 'Invalid request. Please check your input.',
+        message || "Invalid request. Please check your input.",
         undefined,
         undefined,
         fieldErrors,
-        field
-      )
+        field,
+      );
     case 401:
       return new AppError<TResource>(
         ErrorType.Unauthorized,
-        message || 'You are not authorized to perform this action.'
-      )
+        message || "You are not authorized to perform this action.",
+      );
     case 404:
       return new AppError<TResource>(
         ErrorType.NotFound,
-        message || 'The requested resource was not found.'
-      )
+        message || "The requested resource was not found.",
+      );
     case 409:
       return new AppError(
         ErrorType.Conflict,
-        message || 'Resource already exists.',
+        message || "Resource already exists.",
         undefined,
-        resource
-      )
+        resource,
+      );
     case 500:
     case 502:
     case 503:
       return new AppError<TResource>(
         ErrorType.ServerError,
-        message || 'Server error. Please try again later.'
-      )
+        message || "Server error. Please try again later.",
+      );
     default:
       return new AppError<TResource>(
         ErrorType.Unknown,
-        message || 'An unexpected error occurred.'
-      )
+        message || "An unexpected error occurred.",
+      );
   }
 }
 
@@ -123,40 +123,42 @@ export function httpErrorToAppError<TResource = unknown>(
  */
 export function isNetworkError(error: unknown): boolean {
   // Native fetch/network failure
-  if (error instanceof TypeError && error.message === 'Failed to fetch') {
-    return true
+  if (error instanceof TypeError && error.message === "Failed to fetch") {
+    return true;
   }
 
   if (error instanceof AppError) {
     // Treat ServerError as transient to allow retries on 5xx
-    return error.type === ErrorType.Network || error.type === ErrorType.ServerError
+    return (
+      error.type === ErrorType.Network || error.type === ErrorType.ServerError
+    );
   }
 
-  return false
+  return false;
 }
 
 /**
  * Narrow an AbortError emitted by fetch/AbortController.
  */
 export function isAbortError(error: unknown): error is Error {
-  return error instanceof Error && error.name === 'AbortError'
+  return error instanceof Error && error.name === "AbortError";
 }
 
 /**
  * Best-effort guard for AppError across dynamic import boundaries.
  */
 export function isAppError(error: unknown): error is AppError<unknown> {
-  if (!error || typeof error !== 'object') return false
+  if (!error || typeof error !== "object") return false;
 
-  const candidate = error as { name?: unknown; message?: unknown }
-  return candidate.name === 'AppError' && typeof candidate.message === 'string'
+  const candidate = error as { name?: unknown; message?: unknown };
+  return candidate.name === "AppError" && typeof candidate.message === "string";
 }
 
 /**
  * Check if error is a 409 Conflict (e.g., ai_version_rev mismatch).
  */
 export function isConflictError(error: unknown): error is AppError<unknown> {
-  return isAppError(error) && error.type === ErrorType.Conflict
+  return isAppError(error) && error.type === ErrorType.Conflict;
 }
 
 /**
@@ -165,12 +167,12 @@ export function isConflictError(error: unknown): error is AppError<unknown> {
  * Returns undefined if not a conflict or no resource attached.
  */
 export function extractDocumentFromConflict(
-  error: unknown
+  error: unknown,
 ): Document | undefined {
-  if (!isConflictError(error)) return undefined
-  const dto = error.resource as DocumentDto | undefined
-  if (!dto) return undefined
-  return fromDocumentDto(dto)
+  if (!isConflictError(error)) return undefined;
+  const dto = error.resource as DocumentDto | undefined;
+  if (!dto) return undefined;
+  return fromDocumentDto(dto);
 }
 
 /**
@@ -194,7 +196,7 @@ export function extractDocumentFromConflict(
  */
 export function getErrorMessageWithFallback(
   error: unknown,
-  fallbackMessage: string
+  fallbackMessage: string,
 ): string {
-  return getErrorMessage(error) || fallbackMessage
+  return getErrorMessage(error) || fallbackMessage;
 }

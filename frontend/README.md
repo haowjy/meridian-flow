@@ -17,6 +17,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ## Documentation
 
 **For development:** See [`CLAUDE.md`](CLAUDE.md) for:
+
 - Architecture overview (caching, stores, sync system)
 - Development commands
 - Key conventions and patterns
