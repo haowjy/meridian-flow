@@ -8,9 +8,9 @@
  * All events are AG-UI protocol compliant with Meridian extensions.
  */
 
-import { SSE_EVENTS } from '../sseEventTypes'
-import type { SSEDispatchContext, SSEStoreActions } from './types'
-import { parseSSEEvent } from './sseEventParser'
+import { SSE_EVENTS } from "../sseEventTypes";
+import type { SSEDispatchContext, SSEStoreActions } from "./types";
+import { parseSSEEvent } from "./sseEventParser";
 import {
   // Tool handlers
   handleToolCallStart,
@@ -36,7 +36,7 @@ import {
   // Interjection handlers
   handleInterjectionUpdated,
   handleStreamSwitch,
-} from './eventHandlers'
+} from "./eventHandlers";
 
 /**
  * Dispatch an SSE event to the appropriate handler.
@@ -50,34 +50,38 @@ export function dispatchSSEEvent(
   eventType: string,
   data: string,
   ctx: SSEDispatchContext,
-  actions: SSEStoreActions
+  actions: SSEStoreActions,
 ): void {
-  const { logger } = ctx
+  const { logger } = ctx;
 
   // Helper to parse JSON (with camelCase conversion) and invoke handler with separate error tracking
   const parseAndHandle = <T>(
-    handler: (data: T, ctx: SSEDispatchContext, actions: SSEStoreActions) => void
+    handler: (
+      data: T,
+      ctx: SSEDispatchContext,
+      actions: SSEStoreActions,
+    ) => void,
   ) => {
-    let parsed: T
+    let parsed: T;
     try {
       // Use SSE gateway parser for consistent snake_case → camelCase conversion
-      parsed = parseSSEEvent<T>(data)
+      parsed = parseSSEEvent<T>(data);
     } catch (parseError) {
       logger.error(`sse:${eventType}:parse_error`, {
         error: parseError,
         rawData: data.slice(0, 500), // Truncate to avoid log spam
-      })
-      return
+      });
+      return;
     }
     try {
-      handler(parsed, ctx, actions)
+      handler(parsed, ctx, actions);
     } catch (handlerError) {
       logger.error(`sse:${eventType}:handler_error`, {
         error: handlerError,
         parsed,
-      })
+      });
     }
-  }
+  };
 
   switch (eventType) {
     // ============================================================
@@ -86,36 +90,36 @@ export function dispatchSSEEvent(
     // ============================================================
 
     case SSE_EVENTS.TOOL_CALL_START:
-      parseAndHandle(handleToolCallStart)
-      break
+      parseAndHandle(handleToolCallStart);
+      break;
 
     case SSE_EVENTS.TOOL_CALL_ARGS:
-      parseAndHandle(handleToolCallArgs)
-      break
+      parseAndHandle(handleToolCallArgs);
+      break;
 
     case SSE_EVENTS.TOOL_CALL_END:
-      parseAndHandle(handleToolCallEnd)
-      break
+      parseAndHandle(handleToolCallEnd);
+      break;
 
     case SSE_EVENTS.TOOL_CALL_RESULT:
-      parseAndHandle(handleToolCallResult)
-      break
+      parseAndHandle(handleToolCallResult);
+      break;
 
     // ============================================================
     // AG-UI Text Message Events
     // ============================================================
 
     case SSE_EVENTS.TEXT_MESSAGE_START:
-      parseAndHandle(handleTextMessageStart)
-      break
+      parseAndHandle(handleTextMessageStart);
+      break;
 
     case SSE_EVENTS.TEXT_MESSAGE_CONTENT:
-      parseAndHandle(handleTextMessageContent)
-      break
+      parseAndHandle(handleTextMessageContent);
+      break;
 
     case SSE_EVENTS.TEXT_MESSAGE_END:
-      parseAndHandle(handleTextMessageEnd)
-      break
+      parseAndHandle(handleTextMessageEnd);
+      break;
 
     // ============================================================
     // AG-UI Thinking Events
@@ -123,34 +127,34 @@ export function dispatchSSEEvent(
     // ============================================================
 
     case SSE_EVENTS.THINKING_START:
-      parseAndHandle(handleThinkingStart)
-      break
+      parseAndHandle(handleThinkingStart);
+      break;
 
     case SSE_EVENTS.THINKING_TEXT_MESSAGE_START:
       // No data to parse for this event
       try {
-        handleThinkingTextMessageStart(undefined, ctx, actions)
+        handleThinkingTextMessageStart(undefined, ctx, actions);
       } catch (handlerError) {
-        logger.error(`sse:${eventType}:handler_error`, { error: handlerError })
+        logger.error(`sse:${eventType}:handler_error`, { error: handlerError });
       }
-      break
+      break;
 
     case SSE_EVENTS.THINKING_TEXT_MESSAGE_CONTENT:
-      parseAndHandle(handleThinkingTextMessageContent)
-      break
+      parseAndHandle(handleThinkingTextMessageContent);
+      break;
 
     case SSE_EVENTS.THINKING_TEXT_MESSAGE_END:
       // No data to parse for this event
       try {
-        handleThinkingTextMessageEnd(undefined, ctx, actions)
+        handleThinkingTextMessageEnd(undefined, ctx, actions);
       } catch (handlerError) {
-        logger.error(`sse:${eventType}:handler_error`, { error: handlerError })
+        logger.error(`sse:${eventType}:handler_error`, { error: handlerError });
       }
-      break
+      break;
 
     case SSE_EVENTS.THINKING_END:
-      parseAndHandle(handleThinkingEnd)
-      break
+      parseAndHandle(handleThinkingEnd);
+      break;
 
     // ============================================================
     // AG-UI Lifecycle Events (with Meridian extensions)
@@ -158,39 +162,39 @@ export function dispatchSSEEvent(
     // ============================================================
 
     case SSE_EVENTS.RUN_STARTED:
-      parseAndHandle(handleRunStarted)
-      break
+      parseAndHandle(handleRunStarted);
+      break;
 
     case SSE_EVENTS.RUN_FINISHED:
-      parseAndHandle(handleRunFinished)
-      break
+      parseAndHandle(handleRunFinished);
+      break;
 
     case SSE_EVENTS.RUN_ERROR:
-      parseAndHandle(handleRunError)
-      break
+      parseAndHandle(handleRunError);
+      break;
 
     case SSE_EVENTS.STEP_STARTED:
-      parseAndHandle(handleStepStarted)
-      break
+      parseAndHandle(handleStepStarted);
+      break;
 
     case SSE_EVENTS.STEP_FINISHED:
-      parseAndHandle(handleStepFinished)
-      break
+      parseAndHandle(handleStepFinished);
+      break;
 
     // ============================================================
     // Meridian Interjection Events
     // ============================================================
 
     case SSE_EVENTS.INTERJECTION_UPDATED:
-      parseAndHandle(handleInterjectionUpdated)
-      break
+      parseAndHandle(handleInterjectionUpdated);
+      break;
 
     case SSE_EVENTS.STREAM_SWITCH:
-      parseAndHandle(handleStreamSwitch)
-      break
+      parseAndHandle(handleStreamSwitch);
+      break;
 
     default:
       // Unknown event type - log for debugging
-      logger.debug('sse:unknown_event', { eventType, data })
+      logger.debug("sse:unknown_event", { eventType, data });
   }
 }

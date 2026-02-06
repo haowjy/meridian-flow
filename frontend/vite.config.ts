@@ -1,20 +1,20 @@
-import { defineConfig, Plugin } from 'vite'
-import react from '@vitejs/plugin-react'
-import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
-import path from 'node:path'
+import { defineConfig, Plugin } from "vite";
+import react from "@vitejs/plugin-react";
+import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
+import path from "node:path";
 
 // Polyfill for Node.js modules
 const nodePolyfills = (): Plugin => ({
-  name: 'node-polyfills',
+  name: "node-polyfills",
   config() {
     return {
       define: {
-        'process.env': {},
-        global: 'globalThis',
+        "process.env": {},
+        global: "globalThis",
       },
-    }
+    };
   },
-})
+});
 
 export default defineConfig({
   plugins: [
@@ -22,30 +22,30 @@ export default defineConfig({
     TanStackRouterVite(),
     react({
       babel: {
-        plugins: ['babel-plugin-react-compiler'],
+        plugins: ["babel-plugin-react-compiler"],
       },
     }),
   ],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
-      'path': 'path-browserify',
-      'process': 'process/browser',
-      'url': 'url',
+      "@": path.resolve(__dirname, "./src"),
+      path: "path-browserify",
+      process: "process/browser",
+      url: "url",
     },
   },
   server: {
     port: 3000,
   },
   build: {
-    outDir: 'dist',
+    outDir: "dist",
     sourcemap: true,
     commonjsOptions: {
       transformMixedEsModules: true,
     },
   },
   optimizeDeps: {
-    include: ['shiki', 'streamdown', 'style-to-js'],
+    include: ["shiki", "streamdown", "style-to-js"],
     exclude: [],
   },
-})
+});

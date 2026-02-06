@@ -12,12 +12,9 @@
  * regions to copy text, they just can't modify it.
  */
 
-import { EditorState } from '@codemirror/state'
-import {
-  MARKERS,
-  extractHunks,
-} from '@/core/lib/mergedDocument'
-import { blockedEditEffect, type BlockedEditReason } from './blockedEditEffect'
+import { EditorState } from "@codemirror/state";
+import { MARKERS, extractHunks } from "@/core/lib/mergedDocument";
+import { blockedEditEffect, type BlockedEditReason } from "./blockedEditEffect";
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -33,7 +30,7 @@ function containsAnyMarker(text: string): boolean {
     text.includes(MARKERS.DEL_END) ||
     text.includes(MARKERS.INS_START) ||
     text.includes(MARKERS.INS_END)
-  )
+  );
 }
 
 // =============================================================================
@@ -58,36 +55,36 @@ function containsAnyMarker(text: string): boolean {
 export const diffEditFilter = EditorState.transactionFilter.of((tr) => {
   // Pass through non-editing transactions
   if (!tr.docChanged) {
-    return tr
+    return tr;
   }
 
-  const doc = tr.startState.doc.toString()
+  const doc = tr.startState.doc.toString();
 
   // If no markers at all, nothing to protect (not in diff mode)
   if (!containsAnyMarker(doc)) {
-    return tr
+    return tr;
   }
 
   // Extract hunks from the current merged doc.
   // We derive hunks from document content, not from React state.
-  const hunks = extractHunks(doc)
-  let shouldBlock = false
-  let blockReason: BlockedEditReason = 'del_region'
+  const hunks = extractHunks(doc);
+  let shouldBlock = false;
+  let blockReason: BlockedEditReason = "del_region";
 
   // Check each change in the transaction
   tr.changes.iterChanges((fromA, toA, _fromB, _toB, _inserted) => {
     // Already determined to block, skip further checks
-    if (shouldBlock) return
+    if (shouldBlock) return;
 
-    const replacedText = doc.slice(fromA, toA)
-    const insertedText = _inserted.toString()
+    const replacedText = doc.slice(fromA, toA);
+    const insertedText = _inserted.toString();
 
     // 1. Block if marker chars are in replaced or inserted text.
     // Markers are hidden visually but still exist in the document.
     if (containsAnyMarker(replacedText) || containsAnyMarker(insertedText)) {
-      shouldBlock = true
-      blockReason = 'marker_touched'
-      return
+      shouldBlock = true;
+      blockReason = "marker_touched";
+      return;
     }
 
     // 2. Block edits that overlap deletion regions (original text).
@@ -95,29 +92,29 @@ export const diffEditFilter = EditorState.transactionFilter.of((tr) => {
     for (const hunk of hunks) {
       // Check overlap: edit range [fromA, toA) vs DEL region [delStart, delEnd]
       if (fromA <= hunk.delEnd && toA >= hunk.delStart) {
-        shouldBlock = true
-        blockReason = 'del_region'
-        return
+        shouldBlock = true;
+        blockReason = "del_region";
+        return;
       }
 
       // 3. Block inserts exactly at insStart.
       // DEL_END must be immediately followed by INS_START - inserting text
       // between them would break hunk structure and validateMarkerStructure().
       if (fromA === toA && fromA === hunk.insStart) {
-        shouldBlock = true
-        blockReason = 'marker_touched'
-        return
+        shouldBlock = true;
+        blockReason = "marker_touched";
+        return;
       }
     }
-  })
+  });
 
   // Block if any edit touched a protected region
   // Return transaction with effect (no changes) so listeners can show feedback
   if (shouldBlock) {
     return {
       effects: blockedEditEffect.of({ reason: blockReason }),
-    }
+    };
   }
 
-  return tr
-})
+  return tr;
+});

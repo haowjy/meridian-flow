@@ -1,2 +1,2 @@
-export { editorCache } from './editorCache'
-export { useEditorCache } from './useEditorCache'
+export { editorCache } from "./editorCache";
+export { useEditorCache } from "./useEditorCache";

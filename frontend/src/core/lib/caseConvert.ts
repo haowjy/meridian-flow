@@ -13,7 +13,7 @@
  * Examples: "tool_use_id" → "toolUseId", "is_error" → "isError"
  */
 export function snakeToCamel(str: string): string {
-  return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())
+  return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
 }
 
 /**
@@ -23,20 +23,20 @@ export function snakeToCamel(str: string): string {
  * Performance: ~1-2ms for typical API responses. Negligible compared to network latency.
  */
 export function convertKeysToCamelCase<T>(obj: T): T {
-  if (obj === null || obj === undefined) return obj
+  if (obj === null || obj === undefined) return obj;
 
   if (Array.isArray(obj)) {
-    return obj.map(convertKeysToCamelCase) as T
+    return obj.map(convertKeysToCamelCase) as T;
   }
 
-  if (typeof obj === 'object') {
-    const result: Record<string, unknown> = {}
+  if (typeof obj === "object") {
+    const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj)) {
-      const camelKey = snakeToCamel(key)
-      result[camelKey] = convertKeysToCamelCase(value)
+      const camelKey = snakeToCamel(key);
+      result[camelKey] = convertKeysToCamelCase(value);
     }
-    return result as T
+    return result as T;
   }
 
-  return obj
+  return obj;
 }

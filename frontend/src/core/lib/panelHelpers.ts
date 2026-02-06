@@ -1,10 +1,10 @@
-import { useUIStore } from '@/core/stores/useUIStore'
-import type { useNavigate } from '@tanstack/react-router'
-import { makeLogger } from '@/core/lib/logger'
+import { useUIStore } from "@/core/stores/useUIStore";
+import type { useNavigate } from "@tanstack/react-router";
+import { makeLogger } from "@/core/lib/logger";
 
-const logger = makeLogger('panel-helpers')
+const logger = makeLogger("panel-helpers");
 
-type NavigateFunction = ReturnType<typeof useNavigate>
+type NavigateFunction = ReturnType<typeof useNavigate>;
 
 /**
  * Panel coordination helpers for managing workspace state.
@@ -25,7 +25,7 @@ type NavigateFunction = ReturnType<typeof useNavigate>
  * Example: "Chapter 1/Scene 2.md" → "Chapter 1/Scene 2.md" (router encodes to "Chapter%201/Scene%202.md")
  */
 export function encodeDocumentPath(path: string): string {
-  return path
+  return path;
 }
 
 /**
@@ -36,12 +36,12 @@ export function encodeDocumentPath(path: string): string {
  * Example: "Chapter%25201/Scene%25202.md" → "Chapter 1/Scene 2.md"
  */
 export function decodeDocumentPath(urlPath: string): string {
-  let decoded = urlPath.split('/').map(decodeURIComponent).join('/')
+  let decoded = urlPath.split("/").map(decodeURIComponent).join("/");
   // Handle double-encoded URLs (legacy bookmarks) - decode again if encoded chars remain
   if (/%[0-9A-Fa-f]{2}/.test(decoded)) {
-    decoded = decodeURIComponent(decoded)
+    decoded = decodeURIComponent(decoded);
   }
-  return decoded
+  return decoded;
 }
 
 /**
@@ -59,24 +59,24 @@ export function openDocument(
   documentId: string,
   documentPath: string,
   projectSlug: string,
-  navigate: NavigateFunction
+  navigate: NavigateFunction,
 ) {
-  const store = useUIStore.getState()
+  const store = useUIStore.getState();
 
   // Set UI state directly (needed when clicking current document after manual toggle)
-  logger.debug('openDocument:', documentId, 'path:', documentPath)
-  store.setActiveDocument(documentId)
-  store.setRightPanelState('editor')
-  store.setRightPanelCollapsed(false)
+  logger.debug("openDocument:", documentId, "path:", documentPath);
+  store.setActiveDocument(documentId);
+  store.setRightPanelState("editor");
+  store.setRightPanelCollapsed(false);
 
   // Navigate to document URL using path (updates browser history)
   // Splat route captures all segments: /documents/Characters/Heroes/Aria.md
   // Path is URL-encoded to handle special characters (spaces, etc.)
   // If URL is already this document, router won't navigate, but state is already set above
   navigate({
-    to: '/projects/$slug/documents/$',
+    to: "/projects/$slug/documents/$",
     params: { slug: projectSlug, _splat: encodeDocumentPath(documentPath) },
-  })
+  });
 }
 
 /**
@@ -89,18 +89,18 @@ export function openDocument(
  * @param navigate - TanStack Router navigate function from useNavigate()
  */
 export function closeEditor(projectSlug: string, navigate: NavigateFunction) {
-  const store = useUIStore.getState()
+  const store = useUIStore.getState();
 
   // Set UI state directly
-  logger.debug('closeEditor')
-  store.setActiveDocument(null)
-  store.setRightPanelState('documents')
+  logger.debug("closeEditor");
+  store.setActiveDocument(null);
+  store.setRightPanelState("documents");
 
   // Navigate to tree URL using slug (updates browser history)
   navigate({
-    to: '/projects/$slug',
+    to: "/projects/$slug",
     params: { slug: projectSlug },
-  })
+  });
 }
 
 /**
@@ -118,22 +118,22 @@ export function openSkill(
   skillId: string,
   skillName: string,
   projectSlug: string,
-  navigate: NavigateFunction
+  navigate: NavigateFunction,
 ) {
-  const store = useUIStore.getState()
+  const store = useUIStore.getState();
 
   // Set UI state directly (needed when clicking current skill after manual toggle)
-  logger.debug('openSkill:', skillId, 'name:', skillName)
-  store.setActiveSkill(skillId) // Already clears activeDocumentId for mutual exclusivity
-  store.setRightPanelState('editor')
-  store.setRightPanelCollapsed(false)
+  logger.debug("openSkill:", skillId, "name:", skillName);
+  store.setActiveSkill(skillId); // Already clears activeDocumentId for mutual exclusivity
+  store.setRightPanelState("editor");
+  store.setRightPanelCollapsed(false);
 
   // Navigate to skill URL using name identifier
   // If URL is already this skill, router won't navigate, but state is already set above
   navigate({
-    to: '/projects/$slug/skills/$skillName',
+    to: "/projects/$slug/skills/$skillName",
     params: { slug: projectSlug, skillName },
-  })
+  });
 }
 
 /**
@@ -144,7 +144,7 @@ export function openSkill(
  * @param threadId - The ID of the thread to switch to
  */
 export function switchThread(threadId: string) {
-  const store = useUIStore.getState()
+  const store = useUIStore.getState();
 
-  store.setActiveThread(threadId)
+  store.setActiveThread(threadId);
 }

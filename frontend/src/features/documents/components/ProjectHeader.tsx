@@ -1,12 +1,12 @@
-import { useNavigate } from '@tanstack/react-router'
-import { useProjectStore } from '@/core/stores/useProjectStore'
-import { PanelHeader } from '@/shared/components/layout/headers'
-import { DocumentsToggle } from '@/shared/components/layout/DocumentsToggle'
-import { closeEditor } from '@/core/lib/panelHelpers'
+import { useNavigate } from "@tanstack/react-router";
+import { useProjectStore } from "@/core/stores/useProjectStore";
+import { PanelHeader } from "@/shared/components/layout/headers";
+import { DocumentsToggle } from "@/shared/components/layout/DocumentsToggle";
+import { closeEditor } from "@/core/lib/panelHelpers";
 
 interface ProjectHeaderProps {
-  projectId: string
-  projectSlug: string
+  projectId: string;
+  projectSlug: string;
 }
 
 /**
@@ -24,31 +24,31 @@ interface ProjectHeaderProps {
  * - Clicking project name navigates to project home (clears active document)
  */
 export function ProjectHeader({ projectId, projectSlug }: ProjectHeaderProps) {
-  const navigate = useNavigate()
+  const navigate = useNavigate();
 
   // Get project name from store
   const projectName = useProjectStore((s) => {
-    const project = s.projects.find((p) => p.id === projectId)
-    return project?.name ?? 'Untitled Project'
-  })
+    const project = s.projects.find((p) => p.id === projectId);
+    return project?.name ?? "Untitled Project";
+  });
 
   const handleProjectClick = () => {
-    closeEditor(projectSlug, navigate)
-  }
+    closeEditor(projectSlug, navigate);
+  };
 
   // Project name button as leading content
   const leadingContent = (
     <button
       type="button"
       onClick={handleProjectClick}
-      className="font-medium text-sm truncate hover:text-foreground/80 transition-colors"
+      className="hover:text-foreground/80 truncate text-sm font-medium transition-colors"
     >
       {projectName}
     </button>
-  )
+  );
 
   // Documents toggle as trailing content - closes docs and returns to chat
-  const trailingContent = <DocumentsToggle direction="left" />
+  const trailingContent = <DocumentsToggle direction="left" />;
 
   return (
     <PanelHeader
@@ -58,5 +58,5 @@ export function ProjectHeader({ projectId, projectSlug }: ProjectHeaderProps) {
       showBorder={true}
       ariaLabel="Project header"
     />
-  )
+  );
 }

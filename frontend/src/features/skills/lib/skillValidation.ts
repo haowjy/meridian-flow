@@ -12,16 +12,16 @@
 // Pattern: alphanumeric start/end, alphanumeric or hyphens in middle
 // Single char version: just alphanumeric
 // Multi char version: alphanumeric, then any combo of alphanumeric/hyphen, then alphanumeric
-export const SKILL_NAME_PATTERN = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/
+export const SKILL_NAME_PATTERN = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/;
 
-export const SKILL_NAME_MAX_LENGTH = 50
+export const SKILL_NAME_MAX_LENGTH = 50;
 
 // Reserved names that cannot be used for skills (used for routing)
-export const RESERVED_SKILL_NAMES = ['new'] as const
+export const RESERVED_SKILL_NAMES = ["new"] as const;
 
 export interface ValidationResult {
-  valid: boolean
-  error?: string
+  valid: boolean;
+  error?: string;
 }
 
 /**
@@ -33,9 +33,9 @@ export interface ValidationResult {
  */
 export function normalizeSkillName(input: string): string {
   return input
-    .replace(/\s+/g, '-')           // spaces → hyphens
-    .replace(/[^a-zA-Z0-9-]/g, '')  // strip invalid chars (keep case)
-    .replace(/-+/g, '-')            // collapse multiple hyphens
+    .replace(/\s+/g, "-") // spaces → hyphens
+    .replace(/[^a-zA-Z0-9-]/g, "") // strip invalid chars (keep case)
+    .replace(/-+/g, "-"); // collapse multiple hyphens
 }
 
 /**
@@ -44,25 +44,32 @@ export function normalizeSkillName(input: string): string {
  */
 export function validateSkillName(name: string): ValidationResult {
   if (!name) {
-    return { valid: false, error: 'Required' }
+    return { valid: false, error: "Required" };
   }
 
   if (name.length > SKILL_NAME_MAX_LENGTH) {
-    return { valid: false, error: `Max ${SKILL_NAME_MAX_LENGTH} characters` }
+    return { valid: false, error: `Max ${SKILL_NAME_MAX_LENGTH} characters` };
   }
 
   // Check for reserved names (case-insensitive)
-  if (RESERVED_SKILL_NAMES.includes(name.toLowerCase() as typeof RESERVED_SKILL_NAMES[number])) {
-    return { valid: false, error: `"${name}" is a reserved name` }
+  if (
+    RESERVED_SKILL_NAMES.includes(
+      name.toLowerCase() as (typeof RESERVED_SKILL_NAMES)[number],
+    )
+  ) {
+    return { valid: false, error: `"${name}" is a reserved name` };
   }
 
   if (!SKILL_NAME_PATTERN.test(name)) {
     // Provide specific error for common issues
-    if (name.startsWith('-') || name.endsWith('-')) {
-      return { valid: false, error: 'Cannot start or end with hyphen' }
+    if (name.startsWith("-") || name.endsWith("-")) {
+      return { valid: false, error: "Cannot start or end with hyphen" };
     }
-    return { valid: false, error: 'Only letters, numbers, and hyphens allowed' }
+    return {
+      valid: false,
+      error: "Only letters, numbers, and hyphens allowed",
+    };
   }
 
-  return { valid: true }
+  return { valid: true };
 }

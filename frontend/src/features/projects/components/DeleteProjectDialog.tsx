@@ -1,11 +1,11 @@
-import { DeleteConfirmationDialog } from '@/shared/components/ui/delete-confirmation-dialog'
-import { Project } from '../types/project'
+import { DeleteConfirmationDialog } from "@/shared/components/ui/delete-confirmation-dialog";
+import { Project } from "../types/project";
 
 interface DeleteProjectDialogProps {
-  project: Project | null
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onConfirm: () => Promise<void>
+  project: Project | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => Promise<void>;
 }
 
 export function DeleteProjectDialog({
@@ -23,5 +23,5 @@ export function DeleteProjectDialog({
       onOpenChange={onOpenChange}
       onConfirm={onConfirm}
     />
-  )
+  );
 }

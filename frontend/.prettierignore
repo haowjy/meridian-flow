@@ -1,0 +1,7 @@
+dist
+node_modules
+.routegen
+coverage
+pnpm-lock.yaml
+tsconfig.tsbuildinfo
+src/routeTree.gen.ts

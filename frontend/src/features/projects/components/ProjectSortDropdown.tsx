@@ -1,26 +1,27 @@
-import { ChevronDown, Check } from 'lucide-react'
-import { useUIStore, type ProjectSortOrder } from '@/core/stores/useUIStore'
-import { Button } from '@/shared/components/ui/button'
+import { ChevronDown, Check } from "lucide-react";
+import { useUIStore, type ProjectSortOrder } from "@/core/stores/useUIStore";
+import { Button } from "@/shared/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/shared/components/ui/dropdown-menu'
+} from "@/shared/components/ui/dropdown-menu";
 
 const SORT_OPTIONS: { value: ProjectSortOrder; label: string }[] = [
-  { value: 'updated', label: 'Last updated' },
-  { value: 'name-asc', label: 'Name A–Z' },
-  { value: 'name-desc', label: 'Name Z–A' },
-  { value: 'created-newest', label: 'Newest created' },
-  { value: 'created-oldest', label: 'Oldest created' },
-]
+  { value: "updated", label: "Last updated" },
+  { value: "name-asc", label: "Name A–Z" },
+  { value: "name-desc", label: "Name Z–A" },
+  { value: "created-newest", label: "Newest created" },
+  { value: "created-oldest", label: "Oldest created" },
+];
 
 export function ProjectSortDropdown() {
-  const sortOrder = useUIStore((state) => state.projectSortOrder)
-  const setSortOrder = useUIStore((state) => state.setProjectSortOrder)
+  const sortOrder = useUIStore((state) => state.projectSortOrder);
+  const setSortOrder = useUIStore((state) => state.setProjectSortOrder);
 
-  const currentOption = SORT_OPTIONS.find((opt) => opt.value === sortOrder) ?? SORT_OPTIONS[0]!
+  const currentOption =
+    SORT_OPTIONS.find((opt) => opt.value === sortOrder) ?? SORT_OPTIONS[0]!;
 
   return (
     <DropdownMenu>
@@ -39,11 +40,11 @@ export function ProjectSortDropdown() {
           >
             <span>{option.label}</span>
             {sortOrder === option.value && (
-              <Check className="size-4.5 text-primary" />
+              <Check className="text-primary size-4.5" />
             )}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
-  )
+  );
 }

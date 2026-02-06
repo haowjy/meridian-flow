@@ -1,17 +1,17 @@
-import { create } from 'zustand'
+import { create } from "zustand";
 
 interface ErrorStore {
   // Network status
-  isOffline: boolean
-  setIsOffline: (offline: boolean) => void
+  isOffline: boolean;
+  setIsOffline: (offline: boolean) => void;
 
   // Session expiry (401 from API)
-  sessionExpired: boolean
-  setSessionExpired: (expired: boolean) => void
-  clearSessionExpired: () => void
+  sessionExpired: boolean;
+  setSessionExpired: (expired: boolean) => void;
+  clearSessionExpired: () => void;
 
   // Initialize network listeners (call once at app root)
-  initNetworkListeners: () => () => void
+  initNetworkListeners: () => () => void;
 }
 
 /**
@@ -27,7 +27,7 @@ interface ErrorStore {
  * - Call `initNetworkListeners()` once in app root to start monitoring connectivity
  */
 export const useErrorStore = create<ErrorStore>()((set) => ({
-  isOffline: typeof navigator !== 'undefined' ? !navigator.onLine : false,
+  isOffline: typeof navigator !== "undefined" ? !navigator.onLine : false,
   sessionExpired: false,
 
   setIsOffline: (offline) => set({ isOffline: offline }),
@@ -37,16 +37,16 @@ export const useErrorStore = create<ErrorStore>()((set) => ({
   clearSessionExpired: () => set({ sessionExpired: false }),
 
   initNetworkListeners: () => {
-    const handleOnline = () => set({ isOffline: false })
-    const handleOffline = () => set({ isOffline: true })
+    const handleOnline = () => set({ isOffline: false });
+    const handleOffline = () => set({ isOffline: true });
 
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
 
     // Return cleanup function
     return () => {
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
-    }
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
   },
-}))
+}));

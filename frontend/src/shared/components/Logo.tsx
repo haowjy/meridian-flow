@@ -1,10 +1,10 @@
-import { cn } from '@/lib/utils'
+import { cn } from "@/lib/utils";
 
 interface LogoProps {
-  variant?: 'icon' | 'full' | 'compact'
-  size?: number
-  mono?: boolean
-  className?: string
+  variant?: "icon" | "full" | "compact";
+  size?: number;
+  mono?: boolean;
+  className?: string;
 }
 
 /**
@@ -19,18 +19,18 @@ interface LogoProps {
  * while gold elements stay gold for brand consistency.
  */
 export function Logo({
-  variant = 'full',
+  variant = "full",
   size = 32,
   mono = false,
   className,
 }: LogoProps) {
   // Theme-aware colors via CSS variables
-  const ACCENT = 'var(--theme-favorite)'
-  const RING_COLOR = 'var(--muted-foreground)'
+  const ACCENT = "var(--theme-favorite)";
+  const RING_COLOR = "var(--muted-foreground)";
 
   return (
     <div
-      className={cn('flex items-center gap-2 select-none', className)}
+      className={cn("flex items-center gap-2 select-none", className)}
       style={{ height: size }}
     >
       <svg
@@ -46,7 +46,7 @@ export function Logo({
           cx="50"
           cy="50"
           r="38"
-          stroke={mono ? 'currentColor' : RING_COLOR}
+          stroke={mono ? "currentColor" : RING_COLOR}
           strokeWidth="2"
           opacity={0.4}
         />
@@ -56,7 +56,7 @@ export function Logo({
           cx="50"
           cy="50"
           r="30"
-          stroke={mono ? 'currentColor' : RING_COLOR}
+          stroke={mono ? "currentColor" : RING_COLOR}
           strokeWidth="3"
           opacity={0.7}
         />
@@ -81,16 +81,16 @@ export function Logo({
         />
       </svg>
 
-      {variant === 'full' && (
+      {variant === "full" && (
         <div className="flex flex-col justify-center leading-none">
           <span
-            className="font-serif font-semibold tracking-tight text-foreground"
+            className="text-foreground font-serif font-semibold tracking-tight"
             style={{ fontSize: size * 0.5 }}
           >
             Meridian
           </span>
           <span
-            className="uppercase tracking-wider text-muted-foreground font-sans font-medium"
+            className="text-muted-foreground font-sans font-medium tracking-wider uppercase"
             style={{ fontSize: size * 0.25 }}
           >
             flow
@@ -98,16 +98,16 @@ export function Logo({
         </div>
       )}
 
-      {variant === 'compact' && (
+      {variant === "compact" && (
         <div className="flex items-baseline gap-1">
           <span
-            className="font-serif font-semibold tracking-tight text-foreground"
+            className="text-foreground font-serif font-semibold tracking-tight"
             style={{ fontSize: size * 0.45 }}
           >
             Meridian
           </span>
           <span
-            className="uppercase tracking-wider text-muted-foreground font-sans font-medium"
+            className="text-muted-foreground font-sans font-medium tracking-wider uppercase"
             style={{ fontSize: size * 0.3 }}
           >
             Flow
@@ -115,5 +115,5 @@ export function Logo({
         </div>
       )}
     </div>
-  )
+  );
 }

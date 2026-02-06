@@ -1,9 +1,9 @@
-import type { Folder } from '@/features/folders/types/folder'
+import type { Folder } from "@/features/folders/types/folder";
 
 export interface BreadcrumbSegment {
-  id: string
-  name: string
-  isTruncated?: boolean
+  id: string;
+  name: string;
+  isTruncated?: boolean;
 }
 
 /**
@@ -23,41 +23,41 @@ export interface BreadcrumbSegment {
 export function buildBreadcrumbs(
   folderId: string | null,
   folders: Folder[],
-  maxSegments: number = 3
+  maxSegments: number = 3,
 ): BreadcrumbSegment[] {
   if (!folderId) {
-    return []
+    return [];
   }
 
   // Build path from current folder to root
-  const path: BreadcrumbSegment[] = []
-  let currentId: string | null = folderId
+  const path: BreadcrumbSegment[] = [];
+  let currentId: string | null = folderId;
 
   while (currentId) {
-    const folder = folders.find((f) => f.id === currentId)
-    if (!folder) break
+    const folder = folders.find((f) => f.id === currentId);
+    if (!folder) break;
 
     path.unshift({
       id: folder.id,
       name: folder.name,
-    })
+    });
 
-    currentId = folder.parentId
+    currentId = folder.parentId;
   }
 
   // Truncate if path is too long
   if (path.length > maxSegments && path.length > 0) {
-    const firstSegment = path[0]!
-    const lastSegments = path.slice(-(maxSegments - 1))
+    const firstSegment = path[0]!;
+    const lastSegments = path.slice(-(maxSegments - 1));
 
     return [
       firstSegment,
-      { id: 'truncated', name: '...', isTruncated: true },
+      { id: "truncated", name: "...", isTruncated: true },
       ...lastSegments,
-    ]
+    ];
   }
 
-  return path
+  return path;
 }
 
 /**
@@ -73,7 +73,7 @@ export function buildBreadcrumbs(
  */
 export function formatBreadcrumbs(
   segments: BreadcrumbSegment[],
-  separator: string = ' / '
+  separator: string = " / ",
 ): string {
-  return segments.map((s) => s.name).join(separator)
+  return segments.map((s) => s.name).join(separator);
 }

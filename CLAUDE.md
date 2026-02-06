@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 This file provides guidance when working with the code in this repository.
 
@@ -289,6 +289,7 @@ See `internal/repository/postgres/connection.go`
 
 - use `pnpm` instead of `npm` for faster compile times
 - run `pnpm run lint` to run ESLint after making changes
+- run `pnpm run format` after Tailwind/CSS class changes
 
 ## Deployment
 
@@ -296,7 +297,7 @@ See `internal/repository/postgres/connection.go`
 - **Database**: Supabase (PostgreSQL)
 - **Frontend**: Vercel
 
-See `backend/CLAUDE.md` for backend deployment details.
+See `backend/AGENTS.md` for backend deployment details.
 
 ## Refactoring Backlog
 

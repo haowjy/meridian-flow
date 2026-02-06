@@ -13,11 +13,11 @@
  * OCP: Open for extension via props (startLine, extensions, className)
  */
 
-import React, { useRef, useEffect } from 'react'
-import { EditorView, lineNumbers } from '@codemirror/view'
-import { EditorState, Extension } from '@codemirror/state'
-import { cn } from '@/lib/utils'
-import { markdownLanguage } from '@/core/editor/codemirror/extensions'
+import React, { useRef, useEffect } from "react";
+import { EditorView, lineNumbers } from "@codemirror/view";
+import { EditorState, Extension } from "@codemirror/state";
+import { cn } from "@/lib/utils";
+import { markdownLanguage } from "@/core/editor/codemirror/extensions";
 
 // =============================================================================
 // TYPES
@@ -25,13 +25,13 @@ import { markdownLanguage } from '@/core/editor/codemirror/extensions'
 
 export interface CodeMirrorPreviewProps {
   /** Content to display (line number prefixes should be pre-stripped) */
-  content: string
+  content: string;
   /** Starting line number for gutter (default: 1) */
-  startLine?: number
+  startLine?: number;
   /** Additional CSS classes for the container */
-  className?: string
+  className?: string;
   /** Additional CodeMirror extensions (appended after defaults) */
-  extensions?: Extension[]
+  extensions?: Extension[];
 }
 
 // =============================================================================
@@ -43,46 +43,47 @@ export interface CodeMirrorPreviewProps {
  * Minimal styling focused on readability in a compact preview area.
  */
 const previewTheme = EditorView.theme({
-  '&': {
-    fontSize: '12px',
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+  "&": {
+    fontSize: "12px",
+    fontFamily:
+      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
   },
-  '.cm-content': {
-    padding: '8px 4px',
+  ".cm-content": {
+    padding: "8px 4px",
   },
-  '.cm-line': {
-    lineHeight: '1.5',
+  ".cm-line": {
+    lineHeight: "1.5",
   },
   // Line numbers styling
-  '.cm-gutters': {
-    backgroundColor: 'transparent',
-    borderRight: '1px solid var(--theme-border, #e5e5e5)',
-    color: 'var(--theme-text-muted, #78716c)',
+  ".cm-gutters": {
+    backgroundColor: "transparent",
+    borderRight: "1px solid var(--theme-border, #e5e5e5)",
+    color: "var(--theme-text-muted, #78716c)",
   },
-  '.cm-lineNumbers .cm-gutterElement': {
-    padding: '0 8px 0 4px',
-    minWidth: '32px',
+  ".cm-lineNumbers .cm-gutterElement": {
+    padding: "0 8px 0 4px",
+    minWidth: "32px",
   },
   // Markdown styling - simplified versions
-  '.cm-strong': {
-    fontWeight: 'bold',
+  ".cm-strong": {
+    fontWeight: "bold",
   },
-  '.cm-em': {
-    fontStyle: 'italic',
+  ".cm-em": {
+    fontStyle: "italic",
   },
-  '.cm-heading': {
-    fontWeight: 'bold',
+  ".cm-heading": {
+    fontWeight: "bold",
   },
-  '.cm-link': {
-    color: 'var(--theme-primary, #5F8575)',
-    textDecoration: 'underline',
+  ".cm-link": {
+    color: "var(--theme-primary, #5F8575)",
+    textDecoration: "underline",
   },
-  '.cm-inline-code': {
-    backgroundColor: 'var(--theme-surface, #f5f5f5)',
-    padding: '1px 4px',
-    borderRadius: '2px',
+  ".cm-inline-code": {
+    backgroundColor: "var(--theme-surface, #f5f5f5)",
+    padding: "1px 4px",
+    borderRadius: "2px",
   },
-})
+});
 
 // =============================================================================
 // COMPONENT
@@ -98,17 +99,17 @@ export const CodeMirrorPreview = React.memo(function CodeMirrorPreview({
   className,
   extensions: additionalExtensions = [],
 }: CodeMirrorPreviewProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const viewRef = useRef<EditorView | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<EditorView | null>(null);
 
   // Create/update CodeMirror view
   useEffect(() => {
-    if (!containerRef.current) return
+    if (!containerRef.current) return;
 
     // Create line numbers extension with custom start line
     const lineNumbersExt = lineNumbers({
       formatNumber: (n) => String(n + startLine - 1),
-    })
+    });
 
     const extensions: Extension[] = [
       EditorView.editable.of(false), // Read-only
@@ -118,48 +119,48 @@ export const CodeMirrorPreview = React.memo(function CodeMirrorPreview({
       previewTheme,
       EditorView.lineWrapping,
       ...additionalExtensions,
-    ]
+    ];
 
     // If view exists, update content
     if (viewRef.current) {
-      const currentContent = viewRef.current.state.doc.toString()
+      const currentContent = viewRef.current.state.doc.toString();
       if (currentContent !== content) {
         viewRef.current.dispatch({
           changes: { from: 0, to: currentContent.length, insert: content },
-        })
+        });
       }
-      return
+      return;
     }
 
     // Create new view
     const state = EditorState.create({
       doc: content,
       extensions,
-    })
+    });
 
     const view = new EditorView({
       state,
       parent: containerRef.current,
-    })
+    });
 
-    viewRef.current = view
+    viewRef.current = view;
 
     return () => {
-      view.destroy()
-      viewRef.current = null
-    }
-  }, [content, startLine, additionalExtensions])
+      view.destroy();
+      viewRef.current = null;
+    };
+  }, [content, startLine, additionalExtensions]);
 
   return (
     <div
       ref={containerRef}
       className={cn(
-        'max-h-48 overflow-y-auto',
-        'rounded-md border bg-muted/30',
-        'text-foreground/80',
-        '[&_.cm-editor]:outline-none',
-        className
+        "max-h-48 overflow-y-auto",
+        "bg-muted/30 rounded-md border",
+        "text-foreground/80",
+        "[&_.cm-editor]:outline-none",
+        className,
       )}
     />
-  )
-})
+  );
+});

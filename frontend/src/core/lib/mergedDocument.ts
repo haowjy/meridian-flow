@@ -8,7 +8,7 @@
  * markers, enabling CM6 history to track accept/reject as normal edits.
  */
 
-import DiffMatchPatch from 'diff-match-patch'
+import DiffMatchPatch from "diff-match-patch";
 
 // =============================================================================
 // PUA MARKERS
@@ -19,11 +19,11 @@ import DiffMatchPatch from 'diff-match-patch'
  * These characters never appear in normal text, so no escaping needed.
  */
 export const MARKERS = {
-  DEL_START: '\uE000', // Start of deletion (original text)
-  DEL_END: '\uE001', // End of deletion
-  INS_START: '\uE002', // Start of insertion (AI text)
-  INS_END: '\uE003', // End of insertion
-} as const
+  DEL_START: "\uE000", // Start of deletion (original text)
+  DEL_END: "\uE001", // End of deletion
+  INS_START: "\uE002", // Start of insertion (AI text)
+  INS_END: "\uE003", // End of insertion
+} as const;
 
 /**
  * Regex to match a complete hunk (DEL followed by INS).
@@ -40,27 +40,27 @@ export const MARKERS = {
 export const HUNK_REGEX = new RegExp(
   `${MARKERS.DEL_START}([^${MARKERS.DEL_END}]*)${MARKERS.DEL_END}` +
     `${MARKERS.INS_START}([^${MARKERS.INS_END}]*)${MARKERS.INS_END}`,
-  'g'
-)
+  "g",
+);
 
 /**
  * Regex to match any marker character.
  * Use for .test() checks - do NOT use with .replace() (use ALL_MARKER_REGEX).
  */
-export const ANY_MARKER_REGEX = /[\uE000-\uE003]/
+export const ANY_MARKER_REGEX = /[\uE000-\uE003]/;
 
 /**
  * Regex to match all marker characters (global).
  * Use for .replace() - do NOT use for .test() (lastIndex issues).
  */
-export const ALL_MARKER_REGEX = /[\uE000-\uE003]/g
+export const ALL_MARKER_REGEX = /[\uE000-\uE003]/g;
 
 /**
  * Check if any PUA marker exists in the string.
  * NOTE: Empty string "" is valid content; markers, not falsy-ness, is the signal.
  */
 export function hasAnyMarker(text: string): boolean {
-  return ANY_MARKER_REGEX.test(text)
+  return ANY_MARKER_REGEX.test(text);
 }
 
 /**
@@ -68,7 +68,7 @@ export function hasAnyMarker(text: string): boolean {
  * Used to sanitize inputs (server content/aiVersion, AI output, clipboard).
  */
 export function stripMarkers(text: string): string {
-  return text.replace(ALL_MARKER_REGEX, '')
+  return text.replace(ALL_MARKER_REGEX, "");
 }
 
 // =============================================================================
@@ -81,31 +81,31 @@ export function stripMarkers(text: string): string {
  */
 export interface MergedHunk {
   /** Unique ID for React keys (index-based) */
-  id: string
+  id: string;
 
   /** Start position in merged document (includes DEL_START marker) */
-  from: number
+  from: number;
 
   /** End position in merged document (after INS_END marker) */
-  to: number
+  to: number;
 
   /** Position of DEL_START marker */
-  delStart: number
+  delStart: number;
 
   /** Position of DEL_END marker */
-  delEnd: number
+  delEnd: number;
 
   /** Position of INS_START marker */
-  insStart: number
+  insStart: number;
 
   /** Position of INS_END marker */
-  insEnd: number
+  insEnd: number;
 
   /** The deleted text (between DEL markers, excluding markers) */
-  deletedText: string
+  deletedText: string;
 
   /** The inserted text (between INS markers, excluding markers) */
-  insertedText: string
+  insertedText: string;
 }
 
 /**
@@ -113,20 +113,20 @@ export interface MergedHunk {
  */
 export interface ParsedDocument {
   /** Baseline content (with AI changes removed) */
-  content: string
+  content: string;
 
   /** AI version (with deletions removed), or null if no AI changes remain */
-  aiVersion: string | null
+  aiVersion: string | null;
 
   /** Whether the document has any remaining hunks */
-  hasChanges: boolean
+  hasChanges: boolean;
 }
 
 // =============================================================================
 // BUILD MERGED DOCUMENT
 // =============================================================================
 
-const dmp = new DiffMatchPatch()
+const dmp = new DiffMatchPatch();
 
 /**
  * Build a merged document from content and aiVersion.
@@ -149,50 +149,50 @@ const dmp = new DiffMatchPatch()
  */
 export function buildMergedDocument(
   content: string,
-  aiVersion: string
+  aiVersion: string,
 ): string {
   // Defensive: strip any accidental PUA markers from inputs.
   // If markers exist inside content, they would become structurally ambiguous.
   if (hasAnyMarker(content) || hasAnyMarker(aiVersion)) {
     console.warn(
-      'buildMergedDocument: stripping unexpected PUA markers from inputs'
-    )
-    content = stripMarkers(content)
-    aiVersion = stripMarkers(aiVersion)
+      "buildMergedDocument: stripping unexpected PUA markers from inputs",
+    );
+    content = stripMarkers(content);
+    aiVersion = stripMarkers(aiVersion);
   }
 
   // If identical, no markers needed
   if (content === aiVersion) {
-    return content
+    return content;
   }
 
   // Compute character-level diff with semantic cleanup for readability.
   // - diff_cleanupSemantic: merge small edits into meaningful chunks
   // - diff_cleanupSemanticLossless: shift boundaries to word/whitespace edges
-  const diffs = dmp.diff_main(content, aiVersion)
-  dmp.diff_cleanupSemantic(diffs)
-  dmp.diff_cleanupSemanticLossless(diffs)
+  const diffs = dmp.diff_main(content, aiVersion);
+  dmp.diff_cleanupSemantic(diffs);
+  dmp.diff_cleanupSemanticLossless(diffs);
 
   // Build merged document with markers
-  const parts: string[] = []
-  let i = 0
+  const parts: string[] = [];
+  let i = 0;
 
   while (i < diffs.length) {
-    const diff = diffs[i]
+    const diff = diffs[i];
     if (!diff) {
-      i++
-      continue
+      i++;
+      continue;
     }
-    const [op, text] = diff
+    const [op, text] = diff;
 
     if (op === 0) {
       // Unchanged text - add as-is
-      parts.push(text)
-      i++
+      parts.push(text);
+      i++;
     } else if (op === -1) {
       // Deletion from content
       // Check if followed by insertion (replacement)
-      const nextDiff = diffs[i + 1]
+      const nextDiff = diffs[i + 1];
       if (nextDiff && nextDiff[0] === 1) {
         // Replacement: deletion followed by insertion
         parts.push(
@@ -201,9 +201,9 @@ export function buildMergedDocument(
             MARKERS.DEL_END +
             MARKERS.INS_START +
             nextDiff[1] +
-            MARKERS.INS_END
-        )
-        i += 2
+            MARKERS.INS_END,
+        );
+        i += 2;
       } else {
         // Pure deletion (no replacement) - empty INS
         parts.push(
@@ -211,9 +211,9 @@ export function buildMergedDocument(
             text +
             MARKERS.DEL_END +
             MARKERS.INS_START +
-            MARKERS.INS_END
-        )
-        i++
+            MARKERS.INS_END,
+        );
+        i++;
       }
     } else if (op === 1) {
       // Pure insertion (no deletion) - empty DEL
@@ -222,13 +222,13 @@ export function buildMergedDocument(
           MARKERS.DEL_END +
           MARKERS.INS_START +
           text +
-          MARKERS.INS_END
-      )
-      i++
+          MARKERS.INS_END,
+      );
+      i++;
     }
   }
 
-  return parts.join('')
+  return parts.join("");
 }
 
 // =============================================================================
@@ -240,8 +240,8 @@ export function buildMergedDocument(
  */
 export class DiffMarkersCorruptedError extends Error {
   constructor(reason: string) {
-    super(`Diff marker structure is corrupted: ${reason}`)
-    this.name = 'DiffMarkersCorruptedError'
+    super(`Diff marker structure is corrupted: ${reason}`);
+    this.name = "DiffMarkersCorruptedError";
   }
 }
 
@@ -254,67 +254,67 @@ export class DiffMarkersCorruptedError extends Error {
  * @returns { ok: true } if valid, { ok: false, reason: string } if not
  */
 export function validateMarkerStructure(
-  merged: string
+  merged: string,
 ): { ok: true } | { ok: false; reason: string } {
   // State machine: 'outside' -> 'inDel' -> 'afterDel' -> 'inIns' -> 'outside'
-  type State = 'outside' | 'inDel' | 'afterDel' | 'inIns'
-  let state: State = 'outside'
+  type State = "outside" | "inDel" | "afterDel" | "inIns";
+  let state: State = "outside";
 
   for (let i = 0; i < merged.length; i++) {
-    const char = merged[i]
+    const char = merged[i];
 
     // CRITICAL: DEL_END must be immediately followed by INS_START.
     // If anything else appears between them, hunk extraction breaks.
-    if (state === 'afterDel' && char !== MARKERS.INS_START) {
+    if (state === "afterDel" && char !== MARKERS.INS_START) {
       return {
         ok: false,
         reason: `Expected INS_START immediately after DEL_END (position ${i}), got ${JSON.stringify(char)}`,
-      }
+      };
     }
 
     if (char === MARKERS.DEL_START) {
-      if (state !== 'outside') {
+      if (state !== "outside") {
         return {
           ok: false,
           reason: `Unexpected DEL_START at position ${i}, state was ${state}`,
-        }
+        };
       }
-      state = 'inDel'
+      state = "inDel";
     } else if (char === MARKERS.DEL_END) {
-      if (state !== 'inDel') {
+      if (state !== "inDel") {
         return {
           ok: false,
           reason: `Unexpected DEL_END at position ${i}, state was ${state}`,
-        }
+        };
       }
-      state = 'afterDel'
+      state = "afterDel";
     } else if (char === MARKERS.INS_START) {
-      if (state !== 'afterDel') {
+      if (state !== "afterDel") {
         return {
           ok: false,
           reason: `Unexpected INS_START at position ${i}, state was ${state}`,
-        }
+        };
       }
-      state = 'inIns'
+      state = "inIns";
     } else if (char === MARKERS.INS_END) {
-      if (state !== 'inIns') {
+      if (state !== "inIns") {
         return {
           ok: false,
           reason: `Unexpected INS_END at position ${i}, state was ${state}`,
-        }
+        };
       }
-      state = 'outside'
+      state = "outside";
     }
   }
 
-  if (state !== 'outside') {
+  if (state !== "outside") {
     return {
       ok: false,
       reason: `Unclosed marker structure, ended in state ${state}`,
-    }
+    };
   }
 
-  return { ok: true }
+  return { ok: true };
 }
 
 // =============================================================================
@@ -343,13 +343,13 @@ export function parseMergedDocument(merged: string): ParsedDocument {
       content: merged,
       aiVersion: null,
       hasChanges: false,
-    }
+    };
   }
 
   // Validate structure before parsing to prevent corrupt markers leaking into output
-  const validation = validateMarkerStructure(merged)
+  const validation = validateMarkerStructure(merged);
   if (!validation.ok) {
-    throw new DiffMarkersCorruptedError(validation.reason)
+    throw new DiffMarkersCorruptedError(validation.reason);
   }
 
   // Build content: keep DEL content, remove INS regions entirely
@@ -358,13 +358,13 @@ export function parseMergedDocument(merged: string): ParsedDocument {
     .replace(
       new RegExp(
         `${MARKERS.INS_START}[^${MARKERS.INS_END}]*${MARKERS.INS_END}`,
-        'g'
+        "g",
       ),
-      ''
+      "",
     )
     // Keep DEL content but remove markers
-    .replace(new RegExp(MARKERS.DEL_START, 'g'), '')
-    .replace(new RegExp(MARKERS.DEL_END, 'g'), '')
+    .replace(new RegExp(MARKERS.DEL_START, "g"), "")
+    .replace(new RegExp(MARKERS.DEL_END, "g"), "");
 
   // Build aiVersion: keep INS content, remove DEL regions entirely
   const aiVersion = merged
@@ -372,19 +372,19 @@ export function parseMergedDocument(merged: string): ParsedDocument {
     .replace(
       new RegExp(
         `${MARKERS.DEL_START}[^${MARKERS.DEL_END}]*${MARKERS.DEL_END}`,
-        'g'
+        "g",
       ),
-      ''
+      "",
     )
     // Keep INS content but remove markers
-    .replace(new RegExp(MARKERS.INS_START, 'g'), '')
-    .replace(new RegExp(MARKERS.INS_END, 'g'), '')
+    .replace(new RegExp(MARKERS.INS_START, "g"), "")
+    .replace(new RegExp(MARKERS.INS_END, "g"), "");
 
   return {
     content,
     aiVersion,
     hasChanges: true,
-  }
+  };
 }
 
 // =============================================================================
@@ -405,28 +405,28 @@ export function parseMergedDocument(merged: string): ParsedDocument {
  * @returns Array of hunks with positions and content
  */
 export function extractHunks(merged: string): MergedHunk[] {
-  const hunks: MergedHunk[] = []
+  const hunks: MergedHunk[] = [];
 
   // Reset regex state (important for global regex)
-  HUNK_REGEX.lastIndex = 0
+  HUNK_REGEX.lastIndex = 0;
 
-  let match: RegExpExecArray | null
-  let index = 0
+  let match: RegExpExecArray | null;
+  let index = 0;
   while ((match = HUNK_REGEX.exec(merged)) !== null) {
-    const fullMatch = match[0]
+    const fullMatch = match[0];
     // Captures are always defined for this regex (may be empty string, never undefined)
-    const deletedText = match[1] ?? ''
-    const insertedText = match[2] ?? ''
+    const deletedText = match[1] ?? "";
+    const insertedText = match[2] ?? "";
 
-    const from = match.index
-    const to = from + fullMatch.length
+    const from = match.index;
+    const to = from + fullMatch.length;
 
     // Calculate marker positions within the hunk
     // Positions are the START index of each marker character
-    const delStart = from // Position of DEL_START marker (\uE000)
-    const delEnd = from + 1 + deletedText.length // Position of DEL_END marker (\uE001)
-    const insStart = delEnd + 1 // Position of INS_START marker (\uE002)
-    const insEnd = to - 1 // Position of INS_END marker (\uE003)
+    const delStart = from; // Position of DEL_START marker (\uE000)
+    const delEnd = from + 1 + deletedText.length; // Position of DEL_END marker (\uE001)
+    const insStart = delEnd + 1; // Position of INS_START marker (\uE002)
+    const insEnd = to - 1; // Position of INS_END marker (\uE003)
 
     hunks.push({
       id: `hunk-${index}`,
@@ -438,11 +438,11 @@ export function extractHunks(merged: string): MergedHunk[] {
       insEnd,
       deletedText,
       insertedText,
-    })
-    index++
+    });
+    index++;
   }
 
-  return hunks
+  return hunks;
 }
 
 // =============================================================================
@@ -457,7 +457,7 @@ export function extractHunks(merged: string): MergedHunk[] {
  * @returns Text to insert (the insertion content without markers)
  */
 export function getAcceptReplacement(hunk: MergedHunk): string {
-  return hunk.insertedText
+  return hunk.insertedText;
 }
 
 /**
@@ -468,7 +468,7 @@ export function getAcceptReplacement(hunk: MergedHunk): string {
  * @returns Text to insert (the deletion content without markers)
  */
 export function getRejectReplacement(hunk: MergedHunk): string {
-  return hunk.deletedText
+  return hunk.deletedText;
 }
 
 /**
@@ -478,7 +478,7 @@ export function getRejectReplacement(hunk: MergedHunk): string {
  * @returns Document with all AI changes accepted
  */
 export function acceptAllHunks(merged: string): string {
-  return merged.replace(HUNK_REGEX, (_match, _del, ins) => ins)
+  return merged.replace(HUNK_REGEX, (_match, _del, ins) => ins);
 }
 
 /**
@@ -488,7 +488,7 @@ export function acceptAllHunks(merged: string): string {
  * @returns Document with all AI changes rejected
  */
 export function rejectAllHunks(merged: string): string {
-  return merged.replace(HUNK_REGEX, (_match, del) => del)
+  return merged.replace(HUNK_REGEX, (_match, del) => del);
 }
 
 // =============================================================================
@@ -506,10 +506,10 @@ export function isInDeletionRegion(pos: number, hunks: MergedHunk[]): boolean {
   for (const hunk of hunks) {
     // DEL region: from delStart to delEnd (inclusive of markers)
     if (pos >= hunk.delStart && pos <= hunk.delEnd) {
-      return true
+      return true;
     }
   }
-  return false
+  return false;
 }
 
 /**
@@ -521,15 +521,15 @@ export function isInDeletionRegion(pos: number, hunks: MergedHunk[]): boolean {
  */
 export function getInsertionHunk(
   pos: number,
-  hunks: MergedHunk[]
+  hunks: MergedHunk[],
 ): MergedHunk | null {
   for (const hunk of hunks) {
     // INS region: from insStart to insEnd (between markers)
     if (pos > hunk.insStart && pos < hunk.insEnd) {
-      return hunk
+      return hunk;
     }
   }
-  return null
+  return null;
 }
 
 /**
@@ -541,12 +541,12 @@ export function getInsertionHunk(
  */
 export function findHunkAtPosition(
   pos: number,
-  hunks: MergedHunk[]
+  hunks: MergedHunk[],
 ): MergedHunk | null {
   for (const hunk of hunks) {
     if (pos >= hunk.from && pos <= hunk.to) {
-      return hunk
+      return hunk;
     }
   }
-  return null
+  return null;
 }

@@ -5,10 +5,10 @@ export type {
   SkillSyncState,
   CreateSkillRequest,
   UpdateSkillRequest,
-} from './types'
+} from "./types";
 
 // Hooks
-export { useSkillsForProject, type UseSkillsForProjectResult } from './hooks'
+export { useSkillsForProject, type UseSkillsForProjectResult } from "./hooks";
 
 // Components
 export {
@@ -16,4 +16,4 @@ export {
   SkillList,
   SkillListItem,
   DeleteSkillDialog,
-} from './components'
+} from "./components";

@@ -12,34 +12,34 @@
  * reliability through automatic retries and proper error handling.
  */
 
-import { api } from './api'
-import { db } from './db'
-import type { Document } from '@/features/documents/types/document'
-import { RetryScheduler, SyncOp, RetryCallbacks } from './retry'
-import { makeLogger } from '@/core/lib/logger'
+import { api } from "./api";
+import { db } from "./db";
+import type { Document } from "@/features/documents/types/document";
+import { RetryScheduler, SyncOp, RetryCallbacks } from "./retry";
+import { makeLogger } from "@/core/lib/logger";
 
-const log = makeLogger('sync')
+const log = makeLogger("sync");
 
 /**
  * Retry operation stored in memory (not persisted).
  * Lost on page reload, but IndexedDB still has the content.
  */
 // Retry scheduler for document content (policy-based)
-let scheduler: RetryScheduler<string, string, Document> | null = null
+let scheduler: RetryScheduler<string, string, Document> | null = null;
 
 function ensureScheduler(): RetryScheduler<string, string, Document> {
   if (!scheduler) {
     scheduler = new RetryScheduler<string, string, Document>({
       sync: async (op: SyncOp<string, string>) => {
         // Reuse syncDocument for actual API+IDB write
-        return await syncDocument(op.id, op.payload)
+        return await syncDocument(op.id, op.payload);
       },
       // jittered backoff default inside scheduler
       maxAttempts: 3,
       tickMs: 1000,
-    })
+    });
   }
-  return scheduler
+  return scheduler;
 }
 
 /**
@@ -58,21 +58,21 @@ function ensureScheduler(): RetryScheduler<string, string, Document> {
  */
 export async function syncDocument(
   documentId: string,
-  content: string
+  content: string,
 ): Promise<Document> {
-  log.debug(`Syncing document`, documentId)
+  log.debug(`Syncing document`, documentId);
 
   // Call API - this returns the updated document from the server
-  const updatedDoc = await api.documents.update(documentId, { content })
+  const updatedDoc = await api.documents.update(documentId, { content });
 
   // Update IndexedDB with server's response
   // This ensures our cache has the authoritative timestamp from the server
   if (updatedDoc.content !== undefined) {
-    await db.documents.put(updatedDoc as Document & { content: string })
+    await db.documents.put(updatedDoc as Document & { content: string });
   }
 
-  log.info(`Synced document`, documentId)
-  return updatedDoc
+  log.info(`Synced document`, documentId);
+  return updatedDoc;
 }
 
 /**
@@ -87,13 +87,18 @@ export async function syncDocument(
  * @param op - Retry operation to queue
  */
 export function addRetryOperation(
-  op: { entityType: 'document'; entityId: string; content: string; attemptCount: number },
-  cbs?: RetryCallbacks<Document>
+  op: {
+    entityType: "document";
+    entityId: string;
+    content: string;
+    attemptCount: number;
+  },
+  cbs?: RetryCallbacks<Document>,
 ) {
-  const sched = ensureScheduler()
-  log.info(`Queued retry`, op.entityId, `attempt ${op.attemptCount + 1}/3`)
+  const sched = ensureScheduler();
+  log.info(`Queued retry`, op.entityId, `attempt ${op.attemptCount + 1}/3`);
 
-  sched.add({ id: op.entityId, payload: op.content }, cbs)
+  sched.add({ id: op.entityId, payload: op.content }, cbs);
 }
 
 /**
@@ -107,9 +112,9 @@ export function addRetryOperation(
  * This prevents stale retries from overwriting newer content.
  */
 export function cancelRetry(documentId: string) {
-  const sched = ensureScheduler()
-  log.debug(`Cancelled pending retry`, documentId)
-  sched.cancel(documentId)
+  const sched = ensureScheduler();
+  log.debug(`Cancelled pending retry`, documentId);
+  sched.cancel(documentId);
 }
 
 /**
@@ -150,11 +155,11 @@ export async function processRetryQueue() {
  * Unlike the old system, we don't have online/visibility listeners racing with each other.
  */
 export function initializeRetryProcessor(): void {
-  if (typeof window === 'undefined') return
+  if (typeof window === "undefined") return;
 
-  const contentSched = ensureScheduler()
-  log.info('Starting retry scheduler')
-  contentSched.start()
+  const contentSched = ensureScheduler();
+  log.info("Starting retry scheduler");
+  contentSched.start();
 }
 
 /**
@@ -162,14 +167,14 @@ export function initializeRetryProcessor(): void {
  * Should be called when the app unmounts.
  */
 export function cleanupRetryProcessor(): void {
-  log.info('Stopping retry scheduler')
-  scheduler?.stop()
+  log.info("Stopping retry scheduler");
+  scheduler?.stop();
 }
 
 /**
  * Get current retry queue state (for debugging).
  */
 export function getRetryQueueState() {
-  const sched = ensureScheduler()
-  return sched.snapshot()
+  const sched = ensureScheduler();
+  return sched.snapshot();
 }

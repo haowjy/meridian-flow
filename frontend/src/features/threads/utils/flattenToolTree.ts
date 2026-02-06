@@ -10,4 +10,4 @@ export {
   type FlattenResult,
   type PartialDocument,
   type PartialFolder,
-} from '@/core/lib/flattenToolTree'
+} from "@/core/lib/flattenToolTree";

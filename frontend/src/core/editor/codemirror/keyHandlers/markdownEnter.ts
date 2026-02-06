@@ -8,17 +8,17 @@
  * Provides smart list/blockquote continuation and exit behavior.
  */
 
-import { EditorSelection } from '@codemirror/state'
-import { syntaxTree } from '@codemirror/language'
-import { keymap, type EditorView } from '@codemirror/view'
-import { insertNewline } from '@codemirror/commands'
+import { EditorSelection } from "@codemirror/state";
+import { syntaxTree } from "@codemirror/language";
+import { keymap, type EditorView } from "@codemirror/view";
+import { insertNewline } from "@codemirror/commands";
 
 // ============================================================================
 // HANDLER INTERFACE (OCP: extensible)
 // ============================================================================
 
 interface LineHandler {
-  pattern: RegExp
+  pattern: RegExp;
   /**
    * Handle the Enter key for this pattern
    * @returns true if handled, false to try next handler
@@ -26,8 +26,8 @@ interface LineHandler {
   handle(
     view: EditorView,
     match: RegExpExecArray,
-    line: { from: number; to: number; text: string }
-  ): boolean
+    line: { from: number; to: number; text: string },
+  ): boolean;
 }
 
 // ============================================================================
@@ -41,13 +41,13 @@ interface LineHandler {
 function exitMarkdownMarkupLine(
   view: EditorView,
   line: { from: number; to: number },
-  indent: string
+  indent: string,
 ): boolean {
   view.dispatch({
     changes: { from: line.from, to: line.to, insert: indent },
     selection: EditorSelection.cursor(line.from + indent.length),
-  })
-  return insertNewline(view)
+  });
+  return insertNewline(view);
 }
 
 // ============================================================================
@@ -58,111 +58,118 @@ const bulletHandler: LineHandler = {
   pattern: /^(\s*)([*+-])\s*(.*)$/,
 
   handle(view, match, line) {
-    const indent = match[1] ?? ''
-    const marker = match[2] ?? '-'
-    const rest = match[3] ?? ''
+    const indent = match[1] ?? "";
+    const marker = match[2] ?? "-";
+    const rest = match[3] ?? "";
 
     // Empty item: exit the list
     if (rest.trim().length === 0) {
-      return exitMarkdownMarkupLine(view, line, indent)
+      return exitMarkdownMarkupLine(view, line, indent);
     }
 
     // Non-empty: continue the list
-    const insertText = '\n' + indent + marker + ' '
-    const insertPos = line.to
-    const cursorPos = insertPos + insertText.length
+    const insertText = "\n" + indent + marker + " ";
+    const insertPos = line.to;
+    const cursorPos = insertPos + insertText.length;
 
     view.dispatch({
       changes: { from: insertPos, to: insertPos, insert: insertText },
       selection: EditorSelection.cursor(cursorPos),
-    })
-    return true
+    });
+    return true;
   },
-}
+};
 
 const orderedHandler: LineHandler = {
   pattern: /^(\s*)(\d+)([.)])\s*(.*)$/,
 
   handle(view, match, line) {
-    const indent = match[1] ?? ''
-    const numStr = match[2] ?? '1'
-    const delim = match[3] ?? '.'
-    const rest = match[4] ?? ''
+    const indent = match[1] ?? "";
+    const numStr = match[2] ?? "1";
+    const delim = match[3] ?? ".";
+    const rest = match[4] ?? "";
 
     // Empty item: exit the list
     if (rest.trim().length === 0) {
-      return exitMarkdownMarkupLine(view, line, indent)
+      return exitMarkdownMarkupLine(view, line, indent);
     }
 
     // Non-empty: continue with next number
-    const nextNum = String(parseInt(numStr, 10) + 1)
-    const markerText = nextNum + delim
-    const insertText = '\n' + indent + markerText + ' '
-    const insertPos = line.to
-    const cursorPos = insertPos + insertText.length
+    const nextNum = String(parseInt(numStr, 10) + 1);
+    const markerText = nextNum + delim;
+    const insertText = "\n" + indent + markerText + " ";
+    const insertPos = line.to;
+    const cursorPos = insertPos + insertText.length;
 
     view.dispatch({
       changes: { from: insertPos, to: insertPos, insert: insertText },
       selection: EditorSelection.cursor(cursorPos),
-    })
-    return true
+    });
+    return true;
   },
-}
+};
 
 const blockquoteHandler: LineHandler = {
   pattern: /^(\s*)>(\s*)(.*)$/,
 
   handle(view, match, line) {
-    const indent = match[1] ?? ''
-    const space = match[2] ?? ' '
-    const rest = match[3] ?? ''
-    const markerText = '>' + (space || ' ')
+    const indent = match[1] ?? "";
+    const space = match[2] ?? " ";
+    const rest = match[3] ?? "";
+    const markerText = ">" + (space || " ");
 
     // Empty quote line: exit the blockquote
     if (rest.trim().length === 0) {
-      return exitMarkdownMarkupLine(view, line, indent)
+      return exitMarkdownMarkupLine(view, line, indent);
     }
 
     // Non-empty: continue the quote
-    const insertText = '\n' + indent + markerText
-    const insertPos = line.to
-    const cursorPos = insertPos + insertText.length
+    const insertText = "\n" + indent + markerText;
+    const insertPos = line.to;
+    const cursorPos = insertPos + insertText.length;
 
     view.dispatch({
       changes: { from: insertPos, to: insertPos, insert: insertText },
       selection: EditorSelection.cursor(cursorPos),
-    })
-    return true
+    });
+    return true;
   },
-}
+};
 
 // Handler registry (OCP: add new handlers here)
-const handlers: LineHandler[] = [bulletHandler, orderedHandler, blockquoteHandler]
+const handlers: LineHandler[] = [
+  bulletHandler,
+  orderedHandler,
+  blockquoteHandler,
+];
 
 // ============================================================================
 // THEMATIC BREAK (HR) DETECTION
 // ============================================================================
 
-const thematicBreakCandidatePattern = /^\s{0,3}([*_-])(?:\s*\1){2,}\s*$/
+const thematicBreakCandidatePattern = /^\s{0,3}([*_-])(?:\s*\1){2,}\s*$/;
 
-function isHorizontalRuleLine(view: EditorView, line: { from: number; to: number; text: string }): boolean {
+function isHorizontalRuleLine(
+  view: EditorView,
+  line: { from: number; to: number; text: string },
+): boolean {
   // Avoid treating list items like "- --" as HR unless the parser agrees.
   if (!thematicBreakCandidatePattern.test(line.text)) {
-    return false
+    return false;
   }
 
-  let found = false
+  let found = false;
   syntaxTree(view.state).iterate({
     from: line.from,
     to: line.to,
     enter(node) {
-      if (node.name === 'HorizontalRule') {
-        found = true
+      if (node.name === "HorizontalRule") {
+        found = true;
       }
     },
-  })
+  });
 
-  return found
+  return found;
 }
 
 // ============================================================================
@@ -173,44 +180,46 @@ function isHorizontalRuleLine(view: EditorView, line: { from: number; to: number
  * Smart Enter key handler for markdown
  */
 export function markdownEnter(view: EditorView): boolean {
-  const { state } = view
-  const { main } = state.selection
+  const { state } = view;
+  const { main } = state.selection;
 
   // Only handle simple cursor (no selection)
   if (!main.empty) {
-    return false
+    return false;
   }
 
-  const line = state.doc.lineAt(main.head)
-  const cursorOffset = main.head - line.from
-  const lineText = line.text
+  const line = state.doc.lineAt(main.head);
+  const cursorOffset = main.head - line.from;
+  const lineText = line.text;
 
   // If cursor is before end of text, do normal split
   if (cursorOffset < lineText.trimEnd().length) {
-    return insertNewline(view)
+    return insertNewline(view);
   }
 
   // Thematic breaks like "---" and "***" are parsed as HorizontalRule nodes, but
   // they also resemble list items (leading "-" / "*"). Never continue list
   // markup when the line is actually a horizontal rule.
-  if (isHorizontalRuleLine(view, { from: line.from, to: line.to, text: lineText })) {
-    return insertNewline(view)
+  if (
+    isHorizontalRuleLine(view, { from: line.from, to: line.to, text: lineText })
+  ) {
+    return insertNewline(view);
   }
 
   // Try each handler
   for (const handler of handlers) {
-    const match = handler.pattern.exec(lineText)
+    const match = handler.pattern.exec(lineText);
     if (match) {
       return handler.handle(view, match, {
         from: line.from,
         to: line.to,
         text: lineText,
-      })
+      });
     }
   }
 
   // Fallback: normal newline
-  return insertNewline(view)
+  return insertNewline(view);
 }
 
 // ============================================================================
@@ -218,5 +227,5 @@ export function markdownEnter(view: EditorView): boolean {
 // ============================================================================
 
 export const markdownEnterKeymap = keymap.of([
-  { key: 'Enter', run: markdownEnter },
-])
+  { key: "Enter", run: markdownEnter },
+]);

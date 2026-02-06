@@ -8,7 +8,7 @@
  * @see toolRegistry.ts for the registration pattern
  */
 
-export { DocViewBlock } from './DocViewBlock'
+export { DocViewBlock } from "./DocViewBlock";
 export type {
   DocViewInput,
   DocViewResult,
@@ -16,4 +16,4 @@ export type {
   DocViewFolderResult,
   DocViewFolderDocument,
   DocViewFolderChild,
-} from './types'
+} from "./types";

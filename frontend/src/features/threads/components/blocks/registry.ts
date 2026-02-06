@@ -1,13 +1,13 @@
-import React from 'react'
-import type { TurnBlock } from '@/features/threads/types'
-import { TextBlock } from './TextBlock'
-import { ThinkingBlock } from './ThinkingBlock'
+import React from "react";
+import type { TurnBlock } from "@/features/threads/types";
+import { TextBlock } from "./TextBlock";
+import { ThinkingBlock } from "./ThinkingBlock";
 
 /**
  * Block renderer function type.
  * Each renderer receives a block and returns a React element.
  */
-export type BlockRendererFn = (block: TurnBlock) => React.ReactElement
+export type BlockRendererFn = (block: TurnBlock) => React.ReactElement;
 
 /**
  * Registry of block type to renderer function.
@@ -20,14 +20,14 @@ const BLOCK_RENDERERS: Record<string, BlockRendererFn> = {
   thinking: (block) => React.createElement(ThinkingBlock, { block }),
   // citation: (block) => React.createElement(CitationBlock, { block }),
   // image: (block) => React.createElement(ImageBlock, { block }),
-}
+};
 
 /**
  * Get the renderer function for a given block type.
  * Returns TextBlock renderer as fallback for unknown block types.
  */
 export function getBlockRenderer(blockType: string): BlockRendererFn {
-  return BLOCK_RENDERERS[blockType] ?? BLOCK_RENDERERS.text!
+  return BLOCK_RENDERERS[blockType] ?? BLOCK_RENDERERS.text!;
 }
 
 /**
@@ -41,9 +41,9 @@ export function getBlockRenderer(blockType: string): BlockRendererFn {
  */
 export function registerBlockRenderer(
   blockType: string,
-  renderer: BlockRendererFn
+  renderer: BlockRendererFn,
 ): void {
-  BLOCK_RENDERERS[blockType] = renderer
+  BLOCK_RENDERERS[blockType] = renderer;
 }
 
 /**
@@ -51,5 +51,5 @@ export function registerBlockRenderer(
  * Useful for debugging or listing available block types.
  */
 export function getRegisteredBlockTypes(): string[] {
-  return Object.keys(BLOCK_RENDERERS)
+  return Object.keys(BLOCK_RENDERERS);
 }

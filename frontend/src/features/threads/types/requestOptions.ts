@@ -1,30 +1,30 @@
-import type { RequestParams } from './thread'
+import type { RequestParams } from "./thread";
 
-export type ReasoningLevel = 'off' | 'low' | 'medium' | 'high'
+export type ReasoningLevel = "off" | "low" | "medium" | "high";
 
 export interface ThreadRequestOptions {
-  modelId: string
-  modelLabel: string
-  providerId: string
-  reasoning: ReasoningLevel
+  modelId: string;
+  modelLabel: string;
+  providerId: string;
+  reasoning: ReasoningLevel;
   /** Whether the selected model supports tool calling (doc_edit, doc_view, etc.) */
-  supportsTools: boolean
+  supportsTools: boolean;
 }
 
 export const DEFAULT_TOOLS = [
-  { name: 'str_replace_based_edit_tool' },
-  { name: 'doc_search' },
-  { name: 'doc_tree' },
-  { name: 'tavily_web_search' },
-]
+  { name: "str_replace_based_edit_tool" },
+  { name: "doc_search" },
+  { name: "doc_tree" },
+  { name: "tavily_web_search" },
+];
 
 export const DEFAULT_THREAD_REQUEST_OPTIONS: ThreadRequestOptions = {
-  modelId: 'moonshotai/kimi-k2-thinking',
-  modelLabel: 'Kimi K2 Thinking',
-  providerId: 'openrouter',
-  reasoning: 'low', // Default model (kimi-k2-thinking) requires thinking
+  modelId: "moonshotai/kimi-k2-thinking",
+  modelLabel: "Kimi K2 Thinking",
+  providerId: "openrouter",
+  reasoning: "low", // Default model (kimi-k2-thinking) requires thinking
   supportsTools: true, // Default model supports tools
-}
+};
 
 /**
  * Converts backend RequestParams to frontend ThreadRequestOptions.
@@ -33,13 +33,15 @@ export const DEFAULT_THREAD_REQUEST_OPTIONS: ThreadRequestOptions = {
  * Note: RequestParams uses camelCase because fetchAPI's convertKeysToCamelCase
  * transforms all keys from the backend's snake_case (thinking_enabled -> thinkingEnabled).
  */
-export function requestParamsToOptions(params?: RequestParams | null): ThreadRequestOptions {
-  if (!params) return { ...DEFAULT_THREAD_REQUEST_OPTIONS }
+export function requestParamsToOptions(
+  params?: RequestParams | null,
+): ThreadRequestOptions {
+  if (!params) return { ...DEFAULT_THREAD_REQUEST_OPTIONS };
 
   // Map thinkingLevel to reasoning, defaulting to 'low' if thinking is enabled but no level set
-  let reasoning: ReasoningLevel = 'off'
+  let reasoning: ReasoningLevel = "off";
   if (params.thinkingEnabled || params.thinkingLevel) {
-    reasoning = (params.thinkingLevel as ReasoningLevel) ?? 'low'
+    reasoning = (params.thinkingLevel as ReasoningLevel) ?? "low";
   }
 
   return {
@@ -49,5 +51,5 @@ export function requestParamsToOptions(params?: RequestParams | null): ThreadReq
     reasoning,
     // Default to true - will be corrected when model capabilities are loaded
     supportsTools: DEFAULT_THREAD_REQUEST_OPTIONS.supportsTools,
-  }
+  };
 }

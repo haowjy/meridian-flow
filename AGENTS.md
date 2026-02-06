@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file provides guidance when working with the code in this repository. ALWAYS PLAN FIRST BEFORE WRITING CODE. AFTER WRITING A PLAN, MAKE SURE THE DEVELOPER REVIEW THE PLAN AND APPROVE IT BEFORE WRITING ANY CODE THAT ISN'T 1 or 2 LINES OF CODE. You don't need approval or a plan to edit a plan tho.
+This file provides guidance when working with the code in this repository.
 
 ## Project Overview
 
@@ -21,6 +21,14 @@ See `frontend/CLAUDE.md` for UI-specific implementation of this philosophy.
 ## Guiding Principles for Development
 
 ALWAYS FOLLOW SOLID PRINCIPLES.
+
+### SOLID Quick Reference
+
+- **SRP**: Files < 500 lines. One store = one domain. Split large components.
+- **OCP**: Use registries/factories for extensibility (see ToolRegistry, BlockRenderer)
+- **LSP**: All implementations must be substitutable for their interfaces
+- **ISP**: Split large interfaces (Reader vs Writer, Metadata vs CRUD)
+- **DIP**: Depend on interfaces, not concrete types (especially for external services)
 
 Then, these principles can also help you make architectural decisions and other development tasks:
 
@@ -71,6 +79,31 @@ Then, these principles can also help you make architectural decisions and other 
 10. **Keep Documentation Up-to-Date** - Update documentation AFTER finalizing changes. See "Feature Documentation Sync Rule" for feature documentation workflow.
 
 11. **Keep the code clean** - keep the code clean and readable, as the code grows, it will become more difficult to understand, its easier to refactor now than later (make sure to delete dead code as well). Make sure each function/method/file mostly does one thing and does it well (SRP).
+
+## Before Writing New Code
+
+1. **Search for existing patterns** - Before implementing, search for similar implementations:
+   - Hooks: `grep -r "use<Similar>" frontend/src/`
+   - Services: Check `backend/internal/service/` for similar business logic
+   - Repositories: Check existing repos for query patterns
+   - Components: Search `frontend/src/features/` for similar UI patterns
+
+2. **Reuse over recreate** - If a pattern exists, use it. If it's close but not quite right, extend it.
+
+3. **Check shared utilities** - Before writing a helper:
+   - Backend: `backend/internal/util/`, domain errors, httputil
+   - Frontend: `frontend/src/core/lib/`, shared hooks, UI components
+
+4. **When patterns diverge, consolidate** - If you find 2+ implementations of the same thing, refactor to one.
+
+## Consistency Checklist
+
+Before submitting code, verify:
+- [ ] Error handling follows existing patterns (HTTPError, domain errors)
+- [ ] Similar code elsewhere? → Extract shared utility
+- [ ] Dialog patterns use shared components (DeleteConfirmationDialog, etc.)
+- [ ] Store patterns match existing stores (abort controllers, selectors)
+- [ ] API calls follow api.ts conventions
 
 ## Where to Find Things
 
@@ -256,6 +289,7 @@ See `internal/repository/postgres/connection.go`
 
 - use `pnpm` instead of `npm` for faster compile times
 - run `pnpm run lint` to run ESLint after making changes
+- run `pnpm run format` after Tailwind/CSS class changes
 
 ## Deployment
 
@@ -263,4 +297,11 @@ See `internal/repository/postgres/connection.go`
 - **Database**: Supabase (PostgreSQL)
 - **Frontend**: Vercel
 
-See `backend/CLAUDE.md` for backend deployment details.
+See `backend/AGENTS.md` for backend deployment details.
+
+## Refactoring Backlog
+
+Technical debt is tracked in `_docs/future/refactoring-backlog.md`. Use `/backlog` to:
+- Review current items
+- Add new discoveries
+- Work on refactors

@@ -1,1 +1,1 @@
-export { TextEditorBlock } from './TextEditorBlock'
+export { TextEditorBlock } from "./TextEditorBlock";

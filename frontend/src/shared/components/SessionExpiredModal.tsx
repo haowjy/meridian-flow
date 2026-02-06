@@ -1,4 +1,4 @@
-import { useErrorStore } from '@/core/stores/useErrorStore'
+import { useErrorStore } from "@/core/stores/useErrorStore";
 import {
   Dialog,
   DialogContent,
@@ -6,9 +6,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/shared/components/ui/dialog'
-import { Button } from '@/shared/components/ui/button'
-import { LogIn } from 'lucide-react'
+} from "@/shared/components/ui/dialog";
+import { Button } from "@/shared/components/ui/button";
+import { LogIn } from "lucide-react";
 
 /**
  * Modal shown when user session has expired (401 from API).
@@ -17,18 +17,21 @@ import { LogIn } from 'lucide-react'
  * to continue using the app. No dismiss/close button is shown.
  */
 export function SessionExpiredModal() {
-  const sessionExpired = useErrorStore((s) => s.sessionExpired)
-  const clearSessionExpired = useErrorStore((s) => s.clearSessionExpired)
+  const sessionExpired = useErrorStore((s) => s.sessionExpired);
+  const clearSessionExpired = useErrorStore((s) => s.clearSessionExpired);
 
   const handleSignIn = () => {
-    clearSessionExpired()
+    clearSessionExpired();
     // Redirect to login page
-    window.location.href = '/login'
-  }
+    window.location.href = "/login";
+  };
 
   return (
     <Dialog open={sessionExpired}>
-      <DialogContent showCloseButton={false} onPointerDownOutside={(e) => e.preventDefault()}>
+      <DialogContent
+        showCloseButton={false}
+        onPointerDownOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>Session Expired</DialogTitle>
           <DialogDescription>
@@ -43,5 +46,5 @@ export function SessionExpiredModal() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

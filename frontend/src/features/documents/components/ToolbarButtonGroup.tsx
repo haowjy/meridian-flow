@@ -1,10 +1,10 @@
-import { ReactNode } from 'react'
-import { cn } from '@/lib/utils'
+import { ReactNode } from "react";
+import { cn } from "@/lib/utils";
 
 interface ToolbarButtonGroupProps {
-  children: ReactNode
-  gap?: 'tight' | 'normal'
-  className?: string
+  children: ReactNode;
+  gap?: "tight" | "normal";
+  className?: string;
 }
 
 /**
@@ -16,14 +16,14 @@ interface ToolbarButtonGroupProps {
  */
 export function ToolbarButtonGroup({
   children,
-  gap = 'tight',
+  gap = "tight",
   className,
 }: ToolbarButtonGroupProps) {
-  const gapClass = gap === 'tight' ? '' : 'gap-1'
+  const gapClass = gap === "tight" ? "" : "gap-1";
 
   return (
-    <div className={cn('flex items-center', gapClass, className)}>
+    <div className={cn("flex items-center", gapClass, className)}>
       {children}
     </div>
-  )
+  );
 }

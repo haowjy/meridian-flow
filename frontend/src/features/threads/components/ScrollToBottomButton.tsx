@@ -1,11 +1,11 @@
-import { ArrowDown } from 'lucide-react'
-import { Button } from '@/shared/components/ui/button'
-import { cn } from '@/lib/utils'
+import { ArrowDown } from "lucide-react";
+import { Button } from "@/shared/components/ui/button";
+import { cn } from "@/lib/utils";
 
 interface ScrollToBottomButtonProps {
-  visible: boolean
-  onClick: () => void
-  className?: string
+  visible: boolean;
+  onClick: () => void;
+  className?: string;
 }
 
 /**
@@ -26,12 +26,12 @@ export function ScrollToBottomButton({
       onClick={onClick}
       aria-label="Scroll to bottom"
       className={cn(
-        'scroll-to-bottom-button',
-        visible ? 'visible' : '',
-        className
+        "scroll-to-bottom-button",
+        visible ? "visible" : "",
+        className,
       )}
     >
       <ArrowDown className="size-4" />
     </Button>
-  )
+  );
 }

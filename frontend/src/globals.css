@@ -31,8 +31,8 @@
   --color-foreground: var(--foreground);
   --color-primary: var(--jade-primary);
   --color-primary-foreground: var(--jade-foreground);
-  --color-favorite: var(--gold-favorite, #DB9A30);
-  --color-favorite-foreground: var(--gold-favorite-foreground, #1C1A18);
+  --color-favorite: var(--gold-favorite, #db9a30);
+  --color-favorite-foreground: var(--gold-favorite-foreground, #1c1a18);
   --color-border: var(--border);
   --color-input: var(--input-border);
   --color-ring: var(--focus-ring);
@@ -74,18 +74,23 @@
   --color-sidebar-ring: var(--sidebar-ring);
 
   /* === Typography (bridged from theme system) === */
-  --font-display: var(--theme-font-display, 'Cormorant Garamond', Georgia, serif);
-  --font-body: var(--theme-font-body, 'Source Serif 4', Georgia, serif);
-  --font-ui: var(--theme-font-ui, 'Manrope', system-ui, sans-serif);
+  --font-display: var(
+    --theme-font-display,
+    "Cormorant Garamond",
+    Georgia,
+    serif
+  );
+  --font-body: var(--theme-font-body, "Source Serif 4", Georgia, serif);
+  --font-ui: var(--theme-font-ui, "Manrope", system-ui, sans-serif);
   --font-sans: var(--font-ui);
   --font-serif: var(--font-body);
   --font-mono: ui-monospace, monospace;
 
   /* === Component Heights (consistent sizing scale) === */
-  --component-height-xs: 24px;  /* Compact inline controls */
-  --component-height-sm: 32px;  /* Small buttons, inputs */
-  --component-height-md: 36px;  /* Default buttons, inputs (h-9) */
-  --component-height-lg: 40px;  /* Large/prominent buttons, auth forms (h-10) */
+  --component-height-xs: 24px; /* Compact inline controls */
+  --component-height-sm: 32px; /* Small buttons, inputs */
+  --component-height-md: 36px; /* Default buttons, inputs (h-9) */
+  --component-height-lg: 40px; /* Large/prominent buttons, auth forms (h-10) */
 
   /* === Border Radius === */
   /* NOTE: Tailwind's rounded-sm is 4px. Use rounded-[--radius-sm] for 6px, or use rounded directly. */
@@ -104,13 +109,13 @@
   --spacing-6: 48px;
 
   /* === Panel Layout === */
-  --workspace-rail-width: 48px;     /* Vertical navigation rail (desktop only) */
-  --panel-header-height: 3rem;      /* 48px - all panel headers (thread, document, sidebar) */
+  --workspace-rail-width: 48px; /* Vertical navigation rail (desktop only) */
+  --panel-header-height: 3rem; /* 48px - all panel headers (thread, document, sidebar) */
   --thread-composer-max-height: 240px; /* Max height before internal scroll - used for content padding-bottom */
 
   /* === Mobile Layout === */
-  --mobile-top-header-height: 56px;   /* Mobile top header (project selector + menu) - h-14 */
-  --mobile-bottom-bar-height: 48px;   /* Mobile bottom navigation bar (base height) - 3rem */
+  --mobile-top-header-height: 56px; /* Mobile top header (project selector + menu) - h-14 */
+  --mobile-bottom-bar-height: 48px; /* Mobile bottom navigation bar (base height) - 3rem */
 
   /* === Shadows (multi-layer) === */
   --shadow-1: var(--shadow-1-value);
@@ -145,51 +150,58 @@
 :root {
   /* === Theme Variable Fallbacks (Modern Literary Light - Enhanced Contrast) === */
   /* Colors from: _docs/technical/frontend/themes/modern-literary.md */
-  --theme-bg: #F6F2EA;           /* Warmer, more distinguishable from white */
-  --theme-surface: #FAF7F2;      /* Distinct from pure white */
-  --theme-text: #1F1A12;         /* Darker for better contrast */
-  --theme-text-muted: #5A4D3F;   /* Slightly darker muted text */
-  --theme-border: #D8D0C2;       /* More visible borders */
-  --theme-favorite: #DB9A30;     /* Amber gold */
-  --theme-favorite-hover: #C88A20;
-  --theme-favorite-foreground: #1C1A18;
-  --theme-primary: #4A7A68;      /* Deeper, more confident sage green */
-  --theme-primary-foreground: #FFFFFF;
-  --theme-success: #3D8B5F;
-  --theme-success-foreground: #FFFFFF;
-  --theme-warning: #DB9A30;
-  --theme-warning-foreground: #1F1A12;
-  --theme-error: #C4785A;
-  --theme-error-foreground: #FFFFFF;
+  --theme-bg: #f6f2ea; /* Warmer, more distinguishable from white */
+  --theme-surface: #faf7f2; /* Distinct from pure white */
+  --theme-text: #1f1a12; /* Darker for better contrast */
+  --theme-text-muted: #5a4d3f; /* Slightly darker muted text */
+  --theme-border: #d8d0c2; /* More visible borders */
+  --theme-favorite: #db9a30; /* Amber gold */
+  --theme-favorite-hover: #c88a20;
+  --theme-favorite-foreground: #1c1a18;
+  --theme-primary: #4a7a68; /* Deeper, more confident sage green */
+  --theme-primary-foreground: #ffffff;
+  --theme-success: #3d8b5f;
+  --theme-success-foreground: #ffffff;
+  --theme-warning: #db9a30;
+  --theme-warning-foreground: #1f1a12;
+  --theme-error: #c4785a;
+  --theme-error-foreground: #ffffff;
   --theme-focus-ring-outer: rgba(74, 122, 104, 0.35);
   --theme-focus-ring-inner: rgba(74, 122, 104, 0.15);
-  --theme-sidebar: #F0EBE2;      /* Warm sidebar (slightly warmer to match new bg) */
-  --theme-sidebar-foreground: #1F1A12;
-  --theme-sidebar-icon: #5A4D3F;
-  --theme-sidebar-accent: #E8E3D9;
-  --theme-sidebar-border: #D8D0C2;
+  --theme-sidebar: #f0ebe2; /* Warm sidebar (slightly warmer to match new bg) */
+  --theme-sidebar-foreground: #1f1a12;
+  --theme-sidebar-icon: #5a4d3f;
+  --theme-sidebar-accent: #e8e3d9;
+  --theme-sidebar-border: #d8d0c2;
   /* More visible shadows with increased opacity */
-  --theme-shadow-1: 0 1px 3px rgba(44, 36, 24, 0.12), 0 1px 2px rgba(44, 36, 24, 0.08);
-  --theme-shadow-2: 0 4px 12px rgba(44, 36, 24, 0.15), 0 2px 4px rgba(44, 36, 24, 0.10);
-  --theme-shadow-3: 0 10px 25px rgba(44, 36, 24, 0.18), 0 4px 10px rgba(44, 36, 24, 0.12);
+  --theme-shadow-1:
+    0 1px 3px rgba(44, 36, 24, 0.12), 0 1px 2px rgba(44, 36, 24, 0.08);
+  --theme-shadow-2:
+    0 4px 12px rgba(44, 36, 24, 0.15), 0 2px 4px rgba(44, 36, 24, 0.1);
+  --theme-shadow-3:
+    0 10px 25px rgba(44, 36, 24, 0.18), 0 4px 10px rgba(44, 36, 24, 0.12);
   --theme-selection-bg: rgba(74, 122, 104, 0.25);
-  --theme-selection-fg: #1F1A12;
+  --theme-selection-fg: #1f1a12;
   /* Typography: Cormorant Garamond (display), Source Serif 4 (body), Manrope (UI) */
-  --theme-font-display: 'Cormorant Garamond', Georgia, serif;
-  --theme-font-body: 'Source Serif 4', Georgia, serif;
-  --theme-font-ui: 'Manrope', system-ui, sans-serif;
+  --theme-font-display: "Cormorant Garamond", Georgia, serif;
+  --theme-font-body: "Source Serif 4", Georgia, serif;
+  --theme-font-ui: "Manrope", system-ui, sans-serif;
   --theme-radius: 8px;
 
   /* Paper grain texture (subtle noise for light mode, disabled in dark) */
   --texture-grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-  --texture-opacity: 0.06;       /* Increased from 0.03 for subtle but perceptible grain */
+  --texture-opacity: 0.06; /* Increased from 0.03 for subtle but perceptible grain */
 
   /* Editor form inputs: full opacity border for visibility */
   --editor-input-border: var(--theme-border);
 
   /* Editor inset styling: "pressed into paper" depth effect */
   --editor-inset-shadow: inset 0 2px 4px rgba(44, 36, 24, 0.06);
-  --editor-inset-bg: color-mix(in srgb, var(--theme-bg) 92%, var(--theme-border) 8%);
+  --editor-inset-bg: color-mix(
+    in srgb,
+    var(--theme-bg) 92%,
+    var(--theme-border) 8%
+  );
 
   /* === Semantic Variables (bridge to theme system) === */
 
@@ -208,7 +220,7 @@
   /* Interactive States - increased hover visibility from 8% to 14% */
   --hover: color-mix(in srgb, var(--theme-primary) 14%, transparent);
   --active: var(--theme-primary);
-  --disabled: #9A958A;
+  --disabled: #9a958a;
 
   /* Borders & Inputs */
   --border: var(--theme-border);
@@ -232,11 +244,19 @@
   /* Semantic Feedback */
   --success: var(--theme-success);
   --success-foreground: var(--theme-success-foreground);
-  --success-wash: color-mix(in srgb, var(--theme-success) 10%, var(--theme-bg) 90%);
+  --success-wash: color-mix(
+    in srgb,
+    var(--theme-success) 10%,
+    var(--theme-bg) 90%
+  );
 
   --warning: var(--theme-warning);
   --warning-foreground: var(--theme-warning-foreground);
-  --warning-wash: color-mix(in srgb, var(--theme-warning) 10%, var(--theme-bg) 90%);
+  --warning-wash: color-mix(
+    in srgb,
+    var(--theme-warning) 10%,
+    var(--theme-bg) 90%
+  );
 
   --error: var(--theme-error);
   --error-foreground: var(--theme-error-foreground);
@@ -272,35 +292,38 @@
 .dark {
   /* === Theme Variable Fallbacks (Modern Literary Dark - Enhanced) === */
   /* Colors from: _docs/technical/frontend/themes/modern-literary.md */
-  --theme-bg: #1C1917;           /* Espresso/ink */
-  --theme-surface: #2A2724;      /* Slightly lighter for better contrast */
-  --theme-text: #F0EBE3;         /* Warm cream */
-  --theme-text-muted: #A89E8E;   /* Warm muted */
-  --theme-border: #3A3530;       /* Warm border */
-  --theme-favorite: #F0B042;     /* Amber gold for dark mode */
-  --theme-favorite-hover: #F5C060;
-  --theme-favorite-foreground: #1C1917;
-  --theme-primary: #8FB9A4;      /* Brighter, more vibrant sage */
-  --theme-primary-foreground: #1C1917;
-  --theme-success: #5CB87A;
-  --theme-success-foreground: #1C1917;
-  --theme-warning: #F0B042;
-  --theme-warning-foreground: #1C1917;
-  --theme-error: #D4896B;
-  --theme-error-foreground: #1C1917;
-  --theme-focus-ring-outer: rgba(143, 185, 164, 0.30);
+  --theme-bg: #1c1917; /* Espresso/ink */
+  --theme-surface: #2a2724; /* Slightly lighter for better contrast */
+  --theme-text: #f0ebe3; /* Warm cream */
+  --theme-text-muted: #a89e8e; /* Warm muted */
+  --theme-border: #3a3530; /* Warm border */
+  --theme-favorite: #f0b042; /* Amber gold for dark mode */
+  --theme-favorite-hover: #f5c060;
+  --theme-favorite-foreground: #1c1917;
+  --theme-primary: #8fb9a4; /* Brighter, more vibrant sage */
+  --theme-primary-foreground: #1c1917;
+  --theme-success: #5cb87a;
+  --theme-success-foreground: #1c1917;
+  --theme-warning: #f0b042;
+  --theme-warning-foreground: #1c1917;
+  --theme-error: #d4896b;
+  --theme-error-foreground: #1c1917;
+  --theme-focus-ring-outer: rgba(143, 185, 164, 0.3);
   --theme-focus-ring-inner: rgba(143, 185, 164, 0.12);
-  --theme-sidebar: #14120F;      /* Deep sidebar */
-  --theme-sidebar-foreground: #F0EBE3;
-  --theme-sidebar-icon: #A89E8E;
-  --theme-sidebar-accent: #2A2724;
-  --theme-sidebar-border: #3A3530;
+  --theme-sidebar: #14120f; /* Deep sidebar */
+  --theme-sidebar-foreground: #f0ebe3;
+  --theme-sidebar-icon: #a89e8e;
+  --theme-sidebar-accent: #2a2724;
+  --theme-sidebar-border: #3a3530;
   /* More visible shadows with subtle sage glow */
-  --theme-shadow-1: 0 1px 3px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.03);
-  --theme-shadow-2: 0 4px 16px rgba(0, 0, 0, 0.45), 0 0 1px rgba(143, 185, 164, 0.08);
-  --theme-shadow-3: 0 10px 30px rgba(0, 0, 0, 0.50), 0 0 20px rgba(143, 185, 164, 0.06);
+  --theme-shadow-1:
+    0 1px 3px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  --theme-shadow-2:
+    0 4px 16px rgba(0, 0, 0, 0.45), 0 0 1px rgba(143, 185, 164, 0.08);
+  --theme-shadow-3:
+    0 10px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(143, 185, 164, 0.06);
   --theme-selection-bg: rgba(143, 185, 164, 0.35);
-  --theme-selection-fg: #F0EBE3;
+  --theme-selection-fg: #f0ebe3;
 
   /* Disable paper grain in dark mode */
   --texture-opacity: 0;
@@ -310,7 +333,11 @@
 
   /* Editor inset styling: "pressed into paper" depth effect (darker for dark mode) */
   --editor-inset-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.15);
-  --editor-inset-bg: color-mix(in srgb, var(--theme-bg) 85%, var(--theme-border) 15%);
+  --editor-inset-bg: color-mix(
+    in srgb,
+    var(--theme-bg) 85%,
+    var(--theme-border) 15%
+  );
 
   /* === Semantic Variables (same bridge as light, but referencing updated --theme-* values) === */
 
@@ -332,7 +359,7 @@
   /* Interactive States - increased hover visibility from 8% to 14% */
   --hover: color-mix(in srgb, var(--theme-primary) 14%, transparent);
   --active: var(--theme-primary);
-  --disabled: #7E857F;
+  --disabled: #7e857f;
 
   /* Borders & Inputs */
   --border: var(--theme-border);
@@ -356,11 +383,19 @@
   /* Semantic Feedback */
   --success: var(--theme-success);
   --success-foreground: var(--theme-success-foreground);
-  --success-wash: color-mix(in srgb, var(--theme-success) 15%, var(--theme-bg) 85%);
+  --success-wash: color-mix(
+    in srgb,
+    var(--theme-success) 15%,
+    var(--theme-bg) 85%
+  );
 
   --warning: var(--theme-warning);
   --warning-foreground: var(--theme-warning-foreground);
-  --warning-wash: color-mix(in srgb, var(--theme-warning) 15%, var(--theme-bg) 85%);
+  --warning-wash: color-mix(
+    in srgb,
+    var(--theme-warning) 15%,
+    var(--theme-bg) 85%
+  );
 
   --error: var(--theme-error);
   --error-foreground: var(--theme-error-foreground);
@@ -458,7 +493,7 @@
 
   /* Paper grain texture overlay (subtle in light mode, disabled in dark) */
   body::before {
-    content: '';
+    content: "";
     position: fixed;
     inset: 0;
     background-image: var(--texture-grain);
@@ -482,7 +517,9 @@
   }
 
   /* Text cursor for form inputs */
-  input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not(:disabled),
+  input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not(
+      [type="button"]
+    ):not(:disabled),
   textarea:not(:disabled) {
     cursor: text;
   }
@@ -499,30 +536,6 @@ body.preload * {
    ============================================================================ */
 
 @layer components {
-  /* === Focus Ring Utility ===
-     Extracted from button variants to ensure consistent focus treatment.
-     Use: Apply `.focus-ring` to interactive elements needing custom focus styling.
-     Note: Most elements get focus rings automatically from @layer base rules.
-  */
-  .focus-ring {
-    @apply outline-none;
-  }
-  .focus-ring:focus-visible {
-    outline: 3px solid var(--focus-ring-outer);
-    outline-offset: 2px;
-    box-shadow: 0 0 0 2px var(--focus-ring-inner);
-  }
-
-  /* Input variant without outline offset (inset focus) */
-  .focus-ring-inset {
-    @apply outline-none;
-  }
-  .focus-ring-inset:focus-visible {
-    outline: 3px solid var(--focus-ring-outer);
-    outline-offset: 0;
-    box-shadow: 0 0 0 2px var(--focus-ring-inner);
-  }
-
   /* === Typography Utilities (shared front + workspace) === */
 
   .type-display {
@@ -556,121 +569,18 @@ body.preload * {
     color: var(--muted-foreground);
   }
 
-  /* === Literary Typography Enhancements === */
-
-  /* Drop cap for first paragraph in prose - apply .prose-drop-cap to container */
-  .prose-drop-cap p:first-of-type::first-letter {
-    font-family: var(--font-display);
-    font-size: 3.5em;
-    float: left;
-    line-height: 0.8;
-    padding-right: 0.1em;
-    padding-top: 0.1em;
-    color: var(--theme-favorite);
-  }
-
-  /* Scene break decoration (· · ·) */
-  .scene-break {
-    @apply text-center my-8;
-    color: var(--theme-favorite);
-    font-family: var(--font-display);
-    letter-spacing: 0.5em;
-  }
-
   /* === Thread Pane (Left Sidebar) === */
 
   .thread-pane {
     @apply bg-background text-foreground;
   }
 
-  .thread-pane-header {
-    @apply bg-background/80;
-  }
-
   .thread-pane-body {
     @apply overflow-hidden;
   }
 
-  .thread-pane-scroll {
-    @apply h-full;
-  }
-
   .thread-pane-empty {
-    @apply text-xs text-sidebar-foreground/70;
-  }
-
-  /* === List Item Base Pattern ===
-     Consistent base for tree/list items across the app.
-     Usage: Apply appropriate variant class based on context.
-
-     Standard paddings:
-     - Sidebar items (document tree, thread list): px-2.5 py-1.5 gap-2
-     - Compact items: px-2 py-1 gap-1.5
-  */
-  .list-item-base {
-    @apply flex w-full items-center rounded-sm text-left text-sm cursor-pointer;
-    /* Default: sidebar item spacing */
-    @apply gap-2 px-2.5;
-    /* Responsive padding: larger touch targets on mobile */
-    @apply py-2 md:py-1.5;
-    /* Enhanced hover with micro-movement */
-    transition: transform 150ms ease, background 150ms ease;
-  }
-
-  .list-item-base:hover {
-    @apply bg-hover;
-    transform: translateX(2px);
-  }
-
-  .list-item-base--active {
-    @apply bg-sidebar-accent/50 font-medium;
-    /* Visible left border accent for active state */
-    border-left: 2px solid var(--theme-favorite);
-    padding-left: calc(0.625rem - 2px); /* Compensate for border width (px-2.5 = 0.625rem) */
-  }
-
-  /* Compact variant for dense lists */
-  .list-item-compact {
-    @apply flex w-full items-center rounded-sm text-left text-sm cursor-pointer;
-    @apply gap-1.5 px-2 py-1;
-    transition: transform 150ms ease, background 150ms ease;
-  }
-
-  .list-item-compact:hover {
-    @apply bg-hover;
-    transform: translateX(2px);
-  }
-
-  /* List item action button - "..." menu triggers */
-  .list-item-action-button {
-    @apply flex-shrink-0 p-0 rounded-sm transition-opacity;
-    /* Responsive size: larger on mobile for touch */
-    @apply h-7 w-7 md:h-5 md:w-5;
-    /* Hide on desktop, show on hover/focus */
-    @apply opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100;
-  }
-
-  /* === Panel Header Pattern ===
-     Consistent header bars for panels.
-     Usage: Apply .panel-header with a height variable.
-  */
-  .panel-header {
-    @apply flex items-center px-3;
-    /* Standard gap for header items */
-    gap: var(--spacing-1); /* 4px - tight for header controls */
-  }
-
-  /* Responsive variant - tighter padding on mobile */
-  .panel-header-responsive {
-    @apply flex items-center;
-    @apply px-2 sm:px-3;
-    gap: var(--spacing-1);
-  }
-
-  /* Header with space-between layout (left/right groups) */
-  .panel-header-split {
-    @apply flex items-center justify-between;
-    @apply px-2 sm:px-3;
+    @apply text-sidebar-foreground/70 text-xs;
   }
 
   /* Sidebar icons use DARK JADE in light mode */
@@ -681,12 +591,12 @@ body.preload * {
   /* === Thread Main Panel === */
 
   .thread-main {
-    @apply flex h-full flex-col bg-background min-w-0 relative;
+    @apply bg-background relative flex h-full min-w-0 flex-col;
   }
 
   /* Floating scroll-to-bottom button - positioned above composer (which is absolute positioned) */
   .scroll-to-bottom-button {
-    @apply absolute left-1/2 -translate-x-1/2 z-20 rounded-full shadow-md;
+    @apply absolute left-1/2 z-20 -translate-x-1/2 rounded-full shadow-md;
     /* Position above the composer content */
     bottom: 100%;
     margin-bottom: 8px;
@@ -701,11 +611,7 @@ body.preload * {
     pointer-events: auto;
   }
 
-  .thread-main-empty {
-    @apply flex h-full flex-col items-center justify-center px-4 text-center text-sm text-muted-foreground;
-  }
-
-  /* Thread messages - spec: pure white user, jade rim AI */
+  /* Thread messages */
   .thread-message {
     border-radius: var(--radius-lg);
     /* Add visible shadow for elevation/depth */
@@ -723,20 +629,6 @@ body.preload * {
     border: 1px solid var(--border);
   }
 
-  /* AI messages: jade border in light, GLOW JADE rim in dark */
-  .thread-message--ai {
-    @apply bg-card text-card-foreground;
-  }
-
-  .thread-message--ai {
-    border: 1px solid var(--jade-primary);
-  }
-
-  .dark .thread-message--ai {
-    border: 1px solid var(--glow-jade);
-    border-opacity: 0.3;
-  }
-
   /* Code blocks in messages: Neutral 100 in light, Jade Black in dark */
   .thread-message code,
   .thread-message pre {
@@ -745,25 +637,7 @@ body.preload * {
 
   /* Thread input */
   .thread-input-shell {
-    @apply mx-3 mb-2.5 mt-0.5 sm:mx-2;
-  }
-
-  .thread-input {
-    @apply w-full resize-none rounded border bg-card px-3 py-2 text-base md:text-sm outline-none ring-offset-0;
-    box-shadow: var(--shadow-1);
-    transition: box-shadow var(--duration-fast) var(--easing-default);
-  }
-
-  .thread-input:focus-visible {
-    outline: 3px solid var(--focus-ring-outer);
-    outline-offset: 0;
-    box-shadow:
-      var(--shadow-1),
-      0 0 0 2px var(--focus-ring-inner);
-  }
-
-  .thread-input-row {
-    @apply flex items-center gap-2;
+    @apply mx-3 mt-0.5 mb-2.5 sm:mx-2;
   }
 
   /* === Workspace Panel Shells (left/right slabs) === */
@@ -787,22 +661,9 @@ body.preload * {
 
   /* Tooltips */
   .tooltip {
-    @apply rounded-sm border border-border bg-popover px-3 py-2 text-xs text-popover-foreground;
+    @apply border-border bg-popover text-popover-foreground rounded-sm border px-3 py-2 text-xs;
     box-shadow: var(--shadow-2);
     font-family: var(--font-sans);
-  }
-
-  /* Progress bars */
-  .progress-bar {
-    @apply h-1 overflow-hidden rounded-full;
-    background-color: oklch(from var(--jade-primary) l c h / var(--opacity-subtle));
-  }
-
-  .progress-bar__fill {
-    @apply h-full transition-all;
-    background-color: var(--gold);
-    transition-duration: var(--duration-medium);
-    transition-timing-function: var(--easing-default);
   }
 
   /* Badges / Tags */
@@ -830,24 +691,6 @@ body.preload * {
     bottom: 0.25rem;
     border-left: 1px solid var(--border);
     opacity: var(--opacity-subtle);
-    pointer-events: none;
-  }
-
-  /* Compact skills section - reduced indentation */
-  .tree-children-compact {
-    position: relative;
-    margin-left: 0.5rem;   /* 8px (was 12px) */
-    padding-left: 0.5rem;  /* 8px (was 12px) */
-  }
-
-  .tree-children-compact::before {
-    content: "";
-    position: absolute;
-    inset-inline-start: 0.25rem;  /* 4px from left */
-    top: 0.25rem;
-    bottom: 0.25rem;
-    border-left: 1px solid var(--border);
-    opacity: var(--opacity-subtle);  /* 20% opacity */
     pointer-events: none;
   }
 
@@ -997,8 +840,12 @@ body.preload * {
    */
   .cm-ai-deletion {
     text-decoration: line-through;
-    color: var(--error, #C4785A);
-    background-color: color-mix(in srgb, var(--error, #C4785A) 10%, transparent);
+    color: var(--error, #c4785a);
+    background-color: color-mix(
+      in srgb,
+      var(--error, #c4785a) 10%,
+      transparent
+    );
     border-radius: 2px;
   }
 
@@ -1089,7 +936,7 @@ body.preload * {
 
   /* Invisible bridge to allow mouse to reach buttons from text below */
   .cm-hunk-actions::after {
-    content: '';
+    content: "";
     position: absolute;
     left: 0;
     right: 0;
@@ -1105,7 +952,9 @@ body.preload * {
     font-size: 12px;
     line-height: 1;
     cursor: pointer;
-    transition: background 150ms, color 150ms;
+    transition:
+      background 150ms,
+      color 150ms;
     white-space: nowrap;
     background: transparent;
     color: var(--muted-foreground);
@@ -1129,16 +978,31 @@ body.preload * {
 
   /* Shimmer keyframe: horizontal sweep */
   @keyframes meridian-shimmer {
-    0% { background-position: -100% 0; }
-    50% { background-position: 0% 0; }
-    100% { background-position: 100% 0; }
+    0% {
+      background-position: -100% 0;
+    }
+    50% {
+      background-position: 0% 0;
+    }
+    100% {
+      background-position: 100% 0;
+    }
   }
 
   /* Border shimmer keyframe: traveling highlight via box-shadow */
   @keyframes meridian-border-shimmer {
-    0% { box-shadow: inset -100% 0 0 0 color-mix(in srgb, var(--theme-favorite) 30%, transparent); }
-    50% { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-favorite) 50%, transparent); }
-    100% { box-shadow: inset 100% 0 0 0 color-mix(in srgb, var(--theme-favorite) 30%, transparent); }
+    0% {
+      box-shadow: inset -100% 0 0 0
+        color-mix(in srgb, var(--theme-favorite) 30%, transparent);
+    }
+    50% {
+      box-shadow: inset 0 0 0 1px
+        color-mix(in srgb, var(--theme-favorite) 50%, transparent);
+    }
+    100% {
+      box-shadow: inset 100% 0 0 0
+        color-mix(in srgb, var(--theme-favorite) 30%, transparent);
+    }
   }
 
   /* Text shimmer - gradient sweep across text */
@@ -1169,7 +1033,9 @@ body.preload * {
 
   /* Combined bounce + opacity shimmer keyframe */
   @keyframes meridian-bounce-shimmer {
-    0%, 80%, 100% {
+    0%,
+    80%,
+    100% {
       transform: translateY(0);
       opacity: 0.4;
     }
@@ -1183,13 +1049,21 @@ body.preload * {
   .animate-processing-dot {
     animation: meridian-bounce-shimmer 2s ease-in-out infinite;
   }
-  .animate-processing-dot:nth-child(1) { animation-delay: 0s; }
-  .animate-processing-dot:nth-child(2) { animation-delay: 0.16s; }
-  .animate-processing-dot:nth-child(3) { animation-delay: 0.32s; }
+  .animate-processing-dot:nth-child(1) {
+    animation-delay: 0s;
+  }
+  .animate-processing-dot:nth-child(2) {
+    animation-delay: 0.16s;
+  }
+  .animate-processing-dot:nth-child(3) {
+    animation-delay: 0.32s;
+  }
 
   /* Pulse-only version of meridian-bounce-shimmer (no movement) */
   @keyframes meridian-pulse-shimmer {
-    0%, 80%, 100% {
+    0%,
+    80%,
+    100% {
       opacity: 0.4;
     }
     40% {
@@ -1208,8 +1082,13 @@ body.preload * {
      ============================================================================ */
 
   @keyframes meridian-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.6; }
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.6;
+    }
   }
 
   .animate-executing-pulse {
@@ -1229,7 +1108,6 @@ body.preload * {
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
-
 }
 
 /* ============================================================================
@@ -1277,30 +1155,15 @@ body.preload * {
   height: 100dvh;
 }
 
-/* Safe area inset utilities for notched devices (iPhone X+, etc.) */
-.safe-area-inset-bottom {
-  padding-bottom: env(safe-area-inset-bottom);
-}
-
-.safe-area-inset-top {
-  padding-top: env(safe-area-inset-top);
-}
-
-.safe-area-inset-left {
-  padding-left: env(safe-area-inset-left);
-}
-
-.safe-area-inset-right {
-  padding-right: env(safe-area-inset-right);
-}
-
 /* ============================================================================
    MOBILE LAYOUT STYLES
    ============================================================================ */
 
 /* Prevent zoom on input focus (iOS Safari zooms when input font-size < 16px) */
 @media (max-width: 767px) {
-  input, textarea, select {
+  input,
+  textarea,
+  select {
     font-size: 16px !important;
   }
 }
@@ -1322,19 +1185,8 @@ body.preload * {
     font-size: 14px;
   }
 
-  /* List items use text-sm (14px) - bump to 17px on mobile */
-  .list-item-base,
-  .list-item-compact {
-    font-size: 1.0625rem; /* 17px */
-  }
-
   /* CodeMirror editor - larger text for mobile readability */
   .cm-editor {
     font-size: 18px !important;
-  }
-
-  /* Global text-sm scaling - 14px → 16px for mobile readability */
-  .text-sm {
-    font-size: 1rem !important;
   }
 }

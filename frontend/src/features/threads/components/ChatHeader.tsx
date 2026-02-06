@@ -1,24 +1,24 @@
-import { useState } from 'react'
-import { useShallow } from 'zustand/react/shallow'
-import { Plus } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { Button } from '@/shared/components/ui/button'
-import { PanelHeader } from '@/shared/components/layout/headers'
-import { DocumentsToggle } from '@/shared/components/layout/DocumentsToggle'
+import { useState } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { Plus } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/shared/components/ui/button";
+import { PanelHeader } from "@/shared/components/layout/headers";
+import { DocumentsToggle } from "@/shared/components/layout/DocumentsToggle";
 import {
   useUIStore,
   selectEffectiveRightCollapsed,
-} from '@/core/stores/useUIStore'
-import { useThreadStore } from '@/core/stores/useThreadStore'
-import { useThreadsForProject } from '@/features/threads/hooks/useThreadsForProject'
-import { ThreadSelector } from './ThreadSelector'
-import { DeleteThreadDialog } from './DeleteThreadDialog'
-import type { Thread } from '@/features/threads/types'
+} from "@/core/stores/useUIStore";
+import { useThreadStore } from "@/core/stores/useThreadStore";
+import { useThreadsForProject } from "@/features/threads/hooks/useThreadsForProject";
+import { ThreadSelector } from "./ThreadSelector";
+import { DeleteThreadDialog } from "./DeleteThreadDialog";
+import type { Thread } from "@/features/threads/types";
 
 interface ChatHeaderProps {
-  projectId: string
+  projectId: string;
   /** Make header sticky at top of scroll container (default: false) */
-  sticky?: boolean
+  sticky?: boolean;
 }
 
 /**
@@ -32,67 +32,68 @@ interface ChatHeaderProps {
  * Uses PanelHeader for consistent layout across all panel views.
  */
 export function ChatHeader({ projectId, sticky = false }: ChatHeaderProps) {
-  const [threadToDelete, setThreadToDelete] = useState<Thread | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
+  const [threadToDelete, setThreadToDelete] = useState<Thread | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const { threads, isLoading } = useThreadsForProject(projectId)
-  const isDocsCollapsed = useUIStore(selectEffectiveRightCollapsed)
+  const { threads, isLoading } = useThreadsForProject(projectId);
+  const isDocsCollapsed = useUIStore(selectEffectiveRightCollapsed);
 
-  const {
-    activeThreadId,
-    setActiveThread,
-    bumpThreadFocusVersion,
-  } = useUIStore(useShallow((s) => ({
-    activeThreadId: s.activeThreadId,
-    setActiveThread: s.setActiveThread,
-    bumpThreadFocusVersion: s.bumpThreadFocusVersion,
-  })))
+  const { activeThreadId, setActiveThread, bumpThreadFocusVersion } =
+    useUIStore(
+      useShallow((s) => ({
+        activeThreadId: s.activeThreadId,
+        setActiveThread: s.setActiveThread,
+        bumpThreadFocusVersion: s.bumpThreadFocusVersion,
+      })),
+    );
 
-  const { renameThread, deleteThread } = useThreadStore(useShallow((s) => ({
-    renameThread: s.renameThread,
-    deleteThread: s.deleteThread,
-  })))
+  const { renameThread, deleteThread } = useThreadStore(
+    useShallow((s) => ({
+      renameThread: s.renameThread,
+      deleteThread: s.deleteThread,
+    })),
+  );
 
-  const activeThread = threads.find((t) => t.id === activeThreadId) ?? null
+  const activeThread = threads.find((t) => t.id === activeThreadId) ?? null;
 
   const handleNewThread = () => {
-    setActiveThread(null)
-    bumpThreadFocusVersion()
-  }
+    setActiveThread(null);
+    bumpThreadFocusVersion();
+  };
 
   const handleSelectThread = (threadId: string) => {
-    setActiveThread(threadId)
-  }
+    setActiveThread(threadId);
+  };
 
   // Rename thread inline from dropdown
   const handleRename = async (threadId: string) => {
-    const thread = threads.find((t) => t.id === threadId)
-    if (!thread) return
+    const thread = threads.find((t) => t.id === threadId);
+    if (!thread) return;
     // Use simple prompt for now - can be replaced with inline editing later
-    const newTitle = window.prompt('Rename thread', thread.title)
+    const newTitle = window.prompt("Rename thread", thread.title);
     if (newTitle && newTitle.trim() !== thread.title) {
-      await renameThread(threadId, newTitle.trim())
+      await renameThread(threadId, newTitle.trim());
     }
-  }
+  };
 
   const handleDeleteClick = (thread: Thread) => {
-    setThreadToDelete(thread)
-  }
+    setThreadToDelete(thread);
+  };
 
   const handleDeleteConfirm = async () => {
-    if (!threadToDelete) return
+    if (!threadToDelete) return;
 
-    setIsDeleting(true)
+    setIsDeleting(true);
     try {
-      await deleteThread(threadToDelete.id)
+      await deleteThread(threadToDelete.id);
       if (activeThreadId === threadToDelete.id) {
-        setActiveThread(null)
+        setActiveThread(null);
       }
-      setThreadToDelete(null)
+      setThreadToDelete(null);
     } finally {
-      setIsDeleting(false)
+      setIsDeleting(false);
     }
-  }
+  };
 
   // Thread selector as leading content
   const threadSelector = (
@@ -106,7 +107,7 @@ export function ChatHeader({ projectId, sticky = false }: ChatHeaderProps) {
       onRename={handleRename}
       onDelete={handleDeleteClick}
     />
-  )
+  );
 
   // New thread button + Documents toggle as trailing content
   const trailingContent = (
@@ -124,21 +125,20 @@ export function ChatHeader({ projectId, sticky = false }: ChatHeaderProps) {
       {/* Show toggle only when docs are collapsed - clicking opens docs on right */}
       {isDocsCollapsed && <DocumentsToggle direction="right" />}
     </>
-  )
+  );
 
   return (
     <>
       {/* Desktop header only - mobile views provide their own headers */}
       {/* Sticky must be on wrapper div, not PanelHeader - CSS sticky requires the
           sticky element to be a direct child of the scrolling container */}
-      <div className={cn(
-        'hidden md:block',
-        sticky && 'sticky top-0 z-20 bg-background'
-      )}>
-        <PanelHeader
-          leading={threadSelector}
-          trailing={trailingContent}
-        />
+      <div
+        className={cn(
+          "hidden md:block",
+          sticky && "bg-background sticky top-0 z-20",
+        )}
+      >
+        <PanelHeader leading={threadSelector} trailing={trailingContent} />
       </div>
 
       {/* Delete confirmation dialog */}
@@ -146,11 +146,11 @@ export function ChatHeader({ projectId, sticky = false }: ChatHeaderProps) {
         thread={threadToDelete}
         open={threadToDelete !== null}
         onOpenChange={(open) => {
-          if (!open) setThreadToDelete(null)
+          if (!open) setThreadToDelete(null);
         }}
         onConfirm={handleDeleteConfirm}
         isDeleting={isDeleting}
       />
     </>
-  )
+  );
 }

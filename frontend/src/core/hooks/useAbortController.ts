@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo } from "react";
 
 /**
  * Hook to manage AbortController for cancellable fetch requests.
@@ -32,22 +32,22 @@ import { useEffect, useMemo } from 'react'
 export function useAbortController(deps?: React.DependencyList): AbortSignal {
   // Use a serialized dependency key so React's hook rules can statically
   // validate the dependency array while still allowing a dynamic list.
-  const depsKey = JSON.stringify(deps ?? [])
+  const depsKey = JSON.stringify(deps ?? []);
 
   // Create controller synchronously during render when deps change
   // This ensures the signal is fresh and not aborted when returned
   const controller = useMemo(() => {
     // Depend on depsKey so the controller resets when dependencies change.
-    void depsKey
-    return new AbortController()
-  }, [depsKey])
+    void depsKey;
+    return new AbortController();
+  }, [depsKey]);
 
   // Abort controller on unmount or when deps change (creating new controller)
   useEffect(() => {
     return () => {
-      controller.abort()
-    }
-  }, [controller])
+      controller.abort();
+    };
+  }, [controller]);
 
-  return controller.signal
+  return controller.signal;
 }

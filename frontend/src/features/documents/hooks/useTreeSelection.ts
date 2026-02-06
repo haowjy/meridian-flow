@@ -1,5 +1,5 @@
-import { useMemo } from 'react'
-import { useTreeStore } from '@/core/stores/useTreeStore'
+import { useMemo } from "react";
+import { useTreeStore } from "@/core/stores/useTreeStore";
 
 /**
  * Abstracts selection logic from store implementation.
@@ -22,16 +22,17 @@ import { useTreeStore } from '@/core/stores/useTreeStore'
  */
 export function useTreeSelection() {
   // Subscribe only to selectedIds for performance
-  const selectedIds = useTreeStore((s) => s.selectedIds)
+  const selectedIds = useTreeStore((s) => s.selectedIds);
 
   // Get stable action references via getState() (they never change)
-  const { toggleSelection, selectAll, clearSelection } = useTreeStore.getState()
+  const { toggleSelection, selectAll, clearSelection } =
+    useTreeStore.getState();
 
   // Memoize isSelected to avoid creating new function references on every render
   const isSelected = useMemo(
     () => (id: string) => selectedIds.has(id),
-    [selectedIds]
-  )
+    [selectedIds],
+  );
 
   return {
     selectedIds,
@@ -39,5 +40,5 @@ export function useTreeSelection() {
     selectAll,
     clearSelection,
     isSelected,
-  }
+  };
 }

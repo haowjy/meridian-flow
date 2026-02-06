@@ -1,1 +1,4 @@
-export { useSkillsForProject, type UseSkillsForProjectResult } from './useSkillsForProject'
+export {
+  useSkillsForProject,
+  type UseSkillsForProjectResult,
+} from "./useSkillsForProject";

@@ -1,8 +1,8 @@
-import * as React from "react"
-import { GripVerticalIcon } from "lucide-react"
-import * as ResizablePrimitive from "react-resizable-panels"
+import * as React from "react";
+import { GripVerticalIcon } from "lucide-react";
+import * as ResizablePrimitive from "react-resizable-panels";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 function ResizablePanelGroup({
   className,
@@ -13,17 +13,17 @@ function ResizablePanelGroup({
       data-slot="resizable-panel-group"
       className={cn(
         "flex h-full w-full data-[panel-group-direction=vertical]:flex-col",
-        className
+        className,
       )}
       {...props}
     />
-  )
+  );
 }
 
 function ResizablePanel({
   ...props
 }: React.ComponentProps<typeof ResizablePrimitive.Panel>) {
-  return <ResizablePrimitive.Panel data-slot="resizable-panel" {...props} />
+  return <ResizablePrimitive.Panel data-slot="resizable-panel" {...props} />;
 }
 
 function ResizableHandle({
@@ -32,7 +32,7 @@ function ResizableHandle({
   hitAreaMargins,
   ...props
 }: React.ComponentProps<typeof ResizablePrimitive.PanelResizeHandle> & {
-  withHandle?: boolean
+  withHandle?: boolean;
 }) {
   return (
     <ResizablePrimitive.PanelResizeHandle
@@ -40,20 +40,20 @@ function ResizableHandle({
       hitAreaMargins={hitAreaMargins ?? { coarse: 12, fine: 6 }}
       className={cn(
         // Invisible handle: no visual gap or line; interaction comes from hitAreaMargins.
-        "relative z-0 flex w-0 items-center justify-center focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1",
+        "focus-visible:ring-ring relative z-0 flex w-0 items-center justify-center focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:outline-hidden",
         // Rotate any inner handle icon for vertical groups (if we ever show it)
         "[&[data-panel-group-direction=vertical]>div]:rotate-90",
-        className
+        className,
       )}
       {...props}
     >
       {withHandle && (
-        <div className="z-10 flex h-4 w-3 items-center justify-center rounded-xs border border-border bg-background/80 text-muted-foreground">
+        <div className="border-border bg-background/80 text-muted-foreground z-10 flex h-4 w-3 items-center justify-center rounded-xs border">
           <GripVerticalIcon className="size-2.5" />
         </div>
       )}
     </ResizablePrimitive.PanelResizeHandle>
-  )
+  );
 }
 
-export { ResizablePanelGroup, ResizablePanel, ResizableHandle }
+export { ResizablePanelGroup, ResizablePanel, ResizableHandle };

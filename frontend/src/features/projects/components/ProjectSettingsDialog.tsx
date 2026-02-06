@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -6,18 +6,18 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/shared/components/ui/dialog'
-import { Button } from '@/shared/components/ui/button'
-import { Label } from '@/shared/components/ui/label'
-import { Textarea } from '@/shared/components/ui/textarea'
-import { Loader2 } from 'lucide-react'
-import { Project } from '../types/project'
+} from "@/shared/components/ui/dialog";
+import { Button } from "@/shared/components/ui/button";
+import { Label } from "@/shared/components/ui/label";
+import { Textarea } from "@/shared/components/ui/textarea";
+import { Loader2 } from "lucide-react";
+import { Project } from "../types/project";
 
 interface ProjectSettingsDialogProps {
-  project: Project | null
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onSubmit: (systemPrompt: string | null) => Promise<void>
+  project: Project | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (systemPrompt: string | null) => Promise<void>;
 }
 
 export function ProjectSettingsDialog({
@@ -26,52 +26,56 @@ export function ProjectSettingsDialog({
   onOpenChange,
   onSubmit,
 }: ProjectSettingsDialogProps) {
-  const [instructions, setInstructions] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [instructions, setInstructions] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Reset form when project changes
   useEffect(() => {
     if (project) {
-      setInstructions(project.systemPrompt ?? '')
-      setError(null)
+      setInstructions(project.systemPrompt ?? "");
+      setError(null);
     }
-  }, [project])
+  }, [project]);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
+    e.preventDefault();
+    setError(null);
 
-    const trimmed = instructions.trim()
-    const currentValue = project?.systemPrompt?.trim() ?? ''
+    const trimmed = instructions.trim();
+    const currentValue = project?.systemPrompt?.trim() ?? "";
 
     // No change
     if (trimmed === currentValue) {
-      onOpenChange(false)
-      return
+      onOpenChange(false);
+      return;
     }
 
-    setIsSubmitting(true)
+    setIsSubmitting(true);
     try {
       // Send null if empty, otherwise send the trimmed value
-      await onSubmit(trimmed || null)
-      onOpenChange(false)
+      await onSubmit(trimmed || null);
+      onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update project settings')
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to update project settings",
+      );
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
-  }
+  };
 
   const handleOpenChange = (newOpen: boolean) => {
     if (!isSubmitting) {
-      onOpenChange(newOpen)
+      onOpenChange(newOpen);
       if (!newOpen) {
-        setInstructions('')
-        setError(null)
+        setInstructions("");
+        setError(null);
       }
     }
-  }
+  };
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -92,16 +96,15 @@ export function ProjectSettingsDialog({
                 onChange={(e) => setInstructions(e.target.value)}
                 placeholder="Give the AI context about this project..."
                 disabled={isSubmitting}
-                className="resize-none min-h-[120px]"
+                className="min-h-[120px] resize-none"
                 autoFocus
               />
-              <p className="text-xs text-muted-foreground">
-                These instructions will be included in every AI conversation for this project.
+              <p className="text-muted-foreground text-xs">
+                These instructions will be included in every AI conversation for
+                this project.
               </p>
             </div>
-            {error && (
-              <p className="text-sm text-error">{error}</p>
-            )}
+            {error && <p className="text-error text-sm">{error}</p>}
           </div>
           <DialogFooter>
             <Button
@@ -120,5 +123,5 @@ export function ProjectSettingsDialog({
         </form>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

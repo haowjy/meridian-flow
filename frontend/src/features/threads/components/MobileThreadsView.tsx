@@ -1,10 +1,10 @@
-import { useState } from 'react'
-import { useUIStore } from '@/core/stores/useUIStore'
-import { MobilePanelHeader, MobileMenuSheet } from '@/shared/components/layout'
-import { ThreadListPanel } from './ThreadListPanel'
+import { useState } from "react";
+import { useUIStore } from "@/core/stores/useUIStore";
+import { MobilePanelHeader, MobileMenuSheet } from "@/shared/components/layout";
+import { ThreadListPanel } from "./ThreadListPanel";
 
 interface MobileThreadsViewProps {
-  projectId: string
+  projectId: string;
 }
 
 /**
@@ -15,17 +15,17 @@ interface MobileThreadsViewProps {
  * - Thread selection switches to chat tab (state-driven, not URL navigation)
  */
 export function MobileThreadsView({ projectId }: MobileThreadsViewProps) {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const setMobileActiveTab = useUIStore((s) => s.setMobileActiveTab)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const setMobileActiveTab = useUIStore((s) => s.setMobileActiveTab);
 
   const handleThreadSelected = () => {
     // Switch to chat tab after selecting a thread (state-driven)
-    setMobileActiveTab('chat')
-  }
+    setMobileActiveTab("chat");
+  };
 
   return (
     <>
-      <div className="flex h-full flex-col bg-background">
+      <div className="bg-background flex h-full flex-col">
         {/* Mobile header with hamburger menu */}
         <MobilePanelHeader
           title="Threads"
@@ -41,7 +41,11 @@ export function MobileThreadsView({ projectId }: MobileThreadsViewProps) {
         </div>
       </div>
 
-      <MobileMenuSheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen} inWorkspace />
+      <MobileMenuSheet
+        open={mobileMenuOpen}
+        onOpenChange={setMobileMenuOpen}
+        inWorkspace
+      />
     </>
-  )
+  );
 }

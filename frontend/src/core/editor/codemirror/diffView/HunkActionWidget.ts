@@ -8,8 +8,8 @@
  * Clicking them dispatches CM6 transactions, which are undoable via Cmd+Z.
  */
 
-import { WidgetType, type EditorView } from '@codemirror/view'
-import { acceptHunk, rejectHunk } from './transactions'
+import { WidgetType, type EditorView } from "@codemirror/view";
+import { acceptHunk, rejectHunk } from "./transactions";
 
 // =============================================================================
 // WIDGET
@@ -34,50 +34,50 @@ export class HunkActionWidget extends WidgetType {
   constructor(
     private readonly hunkId: string,
     private readonly view: EditorView,
-    private readonly isFocused: boolean = false
+    private readonly isFocused: boolean = false,
   ) {
-    super()
+    super();
   }
 
   toDOM(): HTMLElement {
-    const container = document.createElement('span')
+    const container = document.createElement("span");
     // Add focused class for auto-visibility on focused hunk (critical for mobile/touch)
     container.className = this.isFocused
-      ? 'cm-hunk-actions cm-hunk-focused-visible'
-      : 'cm-hunk-actions'
-    container.dataset.hunkId = this.hunkId
+      ? "cm-hunk-actions cm-hunk-focused-visible"
+      : "cm-hunk-actions";
+    container.dataset.hunkId = this.hunkId;
 
     // Reject button (first, matching floating pill order)
-    const rejectBtn = document.createElement('button')
-    rejectBtn.textContent = 'Reject ✕'
-    rejectBtn.className = 'cm-hunk-reject'
-    rejectBtn.title = 'Reject this change'
-    rejectBtn.type = 'button'
+    const rejectBtn = document.createElement("button");
+    rejectBtn.textContent = "Reject ✕";
+    rejectBtn.className = "cm-hunk-reject";
+    rejectBtn.title = "Reject this change";
+    rejectBtn.type = "button";
     rejectBtn.onclick = (e) => {
-      e.preventDefault()
-      e.stopPropagation()
-      rejectHunk(this.view, this.hunkId)
-      this.view.focus()
-    }
+      e.preventDefault();
+      e.stopPropagation();
+      rejectHunk(this.view, this.hunkId);
+      this.view.focus();
+    };
 
     // Accept button
-    const acceptBtn = document.createElement('button')
-    acceptBtn.textContent = 'Accept ✓'
-    acceptBtn.className = 'cm-hunk-accept'
-    acceptBtn.title = 'Accept this change'
-    acceptBtn.type = 'button' // Prevent form submission if inside a form
+    const acceptBtn = document.createElement("button");
+    acceptBtn.textContent = "Accept ✓";
+    acceptBtn.className = "cm-hunk-accept";
+    acceptBtn.title = "Accept this change";
+    acceptBtn.type = "button"; // Prevent form submission if inside a form
     acceptBtn.onclick = (e) => {
-      e.preventDefault()
-      e.stopPropagation()
-      acceptHunk(this.view, this.hunkId)
+      e.preventDefault();
+      e.stopPropagation();
+      acceptHunk(this.view, this.hunkId);
       // Restore focus to editor after button click
-      this.view.focus()
-    }
+      this.view.focus();
+    };
 
-    container.appendChild(rejectBtn)
-    container.appendChild(acceptBtn)
+    container.appendChild(rejectBtn);
+    container.appendChild(acceptBtn);
 
-    return container
+    return container;
   }
 
   /**
@@ -85,7 +85,7 @@ export class HunkActionWidget extends WidgetType {
    * Returns false if hunkId or isFocused differs, triggering re-render.
    */
   eq(other: HunkActionWidget): boolean {
-    return other.hunkId === this.hunkId && other.isFocused === this.isFocused
+    return other.hunkId === this.hunkId && other.isFocused === this.isFocused;
   }
 
   /**
@@ -94,6 +94,6 @@ export class HunkActionWidget extends WidgetType {
    * interfere with selection/cursor changes.
    */
   ignoreEvent(): boolean {
-    return true
+    return true;
   }
 }
