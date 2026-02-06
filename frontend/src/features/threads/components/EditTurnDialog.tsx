@@ -73,7 +73,7 @@ export function EditTurnDialog({
         placeholder="Edit your message..."
         focusKey={isOpen ? 'edit' : null}
         maxHeight="50vh"
-        minHeight="auto"
+        minHeight={0}
         className="px-0 py-0"  // Card px-3 py-2 handles padding
         onKeyDown={(event) => {
           // Enter → save (consistent with TurnInput)

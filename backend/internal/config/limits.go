@@ -20,6 +20,10 @@ const (
 	// reasonable UX (titles should be short and descriptive).
 	MaxThreadTitleLength = 255
 
+	// MaxSkillDescriptionLength is the maximum length for skill descriptions.
+	// 280 chars = ~2-3 sentences, matches Twitter-style brevity.
+	MaxSkillDescriptionLength = 280
+
 	// MaxDocumentPathLength is the maximum length for full document paths.
 	// Set to 500 to allow paths like "A/B/C/D/E/document" where each
 	// segment can be up to 100 characters. Longer paths indicate

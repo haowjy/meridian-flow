@@ -30,7 +30,7 @@ export interface FieldError {
 /**
  * Application error with type and user-friendly message.
  * For conflict errors (409), includes the existing resource.
- * For validation errors (400), includes field-level errors.
+ * For validation errors (400), includes field-level errors and optional single field hint.
  */
 export class AppError<TResource = unknown> extends Error {
   constructor(
@@ -38,7 +38,9 @@ export class AppError<TResource = unknown> extends Error {
     public message: string,
     public originalError?: Error,
     public resource?: TResource,
-    public fieldErrors?: FieldError[]
+    public fieldErrors?: FieldError[],
+    /** Single field that caused the error (from backend ValidationError.Field) */
+    public field?: string
   ) {
     super(message)
     this.name = 'AppError'
@@ -71,7 +73,8 @@ export function httpErrorToAppError<TResource = unknown>(
   status: number,
   message?: string,
   resource?: TResource,
-  fieldErrors?: FieldError[]
+  fieldErrors?: FieldError[],
+  field?: string
 ): AppError<TResource> {
   switch (status) {
     case 400:
@@ -80,7 +83,8 @@ export function httpErrorToAppError<TResource = unknown>(
         message || 'Invalid request. Please check your input.',
         undefined,
         undefined,
-        fieldErrors
+        fieldErrors,
+        field
       )
     case 401:
       return new AppError<TResource>(

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { useTreeStore } from '@/core/stores/useTreeStore'
 import { buildBreadcrumbs } from '@/core/lib/breadcrumbBuilder'
 import type { Document } from '@/features/documents/types/document'
-import { DocumentHeaderBar } from './DocumentHeaderBar'
+import { PanelHeader } from '@/shared/components/layout/headers'
 import { DocumentStatus } from './DocumentStatus'
 import { useProjectStore } from '@/core/stores/useProjectStore'
 import { CompactBreadcrumb, type BreadcrumbSegment } from '@/shared/components/ui/CompactBreadcrumb'
@@ -42,37 +42,33 @@ export function EditorHeader({ document, wordCount, status, lastSaved, mobileBac
     { label: document.filename }
   ]
 
-  // Combine mobile back button + document tree toggle for leading slot
-  // Note: DocumentTreeToggle hidden on mobile (single screen layout)
+  // Leading: mobile back button + document tree toggle (when collapsed)
   const leadingContent = (
     <>
       {mobileBackButton && <div className="md:hidden">{mobileBackButton}</div>}
       {documentTreeCollapsed && <div className="hidden md:block"><DocumentTreeToggle /></div>}
+      <div title={fullPathTitle}>
+        <CompactBreadcrumb segments={segments} />
+      </div>
     </>
   )
 
-  // Only render leading if there's content
-  const hasLeadingContent = mobileBackButton || documentTreeCollapsed
+  // Trailing: document status
+  const trailingContent = status && (
+    <DocumentStatus
+      wordCount={wordCount ?? 0}
+      status={status}
+      lastSaved={lastSaved ?? null}
+    />
+  )
 
   return (
-    <DocumentHeaderBar
-      leading={hasLeadingContent ? leadingContent : undefined}
-      title={
-        <div title={fullPathTitle}>
-          <CompactBreadcrumb segments={segments} />
-        </div>
-      }
+    <PanelHeader
+      leading={leadingContent}
+      trailing={trailingContent}
+      showGradient={true}
+      showBorder={true}
       ariaLabel={`Breadcrumb: ${fullPathTitle}`}
-      showDivider={true}
-      trailing={
-        status && (
-          <DocumentStatus
-            wordCount={wordCount ?? 0}
-            status={status}
-            lastSaved={lastSaved ?? null}
-          />
-        )
-      }
     />
   )
 }

@@ -1,14 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { ChevronLeft } from 'lucide-react'
 import { api } from '@/core/lib/api'
-import { getErrorMessage } from '@/core/lib/errors'
+import { getErrorMessage, AppError } from '@/core/lib/errors'
 import { makeLogger } from '@/core/lib/logger'
 import { Button } from '@/shared/components/ui/button'
 import { useSkillStore } from '@/core/stores/useSkillStore'
 import { useUIStore } from '@/core/stores/useUIStore'
 import { useNavigate } from '@tanstack/react-router'
 import type { SkillWithContent } from '../types/skill'
-import { DocumentHeaderBar } from '@/features/documents/components/DocumentHeaderBar'
 import { DocumentTreeToggle } from '@/shared/components/layout'
 import { normalizeSkillName, validateSkillName } from '../lib/skillValidation'
 import { SkillForm } from './SkillForm'
@@ -33,8 +32,9 @@ export function SkillEditorPanel({ skillId, projectId, projectSlug, onBackToTree
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
-  // API error message for inline display (e.g., duplicate name conflict)
-  const [saveError, setSaveError] = useState<string | null>(null)
+  // API error messages for inline display - routed to correct field
+  const [nameError, setNameError] = useState<string | null>(null)
+  const [descriptionApiError, setDescriptionApiError] = useState<string | null>(null)
 
   // Local editing state
   const [localName, setLocalName] = useState('')
@@ -78,7 +78,8 @@ export function SkillEditorPanel({ skillId, projectId, projectSlug, onBackToTree
           setLocalContent(loadedSkill.content)
           setTouchedFields(new Set())
           setSaveStatus('idle')
-          setSaveError(null)
+          setNameError(null)
+          setDescriptionApiError(null)
         }
       } catch (err) {
         if (!ignore && (err as Error).name !== 'AbortError') {
@@ -140,7 +141,8 @@ export function SkillEditorPanel({ skillId, projectId, projectSlug, onBackToTree
     if (!skill || !canSave) return
 
     setSaveStatus('saving')
-    setSaveError(null)
+    setNameError(null)
+    setDescriptionApiError(null)
 
     try {
       const normalizedName = normalizeSkillName(localName)
@@ -187,7 +189,15 @@ export function SkillEditorPanel({ skillId, projectId, projectSlug, onBackToTree
       if ((err as Error).name !== 'AbortError') {
         const message = getErrorMessage(err)
         log.error('Failed to save skill:', message)
-        setSaveError(message)
+
+        // Route error to correct field based on backend ValidationError.Field
+        const field = err instanceof AppError ? err.field : undefined
+        if (field === 'description') {
+          setDescriptionApiError(message)
+        } else {
+          // Default to name field for name errors or unknown errors
+          setNameError(message)
+        }
         setSaveStatus('error')
       }
     }
@@ -200,19 +210,21 @@ export function SkillEditorPanel({ skillId, projectId, projectSlug, onBackToTree
     setLocalDescription(skill.description)
     setLocalContent(skill.content)
     setTouchedFields(new Set())
-    setSaveError(null)
+    setNameError(null)
+    setDescriptionApiError(null)
     setSaveStatus('idle')
   }, [skill])
 
   // Handle field changes with touched tracking
   const handleNameChange = useCallback((value: string) => {
     setLocalName(value)
-    setSaveError(null)  // Clear API error when user tries again
+    setNameError(null)  // Clear API error when user tries again
   }, [])
 
   const handleDescriptionChange = useCallback((value: string) => {
     setLocalDescription(value)
     setTouchedFields((prev) => new Set(prev).add('description'))
+    setDescriptionApiError(null)  // Clear API error when user tries again
   }, [])
 
   const handleContentChange = useCallback((value: string) => {
@@ -265,16 +277,15 @@ export function SkillEditorPanel({ skillId, projectId, projectSlug, onBackToTree
   const hasLeadingContent = mobileBackButton || documentTreeCollapsed
 
   return (
-    <div className="flex h-full flex-col bg-background">
-      {/* Header */}
-      <DocumentHeaderBar
-        leading={hasLeadingContent ? leadingContent : undefined}
-        title={
+    <div className="flex h-full flex-col bg-background overflow-hidden">
+      <SkillForm
+        headerLeading={hasLeadingContent ? leadingContent : undefined}
+        headerTitle={
           <span className="text-sm font-medium">
             /{localName}
           </span>
         }
-        trailing={
+        headerTrailing={
           // Only show controls when user has made changes or there's a status to display
           (hasChanges || saveStatus !== 'idle') ? (
             <div className="flex items-center gap-2">
@@ -286,11 +297,8 @@ export function SkillEditorPanel({ skillId, projectId, projectSlug, onBackToTree
                 <span className="text-sm text-success">Saved</span>
               )}
               {saveStatus === 'error' && (
-                <span
-                  className="text-sm text-destructive max-w-[200px] truncate"
-                  title={saveError || undefined}
-                >
-                  {saveError || 'Failed'}
+                <span className="text-sm text-destructive">
+                  Save failed
                 </span>
               )}
               {/* Action buttons - only when there are unsaved changes */}
@@ -322,26 +330,18 @@ export function SkillEditorPanel({ skillId, projectId, projectSlug, onBackToTree
             </div>
           ) : undefined
         }
-        ariaLabel="Skill editor"
-        showDivider={false}
+        name={localName}
+        description={localDescription}
+        content={localContent}
+        onNameChange={handleNameChange}
+        onDescriptionChange={handleDescriptionChange}
+        onContentChange={handleContentChange}
+        nameError={nameValidation.error || nameError || undefined}
+        descriptionError={descriptionError || descriptionApiError || undefined}
+        contentError={contentError}
+        showNameHint={true}
+        disabled={saveStatus === 'saving'}
       />
-
-      {/* Content area - uses shared SkillForm */}
-      <div className="flex-1 overflow-hidden">
-        <SkillForm
-          name={localName}
-          description={localDescription}
-          content={localContent}
-          onNameChange={handleNameChange}
-          onDescriptionChange={handleDescriptionChange}
-          onContentChange={handleContentChange}
-          nameError={nameValidation.error || saveError || undefined}
-          descriptionError={descriptionError}
-          contentError={contentError}
-          showNameHint={true}
-          disabled={saveStatus === 'saving'}
-        />
-      </div>
     </div>
   )
 }

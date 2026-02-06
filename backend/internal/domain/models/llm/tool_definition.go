@@ -286,69 +286,6 @@ func getSearchToolDefinition() ToolDefinition {
 	}
 }
 
-// getEditToolDefinition returns the schema for the 'doc_edit' tool.
-// This tool edits documents by writing to ai_version for user review.
-func getEditToolDefinition() ToolDefinition {
-	// NOTE: We intentionally control the textual order of `properties` for `doc_edit`.
-	// Some providers (notably Anthropic) may stream tool input keys following the schema's
-	// property order. If "file_text" appears before "path", the UI may not be able to
-	// display the destination file path until very late in the stream.
-	//
-	// The library's OrderedProperties handles this via the Order slice.
-	schema := llmprovider.NewToolInputSchema()
-
-	// Add properties in the order we want them to appear in JSON
-	// This ensures "path" appears before "file_text" in streamed output
-	schema.AddProperty("command", llmprovider.PropertySchema{
-		Type:        "string",
-		Enum:        []string{"str_replace", "insert", "append", "create"},
-		Description: "The editing command to execute",
-	}, -1)
-	schema.AddProperty("path", llmprovider.PropertySchema{
-		Type:        "string",
-		Description: "Unix-style path to document (e.g., '/Chapter 5.md', '/characters/hero.md')",
-	}, -1)
-	schema.AddProperty("file_text", llmprovider.PropertySchema{
-		Type:        "string",
-		Description: "For create: initial content for the new document.",
-	}, -1)
-	schema.AddProperty("old_str", llmprovider.PropertySchema{
-		Type:        "string",
-		Description: "For str_replace: exact text to find and replace. Must match exactly, including whitespace and newlines.",
-	}, -1)
-	schema.AddProperty("new_str", llmprovider.PropertySchema{
-		Type:        "string",
-		Description: "For str_replace/insert/append: new text to insert. Can be empty string for str_replace (deletion).",
-	}, -1)
-	schema.AddProperty("insert_line", llmprovider.PropertySchema{
-		Type:        "integer",
-		Description: "For insert: line number to insert after (0 = insert at start of document, before line 1).",
-	}, -1)
-
-	schema.AddRequired("command")
-	schema.AddRequired("path")
-
-	return ToolDefinition{
-		Type: "function",
-		Function: &FunctionDetails{
-			Name: "doc_edit",
-			Description: `Edit documents in the user's project. Use this to modify, improve, or create writing.
-
-Commands:
-- str_replace: Replace exact text (must match exactly, use doc_view first to see content)
-- insert: Insert new text after a specific line number
-- append: Add text to end of document
-- create: Create a new document
-
-Notes:
-- For create: ALWAYS include both path and file_text (file_text may be empty string ""). This avoids needing follow-up edits.
-- For create (streaming UX): output path BEFORE file_text. file_text can be very long; path should be emitted early so the UI can show ` + "`Create: /file.md`" + ` while the content streams.
-- Changes are suggested to the user for review before being applied. Always use doc_view first to see the current content before making edits.`,
-			Parameters: schema,
-		},
-	}
-}
-
 // getWebSearchToolDefinition returns the schema for the 'web_search' tool.
 // This tool searches the web using external APIs (Tavily, Brave, Serper, etc.).
 func getWebSearchToolDefinition() ToolDefinition {

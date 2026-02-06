@@ -1,9 +1,9 @@
 import { ReactNode } from 'react'
 import { Menu } from 'lucide-react'
 import { Button } from '@/shared/components/ui/button'
-import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
+import { HeaderGradientFade } from './HeaderGradientFade'
 
-interface MobileHeaderProps {
+interface MobilePanelHeaderProps {
   /** Content to display after hamburger button (e.g., ThreadSelector) */
   leading?: ReactNode
   /** Title text - centered if centerTitle is true */
@@ -14,10 +14,12 @@ interface MobileHeaderProps {
   centerTitle?: boolean
   /** Callback when hamburger menu is clicked */
   onMenuOpen: () => void
+  /** Show gradient fade below header (default: true) */
+  showGradient?: boolean
 }
 
 /**
- * Unified mobile header component for consistent hamburger positioning.
+ * Mobile-only header component with consistent hamburger positioning.
  *
  * Specs:
  * - Height: h-14 (56px)
@@ -25,13 +27,14 @@ interface MobileHeaderProps {
  * - Gap: gap-2 (8px)
  * - Hamburger: size="icon" with size-5 icon
  */
-export function MobileHeader({
+export function MobilePanelHeader({
   leading,
   title,
   trailing,
   centerTitle = false,
   onMenuOpen,
-}: MobileHeaderProps) {
+  showGradient = true,
+}: MobilePanelHeaderProps) {
   return (
     <div className="md:hidden flex items-center gap-2 px-3 h-14 bg-background shrink-0 relative">
       {/* Hamburger menu button */}
@@ -79,7 +82,7 @@ export function MobileHeader({
         </>
       )}
 
-      <HeaderGradientFade />
+      {showGradient && <HeaderGradientFade />}
     </div>
   )
 }

@@ -1,7 +1,5 @@
 import { useState } from 'react'
-import { Menu } from 'lucide-react'
-import { Button } from '@/shared/components/ui/button'
-import { HeaderGradientFade } from '@/core/components/HeaderGradientFade'
+import { MobilePanelHeader } from '@/shared/components/layout/headers'
 import { MobileMenuSheet } from '@/shared/components/layout/MobileMenuSheet'
 import { ProjectSettingsPanelContent } from './ProjectSettingsPanel'
 
@@ -20,18 +18,10 @@ export function MobileProjectSettingsView({ projectId }: MobileProjectSettingsVi
   return (
     <div className="flex h-full flex-col">
       {/* Mobile header with hamburger */}
-      <div className="md:hidden flex items-center gap-2 px-3 h-14 bg-background shrink-0 relative">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setMenuOpen(true)}
-          aria-label="Open menu"
-        >
-          <Menu className="size-5" />
-        </Button>
-        <span className="font-medium text-sm">Project Settings</span>
-        <HeaderGradientFade />
-      </div>
+      <MobilePanelHeader
+        title="Project Settings"
+        onMenuOpen={() => setMenuOpen(true)}
+      />
 
       <MobileMenuSheet open={menuOpen} onOpenChange={setMenuOpen} inWorkspace />
 

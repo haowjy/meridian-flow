@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { MobileHeader } from './MobileHeader'
+import { MobilePanelHeader } from './headers'
 import { MobileMenuSheet } from './MobileMenuSheet'
 
 interface MobileTopHeaderProps {
@@ -16,7 +16,7 @@ export function MobileTopHeader({ projectName, inWorkspace = false }: MobileTopH
 
   return (
     <>
-      <MobileHeader
+      <MobilePanelHeader
         title={projectName || (!inWorkspace ? 'Projects' : undefined)}
         onMenuOpen={() => setMenuOpen(true)}
       />
