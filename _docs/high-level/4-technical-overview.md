@@ -148,7 +148,7 @@ type LLMProvider interface {
 
 **Tool calling:**
 - **Auto-mapping** - Minimal definitions → provider-specific formats
-- **7 tools** - doc_view, doc_tree, doc_search, doc_edit, web_search, bash, text_editor
+- **3 tools** - str_replace_based_edit_tool, doc_search, web_search
 - **Registry pattern** - Extensible tool system
 
 ---

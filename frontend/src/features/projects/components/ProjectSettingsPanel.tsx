@@ -30,11 +30,10 @@ interface ProjectSettingsPanelContentProps {
 }
 
 // Default tools available for AI
+// str_replace_based_edit_tool handles view + edit; doc_tree was merged into it
 const DEFAULT_TOOLS = [
-  { id: "doc_view", label: "View Documents", group: "document" },
+  { id: "str_replace_based_edit_tool", label: "View & Edit Documents", group: "document" },
   { id: "doc_search", label: "Search Documents", group: "document" },
-  { id: "doc_tree", label: "Browse Tree", group: "document" },
-  { id: "doc_edit", label: "Edit Documents", group: "document" },
   { id: "tavily_web_search", label: "Web Search", group: "external" },
 ];
 

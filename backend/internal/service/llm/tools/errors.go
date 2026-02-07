@@ -21,7 +21,7 @@ const (
 	ErrNotFound     = "NOT_FOUND"
 	ErrInvalidInput = "INVALID_INPUT"
 
-	// Document-specific error codes (doc_edit tool)
+	// Document-specific error codes (text editor tool)
 	// These provide more context for LLM recovery strategies.
 	ErrDocNotFound     = "DOC_NOT_FOUND"
 	ErrDocAlreadyExists = "ALREADY_EXISTS"

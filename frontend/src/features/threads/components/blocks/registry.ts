@@ -2,6 +2,7 @@ import React from "react";
 import type { TurnBlock } from "@/features/threads/types";
 import { TextBlock } from "./TextBlock";
 import { ThinkingBlock } from "./ThinkingBlock";
+import { ReferenceBlock } from "./ReferenceBlock";
 
 /**
  * Block renderer function type.
@@ -18,6 +19,7 @@ export type BlockRendererFn = (block: TurnBlock) => React.ReactElement;
 const BLOCK_RENDERERS: Record<string, BlockRendererFn> = {
   text: (block) => React.createElement(TextBlock, { block }),
   thinking: (block) => React.createElement(ThinkingBlock, { block }),
+  reference: (block) => React.createElement(ReferenceBlock, { block }),
   // citation: (block) => React.createElement(CitationBlock, { block }),
   // image: (block) => React.createElement(ImageBlock, { block }),
 };

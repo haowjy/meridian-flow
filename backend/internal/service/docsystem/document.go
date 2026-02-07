@@ -231,15 +231,6 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 				domain.ErrValidation, extension, models.ValidExtensions())
 		}
 		doc.Extension = extension
-
-		// Keep metadata consistent with the file format.
-		// If switching to a markdown-family extension, recompute word count from current content.
-		// If switching away, remove markdown-specific metadata.
-		if models.IsMarkdownExtension(doc.Extension) {
-			doc.SetMarkdownWordCount(s.contentAnalyzer.CountWords(doc.Content))
-		} else {
-			doc.ClearMarkdownMetadata()
-		}
 	}
 
 	// Priority-based folder resolution for moving documents:
@@ -278,12 +269,29 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 
 	if req.Content != nil {
 		doc.Content = *req.Content
-		// Recalculate word count for markdown-family files
-		if models.IsMarkdownExtension(doc.Extension) {
-			doc.SetMarkdownWordCount(s.contentAnalyzer.CountWords(doc.Content))
-		} else {
-			doc.ClearMarkdownMetadata()
+	}
+
+	// Unified word count recalculation — placed AFTER all field mutations (content, extension,
+	// ai_version) so the count reflects the effective document state.
+	// When ai_version exists, word count should reflect ai_version (the latest text the user sees).
+	if models.IsMarkdownExtension(doc.Extension) {
+		// Determine effective content for word count:
+		// - If ai_version is being SET in this request → use that value
+		// - If ai_version is being CLEARED → fall back to doc.Content
+		// - If ai_version is unchanged and exists on doc → use existing ai_version
+		// - If ai_version is unchanged and absent → use doc.Content
+		effectiveContent := doc.Content
+		if req.AIVersion.Present {
+			if req.AIVersion.Value != nil {
+				effectiveContent = *req.AIVersion.Value
+			}
+			// else: being cleared → effectiveContent stays as doc.Content
+		} else if doc.AIVersion != nil {
+			effectiveContent = *doc.AIVersion
 		}
+		doc.SetMarkdownWordCount(s.contentAnalyzer.CountWords(effectiveContent))
+	} else {
+		doc.ClearMarkdownMetadata()
 	}
 
 	// Check for duplicate name+extension in target folder (if name, extension, or folder changed)
@@ -423,13 +431,29 @@ func (s *documentService) UpdateAIVersion(ctx context.Context, userID, documentI
 		return nil, err
 	}
 
-	// Update ai_version in database
-	if err := s.docRepo.UpdateAIVersion(ctx, documentID, aiVersion); err != nil {
+	// Fetch document to compute word count from effective content
+	doc, err := s.docRepo.GetByIDOnly(ctx, documentID)
+	if err != nil {
 		return nil, err
 	}
+	if doc == nil {
+		return nil, fmt.Errorf("document not found: %s", documentID)
+	}
 
-	// Get updated document to return
-	doc, err := s.docRepo.GetByIDOnly(ctx, documentID)
+	// Recalculate word count from effective content:
+	// - If setting ai_version, count words from new ai_version
+	// - If clearing ai_version (nil), fall back to doc.Content
+	doc.EnsureMetadata()
+	if models.IsMarkdownExtension(doc.Extension) {
+		effectiveContent := doc.Content
+		if aiVersion != nil {
+			effectiveContent = *aiVersion
+		}
+		doc.SetMarkdownWordCount(s.contentAnalyzer.CountWords(effectiveContent))
+	}
+
+	// Persist ai_version + metadata atomically; RETURNING gives us consistent timestamps
+	doc, err = s.docRepo.UpdateAIVersion(ctx, documentID, aiVersion, doc.Metadata)
 	if err != nil {
 		return nil, err
 	}

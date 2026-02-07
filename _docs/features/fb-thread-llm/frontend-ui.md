@@ -35,7 +35,24 @@ feature: "Thread Frontend UI"
 
 **Thread Input**: Enter to send, Shift+Enter for newline
 
-**Model Selection**: Dropdown with provider grouping, default: Kimi K2 Thinking
+**References / Context**:
+- Desktop composer supports `@` mention picker and `+` dropdown selector for inline references.
+- Mobile composer uses the same `+` dropdown selector flow as desktop.
+- Editable composer pills are caret-first on edge click; clear interior single-click opens.
+- Read-only turn viewer pills open on single click.
+- Reference spacing is preserved from `ContentBlock[]` exactly; composer insertion adds one trailing separator only when needed.
+- Copy/cut uses shared CM clipboard extension (`createMeridianClipboardExtension`) across:
+  - chat input composer
+  - chat bubble viewer
+  - document wiki-link editor
+- Meridian custom clipboard payload is v2 (`elements[]`), with v1 `references[]` parsing support.
+- New inline element types plug in via codec registration (`ClipboardCodecRegistry`) without changing per-surface clipboard plumbing.
+- Paste supports:
+  - Meridian payload (chat -> chat, doc editor -> chat)
+  - Plain wiki-link text (converts to pills when path resolves)
+- Ambiguous filename-only wiki-links are kept as plaintext on paste (no silent wrong-doc binding).
+
+**Model Selection**: Dropdown with provider grouping on desktop and mobile, default: Kimi K2 Thinking
 
 **Reasoning Level**: Low/Medium/High dropdown with brain icon
 

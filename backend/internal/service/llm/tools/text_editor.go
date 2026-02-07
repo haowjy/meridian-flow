@@ -14,7 +14,7 @@ import (
 
 
 // TextEditorToolMetadata returns metadata for the str_replace_based_edit_tool tool.
-// This unified tool replaces both doc_view and doc_edit.
+// This unified tool replaces the former doc_view, doc_tree, and doc_edit tools.
 // This enables OCP compliance - tool self-describes for system prompt generation.
 func TextEditorToolMetadata() *ToolMetadata {
 	return &ToolMetadata{
@@ -150,12 +150,8 @@ func (t *TextEditorTool) executeView(ctx context.Context, path string, input map
 // formatDocumentWithLineNumbers converts a document to the tool result format with line numbers.
 // Output format matches Anthropic's text_editor: "1: line1\n2: line2\n..."
 func (t *TextEditorTool) formatDocumentWithLineNumbers(doc *docsystem.Document, input map[string]interface{}) (interface{}, error) {
-	// AI sees ai_version if it exists (includes AI's pending suggestions)
-	// Otherwise sees user's content
-	content := doc.Content
-	if doc.AIVersion != nil {
-		content = *doc.AIVersion
-	}
+	// AI sees ai_version if it exists, otherwise user's content
+	content := doc.EffectiveContent()
 
 	lines := strings.Split(content, "\n")
 	totalLines := len(lines)
@@ -202,11 +198,7 @@ func (t *TextEditorTool) formatDocumentWithLineNumbers(doc *docsystem.Document, 
 		wasTruncated = true
 	}
 
-	// Compute word count on-the-fly if not in metadata
 	wordCount := doc.WordCount()
-	if wordCount == 0 && len(content) > 0 {
-		wordCount = len(strings.Fields(content))
-	}
 
 	return map[string]interface{}{
 		"type":          "document",
@@ -285,7 +277,7 @@ func (t *TextEditorTool) executeStrReplace(ctx context.Context, path string, inp
 	}
 
 	// Get base content (ai_version if exists, else content)
-	base := getBase(doc)
+	base := doc.EffectiveContent()
 
 	// Try to match using normalizer chain (OCP: extensible without modifying this function)
 	result, errMsg := tryMatchWithNormalizers(base, oldStr, newStr, t.normalizers)
@@ -354,7 +346,7 @@ func (t *TextEditorTool) executeInsert(ctx context.Context, path string, input m
 	}
 
 	// Get base content
-	base := getBase(doc)
+	base := doc.EffectiveContent()
 	lines := strings.Split(base, "\n")
 
 	// Validate line number (0 = insert at beginning, len(lines) = insert at end)
@@ -471,4 +463,36 @@ func (t *TextEditorTool) checkEditNamespaceAccess(path string) interface{} {
 		}
 	}
 	return nil
+}
+
+// =============================================================================
+// SHARED HELPERS (used by text editor operations)
+// =============================================================================
+
+// normalizePath ensures path starts with / and has no trailing /
+func normalizePath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "/"
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	// Remove trailing slash (unless it's just "/")
+	if len(path) > 1 && strings.HasSuffix(path, "/") {
+		path = strings.TrimSuffix(path, "/")
+	}
+	return path
+}
+
+// splitDocPath splits a document path into folder path and document name.
+// "/chapters/ch1.md" → ("/chapters", "ch1.md")
+// "/readme.md" → ("/", "readme.md")
+func splitDocPath(path string) (folderPath, docName string) {
+	path = strings.TrimPrefix(path, "/")
+	lastSlash := strings.LastIndex(path, "/")
+	if lastSlash == -1 {
+		return "/", path
+	}
+	return "/" + path[:lastSlash], path[lastSlash+1:]
 }

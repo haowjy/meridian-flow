@@ -133,7 +133,7 @@ export function handleRunFinished(
     actions
       .refreshTurn(threadId, turnId)
       .then(() => {
-        // Refresh active document in case AI edited it via doc_edit tool
+        // Refresh active document in case AI edited it via text editor tool
         // This ensures ai_version changes are reflected in the editor
         // Fire-and-forget - document refresh shouldn't block cleanup
         const activeDocId = useEditorStore.getState()._activeDocumentId;

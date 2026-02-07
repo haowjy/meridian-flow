@@ -191,7 +191,7 @@ event: TEXT_MESSAGE_CONTENT
 data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"msg_xxx","delta":"Hello"}
 
 event: TOOL_CALL_START
-data: {"type":"TOOL_CALL_START","toolCallId":"toolu_xxx","toolCallName":"doc_view"}
+data: {"type":"TOOL_CALL_START","toolCallId":"toolu_xxx","toolCallName":"str_replace_based_edit_tool"}
 ```
 
 - **`event:`** - AG-UI event type (used for routing)

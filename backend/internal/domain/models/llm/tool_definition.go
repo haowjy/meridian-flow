@@ -127,17 +127,16 @@ func ToLibraryTools(definitions []ToolDefinition) ([]llmprovider.Tool, error) {
 // These tools allow the LLM to explore the user's document repository.
 func GetReadOnlyToolDefinitions() []ToolDefinition {
 	return []ToolDefinition{
-		getTreeToolDefinition(),
 		getSearchToolDefinition(),
 	}
 }
 
 // GetDocumentToolDefinitions returns all document tool definitions (read + edit).
-// Includes text editor (unified view/edit), tree, and search tools.
+// Includes text editor (unified view/edit) and search tools.
+// Folder browsing is handled by str_replace_based_edit_tool's "view" command on folder paths.
 func GetDocumentToolDefinitions() []ToolDefinition {
 	return []ToolDefinition{
 		getTextEditorToolDefinition(),
-		getTreeToolDefinition(),
 		getSearchToolDefinition(),
 	}
 }
@@ -226,31 +225,6 @@ Notes:
 	}
 }
 
-// getTreeToolDefinition returns the schema for the 'doc_tree' tool.
-// This tool shows the hierarchical structure of folders and documents.
-func getTreeToolDefinition() ToolDefinition {
-	schema := llmprovider.NewToolInputSchema()
-	schema.AddProperty("path", llmprovider.PropertySchema{
-		Type:        "string",
-		Description: "The Unix-style path to the folder (e.g., '/drafts', '/chapters'). Defaults to '/' (root folder) if not provided.",
-	}, -1)
-	schema.AddProperty("depth", llmprovider.PropertySchema{
-		Type:        "integer",
-		Description: "How many levels deep to traverse (default: 2, max: 5). Higher values show more of the hierarchy.",
-		Minimum:     llmprovider.IntPtr(1),
-		Maximum:     llmprovider.IntPtr(5),
-	}, -1)
-
-	return ToolDefinition{
-		Type: "function",
-		Function: &FunctionDetails{
-			Name:        "doc_tree",
-			Description: "Show the hierarchical structure of folders and documents starting from a given folder. Returns metadata only (no content). Useful for understanding the organization of the user's document repository.",
-			Parameters:  schema,
-		},
-	}
-}
-
 // getSearchToolDefinition returns the schema for the 'doc_search' tool.
 // This tool performs full-text search across documents.
 func getSearchToolDefinition() ToolDefinition {
@@ -317,6 +291,45 @@ func getWebSearchToolDefinition() ToolDefinition {
 	}
 }
 
+// getSkillInvokeToolDefinition returns the schema for the 'skill_invoke' tool.
+// Parameters match SkillInvokeTool.Execute() at tools/skill_invoke.go.
+func getSkillInvokeToolDefinition() ToolDefinition {
+	schema := llmprovider.NewToolInputSchema()
+	schema.AddProperty("skill_name", llmprovider.PropertySchema{
+		Type:        "string",
+		Description: "Name of the skill to invoke (e.g., 'writing-coach')",
+	}, -1)
+	schema.AddProperty("arguments", llmprovider.PropertySchema{
+		Type:        "string",
+		Description: "Optional arguments to pass to the skill (replaces $ARGUMENTS placeholder in skill content)",
+	}, -1)
+	schema.AddRequired("skill_name")
+
+	return ToolDefinition{
+		Type: "function",
+		Function: &FunctionDetails{
+			Name:        "skill_invoke",
+			Description: "Load and execute a skill's instructions. Skills are reusable prompt templates that provide specialized guidance for specific tasks.",
+			Parameters:  schema,
+		},
+	}
+}
+
+// getSkillListToolDefinition returns the schema for the 'skill_list' tool.
+// No parameters required — SkillListTool.Execute() ignores input.
+func getSkillListToolDefinition() ToolDefinition {
+	schema := llmprovider.NewToolInputSchema()
+
+	return ToolDefinition{
+		Type: "function",
+		Function: &FunctionDetails{
+			Name:        "skill_list",
+			Description: "List all available skills for this project with their names and descriptions.",
+			Parameters:  schema,
+		},
+	}
+}
+
 // isWebSearchVariant returns true if the tool name is a web search provider variant.
 // Web search variants (tavily_web_search, brave_web_search, etc.) should be treated
 // as custom local tools with ExecutionSide: Local, not provider-side tools.
@@ -343,14 +356,6 @@ func GetToolDefinitionByName(name string) *ToolDefinition {
 		def := getTextEditorToolDefinition()
 		return &def
 
-	// Legacy tool names - map to text editor for backward compatibility
-	case "doc_view", "doc_edit":
-		def := getTextEditorToolDefinition()
-		return &def
-
-	case "doc_tree":
-		def := getTreeToolDefinition()
-		return &def
 	case "doc_search":
 		def := getSearchToolDefinition()
 		return &def
@@ -368,6 +373,14 @@ func GetToolDefinitionByName(name string) *ToolDefinition {
 		return &def
 	case "exa_web_search":
 		def := getWebSearchToolDefinition()
+		return &def
+
+	// Skill tools (server-side custom tools)
+	case "skill_invoke":
+		def := getSkillInvokeToolDefinition()
+		return &def
+	case "skill_list":
+		def := getSkillListToolDefinition()
 		return &def
 
 	default:

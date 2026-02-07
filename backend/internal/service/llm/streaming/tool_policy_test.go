@@ -26,24 +26,33 @@ func TestParseDisabledTools(t *testing.T) {
 
 	t.Run("interface slice", func(t *testing.T) {
 		got := parseDisabledTools(docsystem.JSONMap{
-			"disabled_tools": []interface{}{"doc_tree", "doc_search"},
+			"disabled_tools": []interface{}{"doc_search", "tavily_web_search"},
 		})
-		if !got["doc_tree"] || !got["doc_search"] {
+		if !got["doc_search"] || !got["tavily_web_search"] {
 			t.Fatalf("expected disabled tools to be present, got %v", got)
 		}
 	})
 }
 
 func TestResolveServerToolNames(t *testing.T) {
-	// Test with str_replace_based_edit_tool disabled
-	disabled := map[string]bool{
-		"str_replace_based_edit_tool": true,
-	}
-	got := resolveServerToolNames(true, disabled)
-	want := []string{"doc_search", "doc_tree", "tavily_web_search"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("resolveServerToolNames mismatch\nwant=%v\ngot =%v", want, got)
-	}
+	t.Run("disabled str_replace_based_edit_tool with web search", func(t *testing.T) {
+		disabled := map[string]bool{
+			"str_replace_based_edit_tool": true,
+		}
+		got := resolveServerToolNames(true, disabled)
+		want := []string{"doc_search", "skill_invoke", "skill_list", "tavily_web_search"}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("resolveServerToolNames mismatch\nwant=%v\ngot =%v", want, got)
+		}
+	})
+
+	t.Run("no disabled tools, no web search", func(t *testing.T) {
+		got := resolveServerToolNames(false, map[string]bool{})
+		want := []string{"str_replace_based_edit_tool", "doc_search", "skill_invoke", "skill_list"}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("resolveServerToolNames mismatch\nwant=%v\ngot =%v", want, got)
+		}
+	})
 }
 
 func TestToolNamesToRequestParamsTools(t *testing.T) {

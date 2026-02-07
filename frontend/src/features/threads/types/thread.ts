@@ -122,3 +122,25 @@ export interface SendTurnResponse {
   assistantTurn: Turn;
   streamUrl: string;
 }
+
+/** A reference to a document attached to a turn (via composer context attachments) */
+export interface DocumentReference {
+  documentId: string;
+  refType: string; // "document", "image", "s3_document"
+}
+
+/**
+ * Canonical ordered representation of a turn's user content.
+ * Preserves interleaving of text and reference pills as authored by the user.
+ *
+ * Used throughout: composer extraction → API serialization → store → display.
+ */
+export type ContentBlock =
+  | { type: "text"; text: string }
+  | {
+      type: "reference";
+      documentId: string;
+      refType: string;
+      displayName: string;
+      documentPath?: string;
+    };

@@ -85,7 +85,7 @@ Anthropic's API **intentionally buffers tool input JSON** before sending `input_
 **Observed behavior:**
 - Keep-alive events arrive every 5 seconds during buffering
 - Tool args (`input_json_delta`) arrive in bursts after buffering
-- This is especially noticeable for large args like `doc_edit` content
+- This is especially noticeable for large args like text editor tool content
 
 **This is expected behavior, not a bug.**
 

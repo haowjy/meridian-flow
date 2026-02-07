@@ -23,6 +23,8 @@ import (
 	skillSvc "meridian/internal/domain/services/skill"
 	"meridian/internal/jobs"
 	"meridian/internal/pkg/sliceutil"
+	"meridian/internal/service/llm/formatting"
+	threadhistory "meridian/internal/service/llm/thread_history"
 	"meridian/internal/service/llm/tokens"
 	"meridian/internal/service/llm/tools"
 	"meridian/internal/service/llm/tools/external"
@@ -90,9 +92,10 @@ type Service struct {
 	systemPromptResolver llmSvc.SystemPromptResolver
 	messageBuilder       llmSvc.MessageBuilder
 	toolLimitResolver    llmSvc.ToolLimitResolver // Resolves tool round limits (tier-ready)
-	capabilityRegistry   *capabilities.Registry   // For checking model capabilities (e.g., supports_tools)
-	tokenFinalizer       tokens.TokenFinalizer    // For finalizing tokens on completion/interruption
-	jobQueue             jobs.JobQueue            // NEW: Phase 2 - background job queue for async operations
+	capabilityRegistry   *capabilities.Registry          // For checking model capabilities (e.g., supports_tools)
+	formatterRegistry    *formatting.FormatterRegistry   // For formatting synthetic tool results (ref transformer)
+	tokenFinalizer       tokens.TokenFinalizer           // For finalizing tokens on completion/interruption
+	jobQueue             jobs.JobQueue                   // NEW: Phase 2 - background job queue for async operations
 	logger               *slog.Logger
 }
 
@@ -116,6 +119,7 @@ func NewService(
 	messageBuilder llmSvc.MessageBuilder,
 	toolLimitResolver llmSvc.ToolLimitResolver,
 	capabilityRegistry *capabilities.Registry,
+	formatterRegistry *formatting.FormatterRegistry,
 	tokenFinalizer tokens.TokenFinalizer,
 	jobQueue jobs.JobQueue,
 	logger *slog.Logger,
@@ -141,6 +145,7 @@ func NewService(
 		messageBuilder:       messageBuilder,
 		toolLimitResolver:    toolLimitResolver,
 		capabilityRegistry:   capabilityRegistry,
+		formatterRegistry:    formatterRegistry,
 		tokenFinalizer:       tokenFinalizer,
 		jobQueue:             jobQueue,
 		logger:               logger,
@@ -291,12 +296,21 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	// Extract enabled tools from requestParams for tool registration
 	enabledTools := extractToolNames(requestParams)
 
+	// Load skills once for tool metadata enrichment (shared across both registries).
+	// Skills metadata is now owned by the tool system (not the system prompt resolver)
+	// so it's naturally excluded when the model doesn't support tools.
+	availableSkills, err := s.skillService.ListSkills(ctx, req.UserID, threadContext.projectID)
+	if err != nil {
+		s.logger.Warn("failed to load skills for tool metadata", "error", err)
+		availableSkills = nil // Continue without skills — non-fatal
+	}
+
 	// Build tool registry FIRST to generate tool section for system prompt (OCP compliance)
 	// Tools self-describe via metadata, registry generates the section dynamically
 	tempToolRegistry := tools.NewToolRegistryBuilder().
 		WithNamespaceService(s.namespaceSvc).
 		WithEnabledDocumentTools(enabledTools, threadContext.projectID, req.UserID, s.documentSvc, s.folderSvc).
-		WithEnabledSkillTools(enabledTools, threadContext.projectID, req.UserID, s.skillService, false).
+		WithEnabledSkillTools(enabledTools, threadContext.projectID, req.UserID, s.skillService, false, availableSkills).
 		Build()
 
 	// Get tool section from registry (OCP compliance - tools describe themselves)
@@ -305,7 +319,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	// Resolve system prompt from user, project, thread, and selected skills
 	// For new thread (cold start), threadContext.threadID will be empty - resolver handles this gracefully
 	// Pass toolSection so the system prompt only mentions tools the LLM can actually use
-	if err := s.resolveSystemPromptForParams(ctx, threadContext.threadID, req.UserID, params, req.SelectedSkills, toolSection); err != nil {
+	if err := s.resolveSystemPromptForParams(ctx, threadContext.threadID, threadContext.projectID, req.UserID, params, req.SelectedSkills, toolSection); err != nil {
 		s.logger.Error("failed to resolve system prompt", "error", err)
 		return nil, err
 	}
@@ -453,7 +467,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	builder := tools.NewToolRegistryBuilder().
 		WithNamespaceService(s.namespaceSvc).
 		WithEnabledDocumentTools(enabledTools, thread.ProjectID, req.UserID, s.documentSvc, s.folderSvc).
-		WithEnabledSkillTools(enabledTools, thread.ProjectID, req.UserID, s.skillService, false) // false = model invocation, not user slash command
+		WithEnabledSkillTools(enabledTools, thread.ProjectID, req.UserID, s.skillService, false, availableSkills) // false = model invocation, not user slash command
 
 	// Add web search tool if requested via provider-specific tool name
 	var hasWebSearch bool
@@ -576,7 +590,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	// Start streaming in background goroutine
 	// Use context.Background() to prevent cancellation when HTTP request completes
 	// Pass the already-created executor to avoid race
-	go s.startStreamingExecution(context.Background(), assistantTurn.ID, turn.ID, executor, params)
+	go s.startStreamingExecution(context.Background(), assistantTurn.ID, turn.ID, req.UserID, threadContext.projectID, executor, params)
 
 	// Return both turns and stream URL
 	// If cold start, also return the created thread
@@ -592,7 +606,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 // startStreamingExecution starts the streaming execution for an assistant turn.
 // This runs in a background goroutine and prepares the request before starting the stream.
 // The executor is already created and registered before this function is called.
-func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, userTurnID string, executor *StreamExecutor, params *llmModels.RequestParams) {
+func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, userTurnID, userID, projectID string, executor *StreamExecutor, params *llmModels.RequestParams) {
 	s.logger.Debug("preparing streaming request",
 		"assistant_turn_id", assistantTurnID,
 	)
@@ -626,13 +640,30 @@ func (s *Service) startStreamingExecution(ctx context.Context, assistantTurnID, 
 		path[i].Blocks = blocks
 	}
 
-	// Build messages from turn history using MessageBuilder
+	// Build messages from turn history
 	messages, err := s.messageBuilder.BuildMessages(ctx, path)
 	if err != nil {
 		s.logger.Error("failed to build messages for streaming",
 			"error", err,
 		)
 		if updateErr := s.turnWriter.UpdateTurnError(ctx, assistantTurnID, fmt.Sprintf("failed to build messages: %v", err)); updateErr != nil {
+			s.logger.Error("failed to update turn error", "error", updateErr)
+		}
+		return
+	}
+
+	// Post-process: compile @-references into synthetic tool_use/tool_result pairs.
+	// This makes references look like prior tool calls, so LLMs don't redundantly
+	// call str_replace_based_edit_tool view to re-fetch the same data.
+	refTransformer := threadhistory.NewReferenceMessageTransformer(
+		s.documentSvc, s.folderSvc, s.formatterRegistry, userID, projectID, s.logger,
+	)
+	messages, err = refTransformer.TransformMessages(ctx, messages)
+	if err != nil {
+		s.logger.Error("failed to transform references in messages",
+			"error", err,
+		)
+		if updateErr := s.turnWriter.UpdateTurnError(ctx, assistantTurnID, fmt.Sprintf("failed to transform references: %v", err)); updateErr != nil {
 			s.logger.Error("failed to update turn error", "error", updateErr)
 		}
 		return
@@ -764,6 +795,7 @@ func (s *Service) CreateAssistantTurnDebug(
 func (s *Service) resolveSystemPromptForParams(
 	ctx context.Context,
 	threadID string,
+	projectID string,
 	userID string,
 	params *llmModels.RequestParams,
 	selectedSkills []string,
@@ -771,7 +803,7 @@ func (s *Service) resolveSystemPromptForParams(
 ) error {
 	// Always resolve to include base + project + thread system prompts
 	// The resolver handles concatenation: base (with tool section) + user + project + thread + skills
-	systemPrompt, err := s.systemPromptResolver.Resolve(ctx, threadID, userID, params.System, selectedSkills, toolSection)
+	systemPrompt, err := s.systemPromptResolver.Resolve(ctx, threadID, projectID, userID, params.System, selectedSkills, toolSection)
 	if err != nil {
 		return fmt.Errorf("failed to resolve system prompt: %w", err)
 	}

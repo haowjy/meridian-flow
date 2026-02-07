@@ -198,7 +198,6 @@ func main() {
 		folderRepo,
 		docService,    // For tool write operations
 		folderService, // For tool write operations
-		skillRepo,     // For skill metadata in system prompt
 		skillService,  // For skill_invoke/skill_list tools
 		providerRegistry,
 		cfg,

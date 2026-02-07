@@ -235,6 +235,17 @@ function ModelSelector({
 
   const groups = Object.entries(grouped);
 
+  const selectDefaultModel = () => {
+    onSelectModel(
+      DEFAULT_THREAD_REQUEST_OPTIONS.modelId,
+      DEFAULT_THREAD_REQUEST_OPTIONS.modelLabel,
+      DEFAULT_THREAD_REQUEST_OPTIONS.providerId,
+      true,
+      true,
+      DEFAULT_THREAD_REQUEST_OPTIONS.supportsTools,
+    );
+  };
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -251,16 +262,7 @@ function ModelSelector({
       <DropdownMenuContent align="start">
         {groups.length === 0 && (
           <DropdownMenuItem
-            onSelect={() =>
-              onSelectModel(
-                DEFAULT_THREAD_REQUEST_OPTIONS.modelId,
-                DEFAULT_THREAD_REQUEST_OPTIONS.modelLabel,
-                DEFAULT_THREAD_REQUEST_OPTIONS.providerId,
-                true, // default model supports thinking
-                true, // default model requires thinking (kimi-k2-thinking)
-                DEFAULT_THREAD_REQUEST_OPTIONS.supportsTools, // default model supports tools
-              )
-            }
+            onSelect={selectDefaultModel}
             className="text-xs"
           >
             {DEFAULT_THREAD_REQUEST_OPTIONS.modelLabel}

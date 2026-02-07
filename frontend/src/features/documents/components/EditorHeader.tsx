@@ -84,7 +84,7 @@ export function EditorHeader({
       leading={leadingContent}
       trailing={trailingContent}
       showGradient={true}
-      showBorder={true}
+      showBorder={false}
       ariaLabel={`Breadcrumb: ${fullPathTitle}`}
     />
   );

@@ -12,7 +12,6 @@ import (
 	"meridian/internal/domain/repositories"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	llmRepo "meridian/internal/domain/repositories/llm"
-	skillRepoIF "meridian/internal/domain/repositories/skill"
 	"meridian/internal/domain/services"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	llmSvc "meridian/internal/domain/services/llm"
@@ -77,7 +76,6 @@ func SetupServices(
 	folderRepo docsysRepo.FolderRepository,
 	documentSvc docsysSvc.DocumentService, // For tool write operations (SOLID: DIP)
 	folderSvc docsysSvc.FolderService, // For tool write operations (SOLID: DIP)
-	skillRepo skillRepoIF.ProjectSkillRepository, // For skill metadata in system prompt
 	skillService skillSvc.ProjectSkillService, // For skill_invoke/skill_list tools
 	providerRegistry *ProviderRegistry,
 	cfg *config.Config,
@@ -122,20 +120,20 @@ func SetupServices(
 	)
 
 	// Create system prompt resolver
+	// Skills metadata is handled by the tool system (skill_invoke metadata enrichment),
+	// not the resolver — so no skillRepo dependency needed here.
 	systemPromptResolver := streaming.NewSystemPromptResolver(
 		projectRepo,
 		threadRepo,
 		documentRepo,
-		skillRepo,
 		logger,
 	)
 
 	// Create formatter registry and register doc tool formatters
-	// str_replace_based_edit_tool is the unified view/edit tool matching Anthropic's text_editor_20250728
+	// str_replace_based_edit_tool handles view (document→text, folder→listing) and edit formatting
 	formatterRegistry := formatting.NewFormatterRegistry()
 	formatterRegistry.Register("doc_search", &formatting.DocSearchFormatter{})
 	formatterRegistry.Register("str_replace_based_edit_tool", &formatting.TextEditorFormatter{})
-	formatterRegistry.Register("doc_tree", formatting.NewDocTreeFormatter())
 
 	// Create MessageBuilder service (pure conversion, no data loading)
 	messageBuilder := threadhistory.NewMessageBuilderService(
@@ -177,10 +175,11 @@ func SetupServices(
 		txManager,
 		systemPromptResolver,
 		messageBuilder,
-		toolLimitResolver,  // Tool round limit resolver (tier-ready)
-		capabilityRegistry, // For checking model capabilities (e.g., supports_tools)
-		tokenFinalizer,     // For finalizing tokens on completion/interruption
-		jobQueue,           // Phase 2: Background job queue for async generation enrichment
+		toolLimitResolver,   // Tool round limit resolver (tier-ready)
+		capabilityRegistry,  // For checking model capabilities (e.g., supports_tools)
+		formatterRegistry,   // For formatting synthetic tool results (ref transformer)
+		tokenFinalizer,      // For finalizing tokens on completion/interruption
+		jobQueue,            // Phase 2: Background job queue for async generation enrichment
 		logger,
 	)
 

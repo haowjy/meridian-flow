@@ -123,7 +123,7 @@ Provider streams `tool_use` block:
 
 ### 3. Backend Executes Tool (Local Tools)
 
-- For locally-executed tools (e.g., `doc_search`, `doc_view`, `web_search` via Tavily), the backend:
+- For locally-executed tools (e.g., `doc_search`, `str_replace_based_edit_tool`, `web_search` via Tavily), the backend:
   - Checks `block.IsLocalTool()` (ExecutionSide: `"local"` or nil)
   - Executes the corresponding tool in application code
   - Writes a `tool_result` block with `content.tool_use_id` and `is_error`

@@ -4,17 +4,45 @@ import {
   useLayoutEffect,
   useRef,
   useCallback,
+  useMemo,
 } from "react";
+import {
+  autoUpdate,
+  flip,
+  offset,
+  shift,
+  useFloating,
+} from "@floating-ui/react-dom";
+import { createPortal } from "react-dom";
 import { useShallow } from "zustand/react/shallow";
+import { useNavigate } from "@tanstack/react-router";
 import { Pencil, Trash2, ChevronDown } from "lucide-react";
 import { useThreadStore } from "@/core/stores/useThreadStore";
 import { useThreadPrefsStore } from "@/core/stores/useThreadPrefsStore";
 import { useUIStore } from "@/core/stores/useUIStore";
-import { ThreadRequestControls } from "@/features/threads/components/ThreadRequestControls";
-import { AutosizeTextarea } from "@/features/threads/components/AutosizeTextarea";
+import { useProjectStore } from "@/core/stores/useProjectStore";
+import { useTreeStore } from "@/core/stores/useTreeStore";
+import { openDocument } from "@/core/lib/panelHelpers";
+import {
+  ComposerShell,
+  type ComposerShellRef,
+} from "@/features/threads/composer";
+import type { AtMentionState } from "@/features/threads/composer/atDetection";
+import type { ReferenceElementData } from "@/features/threads/composer/inlineElements";
+import {
+  DocumentMentionPopover,
+  type MentionResult,
+} from "@/features/threads/components/DocumentMentionPopover";
 import { Button } from "@/shared/components/ui/button";
 import { cn } from "@/lib/utils";
 import { makeLogger } from "@/core/lib/logger";
+import { ComposerAddContextButton } from "@/features/threads/components/ComposerAddContextButton";
+import {
+  getComposePlaceholder,
+  getInterjectPlaceholder,
+} from "@/features/threads/composer/placeholders";
+import { useIsMobile } from "@/core/hooks/useIsMobile";
+import { composerInputMinHeight } from "@/features/threads/composer/composerTheme";
 
 const log = makeLogger("TurnInput");
 
@@ -33,12 +61,21 @@ export function TurnInput({
   focusKey,
   onHeightChange,
 }: TurnInputProps) {
-  const [value, setValue] = useState("");
+  const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [queueExpanded, setQueueExpanded] = useState(false);
   const [isTruncated, setIsTruncated] = useState(false);
+  // Track whether the editor has content (for canSend checks)
+  const [hasContent, setHasContent] = useState(false);
+  const [atMention, setAtMention] = useState<AtMentionState | null>(null);
+  const [mentionAnchor, setMentionAnchor] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mentionAnchorContainerRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<ComposerShellRef>(null);
   const collapsedPreviewRef = useRef<HTMLDivElement>(null);
   const expandedContentRef = useRef<HTMLDivElement>(null);
 
@@ -85,6 +122,14 @@ export function TurnInput({
       setActiveThread: s.setActiveThread,
     })),
   );
+  const { pendingThreadReferences, clearPendingThreadReferences } = useUIStore(
+    useShallow((s) => ({
+      pendingThreadReferences: s.pendingThreadReferences,
+      clearPendingThreadReferences: s.clearPendingThreadReferences,
+    })),
+  );
+
+  const lastAtReferenceUsed = useUIStore((s) => s.lastAtReferenceUsed);
 
   // Get last turn's request params (for per-thread preference).
   // Selector returns a stable reference unless requestParams actually changes,
@@ -120,28 +165,28 @@ export function TurnInput({
     setIsTruncated(el.scrollHeight > el.clientHeight);
   }, [interjectionContent, queueExpanded]);
 
+  // Main composer needs 48px min height for a ~2-line feel; other consumers (display, edit) size to content
+  const inputMinHeightExtensions = useMemo(() => [composerInputMinHeight], []);
+
   const isStreaming = Boolean(streamingTurnId);
 
-  // Can send a normal message if: has text, not loading, not submitting, not streaming, and has either threadId or projectId
+  // Can send a normal message if: has content, not loading, not submitting, not streaming, and has either threadId or projectId
   const canSendMessage =
-    value.trim().length > 0 &&
+    hasContent &&
     !isLoadingTurns &&
     !isSubmitting &&
     !isStreaming &&
     (Boolean(threadId) || Boolean(projectId));
 
-  // Can send an interjection if: has text, not submitting, IS streaming, and has a streaming turn ID
+  // Can send an interjection if: has content, not submitting, IS streaming, and has a streaming turn ID
   const canInterject =
-    value.trim().length > 0 &&
-    !isSubmitting &&
-    isStreaming &&
-    Boolean(streamingTurnId);
+    hasContent && !isSubmitting && isStreaming && Boolean(streamingTurnId);
 
   // Combined: can send either way
   const canSend = canSendMessage || canInterject;
 
-  // Load interjection content into textarea for editing
-  // Clears from queue first (indicator disappears), then loads into textarea
+  // Load interjection content into editor for editing
+  // Clears from queue first (indicator disappears), then loads into editor
   const loadInterjectionForEdit = useCallback(async () => {
     if (!interjectionContent || !streamingTurnId) return;
 
@@ -152,16 +197,9 @@ export function TurnInput({
     // Clear from queue first (API call) - indicator disappears
     await clearInterjection(streamingTurnId);
 
-    // Now load into textarea
-    setValue(content);
-    requestAnimationFrame(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.focus();
-      // Position cursor at end of text
-      const len = el.value.length;
-      el.setSelectionRange(len, len);
-    });
+    // Now load into editor
+    composerRef.current?.setContent(content);
+    composerRef.current?.focus();
   }, [interjectionContent, streamingTurnId, clearInterjection]);
 
   // Clear queued interjection
@@ -172,39 +210,41 @@ export function TurnInput({
     }
   }, [streamingTurnId, interjectionContent, clearInterjection]);
 
-  // Send handler (must be before handleKeyDown since it's used there)
+  // Send handler — extracts content from CM6 editor state
   const handleSend = useCallback(async () => {
-    if (!canSend) return;
-    const messageText = value.trim();
-    setValue("");
+    const composer = composerRef.current;
+    if (!composer || composer.isEmpty()) return;
+
+    const { blocks, text } = composer.extractContent();
+    const messageText = text.trim();
+    if (messageText.length === 0) return;
+
+    // Clear editor immediately for responsiveness
+    composer.clear();
+    setHasContent(false);
 
     setIsSubmitting(true);
     try {
       if (isStreaming && streamingTurnId) {
         // Interjection flow - always 'append' since queue is cleared before editing
+        // Note: interjections don't support references, just text
         log.debug("handleSend:interjection", {
           streamingTurnId,
           contentLength: messageText.length,
         });
         await submitInterjection(streamingTurnId, messageText, "append");
       } else if (threadId) {
-        // Existing thread flow
-        await createTurn(threadId, messageText, currentOptions);
+        // Existing thread flow — pass ordered blocks preserving interleaving
+        await createTurn(threadId, blocks, currentOptions);
       } else if (projectId) {
-        // Cold start flow - creates thread atomically
-        const thread = await startNewThread(
-          projectId,
-          messageText,
-          currentOptions,
-        );
+        // Cold start flow — creates thread atomically with ordered blocks
+        const thread = await startNewThread(projectId, blocks, currentOptions);
         setActiveThread(thread.id);
       }
     } finally {
       setIsSubmitting(false);
     }
   }, [
-    canSend,
-    value,
     isStreaming,
     streamingTurnId,
     submitInterjection,
@@ -216,57 +256,177 @@ export function TurnInput({
     setActiveThread,
   ]);
 
-  // Consolidated keyboard handling (all keyboard logic in one place)
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      // Enter → submit (normal message or interjection)
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        if (canSend) handleSend();
-        return;
-      }
+  // Escape key handling (prioritized):
+  // 1. If editor has content -> clear it
+  // 2. Else if interjection queued -> clear it
+  // 3. Else if streaming -> stop streaming
+  const handleEscape = useCallback(() => {
+    const composer = composerRef.current;
+    if (composer && !composer.isEmpty()) {
+      composer.clear();
+      setHasContent(false);
+    } else if (interjectionContent && streamingTurnId) {
+      handleClearInterjection();
+    } else if (isStreaming) {
+      interruptStreamingTurn();
+    }
+  }, [
+    interjectionContent,
+    streamingTurnId,
+    isStreaming,
+    handleClearInterjection,
+    interruptStreamingTurn,
+  ]);
 
-      // ArrowUp in empty textarea → load interjection for editing
-      if (
-        e.key === "ArrowUp" &&
-        value === "" &&
-        interjectionContent &&
-        streamingTurnId
-      ) {
-        e.preventDefault();
-        loadInterjectionForEdit();
-        return;
-      }
+  // ArrowUp in empty editor -> load interjection for editing
+  const handleArrowUpEmpty = useCallback(() => {
+    if (interjectionContent && streamingTurnId) {
+      loadInterjectionForEdit();
+    }
+  }, [interjectionContent, streamingTurnId, loadInterjectionForEdit]);
 
-      // Escape key handling (prioritized):
-      // 1. If textarea has content → clear it
-      // 2. Else if interjection queued → clear it
-      // 3. Else if streaming → stop streaming
-      if (e.key === "Escape") {
-        if (value.length > 0) {
-          e.preventDefault();
-          setValue("");
-        } else if (interjectionContent && streamingTurnId) {
-          e.preventDefault();
-          handleClearInterjection();
-        } else if (isStreaming) {
-          e.preventDefault();
-          interruptStreamingTurn();
-        }
-        return;
-      }
-    },
-    [
-      canSend,
-      handleSend,
-      value,
-      interjectionContent,
-      streamingTurnId,
-      isStreaming,
-      loadInterjectionForEdit,
-      handleClearInterjection,
-      interruptStreamingTurn,
+  const isPopoverOpen = !isMobile && (atMention?.isActive ?? false);
+  const mentionCollisionPadding = {
+    top: 64,
+    right: 8,
+    bottom: 8,
+    left: 8,
+  } as const;
+  const {
+    refs: mentionRefs,
+    floatingStyles: mentionFloatingStyles,
+    update: updateMentionPosition,
+  } = useFloating({
+    open: isPopoverOpen,
+    strategy: "fixed",
+    placement: "top-start",
+    middleware: [
+      offset(8),
+      flip({
+        fallbackPlacements: ["bottom-start"],
+        padding: mentionCollisionPadding,
+      }),
+      shift({ padding: mentionCollisionPadding }),
     ],
+    whileElementsMounted: autoUpdate,
+  });
+
+  useEffect(() => {
+    if (!isPopoverOpen || !atMention) {
+      setMentionAnchor(null);
+      return;
+    }
+
+    const view = composerRef.current?.getView();
+    const anchorContainer = mentionAnchorContainerRef.current;
+    if (!view || !anchorContainer) {
+      setMentionAnchor(null);
+      return;
+    }
+
+    const coords = view.coordsAtPos(atMention.atPos);
+    if (!coords) {
+      setMentionAnchor(null);
+      return;
+    }
+
+    const containerRect = anchorContainer.getBoundingClientRect();
+    setMentionAnchor({
+      x: coords.left - containerRect.left,
+      y: coords.bottom - containerRect.top,
+    });
+  }, [isPopoverOpen, atMention]);
+
+  useEffect(() => {
+    if (!isPopoverOpen || !mentionAnchor) return;
+    updateMentionPosition();
+  }, [isPopoverOpen, mentionAnchor, atMention?.query, updateMentionPosition]);
+
+  const setMentionReferenceRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      mentionRefs.setReference(node);
+    },
+    [mentionRefs],
+  );
+
+  const setMentionFloatingRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      mentionRefs.setFloating(node);
+    },
+    [mentionRefs],
+  );
+
+  const handleAtMention = useCallback((state: AtMentionState | null) => {
+    setAtMention(state);
+  }, []);
+
+  const handleMentionSelect = useCallback(
+    (result: MentionResult) => {
+      if (!atMention) return;
+      const data: ReferenceElementData = {
+        type: "reference",
+        documentId: result.id,
+        refType: result.refType,
+        displayName: result.name,
+        documentPath: result.path,
+      };
+      composerRef.current?.applyMention(
+        atMention.atPos,
+        atMention.cursorPos,
+        data,
+      );
+      setAtMention(null);
+      useUIStore.getState().recordAtReferenceUsage();
+    },
+    [atMention],
+  );
+
+  const handleMentionClose = useCallback(() => setAtMention(null), []);
+
+  const handleAddReferences = useCallback((refs: ReferenceElementData[]) => {
+    const composer = composerRef.current;
+    if (!composer) return;
+    for (const ref of refs) {
+      composer.appendReference(ref);
+    }
+    composer.focus();
+  }, []);
+
+  // Consume queued references from non-composer UI (e.g., tree context menu)
+  // and append them to the end of the current draft.
+  useEffect(() => {
+    if (pendingThreadReferences.length === 0) return;
+
+    const composer = composerRef.current;
+    if (!composer) return;
+
+    for (const ref of pendingThreadReferences) {
+      composer.appendReference({
+        type: "reference",
+        documentId: ref.documentId,
+        refType: ref.refType,
+        displayName: ref.displayName,
+        documentPath: ref.documentPath,
+      });
+    }
+
+    composer.focus();
+    clearPendingThreadReferences();
+  }, [pendingThreadReferences, clearPendingThreadReferences]);
+
+  // Pill click → open the referenced document in the editor panel
+  const handlePillClick = useCallback(
+    (documentId: string) => {
+      const doc = useTreeStore
+        .getState()
+        .documents.find((d) => d.id === documentId);
+      if (!doc) return;
+      const projectSlug =
+        useProjectStore.getState().currentProject()?.slug ?? "";
+      if (!projectSlug) return;
+      openDocument(doc.id, doc.path, projectSlug, navigate);
+    },
+    [navigate],
   );
 
   // Show pending interjection content if present (received via SSE)
@@ -274,7 +434,7 @@ export function TurnInput({
   const showInterjectionIndicator = isStreaming && interjectionContent;
 
   // Unified layout for both mobile and desktop
-  // Auto-expanding composer - textarea grows up to max height, then scrolls internally
+  // Auto-expanding composer - editor grows up to max height, then scrolls internally
   return (
     <div ref={containerRef} className="thread-input-shell">
       <div className="mx-auto w-full max-w-3xl">
@@ -363,27 +523,68 @@ export function TurnInput({
           )}
           style={{ boxShadow: "var(--shadow-1)" }}
         >
-          <div className="px-2 py-1.5 sm:px-2.5 sm:py-2">
-            <AutosizeTextarea
-              ref={textareaRef}
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
+          <div
+            ref={mentionAnchorContainerRef}
+            className="relative px-2 py-1.5 sm:px-2.5 sm:py-2"
+          >
+            {isPopoverOpen && mentionAnchor && (
+              <div
+                ref={setMentionReferenceRef}
+                className="pointer-events-none absolute size-px"
+                style={{
+                  left: `${mentionAnchor.x}px`,
+                  top: `${mentionAnchor.y}px`,
+                }}
+                aria-hidden="true"
+              />
+            )}
+            {isPopoverOpen &&
+              mentionAnchor &&
+              typeof document !== "undefined" &&
+              createPortal(
+                <div
+                  ref={setMentionFloatingRef}
+                  style={mentionFloatingStyles}
+                  className="z-[70]"
+                >
+                  <DocumentMentionPopover
+                    query={atMention?.query ?? ""}
+                    isOpen={isPopoverOpen}
+                    positioning="none"
+                    onSelect={handleMentionSelect}
+                    onClose={handleMentionClose}
+                  />
+                </div>,
+                document.body,
+              )}
+            <ComposerShell
+              ref={composerRef}
               focusKey={focusKey}
+              extraExtensions={inputMinHeightExtensions}
               placeholder={
                 isStreaming
-                  ? "Interject while streaming..."
-                  : "Type a message..."
+                  ? getInterjectPlaceholder()
+                  : getComposePlaceholder(lastAtReferenceUsed)
               }
-              onKeyDown={handleKeyDown}
-            />
-            <ThreadRequestControls
+              onSubmit={handleSend}
+              onEscape={handleEscape}
+              onArrowUpEmpty={handleArrowUpEmpty}
+              onContentChange={setHasContent}
+              onPillClick={handlePillClick}
+              onAtMention={isMobile ? undefined : handleAtMention}
+              isPopoverOpen={isPopoverOpen}
               options={currentOptions}
               onOptionsChange={updateOptionsManually}
-              onSend={handleSend}
               isSendDisabled={!canSend}
               isStreaming={isStreaming}
               onStop={interruptStreamingTurn}
-              isInterjectionMode={isStreaming && value.trim().length > 0}
+              isInterjectionMode={isStreaming && hasContent}
+              controlsRightContent={
+                <ComposerAddContextButton
+                  disabled={isStreaming}
+                  onAddReferences={handleAddReferences}
+                />
+              }
             />
           </div>
         </div>

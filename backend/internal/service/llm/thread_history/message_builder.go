@@ -99,40 +99,7 @@ func (mb *MessageBuilderService) BuildMessages(
 // This modifies the block in-place by replacing Content["result"] with the formatted version.
 // Formatting happens on message build (not at storage time), so we keep full data in DB.
 func (mb *MessageBuilderService) formatToolResultBlock(block *llmModels.TurnBlock) {
-	// Defensive: ensure formatter registry and block content exist
-	if mb.formatterRegistry == nil {
-		return
-	}
-	if block.Content == nil {
-		return
-	}
-
-	// Extract tool_name from block content
-	toolName, ok := block.Content["tool_name"].(string)
-	if !ok || toolName == "" {
-		// No tool name - can't format
-		return
-	}
-
-	// Extract result from block content
-	result, ok := block.Content["result"]
-	if !ok {
-		// No result to format (might be error or already formatted)
-		return
-	}
-
-	// Apply formatting
-	formattedResult := mb.formatterRegistry.Format(toolName, result)
-
-	// If this is a structured tool error and the tool-specific formatter didn't
-	// already collapse it, format it using the shared tool error formatter.
-	// This ensures all tools have consistent, recovery-friendly error messages.
-	if formattedError, ok := formatting.TryFormatToolError(formattedResult); ok {
-		formattedResult = formattedError
-	}
-
-	// Replace result with formatted version in-place
-	block.Content["result"] = formattedResult
+	formatting.FormatToolResultContent(mb.formatterRegistry, block.Content)
 }
 
 // injectTokenLimitWarningIfNeeded checks if the last assistant turn is approaching the token limit

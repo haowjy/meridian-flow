@@ -21,7 +21,9 @@ Technical debt and refactoring opportunities discovered during development.
 
 ### Medium Priority
 
-(empty)
+| Issue | Location | Refactor | Status |
+|-------|----------|----------|--------|
+| Inline orchestration in service methods | Various `service/llm/` methods | Audit for shared logic that should be standalone functions (like `FormatToolResultContent` was extracted from `formatToolResultBlock`) | ⬜ |
 
 ### Low Priority
 
@@ -38,11 +40,13 @@ Technical debt and refactoring opportunities discovered during development.
 | SRP violation | `useThreadStore.ts` (1,021 lines) | Split into separate stores | ⬜ |
 | SRP violation | `DocumentTreeContainer.tsx` (746 lines) | Extract operation modules | ⬜ |
 | Inconsistent dialogs | `DeleteFolderDialog.tsx` | Use `DeleteConfirmationDialog` | ⬜ |
-| Duplicate keyboard handling | `TurnInput.tsx`, `EditTurnDialog.tsx` | Extract shared hook | ⬜ |
+| Duplicate keyboard handling | `TurnInput.tsx`, `EditTurnInput.tsx` | Extract shared hook | ⬜ |
 
 ### Medium Priority
 
-(empty)
+| Issue | Location | Refactor | Status |
+|-------|----------|----------|--------|
+| SheetContent defaults `gap-4 p-4` but both consumers override to `gap-0 p-0` | `shared/components/ui/sheet.tsx` | Change defaults to `gap-0 p-0`, let consumers opt in to spacing | ⬜ |
 
 ### Low Priority
 

@@ -13,6 +13,7 @@ import (
 	llmModels "meridian/internal/domain/models/llm"
 	llmSvc "meridian/internal/domain/services/llm"
 	"meridian/internal/service/llm/adapters"
+	threadhistory "meridian/internal/service/llm/thread_history"
 	"meridian/internal/service/llm/tools"
 )
 
@@ -118,12 +119,19 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 	}
 	requestParams["tools"] = toolsParam
 
+	// Load skills for tool metadata enrichment (mirrors CreateTurn)
+	availableSkills, err := s.skillService.ListSkills(ctx, req.UserID, thread.ProjectID)
+	if err != nil {
+		s.logger.Warn("failed to load skills for tool metadata (debug)", "error", err)
+		availableSkills = nil
+	}
+
 	// Build tool registry to generate tool section for system prompt (OCP compliance)
 	// Tools self-describe via metadata, registry generates the section dynamically
 	tempToolRegistry := tools.NewToolRegistryBuilder().
 		WithNamespaceService(s.namespaceSvc).
 		WithEnabledDocumentTools(enabledTools, thread.ProjectID, req.UserID, s.documentSvc, s.folderSvc).
-		WithEnabledSkillTools(enabledTools, thread.ProjectID, req.UserID, s.skillService, false).
+		WithEnabledSkillTools(enabledTools, thread.ProjectID, req.UserID, s.skillService, false, availableSkills).
 		Build()
 
 	// Get tool section from registry (OCP compliance - tools describe themselves)
@@ -132,7 +140,7 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 	// Resolve system prompt from user, project, thread, and selected skills (mirror CreateTurn)
 	// Always resolve if skills are selected, or if no user system prompt provided
 	// Pass toolSection so the system prompt only mentions tools the LLM can actually use
-	if err := s.resolveSystemPromptForParams(ctx, *req.ThreadID, req.UserID, params, req.SelectedSkills, toolSection); err != nil {
+	if err := s.resolveSystemPromptForParams(ctx, *req.ThreadID, thread.ProjectID, req.UserID, params, req.SelectedSkills, toolSection); err != nil {
 		s.logger.Error("failed to resolve system prompt for debug", "error", err)
 		return nil, err
 	}
@@ -178,6 +186,16 @@ func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.Cre
 			Role:    "user", // CreateTurn only allows user role from client
 			Content: blocks,
 		})
+	}
+
+	// Post-process: compile @-references into synthetic tool_use/tool_result pairs
+	// (matches startStreamingExecution behavior for debug inspection)
+	refTransformer := threadhistory.NewReferenceMessageTransformer(
+		s.documentSvc, s.folderSvc, s.formatterRegistry, req.UserID, thread.ProjectID, s.logger,
+	)
+	messages, err = refTransformer.TransformMessages(ctx, messages)
+	if err != nil {
+		return nil, fmt.Errorf("failed to transform references for debug: %w", err)
 	}
 
 	// Build backend GenerateRequest that matches what we send to the provider

@@ -1,7 +1,7 @@
 /**
- * Path Resolution for doc_edit Tool
+ * Path Resolution for Text Editor Tool
  *
- * Converts Unix-style paths from doc_edit tool input to Document objects
+ * Converts Unix-style paths from text editor tool input to Document objects
  * for navigation and display.
  *
  * Path format: "/FolderName/SubFolder/Document.md" or "/Document.md"
@@ -28,7 +28,7 @@ export interface ParsedDocPath {
 // =============================================================================
 
 /**
- * Parse doc_edit path into components.
+ * Parse tool path into components.
  *
  * @example
  * parseDocEditPath("/Characters/Hero.md")
@@ -55,7 +55,7 @@ export function parseDocEditPath(path: string): ParsedDocPath {
 // =============================================================================
 
 /**
- * Find document by doc_edit path in tree store data.
+ * Find document by tool path in tree store data.
  *
  * Walks the folder hierarchy to find the target folder, then finds
  * the document by filename within that folder.
