@@ -232,7 +232,7 @@ func TestBuildMessages_FormatsStructuredToolErrors(t *testing.T) {
 					BlockType: llmModels.BlockTypeToolResult,
 					Content: map[string]interface{}{
 						"tool_use_id": "call-1",
-						"tool_name":   "doc_view",
+						"tool_name":   "str_replace_based_edit_tool",
 						"result": map[string]interface{}{
 							"success":    false,
 							"error_code": "MISSING_PARAM",

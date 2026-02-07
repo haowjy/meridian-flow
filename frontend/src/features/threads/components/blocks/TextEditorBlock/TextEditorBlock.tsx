@@ -22,7 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { TurnBlock, ToolBlockContent } from "@/features/threads/types";
 import { useTreeStore } from "@/core/stores/useTreeStore";
-import { DocEditDiffPreview } from "../DocEditBlock/DocEditDiffPreview";
+import { DiffPreview } from "./DiffPreview";
 import {
   parseDocEditPath,
   findDocumentByPath,
@@ -428,7 +428,7 @@ export const TextEditorBlock = React.memo(function TextEditorBlock({
 
       {/* Edit commands: Diff preview */}
       {input && !isViewCommand(input.command) && !isError && (
-        <DocEditDiffPreview
+        <DiffPreview
           input={{
             command: input.command as
               | "str_replace"

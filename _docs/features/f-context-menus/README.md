@@ -18,8 +18,8 @@ Right-click context menus for file tree with reusable component architecture.
 Context menus provide quick access to common document and folder operations via right-click (or long-press on mobile).
 
 **Available on:**
-- Documents: Rename, Delete
-- Folders: Create Document, Create Folder, Rename, Delete, Import
+- Documents: Details, Add to Thread, Rename, Delete
+- Folders: Details, Add to Thread, Create Document, Create Folder, Rename, Delete, Import
 - Root: Create Document, Create Folder, Import
 
 ## Component Architecture
@@ -72,6 +72,7 @@ export function createDocumentMenuItems(
 
 | Action | Document | Folder | Root | Notes |
 |--------|----------|--------|------|-------|
+| Add to Thread | ✅ | ✅ | ❌ | Queues references into active thread composer |
 | Create Document | ❌ | ✅ | ✅ | Opens create document dialog |
 | Create Folder | ❌ | ✅ | ✅ | Opens create folder dialog |
 | Rename | ✅ | ✅ | ❌ | Inline edit or dialog |

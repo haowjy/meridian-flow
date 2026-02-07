@@ -6,7 +6,7 @@ feature: "Custom Tools"
 
 # Custom Tools
 
-**Three custom tools for document access and editing: str_replace_based_edit_tool, doc_tree, doc_search.**
+**Two custom tools for document access and editing: str_replace_based_edit_tool, doc_search.**
 
 ## Status: ✅ Complete
 
@@ -30,26 +30,9 @@ feature: "Custom Tools"
 - View pagination via `view_range: [start, end]`
 - Edits go to `ai_version` (user review before accepting)
 - Accumulative: multiple edits build on previous `ai_version`
-- Backward compatible with legacy `doc_view`/`doc_edit` tool names
+- Legacy `doc_view`/`doc_edit` tool names fully migrated (migration 00016)
 
 **File**: `backend/internal/service/llm/tools/text_editor.go`
-
----
-
-## doc_tree
-
-**Purpose**: Show hierarchical structure of folders/documents
-
-**Parameters**:
-- `path` (string, optional): Unix-style path to folder. Defaults to "/" (root)
-- `depth` (number, optional): How many levels deep (default: 2, max: 5)
-- `folder` (string, optional): Legacy alias for `path` (backward compat)
-
-**Features**:
-- Metadata only (no content)
-- Configurable depth limit
-
-**File**: `backend/internal/service/llm/tools/tree.go`
 
 ---
 

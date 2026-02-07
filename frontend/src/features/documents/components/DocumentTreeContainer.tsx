@@ -1,8 +1,12 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useShallow } from "zustand/react/shallow";
 import { useTreeStore } from "@/core/stores/useTreeStore";
-import { useUIStore } from "@/core/stores/useUIStore";
+import {
+  useUIStore,
+  selectEffectiveLeftCollapsed,
+  type PendingThreadReference,
+} from "@/core/stores/useUIStore";
 import { useProjectStore } from "@/core/stores/useProjectStore";
 import { useSkillStore } from "@/core/stores/useSkillStore";
 import { openDocument, openSkill } from "@/core/lib/panelHelpers";
@@ -19,6 +23,7 @@ import {
   getFolderChildNames,
   buildTree,
 } from "@/core/lib/treeBuilder";
+import { getDescendantDocumentIds } from "@/core/lib/treeUtils";
 import { api } from "@/core/lib/api";
 import {
   getErrorMessageWithFallback,
@@ -154,6 +159,30 @@ export function DocumentTreeContainer({
   // Build tree locally from folders and documents
   // Note: Skills are rendered separately in CollapsibleSkillsSection
   const tree = buildTree(folders, documents);
+  const folderHasDescendantDocuments = useMemo(() => {
+    const map = new Map<string, boolean>();
+    const walk = (nodes: TreeNode[]): boolean => {
+      let hasDocument = false;
+
+      for (const node of nodes) {
+        if (node.type === "document") {
+          hasDocument = true;
+          continue;
+        }
+
+        const childHasDocument = node.children ? walk(node.children) : false;
+        map.set(node.id, childHasDocument);
+        if (childHasDocument) {
+          hasDocument = true;
+        }
+      }
+
+      return hasDocument;
+    };
+
+    walk(tree);
+    return map;
+  }, [tree]);
 
   // Derive loading view state (skeleton shows immediately on cold start)
   const view = useLoadingView({ status, hasData: tree.length > 0 });
@@ -215,6 +244,61 @@ export function DocumentTreeContainer({
       openDocument(documentId, doc.path, projectSlug, navigate);
     },
     [documents, projectSlug, navigate],
+  );
+
+  const openThreadComposerWithReferences = useCallback(
+    (references: PendingThreadReference[]) => {
+      if (references.length === 0) return;
+
+      const store = useUIStore.getState();
+      store.queueThreadReferences(references);
+      store.setLeftPanelView("chat");
+      store.setMobileActiveTab("chat");
+
+      if (selectEffectiveLeftCollapsed(store)) {
+        store.toggleLeftPanel();
+      }
+
+      store.bumpThreadFocusVersion();
+    },
+    [],
+  );
+
+  const handleAddDocumentToThread = useCallback(
+    (documentId: string, document: Document) => {
+      openThreadComposerWithReferences([
+        {
+          documentId,
+          refType: "document",
+          displayName: document.name,
+          documentPath: document.path,
+        },
+      ]);
+    },
+    [openThreadComposerWithReferences],
+  );
+
+  const handleAddFolderToThread = useCallback(
+    (folderId: string) => {
+      const descendantDocumentIds = getDescendantDocumentIds(tree, folderId);
+      if (descendantDocumentIds.length === 0) return;
+
+      const documentMap = new Map(documents.map((doc) => [doc.id, doc]));
+      const references = descendantDocumentIds
+        .map((id) => documentMap.get(id))
+        .filter((doc): doc is Document => doc !== undefined)
+        .map(
+          (doc): PendingThreadReference => ({
+            documentId: doc.id,
+            refType: "document",
+            displayName: doc.name,
+            documentPath: doc.path,
+          }),
+        );
+
+      openThreadComposerWithReferences(references);
+    },
+    [tree, documents, openThreadComposerWithReferences],
   );
 
   // Handle skill click - stable callback for SkillTreeItem
@@ -643,11 +727,15 @@ export function DocumentTreeContainer({
               onCreateDocument={handleCreateDocumentInFolderInline}
               onCreateFolder={handleCreateFolderInFolderInline}
               onImport={handleImportInFolder}
+              onAddToThread={handleAddFolderToThread}
               onRename={startRenameFolder}
               onDelete={handleDeleteFolder}
               onShowDetails={showFolderDetails}
               documentCount={documentCount}
               folderCount={folderCount}
+              hasDescendantDocuments={
+                folderHasDescendantDocuments.get(node.id) ?? false
+              }
               isEditing={isEditingFolder}
               onSubmitName={handleRenameFolderInline}
               onCancelEdit={handleCancelEdit}
@@ -676,6 +764,7 @@ export function DocumentTreeContainer({
               document={node.data}
               isActive={activeDocumentId === node.id}
               onClick={handleDocumentClick}
+              onAddToThread={handleAddDocumentToThread}
               onRename={startRenameDocument}
               onDelete={handleDeleteDocument}
               onShowDetails={showDocumentDetails}

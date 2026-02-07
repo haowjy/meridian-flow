@@ -7,14 +7,13 @@ export interface ThreadRequestOptions {
   modelLabel: string;
   providerId: string;
   reasoning: ReasoningLevel;
-  /** Whether the selected model supports tool calling (doc_edit, doc_view, etc.) */
+  /** Whether the selected model supports tool calling */
   supportsTools: boolean;
 }
 
 export const DEFAULT_TOOLS = [
   { name: "str_replace_based_edit_tool" },
   { name: "doc_search" },
-  { name: "doc_tree" },
   { name: "tavily_web_search" },
 ];
 

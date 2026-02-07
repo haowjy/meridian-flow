@@ -165,7 +165,8 @@ This applies to both Claude and human developers:
 1. Implement the feature/update
 2. Update `_docs/features/<feature-name>/` with changes
 3. Update status in `_docs/features/README.md` if needed
-4. Commit code + docs together
+4. Run `./scripts/check-md-links.sh`
+5. Commit code + docs together
 
 ## Repository Structure
 
@@ -289,7 +290,7 @@ See `internal/repository/postgres/connection.go`
 
 - use `pnpm` instead of `npm` for faster compile times
 - run `pnpm run lint` to run ESLint after making changes
-- run `pnpm run format` after Tailwind/CSS class changes
+- run `pnpm run format 2>&1 | grep -v "unchanged"` after Tailwind/CSS class changes
 
 ## Deployment
 

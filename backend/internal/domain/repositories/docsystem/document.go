@@ -24,9 +24,11 @@ type DocumentRepository interface {
 	// Update updates an existing document
 	Update(ctx context.Context, doc *docsystem.Document) error
 
-	// UpdateAIVersion updates the ai_version field for a document
-	// Pass nil to clear ai_version (reject suggestions)
-	UpdateAIVersion(ctx context.Context, id string, aiVersion *string) error
+	// UpdateAIVersion updates the ai_version and metadata fields for a document.
+	// Pass nil aiVersion to clear ai_version (reject suggestions).
+	// metadata is persisted atomically so word count stays consistent with ai_version.
+	// Returns the updated document with consistent timestamps via RETURNING.
+	UpdateAIVersion(ctx context.Context, id string, aiVersion *string, metadata docsystem.DocumentMetadata) (*docsystem.Document, error)
 
 	// UpdateWithAIVersionCheck atomically updates content + ai_version with CAS.
 	// Returns rowsAffected: 0 means rev mismatch (conflict), 1 means success.

@@ -402,27 +402,41 @@ func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Doc
 	return nil
 }
 
-// UpdateAIVersion updates the ai_version field for a document
-// Pass nil to clear ai_version (reject suggestions)
-func (r *PostgresDocumentRepository) UpdateAIVersion(ctx context.Context, id string, aiVersion *string) error {
+// UpdateAIVersion updates the ai_version and metadata fields for a document.
+// Pass nil aiVersion to clear ai_version (reject suggestions).
+// metadata is persisted atomically so word count stays consistent with ai_version.
+func (r *PostgresDocumentRepository) UpdateAIVersion(ctx context.Context, id string, aiVersion *string, metadata models.DocumentMetadata) (*models.Document, error) {
 	query := fmt.Sprintf(`
 		UPDATE %s
-		SET ai_version = $1, updated_at = NOW()
-		WHERE id = $2 AND deleted_at IS NULL
+		SET ai_version = $1, metadata = $2, updated_at = NOW()
+		WHERE id = $3 AND deleted_at IS NULL
+		RETURNING id, project_id, folder_id, name, extension, content, ai_version, ai_version_rev, metadata, created_at, updated_at
 	`, r.tables.Documents)
 
+	var doc models.Document
 	executor := postgres.GetExecutor(ctx, r.pool)
-	result, err := executor.Exec(ctx, query, aiVersion, id)
+	err := executor.QueryRow(ctx, query, aiVersion, metadata, id).Scan(
+		&doc.ID,
+		&doc.ProjectID,
+		&doc.FolderID,
+		&doc.Name,
+		&doc.Extension,
+		&doc.Content,
+		&doc.AIVersion,
+		&doc.AIVersionRev,
+		&doc.Metadata,
+		&doc.CreatedAt,
+		&doc.UpdatedAt,
+	)
 	if err != nil {
-		return fmt.Errorf("update ai_version: %w", err)
+		if postgres.IsPgNoRowsError(err) {
+			return nil, domain.NewNotFoundError("document",
+				fmt.Sprintf("document %s not found", id))
+		}
+		return nil, fmt.Errorf("update ai_version: %w", err)
 	}
 
-	if result.RowsAffected() == 0 {
-		return domain.NewNotFoundError("document",
-			fmt.Sprintf("document %s not found", id))
-	}
-
-	return nil
+	return &doc, nil
 }
 
 // UpdateWithAIVersionCheck atomically updates content + ai_version with CAS.

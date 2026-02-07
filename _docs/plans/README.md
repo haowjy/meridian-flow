@@ -17,9 +17,11 @@ Each plan document includes:
 - `fb-wikilinks-and-internal-links.md` - Editor-only: wikilink tokens, CM6 pill rendering, `@` autocomplete, click-to-navigate, LLM prompt guidance.
 - `fb-at-references.md` - Thread `@`-file insertion, reference blocks, `BlockTransformer` pipeline, `ReferenceTransformer`. Depends on wikilinks Phase 1.
 - `fb-compaction.md` - Context window management: `is_compaction` turns, auto/user/LLM triggers, `conversation_search` tool, tool result summarization. Depends on at-references Phase 2.
+- `fb-import-any-file-clean-text.md` - Import “almost any file” as cleaned text with markdown/plaintext/code rendering, plus zip safety + extension policy.
 - `fb-document-history-v1.md` - Per-document snapshots + thread "touched docs" review.
 - `fb-event-driven-refresh-framework.md` - Event-driven refresh + 30s polling fallback.
 - `fb-tree-ai-suggestions-banner-accept-all.md` - Tree banner listing AI suggestions + project-wide accept all.
+- `fb-skills-safe-packaging-import-and-references-v1.md` - Skills V1.5: safe package contract (`SKILL.md` + `references/**`), references UI, import pipeline, and extensible component policy.
 - `agents/fb-artifact-templates-and-project-instances.md` - Templates copied into project-owned instances.
 - `agents/archive/fb-project-skills-v1-and-artifact-foundations.md` - Archived project skills plan.
 - `agents/fb-remove-document-slugs.md` - ✅ Complete: Documents now use exact path addressing (slug column removed).

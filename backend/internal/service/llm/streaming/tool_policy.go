@@ -16,7 +16,8 @@ import (
 var serverDefaultToolOrder = []string{
 	"str_replace_based_edit_tool",
 	"doc_search",
-	"doc_tree",
+	"skill_invoke",
+	"skill_list",
 }
 
 func parseDisabledTools(preferences docsystem.JSONMap) map[string]bool {

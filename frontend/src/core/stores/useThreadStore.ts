@@ -6,6 +6,7 @@ import {
   type TurnBlock,
   type BlockType,
   type ThreadRequestOptions,
+  type ContentBlock,
 } from "@/features/threads/types";
 
 import {
@@ -16,6 +17,7 @@ import { api } from "@/core/lib/api";
 import { getErrorMessageWithFallback } from "@/core/lib/errors";
 import { makeLogger } from "@/core/lib/logger";
 import { getTurnBlockIdentity } from "@/features/threads/utils/blockIdentity";
+import { turnToContentBlocks } from "@/features/threads/utils/turnHelpers";
 
 // Stream-end coordination for cancel flow.
 // Stored outside Zustand since it contains non-serializable data (functions, timers).
@@ -76,13 +78,13 @@ interface ThreadStore {
   renameThread: (threadId: string, title: string) => Promise<void>;
   createTurn: (
     threadId: string,
-    messageText: string,
+    blocks: ContentBlock[],
     options: ThreadRequestOptions,
   ) => Promise<void>;
   // Cold-start: creates a new thread atomically with the first turn
   startNewThread: (
     projectId: string,
-    messageText: string,
+    blocks: ContentBlock[],
     options: ThreadRequestOptions,
   ) => Promise<Thread>;
   deleteThread: (threadId: string) => Promise<void>;
@@ -144,7 +146,7 @@ interface ThreadStore {
   editTurn: (
     threadId: string,
     parentTurnId: string | undefined,
-    content: string,
+    blocks: ContentBlock[],
     options?: ThreadRequestOptions,
   ) => Promise<void>;
   regenerateTurn: (threadId: string, parentTurnId: string) => Promise<void>;
@@ -426,7 +428,7 @@ export const useThreadStore = create<ThreadStore>()(
 
       createTurn: async (
         threadId: string,
-        messageText: string,
+        blocks: ContentBlock[],
         options: ThreadRequestOptions,
       ) => {
         // Skeleton - optimistic updates implemented in Phase 4 Task 4.7
@@ -436,12 +438,21 @@ export const useThreadStore = create<ThreadStore>()(
           const state = get();
           const prevTurnId = state.turnIds[state.turnIds.length - 1] ?? null;
 
+          // Derive plain text for the message param (legacy/interjection compat)
+          const messageText = blocks
+            .filter(
+              (b): b is ContentBlock & { type: "text" } => b.type === "text",
+            )
+            .map((b) => b.text)
+            .join("");
+
           const { userTurn, assistantTurn, streamUrl } = await api.turns.send(
             messageText,
             {
               threadId,
               prevTurnId,
               requestOptions: options,
+              blocks,
             },
           );
 
@@ -472,16 +483,24 @@ export const useThreadStore = create<ThreadStore>()(
 
       startNewThread: async (
         projectId: string,
-        messageText: string,
+        blocks: ContentBlock[],
         options: ThreadRequestOptions,
       ): Promise<Thread> => {
         // Cold-start: atomically create thread + first turn in one request
         set({ error: null });
         try {
+          const messageText = blocks
+            .filter(
+              (b): b is ContentBlock & { type: "text" } => b.type === "text",
+            )
+            .map((b) => b.text)
+            .join("");
+
           const { thread, userTurn, assistantTurn, streamUrl } =
             await api.turns.send(messageText, {
               projectId,
               requestOptions: options,
+              blocks,
             });
 
           if (!thread) {
@@ -1159,17 +1178,22 @@ export const useThreadStore = create<ThreadStore>()(
       editTurn: async (
         threadId: string,
         turnId: string | undefined,
-        messageText: string,
+        blocks: ContentBlock[],
         options?: ThreadRequestOptions,
       ) => {
         set({ isLoadingTurns: true, error: null });
         try {
           // Find the original turn to get its prevTurnId
-          // If turnId is undefined, we assume we are editing a root turn (or creating a new one?)
-          // But the signature says turnId is the one being edited.
           const state = get();
           const originalTurn = turnId ? state.turnById[turnId] : undefined;
           const prevTurnId = originalTurn ? originalTurn.prevTurnId : null;
+
+          const messageText = blocks
+            .filter(
+              (b): b is ContentBlock & { type: "text" } => b.type === "text",
+            )
+            .map((b) => b.text)
+            .join("");
 
           // Call createTurn endpoint with the SAME prevTurnId as the original turn
           // This creates a sibling branch.
@@ -1178,6 +1202,7 @@ export const useThreadStore = create<ThreadStore>()(
             threadId,
             prevTurnId,
             requestOptions: options ?? DEFAULT_THREAD_REQUEST_OPTIONS,
+            blocks,
           });
 
           // Navigate to the new branch (the assistant turn leaf)
@@ -1210,11 +1235,14 @@ export const useThreadStore = create<ThreadStore>()(
             throw new Error("Parent user turn not found for regeneration");
           }
 
-          // Rebuild plain-text content from the user's text blocks
-          const userMessageText = userTurn.blocks
-            .filter((b) => b.blockType === "text")
-            .map((b) => b.textContent ?? "")
-            .join("\n\n");
+          // Rebuild ordered content blocks from the user turn (preserves references)
+          const userBlocks = turnToContentBlocks(userTurn);
+          const userMessageText = userBlocks
+            .filter(
+              (b): b is ContentBlock & { type: "text" } => b.type === "text",
+            )
+            .map((b) => b.text)
+            .join("");
 
           // Use the original assistant turn's request params for regeneration
           // This preserves the model, provider, thinking level, etc.
@@ -1229,6 +1257,7 @@ export const useThreadStore = create<ThreadStore>()(
               threadId,
               prevTurnId: userTurn.prevTurnId,
               requestOptions,
+              blocks: userBlocks,
             },
           );
 

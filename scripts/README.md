@@ -4,6 +4,36 @@ Automation scripts for the Meridian project.
 
 ---
 
+## `check-md-links.sh`
+
+**Purpose:** Validate local markdown links and wiki-links to `.md` files.
+
+### Quick Start
+
+```bash
+# From repo root, check all docs (default target)
+./scripts/check-md-links.sh
+
+# Check a specific docs subtree
+./scripts/check-md-links.sh _docs/hidden/guide
+
+# Disable wiki-link checks (markdown links only)
+./scripts/check-md-links.sh _docs --no-wikilinks
+
+# Skip fragment anchor checks
+./scripts/check-md-links.sh _docs --no-anchors
+```
+
+### What It Checks
+
+1. Scans all `.md` files under the target directory
+2. Extracts markdown links like `[text](target.md)` and wiki-links like `[[target]]` / `@[[target|Label]]`
+3. Ignores fenced code blocks and external links (`http(s)`, `mailto`, etc.)
+4. Handles fragment links (`#section`, `file.md#section`) and checks target heading anchors by default
+5. Fails if a referenced local `.md` file does not exist
+
+---
+
 ## `update-libraries.sh`
 
 **Purpose:** Updates meridian-llm-go and meridian-stream-go libraries, tags them, and syncs with backend.
@@ -366,6 +396,58 @@ For production, consider using separate Supabase projects:
 - Prod database: `prod.supabase.co` (use goose normally)
 
 This avoids prefix complexity and provides better isolation.
+
+---
+
+## `llm-post-commit.sh`
+
+**Purpose:** Post-commit hook for `meridian-llm-go` submodule. Automatically bumps the patch version, tags, pushes, and updates `backend/go.mod` after every commit in the submodule.
+
+### What It Does
+
+1. Fetches latest tags from origin
+2. Checks if HEAD is already tagged (skips if so — no double-bump)
+3. Increments patch version (v0.0.24 → v0.0.25)
+4. Tags current commit
+5. Pushes commit + tag to origin
+6. Updates `backend/go.mod` with new version (`go get` + `go mod tidy`)
+
+### Installation (One-Time Setup)
+
+The hook is installed via symlink into the submodule's git hooks directory:
+
+```bash
+# From repo root
+ln -sf ../../../../scripts/llm-post-commit.sh .git/modules/meridian-llm-go/hooks/post-commit
+```
+
+This is local to your machine (`.git/` is not committed).
+
+### Uninstalling
+
+```bash
+rm .git/modules/meridian-llm-go/hooks/post-commit
+```
+
+### Skipping the Hook
+
+```bash
+# One-time skip
+cd meridian-llm-go
+git commit --no-verify -m "message"
+```
+
+### Error Handling
+
+- **Network failure**: Prints warning, creates tag locally. Push manually later.
+- **HEAD already tagged**: Skips gracefully (idempotent).
+- **`go get` fails** (tag not yet indexed by GitHub): Retries once after 5s. If still fails, prints manual command.
+
+### Notes
+
+- Only bumps **patch** version. For minor/major bumps, use `update-libraries.sh` with custom version.
+- The hook runs in the submodule context — it resolves the parent repo and backend paths automatically.
+- After the hook runs, you still need to commit `backend/go.mod` + `go.sum` in the parent repo.
 
 ---
 

@@ -1,15 +1,22 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import type { Turn, ThreadRequestOptions } from "@/features/threads/types";
+import { useNavigate } from "@tanstack/react-router";
+import type {
+  Turn,
+  ContentBlock,
+  ThreadRequestOptions,
+} from "@/features/threads/types";
 import { Card } from "@/shared/components/ui/card";
 import { TurnActionBar } from "./TurnActionBar";
-import { EditTurnDialog } from "./EditTurnDialog";
-import { BlockRenderer } from "./blocks";
+import { EditTurnInput } from "./EditTurnInput";
 import { useThreadStore } from "@/core/stores/useThreadStore";
+import { useTreeStore } from "@/core/stores/useTreeStore";
+import { useProjectStore } from "@/core/stores/useProjectStore";
+import { openDocument } from "@/core/lib/panelHelpers";
 import { makeLogger } from "@/core/lib/logger";
-import { extractTextContent } from "@/features/threads/utils/turnHelpers";
+import { turnToContentBlocks } from "@/features/threads/utils/turnHelpers";
+import { ComposerViewer } from "@/features/threads/composer";
 import { userTurnCardBase } from "./styles";
-import { getTurnBlockReactKey } from "@/features/threads/utils/blockIdentity";
 
 const log = makeLogger("UserTurn");
 
@@ -20,12 +27,8 @@ interface UserTurnProps {
 /**
  * User turn bubble.
  *
- * Single responsibility:
- * - Render a user-authored turn as a right-aligned bubble using BlockRenderer.
- * - Handle actions (edit, navigate).
- *
- * The BlockRenderer pattern allows easy extension for new block types
- * without modifying this component.
+ * Renders user-authored turns as a right-aligned bubble using ComposerViewer
+ * (read-only CM6) so display matches the composer's inline reference pills.
  *
  * Performance: Memoized to prevent unnecessary re-renders when turn data unchanged.
  */
@@ -47,6 +50,7 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
     })),
   );
 
+  const navigate = useNavigate();
   const isStreaming = streamingTurnId !== null;
 
   log.debug("render", {
@@ -63,11 +67,23 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
   );
 
   const handleSaveEdit = useCallback(
-    async (newMessageText: string, options: ThreadRequestOptions) => {
-      await editTurn(turn.threadId, turn.id, newMessageText, options);
+    async (blocks: ContentBlock[], options: ThreadRequestOptions) => {
+      await editTurn(turn.threadId, turn.id, blocks, options);
       setIsEditing(false);
     },
     [editTurn, turn.threadId, turn.id],
+  );
+
+  const handlePillClick = useCallback(
+    (documentId: string) => {
+      const doc = useTreeStore
+        .getState()
+        .documents.find((d) => d.id === documentId);
+      const projectSlug = useProjectStore.getState().currentProject()?.slug;
+      if (!doc || !projectSlug) return;
+      openDocument(doc.id, doc.path, projectSlug, navigate);
+    },
+    [navigate],
   );
 
   const handleEdit = useCallback(() => {
@@ -78,26 +94,46 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
     setIsEditing(false);
   }, []);
 
+  // Memoize content blocks to avoid re-computing on every render
+  const contentBlocks = useMemo(() => turnToContentBlocks(turn), [turn]);
+
+  // Compute draft info from sibling IDs for edit placeholder
+  // Server may or may not include the current turn ID in siblingIds
+  const { draftNumber, totalDrafts } = useMemo(() => {
+    const siblingIdsRaw = turn.siblingIds || [];
+    const siblingList = siblingIdsRaw.includes(turn.id)
+      ? siblingIdsRaw
+      : [turn.id, ...siblingIdsRaw];
+    // Editing creates a new sibling draft, so +1 for the upcoming draft
+    return {
+      draftNumber: siblingList.length + 1,
+      totalDrafts: siblingList.length + 1,
+    };
+  }, [turn.id, turn.siblingIds]);
+
   return (
     <div
       className="group flex min-w-0 flex-col items-end gap-1 text-sm"
       data-turn-id={turn.id}
     >
       {isEditing ? (
-        <EditTurnDialog
+        <EditTurnInput
           isOpen={isEditing}
           onClose={handleCloseEdit}
-          initialContent={extractTextContent(turn)}
+          initialBlocks={contentBlocks}
           originalRequestParams={turn.requestParams}
           onSave={handleSaveEdit}
+          draftNumber={draftNumber}
+          totalDrafts={totalDrafts}
         />
       ) : (
         <>
-          {/* Card styling synced with EditTurnDialog via userTurnCardBase */}
+          {/* Card styling synced with EditTurnInput via userTurnCardBase */}
           <Card className={userTurnCardBase}>
-            {turn.blocks.map((block) => (
-              <BlockRenderer key={getTurnBlockReactKey(block)} block={block} />
-            ))}
+            <ComposerViewer
+              blocks={contentBlocks}
+              onPillClick={handlePillClick}
+            />
           </Card>
 
           <TurnActionBar
