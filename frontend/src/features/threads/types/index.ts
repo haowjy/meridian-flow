@@ -7,6 +7,8 @@ export type {
   ToolBlockContentDto,
   SendTurnResponse,
   RequestParams,
+  DocumentReference,
+  ContentBlock,
 } from "./thread";
 export { fromToolBlockContentDto } from "./thread";
 export type { ThreadRequestOptions, ReasoningLevel } from "./requestOptions";

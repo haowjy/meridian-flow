@@ -527,20 +527,20 @@ func TestToolRegistry_BuildSystemPromptSection(t *testing.T) {
 
 	t.Run("single tool with metadata", func(t *testing.T) {
 		registry := NewToolRegistry()
-		registry.RegisterWithMetadata("doc_view", &mockTool{name: "doc_view"}, &ToolMetadata{
-			Name:        "doc_view",
-			Description: "View documents",
-			Guideline:   "Use doc_view first",
+		registry.RegisterWithMetadata("str_replace_based_edit_tool", &mockTool{name: "str_replace_based_edit_tool"}, &ToolMetadata{
+			Name:        "str_replace_based_edit_tool",
+			Description: "View and edit documents",
+			Guideline:   "Use view command first",
 		})
 
 		section := registry.BuildSystemPromptSection()
 
 		// Check for description
-		if !contains(section, "doc_view: View documents") {
+		if !contains(section, "str_replace_based_edit_tool: View and edit documents") {
 			t.Errorf("section missing tool description: %q", section)
 		}
 		// Check for guideline
-		if !contains(section, "Use doc_view first") {
+		if !contains(section, "Use view command first") {
 			t.Errorf("section missing guideline: %q", section)
 		}
 		// Check for "Available tools:" header
@@ -555,46 +555,46 @@ func TestToolRegistry_BuildSystemPromptSection(t *testing.T) {
 
 	t.Run("multiple tools sorted", func(t *testing.T) {
 		registry := NewToolRegistry()
-		registry.RegisterWithMetadata("doc_edit", &mockTool{name: "doc_edit"}, &ToolMetadata{
-			Name:        "doc_edit",
-			Description: "Edit documents",
-		})
-		registry.RegisterWithMetadata("doc_view", &mockTool{name: "doc_view"}, &ToolMetadata{
-			Name:        "doc_view",
-			Description: "View documents",
-		})
 		registry.RegisterWithMetadata("doc_search", &mockTool{name: "doc_search"}, &ToolMetadata{
 			Name:        "doc_search",
 			Description: "Search documents",
 		})
+		registry.RegisterWithMetadata("str_replace_based_edit_tool", &mockTool{name: "str_replace_based_edit_tool"}, &ToolMetadata{
+			Name:        "str_replace_based_edit_tool",
+			Description: "View and edit documents",
+		})
+		registry.RegisterWithMetadata("web_search", &mockTool{name: "web_search"}, &ToolMetadata{
+			Name:        "web_search",
+			Description: "Search the web",
+		})
 
 		section := registry.BuildSystemPromptSection()
 
-		// Verify tools appear in sorted order (doc_edit, doc_search, doc_view)
-		editIdx := indexOf(section, "doc_edit:")
+		// Verify tools appear in sorted order (doc_search, str_replace_based_edit_tool, web_search)
 		searchIdx := indexOf(section, "doc_search:")
-		viewIdx := indexOf(section, "doc_view:")
+		strReplaceIdx := indexOf(section, "str_replace_based_edit_tool:")
+		webSearchIdx := indexOf(section, "web_search:")
 
-		if editIdx == -1 || searchIdx == -1 || viewIdx == -1 {
+		if searchIdx == -1 || strReplaceIdx == -1 || webSearchIdx == -1 {
 			t.Fatalf("missing tool descriptions in section: %q", section)
 		}
-		if editIdx >= searchIdx || searchIdx >= viewIdx {
-			t.Errorf("tools not in sorted order: edit=%d, search=%d, view=%d", editIdx, searchIdx, viewIdx)
+		if searchIdx >= strReplaceIdx || strReplaceIdx >= webSearchIdx {
+			t.Errorf("tools not in sorted order: search=%d, str_replace=%d, web_search=%d", searchIdx, strReplaceIdx, webSearchIdx)
 		}
 	})
 
 	t.Run("tool without guideline", func(t *testing.T) {
 		registry := NewToolRegistry()
-		registry.RegisterWithMetadata("doc_edit", &mockTool{name: "doc_edit"}, &ToolMetadata{
-			Name:        "doc_edit",
-			Description: "Edit documents",
+		registry.RegisterWithMetadata("doc_search", &mockTool{name: "doc_search"}, &ToolMetadata{
+			Name:        "doc_search",
+			Description: "Search documents",
 			Guideline:   "", // No guideline
 		})
 
 		section := registry.BuildSystemPromptSection()
 
 		// Check for description
-		if !contains(section, "doc_edit: Edit documents") {
+		if !contains(section, "doc_search: Search documents") {
 			t.Errorf("section missing tool description: %q", section)
 		}
 		// Should not have Guidelines section since no guidelines

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	skillModels "meridian/internal/domain/models/skill"
 	skillSvc "meridian/internal/domain/services/skill"
 )
 
@@ -16,6 +17,33 @@ func SkillInvokeToolMetadata() *ToolMetadata {
 		Description: "Load skill instructions on-demand (when skills are available)",
 		Guideline:   "Use skill_invoke when a task matches an available skill",
 	}
+}
+
+// BuildSkillInvokeGuideline enriches the skill_invoke guideline with available skills.
+// Called by the builder to compose runtime context into static metadata.
+// Filters out skills with DisableModelInvocation=true.
+func BuildSkillInvokeGuideline(skills []*skillModels.ProjectSkill) string {
+	base := "Use skill_invoke when a task matches an available skill"
+
+	if len(skills) == 0 {
+		return base
+	}
+
+	// Filter to model-invocable skills only
+	var lines []string
+	for _, skill := range skills {
+		meta := skill.GetMetadata()
+		if meta.DisableModelInvocation {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("- **/%s**: %s", skill.Name, skill.Description))
+	}
+
+	if len(lines) == 0 {
+		return base
+	}
+
+	return base + "\n\nAvailable skills:\n" + strings.Join(lines, "\n")
 }
 
 // SkillListToolMetadata returns metadata for the skill_list tool.

@@ -54,3 +54,31 @@ func (r *FormatterRegistry) Format(toolName string, result interface{}) interfac
 	}
 	return formatter.Format(result)
 }
+
+// FormatToolResultContent applies tool-specific formatting to a tool_result content map in-place.
+// Extracts tool_name, applies the registered formatter, and handles structured tool errors.
+//
+// Shared by MessageBuilderService (real tool results) and ReferenceMessageTransformer
+// (synthetic tool results) to ensure consistent formatting for the LLM.
+func FormatToolResultContent(registry *FormatterRegistry, content map[string]interface{}) {
+	if registry == nil || content == nil {
+		return
+	}
+
+	toolName, _ := content["tool_name"].(string)
+	result, ok := content["result"]
+	if !ok || toolName == "" {
+		return
+	}
+
+	formatted := registry.Format(toolName, result)
+
+	// If this is a structured tool error and the tool-specific formatter didn't
+	// already collapse it, format it using the shared tool error formatter.
+	// This ensures all tools have consistent, recovery-friendly error messages.
+	if formattedError, ok := TryFormatToolError(formatted); ok {
+		formatted = formattedError
+	}
+
+	content["result"] = formatted
+}

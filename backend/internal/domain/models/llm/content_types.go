@@ -19,7 +19,7 @@ type ImageContent struct {
 // ReferenceContent represents the content structure for reference blocks
 type ReferenceContent struct {
 	RefID            string     `json:"ref_id"`
-	RefType          string     `json:"ref_type"` // "document", "image", "s3_document"
+	RefType          string     `json:"ref_type"` // "document", "folder", "image", "s3_document"
 	VersionTimestamp *time.Time `json:"version_timestamp,omitempty"`
 	SelectionStart   *int       `json:"selection_start,omitempty"`
 	SelectionEnd     *int       `json:"selection_end,omitempty"`
@@ -167,12 +167,13 @@ func validateReferenceContent(content map[string]interface{}) error {
 
 	// Validate ref_type is one of allowed values
 	validRefTypes := map[string]bool{
-		"document":     true,
-		"image":        true,
-		"s3_document":  true,
+		"document":    true,
+		"folder":      true,
+		"image":       true,
+		"s3_document": true,
 	}
 	if !validRefTypes[ref.RefType] {
-		return fmt.Errorf("ref_type must be one of: document, image, s3_document")
+		return fmt.Errorf("ref_type must be one of: document, folder, image, s3_document")
 	}
 
 	return nil

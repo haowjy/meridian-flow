@@ -1,4 +1,12 @@
-import { FileText, Folder, Upload, Pencil, Trash2, Info } from "lucide-react";
+import {
+  FileText,
+  Folder,
+  Upload,
+  Pencil,
+  Trash2,
+  Info,
+  MessageSquare,
+} from "lucide-react";
 import type { TreeMenuItemConfig } from "@/shared/components/TreeItemWithContextMenu";
 
 /**
@@ -11,6 +19,7 @@ interface DocumentMenuHandlers {
   onRename?: () => void;
   onDelete?: () => void;
   onDetails?: () => void;
+  onAddToThread?: () => void;
 }
 
 interface FolderMenuHandlers {
@@ -20,6 +29,8 @@ interface FolderMenuHandlers {
   onRename?: () => void;
   onDelete?: () => void;
   onDetails?: () => void;
+  onAddToThread?: () => void;
+  disableAddToThread?: boolean;
 }
 
 interface RootMenuHandlers {
@@ -31,7 +42,8 @@ interface RootMenuHandlers {
 /**
  * Creates context menu items for document tree items.
  * Menu structure:
- * - Add as reference (if provided)
+ * - Details
+ * - Add to Thread
  * - Rename
  * - --- separator ---
  * - Delete (destructive)
@@ -40,6 +52,8 @@ export function createDocumentMenuItems(
   handlers: DocumentMenuHandlers,
 ): TreeMenuItemConfig[] {
   const items: TreeMenuItemConfig[] = [];
+  const hasBottomActions =
+    handlers.onRename !== undefined || handlers.onDelete !== undefined;
 
   if (handlers.onDetails) {
     items.push({
@@ -47,7 +61,18 @@ export function createDocumentMenuItems(
       label: "Details",
       icon: <Info className="size-3.5" />,
       onSelect: handlers.onDetails,
-      separator: "after",
+      separator:
+        !handlers.onAddToThread && hasBottomActions ? "after" : undefined,
+    });
+  }
+
+  if (handlers.onAddToThread) {
+    items.push({
+      id: "add-to-thread",
+      label: "Add to Thread",
+      icon: <MessageSquare className="size-3.5" />,
+      onSelect: handlers.onAddToThread,
+      separator: hasBottomActions ? "after" : undefined,
     });
   }
 
@@ -76,6 +101,9 @@ export function createDocumentMenuItems(
 /**
  * Creates context menu items for folder tree items.
  * Menu structure:
+ * - Details
+ * - Add to Thread
+ * - --- separator ---
  * - New Document
  * - New Folder
  * - Import Documents
@@ -88,18 +116,26 @@ export function createFolderMenuItems(
   handlers: FolderMenuHandlers,
 ): TreeMenuItemConfig[] {
   const items: TreeMenuItemConfig[] = [];
+  const topItems: TreeMenuItemConfig[] = [];
 
-  const hasCreateActions =
-    handlers.onCreateDocument || handlers.onCreateFolder || handlers.onImport;
   const hasBottomActions = handlers.onRename || handlers.onDelete;
 
   if (handlers.onDetails) {
-    items.push({
+    topItems.push({
       id: "details",
       label: "Details",
       icon: <Info className="size-3.5" />,
       onSelect: handlers.onDetails,
-      separator: hasCreateActions || hasBottomActions ? "after" : undefined,
+    });
+  }
+
+  if (handlers.onAddToThread) {
+    topItems.push({
+      id: "add-to-thread",
+      label: "Add to Thread",
+      icon: <MessageSquare className="size-3.5" />,
+      onSelect: handlers.onAddToThread,
+      disabled: handlers.disableAddToThread,
     });
   }
 
@@ -135,8 +171,16 @@ export function createFolderMenuItems(
   if (createItems.length > 0) {
     const lastIndex = createItems.length - 1;
     createItems[lastIndex]!.separator = hasBottomActions ? "after" : undefined;
-    items.push(...createItems);
   }
+
+  const hasActionsAfterTop =
+    createItems.length > 0 || Boolean(handlers.onRename || handlers.onDelete);
+
+  if (topItems.length > 0 && hasActionsAfterTop) {
+    topItems[topItems.length - 1]!.separator = "after";
+  }
+
+  items.push(...topItems, ...createItems);
 
   if (handlers.onRename) {
     items.push({

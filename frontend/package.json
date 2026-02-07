@@ -53,6 +53,7 @@
     "dexie-react-hooks": "^4.2.0",
     "diff-match-patch": "^1.0.5",
     "framer-motion": "^12.23.26",
+    "fzy.js": "^0.4.1",
     "jszip": "^3.10.1",
     "lucide-react": "^0.552.0",
     "partial-json": "^0.1.7",

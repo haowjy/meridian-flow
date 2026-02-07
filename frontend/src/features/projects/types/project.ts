@@ -2,7 +2,7 @@
  * Project-level preferences stored in JSONB
  */
 export interface ProjectPreferences {
-  /** Tools disabled for this project (e.g., 'web_search', 'doc_edit') */
+  /** Tools disabled for this project (e.g., 'web_search', 'str_replace_based_edit_tool') */
   disabledTools?: string[];
 }
 

@@ -5,7 +5,7 @@ package tools
 // Each tool provides its own metadata, and the system prompt is generated
 // from the registered tools rather than a separate hardcoded list.
 type ToolMetadata struct {
-	Name        string // Tool name (e.g., "doc_view")
+	Name        string // Tool name (e.g., "str_replace_based_edit_tool")
 	Description string // Human-readable description for system prompt (e.g., "Read any document or list folder contents")
-	Guideline   string // Usage guideline for the LLM (optional, e.g., "Before suggesting edits, use doc_view to see current content")
+	Guideline   string // Usage guideline for the LLM (optional, e.g., "Before suggesting edits, use the view command to see current content")
 }

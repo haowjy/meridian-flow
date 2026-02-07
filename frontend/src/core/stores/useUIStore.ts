@@ -36,6 +36,13 @@ export type PanelUserOverride = "expanded" | "collapsed" | null;
  */
 export type MobileTab = "threads" | "chat" | "documents" | "projectSettings";
 
+export interface PendingThreadReference {
+  documentId: string;
+  refType: "document";
+  displayName: string;
+  documentPath?: string;
+}
+
 /**
  * UI state store for workspace layout and panel management.
  *
@@ -218,6 +225,22 @@ interface UIStore {
   expandedToolGroups: Set<string>;
 
   /**
+   * References queued by non-composer UI actions (e.g., tree context menus).
+   * TurnInput consumes and clears this queue, appending each item to the draft.
+   * NOT persisted.
+   * @default []
+   */
+  pendingThreadReferences: PendingThreadReference[];
+
+  /**
+   * Timestamp of last @ reference usage (for conditional hint display).
+   * When null or >7 days stale, composer shows "@ for reference" hint.
+   * Persisted across sessions.
+   * @default null
+   */
+  lastAtReferenceUsed: number | null;
+
+  /**
    * Toggles left panel collapsed/expanded state (sets user override)
    */
   toggleLeftPanel: () => void;
@@ -306,6 +329,15 @@ interface UIStore {
 
   /** Clear all expanded tool groups (e.g., on thread change) */
   clearExpandedToolGroups: () => void;
+
+  /** Queue references for insertion into the active thread composer. */
+  queueThreadReferences: (refs: PendingThreadReference[]) => void;
+
+  /** Clear queued references after composer consumes them. */
+  clearPendingThreadReferences: () => void;
+
+  /** Record that the user selected an @ reference (persisted timestamp). */
+  recordAtReferenceUsage: () => void;
 }
 
 /**
@@ -346,6 +378,8 @@ export const useUIStore = create<UIStore>()(
       recentlyCreatedFolderId: null,
       expandedThinkingGroups: new Set<string>(),
       expandedToolGroups: new Set<string>(),
+      pendingThreadReferences: [],
+      lastAtReferenceUsed: null,
 
       toggleLeftPanel: () => {
         const currentlyCollapsed = selectEffectiveLeftCollapsed(get());
@@ -442,10 +476,31 @@ export const useUIStore = create<UIStore>()(
       isToolGroupExpanded: (groupId) => get().expandedToolGroups.has(groupId),
       clearExpandedToolGroups: () =>
         set({ expandedToolGroups: new Set<string>() }),
+      queueThreadReferences: (refs) =>
+        set((state) => {
+          if (refs.length === 0) return state;
+
+          const seen = new Set(
+            state.pendingThreadReferences.map((ref) => ref.documentId),
+          );
+          const merged = [...state.pendingThreadReferences];
+
+          for (const ref of refs) {
+            if (!seen.has(ref.documentId)) {
+              seen.add(ref.documentId);
+              merged.push(ref);
+            }
+          }
+
+          return { pendingThreadReferences: merged };
+        }),
+      clearPendingThreadReferences: () => set({ pendingThreadReferences: [] }),
+      recordAtReferenceUsage: () =>
+        set({ lastAtReferenceUsed: Date.now() }),
     }),
     {
       name: "ui-store",
-      version: 5, // Bumped from 4 to add leftPanelView
+      version: 6, // Bumped from 5 to add lastAtReferenceUsed
       partialize: (state) => ({
         // Persist user's explicit panel override choice (expanded/collapsed/null)
         leftPanelUserOverride: state.leftPanelUserOverride,
@@ -459,6 +514,8 @@ export const useUIStore = create<UIStore>()(
         documentTreeCollapsed: state.documentTreeCollapsed,
         // Workspace state
         leftPanelView: state.leftPanelView,
+        // Composer hint state
+        lastAtReferenceUsed: state.lastAtReferenceUsed,
         // NOT persisted: leftPanelReady, rightPanelReady (session-scoped, set by data loaders)
         // NOT persisted: threadFocusVersion, rightPanelState, projectSearchQuery (ephemeral)
         // REMOVED in v4: mobileActivePanel (new mobile layout uses local state)

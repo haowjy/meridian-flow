@@ -19,9 +19,6 @@
 import React from "react";
 import type { TurnBlock } from "@/features/threads/types";
 import { ToolInteractionBlock } from "./ToolInteractionBlock";
-import { DocEditBlock } from "./DocEditBlock";
-import { DocViewBlock } from "./DocViewBlock";
-import { DocTreeBlock } from "./DocTreeBlock";
 import { TextEditorBlock } from "./TextEditorBlock";
 
 // =============================================================================
@@ -45,23 +42,16 @@ export type ToolRendererFn = (
  * Registry of tool name to custom renderer.
  *
  * Pattern:
- * - Key: tool name from backend (e.g., 'str_replace_based_edit_tool', 'doc_tree')
+ * - Key: tool name from backend (e.g., 'str_replace_based_edit_tool')
  * - Value: Function that creates the component
+ *
+ * All document operations use str_replace_based_edit_tool, rendered by TextEditorBlock.
  */
 const TOOL_RENDERERS: Record<string, ToolRendererFn> = {
   // Unified text editor tool (matches Anthropic's text_editor_20250728)
+  // Handles view (documents + folders), str_replace, create, insert
   str_replace_based_edit_tool: (toolUse, toolResult) =>
     React.createElement(TextEditorBlock, { toolUse, toolResult }),
-
-  // Legacy tool names for backward compatibility
-  doc_edit: (toolUse, toolResult) =>
-    React.createElement(DocEditBlock, { toolUse, toolResult }),
-
-  doc_view: (toolUse, toolResult) =>
-    React.createElement(DocViewBlock, { toolUse, toolResult }),
-
-  doc_tree: (toolUse, toolResult) =>
-    React.createElement(DocTreeBlock, { toolUse, toolResult }),
 
   // Future custom tool UIs can be registered here:
   // web_search: (toolUse, toolResult) =>

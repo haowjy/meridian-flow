@@ -12,6 +12,7 @@
  */
 
 import { EditorView } from "@codemirror/view";
+import { pillStylesTheme } from "./pillStyles";
 
 // ============================================================================
 // BASE THEME (structural defaults)
@@ -60,6 +61,19 @@ export const livePreviewTheme = EditorView.theme({
   },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
     backgroundColor: "rgba(217, 119, 6, 0.2)",
+  },
+
+  // Placeholder — truncate to single line so cursor doesn't stretch to
+  // the full height of a wrapped placeholder element
+  ".cm-placeholder": {
+    color: "var(--theme-text-muted, #78716c)",
+    fontStyle: "italic",
+    display: "inline-block !important",
+    maxWidth: "100%",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    verticalAlign: "top",
   },
 
   // Bold
@@ -171,4 +185,4 @@ export const livePreviewTheme = EditorView.theme({
 // COMBINED THEME EXTENSION
 // ============================================================================
 
-export const editorTheme = [baseTheme, livePreviewTheme];
+export const editorTheme = [baseTheme, livePreviewTheme, pillStylesTheme];

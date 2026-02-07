@@ -141,7 +141,7 @@ describe("SSE interleaving", () => {
       "turn-1",
       1,
       "tool_result",
-      expect.objectContaining({ tool_name: "doc_tree", is_error: false }),
+      expect.objectContaining({ toolName: "doc_tree", isError: false }),
     );
 
     expect(actions.updateToolState).toHaveBeenCalledWith(
@@ -234,7 +234,7 @@ describe("tool content merging", () => {
       {
         type: "TOOL_CALL_START",
         toolCallId: "toolu_123",
-        toolCallName: "doc_edit",
+        toolCallName: "str_replace_based_edit_tool",
       } as ToolCallStartEvent,
       ctx,
       actions,
@@ -242,8 +242,8 @@ describe("tool content merging", () => {
 
     // Set up mock to return existing block content (simulating what Start created)
     mockTurnWithBlock("turn-1", 0, {
-      tool_name: "doc_edit",
-      tool_use_id: "toolu_123",
+      toolName: "str_replace_based_edit_tool",
+      toolUseId: "toolu_123",
       input: {},
     });
 
@@ -264,8 +264,8 @@ describe("tool content merging", () => {
       0,
       "tool_use",
       {
-        tool_name: "doc_edit",
-        tool_use_id: "toolu_123",
+        toolName: "str_replace_based_edit_tool",
+        toolUseId: "toolu_123",
         input: { path: "/ch01.md", command: "append" },
       },
     );
@@ -351,8 +351,8 @@ describe("tool content merging", () => {
 
     // Set up mock for end handler
     mockTurnWithBlock("turn-1", 0, {
-      tool_name: "doc_view",
-      tool_use_id: "toolu_789",
+      toolName: "doc_view",
+      toolUseId: "toolu_789",
       input: {},
     });
 
@@ -383,8 +383,8 @@ describe("tool content merging", () => {
       0,
       "tool_use",
       {
-        tool_name: "doc_view",
-        tool_use_id: "toolu_789",
+        toolName: "doc_view",
+        toolUseId: "toolu_789",
         input: { path: "/doc.md" },
       },
     );
@@ -400,7 +400,7 @@ describe("tool content merging", () => {
       {
         type: "TOOL_CALL_START",
         toolCallId: "toolu_bad",
-        toolCallName: "doc_edit",
+        toolCallName: "str_replace_based_edit_tool",
       } as ToolCallStartEvent,
       ctx,
       actions,

@@ -249,7 +249,7 @@ function Button({ className, variant, size, ...props }: ButtonProps) {
 ```tsx
 /**
  * Base Card className for user turn bubbles.
- * Used by UserTurn (display) and EditTurnDialog (edit) - keep in sync.
+ * Used by UserTurn (display) and EditTurnInput (edit) - keep in sync.
  */
 export const userTurnCardBase =
   "px-3 py-2 min-w-0 max-w-[95%] thread-message thread-message--user";
@@ -263,7 +263,7 @@ Usage:
   <BlockRenderer ... />
 </Card>
 
-// EditTurnDialog.tsx - edit mode (different children, same appearance)
+// EditTurnInput.tsx - edit mode (different children, same appearance)
 <Card className={cn(userTurnCardBase, 'gap-2 w-full')}>
   <AutosizeTextarea ... />
 </Card>

@@ -32,6 +32,7 @@ interface FolderTreeItemProps {
   onCreateDocument?: (folderId: string) => void;
   onCreateFolder?: (parentId: string) => void;
   onImport?: (folderId: string) => void;
+  onAddToThread?: (folderId: string, folder: FolderType) => void;
   onRename?: (folderId: string) => void;
   onDelete?: (folderId: string, folder: FolderType) => void;
   onShowDetails?: (
@@ -43,6 +44,7 @@ interface FolderTreeItemProps {
   // Metadata for details dialog (passed through for stable callback)
   documentCount?: number;
   folderCount?: number;
+  hasDescendantDocuments?: boolean;
   // Inline editing props
   isEditing?: boolean;
   onSubmitName?: (folderId: string, name: string) => void;
@@ -73,11 +75,13 @@ export const FolderTreeItem = memo(function FolderTreeItem({
   onCreateDocument,
   onCreateFolder,
   onImport,
+  onAddToThread,
   onDelete,
   onRename,
   onShowDetails,
   documentCount,
   folderCount,
+  hasDescendantDocuments = false,
   isEditing,
   onSubmitName,
   onCancelEdit,
@@ -103,6 +107,10 @@ export const FolderTreeItem = memo(function FolderTreeItem({
       ? () => onCreateFolder(folder.id)
       : undefined,
     onImport: onImport ? () => onImport(folder.id) : undefined,
+    onAddToThread: onAddToThread
+      ? () => onAddToThread(folder.id, folder)
+      : undefined,
+    disableAddToThread: !hasDescendantDocuments,
     onRename: onRename ? () => onRename(folder.id) : undefined,
     onDelete: onDelete ? () => onDelete(folder.id, folder) : undefined,
   });

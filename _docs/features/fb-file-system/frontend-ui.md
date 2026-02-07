@@ -28,11 +28,16 @@ feature: "File System Frontend UI"
 
 **File**: `frontend/src/shared/components/TreeItemWithContextMenu.tsx`
 
-**Document menu**: Rename, Delete, Add as Reference (stubbed)
-**Folder menu**: Create Document, Create Folder, Rename, Delete
+**Document menu**: Details, Add to Thread, Rename, Delete
+**Folder menu**: Details, Add to Thread, Create Document, Create Folder, Rename, Delete
 **Root menu**: Create Document, Create Folder
 
 **UI**: Radix UI ContextMenu component
+
+**Add to Thread behavior:**
+- Document: appends a document reference pill to the end of the active thread composer draft.
+- Folder: appends references for descendant documents in that folder tree.
+- Also switches to Chat view and focuses the composer.
 
 ---
 

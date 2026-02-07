@@ -25,6 +25,7 @@ interface DocumentTreeItemProps {
   onClick: (documentId: string) => void;
   onDelete?: (documentId: string) => void;
   onRename?: (documentId: string) => void;
+  onAddToThread?: (documentId: string, document: Document) => void;
   onShowDetails?: (documentId: string, document: Document) => void;
   // Inline editing props
   isEditing?: boolean;
@@ -53,6 +54,7 @@ export const DocumentTreeItem = memo(function DocumentTreeItem({
   onClick,
   onDelete,
   onRename,
+  onAddToThread,
   onShowDetails,
   isEditing,
   onSubmitName,
@@ -68,6 +70,9 @@ export const DocumentTreeItem = memo(function DocumentTreeItem({
   const menuItems = createDocumentMenuItems({
     onDetails: onShowDetails
       ? () => onShowDetails(document.id, document)
+      : undefined,
+    onAddToThread: onAddToThread
+      ? () => onAddToThread(document.id, document)
       : undefined,
     onRename: onRename ? () => onRename(document.id) : undefined,
     onDelete: onDelete ? () => onDelete(document.id) : undefined,

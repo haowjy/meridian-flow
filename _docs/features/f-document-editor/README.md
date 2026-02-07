@@ -49,6 +49,16 @@ feature: "Document Editor"
 - Code syntax highlighting
 - Links rendered with hover preview
 
+### Wiki-Link References
+**Status**: ✅ Complete
+- `@[[path | name]]` wiki-links render as inline pills when cursor is away
+- Copy/cut/paste uses shared CM clipboard extension + codec registry
+- Meridian clipboard payload uses v2 `elements[]` (v1 `references[]` still accepted on paste)
+- Paste accepts Meridian payload and inserts canonical wiki-link markdown
+- Enables cross-surface reference copy/paste with thread composer
+- Filename-only wiki-link resolution now only applies when the filename is unique
+  - Ambiguous filename matches stay plaintext `@[[...]]` (prevents wrong-doc binding)
+
 ### AI Editing Interface
 **Status**: ✅ Complete
 - Inline diff view with accept/reject buttons

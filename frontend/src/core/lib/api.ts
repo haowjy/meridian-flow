@@ -3,6 +3,7 @@ import {
   Thread,
   Turn,
   type ThreadRequestOptions,
+  type ContentBlock,
   DEFAULT_THREAD_REQUEST_OPTIONS,
 } from "@/features/threads/types";
 import { Document, DocumentTree } from "@/features/documents/types/document";
@@ -394,6 +395,10 @@ type SendTurnOptions = {
   prevTurnId?: string | null;
   signal?: AbortSignal;
   requestOptions?: ThreadRequestOptions;
+  /** Ordered content blocks — preserves text/reference interleaving */
+  blocks?: ContentBlock[];
+  /** @deprecated Use blocks instead. Kept for backward compatibility. */
+  references?: Array<{ documentId: string; refType: string }>;
 };
 
 function buildRequestParamsFromThreadOptions(
@@ -655,6 +660,41 @@ export const api = {
         options?.requestOptions,
       );
 
+      // Serialize content blocks in order — preserves text/reference interleaving.
+      // Falls back to legacy message + references if blocks not provided.
+      let turnBlocks: Array<Record<string, unknown>>;
+      if (options.blocks && options.blocks.length > 0) {
+        turnBlocks = options.blocks.map((block) => {
+          if (block.type === "text") {
+            return {
+              block_type: "text",
+              text_content: block.text,
+              content: null,
+            };
+          }
+          // block.type === "reference"
+          return {
+            block_type: "reference",
+            text_content: null,
+            content: { ref_id: block.documentId, ref_type: block.refType },
+          };
+        });
+      } else {
+        // Legacy path: single text block + appended references
+        turnBlocks = [
+          {
+            block_type: "text",
+            text_content: message,
+            content: null,
+          },
+          ...(options.references ?? []).map((ref) => ({
+            block_type: "reference",
+            text_content: null,
+            content: { ref_id: ref.documentId, ref_type: ref.refType },
+          })),
+        ];
+      }
+
       // NOTE: Response uses camelCase because fetchAPI auto-converts snake_case from backend
       const response = await fetchAPI<{
         thread?: ThreadDto; // Only present on cold start
@@ -667,13 +707,7 @@ export const api = {
           thread_id: options.threadId ?? null,
           project_id: options.projectId ?? null,
           role: "user",
-          turn_blocks: [
-            {
-              block_type: "text",
-              text_content: message,
-              content: null,
-            },
-          ],
+          turn_blocks: turnBlocks,
           prev_turn_id: options?.prevTurnId ?? null,
           request_params: requestParams,
         }),
@@ -890,16 +924,22 @@ export const api = {
       folderId: string | null,
       name: string,
       extension = ".md",
-      options?: { signal?: AbortSignal },
+      options?: { signal?: AbortSignal; folderPath?: string },
     ): Promise<Document> => {
+      const body: Record<string, unknown> = {
+        project_id: projectId,
+        name,
+        extension,
+      };
+      // folder_path takes precedence — backend auto-creates missing folders via ResolveFolderPath
+      if (options?.folderPath !== undefined) {
+        body.folder_path = options.folderPath;
+      } else {
+        body.folder_id = folderId;
+      }
       const data = await fetchAPI<DocumentDto>("/api/documents", {
         method: "POST",
-        body: JSON.stringify({
-          project_id: projectId,
-          folder_id: folderId,
-          name,
-          extension,
-        }),
+        body: JSON.stringify(body),
         signal: options?.signal,
       });
       return fromDocumentDto(data);

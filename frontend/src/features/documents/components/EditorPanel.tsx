@@ -16,23 +16,26 @@
  * @see `_docs/plans/ai-editing/inline-suggestions-impl-2/06-integration.md`
  */
 
-import { useRef, useCallback } from "react";
+import { useRef, useCallback, useState, useMemo, useEffect } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import {
   CodeMirrorEditor,
   EditorContextMenu,
   type CodeMirrorEditorRef,
 } from "@/core/editor/codemirror";
 import { useEditorStore } from "@/core/stores/useEditorStore";
+import { useProjectStore } from "@/core/stores/useProjectStore";
+import { api } from "@/core/lib/api";
 import { makeLogger } from "@/core/lib/logger";
+import { openDocument } from "@/core/lib/panelHelpers";
 import { EditorHeader } from "./EditorHeader";
+import { EditorWikiLinkPopover } from "./EditorWikiLinkPopover";
+import { WikiLinkCreatePopover } from "./WikiLinkCreatePopover";
 import { ErrorPanel } from "@/shared/components/ErrorPanel";
 import { InlineError } from "@/shared/components/InlineError";
 import { useTreeStore } from "@/core/stores/useTreeStore";
 import { useUIStore } from "@/core/stores/useUIStore";
-import {
-  PanelHeader,
-  HeaderGradientFade,
-} from "@/shared/components/layout/headers";
+import { PanelHeader } from "@/shared/components/layout/headers";
 import { SidebarToggle } from "@/shared/components/layout/SidebarToggle";
 import { CompactBreadcrumb } from "@/shared/components/ui/CompactBreadcrumb";
 import { Button } from "@/shared/components/ui/button";
@@ -44,6 +47,18 @@ import {
   useDiffView,
   useDocumentPolling,
 } from "../hooks";
+import {
+  atMentionField,
+  type AtMentionState,
+} from "@/features/threads/composer/atDetection";
+import { EditorView } from "@codemirror/view";
+import {
+  createWikiLinkPlugin,
+  createWikiLinkClickHandler,
+  createWikiLinkClipboardHandler,
+  insertWikiLink,
+} from "@/core/editor/codemirror/wikiLinks";
+import type { MentionResult } from "@/features/threads/components/DocumentMentionPopover";
 
 const log = makeLogger("editor-panel");
 
@@ -77,6 +92,86 @@ export function EditorPanel({
   // REFS
   // ---------------------------------------------------------------------------
   const editorRef = useRef<CodeMirrorEditorRef | null>(null);
+  const editorContentRef = useRef<HTMLDivElement | null>(null);
+
+  // ---------------------------------------------------------------------------
+  // WIKI-LINK STATE
+  // ---------------------------------------------------------------------------
+  const [atMention, setAtMention] = useState<AtMentionState | null>(null);
+  const [popoverPosition, setPopoverPosition] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
+  // Create-from-broken-link popover state
+  const [createPopover, setCreatePopover] = useState<{
+    path: string;
+    displayName: string;
+    position: { top: number; left: number };
+  } | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+
+  const navigate = useNavigate();
+  const projectSlug = useProjectStore((s) => s.currentProject()?.slug) ?? "";
+
+  // Compute popover position when atMention changes (effect can access refs safely)
+  useEffect(() => {
+    if (!atMention?.isActive) {
+      setPopoverPosition(null);
+      return;
+    }
+    const view = editorRef.current?.getView();
+    if (!view) return;
+    const coords = view.coordsAtPos(atMention.atPos);
+    if (!coords) return;
+    const editorRect =
+      editorContentRef.current?.getBoundingClientRect() ??
+      view.dom.getBoundingClientRect();
+    // Guard against element not in DOM yet (zero-size rect)
+    if (editorRect.width === 0) {
+      setPopoverPosition(null);
+      return;
+    }
+    setPopoverPosition({
+      top: coords.bottom - editorRect.top,
+      left: coords.left - editorRect.left,
+    });
+  }, [atMention]);
+
+  // Wiki-link extensions: @-detection, pill rendering, click navigation + broken-link create
+  const wikiLinkExtensions = useMemo(
+    () => [
+      atMentionField,
+      // Bridge at-mention StateField to React state
+      EditorView.updateListener.of((update) => {
+        if (!update.docChanged && !update.selectionSet) return;
+        const mentionState = update.state.field(atMentionField, false);
+        setAtMention(mentionState ?? null);
+      }),
+      createWikiLinkPlugin(),
+      createWikiLinkClipboardHandler(),
+      createWikiLinkClickHandler(
+        (docId, docPath) => {
+          openDocument(docId, docPath, projectSlug, navigate);
+        },
+        (docPath, displayName, clickCoords) => {
+          // Convert client coords to editor-relative coords for absolute positioning
+          const editorEl = editorRef.current
+            ?.getView()
+            ?.dom?.closest(".relative");
+          const rect = editorEl?.getBoundingClientRect();
+          setCreatePopover({
+            path: docPath,
+            displayName,
+            position: {
+              top: rect ? clickCoords.y - rect.top : clickCoords.y,
+              left: rect ? clickCoords.x - rect.left : clickCoords.x,
+            },
+          });
+        },
+      ),
+    ],
+    [projectSlug, navigate],
+  );
 
   // ---------------------------------------------------------------------------
   // STORE STATE (for UI that's not in hooks)
@@ -194,6 +289,66 @@ export function EditorPanel({
     store.setRightPanelState("documents");
   };
 
+  // Handle wiki-link @-mention selection → insert @[[path | name]] syntax
+  const handleWikiLinkSelect = useCallback(
+    (result: MentionResult) => {
+      const view = editorRef.current?.getView();
+      if (!view || !atMention) return;
+      insertWikiLink(
+        view,
+        atMention.atPos,
+        atMention.cursorPos,
+        result.path,
+        result.name,
+      );
+      setAtMention(null);
+    },
+    [atMention],
+  );
+
+  // Handle creating a document from a broken wiki-link
+  const handleCreateFromBrokenLink = useCallback(async () => {
+    if (!createPopover) return;
+    const projectId = useProjectStore.getState().currentProject()?.id;
+    if (!projectId) return;
+
+    setIsCreating(true);
+    try {
+      // Parse path into folder + filename + extension
+      const wikiPath = createPopover.path;
+      const lastSlash = wikiPath.lastIndexOf("/");
+      const filename =
+        lastSlash >= 0 ? wikiPath.slice(lastSlash + 1) : wikiPath;
+      const folderPath =
+        lastSlash >= 0 ? wikiPath.slice(0, lastSlash) : undefined;
+      const dotIndex = filename.lastIndexOf(".");
+      const name = dotIndex >= 0 ? filename.slice(0, dotIndex) : filename;
+      const extension = dotIndex >= 0 ? filename.slice(dotIndex) : ".md";
+
+      const newDoc = await api.documents.create(
+        projectId,
+        null,
+        name,
+        extension,
+        {
+          folderPath,
+        },
+      );
+
+      // Refresh sidebar tree to show the new document (and any created folders)
+      await useTreeStore.getState().loadTree(projectId);
+
+      setCreatePopover(null);
+
+      // Navigate to the newly created document
+      openDocument(newDoc.id, newDoc.path, projectSlug, navigate);
+    } catch (err) {
+      log.error("Failed to create document from broken wiki-link:", err);
+    } finally {
+      setIsCreating(false);
+    }
+  }, [createPopover, projectSlug, navigate]);
+
   // ---------------------------------------------------------------------------
   // RENDER HELPERS
   // ---------------------------------------------------------------------------
@@ -206,7 +361,6 @@ export function EditorPanel({
   // Get word count from editor ref
   // Note: This ref access during render is intentional - wordCount is a display-only value
   // that updates on re-render. The ref is stable and always points to our editor instance.
-  // eslint-disable-next-line react-hooks/refs
   const wordCount = editorRef.current?.getWordCount().words ?? 0;
 
   const header = headerDocument ? (
@@ -290,10 +444,7 @@ export function EditorPanel({
       {/* Parent scroll container - provides sticky header behavior */}
       <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
         {/* Sticky header - scrolls away when scrolling down, sticks at top when scrolling back up */}
-        <div className="bg-background relative sticky top-0 z-20">
-          {header}
-          <HeaderGradientFade />
-        </div>
+        <div className="bg-background relative sticky top-0 z-20">{header}</div>
 
         {/* Inline error banner for save failures (document is still visible) */}
         {isSaveError && error && (
@@ -307,11 +458,10 @@ export function EditorPanel({
         )}
 
         {/* Editor content - scrolls with parent container */}
-        <div className="relative my-2 flex-1">
+        <div ref={editorContentRef} className="relative my-2 flex-1">
           {isContentLoading ? (
             <div className="flex-1" />
           ) : (
-            // eslint-disable-next-line react-hooks/refs -- editorRef is stable, passed for context menu operations
             <EditorContextMenu editorRef={editorRef.current}>
               <CodeMirrorEditor
                 key={documentId}
@@ -320,10 +470,30 @@ export function EditorPanel({
                 placeholder="Start writing..."
                 onChange={handleContentChange}
                 onReady={handleEditorReady}
-                extensions={initialExtensions}
+                extensions={[...initialExtensions, ...wikiLinkExtensions]}
                 className="min-h-full"
               />
             </EditorContextMenu>
+          )}
+
+          {/* Wiki-link @-mention popover (positioned relative to editor) */}
+          <EditorWikiLinkPopover
+            atMention={atMention}
+            position={popoverPosition}
+            onSelect={handleWikiLinkSelect}
+            onClose={() => setAtMention(null)}
+          />
+
+          {/* Create-from-broken-link popover (positioned relative to editor) */}
+          {createPopover && (
+            <WikiLinkCreatePopover
+              path={createPopover.path}
+              displayName={createPopover.displayName}
+              position={createPopover.position}
+              onConfirm={handleCreateFromBrokenLink}
+              onClose={() => setCreatePopover(null)}
+              isCreating={isCreating}
+            />
           )}
         </div>
 

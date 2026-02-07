@@ -78,7 +78,7 @@ var toolErrorEncoders = map[string]ToolErrorEncoder{
 		return "NOT_FOUND"
 	},
 
-	// doc_edit-specific error codes (kept for backwards compatibility with existing encodings)
+	// Document edit error codes (used by str_replace_based_edit_tool)
 	"NO_MATCH": func(_ map[string]interface{}) string {
 		return "NO_MATCH"
 	},

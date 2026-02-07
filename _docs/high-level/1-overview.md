@@ -52,14 +52,10 @@ OR: "Make it shorter too"
 
 **Safe concurrent editing** - AI and human can work simultaneously with automatic conflict detection (CAS concurrency control).
 
-**Seven powerful tools** - AI can autonomously:
-- `doc_view` - Read any document in your project
-- `doc_tree` - Browse folder structure
+**Powerful tools** - AI can autonomously:
+- `str_replace_based_edit_tool` - View, create, and edit documents with inline diff preview
 - `doc_search` - Full-text search across all files
-- `doc_edit` - Suggest inline edits with diff preview
 - `web_search` - Look up information online
-- `bash` - Execute commands (client-side)
-- `text_editor` - Edit text with sophisticated string replacement
 
 ### Organize Your Writing Project
 

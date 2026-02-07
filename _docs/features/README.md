@@ -109,7 +109,7 @@ This directory contains detailed documentation for all features in Meridian, org
 **Tool calling system for LLM interactions**
 - Auto-mapping: Minimal definitions -> provider-specific
 - Built-in tools: web_search (server), bash (client), text_editor (client)
-- Custom tools: doc_view, doc_tree, doc_search, doc_edit
+- Custom tools: str_replace_based_edit_tool, doc_search
 - Multi-turn tool continuation
 
 ### [fb-ai-editing/](fb-ai-editing/)

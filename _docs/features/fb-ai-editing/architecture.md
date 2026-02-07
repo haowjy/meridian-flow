@@ -68,7 +68,7 @@ Unicode Private Use Area characters mark diff regions:
 
 ```mermaid
 sequenceDiagram
-    participant AI as AI (doc_edit tool)
+    participant AI as AI (text editor tool)
     participant Server as Server
     participant Frontend as Frontend
     participant Editor as CodeMirror

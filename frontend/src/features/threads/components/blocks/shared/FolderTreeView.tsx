@@ -2,8 +2,7 @@
  * FolderTreeView - Reusable expandable folder tree component
  *
  * A SOLID-compliant tree view that can be used by multiple tool blocks:
- * - DocViewBlock: Shows folder contents from doc_view tool
- * - DocTreeBlock: Shows entire project tree from doc_tree tool
+ * - TextEditorBlock: Shows folder contents from str_replace_based_edit_tool view command
  *
  * Design principles:
  * - SRP: Only handles tree rendering, no navigation logic

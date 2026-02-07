@@ -632,8 +632,10 @@ func (r *PostgresTurnRepository) CreateTurnBlocks(ctx context.Context, blocks []
 		VALUES
 	`, r.tables.TurnBlocks)
 
-	// Build VALUES clause dynamically (10 parameters per block)
-	args := make([]interface{}, 0, len(blocks)*10)
+	// Build VALUES clause using a running parameter counter.
+	// 9 actual params per block (status is hardcoded as 'complete').
+	var args []interface{}
+	paramIdx := 1
 	for i, block := range blocks {
 		// Set created_at if not provided (consistent with CreateTurnBlock)
 		if block.CreatedAt.IsZero() {
@@ -645,7 +647,9 @@ func (r *PostgresTurnRepository) CreateTurnBlocks(ctx context.Context, blocks []
 		}
 		query += fmt.Sprintf(`
 			($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, 'complete', $%d)
-		`, i*10+1, i*10+2, i*10+3, i*10+4, i*10+5, i*10+6, i*10+7, i*10+8, i*10+9)
+		`, paramIdx, paramIdx+1, paramIdx+2, paramIdx+3, paramIdx+4,
+			paramIdx+5, paramIdx+6, paramIdx+7, paramIdx+8)
+		paramIdx += 9
 
 		args = append(args,
 			block.TurnID,

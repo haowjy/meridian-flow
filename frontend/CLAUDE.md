@@ -19,8 +19,8 @@ See main `AGENTS.md` for general principles. This document focuses on frontend-s
 pnpm run dev          # Start dev server (http://localhost:3000)
 pnpm run build        # Production build
 pnpm run lint         # ESLint
-pnpm run format       # Prettier write (including Tailwind class sorting)
-pnpm run format:check # Prettier check-only
+pnpm run format 2>&1 | grep -v "unchanged"       # Prettier write (including Tailwind class sorting)
+pnpm run format 2>&1 | grep -v "unchanged":check # Prettier check-only
 pnpm run test         # Vitest unit tests (core libs + services)
 pnpm run test:watch   # Vitest in watch mode
 ```

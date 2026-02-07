@@ -1,6 +1,7 @@
 package tools
 
 import (
+	skillModels "meridian/internal/domain/models/skill"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	skillSvc "meridian/internal/domain/services/skill"
 	"meridian/internal/service/llm/tools/external"
@@ -43,13 +44,14 @@ func (b *ToolRegistryBuilder) WithNamespaceService(namespaceSvc docsysSvc.Namesp
 	return b
 }
 
-// WithDocumentTools registers all document-related tools (str_replace_based_edit_tool, doc_search, doc_tree).
+// WithDocumentTools registers all document-related tools (str_replace_based_edit_tool, doc_search).
 // These tools operate on the project's document system.
 // All tools use services for data access (SOLID: DIP - depends on interfaces).
 // Tools are registered with metadata for dynamic system prompt generation (SOLID: OCP compliance).
 //
 // The str_replace_based_edit_tool is a unified tool that combines view and edit operations,
 // matching Anthropic's text_editor_20250728 API for seamless provider mapping.
+// Folder viewing is handled by str_replace_based_edit_tool's "view" command on folder paths.
 func (b *ToolRegistryBuilder) WithDocumentTools(
 	projectID string,
 	userID string,
@@ -59,22 +61,19 @@ func (b *ToolRegistryBuilder) WithDocumentTools(
 	// All tools use service layer for data access (Phase 4: zero repo dependencies)
 	// Tools self-describe via metadata for system prompt generation (OCP compliance)
 	textEditorTool := NewTextEditorTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
-	treeTool := NewTreeTool(projectID, userID, folderSvc, b.namespaceSvc, b.config)
 	searchTool := NewSearchTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
 
 	b.registry.RegisterWithMetadata("str_replace_based_edit_tool", textEditorTool, TextEditorToolMetadata())
-	b.registry.RegisterWithMetadata("doc_tree", treeTool, TreeToolMetadata())
 	b.registry.RegisterWithMetadata("doc_search", searchTool, SearchToolMetadata())
 
 	return b
 }
 
 // WithEnabledDocumentTools registers only the specified document tools.
-// enabledTools is the list of tool names to register (e.g., ["str_replace_based_edit_tool", "doc_tree"]).
+// enabledTools is the list of tool names to register (e.g., ["str_replace_based_edit_tool", "doc_search"]).
 // This allows frontend to control which tools the LLM can use.
 // Tools are registered with metadata for dynamic system prompt generation (SOLID: OCP compliance).
 //
-// Legacy tool names (doc_view, doc_edit) are mapped to str_replace_based_edit_tool for backward compatibility.
 func (b *ToolRegistryBuilder) WithEnabledDocumentTools(
 	enabledTools []string,
 	projectID string,
@@ -88,16 +87,9 @@ func (b *ToolRegistryBuilder) WithEnabledDocumentTools(
 		toolSet[t] = true
 	}
 
-	// Register text editor if str_replace_based_edit_tool or legacy names (doc_view/doc_edit) are enabled
-	// This provides backward compatibility during migration
-	if toolSet["str_replace_based_edit_tool"] || toolSet["doc_view"] || toolSet["doc_edit"] {
+	if toolSet["str_replace_based_edit_tool"] {
 		textEditorTool := NewTextEditorTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
 		b.registry.RegisterWithMetadata("str_replace_based_edit_tool", textEditorTool, TextEditorToolMetadata())
-	}
-
-	if toolSet["doc_tree"] {
-		treeTool := NewTreeTool(projectID, userID, folderSvc, b.namespaceSvc, b.config)
-		b.registry.RegisterWithMetadata("doc_tree", treeTool, TreeToolMetadata())
 	}
 
 	if toolSet["doc_search"] {
@@ -121,18 +113,25 @@ func (b *ToolRegistryBuilder) WithWebSearch(client external.SearchClient) *ToolR
 
 // WithSkillTools registers skill-related tools (skill_invoke, skill_list).
 // Only registers if a valid skill service is provided.
+// availableSkills is used to enrich skill_invoke metadata with the list of available skills,
+// so the system prompt includes skill names/descriptions only when tools are actually registered.
 // Tools are registered with metadata for dynamic system prompt generation (SOLID: OCP compliance).
 func (b *ToolRegistryBuilder) WithSkillTools(
 	projectID string,
 	userID string,
 	skillService skillSvc.ProjectSkillService,
 	isUserInvocation bool,
+	availableSkills []*skillModels.ProjectSkill,
 ) *ToolRegistryBuilder {
 	if skillService != nil {
 		invokeTool := NewSkillInvokeTool(projectID, userID, skillService, isUserInvocation, b.config)
 		listTool := NewSkillListTool(projectID, userID, skillService, b.config)
 
-		b.registry.RegisterWithMetadata("skill_invoke", invokeTool, SkillInvokeToolMetadata())
+		// Enrich skill_invoke metadata with available skills list (runtime context)
+		invokeMetadata := SkillInvokeToolMetadata()
+		invokeMetadata.Guideline = BuildSkillInvokeGuideline(availableSkills)
+
+		b.registry.RegisterWithMetadata("skill_invoke", invokeTool, invokeMetadata)
 		b.registry.RegisterWithMetadata("skill_list", listTool, SkillListToolMetadata())
 	}
 	return b
@@ -140,6 +139,7 @@ func (b *ToolRegistryBuilder) WithSkillTools(
 
 // WithEnabledSkillTools registers only the specified skill tools.
 // enabledTools is the list of tool names to register (e.g., ["skill_invoke"]).
+// availableSkills is used to enrich skill_invoke metadata with the list of available skills.
 // This allows frontend to control which tools the LLM can use.
 // Tools are registered with metadata for dynamic system prompt generation (SOLID: OCP compliance).
 func (b *ToolRegistryBuilder) WithEnabledSkillTools(
@@ -148,6 +148,7 @@ func (b *ToolRegistryBuilder) WithEnabledSkillTools(
 	userID string,
 	skillService skillSvc.ProjectSkillService,
 	isUserInvocation bool,
+	availableSkills []*skillModels.ProjectSkill,
 ) *ToolRegistryBuilder {
 	if skillService == nil {
 		return b
@@ -162,7 +163,10 @@ func (b *ToolRegistryBuilder) WithEnabledSkillTools(
 	// Register only enabled skill tools with metadata (OCP compliance)
 	if toolSet["skill_invoke"] {
 		invokeTool := NewSkillInvokeTool(projectID, userID, skillService, isUserInvocation, b.config)
-		b.registry.RegisterWithMetadata("skill_invoke", invokeTool, SkillInvokeToolMetadata())
+		// Enrich skill_invoke metadata with available skills list (runtime context)
+		invokeMetadata := SkillInvokeToolMetadata()
+		invokeMetadata.Guideline = BuildSkillInvokeGuideline(availableSkills)
+		b.registry.RegisterWithMetadata("skill_invoke", invokeTool, invokeMetadata)
 	}
 	if toolSet["skill_list"] {
 		listTool := NewSkillListTool(projectID, userID, skillService, b.config)

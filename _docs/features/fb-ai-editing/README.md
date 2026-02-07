@@ -78,7 +78,7 @@ feature: "AI Editing"
 ## User Experience
 
 **Review flow**:
-1. AI edits document via `doc_edit` tool
+1. AI edits document via `str_replace_based_edit_tool`
 2. Editor displays merged view with inline diffs
 3. User reviews each hunk (hover shows ✓/✕ buttons)
 4. Accept/reject operations update document

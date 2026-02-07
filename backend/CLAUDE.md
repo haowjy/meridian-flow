@@ -146,16 +146,20 @@ make build-local # GOWORK=../go.work go build -o bin/server ./cmd/server
 - ✅ **Use tagged versions** for production (Docker, Railway)
 
 **Updating library versions:**
+
+Patch versions for `meridian-llm-go` are **auto-bumped** by a post-commit hook. After committing in the submodule, the hook automatically:
+1. Tags the commit (v0.0.X+1)
+2. Pushes commit + tag to origin
+3. Updates `backend/go.mod` with the new version
+
+You just need to commit `backend/go.mod` + `go.sum` in the parent repo afterward.
+
+For **manual/interactive** version management (minor/major bumps, multi-library updates):
 ```bash
-# When you've made changes to meridian-llm-go or meridian-stream-go
 ./scripts/update-libraries.sh "Add new feature"
-# This script:
-# 1. Tags the library with new version
-# 2. Pushes to GitHub
-# 3. Updates backend/go.mod with new version
 ```
 
-**See:** `scripts/README.md` → `update-libraries.sh` for details.
+**See:** `scripts/README.md` → `llm-post-commit.sh` for hook details, `update-libraries.sh` for interactive mode.
 
 ## Environment Variables
 
@@ -310,7 +314,7 @@ The tool system follows SOLID principles with clean separation of concerns:
 - `ToolRegistryBuilder` - Fluent API for building tool registries
 
 **Tool Types:**
-1. **Document Tools** (internal): `doc_view`, `doc_tree`, `doc_search`
+1. **Document Tools** (internal): `str_replace_based_edit_tool`, `doc_search`
 2. **Web Search Tools** (external): `web_search` (requires API key)
 
 ### Adding New Tools

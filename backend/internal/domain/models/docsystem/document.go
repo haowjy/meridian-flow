@@ -37,6 +37,15 @@ func (d *Document) Filename() string {
 	return d.Name + d.Extension
 }
 
+// EffectiveContent returns ai_version if it exists, otherwise content.
+// This is the canonical "what the document currently says" for word count, LLM context, etc.
+func (d *Document) EffectiveContent() string {
+	if d.AIVersion != nil {
+		return *d.AIVersion
+	}
+	return d.Content
+}
+
 func (d *Document) EnsureMetadata() {
 	if d.Metadata == nil {
 		d.Metadata = DocumentMetadata{}
