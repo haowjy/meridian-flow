@@ -97,7 +97,7 @@ models:
 
 **Most backends don't need custom capability files** - use library defaults and only override when necessary (e.g., custom pricing for enterprise contracts).
 
-**See:** [`../llm/capability-loading.md`](../llm/capability-loading.md) for config loading details.
+**See:** [`../llm/extensibility-and-lifecycle.md`](../llm/extensibility-and-lifecycle.md) for config loading details.
 
 ---
 
@@ -334,9 +334,9 @@ Built-in tools (`web_search`, `bash`, `text_editor`) can be specified with just 
 Custom tools must use `Type: ToolTypeCustom` and provide full definition (Description, InputSchema).
 
 **See:**
-- [`meridian-llm-go/docs/tools.md`](../../meridian-llm-go/docs/tools.md) for complete tool guide
-- [`../llm/unified-tool-mapping.md`](../llm/unified-tool-mapping.md) Section 2.5 for auto-mapping details
-- [`../llm/unified-tool-mapping.md`](../llm/unified-tool-mapping.md) Section 4.5 for tool execution pattern
+- [`meridian-llm-go/docs/tools.md`](../../../meridian-llm-go/docs/tools.md) for complete tool guide
+- [`meridian-llm-go/docs/tools.md`](../../../meridian-llm-go/docs/tools.md) for auto-mapping details
+- [`meridian-llm-go/docs/tools.md`](../../../meridian-llm-go/docs/tools.md) for tool execution pattern
 
 ---
 
@@ -377,7 +377,7 @@ func (s *LLMService) formatUserError(err *llm.LLMError) string {
 }
 ```
 
-**See:** [`meridian-llm-go/docs/errors.md`](../../meridian-llm-go/docs/errors.md) for complete error handling.
+**See:** [`meridian-llm-go/docs/errors.md`](../../../meridian-llm-go/docs/errors.md) for complete error handling.
 
 ---
 
@@ -547,7 +547,7 @@ func TestGenerateTurn(t *testing.T) {
 **See Also:**
 - [LLM Library README](../llm/README.md) - Library overview
 - [Architecture](../llm/architecture.md) - 3-layer design
-- [Tool Mapping](../llm/unified-tool-mapping.md) - Tool execution patterns
-- [Error Normalization](../llm/error-normalization.md) - Error handling
+- [Tool Mapping](../../../meridian-llm-go/docs/tools.md) - Tool execution patterns
+- [Error Normalization](../../../meridian-llm-go/docs/errors.md) - Error handling
 - [Provider Routing](provider-routing.md) - Model string routing
 - [Environment Gating](environment-gating.md) - Tool restrictions

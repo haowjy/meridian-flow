@@ -27,9 +27,9 @@ feature: "Custom Components"
 
 ### Layout Components (in shared/components/layout/)
 
-**GlobalHeader** - App-wide navigation bar (see [technical docs](../../../technical/frontend/architecture/components/global-header.md))
-**ProjectSelector** - Project switcher dropdown (see [technical docs](../../../technical/frontend/architecture/components/project-selector.md))
-**CollapsibleSidebar** - Reusable sidebar wrapper (see [technical docs](../../../technical/frontend/architecture/components/collapsible-sidebar.md))
+**GlobalHeader** - App-wide navigation bar (see [technical docs](../../technical/frontend/architecture/components/global-header.md))
+**ProjectSelector** - Project switcher dropdown (see [technical docs](../../technical/frontend/architecture/components/project-selector.md))
+**CollapsibleSidebar** - Reusable sidebar wrapper (see [technical docs](../../technical/frontend/architecture/components/collapsible-sidebar.md))
 **TwoPanelLayout** - Desktop resizable panel layout
 **MobileTabLayout** - Mobile tab navigation layout
 

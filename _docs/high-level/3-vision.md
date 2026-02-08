@@ -146,7 +146,7 @@ Before shipping the agent framework:
 | **Audit/debug trace** | Make agent behavior explainable + reversible. |
 | **Sessions + `.session/`** | Shared persistent artifacts across thread family. |
 
-**For full design details**, see [`_docs/plans/agents/agents.md`](../../plans/agents/agents.md).
+**For full design details**, see [`_docs/plans/agents/agents.md`](../plans/agents/agents.md).
 
 ---
 
@@ -397,7 +397,7 @@ AI continues working server-side even if user disconnects.
 - `conversation_search` tool
 - Auto-compact + model selection
 
-**For detailed implementation phases**, see [`_docs/plans/agents/agents.md`](../../plans/agents/agents.md).
+**For detailed implementation phases**, see [`_docs/plans/agents/agents.md`](../plans/agents/agents.md).
 
 ---
 
