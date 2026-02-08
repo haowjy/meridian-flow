@@ -18,6 +18,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useNavigate } from "@tanstack/react-router";
 import { Pencil, Trash2, ChevronDown } from "lucide-react";
 import { useThreadStore } from "@/core/stores/useThreadStore";
+import { useCurrentThreadStream } from "@/core/stores/useStreamStore";
 import { useThreadPrefsStore } from "@/core/stores/useThreadPrefsStore";
 import { useUIStore } from "@/core/stores/useUIStore";
 import { useProjectStore } from "@/core/stores/useProjectStore";
@@ -43,6 +44,7 @@ import {
 } from "@/features/threads/composer/placeholders";
 import { useIsMobile } from "@/core/hooks/useIsMobile";
 import { composerInputMinHeight } from "@/features/threads/composer/composerTheme";
+import { threadSurfacePadding } from "./styles";
 
 const log = makeLogger("TurnInput");
 
@@ -95,11 +97,12 @@ export function TurnInput({
   const { currentOptions, initOptionsForThread, updateOptionsManually } =
     useThreadPrefsStore();
 
+  const { streamingTurnId } = useCurrentThreadStream();
+
   const {
     createTurn,
     startNewThread,
     isLoadingTurns,
-    streamingTurnId,
     interruptStreamingTurn,
     submitInterjection,
     clearInterjection,
@@ -109,7 +112,6 @@ export function TurnInput({
       createTurn: s.createTurn,
       startNewThread: s.startNewThread,
       isLoadingTurns: s.isLoadingTurns,
-      streamingTurnId: s.streamingTurnId,
       interruptStreamingTurn: s.interruptStreamingTurn,
       submitInterjection: s.submitInterjection,
       clearInterjection: s.clearInterjection,
@@ -165,7 +167,7 @@ export function TurnInput({
     setIsTruncated(el.scrollHeight > el.clientHeight);
   }, [interjectionContent, queueExpanded]);
 
-  // Main composer needs 48px min height for a ~2-line feel; other consumers (display, edit) size to content
+  // Main composer defaults to ~2 lines; edit/view surfaces stay content-sized.
   const inputMinHeightExtensions = useMemo(() => [composerInputMinHeight], []);
 
   const isStreaming = Boolean(streamingTurnId);
@@ -525,7 +527,7 @@ export function TurnInput({
         >
           <div
             ref={mentionAnchorContainerRef}
-            className="relative px-2 py-1.5 sm:px-2.5 sm:py-2"
+            className={cn("relative", threadSurfacePadding)}
           >
             {isPopoverOpen && mentionAnchor && (
               <div

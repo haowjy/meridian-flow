@@ -43,12 +43,15 @@ export const ReferenceBlock = React.memo(function ReferenceBlock({
     }
   };
 
-  const displayName = doc?.name ?? (isFolder ? "Unknown folder" : "Unknown document");
+  const displayName =
+    doc?.name ?? (isFolder ? "Unknown folder" : "Unknown document");
   const Icon = isFolder ? Folder : FileText;
 
   // Folders don't have a path field; documents do
   const titleText =
-    doc && "path" in doc ? (doc as { path: string }).path : (doc?.name ?? refId ?? "Reference");
+    doc && "path" in doc
+      ? (doc as { path: string }).path
+      : (doc?.name ?? refId ?? "Reference");
 
   return (
     <button

@@ -4,7 +4,6 @@ import {
   Thread,
   Turn,
   type TurnBlock,
-  type BlockType,
   type ThreadRequestOptions,
   type ContentBlock,
 } from "@/features/threads/types";
@@ -18,6 +17,7 @@ import { getErrorMessageWithFallback } from "@/core/lib/errors";
 import { makeLogger } from "@/core/lib/logger";
 import { getTurnBlockIdentity } from "@/features/threads/utils/blockIdentity";
 import { turnToContentBlocks } from "@/features/threads/utils/turnHelpers";
+import { useStreamStore } from "./useStreamStore";
 
 // Stream-end coordination for cancel flow.
 // Stored outside Zustand since it contains non-serializable data (functions, timers).
@@ -62,12 +62,6 @@ interface ThreadStore {
   // Computed getter for backwards compatibility
   isLoadingThreads: boolean;
 
-  // Streaming state for the currently active assistant turn (at most one)
-  streamingTurnId: string | null;
-  streamingUrl: string | null;
-  streamingBlockIndex: number | null;
-  streamingBlockType: BlockType | null;
-
   // Interjection state (user message submitted while streaming)
   interjectionContent: string | null;
 
@@ -101,11 +95,6 @@ interface ThreadStore {
     blockIndex: number,
     blockType: string,
     content: Record<string, unknown>,
-  ) => void;
-  clearStreamingStream: () => void;
-  setStreamingBlockInfo: (
-    blockIndex: number | null,
-    blockType: BlockType | null,
   ) => void;
   setCurrentTurnId: (turnId: string) => void;
 
@@ -156,12 +145,15 @@ interface ThreadStore {
 
 /**
  * Helper to detect if any assistant turn is actively streaming.
- * Returns streaming state or null values if no streaming turn found.
+ * Registers or cleans up stream entries in the stream store.
  */
 const detectStreamingState = (
+  threadId: string,
   turnIds: string[],
   turnById: Record<string, Turn>,
 ) => {
+  const streamStore = useStreamStore.getState();
+
   // Find any assistant turn that's actively streaming
   for (const id of turnIds) {
     const t = turnById[id];
@@ -170,17 +162,14 @@ const detectStreamingState = (
       (t.status === "streaming" || t.status === "waiting_subagents") &&
       t.role === "assistant"
     ) {
-      return {
-        streamingTurnId: t.id,
-        streamingUrl: `/api/turns/${t.id}/stream`,
-      };
+      // Register stream (idempotent — overwrites existing entry)
+      streamStore.registerStream(t.id, threadId, `/api/turns/${t.id}/stream`);
+      return;
     }
   }
 
-  return {
-    streamingTurnId: null,
-    streamingUrl: null,
-  };
+  // No streaming turn found — clean up any stale entries for this thread
+  streamStore.removeStreamsByThread(threadId);
 };
 
 /**
@@ -287,10 +276,6 @@ export const useThreadStore = create<ThreadStore>()(
       isSwitchingSibling: false,
       error: null,
       navigationAbortController: null,
-      streamingTurnId: null,
-      streamingUrl: null,
-      streamingBlockIndex: null,
-      streamingBlockType: null,
       interjectionContent: null,
 
       // Computed getter for backwards compatibility
@@ -466,10 +451,13 @@ export const useThreadStore = create<ThreadStore>()(
                 ...incoming.map((t) => t.id),
               ]),
               turnById: { ...state.turnById, ...incomingById },
-              streamingTurnId: assistantTurn.id,
-              streamingUrl: streamUrl,
             };
           });
+
+          // Register stream in stream store (outside set() to avoid coupling)
+          useStreamStore
+            .getState()
+            .registerStream(assistantTurn.id, threadId, streamUrl);
 
           // Update bookmark to the new assistant turn
           await updateLastViewedTurnBookmark(threadId, assistantTurn.id);
@@ -521,10 +509,13 @@ export const useThreadStore = create<ThreadStore>()(
               turnIds,
               turnById,
               currentTurnId: assistantTurn.id,
-              streamingTurnId: assistantTurn.id,
-              streamingUrl: streamUrl,
             };
           });
+
+          // Register stream in stream store
+          useStreamStore
+            .getState()
+            .registerStream(assistantTurn.id, thread.id, streamUrl);
 
           return thread;
         } catch (error) {
@@ -543,6 +534,9 @@ export const useThreadStore = create<ThreadStore>()(
         try {
           await api.threads.delete(threadId);
 
+          // Clean up any streams for this thread
+          useStreamStore.getState().removeStreamsByThread(threadId);
+
           set((state) => {
             const isActive = state.threadId === threadId;
             return {
@@ -555,10 +549,6 @@ export const useThreadStore = create<ThreadStore>()(
                     turnById: {},
                     hasMoreBefore: false,
                     hasMoreAfter: false,
-                    streamingTurnId: null,
-                    streamingUrl: null,
-                    streamingBlockIndex: null,
-                    streamingBlockType: null,
                   }
                 : {}),
             };
@@ -577,8 +567,15 @@ export const useThreadStore = create<ThreadStore>()(
       interruptStreamingTurn: async () => {
         const log = makeLogger("thread-store");
         const state = get();
-        const turnId = state.streamingTurnId;
         const threadId = state.threadId;
+
+        // Find the streaming turn for the current thread from stream store
+        const streamEntry = threadId
+          ? Object.values(useStreamStore.getState().streams).find(
+              (e) => e.threadId === threadId,
+            )
+          : null;
+        const turnId = streamEntry?.streamId ?? null;
 
         if (!turnId) {
           return;
@@ -598,8 +595,9 @@ export const useThreadStore = create<ThreadStore>()(
           await streamEndPromise;
           log.debug("interruptStreamingTurn:streamEnded", { turnId });
 
-          // 4. Clear local state (SSE hook may have already done this)
-          get().clearStreamingStream();
+          // 4. Clear stream entry + interjection state (SSE hook may have already done this)
+          useStreamStore.getState().removeStream(turnId);
+          set({ interjectionContent: null });
 
           // 5. Refresh to get final state with partial blocks
           if (threadId) {
@@ -752,26 +750,6 @@ export const useThreadStore = create<ThreadStore>()(
         });
       },
 
-      clearStreamingStream: () => {
-        set(() => ({
-          streamingTurnId: null,
-          streamingUrl: null,
-          streamingBlockIndex: null,
-          streamingBlockType: null,
-          interjectionContent: null,
-        }));
-      },
-
-      setStreamingBlockInfo: (
-        blockIndex: number | null,
-        blockType: BlockType | null,
-      ) => {
-        set(() => ({
-          streamingBlockIndex: blockIndex,
-          streamingBlockType: blockType,
-        }));
-      },
-
       setCurrentTurnId: (turnId: string) => {
         set(() => ({ currentTurnId: turnId }));
       },
@@ -824,10 +802,14 @@ export const useThreadStore = create<ThreadStore>()(
                   assistantTurn.id,
                 ]),
                 turnById: { ...state.turnById, ...incomingById },
-                streamingTurnId: assistantTurn.id,
-                streamingUrl: streamUrl ?? null,
                 interjectionContent: null,
               });
+              // Register stream in stream store
+              if (streamUrl && state.threadId) {
+                useStreamStore
+                  .getState()
+                  .registerStream(assistantTurn.id, state.threadId, streamUrl);
+              }
             }
             log.debug("submitInterjection:created", {
               userTurnId: userTurn?.id,
@@ -889,7 +871,18 @@ export const useThreadStore = create<ThreadStore>()(
           assistantTurn,
         ]);
 
-        // Update streaming to point to new assistant turn
+        // Remove old stream, register new one
+        const streamStore = useStreamStore.getState();
+        streamStore.removeStream(prevTurnId);
+        if (state.threadId) {
+          streamStore.registerStream(
+            assistantTurn.id,
+            state.threadId,
+            streamUrl,
+          );
+        }
+
+        // Update turns and clear interjection
         set({
           turnIds: mergeTurnIds([
             ...state.turnIds,
@@ -897,8 +890,6 @@ export const useThreadStore = create<ThreadStore>()(
             assistantTurn.id,
           ]),
           turnById: { ...state.turnById, ...incomingById },
-          streamingTurnId: assistantTurn.id,
-          streamingUrl: streamUrl,
           interjectionContent: null, // Clear - it's now persisted as userTurn
           currentTurnId: assistantTurn.id,
         });
@@ -946,6 +937,9 @@ export const useThreadStore = create<ThreadStore>()(
           const lastTurnId =
             turnIds.length > 0 ? turnIds[turnIds.length - 1] : undefined;
           const nextCurrent = initialTurnId ?? (lastTurnId ? lastTurnId : null);
+          // Detect and register any active streaming turns for this thread
+          detectStreamingState(threadId, turnIds, turnById);
+
           set({
             threadId,
             turnIds,
@@ -954,7 +948,6 @@ export const useThreadStore = create<ThreadStore>()(
             hasMoreBefore,
             hasMoreAfter,
             isLoadingTurns: false,
-            ...detectStreamingState(turnIds, turnById),
           });
           log.debug("openThread:set", {
             threadId,
@@ -1011,12 +1004,12 @@ export const useThreadStore = create<ThreadStore>()(
             normalizeTurnWindow(turns);
           const mergedIds = mergeTurnIds([...incomingIds, ...state.turnIds]);
           const mergedById = { ...state.turnById, ...incomingById };
+          detectStreamingState(state.threadId!, mergedIds, mergedById);
           set({
             turnIds: mergedIds,
             turnById: mergedById,
             hasMoreBefore,
             isLoadingTurns: false,
-            ...detectStreamingState(mergedIds, mergedById),
           });
           log.debug("paginateBefore:set", { total: mergedIds.length });
         } catch (error) {
@@ -1073,12 +1066,12 @@ export const useThreadStore = create<ThreadStore>()(
             normalizeTurnWindow(turns);
           const mergedIds = mergeTurnIds([...state.turnIds, ...incomingIds]);
           const mergedById = { ...state.turnById, ...incomingById };
+          detectStreamingState(state.threadId!, mergedIds, mergedById);
           set({
             turnIds: mergedIds,
             turnById: mergedById,
             hasMoreAfter,
             isLoadingTurns: false,
-            ...detectStreamingState(mergedIds, mergedById),
           });
           log.debug("paginateAfter:set", { total: mergedIds.length });
         } catch (error) {
@@ -1144,6 +1137,7 @@ export const useThreadStore = create<ThreadStore>()(
             // Merge turnById instead of replacing to prevent brief undefined flash
             // during React reconciliation. Old turns remain in memory but won't render
             // (not in turnIds) and will be garbage collected when no longer referenced.
+            detectStreamingState(threadId, turnIds, turnById);
             set((state) => ({
               threadId,
               turnIds,
@@ -1153,7 +1147,6 @@ export const useThreadStore = create<ThreadStore>()(
               hasMoreAfter,
               isSwitchingSibling: false,
               navigationAbortController: null, // Clear after success
-              ...detectStreamingState(turnIds, turnById),
             }));
             log.debug("switchSibling:set", {
               threadId,

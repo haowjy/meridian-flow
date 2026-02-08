@@ -19,6 +19,7 @@ import type { ToolBlockContent } from "@/features/threads/types";
 import type { ToolInteraction } from "@/features/threads/utils/toolGrouping";
 import { useUIStore } from "@/core/stores/useUIStore";
 import { useIsGroupStreaming } from "@/features/threads/hooks/useIsGroupStreaming";
+import { threadToolContentPadding, threadToolHeaderPadding } from "../styles";
 import {
   Collapsible,
   CollapsibleTrigger,
@@ -147,7 +148,8 @@ export const ToolGroupBlock = React.memo(function ToolGroupBlock({
           <button
             type="button"
             className={cn(
-              "flex w-full items-center gap-2 px-3 py-2",
+              "flex w-full items-center gap-2",
+              threadToolHeaderPadding,
               "cursor-pointer text-left",
               "hover:bg-muted/40 transition-colors",
             )}
@@ -194,7 +196,7 @@ export const ToolGroupBlock = React.memo(function ToolGroupBlock({
 
         {/* Expanded content */}
         <CollapsibleContent>
-          <div className="space-y-2 border-t px-3 py-3">
+          <div className={cn("space-y-2 border-t", threadToolContentPadding)}>
             {items.map((interaction, index) => {
               const toolName = getToolName(interaction);
               const render = getToolRenderer(toolName);

@@ -36,7 +36,7 @@ export const livePreviewTheme = EditorView.theme({
   // Base editor styling
   "&": {
     fontSize: "16px",
-    fontFamily: "Georgia, serif",
+    fontFamily: "var(--font-sans)",
   },
   ".cm-content": {
     // IMPORTANT: Keep `.cm-content` full-width so clicking in the left/right
@@ -88,8 +88,7 @@ export const livePreviewTheme = EditorView.theme({
 
   // Inline code
   ".cm-inline-code": {
-    fontFamily:
-      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    fontFamily: "var(--font-mono)",
     fontSize: "0.9em",
     backgroundColor: "var(--theme-surface, #f5f5f5)",
     padding: "2px 6px",
@@ -106,7 +105,7 @@ export const livePreviewTheme = EditorView.theme({
   // Headings
   ".cm-heading": {
     fontWeight: "bold",
-    fontFamily: "var(--theme-font-display, Georgia, serif)",
+    fontFamily: "var(--font-sans)",
   },
   ".cm-heading-1": {
     fontSize: "2em",
@@ -136,8 +135,7 @@ export const livePreviewTheme = EditorView.theme({
 
   // Code blocks
   ".cm-code-block": {
-    fontFamily:
-      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    fontFamily: "var(--font-mono)",
     fontSize: "0.9em",
     backgroundColor: "var(--theme-surface, #f5f5f5)",
   },
@@ -172,8 +170,7 @@ export const livePreviewTheme = EditorView.theme({
 
   // Tables
   ".cm-table-row": {
-    fontFamily:
-      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    fontFamily: "var(--font-mono)",
     fontSize: "0.9em",
   },
   ".cm-table-header": {

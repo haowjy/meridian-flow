@@ -74,17 +74,14 @@
   --color-sidebar-ring: var(--sidebar-ring);
 
   /* === Typography (bridged from theme system) === */
-  --font-display: var(
-    --theme-font-display,
-    "Cormorant Garamond",
-    Georgia,
-    serif
-  );
-  --font-body: var(--theme-font-body, "Source Serif 4", Georgia, serif);
-  --font-ui: var(--theme-font-ui, "Manrope", system-ui, sans-serif);
+  --font-display: var(--theme-font-display, system-ui, sans-serif);
+  --font-body: var(--theme-font-body, system-ui, sans-serif);
+  --font-ui: var(--theme-font-ui, system-ui, sans-serif);
   --font-sans: var(--font-ui);
   --font-serif: var(--font-body);
-  --font-mono: ui-monospace, monospace;
+  --font-mono:
+    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    monospace;
 
   /* === Component Heights (consistent sizing scale) === */
   --component-height-xs: 24px; /* Compact inline controls */
@@ -182,10 +179,10 @@
     0 10px 25px rgba(44, 36, 24, 0.18), 0 4px 10px rgba(44, 36, 24, 0.12);
   --theme-selection-bg: rgba(74, 122, 104, 0.25);
   --theme-selection-fg: #1f1a12;
-  /* Typography: Cormorant Garamond (display), Source Serif 4 (body), Manrope (UI) */
-  --theme-font-display: "Cormorant Garamond", Georgia, serif;
-  --theme-font-body: "Source Serif 4", Georgia, serif;
-  --theme-font-ui: "Manrope", system-ui, sans-serif;
+  /* Typography: browser-default sans (display/body/UI), JetBrains Mono (mono) */
+  --theme-font-display: system-ui, sans-serif;
+  --theme-font-body: system-ui, sans-serif;
+  --theme-font-ui: system-ui, sans-serif;
   --theme-radius: 8px;
 
   /* Paper grain texture (subtle noise for light mode, disabled in dark) */

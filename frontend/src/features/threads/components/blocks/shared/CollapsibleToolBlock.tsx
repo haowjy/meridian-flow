@@ -17,6 +17,10 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from "@/shared/components/ui/collapsible";
+import {
+  threadToolContentPadding,
+  threadToolHeaderPadding,
+} from "../../styles";
 
 export interface CollapsibleToolBlockProps {
   /** Icon component to display in header */
@@ -70,7 +74,8 @@ export function CollapsibleToolBlock({
             <button
               type="button"
               className={cn(
-                "flex min-w-0 flex-1 items-center gap-2 px-3 py-2",
+                "flex min-w-0 flex-1 items-center gap-2",
+                threadToolHeaderPadding,
                 "cursor-pointer text-left",
                 "hover:bg-muted/50 transition-colors",
                 "@container",
@@ -111,7 +116,9 @@ export function CollapsibleToolBlock({
 
         {/* Expanded content */}
         <CollapsibleContent>
-          <div className="space-y-2 border-t px-3 py-3">{children}</div>
+          <div className={cn("space-y-2 border-t", threadToolContentPadding)}>
+            {children}
+          </div>
         </CollapsibleContent>
       </div>
     </Collapsible>

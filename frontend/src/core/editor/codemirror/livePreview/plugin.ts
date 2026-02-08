@@ -148,26 +148,51 @@ export function getLineRange(
 
 class LivePreviewPlugin {
   decorations: DecorationSet;
+  private view: EditorView;
+  private pendingRebuild = false;
+  private onPointerUp: () => void;
 
   constructor(view: EditorView) {
+    this.view = view;
     this.decorations = this.buildDecorations(view);
+
+    // Listen on document so we catch releases outside the editor
+    this.onPointerUp = () => {
+      if (this.pendingRebuild) {
+        this.pendingRebuild = false;
+        // setTimeout so the pointerup finishes before we dispatch,
+        // which triggers a new update cycle with no pointer event.
+        setTimeout(() => this.view.dispatch({}), 0);
+      }
+    };
+    document.addEventListener("pointerup", this.onPointerUp);
   }
 
   update(update: ViewUpdate) {
-    // Rebuild when document, selection, or viewport changes
-    if (update.docChanged || update.selectionSet || update.viewportChanged) {
+    if (update.docChanged || update.viewportChanged) {
+      // Content or viewport changed — always rebuild immediately
+      this.decorations = this.buildDecorations(update.view);
+      return;
+    }
+
+    if (update.selectionSet) {
+      // Pointer-driven selection (drag-select): defer rebuild to avoid
+      // flicker when decorations toggle mid-drag (known CM6 issue).
+      const isPointer = update.transactions.some((tr) =>
+        tr.isUserEvent("select.pointer"),
+      );
+      if (isPointer) {
+        this.pendingRebuild = true;
+        return;
+      }
+
+      // Keyboard navigation — rebuild immediately
       this.decorations = this.buildDecorations(update.view);
     }
   }
 
-  /**
-   * Cleanup method called when plugin is destroyed.
-   * Currently no external resources to clean up, but adding for:
-   * 1. Future-proofing (may add event listeners, subscriptions later)
-   * 2. CodeMirror best practice compliance
-   */
   destroy() {
-    // No external resources to clean up currently
+    document.removeEventListener("pointerup", this.onPointerUp);
   }
 
   buildDecorations(view: EditorView): DecorationSet {
