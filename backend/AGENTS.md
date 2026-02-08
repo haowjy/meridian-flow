@@ -310,7 +310,7 @@ The tool system follows SOLID principles with clean separation of concerns:
 - `ToolRegistryBuilder` - Fluent API for building tool registries
 
 **Tool Types:**
-1. **Document Tools** (internal): `doc_view`, `doc_tree`, `doc_search`
+1. **Document Tools** (internal): `str_replace_based_edit_tool`, `doc_search`
 2. **Web Search Tools** (external): `web_search` (requires API key)
 
 ### Adding New Tools

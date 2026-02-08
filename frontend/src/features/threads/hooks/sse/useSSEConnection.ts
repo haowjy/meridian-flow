@@ -9,6 +9,9 @@
  * - Handle connection lifecycle (connect, disconnect, error, close)
  * - Buffer high-frequency text deltas
  * - Delegate event processing to handlers
+ *
+ * Streaming state is sourced from useStreamStore (per-thread scoping).
+ * Thread data mutations still go through useThreadStore.
  */
 
 import { useEffect, useMemo, useRef, useCallback } from "react";
@@ -18,6 +21,10 @@ import {
   EventSourceMessage,
 } from "@microsoft/fetch-event-source";
 import { useThreadStore } from "@/core/stores/useThreadStore";
+import {
+  useStreamStore,
+  useCurrentThreadStream,
+} from "@/core/stores/useStreamStore";
 import { useToolStreamStore } from "@/features/threads/stores/useToolStreamStore";
 import { useStreamingBuffer } from "../useStreamingBuffer";
 import { BlockTracker } from "../blockTracker";
@@ -31,32 +38,35 @@ import { makeLogger } from "@/core/lib/logger";
  * assistant turn (if any) and applies text/thinking deltas to the thread store.
  */
 export function useThreadSSE() {
-  // Subscribe to thread store for connection state
+  // Streaming state from stream store (per-thread scoped)
+  const { streamingTurnId, streamingUrl } = useCurrentThreadStream();
+
+  // Thread store for data mutations and coordination
   const {
     threadId,
-    streamingTurnId,
-    streamingUrl,
     appendStreamingTextDelta,
     setStreamingBlockContent,
-    clearStreamingStream,
     refreshTurn,
-    setStreamingBlockInfo,
     notifyStreamEnded,
     setInterjectionContent,
     applyStreamSwitch,
   } = useThreadStore(
     useShallow((s) => ({
       threadId: s.threadId,
-      streamingTurnId: s.streamingTurnId,
-      streamingUrl: s.streamingUrl,
       appendStreamingTextDelta: s.appendStreamingTextDelta,
       setStreamingBlockContent: s.setStreamingBlockContent,
-      clearStreamingStream: s.clearStreamingStream,
       refreshTurn: s.refreshTurn,
-      setStreamingBlockInfo: s.setStreamingBlockInfo,
       notifyStreamEnded: s.notifyStreamEnded,
       setInterjectionContent: s.setInterjectionContent,
       applyStreamSwitch: s.applyStreamSwitch,
+    })),
+  );
+
+  // Stream store actions (stable via getState in actions object)
+  const { removeStream, setBlockInfo } = useStreamStore(
+    useShallow((s) => ({
+      removeStream: s.removeStream,
+      setBlockInfo: s.setBlockInfo,
     })),
   );
 
@@ -82,6 +92,29 @@ export function useThreadSSE() {
     flushInterval: 50,
     onFlush: handleFlush,
   });
+
+  // Construct clearStreamingStream and setStreamingBlockInfo for SSEStoreActions
+  // These compose stream store + thread store actions to match the existing interface
+  const clearStreamingStream = useCallback(() => {
+    const turnId = currentTurnIdRef.current;
+    if (turnId) {
+      removeStream(turnId);
+    }
+    useThreadStore.getState().setInterjectionContent(null);
+  }, [removeStream]);
+
+  const setStreamingBlockInfo = useCallback(
+    (
+      blockIndex: number | null,
+      blockType: Parameters<typeof setBlockInfo>[2],
+    ) => {
+      const turnId = currentTurnIdRef.current;
+      if (turnId) {
+        setBlockInfo(turnId, blockIndex, blockType);
+      }
+    },
+    [setBlockInfo],
+  );
 
   useEffect(() => {
     if (!streamingTurnId || !streamingUrl) {

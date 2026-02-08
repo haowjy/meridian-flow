@@ -10,6 +10,7 @@ import { Card } from "@/shared/components/ui/card";
 import { TurnActionBar } from "./TurnActionBar";
 import { EditTurnInput } from "./EditTurnInput";
 import { useThreadStore } from "@/core/stores/useThreadStore";
+import { useCurrentThreadStream } from "@/core/stores/useStreamStore";
 import { useTreeStore } from "@/core/stores/useTreeStore";
 import { useProjectStore } from "@/core/stores/useProjectStore";
 import { openDocument } from "@/core/lib/panelHelpers";
@@ -34,21 +35,17 @@ interface UserTurnProps {
  */
 export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const {
-    switchSibling,
-    editTurn,
-    isLoadingTurns,
-    isSwitchingSibling,
-    streamingTurnId,
-  } = useThreadStore(
-    useShallow((s) => ({
-      switchSibling: s.switchSibling,
-      editTurn: s.editTurn,
-      isLoadingTurns: s.isLoadingTurns,
-      isSwitchingSibling: s.isSwitchingSibling,
-      streamingTurnId: s.streamingTurnId,
-    })),
-  );
+  const { streamingTurnId } = useCurrentThreadStream();
+
+  const { switchSibling, editTurn, isLoadingTurns, isSwitchingSibling } =
+    useThreadStore(
+      useShallow((s) => ({
+        switchSibling: s.switchSibling,
+        editTurn: s.editTurn,
+        isLoadingTurns: s.isLoadingTurns,
+        isSwitchingSibling: s.isSwitchingSibling,
+      })),
+    );
 
   const navigate = useNavigate();
   const isStreaming = streamingTurnId !== null;

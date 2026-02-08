@@ -17,8 +17,7 @@ const composerSpecificTheme = EditorView.theme({
   // Editor container — compact, no outline
   "&.cm-editor": {
     fontSize: "14px",
-    fontFamily:
-      "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+    fontFamily: "var(--font-sans)",
     outline: "none",
   },
   "&.cm-editor.cm-focused": {
@@ -27,7 +26,7 @@ const composerSpecificTheme = EditorView.theme({
 
   // Content area — compact padding, auto height
   ".cm-content": {
-    padding: "6px 8px",
+    padding: "5px 8px",
     caretColor: "var(--theme-text, currentColor)",
     cursor: "text",
   },

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback, } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   autoUpdate,
   flip,
@@ -235,10 +235,10 @@ export function EditTurnInput({
 
   if (!isOpen) return null;
 
-  // Card styling synced with UserTurn via userTurnCardBase
-  // gap-2 overrides Card's gap-6, w-full for editor width
+  // Card styling synced with UserTurn via userTurnCardBase.
+  // Compact gap keeps editor + controls aligned with main composer density.
   return (
-    <Card className={cn(userTurnCardBase, "w-full gap-2")}>
+    <Card className={cn(userTurnCardBase, "w-full gap-1.5")}>
       <div ref={mentionAnchorContainerRef} className="relative">
         {isPopoverOpen && mentionAnchor && (
           <div
@@ -272,7 +272,11 @@ export function EditTurnInput({
           )}
         <ComposerShell
           ref={shellRef}
-          placeholder={getEditPlaceholder(draftNumber, totalDrafts, lastAtReferenceUsed)}
+          placeholder={getEditPlaceholder(
+            draftNumber,
+            totalDrafts,
+            lastAtReferenceUsed,
+          )}
           focusKey={isOpen ? "edit" : null}
           onSubmit={handleSave}
           onEscape={onClose}

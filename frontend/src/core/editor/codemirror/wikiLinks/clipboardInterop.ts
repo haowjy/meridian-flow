@@ -64,8 +64,8 @@ export function formatWikiLink(path: string, displayName: string): string {
   const trimmedPath = path.trim();
   const trimmedName = displayName.trim();
   if (!trimmedPath) return "";
-  if (!trimmedName || trimmedName === trimmedPath) return `@[[${trimmedPath}]]`;
-  return `@[[${trimmedPath} | ${trimmedName}]]`;
+  if (!trimmedName || trimmedName === trimmedPath) return `[[${trimmedPath}]]`;
+  return `[[${trimmedPath} | ${trimmedName}]]`;
 }
 
 const referenceClipboardCodec: ClipboardCodec<ReferenceClipboardElement> = {

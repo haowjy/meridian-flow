@@ -20,6 +20,7 @@ import type { TurnBlock, ToolBlockContent } from "@/features/threads/types";
 import type { ToolInteraction } from "@/features/threads/utils/toolGrouping";
 import { useUIStore } from "@/core/stores/useUIStore";
 import { useIsGroupStreaming } from "@/features/threads/hooks/useIsGroupStreaming";
+import { threadToolContentPadding, threadToolHeaderPadding } from "../styles";
 import {
   Collapsible,
   CollapsibleTrigger,
@@ -178,7 +179,8 @@ export const ThinkingGroupBlock = React.memo(function ThinkingGroupBlock({
           <button
             type="button"
             className={cn(
-              "flex w-full items-center gap-2 px-3 py-2",
+              "flex w-full items-center gap-2",
+              threadToolHeaderPadding,
               "cursor-pointer text-left",
               "hover:bg-muted/40 transition-colors",
             )}
@@ -230,7 +232,7 @@ export const ThinkingGroupBlock = React.memo(function ThinkingGroupBlock({
 
         {/* Expanded content */}
         <CollapsibleContent>
-          <div className="space-y-2 border-t px-3 py-3">
+          <div className={cn("space-y-2 border-t", threadToolContentPadding)}>
             {items.map((item, index) => {
               if (item.kind === "thinking") {
                 // Render thinking content as plain text (not ThinkingBlock)

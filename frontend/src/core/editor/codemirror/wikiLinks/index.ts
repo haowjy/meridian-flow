@@ -2,7 +2,7 @@
  * Wiki-Links Module
  *
  * Document editor @-references stored as `@[[path | name]]` markdown syntax,
- * rendered as pill widgets with Obsidian-style cursor reveal.
+ * rendered as styled inline text with Obsidian-style cursor reveal.
  */
 
 export {
@@ -16,7 +16,8 @@ export {
   findWikiLinks,
   pathToDisplayName,
 } from "./wikiLinkRegex";
-export { WikiLinkWidget } from "./WikiLinkWidget";
+export { RefIconWidget } from "./WikiLinkWidget";
+export type { PillAIChangeType } from "./WikiLinkWidget";
 export {
   buildMeridianClipboardFromWikiText,
   ensureReferenceClipboardCodecRegistered,

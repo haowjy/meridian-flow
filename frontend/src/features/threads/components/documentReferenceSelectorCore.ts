@@ -56,7 +56,8 @@ export function useDocumentReferenceSelector(query: string) {
   );
 
   const getReferencesForItem = useCallback(
-    (item: ReferenceSearchItem) => buildReferencesForItem(item, documents, tree),
+    (item: ReferenceSearchItem) =>
+      buildReferencesForItem(item, documents, tree),
     [documents, tree],
   );
 
@@ -66,4 +67,3 @@ export function useDocumentReferenceSelector(query: string) {
     getReferencesForItem,
   };
 }
-

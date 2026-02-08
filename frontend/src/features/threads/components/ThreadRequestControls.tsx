@@ -109,7 +109,7 @@ export function ThreadRequestControls({
   const showStop = Boolean(isStreaming && onStop && !isInterjectionMode);
 
   return (
-    <div className="flex items-center gap-2 pt-1 text-xs">
+    <div className="flex items-center gap-1.5 pt-0.5 text-xs">
       <div className="@container flex flex-1 items-center gap-1">
         <ModelSelector
           models={allModels}
@@ -261,10 +261,7 @@ function ModelSelector({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
         {groups.length === 0 && (
-          <DropdownMenuItem
-            onSelect={selectDefaultModel}
-            className="text-xs"
-          >
+          <DropdownMenuItem onSelect={selectDefaultModel} className="text-xs">
             {DEFAULT_THREAD_REQUEST_OPTIONS.modelLabel}
           </DropdownMenuItem>
         )}

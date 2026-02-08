@@ -45,8 +45,7 @@ export interface CodeMirrorPreviewProps {
 const previewTheme = EditorView.theme({
   "&": {
     fontSize: "12px",
-    fontFamily:
-      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    fontFamily: "var(--font-mono)",
   },
   ".cm-content": {
     padding: "8px 4px",

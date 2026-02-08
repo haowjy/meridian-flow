@@ -9,7 +9,7 @@ import type { ThemePreset } from "./types";
 
 /**
  * Modern Literary Theme (Enhanced)
- * Cormorant Garamond + Source Serif 4 + Manrope
+ * Browser-default sans for main typography + JetBrains Mono for mono surfaces
  * Warm paper with sage green accent - calm, literary, natural
  */
 const modernLiterary: ThemePreset = {
@@ -118,28 +118,16 @@ const modernLiterary: ThemePreset = {
     },
   },
   typography: {
-    display: "'Cormorant Garamond', Georgia, serif",
-    body: "'Source Serif 4', Georgia, serif",
-    ui: "'Manrope', system-ui, sans-serif",
+    display: "system-ui, sans-serif",
+    body: "system-ui, sans-serif",
+    ui: "system-ui, sans-serif",
   },
   fonts: [
     {
-      family: "Cormorant Garamond",
-      weights: [400, 500, 600],
-      italic: true,
-      url: "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap",
-    },
-    {
-      family: "Source Serif 4",
-      weights: [400, 500, 600],
-      italic: true,
-      url: "https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;1,8..60,400;1,8..60,500&display=swap",
-    },
-    {
-      family: "Manrope",
+      family: "JetBrains Mono",
       weights: [400, 500, 600],
       italic: false,
-      url: "https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&display=swap",
+      url: "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap",
     },
   ],
   radius: 8,

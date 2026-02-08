@@ -20,7 +20,12 @@ import {
   keymap,
   placeholder as placeholderExtension,
 } from "@codemirror/view";
-import { Compartment, EditorState, Prec, type Extension } from "@codemirror/state";
+import {
+  Compartment,
+  EditorState,
+  Prec,
+  type Extension,
+} from "@codemirror/state";
 import { history, historyKeymap, defaultKeymap } from "@codemirror/commands";
 import { createMeridianClipboardExtension } from "@/core/clipboard/codemirrorExtension";
 import {
@@ -377,7 +382,10 @@ export const ComposerEditor = forwardRef<
           if (update.docChanged) {
             onContentChangeRef.current?.();
           }
-          if ((update.docChanged || update.selectionSet) && onAtMentionRef.current) {
+          if (
+            (update.docChanged || update.selectionSet) &&
+            onAtMentionRef.current
+          ) {
             const mentionState = update.state.field(atMentionField, false);
             onAtMentionRef.current(mentionState ?? null);
           }

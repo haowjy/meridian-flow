@@ -1,8 +1,9 @@
 /**
  * Wiki-Link Insertion Helper
  *
- * Inserts a wiki-link `@[[path | displayName]]` into the editor,
+ * Inserts a wiki-link `[[path | displayName]]` into the editor,
  * replacing the `@query` text that triggered the mention popover.
+ * The `@` trigger is consumed because we replace from `atPos`.
  */
 
 import type { EditorView } from "@codemirror/view";
@@ -27,7 +28,7 @@ export function insertWikiLink(
   path: string,
   displayName: string,
 ): void {
-  const wikiLink = `@[[${path} | ${displayName}]]`;
+  const wikiLink = `[[${path} | ${displayName}]]`;
   view.dispatch({
     changes: { from: atPos, to: cursorPos, insert: wikiLink + " " },
     selection: { anchor: atPos + wikiLink.length + 1 },

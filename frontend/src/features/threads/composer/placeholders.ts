@@ -30,7 +30,9 @@ const INTERJECT_PLACEHOLDERS = [
   "Quick thought",
 ];
 
-const EDIT_PLACEHOLDERS: Array<string | ((n: number, total: number) => string)> = [
+const EDIT_PLACEHOLDERS: Array<
+  string | ((n: number, total: number) => string)
+> = [
   (n, total) => `Draft ${n} of ${total}`,
   "Rewrite history",
   "Branch into another timeline",
@@ -79,6 +81,7 @@ export function getEditPlaceholder(
 ): string {
   const suffix = shouldShowAtHint(lastAtUsed) ? ", @ for reference" : "";
   const entry = EDIT_PLACEHOLDERS[editIdx]!;
-  const base = typeof entry === "function" ? entry(draftNumber, totalDrafts) : entry;
+  const base =
+    typeof entry === "function" ? entry(draftNumber, totalDrafts) : entry;
   return `${base}${suffix}`;
 }

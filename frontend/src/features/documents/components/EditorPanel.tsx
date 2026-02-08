@@ -62,6 +62,18 @@ import type { MentionResult } from "@/features/threads/components/DocumentMentio
 
 const log = makeLogger("editor-panel");
 
+const plaintextEditorTheme = EditorView.theme({
+  "&": {
+    fontFamily: "var(--font-mono)",
+  },
+  ".cm-content": {
+    fontFamily: "var(--font-mono)",
+  },
+  ".cm-line": {
+    fontFamily: "var(--font-mono)",
+  },
+});
+
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -198,6 +210,10 @@ export function EditorPanel({
   // Get file extension for adapter selection (default to .md if not available yet)
   const extension =
     activeDocument?.extension ?? documentMetadata?.extension ?? ".md";
+  const editorFontExtensions = useMemo(() => {
+    if (extension.toLowerCase() !== ".txt") return [];
+    return [plaintextEditorTheme];
+  }, [extension]);
 
   // 1. Document content (loading, hydration, local state)
   const {
@@ -470,7 +486,11 @@ export function EditorPanel({
                 placeholder="Start writing..."
                 onChange={handleContentChange}
                 onReady={handleEditorReady}
-                extensions={[...initialExtensions, ...wikiLinkExtensions]}
+                extensions={[
+                  ...initialExtensions,
+                  ...wikiLinkExtensions,
+                  ...editorFontExtensions,
+                ]}
                 className="min-h-full"
               />
             </EditorContextMenu>

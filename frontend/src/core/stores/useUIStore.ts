@@ -495,8 +495,7 @@ export const useUIStore = create<UIStore>()(
           return { pendingThreadReferences: merged };
         }),
       clearPendingThreadReferences: () => set({ pendingThreadReferences: [] }),
-      recordAtReferenceUsage: () =>
-        set({ lastAtReferenceUsed: Date.now() }),
+      recordAtReferenceUsage: () => set({ lastAtReferenceUsed: Date.now() }),
     }),
     {
       name: "ui-store",

@@ -11,7 +11,7 @@ import (
 )
 
 // normalizeToolResultContent converts tool result content to string format.
-// If result is already a string (from formatters like doc_tree), use directly.
+// If result is already a string (from formatters), use directly.
 // If result is structured data (maps/arrays), JSON-marshal it for LLM consumption.
 // This normalization happens at the backend-library boundary so adapters can
 // assume Content["result"] is always a string (Single Responsibility Principle).
