@@ -43,27 +43,13 @@ feature: "Tool UI Components"
 
 ---
 
-## DocTreeBlock
-
-**Purpose**: Specialized UI for `doc_tree` tool interactions.
-
-**Features**:
-- Collapsible project tree hierarchy
-- Status badges: Pending → Traversed/Error
-- Click to navigate to documents
-
-**Files**:
-- `frontend/src/features/threads/components/blocks/DocTreeBlock/`
-
----
-
 ## Shared Components
 
 ### FolderTreeView
 
 **Purpose**: Reusable tree rendering component.
 
-**Used by**: TextEditorBlock (folder view), DocTreeBlock
+**Used by**: TextEditorBlock (folder view)
 
 **Files**:
 - `frontend/src/features/threads/components/blocks/shared/FolderTreeView.tsx`

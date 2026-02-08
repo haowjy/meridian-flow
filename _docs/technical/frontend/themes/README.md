@@ -76,9 +76,10 @@ flowchart LR
 
 | Role | Font | Usage | Fallback |
 |------|------|-------|----------|
-| Display | Cormorant Garamond | Headings, titles | Georgia, serif |
-| Body | Source Serif 4 | Document content | Georgia, serif |
-| UI | Manrope | Buttons, labels, nav | system-ui, sans-serif |
+| Display | Browser default sans | Headings, titles | system-ui, sans-serif |
+| Body | Browser default sans | Document content | system-ui, sans-serif |
+| UI | Browser default sans | Buttons, labels, nav | system-ui, sans-serif |
+| Mono | JetBrains Mono | Code/plaintext surfaces | ui-monospace, monospace |
 
 ### Shadow Elevation
 
@@ -115,7 +116,7 @@ function MyComponent() {
 
 ### Available Themes
 
-- [`modern-literary`](./modern-literary.md) - Only theme. Warm paper + sage green + gold, Cormorant Garamond/Source Serif 4/Manrope
+- [`modern-literary`](./modern-literary.md) - Only theme. Warm paper + sage green + gold, browser default sans + JetBrains Mono for mono surfaces
 
 **Design Decision**: Single theme simplifies the UX and ensures consistent visual identity. Theme switching can be re-enabled in the future if needed by reversing these changes.
 
