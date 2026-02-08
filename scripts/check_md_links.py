@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from functools import lru_cache
@@ -43,7 +44,32 @@ class BrokenRef:
     reason: str
 
 
-def list_markdown_files(root_dir: str) -> list[str]:
+def list_markdown_files(root_dir: str, respect_gitignore: bool = True) -> list[str]:
+    """List markdown files under root_dir.
+
+    When respect_gitignore is True (the default), uses `git ls-files` so that
+    paths matched by .gitignore are automatically excluded.  Falls back to a
+    plain os.walk if git is unavailable or the directory is outside a repo.
+    """
+    if respect_gitignore:
+        try:
+            result = subprocess.run(
+                ["git", "ls-files", "--cached", "--others", "--exclude-standard", "*.md"],
+                cwd=root_dir,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            files = [
+                os.path.join(root_dir, line)
+                for line in result.stdout.splitlines()
+                if line
+            ]
+            files.sort()
+            return files
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass  # fall through to os.walk
+
     files: list[str] = []
     for dirpath, _, filenames in os.walk(root_dir):
         for name in filenames:
@@ -233,6 +259,11 @@ def main() -> int:
         action="store_true",
         help="Skip anchor existence checks for #fragment links.",
     )
+    parser.add_argument(
+        "--no-gitignore",
+        action="store_true",
+        help="Don't respect .gitignore (scan all .md files including ignored ones).",
+    )
     args = parser.parse_args()
 
     root_dir = os.path.abspath(args.root)
@@ -244,7 +275,7 @@ def main() -> int:
         print(f"error: directory not found: {args.root}", file=sys.stderr)
         return 2
 
-    md_files = list_markdown_files(root_dir)
+    md_files = list_markdown_files(root_dir, respect_gitignore=not args.no_gitignore)
     if not md_files:
         print(f"no markdown files found under {args.root}")
         return 0
