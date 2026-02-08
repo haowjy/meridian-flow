@@ -435,6 +435,6 @@ async function connectToStream(turnId: string) {
 - Executor: `internal/service/llm/streaming/executor.go`
 
 **Related:**
-- [Streaming Architecture](../architecture/streaming-architecture.md)
+- [Streaming Architecture](../../backend/architecture/streaming-architecture.md)
 - [Edge Cases](edge-cases.md)
 - [Tool Execution](tool-execution.md)

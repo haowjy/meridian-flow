@@ -213,6 +213,6 @@ When team support is added:
 
 ## Related
 
-- [JWT Validation](../auth/jwt-validation.md) - Authentication layer
+- [JWT Validation](../../../features/fb-authentication/jwt-validation.md) - Authentication layer
 - [Service Layer Architecture](../architecture/service-layer.md) - Service organization
-- [Domain Errors](../errors.md) - Error types (ErrUnauthorized, ErrNotFound)
+- [Domain Errors](../architecture/overview.md#error-handling) - Error types (ErrUnauthorized, ErrNotFound)

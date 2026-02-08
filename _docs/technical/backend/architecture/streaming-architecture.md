@@ -11,11 +11,11 @@
 2. [Core Concepts](#core-concepts)
 3. [Data Models](#data-models)
 4. [Normal Streaming Flow](#normal-streaming-flow)
-5. [Accumulation & Persistence](#accumulation--persistence)
+5. [Accumulation & Persistence](#accumulation-persistence)
 6. [Client Reconnection](#client-reconnection)
 7. [Tool Execution Flow](#tool-execution-flow)
 8. [Multi-Provider Abstraction](#multi-provider-abstraction)
-9. [Edge Cases & Error Handling](#edge-cases--error-handling)
+9. [Edge Cases & Error Handling](#edge-cases-error-handling)
 
 ---
 
@@ -482,7 +482,7 @@ For details, see:
 
 **Status:** ✅ Fixed (2025-01-13)
 
-Key race conditions are documented in [`_docs/technical/llm/streaming/race-conditions.md`](../streaming/race-conditions.md).
+Key race conditions are documented in [`_docs/technical/llm/streaming/race-conditions.md`](../../llm/streaming/race-conditions.md).
 
 Backend streaming currently:
 - Uses `mstream.Stream` for atomic persist‑and‑clear semantics.

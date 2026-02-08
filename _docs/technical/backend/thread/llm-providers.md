@@ -353,7 +353,7 @@ models:
     output_price_per_mtok: 15.00
 ```
 
-**See:** [`_docs/technical/llm/capability-loading.md`](../../llm/capability-loading.md) for config loading details
+**See:** [`_docs/technical/llm/extensibility-and-lifecycle.md`](../../llm/extensibility-and-lifecycle.md) for config loading details
 
 ## Error Handling
 
@@ -417,7 +417,7 @@ func (s *LLMService) formatUserError(err *llm.LLMError) string {
 }
 ```
 
-**See:** [`_docs/technical/llm/error-normalization.md`](../../llm/error-normalization.md) for complete error handling
+**See:** [`meridian-llm-go/docs/errors.md`](../../../../meridian-llm-go/docs/errors.md) for complete error handling
 
 ## Tool Execution
 
@@ -484,7 +484,7 @@ for i := 0; i < maxIterations; i++ {
 - **Custom tools**: Must use `Type: ToolTypeCustom` with full definition (Description, InputSchema)
 
 **See:**
-- [`meridian-llm-go/docs/tools.md`](../../../meridian-llm-go/docs/tools.md) for complete tool guide
+- [`meridian-llm-go/docs/tools.md`](../../../../meridian-llm-go/docs/tools.md) for complete tool guide
 - [`_docs/technical/backend/llm-integration.md`](../llm-integration.md) for complete backend integration guide
 
 ## References
@@ -492,15 +492,15 @@ for i := 0; i < maxIterations; i++ {
 ### Library Documentation
 - **[LLM Library README](../../llm/README.md)** - Library overview
 - **[Architecture](../../llm/architecture.md)** - 3-layer design
-- **[Tool Mapping](../../llm/unified-tool-mapping.md)** - Tool execution patterns
-- **[Error Normalization](../../llm/error-normalization.md)** - Error handling
-- **[Capability Configuration](../../llm/capability-config-schema.md)** - Capability schema
-- **[Capability Loading](../../llm/capability-loading.md)** - Config loading strategy
+- **[Tool Mapping](../../../../meridian-llm-go/docs/tools.md)** - Tool execution patterns
+- **[Error Normalization](../../../../meridian-llm-go/docs/errors.md)** - Error handling
+- **[Capability Configuration](../../llm/extensibility-and-lifecycle.md)** - Capability schema
+- **[Capability Loading](../../llm/extensibility-and-lifecycle.md)** - Config loading strategy
 
 ### Backend Integration
 - **[Backend Integration Guide](../llm-integration.md)** - Complete integration patterns
-- **[Streaming Integration](../streaming/README.md)** - Streaming infrastructure
+- **[Streaming Integration](../architecture/streaming-architecture.md)** - Streaming infrastructure
 - **[Tool Execution](../../llm/streaming/tool-execution.md)** - Tool execution details
 
 ### Implementation Plan
-- **[V5 Plan](_docs/hidden/handoffs/llm-provider-unification-plan-v5.md)** - Complete implementation plan (6 phases)
+- **[Library Architecture](../../llm/architecture.md)** - Complete implementation reference

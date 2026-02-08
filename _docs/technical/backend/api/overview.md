@@ -10,7 +10,7 @@ High-level overview of the Meridian REST API.
 ## Quick Reference
 
 **Full contracts?** -> [contracts.md](contracts.md)
-**Error handling?** -> [../api-contracts.md#error-responses](../api-contracts.md#error-responses)
+**Error handling?** -> [error-responses.md](error-responses.md)
 
 ## Base URL
 
@@ -318,5 +318,5 @@ curl -X POST http://localhost:8080/api/documents \
 ## Next Steps
 
 **Detailed contracts?** -> [contracts.md](contracts.md)
-**Error details?** -> [contracts.md#error-responses](../api-contracts.md#error-responses)
+**Error details?** -> [error-responses.md](error-responses.md)
 **Setup API testing?** -> [../development/testing.md](../development/testing.md)

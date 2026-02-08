@@ -66,10 +66,10 @@ The backend uses the `meridian-llm-go` library for all LLM provider interactions
 
 **For LLM library documentation:**
 - [Architecture](../llm/architecture.md) - Library design and 3-layer architecture
-- [Tool Mapping](../llm/unified-tool-mapping.md) - Unified tool abstraction across providers
-- [Error Handling](../../meridian-llm-go/docs/errors.md) - Error normalization
+- [Tool Mapping](../../../meridian-llm-go/docs/tools.md) - Unified tool abstraction across providers
+- [Error Handling](../../../meridian-llm-go/docs/errors.md) - Error normalization
 - [Retry Strategies](../../future/ideas/infrastructure/retry-strategies.md) - Future retry implementation
-- [Capability Loading](../llm/capability-loading.md) - Provider config loading patterns
+- [Capability Loading](../llm/extensibility-and-lifecycle.md) - Provider config loading patterns
 - [Streaming](../llm/streaming/README.md) - Streaming architecture and block types
 
 **For backend integration:**
@@ -111,7 +111,7 @@ Real-time LLM response delivery via Server-Sent Events:
 
 - **Start here:** [../llm/streaming/README.md](../llm/streaming/README.md) ⭐
 - Architecture: [architecture/streaming-architecture.md](architecture/streaming-architecture.md)
-- Block types: [../llm/streaming/block-types-reference.md](../llm/streaming/block-types-reference.md)
+- Block types: [thread/turn-blocks.md](thread/turn-blocks.md)
 - API endpoints: [../llm/streaming/api-endpoints.md](../llm/streaming/api-endpoints.md)
 - Race conditions: [../llm/streaming/race-conditions.md](../llm/streaming/race-conditions.md)
 - Tool execution: [../llm/streaming/tool-execution.md](../llm/streaming/tool-execution.md)
