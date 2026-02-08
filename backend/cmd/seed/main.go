@@ -7,7 +7,6 @@ import (
 	"log"
 	"log/slog"
 	"os"
-	"time"
 
 	"meridian/internal/auth"
 	"meridian/internal/config"
@@ -67,40 +66,28 @@ func main() {
 	// Create auth admin client for user management
 	authClient := auth.NewAdminClient(cfg.SupabaseURL, cfg.SupabaseKey)
 
-	// Get or create test user (idempotent)
-	testEmail := "test@example.com"
-	testPassword := "meridian"
+	// Resolve test user (optional explicit override via TEST_USER_ID).
+	// Fallback remains idempotent email-based lookup/create for local dev.
+	userID := os.Getenv("TEST_USER_ID")
+	if userID == "" {
+		testEmail := "test@example.com"
+		testPassword := "meridian"
 
-	log.Printf("🔐 Checking for existing test user (%s)...", testEmail)
-	userID, err := authClient.GetUserByEmail(testEmail)
-	if err != nil {
-		// User doesn't exist, create new one
-		log.Printf("🔐 Creating test user (%s)...", testEmail)
-		userID, err = authClient.CreateUser(testEmail, testPassword)
+		log.Printf("🔐 Checking for existing test user (%s)...", testEmail)
+		userID, err = authClient.GetUserByEmail(testEmail)
 		if err != nil {
-			log.Fatalf("❌ Failed to create test user: %v", err)
+			// User doesn't exist, create new one
+			log.Printf("🔐 Creating test user (%s)...", testEmail)
+			userID, err = authClient.CreateUser(testEmail, testPassword)
+			if err != nil {
+				log.Fatalf("❌ Failed to create test user: %v", err)
+			}
+			log.Printf("✅ Created test user with ID: %s", userID)
+		} else {
+			log.Printf("✅ Using existing test user with ID: %s", userID)
 		}
-		log.Printf("✅ Created test user with ID: %s", userID)
 	} else {
-		log.Printf("✅ Using existing test user with ID: %s", userID)
-	}
-
-	// Fixed project ID for test data
-	projectID := "00000000-0000-0000-0000-000000000001"
-
-	// Exit early if clear-data mode (just clear and exit)
-	if *clearData {
-		log.Println("🧹 Clearing existing documents and folders...")
-		if err := clearProjectData(ctx, pool, tables, projectID); err != nil {
-			log.Fatalf("Failed to clear data: %v", err)
-		}
-		log.Println("✅ Data cleared successfully")
-		return
-	}
-
-	// Ensure test project exists
-	if err := ensureTestProject(ctx, pool, tables, projectID, userID); err != nil {
-		log.Fatalf("Failed to ensure test project: %v", err)
+		log.Printf("✅ Using explicit test user override: %s", userID)
 	}
 
 	// Create repositories for document seeding
@@ -113,6 +100,7 @@ func main() {
 	docRepo := postgresDocsys.NewDocumentRepository(repoConfig)
 	folderRepo := postgresDocsys.NewFolderRepository(repoConfig)
 	txManager := postgres.NewTransactionManager(pool)
+	projectService := serviceDocsys.NewProjectService(projectRepo, logger)
 
 	// Thread/turn repos for authorizer (needed for auth chain: turn → thread → project → user)
 	threadRepo := postgresLLM.NewThreadRepository(repoConfig)
@@ -141,6 +129,22 @@ func main() {
 
 	// Create import service with processor registry
 	importService := serviceDocsys.NewImportService(docRepo, fileProcessorRegistry, logger)
+
+	// Ensure test project exists (service-layer path) and use returned ID consistently.
+	projectID, err := ensureTestProject(ctx, projectService, userID)
+	if err != nil {
+		log.Fatalf("Failed to ensure test project: %v", err)
+	}
+
+	// Exit early if clear-data mode (just clear and exit)
+	if *clearData {
+		log.Println("🧹 Clearing existing documents and folders...")
+		if err := clearProjectData(ctx, pool, tables, projectID); err != nil {
+			log.Fatalf("Failed to clear data: %v", err)
+		}
+		log.Println("✅ Data cleared successfully")
+		return
+	}
 
 	// Seed documents using import service (additive - use --clear-data flag to clear first)
 	log.Println("📝 Seeding documents from seed_data directory...")
@@ -185,19 +189,27 @@ func main() {
 	log.Println("✅ Thread data seeded")
 }
 
-// ensureTestProject creates a test project if it doesn't exist
-func ensureTestProject(ctx context.Context, pool *pgxpool.Pool, tables *postgres.TableNames, projectID, userID string) error {
-	query := `
-		INSERT INTO ` + tables.Projects + ` (id, user_id, name, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (id) DO NOTHING
-	`
-	now := time.Now()
-	_, err := pool.Exec(ctx, query, projectID, userID, "Test Project", now, now)
+// ensureTestProject returns an existing "Test Project" ID, or creates it via service layer.
+func ensureTestProject(ctx context.Context, projectService docsysSvc.ProjectService, userID string) (string, error) {
+	projects, err := projectService.ListProjects(ctx, userID)
 	if err != nil {
-		return err
+		return "", err
 	}
-	return nil
+
+	for _, project := range projects {
+		if project.Name == "Test Project" {
+			return project.ID, nil
+		}
+	}
+
+	project, err := projectService.CreateProject(ctx, &docsysSvc.CreateProjectRequest{
+		UserID: userID,
+		Name:   "Test Project",
+	})
+	if err != nil {
+		return "", err
+	}
+	return project.ID, nil
 }
 
 // clearProjectData clears all documents and folders for a project

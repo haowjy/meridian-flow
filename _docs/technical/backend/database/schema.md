@@ -134,8 +134,8 @@ Hierarchical folder structure using adjacency list pattern (self-referencing tre
 - Backend validates against circular references (can't move folder into its own descendant)
 
 **Indexes:**
-- `idx_folders_project_parent` on `(project_id, parent_id)` - Fast hierarchy traversal
-- `idx_folders_root_unique` on `(project_id, name) WHERE parent_id IS NULL` - Root uniqueness
+- `idx_${TABLE_PREFIX}folders_project_parent` on `(project_id, parent_id)` - Fast hierarchy traversal
+- `idx_${TABLE_PREFIX}folders_root_unique` on `(project_id, name) WHERE parent_id IS NULL` - Root uniqueness
 
 #### `documents`
 
@@ -160,9 +160,9 @@ Content documents (leaf nodes in hierarchy). Store text-based content in `conten
 - RESTRICT when project deleted (must delete documents first)
 
 **Indexes:**
-- `idx_documents_project_id` on `project_id` - Fast project queries
-- `idx_documents_project_folder` on `(project_id, folder_id)` - Fast folder queries
-- `idx_documents_root_unique` on `(project_id, name, extension) WHERE folder_id IS NULL` - Root uniqueness
+- `idx_${TABLE_PREFIX}documents_project_id` on `project_id` - Fast project queries
+- `idx_${TABLE_PREFIX}documents_project_folder` on `(project_id, folder_id)` - Fast folder queries
+- `idx_${TABLE_PREFIX}documents_root_unique` on `(project_id, name, extension) WHERE folder_id IS NULL` - Root uniqueness
 
 ### Content Storage
 
@@ -253,9 +253,9 @@ Thread sessions scoped to projects.
 - SET NULL on last_viewed_turn_id when referenced turn deleted
 
 **Indexes:**
-- `idx_threads_project` on `project_id` - Fast project queries
-- `idx_threads_user` on `user_id` - Fast user queries
-- `idx_threads_last_viewed` on `last_viewed_turn_id` - Fast navigation queries
+- `idx_${TABLE_PREFIX}threads_project` on `project_id` - Fast project queries
+- `idx_${TABLE_PREFIX}threads_user` on `user_id` - Fast user queries
+- `idx_${TABLE_PREFIX}threads_last_viewed` on `last_viewed_turn_id` - Fast navigation queries
 
 #### `turns`
 
@@ -294,8 +294,8 @@ See migration `00003_remove_turn_system_prompt.sql` for details.
 - CASCADE to turn_blocks
 
 **Indexes:**
-- `idx_turns_thread` on `thread_id` - Fast thread queries
-- `idx_turns_prev` on `prev_turn_id` - Fast tree traversal
+- `idx_${TABLE_PREFIX}turns_thread` on `thread_id` - Fast thread queries
+- `idx_${TABLE_PREFIX}turns_prev` on `prev_turn_id` - Fast tree traversal
 
 #### `turn_blocks`
 
@@ -335,9 +335,9 @@ Unified multimodal content for both user and assistant turns. Uses JSONB for typ
 - CASCADE when turn deleted
 
 **Indexes:**
-- `idx_turn_blocks_turn_sequence` on `(turn_id, sequence)` - Fast ordered retrieval
-- `idx_turn_blocks_turn_type` on `(turn_id, block_type)` - Filter blocks by type
-- `idx_turn_blocks_content_gin` (GIN) on `content` - Fast JSONB queries
+- `idx_${TABLE_PREFIX}turn_blocks_turn_sequence` on `(turn_id, sequence)` - Fast ordered retrieval
+- `idx_${TABLE_PREFIX}turn_blocks_turn_type` on `(turn_id, block_type)` - Filter blocks by type
+- `idx_${TABLE_PREFIX}turn_blocks_content_gin` (GIN) on `content` - Fast JSONB queries
 
 **Validation:** Type-specific JSONB schemas validated in application layer. See `internal/domain/models/llm/content_types.go`
 
@@ -463,25 +463,25 @@ Primary resources (projects, folders, documents, threads) support soft deletion 
 
 | Index | Columns | Type | Purpose |
 |-------|---------|------|---------|
-| `idx_projects_user_name` | `(user_id, name)` | UNIQUE | Enforce unique project names per user |
-| `idx_folders_project_parent` | `(project_id, parent_id)` | BTREE | Fast hierarchy traversal |
-| `idx_folders_root_unique` | `(project_id, name) WHERE parent_id IS NULL` | UNIQUE PARTIAL | Root-level folder uniqueness |
-| `idx_documents_project_id` | `project_id` | BTREE | Fast project document queries |
-| `idx_documents_project_folder` | `(project_id, folder_id)` | BTREE | Fast folder document queries |
-| `idx_documents_root_unique` | `(project_id, name) WHERE folder_id IS NULL` | UNIQUE PARTIAL | Root-level document uniqueness |
+| `idx_${TABLE_PREFIX}projects_user_name` | `(user_id, name)` | UNIQUE | Enforce unique project names per user |
+| `idx_${TABLE_PREFIX}folders_project_parent` | `(project_id, parent_id)` | BTREE | Fast hierarchy traversal |
+| `idx_${TABLE_PREFIX}folders_root_unique` | `(project_id, name) WHERE parent_id IS NULL` | UNIQUE PARTIAL | Root-level folder uniqueness |
+| `idx_${TABLE_PREFIX}documents_project_id` | `project_id` | BTREE | Fast project document queries |
+| `idx_${TABLE_PREFIX}documents_project_folder` | `(project_id, folder_id)` | BTREE | Fast folder document queries |
+| `idx_${TABLE_PREFIX}documents_root_unique` | `(project_id, name) WHERE folder_id IS NULL` | UNIQUE PARTIAL | Root-level document uniqueness |
 
 ### Thread System
 
 | Index | Columns | Type | Purpose |
 |-------|---------|------|---------|
-| `idx_threads_project` | `project_id` | BTREE | Fast project thread queries |
-| `idx_threads_user` | `user_id` | BTREE | Fast user thread queries |
-| `idx_threads_last_viewed` | `last_viewed_turn_id` | BTREE | Fast navigation queries |
-| `idx_turns_thread` | `thread_id` | BTREE | Fast thread turn queries |
-| `idx_turns_prev` | `prev_turn_id` | BTREE | Fast tree traversal |
-| `idx_turn_blocks_turn_sequence` | `(turn_id, sequence)` | BTREE | Fast ordered block retrieval |
-| `idx_turn_blocks_turn_type` | `(turn_id, block_type)` | BTREE | Filter blocks by type |
-| `idx_turn_blocks_content_gin` | `content` | GIN | Fast JSONB queries |
+| `idx_${TABLE_PREFIX}threads_project` | `project_id` | BTREE | Fast project thread queries |
+| `idx_${TABLE_PREFIX}threads_user` | `user_id` | BTREE | Fast user thread queries |
+| `idx_${TABLE_PREFIX}threads_last_viewed` | `last_viewed_turn_id` | BTREE | Fast navigation queries |
+| `idx_${TABLE_PREFIX}turns_thread` | `thread_id` | BTREE | Fast thread turn queries |
+| `idx_${TABLE_PREFIX}turns_prev` | `prev_turn_id` | BTREE | Fast tree traversal |
+| `idx_${TABLE_PREFIX}turn_blocks_turn_sequence` | `(turn_id, sequence)` | BTREE | Fast ordered block retrieval |
+| `idx_${TABLE_PREFIX}turn_blocks_turn_type` | `(turn_id, block_type)` | BTREE | Filter blocks by type |
+| `idx_${TABLE_PREFIX}turn_blocks_content_gin` | `content` | GIN | Fast JSONB queries |
 
 ## Foreign Key Behavior Summary
 

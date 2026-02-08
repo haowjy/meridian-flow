@@ -188,38 +188,38 @@ CREATE TABLE IF NOT EXISTS ${TABLE_PREFIX}user_preferences (
 -- =============================================================================
 
 -- File system indexes
-CREATE INDEX idx_projects_user_name ON ${TABLE_PREFIX}projects(user_id, name) WHERE deleted_at IS NULL;
-CREATE INDEX idx_projects_deleted ON ${TABLE_PREFIX}projects(deleted_at) WHERE deleted_at IS NOT NULL;
+CREATE INDEX idx_${TABLE_PREFIX}projects_user_name ON ${TABLE_PREFIX}projects(user_id, name) WHERE deleted_at IS NULL;
+CREATE INDEX idx_${TABLE_PREFIX}projects_deleted ON ${TABLE_PREFIX}projects(deleted_at) WHERE deleted_at IS NOT NULL;
 
-CREATE INDEX idx_folders_project_parent ON ${TABLE_PREFIX}folders(project_id, parent_id) WHERE deleted_at IS NULL;
-CREATE UNIQUE INDEX idx_folders_root_unique ON ${TABLE_PREFIX}folders(project_id, name) WHERE parent_id IS NULL AND deleted_at IS NULL;
-CREATE INDEX idx_folders_deleted ON ${TABLE_PREFIX}folders(deleted_at) WHERE deleted_at IS NOT NULL;
+CREATE INDEX idx_${TABLE_PREFIX}folders_project_parent ON ${TABLE_PREFIX}folders(project_id, parent_id) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX idx_${TABLE_PREFIX}folders_root_unique ON ${TABLE_PREFIX}folders(project_id, name) WHERE parent_id IS NULL AND deleted_at IS NULL;
+CREATE INDEX idx_${TABLE_PREFIX}folders_deleted ON ${TABLE_PREFIX}folders(deleted_at) WHERE deleted_at IS NOT NULL;
 
-CREATE INDEX idx_documents_project_folder ON ${TABLE_PREFIX}documents(project_id, folder_id) WHERE deleted_at IS NULL;
-CREATE UNIQUE INDEX idx_documents_root_unique ON ${TABLE_PREFIX}documents(project_id, name) WHERE folder_id IS NULL AND deleted_at IS NULL;
-CREATE INDEX idx_documents_deleted ON ${TABLE_PREFIX}documents(deleted_at) WHERE deleted_at IS NOT NULL;
+CREATE INDEX idx_${TABLE_PREFIX}documents_project_folder ON ${TABLE_PREFIX}documents(project_id, folder_id) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX idx_${TABLE_PREFIX}documents_root_unique ON ${TABLE_PREFIX}documents(project_id, name) WHERE folder_id IS NULL AND deleted_at IS NULL;
+CREATE INDEX idx_${TABLE_PREFIX}documents_deleted ON ${TABLE_PREFIX}documents(deleted_at) WHERE deleted_at IS NOT NULL;
 
 -- Document full-text search indexes (multi-language support)
-CREATE INDEX idx_documents_content_fts_simple ON ${TABLE_PREFIX}documents USING gin(to_tsvector('simple', content)) WHERE deleted_at IS NULL;
-CREATE INDEX idx_documents_content_fts_english ON ${TABLE_PREFIX}documents USING gin(to_tsvector('english', content)) WHERE deleted_at IS NULL;
-CREATE INDEX idx_documents_name_fts_simple ON ${TABLE_PREFIX}documents USING gin(to_tsvector('simple', name)) WHERE deleted_at IS NULL;
-CREATE INDEX idx_documents_name_fts_english ON ${TABLE_PREFIX}documents USING gin(to_tsvector('english', name)) WHERE deleted_at IS NULL;
+CREATE INDEX idx_${TABLE_PREFIX}documents_content_fts_simple ON ${TABLE_PREFIX}documents USING gin(to_tsvector('simple', content)) WHERE deleted_at IS NULL;
+CREATE INDEX idx_${TABLE_PREFIX}documents_content_fts_english ON ${TABLE_PREFIX}documents USING gin(to_tsvector('english', content)) WHERE deleted_at IS NULL;
+CREATE INDEX idx_${TABLE_PREFIX}documents_name_fts_simple ON ${TABLE_PREFIX}documents USING gin(to_tsvector('simple', name)) WHERE deleted_at IS NULL;
+CREATE INDEX idx_${TABLE_PREFIX}documents_name_fts_english ON ${TABLE_PREFIX}documents USING gin(to_tsvector('english', name)) WHERE deleted_at IS NULL;
 
 -- Chat system indexes
-CREATE INDEX idx_chats_project ON ${TABLE_PREFIX}chats(project_id) WHERE deleted_at IS NULL;
-CREATE INDEX idx_chats_user ON ${TABLE_PREFIX}chats(user_id) WHERE deleted_at IS NULL;
-CREATE INDEX idx_chats_last_viewed ON ${TABLE_PREFIX}chats(last_viewed_turn_id);
-CREATE INDEX idx_chats_deleted ON ${TABLE_PREFIX}chats(deleted_at) WHERE deleted_at IS NOT NULL;
+CREATE INDEX idx_${TABLE_PREFIX}chats_project ON ${TABLE_PREFIX}chats(project_id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_${TABLE_PREFIX}chats_user ON ${TABLE_PREFIX}chats(user_id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_${TABLE_PREFIX}chats_last_viewed ON ${TABLE_PREFIX}chats(last_viewed_turn_id);
+CREATE INDEX idx_${TABLE_PREFIX}chats_deleted ON ${TABLE_PREFIX}chats(deleted_at) WHERE deleted_at IS NOT NULL;
 
-CREATE INDEX idx_turns_chat ON ${TABLE_PREFIX}turns(chat_id);
-CREATE INDEX idx_turns_prev ON ${TABLE_PREFIX}turns(prev_turn_id);
+CREATE INDEX idx_${TABLE_PREFIX}turns_chat ON ${TABLE_PREFIX}turns(chat_id);
+CREATE INDEX idx_${TABLE_PREFIX}turns_prev ON ${TABLE_PREFIX}turns(prev_turn_id);
 
-CREATE INDEX idx_turn_blocks_turn_sequence ON ${TABLE_PREFIX}turn_blocks(turn_id, sequence);
-CREATE INDEX idx_turn_blocks_turn_type ON ${TABLE_PREFIX}turn_blocks(turn_id, block_type);
-CREATE INDEX idx_turn_blocks_content_gin ON ${TABLE_PREFIX}turn_blocks USING GIN (content);
+CREATE INDEX idx_${TABLE_PREFIX}turn_blocks_turn_sequence ON ${TABLE_PREFIX}turn_blocks(turn_id, sequence);
+CREATE INDEX idx_${TABLE_PREFIX}turn_blocks_turn_type ON ${TABLE_PREFIX}turn_blocks(turn_id, block_type);
+CREATE INDEX idx_${TABLE_PREFIX}turn_blocks_content_gin ON ${TABLE_PREFIX}turn_blocks USING GIN (content);
 
 -- User preferences indexes
-CREATE INDEX idx_user_preferences_preferences_gin ON ${TABLE_PREFIX}user_preferences USING GIN (preferences);
+CREATE INDEX idx_${TABLE_PREFIX}user_preferences_preferences_gin ON ${TABLE_PREFIX}user_preferences USING GIN (preferences);
 
 -- =============================================================================
 -- TRIGGERS (Auto-update updated_at on row changes)
@@ -314,28 +314,28 @@ DROP TRIGGER IF EXISTS update_projects_updated_at ON ${TABLE_PREFIX}projects;
 DROP FUNCTION IF EXISTS ${TABLE_PREFIX}update_updated_at_column() CASCADE;
 
 -- Remove all indexes
-DROP INDEX IF EXISTS idx_user_preferences_preferences_gin;
-DROP INDEX IF EXISTS idx_turn_blocks_content_gin;
-DROP INDEX IF EXISTS idx_turn_blocks_turn_type;
-DROP INDEX IF EXISTS idx_turn_blocks_turn_sequence;
-DROP INDEX IF EXISTS idx_turns_prev;
-DROP INDEX IF EXISTS idx_turns_chat;
-DROP INDEX IF EXISTS idx_chats_deleted;
-DROP INDEX IF EXISTS idx_chats_last_viewed;
-DROP INDEX IF EXISTS idx_chats_user;
-DROP INDEX IF EXISTS idx_chats_project;
-DROP INDEX IF EXISTS idx_documents_name_fts_english;
-DROP INDEX IF EXISTS idx_documents_name_fts_simple;
-DROP INDEX IF EXISTS idx_documents_content_fts_english;
-DROP INDEX IF EXISTS idx_documents_content_fts_simple;
-DROP INDEX IF EXISTS idx_documents_deleted;
-DROP INDEX IF EXISTS idx_documents_root_unique;
-DROP INDEX IF EXISTS idx_documents_project_folder;
-DROP INDEX IF EXISTS idx_folders_deleted;
-DROP INDEX IF EXISTS idx_folders_root_unique;
-DROP INDEX IF EXISTS idx_folders_project_parent;
-DROP INDEX IF EXISTS idx_projects_deleted;
-DROP INDEX IF EXISTS idx_projects_user_name;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}user_preferences_preferences_gin;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}turn_blocks_content_gin;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}turn_blocks_turn_type;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}turn_blocks_turn_sequence;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}turns_prev;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}turns_chat;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}chats_deleted;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}chats_last_viewed;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}chats_user;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}chats_project;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}documents_name_fts_english;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}documents_name_fts_simple;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}documents_content_fts_english;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}documents_content_fts_simple;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}documents_deleted;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}documents_root_unique;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}documents_project_folder;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}folders_deleted;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}folders_root_unique;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}folders_project_parent;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}projects_deleted;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}projects_user_name;
 
 -- Drop all tables in reverse dependency order
 DROP TABLE IF EXISTS ${TABLE_PREFIX}user_preferences CASCADE;

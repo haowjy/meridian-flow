@@ -78,7 +78,7 @@ ALTER TABLE ${TABLE_PREFIX}projects
 ALTER COLUMN slug SET NOT NULL;
 
 -- Unique index: slug per user (excluding soft-deleted)
-CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_user_slug
+CREATE UNIQUE INDEX IF NOT EXISTS idx_${TABLE_PREFIX}projects_user_slug
 ON ${TABLE_PREFIX}projects(user_id, slug)
 WHERE deleted_at IS NULL;
 
@@ -131,7 +131,7 @@ ALTER COLUMN slug SET NOT NULL;
 
 -- Unique index: slug per project (excluding soft-deleted)
 -- Note: Documents scoped to project, NOT folder
-CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_project_slug
+CREATE UNIQUE INDEX IF NOT EXISTS idx_${TABLE_PREFIX}documents_project_slug
 ON ${TABLE_PREFIX}documents(project_id, slug)
 WHERE deleted_at IS NULL;
 
@@ -145,8 +145,8 @@ COMMENT ON COLUMN ${TABLE_PREFIX}documents.slug IS 'URL-friendly identifier, uni
 -- +goose Down
 
 -- Drop indexes
-DROP INDEX IF EXISTS idx_documents_project_slug;
-DROP INDEX IF EXISTS idx_projects_user_slug;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}documents_project_slug;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}projects_user_slug;
 
 -- Drop slug columns
 ALTER TABLE ${TABLE_PREFIX}documents DROP COLUMN IF EXISTS slug;
