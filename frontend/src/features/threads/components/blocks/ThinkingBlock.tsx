@@ -1,8 +1,7 @@
 import React from "react";
-import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import type { TurnBlock } from "@/features/threads/types";
-import { useThreadStore } from "@/core/stores/useThreadStore";
+import { useCurrentThreadStream } from "@/core/stores/useStreamStore";
 import { Streamdown, defaultRehypePlugins } from "streamdown";
 
 // Omit rehype-raw to prevent XML tags from being interpreted as HTML elements
@@ -27,13 +26,7 @@ export const ThinkingBlock = React.memo(function ThinkingBlock({
   const text = block.textContent ?? "";
 
   const { streamingTurnId, streamingBlockIndex, streamingBlockType } =
-    useThreadStore(
-      useShallow((s) => ({
-        streamingTurnId: s.streamingTurnId,
-        streamingBlockIndex: s.streamingBlockIndex,
-        streamingBlockType: s.streamingBlockType,
-      })),
-    );
+    useCurrentThreadStream();
 
   const isStreamingThinking =
     streamingTurnId === block.turnId &&

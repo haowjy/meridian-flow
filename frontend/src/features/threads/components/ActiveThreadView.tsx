@@ -3,6 +3,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useUIStore } from "@/core/stores/useUIStore";
 import { useTurnsForThread } from "@/features/threads/hooks/useTurnsForThread";
 import { useThreadStore } from "@/core/stores/useThreadStore";
+import { useCurrentThreadStream } from "@/core/stores/useStreamStore";
 import { useThreadSSE } from "@/features/threads/hooks/useThreadSSE";
 import { useLoadingView } from "@/core/hooks";
 import { Sparkles } from "lucide-react";
@@ -39,21 +40,17 @@ export function ActiveThreadView({ projectId }: ActiveThreadViewProps) {
     })),
   );
 
-  const {
-    threads,
-    statusThreads,
-    currentTurnId,
-    streamingTurnId,
-    setCurrentTurnId,
-  } = useThreadStore(
-    useShallow((s) => ({
-      threads: s.threads,
-      statusThreads: s.statusThreads,
-      currentTurnId: s.currentTurnId,
-      streamingTurnId: s.streamingTurnId,
-      setCurrentTurnId: s.setCurrentTurnId,
-    })),
-  );
+  const { streamingTurnId } = useCurrentThreadStream();
+
+  const { threads, statusThreads, currentTurnId, setCurrentTurnId } =
+    useThreadStore(
+      useShallow((s) => ({
+        threads: s.threads,
+        statusThreads: s.statusThreads,
+        currentTurnId: s.currentTurnId,
+        setCurrentTurnId: s.setCurrentTurnId,
+      })),
+    );
 
   // Callback ref pattern: useState triggers re-render when element is assigned,
   // allowing effects to run with the actual element (useRef doesn't trigger re-renders)

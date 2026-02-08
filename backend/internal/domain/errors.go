@@ -63,7 +63,23 @@ var (
 	ErrBadRequest   = errors.New("bad request")
 	ErrUnauthorized = errors.New("unauthorized")
 	ErrForbidden    = errors.New("forbidden")
+	ErrRateLimit    = errors.New("rate limit exceeded")
 )
+
+// RateLimitError indicates the user has exceeded a concurrency or rate limit.
+// Implements HTTPError interface for extensible error handling.
+type RateLimitError struct {
+	Message string
+}
+
+func (e *RateLimitError) Error() string    { return e.Message }
+func (e *RateLimitError) StatusCode() int  { return http.StatusTooManyRequests }
+func (e *RateLimitError) Is(target error) bool { return target == ErrRateLimit }
+
+// NewRateLimitError creates a structured RateLimitError
+func NewRateLimitError(message string) *RateLimitError {
+	return &RateLimitError{Message: message}
+}
 
 // ConflictError represents a resource conflict with details about the existing resource
 // Implements HTTPError interface for extensible error handling

@@ -6,8 +6,7 @@
  */
 
 import { useMemo } from "react";
-import { useShallow } from "zustand/react/shallow";
-import { useThreadStore } from "@/core/stores/useThreadStore";
+import { useCurrentThreadStream } from "@/core/stores/useStreamStore";
 
 /**
  * Hook to determine if a group of blocks is currently streaming.
@@ -23,13 +22,7 @@ export function useIsGroupStreaming(
   validBlockTypes: string[],
 ): boolean {
   const { streamingTurnId, streamingBlockType, streamingBlockIndex } =
-    useThreadStore(
-      useShallow((s) => ({
-        streamingTurnId: s.streamingTurnId,
-        streamingBlockType: s.streamingBlockType,
-        streamingBlockIndex: s.streamingBlockIndex,
-      })),
-    );
+    useCurrentThreadStream();
 
   return useMemo(() => {
     // Must be streaming in this turn

@@ -6,6 +6,7 @@ import type {
   ToolBlockContent,
 } from "@/features/threads/types";
 import { useThreadStore } from "@/core/stores/useThreadStore";
+import { useCurrentThreadStream } from "@/core/stores/useStreamStore";
 import { TurnActionBar } from "./TurnActionBar";
 import { BlockRenderer } from "./blocks";
 import { InlineError } from "@/shared/components/InlineError";
@@ -68,21 +69,17 @@ interface AssistantTurnProps {
 export const AssistantTurn = React.memo(function AssistantTurn({
   turn,
 }: AssistantTurnProps) {
-  const {
-    switchSibling,
-    regenerateTurn,
-    isLoadingTurns,
-    isSwitchingSibling,
-    streamingTurnId,
-  } = useThreadStore(
-    useShallow((s) => ({
-      switchSibling: s.switchSibling,
-      regenerateTurn: s.regenerateTurn,
-      isLoadingTurns: s.isLoadingTurns,
-      isSwitchingSibling: s.isSwitchingSibling,
-      streamingTurnId: s.streamingTurnId,
-    })),
-  );
+  const { streamingTurnId } = useCurrentThreadStream();
+
+  const { switchSibling, regenerateTurn, isLoadingTurns, isSwitchingSibling } =
+    useThreadStore(
+      useShallow((s) => ({
+        switchSibling: s.switchSibling,
+        regenerateTurn: s.regenerateTurn,
+        isLoadingTurns: s.isLoadingTurns,
+        isSwitchingSibling: s.isSwitchingSibling,
+      })),
+    );
 
   // true if ANY turn is streaming (disables actions globally)
   const isStreaming = streamingTurnId !== null;

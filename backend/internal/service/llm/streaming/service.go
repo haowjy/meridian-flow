@@ -96,6 +96,7 @@ type Service struct {
 	formatterRegistry    *formatting.FormatterRegistry   // For formatting synthetic tool results (ref transformer)
 	tokenFinalizer       tokens.TokenFinalizer           // For finalizing tokens on completion/interruption
 	jobQueue             jobs.JobQueue                   // NEW: Phase 2 - background job queue for async operations
+	userStreamTracker    *UserStreamTracker              // Per-user concurrent stream limiter
 	logger               *slog.Logger
 }
 
@@ -148,6 +149,7 @@ func NewService(
 		formatterRegistry:    formatterRegistry,
 		tokenFinalizer:       tokenFinalizer,
 		jobQueue:             jobQueue,
+		userStreamTracker:    NewUserStreamTracker(cfg.MaxConcurrentStreams),
 		logger:               logger,
 	}
 }
@@ -292,6 +294,19 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 			"error", err,
 		)
 	}
+
+	// Enforce per-user concurrent stream limit before committing resources.
+	// Ownership transfers to the cleanup callback after executor registration.
+	if err := s.userStreamTracker.Acquire(req.UserID); err != nil {
+		return nil, err
+	}
+	streamAcquired := true
+	defer func() {
+		if streamAcquired {
+			// Release if we return early (error paths) before ownership transfers to cleanup
+			s.userStreamTracker.Release(req.UserID)
+		}
+	}()
 
 	// Extract enabled tools from requestParams for tool registration
 	enabledTools := extractToolNames(requestParams)
@@ -574,10 +589,13 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	// Set cleanup callback BEFORE registering executor
 	// This ensures executor is removed from registry when streaming completes/errors
 	turnID := assistantTurn.ID // Capture for closure
+	userID := req.UserID       // Capture for closure
 	executor.SetCleanupCallback(func() {
 		s.executorRegistry.Remove(turnID)
+		s.userStreamTracker.Release(userID)
 		s.logger.Debug("executor cleaned up from registry", "turn_id", turnID)
 	})
+	streamAcquired = false // Transfer ownership to cleanup callback
 
 	// Register executor for interruption handling
 	s.executorRegistry.Register(assistantTurn.ID, executor)

@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, FileText, Folder, Plus } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Folder,
+  Plus,
+} from "lucide-react";
 
 import { Button } from "@/shared/components/ui/button";
 import {
