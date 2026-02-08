@@ -24,6 +24,7 @@
     "@codemirror/search": "^6.5.11",
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.39.4",
+    "@floating-ui/react-dom": "^2.1.7",
     "@lezer/common": "^1.4.0",
     "@lezer/markdown": "^1.6.1",
     "@microsoft/fetch-event-source": "^2.0.1",

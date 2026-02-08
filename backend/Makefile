@@ -76,7 +76,7 @@ migrate-test: ## Apply migrations to test (requires .env.test)
 	@./scripts/migrate.sh --test --yes up
 
 migrate-down-all: ## Rollback all migrations (drops all tables, goose only)
-	$(GOOSE) -dir migrations postgres "$(SUPABASE_DB_URL)" down-to 0
+	@./scripts/migrate.sh --yes --to 0 down
 
 migrate-create: ## Create a new migration file (usage: make migrate-create name="add_feature")
 	$(GOOSE) -dir migrations create $(name) sql
@@ -87,10 +87,8 @@ seed: ## Seed the database with data
 seed-fresh: ## Drop all tables, run migrations, and seed data
 	@echo "Dropping all tables..."
 	@go run ./scripts/drop_all_tables.go
-	@echo "Dropping goose version table (for fresh migration)..."
-	@psql "$(SUPABASE_DB_URL)" -c "DROP TABLE IF EXISTS goose_db_version CASCADE;" 2>/dev/null || true
 	@echo "Running migrations..."
-	$(GOOSE) -dir migrations postgres "$(SUPABASE_DB_URL)" up
+	@./scripts/migrate.sh --yes up
 	@echo "Seeding database..."
 	go run ./cmd/seed/main.go
 
