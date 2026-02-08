@@ -56,15 +56,15 @@ audience: developer
 
 | Role | Font | Fallback |
 |------|------|----------|
-| Display | Cormorant Garamond | Georgia, serif |
-| Body | Source Serif 4 | Georgia, serif |
-| UI | Manrope | system-ui, sans-serif |
+| Display | Browser default sans | system-ui, sans-serif |
+| Body | Browser default sans | system-ui, sans-serif |
+| UI | Browser default sans | system-ui, sans-serif |
+| Mono | JetBrains Mono | ui-monospace, monospace |
 
 ### Font Weights
 
-- **Cormorant Garamond**: 400, 500, 600 (with italic)
-- **Source Serif 4**: 400, 500, 600 (with italic)
-- **Manrope**: 400, 500, 600
+- **Browser default sans**: platform-managed
+- **JetBrains Mono**: 400, 500, 600
 
 ## Usage
 
