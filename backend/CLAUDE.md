@@ -77,7 +77,21 @@ query := "SELECT * FROM documents WHERE id = $1"
 
 See `internal/repository/postgres/` for examples.
 
-### 2. Markdown Content Storage
+### 2. SQL Migration Rules (MANDATORY)
+
+When creating or editing files in `backend/migrations/`:
+- Include `-- +goose ENVSUB ON` (Up and Down sections).
+- Prefix all app tables/functions with `${TABLE_PREFIX}`.
+- Prefix all app index names with `idx_${TABLE_PREFIX}...`.
+- Prefix all app constraint names with `${TABLE_PREFIX}...`.
+- Do not hardcode `dev_`, `test_`, `prod_`, or unprefixed app table names.
+
+Before writing migration SQL:
+- Read existing migrations first to copy project patterns.
+- At minimum inspect: `00001_initial_schema.sql`, the most recent migration, and one migration similar to your change.
+- Follow existing goose patterns exactly (`Up/Down`, `StatementBegin/End` for plpgsql blocks).
+
+### 3. Markdown Content Storage
 
 Documents store content as **markdown** (TEXT):
 - Single source of truth
@@ -86,7 +100,7 @@ Documents store content as **markdown** (TEXT):
 
 No server-side format conversion required.
 
-### 3. Error Handling
+### 4. Error Handling
 
 Use standard HTTP error responses via `httputil` package:
 ```go
@@ -122,7 +136,7 @@ All errors use RFC 7807 Problem Details format:
 
 **Key convention**: Always use `resource` field (not `document`, `project`, etc.) for frontend compatibility. Use `RespondErrorWithExtras()` for 409s with resources.
 
-### 4. Local Development with Submodules
+### 5. Local Development with Submodules
 
 **Library versions:**
 - **Production/Docker:** Uses tagged GitHub versions (v0.0.2, v0.0.4, etc.)

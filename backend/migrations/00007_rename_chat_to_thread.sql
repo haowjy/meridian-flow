@@ -8,11 +8,11 @@ ALTER TABLE ${TABLE_PREFIX}chats RENAME TO ${TABLE_PREFIX}threads;
 ALTER TABLE ${TABLE_PREFIX}turns RENAME COLUMN chat_id TO thread_id;
 
 -- Rename indexes
-ALTER INDEX idx_chats_project RENAME TO idx_threads_project;
-ALTER INDEX idx_chats_user RENAME TO idx_threads_user;
-ALTER INDEX idx_chats_last_viewed RENAME TO idx_threads_last_viewed;
-ALTER INDEX idx_chats_deleted RENAME TO idx_threads_deleted;
-ALTER INDEX idx_turns_chat RENAME TO idx_turns_thread;
+ALTER INDEX idx_${TABLE_PREFIX}chats_project RENAME TO idx_${TABLE_PREFIX}threads_project;
+ALTER INDEX idx_${TABLE_PREFIX}chats_user RENAME TO idx_${TABLE_PREFIX}threads_user;
+ALTER INDEX idx_${TABLE_PREFIX}chats_last_viewed RENAME TO idx_${TABLE_PREFIX}threads_last_viewed;
+ALTER INDEX idx_${TABLE_PREFIX}chats_deleted RENAME TO idx_${TABLE_PREFIX}threads_deleted;
+ALTER INDEX idx_${TABLE_PREFIX}turns_chat RENAME TO idx_${TABLE_PREFIX}turns_thread;
 
 -- Rename trigger (drop old, create new pointing to shared function)
 DROP TRIGGER IF EXISTS update_chats_updated_at ON ${TABLE_PREFIX}threads;
@@ -38,11 +38,11 @@ CREATE TRIGGER update_chats_updated_at
     FOR EACH ROW EXECUTE FUNCTION ${TABLE_PREFIX}update_updated_at_column();
 
 -- Rename indexes back
-ALTER INDEX idx_threads_project RENAME TO idx_chats_project;
-ALTER INDEX idx_threads_user RENAME TO idx_chats_user;
-ALTER INDEX idx_threads_last_viewed RENAME TO idx_chats_last_viewed;
-ALTER INDEX idx_threads_deleted RENAME TO idx_chats_deleted;
-ALTER INDEX idx_turns_thread RENAME TO idx_turns_chat;
+ALTER INDEX idx_${TABLE_PREFIX}threads_project RENAME TO idx_${TABLE_PREFIX}chats_project;
+ALTER INDEX idx_${TABLE_PREFIX}threads_user RENAME TO idx_${TABLE_PREFIX}chats_user;
+ALTER INDEX idx_${TABLE_PREFIX}threads_last_viewed RENAME TO idx_${TABLE_PREFIX}chats_last_viewed;
+ALTER INDEX idx_${TABLE_PREFIX}threads_deleted RENAME TO idx_${TABLE_PREFIX}chats_deleted;
+ALTER INDEX idx_${TABLE_PREFIX}turns_thread RENAME TO idx_${TABLE_PREFIX}turns_chat;
 
 -- Rename column back in turns table
 ALTER TABLE ${TABLE_PREFIX}turns RENAME COLUMN thread_id TO chat_id;

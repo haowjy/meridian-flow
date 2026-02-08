@@ -103,7 +103,7 @@ make seed-fresh        # Drop all + migrate + seed
 ```
 
 **Benefits:**
-- Tracks which migrations have run (`goose_db_version` table)
+- Tracks which migrations have run (`${TABLE_PREFIX}schema_migrations` table)
 - Prevents re-running migrations
 - Supports rollback for iteration
 - Incremental updates when adding new migrations

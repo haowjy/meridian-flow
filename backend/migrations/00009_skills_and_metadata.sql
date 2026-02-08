@@ -21,7 +21,7 @@ ALTER TABLE ${TABLE_PREFIX}folders
 ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT false;
 
 -- Index for filtering by visibility in tree queries
-CREATE INDEX IF NOT EXISTS idx_folders_project_hidden
+CREATE INDEX IF NOT EXISTS idx_${TABLE_PREFIX}folders_project_hidden
 ON ${TABLE_PREFIX}folders(project_id, is_hidden)
 WHERE deleted_at IS NULL;
 
@@ -55,17 +55,17 @@ CREATE TABLE IF NOT EXISTS ${TABLE_PREFIX}project_skills (
 
 -- Partial unique indexes for soft-delete compatibility
 -- Skill name must be unique per project (among non-deleted skills)
-CREATE UNIQUE INDEX IF NOT EXISTS idx_project_skills_name
+CREATE UNIQUE INDEX IF NOT EXISTS idx_${TABLE_PREFIX}project_skills_name
 ON ${TABLE_PREFIX}project_skills(project_id, name)
 WHERE deleted_at IS NULL;
 
 -- Each folder can only be associated with one skill
-CREATE UNIQUE INDEX IF NOT EXISTS idx_project_skills_folder
+CREATE UNIQUE INDEX IF NOT EXISTS idx_${TABLE_PREFIX}project_skills_folder
 ON ${TABLE_PREFIX}project_skills(project_id, instance_folder_id)
 WHERE deleted_at IS NULL;
 
 -- Index for listing skills by project (most common query)
-CREATE INDEX IF NOT EXISTS idx_project_skills_project
+CREATE INDEX IF NOT EXISTS idx_${TABLE_PREFIX}project_skills_project
 ON ${TABLE_PREFIX}project_skills(project_id)
 WHERE deleted_at IS NULL;
 
@@ -91,7 +91,7 @@ CREATE POLICY "block_postgrest" ON ${TABLE_PREFIX}project_skills FOR ALL USING (
 ALTER TABLE ${TABLE_PREFIX}documents
 DROP CONSTRAINT IF EXISTS ${TABLE_PREFIX}documents_project_id_folder_id_name_extension_key;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_folder_unique_active
+CREATE UNIQUE INDEX IF NOT EXISTS idx_${TABLE_PREFIX}documents_folder_unique_active
 ON ${TABLE_PREFIX}documents(project_id, folder_id, name, extension)
 WHERE folder_id IS NOT NULL AND deleted_at IS NULL;
 
@@ -99,7 +99,7 @@ WHERE folder_id IS NOT NULL AND deleted_at IS NULL;
 ALTER TABLE ${TABLE_PREFIX}folders
 DROP CONSTRAINT IF EXISTS ${TABLE_PREFIX}folders_project_id_parent_id_name_key;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_parent_unique_active
+CREATE UNIQUE INDEX IF NOT EXISTS idx_${TABLE_PREFIX}folders_parent_unique_active
 ON ${TABLE_PREFIX}folders(project_id, parent_id, name)
 WHERE parent_id IS NOT NULL AND deleted_at IS NULL;
 
@@ -110,23 +110,23 @@ WHERE parent_id IS NOT NULL AND deleted_at IS NULL;
 -- Slugs are legacy and no longer used for uniqueness enforcement
 -- This was blocking skill creation because all SKILL.md documents
 -- generated the same slug "skill", causing conflicts
-DROP INDEX IF EXISTS idx_documents_project_slug;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}documents_project_slug;
 
 -- +goose Down
 
 -- Restore slug unique index
-CREATE UNIQUE INDEX idx_documents_project_slug
+CREATE UNIQUE INDEX idx_${TABLE_PREFIX}documents_project_slug
 ON ${TABLE_PREFIX}documents(project_id, slug)
 WHERE deleted_at IS NULL;
 
 -- Restore folder unique constraint (WARNING: requires no soft-deleted duplicates)
-DROP INDEX IF EXISTS idx_folders_parent_unique_active;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}folders_parent_unique_active;
 ALTER TABLE ${TABLE_PREFIX}folders
 ADD CONSTRAINT ${TABLE_PREFIX}folders_project_id_parent_id_name_key
 UNIQUE(project_id, parent_id, name);
 
 -- Restore document unique constraint (WARNING: requires no soft-deleted duplicates)
-DROP INDEX IF EXISTS idx_documents_folder_unique_active;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}documents_folder_unique_active;
 ALTER TABLE ${TABLE_PREFIX}documents
 ADD CONSTRAINT ${TABLE_PREFIX}documents_project_id_folder_id_name_extension_key
 UNIQUE(project_id, folder_id, name, extension);
@@ -135,11 +135,11 @@ UNIQUE(project_id, folder_id, name, extension);
 DROP POLICY IF EXISTS "block_postgrest" ON ${TABLE_PREFIX}project_skills;
 ALTER TABLE ${TABLE_PREFIX}project_skills DISABLE ROW LEVEL SECURITY;
 DROP TRIGGER IF EXISTS update_project_skills_updated_at ON ${TABLE_PREFIX}project_skills;
-DROP INDEX IF EXISTS idx_project_skills_project;
-DROP INDEX IF EXISTS idx_project_skills_folder;
-DROP INDEX IF EXISTS idx_project_skills_name;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}project_skills_project;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}project_skills_folder;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}project_skills_name;
 DROP TABLE IF EXISTS ${TABLE_PREFIX}project_skills;
 
 -- Drop folder hidden column
-DROP INDEX IF EXISTS idx_folders_project_hidden;
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}folders_project_hidden;
 ALTER TABLE ${TABLE_PREFIX}folders DROP COLUMN IF EXISTS is_hidden;

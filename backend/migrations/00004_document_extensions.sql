@@ -40,8 +40,8 @@ ADD CONSTRAINT ${TABLE_PREFIX}documents_project_id_folder_id_name_extension_key
 UNIQUE(project_id, folder_id, name, extension);
 
 -- Update partial index for root-level uniqueness (folder_id IS NULL)
-DROP INDEX IF EXISTS idx_documents_root_unique;
-CREATE UNIQUE INDEX idx_documents_root_unique
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}documents_root_unique;
+CREATE UNIQUE INDEX idx_${TABLE_PREFIX}documents_root_unique
 ON ${TABLE_PREFIX}documents(project_id, name, extension)
 WHERE folder_id IS NULL AND deleted_at IS NULL;
 
@@ -56,8 +56,8 @@ ALTER TABLE ${TABLE_PREFIX}documents
 ALTER COLUMN extension SET DEFAULT '.md';
 
 -- Restore original root-level uniqueness index
-DROP INDEX IF EXISTS idx_documents_root_unique;
-CREATE UNIQUE INDEX idx_documents_root_unique
+DROP INDEX IF EXISTS idx_${TABLE_PREFIX}documents_root_unique;
+CREATE UNIQUE INDEX idx_${TABLE_PREFIX}documents_root_unique
 ON ${TABLE_PREFIX}documents(project_id, name)
 WHERE folder_id IS NULL AND deleted_at IS NULL;
 
