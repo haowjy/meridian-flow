@@ -128,7 +128,7 @@ Identify any contradictions.
 
 - [Proactive Assistance](./proactive-assistance.md) - Overview of agentic behaviors
 - [Vector Search](../search/vector-search.md) - Required for document lookup
-- [Auto-Context](../../post-mvp/ai-suggestions.md) - Related to context management
+- [Auto-Context](./ai-suggestions.md) - Related to context management
 
 ## References
 

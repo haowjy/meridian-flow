@@ -17,13 +17,13 @@ note: "Comprehensive reference - prefer condensed guide: supabase-jwt-implementa
 
 ## Table of Contents
 
-1. [Context & Current State](#context--current-state)
+1. [Context & Current State](#context-current-state)
 2. [Why This Implementation](#why-this-implementation)
 3. [Approach Decision: RS256 vs HS256](#approach-decision-rs256-vs-hs256)
 4. [Implementation Steps](#implementation-steps)
-5. [Testing & Validation](#testing--validation)
+5. [Testing & Validation](#testing-validation)
 6. [Security Considerations](#security-considerations)
-7. [Migration & Rollout](#migration--rollout)
+7. [Migration & Rollout](#migration-rollout)
 8. [Reference Links](#reference-links)
 
 ---

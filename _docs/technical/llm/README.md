@@ -29,13 +29,13 @@ The Meridian backend uses the `meridian-llm-go` library to provide:
 
 For **standalone library usage**:
 
-- **[Library README](../../meridian-llm-go/docs/README.md)** - Quick start, examples
-- **[Blocks & Content Model](../../meridian-llm-go/docs/blocks.md)** - Message/Block structure
-- **[Streaming](../../meridian-llm-go/docs/streaming.md)** - Real-time SSE streaming
-- **[Tools](../../meridian-llm-go/docs/tools.md)** - Function calling
-- **[Errors](../../meridian-llm-go/docs/errors.md)** - Error handling
-- **[Capabilities](../../meridian-llm-go/docs/capabilities.md)** - Provider configs
-- **[Providers](../../meridian-llm-go/docs/providers.md)** - Supported providers
+- **[Library README](../../../meridian-llm-go/docs/README.md)** - Quick start, examples
+- **[Blocks & Content Model](../../../meridian-llm-go/docs/blocks.md)** - Message/Block structure
+- **[Streaming](../../../meridian-llm-go/docs/streaming.md)** - Real-time SSE streaming
+- **[Tools](../../../meridian-llm-go/docs/tools.md)** - Function calling
+- **[Errors](../../../meridian-llm-go/docs/errors.md)** - Error handling
+- **[Extensibility](./extensibility-and-lifecycle.md)** - Capability and feature evolution
+- **[Providers](../../../meridian-llm-go/docs/providers.md)** - Supported providers
 
 ### Backend Integration
 

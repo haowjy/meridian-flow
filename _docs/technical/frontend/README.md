@@ -18,7 +18,7 @@ Complete technical reference for Meridian frontend (Vite + TanStack Router + Typ
 ## Getting Started
 
 - [Setup Quickstart](setup-quickstart.md) - Development environment setup
-- [Theme System](theme-system.md) - Theming architecture and presets
+- [Theme System](themes/README.md) - Theming architecture and presets
 
 ## Architecture
 
@@ -58,7 +58,7 @@ See `frontend/CLAUDE.md` for:
 
 ## Styling & UI
 
-- [Theme System](theme-system.md) - Theming architecture, presets, CSS variables
+- [Theme System](themes/README.md) - Theming architecture, presets, CSS variables
 - [Tailwind Strategies](tailwind-strategies.md) - Styling patterns and when to use each
 - Tailwind configuration in `globals.css` (Tailwind v4 CSS-first approach)
 

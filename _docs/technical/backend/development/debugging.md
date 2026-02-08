@@ -353,7 +353,7 @@ ORDER BY f.name NULLS FIRST, d.name;
 1. Check this debugging guide
 2. Review relevant documentation:
    - [Database Connections](../database/connections.md)
-   - [API Contracts](../api-contracts.md)
+   - [API Contracts](../api/contracts.md)
    - [Architecture Overview](../architecture/overview.md)
 3. Check server logs for error details
 4. Inspect database state
@@ -399,6 +399,6 @@ curl -X PATCH http://localhost:8080/api/documents/{ID} \
 ## References
 
 - Database troubleshooting: [database/connections.md](../database/connections.md)
-- API error responses: [api-contracts.md](../api-contracts.md#error-responses)
+- API error responses: [error-responses.md](../api/error-responses.md)
 - Environment setup: `/backend/.ENVIRONMENTS.md`
 - Commands: `/backend/CLAUDE.md`

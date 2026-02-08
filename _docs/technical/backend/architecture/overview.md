@@ -15,9 +15,9 @@ Dependencies point **inward**: Handler -> Service -> Repository -> Database
 
 ## Quick Navigation
 
-- **Layer details?** -> [Layers Guide](layers.md)
-- **Request flow?** -> [Request Lifecycle](request-lifecycle.md)
-- **Go patterns?** -> [Go Patterns](go-patterns.md)
+- **Layer details?** -> [The Three Layers](#the-three-layers)
+- **Request flow?** -> [Request Flow Sequence](#request-flow-sequence)
+- **Go patterns?** -> [Repository Patterns](../repository-patterns.md)
 
 ## Architecture Diagram
 
@@ -577,6 +577,6 @@ Each layer answers one question:
 - Errors: `internal/domain/errors.go`
 
 **Further Reading:**
-- [Layers Guide](layers.md) - Detailed layer responsibilities
-- [Request Lifecycle](request-lifecycle.md) - Complete request walkthrough
-- [Go Patterns](go-patterns.md) - Common Go idioms
+- [The Three Layers](#the-three-layers) - Detailed layer responsibilities
+- [Request Flow Sequence](#request-flow-sequence) - Complete request walkthrough
+- [Repository Patterns](../repository-patterns.md) - Common Go idioms

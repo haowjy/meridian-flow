@@ -60,4 +60,3 @@ When tools are sent in production:
 
 - [LLM Integration Guide](llm-integration.md) - Complete backend integration patterns
 - [Provider Routing](provider-routing.md) - Model string routing
-- [Phase 2 Handoff](../../hidden/handoffs/phase-2-completion.md) - Implementation summary

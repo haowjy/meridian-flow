@@ -8,8 +8,8 @@ audience: backend developers
 Real-time LLM response delivery via Server-Sent Events (SSE) with turn block accumulation and database persistence.
 
 **Note:** This describes **backend streaming implementation** (SSE, catchup, persistence). For **library-level streaming** (StreamEvent, BlockDelta), see:
-- [meridian-llm-go/docs/streaming.md](../../../meridian-llm-go/docs/streaming.md)
-- [meridian-llm-go/docs/blocks.md](../../../meridian-llm-go/docs/blocks.md)
+- [meridian-llm-go/docs/streaming.md](../../../../meridian-llm-go/docs/streaming.md)
+- [meridian-llm-go/docs/blocks.md](../../../../meridian-llm-go/docs/blocks.md)
 
 ## Quick Links
 
@@ -104,7 +104,7 @@ Anthropic offers a beta feature (`fine-grained-tool-streaming-2025-05-14` header
 
 ### Core Concepts
 
-**[Streaming Architecture](../architecture/streaming-architecture.md)** (~600 lines)
+**[Streaming Architecture](../../backend/architecture/streaming-architecture.md)** (~600 lines)
 - Overview of streaming system
 - TurnBlockDelta vs TurnBlock explained
 - Data models (SSE event types)
@@ -117,7 +117,7 @@ Anthropic offers a beta feature (`fine-grained-tool-streaming-2025-05-14` header
 
 ---
 
-**[Block Types Reference](block-types-reference.md)** (~300 lines)
+**[Block Types Reference](../../backend/thread/turn-blocks.md)** (~300 lines)
 - Complete list of TurnBlock types (text, thinking, tool_use, etc.)
 - Delta type reference and accumulation mapping
 - SSE event type summary
@@ -274,8 +274,8 @@ pending -> streaming -> complete
 
 ## Related Documentation
 
-- [Service Layer Architecture](../architecture/service-layer.md) - 3-service split
-- [Thread Domain Model](../thread/overview.md) - Turn and block concepts
-- [LLM Providers](../thread/llm-providers.md) - Provider abstraction
+- [Service Layer Architecture](../../backend/architecture/service-layer.md) - 3-service split
+- [Thread Domain Model](../../backend/thread/overview.md) - Turn and block concepts
+- [LLM Providers](../../backend/thread/llm-providers.md) - Provider abstraction
 - [Token Finalization](../tokens/README.md) - Token finalization strategy chain
-- [API Contracts](../api/contracts.md) - HTTP endpoints
+- [API Contracts](../../backend/api/contracts.md) - HTTP endpoints

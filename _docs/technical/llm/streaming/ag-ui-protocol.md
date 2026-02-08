@@ -203,4 +203,4 @@ data: {"type":"TOOL_CALL_START","toolCallId":"toolu_xxx","toolCallName":"str_rep
 
 - [Meridian AG-UI Bridge](meridian-agui-bridge.md) - How Meridian integrates with AG-UI
 - [Streaming README](README.md) - Backend streaming system overview
-- [Block Types Reference](block-types-reference.md) - Turn block data structures
+- [Block Types Reference](../../backend/thread/turn-blocks.md) - Turn block data structures
