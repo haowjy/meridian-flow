@@ -1,160 +1,151 @@
 # Quick Start Guide
 
-Get the Meridian backend up and running in 5 minutes.
+Get the Meridian backend up and running locally using the deployed (cloud) Supabase instance.
 
-## Step 1: Set Up Supabase
+All environments share the same Supabase database but are isolated via table prefixes (`dev_`, `test_`, `prod_`).
 
-1. Go to [supabase.com](https://supabase.com) and create a new project
-2. Wait for the database to be provisioned (~2 minutes)
-3. Go to **Settings** → **Database** and copy your connection string (this is what you actually need!)
-4. (Optional) Go to **Settings** → **API** to get your URL and anon key (not used in Phase 1, but good to have)
+## Prerequisites
 
-## Step 2: Create Database Tables
+- Go 1.21+
+- [goose](https://github.com/pressly/goose) migration tool:
+  ```bash
+  go install github.com/pressly/goose/v3/cmd/goose@latest
+  ```
 
-1. In Supabase dashboard, go to **SQL Editor**
-2. Click **New Query**
-3. Copy and paste the entire contents of `schema.sql` from the backend folder
-4. Click **Run** (or press Cmd/Ctrl + Enter)
-5. You should see "Success. No rows returned"
-
-This creates your `dev_projects`, `dev_folders`, and `dev_documents` tables.
-
-## Step 3: Configure Environment
-
-1. Create a `.env` file in the `backend/` directory:
+## Step 1: Configure Backend Environment
 
 ```bash
+cd backend
 cp .env.example .env
 ```
 
-2. Edit `.env` and fill in your Supabase credentials:
+Edit `.env` with your cloud Supabase credentials:
 
 ```env
 PORT=8080
 ENVIRONMENT=dev
 
-# MOST IMPORTANT: Your database connection string
-# From Supabase Settings → Database → Connection String
-SUPABASE_DB_URL=postgresql://postgres:[YOUR-PASSWORD]@db.xxxxx.supabase.co:5432/postgres
+# Cloud Supabase - Transaction mode (port 6543)
+# From: Supabase Dashboard → Settings → Database → Connection String → Transaction mode
+SUPABASE_DB_URL=postgresql://postgres.[PROJECT]:[PASSWORD]@aws-0-us-east-1.pooler.supabase.com:6543/postgres
 
-# Optional (not used in Phase 1, but here for future)
-SUPABASE_URL=https://xxxxx.supabase.co
-SUPABASE_KEY=your-anon-key-here
+# Cloud Supabase - API settings
+# From: Supabase Dashboard → Settings → API
+SUPABASE_URL=https://[PROJECT].supabase.co
+SUPABASE_KEY=sb_secret_...
 
 CORS_ORIGINS=http://localhost:3000
 ```
 
-**Important:** Replace `[YOUR-PASSWORD]` in the `SUPABASE_DB_URL` with your actual database password.
+**Port 6543** (transaction pooler) is recommended — no IP whitelisting needed and auto-configures simple protocol.
 
-**Note:** The `SUPABASE_URL` and `SUPABASE_KEY` are **not used** in Phase 1 since we connect directly to PostgreSQL. They're there for when you add Supabase features later (like Auth, Storage, etc.).
-
-## Step 4: Start the Server
+## Step 2: Configure Frontend Environment
 
 ```bash
-cd backend
-go run ./cmd/server/main.go
+cd frontend
+cp .env.example .env.local
 ```
 
-You should see:
+Edit `.env.local`:
 
+```env
+VITE_SUPABASE_URL=https://[PROJECT].supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+VITE_API_URL=http://127.0.0.1:8080
 ```
-Successfully connected to database
-Server starting on port 8080
+
+## Step 3: Run Migrations
+
+From `backend/`:
+
+```bash
+make migrate-up
 ```
 
-## Step 5: Test the API
+This applies all migration files with the `dev_` table prefix (derived from `ENVIRONMENT=dev`). Migrations use goose's `ENVSUB` feature to substitute `${TABLE_PREFIX}` in SQL.
 
-Open a new terminal and test the health endpoint:
+Check migration status:
+```bash
+make migrate-status
+```
+
+## Step 4: Seed Test Data (Optional)
+
+```bash
+make seed
+```
+
+This creates a test project with sample documents. See `scripts/README.md` for more seeding options.
+
+## Step 5: Start Services
+
+```bash
+# Terminal 1 - Backend
+cd backend && make run
+
+# Terminal 2 - Frontend
+cd frontend && pnpm install && pnpm run dev
+```
+
+## Step 6: Verify
 
 ```bash
 curl http://localhost:8080/health
 ```
 
-You should get:
-
+Expected response:
 ```json
 {
   "status": "ok",
-  "time": "2025-10-31T..."
+  "time": "2025-..."
 }
 ```
 
-## Test Creating a Document
+## Key Notes
 
-Create a document (markdown content) and auto-create its folder path:
+- All tables are prefixed with `dev_` (e.g., `dev_projects`, `dev_documents`) — completely isolated from `prod_` tables
+- Google OAuth callback URLs in Supabase dashboard need to include `http://localhost:3000` for local auth to work
+- Port 5432 (direct connection) requires IP whitelisting in Supabase dashboard — use 6543 instead
 
-```bash
-curl -X POST http://localhost:8080/api/projects/<PROJECT_ID>/documents \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Hero",
-    "content": "# Hero\n\nThe hero of our story...",
-    "folder_path": "Characters"
-  }'
-```
-
-Notes:
-- Use `folder_path` for path-based placement (auto-creates folders) or `folder_id` for direct placement.
-- To create at the project root, either omit `folder_path` or send it as an empty string `""`.
-
-## Test Getting the Document Tree
-
-Use the project-scoped endpoint to fetch the nested folder/document structure:
+## Common Commands
 
 ```bash
-curl http://localhost:8080/api/projects/<PROJECT_ID>/tree
+make run              # Start server
+make dev              # Start with hot reload (requires air)
+make seed             # Seed test data
+make seed-fresh       # Drop tables + migrate + seed
+make migrate-status   # Check migration status
+make migrate-up       # Apply pending migrations
+make migrate-down     # Rollback last migration
 ```
-
-Tree is always scoped to a project. The legacy `/api/tree` path has been removed.
-
-## Next Steps
-
-Once the server is running:
-- 🧪 Manual API testing (curl): `_docs/technical/backend/development/testing.md`
-- 📖 Docs index: `_docs/technical/`
 
 ## Troubleshooting
 
 ### "Failed to connect to database"
 
-- Check your `SUPABASE_DB_URL` is correct
-- Make sure you replaced `[YOUR-PASSWORD]` with your actual password
-- Verify your IP is allowed in Supabase (Settings → Database → Connection Pooling)
+- Verify `SUPABASE_DB_URL` in `.env` is correct
+- Ensure you're using port 6543 (transaction pooler)
+- Check your Supabase project is active (not paused)
 
-### "Failed to ensure test project"
+### "prepared statement already exists"
 
-- Make sure you ran `schema.sql` in the Supabase SQL Editor
-- Check if the `dev_projects` table exists in Supabase (Table Editor)
+- Ensure using port 6543 (auto-configures simple protocol)
+- If error persists, restart the Supabase project in the dashboard
+
+### Tables not found
+
+- Run `make migrate-status` to check if migrations have been applied
+- Run `make migrate-up` to apply pending migrations
+- Verify `ENVIRONMENT=dev` in `.env` (determines `dev_` prefix)
 
 ### Port already in use
 
-Change the `PORT` in `.env` to something else (e.g., `8081`).
+Change `PORT` in `.env` (e.g., `8081`).
 
-## Next Steps
+## Further Reading
 
-Once the backend is running:
-
-1. ✅ Backend is ready
-2. 📝 Set up the frontend (Vite + TanStack Router)
-3. 🔗 Connect frontend to backend
-4. 🎉 Start building!
-
-## Development Commands
-
-```bash
-# Run server
-go run ./cmd/server/main.go
-
-# Build binary
-go build -o bin/server ./cmd/server
-
-# Run tests
-go test ./...
-
-# Format code
-go fmt ./...
-```
-
-## Need Help?
-
-Check the main [README.md](./README.md) for more detailed documentation.
+- **Environment details**: `ENVIRONMENTS.md`
+- **Backend conventions**: `CLAUDE.md`
+- **Frontend setup**: `_docs/technical/frontend/setup-quickstart.md`
+- **Database connections**: `_docs/technical/backend/database/connections.md`
+- **Seeding**: `scripts/README.md`
