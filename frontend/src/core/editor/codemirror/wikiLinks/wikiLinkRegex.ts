@@ -62,6 +62,9 @@ export function findWikiLinks(text: string, offset: number): WikiLinkMatch[] {
   while ((match = regex.exec(text)) !== null) {
     // Strip PUA diff markers that may split a wiki-link when AI edits part of it
     const path = match[1]!.trim().replace(ALL_MARKER_REGEX, "");
+    // Skip empty paths (e.g. `[[ | ]]`) — no valid target to link to.
+    // Without this, empty paths produce inverted display ranges and blank pills.
+    if (path.length === 0) continue;
     const rawDisplay = match[2]?.replace(ALL_MARKER_REGEX, "");
     const normalizedDisplay = rawDisplay?.trim() ?? "";
     const hasDisplayAlias = normalizedDisplay.length > 0;
