@@ -9,7 +9,7 @@
  * 3. Import and register it here
  */
 
-import { registerRenderer } from "../plugin";
+import { registerRenderer, registerScanner } from "../plugin";
 import { boldRenderer, italicRenderer } from "./emphasis";
 import {
   heading1Renderer,
@@ -23,9 +23,10 @@ import { blockquoteRenderer } from "./blockquote";
 import { horizontalRuleRenderer } from "./horizontalRule";
 import { strikethroughRenderer } from "./strikethrough";
 import { tableRenderer } from "./table";
+import { wikiLinkScanner } from "../../wikiLinks/wikiLinkScanner";
 
 /**
- * Register all built-in renderers
+ * Register all built-in renderers and scanners
  */
 export function registerBuiltinRenderers(): void {
   // Emphasis
@@ -58,6 +59,11 @@ export function registerBuiltinRenderers(): void {
 
   // Tables (GFM)
   registerRenderer(tableRenderer);
+
+  // --- Inline scanners (regex-based patterns) ---
+
+  // Wiki-links: [[path | display]] rendered as styled inline refs
+  registerScanner(wikiLinkScanner);
 }
 
 // Re-export individual renderers for testing/customization

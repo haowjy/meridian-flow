@@ -12,39 +12,14 @@ import { Extension } from "@codemirror/state";
  * - When parent container also scrolls, coordinates are wrong by parentScroller.scrollTop
  * - This causes click-and-drag scrolling to lag (cursor gets ahead of scroll)
  *
- * Solution:
- * 1. Adjust mouse event coordinates to include parent scroll offset
- * 2. Override scrollHandler to scroll parent container instead of .cm-scroller
+ * NOTE: The scroll handler was removed because CM6's built-in scrollRectIntoView
+ * already walks up DOM ancestors and scrolls parent containers correctly.
+ * The old handler always returned `true`, suppressing CM6's native scroll logic
+ * and causing "jump to top" when coordsAtPos() returned stale values during
+ * decoration rebuilds.
  */
 export function createParentScrollExtension(): Extension {
   return [
-    // Handle scrollIntoView for parent container
-    EditorView.scrollHandler.of((view, range) => {
-      const parentScroller = view.scrollDOM.closest(
-        ".overflow-y-auto",
-      ) as HTMLElement;
-      if (!parentScroller) return false;
-
-      // Get target position in document
-      const coords = view.coordsAtPos(range.head);
-      if (!coords) return false;
-
-      // Scroll parent container to bring position into view
-      const parentRect = parentScroller.getBoundingClientRect();
-      const relativeTop = coords.top - parentRect.top;
-      const yMargin = 50; // Pixels of margin around cursor
-
-      if (relativeTop < yMargin) {
-        // Scroll up
-        parentScroller.scrollTop += relativeTop - yMargin;
-      } else if (relativeTop > parentRect.height - yMargin) {
-        // Scroll down
-        parentScroller.scrollTop += relativeTop - parentRect.height + yMargin;
-      }
-
-      return true; // Prevent default CodeMirror scroll
-    }),
-
     // Mouse event handlers with coordinate adjustment
     EditorView.domEventHandlers({
       mousedown: (event, view) => {

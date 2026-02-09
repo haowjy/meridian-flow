@@ -14,13 +14,17 @@ import {
   type EditorView,
   type ViewUpdate,
 } from "@codemirror/view";
-import { RangeSetBuilder, type EditorState } from "@codemirror/state";
+import { RangeSetBuilder } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
-import type { NodeRenderer, DecorationRange, RenderContext } from "./types";
-import {
-  hunkRegionsField,
-  overlapsHunkRegion,
-} from "../diffView/hunkRegionsField";
+import type {
+  NodeRenderer,
+  InlineScanner,
+  DecorationRange,
+  RenderContext,
+} from "./types";
+import { getWordBounds } from "./cursorUtils";
+import { hunkRegionsField } from "../diffView/hunkRegionsField";
+import { overlapsExcludedRegion } from "../state/excludedRegions";
 
 // ============================================================================
 // RENDERER REGISTRY (OCP: Open for Extension)
@@ -56,90 +60,25 @@ export function clearRenderers(): void {
 }
 
 // ============================================================================
-// HELPER FUNCTIONS
+// SCANNER REGISTRY (OCP: Open for Extension)
 // ============================================================================
 
+const scanners = new Map<string, InlineScanner>();
+
 /**
- * Get word boundaries around a position (non-whitespace sequence)
+ * Register an inline scanner.
+ *
+ * Scanners are called in registration order for each visible range.
  */
-export function getWordBounds(
-  state: EditorState,
-  pos: number,
-): { from: number; to: number } {
-  const line = state.doc.lineAt(pos);
-  const lineText = line.text;
-  const lineStart = line.from;
-  const offsetInLine = pos - lineStart;
-
-  // Handle edge case: position at start of line with whitespace
-  if (offsetInLine === 0 && lineText.length > 0) {
-    const firstChar = lineText.charAt(0);
-    if (/\s/.test(firstChar)) {
-      return { from: pos, to: pos };
-    }
-  }
-
-  // Find start of word (scan backwards for whitespace)
-  let wordStart = offsetInLine;
-  while (wordStart > 0) {
-    const char = lineText.charAt(wordStart - 1);
-    if (/\s/.test(char)) break;
-    wordStart--;
-  }
-
-  // Find end of word (scan forwards for whitespace)
-  let wordEnd = offsetInLine;
-  while (wordEnd < lineText.length) {
-    const char = lineText.charAt(wordEnd);
-    if (/\s/.test(char)) break;
-    wordEnd++;
-  }
-
-  return { from: lineStart + wordStart, to: lineStart + wordEnd };
+export function registerScanner(scanner: InlineScanner): void {
+  scanners.set(scanner.id, scanner);
 }
 
 /**
- * Check if cursor is in the same "word" as a formatting node
+ * Clear all registered scanners (for testing)
  */
-export function cursorInSameWord(
-  cursorWords: Array<{ from: number; to: number }>,
-  nodeFrom: number,
-  nodeTo: number,
-): boolean {
-  for (const cursorWord of cursorWords) {
-    if (cursorWord.from < nodeTo && cursorWord.to > nodeFrom) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Check if selection overlaps a range
- */
-export function selectionOverlapsRange(
-  state: EditorState,
-  from: number,
-  to: number,
-): boolean {
-  const { selection } = state;
-  for (const range of selection.ranges) {
-    if (range.from < to && range.to > from) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Get line range for a position
- */
-export function getLineRange(
-  state: EditorState,
-  pos: number,
-): { from: number; to: number } {
-  const line = state.doc.lineAt(pos);
-  return { from: line.from, to: line.to };
+export function clearScanners(): void {
+  scanners.clear();
 }
 
 // ============================================================================
@@ -162,7 +101,11 @@ class LivePreviewPlugin {
         this.pendingRebuild = false;
         // setTimeout so the pointerup finishes before we dispatch,
         // which triggers a new update cycle with no pointer event.
-        setTimeout(() => this.view.dispatch({}), 0);
+        // Set selection explicitly so selectionSet=true and
+        // the update handler rebuilds decorations.
+        setTimeout(() => {
+          this.view.dispatch({ selection: this.view.state.selection });
+        }, 0);
       }
     };
     document.addEventListener("pointerup", this.onPointerUp);
@@ -199,30 +142,37 @@ class LivePreviewPlugin {
     const { state } = view;
     const decorations: DecorationRange[] = [];
 
-    // Get hunk regions (empty array if diff view not active)
-    // The `false` param means don't throw if field doesn't exist
-    const hunkRegions = state.field(hunkRegionsField, false) ?? [];
+    // Get hunk regions as excluded regions (empty array if diff view not active).
+    // The `false` param means don't throw if field doesn't exist.
+    const excludedRegions = state.field(hunkRegionsField, false) ?? [];
 
-    // Pre-compute cursor word bounds for performance
-    const cursorWords = state.selection.ranges.map((range) =>
-      getWordBounds(state, range.head),
-    );
+    // Pre-compute cursor word bounds for performance.
+    // For non-collapsed selections (drag-select), also include the full selection
+    // extent so cursorInSameWord reveals syntax for any node within the selection.
+    const cursorWords = state.selection.ranges.flatMap((range) => {
+      const headWord = getWordBounds(state, range.head);
+      if (!range.empty) {
+        return [headWord, { from: range.from, to: range.to }];
+      }
+      return [headWord];
+    });
 
-    const ctx: RenderContext = { state, cursorWords };
+    const ctx: RenderContext = { state, cursorWords, excludedRegions };
 
     // Iterate through syntax tree for visible ranges only
     const tree = syntaxTree(state);
 
     for (const { from, to } of view.visibleRanges) {
+      // --- Syntax-tree renderers ---
       tree.iterate({
         from,
         to,
         enter(node) {
-          // Skip nodes inside hunk regions - show raw markdown there
+          // Skip nodes inside excluded regions - show raw markdown there
           // This allows diff view styling to take precedence
           if (
-            hunkRegions.length > 0 &&
-            overlapsHunkRegion(hunkRegions, node.from, node.to)
+            excludedRegions.length > 0 &&
+            overlapsExcludedRegion(excludedRegions, node.from, node.to)
           ) {
             return;
           }
@@ -246,6 +196,22 @@ class LivePreviewPlugin {
           }
         },
       });
+
+      // --- Inline scanners (regex/pattern-based) ---
+      if (scanners.size > 0) {
+        const text = state.doc.sliceString(from, to);
+        for (const scanner of scanners.values()) {
+          try {
+            const decos = scanner.scan(text, from, ctx);
+            decorations.push(...decos);
+          } catch (error) {
+            console.warn(
+              `[LivePreview] Scanner "${scanner.id}" failed:`,
+              error,
+            );
+          }
+        }
+      }
     }
 
     // Sort decorations by position (required by RangeSetBuilder)

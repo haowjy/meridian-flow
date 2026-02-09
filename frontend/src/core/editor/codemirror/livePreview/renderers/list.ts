@@ -9,7 +9,7 @@
 import { Decoration, WidgetType } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
 import type { NodeRenderer, DecorationRange, RenderContext } from "../types";
-import { selectionOverlapsRange } from "../plugin";
+import { selectionOverlapsRange } from "../cursorUtils";
 
 // ============================================================================
 // WIDGETS

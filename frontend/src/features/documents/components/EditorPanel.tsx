@@ -53,7 +53,6 @@ import {
 } from "@/features/threads/composer/atDetection";
 import { EditorView } from "@codemirror/view";
 import {
-  createWikiLinkPlugin,
   createWikiLinkClickHandler,
   createWikiLinkClipboardHandler,
   insertWikiLink,
@@ -149,7 +148,9 @@ export function EditorPanel({
     });
   }, [atMention]);
 
-  // Wiki-link extensions: @-detection, pill rendering, click navigation + broken-link create
+  // Wiki-link extensions: @-detection, click navigation, clipboard + broken-link create
+  // Note: wiki-link decorations are now provided by the live preview coordinator
+  // via wikiLinkScanner (registered in registerBuiltinRenderers).
   const wikiLinkExtensions = useMemo(
     () => [
       atMentionField,
@@ -159,7 +160,6 @@ export function EditorPanel({
         const mentionState = update.state.field(atMentionField, false);
         setAtMention(mentionState ?? null);
       }),
-      createWikiLinkPlugin(),
       createWikiLinkClipboardHandler(),
       createWikiLinkClickHandler(
         (docId, docPath) => {
@@ -188,15 +188,13 @@ export function EditorPanel({
   // ---------------------------------------------------------------------------
   // STORE STATE (for UI that's not in hooks)
   // ---------------------------------------------------------------------------
-  const {
-    error,
-    status,
-    lastSaved,
-    loadDocument,
-    saveDocument,
-    clearError,
-    navigatorPosition,
-  } = useEditorStore();
+  const error = useEditorStore((s) => s.error);
+  const status = useEditorStore((s) => s.status);
+  const lastSaved = useEditorStore((s) => s.lastSaved);
+  const navigatorPosition = useEditorStore((s) => s.navigatorPosition);
+  const loadDocument = useEditorStore((s) => s.loadDocument);
+  const saveDocument = useEditorStore((s) => s.saveDocument);
+  const clearError = useEditorStore((s) => s.clearError);
   const activeDocument = useEditorStore((s) => s.activeDocument);
 
   // Get document metadata from tree (available immediately, no need to wait for content)
@@ -224,7 +222,6 @@ export function EditorPanel({
     isEditorReady,
     hasAISuggestions,
     hasUserEdit,
-    setHasUserEdit,
     handleEditorReady,
     handleContentChange,
     hydrateDocument,
@@ -256,7 +253,7 @@ export function EditorPanel({
     localDocument,
     editorRef,
     isEditorReady,
-    setHasUserEdit,
+    incrementEditVersion: syncContext.incrementEditVersion,
     setLocalDocument,
   });
 

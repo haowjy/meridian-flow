@@ -64,7 +64,8 @@ export function useDocumentSync<TEditor = any>(
     serverHasAIVersionRef,
     pendingServerSnapshot,
     setPendingServerSnapshot,
-    setHasUserEdit,
+    editVersionRef,
+    resetEditVersion,
     localDocumentRef,
     hasUserEditRef,
     initializedRef,
@@ -96,6 +97,9 @@ export function useDocumentSync<TEditor = any>(
     const localDoc = localDocument;
 
     saveTimerRef.current = window.setTimeout(() => {
+      // Capture editVersion at save-initiation time so resetEditVersion
+      // only clears the flag if no new edits arrived during the network round-trip.
+      const saveVersion = editVersionRef.current;
       const baseRev = aiVersionBaseRevRef.current;
 
       // Use adapter to convert editor format → storage format
@@ -142,8 +146,14 @@ export function useDocumentSync<TEditor = any>(
             onServerSaved: (doc) => {
               const currentDocId = useEditorStore.getState()._activeDocumentId;
               if (currentDocId !== saveDocumentId) return;
+
+              // A newer local edit landed while this request was in-flight.
+              // Ignore this stale snapshot to avoid triggering false
+              // pendingServerSnapshot conflicts in useDocumentContent.
+              if (editVersionRef.current !== saveVersion) return;
+
               useEditorStore.getState().updateActiveDocument(doc);
-              setHasUserEdit(false);
+              resetEditVersion(saveVersion);
             },
           },
         );
@@ -174,9 +184,17 @@ export function useDocumentSync<TEditor = any>(
             const currentDocId = useEditorStore.getState()._activeDocumentId;
             if (currentDocId !== saveDocumentId) return;
 
+            // If newer local edits exist, treat this as a stale ack: update CAS refs
+            // for future saves, but don't publish the server snapshot into activeDocument.
+            if (editVersionRef.current !== saveVersion) {
+              aiVersionBaseRevRef.current = result.document.aiVersionRev ?? null;
+              serverHasAIVersionRef.current = result.document.aiVersion != null;
+              return;
+            }
+
             useEditorStore.getState().updateActiveDocument(result.document);
             aiVersionBaseRevRef.current = result.document.aiVersionRev ?? null;
-            setHasUserEdit(false);
+            resetEditVersion(saveVersion);
           },
           onAIVersionConflict: (serverDocument) => {
             const latest =
@@ -204,7 +222,9 @@ export function useDocumentSync<TEditor = any>(
     hydrateDocument,
     aiVersionBaseRevRef,
     setPendingServerSnapshot,
-    setHasUserEdit,
+    resetEditVersion,
+    editVersionRef,
+    serverHasAIVersionRef,
     adapter,
   ]);
 

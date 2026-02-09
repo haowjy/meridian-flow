@@ -11,7 +11,7 @@
 import { Decoration } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
 import type { NodeRenderer, DecorationRange, RenderContext } from "../types";
-import { cursorInSameWord } from "../plugin";
+import { cursorInSameWord } from "../cursorUtils";
 
 // ============================================================================
 // DECORATIONS

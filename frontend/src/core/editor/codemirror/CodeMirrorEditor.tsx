@@ -112,8 +112,15 @@ function dispatchSetContent(
     annotations.push(suppressOnChange.of(true));
   }
 
+  // Defense-in-depth: preserve cursor position (clamped to new content length)
+  // so hydration doesn't jump the cursor to position 0.
+  const oldSel = view.state.selection.main;
+  const anchor = Math.min(oldSel.anchor, content.length);
+  const head = Math.min(oldSel.head, content.length);
+
   view.dispatch({
     changes: { from: 0, to: view.state.doc.length, insert: content },
+    selection: { anchor, head },
     annotations: annotations.length > 0 ? annotations : undefined,
     // Hydration/refresh may need to replace marker ranges; bypass filters.
     filter: addToHistory === false ? false : undefined,
@@ -296,7 +303,14 @@ export const CodeMirrorEditor = forwardRef<
         ...closeBracketsKeymap,
       ]),
 
-      // For quotes only (brackets handled by autoPairs)
+      // Restrict closeBrackets to quotes only — brackets handled by autoPairsExtension
+      // (which has ghost state for bracket pairs). Without this override, closeBrackets
+      // also handles [ ( { via its inputHandler, conflicting with autoPairs on mobile.
+      EditorState.languageData.of(() => [
+        {
+          closeBrackets: { brackets: ["'", '"'], before: ")]}:;>" },
+        },
+      ]),
       closeBrackets(),
 
       // Markdown

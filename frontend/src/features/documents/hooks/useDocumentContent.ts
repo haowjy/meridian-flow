@@ -48,7 +48,12 @@ export interface DocumentSyncContext<TEditor = any> {
   serverHasAIVersionRef: React.MutableRefObject<boolean>;
   pendingServerSnapshot: PendingSnapshot | null;
   setPendingServerSnapshot: (snapshot: PendingSnapshot | null) => void;
-  setHasUserEdit: (value: boolean) => void;
+  /** Ref to current editVersion (for capturing at save-initiation time) */
+  editVersionRef: React.MutableRefObject<number>;
+  /** Conditionally reset editVersion to 0 only if no new edits arrived since save started */
+  resetEditVersion: (savedAtVersion: number) => void;
+  /** Increment editVersion (for use in diff view accept/reject) */
+  incrementEditVersion: () => void;
   // Refs for cleanup effects (stale closure prevention)
   localDocumentRef: React.MutableRefObject<TEditor>;
   hasUserEditRef: React.MutableRefObject<boolean>;
@@ -75,7 +80,6 @@ export interface UseDocumentContentResult<TEditor = any> {
 
   // Dirty tracking
   hasUserEdit: boolean;
-  setHasUserEdit: (value: boolean) => void;
 
   // Editor lifecycle
   handleEditorReady: (ref: BaseEditorRef<TEditor>) => void;
@@ -111,8 +115,10 @@ export function useDocumentContent<TEditor = any>(
   // ---------------------------------------------------------------------------
   // STORE STATE
   // ---------------------------------------------------------------------------
-  const { activeDocument, _activeDocumentId, isLoading, loadDocument } =
-    useEditorStore();
+  const activeDocument = useEditorStore((s) => s.activeDocument);
+  const _activeDocumentId = useEditorStore((s) => s._activeDocumentId);
+  const isLoading = useEditorStore((s) => s.isLoading);
+  const loadDocument = useEditorStore((s) => s.loadDocument);
 
   // ---------------------------------------------------------------------------
   // LOCAL STATE
@@ -126,7 +132,8 @@ export function useDocumentContent<TEditor = any>(
       adapter.capabilities.contentFormat === "string" ? "" : {}
     ) as TEditor;
   });
-  const [hasUserEdit, setHasUserEdit] = useState(false);
+  const [editVersion, setEditVersion] = useState(0);
+  const hasUserEdit = editVersion > 0; // Derived: any edit makes this true
   const [isInitialized, setIsInitialized] = useState(false);
   const [isEditorReady, setIsEditorReady] = useState(false);
 
@@ -159,8 +166,22 @@ export function useDocumentContent<TEditor = any>(
   // Refs for "flush on navigate/unmount" without stale closures
   const initializedRef = useLatestRef(isInitialized);
   const localDocumentRef = useLatestRef(localDocument);
+  const editVersionRef = useLatestRef(editVersion);
   const hasUserEditRef = useLatestRef(hasUserEdit);
   const activeDocumentRef = useLatestRef(activeDocument);
+
+  /**
+   * Conditionally reset editVersion to 0, but ONLY if no new edits arrived
+   * since the save was initiated. Uses functional setState to avoid stale closures.
+   */
+  const resetEditVersion = useCallback((savedAtVersion: number) => {
+    setEditVersion((current) => (current === savedAtVersion ? 0 : current));
+  }, []);
+
+  /** Increment editVersion (for use in diff view accept/reject) */
+  const incrementEditVersion = useCallback(() => {
+    setEditVersion((v) => v + 1);
+  }, []);
 
   // Determine editable state early (needed by sync effect below)
   const isEditable =
@@ -186,7 +207,7 @@ export function useDocumentContent<TEditor = any>(
       setLocalDocument(editorContent);
       aiVersionBaseRevRef.current = doc.aiVersionRev ?? null;
       serverHasAIVersionRef.current = aiVersion != null;
-      setHasUserEdit(false);
+      setEditVersion(0);
 
       if (editorRef.current) {
         editorRef.current.setContent(editorContent, {
@@ -206,7 +227,7 @@ export function useDocumentContent<TEditor = any>(
         return;
       }
       setLocalDocument(content);
-      setHasUserEdit(true);
+      setEditVersion((v) => v + 1);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initializedRef is stable
     [],
@@ -238,7 +259,7 @@ export function useDocumentContent<TEditor = any>(
 
     // Reset local editor state on document change
     setIsInitialized(false);
-    setHasUserEdit(false);
+    setEditVersion(0);
     setPendingServerSnapshot(null);
 
     loadDocument(documentId, abortController.signal);
@@ -264,14 +285,14 @@ export function useDocumentContent<TEditor = any>(
     lastActiveDocumentRef.current = activeDocument;
 
     // If same document and no server update, nothing to do.
-    // This prevents re-hydration when only hasUserEdit/pendingServerSnapshot changed,
+    // This prevents re-hydration when only editVersion/pendingServerSnapshot changed,
     // which would revert the editor to old content after accept/reject.
     if (!docChanged && !serverSentNewDoc) {
       return;
     }
 
     // IMPORTANT: Check for existing snapshot FIRST to prevent infinite loop.
-    // If we checked hasUserEdit first, we'd create a new pendingServerSnapshot object,
+    // If we checked editVersion first, we'd create a new pendingServerSnapshot object,
     // which triggers this effect again (it's in deps), creating another object → infinite loop.
     if (!docChanged && pendingServerSnapshot) {
       return;
@@ -279,7 +300,7 @@ export function useDocumentContent<TEditor = any>(
 
     // If server sent a new doc for the SAME document ID while user has edits, stash it.
     // Only do this when serverSentNewDoc=true (server update), not when local state changes.
-    if (!docChanged && serverSentNewDoc && hasUserEdit) {
+    if (!docChanged && serverSentNewDoc && editVersion > 0) {
       setPendingServerSnapshot({
         content: activeDocument.content ?? "",
         aiVersion: activeDocument.aiVersion,
@@ -302,14 +323,14 @@ export function useDocumentContent<TEditor = any>(
   }, [
     activeDocument,
     documentId,
-    hasUserEdit,
+    editVersion,
     hydrateDocument,
     pendingServerSnapshot,
   ]);
 
-  // Enable diff mode when editor becomes ready (if document has markers)
-  // Note: Actual diff extension toggle is handled by useDiffView
-  // This effect just ensures editor content is set if loaded before editor ready
+  // Ensure editor has correct content when it becomes ready after content was already loaded.
+  // Note: Actual diff extension toggle is handled by useDiffView.
+  // Only fires on ready/init transitions, NOT on every keystroke.
   useEffect(() => {
     if (!isEditorReady || !isInitialized) return;
 
@@ -322,7 +343,8 @@ export function useDocumentContent<TEditor = any>(
         emitChange: false,
       });
     }
-  }, [isEditorReady, isInitialized, localDocument, editorRef]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only fire on ready/init transitions, not on every keystroke
+  }, [isEditorReady, isInitialized]);
 
   // Sync editable state to editor when it changes
   useEffect(() => {
@@ -348,7 +370,9 @@ export function useDocumentContent<TEditor = any>(
     serverHasAIVersionRef,
     pendingServerSnapshot,
     setPendingServerSnapshot,
-    setHasUserEdit,
+    editVersionRef,
+    resetEditVersion,
+    incrementEditVersion,
     localDocumentRef,
     hasUserEditRef,
     initializedRef,
@@ -367,7 +391,6 @@ export function useDocumentContent<TEditor = any>(
     isEditorReady,
     hasAISuggestions,
     hasUserEdit,
-    setHasUserEdit,
     handleEditorReady,
     handleContentChange,
     hydrateDocument,
