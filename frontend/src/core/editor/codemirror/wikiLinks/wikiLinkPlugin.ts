@@ -40,7 +40,12 @@ export function createWikiLinkClickHandler(
   ) => void,
 ): Extension {
   return EditorView.domEventHandlers({
-    mousedown(event: MouseEvent) {
+    // pointerdown fires before touchstart/mousedown on all platforms,
+    // so the decoration is still in the DOM when this handler runs.
+    // Using mousedown caused mobile taps to fail: touchstart moved the
+    // cursor, CM6 removed the decoration, then synthetic mousedown
+    // found nothing to click.
+    pointerdown(event: PointerEvent) {
       const target = event.target as HTMLElement;
       const ref = target.closest<HTMLElement>(REF_TARGET_SELECTOR);
       if (!ref) return false;

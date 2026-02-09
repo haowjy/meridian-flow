@@ -33,6 +33,7 @@ feature: "Document Editor"
 - Manual save via Cmd/Ctrl+S
 - Save status UI (Saved, Saving, Error with timestamp)
 - Backend integration: PATCH to `/api/documents/:id`
+- Stale save-ack race fixed (prevents false conflict + autosave stall): see `/_docs/future/bugs/document-sync-stale-save-ack-race.md`
 - See [saving-and-sync.md](saving-and-sync.md)
 
 ### Content Caching
