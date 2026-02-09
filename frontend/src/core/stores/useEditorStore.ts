@@ -23,8 +23,6 @@ interface EditorStore {
   lastSaved: Date | null;
   isLoading: boolean;
   error: string | null;
-  hasUserEdit: boolean;
-
   // Hunk navigation state (for AI diff review)
   focusedHunkIndex: number; // -1 = no visual focus, 0+ = highlighted hunk
   navigatorPosition: number; // Navigator display position (never -1, for "Change X/Y" display)
@@ -34,7 +32,6 @@ interface EditorStore {
   saveDocument: (documentId: string, content: string) => Promise<void>;
   setStatus: (status: SaveStatus) => void;
   updateActiveDocument: (document: Document) => void;
-  setHasUserEdit: (hasEdit: boolean) => void;
   /** Force refresh document from server (e.g., after AI edit tool) */
   refreshDocument: (documentId: string) => Promise<void>;
   /** Set the focused hunk index for keyboard navigation */
@@ -54,7 +51,6 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
   lastSaved: null,
   isLoading: false,
   error: null,
-  hasUserEdit: false,
   focusedHunkIndex: -1, // -1 = no visual focus, 0+ = highlighted hunk
   navigatorPosition: 0, // Navigator display position (never -1)
   navigatorPositionByDoc: {}, // Per-doc persistence for navigator position
@@ -68,7 +64,6 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
       _activeDocumentId: documentId,
       isLoading: true,
       error: null,
-      hasUserEdit: false, // Reset edit flag when switching docs
       focusedHunkIndex: -1, // Start without visual focus
       navigatorPosition: savedPosition, // Restore navigator position from per-doc map
     });
@@ -200,8 +195,6 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
       activeDocument: document,
       lastSaved: document.updatedAt,
     }),
-
-  setHasUserEdit: (hasEdit) => set({ hasUserEdit: hasEdit }),
 
   refreshDocument: async (documentId: string) => {
     // Skip if this isn't the active document

@@ -23,7 +23,7 @@ import { ALL_MARKER_REGEX } from "@/core/lib/mergedDocument";
  * Use `findWikiLinks()` for iteration — it creates its own `g`-flagged copy.
  */
 export const WIKI_LINK_PATTERN =
-  /(?<!\[)@?\[\[([^|\]]+?)(?:\s*\|\s*([^\]]+?))?\]\]/;
+  /(?<!\[)@?\[\[([^|\]\r\n]+?)(?:[^\S\r\n]*\|[^\S\r\n]*([^\]\r\n]+?))?\]\]/;
 
 // =============================================================================
 // TYPES
@@ -62,22 +62,31 @@ export function findWikiLinks(text: string, offset: number): WikiLinkMatch[] {
   while ((match = regex.exec(text)) !== null) {
     // Strip PUA diff markers that may split a wiki-link when AI edits part of it
     const path = match[1]!.trim().replace(ALL_MARKER_REGEX, "");
-    const displayName =
-      match[2]?.trim().replace(ALL_MARKER_REGEX, "") || pathToDisplayName(path);
+    const rawDisplay = match[2]?.replace(ALL_MARKER_REGEX, "");
+    const normalizedDisplay = rawDisplay?.trim() ?? "";
+    const hasDisplayAlias = normalizedDisplay.length > 0;
+    const displayName = hasDisplayAlias
+      ? normalizedDisplay
+      : pathToDisplayName(path);
 
     const matchFrom = offset + match.index;
     const matchTo = matchFrom + match[0].length;
     const fullMatch = match[0];
+    const bracketStart = fullMatch.indexOf("[[");
+    const contentStart = bracketStart + 2;
+    const contentEnd = fullMatch.length - 2;
+    const pipeIdx = fullMatch.indexOf("|");
+    const hasPipe = pipeIdx >= 0;
 
     // Compute displayFrom/displayTo: the visible text range within the match.
     // For `[[path | display]]` — the display name after the pipe.
     // For `[[path]]` — the path itself.
+    // For `[[path | ]]` (whitespace-only alias) — fall back to path text.
     let displayFrom: number;
     let displayTo: number;
 
-    if (match[2]) {
+    if (hasPipe && hasDisplayAlias) {
       // Pipe variant: find display name within the full match string
-      const pipeIdx = fullMatch.indexOf("|");
       // Find first non-space after pipe
       const afterPipe = fullMatch.slice(pipeIdx + 1);
       const trimStart = afterPipe.length - afterPipe.trimStart().length;
@@ -87,14 +96,16 @@ export function findWikiLinks(text: string, offset: number): WikiLinkMatch[] {
       displayFrom = matchFrom + pipeIdx + 1 + trimStart;
       displayTo = matchTo - 2 - trimEnd;
     } else {
-      // No-pipe variant: visible text is the path (between [[ and ]])
-      // Account for optional @ prefix
-      const bracketStart = fullMatch.indexOf("[[");
-      const pathStr = fullMatch.slice(bracketStart + 2, -2);
+      // No-pipe variant (or whitespace-only alias): visible text is the path.
+      const pathStr = hasPipe
+        ? fullMatch.slice(contentStart, pipeIdx)
+        : fullMatch.slice(contentStart, contentEnd);
       const trimStart = pathStr.length - pathStr.trimStart().length;
       const trimEnd = pathStr.length - pathStr.trimEnd().length;
-      displayFrom = matchFrom + bracketStart + 2 + trimStart;
-      displayTo = matchTo - 2 - trimEnd;
+      displayFrom = matchFrom + contentStart + trimStart;
+      displayTo = hasPipe
+        ? matchFrom + pipeIdx - trimEnd
+        : matchFrom + contentEnd - trimEnd;
     }
 
     results.push({
