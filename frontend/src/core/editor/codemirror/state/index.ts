@@ -12,3 +12,8 @@ export {
   clearGhostEffect,
   type GhostState,
 } from "./ghostState";
+
+export {
+  overlapsExcludedRegion,
+  type ExcludedRegion,
+} from "./excludedRegions";

@@ -5,6 +5,7 @@
  *
  * 1. **Inline refs** (`.cm-inline-ref`) — document editor wiki-links.
  *    Mark-based: styled real text, selection flows through naturally.
+ *    File icon rendered via CSS `::before` pseudo-element (mask-image).
  *
  * 2. **Pill widgets** (`.cm-inline-pill`) — composer inline elements.
  *    Replace-based: ORC placeholder + Decoration.replace widget.
@@ -12,8 +13,6 @@
  * Classes:
  * - `.cm-inline-ref` — mark decoration on display text (editor)
  * - `.cm-inline-ref-broken` — broken link variant
- * - `.cm-ref-icon` — file icon point widget
- * - `.cm-ref-ai-insertion` / `.cm-ref-ai-deletion` — AI change styling
  * - `.cm-inline-pill` — container (composer pills)
  * - `.cm-inline-pill-icon` — leading icon (composer)
  * - `.cm-inline-pill-name` — display name (composer)
@@ -23,45 +22,46 @@
 
 import { EditorView } from "@codemirror/view";
 
+// FileText SVG as a data URI for CSS mask-image.
+// Using black stroke so the mask alpha channel picks up the icon shape.
+// backgroundColor: currentColor then provides the actual color, adapting to light/dark.
+const FILE_ICON_DATA_URI =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='M10 9H8'/%3E%3Cpath d='M16 13H8'/%3E%3Cpath d='M16 17H8'/%3E%3C/svg%3E\")";
+
 export const pillStylesTheme = EditorView.theme({
   // =========================================================================
   // INLINE REF — mark-based text decorations (document editor)
   // =========================================================================
 
-  // Icon + mark text form one unified chip via split-border trick:
-  //   <span class="cm-ref-icon">📄</span><span class="cm-inline-ref">Name</span>
-  //   ↑ left half of chip                  ↑ right half of chip
-
-  ".cm-ref-icon": {
-    display: "inline-flex",
-    alignItems: "center",
-    verticalAlign: "middle",
-    backgroundColor: "var(--muted)",
-    borderTop: "1px solid var(--border)",
-    borderBottom: "1px solid var(--border)",
-    borderLeft: "1px solid var(--border)",
-    borderRight: "none",
-    borderRadius: "3px 0 0 3px",
-    padding: "1px 0 1px 4px",
-    opacity: "0.7",
-    transition: "background-color 120ms ease",
-  },
-
-  ".cm-ref-icon-broken": {
-    opacity: "0.4",
-    borderStyle: "dashed",
-  },
+  // Single-element chip: the ::before pseudo-element renders the file icon
+  // via CSS mask-image, so icon + text are one DOM element with unified
+  // border, background, and hover behavior.
 
   ".cm-inline-ref": {
     backgroundColor: "var(--muted)",
-    borderTop: "1px solid var(--border)",
-    borderBottom: "1px solid var(--border)",
-    borderRight: "1px solid var(--border)",
-    borderLeft: "none",
-    borderRadius: "0 3px 3px 0",
-    padding: "1px 4px 1px 2px",
+    border: "1px solid var(--border)",
+    borderRadius: "3px",
+    padding: "1px 4px 1px 4px",
     cursor: "pointer",
     transition: "background-color 120ms ease",
+  },
+
+  // File icon via CSS mask — scales with font, adapts color via currentColor
+  ".cm-inline-ref::before": {
+    content: '""',
+    display: "inline-block",
+    width: "0.75em",
+    height: "0.75em",
+    backgroundColor: "currentColor",
+    maskImage: FILE_ICON_DATA_URI,
+    WebkitMaskImage: FILE_ICON_DATA_URI,
+    maskSize: "contain",
+    WebkitMaskSize: "contain",
+    maskRepeat: "no-repeat",
+    WebkitMaskRepeat: "no-repeat",
+    verticalAlign: "middle",
+    marginRight: "2px",
+    opacity: "0.7",
   },
 
   ".cm-inline-ref:hover": {
@@ -73,18 +73,6 @@ export const pillStylesTheme = EditorView.theme({
     textDecoration: "underline dashed",
     opacity: "0.6",
     borderStyle: "dashed",
-  },
-
-  // AI insertion: ref was added by an AI edit
-  ".cm-ref-ai-insertion": {
-    backgroundColor: "color-mix(in srgb, var(--success) 12%, transparent)",
-  },
-
-  // AI deletion: ref was removed by an AI edit
-  ".cm-ref-ai-deletion": {
-    backgroundColor: "color-mix(in srgb, var(--error) 12%, transparent)",
-    textDecoration: "line-through",
-    opacity: "0.7",
   },
 
   // =========================================================================

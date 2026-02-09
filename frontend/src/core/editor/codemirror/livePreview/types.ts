@@ -7,6 +7,7 @@
 import type { Decoration } from "@codemirror/view";
 import type { EditorState } from "@codemirror/state";
 import type { SyntaxNode } from "@lezer/common";
+import type { ExcludedRegion } from "../state/excludedRegions";
 
 // ============================================================================
 // RENDER CONTEXT
@@ -20,6 +21,9 @@ export interface RenderContext {
   state: EditorState;
   /** Pre-computed cursor word bounds for performance */
   cursorWords: Array<{ from: number; to: number }>;
+  /** Regions where decorations should be suppressed (e.g., diff hunks).
+   *  Empty array when no diff is active. */
+  excludedRegions: readonly ExcludedRegion[];
 }
 
 // ============================================================================
@@ -56,4 +60,31 @@ export interface NodeRenderer {
    * @returns Array of decorations to apply
    */
   render(node: SyntaxNode, ctx: RenderContext): DecorationRange[];
+}
+
+// ============================================================================
+// INLINE SCANNER INTERFACE (OCP: Open for Extension)
+// ============================================================================
+
+/**
+ * Interface for regex/pattern-based inline decoration providers.
+ *
+ * Scanners receive visible text slices and return decorations, coordinated
+ * by the live preview plugin (single ViewPlugin rebuild schedule).
+ */
+export interface InlineScanner {
+  /** Unique identifier for debugging and dedup */
+  id: string;
+
+  /**
+   * Scan visible text and return decorations.
+   * Called once per visible range per rebuild cycle.
+   *
+   * Contract:
+   * - Only operate on the provided `text` slice and `offset`
+   * - Never call `doc.toString()` — keep work O(viewport)
+   * - Check `ctx.excludedRegions` and skip patterns that overlap
+   * - Handle cursor proximity internally (pattern-specific reveal)
+   */
+  scan(text: string, offset: number, ctx: RenderContext): DecorationRange[];
 }

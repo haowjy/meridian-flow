@@ -7,7 +7,7 @@
 import { Decoration } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
 import type { NodeRenderer, DecorationRange, RenderContext } from "../types";
-import { selectionOverlapsRange, getLineRange } from "../plugin";
+import { selectionOverlapsRange, getLineRange } from "../cursorUtils";
 
 // ============================================================================
 // DECORATIONS

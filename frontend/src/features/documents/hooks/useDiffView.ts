@@ -45,7 +45,8 @@ export interface UseDiffViewOptions {
   localDocument: string;
   editorRef: React.MutableRefObject<CodeMirrorEditorRef | null>;
   isEditorReady: boolean;
-  setHasUserEdit: (value: boolean) => void;
+  /** Increment editVersion to mark document as dirty (called on accept/reject) */
+  incrementEditVersion: () => void;
   setLocalDocument: (content: string) => void;
 }
 
@@ -75,18 +76,16 @@ export function useDiffView({
   localDocument,
   editorRef,
   isEditorReady,
-  setHasUserEdit,
+  incrementEditVersion,
   setLocalDocument,
 }: UseDiffViewOptions): UseDiffViewResult {
   // ---------------------------------------------------------------------------
   // STORE STATE
   // ---------------------------------------------------------------------------
-  const {
-    focusedHunkIndex,
-    setFocusedHunkIndex,
-    navigateHunk,
-    clampNavigatorPosition,
-  } = useEditorStore();
+  const focusedHunkIndex = useEditorStore((s) => s.focusedHunkIndex);
+  const setFocusedHunkIndex = useEditorStore((s) => s.setFocusedHunkIndex);
+  const navigateHunk = useEditorStore((s) => s.navigateHunk);
+  const clampNavigatorPosition = useEditorStore((s) => s.clampNavigatorPosition);
 
   // ---------------------------------------------------------------------------
   // REFS
@@ -135,10 +134,10 @@ export function useDiffView({
       diffCompartment.of([
         createDiffViewExtension({
           // Sync React state when accept/reject transactions change the document.
-          // This ensures localDocument and hasUserEdit are updated for autosave.
+          // This ensures localDocument and editVersion are updated for autosave.
           onContentChanged: (content) => {
             setLocalDocument(content);
-            setHasUserEdit(true);
+            incrementEditVersion();
           },
           // Handle hunk focus changes (click inside to focus, outside to unfocus)
           onHunkFocusChange: (hunkIndex) => {
@@ -149,7 +148,7 @@ export function useDiffView({
       ]),
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps -- diffCompartment is reset when documentId changes
-    [documentId, setLocalDocument, setHasUserEdit, setFocusedHunkIndex],
+    [documentId, setLocalDocument, incrementEditVersion, setFocusedHunkIndex],
   );
 
   // ---------------------------------------------------------------------------
