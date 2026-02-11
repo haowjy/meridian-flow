@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "./shared/reference-pill/pill.css";
 
 @source "../../node_modules/streamdown/dist/index.js";
 

@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { useNavigate } from "@tanstack/react-router";
 import type {
   Turn,
   ContentBlock,
@@ -11,10 +10,8 @@ import { TurnActionBar } from "./TurnActionBar";
 import { EditTurnInput } from "./EditTurnInput";
 import { useThreadStore } from "@/core/stores/useThreadStore";
 import { useCurrentThreadStream } from "@/core/stores/useStreamStore";
-import { useTreeStore } from "@/core/stores/useTreeStore";
-import { useProjectStore } from "@/core/stores/useProjectStore";
-import { openDocument } from "@/core/lib/panelHelpers";
 import { makeLogger } from "@/core/lib/logger";
+import { usePillNavigation } from "@/shared/reference-pill";
 import { turnToContentBlocks } from "@/features/threads/utils/turnHelpers";
 import { ComposerViewer } from "@/features/threads/composer";
 import { userTurnCardBase } from "./styles";
@@ -47,7 +44,6 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
       })),
     );
 
-  const navigate = useNavigate();
   const isStreaming = streamingTurnId !== null;
 
   log.debug("render", {
@@ -71,17 +67,8 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
     [editTurn, turn.threadId, turn.id],
   );
 
-  const handlePillClick = useCallback(
-    (documentId: string) => {
-      const doc = useTreeStore
-        .getState()
-        .documents.find((d) => d.id === documentId);
-      const projectSlug = useProjectStore.getState().currentProject()?.slug;
-      if (!doc || !projectSlug) return;
-      openDocument(doc.id, doc.path, projectSlug, navigate);
-    },
-    [navigate],
-  );
+  // Pill click → open documents in editor, folders in a popover
+  const { handlePillClick, folderPopover } = usePillNavigation();
 
   const handleEdit = useCallback(() => {
     setIsEditing(true);
@@ -142,6 +129,7 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
           />
         </>
       )}
+      {folderPopover}
     </div>
   );
 });

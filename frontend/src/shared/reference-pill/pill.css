@@ -1,0 +1,161 @@
+/**
+ * Reference Pill CSS — Single Source of Truth
+ *
+ * Shared styles for reference pills across all contexts:
+ * - CM6 Mark decorations (wiki-links in doc editor) via .ref-pill--mark
+ * - CM6 Widget decorations (composer pills) via .ref-pill
+ * - React components (thread display) via .ref-pill
+ *
+ * Uses @layer components so Tailwind processes the classes.
+ * Imported once in globals.css — available everywhere.
+ */
+
+/* CSS custom properties for mask-image icons (used by ::before pseudo-elements) */
+:root {
+  --ref-pill-file-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='M10 9H8'/%3E%3Cpath d='M16 13H8'/%3E%3Cpath d='M16 17H8'/%3E%3C/svg%3E");
+  --ref-pill-folder-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'/%3E%3C/svg%3E");
+  --ref-pill-close-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6 6 18'/%3E%3Cpath d='m6 6 12 12'/%3E%3C/svg%3E");
+}
+
+@layer components {
+  /* ==========================================================================
+     BASE PILL
+     Shared visual: background, border, rounded, cursor, transition.
+     Widget and React pills use this directly.
+     ========================================================================== */
+
+  .ref-pill {
+    @apply inline-flex items-center gap-[3px] cursor-pointer select-none;
+    @apply bg-muted text-muted-foreground;
+    @apply border border-border rounded-[4px];
+    @apply px-1.5 py-px text-xs leading-snug;
+    @apply max-w-[180px] align-middle;
+    transition: background-color 120ms ease;
+  }
+
+  .ref-pill:hover {
+    background-color: rgba(120, 113, 108, 0.15);
+  }
+
+  .ref-pill:disabled {
+    cursor: default;
+  }
+
+  /* ==========================================================================
+     MARK MODIFIER — for CM6 Mark decorations (doc editor wiki-links)
+     Rendered as styled text (not a widget), icon via ::before pseudo-element.
+     ========================================================================== */
+
+  .ref-pill--mark {
+    @apply bg-muted;
+    @apply border border-border rounded-[3px];
+    @apply px-1 py-px cursor-pointer;
+    transition: background-color 120ms ease;
+  }
+
+  .ref-pill--mark:hover {
+    background-color: color-mix(in srgb, var(--muted) 80%, var(--primary));
+  }
+
+  /* File icon via CSS mask — scales with font, adapts color via currentColor */
+  .ref-pill--mark::before {
+    content: "";
+    display: inline-block;
+    width: 0.75em;
+    height: 0.75em;
+    background-color: currentColor;
+    mask-image: var(--ref-pill-file-icon);
+    -webkit-mask-image: var(--ref-pill-file-icon);
+    mask-size: contain;
+    -webkit-mask-size: contain;
+    mask-repeat: no-repeat;
+    -webkit-mask-repeat: no-repeat;
+    vertical-align: middle;
+    margin-right: 2px;
+    opacity: 0.7;
+  }
+
+  /* Folder icon override — shows folder instead of file for folder refs */
+  .ref-pill--mark-folder::before {
+    mask-image: var(--ref-pill-folder-icon);
+    -webkit-mask-image: var(--ref-pill-folder-icon);
+  }
+
+  /* Hover: swap icon to X for delete affordance.
+     @media (hover: hover) matches Tailwind v4's default hover: behavior —
+     prevents iOS Safari from treating the first tap as "hover only"
+     when :hover causes visible content changes (icon swap, show/hide). */
+  @media (hover: hover) {
+    .ref-pill--mark:hover::before {
+      mask-image: var(--ref-pill-close-icon);
+      -webkit-mask-image: var(--ref-pill-close-icon);
+      opacity: 0.5;
+    }
+  }
+
+  /* ==========================================================================
+     BROKEN LINK VARIANT
+     ========================================================================== */
+
+  .ref-pill--broken {
+    text-decoration: underline dashed;
+    opacity: 0.6;
+    border-style: dashed;
+  }
+
+  /* ==========================================================================
+     CHILD ELEMENTS — icon, name, remove button
+     ========================================================================== */
+
+  .ref-pill-icon {
+    @apply inline-flex items-center shrink-0 opacity-70;
+  }
+
+  .ref-pill-name {
+    @apply overflow-hidden text-ellipsis whitespace-nowrap;
+  }
+
+  .ref-pill-remove {
+    @apply inline-flex items-center justify-center shrink-0;
+    @apply w-3 h-3 rounded-sm; /* 12×12 matches icon size */
+    @apply border-none bg-transparent cursor-pointer p-0 ml-px;
+    @apply opacity-50;
+    /* Hidden by default — shown on hover (swaps with icon) */
+    display: none;
+  }
+
+  .ref-pill-remove:hover {
+    color: var(--foreground);
+    opacity: 1;
+    background-color: rgba(120, 113, 108, 0.1);
+  }
+
+  /* Hover behavior: hide icon, show X button on the LEFT (same position as icon).
+     Guarded by @media (hover: hover) — see mark hover comment above. */
+  @media (hover: hover) {
+    .ref-pill:hover .ref-pill-icon {
+      display: none;
+    }
+    .ref-pill:hover .ref-pill-remove {
+      display: inline-flex;
+      order: -1; /* Move to front (left), matching icon position */
+    }
+  }
+
+  /* ==========================================================================
+     AI DIFF STYLES — editor-specific, kept here for colocation
+     ========================================================================== */
+
+  .cm-pill-ai-insertion {
+    border-color: var(--success);
+    background-color: color-mix(in srgb, var(--success) 12%, var(--muted));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--success) 25%, transparent);
+  }
+
+  .cm-pill-ai-deletion {
+    border-color: var(--error);
+    background-color: color-mix(in srgb, var(--error) 12%, var(--muted));
+    text-decoration: line-through;
+    opacity: 0.7;
+  }
+}

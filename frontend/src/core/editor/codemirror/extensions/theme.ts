@@ -12,7 +12,6 @@
  */
 
 import { EditorView } from "@codemirror/view";
-import { pillStylesTheme } from "./pillStyles";
 
 // ============================================================================
 // BASE THEME (structural defaults)
@@ -100,6 +99,7 @@ export const livePreviewTheme = EditorView.theme({
     color: "var(--theme-primary, #5F8575)",
     textDecoration: "underline",
     textUnderlineOffset: "2px",
+    cursor: "pointer",
   },
 
   // Headings
@@ -182,4 +182,5 @@ export const livePreviewTheme = EditorView.theme({
 // COMBINED THEME EXTENSION
 // ============================================================================
 
-export const editorTheme = [baseTheme, livePreviewTheme, pillStylesTheme];
+// Pill styles are now global CSS (shared/reference-pill/pill.css via globals.css)
+export const editorTheme = [baseTheme, livePreviewTheme];
