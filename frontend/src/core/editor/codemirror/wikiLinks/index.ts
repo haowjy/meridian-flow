@@ -27,6 +27,8 @@ export {
   meridianPayloadToWikiLinkText,
 } from "./clipboardInterop";
 export {
-  resolveDocumentByPath,
+  resolveReference,
   resolveDocumentPathById,
+  resolvePathById,
+  type ResolvedRef,
 } from "./resolveDocument";

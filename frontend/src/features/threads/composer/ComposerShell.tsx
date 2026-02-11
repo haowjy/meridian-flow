@@ -59,7 +59,7 @@ export interface ComposerShellProps {
   onSubmit: () => void;
   onEscape?: () => void;
   onArrowUpEmpty?: () => void;
-  onPillClick?: (documentId: string) => void;
+  onPillClick?: (id: string, refType: string, pillEl: HTMLElement) => void;
   /** Additional CM6 extensions passed to the editor (e.g., compact theme) */
   extraExtensions?: Extension[];
 

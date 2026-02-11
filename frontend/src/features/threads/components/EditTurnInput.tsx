@@ -7,11 +7,10 @@ import {
   useFloating,
 } from "@floating-ui/react-dom";
 import { createPortal } from "react-dom";
-import { useNavigate } from "@tanstack/react-router";
 import { Card } from "@/shared/components/ui/card";
 import { cn } from "@/lib/utils";
 import { makeLogger } from "@/core/lib/logger";
-import { openDocument } from "@/core/lib/panelHelpers";
+import { usePillNavigation } from "@/shared/reference-pill";
 import { userTurnCardBase } from "./styles";
 import {
   ComposerShell,
@@ -31,8 +30,6 @@ import {
   type MentionResult,
 } from "./DocumentMentionPopover";
 import { useUIStore } from "@/core/stores/useUIStore";
-import { useProjectStore } from "@/core/stores/useProjectStore";
-import { useTreeStore } from "@/core/stores/useTreeStore";
 import { getEditPlaceholder } from "@/features/threads/composer/placeholders";
 import { useIsMobile } from "@/core/hooks/useIsMobile";
 
@@ -64,7 +61,6 @@ export function EditTurnInput({
   draftNumber,
   totalDrafts,
 }: EditTurnInputProps) {
-  const navigate = useNavigate();
   const isMobile = useIsMobile();
   const lastAtReferenceUsed = useUIStore((s) => s.lastAtReferenceUsed);
   const [hasContent, setHasContent] = useState(false);
@@ -219,19 +215,8 @@ export function EditTurnInput({
     shell.focus();
   }, []);
 
-  const handlePillClick = useCallback(
-    (documentId: string) => {
-      const doc = useTreeStore
-        .getState()
-        .documents.find((d) => d.id === documentId);
-      if (!doc) return;
-      const projectSlug =
-        useProjectStore.getState().currentProject()?.slug ?? "";
-      if (!projectSlug) return;
-      openDocument(doc.id, doc.path, projectSlug, navigate);
-    },
-    [navigate],
-  );
+  // Pill click → open documents in editor, folders in a popover
+  const { handlePillClick, folderPopover } = usePillNavigation();
 
   if (!isOpen) return null;
 
@@ -296,6 +281,7 @@ export function EditTurnInput({
           }
         />
       </div>
+      {folderPopover}
     </Card>
   );
 }

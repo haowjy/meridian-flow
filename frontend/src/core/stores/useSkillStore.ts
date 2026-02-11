@@ -16,6 +16,8 @@ interface SkillStoreState {
   isLoadingSkills: boolean;
   error: string | null;
   currentProjectId: string | null;
+  /** Timestamp of last successful skills fetch (prevents redundant fetches on tab switch) */
+  skillsLoadedAt: number | null;
 
   // Selected skill (for detail view)
   selectedSkillId: string | null;
@@ -47,6 +49,7 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
   isLoadingSkills: false,
   error: null,
   currentProjectId: null,
+  skillsLoadedAt: null,
   selectedSkillId: null,
   selectedSkillContent: null,
   isLoadingSelectedSkill: false,
@@ -56,6 +59,14 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
     // Stale-while-revalidate: show cached data immediately if same project
     const hasCachedData =
       state.skills.length > 0 && state.currentProjectId === projectId;
+
+    // Skip if data is fresh (< 30s old) for the same project.
+    // Prevents redundant fetches when Activity re-fires effects on tab switch.
+    const isFresh =
+      hasCachedData &&
+      state.skillsLoadedAt !== null &&
+      Date.now() - state.skillsLoadedAt < 30_000;
+    if (isFresh) return;
 
     if (!hasCachedData) {
       // No cache or different project: show loading state
@@ -74,7 +85,12 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
       const skills = await api.skills.list(projectId, { signal });
       // Sort by position
       skills.sort((a, b) => a.position - b.position);
-      set({ skills, skillsStatus: "success", isLoadingSkills: false });
+      set({
+        skills,
+        skillsStatus: "success",
+        isLoadingSkills: false,
+        skillsLoadedAt: Date.now(),
+      });
     } catch (error) {
       // Silent abort errors
       if (error instanceof Error && error.name === "AbortError") {
@@ -172,6 +188,7 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
       isLoadingSkills: false,
       error: null,
       currentProjectId: null,
+      skillsLoadedAt: null,
       selectedSkillId: null,
       selectedSkillContent: null,
       isLoadingSelectedSkill: false,

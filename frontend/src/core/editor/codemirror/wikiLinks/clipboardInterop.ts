@@ -11,10 +11,7 @@ import {
   type MeridianClipboardPayload,
 } from "@/core/lib/meridianClipboard";
 import { findWikiLinks, pathToDisplayName } from "./wikiLinkRegex";
-import {
-  resolveDocumentByPath,
-  resolveDocumentPathById,
-} from "./resolveDocument";
+import { resolveReference, resolvePathById } from "./resolveDocument";
 
 export interface ReferenceClipboardElement extends ClipboardElement {
   type: "reference";
@@ -74,7 +71,7 @@ const referenceClipboardCodec: ClipboardCodec<ReferenceClipboardElement> = {
   toPlainText(element) {
     const path =
       element.documentPath?.trim() ||
-      resolveDocumentPathById(element.documentId)?.trim() ||
+      resolvePathById(element.documentId)?.trim() || // searches both docs + folders
       element.displayName;
     const displayName = element.displayName || pathToDisplayName(path);
     return formatWikiLink(path, displayName);
@@ -94,8 +91,8 @@ const referenceClipboardCodec: ClipboardCodec<ReferenceClipboardElement> = {
     for (const link of links) {
       result += text.slice(cursor, link.from);
 
-      const doc = resolveDocumentByPath(link.path);
-      if (!doc) {
+      const resolved = resolveReference(link.path);
+      if (!resolved) {
         result += text.slice(link.from, link.to);
         cursor = link.to;
         continue;
@@ -107,10 +104,10 @@ const referenceClipboardCodec: ClipboardCodec<ReferenceClipboardElement> = {
         position,
         element: {
           type: "reference",
-          documentId: doc.id,
-          refType: "document",
-          displayName: link.displayName || doc.name,
-          documentPath: doc.path,
+          documentId: resolved.id,
+          refType: resolved.type,
+          displayName: link.displayName || resolved.name,
+          documentPath: resolved.path,
         },
       });
       cursor = link.to;

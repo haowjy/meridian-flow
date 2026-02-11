@@ -23,8 +23,14 @@ import type {
   DecorationRange,
 } from "../livePreview/types";
 import { overlapsExcludedRegion } from "../state/excludedRegions";
+import { cursorAdjacentToRange } from "../livePreview/cursorUtils";
 import { findWikiLinks } from "./wikiLinkRegex";
-import { resolveDocumentByPath } from "./resolveDocument";
+import { resolveReference } from "./resolveDocument";
+import {
+  PILL_MARK_CLASS,
+  PILL_BROKEN_CLASS,
+  PILL_FOLDER_CLASS,
+} from "@/shared/reference-pill/constants";
 
 export const wikiLinkScanner: InlineScanner = {
   id: "wiki-links",
@@ -40,31 +46,44 @@ export const wikiLinkScanner: InlineScanner = {
       // Skip wiki-links that overlap excluded regions (diff hunks)
       if (overlapsExcludedRegion(excludedRegions, link.from, link.to)) continue;
 
-      // Obsidian-style: if cursor is collapsed inside this link, skip
-      // decoration so user sees raw [[...]] syntax and can edit it.
+      // Obsidian-style: if cursor is collapsed inside this link OR adjacent to
+      // its edges, skip decoration so user sees raw [[...]] syntax and can edit.
+      // Adjacent check catches clicks on pills (which land cursor at edge).
       // Only when collapsed — a selection dragged through should keep the pill.
-      if (selection.main.empty && cursor >= link.from && cursor < link.to) {
+      if (
+        selection.main.empty &&
+        (cursor >= link.from && cursor < link.to ||
+          cursorAdjacentToRange(state, link.from, link.to))
+      ) {
         continue;
       }
 
-      const resolvedDoc = resolveDocumentByPath(link.path);
-      const isBroken = resolvedDoc === null;
+      const resolved = resolveReference(link.path);
+      const isBroken = resolved === null;
+      const isFolder = resolved?.type === "folder";
 
       // Build mark class based on state
-      const markClasses = ["cm-inline-ref"];
-      if (isBroken) markClasses.push("cm-inline-ref-broken");
+      const markClasses = [PILL_MARK_CLASS];
+      if (isBroken) markClasses.push(PILL_BROKEN_CLASS);
+      if (isFolder) markClasses.push(PILL_FOLDER_CLASS);
       const title = isBroken
         ? `Document not found: ${link.path}`
         : link.path;
 
-      // Data attributes for click handler and tooltip
+      // Data attributes for click handler, tooltip, and X-to-delete
       const attributes: Record<string, string> = {
         "data-doc-path": link.path,
         "data-display-name": link.displayName,
+        // Full wiki-link range for X-to-delete (icon area click)
+        "data-link-from": String(link.from),
+        "data-link-to": String(link.to),
         title,
       };
-      if (resolvedDoc) {
-        attributes["data-doc-id"] = resolvedDoc.id;
+      if (resolved) {
+        attributes["data-ref-id"] = resolved.id;
+        attributes["data-ref-type"] = resolved.type;
+        // Keep data-doc-id for backward compat with clipboard interop
+        if (!isFolder) attributes["data-doc-id"] = resolved.id;
       }
 
       // 1. Hide opening syntax ([[  or [[path|)

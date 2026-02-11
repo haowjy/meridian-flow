@@ -68,6 +68,8 @@ export function openDocument(
   store.setActiveDocument(documentId);
   store.setRightPanelState("editor");
   store.setRightPanelCollapsed(false);
+  // Sync mobile tab so MobileLayout shows the documents view
+  store.setMobileActiveTab("documents");
 
   // Navigate to document URL using path (updates browser history)
   // Splat route captures all segments: /documents/Characters/Heroes/Aria.md
@@ -95,6 +97,8 @@ export function closeEditor(projectSlug: string, navigate: NavigateFunction) {
   logger.debug("closeEditor");
   store.setActiveDocument(null);
   store.setRightPanelState("documents");
+  // Sync mobile tab so MobileLayout shows the documents view
+  store.setMobileActiveTab("documents");
 
   // Navigate to tree URL using slug (updates browser history)
   navigate({
@@ -127,6 +131,8 @@ export function openSkill(
   store.setActiveSkill(skillId); // Already clears activeDocumentId for mutual exclusivity
   store.setRightPanelState("editor");
   store.setRightPanelCollapsed(false);
+  // Sync mobile tab so MobileLayout shows the documents/editor view
+  store.setMobileActiveTab("documents");
 
   // Navigate to skill URL using name identifier
   // If URL is already this skill, router won't navigate, but state is already set above
@@ -147,4 +153,6 @@ export function switchThread(threadId: string) {
   const store = useUIStore.getState();
 
   store.setActiveThread(threadId);
+  // Sync mobile tab so MobileLayout shows the active chat view
+  store.setMobileActiveTab("chat");
 }

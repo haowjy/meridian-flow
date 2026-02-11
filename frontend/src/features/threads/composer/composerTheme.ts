@@ -4,14 +4,13 @@
  * Compact CM6 theme for the thread composer.
  * - max 200px height (auto-expand composer), no minHeight by default
  * - text-sm (14px), line-wrapping
- * - Pill widget CSS from shared pillStyles
+ * - Pill CSS is global (shared/reference-pill/pill.css via globals.css)
  *
  * Consumers that need a minimum height (e.g., TurnInput's 2-line feel)
  * opt in via `composerInputMinHeight`.
  */
 
 import { EditorView } from "@codemirror/view";
-import { pillStylesTheme } from "@/core/editor/codemirror/extensions/pillStyles";
 
 const composerSpecificTheme = EditorView.theme({
   // Editor container — compact, no outline
@@ -77,8 +76,8 @@ const composerSpecificTheme = EditorView.theme({
   },
 });
 
-// Compose: composer-specific styles + shared pill styles
-export const composerTheme = [composerSpecificTheme, pillStylesTheme];
+// Pill styles are global CSS (shared/reference-pill/pill.css via globals.css)
+export const composerTheme = composerSpecificTheme;
 
 // Opt-in 48px min height for the main composer (TurnInput) — gives a ~2-line feel
 export const composerInputMinHeight = EditorView.theme({

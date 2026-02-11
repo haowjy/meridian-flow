@@ -43,6 +43,8 @@ interface ThreadStore {
   threads: Thread[];
   /** Project ID for the currently cached threads (enables stale-while-revalidate) */
   threadsProjectId: string | null;
+  /** Timestamp of last successful threads fetch (prevents redundant fetches on tab switch) */
+  threadsLoadedAt: number | null;
   /** Ordered IDs for the currently loaded turn window (active thread only). */
   turnIds: string[];
   /** Normalized turn entities for the active thread window. */
@@ -264,6 +266,7 @@ export const useThreadStore = create<ThreadStore>()(
     (set, get) => ({
       threads: [],
       threadsProjectId: null,
+      threadsLoadedAt: null,
       turnIds: [],
       turnById: {},
       threadId: null,
@@ -317,6 +320,14 @@ export const useThreadStore = create<ThreadStore>()(
         const hasCachedData =
           state.threads.length > 0 && state.threadsProjectId === projectId;
 
+        // Skip if data is fresh (< 30s old) for the same project.
+        // Prevents redundant fetches when Activity re-fires effects on tab switch.
+        const isFresh =
+          hasCachedData &&
+          state.threadsLoadedAt !== null &&
+          Date.now() - state.threadsLoadedAt < 30_000;
+        if (isFresh) return;
+
         if (!hasCachedData) {
           // No cache or different project: show loading state
           set({
@@ -337,6 +348,7 @@ export const useThreadStore = create<ThreadStore>()(
             statusThreads: "success",
             isFetchingThreads: false,
             threadsProjectId: projectId,
+            threadsLoadedAt: Date.now(),
           });
         } catch (error) {
           // Handle AbortError silently

@@ -18,6 +18,10 @@ interface TreeStore {
   status: LoadStatus;
   isFetching: boolean;
   error: string | null;
+  /** Project ID for the currently cached tree (enables freshness check) */
+  treeProjectId: string | null;
+  /** Timestamp of last successful tree fetch (prevents redundant fetches on tab switch) */
+  treeLoadedAt: number | null;
 
   // Multi-select state
   selectedIds: Set<string>;
@@ -76,6 +80,8 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
   status: "idle" as LoadStatus,
   isFetching: false,
   error: null,
+  treeProjectId: null,
+  treeLoadedAt: null,
 
   // Multi-select state
   selectedIds: new Set(),
@@ -86,8 +92,19 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
   },
 
   loadTree: async (projectId: string, signal?: AbortSignal) => {
-    // Set loading state based on whether we have cached tree data
     const currentState = get();
+    const hasCachedData =
+      currentState.tree.length > 0 && currentState.treeProjectId === projectId;
+
+    // Skip if data is fresh (< 30s old) for the same project.
+    // Prevents redundant fetches when Activity re-fires effects on tab switch.
+    const isFresh =
+      hasCachedData &&
+      currentState.treeLoadedAt !== null &&
+      Date.now() - currentState.treeLoadedAt < 30_000;
+    if (isFresh) return;
+
+    // Set loading state based on whether we have cached tree data
     const status = currentState.tree.length === 0 ? "loading" : "success";
     set({ status, isFetching: true, error: null });
 
@@ -114,6 +131,8 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
         tree,
         status: "success",
         isFetching: false,
+        treeProjectId: projectId,
+        treeLoadedAt: Date.now(),
       });
     } catch (error) {
       // Handle AbortError silently (expected when loading new project)

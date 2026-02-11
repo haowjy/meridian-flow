@@ -57,6 +57,7 @@ import {
   createWikiLinkClipboardHandler,
   insertWikiLink,
 } from "@/core/editor/codemirror/wikiLinks";
+import { usePillNavigation } from "@/shared/reference-pill";
 import type { MentionResult } from "@/features/threads/components/DocumentMentionPopover";
 
 const log = makeLogger("editor-panel");
@@ -123,6 +124,7 @@ export function EditorPanel({
 
   const navigate = useNavigate();
   const projectSlug = useProjectStore((s) => s.currentProject()?.slug) ?? "";
+  const { handlePillClick, folderPopover } = usePillNavigation();
 
   // Compute popover position when atMention changes (effect can access refs safely)
   useEffect(() => {
@@ -151,6 +153,7 @@ export function EditorPanel({
   // Wiki-link extensions: @-detection, click navigation, clipboard + broken-link create
   // Note: wiki-link decorations are now provided by the live preview coordinator
   // via wikiLinkScanner (registered in registerBuiltinRenderers).
+  // Note: External link clicks are handled by real <a> elements (no extension needed).
   const wikiLinkExtensions = useMemo(
     () => [
       atMentionField,
@@ -162,9 +165,7 @@ export function EditorPanel({
       }),
       createWikiLinkClipboardHandler(),
       createWikiLinkClickHandler(
-        (docId, docPath) => {
-          openDocument(docId, docPath, projectSlug, navigate);
-        },
+        handlePillClick,
         (docPath, displayName, clickCoords) => {
           // Convert client coords to editor-relative coords for absolute positioning
           const editorEl = editorRef.current
@@ -182,7 +183,7 @@ export function EditorPanel({
         },
       ),
     ],
-    [projectSlug, navigate],
+    [handlePillClick],
   );
 
   // ---------------------------------------------------------------------------
@@ -512,6 +513,9 @@ export function EditorPanel({
               isCreating={isCreating}
             />
           )}
+
+          {/* Folder content popover (from usePillNavigation) */}
+          {folderPopover}
         </div>
 
         {/* AI navigator - sticky at bottom of viewport */}

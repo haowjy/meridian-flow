@@ -34,8 +34,8 @@ import { contentBlocksToDocState } from "./contentBlocksToDocState";
 interface ComposerViewerProps {
   /** Ordered content blocks (text + references interleaved) */
   blocks: ContentBlock[];
-  /** Called when user clicks a pill — opens the referenced document */
-  onPillClick?: (documentId: string) => void;
+  /** Called when user clicks a pill — navigates to the referenced item */
+  onPillClick?: (id: string, refType: string, pillEl: HTMLElement) => void;
 }
 
 // =============================================================================
@@ -104,16 +104,17 @@ export function ComposerViewer({ blocks, onPillClick }: ComposerViewerProps) {
           // Read-only surface: single-click opens the referenced document.
           mousedown(event) {
             const target = event.target as HTMLElement;
-            if (target.closest(".cm-inline-pill-remove")) return false;
+            if (target.closest(".ref-pill-remove")) return false;
             const pill = target.closest(
-              ".cm-inline-pill",
+              ".ref-pill",
             ) as HTMLElement | null;
             if (!pill) return false;
 
             const documentId = pill.dataset.documentId;
             if (documentId) {
               event.preventDefault();
-              onPillClickRef.current?.(documentId);
+              const refType = pill.dataset.refType ?? "document";
+              onPillClickRef.current?.(documentId, refType, pill);
               return true;
             }
             return false;
