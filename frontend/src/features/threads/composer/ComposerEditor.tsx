@@ -103,8 +103,8 @@ interface ComposerEditorProps {
   onArrowUpEmpty: () => void;
   /** Called on any content change — used to update canSend in parent */
   onContentChange?: () => void;
-  /** Called when user clicks a pill body (not the x button) — used to open the referenced document */
-  onPillClick?: (documentId: string) => void;
+  /** Called when user clicks a pill body (not the x button) — navigates to the referenced item */
+  onPillClick?: (id: string, refType: string, pillEl: HTMLElement) => void;
   /** Called when @-mention pattern is detected or cleared */
   onAtMention?: (state: AtMentionState | null) => void;
   /** Whether mention popover is currently open */
@@ -338,7 +338,7 @@ export const ComposerEditor = forwardRef<
             // Ignore clicks on the remove button (handled by its own onclick)
             if (target.closest("[data-action='remove']")) return false;
             const pill = target.closest(
-              ".cm-inline-pill",
+              ".ref-pill",
             ) as HTMLElement | null;
             if (!pill) return false;
 
@@ -365,11 +365,12 @@ export const ComposerEditor = forwardRef<
               }
 
               // Interior click: keep cursor stable (no selection move).
-              // If a navigation callback exists, open the referenced document.
+              // If a navigation callback exists, navigate to the referenced item.
               event.preventDefault();
               const documentId = pill.dataset.documentId;
+              const refType = pill.dataset.refType ?? "document";
               if (documentId && onPillClickRef.current) {
-                onPillClickRef.current(documentId);
+                onPillClickRef.current(documentId, refType, pill);
               }
               return true;
             }

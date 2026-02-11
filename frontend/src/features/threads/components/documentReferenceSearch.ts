@@ -1,6 +1,7 @@
 import { hasMatch, score } from "fzy.js";
 import type { Document } from "@/features/documents/types/document";
 import type { Folder } from "@/features/folders/types/folder";
+import { buildFolderPath } from "@/core/references";
 
 export type ReferenceSearchRefType = "document" | "folder";
 
@@ -13,24 +14,6 @@ export interface ReferenceSearchItem {
 
 interface RankedItem extends ReferenceSearchItem {
   score: number;
-}
-
-function buildFolderPath(
-  folderId: string,
-  folderMap: Map<string, { name: string; parentId: string | null }>,
-): string {
-  const parts: string[] = [];
-  let currentId: string | null = folderId;
-  // Guard against cycles — max depth 20
-  let depth = 0;
-  while (currentId && depth < 20) {
-    const folder = folderMap.get(currentId);
-    if (!folder) break;
-    parts.unshift(folder.name);
-    currentId = folder.parentId;
-    depth++;
-  }
-  return parts.join("/");
 }
 
 /**

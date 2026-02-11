@@ -102,3 +102,24 @@ export function getLineRange(
   const line = state.doc.lineAt(pos);
   return { from: line.from, to: line.to };
 }
+
+/**
+ * Check if cursor is adjacent to (directly at the start or end of) a range.
+ *
+ * This helps reveal raw link syntax when clicking on a pill. Clicking on a pill
+ * lands the cursor at position N, but if N is a word-break character (like `[`),
+ * the cursor's word-bounds will be empty and cursorInSameWord won't detect it.
+ * By also checking adjacency, we catch this edge case.
+ */
+export function cursorAdjacentToRange(
+  state: EditorState,
+  nodeFrom: number,
+  nodeTo: number,
+): boolean {
+  for (const range of state.selection.ranges) {
+    // Cursor directly at start or end of node
+    if (range.from === nodeFrom || range.from === nodeTo) return true;
+    if (range.to === nodeFrom || range.to === nodeTo) return true;
+  }
+  return false;
+}

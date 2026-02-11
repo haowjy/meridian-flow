@@ -15,15 +15,12 @@ import {
 } from "@floating-ui/react-dom";
 import { createPortal } from "react-dom";
 import { useShallow } from "zustand/react/shallow";
-import { useNavigate } from "@tanstack/react-router";
 import { Pencil, Trash2, ChevronDown } from "lucide-react";
 import { useThreadStore } from "@/core/stores/useThreadStore";
 import { useCurrentThreadStream } from "@/core/stores/useStreamStore";
 import { useThreadPrefsStore } from "@/core/stores/useThreadPrefsStore";
 import { useUIStore } from "@/core/stores/useUIStore";
-import { useProjectStore } from "@/core/stores/useProjectStore";
-import { useTreeStore } from "@/core/stores/useTreeStore";
-import { openDocument } from "@/core/lib/panelHelpers";
+import { usePillNavigation } from "@/shared/reference-pill";
 import {
   ComposerShell,
   type ComposerShellRef,
@@ -42,7 +39,6 @@ import {
   getComposePlaceholder,
   getInterjectPlaceholder,
 } from "@/features/threads/composer/placeholders";
-import { useIsMobile } from "@/core/hooks/useIsMobile";
 import { composerInputMinHeight } from "@/features/threads/composer/composerTheme";
 import { threadSurfacePadding } from "./styles";
 
@@ -63,8 +59,6 @@ export function TurnInput({
   focusKey,
   onHeightChange,
 }: TurnInputProps) {
-  const navigate = useNavigate();
-  const isMobile = useIsMobile();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [queueExpanded, setQueueExpanded] = useState(false);
   const [isTruncated, setIsTruncated] = useState(false);
@@ -287,7 +281,7 @@ export function TurnInput({
     }
   }, [interjectionContent, streamingTurnId, loadInterjectionForEdit]);
 
-  const isPopoverOpen = !isMobile && (atMention?.isActive ?? false);
+  const isPopoverOpen = atMention?.isActive ?? false;
   const mentionCollisionPadding = {
     top: 64,
     right: 8,
@@ -416,20 +410,8 @@ export function TurnInput({
     clearPendingThreadReferences();
   }, [pendingThreadReferences, clearPendingThreadReferences]);
 
-  // Pill click → open the referenced document in the editor panel
-  const handlePillClick = useCallback(
-    (documentId: string) => {
-      const doc = useTreeStore
-        .getState()
-        .documents.find((d) => d.id === documentId);
-      if (!doc) return;
-      const projectSlug =
-        useProjectStore.getState().currentProject()?.slug ?? "";
-      if (!projectSlug) return;
-      openDocument(doc.id, doc.path, projectSlug, navigate);
-    },
-    [navigate],
-  );
+  // Pill click → open documents in editor, folders in a popover
+  const { handlePillClick, folderPopover } = usePillNavigation();
 
   // Show pending interjection content if present (received via SSE)
   // This visual indicator shows what's been queued server-side
@@ -573,7 +555,7 @@ export function TurnInput({
               onArrowUpEmpty={handleArrowUpEmpty}
               onContentChange={setHasContent}
               onPillClick={handlePillClick}
-              onAtMention={isMobile ? undefined : handleAtMention}
+              onAtMention={handleAtMention}
               isPopoverOpen={isPopoverOpen}
               options={currentOptions}
               onOptionsChange={updateOptionsManually}
@@ -591,6 +573,7 @@ export function TurnInput({
           </div>
         </div>
       </div>
+      {folderPopover}
     </div>
   );
 }
