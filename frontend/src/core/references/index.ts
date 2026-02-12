@@ -20,6 +20,12 @@ export { buildFolderPath } from "./pathing";
 
 // Resolution
 export {
+  type ResolverDocument,
+  type ResolverFolder,
+  type ResolverTreeSnapshot,
+  resolveReferenceFromTree,
+  resolveDocumentPathByIdFromTree,
+  resolvePathByIdFromTree,
   resolveReference,
   resolveDocumentPathById,
   resolvePathById,

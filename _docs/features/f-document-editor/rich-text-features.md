@@ -88,11 +88,14 @@ feature: "Rich Text Features"
 - Headings - Hide `#` markers, apply heading styles
 - Emphasis - Bold (`**`), italic (`*`), strikethrough (`~~`)
 - Code - Inline code and code blocks
-- Links - Clickable with hidden URL
+- Links - External links render as clickable anchors; resolved internal markdown links render as inline reference pills
 - Lists - Bullet and numbered with styled markers
 - Blockquotes - Styled quote blocks
 - Horizontal rules - Visual separators
 - Tables - Basic table rendering
+
+**Internal Link Parity**:
+- Resolved internal markdown links (`[text](path.md)`) and resolved wiki-links (`[[path | name]]`) use the same inline pill style
 
 ---
 
