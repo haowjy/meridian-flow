@@ -29,3 +29,8 @@ export {
   createComposerKeymap,
   type ComposerKeymapOptions,
 } from "./composerKeymap";
+export {
+  mentionResultToReferenceElementData,
+  type MentionReferenceResult,
+} from "./referenceMappers";
+export { useMentionPopoverAnchor } from "./useMentionPopoverAnchor";

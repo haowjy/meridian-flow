@@ -49,24 +49,18 @@ export const linkRenderer: NodeRenderer = {
       return decorations;
     }
 
-    const text = state.doc.sliceString(from, to);
-    const closeBracketIdx = text.indexOf("](");
-
-    if (closeBracketIdx === -1) {
+    const parsed = parseLinkNode(node, state);
+    if (!parsed) {
       return decorations;
     }
-
-    // Extract link text and URL
-    const linkText = text.slice(1, closeBracketIdx); // Skip opening [
-    const urlStart = closeBracketIdx + 2;
-    const urlEnd = text.length - 1; // Exclude closing )
-    const url = text.slice(urlStart, urlEnd);
-
-    // Calculate positions
-    const textStart = from + 1;
-    const textEnd = from + closeBracketIdx;
-    const urlPartStart = from + closeBracketIdx;
-    const urlPartEnd = to;
+    const {
+      linkText,
+      url,
+      textStart,
+      textEnd,
+      urlPartStart,
+      urlPartEnd,
+    } = parsed;
 
     // Classify the link target
     const classification = classifyLinkTarget(url);
@@ -112,6 +106,77 @@ export const linkRenderer: NodeRenderer = {
     }
   },
 };
+
+// ============================================================================
+// PARSE HELPERS
+// ============================================================================
+
+interface ParsedLinkNode {
+  linkText: string;
+  url: string;
+  textStart: number;
+  textEnd: number;
+  urlPartStart: number;
+  urlPartEnd: number;
+}
+
+/**
+ * Parse markdown Link node ranges from syntax children instead of string slicing.
+ * This keeps rendering aligned with the parser for markdown edge-cases.
+ */
+function parseLinkNode(
+  node: SyntaxNode,
+  state: RenderContext["state"],
+): ParsedLinkNode | null {
+  const urlNode = node.getChild("URL");
+
+  let openingBracket: SyntaxNode | null = null;
+  let closingBracket: SyntaxNode | null = null;
+  let openingParen: SyntaxNode | null = null;
+  let closingParen: SyntaxNode | null = null;
+
+  for (let child = node.firstChild; child; child = child.nextSibling) {
+    if (child.name !== "LinkMark") continue;
+    const mark = state.doc.sliceString(child.from, child.to);
+    if (!openingBracket && mark === "[") {
+      openingBracket = child;
+      continue;
+    }
+    if (!closingBracket && mark === "]") {
+      closingBracket = child;
+      continue;
+    }
+    if (!openingParen && mark === "(") {
+      openingParen = child;
+      continue;
+    }
+    if (mark === ")") {
+      closingParen = child;
+    }
+  }
+
+  if (!openingBracket || !closingBracket || !openingParen || !closingParen) {
+    return null;
+  }
+
+  const textStart = openingBracket.to;
+  const textEnd = closingBracket.from;
+  const urlPartStart = closingBracket.from;
+  const urlPartEnd = closingParen.to;
+
+  if (textEnd < textStart || urlPartEnd <= urlPartStart) {
+    return null;
+  }
+
+  return {
+    linkText: state.doc.sliceString(textStart, textEnd),
+    url: urlNode ? state.doc.sliceString(urlNode.from, urlNode.to) : "",
+    textStart,
+    textEnd,
+    urlPartStart,
+    urlPartEnd,
+  };
+}
 
 // ============================================================================
 // RENDER HELPERS
