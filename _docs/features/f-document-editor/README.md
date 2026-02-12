@@ -49,10 +49,12 @@ feature: "Document Editor"
 - Inline markdown rendering (headings, bold, italic, etc.)
 - Code syntax highlighting
 - Links rendered with hover preview
+- Resolved internal markdown links (`[text](path.md)`) render as the same inline pill style used by resolved wiki-links
 
 ### Wiki-Link References
 **Status**: ✅ Complete
 - `@[[path | name]]` wiki-links render as inline pills when cursor is away
+- Resolved wiki-links and resolved internal markdown links share the same pill rendering behavior
 - Copy/cut/paste uses shared CM clipboard extension + codec registry
 - Meridian clipboard payload uses v2 `elements[]` (v1 `references[]` still accepted on paste)
 - Paste accepts Meridian payload and inserts canonical wiki-link markdown

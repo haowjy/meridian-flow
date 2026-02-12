@@ -10,6 +10,9 @@
 // Re-export types and functions from shared domain
 export type { ResolvedRef } from "@/core/references";
 export {
+  resolveReferenceFromTree,
+  resolveDocumentPathByIdFromTree,
+  resolvePathByIdFromTree,
   resolveReference,
   resolveDocumentPathById,
   resolvePathById,

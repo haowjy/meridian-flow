@@ -1,9 +1,8 @@
 /**
  * Reference Resolution
  *
- * Pure resolver that looks up a path in the tree store snapshot.
- * This is the authoritative implementation — wikiLinks/resolveDocument.ts
- * re-exports this for backward compatibility.
+ * Pure resolvers that operate on a tree snapshot.
+ * Store-backed adapters are provided for convenience and compatibility.
  *
  * Search order (first match wins):
  * 1. Document — exact path match
@@ -16,19 +15,39 @@ import { useTreeStore } from "@/core/stores/useTreeStore";
 import { buildFolderPath } from "./pathing";
 import type { ResolvedRef } from "./types";
 
+export interface ResolverDocument {
+  id: string;
+  name: string;
+  path: string;
+  filename: string;
+}
+
+export interface ResolverFolder {
+  id: string;
+  name: string;
+  parentId: string | null;
+}
+
+export interface ResolverTreeSnapshot {
+  documents: readonly ResolverDocument[];
+  folders: readonly ResolverFolder[];
+}
+
 // =============================================================================
-// RESOLVE REFERENCE
+// PURE RESOLVERS
 // =============================================================================
 
 /**
- * Resolve a path to a document or folder from tree store.
+ * Resolve a path to a document or folder from a tree snapshot.
  *
  * @param path - The path to resolve (e.g., "doc.md", "folder/doc", "Chapter 1")
  * @returns Resolved reference or null if not found
  */
-export function resolveReference(path: string): ResolvedRef | null {
-  const { documents, folders } = useTreeStore.getState();
-
+export function resolveReferenceFromTree(
+  path: string,
+  snapshot: ResolverTreeSnapshot,
+): ResolvedRef | null {
+  const { documents, folders } = snapshot;
   // --- Document: exact path match ---
   const exactDoc = documents.find((d) => d.path === path);
   if (exactDoc) {
@@ -93,29 +112,28 @@ export function resolveReference(path: string): ResolvedRef | null {
   return null;
 }
 
-// =============================================================================
-// RESOLVE BY ID
-// =============================================================================
-
 /**
- * Resolve document path from ID.
+ * Resolve document path from ID using a tree snapshot.
  */
-export function resolveDocumentPathById(documentId: string): string | null {
-  const doc = useTreeStore
-    .getState()
-    .documents.find((d) => d.id === documentId);
+export function resolveDocumentPathByIdFromTree(
+  documentId: string,
+  snapshot: Pick<ResolverTreeSnapshot, "documents">,
+): string | null {
+  const doc = snapshot.documents.find((d) => d.id === documentId);
   return doc?.path ?? null;
 }
 
 /**
- * Resolve path from ID, searching both documents and folders.
+ * Resolve path from ID, searching both documents and folders, using a tree snapshot.
  *
  * Used by clipboard `toPlainText` so folder references don't degrade
  * to display-name-only when `documentPath` is absent.
  */
-export function resolvePathById(id: string): string | null {
-  const { documents, folders } = useTreeStore.getState();
-
+export function resolvePathByIdFromTree(
+  id: string,
+  snapshot: ResolverTreeSnapshot,
+): string | null {
+  const { documents, folders } = snapshot;
   const doc = documents.find((d) => d.id === id);
   if (doc) return doc.path;
 
@@ -127,4 +145,29 @@ export function resolvePathById(id: string): string | null {
     folders.map((f) => [f.id, { name: f.name, parentId: f.parentId }]),
   );
   return buildFolderPath(folder.id, folderMap);
+}
+
+// =============================================================================
+// STORE-BACKED ADAPTERS
+// =============================================================================
+
+/**
+ * Resolve a path to a document or folder from the current tree store snapshot.
+ */
+export function resolveReference(path: string): ResolvedRef | null {
+  return resolveReferenceFromTree(path, useTreeStore.getState());
+}
+
+/**
+ * Resolve document path from ID using the current tree store snapshot.
+ */
+export function resolveDocumentPathById(documentId: string): string | null {
+  return resolveDocumentPathByIdFromTree(documentId, useTreeStore.getState());
+}
+
+/**
+ * Resolve path from ID using the current tree store snapshot.
+ */
+export function resolvePathById(id: string): string | null {
+  return resolvePathByIdFromTree(id, useTreeStore.getState());
 }

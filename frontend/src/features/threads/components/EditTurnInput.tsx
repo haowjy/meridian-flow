@@ -1,11 +1,4 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import {
-  autoUpdate,
-  flip,
-  offset,
-  shift,
-  useFloating,
-} from "@floating-ui/react-dom";
 import { createPortal } from "react-dom";
 import { Card } from "@/shared/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -15,6 +8,8 @@ import { userTurnCardBase } from "./styles";
 import {
   ComposerShell,
   type ComposerShellRef,
+  mentionResultToReferenceElementData,
+  useMentionPopoverAnchor,
 } from "@/features/threads/composer";
 import type { AtMentionState } from "@/features/threads/composer";
 import type {
@@ -66,83 +61,21 @@ export function EditTurnInput({
   const [hasContent, setHasContent] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [atMention, setAtMention] = useState<AtMentionState | null>(null);
-  const [mentionAnchor, setMentionAnchor] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
   const shellRef = useRef<ComposerShellRef>(null);
-  const mentionAnchorContainerRef = useRef<HTMLDivElement>(null);
 
   const isPopoverOpen = !isMobile && (atMention?.isActive ?? false);
-  const mentionCollisionPadding = {
-    top: 64,
-    right: 8,
-    bottom: 8,
-    left: 8,
-  } as const;
+  const getComposerView = useCallback(() => shellRef.current?.getView() ?? null, []);
   const {
-    refs: mentionRefs,
+    anchorContainerRef: mentionAnchorContainerRef,
+    mentionAnchor,
     floatingStyles: mentionFloatingStyles,
-    update: updateMentionPosition,
-  } = useFloating({
-    open: isPopoverOpen,
-    strategy: "fixed",
-    placement: "top-start",
-    middleware: [
-      offset(8),
-      flip({
-        fallbackPlacements: ["bottom-start"],
-        padding: mentionCollisionPadding,
-      }),
-      shift({ padding: mentionCollisionPadding }),
-    ],
-    whileElementsMounted: autoUpdate,
+    setMentionReferenceRef,
+    setMentionFloatingRef,
+  } = useMentionPopoverAnchor({
+    isOpen: isPopoverOpen,
+    atMention,
+    getView: getComposerView,
   });
-
-  useEffect(() => {
-    if (!isPopoverOpen || !atMention) {
-      setMentionAnchor(null);
-      return;
-    }
-
-    const view = shellRef.current?.getView();
-    const anchorContainer = mentionAnchorContainerRef.current;
-    if (!view || !anchorContainer) {
-      setMentionAnchor(null);
-      return;
-    }
-
-    const coords = view.coordsAtPos(atMention.atPos);
-    if (!coords) {
-      setMentionAnchor(null);
-      return;
-    }
-
-    const containerRect = anchorContainer.getBoundingClientRect();
-    setMentionAnchor({
-      x: coords.left - containerRect.left,
-      y: coords.bottom - containerRect.top,
-    });
-  }, [isPopoverOpen, atMention]);
-
-  useEffect(() => {
-    if (!isPopoverOpen || !mentionAnchor) return;
-    updateMentionPosition();
-  }, [isPopoverOpen, mentionAnchor, atMention?.query, updateMentionPosition]);
-
-  const setMentionReferenceRef = useCallback(
-    (node: HTMLDivElement | null) => {
-      mentionRefs.setReference(node);
-    },
-    [mentionRefs],
-  );
-
-  const setMentionFloatingRef = useCallback(
-    (node: HTMLDivElement | null) => {
-      mentionRefs.setFloating(node);
-    },
-    [mentionRefs],
-  );
 
   const handleAtMention = useCallback((state: AtMentionState | null) => {
     setAtMention(state);
@@ -151,13 +84,7 @@ export function EditTurnInput({
   const handleMentionSelect = useCallback(
     (result: MentionResult) => {
       if (!atMention) return;
-      const data: ReferenceElementData = {
-        type: "reference",
-        documentId: result.id,
-        refType: result.refType,
-        displayName: result.name,
-        documentPath: result.path,
-      };
+      const data = mentionResultToReferenceElementData(result);
       shellRef.current?.applyMention(
         atMention.atPos,
         atMention.cursorPos,
