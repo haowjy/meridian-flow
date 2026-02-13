@@ -119,7 +119,7 @@ export function EditorPanel({
     path: string;
     displayName: string;
     position: { top: number; left: number };
-    isFolder: boolean;
+    refType: "document" | "folder";
   } | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -167,7 +167,7 @@ export function EditorPanel({
       createWikiLinkClipboardHandler(),
       createWikiLinkClickHandler(
         handlePillClick,
-        (docPath, displayName, clickCoords, isFolder) => {
+        (docPath, displayName, clickCoords, refType) => {
           // Convert client coords to editor-relative coords for absolute positioning
           const editorEl = editorRef.current
             ?.getView()
@@ -180,7 +180,7 @@ export function EditorPanel({
               top: rect ? clickCoords.y - rect.top : clickCoords.y,
               left: rect ? clickCoords.x - rect.left : clickCoords.x,
             },
-            isFolder,
+            refType,
           });
         },
       ),
@@ -330,36 +330,8 @@ export function EditorPanel({
 
     setIsCreating(true);
     try {
-      if (createPopover.isFolder) {
-        // Folder creation: walk path segments and create each missing folder
-        const segments = createPopover.path.split("/").filter(Boolean);
-        let parentId: string | null = null;
-
-        // Walk existing tree to find the deepest existing parent folder
-        const tree = useTreeStore.getState();
-        for (let i = 0; i < segments.length; i++) {
-          const seg = segments[i]!;
-          const existing = tree.folders.find(
-            (f) => f.name === seg && f.parentId === parentId,
-          );
-          if (existing) {
-            parentId = existing.id;
-          } else {
-            // Create this segment and all remaining segments
-            for (let j = i; j < segments.length; j++) {
-              const folder = await api.folders.create(
-                projectId,
-                parentId,
-                segments[j]!,
-              );
-              parentId = folder.id;
-            }
-            break;
-          }
-        }
-
-        // Refresh sidebar tree to show the new folder(s)
-        await useTreeStore.getState().loadTree(projectId);
+      if (createPopover.refType === "folder") {
+        await useTreeStore.getState().createFolderByPath(projectId, createPopover.path);
         setCreatePopover(null);
       } else {
         // Document creation (existing logic)
@@ -546,7 +518,7 @@ export function EditorPanel({
               onConfirm={handleCreateFromBrokenLink}
               onClose={() => setCreatePopover(null)}
               isCreating={isCreating}
-              isFolder={createPopover.isFolder}
+              refType={createPopover.refType}
             />
           )}
 
