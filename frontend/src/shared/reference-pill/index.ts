@@ -4,6 +4,13 @@ export { ReferencePill, type ReferencePillProps } from "./ReferencePill";
 export { FolderContentPopover } from "./FolderContentPopover";
 export { usePillNavigation } from "./usePillNavigation";
 export {
+  resolvePillBehavior,
+  pillBehaviorToDataAttributes,
+  type PillBehavior,
+  type PillBehaviorInput,
+  type PillBehaviorDataAttributes,
+} from "./behavior";
+export {
   PILL_CLASS,
   PILL_MARK_CLASS,
   PILL_BROKEN_CLASS,

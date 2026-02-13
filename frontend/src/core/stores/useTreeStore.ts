@@ -42,6 +42,11 @@ interface TreeStore {
     parentId: string | null,
     name: string,
   ) => Promise<void>;
+  /**
+   * Create a folder at a slash-separated path, creating any missing intermediate
+   * folders along the way. Used by broken wiki-link creation (e.g. `[[a/b/c/]]`).
+   */
+  createFolderByPath: (projectId: string, path: string) => Promise<void>;
   deleteDocument: (id: string, projectId: string) => Promise<void>;
   deleteFolder: (id: string, projectId: string) => Promise<void>;
   renameDocument: (
@@ -199,6 +204,43 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
       const message = getErrorMessageWithFallback(
         error,
         "Failed to create folder",
+      );
+      set({ error: message });
+      throw error;
+    }
+  },
+
+  createFolderByPath: async (projectId, path) => {
+    set({ error: null });
+    try {
+      const segments = path.split("/").filter(Boolean);
+      if (segments.length === 0) return;
+
+      let parentId: string | null = null;
+      const { folders } = get();
+
+      // Walk existing tree to find the deepest existing parent folder
+      let i = 0;
+      for (; i < segments.length; i++) {
+        const existing = folders.find(
+          (f) => f.name === segments[i] && f.parentId === parentId,
+        );
+        if (!existing) break;
+        parentId = existing.id;
+      }
+
+      // Create missing segments from index i onward
+      for (; i < segments.length; i++) {
+        const folder = await api.folders.create(projectId, parentId, segments[i]!);
+        parentId = folder.id;
+      }
+
+      // Reload tree to reflect new folder(s)
+      await useTreeStore.getState().loadTree(projectId);
+    } catch (error) {
+      const message = getErrorMessageWithFallback(
+        error,
+        "Failed to create folder path",
       );
       set({ error: message });
       throw error;

@@ -41,6 +41,10 @@
     cursor: default;
   }
 
+  .ref-pill[data-pill-navigable="false"] {
+    cursor: default;
+  }
+
   /* ==========================================================================
      MARK MODIFIER — for CM6 Mark decorations (doc editor wiki-links)
      Rendered as styled text (not a widget), icon via ::before pseudo-element.
@@ -133,10 +137,12 @@
   /* Hover behavior: hide icon, show X button on the LEFT (same position as icon).
      Guarded by @media (hover: hover) — see mark hover comment above. */
   @media (hover: hover) {
-    .ref-pill:hover .ref-pill-icon {
+    .ref-pill[data-pill-removable="true"][data-pill-hover-swap="true"]:hover
+      .ref-pill-icon {
       display: none;
     }
-    .ref-pill:hover .ref-pill-remove {
+    .ref-pill[data-pill-removable="true"][data-pill-hover-swap="true"]:hover
+      .ref-pill-remove {
       display: inline-flex;
       order: -1; /* Move to front (left), matching icon position */
     }

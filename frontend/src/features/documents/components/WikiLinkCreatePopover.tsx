@@ -30,8 +30,8 @@ interface WikiLinkCreatePopoverProps {
   onClose: () => void;
   /** Whether creation is in progress */
   isCreating: boolean;
-  /** Whether this is a folder creation (trailing-slash wiki-link) */
-  isFolder?: boolean;
+  /** What to create — "folder" for trailing-slash wiki-links, "document" otherwise */
+  refType?: "document" | "folder";
 }
 
 // =============================================================================
@@ -45,7 +45,7 @@ export function WikiLinkCreatePopover({
   onConfirm,
   onClose,
   isCreating,
-  isFolder = false,
+  refType = "document",
 }: WikiLinkCreatePopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
   // Stable ref so event listeners never go stale even if parent re-renders
@@ -98,14 +98,14 @@ export function WikiLinkCreatePopover({
       }}
     >
       <div className="flex items-start gap-2">
-        {isFolder ? (
+        {refType === "folder" ? (
           <FolderPlus className="text-muted-foreground mt-0.5 size-4 shrink-0" />
         ) : (
           <FileText className="text-muted-foreground mt-0.5 size-4 shrink-0" />
         )}
         <div className="min-w-0">
           <p className="text-sm">
-            Create {isFolder ? "folder " : ""}
+            Create {refType === "folder" ? "folder " : ""}
             <span className="font-medium">{displayName}</span>?
           </p>
           {folderPart && (

@@ -35,7 +35,9 @@ const REF_TARGET_SELECTOR = `.${PILL_MARK_CLASS}[data-doc-path]`;
  *
  * @param onRefClick - Called with (id, refType, anchorEl) when a resolved ref is clicked.
  *                     Matches the `handlePillClick` signature from `usePillNavigation`.
- * @param onBrokenClick - Called with (docPath, displayName, clickCoords) when a broken ref is clicked
+ * @param onBrokenClick - Called with (docPath, displayName, clickCoords, refType) when a broken ref is clicked.
+ *                        `refType` mirrors the resolved-ref pattern from `onRefClick` — "folder" when the
+ *                        wiki-link had a trailing slash (`[[path/]]`), "document" otherwise.
  */
 export function createWikiLinkClickHandler(
   onRefClick: (id: string, refType: string, anchorEl: HTMLElement) => void,
@@ -43,7 +45,7 @@ export function createWikiLinkClickHandler(
     docPath: string,
     displayName: string,
     clickCoords: { x: number; y: number },
-    isFolder: boolean,
+    refType: "document" | "folder",
   ) => void,
 ): Extension {
   return EditorView.domEventHandlers({
@@ -110,11 +112,11 @@ export function createWikiLinkClickHandler(
       if (!refId && docPath && onBrokenClick) {
         event.preventDefault();
         const displayName = ref.dataset.displayName ?? docPath;
-        const folderHint = ref.dataset.folderHint === "true";
+        const refType = ref.dataset.folderHint === "true" ? "folder" : "document";
         onBrokenClick(docPath, displayName, {
           x: event.clientX,
           y: event.clientY,
-        }, folderHint);
+        }, refType);
         // Restore selection after CM6's default handler runs
         setTimeout(() => view.dispatch({ selection: savedSelection }), 0);
         return true;

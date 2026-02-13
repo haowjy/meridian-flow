@@ -54,7 +54,11 @@ export class ElementWidget extends WidgetType {
       iconType: data.refType === "folder" ? "folder" : "file",
       documentId: data.documentId,
       documentPath: data.documentPath,
-      editable: isEditable,
+      behavior: {
+        canNavigate: true,
+        canRemove: isEditable,
+        hoverSwapIcon: isEditable,
+      },
       onRemove: isEditable
         ? () => {
             // Find the position of this widget's \uFFFC and delete it.
