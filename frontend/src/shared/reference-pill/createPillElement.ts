@@ -77,7 +77,7 @@ export function createPillElement(options: PillOptions): HTMLElement {
   );
 
   const baseTitle = documentPath ?? displayName;
-  pill.title = finalBehavior.canRemove
+  pill.title = finalBehavior.canRemove && finalBehavior.canNavigate
     ? `${baseTitle}\nClick center to open, edge to place caret`
     : baseTitle;
   pill.setAttribute("role", "img");
