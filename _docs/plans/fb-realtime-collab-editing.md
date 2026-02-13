@@ -10,6 +10,44 @@ audience: developer, architect
 
 ---
 
+## Canonical Plan Contract
+
+This is the **main/canonical plan** for collaboration + AI collaboration.
+
+- If this doc conflicts with any related plan, **this doc wins**.
+- `spec/*` docs in `_docs/plans/collab-ai/spec/` are canonical technical contracts.
+- `phase/*` docs in `_docs/plans/collab-ai/phase/` are implementation slices of this RFC.
+- Canonical model: **two changeset streams**:
+  - **User stream** = authoritative applied edits (human edits + accepted AI edits)
+  - **AI/agent stream** = proposal queue only (non-authoritative)
+- Legacy `ai_version`/PUA-marker plans are retained for history only and are marked superseded.
+
+## Unified Plan Set
+
+| Purpose | Canonical Doc |
+|---|---|
+| Main architecture + sequencing | `_docs/plans/fb-realtime-collab-editing.md` |
+| Index for collab plan set | `_docs/plans/collab-ai/README.md` |
+| Spec: storage model | `_docs/plans/collab-ai/spec/storage-model.md` |
+| Spec: API + events contract | `_docs/plans/collab-ai/spec/api-events-contract.md` |
+| Spec: compaction + retention | `_docs/plans/collab-ai/spec/compaction-retention.md` |
+| Spec: refresh/read-model policy | `_docs/plans/collab-ai/spec/refresh-read-model-framework.md` |
+| Phase 1: transport + authoritative ops | `_docs/plans/collab-ai/phase/phase-1-oplog-transport.md` |
+| Phase 2: writer history + persistent undo | `_docs/plans/collab-ai/phase/phase-2-history-and-undo.md` |
+| Phase 3: AI proposals + writer review UX | `_docs/plans/collab-ai/phase/phase-3-ai-proposals-and-review.md` |
+| Phase 4: multi-agent arbitration | `_docs/plans/collab-ai/phase/phase-4-multi-agent-arbitration.md` |
+| Phase 5: multi-user collaboration (future) | `_docs/plans/collab-ai/phase/phase-5-multi-user-collaboration.md` |
+
+## Legacy Mapping (Superseded Inputs)
+
+| Legacy Plan | New Home |
+|---|---|
+| `_docs/plans/fb-document-history-v1.md` | `_docs/plans/collab-ai/phase/phase-2-history-and-undo.md` |
+| `_docs/plans/fb-tree-ai-suggestions-banner-accept-all.md` | `_docs/plans/collab-ai/phase/phase-3-ai-proposals-and-review.md` |
+| `_docs/plans/fb-event-driven-refresh-framework.md` | `_docs/plans/collab-ai/spec/refresh-read-model-framework.md` |
+
+---
+
 ## Problem Statement
 
 Meridian currently uses snapshot-only writes (`PATCH` full content, one `documents.content` field).
@@ -29,13 +67,15 @@ Meridian currently uses snapshot-only writes (`PATCH` full content, one `documen
 ## Decision Update (From Review + Research)
 
 1. **CodeMirror OT + authoritative Node/TS collab service** — not Go backend. Native `@codemirror/collab` access eliminates need to port ~2000 lines of ChangeSet logic.
-2. Split storage into **applied ops** (authoritative) and **proposals** (review queue).
+2. Split storage into **two changeset streams**:
+   - user operations stream (authoritative, includes accepted AI edits)
+   - AI/agent proposal stream (non-authoritative queue)
 3. Load UX: **snapshot first**, then operation batches. Do not block typing while reconnecting.
 4. Compaction: keep snapshot + bounded replay tail (not snapshot-only).
 5. Use **short-lived WebSocket ticket**, not long-lived JWT query param.
 6. Keep one live-collab stream per chapter/section document. Defer document pagination/segmented loading.
 7. **No migration needed.** No users — greenfield rebuild on a branch.
-8. AI proposals rendered as **CodeMirror decorations** (not PUA markers in document text).
+8. AI proposal review uses **`@codemirror/merge`** as the canonical diff/review surface (no PUA markers in document text).
 9. **Multi-agent first, not multi-user first.** Prioritize many AI proposal producers for one writer before presence/cursors.
 10. **Defer CRDT/Yjs migration.** Re-evaluate before multi-user/offline phase using explicit criteria.
 
@@ -46,7 +86,7 @@ Meridian currently uses snapshot-only writes (`PATCH` full content, one `documen
 Primary near-term concurrency is **multiple LLM agents + one writer**, not many human co-editors.
 
 - The authoritative op stream remains centralized (`@codemirror/collab` OT model).
-- AI systems are proposal producers. They do not write authoritative ops directly.
+- AI systems write proposals to the AI/agent stream. On accept, proposal changeset is promoted into user stream and removed from AI stream.
 - Proposal acceptance is serialized by the Node authority so agent outputs cannot race the version stream.
 
 ### CRDT Re-Evaluation Trigger
@@ -81,15 +121,23 @@ Reconsider Yjs/CRDT only if any become true:
 |---|---|---|
 | Meridian Collab AI (Node) | WebSocket, version authority, proposals, compaction | `<env_prefix>collab_document_applied_operations`, `<env_prefix>collab_document_edit_proposals`, `<env_prefix>collab_ws_tickets` |
 | Go backend | REST API, auth (JWT/JWKS), file system, threads/LLM | Everything else (`documents`, `folders`, `threads`, etc.) |
-| Frontend | CM6 collab extension, proposal decorations, UI | IDB cache |
+| Frontend | CM6 collab extension, merge-based proposal review UI | IDB cache |
 
 Both services connect directly to the same Supabase PostgreSQL. Table ownership is clear — no cross-writes.
 
 **WHY Node:** `rebaseUpdates()`, `ChangeSet.map()`, `ChangeSet.compose()` are JS functions from `@codemirror/collab` and `@codemirror/state`. The Authority server from the CM collab example is ~30 lines of JS. Building on it natively avoids porting ChangeSet operations to Go.
 
-### Dual Streams: Applied Operations + Proposals
+### Dual Streams: User + AI/Agent Changesets
 
-**WHY this split:** Proposals should not consume authoritative versions. Only applied ops define document state/version.
+**WHY this split:**
+- Human editing and AI editing have different lifecycle semantics.
+- Writers need AI traceability/audit without polluting human edit logs.
+- Multi-user human editing can scale independently from agent orchestration.
+
+Authority rule (v1):
+- Document head version is a single monotonic sequence in **user stream**.
+- AI/agent stream never defines canonical document state.
+- On accept: proposal changeset -> user stream operation -> proposal row deleted.
 
 ### SQL Prefix Convention (Required)
 
@@ -172,7 +220,7 @@ meridian-collab-ai/
 
 ### Phase 3: AI Proposal Model (Replace PUA Markers)
 
-**Goal:** AI changes as proposals rendered via decorations. No markers in document text.
+**Goal:** AI changes are reviewed through a merge-based proposal surface. No markers in document text.
 
 ### Phase 4: Multi-Agent Orchestration
 
@@ -181,6 +229,19 @@ meridian-collab-ai/
 ### Phase 5: Multi-User Collaboration (Future)
 
 **Goal:** Presence, cursors, multi-client conflict handling.
+
+Execution docs:
+
+| Phase | Single-Purpose Plan |
+|---|---|
+| 1 | `_docs/plans/collab-ai/phase/phase-1-oplog-transport.md` |
+| 2 | `_docs/plans/collab-ai/phase/phase-2-history-and-undo.md` |
+| 3 | `_docs/plans/collab-ai/phase/phase-3-ai-proposals-and-review.md` |
+| 4 | `_docs/plans/collab-ai/phase/phase-4-multi-agent-arbitration.md` |
+| 5 | `_docs/plans/collab-ai/phase/phase-5-multi-user-collaboration.md` |
+
+Cross-cutting read freshness:
+- `_docs/plans/collab-ai/spec/refresh-read-model-framework.md`
 
 ```
 Phase 1 (WS + Applied Ops)
@@ -209,215 +270,51 @@ This rollout is optimized for a low-traffic greenfield state (one rare user, no 
 
 ---
 
-## Operation Model
+## Specification Set (Canonical)
 
-### Applied Operations Schema (Authoritative)
+Detailed contracts were split into focused spec docs:
 
-```sql
-CREATE TABLE <env_prefix>collab_document_applied_operations (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    document_id   UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    version       INT NOT NULL,      -- authoritative, contiguous per document
-    user_id       TEXT NOT NULL,
-    source        TEXT NOT NULL,     -- 'user' | 'ai' | 'system'
-    client_id     TEXT NOT NULL,     -- browser tab session id (generated per tab, persists across reload via sessionStorage)
-    client_op_id  TEXT NOT NULL,     -- per-client monotonic op id (idempotency)
-    changeset     JSONB NOT NULL,    -- ChangeSet.toJSON() => number[] arrays
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+- Storage/data model: `_docs/plans/collab-ai/spec/storage-model.md`
+- API/events/errors: `_docs/plans/collab-ai/spec/api-events-contract.md`
+- Compaction/floor/retention: `_docs/plans/collab-ai/spec/compaction-retention.md`
+- Refresh/read-model policy: `_docs/plans/collab-ai/spec/refresh-read-model-framework.md`
 
-    UNIQUE(document_id, version),
-    UNIQUE(document_id, client_id, client_op_id)
-);
+Non-negotiable invariants summary:
 
-CREATE INDEX <env_prefix>idx_collab_document_applied_doc_version
-    ON <env_prefix>collab_document_applied_operations(document_id, version);
-```
+1. Canonical storage is two streams:
+   - authoritative user stream (`origin='user'|'ai_accepted'`)
+   - non-authoritative AI proposal queue (`proposed|rejected|conflicted`)
+2. Accept path is atomic and server-authoritative:
+   - rebase proposal
+   - insert authoritative user-stream op (`origin='ai_accepted'`)
+   - remove proposal row
+   - emit `updates` + `proposalRemoved`
+3. Accepted AI edits remain discoverable in authoritative changesets (raw ops and/or compacted segments).
+4. Accepted AI edits, once promoted, compact with the same policy as human authoritative ops.
+5. Clients below floor must reload snapshot via `RESET_REQUIRED`.
+6. Proposal accept is idempotent and can promote each proposal at most once.
+7. Writer timeline defaults to merged authoritative history (`user + ai_accepted`).
+8. Proposal stream uses parallel tiered compaction for `rejected|conflicted`; `proposed` stays raw queue, accepted is removed on promotion.
+9. Undo/restore behavior is identical for human edits and accepted AI edits because both are authoritative ops.
 
-### Proposal Schema (Non-Authoritative)
+## Runtime Config (Env Vars)
 
-```sql
-CREATE TABLE <env_prefix>collab_document_edit_proposals (
-    id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    document_id            UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    source                 TEXT NOT NULL DEFAULT 'ai',
-    agent_id               TEXT,
-    proposal_group_id      UUID,
-    status                 TEXT NOT NULL DEFAULT 'proposed'
-                           CHECK (status IN ('proposed', 'accepted', 'rejected', 'conflicted')),
-    base_version           INT NOT NULL,        -- version proposal was generated against
-    anchor_start           INT NOT NULL,        -- UTF-16 offset at base_version
-    anchor_end             INT NOT NULL,        -- UTF-16 offset at base_version
-    before_hash            TEXT NOT NULL,       -- SHA-256 of text at anchor range at base_version
-    changeset              JSONB NOT NULL,
-    description            TEXT,                -- human-readable summary of change
-    accepted_operation_id  UUID REFERENCES <env_prefix>collab_document_applied_operations(id),
-    created_by             TEXT,
-    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    decided_at             TIMESTAMPTZ
-);
-```
+Compaction/retention behavior is deployment-tunable via env vars. Canonical contract lives in:
+- `_docs/plans/collab-ai/spec/compaction-retention.md`
 
-### WS Ticket Schema
+| Variable | Default |
+|---|---|
+| `MERIDIAN_COLLAB_COMPACTION_OP_COUNT_THRESHOLD` | `200` |
+| `MERIDIAN_COLLAB_COMPACTION_OP_BYTES_THRESHOLD` | `262144` |
+| `MERIDIAN_COLLAB_COMPACTION_MAX_AGE_HOURS` | `24` |
+| `MERIDIAN_COLLAB_REPLAY_TAIL_OPS` | `75` |
+| `MERIDIAN_COLLAB_PROPOSAL_HOT_DAYS` | `30` |
+| `MERIDIAN_COLLAB_PROPOSAL_DAILY_TO_WEEKLY_DAYS` | `90` |
+| `MERIDIAN_COLLAB_PROPOSAL_WEEKLY_TO_MONTHLY_DAYS` | `365` |
+| `MERIDIAN_COLLAB_COMPACTION_LOCK_TIMEOUT_MS` | `2000` |
+| `MERIDIAN_COLLAB_COMPACTION_STATEMENT_TIMEOUT_MS` | `5000` |
 
-```sql
-CREATE TABLE <env_prefix>collab_ws_tickets (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id     TEXT NOT NULL,
-    document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    expires_at  TIMESTAMPTZ NOT NULL,
-    used        BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-```
-
-### Snapshot Metadata
-
-```sql
-ALTER TABLE documents
-  ADD COLUMN collab_snapshot_version INT NOT NULL DEFAULT 0,
-  ADD COLUMN collab_op_floor_version INT NOT NULL DEFAULT 0;
-```
-
-### Retention and Cleanup (v1)
-
-1. `<env_prefix>collab_ws_tickets`: delete rows where `expires_at < now() - interval '1 day'` every hour.
-2. `<env_prefix>collab_document_edit_proposals`: keep `accepted/rejected/conflicted` for 90 days, then delete nightly.
-3. `<env_prefix>collab_document_applied_operations`: bounded by compaction tail; hard alert if any doc keeps > `10_000` ops.
-4. Cleanup jobs run in Meridian Collab AI service scheduler (single instance).
-
-### Version Allocation
-
-`SELECT ... FOR UPDATE` row lock on `documents` then assign next version. Simple, standard SQL semantics. Runs in the Node service directly.
-
----
-
-## Authority Server
-
-`Authority.ts` follows the CM collab example:
-
-```typescript
-import { ChangeSet, Text } from "@codemirror/state";
-import { rebaseUpdates, Update } from "@codemirror/collab";
-
-class Authority {
-  doc: Text;
-  floorVersion: number; // oldest version still replayable from ops table
-  headVersion: number;  // latest authoritative applied op version
-  updates: Update[] = []; // updates[0] corresponds to floorVersion + 1
-
-  receiveUpdates(clientVersion: number, updates: Update[]) {
-    if (clientVersion < this.floorVersion) {
-      return { type: "resetRequired", snapshotVersion: this.floorVersion };
-    }
-    const missedFrom = clientVersion - this.floorVersion;
-    if (missedFrom < this.updates.length) {
-      // Client is behind — rebase their updates over what they missed
-      updates = rebaseUpdates(updates, this.updates.slice(missedFrom));
-    }
-    for (const update of updates) {
-      this.updates.push(update);
-      this.doc = update.changes.apply(this.doc);
-      this.headVersion += 1;
-    }
-    // Persist to <env_prefix>collab_document_applied_operations + broadcast to peers
-  }
-}
-```
-
----
-
-## Transport and Auth
-
-### WS Protocol
-
-```typescript
-// Client → Server
-| { type: "getDocument" }
-| { type: "pushUpdates"; version: number; updates: { clientID: string; changes: number[] }[] }
-| { type: "pullUpdates"; version: number }
-| { type: "getUndoTail" }
-
-// Server → Client
-| { type: "document"; version: number; doc: string }
-| { type: "updates"; updates: { clientID: string; changes: number[]; source: string }[] }
-| { type: "pushResult"; ok: boolean; version?: number; error?: string }
-| { type: "resetRequired"; snapshotVersion: number }
-| { type: "undoTail"; ops: { version: number; changes: number[]; clientID: string }[] }
-| { type: "newProposal"; proposal: Proposal }
-| { type: "proposalStatusChanged"; proposalId: string; status: string }
-```
-
-### Protocol Error Contract (v1)
-
-`pushResult.error` and REST error bodies use stable machine codes:
-
-| Code | Meaning | Client Behavior |
-|---|---|---|
-| `VERSION_GAP` | client version behind floor/head expectations | issue `pullUpdates`; if repeated, reconnect |
-| `RESET_REQUIRED` | requested version `< collab_op_floor_version` | reload snapshot, reconnect from `collab_snapshot_version` |
-| `IDEMPOTENCY_REPLAY` | same (`client_id`, `client_op_id`) already applied | treat as success, refresh head version |
-| `PAYLOAD_TOO_LARGE` | op/proposal exceeds limits | chunk and retry |
-| `PROPOSAL_CONFLICTED` | proposal cannot be safely rebased | show conflicted state, regenerate |
-| `TICKET_INVALID` | ticket missing/expired/used | fetch new ticket and reconnect |
-| `RATE_LIMITED` | per-connection or per-doc limits exceeded | exponential backoff (start 250ms, cap 5s) |
-| `COLLAB_DISABLED` | kill switch enabled | switch UI to read-only mode |
-
-### Auth
-
-**WS ticket:** `POST /api/documents/{id}/ws-ticket` (Go backend, JWT-authenticated) → `{ ticket: "<uuid>", expiresAt: "..." }`. 30-second TTL, one-time use.
-
-**WS connect:** `wss://collab-ai.meridian.app/ws/documents/{documentId}?ticket={ticket}`
-
-Node service redeems ticket against DB, validates user owns document.
-
-Ticket redemption must be atomic:
-- one statement/transaction validates `used = false AND expires_at > now()`
-- marks `used = true` on success
-- fails closed on replay/race
-
-### Security and Data Access Model (v1)
-
-1. Browser never talks to Postgres directly for collab tables.
-2. Meridian Collab AI uses server-side DB credentials only (never exposed to frontend).
-3. Go backend and Meridian Collab AI use separate DB roles with least privilege by table ownership.
-4. Log policy: redact `ticket`, `changeset`, and large proposal payloads from info logs.
-5. Secret rotation target: every 90 days or immediately after suspected leak.
-
-### LLM Stream Transport
-
-Keep existing SSE for turn streaming. Document ops and turn streaming remain separate channels.
-
----
-
-## Compaction and Snapshot Policy
-
-### Policy
-
-1. Trigger compaction when any condition is met:
-   - applied op count > `200`
-   - applied op bytes > `256KB`
-   - active doc has not compacted in `24h`
-2. Compose applied ops up to `cutoff_version` using `ChangeSet.compose()` (native JS).
-3. In one transaction:
-   - write `documents.content` snapshot at `cutoff_version`
-   - set `collab_snapshot_version = cutoff_version`
-   - delete applied ops `<= cutoff_version - replay_tail`
-   - set `collab_op_floor_version` to oldest remaining applied version (or `collab_snapshot_version`)
-4. Keep replay tail (default `75` ops) for reconnect + undo continuity.
-
-### Reconnect Contract
-
-If client requests `fromVersion < collab_op_floor_version`, server returns `resetRequired`. Client reloads snapshot and reconnects from `collab_snapshot_version`.
-
-### Concurrency Rules (Compaction vs Writes)
-
-1. Lock order is fixed: `documents` row lock first, then operation-range reads.
-2. Set transaction `lock_timeout = '2s'` and `statement_timeout = '5s'` for compaction.
-3. If lock timeout occurs, compaction aborts and retries later (no partial work).
-4. Compaction runs max one job per document at a time (document-scoped mutex).
-5. Apply path always wins over compaction under lock contention.
-
----
+All values require startup validation with fail-fast behavior on invalid bounds/relationships.
 
 ## First Load Flow
 
@@ -443,81 +340,6 @@ Typing policy during reconnect:
 - Allow typing immediately.
 - `@codemirror/collab` queues local ops until transport is ready.
 - Show sync state (`Connected`, `Syncing`, `Disconnected`).
-
----
-
-## AI Proposal Accept/Reject Model
-
-### How Proposals Work
-
-**Create:** AI generates edit → Node service creates proposal at `base_version` → broadcasts `newProposal` via WS → frontend renders decorations.
-
-**Render (decoration-based, never in document text):**
-1. Take proposal's `changeset` (against `base_version`)
-2. Map through all ops from `base_version` to current version using `ChangeSet.map()`
-3. For each change in mapped changeset:
-   - **Deletions:** Mark decoration (red strikethrough) on the range
-   - **Insertions:** Widget decoration (green text) at insertion point
-4. Navigate with up/down arrows (same UX as current hunk navigator)
-
-**Accept (server-authoritative, atomic):**
-1. Client sends `POST /collab/proposals/{id}/accept` with idempotency key
-2. Node service loads proposal + ops from `base_version` to current
-3. Node rebases proposal changeset via `ChangeSet.map()`
-4. In one DB transaction:
-   - insert applied op (`source: 'ai'`)
-   - set proposal `status = 'accepted'`
-   - set `accepted_operation_id`, `decided_at`
-5. Node broadcasts both `updates` and `proposalStatusChanged`
-
-**Reject:** Mark proposal `rejected`, remove decorations. No document change.
-
-**Conflict:** If overlap severity is high or `before_hash` mismatches after rebase → mark `conflicted`, require regeneration/review.
-
-This replaces `ai_version` + PUA marker flow entirely.
-
-### Multi-Agent Arbitration Rules
-
-1. Agents only create proposals (non-authoritative).
-2. Proposal accept/reject is the single authority gate.
-3. Accept pipeline is serialized per document to prevent version races.
-4. Overlapping accepted proposals are rebased in acceptance order.
-
-### Large AI Edit Admission Policy
-
-All limits are server-enforced (client mirrors for UX only).
-
-| Limit | Default | Behavior on exceed |
-|---|---|---|
-| `max_changeset_bytes` | `128KB` | Split into chunk proposals |
-| `max_changed_chars` | `20_000` | Split into chunk proposals |
-| `max_changed_ranges` | `200` | Split into chunk proposals |
-| per-op WS payload | `64KB` | Reject push, require chunking |
-
-Chunking strategy:
-1. Split by paragraph/section boundaries into ordered chunks.
-2. Create proposal group (`proposal_group_id`) for shared accept/reject UX.
-3. Accept chunks independently, with stop-on-conflict.
-
-Fallback mode:
-- If chunking still exceeds limits or conflict rate is high, use **full rewrite review mode** (out-of-band diff + manual apply), not live op streaming.
-
-### Backpressure and Rate Limits (v1)
-
-| Scope | Limit | Behavior |
-|---|---|---|
-| per WS connection inbound | `30` messages/sec | return `RATE_LIMITED`, temporary mute 1s |
-| per document pending proposal accepts | `20` | reject new accepts until queue drains |
-| per document queued agent proposals | `200` | reject lowest-priority new proposal |
-| offline local queue (frontend) | `256KB` | stop queueing, show reconnect-required banner |
-
-### Conflict Policy (Rebase Outcomes)
-
-| Tier | Condition | Behavior |
-|---|---|---|
-| Low | Small overlap, hash still valid | Auto-rebase path allowed |
-| Medium | Moderate overlap | Require user review before accept |
-| High | Large overlap or hash mismatch | Mark `conflicted`, do not auto-apply |
 
 ---
 
@@ -553,6 +375,7 @@ Contract rules:
 - Core services depend only on ports/strategies, never concrete DB/WS/JWT clients.
 - Ports are small and task-specific (read/write split when practical).
 - Any adapter replacement (e.g., Redis pub/sub, different SQL client) must keep contract behavior unchanged.
+- Each module keeps single responsibility: transport modules do connection concerns, policy modules decide outcomes, repositories persist state.
 
 ### Frontend
 
@@ -565,15 +388,15 @@ Contract rules:
 | `undoHistory` | Map replay tail ops → CM6 undo stack |
 | `useProposalReview` | Proposal list, WS subscription, accept/reject actions |
 | `useProposalStore` | Active proposals, focused index, navigation |
-| `proposalPlugin` | ViewPlugin: render proposal decorations alongside live preview coordinator |
-| `proposalField` | StateField: proposal data + focused index |
-| `AIProposalNavigator` | Floating nav pill (replaces `AIHunkNavigator`) |
+| `mergeReviewAdapter` | `@codemirror/merge` integration for proposal review/accept/reject UX |
+| `proposalAnchors` | Optional lightweight inline cues for pending proposals (no text mutation) |
+| `AIProposalNavigator` | Proposal navigation/actions tied to merge chunks |
 
-### Decoration Coordinator Integration
+### Merge Review Integration
 
-The proposal plugin sits **alongside** the existing `livePreview/plugin.ts` coordinator as a separate ViewPlugin. The coordinator handles markdown rendering; the proposal plugin handles AI change visualization. They don't conflict because proposals are decoration-only.
+`@codemirror/merge` is the canonical proposal review surface for AI changes. The live editor remains clean text and does not embed AI markers.
 
-The `excludedRegions` pattern extends to proposal decoration ranges (avoid rendering markdown within proposal widgets).
+If lightweight inline proposal cues are retained, they must be decoration-only and must not alter persisted editor text.
 
 ---
 
@@ -592,9 +415,9 @@ The `excludedRegions` pattern extends to proposal decoration ranges (avoid rende
 - `frontend/src/core/collab/proposalTypes.ts`
 - `frontend/src/core/stores/useCollabStore.ts`
 - `frontend/src/core/stores/useProposalStore.ts`
-- `frontend/src/core/editor/codemirror/proposals/proposalPlugin.ts`
-- `frontend/src/core/editor/codemirror/proposals/proposalField.ts`
-- `frontend/src/core/editor/codemirror/proposals/proposalWidget.ts`
+- `frontend/src/core/editor/codemirror/mergeReview/mergeReviewAdapter.ts`
+- `frontend/src/core/editor/codemirror/mergeReview/mergeReviewState.ts`
+- `frontend/src/core/editor/codemirror/mergeReview/mergeReviewTheme.ts`
 - `frontend/src/features/documents/hooks/useDocumentCollab.ts`
 - `frontend/src/features/documents/hooks/useProposalReview.ts`
 - `frontend/src/features/documents/components/AIProposalNavigator.tsx`
@@ -613,6 +436,17 @@ The `excludedRegions` pattern extends to proposal decoration ranges (avoid rende
 - `backend/internal/handler/document.go` — add WS ticket endpoint
 - Drop `documents.ai_version`, `documents.ai_version_rev` columns
 - Remove `GET /api/documents/{id}/ai-status` endpoint
+- Add proposal query APIs:
+  - `GET /api/projects/{id}/proposals`
+  - `GET /api/documents/{id}/proposals`
+  - `GET /api/proposals/{id}`
+  - `GET /api/proposal-groups/{groupId}`
+  - `POST /api/proposal-groups/{groupId}/accept`
+  - `GET /api/projects/{id}/proposal-status`
+- Add authoritative changeset query APIs:
+  - `GET /api/projects/{id}/changesets`
+  - `GET /api/documents/{id}/changesets`
+- `POST /collab/proposals/{id}/accept` returns `operationId` + new `version` and removes proposal row
 
 ---
 
@@ -625,14 +459,26 @@ The `excludedRegions` pattern extends to proposal decoration ranges (avoid rende
 | DB access | Direct PostgreSQL (shared Supabase) | Low latency for version allocation, clear table ownership |
 | WS auth | Short-lived ticket (30s, one-time) | No JWT in URL, revocable |
 | Version allocation | `SELECT ... FOR UPDATE` row lock | Simple, standard SQL semantics |
-| Proposal rendering | Decorations (not in document text) | Clean document, no PUA corruption, multiple proposals coexist |
-| Proposal accept | Server-authoritative atomic transaction | Prevent accepted/applied split-brain on retries/failures |
+| Stream model | User authoritative stream + AI proposal queue | Clear writer-control and future multi-user compatibility |
+| Proposal rendering | `@codemirror/merge` review surface (no in-text markers) | Cleaner review UX, native accept/reject affordances, no PUA corruption |
+| Proposal accept | Promote to user stream + remove proposal row | Accepted AI changes become first-class authoritative edits |
+| AI-accept undo | Same authoritative undo/restore path as user edits | No special-case undo system; accepted AI edits are canonical changesets |
+| Accept idempotency | `Idempotency-Key` + unique accepted-proposal mapping | Safe retries; one proposal cannot be promoted twice |
+| Provenance durability | Copy immutable provenance into authoritative row (no mutable-FK dependency) | Audit trail survives proposal deletion and data cleanup |
 | Multi-agent strategy | Proposal-only writers + serialized acceptance | Deterministic arbitration for many LLMs, one user |
+| Event ordering | Per-document monotonic `eventId` with gap-recovery rules | Deterministic client reconciliation under network disorder |
+| Group accept semantics | Deterministic order + stop-on-conflict, per-item outcomes | Predictable bulk review behavior for large AI edits |
+| Proposal permissions | `owner/editor` mutate, `viewer` read-only | Safe multi-user extension without rewriting core flow |
 | Large AI edits | Admission limits + chunking + fallback mode | Prevent oversized ops from breaking transport/rebase UX |
+| Compaction | Dual-stream tiered compaction (authoritative ops + proposal-history rollups) | Keeps replay/query cost bounded while preserving writer-facing history |
+| Accepted-AI compaction | `origin='ai_accepted'` compacts like `origin='user'` after promotion | Accepted AI edits are first-class authoritatives, not a protected special case |
+| Timeline default | Merged authoritative timeline with origin filters | Keeps accepted AI edits first-class in writer history |
+| Publish-failure recovery | Write-then-publish with pull/refresh reconciliation | Commit success is never rolled back by transient WS issues |
 | CRDT/Yjs | Deferred with explicit trigger criteria | Avoid migration cost before multi-user/offline is needed |
 | Migration | None — greenfield rebuild on branch | No users, no backwards compatibility needed |
 | WS library | `ws` (Node) | Standard, performant, well-maintained |
 | PostgreSQL client | `postgres` (porsager/postgres) | Modern, fast, tagged template queries |
+| Compaction jobs | Graphile Worker (`job_key` per document + advisory lock) | Async, retry-safe compaction without write-path latency |
 | Rollout style | Hard cutover + kill switch | Fast iteration with minimal legacy burden |
 
 ---
@@ -647,12 +493,17 @@ Metrics (per document and global):
 - `ws_reconnect_rate`
 - `compaction_duration_ms`
 - `compaction_lock_timeout_count`
+- `authoritative_raw_ops_highwater` (per-document)
+- `compacted_segment_count` (per-document)
+- `proposal_rollup_lag_seconds` (per-document)
 
 Alert thresholds:
 1. `reset_required_rate > 5%` for 10 minutes.
 2. `proposal_accept_latency_ms p95 > 1500ms` for 10 minutes.
 3. `compaction_lock_timeout_count >= 5` in 15 minutes.
 4. `ws_reconnect_rate > 20%` for 10 minutes.
+5. `authoritative_raw_ops_highwater > 50_000` for any document.
+6. `proposal_rollup_lag_seconds > 86_400` for any document.
 
 SLO targets:
 1. 99% successful `pushUpdates` (excluding client disconnects).
@@ -668,11 +519,17 @@ SLO targets:
 | Concurrent push race | 2 clients push same base version | contiguous versions, no duplicate op IDs |
 | Ticket replay | reuse same ticket twice | first succeeds, second returns `TICKET_INVALID` |
 | Compaction during typing | run compaction with active writes | no lost ops, no partial snapshot, clients stay synced |
+| Accept promotion | accept proposal | authoritative op inserted with `origin='ai_accepted'`, proposal row removed |
 | Floor reset path | request updates below floor | `RESET_REQUIRED` then successful snapshot reload |
 | Large proposal chunking | proposal exceeds limits | split into group, all chunks ordered, stop-on-conflict works |
 | High-overlap conflict | overlapping proposals accepted out of order | high-overlap proposal marked `conflicted` |
+| Accepted-AI compaction | run compaction over old accepted AI ops | old `origin='ai_accepted'` raw ops compacted into valid segments, timeline/query remains coherent |
 | Kill switch | set `COLLAB_DISABLED` | WS/connect/accept blocked, UI read-only |
 | Crash retry idempotency | retry same `client_op_id` after simulated crash | no duplicate authoritative op |
+| Accept retry idempotency | retry same proposal accept request | same `operationId`/`version`, no second promotion |
+| Event gap recovery | drop/out-of-order `eventId` delivery | client reconciles via pull + refresh without divergent state |
+| Group accept determinism | accept a large proposal group with one conflict | deterministic `accepted|conflicted|skipped` outcomes |
+| Permission gating | viewer attempts accept/reject | mutation denied, read endpoints still work |
 
 ---
 
@@ -683,10 +540,15 @@ SLO targets:
 | Version race/collision | Transactional row lock + unique constraints + retry |
 | Duplicate client retries | Idempotency keys (`client_id`, `client_op_id`) |
 | Compaction breaks reconnect | `collab_op_floor_version` + explicit `resetRequired` contract |
+| Accepted proposal trace lost after removal | Copy full provenance to authoritative op (`source_proposal_id`, run/thread/turn fields) |
+| Proposal accepted twice due retries/races | Unique mapping from proposal to authoritative op + idempotency key contract |
 | Proposal drift after edits | Anchor + `before_hash` validation → `conflicted` state |
+| Out-of-order/lost WS events | Monotonic `eventId` + gap reconciliation via pull and refresh |
 | Large AI proposal payloads stall transport | Server admission limits + chunking + fallback mode |
+| Group accept ambiguity | Deterministic order and stop-on-conflict with explicit per-item outcomes |
 | Semantic conflict after mechanical rebase | Tiered conflict policy (low/medium/high) + manual review path |
 | Token leakage via URL/logs | Short-lived WS ticket + log redaction |
+| Over-aggressive compaction can hide fine-grained old history | Keep hot raw window + expose compacted segment metadata in `/changesets` |
 | Over-engineering large docs too early | Chapter/section boundaries first, defer pagination |
 | Multi-instance drift (in-memory sessions) | Run single replica in v1; add pub/sub before horizontal scaling |
 | Extra service to deploy | Meridian Collab AI is focused and small; deploy on Railway alongside Go |
@@ -695,12 +557,13 @@ SLO targets:
 
 ## Open Questions
 
-| Question | Context | Options |
-|---|---|---|
-| Interface granularity | Avoid fat interfaces while keeping ergonomics | Split reader/writer ports if contracts grow |
-| Undo persistence evolution | v1 uses replay-tail-based rebuild | move to serialized history if writer UX requires it |
-| Horizontal fanout | v1 single instance is sufficient | Redis pub/sub when >1 service instance is required |
-| Arbitration ranking | v1 FIFO + overlap score | later add quality/confidence weighting per agent |
+No blocking open questions for v1 collaboration + AI collaboration.
+
+Post-v1 evolution topics (explicitly deferred, non-blocking):
+- Interface granularity refinements (split ports further if contracts grow).
+- Undo persistence evolution beyond replay-tail rebuild.
+- Horizontal fanout (Redis pub/sub when >1 service instance is required).
+- Arbitration ranking beyond FIFO + overlap score.
 
 ---
 
@@ -720,3 +583,4 @@ SLO targets:
 - [MDN WebSocket constructor](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket/WebSocket)
 - [RFC 6455: The WebSocket Protocol](https://datatracker.ietf.org/doc/html/rfc6455.html)
 - [@marimo-team/codemirror-ai](https://github.com/marimo-team/codemirror-ai)
+- [Graphile Worker Docs](https://worker.graphile.org/docs)
