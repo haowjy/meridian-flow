@@ -85,6 +85,10 @@ export const wikiLinkScanner: InlineScanner = {
         // Keep data-doc-id for backward compat with clipboard interop
         if (!isFolder) attributes["data-doc-id"] = resolved.id;
       }
+      // Propagate folder-intent hint so click handler can offer folder creation
+      if (link.endsWithSlash) {
+        attributes["data-folder-hint"] = "true";
+      }
 
       // 1. Hide opening syntax ([[  or [[path|)
       decorations.push({

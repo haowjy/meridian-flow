@@ -43,6 +43,7 @@ export function createWikiLinkClickHandler(
     docPath: string,
     displayName: string,
     clickCoords: { x: number; y: number },
+    isFolder: boolean,
   ) => void,
 ): Extension {
   return EditorView.domEventHandlers({
@@ -109,10 +110,11 @@ export function createWikiLinkClickHandler(
       if (!refId && docPath && onBrokenClick) {
         event.preventDefault();
         const displayName = ref.dataset.displayName ?? docPath;
+        const folderHint = ref.dataset.folderHint === "true";
         onBrokenClick(docPath, displayName, {
           x: event.clientX,
           y: event.clientY,
-        });
+        }, folderHint);
         // Restore selection after CM6's default handler runs
         setTimeout(() => view.dispatch({ selection: savedSelection }), 0);
         return true;
