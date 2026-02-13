@@ -35,6 +35,7 @@ This is generic productivity value (not fiction-specific), delivered through a w
 | **Audit/debug trace** | Make agent behavior explainable + reversible. | Turns, tools, skills, models |
 | **Chat → Thread rename** | Align naming with async, branchable conversation graph. | Backend + frontend + API |
 | **Sessions (+ `.session/`)** | Shared persistent artifacts across thread family. | Backend + frontend + tools |
+| **Collab core (Specs + Phases 1-3)** | Agent writes must use canonical op-log/proposal model, not legacy `ai_version` CAS. | `_docs/plans/fb-realtime-collab-editing.md` + `_docs/plans/collab-ai/spec/` + `_docs/plans/collab-ai/phase/` |
 | **No BYOK (v1)** | Simplifies billing. One payment flow. | Revisit post-v1 |
 
 ---
@@ -326,24 +327,30 @@ Users can branch off a conversation to create a **new parallel thread** (distinc
 
 ## Concurrency Model
 
-Multiple threads (branches or subagents) may edit the same files. Resolution uses **optimistic locking with fail-fast**.
+Multiple threads (branches or subagents) may target the same files. Resolution must follow the canonical collaboration model: **authoritative applied op-log + non-authoritative proposals**.
 
 ```
-Agent reads file → gets version token (ai_version_rev)
-Agent edits file → sends version token with edit
-Token stale?    → Tool returns error: "file changed, re-read first"
-Agent re-reads  → sees other agent's changes → decides what to do
+Agent reads base_version + content context
+Agent proposes edit against base_version
+Acceptance path rebases proposal against current head
+High-overlap/conflict? -> mark conflicted, require regenerate/review
 ```
 
-**Tool contract**: "You can only edit what you've seen."
+**Tool contract**:
+- Agents do **not** write authoritative document ops directly.
+- Agents produce proposals tied to a known `base_version`.
+- Server-side accept/reject is the authority gate and is serialized per document.
 
 | Scenario | Behavior |
 |----------|----------|
-| Agent A edits, Agent B tries to edit same file | Agent B's tool fails, must re-read |
-| Agent reads, then edits | Success (token matches) |
-| User edits while agent working | Agent's next edit fails, must re-read |
+| Agent A and Agent B propose overlapping edits | Both can be created; acceptance order + conflict policy determines outcome |
+| Agent proposes from stale base | Rebase attempt on accept; if unsafe, proposal marked `conflicted` |
+| User edits while agent proposal is pending | Proposal is remapped/rebased at accept time or marked `conflicted` |
 
-This leverages existing CAS infrastructure (`ai_version_rev` field, 409 conflict responses).
+Reference:
+- `_docs/plans/fb-realtime-collab-editing.md`
+- `_docs/plans/collab-ai/phase/phase-3-ai-proposals-and-review.md`
+- `_docs/plans/collab-ai/phase/phase-4-multi-agent-arbitration.md`
 
 ---
 
@@ -401,7 +408,7 @@ Turn: complete
 - Child thread creation
 - Subagent streaming + result return
 - Depth limit enforcement (setting, default=1)
-- **Ship gate**: complete the "Prerequisites" section (billing + limits/budgets + audit + sessions + thread naming)
+- **Ship gate**: complete the "Prerequisites" section (billing + limits/budgets + audit + sessions + thread naming + collab core phases 1-3)
 
 ### Phase 5: Compaction
 - Compaction turn creation
@@ -426,7 +433,7 @@ Turn: complete
 
 | Question | Resolution |
 |----------|------------|
-| **Concurrency** | CAS tokens + fail-fast. Agent must re-read stale files before editing. |
+| **Concurrency** | Canonical collab contract: agents propose against `base_version`; server-serialized accept/rebase applies authoritative ops. Unsafe overlap -> `conflicted`. |
 | **Session cleanup** | Persistent working state, discovered fresh each conversation. Cascade delete with threads. |
 | **Lifecycle** | Session deleted when all threads deleted. |
 | **Subagent depth** | Configurable in settings, default = 1 (subagents cannot spawn subagents). Prevents runaway costs and infinite loops. Requires PAYG billing. |

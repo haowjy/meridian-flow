@@ -1,50 +1,8 @@
-# Shared Context
+# Shared Context (Moved)
 
-**Current**: Each user has separate threads
+This topic is now tracked in active planning:
 
-**Future**: Shared knowledge base
+- `_docs/plans/collab-ai/phase/phase-5-multi-user-collaboration.md`
+- `_docs/plans/agents/fb-artifact-templates-and-project-instances.md`
 
-## Features
-
-- Team workspace
-- Shared document access
-- Collaborative editing
-- Activity feed
-
-## Use Case
-
-Writing teams, game dev teams
-
-## Implementation
-
-### Workspace Model
-
-```typescript
-interface Workspace {
-  id: string;
-  name: string;
-  members: WorkspaceMember[];
-  sharedDocuments: Document[];
-  sharedChats: Chat[];
-}
-
-interface WorkspaceMember {
-  userId: string;
-  role: 'owner' | 'editor' | 'viewer';
-  joinedAt: Date;
-}
-```
-
-### Activity Feed
-
-```tsx
-<ActivityFeed workspace={workspace}>
-  <Activity user="Alice" action="edited" target="Chapter 5" />
-  <Activity user="Bob" action="commented on" target="Character: Elara" />
-  <Activity user="Alice" action="created chat" target="Plot Discussion" />
-</ActivityFeed>
-```
-
-## Priority
-
-**Low** - Complex feature, requires workspace infrastructure
+Shared-project context and permission boundaries now live in the canonical collab plan set.

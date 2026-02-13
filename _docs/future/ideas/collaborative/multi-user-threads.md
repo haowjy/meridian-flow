@@ -1,74 +1,8 @@
-# Multi-User Threads
+# Multi-User Threads (Moved)
 
-**Current**: Single user per thread
+This topic is now tracked in active planning:
 
-**Future**: Multiple users in same thread
+- `_docs/plans/collab-ai/phase/phase-5-multi-user-collaboration.md`
+- `_docs/plans/fb-realtime-collab-editing.md`
 
-## Features
-
-- Invite collaborators
-- Show who's typing
-- Real-time sync
-- Per-user message colors
-
-## Use Case
-
-Team brainstorming, co-writing
-
-## Challenges
-
-- WebSocket infrastructure
-- Conflict resolution
-- Permissions
-
-## Implementation
-
-### WebSocket Architecture
-
-```typescript
-// Server
-io.on('connection', (socket) => {
-  socket.on('join_thread', ({ threadId, userId }) => {
-    socket.join(threadId);
-    socket.to(threadId).emit('user_joined', { userId });
-  });
-
-  socket.on('typing', ({ threadId, userId }) => {
-    socket.to(threadId).emit('user_typing', { userId });
-  });
-
-  socket.on('message', ({ threadId, message }) => {
-    socket.to(threadId).emit('new_message', { message });
-  });
-});
-```
-
-### Typing Indicator
-
-```tsx
-<TypingIndicator>
-  {typingUsers.map(user => (
-    <span key={user.id}>{user.name} is typing...</span>
-  ))}
-</TypingIndicator>
-```
-
-### Permissions
-
-```typescript
-enum ThreadPermission {
-  Read = 'read',
-  Write = 'write',
-  Admin = 'admin',
-}
-
-interface ThreadMember {
-  userId: string;
-  permission: ThreadPermission;
-  joinedAt: Date;
-}
-```
-
-## Priority
-
-**Low** - Complex infrastructure, niche use case
+Retained requirements were folded into Phase 5 (presence, permissions, and collaboration entrypoints).
