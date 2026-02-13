@@ -42,6 +42,8 @@ export interface WikiLinkMatch {
   displayFrom: number;
   /** End of the visible text (display name or path) — for mark decoration */
   displayTo: number;
+  /** Whether the raw path ended with `/` (folder intent, e.g. `[[folder/]]`) */
+  endsWithSlash: boolean;
 }
 
 // =============================================================================
@@ -61,8 +63,12 @@ export function findWikiLinks(text: string, offset: number): WikiLinkMatch[] {
   let match: RegExpExecArray | null;
   while ((match = regex.exec(text)) !== null) {
     // Strip PUA diff markers that may split a wiki-link when AI edits part of it
-    const path = match[1]!.trim().replace(ALL_MARKER_REGEX, "");
-    // Skip empty paths (e.g. `[[ | ]]`) — no valid target to link to.
+    const rawPath = match[1]!.trim().replace(ALL_MARKER_REGEX, "");
+    // Detect folder intent (trailing slash, e.g. `[[folder/]]`) before stripping
+    const endsWithSlash = rawPath.endsWith("/");
+    // Normalize: strip trailing slashes so "folder/" resolves the same as "folder"
+    const path = rawPath.replace(/\/+$/, "");
+    // Skip empty paths (e.g. `[[ | ]]` or `[[/]]`) — no valid target to link to.
     // Without this, empty paths produce inverted display ranges and blank pills.
     if (path.length === 0) continue;
     const rawDisplay = match[2]?.replace(ALL_MARKER_REGEX, "");
@@ -118,6 +124,7 @@ export function findWikiLinks(text: string, offset: number): WikiLinkMatch[] {
       to: matchTo,
       displayFrom,
       displayTo,
+      endsWithSlash,
     });
   }
 

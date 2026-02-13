@@ -119,6 +119,7 @@ export function EditorPanel({
     path: string;
     displayName: string;
     position: { top: number; left: number };
+    isFolder: boolean;
   } | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -166,7 +167,7 @@ export function EditorPanel({
       createWikiLinkClipboardHandler(),
       createWikiLinkClickHandler(
         handlePillClick,
-        (docPath, displayName, clickCoords) => {
+        (docPath, displayName, clickCoords, isFolder) => {
           // Convert client coords to editor-relative coords for absolute positioning
           const editorEl = editorRef.current
             ?.getView()
@@ -179,6 +180,7 @@ export function EditorPanel({
               top: rect ? clickCoords.y - rect.top : clickCoords.y,
               left: rect ? clickCoords.x - rect.left : clickCoords.x,
             },
+            isFolder,
           });
         },
       ),
@@ -320,7 +322,7 @@ export function EditorPanel({
     [atMention],
   );
 
-  // Handle creating a document from a broken wiki-link
+  // Handle creating a document or folder from a broken wiki-link
   const handleCreateFromBrokenLink = useCallback(async () => {
     if (!createPopover) return;
     const projectId = useProjectStore.getState().currentProject()?.id;
@@ -328,36 +330,69 @@ export function EditorPanel({
 
     setIsCreating(true);
     try {
-      // Parse path into folder + filename + extension
-      const wikiPath = createPopover.path;
-      const lastSlash = wikiPath.lastIndexOf("/");
-      const filename =
-        lastSlash >= 0 ? wikiPath.slice(lastSlash + 1) : wikiPath;
-      const folderPath =
-        lastSlash >= 0 ? wikiPath.slice(0, lastSlash) : undefined;
-      const dotIndex = filename.lastIndexOf(".");
-      const name = dotIndex >= 0 ? filename.slice(0, dotIndex) : filename;
-      const extension = dotIndex >= 0 ? filename.slice(dotIndex) : ".md";
+      if (createPopover.isFolder) {
+        // Folder creation: walk path segments and create each missing folder
+        const segments = createPopover.path.split("/").filter(Boolean);
+        let parentId: string | null = null;
 
-      const newDoc = await api.documents.create(
-        projectId,
-        null,
-        name,
-        extension,
-        {
-          folderPath,
-        },
-      );
+        // Walk existing tree to find the deepest existing parent folder
+        const tree = useTreeStore.getState();
+        for (let i = 0; i < segments.length; i++) {
+          const seg = segments[i]!;
+          const existing = tree.folders.find(
+            (f) => f.name === seg && f.parentId === parentId,
+          );
+          if (existing) {
+            parentId = existing.id;
+          } else {
+            // Create this segment and all remaining segments
+            for (let j = i; j < segments.length; j++) {
+              const folder = await api.folders.create(
+                projectId,
+                parentId,
+                segments[j]!,
+              );
+              parentId = folder.id;
+            }
+            break;
+          }
+        }
 
-      // Refresh sidebar tree to show the new document (and any created folders)
-      await useTreeStore.getState().loadTree(projectId);
+        // Refresh sidebar tree to show the new folder(s)
+        await useTreeStore.getState().loadTree(projectId);
+        setCreatePopover(null);
+      } else {
+        // Document creation (existing logic)
+        const wikiPath = createPopover.path;
+        const lastSlash = wikiPath.lastIndexOf("/");
+        const filename =
+          lastSlash >= 0 ? wikiPath.slice(lastSlash + 1) : wikiPath;
+        const folderPath =
+          lastSlash >= 0 ? wikiPath.slice(0, lastSlash) : undefined;
+        const dotIndex = filename.lastIndexOf(".");
+        const name = dotIndex >= 0 ? filename.slice(0, dotIndex) : filename;
+        const extension = dotIndex >= 0 ? filename.slice(dotIndex) : ".md";
 
-      setCreatePopover(null);
+        const newDoc = await api.documents.create(
+          projectId,
+          null,
+          name,
+          extension,
+          {
+            folderPath,
+          },
+        );
 
-      // Navigate to the newly created document
-      openDocument(newDoc.id, newDoc.path, projectSlug, navigate);
+        // Refresh sidebar tree to show the new document (and any created folders)
+        await useTreeStore.getState().loadTree(projectId);
+
+        setCreatePopover(null);
+
+        // Navigate to the newly created document
+        openDocument(newDoc.id, newDoc.path, projectSlug, navigate);
+      }
     } catch (err) {
-      log.error("Failed to create document from broken wiki-link:", err);
+      log.error("Failed to create from broken wiki-link:", err);
     } finally {
       setIsCreating(false);
     }
@@ -511,6 +546,7 @@ export function EditorPanel({
               onConfirm={handleCreateFromBrokenLink}
               onClose={() => setCreatePopover(null)}
               isCreating={isCreating}
+              isFolder={createPopover.isFolder}
             />
           )}
 

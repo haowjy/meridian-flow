@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useRef } from "react";
-import { FileText, Loader2 } from "lucide-react";
+import { FileText, FolderPlus, Loader2 } from "lucide-react";
 import { Button } from "@/shared/components/ui/button";
 
 // =============================================================================
@@ -30,6 +30,8 @@ interface WikiLinkCreatePopoverProps {
   onClose: () => void;
   /** Whether creation is in progress */
   isCreating: boolean;
+  /** Whether this is a folder creation (trailing-slash wiki-link) */
+  isFolder?: boolean;
 }
 
 // =============================================================================
@@ -43,6 +45,7 @@ export function WikiLinkCreatePopover({
   onConfirm,
   onClose,
   isCreating,
+  isFolder = false,
 }: WikiLinkCreatePopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
   // Stable ref so event listeners never go stale even if parent re-renders
@@ -95,10 +98,15 @@ export function WikiLinkCreatePopover({
       }}
     >
       <div className="flex items-start gap-2">
-        <FileText className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+        {isFolder ? (
+          <FolderPlus className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+        ) : (
+          <FileText className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+        )}
         <div className="min-w-0">
           <p className="text-sm">
-            Create <span className="font-medium">{displayName}</span>?
+            Create {isFolder ? "folder " : ""}
+            <span className="font-medium">{displayName}</span>?
           </p>
           {folderPart && (
             <p className="text-muted-foreground mt-0.5 text-xs">
