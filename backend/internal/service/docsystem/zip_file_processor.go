@@ -20,6 +20,10 @@ import (
 // filtered out during import. Defense-in-depth: frontend filters these too,
 // but we filter again here to handle direct zip uploads.
 var ignoredPathPatterns = []string{
+	// Meridian internal namespace (skills, config, etc.)
+	".meridian",
+	// Agents namespace (portable skill exchange with other AI tools)
+	".agents",
 	// Version control
 	".git",
 	".svn",

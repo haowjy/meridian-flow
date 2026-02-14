@@ -22,7 +22,7 @@ func NewSkillSeeder(skillService skillSvc.ProjectSkillService, logger *slog.Logg
 	}
 }
 
-// SeedSkills creates skills from seed_data/.skills/ directory.
+// SeedSkills creates skills from seed_data/.meridian/skills/ directory.
 // Idempotent: skips skills that already exist (by name).
 func (s *SkillSeeder) SeedSkills(ctx context.Context, projectID, userID string) error {
 	// Read skill content from seed data

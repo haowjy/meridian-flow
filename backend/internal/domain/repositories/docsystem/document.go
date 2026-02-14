@@ -18,7 +18,7 @@ type DocumentRepository interface {
 	// Use when authorization is handled separately (e.g., by ResourceAuthorizer)
 	GetByIDOnly(ctx context.Context, id string) (*docsystem.Document, error)
 
-	// GetByPath retrieves a document by its path (e.g., ".skills/cw-prose-writing/SKILL.md")
+	// GetByPath retrieves a document by its path (e.g., ".meridian/skills/my-skill/references/guide.md")
 	GetByPath(ctx context.Context, path string, projectID string) (*docsystem.Document, error)
 
 	// Update updates an existing document

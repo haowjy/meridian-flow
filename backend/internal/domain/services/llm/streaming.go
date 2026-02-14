@@ -67,7 +67,7 @@ type CreateTurnRequest struct {
 	UserID         string                 `json:"-"`                    // Set by handler from auth context, not from request body
 	PrevTurnID     *string                `json:"prev_turn_id,omitempty"`
 	Role           string                 `json:"role"`                      // "user" only (backend generates assistant turns)
-	SelectedSkills []string               `json:"selected_skills,omitempty"` // Skills to load from .skills/ folder
+	SelectedSkills []string               `json:"selected_skills,omitempty"` // Skill names to load from DB
 	TurnBlocks     []TurnBlockInput       `json:"turn_blocks,omitempty"`
 	RequestParams  map[string]interface{} `json:"request_params,omitempty"` // LLM request parameters (model, temperature, thinking_enabled, system, etc.)
 }

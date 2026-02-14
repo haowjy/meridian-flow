@@ -279,7 +279,7 @@ System prompts are NOT stored per-turn. They are resolved at request time from:
 1. `request_params.system` (user-provided)
 2. `project.system_prompt` (project settings)
 3. `thread.system_prompt` (thread settings)
-4. Selected skills (from `.skills/` folder)
+4. Selected skills (loaded from DB via skill service)
 
 See migration `00003_remove_turn_system_prompt.sql` for details.
 
