@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // CreateZipFromDirectory creates a zip file from all markdown files in a directory
@@ -38,6 +39,11 @@ func CreateZipFromDirectory(dirPath string) (buf *bytes.Buffer, err error) {
 		relPath, err := filepath.Rel(dirPath, path)
 		if err != nil {
 			return err
+		}
+
+		// Skip .skills/ directory — skills are seeded via SkillSeeder
+		if strings.HasPrefix(relPath, ".skills/") || strings.HasPrefix(relPath, ".skills\\") {
+			return nil
 		}
 
 		// Create file in zip
