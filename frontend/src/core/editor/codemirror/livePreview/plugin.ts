@@ -25,6 +25,11 @@ import type {
 import { getWordBounds } from "./cursorUtils";
 import { hunkRegionsField } from "../diffView/hunkRegionsField";
 import { overlapsExcludedRegion } from "../state/excludedRegions";
+import {
+  shikiReadyEffect,
+  registerView,
+  unregisterView,
+} from "./shikiHighlighter";
 
 // ============================================================================
 // RENDERER REGISTRY (OCP: Open for Extension)
@@ -93,6 +98,7 @@ class LivePreviewPlugin {
 
   constructor(view: EditorView) {
     this.view = view;
+    registerView(view);
     this.decorations = this.buildDecorations(view);
 
     // Listen on document so we catch releases outside the editor
@@ -118,6 +124,15 @@ class LivePreviewPlugin {
       return;
     }
 
+    // Shiki loaded or a new language became available — rebuild to show highlighting
+    const hasShikiReady = update.transactions.some((tr) =>
+      tr.effects.some((e) => e.is(shikiReadyEffect)),
+    );
+    if (hasShikiReady) {
+      this.decorations = this.buildDecorations(update.view);
+      return;
+    }
+
     if (update.selectionSet) {
       // Pointer-driven selection (drag-select): defer rebuild to avoid
       // flicker when decorations toggle mid-drag (known CM6 issue).
@@ -136,6 +151,7 @@ class LivePreviewPlugin {
 
   destroy() {
     document.removeEventListener("pointerup", this.onPointerUp);
+    unregisterView(this.view);
   }
 
   buildDecorations(view: EditorView): DecorationSet {

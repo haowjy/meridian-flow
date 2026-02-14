@@ -1,7 +1,9 @@
 /**
- * Code Renderer (Inline Code & Code Blocks)
+ * Inline Code Renderer
  *
- * SOLID: Single Responsibility - Only handles code formatting
+ * SOLID: Single Responsibility - Only handles inline code formatting
+ *
+ * Fenced code blocks are handled separately in fencedCode.ts
  */
 
 import { Decoration } from "@codemirror/view";
@@ -14,7 +16,6 @@ import { cursorInSameWord } from "../cursorUtils";
 // ============================================================================
 
 const inlineCodeMark = Decoration.mark({ class: "cm-inline-code" });
-const codeBlockLineDeco = Decoration.line({ class: "cm-code-block" });
 
 // ============================================================================
 // INLINE CODE RENDERER
@@ -59,34 +60,6 @@ export const inlineCodeRenderer: NodeRenderer = {
         from: from + 1,
         to: to - 1,
         deco: inlineCodeMark,
-      });
-    }
-
-    return decorations;
-  },
-};
-
-// ============================================================================
-// FENCED CODE RENDERER
-// ============================================================================
-
-export const fencedCodeRenderer: NodeRenderer = {
-  nodeTypes: ["FencedCode"],
-
-  render(node: SyntaxNode, ctx: RenderContext): DecorationRange[] {
-    const decorations: DecorationRange[] = [];
-    const { state } = ctx;
-
-    const startLine = state.doc.lineAt(node.from);
-    const endLine = state.doc.lineAt(node.to);
-
-    // Add line decoration to each line in the code block
-    for (let lineNum = startLine.number; lineNum <= endLine.number; lineNum++) {
-      const line = state.doc.line(lineNum);
-      decorations.push({
-        from: line.from,
-        to: line.from,
-        deco: codeBlockLineDeco,
       });
     }
 

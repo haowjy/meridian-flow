@@ -133,9 +133,10 @@
 
 ### Fonts
 
-- **Display**: Cormorant Garamond (serif)
+- **Display**: Source Serif 4 (serif)
 - **Body**: Source Serif 4 (serif)
-- **UI**: Manrope (sans-serif)
+- **UI**: Inter (sans-serif)
+- **Mono**: JetBrains Mono (monospace)
 
 ### Scale
 

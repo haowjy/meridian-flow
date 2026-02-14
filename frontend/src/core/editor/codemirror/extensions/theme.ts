@@ -89,7 +89,7 @@ export const livePreviewTheme = EditorView.theme({
   ".cm-inline-code": {
     fontFamily: "var(--font-mono)",
     fontSize: "0.9em",
-    backgroundColor: "var(--theme-surface, #f5f5f5)",
+    backgroundColor: "var(--muted)",
     padding: "2px 6px",
     borderRadius: "4px",
   },
@@ -133,11 +133,11 @@ export const livePreviewTheme = EditorView.theme({
     paddingRight: "0.25em",
   },
 
-  // Code blocks
+  // Code blocks (raw mode — cursor inside fenced code block)
   ".cm-code-block": {
     fontFamily: "var(--font-mono)",
     fontSize: "0.9em",
-    backgroundColor: "var(--theme-surface, #f5f5f5)",
+    backgroundColor: "var(--muted)",
   },
 
   // Blockquotes
