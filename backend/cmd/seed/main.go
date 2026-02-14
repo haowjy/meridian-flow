@@ -14,10 +14,12 @@ import (
 	"meridian/internal/repository/postgres"
 	postgresDocsys "meridian/internal/repository/postgres/docsystem"
 	postgresLLM "meridian/internal/repository/postgres/llm"
+	postgresSkill "meridian/internal/repository/postgres/skill"
 	"meridian/internal/seed"
 	serviceAuth "meridian/internal/service/auth"
 	serviceDocsys "meridian/internal/service/docsystem"
 	"meridian/internal/service/docsystem/converter"
+	serviceSkill "meridian/internal/service/skill"
 	"meridian/internal/utils"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -187,6 +189,17 @@ func main() {
 		log.Fatalf("Failed to seed thread data: %v", err)
 	}
 	log.Println("✅ Thread data seeded")
+
+	// Seed skills via service layer (creates DB record + folder structure)
+	log.Println("🧠 Seeding skills...")
+	skillRepo := postgresSkill.NewProjectSkillRepository(repoConfig)
+	namespaceSvc := serviceDocsys.NewNamespaceService(folderRepo, logger)
+	skillService := serviceSkill.NewProjectSkillService(skillRepo, folderRepo, namespaceSvc, authorizer, txManager, logger)
+	skillSeeder := seed.NewSkillSeeder(skillService, logger)
+	if err := skillSeeder.SeedSkills(ctx, projectID, userID); err != nil {
+		log.Fatalf("Failed to seed skills: %v", err)
+	}
+	log.Println("✅ Skills seeded")
 }
 
 // ensureTestProject returns an existing "Test Project" ID, or creates it via service layer.
