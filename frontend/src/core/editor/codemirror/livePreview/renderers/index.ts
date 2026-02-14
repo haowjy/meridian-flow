@@ -17,7 +17,8 @@ import {
   heading3Renderer,
 } from "./heading";
 import { linkRenderer } from "./link";
-import { inlineCodeRenderer, fencedCodeRenderer } from "./code";
+import { inlineCodeRenderer } from "./code";
+import { fencedCodeRenderer } from "./fencedCode";
 import { listItemRenderer } from "./list";
 import { blockquoteRenderer } from "./blockquote";
 import { horizontalRuleRenderer } from "./horizontalRule";
@@ -74,7 +75,8 @@ export {
   heading3Renderer,
 } from "./heading";
 export { linkRenderer } from "./link";
-export { inlineCodeRenderer, fencedCodeRenderer } from "./code";
+export { inlineCodeRenderer } from "./code";
+export { fencedCodeRenderer } from "./fencedCode";
 export { listItemRenderer } from "./list";
 export { blockquoteRenderer } from "./blockquote";
 export { horizontalRuleRenderer } from "./horizontalRule";

@@ -76,9 +76,9 @@ flowchart LR
 
 | Role | Font | Usage | Fallback |
 |------|------|-------|----------|
-| Display | Browser default sans | Headings, titles | system-ui, sans-serif |
-| Body | Browser default sans | Document content | system-ui, sans-serif |
-| UI | Browser default sans | Buttons, labels, nav | system-ui, sans-serif |
+| Display | Source Serif 4 | Headings, titles | Georgia, serif |
+| Body | Source Serif 4 | Document content | Georgia, serif |
+| UI | Inter | Buttons, labels, nav | system-ui, sans-serif |
 | Mono | JetBrains Mono | Code/plaintext surfaces | ui-monospace, monospace |
 
 ### Shadow Elevation

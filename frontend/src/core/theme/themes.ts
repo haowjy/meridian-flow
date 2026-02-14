@@ -118,9 +118,9 @@ const modernLiterary: ThemePreset = {
     },
   },
   typography: {
-    display: "system-ui, sans-serif",
-    body: "system-ui, sans-serif",
-    ui: "system-ui, sans-serif",
+    display: '"Source Serif 4", Georgia, serif',
+    body: '"Source Serif 4", Georgia, serif',
+    ui: '"Inter", system-ui, sans-serif',
   },
   fonts: [
     {
