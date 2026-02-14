@@ -41,8 +41,8 @@ func CreateZipFromDirectory(dirPath string) (buf *bytes.Buffer, err error) {
 			return err
 		}
 
-		// Skip .skills/ directory — skills are seeded via SkillSeeder
-		if strings.HasPrefix(relPath, ".skills/") || strings.HasPrefix(relPath, ".skills\\") {
+		// Skip .meridian/ directory — internal data (skills, etc.) seeded separately
+		if strings.HasPrefix(relPath, ".meridian/") || strings.HasPrefix(relPath, ".meridian\\") {
 			return nil
 		}
 

@@ -26,7 +26,7 @@ func NewSkillSeeder(skillService skillSvc.ProjectSkillService, logger *slog.Logg
 // Idempotent: skips skills that already exist (by name).
 func (s *SkillSeeder) SeedSkills(ctx context.Context, projectID, userID string) error {
 	// Read skill content from seed data
-	content, err := os.ReadFile("scripts/seed_data/.skills/test-skill/SKILL.md")
+	content, err := os.ReadFile("scripts/seed_data/.meridian/skills/test-skill/SKILL.md")
 	if err != nil {
 		return err
 	}
