@@ -7,7 +7,7 @@
  */
 
 // Constants synced with backend
-export const RESERVED_ROOT_FOLDER_NAMES = [".meridian", ".session"] as const;
+export const RESERVED_ROOT_FOLDER_NAMES = [".meridian", ".session", ".agents"] as const;
 export const MAX_NAME_LENGTH = 255;
 
 export type ValidationType = "folder" | "document";

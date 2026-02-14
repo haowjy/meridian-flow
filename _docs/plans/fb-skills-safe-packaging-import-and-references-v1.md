@@ -36,7 +36,7 @@ Writer-first implication:
 - No references UI for skill folders.
 - No skill import/export API.
 - No package validation policy for skills.
-- Legacy comments/paths still mention `.skills/...` in LLM resolver paths, while runtime skills are DB-backed.
+- ~~Legacy comments/paths still mention `.skills/...` in LLM resolver paths, while runtime skills are DB-backed.~~ ✅ Fixed — resolver uses skill service, comments updated.
 
 ## Scope and Non-goals
 
@@ -51,7 +51,7 @@ Writer-first implication:
 ### Out of Scope (V1.5)
 - Executing scripts shipped in skills.
 - Binary assets pipeline (images/fonts/templates).
-- Full `agents/` support.
+- Full `.agents/` support (only `.agents/skills/` import is in-scope; other `.agents/` content is deferred).
 - Marketplace/public trust model.
 
 ## Decision Log (WHY + Extensibility)
@@ -59,6 +59,7 @@ Writer-first implication:
 | Decision | Why | Extensibility Impact |
 |---|---|---|
 | Support only `SKILL.md` + `references/**` now | Gives immediate utility with minimal risk | Cleanly add `scripts/`, `assets/`, `agents/` later behind policy |
+| Dual-namespace export (`.meridian/skills/` + `.agents/skills/`) | `.meridian/` preserves full Meridian metadata; `.agents/` provides portable format compatible with other AI tools | Import recognizes both; `.meridian/` takes precedence when both exist for same skill |
 | Reject/ignore `scripts/` and binaries on import | No trusted code interpreter exists yet | Future policy can allow trusted execution per project/org |
 | Use dedicated skill references APIs, not global hidden-tree toggle | Keeps `/.meridian/**` private and avoids accidental leakage in generic flows | Same pattern can power personas/agents later |
 | Build import as policy + handler registry | Avoid hardcoded rules scattered across handlers | New component types plug in without rewriting importer |
@@ -91,6 +92,41 @@ Rules:
   assets/                 (future, gated)
   agents/                 (future, metadata/config)
 ```
+
+## Directory Convention: Dual Namespace
+
+### Export (dual output)
+
+Skill export produces both namespaces in the zip:
+
+```text
+export.zip/
+  .meridian/skills/<name>/
+    SKILL.md              # Full content (same as DB)
+    metadata.json         # { position, enabled, syncState, disableModelInvocation, userInvocable }
+    references/           # Reference docs (if any)
+  .agents/skills/<name>/
+    SKILL.md              # Portable: YAML frontmatter (name, description) + body
+```
+
+- `.meridian/skills/` is the **full-fidelity** format — round-trips all Meridian metadata.
+- `.agents/skills/` is the **portable** format — compatible with other AI tools that read `.agents/skills/`.
+
+### Import (recognizes both)
+
+| Source path | Behavior |
+|---|---|
+| `.meridian/skills/<name>/` | Full metadata restoration via `CreateSkill()` — position, enabled, flags all preserved |
+| `.agents/skills/<name>/SKILL.md` | Parse YAML frontmatter for name/description, use defaults for Meridian-specific fields |
+| Both exist for same `<name>` | `.meridian/` takes precedence (full fidelity wins) |
+
+### Architecture fit
+
+- `SkillPackagePolicy` gains path-prefix awareness for both namespaces.
+- Two `ComponentHandler` implementations:
+  - `MeridianSkillHandler` — handles `.meridian/skills/` entries (full metadata).
+  - `AgentsSkillHandler` — handles `.agents/skills/` entries (portable, frontmatter parsing).
+- `SkillImportService` deduplicates by skill name, preferring `.meridian/` source when both exist.
 
 ## Architecture (SOLID and Extensible)
 
@@ -218,9 +254,11 @@ Optional (future-ready) metadata additions:
 
 ## Implementation Plan
 
-### Phase 0: Contract + cleanup (0.5 day)
+### Phase 0: Contract + cleanup (0.5 day) ✅ DONE
 - Lock V1.5 package contract.
-- Fix legacy `.skills/...` references/comments in resolver/docs to current model.
+- ✅ Fix legacy `.skills/...` references/comments in resolver/docs to current model.
+- ✅ System prompt resolver now uses skill service (DB-backed) instead of document repo.
+- ✅ `.agents` namespace reserved alongside `.meridian` (zip import, folder creation, frontend validation).
 - Define constants for allowed components and file types.
 
 ### Phase 1: Backend validation + import core (1-1.5 days)

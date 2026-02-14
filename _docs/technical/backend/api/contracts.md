@@ -603,7 +603,7 @@ System prompts are resolved hierarchically at request time from:
 1. `request_params.system` - User-provided system prompt (optional)
 2. `project.system_prompt` - Project-level system prompt
 3. `thread.system_prompt` - Thread-level system prompt
-4. `selected_skills` - Skills loaded from `.skills/{skill_name}/SKILL`
+4. `selected_skills` - Skills loaded from DB via skill service
 
 All parts are concatenated with `\n\n` separator.
 

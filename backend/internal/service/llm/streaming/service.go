@@ -802,7 +802,7 @@ func (s *Service) CreateAssistantTurnDebug(
 // 2. User-provided system prompt (from params.System)
 // 3. Project system prompt
 // 4. Thread system prompt
-// 5. Selected skills (from .skills/{skillName}/SKILL documents)
+// 5. Selected skills (loaded from DB via skill service)
 //
 // This method ALWAYS calls the resolver to ensure base/project/thread prompts
 // are included even when a user system prompt is provided.

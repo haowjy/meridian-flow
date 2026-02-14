@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"strings"
 
-	docsysModels "meridian/internal/domain/models/docsystem"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	llmRepo "meridian/internal/domain/repositories/llm"
 	llmSvc "meridian/internal/domain/services/llm"
+	skillSvc "meridian/internal/domain/services/skill"
 )
 
 // baseIdentityPrompt is the foundational identity prompt for Meridian.
@@ -25,7 +25,7 @@ const baseIdentityPrompt = `You are Meridian, an AI assistant with access to the
 type systemPromptResolver struct {
 	projectRepo  docsysRepo.ProjectRepository
 	threadRepo   llmRepo.ThreadRepository
-	documentRepo docsysRepo.DocumentRepository
+	skillService skillSvc.ProjectSkillService
 	logger       *slog.Logger
 }
 
@@ -33,13 +33,13 @@ type systemPromptResolver struct {
 func NewSystemPromptResolver(
 	projectRepo docsysRepo.ProjectRepository,
 	threadRepo llmRepo.ThreadRepository,
-	documentRepo docsysRepo.DocumentRepository,
+	skillService skillSvc.ProjectSkillService,
 	logger *slog.Logger,
 ) llmSvc.SystemPromptResolver {
 	return &systemPromptResolver{
 		projectRepo:  projectRepo,
 		threadRepo:   threadRepo,
-		documentRepo: documentRepo,
+		skillService: skillService,
 		logger:       logger,
 	}
 }
@@ -49,7 +49,7 @@ func NewSystemPromptResolver(
 // 2. user-provided system prompt (from request_params.system)
 // 3. project.system_prompt
 // 4. thread.system_prompt
-// 5. Content of each skill's SKILL.md file from .skills/{skill_name}/SKILL.md
+// 5. Content of each selected skill loaded from DB via skill service
 //
 // projectID is used on cold start (threadID == "") to load the project system prompt
 // and skills metadata directly, since the thread doesn't exist yet to infer the project.
@@ -136,9 +136,9 @@ func (r *systemPromptResolver) Resolve(
 		parts = append(parts, *thread.SystemPrompt)
 	}
 
-	// 5. Load selected skills (full content for explicit selection - backwards compatibility)
+	// 5. Load selected skills from DB via skill service
 	if len(selectedSkills) > 0 {
-		skillsContent, err := r.loadSkills(ctx, thread.ProjectID, selectedSkills)
+		skillsContent, err := r.loadSkills(ctx, userID, thread.ProjectID, selectedSkills)
 		if err != nil {
 			return nil, fmt.Errorf("load skills: %w", err)
 		}
@@ -156,9 +156,10 @@ func (r *systemPromptResolver) Resolve(
 	return &result, nil
 }
 
-// loadSkills loads the SKILL.md content for each selected skill
+// loadSkills loads the content for each selected skill from DB via skill service
 func (r *systemPromptResolver) loadSkills(
 	ctx context.Context,
+	userID string,
 	projectID string,
 	selectedSkills []string,
 ) (string, error) {
@@ -172,13 +173,12 @@ func (r *systemPromptResolver) loadSkills(
 
 	// Add header explaining the skills
 	if len(selectedSkills) > 0 {
-		parts = append(parts, "You have access to the following skills. View additional reference materials using tree(\".skills/{skill_name}\") and view(\".skills/{skill_name}/{file}\"):")
+		parts = append(parts, "You have access to the following skills. View additional reference materials using tree(\".meridian/skills/{skill_name}\") and view(\".meridian/skills/{skill_name}/{file}\"):")
 	}
 
 	loadedCount := 0
 	for _, skillName := range selectedSkills {
-		// Query for document at .skills/{skillName}/SKILL
-		doc, err := r.getSkillDocument(ctx, projectID, skillName)
+		content, err := r.skillService.LoadSkillContent(ctx, userID, projectID, skillName)
 		if err != nil {
 			r.logger.Warn("failed to load skill",
 				"skill", skillName,
@@ -190,13 +190,13 @@ func (r *systemPromptResolver) loadSkills(
 
 		r.logger.Debug("skill loaded successfully",
 			"skill", skillName,
-			"content_length", len(doc.Content),
+			"content_length", len(content),
 		)
 		loadedCount++
 
 		// Format skill with path and code block wrapper
-		skillPath := fmt.Sprintf(".skills/%s/SKILL", skillName)
-		skillFormatted := fmt.Sprintf("%s:\n```\n%s\n```", skillPath, doc.Content)
+		skillPath := fmt.Sprintf(".meridian/skills/%s/SKILL.md", skillName)
+		skillFormatted := fmt.Sprintf("%s:\n```\n%s\n```", skillPath, content)
 		parts = append(parts, skillFormatted)
 	}
 
@@ -207,30 +207,6 @@ func (r *systemPromptResolver) loadSkills(
 	)
 
 	return strings.Join(parts, "\n\n"), nil
-}
-
-// getSkillDocument retrieves the SKILL.md document for a given skill.
-// TODO: When adding skill management UI, consider migrating to a SkillService
-// that abstracts skill document loading (currently uses documentRepo directly).
-func (r *systemPromptResolver) getSkillDocument(
-	ctx context.Context,
-	projectID string,
-	skillName string,
-) (*docsysModels.Document, error) {
-	// Construct path: .skills/{skillName}/SKILL
-	// NOTE: Anthropic's Claude Code specification requires skills to be .md files,
-	// but our database doesn't store file extensions. When importing/exporting,
-	// the file is SKILL.md on disk, but stored as "SKILL" in the database.
-	// GetByPath expects paths without extensions to match storage convention.
-	path := fmt.Sprintf(".skills/%s/SKILL", skillName)
-
-	// Use GetByPath to retrieve the document
-	doc, err := r.documentRepo.GetByPath(ctx, path, projectID)
-	if err != nil {
-		return nil, fmt.Errorf("get skill document '%s': %w", skillName, err)
-	}
-
-	return doc, nil
 }
 
 // buildBasePrompt constructs the base system prompt with the tool section.

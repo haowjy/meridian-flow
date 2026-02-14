@@ -11,7 +11,7 @@ type SystemPromptResolver interface {
 	// 2. user-provided system prompt (from request_params.system)
 	// 3. project.system_prompt
 	// 4. thread.system_prompt
-	// 5. Content of each skill's SKILL file from .skills/{skill_name}/SKILL
+	// 5. Content of each selected skill loaded from DB via skill service
 	//
 	// projectID is used on cold start (threadID == "") to load the project system prompt
 	// and skills metadata directly, since the thread doesn't exist yet.

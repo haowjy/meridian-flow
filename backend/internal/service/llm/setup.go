@@ -120,12 +120,12 @@ func SetupServices(
 	)
 
 	// Create system prompt resolver
-	// Skills metadata is handled by the tool system (skill_invoke metadata enrichment),
-	// not the resolver — so no skillRepo dependency needed here.
+	// Skills content is loaded from DB via skillService (not document repo).
+	// Skills metadata is handled by the tool system (skill_invoke metadata enrichment).
 	systemPromptResolver := streaming.NewSystemPromptResolver(
 		projectRepo,
 		threadRepo,
-		documentRepo,
+		skillService,
 		logger,
 	)
 

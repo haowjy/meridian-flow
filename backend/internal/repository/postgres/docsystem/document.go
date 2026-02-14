@@ -187,7 +187,7 @@ func (r *PostgresDocumentRepository) GetByIDOnly(ctx context.Context, id string)
 	return &doc, nil
 }
 
-// GetByPath retrieves a document by its path (e.g., ".skills/cw-prose-writing/SKILL.md")
+// GetByPath retrieves a document by its path (e.g., ".meridian/skills/my-skill/references/guide.md")
 // The path includes the full filename with extension
 func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string, projectID string) (*models.Document, error) {
 	// Split path into parts

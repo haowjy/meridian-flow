@@ -22,7 +22,7 @@ import (
 
 // Reserved folder names that cannot be created at root level
 // These align with system namespaces defined in namespace.go
-var reservedRootFolderNames = []string{".meridian", ".session"}
+var reservedRootFolderNames = []string{".meridian", ".session", ".agents"}
 
 // isReservedRootName checks if a folder name is reserved at root level
 func isReservedRootName(name string, parentID *string) bool {
