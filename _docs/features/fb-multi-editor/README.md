@@ -34,6 +34,8 @@ interface ContentAdapter<TStorage, TEditor> {
 }
 ```
 
+> **Collab Migration:** `ContentAdapter` will be redesigned for Yjs in collab Phase 3. `toStorage()` goes away — Yjs binary state becomes the storage format. See `_docs/plans/fb-realtime-collab-editing.md`.
+
 ## Implementation Status
 
 ### ✅ Phase 1-3: Adapter Foundation (Complete)
@@ -91,6 +93,8 @@ interface ContentAdapter<TStorage, TEditor> {
 2. Conditionally render `CodeMirrorEditor` vs `LaTeXEditor` vs `ImageViewer`
 3. Conditionally show AI navigator based on `capabilities.supportsAIDiff`
 
+> **Collab Overhaul Note:** Text adapter AI integration (PUA markers) will be replaced by proposal-based review in Phase 3 of the collab overhaul. See `_docs/plans/fb-realtime-collab-editing.md`.
+
 ## AI Integration Strategies Per Format
 
 | Editor Type | AI Diff Strategy | Implementation Status |
@@ -136,7 +140,7 @@ interface EditorCapabilities {
 **Markdown documents**: Zero changes
 - `markdownAdapter.toEditor()` calls `buildMergedDocument()` (existing)
 - `markdownAdapter.toStorage()` calls `parseMergedDocument()` (existing)
-- No changes to `mergedDocument.ts`
+- No changes to `mergedDocument.ts` **during multi-editor Phases 1-3** (pre-collab overhaul)
 - Adapter is a **wrapper**, not a rewrite
 
 ## Usage

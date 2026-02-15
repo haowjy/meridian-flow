@@ -3,7 +3,7 @@ detail: standard
 audience: developer, architect
 ---
 
-# RFC: Operation-Based Editing with Real-Time AI Collaboration
+# RFC: Yjs-Based Editing with Real-Time AI Collaboration
 
 **Status:** Draft
 **Priority:** High (foundational architecture change)
@@ -14,12 +14,14 @@ audience: developer, architect
 
 This is the **main/canonical plan** for collaboration + AI collaboration.
 
-- If this doc conflicts with any related plan, **this doc wins**.
-- `spec/*` docs in `_docs/plans/collab-ai/spec/` are canonical technical contracts.
-- `phase/*` docs in `_docs/plans/collab-ai/phase/` are implementation slices of this RFC.
-- Canonical model: **two changeset streams**:
-  - **User stream** = authoritative applied edits (human edits + accepted AI edits)
-  - **AI/agent stream** = proposal queue only (non-authoritative)
+- This doc owns **architecture, scope, and sequencing decisions**.
+- `spec/*` docs own **technical contracts and invariants** (schemas, interfaces, protocols).
+- `phase/*` docs own **implementation delivery steps** and are constrained by both.
+- If a spec and this RFC appear to conflict, the spec is authoritative for technical detail; this RFC is authoritative for architectural intent. Resolve by updating whichever is stale.
+- Canonical model: **Yjs CRDT** with proposal queue:
+  - **Yjs document state** = authoritative document (binary CRDT state, sole source of truth)
+  - **AI/agent proposal queue** = non-authoritative Yjs update buffers awaiting writer review
+  - **`documents.content` and `documents.ai_content`** are derived projections from Yjs state (persisted alongside `yjs_state`, never written independently)
 - Legacy `ai_version`/PUA-marker plans are retained for history only and are marked superseded.
 
 ## Unified Plan Set
@@ -30,13 +32,14 @@ This is the **main/canonical plan** for collaboration + AI collaboration.
 | Index for collab plan set | `_docs/plans/collab-ai/README.md` |
 | Spec: storage model | `_docs/plans/collab-ai/spec/storage-model.md` |
 | Spec: API + events contract | `_docs/plans/collab-ai/spec/api-events-contract.md` |
-| Spec: compaction + retention | `_docs/plans/collab-ai/spec/compaction-retention.md` |
-| Spec: refresh/read-model policy | `_docs/plans/collab-ai/spec/refresh-read-model-framework.md` |
-| Phase 1: transport + authoritative ops | `_docs/plans/collab-ai/phase/phase-1-oplog-transport.md` |
-| Phase 2: writer history + persistent undo | `_docs/plans/collab-ai/phase/phase-2-history-and-undo.md` |
+| Spec: snapshot strategy + retention | `_docs/plans/collab-ai/spec/compaction-retention.md` |
+| Spec: read-model freshness | `_docs/plans/collab-ai/spec/refresh-read-model-framework.md` |
+| Spec: CM6 library model | `_docs/plans/collab-ai/spec/cm6-library-model.md` |
+| Phase 1: Yjs sync + transport | `_docs/plans/collab-ai/phase/phase-1-yjs-sync-and-transport.md` |
+| Phase 2: writer history + session undo + snapshots | `_docs/plans/collab-ai/phase/phase-2-history-and-undo.md` |
 | Phase 3: AI proposals + writer review UX | `_docs/plans/collab-ai/phase/phase-3-ai-proposals-and-review.md` |
 | Phase 4: multi-agent arbitration | `_docs/plans/collab-ai/phase/phase-4-multi-agent-arbitration.md` |
-| Phase 5: multi-user collaboration (future) | `_docs/plans/collab-ai/phase/phase-5-multi-user-collaboration.md` |
+| Phase 5: multi-user collaboration | `_docs/plans/collab-ai/phase/phase-5-multi-user-collaboration.md` |
 
 ## Legacy Mapping (Superseded Inputs)
 
@@ -60,211 +63,272 @@ Meridian currently uses snapshot-only writes (`PATCH` full content, one `documen
 | AI edit granularity is coarse | `ai_version` + PUA marker flow cannot cleanly undo one AI action |
 | No path to multi-user editing | No server operation stream/version protocol |
 
-**WHY now:** Persistent undo and low-latency AI edits are immediate writer pain. A server operation stream also unlocks future multi-user collaboration.
+**WHY now:** Durable rollback/history and low-latency AI edits are immediate writer pain. A real-time sync layer also unlocks future multi-user collaboration.
 
 ---
 
-## Decision Update (From Review + Research)
+## Decision Update: OT -> Yjs CRDT + Go-Only Backend
 
-1. **CodeMirror OT + authoritative Node/TS collab service** — not Go backend. Native `@codemirror/collab` access eliminates need to port ~2000 lines of ChangeSet logic.
-2. Split storage into **two changeset streams**:
-   - user operations stream (authoritative, includes accepted AI edits)
-   - AI/agent proposal stream (non-authoritative queue)
-3. Load UX: **snapshot first**, then operation batches. Do not block typing while reconnecting.
-4. Compaction: keep snapshot + bounded replay tail (not snapshot-only).
-5. Use **short-lived WebSocket ticket**, not long-lived JWT query param.
-6. Keep one live-collab stream per chapter/section document. Defer document pagination/segmented loading.
-7. **No migration needed.** No users — greenfield rebuild on a branch.
-8. AI proposal review uses **`@codemirror/merge`** as the canonical diff/review surface (no PUA markers in document text).
-9. **Multi-agent first, not multi-user first.** Prioritize many AI proposal producers for one writer before presence/cursors.
-10. **Defer CRDT/Yjs migration.** Re-evaluate before multi-user/offline phase using explicit criteria.
+The original plan used CodeMirror OT (`@codemirror/collab`) with a Node collab service. After review, **Yjs CRDTs with a Go-only backend** are a better fit:
 
----
+| Topic | Original (OT + Node) | New (Yjs + Go) |
+|---|---|---|
+| Collab model | `@codemirror/collab` OT | `yjs` + `y-codemirror.next` |
+| Collab server | Node service (complex OT authority) | **Go backend** (same process, using `y-crdt`) |
+| Transport | Go HTTP + Node WS (two services) | **Single WS** per document (Go handles everything) |
+| WS auth | Ticket table + endpoint | **JWT in first message** (no ticket table) |
+| `documents.content` | Text column (dual-write with Yjs) | **Kept as derived projection** — computed from Yjs state on persist, never written directly |
+| Accepted proposals | Hard-delete after applying update | **Terminal accepted status, retained indefinitely** (`status='accepted'`) |
+| Compaction | 3 Graphile Worker services, segment table | **Simple periodic snapshots** |
+| Lease fencing | Per-document lease tokens with 60s TTL | **Removed** — CRDTs are conflict-free |
+| Version allocation | `SELECT ... FOR UPDATE` row locks | **Removed** — Yjs state vectors |
+| AI proposals | OT rebase + promote to authoritative stream | **Yjs update buffers** — held, then `Y.applyUpdate()` |
+| AI proposal model | Separate from AI view | **Two views, one truth** — AI sees proposals as applied |
+| Auto-accept | Not planned | **Tri-state cascade** (agent -> project -> user -> system) |
+| Undo/redo | Custom op replay tail | **`Y.UndoManager`** — built-in |
+| Awareness/presence | Phase 5 (future) | **Phase 1** via `y-protocols/awareness` |
+| Offline | Not planned | **`y-indexeddb`** from Phase 1 |
+| CM6 packages | 4 packages, 9 port interfaces | **1 package** (`@meridian/cm6-collab`), simplified interfaces |
+| Scaling | Coupled to Node service | **Interface-based** (`DocumentBroadcaster`, `DocumentStore`) |
+| Proposal data | HTTP endpoints + TanStack Query | **WS JSON frames** (single connection) |
 
-## Scope Clarification: Multi-Agent First
-
-Primary near-term concurrency is **multiple LLM agents + one writer**, not many human co-editors.
-
-- The authoritative op stream remains centralized (`@codemirror/collab` OT model).
-- AI systems write proposals to the AI/agent stream. On accept, proposal changeset is promoted into user stream and removed from AI stream.
-- Proposal acceptance is serialized by the Node authority so agent outputs cannot race the version stream.
-
-### CRDT Re-Evaluation Trigger
-
-Reconsider Yjs/CRDT only if any become true:
-- multi-user editing with frequent concurrent writers is now near-term
-- offline-first edits must merge after long disconnects
-- cross-region multi-instance fanout is required for core editing reliability
+**WHY Yjs + Go:**
+1. Dramatically simpler — one service, one deployment, one connection pool.
+2. No Node service to deploy, monitor, or coordinate with.
+3. AI proposals don't need rebase — Yjs updates merge regardless of intervening changes.
+4. Undo is built-in — `Y.UndoManager` works out of the box for in-session edits.
+5. Multi-user is native — no CRDT migration needed for Phase 5.
+6. Local-bridge integration is natural — Yjs is a sync protocol, bridge becomes another provider.
+7. Go `y-crdt` library (MIT) covers the narrow server-side usage: load state, apply updates, encode state, sync protocol.
 
 ---
 
 ## Architecture Overview
 
 ```
-┌─────────────────┐     ┌──────────────────────┐     ┌─────────────┐
-│  Frontend        │────│ Meridian Collab AI     │────│  PostgreSQL  │
-│  (Vite + CM6)   │ WS │  (authority + proposals)│ DB │  (Supabase)  │
-└────────┬────────┘     └──────────────────────┘     └──────┬──────┘
-         │ REST                                              │
-         └──────────────┐                                    │
-                        ▼                                    │
-               ┌─────────────────┐                           │
-               │  Go Backend      │───────────────────────────┘
-               │  (REST API, Auth,│ DB
-               │   Threads/LLM)   │
-               └─────────────────┘
+Browser ──HTTP──> Go Backend ──DB──> Postgres
+Browser ──WS────> Go Backend (same process)
 ```
+
+**One service. One deployment. One database connection pool.**
+
+### Network Boundary (Required)
+
+| Traffic | Public Path | Owner |
+|---|---|---|
+| Browser HTTP | `/api/*` | Go backend |
+| Browser realtime | `/ws/*` | Go backend (same process) |
+
+No private service-to-service routes. No Node service.
 
 ### Service Ownership
 
-| Service | Owns | Tables |
+| Owner | Responsibilities | Tables |
 |---|---|---|
-| Meridian Collab AI (Node) | WebSocket, version authority, proposals, compaction | `<env_prefix>collab_document_applied_operations`, `<env_prefix>collab_document_edit_proposals`, `<env_prefix>collab_ws_tickets` |
-| Go backend | REST API, auth (JWT/JWKS), file system, threads/LLM | Everything else (`documents`, `folders`, `threads`, etc.) |
-| Frontend | CM6 collab extension, merge-based proposal review UI | IDB cache |
+| Go backend | HTTP REST, WebSocket, Yjs persistence, proposals, auth | All tables |
+| Frontend | Host app adapters + reusable CM6 collab/proposal libraries | IDB cache (`y-indexeddb`) |
 
-Both services connect directly to the same Supabase PostgreSQL. Table ownership is clear — no cross-writes.
+### Go y-crdt Library
 
-**WHY Node:** `rebaseUpdates()`, `ChangeSet.map()`, `ChangeSet.compose()` are JS functions from `@codemirror/collab` and `@codemirror/state`. The Authority server from the CM collab example is ~30 lines of JS. Building on it natively avoids porting ChangeSet operations to Go.
+The Go backend uses [`skyterra/y-crdt`](https://github.com/skyterra/y-crdt) (MIT license):
 
-### Dual Streams: User + AI/Agent Changesets
+| Feature | Status | Needed For |
+|---|---|---|
+| `NewDoc()`, `GetText()`, `GetMap()` | Working | Core doc operations |
+| `ApplyUpdate()` / `EncodeStateAsUpdate()` | Working, compatibility tests pass | Persistence, proposal accept |
+| `EncodeStateVector` / `DecodeStateVector` | Working | Sync protocol |
+| `ytext.ToString()` | Working | Text extraction for search/preview |
+| V1 encoder/decoder | Working | Binary wire format |
+
+**What Go does NOT need:** `Y.UndoManager` (client-side), `y-codemirror.next` (client-side), `@codemirror/merge` (client-side).
+
+**Risk mitigation for early-stage library:**
+1. MIT license — fork and fix if upstream is unresponsive
+2. Compatibility verified in local POC (round-trip encoding between Go y-crdt and JS Yjs) — formal test suite is a Phase 1 deliverable (see Verification Matrix)
+3. Server usage is narrow: load state, apply updates, encode state, sync protocol
+4. Interface-based design allows swapping to V8-embedded approach if needed
+
+### Yjs Document + AI Proposal Queue
 
 **WHY this split:**
 - Human editing and AI editing have different lifecycle semantics.
-- Writers need AI traceability/audit without polluting human edit logs.
-- Multi-user human editing can scale independently from agent orchestration.
+- Writers need AI traceability/audit without polluting the live document.
+- AI proposals are held as buffered Yjs updates until the writer reviews and accepts.
 
-Authority rule (v1):
-- Document head version is a single monotonic sequence in **user stream**.
-- AI/agent stream never defines canonical document state.
-- On accept: proposal changeset -> user stream operation -> proposal row deleted.
+On accept: `Y.applyUpdate(mainDoc, bufferedUpdate)` -> proposal row marked `status='accepted'` (retained indefinitely as permanent audit record). Yjs handles merge automatically (CRDT guarantee).
+
+### AI Proposal Model: Two Views, One Truth
+
+```
+Yjs Doc (authoritative)
+  |-- Writer View: sees diff decorations for pending AI changes
+  |-- AI View: sees the document WITH all pending AI changes applied
+```
+
+AI proposals aren't "held separately" from AI's perspective. The AI stream treats proposals as already-applied. The human sees them as pending diffs.
+
+### Auto-Accept Configuration
+
+Tri-state cascade (`true | false | null`):
+```
+Agent -> Project -> User -> System default (false)
+```
+When resolved to `true`, proposals are immediately applied — no review step. Writer can still undo via `Y.UndoManager`.
+
+### Single WebSocket Design
+
+Everything over one connection per document:
+- Binary frames: Yjs sync protocol (state vectors, updates)
+- Binary frames: Yjs awareness protocol (cursors, presence)
+- JSON frames: Application messages (proposals, heartbeat, errors)
+
+This eliminates HTTP proposal endpoints, TanStack Query for proposal data, and two-phase staleness windows.
+
+### Scaling Interfaces
+
+```go
+// Connection is the transport-agnostic interface for a connected client.
+// v1: *WSConn satisfies this. Tests and future transports provide their own.
+type Connection interface {
+    ID() string
+    Send(data []byte) error
+}
+
+// v1: in-process map | v2: Redis pub/sub
+type DocumentBroadcaster interface {
+    Subscribe(docID string, conn Connection) error
+    Unsubscribe(docID string, conn Connection)
+    Broadcast(docID string, update []byte, exclude Connection)
+}
+
+// v1: direct Postgres | v2: optional Redis write-through cache
+type DocumentStore interface {
+    LoadState(ctx context.Context, docID string) ([]byte, error)
+    SaveState(ctx context.Context, docID string, state []byte, content string, aiContent string) error
+}
+
+// DocumentCompactor — deferred optimization for Yjs state compaction.
+// See _docs/future/ideas/performance/yjs-periodic-compaction.md
+type DocumentCompactor interface {
+    ReplaceState(ctx context.Context, docID string, compactedState []byte, content string, aiContent string) error
+}
+```
+
+No core logic changes when scaling — only implementation swaps.
+
+### Service Extraction Readiness
+
+The collab domain follows the existing Go backend pattern (`domain/models/`, `domain/services/`, `domain/repositories/`, `service/`, `repository/postgres/`) with its own namespace. The **only cross-domain dependency** is the `DocumentResolver` interface:
+
+```go
+// DocumentResolver is the thin boundary between collab and the document domain.
+// On extraction: swap the direct-call impl for an HTTP client impl.
+type DocumentResolver interface {
+    ResolveDocument(ctx context.Context, docID string) (*CollabDocRef, error)
+    VerifyOwnership(ctx context.Context, docID string, userID string) (bool, error)
+}
+```
+
+This means extracting collab to a separate service requires:
+1. Implement `DocumentResolver` as an HTTP client (calling the document service).
+2. Move the collab domain packages to the new service.
+3. No other cross-domain wiring to untangle.
 
 ### SQL Prefix Convention (Required)
 
-All SQL objects owned by Meridian Collab AI are env-prefixed and collab-scoped.
+All SQL objects are env-prefixed and collab-scoped.
 
-1. Environment prefix comes from `MERIDIAN_SQL_PREFIX` (for example: `dev_`, `stg_`, `prd_`).
-2. Tables: `<env_prefix>collab_document_applied_operations`, `<env_prefix>collab_document_edit_proposals`, `<env_prefix>collab_ws_tickets`.
-3. Indexes/constraints: `<env_prefix>idx_collab_*`, `<env_prefix>uq_collab_*`, `<env_prefix>fk_collab_*` when explicitly named.
-4. Shared-table columns added by collab must use `collab_` prefix (stable across envs).
-5. New migration files should include `collab` in the filename to make ownership obvious.
-
-Example resolution:
-- local (`MERIDIAN_SQL_PREFIX=dev_`): `dev_collab_document_applied_operations`
-- staging (`MERIDIAN_SQL_PREFIX=stg_`): `stg_collab_document_applied_operations`
-- production (`MERIDIAN_SQL_PREFIX=prd_`): `prd_collab_document_applied_operations`
+1. Environment prefix from `TABLE_PREFIX` (e.g., `dev_`, `stg_`, `prd_`).
+2. Tables: `${TABLE_PREFIX}collab_document_edit_proposals`, `${TABLE_PREFIX}collab_document_snapshots`, `${TABLE_PREFIX}collab_request_idempotency`.
+3. Indexes/constraints: `${TABLE_PREFIX}idx_collab_*`, `${TABLE_PREFIX}uq_collab_*`, `${TABLE_PREFIX}fk_collab_*`.
+4. Migration files include `collab` in filename.
 
 ---
 
 ## Repo Structure
 
 ```
-meridian-collab-ai/
-├── package.json
-├── pnpm-workspace.yaml
-├── packages/
-│   ├── core/
-│   │   ├── ports/
-│   │   │   ├── OperationLogPort.ts
-│   │   │   ├── ProposalPort.ts
-│   │   │   ├── TicketPort.ts
-│   │   │   ├── SnapshotPort.ts
-│   │   │   ├── PubSubPort.ts
-│   │   │   └── AuthVerifierPort.ts
-│   │   └── policies/
-│   │       ├── ConflictPolicy.ts
-│   │       ├── AdmissionPolicy.ts
-│   │       └── ArbitrationPolicy.ts
-│   ├── cm-ot/
-│   │   └── index.ts                # CM6 OT adapters/helpers (`ChangeSet`, map, compose)
-│   └── transport-ws/
-│       └── protocol.ts             # WS protocol types
-└── services/
-    └── collab-server/
-        └── src/
-            ├── index.ts            # Entry point, HTTP + WS server
-            ├── authority/
-            │   ├── Authority.ts
-            │   └── DocumentSession.ts
-            ├── proposals/
-            │   ├── ProposalService.ts
-            │   └── proposalTypes.ts
-            ├── agents/
-            │   └── AgentArbiter.ts
-            ├── compaction/
-            │   └── CompactionService.ts
-            ├── transport/
-            │   ├── wsHandler.ts
-            │   └── wsTicket.ts
-            ├── db/
-            │   ├── pool.ts
-            │   ├── operationRepo.ts
-            │   ├── proposalRepo.ts
-            │   ├── ticketRepo.ts
-            │   └── snapshotRepo.ts
-            └── auth/
-                └── jwtValidator.ts
+backend/
+├── internal/
+│   ├── domain/
+│   │   ├── models/collab/          # Collab domain models
+│   │   ├── services/collab/        # Collab service interfaces (including DocumentResolver)
+│   │   └── repositories/collab/    # Collab repo interfaces
+│   ├── service/collab/             # Business logic impl
+│   │   ├── broadcaster.go          (DocumentBroadcaster impl)
+│   │   ├── store.go                (DocumentStore impl)
+│   │   ├── sync.go                 (Yjs sync protocol handler)
+│   │   ├── awareness.go            (opaque awareness relay)
+│   │   ├── proposals.go            (proposal lifecycle: create, accept, reject)
+│   │   └── snapshot.go             (periodic snapshot management)
+│   ├── repository/postgres/collab/ # Data access impl
+│   ├── handler/
+│   │   └── collab.go               (WS upgrade endpoint, self-contained)
+
+packages/
+└── cm6-collab/
+    └── src/
+        ├── sync/        # Yjs binding (y-codemirror.next), sync state, Y.UndoManager
+        ├── proposals/   # Proposal domain state, WS event handling, accept/reject commands
+        └── review/      # @codemirror/merge review integration, presentation policy
 ```
+
+**To remove (during implementation):** `services/collab-server/` (Node service), `packages/cm6-meridian-adapter/`, `packages/cm6-proposals/`, `authority/`, `compaction/`, `core/ports/` with 9 interfaces.
 
 ---
 
 ## Phased Implementation
 
-### Phase 1: WebSocket Transport + Applied Operations
+### Phase 1: Yjs Sync + Transport
 
-**Goal:** Replace HTTP PATCH save with CM collab over WebSocket. Single-user, single-tab.
+**Goal:** Replace HTTP PATCH save with Yjs CRDT sync over WebSocket. Go-only backend with `y-crdt`. Offline via `y-indexeddb`. Awareness/presence available from day one.
 
-### Phase 2: Persistent Undo
+### Phase 2: History + Session Undo
 
-**Goal:** Cmd+Z survives page reload, powered by persisted history state (initially replay-tail based).
+**Goal:** Reliable in-session Cmd+Z via `Y.UndoManager` plus durable cross-reload rollback using named snapshots in `collab_document_snapshots`.
 
 ### Phase 3: AI Proposal Model (Replace PUA Markers)
 
-**Goal:** AI changes are reviewed through a merge-based proposal surface. No markers in document text.
+**Goal:** AI changes are reviewed through Yjs update buffer proposals + `@codemirror/merge` review. No markers in document text. Accept = `Y.applyUpdate()` + terminal `accepted` status (retained indefinitely as audit record). Auto-accept configurable.
 
 ### Phase 4: Multi-Agent Orchestration
 
-**Goal:** Multiple LLM agents can propose concurrently with deterministic arbitration.
+**Goal:** Multiple LLM agents can propose concurrently with semantic quality arbitration (mechanical conflicts are impossible with CRDTs).
 
-### Phase 5: Multi-User Collaboration (Future)
+### Phase 5: Multi-User Collaboration
 
-**Goal:** Presence, cursors, multi-client conflict handling.
+**Goal:** Presence, cursors, multi-client editing — native to Yjs from Phase 1.
 
 Execution docs:
 
 | Phase | Single-Purpose Plan |
 |---|---|
-| 1 | `_docs/plans/collab-ai/phase/phase-1-oplog-transport.md` |
+| 1 | `_docs/plans/collab-ai/phase/phase-1-yjs-sync-and-transport.md` |
 | 2 | `_docs/plans/collab-ai/phase/phase-2-history-and-undo.md` |
 | 3 | `_docs/plans/collab-ai/phase/phase-3-ai-proposals-and-review.md` |
 | 4 | `_docs/plans/collab-ai/phase/phase-4-multi-agent-arbitration.md` |
 | 5 | `_docs/plans/collab-ai/phase/phase-5-multi-user-collaboration.md` |
 
-Cross-cutting read freshness:
-- `_docs/plans/collab-ai/spec/refresh-read-model-framework.md`
-
 ```
-Phase 1 (WS + Applied Ops)
-  └──┬── Phase 2 (Persistent Undo)
-     └── Phase 3 (AI Proposals)
-              └── Phase 4 (Multi-Agent Orchestration)
-                       └── Phase 5 (Multi-User) ← future
+Phase 1 (Yjs Sync + WS, Go-only)
+  |--+-- Phase 2 (Y.UndoManager + Snapshots)
+     |-- Phase 3 (AI Proposals + Auto-Accept)
+              |-- Phase 4 (Semantic Arbitration)
+                       |-- Phase 5 (Multi-User — native to Yjs)
 ```
 
 ### Rollout and Rollback (v1)
 
-This rollout is optimized for a low-traffic greenfield state (one rare user, no compatibility burden).
+This rollout is optimized for a low-traffic greenfield state (one rare user, no compatibility burden). **Gating condition:** Re-evaluate if active user count exceeds ~10 before collab launch. If so, add a dual-write migration path (serve both PATCH and Yjs writes during transition) instead of hard cutover.
+
+> **Confirmed:** Hard cutover valid (low-traffic greenfield, Feb 2026).
 
 1. Hard cutover on a branch merge. No dual-write and no snapshot PATCH fallback.
-2. Feature flag at frontend boot: `ENABLE_COLLAB_OT=true`.
-3. Kill switch (server + frontend):
-   - server returns `503 COLLAB_DISABLED` from WS and proposal endpoints
-   - frontend shows read-only banner and disables proposal accept/reject actions
-4. Rollback procedure:
-   - disable `ENABLE_COLLAB_OT`
-   - stop Meridian Collab AI deployment
+2. Feature flag at frontend boot: `ENABLE_COLLAB_YJS=true`.
+3. Rollback procedure:
+   - disable `ENABLE_COLLAB_YJS`
    - keep data tables intact (no destructive rollback migration)
-5. Data compatibility stance:
+4. Data compatibility stance:
    - no backward compatibility guarantees across pre-cutover plans
    - if schema changes are needed during v1 stabilization, prefer forward-only migrations
 
@@ -276,45 +340,35 @@ Detailed contracts were split into focused spec docs:
 
 - Storage/data model: `_docs/plans/collab-ai/spec/storage-model.md`
 - API/events/errors: `_docs/plans/collab-ai/spec/api-events-contract.md`
-- Compaction/floor/retention: `_docs/plans/collab-ai/spec/compaction-retention.md`
-- Refresh/read-model policy: `_docs/plans/collab-ai/spec/refresh-read-model-framework.md`
+- Snapshot/retention: `_docs/plans/collab-ai/spec/compaction-retention.md`
+- Read-model freshness: `_docs/plans/collab-ai/spec/refresh-read-model-framework.md`
+- Frontend package boundary (single `@meridian/cm6-collab` package): `_docs/plans/collab-ai/spec/cm6-library-model.md`
 
 Non-negotiable invariants summary:
 
-1. Canonical storage is two streams:
-   - authoritative user stream (`origin='user'|'ai_accepted'`)
-   - non-authoritative AI proposal queue (`proposed|rejected|conflicted`)
-2. Accept path is atomic and server-authoritative:
-   - rebase proposal
-   - insert authoritative user-stream op (`origin='ai_accepted'`)
-   - remove proposal row
-   - emit `updates` + `proposalRemoved`
-3. Accepted AI edits remain discoverable in authoritative changesets (raw ops and/or compacted segments).
-4. Accepted AI edits, once promoted, compact with the same policy as human authoritative ops.
-5. Clients below floor must reload snapshot via `RESET_REQUIRED`.
-6. Proposal accept is idempotent and can promote each proposal at most once.
-7. Writer timeline defaults to merged authoritative history (`user + ai_accepted`).
-8. Proposal stream uses parallel tiered compaction for `rejected|conflicted`; `proposed` stays raw queue, accepted is removed on promotion.
-9. Undo/restore behavior is identical for human edits and accepted AI edits because both are authoritative ops.
+1. Document state is a Yjs CRDT (`Y.Doc`). `documents.yjs_state BYTEA` is the sole source of truth. `documents.content` and `documents.ai_content` are derived projections (never written directly).
+2. AI proposals are non-authoritative Yjs update buffers. Accept = `Y.applyUpdate()` + terminal `status='accepted'` (retained indefinitely).
+3. No version allocation, no lease fencing, no compaction pipeline — Yjs handles all of this.
+4. Periodic snapshots persist Yjs state to Postgres (see `_docs/plans/collab-ai/spec/compaction-retention.md` for full trigger policy: 2s debounce, every N updates, on disconnect, manual trigger).
+5. Snapshots stored in `collab_document_snapshots` table (not on documents row).
+6. Text extraction via Go `y-crdt` `ytext.ToString()` — derived `content` and `ai_content` columns persisted alongside `yjs_state` (no dual-write drift; always derived from binary).
+7. Proposal accept is idempotent by `idempotencyKey` in WS message.
+8. `Y.UndoManager` provides undo/redo for both user and accepted AI edits.
+9. Accepted and rejected proposals are retained indefinitely as permanent audit records.
+10. Frontend collab/proposal logic ships as 1 reusable CM6 package (`@meridian/cm6-collab`) with internal module separation (sync, proposals, review); app-layer hooks remain orchestration adapters.
+11. Awareness/presence is available from Phase 1 via `y-protocols/awareness`.
+12. Auto-accept configurable via tri-state cascade (agent -> project -> user -> system).
+13. Single WebSocket per document carries all collab traffic (sync, awareness, proposals).
+14. JWT-in-first-message auth (no ticket table).
+15. `y-indexeddb` for offline persistence from Phase 1.
 
 ## Runtime Config (Env Vars)
 
-Compaction/retention behavior is deployment-tunable via env vars. Canonical contract lives in:
-- `_docs/plans/collab-ai/spec/compaction-retention.md`
-
-| Variable | Default |
-|---|---|
-| `MERIDIAN_COLLAB_COMPACTION_OP_COUNT_THRESHOLD` | `200` |
-| `MERIDIAN_COLLAB_COMPACTION_OP_BYTES_THRESHOLD` | `262144` |
-| `MERIDIAN_COLLAB_COMPACTION_MAX_AGE_HOURS` | `24` |
-| `MERIDIAN_COLLAB_REPLAY_TAIL_OPS` | `75` |
-| `MERIDIAN_COLLAB_PROPOSAL_HOT_DAYS` | `30` |
-| `MERIDIAN_COLLAB_PROPOSAL_DAILY_TO_WEEKLY_DAYS` | `90` |
-| `MERIDIAN_COLLAB_PROPOSAL_WEEKLY_TO_MONTHLY_DAYS` | `365` |
-| `MERIDIAN_COLLAB_COMPACTION_LOCK_TIMEOUT_MS` | `2000` |
-| `MERIDIAN_COLLAB_COMPACTION_STATEMENT_TIMEOUT_MS` | `5000` |
-
-All values require startup validation with fail-fast behavior on invalid bounds/relationships.
+| Variable | Default | Purpose |
+|---|---|---|
+| `MERIDIAN_COLLAB_SNAPSHOT_INTERVAL_UPDATES` | `500` | Write snapshot every N Yjs updates as safety net |
+| `MERIDIAN_COLLAB_AUTO_SNAPSHOT_RETENTION_DAYS` | `90` | Keep auto snapshots before deletion |
+| `MERIDIAN_COLLAB_DEFAULT_AUTO_ACCEPT` | `false` | System-level default for auto-accept tri-state cascade |
 
 ## First Load Flow
 
@@ -322,104 +376,92 @@ All values require startup validation with fail-fast behavior on invalid bounds/
 sequenceDiagram
     participant UI as Editor UI
     participant Go as Go Backend
-    participant Node as Meridian Collab AI
 
-    UI->>Go: GET /documents/{id} (content + collab_snapshot_version)
-    Go-->>UI: snapshot
-    UI->>UI: Render immediately
-    UI->>Go: POST /documents/{id}/ws-ticket
-    Go-->>UI: { ticket, expiresAt }
-    UI->>Node: WS connect with ticket
-    Node-->>UI: applied ops from collab_snapshot_version+1
-    UI->>UI: Apply remote ops via receiveUpdates()
-    UI->>Node: Optional: getUndoTail
-    Node-->>UI: undoTail ops
+    UI->>Go: GET /api/documents/{id}
+    Go-->>UI: { metadata (no content) }
+    UI->>UI: Render shell immediately
+    UI->>Go: WSS /ws/documents/{id}
+    UI->>Go: First message = JWT token
+    Go->>Go: Validate JWT
+    Note over UI,Go: Yjs sync protocol (binary)
+    Go-->>UI: Yjs state (sync step 2)
+    UI->>UI: Y.applyUpdate() — doc now up to date
+    Note over UI: Y.UndoManager active
+    Note over UI: y-indexeddb persists locally
 ```
 
 Typing policy during reconnect:
 - Allow typing immediately.
-- `@codemirror/collab` queues local ops until transport is ready.
+- Yjs queues local changes until WS transport is ready.
+- `y-indexeddb` persists edits locally for offline survival.
 - Show sync state (`Connected`, `Syncing`, `Disconnected`).
 
 ---
 
 ## Component Design
 
-### Meridian Collab AI Service
+### Go Backend (Collab Module)
 
 | Module | Responsibility |
 |---|---|
-| `Authority` | CM collab authority: version log, `rebaseUpdates()`, broadcast |
-| `DocumentSession` | Per-document active session: connections, in-memory state |
-| `ProposalService` | Create, accept (rebase + apply), reject proposals |
-| `AgentArbiter` | Multi-agent ordering, overlap scoring, admission limits |
-| `CompactionService` | Periodic `ChangeSet.compose()` → snapshot |
-| `wsHandler` | WebSocket connection lifecycle |
-| `wsTicket` | Ticket creation + one-time redemption |
+| `collab/broadcaster` | `DocumentBroadcaster` interface + in-memory v1 impl |
+| `collab/store` | `DocumentStore` interface + Postgres v1 impl |
+| `collab/sync` | Yjs sync protocol handler (state vectors, updates) |
+| `collab/awareness` | Opaque awareness relay (binary blob forwarding) |
+| `collab/ws` | WebSocket connection lifecycle, JWT auth, heartbeat |
+| `collab/proposals` | Proposal lifecycle: create, accept (terminal status, retained indefinitely), reject |
+| `collab/snapshot` | Periodic snapshot management, cleanup goroutines |
 
-### Interface Contracts (SOLID)
+### Interface Contracts (Simplified)
 
-| Contract | Kind | Used By | Default Adapter/Policy |
-|---|---|---|---|
-| `OperationLogPort` | Port | `Authority`, `CompactionService` | `db/operationRepo.ts` |
-| `ProposalPort` | Port | `ProposalService`, `AgentArbiter` | `db/proposalRepo.ts` |
-| `TicketPort` | Port | `wsTicket`, `wsHandler` | `db/ticketRepo.ts` |
-| `SnapshotPort` | Port | `CompactionService`, first-load API | `db/snapshotRepo.ts` |
-| `PubSubPort` | Port | `DocumentSession`, `wsHandler` | in-process adapter (v1), Redis adapter (future) |
-| `AuthVerifierPort` | Port | `wsHandler`, ticket endpoints | `auth/jwtValidator.ts` |
-| `ConflictPolicy` | Strategy | `ProposalService` | low/medium/high overlap policy |
-| `AdmissionPolicy` | Strategy | `AgentArbiter`, `ProposalService` | size/range/payload limits |
-| `ArbitrationPolicy` | Strategy | `AgentArbiter` | FIFO + overlap score |
-
-Contract rules:
-- Core services depend only on ports/strategies, never concrete DB/WS/JWT clients.
-- Ports are small and task-specific (read/write split when practical).
-- Any adapter replacement (e.g., Redis pub/sub, different SQL client) must keep contract behavior unchanged.
-- Each module keeps single responsibility: transport modules do connection concerns, policy modules decide outcomes, repositories persist state.
+| Contract | Kind | Used By |
+|---|---|---|
+| `DocumentResolver` | Interface | Collab service (doc ID lookup + ownership verification) — thin cross-domain dependency |
+| `DocumentBroadcaster` | Interface | WS handler, proposals |
+| `DocumentStore` | Interface | Sync, proposals, snapshots |
+| `ProposalQueryPort` | Port | Review UI (via WS) |
+| `ProposalCommandPort` | Port | Accept/reject handlers |
+| `ReviewPresentationPolicy` | Strategy | Merge view generation |
 
 ### Frontend
 
 | Component | Responsibility |
 |---|---|
-| `CollabTransport` | WS connection, reconnect with backoff, message send/receive |
-| `collabExtension` | `@codemirror/collab` setup: `collab()` extension, push/pull wired to transport |
-| `useDocumentCollab` | Hook: ticket → WS connect → collab extension → cleanup |
-| `useCollabStore` | Zustand: `syncState`, `version`, `clientID` |
-| `undoHistory` | Map replay tail ops → CM6 undo stack |
-| `useProposalReview` | Proposal list, WS subscription, accept/reject actions |
-| `useProposalStore` | Active proposals, focused index, navigation |
-| `mergeReviewAdapter` | `@codemirror/merge` integration for proposal review/accept/reject UX |
-| `proposalAnchors` | Optional lightweight inline cues for pending proposals (no text mutation) |
-| `AIProposalNavigator` | Proposal navigation/actions tied to merge chunks |
+| `@meridian/cm6-collab` | Yjs binding (`y-codemirror.next`), `Y.UndoManager`, sync state, awareness, proposal state/event callbacks (invoked by host on WS receipt), accept/reject commands, `@codemirror/merge` review |
+| `useCollabConnection` | WS lifecycle (connect, JWT auth, reconnect, heartbeat, cleanup) |
+| `useCollabExtension` | Wire Yjs + `y-codemirror.next` to CM6 editor |
+| `useCollabEvents` | WS JSON frame routing: parse frames, invoke cm6-collab callbacks, update host store |
+| `useProposalReview` | Host hook that maps proposal state to feature UI |
+| `useCollabStore` | Host UI projection store (`syncState`, `clientID`, `proposals`) |
+| `AIProposalNavigator` | Host UI component bound to review/proposal package outputs |
 
 ### Merge Review Integration
 
 `@codemirror/merge` is the canonical proposal review surface for AI changes. The live editor remains clean text and does not embed AI markers.
 
-If lightweight inline proposal cues are retained, they must be decoration-only and must not alter persisted editor text.
-
 ---
 
 ## Key Files Affected
 
-### New: `meridian-collab-ai/` (entire directory)
-- `meridian-collab-ai/packages/core/ports/*` (new interfaces)
-- `meridian-collab-ai/packages/core/policies/*` (new strategy contracts/defaults)
-- `meridian-collab-ai/services/collab-server/*` (deployable runtime)
+### New: Collab domain (Go backend)
+- `backend/internal/domain/models/collab/` — domain models
+- `backend/internal/domain/services/collab/` — service interfaces (`DocumentResolver`, `DocumentBroadcaster`, `DocumentStore`)
+- `backend/internal/domain/repositories/collab/` — repo interfaces
+- `backend/internal/service/collab/` — business logic (sync, awareness, proposals, snapshots)
+- `backend/internal/repository/postgres/collab/` — Postgres data access
+- `backend/internal/handler/collab.go` — WS upgrade endpoint
+
+### New: `packages/cm6-collab/` (CM6 library)
+- `packages/cm6-collab/src/sync/*`
+- `packages/cm6-collab/src/proposals/*`
+- `packages/cm6-collab/src/review/*`
 
 ### Frontend — New
-- `frontend/src/core/collab/CollabTransport.ts`
-- `frontend/src/core/collab/collabExtension.ts`
-- `frontend/src/core/collab/types.ts`
-- `frontend/src/core/collab/undoHistory.ts`
-- `frontend/src/core/collab/proposalTypes.ts`
-- `frontend/src/core/stores/useCollabStore.ts`
-- `frontend/src/core/stores/useProposalStore.ts`
-- `frontend/src/core/editor/codemirror/mergeReview/mergeReviewAdapter.ts`
-- `frontend/src/core/editor/codemirror/mergeReview/mergeReviewState.ts`
-- `frontend/src/core/editor/codemirror/mergeReview/mergeReviewTheme.ts`
-- `frontend/src/features/documents/hooks/useDocumentCollab.ts`
+- `frontend/src/features/documents/hooks/useCollabConnection.ts`
+- `frontend/src/features/documents/hooks/useCollabExtension.ts`
+- `frontend/src/features/documents/hooks/useCollabEvents.ts`
 - `frontend/src/features/documents/hooks/useProposalReview.ts`
+- `frontend/src/core/stores/useCollabStore.ts`
 - `frontend/src/features/documents/components/AIProposalNavigator.tsx`
 
 ### Frontend — Retire
@@ -433,20 +475,12 @@ If lightweight inline proposal cues are retained, they must be decoration-only a
 - `frontend/src/features/documents/components/AIHunkNavigator.tsx` — delete
 
 ### Backend — Modify
-- `backend/internal/handler/document.go` — add WS ticket endpoint
-- Drop `documents.ai_version`, `documents.ai_version_rev` columns
+- Drop `documents.ai_version`, `documents.ai_version_rev` columns (defer until Phase 3)
+- Keep `documents.content` as derived projection (computed from Yjs state on persist)
+- Add `documents.ai_content TEXT` column (AI's view — doc + pending proposals applied)
+- Add `documents.yjs_state BYTEA` column
 - Remove `GET /api/documents/{id}/ai-status` endpoint
-- Add proposal query APIs:
-  - `GET /api/projects/{id}/proposals`
-  - `GET /api/documents/{id}/proposals`
-  - `GET /api/proposals/{id}`
-  - `GET /api/proposal-groups/{groupId}`
-  - `POST /api/proposal-groups/{groupId}/accept`
-  - `GET /api/projects/{id}/proposal-status`
-- Add authoritative changeset query APIs:
-  - `GET /api/projects/{id}/changesets`
-  - `GET /api/documents/{id}/changesets`
-- `POST /collab/proposals/{id}/accept` returns `operationId` + new `version` and removes proposal row
+- Add WS upgrade endpoint (`/ws/documents/{id}`)
 
 ---
 
@@ -454,59 +488,74 @@ If lightweight inline proposal cues are retained, they must be decoration-only a
 
 | Decision | Choice | Why |
 |---|---|---|
-| Architecture style | Ports + adapters + policy strategies | Strengthens DIP/ISP/OCP and testability |
-| Collab server language | Node/TS | Native `@codemirror/collab` access, no ChangeSet porting |
-| DB access | Direct PostgreSQL (shared Supabase) | Low latency for version allocation, clear table ownership |
-| WS auth | Short-lived ticket (30s, one-time) | No JWT in URL, revocable |
-| Version allocation | `SELECT ... FOR UPDATE` row lock | Simple, standard SQL semantics |
-| Stream model | User authoritative stream + AI proposal queue | Clear writer-control and future multi-user compatibility |
-| Proposal rendering | `@codemirror/merge` review surface (no in-text markers) | Cleaner review UX, native accept/reject affordances, no PUA corruption |
-| Proposal accept | Promote to user stream + remove proposal row | Accepted AI changes become first-class authoritative edits |
-| AI-accept undo | Same authoritative undo/restore path as user edits | No special-case undo system; accepted AI edits are canonical changesets |
-| Accept idempotency | `Idempotency-Key` + unique accepted-proposal mapping | Safe retries; one proposal cannot be promoted twice |
-| Provenance durability | Copy immutable provenance into authoritative row (no mutable-FK dependency) | Audit trail survives proposal deletion and data cleanup |
-| Multi-agent strategy | Proposal-only writers + serialized acceptance | Deterministic arbitration for many LLMs, one user |
-| Event ordering | Per-document monotonic `eventId` with gap-recovery rules | Deterministic client reconciliation under network disorder |
-| Group accept semantics | Deterministic order + stop-on-conflict, per-item outcomes | Predictable bulk review behavior for large AI edits |
-| Proposal permissions | `owner/editor` mutate, `viewer` read-only | Safe multi-user extension without rewriting core flow |
-| Large AI edits | Admission limits + chunking + fallback mode | Prevent oversized ops from breaking transport/rebase UX |
-| Compaction | Dual-stream tiered compaction (authoritative ops + proposal-history rollups) | Keeps replay/query cost bounded while preserving writer-facing history |
-| Accepted-AI compaction | `origin='ai_accepted'` compacts like `origin='user'` after promotion | Accepted AI edits are first-class authoritatives, not a protected special case |
-| Timeline default | Merged authoritative timeline with origin filters | Keeps accepted AI edits first-class in writer history |
-| Publish-failure recovery | Write-then-publish with pull/refresh reconciliation | Commit success is never rolled back by transient WS issues |
-| CRDT/Yjs | Deferred with explicit trigger criteria | Avoid migration cost before multi-user/offline is needed |
+| Collab model | **Yjs CRDT** | Conflict-free merges, built-in undo, native multi-user, simpler server |
+| Backend | **Go-only** (y-crdt library) | One service, one deployment, no Node coordination |
+| Transport | **Single WebSocket** per document | All collab data over one connection (sync, awareness, proposals) |
+| WS auth | **JWT in first message** | No ticket table, no ticket endpoint, no TTL cleanup |
+| `documents.content` | **Derived projection** | Kept as read-only column, computed from Yjs state on persist (for search/export/API) |
+| Accepted proposals | **Terminal accepted status, retained indefinitely** (`status='accepted'`) | Permanent audit trail — no cleanup jobs needed |
+| Auto-accept | **Tri-state cascade** (agent/project/user/system) | Configurable per context |
+| AI proposal model | **Two views, one truth** | AI sees applied; writer sees diffs |
+| Frontend packaging | 1 reusable CM6 package (`@meridian/cm6-collab`) with internal modules (sync, proposals, review) | Proposals depend on `Y.Doc` for accept — 1 package avoids artificial boundary; host-agnostic |
+| DB access | Direct PostgreSQL (shared Supabase) | Simple, low latency |
+| AI proposals | Yjs update buffers, accept = `Y.applyUpdate()` | No rebase, CRDT merge handles divergence |
+| Undo/redo | `Y.UndoManager` | Built-in for in-session undo/redo |
+| Proposal rendering | `@codemirror/merge` review surface | Clean review UX, no PUA markers |
+| Accept idempotency | `idempotencyKey` in WS message + persisted responses | Safe retries |
+| Snapshot strategy | Periodic (disconnect + N updates) + `collab_document_snapshots` table | Simple, no compaction pipeline |
+| Conflict detection | Semantic only (Phase 4) | Mechanical conflicts impossible with CRDTs |
+| Awareness/presence | Available Phase 1 via `y-protocols/awareness` | Free with Yjs |
+| Offline | `y-indexeddb` from Phase 1 | Edits survive tab close |
+| Multi-user | Native to Yjs (Phase 5) | No CRDT migration needed |
+| Scaling | Interface-based (`DocumentBroadcaster`, `DocumentStore`) | Swap impl without core changes |
+| Local-bridge fit | Yjs is a sync protocol — bridge becomes another provider | Natural integration |
+| Proposal data | WS JSON frames (single connection) | No HTTP endpoints for proposals |
+| Comments/annotations | **Separate from AI proposals** — proposals MODIFY (CRDT mutations), comments ANNOTATE (text anchoring) | Different operation types, lifecycles, and review UX; shared primitive: `Y.RelativePosition` |
 | Migration | None — greenfield rebuild on branch | No users, no backwards compatibility needed |
-| WS library | `ws` (Node) | Standard, performant, well-maintained |
-| PostgreSQL client | `postgres` (porsager/postgres) | Modern, fast, tagged template queries |
-| Compaction jobs | Graphile Worker (`job_key` per document + advisory lock) | Async, retry-safe compaction without write-path latency |
-| Rollout style | Hard cutover + kill switch | Fast iteration with minimal legacy burden |
+| Rollout style | Hard cutover + feature flag | Fast iteration |
+
+---
+
+## Local-Bridge Integration
+
+Yjs is a natural fit for the local-bridge plan (`_docs/plans/local-bridge/`). The bridge becomes another Yjs sync provider:
+
+```
+Browser <--> (WebSocket) <--> Go Backend <--> Postgres
+                                   |
+                              (Yjs sync)
+                                   |
+              Local Bridge <--> Local Files on Disk
+```
+
+With Yjs, document state can live in 4 places simultaneously — any subset can be online:
+1. **Browser memory** — `Y.Doc` in the active tab
+2. **IndexedDB** — via `y-indexeddb` provider (persistent offline cache)
+3. **Local disk** — via the bridge (edit in VS Code, Obsidian, etc.)
+4. **Server** — via Go backend -> Postgres
+
+Each is just a Yjs provider. Offline edits sync automatically on reconnect.
 
 ---
 
 ## Observability and SLOs (v1)
 
 Metrics (per document and global):
-- `collab_push_latency_ms` (p50/p95/p99)
+- `collab_sync_latency_ms` (p50/p95/p99)
 - `proposal_accept_latency_ms`
-- `rebase_conflict_rate`
 - `reset_required_rate`
 - `ws_reconnect_rate`
-- `compaction_duration_ms`
-- `compaction_lock_timeout_count`
-- `authoritative_raw_ops_highwater` (per-document)
-- `compacted_segment_count` (per-document)
-- `proposal_rollup_lag_seconds` (per-document)
+- `snapshot_duration_ms`
+- `yjs_state_size_bytes` (per-document)
 
 Alert thresholds:
 1. `reset_required_rate > 5%` for 10 minutes.
 2. `proposal_accept_latency_ms p95 > 1500ms` for 10 minutes.
-3. `compaction_lock_timeout_count >= 5` in 15 minutes.
-4. `ws_reconnect_rate > 20%` for 10 minutes.
-5. `authoritative_raw_ops_highwater > 50_000` for any document.
-6. `proposal_rollup_lag_seconds > 86_400` for any document.
+3. `ws_reconnect_rate > 20%` for 10 minutes.
+4. `yjs_state_size_bytes > 10_000_000` for any document.
 
 SLO targets:
-1. 99% successful `pushUpdates` (excluding client disconnects).
+1. 99% successful Yjs sync operations (excluding client disconnects).
 2. p95 proposal accept end-to-end < 1.5s.
 3. p95 reconnect-to-synced < 3s.
 
@@ -516,20 +565,26 @@ SLO targets:
 
 | Scenario | Method | Pass Criteria |
 |---|---|---|
-| Concurrent push race | 2 clients push same base version | contiguous versions, no duplicate op IDs |
-| Ticket replay | reuse same ticket twice | first succeeds, second returns `TICKET_INVALID` |
-| Compaction during typing | run compaction with active writes | no lost ops, no partial snapshot, clients stay synced |
-| Accept promotion | accept proposal | authoritative op inserted with `origin='ai_accepted'`, proposal row removed |
-| Floor reset path | request updates below floor | `RESET_REQUIRED` then successful snapshot reload |
-| Large proposal chunking | proposal exceeds limits | split into group, all chunks ordered, stop-on-conflict works |
-| High-overlap conflict | overlapping proposals accepted out of order | high-overlap proposal marked `conflicted` |
-| Accepted-AI compaction | run compaction over old accepted AI ops | old `origin='ai_accepted'` raw ops compacted into valid segments, timeline/query remains coherent |
-| Kill switch | set `COLLAB_DISABLED` | WS/connect/accept blocked, UI read-only |
-| Crash retry idempotency | retry same `client_op_id` after simulated crash | no duplicate authoritative op |
-| Accept retry idempotency | retry same proposal accept request | same `operationId`/`version`, no second promotion |
-| Event gap recovery | drop/out-of-order `eventId` delivery | client reconciles via pull + refresh without divergent state |
-| Group accept determinism | accept a large proposal group with one conflict | deterministic `accepted|conflicted|skipped` outcomes |
-| Permission gating | viewer attempts accept/reject | mutation denied, read endpoints still work |
+| Go y-crdt round-trip | Create doc in JS Yjs, encode, decode in Go, verify text | Binary compatibility |
+| Go y-crdt sync protocol | Two Go Y.Docs sync via state vectors | State convergence |
+| Single-user persist | Type, reload | Content preserved via Yjs state round-trip |
+| WS disconnect/reconnect | Kill connection, reconnect | No data loss, Yjs sync recovers |
+| Offline persistence | Type, kill tab, reopen — content survives via IndexedDB | No data loss |
+| JWT auth reject | Send invalid JWT as first message | `AUTH_FAILED`, connection closed |
+| Accept proposal | Accept AI proposal | Yjs update applied, proposal marked `accepted` |
+| Accept after user edits | User edits then accepts | Yjs merge produces correct result |
+| Reject proposal | Reject AI proposal | Update discarded, proposal marked rejected |
+| Undo accepted AI edit | Accept then Cmd+Z | `Y.UndoManager` reverses the accepted edit |
+| Undo across reload boundary | Type, reload, Cmd+Z | New session undo stack starts; snapshot restore provides durable rollback |
+| Auto-accept | Configure agent auto-accept, generate AI edit | Immediate apply, no review step |
+| Accepted-row audit | Accept proposal, verify row marked `accepted` not deleted | Permanent audit trail intact |
+| Group accept | Accept proposal group | Deterministic `accepted|skipped` outcomes |
+| Accept retry idempotency | Retry same accept request | Same response, no duplicate application |
+| Snapshot on disconnect | Disconnect last client | Yjs state written to Postgres |
+| Large document | 100k+ chars | Yjs sync stays responsive |
+| Broadcaster interface | Swap in-memory broadcaster for mock pub/sub | No core logic changes |
+| Cursor relay | Send awareness update from client A, verify client B receives | Opaque relay works |
+| Permission gating (v1) | Unauthenticated user attempts accept | Mutation denied |
 
 ---
 
@@ -537,50 +592,58 @@ SLO targets:
 
 | Risk | Mitigation |
 |---|---|
-| Version race/collision | Transactional row lock + unique constraints + retry |
-| Duplicate client retries | Idempotency keys (`client_id`, `client_op_id`) |
-| Compaction breaks reconnect | `collab_op_floor_version` + explicit `resetRequired` contract |
-| Accepted proposal trace lost after removal | Copy full provenance to authoritative op (`source_proposal_id`, run/thread/turn fields) |
-| Proposal accepted twice due retries/races | Unique mapping from proposal to authoritative op + idempotency key contract |
-| Proposal drift after edits | Anchor + `before_hash` validation → `conflicted` state |
-| Out-of-order/lost WS events | Monotonic `eventId` + gap reconciliation via pull and refresh |
-| Large AI proposal payloads stall transport | Server admission limits + chunking + fallback mode |
-| Group accept ambiguity | Deterministic order and stop-on-conflict with explicit per-item outcomes |
-| Semantic conflict after mechanical rebase | Tiered conflict policy (low/medium/high) + manual review path |
-| Token leakage via URL/logs | Short-lived WS ticket + log redaction |
-| Over-aggressive compaction can hide fine-grained old history | Keep hot raw window + expose compacted segment metadata in `/changesets` |
-| Over-engineering large docs too early | Chapter/section boundaries first, defer pagination |
-| Multi-instance drift (in-memory sessions) | Run single replica in v1; add pub/sub before horizontal scaling |
-| Extra service to deploy | Meridian Collab AI is focused and small; deploy on Railway alongside Go |
+| Yjs state size growth over months | `DocumentCompactor.ReplaceState` interface ready for periodic compaction when needed (see `_docs/future/ideas/performance/yjs-periodic-compaction.md`) |
+| Go y-crdt library is early-stage | MIT fork rights, narrow usage surface, compatibility tests pass, interface-based swap path |
+| Duplicate client retries | Idempotency keys on accept/group-accept |
+| Proposal trace lost after removal | Terminal accepted/rejected rows retained indefinitely as permanent audit records |
+| Large AI proposal payloads | Admission limits on `yjs_update` size |
+| Semantic conflicts after CRDT merge | Phase 4 quality arbitration; writer always reviews |
+| Token leakage via URL/logs | JWT in first WS message (not URL), log redaction |
+| Multi-instance drift (in-memory Y.Doc) | Single instance v1; `DocumentBroadcaster` interface ready for pub/sub |
+
+---
+
+## Comments/Annotations vs AI Proposals
+
+**Design boundary:** Proposals and comments/annotations are fundamentally different operations:
+
+| Concern | AI Proposals | Comments/Annotations |
+|---|---|---|
+| Operation type | **MODIFY** — CRDT mutations (`Y.applyUpdate`) | **ANNOTATE** — text anchoring (no document mutation) |
+| Document effect | Changes document content | Attaches metadata to a text range |
+| Lifecycle | Proposed → accepted/rejected | Created → resolved/deleted |
+| Shared primitive | `Y.RelativePosition` (for tracking proposal ranges) | `Y.RelativePosition` (for anchoring comments to text) |
+
+**WHY separate:** Mixing annotation state into the proposal pipeline would conflate "change the document" with "comment on the document." Different review UX, different lifecycle, different storage.
+
+Comments/annotations are explicitly deferred (not in Phase 1-5 scope) but this boundary is documented to prevent future design drift.
 
 ---
 
 ## Open Questions
 
-No blocking open questions for v1 collaboration + AI collaboration.
+1. **y-crdt awareness protocol completeness** — Need to verify Go library can identify awareness message types for relay. If awareness relay is just "forward opaque bytes," Go only needs to tag message types, not parse them.
+2. **y-crdt WS sync protocol** — Primitives exist (`EncodeStateAsUpdate`, `ApplyUpdate`, state vectors) but the message framing/exchange logic (~50 lines) needs to be written on top of them.
 
 Post-v1 evolution topics (explicitly deferred, non-blocking):
-- Interface granularity refinements (split ports further if contracts grow).
-- Undo persistence evolution beyond replay-tail rebuild.
-- Horizontal fanout (Redis pub/sub when >1 service instance is required).
-- Arbitration ranking beyond FIFO + overlap score.
+- Hocuspocus vs custom sync server (evaluate during Phase 1).
+- Local-bridge as Yjs provider vs relay (evaluate during bridge stage 4-5).
+- Horizontal fanout (Redis pub/sub when >1 instance required).
+- Yjs state compaction strategy for long-lived documents.
+- Comments/annotations system (text anchoring via `Y.RelativePosition`, separate from proposal pipeline).
 
 ---
 
 ## Sources
 
-- [CodeMirror Collaborative Editing Example](https://codemirror.net/examples/collab/)
-- [CodeMirror Collab API Reference](https://codemirror.net/docs/ref/#collab)
-- [CodeMirror ChangeSet API Reference](https://codemirror.net/docs/ref/#state.ChangeSet)
-- [CodeMirror Merge Package Docs](https://codemirror.net/docs/ref/#merge)
-- [CodeMirror Viewport/Rendering Example](https://codemirror.net/examples/million/)
+- [Yjs Documentation](https://docs.yjs.dev/)
 - [Yjs Document Updates](https://docs.yjs.dev/api/document-updates)
-- [Yjs WebSocket Provider](https://docs.yjs.dev/ecosystem/connection-provider/y-websocket)
 - [y-codemirror.next](https://github.com/yjs/y-codemirror.next)
-- [Notion: Data model and persistence](https://www.notion.com/blog/data-model-behind-notion)
+- [Y.UndoManager](https://docs.yjs.dev/api/undo-manager)
+- [y-protocols](https://github.com/yjs/y-protocols)
+- [y-indexeddb](https://github.com/yjs/y-indexeddb)
+- [skyterra/y-crdt (Go)](https://github.com/skyterra/y-crdt)
+- [CodeMirror Merge Package Docs](https://codemirror.net/docs/ref/#merge)
+- [Figma: Multiplayer Technology](https://www.figma.com/blog/how-figmas-multiplayer-technology-works/)
 - [Notion: Offline architecture (Dec 11, 2025)](https://www.notion.com/en-gb/blog/how-we-made-notion-available-offline)
-- [PostgreSQL Explicit Locking (`FOR UPDATE`)](https://www.postgresql.org/docs/current/explicit-locking.html)
-- [MDN WebSocket constructor](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket/WebSocket)
 - [RFC 6455: The WebSocket Protocol](https://datatracker.ietf.org/doc/html/rfc6455.html)
-- [@marimo-team/codemirror-ai](https://github.com/marimo-team/codemirror-ai)
-- [Graphile Worker Docs](https://worker.graphile.org/docs)

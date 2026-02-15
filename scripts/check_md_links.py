@@ -65,6 +65,10 @@ def list_markdown_files(root_dir: str, respect_gitignore: bool = True) -> list[s
                 for line in result.stdout.splitlines()
                 if line
             ]
+            # `git ls-files --cached` can include paths that are deleted in the
+            # working tree but still present in the index; only lint files that
+            # currently exist on disk.
+            files = [path for path in files if os.path.isfile(path)]
             files.sort()
             return files
         except (subprocess.CalledProcessError, FileNotFoundError):
