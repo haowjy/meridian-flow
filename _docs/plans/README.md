@@ -14,15 +14,16 @@ Each plan document includes:
 
 ## Active Plans
 
-- `fb-realtime-collab-editing.md` - Canonical main plan for operation-based collaboration + AI proposal model.
+- `fb-realtime-collab-editing.md` - Canonical main plan for Yjs CRDT collaboration + AI proposal model (Go-only backend).
 - `collab-ai/README.md` - Focused collaboration plan index and phase map.
-- `collab-ai/spec/storage-model.md` - Canonical dual-stream schema and provenance invariants.
-- `collab-ai/spec/api-events-contract.md` - Canonical WS/REST/event/error contracts.
-- `collab-ai/spec/compaction-retention.md` - Canonical compaction/floor/retention/deletion-safety rules.
-- `collab-ai/spec/refresh-read-model-framework.md` - Read-model refresh/coalescing framework.
-- `collab-ai/phase/phase-1-oplog-transport.md` - WebSocket transport + authoritative applied-ops log.
+- `collab-ai/spec/storage-model.md` - Yjs state persistence, proposal queue schema, Go y-crdt architecture.
+- `collab-ai/spec/api-events-contract.md` - Single WebSocket protocol, JWT auth, proposal lifecycle over WS.
+- `collab-ai/spec/compaction-retention.md` - Snapshot persistence, retention, cleanup rules.
+- `collab-ai/spec/refresh-read-model-framework.md` - Non-collab read-model freshness (proposals via WS, not HTTP).
+- `collab-ai/spec/cm6-library-model.md` - Frontend 1-package boundary (`@meridian/cm6-collab` with internal sync/proposals/review modules).
+- `collab-ai/phase/phase-1-yjs-sync-and-transport.md` - Yjs CRDT sync + WS transport (Go-only, y-indexeddb offline).
 - `collab-ai/phase/phase-2-history-and-undo.md` - Durable history/restore + persistent undo model.
-- `collab-ai/phase/phase-3-ai-proposals-and-review.md` - Proposal lifecycle + writer review UX surfaces.
+- `collab-ai/phase/phase-3-ai-proposals-and-review.md` - Proposal lifecycle + auto-accept + writer review UX.
 - `collab-ai/phase/phase-4-multi-agent-arbitration.md` - Multi-agent proposal admission/arbitration.
 - `collab-ai/phase/phase-5-multi-user-collaboration.md` - Future human multi-user extension.
 - `fb-wikilinks-and-internal-links.md` - Editor-only: wikilink tokens, CM6 pill rendering, `@` autocomplete, click-to-navigate, LLM prompt guidance.

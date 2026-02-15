@@ -2,23 +2,39 @@
 detail: minimal
 audience: developer, architect
 ---
-# Phase 5: Multi-User Collaboration (Future)
+# Phase 5: Multi-User Collaboration
 
-**Status:** Future  
-**Priority:** Medium  
-**Purpose:** Extend the established op/proposal model to human co-editing only after writer-core reliability is stable.
+**Status:** Future
+**Priority:** Medium
+**Purpose:** Extend Yjs-based editing to multiple human co-editors. Native to Yjs — no CRDT migration needed.
 
 ## Entry Conditions
 
 - Phase 1-4 are stable in production.
-- CRDT re-evaluation triggers from the main RFC are met.
 - Phase 1-4 spec contracts remain unchanged unless explicitly versioned.
+
+## Key Simplification (Yjs)
+
+Multi-user is **native to Yjs** from the start:
+- Awareness/presence/cursors work from Phase 1 via `y-protocols/awareness` (opaque relay through Go).
+- No CRDT migration or re-evaluation needed (unlike the OT plan).
+- Conflict resolution is built-in (CRDT guarantee).
+- The main new work is membership, permissions, and UX polish.
+
+## Architectural Readiness (from Phase 1-4)
+
+Phase 1-4 already provide the foundations for multi-user:
+- **`DocumentBroadcaster` multi-client fan-out** — designed for N clients per document from the start (no single-user assumption in the interface).
+- **Awareness relay** — opaque binary forwarding of `y-protocols/awareness` messages between all connected clients (Phase 1).
+- **User-agnostic interfaces** — `DocumentStore` and `DocumentBroadcaster` operate on `docID` only (no single-user assumption). Multi-user requires adding `userID` to `Subscribe` for per-user identity tracking, adding per-user cursor state to awareness, and enforcing role-based permissions on mutations.
+- **Permissions as separate domain** — auth is JWT-based with `CanAccessDocument` check; role-based access (owner/editor/viewer) layers on top without restructuring the collab domain.
 
 ## In Scope
 
-- Presence/cursors and multi-client awareness.
 - Membership and permission model for shared projects.
-- Conflict ergonomics for multiple human writers.
+- Multi-client presence UX polish (cursor colors, user labels, typing indicators).
+- Conflict ergonomics for multiple human writers (semantic review for large divergences).
+- Role-based access control (owner/editor/viewer) enforcement.
 
 ## Retained Requirements (From Legacy Future Notes)
 
@@ -34,22 +50,32 @@ audience: developer, architect
 ## Deliverables
 
 - Multi-user session model and permission contracts.
-- Presence transport and UI affordances.
+- Role-based read-only enforcement (viewer cannot edit, `readOnlyChanged` event for permission changes).
+- Presence UX polish beyond Phase 1 baseline (user avatars, cursor labels via `y-codemirror.next`).
 - Shared-project safety model aligned with project-owned artifact instances.
+- `DocumentBroadcaster` scaling (swap in-memory -> Redis pub/sub if multi-instance needed).
+- Frontend collaboration capabilities remain package-owned (`@meridian/cm6-collab` plus awareness extensions), with app layer as orchestration only.
+
+## Dependencies
+
+- Phase 1-4 contracts and invariants.
+- CM6 package boundary contract from `_docs/plans/collab-ai/spec/cm6-library-model.md`.
 
 ## Implements Specs
 
-- `_docs/plans/collab-ai/spec/storage-model.md` (authoritative/proposal boundary remains intact)
-- `_docs/plans/collab-ai/spec/api-events-contract.md` (event/error model extension)
-- `_docs/plans/collab-ai/spec/refresh-read-model-framework.md` (presence/read-model freshness)
+- `_docs/plans/collab-ai/spec/storage-model.md` (Yjs state boundary remains intact)
+- `_docs/plans/collab-ai/spec/api-events-contract.md` (event/error model extension for permissions)
+- `_docs/plans/collab-ai/spec/cm6-library-model.md` (frontend package boundaries for presence/cursors/permissions UX)
 
 ## Exit Criteria
 
-- Multiple human editors can edit simultaneously with predictable conflict behavior.
-- Permission boundaries are enforceable server-side.
+- Multiple human editors can edit simultaneously with predictable CRDT merge behavior.
+- Permission boundaries are enforceable server-side (viewer cannot write).
 - Writer focus UX remains stable under collaboration load.
+- Multi-user editor behavior is delivered through `@meridian/cm6-collab` package APIs, without app-local reimplementation of collab state logic.
 
 ## Related
 
 - `_docs/plans/fb-realtime-collab-editing.md`
 - `_docs/plans/agents/fb-artifact-templates-and-project-instances.md`
+- `_docs/plans/collab-ai/spec/cm6-library-model.md`

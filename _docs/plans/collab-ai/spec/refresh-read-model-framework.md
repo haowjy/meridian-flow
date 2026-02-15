@@ -2,42 +2,63 @@
 detail: minimal
 audience: developer
 ---
-# Collaboration Spec: Refresh Read-Model Framework
+# Collaboration Spec: Read-Model Freshness
 
-**Status:** In planning  
-**Priority:** High  
-**Purpose:** Keep writer-facing collab read models fresh without request storms.
+**Status:** In planning
+**Priority:** Medium
+**Purpose:** Define what frontend data channels exist and how non-collab data stays fresh.
 
-## In Scope
+## Scope Reduction
 
-- Event-driven refresh intents from SSE and collab events.
-- Poll fallback (visible + online + project-open only).
-- Coalescing/dedupe/in-flight suppression.
-- Debug visibility for queued intents and last refresh timestamps.
+With the single-WebSocket architecture, **proposals are no longer HTTP data**. All proposal state (new, accepted, rejected) flows through the WebSocket connection. This eliminates:
 
-## Refresh Targets
+- TanStack Query for proposal lists/status
+- HTTP proposal endpoints
+- WS event -> TanStack Query invalidation wiring
+- Proposal query keys and mutation invalidation maps
+- Custom coalescing/dedup for proposal data
 
-- Project tree.
-- Proposal review index (pending counts + affected docs).
-- Touched-document read model.
-- Active document (only when affected).
+## Two Data Channels (Simplified)
 
-## Trigger Baseline
+| Channel | Transport | State Layer | Data |
+|---|---|---|---|
+| **WebSocket** | Yjs sync + JSON frames | Yjs (`Y.Doc`) + Zustand (`useCollabStore`) | Document content, sync state, awareness/presence, **proposals** |
+| **HTTP** | REST via existing patterns | Existing Zustand stores | File tree, thread list, user settings, document metadata |
 
-- On turn/proposal completion: refresh impacted read models.
-- On accept/reject/restore/checkpoint actions: refresh impacted read models.
-- Poll every 30s as healing fallback.
+WS handles all real-time collab data. HTTP handles non-collab UI state.
 
-Collab proposal event minimums:
-- `newProposal` -> refresh proposal lists/status index.
-- `proposalStatusChanged` (`rejected|conflicted`) -> refresh proposal lists/status index.
-- `proposalRemoved` (accepted + promoted) -> refresh proposal lists/status index + authoritative changeset lists.
+## What Remains
+
+TanStack Query is **not introduced** for collab. Existing non-collab stores (projects, threads, tree) remain on Zustand unchanged.
+
+### Non-Collab Refresh Targets (Unchanged)
+
+These use existing Zustand store patterns:
+- Project tree
+- Active document metadata
+- Thread list
+- User settings
+
+### Collab Refresh (Via WebSocket)
+
+All collab data refreshes automatically through the WebSocket connection:
+- Document content: Yjs sync protocol
+- Proposals: baseline snapshot + JSON frames (`proposal:snapshot`, `proposal:new`, `proposal:statusChanged`, `proposal:groupAcceptResult`)
+- Presence/awareness: Yjs awareness protocol
+- Connection state: `useCollabStore`
+
+Reconnect rule:
+- After each successful auth+sync, server sends `proposal:snapshot` before incremental proposal events.
+
+### Touched-Document Read Model
+
+`turn_document_touches` tracks which documents were modified within a thread turn, populated from Yjs updates with matching provenance. This supports "what changed" review entrypoints. Refreshed via existing store patterns when navigating to review views.
 
 ## Exit Criteria
 
-- Missed events self-heal without hard refresh.
+- Missed WS events self-heal on reconnect via Yjs sync for document state plus `proposal:snapshot` for proposal state.
+- Non-collab read models stay coherent across tree/editor/thread surfaces using existing Zustand patterns.
 - No request storm from bursty trigger sources.
-- Read models stay coherent across tree/editor/thread surfaces.
 
 ## Related
 
