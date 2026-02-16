@@ -245,7 +245,9 @@ export function EditorPanel({
   useEffect(() => {
     if (!collabEnabled || !isInitialized) return;
     setCollabSeedContent(typeof localDocument === "string" ? localDocument : "");
-    // Only seed once when document initializes; further edits come from Yjs.
+    // localDocument intentionally omitted: we only read the initial content once
+    // to seed Yjs. After that, Yjs owns the document state and localDocument
+    // changes should not re-trigger seeding.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentId, collabEnabled, isInitialized]);
 

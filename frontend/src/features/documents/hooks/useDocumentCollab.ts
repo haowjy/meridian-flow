@@ -136,6 +136,8 @@ export function useDocumentCollab({
 
           if (textEvent.type === "error") {
             if (textEvent.code === "AUTH_FAILED") {
+              // Fire-and-forget: best-effort warm-up so the token is ready
+              // by the time the reconnect loop calls resolveAccessToken().
               void createClient().auth.refreshSession();
             }
             ws.close();
@@ -148,10 +150,11 @@ export function useDocumentCollab({
         try {
           runtime.handleBinaryFrame(toUint8Array(event.data));
         } catch (err) {
-          log.warn("failed to handle collab binary frame", {
+          log.warn("failed to handle collab binary frame, closing to reconnect", {
             documentId,
             error: err instanceof Error ? err.message : String(err),
           });
+          ws.close();
         }
       };
 

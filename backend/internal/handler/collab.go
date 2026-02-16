@@ -22,11 +22,18 @@ import (
 	serviceCollab "meridian/internal/service/collab"
 )
 
+// documentSessionManager is a narrow interface for session lifecycle (ISP).
+// Decouples the handler from the concrete DocumentSessionManager implementation.
+type documentSessionManager interface {
+	Acquire(ctx context.Context, docID string) (*serviceCollab.DocumentSession, error)
+	Release(ctx context.Context, docID string) error
+}
+
 // CollabHandler handles collaboration transport entrypoints.
 type CollabHandler struct {
 	documentResolver    collabSvc.DocumentResolver
 	documentBroadcaster collabSvc.DocumentBroadcaster
-	sessionManager      *serviceCollab.DocumentSessionManager
+	sessionManager      documentSessionManager
 	jwtVerifier         auth.JWTVerifier
 	logger              *slog.Logger
 	config              *config.Config
@@ -94,7 +101,7 @@ func (c *websocketDocumentConnection) Close() error {
 func NewCollabHandler(
 	documentResolver collabSvc.DocumentResolver,
 	documentBroadcaster collabSvc.DocumentBroadcaster,
-	sessionManager *serviceCollab.DocumentSessionManager,
+	sessionManager documentSessionManager,
 	jwtVerifier auth.JWTVerifier,
 	logger *slog.Logger,
 	cfg *config.Config,
@@ -147,7 +154,7 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 			"document_id", docID,
 			"error", err,
 		)
-		h.sendError(wsConn, "AUTH_FAILED", "Missing or invalid authentication token")
+		h.sendError(wsConn, "AUTH_FAILED", "missing or invalid authentication token")
 		return
 	}
 
@@ -157,7 +164,7 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 			"document_id", docID,
 			"error", err,
 		)
-		h.sendError(wsConn, "AUTH_FAILED", "Invalid or expired token")
+		h.sendError(wsConn, "AUTH_FAILED", "invalid or expired token")
 		return
 	}
 
@@ -169,11 +176,11 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 			"user_id", userID,
 			"error", err,
 		)
-		h.sendError(wsConn, "INTERNAL_ERROR", "Failed to verify document access")
+		h.sendError(wsConn, "INTERNAL_ERROR", "failed to verify document access")
 		return
 	}
 	if !allowed {
-		h.sendError(wsConn, "FORBIDDEN", "Access denied")
+		h.sendError(wsConn, "FORBIDDEN", "access denied")
 		return
 	}
 
@@ -184,7 +191,7 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 			"user_id", userID,
 			"error", err,
 		)
-		h.sendError(wsConn, "RESET_REQUIRED", "Document state requires reset")
+		h.sendError(wsConn, "RESET_REQUIRED", "document state requires reset")
 		return
 	}
 	defer func() {
@@ -204,7 +211,7 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 			"user_id", userID,
 			"error", err,
 		)
-		h.sendError(wsConn, "INTERNAL_ERROR", "Failed to register collab connection")
+		h.sendError(wsConn, "INTERNAL_ERROR", "failed to register collab connection")
 		return
 	}
 	defer h.documentBroadcaster.Unsubscribe(docID, wsConn)
@@ -249,14 +256,14 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 
 		switch envelopeType {
 		case collabEnvelopeSyncStep1, collabEnvelopeSyncStep2, collabEnvelopeUpdate:
-			syncType, responsePayload, updatePayload, err := session.HandleSyncPayload(payload, wsConn.ID())
+			syncType, responsePayload, updatePayload, err := session.HandleSyncPayload(ctx, payload, wsConn.ID())
 			if err != nil {
 				h.logger.Warn("collab sync message handling failed",
 					"document_id", docID,
 					"connection_id", wsConn.ID(),
 					"error", err,
 				)
-				h.sendError(wsConn, "RESET_REQUIRED", "Document state requires reset")
+				h.sendError(wsConn, "RESET_REQUIRED", "document state requires reset")
 				return
 			}
 
@@ -267,7 +274,7 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 					"envelope_type", envelopeType,
 					"sync_type", syncType,
 				)
-				h.sendError(wsConn, "RESET_REQUIRED", "Document state requires reset")
+				h.sendError(wsConn, "RESET_REQUIRED", "document state requires reset")
 				return
 			}
 			if envelopeType == collabEnvelopeSyncStep1 && len(responsePayload) == 0 {
@@ -275,7 +282,7 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 					"document_id", docID,
 					"connection_id", wsConn.ID(),
 				)
-				h.sendError(wsConn, "RESET_REQUIRED", "Document state requires reset")
+				h.sendError(wsConn, "RESET_REQUIRED", "document state requires reset")
 				return
 			}
 
@@ -287,7 +294,7 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 						"connection_id", wsConn.ID(),
 						"error", err,
 					)
-					h.sendError(wsConn, "RESET_REQUIRED", "Document state requires reset")
+					h.sendError(wsConn, "RESET_REQUIRED", "document state requires reset")
 					return
 				}
 
@@ -304,7 +311,7 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 						"connection_id", wsConn.ID(),
 						"error", err,
 					)
-					h.sendError(wsConn, "RESET_REQUIRED", "Document state requires reset")
+					h.sendError(wsConn, "RESET_REQUIRED", "document state requires reset")
 					return
 				}
 
@@ -321,7 +328,7 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 						"connection_id", wsConn.ID(),
 						"error", err,
 					)
-					h.sendError(wsConn, "RESET_REQUIRED", "Document state requires reset")
+					h.sendError(wsConn, "RESET_REQUIRED", "document state requires reset")
 					return
 				}
 
@@ -360,7 +367,9 @@ func (h *CollabHandler) runHeartbeatLoop(conn *websocketDocumentConnection, acks
 			case <-acks:
 				timeout.Stop()
 			case <-timeout.C:
-				_ = conn.Close()
+				if err := conn.Close(); err != nil {
+					h.logger.Debug("collab heartbeat timeout close failed", "error", err)
+				}
 				return
 			}
 		}
@@ -453,6 +462,7 @@ func envelopeMatchesSyncType(envelopeType byte, syncType int) bool {
 	}
 }
 
+// nonBlockingSignal sends a signal without blocking if the channel is full.
 func nonBlockingSignal(ch chan<- struct{}) {
 	select {
 	case ch <- struct{}{}:
@@ -460,6 +470,7 @@ func nonBlockingSignal(ch chan<- struct{}) {
 	}
 }
 
+// drainSignalChannel discards all pending signals so the next receive blocks on a fresh signal.
 func drainSignalChannel(ch <-chan struct{}) {
 	for {
 		select {

@@ -8,7 +8,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"meridian/internal/domain"
-	collabRepo "meridian/internal/domain/repositories/collab"
 	collabSvc "meridian/internal/domain/services/collab"
 	"meridian/internal/repository/postgres"
 )
@@ -18,15 +17,6 @@ type PostgresDocumentStore struct {
 	pool   *pgxpool.Pool
 	tables *postgres.TableNames
 	logger *slog.Logger
-}
-
-// NewDocumentStoreRepository creates a repository-scoped document store.
-func NewDocumentStoreRepository(config *postgres.RepositoryConfig) collabRepo.DocumentStoreRepository {
-	return &PostgresDocumentStore{
-		pool:   config.Pool,
-		tables: config.Tables,
-		logger: config.Logger,
-	}
 }
 
 // NewDocumentStore creates a service-scoped document store.
