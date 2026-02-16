@@ -309,20 +309,7 @@ See `internal/repository/postgres/connection.go`
 
 ### Long-Running Tasks
 
-For multi-phase plans, use the headless orchestrator:
-
-```bash
-# Default (Claude Code)
-./scripts/orchestrator/run.sh _docs/plans/path/to/plan.md
-
-# With Codex or OpenCode
-AI_TOOL=codex ./scripts/orchestrator/run.sh _docs/plans/path/to/plan.md
-AI_TOOL=opencode ./scripts/orchestrator/run.sh _docs/plans/path/to/plan.md
-```
-
-**Pipeline:** plan slice → implement → review → cleanup loop → commit → repeat. Each stage is a headless `claude -p` (or equivalent) with auto-approved tools. Stages communicate via task files in `_docs/hidden/tasks/`. Logs go to `_docs/hidden/orchestrator-logs/`.
-
-**Interactive equivalents:** Use `/plan-slice` and `/review` skills for the same stages in an interactive session.
+For multi-phase plans, use the `/orchestrate` skill interactively. It runs an autonomous plan-slice pipeline using CLI subagents (codex, claude). See `.claude/skills/orchestrate/SKILL.md` for full details.
 
 **Prompt templates:** `scripts/orchestrator/prompts/*.md` — edit these to customize stage behavior.
 

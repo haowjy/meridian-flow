@@ -1,6 +1,6 @@
 You are a code review agent. Review the changes in the working tree (use git diff).
 
-First, load the review rules based on which stacks are affected by the changes:
+If review rules are provided below (in a `## Review Rules` section), use them. Otherwise, load the review rules based on which stacks are affected by the changes:
 - Always read `.claude/skills/review/rules/general.md`
 - If `backend/` files changed → also read `.claude/skills/review/rules/backend.md`
 - If `frontend/` files changed → also read `.claude/skills/review/rules/frontend.md`
