@@ -26,9 +26,10 @@ Build interfaces with intention, consistency, and memory. This skill helps you e
 **APPLY MODE** (system exists):
 1. Read `.design-engineer/system.md`
 2. Load direction, tokens, patterns
-3. Build using established patterns
-4. Validate before finishing
-5. If new patterns emerge → add to system.md
+3. **Meridian context**: Also respect `frontend/CLAUDE.md` conventions — semantic color names (`--theme-primary`, `--theme-surface`, etc.), 8pt spacing grid (`gap-2` = 8px), `cn()` utility for class merging, and writer-first UI philosophy (chat supports writing, not the other way around).
+4. Build using established patterns
+5. Validate before finishing
+6. If new patterns emerge → add to system.md
 
 **ESTABLISH MODE** (real project, no system):
 1. Scan project structure (package.json, files, framework)
