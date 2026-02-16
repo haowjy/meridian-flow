@@ -1,6 +1,6 @@
 You are a planning agent. Read the plan at {{PLAN_FILE}}.
 
-{{PROGRESS}}
+If a progress file exists at {{TASKS_DIR}}/progress.md, read it to understand what has already been completed.
 
 Create the next implementable slice. Write it to {{TASKS_DIR}}/current.md with:
 - A clear title
