@@ -128,3 +128,4 @@ build-local: ## Build using local workspace (forces GOWORK=../go.work)
 
 run-local: ## Run using local workspace (forces GOWORK=../go.work)
 	GOWORK=$(GO_WORK_FILE) go run ./cmd/server/main.go
+

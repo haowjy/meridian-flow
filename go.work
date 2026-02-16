@@ -4,4 +4,5 @@ use (
 	./backend
 	./meridian-llm-go
 	./meridian-stream-go
+	./orchestrator
 )

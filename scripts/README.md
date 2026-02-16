@@ -451,6 +451,73 @@ git commit --no-verify -m "message"
 
 ---
 
+## `orchestrator/`
+
+**Purpose:** Headless pipeline that iterates plan slices through 5 stages: plan → implement → review → cleanup → commit. Wraps Claude Code, Codex, or OpenCode.
+
+### Quick Start
+
+```bash
+# Default (Claude Code)
+./scripts/orchestrator/run.sh _docs/plans/path/to/plan.md
+
+# With Codex or OpenCode
+AI_TOOL=codex ./scripts/orchestrator/run.sh _docs/plans/path/to/plan.md
+AI_TOOL=opencode ./scripts/orchestrator/run.sh _docs/plans/path/to/plan.md
+```
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--start-at` | (none) | Resume from stage: `plan\|implement\|review\|cleanup\|commit` |
+| `--max-slices` | `20` | Cap total slice iterations |
+| `--quiet` | `false` | Suppress LLM output (logs only) |
+| `--ai-tool` | `$AI_TOOL` or `claude` | Override AI tool |
+
+### Pipeline
+
+Each slice runs 5 stages in order:
+
+1. **plan** — Reads the plan file, creates `_docs/hidden/tasks/current.md` (or writes `ALL_DONE`)
+2. **implement** — Executes `current.md`
+3. **review** — Checks `git diff` for issues, creates `cleanup-NNN.md` tasks
+4. **cleanup** — Fixes each cleanup task
+5. **commit** — Creates a commit, rotates task files (`current.md` → `progress.md`)
+
+Stages communicate via files in `_docs/hidden/tasks/`. Logs go to `_docs/hidden/orchestrator-logs/`.
+
+### Prompt Templates
+
+Editable templates in `scripts/orchestrator/prompts/`:
+
+| Template | Stage | Variables |
+|----------|-------|-----------|
+| `plan-slice.md` | plan | `{{PLAN_FILE}}`, `{{TASKS_DIR}}` |
+| `implement.md` | implement | `{{TASKS_DIR}}` |
+| `review.md` | review | `{{TASKS_DIR}}` |
+| `cleanup.md` | cleanup | `{{CLEANUP_FILE}}` |
+| `commit.md` | commit | `{{BREADCRUMBS}}` |
+
+### Architecture
+
+Go CLI in `orchestrator/` (standalone module at repo root):
+
+| File | Purpose |
+|------|---------|
+| `main.go` | CLI flags, repo root resolution |
+| `orchestrator.go` | Main loop (slice iteration, stage dispatch) |
+| `agent.go` | AI tool wrapper (claude/codex/opencode via stdin) |
+| `stage.go` | Stage definitions (tools, templates, max turns) |
+| `render.go` | Template variable substitution |
+| `rotate.go` | Task file rotation after commit |
+
+### Interactive Equivalents
+
+Use `/plan-slice` and `/review` skills for the same stages in an interactive Claude Code session.
+
+---
+
 ## Future Scripts
 
 - `deploy.sh` - Deploy to Railway + Vercel
