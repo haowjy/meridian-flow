@@ -1,6 +1,9 @@
 /**
  * EditorPanel - CodeMirror 6 markdown editor with AI diff view support.
  *
+ * NOTE: ~585 lines — approaching SRP limit. Monitor on next feature addition;
+ * candidates for extraction: wiki-link popover logic, create-from-broken-link handler.
+ *
  * Key architecture:
  * - Merged document is source of truth (content + aiVersion combined with PUA markers)
  * - Accept/reject are CM6 transactions (undoable via Cmd+Z)

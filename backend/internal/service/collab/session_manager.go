@@ -27,6 +27,9 @@ type DocumentSessionManager struct {
 }
 
 // DocumentSession wraps a single in-memory Y.Doc lifecycle.
+//
+// Concurrency: refCount is guarded by DocumentSessionManager.mu (not this session's mu).
+// Acquire/Release hold the manager lock when reading or writing refCount.
 type DocumentSession struct {
 	docID                   string
 	doc                     *ycrdt.Doc
@@ -247,6 +250,8 @@ func (s *DocumentSession) persistLocked(ctx context.Context, writeSnapshot bool)
 		return err
 	}
 
+	// Phase 1: aiContent == content because there is no separate AI-edited view yet.
+	// Phase 2+ will diverge these when AI suggestions produce a distinct aiContent.
 	if err := s.store.SaveState(ctx, s.docID, state, content, content); err != nil {
 		return err
 	}

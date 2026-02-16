@@ -213,6 +213,10 @@ export function useDocumentCollab({
     };
   }, [clearState, documentId, enabled, initialContent, setState]);
 
+  // Phase 5: setLocalAwarenessState() for multi-user cursors / presence.
+  // The runtime already creates an awareness instance; this hook will expose
+  // setLocalUser({ name, color }) and return a peer list for cursor rendering.
+
   return {
     extensions: enabled ? extensions : [],
     connectionState,
