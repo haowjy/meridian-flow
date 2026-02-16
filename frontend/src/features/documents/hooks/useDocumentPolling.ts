@@ -23,6 +23,8 @@ import type { Document } from "../types/document";
  * Options for document polling.
  */
 export interface UseDocumentPollingOptions {
+  /** Explicit enable flag. */
+  enabled?: boolean;
   /** Document ID to poll. Polling disabled if undefined. */
   documentId: string | undefined;
   /** Current aiVersionRev (CAS token). Used to detect changes. */
@@ -79,6 +81,7 @@ export function useDocumentPolling(
   handlers: UseDocumentPollingHandlers,
 ): void {
   const {
+    enabled = true,
     documentId,
     currentAIVersionRev,
     hasUserEdit,
@@ -92,7 +95,7 @@ export function useDocumentPolling(
   useResourcePolling<AIStatusResponse>({
     // Always poll when document is open (removed hasAIVersion condition)
     // This allows detecting new AI edits the user hasn't seen yet
-    enabled: !!documentId && !hasUserEdit,
+    enabled: enabled && !!documentId && !hasUserEdit,
     intervalMs,
 
     // Phase 1: Lightweight status check (~100 bytes vs ~50KB full document)

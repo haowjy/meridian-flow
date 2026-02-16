@@ -32,13 +32,12 @@ make seed-fresh   # Drop tables + seed
 make seed-clear   # Clear data (keep schema)
 ```
 
-## Server Management (IMPORTANT)
+## Server Management
 
-**User manages the server, not Claude:**
-- User starts/stops/restarts server
-- Claude suggests commands: `make run`, `make dev`
+- Claude CAN restart the backend server via: `./scripts/restart-server.sh`
 - Claude CAN run curl to test endpoints (once server running)
-- If tests fail, Claude informs user + suggests restart
+- Claude CAN run `./scripts/get-token.sh` to refresh `ACCESS_TOKEN` in root `.env` before authenticated smoke tests
+- If tests fail, restart the server and re-test
 
 ## API Testing
 
@@ -49,6 +48,16 @@ curl http://localhost:8080/api/projects
 curl http://localhost:8080/api/projects/<PROJECT_ID>/tree
 curl http://localhost:8080/api/documents/:id
 ```
+
+## Smoke Testing
+
+- Scratchpad: `tmp/` at repo root (gitignored) for one-off curl scripts
+- Get token: `./scripts/get-token.sh` (saves `ACCESS_TOKEN` to root `.env`)
+  - Setup: `cp scripts/get-token.sh.example scripts/get-token.sh && chmod +x scripts/get-token.sh`
+- Token refresh is agent-authorized: Claude may run `./scripts/get-token.sh` whenever the current token is expired
+- Load token: `source .env`
+- Authenticated curl: `curl -H "Authorization: Bearer $ACCESS_TOKEN" http://localhost:8080/api/...`
+- Existing smoke tests in `tmp/` — see `tmp/README.md`
 
 ## Architecture
 

@@ -55,6 +55,7 @@ export function useDocumentSync<TEditor = any>(
   hasUserEdit: boolean,
   editorRef: React.MutableRefObject<BaseEditorRef<TEditor> | null>,
   hydrateDocument: (doc: HydrationInput) => void,
+  enabled = true,
 ): void {
   // Detect editor type and get adapter
   const editorType = detectEditorType(extension);
@@ -83,6 +84,7 @@ export function useDocumentSync<TEditor = any>(
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
+    if (!enabled) return;
     if (!activeDocument) return;
     if (!hasUserEdit) return;
     if (pendingServerSnapshot) return; // Don't save if conflict pending
@@ -226,6 +228,7 @@ export function useDocumentSync<TEditor = any>(
     editVersionRef,
     serverHasAIVersionRef,
     adapter,
+    enabled,
   ]);
 
   // ---------------------------------------------------------------------------
@@ -233,6 +236,7 @@ export function useDocumentSync<TEditor = any>(
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
+    if (!enabled) return;
     // Return cleanup function that flushes pending changes.
     // Note: We intentionally read refs at cleanup time to get the LATEST values.
     // These refs point to our own data (not React DOM nodes), so they're stable.
@@ -319,5 +323,5 @@ export function useDocumentSync<TEditor = any>(
     };
     /* eslint-enable react-hooks/exhaustive-deps */
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refs are stable, documentId/adapter trigger re-subscription
-  }, [documentId, adapter]);
+  }, [documentId, adapter, enabled]);
 }

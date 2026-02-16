@@ -17,8 +17,9 @@ import (
 func AuthMiddleware(jwtVerifier auth.JWTVerifier) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Skip auth for health check endpoint
-			if r.URL.Path == "/health" {
+			// Skip auth for health check and collab websocket entrypoint only.
+			// Collab websocket uses JWT-in-first-message instead of Authorization header.
+			if r.URL.Path == "/health" || strings.HasPrefix(r.URL.Path, "/ws/documents/") {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -53,4 +54,3 @@ func AuthMiddleware(jwtVerifier auth.JWTVerifier) func(http.Handler) http.Handle
 		})
 	}
 }
-

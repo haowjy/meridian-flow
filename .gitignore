@@ -9,6 +9,7 @@ go.work.sum
 __debug_bin*
 
 tmp/
+temp/
 
 # Local Go build cache (when GOCACHE is pointed inside repo for sandboxed runs)
 backend/.gocache/
@@ -16,3 +17,7 @@ backend/.gocache/
 .gemini-clipboard
 
 .pnpm-store
+
+.env
+
+scripts/get-token.sh

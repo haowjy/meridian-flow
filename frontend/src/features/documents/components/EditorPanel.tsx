@@ -43,6 +43,7 @@ import { ChevronLeft } from "lucide-react";
 import { AIHunkNavigator } from "./AIHunkNavigator";
 import {
   useDocumentContent,
+  useDocumentCollab,
   useDocumentSync,
   useDiffView,
   useDocumentPolling,
@@ -122,6 +123,9 @@ export function EditorPanel({
     refType: "document" | "folder";
   } | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [collabSeedContent, setCollabSeedContent] = useState<string | null>(
+    null,
+  );
 
   const navigate = useNavigate();
   const projectSlug = useProjectStore((s) => s.currentProject()?.slug) ?? "";
@@ -211,6 +215,7 @@ export function EditorPanel({
   // Get file extension for adapter selection (default to .md if not available yet)
   const extension =
     activeDocument?.extension ?? documentMetadata?.extension ?? ".md";
+  const collabEnabled = isCollabExtension(extension);
   const editorFontExtensions = useMemo(() => {
     if (extension.toLowerCase() !== ".txt") return [];
     return [plaintextEditorTheme];
@@ -229,7 +234,27 @@ export function EditorPanel({
     handleContentChange,
     hydrateDocument,
     syncContext,
-  } = useDocumentContent(documentId, extension, editorRef);
+  } = useDocumentContent(documentId, extension, editorRef, {
+    disableAIVersion: collabEnabled,
+  });
+
+  useEffect(() => {
+    setCollabSeedContent(null);
+  }, [documentId]);
+
+  useEffect(() => {
+    if (!collabEnabled || !isInitialized) return;
+    setCollabSeedContent(typeof localDocument === "string" ? localDocument : "");
+    // Only seed once when document initializes; further edits come from Yjs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentId, collabEnabled, isInitialized]);
+
+  const { extensions: collabExtensions, isReady: isCollabReady } =
+    useDocumentCollab({
+      documentId,
+      enabled: collabEnabled && isInitialized && collabSeedContent !== null,
+      initialContent: collabSeedContent ?? "",
+    });
 
   // 2. Document sync (save, flush) - pure effect, no return
   useDocumentSync(
@@ -240,6 +265,7 @@ export function EditorPanel({
     hasUserEdit,
     editorRef,
     hydrateDocument,
+    !collabEnabled,
   );
 
   // 3. Diff view (markers, navigation)
@@ -252,6 +278,7 @@ export function EditorPanel({
     handleAcceptAll,
     handleRejectAll,
   } = useDiffView({
+    enabled: !collabEnabled,
     documentId,
     localDocument,
     editorRef,
@@ -265,6 +292,7 @@ export function EditorPanel({
   // Note: Polls always (not just when AI session active) to detect new AI edits.
   useDocumentPolling(
     {
+      enabled: !collabEnabled,
       documentId,
       currentAIVersionRev: syncContext.aiVersionBaseRevRef.current,
       hasUserEdit,
@@ -454,7 +482,11 @@ export function EditorPanel({
     return <div className="flex h-full flex-col" />;
   }
 
-  const isContentLoading = activeDocument?.id !== documentId || !isInitialized;
+  const isContentLoading =
+    activeDocument?.id !== documentId ||
+    !isInitialized ||
+    (collabEnabled && collabSeedContent === null) ||
+    (collabEnabled && !isCollabReady);
 
   // ---------------------------------------------------------------------------
   // MAIN RENDER
@@ -492,6 +524,7 @@ export function EditorPanel({
                 onChange={handleContentChange}
                 onReady={handleEditorReady}
                 extensions={[
+                  ...collabExtensions,
                   ...initialExtensions,
                   ...wikiLinkExtensions,
                   ...editorFontExtensions,
@@ -542,4 +575,9 @@ export function EditorPanel({
       </div>
     </div>
   );
+}
+
+function isCollabExtension(extension: string): boolean {
+  const normalized = extension.toLowerCase();
+  return normalized === ".md" || normalized === ".markdown" || normalized === ".txt";
 }

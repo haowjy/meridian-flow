@@ -270,9 +270,9 @@ See `internal/repository/postgres/connection.go`
 
 ### Server Management
 
-- User manages dev server (starts/stops/restarts)
-- Claude suggests commands but doesn't run them
+- Claude CAN restart the backend server via: `./scripts/restart-server.sh`
 - Claude CAN run curl commands to test APIs
+- Claude CAN run `./scripts/get-token.sh` to refresh `ACCESS_TOKEN` in root `.env` before authenticated smoke tests
 
 ### Git Commits
 
@@ -285,6 +285,37 @@ See `internal/repository/postgres/connection.go`
 - User runs tests manually or via CI/CD
 - Claude can suggest test commands
 - Claude can help write/fix tests
+
+### Smoke Testing
+
+- Use `tmp/` at the repo root as a scratchpad for one-off curl scripts and ad-hoc tests (gitignored)
+- Get a dev access token: `./scripts/get-token.sh` (saves to root `.env`)
+  - First time: `cp scripts/get-token.sh.example scripts/get-token.sh && chmod +x scripts/get-token.sh`, then edit credentials
+- Token refresh is agent-authorized: Claude may run `./scripts/get-token.sh` whenever the current token is expired
+- Before running curl: `source .env` to load `ACCESS_TOKEN`
+- Authenticated requests: `curl -H "Authorization: Bearer $ACCESS_TOKEN" http://localhost:8080/api/...`
+
+### Scratchpad + Plan Sync
+
+- Use `_docs/hidden/scratch/` as a running scratchpad for cross-session continuity (handoff notes, active hypotheses, temporary TODOs, command snippets, validation notes).
+- Prefer small dated markdown notes (for example: `_docs/hidden/scratch/2026-02-16-collab-handshake.md`) so context survives compaction.
+- Do not store secrets or raw tokens in scratch files (`.env` values, JWTs, API keys, cookies).
+- Keep scratch content concise and task-focused; delete stale notes when a slice is fully complete.
+- While implementing any plan slice, update the relevant plan doc incrementally (small diffs, not rewrites), especially:
+  - current status/date
+  - what was completed
+  - current stop point
+  - next concrete slice
+- If implementation diverges from plan assumptions, add a short "Plan adjustment" note in the phase doc with rationale.
+
+### Long-Running Tasks
+
+When working on multi-step or large tasks:
+1. **Commit at good stopping points** — after completing a logical slice (a working feature, a passing test, a clean refactor), commit the progress
+2. **Compact context** — use `/compact` to summarize and free up context window
+3. **Continue** — pick up the next slice, referencing scratch notes or plan docs for continuity
+
+This prevents context exhaustion and ensures incremental progress is saved.
 
 ### Frontend
 

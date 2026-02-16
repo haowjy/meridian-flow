@@ -37,6 +37,11 @@ type TableNames struct {
 
 	// Skills system tables
 	ProjectSkills string
+
+	// Collaboration tables
+	CollabDocumentSnapshots  string
+	CollabDocumentProposals  string
+	CollabRequestIdempotency string
 }
 
 // NewTableNames creates table names with the given prefix
@@ -60,6 +65,11 @@ func NewTableNames(prefix string) *TableNames {
 
 		// Skills system tables
 		ProjectSkills: fmt.Sprintf("%sproject_skills", prefix),
+
+		// Collaboration tables
+		CollabDocumentSnapshots:  fmt.Sprintf("%scollab_document_snapshots", prefix),
+		CollabDocumentProposals:  fmt.Sprintf("%scollab_document_edit_proposals", prefix),
+		CollabRequestIdempotency: fmt.Sprintf("%scollab_request_idempotency", prefix),
 	}
 }
 
@@ -77,15 +87,15 @@ func NewTableNames(prefix string) *TableNames {
 //
 // Solution - Hybrid Approach:
 //
-// 1. AUTO-DETECTION: If port 6543 is detected (Supabase pooler), automatically uses
-//    QueryExecModeSimpleProtocol which disables prepared statements.
+//  1. AUTO-DETECTION: If port 6543 is detected (Supabase pooler), automatically uses
+//     QueryExecModeSimpleProtocol which disables prepared statements.
 //
-// 2. EXPLICIT OVERRIDE: Users can set the mode via connection string parameter:
-//    ?default_query_exec_mode=simple_protocol
-//    This is parsed by pgx automatically and takes precedence over auto-detection.
+//  2. EXPLICIT OVERRIDE: Users can set the mode via connection string parameter:
+//     ?default_query_exec_mode=simple_protocol
+//     This is parsed by pgx automatically and takes precedence over auto-detection.
 //
-// 3. DIRECT CONNECTIONS: Port 5432 (direct PostgreSQL) uses default prepared statements
-//    for optimal performance.
+//  3. DIRECT CONNECTIONS: Port 5432 (direct PostgreSQL) uses default prepared statements
+//     for optimal performance.
 //
 // Note on Dynamic Table Names:
 // Our use of fmt.Sprintf for dynamic table prefixes (dev_, test_, prod_) is safe with

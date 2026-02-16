@@ -1,0 +1,62 @@
+package collab
+
+import (
+	"context"
+	"errors"
+
+	"meridian/internal/domain"
+	collabModels "meridian/internal/domain/models/collab"
+	docsysRepo "meridian/internal/domain/repositories/docsystem"
+	domainServices "meridian/internal/domain/services"
+	collabSvc "meridian/internal/domain/services/collab"
+)
+
+// DocumentResolverAdapter bridges collab with existing document/authorization services.
+type DocumentResolverAdapter struct {
+	docRepo    docsysRepo.DocumentRepository
+	authorizer domainServices.ResourceAuthorizer
+}
+
+// NewDocumentResolver creates a DocumentResolver backed by current document domain services.
+func NewDocumentResolver(
+	docRepo docsysRepo.DocumentRepository,
+	authorizer domainServices.ResourceAuthorizer,
+) collabSvc.DocumentResolver {
+	return &DocumentResolverAdapter{
+		docRepo:    docRepo,
+		authorizer: authorizer,
+	}
+}
+
+// ResolveDocument returns the minimal metadata collab requires for a document.
+func (r *DocumentResolverAdapter) ResolveDocument(ctx context.Context, docID string) (*collabModels.CollabDocRef, error) {
+	doc, err := r.docRepo.GetByIDOnly(ctx, docID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &collabModels.CollabDocRef{
+		DocumentID: doc.ID,
+		ProjectID:  doc.ProjectID,
+	}, nil
+}
+
+// VerifyOwnership checks whether a user can access the given document.
+func (r *DocumentResolverAdapter) VerifyOwnership(ctx context.Context, docID string, userID string) (bool, error) {
+	err := r.authorizer.CanAccessDocument(ctx, userID, docID)
+	if err == nil {
+		return true, nil
+	}
+
+	// Not found/forbidden/unauthorized are mapped to "not owner" without leaking details.
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		return false, nil
+	case errors.Is(err, domain.ErrForbidden):
+		return false, nil
+	case errors.Is(err, domain.ErrUnauthorized):
+		return false, nil
+	default:
+		return false, err
+	}
+}

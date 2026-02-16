@@ -4,7 +4,7 @@ audience: developer
 ---
 # Phase 1: Yjs Sync + Transport
 
-**Status:** In planning
+**Status:** Complete (foundation scaffolded on February 15, 2026; backend + frontend sync transport and offline wiring completed on February 16, 2026)
 **Priority:** High
 **Purpose:** Replace snapshot PATCH saves with Yjs CRDT sync over WebSocket via Go-only backend.
 
@@ -39,6 +39,24 @@ audience: developer
 - Heartbeat management (30s interval, 5s timeout).
 - Periodic snapshot persistence (see `_docs/plans/collab-ai/spec/compaction-retention.md` for full trigger policy: 2s debounce, every N updates, on disconnect, manual trigger).
 - Text extraction via `ytext.ToString()` persisted to `documents.content` (writer view) and `documents.ai_content` (= content in Phase 1; no proposals exist yet).
+
+### Current Milestone
+
+- Added schema foundation: `documents.yjs_state`, `documents.ai_content`, `collab_document_snapshots`.
+- Added collab domain boundaries: `DocumentResolver`, `DocumentBroadcaster`, `DocumentStore`.
+- Added in-memory broadcaster v1 implementation and Postgres `DocumentStore` implementation.
+- Wired `/ws/documents/{id}` route to websocket upgrade + JWT-in-first-message verification.
+- Added websocket-side authorization checks (`AUTH_FAILED` for bad tokens, `FORBIDDEN` for inaccessible docs) and malformed ID rejection (`400`).
+- Implemented Yjs sync envelope handling (`sync step1`, `sync step2`, `update`) and awareness relay over one WS connection.
+- Added in-memory document session manager (`Y.Doc` load/apply/encode), 2s debounce persistence, and auto snapshot writes on interval/disconnect.
+- Fixed derived text persistence to read `Y.Text("content")` via `doc.GetText("content")`, ensuring `GET /api/documents/{id}` reflects synced Yjs state.
+- Added heartbeat loop (30s server heartbeat, 5s client response timeout).
+- Added `@meridian/cm6-collab` package scaffold (`packages/cm6-collab`) with sync runtime + CM6 binding.
+- Wired frontend host integration for `/ws/documents/{id}` with JWT-in-first-message flow and reconnect backoff.
+- Added `y-indexeddb` wiring for offline persistence in editor collab flow.
+- Added frontend sync state projection (`useCollabStore`) and editor integration (`useDocumentCollab`).
+- Added one-off WS sync roundtrip smoke coverage in `tmp/ws_collab_sync_roundtrip_smoke.sh`.
+- Milestone reached: Phase 1 exit criteria implemented and validated via backend tests + frontend lint/build/tests + websocket handshake/roundtrip smoke scripts.
 
 ### Frontend
 
@@ -94,8 +112,7 @@ When multi-user ships (Phase 5), cursor rendering is purely frontend work — no
 
 ## Open Questions
 
-1. **y-crdt awareness protocol completeness** — Need to verify Go library can identify awareness message types for relay. If awareness relay is just "forward opaque bytes," Go only needs to tag message types, not parse them.
-2. **y-crdt sync protocol handler** — Primitives exist but message framing/exchange logic (~50 lines) needs to be written on top of them.
+None for Phase 1. Longer browser soak remains recommended as operational hardening, not a phase gate.
 
 ## Related
 

@@ -24,7 +24,7 @@ This directory contains detailed documentation for all features in Meridian, org
 |---------|-------|---------|----------|-------|
 | **Authentication** | Both | [x] Complete | [x] Complete | JWT validation, Google OAuth only, protected routes, resource authorization |
 | **User Settings** | Both | [x] Complete | [-] Partial | Profile UI complete, preferences API complete, preferences UI missing |
-| **Document Editor** | Frontend | N/A | [x] Complete | CodeMirror, auto-save, markdown, caching |
+| **Document Editor** | Frontend | N/A | [x] Complete | CodeMirror, Yjs WS sync (text docs), offline persistence, caching |
 | **Multi-Editor** | Both | N/A | [-] Partial | Adapter foundation complete, editor components pending (LaTeX, images) |
 | **File System** | Both | [x] Complete | [x] Complete | CRUD, tree view, context menus; Search UI non-functional |
 | **Document Import** | Both | [x] Complete | [x] Complete | Multi-format (.zip, .md, .txt, .html), XSS sanitization, drag-drop |
@@ -58,9 +58,9 @@ This directory contains detailed documentation for all features in Meridian, org
 - Preferences UI: not yet implemented (frontend [ ])
 
 ### [f-document-editor/](f-document-editor/)
-**CodeMirror markdown editor with auto-save and caching**
+**CodeMirror editor with Yjs realtime sync and caching**
 - CodeMirror 6 markdown-native editor with live preview
-- Auto-save (1s debounce), no format conversion needed
+- Yjs WS sync + offline `y-indexeddb` for text docs
 - IndexedDB caching with Reconcile-Newest strategy
 - Word count, save status UI
 
