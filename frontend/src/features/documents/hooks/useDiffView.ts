@@ -41,6 +41,7 @@ const diffModeContentClass = EditorView.contentAttributes.of({
 // =============================================================================
 
 export interface UseDiffViewOptions {
+  enabled?: boolean;
   documentId: string;
   localDocument: string;
   editorRef: React.MutableRefObject<CodeMirrorEditorRef | null>;
@@ -72,6 +73,7 @@ export interface UseDiffViewResult {
 // =============================================================================
 
 export function useDiffView({
+  enabled = true,
   documentId,
   localDocument,
   editorRef,
@@ -121,34 +123,47 @@ export function useDiffView({
   // ---------------------------------------------------------------------------
 
   // Computed hunks from current document
-  const hunks = useMemo(() => extractHunks(localDocument), [localDocument]);
+  const hunks = useMemo(() => {
+    if (!enabled) return [];
+    return extractHunks(localDocument);
+  }, [enabled, localDocument]);
 
   // Diff mode active = markers exist (NOT based on aiVersion from server)
-  const hasAISuggestions = hasAnyMarker(localDocument);
+  const hasAISuggestions = enabled && hasAnyMarker(localDocument);
 
   // Initial extension array - ALWAYS include diff view extensions.
   // The plugin handles empty documents gracefully (no markers = no decorations).
   // This eliminates timing issues with dynamic enable/disable via reconfigure.
   const initialExtensions = useMemo(
-    () => [
-      diffCompartment.of([
-        createDiffViewExtension({
-          // Sync React state when accept/reject transactions change the document.
-          // This ensures localDocument and editVersion are updated for autosave.
-          onContentChanged: (content) => {
-            setLocalDocument(content);
-            incrementEditVersion();
-          },
-          // Handle hunk focus changes (click inside to focus, outside to unfocus)
-          onHunkFocusChange: (hunkIndex) => {
-            setFocusedHunkIndex(hunkIndex); // -1 unfocuses, 0+ focuses that hunk
-          },
-        }),
-        diffModeContentClass,
-      ]),
-    ],
+    () => {
+      if (!enabled) return [];
+
+      return [
+        diffCompartment.of([
+          createDiffViewExtension({
+            // Sync React state when accept/reject transactions change the document.
+            // This ensures localDocument and editVersion are updated for autosave.
+            onContentChanged: (content) => {
+              setLocalDocument(content);
+              incrementEditVersion();
+            },
+            // Handle hunk focus changes (click inside to focus, outside to unfocus)
+            onHunkFocusChange: (hunkIndex) => {
+              setFocusedHunkIndex(hunkIndex); // -1 unfocuses, 0+ focuses that hunk
+            },
+          }),
+          diffModeContentClass,
+        ]),
+      ];
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- diffCompartment is reset when documentId changes
-    [documentId, setLocalDocument, incrementEditVersion, setFocusedHunkIndex],
+    [
+      documentId,
+      enabled,
+      setLocalDocument,
+      incrementEditVersion,
+      setFocusedHunkIndex,
+    ],
   );
 
   // ---------------------------------------------------------------------------
@@ -167,18 +182,20 @@ export function useDiffView({
   // Bulk operations (via CM6 transactions)
   // Note: onContentChanged callback handles setLocalDocument + setHasUserEdit synchronously.
   const handleAcceptAll = useCallback(() => {
+    if (!enabled) return;
     const view = editorRef.current?.getView();
     if (!view) return;
     acceptAll(view);
     setFocusedHunkIndex(0);
-  }, [editorRef, setFocusedHunkIndex]);
+  }, [editorRef, enabled, setFocusedHunkIndex]);
 
   const handleRejectAll = useCallback(() => {
+    if (!enabled) return;
     const view = editorRef.current?.getView();
     if (!view) return;
     rejectAll(view);
     setFocusedHunkIndex(0);
-  }, [editorRef, setFocusedHunkIndex]);
+  }, [editorRef, enabled, setFocusedHunkIndex]);
 
   // ---------------------------------------------------------------------------
   // EFFECTS
@@ -199,6 +216,7 @@ export function useDiffView({
   // Sync focused hunk index to CM6 for decoration highlighting.
   // This SHOULD run on hunks change (decorations need current hunk positions).
   useEffect(() => {
+    if (!enabled) return;
     if (!isEditorReady || hunks.length === 0) return;
     const view = editorRef.current?.getView();
     if (!view) return;
@@ -206,11 +224,12 @@ export function useDiffView({
     view.dispatch({
       effects: setFocusedHunkIndexEffect.of(focusedHunkIndex),
     });
-  }, [focusedHunkIndex, hunks, isEditorReady, editorRef]);
+  }, [enabled, focusedHunkIndex, hunks, isEditorReady, editorRef]);
 
   // Navigate cursor to focused hunk (only on user-initiated navigation, not on typing).
   // Uses prevFocusedHunkIndexRef to detect navigation vs hunks change from typing.
   useEffect(() => {
+    if (!enabled) return;
     if (!isEditorReady) return;
     const view = editorRef.current?.getView();
     if (!view) return;
@@ -227,10 +246,11 @@ export function useDiffView({
         effects: EditorView.scrollIntoView(hunk.from, { y: "center" }),
       });
     }
-  }, [focusedHunkIndex, hunks, isEditorReady, editorRef]);
+  }, [enabled, focusedHunkIndex, hunks, isEditorReady, editorRef]);
 
   // Clamp focusedHunkIndex and navigatorPosition when hunks are removed
   useEffect(() => {
+    if (!enabled) return;
     // Always clamp navigator position (even if focusedHunkIndex is -1)
     clampNavigatorPosition(hunks.length);
 
@@ -246,6 +266,7 @@ export function useDiffView({
     focusedHunkIndex,
     setFocusedHunkIndex,
     clampNavigatorPosition,
+    enabled,
   ]);
 
   // ---------------------------------------------------------------------------

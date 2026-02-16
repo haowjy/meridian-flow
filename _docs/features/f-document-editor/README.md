@@ -6,7 +6,7 @@ feature: "Document Editor"
 
 # Document Editor
 
-**CodeMirror 6 markdown editor with live preview, auto-save, and caching.**
+**CodeMirror 6 editor with live preview, Yjs realtime sync, and offline persistence.**
 
 ## Status: ✅ Complete (Frontend Only)
 
@@ -29,17 +29,16 @@ feature: "Document Editor"
 
 ### Document Saving
 **Status**: ✅ Complete
-- Auto-save with 1-second debounce (trailing edge)
-- Manual save via Cmd/Ctrl+S
-- Save status UI (Saved, Saving, Error with timestamp)
-- Backend integration: PATCH to `/api/documents/:id`
+- Collab-enabled text docs (`.md`, `.markdown`, `.txt`) use Yjs sync over `/ws/documents/:id`
+- Legacy PATCH save path remains for non-collab editors
+- Save status UI remains in header
 - Stale save-ack race fixed (prevents false conflict + autosave stall): see `/_docs/future/bugs/document-sync-stale-save-ack-race.md`
 - See [saving-and-sync.md](saving-and-sync.md)
 
 ### Content Caching
 **Status**: ✅ Complete
-- Strategy: Reconcile-Newest (cache-first with server reconciliation)
-- IndexedDB for instant loads
+- Strategy: Reconcile-Newest for metadata/load path
+- `y-indexeddb` for offline Yjs document state (text docs)
 - Optimistic updates
 - Conflict handling via server timestamps
 - See [saving-and-sync.md](saving-and-sync.md)
@@ -117,10 +116,9 @@ feature: "Document Editor"
 
 ## Known Gaps
 
-1. **No offline editing** - Can view cached docs, but can't edit without connection
-2. **No version history** - No undo beyond current session
-3. **No collaborative editing** - Single-user only
-4. **No rich media** - Images, tables, embeds not supported yet
+1. **No proposal-review UX in collab flow yet** - Phase 3 scope
+2. **No persisted history/snapshot UI yet** - Phase 2 scope
+3. **No rich media** - Images, tables, embeds not supported yet
 
 ---
 

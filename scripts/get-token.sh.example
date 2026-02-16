@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Fetch a dev access token from Supabase and store in root .env
+# Setup: cp scripts/get-token.sh.example scripts/get-token.sh && chmod +x scripts/get-token.sh
+#        Edit the variables below, then run: ./scripts/get-token.sh
+
+SUPABASE_AUTH_URL="https://<YOUR_PROJECT>.supabase.co/auth/v1/token?grant_type=password"
+EMAIL="your@email.com"
+PASSWORD="your-password"
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+ENV_FILE="$ROOT_DIR/.env"
+
+TOKEN=$(curl -sS "$SUPABASE_AUTH_URL" \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" \
+  | jq -r '.access_token')
+
+if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+  echo "Failed to get token"
+  exit 1
+fi
+
+if [ -f "$ENV_FILE" ] && grep -q '^ACCESS_TOKEN=' "$ENV_FILE"; then
+  sed -i "s|^ACCESS_TOKEN=.*|ACCESS_TOKEN=$TOKEN|" "$ENV_FILE"
+else
+  echo "ACCESS_TOKEN=$TOKEN" >> "$ENV_FILE"
+fi
+
+echo "Token saved to $ENV_FILE"

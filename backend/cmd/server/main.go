@@ -18,11 +18,13 @@ import (
 	"meridian/internal/jobs"
 	"meridian/internal/middleware"
 	"meridian/internal/repository/postgres"
+	postgresCollab "meridian/internal/repository/postgres/collab"
 	postgresDocsys "meridian/internal/repository/postgres/docsystem"
 	postgresLLM "meridian/internal/repository/postgres/llm"
 	postgresSkill "meridian/internal/repository/postgres/skill"
 	"meridian/internal/service"
 	serviceAuth "meridian/internal/service/auth"
+	serviceCollab "meridian/internal/service/collab"
 	serviceDocsys "meridian/internal/service/docsystem"
 	"meridian/internal/service/docsystem/converter"
 	"meridian/internal/service/identifier"
@@ -239,6 +241,21 @@ func main() {
 	newFolderHandler := handler.NewFolderHandler(folderService, logger, cfg)
 	newTreeHandler := handler.NewTreeHandler(treeService, identifierResolver, logger, cfg)
 	importHandler := handler.NewImportHandler(importService, authorizer, logger, cfg)
+	collabStore := postgresCollab.NewDocumentStore(repoConfig)
+	collabBroadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
+	collabSessionManager := serviceCollab.NewDocumentSessionManager(
+		collabStore,
+		logger,
+		cfg.CollabSnapshotIntervalUpdates,
+	)
+	collabHandler := handler.NewCollabHandler(
+		serviceCollab.NewDocumentResolver(docRepo, authorizer),
+		collabBroadcaster,
+		collabSessionManager,
+		jwtVerifier,
+		logger,
+		cfg,
+	)
 
 	// Thread handlers (follows Clean Architecture - no repository access)
 	threadHandler := handler.NewThreadHandler(
@@ -309,6 +326,9 @@ func main() {
 	mux.HandleFunc("DELETE /api/documents/{id}", newDocHandler.DeleteDocument)
 	// Note: ai_version is now handled via PATCH /api/documents/{id} with tri-state semantics
 
+	// Collaboration routes
+	mux.HandleFunc("GET /ws/documents/{id}", collabHandler.ConnectDocument)
+
 	// Import routes
 	mux.HandleFunc("POST /api/import", importHandler.Merge)
 	mux.HandleFunc("POST /api/import/replace", importHandler.Replace)
@@ -339,9 +359,9 @@ func main() {
 	mux.HandleFunc("POST /api/turns/{id}/interrupt", threadHandler.InterruptTurn)      // Cancel streaming turn
 
 	// Interjection routes (submit messages while streaming)
-	mux.HandleFunc("POST /api/turns/{id}/interjection", threadHandler.UpsertInterjection)   // Add/update interjection
-	mux.HandleFunc("GET /api/turns/{id}/interjection", threadHandler.GetInterjection)       // Get interjection state
-	mux.HandleFunc("DELETE /api/turns/{id}/interjection", threadHandler.ClearInterjection)  // Clear interjection
+	mux.HandleFunc("POST /api/turns/{id}/interjection", threadHandler.UpsertInterjection)  // Add/update interjection
+	mux.HandleFunc("GET /api/turns/{id}/interjection", threadHandler.GetInterjection)      // Get interjection state
+	mux.HandleFunc("DELETE /api/turns/{id}/interjection", threadHandler.ClearInterjection) // Clear interjection
 
 	// Debug routes (only in dev environment)
 	if cfg.Environment == "dev" && threadDebugHandler != nil {

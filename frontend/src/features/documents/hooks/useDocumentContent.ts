@@ -108,7 +108,11 @@ export function useDocumentContent<TEditor = any>(
   documentId: string,
   extension: string,
   editorRef: React.MutableRefObject<BaseEditorRef<TEditor> | null>,
+  options?: {
+    disableAIVersion?: boolean;
+  },
 ): UseDocumentContentResult<TEditor> {
+  const disableAIVersion = options?.disableAIVersion ?? false;
   // Detect editor type and get adapter
   const editorType = detectEditorType(extension);
   const adapter = getAdapter(editorType);
@@ -200,7 +204,7 @@ export function useDocumentContent<TEditor = any>(
   const hydrateDocument = useCallback(
     (doc: HydrationInput) => {
       const content = doc.content;
-      const aiVersion = doc.aiVersion;
+      const aiVersion = disableAIVersion ? null : doc.aiVersion;
       // Use adapter to transform storage → editor format
       const editorContent = adapter.toEditor(content, aiVersion) as TEditor;
 
@@ -216,7 +220,7 @@ export function useDocumentContent<TEditor = any>(
         });
       }
     },
-    [adapter, editorRef],
+    [adapter, disableAIVersion, editorRef],
   );
 
   // Handle content changes from the editor

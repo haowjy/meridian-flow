@@ -9,6 +9,7 @@ export {
   type UseDocumentContentResult,
 } from "./useDocumentContent";
 export { useDocumentSync } from "./useDocumentSync";
+export { useDocumentCollab } from "./useDocumentCollab";
 
 // Visualization hooks
 export {
