@@ -5,7 +5,6 @@ export {
   buildHeartbeatAckMessage,
   toUint8Array,
   type CollabSyncStatus,
-  type CollabServerErrorEvent,
   type CollabServerTextEvent,
   type CreateCollabSyncRuntimeOptions,
 } from "./sync/runtime";

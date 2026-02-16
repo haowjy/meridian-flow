@@ -131,7 +131,7 @@ func (s *DocumentSession) BuildSyncStep1Payload() ([]byte, error) {
 }
 
 // HandleSyncPayload applies a sync payload and returns protocol-specific response/update artifacts.
-func (s *DocumentSession) HandleSyncPayload(payload []byte, transactionOrigin string) (int, []byte, []byte, error) {
+func (s *DocumentSession) HandleSyncPayload(ctx context.Context, payload []byte, transactionOrigin string) (int, []byte, []byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -152,7 +152,7 @@ func (s *DocumentSession) HandleSyncPayload(payload []byte, transactionOrigin st
 			return 0, nil, nil, err
 		}
 
-		if err := s.markDirtyLocked(); err != nil {
+		if err := s.markDirtyLocked(ctx); err != nil {
 			return 0, nil, nil, err
 		}
 	}
@@ -200,7 +200,7 @@ func (s *DocumentSession) flushOnDisconnect(ctx context.Context) error {
 	return nil
 }
 
-func (s *DocumentSession) markDirtyLocked() error {
+func (s *DocumentSession) markDirtyLocked(ctx context.Context) error {
 	s.dirty = true
 	s.updateCount++
 
@@ -211,7 +211,7 @@ func (s *DocumentSession) markDirtyLocked() error {
 	}
 
 	if s.updateCount >= s.snapshotIntervalUpdates {
-		if err := s.persistLocked(context.Background(), true); err != nil {
+		if err := s.persistLocked(ctx, true); err != nil {
 			return err
 		}
 		s.updateCount = 0
@@ -228,6 +228,8 @@ func (s *DocumentSession) runDebouncePersist() {
 		return
 	}
 
+	// Uses context.Background() because this fires asynchronously from a timer,
+	// after the original request context has completed.
 	ctx, cancel := context.WithTimeout(context.Background(), persistTimeout)
 	defer cancel()
 
@@ -256,6 +258,15 @@ func (s *DocumentSession) persistLocked(ctx context.Context, writeSnapshot bool)
 	}
 
 	s.dirty = false
+
+	// Stop any pending debounce timer since we just persisted. The next update
+	// will create a fresh timer. Without this, a stale timer could fire and
+	// persist redundantly (harmless since dirty=false, but wasteful).
+	if s.debounceTimer != nil {
+		s.debounceTimer.Stop()
+		s.debounceTimer = nil
+	}
+
 	return nil
 }
 
@@ -295,6 +306,9 @@ func extractUpdatePayload(syncPayload []byte) ([]byte, error) {
 	return update, nil
 }
 
+// safeReadSyncMessage wraps ycrdt.ReadSyncMessage with panic recovery.
+// Known panic triggers: nil decoder/encoder, nil doc, malformed sync payload.
+// Panics map to RESET_REQUIRED at the handler layer.
 func safeReadSyncMessage(
 	decoder *ycrdt.UpdateDecoderV1,
 	encoder *ycrdt.UpdateEncoderV1,
@@ -311,6 +325,9 @@ func safeReadSyncMessage(
 	return messageType, nil
 }
 
+// safeApplyUpdate wraps ycrdt.ApplyUpdate with panic recovery.
+// Known panic triggers: nil doc, malformed/truncated update bytes, nil internal structures.
+// Panics map to RESET_REQUIRED at the handler layer.
 func safeApplyUpdate(doc *ycrdt.Doc, update []byte, origin interface{}) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -322,6 +339,9 @@ func safeApplyUpdate(doc *ycrdt.Doc, update []byte, origin interface{}) (err err
 	return nil
 }
 
+// safeEncodeStateAsUpdate wraps ycrdt.EncodeStateAsUpdate with panic recovery.
+// Known panic triggers: nil doc, corrupted internal doc state.
+// Panics map to RESET_REQUIRED at the handler layer.
 func safeEncodeStateAsUpdate(doc *ycrdt.Doc) (state []byte, err error) {
 	defer func() {
 		if r := recover(); r != nil {

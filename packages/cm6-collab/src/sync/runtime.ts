@@ -29,8 +29,7 @@ export interface CollabHeartbeatEvent {
 
 export type CollabServerTextEvent =
   | CollabHeartbeatEvent
-  | CollabServerErrorEvent
-  | { type: string; [key: string]: unknown };
+  | CollabServerErrorEvent;
 
 export interface CreateCollabSyncRuntimeOptions {
   documentId: string;
