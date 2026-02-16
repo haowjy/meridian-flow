@@ -225,6 +225,13 @@ interface UIStore {
   expandedToolGroups: Set<string>;
 
   /**
+   * Whether the version history panel is visible for the active document.
+   * NOT persisted (session-scoped).
+   * @default false
+   */
+  showVersionHistory: boolean;
+
+  /**
    * References queued by non-composer UI actions (e.g., tree context menus).
    * TurnInput consumes and clears this queue, appending each item to the draft.
    * NOT persisted.
@@ -336,6 +343,12 @@ interface UIStore {
   /** Clear queued references after composer consumes them. */
   clearPendingThreadReferences: () => void;
 
+  /** Toggle version history panel visibility. */
+  toggleVersionHistory: () => void;
+
+  /** Set version history panel visibility. */
+  setShowVersionHistory: (show: boolean) => void;
+
   /** Record that the user selected an @ reference (persisted timestamp). */
   recordAtReferenceUsage: () => void;
 }
@@ -378,6 +391,7 @@ export const useUIStore = create<UIStore>()(
       recentlyCreatedFolderId: null,
       expandedThinkingGroups: new Set<string>(),
       expandedToolGroups: new Set<string>(),
+      showVersionHistory: false,
       pendingThreadReferences: [],
       lastAtReferenceUsed: null,
 
@@ -423,7 +437,7 @@ export const useUIStore = create<UIStore>()(
           prevId: get().activeDocumentId,
           stack,
         });
-        set({ activeDocumentId: id, activeSkillId: null });
+        set({ activeDocumentId: id, activeSkillId: null, showVersionHistory: false });
       },
       setActiveSkill: (id) => {
         const stack =
@@ -495,6 +509,9 @@ export const useUIStore = create<UIStore>()(
           return { pendingThreadReferences: merged };
         }),
       clearPendingThreadReferences: () => set({ pendingThreadReferences: [] }),
+      toggleVersionHistory: () =>
+        set((state) => ({ showVersionHistory: !state.showVersionHistory })),
+      setShowVersionHistory: (show) => set({ showVersionHistory: show }),
       recordAtReferenceUsage: () => set({ lastAtReferenceUsed: Date.now() }),
     }),
     {

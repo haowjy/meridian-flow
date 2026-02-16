@@ -42,6 +42,7 @@ type TableNames struct {
 	CollabDocumentSnapshots  string
 	CollabDocumentProposals  string
 	CollabRequestIdempotency string
+	TurnDocumentTouches      string
 }
 
 // NewTableNames creates table names with the given prefix
@@ -70,6 +71,7 @@ func NewTableNames(prefix string) *TableNames {
 		CollabDocumentSnapshots:  fmt.Sprintf("%scollab_document_snapshots", prefix),
 		CollabDocumentProposals:  fmt.Sprintf("%scollab_document_edit_proposals", prefix),
 		CollabRequestIdempotency: fmt.Sprintf("%scollab_request_idempotency", prefix),
+		TurnDocumentTouches:      fmt.Sprintf("%sturn_document_touches", prefix),
 	}
 }
 

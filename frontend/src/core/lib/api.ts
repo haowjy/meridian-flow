@@ -31,6 +31,7 @@ import type {
   CreateSkillRequest,
   UpdateSkillRequest,
 } from "@/features/skills/types/skill";
+import type { DocumentSnapshot } from "@/features/documents/types/snapshot";
 import { httpErrorToAppError } from "@/core/lib/errors";
 import { convertKeysToCamelCase } from "./caseConvert";
 
@@ -1055,6 +1056,109 @@ export const api = {
       });
       return data;
     },
+  },
+
+  snapshots: {
+    /** List all snapshots for a document (newest first). */
+    list: async (
+      documentId: string,
+      options?: { limit?: number; offset?: number; signal?: AbortSignal },
+    ): Promise<{ snapshots: DocumentSnapshot[]; total: number }> => {
+      // NOTE: Response uses camelCase because fetchAPI auto-converts snake_case from backend
+      type ListSnapshotsDto = {
+        snapshots: Array<{
+          id: string;
+          documentId: string;
+          snapshotType: string;
+          name?: string;
+          createdByUserId?: string;
+          createdAt: string;
+        }>;
+        total: number;
+      };
+
+      const params = new URLSearchParams();
+      if (options?.limit !== undefined) params.set("limit", String(options.limit));
+      if (options?.offset !== undefined) params.set("offset", String(options.offset));
+      const query = params.toString();
+      const endpoint = `/api/documents/${documentId}/snapshots${query ? `?${query}` : ""}`;
+
+      const data = await fetchAPI<ListSnapshotsDto>(endpoint, {
+        signal: options?.signal,
+      });
+
+      return {
+        snapshots: (data.snapshots ?? []).map((s) => ({
+          id: s.id,
+          documentId: s.documentId,
+          snapshotType: s.snapshotType as DocumentSnapshot["snapshotType"],
+          name: s.name,
+          createdByUserId: s.createdByUserId,
+          createdAt: new Date(s.createdAt),
+        })),
+        total: data.total,
+      };
+    },
+    /** Create a named snapshot of the current document state. */
+    create: async (
+      documentId: string,
+      name: string,
+      options?: { signal?: AbortSignal },
+    ): Promise<DocumentSnapshot> => {
+      type SnapshotDto = {
+        id: string;
+        documentId: string;
+        snapshotType: string;
+        name?: string;
+        createdByUserId?: string;
+        createdAt: string;
+      };
+
+      const data = await fetchAPI<SnapshotDto>(
+        `/api/documents/${documentId}/snapshots`,
+        {
+          method: "POST",
+          body: JSON.stringify({ name }),
+          signal: options?.signal,
+        },
+      );
+
+      return {
+        id: data.id,
+        documentId: data.documentId,
+        snapshotType: data.snapshotType as DocumentSnapshot["snapshotType"],
+        name: data.name,
+        createdByUserId: data.createdByUserId,
+        createdAt: new Date(data.createdAt),
+      };
+    },
+    /** Restore document to a snapshot (creates pre_restore safety snapshot first). */
+    restore: async (
+      documentId: string,
+      snapshotId: string,
+      options?: { signal?: AbortSignal },
+    ): Promise<{ status: string; snapshotId: string }> => {
+      return fetchAPI<{ status: string; snapshotId: string }>(
+        `/api/documents/${documentId}/snapshots/${snapshotId}/restore`,
+        {
+          method: "POST",
+          signal: options?.signal,
+        },
+      );
+    },
+    /** Delete a snapshot. */
+    delete: (
+      documentId: string,
+      snapshotId: string,
+      options?: { signal?: AbortSignal },
+    ) =>
+      fetchAPI<void>(
+        `/api/documents/${documentId}/snapshots/${snapshotId}`,
+        {
+          method: "DELETE",
+          signal: options?.signal,
+        },
+      ),
   },
 
   folders: {

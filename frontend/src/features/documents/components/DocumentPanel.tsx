@@ -11,6 +11,7 @@ import {
 import type { ImperativePanelHandle } from "react-resizable-panels";
 import { DocumentTreeContainer } from "./DocumentTreeContainer";
 import { EditorPanel } from "./EditorPanel";
+import { VersionHistoryPanel } from "./VersionHistoryPanel";
 import {
   SkillEditorPanel,
   SkillCreatePanel,
@@ -51,11 +52,12 @@ export function DocumentPanel({
   effectiveSkillName,
   isResolvingDocument,
 }: DocumentPanelProps) {
-  const { documentTreeCollapsed, activeDocumentId, activeSkillId } = useUIStore(
+  const { documentTreeCollapsed, activeDocumentId, activeSkillId, showVersionHistory } = useUIStore(
     useShallow((s) => ({
       documentTreeCollapsed: s.documentTreeCollapsed,
       activeDocumentId: s.activeDocumentId,
       activeSkillId: s.activeSkillId,
+      showVersionHistory: s.showVersionHistory,
     })),
   );
 
@@ -167,60 +169,70 @@ export function DocumentPanel({
             defaultSize={75}
             collapsible={false}
           >
-            <div className="bg-background h-full">
-              {/* Skill creation mode - URL is /skills/new */}
-              {isCreatingNewSkill ? (
-                <SkillCreatePanel
-                  projectId={projectId}
-                  projectSlug={projectSlug}
-                />
-              ) : /* Blank space while skill is being resolved from URL (tree loading) */
-              isLoadingSkills && effectiveSkillName && !activeSkillId ? (
-                <div className="bg-background flex h-full flex-col">
-                  <PanelHeader
-                    leading={
-                      documentTreeCollapsed ? <DocumentTreeToggle /> : undefined
-                    }
-                    ariaLabel="Skill editor"
-                    showGradient={false}
-                  />
-                  <div className="flex-1" />
-                </div>
-              ) : activeSkillId ? (
-                <SkillEditorPanel
-                  skillId={activeSkillId}
-                  projectId={projectId}
-                  projectSlug={projectSlug}
-                />
-              ) : activeDocumentId ? (
-                <EditorPanel documentId={activeDocumentId} />
-              ) : isResolvingDocument ? (
-                /* Blank state while document path is resolving to ID (tree loading) */
-                <div className="bg-background flex h-full flex-col">
-                  <PanelHeader
-                    leading={
-                      documentTreeCollapsed ? <DocumentTreeToggle /> : undefined
-                    }
-                    ariaLabel="Document editor"
-                    showGradient={false}
-                  />
-                  <div className="flex-1" />
-                </div>
-              ) : (
-                <div className="bg-background flex h-full flex-col">
-                  {/* Only show header when tree is collapsed (for toggle button) */}
-                  {documentTreeCollapsed && (
-                    <PanelHeader
-                      leading={<DocumentTreeToggle />}
-                      ariaLabel="Project home"
-                      showGradient={false}
-                    />
-                  )}
-                  {/* Project home content */}
-                  <ProjectHomeView
+            <div className="bg-background flex h-full">
+              {/* Main content area */}
+              <div className="min-w-0 flex-1">
+                {/* Skill creation mode - URL is /skills/new */}
+                {isCreatingNewSkill ? (
+                  <SkillCreatePanel
                     projectId={projectId}
                     projectSlug={projectSlug}
                   />
+                ) : /* Blank space while skill is being resolved from URL (tree loading) */
+                isLoadingSkills && effectiveSkillName && !activeSkillId ? (
+                  <div className="bg-background flex h-full flex-col">
+                    <PanelHeader
+                      leading={
+                        documentTreeCollapsed ? <DocumentTreeToggle /> : undefined
+                      }
+                      ariaLabel="Skill editor"
+                      showGradient={false}
+                    />
+                    <div className="flex-1" />
+                  </div>
+                ) : activeSkillId ? (
+                  <SkillEditorPanel
+                    skillId={activeSkillId}
+                    projectId={projectId}
+                    projectSlug={projectSlug}
+                  />
+                ) : activeDocumentId ? (
+                  <EditorPanel documentId={activeDocumentId} />
+                ) : isResolvingDocument ? (
+                  /* Blank state while document path is resolving to ID (tree loading) */
+                  <div className="bg-background flex h-full flex-col">
+                    <PanelHeader
+                      leading={
+                        documentTreeCollapsed ? <DocumentTreeToggle /> : undefined
+                      }
+                      ariaLabel="Document editor"
+                      showGradient={false}
+                    />
+                    <div className="flex-1" />
+                  </div>
+                ) : (
+                  <div className="bg-background flex h-full flex-col">
+                    {/* Only show header when tree is collapsed (for toggle button) */}
+                    {documentTreeCollapsed && (
+                      <PanelHeader
+                        leading={<DocumentTreeToggle />}
+                        ariaLabel="Project home"
+                        showGradient={false}
+                      />
+                    )}
+                    {/* Project home content */}
+                    <ProjectHomeView
+                      projectId={projectId}
+                      projectSlug={projectSlug}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Version History Panel — slides in from right */}
+              {showVersionHistory && activeDocumentId && (
+                <div className="w-64 shrink-0">
+                  <VersionHistoryPanel documentId={activeDocumentId} />
                 </div>
               )}
             </div>

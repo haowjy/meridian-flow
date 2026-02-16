@@ -12,6 +12,9 @@ import {
 import type { SaveStatus } from "@/shared/components/ui/StatusBadge";
 import { useUIStore } from "@/core/stores/useUIStore";
 import { DocumentTreeToggle } from "@/shared/components/layout";
+import { Button } from "@/shared/components/ui/button";
+import { History } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface EditorHeaderProps {
   document: Document;
@@ -42,6 +45,8 @@ export function EditorHeader({
       "Project",
   );
   const documentTreeCollapsed = useUIStore((s) => s.documentTreeCollapsed);
+  const showVersionHistory = useUIStore((s) => s.showVersionHistory);
+  const toggleVersionHistory = useUIStore((s) => s.toggleVersionHistory);
 
   // Build full folder path; we'll display as: Project / ... / Last Folder / File.ext
   const fullFolderPath = buildBreadcrumbs(document.folderId, folders, 99);
@@ -70,13 +75,29 @@ export function EditorHeader({
     </>
   );
 
-  // Trailing: document status
-  const trailingContent = status && (
-    <DocumentStatus
-      wordCount={wordCount ?? 0}
-      status={status}
-      lastSaved={lastSaved ?? null}
-    />
+  // Trailing: version history toggle + document status
+  const trailingContent = (
+    <div className="flex items-center gap-1">
+      <Button
+        variant="ghost"
+        size="icon"
+        className={cn(
+          "h-6 w-6",
+          showVersionHistory && "bg-muted text-primary",
+        )}
+        onClick={toggleVersionHistory}
+        title="Version history"
+      >
+        <History className="h-3.5 w-3.5" />
+      </Button>
+      {status && (
+        <DocumentStatus
+          wordCount={wordCount ?? 0}
+          status={status}
+          lastSaved={lastSaved ?? null}
+        />
+      )}
+    </div>
   );
 
   return (
