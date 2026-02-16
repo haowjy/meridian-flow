@@ -1,12 +1,12 @@
 ---
 name: orchestrate
-description: Run the plan-slice pipeline. Iterates stages (plan → implement → review → cleanup → commit) using opus subagents.
-allowed-tools: Bash(git *), Bash(go build *), Bash(go test *), Bash(mkdir *), Bash(rm *), Read, Edit, Write, Glob, Grep, Task
+description: Run the plan-slice pipeline using CLI subagents with model routing. Codex for plan/implement, Claude opus for review/cleanup, Claude haiku for commit.
+allowed-tools: Bash(codex *), Bash(CLAUDECODE=* claude *), Bash(git *), Bash(cat *), Bash(mktemp *), Bash(rm *), Read, Edit, Write, Glob, Grep
 ---
 
 # Orchestrate
 
-Run an automated plan-slice pipeline using opus subagents.
+Run an automated plan-slice pipeline using CLI subagents with cross-model routing.
 
 ## Usage
 
@@ -18,111 +18,144 @@ Run an automated plan-slice pipeline using opus subagents.
 - `--max-slices N` — cap total slice iterations (default: 20)
 - `--start-at stage` — resume from a specific stage: `plan|implement|review|cleanup|commit`
 
+## Stage Configuration
+
+| Stage | CLI Tool | Model | Skill Instructions | Max Turns |
+|-------|----------|-------|--------------------|-----------|
+| plan-slice | `codex exec` | `gpt5.3-codex-high` | `.claude/skills/plan-slice/SKILL.md` | — |
+| implement | `codex exec` | `gpt5.3-codex-high` | CLAUDE.md (auto-discovered) | — |
+| review | `claude -p` | `opus` | `.claude/skills/review/SKILL.md` + `rules/*.md` | 15 |
+| cleanup | `claude -p` | `opus` | Stack-relevant `rules/*.md` | 10 |
+| commit | `claude -p` | `haiku` | None | 5 |
+
 ## Pipeline
 
 Each slice iterates 5 stages. Communication happens via task files in `_docs/hidden/tasks/`.
 
+**Before starting:** Create `_docs/hidden/tasks/` directory if it doesn't exist.
+
+### How to Execute Each Stage
+
+For every stage, follow this exact process:
+
+1. **Read the prompt template** from `scripts/orchestrator/prompts/{stage}.md`
+2. **Read skill instructions** for that stage (SKILL.md + rule files per table above)
+3. **Read outputs from previous stage** (task files via `_docs/hidden/tasks/`, `git diff --stat`)
+4. **Compose a prompt** by combining: template + skill instructions + a `## Parent Context` section containing your observations, decisions, and relevant context from prior stages
+5. **Write the composed prompt** to a temp file: `mktemp /tmp/orchestrate-{stage}-XXXXXX.md`
+6. **Launch the CLI subprocess** via Bash using the correct invocation pattern (see below)
+7. **Read results** — check task files and git state, evaluate outcome, decide whether to continue
+
+### CLI Invocation Patterns
+
+**Codex** (plan-slice, implement):
+```bash
+codex exec -m gpt5.3-codex-high --full-auto --json - < /tmp/prompt-file.md
+```
+- Auto-discovers CLAUDE.md/AGENTS.md for project context
+- Reads prompt from stdin via `-`
+
+**Claude** (review, cleanup, commit):
+```bash
+CLAUDECODE= claude -p - --model opus --output-format json \
+  --max-turns 15 --allowedTools "Read,Edit,Write,Bash,Glob,Grep" \
+  --dangerously-skip-permissions < /tmp/prompt-file.md
+```
+- `CLAUDECODE=` unsets nested session check
+- Adjust `--model` per stage table (`opus` or `haiku`)
+- Adjust `--max-turns` per stage table
+- Commit stage: use `--allowedTools "Bash,Read,Glob,Grep"` (no Edit/Write)
+
 ### Stage 1: Plan Slice
 
-Launch an opus subagent to read the plan and create the next implementable slice.
+**Prompt composition:**
+1. Read `scripts/orchestrator/prompts/plan-slice.md`
+2. Read `.claude/skills/plan-slice/SKILL.md` for slice-creation instructions
+3. Replace `{{PLAN_FILE}}` with the actual plan path
+4. Replace `{{TASKS_DIR}}` with `_docs/hidden/tasks`
+5. Add `## Parent Context` with: which slices are done, any observations from prior iterations, guidance on slice scope
 
-**Prompt:**
-```
-Read the plan at {PLAN_FILE}.
+**Launch:** `codex exec -m gpt5.3-codex-high --full-auto --json - < {temp_file}`
 
-Gather progress context:
-1. Read the plan file's status sections for completion tracking.
-2. If _docs/hidden/tasks/progress.md exists, read it for previously completed slices.
-3. If _docs/hidden/tasks/current.md exists and has a completed slice, note it.
+**After return:** Read `_docs/hidden/tasks/current.md`. If it contains only `ALL_DONE`, stop the pipeline and tell the user the plan is fully implemented.
 
-If all phases/steps in the plan are complete, write ONLY the text 'ALL_DONE' to _docs/hidden/tasks/current.md and stop.
-
-Otherwise, create the next implementable slice — one logical unit of work (aim for 1-5 files changed) that leaves the codebase in a working state.
-
-Write _docs/hidden/tasks/current.md with:
-- A clear title
-- Context: why this slice is next (reference plan phase/step)
-- What to implement (specific files, functions, patterns)
-- Acceptance criteria (observable, testable outcomes as checkboxes)
-- Constraints
-```
-
-**After the subagent returns:** Read `_docs/hidden/tasks/current.md`. If it contains only `ALL_DONE`, stop the pipeline and tell the user the plan is fully implemented.
+**Quality gate:** If the slice is too large (>5 files), unclear criteria, or doesn't reference plan phases — add feedback to `## Parent Context` and re-run once. If still bad, flag to user.
 
 ### Stage 2: Implement
 
-Launch an opus subagent to implement the task.
+**Prompt composition:**
+1. Read `scripts/orchestrator/prompts/implement.md`
+2. Replace `{{TASKS_DIR}}` with `_docs/hidden/tasks`
+3. Add `## Parent Context` with: summary of the slice, any architectural notes, relevant patterns from earlier slices
 
-**Prompt:**
-```
-Read the task at _docs/hidden/tasks/current.md and implement it.
+**Launch:** `codex exec -m gpt5.3-codex-high --full-auto --json - < {temp_file}`
 
-Follow the project conventions in CLAUDE.md. Write clean, correct code.
-When done, append a '## Completed' section to _docs/hidden/tasks/current.md describing what you did.
-```
+**After return:** Run `git diff --stat` to see what changed. Read `_docs/hidden/tasks/current.md` to check for `## Completed` section. If acceptance criteria appear unmet, flag to user before continuing.
 
 ### Stage 3: Review
 
-Launch an opus subagent to review the changes.
+**Prompt composition:**
+1. Read `scripts/orchestrator/prompts/review.md`
+2. Read `.claude/skills/review/SKILL.md` for the full review process
+3. Read all relevant rule files from `.claude/skills/review/rules/`:
+   - Always include `general.md`
+   - If `backend/` files changed → include `backend.md`
+   - If `frontend/` files changed → include `frontend.md`
+4. Replace `{{TASKS_DIR}}` with `_docs/hidden/tasks`
+5. Embed the rule file contents directly in the composed prompt under `## Review Rules`
+6. Add `## Parent Context` with: what was implemented, which files changed, any areas of concern
 
-**Prompt:**
-```
-Review the changes in the working tree (use git diff).
+**Launch:** `CLAUDECODE= claude -p - --model opus --output-format json --max-turns 15 --allowedTools "Read,Edit,Write,Bash,Glob,Grep" --dangerously-skip-permissions < {temp_file}`
 
-Check for:
-1. Dead code that should be removed
-2. SOLID principle violations
-3. Reliability issues (error handling, race conditions)
-4. Consistency with existing codebase patterns
-
-For each issue found, create a cleanup subtask file: _docs/hidden/tasks/cleanup-NNN.md
-Each file should describe the specific issue and the fix needed.
-If no issues found, create no files.
-```
+**After return:** Check for `_docs/hidden/tasks/cleanup-*.md` files.
 
 ### Stage 4: Cleanup
 
-Check for `_docs/hidden/tasks/cleanup-*.md` files. For each one, launch an opus subagent:
+**Skip condition:** If no `_docs/hidden/tasks/cleanup-*.md` files exist, skip this stage entirely.
 
-**Prompt:**
-```
-Read and implement the cleanup task at _docs/hidden/tasks/{CLEANUP_FILE}.
-Keep changes minimal and focused.
-```
+For each cleanup file found:
 
-If no cleanup files exist, skip this stage.
+**Prompt composition:**
+1. Read `scripts/orchestrator/prompts/cleanup.md`
+2. Replace `{{CLEANUP_FILE}}` with the cleanup file path
+3. Read the relevant rule files (same stack detection as review)
+4. Add `## Parent Context` with: brief summary of the review finding
+
+**Launch:** `CLAUDECODE= claude -p - --model opus --output-format json --max-turns 10 --allowedTools "Read,Edit,Write,Bash,Glob,Grep" --dangerously-skip-permissions < {temp_file}`
+
+If there are multiple cleanup files, launch them sequentially (not in parallel) to avoid edit conflicts.
 
 ### Stage 5: Commit
 
-Launch an opus subagent to create a commit.
+**Prompt composition:**
+1. Read `scripts/orchestrator/prompts/commit.md`
+2. Replace `{{BREADCRUMBS}}` with the list of task files: `_docs/hidden/tasks/current.md` and any `cleanup-*.md` files
+3. Add `## Parent Context` with: one-line summary of what this slice accomplished
 
-**Prompt:**
-```
-Review all changes in the working tree (git diff, git status).
+**Launch:** `CLAUDECODE= claude -p - --model haiku --output-format json --max-turns 5 --allowedTools "Bash,Read,Glob,Grep" --dangerously-skip-permissions < {temp_file}`
 
-Read these task files for context on what was implemented and why:
-- _docs/hidden/tasks/current.md
-- Any _docs/hidden/tasks/cleanup-*.md files that exist
-
-Create a clear, concise commit message that summarizes the 'why' not just the 'what'.
-Stage all relevant files and commit. Do NOT push.
-```
-
-**After the commit subagent returns:** Rotate task files:
-1. Append contents of `_docs/hidden/tasks/current.md` to `_docs/hidden/tasks/progress.md` (with a separator)
-2. Delete `_docs/hidden/tasks/current.md` and all `_docs/hidden/tasks/cleanup-*.md` files
+**After commit:** Rotate task files:
+1. Append contents of `_docs/hidden/tasks/current.md` to `_docs/hidden/tasks/progress.md` (with a `---` separator)
+2. Delete `_docs/hidden/tasks/current.md` and all `_docs/hidden/tasks/cleanup-*.md`
+3. Clean up temp files: `rm /tmp/orchestrate-*.md`
 
 ### Loop
 
 Increment the slice counter and repeat from Stage 1 until:
-- The plan agent writes `ALL_DONE`
+- The plan-slice stage writes `ALL_DONE`
 - `--max-slices` is reached
-- An error occurs
+- A subprocess fails (non-zero exit)
 
-## Execution Notes
+## Behavior Between Stages
 
-- All subagents should be `subagent_type: "general-purpose"` with `model: "opus"`
-- Run cleanup subagents in parallel if there are multiple cleanup files
-- Create `_docs/hidden/tasks/` directory if it doesn't exist before starting
-- Print a status line between stages so the user can follow progress: `[slice N/max] stage: description`
-- If a subagent fails, stop the pipeline and report the error — don't retry blindly
+You are the **supervisor**. Between every stage:
+
+1. **Print status:** `[slice N/max] stage: description`
+2. **Read task files** to understand what the subprocess did
+3. **Run `git diff --stat`** to see file-level changes
+4. **Carry forward context** — your observations become `## Parent Context` in the next prompt
+5. **Make decisions:**
+   - Skip cleanup if review found no issues
+   - Re-run plan-slice (once) if slice quality is poor
+   - Flag to user if implement doesn't meet acceptance criteria
+   - Stop on subprocess failure — don't retry blindly

@@ -21,3 +21,6 @@ backend/.gocache/
 .env
 
 scripts/get-token.sh
+
+# Go build artifacts outside of standard paths
+backend/orchestrator
