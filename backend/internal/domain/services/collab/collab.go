@@ -30,7 +30,20 @@ type DocumentStore interface {
 		snapshotType string,
 		name *string,
 		createdByUserID *string,
-	) error
+	) (string, error)
+	ListSnapshots(ctx context.Context, docID string, limit, offset int) ([]collabModels.Snapshot, int, error)
+	GetSnapshot(ctx context.Context, snapshotID string) (*collabModels.SnapshotWithState, error)
+	DeleteSnapshot(ctx context.Context, snapshotID string) error
+	// DeleteExpiredAutoSnapshots removes auto snapshots older than the given TTL.
+	// Returns the number of deleted rows.
+	DeleteExpiredAutoSnapshots(ctx context.Context, ttlHours int) (int64, error)
+}
+
+// DocumentTouchStore records and queries document-turn provenance.
+type DocumentTouchStore interface {
+	RecordTouch(ctx context.Context, documentID, threadID, turnID string) error
+	ListByDocument(ctx context.Context, documentID string, limit, offset int) ([]collabModels.DocumentTouch, error)
+	ListByTurn(ctx context.Context, turnID string) ([]collabModels.DocumentTouch, error)
 }
 
 // DocumentResolver is the only collab dependency on the document domain.

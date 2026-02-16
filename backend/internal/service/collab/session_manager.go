@@ -257,7 +257,7 @@ func (s *DocumentSession) persistLocked(ctx context.Context, writeSnapshot bool)
 	}
 
 	if writeSnapshot {
-		if err := s.store.SaveSnapshot(ctx, s.docID, state, "auto", nil, nil); err != nil {
+		if _, err := s.store.SaveSnapshot(ctx, s.docID, state, "auto", nil, nil); err != nil {
 			return err
 		}
 	}

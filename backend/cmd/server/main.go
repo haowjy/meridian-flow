@@ -241,6 +241,7 @@ func main() {
 	newFolderHandler := handler.NewFolderHandler(folderService, logger, cfg)
 	newTreeHandler := handler.NewTreeHandler(treeService, identifierResolver, logger, cfg)
 	importHandler := handler.NewImportHandler(importService, authorizer, logger, cfg)
+	// Collab stores + cleanup
 	collabStore := postgresCollab.NewDocumentStore(repoConfig)
 	collabBroadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
 	collabSessionManager := serviceCollab.NewDocumentSessionManager(
@@ -248,14 +249,31 @@ func main() {
 		logger,
 		cfg.CollabSnapshotIntervalUpdates,
 	)
+	collabDocResolver := serviceCollab.NewDocumentResolver(docRepo, authorizer)
 	collabHandler := handler.NewCollabHandler(
-		serviceCollab.NewDocumentResolver(docRepo, authorizer),
+		collabDocResolver,
 		collabBroadcaster,
 		collabSessionManager,
 		jwtVerifier,
 		logger,
 		cfg,
 	)
+	collabSnapshotHandler := handler.NewCollabSnapshotHandler(
+		collabStore,
+		collabDocResolver,
+		txManager,
+		logger,
+		cfg,
+	)
+
+	// Start collab auto-snapshot cleanup goroutine
+	collabCleanup := jobs.NewCollabCleanup(
+		collabStore,
+		cfg.CollabAutoSnapshotTTLHours,
+		cfg.CollabCleanupIntervalMinutes,
+		logger,
+	)
+	go collabCleanup.Start(queueCtx)
 
 	// Thread handlers (follows Clean Architecture - no repository access)
 	threadHandler := handler.NewThreadHandler(
@@ -328,6 +346,12 @@ func main() {
 
 	// Collaboration routes
 	mux.HandleFunc("GET /ws/documents/{id}", collabHandler.ConnectDocument)
+
+	// Snapshot routes (collab document version history)
+	mux.HandleFunc("POST /api/documents/{id}/snapshots", collabSnapshotHandler.CreateSnapshot)
+	mux.HandleFunc("GET /api/documents/{id}/snapshots", collabSnapshotHandler.ListSnapshots)
+	mux.HandleFunc("POST /api/documents/{id}/snapshots/{snapshotId}/restore", collabSnapshotHandler.RestoreSnapshot)
+	mux.HandleFunc("DELETE /api/documents/{id}/snapshots/{snapshotId}", collabSnapshotHandler.DeleteSnapshot)
 
 	// Import routes
 	mux.HandleFunc("POST /api/import", importHandler.Merge)
@@ -404,10 +428,15 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Setup graceful shutdown for job queue
+	// Setup graceful shutdown for job queue and cleanup goroutines
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+
+		logger.Info("shutting down collab cleanup...")
+		if err := collabCleanup.Stop(shutdownCtx); err != nil {
+			logger.Error("collab cleanup shutdown error", "error", err)
+		}
 
 		logger.Info("shutting down job queue...")
 		if err := jobQueue.Stop(shutdownCtx); err != nil {

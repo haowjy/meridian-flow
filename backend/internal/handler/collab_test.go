@@ -88,12 +88,28 @@ func (s *testCollabStore) SaveSnapshot(
 	_ string,
 	_ *string,
 	_ *string,
-) error {
+) (string, error) {
 	if s.snapshotErr != nil {
-		return s.snapshotErr
+		return "", s.snapshotErr
 	}
 	s.snapCalls++
+	return "", nil
+}
+
+func (s *testCollabStore) ListSnapshots(_ context.Context, _ string, _, _ int) ([]collabModels.Snapshot, int, error) {
+	return nil, 0, nil
+}
+
+func (s *testCollabStore) GetSnapshot(_ context.Context, _ string) (*collabModels.SnapshotWithState, error) {
+	return nil, nil
+}
+
+func (s *testCollabStore) DeleteSnapshot(_ context.Context, _ string) error {
 	return nil
+}
+
+func (s *testCollabStore) DeleteExpiredAutoSnapshots(_ context.Context, _ int) (int64, error) {
+	return 0, nil
 }
 
 type wsErrorResponse struct {

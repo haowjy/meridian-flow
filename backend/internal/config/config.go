@@ -27,6 +27,8 @@ type Config struct {
 	LLMIdleTimeoutSeconds         int // Streaming idle timeout in seconds (default: 120 = 2 minutes)
 	MaxConcurrentStreams          int // Max concurrent streams per user (default: 3)
 	CollabSnapshotIntervalUpdates int // Collab snapshot safety net trigger (default: 500 updates)
+	CollabAutoSnapshotTTLHours    int // TTL for auto snapshots in hours (default: 168 = 7 days)
+	CollabCleanupIntervalMinutes  int // How often to run snapshot cleanup (default: 60 = 1 hour)
 	// Search API Configuration (optional - for web_search tool)
 	SearchAPIKey      string // API key for external search provider
 	SearchAPIProvider string // Provider name: "tavily", "brave", "serper", etc.
@@ -69,6 +71,8 @@ func Load() *Config {
 		LLMIdleTimeoutSeconds:         getEnvInt("LLM_IDLE_TIMEOUT_SECONDS", 120),    // 2 minutes default
 		MaxConcurrentStreams:          getEnvInt("MAX_CONCURRENT_STREAMS", 3),        // Per-user concurrent stream limit
 		CollabSnapshotIntervalUpdates: getEnvInt("MERIDIAN_COLLAB_SNAPSHOT_INTERVAL_UPDATES", 500),
+		CollabAutoSnapshotTTLHours:    getEnvInt("MERIDIAN_COLLAB_AUTO_SNAPSHOT_TTL_HOURS", 168),      // 7 days
+		CollabCleanupIntervalMinutes:  getEnvInt("MERIDIAN_COLLAB_CLEANUP_INTERVAL_MINUTES", 60),       // 1 hour
 		// Search API Configuration (optional)
 		SearchAPIKey:      getEnv("SEARCH_API_KEY", ""),
 		SearchAPIProvider: getEnv("SEARCH_API_PROVIDER", "tavily"),

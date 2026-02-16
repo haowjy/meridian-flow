@@ -4,7 +4,7 @@ audience: developer
 ---
 # Phase 2: History + Session Undo
 
-**Status:** In planning
+**Status:** Implemented (2026-02-16)
 **Priority:** High
 **Purpose:** Give writers durable rollback/restore with snapshot history plus reliable in-session undo.
 
