@@ -18,16 +18,27 @@ mkdir -p "$TASKS_DIR" "$LOG_DIR"
 
 log() { echo "[$(date +%H:%M:%S)] $1"; }
 
-# Template substitution — replaces {{KEY}} with value
+# Template substitution — replaces {{KEY}} with value using sed
+# Handles multi-line values, special characters in replacements safely
 render() {
   local template="$1"; shift
-  local content
-  content=$(cat "$PROMPTS_DIR/$template")
+  local rendered
+  rendered=$(mktemp)
+  cp "$PROMPTS_DIR/$template" "$rendered"
   while [[ $# -gt 0 ]]; do
     local key="$1" val="$2"; shift 2
-    content="${content//\{\{$key\}\}/$val}"
+    # Use awk for safe multi-line substitution (sed can't handle newlines in replacement)
+    awk -v pat="{{${key}}}" -v rep="$val" '{
+      idx = index($0, pat)
+      while (idx > 0) {
+        $0 = substr($0, 1, idx-1) rep substr($0, idx+length(pat))
+        idx = index($0, pat)
+      }
+      print
+    }' "$rendered" > "${rendered}.tmp" && mv "${rendered}.tmp" "$rendered"
   done
-  echo "$content"
+  cat "$rendered"
+  rm -f "$rendered"
 }
 
 slice=0
@@ -36,13 +47,9 @@ while [ $slice -lt $MAX_SLICES ]; do
 
   # ── PLAN SLICE ──
   log "=== PLAN SLICE $slice ==="
-  progress=""
-  [[ -f "$TASKS_DIR/progress.md" ]] && progress="Previous progress:\n$(cat "$TASKS_DIR/progress.md")"
-
   prompt=$(render plan-slice.md \
     PLAN_FILE "$PLAN_FILE" \
-    TASKS_DIR "$TASKS_DIR" \
-    PROGRESS "$progress")
+    TASKS_DIR "$TASKS_DIR")
 
   ai_run "$prompt" "$REPO_ROOT/CLAUDE.md" "Read,Edit,Write,Glob,Grep" 10 \
     > "$LOG_DIR/slice-${slice}-plan.json" 2>&1 || true
@@ -51,6 +58,12 @@ while [ $slice -lt $MAX_SLICES ]; do
   if [[ -f "$TASKS_DIR/current.md" ]] && grep -q "ALL_DONE" "$TASKS_DIR/current.md"; then
     log "All slices complete!"
     break
+  fi
+
+  # Guard: skip implement/review/commit if plan-slice failed to produce a task
+  if [[ ! -s "$TASKS_DIR/current.md" ]]; then
+    log "WARNING: No current.md produced by plan-slice stage — skipping implement/review/commit"
+    continue
   fi
 
   # ── IMPLEMENT ──
@@ -81,17 +94,18 @@ while [ $slice -lt $MAX_SLICES ]; do
   log "=== COMMIT (slice $slice) ==="
   breadcrumbs=""
   for f in "$TASKS_DIR"/*.md; do
-    [[ -f "$f" ]] && breadcrumbs="$breadcrumbs\n--- $(basename "$f") ---\n$(cat "$f")\n"
+    [[ -f "$f" ]] && breadcrumbs="${breadcrumbs}"$'\n'"- ${f}"
   done
   prompt=$(render commit.md BREADCRUMBS "$breadcrumbs")
 
-  ai_run "$prompt" "$REPO_ROOT/CLAUDE.md" "Bash(git *),Read,Glob,Grep" 5 \
+  # Use "Bash" (not "Bash(git *)") — prompt constrains to git-only operations
+  ai_run "$prompt" "$REPO_ROOT/CLAUDE.md" "Bash,Read,Glob,Grep" 5 \
     > "$LOG_DIR/slice-${slice}-commit.json" 2>&1 || true
 
   # ── ROTATE TASK FILES ──
   cat "$TASKS_DIR/current.md" >> "$TASKS_DIR/progress.md" 2>/dev/null || true
-  echo -e "\n---\n" >> "$TASKS_DIR/progress.md" 2>/dev/null || true
-  find "$TASKS_DIR" -name "current.md" -o -name "cleanup-*.md" | xargs rm -f
+  printf '\n---\n\n' >> "$TASKS_DIR/progress.md" 2>/dev/null || true
+  rm -f "$TASKS_DIR"/current.md "$TASKS_DIR"/cleanup-*.md
 
   log "Slice $slice complete."
 done

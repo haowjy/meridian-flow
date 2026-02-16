@@ -55,8 +55,7 @@ curl http://localhost:8080/api/documents/:id
 - Get token: `./scripts/get-token.sh` (saves `ACCESS_TOKEN` to root `.env`)
   - Setup: `cp scripts/get-token.sh.example scripts/get-token.sh && chmod +x scripts/get-token.sh`
 - Token refresh is agent-authorized: Claude may run `./scripts/get-token.sh` whenever the current token is expired
-- Load token: `source .env`
-- Authenticated curl: `curl -H "Authorization: Bearer $ACCESS_TOKEN" http://localhost:8080/api/...`
+- Authenticated curl: `curl -H "Authorization: Bearer $(grep '^ACCESS_TOKEN=' .env | cut -d= -f2-)" http://localhost:8080/api/...`
 - Existing smoke tests in `tmp/` — see `tmp/README.md`
 
 ## Architecture

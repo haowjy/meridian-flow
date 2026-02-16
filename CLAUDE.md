@@ -292,8 +292,7 @@ See `internal/repository/postgres/connection.go`
 - Get a dev access token: `./scripts/get-token.sh` (saves to root `.env`)
   - First time: `cp scripts/get-token.sh.example scripts/get-token.sh && chmod +x scripts/get-token.sh`, then edit credentials
 - Token refresh is agent-authorized: Claude may run `./scripts/get-token.sh` whenever the current token is expired
-- Before running curl: `source .env` to load `ACCESS_TOKEN`
-- Authenticated requests: `curl -H "Authorization: Bearer $ACCESS_TOKEN" http://localhost:8080/api/...`
+- Authenticated requests: `curl -H "Authorization: Bearer $(grep '^ACCESS_TOKEN=' .env | cut -d= -f2-)" http://localhost:8080/api/...`
 
 ### Scratchpad + Plan Sync
 
@@ -310,12 +309,22 @@ See `internal/repository/postgres/connection.go`
 
 ### Long-Running Tasks
 
-When working on multi-step or large tasks:
-1. **Commit at good stopping points** — after completing a logical slice (a working feature, a passing test, a clean refactor), commit the progress
-2. **Compact context** — use `/compact` to summarize and free up context window
-3. **Continue** — pick up the next slice, referencing scratch notes or plan docs for continuity
+For multi-phase plans, use the headless orchestrator:
 
-This prevents context exhaustion and ensures incremental progress is saved.
+```bash
+# Default (Claude Code)
+./scripts/orchestrator/run.sh _docs/plans/path/to/plan.md
+
+# With Codex or OpenCode
+AI_TOOL=codex ./scripts/orchestrator/run.sh _docs/plans/path/to/plan.md
+AI_TOOL=opencode ./scripts/orchestrator/run.sh _docs/plans/path/to/plan.md
+```
+
+**Pipeline:** plan slice → implement → review → cleanup loop → commit → repeat. Each stage is a headless `claude -p` (or equivalent) with auto-approved tools. Stages communicate via task files in `_docs/hidden/tasks/`. Logs go to `_docs/hidden/orchestrator-logs/`.
+
+**Interactive equivalents:** Use `/plan-slice` and `/review` skills for the same stages in an interactive session.
+
+**Prompt templates:** `scripts/orchestrator/prompts/*.md` — edit these to customize stage behavior.
 
 ### Frontend
 
