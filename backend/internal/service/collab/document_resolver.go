@@ -29,6 +29,8 @@ func NewDocumentResolver(
 }
 
 // ResolveDocument returns the minimal metadata collab requires for a document.
+// Phase 1: Not called yet — VerifyOwnership is the only active path.
+// Phase 2+: Used for multi-user room creation where project context is needed.
 func (r *DocumentResolverAdapter) ResolveDocument(ctx context.Context, docID string) (*collabModels.CollabDocRef, error) {
 	doc, err := r.docRepo.GetByIDOnly(ctx, docID)
 	if err != nil {
