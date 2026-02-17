@@ -111,6 +111,27 @@ func (s *PostgresProposalStore) GetByID(ctx context.Context, proposalID uuid.UUI
 	return &proposal, nil
 }
 
+// CountByDocumentAndStatusAndSource counts proposal rows for one document/status/source tuple.
+func (s *PostgresProposalStore) CountByDocumentAndStatusAndSource(
+	ctx context.Context,
+	documentID uuid.UUID,
+	status collabModels.ProposalStatus,
+	source collabModels.ProposalSource,
+) (int, error) {
+	query := fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM %s
+		WHERE document_id = $1 AND status = $2 AND source = $3
+	`, s.tables.CollabDocumentProposals)
+
+	var count int
+	executor := postgres.GetExecutor(ctx, s.pool)
+	if err := executor.QueryRow(ctx, query, documentID, status, source).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count proposals by document/status/source: %w", err)
+	}
+	return count, nil
+}
+
 // ListByDocument lists proposals for a document with optional status filter.
 func (s *PostgresProposalStore) ListByDocument(
 	ctx context.Context,

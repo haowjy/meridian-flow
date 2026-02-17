@@ -152,6 +152,15 @@ func (s *noopProposalStore) GetByID(_ context.Context, _ uuid.UUID) (*collabMode
 	return nil, nil
 }
 
+func (s *noopProposalStore) CountByDocumentAndStatusAndSource(
+	_ context.Context,
+	_ uuid.UUID,
+	_ collabModels.ProposalStatus,
+	_ collabModels.ProposalSource,
+) (int, error) {
+	return 0, nil
+}
+
 func (s *noopProposalStore) ListByDocument(
 	_ context.Context,
 	_ uuid.UUID,
