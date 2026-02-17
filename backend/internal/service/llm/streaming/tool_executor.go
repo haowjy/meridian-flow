@@ -116,6 +116,10 @@ func (se *StreamExecutor) executeToolsAndContinue(ctx context.Context, send func
 
 	// NOTE: Legacy tool_executing events removed - AG-UI handles tool execution state
 
+	// Inject thread context so tools can attribute edits to the originating conversation.
+	// This enables provenance tracking in collab proposals (Phase 4.5).
+	ctx = tools.InjectThreadContext(ctx, se.threadID, se.turnID, se.userID)
+
 	// Execute filtered tools in parallel
 	toolResults := se.toolRegistry.ExecuteParallel(ctx, toolsToExecute)
 
