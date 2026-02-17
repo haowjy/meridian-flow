@@ -2,6 +2,9 @@ package collab
 
 import (
 	"context"
+	"time"
+
+	"github.com/google/uuid"
 
 	collabModels "meridian/internal/domain/models/collab"
 )
@@ -44,6 +47,37 @@ type DocumentTouchStore interface {
 	RecordTouch(ctx context.Context, documentID, threadID, turnID string) error
 	ListByDocument(ctx context.Context, documentID string, limit, offset int) ([]collabModels.DocumentTouch, error)
 	ListByTurn(ctx context.Context, turnID string) ([]collabModels.DocumentTouch, error)
+}
+
+// ProposalStore manages proposal persistence and terminal status transitions.
+type ProposalStore interface {
+	Create(ctx context.Context, proposal *collabModels.Proposal) error
+	GetByID(ctx context.Context, proposalID uuid.UUID) (*collabModels.Proposal, error)
+	ListByDocument(
+		ctx context.Context,
+		documentID uuid.UUID,
+		status *collabModels.ProposalStatus,
+		limit int,
+		offset int,
+	) ([]collabModels.Proposal, error)
+	ListByGroup(
+		ctx context.Context,
+		proposalGroupID uuid.UUID,
+		status *collabModels.ProposalStatus,
+	) ([]collabModels.Proposal, error)
+	MarkAccepted(ctx context.Context, decision collabModels.ProposalDecision) error
+	MarkRejected(ctx context.Context, decision collabModels.ProposalDecision) error
+}
+
+// IdempotencyStore persists request idempotency records for replay/conflict checks.
+type IdempotencyStore interface {
+	GetByUserAndKey(
+		ctx context.Context,
+		userID uuid.UUID,
+		idempotencyKey string,
+	) (*collabModels.IdempotencyRecord, error)
+	Create(ctx context.Context, record *collabModels.IdempotencyRecord) error
+	DeleteExpired(ctx context.Context, now time.Time) (int64, error)
 }
 
 // DocumentResolver is the only collab dependency on the document domain.
