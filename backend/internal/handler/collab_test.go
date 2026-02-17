@@ -12,11 +12,13 @@ import (
 	"testing"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	ycrdt "github.com/skyterra/y-crdt"
 	"golang.org/x/net/websocket"
 	"meridian/internal/config"
 	"meridian/internal/domain/models"
 	collabModels "meridian/internal/domain/models/collab"
+	collabSvc "meridian/internal/domain/services/collab"
 	serviceCollab "meridian/internal/service/collab"
 )
 
@@ -118,6 +120,62 @@ type wsErrorResponse struct {
 	Message string `json:"message"`
 }
 
+type noopProposalService struct{}
+
+func (s *noopProposalService) CreateProposal(_ context.Context, _ collabSvc.CreateProposalRequest) (*collabModels.Proposal, error) {
+	return nil, nil
+}
+
+func (s *noopProposalService) AcceptProposal(_ context.Context, _ collabSvc.AcceptProposalRequest) (*collabSvc.AcceptProposalResult, error) {
+	return &collabSvc.AcceptProposalResult{}, nil
+}
+
+func (s *noopProposalService) RejectProposal(_ context.Context, _ collabSvc.RejectProposalRequest) (*collabSvc.RejectProposalResult, error) {
+	return &collabSvc.RejectProposalResult{}, nil
+}
+
+func (s *noopProposalService) GroupAccept(_ context.Context, _ collabSvc.GroupAcceptRequest) (*collabSvc.GroupAcceptResult, error) {
+	return &collabSvc.GroupAcceptResult{
+		Payload: collabModels.GroupAcceptResponsePayload{},
+	}, nil
+}
+
+type noopProposalStore struct{}
+
+func (s *noopProposalStore) Create(_ context.Context, _ *collabModels.Proposal) error {
+	return nil
+}
+
+func (s *noopProposalStore) GetByID(_ context.Context, _ uuid.UUID) (*collabModels.Proposal, error) {
+	return nil, nil
+}
+
+func (s *noopProposalStore) ListByDocument(
+	_ context.Context,
+	_ uuid.UUID,
+	_ *collabModels.ProposalStatus,
+	_ int,
+	_ int,
+) ([]collabModels.Proposal, error) {
+	return nil, nil
+}
+
+func (s *noopProposalStore) ListByGroup(
+	_ context.Context,
+	_ uuid.UUID,
+	_ *collabModels.ProposalStatus,
+) ([]collabModels.Proposal, error) {
+	return nil, nil
+}
+
+func (s *noopProposalStore) MarkAccepted(_ context.Context, _ collabModels.ProposalDecision) error {
+	return nil
+}
+
+func (s *noopProposalStore) MarkRejected(_ context.Context, _ collabModels.ProposalDecision) error {
+	return nil
+}
+
 func TestCollabHandler_WSAuthFailed(t *testing.T) {
 	resolver := &testCollabResolver{allowed: true}
 	verifier := &testJWTVerifier{tokens: map[string]*models.SupabaseClaims{}}
@@ -199,7 +257,7 @@ func TestCollabHandler_WSSyncStep1Handshake(t *testing.T) {
 	resolver := &testCollabResolver{allowed: true}
 	verifier := &testJWTVerifier{
 		tokens: map[string]*models.SupabaseClaims{
-			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "user-1"}},
+			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}},
 		},
 	}
 	store := &testCollabStore{}
@@ -243,7 +301,7 @@ func TestCollabHandler_WSCorruptSyncPayload(t *testing.T) {
 	resolver := &testCollabResolver{allowed: true}
 	verifier := &testJWTVerifier{
 		tokens: map[string]*models.SupabaseClaims{
-			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "user-1"}},
+			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"}},
 		},
 	}
 	store := &testCollabStore{}
@@ -283,6 +341,8 @@ func newTestCollabServer(
 		resolver,
 		serviceCollab.NewInMemoryDocumentBroadcaster(),
 		serviceCollab.NewDocumentSessionManager(store, slog.New(slog.NewTextHandler(io.Discard, nil)), 500),
+		&noopProposalService{},
+		&noopProposalStore{},
 		verifier,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 		&config.Config{},
@@ -322,11 +382,18 @@ func readWSErrorMessage(t *testing.T, conn *websocket.Conn) wsErrorResponse {
 func readWSBinaryMessage(t *testing.T, conn *websocket.Conn) []byte {
 	t.Helper()
 
-	var raw []byte
-	if err := websocket.Message.Receive(conn, &raw); err != nil {
-		t.Fatalf("receive ws binary message: %v", err)
+	// Skip any text frames (e.g., proposal:snapshot) and return the next binary frame.
+	for {
+		var raw []byte
+		if err := websocket.Message.Receive(conn, &raw); err != nil {
+			t.Fatalf("receive ws binary message: %v", err)
+		}
+		// Text frames start with '{' (JSON). Skip them.
+		if len(raw) > 0 && raw[0] == '{' {
+			continue
+		}
+		return raw
 	}
-	return raw
 }
 
 func buildEnvelopeSyncStep1(t *testing.T) []byte {
