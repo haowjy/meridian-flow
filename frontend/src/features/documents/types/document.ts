@@ -34,6 +34,8 @@ export interface Document {
    * Must be included as ai_version_base_rev when PATCHing ai_version.
    */
   aiVersionRev?: number;
+  /** Number of pending AI proposals for this document (from tree API) */
+  pendingProposalCount?: number;
 }
 
 export interface DocumentTree {

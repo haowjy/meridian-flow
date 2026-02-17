@@ -89,6 +89,7 @@ export interface TreeDocumentDto {
   path: string; // Display path with extension: "Characters/Heroes/Aria.md"
   extension: string;
   updatedAt: string;
+  pendingProposalCount?: number; // Number of pending AI proposals for this document
 }
 
 export interface TreeFolderDto {
@@ -210,6 +211,7 @@ export function fromTreeDocumentDto(dto: TreeDocumentDto): Document {
     filename,
     fileType,
     updatedAt: new Date(dto.updatedAt),
+    pendingProposalCount: dto.pendingProposalCount,
   };
 }
 
