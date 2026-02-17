@@ -15,9 +15,10 @@ import (
 // - Open for extension: Easy to add new tool types
 // - Closed for modification: Existing registration logic doesn't change
 type ToolRegistryBuilder struct {
-	registry     *ToolRegistry
-	config       *ToolConfig
-	namespaceSvc docsysSvc.NamespaceService // Optional, for namespace-aware tools
+	registry         *ToolRegistry
+	config           *ToolConfig
+	namespaceSvc     docsysSvc.NamespaceService   // Optional, for namespace-aware tools
+	mutationStrategy DocumentMutationStrategy      // Optional, for AI edit persistence strategy
 }
 
 // NewToolRegistryBuilder creates a new builder with a fresh registry.
@@ -44,6 +45,13 @@ func (b *ToolRegistryBuilder) WithNamespaceService(namespaceSvc docsysSvc.Namesp
 	return b
 }
 
+// WithMutationStrategy sets the strategy for persisting AI edits.
+// If not called, the default AIVersionStrategy is used (backwards compatible).
+func (b *ToolRegistryBuilder) WithMutationStrategy(strategy DocumentMutationStrategy) *ToolRegistryBuilder {
+	b.mutationStrategy = strategy
+	return b
+}
+
 // WithDocumentTools registers all document-related tools (str_replace_based_edit_tool, doc_search).
 // These tools operate on the project's document system.
 // All tools use services for data access (SOLID: DIP - depends on interfaces).
@@ -60,7 +68,7 @@ func (b *ToolRegistryBuilder) WithDocumentTools(
 ) *ToolRegistryBuilder {
 	// All tools use service layer for data access (Phase 4: zero repo dependencies)
 	// Tools self-describe via metadata for system prompt generation (OCP compliance)
-	textEditorTool := NewTextEditorTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
+	textEditorTool := NewTextEditorTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config, b.mutationStrategy)
 	searchTool := NewSearchTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
 
 	b.registry.RegisterWithMetadata("str_replace_based_edit_tool", textEditorTool, TextEditorToolMetadata())
@@ -88,7 +96,7 @@ func (b *ToolRegistryBuilder) WithEnabledDocumentTools(
 	}
 
 	if toolSet["str_replace_based_edit_tool"] {
-		textEditorTool := NewTextEditorTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
+		textEditorTool := NewTextEditorTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config, b.mutationStrategy)
 		b.registry.RegisterWithMetadata("str_replace_based_edit_tool", textEditorTool, TextEditorToolMetadata())
 	}
 

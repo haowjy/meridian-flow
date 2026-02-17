@@ -23,6 +23,7 @@ import (
 	"meridian/internal/service/llm/thread"
 	threadhistory "meridian/internal/service/llm/thread_history"
 	"meridian/internal/service/llm/tokens"
+	"meridian/internal/service/llm/tools"
 )
 
 // SetupProviders initializes the provider factory and registry for routing.
@@ -84,6 +85,7 @@ func SetupServices(
 	authorizer services.ResourceAuthorizer,
 	toolLimitResolver llmSvc.ToolLimitResolver,
 	jobQueue jobs.JobQueue,
+	mutationStrategy tools.DocumentMutationStrategy, // Strategy for AI edit persistence (ai_version or collab proposal)
 	logger *slog.Logger,
 ) (*Services, *mstream.Registry, error) {
 	// Create shared validator
@@ -180,6 +182,7 @@ func SetupServices(
 		formatterRegistry,   // For formatting synthetic tool results (ref transformer)
 		tokenFinalizer,      // For finalizing tokens on completion/interruption
 		jobQueue,            // Phase 2: Background job queue for async generation enrichment
+		mutationStrategy,    // Strategy for AI edit persistence (ai_version or collab proposal)
 		logger,
 	)
 
