@@ -44,6 +44,7 @@ import { CompactBreadcrumb } from "@/shared/components/ui/CompactBreadcrumb";
 import { Button } from "@/shared/components/ui/button";
 import { ChevronLeft } from "lucide-react";
 import { AIHunkNavigator } from "./AIHunkNavigator";
+import { AIProposalReviewPanel } from "./AIProposalReviewPanel";
 import {
   useDocumentContent,
   useDocumentCollab,
@@ -254,12 +255,18 @@ export function EditorPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentId, collabEnabled, isInitialized]);
 
-  const { extensions: collabExtensions, isReady: isCollabReady } =
-    useDocumentCollab({
-      documentId,
-      enabled: collabEnabled && isInitialized && collabSeedContent !== null,
-      initialContent: collabSeedContent ?? "",
-    });
+  const {
+    extensions: collabExtensions,
+    proposals,
+    reviewModels,
+    sendProposalAccept,
+    sendProposalReject,
+    isReady: isCollabReady,
+  } = useDocumentCollab({
+    documentId,
+    enabled: collabEnabled && isInitialized && collabSeedContent !== null,
+    initialContent: collabSeedContent ?? "",
+  });
 
   // 2. Document sync (save, flush) - pure effect, no return
   useDocumentSync(
@@ -403,6 +410,24 @@ export function EditorPanel({
     }
   }, [createPopover, projectSlug, navigate]);
 
+  const handleProposalAccept = useCallback(
+    (proposalId: string) => {
+      const idempotencyKey =
+        typeof globalThis.crypto?.randomUUID === "function"
+          ? globalThis.crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      sendProposalAccept(proposalId, idempotencyKey);
+    },
+    [sendProposalAccept],
+  );
+
+  const handleProposalReject = useCallback(
+    (proposalId: string) => {
+      sendProposalReject(proposalId);
+    },
+    [sendProposalReject],
+  );
+
   // ---------------------------------------------------------------------------
   // RENDER HELPERS
   // ---------------------------------------------------------------------------
@@ -513,6 +538,15 @@ export function EditorPanel({
               onDismiss={clearError}
             />
           </div>
+        )}
+
+        {collabEnabled && (
+          <AIProposalReviewPanel
+            proposals={proposals}
+            reviewModels={reviewModels}
+            onAcceptProposal={handleProposalAccept}
+            onRejectProposal={handleProposalReject}
+          />
         )}
 
         {/* Editor content - scrolls with parent container */}
