@@ -35,6 +35,28 @@ func (s *testProposalStore) GetByID(_ context.Context, _ uuid.UUID) (*collabMode
 	return nil, errors.New("not implemented")
 }
 
+func (s *testProposalStore) CountByDocumentAndStatusAndSource(
+	_ context.Context,
+	documentID uuid.UUID,
+	status collabModels.ProposalStatus,
+	source collabModels.ProposalSource,
+) (int, error) {
+	count := 0
+	for _, proposal := range s.proposals {
+		if proposal.DocumentID != documentID {
+			continue
+		}
+		if proposal.Status != status {
+			continue
+		}
+		if proposal.Source != source {
+			continue
+		}
+		count++
+	}
+	return count, nil
+}
+
 func (s *testProposalStore) ListByDocument(
 	_ context.Context,
 	documentID uuid.UUID,
@@ -490,6 +512,53 @@ func TestCollabHandler_WSProposalAcceptErrorMapping_IdempotencyConflict(t *testi
 	got := readWSErrorMessage(t, conn)
 	if got.Code != "IDEMPOTENCY_KEY_CONFLICT" {
 		t.Fatalf("expected IDEMPOTENCY_KEY_CONFLICT, got %q", got.Code)
+	}
+}
+
+func TestCollabHandler_WSProposalAcceptErrorMapping_RateLimited(t *testing.T) {
+	resolver := &testCollabResolver{allowed: true}
+	verifier := &testJWTVerifier{
+		tokens: map[string]*models.SupabaseClaims{
+			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "dddddddd-dddd-dddd-dddd-dddddddddddd"}},
+		},
+	}
+	store := &testCollabStore{}
+
+	proposalService := &testProposalService{
+		acceptErr: domain.NewRateLimitError("too many pending accept operations"),
+	}
+	server := newTestCollabServerWithProposalDeps(t, resolver, verifier, store, proposalService, &noopProposalStore{})
+	defer server.Close()
+
+	wsURL := asWebSocketURL(t, server.URL, "/ws/documents/eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
+	conn, err := websocket.Dial(wsURL, "", "http://localhost/")
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer conn.Close()
+
+	if err := websocket.Message.Send(conn, "valid-token"); err != nil {
+		t.Fatalf("send auth token: %v", err)
+	}
+	if err := websocket.Message.Send(conn, buildEnvelopeSyncStep1(t)); err != nil {
+		t.Fatalf("send sync step1: %v", err)
+	}
+	_ = readWSBinaryMessage(t, conn)
+	_ = readWSBinaryMessage(t, conn)
+	_ = readWSRawMessage(t, conn) // proposal:snapshot
+
+	msg := proposalAcceptCommand{
+		Type:           wsTypeProposalAccept,
+		ProposalID:     "ffffffff-ffff-ffff-ffff-ffffffffffff",
+		IdempotencyKey: "k",
+	}
+	if err := websocket.JSON.Send(conn, msg); err != nil {
+		t.Fatalf("send proposal:accept: %v", err)
+	}
+
+	got := readWSErrorMessage(t, conn)
+	if got.Code != "RATE_LIMITED" {
+		t.Fatalf("expected RATE_LIMITED, got %q", got.Code)
 	}
 }
 

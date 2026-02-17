@@ -195,6 +195,15 @@ func (s *fakeProjectorProposalStore) GetByID(_ context.Context, _ uuid.UUID) (*c
 	return nil, nil
 }
 
+func (s *fakeProjectorProposalStore) CountByDocumentAndStatusAndSource(
+	_ context.Context,
+	_ uuid.UUID,
+	_ collabModels.ProposalStatus,
+	_ collabModels.ProposalSource,
+) (int, error) {
+	return 0, nil
+}
+
 func (s *fakeProjectorProposalStore) ListByDocument(
 	_ context.Context,
 	_ uuid.UUID,

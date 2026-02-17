@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -703,6 +704,171 @@ func TestProposalServiceCreateProposal_AutoAcceptCascade(t *testing.T) {
 	}
 }
 
+func TestProposalServiceCreateProposal_QueuedAIProposalCap(t *testing.T) {
+	ctx := context.Background()
+	docID := uuid.New()
+	userID := uuid.New()
+
+	stores := newFakeProposalStore()
+	idempotency := newFakeIdempotencyStore()
+	runtime := newFakeProposalRuntime(nil)
+	autoAccept := &fakeAutoAcceptPolicyStore{}
+	projector := &fakeAIContentProjector{}
+
+	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, false)
+	createReq := collabSvc.CreateProposalRequest{
+		DocumentID:        docID,
+		Source:            collabModels.ProposalSourceAI,
+		ProducerAgentType: "writer",
+		ThreadID:          uuid.New(),
+		AgentRunID:        uuid.New(),
+		YjsUpdate:         []byte("queued-update"),
+		CreatedByUserID:   userID,
+		AgentAutoAccept:   boolPtr(false),
+	}
+
+	for i := 0; i < maxQueuedAIProposalsPerDocument; i++ {
+		if _, err := svc.CreateProposal(ctx, createReq); err != nil {
+			t.Fatalf("create queued proposal %d: %v", i+1, err)
+		}
+	}
+
+	_, err := svc.CreateProposal(ctx, createReq)
+	if err == nil {
+		t.Fatal("expected queued AI proposal cap error")
+	}
+
+	var rateLimitErr *domain.RateLimitError
+	if !errors.As(err, &rateLimitErr) {
+		t.Fatalf("expected rate limit error, got %T", err)
+	}
+
+	count, err := stores.CountByDocumentAndStatusAndSource(
+		ctx,
+		docID,
+		collabModels.ProposalStatusProposed,
+		collabModels.ProposalSourceAI,
+	)
+	if err != nil {
+		t.Fatalf("count queued proposals: %v", err)
+	}
+	if count != maxQueuedAIProposalsPerDocument {
+		t.Fatalf("expected %d queued AI proposals, got %d", maxQueuedAIProposalsPerDocument, count)
+	}
+}
+
+func TestProposalServiceAcceptProposal_PendingCapAndRecovery(t *testing.T) {
+	ctx := context.Background()
+	stores := newFakeProposalStore()
+	idempotency := newFakeIdempotencyStore()
+	autoAccept := &fakeAutoAcceptPolicyStore{}
+	projector := &fakeAIContentProjector{}
+	runtime := newFakeProposalRuntime(nil)
+
+	docID := uuid.New()
+	userID := uuid.New()
+	proposals := make([]collabModels.Proposal, 0, maxPendingAcceptOperationsPerDocument+1)
+	for i := 0; i < maxPendingAcceptOperationsPerDocument+1; i++ {
+		proposal := collabModels.Proposal{
+			ID:              uuid.New(),
+			DocumentID:      docID,
+			Source:          collabModels.ProposalSourceAI,
+			Status:          collabModels.ProposalStatusProposed,
+			YjsUpdate:       []byte(fmt.Sprintf("u-%d", i)),
+			CreatedByUserID: userID,
+			CreatedAt:       time.Now().UTC().Add(time.Duration(i) * time.Millisecond),
+		}
+		stores.put(proposal)
+		proposals = append(proposals, proposal)
+	}
+
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var hookOnce sync.Once
+	runtime.applyHook = func(_ uuid.UUID, update []byte) {
+		hookOnce.Do(func() {
+			close(firstStarted)
+			<-releaseFirst
+		})
+	}
+
+	svcIface := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, false)
+	svc := svcIface.(*ProposalService)
+
+	errCh := make(chan error, maxPendingAcceptOperationsPerDocument)
+	for i := 0; i < maxPendingAcceptOperationsPerDocument; i++ {
+		proposal := proposals[i]
+		go func(idx int, p collabModels.Proposal) {
+			_, err := svc.AcceptProposal(ctx, collabSvc.AcceptProposalRequest{
+				ProposalID:     p.ID,
+				UserID:         userID,
+				IdempotencyKey: fmt.Sprintf("pending-cap-key-%d", idx),
+				RequestHash:    fmt.Sprintf("pending-cap-hash-%d", idx),
+			})
+			errCh <- err
+		}(i, proposal)
+	}
+
+	select {
+	case <-firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first accept to reach runtime apply")
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if svc.acceptGate.pendingCount(docID) == maxPendingAcceptOperationsPerDocument {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for pending accepts to reach %d", maxPendingAcceptOperationsPerDocument)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	overflowProposal := proposals[maxPendingAcceptOperationsPerDocument]
+	_, err := svc.AcceptProposal(ctx, collabSvc.AcceptProposalRequest{
+		ProposalID:     overflowProposal.ID,
+		UserID:         userID,
+		IdempotencyKey: "pending-cap-overflow",
+		RequestHash:    "pending-cap-overflow-hash",
+	})
+	if err == nil {
+		t.Fatal("expected pending accept cap error")
+	}
+
+	var rateLimitErr *domain.RateLimitError
+	if !errors.As(err, &rateLimitErr) {
+		t.Fatalf("expected rate limit error, got %T", err)
+	}
+
+	close(releaseFirst)
+
+	for i := 0; i < maxPendingAcceptOperationsPerDocument; i++ {
+		select {
+		case err := <-errCh:
+			if err != nil {
+				t.Fatalf("expected queued accept to succeed, got %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for queued accepts")
+		}
+	}
+
+	retry, err := svc.AcceptProposal(ctx, collabSvc.AcceptProposalRequest{
+		ProposalID:     overflowProposal.ID,
+		UserID:         userID,
+		IdempotencyKey: "pending-cap-retry",
+		RequestHash:    "pending-cap-retry-hash",
+	})
+	if err != nil {
+		t.Fatalf("expected accept after drain to succeed, got %v", err)
+	}
+	if retry.IsReplay {
+		t.Fatal("expected accept after drain to be non-replay")
+	}
+}
+
 func TestProposalServiceCreateProposal_RejectsOversizedYjsUpdate(t *testing.T) {
 	ctx := context.Background()
 	stores := newFakeProposalStore()
@@ -806,6 +972,31 @@ func (s *fakeProposalStore) ListByDocument(
 		out = append(out, proposal)
 	}
 	return out, nil
+}
+
+func (s *fakeProposalStore) CountByDocumentAndStatusAndSource(
+	_ context.Context,
+	documentID uuid.UUID,
+	status collabModels.ProposalStatus,
+	source collabModels.ProposalSource,
+) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	count := 0
+	for _, proposal := range s.proposals {
+		if proposal.DocumentID != documentID {
+			continue
+		}
+		if proposal.Status != status {
+			continue
+		}
+		if proposal.Source != source {
+			continue
+		}
+		count++
+	}
+	return count, nil
 }
 
 func (s *fakeProposalStore) ListByGroup(

@@ -18,6 +18,8 @@ import (
 const defaultIdempotencyTTL = 24 * time.Hour
 
 const maxProposalYjsUpdateBytes = 256 * 1024
+const maxQueuedAIProposalsPerDocument = 200
+const maxPendingAcceptOperationsPerDocument = 20
 
 // ProposalService executes proposal lifecycle operations.
 type ProposalService struct {
@@ -27,6 +29,7 @@ type ProposalService struct {
 	runtime                collabSvc.ProposalRuntime
 	autoAcceptPolicyStore  collabSvc.AutoAcceptPolicyStore
 	aiContentProjector     collabSvc.AIContentProjector
+	createGate             *proposalDocumentGate
 	acceptGate             *proposalAcceptGate
 	defaultAutoAcceptValue bool
 }
@@ -48,7 +51,8 @@ func NewProposalService(
 		runtime:                runtime,
 		autoAcceptPolicyStore:  autoAcceptPolicyStore,
 		aiContentProjector:     aiContentProjector,
-		acceptGate:             newProposalAcceptGate(),
+		createGate:             newProposalDocumentGate(),
+		acceptGate:             newProposalAcceptGate(maxPendingAcceptOperationsPerDocument),
 		defaultAutoAcceptValue: defaultAutoAcceptValue,
 	}
 }
@@ -89,6 +93,42 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.Crea
 	}
 
 	if !autoAccept {
+		if req.Source == collabModels.ProposalSourceAI {
+			if err := s.createGate.WithDocument(req.DocumentID, func() error {
+				return s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
+					count, err := s.proposalStore.CountByDocumentAndStatusAndSource(
+						txCtx,
+						req.DocumentID,
+						collabModels.ProposalStatusProposed,
+						collabModels.ProposalSourceAI,
+					)
+					if err != nil {
+						return err
+					}
+					if count >= maxQueuedAIProposalsPerDocument {
+						return domain.NewRateLimitError(
+							fmt.Sprintf(
+								"document %s has reached the queued AI proposal limit (%d)",
+								req.DocumentID,
+								maxQueuedAIProposalsPerDocument,
+							),
+						)
+					}
+
+					if err := s.proposalStore.Create(txCtx, proposal); err != nil {
+						return err
+					}
+					if err := s.aiContentProjector.Recompute(txCtx, req.DocumentID); err != nil {
+						return err
+					}
+					return nil
+				})
+			}); err != nil {
+				return nil, err
+			}
+			return proposal, nil
+		}
+
 		if err := s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
 			if err := s.proposalStore.Create(txCtx, proposal); err != nil {
 				return err

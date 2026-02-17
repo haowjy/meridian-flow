@@ -370,6 +370,11 @@ func mapProposalErrorCode(err error) string {
 		return "IDEMPOTENCY_KEY_CONFLICT"
 	}
 
+	var rateLimitErr *domain.RateLimitError
+	if errors.As(err, &rateLimitErr) {
+		return "RATE_LIMITED"
+	}
+
 	var forbiddenErr *domain.ForbiddenError
 	if errors.As(err, &forbiddenErr) {
 		return "FORBIDDEN"

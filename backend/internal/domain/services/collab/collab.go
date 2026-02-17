@@ -53,6 +53,12 @@ type DocumentTouchStore interface {
 type ProposalStore interface {
 	Create(ctx context.Context, proposal *collabModels.Proposal) error
 	GetByID(ctx context.Context, proposalID uuid.UUID) (*collabModels.Proposal, error)
+	CountByDocumentAndStatusAndSource(
+		ctx context.Context,
+		documentID uuid.UUID,
+		status collabModels.ProposalStatus,
+		source collabModels.ProposalSource,
+	) (int, error)
 	ListByDocument(
 		ctx context.Context,
 		documentID uuid.UUID,
