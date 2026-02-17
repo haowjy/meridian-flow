@@ -75,7 +75,7 @@ func Load() *Config {
 		CollabSnapshotIntervalUpdates: getEnvInt("MERIDIAN_COLLAB_SNAPSHOT_INTERVAL_UPDATES", 500),
 		CollabAutoSnapshotTTLHours:    getEnvInt("MERIDIAN_COLLAB_AUTO_SNAPSHOT_TTL_HOURS", 168), // 7 days
 		CollabCleanupIntervalMinutes:  getEnvInt("MERIDIAN_COLLAB_CLEANUP_INTERVAL_MINUTES", 60), // 1 hour
-		CollabDefaultAutoAccept:       getEnv("MERIDIAN_COLLAB_DEFAULT_AUTO_ACCEPT", "false") == "true",
+		CollabDefaultAutoAccept:       getEnv("MERIDIAN_COLLAB_DEFAULT_AUTO_ACCEPT", "true") == "true",
 		CollabAIProposalsEnabled:      getEnv("MERIDIAN_COLLAB_AI_PROPOSALS_ENABLED", "true") == "true",
 		// Search API Configuration (optional)
 		SearchAPIKey:      getEnv("SEARCH_API_KEY", ""),
