@@ -40,3 +40,17 @@ export {
   type ProposalRejectCommand,
   type ProposalGroupAcceptCommand,
 } from "./proposals";
+
+export {
+  ProposalReviewRuntime,
+  createProposalReviewRuntime,
+  mountProposalReviewMergeView,
+  type CreateProposalReviewRuntimeOptions,
+  type ProposalReviewMergeViewParams,
+  type ProposalReviewMergeViewHandle,
+  type ProposalReviewUnavailableReason,
+  type ProposalReviewReady,
+  type ProposalReviewUnavailable,
+  type ProposalReviewModel,
+  type ProposalReviewSnapshot,
+} from "./review";

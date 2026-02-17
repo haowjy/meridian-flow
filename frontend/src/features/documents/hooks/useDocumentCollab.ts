@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Extension } from "@codemirror/state";
 import { IndexeddbPersistence } from "y-indexeddb";
 import {
@@ -7,6 +7,7 @@ import {
   buildProposalRejectCommand,
   createCollabSyncRuntime,
   createProposalManager,
+  createProposalReviewRuntime,
   isProposalGroupAcceptResultEvent,
   isProposalNewEvent,
   isProposalSnapshotEvent,
@@ -14,6 +15,7 @@ import {
   parseCollabServerTextEvent,
   type Proposal,
   type ProposalGroupAcceptResultEvent,
+  type ProposalReviewModel,
   toUint8Array,
 } from "@meridian/cm6-collab";
 
@@ -38,11 +40,15 @@ interface UseDocumentCollabResult {
   extensions: Extension[];
   connectionState: CollabConnectionState;
   proposals: Map<string, Proposal>;
+  reviewModels: Map<string, ProposalReviewModel>;
   lastGroupAcceptResult: ProposalGroupAcceptResultEvent | null;
+  getProposalReviewModel: (proposalId: string) => ProposalReviewModel | null;
   sendProposalAccept: (proposalId: string, idempotencyKey: string) => boolean;
   sendProposalReject: (proposalId: string) => boolean;
   isReady: boolean;
 }
+
+const EMPTY_REVIEW_MODELS = new Map<string, ProposalReviewModel>();
 
 export function useDocumentCollab({
   documentId,
@@ -64,6 +70,10 @@ export function useDocumentCollab({
   const reconnectAttemptRef = useRef(0);
   const persistenceRef = useRef<IndexeddbPersistence | null>(null);
   const [extensions, setExtensions] = useState<Extension[]>([]);
+  const [reviewRuntime, setReviewRuntime] = useState<
+    ReturnType<typeof createProposalReviewRuntime> | null
+  >(null);
+  const [reviewRevision, setReviewRevision] = useState(0);
 
   useEffect(() => {
     if (!enabled) {
@@ -102,6 +112,15 @@ export function useDocumentCollab({
         }
       },
     });
+
+    const proposalReviewRuntime = createProposalReviewRuntime({
+      ydoc: runtime.ydoc,
+    });
+    setReviewRuntime(proposalReviewRuntime);
+    const handleDocUpdate = () => {
+      setReviewRevision((current) => current + 1);
+    };
+    runtime.ydoc.on("update", handleDocUpdate);
 
     setExtensions(runtime.extensions);
 
@@ -250,6 +269,8 @@ export function useDocumentCollab({
       void persistenceRef.current?.destroy();
       persistenceRef.current = null;
 
+      runtime.ydoc.off("update", handleDocUpdate);
+      setReviewRuntime(null);
       runtime.destroy();
       setExtensions([]);
       clearState(documentId);
@@ -303,11 +324,37 @@ export function useDocumentCollab({
     return true;
   }, []);
 
+  const reviewModels = useMemo(() => {
+    const revision = reviewRevision;
+    if (revision < 0) {
+      return EMPTY_REVIEW_MODELS;
+    }
+
+    if (!enabled) {
+      return EMPTY_REVIEW_MODELS;
+    }
+
+    if (!reviewRuntime) {
+      return EMPTY_REVIEW_MODELS;
+    }
+
+    return reviewRuntime.deriveProposalReviews(proposalState.proposals.values()).reviews;
+  }, [enabled, proposalState.proposals, reviewRevision, reviewRuntime]);
+
+  const getProposalReviewModel = useCallback(
+    (proposalId: string): ProposalReviewModel | null => {
+      return reviewModels.get(proposalId) ?? null;
+    },
+    [reviewModels],
+  );
+
   return {
     extensions: enabled ? extensions : [],
     connectionState,
     proposals: proposalState.proposals,
+    reviewModels,
     lastGroupAcceptResult: proposalState.lastGroupAcceptResult,
+    getProposalReviewModel,
     sendProposalAccept,
     sendProposalReject,
     isReady: !enabled || extensions.length > 0,
