@@ -33,14 +33,15 @@ func TextEditorToolMetadata() *ToolMetadata {
 //
 // Schema docs: https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool
 type TextEditorTool struct {
-	projectID    string
-	userID       string                        // Required for service layer authorization
-	documentSvc  docsysSvc.DocumentService     // For document operations
-	folderSvc    docsysSvc.FolderService       // For folder operations
-	namespaceSvc docsysSvc.NamespaceService    // For namespace routing (optional)
-	pathResolver *PathResolver                 // For folder path resolution
-	config       *ToolConfig
-	normalizers  []TextNormalizer              // For str_replace text normalization (OCP)
+	projectID        string
+	userID           string                        // Required for service layer authorization
+	documentSvc      docsysSvc.DocumentService     // For document operations
+	folderSvc        docsysSvc.FolderService       // For folder operations
+	namespaceSvc     docsysSvc.NamespaceService    // For namespace routing (optional)
+	pathResolver     *PathResolver                 // For folder path resolution
+	config           *ToolConfig
+	normalizers      []TextNormalizer              // For str_replace text normalization (OCP)
+	mutationStrategy DocumentMutationStrategy      // Strategy for persisting AI edits (ai_version or collab proposal)
 }
 
 // NewTextEditorTool creates a new TextEditorTool instance.
@@ -52,19 +53,25 @@ func NewTextEditorTool(
 	folderSvc docsysSvc.FolderService,
 	namespaceSvc docsysSvc.NamespaceService,
 	config *ToolConfig,
+	mutationStrategy DocumentMutationStrategy,
 ) *TextEditorTool {
 	if config == nil {
 		config = DefaultToolConfig()
 	}
+	// Default to AIVersionStrategy if no strategy provided (backwards compatible)
+	if mutationStrategy == nil {
+		mutationStrategy = NewAIVersionStrategy(documentSvc)
+	}
 	return &TextEditorTool{
-		projectID:    projectID,
-		userID:       userID,
-		documentSvc:  documentSvc,
-		folderSvc:    folderSvc,
-		namespaceSvc: namespaceSvc,
-		pathResolver: NewPathResolver(projectID, userID, folderSvc),
-		config:       config,
-		normalizers:  DefaultNormalizers(), // OCP: extensible without modifying str_replace logic
+		projectID:        projectID,
+		userID:           userID,
+		documentSvc:      documentSvc,
+		folderSvc:        folderSvc,
+		namespaceSvc:     namespaceSvc,
+		pathResolver:     NewPathResolver(projectID, userID, folderSvc),
+		config:           config,
+		normalizers:      DefaultNormalizers(), // OCP: extensible without modifying str_replace logic
+		mutationStrategy: mutationStrategy,
 	}
 }
 
@@ -299,21 +306,33 @@ func (t *TextEditorTool) executeStrReplace(ctx context.Context, path string, inp
 	// Apply replacement
 	newVersion := strings.Replace(base, result.matchedOld, result.normalizedNew, 1)
 
-	// Save to ai_version
-	if _, err := t.documentSvc.UpdateAIVersion(ctx, t.userID, doc.ID, &newVersion); err != nil {
-		return nil, fmt.Errorf("failed to save ai_version: %w", err)
-	}
-
-	// Build response message
-	message := "Suggested text replacement"
+	// Build description
+	description := "Suggested text replacement"
 	if result.appliedNorm != "" {
-		message += " (" + result.appliedNorm + " normalization applied)"
+		description += " (" + result.appliedNorm + " normalization applied)"
 	}
 
-	return map[string]interface{}{
+	// Persist via mutation strategy (ai_version or collab proposal)
+	mutResult, err := t.mutationStrategy.Apply(ctx, MutationInput{
+		DocumentID:  doc.ID,
+		UserID:      t.userID,
+		Path:        path,
+		Base:        base,
+		NewContent:  newVersion,
+		Description: description,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	resp := map[string]interface{}{
 		"path":    path,
-		"message": message,
-	}, nil
+		"message": mutResult.Message,
+	}
+	for k, v := range mutResult.Extra {
+		resp[k] = v
+	}
+	return resp, nil
 }
 
 // executeInsert handles the insert command.
@@ -361,15 +380,28 @@ func (t *TextEditorTool) executeInsert(ctx context.Context, path string, input m
 	newLines = append(newLines, lines[insertLine:]...)
 	newVersion := strings.Join(newLines, "\n")
 
-	// Save to ai_version
-	if _, err := t.documentSvc.UpdateAIVersion(ctx, t.userID, doc.ID, &newVersion); err != nil {
-		return nil, fmt.Errorf("failed to save ai_version: %w", err)
+	// Persist via mutation strategy (ai_version or collab proposal)
+	description := fmt.Sprintf("Suggested insertion after line %d", insertLine)
+	mutResult, err := t.mutationStrategy.Apply(ctx, MutationInput{
+		DocumentID:  doc.ID,
+		UserID:      t.userID,
+		Path:        path,
+		Base:        base,
+		NewContent:  newVersion,
+		Description: description,
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	return map[string]interface{}{
+	resp := map[string]interface{}{
 		"path":    path,
-		"message": fmt.Sprintf("Suggested insertion after line %d", insertLine),
-	}, nil
+		"message": mutResult.Message,
+	}
+	for k, v := range mutResult.Extra {
+		resp[k] = v
+	}
+	return resp, nil
 }
 
 // executeCreate handles the create command.
@@ -432,11 +464,29 @@ func (t *TextEditorTool) executeCreate(ctx context.Context, path string, input m
 		return nil, fmt.Errorf("failed to create document: %w", err)
 	}
 
-	// Set AI-generated content as ai_version for human review
+	// Set AI-generated content via mutation strategy for human review
 	if fileText != "" {
-		if _, err := t.documentSvc.UpdateAIVersion(ctx, t.userID, doc.ID, &fileText); err != nil {
-			return nil, fmt.Errorf("failed to save ai_version: %w", err)
+		mutResult, err := t.mutationStrategy.Apply(ctx, MutationInput{
+			DocumentID:  doc.ID,
+			UserID:      t.userID,
+			Path:        path,
+			Base:        "",       // New document has empty content
+			NewContent:  fileText,
+			Description: "Created new document with suggested content",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to save ai content: %w", err)
 		}
+
+		resp := map[string]interface{}{
+			"path":       path,
+			"message":    mutResult.Message,
+			"documentId": doc.ID,
+		}
+		for k, v := range mutResult.Extra {
+			resp[k] = v
+		}
+		return resp, nil
 	}
 
 	return map[string]interface{}{

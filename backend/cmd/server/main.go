@@ -13,6 +13,7 @@ import (
 	"meridian/internal/auth"
 	"meridian/internal/capabilities"
 	"meridian/internal/config"
+	collabSvc "meridian/internal/domain/services/collab"
 	domainLLM "meridian/internal/domain/services/llm"
 	"meridian/internal/handler"
 	"meridian/internal/jobs"
@@ -29,6 +30,7 @@ import (
 	"meridian/internal/service/docsystem/converter"
 	"meridian/internal/service/identifier"
 	serviceLLM "meridian/internal/service/llm"
+	"meridian/internal/service/llm/tools"
 	serviceSkill "meridian/internal/service/skill"
 
 	"github.com/joho/godotenv"
@@ -190,6 +192,53 @@ func main() {
 		logger,
 	)
 
+	// Collab stores (needed before mutation strategy and LLM services)
+	collabStore := postgresCollab.NewDocumentStore(repoConfig)
+	proposalStore := postgresCollab.NewProposalStore(repoConfig)
+	idempotencyStore := postgresCollab.NewIdempotencyStore(repoConfig)
+	autoAcceptStore := postgresCollab.NewAutoAcceptStore(repoConfig)
+	collabBroadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
+	collabSessionManager := serviceCollab.NewDocumentSessionManager(
+		collabStore,
+		logger,
+		cfg.CollabSnapshotIntervalUpdates,
+	)
+	aiContentProjector := serviceCollab.NewAIContentProjector(
+		collabStore,
+		proposalStore,
+		collabSessionManager,
+	)
+	sizeStrategy := serviceCollab.NewSizeThresholdStrategy(51200)
+	densityStrategy := serviceCollab.NewRecentChangeDensityStrategy(proposalStore, 5, 60*time.Second, logger)
+	agentArbiter := serviceCollab.NewStrategyChainArbiter(
+		[]collabSvc.ArbiterStrategy{sizeStrategy, densityStrategy},
+		logger,
+	)
+	proposalService := serviceCollab.NewProposalService(
+		proposalStore,
+		idempotencyStore,
+		txManager,
+		collabSessionManager,
+		autoAcceptStore,
+		aiContentProjector,
+		agentArbiter,
+		cfg.CollabDefaultAutoAccept,
+	)
+
+	// Build mutation strategy for AI edits (construction-time decision based on config).
+	// CollabProposalStrategy creates collab proposals with Yjs updates and WS broadcasting.
+	// AIVersionStrategy is the legacy path that writes to document.ai_version directly.
+	var mutationStrategy tools.DocumentMutationStrategy
+	if cfg.CollabAIProposalsEnabled {
+		yjsConverter := serviceCollab.NewYjsTextConverter(collabStore)
+		proposalBroadcasterImpl := handler.NewProposalBroadcasterImpl(collabBroadcaster)
+		mutationStrategy = tools.NewCollabProposalStrategy(proposalService, proposalBroadcasterImpl, yjsConverter, logger)
+		logger.Info("mutation strategy: collab proposals enabled")
+	} else {
+		mutationStrategy = tools.NewAIVersionStrategy(docService)
+		logger.Info("mutation strategy: legacy ai_version")
+	}
+
 	// Setup LLM services (thread, thread history, streaming)
 	// docService and folderService are passed for tool write operations (SOLID: DIP)
 	llmServices, streamRegistry, err := serviceLLM.SetupServices(
@@ -198,16 +247,17 @@ func main() {
 		projectRepo,
 		docRepo,
 		folderRepo,
-		docService,    // For tool write operations
-		folderService, // For tool write operations
-		skillService,  // For skill_invoke/skill_list tools
+		docService,       // For tool write operations
+		folderService,    // For tool write operations
+		skillService,     // For skill_invoke/skill_list tools
 		providerRegistry,
 		cfg,
 		txManager,
 		capabilityRegistry,
 		authorizer,
 		toolLimitResolver,
-		jobQueue, // Phase 2: Background job queue for async generation enrichment
+		jobQueue,           // Phase 2: Background job queue for async generation enrichment
+		mutationStrategy,   // Strategy for AI edit persistence (ai_version or collab proposal)
 		logger,
 	)
 	if err != nil {
@@ -241,38 +291,7 @@ func main() {
 	newFolderHandler := handler.NewFolderHandler(folderService, logger, cfg)
 	newTreeHandler := handler.NewTreeHandler(treeService, identifierResolver, logger, cfg)
 	importHandler := handler.NewImportHandler(importService, authorizer, logger, cfg)
-	// Collab stores + cleanup
-	collabStore := postgresCollab.NewDocumentStore(repoConfig)
-	proposalStore := postgresCollab.NewProposalStore(repoConfig)
-	idempotencyStore := postgresCollab.NewIdempotencyStore(repoConfig)
-	autoAcceptStore := postgresCollab.NewAutoAcceptStore(repoConfig)
-	collabBroadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
-	collabSessionManager := serviceCollab.NewDocumentSessionManager(
-		collabStore,
-		logger,
-		cfg.CollabSnapshotIntervalUpdates,
-	)
-	aiContentProjector := serviceCollab.NewAIContentProjector(
-		collabStore,
-		proposalStore,
-		collabSessionManager,
-	)
-	sizeStrategy := serviceCollab.NewSizeThresholdStrategy(1024, 51200)
-	densityStrategy := serviceCollab.NewRecentChangeDensityStrategy(proposalStore, 5, 60*time.Second, logger)
-	agentArbiter := serviceCollab.NewStrategyChainArbiter(
-		[]serviceCollab.ArbiterStrategy{sizeStrategy, densityStrategy},
-		logger,
-	)
-	proposalService := serviceCollab.NewProposalService(
-		proposalStore,
-		idempotencyStore,
-		txManager,
-		collabSessionManager,
-		autoAcceptStore,
-		aiContentProjector,
-		agentArbiter,
-		cfg.CollabDefaultAutoAccept,
-	)
+	// Collab handler + snapshot handler (stores created above before LLM services)
 	collabDocResolver := serviceCollab.NewDocumentResolver(docRepo, authorizer)
 	collabHandler := handler.NewCollabHandler(
 		collabDocResolver,

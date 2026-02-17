@@ -96,6 +96,7 @@ type Service struct {
 	formatterRegistry    *formatting.FormatterRegistry   // For formatting synthetic tool results (ref transformer)
 	tokenFinalizer       tokens.TokenFinalizer           // For finalizing tokens on completion/interruption
 	jobQueue             jobs.JobQueue                   // NEW: Phase 2 - background job queue for async operations
+	mutationStrategy     tools.DocumentMutationStrategy  // Strategy for AI edit persistence (ai_version or collab proposal)
 	userStreamTracker    *UserStreamTracker              // Per-user concurrent stream limiter
 	logger               *slog.Logger
 }
@@ -123,6 +124,7 @@ func NewService(
 	formatterRegistry *formatting.FormatterRegistry,
 	tokenFinalizer tokens.TokenFinalizer,
 	jobQueue jobs.JobQueue,
+	mutationStrategy tools.DocumentMutationStrategy,
 	logger *slog.Logger,
 ) llmSvc.StreamingService {
 	return &Service{
@@ -149,6 +151,7 @@ func NewService(
 		formatterRegistry:    formatterRegistry,
 		tokenFinalizer:       tokenFinalizer,
 		jobQueue:             jobQueue,
+		mutationStrategy:     mutationStrategy,
 		userStreamTracker:    NewUserStreamTracker(cfg.MaxConcurrentStreams),
 		logger:               logger,
 	}
@@ -324,6 +327,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	// Tools self-describe via metadata, registry generates the section dynamically
 	tempToolRegistry := tools.NewToolRegistryBuilder().
 		WithNamespaceService(s.namespaceSvc).
+		WithMutationStrategy(s.mutationStrategy).
 		WithEnabledDocumentTools(enabledTools, threadContext.projectID, req.UserID, s.documentSvc, s.folderSvc).
 		WithEnabledSkillTools(enabledTools, threadContext.projectID, req.UserID, s.skillService, false, availableSkills).
 		Build()
@@ -481,6 +485,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	// Use filtered builder methods to only register tools that are actually enabled
 	builder := tools.NewToolRegistryBuilder().
 		WithNamespaceService(s.namespaceSvc).
+		WithMutationStrategy(s.mutationStrategy).
 		WithEnabledDocumentTools(enabledTools, thread.ProjectID, req.UserID, s.documentSvc, s.folderSvc).
 		WithEnabledSkillTools(enabledTools, thread.ProjectID, req.UserID, s.skillService, false, availableSkills) // false = model invocation, not user slash command
 
