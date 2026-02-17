@@ -52,6 +52,8 @@ import {
 import { ToolStreamState } from "@/features/threads/stores/useToolStreamStore";
 import type { Document } from "@/features/documents/types/document";
 import { parseLineNumberedContent } from "@/features/threads/utils/lineNumbers";
+import { useProposalStatus } from "@/features/documents/hooks/useProposalStatus";
+import { ProposalStatusBadge } from "./ProposalStatusBadge";
 
 // =============================================================================
 // TYPES
@@ -86,6 +88,27 @@ function getResultStatus(toolResult: TurnBlock | null): {
   }
 
   return { isError, message };
+}
+
+/**
+ * Extract proposal metadata from tool_result block.
+ * The backend includes proposal_id and status when the collab proposal strategy is active.
+ */
+function getProposalInfo(toolResult: TurnBlock | null): {
+  proposalId?: string;
+  initialStatus?: string;
+} {
+  if (!toolResult) return {};
+  const content = toolResult.content as Record<string, unknown> | undefined;
+  if (!content) return {};
+
+  // Backend sends proposal_id and status as snake_case fields (not converted by SSE handler)
+  const proposalId =
+    typeof content.proposal_id === "string" ? content.proposal_id : undefined;
+  const initialStatus =
+    typeof content.status === "string" ? content.status : undefined;
+
+  return { proposalId, initialStatus };
 }
 
 /**
@@ -251,6 +274,9 @@ export const TextEditorBlock = React.memo(function TextEditorBlock({
   const { isError, message } = getResultStatus(toolResult);
   const hasResult = !!toolResult;
 
+  // Extract proposal metadata from edit tool results (collab proposal strategy)
+  const { proposalId, initialStatus } = getProposalInfo(toolResult);
+
   // Get view result if this is a view command
   const viewResult =
     input && isViewCommand(input.command) ? getViewResult(toolResult) : null;
@@ -279,6 +305,13 @@ export const TextEditorBlock = React.memo(function TextEditorBlock({
   const resolvedDocument = input?.path
     ? findDocumentByPath(input.path, documents, folders)
     : null;
+
+  // Live proposal status from collab store (only relevant for edit commands)
+  const proposalStatus = useProposalStatus(
+    proposalId,
+    initialStatus,
+    resolvedDocument?.id,
+  );
 
   // Resolve folder for folder results
   const resolvedFolder = isFolderRes
@@ -367,7 +400,12 @@ export const TextEditorBlock = React.memo(function TextEditorBlock({
           </span>
         </>
       }
-      statusBadge={<ToolStatusBadge status={status} label={statusLabel} />}
+      statusBadge={
+        <span className="flex items-center gap-1.5">
+          <ToolStatusBadge status={status} label={statusLabel} />
+          <ProposalStatusBadge status={proposalStatus} />
+        </span>
+      }
       actions={
         input?.path && projectSlug ? (
           <button
