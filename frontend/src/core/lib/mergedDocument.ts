@@ -1,6 +1,9 @@
 /**
  * Merged Document Utilities
  *
+ * @deprecated Use the collab proposals system (Yjs sync + proposal review) instead.
+ * This PUA marker approach will be removed in a future release.
+ *
  * Transforms between storage format (separate content/aiVersion) and
  * editor format (merged document with PUA markers).
  *
@@ -9,6 +12,18 @@
  */
 
 import DiffMatchPatch from "diff-match-patch";
+
+/** Module-level flag to emit the deprecation warning only once. */
+let _deprecationWarned = false;
+
+function warnDeprecated() {
+  if (!_deprecationWarned && import.meta.env.DEV) {
+    _deprecationWarned = true;
+    console.warn(
+      "mergedDocument is deprecated. Use collab proposals instead.",
+    );
+  }
+}
 
 // =============================================================================
 // PUA MARKERS
@@ -146,11 +161,14 @@ const dmp = new DiffMatchPatch();
  * )
  * // Result contains PUA markers around "She felt sad." and "A heavy melancholia."
  * ```
+ *
+ * @deprecated Use collab proposals system instead. Will be removed in a future release.
  */
 export function buildMergedDocument(
   content: string,
   aiVersion: string,
 ): string {
+  warnDeprecated();
   // Defensive: strip any accidental PUA markers from inputs.
   // If markers exist inside content, they would become structurally ambiguous.
   if (hasAnyMarker(content) || hasAnyMarker(aiVersion)) {
@@ -334,8 +352,11 @@ export function validateMarkerStructure(
  * // content: baseline with AI changes removed
  * // aiVersion: AI version with deletions removed, or null if no markers
  * ```
+ *
+ * @deprecated Use collab proposals system instead. Will be removed in a future release.
  */
 export function parseMergedDocument(merged: string): ParsedDocument {
+  warnDeprecated();
   // Check if any markers exist
   if (!hasAnyMarker(merged)) {
     // No markers = no AI changes (either never had them or all resolved)
