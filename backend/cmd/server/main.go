@@ -243,17 +243,27 @@ func main() {
 	importHandler := handler.NewImportHandler(importService, authorizer, logger, cfg)
 	// Collab stores + cleanup
 	collabStore := postgresCollab.NewDocumentStore(repoConfig)
+	proposalStore := postgresCollab.NewProposalStore(repoConfig)
+	idempotencyStore := postgresCollab.NewIdempotencyStore(repoConfig)
 	collabBroadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
 	collabSessionManager := serviceCollab.NewDocumentSessionManager(
 		collabStore,
 		logger,
 		cfg.CollabSnapshotIntervalUpdates,
 	)
+	proposalService := serviceCollab.NewProposalService(
+		proposalStore,
+		idempotencyStore,
+		txManager,
+		collabSessionManager,
+	)
 	collabDocResolver := serviceCollab.NewDocumentResolver(docRepo, authorizer)
 	collabHandler := handler.NewCollabHandler(
 		collabDocResolver,
 		collabBroadcaster,
 		collabSessionManager,
+		proposalService,
+		proposalStore,
 		jwtVerifier,
 		logger,
 		cfg,

@@ -34,6 +34,8 @@ type CollabHandler struct {
 	documentResolver    collabSvc.DocumentResolver
 	documentBroadcaster collabSvc.DocumentBroadcaster
 	sessionManager      documentSessionManager
+	proposalService     collabSvc.ProposalService
+	proposalStore       collabSvc.ProposalStore
 	jwtVerifier         auth.JWTVerifier
 	logger              *slog.Logger
 	config              *config.Config
@@ -82,6 +84,9 @@ func (c *websocketDocumentConnection) ID() string {
 func (c *websocketDocumentConnection) Send(data []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	if isLikelyJSONMessage(data) {
+		return websocket.Message.Send(c.conn, string(data))
+	}
 	return websocket.Message.Send(c.conn, data)
 }
 
@@ -102,6 +107,8 @@ func NewCollabHandler(
 	documentResolver collabSvc.DocumentResolver,
 	documentBroadcaster collabSvc.DocumentBroadcaster,
 	sessionManager documentSessionManager,
+	proposalService collabSvc.ProposalService,
+	proposalStore collabSvc.ProposalStore,
 	jwtVerifier auth.JWTVerifier,
 	logger *slog.Logger,
 	cfg *config.Config,
@@ -110,6 +117,8 @@ func NewCollabHandler(
 		documentResolver:    documentResolver,
 		documentBroadcaster: documentBroadcaster,
 		sessionManager:      sessionManager,
+		proposalService:     proposalService,
+		proposalStore:       proposalStore,
 		jwtVerifier:         jwtVerifier,
 		logger:              logger,
 		config:              cfg,
@@ -184,6 +193,27 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 		return
 	}
 
+	userUUID, err := parseUUID(userID)
+	if err != nil {
+		h.logger.Error("collab user id is not a uuid",
+			"document_id", docID,
+			"user_id", userID,
+			"error", err,
+		)
+		h.sendError(wsConn, "INTERNAL_ERROR", "failed to initialize collab session")
+		return
+	}
+
+	docUUID, err := parseUUID(docID)
+	if err != nil {
+		h.logger.Error("collab document id is not a uuid",
+			"document_id", docID,
+			"error", err,
+		)
+		h.sendError(wsConn, "INTERNAL_ERROR", "failed to initialize collab session")
+		return
+	}
+
 	session, err := h.sessionManager.Acquire(ctx, docID)
 	if err != nil {
 		h.logger.Error("collab session acquire failed",
@@ -228,6 +258,8 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 	go h.runHeartbeatLoop(wsConn, heartbeatAcks, heartbeatStop)
 	defer close(heartbeatStop)
 
+	proposalSnapshotSent := false
+
 	for {
 		var rawMessage []byte
 		if err := websocket.Message.Receive(conn, &rawMessage); err != nil {
@@ -242,12 +274,11 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 			return
 		}
 
-		if h.isHeartbeatMessage(rawMessage) {
-			nonBlockingSignal(heartbeatAcks)
+		if len(rawMessage) == 0 {
 			continue
 		}
 
-		if len(rawMessage) == 0 {
+		if handled := h.handleTextMessage(ctx, wsConn, docID, docUUID, userUUID, rawMessage, heartbeatAcks); handled {
 			continue
 		}
 
@@ -317,6 +348,19 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 
 				if err := wsConn.Send(frameEnvelope(collabEnvelopeSyncStep1, serverStep1Payload)); err != nil {
 					return
+				}
+
+				if !proposalSnapshotSent {
+					if err := h.sendProposalSnapshot(ctx, wsConn, docUUID); err != nil {
+						h.logger.Error("collab proposal snapshot send failed",
+							"document_id", docID,
+							"connection_id", wsConn.ID(),
+							"error", err,
+						)
+						h.sendError(wsConn, "INTERNAL_ERROR", "failed to load proposal snapshot")
+						return
+					}
+					proposalSnapshotSent = true
 				}
 			}
 
@@ -402,24 +446,9 @@ func (h *CollabHandler) sendError(conn *websocketDocumentConnection, code string
 	}
 }
 
-func (h *CollabHandler) isHeartbeatMessage(raw []byte) bool {
-	if len(raw) == 0 {
+func isLikelyJSONMessage(raw []byte) bool {
+	if len(raw) == 0 || raw[0] != '{' {
 		return false
 	}
-
-	// Fast-path: binary Yjs frames never start with '{', so skip JSON decode
-	// for the vast majority of messages (sync/update/awareness payloads).
-	// Coupling: client sends heartbeat acks as JSON text frames (see buildHeartbeatAckMessage).
-	// If that changes to a binary-envelope format, this guard must be updated.
-	if raw[0] != '{' {
-		return false
-	}
-
-	var msg collabHeartbeatMessage
-	if err := json.Unmarshal(raw, &msg); err != nil {
-		return false
-	}
-
-	return msg.Type == "heartbeat"
+	return json.Valid(raw)
 }
-
