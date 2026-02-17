@@ -29,6 +29,7 @@ import {
   findFolderByPath,
 } from "@/features/threads/utils/docPathResolver";
 import { openDocument } from "@/core/lib/panelHelpers";
+import { useUIStore } from "@/core/stores/useUIStore";
 import type {
   TextEditorInput,
   TextEditorCommand,
@@ -321,10 +322,15 @@ export const TextEditorBlock = React.memo(function TextEditorBlock({
   const rootFolderId =
     resolvedFolder === null ? null : (resolvedFolder?.id ?? null);
 
-  // Handle "View" navigation
+  // Handle "View in Editor" navigation — also sets pending proposal for review panel auto-selection
   const handleViewInEditor = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!projectSlug) return;
+
+    // If this edit has a proposal, tell the review panel to select it
+    if (proposalId) {
+      useUIStore.getState().setPendingProposalId(proposalId);
+    }
 
     if (resolvedDocument) {
       openDocument(

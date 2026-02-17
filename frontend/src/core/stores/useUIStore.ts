@@ -240,6 +240,14 @@ interface UIStore {
   pendingThreadReferences: PendingThreadReference[];
 
   /**
+   * Proposal ID to highlight in the review panel after navigating from thread.
+   * Set by TextEditorBlock "View in Editor" action, consumed by AIProposalReviewPanel.
+   * NOT persisted (ephemeral, one-shot).
+   * @default null
+   */
+  pendingProposalId: string | null;
+
+  /**
    * Timestamp of last @ reference usage (for conditional hint display).
    * When null or >7 days stale, composer shows "@ for reference" hint.
    * Persisted across sessions.
@@ -351,6 +359,9 @@ interface UIStore {
 
   /** Record that the user selected an @ reference (persisted timestamp). */
   recordAtReferenceUsage: () => void;
+
+  /** Set pending proposal ID for review panel auto-selection. */
+  setPendingProposalId: (id: string | null) => void;
 }
 
 /**
@@ -394,6 +405,7 @@ export const useUIStore = create<UIStore>()(
       showVersionHistory: false,
       pendingThreadReferences: [],
       lastAtReferenceUsed: null,
+      pendingProposalId: null,
 
       toggleLeftPanel: () => {
         const currentlyCollapsed = selectEffectiveLeftCollapsed(get());
@@ -513,6 +525,7 @@ export const useUIStore = create<UIStore>()(
         set((state) => ({ showVersionHistory: !state.showVersionHistory })),
       setShowVersionHistory: (show) => set({ showVersionHistory: show }),
       recordAtReferenceUsage: () => set({ lastAtReferenceUsed: Date.now() }),
+      setPendingProposalId: (id) => set({ pendingProposalId: id }),
     }),
     {
       name: "ui-store",
