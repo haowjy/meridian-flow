@@ -422,9 +422,10 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 	return doc, nil
 }
 
-// UpdateAIVersion updates the ai_version field for a document
-// Authorization is checked first via the injected authorizer
-// Pass nil to clear ai_version (reject suggestions)
+// Deprecated: Use CollabProposalStrategy instead. Retained for feature flag fallback.
+// UpdateAIVersion updates the ai_version field for a document.
+// Authorization is checked first via the injected authorizer.
+// Pass nil to clear ai_version (reject suggestions).
 func (s *documentService) UpdateAIVersion(ctx context.Context, userID, documentID string, aiVersion *string) (*models.Document, error) {
 	// Authorize: check user can access this document
 	if err := s.authorizer.CanAccessDocument(ctx, userID, documentID); err != nil {

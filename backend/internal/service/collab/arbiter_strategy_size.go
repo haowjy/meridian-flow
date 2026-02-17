@@ -7,24 +7,17 @@ import (
 	collabSvc "meridian/internal/domain/services/collab"
 )
 
-const (
-	defaultSmallThresholdBytes = 1024      // 1 KB
-	defaultLargeThresholdBytes = 50 * 1024 // 50 KB
-)
-
 // SizeThresholdStrategy classifies proposals by Yjs update size.
 // Large proposals (> largeThresholdBytes) require writer review;
-// small/medium proposals pass through to the next strategy or baseline.
+// smaller proposals pass through to the next strategy or baseline.
 type SizeThresholdStrategy struct {
-	smallThresholdBytes int
 	largeThresholdBytes int
 }
 
 // NewSizeThresholdStrategy creates a size-based arbiter strategy.
-// smallThresholdBytes and largeThresholdBytes define the classification bands.
-func NewSizeThresholdStrategy(smallThresholdBytes, largeThresholdBytes int) *SizeThresholdStrategy {
+// largeThresholdBytes is the size above which proposals require writer review.
+func NewSizeThresholdStrategy(largeThresholdBytes int) *SizeThresholdStrategy {
 	return &SizeThresholdStrategy{
-		smallThresholdBytes: smallThresholdBytes,
 		largeThresholdBytes: largeThresholdBytes,
 	}
 }

@@ -24,6 +24,7 @@ type DocumentRepository interface {
 	// Update updates an existing document
 	Update(ctx context.Context, doc *docsystem.Document) error
 
+	// Deprecated: Use CollabProposalStrategy instead. Retained for feature flag fallback.
 	// UpdateAIVersion updates the ai_version and metadata fields for a document.
 	// Pass nil aiVersion to clear ai_version (reject suggestions).
 	// metadata is persisted atomically so word count stays consistent with ai_version.

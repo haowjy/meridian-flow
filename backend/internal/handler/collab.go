@@ -54,7 +54,7 @@ const (
 	collabEnvelopeAwareness byte = 0x03
 )
 
-var (
+const (
 	collabInboundRateWindow = time.Second
 	collabInboundMutePeriod = time.Second
 )

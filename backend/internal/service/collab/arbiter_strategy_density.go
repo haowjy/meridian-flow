@@ -10,11 +10,6 @@ import (
 	collabSvc "meridian/internal/domain/services/collab"
 )
 
-const (
-	defaultDensityThreshold      = 5                // accepted proposals in window
-	defaultDensityLookbackWindow = 60 * time.Second // 1 minute
-)
-
 // RecentChangeDensityStrategy flags documents with high recent proposal volume.
 // When many AI proposals are accepted for the same document in a short window,
 // the combined semantic result is more likely to be incoherent, so review is required.

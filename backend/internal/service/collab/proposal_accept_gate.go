@@ -11,6 +11,12 @@ import (
 
 // proposalAcceptGate serializes acceptance mutations per document ID and bounds
 // same-document pending operations (in-flight + waiting).
+//
+// Bounded growth: The locks map grows by one entry per unique document that has
+// ever had an accept operation. Each entry is a small struct (~64 bytes), so even
+// 100K documents would use ~6 MB. For Meridian's expected workload (single-writer
+// platform), this is well within acceptable limits. If document cardinality ever
+// becomes a concern, consider a sharded/striped lock pool keyed by document ID hash.
 type proposalAcceptGate struct {
 	mu         sync.Mutex
 	locks      map[uuid.UUID]*proposalAcceptGateLock

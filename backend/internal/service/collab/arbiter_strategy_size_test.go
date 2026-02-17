@@ -11,7 +11,7 @@ import (
 )
 
 func TestSizeThresholdStrategy_Name(t *testing.T) {
-	s := NewSizeThresholdStrategy(1024, 51200)
+	s := NewSizeThresholdStrategy(51200)
 	if s.Name() != "size_threshold" {
 		t.Fatalf("expected name 'size_threshold', got %q", s.Name())
 	}
@@ -35,7 +35,7 @@ func TestSizeThresholdStrategy_Evaluate(t *testing.T) {
 		{"very large requires review", 200000, collabSvc.ArbiterVerdictRequireReview},
 	}
 
-	s := NewSizeThresholdStrategy(small, large)
+	s := NewSizeThresholdStrategy(large)
 	ctx := context.Background()
 
 	for _, tt := range tests {
@@ -54,7 +54,7 @@ func TestSizeThresholdStrategy_Evaluate(t *testing.T) {
 }
 
 func TestSizeThresholdStrategy_CustomThresholds(t *testing.T) {
-	s := NewSizeThresholdStrategy(100, 500)
+	s := NewSizeThresholdStrategy(500)
 	ctx := context.Background()
 	input := collabSvc.ArbiterInput{
 		DocumentID:    uuid.New(),
@@ -74,7 +74,7 @@ func TestSizeThresholdStrategy_CustomThresholds(t *testing.T) {
 }
 
 func TestSizeThresholdStrategy_ReasonContainsSize(t *testing.T) {
-	s := NewSizeThresholdStrategy(1024, 51200)
+	s := NewSizeThresholdStrategy(51200)
 	ctx := context.Background()
 	input := collabSvc.ArbiterInput{
 		DocumentID:    uuid.New(),

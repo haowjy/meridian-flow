@@ -215,6 +215,13 @@ type ArbiterDecision struct {
 	Reason  string // human-readable explanation (logged, not user-facing)
 }
 
+// ArbiterStrategy is a single evaluation rule in the arbiter chain.
+// Strategies return PassThrough to defer to the next strategy in the chain.
+type ArbiterStrategy interface {
+	Name() string
+	Evaluate(ctx context.Context, input ArbiterInput) ArbiterDecision
+}
+
 // AgentArbiter evaluates AI proposals at creation time and can override auto-accept.
 // Implementations must be safe for concurrent use.
 type AgentArbiter interface {

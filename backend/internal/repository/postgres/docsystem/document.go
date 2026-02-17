@@ -404,6 +404,7 @@ func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Doc
 	return nil
 }
 
+// Deprecated: Use CollabProposalStrategy instead. Retained for feature flag fallback.
 // UpdateAIVersion updates the ai_version and metadata fields for a document.
 // Pass nil aiVersion to clear ai_version (reject suggestions).
 // metadata is persisted atomically so word count stays consistent with ai_version.

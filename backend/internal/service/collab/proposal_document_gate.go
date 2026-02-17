@@ -8,6 +8,12 @@ import (
 
 // proposalDocumentGate serializes operations per document while allowing
 // different documents to proceed concurrently.
+//
+// Bounded growth: The locks sync.Map grows by one *sync.Mutex per unique document
+// that has ever had a create operation. Each entry is negligible (~pointer + mutex).
+// For Meridian's expected workload (single-writer platform with bounded document
+// counts), this is well within acceptable limits. If document cardinality becomes
+// a concern, consider a striped lock pool keyed by document ID hash.
 type proposalDocumentGate struct {
 	locks sync.Map // map[uuid.UUID]*sync.Mutex
 }

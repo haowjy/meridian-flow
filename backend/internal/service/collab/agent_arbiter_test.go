@@ -15,10 +15,10 @@ import (
 func TestStrategyChainArbiter_SizeTriggersFirst(t *testing.T) {
 	// Large proposal: size strategy should fire before density is reached.
 	store := &stubProposalStore{count: 0}
-	sizeStrategy := NewSizeThresholdStrategy(1024, 51200)
+	sizeStrategy := NewSizeThresholdStrategy(51200)
 	densityStrategy := NewRecentChangeDensityStrategy(store, 5, time.Minute, slog.Default())
 	arbiter := NewStrategyChainArbiter(
-		[]ArbiterStrategy{sizeStrategy, densityStrategy},
+		[]collabSvc.ArbiterStrategy{sizeStrategy, densityStrategy},
 		slog.Default(),
 	)
 
@@ -37,10 +37,10 @@ func TestStrategyChainArbiter_SizeTriggersFirst(t *testing.T) {
 func TestStrategyChainArbiter_SizePassesDensityTriggers(t *testing.T) {
 	// Small proposal but high density: density strategy should trigger.
 	store := &stubProposalStore{count: 10}
-	sizeStrategy := NewSizeThresholdStrategy(1024, 51200)
+	sizeStrategy := NewSizeThresholdStrategy(51200)
 	densityStrategy := NewRecentChangeDensityStrategy(store, 5, time.Minute, slog.Default())
 	arbiter := NewStrategyChainArbiter(
-		[]ArbiterStrategy{sizeStrategy, densityStrategy},
+		[]collabSvc.ArbiterStrategy{sizeStrategy, densityStrategy},
 		slog.Default(),
 	)
 
@@ -59,10 +59,10 @@ func TestStrategyChainArbiter_SizePassesDensityTriggers(t *testing.T) {
 func TestStrategyChainArbiter_BothPassThrough(t *testing.T) {
 	// Small proposal, low density: both strategies pass through.
 	store := &stubProposalStore{count: 2}
-	sizeStrategy := NewSizeThresholdStrategy(1024, 51200)
+	sizeStrategy := NewSizeThresholdStrategy(51200)
 	densityStrategy := NewRecentChangeDensityStrategy(store, 5, time.Minute, slog.Default())
 	arbiter := NewStrategyChainArbiter(
-		[]ArbiterStrategy{sizeStrategy, densityStrategy},
+		[]collabSvc.ArbiterStrategy{sizeStrategy, densityStrategy},
 		slog.Default(),
 	)
 
