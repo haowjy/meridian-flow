@@ -562,6 +562,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	executor := NewStreamExecutor(
 		assistantTurn.ID,
 		threadContext.threadID, // Thread ID for AG-UI events
+		req.UserID,             // User who initiated this turn (for tool provenance)
 		model,                  // Pure model name (no provider prefix)
 		s.turnWriter,           // TurnWriter
 		s.turnReader,           // TurnReader

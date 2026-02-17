@@ -461,6 +461,7 @@ func TestStreamExecutor_SoftCancelDrainTimeoutStopsProvider(t *testing.T) {
 	executor := NewStreamExecutor(
 		"test-turn-456",
 		"test-thread-456", // Thread ID for AG-UI events
+		"test-user-456",   // User ID for tool provenance
 		"test-model",
 		turnWriter,
 		&mockTurnReader{},
@@ -518,6 +519,7 @@ func TestStreamExecutor_IdempotentCancel(t *testing.T) {
 	executor := NewStreamExecutor(
 		"test-turn-789",
 		"test-thread-789", // Thread ID for AG-UI events
+		"test-user-789",   // User ID for tool provenance
 		"test-model",
 		turnWriter,
 		&mockTurnReader{},
@@ -567,6 +569,7 @@ func TestStreamExecutor_HardCancelIdempotent(t *testing.T) {
 	executor := NewStreamExecutor(
 		"test-turn-abc",
 		"test-thread-abc", // Thread ID for AG-UI events
+		"test-user-abc",   // User ID for tool provenance
 		"test-model",
 		turnWriter,
 		&mockTurnReader{},

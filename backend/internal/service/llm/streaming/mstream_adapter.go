@@ -87,6 +87,9 @@ type StreamExecutor struct {
 	// Used by service layer to clean up executor registry
 	onCleanup func()
 
+	// Identity: who triggered this stream (for provenance tracking in tool execution)
+	userID string // User who initiated this streaming turn
+
 	// AG-UI Protocol Support
 	// These enable the new AG-UI streaming protocol alongside legacy events (dual protocol mode)
 	threadID    string           // Thread/conversation ID for AG-UI events
@@ -123,6 +126,7 @@ type StreamSwitchResult struct {
 func NewStreamExecutor(
 	turnID string,
 	threadID string, // Thread ID for AG-UI events
+	userID string,   // User who initiated this turn (for tool provenance)
 	model string,
 	turnWriter llmRepo.TurnWriter,
 	turnReader llmRepo.TurnReader,
@@ -145,6 +149,7 @@ func NewStreamExecutor(
 	se := &StreamExecutor{
 		turnID:              turnID,
 		threadID:            threadID,
+		userID:              userID,
 		model:               model,
 		turnRepo:            turnWriter,
 		provider:            provider,
