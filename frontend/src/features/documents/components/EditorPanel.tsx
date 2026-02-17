@@ -45,6 +45,7 @@ import { Button } from "@/shared/components/ui/button";
 import { ChevronLeft } from "lucide-react";
 import { AIHunkNavigator } from "./AIHunkNavigator";
 import { AIProposalReviewPanel } from "./AIProposalReviewPanel";
+import { CollabConnectionIndicator } from "./CollabConnectionIndicator";
 import {
   useDocumentContent,
   useDocumentCollab,
@@ -276,6 +277,7 @@ export function EditorPanel({
 
   const {
     extensions: collabExtensions,
+    connectionState: collabConnectionState,
     proposals,
     reviewModels,
     sendProposalAccept,
@@ -546,7 +548,15 @@ export function EditorPanel({
       {/* Parent scroll container - provides sticky header behavior */}
       <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
         {/* Sticky header - scrolls away when scrolling down, sticks at top when scrolling back up */}
-        <div className="bg-background relative sticky top-0 z-20">{header}</div>
+        <div className="bg-background relative sticky top-0 z-20">
+          {header}
+          {collabEnabled && (
+            <CollabConnectionIndicator
+              state={collabConnectionState}
+              className="px-4 pb-1"
+            />
+          )}
+        </div>
 
         {/* Inline error banner for save failures (document is still visible) */}
         {isSaveError && error && (
