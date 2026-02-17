@@ -19,10 +19,13 @@ const defaultIdempotencyTTL = 24 * time.Hour
 
 // ProposalService executes proposal lifecycle operations.
 type ProposalService struct {
-	proposalStore    collabSvc.ProposalStore
-	idempotencyStore collabSvc.IdempotencyStore
-	txManager        repositories.TransactionManager
-	runtime          collabSvc.ProposalRuntime
+	proposalStore          collabSvc.ProposalStore
+	idempotencyStore       collabSvc.IdempotencyStore
+	txManager              repositories.TransactionManager
+	runtime                collabSvc.ProposalRuntime
+	autoAcceptPolicyStore  collabSvc.AutoAcceptPolicyStore
+	aiContentProjector     collabSvc.AIContentProjector
+	defaultAutoAcceptValue bool
 }
 
 // NewProposalService creates a new proposal service.
@@ -31,12 +34,18 @@ func NewProposalService(
 	idempotencyStore collabSvc.IdempotencyStore,
 	txManager repositories.TransactionManager,
 	runtime collabSvc.ProposalRuntime,
+	autoAcceptPolicyStore collabSvc.AutoAcceptPolicyStore,
+	aiContentProjector collabSvc.AIContentProjector,
+	defaultAutoAcceptValue bool,
 ) collabSvc.ProposalService {
 	return &ProposalService{
-		proposalStore:    proposalStore,
-		idempotencyStore: idempotencyStore,
-		txManager:        txManager,
-		runtime:          runtime,
+		proposalStore:          proposalStore,
+		idempotencyStore:       idempotencyStore,
+		txManager:              txManager,
+		runtime:                runtime,
+		autoAcceptPolicyStore:  autoAcceptPolicyStore,
+		aiContentProjector:     aiContentProjector,
+		defaultAutoAcceptValue: defaultAutoAcceptValue,
 	}
 }
 
@@ -60,7 +69,47 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.Crea
 		CreatedByUserID:   req.CreatedByUserID,
 	}
 
-	if err := s.proposalStore.Create(ctx, proposal); err != nil {
+	if err := s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
+		if err := s.proposalStore.Create(txCtx, proposal); err != nil {
+			return err
+		}
+		if err := s.aiContentProjector.Recompute(txCtx, req.DocumentID); err != nil {
+			return err
+		}
+
+		autoAccept := s.resolveAutoAccept(req.AgentAutoAccept, nil)
+		if req.AgentAutoAccept == nil {
+			inputs, err := s.autoAcceptPolicyStore.GetPolicyInputs(txCtx, req.DocumentID, req.CreatedByUserID)
+			if err != nil {
+				return err
+			}
+			autoAccept = s.resolveAutoAccept(nil, inputs)
+		}
+		if !autoAccept {
+			return nil
+		}
+
+		if err := s.runtime.ApplyUpdate(txCtx, proposal.DocumentID, proposal.YjsUpdate, "proposal:auto_accept"); err != nil {
+			return fmt.Errorf("apply proposal auto-accept update: %w", err)
+		}
+
+		decision := collabModels.ProposalDecision{
+			ProposalID:      proposal.ID,
+			DecidedByUserID: req.CreatedByUserID,
+			DecidedAt:       time.Now().UTC(),
+		}
+		if err := s.proposalStore.MarkAccepted(txCtx, decision); err != nil {
+			return err
+		}
+
+		proposal.Status = collabModels.ProposalStatusAccepted
+		proposal.DecidedByUserID = &req.CreatedByUserID
+		proposal.DecidedAt = &decision.DecidedAt
+		if err := s.aiContentProjector.Recompute(txCtx, req.DocumentID); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	return proposal, nil
@@ -101,6 +150,9 @@ func (s *ProposalService) AcceptProposal(ctx context.Context, req collabSvc.Acce
 			DecidedAt:       time.Now().UTC(),
 		}
 		if err := s.proposalStore.MarkAccepted(txCtx, decision); err != nil {
+			return err
+		}
+		if err := s.aiContentProjector.Recompute(txCtx, proposal.DocumentID); err != nil {
 			return err
 		}
 
@@ -178,6 +230,9 @@ func (s *ProposalService) RejectProposal(ctx context.Context, req collabSvc.Reje
 			if err := s.proposalStore.MarkRejected(txCtx, decision); err != nil {
 				return err
 			}
+			if err := s.aiContentProjector.Recompute(txCtx, proposal.DocumentID); err != nil {
+				return err
+			}
 			result.Mutations = append(result.Mutations, collabSvc.ProposalMutationIntent{
 				DocumentID: proposal.DocumentID,
 				ProposalID: proposal.ID,
@@ -218,6 +273,7 @@ func (s *ProposalService) GroupAccept(ctx context.Context, req collabSvc.GroupAc
 
 		outcomes := make([]collabModels.GroupAcceptOutcome, 0, len(proposals))
 		mutations := make([]collabSvc.ProposalMutationIntent, 0, len(proposals))
+		var hadAcceptedMutation bool
 		for _, proposal := range proposals {
 			if proposal.DocumentID != req.DocumentID {
 				msg := fmt.Sprintf(
@@ -272,12 +328,18 @@ func (s *ProposalService) GroupAccept(ctx context.Context, req collabSvc.GroupAc
 				ProposalID: proposal.ID,
 				Status:     collabModels.GroupAcceptOutcomeStatusAccepted,
 			})
+			hadAcceptedMutation = true
 			mutations = append(mutations, collabSvc.ProposalMutationIntent{
 				DocumentID: proposal.DocumentID,
 				ProposalID: proposal.ID,
 				Status:     collabModels.ProposalStatusAccepted,
 				YjsUpdate:  proposal.YjsUpdate,
 			})
+		}
+		if hadAcceptedMutation {
+			if err := s.aiContentProjector.Recompute(txCtx, req.DocumentID); err != nil {
+				return err
+			}
 		}
 
 		payload := collabModels.GroupAcceptResponsePayload{Outcomes: outcomes}
@@ -412,4 +474,17 @@ func isIdempotencyConflict(err error) bool {
 		return false
 	}
 	return conflictErr.ResourceType == "idempotency_key"
+}
+
+func (s *ProposalService) resolveAutoAccept(agent *bool, inputs *collabSvc.AutoAcceptPolicyInputs) bool {
+	if agent != nil {
+		return *agent
+	}
+	if inputs != nil && inputs.Project != nil {
+		return *inputs.Project
+	}
+	if inputs != nil && inputs.User != nil {
+		return *inputs.User
+	}
+	return s.defaultAutoAcceptValue
 }

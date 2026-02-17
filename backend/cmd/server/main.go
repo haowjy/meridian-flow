@@ -245,17 +245,26 @@ func main() {
 	collabStore := postgresCollab.NewDocumentStore(repoConfig)
 	proposalStore := postgresCollab.NewProposalStore(repoConfig)
 	idempotencyStore := postgresCollab.NewIdempotencyStore(repoConfig)
+	autoAcceptStore := postgresCollab.NewAutoAcceptStore(repoConfig)
 	collabBroadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
 	collabSessionManager := serviceCollab.NewDocumentSessionManager(
 		collabStore,
 		logger,
 		cfg.CollabSnapshotIntervalUpdates,
 	)
+	aiContentProjector := serviceCollab.NewAIContentProjector(
+		collabStore,
+		proposalStore,
+		collabSessionManager,
+	)
 	proposalService := serviceCollab.NewProposalService(
 		proposalStore,
 		idempotencyStore,
 		txManager,
 		collabSessionManager,
+		autoAcceptStore,
+		aiContentProjector,
+		cfg.CollabDefaultAutoAccept,
 	)
 	collabDocResolver := serviceCollab.NewDocumentResolver(docRepo, authorizer)
 	collabHandler := handler.NewCollabHandler(

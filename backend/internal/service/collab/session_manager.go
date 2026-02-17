@@ -139,6 +139,28 @@ func (m *DocumentSessionManager) ApplyUpdate(ctx context.Context, documentID uui
 	return session.applyUpdate(ctx, update, origin)
 }
 
+// GetStateSnapshot returns encoded Yjs state for an active in-memory session.
+// If no active session exists, found=false and caller should fall back to persisted state.
+func (m *DocumentSessionManager) GetStateSnapshot(_ context.Context, documentID uuid.UUID) ([]byte, bool, error) {
+	docID := documentID.String()
+
+	m.mu.Lock()
+	session, ok := m.sessions[docID]
+	m.mu.Unlock()
+	if !ok {
+		return nil, false, nil
+	}
+
+	session.mu.Lock()
+	defer session.mu.Unlock()
+
+	state, err := safeEncodeStateAsUpdate(session.doc)
+	if err != nil {
+		return nil, true, fmt.Errorf("encode in-memory state: %w", err)
+	}
+	return state, true, nil
+}
+
 // BuildSyncStep1Payload creates a sync-step1 message from current in-memory state.
 func (s *DocumentSession) BuildSyncStep1Payload() ([]byte, error) {
 	s.mu.Lock()

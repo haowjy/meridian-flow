@@ -89,6 +89,23 @@ type DocumentResolver interface {
 // ProposalRuntime applies Yjs updates to the authoritative in-memory document runtime.
 type ProposalRuntime interface {
 	ApplyUpdate(ctx context.Context, documentID uuid.UUID, update []byte, origin string) error
+	GetStateSnapshot(ctx context.Context, documentID uuid.UUID) ([]byte, bool, error)
+}
+
+// AutoAcceptPolicyInputs captures project/user tri-state values for proposal auto-accept.
+type AutoAcceptPolicyInputs struct {
+	Project *bool
+	User    *bool
+}
+
+// AutoAcceptPolicyStore resolves project/user auto-accept tri-state inputs.
+type AutoAcceptPolicyStore interface {
+	GetPolicyInputs(ctx context.Context, documentID uuid.UUID, userID uuid.UUID) (*AutoAcceptPolicyInputs, error)
+}
+
+// AIContentProjector recomputes and persists ai_content for a document.
+type AIContentProjector interface {
+	Recompute(ctx context.Context, documentID uuid.UUID) error
 }
 
 // ProposalMutationIntent describes what should be broadcast after a successful proposal mutation.
@@ -111,6 +128,7 @@ type CreateProposalRequest struct {
 	YjsUpdate         []byte
 	Description       *string
 	CreatedByUserID   uuid.UUID
+	AgentAutoAccept   *bool
 }
 
 // AcceptProposalRequest captures writer proposal-accept command inputs.
