@@ -2,6 +2,7 @@ package collab
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -11,6 +12,11 @@ import (
 	ycrdt "github.com/skyterra/y-crdt"
 	collabSvc "meridian/internal/domain/services/collab"
 )
+
+// ErrNoActiveSession is returned by ApplyUpdate when no collab session exists for a document.
+// Callers can check for this to gracefully handle the case (e.g., auto-accepted proposals
+// when the editor isn't open — the update is persisted and synced on next connect).
+var ErrNoActiveSession = errors.New("no active collab session")
 
 const (
 	defaultPersistDebounce         = 2 * time.Second
@@ -126,6 +132,9 @@ func (m *DocumentSessionManager) Release(ctx context.Context, docID string) erro
 }
 
 // ApplyUpdate applies a proposal update to the active in-memory Y.Doc for a document.
+// If an active session exists, the update is applied to the live doc. Otherwise, it falls
+// back to loading persisted state, applying offline, and saving back — so auto-accepted
+// proposals work even when no editor has the document open.
 func (m *DocumentSessionManager) ApplyUpdate(ctx context.Context, documentID uuid.UUID, update []byte, origin string) error {
 	docID := documentID.String()
 
@@ -133,11 +142,52 @@ func (m *DocumentSessionManager) ApplyUpdate(ctx context.Context, documentID uui
 	session, ok := m.sessions[docID]
 	m.mu.Unlock()
 
-	if !ok {
-		return fmt.Errorf("no active collab session for document %s", docID)
+	if ok {
+		return session.applyUpdate(ctx, update, origin)
 	}
 
-	return session.applyUpdate(ctx, update, origin)
+	// No active session — apply directly to persisted state so the update isn't lost.
+	// This happens when AI edits are auto-accepted while no editor has the document open.
+	m.logger.Info("applying update offline (no active session)", "document_id", docID, "origin", origin)
+	return m.applyUpdateOffline(ctx, docID, update, origin)
+}
+
+// applyUpdateOffline loads persisted yjs_state, applies the update to a temporary Y.Doc,
+// and saves the merged state back. This ensures auto-accepted proposals are reflected in
+// the document state even without a live WS session.
+func (m *DocumentSessionManager) applyUpdateOffline(ctx context.Context, docID string, update []byte, origin string) error {
+	state, err := m.store.LoadState(ctx, docID)
+	if err != nil {
+		return fmt.Errorf("load state for offline apply: %w", err)
+	}
+
+	doc := ycrdt.NewDoc(docID, true, ycrdt.DefaultGCFilter, nil, false)
+	if len(state) > 0 {
+		if err := safeApplyUpdate(doc, state, nil); err != nil {
+			return fmt.Errorf("apply existing state for offline apply: %w", err)
+		}
+	}
+
+	if err := safeApplyUpdate(doc, update, origin); err != nil {
+		return fmt.Errorf("apply proposal update offline: %w", err)
+	}
+
+	newState, err := safeEncodeStateAsUpdate(doc)
+	if err != nil {
+		return fmt.Errorf("encode state after offline apply: %w", err)
+	}
+
+	content := ""
+	if yText := doc.GetText("content"); yText != nil {
+		content = yText.ToString()
+	}
+
+	// aiContent is recomputed separately by the AIContentProjector, pass empty here
+	if err := m.store.SaveState(ctx, docID, newState, content, ""); err != nil {
+		return fmt.Errorf("save state after offline apply: %w", err)
+	}
+
+	return nil
 }
 
 // GetStateSnapshot returns encoded Yjs state for an active in-memory session.
