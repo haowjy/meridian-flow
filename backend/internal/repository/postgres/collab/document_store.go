@@ -187,10 +187,11 @@ func (s *PostgresDocumentStore) DeleteSnapshot(ctx context.Context, snapshotID s
 }
 
 // DeleteExpiredAutoSnapshots removes auto snapshots older than the given TTL.
+// Includes legacy 'auto' and new origin-aware 'auto_human' and 'auto_ai_accept' types.
 func (s *PostgresDocumentStore) DeleteExpiredAutoSnapshots(ctx context.Context, ttlHours int) (int64, error) {
 	query := fmt.Sprintf(`
 		DELETE FROM %s
-		WHERE snapshot_type = 'auto'
+		WHERE snapshot_type IN ('auto', 'auto_human', 'auto_ai_accept')
 		  AND created_at < NOW() - INTERVAL '1 hour' * $1
 	`, s.tables.CollabDocumentSnapshots)
 

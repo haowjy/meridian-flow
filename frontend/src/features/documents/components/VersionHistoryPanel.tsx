@@ -4,9 +4,11 @@ import { isAbortError } from "@/core/lib/errors";
 import { useUIStore } from "@/core/stores/useUIStore";
 import { Button } from "@/shared/components/ui/button";
 import { ScrollArea } from "@/shared/components/ui/scroll-area";
-import { X, Plus, RotateCcw, Trash2, Clock, Bookmark, Shield } from "lucide-react";
+import { X, Plus, RotateCcw, Trash2, Clock, Bookmark, Shield, User, Sparkles } from "lucide-react";
 import type { DocumentSnapshot } from "@/features/documents/types/snapshot";
 import { cn } from "@/lib/utils";
+
+type OriginFilter = "all" | "human" | "ai";
 
 interface VersionHistoryPanelProps {
   documentId: string;
@@ -27,6 +29,7 @@ export function VersionHistoryPanel({ documentId }: VersionHistoryPanelProps) {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [originFilter, setOriginFilter] = useState<OriginFilter>("all");
   const abortRef = useRef<AbortController | null>(null);
 
   const loadSnapshots = useCallback(async () => {
@@ -105,6 +108,22 @@ export function VersionHistoryPanel({ documentId }: VersionHistoryPanelProps) {
 
   const close = () => useUIStore.getState().setShowVersionHistory(false);
 
+  // Determine origin from snapshot type
+  const getSnapshotOrigin = (snap: DocumentSnapshot): "human" | "ai" | "system" => {
+    if (snap.snapshotType === "auto_ai_accept") return "ai";
+    if (snap.snapshotType === "auto" || snap.snapshotType === "auto_human" || snap.snapshotType === "named") return "human";
+    return "system"; // pre_restore
+  };
+
+  // Filter snapshots by origin
+  const filteredSnapshots = snapshots.filter((snap) => {
+    if (originFilter === "all") return true;
+    const origin = getSnapshotOrigin(snap);
+    if (originFilter === "human") return origin === "human";
+    if (originFilter === "ai") return origin === "ai";
+    return true;
+  });
+
   const snapshotIcon = (type: DocumentSnapshot["snapshotType"]) => {
     switch (type) {
       case "named":
@@ -112,6 +131,8 @@ export function VersionHistoryPanel({ documentId }: VersionHistoryPanelProps) {
       case "pre_restore":
         return <Shield className="text-warning h-3.5 w-3.5" />;
       case "auto":
+      case "auto_human":
+      case "auto_ai_accept":
       default:
         return <Clock className="text-muted-foreground h-3.5 w-3.5" />;
     }
@@ -124,9 +145,39 @@ export function VersionHistoryPanel({ documentId }: VersionHistoryPanelProps) {
         return "Pre-restore backup";
       case "auto":
         return "Auto-save checkpoint";
+      case "auto_human":
+        return "Auto-save checkpoint";
+      case "auto_ai_accept":
+        return "AI auto-save";
       default:
         return "Snapshot";
     }
+  };
+
+  // Render origin badge for auto snapshots
+  const renderOriginBadge = (snap: DocumentSnapshot) => {
+    const origin = getSnapshotOrigin(snap);
+    if (snap.snapshotType === "named" || snap.snapshotType === "pre_restore") return null;
+
+    if (origin === "ai") {
+      return (
+        <span className="inline-flex items-center gap-0.5 rounded bg-purple-500/10 px-1 py-0.5 text-[9px] text-purple-600 dark:text-purple-400">
+          <Sparkles className="h-2 w-2" />
+          AI
+        </span>
+      );
+    }
+
+    if (origin === "human") {
+      return (
+        <span className="inline-flex items-center gap-0.5 rounded bg-blue-500/10 px-1 py-0.5 text-[9px] text-blue-600 dark:text-blue-400">
+          <User className="h-2 w-2" />
+          Human
+        </span>
+      );
+    }
+
+    return null;
   };
 
   const formatDate = (date: Date) => {
@@ -209,6 +260,38 @@ export function VersionHistoryPanel({ documentId }: VersionHistoryPanelProps) {
         )}
       </div>
 
+      {/* Origin Filter */}
+      <div className="border-border/50 border-b px-3 py-2">
+        <div className="flex gap-1">
+          <Button
+            variant={originFilter === "all" ? "default" : "ghost"}
+            size="sm"
+            className="h-6 flex-1 text-xs"
+            onClick={() => setOriginFilter("all")}
+          >
+            All
+          </Button>
+          <Button
+            variant={originFilter === "human" ? "default" : "ghost"}
+            size="sm"
+            className="h-6 flex-1 text-xs"
+            onClick={() => setOriginFilter("human")}
+          >
+            <User className="mr-0.5 h-2.5 w-2.5" />
+            Human
+          </Button>
+          <Button
+            variant={originFilter === "ai" ? "default" : "ghost"}
+            size="sm"
+            className="h-6 flex-1 text-xs"
+            onClick={() => setOriginFilter("ai")}
+          >
+            <Sparkles className="mr-0.5 h-2.5 w-2.5" />
+            AI
+          </Button>
+        </div>
+      </div>
+
       {/* Error */}
       {error && (
         <div className="bg-destructive/10 text-destructive px-3 py-1.5 text-xs">
@@ -233,29 +316,36 @@ export function VersionHistoryPanel({ documentId }: VersionHistoryPanelProps) {
           <div className="flex items-center justify-center py-8">
             <div className="text-muted-foreground text-xs">Loading...</div>
           </div>
-        ) : snapshots.length === 0 ? (
+        ) : filteredSnapshots.length === 0 ? (
           <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
             <Clock className="text-muted-foreground mb-2 h-8 w-8 opacity-50" />
-            <p className="text-muted-foreground text-xs">No snapshots yet</p>
+            <p className="text-muted-foreground text-xs">
+              {snapshots.length === 0 ? "No snapshots yet" : `No ${originFilter} snapshots`}
+            </p>
             <p className="text-muted-foreground mt-1 text-xs opacity-70">
-              Create a restore point to save your current progress
+              {snapshots.length === 0
+                ? "Create a restore point to save your current progress"
+                : "Try a different filter"}
             </p>
           </div>
         ) : (
           <div className="divide-border/50 divide-y">
-            {snapshots.map((snap) => (
+            {filteredSnapshots.map((snap) => (
               <div
                 key={snap.id}
                 className={cn(
                   "group flex flex-col gap-1 px-3 py-2 transition-colors hover:bg-muted/50",
-                  snap.snapshotType === "auto" && "opacity-70",
+                  (snap.snapshotType === "auto" || snap.snapshotType === "auto_human" || snap.snapshotType === "auto_ai_accept") && "opacity-70",
                 )}
               >
                 <div className="flex items-start gap-2">
                   <div className="mt-0.5 shrink-0">{snapshotIcon(snap.snapshotType)}</div>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-xs font-medium">
-                      {snapshotLabel(snap)}
+                    <div className="flex items-center gap-1.5">
+                      <div className="truncate text-xs font-medium">
+                        {snapshotLabel(snap)}
+                      </div>
+                      {renderOriginBadge(snap)}
                     </div>
                     <div className="text-muted-foreground text-[10px]">
                       {formatDate(snap.createdAt)}
@@ -291,9 +381,14 @@ export function VersionHistoryPanel({ documentId }: VersionHistoryPanelProps) {
             ))}
           </div>
         )}
-        {total > snapshots.length && (
+        {total > snapshots.length && originFilter === "all" && (
           <div className="text-muted-foreground px-3 py-2 text-center text-[10px]">
             Showing {snapshots.length} of {total} snapshots
+          </div>
+        )}
+        {originFilter !== "all" && filteredSnapshots.length > 0 && (
+          <div className="text-muted-foreground px-3 py-2 text-center text-[10px]">
+            Showing {filteredSnapshots.length} {originFilter} snapshot{filteredSnapshots.length !== 1 ? "s" : ""}
           </div>
         )}
       </ScrollArea>
