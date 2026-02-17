@@ -67,6 +67,13 @@ import type { MentionResult } from "@/features/threads/components/DocumentMentio
 
 const log = makeLogger("editor-panel");
 
+/**
+ * Feature flag: gates collab proposals system (Yjs sync + review panel) vs legacy PUA markers.
+ * Defaults to true (collab ON). Set VITE_COLLAB_PROPOSALS_ENABLED=false to revert.
+ */
+const COLLAB_PROPOSALS_ENABLED =
+  (import.meta.env.VITE_COLLAB_PROPOSALS_ENABLED ?? "true") !== "false";
+
 const plaintextEditorTheme = EditorView.theme({
   "&": {
     fontFamily: "var(--font-mono)",
@@ -219,7 +226,19 @@ export function EditorPanel({
   // Get file extension for adapter selection (default to .md if not available yet)
   const extension =
     activeDocument?.extension ?? documentMetadata?.extension ?? ".md";
-  const collabEnabled = isCollabExtension(extension);
+  // Collab requires both: compatible extension AND feature flag enabled
+  const collabEnabled = COLLAB_PROPOSALS_ENABLED && isCollabExtension(extension);
+
+  // Warn in dev when using deprecated PUA path because feature flag is off
+  useEffect(() => {
+    if (!COLLAB_PROPOSALS_ENABLED && isCollabExtension(extension) && import.meta.env.DEV) {
+      log.warn(
+        "Collab proposals disabled by VITE_COLLAB_PROPOSALS_ENABLED=false. " +
+          "Using deprecated PUA marker system. This will be removed in a future release.",
+      );
+    }
+  }, [extension]);
+
   const editorFontExtensions = useMemo(() => {
     if (extension.toLowerCase() !== ".txt") return [];
     return [plaintextEditorTheme];
