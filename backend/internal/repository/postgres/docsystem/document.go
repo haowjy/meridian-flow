@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"meridian/internal/domain"
+	collabModels "meridian/internal/domain/models/collab"
 	models "meridian/internal/domain/models/docsystem"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 
@@ -589,14 +590,30 @@ func (r *PostgresDocumentRepository) ListByFolder(ctx context.Context, folderID 
 // GetAllMetadataByProject retrieves all document metadata in a project (no content)
 func (r *PostgresDocumentRepository) GetAllMetadataByProject(ctx context.Context, projectID string) ([]models.Document, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, folder_id, name, extension, metadata, updated_at
-		FROM %s
-		WHERE project_id = $1 AND deleted_at IS NULL
-		ORDER BY updated_at DESC
-	`, r.tables.Documents)
+		SELECT
+			d.id,
+			d.project_id,
+			d.folder_id,
+			d.name,
+			d.extension,
+			d.metadata,
+			d.updated_at,
+			COALESCE(pp.pending_proposal_count, 0) AS pending_proposal_count
+		FROM %s d
+		LEFT JOIN (
+			SELECT
+				document_id,
+				COUNT(*)::int AS pending_proposal_count
+			FROM %s
+			WHERE status = $2
+			GROUP BY document_id
+		) pp ON pp.document_id = d.id
+		WHERE d.project_id = $1 AND d.deleted_at IS NULL
+		ORDER BY d.updated_at DESC
+	`, r.tables.Documents, r.tables.CollabDocumentProposals)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
-	rows, err := executor.Query(ctx, query, projectID)
+	rows, err := executor.Query(ctx, query, projectID, collabModels.ProposalStatusProposed)
 	if err != nil {
 		return nil, fmt.Errorf("get all document metadata: %w", err)
 	}
@@ -613,6 +630,7 @@ func (r *PostgresDocumentRepository) GetAllMetadataByProject(ctx context.Context
 			&doc.Extension,
 			&doc.Metadata,
 			&doc.UpdatedAt,
+			&doc.PendingProposalCount,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan document: %w", err)
