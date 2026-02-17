@@ -515,6 +515,37 @@ func TestProposalServiceCreateProposal_AutoAcceptCascade(t *testing.T) {
 	}
 }
 
+func TestProposalServiceCreateProposal_RejectsOversizedYjsUpdate(t *testing.T) {
+	ctx := context.Background()
+	stores := newFakeProposalStore()
+	idempotency := newFakeIdempotencyStore()
+	runtime := newFakeProposalRuntime(nil)
+	autoAccept := &fakeAutoAcceptPolicyStore{}
+	projector := &fakeAIContentProjector{}
+
+	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, false)
+	_, err := svc.CreateProposal(ctx, collabSvc.CreateProposalRequest{
+		DocumentID:        uuid.New(),
+		Source:            collabModels.ProposalSourceAI,
+		ProducerAgentType: "writer",
+		ThreadID:          uuid.New(),
+		AgentRunID:        uuid.New(),
+		YjsUpdate:         make([]byte, maxProposalYjsUpdateBytes+1),
+		CreatedByUserID:   uuid.New(),
+	})
+	if err == nil {
+		t.Fatal("expected oversized yjs_update validation error")
+	}
+
+	var validationErr *domain.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected validation error, got %T", err)
+	}
+	if validationErr.Field != "yjs_update" {
+		t.Fatalf("expected field yjs_update, got %q", validationErr.Field)
+	}
+}
+
 type fakeTxManager struct{}
 
 func (fakeTxManager) ExecTx(ctx context.Context, fn repositories.TxFn) error {

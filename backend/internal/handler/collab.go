@@ -46,11 +46,17 @@ const (
 	collabMaxMessageBytes    = 64 * 1024
 	collabHeartbeatInterval  = 30 * time.Second
 	collabHeartbeatTimeout   = 5 * time.Second
+	collabInboundRateLimit   = 30
 
 	collabEnvelopeSyncStep1 byte = 0x00
 	collabEnvelopeSyncStep2 byte = 0x01
 	collabEnvelopeUpdate    byte = 0x02
 	collabEnvelopeAwareness byte = 0x03
+)
+
+var (
+	collabInboundRateWindow = time.Second
+	collabInboundMutePeriod = time.Second
 )
 
 type collabErrorMessage struct {
@@ -61,6 +67,31 @@ type collabErrorMessage struct {
 
 type collabHeartbeatMessage struct {
 	Type string `json:"type"`
+}
+
+type collabInboundRateTracker struct {
+	windowStart time.Time
+	windowCount int
+	mutedUntil  time.Time
+}
+
+func (t *collabInboundRateTracker) allowInbound(now time.Time) (allowed bool, limitExceeded bool) {
+	if now.Before(t.mutedUntil) {
+		return false, false
+	}
+
+	if t.windowStart.IsZero() || now.Sub(t.windowStart) >= collabInboundRateWindow {
+		t.windowStart = now
+		t.windowCount = 0
+	}
+
+	t.windowCount++
+	if t.windowCount > collabInboundRateLimit {
+		t.mutedUntil = now.Add(collabInboundMutePeriod)
+		return false, true
+	}
+
+	return true, false
 }
 
 // websocketDocumentConnection wraps a websocket with write serialization.
@@ -259,6 +290,7 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 	defer close(heartbeatStop)
 
 	proposalSnapshotSent := false
+	inboundRateTracker := collabInboundRateTracker{}
 
 	for {
 		var rawMessage []byte
@@ -272,6 +304,20 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 				"error", err,
 			)
 			return
+		}
+
+		allowed, limitExceeded := inboundRateTracker.allowInbound(time.Now())
+		if !allowed {
+			if limitExceeded {
+				h.sendError(wsConn, "RATE_LIMITED", "too many inbound messages; muted for 1 second")
+				h.logger.Warn("collab websocket inbound rate limited",
+					"document_id", docID,
+					"connection_id", wsConn.ID(),
+					"rate_limit_per_sec", collabInboundRateLimit,
+					"mute_seconds", collabInboundMutePeriod.Seconds(),
+				)
+			}
+			continue
 		}
 
 		if len(rawMessage) == 0 {

@@ -4,7 +4,7 @@ audience: developer
 ---
 # Phase 3: AI Proposals + Writer Review
 
-**Status:** In planning
+**Status:** Complete (Feb 17, 2026)
 **Priority:** High
 **Purpose:** Replace marker-based AI edits with Yjs update buffer proposals that keep writers in control.
 

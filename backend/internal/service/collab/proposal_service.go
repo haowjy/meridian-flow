@@ -17,6 +17,8 @@ import (
 
 const defaultIdempotencyTTL = 24 * time.Hour
 
+const maxProposalYjsUpdateBytes = 256 * 1024
+
 // ProposalService executes proposal lifecycle operations.
 type ProposalService struct {
 	proposalStore          collabSvc.ProposalStore
@@ -53,6 +55,12 @@ func NewProposalService(
 func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.CreateProposalRequest) (*collabModels.Proposal, error) {
 	if len(req.YjsUpdate) == 0 {
 		return nil, domain.NewValidationErrorWithField("proposal yjs_update is required", "yjs_update")
+	}
+	if len(req.YjsUpdate) > maxProposalYjsUpdateBytes {
+		return nil, domain.NewValidationErrorWithField(
+			fmt.Sprintf("proposal yjs_update exceeds maximum size of %d bytes", maxProposalYjsUpdateBytes),
+			"yjs_update",
+		)
 	}
 
 	proposal := &collabModels.Proposal{
