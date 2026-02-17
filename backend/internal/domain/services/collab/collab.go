@@ -73,6 +73,10 @@ type ProposalStore interface {
 	) ([]collabModels.Proposal, error)
 	MarkAccepted(ctx context.Context, decision collabModels.ProposalDecision) error
 	MarkRejected(ctx context.Context, decision collabModels.ProposalDecision) error
+	// CountRecentByDocumentAndStatus counts proposals for a document with the given
+	// status that were decided (accepted/rejected) within the lookback window.
+	// For "proposed" status, uses created_at instead of decided_at.
+	CountRecentByDocumentAndStatus(ctx context.Context, documentID uuid.UUID, status collabModels.ProposalStatus, since time.Time) (int, error)
 }
 
 // IdempotencyStore persists request idempotency records for replay/conflict checks.

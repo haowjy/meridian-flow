@@ -1064,6 +1064,15 @@ func (s *fakeProposalStore) MarkRejected(_ context.Context, decision collabModel
 	return nil
 }
 
+func (s *fakeProposalStore) CountRecentByDocumentAndStatus(
+	_ context.Context,
+	_ uuid.UUID,
+	_ collabModels.ProposalStatus,
+	_ time.Time,
+) (int, error) {
+	return 0, nil
+}
+
 type fakeIdempotencyStore struct {
 	mu      sync.Mutex
 	records map[string]collabModels.IdempotencyRecord
