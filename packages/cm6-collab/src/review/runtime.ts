@@ -43,12 +43,17 @@ export class ProposalReviewRuntime {
       Y.applyUpdate(nextDoc, update);
       const proposedText = nextDoc.getText(this.textKey).toString();
 
+      // Normalize for prose-first diff display (deterministic, display-only)
+      // This reduces visual noise without mutating persisted data
+      const normalizedBase = normalizeForDiff(baseText);
+      const normalizedProposed = normalizeForDiff(proposedText);
+
       return {
         availability: "ready",
         proposal,
-        baseText,
-        proposedText,
-        hasChanges: proposedText !== baseText,
+        baseText: normalizedBase,
+        proposedText: normalizedProposed,
+        hasChanges: normalizedProposed !== normalizedBase,
       };
     } catch {
       return this.unavailable(
@@ -121,4 +126,29 @@ function normalizeBase64(value: string): string {
   }
 
   return value.padEnd(value.length + (4 - (value.length % 4)), "=");
+}
+
+/**
+ * Normalize text for prose-first diff display.
+ * Deterministic, display-only normalization that reduces visual noise
+ * without mutating persisted proposal payloads.
+ *
+ * Normalizations:
+ * - Trim trailing whitespace from each line (preserves paragraph structure)
+ * - Normalize line endings to \n
+ * - Trim trailing newlines at end of document
+ */
+function normalizeForDiff(text: string): string {
+  return (
+    text
+      // Normalize all line endings to \n
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n")
+      // Trim trailing whitespace from each line
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .join("\n")
+      // Trim trailing newlines at end of document
+      .replace(/\n+$/, "")
+  );
 }

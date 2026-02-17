@@ -8,9 +8,13 @@ interface AIProposalReviewDiffProps {
   reviewModel: ProposalReviewModel | null;
 }
 
-export function AIProposalReviewDiff({ reviewModel }: AIProposalReviewDiffProps) {
+export function AIProposalReviewDiff({
+  reviewModel,
+}: AIProposalReviewDiffProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const mergeViewRef = useRef<ReturnType<typeof mountProposalReviewMergeView> | null>(null);
+  const mergeViewRef = useRef<ReturnType<
+    typeof mountProposalReviewMergeView
+  > | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -27,7 +31,10 @@ export function AIProposalReviewDiff({ reviewModel }: AIProposalReviewDiffProps)
 
     const config = {
       orientation: "a-b" as const,
-      collapseUnchanged: { margin: 2, minSize: 5 },
+      // Prose-first settings: show more context, collapse less aggressively
+      // margin: lines of context around changes to show
+      // minSize: minimum unchanged block size before collapsing
+      collapseUnchanged: { margin: 4, minSize: 8 },
     };
 
     if (mergeViewRef.current == null) {

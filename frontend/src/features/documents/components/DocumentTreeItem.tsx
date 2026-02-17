@@ -145,6 +145,16 @@ export const DocumentTreeItem = memo(function DocumentTreeItem({
           >
             <FileText className="size-5 flex-shrink-0 md:size-4" />
             <span className="truncate">{document.filename}</span>
+            {/* Pending proposal badge */}
+            {document.pendingProposalCount &&
+            document.pendingProposalCount > 0 ? (
+              <span
+                className="bg-primary/15 text-primary ml-1 inline-flex h-4 min-w-4 flex-shrink-0 items-center justify-center rounded-full px-1 text-xs font-medium"
+                aria-label={`${document.pendingProposalCount} pending proposal${document.pendingProposalCount > 1 ? "s" : ""}`}
+              >
+                {document.pendingProposalCount}
+              </span>
+            ) : null}
           </button>
 
           {/* "..." button - visible on hover or always on mobile */}
