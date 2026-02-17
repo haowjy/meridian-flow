@@ -3,6 +3,7 @@ import type { Proposal, ProposalReviewModel } from "@meridian/cm6-collab";
 import { ScrollArea } from "@/shared/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { cn } from "@/lib/utils";
+import { useUIStore } from "@/core/stores/useUIStore";
 import { AIProposalReviewDiff } from "./AIProposalReviewDiff";
 import { AIProposalReviewActions } from "./AIProposalReviewActions";
 
@@ -66,9 +67,22 @@ export function AIProposalReviewPanel({
   }, [proposals]);
 
   const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
+
+  // Pending proposal ID from thread navigation ("View in Editor" action).
+  // Acts as an override: if the pending proposal exists in the current list, select it.
+  // Cleared when the user manually clicks a different proposal.
+  const pendingProposalId = useUIStore((s) => s.pendingProposalId);
+
   const resolvedSelectedProposalId = useMemo(() => {
+    // If a pending proposal ID is set and matches a current proposal, prefer it
+    if (
+      pendingProposalId &&
+      sortedProposals.some((p) => p.id === pendingProposalId)
+    ) {
+      return pendingProposalId;
+    }
     return resolveSelectedProposalId(selectedProposalId, sortedProposals);
-  }, [selectedProposalId, sortedProposals]);
+  }, [selectedProposalId, sortedProposals, pendingProposalId]);
 
   const selectedReview =
     resolvedSelectedProposalId == null
@@ -99,7 +113,13 @@ export function AIProposalReviewPanel({
                       ? "bg-accent text-accent-foreground"
                       : "hover:bg-muted text-foreground",
                   )}
-                  onClick={() => setSelectedProposalId(proposal.id)}
+                  onClick={() => {
+                    setSelectedProposalId(proposal.id);
+                    // Clear pending override so manual selection takes precedence
+                    if (useUIStore.getState().pendingProposalId) {
+                      useUIStore.getState().setPendingProposalId(null);
+                    }
+                  }}
                 >
                   <p className="truncate text-xs font-medium">{proposal.description ?? proposal.id}</p>
                   <p className="text-muted-foreground truncate text-[11px]">{proposal.createdAt}</p>
