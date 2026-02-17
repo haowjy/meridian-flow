@@ -105,6 +105,10 @@ func (s *testProposalStore) MarkRejected(_ context.Context, _ collabModels.Propo
 	return nil
 }
 
+func (s *testProposalStore) CountRecentByDocumentAndStatus(_ context.Context, _ uuid.UUID, _ collabModels.ProposalStatus, _ time.Time) (int, error) {
+	return 0, nil
+}
+
 type testProposalService struct {
 	acceptReqs      []collabSvc.AcceptProposalRequest
 	acceptResult    *collabSvc.AcceptProposalResult

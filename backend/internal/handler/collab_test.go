@@ -187,6 +187,10 @@ func (s *noopProposalStore) MarkRejected(_ context.Context, _ collabModels.Propo
 	return nil
 }
 
+func (s *noopProposalStore) CountRecentByDocumentAndStatus(_ context.Context, _ uuid.UUID, _ collabModels.ProposalStatus, _ time.Time) (int, error) {
+	return 0, nil
+}
+
 func TestCollabHandler_WSAuthFailed(t *testing.T) {
 	resolver := &testCollabResolver{allowed: true}
 	verifier := &testJWTVerifier{tokens: map[string]*models.SupabaseClaims{}}

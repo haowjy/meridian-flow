@@ -6,7 +6,7 @@
 -- New types: 'auto_human' (from user editing) and 'auto_ai_accept' (from AI proposal acceptance).
 
 ALTER TABLE ${TABLE_PREFIX}collab_document_snapshots
-    DROP CONSTRAINT IF EXISTS collab_document_snapshots_snapshot_type_check;
+    DROP CONSTRAINT IF EXISTS ${TABLE_PREFIX}collab_document_snapshots_snapshot_type_check;
 
 ALTER TABLE ${TABLE_PREFIX}collab_document_snapshots
     ADD CONSTRAINT ${TABLE_PREFIX}collab_document_snapshots_snapshot_type_check
@@ -20,5 +20,5 @@ ALTER TABLE ${TABLE_PREFIX}collab_document_snapshots
     DROP CONSTRAINT IF EXISTS ${TABLE_PREFIX}collab_document_snapshots_snapshot_type_check;
 
 ALTER TABLE ${TABLE_PREFIX}collab_document_snapshots
-    ADD CONSTRAINT collab_document_snapshots_snapshot_type_check
+    ADD CONSTRAINT ${TABLE_PREFIX}collab_document_snapshots_snapshot_type_check
     CHECK (snapshot_type IN ('auto', 'named', 'pre_restore'));

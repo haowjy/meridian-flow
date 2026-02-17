@@ -39,6 +39,8 @@ This directory contains detailed documentation for all features in Meridian, org
 | **Skills** | Both | [x] Complete | [x] Complete | Custom AI commands, tree integration, auto-save editor |
 | **Infrastructure** | Both | [x] Complete | [x] Complete | Errors, DB features, routing, logging, deployment |
 | **Mobile Responsive** | Frontend | N/A | [x] Complete | Responsive layouts, bottom nav, 768px breakpoint |
+| **Collab Arbitration** | Backend | [x] Complete | N/A | Arbiter chain, proposal guardrails, per-doc serialization |
+| **AI Collab Bridge** | Both | ✅ Complete | ✅ Complete | AI edits → Yjs proposals, auto-accept, strategy pattern |
 
 ---
 
@@ -145,6 +147,20 @@ This directory contains detailed documentation for all features in Meridian, org
 - Backend: Error handling, DB features (soft delete, RLS, transactions), CORS
 - Frontend: TanStack Router (file-based routing), logging, dev tools
 - Deployment: Railway (backend), Vercel (frontend)
+
+### [b-collab-arbitration/](b-collab-arbitration/)
+**Multi-agent arbitration and proposal guardrails** (Phase 4)
+- Arbiter strategy chain: size threshold, recent change density
+- Admission guardrails: proposal size limit, queue cap, WS rate limiting
+- Per-document acceptance serialization with bounded pending operations
+- Idempotent accept/group-accept with replay support
+
+### [fb-collab-ai-bridge/](fb-collab-ai-bridge/)
+**AI edits routed through Yjs collab proposal system** (Phase 4.5)
+- Strategy pattern: `CollabProposalStrategy` (default) vs `AIVersionStrategy` (deprecated fallback)
+- Yjs text diff converter, thread context propagation, WS proposal broadcasting
+- Frontend: connection indicator, proposal badges in thread, editor navigation
+- Auto-accept ON by default; legacy PUA system gated off
 
 ### [f-mobile-responsive/](f-mobile-responsive/)
 **Responsive layouts for mobile and desktop viewports**

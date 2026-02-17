@@ -34,9 +34,9 @@ type DocumentService interface {
 	// userID is used to filter results to user's accessible projects
 	SearchDocuments(ctx context.Context, userID string, req *SearchDocumentsRequest) (*docsystem.SearchResults, error)
 
-	// UpdateAIVersion updates only the ai_version field for a document
-	// This is a convenience method for LLM tools that only need to update ai_version
-	// userID is used for authorization check
+	// Deprecated: Use CollabProposalStrategy instead. Retained for feature flag fallback.
+	// UpdateAIVersion updates only the ai_version field for a document.
+	// userID is used for authorization check.
 	UpdateAIVersion(ctx context.Context, userID, documentID string, aiVersion *string) (*docsystem.Document, error)
 }
 
