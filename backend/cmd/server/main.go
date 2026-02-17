@@ -257,6 +257,9 @@ func main() {
 		proposalStore,
 		collabSessionManager,
 	)
+	// Default no-op arbiter preserves existing auto-accept behavior.
+	// Replace with StrategyChainArbiter when semantic strategies are added.
+	agentArbiter := serviceCollab.NoOpArbiter
 	proposalService := serviceCollab.NewProposalService(
 		proposalStore,
 		idempotencyStore,
@@ -264,6 +267,7 @@ func main() {
 		collabSessionManager,
 		autoAcceptStore,
 		aiContentProjector,
+		agentArbiter,
 		cfg.CollabDefaultAutoAccept,
 	)
 	collabDocResolver := serviceCollab.NewDocumentResolver(docRepo, authorizer)
