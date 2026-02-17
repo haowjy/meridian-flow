@@ -16,3 +16,27 @@ export {
   envelopeFromSyncType,
   type SyncMessageType,
 } from "./sync/envelope";
+
+export {
+  ProposalManager,
+  createProposalManager,
+  buildProposalAcceptCommand,
+  buildProposalRejectCommand,
+  buildProposalGroupAcceptCommand,
+  isProposalSnapshotEvent,
+  isProposalNewEvent,
+  isProposalStatusChangedEvent,
+  isProposalGroupAcceptResultEvent,
+  type Proposal,
+  type ProposalSnapshotEvent,
+  type ProposalNewEvent,
+  type ProposalStatusChangedEvent,
+  type ProposalGroupAcceptOutcome,
+  type ProposalGroupAcceptResultEvent,
+  type ProposalServerEvent,
+  type ProposalStateSnapshot,
+  type CreateProposalManagerOptions,
+  type ProposalAcceptCommand,
+  type ProposalRejectCommand,
+  type ProposalGroupAcceptCommand,
+} from "./proposals";

@@ -1,10 +1,19 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Extension } from "@codemirror/state";
 import { IndexeddbPersistence } from "y-indexeddb";
 import {
   buildHeartbeatAckMessage,
+  buildProposalAcceptCommand,
+  buildProposalRejectCommand,
   createCollabSyncRuntime,
+  createProposalManager,
+  isProposalGroupAcceptResultEvent,
+  isProposalNewEvent,
+  isProposalSnapshotEvent,
+  isProposalStatusChangedEvent,
   parseCollabServerTextEvent,
+  type Proposal,
+  type ProposalGroupAcceptResultEvent,
   toUint8Array,
 } from "@meridian/cm6-collab";
 
@@ -12,6 +21,7 @@ import { API_BASE_URL } from "@/core/lib/api";
 import { makeLogger } from "@/core/lib/logger";
 import { createClient } from "@/core/supabase/client";
 import {
+  EMPTY_DOCUMENT_PROPOSAL_STATE,
   useCollabStore,
   type CollabConnectionState,
 } from "../stores/useCollabStore";
@@ -27,6 +37,10 @@ interface UseDocumentCollabOptions {
 interface UseDocumentCollabResult {
   extensions: Extension[];
   connectionState: CollabConnectionState;
+  proposals: Map<string, Proposal>;
+  lastGroupAcceptResult: ProposalGroupAcceptResultEvent | null;
+  sendProposalAccept: (proposalId: string, idempotencyKey: string) => boolean;
+  sendProposalReject: (proposalId: string) => boolean;
   isReady: boolean;
 }
 
@@ -36,9 +50,13 @@ export function useDocumentCollab({
   initialContent,
 }: UseDocumentCollabOptions): UseDocumentCollabResult {
   const setState = useCollabStore((s) => s.setState);
+  const setProposalState = useCollabStore((s) => s.setProposalState);
   const clearState = useCollabStore((s) => s.clearState);
   const connectionState = useCollabStore(
     (s) => s.stateByDocumentId[documentId] ?? "disconnected",
+  );
+  const proposalState = useCollabStore(
+    (s) => s.proposalStateByDocumentId[documentId] ?? EMPTY_DOCUMENT_PROPOSAL_STATE,
   );
 
   const websocketRef = useRef<WebSocket | null>(null);
@@ -58,6 +76,11 @@ export function useDocumentCollab({
     let runtime:
       | ReturnType<typeof createCollabSyncRuntime>
       | null = null;
+    const proposalManager = createProposalManager({
+      onStateChange: (state) => {
+        setProposalState(documentId, state);
+      },
+    });
 
     runtime = createCollabSyncRuntime({
       documentId,
@@ -144,6 +167,26 @@ export function useDocumentCollab({
             return;
           }
 
+          if (isProposalSnapshotEvent(textEvent)) {
+            proposalManager.onProposalSnapshot(textEvent);
+            return;
+          }
+
+          if (isProposalNewEvent(textEvent)) {
+            proposalManager.onProposalNew(textEvent);
+            return;
+          }
+
+          if (isProposalStatusChangedEvent(textEvent)) {
+            proposalManager.onProposalStatusChanged(textEvent);
+            return;
+          }
+
+          if (isProposalGroupAcceptResultEvent(textEvent)) {
+            proposalManager.onProposalGroupAcceptResult(textEvent);
+            return;
+          }
+
           return;
         }
 
@@ -181,7 +224,7 @@ export function useDocumentCollab({
       runtime.ydoc,
     );
 
-    void persistenceRef.current.whenSynced.catch((err) => {
+    void persistenceRef.current.whenSynced.catch((err: unknown) => {
       log.warn("collab indexeddb bootstrap failed", {
         documentId,
         error: err instanceof Error ? err.message : String(err),
@@ -211,15 +254,62 @@ export function useDocumentCollab({
       setExtensions([]);
       clearState(documentId);
     };
-  }, [clearState, documentId, enabled, initialContent, setState]);
+  }, [
+    clearState,
+    documentId,
+    enabled,
+    initialContent,
+    setProposalState,
+    setState,
+  ]);
 
   // Phase 5: setLocalAwarenessState() for multi-user cursors / presence.
   // The runtime already creates an awareness instance; this hook will expose
   // setLocalUser({ name, color }) and return a peer list for cursor rendering.
 
+  const sendProposalAccept = useCallback(
+    (proposalId: string, idempotencyKey: string): boolean => {
+      const ws = websocketRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+
+      ws.send(
+        JSON.stringify(
+          buildProposalAcceptCommand({
+            proposalId,
+            idempotencyKey,
+          }),
+        ),
+      );
+      return true;
+    },
+    [],
+  );
+
+  const sendProposalReject = useCallback((proposalId: string): boolean => {
+    const ws = websocketRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      return false;
+    }
+
+    ws.send(
+      JSON.stringify(
+        buildProposalRejectCommand({
+          proposalId,
+        }),
+      ),
+    );
+    return true;
+  }, []);
+
   return {
     extensions: enabled ? extensions : [],
     connectionState,
+    proposals: proposalState.proposals,
+    lastGroupAcceptResult: proposalState.lastGroupAcceptResult,
+    sendProposalAccept,
+    sendProposalReject,
     isReady: !enabled || extensions.length > 0,
   };
 }

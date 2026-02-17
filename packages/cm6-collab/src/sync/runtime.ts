@@ -6,6 +6,12 @@ import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protoc
 import * as syncProtocol from "y-protocols/sync";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import * as Y from "yjs";
+import type {
+  ProposalGroupAcceptResultEvent,
+  ProposalNewEvent,
+  ProposalSnapshotEvent,
+  ProposalStatusChangedEvent,
+} from "../proposals/contracts";
 
 import {
   envelopeFromSyncType,
@@ -27,9 +33,19 @@ export interface CollabHeartbeatEvent {
   type: "heartbeat";
 }
 
+export interface CollabUnknownTextEvent {
+  type: string;
+  [key: string]: unknown;
+}
+
 export type CollabServerTextEvent =
   | CollabHeartbeatEvent
-  | CollabServerErrorEvent;
+  | CollabServerErrorEvent
+  | ProposalSnapshotEvent
+  | ProposalNewEvent
+  | ProposalStatusChangedEvent
+  | ProposalGroupAcceptResultEvent
+  | CollabUnknownTextEvent;
 
 export interface CreateCollabSyncRuntimeOptions {
   documentId: string;
@@ -204,11 +220,16 @@ function readSyncType(syncPayload: Uint8Array): SyncMessageType {
 
 export function parseCollabServerTextEvent(raw: string): CollabServerTextEvent | null {
   try {
-    const parsed = JSON.parse(raw) as CollabServerTextEvent;
-    if (!parsed || typeof parsed !== "object" || !("type" in parsed)) {
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      parsed == null ||
+      typeof parsed !== "object" ||
+      !("type" in parsed) ||
+      typeof parsed.type !== "string"
+    ) {
       return null;
     }
-    return parsed;
+    return parsed as CollabServerTextEvent;
   } catch {
     return null;
   }
