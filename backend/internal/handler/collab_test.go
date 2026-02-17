@@ -6,10 +6,12 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -329,6 +331,58 @@ func TestCollabHandler_WSCorruptSyncPayload(t *testing.T) {
 	}
 }
 
+func TestCollabHandler_WSInboundRateLimitAndRecovery(t *testing.T) {
+	resolver := &testCollabResolver{allowed: true}
+	verifier := &testJWTVerifier{
+		tokens: map[string]*models.SupabaseClaims{
+			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "cccccccc-cccc-cccc-cccc-cccccccccccc"}},
+		},
+	}
+	store := &testCollabStore{}
+	server := newTestCollabServer(t, resolver, verifier, store)
+	defer server.Close()
+
+	wsURL := asWebSocketURL(t, server.URL, "/ws/documents/11111111-1111-1111-1111-111111111111")
+	conn, err := websocket.Dial(wsURL, "", "http://localhost/")
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer conn.Close()
+
+	if err := websocket.Message.Send(conn, "valid-token"); err != nil {
+		t.Fatalf("send auth token: %v", err)
+	}
+
+	for i := 0; i < collabInboundRateLimit+1; i++ {
+		if err := websocket.Message.Send(conn, []byte{collabEnvelopeAwareness}); err != nil {
+			t.Fatalf("send burst message %d: %v", i, err)
+		}
+	}
+
+	limited := readWSErrorMessage(t, conn)
+	if limited.Code != "RATE_LIMITED" {
+		t.Fatalf("expected RATE_LIMITED, got %q", limited.Code)
+	}
+
+	// This payload normally triggers RESET_REQUIRED, so lack of response confirms mute-drop behavior.
+	if err := websocket.Message.Send(conn, []byte{collabEnvelopeUpdate, 0xFF, 0xFF, 0xFF}); err != nil {
+		t.Fatalf("send muted corrupt update: %v", err)
+	}
+	if msg, ok := readWSErrorMessageWithTimeout(t, conn, 250*time.Millisecond); ok {
+		t.Fatalf("expected no response during mute, got %+v", msg)
+	}
+
+	time.Sleep(collabInboundMutePeriod + 100*time.Millisecond)
+
+	if err := websocket.Message.Send(conn, []byte{collabEnvelopeUpdate, 0xFF, 0xFF, 0xFF}); err != nil {
+		t.Fatalf("send post-mute corrupt update: %v", err)
+	}
+	recovered := readWSErrorMessage(t, conn)
+	if recovered.Code != "RESET_REQUIRED" {
+		t.Fatalf("expected RESET_REQUIRED after mute, got %q", recovered.Code)
+	}
+}
+
 func newTestCollabServer(
 	t *testing.T,
 	resolver *testCollabResolver,
@@ -377,6 +431,34 @@ func readWSErrorMessage(t *testing.T, conn *websocket.Conn) wsErrorResponse {
 		t.Fatalf("decode ws message %q: %v", raw, err)
 	}
 	return msg
+}
+
+func readWSErrorMessageWithTimeout(t *testing.T, conn *websocket.Conn, timeout time.Duration) (wsErrorResponse, bool) {
+	t.Helper()
+
+	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	defer func() {
+		if err := conn.SetDeadline(time.Time{}); err != nil {
+			t.Fatalf("clear read deadline: %v", err)
+		}
+	}()
+
+	var raw string
+	if err := websocket.Message.Receive(conn, &raw); err != nil {
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			return wsErrorResponse{}, false
+		}
+		t.Fatalf("receive ws message with timeout: %v", err)
+	}
+
+	var msg wsErrorResponse
+	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
+		t.Fatalf("decode ws message %q: %v", raw, err)
+	}
+	return msg, true
 }
 
 func readWSBinaryMessage(t *testing.T, conn *websocket.Conn) []byte {
