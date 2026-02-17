@@ -85,3 +85,85 @@ type DocumentResolver interface {
 	ResolveDocument(ctx context.Context, docID string) (*collabModels.CollabDocRef, error)
 	VerifyOwnership(ctx context.Context, docID string, userID string) (bool, error)
 }
+
+// ProposalRuntime applies Yjs updates to the authoritative in-memory document runtime.
+type ProposalRuntime interface {
+	ApplyUpdate(ctx context.Context, documentID uuid.UUID, update []byte, origin string) error
+}
+
+// ProposalMutationIntent describes what should be broadcast after a successful proposal mutation.
+type ProposalMutationIntent struct {
+	DocumentID uuid.UUID
+	ProposalID uuid.UUID
+	Status     collabModels.ProposalStatus
+	YjsUpdate  []byte
+}
+
+// CreateProposalRequest captures proposal-creation inputs from internal producers.
+type CreateProposalRequest struct {
+	DocumentID        uuid.UUID
+	Source            collabModels.ProposalSource
+	ProducerAgentType string
+	ThreadID          uuid.UUID
+	TurnID            *uuid.UUID
+	AgentRunID        uuid.UUID
+	ProposalGroupID   *uuid.UUID
+	YjsUpdate         []byte
+	Description       *string
+	CreatedByUserID   uuid.UUID
+}
+
+// AcceptProposalRequest captures writer proposal-accept command inputs.
+type AcceptProposalRequest struct {
+	ProposalID        uuid.UUID
+	UserID            uuid.UUID
+	IdempotencyKey    string
+	RequestHash       string
+	IdempotencyTTL    time.Duration
+	TransactionOrigin string
+}
+
+// AcceptProposalResult captures accept response and broadcast intents.
+type AcceptProposalResult struct {
+	Payload   collabModels.ProposalAcceptResponsePayload
+	IsReplay  bool
+	Mutations []ProposalMutationIntent
+}
+
+// RejectProposalRequest captures writer proposal-reject command inputs.
+type RejectProposalRequest struct {
+	ProposalID uuid.UUID
+	UserID     uuid.UUID
+}
+
+// RejectProposalResult captures reject output and broadcast intents.
+type RejectProposalResult struct {
+	Noop      bool
+	Mutations []ProposalMutationIntent
+}
+
+// GroupAcceptRequest captures grouped proposal-accept command inputs.
+type GroupAcceptRequest struct {
+	DocumentID        uuid.UUID
+	ProposalGroupID   uuid.UUID
+	UserID            uuid.UUID
+	IdempotencyKey    string
+	RequestHash       string
+	IdempotencyTTL    time.Duration
+	TransactionOrigin string
+}
+
+// GroupAcceptResult captures group-accept outcomes and broadcast intents.
+type GroupAcceptResult struct {
+	Payload   collabModels.GroupAcceptResponsePayload
+	IsReplay  bool
+	Mutations []ProposalMutationIntent
+}
+
+// ProposalService executes proposal lifecycle operations.
+type ProposalService interface {
+	CreateProposal(ctx context.Context, req CreateProposalRequest) (*collabModels.Proposal, error)
+	AcceptProposal(ctx context.Context, req AcceptProposalRequest) (*AcceptProposalResult, error)
+	RejectProposal(ctx context.Context, req RejectProposalRequest) (*RejectProposalResult, error)
+	GroupAccept(ctx context.Context, req GroupAcceptRequest) (*GroupAcceptResult, error)
+}

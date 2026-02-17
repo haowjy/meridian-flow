@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	ycrdt "github.com/skyterra/y-crdt"
 	collabSvc "meridian/internal/domain/services/collab"
 )
@@ -123,6 +124,21 @@ func (m *DocumentSessionManager) Release(ctx context.Context, docID string) erro
 	return nil
 }
 
+// ApplyUpdate applies a proposal update to the active in-memory Y.Doc for a document.
+func (m *DocumentSessionManager) ApplyUpdate(ctx context.Context, documentID uuid.UUID, update []byte, origin string) error {
+	docID := documentID.String()
+
+	m.mu.Lock()
+	session, ok := m.sessions[docID]
+	m.mu.Unlock()
+
+	if !ok {
+		return fmt.Errorf("no active collab session for document %s", docID)
+	}
+
+	return session.applyUpdate(ctx, update, origin)
+}
+
 // BuildSyncStep1Payload creates a sync-step1 message from current in-memory state.
 func (s *DocumentSession) BuildSyncStep1Payload() ([]byte, error) {
 	s.mu.Lock()
@@ -161,6 +177,20 @@ func (s *DocumentSession) HandleSyncPayload(ctx context.Context, payload []byte,
 	}
 
 	return messageType, responsePayload, updatePayload, nil
+}
+
+func (s *DocumentSession) applyUpdate(ctx context.Context, update []byte, origin string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := safeApplyUpdate(s.doc, update, origin); err != nil {
+		return fmt.Errorf("apply yjs update: %w", err)
+	}
+
+	if err := s.markDirtyLocked(ctx); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *DocumentSession) loadState(ctx context.Context) error {
