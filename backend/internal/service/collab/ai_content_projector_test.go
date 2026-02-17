@@ -229,6 +229,10 @@ func (s *fakeProjectorProposalStore) MarkRejected(_ context.Context, _ collabMod
 	return nil
 }
 
+func (s *fakeProjectorProposalStore) CountRecentByDocumentAndStatus(_ context.Context, _ uuid.UUID, _ collabModels.ProposalStatus, _ time.Time) (int, error) {
+	return 0, nil
+}
+
 func mustBuildDocState(t *testing.T, content string) []byte {
 	t.Helper()
 	doc := ycrdt.NewDoc("test-doc", true, ycrdt.DefaultGCFilter, nil, false)

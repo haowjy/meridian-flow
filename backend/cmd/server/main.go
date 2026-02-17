@@ -257,9 +257,12 @@ func main() {
 		proposalStore,
 		collabSessionManager,
 	)
-	// Default no-op arbiter preserves existing auto-accept behavior.
-	// Replace with StrategyChainArbiter when semantic strategies are added.
-	agentArbiter := serviceCollab.NoOpArbiter
+	sizeStrategy := serviceCollab.NewSizeThresholdStrategy(1024, 51200)
+	densityStrategy := serviceCollab.NewRecentChangeDensityStrategy(proposalStore, 5, 60*time.Second, logger)
+	agentArbiter := serviceCollab.NewStrategyChainArbiter(
+		[]serviceCollab.ArbiterStrategy{sizeStrategy, densityStrategy},
+		logger,
+	)
 	proposalService := serviceCollab.NewProposalService(
 		proposalStore,
 		idempotencyStore,

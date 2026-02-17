@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -194,6 +195,35 @@ func (s *PostgresProposalStore) MarkAccepted(ctx context.Context, decision colla
 // MarkRejected transitions proposed -> rejected and captures decision metadata.
 func (s *PostgresProposalStore) MarkRejected(ctx context.Context, decision collabModels.ProposalDecision) error {
 	return s.markTerminalStatus(ctx, decision, collabModels.ProposalStatusRejected)
+}
+
+// CountRecentByDocumentAndStatus counts proposals for a document with the given
+// status that were decided within the lookback window. For "proposed" status,
+// uses created_at instead of decided_at.
+func (s *PostgresProposalStore) CountRecentByDocumentAndStatus(
+	ctx context.Context,
+	documentID uuid.UUID,
+	status collabModels.ProposalStatus,
+	since time.Time,
+) (int, error) {
+	// "proposed" rows have no decided_at; use created_at instead.
+	timeCol := "decided_at"
+	if status == collabModels.ProposalStatusProposed {
+		timeCol = "created_at"
+	}
+
+	query := fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM %s
+		WHERE document_id = $1 AND status = $2 AND %s >= $3
+	`, s.tables.CollabDocumentProposals, timeCol)
+
+	var count int
+	executor := postgres.GetExecutor(ctx, s.pool)
+	if err := executor.QueryRow(ctx, query, documentID, status, since).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count recent proposals by document/status: %w", err)
+	}
+	return count, nil
 }
 
 func (s *PostgresProposalStore) queryProposals(ctx context.Context, query string, args ...any) ([]collabModels.Proposal, error) {
