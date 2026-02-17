@@ -184,6 +184,39 @@ type GroupAcceptResult struct {
 	Mutations []ProposalMutationIntent
 }
 
+// ArbiterVerdict is the arbiter's final ruling on whether auto-accept should proceed.
+type ArbiterVerdict string
+
+const (
+	// ArbiterVerdictPassThrough means the arbiter has no opinion; defer to the baseline.
+	ArbiterVerdictPassThrough ArbiterVerdict = "pass_through"
+	// ArbiterVerdictAllow means the arbiter explicitly approves auto-accept.
+	ArbiterVerdictAllow ArbiterVerdict = "allow"
+	// ArbiterVerdictRequireReview means the arbiter overrides auto-accept → proposal needs writer review.
+	ArbiterVerdictRequireReview ArbiterVerdict = "require_review"
+)
+
+// ArbiterInput provides the arbiter with proposal metadata and the resolved auto-accept baseline.
+type ArbiterInput struct {
+	DocumentID        uuid.UUID
+	Source            collabModels.ProposalSource
+	ProducerAgentType string
+	YjsUpdateSize     int
+	BaselineAutoAccept bool
+}
+
+// ArbiterDecision captures the arbiter's output for a single proposal evaluation.
+type ArbiterDecision struct {
+	Verdict ArbiterVerdict
+	Reason  string // human-readable explanation (logged, not user-facing)
+}
+
+// AgentArbiter evaluates AI proposals at creation time and can override auto-accept.
+// Implementations must be safe for concurrent use.
+type AgentArbiter interface {
+	Evaluate(ctx context.Context, input ArbiterInput) ArbiterDecision
+}
+
 // ProposalService executes proposal lifecycle operations.
 type ProposalService interface {
 	CreateProposal(ctx context.Context, req CreateProposalRequest) (*collabModels.Proposal, error)

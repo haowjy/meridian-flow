@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,6 +30,7 @@ type ProposalService struct {
 	runtime                collabSvc.ProposalRuntime
 	autoAcceptPolicyStore  collabSvc.AutoAcceptPolicyStore
 	aiContentProjector     collabSvc.AIContentProjector
+	arbiter                collabSvc.AgentArbiter
 	createGate             *proposalDocumentGate
 	acceptGate             *proposalAcceptGate
 	defaultAutoAcceptValue bool
@@ -42,6 +44,7 @@ func NewProposalService(
 	runtime collabSvc.ProposalRuntime,
 	autoAcceptPolicyStore collabSvc.AutoAcceptPolicyStore,
 	aiContentProjector collabSvc.AIContentProjector,
+	arbiter collabSvc.AgentArbiter,
 	defaultAutoAcceptValue bool,
 ) collabSvc.ProposalService {
 	return &ProposalService{
@@ -51,6 +54,7 @@ func NewProposalService(
 		runtime:                runtime,
 		autoAcceptPolicyStore:  autoAcceptPolicyStore,
 		aiContentProjector:     aiContentProjector,
+		arbiter:                arbiter,
 		createGate:             newProposalDocumentGate(),
 		acceptGate:             newProposalAcceptGate(maxPendingAcceptOperationsPerDocument),
 		defaultAutoAcceptValue: defaultAutoAcceptValue,
@@ -90,6 +94,23 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.Crea
 			return nil, err
 		}
 		autoAccept = s.resolveAutoAccept(nil, inputs)
+	}
+
+	// Arbiter evaluation: AI proposals only. Can downgrade auto-accept → require review.
+	// Arbiter errors are non-fatal: degrade to review-required for writer safety.
+	if req.Source == collabModels.ProposalSourceAI && autoAccept {
+		arbiterInput := collabSvc.ArbiterInput{
+			DocumentID:         req.DocumentID,
+			Source:             req.Source,
+			ProducerAgentType:  req.ProducerAgentType,
+			YjsUpdateSize:      len(req.YjsUpdate),
+			BaselineAutoAccept: autoAccept,
+		}
+		decision := s.evaluateArbiterSafe(ctx, arbiterInput)
+		if decision.Verdict == collabSvc.ArbiterVerdictRequireReview {
+			autoAccept = false
+		}
+		// ArbiterVerdictAllow and ArbiterVerdictPassThrough preserve the baseline.
 	}
 
 	if !autoAccept {
@@ -558,6 +579,24 @@ func isIdempotencyConflict(err error) bool {
 		return false
 	}
 	return conflictErr.ResourceType == "idempotency_key"
+}
+
+// evaluateArbiterSafe wraps arbiter evaluation with panic recovery.
+// On any panic, degrades to require-review for writer safety.
+func (s *ProposalService) evaluateArbiterSafe(ctx context.Context, input collabSvc.ArbiterInput) (decision collabSvc.ArbiterDecision) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("arbiter panicked, degrading to require-review",
+				"panic", fmt.Sprintf("%v", r),
+				"document_id", input.DocumentID,
+			)
+			decision = collabSvc.ArbiterDecision{
+				Verdict: collabSvc.ArbiterVerdictRequireReview,
+				Reason:  "arbiter panic recovery",
+			}
+		}
+	}()
+	return s.arbiter.Evaluate(ctx, input)
 }
 
 func (s *ProposalService) resolveAutoAccept(agent *bool, inputs *collabSvc.AutoAcceptPolicyInputs) bool {

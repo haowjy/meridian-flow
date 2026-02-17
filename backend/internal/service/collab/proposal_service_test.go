@@ -37,7 +37,7 @@ func TestProposalServiceAcceptProposal_IdempotencyReplayAndConflict(t *testing.T
 	}
 	stores.put(proposal)
 
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, false)
+	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
 	userID := uuid.New()
 	req := collabSvc.AcceptProposalRequest{
 		ProposalID:     proposal.ID,
@@ -133,7 +133,7 @@ func TestProposalServiceAcceptProposal_SerializesSameDocument(t *testing.T) {
 		}
 	}
 
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, false)
+	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
 	errCh := make(chan error, 2)
 
 	go func() {
@@ -226,7 +226,7 @@ func TestProposalServiceAcceptProposal_DifferentDocumentsProceedIndependently(t 
 		}
 	}
 
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, false)
+	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
 	errCh := make(chan error, 2)
 
 	go func() {
@@ -306,7 +306,7 @@ func TestProposalServiceRejectProposal_TerminalBehavior(t *testing.T) {
 	stores.put(proposed)
 	stores.put(accepted)
 
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, false)
+	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
 	userID := uuid.New()
 
 	first, err := svc.RejectProposal(ctx, collabSvc.RejectProposalRequest{
@@ -397,7 +397,7 @@ func TestProposalServiceGroupAccept_DeterministicOutcomesAndReplay(t *testing.T)
 	runtime := newFakeProposalRuntime(map[string]error{
 		string(p2.YjsUpdate): domain.NewValidationError("bad update"),
 	})
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, false)
+	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
 
 	userID := uuid.New()
 	req := collabSvc.GroupAcceptRequest{
@@ -499,7 +499,7 @@ func TestProposalServiceGroupAccept_SkipsDifferentDocumentInGroup(t *testing.T) 
 	stores.put(p1)
 	stores.put(p2)
 
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, false)
+	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
 	req := collabSvc.GroupAcceptRequest{
 		DocumentID:      targetDocID,
 		ProposalGroupID: groupID,
@@ -561,7 +561,7 @@ func TestProposalServiceGroupAccept_TransientMarkAcceptedErrorAborts(t *testing.
 
 	expectedErr := errors.New("db connection dropped")
 	stores.markAcceptedErrs[proposal.ID] = expectedErr
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, false)
+	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
 
 	_, err := svc.GroupAccept(ctx, collabSvc.GroupAcceptRequest{
 		DocumentID:      docID,
@@ -655,7 +655,7 @@ func TestProposalServiceCreateProposal_AutoAcceptCascade(t *testing.T) {
 				},
 			}
 
-			svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, tc.systemDefault)
+			svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, tc.systemDefault)
 			created, err := svc.CreateProposal(ctx, collabSvc.CreateProposalRequest{
 				DocumentID:        docID,
 				Source:            collabModels.ProposalSourceAI,
@@ -715,7 +715,7 @@ func TestProposalServiceCreateProposal_QueuedAIProposalCap(t *testing.T) {
 	autoAccept := &fakeAutoAcceptPolicyStore{}
 	projector := &fakeAIContentProjector{}
 
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, false)
+	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
 	createReq := collabSvc.CreateProposalRequest{
 		DocumentID:        docID,
 		Source:            collabModels.ProposalSourceAI,
@@ -792,7 +792,7 @@ func TestProposalServiceAcceptProposal_PendingCapAndRecovery(t *testing.T) {
 		})
 	}
 
-	svcIface := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, false)
+	svcIface := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
 	svc := svcIface.(*ProposalService)
 
 	errCh := make(chan error, maxPendingAcceptOperationsPerDocument)
@@ -877,7 +877,7 @@ func TestProposalServiceCreateProposal_RejectsOversizedYjsUpdate(t *testing.T) {
 	autoAccept := &fakeAutoAcceptPolicyStore{}
 	projector := &fakeAIContentProjector{}
 
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, false)
+	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
 	_, err := svc.CreateProposal(ctx, collabSvc.CreateProposalRequest{
 		DocumentID:        uuid.New(),
 		Source:            collabModels.ProposalSourceAI,
@@ -1230,6 +1230,209 @@ func (p *fakeAIContentProjector) count() int {
 
 func boolPtr(v bool) *bool {
 	return &v
+}
+
+// --- Arbiter tests ---
+
+// fakeArbiter implements collabSvc.AgentArbiter for testing.
+type fakeArbiter struct {
+	decision  collabSvc.ArbiterDecision
+	callCount int
+}
+
+func (a *fakeArbiter) Evaluate(_ context.Context, _ collabSvc.ArbiterInput) collabSvc.ArbiterDecision {
+	a.callCount++
+	return a.decision
+}
+
+// panicArbiter panics on Evaluate, used to test panic recovery.
+type panicArbiter struct{}
+
+func (a *panicArbiter) Evaluate(_ context.Context, _ collabSvc.ArbiterInput) collabSvc.ArbiterDecision {
+	panic("arbiter blew up")
+}
+
+func TestProposalServiceCreateProposal_ArbiterForcesReview(t *testing.T) {
+	ctx := context.Background()
+	stores := newFakeProposalStore()
+	idempotency := newFakeIdempotencyStore()
+	runtime := newFakeProposalRuntime(nil)
+	projector := &fakeAIContentProjector{}
+
+	// Baseline auto-accept = true (agent override), but arbiter forces review.
+	arbiter := &fakeArbiter{
+		decision: collabSvc.ArbiterDecision{
+			Verdict: collabSvc.ArbiterVerdictRequireReview,
+			Reason:  "test: force review",
+		},
+	}
+	autoAccept := &fakeAutoAcceptPolicyStore{}
+
+	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, arbiter, true)
+	created, err := svc.CreateProposal(ctx, collabSvc.CreateProposalRequest{
+		DocumentID:        uuid.New(),
+		Source:            collabModels.ProposalSourceAI,
+		ProducerAgentType: "writer",
+		ThreadID:          uuid.New(),
+		AgentRunID:        uuid.New(),
+		YjsUpdate:         []byte("arbiter-review-update"),
+		CreatedByUserID:   uuid.New(),
+		AgentAutoAccept:   boolPtr(true),
+	})
+	if err != nil {
+		t.Fatalf("create proposal: %v", err)
+	}
+	if created.Status != collabModels.ProposalStatusProposed {
+		t.Fatalf("expected proposed (review-required) status, got %s", created.Status)
+	}
+	if runtime.callCount() != 0 {
+		t.Fatalf("expected no runtime apply when arbiter forces review, got %d", runtime.callCount())
+	}
+	if arbiter.callCount != 1 {
+		t.Fatalf("expected arbiter called once, got %d", arbiter.callCount)
+	}
+}
+
+func TestProposalServiceCreateProposal_ArbiterPassThroughPreservesAutoAccept(t *testing.T) {
+	ctx := context.Background()
+	stores := newFakeProposalStore()
+	idempotency := newFakeIdempotencyStore()
+	runtime := newFakeProposalRuntime(nil)
+	projector := &fakeAIContentProjector{}
+	arbiter := &fakeArbiter{
+		decision: collabSvc.ArbiterDecision{
+			Verdict: collabSvc.ArbiterVerdictPassThrough,
+			Reason:  "no opinion",
+		},
+	}
+	autoAccept := &fakeAutoAcceptPolicyStore{}
+
+	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, arbiter, true)
+	created, err := svc.CreateProposal(ctx, collabSvc.CreateProposalRequest{
+		DocumentID:        uuid.New(),
+		Source:            collabModels.ProposalSourceAI,
+		ProducerAgentType: "writer",
+		ThreadID:          uuid.New(),
+		AgentRunID:        uuid.New(),
+		YjsUpdate:         []byte("arbiter-pass-update"),
+		CreatedByUserID:   uuid.New(),
+	})
+	if err != nil {
+		t.Fatalf("create proposal: %v", err)
+	}
+	if created.Status != collabModels.ProposalStatusAccepted {
+		t.Fatalf("expected auto-accepted status, got %s", created.Status)
+	}
+	if runtime.callCount() != 1 {
+		t.Fatalf("expected one runtime apply for auto-accept, got %d", runtime.callCount())
+	}
+	if arbiter.callCount != 1 {
+		t.Fatalf("expected arbiter called once, got %d", arbiter.callCount)
+	}
+}
+
+func TestProposalServiceCreateProposal_ArbiterNotCalledForNonAI(t *testing.T) {
+	ctx := context.Background()
+	stores := newFakeProposalStore()
+	idempotency := newFakeIdempotencyStore()
+	runtime := newFakeProposalRuntime(nil)
+	projector := &fakeAIContentProjector{}
+	arbiter := &fakeArbiter{
+		decision: collabSvc.ArbiterDecision{
+			Verdict: collabSvc.ArbiterVerdictRequireReview,
+			Reason:  "should not be called",
+		},
+	}
+	autoAccept := &fakeAutoAcceptPolicyStore{}
+
+	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, arbiter, true)
+	created, err := svc.CreateProposal(ctx, collabSvc.CreateProposalRequest{
+		DocumentID:        uuid.New(),
+		Source:            collabModels.ProposalSourceUserSuggestion,
+		ProducerAgentType: "",
+		ThreadID:          uuid.New(),
+		AgentRunID:        uuid.New(),
+		YjsUpdate:         []byte("human-update"),
+		CreatedByUserID:   uuid.New(),
+	})
+	if err != nil {
+		t.Fatalf("create proposal: %v", err)
+	}
+	// Non-AI proposals should still auto-accept (system default = true) and skip arbiter.
+	if created.Status != collabModels.ProposalStatusAccepted {
+		t.Fatalf("expected auto-accepted for non-AI, got %s", created.Status)
+	}
+	if arbiter.callCount != 0 {
+		t.Fatalf("expected arbiter NOT called for non-AI source, got %d calls", arbiter.callCount)
+	}
+}
+
+func TestProposalServiceCreateProposal_ArbiterNotCalledWhenBaselineReview(t *testing.T) {
+	ctx := context.Background()
+	stores := newFakeProposalStore()
+	idempotency := newFakeIdempotencyStore()
+	runtime := newFakeProposalRuntime(nil)
+	projector := &fakeAIContentProjector{}
+	arbiter := &fakeArbiter{
+		decision: collabSvc.ArbiterDecision{
+			Verdict: collabSvc.ArbiterVerdictAllow,
+			Reason:  "should not matter",
+		},
+	}
+	autoAccept := &fakeAutoAcceptPolicyStore{}
+
+	// System default = false, agent override = false → baseline is already review-required.
+	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, arbiter, false)
+	created, err := svc.CreateProposal(ctx, collabSvc.CreateProposalRequest{
+		DocumentID:        uuid.New(),
+		Source:            collabModels.ProposalSourceAI,
+		ProducerAgentType: "writer",
+		ThreadID:          uuid.New(),
+		AgentRunID:        uuid.New(),
+		YjsUpdate:         []byte("baseline-review-update"),
+		CreatedByUserID:   uuid.New(),
+		AgentAutoAccept:   boolPtr(false),
+	})
+	if err != nil {
+		t.Fatalf("create proposal: %v", err)
+	}
+	if created.Status != collabModels.ProposalStatusProposed {
+		t.Fatalf("expected proposed, got %s", created.Status)
+	}
+	// Arbiter should not be called when baseline is already review-required.
+	if arbiter.callCount != 0 {
+		t.Fatalf("expected arbiter NOT called when baseline is review, got %d calls", arbiter.callCount)
+	}
+}
+
+func TestProposalServiceCreateProposal_ArbiterPanicDegradesToReview(t *testing.T) {
+	ctx := context.Background()
+	stores := newFakeProposalStore()
+	idempotency := newFakeIdempotencyStore()
+	runtime := newFakeProposalRuntime(nil)
+	projector := &fakeAIContentProjector{}
+	autoAccept := &fakeAutoAcceptPolicyStore{}
+
+	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, &panicArbiter{}, true)
+	created, err := svc.CreateProposal(ctx, collabSvc.CreateProposalRequest{
+		DocumentID:        uuid.New(),
+		Source:            collabModels.ProposalSourceAI,
+		ProducerAgentType: "writer",
+		ThreadID:          uuid.New(),
+		AgentRunID:        uuid.New(),
+		YjsUpdate:         []byte("panic-update"),
+		CreatedByUserID:   uuid.New(),
+	})
+	if err != nil {
+		t.Fatalf("create proposal should succeed despite arbiter panic: %v", err)
+	}
+	// Panic degrades to review-required: proposal should NOT be auto-accepted.
+	if created.Status != collabModels.ProposalStatusProposed {
+		t.Fatalf("expected proposed after arbiter panic, got %s", created.Status)
+	}
+	if runtime.callCount() != 0 {
+		t.Fatalf("expected no runtime apply after arbiter panic, got %d", runtime.callCount())
+	}
 }
 
 func TestFakeIdempotencyStorePayloadRoundTrip(t *testing.T) {
