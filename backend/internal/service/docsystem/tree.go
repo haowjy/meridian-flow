@@ -140,13 +140,14 @@ func (s *treeService) GetProjectTreeWithOptions(ctx context.Context, userID, pro
 		}
 
 		docNode := docsysSvc.TreeDocument{
-			ID:        doc.ID,
-			ProjectID: doc.ProjectID,
-			Name:      doc.Name,
-			FolderID:  doc.FolderID,
-			Extension: doc.Extension,
-			Path:      docPath,
-			UpdatedAt: doc.UpdatedAt,
+			ID:                   doc.ID,
+			ProjectID:            doc.ProjectID,
+			Name:                 doc.Name,
+			FolderID:             doc.FolderID,
+			Extension:            doc.Extension,
+			PendingProposalCount: doc.PendingProposalCount,
+			Path:                 docPath,
+			UpdatedAt:            doc.UpdatedAt,
 		}
 
 		if doc.FolderID == nil {

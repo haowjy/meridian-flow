@@ -19,8 +19,8 @@ type TreeFolder struct {
 	ProjectID string
 	FolderID  *string // Parent folder ID (nil = root)
 	Name      string
-	Path      string  // Normalized path (e.g., "Characters/Heroes")
-	IsHidden  bool    // Hidden folders excluded from tree by default (e.g., .meridian)
+	Path      string // Normalized path (e.g., "Characters/Heroes")
+	IsHidden  bool   // Hidden folders excluded from tree by default (e.g., .meridian)
 	CreatedAt time.Time
 	UpdatedAt time.Time
 
@@ -30,11 +30,12 @@ type TreeFolder struct {
 
 // TreeDocument is a document node in the project tree (metadata only, no content).
 type TreeDocument struct {
-	ID        string
-	ProjectID string
-	FolderID  *string // Parent folder ID (nil = root)
-	Name      string
-	Extension string
-	Path      string // Normalized path with extension (e.g., "Characters/Heroes/Aria.md")
-	UpdatedAt time.Time
+	ID                   string
+	ProjectID            string
+	FolderID             *string // Parent folder ID (nil = root)
+	Name                 string
+	Extension            string
+	PendingProposalCount int
+	Path                 string // Normalized path with extension (e.g., "Characters/Heroes/Aria.md")
+	UpdatedAt            time.Time
 }

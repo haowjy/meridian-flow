@@ -28,13 +28,14 @@ type treeFolderDTO struct {
 }
 
 type treeDocumentDTO struct {
-	ID        string    `json:"id"`
-	ProjectID string    `json:"project_id"`
-	FolderID  *string   `json:"folder_id"`
-	Name      string    `json:"name"`
-	Extension string    `json:"extension"`
-	Path      string    `json:"path"` // Normalized path with extension (e.g., "Characters/Heroes/Aria.md")
-	UpdatedAt time.Time `json:"updated_at"`
+	ID                   string    `json:"id"`
+	ProjectID            string    `json:"project_id"`
+	FolderID             *string   `json:"folder_id"`
+	Name                 string    `json:"name"`
+	Extension            string    `json:"extension"`
+	PendingProposalCount int       `json:"pending_proposal_count"`
+	Path                 string    `json:"path"` // Normalized path with extension (e.g., "Characters/Heroes/Aria.md")
+	UpdatedAt            time.Time `json:"updated_at"`
 }
 
 func toTreeResponseDTO(tree *docsysSvc.ProjectTree) *treeResponseDTO {
@@ -95,12 +96,13 @@ func toTreeFolderDTO(folder *docsysSvc.TreeFolder) *treeFolderDTO {
 
 func toTreeDocumentDTO(doc docsysSvc.TreeDocument) treeDocumentDTO {
 	return treeDocumentDTO{
-		ID:        doc.ID,
-		ProjectID: doc.ProjectID,
-		FolderID:  doc.FolderID,
-		Name:      doc.Name,
-		Extension: doc.Extension,
-		Path:      doc.Path,
-		UpdatedAt: doc.UpdatedAt,
+		ID:                   doc.ID,
+		ProjectID:            doc.ProjectID,
+		FolderID:             doc.FolderID,
+		Name:                 doc.Name,
+		Extension:            doc.Extension,
+		PendingProposalCount: doc.PendingProposalCount,
+		Path:                 doc.Path,
+		UpdatedAt:            doc.UpdatedAt,
 	}
 }
