@@ -2,7 +2,7 @@
 export interface DocumentSnapshot {
   id: string;
   documentId: string;
-  snapshotType: "auto" | "named" | "pre_restore";
+  snapshotType: "auto" | "auto_human" | "auto_ai_accept" | "named" | "pre_restore";
   name?: string;
   createdByUserId?: string;
   createdAt: Date;

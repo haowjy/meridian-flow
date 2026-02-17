@@ -43,6 +43,7 @@ type DocumentSession struct {
 	dirty         bool
 	updateCount   int
 	debounceTimer *time.Timer
+	lastOrigin    string // "human" or "ai_accept" - tracks origin of most recent mutation for snapshot typing
 }
 
 // NewDocumentSessionManager creates the collab document runtime cache.
@@ -193,6 +194,8 @@ func (s *DocumentSession) HandleSyncPayload(ctx context.Context, payload []byte,
 			return 0, nil, nil, err
 		}
 
+		// Mark origin as human since this came from user sync
+		s.lastOrigin = "human"
 		if err := s.markDirtyLocked(ctx); err != nil {
 			return 0, nil, nil, err
 		}
@@ -209,6 +212,8 @@ func (s *DocumentSession) applyUpdate(ctx context.Context, update []byte, origin
 		return fmt.Errorf("apply yjs update: %w", err)
 	}
 
+	// Mark origin as AI accept since this is a proposal runtime update
+	s.lastOrigin = "ai_accept"
 	if err := s.markDirtyLocked(ctx); err != nil {
 		return err
 	}
@@ -309,7 +314,16 @@ func (s *DocumentSession) persistLocked(ctx context.Context, writeSnapshot bool)
 	}
 
 	if writeSnapshot {
-		if _, err := s.store.SaveSnapshot(ctx, s.docID, state, "auto", nil, nil); err != nil {
+		// Route snapshot type by last mutation origin.
+		// Mixed-batch tradeoff: if a batch contains both human and AI edits,
+		// the last origin wins for this snapshot. This is acceptable since
+		// snapshots are frequent (every 500 updates) and TTL-cleaned.
+		snapshotType := "auto_human" // default to human if no origin set
+		if s.lastOrigin == "ai_accept" {
+			snapshotType = "auto_ai_accept"
+		}
+
+		if _, err := s.store.SaveSnapshot(ctx, s.docID, state, snapshotType, nil, nil); err != nil {
 			return err
 		}
 	}
