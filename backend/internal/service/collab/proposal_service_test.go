@@ -6,6 +6,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -54,11 +55,11 @@ func TestProposalServiceAcceptProposal_IdempotencyReplayAndConflict(t *testing.T
 	if len(first.Mutations) != 1 {
 		t.Fatalf("expected one mutation, got %d", len(first.Mutations))
 	}
-	if len(runtime.calls) != 1 {
-		t.Fatalf("expected one runtime apply, got %d", len(runtime.calls))
+	if runtime.callCount() != 1 {
+		t.Fatalf("expected one runtime apply, got %d", runtime.callCount())
 	}
-	if len(projector.documentIDs) != 1 {
-		t.Fatalf("expected one ai_content recompute, got %d", len(projector.documentIDs))
+	if projector.count() != 1 {
+		t.Fatalf("expected one ai_content recompute, got %d", projector.count())
 	}
 
 	second, err := svc.AcceptProposal(ctx, req)
@@ -68,11 +69,11 @@ func TestProposalServiceAcceptProposal_IdempotencyReplayAndConflict(t *testing.T
 	if !second.IsReplay {
 		t.Fatalf("expected replay call to be marked replay")
 	}
-	if len(runtime.calls) != 1 {
-		t.Fatalf("expected replay to avoid extra applies, got %d applies", len(runtime.calls))
+	if runtime.callCount() != 1 {
+		t.Fatalf("expected replay to avoid extra applies, got %d applies", runtime.callCount())
 	}
-	if len(projector.documentIDs) != 1 {
-		t.Fatalf("expected replay to avoid extra recomputes, got %d", len(projector.documentIDs))
+	if projector.count() != 1 {
+		t.Fatalf("expected replay to avoid extra recomputes, got %d", projector.count())
 	}
 
 	_, err = svc.AcceptProposal(ctx, collabSvc.AcceptProposalRequest{
@@ -87,6 +88,193 @@ func TestProposalServiceAcceptProposal_IdempotencyReplayAndConflict(t *testing.T
 	var conflictErr *domain.ConflictError
 	if !errors.As(err, &conflictErr) {
 		t.Fatalf("expected conflict error, got %T", err)
+	}
+}
+
+func TestProposalServiceAcceptProposal_SerializesSameDocument(t *testing.T) {
+	ctx := context.Background()
+	stores := newFakeProposalStore()
+	idempotency := newFakeIdempotencyStore()
+	autoAccept := &fakeAutoAcceptPolicyStore{}
+	projector := &fakeAIContentProjector{}
+	runtime := newFakeProposalRuntime(nil)
+
+	documentID := uuid.New()
+	firstProposal := collabModels.Proposal{
+		ID:              uuid.New(),
+		DocumentID:      documentID,
+		Status:          collabModels.ProposalStatusProposed,
+		YjsUpdate:       []byte("u1"),
+		CreatedByUserID: uuid.New(),
+		CreatedAt:       time.Now().UTC(),
+	}
+	secondProposal := collabModels.Proposal{
+		ID:              uuid.New(),
+		DocumentID:      documentID,
+		Status:          collabModels.ProposalStatusProposed,
+		YjsUpdate:       []byte("u2"),
+		CreatedByUserID: uuid.New(),
+		CreatedAt:       time.Now().UTC().Add(time.Second),
+	}
+	stores.put(firstProposal)
+	stores.put(secondProposal)
+
+	firstStarted := make(chan struct{})
+	secondStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	runtime.applyHook = func(_ uuid.UUID, update []byte) {
+		switch string(update) {
+		case "u1":
+			close(firstStarted)
+			<-releaseFirst
+		case "u2":
+			close(secondStarted)
+		}
+	}
+
+	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, false)
+	errCh := make(chan error, 2)
+
+	go func() {
+		_, err := svc.AcceptProposal(ctx, collabSvc.AcceptProposalRequest{
+			ProposalID:     firstProposal.ID,
+			UserID:         uuid.New(),
+			IdempotencyKey: "same-doc-key-1",
+			RequestHash:    "same-doc-hash-1",
+		})
+		errCh <- err
+	}()
+
+	select {
+	case <-firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first accept to reach runtime apply")
+	}
+
+	go func() {
+		_, err := svc.AcceptProposal(ctx, collabSvc.AcceptProposalRequest{
+			ProposalID:     secondProposal.ID,
+			UserID:         uuid.New(),
+			IdempotencyKey: "same-doc-key-2",
+			RequestHash:    "same-doc-hash-2",
+		})
+		errCh <- err
+	}()
+
+	select {
+	case <-secondStarted:
+		t.Fatal("second same-document accept entered runtime apply before first completed")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(releaseFirst)
+
+	for i := 0; i < 2; i++ {
+		select {
+		case err := <-errCh:
+			if err != nil {
+				t.Fatalf("accept failed: %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for accept result")
+		}
+	}
+
+	if runtime.maxInFlight() != 1 {
+		t.Fatalf("expected max in-flight runtime apply to be 1 for same document, got %d", runtime.maxInFlight())
+	}
+}
+
+func TestProposalServiceAcceptProposal_DifferentDocumentsProceedIndependently(t *testing.T) {
+	ctx := context.Background()
+	stores := newFakeProposalStore()
+	idempotency := newFakeIdempotencyStore()
+	autoAccept := &fakeAutoAcceptPolicyStore{}
+	projector := &fakeAIContentProjector{}
+	runtime := newFakeProposalRuntime(nil)
+
+	firstProposal := collabModels.Proposal{
+		ID:              uuid.New(),
+		DocumentID:      uuid.New(),
+		Status:          collabModels.ProposalStatusProposed,
+		YjsUpdate:       []byte("u1"),
+		CreatedByUserID: uuid.New(),
+		CreatedAt:       time.Now().UTC(),
+	}
+	secondProposal := collabModels.Proposal{
+		ID:              uuid.New(),
+		DocumentID:      uuid.New(),
+		Status:          collabModels.ProposalStatusProposed,
+		YjsUpdate:       []byte("u2"),
+		CreatedByUserID: uuid.New(),
+		CreatedAt:       time.Now().UTC().Add(time.Second),
+	}
+	stores.put(firstProposal)
+	stores.put(secondProposal)
+
+	firstStarted := make(chan struct{})
+	secondStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	runtime.applyHook = func(_ uuid.UUID, update []byte) {
+		switch string(update) {
+		case "u1":
+			close(firstStarted)
+			<-releaseFirst
+		case "u2":
+			close(secondStarted)
+		}
+	}
+
+	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, false)
+	errCh := make(chan error, 2)
+
+	go func() {
+		_, err := svc.AcceptProposal(ctx, collabSvc.AcceptProposalRequest{
+			ProposalID:     firstProposal.ID,
+			UserID:         uuid.New(),
+			IdempotencyKey: "diff-doc-key-1",
+			RequestHash:    "diff-doc-hash-1",
+		})
+		errCh <- err
+	}()
+
+	select {
+	case <-firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first accept to reach runtime apply")
+	}
+
+	go func() {
+		_, err := svc.AcceptProposal(ctx, collabSvc.AcceptProposalRequest{
+			ProposalID:     secondProposal.ID,
+			UserID:         uuid.New(),
+			IdempotencyKey: "diff-doc-key-2",
+			RequestHash:    "diff-doc-hash-2",
+		})
+		errCh <- err
+	}()
+
+	select {
+	case <-secondStarted:
+	case <-time.After(time.Second):
+		t.Fatal("second different-document accept did not proceed while first was blocked")
+	}
+
+	close(releaseFirst)
+
+	for i := 0; i < 2; i++ {
+		select {
+		case err := <-errCh:
+			if err != nil {
+				t.Fatalf("accept failed: %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for accept result")
+		}
+	}
+
+	if runtime.maxInFlight() < 2 {
+		t.Fatalf("expected concurrent runtime applies across different documents, got max in-flight %d", runtime.maxInFlight())
 	}
 }
 
@@ -133,8 +321,8 @@ func TestProposalServiceRejectProposal_TerminalBehavior(t *testing.T) {
 	if len(first.Mutations) != 1 {
 		t.Fatalf("expected one mutation from first reject, got %d", len(first.Mutations))
 	}
-	if len(projector.documentIDs) != 1 {
-		t.Fatalf("expected one recompute for first reject, got %d", len(projector.documentIDs))
+	if projector.count() != 1 {
+		t.Fatalf("expected one recompute for first reject, got %d", projector.count())
 	}
 
 	second, err := svc.RejectProposal(ctx, collabSvc.RejectProposalRequest{
@@ -150,8 +338,8 @@ func TestProposalServiceRejectProposal_TerminalBehavior(t *testing.T) {
 	if len(second.Mutations) != 0 {
 		t.Fatalf("expected no mutation on noop reject, got %d", len(second.Mutations))
 	}
-	if len(projector.documentIDs) != 1 {
-		t.Fatalf("expected noop reject to avoid recompute, got %d", len(projector.documentIDs))
+	if projector.count() != 1 {
+		t.Fatalf("expected noop reject to avoid recompute, got %d", projector.count())
 	}
 
 	_, err = svc.RejectProposal(ctx, collabSvc.RejectProposalRequest{
@@ -247,8 +435,8 @@ func TestProposalServiceGroupAccept_DeterministicOutcomesAndReplay(t *testing.T)
 	if len(first.Mutations) != 2 {
 		t.Fatalf("expected only accepted proposals to emit mutations, got %d", len(first.Mutations))
 	}
-	if len(projector.documentIDs) != 1 {
-		t.Fatalf("expected one recompute for group accept, got %d", len(projector.documentIDs))
+	if projector.count() != 1 {
+		t.Fatalf("expected one recompute for group accept, got %d", projector.count())
 	}
 
 	second, err := svc.GroupAccept(ctx, req)
@@ -258,11 +446,11 @@ func TestProposalServiceGroupAccept_DeterministicOutcomesAndReplay(t *testing.T)
 	if !second.IsReplay {
 		t.Fatalf("expected second group accept to replay")
 	}
-	if len(runtime.calls) != 3 {
-		t.Fatalf("expected replay to avoid extra applies, got %d calls", len(runtime.calls))
+	if runtime.callCount() != 3 {
+		t.Fatalf("expected replay to avoid extra applies, got %d calls", runtime.callCount())
 	}
-	if len(projector.documentIDs) != 1 {
-		t.Fatalf("expected replay to avoid extra recomputes, got %d", len(projector.documentIDs))
+	if projector.count() != 1 {
+		t.Fatalf("expected replay to avoid extra recomputes, got %d", projector.count())
 	}
 
 	_, err = svc.GroupAccept(ctx, collabSvc.GroupAcceptRequest{
@@ -341,11 +529,11 @@ func TestProposalServiceGroupAccept_SkipsDifferentDocumentInGroup(t *testing.T) 
 	if len(result.Mutations) != 1 {
 		t.Fatalf("expected one mutation, got %d", len(result.Mutations))
 	}
-	if len(runtime.calls) != 1 {
-		t.Fatalf("expected one runtime apply, got %d", len(runtime.calls))
+	if runtime.callCount() != 1 {
+		t.Fatalf("expected one runtime apply, got %d", runtime.callCount())
 	}
-	if len(projector.documentIDs) != 1 {
-		t.Fatalf("expected one recompute for one accepted proposal, got %d", len(projector.documentIDs))
+	if projector.count() != 1 {
+		t.Fatalf("expected one recompute for one accepted proposal, got %d", projector.count())
 	}
 }
 
@@ -387,8 +575,8 @@ func TestProposalServiceGroupAccept_TransientMarkAcceptedErrorAborts(t *testing.
 	if !errors.Is(err, expectedErr) {
 		t.Fatalf("expected wrapped transient error, got %v", err)
 	}
-	if len(projector.documentIDs) != 0 {
-		t.Fatalf("expected transient error to avoid recompute, got %d", len(projector.documentIDs))
+	if projector.count() != 0 {
+		t.Fatalf("expected transient error to avoid recompute, got %d", projector.count())
 	}
 }
 
@@ -494,21 +682,21 @@ func TestProposalServiceCreateProposal_AutoAcceptCascade(t *testing.T) {
 				if stored.Status != collabModels.ProposalStatusAccepted {
 					t.Fatalf("expected accepted proposal, got %s", stored.Status)
 				}
-				if len(runtime.calls) != 1 {
-					t.Fatalf("expected one runtime apply for auto-accept, got %d", len(runtime.calls))
+				if runtime.callCount() != 1 {
+					t.Fatalf("expected one runtime apply for auto-accept, got %d", runtime.callCount())
 				}
-				if len(projector.documentIDs) != 2 {
-					t.Fatalf("expected two recomputes for auto-accept, got %d", len(projector.documentIDs))
+				if projector.count() != 2 {
+					t.Fatalf("expected two recomputes for auto-accept, got %d", projector.count())
 				}
 			} else {
 				if stored.Status != collabModels.ProposalStatusProposed {
 					t.Fatalf("expected proposed status, got %s", stored.Status)
 				}
-				if len(runtime.calls) != 0 {
-					t.Fatalf("expected no runtime apply, got %d", len(runtime.calls))
+				if runtime.callCount() != 0 {
+					t.Fatalf("expected no runtime apply, got %d", runtime.callCount())
 				}
-				if len(projector.documentIDs) != 1 {
-					t.Fatalf("expected one recompute for non-auto-accept create, got %d", len(projector.documentIDs))
+				if projector.count() != 1 {
+					t.Fatalf("expected one recompute for non-auto-accept create, got %d", projector.count())
 				}
 			}
 		})
@@ -553,6 +741,7 @@ func (fakeTxManager) ExecTx(ctx context.Context, fn repositories.TxFn) error {
 }
 
 type fakeProposalStore struct {
+	mu               sync.Mutex
 	proposals        map[uuid.UUID]collabModels.Proposal
 	markAcceptedErrs map[uuid.UUID]error
 }
@@ -565,10 +754,14 @@ func newFakeProposalStore() *fakeProposalStore {
 }
 
 func (s *fakeProposalStore) put(p collabModels.Proposal) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.proposals[p.ID] = p
 }
 
 func (s *fakeProposalStore) Create(_ context.Context, proposal *collabModels.Proposal) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if proposal.ID == uuid.Nil {
 		proposal.ID = uuid.New()
 	}
@@ -583,6 +776,8 @@ func (s *fakeProposalStore) Create(_ context.Context, proposal *collabModels.Pro
 }
 
 func (s *fakeProposalStore) GetByID(_ context.Context, proposalID uuid.UUID) (*collabModels.Proposal, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	proposal, ok := s.proposals[proposalID]
 	if !ok {
 		return nil, domain.NewNotFoundError("proposal", "proposal not found")
@@ -598,6 +793,8 @@ func (s *fakeProposalStore) ListByDocument(
 	_ int,
 	_ int,
 ) ([]collabModels.Proposal, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	out := make([]collabModels.Proposal, 0)
 	for _, proposal := range s.proposals {
 		if proposal.DocumentID != documentID {
@@ -616,6 +813,8 @@ func (s *fakeProposalStore) ListByGroup(
 	proposalGroupID uuid.UUID,
 	status *collabModels.ProposalStatus,
 ) ([]collabModels.Proposal, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	out := make([]collabModels.Proposal, 0)
 	for _, proposal := range s.proposals {
 		if proposal.ProposalGroupID == nil || *proposal.ProposalGroupID != proposalGroupID {
@@ -638,6 +837,8 @@ func (s *fakeProposalStore) ListByGroup(
 }
 
 func (s *fakeProposalStore) MarkAccepted(_ context.Context, decision collabModels.ProposalDecision) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if err, ok := s.markAcceptedErrs[decision.ProposalID]; ok {
 		return err
 	}
@@ -656,6 +857,8 @@ func (s *fakeProposalStore) MarkAccepted(_ context.Context, decision collabModel
 }
 
 func (s *fakeProposalStore) MarkRejected(_ context.Context, decision collabModels.ProposalDecision) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	proposal, ok := s.proposals[decision.ProposalID]
 	if !ok {
 		return domain.NewNotFoundError("proposal", "proposal not found")
@@ -671,6 +874,7 @@ func (s *fakeProposalStore) MarkRejected(_ context.Context, decision collabModel
 }
 
 type fakeIdempotencyStore struct {
+	mu      sync.Mutex
 	records map[string]collabModels.IdempotencyRecord
 }
 
@@ -685,6 +889,8 @@ func (s *fakeIdempotencyStore) GetByUserAndKey(
 	userID uuid.UUID,
 	idempotencyKey string,
 ) (*collabModels.IdempotencyRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	record, ok := s.records[s.key(userID, idempotencyKey)]
 	if !ok {
 		return nil, nil
@@ -694,6 +900,8 @@ func (s *fakeIdempotencyStore) GetByUserAndKey(
 }
 
 func (s *fakeIdempotencyStore) Create(_ context.Context, record *collabModels.IdempotencyRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	key := s.key(record.UserID, record.IdempotencyKey)
 	if _, exists := s.records[key]; exists {
 		return domain.NewConflictError("idempotency_key", record.IdempotencyKey, "idempotency key already exists")
@@ -713,6 +921,8 @@ func (s *fakeIdempotencyStore) Create(_ context.Context, record *collabModels.Id
 }
 
 func (s *fakeIdempotencyStore) DeleteExpired(_ context.Context, now time.Time) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	var deleted int64
 	for key, record := range s.records {
 		if record.ExpiresAt.Before(now) {
@@ -728,8 +938,12 @@ func (s *fakeIdempotencyStore) key(userID uuid.UUID, idempotencyKey string) stri
 }
 
 type fakeProposalRuntime struct {
-	failures map[string]error
-	calls    []string
+	mu            sync.Mutex
+	failures      map[string]error
+	calls         []string
+	applyHook     func(documentID uuid.UUID, update []byte)
+	currentActive int
+	maxActive     int
 }
 
 func newFakeProposalRuntime(failures map[string]error) *fakeProposalRuntime {
@@ -742,13 +956,46 @@ func newFakeProposalRuntime(failures map[string]error) *fakeProposalRuntime {
 	}
 }
 
-func (r *fakeProposalRuntime) ApplyUpdate(_ context.Context, _ uuid.UUID, update []byte, _ string) error {
+func (r *fakeProposalRuntime) ApplyUpdate(_ context.Context, documentID uuid.UUID, update []byte, _ string) error {
 	key := string(update)
+	r.mu.Lock()
 	r.calls = append(r.calls, key)
-	if err, ok := r.failures[key]; ok {
+	r.currentActive++
+	if r.currentActive > r.maxActive {
+		r.maxActive = r.currentActive
+	}
+	hook := r.applyHook
+	r.mu.Unlock()
+
+	defer func() {
+		r.mu.Lock()
+		r.currentActive--
+		r.mu.Unlock()
+	}()
+
+	if hook != nil {
+		hook(documentID, update)
+	}
+
+	r.mu.Lock()
+	err, ok := r.failures[key]
+	r.mu.Unlock()
+	if ok {
 		return err
 	}
 	return nil
+}
+
+func (r *fakeProposalRuntime) maxInFlight() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.maxActive
+}
+
+func (r *fakeProposalRuntime) callCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.calls)
 }
 
 func (r *fakeProposalRuntime) GetStateSnapshot(_ context.Context, _ uuid.UUID) ([]byte, bool, error) {
@@ -773,12 +1020,21 @@ func (s *fakeAutoAcceptPolicyStore) GetPolicyInputs(
 }
 
 type fakeAIContentProjector struct {
+	mu          sync.Mutex
 	documentIDs []uuid.UUID
 }
 
 func (p *fakeAIContentProjector) Recompute(_ context.Context, documentID uuid.UUID) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.documentIDs = append(p.documentIDs, documentID)
 	return nil
+}
+
+func (p *fakeAIContentProjector) count() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.documentIDs)
 }
 
 func boolPtr(v bool) *bool {

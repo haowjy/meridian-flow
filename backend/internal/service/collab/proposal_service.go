@@ -27,6 +27,7 @@ type ProposalService struct {
 	runtime                collabSvc.ProposalRuntime
 	autoAcceptPolicyStore  collabSvc.AutoAcceptPolicyStore
 	aiContentProjector     collabSvc.AIContentProjector
+	acceptGate             *proposalAcceptGate
 	defaultAutoAcceptValue bool
 }
 
@@ -47,6 +48,7 @@ func NewProposalService(
 		runtime:                runtime,
 		autoAcceptPolicyStore:  autoAcceptPolicyStore,
 		aiContentProjector:     aiContentProjector,
+		acceptGate:             newProposalAcceptGate(),
 		defaultAutoAcceptValue: defaultAutoAcceptValue,
 	}
 }
@@ -77,46 +79,59 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.Crea
 		CreatedByUserID:   req.CreatedByUserID,
 	}
 
-	if err := s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
-		if err := s.proposalStore.Create(txCtx, proposal); err != nil {
-			return err
+	autoAccept := s.resolveAutoAccept(req.AgentAutoAccept, nil)
+	if req.AgentAutoAccept == nil {
+		inputs, err := s.autoAcceptPolicyStore.GetPolicyInputs(ctx, req.DocumentID, req.CreatedByUserID)
+		if err != nil {
+			return nil, err
 		}
-		if err := s.aiContentProjector.Recompute(txCtx, req.DocumentID); err != nil {
-			return err
-		}
+		autoAccept = s.resolveAutoAccept(nil, inputs)
+	}
 
-		autoAccept := s.resolveAutoAccept(req.AgentAutoAccept, nil)
-		if req.AgentAutoAccept == nil {
-			inputs, err := s.autoAcceptPolicyStore.GetPolicyInputs(txCtx, req.DocumentID, req.CreatedByUserID)
-			if err != nil {
+	if !autoAccept {
+		if err := s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
+			if err := s.proposalStore.Create(txCtx, proposal); err != nil {
 				return err
 			}
-			autoAccept = s.resolveAutoAccept(nil, inputs)
-		}
-		if !autoAccept {
+			if err := s.aiContentProjector.Recompute(txCtx, req.DocumentID); err != nil {
+				return err
+			}
 			return nil
+		}); err != nil {
+			return nil, err
 		}
+		return proposal, nil
+	}
 
-		if err := s.runtime.ApplyUpdate(txCtx, proposal.DocumentID, proposal.YjsUpdate, "proposal:auto_accept"); err != nil {
-			return fmt.Errorf("apply proposal auto-accept update: %w", err)
-		}
+	if err := s.acceptGate.WithDocument(req.DocumentID, func() error {
+		return s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
+			if err := s.proposalStore.Create(txCtx, proposal); err != nil {
+				return err
+			}
+			if err := s.aiContentProjector.Recompute(txCtx, req.DocumentID); err != nil {
+				return err
+			}
+			if err := s.runtime.ApplyUpdate(txCtx, proposal.DocumentID, proposal.YjsUpdate, "proposal:auto_accept"); err != nil {
+				return fmt.Errorf("apply proposal auto-accept update: %w", err)
+			}
 
-		decision := collabModels.ProposalDecision{
-			ProposalID:      proposal.ID,
-			DecidedByUserID: req.CreatedByUserID,
-			DecidedAt:       time.Now().UTC(),
-		}
-		if err := s.proposalStore.MarkAccepted(txCtx, decision); err != nil {
-			return err
-		}
+			decision := collabModels.ProposalDecision{
+				ProposalID:      proposal.ID,
+				DecidedByUserID: req.CreatedByUserID,
+				DecidedAt:       time.Now().UTC(),
+			}
+			if err := s.proposalStore.MarkAccepted(txCtx, decision); err != nil {
+				return err
+			}
 
-		proposal.Status = collabModels.ProposalStatusAccepted
-		proposal.DecidedByUserID = &req.CreatedByUserID
-		proposal.DecidedAt = &decision.DecidedAt
-		if err := s.aiContentProjector.Recompute(txCtx, req.DocumentID); err != nil {
-			return err
-		}
-		return nil
+			proposal.Status = collabModels.ProposalStatusAccepted
+			proposal.DecidedByUserID = &req.CreatedByUserID
+			proposal.DecidedAt = &decision.DecidedAt
+			if err := s.aiContentProjector.Recompute(txCtx, req.DocumentID); err != nil {
+				return err
+			}
+			return nil
+		})
 	}); err != nil {
 		return nil, err
 	}
@@ -134,69 +149,82 @@ func (s *ProposalService) AcceptProposal(ctx context.Context, req collabSvc.Acce
 		return replay, err
 	}
 
+	proposalForLock, err := s.proposalStore.GetByID(ctx, req.ProposalID)
+	if err != nil {
+		return nil, err
+	}
+
 	var result *collabSvc.AcceptProposalResult
-	err = s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
-		proposal, err := s.proposalStore.GetByID(txCtx, req.ProposalID)
-		if err != nil {
-			return err
-		}
-		if proposal.Status != collabModels.ProposalStatusProposed {
-			return domain.NewValidationError(
-				fmt.Sprintf("proposal %s is %s and cannot be accepted", proposal.ID, proposal.Status),
-			)
-		}
-
-		// Apply runtime update before MarkAccepted. If MarkAccepted fails, retry is safe because
-		// Yjs updates are idempotent: re-applying the same update does not change document state.
-		if err := s.runtime.ApplyUpdate(txCtx, proposal.DocumentID, proposal.YjsUpdate, req.TransactionOrigin); err != nil {
-			return fmt.Errorf("apply proposal update: %w", err)
-		}
-
-		decision := collabModels.ProposalDecision{
-			ProposalID:      proposal.ID,
-			DecidedByUserID: req.UserID,
-			DecidedAt:       time.Now().UTC(),
-		}
-		if err := s.proposalStore.MarkAccepted(txCtx, decision); err != nil {
-			return err
-		}
-		if err := s.aiContentProjector.Recompute(txCtx, proposal.DocumentID); err != nil {
+	err = s.acceptGate.WithDocument(proposalForLock.DocumentID, func() error {
+		replay, err := s.getProposalAcceptReplay(ctx, req.ProposalID, req.UserID, req.IdempotencyKey, req.RequestHash)
+		if err != nil || replay != nil {
+			result = replay
 			return err
 		}
 
-		payload := collabModels.ProposalAcceptResponsePayload{ProposalID: proposal.ID}
-		payloadBytes, err := json.Marshal(payload)
-		if err != nil {
-			return fmt.Errorf("marshal proposal accept payload: %w", err)
-		}
+		return s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
+			proposal, err := s.proposalStore.GetByID(txCtx, req.ProposalID)
+			if err != nil {
+				return err
+			}
+			if proposal.Status != collabModels.ProposalStatusProposed {
+				return domain.NewValidationError(
+					fmt.Sprintf("proposal %s is %s and cannot be accepted", proposal.ID, proposal.Status),
+				)
+			}
 
-		record := &collabModels.IdempotencyRecord{
-			UserID:          req.UserID,
-			IdempotencyKey:  req.IdempotencyKey,
-			RequestScope:    collabModels.IdempotencyScopeProposalAccept,
-			ScopeID:         proposal.ID,
-			RequestHash:     req.RequestHash,
-			DocumentID:      proposal.DocumentID,
-			ResponsePayload: payloadBytes,
-			ExpiresAt:       buildIdempotencyExpiresAt(req.IdempotencyTTL),
-		}
-		if err := s.idempotencyStore.Create(txCtx, record); err != nil {
-			return err
-		}
+			// Apply runtime update before MarkAccepted. If MarkAccepted fails, retry is safe because
+			// Yjs updates are idempotent: re-applying the same update does not change document state.
+			if err := s.runtime.ApplyUpdate(txCtx, proposal.DocumentID, proposal.YjsUpdate, req.TransactionOrigin); err != nil {
+				return fmt.Errorf("apply proposal update: %w", err)
+			}
 
-		result = &collabSvc.AcceptProposalResult{
-			Payload:  payload,
-			IsReplay: false,
-			Mutations: []collabSvc.ProposalMutationIntent{
-				{
-					DocumentID: proposal.DocumentID,
-					ProposalID: proposal.ID,
-					Status:     collabModels.ProposalStatusAccepted,
-					YjsUpdate:  proposal.YjsUpdate,
+			decision := collabModels.ProposalDecision{
+				ProposalID:      proposal.ID,
+				DecidedByUserID: req.UserID,
+				DecidedAt:       time.Now().UTC(),
+			}
+			if err := s.proposalStore.MarkAccepted(txCtx, decision); err != nil {
+				return err
+			}
+			if err := s.aiContentProjector.Recompute(txCtx, proposal.DocumentID); err != nil {
+				return err
+			}
+
+			payload := collabModels.ProposalAcceptResponsePayload{ProposalID: proposal.ID}
+			payloadBytes, err := json.Marshal(payload)
+			if err != nil {
+				return fmt.Errorf("marshal proposal accept payload: %w", err)
+			}
+
+			record := &collabModels.IdempotencyRecord{
+				UserID:          req.UserID,
+				IdempotencyKey:  req.IdempotencyKey,
+				RequestScope:    collabModels.IdempotencyScopeProposalAccept,
+				ScopeID:         proposal.ID,
+				RequestHash:     req.RequestHash,
+				DocumentID:      proposal.DocumentID,
+				ResponsePayload: payloadBytes,
+				ExpiresAt:       buildIdempotencyExpiresAt(req.IdempotencyTTL),
+			}
+			if err := s.idempotencyStore.Create(txCtx, record); err != nil {
+				return err
+			}
+
+			result = &collabSvc.AcceptProposalResult{
+				Payload:  payload,
+				IsReplay: false,
+				Mutations: []collabSvc.ProposalMutationIntent{
+					{
+						DocumentID: proposal.DocumentID,
+						ProposalID: proposal.ID,
+						Status:     collabModels.ProposalStatusAccepted,
+						YjsUpdate:  proposal.YjsUpdate,
+					},
 				},
-			},
-		}
-		return nil
+			}
+			return nil
+		})
 	})
 	if err != nil {
 		if isIdempotencyConflict(err) {
@@ -272,110 +300,118 @@ func (s *ProposalService) GroupAccept(ctx context.Context, req collabSvc.GroupAc
 	}
 
 	var result *collabSvc.GroupAcceptResult
-	err = s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
-		proposedStatus := collabModels.ProposalStatusProposed
-		proposals, err := s.proposalStore.ListByGroup(txCtx, req.ProposalGroupID, &proposedStatus)
-		if err != nil {
+	err = s.acceptGate.WithDocument(req.DocumentID, func() error {
+		replay, err := s.getGroupAcceptReplay(ctx, req.ProposalGroupID, req.UserID, req.IdempotencyKey, req.RequestHash)
+		if err != nil || replay != nil {
+			result = replay
 			return err
 		}
 
-		outcomes := make([]collabModels.GroupAcceptOutcome, 0, len(proposals))
-		mutations := make([]collabSvc.ProposalMutationIntent, 0, len(proposals))
-		var hadAcceptedMutation bool
-		for _, proposal := range proposals {
-			if proposal.DocumentID != req.DocumentID {
-				msg := fmt.Sprintf(
-					"proposal document mismatch: expected %s, got %s",
-					req.DocumentID,
-					proposal.DocumentID,
-				)
-				outcomes = append(outcomes, collabModels.GroupAcceptOutcome{
-					ProposalID: proposal.ID,
-					Status:     collabModels.GroupAcceptOutcomeStatusSkipped,
-					Error:      &msg,
-				})
-				continue
-			}
-
-			// Apply runtime update before MarkAccepted. If MarkAccepted fails, retry is safe because
-			// Yjs updates are idempotent: re-applying the same update does not change document state.
-			if err := s.runtime.ApplyUpdate(txCtx, proposal.DocumentID, proposal.YjsUpdate, req.TransactionOrigin); err != nil {
-				var validationErr *domain.ValidationError
-				if errors.As(err, &validationErr) {
-					msg := fmt.Sprintf("apply failed: %v", err)
-					outcomes = append(outcomes, collabModels.GroupAcceptOutcome{
-						ProposalID: proposal.ID,
-						Status:     collabModels.GroupAcceptOutcomeStatusSkipped,
-						Error:      &msg,
-					})
-					continue
-				}
-				return fmt.Errorf("apply proposal update: %w", err)
-			}
-
-			decision := collabModels.ProposalDecision{
-				ProposalID:      proposal.ID,
-				DecidedByUserID: req.UserID,
-				DecidedAt:       time.Now().UTC(),
-			}
-			if err := s.proposalStore.MarkAccepted(txCtx, decision); err != nil {
-				var validationErr *domain.ValidationError
-				if errors.As(err, &validationErr) {
-					msg := fmt.Sprintf("mark accepted failed: %v", err)
-					outcomes = append(outcomes, collabModels.GroupAcceptOutcome{
-						ProposalID: proposal.ID,
-						Status:     collabModels.GroupAcceptOutcomeStatusSkipped,
-						Error:      &msg,
-					})
-					continue
-				}
-				return fmt.Errorf("mark proposal accepted: %w", err)
-			}
-
-			outcomes = append(outcomes, collabModels.GroupAcceptOutcome{
-				ProposalID: proposal.ID,
-				Status:     collabModels.GroupAcceptOutcomeStatusAccepted,
-			})
-			hadAcceptedMutation = true
-			mutations = append(mutations, collabSvc.ProposalMutationIntent{
-				DocumentID: proposal.DocumentID,
-				ProposalID: proposal.ID,
-				Status:     collabModels.ProposalStatusAccepted,
-				YjsUpdate:  proposal.YjsUpdate,
-			})
-		}
-		if hadAcceptedMutation {
-			if err := s.aiContentProjector.Recompute(txCtx, req.DocumentID); err != nil {
+		return s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
+			proposedStatus := collabModels.ProposalStatusProposed
+			proposals, err := s.proposalStore.ListByGroup(txCtx, req.ProposalGroupID, &proposedStatus)
+			if err != nil {
 				return err
 			}
-		}
 
-		payload := collabModels.GroupAcceptResponsePayload{Outcomes: outcomes}
-		payloadBytes, err := json.Marshal(payload)
-		if err != nil {
-			return fmt.Errorf("marshal group accept payload: %w", err)
-		}
+			outcomes := make([]collabModels.GroupAcceptOutcome, 0, len(proposals))
+			mutations := make([]collabSvc.ProposalMutationIntent, 0, len(proposals))
+			var hadAcceptedMutation bool
+			for _, proposal := range proposals {
+				if proposal.DocumentID != req.DocumentID {
+					msg := fmt.Sprintf(
+						"proposal document mismatch: expected %s, got %s",
+						req.DocumentID,
+						proposal.DocumentID,
+					)
+					outcomes = append(outcomes, collabModels.GroupAcceptOutcome{
+						ProposalID: proposal.ID,
+						Status:     collabModels.GroupAcceptOutcomeStatusSkipped,
+						Error:      &msg,
+					})
+					continue
+				}
 
-		record := &collabModels.IdempotencyRecord{
-			UserID:          req.UserID,
-			IdempotencyKey:  req.IdempotencyKey,
-			RequestScope:    collabModels.IdempotencyScopeGroupAccept,
-			ScopeID:         req.ProposalGroupID,
-			RequestHash:     req.RequestHash,
-			DocumentID:      req.DocumentID,
-			ResponsePayload: payloadBytes,
-			ExpiresAt:       buildIdempotencyExpiresAt(req.IdempotencyTTL),
-		}
-		if err := s.idempotencyStore.Create(txCtx, record); err != nil {
-			return err
-		}
+				// Apply runtime update before MarkAccepted. If MarkAccepted fails, retry is safe because
+				// Yjs updates are idempotent: re-applying the same update does not change document state.
+				if err := s.runtime.ApplyUpdate(txCtx, proposal.DocumentID, proposal.YjsUpdate, req.TransactionOrigin); err != nil {
+					var validationErr *domain.ValidationError
+					if errors.As(err, &validationErr) {
+						msg := fmt.Sprintf("apply failed: %v", err)
+						outcomes = append(outcomes, collabModels.GroupAcceptOutcome{
+							ProposalID: proposal.ID,
+							Status:     collabModels.GroupAcceptOutcomeStatusSkipped,
+							Error:      &msg,
+						})
+						continue
+					}
+					return fmt.Errorf("apply proposal update: %w", err)
+				}
 
-		result = &collabSvc.GroupAcceptResult{
-			Payload:   payload,
-			IsReplay:  false,
-			Mutations: mutations,
-		}
-		return nil
+				decision := collabModels.ProposalDecision{
+					ProposalID:      proposal.ID,
+					DecidedByUserID: req.UserID,
+					DecidedAt:       time.Now().UTC(),
+				}
+				if err := s.proposalStore.MarkAccepted(txCtx, decision); err != nil {
+					var validationErr *domain.ValidationError
+					if errors.As(err, &validationErr) {
+						msg := fmt.Sprintf("mark accepted failed: %v", err)
+						outcomes = append(outcomes, collabModels.GroupAcceptOutcome{
+							ProposalID: proposal.ID,
+							Status:     collabModels.GroupAcceptOutcomeStatusSkipped,
+							Error:      &msg,
+						})
+						continue
+					}
+					return fmt.Errorf("mark proposal accepted: %w", err)
+				}
+
+				outcomes = append(outcomes, collabModels.GroupAcceptOutcome{
+					ProposalID: proposal.ID,
+					Status:     collabModels.GroupAcceptOutcomeStatusAccepted,
+				})
+				hadAcceptedMutation = true
+				mutations = append(mutations, collabSvc.ProposalMutationIntent{
+					DocumentID: proposal.DocumentID,
+					ProposalID: proposal.ID,
+					Status:     collabModels.ProposalStatusAccepted,
+					YjsUpdate:  proposal.YjsUpdate,
+				})
+			}
+			if hadAcceptedMutation {
+				if err := s.aiContentProjector.Recompute(txCtx, req.DocumentID); err != nil {
+					return err
+				}
+			}
+
+			payload := collabModels.GroupAcceptResponsePayload{Outcomes: outcomes}
+			payloadBytes, err := json.Marshal(payload)
+			if err != nil {
+				return fmt.Errorf("marshal group accept payload: %w", err)
+			}
+
+			record := &collabModels.IdempotencyRecord{
+				UserID:          req.UserID,
+				IdempotencyKey:  req.IdempotencyKey,
+				RequestScope:    collabModels.IdempotencyScopeGroupAccept,
+				ScopeID:         req.ProposalGroupID,
+				RequestHash:     req.RequestHash,
+				DocumentID:      req.DocumentID,
+				ResponsePayload: payloadBytes,
+				ExpiresAt:       buildIdempotencyExpiresAt(req.IdempotencyTTL),
+			}
+			if err := s.idempotencyStore.Create(txCtx, record); err != nil {
+				return err
+			}
+
+			result = &collabSvc.GroupAcceptResult{
+				Payload:   payload,
+				IsReplay:  false,
+				Mutations: mutations,
+			}
+			return nil
+		})
 	})
 	if err != nil {
 		if isIdempotencyConflict(err) {
