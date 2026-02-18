@@ -243,14 +243,19 @@ export function useDocumentCollab({
       runtime.ydoc,
     );
 
-    void persistenceRef.current.whenSynced.catch((err: unknown) => {
-      log.warn("collab indexeddb bootstrap failed", {
-        documentId,
-        error: err instanceof Error ? err.message : String(err),
+    // Wait for IndexedDB to load before connecting WS.
+    // This ensures bootstrapTextIfEmpty correctly sees existing IndexedDB content
+    // and skips insertion, preventing duplication from the IDB+WS bootstrap race.
+    persistenceRef.current.whenSynced
+      .catch((err: unknown) => {
+        log.warn("collab indexeddb bootstrap failed", {
+          documentId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      })
+      .finally(() => {
+        if (!isStopped) void connect();
       });
-    });
-
-    void connect();
 
     return () => {
       isStopped = true;

@@ -33,7 +33,7 @@ This directory contains detailed documentation for all features in Meridian, org
 | **Streaming (SSE)** | Both | [x] Complete | [x] Complete | Catchup, reconnection, race-free |
 | **Interjection** | Both | [x] Complete | [x] Complete | Send messages during streaming, stream switch |
 | **Tool Calling** | Backend | ✅ Complete | N/A | Auto-mapping, 3 built-in + 4 custom tools |
-| **AI Editing** | Both | ✅ Complete | ✅ Complete | Inline suggestions, accept/reject, CAS concurrency |
+| **AI Editing (Legacy PUA)** | Both | ✅ Archived | ✅ Archived | Superseded by collab proposals; docs retained for history |
 | **State Management** | Frontend | N/A | [x] Complete | Zustand, IndexedDB, optimistic updates, retry queue |
 | **UI Components** | Frontend | N/A | [x] Complete | shadcn/ui, custom components, high polish |
 | **Skills** | Both | [x] Complete | [x] Complete | Custom AI commands, tree integration, auto-save editor |
@@ -115,11 +115,9 @@ This directory contains detailed documentation for all features in Meridian, org
 - Multi-turn tool continuation
 
 ### [fb-ai-editing/](fb-ai-editing/)
-**Inline AI suggestions with accept/reject UI**
-- Backend: `ai_version` storage, CAS concurrency (`ai_version_rev`), tri-state PATCH
-- Frontend: Merged document with PUA markers, diff decorations, edit protection
-- Accept/reject are CM6 transactions (undoable via Cmd+Z)
-- Conflict detection via polling + 409 responses
+**Legacy inline AI suggestions (archived)**
+- Historical PUA-marker + `ai_version` implementation
+- Superseded by [fb-collab-ai-bridge/](fb-collab-ai-bridge/)
 
 ### [f-state-management/](f-state-management/)
 **Frontend state and caching**
@@ -157,10 +155,10 @@ This directory contains detailed documentation for all features in Meridian, org
 
 ### [fb-collab-ai-bridge/](fb-collab-ai-bridge/)
 **AI edits routed through Yjs collab proposal system** (Phase 4.5)
-- Strategy pattern: `CollabProposalStrategy` (default) vs `AIVersionStrategy` (deprecated fallback)
+- Strategy pattern: `CollabProposalStrategy` (single path)
 - Yjs text diff converter, thread context propagation, WS proposal broadcasting
 - Frontend: connection indicator, proposal badges in thread, editor navigation
-- Auto-accept ON by default; legacy PUA system gated off
+- Auto-accept ON by default; legacy PUA system removed
 
 ### [f-mobile-responsive/](f-mobile-responsive/)
 **Responsive layouts for mobile and desktop viewports**

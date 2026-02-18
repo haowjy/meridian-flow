@@ -110,9 +110,12 @@ export function useDocumentContent<TEditor = any>(
   editorRef: React.MutableRefObject<BaseEditorRef<TEditor> | null>,
   options?: {
     disableAIVersion?: boolean;
+    /** When true, Yjs owns editor content — skip REST hydration to prevent duplication. */
+    collabEnabled?: boolean;
   },
 ): UseDocumentContentResult<TEditor> {
   const disableAIVersion = options?.disableAIVersion ?? false;
+  const collabEnabled = options?.collabEnabled ?? false;
   // Detect editor type and get adapter
   const editorType = detectEditorType(extension);
   const adapter = getAdapter(editorType);
@@ -336,7 +339,9 @@ export function useDocumentContent<TEditor = any>(
   // Note: Actual diff extension toggle is handled by useDiffView.
   // Only fires on ready/init transitions, NOT on every keystroke.
   useEffect(() => {
-    if (!isEditorReady || !isInitialized) return;
+    // In collab mode, Yjs owns editor content. Pushing REST content here
+    // would fight yCollab and cause duplication.
+    if (!isEditorReady || !isInitialized || collabEnabled) return;
 
     // If editor just became ready but content was already loaded,
     // ensure editor has the correct content
@@ -348,7 +353,7 @@ export function useDocumentContent<TEditor = any>(
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- Only fire on ready/init transitions, not on every keystroke
-  }, [isEditorReady, isInitialized]);
+  }, [isEditorReady, isInitialized, collabEnabled]);
 
   // Sync editable state to editor when it changes
   useEffect(() => {
