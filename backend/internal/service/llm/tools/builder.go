@@ -17,8 +17,8 @@ import (
 type ToolRegistryBuilder struct {
 	registry         *ToolRegistry
 	config           *ToolConfig
-	namespaceSvc     docsysSvc.NamespaceService   // Optional, for namespace-aware tools
-	mutationStrategy DocumentMutationStrategy      // Optional, for AI edit persistence strategy
+	namespaceSvc     docsysSvc.NamespaceService // Optional, for namespace-aware tools
+	mutationStrategy DocumentMutationStrategy   // Optional, for AI edit persistence strategy
 }
 
 // NewToolRegistryBuilder creates a new builder with a fresh registry.
@@ -46,7 +46,7 @@ func (b *ToolRegistryBuilder) WithNamespaceService(namespaceSvc docsysSvc.Namesp
 }
 
 // WithMutationStrategy sets the strategy for persisting AI edits.
-// If not called, the default AIVersionStrategy is used (backwards compatible).
+// Must be called — panics at tool construction time if nil.
 func (b *ToolRegistryBuilder) WithMutationStrategy(strategy DocumentMutationStrategy) *ToolRegistryBuilder {
 	b.mutationStrategy = strategy
 	return b
@@ -81,7 +81,6 @@ func (b *ToolRegistryBuilder) WithDocumentTools(
 // enabledTools is the list of tool names to register (e.g., ["str_replace_based_edit_tool", "doc_search"]).
 // This allows frontend to control which tools the LLM can use.
 // Tools are registered with metadata for dynamic system prompt generation (SOLID: OCP compliance).
-//
 func (b *ToolRegistryBuilder) WithEnabledDocumentTools(
 	enabledTools []string,
 	projectID string,
@@ -190,32 +189,36 @@ func (b *ToolRegistryBuilder) Build() *ToolRegistry {
 }
 
 // BuildWithDefaults is a convenience method that builds a registry with default document tools.
-// Equivalent to: NewToolRegistryBuilder().WithDocumentTools(...).Build()
+// Equivalent to: NewToolRegistryBuilder().WithMutationStrategy(...).WithDocumentTools(...).Build()
 func BuildWithDefaults(
 	projectID string,
 	userID string,
 	documentSvc docsysSvc.DocumentService,
 	folderSvc docsysSvc.FolderService,
 	namespaceSvc docsysSvc.NamespaceService,
+	mutationStrategy DocumentMutationStrategy,
 ) *ToolRegistry {
 	return NewToolRegistryBuilder().
 		WithNamespaceService(namespaceSvc).
+		WithMutationStrategy(mutationStrategy).
 		WithDocumentTools(projectID, userID, documentSvc, folderSvc).
 		Build()
 }
 
 // BuildWithWebSearch is a convenience method for document tools + web search.
-// Equivalent to: NewToolRegistryBuilder().WithDocumentTools(...).WithWebSearch(...).Build()
+// Equivalent to: NewToolRegistryBuilder().WithMutationStrategy(...).WithDocumentTools(...).WithWebSearch(...).Build()
 func BuildWithWebSearch(
 	projectID string,
 	userID string,
 	documentSvc docsysSvc.DocumentService,
 	folderSvc docsysSvc.FolderService,
 	namespaceSvc docsysSvc.NamespaceService,
+	mutationStrategy DocumentMutationStrategy,
 	searchClient external.SearchClient,
 ) *ToolRegistry {
 	return NewToolRegistryBuilder().
 		WithNamespaceService(namespaceSvc).
+		WithMutationStrategy(mutationStrategy).
 		WithDocumentTools(projectID, userID, documentSvc, folderSvc).
 		WithWebSearch(searchClient).
 		Build()

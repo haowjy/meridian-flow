@@ -52,7 +52,7 @@ const adapters = new Map<EditorType, RegisteredAdapter>([
  *
  * @example
  * const adapter = getAdapter('markdown')
- * const editorContent = adapter.toEditor(doc.content, doc.aiVersion)
+ * const editorContent = adapter.toEditor(doc.content)
  */
 export function getAdapter<T extends keyof AdapterMap>(type: T): AdapterMap[T];
 export function getAdapter(type: EditorType): RegisteredAdapter;
@@ -72,7 +72,7 @@ export function getAdapter(type: EditorType): RegisteredAdapter {
  *
  * @example
  * const capabilities = getCapabilities('markdown')
- * if (capabilities.supportsAIDiff) {
+ * if (capabilities.editable) {
  *   // Show AI navigator
  * }
  */

@@ -18,11 +18,9 @@ When the AI edits a document via `str_replace_based_edit_tool`, the edit flows t
 
 ```
 TextEditorTool → DocumentMutationStrategy
-  ├─ CollabProposalStrategy (default)
-  │   → YjsTextConverter → ProposalService.CreateProposal
-  │   → ProposalBroadcaster → WS → editor
-  └─ AIVersionStrategy (deprecated fallback, feature-flagged)
-      → documentSvc.UpdateAIVersion → PUA markers
+  └─ CollabProposalStrategy
+      → YjsTextConverter → ProposalService.CreateProposal
+      → ProposalBroadcaster → WS → editor
 ```
 
 Auto-accept is ON by default — AI proposals apply immediately unless the arbiter downgrades to `require_review`.
@@ -42,13 +40,9 @@ flowchart LR
     G -->|auto-accept| H["Apply immediately"]
     G -->|require_review| I["Pending in Review Panel"]
 
-    B -->|Legacy path| J["UpdateAIVersion"]
-    J --> K["PUA markers"]
-
     style B fill:#2d5a7d
     style H fill:#2d5a2d
     style I fill:#7d5a2d
-    style K fill:#5a2d2d
 ```
 
 ### Key Design: Strategy Pattern (DIP + OCP)
@@ -76,7 +70,7 @@ See `backend/internal/service/llm/tools/mutation_strategy.go`
 
 | Feature | Status | Key Files |
 |---------|--------|-----------|
-| Feature flag (PUA off, collab on) | ✅ | `EditorPanel.tsx`, `mergedDocument.ts` |
+| Collab extension gating (`.md`, `.markdown`, `.txt`) | ✅ | `features/documents/lib/collabFeatureFlag.ts` |
 | Connection status indicator | ✅ | `CollabConnectionIndicator.tsx` |
 | Proposal status badges in thread | ✅ | `useProposalStatus.ts`, `TextEditorBlock` |
 | Thread → Editor navigation | ✅ | `TextEditorBlock` "View in Editor" button |
@@ -87,18 +81,17 @@ See `backend/internal/service/llm/tools/mutation_strategy.go`
 
 | Env Var | Default | Description |
 |---------|---------|-------------|
-| `MERIDIAN_COLLAB_AI_PROPOSALS_ENABLED` | `true` | Use collab proposals for AI edits (false = legacy PUA path) |
 | `MERIDIAN_COLLAB_DEFAULT_AUTO_ACCEPT` | `true` | Auto-accept AI proposals (arbiter can override) |
 
 ---
 
-## Deprecations
+## Removed
 
-The following are retained for feature-flag fallback but should not be used for new development:
+The legacy ai-version path has been removed:
 
-- `DocumentService.UpdateAIVersion` — use `CollabProposalStrategy` instead
-- `documents.ai_version` column — proposals stored via collab system
-- PUA-marker merge logic in `mergedDocument.ts` — gated off by default
+- `DocumentService.UpdateAIVersion`
+- `documents.ai_version` / `documents.ai_version_rev`
+- PUA-marker merge/diff save path
 
 ---
 

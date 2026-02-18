@@ -225,19 +225,11 @@ func main() {
 		cfg.CollabDefaultAutoAccept,
 	)
 
-	// Build mutation strategy for AI edits (construction-time decision based on config).
+	// Build mutation strategy for AI edits.
 	// CollabProposalStrategy creates collab proposals with Yjs updates and WS broadcasting.
-	// AIVersionStrategy is the legacy path that writes to document.ai_version directly.
-	var mutationStrategy tools.DocumentMutationStrategy
-	if cfg.CollabAIProposalsEnabled {
-		yjsConverter := serviceCollab.NewYjsTextConverter(collabStore)
-		proposalBroadcasterImpl := handler.NewProposalBroadcasterImpl(collabBroadcaster)
-		mutationStrategy = tools.NewCollabProposalStrategy(proposalService, proposalBroadcasterImpl, yjsConverter, logger)
-		logger.Info("mutation strategy: collab proposals enabled")
-	} else {
-		mutationStrategy = tools.NewAIVersionStrategy(docService)
-		logger.Info("mutation strategy: legacy ai_version")
-	}
+	yjsConverter := serviceCollab.NewYjsTextConverter(collabStore)
+	proposalBroadcasterImpl := handler.NewProposalBroadcasterImpl(collabBroadcaster)
+	mutationStrategy := tools.NewCollabProposalStrategy(proposalService, proposalBroadcasterImpl, yjsConverter, logger)
 
 	// Setup LLM services (thread, thread history, streaming)
 	// docService and folderService are passed for tool write operations (SOLID: DIP)
@@ -247,17 +239,17 @@ func main() {
 		projectRepo,
 		docRepo,
 		folderRepo,
-		docService,       // For tool write operations
-		folderService,    // For tool write operations
-		skillService,     // For skill_invoke/skill_list tools
+		docService,    // For tool write operations
+		folderService, // For tool write operations
+		skillService,  // For skill_invoke/skill_list tools
 		providerRegistry,
 		cfg,
 		txManager,
 		capabilityRegistry,
 		authorizer,
 		toolLimitResolver,
-		jobQueue,           // Phase 2: Background job queue for async generation enrichment
-		mutationStrategy,   // Strategy for AI edit persistence (ai_version or collab proposal)
+		jobQueue,         // Phase 2: Background job queue for async generation enrichment
+		mutationStrategy, // Strategy for AI edit persistence (collab proposal)
 		logger,
 	)
 	if err != nil {
@@ -384,10 +376,8 @@ func main() {
 	mux.HandleFunc("POST /api/documents", newDocHandler.CreateDocument)
 	mux.HandleFunc("GET /api/documents/search", newDocHandler.SearchDocuments) // Must come before {id} route
 	mux.HandleFunc("GET /api/documents/{id}", newDocHandler.GetDocument)
-	mux.HandleFunc("GET /api/documents/{id}/ai-status", newDocHandler.GetAIStatus) // Lightweight polling endpoint
 	mux.HandleFunc("PATCH /api/documents/{id}", newDocHandler.UpdateDocument)
 	mux.HandleFunc("DELETE /api/documents/{id}", newDocHandler.DeleteDocument)
-	// Note: ai_version is now handled via PATCH /api/documents/{id} with tri-state semantics
 
 	// Collaboration routes
 	mux.HandleFunc("GET /ws/documents/{id}", collabHandler.ConnectDocument)

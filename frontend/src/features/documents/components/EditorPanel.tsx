@@ -260,6 +260,7 @@ export function EditorPanel({
     syncContext,
   } = useDocumentContent(documentId, extension, editorRef, {
     disableAIVersion: collabEnabled,
+    collabEnabled,
   });
 
   useEffect(() => {
@@ -586,7 +587,7 @@ export function EditorPanel({
             <EditorContextMenu editorRef={editorRef.current}>
               <CodeMirrorEditor
                 key={documentId}
-                initialContent={localDocument}
+                initialContent={collabEnabled ? "" : localDocument}
                 editable={isEditable}
                 placeholder="Start writing..."
                 onChange={handleContentChange}
