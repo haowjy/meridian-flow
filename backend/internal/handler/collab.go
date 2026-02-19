@@ -4,10 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
@@ -33,7 +31,7 @@ type CollabHandler struct {
 	sessionManager      documentSessionManager
 	proposalService     collabSvc.ProposalService
 	proposalStore       collabSvc.ProposalStore
-	jwtVerifier         auth.JWTVerifier
+	authenticator       *collabAuthenticator
 	logger              *slog.Logger
 	config              *config.Config
 }
@@ -147,7 +145,7 @@ func NewCollabHandler(
 		sessionManager:      sessionManager,
 		proposalService:     proposalService,
 		proposalStore:       proposalStore,
-		jwtVerifier:         jwtVerifier,
+		authenticator:       newCollabAuthenticator(jwtVerifier, documentResolver, logger),
 		logger:              logger,
 		config:              cfg,
 	}
@@ -183,18 +181,6 @@ func (h *CollabHandler) runHeartbeatLoop(conn *websocketDocumentConnection, acks
 			}
 		}
 	}
-}
-
-func (h *CollabHandler) readFirstJWTMessage(conn *websocket.Conn) (string, error) {
-	var token string
-	if err := websocket.Message.Receive(conn, &token); err != nil {
-		return "", err
-	}
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return "", fmt.Errorf("auth message is empty")
-	}
-	return token, nil
 }
 
 func (h *CollabHandler) sendError(conn *websocketDocumentConnection, code string, message string) {
