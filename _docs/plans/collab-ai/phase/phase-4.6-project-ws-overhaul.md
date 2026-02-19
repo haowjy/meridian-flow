@@ -111,23 +111,39 @@ Also update TS type guards in `contracts.ts` (`isProposalStatusChangedEvent`, `i
 ## Key Files
 
 **Backend (new):**
-- `handler/collab_project.go` — project WS handler + `multiplexedConnection` adapter
+- `backend/internal/handler/collab_project.go` — project WS orchestration (`ConnectProject` + routing)
+- `backend/internal/handler/collab_project_subscription.go` — subscription registry/lifecycle + `multiplexedConnection`
+- `backend/internal/handler/collab_authenticator.go` — shared JWT bootstrap + access validation/invalidation checks
+- `backend/internal/handler/collab_message_loop.go` — shared receive/rate-limit/dispatch websocket loop
 
 **Backend (modified):**
-- `handler/collab_envelope.go` — multiplexed frame format
-- `handler/collab_proposal.go` — `documentId` on events/commands, `mutation.DocumentID` for broadcast
-- `handler/collab.go` — shared helpers, `authorizer` field
-- `cmd/server/main.go` — route registration
+- `backend/internal/handler/collab_envelope.go` — multiplexed frame format
+- `backend/internal/handler/collab_proposal.go` — `documentId` on events/commands, `mutation.DocumentID` for broadcast
+- `backend/internal/handler/collab_proposal_broadcaster.go` — proposal WS broadcasting bridge
+- `backend/internal/handler/collab.go` — collab handler wiring + authenticator dependency
+- `backend/cmd/server/main.go` — `/ws/projects/{projectId}` route registration (document WS route removed)
 
 **Frontend (new):**
-- `hooks/useProjectCollab.ts` — project WS lifecycle
-- `contexts/ProjectCollabContext.ts` — React context
+- `frontend/src/features/documents/hooks/useProjectCollab.ts` — project WS lifecycle
+- `frontend/src/features/documents/contexts/ProjectCollabContext.tsx` — React context
 
 **Frontend (modified):**
-- `hooks/useDocumentCollab.ts` — delegate transport, debounced unsubscribe
+- `frontend/src/features/documents/hooks/useDocumentCollab.ts` — delegate transport, debounced unsubscribe
 
 **CM6:**
 - `packages/cm6-collab/src/sync/envelope.ts` — multiplexed frame format (TS side)
 - `packages/cm6-collab/src/proposals/contracts.ts` — `documentId` on all events
 
-## Status: PLANNED
+## Completion
+
+| Slice | Status | Delivered |
+|---|---|---|
+| 1 | Done | Contract fixes (`documentId` coverage + multiplexed envelope support) in Go + TS |
+| 2 | Done | Backend project WS transport (`ConnectProject`, subscribe/unsubscribe, max-subscription guard) |
+| 3 | Done | Frontend project transport (`useProjectCollab`, context, reconnect resubscribe) |
+| 4 | Done | `useDocumentCollab` transport delegation + unsubscribe debounce |
+| 5 | Done | Per-document WS endpoint removed; runtime kept only project WS endpoint |
+| 6 | Done | Backend SRP refactor (`collabAuthenticator` + shared message-loop core + subscription extraction) |
+| 7 | Done | Documentation closure (phase/spec/feature docs aligned to shipped behavior) |
+
+## Status: IMPLEMENTED (2026-02-19)
