@@ -6,60 +6,46 @@ feature: "Retry Queue"
 
 # Retry Queue
 
-**In-memory retry queue with exponential backoff.**
+**Dexie-backed retry queues with startup/reconnect drain.**
 
 ## Status: ✅ Complete
 
 ---
 
-## Implementation
+## Queues
 
-**File**: `frontend/src/core/lib/retry.ts`
+| Queue | Table | Semantics | Primary Runtime |
+|---|---|---|---|
+| Document saves | `pendingDocumentSaves` | Last-write-wins by `documentId` | `documentSyncService.ts` + `persistentSaveDrain.ts` |
+| Tree mutations | `pendingTreeOps` | FIFO replay (`++id`) + per-entity coalescing | `useTreeStore.ts` + `treeQueueDrain.ts` |
 
-**Features**:
-- In-memory queue (no persistent queue)
-- Exponential backoff with jitter
-- Max 3 retry attempts
-- 5-second retry interval
-- 4xx errors -> show toast, don't retry
-- 5xx errors -> auto-retry
+`RetryScheduler` in `retry.ts` is still available for non-persistent retry use cases, but offline-first document/tree durability is handled by Dexie queues.
 
----
+## Drain Triggers
 
-## Retry Intervals
+- Initial app startup
+- Browser `online` event
+- Periodic safety tick
 
-5s, 10s, 15s (linear with jitter)
+## Error Handling
 
----
+| Case | Behavior |
+|---|---|
+| Network / 5xx | Keep queued; retry next drain cycle |
+| 404 tree op | Drop op and continue |
+| 409 tree op | Drop op, stop drain, refresh tree |
+| Other 4xx | Treat as permanent failure and remove |
 
-## Retry Cancellation
+## Coalescing Rules (Tree)
 
-Retries are automatically canceled in these scenarios:
-
-### On Document Delete
-Before deleting from IndexedDB/server, cancel pending retries:
-- `cancelRetry(id)` - cancels content sync retry
-- `cancelAIVersionClearRetry(id)` - cancels AI version clear retry
-
-Prevents stale content from being re-synced after deletion.
-
-### On Document Switch
-When switching documents, AI version clear retries for the previous document are canceled.
-Prevents clearing AI version on wrong document.
-
-### On New Save
-When saving new content, any pending retry for that document is canceled.
-Newer content wins.
-
----
-
-## Dev Tools
-
-No UI panel (use console logs when retries are scheduled/executed).
-
----
+- Rename -> rename (same entity): keep latest rename.
+- Move -> move (same entity): keep latest move.
+- Rename/move -> delete (same entity): keep delete only.
+- Different entities: preserve relative FIFO order.
 
 ## Related
 
-- See [optimistic-updates.md](optimistic-updates.md) for usage
-- See `frontend/src/core/lib/sync.ts` for sync processor
+- `frontend/src/core/services/documentSyncService.ts`
+- `frontend/src/core/lib/persistentSaveDrain.ts`
+- `frontend/src/core/services/treeSyncService.ts`
+- `frontend/src/core/lib/treeQueueDrain.ts`

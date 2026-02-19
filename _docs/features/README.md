@@ -25,6 +25,7 @@ This directory contains detailed documentation for all features in Meridian, org
 | **Authentication** | Both | [x] Complete | [x] Complete | JWT validation, Google OAuth only, protected routes, resource authorization |
 | **User Settings** | Both | [x] Complete | [-] Partial | Profile UI complete, preferences API complete, preferences UI missing |
 | **Document Editor** | Frontend | N/A | [x] Complete | CodeMirror, project-scoped Yjs WS sync (doc subscriptions), offline persistence, caching |
+| **Offline-First** | Frontend | N/A | [x] Complete | Persistent document save retry, tree cache warm reads, queued offline tree mutations with reconnect drain |
 | **Multi-Editor** | Both | N/A | [-] Partial | Adapter foundation complete, editor components pending (LaTeX, images) |
 | **File System** | Both | [x] Complete | [x] Complete | CRUD, tree view, context menus; Search UI non-functional |
 | **Document Import** | Both | [x] Complete | [x] Complete | Multi-format (.zip, .md, .txt, .html), XSS sanitization, drag-drop |
@@ -65,6 +66,12 @@ This directory contains detailed documentation for all features in Meridian, org
 - Yjs sync over `/ws/projects/{projectId}` with per-document `doc:subscribe` + offline `y-indexeddb` for text docs
 - IndexedDB caching with Reconcile-Newest strategy
 - Word count, save status UI
+
+### [f-offline-first/](f-offline-first/)
+**Offline durability for document and tree workflows**
+- Persistent non-collab save retry in Dexie (`pendingDocumentSaves`)
+- Tree snapshot cache warm-read path (`projectTrees`)
+- Offline rename/move/delete queue (`pendingTreeOps`) with reconnect drain + coalescing
 
 ### [fb-multi-editor/](fb-multi-editor/)
 **Content Adapter Pattern for multiple file types** ✨ NEW (h/skills)
@@ -123,7 +130,7 @@ This directory contains detailed documentation for all features in Meridian, org
 **Frontend state and caching**
 - 5 Zustand stores (Project, Tree, Thread, UI, Editor)
 - IndexedDB via Dexie v5 (documents, threads, messages, projectTrees, pendingDocumentSaves, pendingTreeOps)
-- Optimistic updates, in-memory retry queue
+- Optimistic updates, persistent Dexie-backed retry/drain flows
 - Cache strategies: Reconcile-Newest, Network-First
 
 ### [f-ui-components/](f-ui-components/)

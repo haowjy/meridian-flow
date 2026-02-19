@@ -190,15 +190,22 @@ Document and panel navigation uses a **two-pronged approach**:
 
 ### Sync System
 
-- Core policy + scheduler: `frontend/src/core/lib/cache.ts`, `frontend/src/core/lib/retry.ts`, `frontend/src/core/lib/sync.ts`
-- Persistent drain: `frontend/src/core/lib/persistentSaveDrain.ts`
-- UI-free orchestration service: `frontend/src/core/services/documentSyncService.ts`
+- Document save path: `frontend/src/core/services/documentSyncService.ts`, `frontend/src/core/lib/persistentSaveDrain.ts`
+- Tree queue path: `frontend/src/core/services/treeSyncService.ts`, `frontend/src/core/lib/treeQueueDrain.ts`
+- Shared sync helpers: `frontend/src/core/lib/cache.ts`, `frontend/src/core/lib/retry.ts`, `frontend/src/core/lib/sync.ts`
 
-Flow (documents):
+Flow (documents, non-collab):
 
-1. Optimistic write to IndexedDB -> 2) direct PATCH to API -> 3) apply server doc (server timestamps become canonical once applied). On network/5xx, persist to `pendingDocumentSaves` Dexie table (last-write-wins by `documentId`). 4xx bubbles to UI for manual retry.
+1. Optimistic write to IndexedDB -> direct PATCH to API -> apply server doc (server timestamps become canonical once applied).
+2. On network/5xx, persist failed save to `pendingDocumentSaves` (last-write-wins by `documentId`).
+3. `persistentSaveDrain.ts` retries on startup, `online` event, and periodic tick (5s). 4xx failures are treated as permanent and removed.
 
-Background: persistent save drain (`persistentSaveDrain.ts`) retries failed document saves on startup, `online` event, and periodic tick (5s). In-memory RetryScheduler is preserved for potential non-document retries.
+Flow (tree):
+
+1. `useTreeStore.loadTree()` warm-reads `projectTrees` cache immediately, then reconciles with server.
+2. Rename/move/delete apply optimistic in-memory update and persist snapshot to `projectTrees`.
+3. Offline/network failures are queued to `pendingTreeOps`.
+4. `treeQueueDrain.ts` replays queued ops FIFO on startup/`online`/periodic tick with coalescing and conflict handling (404 drop, 409 stop+refresh, 5xx retry later).
 
 Dev: optional retry inspector in dev builds — set `VITE_DEV_TOOLS=1` to enable small bottom-left panel.
 
@@ -228,7 +235,7 @@ Current version: 5
 - `pendingDocumentSaves`: `documentId`
 - `pendingTreeOps`: `++id, projectId, [projectId+status]`
 
-**Runtime note**: `projectTrees`, `pendingDocumentSaves`, and `pendingTreeOps` are part of the offline-first v5 schema foundation and are wired by follow-up slices.
+**Runtime note**: `projectTrees`, `pendingDocumentSaves`, and `pendingTreeOps` are active runtime tables used by offline-first cache/queue/drain paths.
 
 **Auto-eviction**: Not implemented yet (YAGNI). Add only when quota issues appear.
 
@@ -240,7 +247,7 @@ Current version: 5
 ### Testing
 
 - Unit tests live under `frontend/tests/` and run with Vitest.
-- Focused coverage for: retry scheduler, cache policies, and `DocumentSyncService`.
+- Focused coverage for: retry scheduler, cache policies, `DocumentSyncService`, persistent save drain, and tree queue drain/coalescing.
 
 ### Dev Tools
 

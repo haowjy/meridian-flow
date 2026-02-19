@@ -23,7 +23,7 @@ feature: "State Management"
 **Optimistic Updates** - Write to cache immediately, sync to server
 - See [optimistic-updates.md](optimistic-updates.md)
 
-**Retry Queue** - In-memory queue with exponential backoff
+**Retry Queues + Drain** - Dexie-backed pending saves/tree ops with reconnect drain
 - See [retry-queue.md](retry-queue.md)
 
 ---
