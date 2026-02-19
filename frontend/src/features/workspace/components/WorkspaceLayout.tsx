@@ -10,6 +10,7 @@ import { DocumentPanel } from "@/features/documents/components/DocumentPanel";
 import { ThreadListPanel } from "@/features/threads/components/ThreadListPanel";
 import { ActiveThreadView } from "@/features/threads/components/ActiveThreadView";
 import { ProjectSettingsPanel } from "@/features/projects/components/ProjectSettingsPanel";
+import { ProjectCollabProvider } from "@/features/documents/contexts/ProjectCollabContext";
 import { useTreeStore } from "@/core/stores/useTreeStore";
 import { useProjectStore } from "@/core/stores/useProjectStore";
 import { useSkillStore } from "@/core/stores/useSkillStore";
@@ -502,5 +503,9 @@ export default function WorkspaceLayout({
     projectSettings: <ProjectSettingsPanel projectId={projectId} />,
   };
 
-  return <LayoutStrategy panels={panels} leftPanelView={leftPanelView} />;
+  return (
+    <ProjectCollabProvider key={projectId} projectId={projectId}>
+      <LayoutStrategy panels={panels} leftPanelView={leftPanelView} />
+    </ProjectCollabProvider>
+  );
 }
