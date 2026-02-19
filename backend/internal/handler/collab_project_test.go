@@ -203,7 +203,6 @@ func newTestProjectCollabServerWithDeps(
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /ws/projects/{projectId}", h.ConnectProject)
-	mux.HandleFunc("GET /ws/documents/{id}", h.ConnectDocument)
 	return httptest.NewServer(mux)
 }
 
@@ -854,54 +853,6 @@ func TestProjectWS_BinaryFrameNotSubscribed(t *testing.T) {
 	hbBytes, _ := json.Marshal(hb)
 	if err := websocket.Message.Send(conn, string(hbBytes)); err != nil {
 		t.Fatalf("socket should still be alive after doc:error: %v", err)
-	}
-}
-
-func TestProjectWS_ExistingDocWSStillWorks(t *testing.T) {
-	// Ensure existing /ws/documents/{id} endpoint still works alongside project WS.
-	resolver := &testProjectCollabResolver{allowed: true, projectID: testProjectID}
-	verifier := &testJWTVerifier{
-		tokens: map[string]*models.SupabaseClaims{
-			testToken: {RegisteredClaims: jwt.RegisteredClaims{Subject: testUserID}},
-		},
-	}
-	store := &testCollabStore{}
-	server := newTestProjectCollabServer(t, resolver, verifier, store)
-	defer server.Close()
-
-	wsURL := asWebSocketURL(t, server.URL, "/ws/documents/"+testDocID1)
-	conn, err := websocket.Dial(wsURL, "", "http://localhost/")
-	if err != nil {
-		t.Fatalf("dial document websocket: %v", err)
-	}
-	defer conn.Close()
-
-	authenticateWS(t, conn, testToken)
-
-	// Send SyncStep1 and expect responses — proves legacy path works
-	docUUID := uuid.MustParse(testDocID1)
-	step1 := buildEnvelopeSyncStep1(t, docUUID)
-	if err := websocket.Message.Send(conn, step1); err != nil {
-		t.Fatalf("send sync step1: %v", err)
-	}
-
-	// Should get binary responses (SyncStep2, then server SyncStep1)
-	msg1 := readWSBinaryMessage(t, conn)
-	env1, _, _, err := unframeEnvelope(msg1)
-	if err != nil {
-		t.Fatalf("unframe first response: %v", err)
-	}
-	if env1 != collabEnvelopeSyncStep2 {
-		t.Fatalf("expected SyncStep2, got envelope %d", env1)
-	}
-
-	msg2 := readWSBinaryMessage(t, conn)
-	env2, _, _, err := unframeEnvelope(msg2)
-	if err != nil {
-		t.Fatalf("unframe second response: %v", err)
-	}
-	if env2 != collabEnvelopeSyncStep1 {
-		t.Fatalf("expected SyncStep1, got envelope %d", env2)
 	}
 }
 
