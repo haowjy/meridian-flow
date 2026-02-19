@@ -453,13 +453,9 @@ git commit --no-verify -m "message"
 
 ## Orchestration
 
-Orchestration utilities live in the `orchestrate` skill (`.agents/skills/orchestrate/`):
-- `scripts/run-agent.sh`
-- `scripts/extract-files-touched.sh`
-- `scripts/save-handoff.sh`
-- `agents/*.md`
+Orchestration is provided by the [orchestrate plugin](https://github.com/jimmyyao/orchestrate).
 
-See `.agents/skills/orchestrate/README.md` for usage and configuration.
+Install: `/plugin marketplace add jimmyyao/orchestrate` (Claude Code)
 
 ---
 

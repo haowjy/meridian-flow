@@ -295,11 +295,11 @@ See `internal/repository/postgres/connection.go`
 
 ### Long-Running Tasks
 
-For multi-phase plans, use the `/orchestrate` skill interactively. It launches agents via `scripts/run-agent.sh` to implement plans autonomously. See the `orchestrate` skill's SKILL.md for full details.
+For multi-phase plans, use the `/orchestrate` skill interactively. It launches agents via `run-agent.sh` to implement plans autonomously. See the orchestrate plugin's SKILL.md for full details.
 
-**Agent definitions:** `orchestrate` skill's `agents/*.md` — model, tools, prompt per agent.
+**Install:** `/plugin marketplace add jimmyyao/orchestrate` (Claude Code)
+**Agent definitions:** `agents/*.md` in the orchestrate plugin — model, tools, prompt per agent.
 **Skills:** `*/SKILL.md` under your skills directory — reusable instruction bundles.
-**Run any agent:** `orchestrate` skill's `scripts/run-agent.sh [agent] [OPTIONS]` — see its README.md for usage.
 
 ### Frontend
 
