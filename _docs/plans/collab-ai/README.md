@@ -27,7 +27,7 @@ Browser ──WS────> Go Backend (same process)
 
 Key architectural decisions:
 - Go uses [`skyterra/y-crdt`](https://github.com/skyterra/y-crdt) (MIT) for server-side Yjs operations
-- Single WebSocket per document carries Yjs sync, awareness, and proposal messages
+- Single WebSocket per project carries Yjs sync, awareness, and proposal messages for all documents (Phase 4.6; previously per-document)
 - JWT-in-first-message auth (no ticket table)
 - `documents.content` and `documents.ai_content` are derived projections from Yjs state (persisted alongside `yjs_state`, never written independently)
 - Accepted/rejected proposals are retained indefinitely as permanent audit records (no TTL purge)
@@ -72,6 +72,8 @@ Canonical route and boundary contract: `spec/api-events-contract.md`
 | 2 | History + session undo + snapshots | `phase/phase-2-history-and-undo.md` |
 | 3 | AI proposal lifecycle (Yjs update buffers) + review UX | `phase/phase-3-ai-proposals-and-review.md` |
 | 4 | Multi-agent semantic arbitration | `phase/phase-4-multi-agent-arbitration.md` |
+| 4.5 | AI collaboration bridge (Yjs proposals from tool edits) | `phase/phase-4.5-ai-collab-bridge.md` |
+| 4.6 | Per-project WebSocket overhaul | `phase/phase-4.6-project-ws-overhaul.md` |
 | 5 | Multi-user collaboration (native to Yjs) | `phase/phase-5-multi-user-collaboration.md` |
 
 ```mermaid
@@ -84,10 +86,13 @@ flowchart LR
   P1["Phase 1\nYjs Sync + WS"] --> P2["Phase 2\nUndo + History"]
   P2 --> P3["Phase 3\nAI Proposals"]
   P3 --> P4["Phase 4\nMulti-Agent"]
-  P4 --> P5["Phase 5\nMulti-User"]
+  P4 --> P4_5["Phase 4.5\nAI Bridge"]
+  P4_5 --> P4_6["Phase 4.6\nProject WS"]
+  P4_6 --> P5["Phase 5\nMulti-User"]
   S1 -. constrains .-> P1
   S2 -. constrains .-> P1
   S2 -. constrains .-> P3
+  S2 -. constrains .-> P4_6
   S3 -. constrains .-> P2
   S5 -. constrains .-> P1
   S5 -. constrains .-> P2

@@ -263,7 +263,7 @@ func TestCollabHandler_WSProposalSnapshotAfterHandshake(t *testing.T) {
 	if err := websocket.Message.Send(conn, "valid-token"); err != nil {
 		t.Fatalf("send auth token: %v", err)
 	}
-	if err := websocket.Message.Send(conn, buildEnvelopeSyncStep1(t)); err != nil {
+	if err := websocket.Message.Send(conn, buildEnvelopeSyncStep1(t, docID)); err != nil {
 		t.Fatalf("send sync step1: %v", err)
 	}
 
@@ -272,8 +272,9 @@ func TestCollabHandler_WSProposalSnapshotAfterHandshake(t *testing.T) {
 	raw := readWSRawMessage(t, conn)
 
 	var event struct {
-		Type      string                   `json:"type"`
-		Proposals []map[string]interface{} `json:"proposals"`
+		Type       string                   `json:"type"`
+		DocumentID string                   `json:"documentId"`
+		Proposals  []map[string]interface{} `json:"proposals"`
 	}
 	if err := json.Unmarshal(raw, &event); err != nil {
 		t.Fatalf("decode proposal snapshot: %v", err)
@@ -281,6 +282,9 @@ func TestCollabHandler_WSProposalSnapshotAfterHandshake(t *testing.T) {
 
 	if event.Type != wsTypeProposalSnapshot {
 		t.Fatalf("expected type %q, got %q", wsTypeProposalSnapshot, event.Type)
+	}
+	if event.DocumentID != docID.String() {
+		t.Fatalf("expected snapshot documentId %q, got %q", docID, event.DocumentID)
 	}
 	if len(event.Proposals) != 2 {
 		t.Fatalf("expected 2 pending proposals, got %d", len(event.Proposals))
@@ -306,6 +310,7 @@ func TestCollabHandler_WSProposalAcceptDispatchAndBroadcast(t *testing.T) {
 	store := &testCollabStore{}
 
 	proposalID := uuid.MustParse("66666666-6666-6666-6666-666666666666")
+	documentID := uuid.MustParse("77777777-7777-7777-7777-777777777777")
 	proposalService := &testProposalService{
 		acceptResult: &collabSvc.AcceptProposalResult{
 			Payload: collabModels.ProposalAcceptResponsePayload{
@@ -313,7 +318,7 @@ func TestCollabHandler_WSProposalAcceptDispatchAndBroadcast(t *testing.T) {
 			},
 			Mutations: []collabSvc.ProposalMutationIntent{
 				{
-					DocumentID: uuid.MustParse("77777777-7777-7777-7777-777777777777"),
+					DocumentID: documentID,
 					ProposalID: proposalID,
 					Status:     collabModels.ProposalStatusAccepted,
 					YjsUpdate:  []byte{0x01, 0x02, 0x03},
@@ -335,7 +340,7 @@ func TestCollabHandler_WSProposalAcceptDispatchAndBroadcast(t *testing.T) {
 	if err := websocket.Message.Send(conn, "valid-token"); err != nil {
 		t.Fatalf("send auth token: %v", err)
 	}
-	if err := websocket.Message.Send(conn, buildEnvelopeSyncStep1(t)); err != nil {
+	if err := websocket.Message.Send(conn, buildEnvelopeSyncStep1(t, documentID)); err != nil {
 		t.Fatalf("send sync step1: %v", err)
 	}
 	_ = readWSBinaryMessage(t, conn)
@@ -344,6 +349,7 @@ func TestCollabHandler_WSProposalAcceptDispatchAndBroadcast(t *testing.T) {
 
 	acceptMsg := proposalAcceptCommand{
 		Type:           wsTypeProposalAccept,
+		DocumentID:     documentID.String(),
 		ProposalID:     proposalID.String(),
 		IdempotencyKey: "accept-key",
 	}
@@ -352,8 +358,18 @@ func TestCollabHandler_WSProposalAcceptDispatchAndBroadcast(t *testing.T) {
 	}
 
 	updateMsg := readWSBinaryMessage(t, conn)
-	if len(updateMsg) < 2 || updateMsg[0] != collabEnvelopeUpdate {
-		t.Fatalf("expected collab update frame, got %v", updateMsg)
+	updateEnvelope, updateDocID, updatePayload, err := unframeEnvelope(updateMsg)
+	if err != nil {
+		t.Fatalf("unframe update message: %v", err)
+	}
+	if updateEnvelope != collabEnvelopeUpdate {
+		t.Fatalf("expected collab update envelope, got %d", updateEnvelope)
+	}
+	if updateDocID != documentID {
+		t.Fatalf("expected update documentId %s, got %s", documentID, updateDocID)
+	}
+	if len(updatePayload) == 0 {
+		t.Fatalf("expected non-empty update payload")
 	}
 
 	statusRaw := readWSRawMessage(t, conn)
@@ -363,6 +379,9 @@ func TestCollabHandler_WSProposalAcceptDispatchAndBroadcast(t *testing.T) {
 	}
 	if statusEvent.Type != wsTypeProposalStatusChanged {
 		t.Fatalf("expected statusChanged type, got %q", statusEvent.Type)
+	}
+	if statusEvent.DocumentID != documentID.String() {
+		t.Fatalf("expected statusChanged documentId %q, got %q", documentID, statusEvent.DocumentID)
 	}
 	if statusEvent.ProposalID != proposalID.String() || statusEvent.Status != string(collabModels.ProposalStatusAccepted) {
 		t.Fatalf("unexpected status event: %+v", statusEvent)
@@ -374,6 +393,7 @@ func TestCollabHandler_WSProposalAcceptDispatchAndBroadcast(t *testing.T) {
 	gotReq := proposalService.acceptReqs[0]
 	expectedHash, err := buildCanonicalRequestHash(map[string]any{
 		"action":     wsTypeProposalAccept,
+		"documentId": documentID.String(),
 		"proposalId": proposalID.String(),
 		"userId":     "55555555-5555-5555-5555-555555555555",
 	})
@@ -395,6 +415,7 @@ func TestCollabHandler_WSProposalGroupAcceptResultEvent(t *testing.T) {
 	store := &testCollabStore{}
 
 	groupID := uuid.MustParse("99999999-9999-9999-9999-999999999999")
+	documentID := uuid.MustParse("aaaaaaaa-1111-1111-1111-111111111111")
 	proposalService := &testProposalService{
 		groupResult: &collabSvc.GroupAcceptResult{
 			Payload: collabModels.GroupAcceptResponsePayload{
@@ -416,7 +437,7 @@ func TestCollabHandler_WSProposalGroupAcceptResultEvent(t *testing.T) {
 	server := newTestCollabServerWithProposalDeps(t, resolver, verifier, store, proposalService, &noopProposalStore{})
 	defer server.Close()
 
-	wsURL := asWebSocketURL(t, server.URL, "/ws/documents/aaaaaaaa-1111-1111-1111-111111111111")
+	wsURL := asWebSocketURL(t, server.URL, "/ws/documents/"+documentID.String())
 	conn, err := websocket.Dial(wsURL, "", "http://localhost/")
 	if err != nil {
 		t.Fatalf("dial websocket: %v", err)
@@ -426,7 +447,7 @@ func TestCollabHandler_WSProposalGroupAcceptResultEvent(t *testing.T) {
 	if err := websocket.Message.Send(conn, "valid-token"); err != nil {
 		t.Fatalf("send auth token: %v", err)
 	}
-	if err := websocket.Message.Send(conn, buildEnvelopeSyncStep1(t)); err != nil {
+	if err := websocket.Message.Send(conn, buildEnvelopeSyncStep1(t, documentID)); err != nil {
 		t.Fatalf("send sync step1: %v", err)
 	}
 	_ = readWSBinaryMessage(t, conn)
@@ -435,6 +456,7 @@ func TestCollabHandler_WSProposalGroupAcceptResultEvent(t *testing.T) {
 
 	msg := proposalGroupAcceptCommand{
 		Type:           wsTypeProposalGroupAccept,
+		DocumentID:     documentID.String(),
 		GroupID:        groupID.String(),
 		IdempotencyKey: "group-key",
 	}
@@ -450,6 +472,9 @@ func TestCollabHandler_WSProposalGroupAcceptResultEvent(t *testing.T) {
 	if event.Type != wsTypeProposalGroupAcceptEvent {
 		t.Fatalf("expected type %q, got %q", wsTypeProposalGroupAcceptEvent, event.Type)
 	}
+	if event.DocumentID != documentID.String() {
+		t.Fatalf("expected group result documentId %q, got %q", documentID, event.DocumentID)
+	}
 	if len(event.Outcomes) != 2 {
 		t.Fatalf("expected 2 outcomes, got %d", len(event.Outcomes))
 	}
@@ -460,7 +485,7 @@ func TestCollabHandler_WSProposalGroupAcceptResultEvent(t *testing.T) {
 	gotReq := proposalService.groupAcceptReqs[0]
 	expectedHash, err := buildCanonicalRequestHash(map[string]any{
 		"action":     wsTypeProposalGroupAccept,
-		"documentId": "aaaaaaaa-1111-1111-1111-111111111111",
+		"documentId": documentID.String(),
 		"groupId":    groupID.String(),
 		"userId":     "88888888-8888-8888-8888-888888888888",
 	})
@@ -469,6 +494,104 @@ func TestCollabHandler_WSProposalGroupAcceptResultEvent(t *testing.T) {
 	}
 	if gotReq.RequestHash != expectedHash {
 		t.Fatalf("unexpected request hash: got %q want %q", gotReq.RequestHash, expectedHash)
+	}
+}
+
+func TestCollabHandler_WSProposalAcceptRejectsMissingDocumentID(t *testing.T) {
+	resolver := &testCollabResolver{allowed: true}
+	verifier := &testJWTVerifier{
+		tokens: map[string]*models.SupabaseClaims{
+			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "12121212-1212-1212-1212-121212121212"}},
+		},
+	}
+	store := &testCollabStore{}
+
+	documentID := uuid.MustParse("13131313-1313-1313-1313-131313131313")
+	proposalService := &testProposalService{}
+	server := newTestCollabServerWithProposalDeps(t, resolver, verifier, store, proposalService, &noopProposalStore{})
+	defer server.Close()
+
+	wsURL := asWebSocketURL(t, server.URL, "/ws/documents/"+documentID.String())
+	conn, err := websocket.Dial(wsURL, "", "http://localhost/")
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer conn.Close()
+
+	if err := websocket.Message.Send(conn, "valid-token"); err != nil {
+		t.Fatalf("send auth token: %v", err)
+	}
+	if err := websocket.Message.Send(conn, buildEnvelopeSyncStep1(t, documentID)); err != nil {
+		t.Fatalf("send sync step1: %v", err)
+	}
+	_ = readWSBinaryMessage(t, conn)
+	_ = readWSBinaryMessage(t, conn)
+	_ = readWSRawMessage(t, conn) // proposal:snapshot
+
+	msg := map[string]string{
+		"type":           wsTypeProposalAccept,
+		"proposalId":     "14141414-1414-1414-1414-141414141414",
+		"idempotencyKey": "k",
+	}
+	if err := websocket.JSON.Send(conn, msg); err != nil {
+		t.Fatalf("send proposal:accept: %v", err)
+	}
+
+	got := readWSErrorMessage(t, conn)
+	if got.Code != "INTERNAL_ERROR" {
+		t.Fatalf("expected INTERNAL_ERROR, got %q", got.Code)
+	}
+	if len(proposalService.acceptReqs) != 0 {
+		t.Fatalf("expected no accept calls, got %d", len(proposalService.acceptReqs))
+	}
+}
+
+func TestCollabHandler_WSProposalRejectRejectsMismatchedDocumentID(t *testing.T) {
+	resolver := &testCollabResolver{allowed: true}
+	verifier := &testJWTVerifier{
+		tokens: map[string]*models.SupabaseClaims{
+			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "15151515-1515-1515-1515-151515151515"}},
+		},
+	}
+	store := &testCollabStore{}
+
+	documentID := uuid.MustParse("16161616-1616-1616-1616-161616161616")
+	proposalService := &testProposalService{}
+	server := newTestCollabServerWithProposalDeps(t, resolver, verifier, store, proposalService, &noopProposalStore{})
+	defer server.Close()
+
+	wsURL := asWebSocketURL(t, server.URL, "/ws/documents/"+documentID.String())
+	conn, err := websocket.Dial(wsURL, "", "http://localhost/")
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer conn.Close()
+
+	if err := websocket.Message.Send(conn, "valid-token"); err != nil {
+		t.Fatalf("send auth token: %v", err)
+	}
+	if err := websocket.Message.Send(conn, buildEnvelopeSyncStep1(t, documentID)); err != nil {
+		t.Fatalf("send sync step1: %v", err)
+	}
+	_ = readWSBinaryMessage(t, conn)
+	_ = readWSBinaryMessage(t, conn)
+	_ = readWSRawMessage(t, conn) // proposal:snapshot
+
+	msg := proposalRejectCommand{
+		Type:       wsTypeProposalReject,
+		DocumentID: "17171717-1717-1717-1717-171717171717",
+		ProposalID: "18181818-1818-1818-1818-181818181818",
+	}
+	if err := websocket.JSON.Send(conn, msg); err != nil {
+		t.Fatalf("send proposal:reject: %v", err)
+	}
+
+	got := readWSErrorMessage(t, conn)
+	if got.Code != "INTERNAL_ERROR" {
+		t.Fatalf("expected INTERNAL_ERROR, got %q", got.Code)
+	}
+	if len(proposalService.rejectReqs) != 0 {
+		t.Fatalf("expected no reject calls, got %d", len(proposalService.rejectReqs))
 	}
 }
 
@@ -488,6 +611,7 @@ func TestCollabHandler_WSProposalAcceptErrorMapping_IdempotencyConflict(t *testi
 	defer server.Close()
 
 	wsURL := asWebSocketURL(t, server.URL, "/ws/documents/eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
+	documentID := uuid.MustParse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
 	conn, err := websocket.Dial(wsURL, "", "http://localhost/")
 	if err != nil {
 		t.Fatalf("dial websocket: %v", err)
@@ -497,7 +621,7 @@ func TestCollabHandler_WSProposalAcceptErrorMapping_IdempotencyConflict(t *testi
 	if err := websocket.Message.Send(conn, "valid-token"); err != nil {
 		t.Fatalf("send auth token: %v", err)
 	}
-	if err := websocket.Message.Send(conn, buildEnvelopeSyncStep1(t)); err != nil {
+	if err := websocket.Message.Send(conn, buildEnvelopeSyncStep1(t, documentID)); err != nil {
 		t.Fatalf("send sync step1: %v", err)
 	}
 	_ = readWSBinaryMessage(t, conn)
@@ -506,6 +630,7 @@ func TestCollabHandler_WSProposalAcceptErrorMapping_IdempotencyConflict(t *testi
 
 	msg := proposalAcceptCommand{
 		Type:           wsTypeProposalAccept,
+		DocumentID:     documentID.String(),
 		ProposalID:     "ffffffff-ffff-ffff-ffff-ffffffffffff",
 		IdempotencyKey: "k",
 	}
@@ -535,6 +660,7 @@ func TestCollabHandler_WSProposalAcceptErrorMapping_RateLimited(t *testing.T) {
 	defer server.Close()
 
 	wsURL := asWebSocketURL(t, server.URL, "/ws/documents/eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
+	documentID := uuid.MustParse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
 	conn, err := websocket.Dial(wsURL, "", "http://localhost/")
 	if err != nil {
 		t.Fatalf("dial websocket: %v", err)
@@ -544,7 +670,7 @@ func TestCollabHandler_WSProposalAcceptErrorMapping_RateLimited(t *testing.T) {
 	if err := websocket.Message.Send(conn, "valid-token"); err != nil {
 		t.Fatalf("send auth token: %v", err)
 	}
-	if err := websocket.Message.Send(conn, buildEnvelopeSyncStep1(t)); err != nil {
+	if err := websocket.Message.Send(conn, buildEnvelopeSyncStep1(t, documentID)); err != nil {
 		t.Fatalf("send sync step1: %v", err)
 	}
 	_ = readWSBinaryMessage(t, conn)
@@ -553,6 +679,7 @@ func TestCollabHandler_WSProposalAcceptErrorMapping_RateLimited(t *testing.T) {
 
 	msg := proposalAcceptCommand{
 		Type:           wsTypeProposalAccept,
+		DocumentID:     documentID.String(),
 		ProposalID:     "ffffffff-ffff-ffff-ffff-ffffffffffff",
 		IdempotencyKey: "k",
 	}

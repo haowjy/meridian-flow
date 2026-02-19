@@ -328,8 +328,25 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 			continue
 		}
 
-		envelopeType := rawMessage[0]
-		payload := rawMessage[1:]
+		envelopeType, framedDocUUID, payload, err := unframeEnvelope(rawMessage)
+		if err != nil {
+			h.logger.Warn("collab frame parse failed",
+				"document_id", docID,
+				"connection_id", wsConn.ID(),
+				"error", err,
+			)
+			h.sendError(wsConn, "RESET_REQUIRED", "document state requires reset")
+			return
+		}
+		if framedDocUUID != docUUID {
+			h.logger.Warn("collab frame document mismatch",
+				"document_id", docID,
+				"connection_id", wsConn.ID(),
+				"framed_document_id", framedDocUUID.String(),
+			)
+			h.sendError(wsConn, "RESET_REQUIRED", "document frame does not match websocket document")
+			return
+		}
 
 		switch envelopeType {
 		case collabEnvelopeSyncStep1, collabEnvelopeSyncStep2, collabEnvelopeUpdate:
@@ -375,7 +392,7 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 					return
 				}
 
-				if err := wsConn.Send(frameEnvelope(responseEnvelope, responsePayload)); err != nil {
+				if err := wsConn.Send(frameEnvelope(responseEnvelope, docUUID, responsePayload)); err != nil {
 					return
 				}
 			}
@@ -392,7 +409,7 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 					return
 				}
 
-				if err := wsConn.Send(frameEnvelope(collabEnvelopeSyncStep1, serverStep1Payload)); err != nil {
+				if err := wsConn.Send(frameEnvelope(collabEnvelopeSyncStep1, docUUID, serverStep1Payload)); err != nil {
 					return
 				}
 
@@ -411,7 +428,7 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 			}
 
 			if len(updatePayload) > 0 {
-				updateFrame, err := buildUpdateFrame(updatePayload)
+				updateFrame, err := buildUpdateFrame(docUUID, updatePayload)
 				if err != nil {
 					h.logger.Warn("collab update frame build failed",
 						"document_id", docID,
@@ -426,7 +443,7 @@ func (h *CollabHandler) handleDocumentSocket(ctx context.Context, docID string, 
 			}
 
 		case collabEnvelopeAwareness:
-			h.documentBroadcaster.Broadcast(docID, rawMessage, wsConn)
+			h.documentBroadcaster.Broadcast(docID, frameEnvelope(collabEnvelopeAwareness, docUUID, payload), wsConn)
 
 		default:
 			// Ignore unknown envelope types for forward compatibility.

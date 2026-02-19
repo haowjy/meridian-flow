@@ -7,14 +7,17 @@ audience: developer, architect
 **Status:** Draft
 **Purpose:** Define external contracts for Yjs transport, proposal lifecycle, and document sync.
 
-## Architecture: Single WebSocket
+## Architecture: Single WebSocket Per Project
 
-Everything runs over **one WebSocket connection per document** between the browser and the Go backend:
+> **Phase 4.6 migration:** Transport changed from per-document to per-project WebSocket. Documents are subscribed/unsubscribed dynamically over a single connection.
+
+Everything runs over **one WebSocket connection per project** between the browser and the Go backend:
 
 ```
-Browser <--> Go Backend (single WS per document)
-  |-- Binary frames: Yjs sync protocol (state vectors, updates)
-  |-- Binary frames: Yjs awareness protocol (cursors, presence)
+Browser <--> Go Backend (single WS per project)
+  |-- JSON frames: doc:subscribe / doc:unsubscribe (document lifecycle)
+  |-- Binary frames: Yjs sync protocol (document-multiplexed)
+  |-- Binary frames: Yjs awareness protocol (document-multiplexed)
   |-- JSON frames: Application messages (proposals, heartbeat, errors)
 ```
 
@@ -57,28 +60,64 @@ Meridian uses a single-byte message-type prefix to multiplex sync and awareness 
 | `0x02` (`messageYjsUpdate`) | Yjs incremental update |
 | `0x03` (`messageAwareness`) | Yjs awareness update |
 
+### Document-Multiplexed Binary Framing (Phase 4.6)
+
+Binary frames include a 16-byte document UUID for routing over the shared project connection:
+
+```
+[1B Meridian envelope][16B docID (UUID binary, big-endian)][N bytes Yjs protocol payload]
+```
+
+The envelope byte meanings are unchanged (see table above). The 16-byte UUID identifies which document the frame belongs to.
+
+### Document Subscribe/Unsubscribe Protocol (Phase 4.6)
+
+```
+Client → Server:
+  { "type": "doc:subscribe", "documentId": "uuid" }
+  { "type": "doc:unsubscribe", "documentId": "uuid" }
+
+Server → Client:
+  { "type": "doc:subscribed", "documentId": "uuid" }
+  { "type": "doc:unsubscribed", "documentId": "uuid" }
+  { "type": "doc:error", "documentId": "uuid", "code": "string", "message": "string" }
+```
+
+**Subscribe handshake sequence (strict order):**
+1. Client sends `doc:subscribe`
+2. Server validates ownership + project match
+3. Server sends sync-step1 (multiplexed binary frame)
+4. Server sends `proposal:snapshot` (JSON with `documentId`)
+5. Server sends `doc:subscribed` (LAST — signals client to start sync)
+
+**Idempotency:** Double-subscribe = no-op + re-send `doc:subscribed`. Unsubscribe for non-subscribed doc = no-op + send `doc:unsubscribed`.
+
+**Reconnect:** Client maintains `activeSubscriptions` set and replays all subscriptions after re-auth on reconnect.
+
 ### Application-Level Messages (JSON text frames)
 
 ```typescript
 // Server -> Client
-{ type: "proposal:snapshot", proposals: Proposal[] }
-{ type: "proposal:new", proposal: Proposal }
-{ type: "proposal:statusChanged", proposalId: string, status: "accepted" | "rejected" }
-{ type: "proposal:groupAcceptResult", outcomes: [{ proposalId: string, status: "accepted" | "skipped", error?: string }] }
+{ type: "proposal:snapshot", documentId: string, proposals: Proposal[] }
+{ type: "proposal:new", proposal: Proposal }  // Proposal already contains documentId
+{ type: "proposal:statusChanged", documentId: string, proposalId: string, status: "accepted" | "rejected" }
+{ type: "proposal:groupAcceptResult", documentId: string, outcomes: [{ proposalId: string, status: "accepted" | "skipped", error?: string }] }
 { type: "heartbeat" }
 { type: "readOnlyChanged", readOnly: boolean, reason: "permission_change" }  // Phase 5 only (viewer role)
 { type: "error", code: string, message: string }
 
 // Client -> Server
-{ type: "proposal:accept", proposalId: string, idempotencyKey: string }
-{ type: "proposal:reject", proposalId: string }
-{ type: "proposal:groupAccept", groupId: string, idempotencyKey: string }
+{ type: "proposal:accept", documentId: string, proposalId: string, idempotencyKey: string }
+{ type: "proposal:reject", documentId: string, proposalId: string }
+{ type: "proposal:groupAccept", documentId: string, groupId: string, idempotencyKey: string }
 { type: "heartbeat" }
 ```
 
+> **Note:** All document-scoped events and commands include `documentId` for routing over the multiplexed project WebSocket. `proposal:new` carries `documentId` inside the `Proposal` object. `proposal:snapshot` is scoped to a single document (sent per-document during subscribe handshake).
+
 `proposal:snapshot` contract:
-- Sent after successful auth + Yjs sync on each connect/reconnect.
-- Contains current pending proposals (`status='proposed'`) for the document.
+- Sent per-document after successful subscribe + Yjs sync-step1.
+- Contains `documentId` and current pending proposals (`status='proposed'`) for that document.
 - Incremental events (`proposal:new`, `proposal:statusChanged`) apply after this baseline snapshot.
 
 ### Proposal Type (WS JSON)
@@ -117,20 +156,23 @@ All dates in WS JSON use ISO 8601 format. All binary data (Yjs updates) uses bas
 
 ## Session Handshake Contract (Required)
 
-1. Client opens WebSocket: `wss://<public-host>/ws/documents/{documentId}` (no auth in URL).
+### Project WebSocket (Phase 4.6 — current)
+
+1. Client opens WebSocket: `wss://<public-host>/ws/projects/{projectId}` (no auth in URL).
 2. Client sends JWT token as the **first message** — a WebSocket **text frame** containing the raw JWT string (no JSON wrapper, no prefix).
-3. Server validates JWT, extracts user ID. On failure: error message + close.
-4. Yjs sync protocol initiates (sync step 1/2).
-5. Server loads persisted Yjs state and syncs to client.
-6. Client receives full document state — no manual version tracking needed.
-7. Server sends `proposal:snapshot` (pending proposals for the document).
+3. Server validates JWT, extracts user ID, verifies `CanAccessProject`. On failure: error message + close.
+4. Connection is live — no documents subscribed yet.
+5. Client sends `doc:subscribe` for each document to sync (see subscribe handshake above).
 
 ```
 Browser: WS upgrade (no auth in URL)
 Browser -> Server: first message = JWT token
-Server: validate JWT, extract user ID
-Server -> Browser: Yjs sync step 2 (or error + close)
-Server -> Browser: proposal:snapshot (pending proposals)
+Server: validate JWT, verify project access
+Browser -> Server: { "type": "doc:subscribe", "documentId": "..." }
+Server -> Browser: sync-step1 (multiplexed binary)
+Server -> Browser: proposal:snapshot (JSON)
+Server -> Browser: { "type": "doc:subscribed", "documentId": "..." }
+Browser: runtime.startSync()
 ```
 
 ## Protocol Error Contract (v1)
