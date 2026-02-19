@@ -16,8 +16,16 @@ const log = makeLogger("tree-sync");
  * - CRUD operations for the Dexie pendingTreeOps table
  * - Coalescing redundant queued ops before drain
  *
- * Queue drain (replay to server) is NOT handled here — that's Slice 5.
+ * Queue drain (replay to server) is handled in treeQueueDrain.ts.
  */
+
+/** Get all pending ops across all projects, ordered by id (FIFO). */
+export async function getAllPendingOps(): Promise<PendingTreeOp[]> {
+  return db.pendingTreeOps
+    .orderBy("id")
+    .filter((op) => op.status === "pending")
+    .toArray();
+}
 
 /** Queue a tree mutation op to Dexie for later replay. */
 export async function queueTreeOp(
