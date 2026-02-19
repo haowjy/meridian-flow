@@ -97,6 +97,11 @@ describe("project collab transport", () => {
     reconnectedSocket.open();
 
     expect(reconnectedSocket.sent[0]).toBe(AUTH_TOKEN);
+    // Subscriptions replay only after server confirms auth with project:connected.
+    expect(extractDocSubscribeIds(reconnectedSocket.sent)).toEqual([]);
+    reconnectedSocket.emitTextMessage(
+      JSON.stringify({ type: "project:connected" }),
+    );
     expect(extractDocSubscribeIds(reconnectedSocket.sent)).toEqual([DOC_A, DOC_B]);
 
     transport.stop();

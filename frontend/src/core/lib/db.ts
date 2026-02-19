@@ -1,11 +1,19 @@
 import Dexie, { Table } from "dexie";
 import { Document } from "@/features/documents/types/document";
 import { Thread, Turn } from "@/features/threads/types";
+import type {
+  PendingDocumentSave,
+  PendingTreeOp,
+  ProjectTreeCache,
+} from "@/core/lib/offlineTypes";
 
 export class MeridianDB extends Dexie {
   documents!: Table<Document & { content: string }, string>;
   threads!: Table<Thread, string>;
   messages!: Table<Turn, string>;
+  projectTrees!: Table<ProjectTreeCache, string>;
+  pendingDocumentSaves!: Table<PendingDocumentSave, string>;
+  pendingTreeOps!: Table<PendingTreeOp, number>;
 
   constructor() {
     super("meridian");
@@ -38,7 +46,20 @@ export class MeridianDB extends Dexie {
       threads: "id, projectId, createdAt",
       messages: "id, threadId, createdAt, lastAccessedAt",
     });
+
+    // Version 5: Add offline-first tree cache + pending operation tables
+    this.version(5).stores({
+      documents: "id, projectId, folderId, updatedAt",
+      threads: "id, projectId, createdAt",
+      messages: "id, threadId, createdAt, lastAccessedAt",
+      projectTrees: "projectId",
+      pendingDocumentSaves: "documentId",
+      pendingTreeOps: "++id, projectId, [projectId+status]",
+    });
   }
 }
 
 export const db = new MeridianDB();
+export const projectTrees = db.projectTrees;
+export const pendingDocumentSaves = db.pendingDocumentSaves;
+export const pendingTreeOps = db.pendingTreeOps;

@@ -122,7 +122,7 @@ This directory contains detailed documentation for all features in Meridian, org
 ### [f-state-management/](f-state-management/)
 **Frontend state and caching**
 - 5 Zustand stores (Project, Tree, Thread, UI, Editor)
-- IndexedDB via Dexie (documents, threads, messages)
+- IndexedDB via Dexie v5 (documents, threads, messages, projectTrees, pendingDocumentSaves, pendingTreeOps)
 - Optimistic updates, in-memory retry queue
 - Cache strategies: Reconcile-Newest, Network-First
 

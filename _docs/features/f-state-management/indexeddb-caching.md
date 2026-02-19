@@ -6,7 +6,7 @@ feature: "IndexedDB Caching"
 
 # IndexedDB Caching
 
-**Dexie for persistent caching of documents, threads, and messages.**
+**Dexie v5 for persistent cache + offline-first queue storage.**
 
 ## Status: ✅ Complete
 
@@ -20,8 +20,11 @@ feature: "IndexedDB Caching"
 - `documents` - Full documents with content (cache-first)
 - `threads` - Thread metadata (network-first)
 - `messages` - Thread messages (network-first, prepared for windowing)
+- `projectTrees` - Per-project tree snapshot cache (`projectId`, `folders`, `documents`, `updatedAt`)
+- `pendingDocumentSaves` - Persistent last-write-wins document save queue (`documentId`, `content`, `createdAt`)
+- `pendingTreeOps` - Persistent ordered tree mutation queue (`++id`, `projectId`, `[projectId+status]`)
 
-**Note**: Thread/turn Dexie caching intentionally disabled for MVP (TODO in useThreadStore.ts:15-21)
+**Note**: Thread/turn Dexie caching is intentionally disabled for MVP (`useThreadStore.ts`). The three offline-first tables are v5 schema foundations and are used by follow-up slices.
 
 ---
 

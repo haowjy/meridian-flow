@@ -350,6 +350,12 @@ export function createProjectCollabTransport(
       return;
     }
 
+    if (textEvent.type === "project:connected") {
+      // Auth succeeded — safe to send commands now.
+      replayActiveSubscriptions(sourceSocket);
+      return;
+    }
+
     if (textEvent.type === "heartbeat") {
       const openSocket = getOpenSocket();
       if (openSocket == null || openSocket !== sourceSocket) {
@@ -455,7 +461,7 @@ export function createProjectCollabTransport(
     ws.onopen = () => {
       reconnectAttempt = 0;
       ws.send(token);
-      replayActiveSubscriptions(ws);
+      // Subscriptions are replayed after "project:connected" ack from server.
     };
 
     ws.onmessage = (event) => {

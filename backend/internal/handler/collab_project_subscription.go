@@ -83,6 +83,7 @@ const (
 	wsTypeDocSubscribed   = "doc:subscribed"
 	wsTypeDocUnsubscribed = "doc:unsubscribed"
 	wsTypeDocError        = "doc:error"
+	wsTypeProjectConnected = "project:connected"
 )
 
 type docSubscribeCommand struct {

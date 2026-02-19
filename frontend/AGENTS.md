@@ -207,19 +207,27 @@ Dev: optional retry inspector in dev builds — set `VITE_DEV_TOOLS=1` to enable
 
 **Location**: `frontend/src/core/lib/db.ts`
 
-Current version: 4
+Current version: 5
 
 **Tables**:
 
 - `documents`: Full documents with content (cache-first)
 - `threads`: Thread metadata (network-first)
 - `messages`: Thread messages (network-first, windowed to 100)
+- `projectTrees`: Per-project tree snapshot cache (`projectId`, `folders`, `documents`, `updatedAt`)
+- `pendingDocumentSaves`: Last-write-wins persistent document save queue (`documentId`, `content`, `createdAt`)
+- `pendingTreeOps`: Ordered persistent tree operation queue (`id`, `projectId`, `opType`, `entityType`, `entityId`, `params`, `createdAt`, `status`)
 
 **Indexes**:
 
 - `documents`: `id, projectId, folderId, updatedAt`
 - `threads`: `id, projectId, createdAt`
 - `messages`: `id, threadId, createdAt, lastAccessedAt`
+- `projectTrees`: `projectId`
+- `pendingDocumentSaves`: `documentId`
+- `pendingTreeOps`: `++id, projectId, [projectId+status]`
+
+**Runtime note**: `projectTrees`, `pendingDocumentSaves`, and `pendingTreeOps` are part of the offline-first v5 schema foundation and are wired by follow-up slices.
 
 **Auto-eviction**: Not implemented yet (YAGNI). Add only when quota issues appear.
 
