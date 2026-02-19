@@ -12,7 +12,7 @@ Go REST API for the Meridian file management system and agentic tools.
 - **HTTP:** Go standard library `net/http`
 - **Database:** PostgreSQL via [Supabase](https://supabase.com/)
 - **Driver:** pgx v5 (native PostgreSQL)
-- **Architecture:** Clean Architecture (Handler → Service → Repository)
+- **Architecture:** Clean Architecture (Handler -> Service -> Repository)
 
 ## Features
 
@@ -120,7 +120,7 @@ Use **manual script** for one-time environment setup:
 ```bash
 # Interactive mode (recommended)
 ./scripts/migrate-prefix.sh
-# Shows menu → select test/prod → enter DB URL → migrates
+# Shows menu -> select test/prod -> enter DB URL -> migrates
 
 # Direct mode (for automation)
 ./scripts/migrate-prefix.sh test_
@@ -202,10 +202,10 @@ ANTHROPIC_API_KEY=sk-ant-your-key-here
 **Common issues:** See [Debugging Guide](../_docs/technical/backend/development/debugging.md)
 
 **Quick fixes:**
-- Database connection errors → Check `SUPABASE_DB_URL` and Supabase dashboard
-- "Prepared statement already exists" → Ensure using port 6543 (development)
-- Seeding fails → Run `make seed-fresh`
-- CORS errors → Add frontend URL to `CORS_ORIGINS`
+- Database connection errors -> Check `SUPABASE_DB_URL` and Supabase dashboard
+- "Prepared statement already exists" -> Ensure using port 6543 (development)
+- Seeding fails -> Run `make seed-fresh`
+- CORS errors -> Add frontend URL to `CORS_ORIGINS`
 
 ## License
 

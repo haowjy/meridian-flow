@@ -70,7 +70,7 @@ flowchart LR
 
 Standard merge view treats original as a baseline to compare against. Meridian's requirement: **edits outside hunks update both versions**.
 
-With PUA markers, shared text exists once → `parseMergedDocument()` naturally includes it in both projections.
+With PUA markers, shared text exists once -> `parseMergedDocument()` naturally includes it in both projections.
 
 ### Why Transactions (Not State)
 

@@ -26,9 +26,9 @@ Supabase supports two JWT signing methods. Choose based on project creation date
 **Recommendation:** Use RS256 + JWKS for new projects (more secure, future-proof, automatic key rotation).
 
 **Check your project:**
-- Supabase Dashboard → Settings → API
-- If "JWKS Endpoint" exists → Use RS256
-- If only "JWT Secret" exists → Use HS256 (then migrate)
+- Supabase Dashboard -> Settings -> API
+- If "JWKS Endpoint" exists -> Use RS256
+- If only "JWT Secret" exists -> Use HS256 (then migrate)
 
 ---
 
@@ -202,7 +202,7 @@ go get github.com/golang-jwt/jwt/v5  # Only need this
 
 **4. Environment Variables**
 ```bash
-# Get from: Supabase Dashboard → Settings → API → JWT Secret
+# Get from: Supabase Dashboard -> Settings -> API -> JWT Secret
 SUPABASE_JWT_SECRET=your-jwt-secret-here
 ```
 
@@ -241,10 +241,10 @@ SUPABASE_JWT_SECRET=your-jwt-secret-here
 ### Unit Testing
 
 Create `backend/internal/middleware/auth_test.go`:
-- Test missing Authorization header → 401
-- Test invalid format (no "Bearer") → 401
-- Test expired token → 401
-- Test valid token → user ID in context
+- Test missing Authorization header -> 401
+- Test invalid format (no "Bearer") -> 401
+- Test expired token -> 401
+- Test valid token -> user ID in context
 
 For valid token tests, use test JWT from https://jwt.io or mock JWKS endpoint.
 
@@ -274,7 +274,7 @@ For valid token tests, use test JWT from https://jwt.io or mock JWKS endpoint.
 
 ## Migration Path
 
-### Current State → RS256
+### Current State -> RS256
 
 ```mermaid
 graph LR

@@ -42,9 +42,9 @@ While documents/folders are stored with UUID foreign keys internally, paths are 
 - **Three semantic tools** - Each represents a distinct user intent ✓
 
 **The three intents:**
-1. **"Show me what's at this path"** → `view`
-2. **"Show me the organizational structure"** → `tree`
-3. **"Find documents matching this query"** → `search`
+1. **"Show me what's at this path"** -> `view`
+2. **"Show me the organizational structure"** -> `tree`
+3. **"Find documents matching this query"** -> `search`
 
 These map to how users naturally ask questions about their content.
 
@@ -165,7 +165,7 @@ tree(folder="Characters")
 **Why:**
 - Paths are how users think about their documents
 - Eliminates multi-step UUID lookup ("what's the UUID for Characters?")
-- Reduces tool calls dramatically (7+ calls → 1 call for nested navigation)
+- Reduces tool calls dramatically (7+ calls -> 1 call for nested navigation)
 - Aligns with existing API path notation support
 
 **Trade-off:**  
@@ -284,49 +284,49 @@ Adds a parameter. Worth it for consistency and future scalability.
 ```
 User: "What's in my Characters folder?"
 LLM: view(path="Characters")
-→ Returns list of documents/subfolders at this level
+-> Returns list of documents/subfolders at this level
 ```
 
 ### Pattern 2: Reading Content
 ```
 User: "Read the Elara character document"
 LLM: view(path="Characters/Elara")
-→ Returns full document markdown content
+-> Returns full document markdown content
 ```
 
 ### Pattern 3: Understanding Structure
 ```
 User: "How is my project organized?"
 LLM: tree(folder="", depth=2)
-→ Returns nested tree of entire project (2 levels deep)
+-> Returns nested tree of entire project (2 levels deep)
 ```
 
 ### Pattern 4: Finding Content
 ```
 User: "Where did I write about dragons?"
 LLM: search(query="dragon")
-→ Returns matching documents with metadata
+-> Returns matching documents with metadata
 LLM: view(path="Worldbuilding/Creatures/Dragons")
-→ Reads specific document to answer question
+-> Reads specific document to answer question
 ```
 
 ### Pattern 5: Scoped Exploration
 ```
 User: "Find all mentions of betrayal in my plot outlines"
 LLM: search(query="betrayal", folder="Plot/Outlines")
-→ Returns matches scoped to that folder only
+-> Returns matches scoped to that folder only
 ```
 
 ### Pattern 6: Multi-Step Discovery
 ```
 User: "Tell me about the character who owns the magic sword"
 LLM: search(query="magic sword")
-→ Finds "Items/Weapons/Dawnblade" mentions sword owner
+-> Finds "Items/Weapons/Dawnblade" mentions sword owner
 LLM: view(path="Items/Weapons/Dawnblade")
-→ Reads document: "Owned by Kael Stormborn"
+-> Reads document: "Owned by Kael Stormborn"
 LLM: view(path="Characters/Kael Stormborn")
-→ Reads character document
-→ Responds with character details
+-> Reads character document
+-> Responds with character details
 ```
 
 ---

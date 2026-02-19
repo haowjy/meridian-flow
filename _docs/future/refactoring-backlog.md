@@ -4,8 +4,8 @@ Technical debt and refactoring opportunities discovered during development.
 
 ## How to Use
 - Run `/backlog` to review and update this file
-- Items are prioritized: High → Medium → Low
-- Check off items when completed (⬜ → ✅)
+- Items are prioritized: High -> Medium -> Low
+- Check off items when completed (⬜ -> ✅)
 
 ---
 
@@ -27,7 +27,9 @@ Technical debt and refactoring opportunities discovered during development.
 
 ### Low Priority
 
-(empty)
+| Issue | Location | Refactor | Status |
+|-------|----------|----------|--------|
+| No portable log-query abstraction | `.agents/skills/orchestrate/scripts/` | Create `query-log.sh` that abstracts output format differences across Claude/Codex/OpenCode backends, enabling agents to search/slice agent run logs without knowing the format | ⬜ |
 
 ---
 

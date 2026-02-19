@@ -51,9 +51,9 @@ feature: "Built-in Tools"
 ## Auto-Mapping
 
 Built-in tools auto-map from minimal definitions:
-- `{"name": "tavily_web_search"}` → Custom `web_search` tool with `ExecutionSide: Local`
-- `{"name": "bash"}` → `bash_20250305` (provider-specific)
-- `{"name": "text_editor"}` → `text_editor_20250305` (provider-specific)
+- `{"name": "tavily_web_search"}` -> Custom `web_search` tool with `ExecutionSide: Local`
+- `{"name": "bash"}` -> `bash_20250305` (provider-specific)
+- `{"name": "text_editor"}` -> `text_editor_20250305` (provider-specific)
 
 ---
 

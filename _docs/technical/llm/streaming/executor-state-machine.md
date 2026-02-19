@@ -90,24 +90,24 @@ flowchart LR
 flowchart TD
     subgraph Soft["Soft Cancel (most providers)"]
         S1["User clicks Stop"] --> S2["RequestSoftCancel()"]
-        S2 --> S3["State → DrainMetadata"]
+        S2 --> S3["State -> DrainMetadata"]
         S3 --> S4["Persist partial text"]
         S4 --> S5["SSE: turn_error (cancelled)"]
         S5 --> S6["Disconnect clients"]
         S6 --> S7["Provider continues..."]
         S7 --> S8{"Metadata arrives?"}
-        S8 -->|"Yes (< 5m)"| S9["Save tokens → Completed"]
-        S8 -->|"No (timeout)"| S10["Cancel provider + Estimate tokens → Errored"]
+        S8 -->|"Yes (< 5m)"| S9["Save tokens -> Completed"]
+        S8 -->|"No (timeout)"| S10["Cancel provider + Estimate tokens -> Errored"]
     end
 
     subgraph Hard["Hard Cancel (Anthropic)"]
         H1["User clicks Stop"] --> H2["RequestHardCancel()"]
-        H2 --> H3["State → HardCancelled"]
+        H2 --> H3["State -> HardCancelled"]
         H3 --> H4["Context cancelled"]
         H4 --> H5["Estimate tokens"]
         H5 --> H6["Persist partial text"]
         H6 --> H7["SSE: turn_error (cancelled)"]
-        H7 --> H8["State → Errored"]
+        H7 --> H8["State -> Errored"]
     end
 ```
 

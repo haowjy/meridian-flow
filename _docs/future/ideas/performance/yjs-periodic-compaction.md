@@ -13,7 +13,7 @@ As documents accumulate Yjs updates over months, the binary state (`Y.encodeStat
 
 ## Proposed Solution
 
-Periodic compaction: `Y.encodeStateAsUpdate(doc)` → replace the stored state with a fresh encoding. This discards internal tombstones and produces a minimal representation of the current document state.
+Periodic compaction: `Y.encodeStateAsUpdate(doc)` -> replace the stored state with a fresh encoding. This discards internal tombstones and produces a minimal representation of the current document state.
 
 **Note:** The `DocumentCompactor` interface already includes `ReplaceState(ctx, docID, compactedState, content, aiContent)` for atomic swap of stored state with a compacted version. The interface is ready — only the trigger logic and scheduling need to be implemented.
 

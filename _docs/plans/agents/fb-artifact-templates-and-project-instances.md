@@ -181,7 +181,7 @@ erDiagram
 
 ## Key Flows (Skills example)
 
-### Install public skill template → project instance
+### Install public skill template -> project instance
 
 ```mermaid
 sequenceDiagram

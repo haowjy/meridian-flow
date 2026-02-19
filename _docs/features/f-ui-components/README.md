@@ -57,7 +57,7 @@ feature: "UI Components"
 ## Recent Changes
 
 **Theme v3 Migration** (h/skills branch):
-- Button: `accent` variant → `primary` variant (uses sage green)
+- Button: `accent` variant -> `primary` variant (uses sage green)
 - Label: Added `editorial` variant (uppercase, tracking-wide)
 - Textarea: New component added for multi-line input
 - Color semantics: `primary` (sage) for interactive, `favorite` (gold) for special emphasis

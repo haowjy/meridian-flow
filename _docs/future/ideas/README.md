@@ -12,6 +12,7 @@ Features and improvements to consider post-MVP.
 - [Proactive Assistance](./ai-behaviors/proactive-assistance.md) - AI detects issues and suggests improvements
 - [Consistency Checking](./ai-behaviors/consistency-checking.md) - Detect contradictions across documents
 - [AI Suggestions (3-Way Merge)](./ai-behaviors/ai-suggestions.md) - Collaborative editing with conflict resolution
+- [Line-Oriented Edit Commands](./ai-behaviors/line-oriented-edit-commands.md) - Add internal `delete_lines`/`replace_lines` for robust multiline edits
 
 ### Infrastructure
 - [Redis-Based Streaming](./infrastructure/redis-streaming.md) - Distributed SSE streaming for horizontal scaling

@@ -66,7 +66,7 @@ AI:
 └── Shows suggestion in thread
 
 Writer:
-├── Clicks "Review" → sees diff
+├── Clicks "Review" -> sees diff
 ├── Accepts changes
 └── Document updated
 
@@ -83,7 +83,7 @@ Writer: "This is magical."
 
 **What users see:**
 - Document tree (folders + documents)
-- Click document → opens in editor (single view, one document at a time)
+- Click document -> opens in editor (single view, one document at a time)
 - Create/rename/delete/move documents
 - Rich text editing (bold, italic, headings, lists)
 - Auto-save (every 2 seconds after typing stops)
@@ -148,8 +148,8 @@ Writer: "This is magical."
 ### 4. AI Tools & Editing
 
 **What users see:**
-- Ask AI to find information → AI searches and reads documents autonomously
-- Ask AI to improve writing → AI suggests edits
+- Ask AI to find information -> AI searches and reads documents autonomously
+- Ask AI to improve writing -> AI suggests edits
 - Review suggestions side-by-side
 - Accept or reject changes
 - AI can iterate on feedback
@@ -168,8 +168,8 @@ Writer: "This is magical."
 - **Accept/reject workflow**:
   - AI creates version (doesn't modify live document)
   - User reviews diff in editor
-  - Accept → applies changes, Reject → discards
-  - Can iterate: "make it shorter" → AI refines suggestion
+  - Accept -> applies changes, Reject -> discards
+  - Can iterate: "make it shorter" -> AI refines suggestion
 
 **Example flow:**
 ```
@@ -182,10 +182,10 @@ AI:
 
 User sees:
 - Suggestion card in thread
-- Click "Review" → opens diff view
-- Accept → document updated
+- Click "Review" -> opens diff view
+- Accept -> document updated
 - OR: "Make it shorter too"
-  → AI refines suggestion (v2 → v3)
+  -> AI refines suggestion (v2 -> v3)
 ```
 
 **MVP0 scope: Single-document editing only**
@@ -257,7 +257,7 @@ User sees:
 - ✅ Reconnection logic (Last-Event-ID catchup)
 - ✅ Cleanup on completion (automatic goroutine lifecycle)
 - ✅ Race condition fixes (atomic PersistAndClear, catchup mutex)
-- ✅ Multi-client support (one stream → many SSE connections)
+- ✅ Multi-client support (one stream -> many SSE connections)
 
 **Frontend:** ✅ Complete
 - ✅ Store session IDs
@@ -445,10 +445,10 @@ Returns: SSE stream
 
 ### AI Tools (Internal - Called by LLM during streaming)
 ```
-Tool: view_file(document_id) → document content
-Tool: get_tree(folder_id) → list of documents
-Tool: search_documents(query) → ranked results
-Tool: suggest_document_edits(document_id, edits) → version_id
+Tool: view_file(document_id) -> document content
+Tool: get_tree(folder_id) -> list of documents
+Tool: search_documents(query) -> ranked results
+Tool: suggest_document_edits(document_id, edits) -> version_id
 ```
 
 ### Document Versions
@@ -470,7 +470,7 @@ GET    /api/versions/:id
 - **AI tools execute successfully** (view_file, get_tree, search_documents)
 - **Tool results stream correctly** (tools execute during streaming)
 - **Version snapshots persist** (AI suggestions saved as versions)
-- **Suggestion workflow works** (create → review → accept/reject)
+- **Suggestion workflow works** (create -> review -> accept/reject)
 - **Diff viewer displays correctly** (side-by-side comparison)
 - Streaming works
 - Reconnection works
@@ -482,7 +482,7 @@ GET    /api/versions/:id
 - AI demonstrates context knowledge
 - **Writer asks AI to improve writing** (AI editing workflow)
 - **Writer reviews suggestions in diff view** (accept/reject flow)
-- **Writer refines suggestions iteratively** ("make it shorter" → AI updates)
+- **Writer refines suggestions iteratively** ("make it shorter" -> AI updates)
 - Writer says "this is helpful"
 - Writer wants to keep using it
 - **Writer feels in control** (not scared of AI auto-editing)
@@ -502,7 +502,7 @@ GET    /api/versions/:id
 **Advanced AI Features:**
 - Multi-document batch editing (AI updates multiple docs at once)
 - Skills system (different AI behaviors for different tasks)
-- Ideas → Lore → Story pipeline (three-phase workflow automation)
+- Ideas -> Lore -> Story pipeline (three-phase workflow automation)
 - Proactive AI suggestions (AI suggests without being asked)
 - Advanced @-reference features (autocomplete, fuzzy search)
 
@@ -545,8 +545,8 @@ GET    /api/versions/:id
    └─ AI shows suggestion in thread
 5. Writer reviews suggestion
    ├─ Opens diff viewer (side-by-side comparison)
-   ├─ Accepts → document updated
-   └─ OR refines: "make it shorter" → AI iterates
+   ├─ Accepts -> document updated
+   └─ OR refines: "make it shorter" -> AI iterates
 6. Writer: "This is magical!"
 ```
 

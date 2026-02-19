@@ -11,7 +11,7 @@ Backend needs to route LLM requests to the correct provider (Anthropic, OpenRout
 
 ## Solution
 
-Separate provider and model fields with smart defaults: Extract → Infer → Create → Cache
+Separate provider and model fields with smart defaults: Extract -> Infer -> Create -> Cache
 
 ```mermaid
 graph TD
@@ -59,7 +59,7 @@ graph TD
 | `{model: "claude-haiku-4-5"}` | `anthropic` | `claude-haiku-4-5` | Inferred from `claude-` prefix |
 | `{model: "gpt-4o"}` | `openai` | `gpt-4o` | Inferred from `gpt-` prefix |
 | `{model: "gemini-2.0-flash"}` | `google` | `gemini-2.0-flash` | Inferred from `gemini-` prefix |
-| `{model: "moonshotai/kimi-k2"}` | `openrouter` | `moonshotai/kimi-k2` | No prefix match → defaults to OpenRouter |
+| `{model: "moonshotai/kimi-k2"}` | `openrouter` | `moonshotai/kimi-k2` | No prefix match -> defaults to OpenRouter |
 | `{provider: "openrouter", model: "anthropic/claude-sonnet-4-5"}` | `openrouter` | `anthropic/claude-sonnet-4-5` | Explicit provider override |
 
 **Implementation:** `backend/internal/domain/models/llm/model_mapping.go:10-41`
@@ -102,11 +102,11 @@ provider, err := registry.GetProvider("claude-sonnet-4-5")
 Smart defaults infer provider from model name prefixes when provider not specified.
 
 **Mappings:**
-- `claude-*` → anthropic
-- `gpt-*`, `o1-*`, `text-*`, `davinci-*` → openai
-- `gemini-*` → google
-- `lorem-*` → lorem (testing)
-- **No match** → openrouter (universal fallback)
+- `claude-*` -> anthropic
+- `gpt-*`, `o1-*`, `text-*`, `davinci-*` -> openai
+- `gemini-*` -> google
+- `lorem-*` -> lorem (testing)
+- **No match** -> openrouter (universal fallback)
 
 **Implementation:** `backend/internal/domain/models/llm/model_mapping.go:10-41`
 

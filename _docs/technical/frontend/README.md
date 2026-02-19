@@ -9,11 +9,11 @@ Complete technical reference for Meridian frontend (Vite + TanStack Router + Typ
 
 ## Quick Links
 
-**First time?** → [Setup Quickstart](setup-quickstart.md)
-**Architecture?** → [Architecture Overview](#architecture)
-**Auth?** → [Auth Implementation](auth-implementation.md) ⭐
-**Editor?** → [Editor Caching](editor-caching.md)
-**Thread UI?** → [Thread Rendering Guide](thread-rendering-guide.md)
+**First time?** -> [Setup Quickstart](setup-quickstart.md)
+**Architecture?** -> [Architecture Overview](#architecture)
+**Auth?** -> [Auth Implementation](auth-implementation.md) ⭐
+**Editor?** -> [Editor Caching](editor-caching.md)
+**Thread UI?** -> [Thread Rendering Guide](thread-rendering-guide.md)
 
 ## Getting Started
 

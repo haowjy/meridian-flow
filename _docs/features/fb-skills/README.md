@@ -30,7 +30,7 @@ Skills are custom AI commands that writers can create and invoke in chat threads
 
 ### Editing
 
-- Click skill in tree → opens full-screen editor
+- Click skill in tree -> opens full-screen editor
 - Three-field form at top:
   - Command name (with `/` prefix visual)
   - Description (flexible-height textarea)
@@ -112,8 +112,8 @@ CREATE TABLE project_skills (
   - Collapsible (starts expanded)
 - `SkillTreeItem` - Individual skill in tree (leaf node)
   - Wrapped by `SelectableTreeItem` for selection feedback
-  - Click → opens `SkillEditorPanel`
-  - Context menu → rename/delete (to be implemented)
+  - Click -> opens `SkillEditorPanel`
+  - Context menu -> rename/delete (to be implemented)
 
 **Editor Panels**:
 - `SkillEditorPanel` - Full-screen editor for existing skills
@@ -143,7 +143,7 @@ Uses same bidirectional URL-state sync as documents:
 **Backward** (browser back):
 1. URL changes to `/projects/{slug}/skills/{name}`
 2. WorkspaceLayout effect parses URL
-3. Resolves skill name → skill ID via skills store
+3. Resolves skill name -> skill ID via skills store
 4. Updates UI state to match URL
 5. Editor opens
 
@@ -269,14 +269,14 @@ Visual feedback shown in header (only when `hasChanges` or status is non-idle):
 
 ### Integration Tests
 
-- [ ] Create skill via panel → appears in tree
-- [ ] Edit skill → save button appears, saves on click
-- [ ] Edit skill → cancel reverts to saved values
-- [ ] Click skill → opens editor with correct data
-- [ ] Browser back after opening skill → closes editor
-- [ ] Deep link to skill → shows loading, then opens editor
-- [ ] Delete skill → removes from tree and closes editor
-- [ ] Duplicate skill name → shows validation error in header
+- [ ] Create skill via panel -> appears in tree
+- [ ] Edit skill -> save button appears, saves on click
+- [ ] Edit skill -> cancel reverts to saved values
+- [ ] Click skill -> opens editor with correct data
+- [ ] Browser back after opening skill -> closes editor
+- [ ] Deep link to skill -> shows loading, then opens editor
+- [ ] Delete skill -> removes from tree and closes editor
+- [ ] Duplicate skill name -> shows validation error in header
 
 ### State Management Tests
 
@@ -298,7 +298,7 @@ Visual feedback shown in header (only when `hasChanges` or status is non-idle):
 - [ ] Save button disabled when validation fails
 - [ ] Save button enabled when valid changes exist
 - [ ] Cancel reverts all fields to saved values
-- [ ] Save status shows correct indicator (saving → saved → idle)
+- [ ] Save status shows correct indicator (saving -> saved -> idle)
 
 ## Related Documentation
 
@@ -316,8 +316,8 @@ If merging h/skills branch into another branch that has diverged, follow these s
 Run migration to add `skills` table (see `backend/schema.sql` for schema).
 
 ### 2. Theme Color Migration
-The theme system was refactored from v2 → v3:
-- `accent` → split into `favorite` (gold) and `primary` (sage)
+The theme system was refactored from v2 -> v3:
+- `accent` -> split into `favorite` (gold) and `primary` (sage)
 - Search codebase for `accent` usage and replace with appropriate semantic color
 - Update any custom themes to include `favorite` and `primary` colors
 

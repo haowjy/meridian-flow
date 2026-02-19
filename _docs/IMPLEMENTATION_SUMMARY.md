@@ -148,11 +148,11 @@ interface ContentAdapter<TStorage, TEditor> {
 ### Manual Testing Required
 
 Before merging, verify:
-1. ✅ Open existing markdown document → Should load and display correctly
-2. ✅ Edit markdown → Should auto-save correctly
-3. ✅ AI creates suggestions → Should show inline diff view
-4. ✅ Accept/reject AI changes → Should work identically to before
-5. ✅ Navigate away → Should flush pending changes
+1. ✅ Open existing markdown document -> Should load and display correctly
+2. ✅ Edit markdown -> Should auto-save correctly
+3. ✅ AI creates suggestions -> Should show inline diff view
+4. ✅ Accept/reject AI changes -> Should work identically to before
+5. ✅ Navigate away -> Should flush pending changes
 
 ## Future Work (Not in This PR)
 

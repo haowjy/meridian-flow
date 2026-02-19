@@ -14,10 +14,10 @@ Reference guide for all supported file formats and their conversion behavior.
 
 | Format | Extensions | Conversion | Notes |
 |--------|------------|------------|-------|
-| **Zip Archive** | `.zip` | Extract → Convert each file | Folder structure preserved |
+| **Zip Archive** | `.zip` | Extract -> Convert each file | Folder structure preserved |
 | **Markdown** | `.md` | Pass-through | No conversion needed |
-| **Plain Text** | `.txt` | Text → Markdown | Minimal formatting added |
-| **HTML** | `.html`, `.htm` | HTML → Markdown + XSS sanitization | Semantic structure preserved |
+| **Plain Text** | `.txt` | Text -> Markdown | Minimal formatting added |
+| **HTML** | `.html`, `.htm` | HTML -> Markdown + XSS sanitization | Semantic structure preserved |
 
 ## Format Details
 
@@ -37,10 +37,10 @@ my-project.zip
 ```
 
 **Result:**
-- `chapter1.md` → Root level document
-- `notes/character-notes.txt` → Document in "notes" folder (auto-created)
-- `notes/plot-ideas.html` → Document in "notes" folder (converted from HTML)
-- `drafts/scene1.md` → Document in "drafts" folder (auto-created)
+- `chapter1.md` -> Root level document
+- `notes/character-notes.txt` -> Document in "notes" folder (auto-created)
+- `notes/plot-ideas.html` -> Document in "notes" folder (converted from HTML)
+- `drafts/scene1.md` -> Document in "drafts" folder (auto-created)
 
 **Limitations:**
 - Max zip size: 100MB
@@ -117,7 +117,7 @@ This is another paragraph.
 
 ### 4. HTML (.html, .htm)
 
-**Behavior:** Two-stage conversion (Sanitize → Convert to Markdown).
+**Behavior:** Two-stage conversion (Sanitize -> Convert to Markdown).
 
 **Input:**
 ```html
@@ -158,12 +158,12 @@ This is a **bold** paragraph.
 - Allows only safe HTML tags (see below)
 
 **Stage 2 - Markdown Conversion:**
-- `<h1>-<h6>` → `# Heading` (markdown headings)
-- `<strong>, <b>` → `**bold**`
-- `<em>, <i>` → `*italic*`
-- `<ul>, <ol>` → Markdown lists
-- `<a href>` → `[text](url)`
-- `<img src>` → `![alt](url)`
+- `<h1>-<h6>` -> `# Heading` (markdown headings)
+- `<strong>, <b>` -> `**bold**`
+- `<em>, <i>` -> `*italic*`
+- `<ul>, <ol>` -> Markdown lists
+- `<a href>` -> `[text](url)`
+- `<img src>` -> `![alt](url)`
 
 **Allowed HTML tags (bluemonday UGC policy):**
 - **Text:** `p`, `b`, `i`, `u`, `strong`, `em`, `code`, `pre`
@@ -202,7 +202,7 @@ This is a **bold** paragraph.
 
 ## Conversion Examples
 
-### Example 1: Wiki Page (HTML → Markdown)
+### Example 1: Wiki Page (HTML -> Markdown)
 
 **Input (wiki-export.html):**
 ```html
@@ -409,8 +409,8 @@ Output: This costs $100 and uses * for emphasis
 ## Key Files
 
 ### Backend
-- `backend/internal/service/docsystem/converter/html_converter.go` - HTML → Markdown
-- `backend/internal/service/docsystem/converter/text_converter.go` - Text → Markdown
+- `backend/internal/service/docsystem/converter/html_converter.go` - HTML -> Markdown
+- `backend/internal/service/docsystem/converter/text_converter.go` - Text -> Markdown
 - `backend/internal/service/docsystem/converter/markdown_converter.go` - Markdown pass-through
 - `backend/internal/service/docsystem/zip_file_processor.go` - Zip extraction
 

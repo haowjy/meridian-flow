@@ -73,7 +73,7 @@ You: "Check this chapter for consistency across the entire series"
 Main Agent:
 ├─ Spawns subagent with task: "Search all chapters for character mentions"
 ├─ Spawns subagent with task: "Analyze timeline consistency"
-└─ Waits for results → synthesizes → responds
+└─ Waits for results -> synthesizes -> responds
 
 You see: Collapsed blocks in main thread, expandable to view subagent work
 ```
@@ -132,7 +132,7 @@ During conversation, Persona decides: "I need to check facts"
            ↓
 Spawns: "Fact-Check" agent with specific tools + skills
            ↓
-Agent completes → result flows back to Persona → Persona responds to you
+Agent completes -> result flows back to Persona -> Persona responds to you
 ```
 
 ### Prerequisites
@@ -154,7 +154,7 @@ Before shipping the agent framework:
 
 ### Skill Sharing
 
-**Create → Use → Share lifecycle:**
+**Create -> Use -> Share lifecycle:**
 
 ```
 Create (via UI editor or AI)
@@ -199,7 +199,7 @@ Discover (public marketplace - future)
 - One-click chapter publishing
 - Sync published chapters with local documents
 - Version control for published content
-- Update tracking (local edits → pending sync status)
+- Update tracking (local edits -> pending sync status)
 
 **Other platforms:**
 - Wattpad, Webnovel, Scribble Hub, etc.
@@ -230,7 +230,7 @@ Discover (public marketplace - future)
 
 ### Multi-Document Batch Editing
 
-**One creative direction → many document updates:**
+**One creative direction -> many document updates:**
 
 ```
 You: "Make Elara more cynical"
@@ -243,9 +243,9 @@ AI updates atomically:
 └─ Characters/Marcus.md (relationship notes)
 
 You: Review all 5 changes
-├─ Accept all → atomic commit
-├─ Accept some → selective application
-└─ Refine → AI iterates
+├─ Accept all -> atomic commit
+├─ Accept some -> selective application
+└─ Refine -> AI iterates
 ```
 
 **Like git commits for creative work.**
@@ -293,9 +293,9 @@ You: Review all 5 changes
 
 **But this is a hypothesis, not a commitment.**
 
-If fiction writers don't convert but game developers do → pivot to game dev.
-If neither works but technical writers love it → pivot to docs.
-If enterprise product teams want it → pivot to B2B.
+If fiction writers don't convert but game developers do -> pivot to game dev.
+If neither works but technical writers love it -> pivot to docs.
+If enterprise product teams want it -> pivot to B2B.
 
 **We're optimizing for learning, not a specific market.**
 
@@ -384,7 +384,7 @@ AI continues working server-side even if user disconnects.
 **Phase 3: Agents**
 - Built-in agent definitions
 - Agent composition (prompt + skills + tools)
-- Persona → Agent spawning
+- Persona -> Agent spawning
 
 **Phase 4: Subagents**
 - `spawn_agent` tool

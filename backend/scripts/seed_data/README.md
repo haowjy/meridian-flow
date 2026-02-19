@@ -7,10 +7,10 @@ This directory contains markdown documents for seeding the database. Frontmatter
 **Just organize your files in folders, and it works:**
 
 ```
-Characters/Aria.md            → Folder: "Characters/"          Name: "Aria"
-World Building/Geography.md   → Folder: "World Building/"      Name: "Geography"
-Characters/Villains/Shadow.md → Folder: "Characters/Villains/" Name: "Shadow"
-Quick Notes.md                → Root level                     Name: "Quick Notes"
+Characters/Aria.md            -> Folder: "Characters/"          Name: "Aria"
+World Building/Geography.md   -> Folder: "World Building/"      Name: "Geography"
+Characters/Villains/Shadow.md -> Folder: "Characters/Villains/" Name: "Shadow"
+Quick Notes.md                -> Root level                     Name: "Quick Notes"
 ```
 
 The folder path is derived from the directory structure, and the document name is derived from the filename.

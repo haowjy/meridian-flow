@@ -185,11 +185,11 @@ TanStack Router's `beforeLoad` hooks eliminate the need for:
 ## Testing
 
 **Dev Mode**:
-1. Visit `/projects` while logged out → redirects to `/login?redirect=/projects`
-2. Login with Google → OAuth callback redirects to `/projects`
-3. Visit `/login` while logged in → redirects to `/projects`
+1. Visit `/projects` while logged out -> redirects to `/login?redirect=/projects`
+2. Login with Google -> OAuth callback redirects to `/projects`
+3. Visit `/login` while logged in -> redirects to `/projects`
 4. Bookmark `/projects/abc/documents/def` while logged out
-5. Login → lands on bookmarked document
+5. Login -> lands on bookmarked document
 
 **Production**: Same behavior, tested via deployment
 

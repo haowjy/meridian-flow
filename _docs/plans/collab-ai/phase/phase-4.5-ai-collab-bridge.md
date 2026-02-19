@@ -4,24 +4,24 @@
 
 Phases 1-4 built the complete collab proposal infrastructure (Yjs sync, proposal lifecycle, review UI, arbiter strategies) but never connected the AI text generation system to it. When the AI edits a document via the `str_replace_based_edit_tool`, it saves to `documents.ai_version` (TEXT column) using the old PUA-marker diff system. No proposals are created, the review panel never shows, and the collab system sits dormant.
 
-This phase bridges that gap: AI edits → Yjs updates → collab proposals → writer review/auto-accept.
+This phase bridges that gap: AI edits -> Yjs updates -> collab proposals -> writer review/auto-accept.
 
 **User decisions:**
 - Auto-accept ON by default for all AI proposals
 - Feature flag for old PUA system (new collab system ON by default)
 - Full AI collab experience scope (bridge + UX polish)
 
-## Architecture: Current → Target
+## Architecture: Current -> Target
 
 ```
 CURRENT:
-  TextEditorTool → documentSvc.UpdateAIVersion(text) → documents.ai_version → PUA markers
+  TextEditorTool -> documentSvc.UpdateAIVersion(text) -> documents.ai_version -> PUA markers
 
 TARGET:
-  TextEditorTool → mutationStrategy.Apply(base, new)
-    ├─ CollabProposalStrategy → YjsConverter → ProposalService.CreateProposal
-    │   → ProposalBroadcaster.Broadcast(mutations) → WS → editor
-    └─ AIVersionStrategy (deprecated fallback) → UpdateAIVersion
+  TextEditorTool -> mutationStrategy.Apply(base, new)
+    ├─ CollabProposalStrategy -> YjsConverter -> ProposalService.CreateProposal
+    │   -> ProposalBroadcaster.Broadcast(mutations) -> WS -> editor
+    └─ AIVersionStrategy (deprecated fallback) -> UpdateAIVersion
 ```
 
 **Key refactoring: Strategy pattern** — The tool doesn't branch on a flag. The builder injects the right strategy at construction time. This is cleaner than adding 3 fields + `if/else` to TextEditorTool.
@@ -38,12 +38,12 @@ TARGET:
 
 ```
 1. Load current yjs_state bytes from DocumentStore (or in-memory session)
-2. Create base Y.Doc, apply yjs_state → establishes CRDT lineage
+2. Create base Y.Doc, apply yjs_state -> establishes CRDT lineage
 3. Read current text from base doc's Y.Text("content")
 4. Diff current text vs newContent using sergi/go-diff (character-level)
 5. Clone base state into target Y.Doc (same lineage)
 6. Apply diff ops (delete/insert) on target's Y.Text
-7. EncodeStateAsUpdate(target, EncodeStateVector(base)) → relative update bytes
+7. EncodeStateAsUpdate(target, EncodeStateVector(base)) -> relative update bytes
 ```
 
 This ensures the generated update has valid CRDT ancestry and can be applied to the live session doc.
@@ -64,7 +64,7 @@ This ensures the generated update has valid CRDT ancestry and can be applied to 
 - **NEW** `backend/internal/service/collab/yjs_text_converter_test.go`
   - Simple replacement, pure insertion, pure deletion, multi-line
   - **Emoji/supplementary char test** — verify UTF-16 positions don't drift
-  - Round-trip: convert → apply update to base doc → verify content matches
+  - Round-trip: convert -> apply update to base doc -> verify content matches
   - Edge cases: empty base, empty new, identical content (nil update)
 
 ### Technical notes
@@ -194,7 +194,7 @@ cd backend && go build ./... && go test ./internal/service/llm/tools/... -v
 
 ### Verification
 ```bash
-# Create AI edit → verify proposal auto-accepted (status='accepted', not 'proposed')
+# Create AI edit -> verify proposal auto-accepted (status='accepted', not 'proposed')
 ```
 
 ---
@@ -256,7 +256,7 @@ cd frontend && pnpm run lint
 
 ---
 
-## Slice 9: Thread → Editor Navigation
+## Slice 9: Thread -> Editor Navigation
 
 **Goal:** "View in Editor" from thread navigates to document + selects proposal.
 

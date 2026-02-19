@@ -309,9 +309,9 @@ Write-then-publish recovery:
 | Limit | Default | Behavior on exceed |
 |---|---|---|
 | `max_yjs_update_bytes` | `256KB` | Reject proposal creation (server-side; proposals created via internal API, not WS frame) |
-| per-op WS payload (client→server) | `64KB` | Reject, require smaller updates |
+| per-op WS payload (client->server) | `64KB` | Reject, require smaller updates |
 
-> **Note:** `max_yjs_update_bytes` applies to server-side proposal creation (internal API call), not to WS transport. Client WS frames are bound by the 64KB per-op limit. Proposals are broadcast to clients via `proposal:new` JSON frames which include the base64 `yjsUpdate` — these server→client frames are exempt from the 64KB client→server limit.
+> **Note:** `max_yjs_update_bytes` applies to server-side proposal creation (internal API call), not to WS transport. Client WS frames are bound by the 64KB per-op limit. Proposals are broadcast to clients via `proposal:new` JSON frames which include the base64 `yjsUpdate` — these server->client frames are exempt from the 64KB client->server limit.
 >
 > **Known limitation:** `proposal:snapshot` sends an array of pending proposals on connect. **v1 mitigation:** `proposal:snapshot` sends proposal metadata only (no `yjsUpdate` blobs). Clients request full Yjs update blobs on demand via a `proposal:getUpdate` message. This caps snapshot frame size regardless of proposal count/size. **Future (v2):** if metadata-only `proposal:snapshot` still exceeds 1MB, paginate into multiple frames with a continuation marker.
 

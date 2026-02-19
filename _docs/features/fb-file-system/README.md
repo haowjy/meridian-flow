@@ -135,7 +135,7 @@ Documents use project-relative paths for semantic navigation:
 
 **Implementation:**
 - Frontend: TanStack Router splat route (`$.tsx`) captures all path segments
-- Resolution: WorkspaceLayout resolves path → UUID via tree store
+- Resolution: WorkspaceLayout resolves path -> UUID via tree store
 - Document paths are computed from folder hierarchy (slug column removed in migration 00014)
 - Path format: `{folder}/{subfolder}/{document-name}` (no extension in URL)
 

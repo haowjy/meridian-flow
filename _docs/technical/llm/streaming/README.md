@@ -142,7 +142,7 @@ Anthropic offers a beta feature (`fine-grained-tool-streaming-2025-05-14` header
 ---
 
 **[Meridian AG-UI Bridge](meridian-agui-bridge.md)** (~200 lines)
-- Full-stack integration (Library → Backend → Frontend)
+- Full-stack integration (Library -> Backend -> Frontend)
 - IDFactory and Emitter components
 - BlockTracker for frontend correlation
 - Meridian-specific extensions (turn_complete, turn_error)

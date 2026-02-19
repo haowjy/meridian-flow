@@ -4,13 +4,19 @@ This file provides guidance when working with the code in this repository.
 
 ## Project Overview
 
-Meridian is a Agentic writing platform for writers, starting with fiction writers who manage 100+ chapter web serials, but being inclusive for any kind of writer.
+Meridian is an agentic writing platform for writers, starting with fiction writers who manage 100+ chapter web serials, but being inclusive for any kind of writer.
 
 **Current Status:**
 - ✅ Backend (Go + net/http + PostgreSQL): File system complete, Auth complete (JWT/JWKS), Thread/LLM in progress (Anthropic provider working, streaming complete)
 - ✅ Frontend (Vite + TanStack Router + CodeMirror): Document editor complete, Thread UI complete
 
 For product details, see `_docs/high-level/1-overview.md`.
+
+## Concepts
+
+- **Plan** — the overall goal document describing what to build
+- **Slice** — a self-contained unit of work that ends in a commit. The codebase must be in a working state after each slice. Slices can be large (a cross-cutting refactor is fine) as long as they are self-contained
+- **Task** — a small tracked work item within a slice, managed via the built-in TaskCreate/TaskUpdate/TaskList tools. No separate commits or logs needed
 
 ## Product Philosophy
 
@@ -24,18 +30,17 @@ ALWAYS FOLLOW SOLID PRINCIPLES.
 
 ### SOLID Quick Reference
 
-- **SRP**: Files < 500 lines. One store = one domain. Split large components.
+- **SRP**: Files should be about <500 lines. One store = one domain. Split large components.
 - **OCP**: Use registries/factories for extensibility (see ToolRegistry, BlockRenderer)
 - **LSP**: All implementations must be substitutable for their interfaces
 - **ISP**: Split large interfaces (Reader vs Writer, Metadata vs CRUD)
 - **DIP**: Depend on interfaces, not concrete types (especially for external services)
 
-Then, these principles can also help you make architectural decisions and other development tasks:
-
 1. **Start Simple, Stay Simple**
    - Write the simplest thing that could work
    - Add complexity only when necessary
    - Regularly refactor to remove unnecessary complexity
+   - Delete dead code — it's easier to clean up now than later
 
 2. **Make Correctness Obvious**
    - Code should make bugs impossible or obvious
@@ -72,13 +77,8 @@ Then, these principles can also help you make architectural decisions and other 
    - If it needs a guard, comment why
    - If it prevents a race, explain the race
    - If you had to debug it, future you will too
-   - etc.
 
-9. **Extensible** - Design for extensibility.
-
-10. **Keep Documentation Up-to-Date** - Update documentation AFTER finalizing changes. See "Feature Documentation Sync Rule" for feature documentation workflow.
-
-11. **Keep the code clean** - keep the code clean and readable, as the code grows, it will become more difficult to understand, its easier to refactor now than later (make sure to delete dead code as well). Make sure each function/method/file mostly does one thing and does it well (SRP).
+9. **Keep Documentation Up-to-Date** - Update documentation AFTER finalizing changes. See "Feature Documentation Sync Rule" for feature documentation workflow.
 
 ## Before Writing New Code
 
@@ -100,7 +100,7 @@ Then, these principles can also help you make architectural decisions and other 
 
 Before submitting code, verify:
 - [ ] Error handling follows existing patterns (HTTPError, domain errors)
-- [ ] Similar code elsewhere? → Extract shared utility
+- [ ] Similar code elsewhere? -> Extract shared utility
 - [ ] Dialog patterns use shared components (DeleteConfirmationDialog, etc.)
 - [ ] Store patterns match existing stores (abort controllers, selectors)
 - [ ] API calls follow api.ts conventions
@@ -135,7 +135,7 @@ Before submitting code, verify:
 Documentation is organized in three tiers:
 
 1. **Features** (`_docs/features/`) - **Start here**
-   - What features exist and their status (✅/🟡/❌)
+   - What features exist and their status
    - Stack-prefixed folders show frontend-only (f-), backend-only (b-), or both (fb-)
    - Concise implementation guides with links to technical details
 
@@ -157,7 +157,7 @@ This applies to both Claude and human developers:
 ✅ **Update feature docs when:**
 - Implementing a new feature
 - Significantly changing existing feature behavior
-- Changing feature status (e.g., from 🟡 partial to ✅ complete)
+- Changing feature status (e.g., from partial to complete)
 - Adding/removing major functionality
 - Changing stack requirements (e.g., backend-only -> full-stack)
 
@@ -216,8 +216,8 @@ _docs/
    - Cut ruthlessly; too much text hurts comprehension
 
 3. **Reference, don't duplicate** - Point to code, don't copy it
-   - ✅ "See `internal/service/document.go:29-33`"
-   - ❌ Pasting 50 lines of existing code
+   - correct: "See `internal/service/document.go:29-33`"
+   - wrong: Pasting 50 lines of existing code
 
 4. **Split by purpose, not size** - Each doc should have a single, clear purpose
    - If covering multiple distinct topics -> split into separate docs
@@ -257,10 +257,10 @@ _docs/
 # Database Connections
 
 ## Problem
-PgBouncer conflicts with prepared statements.
+Supabase's PgBouncer pooler (port 6543) doesn't support prepared statements.
 
 ## Solution
-Add `?pgbouncer=true` for dev (port 6543).
+Auto-detect port 6543 and use `QueryExecModeCacheDescribe`.
 
 ## Implementation
 See `internal/repository/postgres/connection.go`
@@ -278,7 +278,6 @@ See `internal/repository/postgres/connection.go`
 
 - Only commit when user explicitly requests
 - Follow repository's commit message style
-- See general Git conventions in main CLAUDE.md guidelines
 
 ### Testing
 
@@ -288,30 +287,19 @@ See `internal/repository/postgres/connection.go`
 
 ### Smoke Testing
 
-- Use `tmp/` at the repo root as a scratchpad for one-off curl scripts and ad-hoc tests (gitignored)
 - Get a dev access token: `./scripts/get-token.sh` (saves to root `.env`)
   - First time: `cp scripts/get-token.sh.example scripts/get-token.sh && chmod +x scripts/get-token.sh`, then edit credentials
 - Token refresh is agent-authorized: Claude may run `./scripts/get-token.sh` whenever the current token is expired
 - Authenticated requests: `curl -H "Authorization: Bearer $(grep '^ACCESS_TOKEN=' .env | cut -d= -f2-)" http://localhost:8080/api/...`
-
-### Scratchpad + Plan Sync
-
-- Use `_docs/hidden/scratch/` as a running scratchpad for cross-session continuity (handoff notes, active hypotheses, temporary TODOs, command snippets, validation notes).
-- Prefer small dated markdown notes (for example: `_docs/hidden/scratch/2026-02-16-collab-handshake.md`) so context survives compaction.
-- Do not store secrets or raw tokens in scratch files (`.env` values, JWTs, API keys, cookies).
-- Keep scratch content concise and task-focused; delete stale notes when a slice is fully complete.
-- While implementing any plan slice, update the relevant plan doc incrementally (small diffs, not rewrites), especially:
-  - current status/date
-  - what was completed
-  - current stop point
-  - next concrete slice
-- If implementation diverges from plan assumptions, add a short "Plan adjustment" note in the phase doc with rationale.
+- See the `scratchpad` skill for scratch/smoke file conventions
 
 ### Long-Running Tasks
 
-For multi-phase plans, use the `/orchestrate` skill interactively. It runs an autonomous plan-slice pipeline using CLI subagents (codex, claude). See `.claude/skills/orchestrate/SKILL.md` for full details.
+For multi-phase plans, use the `/orchestrate` skill interactively. It launches agents via `scripts/run-agent.sh` to implement plans autonomously. See the `orchestrate` skill's SKILL.md for full details.
 
-**Prompt templates:** `scripts/orchestrator/prompts/*.md` — edit these to customize stage behavior.
+**Agent definitions:** `orchestrate` skill's `agents/*.md` — model, tools, prompt per agent.
+**Skills:** `*/SKILL.md` under your skills directory — reusable instruction bundles.
+**Run any agent:** `orchestrate` skill's `scripts/run-agent.sh [agent] [OPTIONS]` — see its README.md for usage.
 
 ### Frontend
 

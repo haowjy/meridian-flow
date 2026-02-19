@@ -34,7 +34,7 @@ feature: "LLM Providers"
 
 **Unified Interface**: All providers implement same interface
 
-**Auto-Mapping**: Minimal tool definitions → provider-specific
+**Auto-Mapping**: Minimal tool definitions -> provider-specific
 
 **Error Normalization**: Consistent error handling
 

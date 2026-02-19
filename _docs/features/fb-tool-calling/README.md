@@ -14,7 +14,7 @@ feature: "Tool Calling"
 
 ## Features
 
-**Auto-Mapping** - `{"name": "web_search"}` → provider-specific implementation
+**Auto-Mapping** - `{"name": "web_search"}` -> provider-specific implementation
 - See [auto-mapping.md](auto-mapping.md)
 
 **Built-in Tools** - web_search (backend via Tavily), bash (client), text_editor (client)

@@ -43,7 +43,7 @@ Implementation notes:
   - JSON accumulator (for function/tool call arguments)
 - Use “done” events to finalize blocks and persist them.
 
-## Mapping Responses → Meridian Blocks
+## Mapping Responses -> Meridian Blocks
 ### Critical Streaming Contract (Repo-Specific)
 The backend does **not** assemble final blocks from provider-native fragments. The provider should:
 - Emit `BlockDelta` for progressive UI updates (SSE).

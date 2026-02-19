@@ -153,7 +153,7 @@ opts := &SearchOptions{
 ```
 
 **How It Works:**
-- **Stemming**: "corriendo" → "corr" (matches "correr", "corrió")
+- **Stemming**: "corriendo" -> "corr" (matches "correr", "corrió")
 - **Stop words**: Ignores "el", "la", "de", etc.
 - **Better ranking**: Language-aware relevance scoring
 

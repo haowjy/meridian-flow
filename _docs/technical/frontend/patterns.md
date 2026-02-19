@@ -29,9 +29,9 @@ frontend/src/
 ### Import Rules
 
 ```
-core/ → NEVER imports from features/
-features/ → can import from core/, shared/, types/
-shared/ → can import from core/, types/
+core/ -> NEVER imports from features/
+features/ -> can import from core/, shared/, types/
+shared/ -> can import from core/, types/
 ```
 
 **Why**: Keeps `core/` as truly reusable infrastructure that can be used by any feature.

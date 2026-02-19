@@ -11,7 +11,7 @@ audience: developer
 
 Meridian’s document “slug” has accumulated multiple meanings over time:
 - originally project-scoped name slug
-- later “path-based slug” by *slugifying* folder/name segments (lowercase, spaces→hyphens, strip special chars)
+- later “path-based slug” by *slugifying* folder/name segments (lowercase, spaces->hyphens, strip special chars)
 
 We now want a writer-first model:
 - document URLs are **project-relative paths** (splat) with **exact decode**
@@ -42,7 +42,7 @@ In that world, `documents.slug` becomes redundant and actively confusing.
 
 ### Phase 1: Dual-read (no breaking) (0.5–1 day)
 - Add `path` to tree DTO and plumb it to frontend `Document`.
-- Switch frontend routing + deep link resolution from `doc.slug` → `doc.path`.
+- Switch frontend routing + deep link resolution from `doc.slug` -> `doc.path`.
 - Keep accepting old URLs as best-effort if needed (optional):
   - If splat has no extension, try `.md`.
   - If splat matches an old slugified form, optionally attempt a server-side mapping (only if you still have `slug`).

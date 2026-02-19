@@ -42,7 +42,7 @@ Enable users to **branch from any block** in an assistant turn by:
 
 1. **Forking the assistant turn** - Create sibling turn with blocks 0 through N
 2. **Creating user turn** - User provides alternative direction
-3. **Building context** - New assistant turn sees: Turn 1b → Turn 2 (user) → Turn 3 (assistant continues)
+3. **Building context** - New assistant turn sees: Turn 1b -> Turn 2 (user) -> Turn 3 (assistant continues)
 
 ### Use Cases
 

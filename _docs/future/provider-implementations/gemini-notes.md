@@ -343,7 +343,7 @@ case "text":
 
 5. **Block sequence for Google responses:**
    ```
-   1. [Optional] Synthetic tool_result (groundingChunks → results)
+   1. [Optional] Synthetic tool_result (groundingChunks -> results)
    2. Text block (model response with Citations from groundingSupports)
    ```
 
@@ -395,7 +395,7 @@ UPDATE turns SET response_metadata = '{
 
 When implementing Google/Gemini:
 
-- [ ] Test grounding metadata → converted to text block
+- [ ] Test grounding metadata -> converted to text block
 - [ ] Verify `renderedContent` HTML preserved in `response_metadata`
 - [ ] Test conversation replay (text block should be sent, metadata skipped)
 - [ ] Verify provider field set to `"google"`

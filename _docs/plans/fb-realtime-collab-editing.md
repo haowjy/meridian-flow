@@ -611,7 +611,7 @@ SLO targets:
 |---|---|---|
 | Operation type | **MODIFY** — CRDT mutations (`Y.applyUpdate`) | **ANNOTATE** — text anchoring (no document mutation) |
 | Document effect | Changes document content | Attaches metadata to a text range |
-| Lifecycle | Proposed → accepted/rejected | Created → resolved/deleted |
+| Lifecycle | Proposed -> accepted/rejected | Created -> resolved/deleted |
 | Shared primitive | `Y.RelativePosition` (for tracking proposal ranges) | `Y.RelativePosition` (for anchoring comments to text) |
 
 **WHY separate:** Mixing annotation state into the proposal pipeline would conflate "change the document" with "comment on the document." Different review UX, different lifecycle, different storage.

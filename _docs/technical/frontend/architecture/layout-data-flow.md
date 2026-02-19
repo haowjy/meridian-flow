@@ -7,7 +7,7 @@ audience: developer
 
 How URL state, Zustand stores, and ready flags coordinate to render the workspace.
 
-## URL → State Flow
+## URL -> State Flow
 
 ```mermaid
 flowchart TB
@@ -15,7 +15,7 @@ flowchart TB
 
     subgraph WL["WorkspaceLayout (Orchestrator)"]
         Parse["Parse URL segments<br/>(slug, path, skillName)"]
-        Resolve["Resolve identifiers<br/>(path → documentId, name → skillId)"]
+        Resolve["Resolve identifiers<br/>(path -> documentId, name -> skillId)"]
         Sync["Sync to store<br/>(via getState())"]
     end
 
@@ -133,8 +133,8 @@ stateDiagram-v2
 ```
 
 **State Priority:**
-1. `userOverride !== null` → Use override value (persisted)
-2. `userOverride === null` → Follow `ready` flag (session-scoped)
+1. `userOverride !== null` -> Use override value (persisted)
+2. `userOverride === null` -> Follow `ready` flag (session-scoped)
 
 ## URL Resolution
 

@@ -37,7 +37,7 @@ Streaming assistant text content.
 
 **Flow:**
 ```
-TEXT_MESSAGE_START → TEXT_MESSAGE_CONTENT* → TEXT_MESSAGE_END
+TEXT_MESSAGE_START -> TEXT_MESSAGE_CONTENT* -> TEXT_MESSAGE_END
 ```
 
 ### Thinking Events
@@ -54,7 +54,7 @@ Extended thinking/reasoning content (e.g., Claude's thinking blocks).
 
 **Flow:**
 ```
-THINKING_START → THINKING_TEXT_MESSAGE_START → THINKING_TEXT_MESSAGE_CONTENT* → THINKING_TEXT_MESSAGE_END → THINKING_END
+THINKING_START -> THINKING_TEXT_MESSAGE_START -> THINKING_TEXT_MESSAGE_CONTENT* -> THINKING_TEXT_MESSAGE_END -> THINKING_END
 ```
 
 ### Tool Call Events
@@ -69,7 +69,7 @@ Streaming tool invocations with incremental JSON arguments.
 
 **Flow:**
 ```
-TOOL_CALL_START → TOOL_CALL_ARGS* → TOOL_CALL_END
+TOOL_CALL_START -> TOOL_CALL_ARGS* -> TOOL_CALL_END
 ```
 
 **Note:** `TOOL_CALL_RESULT` exists in the spec but Meridian handles tool results internally.
@@ -88,12 +88,12 @@ Run and step management for orchestration.
 
 **Flow (success):**
 ```
-RUN_STARTED → (STEP_STARTED → events... → STEP_FINISHED)* → RUN_FINISHED
+RUN_STARTED -> (STEP_STARTED -> events... -> STEP_FINISHED)* -> RUN_FINISHED
 ```
 
 **Flow (error):**
 ```
-RUN_STARTED → ... → RUN_ERROR
+RUN_STARTED -> ... -> RUN_ERROR
 ```
 
 ---

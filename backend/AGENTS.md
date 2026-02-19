@@ -11,7 +11,7 @@ cp .env.example .env
 go mod download
 
 # Run schema in Supabase SQL Editor (one-time)
-# Copy contents of schema.sql → Supabase Dashboard → SQL Editor → Run
+# Copy contents of schema.sql -> Supabase Dashboard -> SQL Editor -> Run
 
 # Seed test data (creates test project + sample documents)
 make seed
@@ -62,11 +62,11 @@ curl http://localhost:8080/api/documents/:id
 
 Uses Clean Architecture (Hexagonal):
 ```
-cmd/server/main.go           → Entry point
-internal/handler/            → HTTP layer (net/http)
-internal/service/            → Business logic
-internal/repository/postgres → Data layer
-internal/domain/             → Interfaces + models
+cmd/server/main.go           -> Entry point
+internal/handler/            -> HTTP layer (net/http)
+internal/service/            -> Business logic
+internal/repository/postgres -> Data layer
+internal/domain/             -> Interfaces + models
 ```
 
 ## Critical Conventions
@@ -178,7 +178,7 @@ make build-local # GOWORK=../go.work go build -o bin/server ./cmd/server
 # 3. Updates backend/go.mod with new version
 ```
 
-**See:** `scripts/README.md` → `update-libraries.sh` for details.
+**See:** `scripts/README.md` -> `update-libraries.sh` for details.
 
 ## Environment Variables
 
@@ -205,12 +205,12 @@ See `.env.example` for development and `.env.production.example` for deployment.
 
 ## Common Issues
 
-**"prepared statement already exists"** → Ensure using port 6543 (auto-configured) or add `?default_query_exec_mode=simple_protocol`. If error persists, restart Supabase project in dashboard.
+**"prepared statement already exists"** -> Ensure using port 6543 (auto-configured) or add `?default_query_exec_mode=simple_protocol`. If error persists, restart Supabase project in dashboard.
 See `_docs/technical/backend/database-connections.md`
 
-**JSONB encoding errors** → Ensure using correct query execution mode (simple protocol for PgBouncer)
+**JSONB encoding errors** -> Ensure using correct query execution mode (simple protocol for PgBouncer)
 
-**Seeding fails** → Run `make seed-fresh` (drops tables first)
+**Seeding fails** -> Run `make seed-fresh` (drops tables first)
 
 ## Production Safety
 
@@ -404,7 +404,7 @@ SEARCH_API_PROVIDER=tavily  # Used for validation
 **OCP** (8/10): Builder pattern allows extension without modification
 **LSP** (10/10): All tools are perfectly substitutable
 **ISP** (10/10): Minimal ToolExecutor interface
-**DIP** (7/10 → 9/10): External API abstraction added
+**DIP** (7/10 -> 9/10): External API abstraction added
 
 See `_docs/technical/backend/tools/architecture.md` for detailed analysis.
 
@@ -424,7 +424,7 @@ The backend automatically maps minimal tool definitions to provider-specific imp
   ]
 }
 ```
-→ Library resolves to provider's built-in tools (e.g., Anthropic's `web_search_20250305`)
+-> Library resolves to provider's built-in tools (e.g., Anthropic's `web_search_20250305`)
 
 **Custom tool (bypass auto-mapping):**
 ```json
@@ -445,7 +445,7 @@ The backend automatically maps minimal tool definitions to provider-specific imp
   ]
 }
 ```
-→ Used as-is, no mapping (user-provided custom tool)
+-> Used as-is, no mapping (user-provided custom tool)
 
 **Mix both:**
 ```json
@@ -456,7 +456,7 @@ The backend automatically maps minimal tool definitions to provider-specific imp
   ]
 }
 ```
-→ First tool auto-maps, second bypasses
+-> First tool auto-maps, second bypasses
 
 ### Supported Built-in Tools
 
@@ -468,11 +468,11 @@ The backend automatically maps minimal tool definitions to provider-specific imp
 
 ```
 if tool.Type == "custom":
-    → Pass through as-is (user-provided custom tool)
+    -> Pass through as-is (user-provided custom tool)
 elif tool has only Name (missing Category/ExecutionSide/Config):
-    → Auto-map to built-in using MapToolByName()
+    -> Auto-map to built-in using MapToolByName()
 else:
-    → Pass through as-is (already fully defined)
+    -> Pass through as-is (already fully defined)
 ```
 
 **Implementation:** See `backend/internal/service/llm/adapters/conversion.go:convertTools()`

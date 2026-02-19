@@ -15,7 +15,7 @@ Purpose: how to adopt new provider features with minimal churn.
 
 ## Provider‑Only Feature Lifecycle
 - Explore: prototype as CustomTool or keep provider‑specific in your app.
-- Experimental unified: reserve a unified tool/block name; adapters map native→native, others→function schema or client polyfill.
+- Experimental unified: reserve a unified tool/block name; adapters map native->native, others->function schema or client polyfill.
 - Graduate: when ≥2 providers converge, promote common params to typed fields; keep edge cases in `ToolConfig.Extras`.
 - Stabilize: document v1; maintain polyfill; deprecate temporary knobs later.
 
@@ -31,8 +31,8 @@ flowchart LR
 - Avoid global hint bags until needed; promote to typed fields only after convergence.
 
 ## When Library Changes Are Required
-- New provider‑native tool format not yet mapped → add small adapter case + capability YAML.
-- New block/stream event type → adapter decode + (optional) new `BlockType` docs.
+- New provider‑native tool format not yet mapped -> add small adapter case + capability YAML.
+- New block/stream event type -> adapter decode + (optional) new `BlockType` docs.
 
 ## Tests (Future Features)
 - Contract tests per adapter (mapping, error normalization, execution side).

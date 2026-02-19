@@ -15,7 +15,7 @@ We want **project skills** to work immediately (skills influence the AI in a giv
 We want a Drive/Dropbox-like mental model:
 - Trees are **stable IDs** (folders/docs), paths are views.
 - Sharing is a **permission domain** (projects), not “read my private library”.
-- Reuse is **copy/install** (templates → instances), with optional links for “reload/update”.
+- Reuse is **copy/install** (templates -> instances), with optional links for “reload/update”.
 
 ## Key Decisions (locked for v1)
 

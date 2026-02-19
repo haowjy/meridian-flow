@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Restart the backend dev server via tmux
-tmux send-keys -t ms_server:0.0 C-c
-sleep 2
-tmux send-keys -t ms_server:0.0 "make run-local" Enter
+# Restart the backend dev server.
+# Delegates to scripts/dev/restart-backend.sh for the reliable tmux respawn approach.
+exec "$(dirname "$0")/dev/restart-backend.sh" "$@"

@@ -114,10 +114,10 @@ interface ContentAdapter<TStorage, TEditor> {
 // Get adapter for editor type
 const adapter = getAdapter('markdown')
 
-// Transform storage → editor format
+// Transform storage -> editor format
 const editorContent = adapter.toEditor(doc.content, doc.aiVersion)
 
-// Transform editor → storage format
+// Transform editor -> storage format
 const { content, aiVersion } = adapter.toStorage(editorContent)
 
 // Check for AI suggestions
@@ -180,11 +180,11 @@ interface EditorCapabilities {
 ## Testing
 
 **Manual Testing Checklist**:
-1. ✅ Open existing markdown document → Loads correctly
-2. ✅ Edit markdown → Auto-saves correctly
-3. ✅ AI creates suggestions → Shows inline diff view
-4. ✅ Accept/reject AI changes → Works identically to before
-5. ✅ Navigate away → Flushes pending changes
+1. ✅ Open existing markdown document -> Loads correctly
+2. ✅ Edit markdown -> Auto-saves correctly
+3. ✅ AI creates suggestions -> Shows inline diff view
+4. ✅ Accept/reject AI changes -> Works identically to before
+5. ✅ Navigate away -> Flushes pending changes
 
 ## Related Documentation
 

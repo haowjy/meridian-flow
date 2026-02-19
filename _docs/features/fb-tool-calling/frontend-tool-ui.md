@@ -34,7 +34,7 @@ feature: "Tool UI Components"
 - Handles all commands: view, str_replace, create, insert
 - Collapsible content preview (documents) or folder listing (folders)
 - Collapsible diff preview for edit commands
-- Status badges: Pending → Read/Applied/Error
+- Status badges: Pending -> Read/Applied/Error
 - "View" button to navigate to document
 
 **Files**:

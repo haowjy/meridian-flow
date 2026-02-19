@@ -110,8 +110,8 @@ export const Route = createFileRoute('/_authenticated')({
 ```
 
 **Logic**:
-- No session → Redirect to `/login` with return URL
-- Has session → Allow access to nested routes
+- No session -> Redirect to `/login` with return URL
+- Has session -> Allow access to nested routes
 - Public routes (`/login`, `/`) check session and redirect authenticated users to `/projects`
 
 ### 3. API Integration

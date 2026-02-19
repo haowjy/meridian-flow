@@ -10,6 +10,9 @@ __debug_bin*
 
 tmp/
 temp/
+.runs/
+# Skill-local data directories
+.data/
 
 # Local Go build cache (when GOCACHE is pointed inside repo for sandboxed runs)
 backend/.gocache/
@@ -21,6 +24,9 @@ backend/.gocache/
 .env
 
 scripts/get-token.sh
+
+# Per-worktree dev port overrides
+.dev-ports
 
 # Go build artifacts outside of standard paths
 backend/orchestrator

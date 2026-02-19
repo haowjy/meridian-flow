@@ -220,7 +220,7 @@ Errors appear above file list, user must fix before proceeding.
 ### Client-Side Zip Flow
 
 ```
-Folder selection → processSelection() → ImportSelection → buildUploadFiles() → FormData
+Folder selection -> processSelection() -> ImportSelection -> buildUploadFiles() -> FormData
                          ↓                     ↓                  ↓
                    Categorize files      Preview display    JSZip compression
 ```
@@ -425,9 +425,9 @@ if (!response.ok) {
 
 ### Focus Management
 
-- Dialog opens → Focus on "Browse files" button
-- Upload completes → Focus on "Close" button in results
-- Dialog closes → Focus returns to element that opened it (Import menu item)
+- Dialog opens -> Focus on "Browse files" button
+- Upload completes -> Focus on "Close" button in results
+- Dialog closes -> Focus returns to element that opened it (Import menu item)
 
 ## Performance Considerations
 
@@ -488,9 +488,9 @@ if (!response.ok) {
 4. User can retry by closing and reopening dialog
 
 ### Edge Cases
-- Empty zip archive → Backend returns "No valid files found"
-- Duplicate file names → Backend handles uniqueness (append counter or reject)
-- Mixed valid/invalid files → Valid files imported, invalid files in failed list
+- Empty zip archive -> Backend returns "No valid files found"
+- Duplicate file names -> Backend handles uniqueness (append counter or reject)
+- Mixed valid/invalid files -> Valid files imported, invalid files in failed list
 
 ## Key Files
 

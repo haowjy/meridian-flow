@@ -29,8 +29,8 @@ flowchart TD
 ```
 
 **Why two prongs:**
-1. Direct updates → instant UI feedback, handles same-URL clicks
-2. URL effect → syncs on back/forward/refresh
+1. Direct updates -> instant UI feedback, handles same-URL clicks
+2. URL effect -> syncs on back/forward/refresh
 
 ## Critical Pattern: getState()
 
@@ -40,7 +40,7 @@ const { activeDocumentId } = useUIStore(/* subscribes */)
 
 useEffect(() => {
   if (activeDocumentId !== initialDocumentId) {
-    setActiveDocument(initialDocumentId)  // Triggers re-render → effect runs again!
+    setActiveDocument(initialDocumentId)  // Triggers re-render -> effect runs again!
   }
 }, [initialDocumentId, activeDocumentId])  // State in deps
 ```
@@ -78,7 +78,7 @@ flowchart LR
     style Panel fill:#8d5d2d,stroke:#5a3a1e,color:#fff
 ```
 
-**Project-relative paths:** URLs include folder path (`chars/heroes/aria`). Splat route (`$.tsx`) captures all segments after `/documents/`. WorkspaceLayout resolves path → UUID via tree store.
+**Project-relative paths:** URLs include folder path (`chars/heroes/aria`). Splat route (`$.tsx`) captures all segments after `/documents/`. WorkspaceLayout resolves path -> UUID via tree store.
 
 **Why rightPanelState isn't persisted:** URL is source of truth; effect syncs it on mount.
 
@@ -110,7 +110,7 @@ Navigating between documents won't reload chat data.
 | Issue | Cause | Fix |
 |-------|-------|-----|
 | Can't reopen current doc after toggle | `openDocument()` missing direct state update | Add state updates before `router.push()` |
-| Browser back shows tree not editor | State in effect deps → race condition | Use `getState()`, remove state from deps |
+| Browser back shows tree not editor | State in effect deps -> race condition | Use `getState()`, remove state from deps |
 | Chat reloads on doc navigation | Chat effect depends on doc URL | Separate effects with own dependencies |
 
 ## Implementation

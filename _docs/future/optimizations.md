@@ -8,13 +8,13 @@ Potential performance and reliability improvements for post-MVP production harde
 
 **Current**: Tools execute after stream completes
 ```
-LLM Stream → tool_use blocks → Stream completes → Execute tools → Stream results
+LLM Stream -> tool_use blocks -> Stream completes -> Execute tools -> Stream results
 ```
 
 **Optimized**: Execute tools immediately upon collection
 ```
-LLM Stream → tool_use blocks → Execute in background ⎤
-                                                       ⎬ → Stream completes → Stream results
+LLM Stream -> tool_use blocks -> Execute in background ⎤
+                                                       ⎬ -> Stream completes -> Stream results
 Stream continues...                                   ⎦
 ```
 
@@ -32,7 +32,7 @@ Stream continues...                                   ⎦
 se.turnRepo.CreateTurnBlock(ctx, block)  // Uses parent context
 ```
 
-**Issue**: If DB is slow + context cancelled → goroutine blocks indefinitely
+**Issue**: If DB is slow + context cancelled -> goroutine blocks indefinitely
 
 **Solution**: Use separate timeout context for persistence
 ```go
@@ -47,7 +47,7 @@ se.turnRepo.CreateTurnBlock(persistCtx, block)
 
 ## 3. Request Size Limits
 
-**Risk**: Large inputs → memory exhaustion, slow parsing, DB bloat
+**Risk**: Large inputs -> memory exhaustion, slow parsing, DB bloat
 
 **Solution**: Add middleware-level body size limit (10MB recommended for MVP)
 

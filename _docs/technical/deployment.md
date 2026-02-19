@@ -28,13 +28,13 @@ audience: developer
 ### 1.1 Create Railway Project
 
 1. Go to https://railway.app
-2. Click "New Project" → "Deploy from GitHub repo"
+2. Click "New Project" -> "Deploy from GitHub repo"
 3. Select your Meridian repository
 4. Railway will auto-detect the Dockerfile in `/backend`
 
 ### 1.2 Configure Environment Variables
 
-In Railway dashboard → Variables tab, add:
+In Railway dashboard -> Variables tab, add:
 
 ```env
 # Core Configuration
@@ -60,9 +60,9 @@ DEBUG=false
 ```
 
 **Getting Supabase credentials:**
-- Database URL: Supabase Dashboard → Settings → Database → Connection String → **Transaction mode** (port 6543)
+- Database URL: Supabase Dashboard -> Settings -> Database -> Connection String -> **Transaction mode** (port 6543)
 - Project URL: `https://[PROJECT-ID].supabase.co`
-- Service Key: Settings → API → Service role secret (starts with `sb_secret_`)
+- Service Key: Settings -> API -> Service role secret (starts with `sb_secret_`)
 
 ### 1.3 Deploy
 
@@ -80,7 +80,7 @@ DEBUG=false
 ### 1.4 Configure Root Directory (if needed)
 
 If Railway doesn't auto-detect:
-1. Settings → Root Directory → Set to `backend`
+1. Settings -> Root Directory -> Set to `backend`
 2. Redeploy
 
 ---
@@ -90,7 +90,7 @@ If Railway doesn't auto-detect:
 ### 2.1 Create Vercel Project
 
 1. Go to https://vercel.com
-2. Click "Add New..." → "Project"
+2. Click "Add New..." -> "Project"
 3. Import your GitHub repository
 4. **Root Directory:** Set to `frontend`
 5. **Framework Preset:** Vite
@@ -99,7 +99,7 @@ If Railway doesn't auto-detect:
 
 ### 2.2 Configure Environment Variables
 
-In Vercel dashboard → Settings → Environment Variables, add for **all environments** (Production, Preview, Development):
+In Vercel dashboard -> Settings -> Environment Variables, add for **all environments** (Production, Preview, Development):
 
 ```env
 # Supabase (public - safe for client-side)
@@ -114,7 +114,7 @@ VITE_ENVIRONMENT=production
 ```
 
 **Getting Supabase keys:**
-- Anon key: Settings → API → Project API keys → `anon` `public`
+- Anon key: Settings -> API -> Project API keys -> `anon` `public`
 
 **Important:**
 - `VITE_*` variables are exposed to the browser (safe for client-side)
@@ -138,7 +138,7 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080'
 
 ### 2.5 Update Backend CORS
 
-Go back to Railway → Environment Variables:
+Go back to Railway -> Environment Variables:
 - Update `CORS_ORIGINS` to include your Vercel URL:
   ```
   CORS_ORIGINS=https://your-app.vercel.app,https://*.vercel.app
@@ -151,7 +151,7 @@ Go back to Railway → Environment Variables:
 
 ### 3.1 Configure Authentication Redirect URLs
 
-Supabase Dashboard → Authentication → URL Configuration:
+Supabase Dashboard -> Authentication -> URL Configuration:
 
 **Site URL:**
 ```
@@ -172,7 +172,7 @@ http://localhost:3000/auth/callback
 
 ### 3.2 Verify Connection Pooling
 
-Supabase Dashboard → Settings → Database:
+Supabase Dashboard -> Settings -> Database:
 - **Transaction pooling (port 6543):** Should be enabled by default
 - Backend uses this for Railway deployment (no static IP whitelisting needed)
 
@@ -200,7 +200,7 @@ From your local machine (repo root):
 **Interactive prompts:**
 1. Select table prefix: Choose **2) prod_**
 2. Enter Supabase DB URL: Use production database URL from Supabase Dashboard
-   - Settings → Database → Connection String → **Transaction mode** (port 6543)
+   - Settings -> Database -> Connection String -> **Transaction mode** (port 6543)
    - Format: `postgresql://postgres.[PROJECT]:[PASSWORD]@[HOST]:6543/postgres`
 3. Confirm migration
 
@@ -221,7 +221,7 @@ Tables created:
 
 ### 4.2 Verify Tables
 
-In Supabase Dashboard → Table Editor:
+In Supabase Dashboard -> Table Editor:
 - You should see 7 tables with `prod_` prefix
 - All tables should have Row Level Security (RLS) enabled
 - Each table should have a "block_postgrest" policy
@@ -229,7 +229,7 @@ In Supabase Dashboard → Table Editor:
 **Why this is safe:**
 - RLS blocks PostgREST API access (prevents unauthorized access via Supabase anon key)
 - Backend connects as postgres superuser and bypasses RLS
-- See `backend/README.md` → Database Migrations for details
+- See `backend/README.md` -> Database Migrations for details
 
 ### 4.3 One-Time Operation
 
@@ -237,7 +237,7 @@ In Supabase Dashboard → Table Editor:
 - This migration is **NOT** tracked by goose
 - Run only once per environment (test, prod, etc.)
 - For dev environment, use `make seed-fresh` instead (tracked by goose)
-- See `backend/README.md` → Database Migrations for migration strategy
+- See `backend/README.md` -> Database Migrations for migration strategy
 
 ---
 
@@ -259,7 +259,7 @@ Expected: `{"status":"ok"}`
 4. Verify streaming works (text appears incrementally)
 
 **If streaming fails:**
-- Check browser Network tab → `stream` request
+- Check browser Network tab -> `stream` request
 - Verify `Content-Type: text/event-stream`
 - Check Railway logs for errors
 
@@ -284,15 +284,15 @@ Access to XMLHttpRequest blocked by CORS policy
 Railway automatically deploys on push to `main` branch.
 
 **Configure:**
-- Railway Dashboard → Settings → GitHub
+- Railway Dashboard -> Settings -> GitHub
 - Branch: `main`
 - Deploy on: Push to main branch
 
 ### 6.2 Vercel Auto-Deploy
 
 Vercel automatically:
-- Deploys `main` → Production
-- Deploys PRs → Preview deployments
+- Deploys `main` -> Production
+- Deploys PRs -> Preview deployments
 
 **Configure preview URLs in Supabase:**
 - Already done with wildcard: `https://*.vercel.app/auth/callback`
@@ -336,7 +336,7 @@ Vercel automatically:
 
 **Fixes:**
 1. Verify using port 6543 (transaction mode) in `SUPABASE_DB_URL`
-2. Check Supabase dashboard → Database → Connection pooling
+2. Check Supabase dashboard -> Database -> Connection pooling
 3. Consider upgrading Supabase plan if hitting limits
 
 ---
@@ -346,7 +346,7 @@ Vercel automatically:
 ### Railway
 
 **Logs:**
-- Railway Dashboard → Deployments → Click deployment → Logs
+- Railway Dashboard -> Deployments -> Click deployment -> Logs
 - Filter by error level
 
 **Metrics:**
@@ -356,21 +356,21 @@ Vercel automatically:
 ### Vercel
 
 **Analytics:**
-- Vercel Dashboard → Analytics (requires Pro plan)
+- Vercel Dashboard -> Analytics (requires Pro plan)
 - Track page load times, errors
 
 **Logs:**
-- Vercel Dashboard → Deployments → Functions
+- Vercel Dashboard -> Deployments -> Functions
 - Real-time logs for API routes
 
 ### Supabase
 
 **Database:**
-- Supabase Dashboard → Database → Connection stats
+- Supabase Dashboard -> Database -> Connection stats
 - Monitor connection pool usage
 
 **Auth:**
-- Dashboard → Auth → Users
+- Dashboard -> Auth -> Users
 - Monitor sign-ups, failures
 
 ---
@@ -447,11 +447,11 @@ Vercel automatically:
 ### 1. Custom Domain (Optional)
 
 **Railway:**
-- Settings → Domains → Add custom domain
+- Settings -> Domains -> Add custom domain
 - Update DNS CNAME record
 
 **Vercel:**
-- Settings → Domains → Add domain
+- Settings -> Domains -> Add domain
 - Follow DNS configuration instructions
 
 ### 2. Environment-Specific Configs

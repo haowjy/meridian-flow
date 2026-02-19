@@ -130,9 +130,9 @@ func (r *PostgresDocumentRepository) reciprocalRankFusion(
 - Handling typos and synonyms while preserving exact matches
 
 **Not ideal for:**
-- Pure keyword searches → use FTS (faster)
-- Pure semantic searches → use vector (better conceptual matching)
-- High-frequency queries → higher cost (2x searches + merging)
+- Pure keyword searches -> use FTS (faster)
+- Pure semantic searches -> use vector (better conceptual matching)
+- High-frequency queries -> higher cost (2x searches + merging)
 
 ## Alternative: ML-Based Reranking
 
