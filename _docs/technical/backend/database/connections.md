@@ -13,21 +13,21 @@ Supabase provides two connection types. Using the wrong one causes "prepared sta
 
 | Type | Port | For | Auto-Configuration |
 |------|------|-----|-------------------|
-| Pooled (PgBouncer) | 6543 | Development | Simple protocol (no prepared statements) |
-| Direct | 5432 | Production | Prepared statements (better performance) |
+| Pooled (PgBouncer) | 6543 | Dev and production | `QueryExecModeCacheDescribe` (no prepared statements) |
+| Direct | 5432 | Static-IP deployments | Prepared statements (better performance) |
 
 ### Pooled Connection (Port 6543)
 
-Uses Supabase's PgBouncer connection pooler. Works from any IP, but PgBouncer doesn't support prepared statements in transaction mode.
+Uses Supabase's PgBouncer connection pooler. Works from any IP. PgBouncer's transaction mode historically didn't support prepared statements; Supabase's pooler still requires cached describe or simple protocol mode.
 
-**When to use:** Development (laptop, CI/CD without static IP)
+**When to use:** Development and production (any deployment without static IP)
 
 **Connection string:**
 ```
 postgresql://...@...pooler.supabase.com:6543/postgres
 ```
 
-**Auto-configuration:** Port 6543 is automatically detected and configures `QueryExecModeSimpleProtocol` to disable prepared statements.
+**Auto-configuration:** Port 6543 is automatically detected and configures `QueryExecModeCacheDescribe` to avoid prepared statements.
 
 **Explicit override (optional):**
 ```
@@ -38,7 +38,7 @@ postgresql://...@...pooler.supabase.com:6543/postgres?default_query_exec_mode=si
 
 Bypasses PgBouncer, connects directly to PostgreSQL. Requires IP whitelisting but supports full PostgreSQL features.
 
-**When to use:** Production (Railway, Vercel with static IP)
+**When to use:** Deployments with static IP (optional, for prepared statement performance)
 
 **Connection string:**
 ```
@@ -57,9 +57,12 @@ SUPABASE_DB_URL=postgresql://...pooler.supabase.com:6543/postgres?default_query_
 ```
 
 **Production** (Railway/Vercel):
-1. Get static IP of your deployment
-2. Whitelist IP in Supabase: Dashboard → Database → Database settings → Add IP
-3. Use port 5432 connection string (auto-uses prepared statements)
+```env
+# Use pooled connection (works with dynamic IPs)
+SUPABASE_DB_URL=postgresql://...pooler.supabase.com:6543/postgres
+```
+
+> **Optional:** If your deployment has a static IP, you can use port 5432 for prepared statement performance. Whitelist the IP in Supabase Dashboard -> Database -> Database settings.
 
 ## Environment-Based Table Names
 
@@ -92,7 +95,7 @@ query := fmt.Sprintf("SELECT * FROM %s WHERE id = $1", tables.Documents)
 
 This works with prepared statements because:
 - `fmt.Sprintf` runs **before** database sees the query
-- Each environment gets different SQL → different prepared statements
+- Each environment gets different SQL -> different prepared statements
 - `dev_documents` and `test_documents` have separate statement caches
 
 **Implementation:** `internal/repository/postgres/connection.go:15-27`

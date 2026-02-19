@@ -62,7 +62,7 @@ sequenceDiagram
 
 Color note: diagrams use defaults; UI nodes are conceptual. Dark‑mode safe colors applied in later focused diagrams.
 
-## Flow B — Typing → Autosave → Sync
+## Flow B — Typing -> Autosave -> Sync
 
 ```mermaid
 sequenceDiagram
@@ -74,7 +74,7 @@ sequenceDiagram
     participant IDB as "IndexedDB"
     participant API as "Backend API"
 
-    Editor->>Panel: onChange → setLocalContent(markdown)
+    Editor->>Panel: onChange -> setLocalContent(markdown)
     Panel->>Panel: debounce 1s ("hasUserEdit" true)
     Panel->>Store: saveDocument(D, debouncedContent)
     Store->>Store: set({status:'saving'})
@@ -111,9 +111,9 @@ sequenceDiagram
     Panel->>Store: loadDocument(D, s2)
     Store->>API: fetch(D, s1)
     Store->>API: fetch(D, s2)
-    API-->>Store: s1 abort → AbortError
+    API-->>Store: s1 abort -> AbortError
     Store-->>Store: set({isLoading:false})
-    API-->>Store: s2 success → Document(D)
+    API-->>Store: s2 success -> Document(D)
     Store-->>Store: set({activeDocument:D, isLoading:false})
 
     Note over Store: RACE GUARD: every await checks _activeDocumentId == D
@@ -173,7 +173,7 @@ flowchart TD
 
 ## Quick Checks to Diagnose "stuck on first doc"
 
-1) Open A → type → switch to B → back to A. Capture console:
+1) Open A -> type -> switch to B -> back to A. Capture console:
 - Expect: at most one AbortError per switch; content should match each document.
 
 2) Check that CodeMirror receives correct `key` prop (should be documentId) to force remount on switch.
@@ -235,7 +235,7 @@ sequenceDiagram
 Notes:
 - Edit mode remains disabled until initialization completes in `EditorPanel`.
 - This avoids overwriting the server with empty content when the editor mounts.
-- No automatic "local newer → push"; syncing still happens via autosave or explicit save.
+- No automatic "local newer -> push"; syncing still happens via autosave or explicit save.
 
 ## References (code)
 

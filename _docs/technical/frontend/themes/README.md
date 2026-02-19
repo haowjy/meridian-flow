@@ -150,8 +150,8 @@ Theme v3+ uses semantic color naming with clear intent:
 - "This is the main action color"
 
 **Migration from v2**: The legacy `accent` color was split for clearer intent:
-- `accent` → `favorite` for starred items, special markings
-- `accent` → `primary` for interactive UI elements
+- `accent` -> `favorite` for starred items, special markings
+- `accent` -> `primary` for interactive UI elements
 
 ## Adding New Themes
 

@@ -15,7 +15,7 @@ sequenceDiagram
     participant AI
 
     User->>User: Reviewing AI changes
-    AI->>Server: Update aiVersion (rev→6)
+    AI->>Server: Update aiVersion (rev->6)
     User->>Server: Save with ai_version (rev=5)
     Note over Server: Lost AI update!
 ```
@@ -79,8 +79,8 @@ Frontend polls `/api/documents/{id}/ai-status` every 2 seconds:
 ~100 bytes vs ~50KB for full document.
 
 **When `ai_version_rev` changes:**
-1. If not dirty → fetch full doc, refresh editor
-2. If dirty → stash as `pendingServerSnapshot`, show prompt
+1. If not dirty -> fetch full doc, refresh editor
+2. If dirty -> stash as `pendingServerSnapshot`, show prompt
 
 ---
 
@@ -111,7 +111,7 @@ flowchart TD
 
 | Client State | Server State | Outcome |
 |--------------|--------------|---------|
-| base_rev=5 | rev=5 | ✅ Success, rev→6 |
+| base_rev=5 | rev=5 | ✅ Success, rev->6 |
 | base_rev=5 | rev=6 | ❌ 409 Conflict |
 | base_rev=5 | rev=4 | ❌ Invalid (shouldn't happen) |
 

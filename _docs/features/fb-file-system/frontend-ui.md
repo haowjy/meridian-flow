@@ -43,11 +43,11 @@ feature: "File System Frontend UI"
 
 ## Document Operations
 
-**Create**: Inline name editor in tree (root `+` menu, folder context menu, or zero-state “Create a document”) → POST `/api/documents`
+**Create**: Inline name editor in tree (root `+` menu, folder context menu, or zero-state “Create a document”) -> POST `/api/documents`
   - Enter / checkmark = confirm, ESC / “X” = cancel
   - Early blur without changes does not create a file/folder (guards against focus races)
-**Rename**: Inline editor in tree → PATCH `/api/documents/{id}`
-**Delete**: Confirmation → DELETE `/api/documents/{id}` + remove from IndexedDB
+**Rename**: Inline editor in tree -> PATCH `/api/documents/{id}`
+**Delete**: Confirmation -> DELETE `/api/documents/{id}` + remove from IndexedDB
 
 ---
 

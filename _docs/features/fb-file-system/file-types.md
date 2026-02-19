@@ -50,8 +50,8 @@ Word count is computed on create/update for markdown-family files only.
 
 ### Normalization Rules
 
-- **Lowercase**: Extensions are normalized to lowercase (`MD` → `.md`)
-- **Leading dot**: Ensured automatically (`md` → `.md`)
+- **Lowercase**: Extensions are normalized to lowercase (`MD` -> `.md`)
+- **Leading dot**: Ensured automatically (`md` -> `.md`)
 - **Empty default**: Empty extension defaults to `.md`
 - **Validation**: Invalid extensions rejected with HTTP 400
 

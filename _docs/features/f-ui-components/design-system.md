@@ -57,8 +57,8 @@ Theme v3+ introduces semantic color usage:
 - Featured content markers
 
 **Migration from v2**: When updating components that used `accent`:
-1. **Interactive element?** → Use `primary`
-2. **Special marking?** → Use `favorite`
+1. **Interactive element?** -> Use `primary`
+2. **Special marking?** -> Use `favorite`
 
 ---
 

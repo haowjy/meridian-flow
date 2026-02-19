@@ -21,11 +21,11 @@ audience: developer
 
 ## Timestamp Handling
 - Missing timestamps return `NaN` (not `0`/epoch) to distinguish "unknown" from "very old"
-- When either timestamp is `NaN`, comparison returns `0` (equal) → local wins on tie
+- When either timestamp is `NaN`, comparison returns `0` (equal) -> local wins on tie
 - See `frontend/src/core/lib/cache.ts:133-158`
 
 ## Failure Handling
-- Network/5xx → retry; 4xx/validation → toast error, no retry. See `frontend/src/core/lib/errors.ts:73`.
+- Network/5xx -> retry; 4xx/validation -> toast error, no retry. See `frontend/src/core/lib/errors.ts:73`.
 - On new edits, cancel older retries so newer content wins. See `frontend/src/core/lib/sync.ts:103`.
 
 ## Observability
@@ -34,7 +34,7 @@ audience: developer
 
 ## Test Matrix (unit)
 - RetryScheduler: success path, backoff retries, cancel, permanent failure.
-- Cache policies: cache-emit + newest; tie→local; abort/network fallback.
+- Cache policies: cache-emit + newest; tie->local; abort/network fallback.
 - DocumentSyncService: optimistic put, server application, retry scheduling on server error, bubble validation.
 
 Implementation references in tests: `frontend/tests/*.test.ts`.

@@ -14,10 +14,10 @@ Build interfaces with intention, consistency, and memory. This skill helps you e
 ### Step 1: Determine Mode
 
 **Check for `.design-engineer/system.md`:**
-- **Exists?** → **APPLY MODE** (use existing system)
-- **Doesn't exist?** → Check project type:
-  - Has `package.json` or `.git`? → **ESTABLISH MODE** (create system)
-  - Neither? → **PRINCIPLES ONLY** (just apply principles)
+- **Exists?** -> **APPLY MODE** (use existing system)
+- **Doesn't exist?** -> Check project type:
+  - Has `package.json` or `.git`? -> **ESTABLISH MODE** (create system)
+  - Neither? -> **PRINCIPLES ONLY** (just apply principles)
 
 ### Step 2: Execute Mode
 
@@ -31,18 +31,18 @@ Build interfaces with intention, consistency, and memory. This skill helps you e
 **ESTABLISH MODE** (real project, no system):
 1. Scan project structure (package.json, files, framework)
 2. Infer product type:
-   - `tRPC`, `Prisma`, data tables → Dashboard/Admin
-   - Landing page, hero sections → Marketing
-   - Docs structure, MDX → Documentation
-   - Creative tool, canvas → Creative App
+   - `tRPC`, `Prisma`, data tables -> Dashboard/Admin
+   - Landing page, hero sections -> Marketing
+   - Docs structure, MDX -> Documentation
+   - Creative tool, canvas -> Creative App
 3. Suggest direction based on context:
-   - Dashboard → Precision & Density
-   - Marketing → Boldness & Clarity
-   - SaaS collab → Warmth & Approachability
-   - Finance → Sophistication & Trust
+   - Dashboard -> Precision & Density
+   - Marketing -> Boldness & Clarity
+   - SaaS collab -> Warmth & Approachability
+   - Finance -> Sophistication & Trust
 4. Ask ONE smart question with default:
    ```
-   Detected: [Dashboard] → Suggests [Precision & Density, Cool slate, Borders-only]
+   Detected: [Dashboard] -> Suggests [Precision & Density, Cool slate, Borders-only]
 
    Does this direction fit? (y/n/customize)
    ```
@@ -231,7 +231,7 @@ Give standalone icons presence with subtle background containers.
 - No spring/bouncy effects in enterprise UI
 
 ### Contrast Hierarchy
-Build a four-level system: foreground (primary) → secondary → muted → faint. Use all four consistently.
+Build a four-level system: foreground (primary) -> secondary -> muted -> faint. Use all four consistently.
 
 ### Color for Meaning Only
 Gray builds structure. Color only appears when it communicates: status, action, error, success. Decorative color is noise.
@@ -260,7 +260,7 @@ Dark interfaces have different needs:
 
 **Adjust semantic colors** — Status colors (success, warning, error) often need to be slightly desaturated or adjusted for dark backgrounds to avoid feeling harsh.
 
-**Same structure, different values** — The hierarchy system (foreground → secondary → muted → faint) still applies, just with inverted values.
+**Same structure, different values** — The hierarchy system (foreground -> secondary -> muted -> faint) still applies, just with inverted values.
 
 ---
 
@@ -273,9 +273,9 @@ Dark interfaces have different needs:
    - Padding symmetrical unless intentional?
 
 2. **Depth check** (if system defines strategy):
-   - Borders-only → no shadows except rings (0 0 0 1px)
-   - Subtle shadows → single layer only
-   - Layered → multiple layers consistent
+   - Borders-only -> no shadows except rings (0 0 0 1px)
+   - Subtle shadows -> single layer only
+   - Layered -> multiple layers consistent
 
 3. **Pattern check** (if system has patterns):
    - Reusing button pattern instead of creating new?

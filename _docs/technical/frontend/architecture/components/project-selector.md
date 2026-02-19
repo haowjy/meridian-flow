@@ -38,7 +38,7 @@ if (!projectSlug) return null
 - Separator after project list
 
 **Bottom Link**:
-- "All Projects" → navigates to `/projects` (index)
+- "All Projects" -> navigates to `/projects` (index)
 
 ## UI Structure
 

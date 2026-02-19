@@ -171,7 +171,7 @@ DEFAULT_MODEL=moonshotai/kimi-k2-thinking
 
 | Variable | Source | Description |
 |----------|--------|-------------|
-| `TABLE_PREFIX` | Auto | Auto-generated from `ENVIRONMENT`:<br>`dev` → `dev_`<br>`test` → `test_`<br>`prod` → `prod_`<br><br>Can be manually overridden if needed |
+| `TABLE_PREFIX` | Auto | Auto-generated from `ENVIRONMENT`:<br>`dev` -> `dev_`<br>`test` -> `test_`<br>`prod` -> `prod_`<br><br>Can be manually overridden if needed |
 
 ---
 
@@ -281,13 +281,13 @@ Use database backups instead:
 
 ## Migrating Between Environments
 
-### Dev → Test
+### Dev -> Test
 
 1. Change `ENVIRONMENT=dev` to `ENVIRONMENT=test`
 2. Run `make seed-fresh` to create test tables
 3. Test data is isolated from dev
 
-### Test → Prod
+### Test -> Prod
 
 1. Deploy to Railway with `ENVIRONMENT=prod`
 2. Railway auto-injects `PORT`

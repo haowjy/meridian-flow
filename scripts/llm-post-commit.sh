@@ -4,7 +4,7 @@
 # Auto-bumps patch version, tags, pushes, and updates backend/go.mod.
 #
 # Installed via symlink:
-#   .git/modules/meridian-llm-go/hooks/post-commit → ../../../scripts/llm-post-commit.sh
+#   .git/modules/meridian-llm-go/hooks/post-commit -> ../../../scripts/llm-post-commit.sh
 #
 # This runs automatically after every commit in the submodule.
 # To skip: git commit --no-verify (or delete the symlink to uninstall).

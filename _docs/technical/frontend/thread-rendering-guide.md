@@ -385,7 +385,7 @@ sequenceDiagram
     ES->>Buf: append(text_delta)
     Note over Buf: Accumulate for 50ms
 
-    Buf->>Store: flush() → updateActiveBlock()
+    Buf->>Store: flush() -> updateActiveBlock()
     Store->>UI: state update (blocks)
     UI->>SD: render blocks
     SD->>SD: incremental parse

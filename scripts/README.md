@@ -48,7 +48,7 @@ Automation scripts for the Meridian project.
 ### What It Does
 
 1. **Detects uncommitted changes** in each library
-2. **Auto-increments patch version** (v0.0.1 → v0.0.2)
+2. **Auto-increments patch version** (v0.0.1 -> v0.0.2)
 3. **Commits and tags** the libraries
 4. **Pushes to GitHub** (main + tags)
 5. **Updates backend/go.mod** with new versions
@@ -136,13 +136,13 @@ Next steps:
 ### Versioning Strategy
 
 **Auto-increment (recommended for most changes):**
-- Bug fixes: Auto-increment patch (v0.0.1 → v0.0.2)
+- Bug fixes: Auto-increment patch (v0.0.1 -> v0.0.2)
 - Small features: Auto-increment patch
 
 **Manual versioning (for significant changes):**
-- Minor version bump: Choose "custom" → `v0.1.0`
+- Minor version bump: Choose "custom" -> `v0.1.0`
   - New features, backward compatible
-- Major version bump: Choose "custom" → `v1.0.0`
+- Major version bump: Choose "custom" -> `v1.0.0`
   - Breaking changes, API redesign
 
 ### Rollback
@@ -275,16 +275,16 @@ git push origin main  # Triggers Railway deployment
 **Interactive mode (recommended):**
 ```bash
 ./scripts/migrate-prefix.sh
-# Shows menu → select 1/2/3 → enter DB URL → runs migration
+# Shows menu -> select 1/2/3 -> enter DB URL -> runs migration
 ```
 
 **Direct mode (for automation):**
 ```bash
 ./scripts/migrate-prefix.sh test_
-# Prompts for DB URL → runs migration
+# Prompts for DB URL -> runs migration
 
 ./scripts/migrate-prefix.sh prod_
-# Prompts for DB URL → runs migration
+# Prompts for DB URL -> runs migration
 ```
 
 ### Example Session (Interactive Mode)
@@ -365,7 +365,7 @@ This script includes the RLS section from the migration, so:
 ```bash
 # Ensure URL starts with postgresql://
 # Correct format: postgresql://postgres.[PROJECT-REF]:[PASSWORD]@[HOST]:6543/postgres
-# Find in Supabase Dashboard → Settings → Database → Connection Pooling (Session mode, port 6543)
+# Find in Supabase Dashboard -> Settings -> Database -> Connection Pooling (Session mode, port 6543)
 ```
 
 **Error: "migration file not found"**
@@ -407,7 +407,7 @@ This avoids prefix complexity and provides better isolation.
 
 1. Fetches latest tags from origin
 2. Checks if HEAD is already tagged (skips if so — no double-bump)
-3. Increments patch version (v0.0.24 → v0.0.25)
+3. Increments patch version (v0.0.24 -> v0.0.25)
 4. Tags current commit
 5. Pushes commit + tag to origin
 6. Updates `backend/go.mod` with new version (`go get` + `go mod tidy`)
@@ -451,19 +451,45 @@ git commit --no-verify -m "message"
 
 ---
 
-## `orchestrator/prompts/`
+## Orchestration
 
-**Purpose:** Prompt templates used by the `/orchestrate` skill (interactive plan-slice pipeline). See `.claude/skills/orchestrate/SKILL.md` for the full pipeline description.
+Orchestration utilities live in the `orchestrate` skill (`.agents/skills/orchestrate/`):
+- `scripts/run-agent.sh`
+- `scripts/extract-files-touched.sh`
+- `scripts/save-handoff.sh`
+- `agents/*.md`
 
-### Prompt Templates
+See `.agents/skills/orchestrate/README.md` for usage and configuration.
 
-| Template | Stage | Variables |
-|----------|-------|-----------|
-| `plan-slice.md` | plan | `{{PLAN_FILE}}`, `{{TASKS_DIR}}` |
-| `implement.md` | implement | `{{TASKS_DIR}}` |
-| `review.md` | review | `{{TASKS_DIR}}` |
-| `cleanup.md` | cleanup | `{{CLEANUP_FILE}}` |
-| `commit.md` | commit | `{{BREADCRUMBS}}` |
+---
+
+## `dev/setup.sh` — Dev Environment
+
+**Purpose:** Create a tmux dev session with backend + frontend panes.
+
+```bash
+scripts/dev/setup.sh
+```
+
+Creates session `ms_server` with:
+- Left pane: `cd backend && make run-local` (port 8080)
+- Right pane: `cd frontend && pnpm run dev` (port 5173)
+
+For per-worktree port overrides, create `.dev-ports` (gitignored):
+```bash
+BACKEND_PORT=8081
+FRONTEND_PORT=5174
+```
+
+## `dev/restart-backend.sh` — Reliable Backend Restart
+
+**Purpose:** Kill and restart the backend using `tmux respawn-pane -k`. More reliable than sending ctrl+c.
+
+```bash
+scripts/dev/restart-backend.sh
+```
+
+`scripts/restart-server.sh` delegates to this script.
 
 ---
 

@@ -24,7 +24,7 @@ flowchart LR
         L1["ActiveThreadView<br/>─ or ─<br/>ThreadListPanel<br/>─ or ─<br/>ProjectSettingsPanel"]
     end
 
-    subgraph Right["Right Panel (58%)<br/>min 25% • max 60% • COLLAPSIBLE → 0%"]
+    subgraph Right["Right Panel (58%)<br/>min 25% • max 60% • COLLAPSIBLE -> 0%"]
         subgraph DocPanel["DocumentPanel"]
             Tree["Tree<br/>(25%)"]
             Editor["Editor<br/>(75%)"]
@@ -114,7 +114,7 @@ graph TB
     end
 
     subgraph "Strategy Selection"
-        Strategy["useLayoutStrategy()<br/>Selects based on viewport:<br/>≥768px → TwoPanelLayout<br/><768px → MobileLayout"]
+        Strategy["useLayoutStrategy()<br/>Selects based on viewport:<br/>≥768px -> TwoPanelLayout<br/><768px -> MobileLayout"]
     end
 
     subgraph "Layout Strategies"
@@ -341,10 +341,10 @@ toggleLeftPanel: () => {
 3. User preference should persist across sessions
 
 **Solution**: Separate `ready` (session) and `userOverride` (persisted) state:
-- `ready` = false → panel should hide (data not loaded)
-- `ready` = true → panel should show (data loaded)
-- `userOverride` = null → follow `ready` state
-- `userOverride` = 'collapsed'/'expanded' → ignore `ready` state
+- `ready` = false -> panel should hide (data not loaded)
+- `ready` = true -> panel should show (data loaded)
+- `userOverride` = null -> follow `ready` state
+- `userOverride` = 'collapsed'/'expanded' -> ignore `ready` state
 
 **Alternative Considered**: Single `collapsed: boolean` flag
 - **Problem**: Can't distinguish "user collapsed" from "auto-collapsed during loading"
@@ -362,7 +362,7 @@ const { leftPanelUserOverride } = useUIStore()
 const collapsed = leftPanelUserOverride === 'collapsed'  // false initially, then true after hydration
 ```
 
-**Result**: Panel flashes expanded → collapsed on page load.
+**Result**: Panel flashes expanded -> collapsed on page load.
 
 ### Solution
 
@@ -392,7 +392,7 @@ The layout implements **bidirectional URL-state synchronization**:
 
 ### Forward Navigation (User Action)
 
-User clicks document/skill → Helper updates state + URL:
+User clicks document/skill -> Helper updates state + URL:
 
 ```typescript
 // panelHelpers.ts
@@ -410,7 +410,7 @@ export function openDocument(documentId: string, projectSlug: string, documentPa
 
 ### Backward Navigation (Browser Back/Forward)
 
-Browser changes URL → Effect updates state:
+Browser changes URL -> Effect updates state:
 
 ```typescript
 // WorkspaceLayout.tsx
@@ -418,13 +418,13 @@ useEffect(() => {
   const store = useUIStore.getState()
 
   if (effectiveDocumentId) {
-    // Document URL → open editor
+    // Document URL -> open editor
     if (store.activeDocumentId !== effectiveDocumentId) {
       store.setActiveDocument(effectiveDocumentId)
     }
     store.setRightPanelState('editor')
   } else {
-    // Tree URL → close editor
+    // Tree URL -> close editor
     store.setActiveDocument(null)
     store.setRightPanelState('documents')
   }
@@ -439,14 +439,14 @@ useEffect(() => {
 Resolution happens in `useMemo` hooks:
 
 ```typescript
-// Document path → ID
+// Document path -> ID
 const effectiveDocumentId = useMemo(() => {
   if (!effectiveDocumentPath) return undefined
   const doc = documents.find(d => d.path === effectiveDocumentPath)
   return doc?.id
 }, [effectiveDocumentPath, documents])
 
-// Skill name → ID
+// Skill name -> ID
 const effectiveSkillId = useMemo(() => {
   if (!effectiveSkillName) return undefined
   const skill = skills.find(s => s.name === effectiveSkillName)
@@ -459,9 +459,9 @@ const effectiveSkillId = useMemo(() => {
 ### Problem
 
 User navigates directly to `/projects/my-project/skills/writing-coach`:
-1. URL parsed → `effectiveSkillName = 'writing-coach'`
-2. Skills not loaded yet → `skills = []`
-3. Resolution fails → `effectiveSkillId = undefined`
+1. URL parsed -> `effectiveSkillName = 'writing-coach'`
+2. Skills not loaded yet -> `skills = []`
+3. Resolution fails -> `effectiveSkillId = undefined`
 4. Editor doesn't open until skills finish loading
 
 ### Solution
@@ -520,9 +520,9 @@ useEffect(() => {
 
 **Why skip first load?**
 - Deep link: `/projects/my-project/documents/chapter-1`
-- Project resolves (null → UUID)
+- Project resolves (null -> UUID)
 - If we reset, the document selection is lost
-- Solution: Only reset on subsequent project switches (UUID → different UUID)
+- Solution: Only reset on subsequent project switches (UUID -> different UUID)
 
 ## Component Reference
 

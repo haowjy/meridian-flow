@@ -86,7 +86,7 @@ Both `content` and `ai_content` are **read-only projections** — never written 
 |--------|------|-------------|------------|
 | `yjs_state` | Binary CRDT (authority) | 2s debounce + disconnect + every N updates | `Y.encodeStateAsUpdate(doc)` |
 | `content` | Writer's text | Same as `yjs_state` | `doc.GetText("content").ToString()` |
-| `ai_content` | AI's text (doc + pending proposals) | Same as `yjs_state` + proposal lifecycle | Phase 1: same as content. Phase 3+: Clone doc → apply all `status='proposed'` updates → `ToString()` |
+| `ai_content` | AI's text (doc + pending proposals) | Same as `yjs_state` + proposal lifecycle | Phase 1: same as content. Phase 3+: Clone doc -> apply all `status='proposed'` updates -> `ToString()` |
 
 **Persistence triggers (all three columns written together in one UPDATE):**
 - **2s debounce timer** — resets on each Yjs update, fires 2s after last activity
@@ -94,7 +94,7 @@ Both `content` and `ai_content` are **read-only projections** — never written 
 - **On disconnect** — final persist when last client disconnects
 - **On proposal lifecycle** — `ai_content` also recomputed when proposals are created/accepted/rejected (Phase 3+)
 
-**Scaling note:** v1 writes directly to Postgres via `DocumentStore` interface. v2 scaling requires only a `DocumentBroadcaster` swap (in-memory → Redis pub/sub). Optionally, a Redis write-through cache could be added in front of `DocumentStore` for sub-second durability, but this is **not** part of the v1→v2 scaling path — it's an independent optimization if Postgres write latency becomes a bottleneck.
+**Scaling note:** v1 writes directly to Postgres via `DocumentStore` interface. v2 scaling requires only a `DocumentBroadcaster` swap (in-memory -> Redis pub/sub). Optionally, a Redis write-through cache could be added in front of `DocumentStore` for sub-second durability, but this is **not** part of the v1->v2 scaling path — it's an independent optimization if Postgres write latency becomes a bottleneck.
 
 ### Search and Preview Read-Model Contract
 

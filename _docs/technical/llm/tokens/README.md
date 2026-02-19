@@ -80,8 +80,8 @@ flowchart LR
 
 For reasoning-capable models (o1, Grok, DeepSeek-R1), there's a brief window where `output_tokens` is incomplete:
 
-1. Stream completes → `output_tokens` set from streaming metadata (NO reasoning tokens)
-2. Background job runs (200ms - 8.5 min later) → adds reasoning tokens
+1. Stream completes -> `output_tokens` set from streaming metadata (NO reasoning tokens)
+2. Background job runs (200ms - 8.5 min later) -> adds reasoning tokens
 3. `output_tokens` now complete (completion + reasoning)
 
 This is **acceptable** for backend tracking:

@@ -24,7 +24,7 @@ type FileProcessor interface {
 }
 
 // Strategies:
-// - ZipFileProcessor: Extracts zip archive → individual files
+// - ZipFileProcessor: Extracts zip archive -> individual files
 // - IndividualFileProcessor: Passes through individual files
 ```
 
@@ -53,14 +53,14 @@ type ContentConverter interface {
 // Implementations:
 // - MarkdownConverter: Pass-through (no conversion)
 // - TextConverter: Wraps in markdown code block if needed
-// - HTMLConverter: HTML → Markdown + XSS sanitization
+// - HTMLConverter: HTML -> Markdown + XSS sanitization
 ```
 
 **Registry-based routing:**
 ```go
 func (r *ConverterRegistry) GetConverter(ext string) (ContentConverter, error) {
     converter, ok := r.converters[strings.ToLower(ext)]
-    // Routes .md → MarkdownConverter, .html → HTMLConverter, etc.
+    // Routes .md -> MarkdownConverter, .html -> HTMLConverter, etc.
 }
 ```
 
@@ -138,14 +138,14 @@ Uses `shouldIgnorePath()` to skip system directories and files:
 
 **Key Logic:**
 ```go
-// Extract zip → filter system files → convert each → collect ProcessedFiles
+// Extract zip -> filter system files -> convert each -> collect ProcessedFiles
 for _, zipFile := range zipReader.File {
     // Skip system files (defense-in-depth: frontend filters too)
     if shouldIgnorePath(zipFile.Name) {
         continue
     }
 
-    folderPath := extractFolderPath(zipFile.Name)  // "dir/subdir/file.md" → "dir/subdir"
+    folderPath := extractFolderPath(zipFile.Name)  // "dir/subdir/file.md" -> "dir/subdir"
     fileName := extractFileName(zipFile.Name)       // "file.md"
     content := readContent(zipFile)
 
@@ -187,7 +187,7 @@ return []ProcessedFile{{
 **Location:** `internal/service/docsystem/converter/registry.go`
 
 **Responsibilities:**
-- Map file extensions to converters (.md → MarkdownConverter, .html → HTMLConverter)
+- Map file extensions to converters (.md -> MarkdownConverter, .html -> HTMLConverter)
 - Validate extensions before conversion
 - Return errors for unsupported formats
 
@@ -370,16 +370,16 @@ for _, file := range files {
 
 ### Integration Tests
 
-- Upload sample zip with nested folders → verify folder structure
-- Upload HTML with script tags → verify sanitization
-- Upload mixed formats (.md + .txt + .html) → verify all converted
+- Upload sample zip with nested folders -> verify folder structure
+- Upload HTML with script tags -> verify sanitization
+- Upload mixed formats (.md + .txt + .html) -> verify all converted
 
 ### Edge Cases
 
-- Empty zip archive → return empty results
-- Zip with no valid files → return error
-- HTML with only disallowed tags → return empty markdown
-- File extension mismatch (e.g., .txt contains HTML) → convert as text
+- Empty zip archive -> return empty results
+- Zip with no valid files -> return error
+- HTML with only disallowed tags -> return empty markdown
+- File extension mismatch (e.g., .txt contains HTML) -> convert as text
 
 ## Security Considerations
 
@@ -413,7 +413,7 @@ if file.Size > MaxFileSize {
 
 ### Zip Bomb Protection
 
-**Risk:** Malicious zip that extracts to enormous size (e.g., 1MB zip → 1GB extracted).
+**Risk:** Malicious zip that extracts to enormous size (e.g., 1MB zip -> 1GB extracted).
 
 **Mitigation:** (TODO for production)
 ```go
@@ -435,13 +435,13 @@ for _, zipFile := range zipReader.File {
 - `backend/internal/service/docsystem/zip_file_processor.go` - Zip extraction
 - `backend/internal/service/docsystem/individual_file_processor.go` - Single file handling
 - `backend/internal/service/docsystem/converter/registry.go` - Converter routing
-- `backend/internal/service/docsystem/converter/html_converter.go` - HTML → Markdown + XSS
-- `backend/internal/service/docsystem/converter/text_converter.go` - Text → Markdown
+- `backend/internal/service/docsystem/converter/html_converter.go` - HTML -> Markdown + XSS
+- `backend/internal/service/docsystem/converter/text_converter.go` - Text -> Markdown
 - `backend/internal/service/docsystem/converter/markdown_converter.go` - Markdown pass-through
 - `backend/internal/handler/document.go:ImportDocuments()` - HTTP handler
 
 ## Dependencies
 
-- `github.com/JohannesKaufmann/html-to-markdown` (v1.6.0) - HTML → Markdown conversion
+- `github.com/JohannesKaufmann/html-to-markdown` (v1.6.0) - HTML -> Markdown conversion
 - `github.com/microcosm-cc/bluemonday` (v1.0.27) - HTML sanitization (XSS prevention)
 - `github.com/PuerkitoBio/goquery` (v1.9.2) - HTML parsing (transitive via html-to-markdown)

@@ -54,7 +54,7 @@ The library converts provider-specific events into standardized AG-UI events.
 
 **Flow:**
 ```go
-// Provider stream → Library normalization → AG-UI event
+// Provider stream -> Library normalization -> AG-UI event
 provider.StreamResponse(ctx, request) // Returns StreamEventIterator
 
 for event := range iter {
@@ -162,17 +162,17 @@ Maps AG-UI IDs to block indices for correlation:
 
 ```typescript
 class BlockTracker {
-  // Tool calls: toolCallId → blockIndex
+  // Tool calls: toolCallId -> blockIndex
   registerToolCall(toolCallId: string, blockIndex: number): void
   getToolCallBlockIndex(toolCallId: string): number | undefined
   appendToolJson(toolCallId: string, delta: string, opts?: { maxChars?: number }): { json: string; truncated: boolean }
   appendToolArgsDelta(toolCallId: string, delta: string): ToolArgsStreamSnapshot | null
 
-  // Messages: messageId → blockIndex
+  // Messages: messageId -> blockIndex
   registerMessage(messageId: string, blockIndex: number): void
   getMessageBlockIndex(messageId: string): number | undefined
 
-  // Thinking: thinkingId → blockIndex
+  // Thinking: thinkingId -> blockIndex
   registerThinking(thinkingId: string, blockIndex: number): void
   getThinkingBlockIndex(thinkingId: string): number | undefined
 
@@ -192,30 +192,30 @@ class BlockTracker {
 Each AG-UI event maps to a store action:
 
 ```typescript
-// TEXT_MESSAGE_START → Create new text block
+// TEXT_MESSAGE_START -> Create new text block
 case SSE_EVENTS.TEXT_MESSAGE_START:
   const blockIndex = tracker.nextBlockIndex()
   tracker.registerMessage(data.messageId, blockIndex)
   tracker.setCurrentBlockType('text')
   // Store: Add block to turn
 
-// TEXT_MESSAGE_CONTENT → Append delta (buffered)
+// TEXT_MESSAGE_CONTENT -> Append delta (buffered)
 case SSE_EVENTS.TEXT_MESSAGE_CONTENT:
   append(data.delta) // Buffer for batch flush
 
-// TOOL_CALL_START → Create tool_use block
+// TOOL_CALL_START -> Create tool_use block
 case SSE_EVENTS.TOOL_CALL_START:
   const blockIndex = tracker.nextBlockIndex()
   tracker.registerToolCall(data.toolCallId, blockIndex)
   // Store: Add tool_use block with name
 
-// TOOL_CALL_ARGS → Accumulate JSON
+// TOOL_CALL_ARGS -> Accumulate JSON
 case SSE_EVENTS.TOOL_CALL_ARGS:
   const meta = tracker.appendToolArgsDelta(data.toolCallId, data.delta)
   const { json, truncated } = tracker.appendToolJson(data.toolCallId, data.delta, { maxChars: ... })
   // Store: Update tool state with meta; parse json only while small/not in large string
 
-// TOOL_CALL_RESULT → Mark tool complete + insert tool_result block
+// TOOL_CALL_RESULT -> Mark tool complete + insert tool_result block
 case SSE_EVENTS.TOOL_CALL_RESULT:
   // Store: Add tool_result block + set tool stream state COMPLETE/ERROR
 ```
@@ -292,7 +292,7 @@ Meridian adds two events not in the AG-UI spec:
 | Backend | `agui/id_factory.go` | Deterministic ID generation |
 | Backend | `agui/emitter.go` | SSE serialization + lifecycle events |
 | Frontend | `sseEventTypes.ts` | Event constants + TypeScript interfaces |
-| Frontend | `blockTracker.ts` | ID→blockIndex correlation |
+| Frontend | `blockTracker.ts` | ID->blockIndex correlation |
 | Frontend | `useThreadSSE.ts` | SSE connection + event handlers |
 
 ---

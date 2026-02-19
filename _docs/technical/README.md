@@ -44,7 +44,7 @@ Lean, up-to-date references for engineers. Prefer code over prose; include file/
 ```mermaid
 flowchart LR
   FE["Vite + TanStack Router Frontend\n(Zustand + Dexie)"]
-  API["Go + Fiber API\n(Handler → Service → Repository)"]
+  API["Go + Fiber API\n(Handler -> Service -> Repository)"]
   DB[("PostgreSQL\n(Supabase)")]
 
   FE <---> | JSON (DTOs) | API

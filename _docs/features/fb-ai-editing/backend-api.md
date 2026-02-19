@@ -42,8 +42,8 @@ When PATCH includes `ai_version`, it **must** include `ai_version_base_rev`:
 ```
 
 **Server validation:**
-1. If `ai_version_base_rev` != current `ai_version_rev` → **409 Conflict**
-2. If match → update `ai_version`, increment `ai_version_rev`
+1. If `ai_version_base_rev` != current `ai_version_rev` -> **409 Conflict**
+2. If match -> update `ai_version`, increment `ai_version_rev`
 
 ---
 

@@ -35,7 +35,7 @@ note: "Comprehensive reference - prefer condensed guide: supabase-jwt-implementa
 The backend uses **JWT validation via JWKS** for authentication:
 
 ```
-Request → AuthMiddleware (validates JWT via JWKS) → Handler → Service
+Request -> AuthMiddleware (validates JWT via JWKS) -> Handler -> Service
 ```
 
 **Key Files:**
@@ -111,9 +111,9 @@ Supabase supports two JWT signing methods. **Choose based on your project creati
 
 **How it works:**
 ```
-Frontend Login → Supabase Auth → JWT (signed with private key)
+Frontend Login -> Supabase Auth -> JWT (signed with private key)
                                     ↓
-Backend → Fetch public key from JWKS → Verify signature → Extract claims
+Backend -> Fetch public key from JWKS -> Verify signature -> Extract claims
 ```
 
 **Pros:**
@@ -140,9 +140,9 @@ https://<project-id>.supabase.co/auth/v1/.well-known/jwks.json
 
 **How it works:**
 ```
-Frontend Login → Supabase Auth → JWT (signed with JWT_SECRET)
+Frontend Login -> Supabase Auth -> JWT (signed with JWT_SECRET)
                                     ↓
-Backend → Verify with same JWT_SECRET → Extract claims
+Backend -> Verify with same JWT_SECRET -> Extract claims
 ```
 
 **Pros:**
@@ -157,7 +157,7 @@ Backend → Verify with same JWT_SECRET → Extract claims
 
 **JWT_SECRET Location:**
 ```
-Supabase Dashboard → Settings → API → JWT Secret
+Supabase Dashboard -> Settings -> API -> JWT Secret
 ```
 
 ### Recommendation
@@ -178,10 +178,10 @@ Supabase Dashboard → Settings → API → JWT Secret
 ### Prerequisites
 
 **Check your Supabase project:**
-1. Go to Supabase Dashboard → Settings → API
+1. Go to Supabase Dashboard -> Settings -> API
 2. Check if you see "JWKS Endpoint" or "JWT Secret"
-3. If JWKS endpoint exists → Use RS256 approach
-4. If only JWT Secret exists → Use HS256 approach (migrate later)
+3. If JWKS endpoint exists -> Use RS256 approach
+4. If only JWT Secret exists -> Use HS256 approach (migrate later)
 
 ---
 
@@ -435,7 +435,7 @@ func AuthMiddleware(jwtVerifier *auth.JWTVerifier) func(http.Handler) http.Handl
 **Changes from Phase 1:**
 - No longer uses test user ID
 - Validates real JWT tokens
-- Same interface → handlers don't need changes
+- Same interface -> handlers don't need changes
 
 #### Step 6: Update Server Initialization
 
@@ -548,7 +548,7 @@ SUPABASE_DB_URL=postgresql://postgres:[password]@db.[project].supabase.co:6543/p
 ```
 
 **Why:**
-- JWKS URL auto-constructed from `SUPABASE_URL` → DRY
+- JWKS URL auto-constructed from `SUPABASE_URL` -> DRY
 - Override available if needed (e.g., custom auth server)
 
 ---
@@ -679,12 +679,12 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your-anon-key
 SUPABASE_DB_URL=postgresql://...
 
-# NEW - Get from Supabase Dashboard → Settings → API → JWT Secret
+# NEW - Get from Supabase Dashboard -> Settings -> API -> JWT Secret
 SUPABASE_JWT_SECRET=your-jwt-secret-here
 ```
 
 **Where to find JWT Secret:**
-1. Supabase Dashboard → Project Settings → API
+1. Supabase Dashboard -> Project Settings -> API
 2. Scroll to "JWT Settings"
 3. Copy "JWT Secret" (long base64 string)
 
@@ -785,10 +785,10 @@ curl -v \
 
 - [ ] Start backend server
 - [ ] Login via frontend (get JWT token)
-- [ ] Call protected endpoint with valid token → 200 OK
-- [ ] Call without Authorization header → 401
-- [ ] Call with malformed header → 401
-- [ ] Call with expired token → 401
+- [ ] Call protected endpoint with valid token -> 200 OK
+- [ ] Call without Authorization header -> 401
+- [ ] Call with malformed header -> 401
+- [ ] Call with expired token -> 401
 - [ ] Verify user ID is correct in backend logs
 - [ ] Test multiple users (different tokens)
 

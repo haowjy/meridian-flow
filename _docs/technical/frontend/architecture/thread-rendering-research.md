@@ -69,7 +69,7 @@ editor.commands.streamContent({
 });
 ```
 
-**Problem for chat:** Each message needs separate editor instance → 100 messages = 100 heavy editor instances.
+**Problem for chat:** Each message needs separate editor instance -> 100 messages = 100 heavy editor instances.
 
 **React Performance Issues:**
 > "Performance can slow down quite a bit" without best practices

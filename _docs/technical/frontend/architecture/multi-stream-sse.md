@@ -69,15 +69,15 @@ Even before multi-stream, stream switching introduces races (old stream ends whi
 
 Connection lifecycle cleanup:
 - `onclose()` clears global streaming state:
-  - `frontend/src/features/threads/hooks/sse/useSSEConnection.ts:185` → `clearStreamingStream()` at line 200
+  - `frontend/src/features/threads/hooks/sse/useSSEConnection.ts:185` -> `clearStreamingStream()` at line 200
 - `onerror()` clears global streaming state:
-  - `frontend/src/features/threads/hooks/sse/useSSEConnection.ts:211` → `clearStreamingStream()` at line 218
+  - `frontend/src/features/threads/hooks/sse/useSSEConnection.ts:211` -> `clearStreamingStream()` at line 218
 
 Event lifecycle cleanup:
 - `RUN_FINISHED` clears global streaming state:
-  - `frontend/src/features/threads/hooks/sse/eventHandlers/lifecycleEventHandlers.ts:94` → `clearStreamingStream()` at line 120
+  - `frontend/src/features/threads/hooks/sse/eventHandlers/lifecycleEventHandlers.ts:94` -> `clearStreamingStream()` at line 120
 - `RUN_ERROR` clears global streaming state:
-  - `frontend/src/features/threads/hooks/sse/eventHandlers/lifecycleEventHandlers.ts:159` → `clearStreamingStream()` at line 190
+  - `frontend/src/features/threads/hooks/sse/eventHandlers/lifecycleEventHandlers.ts:159` -> `clearStreamingStream()` at line 190
 
 In a multi-stream world (or even during `STREAM_SWITCH`), stale close/terminal events from Stream A can erase Stream B’s state unless cleanup is scoped.
 
@@ -110,7 +110,7 @@ User-facing reasons:
 
 Engineering reasons:
 - Avoid “singleton state fights” and hard-to-debug races.
-- Make correctness obvious: event → state update is scoped to one stream.
+- Make correctness obvious: event -> state update is scoped to one stream.
 - Make extensibility cheap: adding a new stream kind should not require reworking the main thread streaming pipeline.
 
 ---
@@ -283,7 +283,7 @@ Suggested new/updated modules:
 
 ---
 
-## Migration Plan (from today → multi-stream)
+## Migration Plan (from today -> multi-stream)
 
 This plan keeps the refactor incremental while immediately fixing the current `STREAM_SWITCH` crash.
 

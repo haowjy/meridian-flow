@@ -34,8 +34,8 @@ FileProcessorRegistry
 
 ConverterRegistry
 ├── MarkdownConverter (.md) - Pass-through
-├── TextConverter (.txt) - Plain text → Markdown
-└── HTMLConverter (.html, .htm) - HTML → Markdown + XSS sanitization
+├── TextConverter (.txt) - Plain text -> Markdown
+└── HTMLConverter (.html, .htm) - HTML -> Markdown + XSS sanitization
 ```
 
 **Flow:**

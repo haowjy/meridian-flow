@@ -260,7 +260,7 @@ func (a *AnthropicAdapter) ConvertBuiltInTool(tool *BuiltInTool) (anthropic.Tool
         }, nil
     case "apply_patch":
         // Anthropic has text_editor, which is similar but not identical
-        // Adapter translates apply_patch → text_editor semantics
+        // Adapter translates apply_patch -> text_editor semantics
         return anthropic.Tool{
             Type: anthropic.F("text_editor_20250728"),
             Name: anthropic.F("str_replace_based_edit_tool"),
@@ -333,7 +333,7 @@ func (s *LLMService) GenerateTurn(ctx context.Context, req *TurnRequest) (*Turn,
 **Boundary Rules:**
 - ✅ Core defines `BuiltInTool` abstraction with unified names
 - ✅ Core capability registry tracks provider support (from config)
-- ✅ Adapters translate unified tools → provider-specific format
+- ✅ Adapters translate unified tools -> provider-specific format
 - ✅ Adapters fail explicitly if tool unsupported
 - ✅ Backend chooses which tools to enable (business logic)
 - ❌ Core does NOT know provider names ("anthropic", "gemini")
@@ -443,7 +443,7 @@ func (s *LLMService) GenerateTurn(ctx context.Context, req *TurnRequest) (*Turn,
 - ✅ Core validates against capability constraints
 - ✅ Adapters convert effort ↔ budget as needed
 - ✅ Backend sets thinking policy (business logic)
-- ❌ Core does NOT know conversion ratios (effort → budget)
+- ❌ Core does NOT know conversion ratios (effort -> budget)
 - ❌ Adapters do NOT decide when to enable thinking
 - ❌ Backend does NOT do provider-specific validation
 
@@ -612,7 +612,7 @@ func (v *RequestValidator) Validate(provider string, req *GenerateRequest) error
 func (a *AnthropicAdapter) GenerateResponse(ctx context.Context, req *llm.GenerateRequest) (*llm.GenerateResponse, error) {
     resp, err := a.client.Messages.New(ctx, params)
     if err != nil {
-        // Translate SDK error → core error
+        // Translate SDK error -> core error
         return nil, a.mapError(err)
     }
     return resp, nil
@@ -667,7 +667,7 @@ func (s *LLMService) GenerateTurn(ctx context.Context, req *TurnRequest) (*Turn,
 **Boundary Rules:**
 - ✅ Core defines error types
 - ✅ Core validation returns typed errors
-- ✅ Adapters map SDK errors → core errors
+- ✅ Adapters map SDK errors -> core errors
 - ✅ Backend handles errors (retry, log, metrics)
 - ❌ Core does NOT log or emit metrics
 - ❌ Adapters do NOT retry (stateless)
@@ -690,10 +690,10 @@ sequenceDiagram
 
     Backend->>Core: provider.GenerateResponse(req)
     Core->>Adapter: GenerateResponse(req)
-    Note over Adapter: Translate Block[]<br/>→ SDK format
+    Note over Adapter: Translate Block[]<br/>-> SDK format
     Adapter->>ProviderSDK: SDK.Generate(sdkReq)
     ProviderSDK-->>Adapter: SDK Response
-    Note over Adapter: Translate SDK response<br/>→ Block[]
+    Note over Adapter: Translate SDK response<br/>-> Block[]
     Adapter-->>Core: llm.GenerateResponse
     Core-->>Backend: llm.GenerateResponse
 
@@ -705,7 +705,7 @@ sequenceDiagram
 1. Backend works with domain models (`Turn`, `TurnBlock`)
 2. Core works with library models (`GenerateRequest`, `Block`)
 3. Adapter works with SDK models (`anthropic.MessageParam`)
-4. No layer skips another (no Backend → Adapter directly)
+4. No layer skips another (no Backend -> Adapter directly)
 
 ---
 

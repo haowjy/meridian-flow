@@ -53,7 +53,7 @@ Only recognized as internal when target is NOT `http(s)://`.
 ### Target rules
 
 - Project-relative file path, filesystem-style: `Characters/Heroes/Aria.md`
-- Extension omission implies `.md`: `[[Aria]]` → `Aria.md`
+- Extension omission implies `.md`: `[[Aria]]` -> `Aria.md`
 - Non-markdown requires explicit extension: `[[Images/Map.png]]`
 - `#fragment` refers to a heading inside the target file.
 
@@ -62,9 +62,9 @@ Only recognized as internal when target is NOT `http(s)://`.
 The `@` autocomplete inserts the **shortest unique suffix** of the target path:
 
 ```
-Characters/Heroes/Aria.md → try Aria.md → unique? use it
-                           → else Heroes/Aria.md → unique? use it
-                           → else full path
+Characters/Heroes/Aria.md -> try Aria.md -> unique? use it
+                           -> else Heroes/Aria.md -> unique? use it
+                           -> else full path
 ```
 
 ### Rendering
@@ -82,7 +82,7 @@ flowchart LR
   Insert --> Doc["Markdown content"]
   Doc --> Scan["Token scanner"]
   Scan --> Deco["Pill widget"]
-  Deco --> Click["Click → openDocument()"]
+  Deco --> Click["Click -> openDocument()"]
 ```
 
 Internal links are a **CM6 extension** reusable in main editor and skill editor. We scan raw text for tokens in visible ranges and render via decorations — same approach as existing live preview. Underlying markdown is never mutated.
@@ -114,7 +114,7 @@ scanInternalLinks(text, from): ParsedInternalLink[]
 Rules:
 - `[[target]]`, `[[target|alias]]`, `[[target#fragment]]`, `[[target#fragment|alias]]`
 - Markdown links `[alias](target)` only when target is NOT `http(s)://`
-- No extension → append `.md`
+- No extension -> append `.md`
 - Split `#fragment` from path
 
 #### `resolver.ts` — Resolution against document list
@@ -130,7 +130,7 @@ resolveTarget(target, documents): ResolvedLink
 shortestUniquePath(docPath, documents): string
 ```
 
-Resolution: exact match on `Document.path` → fallback `endsWith` → ambiguous/unresolved.
+Resolution: exact match on `Document.path` -> fallback `endsWith` -> ambiguous/unresolved.
 
 #### Files
 - **Create**: `frontend/src/core/editor/wikilinks/parser.ts`
@@ -197,24 +197,24 @@ Injected only when `str_replace_based_edit_tool` is enabled (existing mechanism 
 ## Dependency Graph
 
 ```
-Phase 1 (parser) → Phase 2 (pills) → Phase 3 (@ autocomplete)
+Phase 1 (parser) -> Phase 2 (pills) -> Phase 3 (@ autocomplete)
 Phase 4 (prompt guidance) — independent, parallel with anything
 ```
 
 ## Testing
 
 ### Unit tests (Vitest)
-- `[[Aria]]` → `Aria.md`
-- `[[Aria#Spellcraft]]` → `Aria.md` + fragment `Spellcraft`
+- `[[Aria]]` -> `Aria.md`
+- `[[Aria#Spellcraft]]` -> `Aria.md` + fragment `Spellcraft`
 - `[[Images/Map.png]]` stays `.png`
 - `[[Heroes/Aria.md|Aria]]` parses alias
 - `[Aria](Characters/Heroes/Aria.md)` recognized as internal link
 - `[link](https://example.com)` NOT recognized as internal link
-- Shortest-unique: two docs with same filename in different folders → longer suffix used
+- Shortest-unique: two docs with same filename in different folders -> longer suffix used
 
 ### Manual verification
-- Create doc with `[[OtherDoc]]` → pill appears when cursor moves away, raw syntax shows on cursor enter
-- Click pill → opens referenced document
+- Create doc with `[[OtherDoc]]` -> pill appears when cursor moves away, raw syntax shows on cursor enter
+- Click pill -> opens referenced document
 - LLM edit runs do not break internal links
 
 ## Success Criteria

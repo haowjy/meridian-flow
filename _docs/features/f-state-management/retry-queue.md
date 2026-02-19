@@ -21,8 +21,8 @@ feature: "Retry Queue"
 - Exponential backoff with jitter
 - Max 3 retry attempts
 - 5-second retry interval
-- 4xx errors → show toast, don't retry
-- 5xx errors → auto-retry
+- 4xx errors -> show toast, don't retry
+- 5xx errors -> auto-retry
 
 ---
 

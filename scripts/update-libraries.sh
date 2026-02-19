@@ -1,6 +1,6 @@
 #!/bin/bash
 # Update Library Versions and Sync with Backend
-# Auto-increments patch versions (v0.0.1 → v0.0.2)
+# Auto-increments patch versions (v0.0.1 -> v0.0.2)
 # Usage: ./scripts/update-libraries.sh [commit-message]
 
 set -e  # Exit on error
@@ -33,7 +33,7 @@ get_latest_tag() {
     fi
 }
 
-# Function to increment patch version (v0.0.1 → v0.0.2)
+# Function to increment patch version (v0.0.1 -> v0.0.2)
 increment_patch() {
     local version=$1
     # Remove 'v' prefix

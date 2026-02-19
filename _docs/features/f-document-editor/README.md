@@ -94,7 +94,7 @@ feature: "Document Editor"
 **Auto-save flow**:
 1. User types content
 2. 1-second debounce timer starts
-3. On debounce completion: Save to IndexedDB → Show "Saving" → Sync to server
+3. On debounce completion: Save to IndexedDB -> Show "Saving" -> Sync to server
 4. On success: Show "Saved" with timestamp
 5. On error: Show error icon, retry automatically
 

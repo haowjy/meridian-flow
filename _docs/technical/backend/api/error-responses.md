@@ -113,7 +113,7 @@ Requested resource does not exist.
 **Soft-delete behavior:**
 - Soft-deleted resources are treated as non-existent
 - Operations on child resources fail if parent is soft-deleted
-- Example: Creating document in deleted project → 404
+- Example: Creating document in deleted project -> 404
 - No distinction between "never existed" and "deleted" to prevent information leakage
 
 ```json
@@ -172,9 +172,9 @@ For **CREATE operations only**, includes the full existing resource:
 - Use resource data to enable smart UI decisions
 
 **Endpoints returning resource**:
-- `POST /api/projects` → returns existing project
-- `POST /api/projects/:id/documents` → returns existing document
-- `POST /api/folders` → returns existing folder
+- `POST /api/projects` -> returns existing project
+- `POST /api/projects/:id/documents` -> returns existing document
+- `POST /api/folders` -> returns existing folder
 
 ### 500 Internal Server Error
 **Type**: `internal-error`

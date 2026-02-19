@@ -15,7 +15,7 @@ Keep this short, practical, and enforced in code review.
 - Minimal capability configs: user-facing facts only; no adapter internals.
 
 ## Layering Rules (Do/Don’t)
-- Do: keep dependencies pointing inward (Backend → Core; Adapters → Core).
+- Do: keep dependencies pointing inward (Backend -> Core; Adapters -> Core).
 - Don’t: import provider SDKs in Core, or Core types in Adapters beyond defined interfaces.
 - Do: ensure Core compiles without any provider SDKs.
 - Don’t: put provider translation or business logic in Core.
@@ -29,7 +29,7 @@ flowchart TB
 
 ## Tools & Execution Side
 - Adapters must tag blocks with `ExecutionSide` when decoding.
-- Fallback order to detect side: Block tag → streaming event → capability default.
+- Fallback order to detect side: Block tag -> streaming event -> capability default.
 - Provider-executed tools: don't execute locally; results arrive in response blocks.
 - Client-executed tools: sandbox strictly; never shell out unsafely; enforce timeouts.
 - Limit tool loop iterations (e.g., 10) and surface an explicit error on cap.

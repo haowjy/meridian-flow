@@ -11,7 +11,7 @@ status: ✅ Implemented
 
 Three race conditions were discovered and fixed in the streaming architecture:
 
-1. **Event ID jumps** (event-2 → event-23)
+1. **Event ID jumps** (event-2 -> event-23)
 2. **Buffer clear race** (events lost during reconnection)
 3. **Event ID calculation mismatches**
 
@@ -108,10 +108,10 @@ func (s *Stream) GetCatchupEvents() []Event {
 
 ```bash
 # Development: Enable event IDs
-DEBUG=true   # → "1", "2", "3"...
+DEBUG=true   # -> "1", "2", "3"...
 
 # Production: Disable event IDs
-DEBUG=false  # → No IDs (block sequence provides ordering)
+DEBUG=false  # -> No IDs (block sequence provides ordering)
 ```
 
 **Implementation:** See `meridian-stream-go/stream.go:NewStream()` for event ID generation
@@ -185,7 +185,7 @@ func (se *StreamExecutor) processCompleteBlock(...) error {
 
 **Before:** `calculateStartingSequence()` computed event IDs at executor creation time
 
-**Problem:** Database state could change between calculation and catchup → ID mismatches
+**Problem:** Database state could change between calculation and catchup -> ID mismatches
 
 **After:** Removed `calculateStartingSequence()`, rely on library's DEBUG mode
 

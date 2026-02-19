@@ -155,7 +155,7 @@ If an effect **updates** store state, it must **read** that state via `getState(
 const { items } = useStore((s) => ({ items: s.items }))
 useEffect(() => {
   useStore.getState().updateItems(...)  // Updates items
-}, [someCondition, items])  // items in deps → effect re-runs → loop!
+}, [someCondition, items])  // items in deps -> effect re-runs -> loop!
 
 // ✅ GOOD: Read inside effect
 useEffect(() => {
@@ -293,10 +293,10 @@ The theme system uses semantic color naming (v3+) with clear intent:
 - Use with `-foreground` variants on solid backgrounds for proper contrast
 - Example: `bg-success` + `text-success-foreground` ensures readability
 
-**Migration Note (v2 → v3)**: The legacy `accent` color was split for clearer intent:
+**Migration Note (v2 -> v3)**: The legacy `accent` color was split for clearer intent:
 
-- `accent` → `favorite` for starred items, special markings
-- `accent` → `primary` for interactive UI elements
+- `accent` -> `favorite` for starred items, special markings
+- `accent` -> `primary` for interactive UI elements
 
 **Key CSS variables**: `--theme-bg`, `--theme-surface`, `--theme-text`, `--theme-primary`, `--theme-favorite`, `--theme-font-display`, `--theme-font-body`, `--theme-font-ui`
 

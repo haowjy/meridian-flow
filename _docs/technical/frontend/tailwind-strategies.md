@@ -85,7 +85,7 @@ flowchart TD
 **Why**:
 
 - Merge conditional classes cleanly
-- Resolve Tailwind conflicts correctly (e.g., `cn('px-2', 'px-4')` → `'px-4'`)
+- Resolve Tailwind conflicts correctly (e.g., `cn('px-2', 'px-4')` -> `'px-4'`)
 - Allow components to accept `className` prop for customization
 
 **When to use**:

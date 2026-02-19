@@ -103,7 +103,7 @@ flowchart TB
 - **pgx** - PostgreSQL driver (prepared statements, connection pooling)
 
 **Architecture:**
-- **Clean Architecture** - Domain → Service → Repository → Handler layers
+- **Clean Architecture** - Domain -> Service -> Repository -> Handler layers
 - **SOLID principles** - Interfaces, dependency injection, single responsibility
 - **Provider abstraction** - Multi-LLM support via common interface
 
@@ -125,8 +125,8 @@ flowchart TB
 - **Soft delete** - `deleted_at` timestamp for recovery
 
 **Schema highlights:**
-- **projects** → **folders** → **documents** (tree structure)
-- **threads** → **turns** → **turn_blocks** (conversation tree)
+- **projects** -> **folders** -> **documents** (tree structure)
+- **threads** -> **turns** -> **turn_blocks** (conversation tree)
 - **skills** - Custom AI commands with instructions
 - **user_preferences** - JSONB storage (5 categories)
 
@@ -147,7 +147,7 @@ type LLMProvider interface {
 ```
 
 **Tool calling:**
-- **Auto-mapping** - Minimal definitions → provider-specific formats
+- **Auto-mapping** - Minimal definitions -> provider-specific formats
 - **3 tools** - str_replace_based_edit_tool, doc_search, web_search
 - **Registry pattern** - Extensible tool system
 
@@ -206,7 +206,7 @@ go func() {
 - **HTTP/1.1 compatible** - Works everywhere
 - **Automatic reconnection** - Built into EventSource API
 - **Simple server-side** - Just write to response stream
-- **Unidirectional** - Perfect for LLM streaming (server → client)
+- **Unidirectional** - Perfect for LLM streaming (server -> client)
 - **Works with proxies** - Better than WebSockets through load balancers
 
 **Catchup mechanism:**
@@ -246,11 +246,11 @@ No: Query database for completed blocks (historical catchup)
 ```
 Document has: ai_version (content hash), ai_version_rev (counter)
 
-AI reads document → gets rev=5
-User edits document → rev=6
-AI tries to edit → sends rev=5 → 409 Conflict
+AI reads document -> gets rev=5
+User edits document -> rev=6
+AI tries to edit -> sends rev=5 -> 409 Conflict
 
-AI must re-read (see user's changes) → decide what to do
+AI must re-read (see user's changes) -> decide what to do
 ```
 
 **This prevents:**
@@ -370,7 +370,7 @@ sequenceDiagram
 3. Frontend stores in httpOnly cookie
 4. Every request includes JWT in Authorization header
 5. Backend validates JWT signature via JWKS endpoint
-6. User ID extracted from JWT → injected into context
+6. User ID extracted from JWT -> injected into context
 ```
 
 **No session storage** - Stateless, scales horizontally.
@@ -382,7 +382,7 @@ sequenceDiagram
 ```
 Check: user owns project?
        ↓
-Yes: Grant access to project → folders → documents → threads → turns
+Yes: Grant access to project -> folders -> documents -> threads -> turns
 No: 403 Forbidden
 ```
 
@@ -393,7 +393,7 @@ No: 403 Forbidden
 **Document import** - HTML sanitization with allowlist.
 
 ```
-Imported HTML → DOMPurify → Safe HTML → Turndown → Markdown
+Imported HTML -> DOMPurify -> Safe HTML -> Turndown -> Markdown
 ```
 
 **Allowed:** Headings, paragraphs, lists, emphasis, links
@@ -433,7 +433,7 @@ Imported HTML → DOMPurify → Safe HTML → Turndown → Markdown
 ### Frontend (Vercel)
 
 - **CDN distribution** - Global edge caching
-- **Automatic deployments** - Git push → deploy
+- **Automatic deployments** - Git push -> deploy
 - **Preview deployments** - Per-branch testing
 - **Environment variables** - Secure config management
 

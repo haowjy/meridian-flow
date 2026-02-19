@@ -62,7 +62,7 @@ Default: `http://localhost:8080`
 - `↑` - Navigate to parent turn
 - `↓` - Navigate to child turn (first child)
 - `←` - Navigate to previous sibling
-- `→` - Navigate to next sibling
+- `->` - Navigate to next sibling
 - `Tab` - Switch focus between display and input boxes
 - `p` - Edit LLM parameters
 - `Enter` - Submit message (shows confirmation screen)
@@ -70,7 +70,7 @@ Default: `http://localhost:8080`
 - `q` - Quit
 
 **Confirmation Screen:**
-- `←/→` - Move between buttons
+- `←/->` - Move between buttons
 - `↑/↓` - Move between buttons
 - `Enter` - Submit message
 - `p` - Edit parameters

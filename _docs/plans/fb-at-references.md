@@ -23,7 +23,7 @@ This plan adds **@-file insertion in the thread composer** and builds the **mess
 - `ValidateContent()` already validates reference blocks (requires `ref_id`, `ref_type`)
 - `TurnInput.tsx` handles message composition with textarea
 - Block renderer registry supports registering new block types — `frontend/src/features/threads/components/blocks/registry.ts`
-- `MessageBuilderService.BuildMessages()` processes turns through sanitize → format pipeline — `backend/internal/service/llm/thread_history/message_builder.go`
+- `MessageBuilderService.BuildMessages()` processes turns through sanitize -> format pipeline — `backend/internal/service/llm/thread_history/message_builder.go`
 - `DocumentService.GetDocument()` available for fetching document content — `backend/internal/domain/services/docsystem/document.go`
 
 ### What's Missing
@@ -63,9 +63,9 @@ flowchart TD
 
 ### Data flow: Sending a reference
 
-1. User types `@` in composer → `DocumentMentionPopover` appears
-2. User selects document → chip appears below textarea, `@DocName` inserted inline
-3. User sends message → API receives turn blocks: `[text_block, ...reference_blocks]`
+1. User types `@` in composer -> `DocumentMentionPopover` appears
+2. User selects document -> chip appears below textarea, `@DocName` inserted inline
+3. User sends message -> API receives turn blocks: `[text_block, ...reference_blocks]`
 4. Backend stores blocks as-is (reference blocks with `ref_id` + `ref_type`)
 5. On next LLM call, `MessageBuilderService` runs `ReferenceTransformer`:
    - Fetches document content via `DocumentService.GetDocument()`
@@ -83,7 +83,7 @@ flowchart TD
 - Triggers on `@` keypress in TurnInput textarea
 - Filters `useTreeStore().documents` by typed query (case-insensitive substring match)
 - On selection:
-  1. Add to `attachedRefs` local state → show dismissible **chip below textarea**
+  1. Add to `attachedRefs` local state -> show dismissible **chip below textarea**
   2. Insert `@DocumentName` text inline in textarea (readability in message text)
   3. Both chip and inline text reference the same document
 
@@ -116,7 +116,7 @@ Already valid per backend's `ValidateContent()` for `BlockTypeReference`.
 
 **Create**: `frontend/src/features/threads/components/blocks/ReferenceBlock.tsx`
 
-- Pill that shows `@DocName`, clickable → opens document via `openDocument()`
+- Pill that shows `@DocName`, clickable -> opens document via `openDocument()`
 - Styled distinctly from regular text (subtle background, icon)
 
 **Modify**: `frontend/src/features/threads/components/blocks/registry.ts`
@@ -244,7 +244,7 @@ messages, err := builder.BuildMessages(ctx, path)
 ```
 fb-wikilinks Phase 1 (parser/resolver)
       ↓ (shared code, not blocking)
-Phase 1 (composer @-file) → Phase 2 (message builder pipeline)
+Phase 1 (composer @-file) -> Phase 2 (message builder pipeline)
 ```
 
 Phase 1 and Phase 2 can be developed in parallel if the API contract for reference blocks is agreed upfront (it already exists in `ValidateContent`).
@@ -265,21 +265,21 @@ Phase 1 and Phase 2 can be developed in parallel if the API contract for referen
 ## Testing
 
 ### Frontend
-- Type `@` in composer → document list appears, filtered by query
-- Select document → chip appears below textarea, `@DocName` in message text
-- Remove chip → chip disappears (inline text stays)
-- Send message with reference → turn stored with reference block
+- Type `@` in composer -> document list appears, filtered by query
+- Select document -> chip appears below textarea, `@DocName` in message text
+- Remove chip -> chip disappears (inline text stays)
+- Send message with reference -> turn stored with reference block
 - Reference block renders as clickable `@DocName` pill in thread
 
 ### Backend
-- Reference block in turn → `BuildMessages()` outputs text block with `<referenced_document>` content
-- Missing document → fallback text, no crash
-- Multiple references in one turn → all resolved
+- Reference block in turn -> `BuildMessages()` outputs text block with `<referenced_document>` content
+- Missing document -> fallback text, no crash
+- Multiple references in one turn -> all resolved
 - Non-reference blocks pass through unchanged
 
 ### Integration
-- Send message with `@Aria` reference → LLM response demonstrates awareness of Aria's content
-- Delete referenced document → next LLM call gracefully handles missing doc
+- Send message with `@Aria` reference -> LLM response demonstrates awareness of Aria's content
+- Delete referenced document -> next LLM call gracefully handles missing doc
 
 ## Success Criteria
 

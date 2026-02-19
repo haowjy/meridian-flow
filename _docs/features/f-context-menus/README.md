@@ -84,21 +84,21 @@ export function createDocumentMenuItems(
 ### Interaction
 
 **Mouse:**
-- Right-click on tree item → Menu appears
-- Click menu item → Action executes
-- Click outside menu → Menu closes
+- Right-click on tree item -> Menu appears
+- Click menu item -> Action executes
+- Click outside menu -> Menu closes
 
 **Keyboard:**
-- Tab to tree item → Focus outline appears
-- Right-click key (context menu key) → Menu opens
-- Arrow keys → Navigate menu items
-- Enter → Execute action
-- Escape → Close menu
+- Tab to tree item -> Focus outline appears
+- Right-click key (context menu key) -> Menu opens
+- Arrow keys -> Navigate menu items
+- Enter -> Execute action
+- Escape -> Close menu
 
 **Touch (mobile):**
-- Long-press on tree item → Menu appears
-- Tap menu item → Action executes
-- Tap outside → Menu closes
+- Long-press on tree item -> Menu appears
+- Tap menu item -> Action executes
+- Tap outside -> Menu closes
 
 ### Visual Design
 

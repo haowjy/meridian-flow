@@ -164,7 +164,7 @@ type CompactOptions struct {
 
 ### Summarization flow
 
-1. Partition turns: everything before `KeepRecentTurns` → "to summarize"
+1. Partition turns: everything before `KeepRecentTurns` -> "to summarize"
 2. Build summarization prompt:
    - "Summarize this conversation. Preserve: key decisions, constraints, character/world details discussed, files edited, and important context."
 3. Call LLM with summarization model (configurable per project — default to quality-optimized model)
@@ -182,9 +182,9 @@ The compaction turn structure:
 ```
 Block 1: text — "Summary: discussed Aria's character arc, edited Chapter 12
                  intro, established magic system rules..."
-Block 2: reference → Characters/Heroes/Aria.md
-Block 3: reference → Chapters/Chapter12.md
-Block 4: reference → Worldbuilding/Magic.md
+Block 2: reference -> Characters/Heroes/Aria.md
+Block 3: reference -> Chapters/Chapter12.md
+Block 4: reference -> Worldbuilding/Magic.md
 ```
 
 When `MessageBuilderService` processes this turn, `ReferenceTransformer` resolves each reference to **current** document content. No special "context refresh" mechanism needed — reuses existing infrastructure.
@@ -324,19 +324,19 @@ flowchart LR
 ## Testing
 
 ### Phase A verification
-- Manually insert `is_compaction` turn via DB → `BuildMessages()` skips older turns
+- Manually insert `is_compaction` turn via DB -> `BuildMessages()` skips older turns
 
 ### Phase B verification
-- Send 20+ messages → click compact → summary turn appears → next LLM response uses summary
+- Send 20+ messages -> click compact -> summary turn appears -> next LLM response uses summary
 
 ### Phase C verification
-- Use small context model → verify compaction auto-triggers at threshold
+- Use small context model -> verify compaction auto-triggers at threshold
 
 ### Phase D verification
 - Older tool results show summaries, recent ones show full content
 
 ### Phase E verification
-- Compact → LLM calls `conversation_search` → finds pre-compaction content
+- Compact -> LLM calls `conversation_search` -> finds pre-compaction content
 
 ## Success Criteria
 

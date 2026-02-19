@@ -40,7 +40,7 @@ This directory contains detailed documentation for all features in Meridian, org
 | **Infrastructure** | Both | [x] Complete | [x] Complete | Errors, DB features, routing, logging, deployment |
 | **Mobile Responsive** | Frontend | N/A | [x] Complete | Responsive layouts, bottom nav, 768px breakpoint |
 | **Collab Arbitration** | Backend | [x] Complete | N/A | Arbiter chain, proposal guardrails, per-doc serialization |
-| **AI Collab Bridge** | Both | ✅ Complete | ✅ Complete | AI edits → Yjs proposals, auto-accept, strategy pattern |
+| **AI Collab Bridge** | Both | ✅ Complete | ✅ Complete | AI edits -> Yjs proposals, auto-accept, strategy pattern |
 
 ---
 
@@ -184,7 +184,7 @@ This directory contains detailed documentation for all features in Meridian, org
 ### Recent Additions
 - **Skills System**: Custom AI commands with tree integration and editor (h/skills) ✨ NEW
 - **Layout Refactor**: Strategy pattern, responsive two-panel desktop layout (h/skills)
-- **Theme Refactor**: accent → favorite/primary semantic split (h/skills)
+- **Theme Refactor**: accent -> favorite/primary semantic split (h/skills)
 - **Mobile Responsive Layout**: Strategy pattern for mobile/desktop, bottom tab nav (h/edit-tools)
 - **Document Import System**: Multi-format support with XSS protection (h/bet-ui)
 - **Context Menu System**: Right-click actions for file tree (h/bet-ui)

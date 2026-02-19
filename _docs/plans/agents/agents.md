@@ -33,7 +33,7 @@ This is generic productivity value (not fiction-specific), delivered through a w
 | **PAYG Billing** | Users pay for LLM usage. Can't ship subagents without it. | All LLM usage (not just subagents) |
 | **Usage limits + budgets** | Prevent runaway cost/latency (esp. async subagents). | Per user/project/session |
 | **Audit/debug trace** | Make agent behavior explainable + reversible. | Turns, tools, skills, models |
-| **Chat → Thread rename** | Align naming with async, branchable conversation graph. | Backend + frontend + API |
+| **Chat -> Thread rename** | Align naming with async, branchable conversation graph. | Backend + frontend + API |
 | **Sessions (+ `.session/`)** | Shared persistent artifacts across thread family. | Backend + frontend + tools |
 | **Collab core (Specs + Phases 1-3)** | Agent writes must use canonical op-log/proposal model, not legacy `ai_version` CAS. | `_docs/plans/fb-realtime-collab-editing.md` + `_docs/plans/collab-ai/spec/` + `_docs/plans/collab-ai/phase/` |
 | **No BYOK (v1)** | Simplifies billing. One payment flow. | Revisit post-v1 |
@@ -59,7 +59,7 @@ These are “agent framework” tasks that still stand alone (they improve corre
 
 | Task | Outcome | Notes |
 |------|---------|-------|
-| **Chat → Thread rename** | Naming matches async/thread graph semantics. | Prefer scoped rename (avoid “thread-safe” collisions). |
+| **Chat -> Thread rename** | Naming matches async/thread graph semantics. | Prefer scoped rename (avoid “thread-safe” collisions). |
 | **Sessions (+ `.session/`)** | Shared persistent artifacts across thread family. | Includes persistence + tools + dedicated UI surface. |
 | **Thread modes (Plan/Edit)** | Server-enforced write gating for workspace vs session. | Mode must be enforced at the tool layer (not just UI). |
 | **Audit/debug trace** | “Why did it do that?” is answerable. | Persist prompt manifest + tool traces + provenance. |
@@ -159,7 +159,7 @@ Runtime behavior:
 - Instruction bundles as project-owned instances under `.meridian/skills/**`
 - SKILL.md with frontmatter (name, description) + instructions
 - Instance folder names are human-facing project-unique names (not slugs). Stability comes from IDs stored in metadata (e.g., `meta.json` inside the instance folder).
-- Progressive loading: metadata → instructions → resources
+- Progressive loading: metadata -> instructions -> resources
 - Edited via dedicated UI (not exposed as a normal folder in the writer file tree)
 - **Skills ARE the system prompt** (in modular, composable pieces)
 - Versioned + auditable (every change creates a new revision; active revision is a pointer)
@@ -244,7 +244,7 @@ Agent (built-in, v1)
 
 ## User Library Pattern
 
-Skills follow a create → use → share lifecycle:
+Skills follow a create -> use -> share lifecycle:
 
 ```
 Create (UI editor OR LLM via "skill-creator" meta-skill)
@@ -401,7 +401,7 @@ Turn: complete
 ### Phase 3: Agents
 - Built-in agent definitions (code-defined)
 - Agent composition (prompt + skills + built-in tools)
-- Persona → Agent spawning (persona specifies available agents)
+- Persona -> Agent spawning (persona specifies available agents)
 
 ### Phase 4: Subagents
 - `spawn_agent` tool
@@ -438,7 +438,7 @@ Turn: complete
 | **Lifecycle** | Session deleted when all threads deleted. |
 | **Subagent depth** | Configurable in settings, default = 1 (subagents cannot spawn subagents). Prevents runaway costs and infinite loops. Requires PAYG billing. |
 | **Subagent UI** | Inline collapsed block, expandable to see subagent's thinking/progress. Alternative: popup modal. (It's a full thread, should be viewable.) |
-| **Branch modes** | Two types: (1) Branch from turn → copies turns up to that point, (2) Branch with session only → no turn history, just `.session/` access. No "summary" mode for now. |
+| **Branch modes** | Two types: (1) Branch from turn -> copies turns up to that point, (2) Branch with session only -> no turn history, just `.session/` access. No "summary" mode for now. |
 | **User-defined agents/tools** | Deferred. Custom agents need custom tools to be useful. Built-in only for v1. |
 
 ---

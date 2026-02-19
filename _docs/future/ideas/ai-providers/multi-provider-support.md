@@ -14,9 +14,9 @@
 ## Example
 
 ```
-User message → Claude Opus (quality)
-Quick question → GPT-4o-mini (speed/cost)
-Code generation → Claude Sonnet (balance)
+User message -> Claude Opus (quality)
+Quick question -> GPT-4o-mini (speed/cost)
+Code generation -> Claude Sonnet (balance)
 ```
 
 ## Benefits

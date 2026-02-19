@@ -20,7 +20,7 @@ This manifests as an infinite `TOOL_CALL_ARGS` stream, unbounded argument accumu
   - Sometimes the accumulated tool args JSON is “almost complete” but missing a final `}`.
 
 Example log excerpt (whitespace args deltas):
-- `args:"\r\r"` → `args:"\n\n\n"` → `args:" "` → `args:"\t\t\t\t\t\t\t\t\n"` (repeats)
+- `args:"\r\r"` -> `args:"\n\n\n"` -> `args:" "` -> `args:"\t\t\t\t\t\t\t\t\n"` (repeats)
 
 ## Current Mitigation
 

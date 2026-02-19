@@ -15,7 +15,7 @@ feature: "Backend Infrastructure"
 ## Error Handling
 
 **Domain Errors**: `ErrNotFound`, `ErrConflict`, `ErrUnauthorized`, `ErrValidation`
-**HTTP Mapping**: Automatic error → HTTP status mapping
+**HTTP Mapping**: Automatic error -> HTTP status mapping
 **Recovery Middleware**: Panic recovery, 500 Internal Server Error
 
 **Files**: `backend/internal/domain/errors.go`, `backend/internal/middleware/recovery.go`

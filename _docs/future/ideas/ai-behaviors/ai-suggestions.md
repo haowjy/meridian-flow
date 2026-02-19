@@ -433,7 +433,7 @@ sequenceDiagram
 
     Note over User,Editor: User continues editing while AI works
 
-    User->>Editor: Edits line 5: "tavern" → "tavern, sword at side"
+    User->>Editor: Edits line 5: "tavern" -> "tavern, sword at side"
     Editor->>DB: Auto-save user's edit
 
     AI-->>DB: Store edits (includes edit to line 5)
@@ -577,13 +577,13 @@ async function emergencyCleanup() {
 This system extends **Flow 1: Auto-Save Flow** with AI suggestions:
 
 ```
-User edits → Debounce → IndexedDB → Sync Queue → Backend
+User edits -> Debounce -> IndexedDB -> Sync Queue -> Backend
                 ↓
          (Meanwhile)
                 ↓
-AI suggests → Store session → Show in editor → User accepts
+AI suggests -> Store session -> Show in editor -> User accepts
                                      ↓
-                              Apply to IndexedDB → Sync Queue
+                              Apply to IndexedDB -> Sync Queue
 ```
 
 **Key difference**: AI suggestions go through review UI before hitting IndexedDB/sync queue.

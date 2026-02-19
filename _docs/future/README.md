@@ -27,6 +27,13 @@ Enable users to branch conversations from any block in an assistant turn. Allows
 
 **Implementation:** Requires `branch_from_block_id` column, message building updates, and frontend UI.
 
+### [Line-Oriented Edit Commands](./ideas/ai-behaviors/line-oriented-edit-commands.md)
+**Status:** Idea, not scheduled
+**Effort:** Small-Medium
+**Priority:** Medium
+
+Add internal `delete_lines` and `replace_lines` commands to improve reliability for large multiline document edits.
+
 ---
 
 ## Related Directories

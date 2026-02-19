@@ -30,7 +30,7 @@ Use a Go workspace to prefer local sources during development, and keep `backend
 - Remote/pinned run: `GOWORK=off make -C backend run`
 
 ## Flow
-1) Develop: edit code in `meridian-stream-go/` → build/test in `backend/` (workspace picks local copy).
+1) Develop: edit code in `meridian-stream-go/` -> build/test in `backend/` (workspace picks local copy).
 2) Upstream: push changes to `github.com/haowjy/meridian-stream-go`.
 3) Update backend: bump version in `backend/go.mod` to the new tag/commit and commit the change.
 

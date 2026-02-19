@@ -17,10 +17,10 @@ feature: "AI Collaboration Bridge"
 When the AI edits a document via `str_replace_based_edit_tool`, the edit flows through the collab proposal system:
 
 ```
-TextEditorTool → DocumentMutationStrategy
+TextEditorTool -> DocumentMutationStrategy
   └─ CollabProposalStrategy
-      → YjsTextConverter → ProposalService.CreateProposal
-      → ProposalBroadcaster → WS → editor
+      -> YjsTextConverter -> ProposalService.CreateProposal
+      -> ProposalBroadcaster -> WS -> editor
 ```
 
 Auto-accept is ON by default — AI proposals apply immediately unless the arbiter downgrades to `require_review`.
@@ -35,7 +35,7 @@ flowchart LR
     B -->|Collab path| C["YjsTextConverter"]
     C --> D["ProposalService"]
     D --> E["ProposalBroadcaster"]
-    E --> F["WS → Editor"]
+    E --> F["WS -> Editor"]
     D --> G["Arbiter Chain"]
     G -->|auto-accept| H["Apply immediately"]
     G -->|require_review| I["Pending in Review Panel"]
@@ -73,7 +73,7 @@ See `backend/internal/service/llm/tools/mutation_strategy.go`
 | Collab extension gating (`.md`, `.markdown`, `.txt`) | ✅ | `features/documents/lib/collabFeatureFlag.ts` |
 | Connection status indicator | ✅ | `CollabConnectionIndicator.tsx` |
 | Proposal status badges in thread | ✅ | `useProposalStatus.ts`, `TextEditorBlock` |
-| Thread → Editor navigation | ✅ | `TextEditorBlock` "View in Editor" button |
+| Thread -> Editor navigation | ✅ | `TextEditorBlock` "View in Editor" button |
 
 ---
 

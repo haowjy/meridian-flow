@@ -4,7 +4,7 @@
 include .env
 export
 
-# Derive TABLE_PREFIX from ENVIRONMENT (e.g., dev → dev_)
+# Derive TABLE_PREFIX from ENVIRONMENT (e.g., dev -> dev_)
 export TABLE_PREFIX := $(ENVIRONMENT)_
 
 ## Absolute path to workspace file for local builds
@@ -113,7 +113,7 @@ seed-test-fresh: ## Clear and re-seed test_ tables (destructive)
 
 run-cli: ## Run interactive LLM CLI (requires server running at localhost:8080)
 	@echo "Starting interactive LLM CLI..."
-	@echo "Controls: ↑/↓ navigate | ←/→ branches | [n]ew turn | [p]arams | [h]elp | [q]uit"
+	@echo "Controls: ↑/↓ navigate | ←/-> branches | [n]ew turn | [p]arams | [h]elp | [q]uit"
 	@echo ""
 	cd ../cli && go run .
 

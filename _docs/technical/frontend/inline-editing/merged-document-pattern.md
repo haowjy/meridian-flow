@@ -135,7 +135,7 @@ Used for decoration positioning and accept/reject operations.
 ### 1. Marker Pairing
 Every DEL_START has matching DEL_END, every INS_START has matching INS_END. No orphans.
 
-### 2. DEL→INS Adjacency
+### 2. DEL->INS Adjacency
 DEL_END must be immediately followed by INS_START. Edit filter blocks inserts at INS_START.
 
 ### 3. No Marker Leakage
