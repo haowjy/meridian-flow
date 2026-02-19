@@ -60,6 +60,3 @@ export class MeridianDB extends Dexie {
 }
 
 export const db = new MeridianDB();
-export const projectTrees = db.projectTrees;
-export const pendingDocumentSaves = db.pendingDocumentSaves;
-export const pendingTreeOps = db.pendingTreeOps;

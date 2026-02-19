@@ -18,6 +18,8 @@ Reference for choosing the right agent variant. Used by the orchestrate skill wh
 
 ## Agent Variant Selection
 
+### Implementation Agents
+
 ### `implement` (gpt-5.3-codex)
 **Default choice.** Use for most slices — especially cross-stack changes, new features, and backend work. Exhaustive and thorough.
 
@@ -33,9 +35,34 @@ Use when:
 - Architectural decisions need careful reasoning
 - Previous implementation attempts failed or produced bugs
 
+### Review Agents
+
+### `review` (claude-opus-4-6) — **Default**
+Thoughtful senior dev with strong design sense. Catches real issues without noise. Good balance of thoroughness and signal-to-noise ratio. Use for most slices.
+
+### `review-thorough` (gpt-5.3-codex, high effort)
+Exhaustive auditor — leave-no-stone-unturned. Use for:
+- Important or high-risk slices (auth, payments, data migrations)
+- Final review before a major release
+- When you want security + perf + architecture deep-dive
+
+### `review-quick` (gpt-5.3-codex, low effort)
+Fast mechanical sanity check. Use for:
+- Trivial slices (docs, config, simple renames)
+- Quick pass before committing when you're confident in the implementation
+- When speed matters more than depth
+
+### `review-adversarial` (claude-sonnet-4-6, high effort)
+Adversarial tester — actively writes scratch tests to break the code. Use for:
+- Concurrency-sensitive code (race conditions, shared state)
+- Security-critical paths (auth, input validation, API boundaries)
+- When a standard review passed but you want extra confidence
+
 ### General Rules
 
 1. **Start with `implement`** (default) unless you have a specific reason to use a variant.
 2. **Switch to `implement-iterative`** if the slice is UI-focused and you want faster cycles.
 3. **Escalate to `implement-deliberate`** if a slice fails on the first attempt or involves tricky logic.
-4. **Use `-m MODEL` override** on any agent when you want to temporarily switch models without changing the agent definition.
+4. **Use `review`** (default) for most slices. Escalate to `review-thorough` or `review-adversarial` for important changes.
+5. **Use `review-quick`** for trivial slices where a fast sanity check suffices.
+6. **Use `-m MODEL` override** on any agent when you want to temporarily switch models without changing the agent definition.

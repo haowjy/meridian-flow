@@ -62,6 +62,9 @@ parse_agent_md() {
   val=$(echo "$frontmatter" | grep -E '^tools:' | head -1 | sed 's/^tools:[[:space:]]*//' || true)
   [[ -n "$val" ]] && [[ "$TOOLS_FROM_CLI" == false ]] && TOOLS="$val"
 
+  val=$(echo "$frontmatter" | grep -E '^effort:' | head -1 | sed 's/^effort:[[:space:]]*//' || true)
+  [[ -n "$val" ]] && [[ "$EFFORT_FROM_CLI" == false ]] && EFFORT="$val"
+
   # Skills: YAML list (  - name) or inline [name1, name2]
   local skills_raw
   skills_raw=$(echo "$frontmatter" | sed -n '/^skills:/,/^[^ -]/{ /^skills:/d; /^[^ -]/d; p; }' || true)

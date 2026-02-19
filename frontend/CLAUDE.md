@@ -191,13 +191,14 @@ Document and panel navigation uses a **two-pronged approach**:
 ### Sync System
 
 - Core policy + scheduler: `frontend/src/core/lib/cache.ts`, `frontend/src/core/lib/retry.ts`, `frontend/src/core/lib/sync.ts`
+- Persistent drain: `frontend/src/core/lib/persistentSaveDrain.ts`
 - UI-free orchestration service: `frontend/src/core/services/documentSyncService.ts`
 
 Flow (documents):
 
-1. Optimistic write to IndexedDB -> 2) direct PATCH to API -> 3) apply server doc (server timestamps become canonical once applied). On network/5xx, enqueue in-memory retry (jittered backoff; max 3 attempts). 4xx bubbles to UI for manual retry.
+1. Optimistic write to IndexedDB -> 2) direct PATCH to API -> 3) apply server doc (server timestamps become canonical once applied). On network/5xx, persist to `pendingDocumentSaves` Dexie table (last-write-wins by `documentId`). 4xx bubbles to UI for manual retry.
 
-Background: only the retry scheduler (ticked in `SyncProvider`). No visibility/online listeners.
+Background: persistent save drain (`persistentSaveDrain.ts`) retries failed document saves on startup, `online` event, and periodic tick (5s). In-memory RetryScheduler is preserved for potential non-document retries.
 
 Dev: optional retry inspector in dev builds — set `VITE_DEV_TOOLS=1` to enable small bottom-left panel.
 

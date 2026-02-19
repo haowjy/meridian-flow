@@ -3,24 +3,27 @@ import {
   initializeRetryProcessor,
   cleanupRetryProcessor,
 } from "@/core/lib/sync";
+import {
+  initPersistentSaveDrain,
+  cleanupPersistentSaveDrain,
+} from "@/core/lib/persistentSaveDrain";
 
 /**
- * Provider component that initializes the retry processor.
+ * Provider component that initializes background sync processors.
  *
- * The retry processor is the only background sync mechanism in the new system.
- * It checks for failed sync operations every 5 seconds and retries them.
- *
- * Unlike the old queue-based system, there are no event listeners racing
- * with each other, making the sync behavior predictable and debuggable.
+ * - In-memory RetryScheduler: general-purpose retry infrastructure
+ *   (no longer used for document saves; kept for potential future use)
+ * - Persistent save drain: retries failed document saves from IndexedDB,
+ *   survives page reload, and drains on startup + `online` event + periodic tick
  */
 export function SyncProvider() {
   useEffect(() => {
-    // Initialize retry processor when component mounts
     initializeRetryProcessor();
+    initPersistentSaveDrain();
 
-    // Cleanup on unmount
     return () => {
       cleanupRetryProcessor();
+      cleanupPersistentSaveDrain();
     };
   }, []);
 
