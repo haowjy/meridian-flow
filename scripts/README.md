@@ -467,14 +467,21 @@ Install: `/plugin marketplace add jimmyyao/orchestrate` (Claude Code)
 scripts/dev/setup.sh
 ```
 
-Creates session `ms_server` with:
-- Left pane: `cd backend && make run-local` (port 8080)
-- Right pane: `cd frontend && pnpm run dev` (port 5173)
+Session name and ports are **branch/worktree-aware** (via `dev/lib.sh`):
+- Session name = directory basename (e.g. `meridian-collab`)
+- Backend port = `8080 + hash(session) % 100` (deterministic per worktree)
+- Frontend port = always `3000`
 
-For per-worktree port overrides, create `.dev-ports` (gitignored):
+| Worktree | Session | Backend Port |
+|----------|---------|-------------|
+| meridian | `meridian` | 8140 |
+| meridian-agents | `meridian-agents` | 8170 |
+| meridian-collab | `meridian-collab` | 8130 |
+
+For manual overrides, create `.dev-ports` (gitignored):
 ```bash
 BACKEND_PORT=8081
-FRONTEND_PORT=5174
+FRONTEND_PORT=3001
 ```
 
 ## `dev/restart-backend.sh` — Reliable Backend Restart

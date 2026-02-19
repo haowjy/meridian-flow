@@ -5,15 +5,8 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SESSION="ms_server"
-
-# Load port overrides if present
-BACKEND_PORT=8080
-if [[ -f "$REPO_ROOT/.dev-ports" ]]; then
-  # shellcheck source=/dev/null
-  source "$REPO_ROOT/.dev-ports"
-fi
+# shellcheck source=lib.sh
+source "$(dirname "$0")/lib.sh"
 
 if ! tmux has-session -t "$SESSION" 2>/dev/null; then
   echo "ERROR: tmux session '$SESSION' not found. Run scripts/dev/setup.sh first." >&2
