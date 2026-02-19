@@ -10,6 +10,12 @@ build_cli_command() {
   local tool
   tool=$(route_model "$MODEL") || exit 1
 
+  # Pre-flight: verify the CLI binary exists before building the command.
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "ERROR: '$tool' CLI not found (needed for model $MODEL). Install $tool or try a different model with -m." >&2
+    return 1
+  fi
+
   CLI_CMD_ARGV=()
   case "$tool" in
     claude)
