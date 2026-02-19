@@ -21,7 +21,7 @@ const {
 
   return {
     pendingRows: rows,
-    mockSyncDocument: vi.fn(async () => ({})),
+    mockSyncDocument: vi.fn(async (_id: string, _content: string) => ({})),
     mockDocumentUpdate: vi.fn(async () => 1),
     mockDocumentPut: vi.fn(async () => void 0),
     mockPendingPut: vi.fn(async (row: PendingSaveRow) => {
