@@ -4,12 +4,12 @@ audience: developer, architect
 ---
 # Collaboration Spec: API and Event Contract
 
-**Status:** Draft
-**Purpose:** Define external contracts for Yjs transport, proposal lifecycle, and document sync.
+**Status:** Implemented (2026-02-19)
+**Purpose:** Current runtime contract for Yjs transport, proposal lifecycle, and document sync.
 
 ## Architecture: Single WebSocket Per Project
 
-> **Phase 4.6 migration:** Transport changed from per-document to per-project WebSocket. Documents are subscribed/unsubscribed dynamically over a single connection.
+> Current runtime uses `GET /ws/projects/{projectId}` for collaboration transport. Legacy `GET /ws/documents/{id}` is removed from runtime routing.
 
 Everything runs over **one WebSocket connection per project** between the browser and the Go backend:
 
@@ -47,7 +47,7 @@ WebSocket framing uses opcode first, then protocol-specific parsing:
 | WS Frame Opcode | Payload | Handling |
 |---|---|---|
 | Text | Raw JWT string (first client message only) or JSON application message | Decode as UTF-8 text |
-| Binary | Meridian envelope byte + Yjs protocol payload | Strip first byte (Meridian envelope), pass remainder to appropriate Yjs protocol decoder |
+| Binary | Meridian envelope byte + 16-byte document UUID + Yjs protocol payload | Strip envelope+doc prefix, route by doc UUID, pass payload to Yjs protocol decoder |
 
 Meridian uses a single-byte message-type prefix to multiplex sync and awareness on one WebSocket connection. This is a **custom envelope** — not the raw `y-protocols` wire format. The server strips this byte before passing the remainder to the underlying `y-protocols` decoders, and prepends it when sending.
 
@@ -60,7 +60,7 @@ Meridian uses a single-byte message-type prefix to multiplex sync and awareness 
 | `0x02` (`messageYjsUpdate`) | Yjs incremental update |
 | `0x03` (`messageAwareness`) | Yjs awareness update |
 
-### Document-Multiplexed Binary Framing (Phase 4.6)
+### Document-Multiplexed Binary Framing
 
 Binary frames include a 16-byte document UUID for routing over the shared project connection:
 
@@ -70,7 +70,7 @@ Binary frames include a 16-byte document UUID for routing over the shared projec
 
 The envelope byte meanings are unchanged (see table above). The 16-byte UUID identifies which document the frame belongs to.
 
-### Document Subscribe/Unsubscribe Protocol (Phase 4.6)
+### Document Subscribe/Unsubscribe Protocol
 
 ```
 Client → Server:
@@ -118,6 +118,7 @@ Server → Client:
 `proposal:snapshot` contract:
 - Sent per-document after successful subscribe + Yjs sync-step1.
 - Contains `documentId` and current pending proposals (`status='proposed'`) for that document.
+- Snapshot proposals are metadata-only (`yjsUpdate` omitted to keep subscribe responses bounded).
 - Incremental events (`proposal:new`, `proposal:statusChanged`) apply after this baseline snapshot.
 
 ### Proposal Type (WS JSON)
@@ -133,7 +134,7 @@ interface Proposal {
   agentRunId: string;                  // UUID
   proposalGroupId: string | null;      // UUID, nullable
   status: "proposed";                  // always "proposed" in proposal:new/proposal:snapshot
-  yjsUpdate: string;                  // base64-encoded Yjs update buffer
+  yjsUpdate?: string;                 // base64-encoded Yjs update buffer (included in proposal:new, omitted in proposal:snapshot)
   description: string | null;
   createdByUserId: string;
   createdAt: string;                   // ISO 8601 (e.g., "2026-01-15T10:30:00Z")
@@ -156,18 +157,18 @@ All dates in WS JSON use ISO 8601 format. All binary data (Yjs updates) uses bas
 
 ## Session Handshake Contract (Required)
 
-### Project WebSocket (Phase 4.6 — current)
+### Project WebSocket (Current Runtime)
 
 1. Client opens WebSocket: `wss://<public-host>/ws/projects/{projectId}` (no auth in URL).
 2. Client sends JWT token as the **first message** — a WebSocket **text frame** containing the raw JWT string (no JSON wrapper, no prefix).
-3. Server validates JWT, extracts user ID, verifies `CanAccessProject`. On failure: error message + close.
+3. Server validates JWT and extracts user ID. On failure: error message + close.
 4. Connection is live — no documents subscribed yet.
-5. Client sends `doc:subscribe` for each document to sync (see subscribe handshake above).
+5. Client sends `doc:subscribe` for each document to sync; server enforces ownership + project match per document (see subscribe handshake above).
 
 ```
 Browser: WS upgrade (no auth in URL)
 Browser -> Server: first message = JWT token
-Server: validate JWT, verify project access
+Server: validate JWT
 Browser -> Server: { "type": "doc:subscribe", "documentId": "..." }
 Server -> Browser: sync-step1 (multiplexed binary)
 Server -> Browser: proposal:snapshot (JSON)
@@ -184,7 +185,7 @@ Browser: runtime.startSync()
 | `IDEMPOTENCY_KEY_CONFLICT` | Same idempotency key reused with different payload | Treat as hard error, generate new key |
 | `PROPOSAL_NOT_FOUND` | Proposal ID does not exist in the database | Remove from local state |
 | `PROPOSAL_INVALID_STATE` | Proposal is in a terminal state (`accepted` or `rejected`) and cannot transition | Refresh proposal status, show current state |
-| `FORBIDDEN` | User/session is read-only for this action | Keep UI read-only, suppress retries |
+| `FORBIDDEN` | User is not allowed to access the requested document/action | Stop retrying this action, surface access error |
 | `AUTH_FAILED` | JWT invalid, expired, or missing | Close connection, re-authenticate |
 | `RATE_LIMITED` | Per-connection or per-doc limits exceeded | Exponential backoff (start 250ms, cap 5s) |
 
@@ -240,6 +241,8 @@ No private service-to-service routes. No Node service.
 Route ownership:
 - Go handles all HTTP REST, WebSocket connections, Yjs persistence, and proposal mutations.
 - Go uses `y-crdt` library for server-side Yjs operations.
+- Active collab WS endpoint is `GET /ws/projects/{projectId}` only.
+- `GET /ws/documents/{id}` is removed from runtime.
 
 ## Auth: JWT in First Message
 
@@ -267,7 +270,7 @@ AI agents create proposals via internal Go service calls (not via WS from browse
 ### Proposal Accept (Client -> Server via WS)
 
 ```json
-{ "type": "proposal:accept", "proposalId": "uuid", "idempotencyKey": "uuid" }
+{ "type": "proposal:accept", "documentId": "uuid", "proposalId": "uuid", "idempotencyKey": "uuid" }
 ```
 
 Server behavior:
@@ -286,7 +289,7 @@ Accept idempotency:
 ### Proposal Reject (Client -> Server via WS)
 
 ```json
-{ "type": "proposal:reject", "proposalId": "uuid" }
+{ "type": "proposal:reject", "documentId": "uuid", "proposalId": "uuid" }
 ```
 
 Server behavior:
@@ -298,7 +301,7 @@ Server behavior:
 ### Group Accept (Client -> Server via WS)
 
 ```json
-{ "type": "proposal:groupAccept", "groupId": "uuid", "idempotencyKey": "uuid" }
+{ "type": "proposal:groupAccept", "documentId": "uuid", "groupId": "uuid", "idempotencyKey": "uuid" }
 ```
 
 Server behavior:
@@ -311,6 +314,7 @@ Server behavior:
 ### What This Eliminates
 
 - HTTP proposal endpoints (`GET/POST /api/proposals/*`)
+- Per-document collab websocket endpoint (`/ws/documents/{id}`)
 - TanStack Query for proposal data (proposals come via WS)
 - Go-to-Node forwarding for proposal mutations
 - HMAC signing for internal service calls
@@ -355,7 +359,7 @@ Write-then-publish recovery:
 
 > **Note:** `max_yjs_update_bytes` applies to server-side proposal creation (internal API call), not to WS transport. Client WS frames are bound by the 64KB per-op limit. Proposals are broadcast to clients via `proposal:new` JSON frames which include the base64 `yjsUpdate` — these server->client frames are exempt from the 64KB client->server limit.
 >
-> **Known limitation:** `proposal:snapshot` sends an array of pending proposals on connect. **v1 mitigation:** `proposal:snapshot` sends proposal metadata only (no `yjsUpdate` blobs). Clients request full Yjs update blobs on demand via a `proposal:getUpdate` message. This caps snapshot frame size regardless of proposal count/size. **Future (v2):** if metadata-only `proposal:snapshot` still exceeds 1MB, paginate into multiple frames with a continuation marker.
+> **Known limitation:** `proposal:snapshot` is metadata-only (no `yjsUpdate` payloads). Snapshot is used as a baseline/status view; full Yjs update payloads are delivered in `proposal:new` events.
 
 | Scope | Limit | Behavior |
 |---|---|---|

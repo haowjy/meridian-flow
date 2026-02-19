@@ -29,8 +29,8 @@ feature: "Document Editor"
 
 ### Document Saving
 **Status**: ✅ Complete
-- Collab-enabled text docs (`.md`, `.markdown`, `.txt`) use Yjs sync over `/ws/documents/:id`
-- Project-scoped collab transport foundation now mounts at workspace scope (`useProjectCollab` + `ProjectCollabProvider`) for upcoming `/ws/projects/:projectId` migration
+- Collab-enabled text docs (`.md`, `.markdown`, `.txt`) sync over project-scoped Yjs transport: `/ws/projects/{projectId}` + per-document `doc:subscribe`/`doc:unsubscribe`
+- Workspace-level transport is managed by `useProjectCollab` + `ProjectCollabProvider`
 - Legacy PATCH save path remains for non-collab editors
 - Save status UI remains in header
 - Stale save-ack race fixed (prevents false conflict + autosave stall): see `/_docs/future/bugs/document-sync-stale-save-ack-race.md`
