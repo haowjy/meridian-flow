@@ -106,9 +106,18 @@ wait
 
 See `agents/` directory for available agent definitions. See the `model-guidance` skill for detailed model tendencies.
 
+### Implementation
 - **Default:** Use `implement` (gpt-5.3-codex) for most slices.
 - **Fast UI loops:** Use `implement-iterative` (claude-sonnet-4-6) for frontend iteration.
 - **Deep reasoning:** Use `implement-deliberate` (claude-opus-4-6) for tricky logic or failed first attempts.
+
+### Review
+- **Default:** Use `review` (claude-opus-4-6) — thoughtful, balanced, good signal-to-noise.
+- **Thorough:** Use `review-thorough` (gpt-5.3-codex) for important/high-risk slices.
+- **Quick:** Use `review-quick` (gpt-5.3-codex, low effort) for trivial changes.
+- **Adversarial:** Use `review-adversarial` (claude-sonnet-4-6) to actively break the code with scratch tests.
+
+### General
 - **Model override:** Use `-m MODEL` on any agent to temporarily switch models.
 
 ## Pipeline

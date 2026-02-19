@@ -5,8 +5,12 @@ import { buildTree, TreeNode } from "@/core/lib/treeBuilder";
 import { api } from "@/core/lib/api";
 import { getErrorMessageWithFallback, isAbortError } from "@/core/lib/errors";
 import { db } from "@/core/lib/db";
+import type { CachedDocumentMeta, ProjectTreeCache } from "@/core/lib/offlineTypes";
 import { cancelRetry } from "@/core/lib/sync";
 import { getDescendantDocumentIds } from "@/core/lib/treeUtils";
+import { makeLogger } from "@/core/lib/logger";
+
+const log = makeLogger("tree-store");
 
 type LoadStatus = "idle" | "loading" | "success" | "error";
 
@@ -77,6 +81,12 @@ interface TreeStore {
   ) => void;
 }
 
+function toCachedDocumentMeta(document: Document): CachedDocumentMeta {
+  const { content, ...metadataOnly } = document;
+  void content;
+  return metadataOnly;
+}
+
 export const useTreeStore = create<TreeStore>()((set, get) => ({
   documents: [],
   folders: [],
@@ -98,20 +108,39 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
 
   loadTree: async (projectId: string, signal?: AbortSignal) => {
     const currentState = get();
-    const hasCachedData =
+    const hasInMemoryData =
       currentState.tree.length > 0 && currentState.treeProjectId === projectId;
 
     // Skip if data is fresh (< 30s old) for the same project.
     // Prevents redundant fetches when Activity re-fires effects on tab switch.
     const isFresh =
-      hasCachedData &&
+      hasInMemoryData &&
       currentState.treeLoadedAt !== null &&
       Date.now() - currentState.treeLoadedAt < 30_000;
     if (isFresh) return;
 
-    // Set loading state based on whether we have cached tree data
-    const status = currentState.tree.length === 0 ? "loading" : "success";
+    // Set loading state based on whether we already have this project's tree in memory.
+    const status = hasInMemoryData ? "success" : "loading";
     set({ status, isFetching: true, error: null });
+
+    try {
+      const cachedTree = await db.projectTrees.get(projectId);
+      if (cachedTree) {
+        const cachedTreeData = buildTree(cachedTree.folders, cachedTree.documents);
+        set({
+          folders: cachedTree.folders,
+          documents: cachedTree.documents,
+          tree: cachedTreeData,
+          status: "success",
+          isFetching: true,
+          error: null,
+          treeProjectId: projectId,
+        });
+      }
+    } catch (err) {
+      // Cache read is best-effort. If IndexedDB read fails, continue with network fetch.
+      log.warn("Cache read failed, falling back to network", err);
+    }
 
     try {
       // Fetch tree from backend (already flattened by fromDocumentTreeDto mapper)
@@ -127,6 +156,19 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
       );
       if (fullDocuments.length > 0) {
         await Promise.all(fullDocuments.map((doc) => db.documents.put(doc)));
+      }
+
+      const treeCache: ProjectTreeCache = {
+        projectId,
+        folders: response.folders,
+        documents: response.documents.map(toCachedDocumentMeta),
+        updatedAt: new Date().toISOString(),
+      };
+      try {
+        await db.projectTrees.put(treeCache);
+      } catch (err) {
+        // Tree cache write failure should not block rendering server data.
+        log.warn("Tree cache write failed", err);
       }
 
       // Update store
@@ -150,10 +192,18 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
         error,
         "Failed to load documents",
       );
-      // If we have cached tree data, keep status as 'success', otherwise set to 'error'
-      const currentTree = get().tree;
-      const errorStatus = currentTree.length > 0 ? "success" : "error";
-      set({ error: message, status: errorStatus, isFetching: false });
+      // Keep cached/in-memory tree visible on network failures.
+      const stateAfterFailure = get();
+      const hasProjectData =
+        stateAfterFailure.treeProjectId === projectId &&
+        stateAfterFailure.tree.length > 0;
+
+      if (hasProjectData) {
+        set({ error: null, status: "success", isFetching: false });
+        return;
+      }
+
+      set({ error: message, status: "error", isFetching: false });
     }
   },
 
@@ -253,6 +303,7 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
       // Cancel any pending retries FIRST to prevent stale content from being re-synced
       // after we delete the document from cache and server
       cancelRetry(id);
+      await db.pendingDocumentSaves.delete(id);
 
       // Clear from IndexedDB cache to prevent race conditions
       // where URL sync might try to load a deleted document
@@ -279,6 +330,7 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
       const descendantDocIds = getDescendantDocumentIds(get().tree, id);
       for (const docId of descendantDocIds) {
         cancelRetry(docId);
+        await db.pendingDocumentSaves.delete(docId);
         await db.documents.delete(docId);
       }
 

@@ -1,8 +1,10 @@
 import type { Document } from "@/features/documents/types/document";
 import { db } from "@/core/lib/db";
-import { addRetryOperation, cancelRetry, syncDocument } from "@/core/lib/sync";
+import { syncDocument } from "@/core/lib/sync";
 import { isNetworkError, isAbortError } from "@/core/lib/errors";
-import type { RetryCallbacks } from "@/core/lib/retry";
+import { makeLogger } from "@/core/lib/logger";
+
+const log = makeLogger("doc-sync-service");
 
 export type SaveCallbacks = {
   onServerSaved?: (doc: Document) => void;
@@ -14,6 +16,10 @@ export class DocumentSyncService {
   /**
    * Save with optimistic local update and retry-on-network-failure.
    * UI concerns are surfaced via callbacks; no direct store/toast usage here.
+   *
+   * On network/5xx failure the save is persisted to the `pendingDocumentSaves`
+   * Dexie table so it survives page reload. The persistent drain (see
+   * `persistentSaveDrain.ts`) picks it up on next startup / online event.
    */
   async save(
     documentId: string,
@@ -21,8 +27,8 @@ export class DocumentSyncService {
     currentDoc?: Document,
     cbs?: SaveCallbacks,
   ): Promise<void> {
-    // Cancel pending retry for this document (newer content wins)
-    cancelRetry(documentId);
+    // Remove any stale pending save for this document (newer content wins)
+    await db.pendingDocumentSaves.delete(documentId);
 
     const now = new Date();
 
@@ -45,20 +51,24 @@ export class DocumentSyncService {
       }
 
       if (isNetworkError(error)) {
-        // Schedule retry with mapped callbacks
-        const callbacks: RetryCallbacks<Document> = {
-          onSuccess: (doc) => cbs?.onServerSaved?.(doc),
-          onPermanentFailure: (err) => cbs?.onPermanentFailure?.(err),
-        };
-        addRetryOperation(
-          {
-            entityType: "document",
-            entityId: documentId,
+        // Persist the failed save to IndexedDB for cross-session retry.
+        // Uses documentId as key → last-write-wins (put overwrites).
+        log.info("Persisting failed save for retry", documentId);
+        try {
+          await db.pendingDocumentSaves.put({
+            documentId,
             content,
-            attemptCount: 0,
-          },
-          callbacks,
-        );
+            createdAt: new Date().toISOString(),
+          });
+        } catch (dbError) {
+          // Keep network failure handling predictable if IndexedDB persistence fails.
+          // Optimistic content still exists in the local `documents` table.
+          log.warn(
+            "Failed to persist pending save to IndexedDB",
+            documentId,
+            dbError,
+          );
+        }
         cbs?.onRetryScheduled?.();
         return;
       }
@@ -68,24 +78,12 @@ export class DocumentSyncService {
     }
   }
 
-  queueRetry(
-    documentId: string,
-    content: string,
-    cbs?: RetryCallbacks<Document>,
-  ) {
-    addRetryOperation(
-      {
-        entityType: "document",
-        entityId: documentId,
-        content,
-        attemptCount: 0,
-      },
-      cbs,
-    );
-  }
-
-  cancelRetry(documentId: string) {
-    cancelRetry(documentId);
+  /**
+   * Cancel any pending persistent retry for a document.
+   * Called when a newer save supersedes a pending one.
+   */
+  async cancelRetry(documentId: string): Promise<void> {
+    await db.pendingDocumentSaves.delete(documentId);
   }
 }
 
