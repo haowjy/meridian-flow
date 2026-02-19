@@ -16,6 +16,7 @@ export interface Proposal {
 
 export interface ProposalSnapshotEvent {
   type: "proposal:snapshot";
+  documentId: string;
   proposals: Proposal[];
 }
 
@@ -26,6 +27,7 @@ export interface ProposalNewEvent {
 
 export interface ProposalStatusChangedEvent {
   type: "proposal:statusChanged";
+  documentId: string;
   proposalId: string;
   status: "accepted" | "rejected";
 }
@@ -38,6 +40,7 @@ export interface ProposalGroupAcceptOutcome {
 
 export interface ProposalGroupAcceptResultEvent {
   type: "proposal:groupAcceptResult";
+  documentId: string;
   outcomes: ProposalGroupAcceptOutcome[];
 }
 
@@ -53,7 +56,11 @@ export function isProposalSnapshotEvent(
   if (!isRecord(event)) {
     return false;
   }
-  return event.type === "proposal:snapshot" && Array.isArray(event.proposals);
+  return (
+    event.type === "proposal:snapshot" &&
+    typeof event.documentId === "string" &&
+    Array.isArray(event.proposals)
+  );
 }
 
 export function isProposalNewEvent(
@@ -73,6 +80,7 @@ export function isProposalStatusChangedEvent(
   }
   return (
     event.type === "proposal:statusChanged" &&
+    typeof event.documentId === "string" &&
     typeof event.proposalId === "string" &&
     (event.status === "accepted" || event.status === "rejected")
   );
@@ -84,7 +92,11 @@ export function isProposalGroupAcceptResultEvent(
   if (!isRecord(event)) {
     return false;
   }
-  return event.type === "proposal:groupAcceptResult" && Array.isArray(event.outcomes);
+  return (
+    event.type === "proposal:groupAcceptResult" &&
+    typeof event.documentId === "string" &&
+    Array.isArray(event.outcomes)
+  );
 }
 
 function isRecord(event: unknown): event is Record<string, unknown> {
@@ -93,47 +105,56 @@ function isRecord(event: unknown): event is Record<string, unknown> {
 
 export interface ProposalAcceptCommand {
   type: "proposal:accept";
+  documentId: string;
   proposalId: string;
   idempotencyKey: string;
 }
 
 export interface ProposalRejectCommand {
   type: "proposal:reject";
+  documentId: string;
   proposalId: string;
 }
 
 export interface ProposalGroupAcceptCommand {
   type: "proposal:groupAccept";
+  documentId: string;
   groupId: string;
   idempotencyKey: string;
 }
 
 export function buildProposalAcceptCommand(params: {
+  documentId: string;
   proposalId: string;
   idempotencyKey: string;
 }): ProposalAcceptCommand {
   return {
     type: "proposal:accept",
+    documentId: params.documentId,
     proposalId: params.proposalId,
     idempotencyKey: params.idempotencyKey,
   };
 }
 
 export function buildProposalRejectCommand(params: {
+  documentId: string;
   proposalId: string;
 }): ProposalRejectCommand {
   return {
     type: "proposal:reject",
+    documentId: params.documentId,
     proposalId: params.proposalId,
   };
 }
 
 export function buildProposalGroupAcceptCommand(params: {
+  documentId: string;
   groupId: string;
   idempotencyKey: string;
 }): ProposalGroupAcceptCommand {
   return {
     type: "proposal:groupAccept",
+    documentId: params.documentId,
     groupId: params.groupId,
     idempotencyKey: params.idempotencyKey,
   };

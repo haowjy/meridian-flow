@@ -3,10 +3,17 @@ package handler
 import (
 	"fmt"
 
+	"github.com/google/uuid"
 	ycrdt "github.com/skyterra/y-crdt"
 )
 
-func buildUpdateFrame(update []byte) ([]byte, error) {
+const (
+	collabEnvelopeHeaderSize = 1
+	collabDocumentUUIDSize   = 16
+	collabFramePrefixSize    = collabEnvelopeHeaderSize + collabDocumentUUIDSize
+)
+
+func buildUpdateFrame(documentID uuid.UUID, update []byte) ([]byte, error) {
 	encoder := ycrdt.NewUpdateEncoderV1()
 	ycrdt.WriteUpdate(encoder, update)
 	payload := encoder.ToUint8Array()
@@ -14,7 +21,7 @@ func buildUpdateFrame(update []byte) ([]byte, error) {
 		return nil, fmt.Errorf("empty update payload")
 	}
 
-	return frameEnvelope(collabEnvelopeUpdate, payload), nil
+	return frameEnvelope(collabEnvelopeUpdate, documentID, payload), nil
 }
 
 func envelopeTypeFromSyncPayload(syncPayload []byte) (byte, error) {
@@ -33,11 +40,23 @@ func envelopeTypeFromSyncPayload(syncPayload []byte) (byte, error) {
 	}
 }
 
-func frameEnvelope(envelopeType byte, payload []byte) []byte {
-	framed := make([]byte, 1+len(payload))
+func frameEnvelope(envelopeType byte, documentID uuid.UUID, payload []byte) []byte {
+	framed := make([]byte, collabFramePrefixSize+len(payload))
 	framed[0] = envelopeType
-	copy(framed[1:], payload)
+	copy(framed[1:collabFramePrefixSize], documentID[:])
+	copy(framed[collabFramePrefixSize:], payload)
 	return framed
+}
+
+func unframeEnvelope(frame []byte) (byte, uuid.UUID, []byte, error) {
+	if len(frame) < collabFramePrefixSize {
+		return 0, uuid.Nil, nil, fmt.Errorf("frame too short: got %d bytes", len(frame))
+	}
+
+	var documentID uuid.UUID
+	copy(documentID[:], frame[1:collabFramePrefixSize])
+
+	return frame[0], documentID, frame[collabFramePrefixSize:], nil
 }
 
 func envelopeMatchesSyncType(envelopeType byte, syncType int) bool {

@@ -35,6 +35,7 @@ describe("proposal manager", () => {
 
     manager.onProposalSnapshot({
       type: "proposal:snapshot",
+      documentId: "doc-1",
       proposals: [makeProposal({ id: "snapshot-proposal", yjsUpdate: undefined })],
     });
 
@@ -68,6 +69,7 @@ describe("proposal manager", () => {
 
     manager.onProposalStatusChanged({
       type: "proposal:statusChanged",
+      documentId: "doc-1",
       proposalId: "proposal-terminal",
       status: "accepted",
     });
@@ -85,6 +87,7 @@ describe("proposal manager", () => {
 
     manager.onProposalGroupAcceptResult({
       type: "proposal:groupAcceptResult",
+      documentId: "doc-1",
       outcomes: [{ proposalId: "proposal-group", status: "accepted" }],
     });
 
@@ -100,11 +103,13 @@ describe("proposal command builders", () => {
   it("builds proposal:accept payload shape", () => {
     expect(
       buildProposalAcceptCommand({
+        documentId: "doc-1",
         proposalId: "proposal-123",
         idempotencyKey: "idem-123",
       }),
     ).toEqual({
       type: "proposal:accept",
+      documentId: "doc-1",
       proposalId: "proposal-123",
       idempotencyKey: "idem-123",
     });
@@ -113,10 +118,12 @@ describe("proposal command builders", () => {
   it("builds proposal:reject payload shape", () => {
     expect(
       buildProposalRejectCommand({
+        documentId: "doc-1",
         proposalId: "proposal-456",
       }),
     ).toEqual({
       type: "proposal:reject",
+      documentId: "doc-1",
       proposalId: "proposal-456",
     });
   });

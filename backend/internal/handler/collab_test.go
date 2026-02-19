@@ -280,6 +280,7 @@ func TestCollabHandler_WSSyncStep1Handshake(t *testing.T) {
 	defer server.Close()
 
 	wsURL := asWebSocketURL(t, server.URL, "/ws/documents/11111111-1111-1111-1111-111111111111")
+	docUUID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	conn, err := websocket.Dial(wsURL, "", "http://localhost/")
 	if err != nil {
 		t.Fatalf("dial websocket: %v", err)
@@ -290,25 +291,39 @@ func TestCollabHandler_WSSyncStep1Handshake(t *testing.T) {
 		t.Fatalf("send auth token: %v", err)
 	}
 
-	step1 := buildEnvelopeSyncStep1(t)
+	step1 := buildEnvelopeSyncStep1(t, docUUID)
 	if err := websocket.Message.Send(conn, step1); err != nil {
 		t.Fatalf("send sync step1: %v", err)
 	}
 
 	msg1 := readWSBinaryMessage(t, conn)
-	if len(msg1) < 2 {
+	msg1Envelope, msg1DocumentID, msg1Payload, err := unframeEnvelope(msg1)
+	if err != nil {
+		t.Fatalf("unframe first sync frame: %v", err)
+	}
+	if msg1DocumentID != docUUID {
+		t.Fatalf("expected first frame document %s, got %s", docUUID, msg1DocumentID)
+	}
+	if len(msg1Payload) == 0 {
 		t.Fatalf("expected non-empty first sync frame")
 	}
-	if msg1[0] != collabEnvelopeSyncStep2 {
-		t.Fatalf("expected first frame envelope %d, got %d", collabEnvelopeSyncStep2, msg1[0])
+	if msg1Envelope != collabEnvelopeSyncStep2 {
+		t.Fatalf("expected first frame envelope %d, got %d", collabEnvelopeSyncStep2, msg1Envelope)
 	}
 
 	msg2 := readWSBinaryMessage(t, conn)
-	if len(msg2) < 2 {
+	msg2Envelope, msg2DocumentID, msg2Payload, err := unframeEnvelope(msg2)
+	if err != nil {
+		t.Fatalf("unframe second sync frame: %v", err)
+	}
+	if msg2DocumentID != docUUID {
+		t.Fatalf("expected second frame document %s, got %s", docUUID, msg2DocumentID)
+	}
+	if len(msg2Payload) == 0 {
 		t.Fatalf("expected non-empty second sync frame")
 	}
-	if msg2[0] != collabEnvelopeSyncStep1 {
-		t.Fatalf("expected second frame envelope %d, got %d", collabEnvelopeSyncStep1, msg2[0])
+	if msg2Envelope != collabEnvelopeSyncStep1 {
+		t.Fatalf("expected second frame envelope %d, got %d", collabEnvelopeSyncStep1, msg2Envelope)
 	}
 }
 
@@ -324,6 +339,7 @@ func TestCollabHandler_WSCorruptSyncPayload(t *testing.T) {
 	defer server.Close()
 
 	wsURL := asWebSocketURL(t, server.URL, "/ws/documents/11111111-1111-1111-1111-111111111111")
+	docUUID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	conn, err := websocket.Dial(wsURL, "", "http://localhost/")
 	if err != nil {
 		t.Fatalf("dial websocket: %v", err)
@@ -334,7 +350,7 @@ func TestCollabHandler_WSCorruptSyncPayload(t *testing.T) {
 		t.Fatalf("send auth token: %v", err)
 	}
 
-	if err := websocket.Message.Send(conn, []byte{collabEnvelopeUpdate, 0xFF, 0xFF, 0xFF}); err != nil {
+	if err := websocket.Message.Send(conn, frameEnvelope(collabEnvelopeUpdate, docUUID, []byte{0xFF, 0xFF, 0xFF})); err != nil {
 		t.Fatalf("send corrupt update: %v", err)
 	}
 
@@ -356,6 +372,7 @@ func TestCollabHandler_WSInboundRateLimitAndRecovery(t *testing.T) {
 	defer server.Close()
 
 	wsURL := asWebSocketURL(t, server.URL, "/ws/documents/11111111-1111-1111-1111-111111111111")
+	docUUID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	conn, err := websocket.Dial(wsURL, "", "http://localhost/")
 	if err != nil {
 		t.Fatalf("dial websocket: %v", err)
@@ -367,7 +384,7 @@ func TestCollabHandler_WSInboundRateLimitAndRecovery(t *testing.T) {
 	}
 
 	for i := 0; i < collabInboundRateLimit+1; i++ {
-		if err := websocket.Message.Send(conn, []byte{collabEnvelopeAwareness}); err != nil {
+		if err := websocket.Message.Send(conn, frameEnvelope(collabEnvelopeAwareness, docUUID, nil)); err != nil {
 			t.Fatalf("send burst message %d: %v", i, err)
 		}
 	}
@@ -378,7 +395,7 @@ func TestCollabHandler_WSInboundRateLimitAndRecovery(t *testing.T) {
 	}
 
 	// This payload normally triggers RESET_REQUIRED, so lack of response confirms mute-drop behavior.
-	if err := websocket.Message.Send(conn, []byte{collabEnvelopeUpdate, 0xFF, 0xFF, 0xFF}); err != nil {
+	if err := websocket.Message.Send(conn, frameEnvelope(collabEnvelopeUpdate, docUUID, []byte{0xFF, 0xFF, 0xFF})); err != nil {
 		t.Fatalf("send muted corrupt update: %v", err)
 	}
 	if msg, ok := readWSErrorMessageWithTimeout(t, conn, 250*time.Millisecond); ok {
@@ -387,7 +404,7 @@ func TestCollabHandler_WSInboundRateLimitAndRecovery(t *testing.T) {
 
 	time.Sleep(collabInboundMutePeriod + 100*time.Millisecond)
 
-	if err := websocket.Message.Send(conn, []byte{collabEnvelopeUpdate, 0xFF, 0xFF, 0xFF}); err != nil {
+	if err := websocket.Message.Send(conn, frameEnvelope(collabEnvelopeUpdate, docUUID, []byte{0xFF, 0xFF, 0xFF})); err != nil {
 		t.Fatalf("send post-mute corrupt update: %v", err)
 	}
 	recovered := readWSErrorMessage(t, conn)
@@ -491,7 +508,7 @@ func readWSBinaryMessage(t *testing.T, conn *websocket.Conn) []byte {
 	}
 }
 
-func buildEnvelopeSyncStep1(t *testing.T) []byte {
+func buildEnvelopeSyncStep1(t *testing.T, docID uuid.UUID) []byte {
 	t.Helper()
 
 	doc := ycrdt.NewDoc("test-client", true, ycrdt.DefaultGCFilter, nil, false)
@@ -502,8 +519,5 @@ func buildEnvelopeSyncStep1(t *testing.T) []byte {
 		t.Fatalf("empty sync-step1 payload")
 	}
 
-	frame := make([]byte, 1+len(payload))
-	frame[0] = collabEnvelopeSyncStep1
-	copy(frame[1:], payload)
-	return frame
+	return frameEnvelope(collabEnvelopeSyncStep1, docID, payload)
 }

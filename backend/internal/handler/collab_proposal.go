@@ -37,17 +37,20 @@ type collabTypedMessage struct {
 
 type proposalAcceptCommand struct {
 	Type           string `json:"type"`
+	DocumentID     string `json:"documentId"`
 	ProposalID     string `json:"proposalId"`
 	IdempotencyKey string `json:"idempotencyKey"`
 }
 
 type proposalRejectCommand struct {
 	Type       string `json:"type"`
+	DocumentID string `json:"documentId"`
 	ProposalID string `json:"proposalId"`
 }
 
 type proposalGroupAcceptCommand struct {
 	Type           string `json:"type"`
+	DocumentID     string `json:"documentId"`
 	GroupID        string `json:"groupId"`
 	IdempotencyKey string `json:"idempotencyKey"`
 }
@@ -69,8 +72,9 @@ type proposalEventDTO struct {
 }
 
 type proposalSnapshotEvent struct {
-	Type      string             `json:"type"`
-	Proposals []proposalEventDTO `json:"proposals"`
+	Type       string             `json:"type"`
+	DocumentID string             `json:"documentId"`
+	Proposals  []proposalEventDTO `json:"proposals"`
 }
 
 type proposalNewEvent struct {
@@ -80,13 +84,15 @@ type proposalNewEvent struct {
 
 type proposalStatusChangedEvent struct {
 	Type       string `json:"type"`
+	DocumentID string `json:"documentId"`
 	ProposalID string `json:"proposalId"`
 	Status     string `json:"status"`
 }
 
 type proposalGroupAcceptResultEvent struct {
-	Type     string                  `json:"type"`
-	Outcomes []groupAcceptOutcomeDTO `json:"outcomes"`
+	Type       string                  `json:"type"`
+	DocumentID string                  `json:"documentId"`
+	Outcomes   []groupAcceptOutcomeDTO `json:"outcomes"`
 }
 
 type groupAcceptOutcomeDTO struct {
@@ -118,10 +124,10 @@ func (h *CollabHandler) handleTextMessage(
 		nonBlockingSignal(heartbeatAcks)
 		return true
 	case wsTypeProposalAccept:
-		h.handleProposalAccept(ctx, conn, docID, userUUID, raw)
+		h.handleProposalAccept(ctx, conn, docID, docUUID, userUUID, raw)
 		return true
 	case wsTypeProposalReject:
-		h.handleProposalReject(ctx, conn, docID, userUUID, raw)
+		h.handleProposalReject(ctx, conn, docID, docUUID, userUUID, raw)
 		return true
 	case wsTypeProposalGroupAccept:
 		h.handleProposalGroupAccept(ctx, conn, docID, docUUID, userUUID, raw)
@@ -136,6 +142,7 @@ func (h *CollabHandler) handleProposalAccept(
 	ctx context.Context,
 	conn *websocketDocumentConnection,
 	docID string,
+	docUUID uuid.UUID,
 	userUUID uuid.UUID,
 	raw []byte,
 ) {
@@ -153,6 +160,10 @@ func (h *CollabHandler) handleProposalAccept(
 		h.sendError(conn, "INTERNAL_ERROR", "idempotencyKey is required")
 		return
 	}
+	commandDocumentID, ok := h.validateProposalCommandDocumentID(conn, cmd.DocumentID, docUUID)
+	if !ok {
+		return
+	}
 
 	proposalUUID, err := parseUUID(cmd.ProposalID)
 	if err != nil {
@@ -162,6 +173,7 @@ func (h *CollabHandler) handleProposalAccept(
 
 	requestHash, err := buildCanonicalRequestHash(map[string]any{
 		"action":     wsTypeProposalAccept,
+		"documentId": commandDocumentID.String(),
 		"proposalId": proposalUUID.String(),
 		"userId":     userUUID.String(),
 	})
@@ -186,7 +198,7 @@ func (h *CollabHandler) handleProposalAccept(
 		h.sendError(conn, "IDEMPOTENCY_REPLAY", "proposal:accept already processed")
 		return
 	}
-	if err := h.broadcastProposalMutations(docID, result.Mutations); err != nil {
+	if err := h.broadcastProposalMutations(result.Mutations); err != nil {
 		h.logger.Error("collab accept mutation broadcast failed", "document_id", docID, "error", err)
 		h.sendError(conn, "INTERNAL_ERROR", "failed to broadcast proposal updates")
 	}
@@ -196,6 +208,7 @@ func (h *CollabHandler) handleProposalReject(
 	ctx context.Context,
 	conn *websocketDocumentConnection,
 	docID string,
+	docUUID uuid.UUID,
 	userUUID uuid.UUID,
 	raw []byte,
 ) {
@@ -207,6 +220,9 @@ func (h *CollabHandler) handleProposalReject(
 	var cmd proposalRejectCommand
 	if err := json.Unmarshal(raw, &cmd); err != nil {
 		h.sendError(conn, "INTERNAL_ERROR", "invalid proposal:reject payload")
+		return
+	}
+	if _, ok := h.validateProposalCommandDocumentID(conn, cmd.DocumentID, docUUID); !ok {
 		return
 	}
 
@@ -224,7 +240,7 @@ func (h *CollabHandler) handleProposalReject(
 		h.sendError(conn, mapProposalErrorCode(err), err.Error())
 		return
 	}
-	if err := h.broadcastProposalMutations(docID, result.Mutations); err != nil {
+	if err := h.broadcastProposalMutations(result.Mutations); err != nil {
 		h.logger.Error("collab reject mutation broadcast failed", "document_id", docID, "error", err)
 		h.sendError(conn, "INTERNAL_ERROR", "failed to broadcast proposal updates")
 	}
@@ -252,6 +268,10 @@ func (h *CollabHandler) handleProposalGroupAccept(
 		h.sendError(conn, "INTERNAL_ERROR", "idempotencyKey is required")
 		return
 	}
+	commandDocumentID, ok := h.validateProposalCommandDocumentID(conn, cmd.DocumentID, docUUID)
+	if !ok {
+		return
+	}
 
 	groupUUID, err := parseUUID(cmd.GroupID)
 	if err != nil {
@@ -261,7 +281,7 @@ func (h *CollabHandler) handleProposalGroupAccept(
 
 	requestHash, err := buildCanonicalRequestHash(map[string]any{
 		"action":     wsTypeProposalGroupAccept,
-		"documentId": docUUID.String(),
+		"documentId": commandDocumentID.String(),
 		"groupId":    groupUUID.String(),
 		"userId":     userUUID.String(),
 	})
@@ -272,7 +292,7 @@ func (h *CollabHandler) handleProposalGroupAccept(
 	}
 
 	result, err := h.proposalService.GroupAccept(ctx, collabSvc.GroupAcceptRequest{
-		DocumentID:        docUUID,
+		DocumentID:        commandDocumentID,
 		ProposalGroupID:   groupUUID,
 		UserID:            userUUID,
 		IdempotencyKey:    strings.TrimSpace(cmd.IdempotencyKey),
@@ -284,13 +304,13 @@ func (h *CollabHandler) handleProposalGroupAccept(
 		return
 	}
 
-	if err := h.broadcastProposalMutations(docID, result.Mutations); err != nil {
+	if err := h.broadcastProposalMutations(result.Mutations); err != nil {
 		h.logger.Error("collab group accept mutation broadcast failed", "document_id", docID, "error", err)
 		h.sendError(conn, "INTERNAL_ERROR", "failed to broadcast proposal updates")
 		return
 	}
 
-	groupEventBytes, err := buildProposalGroupAcceptResultEventBytes(result.Payload)
+	groupEventBytes, err := buildProposalGroupAcceptResultEventBytes(commandDocumentID, result.Payload)
 	if err != nil {
 		h.logger.Error("collab group accept event encode failed", "document_id", docID, "error", err)
 		h.sendError(conn, "INTERNAL_ERROR", "failed to encode group accept result")
@@ -305,7 +325,7 @@ func (h *CollabHandler) sendProposalSnapshot(
 	docUUID uuid.UUID,
 ) error {
 	if h.proposalStore == nil {
-		return conn.SendJSON(buildProposalSnapshotEvent(nil))
+		return conn.SendJSON(buildProposalSnapshotEvent(docUUID, nil))
 	}
 
 	proposedStatus := collabModels.ProposalStatusProposed
@@ -332,26 +352,44 @@ func (h *CollabHandler) sendProposalSnapshot(
 		return proposals[i].CreatedAt.Before(proposals[j].CreatedAt)
 	})
 
-	return conn.SendJSON(buildProposalSnapshotEvent(proposals))
+	return conn.SendJSON(buildProposalSnapshotEvent(docUUID, proposals))
 }
 
-func (h *CollabHandler) broadcastProposalMutations(docID string, mutations []collabSvc.ProposalMutationIntent) error {
+func (h *CollabHandler) broadcastProposalMutations(mutations []collabSvc.ProposalMutationIntent) error {
 	for _, mutation := range mutations {
+		documentID := mutation.DocumentID.String()
 		if mutation.Status == collabModels.ProposalStatusAccepted && len(mutation.YjsUpdate) > 0 {
-			updateFrame, err := buildUpdateFrame(mutation.YjsUpdate)
+			updateFrame, err := buildUpdateFrame(mutation.DocumentID, mutation.YjsUpdate)
 			if err != nil {
 				return err
 			}
-			h.documentBroadcaster.Broadcast(docID, updateFrame, nil)
+			h.documentBroadcaster.Broadcast(documentID, updateFrame, nil)
 		}
 
-		statusEventBytes, err := buildProposalStatusChangedEventBytes(mutation.ProposalID, mutation.Status)
+		statusEventBytes, err := buildProposalStatusChangedEventBytes(mutation.DocumentID, mutation.ProposalID, mutation.Status)
 		if err != nil {
 			return err
 		}
-		h.documentBroadcaster.Broadcast(docID, statusEventBytes, nil)
+		h.documentBroadcaster.Broadcast(documentID, statusEventBytes, nil)
 	}
 	return nil
+}
+
+func (h *CollabHandler) validateProposalCommandDocumentID(
+	conn *websocketDocumentConnection,
+	commandDocumentID string,
+	socketDocumentID uuid.UUID,
+) (uuid.UUID, bool) {
+	documentUUID, err := parseUUID(commandDocumentID)
+	if err != nil {
+		h.sendError(conn, "INTERNAL_ERROR", "documentId must be a valid UUID")
+		return uuid.Nil, false
+	}
+	if documentUUID != socketDocumentID {
+		h.sendError(conn, "INTERNAL_ERROR", "documentId must match websocket document")
+		return uuid.Nil, false
+	}
+	return documentUUID, true
 }
 
 func mapProposalErrorCode(err error) string {
@@ -383,14 +421,15 @@ func mapProposalErrorCode(err error) string {
 	return "INTERNAL_ERROR"
 }
 
-func buildProposalSnapshotEvent(proposals []collabModels.Proposal) proposalSnapshotEvent {
+func buildProposalSnapshotEvent(documentID uuid.UUID, proposals []collabModels.Proposal) proposalSnapshotEvent {
 	out := make([]proposalEventDTO, 0, len(proposals))
 	for _, proposal := range proposals {
 		out = append(out, toProposalEventDTO(proposal, false))
 	}
 	return proposalSnapshotEvent{
-		Type:      wsTypeProposalSnapshot,
-		Proposals: out,
+		Type:       wsTypeProposalSnapshot,
+		DocumentID: documentID.String(),
+		Proposals:  out,
 	}
 }
 
@@ -401,19 +440,31 @@ func buildProposalNewEvent(proposal collabModels.Proposal) proposalNewEvent {
 	}
 }
 
-func buildProposalStatusChangedEvent(proposalID uuid.UUID, status collabModels.ProposalStatus) proposalStatusChangedEvent {
+func buildProposalStatusChangedEvent(
+	documentID uuid.UUID,
+	proposalID uuid.UUID,
+	status collabModels.ProposalStatus,
+) proposalStatusChangedEvent {
 	return proposalStatusChangedEvent{
 		Type:       wsTypeProposalStatusChanged,
+		DocumentID: documentID.String(),
 		ProposalID: proposalID.String(),
 		Status:     string(status),
 	}
 }
 
-func buildProposalStatusChangedEventBytes(proposalID uuid.UUID, status collabModels.ProposalStatus) ([]byte, error) {
-	return json.Marshal(buildProposalStatusChangedEvent(proposalID, status))
+func buildProposalStatusChangedEventBytes(
+	documentID uuid.UUID,
+	proposalID uuid.UUID,
+	status collabModels.ProposalStatus,
+) ([]byte, error) {
+	return json.Marshal(buildProposalStatusChangedEvent(documentID, proposalID, status))
 }
 
-func buildProposalGroupAcceptResultEvent(payload collabModels.GroupAcceptResponsePayload) proposalGroupAcceptResultEvent {
+func buildProposalGroupAcceptResultEvent(
+	documentID uuid.UUID,
+	payload collabModels.GroupAcceptResponsePayload,
+) proposalGroupAcceptResultEvent {
 	outcomes := make([]groupAcceptOutcomeDTO, 0, len(payload.Outcomes))
 	for _, outcome := range payload.Outcomes {
 		outcomes = append(outcomes, groupAcceptOutcomeDTO{
@@ -423,13 +474,17 @@ func buildProposalGroupAcceptResultEvent(payload collabModels.GroupAcceptRespons
 		})
 	}
 	return proposalGroupAcceptResultEvent{
-		Type:     wsTypeProposalGroupAcceptEvent,
-		Outcomes: outcomes,
+		Type:       wsTypeProposalGroupAcceptEvent,
+		DocumentID: documentID.String(),
+		Outcomes:   outcomes,
 	}
 }
 
-func buildProposalGroupAcceptResultEventBytes(payload collabModels.GroupAcceptResponsePayload) ([]byte, error) {
-	return json.Marshal(buildProposalGroupAcceptResultEvent(payload))
+func buildProposalGroupAcceptResultEventBytes(
+	documentID uuid.UUID,
+	payload collabModels.GroupAcceptResponsePayload,
+) ([]byte, error) {
+	return json.Marshal(buildProposalGroupAcceptResultEvent(documentID, payload))
 }
 
 func toProposalEventDTO(proposal collabModels.Proposal, includeYjsUpdate bool) proposalEventDTO {

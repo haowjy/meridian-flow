@@ -154,8 +154,11 @@ export class CollabSyncRuntime {
   }
 
   handleBinaryFrame(frame: Uint8Array): void {
-    const { envelope, payload } = unwrapEnvelope(frame);
-    if (envelope == null) {
+    const { envelope, documentId, payload } = unwrapEnvelope(frame);
+    if (envelope == null || documentId == null) {
+      return;
+    }
+    if (documentId !== this.documentId) {
       return;
     }
 
@@ -200,7 +203,7 @@ export class CollabSyncRuntime {
   }
 
   private sendEnvelope(envelope: MeridianEnvelopeType, payload: Uint8Array): void {
-    this.sendBinary(frameEnvelope(envelope, payload));
+    this.sendBinary(frameEnvelope(envelope, this.documentId, payload));
   }
 
   private setStatus(next: CollabSyncStatus): void {
@@ -230,7 +233,10 @@ export function parseCollabServerTextEvent(raw: string): CollabServerTextEvent |
       return null;
     }
     return parsed as CollabServerTextEvent;
-  } catch {
+  } catch (error) {
+    console.warn("[cm6-collab] failed to parse collab text event", {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }

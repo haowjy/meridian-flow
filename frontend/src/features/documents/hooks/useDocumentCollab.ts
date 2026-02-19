@@ -139,6 +139,20 @@ export function useDocumentCollab({
         void connect();
       }, delayMs);
     };
+    const isMatchingEventDocument = (
+      eventDocumentId: string,
+      eventType: string,
+    ): boolean => {
+      if (eventDocumentId === documentId) {
+        return true;
+      }
+      log.debug("ignoring collab proposal event for different document", {
+        type: eventType,
+        expectedDocumentId: documentId,
+        eventDocumentId,
+      });
+      return false;
+    };
 
     const connect = async () => {
       if (isStopped) {
@@ -187,21 +201,33 @@ export function useDocumentCollab({
           }
 
           if (isProposalSnapshotEvent(textEvent)) {
+            if (!isMatchingEventDocument(textEvent.documentId, textEvent.type)) {
+              return;
+            }
             proposalManager.onProposalSnapshot(textEvent);
             return;
           }
 
           if (isProposalNewEvent(textEvent)) {
+            if (!isMatchingEventDocument(textEvent.proposal.documentId, textEvent.type)) {
+              return;
+            }
             proposalManager.onProposalNew(textEvent);
             return;
           }
 
           if (isProposalStatusChangedEvent(textEvent)) {
+            if (!isMatchingEventDocument(textEvent.documentId, textEvent.type)) {
+              return;
+            }
             proposalManager.onProposalStatusChanged(textEvent);
             return;
           }
 
           if (isProposalGroupAcceptResultEvent(textEvent)) {
+            if (!isMatchingEventDocument(textEvent.documentId, textEvent.type)) {
+              return;
+            }
             proposalManager.onProposalGroupAcceptResult(textEvent);
             return;
           }
@@ -303,6 +329,7 @@ export function useDocumentCollab({
       ws.send(
         JSON.stringify(
           buildProposalAcceptCommand({
+            documentId,
             proposalId,
             idempotencyKey,
           }),
@@ -310,7 +337,7 @@ export function useDocumentCollab({
       );
       return true;
     },
-    [],
+    [documentId],
   );
 
   const sendProposalReject = useCallback((proposalId: string): boolean => {
@@ -322,12 +349,13 @@ export function useDocumentCollab({
     ws.send(
       JSON.stringify(
         buildProposalRejectCommand({
+          documentId,
           proposalId,
         }),
       ),
     );
     return true;
-  }, []);
+  }, [documentId]);
 
   const reviewModels = useMemo(() => {
     const revision = reviewRevision;

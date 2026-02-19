@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/google/uuid"
 
@@ -38,9 +39,14 @@ func (b *ProposalBroadcasterImpl) BroadcastProposalCreated(documentID string, pr
 // event to all document subscribers. This mirrors broadcastProposalMutations for
 // the auto-accept case.
 func (b *ProposalBroadcasterImpl) BroadcastProposalAccepted(documentID string, proposalID uuid.UUID, yjsUpdate []byte) error {
+	documentUUID, err := parseUUID(documentID)
+	if err != nil {
+		return fmt.Errorf("invalid document id for proposal broadcast: %w", err)
+	}
+
 	// Send Yjs update frame so connected editors apply the change
 	if len(yjsUpdate) > 0 {
-		updateFrame, err := buildUpdateFrame(yjsUpdate)
+		updateFrame, err := buildUpdateFrame(documentUUID, yjsUpdate)
 		if err != nil {
 			return err
 		}
@@ -48,7 +54,7 @@ func (b *ProposalBroadcasterImpl) BroadcastProposalAccepted(documentID string, p
 	}
 
 	// Send status changed event so UI updates the proposal badge
-	statusEventBytes, err := buildProposalStatusChangedEventBytes(proposalID, collabModels.ProposalStatusAccepted)
+	statusEventBytes, err := buildProposalStatusChangedEventBytes(documentUUID, proposalID, collabModels.ProposalStatusAccepted)
 	if err != nil {
 		return err
 	}

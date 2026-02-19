@@ -96,6 +96,7 @@ function cloneGroupAcceptResult(
 
   return {
     type: event.type,
+    documentId: event.documentId,
     outcomes: event.outcomes.map((outcome) => ({
       proposalId: outcome.proposalId,
       status: outcome.status,

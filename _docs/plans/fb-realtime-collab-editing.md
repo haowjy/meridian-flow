@@ -39,6 +39,8 @@ This is the **main/canonical plan** for collaboration + AI collaboration.
 | Phase 2: writer history + session undo + snapshots | `_docs/plans/collab-ai/phase/phase-2-history-and-undo.md` |
 | Phase 3: AI proposals + writer review UX | `_docs/plans/collab-ai/phase/phase-3-ai-proposals-and-review.md` |
 | Phase 4: multi-agent arbitration | `_docs/plans/collab-ai/phase/phase-4-multi-agent-arbitration.md` |
+| Phase 4.5: AI collaboration bridge | `_docs/plans/collab-ai/phase/phase-4.5-ai-collab-bridge.md` |
+| Phase 4.6: per-project WebSocket overhaul | `_docs/plans/collab-ai/phase/phase-4.6-project-ws-overhaul.md` |
 | Phase 5: multi-user collaboration | `_docs/plans/collab-ai/phase/phase-5-multi-user-collaboration.md` |
 
 ## Legacy Mapping (Superseded Inputs)
