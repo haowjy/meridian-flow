@@ -553,7 +553,7 @@ export const useUIStore = create<UIStore>()(
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
 
-        // v1 → v2: Convert boolean collapsed to override system
+        // v1 -> v2: Convert boolean collapsed to override system
         if (version < 2) {
           if (state.leftPanelCollapsed !== undefined) {
             state.leftPanelUserOverride = state.leftPanelCollapsed
@@ -569,7 +569,7 @@ export const useUIStore = create<UIStore>()(
           }
         }
 
-        // v3 → v4: Remove mobileActivePanel
+        // v3 -> v4: Remove mobileActivePanel
         if (version < 4) {
           delete state.mobileActivePanel;
         }

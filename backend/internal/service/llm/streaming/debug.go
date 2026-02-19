@@ -23,11 +23,11 @@ import (
 // It mirrors the logic used by CreateTurn + startStreamingExecution:
 //   - Validates the request
 //   - Validates the thread exists
-//   - Parses and normalizes request_params → RequestParams struct
+//   - Parses and normalizes request_params -> RequestParams struct
 //   - Resolves the final model
 //   - Loads the conversation path from prev_turn_id (if provided)
 //   - Appends the hypothetical new user message from turn_blocks
-//   - Converts the backend GenerateRequest → library GenerateRequest
+//   - Converts the backend GenerateRequest -> library GenerateRequest
 //   - Returns the library request as a generic JSON map for debug inspection
 func (s *Service) BuildDebugProviderRequest(ctx context.Context, req *llmSvc.CreateTurnRequest) (map[string]interface{}, error) {
 	// Normalize empty string to nil for prev_turn_id (matches CreateTurn)

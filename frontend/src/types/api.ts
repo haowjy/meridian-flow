@@ -68,8 +68,6 @@ export interface DocumentDto {
   content?: string;
   metadata?: DocumentMetadataDto; // Format-specific stats (replaces word_count)
   updatedAt: string;
-  aiVersion?: string | null;
-  aiVersionRev?: number; // CAS revision counter for ai_version
 }
 
 export interface FolderDto {
@@ -182,8 +180,6 @@ export function fromDocumentDto(dto: DocumentDto): Document {
     content: dto.content,
     wordCount: dto.metadata?.markdown?.wordCount, // Extract from metadata.markdown
     updatedAt: new Date(dto.updatedAt),
-    aiVersion: dto.aiVersion ?? null,
-    aiVersionRev: dto.aiVersionRev,
   };
 }
 

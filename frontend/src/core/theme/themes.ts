@@ -35,8 +35,8 @@ const modernLiterary: ThemePreset = {
       primaryForeground: "#FFFFFF",
 
       // Feedback colors - usage guide:
-      // - bg-X/10-20 (tinted bg) → use text-X (the color itself)
-      // - bg-X (full bg) → use text-X-foreground (contrasting text)
+      // - bg-X/10-20 (tinted bg) -> use text-X (the color itself)
+      // - bg-X (full bg) -> use text-X-foreground (contrasting text)
       // Example: bg-error/10 + text-error ✓ | bg-error + text-error-foreground ✓
       success: "#3D8B5F",
       successForeground: "#FFFFFF", // Use ON bg-success (full background)

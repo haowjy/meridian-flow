@@ -14,8 +14,8 @@ import (
 // Returns just docName if folderPath is empty (root-level document).
 //
 // Examples:
-//   - BuildFullPath("chapters", "intro") → "chapters/intro"
-//   - BuildFullPath("", "readme") → "readme"
+//   - BuildFullPath("chapters", "intro") -> "chapters/intro"
+//   - BuildFullPath("", "readme") -> "readme"
 func BuildFullPath(folderPath, docName string) string {
 	if folderPath == "" {
 		return docName
@@ -33,7 +33,7 @@ func BuildFullPath(folderPath, docName string) string {
 // The pipe separator is safe because document names cannot contain pipes.
 //
 // Example:
-//   - BuildLookupKey("chapters/intro", "intro") → "chapters/intro|intro"
+//   - BuildLookupKey("chapters/intro", "intro") -> "chapters/intro|intro"
 func BuildLookupKey(path, name string) string {
 	return fmt.Sprintf("%s|%s", path, name)
 }
@@ -41,7 +41,7 @@ func BuildLookupKey(path, name string) string {
 // SanitizeDocName removes or replaces invalid characters from document names.
 //
 // Currently handles:
-//   - "/" → "-" (prevents path injection, maintains readability)
+//   - "/" -> "-" (prevents path injection, maintains readability)
 //
 // This is applied during import to ensure document names are valid for
 // the file system and don't interfere with path construction.

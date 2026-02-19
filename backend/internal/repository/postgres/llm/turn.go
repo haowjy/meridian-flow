@@ -1017,8 +1017,8 @@ func (r *PostgresTurnRepository) GetPaginatedTurns(
 
 	// CRITICAL: Leaf resolution ONLY when fromTurnID is nil (cold start)
 	// This is the key difference between cache mode and leaf resolution mode:
-	// - Cold start (fromTurnID == nil): User opening thread fresh → resolve to leaf (end of active branch)
-	// - Active session (fromTurnID != nil): User scrolling → use exact position (can be mid-tree)
+	// - Cold start (fromTurnID == nil): User opening thread fresh -> resolve to leaf (end of active branch)
+	// - Active session (fromTurnID != nil): User scrolling -> use exact position (can be mid-tree)
 	if fromTurnID == nil {
 		leaf, err := r.findMostRecentLeaf(ctx, *startTurnID)
 		if err != nil {

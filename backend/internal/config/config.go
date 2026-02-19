@@ -29,8 +29,7 @@ type Config struct {
 	CollabSnapshotIntervalUpdates int // Collab snapshot safety net trigger (default: 500 updates)
 	CollabAutoSnapshotTTLHours    int // TTL for auto snapshots in hours (default: 168 = 7 days)
 	CollabCleanupIntervalMinutes  int // How often to run snapshot cleanup (default: 60 = 1 hour)
-	CollabDefaultAutoAccept       bool
-	CollabAIProposalsEnabled      bool // When true, AI edits create collab proposals instead of ai_version
+	CollabDefaultAutoAccept bool
 	// Search API Configuration (optional - for web_search tool)
 	SearchAPIKey      string // API key for external search provider
 	SearchAPIProvider string // Provider name: "tavily", "brave", "serper", etc.
@@ -75,8 +74,7 @@ func Load() *Config {
 		CollabSnapshotIntervalUpdates: getEnvInt("MERIDIAN_COLLAB_SNAPSHOT_INTERVAL_UPDATES", 500),
 		CollabAutoSnapshotTTLHours:    getEnvInt("MERIDIAN_COLLAB_AUTO_SNAPSHOT_TTL_HOURS", 168), // 7 days
 		CollabCleanupIntervalMinutes:  getEnvInt("MERIDIAN_COLLAB_CLEANUP_INTERVAL_MINUTES", 60), // 1 hour
-		CollabDefaultAutoAccept:       getEnv("MERIDIAN_COLLAB_DEFAULT_AUTO_ACCEPT", "true") == "true",
-		CollabAIProposalsEnabled:      getEnv("MERIDIAN_COLLAB_AI_PROPOSALS_ENABLED", "true") == "true",
+		CollabDefaultAutoAccept: getEnv("MERIDIAN_COLLAB_DEFAULT_AUTO_ACCEPT", "true") == "true",
 		// Search API Configuration (optional)
 		SearchAPIKey:      getEnv("SEARCH_API_KEY", ""),
 		SearchAPIProvider: getEnv("SEARCH_API_PROVIDER", "tavily"),

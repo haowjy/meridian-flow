@@ -85,7 +85,7 @@ func SetupServices(
 	authorizer services.ResourceAuthorizer,
 	toolLimitResolver llmSvc.ToolLimitResolver,
 	jobQueue jobs.JobQueue,
-	mutationStrategy tools.DocumentMutationStrategy, // Strategy for AI edit persistence (ai_version or collab proposal)
+	mutationStrategy tools.DocumentMutationStrategy, // Strategy for AI edit persistence (collab proposal)
 	logger *slog.Logger,
 ) (*Services, *mstream.Registry, error) {
 	// Create shared validator
@@ -132,7 +132,7 @@ func SetupServices(
 	)
 
 	// Create formatter registry and register doc tool formatters
-	// str_replace_based_edit_tool handles view (document→text, folder→listing) and edit formatting
+	// str_replace_based_edit_tool handles view (document->text, folder->listing) and edit formatting
 	formatterRegistry := formatting.NewFormatterRegistry()
 	formatterRegistry.Register("doc_search", &formatting.DocSearchFormatter{})
 	formatterRegistry.Register("str_replace_based_edit_tool", &formatting.TextEditorFormatter{})
@@ -182,7 +182,7 @@ func SetupServices(
 		formatterRegistry,   // For formatting synthetic tool results (ref transformer)
 		tokenFinalizer,      // For finalizing tokens on completion/interruption
 		jobQueue,            // Phase 2: Background job queue for async generation enrichment
-		mutationStrategy,    // Strategy for AI edit persistence (ai_version or collab proposal)
+		mutationStrategy,    // Strategy for AI edit persistence (collab proposal)
 		logger,
 	)
 

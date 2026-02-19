@@ -22,10 +22,10 @@ var (
 )
 
 // GenerateSlug converts a name to a URL-friendly slug.
-// Example: "My Novel Chapter 1" → "my-novel-chapter-1"
+// Example: "My Novel Chapter 1" -> "my-novel-chapter-1"
 //
 // Transformations applied:
-// 1. Normalize unicode (NFD) and remove diacritics (é → e)
+// 1. Normalize unicode (NFD) and remove diacritics (é -> e)
 // 2. Trim whitespace
 // 3. Convert to lowercase
 // 4. Remove special characters (keep alphanumeric, spaces, hyphens)

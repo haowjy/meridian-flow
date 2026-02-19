@@ -64,7 +64,7 @@ export function TwoPanelLayout({
   // This prevents CSS transitions from interfering with manual drag operations
   const [isResizing, setIsResizing] = useState(false);
 
-  // Sync store state → panel ref (imperative API)
+  // Sync store state -> panel ref (imperative API)
   // Skip during active drag to prevent race conditions
   useEffect(() => {
     if (isDraggingRef.current) return;
@@ -158,7 +158,7 @@ export function TwoPanelLayout({
           maxSize={60}
           defaultSize={58}
           onCollapse={() => {
-            // Sync library state → store (user dragged to collapse)
+            // Sync library state -> store (user dragged to collapse)
             // Use getState() for fresh read to avoid stale closure
             const state = useUIStore.getState();
             const currentCollapsed =
@@ -169,7 +169,7 @@ export function TwoPanelLayout({
             }
           }}
           onExpand={() => {
-            // Sync library state → store (user dragged to expand)
+            // Sync library state -> store (user dragged to expand)
             // Use getState() for fresh read to avoid stale closure
             const state = useUIStore.getState();
             const currentCollapsed =

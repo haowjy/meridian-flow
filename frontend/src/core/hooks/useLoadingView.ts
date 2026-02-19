@@ -18,10 +18,10 @@ interface UseLoadingViewParams {
  * Derives the correct view state from loading status and data presence.
  *
  * Decision tree:
- * - Have data → 'content' (always, even during background refresh)
- * - No data + loading/idle → 'skeleton'
- * - No data + success → 'empty'
- * - No data + error → 'error'
+ * - Have data -> 'content' (always, even during background refresh)
+ * - No data + loading/idle -> 'skeleton'
+ * - No data + success -> 'empty'
+ * - No data + error -> 'error'
  *
  * This is a pure derivation - no useState/useEffect needed.
  * Skeleton shows immediately on cold start (no 150ms delay that causes empty flash).
@@ -38,7 +38,7 @@ export function useLoadingView({
   status,
   hasData,
 }: UseLoadingViewParams): LoadingView {
-  // Have data → always show content (even during background refresh)
+  // Have data -> always show content (even during background refresh)
   if (hasData) return "content";
 
   // No data - determine what to show

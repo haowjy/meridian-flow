@@ -5,7 +5,7 @@
 -- the public schema. Since dev_, test_, prod_ environments share the same
 -- Supabase database, only one environment can own each index name.
 --
--- Solution: Rename idx_foo on dev_table → idx_dev_foo, and create
+-- Solution: Rename idx_foo on dev_table -> idx_dev_foo, and create
 -- corresponding indexes for other environments whose tables exist.
 --
 -- Run this ONCE in the Supabase SQL Editor, then update migration files.
@@ -51,7 +51,7 @@ BEGIN
             CONTINUE;
         END IF;
 
-        -- Extract suffix: idx_projects_user_name → projects_user_name
+        -- Extract suffix: idx_projects_user_name -> projects_user_name
         suffix := substring(idx.indexname FROM 5);  -- strip 'idx_'
 
         -- Rename existing index if target name is free.
@@ -67,7 +67,7 @@ BEGIN
 
             IF existing_table_name IS NULL THEN
                 EXECUTE format('ALTER INDEX %I RENAME TO %I', idx.indexname, new_index_name);
-                RAISE NOTICE 'Renamed: % → %', idx.indexname, new_index_name;
+                RAISE NOTICE 'Renamed: % -> %', idx.indexname, new_index_name;
             ELSIF existing_table_name = idx.tablename THEN
                 EXECUTE format('DROP INDEX IF EXISTS %I', idx.indexname);
                 RAISE NOTICE 'Dropped duplicate/orphaned unprefixed index: % (kept %)', idx.indexname, new_index_name;

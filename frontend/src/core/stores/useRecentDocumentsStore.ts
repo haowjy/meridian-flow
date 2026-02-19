@@ -7,7 +7,7 @@ interface RecentDocument {
 }
 
 interface RecentDocumentsState {
-  // Map of projectId → recent documents (most recent first)
+  // Map of projectId -> recent documents (most recent first)
   recentByProject: Record<string, RecentDocument[]>;
 
   // Actions

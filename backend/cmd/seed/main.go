@@ -104,7 +104,7 @@ func main() {
 	txManager := postgres.NewTransactionManager(pool)
 	projectService := serviceDocsys.NewProjectService(projectRepo, logger)
 
-	// Thread/turn repos for authorizer (needed for auth chain: turn → thread → project → user)
+	// Thread/turn repos for authorizer (needed for auth chain: turn -> thread -> project -> user)
 	threadRepo := postgresLLM.NewThreadRepository(repoConfig)
 	turnRepo := postgresLLM.NewTurnRepository(repoConfig)
 

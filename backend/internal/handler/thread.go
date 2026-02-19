@@ -193,9 +193,9 @@ func (h *ThreadHandler) DeleteThread(w http.ResponseWriter, r *http.Request) {
 // POST /api/turns
 //
 // Thread resolution priority:
-// 1. If prev_turn_id provided → infer thread from that turn
-// 2. Else if thread_id provided → use that thread
-// 3. Else if project_id provided → create new thread (cold start)
+// 1. If prev_turn_id provided -> infer thread from that turn
+// 2. Else if thread_id provided -> use that thread
+// 3. Else if project_id provided -> create new thread (cold start)
 func (h *ThreadHandler) CreateTurnV2(w http.ResponseWriter, r *http.Request) {
 	userID := httputil.GetUserID(r)
 	var req llmSvc.CreateTurnRequest

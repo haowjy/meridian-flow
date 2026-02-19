@@ -25,9 +25,9 @@ type PathResolver interface {
 	//   Priority 2: Use folderPath if provided (resolve/create folders)
 	//   Priority 3: Use root (nil) if neither provided
 	// Supports:
-	//   - "name" → simple name at resolved parent
-	//   - "a/b/c" → relative path (auto-create intermediate folders a, b)
-	//   - "/a/b/c" → absolute path from root (ignore folderID and folderPath)
+	//   - "name" -> simple name at resolved parent
+	//   - "a/b/c" -> relative path (auto-create intermediate folders a, b)
+	//   - "/a/b/c" -> absolute path from root (ignore folderID and folderPath)
 	// Returns the resolved parent folder ID and final name
 	ResolvePathNotation(ctx context.Context, req *PathNotationRequest) (*PathNotationResult, error)
 }

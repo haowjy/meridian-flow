@@ -30,9 +30,9 @@ func NewProviderRegistry(providerFactory *ProviderFactory, adapterFactory Adapte
 // Creates provider via factory, wraps in appropriate adapter, and caches for reuse.
 //
 // Examples:
-//   - "anthropic" → creates Anthropic provider, wraps in AnthropicAdapter
-//   - "openrouter" → creates OpenRouter provider, wraps in AnthropicAdapter
-//   - "lorem" → creates Lorem provider, wraps in LoremAdapter
+//   - "anthropic" -> creates Anthropic provider, wraps in AnthropicAdapter
+//   - "openrouter" -> creates OpenRouter provider, wraps in AnthropicAdapter
+//   - "lorem" -> creates Lorem provider, wraps in LoremAdapter
 func (r *ProviderRegistry) GetProvider(provider string) (domainllm.LLMProvider, error) {
 	if provider == "" {
 		return nil, fmt.Errorf("provider cannot be empty")

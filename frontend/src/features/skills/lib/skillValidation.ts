@@ -27,13 +27,13 @@ export interface ValidationResult {
 /**
  * Normalize user input for skill names.
  * Auto-transforms while preserving case:
- * - Spaces → hyphens
+ * - Spaces -> hyphens
  * - Strip invalid characters (keep a-zA-Z0-9-)
  * - Collapse consecutive hyphens
  */
 export function normalizeSkillName(input: string): string {
   return input
-    .replace(/\s+/g, "-") // spaces → hyphens
+    .replace(/\s+/g, "-") // spaces -> hyphens
     .replace(/[^a-zA-Z0-9-]/g, "") // strip invalid chars (keep case)
     .replace(/-+/g, "-"); // collapse multiple hyphens
 }

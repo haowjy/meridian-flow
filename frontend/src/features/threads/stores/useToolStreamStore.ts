@@ -48,7 +48,7 @@ export interface StreamingToolData {
 }
 
 interface ToolStreamStore {
-  // State: toolCallId → streaming data
+  // State: toolCallId -> streaming data
   tools: Record<string, StreamingToolData>;
 
   // Actions (called by SSE handlers)

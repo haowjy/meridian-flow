@@ -25,7 +25,6 @@ type ProposalBroadcaster interface {
 }
 
 // CollabProposalStrategy persists edits by creating a collab proposal with Yjs update bytes.
-// This replaces the ai_version write path when collab AI proposals are enabled.
 type CollabProposalStrategy struct {
 	proposalCreator     ProposalCreator
 	proposalBroadcaster ProposalBroadcaster
@@ -50,7 +49,7 @@ func NewCollabProposalStrategy(
 
 // Apply creates a collab proposal from the text diff and broadcasts the appropriate WS event.
 func (s *CollabProposalStrategy) Apply(ctx context.Context, input MutationInput) (*MutationResult, error) {
-	// No-op short-circuit: identical content → no proposal, no DB write, no broadcast
+	// No-op short-circuit: identical content -> no proposal, no DB write, no broadcast
 	if input.Base == input.NewContent {
 		return &MutationResult{
 			Message: "No changes needed",

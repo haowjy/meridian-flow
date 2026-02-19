@@ -162,7 +162,7 @@ func (s *pathResolverService) ResolvePathNotation(ctx context.Context, req *docs
 		// Absolute path: ignore both folder_id and folder_path, start from root
 		baseParentID = nil
 	} else {
-		// Relative path: use priority system (folder_id → folder_path → root)
+		// Relative path: use priority system (folder_id -> folder_path -> root)
 		if req.FolderID != nil {
 			// Priority 1: Use provided folder_id directly
 			baseParentID = req.FolderID

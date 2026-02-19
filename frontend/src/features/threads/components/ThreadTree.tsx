@@ -18,7 +18,7 @@ interface ThreadTreeProps {
  * Pure tree renderer for threads.
  *
  * Responsibilities:
- * - Layout and mapping nodes → ThreadRow (recursive).
+ * - Layout and mapping nodes -> ThreadRow (recursive).
  * - No data fetching or side effects.
  */
 export function ThreadTree({

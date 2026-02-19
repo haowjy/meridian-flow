@@ -142,7 +142,7 @@ func (g *ResponseGenerator) GenerateResponse(ctx context.Context, userTurnID str
 }
 
 // buildMessages converts turn history to LLM messages.
-// path is ordered from oldest to newest (root → current turn)
+// path is ordered from oldest to newest (root -> current turn)
 func (g *ResponseGenerator) buildMessages(path []llm.Turn) ([]domainllm.Message, error) {
 	messages := make([]domainllm.Message, 0, len(path))
 

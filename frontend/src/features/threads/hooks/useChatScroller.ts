@@ -7,7 +7,7 @@ import {
 } from "react";
 
 interface UseChatScrollerProps {
-  /** Thread-level reset key - triggers content gating (hide → scroll → reveal). */
+  /** Thread-level reset key - triggers content gating (hide -> scroll -> reveal). */
   threadResetKey: string | null;
   scrollContainer: HTMLElement | null;
   turnIds: string[];
@@ -301,7 +301,7 @@ export function useChatScroller({
     const wasStreaming = prevIsStreamingRef.current;
     prevIsStreamingRef.current = isStreaming;
 
-    // Only act on transition: not-streaming → streaming
+    // Only act on transition: not-streaming -> streaming
     if (isStreaming && !wasStreaming && scrollContainer) {
       // isAtBottom reflects pre-DOM-update position (scroll event hasn't fired yet
       // because scroll events fire on scrollTop changes, not scrollHeight changes)

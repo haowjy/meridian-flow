@@ -4,9 +4,9 @@
  * SOLID: Single Responsibility - Only handles fenced code block formatting
  *
  * Behavior: Line-level decorations (no widget replacement — cursor stays native)
- * - Cursor OUTSIDE code block → hide fence markers, show language label,
+ * - Cursor OUTSIDE code block -> hide fence markers, show language label,
  *   apply Shiki syntax colors via mark decorations
- * - Cursor INSIDE code block → show raw markdown with line-level styling
+ * - Cursor INSIDE code block -> show raw markdown with line-level styling
  *
  * Why not widget replacement: CM6 block replacement decorations prevent
  * default cursor motion and cause interaction bugs around triple-backtick editing.

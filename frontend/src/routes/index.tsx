@@ -8,7 +8,7 @@ export const Route = createFileRoute("/")({
       data: { session },
     } = await supabase.auth.getSession();
 
-    // Authenticated → projects, unauthenticated → login
+    // Authenticated -> projects, unauthenticated -> login
     throw redirect({
       to: session ? "/projects" : "/login",
     });

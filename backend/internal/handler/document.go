@@ -98,19 +98,17 @@ func (h *DocumentHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 }
 
 // updateDocumentDTO is the transport-layer request for PATCH /api/documents/{id}.
-// Uses optional.Optional[string] for folder_id and ai_version to support tri-state PATCH semantics (RFC 7396):
+// Uses optional.Optional[string] for folder_id to support tri-state PATCH semantics (RFC 7396):
 //   - field absent = don't change
-//   - field null = clear (ai_version) / move to root (folder_id)
+//   - field null = move to root (folder_id)
 //   - field has value = set
 type updateDocumentDTO struct {
-	ProjectID        string                    `json:"project_id"`
-	Name             *string                   `json:"name,omitempty"`
-	Extension        *string                   `json:"extension,omitempty"` // Optional extension change (e.g., ".md" -> ".txt")
-	FolderPath       *string                   `json:"folder_path,omitempty"`
-	FolderID         optional.Optional[string] `json:"folder_id"`
-	Content          *string                   `json:"content,omitempty"`
-	AIVersion        optional.Optional[string] `json:"ai_version"`
-	AIVersionBaseRev *int                      `json:"ai_version_base_rev,omitempty"` // Required when ai_version is present (CAS)
+	ProjectID  string                    `json:"project_id"`
+	Name       *string                   `json:"name,omitempty"`
+	Extension  *string                   `json:"extension,omitempty"` // Optional extension change (e.g., ".md" -> ".txt")
+	FolderPath *string                   `json:"folder_path,omitempty"`
+	FolderID   optional.Optional[string] `json:"folder_id"`
+	Content    *string                   `json:"content,omitempty"`
 }
 
 // UpdateDocument updates a document
@@ -146,12 +144,6 @@ func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Validate: ai_version_base_rev required when updating ai_version (CAS)
-	if dto.AIVersion.Present && dto.AIVersionBaseRev == nil {
-		httputil.RespondError(w, http.StatusBadRequest, "ai_version_base_rev required when updating ai_version")
-		return
-	}
-
 	// Map transport DTO to service request
 	req := &docsysSvc.UpdateDocumentRequest{
 		ProjectID:  dto.ProjectID,
@@ -160,12 +152,6 @@ func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request)
 		FolderPath: dto.FolderPath,
 		FolderID:   dto.FolderID,
 		Content:    dto.Content,
-		AIVersion:  dto.AIVersion,
-	}
-
-	// Map ai_version_base_rev when ai_version is being updated
-	if dto.AIVersion.Present {
-		req.AIVersionBaseRev = *dto.AIVersionBaseRev
 	}
 
 	// Get userID from context (set by auth middleware)
@@ -173,24 +159,6 @@ func (h *DocumentHandler) UpdateDocument(w http.ResponseWriter, r *http.Request)
 
 	doc, err := h.docService.UpdateDocument(r.Context(), userID, documentID, req)
 	if err != nil {
-		// Special handling for AI version conflict - include document in RFC 7807 response
-		var aiConflict *domain.AIVersionConflictError
-		if errors.As(err, &aiConflict) {
-			// Cast Document to get AIVersionRev
-			conflictDoc, _ := aiConflict.Document.(*docsystem.Document)
-			var aiVersionRev int
-			if conflictDoc != nil {
-				aiVersionRev = conflictDoc.AIVersionRev
-			}
-			// Use RFC 7807 format with `resource` field for frontend compatibility
-			httputil.RespondErrorWithExtras(w, http.StatusConflict, aiConflict.Message,
-				map[string]interface{}{
-					"error":                  "ai_version_conflict",
-					"current_ai_version_rev": aiVersionRev,
-					"resource":               aiConflict.Document,
-				})
-			return
-		}
 		handleError(w, err, h.config)
 		return
 	}
@@ -280,56 +248,6 @@ func (h *DocumentHandler) SearchDocuments(w http.ResponseWriter, r *http.Request
 	}
 
 	httputil.RespondJSON(w, http.StatusOK, results)
-}
-
-// GetAIStatus returns lightweight AI version status for polling.
-// GET /api/documents/{id}/ai-status
-//
-// Returns ~100 bytes instead of full document (~50KB), enabling efficient
-// polling to detect AI version changes. Frontend polls this endpoint every
-// 5s and only fetches full document when status indicates a change.
-func (h *DocumentHandler) GetAIStatus(w http.ResponseWriter, r *http.Request) {
-	identifier, ok := PathParam(w, r, "id", "Document identifier")
-	if !ok {
-		return
-	}
-
-	// Resolve identifier (UUID works, slug returns helpful error)
-	documentID, err := h.resolver.ResolveDocumentIDOnly(r.Context(), identifier)
-	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
-			httputil.RespondError(w, http.StatusNotFound, "Document not found")
-		} else if errors.Is(err, domain.ErrBadRequest) {
-			httputil.RespondError(w, http.StatusBadRequest, err.Error())
-		} else {
-			httputil.RespondError(w, http.StatusInternalServerError, "Failed to resolve document")
-		}
-		return
-	}
-
-	userID := httputil.GetUserID(r)
-
-	doc, err := h.docService.GetDocument(r.Context(), userID, documentID)
-	if err != nil {
-		handleError(w, err, h.config)
-		return
-	}
-
-	// Return only AI status fields (lightweight ~100 bytes vs ~50KB full document)
-	response := struct {
-		HasAIVersion bool `json:"hasAiVersion"`
-		AIVersionRev *int `json:"aiVersionRev"`
-	}{
-		HasAIVersion: doc.AIVersion != nil,
-		AIVersionRev: nil, // Will be set below if doc has AI version
-	}
-
-	// Only include rev if document has AI version
-	if doc.AIVersion != nil {
-		response.AIVersionRev = &doc.AIVersionRev
-	}
-
-	httputil.RespondJSON(w, http.StatusOK, response)
 }
 
 // HealthCheck is a simple health check endpoint

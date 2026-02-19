@@ -7,8 +7,8 @@ import "fmt"
 // This file defines error codes and helpers for TOOL-LEVEL errors (execution layer).
 // These are distinct from LIBRARY-LEVEL errors (streaming/decode layer) in meridian-llm-go:
 //
-//   - Library errors: Malformed tool JSON from provider → `_malformed: {raw, error}`
-//   - Tool errors: Valid tool call that failed execution → `ErrorResult(code, message, data)`
+//   - Library errors: Malformed tool JSON from provider -> `_malformed: {raw, error}`
+//   - Tool errors: Valid tool call that failed execution -> `ErrorResult(code, message, data)`
 //
 // The separation is intentional: library handles "couldn't parse" while tools handle
 // "understood but couldn't execute".

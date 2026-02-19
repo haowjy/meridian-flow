@@ -57,10 +57,10 @@ type StreamingService interface {
 // CreateTurnRequest is the DTO for creating a new turn
 //
 // Thread resolution priority:
-// 1. If PrevTurnID provided → lookup its thread_id from DB (ignores ThreadID/ProjectID)
-// 2. Else if ThreadID provided → use that thread
-// 3. Else if ProjectID provided → create new thread (cold start, title from first text block)
-// 4. Else → validation error
+// 1. If PrevTurnID provided -> lookup its thread_id from DB (ignores ThreadID/ProjectID)
+// 2. Else if ThreadID provided -> use that thread
+// 3. Else if ProjectID provided -> create new thread (cold start, title from first text block)
+// 4. Else -> validation error
 type CreateTurnRequest struct {
 	ThreadID       *string                `json:"thread_id,omitempty"`  // Optional - if nil with ProjectID, creates new thread
 	ProjectID      *string                `json:"project_id,omitempty"` // Required if ThreadID is nil (for new thread creation)

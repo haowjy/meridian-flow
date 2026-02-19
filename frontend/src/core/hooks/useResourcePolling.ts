@@ -29,7 +29,6 @@ export interface UseResourcePollingOptions<T> {
  * Generic resource polling hook - handles polling lifecycle with robustness features.
  *
  * Designed for extension:
- * - Document polling (ai_version changes)
  * - Turn status polling (tool execution progress)
  * - Any versioned resource
  *
@@ -43,16 +42,16 @@ export interface UseResourcePollingOptions<T> {
  * Robustness features:
  * - Page Visibility: Skips tick when tab hidden, immediate poll on visible
  * - Online Status: Skips tick when offline, immediate poll on reconnect
- * - Exponential Backoff: On error: 5s → 10s → 20s → 40s → 60s (max). Reset on success.
+ * - Exponential Backoff: On error: 5s -> 10s -> 20s -> 40s -> 60s (max). Reset on success.
  *
  * @example
  * ```tsx
  * useResourcePolling({
  *   enabled: !!documentId && !hasUserEdit,
  *   intervalMs: 5000,
- *   fetch: (signal) => api.documents.getAIStatus(docId, { signal }),
- *   shouldUpdate: (status) => status.aiVersionRev !== currentRev,
- *   onUpdate: (status) => fetchFullDocumentAndHydrate(),
+ *   fetch: (signal) => api.someResource.getStatus(id, { signal }),
+ *   shouldUpdate: (status) => status.rev !== currentRev,
+ *   onUpdate: (status) => refreshResource(),
  *   onError: (error) => console.warn('Poll error:', error),
  * })
  * ```
@@ -134,7 +133,7 @@ export function useResourcePolling<T>(
         return;
       }
 
-      // Exponential backoff on error: 5s → 10s → 20s → 40s → 60s (max)
+      // Exponential backoff on error: 5s -> 10s -> 20s -> 40s -> 60s (max)
       errorCountRef.current++;
       currentIntervalRef.current = Math.min(
         intervalMsRef.current * Math.pow(2, errorCountRef.current),

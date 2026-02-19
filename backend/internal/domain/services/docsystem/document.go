@@ -23,7 +23,6 @@ type DocumentService interface {
 
 	// UpdateDocument updates a document
 	// userID is used for authorization check
-	// AIVersion field supports tri-state: absent=don't change, null=clear, value=set
 	UpdateDocument(ctx context.Context, userID, documentID string, req *UpdateDocumentRequest) (*docsystem.Document, error)
 
 	// DeleteDocument deletes a document
@@ -33,11 +32,6 @@ type DocumentService interface {
 	// SearchDocuments performs full-text search across documents
 	// userID is used to filter results to user's accessible projects
 	SearchDocuments(ctx context.Context, userID string, req *SearchDocumentsRequest) (*docsystem.SearchResults, error)
-
-	// Deprecated: Use CollabProposalStrategy instead. Retained for feature flag fallback.
-	// UpdateAIVersion updates only the ai_version field for a document.
-	// userID is used for authorization check.
-	UpdateAIVersion(ctx context.Context, userID, documentID string, aiVersion *string) (*docsystem.Document, error)
 }
 
 // CreateDocumentRequest represents a document creation request
@@ -52,7 +46,7 @@ type CreateDocumentRequest struct {
 }
 
 // UpdateDocumentRequest represents a document update request
-// Uses optional.Optional[string] for FolderID and AIVersion tri-state semantics (RFC 7396 PATCH)
+// Uses optional.Optional[string] for FolderID tri-state semantics (RFC 7396 PATCH)
 type UpdateDocumentRequest struct {
 	ProjectID  string
 	Name       *string
@@ -60,10 +54,6 @@ type UpdateDocumentRequest struct {
 	FolderPath *string                   // Move to folder path (resolve/auto-create)
 	FolderID   optional.Optional[string] // Tri-state: absent=don't change, null=root, value=folder
 	Content    *string
-	AIVersion  optional.Optional[string] // Tri-state: absent=don't change, null=clear, value=set
-	// AIVersionBaseRev is the client's last-seen ai_version_rev.
-	// Required when AIVersion.Present is true. Used for CAS (compare-and-swap) check.
-	AIVersionBaseRev int
 }
 
 // SearchDocumentsRequest represents a document search request

@@ -46,7 +46,7 @@ class NavigationState:
             return self.current.sibling_ids[idx - 1]
         return None
 
-    # → Key: Navigate to next sibling
+    # -> Key: Navigate to next sibling
     @property
     def can_go_right(self) -> bool:
         """Check if we can navigate to next sibling"""
@@ -55,7 +55,7 @@ class NavigationState:
 
     @property
     def next_sibling_id(self) -> str | None:
-        """Get next sibling turn ID for → navigation"""
+        """Get next sibling turn ID for -> navigation"""
         idx = self.current.sibling_index
         if idx < len(self.current.sibling_ids) - 1:
             return self.current.sibling_ids[idx + 1]

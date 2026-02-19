@@ -7,7 +7,7 @@
 -- This converts all historical blocks so the codebase can drop backward compat.
 
 -- ============================================================
--- Part 1: doc_view / doc_tree → str_replace_based_edit_tool
+-- Part 1: doc_view / doc_tree -> str_replace_based_edit_tool
 -- ============================================================
 
 -- tool_use blocks: rename tool_name + add command: "view" to input
@@ -27,7 +27,7 @@ WHERE content->>'tool_name' IN ('doc_view', 'doc_tree')
 AND block_type = 'tool_result';
 
 -- ============================================================
--- Part 2: doc_edit → str_replace_based_edit_tool
+-- Part 2: doc_edit -> str_replace_based_edit_tool
 -- ============================================================
 -- doc_edit input already has command/path — same schema as str_replace_based_edit_tool
 -- edit commands, so only the tool_name needs updating.

@@ -175,14 +175,14 @@ export const FolderTreeItem = memo(function FolderTreeItem({
             <button
               type="button"
               onClick={(e) => {
-                // Modifier key pressed → toggle selection
+                // Modifier key pressed -> toggle selection
                 if (e.metaKey || e.ctrlKey) {
                   e.preventDefault();
                   toggleSelection(folder.id);
                   return;
                 }
 
-                // No modifier → clear selection and toggle folder
+                // No modifier -> clear selection and toggle folder
                 clearSelection();
                 onToggle(folder.id);
               }}

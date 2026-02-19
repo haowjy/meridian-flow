@@ -340,7 +340,7 @@ export function TurnInput({
     clearPendingThreadReferences();
   }, [pendingThreadReferences, clearPendingThreadReferences]);
 
-  // Pill click → open documents in editor, folders in a popover
+  // Pill click -> open documents in editor, folders in a popover
   const { handlePillClick, folderPopover } = usePillNavigation();
 
   // Show pending interjection content if present (received via SSE)

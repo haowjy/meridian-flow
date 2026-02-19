@@ -1390,7 +1390,7 @@ func TestProposalServiceCreateProposal_ArbiterNotCalledWhenBaselineReview(t *tes
 	}
 	autoAccept := &fakeAutoAcceptPolicyStore{}
 
-	// System default = false, agent override = false → baseline is already review-required.
+	// System default = false, agent override = false -> baseline is already review-required.
 	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, arbiter, false)
 	created, err := svc.CreateProposal(ctx, collabSvc.CreateProposalRequest{
 		DocumentID:        uuid.New(),

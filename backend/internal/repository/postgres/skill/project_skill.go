@@ -49,7 +49,7 @@ func (r *PostgresProjectSkillRepository) Create(ctx context.Context, skill *mode
 		skill.Content,
 		skill.Position,
 		skill.Enabled, // enabled defaults to true via DB constraint
-		skill.Metadata, // pgx handles map[string]interface{} → JSONB automatically
+		skill.Metadata, // pgx handles map[string]interface{} -> JSONB automatically
 		skill.SourceTemplateVersionID,
 		skill.SyncState,
 		skill.IsDirty,

@@ -24,8 +24,6 @@ type Document struct {
 	Path                 string           `json:"path,omitempty"`                                     // Computed display path with extension, not stored in DB
 	PendingProposalCount int              `json:"pending_proposal_count,omitempty" db:"pending_proposal_count"` // Metadata-only tree field: count of proposals with status='proposed'
 	Content              string           `json:"content" db:"content"`                               // Markdown content (for text-based files)
-	AIVersion            *string          `json:"ai_version,omitempty" db:"ai_version"`               // AI's suggested version (nullable)
-	AIVersionRev         int              `json:"ai_version_rev" db:"ai_version_rev"`                 // Revision counter for CAS
 	Metadata             DocumentMetadata `json:"metadata" db:"metadata"`                             // Format-specific stats (JSONB)
 	CreatedAt            time.Time        `json:"created_at" db:"created_at"`
 	UpdatedAt            time.Time        `json:"updated_at" db:"updated_at"`
@@ -36,15 +34,6 @@ type Document struct {
 // Example: Name="Chapter 5", Extension=".md" -> "Chapter 5.md"
 func (d *Document) Filename() string {
 	return d.Name + d.Extension
-}
-
-// EffectiveContent returns ai_version if it exists, otherwise content.
-// This is the canonical "what the document currently says" for word count, LLM context, etc.
-func (d *Document) EffectiveContent() string {
-	if d.AIVersion != nil {
-		return *d.AIVersion
-	}
-	return d.Content
 }
 
 func (d *Document) EnsureMetadata() {

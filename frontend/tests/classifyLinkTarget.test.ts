@@ -80,7 +80,7 @@ describe("classifyLinkTarget", () => {
   });
 
   describe("unresolved paths (treated as external)", () => {
-    // When tree store is empty, relative paths don't resolve → treated as external URLs
+    // When tree store is empty, relative paths don't resolve -> treated as external URLs
 
     it("classifies unresolved filename as external", () => {
       const result = classifyLinkTarget("path.md");
@@ -115,7 +115,7 @@ describe("classifyLinkTarget", () => {
   });
 
   describe("resolved paths (internal)", () => {
-    // When documents exist in tree store, matching paths resolve → internal
+    // When documents exist in tree store, matching paths resolve -> internal
 
     beforeEach(() => {
       useTreeStore.setState({

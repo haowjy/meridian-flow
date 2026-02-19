@@ -3,9 +3,9 @@
  *
  * The tool result from the backend includes `proposal_id` and `status` (at creation time).
  * This hook cross-references with the collab store to get the live status:
- * - If the proposal is still in the store's Map → "pending" (awaiting review)
- * - If not in the Map and initial status was "accepted" → "accepted" (auto-accepted at creation)
- * - If not in the Map and initial status was "proposed" → "resolved" (was accepted/rejected after creation)
+ * - If the proposal is still in the store's Map -> "pending" (awaiting review)
+ * - If not in the Map and initial status was "accepted" -> "accepted" (auto-accepted at creation)
+ * - If not in the Map and initial status was "proposed" -> "resolved" (was accepted/rejected after creation)
  *
  * Note: proposals are removed from the collab store Map when accepted or rejected,
  * so presence in the Map means the proposal is still pending review.

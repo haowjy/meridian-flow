@@ -138,7 +138,7 @@ func (p *zipFileProcessor) Process(
 		return nil, err // Pass through HTTPError directly
 	}
 
-	// Build lookup map for deduplication: "path|filename" → document_id
+	// Build lookup map for deduplication: "path|filename" -> document_id
 	// The key format uses pipe separator (see BuildLookupKey) to ensure uniqueness
 	// since the same document name can exist in different folders with different extensions.
 	docMap := make(map[string]string)
@@ -244,9 +244,9 @@ func (p *zipFileProcessor) processZipEntry(
 	// Zip entries use forward slashes regardless of OS: "folder/subfolder/file.md"
 	//
 	// Examples:
-	//   - "chapter1.md" → folderPath="", docName="chapter1", ext=".md"
-	//   - "book/chapter1.md" → folderPath="book", docName="chapter1", ext=".md"
-	//   - "book/part1/intro.md" → folderPath="book/part1", docName="intro", ext=".md"
+	//   - "chapter1.md" -> folderPath="", docName="chapter1", ext=".md"
+	//   - "book/chapter1.md" -> folderPath="book", docName="chapter1", ext=".md"
+	//   - "book/part1/intro.md" -> folderPath="book/part1", docName="intro", ext=".md"
 	var folderPath string
 	var docName string
 
@@ -265,7 +265,7 @@ func (p *zipFileProcessor) processZipEntry(
 
 	// Determine target extension:
 	// - Keep original if it's a valid extension
-	// - Default to .md for converted files (e.g., .html → .md)
+	// - Default to .md for converted files (e.g., .html -> .md)
 	targetExt := ".md" // default for conversions
 	if docsysModels.IsValidExtension(ext) {
 		targetExt = ext

@@ -151,7 +151,7 @@ func (se *StreamExecutor) processAGUIEvent(_ context.Context, send func(mstream.
 }
 
 // processCompleteBlock handles a complete, normalized block from the library.
-// The library has already normalized provider-specific types (web_search_tool_result → tool_result).
+// The library has already normalized provider-specific types (web_search_tool_result -> tool_result).
 // streamStartSequence is used to remap provider block indices to turn-level sequences
 func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(mstream.Event), block *llmModels.TurnBlock, streamStartSequence int) error {
 	// Set turn ID
@@ -164,8 +164,8 @@ func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(ms
 	// CRITICAL FIX: Remap provider block index to turn-level sequence
 	// Provider always emits blocks starting at index 0 for each stream, but continuation
 	// streams need to continue from where we left off (after tool_result blocks)
-	// Initial stream: streamStartSequence = 0, provider block 0 → sequence 0
-	// Continuation: streamStartSequence = 3, provider block 0 → sequence 3
+	// Initial stream: streamStartSequence = 0, provider block 0 -> sequence 0
+	// Continuation: streamStartSequence = 3, provider block 0 -> sequence 3
 	block.Sequence = streamStartSequence + providerBlockIndex
 
 	// If not in Streaming state, skip all persistence/tool collection and SSE.
@@ -189,8 +189,8 @@ func (se *StreamExecutor) processCompleteBlock(ctx context.Context, send func(ms
 	// Local tools (e.g., Tavily web search, str_replace_based_edit_tool) need backend execution
 	// TODO: Optimization - start executing tools in background goroutine immediately upon collection
 	// instead of waiting for stream completion. This would overlap tool execution with provider
-	// streaming, reducing total latency. Currently: collect → stream finishes → execute → stream results.
-	// Optimized: collect + execute in background → stream finishes → wait for execution → stream results.
+	// streaming, reducing total latency. Currently: collect -> stream finishes -> execute -> stream results.
+	// Optimized: collect + execute in background -> stream finishes -> wait for execution -> stream results.
 	if se.toolRegistry != nil && block.IsLocalTool() {
 		se.collectToolUse(block)
 	}

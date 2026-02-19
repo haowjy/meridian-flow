@@ -36,7 +36,7 @@ type refWithID struct {
 //
 // Operates at the message level (post-BuildMessages) because tool_use must be in assistant
 // messages and tool_result in user messages — a block-level transform can't split one user
-// message into a user→assistant→user sequence.
+// message into a user->assistant->user sequence.
 type ReferenceMessageTransformer struct {
 	documentSvc       docsysSvc.DocumentService    // DIP: interface dependency
 	folderSvc         docsysSvc.FolderService       // For folder reference resolution
@@ -141,7 +141,7 @@ func (rt *ReferenceMessageTransformer) TransformMessages(
 // Returns the modified block list and the collected reference blocks with their IDs.
 //
 // Ghost text format: "@/Stories/storm-magic-ideas.md (ref_0_0)"
-// This lets the LLM connect: user instruction → ghost text with ID → matching tool_use → matching tool_result.
+// This lets the LLM connect: user instruction -> ghost text with ID -> matching tool_use -> matching tool_result.
 func (rt *ReferenceMessageTransformer) replaceRefsWithGhostText(
 	ctx context.Context,
 	blocks []*llmModels.TurnBlock,
@@ -245,7 +245,7 @@ func (rt *ReferenceMessageTransformer) resolveDocumentToToolPair(
 ) (*llmModels.TurnBlock, *llmModels.TurnBlock, error) {
 	doc := cachedDoc
 	if doc == nil {
-		// Ghost text resolution failed — try again (may still fail → error tool_result)
+		// Ghost text resolution failed — try again (may still fail -> error tool_result)
 		var err error
 		doc, err = rt.documentSvc.GetDocument(ctx, rt.userID, ref.RefID)
 		if err != nil {
@@ -253,8 +253,7 @@ func (rt *ReferenceMessageTransformer) resolveDocumentToToolPair(
 		}
 	}
 
-	// Use effective content (ai_version if exists, else content) — matches TextEditorTool behavior
-	content := doc.EffectiveContent()
+	content := doc.Content
 
 	// Add line numbers to match TextEditorTool.formatDocumentWithLineNumbers format
 	lines := strings.Split(content, "\n")
@@ -301,7 +300,7 @@ func (rt *ReferenceMessageTransformer) resolveDocumentToToolPair(
 	}
 
 	// Apply same formatting pipeline as real tool results
-	// (TextEditorFormatter converts JSON → human-readable text)
+	// (TextEditorFormatter converts JSON -> human-readable text)
 	formatting.FormatToolResultContent(rt.formatterRegistry, resultBlock.Content)
 
 	return useBlock, resultBlock, nil
@@ -318,7 +317,7 @@ func (rt *ReferenceMessageTransformer) resolveFolderToToolPair(
 ) (*llmModels.TurnBlock, *llmModels.TurnBlock, error) {
 	folder := cachedFolder
 	if folder == nil {
-		// Ghost text resolution failed — try again (may still fail → error tool_result)
+		// Ghost text resolution failed — try again (may still fail -> error tool_result)
 		var err error
 		folder, err = rt.folderSvc.GetFolder(ctx, rt.userID, ref.RefID)
 		if err != nil {
@@ -379,7 +378,7 @@ func (rt *ReferenceMessageTransformer) resolveFolderToToolPair(
 	}
 
 	// Apply same formatting pipeline as real tool results
-	// (TextEditorFormatter converts JSON → indented folder listing text)
+	// (TextEditorFormatter converts JSON -> indented folder listing text)
 	formatting.FormatToolResultContent(rt.formatterRegistry, resultBlock.Content)
 
 	return useBlock, resultBlock, nil

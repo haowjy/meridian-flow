@@ -1,7 +1,7 @@
 /**
  * Case Conversion Utilities
  *
- * Provides automatic snake_case → camelCase conversion for API responses.
+ * Provides automatic snake_case -> camelCase conversion for API responses.
  * This is the single gateway for case normalization, applied in fetchAPI.
  *
  * Why: Backend (Go) uses snake_case, frontend (TypeScript) uses camelCase.
@@ -10,7 +10,7 @@
 
 /**
  * Converts a snake_case string to camelCase.
- * Examples: "tool_use_id" → "toolUseId", "is_error" → "isError"
+ * Examples: "tool_use_id" -> "toolUseId", "is_error" -> "isError"
  */
 export function snakeToCamel(str: string): string {
   return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());

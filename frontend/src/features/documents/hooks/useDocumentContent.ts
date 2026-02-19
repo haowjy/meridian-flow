@@ -3,14 +3,11 @@
  *
  * This hook handles:
  * - Loading documents from the store
- * - Building merged documents (content + aiVersion)
  * - Managing local editor state (content, dirty flag, initialization)
  * - Providing sync context for useDocumentSync
  *
- * Designed for reuse across:
- * - Main editor (with useDocumentSync + useDiffView)
- * - Comment annotations (with useDocumentSync + useCommentView)
- * - Preview boxes (with useDocumentSync, VSCode peek-style)
+ * When collab is enabled (Yjs owns the doc), AI version handling is skipped
+ * and REST hydration is deferred to Yjs.
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -18,6 +15,7 @@ import { useEditorStore } from "@/core/stores/useEditorStore";
 import { useLatestRef } from "@/core/hooks";
 import { getAdapter } from "@/core/editor/adapters";
 import { detectEditorType } from "@/core/editor/types/editorRegistry";
+import { isCollabEnabled } from "../lib/collabFeatureFlag";
 import type { BaseEditorRef } from "@/core/editor/types/editorRegistry";
 
 // =============================================================================
@@ -26,14 +24,10 @@ import type { BaseEditorRef } from "@/core/editor/types/editorRegistry";
 
 interface HydrationInput {
   content: string;
-  aiVersion: string | null | undefined;
-  aiVersionRev: number | null | undefined;
 }
 
 interface PendingSnapshot {
   content: string;
-  aiVersion: string | null | undefined;
-  aiVersionRev: number | null | undefined;
 }
 
 /**
@@ -44,8 +38,6 @@ interface PendingSnapshot {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface DocumentSyncContext<TEditor = any> {
-  aiVersionBaseRevRef: React.MutableRefObject<number | null>;
-  serverHasAIVersionRef: React.MutableRefObject<boolean>;
   pendingServerSnapshot: PendingSnapshot | null;
   setPendingServerSnapshot: (snapshot: PendingSnapshot | null) => void;
   /** Ref to current editVersion (for capturing at save-initiation time) */
@@ -76,7 +68,6 @@ export interface UseDocumentContentResult<TEditor = any> {
   isInitialized: boolean;
   isEditable: boolean;
   isEditorReady: boolean;
-  hasAISuggestions: boolean;
 
   // Dirty tracking
   hasUserEdit: boolean;
@@ -97,6 +88,9 @@ export interface UseDocumentContentResult<TEditor = any> {
 /**
  * Document content hook - Adapter-based multi-editor support.
  *
+ * Derives collab state internally from `extension` — no options needed.
+ * When collab is enabled, AI version is ignored (Yjs owns the doc).
+ *
  * @template TEditor - Editor content type (inferred from extension)
  * @param documentId - Document ID to load
  * @param extension - File extension (used to determine adapter)
@@ -108,14 +102,9 @@ export function useDocumentContent<TEditor = any>(
   documentId: string,
   extension: string,
   editorRef: React.MutableRefObject<BaseEditorRef<TEditor> | null>,
-  options?: {
-    disableAIVersion?: boolean;
-    /** When true, Yjs owns editor content — skip REST hydration to prevent duplication. */
-    collabEnabled?: boolean;
-  },
 ): UseDocumentContentResult<TEditor> {
-  const disableAIVersion = options?.disableAIVersion ?? false;
-  const collabEnabled = options?.collabEnabled ?? false;
+  const collabEnabled = isCollabEnabled(extension);
+
   // Detect editor type and get adapter
   const editorType = detectEditorType(extension);
   const adapter = getAdapter(editorType);
@@ -144,11 +133,7 @@ export function useDocumentContent<TEditor = any>(
   const [isInitialized, setIsInitialized] = useState(false);
   const [isEditorReady, setIsEditorReady] = useState(false);
 
-  // CAS token for ai_version updates
   const lastHydratedDocIdRef = useRef<string | null>(null);
-  const aiVersionBaseRevRef = useRef<number | null>(null);
-  // Track if server had an AI version (for flush-on-unmount)
-  const serverHasAIVersionRef = useRef(false);
   // Track the last seen activeDocument reference to detect server updates vs local state changes
   const lastActiveDocumentRef = useRef<typeof activeDocument>(null);
 
@@ -157,15 +142,12 @@ export function useDocumentContent<TEditor = any>(
    *
    * State machine:
    * - null: No pending update (normal state)
-   * - {content, aiVersion, aiVersionRev}: Server update waiting to be applied
+   * - {content}: Server update waiting to be applied
    *
    * Transitions:
-   * - Server update arrives + hasUserEdit=true → store snapshot, don't apply
-   * - User saves document → clear pendingServerSnapshot after save succeeds
-   * - User switches to different document → flush changes, clear snapshot
-   *
-   * TODO: Add UI for conflict resolution (show diff, let user choose).
-   * Currently, pending snapshots are silently overwritten when user saves.
+   * - Server update arrives + hasUserEdit=true -> store snapshot, don't apply
+   * - User saves document -> clear pendingServerSnapshot after save succeeds
+   * - User switches to different document -> flush changes, clear snapshot
    */
   const [pendingServerSnapshot, setPendingServerSnapshot] =
     useState<PendingSnapshot | null>(null);
@@ -201,19 +183,14 @@ export function useDocumentContent<TEditor = any>(
   /**
    * Hydrate editor with document data from server.
    * Used by both initialization and corruption repair.
-   * Uses adapter to transform storage → editor format.
-   * SRP: Single function for all hydration logic.
+   * Uses adapter to transform storage -> editor format.
    */
   const hydrateDocument = useCallback(
     (doc: HydrationInput) => {
-      const content = doc.content;
-      const aiVersion = disableAIVersion ? null : doc.aiVersion;
-      // Use adapter to transform storage → editor format
-      const editorContent = adapter.toEditor(content, aiVersion) as TEditor;
+      // Use adapter to transform storage -> editor format
+      const editorContent = adapter.toEditor(doc.content) as TEditor;
 
       setLocalDocument(editorContent);
-      aiVersionBaseRevRef.current = doc.aiVersionRev ?? null;
-      serverHasAIVersionRef.current = aiVersion != null;
       setEditVersion(0);
 
       if (editorRef.current) {
@@ -223,7 +200,7 @@ export function useDocumentContent<TEditor = any>(
         });
       }
     },
-    [adapter, disableAIVersion, editorRef],
+    [adapter, editorRef],
   );
 
   // Handle content changes from the editor
@@ -300,7 +277,7 @@ export function useDocumentContent<TEditor = any>(
 
     // IMPORTANT: Check for existing snapshot FIRST to prevent infinite loop.
     // If we checked editVersion first, we'd create a new pendingServerSnapshot object,
-    // which triggers this effect again (it's in deps), creating another object → infinite loop.
+    // which triggers this effect again (it's in deps), creating another object -> infinite loop.
     if (!docChanged && pendingServerSnapshot) {
       return;
     }
@@ -310,8 +287,6 @@ export function useDocumentContent<TEditor = any>(
     if (!docChanged && serverSentNewDoc && editVersion > 0) {
       setPendingServerSnapshot({
         content: activeDocument.content ?? "",
-        aiVersion: activeDocument.aiVersion,
-        aiVersionRev: activeDocument.aiVersionRev,
       });
       return;
     }
@@ -322,8 +297,6 @@ export function useDocumentContent<TEditor = any>(
 
     hydrateDocument({
       content: activeDocument.content ?? "",
-      aiVersion: activeDocument.aiVersion,
-      aiVersionRev: activeDocument.aiVersionRev,
     });
 
     setIsInitialized(true);
@@ -336,7 +309,6 @@ export function useDocumentContent<TEditor = any>(
   ]);
 
   // Ensure editor has correct content when it becomes ready after content was already loaded.
-  // Note: Actual diff extension toggle is handled by useDiffView.
   // Only fires on ready/init transitions, NOT on every keystroke.
   useEffect(() => {
     // In collab mode, Yjs owns editor content. Pushing REST content here
@@ -363,20 +335,10 @@ export function useDocumentContent<TEditor = any>(
   }, [isEditable, editorRef]);
 
   // ---------------------------------------------------------------------------
-  // DERIVED STATE
-  // ---------------------------------------------------------------------------
-
-  // Check for AI suggestions using adapter
-  // Type assertion safe: all current text-based adapters expect string
-  const hasAISuggestions = adapter.hasAISuggestions(localDocument as string);
-
-  // ---------------------------------------------------------------------------
   // SYNC CONTEXT (for composition with useDocumentSync)
   // ---------------------------------------------------------------------------
 
   const syncContext: DocumentSyncContext<TEditor> = {
-    aiVersionBaseRevRef,
-    serverHasAIVersionRef,
     pendingServerSnapshot,
     setPendingServerSnapshot,
     editVersionRef,
@@ -398,7 +360,6 @@ export function useDocumentContent<TEditor = any>(
     isInitialized,
     isEditable,
     isEditorReady,
-    hasAISuggestions,
     hasUserEdit,
     handleEditorReady,
     handleContentChange,

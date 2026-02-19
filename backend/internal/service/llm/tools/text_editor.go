@@ -12,7 +12,6 @@ import (
 	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
-
 // TextEditorToolMetadata returns metadata for the str_replace_based_edit_tool tool.
 // This unified tool replaces the former doc_view, doc_tree, and doc_edit tools.
 // This enables OCP compliance - tool self-describes for system prompt generation.
@@ -34,14 +33,14 @@ func TextEditorToolMetadata() *ToolMetadata {
 // Schema docs: https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool
 type TextEditorTool struct {
 	projectID        string
-	userID           string                        // Required for service layer authorization
-	documentSvc      docsysSvc.DocumentService     // For document operations
-	folderSvc        docsysSvc.FolderService       // For folder operations
-	namespaceSvc     docsysSvc.NamespaceService    // For namespace routing (optional)
-	pathResolver     *PathResolver                 // For folder path resolution
+	userID           string                     // Required for service layer authorization
+	documentSvc      docsysSvc.DocumentService  // For document operations
+	folderSvc        docsysSvc.FolderService    // For folder operations
+	namespaceSvc     docsysSvc.NamespaceService // For namespace routing (optional)
+	pathResolver     *PathResolver              // For folder path resolution
 	config           *ToolConfig
-	normalizers      []TextNormalizer              // For str_replace text normalization (OCP)
-	mutationStrategy DocumentMutationStrategy      // Strategy for persisting AI edits (ai_version or collab proposal)
+	normalizers      []TextNormalizer         // For str_replace text normalization (OCP)
+	mutationStrategy DocumentMutationStrategy // Strategy for persisting AI edits (collab proposal)
 }
 
 // NewTextEditorTool creates a new TextEditorTool instance.
@@ -58,9 +57,8 @@ func NewTextEditorTool(
 	if config == nil {
 		config = DefaultToolConfig()
 	}
-	// Default to AIVersionStrategy if no strategy provided (backwards compatible)
 	if mutationStrategy == nil {
-		mutationStrategy = NewAIVersionStrategy(documentSvc)
+		panic("mutationStrategy is required")
 	}
 	return &TextEditorTool{
 		projectID:        projectID,
@@ -157,8 +155,7 @@ func (t *TextEditorTool) executeView(ctx context.Context, path string, input map
 // formatDocumentWithLineNumbers converts a document to the tool result format with line numbers.
 // Output format matches Anthropic's text_editor: "1: line1\n2: line2\n..."
 func (t *TextEditorTool) formatDocumentWithLineNumbers(doc *docsystem.Document, input map[string]interface{}) (interface{}, error) {
-	// AI sees ai_version if it exists, otherwise user's content
-	content := doc.EffectiveContent()
+	content := doc.Content
 
 	lines := strings.Split(content, "\n")
 	totalLines := len(lines)
@@ -256,7 +253,7 @@ func (t *TextEditorTool) listFolderContents(ctx context.Context, folderID *strin
 }
 
 // executeStrReplace handles the str_replace command.
-// Replaces exact text in the document's ai_version (or content if no ai_version).
+// Replaces exact text in the document content.
 //
 // Smart text normalization: Uses the normalizer chain (OCP) to handle common LLM mistakes
 // like including line number prefixes from view output. Normalizers are tried in order
@@ -283,12 +280,14 @@ func (t *TextEditorTool) executeStrReplace(ctx context.Context, path string, inp
 		return nil, fmt.Errorf("failed to get document: %w", err)
 	}
 
-	// Get base content (ai_version if exists, else content)
-	base := doc.EffectiveContent()
+	base := doc.Content
 
 	// Try to match using normalizer chain (OCP: extensible without modifying this function)
 	result, errMsg := tryMatchWithNormalizers(base, oldStr, newStr, t.normalizers)
 	if result == nil {
+		if strings.HasPrefix(errMsg, "AMBIGUOUS_MATCH:") {
+			return ErrorResult(ErrAmbiguousMatch, "Multiple matches found", nil), nil
+		}
 		return ErrorResult(ErrNoMatch, errMsg, nil), nil
 	}
 
@@ -312,7 +311,7 @@ func (t *TextEditorTool) executeStrReplace(ctx context.Context, path string, inp
 		description += " (" + result.appliedNorm + " normalization applied)"
 	}
 
-	// Persist via mutation strategy (ai_version or collab proposal)
+	// Persist via mutation strategy (collab proposal)
 	mutResult, err := t.mutationStrategy.Apply(ctx, MutationInput{
 		DocumentID:  doc.ID,
 		UserID:      t.userID,
@@ -364,8 +363,7 @@ func (t *TextEditorTool) executeInsert(ctx context.Context, path string, input m
 		return nil, fmt.Errorf("failed to get document: %w", err)
 	}
 
-	// Get base content
-	base := doc.EffectiveContent()
+	base := doc.Content
 	lines := strings.Split(base, "\n")
 
 	// Validate line number (0 = insert at beginning, len(lines) = insert at end)
@@ -380,7 +378,7 @@ func (t *TextEditorTool) executeInsert(ctx context.Context, path string, input m
 	newLines = append(newLines, lines[insertLine:]...)
 	newVersion := strings.Join(newLines, "\n")
 
-	// Persist via mutation strategy (ai_version or collab proposal)
+	// Persist via mutation strategy (collab proposal)
 	description := fmt.Sprintf("Suggested insertion after line %d", insertLine)
 	mutResult, err := t.mutationStrategy.Apply(ctx, MutationInput{
 		DocumentID:  doc.ID,
@@ -405,7 +403,7 @@ func (t *TextEditorTool) executeInsert(ctx context.Context, path string, input m
 }
 
 // executeCreate handles the create command.
-// Creates a new document with content in ai_version for human review.
+// Creates a new document via the mutation strategy for human review.
 func (t *TextEditorTool) executeCreate(ctx context.Context, path string, input map[string]interface{}) (interface{}, error) {
 	// Check namespace access
 	if err := t.checkEditNamespaceAccess(path); err != nil {
@@ -457,7 +455,7 @@ func (t *TextEditorTool) executeCreate(ctx context.Context, path string, input m
 		FolderPath: folderPathPtr,
 		Name:       name,
 		Extension:  ext,
-		Content:    "", // Empty content - AI content goes to ai_version for review
+		Content:    "", // Empty content - AI content goes through mutation strategy as proposal
 	}
 	doc, err := t.documentSvc.CreateDocument(ctx, createReq)
 	if err != nil {
@@ -470,7 +468,7 @@ func (t *TextEditorTool) executeCreate(ctx context.Context, path string, input m
 			DocumentID:  doc.ID,
 			UserID:      t.userID,
 			Path:        path,
-			Base:        "",       // New document has empty content
+			Base:        "", // New document has empty content
 			NewContent:  fileText,
 			Description: "Created new document with suggested content",
 		})
@@ -536,8 +534,8 @@ func normalizePath(path string) string {
 }
 
 // splitDocPath splits a document path into folder path and document name.
-// "/chapters/ch1.md" → ("/chapters", "ch1.md")
-// "/readme.md" → ("/", "readme.md")
+// "/chapters/ch1.md" -> ("/chapters", "ch1.md")
+// "/readme.md" -> ("/", "readme.md")
 func splitDocPath(path string) (folderPath, docName string) {
 	path = strings.TrimPrefix(path, "/")
 	lastSlash := strings.LastIndex(path, "/")

@@ -12,12 +12,6 @@ import type { EditorType } from "../types/editorRegistry";
  * Determines which features are available for this editor.
  */
 export interface EditorCapabilities {
-  /** Can show inline AI diff view (PUA markers or similar) */
-  supportsAIDiff: boolean;
-
-  /** Can track content versions (separate content + aiVersion) */
-  supportsVersioning: boolean;
-
   /** Storage format type */
   contentFormat: "string" | "object" | "binary";
 
@@ -35,14 +29,11 @@ export interface ContentAdapter<TStorage, TEditor> {
   /** Editor type this adapter serves */
   editorType: EditorType;
 
-  /** Transform storage format → editor format */
-  toEditor(storage: TStorage, aiVersion?: TStorage | null): TEditor;
+  /** Transform storage format -> editor format */
+  toEditor(storage: TStorage): TEditor;
 
-  /** Transform editor format → storage format */
-  toStorage(editor: TEditor): { content: TStorage; aiVersion: TStorage | null };
-
-  /** Check if editor content has AI suggestions */
-  hasAISuggestions(editor: TEditor): boolean;
+  /** Transform editor format -> storage format */
+  toStorage(editor: TEditor): { content: TStorage };
 
   /** Capabilities of this editor */
   capabilities: EditorCapabilities;
