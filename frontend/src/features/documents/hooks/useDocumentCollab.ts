@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Extension } from "@codemirror/state";
 import { IndexeddbPersistence } from "y-indexeddb";
 import {
-  buildHeartbeatAckMessage,
   buildProposalAcceptCommand,
   buildProposalRejectCommand,
   createCollabSyncRuntime,
@@ -12,21 +11,21 @@ import {
   isProposalNewEvent,
   isProposalSnapshotEvent,
   isProposalStatusChangedEvent,
-  parseCollabServerTextEvent,
   type Proposal,
   type ProposalGroupAcceptResultEvent,
   type ProposalReviewModel,
   toUint8Array,
 } from "@meridian/cm6-collab";
 
-import { API_BASE_URL } from "@/core/lib/api";
 import { makeLogger } from "@/core/lib/logger";
-import { createClient } from "@/core/supabase/client";
 import {
   EMPTY_DOCUMENT_PROPOSAL_STATE,
   useCollabStore,
   type CollabConnectionState,
 } from "../stores/useCollabStore";
+import { useProjectCollabContext } from "../contexts/ProjectCollabContext";
+import { createDocumentSubscriptionDebounce } from "./documentSubscriptionDebounce";
+import type { ProjectCollabDocumentTextEvent } from "./useProjectCollab";
 
 const log = makeLogger("use-document-collab");
 
@@ -65,10 +64,17 @@ export function useDocumentCollab({
     (s) => s.proposalStateByDocumentId[documentId] ?? EMPTY_DOCUMENT_PROPOSAL_STATE,
   );
 
-  const websocketRef = useRef<WebSocket | null>(null);
-  const reconnectTimerRef = useRef<number | null>(null);
-  const reconnectAttemptRef = useRef(0);
+  const projectCollab = useProjectCollabContext();
+
   const persistenceRef = useRef<IndexeddbPersistence | null>(null);
+  // Keep debounce state stable across effect cleanup/re-run (React StrictMode)
+  // so a pending unsubscribe can be canceled by the next subscribe call.
+  const subscriptionDebounceRef = useRef<
+    ReturnType<typeof createDocumentSubscriptionDebounce> | null
+  >(null);
+  if (subscriptionDebounceRef.current == null) {
+    subscriptionDebounceRef.current = createDocumentSubscriptionDebounce();
+  }
   const [extensions, setExtensions] = useState<Extension[]>([]);
   const [reviewRuntime, setReviewRuntime] = useState<
     ReturnType<typeof createProposalReviewRuntime> | null
@@ -92,13 +98,12 @@ export function useDocumentCollab({
       },
     });
 
+    const debounce = subscriptionDebounceRef.current!;
+
     runtime = createCollabSyncRuntime({
       documentId,
       sendBinary: (frame) => {
-        const ws = websocketRef.current;
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(frame);
-        }
+        projectCollab.sendDocumentBinary(documentId, frame);
       },
       onStatusChange: (status) => {
         setState(documentId, status);
@@ -116,6 +121,9 @@ export function useDocumentCollab({
     const proposalReviewRuntime = createProposalReviewRuntime({
       ydoc: runtime.ydoc,
     });
+    // Intentional: the review runtime is created alongside the Yjs runtime
+    // and must be available for the reviewModels memo on the first render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setReviewRuntime(proposalReviewRuntime);
     const handleDocUpdate = () => {
       setReviewRevision((current) => current + 1);
@@ -124,21 +132,6 @@ export function useDocumentCollab({
 
     setExtensions(runtime.extensions);
 
-    const scheduleReconnect = () => {
-      if (isStopped) {
-        return;
-      }
-
-      const attempt = reconnectAttemptRef.current;
-      const baseDelay = Math.min(5000, 250 * 2 ** attempt);
-      const jitter = baseDelay * 0.15 * (Math.random() * 2 - 1);
-      const delayMs = Math.max(100, Math.round(baseDelay + jitter));
-      reconnectAttemptRef.current = attempt + 1;
-
-      reconnectTimerRef.current = window.setTimeout(() => {
-        void connect();
-      }, delayMs);
-    };
     const isMatchingEventDocument = (
       eventDocumentId: string,
       eventType: string,
@@ -154,122 +147,95 @@ export function useDocumentCollab({
       return false;
     };
 
-    const connect = async () => {
-      if (isStopped) {
+    // Document listener for text events from the project transport
+    const onTextEvent = (event: ProjectCollabDocumentTextEvent) => {
+      if (event.type === "doc:subscribed") {
+        // Handshake completion — start sync
+        runtime!.startSync();
         return;
       }
+
+      if (event.type === "doc:unsubscribed") {
+        // Document-scoped disconnection; do NOT tear down project transport
+        setState(documentId, "disconnected");
+        log.info("document unsubscribed via project transport", {
+          documentId,
+          reason: event.reason,
+        });
+        return;
+      }
+
+      if (event.type === "doc:error") {
+        // Document-scoped error; do NOT tear down project transport
+        log.warn("document-scoped collab error", {
+          documentId,
+          code: event.code,
+          message: event.message,
+        });
+        return;
+      }
+
+      // Proposal events
+      if (isProposalSnapshotEvent(event)) {
+        if (!isMatchingEventDocument(event.documentId, event.type)) return;
+        proposalManager.onProposalSnapshot(event);
+        return;
+      }
+
+      if (isProposalNewEvent(event)) {
+        if (!isMatchingEventDocument(event.proposal.documentId, event.type)) return;
+        proposalManager.onProposalNew(event);
+        return;
+      }
+
+      if (isProposalStatusChangedEvent(event)) {
+        if (!isMatchingEventDocument(event.documentId, event.type)) return;
+        proposalManager.onProposalStatusChanged(event);
+        return;
+      }
+
+      if (isProposalGroupAcceptResultEvent(event)) {
+        if (!isMatchingEventDocument(event.documentId, event.type)) return;
+        proposalManager.onProposalGroupAcceptResult(event);
+      }
+    };
+
+    // Binary frame listener — isolated error handling per document
+    const onBinaryFrame = (frame: Uint8Array) => {
+      try {
+        runtime!.handleBinaryFrame(toUint8Array(frame));
+      } catch (err) {
+        // Document-scoped error: log but do NOT tear down project transport
+        log.warn("failed to handle collab binary frame", {
+          documentId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    };
+
+    const startSubscription = () => {
+      if (isStopped) return;
 
       setState(documentId, "syncing");
 
-      const token = await resolveAccessToken();
-      if (!token) {
-        setState(documentId, "disconnected");
-        scheduleReconnect();
-        return;
-      }
+      // Cancel any pending debounced unsubscribe for this document
+      debounce.subscribe(documentId);
 
-      const ws = new WebSocket(buildDocumentWSURL(documentId));
-      ws.binaryType = "arraybuffer";
-      websocketRef.current = ws;
-
-      ws.onopen = () => {
-        reconnectAttemptRef.current = 0;
-        ws.send(token);
-        runtime.startSync();
-      };
-
-      ws.onmessage = (event: MessageEvent) => {
-        if (typeof event.data === "string") {
-          const textEvent = parseCollabServerTextEvent(event.data);
-          if (!textEvent) {
-            return;
-          }
-
-          if (textEvent.type === "heartbeat") {
-            ws.send(buildHeartbeatAckMessage());
-            return;
-          }
-
-          if (textEvent.type === "error") {
-            if (textEvent.code === "AUTH_FAILED") {
-              // Fire-and-forget: best-effort warm-up so the token is ready
-              // by the time the reconnect loop calls resolveAccessToken().
-              void createClient().auth.refreshSession();
-            }
-            ws.close();
-            return;
-          }
-
-          if (isProposalSnapshotEvent(textEvent)) {
-            if (!isMatchingEventDocument(textEvent.documentId, textEvent.type)) {
-              return;
-            }
-            proposalManager.onProposalSnapshot(textEvent);
-            return;
-          }
-
-          if (isProposalNewEvent(textEvent)) {
-            if (!isMatchingEventDocument(textEvent.proposal.documentId, textEvent.type)) {
-              return;
-            }
-            proposalManager.onProposalNew(textEvent);
-            return;
-          }
-
-          if (isProposalStatusChangedEvent(textEvent)) {
-            if (!isMatchingEventDocument(textEvent.documentId, textEvent.type)) {
-              return;
-            }
-            proposalManager.onProposalStatusChanged(textEvent);
-            return;
-          }
-
-          if (isProposalGroupAcceptResultEvent(textEvent)) {
-            if (!isMatchingEventDocument(textEvent.documentId, textEvent.type)) {
-              return;
-            }
-            proposalManager.onProposalGroupAcceptResult(textEvent);
-            return;
-          }
-
-          return;
-        }
-
-        try {
-          runtime.handleBinaryFrame(toUint8Array(event.data));
-        } catch (err) {
-          log.warn("failed to handle collab binary frame, closing to reconnect", {
-            documentId,
-            error: err instanceof Error ? err.message : String(err),
-          });
-          ws.close();
-        }
-      };
-
-      ws.onerror = () => {
-        ws.close();
-      };
-
-      ws.onclose = () => {
-        if (websocketRef.current === ws) {
-          websocketRef.current = null;
-        }
-
-        if (isStopped) {
-          return;
-        }
-
-        setState(documentId, "disconnected");
-        scheduleReconnect();
-      };
+      projectCollab.subscribeDocument(documentId);
     };
+
+    // Register listener before subscribing so we don't miss the doc:subscribed event
+    const unregisterListener = projectCollab.registerDocumentListener(
+      documentId,
+      { onTextEvent, onBinaryFrame },
+    );
 
     persistenceRef.current = new IndexeddbPersistence(
       `meridian-collab:${documentId}`,
       runtime.ydoc,
     );
 
-    // Wait for IndexedDB to load before connecting WS.
+    // Wait for IndexedDB to load before subscribing via project transport.
     // This ensures bootstrapTextIfEmpty correctly sees existing IndexedDB content
     // and skips insertion, preventing duplication from the IDB+WS bootstrap race.
     persistenceRef.current.whenSynced
@@ -280,29 +246,27 @@ export function useDocumentCollab({
         });
       })
       .finally(() => {
-        if (!isStopped) void connect();
+        startSubscription();
       });
 
     return () => {
       isStopped = true;
 
-      if (reconnectTimerRef.current !== null) {
-        window.clearTimeout(reconnectTimerRef.current);
-        reconnectTimerRef.current = null;
-      }
+      unregisterListener();
 
-      const ws = websocketRef.current;
-      websocketRef.current = null;
-      if (ws) {
-        ws.close();
-      }
+      // Debounced unsubscribe: wait 100ms before actually unsubscribing.
+      // If the same document re-mounts (StrictMode), the new effect's
+      // debounce.subscribe() call will cancel this pending unsubscribe.
+      debounce.scheduleUnsubscribe(documentId, () => {
+        projectCollab.unsubscribeDocument(documentId);
+      });
 
       void persistenceRef.current?.destroy();
       persistenceRef.current = null;
 
-      runtime.ydoc.off("update", handleDocUpdate);
+      runtime!.ydoc.off("update", handleDocUpdate);
       setReviewRuntime(null);
-      runtime.destroy();
+      runtime!.destroy();
       setExtensions([]);
       clearState(documentId);
     };
@@ -311,6 +275,7 @@ export function useDocumentCollab({
     documentId,
     enabled,
     initialContent,
+    projectCollab,
     setProposalState,
     setState,
   ]);
@@ -321,48 +286,32 @@ export function useDocumentCollab({
 
   const sendProposalAccept = useCallback(
     (proposalId: string, idempotencyKey: string): boolean => {
-      const ws = websocketRef.current;
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        return false;
-      }
-
-      ws.send(
-        JSON.stringify(
-          buildProposalAcceptCommand({
-            documentId,
-            proposalId,
-            idempotencyKey,
-          }),
-        ),
+      return projectCollab.sendDocumentCommand(
+        documentId,
+        buildProposalAcceptCommand({
+          documentId,
+          proposalId,
+          idempotencyKey,
+        }) as unknown as Record<string, unknown>,
       );
-      return true;
     },
-    [documentId],
+    [documentId, projectCollab],
   );
 
-  const sendProposalReject = useCallback((proposalId: string): boolean => {
-    const ws = websocketRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      return false;
-    }
-
-    ws.send(
-      JSON.stringify(
+  const sendProposalReject = useCallback(
+    (proposalId: string): boolean => {
+      return projectCollab.sendDocumentCommand(
+        documentId,
         buildProposalRejectCommand({
           documentId,
           proposalId,
-        }),
-      ),
-    );
-    return true;
-  }, [documentId]);
+        }) as unknown as Record<string, unknown>,
+      );
+    },
+    [documentId, projectCollab],
+  );
 
   const reviewModels = useMemo(() => {
-    const revision = reviewRevision;
-    if (revision < 0) {
-      return EMPTY_REVIEW_MODELS;
-    }
-
     if (!enabled) {
       return EMPTY_REVIEW_MODELS;
     }
@@ -370,6 +319,10 @@ export function useDocumentCollab({
     if (!reviewRuntime) {
       return EMPTY_REVIEW_MODELS;
     }
+
+    // reviewRevision is the recompute trigger from Yjs updates.
+    const revision = reviewRevision;
+    void revision;
 
     return reviewRuntime.deriveProposalReviews(proposalState.proposals.values()).reviews;
   }, [enabled, proposalState.proposals, reviewRevision, reviewRuntime]);
@@ -392,32 +345,4 @@ export function useDocumentCollab({
     sendProposalReject,
     isReady: !enabled || extensions.length > 0,
   };
-}
-
-async function resolveAccessToken(): Promise<string | null> {
-  const supabase = createClient();
-
-  const current = await supabase.auth.getSession();
-  const currentToken = current.data.session?.access_token;
-  if (currentToken) {
-    return currentToken;
-  }
-
-  const refreshed = await supabase.auth.refreshSession();
-  return refreshed.data.session?.access_token ?? null;
-}
-
-function buildDocumentWSURL(documentId: string): string {
-  const base = normalizeAPIBase(API_BASE_URL);
-  const url = new URL(`/ws/documents/${documentId}`, base);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  return url.toString();
-}
-
-function normalizeAPIBase(base: string): string {
-  if (base.startsWith("http://") || base.startsWith("https://")) {
-    return base;
-  }
-
-  return `http://${base}`;
 }
