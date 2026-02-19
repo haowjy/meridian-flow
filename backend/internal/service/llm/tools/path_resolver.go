@@ -36,9 +36,9 @@ func NewPathResolver(
 // Returns the folder ID and the resolved path.
 //
 // Examples:
-//   - "" or "/" → returns (nil, "/", nil) for root folder
-//   - "novels/chapter1" → returns (&folderId, "/novels/chapter1", nil)
-//   - "nonexistent" → returns (nil, "", ErrNotFound)
+//   - "" or "/" -> returns (nil, "/", nil) for root folder
+//   - "novels/chapter1" -> returns (&folderId, "/novels/chapter1", nil)
+//   - "nonexistent" -> returns (nil, "", ErrNotFound)
 func (r *PathResolver) ResolveFolderPath(ctx context.Context, path string) (*string, string, error) {
 	// Normalize path
 	path = strings.Trim(path, "/")

@@ -67,7 +67,7 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
     [editTurn, turn.threadId, turn.id],
   );
 
-  // Pill click → open documents in editor, folders in a popover
+  // Pill click -> open documents in editor, folders in a popover
   const { handlePillClick, folderPopover } = usePillNavigation();
 
   const handleEdit = useCallback(() => {

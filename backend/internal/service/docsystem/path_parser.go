@@ -23,13 +23,13 @@ type PathParseResult struct {
 //   - Final segment is the actual name
 //
 // Examples:
-//   - "name" → {["name"], false, "name", []}
-//   - "a/b/c" → {["a", "b", "c"], false, "c", ["a", "b"]}
-//   - "/a/b/c" → {["a", "b", "c"], true, "c", ["a", "b"]}
+//   - "name" -> {["name"], false, "name", []}
+//   - "a/b/c" -> {["a", "b", "c"], false, "c", ["a", "b"]}
+//   - "/a/b/c" -> {["a", "b", "c"], true, "c", ["a", "b"]}
 //
 // Validation (strict):
-//   - No consecutive slashes ("a//b" → error)
-//   - No trailing slash ("a/" → error)
+//   - No consecutive slashes ("a//b" -> error)
+//   - No trailing slash ("a/" -> error)
 //   - No empty segments
 //   - Each segment must be valid name (alphanumeric, spaces, hyphens, underscores)
 //   - Each segment must not exceed max length

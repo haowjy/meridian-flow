@@ -84,6 +84,6 @@ type TurnWriter interface {
 	// in response_metadata.openrouter.generations[] array.
 	// Uses JSONB upsert-by-id: if a record with the same generation ID exists, it's replaced;
 	// otherwise the new record is appended.
-	// This supports both sync enrichment (complete record) and async enrichment (partial→full).
+	// This supports both sync enrichment (complete record) and async enrichment (partial->full).
 	AppendGenerationRecord(ctx context.Context, turnID string, record *llm.GenerationRecord) error
 }

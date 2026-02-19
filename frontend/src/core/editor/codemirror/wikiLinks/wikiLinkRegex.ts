@@ -7,8 +7,6 @@
  * and by insertion helpers to validate syntax.
  */
 
-import { ALL_MARKER_REGEX } from "@/core/lib/mergedDocument";
-
 // =============================================================================
 // PATTERN
 // =============================================================================
@@ -62,8 +60,7 @@ export function findWikiLinks(text: string, offset: number): WikiLinkMatch[] {
 
   let match: RegExpExecArray | null;
   while ((match = regex.exec(text)) !== null) {
-    // Strip PUA diff markers that may split a wiki-link when AI edits part of it
-    const rawPath = match[1]!.trim().replace(ALL_MARKER_REGEX, "");
+    const rawPath = match[1]!.trim();
     // Detect folder intent (trailing slash, e.g. `[[folder/]]`) before stripping
     const endsWithSlash = rawPath.endsWith("/");
     // Normalize: strip trailing slashes so "folder/" resolves the same as "folder"
@@ -71,7 +68,7 @@ export function findWikiLinks(text: string, offset: number): WikiLinkMatch[] {
     // Skip empty paths (e.g. `[[ | ]]` or `[[/]]`) — no valid target to link to.
     // Without this, empty paths produce inverted display ranges and blank pills.
     if (path.length === 0) continue;
-    const rawDisplay = match[2]?.replace(ALL_MARKER_REGEX, "");
+    const rawDisplay = match[2];
     const normalizedDisplay = rawDisplay?.trim() ?? "";
     const hasDisplayAlias = normalizedDisplay.length > 0;
     const displayName = hasDisplayAlias
@@ -135,8 +132,8 @@ export function findWikiLinks(text: string, offset: number): WikiLinkMatch[] {
  * Derive a display name from a file path.
  * Strips directory prefix and extension.
  *
- * "book-one/chapter-5.md" → "chapter-5"
- * "notes.md" → "notes"
+ * "book-one/chapter-5.md" -> "chapter-5"
+ * "notes.md" -> "notes"
  */
 export function pathToDisplayName(path: string): string {
   const filename = path.split("/").pop() ?? path;

@@ -34,7 +34,7 @@ export function ProjectHomeView({
 /**
  * Get folder path from document's path property.
  * Returns the directory portion (everything before the filename).
- * Example: "Characters/Heroes/Aria.md" → "Characters/Heroes"
+ * Example: "Characters/Heroes/Aria.md" -> "Characters/Heroes"
  */
 function getFolderPath(doc: Document): string | null {
   if (!doc.path) return null;

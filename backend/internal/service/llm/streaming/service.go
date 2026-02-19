@@ -96,7 +96,7 @@ type Service struct {
 	formatterRegistry    *formatting.FormatterRegistry   // For formatting synthetic tool results (ref transformer)
 	tokenFinalizer       tokens.TokenFinalizer           // For finalizing tokens on completion/interruption
 	jobQueue             jobs.JobQueue                   // NEW: Phase 2 - background job queue for async operations
-	mutationStrategy     tools.DocumentMutationStrategy  // Strategy for AI edit persistence (ai_version or collab proposal)
+	mutationStrategy     tools.DocumentMutationStrategy  // Strategy for AI edit persistence (collab proposal)
 	userStreamTracker    *UserStreamTracker              // Per-user concurrent stream limiter
 	logger               *slog.Logger
 }
@@ -161,10 +161,10 @@ func NewService(
 // Returns both the user turn and the assistant turn for client to connect to SSE stream.
 //
 // Thread resolution priority:
-// 1. If PrevTurnID provided → lookup its thread_id from DB (ignores ThreadID/ProjectID)
-// 2. Else if ThreadID provided → use that thread
-// 3. Else if ProjectID provided → create new thread (cold start, title from first text block)
-// 4. Else → validation error
+// 1. If PrevTurnID provided -> lookup its thread_id from DB (ignores ThreadID/ProjectID)
+// 2. Else if ThreadID provided -> use that thread
+// 3. Else if ProjectID provided -> create new thread (cold start, title from first text block)
+// 4. Else -> validation error
 func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest) (*llmSvc.CreateTurnResponse, error) {
 	// Normalize empty strings to nil
 	if req.PrevTurnID != nil && *req.PrevTurnID == "" {
@@ -854,10 +854,10 @@ type threadContext struct {
 // resolveThreadContext determines which thread to use for turn creation.
 //
 // Priority:
-// 1. If PrevTurnID provided → lookup its thread from DB (ignores ThreadID/ProjectID params)
-// 2. Else if ThreadID provided → validate and use that thread
-// 3. Else if ProjectID provided → cold start (will create new thread)
-// 4. Else → validation error
+// 1. If PrevTurnID provided -> lookup its thread from DB (ignores ThreadID/ProjectID params)
+// 2. Else if ThreadID provided -> validate and use that thread
+// 3. Else if ProjectID provided -> cold start (will create new thread)
+// 4. Else -> validation error
 func (s *Service) resolveThreadContext(ctx context.Context, req *llmSvc.CreateTurnRequest) (*threadContext, error) {
 	// Case 1: PrevTurnID provided - infer thread from the turn
 	if req.PrevTurnID != nil {

@@ -28,8 +28,8 @@ const REF_TARGET_SELECTOR = `.${PILL_MARK_CLASS}[data-doc-path]`;
 /**
  * Create a CM6 extension that handles clicks on wiki-link inline references.
  *
- * - Click on text area → navigate to document/folder via onRefClick
- * - Click on icon area (left ~16px) → delete the entire [[...]] syntax
+ * - Click on text area -> navigate to document/folder via onRefClick
+ * - Click on icon area (left ~16px) -> delete the entire [[...]] syntax
  *
  * The icon area shows an X on hover (via CSS), signaling delete affordance.
  *
@@ -73,7 +73,7 @@ export function createWikiLinkClickHandler(
 
       const docPath = ref.dataset.docPath;
 
-      // Icon-area click → delete the entire [[...]] syntax.
+      // Icon-area click -> delete the entire [[...]] syntax.
       // The ::before pseudo-element shows an X on hover (CSS), so clicking
       // the left ~16px of the pill means "remove this reference".
       const rect = ref.getBoundingClientRect();

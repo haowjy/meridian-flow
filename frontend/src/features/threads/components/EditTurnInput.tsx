@@ -142,7 +142,7 @@ export function EditTurnInput({
     shell.focus();
   }, []);
 
-  // Pill click → open documents in editor, folders in a popover
+  // Pill click -> open documents in editor, folders in a popover
   const { handlePillClick, folderPopover } = usePillNavigation();
 
   if (!isOpen) return null;

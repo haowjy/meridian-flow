@@ -20,7 +20,7 @@ class TurnBrowserScreen(Screen):
         Binding("w", "navigate_up", "W: ↑ Parent"),
         Binding("s", "navigate_down", "S: ↓ Child"),
         Binding("a", "navigate_left", "A: ← Prev Sibling"),
-        Binding("d", "navigate_right", "D: → Next Sibling"),
+        Binding("d", "navigate_right", "D: -> Next Sibling"),
         Binding("p", "edit_params", "Params"),
         Binding("tab", "focus_next", "Switch Focus", show=False),
         Binding("escape", "go_back", "Back"),
@@ -116,7 +116,7 @@ class TurnBrowserScreen(Screen):
             up_label = "W: ↑ Parent"
             down_label = "S: ↓ Child"
             left_label = "A: ← Prev"
-            right_label = "D: → Next"
+            right_label = "D: -> Next"
 
             hints = []
 
@@ -210,7 +210,7 @@ class TurnBrowserScreen(Screen):
             await self.navigate_to_turn(self.nav_state.prev_sibling_id)
 
     async def action_navigate_right(self) -> None:
-        """→ key: Navigate to next sibling"""
+        """-> key: Navigate to next sibling"""
         if self.nav_state and self.nav_state.can_go_right and self.nav_state.next_sibling_id:
             logger.debug(f"Navigation right - moving to next sibling {self.nav_state.next_sibling_id}")
             await self.navigate_to_turn(self.nav_state.next_sibling_id)

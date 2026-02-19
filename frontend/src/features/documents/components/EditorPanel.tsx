@@ -1,22 +1,15 @@
 /**
- * EditorPanel - CodeMirror 6 markdown editor with AI diff view support.
- *
- * NOTE: ~585 lines — approaching SRP limit. Monitor on next feature addition;
- * candidates for extraction: wiki-link popover logic, create-from-broken-link handler.
+ * EditorPanel - CodeMirror 6 markdown editor with collab proposal support.
  *
  * Key architecture:
- * - Merged document is source of truth (content + aiVersion combined with PUA markers)
- * - Accept/reject are CM6 transactions (undoable via Cmd+Z)
- * - Compartment-based diff extension for dynamic enable/disable
- * - Debounced save parses merged doc back to content + aiVersion
+ * - Collab (Yjs) owns document state for supported extensions (.md, .txt)
+ * - Non-collab extensions use REST-based content save
+ * - AI edits arrive as proposals via WebSocket, auto-accepted into Yjs doc
  *
  * Hook composition:
  * - useDocumentContent: Loading, hydration, local state
- * - useDocumentSync: Debounced save, flush on unmount
- * - useDiffView: Diff extension, hunk navigation
- * - useDocumentPolling: Detect background AI updates (polls while AI session active)
- *
- * @see `_docs/plans/ai-editing/inline-suggestions-impl-2/06-integration.md`
+ * - useDocumentSync: Debounced save, flush on unmount (non-collab only)
+ * - useDocumentCollab: Yjs sync, proposals, connection state
  */
 
 import { useRef, useCallback, useState, useMemo, useEffect } from "react";
@@ -43,16 +36,14 @@ import { SidebarToggle } from "@/shared/components/layout/SidebarToggle";
 import { CompactBreadcrumb } from "@/shared/components/ui/CompactBreadcrumb";
 import { Button } from "@/shared/components/ui/button";
 import { ChevronLeft } from "lucide-react";
-import { AIHunkNavigator } from "./AIHunkNavigator";
 import { AIProposalReviewPanel } from "./AIProposalReviewPanel";
 import { CollabConnectionIndicator } from "./CollabConnectionIndicator";
 import {
   useDocumentContent,
   useDocumentCollab,
   useDocumentSync,
-  useDiffView,
-  useDocumentPolling,
 } from "../hooks";
+import { isCollabEnabled } from "../lib/collabFeatureFlag";
 import {
   atMentionField,
   type AtMentionState,
@@ -67,13 +58,6 @@ import { usePillNavigation } from "@/shared/reference-pill";
 import type { MentionResult } from "@/features/threads/components/DocumentMentionPopover";
 
 const log = makeLogger("editor-panel");
-
-/**
- * Feature flag: gates collab proposals system (Yjs sync + review panel) vs legacy PUA markers.
- * Defaults to true (collab ON). Set VITE_COLLAB_PROPOSALS_ENABLED=false to revert.
- */
-const COLLAB_PROPOSALS_ENABLED =
-  (import.meta.env.VITE_COLLAB_PROPOSALS_ENABLED ?? "true") !== "false";
 
 const plaintextEditorTheme = EditorView.theme({
   "&": {
@@ -102,12 +86,7 @@ interface EditorPanelProps {
 // =============================================================================
 
 /**
- * CodeMirror 6 markdown editor panel with AI diff view support.
- *
- * Uses merged document pattern:
- * - On load: buildMergedDocument(content, aiVersion) → editor
- * - During editing: editor shows merged document with diff decorations
- * - On save: parseMergedDocument() → API (content + aiVersion)
+ * CodeMirror 6 markdown editor panel with collab proposal support.
  */
 export function EditorPanel({
   documentId,
@@ -210,7 +189,6 @@ export function EditorPanel({
   const error = useEditorStore((s) => s.error);
   const status = useEditorStore((s) => s.status);
   const lastSaved = useEditorStore((s) => s.lastSaved);
-  const navigatorPosition = useEditorStore((s) => s.navigatorPosition);
   const loadDocument = useEditorStore((s) => s.loadDocument);
   const saveDocument = useEditorStore((s) => s.saveDocument);
   const clearError = useEditorStore((s) => s.clearError);
@@ -227,18 +205,7 @@ export function EditorPanel({
   // Get file extension for adapter selection (default to .md if not available yet)
   const extension =
     activeDocument?.extension ?? documentMetadata?.extension ?? ".md";
-  // Collab requires both: compatible extension AND feature flag enabled
-  const collabEnabled = COLLAB_PROPOSALS_ENABLED && isCollabExtension(extension);
-
-  // Warn in dev when using deprecated PUA path because feature flag is off
-  useEffect(() => {
-    if (!COLLAB_PROPOSALS_ENABLED && isCollabExtension(extension) && import.meta.env.DEV) {
-      log.warn(
-        "Collab proposals disabled by VITE_COLLAB_PROPOSALS_ENABLED=false. " +
-          "Using deprecated PUA marker system. This will be removed in a future release.",
-      );
-    }
-  }, [extension]);
+  const collabEnabled = isCollabEnabled(extension);
 
   const editorFontExtensions = useMemo(() => {
     if (extension.toLowerCase() !== ".txt") return [];
@@ -248,20 +215,14 @@ export function EditorPanel({
   // 1. Document content (loading, hydration, local state)
   const {
     localDocument,
-    setLocalDocument,
     isInitialized,
     isEditable,
-    isEditorReady,
-    hasAISuggestions,
     hasUserEdit,
     handleEditorReady,
     handleContentChange,
     hydrateDocument,
     syncContext,
-  } = useDocumentContent(documentId, extension, editorRef, {
-    disableAIVersion: collabEnabled,
-    collabEnabled,
-  });
+  } = useDocumentContent(documentId, extension, editorRef);
 
   useEffect(() => {
     setCollabSeedContent(null);
@@ -290,7 +251,7 @@ export function EditorPanel({
     initialContent: collabSeedContent ?? "",
   });
 
-  // 2. Document sync (save, flush) - pure effect, no return
+  // 2. Document sync (save, flush) — only active for non-collab extensions
   useDocumentSync(
     documentId,
     extension,
@@ -300,61 +261,6 @@ export function EditorPanel({
     editorRef,
     hydrateDocument,
     !collabEnabled,
-  );
-
-  // 3. Diff view (markers, navigation)
-  const {
-    hunks,
-    // Note: hasAISuggestions from useDiffView is not used - we use the adapter-based one from useDocumentContent
-    initialExtensions,
-    handlePrevHunk,
-    handleNextHunk,
-    handleAcceptAll,
-    handleRejectAll,
-  } = useDiffView({
-    enabled: !collabEnabled,
-    documentId,
-    localDocument,
-    editorRef,
-    isEditorReady,
-    incrementEditVersion: syncContext.incrementEditVersion,
-    setLocalDocument,
-  });
-
-  // 4. Document polling (detects background AI updates)
-  // Polls for aiVersionRev changes when document is open and not being edited.
-  // Note: Polls always (not just when AI session active) to detect new AI edits.
-  useDocumentPolling(
-    {
-      enabled: !collabEnabled,
-      documentId,
-      currentAIVersionRev: syncContext.aiVersionBaseRevRef.current,
-      hasUserEdit,
-      intervalMs: 5000,
-    },
-    {
-      onAIVersionChanged: (doc) => {
-        // If user has pending edits, stash the update for later
-        // Otherwise, hydrate immediately
-        if (hasUserEdit) {
-          syncContext.setPendingServerSnapshot({
-            content: doc.content ?? "",
-            aiVersion: doc.aiVersion,
-            aiVersionRev: doc.aiVersionRev,
-          });
-        } else {
-          hydrateDocument({
-            content: doc.content ?? "",
-            aiVersion: doc.aiVersion,
-            aiVersionRev: doc.aiVersionRev,
-          });
-        }
-      },
-      onError: (error) => {
-        // Log but don't disrupt the user - polling will retry
-        log.warn("[DocumentPolling] Error:", error.message);
-      },
-    },
   );
 
   // ---------------------------------------------------------------------------
@@ -367,7 +273,7 @@ export function EditorPanel({
     store.setRightPanelState("documents");
   };
 
-  // Handle wiki-link @-mention selection → insert @[[path | name]] syntax
+  // Handle wiki-link @-mention selection -> insert @[[path | name]] syntax
   const handleWikiLinkSelect = useCallback(
     (result: MentionResult) => {
       const view = editorRef.current?.getView();
@@ -594,7 +500,6 @@ export function EditorPanel({
                 onReady={handleEditorReady}
                 extensions={[
                   ...collabExtensions,
-                  ...initialExtensions,
                   ...wikiLinkExtensions,
                   ...editorFontExtensions,
                 ]}
@@ -627,26 +532,7 @@ export function EditorPanel({
           {/* Folder content popover (from usePillNavigation) */}
           {folderPopover}
         </div>
-
-        {/* AI navigator - sticky at bottom of viewport */}
-        {hasAISuggestions && hunks.length > 0 && (
-          <div className="pointer-events-none sticky right-0 bottom-0 left-0 z-20">
-            <AIHunkNavigator
-              hunks={hunks}
-              currentIndex={navigatorPosition}
-              onPrevious={handlePrevHunk}
-              onNext={handleNextHunk}
-              onAcceptAll={handleAcceptAll}
-              onRejectAll={handleRejectAll}
-            />
-          </div>
-        )}
       </div>
     </div>
   );
-}
-
-function isCollabExtension(extension: string): boolean {
-  const normalized = extension.toLowerCase();
-  return normalized === ".md" || normalized === ".markdown" || normalized === ".txt";
 }

@@ -381,15 +381,6 @@ export interface ImportResponse {
   documents: Array<{ id: string; path: string; name: string; action: string }>;
 }
 
-/**
- * Lightweight AI status response for efficient polling (~100 bytes vs ~50KB full document).
- * Backend: GET /api/documents/{id}/ai-status
- */
-export interface AIStatusResponse {
-  hasAiVersion: boolean;
-  aiVersionRev: number | null;
-}
-
 type SendTurnOptions = {
   threadId?: string; // Optional - if not provided with projectId, creates new thread
   projectId?: string; // Required if threadId is not provided (for cold start)
@@ -648,9 +639,9 @@ export const api = {
 
     // Send a message to create a new turn.
     // Uses POST /api/turns with thread resolution:
-    // 1. If prevTurnId provided → infer thread from that turn
-    // 2. Else if threadId provided → use that thread
-    // 3. Else if projectId provided → create new thread (cold start)
+    // 1. If prevTurnId provided -> infer thread from that turn
+    // 2. Else if threadId provided -> use that thread
+    // 3. Else if projectId provided -> create new thread (cold start)
     //
     // Returns the created turns and optionally the new thread if cold start.
     send: async (
@@ -908,18 +899,6 @@ export const api = {
       });
       return fromDocumentDto(data);
     },
-    /**
-     * Lightweight AI status check for polling (~100 bytes vs ~50KB full document).
-     * Used by useDocumentPolling to efficiently detect AI version changes.
-     */
-    getAIStatus: async (
-      id: string,
-      options?: { signal?: AbortSignal },
-    ): Promise<AIStatusResponse> => {
-      return fetchAPI<AIStatusResponse>(`/api/documents/${id}/ai-status`, {
-        signal: options?.signal,
-      });
-    },
     create: async (
       projectId: string,
       folderId: string | null,
@@ -946,37 +925,17 @@ export const api = {
       return fromDocumentDto(data);
     },
     /**
-     * Update document with optional content and/or aiVersion.
-     *
-     * Tri-state aiVersion semantics:
-     * - undefined: omit field (no change to ai_version)
-     * - null: clear ai_version
-     * - string (including ""): set ai_version
-     *
-     * Concurrency: when aiVersion is provided, aiVersionBaseRev is required
-     * for compare-and-swap (CAS) to prevent overwriting unseen server updates.
+     * Update document content.
      */
     update: async (
       id: string,
       updates: {
         content?: string;
-        aiVersion?: string | null;
-        aiVersionBaseRev?: number;
       },
       options?: { signal?: AbortSignal },
     ): Promise<Document> => {
       const body: Record<string, unknown> = {};
       if (updates.content !== undefined) body.content = updates.content;
-      if (updates.aiVersion !== undefined) {
-        // Enforce CAS requirement: backend returns 400 if ai_version_base_rev is missing
-        if (updates.aiVersionBaseRev === undefined) {
-          throw new Error(
-            "aiVersionBaseRev is required when aiVersion is provided",
-          );
-        }
-        body.ai_version = updates.aiVersion;
-        body.ai_version_base_rev = updates.aiVersionBaseRev;
-      }
 
       const data = await fetchAPI<DocumentDto>(`/api/documents/${id}`, {
         method: "PATCH",

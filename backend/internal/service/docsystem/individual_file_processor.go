@@ -100,7 +100,7 @@ func (p *individualFileProcessor) Process(
 
 	// Determine target extension:
 	// - Keep original if it's a valid markdown extension (.md, .markdown, .txt)
-	// - Default to .md for converted files (e.g., .html → .md)
+	// - Default to .md for converted files (e.g., .html -> .md)
 	targetExt := ".md" // default for conversions
 	if docsysModels.IsValidExtension(ext) {
 		targetExt = ext

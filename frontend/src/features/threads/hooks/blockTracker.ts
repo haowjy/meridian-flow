@@ -5,9 +5,9 @@
  * Provides single clear() method to prevent memory leaks when streams end.
  *
  * This class solves:
- * - 4 separate Maps → 1 class with single cleanup
- * - Scattered JSON buffer management → centralized in one place
- * - Block index + type tracking → consistent interface
+ * - 4 separate Maps -> 1 class with single cleanup
+ * - Scattered JSON buffer management -> centralized in one place
+ * - Block index + type tracking -> consistent interface
  */
 
 import type { BlockType } from "@/features/threads/types";

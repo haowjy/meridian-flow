@@ -4,8 +4,8 @@
  * Replaces the duplicate handlePillClick logic in TurnInput, UserTurn,
  * EditTurnInput, and ReferenceBlock.
  *
- * - Document pill click → opens the document in the editor panel
- * - Folder pill click → shows a FolderContentPopover anchored to the pill
+ * - Document pill click -> opens the document in the editor panel
+ * - Folder pill click -> shows a FolderContentPopover anchored to the pill
  */
 
 import { useState, useCallback, type ReactNode } from "react";
@@ -40,7 +40,7 @@ export function usePillNavigation(): PillNavigationResult {
         return;
       }
 
-      // Document click → navigate to editor
+      // Document click -> navigate to editor
       const doc = useTreeStore
         .getState()
         .documents.find((d) => d.id === id);

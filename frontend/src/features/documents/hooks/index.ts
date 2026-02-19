@@ -11,19 +11,5 @@ export {
 export { useDocumentSync } from "./useDocumentSync";
 export { useDocumentCollab } from "./useDocumentCollab";
 
-// Visualization hooks
-export {
-  useDiffView,
-  type UseDiffViewOptions,
-  type UseDiffViewResult,
-} from "./useDiffView";
-
-// Polling hooks
-export {
-  useDocumentPolling,
-  type UseDocumentPollingOptions,
-  type UseDocumentPollingHandlers,
-} from "./useDocumentPolling";
-
 // UI utility hooks
 export { useThumbFollow } from "./useThumbFollow";

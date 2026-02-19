@@ -290,7 +290,7 @@ function renderExternalLink(
   linkText: string,
   url: string,
 ): DecorationRange[] {
-  // Prepend https:// for bare domains (e.g., "google.com" → "https://google.com")
+  // Prepend https:// for bare domains (e.g., "google.com" -> "https://google.com")
   const href = url.includes("://") ? url : `https://${url}`;
 
   // Replace entire [text](url) with a widget containing a real <a> element

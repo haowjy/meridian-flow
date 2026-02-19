@@ -4,7 +4,7 @@
  * Handles THINKING_START, THINKING_TEXT_MESSAGE_*, THINKING_END events.
  * These events stream thinking/reasoning content from the LLM.
  *
- * Structure: THINKING_START → TEXT_MESSAGE_* → THINKING_END
+ * Structure: THINKING_START -> TEXT_MESSAGE_* -> THINKING_END
  */
 
 import type { SSEDispatchContext, SSEStoreActions } from "../types";

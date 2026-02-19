@@ -110,14 +110,14 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 
 	if projectID != "" {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, folder_id, name, extension, content, ai_version, ai_version_rev, metadata, created_at, updated_at
+			SELECT id, project_id, folder_id, name, extension, content, metadata, created_at, updated_at
 			FROM %s
 			WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
 		`, r.tables.Documents)
 		args = []interface{}{id, projectID}
 	} else {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, folder_id, name, extension, content, ai_version, ai_version_rev, metadata, created_at, updated_at
+			SELECT id, project_id, folder_id, name, extension, content, metadata, created_at, updated_at
 			FROM %s
 			WHERE id = $1 AND deleted_at IS NULL
 		`, r.tables.Documents)
@@ -133,8 +133,6 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 		&doc.Name,
 		&doc.Extension,
 		&doc.Content,
-		&doc.AIVersion,
-		&doc.AIVersionRev,
 		&doc.Metadata,
 		&doc.CreatedAt,
 		&doc.UpdatedAt,
@@ -156,7 +154,7 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 // Use when authorization is handled separately (e.g., by ResourceAuthorizer)
 func (r *PostgresDocumentRepository) GetByIDOnly(ctx context.Context, id string) (*models.Document, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, folder_id, name, extension, content, ai_version, ai_version_rev, metadata, created_at, updated_at
+		SELECT id, project_id, folder_id, name, extension, content, metadata, created_at, updated_at
 		FROM %s
 		WHERE id = $1 AND deleted_at IS NULL
 	`, r.tables.Documents)
@@ -170,8 +168,6 @@ func (r *PostgresDocumentRepository) GetByIDOnly(ctx context.Context, id string)
 		&doc.Name,
 		&doc.Extension,
 		&doc.Content,
-		&doc.AIVersion,
-		&doc.AIVersionRev,
 		&doc.Metadata,
 		&doc.CreatedAt,
 		&doc.UpdatedAt,
@@ -226,7 +222,7 @@ func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string,
 
 	// Query for the document in the final folder
 	query := fmt.Sprintf(`
-		SELECT id, project_id, folder_id, name, extension, content, ai_version, ai_version_rev, metadata, created_at, updated_at
+		SELECT id, project_id, folder_id, name, extension, content, metadata, created_at, updated_at
 		FROM %s
 		WHERE project_id = $1 AND name = $2 AND extension = $3 AND deleted_at IS NULL
 	`, r.tables.Documents)
@@ -250,8 +246,6 @@ func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string,
 		&doc.Name,
 		&doc.Extension,
 		&doc.Content,
-		&doc.AIVersion,
-		&doc.AIVersionRev,
 		&doc.Metadata,
 		&doc.CreatedAt,
 		&doc.UpdatedAt,
@@ -402,77 +396,6 @@ func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Doc
 	}
 
 	return nil
-}
-
-// Deprecated: Use CollabProposalStrategy instead. Retained for feature flag fallback.
-// UpdateAIVersion updates the ai_version and metadata fields for a document.
-// Pass nil aiVersion to clear ai_version (reject suggestions).
-// metadata is persisted atomically so word count stays consistent with ai_version.
-func (r *PostgresDocumentRepository) UpdateAIVersion(ctx context.Context, id string, aiVersion *string, metadata models.DocumentMetadata) (*models.Document, error) {
-	query := fmt.Sprintf(`
-		UPDATE %s
-		SET ai_version = $1, metadata = $2, updated_at = NOW()
-		WHERE id = $3 AND deleted_at IS NULL
-		RETURNING id, project_id, folder_id, name, extension, content, ai_version, ai_version_rev, metadata, created_at, updated_at
-	`, r.tables.Documents)
-
-	var doc models.Document
-	executor := postgres.GetExecutor(ctx, r.pool)
-	err := executor.QueryRow(ctx, query, aiVersion, metadata, id).Scan(
-		&doc.ID,
-		&doc.ProjectID,
-		&doc.FolderID,
-		&doc.Name,
-		&doc.Extension,
-		&doc.Content,
-		&doc.AIVersion,
-		&doc.AIVersionRev,
-		&doc.Metadata,
-		&doc.CreatedAt,
-		&doc.UpdatedAt,
-	)
-	if err != nil {
-		if postgres.IsPgNoRowsError(err) {
-			return nil, domain.NewNotFoundError("document",
-				fmt.Sprintf("document %s not found", id))
-		}
-		return nil, fmt.Errorf("update ai_version: %w", err)
-	}
-
-	return &doc, nil
-}
-
-// UpdateWithAIVersionCheck atomically updates content + ai_version with CAS.
-// Returns rowsAffected: 0 means rev mismatch (conflict), 1 means success.
-// This is the core CAS operation for ai_version concurrency control.
-func (r *PostgresDocumentRepository) UpdateWithAIVersionCheck(ctx context.Context, params docsysRepo.UpdateWithAIVersionParams) (int64, error) {
-	query := fmt.Sprintf(`
-		UPDATE %s
-		SET content = COALESCE($1, content),
-		    ai_content = COALESCE($1, ai_content),
-		    name = COALESCE($2, name),
-		    folder_id = COALESCE($3, folder_id),
-		    ai_version = $4,
-		    ai_version_rev = ai_version_rev + 1,
-		    updated_at = NOW()
-		WHERE id = $5
-		  AND ai_version_rev = $6
-		  AND deleted_at IS NULL
-	`, r.tables.Documents)
-
-	executor := postgres.GetExecutor(ctx, r.pool)
-	result, err := executor.Exec(ctx, query,
-		params.Content,
-		params.Name,
-		params.FolderID,
-		params.AIVersion,
-		params.ID,
-		params.AIVersionBaseRev,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("update with ai_version check: %w", err)
-	}
-	return result.RowsAffected(), nil
 }
 
 // Delete soft-deletes a document by setting deleted_at timestamp

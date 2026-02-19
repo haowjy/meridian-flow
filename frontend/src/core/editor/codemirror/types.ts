@@ -23,7 +23,7 @@ export interface WordCount {
 
 /**
  * Options for setContent() to control history and event behavior.
- * Used for hydration/refresh (server → editor) vs user actions.
+ * Used for hydration/refresh (server -> editor) vs user actions.
  */
 export interface SetContentOptions {
   /**
@@ -35,7 +35,7 @@ export interface SetContentOptions {
 
   /**
    * If false, do not call the React onChange callback.
-   * Use for hydration/refresh (server → editor), not for user actions.
+   * Use for hydration/refresh (server -> editor), not for user actions.
    * Default: true
    */
   emitChange?: boolean;

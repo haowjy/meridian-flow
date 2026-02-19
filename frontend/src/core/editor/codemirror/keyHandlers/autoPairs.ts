@@ -69,7 +69,7 @@ const backtickHandler = keymap.of([
       // Check what's before cursor
       const before = view.state.sliceDoc(Math.max(0, from - 2), from);
 
-      // Case 1: Third backtick → create code block
+      // Case 1: Third backtick -> create code block
       if (before === "``") {
         dispatchWithGhost(
           view,
@@ -80,7 +80,7 @@ const backtickHandler = keymap.of([
         return true;
       }
 
-      // Case 2: Cursor at ghost backtick → consume it
+      // Case 2: Cursor at ghost backtick -> consume it
       if (ghost && ghost.pos === from && ghost.chars === "`") {
         const afterCursor = view.state.sliceDoc(from, from + 1);
         if (afterCursor === "`") {
@@ -94,7 +94,7 @@ const backtickHandler = keymap.of([
         }
       }
 
-      // Case 3: First backtick → insert with ghost
+      // Case 3: First backtick -> insert with ghost
       dispatchWithGhost(view, { from, to, insert: "``" }, from + 1, {
         pos: from + 1,
         chars: "`",
@@ -115,7 +115,7 @@ function createOpenBracketHandler(open: string, close: string) {
       const { from, to } = view.state.selection.main;
       const ghost = getGhost(view.state);
 
-      // Case 1: Second open when ghost is single close → double up
+      // Case 1: Second open when ghost is single close -> double up
       if (ghost && ghost.pos === from && ghost.chars === close) {
         const afterCursor = view.state.sliceDoc(from, from + 1);
         if (afterCursor === close) {
@@ -129,7 +129,7 @@ function createOpenBracketHandler(open: string, close: string) {
         }
       }
 
-      // Case 2: First open → insert with ghost close
+      // Case 2: First open -> insert with ghost close
       dispatchWithGhost(view, { from, to, insert: open + close }, from + 1, {
         pos: from + 1,
         chars: close,

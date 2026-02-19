@@ -6,7 +6,7 @@
  *
  * Responsibilities:
  * - Parse JSON string to object
- * - Convert snake_case → camelCase (backend sends snake_case)
+ * - Convert snake_case -> camelCase (backend sends snake_case)
  * - Return typed object ready for handlers
  */
 

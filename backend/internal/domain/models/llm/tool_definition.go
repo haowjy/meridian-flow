@@ -51,8 +51,8 @@ type ToolDefinition struct {
 // using the appropriate constructor (NewCustomTool or MapToolByName).
 //
 // Detection logic:
-//   - If Function field is present → Create custom tool (OpenAI format)
-//   - Else if Name is present → Map to built-in tool by name (minimal format)
+//   - If Function field is present -> Create custom tool (OpenAI format)
+//   - Else if Name is present -> Map to built-in tool by name (minimal format)
 func (td *ToolDefinition) ToLibraryTool() (*llmprovider.Tool, error) {
 	// Full OpenAI format: {"type": "function", "function": {...}}
 	if td.Function != nil {

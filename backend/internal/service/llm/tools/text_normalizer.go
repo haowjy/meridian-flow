@@ -1,6 +1,9 @@
 package tools
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 // TextNormalizer transforms input strings before matching.
 // Implements the Strategy pattern for extensible text preprocessing.
@@ -55,6 +58,77 @@ func (n *LineNumberNormalizer) Normalize(s string) string {
 }
 
 // =============================================================================
+// LINE ENDING NORMALIZER
+// =============================================================================
+
+// LineEndingNormalizer normalizes Windows/Mac line endings to Unix style (\n).
+// This prevents multiline matching failures when copied text contains CRLF.
+//
+// Example:
+//
+//	"Hello\r\nWorld\r\n" -> "Hello\nWorld\n"
+type LineEndingNormalizer struct{}
+
+// Name returns the normalizer identifier for logging/messages.
+func (n *LineEndingNormalizer) Name() string {
+	return "line_endings"
+}
+
+// ShouldApply checks if the string contains non-Unix line endings.
+func (n *LineEndingNormalizer) ShouldApply(s string) bool {
+	return strings.Contains(s, "\r")
+}
+
+// Normalize converts all CRLF/CR line endings to LF.
+func (n *LineEndingNormalizer) Normalize(s string) string {
+	normalized := strings.ReplaceAll(s, "\r\n", "\n")
+	return strings.ReplaceAll(normalized, "\r", "\n")
+}
+
+// =============================================================================
+// TRAILING WHITESPACE NORMALIZER
+// =============================================================================
+
+// TrailingWhitespaceNormalizer strips trailing horizontal whitespace from each line
+// and ignores terminal newline differences.
+//
+// This makes str_replace more tolerant when an LLM copies multiline snippets with
+// slightly different trailing spaces/newline at EOF.
+//
+// Example:
+//
+//	"foo  \nbar\t\n" -> "foo\nbar"
+type TrailingWhitespaceNormalizer struct{}
+
+// Name returns the normalizer identifier for logging/messages.
+func (n *TrailingWhitespaceNormalizer) Name() string {
+	return "trailing_whitespace"
+}
+
+// ShouldApply checks if there are tabs/spaces before newline or at end of content,
+// or if the string ends with a newline that may differ from document EOF formatting.
+func (n *TrailingWhitespaceNormalizer) ShouldApply(s string) bool {
+	return strings.Contains(s, " \n") ||
+		strings.Contains(s, "\t\n") ||
+		strings.HasSuffix(s, " ") ||
+		strings.HasSuffix(s, "\t") ||
+		strings.HasSuffix(s, "\n")
+}
+
+// Normalize strips right-side tabs/spaces per line and trims terminal newlines.
+func (n *TrailingWhitespaceNormalizer) Normalize(s string) string {
+	if s == "" {
+		return s
+	}
+
+	lines := strings.Split(s, "\n")
+	for i := range lines {
+		lines[i] = strings.TrimRight(lines[i], " \t")
+	}
+	return strings.TrimRight(strings.Join(lines, "\n"), "\n")
+}
+
+// =============================================================================
 // NORMALIZER CHAIN HELPERS
 // =============================================================================
 
@@ -104,6 +178,46 @@ func tryMatchWithNormalizers(base, oldStr, newStr string, normalizers []TextNorm
 		}
 	}
 
+	// Try cumulative normalization chain (handles combinations like:
+	// line numbers + trailing whitespace + CRLF differences).
+	cumulativeOld := oldStr
+	cumulativeNew := newStr
+	var appliedChain []string
+	for _, norm := range normalizers {
+		if !norm.ShouldApply(cumulativeOld) {
+			continue
+		}
+		appliedChain = append(appliedChain, norm.Name())
+		cumulativeOld = norm.Normalize(cumulativeOld)
+		cumulativeNew = norm.Normalize(cumulativeNew)
+	}
+	if len(appliedChain) > 0 {
+		attemptedNormalizers = append(attemptedNormalizers, "chain("+joinStrings(appliedChain, "->")+")")
+		if containsExact(base, cumulativeOld) {
+			return &matchResult{
+				matchedOld:    cumulativeOld,
+				normalizedNew: cumulativeNew,
+				appliedNorm:   "chain(" + joinStrings(appliedChain, "->") + ")",
+			}, ""
+		}
+	}
+
+	// Final fallback for multiline edits: tolerant per-line whitespace matching.
+	// This handles cases where copied snippets differ in leading/trailing spaces,
+	// while still requiring contiguous line structure.
+	if strings.Contains(oldStr, "\n") {
+		attemptedNormalizers = append(attemptedNormalizers, "flex_whitespace")
+		if matchedOld, normalizedNew, ok, ambiguousCount := tryFlexibleWhitespaceMatch(base, oldStr, newStr); ok {
+			return &matchResult{
+				matchedOld:    matchedOld,
+				normalizedNew: normalizedNew,
+				appliedNorm:   "flex_whitespace",
+			}, ""
+		} else if ambiguousCount > 1 {
+			return nil, "AMBIGUOUS_MATCH:flex_whitespace:" + intToString(ambiguousCount)
+		}
+	}
+
 	// Build helpful error message
 	if len(attemptedNormalizers) > 0 {
 		return nil, "Text not found in document. Attempted normalizations: " +
@@ -112,6 +226,64 @@ func tryMatchWithNormalizers(base, oldStr, newStr string, normalizers []TextNorm
 	}
 
 	return nil, "Text not found in document. Use view command to see current content and try again."
+}
+
+// tryFlexibleWhitespaceMatch attempts a multiline contiguous match where each line
+// tolerates different leading/trailing horizontal whitespace.
+//
+// Returns:
+// - matchedOld: exact substring from base to replace
+// - normalizedNew: new text with line numbers removed and line endings normalized
+// - ok: whether a unique match was found
+// - ambiguousCount: number of matches found when >1
+func tryFlexibleWhitespaceMatch(base, oldStr, newStr string) (matchedOld, normalizedNew string, ok bool, ambiguousCount int) {
+	// Pre-normalize LLM-copied snippets for common artifacts.
+	normalizedOld := normalizeForFlexibleWhitespace(oldStr)
+	normalizedNew = normalizeForFlexibleWhitespace(newStr)
+
+	lines := strings.Split(normalizedOld, "\n")
+	if len(lines) == 0 {
+		return "", "", false, 0
+	}
+
+	// Build regex that allows flexible leading/trailing spaces on each line.
+	var pattern strings.Builder
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		pattern.WriteString(`[ \t]*`)
+		pattern.WriteString(regexp.QuoteMeta(trimmed))
+		pattern.WriteString(`[ \t]*`)
+		if i < len(lines)-1 {
+			pattern.WriteString(`\n`)
+		}
+	}
+
+	re, err := regexp.Compile(pattern.String())
+	if err != nil {
+		return "", "", false, 0
+	}
+
+	matches := re.FindAllStringIndex(base, -1)
+	if len(matches) == 0 {
+		return "", "", false, 0
+	}
+	if len(matches) > 1 {
+		return "", "", false, len(matches)
+	}
+
+	start, end := matches[0][0], matches[0][1]
+	return base[start:end], normalizedNew, true, 1
+}
+
+// normalizeForFlexibleWhitespace removes line-number prefixes and normalizes line endings.
+// It also trims terminal newlines to avoid EOF mismatch from copied snippets.
+func normalizeForFlexibleWhitespace(s string) string {
+	if s == "" {
+		return s
+	}
+	s = (&LineNumberNormalizer{}).Normalize(s)
+	s = (&LineEndingNormalizer{}).Normalize(s)
+	return strings.TrimRight(s, "\n")
 }
 
 // containsExact checks if base contains the exact substring s.
@@ -156,6 +328,25 @@ func joinStrings(strs []string, sep string) string {
 	return string(result)
 }
 
+// intToString converts a non-negative integer to decimal string.
+func intToString(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	// int in Go is signed; this helper is only used for non-negative values.
+	if n < 0 {
+		n = -n
+	}
+	var digits [20]byte
+	i := len(digits)
+	for n > 0 {
+		i--
+		digits[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(digits[i:])
+}
+
 // =============================================================================
 // DEFAULT NORMALIZERS
 // =============================================================================
@@ -165,8 +356,7 @@ func joinStrings(strs []string, sep string) string {
 func DefaultNormalizers() []TextNormalizer {
 	return []TextNormalizer{
 		&LineNumberNormalizer{},
-		// Future normalizers can be added here:
-		// &WhitespaceNormalizer{},
-		// &IndentationNormalizer{},
+		&LineEndingNormalizer{},
+		&TrailingWhitespaceNormalizer{},
 	}
 }

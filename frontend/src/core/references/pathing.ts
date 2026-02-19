@@ -13,7 +13,7 @@
  * Build full path for a folder by walking its parentId chain.
  *
  * @param folderId - The folder ID to build path for
- * @param folderMap - Map of folder ID → { name, parentId }
+ * @param folderMap - Map of folder ID -> { name, parentId }
  * @returns Full path like "parent/child/folder"
  */
 export function buildFolderPath(

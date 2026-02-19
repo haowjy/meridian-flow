@@ -4,8 +4,8 @@ import { decodeDocumentPath } from "@/core/lib/panelHelpers";
 
 // Splat route: catches all segments after /documents/
 // Examples:
-//   /documents/readme → _splat = "readme"
-//   /documents/characters/heroes/aria → _splat = "characters/heroes/aria"
+//   /documents/readme -> _splat = "readme"
+//   /documents/characters/heroes/aria -> _splat = "characters/heroes/aria"
 export const Route = createFileRoute(
   "/_authenticated/projects/$slug/documents/$",
 )({

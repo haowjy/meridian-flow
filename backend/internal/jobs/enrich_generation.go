@@ -36,8 +36,8 @@ const (
 // Token Accuracy Race Window (Expected Behavior):
 // For reasoning-capable models (o1, Grok, DeepSeek-R1, etc.), there is a brief window
 // where turn.output_tokens is incomplete:
-//   1. Stream completes → turn.output_tokens set from streaming metadata (NO reasoning tokens)
-//   2. Background job runs (1s - 8.5 min later) → adds reasoning tokens
+//   1. Stream completes -> turn.output_tokens set from streaming metadata (NO reasoning tokens)
+//   2. Background job runs (1s - 8.5 min later) -> adds reasoning tokens
 //   3. turn.output_tokens now complete (completion + reasoning)
 //
 // This is ACCEPTABLE for backend tracking/billing purposes:

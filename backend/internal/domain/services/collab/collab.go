@@ -196,7 +196,7 @@ const (
 	ArbiterVerdictPassThrough ArbiterVerdict = "pass_through"
 	// ArbiterVerdictAllow means the arbiter explicitly approves auto-accept.
 	ArbiterVerdictAllow ArbiterVerdict = "allow"
-	// ArbiterVerdictRequireReview means the arbiter overrides auto-accept → proposal needs writer review.
+	// ArbiterVerdictRequireReview means the arbiter overrides auto-accept -> proposal needs writer review.
 	ArbiterVerdictRequireReview ArbiterVerdict = "require_review"
 )
 

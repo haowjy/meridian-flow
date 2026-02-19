@@ -12,8 +12,8 @@ import {
  * Folders have children (recursive), documents are leaf nodes.
  *
  * This is a discriminated union - TypeScript can narrow the type based on the `type` field:
- * - if (node.type === 'folder') → node.data is Folder, node.children exists
- * - if (node.type === 'document') → node.data is Document, node.children is undefined
+ * - if (node.type === 'folder') -> node.data is Folder, node.children exists
+ * - if (node.type === 'document') -> node.data is Document, node.children is undefined
  */
 export type TreeNode =
   | {
@@ -138,7 +138,7 @@ export function buildTree(
         data: doc,
       }));
 
-    // Combine and sort: folders → documents, alphabetically within each type
+    // Combine and sort: folders -> documents, alphabetically within each type
     // Note: Skills are handled separately in CollapsibleSkillsSection
     const combined = [...childFolders, ...childDocuments];
 

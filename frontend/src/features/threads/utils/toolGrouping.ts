@@ -122,7 +122,7 @@ export function buildAssistantRenderItems(
  * Groups consecutive thinking blocks and tool interactions into a single
  * collapsible "thinking group" for cleaner UI presentation.
  *
- * Pattern recognized: thinking → tool → thinking → tool → ...
+ * Pattern recognized: thinking -> tool -> thinking -> tool -> ...
  * Groups break when a non-thinking/non-tool item (e.g., text block) appears.
  *
  * This is a second pass over the already-grouped render items.

@@ -95,7 +95,7 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.Crea
 		autoAccept = s.resolveAutoAccept(nil, inputs)
 	}
 
-	// Arbiter evaluation: AI proposals only. Can downgrade auto-accept → require review.
+	// Arbiter evaluation: AI proposals only. Can downgrade auto-accept -> require review.
 	// Arbiter errors are non-fatal: degrade to review-required for writer safety.
 	if req.Source == collabModels.ProposalSourceAI && autoAccept {
 		arbiterInput := collabSvc.ArbiterInput{

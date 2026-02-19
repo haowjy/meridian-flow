@@ -23,7 +23,6 @@ import type {
   RenderContext,
 } from "./types";
 import { getWordBounds } from "./cursorUtils";
-import { hunkRegionsField } from "../diffView/hunkRegionsField";
 import { overlapsExcludedRegion } from "../state/excludedRegions";
 import {
   shikiReadyEffect,
@@ -158,9 +157,9 @@ class LivePreviewPlugin {
     const { state } = view;
     const decorations: DecorationRange[] = [];
 
-    // Get hunk regions as excluded regions (empty array if diff view not active).
-    // The `false` param means don't throw if field doesn't exist.
-    const excludedRegions = state.field(hunkRegionsField, false) ?? [];
+    // Excluded regions: currently empty (PUA diff view removed).
+    // Kept as extension point for future use (e.g., collab conflict regions).
+    const excludedRegions: { from: number; to: number }[] = [];
 
     // Pre-compute cursor word bounds for performance.
     // For non-collapsed selections (drag-select), also include the full selection

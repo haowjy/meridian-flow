@@ -56,9 +56,9 @@ func NewDocumentService(
 
 // CreateDocument creates a new document with priority-based folder resolution
 // Supports Unix-style path notation in name field:
-//   - "name" → create document with given name at folder_id
-//   - "a/b/c" → auto-create intermediate folders (a, b) and document (c) at folder_id
-//   - "/a/b/c" → absolute path from root (ignore folder_id)
+//   - "name" -> create document with given name at folder_id
+//   - "a/b/c" -> auto-create intermediate folders (a, b) and document (c) at folder_id
+//   - "/a/b/c" -> absolute path from root (ignore folder_id)
 func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.CreateDocumentRequest) (*models.Document, error) {
 	// Normalize empty string folder_id to nil for root-level documents
 	if req.FolderID != nil && *req.FolderID == "" {
@@ -271,25 +271,9 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 		doc.Content = *req.Content
 	}
 
-	// Unified word count recalculation — placed AFTER all field mutations (content, extension,
-	// ai_version) so the count reflects the effective document state.
-	// When ai_version exists, word count should reflect ai_version (the latest text the user sees).
+	// Word count recalculation — placed AFTER all field mutations (content, extension)
 	if models.IsMarkdownExtension(doc.Extension) {
-		// Determine effective content for word count:
-		// - If ai_version is being SET in this request → use that value
-		// - If ai_version is being CLEARED → fall back to doc.Content
-		// - If ai_version is unchanged and exists on doc → use existing ai_version
-		// - If ai_version is unchanged and absent → use doc.Content
-		effectiveContent := doc.Content
-		if req.AIVersion.Present {
-			if req.AIVersion.Value != nil {
-				effectiveContent = *req.AIVersion.Value
-			}
-			// else: being cleared → effectiveContent stays as doc.Content
-		} else if doc.AIVersion != nil {
-			effectiveContent = *doc.AIVersion
-		}
-		doc.SetMarkdownWordCount(s.contentAnalyzer.CountWords(effectiveContent))
+		doc.SetMarkdownWordCount(s.contentAnalyzer.CountWords(doc.Content))
 	} else {
 		doc.ClearMarkdownMetadata()
 	}
@@ -313,83 +297,6 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 
 	doc.UpdatedAt = time.Now()
 
-	// If ai_version is being updated, use CAS (compare-and-swap) for concurrency safety
-	if req.AIVersion.Present {
-		var result *models.Document
-		err := s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
-			// Update document fields first (name, folder, content)
-			if err := s.docRepo.Update(txCtx, doc); err != nil {
-				return err
-			}
-
-			// Atomic CAS update for ai_version with revision check
-			rowsAffected, err := s.docRepo.UpdateWithAIVersionCheck(txCtx, docsysRepo.UpdateWithAIVersionParams{
-				ID:               documentID,
-				AIVersion:        req.AIVersion.Value,
-				AIVersionBaseRev: req.AIVersionBaseRev,
-				// Other fields already updated above, pass nil to skip (COALESCE keeps current)
-			})
-			if err != nil {
-				return err
-			}
-			if rowsAffected == 0 {
-				// CAS failed - ai_version_rev mismatch
-				// Fetch current doc to include in conflict response
-				currentDoc, fetchErr := s.docRepo.GetByIDOnly(txCtx, documentID)
-				if fetchErr != nil {
-					s.logger.Debug("failed to fetch doc for conflict response", "doc_id", documentID, "error", fetchErr)
-				}
-				return &domain.AIVersionConflictError{
-					Message:  "ai_version was modified since last fetch",
-					Document: currentDoc,
-				}
-			}
-
-			// Re-fetch for consistent response (captures updated timestamps)
-			fetched, err := s.docRepo.GetByIDOnly(txCtx, documentID)
-			if err != nil {
-				return err
-			}
-			result = fetched
-			return nil
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		// Touch project activity when content changes (non-fatal, outside tx)
-		if req.Content != nil {
-			if err := s.projectRepo.TouchLastActivityAt(ctx, result.ProjectID); err != nil {
-				s.logger.Warn("failed to touch project activity",
-					"project_id", result.ProjectID,
-					"error", err,
-				)
-			}
-		}
-
-		// Compute display path (outside tx, non-critical)
-		path, err := s.docRepo.GetPath(ctx, result)
-		if err != nil {
-			s.logger.Warn("failed to compute path", "doc_id", result.ID, "error", err)
-			result.Path = result.Filename()
-		} else {
-			result.Path = path
-		}
-
-		action := "updated"
-		if req.AIVersion.Value == nil {
-			action = "cleared"
-		}
-		s.logger.Debug("document updated with ai_version "+action,
-			"id", result.ID,
-			"name", result.Name,
-			"project_id", result.ProjectID,
-		)
-
-		return result, nil
-	}
-
-	// Non-transactional path (no ai_version change)
 	if err := s.docRepo.Update(ctx, doc); err != nil {
 		return nil, err
 	}
@@ -416,64 +323,6 @@ func (s *documentService) UpdateDocument(ctx context.Context, userID, documentID
 	s.logger.Debug("document updated",
 		"id", doc.ID,
 		"name", doc.Name,
-		"project_id", doc.ProjectID,
-	)
-
-	return doc, nil
-}
-
-// Deprecated: Use CollabProposalStrategy instead. Retained for feature flag fallback.
-// UpdateAIVersion updates the ai_version field for a document.
-// Authorization is checked first via the injected authorizer.
-// Pass nil to clear ai_version (reject suggestions).
-func (s *documentService) UpdateAIVersion(ctx context.Context, userID, documentID string, aiVersion *string) (*models.Document, error) {
-	// Authorize: check user can access this document
-	if err := s.authorizer.CanAccessDocument(ctx, userID, documentID); err != nil {
-		return nil, err
-	}
-
-	// Fetch document to compute word count from effective content
-	doc, err := s.docRepo.GetByIDOnly(ctx, documentID)
-	if err != nil {
-		return nil, err
-	}
-	if doc == nil {
-		return nil, fmt.Errorf("document not found: %s", documentID)
-	}
-
-	// Recalculate word count from effective content:
-	// - If setting ai_version, count words from new ai_version
-	// - If clearing ai_version (nil), fall back to doc.Content
-	doc.EnsureMetadata()
-	if models.IsMarkdownExtension(doc.Extension) {
-		effectiveContent := doc.Content
-		if aiVersion != nil {
-			effectiveContent = *aiVersion
-		}
-		doc.SetMarkdownWordCount(s.contentAnalyzer.CountWords(effectiveContent))
-	}
-
-	// Persist ai_version + metadata atomically; RETURNING gives us consistent timestamps
-	doc, err = s.docRepo.UpdateAIVersion(ctx, documentID, aiVersion, doc.Metadata)
-	if err != nil {
-		return nil, err
-	}
-
-	// Compute display path
-	path, err := s.docRepo.GetPath(ctx, doc)
-	if err != nil {
-		s.logger.Warn("failed to compute path", "doc_id", doc.ID, "error", err)
-		doc.Path = doc.Filename()
-	} else {
-		doc.Path = path
-	}
-
-	action := "updated"
-	if aiVersion == nil {
-		action = "cleared"
-	}
-	s.logger.Debug("document ai_version "+action,
-		"id", doc.ID,
 		"project_id", doc.ProjectID,
 	)
 

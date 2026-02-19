@@ -154,7 +154,7 @@ export function DocumentTreePanel({
             </div>
           </div>
 
-          {/* Row 2: Search + action buttons (search → create flow) */}
+          {/* Row 2: Search + action buttons (search -> create flow) */}
           <div className="flex items-center gap-1.5 px-2 pb-1.5">
             <Input
               type="search"

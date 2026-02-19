@@ -12,7 +12,7 @@ const SKILL_DESCRIPTION_MAX_CHARS = 100;
 // TODO: Future enhancements for TreeItemInfoContent:
 // - TreeItemInfoSummary: AI-generated summary (read-only display)
 // - TreeItemInfoTags: Tag display (read-only chips)
-// - Edit actions: Single "Edit" button → popup with all editable fields
+// - Edit actions: Single "Edit" button -> popup with all editable fields
 //   (tags, summary, etc.) rather than individual edit menu items
 
 interface FolderContentProps {

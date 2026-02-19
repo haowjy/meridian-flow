@@ -125,14 +125,14 @@ export const DocumentTreeItem = memo(function DocumentTreeItem({
           <button
             type="button"
             onClick={(e) => {
-              // Modifier key pressed → toggle selection
+              // Modifier key pressed -> toggle selection
               if (e.metaKey || e.ctrlKey) {
                 e.preventDefault();
                 toggleSelection(document.id);
                 return;
               }
 
-              // No modifier → clear selection and navigate
+              // No modifier -> clear selection and navigate
               clearSelection();
               onClick(document.id);
             }}

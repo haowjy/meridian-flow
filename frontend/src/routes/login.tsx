@@ -5,7 +5,7 @@ import { Logo } from "@/shared/components";
 
 export const Route = createFileRoute("/login")({
   beforeLoad: async () => {
-    // Already logged in → redirect to projects
+    // Already logged in -> redirect to projects
     const supabase = createClient();
     const {
       data: { session },

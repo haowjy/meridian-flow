@@ -40,9 +40,9 @@ export function WorkspaceRail({ className, projectSlug }: WorkspaceRailProps) {
 
   /**
    * Smart toggle handler for rail buttons.
-   * - Click active view when expanded → collapse panel
-   * - Click active view when collapsed → expand panel
-   * - Click different view → switch view AND expand if collapsed
+   * - Click active view when expanded -> collapse panel
+   * - Click active view when collapsed -> expand panel
+   * - Click different view -> switch view AND expand if collapsed
    */
   const handleViewClick = (
     targetView: "chat" | "threads" | "projectSettings",

@@ -15,8 +15,8 @@ interface EditableThreadTitleProps {
  * Design pattern inspired by Claude.ai chat headers:
  * - Connected buttons with thin divider (title rounded-l, chevron rounded-r)
  * - Layered hover states (subtle group hover + stronger individual hover)
- * - Click title → Trigger edit mode
- * - Click chevron → Open dropdown menu
+ * - Click title -> Trigger edit mode
+ * - Click chevron -> Open dropdown menu
  */
 export function EditableThreadTitle({
   threadTitle,

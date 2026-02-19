@@ -94,7 +94,7 @@ export default function WorkspaceLayout({
   // component itself does not render (e.g., due to nesting or Outlet usage).
   //
   // Path format: captures ALL segments after /documents/ and decodes them.
-  // Example: /documents/Characters/Heroes/Aria.md → "Characters/Heroes/Aria.md"
+  // Example: /documents/Characters/Heroes/Aria.md -> "Characters/Heroes/Aria.md"
   const urlDocumentPath = useMemo(() => {
     const segments = location.pathname.split("/").filter(Boolean);
     const documentsIndex = segments.indexOf("documents");
@@ -224,7 +224,7 @@ export default function WorkspaceLayout({
   }, [projectIdentifier]);
 
   // Reset UI state when switching between projects to prevent context leakage
-  // Skip on first project load (null → UUID) to preserve deep-link state
+  // Skip on first project load (null -> UUID) to preserve deep-link state
   useEffect(() => {
     logger.debug("[SKILL-DEEPLINK] Project reset effect triggered", {
       projectId,
@@ -329,7 +329,7 @@ export default function WorkspaceLayout({
   }, [effectiveDocumentId]);
 
   // For deep links: load the tree once in the background if empty
-  // Uses effectiveDocumentPath (not effectiveDocumentId) since we need tree loaded to resolve path → ID
+  // Uses effectiveDocumentPath (not effectiveDocumentId) since we need tree loaded to resolve path -> ID
   useEffect(() => {
     if (!effectiveDocumentPath) return;
     if (projectId === null) return; // Wait for project to be resolved
@@ -363,7 +363,7 @@ export default function WorkspaceLayout({
   }, [documentsCount, documents, effectiveDocumentId]);
 
   // For deep links: load skills once in the background if empty
-  // Uses effectiveSkillName (not effectiveSkillId) since we need skills loaded to resolve name → ID
+  // Uses effectiveSkillName (not effectiveSkillId) since we need skills loaded to resolve name -> ID
   useEffect(() => {
     logger.debug("[SKILL-DEEPLINK] Skill loading effect check", {
       effectiveSkillName,

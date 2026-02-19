@@ -64,7 +64,7 @@ export function dispatchSSEEvent(
   ) => {
     let parsed: T;
     try {
-      // Use SSE gateway parser for consistent snake_case → camelCase conversion
+      // Use SSE gateway parser for consistent snake_case -> camelCase conversion
       parsed = parseSSEEvent<T>(data);
     } catch (parseError) {
       logger.error(`sse:${eventType}:parse_error`, {
@@ -123,7 +123,7 @@ export function dispatchSSEEvent(
 
     // ============================================================
     // AG-UI Thinking Events
-    // Nested structure: THINKING_START → TEXT_MESSAGE_* → THINKING_END
+    // Nested structure: THINKING_START -> TEXT_MESSAGE_* -> THINKING_END
     // ============================================================
 
     case SSE_EVENTS.THINKING_START:

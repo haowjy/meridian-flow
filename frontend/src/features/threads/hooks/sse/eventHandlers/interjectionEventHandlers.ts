@@ -45,8 +45,8 @@ export function handleStreamSwitch(
     newStreamUrl: data.streamUrl,
   });
 
-  // Convert TurnDto → Turn (dates become Date objects)
-  // SSE parser already converted snake_case → camelCase, but dates are still strings
+  // Convert TurnDto -> Turn (dates become Date objects)
+  // SSE parser already converted snake_case -> camelCase, but dates are still strings
   const userTurn = turnDtoToTurn(data.userTurn);
   const assistantTurn = turnDtoToTurn(data.assistantTurn);
 

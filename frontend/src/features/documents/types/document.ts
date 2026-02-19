@@ -22,18 +22,6 @@ export interface Document {
    * Computed from extension in DTO mapper.
    */
   fileType: EditorType;
-  /**
-   * AI-suggested version of the document content.
-   * When present, frontend computes diff(content, aiVersion) to show inline suggestions.
-   * null/undefined means no pending AI suggestions.
-   */
-  aiVersion?: string | null;
-  /**
-   * Revision counter for ai_version (compare-and-swap token).
-   * Used to prevent client saves from overwriting unseen server AI updates.
-   * Must be included as ai_version_base_rev when PATCHing ai_version.
-   */
-  aiVersionRev?: number;
   /** Number of pending AI proposals for this document (from tree API) */
   pendingProposalCount?: number;
 }

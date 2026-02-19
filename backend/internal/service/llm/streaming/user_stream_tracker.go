@@ -11,7 +11,7 @@ import (
 // Uses sync.Mutex (not sync.Map) because Acquire requires an atomic check-and-increment.
 type UserStreamTracker struct {
 	mu     sync.Mutex
-	counts map[string]int // userID → active stream count
+	counts map[string]int // userID -> active stream count
 	limit  int
 }
 

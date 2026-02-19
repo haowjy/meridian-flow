@@ -127,7 +127,7 @@ func main() {
 	docsysValidator := serviceDocsys.NewResourceValidator(projectRepo, folderRepo)
 
 	// Create authorizer (ownership-based, swappable for role-based later)
-	// Needs all repositories for checking ownership chains (turn → thread → project → user)
+	// Needs all repositories for checking ownership chains (turn -> thread -> project -> user)
 	authorizer := serviceAuth.NewOwnerBasedAuthorizer(projectRepo, folderRepo, docRepo, threadRepo, turnRepo)
 
 	// Create favorite repository
@@ -441,7 +441,7 @@ func main() {
 	var handler http.Handler = mux
 
 	// Apply middleware in reverse order (they wrap each other)
-	// Order: CORS → Recovery → Auth → Routes
+	// Order: CORS -> Recovery -> Auth -> Routes
 	handler = middleware.AuthMiddleware(jwtVerifier)(handler)
 	handler = middleware.Recovery(logger)(handler)
 

@@ -105,9 +105,9 @@ export function addRetryOperation(
  * Cancel any pending retry for a document.
  *
  * This is called when:
- * 1. A new save is triggered (user kept typing) → abandon old retry
- * 2. A retry succeeds → remove from queue
- * 3. Max retries reached → remove from queue
+ * 1. A new save is triggered (user kept typing) -> abandon old retry
+ * 2. A retry succeeds -> remove from queue
+ * 3. Max retries reached -> remove from queue
  *
  * This prevents stale retries from overwriting newer content.
  */

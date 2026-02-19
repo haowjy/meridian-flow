@@ -24,17 +24,6 @@ type DocumentRepository interface {
 	// Update updates an existing document
 	Update(ctx context.Context, doc *docsystem.Document) error
 
-	// Deprecated: Use CollabProposalStrategy instead. Retained for feature flag fallback.
-	// UpdateAIVersion updates the ai_version and metadata fields for a document.
-	// Pass nil aiVersion to clear ai_version (reject suggestions).
-	// metadata is persisted atomically so word count stays consistent with ai_version.
-	// Returns the updated document with consistent timestamps via RETURNING.
-	UpdateAIVersion(ctx context.Context, id string, aiVersion *string, metadata docsystem.DocumentMetadata) (*docsystem.Document, error)
-
-	// UpdateWithAIVersionCheck atomically updates content + ai_version with CAS.
-	// Returns rowsAffected: 0 means rev mismatch (conflict), 1 means success.
-	UpdateWithAIVersionCheck(ctx context.Context, params UpdateWithAIVersionParams) (int64, error)
-
 	// Delete deletes a document
 	Delete(ctx context.Context, id, projectID string) error
 
@@ -58,14 +47,4 @@ type DocumentRepository interface {
 	// GetAllByFolderRecursive returns all documents in a folder and all its descendant folders.
 	// Used for recursive folder operations.
 	GetAllByFolderRecursive(ctx context.Context, folderID, projectID string) ([]docsystem.Document, error)
-}
-
-// UpdateWithAIVersionParams contains parameters for atomic ai_version update with CAS.
-type UpdateWithAIVersionParams struct {
-	ID               string  // Document ID
-	Content          *string // nil = don't change, &"" = set empty, &"text" = set value
-	Name             *string // nil = don't change
-	FolderID         *string // nil = don't change
-	AIVersion        *string // nil = clear, &"" = set empty, &"text" = set value
-	AIVersionBaseRev int     // Client's last-seen revision (for CAS check)
 }

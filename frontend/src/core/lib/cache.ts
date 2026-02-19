@@ -197,14 +197,14 @@ export class ReconcileNewestPolicy<T> implements LoadPolicy<T> {
         onIntermediate?.({ data: cached, source: "cache", isFinal: false });
       }
     } catch {
-      // cache read failure → ignore, rely on server
+      // cache read failure -> ignore, rely on server
     }
 
     try {
       const server = await remotePromise;
 
       if (!cached) {
-        // No cache → server wins, update cache
+        // No cache -> server wins, update cache
         await cacheRepo.put(server);
         return { data: server, source: "server", isFinal: true };
       }
@@ -286,7 +286,7 @@ export class StaleWhileRevalidatePolicy<T> implements LoadPolicy<T> {
         onIntermediate?.({ data: cached, source: "cache", isFinal: false });
       }
     } catch {
-      // cache read failure → ignore, rely on server
+      // cache read failure -> ignore, rely on server
     }
 
     try {

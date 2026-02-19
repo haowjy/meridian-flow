@@ -37,7 +37,7 @@ func (c *AnthropicTokenCounter) CountOutputTokens(ctx context.Context, model str
 	}
 
 	// Normalize OpenRouter model names to Anthropic API format
-	// e.g., "anthropic/claude-3.5-sonnet" → "claude-3-5-sonnet-latest"
+	// e.g., "anthropic/claude-3.5-sonnet" -> "claude-3-5-sonnet-latest"
 	apiModel := normalizeModelForAnthropicAPI(model)
 
 	// Anthropic's count_tokens endpoint requires a valid model

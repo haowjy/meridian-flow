@@ -74,9 +74,9 @@ func NewFolderService(
 
 // CreateFolder creates a new folder
 // Supports Unix-style path notation:
-//   - "name" → create folder with given name at folder_id
-//   - "a/b/c" → auto-create intermediate folders (a, b) and final folder (c) at folder_id
-//   - "/a/b/c" → absolute path from root (ignore folder_id)
+//   - "name" -> create folder with given name at folder_id
+//   - "a/b/c" -> auto-create intermediate folders (a, b) and final folder (c) at folder_id
+//   - "/a/b/c" -> absolute path from root (ignore folder_id)
 func (s *folderService) CreateFolder(ctx context.Context, req *docsysSvc.CreateFolderRequest) (*models.Folder, error) {
 	// Normalize empty string to nil for root-level folders
 	if req.FolderID != nil && *req.FolderID == "" {

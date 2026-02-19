@@ -133,7 +133,7 @@ export interface DocumentReference {
  * Canonical ordered representation of a turn's user content.
  * Preserves interleaving of text and reference pills as authored by the user.
  *
- * Used throughout: composer extraction → API serialization → store → display.
+ * Used throughout: composer extraction -> API serialization -> store -> display.
  */
 export type ContentBlock =
   | { type: "text"; text: string }

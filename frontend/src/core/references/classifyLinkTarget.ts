@@ -5,7 +5,7 @@
  * anchor-only (#fragment), or unsupported (absolute paths, query strings).
  *
  * Key behavior: If a relative path doesn't resolve to a document/folder in the tree,
- * it's treated as an external URL (e.g., "google.com" → external, not broken internal).
+ * it's treated as an external URL (e.g., "google.com" -> external, not broken internal).
  */
 
 import type { LinkClassification } from "./types";

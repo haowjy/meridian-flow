@@ -322,7 +322,7 @@ export const CodeMirrorEditor = forwardRef<
       // Theming (wrapped in compartment for runtime switching)
       themeCompartment.of(editorTheme),
 
-      // Click below content → move cursor to end
+      // Click below content -> move cursor to end
       clickBelowContentExtension,
 
       // Line wrapping

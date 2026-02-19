@@ -22,7 +22,7 @@ type NavigateFunction = ReturnType<typeof useNavigate>;
  * Encodes a document path for use in URLs.
  * Returns path as-is - TanStack Router handles URL encoding automatically.
  * (Previously we encoded here, causing double-encoding since router also encodes.)
- * Example: "Chapter 1/Scene 2.md" → "Chapter 1/Scene 2.md" (router encodes to "Chapter%201/Scene%202.md")
+ * Example: "Chapter 1/Scene 2.md" -> "Chapter 1/Scene 2.md" (router encodes to "Chapter%201/Scene%202.md")
  */
 export function encodeDocumentPath(path: string): string {
   return path;
@@ -32,8 +32,8 @@ export function encodeDocumentPath(path: string): string {
  * Decodes a URL path back to a document path.
  * Handles both single-encoded (%20) and double-encoded (%2520) URLs.
  * Double-encoding can occur from legacy bookmarks or manual URL construction.
- * Example: "Chapter%201/Scene%202.md" → "Chapter 1/Scene 2.md"
- * Example: "Chapter%25201/Scene%25202.md" → "Chapter 1/Scene 2.md"
+ * Example: "Chapter%201/Scene%202.md" -> "Chapter 1/Scene 2.md"
+ * Example: "Chapter%25201/Scene%25202.md" -> "Chapter 1/Scene 2.md"
  */
 export function decodeDocumentPath(urlPath: string): string {
   let decoded = urlPath.split("/").map(decodeURIComponent).join("/");
