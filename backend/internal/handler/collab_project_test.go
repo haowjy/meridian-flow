@@ -254,6 +254,12 @@ func authenticateWS(t *testing.T, conn *websocket.Conn, token string) {
 	if err := websocket.Message.Send(conn, token); err != nil {
 		t.Fatalf("send auth token: %v", err)
 	}
+
+	// Read the project:connected ack that signals auth success.
+	ack := readWSJSONMessage(t, conn)
+	if ack["type"] != "project:connected" {
+		t.Fatalf("expected project:connected after auth, got %v", ack["type"])
+	}
 }
 
 // --- Tests ---
@@ -276,7 +282,10 @@ func TestProjectWS_AuthFailed(t *testing.T) {
 	conn := dialProjectWS(t, server.URL, testProjectID)
 	defer conn.Close()
 
-	authenticateWS(t, conn, "bad-token")
+	// Send bad token directly (don't use authenticateWS which expects project:connected).
+	if err := websocket.Message.Send(conn, "bad-token"); err != nil {
+		t.Fatalf("send auth token: %v", err)
+	}
 
 	got := readWSErrorMessage(t, conn)
 	if got.Code != "AUTH_FAILED" {

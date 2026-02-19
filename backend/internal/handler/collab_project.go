@@ -65,6 +65,17 @@ func (h *CollabHandler) handleProjectSocket(ctx context.Context, projectID strin
 		"connection_id", wsConn.ID(),
 	)
 
+	// Signal auth success so the client knows it's safe to send commands.
+	if err := wsConn.SendJSON(struct {
+		Type string `json:"type"`
+	}{Type: wsTypeProjectConnected}); err != nil {
+		h.logger.Debug("project ws failed to send project:connected",
+			"project_id", projectID,
+			"error", err,
+		)
+		return
+	}
+
 	registry := newProjectSubscriptionRegistry(projectMaxDocSubscriptions)
 	defer h.cleanupProjectSubscriptions(ctx, registry, projectID, wsConn.ID())
 

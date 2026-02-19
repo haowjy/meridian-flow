@@ -17,7 +17,7 @@ feature: "State Management"
 **Zustand Stores** - 5 stores (Project, Tree, Thread, UI, Editor)
 - See [zustand-stores.md](zustand-stores.md)
 
-**IndexedDB Caching** - Dexie (documents, threads, messages)
+**IndexedDB Caching** - Dexie v5 (`documents`, `threads`, `messages`, `projectTrees`, `pendingDocumentSaves`, `pendingTreeOps`)
 - See [indexeddb-caching.md](indexeddb-caching.md)
 
 **Optimistic Updates** - Write to cache immediately, sync to server
