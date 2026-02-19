@@ -381,6 +381,7 @@ func main() {
 
 	// Collaboration routes
 	mux.HandleFunc("GET /ws/documents/{id}", collabHandler.ConnectDocument)
+	mux.HandleFunc("GET /ws/projects/{projectId}", collabHandler.ConnectProject)
 
 	// Snapshot routes (collab document version history)
 	mux.HandleFunc("POST /api/documents/{id}/snapshots", collabSnapshotHandler.CreateSnapshot)
