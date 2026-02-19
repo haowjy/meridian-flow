@@ -101,43 +101,6 @@ type groupAcceptOutcomeDTO struct {
 	Error      *string `json:"error,omitempty"`
 }
 
-func (h *CollabHandler) handleTextMessage(
-	ctx context.Context,
-	conn *websocketDocumentConnection,
-	docID string,
-	docUUID uuid.UUID,
-	userUUID uuid.UUID,
-	raw []byte,
-	heartbeatAcks chan<- struct{},
-) bool {
-	if len(raw) == 0 || raw[0] != '{' {
-		return false
-	}
-
-	var typed collabTypedMessage
-	if err := json.Unmarshal(raw, &typed); err != nil {
-		return false
-	}
-
-	switch typed.Type {
-	case wsTypeHeartbeat:
-		nonBlockingSignal(heartbeatAcks)
-		return true
-	case wsTypeProposalAccept:
-		h.handleProposalAccept(ctx, conn, docID, docUUID, userUUID, raw)
-		return true
-	case wsTypeProposalReject:
-		h.handleProposalReject(ctx, conn, docID, docUUID, userUUID, raw)
-		return true
-	case wsTypeProposalGroupAccept:
-		h.handleProposalGroupAccept(ctx, conn, docID, docUUID, userUUID, raw)
-		return true
-	default:
-		// Ignore unknown JSON message types for forward compatibility.
-		return true
-	}
-}
-
 func (h *CollabHandler) handleProposalAccept(
 	ctx context.Context,
 	conn *websocketDocumentConnection,

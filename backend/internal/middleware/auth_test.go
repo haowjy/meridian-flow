@@ -40,7 +40,7 @@ func TestAuthMiddleware_SkipsWebSocketRoutes(t *testing.T) {
 	})
 
 	handler := AuthMiddleware(verifier)(next)
-	req := httptest.NewRequest(http.MethodGet, "/ws/documents/doc-1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/ws/projects/proj-1", nil)
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 

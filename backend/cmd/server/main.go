@@ -380,7 +380,6 @@ func main() {
 	mux.HandleFunc("DELETE /api/documents/{id}", newDocHandler.DeleteDocument)
 
 	// Collaboration routes
-	mux.HandleFunc("GET /ws/documents/{id}", collabHandler.ConnectDocument)
 	mux.HandleFunc("GET /ws/projects/{projectId}", collabHandler.ConnectProject)
 
 	// Snapshot routes (collab document version history)
