@@ -24,7 +24,7 @@ feature: "IndexedDB Caching"
 - `pendingDocumentSaves` - Persistent last-write-wins document save queue (`documentId`, `content`, `createdAt`)
 - `pendingTreeOps` - Persistent ordered tree mutation queue (`++id`, `projectId`, `[projectId+status]`)
 
-**Note**: Thread/turn Dexie caching is intentionally disabled for MVP (`useThreadStore.ts`). The three offline-first tables are v5 schema foundations and are used by follow-up slices.
+**Note**: Thread/turn Dexie caching is intentionally disabled for MVP (`useThreadStore.ts`). Offline-first document/tree flows actively use `projectTrees`, `pendingDocumentSaves`, and `pendingTreeOps`.
 
 ---
 
