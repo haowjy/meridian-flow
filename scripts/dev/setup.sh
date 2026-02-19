@@ -1,19 +1,11 @@
 #!/usr/bin/env bash
 # Create a tmux dev session with backend + frontend panes.
-# Reads optional .dev-ports for per-worktree port overrides.
+# Session name and ports are derived from the worktree directory — see lib.sh.
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SESSION="ms_server"
-
-# Load port overrides if present
-BACKEND_PORT=8080
-FRONTEND_PORT=5173
-if [[ -f "$REPO_ROOT/.dev-ports" ]]; then
-  # shellcheck source=/dev/null
-  source "$REPO_ROOT/.dev-ports"
-fi
+# shellcheck source=lib.sh
+source "$(dirname "$0")/lib.sh"
 
 # Kill existing session if present
 tmux kill-session -t "$SESSION" 2>/dev/null || true
