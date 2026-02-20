@@ -16,7 +16,6 @@ import { useLatestRef } from "@/core/hooks";
 import { getAdapter } from "@/core/editor/adapters";
 import { detectEditorType } from "@/core/editor/types/editorRegistry";
 import { isCollabEnabled } from "../lib/collabFeatureFlag";
-import { useCollabStore } from "../stores/useCollabStore";
 import type { BaseEditorRef } from "@/core/editor/types/editorRegistry";
 
 // =============================================================================
@@ -45,8 +44,6 @@ export interface DocumentSyncContext<TEditor = any> {
   editVersionRef: React.MutableRefObject<number>;
   /** Conditionally reset editVersion to 0 only if no new edits arrived since save started */
   resetEditVersion: (savedAtVersion: number) => void;
-  /** Increment editVersion (for use in diff view accept/reject) */
-  incrementEditVersion: () => void;
   // Refs for cleanup effects (stale closure prevention)
   localDocumentRef: React.MutableRefObject<TEditor>;
   hasUserEditRef: React.MutableRefObject<boolean>;
@@ -65,10 +62,8 @@ export interface DocumentSyncContext<TEditor = any> {
 export interface UseDocumentContentResult<TEditor = any> {
   // Content state
   localDocument: TEditor;
-  setLocalDocument: (content: TEditor) => void;
   isInitialized: boolean;
   isEditable: boolean;
-  isEditorReady: boolean;
 
   // Dirty tracking
   hasUserEdit: boolean;
@@ -116,9 +111,6 @@ export function useDocumentContent<TEditor = any>(
   const _activeDocumentId = useEditorStore((s) => s._activeDocumentId);
   const isLoading = useEditorStore((s) => s.isLoading);
   const loadDocument = useEditorStore((s) => s.loadDocument);
-  const collabConnectionState = useCollabStore(
-    (s) => s.stateByDocumentId[documentId] ?? "disconnected",
-  );
 
   // ---------------------------------------------------------------------------
   // LOCAL STATE
@@ -171,18 +163,11 @@ export function useDocumentContent<TEditor = any>(
     setEditVersion((current) => (current === savedAtVersion ? 0 : current));
   }, []);
 
-  /** Increment editVersion (for use in diff view accept/reject) */
-  const incrementEditVersion = useCallback(() => {
-    setEditVersion((v) => v + 1);
-  }, []);
-
-  // Base editor gate applies to all file types.
-  const baseIsEditable =
-    isInitialized && activeDocument?.id === documentId && !isLoading;
-  // Collab docs stay read-only until this document's WS session is connected.
+  // Editable once document is initialized and loaded.
+  // Collab docs don't need to wait for WS — Yjs CRDTs handle offline edits
+  // and merge automatically when the connection is restored.
   const isEditable =
-    baseIsEditable &&
-    (!collabEnabled || collabConnectionState === "connected");
+    isInitialized && activeDocument?.id === documentId && !isLoading;
 
   // ---------------------------------------------------------------------------
   // CALLBACKS
@@ -326,7 +311,7 @@ export function useDocumentContent<TEditor = any>(
     // If editor just became ready but content was already loaded,
     // ensure editor has the correct content
     const currentEditorContent = editorRef.current?.getContent();
-    if (currentEditorContent !== localDocument && localDocument) {
+    if (currentEditorContent !== localDocument && localDocument !== undefined) {
       editorRef.current?.setContent(localDocument, {
         addToHistory: false,
         emitChange: false,
@@ -351,7 +336,6 @@ export function useDocumentContent<TEditor = any>(
     setPendingServerSnapshot,
     editVersionRef,
     resetEditVersion,
-    incrementEditVersion,
     localDocumentRef,
     hasUserEditRef,
     initializedRef,
@@ -364,10 +348,8 @@ export function useDocumentContent<TEditor = any>(
 
   return {
     localDocument,
-    setLocalDocument,
     isInitialized,
     isEditable,
-    isEditorReady,
     hasUserEdit,
     handleEditorReady,
     handleContentChange,

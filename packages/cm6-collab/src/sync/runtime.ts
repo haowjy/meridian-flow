@@ -52,6 +52,9 @@ export interface CreateCollabSyncRuntimeOptions {
   textKey?: string;
   sendBinary: (frame: Uint8Array) => void;
   onStatusChange?: (status: CollabSyncStatus) => void;
+  /** Fires once after the first SyncStep2 is processed (server diff = initial sync done).
+   *  Does NOT re-fire on subsequent messages. */
+  onInitialSyncComplete?: () => void;
 }
 
 /**
@@ -68,17 +71,20 @@ export class CollabSyncRuntime {
 
   private readonly sendBinary: (frame: Uint8Array) => void;
   private readonly onStatusChange?: (status: CollabSyncStatus) => void;
+  private readonly onInitialSyncComplete?: () => void;
   private readonly onDocUpdate: (update: Uint8Array, origin: unknown) => void;
   private readonly onAwarenessUpdate: (
     data: { added: number[]; updated: number[]; removed: number[] },
     origin: unknown,
   ) => void;
   private status: CollabSyncStatus = "disconnected";
+  private didFireInitialSync = false;
 
   constructor(options: CreateCollabSyncRuntimeOptions) {
     this.documentId = options.documentId;
     this.sendBinary = options.sendBinary;
     this.onStatusChange = options.onStatusChange;
+    this.onInitialSyncComplete = options.onInitialSyncComplete;
 
     this.ydoc = new Y.Doc({ guid: options.documentId });
     this.ytext = this.ydoc.getText(options.textKey ?? "content");
@@ -167,6 +173,12 @@ export class CollabSyncRuntime {
       case MeridianEnvelopeType.SyncStep2:
       case MeridianEnvelopeType.Update:
         this.handleSyncPayload(payload);
+        // SyncStep2 = server's diff response = initial sync is complete.
+        // Fire callback once so consumers know server state is in ytext.
+        if (envelope === MeridianEnvelopeType.SyncStep2 && !this.didFireInitialSync) {
+          this.didFireInitialSync = true;
+          this.onInitialSyncComplete?.();
+        }
         return;
       case MeridianEnvelopeType.Awareness:
         applyAwarenessUpdate(this.awareness, payload, this);
