@@ -268,8 +268,45 @@ See `internal/repository/postgres/connection.go`
 
 ## General Conventions
 
-### Server Management
+### Dev Environment Setup
 
+The dev environment uses tmux to run backend + frontend in parallel, with worktree-aware port allocation.
+
+**First-time setup:**
+1. `cp backend/.env.example backend/.env` — edit with Supabase/API credentials
+2. `cp frontend/.env.example frontend/.env.local` — set `VITE_API_URL` to match backend port (see below)
+3. `cp scripts/get-token.sh.example scripts/get-token.sh && chmod +x scripts/get-token.sh` — edit credentials
+4. `./scripts/dev/setup.sh` — creates tmux session with backend + frontend
+
+**Port allocation:**
+- Backend port is computed per worktree: `8080 + hash(directory_name) % 100`
+- Frontend port is always `3000`
+- The backend port is passed as a Make variable override (`make run-local PORT=<port>`) to take precedence over `backend/.env`
+- `frontend/.env.local` must set `VITE_API_URL` to match the backend port for this worktree
+
+Common worktree ports (from `scripts/dev/lib.sh`):
+
+| Worktree | Backend Port |
+|----------|-------------|
+| meridian | 8140 |
+| meridian-agents | 8170 |
+| meridian-collab | 8130 |
+
+To check your worktree's port: `source scripts/dev/lib.sh && echo $BACKEND_PORT`
+
+Optional override: create `.dev-ports` (gitignored) in repo root:
+```bash
+BACKEND_PORT=8081
+FRONTEND_PORT=3001
+```
+
+**Daily usage:**
+- Start: `./scripts/dev/setup.sh` (creates tmux session)
+- Restart backend: `./scripts/restart-server.sh`
+- Attach: `tmux attach -t <session-name>`
+- Session name = repo directory basename (e.g., `meridian-collab`)
+
+**Agent permissions:**
 - Claude CAN restart the backend server via: `./scripts/restart-server.sh`
 - Claude CAN run curl commands to test APIs
 - Claude CAN run `./scripts/get-token.sh` to refresh `ACCESS_TOKEN` in root `.env` before authenticated smoke tests
@@ -290,7 +327,7 @@ See `internal/repository/postgres/connection.go`
 - Get a dev access token: `./scripts/get-token.sh` (saves to root `.env`)
   - First time: `cp scripts/get-token.sh.example scripts/get-token.sh && chmod +x scripts/get-token.sh`, then edit credentials
 - Token refresh is agent-authorized: Claude may run `./scripts/get-token.sh` whenever the current token is expired
-- Authenticated requests: `curl -H "Authorization: Bearer $(grep '^ACCESS_TOKEN=' .env | cut -d= -f2-)" http://localhost:8080/api/...`
+- Authenticated requests: `curl -H "Authorization: Bearer $(grep '^ACCESS_TOKEN=' .env | cut -d= -f2-)" http://localhost:<backend-port>/api/...`
 - See the `scratchpad` skill for scratch/smoke file conventions
 
 ### Long-Running Tasks
