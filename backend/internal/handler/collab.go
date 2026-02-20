@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -17,18 +16,11 @@ import (
 	serviceCollab "meridian/internal/service/collab"
 )
 
-// documentSessionManager is a narrow interface for session lifecycle (ISP).
-// Decouples the handler from the concrete DocumentSessionManager implementation.
-type documentSessionManager interface {
-	Acquire(ctx context.Context, docID string) (*serviceCollab.DocumentSession, error)
-	Release(ctx context.Context, docID string) error
-}
-
 // CollabHandler handles collaboration transport entrypoints.
 type CollabHandler struct {
 	documentResolver    collabSvc.DocumentResolver
 	documentBroadcaster collabSvc.DocumentBroadcaster
-	sessionManager      documentSessionManager
+	subscriptionService *serviceCollab.SubscriptionService
 	proposalService     collabSvc.ProposalService
 	proposalStore       collabSvc.ProposalStore
 	authenticator       *collabAuthenticator
@@ -132,7 +124,7 @@ func (c *websocketDocumentConnection) Close() error {
 func NewCollabHandler(
 	documentResolver collabSvc.DocumentResolver,
 	documentBroadcaster collabSvc.DocumentBroadcaster,
-	sessionManager documentSessionManager,
+	subscriptionService *serviceCollab.SubscriptionService,
 	proposalService collabSvc.ProposalService,
 	proposalStore collabSvc.ProposalStore,
 	jwtVerifier auth.JWTVerifier,
@@ -142,7 +134,7 @@ func NewCollabHandler(
 	return &CollabHandler{
 		documentResolver:    documentResolver,
 		documentBroadcaster: documentBroadcaster,
-		sessionManager:      sessionManager,
+		subscriptionService: subscriptionService,
 		proposalService:     proposalService,
 		proposalStore:       proposalStore,
 		authenticator:       newCollabAuthenticator(jwtVerifier, documentResolver, logger),

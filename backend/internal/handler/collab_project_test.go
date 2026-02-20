@@ -66,14 +66,14 @@ func (r *testProjectCollabResolver) setProjectID(projectID string) {
 }
 
 type spySessionManager struct {
-	inner documentSessionManager
+	inner serviceCollab.SessionLifecycle
 
 	mu           sync.Mutex
 	acquireCalls map[string]int
 	releaseCalls map[string]int
 }
 
-func newSpySessionManager(inner documentSessionManager) *spySessionManager {
+func newSpySessionManager(inner serviceCollab.SessionLifecycle) *spySessionManager {
 	return &spySessionManager{
 		inner:        inner,
 		acquireCalls: make(map[string]int),
@@ -179,7 +179,7 @@ func newTestProjectCollabServerWithDeps(
 	verifier *testJWTVerifier,
 	store *testCollabStore,
 	broadcaster collabSvc.DocumentBroadcaster,
-	sessionManager documentSessionManager,
+	sessionManager serviceCollab.SessionLifecycle,
 ) *httptest.Server {
 	t.Helper()
 
@@ -190,10 +190,17 @@ func newTestProjectCollabServerWithDeps(
 		sessionManager = serviceCollab.NewDocumentSessionManager(store, slog.New(slog.NewTextHandler(io.Discard, nil)), 500)
 	}
 
+	subscriptionSvc := serviceCollab.NewSubscriptionService(
+		sessionManager,
+		broadcaster,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		10, // max subscriptions per connection
+	)
+
 	h := NewCollabHandler(
 		resolver,
 		broadcaster,
-		sessionManager,
+		subscriptionSvc,
 		&noopProposalService{},
 		&noopProposalStore{},
 		verifier,
@@ -621,8 +628,8 @@ func TestProjectWS_DocSubscribeLimitExceeded(t *testing.T) {
 	defer conn.Close()
 	authenticateWS(t, conn, testToken)
 
-	// Subscribe to projectMaxDocSubscriptions documents
-	for i := 0; i < projectMaxDocSubscriptions; i++ {
+	// Subscribe to max (10) documents
+	for i := 0; i < 10; i++ {
 		docID := uuid.New().String()
 		cmd := map[string]string{"type": "doc:subscribe", "documentId": docID}
 		cmdBytes, _ := json.Marshal(cmd)

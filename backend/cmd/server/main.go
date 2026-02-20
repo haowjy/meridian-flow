@@ -285,10 +285,16 @@ func main() {
 	importHandler := handler.NewImportHandler(importService, authorizer, logger, cfg)
 	// Collab handler + snapshot handler (stores created above before LLM services)
 	collabDocResolver := serviceCollab.NewDocumentResolver(docRepo, authorizer)
+	collabSubscriptionService := serviceCollab.NewSubscriptionService(
+		collabSessionManager,
+		collabBroadcaster,
+		logger,
+		10, // max concurrent document subscriptions per project WS connection
+	)
 	collabHandler := handler.NewCollabHandler(
 		collabDocResolver,
 		collabBroadcaster,
-		collabSessionManager,
+		collabSubscriptionService,
 		proposalService,
 		proposalStore,
 		jwtVerifier,
