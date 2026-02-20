@@ -16,6 +16,7 @@ import { useLatestRef } from "@/core/hooks";
 import { getAdapter } from "@/core/editor/adapters";
 import { detectEditorType } from "@/core/editor/types/editorRegistry";
 import { isCollabEnabled } from "../lib/collabFeatureFlag";
+import { useCollabStore } from "../stores/useCollabStore";
 import type { BaseEditorRef } from "@/core/editor/types/editorRegistry";
 
 // =============================================================================
@@ -115,6 +116,9 @@ export function useDocumentContent<TEditor = any>(
   const _activeDocumentId = useEditorStore((s) => s._activeDocumentId);
   const isLoading = useEditorStore((s) => s.isLoading);
   const loadDocument = useEditorStore((s) => s.loadDocument);
+  const collabConnectionState = useCollabStore(
+    (s) => s.stateByDocumentId[documentId] ?? "disconnected",
+  );
 
   // ---------------------------------------------------------------------------
   // LOCAL STATE
@@ -172,9 +176,13 @@ export function useDocumentContent<TEditor = any>(
     setEditVersion((v) => v + 1);
   }, []);
 
-  // Determine editable state early (needed by sync effect below)
-  const isEditable =
+  // Base editor gate applies to all file types.
+  const baseIsEditable =
     isInitialized && activeDocument?.id === documentId && !isLoading;
+  // Collab docs stay read-only until this document's WS session is connected.
+  const isEditable =
+    baseIsEditable &&
+    (!collabEnabled || collabConnectionState === "connected");
 
   // ---------------------------------------------------------------------------
   // CALLBACKS
