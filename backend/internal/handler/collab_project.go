@@ -8,12 +8,12 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	ycrdt "github.com/skyterra/y-crdt"
 	"golang.org/x/net/websocket"
 	"meridian/internal/httputil"
+	serviceCollab "meridian/internal/service/collab"
 )
 
 // --- ConnectProject handler ---
@@ -59,10 +59,11 @@ func (h *CollabHandler) handleProjectSocket(ctx context.Context, projectID strin
 
 	userID := authResult.UserID
 	userUUID := authResult.UserUUID
+	connectionID := wsConn.ID()
 	h.logger.Info("project websocket authenticated",
 		"project_id", projectID,
 		"user_id", userID,
-		"connection_id", wsConn.ID(),
+		"connection_id", connectionID,
 	)
 
 	// Signal auth success so the client knows it's safe to send commands.
@@ -76,8 +77,8 @@ func (h *CollabHandler) handleProjectSocket(ctx context.Context, projectID strin
 		return
 	}
 
-	registry := newProjectSubscriptionRegistry(projectMaxDocSubscriptions)
-	defer h.cleanupProjectSubscriptions(ctx, registry, projectID, wsConn.ID())
+	// Subscription service handles per-connection cleanup on close.
+	defer h.subscriptionService.UnsubscribeAll(ctx, connectionID)
 
 	heartbeatAcks := make(chan struct{}, 1)
 	heartbeatStop := make(chan struct{})
@@ -87,10 +88,10 @@ func (h *CollabHandler) handleProjectSocket(ctx context.Context, projectID strin
 	// Run the shared message loop with project-specific handlers
 	runMessageLoop(conn, wsConn, messageLoopHandlers{
 		onTextMessage: func(raw []byte) bool {
-			return h.handleProjectTextMessage(ctx, wsConn, projectID, userID, userUUID, raw, heartbeatAcks, registry)
+			return h.handleProjectTextMessage(ctx, wsConn, projectID, userID, userUUID, raw, heartbeatAcks, connectionID)
 		},
 		onBinaryMessage: func(raw []byte) {
-			h.handleProjectBinaryMessage(ctx, wsConn, projectID, userID, raw, registry)
+			h.handleProjectBinaryMessage(ctx, wsConn, projectID, userID, raw, connectionID)
 		},
 	}, messageLoopConfig{
 		logContext: []any{"project_id", projectID},
@@ -107,7 +108,7 @@ func (h *CollabHandler) handleProjectTextMessage(
 	userUUID uuid.UUID,
 	raw []byte,
 	heartbeatAcks chan<- struct{},
-	registry *projectSubscriptionRegistry,
+	connectionID string,
 ) bool {
 	msgType, ok := tryParseTypedMessage(raw)
 	if !ok {
@@ -120,15 +121,15 @@ func (h *CollabHandler) handleProjectTextMessage(
 		return true
 
 	case wsTypeDocSubscribe:
-		h.handleDocSubscribe(ctx, conn, projectID, userID, raw, registry)
+		h.handleDocSubscribe(ctx, conn, projectID, userID, raw, connectionID)
 		return true
 
 	case wsTypeDocUnsubscribe:
-		h.handleDocUnsubscribe(ctx, conn, raw, registry)
+		h.handleDocUnsubscribe(ctx, conn, raw, connectionID)
 		return true
 
 	case wsTypeProposalAccept, wsTypeProposalReject, wsTypeProposalGroupAccept:
-		h.handleProjectProposalCommand(ctx, conn, projectID, userID, userUUID, raw, registry, msgType)
+		h.handleProjectProposalCommand(ctx, conn, projectID, userID, userUUID, raw, connectionID, msgType)
 		return true
 
 	default:
@@ -138,14 +139,22 @@ func (h *CollabHandler) handleProjectTextMessage(
 }
 
 // handleDocSubscribe processes a doc:subscribe command.
+//
+// Handler responsibilities (transport boundary):
+//  1. Parse JSON payload + validate fields
+//  2. Check document access via authenticator
+//  3. Delegate to subscriptionService.Subscribe
+//  4. Send sync state + ack over WS
+//  5. Map service errors to WS error codes
 func (h *CollabHandler) handleDocSubscribe(
 	ctx context.Context,
 	conn *websocketDocumentConnection,
 	projectID string,
 	userID string,
 	raw []byte,
-	registry *projectSubscriptionRegistry,
+	connectionID string,
 ) {
+	// --- 1. Parse + validate ---
 	var cmd docSubscribeCommand
 	if err := json.Unmarshal(raw, &cmd); err != nil {
 		h.sendDocError(conn, "", "INVALID_PAYLOAD", "invalid doc:subscribe payload")
@@ -165,106 +174,83 @@ func (h *CollabHandler) handleDocSubscribe(
 	}
 	canonicalDocumentID := docUUID.String()
 
-	// Idempotent: if already subscribed, just re-ack
-	if _, alreadySubscribed := registry.get(canonicalDocumentID); alreadySubscribed {
-		err := conn.SendJSON(docSubscribedEvent{
-			Type:       wsTypeDocSubscribed,
-			DocumentID: canonicalDocumentID,
-		})
-		if err != nil && !errors.Is(err, io.EOF) {
-			h.logger.Debug("project ws failed to send doc:subscribed",
-				"project_id", projectID,
-				"document_id", canonicalDocumentID,
-				"error", err,
-			)
-		}
-		return
-	}
-
-	// Verify access via authenticator
+	// --- 2. Check document access ---
 	if errCode, errMsg := h.authenticator.checkDocumentAccess(ctx, projectID, userID, canonicalDocumentID); errCode != "" {
 		h.sendDocError(conn, canonicalDocumentID, errCode, errMsg)
 		return
 	}
 
-	// Check subscription limit
-	sub := &projectDocSubscription{
-		docID:   canonicalDocumentID,
-		docUUID: docUUID,
-	}
-	if err := registry.add(sub); err != nil {
-		h.sendDocError(conn, canonicalDocumentID, "SUBSCRIPTION_LIMIT", fmt.Sprintf("max %d concurrent subscriptions", projectMaxDocSubscriptions))
-		return
-	}
-
-	// Acquire session
-	session, err := h.sessionManager.Acquire(ctx, canonicalDocumentID)
+	// --- 3. Delegate to subscription service ---
+	muxConn := newMultiplexedConnection(conn)
+	result, err := h.subscriptionService.Subscribe(ctx, serviceCollab.SubscribeRequest{
+		ConnectionID: connectionID,
+		DocumentID:   canonicalDocumentID,
+		DocumentUUID: docUUID,
+		Conn:         muxConn,
+	})
 	if err != nil {
-		h.logger.Error("project ws session acquire failed",
+		if errors.Is(err, serviceCollab.ErrSubscriptionLimitExceeded) {
+			h.sendDocError(conn, canonicalDocumentID, "SUBSCRIPTION_LIMIT",
+				fmt.Sprintf("max %d concurrent subscriptions", h.subscriptionService.MaxPerConnection()))
+			return
+		}
+		h.logger.Error("project ws subscribe failed",
 			"project_id", projectID,
 			"document_id", canonicalDocumentID,
 			"error", err,
 		)
-		registry.remove(canonicalDocumentID)
 		h.sendDocError(conn, canonicalDocumentID, "INTERNAL_ERROR", "failed to initialize document session")
 		return
 	}
-	sub.session = session
 
-	// Create multiplexed connection adapter and subscribe to broadcaster
-	muxConn := newMultiplexedConnection(conn)
-	sub.conn = muxConn
-	if err := h.documentBroadcaster.Subscribe(canonicalDocumentID, muxConn); err != nil {
-		h.logger.Error("project ws broadcaster subscribe failed",
-			"project_id", projectID,
-			"document_id", canonicalDocumentID,
-			"error", err,
-		)
-		releaseCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := h.sessionManager.Release(releaseCtx, canonicalDocumentID); err != nil {
-			h.logger.Error("project ws session release failed after subscribe error",
+	// Idempotent: if already subscribed, just re-ack
+	if result.AlreadySubscribed {
+		err := conn.SendJSON(docSubscribedEvent{
+			Type:       wsTypeDocSubscribed,
+			DocumentID: canonicalDocumentID,
+		})
+		if err != nil && !errors.Is(err, io.EOF) {
+			h.logger.Debug("project ws failed to send doc:subscribed (idempotent)",
 				"project_id", projectID,
 				"document_id", canonicalDocumentID,
 				"error", err,
 			)
 		}
-		registry.remove(canonicalDocumentID)
-		h.sendDocError(conn, canonicalDocumentID, "INTERNAL_ERROR", "failed to subscribe to document")
 		return
 	}
 
-	// Send initial sync sequence:
-	// 1. sync-step1 binary frame (multiplexed)
-	serverStep1Payload, err := session.BuildSyncStep1Payload()
+	// --- 4. Send sync state + ack ---
+
+	// 4a. sync-step1 binary frame (multiplexed)
+	serverStep1Payload, err := result.Subscription.Session.BuildSyncStep1Payload()
 	if err != nil {
 		h.logger.Error("project ws sync-step1 build failed",
 			"project_id", projectID,
 			"document_id", canonicalDocumentID,
 			"error", err,
 		)
-		h.teardownSubscription(ctx, canonicalDocumentID, registry)
+		h.subscriptionService.Unsubscribe(ctx, connectionID, canonicalDocumentID)
 		h.sendDocError(conn, canonicalDocumentID, "INTERNAL_ERROR", "failed to build sync state")
 		return
 	}
 	if err := conn.Send(frameEnvelope(collabEnvelopeSyncStep1, docUUID, serverStep1Payload)); err != nil {
-		h.teardownSubscription(ctx, canonicalDocumentID, registry)
+		h.subscriptionService.Unsubscribe(ctx, connectionID, canonicalDocumentID)
 		return
 	}
 
-	// 2. proposal:snapshot JSON
+	// 4b. proposal:snapshot JSON
 	if err := h.sendProposalSnapshot(ctx, conn, docUUID); err != nil {
 		h.logger.Error("project ws proposal snapshot failed",
 			"project_id", projectID,
 			"document_id", canonicalDocumentID,
 			"error", err,
 		)
-		h.teardownSubscription(ctx, canonicalDocumentID, registry)
+		h.subscriptionService.Unsubscribe(ctx, connectionID, canonicalDocumentID)
 		h.sendDocError(conn, canonicalDocumentID, "INTERNAL_ERROR", "failed to load proposal snapshot")
 		return
 	}
 
-	// 3. doc:subscribed (terminal ack)
+	// 4c. doc:subscribed (terminal ack)
 	err = conn.SendJSON(docSubscribedEvent{
 		Type:       wsTypeDocSubscribed,
 		DocumentID: canonicalDocumentID,
@@ -283,7 +269,7 @@ func (h *CollabHandler) handleDocUnsubscribe(
 	ctx context.Context,
 	conn *websocketDocumentConnection,
 	raw []byte,
-	registry *projectSubscriptionRegistry,
+	connectionID string,
 ) {
 	var cmd docUnsubscribeCommand
 	if err := json.Unmarshal(raw, &cmd); err != nil {
@@ -297,8 +283,8 @@ func (h *CollabHandler) handleDocUnsubscribe(
 		canonicalDocumentID = parsed.String()
 	}
 
-	// Safe if not subscribed
-	h.teardownSubscription(ctx, canonicalDocumentID, registry)
+	// Delegate teardown to subscription service (safe if not subscribed)
+	h.subscriptionService.Unsubscribe(ctx, connectionID, canonicalDocumentID)
 	h.sendDocUnsubscribed(conn, canonicalDocumentID, nil)
 }
 
@@ -309,7 +295,7 @@ func (h *CollabHandler) handleProjectBinaryMessage(
 	projectID string,
 	userID string,
 	rawMessage []byte,
-	registry *projectSubscriptionRegistry,
+	connectionID string,
 ) {
 	envelopeType, framedDocUUID, payload, err := unframeEnvelope(rawMessage)
 	if err != nil {
@@ -323,21 +309,21 @@ func (h *CollabHandler) handleProjectBinaryMessage(
 	}
 
 	documentID := framedDocUUID.String()
-	sub, ok := registry.get(documentID)
+	sub, ok := h.subscriptionService.GetSubscription(connectionID, documentID)
 	if !ok {
 		h.sendDocError(conn, documentID, "NOT_SUBSCRIBED", "document is not subscribed on this connection")
 		return
 	}
 	// Re-validate on active traffic so stale access/project scope is cleaned up quickly.
 	if reason, invalid := h.authenticator.getSubscriptionInvalidationReason(ctx, projectID, userID, documentID); invalid {
-		h.teardownSubscription(ctx, documentID, registry)
+		h.subscriptionService.Unsubscribe(ctx, connectionID, documentID)
 		h.sendDocUnsubscribed(conn, documentID, &reason)
 		return
 	}
 
 	switch envelopeType {
 	case collabEnvelopeSyncStep1, collabEnvelopeSyncStep2, collabEnvelopeUpdate:
-		syncType, responsePayload, updatePayload, err := sub.session.HandleSyncPayload(ctx, payload, conn.ID())
+		syncType, responsePayload, updatePayload, err := sub.Session.HandleSyncPayload(ctx, payload, conn.ID())
 		if err != nil {
 			h.logger.Warn("project ws sync message handling failed",
 				"project_id", projectID,
@@ -391,7 +377,7 @@ func (h *CollabHandler) handleProjectBinaryMessage(
 
 		// On SyncStep1, also send server's SyncStep1
 		if envelopeType == collabEnvelopeSyncStep1 && syncType == ycrdt.MessageYjsSyncStep1 {
-			serverStep1Payload, err := sub.session.BuildSyncStep1Payload()
+			serverStep1Payload, err := sub.Session.BuildSyncStep1Payload()
 			if err != nil {
 				h.logger.Warn("project ws server sync-step1 build failed",
 					"project_id", projectID,
@@ -421,12 +407,12 @@ func (h *CollabHandler) handleProjectBinaryMessage(
 				return
 			}
 			// Exclude this connection's multiplexed adapter from receiving its own broadcast
-			h.documentBroadcaster.Broadcast(documentID, updateFrame, sub.conn)
+			h.documentBroadcaster.Broadcast(documentID, updateFrame, sub.Conn)
 		}
 
 	case collabEnvelopeAwareness:
 		// Broadcast awareness to all subscribers except sender
-		h.documentBroadcaster.Broadcast(documentID, frameEnvelope(collabEnvelopeAwareness, framedDocUUID, payload), sub.conn)
+		h.documentBroadcaster.Broadcast(documentID, frameEnvelope(collabEnvelopeAwareness, framedDocUUID, payload), sub.Conn)
 
 	default:
 		// Ignore unknown envelope types for forward compatibility.
@@ -442,7 +428,7 @@ func (h *CollabHandler) handleProjectProposalCommand(
 	userID string,
 	userUUID uuid.UUID,
 	raw []byte,
-	registry *projectSubscriptionRegistry,
+	connectionID string,
 	msgType string,
 ) {
 	// Extract documentId from the raw message to validate subscription
@@ -458,13 +444,13 @@ func (h *CollabHandler) handleProjectProposalCommand(
 	if parsed, err := parseUUID(documentID); err == nil {
 		documentID = parsed.String()
 	}
-	sub, ok := registry.get(documentID)
+	sub, ok := h.subscriptionService.GetSubscription(connectionID, documentID)
 	if !ok {
 		h.sendDocError(conn, documentID, "NOT_SUBSCRIBED", "document is not subscribed on this connection")
 		return
 	}
 	if reason, invalid := h.authenticator.getSubscriptionInvalidationReason(ctx, projectID, userID, documentID); invalid {
-		h.teardownSubscription(ctx, documentID, registry)
+		h.subscriptionService.Unsubscribe(ctx, connectionID, documentID)
 		h.sendDocUnsubscribed(conn, documentID, &reason)
 		return
 	}
@@ -472,11 +458,11 @@ func (h *CollabHandler) handleProjectProposalCommand(
 	// Delegate to existing proposal handlers using the subscription's document context
 	switch msgType {
 	case wsTypeProposalAccept:
-		h.handleProposalAccept(ctx, conn, sub.docID, sub.docUUID, userUUID, raw)
+		h.handleProposalAccept(ctx, conn, sub.DocID, sub.DocUUID, userUUID, raw)
 	case wsTypeProposalReject:
-		h.handleProposalReject(ctx, conn, sub.docID, sub.docUUID, userUUID, raw)
+		h.handleProposalReject(ctx, conn, sub.DocID, sub.DocUUID, userUUID, raw)
 	case wsTypeProposalGroupAccept:
-		h.handleProposalGroupAccept(ctx, conn, sub.docID, sub.docUUID, userUUID, raw)
+		h.handleProposalGroupAccept(ctx, conn, sub.DocID, sub.DocUUID, userUUID, raw)
 	}
 }
 
