@@ -35,7 +35,7 @@ import { PanelHeader } from "@/shared/components/layout/headers";
 import { SidebarToggle } from "@/shared/components/layout/SidebarToggle";
 import { CompactBreadcrumb } from "@/shared/components/ui/CompactBreadcrumb";
 import { Button } from "@/shared/components/ui/button";
-import { ChevronLeft, Loader2 } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { AIProposalReviewPanel } from "./AIProposalReviewPanel";
 import {
   useDocumentContent,
@@ -456,12 +456,6 @@ export function EditorPanel({
     // prevents the "Start writing..." placeholder during the connect window.
     (collabEnabled && collabConnectionState !== "connected");
 
-  const collabLoadingMessage =
-    collabConnectionState === "syncing"
-      ? "Syncing collaborative document..."
-      : collabConnectionState === "connected"
-        ? "Preparing collaborative editor..."
-        : "Connecting collaboration...";
 
   // ---------------------------------------------------------------------------
   // MAIN RENDER
@@ -497,18 +491,9 @@ export function EditorPanel({
         {/* Editor content - scrolls with parent container */}
         <div ref={editorContentRef} className="relative my-2 flex-1">
           {isContentLoading ? (
-            collabEnabled ? (
-              <div
-                className="text-muted-foreground flex min-h-[220px] items-center justify-center gap-2 px-4 py-8 text-sm"
-                role="status"
-                aria-live="polite"
-              >
-                <Loader2 className="size-4 animate-spin" />
-                <span>{collabLoadingMessage}</span>
-              </div>
-            ) : (
-              <div className="flex-1" />
-            )
+            // Empty placeholder while loading — consistent blank area for both
+            // collab (waiting for WS connection) and non-collab (waiting for content)
+            <div className="flex-1" />
           ) : (
             <EditorContextMenu editorRef={editorRef.current}>
               <CodeMirrorEditor
