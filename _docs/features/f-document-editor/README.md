@@ -64,6 +64,13 @@ feature: "Document Editor"
 - Filename-only wiki-link resolution now only applies when the filename is unique
   - Ambiguous filename matches stay plaintext `@[[...]]` (prevents wrong-doc binding)
 
+### Version History & Snapshot Preview
+**Status**: ✅ Complete
+- Version history panel lists named + auto snapshots
+- Clicking a snapshot opens read-only preview mode (current document vs snapshot diff)
+- Restore action lives in preview mode and confirms intent before mutating
+- Preview open/switch/close actions do not reload the page
+
 ### AI Editing Interface
 **Status**: ✅ Complete
 - Inline diff view with accept/reject buttons
@@ -120,7 +127,7 @@ feature: "Document Editor"
 ## Known Gaps
 
 1. **No proposal-review UX in collab flow yet** - Phase 3 scope
-2. **No persisted history/snapshot UI yet** - Phase 2 scope
+2. **Snapshot restore still reloads page** - preview interactions are in-place, restore still triggers full reload
 3. **No rich media** - Images, tables, embeds not supported yet
 
 ---

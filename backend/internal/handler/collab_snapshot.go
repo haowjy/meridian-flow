@@ -2,10 +2,12 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 
+	ycrdt "github.com/skyterra/y-crdt"
 	"meridian/internal/config"
 	"meridian/internal/domain"
 	collabModels "meridian/internal/domain/models/collab"
@@ -58,6 +60,10 @@ type snapshotDTO struct {
 type listSnapshotsResponse struct {
 	Snapshots []snapshotDTO `json:"snapshots"`
 	Total     int           `json:"total"`
+}
+
+type snapshotContentResponse struct {
+	Content string `json:"content"`
 }
 
 func toSnapshotDTO(s collabModels.Snapshot) snapshotDTO {
@@ -158,6 +164,59 @@ func (h *CollabSnapshotHandler) ListSnapshots(w http.ResponseWriter, r *http.Req
 	httputil.RespondJSON(w, http.StatusOK, listSnapshotsResponse{
 		Snapshots: dtos,
 		Total:     total,
+	})
+}
+
+// GetSnapshotContent returns decoded plain-text content from a snapshot Yjs state.
+// GET /api/documents/{id}/snapshots/{snapshotId}/content
+func (h *CollabSnapshotHandler) GetSnapshotContent(w http.ResponseWriter, r *http.Request) {
+	docID, ok := PathParam(w, r, "id", "Document identifier")
+	if !ok {
+		return
+	}
+	if _, err := parseUUID(docID); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Document identifier must be a valid UUID")
+		return
+	}
+
+	snapshotID, ok := PathParam(w, r, "snapshotId", "Snapshot identifier")
+	if !ok {
+		return
+	}
+	if _, err := parseUUID(snapshotID); err != nil {
+		httputil.RespondError(w, http.StatusBadRequest, "Snapshot identifier must be a valid UUID")
+		return
+	}
+
+	userID := httputil.GetUserID(r)
+	if !h.checkOwnership(w, r, docID, userID) {
+		return
+	}
+
+	target, err := h.store.GetSnapshot(r.Context(), snapshotID)
+	if err != nil {
+		handleError(w, err, h.config)
+		return
+	}
+
+	if target.DocumentID != docID {
+		httputil.RespondError(w, http.StatusNotFound, "Snapshot not found for this document")
+		return
+	}
+
+	content, err := decodeSnapshotContent(target.YjsState)
+	if err != nil {
+		h.logger.Error("failed to decode snapshot content",
+			"document_id", docID,
+			"snapshot_id", snapshotID,
+			"error", err,
+		)
+		httputil.RespondError(w, http.StatusInternalServerError, "Failed to decode snapshot content")
+		return
+	}
+
+	httputil.RespondJSON(w, http.StatusOK, snapshotContentResponse{
+		Content: content,
 	})
 }
 
@@ -303,4 +362,41 @@ func (h *CollabSnapshotHandler) checkOwnership(w http.ResponseWriter, r *http.Re
 		return false
 	}
 	return true
+}
+
+func decodeSnapshotContent(state []byte) (content string, err error) {
+	// Guard all Yjs FFI decode/read calls to prevent malformed payload panics from escaping.
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("decode snapshot content panic: %v", r)
+			content = ""
+		}
+	}()
+
+	if len(state) == 0 {
+		return "", nil
+	}
+
+	doc := ycrdt.NewDoc("snapshot-content", true, ycrdt.DefaultGCFilter, nil, false)
+	if err := safeApplySnapshotState(doc, state); err != nil {
+		return "", err
+	}
+
+	text := doc.GetText("content")
+	if text == nil {
+		return "", nil
+	}
+
+	return text.ToString(), nil
+}
+
+func safeApplySnapshotState(doc *ycrdt.Doc, state []byte) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("apply snapshot state panic: %v", r)
+		}
+	}()
+
+	ycrdt.ApplyUpdate(doc, state, "snapshot-content")
+	return nil
 }
