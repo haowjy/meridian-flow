@@ -4,3 +4,6 @@
 [submodule "meridian-llm-go"]
 	path = meridian-llm-go
 	url = https://github.com/haowjy/meridian-llm-go
+[submodule ".agents/.orchestrate"]
+	path = .agents/.orchestrate
+	url = https://github.com/haowjy/orchestrate
