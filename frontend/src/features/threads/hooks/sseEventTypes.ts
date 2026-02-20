@@ -120,10 +120,6 @@ export const SSE_EVENTS = {
   // Meridian Interjection Events
   INTERJECTION_UPDATED: "INTERJECTION_UPDATED" as const,
   STREAM_SWITCH: "STREAM_SWITCH" as const,
-
-  // DEPRECATED: Legacy Meridian events - removed from backend, kept for reference
-  // TURN_COMPLETE: 'turn_complete', // Use RUN_FINISHED instead
-  // TURN_ERROR: 'turn_error',       // Use RUN_ERROR instead
 } as const;
 
 export type SSEEventType = (typeof SSE_EVENTS)[keyof typeof SSE_EVENTS];

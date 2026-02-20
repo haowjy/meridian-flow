@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { api, type ModelCapabilitiesProvider } from "@/core/lib/api";
-import { getErrorMessageWithFallback } from "@/core/lib/errors";
+import {
+  getErrorMessageWithFallback,
+  isAbortError,
+} from "@/core/lib/errors";
 
 interface UseModelCapabilitiesResult {
   providers: ModelCapabilitiesProvider[];
@@ -14,15 +17,17 @@ export function useModelCapabilities(): UseModelCapabilitiesResult {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let isMounted = true;
+    const controller = new AbortController();
     const load = async () => {
       try {
-        const data = await api.models.getCapabilities();
-        if (!isMounted) return;
+        const data = await api.models.getCapabilities({
+          signal: controller.signal,
+        });
         setProviders(data ?? []);
         setIsLoading(false);
       } catch (err) {
-        if (!isMounted) return;
+        // Silent abort — component unmounted or effect re-fired
+        if (isAbortError(err)) return;
         setIsLoading(false);
         const message = getErrorMessageWithFallback(
           err,
@@ -35,7 +40,7 @@ export function useModelCapabilities(): UseModelCapabilitiesResult {
     load();
 
     return () => {
-      isMounted = false;
+      controller.abort();
     };
   }, []);
 

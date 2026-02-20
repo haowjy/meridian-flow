@@ -83,7 +83,8 @@ function getThinkingPreview(items: ThinkingGroupItem[]): string | null {
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
     if (!item) continue;
-    if (item.kind === "thinking" && item.block.textContent) {
+    // Empty string "" is valid content (convention: treat empty as valid)
+    if (item.kind === "thinking" && item.block.textContent !== undefined) {
       const text = item.block.textContent.trim();
       if (text.length === 0) continue;
       // Get last ~50 chars, breaking at word boundary if possible

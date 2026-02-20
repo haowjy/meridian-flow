@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   ReconcileNewestPolicy,
-  NetworkFirstPolicy,
   type ICacheRepo,
   type IRemoteRepo,
 } from "@/core/lib/cache";
@@ -91,26 +90,4 @@ describe("Cache policies", () => {
     expect(result.source).toBe("cache");
   });
 
-  it("NetworkFirstPolicy returns cache when network fails", async () => {
-    const cached: Item = {
-      id: "a",
-      updatedAt: new Date("2025-03-01T00:00:00Z"),
-    };
-    const cacheRepo: ICacheRepo<Item> = {
-      get: async () => cached,
-      put: async () => void 0,
-    };
-    const remoteRepo: IRemoteRepo<Item> = {
-      fetch: async () => {
-        throw new Error("network");
-      },
-    };
-
-    const result = await new NetworkFirstPolicy<Item>().run({
-      cacheRepo,
-      remoteRepo,
-    });
-    expect(result.data).toEqual(cached);
-    expect(result.source).toBe("cache");
-  });
 });

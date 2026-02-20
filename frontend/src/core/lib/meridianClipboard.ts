@@ -12,8 +12,6 @@
 
 /** Object Replacement Character — single char placeholder for inline elements */
 export const ORC = "\uFFFC";
-/** @deprecated Use `ORC` instead */
-export const ORC_CHAR = ORC;
 export const MERIDIAN_CLIPBOARD_MIME =
   "application/x-meridian-reference-pills+json";
 export const MERIDIAN_CLIPBOARD_KIND = "meridian-reference-pills";
@@ -25,7 +23,7 @@ export type MeridianClipboardElement = {
   [key: string]: unknown;
 };
 
-export interface MeridianClipboardPositionedElement {
+interface MeridianClipboardPositionedElement {
   /** Position of \uFFFC in payload.text */
   position: number;
   element: MeridianClipboardElement;

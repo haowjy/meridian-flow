@@ -373,14 +373,31 @@ export const useThreadStore = create<ThreadStore>()(
       },
 
       loadTurns: async (threadId: string, signal?: AbortSignal) => {
-        // Fetch thread to get lastViewedTurnId for auto-scroll
-        const thread = await api.threads.get(threadId);
-        // Delegate to openThread with lastViewedTurnId as initial turn
-        await get().openThread(
-          threadId,
-          thread.lastViewedTurnId ?? undefined,
-          signal,
-        );
+        const log = makeLogger("thread-store");
+        try {
+          // Fetch thread to get lastViewedTurnId for auto-scroll
+          // Pass signal so aborting the caller also cancels this preflight request
+          const thread = await api.threads.get(threadId, { signal });
+          // Delegate to openThread with lastViewedTurnId as initial turn
+          await get().openThread(
+            threadId,
+            thread.lastViewedTurnId ?? undefined,
+            signal,
+          );
+        } catch (error) {
+          if (error instanceof Error && error.name === "AbortError") {
+            log.debug("loadTurns:aborted", { threadId });
+            return;
+          }
+          log.error("loadTurns:error", error);
+          set({
+            error: getErrorMessageWithFallback(
+              error,
+              "Failed to load thread turns",
+            ),
+            isLoadingTurns: false,
+          });
+        }
       },
 
       createThread: async (projectId: string, title: string) => {
@@ -945,6 +962,17 @@ export const useThreadStore = create<ThreadStore>()(
             first: turns[0]?.id,
             last: turns[turns.length - 1]?.id,
           });
+          // Staleness guard: if the user switched threads while this fetch was
+          // in-flight, the response belongs to the old thread. Discard it to
+          // prevent overwriting the newer thread's state.
+          if (get().threadId !== threadId) {
+            log.debug("openThread:stale", {
+              requestedThread: threadId,
+              activeThread: get().threadId,
+            });
+            return;
+          }
+
           const { turnIds, turnById } = normalizeTurnWindow(turns);
           const lastTurnId =
             turnIds.length > 0 ? turnIds[turnIds.length - 1] : undefined;
@@ -968,8 +996,21 @@ export const useThreadStore = create<ThreadStore>()(
           });
         } catch (error) {
           if (error instanceof Error && error.name === "AbortError") {
-            set({ isLoadingTurns: false });
+            // Only clear loading state if this thread is still active.
+            // If the user switched threads while in-flight, clearing here
+            // would reset loading state for the new thread's request.
+            if (get().threadId === threadId) {
+              set({ isLoadingTurns: false });
+            }
             log.debug("openThread:aborted", { threadId });
+            return;
+          }
+          // Staleness guard: don't overwrite error/loading state for a newer thread
+          if (get().threadId !== threadId) {
+            log.debug("openThread:staleError", {
+              requestedThread: threadId,
+              activeThread: get().threadId,
+            });
             return;
           }
           log.error("openThread:error", error);
@@ -989,47 +1030,62 @@ export const useThreadStore = create<ThreadStore>()(
           set({ isLoadingTurns: false });
           return;
         }
+        const threadId = state.threadId;
         const log = makeLogger("thread-store");
         log.debug("paginateBefore:start", {
-          threadId: state.threadId,
+          threadId,
           fromTurnId: top.id,
         });
         set({ isLoadingTurns: true, error: null });
         try {
-          const { turns, hasMoreBefore } = await api.turns.paginate(
-            state.threadId,
-            {
-              fromTurnId: top.id,
-              direction: "before",
-              limit: 100,
-              signal,
-            },
-          );
+          const { turns, hasMoreBefore } = await api.turns.paginate(threadId, {
+            fromTurnId: top.id,
+            direction: "before",
+            limit: 100,
+            signal,
+          });
+          // Staleness guard: discard if the user switched threads during the await
+          if (get().threadId !== threadId) {
+            log.debug("paginateBefore:stale", {
+              requestedThread: threadId,
+              activeThread: get().threadId,
+            });
+            return;
+          }
           log.debug("paginateBefore:response", {
             loaded: turns.length,
             hasMoreBefore,
             first: turns[0]?.id,
             last: turns[turns.length - 1]?.id,
           });
-          // Prepend older turns (chronological order preserved by backend)
+          // Prepend older turns using functional set() to merge against
+          // current state instead of the pre-await snapshot. This prevents
+          // dropping concurrent streaming updates that arrived during the fetch.
           const { turnIds: incomingIds, turnById: incomingById } =
             normalizeTurnWindow(turns);
-          const mergedIds = mergeTurnIds([...incomingIds, ...state.turnIds]);
-          const mergedById = { ...state.turnById, ...incomingById };
-          detectStreamingState(state.threadId!, mergedIds, mergedById);
-          set({
-            turnIds: mergedIds,
-            turnById: mergedById,
-            hasMoreBefore,
-            isLoadingTurns: false,
+          set((current) => {
+            const mergedIds = mergeTurnIds([...incomingIds, ...current.turnIds]);
+            const mergedById = { ...current.turnById, ...incomingById };
+            detectStreamingState(threadId, mergedIds, mergedById);
+            return {
+              turnIds: mergedIds,
+              turnById: mergedById,
+              hasMoreBefore,
+              isLoadingTurns: false,
+            };
           });
-          log.debug("paginateBefore:set", { total: mergedIds.length });
+          log.debug("paginateBefore:set", {
+            total: get().turnIds.length,
+          });
         } catch (error) {
           if (error instanceof Error && error.name === "AbortError") {
-            set({ isLoadingTurns: false });
+            if (get().threadId === threadId) {
+              set({ isLoadingTurns: false });
+            }
             log.debug("paginateBefore:aborted");
             return;
           }
+          if (get().threadId !== threadId) return; // stale error, discard
           log.error("paginateBefore:error", error);
           set({
             error: getErrorMessageWithFallback(
@@ -1050,48 +1106,66 @@ export const useThreadStore = create<ThreadStore>()(
           set({ isLoadingTurns: false });
           return;
         }
+        const threadId = state.threadId;
         const log = makeLogger("thread-store");
         log.debug("paginateAfter:start", {
-          threadId: state.threadId,
+          threadId,
           fromTurnId: bottom.id,
         });
         set({ isLoadingTurns: true, error: null });
         try {
-          const { turns, hasMoreAfter } = await api.turns.paginate(
-            state.threadId,
-            {
-              fromTurnId: bottom.id,
-              direction: "after",
-              limit: 100,
-              updateLastViewed: true, // Update bookmark when scrolling down
-              signal,
-            },
-          );
+          const { turns, hasMoreAfter } = await api.turns.paginate(threadId, {
+            fromTurnId: bottom.id,
+            direction: "after",
+            limit: 100,
+            updateLastViewed: true, // Update bookmark when scrolling down
+            signal,
+          });
+          // Staleness guard: discard if the user switched threads during the await
+          if (get().threadId !== threadId) {
+            log.debug("paginateAfter:stale", {
+              requestedThread: threadId,
+              activeThread: get().threadId,
+            });
+            return;
+          }
           log.debug("paginateAfter:response", {
             loaded: turns.length,
             hasMoreAfter,
             first: turns[0]?.id,
             last: turns[turns.length - 1]?.id,
           });
-          // Append newer turns
+          // Append newer turns using functional set() to merge against
+          // current state instead of the pre-await snapshot. This prevents
+          // dropping concurrent streaming updates that arrived during the fetch.
           const { turnIds: incomingIds, turnById: incomingById } =
             normalizeTurnWindow(turns);
-          const mergedIds = mergeTurnIds([...state.turnIds, ...incomingIds]);
-          const mergedById = { ...state.turnById, ...incomingById };
-          detectStreamingState(state.threadId!, mergedIds, mergedById);
-          set({
-            turnIds: mergedIds,
-            turnById: mergedById,
-            hasMoreAfter,
-            isLoadingTurns: false,
+          set((current) => {
+            const mergedIds = mergeTurnIds([
+              ...current.turnIds,
+              ...incomingIds,
+            ]);
+            const mergedById = { ...current.turnById, ...incomingById };
+            detectStreamingState(threadId, mergedIds, mergedById);
+            return {
+              turnIds: mergedIds,
+              turnById: mergedById,
+              hasMoreAfter,
+              isLoadingTurns: false,
+            };
           });
-          log.debug("paginateAfter:set", { total: mergedIds.length });
+          log.debug("paginateAfter:set", {
+            total: get().turnIds.length,
+          });
         } catch (error) {
           if (error instanceof Error && error.name === "AbortError") {
-            set({ isLoadingTurns: false });
+            if (get().threadId === threadId) {
+              set({ isLoadingTurns: false });
+            }
             log.debug("paginateAfter:aborted");
             return;
           }
+          if (get().threadId !== threadId) return; // stale error, discard
           log.error("paginateAfter:error", error);
           set({
             error: getErrorMessageWithFallback(
@@ -1119,6 +1193,20 @@ export const useThreadStore = create<ThreadStore>()(
         }
 
         const controller = new AbortController();
+        // Chain external signal to local controller so the caller's abort
+        // (e.g., component unmount) also cancels this request. The local
+        // controller handles internal cancellation (next switchSibling call).
+        if (signal) {
+          // Guard against already-aborted signals — addEventListener would
+          // never fire, leaving the local controller un-cancelled.
+          if (signal.aborted) {
+            controller.abort();
+          } else {
+            signal.addEventListener("abort", () => controller.abort(), {
+              once: true,
+            });
+          }
+        }
         // Use isSwitchingSibling instead of isLoadingTurns to avoid skeleton UI during sibling nav
         set({
           navigationAbortController: controller,
@@ -1133,7 +1221,7 @@ export const useThreadStore = create<ThreadStore>()(
               direction: "both",
               limit: 100,
               updateLastViewed: true, // Explicit bookmarking on sibling switch
-              signal: controller.signal ?? signal,
+              signal: controller.signal,
             });
           log.debug("switchSibling:response", {
             count: turns.length,
@@ -1144,16 +1232,28 @@ export const useThreadStore = create<ThreadStore>()(
           });
           const { turnIds, turnById } = normalizeTurnWindow(turns);
 
+          // Staleness guard: if the user switched threads while this request
+          // was in-flight, discard to prevent a thread-jump race.
+          if (get().threadId !== threadId) {
+            log.debug("switchSibling:stale", {
+              requestedThread: threadId,
+              activeThread: get().threadId,
+            });
+            // Clean up flags since we're discarding the response
+            set({ isSwitchingSibling: false, navigationAbortController: null });
+            return;
+          }
+
           // Only update if not aborted
           if (!controller.signal.aborted) {
             // Merge turnById instead of replacing to prevent brief undefined flash
             // during React reconciliation. Old turns remain in memory but won't render
             // (not in turnIds) and will be garbage collected when no longer referenced.
             detectStreamingState(threadId, turnIds, turnById);
-            set((state) => ({
+            set((s) => ({
               threadId,
               turnIds,
-              turnById: { ...state.turnById, ...turnById },
+              turnById: { ...s.turnById, ...turnById },
               currentTurnId: targetTurnId,
               hasMoreBefore,
               hasMoreAfter,
@@ -1169,6 +1269,9 @@ export const useThreadStore = create<ThreadStore>()(
         } catch (error) {
           if (error instanceof Error && error.name === "AbortError") {
             log.debug("switchSibling:aborted");
+            // Always clean up state flags on abort — previous code returned
+            // without clearing isSwitchingSibling, leaving nav buttons disabled.
+            set({ isSwitchingSibling: false, navigationAbortController: null });
             return;
           }
           log.error("switchSibling:error", error);
