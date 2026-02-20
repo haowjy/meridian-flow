@@ -10,23 +10,16 @@
  * - useDocumentContent: Loading, hydration, local state
  * - useDocumentSync: Debounced save, flush on unmount (non-collab only)
  * - useDocumentCollab: Yjs sync, proposals, connection state
+ * - useEditorWikiLinks: Wiki-link extensions, @-mention, broken-link create
  */
 
-import { useRef, useCallback, useState, useMemo, useEffect } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useRef, useCallback, useMemo } from "react";
 import {
   CodeMirrorEditor,
   EditorContextMenu,
   type CodeMirrorEditorRef,
 } from "@/core/editor/codemirror";
 import { useEditorStore } from "@/core/stores/useEditorStore";
-import { useProjectStore } from "@/core/stores/useProjectStore";
-import { api } from "@/core/lib/api";
-import { makeLogger } from "@/core/lib/logger";
-import { openDocument } from "@/core/lib/panelHelpers";
-import { EditorHeader } from "./EditorHeader";
-import { EditorWikiLinkPopover } from "./EditorWikiLinkPopover";
-import { WikiLinkCreatePopover } from "./WikiLinkCreatePopover";
 import { ErrorPanel } from "@/shared/components/ErrorPanel";
 import { InlineError } from "@/shared/components/InlineError";
 import { useTreeStore } from "@/core/stores/useTreeStore";
@@ -37,26 +30,17 @@ import { CompactBreadcrumb } from "@/shared/components/ui/CompactBreadcrumb";
 import { Button } from "@/shared/components/ui/button";
 import { ChevronLeft } from "lucide-react";
 import { AIProposalReviewPanel } from "./AIProposalReviewPanel";
+import { EditorHeader } from "./EditorHeader";
+import { EditorWikiLinkPopover } from "./EditorWikiLinkPopover";
+import { WikiLinkCreatePopover } from "./WikiLinkCreatePopover";
 import {
   useDocumentContent,
   useDocumentCollab,
   useDocumentSync,
 } from "../hooks";
+import { useEditorWikiLinks } from "../hooks/useEditorWikiLinks";
 import { isCollabEnabled } from "../lib/collabFeatureFlag";
-import {
-  atMentionField,
-  type AtMentionState,
-} from "@/features/threads/composer/atDetection";
 import { EditorView } from "@codemirror/view";
-import {
-  createWikiLinkClickHandler,
-  createWikiLinkClipboardHandler,
-  insertWikiLink,
-} from "@/core/editor/codemirror/wikiLinks";
-import { usePillNavigation } from "@/shared/reference-pill";
-import type { MentionResult } from "@/features/threads/components/DocumentMentionPopover";
-
-const log = makeLogger("editor-panel");
 
 const plaintextEditorTheme = EditorView.theme({
   "&": {
@@ -98,91 +82,6 @@ export function EditorPanel({
   const editorContentRef = useRef<HTMLDivElement | null>(null);
 
   // ---------------------------------------------------------------------------
-  // WIKI-LINK STATE
-  // ---------------------------------------------------------------------------
-  const [atMention, setAtMention] = useState<AtMentionState | null>(null);
-  const [popoverPosition, setPopoverPosition] = useState<{
-    top: number;
-    left: number;
-  } | null>(null);
-  // Create-from-broken-link popover state
-  const [createPopover, setCreatePopover] = useState<{
-    path: string;
-    displayName: string;
-    position: { top: number; left: number };
-    refType: "document" | "folder";
-  } | null>(null);
-  const [isCreating, setIsCreating] = useState(false);
-  const [collabSeedContent, setCollabSeedContent] = useState<string | null>(
-    null,
-  );
-
-  const navigate = useNavigate();
-  const projectSlug = useProjectStore((s) => s.currentProject()?.slug) ?? "";
-  const { handlePillClick, folderPopover } = usePillNavigation();
-
-  // Compute popover position when atMention changes (effect can access refs safely)
-  useEffect(() => {
-    if (!atMention?.isActive) {
-      setPopoverPosition(null);
-      return;
-    }
-    const view = editorRef.current?.getView();
-    if (!view) return;
-    const coords = view.coordsAtPos(atMention.atPos);
-    if (!coords) return;
-    const editorRect =
-      editorContentRef.current?.getBoundingClientRect() ??
-      view.dom.getBoundingClientRect();
-    // Guard against element not in DOM yet (zero-size rect)
-    if (editorRect.width === 0) {
-      setPopoverPosition(null);
-      return;
-    }
-    setPopoverPosition({
-      top: coords.bottom - editorRect.top,
-      left: coords.left - editorRect.left,
-    });
-  }, [atMention]);
-
-  // Wiki-link extensions: @-detection, click navigation, clipboard + broken-link create
-  // Note: wiki-link decorations are now provided by the live preview coordinator
-  // via wikiLinkScanner (registered in registerBuiltinRenderers).
-  // Note: External link clicks are handled by real <a> elements (no extension needed).
-  const wikiLinkExtensions = useMemo(
-    () => [
-      atMentionField,
-      // Bridge at-mention StateField to React state
-      EditorView.updateListener.of((update) => {
-        if (!update.docChanged && !update.selectionSet) return;
-        const mentionState = update.state.field(atMentionField, false);
-        setAtMention(mentionState ?? null);
-      }),
-      createWikiLinkClipboardHandler(),
-      createWikiLinkClickHandler(
-        handlePillClick,
-        (docPath, displayName, clickCoords, refType) => {
-          // Convert client coords to editor-relative coords for absolute positioning
-          const editorEl = editorRef.current
-            ?.getView()
-            ?.dom?.closest(".relative");
-          const rect = editorEl?.getBoundingClientRect();
-          setCreatePopover({
-            path: docPath,
-            displayName,
-            position: {
-              top: rect ? clickCoords.y - rect.top : clickCoords.y,
-              left: rect ? clickCoords.x - rect.left : clickCoords.x,
-            },
-            refType,
-          });
-        },
-      ),
-    ],
-    [handlePillClick],
-  );
-
-  // ---------------------------------------------------------------------------
   // STORE STATE (for UI that's not in hooks)
   // ---------------------------------------------------------------------------
   const error = useEditorStore((s) => s.error);
@@ -201,9 +100,14 @@ export function EditorPanel({
   // HOOKS (composed)
   // ---------------------------------------------------------------------------
 
-  // Get file extension for adapter selection (default to .md if not available yet)
+  // Get file extension for adapter selection (default to .md if not available yet).
+  // Guard: only use activeDocument.extension when its ID matches the current
+  // documentId, otherwise a stale activeDocument from a previous navigation
+  // could supply the wrong extension.
   const extension =
-    activeDocument?.extension ?? documentMetadata?.extension ?? ".md";
+    (activeDocument?.id === documentId ? activeDocument?.extension : undefined) ??
+    documentMetadata?.extension ??
+    ".md";
   const collabEnabled = isCollabEnabled(extension);
 
   const editorFontExtensions = useMemo(() => {
@@ -223,20 +127,10 @@ export function EditorPanel({
     syncContext,
   } = useDocumentContent(documentId, extension, editorRef);
 
-  useEffect(() => {
-    setCollabSeedContent(null);
-  }, [documentId]);
-
-  useEffect(() => {
-    if (!collabEnabled || !isInitialized) return;
-    setCollabSeedContent(
-      typeof localDocument === "string" ? localDocument : "",
-    );
-    // localDocument intentionally omitted: we only read the initial content once
-    // to seed Yjs. After that, Yjs owns the document state and localDocument
-    // changes should not re-trigger seeding.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [documentId, collabEnabled, isInitialized]);
+  // Seed content for collab: use activeDocument content when IDs match,
+  // otherwise empty string. No stale state — derived directly each render.
+  const collabSeedContent =
+    activeDocument?.id === documentId ? (activeDocument?.content ?? "") : "";
 
   const {
     extensions: collabExtensions,
@@ -246,10 +140,12 @@ export function EditorPanel({
     sendProposalAccept,
     sendProposalReject,
     isReady: isCollabReady,
+    getYtextContent,
+    idbSynced: isCollabIdbSynced,
   } = useDocumentCollab({
     documentId,
-    enabled: collabEnabled && isInitialized && collabSeedContent !== null,
-    initialContent: collabSeedContent ?? "",
+    enabled: collabEnabled && isInitialized,
+    initialContent: collabSeedContent,
   });
 
   // 2. Document sync (save, flush) — only active for non-collab extensions
@@ -264,6 +160,20 @@ export function EditorPanel({
     !collabEnabled,
   );
 
+  // 3. Wiki-link extensions, @-mention, broken-link create
+  const {
+    extensions: wikiLinkExtensions,
+    atMention,
+    popoverPosition,
+    handleWikiLinkSelect,
+    closeAtMention,
+    createPopover,
+    isCreating,
+    handleCreateFromBrokenLink,
+    closeCreatePopover,
+    folderPopover,
+  } = useEditorWikiLinks(editorRef, editorContentRef);
+
   // ---------------------------------------------------------------------------
   // CALLBACKS
   // ---------------------------------------------------------------------------
@@ -273,73 +183,6 @@ export function EditorPanel({
     const store = useUIStore.getState();
     store.setRightPanelState("documents");
   };
-
-  // Handle wiki-link @-mention selection -> insert @[[path | name]] syntax
-  const handleWikiLinkSelect = useCallback(
-    (result: MentionResult) => {
-      const view = editorRef.current?.getView();
-      if (!view || !atMention) return;
-      insertWikiLink(
-        view,
-        atMention.atPos,
-        atMention.cursorPos,
-        result.path,
-        result.name,
-      );
-      setAtMention(null);
-    },
-    [atMention],
-  );
-
-  // Handle creating a document or folder from a broken wiki-link
-  const handleCreateFromBrokenLink = useCallback(async () => {
-    if (!createPopover) return;
-    const projectId = useProjectStore.getState().currentProject()?.id;
-    if (!projectId) return;
-
-    setIsCreating(true);
-    try {
-      if (createPopover.refType === "folder") {
-        await useTreeStore
-          .getState()
-          .createFolderByPath(projectId, createPopover.path);
-        setCreatePopover(null);
-      } else {
-        // Document creation (existing logic)
-        const wikiPath = createPopover.path;
-        const lastSlash = wikiPath.lastIndexOf("/");
-        const filename =
-          lastSlash >= 0 ? wikiPath.slice(lastSlash + 1) : wikiPath;
-        const folderPath =
-          lastSlash >= 0 ? wikiPath.slice(0, lastSlash) : undefined;
-        const dotIndex = filename.lastIndexOf(".");
-        const name = dotIndex >= 0 ? filename.slice(0, dotIndex) : filename;
-        const extension = dotIndex >= 0 ? filename.slice(dotIndex) : ".md";
-
-        const newDoc = await api.documents.create(
-          projectId,
-          null,
-          name,
-          extension,
-          {
-            folderPath,
-          },
-        );
-
-        // Refresh sidebar tree to show the new document (and any created folders)
-        await useTreeStore.getState().loadTree(projectId);
-
-        setCreatePopover(null);
-
-        // Navigate to the newly created document
-        openDocument(newDoc.id, newDoc.path, projectSlug, navigate);
-      }
-    } catch (err) {
-      log.error("Failed to create from broken wiki-link:", err);
-    } finally {
-      setIsCreating(false);
-    }
-  }, [createPopover, projectSlug, navigate]);
 
   const handleProposalAccept = useCallback(
     (proposalId: string) => {
@@ -371,6 +214,7 @@ export function EditorPanel({
   // Get word count from editor ref
   // Note: This ref access during render is intentional - wordCount is a display-only value
   // that updates on re-render. The ref is stable and always points to our editor instance.
+  // eslint-disable-next-line react-hooks/refs -- intentional: display-only value from stable ref
   const wordCount = editorRef.current?.getWordCount().words ?? 0;
 
   const header = headerDocument ? (
@@ -448,13 +292,11 @@ export function EditorPanel({
   const isContentLoading =
     activeDocument?.id !== documentId ||
     !isInitialized ||
-    (collabEnabled && collabSeedContent === null) ||
     // Yjs extensions are not ready yet, so the collab editor cannot mount safely.
     (collabEnabled && !isCollabReady) ||
-    // Defense-in-depth: keep the editor surface hidden until WS is connected.
-    // useDocumentContent also gates editability, but hiding the editor here
-    // prevents the "Start writing..." placeholder during the connect window.
-    (collabEnabled && collabConnectionState !== "connected");
+    // Show editor once IndexedDB cache has loaded (read-only until WS connects).
+    // This avoids blocking on WS round-trip for cached content display.
+    (collabEnabled && !isCollabIdbSynced);
 
 
   // ---------------------------------------------------------------------------
@@ -495,10 +337,14 @@ export function EditorPanel({
             // collab (waiting for WS connection) and non-collab (waiting for content)
             <div className="flex-1" />
           ) : (
+            // eslint-disable-next-line react-hooks/refs -- intentional: stable ref passed as prop
             <EditorContextMenu editorRef={editorRef.current}>
               <CodeMirrorEditor
                 key={documentId}
-                initialContent={collabEnabled ? "" : localDocument}
+                // Collab: use current ytext snapshot so editor doc matches Yjs state
+                // at mount time. ySync only applies future deltas, so initial alignment
+                // is required to prevent flash-of-empty or stale content divergence.
+                initialContent={collabEnabled ? getYtextContent() : localDocument}
                 editable={isEditable}
                 placeholder="Start writing..."
                 onChange={handleContentChange}
@@ -518,7 +364,7 @@ export function EditorPanel({
             atMention={atMention}
             position={popoverPosition}
             onSelect={handleWikiLinkSelect}
-            onClose={() => setAtMention(null)}
+            onClose={closeAtMention}
           />
 
           {/* Create-from-broken-link popover (positioned relative to editor) */}
@@ -528,7 +374,7 @@ export function EditorPanel({
               displayName={createPopover.displayName}
               position={createPopover.position}
               onConfirm={handleCreateFromBrokenLink}
-              onClose={() => setCreatePopover(null)}
+              onClose={closeCreatePopover}
               isCreating={isCreating}
               refType={createPopover.refType}
             />

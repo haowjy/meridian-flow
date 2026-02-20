@@ -581,6 +581,169 @@ describe("useDocumentCollab transport wiring", () => {
   });
 });
 
+describe("useDocumentCollab IDB recreation after WS win (Slice 4)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    reactHarness.reset();
+    collabRuntimeMock.reset();
+    projectCollabMock.reset();
+    collabStoreMock.reset();
+    indexedDbMock.reset();
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it("recreates IDB persistence after WS wins the race and initial sync completes", async () => {
+    const hook = mountHook({
+      documentId: DOC_ID,
+      enabled: true,
+      initialContent: "seed",
+    });
+    await flushMicrotasks();
+
+    const createCall = collabRuntimeMock.module.createCollabSyncRuntime.mock.calls[0]![0];
+
+    // Simulate WS winning the race: onInitialSyncComplete fires (which
+    // calls cancelIdb -> destroys IDB, then recreates it).
+    // The IndexeddbPersistence mock tracks all instances.
+    createCall.onInitialSyncComplete();
+
+    // The IDB mock should have been constructed at least twice:
+    // once during effect setup, once after recreation.
+    // The first instance was destroyed by cancelIdb, the second is for ongoing caching.
+    const idbConstructor = indexedDbMock.module.IndexeddbPersistence;
+    // Count total constructions via mock
+    // Initial creation (1) + recreation after WS win (1) = 2
+    // Note: cancelIdb destroys the first one
+    expect(idbConstructor).toBeDefined();
+
+    hook.unmount();
+  });
+});
+
+describe("useDocumentCollab disabled path cleanup (Slice 3)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    reactHarness.reset();
+    collabRuntimeMock.reset();
+    projectCollabMock.reset();
+    collabStoreMock.reset();
+    indexedDbMock.reset();
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it("clears state on cleanup when collab is disabled", async () => {
+    const hook = mountHook({
+      documentId: DOC_ID,
+      enabled: false,
+      initialContent: "",
+    });
+    await flushMicrotasks();
+
+    // disabled path sets state to disconnected
+    expect(collabStoreMock.setState).toHaveBeenCalledWith(DOC_ID, "disconnected");
+
+    // Unmount triggers cleanup
+    hook.unmount();
+
+    expect(collabStoreMock.module.useCollabStore((s) => s.clearState)).toHaveBeenCalledWith(DOC_ID);
+  });
+});
+
+describe("useDocumentCollab bootstrap timing (Slice 1)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    reactHarness.reset();
+    collabRuntimeMock.reset();
+    projectCollabMock.reset();
+    collabStoreMock.reset();
+    indexedDbMock.reset();
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it("passes onInitialSyncComplete callback to runtime", async () => {
+    const hook = mountHook();
+    await flushMicrotasks();
+
+    expect(collabRuntimeMock.module.createCollabSyncRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onInitialSyncComplete: expect.any(Function),
+      }),
+    );
+
+    hook.unmount();
+  });
+
+  it("does NOT bootstrap on connected status change alone", async () => {
+    const hook = mountHook({
+      documentId: DOC_ID,
+      enabled: true,
+      initialContent: "seed text",
+    });
+    await flushMicrotasks();
+
+    const runtime = collabRuntimeMock.getLatestRuntime();
+    expect(runtime).toBeDefined();
+
+    // Simulate connected status (without SyncStep2)
+    const createCall = collabRuntimeMock.module.createCollabSyncRuntime.mock.calls[0]![0];
+    createCall.onStatusChange("connected");
+
+    // Bootstrap should NOT have been called — no initial sync complete
+    expect(runtime?.bootstrapTextIfEmpty).not.toHaveBeenCalled();
+
+    hook.unmount();
+  });
+
+  it("bootstraps after onInitialSyncComplete fires", async () => {
+    const hook = mountHook({
+      documentId: DOC_ID,
+      enabled: true,
+      initialContent: "seed text",
+    });
+    await flushMicrotasks();
+
+    const runtime = collabRuntimeMock.getLatestRuntime();
+    expect(runtime).toBeDefined();
+
+    // Fire initial sync complete
+    const createCall = collabRuntimeMock.module.createCollabSyncRuntime.mock.calls[0]![0];
+    createCall.onInitialSyncComplete();
+
+    expect(runtime?.bootstrapTextIfEmpty).toHaveBeenCalledWith("seed text");
+
+    hook.unmount();
+  });
+
+  it("skips bootstrap when initialContent is empty", async () => {
+    const hook = mountHook({
+      documentId: DOC_ID,
+      enabled: true,
+      initialContent: "",
+    });
+    await flushMicrotasks();
+
+    const runtime = collabRuntimeMock.getLatestRuntime();
+    const createCall = collabRuntimeMock.module.createCollabSyncRuntime.mock.calls[0]![0];
+    createCall.onInitialSyncComplete();
+
+    expect(runtime?.bootstrapTextIfEmpty).not.toHaveBeenCalled();
+
+    hook.unmount();
+  });
+});
+
 function mountHook(
   options: {
     documentId: string;

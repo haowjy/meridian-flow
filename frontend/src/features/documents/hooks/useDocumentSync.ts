@@ -62,6 +62,7 @@ export function useDocumentSync<TEditor = any>(
   const adapter = getAdapter(editorType);
   const {
     pendingServerSnapshot,
+    setPendingServerSnapshot,
     editVersionRef,
     resetEditVersion,
     localDocumentRef,
@@ -142,6 +143,11 @@ export function useDocumentSync<TEditor = any>(
 
             useEditorStore.getState().updateActiveDocument(doc);
             resetEditVersion(saveVersion);
+            // Clear stashed server snapshot so future saves aren't blocked.
+            // Without this, pendingServerSnapshot stays non-null forever
+            // and the debounced save guard (`if (pendingServerSnapshot) return`)
+            // prevents subsequent saves.
+            setPendingServerSnapshot(null);
           },
         },
       );
@@ -155,6 +161,7 @@ export function useDocumentSync<TEditor = any>(
     localDocument,
     hasUserEdit,
     pendingServerSnapshot,
+    setPendingServerSnapshot,
     hydrateDocument,
     resetEditVersion,
     editVersionRef,

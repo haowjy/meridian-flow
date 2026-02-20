@@ -41,10 +41,16 @@ interface UseDocumentCollabResult {
   proposals: Map<string, Proposal>;
   reviewModels: Map<string, ProposalReviewModel>;
   lastGroupAcceptResult: ProposalGroupAcceptResultEvent | null;
-  getProposalReviewModel: (proposalId: string) => ProposalReviewModel | null;
   sendProposalAccept: (proposalId: string, idempotencyKey: string) => boolean;
   sendProposalReject: (proposalId: string) => boolean;
   isReady: boolean;
+  /** Current Yjs text content — use as initialContent for CodeMirror to avoid
+   *  flash of empty placeholder. Safe because ySync only applies future deltas,
+   *  so the editor doc must match ytext at mount time. */
+  getYtextContent: () => string;
+  /** True once IndexedDB cache has loaded into ytext. Editor can show
+   *  read-only content before WS connects. */
+  idbSynced: boolean;
 }
 
 const EMPTY_REVIEW_MODELS = new Map<string, ProposalReviewModel>();
@@ -67,6 +73,7 @@ export function useDocumentCollab({
   const projectCollab = useProjectCollabContext();
 
   const persistenceRef = useRef<IndexeddbPersistence | null>(null);
+  const runtimeRef = useRef<ReturnType<typeof createCollabSyncRuntime> | null>(null);
   // Keep debounce state stable across effect cleanup/re-run (React StrictMode)
   // so a pending unsubscribe can be canceled by the next subscribe call.
   const subscriptionDebounceRef = useRef<
@@ -76,6 +83,10 @@ export function useDocumentCollab({
     subscriptionDebounceRef.current = createDocumentSubscriptionDebounce();
   }
   const [extensions, setExtensions] = useState<Extension[]>([]);
+  // True once IndexedDB persistence has loaded cached Yjs state into ytext.
+  // At this point ytext has content (if any was cached) and the editor can
+  // render read-only while waiting for WS connection.
+  const [idbSynced, setIdbSynced] = useState(false);
   const [reviewRuntime, setReviewRuntime] = useState<
     ReturnType<typeof createProposalReviewRuntime> | null
   >(null);
@@ -84,7 +95,12 @@ export function useDocumentCollab({
   useEffect(() => {
     if (!enabled) {
       setState(documentId, "disconnected");
-      return;
+      // Clean up stale state from a previously-enabled document when collab is
+      // disabled (e.g., switching from .md to .json). Without this, the old
+      // document's state leaks in the store until the component fully unmounts.
+      return () => {
+        clearState(documentId);
+      };
     }
 
     let isStopped = false;
@@ -100,20 +116,51 @@ export function useDocumentCollab({
 
     const debounce = subscriptionDebounceRef.current!;
 
-    runtime = createCollabSyncRuntime({
+    let isIdbLoaded = false;
+    let isInitialSyncDone = false;
+
+    // Destroy IDB persistence — server state is authoritative once initial sync completes.
+    const cancelIdb = () => {
+      if (isIdbLoaded) return;
+      isIdbLoaded = true;
+      if (persistenceRef.current) {
+        persistenceRef.current.destroy();
+        persistenceRef.current = null;
+      }
+      if (!isStopped) setIdbSynced(true);
+    };
+
+    // Bootstrap seed content only after initial sync completes (SyncStep2 processed,
+    // server state is in ytext). If IDB loaded first, ytext already has cached
+    // content and bootstrap will skip (ytext.length > 0). If WS won, IDB is
+    // cancelled above.
+    const tryBootstrap = () => {
+      if (didBootstrap || !isInitialSyncDone) return;
+      // Initial sync done — server state wins. Cancel any pending IDB load.
+      cancelIdb();
+      if (!runtime || initialContent.length === 0) return;
+      didBootstrap = runtime.bootstrapTextIfEmpty(initialContent);
+    };
+
+    runtimeRef.current = runtime = createCollabSyncRuntime({
       documentId,
       sendBinary: (frame) => {
         projectCollab.sendDocumentBinary(documentId, frame);
       },
       onStatusChange: (status) => {
         setState(documentId, status);
-        if (
-          status === "connected" &&
-          !didBootstrap &&
-          runtime &&
-          initialContent.length > 0
-        ) {
-          didBootstrap = runtime.bootstrapTextIfEmpty(initialContent);
+      },
+      onInitialSyncComplete: () => {
+        isInitialSyncDone = true;
+        tryBootstrap();
+
+        // If WS won the race (cancelIdb destroyed persistence), recreate IDB
+        // so ongoing edits are cached for future offline access.
+        if (!isStopped && persistenceRef.current == null && runtime) {
+          persistenceRef.current = new IndexeddbPersistence(
+            `meridian-collab:${documentId}`,
+            runtime.ydoc,
+          );
         }
       },
     });
@@ -123,7 +170,6 @@ export function useDocumentCollab({
     });
     // Intentional: the review runtime is created alongside the Yjs runtime
     // and must be available for the reviewModels memo on the first render.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setReviewRuntime(proposalReviewRuntime);
     const handleDocUpdate = () => {
       setReviewRevision((current) => current + 1);
@@ -224,20 +270,32 @@ export function useDocumentCollab({
       projectCollab.subscribeDocument(documentId);
     };
 
+    // Create IDB persistence BEFORE registering listeners so that
+    // persistenceRef.current exists if WS connects very fast (cleanup-007).
+    persistenceRef.current = new IndexeddbPersistence(
+      `meridian-collab:${documentId}`,
+      runtime.ydoc,
+    );
+
     // Register listener before subscribing so we don't miss the doc:subscribed event
     const unregisterListener = projectCollab.registerDocumentListener(
       documentId,
       { onTextEvent, onBinaryFrame },
     );
 
-    persistenceRef.current = new IndexeddbPersistence(
-      `meridian-collab:${documentId}`,
-      runtime.ydoc,
-    );
+    // Start WS subscription immediately (in parallel with IDB load).
+    startSubscription();
 
-    // Wait for IndexedDB to load before subscribing via project transport.
-    // This ensures bootstrapTextIfEmpty correctly sees existing IndexedDB content
-    // and skips insertion, preventing duplication from the IDB+WS bootstrap race.
+    // IDB timeout: if whenSynced never resolves (corruption/quota), unblock
+    // loading after 3s so the editor isn't stuck forever (cleanup-006).
+    const idbTimeout = setTimeout(() => {
+      if (isStopped || isIdbLoaded) return;
+      log.warn("collab indexeddb load timed out, proceeding without cache", {
+        documentId,
+      });
+      cancelIdb();
+    }, 3000);
+
     persistenceRef.current.whenSynced
       .catch((err: unknown) => {
         log.warn("collab indexeddb bootstrap failed", {
@@ -246,11 +304,16 @@ export function useDocumentCollab({
         });
       })
       .finally(() => {
-        startSubscription();
+        clearTimeout(idbTimeout);
+        if (isStopped || isIdbLoaded) return; // WS may have already won the race
+        isIdbLoaded = true;
+        if (!isStopped) setIdbSynced(true);
+        tryBootstrap();
       });
 
     return () => {
       isStopped = true;
+      clearTimeout(idbTimeout);
 
       unregisterListener();
 
@@ -267,7 +330,9 @@ export function useDocumentCollab({
       runtime!.ydoc.off("update", handleDocUpdate);
       setReviewRuntime(null);
       runtime!.destroy();
+      runtimeRef.current = null;
       setExtensions([]);
+      setIdbSynced(false);
       clearState(documentId);
     };
   }, [
@@ -327,22 +392,19 @@ export function useDocumentCollab({
     return reviewRuntime.deriveProposalReviews(proposalState.proposals.values()).reviews;
   }, [enabled, proposalState.proposals, reviewRevision, reviewRuntime]);
 
-  const getProposalReviewModel = useCallback(
-    (proposalId: string): ProposalReviewModel | null => {
-      return reviewModels.get(proposalId) ?? null;
-    },
-    [reviewModels],
-  );
-
   return {
     extensions: enabled ? extensions : [],
     connectionState,
     proposals: proposalState.proposals,
     reviewModels,
     lastGroupAcceptResult: proposalState.lastGroupAcceptResult,
-    getProposalReviewModel,
     sendProposalAccept,
     sendProposalReject,
     isReady: !enabled || extensions.length > 0,
+    idbSynced,
+    getYtextContent: useCallback(
+      () => runtimeRef.current?.ytext.toString() ?? "",
+      [],
+    ),
   };
 }
