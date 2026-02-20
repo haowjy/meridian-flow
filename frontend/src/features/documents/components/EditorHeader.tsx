@@ -15,12 +15,15 @@ import { DocumentTreeToggle } from "@/shared/components/layout";
 import { Button } from "@/shared/components/ui/button";
 import { History } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { CollabConnectionState } from "../stores/useCollabStore";
 
 interface EditorHeaderProps {
   document: Document;
   wordCount?: number;
   status?: SaveStatus;
   lastSaved?: Date | null;
+  collabEnabled?: boolean;
+  collabConnectionState?: CollabConnectionState;
   // Mobile navigation: back button (shown before breadcrumb on mobile)
   mobileBackButton?: ReactNode;
 }
@@ -35,6 +38,8 @@ export function EditorHeader({
   wordCount,
   status,
   lastSaved,
+  collabEnabled = false,
+  collabConnectionState,
   mobileBackButton,
 }: EditorHeaderProps) {
   const folders = useTreeStore((state) => state.folders);
@@ -81,20 +86,19 @@ export function EditorHeader({
       <Button
         variant="ghost"
         size="icon"
-        className={cn(
-          "h-6 w-6",
-          showVersionHistory && "bg-muted text-primary",
-        )}
+        className={cn("h-6 w-6", showVersionHistory && "bg-muted text-primary")}
         onClick={toggleVersionHistory}
         title="Version history"
       >
         <History className="h-3.5 w-3.5" />
       </Button>
-      {status && (
+      {(collabEnabled || status) && (
         <DocumentStatus
           wordCount={wordCount ?? 0}
           status={status}
           lastSaved={lastSaved ?? null}
+          collabEnabled={collabEnabled}
+          collabConnectionState={collabConnectionState}
         />
       )}
     </div>

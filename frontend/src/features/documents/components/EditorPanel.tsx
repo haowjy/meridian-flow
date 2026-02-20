@@ -37,7 +37,6 @@ import { CompactBreadcrumb } from "@/shared/components/ui/CompactBreadcrumb";
 import { Button } from "@/shared/components/ui/button";
 import { ChevronLeft, Loader2 } from "lucide-react";
 import { AIProposalReviewPanel } from "./AIProposalReviewPanel";
-import { CollabConnectionIndicator } from "./CollabConnectionIndicator";
 import {
   useDocumentContent,
   useDocumentCollab,
@@ -230,7 +229,9 @@ export function EditorPanel({
 
   useEffect(() => {
     if (!collabEnabled || !isInitialized) return;
-    setCollabSeedContent(typeof localDocument === "string" ? localDocument : "");
+    setCollabSeedContent(
+      typeof localDocument === "string" ? localDocument : "",
+    );
     // localDocument intentionally omitted: we only read the initial content once
     // to seed Yjs. After that, Yjs owns the document state and localDocument
     // changes should not re-trigger seeding.
@@ -299,7 +300,9 @@ export function EditorPanel({
     setIsCreating(true);
     try {
       if (createPopover.refType === "folder") {
-        await useTreeStore.getState().createFolderByPath(projectId, createPopover.path);
+        await useTreeStore
+          .getState()
+          .createFolderByPath(projectId, createPopover.path);
         setCreatePopover(null);
       } else {
         // Document creation (existing logic)
@@ -376,6 +379,8 @@ export function EditorPanel({
       wordCount={wordCount}
       status={status}
       lastSaved={lastSaved}
+      collabEnabled={collabEnabled}
+      collabConnectionState={collabConnectionState}
       mobileBackButton={mobileBackButton}
     />
   ) : (
@@ -467,15 +472,7 @@ export function EditorPanel({
       {/* Parent scroll container - provides sticky header behavior */}
       <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
         {/* Sticky header - scrolls away when scrolling down, sticks at top when scrolling back up */}
-        <div className="bg-background relative sticky top-0 z-20">
-          {header}
-          {collabEnabled && (
-            <CollabConnectionIndicator
-              state={collabConnectionState}
-              className="px-4 pb-1"
-            />
-          )}
-        </div>
+        <div className="bg-background relative sticky top-0 z-20">{header}</div>
 
         {/* Inline error banner for save failures (document is still visible) */}
         {isSaveError && error && (
