@@ -15,11 +15,12 @@ type CreateProjectRequest struct {
 
 // UpdateProjectRequest represents a request to update a project.
 // All fields are optional - only provided fields are updated.
-// SystemPrompt uses tri-state: absent=don't change, null=clear, value=set.
+// SystemPrompt/AutoAcceptProposals use tri-state: absent=don't change, null=clear, value=set.
 type UpdateProjectRequest struct {
-	Name         *string
-	SystemPrompt optional.Optional[string]
-	Preferences  docsystem.JSONMap // If provided, replaces preferences (nil = don't change)
+	Name                *string
+	SystemPrompt        optional.Optional[string]
+	AutoAcceptProposals optional.Optional[bool]
+	Preferences         docsystem.JSONMap // If provided, replaces preferences (nil = don't change)
 }
 
 // ProjectService defines business logic operations for projects

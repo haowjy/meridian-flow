@@ -32,6 +32,7 @@ export interface ProjectDto {
   slug: string; // URL-friendly identifier, unique per user
   isFavorite: boolean; // User's favorite status for quick access (from junction table)
   systemPrompt?: string | null; // Custom AI instructions for the project
+  autoAcceptProposals?: boolean | null; // Project-level auto-accept override (null = use system default)
   preferences?: ProjectPreferencesDto | null; // Project-level settings
   lastActivityAt: string; // ISO date string - last content activity
   createdAt: string; // ISO date string
@@ -140,6 +141,7 @@ export function fromProjectDto(dto: ProjectDto): Project {
     slug: dto.slug,
     isFavorite: dto.isFavorite,
     systemPrompt: dto.systemPrompt,
+    autoAcceptProposals: dto.autoAcceptProposals,
     preferences: dto.preferences
       ? {
           disabledTools: dto.preferences.disabledTools,

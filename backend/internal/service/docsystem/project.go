@@ -94,7 +94,7 @@ func (s *projectService) ListProjects(ctx context.Context, userID string) ([]mod
 	return projects, nil
 }
 
-// UpdateProject updates a project's fields (name, system_prompt).
+// UpdateProject updates a project's fields (name, system_prompt, auto_accept_proposals).
 // Only provided fields are updated - nil fields are left unchanged.
 func (s *projectService) UpdateProject(ctx context.Context, id, userID string, req *docsysSvc.UpdateProjectRequest) (*models.Project, error) {
 	// Validate request
@@ -138,6 +138,16 @@ func (s *projectService) UpdateProject(ctx context.Context, id, userID string, r
 		}
 	}
 
+	// Update auto_accept_proposals if present (tri-state: absent=don't change, null=clear, value=set)
+	if req.AutoAcceptProposals.Present {
+		if req.AutoAcceptProposals.Value == nil {
+			project.AutoAcceptProposals = nil
+		} else {
+			autoAccept := *req.AutoAcceptProposals.Value
+			project.AutoAcceptProposals = &autoAccept
+		}
+	}
+
 	// Update preferences if provided (replaces entire preferences object)
 	if req.Preferences != nil {
 		project.Preferences = req.Preferences
@@ -154,6 +164,7 @@ func (s *projectService) UpdateProject(ctx context.Context, id, userID string, r
 		"name", project.Name,
 		"slug", project.Slug,
 		"has_system_prompt", project.SystemPrompt != nil,
+		"has_auto_accept_override", project.AutoAcceptProposals != nil,
 		"user_id", userID,
 	)
 
@@ -163,10 +174,10 @@ func (s *projectService) UpdateProject(ctx context.Context, id, userID string, r
 // DeleteProject soft-deletes a project by setting deleted_at timestamp
 // Returns the deleted project with deleted_at set
 // TODO: Implement background cleanup job to permanently delete soft-deleted items
-//       - Suggested retention period: 30 days after soft delete
-//       - Should cleanup projects, folders, documents, and threads
-//       - Can be implemented as a cron job or background worker
-//       - Consider adding a "restore" API endpoint before implementing hard delete
+//   - Suggested retention period: 30 days after soft delete
+//   - Should cleanup projects, folders, documents, and threads
+//   - Can be implemented as a cron job or background worker
+//   - Consider adding a "restore" API endpoint before implementing hard delete
 func (s *projectService) DeleteProject(ctx context.Context, id, userID string) (*models.Project, error) {
 	// Verify project exists first (provides better error message)
 	_, err := s.projectRepo.GetByID(ctx, id, userID)

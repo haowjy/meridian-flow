@@ -24,6 +24,7 @@ TextEditorTool -> DocumentMutationStrategy
 ```
 
 Auto-accept is ON by default — AI proposals apply immediately unless the arbiter downgrades to `require_review`.
+Writers can now override this per project in **Project Settings -> Collaboration -> Auto-accept AI proposals**.
 
 ---
 
@@ -82,6 +83,11 @@ See `backend/internal/service/llm/tools/mutation_strategy.go`
 | Env Var | Default | Description |
 |---------|---------|-------------|
 | `MERIDIAN_COLLAB_DEFAULT_AUTO_ACCEPT` | `true` | Auto-accept AI proposals (arbiter can override) |
+
+Project-level override:
+- Stored in `projects.auto_accept_proposals` (nullable)
+- Configured in frontend `Project Settings` panel
+- `NULL` defers to the environment default (`MERIDIAN_COLLAB_DEFAULT_AUTO_ACCEPT`)
 
 ---
 

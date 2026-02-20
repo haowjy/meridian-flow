@@ -29,6 +29,7 @@ interface ProjectStore {
     updates: {
       name?: string;
       systemPrompt?: string | null;
+      autoAcceptProposals?: boolean | null;
       preferences?: { disabledTools?: string[] };
     },
   ) => Promise<void>;

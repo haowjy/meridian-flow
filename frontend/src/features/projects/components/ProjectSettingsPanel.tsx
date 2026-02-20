@@ -268,8 +268,10 @@ export function ProjectSettingsPanelContent({
   // Local state for form editing
   const [instructions, setInstructions] = useState("");
   const [disabledTools, setDisabledTools] = useState<string[]>([]);
+  const [isAutoAcceptEnabled, setIsAutoAcceptEnabled] = useState(true);
   const [isSavingInstructions, setIsSavingInstructions] = useState(false);
   const [savingToolId, setSavingToolId] = useState<string | null>(null);
+  const [isSavingAutoAccept, setIsSavingAutoAccept] = useState(false);
   const [isInstructionsDirty, setIsInstructionsDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [updatingSkillId, setUpdatingSkillId] = useState<string | null>(null);
@@ -286,6 +288,7 @@ export function ProjectSettingsPanelContent({
     if (project) {
       setInstructions(project.systemPrompt ?? "");
       setDisabledTools(project.preferences?.disabledTools ?? []);
+      setIsAutoAcceptEnabled(project.autoAcceptProposals ?? true);
       setIsInstructionsDirty(false);
       setError(null);
     }
@@ -338,6 +341,32 @@ export function ProjectSettingsPanelContent({
       );
     } finally {
       setSavingToolId(null);
+    }
+  };
+
+  // Auto-accept toggle - auto-save immediately (same UX as tools)
+  const handleAutoAcceptToggle = async (enabled: boolean) => {
+    const previousValue = isAutoAcceptEnabled;
+
+    // Optimistic update
+    setIsAutoAcceptEnabled(enabled);
+    setIsSavingAutoAccept(true);
+    setError(null);
+
+    try {
+      await updateProject(projectId, {
+        autoAcceptProposals: enabled,
+      });
+    } catch (err) {
+      // Revert on error
+      setIsAutoAcceptEnabled(previousValue);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to update auto-accept setting",
+      );
+    } finally {
+      setIsSavingAutoAccept(false);
     }
   };
 
@@ -466,6 +495,33 @@ export function ProjectSettingsPanelContent({
           </div>
         </CollapsibleContent>
       </Collapsible>
+
+      <div className="border-b pb-1">
+        <div className="px-3 py-2 text-lg font-medium md:text-sm">
+          Collaboration
+        </div>
+        <div className="flex min-h-10 items-center justify-between gap-3 px-3 py-0.5 md:min-h-7">
+          <div className="min-w-0 flex-1">
+            <p className="text-foreground text-lg md:text-sm">
+              Auto-accept AI proposals
+            </p>
+            <p className="text-muted-foreground text-sm md:text-xs">
+              ON applies edits immediately. OFF requires manual acceptance.
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {isSavingAutoAccept && (
+              <Loader2 className="text-muted-foreground size-3 animate-spin" />
+            )}
+            <Switch
+              checked={isAutoAcceptEnabled}
+              onCheckedChange={handleAutoAcceptToggle}
+              disabled={isSavingAutoAccept}
+              size={isMobile ? "default" : "md"}
+            />
+          </div>
+        </div>
+      </div>
 
       {/* Skills Section - auto-save on toggle */}
       <Collapsible
