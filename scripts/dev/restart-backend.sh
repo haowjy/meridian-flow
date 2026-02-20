@@ -14,6 +14,6 @@ if ! tmux has-session -t "$SESSION" 2>/dev/null; then
 fi
 
 tmux respawn-pane -k -t "$SESSION:0.0" \
-  "cd $REPO_ROOT/backend && PORT=$BACKEND_PORT make run-local; exec bash"
+  "cd $REPO_ROOT/backend && make run-local PORT=$BACKEND_PORT; exec bash"
 
 echo "Backend restarted on :$BACKEND_PORT"
