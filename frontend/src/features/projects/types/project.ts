@@ -15,6 +15,8 @@ export interface Project {
   isFavorite: boolean;
   /** Custom AI instructions for the project */
   systemPrompt?: string | null;
+  /** Project-level override for collab auto-accept (null/undefined = use system default) */
+  autoAcceptProposals?: boolean | null;
   /** Project-level settings (disabled tools, etc.) */
   preferences?: ProjectPreferences | null;
   /** Last content activity timestamp (documents, folders, threads) */

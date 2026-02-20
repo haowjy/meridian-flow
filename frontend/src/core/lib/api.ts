@@ -450,6 +450,7 @@ export const api = {
       updates: {
         name?: string;
         systemPrompt?: string | null;
+        autoAcceptProposals?: boolean | null;
         preferences?: { disabledTools?: string[] };
       },
       options?: { signal?: AbortSignal },
@@ -459,6 +460,9 @@ export const api = {
       if (updates.name !== undefined) body.name = updates.name;
       if (updates.systemPrompt !== undefined)
         body.system_prompt = updates.systemPrompt;
+      if (updates.autoAcceptProposals !== undefined) {
+        body.auto_accept_proposals = updates.autoAcceptProposals;
+      }
       if (updates.preferences !== undefined) {
         body.preferences = {
           disabled_tools: updates.preferences.disabledTools,
@@ -1037,8 +1041,10 @@ export const api = {
       };
 
       const params = new URLSearchParams();
-      if (options?.limit !== undefined) params.set("limit", String(options.limit));
-      if (options?.offset !== undefined) params.set("offset", String(options.offset));
+      if (options?.limit !== undefined)
+        params.set("limit", String(options.limit));
+      if (options?.offset !== undefined)
+        params.set("offset", String(options.offset));
       const query = params.toString();
       const endpoint = `/api/documents/${documentId}/snapshots${query ? `?${query}` : ""}`;
 
@@ -1111,13 +1117,10 @@ export const api = {
       snapshotId: string,
       options?: { signal?: AbortSignal },
     ) =>
-      fetchAPI<void>(
-        `/api/documents/${documentId}/snapshots/${snapshotId}`,
-        {
-          method: "DELETE",
-          signal: options?.signal,
-        },
-      ),
+      fetchAPI<void>(`/api/documents/${documentId}/snapshots/${snapshotId}`, {
+        method: "DELETE",
+        signal: options?.signal,
+      }),
   },
 
   folders: {

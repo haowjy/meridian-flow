@@ -165,7 +165,8 @@ This directory contains detailed documentation for all features in Meridian, org
 - Strategy pattern: `CollabProposalStrategy` (single path)
 - Yjs text diff converter, thread context propagation, WS proposal broadcasting
 - Frontend: connection indicator, proposal badges in thread, editor navigation
-- Auto-accept ON by default; legacy PUA system removed
+- Auto-accept ON by default; project-level override in Project Settings
+- Legacy PUA system removed
 
 ### [f-mobile-responsive/](f-mobile-responsive/)
 **Responsive layouts for mobile and desktop viewports**

@@ -118,9 +118,10 @@ type preferencesDTO struct {
 //   - field null = clear
 //   - field has value = set
 type updateProjectDTO struct {
-	Name         *string                   `json:"name,omitempty"`
-	SystemPrompt optional.Optional[string] `json:"system_prompt"`
-	Preferences  *preferencesDTO           `json:"preferences,omitempty"` // If provided, replaces preferences
+	Name                *string                   `json:"name,omitempty"`
+	SystemPrompt        optional.Optional[string] `json:"system_prompt"`
+	AutoAcceptProposals optional.Optional[bool]   `json:"auto_accept_proposals"`
+	Preferences         *preferencesDTO           `json:"preferences,omitempty"` // If provided, replaces preferences
 }
 
 // UpdateProject updates a project
@@ -149,8 +150,9 @@ func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 
 	// Map transport DTO to service request
 	req := &docsysSvc.UpdateProjectRequest{
-		Name:         dto.Name,
-		SystemPrompt: dto.SystemPrompt,
+		Name:                dto.Name,
+		SystemPrompt:        dto.SystemPrompt,
+		AutoAcceptProposals: dto.AutoAcceptProposals,
 	}
 
 	// Map preferences DTO to JSONMap if provided
