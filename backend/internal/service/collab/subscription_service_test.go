@@ -1,4 +1,4 @@
-package smoke_test
+package collab_test
 
 import (
 	"context"
@@ -11,40 +11,40 @@ import (
 	serviceCollab "meridian/internal/service/collab"
 )
 
-// testStore implements collab.DocumentStore minimally for smoke tests.
-type testStore struct{}
+// testSubStore implements collab.DocumentStore minimally for subscription tests.
+type testSubStore struct{}
 
-func (s *testStore) LoadState(_ context.Context, _ string) ([]byte, error)   { return nil, nil }
-func (s *testStore) SaveState(_ context.Context, _ string, _ []byte, _ string, _ string) error {
+func (s *testSubStore) LoadState(_ context.Context, _ string) ([]byte, error)   { return nil, nil }
+func (s *testSubStore) SaveState(_ context.Context, _ string, _ []byte, _ string, _ string) error {
 	return nil
 }
-func (s *testStore) SaveSnapshot(_ context.Context, _ string, _ []byte, _ string, _ *string, _ *string) (string, error) {
+func (s *testSubStore) SaveSnapshot(_ context.Context, _ string, _ []byte, _ string, _ *string, _ *string) (string, error) {
 	return "", nil
 }
-func (s *testStore) ListSnapshots(_ context.Context, _ string, _, _ int) ([]collabModels.Snapshot, int, error) {
+func (s *testSubStore) ListSnapshots(_ context.Context, _ string, _, _ int) ([]collabModels.Snapshot, int, error) {
 	return nil, 0, nil
 }
-func (s *testStore) GetSnapshot(_ context.Context, _ string) (*collabModels.SnapshotWithState, error) {
+func (s *testSubStore) GetSnapshot(_ context.Context, _ string) (*collabModels.SnapshotWithState, error) {
 	return nil, nil
 }
-func (s *testStore) DeleteSnapshot(_ context.Context, _ string) error { return nil }
-func (s *testStore) DeleteExpiredAutoSnapshots(_ context.Context, _ int) (int64, error) {
+func (s *testSubStore) DeleteSnapshot(_ context.Context, _ string) error { return nil }
+func (s *testSubStore) DeleteExpiredAutoSnapshots(_ context.Context, _ int) (int64, error) {
 	return 0, nil
 }
 
-// testConn implements collab.Connection.
-type testConn struct{ id string }
+// testSubConn implements collab.Connection.
+type testSubConn struct{ id string }
 
-func (c *testConn) ID() string          { return c.id }
-func (c *testConn) Send(_ []byte) error { return nil }
+func (c *testSubConn) ID() string          { return c.id }
+func (c *testSubConn) Send(_ []byte) error { return nil }
 
-func newLogger() *slog.Logger {
+func newSubLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 }
 
 func TestSubscriptionService_SubscribeIdempotent(t *testing.T) {
-	logger := newLogger()
-	sessionMgr := serviceCollab.NewDocumentSessionManager(&testStore{}, logger, 500)
+	logger := newSubLogger()
+	sessionMgr := serviceCollab.NewDocumentSessionManager(&testSubStore{}, logger, 500)
 	broadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
 	svc := serviceCollab.NewSubscriptionService(sessionMgr, broadcaster, logger, 10)
 
@@ -55,7 +55,7 @@ func TestSubscriptionService_SubscribeIdempotent(t *testing.T) {
 	// First subscribe
 	result, err := svc.Subscribe(context.Background(), serviceCollab.SubscribeRequest{
 		ConnectionID: connID, DocumentID: docID, DocumentUUID: docUUID,
-		Conn: &testConn{id: "mux-1"},
+		Conn: &testSubConn{id: "mux-1"},
 	})
 	if err != nil {
 		t.Fatalf("first subscribe: %v", err)
@@ -70,7 +70,7 @@ func TestSubscriptionService_SubscribeIdempotent(t *testing.T) {
 	// Second subscribe (idempotent)
 	result2, err := svc.Subscribe(context.Background(), serviceCollab.SubscribeRequest{
 		ConnectionID: connID, DocumentID: docID, DocumentUUID: docUUID,
-		Conn: &testConn{id: "mux-2"},
+		Conn: &testSubConn{id: "mux-2"},
 	})
 	if err != nil {
 		t.Fatalf("idempotent subscribe: %v", err)
@@ -84,8 +84,8 @@ func TestSubscriptionService_SubscribeIdempotent(t *testing.T) {
 }
 
 func TestSubscriptionService_LimitExceeded(t *testing.T) {
-	logger := newLogger()
-	sessionMgr := serviceCollab.NewDocumentSessionManager(&testStore{}, logger, 500)
+	logger := newSubLogger()
+	sessionMgr := serviceCollab.NewDocumentSessionManager(&testSubStore{}, logger, 500)
 	broadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
 	svc := serviceCollab.NewSubscriptionService(sessionMgr, broadcaster, logger, 3)
 
@@ -94,7 +94,7 @@ func TestSubscriptionService_LimitExceeded(t *testing.T) {
 		docID := uuid.New().String()
 		_, err := svc.Subscribe(context.Background(), serviceCollab.SubscribeRequest{
 			ConnectionID: connID, DocumentID: docID, DocumentUUID: uuid.MustParse(docID),
-			Conn: &testConn{id: uuid.NewString()},
+			Conn: &testSubConn{id: uuid.NewString()},
 		})
 		if err != nil {
 			t.Fatalf("subscribe %d: %v", i, err)
@@ -104,7 +104,7 @@ func TestSubscriptionService_LimitExceeded(t *testing.T) {
 	docID := uuid.New().String()
 	_, err := svc.Subscribe(context.Background(), serviceCollab.SubscribeRequest{
 		ConnectionID: connID, DocumentID: docID, DocumentUUID: uuid.MustParse(docID),
-		Conn: &testConn{id: uuid.NewString()},
+		Conn: &testSubConn{id: uuid.NewString()},
 	})
 	if err != serviceCollab.ErrSubscriptionLimitExceeded {
 		t.Fatalf("expected ErrSubscriptionLimitExceeded, got: %v", err)
@@ -112,8 +112,8 @@ func TestSubscriptionService_LimitExceeded(t *testing.T) {
 }
 
 func TestSubscriptionService_UnsubscribeAndResubscribe(t *testing.T) {
-	logger := newLogger()
-	sessionMgr := serviceCollab.NewDocumentSessionManager(&testStore{}, logger, 500)
+	logger := newSubLogger()
+	sessionMgr := serviceCollab.NewDocumentSessionManager(&testSubStore{}, logger, 500)
 	broadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
 	svc := serviceCollab.NewSubscriptionService(sessionMgr, broadcaster, logger, 10)
 
@@ -123,7 +123,7 @@ func TestSubscriptionService_UnsubscribeAndResubscribe(t *testing.T) {
 
 	_, err := svc.Subscribe(context.Background(), serviceCollab.SubscribeRequest{
 		ConnectionID: connID, DocumentID: docID, DocumentUUID: docUUID,
-		Conn: &testConn{id: "mux-1"},
+		Conn: &testSubConn{id: "mux-1"},
 	})
 	if err != nil {
 		t.Fatalf("subscribe: %v", err)
@@ -142,7 +142,7 @@ func TestSubscriptionService_UnsubscribeAndResubscribe(t *testing.T) {
 	// Resubscribe
 	result, err := svc.Subscribe(context.Background(), serviceCollab.SubscribeRequest{
 		ConnectionID: connID, DocumentID: docID, DocumentUUID: docUUID,
-		Conn: &testConn{id: "mux-2"},
+		Conn: &testSubConn{id: "mux-2"},
 	})
 	if err != nil {
 		t.Fatalf("resubscribe: %v", err)
@@ -153,8 +153,8 @@ func TestSubscriptionService_UnsubscribeAndResubscribe(t *testing.T) {
 }
 
 func TestSubscriptionService_UnsubscribeAll(t *testing.T) {
-	logger := newLogger()
-	sessionMgr := serviceCollab.NewDocumentSessionManager(&testStore{}, logger, 500)
+	logger := newSubLogger()
+	sessionMgr := serviceCollab.NewDocumentSessionManager(&testSubStore{}, logger, 500)
 	broadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
 	svc := serviceCollab.NewSubscriptionService(sessionMgr, broadcaster, logger, 10)
 
@@ -165,7 +165,7 @@ func TestSubscriptionService_UnsubscribeAll(t *testing.T) {
 		docIDs[i] = docID
 		_, err := svc.Subscribe(context.Background(), serviceCollab.SubscribeRequest{
 			ConnectionID: connID, DocumentID: docID, DocumentUUID: uuid.MustParse(docID),
-			Conn: &testConn{id: uuid.NewString()},
+			Conn: &testSubConn{id: uuid.NewString()},
 		})
 		if err != nil {
 			t.Fatalf("subscribe %d: %v", i, err)
