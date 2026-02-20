@@ -268,6 +268,11 @@ async function persistTreeCache(
 // Store
 // ---------------------------------------------------------------------------
 
+// Monotonic counter for loadTree request scoping — ensures stale async
+// continuations (cache hydration, abort, error) don't clobber the active
+// project's state when the user switches projects mid-flight.
+let loadTreeRequestId = 0;
+
 export const useTreeStore = create<TreeStore>()((set, get) => ({
   documents: [],
   folders: [],
@@ -300,12 +305,21 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
       Date.now() - currentState.treeLoadedAt < 30_000;
     if (isFresh) return;
 
+    // Capture a monotonic request token so that every post-await state write
+    // can verify it's still the active request. A newer loadTree call will
+    // increment the counter, making this token stale.
+    const thisRequest = ++loadTreeRequestId;
+
     // Set loading state based on whether we already have this project's tree in memory.
+    // Set treeProjectId eagerly so that stale in-flight responses for a previous
+    // project are discarded (see request-scoping guard after the network fetch).
     const status = hasInMemoryData ? "success" : "loading";
-    set({ status, isFetching: true, error: null });
+    set({ status, isFetching: true, error: null, treeProjectId: projectId });
 
     try {
       const cachedTree = await db.projectTrees.get(projectId);
+      // Guard: a newer loadTree call may have started while we awaited cache
+      if (thisRequest !== loadTreeRequestId) return;
       if (cachedTree) {
         const cachedTreeData = buildTree(cachedTree.folders, cachedTree.documents);
         set({
@@ -323,9 +337,19 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
       log.warn("Cache read failed, falling back to network", err);
     }
 
+    // If superseded after cache phase, bail out entirely
+    if (thisRequest !== loadTreeRequestId) return;
+
     try {
       // Fetch tree from backend (already flattened by fromDocumentTreeDto mapper)
       const response = await api.documents.getTree(projectId, { signal });
+
+      // Request-scoping guard: if a newer loadTree call started while this fetch
+      // was in-flight, discard this stale response.
+      if (thisRequest !== loadTreeRequestId) {
+        log.info("Discarding stale tree response for project", projectId);
+        return;
+      }
 
       // Build hierarchical tree structure from flat arrays
       const tree = buildTree(response.folders, response.documents);
@@ -352,6 +376,9 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
         log.warn("Tree cache write failed", err);
       }
 
+      // Final staleness check after cache writes
+      if (thisRequest !== loadTreeRequestId) return;
+
       // Update store
       set({
         folders: response.folders,
@@ -365,9 +392,15 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
     } catch (error) {
       // Handle AbortError silently (expected when loading new project)
       if (isAbortError(error)) {
-        set({ isFetching: false });
+        // Only clear isFetching if this is still the active request
+        if (thisRequest === loadTreeRequestId) {
+          set({ isFetching: false });
+        }
         return;
       }
+
+      // If superseded, don't write error state for a stale request
+      if (thisRequest !== loadTreeRequestId) return;
 
       const message = getErrorMessageWithFallback(
         error,

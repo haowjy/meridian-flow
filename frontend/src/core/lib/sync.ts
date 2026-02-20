@@ -15,7 +15,7 @@
 import { api } from "./api";
 import { db } from "./db";
 import type { Document } from "@/features/documents/types/document";
-import { RetryScheduler, SyncOp, RetryCallbacks } from "./retry";
+import { RetryScheduler, SyncOp } from "./retry";
 import { makeLogger } from "@/core/lib/logger";
 
 const log = makeLogger("sync");
@@ -76,32 +76,6 @@ export async function syncDocument(
 }
 
 /**
- * Add a failed sync operation to the retry queue.
- *
- * This is called when a sync fails due to network errors (not client errors).
- * The operation will be retried automatically by the retry processor.
- *
- * NOTE: If the user keeps typing and triggers a new save, the new save will
- * automatically supersede this retry (newer content wins).
- *
- * @param op - Retry operation to queue
- */
-export function addRetryOperation(
-  op: {
-    entityType: "document";
-    entityId: string;
-    content: string;
-    attemptCount: number;
-  },
-  cbs?: RetryCallbacks<Document>,
-) {
-  const sched = ensureScheduler();
-  log.info(`Queued retry`, op.entityId, `attempt ${op.attemptCount + 1}/3`);
-
-  sched.add({ id: op.entityId, payload: op.content }, cbs);
-}
-
-/**
  * Cancel any pending retry for a document.
  *
  * This is called when:
@@ -116,34 +90,6 @@ export function cancelRetry(documentId: string) {
   log.debug(`Cancelled pending retry`, documentId);
   sched.cancel(documentId);
 }
-
-/**
- * Process all pending retry operations.
- *
- * This runs in the background (every 5 seconds) to retry failed sync operations.
- * It's the only "background" processing in the new sync system.
- *
- * For each retry:
- * - Check if enough time has passed since last attempt (5s delay)
- * - Attempt to sync to backend
- * - On success: Remove from queue, update store status
- * - On failure: Increment attempt count, schedule next retry
- * - After 3 attempts: Give up, show error to user
- */
-export async function processRetryQueue() {
-  // No-op: kept for backward compatibility; scheduler ticks internally.
-}
-
-/**
- * Check if an error is a network error (should retry).
- *
- * Network errors: Connection failed, timeout, 5xx server errors
- * Client errors: 400, 404, validation errors (should NOT retry)
- *
- * @param error - Error to check
- * @returns true if this is a network error
- */
-// Network error classifier moved to core/lib/errors.ts to avoid duplication
 
 /**
  * Initialize the retry processor.
@@ -169,12 +115,4 @@ export function initializeRetryProcessor(): void {
 export function cleanupRetryProcessor(): void {
   log.info("Stopping retry scheduler");
   scheduler?.stop();
-}
-
-/**
- * Get current retry queue state (for debugging).
- */
-export function getRetryQueueState() {
-  const sched = ensureScheduler();
-  return sched.snapshot();
 }

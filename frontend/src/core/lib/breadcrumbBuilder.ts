@@ -59,21 +59,3 @@ export function buildBreadcrumbs(
 
   return path;
 }
-
-/**
- * Formats breadcrumb segments as a display string.
- *
- * @param segments - Breadcrumb segments
- * @param separator - Separator string (default: ' / ')
- * @returns Formatted breadcrumb string
- *
- * @example
- * formatBreadcrumbs([{ name: 'Chapters' }, { name: 'Chapter 1' }])
- * // Returns: "Chapters / Chapter 1"
- */
-export function formatBreadcrumbs(
-  segments: BreadcrumbSegment[],
-  separator: string = " / ",
-): string {
-  return segments.map((s) => s.name).join(separator);
-}

@@ -37,7 +37,8 @@ export function useStreamingBuffer({
     if (entries.length === 0) return;
 
     for (const [key, content] of entries) {
-      if (!content) continue;
+      // Empty string "" is a valid streaming delta (convention: treat empty as valid)
+      if (content == null) continue;
       const [blockType, blockIndexStr] = key.split(":");
       const blockIndex = Number(blockIndexStr);
       if (!Number.isFinite(blockIndex)) continue;
@@ -49,7 +50,8 @@ export function useStreamingBuffer({
 
   const append = useCallback(
     (blockIndex: number, blockType: string, delta: string) => {
-      if (!delta || !Number.isFinite(blockIndex)) return;
+      // Empty string "" is a valid delta (convention: treat empty as valid)
+      if (delta == null || !Number.isFinite(blockIndex)) return;
 
       const key = `${blockType}:${blockIndex}`;
       buffersRef.current[key] = (buffersRef.current[key] ?? "") + delta;

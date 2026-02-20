@@ -258,6 +258,9 @@ export default function WorkspaceLayout({
       });
       store.setActiveDocument(null);
       store.setActiveSkill(null);
+      // Clear thread ephemeral state — these are project-scoped and must not survive navigation
+      store.clearPendingThreadReferences();
+      store.setPendingProposalId(null);
       useSkillStore.getState().clearSkills(); // Clear stale skills from previous project
       store.setRightPanelState("documents");
       // Reset panel ready state for new project - panels will collapse until new data loads

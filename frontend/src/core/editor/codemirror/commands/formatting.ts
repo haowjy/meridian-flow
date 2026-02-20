@@ -124,7 +124,9 @@ export function insertLink(
   const { state } = view;
   const { from, to } = state.selection.main;
   const selectedText = state.sliceDoc(from, to);
-  const linkText = text || selectedText || "link";
+  // ?? for `text` preserves empty string as valid (explicit param).
+  // || for `selectedText` because "" means "no selection" and should fall back to "link".
+  const linkText = text ?? (selectedText || "link");
   const markdown = `[${linkText}](${url})`;
 
   view.dispatch({

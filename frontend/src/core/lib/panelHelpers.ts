@@ -24,7 +24,7 @@ type NavigateFunction = ReturnType<typeof useNavigate>;
  * (Previously we encoded here, causing double-encoding since router also encodes.)
  * Example: "Chapter 1/Scene 2.md" -> "Chapter 1/Scene 2.md" (router encodes to "Chapter%201/Scene%202.md")
  */
-export function encodeDocumentPath(path: string): string {
+function encodeDocumentPath(path: string): string {
   return path;
 }
 
@@ -140,19 +140,4 @@ export function openSkill(
     to: "/projects/$slug/skills/$skillName",
     params: { slug: projectSlug, skillName },
   });
-}
-
-/**
- * Switches to a different thread in the active thread panel.
- * - Sets the active thread ID
- * - Does not affect panel collapse states
- *
- * @param threadId - The ID of the thread to switch to
- */
-export function switchThread(threadId: string) {
-  const store = useUIStore.getState();
-
-  store.setActiveThread(threadId);
-  // Sync mobile tab so MobileLayout shows the active chat view
-  store.setMobileActiveTab("chat");
 }

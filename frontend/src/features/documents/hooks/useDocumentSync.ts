@@ -84,6 +84,9 @@ export function useDocumentSync<TEditor = any>(
   useEffect(() => {
     if (!enabled) return;
     if (!activeDocument) return;
+    // Guard against stale activeDocument after navigation: the store's activeDocument
+    // may briefly reference the previous document during a project/document switch.
+    if (activeDocument.id !== documentId) return;
     if (!hasUserEdit) return;
     if (pendingServerSnapshot) return; // Don't save if conflict pending
 
@@ -157,6 +160,7 @@ export function useDocumentSync<TEditor = any>(
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
     };
   }, [
+    documentId,
     activeDocument,
     localDocument,
     hasUserEdit,
@@ -182,7 +186,9 @@ export function useDocumentSync<TEditor = any>(
     return () => {
       if (initializedRef.current && hasUserEditRef.current) {
         const doc = activeDocumentRef.current;
-        const docId = doc?.id ?? documentId;
+        // Use documentId directly (the hook parameter) — activeDocumentRef may
+        // point to a stale document if the user navigated away during cleanup.
+        const docId = documentId;
         const editorContent =
           editorRef.current?.getContent() ?? localDocumentRef.current;
 

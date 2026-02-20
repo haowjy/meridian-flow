@@ -1,10 +1,5 @@
 import type { Folder } from "@/features/folders/types/folder";
 import type { Document } from "@/features/documents/types/document";
-import {
-  type TreeFolderDto,
-  type TreeDocumentDto,
-  fromTreeDocumentDto,
-} from "@/types/api";
 
 /**
  * Hierarchical tree node for rendering folder/document structure.
@@ -29,66 +24,6 @@ export type TreeNode =
       name: string;
       data: Document;
     };
-
-/**
- * Converts nested backend structure to TreeNode format.
- * Backend returns folders with nested folders/documents already built.
- *
- * @param foldersDto - Nested folders from backend /tree endpoint
- * @param documentsDto - Documents at this level
- * @returns TreeNode array ready for rendering
- */
-export function convertNestedToTreeNodes(
-  foldersDto: TreeFolderDto[],
-  documentsDto: TreeDocumentDto[],
-): TreeNode[] {
-  const nodes: TreeNode[] = [];
-
-  // Convert folders (with their nested children)
-  for (const folderDto of foldersDto) {
-    const folder: Folder = {
-      id: folderDto.id,
-      projectId: folderDto.projectId,
-      parentId: folderDto.folderId,
-      name: folderDto.name,
-      createdAt: new Date(folderDto.createdAt),
-    };
-
-    // Recursively convert nested children
-    const children = convertNestedToTreeNodes(
-      folderDto.folders || [],
-      folderDto.documents || [],
-    );
-
-    nodes.push({
-      type: "folder",
-      id: folder.id,
-      name: folder.name,
-      data: folder,
-      children: children.length > 0 ? children : undefined,
-    });
-  }
-
-  // Convert documents at this level
-  for (const docDto of documentsDto) {
-    const document: Document = fromTreeDocumentDto(docDto);
-
-    nodes.push({
-      type: "document",
-      id: document.id,
-      name: document.filename, // Display full filename with extension
-      data: document,
-    });
-  }
-
-  // Sort: folders first, then documents, alphabetically within each type
-  return nodes.sort((a, b) => {
-    if (a.type !== b.type) {
-      return a.type === "folder" ? -1 : 1;
-    }
-    return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-  });
-}
 
 /**
  * Builds hierarchical tree structure from flat folder/document arrays.

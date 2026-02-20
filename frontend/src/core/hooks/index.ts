@@ -5,10 +5,6 @@ export { useOnlineStatus } from "./useOnlineStatus";
 export { useAbortController } from "./useAbortController";
 export { useResourceOperations } from "./useResourceOperations";
 export { useLatestRef } from "./useLatestRef";
-export {
-  useResourcePolling,
-  type UseResourcePollingOptions,
-} from "./useResourcePolling";
 export { useIsMobile } from "./useIsMobile";
 export { useLayoutStrategy } from "./useLayoutStrategy";
 export {

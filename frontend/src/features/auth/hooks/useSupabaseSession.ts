@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { createClient } from "@/core/supabase/client";
 import type { SessionStatus } from "../types";
@@ -15,25 +15,46 @@ export function useSupabaseSession(): {
 } {
   const [session, setSession] = useState<Session | null>(null);
   const [status, setStatus] = useState<SessionStatus>("loading");
+  // Track current session so the .catch() can avoid clobbering a valid session
+  // that onAuthStateChange already delivered.
+  const sessionRef = useRef<Session | null>(null);
 
   useEffect(() => {
+    let mounted = true;
     const supabase = createClient();
 
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setStatus(session ? "authenticated" : "unauthenticated");
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        if (!mounted) return;
+        sessionRef.current = session;
+        setSession(session);
+        setStatus(session ? "authenticated" : "unauthenticated");
+      })
+      .catch((err) => {
+        console.error("Failed to load auth session:", err);
+        if (!mounted) return;
+        // Only fall back to unauthenticated if onAuthStateChange hasn't
+        // already delivered a valid session (race: listener fires before
+        // getSession resolves/rejects).
+        if (!sessionRef.current) {
+          setStatus("unauthenticated");
+        }
+      });
 
     // Subscribe to auth state changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+      sessionRef.current = session;
       setSession(session);
       setStatus(session ? "authenticated" : "unauthenticated");
     });
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, []);

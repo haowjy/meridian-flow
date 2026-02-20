@@ -92,8 +92,9 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
         skillsLoadedAt: Date.now(),
       });
     } catch (error) {
-      // Silent abort errors
+      // Clear loading flag on abort to prevent stuck loading state
       if (error instanceof Error && error.name === "AbortError") {
+        set({ isLoadingSkills: false });
         return;
       }
       // On error with cached data for same project, keep showing cached data
@@ -118,7 +119,9 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
       const skill = await api.skills.get(projectId, skillId, { signal });
       set({ selectedSkillContent: skill, isLoadingSelectedSkill: false });
     } catch (error) {
+      // Clear loading flag on abort to prevent stuck loading state
       if (error instanceof Error && error.name === "AbortError") {
+        set({ isLoadingSelectedSkill: false });
         return;
       }
       set({ isLoadingSelectedSkill: false });

@@ -7,12 +7,12 @@
  */
 
 // Constants synced with backend
-export const RESERVED_ROOT_FOLDER_NAMES = [".meridian", ".session", ".agents"] as const;
-export const MAX_NAME_LENGTH = 255;
+const RESERVED_ROOT_FOLDER_NAMES = [".meridian", ".session", ".agents"] as const;
+const MAX_NAME_LENGTH = 255;
 
 export type ValidationType = "folder" | "document";
 
-export interface ValidationOptions {
+interface ValidationOptions {
   type?: ValidationType;
   isRootLevel?: boolean;
   existingNames?: string[];
@@ -23,7 +23,7 @@ export interface ValidationOptions {
 /**
  * Validates that name is not empty after trimming
  */
-export function validateNotEmpty(name: string): string | null {
+function validateNotEmpty(name: string): string | null {
   if (!name.trim()) {
     return "Name cannot be empty";
   }
@@ -34,7 +34,7 @@ export function validateNotEmpty(name: string): string | null {
  * Validates that name does not contain slashes
  * Matches backend regex: ^[^/]+$
  */
-export function validateNoSlashes(name: string): string | null {
+function validateNoSlashes(name: string): string | null {
   if (name.includes("/")) {
     return "Name cannot contain slashes";
   }
@@ -45,7 +45,7 @@ export function validateNoSlashes(name: string): string | null {
  * Validates that name does not exceed max length
  * Matches backend MaxFolderNameLength and MaxDocumentNameLength (255)
  */
-export function validateMaxLength(name: string): string | null {
+function validateMaxLength(name: string): string | null {
   if (name.length > MAX_NAME_LENGTH) {
     return `Name cannot exceed ${MAX_NAME_LENGTH} characters`;
   }
@@ -57,7 +57,7 @@ export function validateMaxLength(name: string): string | null {
  * Only applies to folders at root level
  * Matches backend reservedRootFolderNames
  */
-export function validateNotReserved(
+function validateNotReserved(
   name: string,
   options: Pick<ValidationOptions, "type" | "isRootLevel">,
 ): string | null {
@@ -76,7 +76,7 @@ export function validateNotReserved(
  * Validates that name is not a duplicate
  * Case-insensitive comparison, excludes current name for renames
  */
-export function validateNotDuplicate(
+function validateNotDuplicate(
   name: string,
   options: Pick<
     ValidationOptions,

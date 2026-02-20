@@ -112,18 +112,3 @@ export function detectEditorType(filename: string): EditorType {
   }
 }
 
-// ============================================================================
-// FUTURE: EDITOR REGISTRY
-// ============================================================================
-
-// When implementing multi-editor support, add:
-//
-// const editorRegistry = new Map<EditorType, EditorDefinition>()
-//
-// export function registerEditor(definition: EditorDefinition): void {
-//   editorRegistry.set(definition.type, definition)
-// }
-//
-// export function getEditor(type: EditorType): EditorDefinition | undefined {
-//   return editorRegistry.get(type)
-// }

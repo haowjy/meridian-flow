@@ -11,6 +11,3 @@ export {
 export { useDocumentSync } from "./useDocumentSync";
 export { useDocumentCollab } from "./useDocumentCollab";
 export { useProjectCollab } from "./useProjectCollab";
-
-// UI utility hooks
-export { useThumbFollow } from "./useThumbFollow";

@@ -45,19 +45,3 @@ export function formatRelativeTime(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-/**
- * Format file size with appropriate unit.
- *
- * @param bytes - File size in bytes
- * @returns Formatted file size (e.g., "1.2 KB", "3.4 MB", "512 bytes")
- *
- * @example
- * formatFileSize(512)       // "512 bytes"
- * formatFileSize(1536)      // "1.5 KB"
- * formatFileSize(3670016)   // "3.5 MB"
- */
-export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} bytes`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}

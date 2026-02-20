@@ -211,7 +211,8 @@ function BlockItem({ block, index }: { block: TurnBlock; index: number }) {
   const [metadataOpen, setMetadataOpen] = useState(false);
 
   const fullContent = (() => {
-    if (block.textContent) return block.textContent;
+    // Empty string "" is valid content (convention: treat empty as valid)
+    if (block.textContent !== undefined) return block.textContent;
     if (block.content) return JSON.stringify(block.content, null, 2);
     return "—";
   })();

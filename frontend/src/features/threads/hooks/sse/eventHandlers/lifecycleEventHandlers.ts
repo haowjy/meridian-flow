@@ -101,7 +101,8 @@ export function handleRunFinished(
 ): void {
   const { tracker, logger, buffer, ctrl, threadId } = ctx;
   // Use turnId directly from Meridian extension (avoids parsing runId)
-  const turnId = data.turnId || null;
+  // ?? preserves empty string as valid (convention: treat empty as valid)
+  const turnId = data.turnId ?? null;
 
   logger.debug("sse:run_finished", {
     turnId,
@@ -167,7 +168,8 @@ export function handleRunError(
 ): void {
   const { tracker, logger, buffer, ctrl, threadId } = ctx;
   // Use turnId directly from Meridian extension (avoids parsing runId)
-  const turnId = data.turnId || null;
+  // ?? preserves empty string as valid (convention: treat empty as valid)
+  const turnId = data.turnId ?? null;
 
   // Log error (non-cancellation) or debug (cancellation)
   if (!data.isCancelled) {

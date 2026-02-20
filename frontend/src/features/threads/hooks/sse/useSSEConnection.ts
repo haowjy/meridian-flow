@@ -82,7 +82,8 @@ export function useThreadSSE() {
   const handleFlush = useCallback(
     (blockIndex: number, blockType: string, content: string) => {
       const turnId = currentTurnIdRef.current;
-      if (!turnId || blockIndex == null || !content) return;
+      // Empty string "" is valid content (convention: treat empty as valid); keep !turnId — IDs are never empty string
+      if (!turnId || blockIndex == null || content == null) return;
       appendStreamingTextDelta(turnId, blockIndex, blockType, content);
     },
     [appendStreamingTextDelta],
