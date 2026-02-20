@@ -385,6 +385,7 @@ func main() {
 	// Snapshot routes (collab document version history)
 	mux.HandleFunc("POST /api/documents/{id}/snapshots", collabSnapshotHandler.CreateSnapshot)
 	mux.HandleFunc("GET /api/documents/{id}/snapshots", collabSnapshotHandler.ListSnapshots)
+	mux.HandleFunc("GET /api/documents/{id}/snapshots/{snapshotId}/content", collabSnapshotHandler.GetSnapshotContent)
 	mux.HandleFunc("POST /api/documents/{id}/snapshots/{snapshotId}/restore", collabSnapshotHandler.RestoreSnapshot)
 	mux.HandleFunc("DELETE /api/documents/{id}/snapshots/{snapshotId}", collabSnapshotHandler.DeleteSnapshot)
 

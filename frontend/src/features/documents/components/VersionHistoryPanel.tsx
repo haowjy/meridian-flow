@@ -1,12 +1,13 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { api } from "@/core/lib/api";
 import { isAbortError } from "@/core/lib/errors";
+import { useEditorStore } from "@/core/stores/useEditorStore";
 import { useUIStore } from "@/core/stores/useUIStore";
 import { Button } from "@/shared/components/ui/button";
-import { ScrollArea } from "@/shared/components/ui/scroll-area";
-import { X, Plus, RotateCcw, Trash2, Clock, Bookmark, Shield, User, Sparkles } from "lucide-react";
+import { X, Plus, Clock, Bookmark, Shield, User, Sparkles } from "lucide-react";
 import type { DocumentSnapshot } from "@/features/documents/types/snapshot";
-import { cn } from "@/lib/utils";
+import { SnapshotListView } from "./SnapshotListView";
+import { SnapshotPreviewPane } from "./SnapshotPreviewPane";
 
 type OriginFilter = "all" | "human" | "ai";
 
@@ -30,12 +31,25 @@ export function VersionHistoryPanel({ documentId }: VersionHistoryPanelProps) {
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [originFilter, setOriginFilter] = useState<OriginFilter>("all");
-  const abortRef = useRef<AbortController | null>(null);
+
+  // Explicit preview state (list mode vs preview mode).
+  const [selectedSnapshotId, setSelectedSnapshotId] = useState<string | null>(
+    null,
+  );
+  const [previewSnapshot, setPreviewSnapshot] =
+    useState<DocumentSnapshot | null>(null);
+  const [previewContent, setPreviewContent] = useState("");
+  const [previewBaseContent, setPreviewBaseContent] = useState("");
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  const listAbortRef = useRef<AbortController | null>(null);
+  const previewAbortRef = useRef<AbortController | null>(null);
 
   const loadSnapshots = useCallback(async () => {
-    abortRef.current?.abort();
+    listAbortRef.current?.abort();
     const controller = new AbortController();
-    abortRef.current = controller;
+    listAbortRef.current = controller;
 
     setIsLoading(true);
     setError(null);
@@ -55,9 +69,66 @@ export function VersionHistoryPanel({ documentId }: VersionHistoryPanelProps) {
   }, [documentId]);
 
   useEffect(() => {
-    loadSnapshots();
-    return () => abortRef.current?.abort();
+    void loadSnapshots();
+    return () => {
+      listAbortRef.current?.abort();
+      previewAbortRef.current?.abort();
+    };
   }, [loadSnapshots]);
+
+  const getCurrentBaseContent = useCallback(() => {
+    const activeDocument = useEditorStore.getState().activeDocument;
+    if (activeDocument?.id !== documentId) {
+      return "";
+    }
+    return activeDocument.content ?? "";
+  }, [documentId]);
+
+  const clearPreview = useCallback(() => {
+    previewAbortRef.current?.abort();
+    setSelectedSnapshotId(null);
+    setPreviewSnapshot(null);
+    setPreviewContent("");
+    setPreviewBaseContent("");
+    setIsPreviewLoading(false);
+    setPreviewError(null);
+  }, []);
+
+  const openPreview = useCallback(
+    async (snapshot: DocumentSnapshot) => {
+      previewAbortRef.current?.abort();
+      const controller = new AbortController();
+      previewAbortRef.current = controller;
+
+      setSelectedSnapshotId(snapshot.id);
+      setPreviewSnapshot(snapshot);
+      setPreviewBaseContent(getCurrentBaseContent());
+      setPreviewContent("");
+      setPreviewError(null);
+      setIsPreviewLoading(true);
+
+      try {
+        const result = await api.snapshots.content(documentId, snapshot.id, {
+          signal: controller.signal,
+        });
+
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setPreviewSnapshot(snapshot);
+        setPreviewContent(result.content);
+      } catch (err) {
+        if (isAbortError(err)) return;
+        setPreviewError("Failed to load snapshot preview");
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsPreviewLoading(false);
+        }
+      }
+    },
+    [documentId, getCurrentBaseContent],
+  );
 
   const handleCreate = async () => {
     if (!newSnapshotName.trim()) return;
@@ -76,12 +147,15 @@ export function VersionHistoryPanel({ documentId }: VersionHistoryPanelProps) {
     }
   };
 
-  const handleRestore = async (snapshotId: string) => {
+  const handleRestore = async () => {
+    const snapshotId = previewSnapshot?.id ?? selectedSnapshotId;
+    if (!snapshotId) return;
+
     setRestoringId(snapshotId);
     try {
       await api.snapshots.restore(documentId, snapshotId);
       await loadSnapshots();
-      // Reload the page to pick up restored Yjs state
+      // Restore still requires full reload so editor session picks up restored Yjs state.
       window.location.reload();
     } catch (err) {
       if (!isAbortError(err)) {
@@ -106,23 +180,54 @@ export function VersionHistoryPanel({ documentId }: VersionHistoryPanelProps) {
     }
   };
 
-  const close = () => useUIStore.getState().setShowVersionHistory(false);
+  const close = () => {
+    clearPreview();
+    useUIStore.getState().setShowVersionHistory(false);
+  };
 
   // Determine origin from snapshot type
-  const getSnapshotOrigin = (snap: DocumentSnapshot): "human" | "ai" | "system" => {
+  const getSnapshotOrigin = (
+    snap: DocumentSnapshot,
+  ): "human" | "ai" | "system" => {
     if (snap.snapshotType === "auto_ai_accept") return "ai";
-    if (snap.snapshotType === "auto" || snap.snapshotType === "auto_human" || snap.snapshotType === "named") return "human";
+    if (
+      snap.snapshotType === "auto" ||
+      snap.snapshotType === "auto_human" ||
+      snap.snapshotType === "named"
+    )
+      return "human";
     return "system"; // pre_restore
   };
 
-  // Filter snapshots by origin
-  const filteredSnapshots = snapshots.filter((snap) => {
-    if (originFilter === "all") return true;
-    const origin = getSnapshotOrigin(snap);
-    if (originFilter === "human") return origin === "human";
-    if (originFilter === "ai") return origin === "ai";
-    return true;
-  });
+  const filteredSnapshots = useMemo(() => {
+    return snapshots.filter((snap) => {
+      if (originFilter === "all") return true;
+      const origin = getSnapshotOrigin(snap);
+      if (originFilter === "human") return origin === "human";
+      if (originFilter === "ai") return origin === "ai";
+      return true;
+    });
+  }, [snapshots, originFilter]);
+
+  const previewIndex = useMemo(() => {
+    if (!selectedSnapshotId) return -1;
+    return filteredSnapshots.findIndex(
+      (snap) => snap.id === selectedSnapshotId,
+    );
+  }, [filteredSnapshots, selectedSnapshotId]);
+
+  const canSwitchPrev = previewIndex > 0;
+  const canSwitchNext =
+    previewIndex >= 0 && previewIndex < filteredSnapshots.length - 1;
+
+  const switchPreview = async (direction: -1 | 1) => {
+    if (previewIndex < 0) return;
+    const target = filteredSnapshots[previewIndex + direction];
+    if (!target) return;
+    await openPreview(target);
+  };
+
+  const isPreviewMode = selectedSnapshotId !== null;
 
   const snapshotIcon = (type: DocumentSnapshot["snapshotType"]) => {
     switch (type) {
@@ -157,7 +262,8 @@ export function VersionHistoryPanel({ documentId }: VersionHistoryPanelProps) {
   // Render origin badge for auto snapshots
   const renderOriginBadge = (snap: DocumentSnapshot) => {
     const origin = getSnapshotOrigin(snap);
-    if (snap.snapshotType === "named" || snap.snapshotType === "pre_restore") return null;
+    if (snap.snapshotType === "named" || snap.snapshotType === "pre_restore")
+      return null;
 
     if (origin === "ai") {
       return (
@@ -200,6 +306,8 @@ export function VersionHistoryPanel({ documentId }: VersionHistoryPanelProps) {
     });
   };
 
+  const selectedSnapshot = previewSnapshot;
+
   return (
     <div className="bg-background flex h-full flex-col border-l">
       {/* Header */}
@@ -211,86 +319,90 @@ export function VersionHistoryPanel({ documentId }: VersionHistoryPanelProps) {
       </div>
 
       {/* Create snapshot */}
-      <div className="border-border/50 border-b px-3 py-2">
-        {showCreateForm ? (
-          <div className="flex flex-col gap-1.5">
-            <input
-              type="text"
-              className="border-border bg-background text-sm rounded border px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary"
-              placeholder="Snapshot name..."
-              value={newSnapshotName}
-              onChange={(e) => setNewSnapshotName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleCreate();
-                if (e.key === "Escape") setShowCreateForm(false);
-              }}
-              autoFocus
-              disabled={isCreating}
-            />
-            <div className="flex gap-1">
-              <Button
-                size="sm"
-                className="h-6 text-xs"
-                onClick={handleCreate}
-                disabled={isCreating || !newSnapshotName.trim()}
-              >
-                {isCreating ? "Saving..." : "Save"}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 text-xs"
-                onClick={() => setShowCreateForm(false)}
+      {!isPreviewMode && (
+        <div className="border-border/50 border-b px-3 py-2">
+          {showCreateForm ? (
+            <div className="flex flex-col gap-1.5">
+              <input
+                type="text"
+                className="border-border bg-background focus:ring-primary rounded border px-2 py-1 text-sm focus:ring-1 focus:outline-none"
+                placeholder="Snapshot name..."
+                value={newSnapshotName}
+                onChange={(e) => setNewSnapshotName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void handleCreate();
+                  if (e.key === "Escape") setShowCreateForm(false);
+                }}
+                autoFocus
                 disabled={isCreating}
-              >
-                Cancel
-              </Button>
+              />
+              <div className="flex gap-1">
+                <Button
+                  size="sm"
+                  className="h-6 text-xs"
+                  onClick={() => void handleCreate()}
+                  disabled={isCreating || !newSnapshotName.trim()}
+                >
+                  {isCreating ? "Saving..." : "Save"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs"
+                  onClick={() => setShowCreateForm(false)}
+                  disabled={isCreating}
+                >
+                  Cancel
+                </Button>
+              </div>
             </div>
-          </div>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 w-full text-xs"
-            onClick={() => setShowCreateForm(true)}
-          >
-            <Plus className="mr-1 h-3 w-3" />
-            Create Restore Point
-          </Button>
-        )}
-      </div>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 w-full text-xs"
+              onClick={() => setShowCreateForm(true)}
+            >
+              <Plus className="mr-1 h-3 w-3" />
+              Create Restore Point
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Origin Filter */}
-      <div className="border-border/50 border-b px-3 py-2">
-        <div className="flex gap-1">
-          <Button
-            variant={originFilter === "all" ? "default" : "ghost"}
-            size="sm"
-            className="h-6 flex-1 text-xs"
-            onClick={() => setOriginFilter("all")}
-          >
-            All
-          </Button>
-          <Button
-            variant={originFilter === "human" ? "default" : "ghost"}
-            size="sm"
-            className="h-6 flex-1 text-xs"
-            onClick={() => setOriginFilter("human")}
-          >
-            <User className="mr-0.5 h-2.5 w-2.5" />
-            Human
-          </Button>
-          <Button
-            variant={originFilter === "ai" ? "default" : "ghost"}
-            size="sm"
-            className="h-6 flex-1 text-xs"
-            onClick={() => setOriginFilter("ai")}
-          >
-            <Sparkles className="mr-0.5 h-2.5 w-2.5" />
-            AI
-          </Button>
+      {!isPreviewMode && (
+        <div className="border-border/50 border-b px-3 py-2">
+          <div className="flex gap-1">
+            <Button
+              variant={originFilter === "all" ? "default" : "ghost"}
+              size="sm"
+              className="h-6 flex-1 text-xs"
+              onClick={() => setOriginFilter("all")}
+            >
+              All
+            </Button>
+            <Button
+              variant={originFilter === "human" ? "default" : "ghost"}
+              size="sm"
+              className="h-6 flex-1 text-xs"
+              onClick={() => setOriginFilter("human")}
+            >
+              <User className="mr-0.5 h-2.5 w-2.5" />
+              Human
+            </Button>
+            <Button
+              variant={originFilter === "ai" ? "default" : "ghost"}
+              size="sm"
+              className="h-6 flex-1 text-xs"
+              onClick={() => setOriginFilter("ai")}
+            >
+              <Sparkles className="mr-0.5 h-2.5 w-2.5" />
+              AI
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Error */}
       {error && (
@@ -302,7 +414,7 @@ export function VersionHistoryPanel({ documentId }: VersionHistoryPanelProps) {
             className="ml-1 h-4 text-xs underline"
             onClick={() => {
               setError(null);
-              loadSnapshots();
+              void loadSnapshots();
             }}
           >
             Retry
@@ -310,88 +422,54 @@ export function VersionHistoryPanel({ documentId }: VersionHistoryPanelProps) {
         </div>
       )}
 
-      {/* Snapshot list */}
-      <ScrollArea className="flex-1">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <div className="text-muted-foreground text-xs">Loading...</div>
-          </div>
-        ) : filteredSnapshots.length === 0 ? (
-          <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
-            <Clock className="text-muted-foreground mb-2 h-8 w-8 opacity-50" />
-            <p className="text-muted-foreground text-xs">
-              {snapshots.length === 0 ? "No snapshots yet" : `No ${originFilter} snapshots`}
-            </p>
-            <p className="text-muted-foreground mt-1 text-xs opacity-70">
-              {snapshots.length === 0
-                ? "Create a restore point to save your current progress"
-                : "Try a different filter"}
-            </p>
-          </div>
-        ) : (
-          <div className="divide-border/50 divide-y">
-            {filteredSnapshots.map((snap) => (
-              <div
-                key={snap.id}
-                className={cn(
-                  "group flex flex-col gap-1 px-3 py-2 transition-colors hover:bg-muted/50",
-                  (snap.snapshotType === "auto" || snap.snapshotType === "auto_human" || snap.snapshotType === "auto_ai_accept") && "opacity-70",
-                )}
-              >
-                <div className="flex items-start gap-2">
-                  <div className="mt-0.5 shrink-0">{snapshotIcon(snap.snapshotType)}</div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <div className="truncate text-xs font-medium">
-                        {snapshotLabel(snap)}
-                      </div>
-                      {renderOriginBadge(snap)}
-                    </div>
-                    <div className="text-muted-foreground text-[10px]">
-                      {formatDate(snap.createdAt)}
-                    </div>
-                  </div>
-                </div>
-                {/* Actions: visible on hover */}
-                <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-5 px-1.5 text-[10px]"
-                    onClick={() => handleRestore(snap.id)}
-                    disabled={restoringId !== null}
-                  >
-                    <RotateCcw className="mr-0.5 h-2.5 w-2.5" />
-                    {restoringId === snap.id ? "Restoring..." : "Restore"}
-                  </Button>
-                  {snap.snapshotType === "named" && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive h-5 px-1.5 text-[10px]"
-                      onClick={() => handleDelete(snap.id)}
-                      disabled={deletingId !== null}
-                    >
-                      <Trash2 className="mr-0.5 h-2.5 w-2.5" />
-                      {deletingId === snap.id ? "..." : "Delete"}
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-        {total > snapshots.length && originFilter === "all" && (
-          <div className="text-muted-foreground px-3 py-2 text-center text-[10px]">
-            Showing {snapshots.length} of {total} snapshots
-          </div>
-        )}
-        {originFilter !== "all" && filteredSnapshots.length > 0 && (
-          <div className="text-muted-foreground px-3 py-2 text-center text-[10px]">
-            Showing {filteredSnapshots.length} {originFilter} snapshot{filteredSnapshots.length !== 1 ? "s" : ""}
-          </div>
-        )}
-      </ScrollArea>
+      {/* Preview mode */}
+      {isPreviewMode ? (
+        <SnapshotPreviewPane
+          snapshot={selectedSnapshot}
+          selectedSnapshotId={selectedSnapshotId}
+          previewBaseContent={previewBaseContent}
+          previewContent={previewContent}
+          isPreviewLoading={isPreviewLoading}
+          previewError={previewError}
+          restoringId={restoringId}
+          canSwitchPrev={canSwitchPrev}
+          canSwitchNext={canSwitchNext}
+          formatDate={formatDate}
+          snapshotIcon={snapshotIcon}
+          snapshotLabel={snapshotLabel}
+          onSwitchPrev={() => void switchPreview(-1)}
+          onSwitchNext={() => void switchPreview(1)}
+          onRestore={() => void handleRestore()}
+          onClosePreview={clearPreview}
+          onRetryPreview={() => {
+            if (!selectedSnapshotId) return;
+            const snapshot = snapshots.find(
+              (item) => item.id === selectedSnapshotId,
+            );
+            if (!snapshot) {
+              setPreviewError("Snapshot no longer available");
+              return;
+            }
+            void openPreview(snapshot);
+          }}
+        />
+      ) : (
+        <SnapshotListView
+          snapshots={snapshots}
+          filteredSnapshots={filteredSnapshots}
+          total={total}
+          originFilter={originFilter}
+          isLoading={isLoading}
+          isPreviewLoading={isPreviewLoading}
+          deletingId={deletingId}
+          snapshotIcon={snapshotIcon}
+          snapshotLabel={snapshotLabel}
+          renderOriginBadge={renderOriginBadge}
+          formatDate={formatDate}
+          onOpenPreview={(snapshot) => void openPreview(snapshot)}
+          onDelete={(snapshotId) => void handleDelete(snapshotId)}
+        />
+      )}
     </div>
   );
 }

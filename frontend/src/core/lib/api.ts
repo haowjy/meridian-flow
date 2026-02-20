@@ -1064,6 +1064,20 @@ export const api = {
         total: data.total,
       };
     },
+    /** Get decoded plain-text content for a snapshot. */
+    content: async (
+      documentId: string,
+      snapshotId: string,
+      options?: { signal?: AbortSignal },
+    ): Promise<{ content: string }> => {
+      const data = await fetchAPI<{ content?: string }>(
+        `/api/documents/${documentId}/snapshots/${snapshotId}/content`,
+        {
+          signal: options?.signal,
+        },
+      );
+      return { content: data.content ?? "" };
+    },
     /** Create a named snapshot of the current document state. */
     create: async (
       documentId: string,
