@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi, afterEach } from "vitest";
-import { MeridianEnvelopeType, frameEnvelope } from "@meridian/cm6-collab";
+import { MeridianEnvelopeType, frameEnvelope } from "@/core/cm6-collab";
 
 import {
   createProjectCollabTransport,

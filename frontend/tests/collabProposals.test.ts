@@ -4,7 +4,7 @@ import {
   buildProposalRejectCommand,
   createProposalManager,
   type Proposal,
-} from "@meridian/cm6-collab";
+} from "@/core/cm6-collab";
 
 function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
   return {

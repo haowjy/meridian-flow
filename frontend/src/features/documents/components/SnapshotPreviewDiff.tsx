@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { mountProposalReviewMergeView } from "@meridian/cm6-collab";
+import { mountProposalReviewMergeView } from "@/core/cm6-collab";
 
 interface SnapshotPreviewDiffProps {
   baseText: string;

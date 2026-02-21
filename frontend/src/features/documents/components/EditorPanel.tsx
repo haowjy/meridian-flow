@@ -29,14 +29,15 @@ import { SidebarToggle } from "@/shared/components/layout/SidebarToggle";
 import { CompactBreadcrumb } from "@/shared/components/ui/CompactBreadcrumb";
 import { Button } from "@/shared/components/ui/button";
 import { ChevronLeft } from "lucide-react";
-import { AIProposalReviewPanel } from "./AIProposalReviewPanel";
 import { EditorHeader } from "./EditorHeader";
 import { EditorWikiLinkPopover } from "./EditorWikiLinkPopover";
 import { WikiLinkCreatePopover } from "./WikiLinkCreatePopover";
+import { ProposalReviewToolbar } from "./ProposalReviewToolbar";
 import {
   useDocumentContent,
   useDocumentCollab,
   useDocumentSync,
+  useInlineReview,
 } from "../hooks";
 import { useEditorWikiLinks } from "../hooks/useEditorWikiLinks";
 import { isCollabEnabled } from "../lib/collabFeatureFlag";
@@ -137,10 +138,10 @@ export function EditorPanel({
   const {
     extensions: collabExtensions,
     connectionState: collabConnectionState,
-    proposals,
     operationsModels,
     sendProposalAccept,
     sendProposalReject,
+    requestProposalUpdate,
     applyChunkUpdate,
     isReady: isCollabReady,
     getYtextContent,
@@ -151,6 +152,17 @@ export function EditorPanel({
     initialContent: collabSeedContent,
   });
 
+  // 4. Inline review — wires proposal chunks to CM6 decorations + toolbar
+  const { extensions: inlineReviewExts, toolbarProps: reviewToolbarProps } =
+    useInlineReview({
+      editorRef,
+      collabEnabled,
+      operationsModels,
+      applyChunkUpdate,
+      sendProposalAccept,
+      sendProposalReject,
+      requestProposalUpdate,
+    });
   // 2. Document sync (save, flush) — only active for non-collab extensions
   useDocumentSync(
     documentId,
@@ -186,24 +198,6 @@ export function EditorPanel({
     const store = useUIStore.getState();
     store.setRightPanelState("documents");
   };
-
-  const handleProposalAccept = useCallback(
-    (proposalId: string) => {
-      const idempotencyKey =
-        typeof globalThis.crypto?.randomUUID === "function"
-          ? globalThis.crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      sendProposalAccept(proposalId, idempotencyKey);
-    },
-    [sendProposalAccept],
-  );
-
-  const handleProposalReject = useCallback(
-    (proposalId: string) => {
-      sendProposalReject(proposalId);
-    },
-    [sendProposalReject],
-  );
 
   // ---------------------------------------------------------------------------
   // RENDER HELPERS
@@ -323,16 +317,6 @@ export function EditorPanel({
           </div>
         )}
 
-        {collabEnabled && (
-          <AIProposalReviewPanel
-            proposals={proposals}
-            operationsModels={operationsModels}
-            onAcceptProposal={handleProposalAccept}
-            onRejectProposal={handleProposalReject}
-            applyChunkUpdate={applyChunkUpdate}
-          />
-        )}
-
         {/* Editor content - scrolls with parent container */}
         <div ref={editorContentRef} className="relative my-2 flex-1">
           {isContentLoading ? (
@@ -358,6 +342,7 @@ export function EditorPanel({
                   ...collabExtensions,
                   ...wikiLinkExtensions,
                   ...editorFontExtensions,
+                  ...inlineReviewExts,
                 ]}
                 className="min-h-full"
               />
@@ -387,6 +372,9 @@ export function EditorPanel({
 
           {/* Folder content popover (from usePillNavigation) */}
           {folderPopover}
+
+          {/* Floating review toolbar — accept/reject all, chunk navigation */}
+          <ProposalReviewToolbar {...reviewToolbarProps} />
         </div>
       </div>
     </div>

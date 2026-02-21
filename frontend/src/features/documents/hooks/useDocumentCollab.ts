@@ -7,6 +7,7 @@ import {
   buildPartialUpdate,
   buildProposalAcceptCommand,
   buildProposalRejectCommand,
+  buildProposalRequestUpdateCommand,
   createCollabSyncRuntime,
   createProposalManager,
   createProposalReviewRuntime,
@@ -14,13 +15,14 @@ import {
   isProposalNewEvent,
   isProposalSnapshotEvent,
   isProposalStatusChangedEvent,
+  isProposalUpdateDataEvent,
   type Proposal,
   type ProposalGroupAcceptResultEvent,
   type ProposalOperationsModel,
   type ProposalReviewModel,
   type ReviewChunk,
   toUint8Array,
-} from "@meridian/cm6-collab";
+} from "@/core/cm6-collab";
 
 import { makeLogger } from "@/core/lib/logger";
 import {
@@ -54,8 +56,18 @@ interface UseDocumentCollabResult {
    * Used by partial chunk accept: builds a Yjs update for the chunk's text change
    * and applies it to the document. The collab system automatically broadcasts
    * the update to other clients.
+   * Returns { ok: true } on success, { ok: false } if runtime not ready.
    */
-  applyChunkUpdate: (chunk: ReviewChunk, editedInsertedText?: string) => void;
+  applyChunkUpdate: (
+    chunk: ReviewChunk,
+    editedInsertedText?: string,
+  ) => { ok: boolean };
+  /**
+   * Request the server to send the yjsUpdate for a specific proposal.
+   * Used to lazy-fetch update data for proposals loaded via snapshot
+   * (which intentionally omits yjsUpdate for bandwidth optimization).
+   */
+  requestProposalUpdate: (proposalId: string) => boolean;
   isReady: boolean;
   /** Current Yjs text content — use as initialContent for CodeMirror to avoid
    *  flash of empty placeholder. Safe because ySync only applies future deltas,
@@ -259,6 +271,14 @@ export function useDocumentCollab({
       if (isProposalGroupAcceptResultEvent(event)) {
         if (!isMatchingEventDocument(event.documentId, event.type)) return;
         proposalManager.onProposalGroupAcceptResult(event);
+        return;
+      }
+
+      if (isProposalUpdateDataEvent(event)) {
+        if (!isMatchingEventDocument(event.documentId, event.type)) return;
+        proposalManager.onProposalUpdateData(event);
+        // Bump review revision so operationsModels recompute with the new yjsUpdate
+        setReviewRevision((current) => current + 1);
       }
     };
 
@@ -379,6 +399,19 @@ export function useDocumentCollab({
     [documentId, projectCollab],
   );
 
+  const requestProposalUpdate = useCallback(
+    (proposalId: string): boolean => {
+      return projectCollab.sendDocumentCommand(
+        documentId,
+        buildProposalRequestUpdateCommand({
+          documentId,
+          proposalId,
+        }) as unknown as Record<string, unknown>,
+      );
+    },
+    [documentId, projectCollab],
+  );
+
   const sendProposalReject = useCallback(
     (proposalId: string): boolean => {
       return projectCollab.sendDocumentCommand(
@@ -420,17 +453,18 @@ export function useDocumentCollab({
   }, [enabled, proposalState.proposals, reviewRevision, reviewRuntime]);
 
   const applyChunkUpdate = useCallback(
-    (chunk: ReviewChunk, editedInsertedText?: string) => {
+    (chunk: ReviewChunk, editedInsertedText?: string): { ok: boolean } => {
       const doc = runtimeRef.current?.ydoc;
       if (doc == null) {
         log.warn("applyChunkUpdate called but runtime not ready");
-        return;
+        return { ok: false };
       }
       const update =
         editedInsertedText === undefined
           ? buildPartialUpdate(doc, chunk)
           : buildEditedChunkUpdate(doc, chunk, editedInsertedText);
       Y.applyUpdate(doc, update);
+      return { ok: true };
     },
     [],
   );
@@ -444,6 +478,7 @@ export function useDocumentCollab({
     lastGroupAcceptResult: proposalState.lastGroupAcceptResult,
     sendProposalAccept,
     sendProposalReject,
+    requestProposalUpdate,
     applyChunkUpdate,
     isReady: !enabled || extensions.length > 0,
     idbSynced,

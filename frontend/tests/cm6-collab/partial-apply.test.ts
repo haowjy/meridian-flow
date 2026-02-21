@@ -3,8 +3,8 @@ import * as Y from "yjs";
 import {
   buildEditedChunkUpdate,
   buildPartialUpdate,
-} from "../partial-apply";
-import type { ReviewChunk } from "../types";
+} from "@/core/cm6-collab/review/partial-apply";
+import type { ReviewChunk } from "@/core/cm6-collab/review/types";
 
 function createDoc(content: string): Y.Doc {
   const doc = new Y.Doc();

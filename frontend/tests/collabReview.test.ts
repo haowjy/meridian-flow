@@ -1,16 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
   createProposalReviewRuntime,
   type Proposal,
-} from "@meridian/cm6-collab";
-import {
-  countChunkResolutions,
-  invokeSelectedProposalAction,
-  resolveSelectedProposalId,
-  setChunkResolutionStatus,
-  sortPendingProposals,
-} from "@/features/documents/components/AIProposalReviewPanel";
+} from "@/core/cm6-collab";
 
 function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
   return {
@@ -111,69 +104,5 @@ describe("proposal review runtime", () => {
     if (model.availability === "unavailable") {
       expect(model.reason).toBe("invalid_update");
     }
-  });
-});
-
-describe("proposal review panel helpers", () => {
-  it("sorts pending proposals by createdAt ASC then id ASC", () => {
-    const sorted = sortPendingProposals([
-      makeProposal({ id: "b", createdAt: "2026-02-16T10:30:00Z" }),
-      makeProposal({ id: "a", createdAt: "2026-02-16T10:30:00Z" }),
-      makeProposal({ id: "c", createdAt: "2026-02-16T10:20:00Z" }),
-    ]);
-
-    expect(sorted.map((proposal) => proposal.id)).toEqual(["c", "a", "b"]);
-  });
-
-  it("resolves selection fallback when current proposal disappears", () => {
-    const proposals = sortPendingProposals([
-      makeProposal({ id: "proposal-2", createdAt: "2026-02-16T10:31:00Z" }),
-      makeProposal({ id: "proposal-1", createdAt: "2026-02-16T10:30:00Z" }),
-    ]);
-
-    expect(resolveSelectedProposalId("missing", proposals)).toBe("proposal-1");
-    expect(resolveSelectedProposalId("proposal-2", proposals)).toBe(
-      "proposal-2",
-    );
-    expect(resolveSelectedProposalId(null, proposals)).toBe("proposal-1");
-  });
-
-  it("invokes accept/reject callbacks only when there is a selected proposal", () => {
-    const accept = vi.fn();
-    const reject = vi.fn();
-
-    expect(invokeSelectedProposalAction("proposal-1", accept)).toBe(true);
-    expect(invokeSelectedProposalAction(null, reject)).toBe(false);
-
-    expect(accept).toHaveBeenCalledWith("proposal-1");
-    expect(reject).not.toHaveBeenCalled();
-  });
-
-  it("tracks edited accepts as a distinct local resolution status", () => {
-    let resolutions = new Map<string, Map<string, "accepted" | "accepted_with_edits" | "rejected">>();
-
-    resolutions = setChunkResolutionStatus(
-      resolutions,
-      "proposal-1",
-      "chunk-1",
-      "accepted",
-    );
-    resolutions = setChunkResolutionStatus(
-      resolutions,
-      "proposal-1",
-      "chunk-2",
-      "accepted_with_edits",
-    );
-    resolutions = setChunkResolutionStatus(
-      resolutions,
-      "proposal-1",
-      "chunk-3",
-      "rejected",
-    );
-
-    expect(countChunkResolutions(resolutions.get("proposal-1"))).toEqual({
-      acceptedCount: 2,
-      rejectedCount: 1,
-    });
   });
 });

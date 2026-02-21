@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -34,8 +33,13 @@ func (s *testProposalStore) Create(_ context.Context, _ *collabModels.Proposal) 
 	return nil
 }
 
-func (s *testProposalStore) GetByID(_ context.Context, _ uuid.UUID) (*collabModels.Proposal, error) {
-	return nil, errors.New("not implemented")
+func (s *testProposalStore) GetByID(_ context.Context, id uuid.UUID) (*collabModels.Proposal, error) {
+	for i := range s.proposals {
+		if s.proposals[i].ID == id {
+			return &s.proposals[i], nil
+		}
+	}
+	return nil, domain.NewNotFoundError("proposal", id.String())
 }
 
 func (s *testProposalStore) CountByDocumentAndStatusAndSource(
@@ -659,6 +663,169 @@ func TestProjectWS_ProposalAcceptErrorMapping_RateLimited(t *testing.T) {
 	got := readWSErrorMessage(t, conn)
 	if got.Code != "RATE_LIMITED" {
 		t.Fatalf("expected RATE_LIMITED, got %q", got.Code)
+	}
+}
+
+func TestProjectWS_ProposalRequestUpdate(t *testing.T) {
+	resolver := &testProjectCollabResolver{allowed: true, projectID: testProposalProjectID}
+	verifier := &testJWTVerifier{
+		tokens: map[string]*models.SupabaseClaims{
+			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "11111111-1111-1111-1111-111111111111"}},
+		},
+	}
+	store := &testCollabStore{}
+
+	docID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	proposalID := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+	threadID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	agentRunID := uuid.MustParse("44444444-4444-4444-4444-444444444444")
+	userID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+
+	proposalStore := &testProposalStore{
+		proposals: []collabModels.Proposal{
+			{
+				ID:                proposalID,
+				DocumentID:        docID,
+				Source:            collabModels.ProposalSourceAI,
+				ProducerAgentType: "editing_agent",
+				ThreadID:          threadID,
+				AgentRunID:        agentRunID,
+				Status:            collabModels.ProposalStatusProposed,
+				YjsUpdate:         []byte{0x01, 0x02, 0x03},
+				CreatedByUserID:   userID,
+				CreatedAt:         time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC),
+			},
+		},
+	}
+
+	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, store, &noopProposalService{}, proposalStore)
+	defer server.Close()
+
+	conn := dialProjectWS(t, server.URL, testProposalProjectID)
+	defer conn.Close()
+	authenticateWS(t, conn, "valid-token")
+	subscribeDocOnProjectWS(t, conn, docID.String())
+
+	// Send proposal:requestUpdate
+	msg := map[string]string{
+		"type":       wsTypeProposalRequestUpdate,
+		"documentId": docID.String(),
+		"proposalId": proposalID.String(),
+	}
+	if err := websocket.JSON.Send(conn, msg); err != nil {
+		t.Fatalf("send proposal:requestUpdate: %v", err)
+	}
+
+	raw := readWSRawMessage(t, conn)
+	var event proposalUpdateDataEvent
+	if err := json.Unmarshal(raw, &event); err != nil {
+		t.Fatalf("decode proposal:updateData: %v", err)
+	}
+	if event.Type != wsTypeProposalUpdateData {
+		t.Fatalf("expected type %q, got %q", wsTypeProposalUpdateData, event.Type)
+	}
+	if event.DocumentID != docID.String() {
+		t.Fatalf("expected documentId %q, got %q", docID, event.DocumentID)
+	}
+	if event.ProposalID != proposalID.String() {
+		t.Fatalf("expected proposalId %q, got %q", proposalID, event.ProposalID)
+	}
+	if event.YjsUpdate == "" {
+		t.Fatal("expected non-empty yjsUpdate")
+	}
+}
+
+func TestProjectWS_ProposalRequestUpdateNotFound(t *testing.T) {
+	resolver := &testProjectCollabResolver{allowed: true, projectID: testProposalProjectID}
+	verifier := &testJWTVerifier{
+		tokens: map[string]*models.SupabaseClaims{
+			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "11111111-1111-1111-1111-111111111111"}},
+		},
+	}
+	store := &testCollabStore{}
+
+	docID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	// Empty proposal store — proposal not found
+	proposalStore := &testProposalStore{}
+
+	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, store, &noopProposalService{}, proposalStore)
+	defer server.Close()
+
+	conn := dialProjectWS(t, server.URL, testProposalProjectID)
+	defer conn.Close()
+	authenticateWS(t, conn, "valid-token")
+	subscribeDocOnProjectWS(t, conn, docID.String())
+
+	msg := map[string]string{
+		"type":       wsTypeProposalRequestUpdate,
+		"documentId": docID.String(),
+		"proposalId": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+	}
+	if err := websocket.JSON.Send(conn, msg); err != nil {
+		t.Fatalf("send proposal:requestUpdate: %v", err)
+	}
+
+	got := readWSErrorMessage(t, conn)
+	if got.Code != "PROPOSAL_NOT_FOUND" {
+		t.Fatalf("expected PROPOSAL_NOT_FOUND, got %q", got.Code)
+	}
+}
+
+func TestProjectWS_ProposalRequestUpdateWrongDocument(t *testing.T) {
+	resolver := &testProjectCollabResolver{allowed: true, projectID: testProposalProjectID}
+	verifier := &testJWTVerifier{
+		tokens: map[string]*models.SupabaseClaims{
+			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "11111111-1111-1111-1111-111111111111"}},
+		},
+	}
+	store := &testCollabStore{}
+
+	// The document the user is subscribed to
+	subscribedDocID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	// The document the proposal actually belongs to
+	otherDocID := uuid.MustParse("99999999-9999-9999-9999-999999999999")
+	proposalID := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+	threadID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	agentRunID := uuid.MustParse("44444444-4444-4444-4444-444444444444")
+	userID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+
+	proposalStore := &testProposalStore{
+		proposals: []collabModels.Proposal{
+			{
+				ID:                proposalID,
+				DocumentID:        otherDocID, // belongs to a different document
+				Source:            collabModels.ProposalSourceAI,
+				ProducerAgentType: "editing_agent",
+				ThreadID:          threadID,
+				AgentRunID:        agentRunID,
+				Status:            collabModels.ProposalStatusProposed,
+				YjsUpdate:         []byte{0x01},
+				CreatedByUserID:   userID,
+				CreatedAt:         time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC),
+			},
+		},
+	}
+
+	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, store, &noopProposalService{}, proposalStore)
+	defer server.Close()
+
+	conn := dialProjectWS(t, server.URL, testProposalProjectID)
+	defer conn.Close()
+	authenticateWS(t, conn, "valid-token")
+	subscribeDocOnProjectWS(t, conn, subscribedDocID.String())
+
+	msg := map[string]string{
+		"type":       wsTypeProposalRequestUpdate,
+		"documentId": subscribedDocID.String(),
+		"proposalId": proposalID.String(),
+	}
+	if err := websocket.JSON.Send(conn, msg); err != nil {
+		t.Fatalf("send proposal:requestUpdate: %v", err)
+	}
+
+	got := readWSErrorMessage(t, conn)
+	if got.Code != "FORBIDDEN" {
+		t.Fatalf("expected FORBIDDEN, got %q", got.Code)
 	}
 }
 

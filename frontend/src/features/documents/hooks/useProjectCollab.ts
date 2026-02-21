@@ -5,6 +5,7 @@ import {
   isProposalNewEvent,
   isProposalSnapshotEvent,
   isProposalStatusChangedEvent,
+  isProposalUpdateDataEvent,
   parseCollabServerTextEvent,
   toUint8Array,
   unwrapEnvelope,
@@ -12,7 +13,8 @@ import {
   type ProposalNewEvent,
   type ProposalSnapshotEvent,
   type ProposalStatusChangedEvent,
-} from "@meridian/cm6-collab";
+  type ProposalUpdateDataEvent,
+} from "@/core/cm6-collab";
 
 import { API_BASE_URL } from "@/core/lib/api";
 import { makeLogger } from "@/core/lib/logger";
@@ -48,7 +50,8 @@ export type ProjectCollabProposalEvent =
   | ProposalSnapshotEvent
   | ProposalNewEvent
   | ProposalStatusChangedEvent
-  | ProposalGroupAcceptResultEvent;
+  | ProposalGroupAcceptResultEvent
+  | ProposalUpdateDataEvent;
 
 export type ProjectCollabDocumentTextEvent =
   | ProjectCollabControlEvent
@@ -413,6 +416,11 @@ export function createProjectCollabTransport(
     }
 
     if (isProposalGroupAcceptResultEvent(textEvent)) {
+      handleProposalEvent(textEvent);
+      return;
+    }
+
+    if (isProposalUpdateDataEvent(textEvent)) {
       handleProposalEvent(textEvent);
     }
   };
