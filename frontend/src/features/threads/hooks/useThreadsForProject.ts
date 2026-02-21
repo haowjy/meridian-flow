@@ -3,6 +3,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useAbortableEffect } from "@/core/hooks";
 import { useThreadStore } from "@/core/stores/useThreadStore";
 import { useUIStore } from "@/core/stores/useUIStore";
+import { reconcileSelectionIfMissing } from "@/core/retrieval";
 import { Thread } from "@/features/threads/types";
 
 type LoadStatus = "idle" | "loading" | "success" | "error";
@@ -54,6 +55,19 @@ export function useThreadsForProject(
     const isReady = statusThreads === "success" || statusThreads === "error";
     useUIStore.getState().setLeftPanelReady(isReady);
   }, [statusThreads]);
+
+  // Reconcile persisted active thread selection after authoritative thread loads.
+  useEffect(() => {
+    if (statusThreads !== "success") return;
+
+    const uiStore = useUIStore.getState();
+    reconcileSelectionIfMissing({
+      items: threads,
+      activeId: uiStore.activeThreadId,
+      getId: (thread) => thread.id,
+      clearSelection: () => uiStore.setActiveThread(null),
+    });
+  }, [threads, statusThreads]);
 
   return {
     threads,

@@ -34,6 +34,14 @@ feature: "IndexedDB Caching"
 **Threads**: Network-First
 **Projects**: Persist Middleware (localStorage)
 
+### Recent hardening
+
+- Document 404s no longer fall back to stale IndexedDB cache (`ReconcileNewestPolicy` only falls back on transient failures).
+- Tree refresh now prunes stale per-document cache rows and pending save retries when a doc was deleted on another device.
+- Shared retrieval helpers (`frontend/src/core/retrieval/`) now drive background loading and persisted-selection reconciliation for projects/threads/skills/documents.
+- Terminal error handling is centralized by operation (`frontend/src/core/retrieval/terminalErrorPolicy.ts`) so 404/403 behavior is explicit per retrieval path.
+- Tree snapshots are normalized at every ingress (`loadTree` cache hydration, `loadTree` server hydration, folder-view hydration, and tree-cache persistence), preventing malformed docs (e.g., missing `path`) and stale child entities from re-entering local state.
+
 **File**: `frontend/src/core/lib/cache.ts`
 
 ---

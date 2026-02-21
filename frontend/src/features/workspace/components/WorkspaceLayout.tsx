@@ -17,6 +17,7 @@ import { useSkillStore } from "@/core/stores/useSkillStore";
 import { api } from "@/core/lib/api";
 import { makeLogger } from "@/core/lib/logger";
 import { decodeDocumentPath } from "@/core/lib/panelHelpers";
+import { shouldClearActiveSelection } from "@/core/retrieval";
 import type { PanelDefinitions } from "@/shared/components/layout/types";
 
 const logger = makeLogger("workspace-layout");
@@ -196,6 +197,9 @@ export default function WorkspaceLayout({
               "Project fetch aborted in workspace layout (expected during unmount/StrictMode)",
             );
           } else {
+            if (shouldClearActiveSelection("project:getById", error)) {
+              setCurrentProject(null);
+            }
             logger.warn("Failed to resolve project in workspace layout", error);
             navigate({ to: "/projects" });
           }

@@ -10,7 +10,12 @@ import {
   IRemoteRepo,
 } from "@/core/lib/cache";
 import { documentSyncService } from "@/core/services/documentSyncService";
-import { getErrorMessageWithFallback, isAbortError } from "@/core/lib/errors";
+import { purgeDeletedDocumentLocalState } from "@/core/services/documentCleanupService";
+import { shouldPruneLocalEntity } from "@/core/retrieval";
+import {
+  getErrorMessageWithFallback,
+  isAbortError,
+} from "@/core/lib/errors";
 import { makeLogger } from "@/core/lib/logger";
 import { useRecentDocumentsStore } from "./useRecentDocumentsStore";
 
@@ -53,66 +58,71 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
 
     logger.debug(`Starting load for document ${documentId}`);
 
+    const cacheRepo: ICacheRepo<Document> = {
+      get: async () => {
+        const d = await db.documents.get(documentId);
+        return d && d.content !== undefined ? d : undefined;
+      },
+      put: async (doc) => {
+        const withContent = doc as Document & { content?: unknown };
+        if (withContent.content !== undefined) {
+          await db.documents.put(withContent as Document & { content: string });
+        }
+      },
+    };
+
+    const remoteRepo: IRemoteRepo<Document> = {
+      fetch: () => api.documents.get(documentId, { signal }),
+    };
+
     try {
-      const cacheRepo: ICacheRepo<Document> = {
-        get: async () => {
-          const d = await db.documents.get(documentId);
-          return d && d.content !== undefined ? d : undefined;
+      const final = await loadWithPolicy<Document>(
+        new ReconcileNewestPolicy<Document>(),
+        {
+          cacheRepo,
+          remoteRepo,
+          signal,
+          onIntermediate: (r) => {
+            if (get()._activeDocumentId !== documentId) return;
+            // Show cached content immediately and allow UI to render
+            set({ activeDocument: r.data, isLoading: false });
+          },
         },
-        put: async (doc) => {
-          const withContent = doc as Document & { content?: unknown };
-          if (withContent.content !== undefined) {
-            await db.documents.put(
-              withContent as Document & { content: string },
-            );
-          }
-        },
-      };
+      );
 
-      const remoteRepo: IRemoteRepo<Document> = {
-        fetch: () => api.documents.get(documentId, { signal }),
-      };
+      if (get()._activeDocumentId !== documentId) return;
 
-      await loadWithPolicy<Document>(new ReconcileNewestPolicy<Document>(), {
-        cacheRepo,
-        remoteRepo,
-        signal,
-        onIntermediate: (r) => {
-          if (get()._activeDocumentId !== documentId) return;
-          // Show cached content immediately and allow UI to render
-          set({ activeDocument: r.data, isLoading: false });
-        },
-      })
-        .then((final) => {
-          if (get()._activeDocumentId !== documentId) return;
-          set({
-            activeDocument: final.data,
-            status: "saved",
-            isLoading: false,
-          });
-          // Track recent document access (document has projectId from API response)
-          useRecentDocumentsStore
-            .getState()
-            .addRecent(final.data.projectId, documentId);
-        })
-        .catch((error) => {
-          if (isAbortError(error)) {
-            set({ isLoading: false });
-            return;
-          }
-          const message = getErrorMessageWithFallback(
-            error,
-            "Failed to load document",
-          );
-          set({ error: message, isLoading: false });
-        });
+      set({
+        activeDocument: final.data,
+        status: "saved",
+        isLoading: false,
+      });
+      // Track recent document access (document has projectId from API response)
+      useRecentDocumentsStore.getState().addRecent(final.data.projectId, documentId);
     } catch (error) {
       // Handle AbortError silently (expected when user switches documents)
       if (isAbortError(error)) {
+        if (get()._activeDocumentId === documentId) {
+          set({ isLoading: false });
+        }
         logger.debug(`Aborted load for ${documentId}`);
-        set({ isLoading: false });
         return;
       }
+
+      if (shouldPruneLocalEntity("document:getById", error)) {
+        await purgeDeletedDocumentLocalState(documentId);
+        if (get()._activeDocumentId !== documentId) return;
+        set((state) => ({
+          activeDocument:
+            state.activeDocument?.id === documentId ? null : state.activeDocument,
+          error: getErrorMessageWithFallback(error, "Document not found"),
+          isLoading: false,
+        }));
+        return;
+      }
+
+      // Ignore stale request failures that no longer match the active doc.
+      if (get()._activeDocumentId !== documentId) return;
 
       // Real errors: set error state for inline display
       const message = getErrorMessageWithFallback(

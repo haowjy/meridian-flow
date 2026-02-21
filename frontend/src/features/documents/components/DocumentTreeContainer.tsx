@@ -25,6 +25,7 @@ import {
 } from "@/core/lib/treeBuilder";
 import { getDescendantDocumentIds } from "@/core/lib/treeUtils";
 import { api } from "@/core/lib/api";
+import { reconcileSelectionIfMissing } from "@/core/retrieval";
 import {
   getErrorMessageWithFallback,
   getErrorMessage,
@@ -119,9 +120,10 @@ export function DocumentTreeContainer({
       activeSkillId: s.activeSkillId,
     })),
   );
-  const { skills, loadSkills, deleteSkill } = useSkillStore(
+  const { skills, skillsStatus, loadSkills, deleteSkill } = useSkillStore(
     useShallow((s) => ({
       skills: s.skills,
+      skillsStatus: s.skillsStatus,
       loadSkills: s.loadSkills,
       deleteSkill: s.deleteSkill,
     })),
@@ -220,6 +222,30 @@ export function DocumentTreeContainer({
     const isReady = status === "success" || status === "error";
     useUIStore.getState().setRightPanelReady(isReady);
   }, [status]);
+
+  useEffect(() => {
+    if (status !== "success") return;
+    if (!activeDocumentId) return;
+
+    reconcileSelectionIfMissing({
+      items: documents,
+      activeId: activeDocumentId,
+      getId: (document) => document.id,
+      clearSelection: () => useUIStore.getState().setActiveDocument(null),
+    });
+  }, [documents, status, activeDocumentId]);
+
+  useEffect(() => {
+    if (skillsStatus !== "success") return;
+    if (!activeSkillId) return;
+
+    reconcileSelectionIfMissing({
+      items: skills,
+      activeId: activeSkillId,
+      getId: (skill) => skill.id,
+      clearSelection: () => useUIStore.getState().setActiveSkill(null),
+    });
+  }, [skills, skillsStatus, activeSkillId]);
 
   // --- Stable callbacks for tree items (accept id as parameter for memoization) ---
 

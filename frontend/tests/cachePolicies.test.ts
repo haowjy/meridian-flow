@@ -4,6 +4,7 @@ import {
   type ICacheRepo,
   type IRemoteRepo,
 } from "@/core/lib/cache";
+import { AppError, ErrorType } from "@/core/lib/errors";
 
 type Item = { id: string; updatedAt: Date };
 
@@ -88,6 +89,52 @@ describe("Cache policies", () => {
     });
     expect(result.data).toEqual(cached);
     expect(result.source).toBe("cache");
+  });
+
+  it("ReconcileNewestPolicy does not fall back to cache on 404", async () => {
+    const cached: Item = {
+      id: "a",
+      updatedAt: new Date("2025-01-01T00:00:00Z"),
+    };
+    const cacheRepo: ICacheRepo<Item> = {
+      get: async () => cached,
+      put: async () => void 0,
+    };
+    const remoteRepo: IRemoteRepo<Item> = {
+      fetch: async () => {
+        throw new AppError(ErrorType.NotFound, "missing");
+      },
+    };
+
+    await expect(
+      new ReconcileNewestPolicy<Item>().run({
+        cacheRepo,
+        remoteRepo,
+      }),
+    ).rejects.toMatchObject({ type: ErrorType.NotFound });
+  });
+
+  it("ReconcileNewestPolicy does not fall back to cache on 403", async () => {
+    const cached: Item = {
+      id: "a",
+      updatedAt: new Date("2025-01-01T00:00:00Z"),
+    };
+    const cacheRepo: ICacheRepo<Item> = {
+      get: async () => cached,
+      put: async () => void 0,
+    };
+    const remoteRepo: IRemoteRepo<Item> = {
+      fetch: async () => {
+        throw new AppError(ErrorType.Forbidden, "forbidden");
+      },
+    };
+
+    await expect(
+      new ReconcileNewestPolicy<Item>().run({
+        cacheRepo,
+        remoteRepo,
+      }),
+    ).rejects.toMatchObject({ type: ErrorType.Forbidden });
   });
 
 });

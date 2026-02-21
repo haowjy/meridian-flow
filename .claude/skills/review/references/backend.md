@@ -19,6 +19,19 @@ If you see business logic in a handler or a handler calling a repository directl
 
 **The pattern**: Services return domain errors. Handlers map them to HTTP status codes. Services should never import `net/http` or know about status codes.
 
+## Terminal Error Policy Must Be Operation-Scoped
+
+**Why**: The same status code does not imply the same action across operations. A 404 on `GetByID` can mean "entity is gone" and should reconcile stale local projections. A 404 on list pagination, auth/session, or external dependency paths often should not delete anything. Global "always prune on 404" logic causes data loss and inconsistent behavior.
+
+**The pattern**:
+- Define error handling per operation (`GetByID`, `List`, `Search`, `Stream`, `Session`, etc.), not per status code globally.
+- For authoritative `GetByID` reads, map `ErrNotFound` to explicit reconciliation when appropriate (cache/index cleanup, pending-queue cleanup).
+- For transient failures (timeouts/network/5xx), retry or degrade gracefully; do not prune durable state.
+- Make reconciliation idempotent and race-safe (safe to run twice, safe under concurrent requests).
+- Keep policy centralized so all handlers/callers apply the same rules.
+
+If you see blanket terminal-error handling that ignores operation semantics, flag it.
+
 ## Null vs Empty vs Omitted Are Three Different Things
 
 **Why**: Go's standard `encoding/json` has no way to distinguish "field was absent from JSON" from "field was `null`" — both result in a nil pointer. But for PATCH semantics (RFC 7396), these are three distinct user intents:
@@ -59,6 +72,17 @@ Use `optional.Optional[T]` for any PATCH request field where the user might want
 **The pattern**: Validate input once in the handler. Services trust validated input. Don't scatter validation checks deep in the call chain.
 
 Note: WebSocket messages have their own validation layer — the WS message loop handler validates inbound frames, separate from HTTP middleware.
+
+## Normalize External Ingress Before Canonical Writes
+
+**Why**: External payloads (HTTP DTOs, provider events, background feeds) can be malformed, partial, or out of order. Writing them directly into canonical state creates long-lived corruption that later code assumes is impossible.
+
+**The pattern**:
+- Normalize and validate external snapshots before persisting/updating canonical state.
+- Reject or drop malformed records (missing required identifiers, invalid references, impossible timestamps).
+- Keep normalization in one shared path per entity to avoid drift between ingest codepaths.
+
+If multiple ingest paths apply different normalization rules for the same entity, flag it.
 
 ## Database: Know the Pooler Limitation
 

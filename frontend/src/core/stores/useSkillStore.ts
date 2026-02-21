@@ -1,5 +1,10 @@
 import { create } from "zustand";
 import { api } from "@/core/lib/api";
+import { getErrorMessageWithFallback } from "@/core/lib/errors";
+import {
+  runBackgroundRetrieval,
+  shouldClearActiveSelection,
+} from "@/core/retrieval";
 import type {
   Skill,
   SkillWithContent,
@@ -8,6 +13,7 @@ import type {
 } from "@/features/skills/types/skill";
 
 type SkillStatus = "idle" | "loading" | "success" | "error";
+let loadSkillsRequestId = 0;
 
 interface SkillStoreState {
   // State
@@ -55,6 +61,7 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
   isLoadingSelectedSkill: false,
 
   loadSkills: async (projectId: string, signal: AbortSignal) => {
+    const requestId = ++loadSkillsRequestId;
     const state = get();
     // Stale-while-revalidate: show cached data immediately if same project
     const hasCachedData =
@@ -68,44 +75,59 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
       Date.now() - state.skillsLoadedAt < 30_000;
     if (isFresh) return;
 
-    if (!hasCachedData) {
-      // No cache or different project: show loading state
-      set({
-        skillsStatus: "loading",
-        isLoadingSkills: true,
-        error: null,
-        currentProjectId: projectId,
-      });
-    } else {
-      // Has cache for same project: keep showing cached data, fetch in background
-      set({ isLoadingSkills: true, error: null });
-    }
+    await runBackgroundRetrieval({
+      hasCachedData,
+      isStale: () => requestId !== loadSkillsRequestId,
+      onBegin: (mode) => {
+        if (mode === "initial") {
+          // No cache or different project: show loading state
+          set({
+            skillsStatus: "loading",
+            isLoadingSkills: true,
+            error: null,
+            currentProjectId: projectId,
+          });
+          return;
+        }
 
-    try {
-      const skills = await api.skills.list(projectId, { signal });
-      // Sort by position
-      skills.sort((a, b) => a.position - b.position);
-      set({
-        skills,
-        skillsStatus: "success",
-        isLoadingSkills: false,
-        skillsLoadedAt: Date.now(),
-      });
-    } catch (error) {
-      // Clear loading flag on abort to prevent stuck loading state
-      if (error instanceof Error && error.name === "AbortError") {
+        // Has cache for same project: keep showing cached data, fetch in background
+        set({ isLoadingSkills: true, error: null });
+      },
+      retrieve: () => api.skills.list(projectId, { signal }),
+      onSuccess: (skills) => {
+        // Sort by position
+        const sortedSkills = [...skills].sort((a, b) => a.position - b.position);
+        set((state) => {
+          const shouldClearSelectedSkill =
+            state.selectedSkillId !== null &&
+            !sortedSkills.some((skill) => skill.id === state.selectedSkillId);
+          return {
+            skills: sortedSkills,
+            skillsStatus: "success",
+            isLoadingSkills: false,
+            skillsLoadedAt: Date.now(),
+            selectedSkillId: shouldClearSelectedSkill ? null : state.selectedSkillId,
+            selectedSkillContent: shouldClearSelectedSkill
+              ? null
+              : state.selectedSkillContent,
+          };
+        });
+      },
+      onAbort: () => {
+        // Clear loading flag on abort to prevent stuck loading state
         set({ isLoadingSkills: false });
-        return;
-      }
-      // On error with cached data for same project, keep showing cached data
-      const hasData =
-        get().skills.length > 0 && get().currentProjectId === projectId;
-      set({
-        skillsStatus: hasData ? "success" : "error",
-        isLoadingSkills: false,
-        error: error instanceof Error ? error.message : "Failed to load skills",
-      });
-    }
+      },
+      onError: (error) => {
+        // On error with cached data for same project, keep showing cached data
+        const hasData =
+          get().skills.length > 0 && get().currentProjectId === projectId;
+        set({
+          skillsStatus: hasData ? "success" : "error",
+          isLoadingSkills: false,
+          error: getErrorMessageWithFallback(error, "Failed to load skills"),
+        });
+      },
+    });
   },
 
   loadSkillContent: async (
@@ -122,6 +144,15 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
       // Clear loading flag on abort to prevent stuck loading state
       if (error instanceof Error && error.name === "AbortError") {
         set({ isLoadingSelectedSkill: false });
+        return;
+      }
+      if (shouldClearActiveSelection("skill:getById", error)) {
+        set({
+          selectedSkillId: null,
+          selectedSkillContent: null,
+          isLoadingSelectedSkill: false,
+          error: getErrorMessageWithFallback(error, "Skill not found"),
+        });
         return;
       }
       set({ isLoadingSelectedSkill: false });

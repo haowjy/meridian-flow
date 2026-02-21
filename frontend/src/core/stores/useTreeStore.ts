@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { Document } from "@/features/documents/types/document";
 import { Folder } from "@/features/folders/types/folder";
 import { buildTree, TreeNode } from "@/core/lib/treeBuilder";
+import { detectEditorType } from "@/core/editor/types";
 import { api } from "@/core/lib/api";
 import {
   getErrorMessageWithFallback,
@@ -14,6 +15,7 @@ import { cancelRetry } from "@/core/lib/sync";
 import { getDescendantDocumentIds } from "@/core/lib/treeUtils";
 import { makeLogger } from "@/core/lib/logger";
 import { useErrorStore } from "@/core/stores/useErrorStore";
+import { normalizeTreeState, sanitizeTreeSnapshot } from "@/core/retrieval";
 import {
   queueTreeOp,
   removeOpsForEntity,
@@ -240,6 +242,53 @@ function rebuildDocumentPaths(
   });
 }
 
+type TreeHydrationState = {
+  folders: Folder[];
+  documents: Document[];
+  treeProjectId: string | null;
+};
+
+function resolveHydrationProjectId(
+  state: TreeHydrationState,
+  parentFolderId: string | null,
+): string | null {
+  if (parentFolderId) {
+    const parentFolder = state.folders.find((f) => f.id === parentFolderId);
+    if (parentFolder) return parentFolder.projectId;
+  }
+
+  return (
+    state.treeProjectId ??
+    state.folders[0]?.projectId ??
+    state.documents[0]?.projectId ??
+    null
+  );
+}
+
+function collectFolderSubtreeIds(
+  folderMap: Map<string, Folder>,
+  rootFolderIds: string[],
+): Set<string> {
+  const folderIdsToRemove = new Set(rootFolderIds);
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    for (const folder of folderMap.values()) {
+      if (
+        folder.parentId !== null &&
+        folderIdsToRemove.has(folder.parentId) &&
+        !folderIdsToRemove.has(folder.id)
+      ) {
+        folderIdsToRemove.add(folder.id);
+        changed = true;
+      }
+    }
+  }
+
+  return folderIdsToRemove;
+}
+
 // ---------------------------------------------------------------------------
 // Dexie cache helper — persist optimistic tree snapshot
 // ---------------------------------------------------------------------------
@@ -251,10 +300,15 @@ async function persistTreeCache(
   documents: Document[],
 ): Promise<void> {
   try {
+    const sanitized = sanitizeTreeSnapshot({
+      folders,
+      documents,
+      fallbackProjectId: projectId,
+    });
     const treeCache: ProjectTreeCache = {
       projectId,
-      folders,
-      documents: documents.map(toCachedDocumentMeta),
+      folders: sanitized.folders,
+      documents: sanitized.documents.map(toCachedDocumentMeta),
       updatedAt: new Date().toISOString(),
     };
     await db.projectTrees.put(treeCache);
@@ -321,11 +375,18 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
       // Guard: a newer loadTree call may have started while we awaited cache
       if (thisRequest !== loadTreeRequestId) return;
       if (cachedTree) {
-        const cachedTreeData = buildTree(cachedTree.folders, cachedTree.documents);
-        set({
+        const normalizedCachedTree = normalizeTreeState({
           folders: cachedTree.folders,
           documents: cachedTree.documents,
-          tree: cachedTreeData,
+          fallbackProjectId: projectId,
+          selectedIds: get().selectedIds,
+        });
+        set({
+          folders: normalizedCachedTree.folders,
+          documents: normalizedCachedTree.documents,
+          tree: normalizedCachedTree.tree,
+          selectedIds:
+            normalizedCachedTree.selectedIds ?? get().selectedIds,
           status: "success",
           isFetching: true,
           error: null,
@@ -351,11 +412,15 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
         return;
       }
 
-      // Build hierarchical tree structure from flat arrays
-      const tree = buildTree(response.folders, response.documents);
+      const normalizedServerTree = normalizeTreeState({
+        folders: response.folders,
+        documents: response.documents,
+        fallbackProjectId: projectId,
+        selectedIds: get().selectedIds,
+      });
 
       // Cache full documents in IndexedDB (only those with content)
-      const fullDocuments = response.documents.filter(
+      const fullDocuments = normalizedServerTree.documents.filter(
         (doc): doc is Document & { content: string } =>
           doc.content !== undefined,
       );
@@ -363,14 +428,37 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
         await Promise.all(fullDocuments.map((doc) => db.documents.put(doc)));
       }
 
-      const treeCache: ProjectTreeCache = {
-        projectId,
-        folders: response.folders,
-        documents: response.documents.map(toCachedDocumentMeta),
-        updatedAt: new Date().toISOString(),
-      };
+      // Remove stale per-document cache entries that no longer exist in the
+      // authoritative server tree (for example deleted on another device).
       try {
-        await db.projectTrees.put(treeCache);
+        const serverDocumentIds = new Set(
+          normalizedServerTree.documents.map((doc) => doc.id),
+        );
+        const cachedProjectDocs = await db.documents
+          .where("projectId")
+          .equals(projectId)
+          .toArray();
+        const staleDocumentIds = cachedProjectDocs
+          .filter((doc) => !serverDocumentIds.has(doc.id))
+          .map((doc) => doc.id);
+        if (staleDocumentIds.length > 0) {
+          for (const docId of staleDocumentIds) {
+            cancelRetry(docId);
+          }
+          await db.pendingDocumentSaves.bulkDelete(staleDocumentIds);
+          await db.documents.bulkDelete(staleDocumentIds);
+        }
+      } catch (err) {
+        // Best-effort cleanup — stale cache eviction should not block tree render.
+        log.warn("Failed to prune stale document cache entries", err);
+      }
+
+      try {
+        await persistTreeCache(
+          projectId,
+          normalizedServerTree.folders,
+          normalizedServerTree.documents,
+        );
       } catch (err) {
         // Tree cache write failure should not block rendering server data.
         log.warn("Tree cache write failed", err);
@@ -381,9 +469,11 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
 
       // Update store
       set({
-        folders: response.folders,
-        documents: response.documents,
-        tree,
+        folders: normalizedServerTree.folders,
+        documents: normalizedServerTree.documents,
+        tree: normalizedServerTree.tree,
+        selectedIds:
+          normalizedServerTree.selectedIds ?? get().selectedIds,
         status: "success",
         isFetching: false,
         treeProjectId: projectId,
@@ -838,75 +928,117 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
 
   hydrateFromFolderView: (parentFolderId, viewFolders, viewDocuments) => {
     set((state) => {
-      // Merge folders: add new, update existing (by id)
+      const inferredProjectId = resolveHydrationProjectId(state, parentFolderId);
+      if (!inferredProjectId) {
+        log.warn("Skipping folder hydration: could not infer project context", {
+          parentFolderId,
+        });
+        return state;
+      }
+
+      // Merge folders: update existing, add missing.
       const folderMap = new Map(state.folders.map((f) => [f.id, f]));
       for (const folder of viewFolders) {
         const existing = folderMap.get(folder.id);
         if (existing) {
-          // Update name if changed
+          // Keep immutable metadata but update name/parent for the viewed slice.
           folderMap.set(folder.id, {
             ...existing,
             name: folder.name,
             parentId: parentFolderId,
           });
         } else {
-          // Add new folder (partial data)
+          // Create a complete folder object to avoid partial-state corruption.
           folderMap.set(folder.id, {
             id: folder.id,
+            projectId: inferredProjectId,
             name: folder.name,
             parentId: parentFolderId,
-          } as Folder);
+            createdAt: new Date(),
+          });
         }
       }
 
-      // Merge documents: add new, update existing (by id)
-      const docMap = new Map(state.documents.map((d) => [d.id, d]));
-      for (const doc of viewDocuments) {
-        // Derive extension and name from full filename
-        const lastDot = doc.name.lastIndexOf(".");
-        const extension = lastDot > 0 ? doc.name.slice(lastDot) : ".md";
-        const name = lastDot > 0 ? doc.name.slice(0, lastDot) : doc.name;
-        const filename = doc.name;
-
-        const existing = docMap.get(doc.id);
-        if (existing) {
-          // Update existing document
-          docMap.set(doc.id, {
-            ...existing,
-            name,
-            filename,
-            extension,
-            folderId: parentFolderId,
-            wordCount: doc.word_count,
-            updatedAt: doc.updated_at
-              ? new Date(doc.updated_at)
-              : existing.updatedAt,
-          });
-        } else {
-          // Add new document (partial data)
-          docMap.set(doc.id, {
-            id: doc.id,
-            name,
-            filename,
-            extension,
-            folderId: parentFolderId,
-            wordCount: doc.word_count,
-            updatedAt: doc.updated_at ? new Date(doc.updated_at) : new Date(),
-          } as Document);
-        }
+      // The tool "view folder" response is authoritative for immediate children.
+      // Prune stale direct child folders plus any descendants in local state.
+      const incomingFolderIds = new Set(viewFolders.map((folder) => folder.id));
+      const staleDirectFolderIds = Array.from(folderMap.values())
+        .filter(
+          (folder) =>
+            folder.parentId === parentFolderId && !incomingFolderIds.has(folder.id),
+        )
+        .map((folder) => folder.id);
+      const staleFolderIds = collectFolderSubtreeIds(
+        folderMap,
+        staleDirectFolderIds,
+      );
+      for (const folderId of staleFolderIds) {
+        folderMap.delete(folderId);
       }
 
       const mergedFolders = Array.from(folderMap.values());
-      const mergedDocuments = Array.from(docMap.values());
+      const parentPathPrefix = buildPathPrefix(mergedFolders, parentFolderId);
 
-      // Rebuild tree from merged data
-      const tree = buildTree(mergedFolders, mergedDocuments);
+      const docMap = new Map(state.documents.map((d) => [d.id, d]));
+      // Drop documents that belong to removed folder subtrees.
+      if (staleFolderIds.size > 0) {
+        for (const [docId, doc] of docMap.entries()) {
+          if (doc.folderId !== null && staleFolderIds.has(doc.folderId)) {
+            docMap.delete(docId);
+          }
+        }
+      }
+
+      // Prune stale direct child documents for this viewed folder.
+      const incomingDocumentIds = new Set(viewDocuments.map((doc) => doc.id));
+      for (const [docId, doc] of docMap.entries()) {
+        if (doc.folderId === parentFolderId && !incomingDocumentIds.has(docId)) {
+          docMap.delete(docId);
+        }
+      }
+
+      for (const doc of viewDocuments) {
+        // Derive extension/name from full filename.
+        const filename = doc.name;
+        const lastDot = filename.lastIndexOf(".");
+        const extension = lastDot > 0 ? filename.slice(lastDot) : ".md";
+        const name = lastDot > 0 ? filename.slice(0, lastDot) : filename;
+        const path = parentPathPrefix + filename;
+        const existing = docMap.get(doc.id);
+        const nextUpdatedAt = doc.updated_at
+          ? new Date(doc.updated_at)
+          : existing?.updatedAt ?? new Date();
+
+        docMap.set(doc.id, {
+          id: doc.id,
+          projectId: existing?.projectId ?? inferredProjectId,
+          folderId: parentFolderId,
+          name,
+          path,
+          extension,
+          filename,
+          fileType: existing?.fileType ?? detectEditorType(filename),
+          content: existing?.content,
+          wordCount: doc.word_count,
+          updatedAt: nextUpdatedAt,
+          pendingProposalCount: existing?.pendingProposalCount,
+        });
+      }
+
+      const normalizedHydration = normalizeTreeState({
+        folders: mergedFolders,
+        documents: Array.from(docMap.values()),
+        fallbackProjectId: inferredProjectId,
+        selectedIds: state.selectedIds,
+      });
 
       return {
-        folders: mergedFolders,
-        documents: mergedDocuments,
-        tree,
-        status: tree.length > 0 ? "success" : state.status,
+        folders: normalizedHydration.folders,
+        documents: normalizedHydration.documents,
+        tree: normalizedHydration.tree,
+        selectedIds: normalizedHydration.selectedIds ?? state.selectedIds,
+        status:
+          normalizedHydration.tree.length > 0 ? "success" : state.status,
       };
     });
   },
