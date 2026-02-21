@@ -76,8 +76,6 @@ flowchart TD
     I --> K
     J --> K
 
-    style A fill:#2d5f8d,color:#fff
-    style K fill:#2d7d2d,color:#fff
 ```
 
 See `frontend/src/core/lib/mergedDocument.ts:150-232`

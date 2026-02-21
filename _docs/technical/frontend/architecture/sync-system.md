@@ -105,6 +105,4 @@ flowchart TD
     Check -->|"no"| Q
     Sync -->|"error"| Fail --> Q
 
-    style Success fill:#2d7d2d,stroke:#1e4d1e,color:#fff
-    style Fail fill:#8d2d2d,stroke:#5a1e1e,color:#fff
 ```

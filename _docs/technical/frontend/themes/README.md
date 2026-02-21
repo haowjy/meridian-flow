@@ -49,9 +49,6 @@ flowchart TB
         error["error<br/>#B54425 / #E8735A"]
     end
 
-    style Foundation fill:#2d5a4a,color:#fff
-    style Interactive fill:#5a4a3a,color:#fff
-    style Feedback fill:#6a5a2a,color:#fff
 ```
 
 ### Spacing Scale (8pt Grid)
@@ -67,7 +64,6 @@ flowchart LR
 
     S1 --> S2 --> S3 --> S4 --> S5 --> S6
 
-    style S2 fill:#5F8575,color:#fff
 ```
 
 **Standard unit**: 8px (`spacing-2`). All spacing should be multiples of 4px.

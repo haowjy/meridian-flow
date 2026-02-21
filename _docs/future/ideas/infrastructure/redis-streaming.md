@@ -20,8 +20,6 @@ graph LR
     Server -->|Goroutine| Memory[In-Memory Buffer]
     Server -->|Persist| DB[(PostgreSQL)]
 
-    style Memory fill:#2d7d2d
-    style DB fill:#2d5d2d
 ```
 
 **Benefits:**
@@ -50,8 +48,6 @@ graph TB
     Server1 -->|Persist| DB[(PostgreSQL)]
     Server2 -->|Persist| DB
 
-    style Redis fill:#9d4d4d
-    style DB fill:#2d5d2d
 ```
 
 **Benefits:**

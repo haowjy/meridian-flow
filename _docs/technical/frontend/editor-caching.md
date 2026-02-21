@@ -124,8 +124,6 @@ Styling (dark‑mode safe):
 ```mermaid
 flowchart TD
     A["Guard"] --> B["_activeDocumentId check"]
-    style A fill:#2d7d2d,stroke:#1e4d1e,color:#fff
-    style B fill:#2d5f8d,stroke:#1a3f5a,color:#fff
 ```
 
 ## Edge Cases and Invariants

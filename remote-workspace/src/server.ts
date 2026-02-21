@@ -37,8 +37,13 @@ const MAX_PREVIEW_BYTES = parseIntegerFromEnv("REMOTE_WS_MAX_PREVIEW_BYTES", 1_0
 const MAX_UPLOAD_BYTES = parseIntegerFromEnv("REMOTE_WS_MAX_UPLOAD_BYTES", 26_214_400, {
   min: 1,
 });
+const MAX_TREE_ENTRIES = parseIntegerFromEnv("REMOTE_WS_MAX_TREE_ENTRIES", 5000, {
+  min: 1,
+});
 const CLIPBOARD_DIRECTORY_NAME = ".clipboard";
 const CLIPBOARD_DIRECTORY_PATH = path.resolve(REPO_ROOT, CLIPBOARD_DIRECTORY_NAME);
+const SCREENSHOTS_DIRECTORY_NAME = ".playwright-mcp";
+const SCREENSHOTS_DIRECTORY_PATH = path.resolve(REPO_ROOT, SCREENSHOTS_DIRECTORY_NAME);
 const ALLOWED_IMAGE_EXTENSIONS = new Set([
   ".png",
   ".jpg",
@@ -328,6 +333,97 @@ async function ensureClipboardDirectoryReady(): Promise<void> {
   });
 }
 
+type TreeNode = {
+  name: string;
+  path: string;
+  type: "file" | "directory";
+  children?: TreeNode[];
+};
+
+function buildTreeFromPaths(filePaths: string[]): TreeNode {
+  const root: TreeNode = { name: "", path: "", type: "directory", children: [] };
+
+  for (const filePath of filePaths) {
+    const segments = filePath.split("/");
+    let current = root;
+
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+      const isFile = i === segments.length - 1;
+      const currentPath = segments.slice(0, i + 1).join("/");
+
+      if (!current.children) {
+        current.children = [];
+      }
+
+      let existing = current.children.find((c) => c.name === segment);
+      if (!existing) {
+        existing = {
+          name: segment,
+          path: currentPath,
+          type: isFile ? "file" : "directory",
+          ...(isFile ? {} : { children: [] }),
+        };
+        current.children.push(existing);
+      } else if (!isFile && !existing.children) {
+        // Was added as a file but now needs to be a directory (shouldn't happen, but safe)
+        existing.type = "directory";
+        existing.children = [];
+      }
+
+      if (!isFile) {
+        current = existing;
+      }
+    }
+  }
+
+  return root;
+}
+
+function sortTree(node: TreeNode): void {
+  if (!node.children) return;
+  node.children.sort((a, b) => {
+    if (a.type !== b.type) return a.type === "directory" ? -1 : 1;
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+  });
+  for (const child of node.children) {
+    sortTree(child);
+  }
+}
+
+app.get("/api/tree", async (_req, res) => {
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["-C", REPO_ROOT, "ls-files", "--cached", "--others", "--exclude-standard"],
+      { maxBuffer: 10 * 1024 * 1024 },
+    );
+
+    const allPaths = String(stdout)
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    // Filter hidden paths
+    const visiblePaths = allPaths.filter((p) => !isHiddenRepoRelativePath(p));
+
+    const truncated = visiblePaths.length > MAX_TREE_ENTRIES;
+    const paths = truncated ? visiblePaths.slice(0, MAX_TREE_ENTRIES) : visiblePaths;
+
+    const root = buildTreeFromPaths(paths);
+    sortTree(root);
+
+    res.json({
+      root,
+      totalFiles: visiblePaths.length,
+      truncated,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to build file tree";
+    res.status(400).json({ error: message });
+  }
+});
+
 app.get("/api/list", async (req, res) => {
   try {
     const requestedPath = getSingleQueryValue(req.query.path);
@@ -498,6 +594,85 @@ app.get("/api/clipboard/file", async (req, res) => {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unable to stream clipboard file";
+    if (!res.headersSent) {
+      res.status(400).json({ error: message });
+      return;
+    }
+    res.destroy();
+  }
+});
+
+app.get("/api/screenshots/list", async (_req, res) => {
+  try {
+    const dirEntries = await fs.readdir(SCREENSHOTS_DIRECTORY_PATH, {
+      withFileTypes: true,
+    }).catch(() => [] as never[]);
+
+    const entries: Entry[] = [];
+    for (const dirEntry of dirEntries) {
+      if (!dirEntry.isFile()) continue;
+      const extension = path.extname(dirEntry.name).toLowerCase();
+      if (!ALLOWED_IMAGE_EXTENSIONS.has(extension)) continue;
+
+      const absPath = path.join(SCREENSHOTS_DIRECTORY_PATH, dirEntry.name);
+      let stats;
+      try {
+        stats = await fs.stat(absPath);
+      } catch {
+        continue;
+      }
+
+      entries.push({
+        name: dirEntry.name,
+        path: `${SCREENSHOTS_DIRECTORY_NAME}/${dirEntry.name}`,
+        type: "file",
+        size: stats.size,
+        modifiedAt: stats.mtime.toISOString(),
+      });
+    }
+
+    entries.sort((left, right) => right.modifiedAt.localeCompare(left.modifiedAt));
+    res.json({
+      directory: SCREENSHOTS_DIRECTORY_NAME,
+      entries,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unable to list screenshots";
+    res.status(400).json({ error: message });
+  }
+});
+
+app.get("/api/screenshots/file", async (req, res) => {
+  try {
+    const requestedName = getSingleQueryValue(req.query.name);
+    if (!requestedName) {
+      res.status(400).json({ error: "Missing ?name=..." });
+      return;
+    }
+
+    const safeName = sanitizeUploadFilename(requestedName);
+    const absPath = path.join(SCREENSHOTS_DIRECTORY_PATH, safeName);
+
+    // Ensure it exists, is a file, and stays within the screenshots directory
+    const stats = await fs.stat(absPath);
+    if (!stats.isFile()) {
+      res.status(400).json({ error: "Not a file" });
+      return;
+    }
+    const realPath = await fs.realpath(absPath);
+    if (!realPath.startsWith(SCREENSHOTS_DIRECTORY_PATH)) {
+      res.status(400).json({ error: "Path escapes screenshots directory" });
+      return;
+    }
+
+    const mimeType = mimeLookup(absPath) || "application/octet-stream";
+    res.setHeader("Content-Type", mimeType);
+    res.setHeader("Content-Length", String(stats.size));
+    await pipeline(createReadStream(absPath), res);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unable to stream screenshot";
     if (!res.headersSent) {
       res.status(400).json({ error: message });
       return;

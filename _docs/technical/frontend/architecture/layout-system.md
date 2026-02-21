@@ -33,10 +33,6 @@ flowchart LR
 
     Rail --> Left --> Right
 
-    style Rail fill:#2d5a4a,color:#fff
-    style Left fill:#5a4a3a,color:#fff
-    style Right fill:#6a5a2a,color:#fff
-    style DocPanel fill:#4a4030,color:#fff
 ```
 
 **WorkspaceRail Icons** (top to bottom):
@@ -89,9 +85,6 @@ flowchart TB
 
     Header --> Content --> Bottom
 
-    style Header fill:#2d5a4a,color:#fff
-    style Content fill:#5a4a3a,color:#fff
-    style Bottom fill:#6a5a2a,color:#fff
 ```
 
 **MobileBottomBar Tabs**:
@@ -137,9 +130,6 @@ graph TB
     Mobile --> ActiveThread
     Mobile --> DocPanel
 
-    classDef orchestrator fill:#7BA391,stroke:#5F8575,color:#1C1917
-    classDef strategy fill:#E3C169,stroke:#F4B41A,color:#2f2f2f
-    classDef layout fill:#A89E8E,stroke:#6B5D4D,color:#1C1917
 
     class WL orchestrator
     class Strategy strategy

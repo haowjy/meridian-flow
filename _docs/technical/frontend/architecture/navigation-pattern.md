@@ -23,9 +23,6 @@ flowchart TD
     Back["Browser back"] --> Effect
     Refresh["Page refresh"] --> Effect
 
-    style Direct fill:#2d7d2d,stroke:#1e4d1e,color:#fff
-    style Effect fill:#2d5f8d,stroke:#1b3a56,color:#fff
-    style Done fill:#2d8d2d,stroke:#1e5d1e,color:#fff
 ```
 
 **Why two prongs:**
@@ -74,8 +71,6 @@ flowchart LR
 
     Panel -.->|"Resets to 'documents'\non page load"| Default["'documents'"]
 
-    style URL fill:#2d5f8d,stroke:#1b3a56,color:#fff
-    style Panel fill:#8d5d2d,stroke:#5a3a1e,color:#fff
 ```
 
 **Project-relative paths:** URLs include folder path (`chars/heroes/aria`). Splat route (`$.tsx`) captures all segments after `/documents/`. WorkspaceLayout resolves path -> UUID via tree store.
@@ -99,8 +94,6 @@ flowchart LR
     DocEffect -.->|"Doesn't trigger"| ChatEffect
     ChatEffect -.->|"Doesn't trigger"| DocEffect
 
-    style DocEffect fill:#2d7d2d,stroke:#1e4d1e,color:#fff
-    style ChatEffect fill:#2d5f8d,stroke:#1b3a56,color:#fff
 ```
 
 Navigating between documents won't reload chat data.

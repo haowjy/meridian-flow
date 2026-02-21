@@ -66,8 +66,6 @@ flowchart LR
     B --> C["Background enrichment job<br/>(200ms - 8.5min)"]
     C --> D["output_tokens = completion + reasoning<br/>(complete and accurate)"]
 
-    style B fill:#9d8d2d
-    style D fill:#2d7d2d
 ```
 
 **Why inclusive design:**

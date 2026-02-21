@@ -21,7 +21,6 @@ flowchart TB
 
   Header --> Toolbar --> Editor --> Status
 
-  classDef ui fill:#2d5f8d,stroke:#1b3a56,color:#fff
   class Header,Toolbar,Editor,Status ui
 ```
 

@@ -51,8 +51,6 @@ flowchart LR
   FE <-->| Cache | IDB["IndexedDB (Dexie)"]
   API <---> | pgx | DB
 
-  classDef a fill:#2d7d9d,stroke:#1e4d1e,color:#fff
-  classDef b fill:#2d8d2d,stroke:#1e4d1e,color:#fff
   class FE a
   class API b
 ```

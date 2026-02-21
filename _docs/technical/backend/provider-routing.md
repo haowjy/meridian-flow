@@ -43,11 +43,6 @@ graph TD
 
     L --> Q[Execute Request]
 
-    style A fill:#2d5f7d
-    style C fill:#2d7d2d
-    style J fill:#7d2d5f
-    style L fill:#2d7d2d
-    style P fill:#7d2d5f
 ```
 
 ## Request Format

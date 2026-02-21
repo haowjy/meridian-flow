@@ -57,9 +57,6 @@ flowchart TB
     Stream -->|"Provider Abstraction"| LLM3
     API <-->|"JWT Validation\n(JWKS)"| DB
 
-    classDef frontend fill:#2d5d7d,stroke:#1e3d5d,color:#fff
-    classDef backend fill:#2d7d2d,stroke:#1e5d1e,color:#fff
-    classDef external fill:#7d2d2d,stroke:#5d1e1e,color:#fff
 
     class UI,CM,Store,Cache frontend
     class API,Service,Repo,Stream backend

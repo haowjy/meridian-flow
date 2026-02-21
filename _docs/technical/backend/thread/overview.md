@@ -28,12 +28,6 @@ graph TD
     T3a --> T4a
     T3b --> T4b
 
-    style T1 fill:#2d7d2d
-    style T2 fill:#7d2d5a
-    style T3a fill:#2d7d2d
-    style T3b fill:#2d7d2d
-    style T4a fill:#7d2d5a
-    style T4b fill:#7d2d5a
 ```
 
 **Key points:**
@@ -64,10 +58,6 @@ graph LR
     T1 --> B1
     T1 --> B2
 
-    style T1 fill:#2d7d2d
-    style B0 fill:#7d5a2d
-    style B1 fill:#7d5a2d
-    style B2 fill:#7d5a2d
 ```
 
 **Block types:**

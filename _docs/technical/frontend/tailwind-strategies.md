@@ -41,12 +41,6 @@ flowchart TD
     Q5 -->|No| Done([Done])
     CSSVars --> Done
 
-    style Inline fill:#2d5a2d,stroke:#1a1a1a
-    style CVA fill:#2d5a5a,stroke:#1a1a1a
-    style Layer fill:#5a5a2d,stroke:#1a1a1a
-    style Styles fill:#5a2d5a,stroke:#1a1a1a
-    style CSSVars fill:#2d2d5a,stroke:#1a1a1a
-    style Component fill:#5a2d2d,stroke:#1a1a1a
 ```
 
 ---

@@ -26,8 +26,6 @@ graph LR
     Tree -->|IDs + prev_turn_id only<br/>~2KB for 1000 turns| Client
     Paginate -->|Full Turn objects<br/>+ nested blocks| Client
 
-    style Tree fill:#2d7d7d
-    style Paginate fill:#7d4d2d
 ```
 
 ---
@@ -285,10 +283,6 @@ graph RL
     T3 -->|prev_turn_id| T2
     T2 -->|prev_turn_id| T1
 
-    style T5 fill:#7d4d2d
-    style T4 fill:#2d7d2d
-    style T3 fill:#2d7d2d
-    style T2 fill:#2d7d2d
 ```
 
 **Query (simplified):**
@@ -339,9 +333,6 @@ graph LR
     T1 -->|child| T2b
     T2b -->|child| T3
 
-    style T1 fill:#7d4d2d
-    style T2b fill:#2d7d2d
-    style T3 fill:#2d7d2d
 ```
 
 **Branch selection:** Pick child with latest `created_at`
@@ -410,12 +401,6 @@ graph LR
     T4 --> T5
     T5 --> T6
 
-    style T3 fill:#7d4d2d
-    style T2 fill:#2d5d7d
-    style T1 fill:#2d5d7d
-    style T4 fill:#2d7d2d
-    style T5 fill:#2d7d2d
-    style T6 fill:#2d7d2d
 ```
 
 **Example:**
@@ -724,8 +709,6 @@ flowchart TD
     UpdateCache --> DirectionBoth
     UpdateLeaf --> DirectionBefore
 
-    style CacheMode fill:#2d7d2d
-    style LeafMode fill:#7d4d2d
 ```
 
 ### Cache Mode (Active Session)

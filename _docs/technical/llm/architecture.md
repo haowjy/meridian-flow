@@ -39,12 +39,6 @@ graph TB
     Gemini -->|implements| Core
     OpenRouter -->|implements| Core
 
-    style Core fill:#2d7d2d
-    style Consumer fill:#4a5f8a
-    style Anthropic fill:#c17d3a
-    style OpenAI fill:#c17d3a
-    style Gemini fill:#c17d3a
-    style OpenRouter fill:#c17d3a
 ```
 
 **Key Insight:** Dependencies point INWARD. Core knows nothing about adapters or consumers.

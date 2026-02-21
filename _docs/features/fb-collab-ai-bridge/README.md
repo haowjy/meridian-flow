@@ -41,9 +41,6 @@ flowchart LR
     G -->|auto-accept| H["Apply immediately"]
     G -->|require_review| I["Pending in Review Panel"]
 
-    style B fill:#2d5a7d
-    style H fill:#2d5a2d
-    style I fill:#7d5a2d
 ```
 
 ### Key Design: Strategy Pattern (DIP + OCP)

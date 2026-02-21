@@ -81,9 +81,6 @@ graph TB
     TEST --> TABLES2["test_projects<br/>test_folders<br/>test_documents"]
     PROD --> TABLES3["prod_projects<br/>prod_folders<br/>prod_documents"]
 
-    style DEV fill:#2d7d2d
-    style TEST fill:#9d7d2d
-    style PROD fill:#7d2d2d
 ```
 
 ### Dynamic Table Names in Code

@@ -28,8 +28,6 @@ flowchart LR
     parse --> content
     parse --> aiVersion
 
-    style Storage fill:#2d5f8d,color:#fff
-    style Frontend fill:#2d7d2d,color:#fff
 ```
 
 **Key insight**: Storage always contains clean markdown. PUA markers only exist in the frontend editor.

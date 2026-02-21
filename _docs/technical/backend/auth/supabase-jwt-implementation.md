@@ -280,8 +280,6 @@ For valid token tests, use test JWT from https://jwt.io or mock JWKS endpoint.
 graph LR
     A[Test Stub<br/>hardcoded ID] --> B[RS256 + JWKS<br/>real validation]
 
-    style A fill:#ff6b6b
-    style B fill:#51cf66
 ```
 
 **Deployment checklist:**

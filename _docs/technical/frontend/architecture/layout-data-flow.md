@@ -36,10 +36,6 @@ flowchart TB
     WL --> Stores
     Stores --> Components
 
-    style URL fill:#2d5a4a,color:#fff
-    style WL fill:#5a4a3a,color:#fff
-    style Stores fill:#6a5a2a,color:#fff
-    style Components fill:#4a5a3a,color:#fff
 ```
 
 ## Store Interaction Patterns
@@ -96,9 +92,6 @@ flowchart LR
     LR --> LC
     RR --> RC
 
-    style Hooks fill:#2d5a4a,color:#fff
-    style Store fill:#5a4a3a,color:#fff
-    style Layout fill:#6a5a2a,color:#fff
 ```
 
 **Who Sets Ready Flags:**
