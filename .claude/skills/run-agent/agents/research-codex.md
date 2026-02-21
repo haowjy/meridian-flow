@@ -1,7 +1,7 @@
 ---
 name: research-codex
 description: Research agent (codex) — explores codebase, researches best practices, evaluates approaches
-model: gpt-5.3-codex
+model: claude-sonnet-4-6
 tools: Read,Bash,Glob,Grep,WebSearch,WebFetch
 skills:
   - research

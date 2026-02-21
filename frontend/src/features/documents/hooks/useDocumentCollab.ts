@@ -13,6 +13,7 @@ import {
   isProposalStatusChangedEvent,
   type Proposal,
   type ProposalGroupAcceptResultEvent,
+  type ProposalOperationsModel,
   type ProposalReviewModel,
   toUint8Array,
 } from "@meridian/cm6-collab";
@@ -40,6 +41,7 @@ interface UseDocumentCollabResult {
   connectionState: CollabConnectionState;
   proposals: Map<string, Proposal>;
   reviewModels: Map<string, ProposalReviewModel>;
+  operationsModels: Map<string, ProposalOperationsModel>;
   lastGroupAcceptResult: ProposalGroupAcceptResultEvent | null;
   sendProposalAccept: (proposalId: string, idempotencyKey: string) => boolean;
   sendProposalReject: (proposalId: string) => boolean;
@@ -54,6 +56,7 @@ interface UseDocumentCollabResult {
 }
 
 const EMPTY_REVIEW_MODELS = new Map<string, ProposalReviewModel>();
+const EMPTY_OPERATIONS_MODELS = new Map<string, ProposalOperationsModel>();
 
 export function useDocumentCollab({
   documentId,
@@ -392,11 +395,22 @@ export function useDocumentCollab({
     return reviewRuntime.deriveProposalReviews(proposalState.proposals.values()).reviews;
   }, [enabled, proposalState.proposals, reviewRevision, reviewRuntime]);
 
+  const operationsModels = useMemo(() => {
+    if (!enabled || !reviewRuntime) return EMPTY_OPERATIONS_MODELS;
+    void reviewRevision; // recompute trigger
+    const result = new Map<string, ProposalOperationsModel>();
+    for (const proposal of proposalState.proposals.values()) {
+      result.set(proposal.id, reviewRuntime.deriveProposalOperations(proposal));
+    }
+    return result;
+  }, [enabled, proposalState.proposals, reviewRevision, reviewRuntime]);
+
   return {
     extensions: enabled ? extensions : [],
     connectionState,
     proposals: proposalState.proposals,
     reviewModels,
+    operationsModels,
     lastGroupAcceptResult: proposalState.lastGroupAcceptResult,
     sendProposalAccept,
     sendProposalReject,

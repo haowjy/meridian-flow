@@ -12,6 +12,12 @@ export {
   type ProposalReviewMergeViewHandle,
 } from "./merge";
 
+export {
+  mountUnifiedReviewView,
+  type UnifiedReviewParams,
+  type UnifiedReviewHandle,
+} from "./unified-review";
+
 export type {
   ProposalReviewUnavailableReason,
   ProposalReviewReady,

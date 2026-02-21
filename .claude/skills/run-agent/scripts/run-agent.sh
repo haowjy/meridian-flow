@@ -4,7 +4,7 @@
 #
 # Usage:
 #   scripts/run-agent.sh [agent] [OPTIONS]
-#   scripts/run-agent.sh --model gpt-5.3-codex --skills review -p "Review the changes"
+#   scripts/run-agent.sh --model claude-sonnet-4-6 --skills review -p "Review the changes"
 #   scripts/run-agent.sh review --dry-run
 #
 # See the run-agent skill README.md for full documentation.

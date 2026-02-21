@@ -75,7 +75,8 @@ export function extractProposalOpsWithClone(
 
   // Use the first (and normally only) delta for single-update proposals.
   // Multiple deltas from a single applyUpdate are not expected in practice.
-  const delta = capturedDeltas[0];
+  // capturedDeltas[0] is guaranteed by the length guard above.
+  const delta = capturedDeltas[0]!;
 
   const positioned = deltaToPositionedOps(delta, baseText);
   return { ops: mergeAdjacentOps(positioned), clonedDoc: cloned };
@@ -127,8 +128,9 @@ function mergeAdjacentOps(ops: PositionedOp[]): EditOp[] {
   let i = 0;
 
   while (i < ops.length) {
-    const curr = ops[i];
-    const next = i + 1 < ops.length ? ops[i + 1] : null;
+    // curr: guaranteed by while condition; next: guaranteed by bounds check.
+    const curr = ops[i]!;
+    const next = i + 1 < ops.length ? ops[i + 1]! : null;
 
     if (
       curr.kind === "delete" &&

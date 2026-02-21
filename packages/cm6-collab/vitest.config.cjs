@@ -17,6 +17,9 @@ module.exports = {
   resolve: {
     alias: {
       yjs: path.join(CM6_COLLAB_DEPS, "yjs"),
+      "@codemirror/merge": path.join(CM6_COLLAB_DEPS, "@codemirror/merge"),
+      "@codemirror/state": path.join(CM6_COLLAB_DEPS, "@codemirror/state"),
+      "@codemirror/view": path.join(CM6_COLLAB_DEPS, "@codemirror/view"),
     },
   },
 };
