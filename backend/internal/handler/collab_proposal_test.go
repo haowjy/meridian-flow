@@ -287,7 +287,7 @@ func TestProjectWS_ProposalSnapshotAfterSubscribe(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProposalProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, "valid-token")
 
 	// Send doc:subscribe — manually read the subscribe sequence to inspect proposal:snapshot
@@ -360,7 +360,7 @@ func TestProjectWS_ProposalAcceptDispatchAndBroadcast(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProposalProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, "valid-token")
 	subscribeDocOnProjectWS(t, conn, documentID.String())
 
@@ -455,7 +455,7 @@ func TestProjectWS_ProposalGroupAcceptResultEvent(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProposalProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, "valid-token")
 	subscribeDocOnProjectWS(t, conn, documentID.String())
 
@@ -520,7 +520,7 @@ func TestProjectWS_ProposalAcceptNonSubscribedDocument(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProposalProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, "valid-token")
 	subscribeDocOnProjectWS(t, conn, documentID.String())
 
@@ -565,7 +565,7 @@ func TestProjectWS_ProposalRejectNonSubscribedDocument(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProposalProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, "valid-token")
 	subscribeDocOnProjectWS(t, conn, documentID.String())
 
@@ -609,7 +609,7 @@ func TestProjectWS_ProposalAcceptErrorMapping_IdempotencyConflict(t *testing.T) 
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProposalProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, "valid-token")
 	subscribeDocOnProjectWS(t, conn, documentID.String())
 
@@ -646,7 +646,7 @@ func TestProjectWS_ProposalAcceptErrorMapping_RateLimited(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProposalProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, "valid-token")
 	subscribeDocOnProjectWS(t, conn, documentID.String())
 
@@ -702,7 +702,7 @@ func TestProjectWS_ProposalRequestUpdate(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProposalProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, "valid-token")
 	subscribeDocOnProjectWS(t, conn, docID.String())
 
@@ -752,7 +752,7 @@ func TestProjectWS_ProposalRequestUpdateNotFound(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProposalProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, "valid-token")
 	subscribeDocOnProjectWS(t, conn, docID.String())
 
@@ -810,7 +810,7 @@ func TestProjectWS_ProposalRequestUpdateWrongDocument(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProposalProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, "valid-token")
 	subscribeDocOnProjectWS(t, conn, subscribedDocID.String())
 

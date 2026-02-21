@@ -287,7 +287,7 @@ func TestProjectWS_AuthFailed(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 
 	// Send bad token directly (don't use authenticateWS which expects project:connected).
 	if err := websocket.Message.Send(conn, "bad-token"); err != nil {
@@ -311,7 +311,7 @@ func TestProjectWS_MalformedProjectID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("http get: %v", err)
 	}
-	defer resp.Body.Close()
+	defer closeHTTPBody(t, resp.Body)
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, resp.StatusCode)
@@ -330,7 +330,7 @@ func TestProjectWS_DocSubscribeSuccess(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, testToken)
 
 	// Send doc:subscribe
@@ -391,7 +391,7 @@ func TestProjectWS_DocSubscribeIdempotent(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, testToken)
 	canonicalDocumentID := uuid.MustParse(testDocID1).String()
 
@@ -450,7 +450,7 @@ func TestProjectWS_DocSubscribeCanonicalizesMixedCaseUUID(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, strings.ToUpper(testProjectID))
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, testToken)
 
 	mixedCaseDocumentID := strings.ToUpper(testDocID1)
@@ -520,7 +520,7 @@ func TestProjectWS_DocSubscribeMalformedUUID(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, testToken)
 
 	cmd := map[string]string{"type": "doc:subscribe", "documentId": "not-a-uuid"}
@@ -550,7 +550,7 @@ func TestProjectWS_DocSubscribeUnauthorized(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, testToken)
 
 	cmd := map[string]string{"type": "doc:subscribe", "documentId": testDocID1}
@@ -588,7 +588,7 @@ func TestProjectWS_DocSubscribeProjectMismatch(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, testToken)
 
 	cmd := map[string]string{"type": "doc:subscribe", "documentId": testDocID1}
@@ -625,7 +625,7 @@ func TestProjectWS_DocSubscribeLimitExceeded(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, testToken)
 
 	// Subscribe to max (10) documents
@@ -670,7 +670,7 @@ func TestProjectWS_DocUnsubscribe(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, testToken)
 
 	// Subscribe first
@@ -712,7 +712,7 @@ func TestProjectWS_DocUnsubscribeNotSubscribed(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, testToken)
 
 	// Unsubscribe without subscribing first — should be safe
@@ -743,7 +743,7 @@ func TestProjectWS_ServerInvalidationAccessRevoked(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, testToken)
 
 	cmd := map[string]string{"type": "doc:subscribe", "documentId": testDocID1}
@@ -796,7 +796,7 @@ func TestProjectWS_ServerInvalidationProjectMismatch(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, testToken)
 
 	cmd := map[string]string{"type": "doc:subscribe", "documentId": testDocID1}
@@ -846,7 +846,7 @@ func TestProjectWS_BinaryFrameNotSubscribed(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, testToken)
 
 	// Send binary frame for a document we haven't subscribed to
@@ -886,7 +886,7 @@ func TestProjectWS_DocErrorKeepsSocketAlive(t *testing.T) {
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProjectID)
-	defer conn.Close()
+	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, testToken)
 
 	// Subscribe to doc1

@@ -4,13 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net"
 	"net/url"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	ycrdt "github.com/skyterra/y-crdt"
 	"golang.org/x/net/websocket"
 	"meridian/internal/domain/models"
 	collabModels "meridian/internal/domain/models/collab"
@@ -194,32 +192,18 @@ func readWSErrorMessage(t *testing.T, conn *websocket.Conn) wsErrorResponse {
 	return msg
 }
 
-func readWSErrorMessageWithTimeout(t *testing.T, conn *websocket.Conn, timeout time.Duration) (wsErrorResponse, bool) {
+func closeWSConn(t *testing.T, conn *websocket.Conn) {
 	t.Helper()
-
-	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
-		t.Fatalf("set read deadline: %v", err)
+	if err := conn.Close(); err != nil {
+		t.Errorf("close websocket connection: %v", err)
 	}
-	defer func() {
-		if err := conn.SetDeadline(time.Time{}); err != nil {
-			t.Fatalf("clear read deadline: %v", err)
-		}
-	}()
+}
 
-	var raw string
-	if err := websocket.Message.Receive(conn, &raw); err != nil {
-		var netErr net.Error
-		if errors.As(err, &netErr) && netErr.Timeout() {
-			return wsErrorResponse{}, false
-		}
-		t.Fatalf("receive ws message with timeout: %v", err)
+func closeHTTPBody(t *testing.T, body interface{ Close() error }) {
+	t.Helper()
+	if err := body.Close(); err != nil {
+		t.Errorf("close HTTP response body: %v", err)
 	}
-
-	var msg wsErrorResponse
-	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
-		t.Fatalf("decode ws message %q: %v", raw, err)
-	}
-	return msg, true
 }
 
 func readWSBinaryMessage(t *testing.T, conn *websocket.Conn) []byte {
@@ -237,18 +221,4 @@ func readWSBinaryMessage(t *testing.T, conn *websocket.Conn) []byte {
 		}
 		return raw
 	}
-}
-
-func buildEnvelopeSyncStep1(t *testing.T, docID uuid.UUID) []byte {
-	t.Helper()
-
-	doc := ycrdt.NewDoc("test-client", true, ycrdt.DefaultGCFilter, nil, false)
-	encoder := ycrdt.NewUpdateEncoderV1()
-	ycrdt.WriteSyncStep1(encoder, doc)
-	payload := encoder.ToUint8Array()
-	if len(payload) == 0 {
-		t.Fatalf("empty sync-step1 payload")
-	}
-
-	return frameEnvelope(collabEnvelopeSyncStep1, docID, payload)
 }

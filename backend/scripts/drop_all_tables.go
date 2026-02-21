@@ -94,15 +94,19 @@ func main() {
 }
 
 // discoverTables queries pg_tables for all tables matching the given prefix in the public schema.
-func discoverTables(db *sql.DB, prefix string) ([]string, error) {
+func discoverTables(db *sql.DB, prefix string) (tables []string, err error) {
 	query := "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE $1"
 	rows, err := db.Query(query, prefix+"%")
 	if err != nil {
 		return nil, fmt.Errorf("querying pg_tables: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		closeErr := rows.Close()
+		if closeErr != nil && err == nil {
+			err = fmt.Errorf("closing pg_tables rows: %w", closeErr)
+		}
+	}()
 
-	var tables []string
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
@@ -110,13 +114,16 @@ func discoverTables(db *sql.DB, prefix string) ([]string, error) {
 		}
 		tables = append(tables, name)
 	}
-	return tables, rows.Err()
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("iterating pg_tables rows: %w", rowsErr)
+	}
+	return tables, nil
 }
 
 // discoverIndexes queries pg_indexes for all custom indexes belonging to this environment.
 // Matches indexes on prefixed tables OR indexes named with the prefix (catches orphans).
 // Includes only app-managed idx_* indexes, excluding constraint-owned indexes.
-func discoverIndexes(db *sql.DB, prefix string) ([]string, error) {
+func discoverIndexes(db *sql.DB, prefix string) (indexes []string, err error) {
 	query := `SELECT DISTINCT indexname FROM pg_indexes
 		WHERE schemaname = 'public'
 		AND (tablename LIKE $1 OR indexname LIKE $2)
@@ -125,9 +132,13 @@ func discoverIndexes(db *sql.DB, prefix string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("querying pg_indexes: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		closeErr := rows.Close()
+		if closeErr != nil && err == nil {
+			err = fmt.Errorf("closing pg_indexes rows: %w", closeErr)
+		}
+	}()
 
-	var indexes []string
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
@@ -135,19 +146,26 @@ func discoverIndexes(db *sql.DB, prefix string) ([]string, error) {
 		}
 		indexes = append(indexes, name)
 	}
-	return indexes, rows.Err()
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("iterating pg_indexes rows: %w", rowsErr)
+	}
+	return indexes, nil
 }
 
 // discoverFunctions queries information_schema.routines for all functions matching the given prefix.
-func discoverFunctions(db *sql.DB, prefix string) ([]string, error) {
+func discoverFunctions(db *sql.DB, prefix string) (functions []string, err error) {
 	query := "SELECT routine_name FROM information_schema.routines WHERE routine_schema = 'public' AND routine_name LIKE $1"
 	rows, err := db.Query(query, prefix+"%")
 	if err != nil {
 		return nil, fmt.Errorf("querying routines: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		closeErr := rows.Close()
+		if closeErr != nil && err == nil {
+			err = fmt.Errorf("closing routines rows: %w", closeErr)
+		}
+	}()
 
-	var functions []string
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
@@ -155,7 +173,10 @@ func discoverFunctions(db *sql.DB, prefix string) ([]string, error) {
 		}
 		functions = append(functions, name)
 	}
-	return functions, rows.Err()
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("iterating routines rows: %w", rowsErr)
+	}
+	return functions, nil
 }
 
 // quoteIdent safely quotes a SQL identifier (table/index/function name).
