@@ -457,6 +457,24 @@ Orchestration is provided by the [orchestrate plugin](https://github.com/jimmyya
 
 Install: `/plugin marketplace add jimmyyao/orchestrate` (Claude Code)
 
+### `cc-orchestrate`
+
+**Purpose:** Launch Claude Code with orchestrator-friendly defaults:
+- `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=60`
+- `--dangerously-skip-permissions`
+- optional startup prompt for `/orchestrate`
+
+```bash
+# Start Claude with defaults
+./scripts/cc-orchestrate
+
+# Start and immediately run /orchestrate on a plan
+./scripts/cc-orchestrate --plan _docs/plans/my-plan.md
+
+# Pass through any other Claude flags
+./scripts/cc-orchestrate --model claude-opus-4-6 --debug api,hooks
+```
+
 ---
 
 ## `dev/setup.sh` — Dev Environment

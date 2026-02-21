@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ./scripts/cc-orchestrate [wrapper options] [--] [claude args...]
+
+Wrapper options:
+  --autocompact <1-100>   Override auto-compact percentage (default: 60)
+  --plan <path>           Start with /orchestrate using the given plan file
+  --plan-name <name>      Optional --plan-name value for /orchestrate
+  -h, --help              Show this help
+
+Examples:
+  ./scripts/cc-orchestrate
+  ./scripts/cc-orchestrate --model claude-opus-4-6
+  ./scripts/cc-orchestrate --plan _docs/plans/my-plan.md
+  ./scripts/cc-orchestrate --autocompact 50 -- --debug api,hooks
+EOF
+}
+
+AUTOCOMPACT_PCT="${CC_AUTOCOMPACT_PCT:-${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-60}}"
+PLAN_FILE=""
+PLAN_NAME=""
+PASSTHROUGH_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --autocompact)
+      if [[ $# -lt 2 ]]; then
+        echo "Missing value for --autocompact" >&2
+        exit 1
+      fi
+      AUTOCOMPACT_PCT="$2"
+      shift 2
+      ;;
+    --plan)
+      if [[ $# -lt 2 ]]; then
+        echo "Missing value for --plan" >&2
+        exit 1
+      fi
+      PLAN_FILE="$2"
+      shift 2
+      ;;
+    --plan-name)
+      if [[ $# -lt 2 ]]; then
+        echo "Missing value for --plan-name" >&2
+        exit 1
+      fi
+      PLAN_NAME="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      PASSTHROUGH_ARGS+=("$@")
+      break
+      ;;
+    *)
+      PASSTHROUGH_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if ! [[ "$AUTOCOMPACT_PCT" =~ ^[0-9]+$ ]] || (( AUTOCOMPACT_PCT < 1 || AUTOCOMPACT_PCT > 100 )); then
+  echo "Invalid --autocompact value '$AUTOCOMPACT_PCT' (expected 1-100)" >&2
+  exit 1
+fi
+
+if [[ -n "$PLAN_NAME" && -z "$PLAN_FILE" ]]; then
+  echo "--plan-name requires --plan" >&2
+  exit 1
+fi
+
+ORCHESTRATE_PROMPT=""
+if [[ -n "$PLAN_FILE" ]]; then
+  if [[ ! -f "$REPO_ROOT/.claude/skills/orchestrate/SKILL.md" ]]; then
+    echo "Warning: $REPO_ROOT/.claude/skills/orchestrate/SKILL.md not found." >&2
+    echo "The /orchestrate command may not be available." >&2
+  fi
+
+  escaped_plan=${PLAN_FILE//\"/\\\"}
+  ORCHESTRATE_PROMPT="/orchestrate:orchestrate \"$escaped_plan\""
+  if [[ -n "$PLAN_NAME" ]]; then
+    escaped_plan_name=${PLAN_NAME//\"/\\\"}
+    ORCHESTRATE_PROMPT="$ORCHESTRATE_PROMPT --plan-name \"$escaped_plan_name\""
+  fi
+fi
+
+CLAUDE_ARGS=(--dangerously-skip-permissions "${PASSTHROUGH_ARGS[@]}")
+if [[ -n "$ORCHESTRATE_PROMPT" ]]; then
+  CLAUDE_ARGS+=("$ORCHESTRATE_PROMPT")
+fi
+
+echo "[cc-orchestrate] CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=$AUTOCOMPACT_PCT" >&2
+if [[ -n "$ORCHESTRATE_PROMPT" ]]; then
+  echo "[cc-orchestrate] Starting prompt: $ORCHESTRATE_PROMPT" >&2
+fi
+
+exec env CLAUDECODE= CLAUDE_AUTOCOMPACT_PCT_OVERRIDE="$AUTOCOMPACT_PCT" \
+  claude "${CLAUDE_ARGS[@]}"
