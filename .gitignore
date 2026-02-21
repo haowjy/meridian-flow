@@ -27,6 +27,9 @@ remote-workspace/dist/
 
 scripts/get-token.sh
 
+# Remote workspace upload clipboard
+.clipboard/
+
 # Per-worktree dev port overrides
 .dev-ports
 

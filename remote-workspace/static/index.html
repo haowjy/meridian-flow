@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Remote Workspace</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="card bar">
+        <h1 class="title">Remote Workspace</h1>
+        <div class="crumbs" id="crumbs"></div>
+        <div class="controls">
+          <button id="refresh-btn" class="ghost" type="button">Refresh</button>
+          <label class="upload-label">
+            Upload Images
+            <input id="upload-input" type="file" accept="image/*" multiple hidden />
+          </label>
+          <input id="mkdir-input" class="input" type="text" placeholder="New folder name" />
+          <button id="mkdir-btn" class="ghost" type="button">Create Folder</button>
+        </div>
+        <div id="status" class="muted"></div>
+      </section>
+
+      <section class="card">
+        <ul id="file-list"></ul>
+      </section>
+
+      <section class="card viewer">
+        <h2 id="viewer-title">Preview</h2>
+        <div id="viewer">
+          <p class="placeholder">Select a file to preview it.</p>
+        </div>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
