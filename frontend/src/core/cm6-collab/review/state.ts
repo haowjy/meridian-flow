@@ -7,38 +7,38 @@
  */
 
 import { StateField, StateEffect } from "@codemirror/state";
-import type { ReviewChunk } from "./types";
+import type { ReviewHunk } from "./types";
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
 export interface InlineReviewState {
-  chunks: ReviewChunk[];
+  hunks: ReviewHunk[];
   resolutions: Map<string, "accepted" | "rejected">;
-  activeChunkIndex: number; // -1 = none
+  activeHunkIndex: number; // -1 = none
 }
 
 export interface InlineReviewCallbacks {
-  onAcceptChunk: (chunk: ReviewChunk) => void;
-  onRejectChunk: (chunk: ReviewChunk) => void;
+  onAcceptHunk: (hunk: ReviewHunk) => void;
+  onRejectHunk: (hunk: ReviewHunk) => void;
 }
 
 // ============================================================================
 // STATE EFFECTS
 // ============================================================================
 
-/** Load chunks for review */
-export const setReviewChunks = StateEffect.define<ReviewChunk[]>();
+/** Load hunks for review */
+export const setReviewHunks = StateEffect.define<ReviewHunk[]>();
 
-/** Resolve a chunk (accept or reject) */
-export const resolveChunk = StateEffect.define<{
-  chunkId: string;
+/** Resolve a hunk (accept or reject) */
+export const resolveHunk = StateEffect.define<{
+  hunkId: string;
   status: "accepted" | "rejected";
 }>();
 
-/** Set active chunk index for navigation */
-export const setActiveChunk = StateEffect.define<number>();
+/** Set active hunk index for navigation */
+export const setActiveHunk = StateEffect.define<number>();
 
 /** Clear all review state */
 export const clearReview = StateEffect.define<void>();
@@ -48,9 +48,9 @@ export const clearReview = StateEffect.define<void>();
 // ============================================================================
 
 const emptyState: InlineReviewState = {
-  chunks: [],
+  hunks: [],
   resolutions: new Map(),
-  activeChunkIndex: -1,
+  activeHunkIndex: -1,
 };
 
 export const inlineReviewField = StateField.define<InlineReviewState>({
@@ -60,10 +60,10 @@ export const inlineReviewField = StateField.define<InlineReviewState>({
 
   update(value, tr) {
     for (const effect of tr.effects) {
-      if (effect.is(setReviewChunks)) {
-        // Carry over existing resolutions for chunks that still exist.
-        // This prevents the re-sync race (Bug 2): accepting a chunk changes
-        // the Yjs doc → reviewRevision++ → setReviewChunks fires, and we
+      if (effect.is(setReviewHunks)) {
+        // Carry over existing resolutions for hunks that still exist.
+        // This prevents the re-sync race (Bug 2): accepting a hunk changes
+        // the Yjs doc → reviewRevision++ → setReviewHunks fires, and we
         // must not wipe the just-recorded resolution.
         const newIds = new Set(effect.value.map((c) => c.id));
         const carried = new Map<string, "accepted" | "rejected">();
@@ -71,33 +71,33 @@ export const inlineReviewField = StateField.define<InlineReviewState>({
           if (newIds.has(id)) carried.set(id, status);
         }
 
-        // Preserve current activeChunkIndex across re-syncs (#5).
+        // Preserve current activeHunkIndex across re-syncs (#5).
         // If idle (-1), stay idle. Otherwise clamp to new list length.
         let nextIndex: number;
         if (effect.value.length === 0) {
           nextIndex = -1;
-        } else if (value.activeChunkIndex < 0) {
+        } else if (value.activeHunkIndex < 0) {
           // Was idle — stay idle unless this is the initial load
-          // (initial load = no prior chunks)
-          nextIndex = value.chunks.length === 0 ? 0 : -1;
+          // (initial load = no prior hunks)
+          nextIndex = value.hunks.length === 0 ? 0 : -1;
         } else {
           // Clamp to new bounds
-          nextIndex = Math.min(value.activeChunkIndex, effect.value.length - 1);
+          nextIndex = Math.min(value.activeHunkIndex, effect.value.length - 1);
         }
 
         return {
-          chunks: effect.value,
+          hunks: effect.value,
           resolutions: carried,
-          activeChunkIndex: nextIndex,
+          activeHunkIndex: nextIndex,
         };
       }
-      if (effect.is(resolveChunk)) {
+      if (effect.is(resolveHunk)) {
         const next = new Map(value.resolutions);
-        next.set(effect.value.chunkId, effect.value.status);
+        next.set(effect.value.hunkId, effect.value.status);
         return { ...value, resolutions: next };
       }
-      if (effect.is(setActiveChunk)) {
-        return { ...value, activeChunkIndex: effect.value };
+      if (effect.is(setActiveHunk)) {
+        return { ...value, activeHunkIndex: effect.value };
       }
       if (effect.is(clearReview)) {
         return emptyState;

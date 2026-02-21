@@ -6,9 +6,9 @@ import type {
   ProposalReviewUnavailable,
   ProposalReviewUnavailableReason,
 } from "./contracts";
-import type { EditOp, ReviewChunk } from "./types";
+import type { EditOp, ReviewHunk } from "./types";
 import { extractProposalOpsWithClone } from "./changeset-extractor";
-import { groupIntoChunks } from "./chunk-grouper";
+import { groupIntoHunks } from "./hunk-grouper";
 
 export interface CreateProposalReviewRuntimeOptions {
   ydoc: Y.Doc;
@@ -24,7 +24,7 @@ export interface ProposalOperationsReady {
   baseText: string;
   proposedText: string;
   ops: EditOp[];
-  chunks: ReviewChunk[];
+  hunks: ReviewHunk[];
 }
 
 /**
@@ -118,7 +118,7 @@ export class ProposalReviewRuntime {
     try {
       // Extract ops and reuse the cloned doc (avoids cloning + applying twice)
       const { ops, clonedDoc } = extractProposalOpsWithClone(this.ydoc, update, this.textKey);
-      const chunks = groupIntoChunks(ops, proposal.id, baseText);
+      const hunks = groupIntoHunks(ops, proposal.id, baseText);
       const proposedText = clonedDoc.getText(this.textKey).toString();
 
       return {
@@ -127,7 +127,7 @@ export class ProposalReviewRuntime {
         baseText,
         proposedText,
         ops,
-        chunks,
+        hunks,
       };
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);

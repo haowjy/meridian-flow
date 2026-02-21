@@ -12,7 +12,7 @@
  * jittery mouse-following and matches VS Code's gutter action pattern.
  *
  * Click outside any [data-hunk-id] region clears the focused state via
- * setActiveChunk.of(-1).
+ * setActiveHunk.of(-1).
  *
  * This plugin is the SINGLE SOURCE OF TRUTH for toolbar visibility (#3).
  * It manages both hover-triggered and focus-triggered (keyboard nav)
@@ -20,7 +20,7 @@
  */
 
 import { ViewPlugin, type ViewUpdate, EditorView } from "@codemirror/view";
-import { inlineReviewField, setActiveChunk } from "./state";
+import { inlineReviewField, setActiveHunk } from "./state";
 
 /** Delay before hiding toolbar on mouseleave (ms). Combined with the
  *  16px CSS bridge (::after on .cm-review-actions), this prevents
@@ -61,17 +61,17 @@ class HunkHoverManager {
       this.requestReposition();
     }
 
-    // (#3) When activeChunkIndex changes via keyboard, ensure focused toolbar
+    // (#3) When activeHunkIndex changes via keyboard, ensure focused toolbar
     // is positioned and that any stale hover toolbar is hidden.
     const oldState = update.startState.field(inlineReviewField, false);
     const newState = update.state.field(inlineReviewField, false);
-    if (oldState && newState && oldState.activeChunkIndex !== newState.activeChunkIndex) {
+    if (oldState && newState && oldState.activeHunkIndex !== newState.activeHunkIndex) {
       // Hide any current hover toolbar that doesn't match the new focus
       if (this.currentHunkId) {
-        const focusedChunk = newState.activeChunkIndex >= 0 && newState.activeChunkIndex < newState.chunks.length
-          ? newState.chunks[newState.activeChunkIndex]!
+        const focusedHunk = newState.activeHunkIndex >= 0 && newState.activeHunkIndex < newState.hunks.length
+          ? newState.hunks[newState.activeHunkIndex]!
           : null;
-        if (!focusedChunk || focusedChunk.id !== this.currentHunkId) {
+        if (!focusedHunk || focusedHunk.id !== this.currentHunkId) {
           this.hideActions(this.currentHunkId);
           this.removeHoverPreview(this.currentHunkId);
           this.currentHunkId = null;
@@ -79,13 +79,13 @@ class HunkHoverManager {
       }
 
       // Position the focused-visible toolbar if one exists
-      if (newState.activeChunkIndex >= 0 && newState.activeChunkIndex < newState.chunks.length) {
-        const chunk = newState.chunks[newState.activeChunkIndex]!;
+      if (newState.activeHunkIndex >= 0 && newState.activeHunkIndex < newState.hunks.length) {
+        const hunk = newState.hunks[newState.activeHunkIndex]!;
         // Defer to next frame so the DOM has updated with the new focused-visible class
         requestAnimationFrame(() => {
-          const actionsEl = this.findActionsForHunk(chunk.id);
+          const actionsEl = this.findActionsForHunk(hunk.id);
           if (actionsEl?.classList.contains("cm-review-focused-visible")) {
-            this.positionToolbar(actionsEl, chunk.id);
+            this.positionToolbar(actionsEl, hunk.id);
           }
         });
       }
@@ -159,8 +159,8 @@ class HunkHoverManager {
 
     // Click outside any hunk region — clear focused state
     const state = this.view.state.field(inlineReviewField, false);
-    if (state && state.activeChunkIndex >= 0) {
-      this.view.dispatch({ effects: setActiveChunk.of(-1) });
+    if (state && state.activeHunkIndex >= 0) {
+      this.view.dispatch({ effects: setActiveHunk.of(-1) });
     }
   }
 

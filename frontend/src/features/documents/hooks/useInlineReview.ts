@@ -1,15 +1,15 @@
 /**
  * useInlineReview — wires the CM6 inline review extension to the collab data
  * pipeline, handling:
- * - Accept/reject individual chunks (applyChunkUpdate + CM6 state effect)
- * - Accept/reject all pending chunks
- * - Auto-finalization: when all chunks for a proposal are resolved, send
+ * - Accept/reject individual hunks (applyHunkUpdate + CM6 state effect)
+ * - Accept/reject all pending hunks
+ * - Auto-finalization: when all hunks for a proposal are resolved, send
  *   proposal accept or reject via WebSocket
- * - Chunk navigation (prev/next)
+ * - Hunk navigation (prev/next)
  * - pendingProposalId consumption (auto-select proposal from thread)
  *
- * CM6 StateField is the single source of truth for chunks, resolutions, and
- * active chunk index. React only tracks a version counter to trigger toolbar
+ * CM6 StateField is the single source of truth for hunks, resolutions, and
+ * active hunk index. React only tracks a version counter to trigger toolbar
  * re-renders + the set of active proposal IDs (not in CM6 state).
  *
  * IMPORTANT: The extension array must be stable across re-renders because
@@ -26,12 +26,12 @@ import { useUIStore } from "@/core/stores/useUIStore";
 import { makeLogger } from "@/core/lib/logger";
 import {
   inlineReviewExtension,
-  setReviewChunksEffect,
+  setReviewHunksEffect,
   clearReviewEffect,
-  resolveChunkEffect,
-  setActiveChunkIndex,
+  resolveHunkEffect,
+  setActiveHunkIndex,
   getInlineReviewState,
-  type ReviewChunk,
+  type ReviewHunk,
   type ProposalOperationsModel,
 } from "@/core/cm6-collab";
 
@@ -45,8 +45,8 @@ interface UseInlineReviewOptions {
   editorRef: React.RefObject<CodeMirrorEditorRef | null>;
   collabEnabled: boolean;
   operationsModels: Map<string, ProposalOperationsModel>;
-  applyChunkUpdate: (
-    chunk: ReviewChunk,
+  applyHunkUpdate: (
+    hunk: ReviewHunk,
     editedInsertedText?: string,
   ) => { ok: boolean };
   sendProposalAccept: (proposalId: string, idempotencyKey: string) => boolean;
@@ -60,13 +60,13 @@ interface UseInlineReviewResult {
   extensions: Extension[];
   /** Props to pass to ProposalReviewToolbar */
   toolbarProps: {
-    totalChunks: number;
-    activeChunkIndex: number;
+    totalHunks: number;
+    activeHunkIndex: number;
     resolvedCount: number;
     onAcceptAll: () => void;
     onRejectAll: () => void;
-    onPrevChunk: () => void;
-    onNextChunk: () => void;
+    onPrevHunk: () => void;
+    onNextHunk: () => void;
   };
 }
 
@@ -74,14 +74,14 @@ interface UseInlineReviewResult {
 // HELPERS
 // ============================================================================
 
-/** Get all review chunks from ready operations models */
-function collectReadyChunks(
+/** Get all review hunks from ready operations models */
+function collectReadyHunks(
   operationsModels: Map<string, ProposalOperationsModel>,
-): { proposalId: string; chunks: ReviewChunk[] }[] {
-  const result: { proposalId: string; chunks: ReviewChunk[] }[] = [];
+): { proposalId: string; hunks: ReviewHunk[] }[] {
+  const result: { proposalId: string; hunks: ReviewHunk[] }[] = [];
   for (const [proposalId, model] of operationsModels) {
-    if (model.availability === "ready" && model.chunks.length > 0) {
-      result.push({ proposalId, chunks: model.chunks });
+    if (model.availability === "ready" && model.hunks.length > 0) {
+      result.push({ proposalId, hunks: model.hunks });
     }
   }
   return result;
@@ -103,19 +103,19 @@ export function useInlineReview({
   editorRef,
   collabEnabled,
   operationsModels,
-  applyChunkUpdate,
-  // sendProposalAccept is intentionally unused — inline chunk review applies
+  applyHunkUpdate,
+  // sendProposalAccept is intentionally unused — inline hunk review applies
   // edits via Yjs sync, so we always close proposals with reject (Bug 3 fix).
   sendProposalReject,
   requestProposalUpdate,
 }: UseInlineReviewOptions): UseInlineReviewResult {
   // Proposal IDs for the current review session — needed for finalization
-  // (not tracked in CM6 state since it's proposal-level, not chunk-level)
+  // (not tracked in CM6 state since it's proposal-level, not hunk-level)
   const activeProposalIdsRef = useRef<Set<string>>(new Set());
 
-  // Guard: suppress re-sync while a chunk is being resolved.
-  // Accepting a chunk mutates the Yjs doc → reviewRevision++ → the sync effect
-  // would re-dispatch setReviewChunksEffect and wipe the just-recorded resolution.
+  // Guard: suppress re-sync while a hunk is being resolved.
+  // Accepting a hunk mutates the Yjs doc → reviewRevision++ → the sync effect
+  // would re-dispatch setReviewHunksEffect and wipe the just-recorded resolution.
   // We set this flag before resolve and clear it via queueMicrotask so the
   // synchronous effect triggered by the same Yjs update is skipped.
   const isResolvingRef = useRef(false);
@@ -140,30 +140,30 @@ export function useInlineReview({
   // extensions on mount, so the extension array MUST be stable.
   // ------------------------------------------------------------------
 
-  const acceptChunkRef = useRef<(chunk: ReviewChunk) => void>(() => {});
-  const rejectChunkRef = useRef<(chunk: ReviewChunk) => void>(() => {});
+  const acceptHunkRef = useRef<(hunk: ReviewHunk) => void>(() => {});
+  const rejectHunkRef = useRef<(hunk: ReviewHunk) => void>(() => {});
 
   // ------------------------------------------------------------------
   // Auto-finalization helper
   // ------------------------------------------------------------------
 
   /**
-   * Check if all chunks are resolved. If so, send accept/reject per proposal
+   * Check if all hunks are resolved. If so, send accept/reject per proposal
    * and clear review state. Called directly from accept/reject handlers —
    * reads CM6 state as source of truth.
    */
   const maybeAutoFinalize = useCallback(
     (view: EditorView) => {
       const state = getInlineReviewState(view.state);
-      if (!state || state.chunks.length === 0) return;
+      if (!state || state.hunks.length === 0) return;
 
-      const allResolved = state.chunks.every((c) =>
+      const allResolved = state.hunks.every((c) =>
         state.resolutions.has(c.id),
       );
       if (!allResolved) return;
 
-      log.info("All chunks resolved, auto-finalizing", {
-        total: state.chunks.length,
+      log.info("All hunks resolved, auto-finalizing", {
+        total: state.hunks.length,
         accepted: [...state.resolutions.values()].filter(
           (s) => s === "accepted",
         ).length,
@@ -177,28 +177,28 @@ export function useInlineReview({
         string,
         { accepted: number; rejected: number }
       >();
-      for (const chunk of state.chunks) {
-        const status = state.resolutions.get(chunk.id);
+      for (const hunk of state.hunks) {
+        const status = state.resolutions.get(hunk.id);
         if (!status) continue;
-        const cur = perProposal.get(chunk.proposalId) ?? {
+        const cur = perProposal.get(hunk.proposalId) ?? {
           accepted: 0,
           rejected: 0,
         };
         if (status === "accepted") cur.accepted++;
         else cur.rejected++;
-        perProposal.set(chunk.proposalId, cur);
+        perProposal.set(hunk.proposalId, cur);
       }
 
-      // Always send reject to close the proposal — chunk edits are already
+      // Always send reject to close the proposal — hunk edits are already
       // applied to the Yjs doc and synced to the server via collab transport.
       // Sending accept would cause the server to re-apply the full yjsUpdate,
       // duplicating the accepted text (Bug 3: double-apply).
       for (const [proposalId, counts] of perProposal) {
         sendProposalReject(proposalId);
-        log.info("Closed proposal after inline chunk review", {
+        log.info("Closed proposal after inline hunk review", {
           proposalId,
-          acceptedChunks: counts.accepted,
-          rejectedChunks: counts.rejected,
+          acceptedHunks: counts.accepted,
+          rejectedHunks: counts.rejected,
         });
       }
 
@@ -211,20 +211,20 @@ export function useInlineReview({
   );
 
   // ------------------------------------------------------------------
-  // Accept/reject chunk handlers
+  // Accept/reject hunk handlers
   // ------------------------------------------------------------------
 
-  const handleAcceptChunk = useCallback(
-    (chunk: ReviewChunk) => {
+  const handleAcceptHunk = useCallback(
+    (hunk: ReviewHunk) => {
       // Suppress re-sync while resolving — accepting mutates the Yjs doc
       // which triggers reviewRevision++ and the sync effect. Without this
-      // guard the sync effect would re-dispatch setReviewChunks and could
-      // produce phantom chunks from the mutated doc.
+      // guard the sync effect would re-dispatch setReviewHunks and could
+      // produce phantom hunks from the mutated doc.
       isResolvingRef.current = true;
 
-      const { ok } = applyChunkUpdate(chunk);
+      const { ok } = applyHunkUpdate(hunk);
       if (!ok) {
-        log.warn("Failed to apply chunk update", { chunkId: chunk.id });
+        log.warn("Failed to apply hunk update", { hunkId: hunk.id });
         isResolvingRef.current = false;
         return;
       }
@@ -234,7 +234,7 @@ export function useInlineReview({
         return;
       }
 
-      resolveChunkEffect(view, chunk.id, "accepted");
+      resolveHunkEffect(view, hunk.id, "accepted");
       bump();
       maybeAutoFinalize(view);
 
@@ -244,11 +244,11 @@ export function useInlineReview({
         isResolvingRef.current = false;
       });
     },
-    [applyChunkUpdate, getView, bump, maybeAutoFinalize],
+    [applyHunkUpdate, getView, bump, maybeAutoFinalize],
   );
 
-  const handleRejectChunk = useCallback(
-    (chunk: ReviewChunk) => {
+  const handleRejectHunk = useCallback(
+    (hunk: ReviewHunk) => {
       isResolvingRef.current = true;
 
       const view = getView();
@@ -257,7 +257,7 @@ export function useInlineReview({
         return;
       }
 
-      resolveChunkEffect(view, chunk.id, "rejected");
+      resolveHunkEffect(view, hunk.id, "rejected");
       bump();
       maybeAutoFinalize(view);
 
@@ -269,8 +269,8 @@ export function useInlineReview({
   );
 
   // Keep refs in sync with latest callback versions
-  acceptChunkRef.current = handleAcceptChunk;
-  rejectChunkRef.current = handleRejectChunk;
+  acceptHunkRef.current = handleAcceptHunk;
+  rejectHunkRef.current = handleRejectHunk;
 
   // ------------------------------------------------------------------
   // Batch actions
@@ -283,15 +283,15 @@ export function useInlineReview({
     const state = getInlineReviewState(view.state);
     if (!state) return;
 
-    const pending = state.chunks.filter((c) => !state.resolutions.has(c.id));
-    for (const chunk of pending) {
-      const { ok } = applyChunkUpdate(chunk);
+    const pending = state.hunks.filter((c) => !state.resolutions.has(c.id));
+    for (const hunk of pending) {
+      const { ok } = applyHunkUpdate(hunk);
       if (ok) {
-        resolveChunkEffect(view, chunk.id, "accepted");
+        resolveHunkEffect(view, hunk.id, "accepted");
       }
     }
 
-    // Send reject to close each proposal — chunk edits are already in the
+    // Send reject to close each proposal — hunk edits are already in the
     // Yjs doc and synced via collab transport. Accept would re-apply the
     // full yjsUpdate, duplicating text (Bug 3: double-apply).
     for (const proposalId of activeProposalIdsRef.current) {
@@ -302,7 +302,7 @@ export function useInlineReview({
     clearReviewEffect(view);
     activeProposalIdsRef.current = new Set();
     bump();
-  }, [applyChunkUpdate, getView, sendProposalReject, bump]);
+  }, [applyHunkUpdate, getView, sendProposalReject, bump]);
 
   const handleRejectAll = useCallback(() => {
     const view = getView();
@@ -323,38 +323,38 @@ export function useInlineReview({
   // Navigation
   // ------------------------------------------------------------------
 
-  const handlePrevChunk = useCallback(() => {
+  const handlePrevHunk = useCallback(() => {
     const view = getView();
     if (!view) return;
 
     const state = getInlineReviewState(view.state);
-    if (!state || state.chunks.length === 0) return;
+    if (!state || state.hunks.length === 0) return;
 
-    const len = state.chunks.length;
+    const len = state.hunks.length;
     for (let step = 1; step <= len; step++) {
-      const idx = (((state.activeChunkIndex - step) % len) + len) % len;
-      if (!state.resolutions.has(state.chunks[idx]!.id)) {
-        setActiveChunkIndex(view, idx);
-        scrollToPos(view, state.chunks[idx]!.baseStart);
+      const idx = (((state.activeHunkIndex - step) % len) + len) % len;
+      if (!state.resolutions.has(state.hunks[idx]!.id)) {
+        setActiveHunkIndex(view, idx);
+        scrollToPos(view, state.hunks[idx]!.baseStart);
         bump();
         return;
       }
     }
   }, [getView, bump]);
 
-  const handleNextChunk = useCallback(() => {
+  const handleNextHunk = useCallback(() => {
     const view = getView();
     if (!view) return;
 
     const state = getInlineReviewState(view.state);
-    if (!state || state.chunks.length === 0) return;
+    if (!state || state.hunks.length === 0) return;
 
-    const len = state.chunks.length;
+    const len = state.hunks.length;
     for (let step = 1; step <= len; step++) {
-      const idx = (state.activeChunkIndex + step) % len;
-      if (!state.resolutions.has(state.chunks[idx]!.id)) {
-        setActiveChunkIndex(view, idx);
-        scrollToPos(view, state.chunks[idx]!.baseStart);
+      const idx = (state.activeHunkIndex + step) % len;
+      if (!state.resolutions.has(state.hunks[idx]!.id)) {
+        setActiveHunkIndex(view, idx);
+        scrollToPos(view, state.hunks[idx]!.baseStart);
         bump();
         return;
       }
@@ -370,14 +370,14 @@ export function useInlineReview({
   const extensions = useMemo((): Extension[] => {
     if (!collabEnabled) return [];
     return inlineReviewExtension({
-      onAcceptChunk: (chunk) => acceptChunkRef.current(chunk),
-      onRejectChunk: (chunk) => rejectChunkRef.current(chunk),
+      onAcceptHunk: (hunk) => acceptHunkRef.current(hunk),
+      onRejectHunk: (hunk) => rejectHunkRef.current(hunk),
     });
     // Only depends on collabEnabled — callbacks go through stable refs
   }, [collabEnabled]);
 
   // ------------------------------------------------------------------
-  // Sync operationsModels → CM6 state (dispatch setReviewChunks)
+  // Sync operationsModels → CM6 state (dispatch setReviewHunks)
   // ------------------------------------------------------------------
 
   useEffect(() => {
@@ -393,24 +393,24 @@ export function useInlineReview({
       return;
     }
 
-    // Skip re-sync while a chunk is being resolved — the Yjs mutation from
+    // Skip re-sync while a hunk is being resolved — the Yjs mutation from
     // accept triggers reviewRevision++ which re-runs this effect. Re-deriving
-    // chunks against the mutated doc would produce phantom diffs (Bug 4) and
+    // hunks against the mutated doc would produce phantom diffs (Bug 4) and
     // wipe the just-recorded resolution (Bug 2).
     if (isResolvingRef.current) {
       return;
     }
 
-    const readyGroups = collectReadyChunks(operationsModels);
-    const allChunks = readyGroups.flatMap((g) => g.chunks);
+    const readyGroups = collectReadyHunks(operationsModels);
+    const allHunks = readyGroups.flatMap((g) => g.hunks);
     const proposalIds = new Set(readyGroups.map((g) => g.proposalId));
 
     activeProposalIdsRef.current = proposalIds;
 
-    if (allChunks.length > 0) {
-      setReviewChunksEffect(view, allChunks);
-      log.info("Loaded review chunks into editor", {
-        count: allChunks.length,
+    if (allHunks.length > 0) {
+      setReviewHunksEffect(view, allHunks);
+      log.info("Loaded review hunks into editor", {
+        count: allHunks.length,
         proposals: readyGroups.map((g) => g.proposalId),
       });
     } else {
@@ -477,9 +477,9 @@ export function useInlineReview({
     const view = getView();
     if (!view) return;
 
-    // Already loaded via the sync effect above — just scroll to first chunk
-    if (model.chunks.length > 0) {
-      scrollToPos(view, model.chunks[0]!.baseStart);
+    // Already loaded via the sync effect above — just scroll to first hunk
+    if (model.hunks.length > 0) {
+      scrollToPos(view, model.hunks[0]!.baseStart);
     }
 
     // Consume the pending ID
@@ -496,18 +496,18 @@ export function useInlineReview({
     const state = view ? getInlineReviewState(view.state) : null;
 
     return {
-      totalChunks: state?.chunks.length ?? 0,
-      activeChunkIndex: state?.activeChunkIndex ?? -1,
+      totalHunks: state?.hunks.length ?? 0,
+      activeHunkIndex: state?.activeHunkIndex ?? -1,
       resolvedCount: state?.resolutions.size ?? 0,
       onAcceptAll: handleAcceptAll,
       onRejectAll: handleRejectAll,
-      onPrevChunk: handlePrevChunk,
-      onNextChunk: handleNextChunk,
+      onPrevHunk: handlePrevHunk,
+      onNextHunk: handleNextHunk,
     };
     // version is a render trigger — its value is unused, but its change forces
     // re-computation so toolbar reads fresh CM6 state after each mutation
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [version, getView, handleAcceptAll, handleRejectAll, handlePrevChunk, handleNextChunk]);
+  }, [version, getView, handleAcceptAll, handleRejectAll, handlePrevHunk, handleNextHunk]);
 
   return { extensions, toolbarProps };
 }

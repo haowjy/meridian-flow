@@ -3,7 +3,7 @@ import type { Extension } from "@codemirror/state";
 import { IndexeddbPersistence } from "y-indexeddb";
 import * as Y from "yjs";
 import {
-  buildEditedChunkUpdate,
+  buildEditedHunkUpdate,
   buildPartialUpdate,
   buildProposalAcceptCommand,
   buildProposalRejectCommand,
@@ -20,7 +20,7 @@ import {
   type ProposalGroupAcceptResultEvent,
   type ProposalOperationsModel,
   type ProposalReviewModel,
-  type ReviewChunk,
+  type ReviewHunk,
   toUint8Array,
 } from "@/core/cm6-collab";
 
@@ -52,14 +52,14 @@ interface UseDocumentCollabResult {
   sendProposalAccept: (proposalId: string, idempotencyKey: string) => boolean;
   sendProposalReject: (proposalId: string) => boolean;
   /**
-   * Apply a single chunk's edit to the live Y.Doc.
-   * Used by partial chunk accept: builds a Yjs update for the chunk's text change
+   * Apply a single hunk's edit to the live Y.Doc.
+   * Used by partial hunk accept: builds a Yjs update for the hunk's text change
    * and applies it to the document. The collab system automatically broadcasts
    * the update to other clients.
    * Returns { ok: true } on success, { ok: false } if runtime not ready.
    */
-  applyChunkUpdate: (
-    chunk: ReviewChunk,
+  applyHunkUpdate: (
+    hunk: ReviewHunk,
     editedInsertedText?: string,
   ) => { ok: boolean };
   /**
@@ -448,17 +448,17 @@ export function useDocumentCollab({
     return result;
   }, [enabled, proposalState.proposals, reviewRevision, reviewRuntime]);
 
-  const applyChunkUpdate = useCallback(
-    (chunk: ReviewChunk, editedInsertedText?: string): { ok: boolean } => {
+  const applyHunkUpdate = useCallback(
+    (hunk: ReviewHunk, editedInsertedText?: string): { ok: boolean } => {
       const doc = runtimeRef.current?.ydoc;
       if (doc == null) {
-        log.warn("applyChunkUpdate called but runtime not ready");
+        log.warn("applyHunkUpdate called but runtime not ready");
         return { ok: false };
       }
       const update =
         editedInsertedText === undefined
-          ? buildPartialUpdate(doc, chunk)
-          : buildEditedChunkUpdate(doc, chunk, editedInsertedText);
+          ? buildPartialUpdate(doc, hunk)
+          : buildEditedHunkUpdate(doc, hunk, editedInsertedText);
       Y.applyUpdate(doc, update);
       return { ok: true };
     },
@@ -475,7 +475,7 @@ export function useDocumentCollab({
     sendProposalAccept,
     sendProposalReject,
     requestProposalUpdate,
-    applyChunkUpdate,
+    applyHunkUpdate,
     isReady: !enabled || extensions.length > 0,
     idbSynced,
     getYtextContent: useCallback(

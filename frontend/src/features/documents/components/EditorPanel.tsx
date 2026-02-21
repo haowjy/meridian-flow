@@ -142,7 +142,7 @@ export function EditorPanel({
     sendProposalAccept,
     sendProposalReject,
     requestProposalUpdate,
-    applyChunkUpdate,
+    applyHunkUpdate,
     isReady: isCollabReady,
     getYtextContent,
     idbSynced: isCollabIdbSynced,
@@ -152,13 +152,13 @@ export function EditorPanel({
     initialContent: collabSeedContent,
   });
 
-  // 4. Inline review — wires proposal chunks to CM6 decorations + toolbar
+  // 4. Inline review — wires proposal hunks to CM6 decorations + toolbar
   const { extensions: inlineReviewExts, toolbarProps: reviewToolbarProps } =
     useInlineReview({
       editorRef,
       collabEnabled,
       operationsModels,
-      applyChunkUpdate,
+      applyHunkUpdate,
       sendProposalAccept,
       sendProposalReject,
       requestProposalUpdate,
@@ -373,7 +373,7 @@ export function EditorPanel({
           {/* Folder content popover (from usePillNavigation) */}
           {folderPopover}
 
-          {/* Floating review toolbar — accept/reject all, chunk navigation */}
+          {/* Floating review toolbar — accept/reject all, hunk navigation */}
           <ProposalReviewToolbar {...reviewToolbarProps} />
         </div>
       </div>

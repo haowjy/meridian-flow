@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
 import * as Y from "yjs";
 import { extractProposalOps } from "@/core/cm6-collab/review/changeset-extractor";
-import { groupIntoChunks } from "@/core/cm6-collab/review/chunk-grouper";
+import { groupIntoHunks } from "@/core/cm6-collab/review/hunk-grouper";
 import type {
   DeleteOp,
   EditOp,
   InsertOp,
   ReplaceOp,
-  ReviewChunk,
+  ReviewHunk,
 } from "@/core/cm6-collab/review/types";
 
 // ---------------------------------------------------------------------------
@@ -79,8 +79,8 @@ function expectReplaceOp(op: EditOp): ReplaceOp {
   return op;
 }
 
-function requiredChunk(chunks: readonly ReviewChunk[], index: number): ReviewChunk {
-  return requiredAt(chunks, index, "chunk");
+function requiredHunk(hunks: readonly ReviewHunk[], index: number): ReviewHunk {
+  return requiredAt(hunks, index, "hunk");
 }
 
 // ---------------------------------------------------------------------------
@@ -205,7 +205,7 @@ describe("extractProposalOps — no-op update", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Multi-op proposal producing multiple chunks
+// Multi-op proposal producing multiple hunks
 // ---------------------------------------------------------------------------
 
 describe("extractProposalOps — multi-op proposal", () => {
@@ -238,13 +238,13 @@ describe("extractProposalOps — multi-op proposal", () => {
 });
 
 // ---------------------------------------------------------------------------
-// groupIntoChunks — basic tests
+// groupIntoHunks — basic tests
 // ---------------------------------------------------------------------------
 
-describe("groupIntoChunks", () => {
+describe("groupIntoHunks", () => {
   it("returns empty array for no ops", () => {
-    const chunks = groupIntoChunks([], "prop-1", "Hello world");
-    expect(chunks).toHaveLength(0);
+    const hunks = groupIntoHunks([], "prop-1", "Hello world");
+    expect(hunks).toHaveLength(0);
   });
 
   it("assigns deterministic ids from proposalId and chunk index", () => {
@@ -252,25 +252,25 @@ describe("groupIntoChunks", () => {
     const update = buildUpdate(base, (text) => text.insert(5, " beautiful"));
     const ops = extractProposalOps(base, update);
 
-    const chunks = groupIntoChunks(ops, "proposal-abc", "Hello world");
+    const hunks = groupIntoHunks(ops, "proposal-abc", "Hello world");
 
-    expect(chunks).toHaveLength(1);
-    const chunk = requiredChunk(chunks, 0);
-    expect(chunk.id).toBe("proposal-abc-chunk-0");
-    expect(chunk.proposalId).toBe("proposal-abc");
+    expect(hunks).toHaveLength(1);
+    const hunk = requiredHunk(hunks, 0);
+    expect(hunk.id).toBe("proposal-abc-chunk-0");
+    expect(hunk.proposalId).toBe("proposal-abc");
   });
 
-  it("sets status to 'pending' for new chunks", () => {
+  it("sets status to 'pending' for new hunks", () => {
     const base = makeBaseDoc("Hello world");
     const update = buildUpdate(base, (text) => text.insert(5, " beautiful"));
     const ops = extractProposalOps(base, update);
 
-    const chunks = groupIntoChunks(ops, "prop-1", "Hello world");
+    const hunks = groupIntoHunks(ops, "prop-1", "Hello world");
 
-    expect(requiredChunk(chunks, 0).status).toBe("pending");
+    expect(requiredHunk(hunks, 0).status).toBe("pending");
   });
 
-  it("merges two ops separated by <=2 lines into one chunk", () => {
+  it("merges two ops separated by <=2 lines into one hunk", () => {
     // Two insertions on adjacent lines (1 newline = 2 lines when split)
     const baseText = "line one\nline two\nline three";
     const base = makeBaseDoc(baseText);
@@ -279,10 +279,10 @@ describe("groupIntoChunks", () => {
       text.insert(11, ">> "); // insert at start of "line two" (after offset shift)
     });
     const ops = extractProposalOps(base, update);
-    const chunks = groupIntoChunks(ops, "prop-1", baseText);
+    const hunks = groupIntoHunks(ops, "prop-1", baseText);
 
-    // Both ops are close (within 2 lines) → merged into 1 chunk
-    expect(chunks.length).toBeLessThanOrEqual(ops.length);
+    // Both ops are close (within 2 lines) → merged into 1 hunk
+    expect(hunks.length).toBeLessThanOrEqual(ops.length);
   });
 
   it("does not merge ops separated by a paragraph boundary (>2 lines)", () => {
@@ -294,29 +294,29 @@ describe("groupIntoChunks", () => {
       text.insert(18, "B: "); // in second paragraph (after blank line)
     });
     const ops = extractProposalOps(base, update);
-    const chunks = groupIntoChunks(ops, "prop-1", baseText);
+    const hunks = groupIntoHunks(ops, "prop-1", baseText);
 
     // Separated by blank line → should NOT be merged
-    expect(chunks.length).toBe(ops.length);
+    expect(hunks.length).toBe(ops.length);
   });
 
-  it("produces correct baseStart/baseEnd for an insert chunk", () => {
+  it("produces correct baseStart/baseEnd for an insert hunk", () => {
     const baseText = "Hello world";
     const base = makeBaseDoc(baseText);
     const update = buildUpdate(base, (text) => text.insert(5, " beautiful"));
     const ops = extractProposalOps(base, update);
 
-    const chunks = groupIntoChunks(ops, "prop-1", baseText);
+    const hunks = groupIntoHunks(ops, "prop-1", baseText);
 
-    expect(chunks).toHaveLength(1);
-    const chunk = requiredChunk(chunks, 0);
-    expect(chunk.baseStart).toBe(5);
-    expect(chunk.baseEnd).toBe(5); // pure insert → baseStart === baseEnd
-    expect(chunk.deletedText).toBe("");
-    expect(chunk.insertedText).toBe(" beautiful");
+    expect(hunks).toHaveLength(1);
+    const hunk = requiredHunk(hunks, 0);
+    expect(hunk.baseStart).toBe(5);
+    expect(hunk.baseEnd).toBe(5); // pure insert → baseStart === baseEnd
+    expect(hunk.deletedText).toBe("");
+    expect(hunk.insertedText).toBe(" beautiful");
   });
 
-  it("produces correct fields for a replace chunk", () => {
+  it("produces correct fields for a replace hunk", () => {
     const baseText = "Hello world";
     const base = makeBaseDoc(baseText);
     const update = buildUpdate(base, (text) => {
@@ -325,14 +325,14 @@ describe("groupIntoChunks", () => {
     });
     const ops = extractProposalOps(base, update);
 
-    const chunks = groupIntoChunks(ops, "prop-1", baseText);
+    const hunks = groupIntoHunks(ops, "prop-1", baseText);
 
-    expect(chunks).toHaveLength(1);
-    const chunk = requiredChunk(chunks, 0);
-    expect(chunk.baseStart).toBe(6);
-    expect(chunk.baseEnd).toBe(11);
-    expect(chunk.deletedText).toBe("world");
-    expect(chunk.insertedText).toBe("earth");
+    expect(hunks).toHaveLength(1);
+    const hunk = requiredHunk(hunks, 0);
+    expect(hunk.baseStart).toBe(6);
+    expect(hunk.baseEnd).toBe(11);
+    expect(hunk.deletedText).toBe("world");
+    expect(hunk.insertedText).toBe("earth");
   });
 });
 

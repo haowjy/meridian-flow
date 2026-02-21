@@ -1,43 +1,43 @@
 /**
  * ProposalReviewToolbar — floating pill at the bottom-center of the editor
- * providing batch actions (accept/reject all) and chunk navigation for
+ * providing batch actions (accept/reject all) and hunk navigation for
  * proposal review.
  *
- * Only visible when there are pending review chunks.
+ * Only visible when there are pending review hunks.
  */
 
 import { Button } from "@/shared/components/ui/button";
 import { Check, X, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface ProposalReviewToolbarProps {
-  /** Total number of pending review chunks */
-  totalChunks: number;
-  /** Currently active chunk index (0-based, -1 = none) */
-  activeChunkIndex: number;
-  /** Number of chunks already resolved */
+  /** Total number of pending review hunks */
+  totalHunks: number;
+  /** Currently active hunk index (0-based, -1 = none) */
+  activeHunkIndex: number;
+  /** Number of hunks already resolved */
   resolvedCount: number;
   onAcceptAll: () => void;
   onRejectAll: () => void;
-  onPrevChunk: () => void;
-  onNextChunk: () => void;
+  onPrevHunk: () => void;
+  onNextHunk: () => void;
 }
 
 export function ProposalReviewToolbar({
-  totalChunks,
-  activeChunkIndex,
+  totalHunks,
+  activeHunkIndex,
   resolvedCount,
   onAcceptAll,
   onRejectAll,
-  onPrevChunk,
-  onNextChunk,
+  onPrevHunk,
+  onNextHunk,
 }: ProposalReviewToolbarProps) {
-  const pendingCount = totalChunks - resolvedCount;
+  const pendingCount = totalHunks - resolvedCount;
 
-  // Don't render when there are no active review chunks
+  // Don't render when there are no active review hunks
   if (pendingCount <= 0) return null;
 
-  // Display 1-based position within pending chunks
-  const displayIndex = activeChunkIndex >= 0 ? activeChunkIndex + 1 : 0;
+  // Display 1-based position within pending hunks
+  const displayIndex = activeHunkIndex >= 0 ? activeHunkIndex + 1 : 0;
 
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center">
@@ -69,29 +69,29 @@ export function ProposalReviewToolbar({
         {/* Separator */}
         <div className="bg-border mx-0.5 h-4 w-px" />
 
-        {/* Prev Chunk */}
+        {/* Prev Hunk */}
         <Button
           variant="ghost"
           size="icon-xs"
-          onClick={onPrevChunk}
-          title="Previous chunk (Ctrl-[)"
+          onClick={onPrevHunk}
+          title="Previous hunk (Ctrl-[)"
           disabled={pendingCount <= 1}
           className="rounded-full"
         >
           <ChevronLeft className="size-3" />
         </Button>
 
-        {/* Chunk Counter */}
+        {/* Hunk Counter */}
         <span className="text-muted-foreground min-w-[2.5rem] text-center text-xs tabular-nums">
           {displayIndex}/{pendingCount}
         </span>
 
-        {/* Next Chunk */}
+        {/* Next Hunk */}
         <Button
           variant="ghost"
           size="icon-xs"
-          onClick={onNextChunk}
-          title="Next chunk (Ctrl-])"
+          onClick={onNextHunk}
+          title="Next hunk (Ctrl-])"
           disabled={pendingCount <= 1}
           className="rounded-full"
         >

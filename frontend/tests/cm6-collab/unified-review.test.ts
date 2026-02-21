@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { editOpsToMergeChanges } from "@/core/cm6-collab/review/ops-to-changes";
-import type { ReviewChunk } from "@/core/cm6-collab/review/types";
+import type { ReviewHunk } from "@/core/cm6-collab/review/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -12,7 +12,7 @@ function chunk(
   baseEnd: number,
   deletedText: string,
   insertedText: string,
-): ReviewChunk {
+): ReviewHunk {
   return {
     id,
     proposalId: "p1",

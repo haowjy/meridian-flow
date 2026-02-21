@@ -22,35 +22,35 @@ export type {
 
 export {
   buildPartialUpdate,
-  buildEditedChunkUpdate,
+  buildEditedHunkUpdate,
   type BuildPartialUpdateOptions,
 } from "./partial-apply";
 export {
-  startChunkEditSession,
-  updateChunkEditSession,
-  resetChunkEditSession,
-  commitChunkEditSession,
-  cancelChunkEditSession,
-  type ChunkEditSession,
-  type ChunkEditCommit,
-} from "./chunk-editor";
+  startHunkEditSession,
+  updateHunkEditSession,
+  resetHunkEditSession,
+  commitHunkEditSession,
+  cancelHunkEditSession,
+  type HunkEditSession,
+  type HunkEditCommit,
+} from "./hunk-editor";
 export { extractProposalOps, extractProposalOpsWithClone } from "./changeset-extractor";
-export { groupIntoChunks } from "./chunk-grouper";
+export { groupIntoHunks } from "./hunk-grouper";
 export type {
   EditOp,
   InsertOp,
   DeleteOp,
   ReplaceOp,
-  ReviewChunk,
-  ReviewChunkStatus,
+  ReviewHunk,
+  ReviewHunkStatus,
 } from "./types";
 
 export {
   inlineReviewExtension,
-  setReviewChunksEffect,
+  setReviewHunksEffect,
   clearReviewEffect,
-  resolveChunkEffect,
-  setActiveChunkIndex,
+  resolveHunkEffect,
+  setActiveHunkIndex,
   getInlineReviewState,
   type InlineReviewState,
   type InlineReviewCallbacks,

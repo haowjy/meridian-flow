@@ -2,10 +2,10 @@
  * Inline Review CM6 Extension
  *
  * Renders diff decorations directly in the main editor — green/red backgrounds
- * for inserted/deleted text, with a floating hover toolbar for per-chunk
+ * for inserted/deleted text, with a floating hover toolbar for per-hunk
  * keep/discard actions.
  *
- * The editor shows the LIVE Yjs doc (base text before proposal). Chunk positions
+ * The editor shows the LIVE Yjs doc (base text before proposal). Hunk positions
  * (baseStart/baseEnd) map directly to editor positions.
  *
  * - Deleted text: highlighted with red background + strikethrough (line deco)
@@ -28,13 +28,13 @@ import {
   EditorView,
   keymap,
 } from "@codemirror/view";
-import type { ReviewChunk } from "./types";
+import type { ReviewHunk } from "./types";
 import { hunkHoverPlugin } from "./hover-manager";
 import {
   inlineReviewField,
-  setReviewChunks,
-  resolveChunk,
-  setActiveChunk,
+  setReviewHunks,
+  resolveHunk,
+  setActiveHunk,
   clearReview,
   type InlineReviewState,
   type InlineReviewCallbacks,
@@ -43,9 +43,9 @@ import {
 // Re-export shared state for consumers
 export {
   inlineReviewField,
-  setReviewChunks,
-  resolveChunk,
-  setActiveChunk,
+  setReviewHunks,
+  resolveHunk,
+  setActiveHunk,
   clearReview,
   type InlineReviewState,
   type InlineReviewCallbacks,
@@ -65,7 +65,7 @@ export {
 
 class HunkActionWidget extends WidgetType {
   constructor(
-    private chunk: ReviewChunk,
+    private hunk: ReviewHunk,
     private callbacks: InlineReviewCallbacks,
     private isFocused: boolean,
   ) {
@@ -78,7 +78,7 @@ class HunkActionWidget extends WidgetType {
     container.className = this.isFocused
       ? "cm-review-actions cm-review-focused-visible"
       : "cm-review-actions";
-    container.dataset.hunkId = this.chunk.id;
+    container.dataset.hunkId = this.hunk.id;
 
     // Writer-first language: "Keep" / "Discard" instead of "Accept" / "Reject"
     const keepBtn = document.createElement("button");
@@ -89,7 +89,7 @@ class HunkActionWidget extends WidgetType {
     keepBtn.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      this.callbacks.onAcceptChunk(this.chunk);
+      this.callbacks.onAcceptHunk(this.hunk);
     };
 
     const discardBtn = document.createElement("button");
@@ -100,7 +100,7 @@ class HunkActionWidget extends WidgetType {
     discardBtn.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      this.callbacks.onRejectChunk(this.chunk);
+      this.callbacks.onRejectHunk(this.hunk);
     };
 
     container.appendChild(keepBtn);
@@ -109,7 +109,7 @@ class HunkActionWidget extends WidgetType {
   }
 
   eq(other: HunkActionWidget): boolean {
-    return this.chunk.id === other.chunk.id && this.isFocused === other.isFocused;
+    return this.hunk.id === other.hunk.id && this.isFocused === other.isFocused;
   }
 
   ignoreEvent(): boolean {
@@ -186,14 +186,14 @@ class InsertedTextWidget extends WidgetType {
  * - Decoration.line for deleted line visual styling (red bg + strikethrough)
  * - Decoration.mark over deleted ranges for hover identity (data-hunk-id)
  * - InsertedTextWidget block widget with data-hunk-id
- * - HunkActionWidget at chunk end, floating, hidden by default
+ * - HunkActionWidget at hunk end, floating, hidden by default
  */
 function buildInlineReviewDecorations(
   state: EditorState,
   reviewState: InlineReviewState,
   callbacks: InlineReviewCallbacks,
 ): DecorationSet {
-  if (reviewState.chunks.length === 0) {
+  if (reviewState.hunks.length === 0) {
     return Decoration.none;
   }
 
@@ -209,12 +209,12 @@ function buildInlineReviewDecorations(
   }[] = [];
   const lineStartSide = Decoration.line({ class: "" }).startSide;
 
-  for (let i = 0; i < reviewState.chunks.length; i++) {
-    const chunk = reviewState.chunks[i]!;
-    const isActive = i === reviewState.activeChunkIndex;
+  for (let i = 0; i < reviewState.hunks.length; i++) {
+    const hunk = reviewState.hunks[i]!;
+    const isActive = i === reviewState.activeHunkIndex;
 
-    // Skip resolved chunks — they disappear immediately
-    if (reviewState.resolutions.has(chunk.id)) {
+    // Skip resolved hunks — they disappear immediately
+    if (reviewState.resolutions.has(hunk.id)) {
       continue;
     }
 
@@ -222,14 +222,14 @@ function buildInlineReviewDecorations(
     const docLength = doc.length;
 
     // Clamp positions to document bounds
-    const chunkStart = Math.min(chunk.baseStart, docLength);
-    const chunkEnd = Math.min(chunk.baseEnd, docLength);
+    const hunkStart = Math.min(hunk.baseStart, docLength);
+    const hunkEnd = Math.min(hunk.baseEnd, docLength);
 
     // Deleted text decorations (#4: check !== undefined, not falsy —
     // empty string "" is valid data per project rules)
-    if (chunk.deletedText !== undefined) {
-      const startLine = doc.lineAt(chunkStart);
-      const endLine = doc.lineAt(Math.max(chunkStart, chunkEnd - 1));
+    if (hunk.deletedText !== undefined) {
+      const startLine = doc.lineAt(hunkStart);
+      const endLine = doc.lineAt(Math.max(hunkStart, hunkEnd - 1));
 
       // Line decorations for visual styling (red bg + strikethrough per line)
       for (let line = startLine.number; line <= endLine.number; line++) {
@@ -249,14 +249,14 @@ function buildInlineReviewDecorations(
       // Mark decoration over deleted text range for hover identity (data-hunk-id).
       // Mark decorations are per-range so multiple hunks on the same line each
       // get their own attribute — unlike line decorations which are ambiguous.
-      if (chunkStart < chunkEnd) {
+      if (hunkStart < hunkEnd) {
         const markDeco = Decoration.mark({
           class: "cm-review-deleted-mark",
-          attributes: { "data-hunk-id": chunk.id },
+          attributes: { "data-hunk-id": hunk.id },
         });
         decos.push({
-          from: chunkStart,
-          to: chunkEnd,
+          from: hunkStart,
+          to: hunkEnd,
           startSide: markDeco.startSide,
           deco: markDeco,
         });
@@ -265,32 +265,32 @@ function buildInlineReviewDecorations(
 
     // Inserted text as a block widget below the deletion point
     // (#4: check !== undefined, not falsy — empty string "" is valid data)
-    if (chunk.insertedText !== undefined) {
+    if (hunk.insertedText !== undefined) {
       // For pure inserts (baseStart === baseEnd), show at baseStart.
       // For replaces, show after the deleted region.
-      const insertPos = chunkEnd;
+      const insertPos = hunkEnd;
 
       decos.push({
         from: insertPos,
         to: insertPos,
         startSide: 1,
         deco: Decoration.widget({
-          widget: new InsertedTextWidget(chunk.insertedText, isActive, chunk.id),
+          widget: new InsertedTextWidget(hunk.insertedText, isActive, hunk.id),
           block: true,
           side: 1, // after the line content
         }),
       });
     }
 
-    // Floating action widget at the END of the chunk (not start).
+    // Floating action widget at the END of the hunk (not start).
     // Hidden by default, shown on hover via HunkHoverManager or on focus
     // via keyboard navigation (.cm-review-focused-visible class).
     decos.push({
-      from: chunkEnd,
-      to: chunkEnd,
+      from: hunkEnd,
+      to: hunkEnd,
       startSide: 1,
       deco: Decoration.widget({
-        widget: new HunkActionWidget(chunk, callbacks, isActive),
+        widget: new HunkActionWidget(hunk, callbacks, isActive),
         side: 1,
       }),
     });
@@ -345,7 +345,7 @@ const reviewActiveAttrs = EditorView.editorAttributes.compute(
   [inlineReviewField],
   (state): Record<string, string> => {
     const review = state.field(inlineReviewField, false);
-    if (review && review.chunks.length > 0) {
+    if (review && review.hunks.length > 0) {
       return { class: "cm-review-active" };
     }
     return {};
@@ -353,25 +353,25 @@ const reviewActiveAttrs = EditorView.editorAttributes.compute(
 );
 
 // ============================================================================
-// SCROLL LISTENER: Scroll to active chunk on navigation
+// SCROLL LISTENER: Scroll to active hunk on navigation
 // ============================================================================
 // EditorView.updateListener is appropriate for side effects like scrolling.
 // This is the SINGLE scrolling mechanism — keymap handlers rely on this
-// listener to scroll after dispatching setActiveChunk (#6: no double scroll).
+// listener to scroll after dispatching setActiveHunk (#6: no double scroll).
 
-function makeScrollOnActiveChunkListener() {
+function makeScrollOnActiveHunkListener() {
   return EditorView.updateListener.of((update) => {
     const oldState = update.startState.field(inlineReviewField);
     const newState = update.state.field(inlineReviewField);
     if (
-      oldState.activeChunkIndex !== newState.activeChunkIndex &&
-      newState.activeChunkIndex >= 0 &&
-      newState.activeChunkIndex < newState.chunks.length
+      oldState.activeHunkIndex !== newState.activeHunkIndex &&
+      newState.activeHunkIndex >= 0 &&
+      newState.activeHunkIndex < newState.hunks.length
     ) {
-      const chunk = newState.chunks[newState.activeChunkIndex]!;
+      const hunk = newState.hunks[newState.activeHunkIndex]!;
       // Defer scroll to after the current transaction is applied
       requestAnimationFrame(() => {
-        scrollToChunk(update.view, chunk);
+        scrollToHunk(update.view, hunk);
       });
     }
   });
@@ -387,15 +387,15 @@ function makeInlineReviewKeymap(callbacks: InlineReviewCallbacks) {
       key: "Ctrl-]",
       run(view) {
         const state = view.state.field(inlineReviewField);
-        const pending = getPendingChunks(state);
+        const pending = getPendingHunks(state);
         if (pending.length === 0) return false;
 
-        const currentIdx = state.activeChunkIndex;
+        const currentIdx = state.activeHunkIndex;
         const nextIdx = findNextPendingIndex(state, currentIdx, 1);
         if (nextIdx !== -1) {
-          // Only dispatch the effect — scrollOnActiveChunkListener handles
+          // Only dispatch the effect — scrollOnActiveHunkListener handles
           // scrolling (#6: single scroll mechanism)
-          view.dispatch({ effects: setActiveChunk.of(nextIdx) });
+          view.dispatch({ effects: setActiveHunk.of(nextIdx) });
         }
         return true;
       },
@@ -404,15 +404,15 @@ function makeInlineReviewKeymap(callbacks: InlineReviewCallbacks) {
       key: "Ctrl-[",
       run(view) {
         const state = view.state.field(inlineReviewField);
-        const pending = getPendingChunks(state);
+        const pending = getPendingHunks(state);
         if (pending.length === 0) return false;
 
-        const currentIdx = state.activeChunkIndex;
+        const currentIdx = state.activeHunkIndex;
         const prevIdx = findNextPendingIndex(state, currentIdx, -1);
         if (prevIdx !== -1) {
-          // Only dispatch the effect — scrollOnActiveChunkListener handles
+          // Only dispatch the effect — scrollOnActiveHunkListener handles
           // scrolling (#6: single scroll mechanism)
-          view.dispatch({ effects: setActiveChunk.of(prevIdx) });
+          view.dispatch({ effects: setActiveHunk.of(prevIdx) });
         }
         return true;
       },
@@ -422,15 +422,15 @@ function makeInlineReviewKeymap(callbacks: InlineReviewCallbacks) {
       run(view) {
         const state = view.state.field(inlineReviewField);
         if (
-          state.activeChunkIndex < 0 ||
-          state.activeChunkIndex >= state.chunks.length
+          state.activeHunkIndex < 0 ||
+          state.activeHunkIndex >= state.hunks.length
         )
           return false;
 
-        const chunk = state.chunks[state.activeChunkIndex]!;
-        if (state.resolutions.has(chunk.id)) return false;
+        const hunk = state.hunks[state.activeHunkIndex]!;
+        if (state.resolutions.has(hunk.id)) return false;
 
-        callbacks.onAcceptChunk(chunk);
+        callbacks.onAcceptHunk(hunk);
         return true;
       },
     },
@@ -439,15 +439,15 @@ function makeInlineReviewKeymap(callbacks: InlineReviewCallbacks) {
       run(view) {
         const state = view.state.field(inlineReviewField);
         if (
-          state.activeChunkIndex < 0 ||
-          state.activeChunkIndex >= state.chunks.length
+          state.activeHunkIndex < 0 ||
+          state.activeHunkIndex >= state.hunks.length
         )
           return false;
 
-        const chunk = state.chunks[state.activeChunkIndex]!;
-        if (state.resolutions.has(chunk.id)) return false;
+        const hunk = state.hunks[state.activeHunkIndex]!;
+        if (state.resolutions.has(hunk.id)) return false;
 
-        callbacks.onRejectChunk(chunk);
+        callbacks.onRejectHunk(hunk);
         return true;
       },
     },
@@ -456,8 +456,8 @@ function makeInlineReviewKeymap(callbacks: InlineReviewCallbacks) {
       key: "Escape",
       run(view) {
         const state = view.state.field(inlineReviewField);
-        if (state.activeChunkIndex >= 0) {
-          view.dispatch({ effects: setActiveChunk.of(-1) });
+        if (state.activeHunkIndex >= 0) {
+          view.dispatch({ effects: setActiveHunk.of(-1) });
           return true;
         }
         return false;
@@ -470,31 +470,31 @@ function makeInlineReviewKeymap(callbacks: InlineReviewCallbacks) {
 // HELPERS
 // ============================================================================
 
-function getPendingChunks(state: InlineReviewState): ReviewChunk[] {
-  return state.chunks.filter((c) => !state.resolutions.has(c.id));
+function getPendingHunks(state: InlineReviewState): ReviewHunk[] {
+  return state.hunks.filter((c) => !state.resolutions.has(c.id));
 }
 
-/** Find next pending chunk index in a given direction (1 = forward, -1 = backward) */
+/** Find next pending hunk index in a given direction (1 = forward, -1 = backward) */
 function findNextPendingIndex(
   state: InlineReviewState,
   currentIdx: number,
   direction: 1 | -1,
 ): number {
-  const len = state.chunks.length;
+  const len = state.hunks.length;
   if (len === 0) return -1;
 
   for (let step = 1; step <= len; step++) {
     const idx = ((currentIdx + direction * step) % len + len) % len;
-    if (!state.resolutions.has(state.chunks[idx]!.id)) {
+    if (!state.resolutions.has(state.hunks[idx]!.id)) {
       return idx;
     }
   }
   return -1;
 }
 
-/** Scroll the editor to make a chunk visible */
-function scrollToChunk(view: EditorView, chunk: ReviewChunk): void {
-  const pos = Math.min(chunk.baseStart, view.state.doc.length);
+/** Scroll the editor to make a hunk visible */
+function scrollToHunk(view: EditorView, hunk: ReviewHunk): void {
+  const pos = Math.min(hunk.baseStart, view.state.doc.length);
   view.dispatch({
     effects: EditorView.scrollIntoView(pos, { y: "center" }),
   });
@@ -518,17 +518,17 @@ export function inlineReviewExtension(callbacks: InlineReviewCallbacks): Extensi
     reviewActiveAttrs,
     makeInlineReviewDecorationField(callbacks),
     hunkHoverPlugin,
-    makeScrollOnActiveChunkListener(),
+    makeScrollOnActiveHunkListener(),
     makeInlineReviewKeymap(callbacks),
   ];
 }
 
-/** Load review chunks into the editor */
-export function setReviewChunksEffect(
+/** Load review hunks into the editor */
+export function setReviewHunksEffect(
   view: EditorView,
-  chunks: ReviewChunk[],
+  hunks: ReviewHunk[],
 ): void {
-  view.dispatch({ effects: setReviewChunks.of(chunks) });
+  view.dispatch({ effects: setReviewHunks.of(hunks) });
 }
 
 /** Clear all review state */
@@ -536,21 +536,21 @@ export function clearReviewEffect(view: EditorView): void {
   view.dispatch({ effects: clearReview.of(undefined) });
 }
 
-/** Resolve a specific chunk */
-export function resolveChunkEffect(
+/** Resolve a specific hunk */
+export function resolveHunkEffect(
   view: EditorView,
-  chunkId: string,
+  hunkId: string,
   status: "accepted" | "rejected",
 ): void {
-  view.dispatch({ effects: resolveChunk.of({ chunkId, status }) });
+  view.dispatch({ effects: resolveHunk.of({ hunkId, status }) });
 }
 
-/** Set the active chunk index for navigation */
-export function setActiveChunkIndex(
+/** Set the active hunk index for navigation */
+export function setActiveHunkIndex(
   view: EditorView,
   index: number,
 ): void {
-  view.dispatch({ effects: setActiveChunk.of(index) });
+  view.dispatch({ effects: setActiveHunk.of(index) });
 }
 
 /** Read inline review state from editor state (returns null if field not present) */

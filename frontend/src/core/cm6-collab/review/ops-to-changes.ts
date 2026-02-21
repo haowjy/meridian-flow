@@ -1,27 +1,27 @@
 import { Change } from "@codemirror/merge";
-import type { ReviewChunk } from "./types";
+import type { ReviewHunk } from "./types";
 
 /**
- * Converts ReviewChunk[] to @codemirror/merge Change[] format.
+ * Converts ReviewHunk[] to @codemirror/merge Change[] format.
  *
- * Tracks a proposedText offset as chunks are applied in base-text order
- * (chunks are already sorted by baseStart from groupIntoChunks).
+ * Tracks a proposedText offset as hunks are applied in base-text order
+ * (hunks are already sorted by baseStart from groupIntoHunks).
  *
  * Approach (Path A): override bypasses CM6's diff algorithm entirely.
  * Our Change[] come from Yjs delta operations with exact positions,
  * so no re-diffing or normalization is needed.
  *
- * Formula per chunk:
+ * Formula per hunk:
  *   insert:  fromA=baseStart, toA=baseStart, fromB=baseStart+offset, toB=baseStart+offset+insertLen; offset += insertLen
  *   delete:  fromA=baseStart, toA=baseEnd,   fromB=baseStart+offset, toB=baseStart+offset;           offset -= deleteLen
  *   replace: fromA=baseStart, toA=baseEnd,   fromB=baseStart+offset, toB=baseStart+offset+insertLen; offset += insertLen - deleteLen
  */
-export function editOpsToMergeChanges(chunks: ReviewChunk[]): Change[] {
+export function editOpsToMergeChanges(hunks: ReviewHunk[]): Change[] {
   let offset = 0;
   const changes: Change[] = [];
 
-  for (const chunk of chunks) {
-    const { baseStart, baseEnd, insertedText } = chunk;
+  for (const hunk of hunks) {
+    const { baseStart, baseEnd, insertedText } = hunk;
     const deleteLen = baseEnd - baseStart;
     const insertLen = insertedText.length;
 
@@ -42,7 +42,7 @@ export function editOpsToMergeChanges(chunks: ReviewChunk[]): Change[] {
       );
       offset += insertLen - deleteLen;
     }
-    // No-op chunks (both zero) are skipped.
+    // No-op hunks (both zero) are skipped.
   }
 
   return changes;

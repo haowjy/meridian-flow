@@ -32,19 +32,19 @@ export interface ReplaceOp {
 /** A single atomic edit operation with exact base-text position semantics. */
 export type EditOp = InsertOp | DeleteOp | ReplaceOp;
 
-export type ReviewChunkStatus = "pending" | "accepted" | "rejected";
+export type ReviewHunkStatus = "pending" | "accepted" | "rejected";
 
 /**
  * A prose-grouped unit of change for proposal review.
  *
  * Covers a contiguous region of the base text. Multiple adjacent EditOps
- * may be merged into a single ReviewChunk by the grouper when they are
+ * may be merged into a single ReviewHunk by the grouper when they are
  * close enough (same paragraph or separated by <=2 lines).
  *
  * For pure inserts: baseStart === baseEnd, deletedText === "".
  * For pure deletes: insertedText === "".
  */
-export interface ReviewChunk {
+export interface ReviewHunk {
   /** Stable id: deterministic from proposalId + chunk index. */
   id: string;
   proposalId: string;
@@ -52,9 +52,9 @@ export interface ReviewChunk {
   baseStart: number;
   /** End offset in base text (exclusive). For pure inserts, equals baseStart. */
   baseEnd: number;
-  /** Text from base document that this chunk covers. Empty for pure inserts. */
+  /** Text from base document that this hunk covers. Empty for pure inserts. */
   deletedText: string;
   /** Text that the proposed document has in place of deletedText. Empty for pure deletes. */
   insertedText: string;
-  status: ReviewChunkStatus;
+  status: ReviewHunkStatus;
 }
