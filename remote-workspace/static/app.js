@@ -10,6 +10,17 @@ const ALLOWED_UPLOAD_EXTENSIONS = new Set([
   ".heif",
   ".avif",
 ]);
+const IMAGE_MIME_TO_EXTENSION = {
+  "image/png": ".png",
+  "image/jpeg": ".jpg",
+  "image/gif": ".gif",
+  "image/webp": ".webp",
+  "image/svg+xml": ".svg",
+  "image/bmp": ".bmp",
+  "image/heic": ".heic",
+  "image/heif": ".heif",
+  "image/avif": ".avif",
+};
 
 const state = {
   currentPath: "",
@@ -21,6 +32,7 @@ const state = {
   fileAbortController: null,
   clipboardAbortController: null,
   pendingUploadFile: null,
+  clipboardApiMode: "modern",
 };
 
 const fileList = document.getElementById("file-list");
@@ -31,6 +43,7 @@ const statusEl = document.getElementById("status");
 const clipboardStatusEl = document.getElementById("clipboard-status");
 const clipboardGrid = document.getElementById("clipboard-grid");
 const uploadInput = document.getElementById("upload-input");
+const pasteClipboardButton = document.getElementById("paste-clipboard-btn");
 const uploadNameInput = document.getElementById("upload-name-input");
 const uploadButton = document.getElementById("upload-btn");
 const clipboardRefreshButton = document.getElementById("clipboard-refresh-btn");
@@ -55,6 +68,18 @@ function setStatus(message, isError = false) {
 function setClipboardStatus(message, isError = false) {
   clipboardStatusEl.textContent = message;
   clipboardStatusEl.className = isError ? "error" : "muted";
+}
+
+function isRouteMissingResponse(response, parseError) {
+  if (response.status !== 404) {
+    return false;
+  }
+  const message = toErrorMessage(parseError);
+  return (
+    message.includes("Unexpected response payload") ||
+    message.includes("Cannot POST") ||
+    message.includes("Cannot GET")
+  );
 }
 
 function escapeHtml(value) {
@@ -109,6 +134,28 @@ function handleUploadError(error) {
   setStatus(message, true);
 }
 
+function isBlockedPathErrorMessage(message) {
+  return (
+    message.includes("Gitignored paths are not accessible") ||
+    message.includes("Hidden paths are not accessible")
+  );
+}
+
+async function refreshDirectoryWithFallback(targetPath) {
+  try {
+    await loadDirectory(targetPath);
+  } catch (error) {
+    const message = toErrorMessage(error);
+    if (targetPath && isBlockedPathErrorMessage(message)) {
+      state.currentPath = "";
+      await loadDirectory("");
+      setStatus("Current path is blocked by visibility rules; returned to repo root.");
+      return;
+    }
+    throw error;
+  }
+}
+
 function normalizeSuggestedFilename(originalName) {
   const trimmed = (originalName || "").trim();
   const hasDot = trimmed.lastIndexOf(".") > 0;
@@ -121,6 +168,28 @@ function normalizeSuggestedFilename(originalName) {
     .replace(/-+/g, "-")
     .replace(/^-+|-+$/g, "");
   return `${safeStem || "image"}${safeExtension}`;
+}
+
+function extensionFromMimeType(mimeType) {
+  return IMAGE_MIME_TO_EXTENSION[mimeType] || ".png";
+}
+
+function ensureClipboardFileHasName(file) {
+  if (file.name && file.name.trim()) {
+    return file;
+  }
+  const extension = extensionFromMimeType(file.type);
+  const fileName = `clipboard-${Date.now()}${extension}`;
+  return new File([file], fileName, { type: file.type || "image/png" });
+}
+
+function setPendingUploadFile(file, sourceLabel) {
+  const namedFile = ensureClipboardFileHasName(file);
+  state.pendingUploadFile = namedFile;
+  if (!uploadNameInput.value.trim()) {
+    uploadNameInput.value = normalizeSuggestedFilename(namedFile.name);
+  }
+  setClipboardStatus(`Selected ${namedFile.name} from ${sourceLabel}. Set filename, then tap Upload.`);
 }
 
 function validateUploadFilename(fileName) {
@@ -248,6 +317,13 @@ function renderFileList(entries, parentPath) {
   }
 }
 
+function clipboardImageUrl(entry) {
+  if (state.clipboardApiMode === "legacy") {
+    return `/api/file?path=${encodeURIComponent(entry.path)}`;
+  }
+  return `/api/clipboard/file?name=${encodeURIComponent(entry.name)}`;
+}
+
 function renderClipboardImages(imageEntries) {
   clipboardGrid.innerHTML = "";
   if (imageEntries.length === 0) {
@@ -260,8 +336,9 @@ function renderClipboardImages(imageEntries) {
     container.className = "clipboard-item";
     const button = document.createElement("button");
     button.type = "button";
-    button.innerHTML = `<img alt="${escapeHtml(entry.name)}" src="/api/clipboard/file?name=${encodeURIComponent(entry.name)}" />`;
-    button.onclick = () => openClipboardImage(entry.name);
+    const imageUrl = clipboardImageUrl(entry);
+    button.innerHTML = `<img alt="${escapeHtml(entry.name)}" src="${imageUrl}" />`;
+    button.onclick = () => openClipboardImage(entry);
 
     const fileName = document.createElement("div");
     fileName.className = "filename";
@@ -273,10 +350,37 @@ function renderClipboardImages(imageEntries) {
   }
 }
 
-function openClipboardImage(imageName) {
-  viewerTitle.textContent = `${".clipboard"}/${imageName}`;
-  viewer.innerHTML = `<img alt="${escapeHtml(imageName)}" src="/api/clipboard/file?name=${encodeURIComponent(imageName)}" style="max-width:100%;border-radius:10px;" />`;
-  setStatus(`Showing .clipboard image: ${imageName}`);
+function openClipboardImage(entry) {
+  const imageUrl = clipboardImageUrl(entry);
+  viewerTitle.textContent = `${".clipboard"}/${entry.name}`;
+  viewer.innerHTML = `<img alt="${escapeHtml(entry.name)}" src="${imageUrl}" style="max-width:100%;border-radius:10px;" />`;
+  setStatus(`Showing .clipboard image: ${entry.name}`);
+}
+
+async function fetchClipboardEntriesModern(signal) {
+  const response = await fetch("/api/clipboard/list", { signal });
+  let data;
+  try {
+    data = await readJsonResponse(response);
+  } catch (error) {
+    if (isRouteMissingResponse(response, error)) {
+      throw new Error("Clipboard API not available");
+    }
+    throw error;
+  }
+  if (!response.ok) {
+    throw new Error(data.error || "Unable to load .clipboard");
+  }
+  return data.entries || [];
+}
+
+async function fetchClipboardEntriesLegacy(signal) {
+  const response = await fetch("/api/list?path=.clipboard", { signal });
+  const data = await readJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(data.error || "Unable to load .clipboard");
+  }
+  return (data.entries || []).filter((entry) => entry.type === "file");
 }
 
 async function loadClipboardImages() {
@@ -289,20 +393,31 @@ async function loadClipboardImages() {
 
   try {
     setClipboardStatus("Loading .clipboard images...");
-    const response = await fetch("/api/clipboard/list", { signal: controller.signal });
-    const data = await readJsonResponse(response);
+    let entries;
+    let mode = "modern";
+    try {
+      entries = await fetchClipboardEntriesModern(controller.signal);
+    } catch (error) {
+      if (toErrorMessage(error) === "Clipboard API not available") {
+        entries = await fetchClipboardEntriesLegacy(controller.signal);
+        mode = "legacy";
+      } else {
+        throw error;
+      }
+    }
     if (requestId !== state.clipboardRequestId) {
       return;
     }
-    if (!response.ok) {
-      throw new Error(data.error || "Unable to load .clipboard");
-    }
-
-    const imageEntries = (data.entries || []).filter((entry) =>
+    state.clipboardApiMode = mode;
+    const imageEntries = entries.filter((entry) =>
       isImagePath(entry.path || entry.name),
     );
     renderClipboardImages(imageEntries);
-    setClipboardStatus(`.clipboard: ${imageEntries.length} image(s).`);
+    if (mode === "legacy") {
+      setClipboardStatus(`.clipboard: ${imageEntries.length} image(s). Using legacy API mode.`);
+    } else {
+      setClipboardStatus(`.clipboard: ${imageEntries.length} image(s).`);
+    }
   } catch (error) {
     if (isAbortError(error)) {
       return;
@@ -403,16 +518,32 @@ async function renderMarkdown(markdownContent, truncated, requestId) {
 
 function handleUploadSelection() {
   const selectedFile = uploadInput.files?.[0];
-  state.pendingUploadFile = selectedFile ?? null;
   if (!selectedFile) {
+    state.pendingUploadFile = null;
+    return;
+  }
+  setPendingUploadFile(selectedFile, "file picker");
+}
+
+async function pasteImageFromClipboard() {
+  if (!navigator.clipboard || typeof navigator.clipboard.read !== "function") {
+    throw new Error("Clipboard image paste button is not supported in this browser.");
+  }
+
+  const clipboardItems = await navigator.clipboard.read();
+  for (const clipboardItem of clipboardItems) {
+    const imageType = clipboardItem.types.find((type) => type.startsWith("image/"));
+    if (!imageType) {
+      continue;
+    }
+    const blob = await clipboardItem.getType(imageType);
+    const extension = extensionFromMimeType(imageType);
+    const file = new File([blob], `clipboard-${Date.now()}${extension}`, { type: imageType });
+    setPendingUploadFile(file, "clipboard");
     return;
   }
 
-  if (!uploadNameInput.value.trim()) {
-    uploadNameInput.value = normalizeSuggestedFilename(selectedFile.name);
-  }
-
-  setClipboardStatus(`Selected ${selectedFile.name}. Set filename, then tap Upload.`);
+  throw new Error("Clipboard does not contain an image.");
 }
 
 async function uploadPendingImage() {
@@ -427,16 +558,46 @@ async function uploadPendingImage() {
   }
 
   setStatus(`Uploading ${requestedName} to .clipboard...`);
-  const body = new FormData();
-  body.append("file", state.pendingUploadFile);
+  const createBody = () => {
+    const formData = new FormData();
+    formData.append("file", state.pendingUploadFile);
+    return formData;
+  };
 
-  const response = await fetch(`/api/upload?name=${encodeURIComponent(requestedName)}`, {
-    method: "POST",
-    body,
-  });
-  const data = await readJsonResponse(response);
-  if (!response.ok) {
-    throw new Error(data.error || "Upload failed");
+  let data;
+  try {
+    const primaryResponse = await fetch(
+      `/api/clipboard/upload?name=${encodeURIComponent(requestedName)}`,
+      {
+        method: "POST",
+        body: createBody(),
+      },
+    );
+    try {
+      data = await readJsonResponse(primaryResponse);
+    } catch (error) {
+      if (isRouteMissingResponse(primaryResponse, error)) {
+        throw new Error("Clipboard API not available");
+      }
+      throw error;
+    }
+    if (!primaryResponse.ok) {
+      throw new Error(data.error || "Upload failed");
+    }
+  } catch (error) {
+    if (toErrorMessage(error) !== "Clipboard API not available") {
+      throw error;
+    }
+
+    const legacyResponse = await fetch(`/api/upload?name=${encodeURIComponent(requestedName)}`, {
+      method: "POST",
+      body: createBody(),
+    });
+    data = await readJsonResponse(legacyResponse);
+    if (!legacyResponse.ok) {
+      throw new Error(data.error || "Upload failed");
+    }
+    state.clipboardApiMode = "legacy";
   }
 
   setClipboardStatus(`Uploaded ${requestedName} to ${data.directory || ".clipboard"}.`);
@@ -444,13 +605,14 @@ async function uploadPendingImage() {
   uploadInput.value = "";
   uploadNameInput.value = "";
   await loadClipboardImages();
-  await loadDirectory(state.currentPath);
+  await refreshDirectoryWithFallback(state.currentPath);
 }
 
 document.getElementById("refresh-btn").onclick = () =>
-  loadDirectory(state.currentPath).catch(handleActionError);
+  refreshDirectoryWithFallback(state.currentPath).catch(handleActionError);
 
 uploadInput.addEventListener("change", handleUploadSelection);
+pasteClipboardButton.onclick = () => pasteImageFromClipboard().catch(handleUploadError);
 uploadButton.onclick = () => uploadPendingImage().catch(handleUploadError);
 clipboardRefreshButton.onclick = () => loadClipboardImages().catch(handleActionError);
 
