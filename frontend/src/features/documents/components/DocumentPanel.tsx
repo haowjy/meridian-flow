@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useUIStore } from "@/core/stores/useUIStore";
-import { makeLogger } from "@/core/lib/logger";
 import { cn } from "@/lib/utils";
 import {
   ResizableHandle,
@@ -20,8 +19,6 @@ import { PanelHeader } from "@/shared/components/layout/headers";
 import { DocumentTreeToggle } from "@/shared/components/layout";
 import { ProjectHeader } from "./ProjectHeader";
 import { ProjectHomeView } from "./ProjectHomeView";
-
-const logger = makeLogger("document-panel");
 
 interface DocumentPanelProps {
   projectId: string;
@@ -102,21 +99,6 @@ export function DocumentPanel({
   // Determine which component to render for the editor panel
   // 'new' is a reserved skill name for the creation flow
   const isCreatingNewSkill = effectiveSkillName === "new";
-
-  logger.debug("[SKILL-DEEPLINK] DocumentPanel rendering", {
-    activeSkillId,
-    activeDocumentId,
-    documentTreeCollapsed,
-    effectiveSkillName,
-    isCreatingNewSkill,
-    willRender: isCreatingNewSkill
-      ? "SkillCreatePanel"
-      : activeSkillId
-        ? "SkillEditorPanel"
-        : activeDocumentId
-          ? "EditorPanel"
-          : "fallback",
-  });
 
   return (
     <div className="flex h-full flex-col">

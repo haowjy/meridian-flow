@@ -381,16 +381,10 @@ export function useInlineReview({
   // ------------------------------------------------------------------
 
   useEffect(() => {
-    if (!collabEnabled) {
-      log.debug("Sync effect skipped: collabEnabled=false");
-      return;
-    }
+    if (!collabEnabled) return;
 
     const view = getView();
-    if (!view) {
-      log.debug("Sync effect skipped: view not ready");
-      return;
-    }
+    if (!view) return;
 
     // Check that the inlineReviewField is present in the editor state
     const currentState = getInlineReviewState(view.state);
@@ -404,24 +398,12 @@ export function useInlineReview({
     // chunks against the mutated doc would produce phantom diffs (Bug 4) and
     // wipe the just-recorded resolution (Bug 2).
     if (isResolvingRef.current) {
-      log.debug("Sync effect skipped: chunk resolution in progress");
       return;
     }
 
     const readyGroups = collectReadyChunks(operationsModels);
     const allChunks = readyGroups.flatMap((g) => g.chunks);
     const proposalIds = new Set(readyGroups.map((g) => g.proposalId));
-
-    log.debug("Sync effect running", {
-      operationsModelsSize: operationsModels.size,
-      readyGroupCount: readyGroups.length,
-      totalChunks: allChunks.length,
-      availabilities: [...operationsModels.values()].map((m) =>
-        m.availability === "unavailable"
-          ? `unavailable:${m.reason} (${m.message})`
-          : m.availability,
-      ),
-    });
 
     activeProposalIdsRef.current = proposalIds;
 
@@ -443,9 +425,6 @@ export function useInlineReview({
       );
       if (!hasProposalsLoading) {
         clearReviewEffect(view);
-        log.debug("No ready chunks and no loading proposals — cleared review state");
-      } else {
-        log.debug("No ready chunks but proposals still loading — preserving current decorations");
       }
     }
     bump();

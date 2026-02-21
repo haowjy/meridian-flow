@@ -11,7 +11,10 @@
 
 import { StateEffect } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
+import { makeLogger } from "@/core/lib/logger";
 import type { Highlighter } from "shiki";
+
+const log = makeLogger("shiki-highlighter");
 
 type ShikiLoadLanguageArg = Parameters<Highlighter["loadLanguage"]>[0];
 type ShikiCodeLang = Parameters<Highlighter["codeToTokens"]>[1]["lang"];
@@ -102,7 +105,7 @@ async function bootstrap(): Promise<void> {
     ready = true;
     notifyViews();
   } catch (err) {
-    console.warn("[ShikiHighlighter] Failed to load:", err);
+    log.warn("Failed to load shiki highlighter", err);
     loading = false;
   }
 }

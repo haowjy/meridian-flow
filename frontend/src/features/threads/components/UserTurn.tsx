@@ -10,13 +10,10 @@ import { TurnActionBar } from "./TurnActionBar";
 import { EditTurnInput } from "./EditTurnInput";
 import { useThreadStore } from "@/core/stores/useThreadStore";
 import { useCurrentThreadStream } from "@/core/stores/useStreamStore";
-import { makeLogger } from "@/core/lib/logger";
 import { usePillNavigation } from "@/shared/reference-pill";
 import { turnToContentBlocks } from "@/features/threads/utils/turnHelpers";
 import { ComposerViewer } from "@/features/threads/composer";
 import { userTurnCardBase } from "./styles";
-
-const log = makeLogger("UserTurn");
 
 interface UserTurnProps {
   turn: Turn;
@@ -45,12 +42,6 @@ export const UserTurn = React.memo(function UserTurn({ turn }: UserTurnProps) {
     );
 
   const isStreaming = streamingTurnId !== null;
-
-  log.debug("render", {
-    id: turn.id,
-    prevTurnId: turn.prevTurnId,
-    blocks: turn.blocks.length,
-  });
 
   const handleNavigate = useCallback(
     (turnId: string) => {

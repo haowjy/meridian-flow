@@ -138,31 +138,11 @@ export default function WorkspaceLayout({
 
   const effectiveSkillName = initialSkillName ?? urlSkillName;
 
-  // ADD THIS LOG
-  logger.debug("[SKILL-DEEPLINK] effectiveSkillName parsed from URL", {
-    effectiveSkillName,
-    urlSkillName,
-    initialSkillName,
-    pathname: location.pathname,
-  });
-
   // Resolve skill name to skill ID using the skill store
   // Returns the UUID if found by name, undefined otherwise
   const effectiveSkillId = useMemo(() => {
-    if (!effectiveSkillName) {
-      logger.debug(
-        "[SKILL-DEEPLINK] effectiveSkillId memo: no skill name in URL",
-      );
-      return undefined;
-    }
+    if (!effectiveSkillName) return undefined;
     const skill = skills.find((s) => s.name === effectiveSkillName);
-    logger.debug("[SKILL-DEEPLINK] effectiveSkillId memo recalculated", {
-      effectiveSkillName,
-      skillsCount: skills.length,
-      foundSkill: skill ? { id: skill.id, name: skill.name } : null,
-      effectiveSkillId: skill?.id,
-      allSkillNames: skills.map((s) => s.name),
-    });
     return skill?.id;
   }, [effectiveSkillName, skills]);
 
@@ -192,11 +172,7 @@ export default function WorkspaceLayout({
         } catch (error) {
           // Non-fatal for the layout; header will fallback until projects page refreshes.
           // Errors are surfaced elsewhere when listing projects; we still log for debuggability.
-          if ((error as Error)?.name === "AbortError") {
-            logger.debug(
-              "Project fetch aborted in workspace layout (expected during unmount/StrictMode)",
-            );
-          } else {
+          if ((error as Error)?.name !== "AbortError") {
             if (shouldClearActiveSelection("project:getById", error)) {
               setCurrentProject(null);
             }
@@ -231,21 +207,11 @@ export default function WorkspaceLayout({
   // Reset UI state when switching between projects to prevent context leakage
   // Skip on first project load (null -> UUID) to preserve deep-link state
   useEffect(() => {
-    logger.debug("[SKILL-DEEPLINK] Project reset effect triggered", {
-      projectId,
-      previousResolvedProjectId: previousResolvedProjectIdRef.current,
-      isFirstLoad:
-        previousResolvedProjectIdRef.current === null && projectId !== null,
-      willSkipReset:
-        previousResolvedProjectIdRef.current === null && projectId !== null,
-    });
-
     const store = useUIStore.getState();
 
     // First project load: projectId goes from null to a UUID
     // Skip reset - no previous project to leak state from, sync effects will set initial state
     if (previousResolvedProjectIdRef.current === null && projectId !== null) {
-      logger.debug("[SKILL-DEEPLINK] Skipping reset - first project load");
       previousResolvedProjectIdRef.current = projectId;
       return;
     }
@@ -256,10 +222,6 @@ export default function WorkspaceLayout({
       projectId !== null &&
       projectId !== previousResolvedProjectIdRef.current
     ) {
-      logger.debug("[SKILL-DEEPLINK] Running reset - project switched", {
-        from: previousResolvedProjectIdRef.current,
-        to: projectId,
-      });
       store.setActiveDocument(null);
       store.setActiveSkill(null);
       // Clear thread ephemeral state — these are project-scoped and must not survive navigation
@@ -273,7 +235,6 @@ export default function WorkspaceLayout({
       // Note: Do NOT reset userOverride - user's collapse/expand preference should persist across projects
       previousDocumentIdRef.current = undefined; // Reset ref so next URL is treated as changed
       previousResolvedProjectIdRef.current = projectId;
-      logger.debug("[SKILL-DEEPLINK] Reset complete");
     }
   }, [projectId]);
 
@@ -282,13 +243,6 @@ export default function WorkspaceLayout({
   // Effect only runs when document URL param changes, not when UI state changes
   // This allows future thread effects to run independently without interfering
   useEffect(() => {
-    logger.debug("[SKILL-DEEPLINK] Document sync effect triggered", {
-      effectiveDocumentId,
-      previousDocId: previousDocumentIdRef.current,
-      isFirstMount: isFirstMountRef.current,
-      pathname: location.pathname,
-    });
-
     const urlChanged = previousDocumentIdRef.current !== effectiveDocumentId;
     const isFirstMount = isFirstMountRef.current;
 
@@ -297,11 +251,8 @@ export default function WorkspaceLayout({
 
     // Skip only if NOT first mount AND URL didn't change
     if (!isFirstMount && !urlChanged) {
-      logger.debug("URL unchanged (not first mount), skipping sync");
       return;
     }
-
-    logger.debug("URL changed, syncing UI state to match URL...");
 
     // Read current state without subscribing (no re-renders when state changes)
     const store = useUIStore.getState();
@@ -309,31 +260,24 @@ export default function WorkspaceLayout({
     if (effectiveDocumentId) {
       // Document URL - open editor with this document and ensure sidebar open
       if (store.activeDocumentId !== effectiveDocumentId) {
-        logger.debug("Setting active document:", effectiveDocumentId);
         store.setActiveDocument(effectiveDocumentId);
       }
       if (store.rightPanelState !== "editor") {
-        logger.debug("Setting panel state: editor");
         store.setRightPanelState("editor");
       }
       // Check effective collapsed state (considers ready state + user override)
       if (selectEffectiveRightCollapsed(store)) {
-        logger.debug("Expanding right panel");
         store.setRightPanelCollapsed(false);
       }
     } else {
       // Tree URL - show tree view
       if (store.activeDocumentId !== null) {
-        logger.debug("Clearing active document");
         store.setActiveDocument(null);
       }
       if (store.rightPanelState !== "documents") {
-        logger.debug("Setting panel state: documents");
         store.setRightPanelState("documents");
       }
     }
-    // location.pathname is only used for debug logging, intentionally not in deps
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveDocumentId]);
 
   // For deep links: load the tree once in the background if empty
@@ -362,10 +306,6 @@ export default function WorkspaceLayout({
     const existsInTree = documents.some((d) => d.id === effectiveDocumentId);
     const store = useUIStore.getState();
     if (existsInTree && store.activeDocumentId !== effectiveDocumentId) {
-      logger.debug(
-        "Tree loaded, syncing active document to URL:",
-        effectiveDocumentId,
-      );
       store.setActiveDocument(effectiveDocumentId);
     }
   }, [documentsCount, documents, effectiveDocumentId]);
@@ -373,23 +313,10 @@ export default function WorkspaceLayout({
   // For deep links: load skills once in the background if empty
   // Uses effectiveSkillName (not effectiveSkillId) since we need skills loaded to resolve name -> ID
   useEffect(() => {
-    logger.debug("[SKILL-DEEPLINK] Skill loading effect check", {
-      effectiveSkillName,
-      projectId,
-      skillsCount: skills.length,
-      isLoadingSkills,
-      willLoadSkills:
-        effectiveSkillName &&
-        projectId &&
-        skills.length === 0 &&
-        !isLoadingSkills,
-    });
-
     if (!effectiveSkillName) return;
     if (projectId === null) return; // Wait for project to be resolved
     if (skills.length !== 0 || isLoadingSkills) return;
 
-    logger.debug("[SKILL-DEEPLINK] Loading skills for deep-link...");
     const abortController = new AbortController();
     loadSkills(projectId, abortController.signal);
     return () => abortController.abort();
@@ -406,36 +333,14 @@ export default function WorkspaceLayout({
   useEffect(() => {
     const store = useUIStore.getState();
 
-    logger.debug("[SKILL-DEEPLINK] Skill sync effect triggered", {
-      effectiveSkillId,
-      currentActiveSkillId: store.activeSkillId,
-      currentActiveDocumentId: store.activeDocumentId,
-      currentRightPanelState: store.rightPanelState,
-      willSetSkill: !!effectiveSkillId,
-    });
-
-    if (!effectiveSkillId) {
-      logger.debug("[SKILL-DEEPLINK] No effectiveSkillId, skipping sync");
-      return;
-    }
-
-    logger.debug("[SKILL-DEEPLINK] Setting active skill and opening editor...");
+    if (!effectiveSkillId) return;
 
     if (store.activeSkillId !== effectiveSkillId) {
-      logger.debug("[SKILL-DEEPLINK] Calling setActiveSkill", {
-        effectiveSkillId,
-      });
       store.setActiveSkill(effectiveSkillId);
     }
     // Note: setActiveSkill already clears activeDocumentId for mutual exclusivity
     store.setRightPanelState("editor");
     store.setRightPanelCollapsed(false);
-
-    logger.debug("[SKILL-DEEPLINK] After setting state", {
-      activeSkillId: useUIStore.getState().activeSkillId,
-      activeDocumentId: useUIStore.getState().activeDocumentId,
-      rightPanelState: useUIStore.getState().rightPanelState,
-    });
   }, [effectiveSkillId]);
 
   // Handle skill not found
@@ -453,11 +358,6 @@ export default function WorkspaceLayout({
         if (activeSkill) {
           // Active skill exists - check if URL needs correction (rename case)
           if (activeSkill.name !== effectiveSkillName) {
-            logger.debug("[SKILL-DEEPLINK] Skill URL stale, replacing", {
-              effectiveSkillName,
-              activeSkillId,
-              activeSkillName: activeSkill.name,
-            });
             navigate({
               to: "/projects/$slug/skills/$skillName",
               params: { slug: projectSlug, skillName: activeSkill.name },

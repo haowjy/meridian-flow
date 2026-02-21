@@ -5,9 +5,6 @@ import type {
   TreeEntityType,
   TreeOpParams,
 } from "@/core/lib/offlineTypes";
-import { makeLogger } from "@/core/lib/logger";
-
-const log = makeLogger("tree-sync");
 
 /**
  * Service for managing the persistent tree operation queue (pendingTreeOps).
@@ -46,7 +43,6 @@ export async function queueTreeOp(
   } as PendingTreeOp;
 
   await db.pendingTreeOps.add(op);
-  log.debug("Queued tree op", opType, entityType, entityId);
 }
 
 /** Get all pending ops for a project, ordered by id (FIFO). */
@@ -91,7 +87,6 @@ export async function removeOpsForEntity(entityId: string): Promise<void> {
       .map((op) => op.id)
       .filter((id): id is number => id !== undefined);
     await db.pendingTreeOps.bulkDelete(ids);
-    log.debug("Removed", ids.length, "ops for entity", entityId);
   }
 }
 

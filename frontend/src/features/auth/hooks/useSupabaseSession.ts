@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { createClient } from "@/core/supabase/client";
+import { makeLogger } from "@/core/lib/logger";
 import type { SessionStatus } from "../types";
+
+const log = makeLogger("use-supabase-session");
 
 /**
  * Low-level hook for Supabase session state.
@@ -33,7 +36,7 @@ export function useSupabaseSession(): {
         setStatus(session ? "authenticated" : "unauthenticated");
       })
       .catch((err) => {
-        console.error("Failed to load auth session:", err);
+        log.error("Failed to load auth session", err);
         if (!mounted) return;
         // Only fall back to unauthenticated if onAuthStateChange hasn't
         // already delivered a valid session (race: listener fires before

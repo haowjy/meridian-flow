@@ -398,10 +398,6 @@ function buildRequestParamsFromThreadOptions(
 ): Record<string, unknown> {
   const resolved = options ?? DEFAULT_THREAD_REQUEST_OPTIONS;
 
-  console.debug("[buildRequestParamsFromThreadOptions]", {
-    supportsTools: resolved.supportsTools,
-  });
-
   // When reasoning is 'off', disable thinking entirely
   // Otherwise, enable thinking with the specified level
   const thinkingEnabled = resolved.reasoning !== "off";

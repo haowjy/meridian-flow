@@ -210,16 +210,10 @@ export function useDocumentCollab({
 
     const isMatchingEventDocument = (
       eventDocumentId: string,
-      eventType: string,
     ): boolean => {
       if (eventDocumentId === documentId) {
         return true;
       }
-      log.debug("ignoring collab proposal event for different document", {
-        type: eventType,
-        expectedDocumentId: documentId,
-        eventDocumentId,
-      });
       return false;
     };
 
@@ -253,32 +247,31 @@ export function useDocumentCollab({
 
       // Proposal events
       if (isProposalSnapshotEvent(event)) {
-        if (!isMatchingEventDocument(event.documentId, event.type)) return;
+        if (!isMatchingEventDocument(event.documentId)) return;
         proposalManager.onProposalSnapshot(event);
         return;
       }
 
       if (isProposalNewEvent(event)) {
-        if (!isMatchingEventDocument(event.proposal.documentId, event.type))
-          return;
+        if (!isMatchingEventDocument(event.proposal.documentId)) return;
         proposalManager.onProposalNew(event);
         return;
       }
 
       if (isProposalStatusChangedEvent(event)) {
-        if (!isMatchingEventDocument(event.documentId, event.type)) return;
+        if (!isMatchingEventDocument(event.documentId)) return;
         proposalManager.onProposalStatusChanged(event);
         return;
       }
 
       if (isProposalGroupAcceptResultEvent(event)) {
-        if (!isMatchingEventDocument(event.documentId, event.type)) return;
+        if (!isMatchingEventDocument(event.documentId)) return;
         proposalManager.onProposalGroupAcceptResult(event);
         return;
       }
 
       if (isProposalUpdateDataEvent(event)) {
-        if (!isMatchingEventDocument(event.documentId, event.type)) return;
+        if (!isMatchingEventDocument(event.documentId)) return;
         proposalManager.onProposalUpdateData(event);
         // Bump review revision so operationsModels recompute with the new yjsUpdate
         setReviewRevision((current) => current + 1);

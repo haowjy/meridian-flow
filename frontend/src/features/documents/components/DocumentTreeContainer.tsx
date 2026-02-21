@@ -25,6 +25,7 @@ import {
 } from "@/core/lib/treeBuilder";
 import { getDescendantDocumentIds } from "@/core/lib/treeUtils";
 import { api } from "@/core/lib/api";
+import { makeLogger } from "@/core/lib/logger";
 import { reconcileSelectionIfMissing } from "@/core/retrieval";
 import {
   getErrorMessageWithFallback,
@@ -45,6 +46,8 @@ import { InlineError } from "@/shared/components/InlineError";
 import type { Folder } from "@/features/folders/types/folder";
 import type { Document } from "../types/document";
 import type { Skill } from "@/features/skills/types/skill";
+
+const log = makeLogger("document-tree-container");
 
 // Tracks which tree item is being edited (existing items only)
 interface EditingItem {
@@ -264,7 +267,7 @@ export function DocumentTreeContainer({
       const doc = documents.find((d) => d.id === documentId);
       if (!doc?.path) {
         // All documents should have paths - this indicates a data integrity issue
-        console.error("Document missing path:", documentId);
+        log.error("Document missing path", { documentId });
         return;
       }
       openDocument(documentId, doc.path, projectSlug, navigate);
@@ -333,7 +336,7 @@ export function DocumentTreeContainer({
       // Find skill to get its name (URL identifier) for routing
       const skill = skills.find((s) => s.id === skillId);
       if (!skill?.name) {
-        console.error("Skill missing name:", skillId);
+        log.error("Skill missing name", { skillId });
         return;
       }
       openSkill(skillId, skill.name, projectSlug, navigate);
@@ -410,7 +413,7 @@ export function DocumentTreeContainer({
       await deleteSkill(projectId, skillDeleteDialog.item.id);
       skillDeleteDialog.close();
     } catch (error) {
-      console.error("Failed to delete skill:", getErrorMessage(error));
+      log.error("Failed to delete skill", { error: getErrorMessage(error) });
     } finally {
       setIsDeletingSkill(false);
     }

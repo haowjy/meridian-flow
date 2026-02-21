@@ -1,9 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useThreadStore } from "@/core/stores/useThreadStore";
-import { makeLogger } from "@/core/lib/logger";
-
-const log = makeLogger("useTurnsForThread");
 
 /**
  * Feature-level hook for loading turns for a given thread.
@@ -38,8 +35,6 @@ export function useTurnsForThread(threadId: string | null) {
   useEffect(() => {
     if (!threadId) return;
 
-    log.debug("effect:start", { threadId });
-
     // If we already have turns for this thread (or a load is already in-flight),
     // don't re-fetch on remount / tab switches. This prevents "progressive reload"
     // when navigating away and back.
@@ -48,11 +43,6 @@ export function useTurnsForThread(threadId: string | null) {
       state.threadId === threadId &&
       (state.turnIds.length > 0 || state.isLoadingTurns)
     ) {
-      log.debug("effect:skip", {
-        threadId,
-        turns: state.turnIds.length,
-        isLoadingTurns: state.isLoadingTurns,
-      });
       return;
     }
 
@@ -69,18 +59,8 @@ export function useTurnsForThread(threadId: string | null) {
 
     return () => {
       controller.abort();
-      log.debug("effect:cleanup", { threadId });
     };
   }, [threadId]);
-
-  useEffect(() => {
-    log.debug("state:update", {
-      threadId,
-      turns: turnIds.length,
-      isLoadingTurns,
-      error,
-    });
-  }, [threadId, turnIds.length, isLoadingTurns, error]);
 
   // Prevent showing stale data during thread transitions.
   const scopedIds = threadId && storeThreadId === threadId ? turnIds : [];

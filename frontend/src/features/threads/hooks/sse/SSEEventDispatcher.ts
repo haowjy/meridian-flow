@@ -194,7 +194,7 @@ export function dispatchSSEEvent(
       break;
 
     default:
-      // Unknown event type - log for debugging
-      logger.debug("sse:unknown_event", { eventType, data });
+      // Unknown events are ignored for forward compatibility.
+      return;
   }
 }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { X } from "lucide-react";
+import { makeLogger } from "@/core/lib/logger";
 import { Button } from "@/shared/components/ui/button";
 import { useTreeSelection } from "../hooks/useTreeSelection";
 import type { TreeNode } from "@/core/lib/treeBuilder";
@@ -16,6 +17,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/components/ui/dialog";
+
+const log = makeLogger("batch-actions-bar");
 
 /**
  * Follows SRP: only renders batch actions UI.
@@ -69,7 +72,7 @@ export function BatchActionsBar({
       }
     } catch (error) {
       // Unexpected error (not from operation.execute)
-      console.error("[BatchActionsBar] Unexpected error:", error);
+      log.error("Unexpected batch action error", error);
       setLastResult({
         success: false,
         successCount: 0,

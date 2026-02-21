@@ -1,8 +1,5 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { makeLogger } from "@/core/lib/logger";
-
-const logger = makeLogger("ui-store");
 
 /**
  * Represents the current view mode of the right panel.
@@ -426,44 +423,18 @@ export const useUIStore = create<UIStore>()(
         set({ leftPanelUserOverride: override }),
       setRightPanelUserOverride: (override) =>
         set({ rightPanelUserOverride: override }),
-      setRightPanelState: (state) => {
-        const stack =
-          new Error().stack?.split("\n").slice(2, 6).join("\n") || "no stack";
-        logger.debug("[SKILL-DEEPLINK] setRightPanelState called", {
-          state,
-          prevState: get().rightPanelState,
-          stack,
-        });
-        set({ rightPanelState: state });
-      },
+      setRightPanelState: (state) => set({ rightPanelState: state }),
       // Sets user override to force panel expanded/collapsed state
       // Used by URL navigation to expand panel when opening documents/skills
       setRightPanelCollapsed: (collapsed) =>
         set({ rightPanelUserOverride: collapsed ? "collapsed" : "expanded" }),
-      setActiveDocument: (id) => {
-        const stack =
-          new Error().stack?.split("\n").slice(2, 6).join("\n") || "no stack";
-        logger.debug("[SKILL-DEEPLINK] setActiveDocument called", {
-          id,
-          prevId: get().activeDocumentId,
-          stack,
-        });
+      setActiveDocument: (id) =>
         set({
           activeDocumentId: id,
           activeSkillId: null,
           showVersionHistory: false,
-        });
-      },
-      setActiveSkill: (id) => {
-        const stack =
-          new Error().stack?.split("\n").slice(2, 6).join("\n") || "no stack";
-        logger.debug("[SKILL-DEEPLINK] setActiveSkill called", {
-          id,
-          prevId: get().activeSkillId,
-          stack,
-        });
-        set({ activeSkillId: id, activeDocumentId: null });
-      },
+        }),
+      setActiveSkill: (id) => set({ activeSkillId: id, activeDocumentId: null }),
       setActiveThread: (id) => set({ activeThreadId: id }),
       bumpThreadFocusVersion: () =>
         set((state) => ({ threadFocusVersion: state.threadFocusVersion + 1 })),

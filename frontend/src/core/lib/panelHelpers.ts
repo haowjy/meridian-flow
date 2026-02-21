@@ -1,8 +1,5 @@
 import { useUIStore } from "@/core/stores/useUIStore";
 import type { useNavigate } from "@tanstack/react-router";
-import { makeLogger } from "@/core/lib/logger";
-
-const logger = makeLogger("panel-helpers");
 
 type NavigateFunction = ReturnType<typeof useNavigate>;
 
@@ -64,7 +61,6 @@ export function openDocument(
   const store = useUIStore.getState();
 
   // Set UI state directly (needed when clicking current document after manual toggle)
-  logger.debug("openDocument:", documentId, "path:", documentPath);
   store.setActiveDocument(documentId);
   store.setRightPanelState("editor");
   store.setRightPanelCollapsed(false);
@@ -94,7 +90,6 @@ export function closeEditor(projectSlug: string, navigate: NavigateFunction) {
   const store = useUIStore.getState();
 
   // Set UI state directly
-  logger.debug("closeEditor");
   store.setActiveDocument(null);
   store.setRightPanelState("documents");
   // Sync mobile tab so MobileLayout shows the documents view
@@ -127,7 +122,6 @@ export function openSkill(
   const store = useUIStore.getState();
 
   // Set UI state directly (needed when clicking current skill after manual toggle)
-  logger.debug("openSkill:", skillId, "name:", skillName);
   store.setActiveSkill(skillId); // Already clears activeDocumentId for mutual exclusivity
   store.setRightPanelState("editor");
   store.setRightPanelCollapsed(false);

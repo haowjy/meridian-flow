@@ -1,4 +1,7 @@
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { makeLogger } from "@/core/lib/logger";
+
+const log = makeLogger("supabase-client");
 
 let client: ReturnType<typeof createSupabaseClient> | null = null;
 
@@ -13,7 +16,7 @@ export function createClient() {
     if (import.meta.env.MODE === "production") {
       throw new Error("Supabase keys are missing in production environment");
     }
-    console.warn(
+    log.warn(
       "Supabase keys are missing. Using dummy values for non-production build.",
     );
     return createSupabaseClient("https://example.com", "example-key");

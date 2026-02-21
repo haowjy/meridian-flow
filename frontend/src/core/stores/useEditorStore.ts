@@ -53,8 +53,6 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
       error: null,
     });
 
-    logger.debug(`Starting load for document ${documentId}`);
-
     const cacheRepo: ICacheRepo<Document> = {
       get: async () => {
         const d = await db.documents.get(documentId);
@@ -104,7 +102,6 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
         if (get()._activeDocumentId === documentId) {
           set({ isLoading: false });
         }
-        logger.debug(`Aborted load for ${documentId}`);
         return;
       }
 
@@ -161,7 +158,6 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
           onRetryScheduled: () => {
             // Keep showing "saving" status while retry is pending
             // Status badge will show 'saving' state
-            logger.debug("Save retry scheduled, keeping saving status");
           },
           onPermanentFailure: (err) => {
             const message =
@@ -193,8 +189,6 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
   refreshDocument: async (documentId: string) => {
     // Skip if this isn't the active document
     if (get()._activeDocumentId !== documentId) return;
-
-    logger.debug(`Force refreshing document ${documentId}`);
 
     try {
       // Fetch fresh from server, bypassing cache comparison

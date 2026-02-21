@@ -12,11 +12,13 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { makeLogger } from "@/core/lib/logger";
 import type { ThemeColors, ThemeMode, ThemePreset } from "./types";
 import { DEFAULT_THEME_ID, getThemePreset } from "./themes";
 import { loadThemeFonts } from "./fonts";
 
 const STORAGE_KEY_MODE = "meridian-theme-mode";
+const log = makeLogger("theme");
 
 /**
  * Get system color scheme preference
@@ -158,7 +160,7 @@ export function useTheme() {
   const setThemeId = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     (_id: string) => {
-      console.warn(
+      log.warn(
         "Theme switching is disabled. Only Modern Literary theme is available.",
       );
       // No-op: always use Modern Literary

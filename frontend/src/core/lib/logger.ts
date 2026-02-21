@@ -3,7 +3,6 @@ type LogLevel = "debug" | "info" | "warn" | "error" | "silent";
 const ENV_LEVEL = (
   import.meta.env.VITE_LOG_LEVEL || ""
 ).toLowerCase() as LogLevel;
-const NODE_ENV = import.meta.env.MODE || "development";
 
 function levelOrder(level: LogLevel): number {
   switch (level) {
@@ -22,8 +21,8 @@ function levelOrder(level: LogLevel): number {
   }
 }
 
-// Default: debug in development, info otherwise
-const DEFAULT_LEVEL: LogLevel = NODE_ENV === "development" ? "debug" : "info";
+// Default to info; opt into debug explicitly with VITE_LOG_LEVEL=debug
+const DEFAULT_LEVEL: LogLevel = "info";
 const ACTIVE_LEVEL: LogLevel =
   ENV_LEVEL && ["debug", "info", "warn", "error", "silent"].includes(ENV_LEVEL)
     ? ENV_LEVEL
