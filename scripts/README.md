@@ -4,41 +4,8 @@ Automation scripts for the Meridian project.
 
 ---
 
-## `remote-workspace.sh`
-
-**Purpose:** Launches the standalone `remote-workspace/` web app for remote file browsing/upload and Markdown+Mermaid preview.
-
-### Quick Start
-
-```bash
-# From repo root
-./scripts/remote-workspace.sh
-
-# Recommended (private tailnet URL)
-./scripts/remote-workspace.sh --tailscale-serve
-```
-
-Default URL: `http://127.0.0.1:18080`
-
-### Common Options
-
-```bash
-./scripts/remote-workspace.sh --port 18111
-./scripts/remote-workspace.sh --install
-./scripts/remote-workspace.sh --tailscale-serve
-./scripts/remote-workspace.sh --tailscale-funnel
-```
-
-### What It Starts
-
-The script runs a TypeScript Node service in `remote-workspace/` with:
-
-1. Directory/file explorer (repo-root sandboxed)
-2. File upload into the current folder
-3. Folder creation endpoint
-4. Markdown preview with Mermaid rendering
-
-See `remote-workspace/README.md` for details and Tailscale examples.
+Remote workspace launcher moved to `./remote-workspace/run.sh`.  
+See `remote-workspace/README.md` for usage and options.
 
 ---
 
