@@ -6,6 +6,7 @@ import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protoc
 import * as syncProtocol from "y-protocols/sync";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import * as Y from "yjs";
+import { makeLogger } from "@/core/lib/logger";
 import type {
   ProposalGroupAcceptResultEvent,
   ProposalNewEvent,
@@ -20,6 +21,8 @@ import {
   unwrapEnvelope,
   type SyncMessageType,
 } from "./envelope";
+
+const log = makeLogger("cm6-collab-runtime");
 
 export type CollabSyncStatus = "disconnected" | "syncing" | "connected";
 
@@ -246,7 +249,7 @@ export function parseCollabServerTextEvent(raw: string): CollabServerTextEvent |
     }
     return parsed as CollabServerTextEvent;
   } catch (error) {
-    console.warn("[cm6-collab] failed to parse collab text event", {
+    log.warn("failed to parse collab text event", {
       error: error instanceof Error ? error.message : String(error),
     });
     return null;

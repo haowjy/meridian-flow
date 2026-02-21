@@ -33,7 +33,7 @@ export function handleToolCallStart(
   ctx: SSEDispatchContext,
   actions: SSEStoreActions,
 ): void {
-  const { tracker, logger, buffer } = ctx;
+  const { tracker, buffer } = ctx;
   const toolCallId = normalizeToolCallId(data.toolCallId);
 
   // Tool calls can start before TEXT_MESSAGE_END arrives. Flush any buffered text/thinking
@@ -70,12 +70,6 @@ export function handleToolCallStart(
 
   // Update streaming block info
   actions.setStreamingBlockInfo(blockIndex, "tool_use");
-
-  logger.debug("sse:TOOL_CALL_START", {
-    toolCallId,
-    toolName: data.toolCallName,
-    blockIndex,
-  });
 }
 
 /**
@@ -226,11 +220,6 @@ export function handleToolCallEnd(
 
   // Reset current block tracking (tool block is complete)
   tracker.setCurrentBlockType(null);
-
-  logger.debug("sse:TOOL_CALL_END", {
-    toolCallId,
-    blockIndex,
-  });
 }
 
 /**
@@ -242,7 +231,7 @@ export function handleToolCallResult(
   ctx: SSEDispatchContext,
   actions: SSEStoreActions,
 ): void {
-  const { tracker, logger } = ctx;
+  const { tracker } = ctx;
   const toolCallId = normalizeToolCallId(data.toolCallId);
 
   // Backend emits `content` as a JSON string; parse for block content.
@@ -279,12 +268,6 @@ export function handleToolCallResult(
 
   actions.updateToolState(toolCallId, {
     state: isError ? ToolStreamState.ERROR : ToolStreamState.COMPLETE,
-  });
-
-  logger.debug("sse:TOOL_CALL_RESULT", {
-    toolCallId,
-    blockIndex,
-    isError,
   });
 
   // Execute tool-specific side effects (document refresh, tree hydration)

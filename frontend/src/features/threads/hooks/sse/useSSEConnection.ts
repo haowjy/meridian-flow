@@ -127,8 +127,6 @@ export function useThreadSSE() {
         ? streamingUrl
         : `${API_BASE_URL}${streamingUrl}`;
 
-    logger.debug("sse:connect", { fullUrl, streamingTurnId });
-
     currentTurnIdRef.current = streamingTurnId;
 
     // Reset tracker for new stream
@@ -195,8 +193,6 @@ export function useThreadSSE() {
 
           async onopen(response: Response) {
             if (response.ok) {
-              logger.debug("sse:connected");
-
               // Fetch live interjection state on connect/reconnect.
               // This avoids stale state from buffered SSE events being replayed.
               const turnId = currentTurnIdRef.current;
@@ -250,8 +246,6 @@ export function useThreadSSE() {
               return;
             }
 
-            logger.debug("sse:closed");
-
             // Notify waiters that stream has ended
             const currentTurnId = currentTurnIdRef.current;
             if (currentTurnId) {
@@ -294,7 +288,6 @@ export function useThreadSSE() {
     connect();
 
     return () => {
-      logger.debug("sse:cleanup");
       flush();
       ctrl.abort();
       ctrlRef.current = null;

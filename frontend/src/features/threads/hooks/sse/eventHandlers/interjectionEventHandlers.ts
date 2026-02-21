@@ -18,14 +18,9 @@ import type {
  */
 export function handleInterjectionUpdated(
   data: InterjectionUpdatedEvent,
-  ctx: SSEDispatchContext,
+  _ctx: SSEDispatchContext,
   actions: SSEStoreActions,
 ): void {
-  ctx.logger.debug("sse:interjection_updated", {
-    turnId: data.turnId,
-    length: data.length,
-  });
-
   actions.setInterjectionContent(data.content);
 }
 

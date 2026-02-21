@@ -23,7 +23,7 @@ export function handleThinkingStart(
   ctx: SSEDispatchContext,
   actions: SSEStoreActions,
 ): void {
-  const { tracker, logger } = ctx;
+  const { tracker } = ctx;
 
   // Get next block index and register the thinking block
   const blockIndex = tracker.nextBlockIndex();
@@ -31,11 +31,6 @@ export function handleThinkingStart(
   tracker.registerThinking(data.thinkingId, blockIndex);
 
   actions.setStreamingBlockInfo(blockIndex, "thinking");
-
-  logger.debug("sse:THINKING_START", {
-    thinkingId: data.thinkingId,
-    blockIndex,
-  });
 }
 
 /**
@@ -44,11 +39,13 @@ export function handleThinkingStart(
  */
 export function handleThinkingTextMessageStart(
   _data: unknown,
-  ctx: SSEDispatchContext,
+  _ctx: SSEDispatchContext,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _actions: SSEStoreActions,
 ): void {
-  ctx.logger.debug("sse:THINKING_TEXT_MESSAGE_START");
+  void _data;
+  void _ctx;
+  // No-op: content deltas drive rendering.
 }
 
 /**
@@ -84,11 +81,13 @@ export function handleThinkingTextMessageContent(
  */
 export function handleThinkingTextMessageEnd(
   _data: unknown,
-  ctx: SSEDispatchContext,
+  _ctx: SSEDispatchContext,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _actions: SSEStoreActions,
 ): void {
-  ctx.logger.debug("sse:THINKING_TEXT_MESSAGE_END");
+  void _data;
+  void _ctx;
+  // No-op: tracker cleanup happens in THINKING_END.
 }
 
 /**
@@ -100,7 +99,7 @@ export function handleThinkingEnd(
   ctx: SSEDispatchContext,
   actions: SSEStoreActions,
 ): void {
-  const { tracker, logger, buffer } = ctx;
+  const { tracker, buffer } = ctx;
 
   buffer.flush();
 
@@ -115,9 +114,4 @@ export function handleThinkingEnd(
     tracker.setCurrentBlockType(null);
     actions.setStreamingBlockInfo(null, null);
   }
-
-  logger.debug("sse:THINKING_END", {
-    thinkingId: data.thinkingId,
-    clearedCurrent: shouldClearCurrent,
-  });
 }

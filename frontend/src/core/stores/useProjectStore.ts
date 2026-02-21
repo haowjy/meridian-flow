@@ -3,11 +3,8 @@ import { persist } from "zustand/middleware";
 import { Project } from "@/features/projects/types/project";
 import { api } from "@/core/lib/api";
 import { getErrorMessageWithFallback } from "@/core/lib/errors";
-import { makeLogger } from "@/core/lib/logger";
 import { runBackgroundRetrieval } from "@/core/retrieval";
 import { editorCache } from "@/core/editor/cache";
-
-const log = makeLogger("project-store");
 
 type LoadStatus = "idle" | "loading" | "success" | "error";
 
@@ -175,14 +172,9 @@ export const useProjectStore = create<ProjectStore>()(
       },
 
       updateProject: async (id, updates) => {
-        log.debug("[useProjectStore.updateProject] request:", { id, updates });
         set({ error: null });
         try {
           const updated = await api.projects.update(id, updates);
-          log.debug("[useProjectStore.updateProject] response:", {
-            preferences: updated.preferences,
-            disabledTools: updated.preferences?.disabledTools,
-          });
           set((state) => ({
             projects: state.projects.map((p) => (p.id === id ? updated : p)),
           }));

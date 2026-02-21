@@ -39,22 +39,12 @@ export function handleRunStarted(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Matches SSEEventHandler signature for consistency
   _actions: SSEStoreActions,
 ): void {
-  const { logger, tracker } = ctx;
+  const { tracker } = ctx;
 
   // Initialize BlockTracker from lastBlockSequence on reconnection
   // This ensures new blocks start from lastBlockSequence + 1, avoiding duplicates
   if (data.lastBlockSequence !== undefined && data.lastBlockSequence >= 0) {
     tracker.initializeFromSequence(data.lastBlockSequence);
-    logger.debug("sse:run_started:reconnection", {
-      runId: data.runId,
-      threadId: data.threadId,
-      lastBlockSequence: data.lastBlockSequence,
-    });
-  } else {
-    logger.debug("sse:run_started", {
-      runId: data.runId,
-      threadId: data.threadId,
-    });
   }
 }
 
@@ -64,13 +54,14 @@ export function handleRunStarted(
  * Can be used for UI showing "Step N of M" or progress indicators.
  */
 export function handleStepStarted(
-  data: StepStartedEvent,
-  ctx: SSEDispatchContext,
+  _data: StepStartedEvent,
+  _ctx: SSEDispatchContext,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Matches SSEEventHandler signature for consistency
   _actions: SSEStoreActions,
 ): void {
-  const { logger } = ctx;
-  logger.debug("sse:step_started", { stepName: data.stepName });
+  void _data;
+  void _ctx;
+  // No-op: step-level progress is not surfaced in the UI.
 }
 
 /**
@@ -78,13 +69,14 @@ export function handleStepStarted(
  * Signals the end of a step (tool loop iteration).
  */
 export function handleStepFinished(
-  data: StepFinishedEvent,
-  ctx: SSEDispatchContext,
+  _data: StepFinishedEvent,
+  _ctx: SSEDispatchContext,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Matches SSEEventHandler signature for consistency
   _actions: SSEStoreActions,
 ): void {
-  const { logger } = ctx;
-  logger.debug("sse:step_finished", { stepName: data.stepName });
+  void _data;
+  void _ctx;
+  // No-op: step-level progress is not surfaced in the UI.
 }
 
 /**
@@ -104,13 +96,6 @@ export function handleRunFinished(
   // ?? preserves empty string as valid (convention: treat empty as valid)
   const turnId = data.turnId ?? null;
 
-  logger.debug("sse:run_finished", {
-    turnId,
-    stopReason: data.stopReason,
-    inputTokens: data.inputTokens,
-    outputTokens: data.outputTokens,
-  });
-
   // Notify waiters that stream has ended (for cancel coordination)
   if (turnId) {
     actions.notifyStreamEnded(turnId);
@@ -120,7 +105,6 @@ export function handleRunFinished(
   // to ensure tool_result blocks are fetched before clearing streaming state
   const runCleanup = () => {
     buffer.flush();
-    logger.debug("sse:run_finished:cleanup", { turnId });
     actions.clearStreamingStream();
     tracker.clear();
     actions.setStreamingBlockInfo(null, null);
@@ -174,8 +158,6 @@ export function handleRunError(
   // Log error (non-cancellation) or debug (cancellation)
   if (!data.isCancelled) {
     logger.error("sse:run_error", { turnId, message: data.message });
-  } else {
-    logger.debug("sse:run_cancelled", { turnId, message: data.message });
   }
 
   // Notify waiters that stream has ended (for cancel coordination)

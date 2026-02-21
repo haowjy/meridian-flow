@@ -10,7 +10,6 @@ import { useCurrentThreadStream } from "@/core/stores/useStreamStore";
 import { TurnActionBar } from "./TurnActionBar";
 import { BlockRenderer } from "./blocks";
 import { InlineError } from "@/shared/components/InlineError";
-import { makeLogger } from "@/core/lib/logger";
 import {
   buildAssistantRenderItems,
   groupThinkingAndTools,
@@ -25,8 +24,6 @@ import {
 } from "@/features/threads/utils/blockIdentity";
 import { ThinkingGroupBlock } from "./blocks/ThinkingGroupBlock";
 import { ToolGroupBlock } from "./blocks/ToolGroupBlock";
-
-const log = makeLogger("AssistantTurn");
 
 // =============================================================================
 // HELPERS
@@ -85,12 +82,6 @@ export const AssistantTurn = React.memo(function AssistantTurn({
   const isStreaming = streamingTurnId !== null;
   // true if THIS turn is streaming (shows dots indicator)
   const isStreamingThisTurn = streamingTurnId === turn.id;
-
-  log.debug("render", {
-    id: turn.id,
-    prevTurnId: turn.prevTurnId,
-    blocks: turn.blocks.length,
-  });
 
   const handleNavigate = useCallback(
     (turnId: string) => {

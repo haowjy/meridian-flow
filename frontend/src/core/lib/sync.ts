@@ -60,8 +60,6 @@ export async function syncDocument(
   documentId: string,
   content: string,
 ): Promise<Document> {
-  log.debug(`Syncing document`, documentId);
-
   // Call API - this returns the updated document from the server
   const updatedDoc = await api.documents.update(documentId, { content });
 
@@ -87,7 +85,6 @@ export async function syncDocument(
  */
 export function cancelRetry(documentId: string) {
   const sched = ensureScheduler();
-  log.debug(`Cancelled pending retry`, documentId);
   sched.cancel(documentId);
 }
 

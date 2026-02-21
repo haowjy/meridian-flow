@@ -14,11 +14,14 @@
  */
 
 import { useEffect, useMemo, useRef } from "react";
+import { makeLogger } from "@/core/lib/logger";
 import { useEditorStore } from "@/core/stores/useEditorStore";
 import { documentSyncService } from "@/core/services/documentSyncService";
 import type { DocumentSyncContext } from "./useDocumentContent";
 import type { BaseEditorRef } from "@/core/editor/types/editorRegistry";
 import { createTextDocumentContentDriver } from "./documentContentDriver";
+
+const log = makeLogger("use-document-sync");
 
 // =============================================================================
 // TYPES
@@ -109,7 +112,7 @@ export function useDocumentSync(
         storageContent = contentDriver.toStorage(localDoc);
       } catch (err) {
         // Log error for debugging - this indicates a bug in our transaction logic
-        console.error(
+        log.error(
           "[useDocumentSync] BUG: Adapter conversion failed. Auto-repairing.",
           {
             error: err instanceof Error ? err.message : String(err),

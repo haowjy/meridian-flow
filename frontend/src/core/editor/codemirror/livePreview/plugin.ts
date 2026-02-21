@@ -16,6 +16,7 @@ import {
 } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
+import { makeLogger } from "@/core/lib/logger";
 import type {
   NodeRenderer,
   InlineScanner,
@@ -29,6 +30,8 @@ import {
   registerView,
   unregisterView,
 } from "./shikiHighlighter";
+
+const log = makeLogger("live-preview");
 
 // ============================================================================
 // RENDERER REGISTRY (OCP: Open for Extension)
@@ -202,7 +205,7 @@ class LivePreviewPlugin {
               const decos = renderer.render(node.node, ctx);
               decorations.push(...decos);
             } catch (error) {
-              console.warn(
+              log.warn(
                 `[LivePreview] Renderer for ${node.name} failed:`,
                 error,
               );
@@ -220,7 +223,7 @@ class LivePreviewPlugin {
             const decos = scanner.scan(text, from, ctx);
             decorations.push(...decos);
           } catch (error) {
-            console.warn(
+            log.warn(
               `[LivePreview] Scanner "${scanner.id}" failed:`,
               error,
             );

@@ -14,6 +14,18 @@ export default tseslint.config(
     },
   },
   {
+    files: ["src/**/*.{ts,tsx}"],
+    rules: {
+      "no-console": "error",
+    },
+  },
+  {
+    files: ["src/core/lib/logger.ts"],
+    rules: {
+      "no-console": "off",
+    },
+  },
+  {
     ignores: ["dist/**", "node_modules/**", ".routegen/**"],
   },
 );

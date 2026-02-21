@@ -28,7 +28,6 @@ import {
 } from "@/features/threads/components/DocumentMentionPopover";
 import { Button } from "@/shared/components/ui/button";
 import { cn } from "@/lib/utils";
-import { makeLogger } from "@/core/lib/logger";
 import { ComposerAddContextButton } from "@/features/threads/components/ComposerAddContextButton";
 import {
   getComposePlaceholder,
@@ -36,8 +35,6 @@ import {
 } from "@/features/threads/composer/placeholders";
 import { composerInputMinHeight } from "@/features/threads/composer/composerTheme";
 import { threadSurfacePadding } from "./styles";
-
-const log = makeLogger("TurnInput");
 
 interface TurnInputProps {
   threadId?: string; // Existing thread
@@ -178,7 +175,6 @@ export function TurnInput({
 
     // Save content before clearing (it will be nulled after clear)
     const content = interjectionContent;
-    log.debug("loadInterjectionForEdit", { contentLength: content.length });
 
     // Clear from queue first (API call) - indicator disappears
     await clearInterjection(streamingTurnId);
@@ -191,7 +187,6 @@ export function TurnInput({
   // Clear queued interjection
   const handleClearInterjection = useCallback(async () => {
     if (streamingTurnId && interjectionContent) {
-      log.debug("handleClearInterjection", { streamingTurnId });
       await clearInterjection(streamingTurnId);
     }
   }, [streamingTurnId, interjectionContent, clearInterjection]);
@@ -214,10 +209,6 @@ export function TurnInput({
       if (isStreaming && streamingTurnId) {
         // Interjection flow - always 'append' since queue is cleared before editing
         // Note: interjections don't support references, just text
-        log.debug("handleSend:interjection", {
-          streamingTurnId,
-          contentLength: messageText.length,
-        });
         await submitInterjection(streamingTurnId, messageText, "append");
       } else if (threadId) {
         // Existing thread flow — pass ordered blocks preserving interleaving

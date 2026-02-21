@@ -21,7 +21,7 @@ export function handleTextMessageStart(
   ctx: SSEDispatchContext,
   actions: SSEStoreActions,
 ): void {
-  const { tracker, logger } = ctx;
+  const { tracker } = ctx;
 
   // Get next block index and register the message
   const blockIndex = tracker.nextBlockIndex();
@@ -29,11 +29,6 @@ export function handleTextMessageStart(
   tracker.registerMessage(data.messageId, blockIndex);
 
   actions.setStreamingBlockInfo(blockIndex, "text");
-
-  logger.debug("sse:TEXT_MESSAGE_START", {
-    messageId: data.messageId,
-    blockIndex,
-  });
 }
 
 /**
@@ -68,7 +63,7 @@ export function handleTextMessageEnd(
   ctx: SSEDispatchContext,
   actions: SSEStoreActions,
 ): void {
-  const { tracker, logger, buffer } = ctx;
+  const { tracker, buffer } = ctx;
 
   buffer.flush();
 
@@ -83,9 +78,4 @@ export function handleTextMessageEnd(
     tracker.setCurrentBlockType(null);
     actions.setStreamingBlockInfo(null, null);
   }
-
-  logger.debug("sse:TEXT_MESSAGE_END", {
-    messageId: data.messageId,
-    clearedCurrent: shouldClearCurrent,
-  });
 }

@@ -6,10 +6,12 @@ import {
   detectEditorType,
   type EditorType,
 } from "@/core/editor/types/editorRegistry";
+import { makeLogger } from "@/core/lib/logger";
 
 type AdapterBackedEditorType = keyof EditorContentMap;
 
 const DEFAULT_EDITOR_TYPE: AdapterBackedEditorType = "markdown";
+const log = makeLogger("document-content-driver");
 
 /**
  * Boundary for storage/editor conversion used by document hooks.
@@ -39,7 +41,7 @@ function resolveAdapterBackedEditorType(
     return editorType;
   }
 
-  console.warn(
+  log.warn(
     `[documentContentDriver] Unsupported editor type "${editorType}" for extension "${extension}". Falling back to "${DEFAULT_EDITOR_TYPE}".`,
   );
   return DEFAULT_EDITOR_TYPE;

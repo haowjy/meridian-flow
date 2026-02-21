@@ -425,7 +425,6 @@ export const useThreadStore = create<ThreadStore>()(
           );
         } catch (error) {
           if (error instanceof Error && error.name === "AbortError") {
-            log.debug("loadTurns:aborted", { threadId });
             return;
           }
           if (shouldClearActiveSelection("thread:getById", error)) {
@@ -647,7 +646,6 @@ export const useThreadStore = create<ThreadStore>()(
       },
 
       interruptStreamingTurn: async () => {
-        const log = makeLogger("thread-store");
         const state = get();
         const threadId = state.threadId;
 
@@ -664,7 +662,6 @@ export const useThreadStore = create<ThreadStore>()(
         }
 
         set({ error: null });
-        log.debug("interruptStreamingTurn:start", { turnId, threadId });
 
         try {
           // 1. Start waiting BEFORE interrupt request (prevents missing fast closes)
@@ -675,7 +672,6 @@ export const useThreadStore = create<ThreadStore>()(
 
           // 3. Wait for SSE to actually end (or timeout)
           await streamEndPromise;
-          log.debug("interruptStreamingTurn:streamEnded", { turnId });
 
           // 4. Clear stream entry + interjection state (SSE hook may have already done this)
           useStreamStore.getState().removeStream(turnId);
@@ -696,12 +692,10 @@ export const useThreadStore = create<ThreadStore>()(
       },
 
       waitForStreamEnd: (turnId: string, timeoutMs = 3000): Promise<void> => {
-        const log = makeLogger("thread-store");
         const existing = streamEndWaiters.get(turnId);
 
         if (existing) {
           // SOLID S: Single responsibility - just add to existing resolver set
-          log.debug("waitForStreamEnd:existingWaiter", { turnId });
           return new Promise((resolve) => {
             existing.resolvers.add(resolve);
           });
@@ -711,27 +705,21 @@ export const useThreadStore = create<ThreadStore>()(
         return new Promise((resolve) => {
           const resolvers = new Set<() => void>([resolve]);
           const timeoutId = setTimeout(() => {
-            log.debug("waitForStreamEnd:timeout", { turnId, timeoutMs });
             streamEndWaiters.delete(turnId);
             resolvers.forEach((r) => r()); // Resolve all waiting promises
           }, timeoutMs);
 
           streamEndWaiters.set(turnId, { resolvers, timeoutId });
-          log.debug("waitForStreamEnd:registered", { turnId, timeoutMs });
         });
       },
 
       notifyStreamEnded: (turnId: string) => {
-        const log = makeLogger("thread-store");
         const waiter = streamEndWaiters.get(turnId);
 
         if (waiter) {
-          log.debug("notifyStreamEnded:resolving", { turnId });
           clearTimeout(waiter.timeoutId);
           streamEndWaiters.delete(turnId); // Clean up BEFORE resolving
           waiter.resolvers.forEach((r) => r()); // Resolve all waiting promises
-        } else {
-          log.debug("notifyStreamEnded:noWaiter", { turnId });
         }
       },
 
@@ -847,11 +835,6 @@ export const useThreadStore = create<ThreadStore>()(
         mode: "append" | "replace" = "append",
       ) => {
         const log = makeLogger("thread-store");
-        log.debug("submitInterjection:start", {
-          turnId,
-          mode,
-          contentLength: content.length,
-        });
 
         try {
           const response = await api.turns.submitInterjection(
@@ -863,10 +846,6 @@ export const useThreadStore = create<ThreadStore>()(
           if (response.mode === "queued") {
             // Interjection was buffered - update local state
             set(() => ({ interjectionContent: response.content }));
-            log.debug("submitInterjection:queued", {
-              turnId,
-              length: response.length,
-            });
           } else if (response.mode === "created") {
             // Fallback path: turn wasn't streaming, new turns were created
             // Merge the new turns into state and update streaming
@@ -893,10 +872,6 @@ export const useThreadStore = create<ThreadStore>()(
                   .registerStream(assistantTurn.id, state.threadId, streamUrl);
               }
             }
-            log.debug("submitInterjection:created", {
-              userTurnId: userTurn?.id,
-              assistantTurnId: assistantTurn?.id,
-            });
           }
         } catch (error) {
           log.error("submitInterjection:error", error);
@@ -912,12 +887,10 @@ export const useThreadStore = create<ThreadStore>()(
 
       clearInterjection: async (turnId: string) => {
         const log = makeLogger("thread-store");
-        log.debug("clearInterjection:start", { turnId });
 
         try {
           await api.turns.clearInterjection(turnId);
           set(() => ({ interjectionContent: null }));
-          log.debug("clearInterjection:success", { turnId });
         } catch (error) {
           log.error("clearInterjection:error", error);
           // Don't throw - clearing is best-effort; user can retry
@@ -989,7 +962,6 @@ export const useThreadStore = create<ThreadStore>()(
         signal?: AbortSignal,
       ) => {
         const log = makeLogger("thread-store");
-        log.debug("openThread:start", { threadId, initialTurnId });
         // Set threadId immediately so remounts can detect in-flight loads and avoid
         // redundant re-fetches that cause "progressive reload" UI.
         set({
@@ -1008,21 +980,10 @@ export const useThreadStore = create<ThreadStore>()(
               limit: 100,
               signal,
             });
-          log.debug("openThread:response", {
-            count: turns.length,
-            hasMoreBefore,
-            hasMoreAfter,
-            first: turns[0]?.id,
-            last: turns[turns.length - 1]?.id,
-          });
           // Staleness guard: if the user switched threads while this fetch was
           // in-flight, the response belongs to the old thread. Discard it to
           // prevent overwriting the newer thread's state.
           if (get().threadId !== threadId) {
-            log.debug("openThread:stale", {
-              requestedThread: threadId,
-              activeThread: get().threadId,
-            });
             return;
           }
 
@@ -1042,11 +1003,6 @@ export const useThreadStore = create<ThreadStore>()(
             hasMoreAfter,
             isLoadingTurns: false,
           });
-          log.debug("openThread:set", {
-            threadId,
-            currentTurnId: nextCurrent,
-            total: turnIds.length,
-          });
         } catch (error) {
           if (error instanceof Error && error.name === "AbortError") {
             // Only clear loading state if this thread is still active.
@@ -1055,15 +1011,10 @@ export const useThreadStore = create<ThreadStore>()(
             if (get().threadId === threadId) {
               set({ isLoadingTurns: false });
             }
-            log.debug("openThread:aborted", { threadId });
             return;
           }
           // Staleness guard: don't overwrite error/loading state for a newer thread
           if (get().threadId !== threadId) {
-            log.debug("openThread:staleError", {
-              requestedThread: threadId,
-              activeThread: get().threadId,
-            });
             return;
           }
           log.error("openThread:error", error);
@@ -1085,10 +1036,6 @@ export const useThreadStore = create<ThreadStore>()(
         }
         const threadId = state.threadId;
         const log = makeLogger("thread-store");
-        log.debug("paginateBefore:start", {
-          threadId,
-          fromTurnId: top.id,
-        });
         set({ isLoadingTurns: true, error: null });
         try {
           const { turns, hasMoreBefore } = await api.turns.paginate(threadId, {
@@ -1099,18 +1046,8 @@ export const useThreadStore = create<ThreadStore>()(
           });
           // Staleness guard: discard if the user switched threads during the await
           if (get().threadId !== threadId) {
-            log.debug("paginateBefore:stale", {
-              requestedThread: threadId,
-              activeThread: get().threadId,
-            });
             return;
           }
-          log.debug("paginateBefore:response", {
-            loaded: turns.length,
-            hasMoreBefore,
-            first: turns[0]?.id,
-            last: turns[turns.length - 1]?.id,
-          });
           // Prepend older turns using functional set() to merge against
           // current state instead of the pre-await snapshot. This prevents
           // dropping concurrent streaming updates that arrived during the fetch.
@@ -1130,15 +1067,11 @@ export const useThreadStore = create<ThreadStore>()(
               isLoadingTurns: false,
             };
           });
-          log.debug("paginateBefore:set", {
-            total: get().turnIds.length,
-          });
         } catch (error) {
           if (error instanceof Error && error.name === "AbortError") {
             if (get().threadId === threadId) {
               set({ isLoadingTurns: false });
             }
-            log.debug("paginateBefore:aborted");
             return;
           }
           if (get().threadId !== threadId) return; // stale error, discard
@@ -1164,10 +1097,6 @@ export const useThreadStore = create<ThreadStore>()(
         }
         const threadId = state.threadId;
         const log = makeLogger("thread-store");
-        log.debug("paginateAfter:start", {
-          threadId,
-          fromTurnId: bottom.id,
-        });
         set({ isLoadingTurns: true, error: null });
         try {
           const { turns, hasMoreAfter } = await api.turns.paginate(threadId, {
@@ -1179,18 +1108,8 @@ export const useThreadStore = create<ThreadStore>()(
           });
           // Staleness guard: discard if the user switched threads during the await
           if (get().threadId !== threadId) {
-            log.debug("paginateAfter:stale", {
-              requestedThread: threadId,
-              activeThread: get().threadId,
-            });
             return;
           }
-          log.debug("paginateAfter:response", {
-            loaded: turns.length,
-            hasMoreAfter,
-            first: turns[0]?.id,
-            last: turns[turns.length - 1]?.id,
-          });
           // Append newer turns using functional set() to merge against
           // current state instead of the pre-await snapshot. This prevents
           // dropping concurrent streaming updates that arrived during the fetch.
@@ -1210,15 +1129,11 @@ export const useThreadStore = create<ThreadStore>()(
               isLoadingTurns: false,
             };
           });
-          log.debug("paginateAfter:set", {
-            total: get().turnIds.length,
-          });
         } catch (error) {
           if (error instanceof Error && error.name === "AbortError") {
             if (get().threadId === threadId) {
               set({ isLoadingTurns: false });
             }
-            log.debug("paginateAfter:aborted");
             return;
           }
           if (get().threadId !== threadId) return; // stale error, discard
@@ -1239,7 +1154,6 @@ export const useThreadStore = create<ThreadStore>()(
         signal?: AbortSignal,
       ) => {
         const log = makeLogger("thread-store");
-        log.debug("switchSibling:start", { threadId, targetTurnId });
 
         const state = get();
 
@@ -1279,22 +1193,11 @@ export const useThreadStore = create<ThreadStore>()(
               updateLastViewed: true, // Explicit bookmarking on sibling switch
               signal: controller.signal,
             });
-          log.debug("switchSibling:response", {
-            count: turns.length,
-            hasMoreBefore,
-            hasMoreAfter,
-            first: turns[0]?.id,
-            last: turns[turns.length - 1]?.id,
-          });
           const { turnIds, turnById } = normalizeTurnWindow(turns);
 
           // Staleness guard: if the user switched threads while this request
           // was in-flight, discard to prevent a thread-jump race.
           if (get().threadId !== threadId) {
-            log.debug("switchSibling:stale", {
-              requestedThread: threadId,
-              activeThread: get().threadId,
-            });
             // Clean up flags since we're discarding the response
             set({ isSwitchingSibling: false, navigationAbortController: null });
             return;
@@ -1316,15 +1219,9 @@ export const useThreadStore = create<ThreadStore>()(
               isSwitchingSibling: false,
               navigationAbortController: null, // Clear after success
             }));
-            log.debug("switchSibling:set", {
-              threadId,
-              currentTurnId: targetTurnId,
-              total: turnIds.length,
-            });
           }
         } catch (error) {
           if (error instanceof Error && error.name === "AbortError") {
-            log.debug("switchSibling:aborted");
             // Always clean up state flags on abort — previous code returned
             // without clearing isSwitchingSibling, leaving nav buttons disabled.
             set({ isSwitchingSibling: false, navigationAbortController: null });
