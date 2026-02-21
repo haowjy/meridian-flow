@@ -1,10 +1,26 @@
+const ALLOWED_UPLOAD_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".svg",
+  ".bmp",
+  ".heic",
+  ".heif",
+  ".avif",
+]);
+
 const state = {
   currentPath: "",
   selectedPath: "",
   directoryRequestId: 0,
   fileRequestId: 0,
+  clipboardRequestId: 0,
   directoryAbortController: null,
   fileAbortController: null,
+  clipboardAbortController: null,
+  pendingUploadFile: null,
 };
 
 const fileList = document.getElementById("file-list");
@@ -12,8 +28,12 @@ const viewer = document.getElementById("viewer");
 const viewerTitle = document.getElementById("viewer-title");
 const crumbs = document.getElementById("crumbs");
 const statusEl = document.getElementById("status");
+const clipboardStatusEl = document.getElementById("clipboard-status");
+const clipboardGrid = document.getElementById("clipboard-grid");
 const uploadInput = document.getElementById("upload-input");
-const mkdirInput = document.getElementById("mkdir-input");
+const uploadNameInput = document.getElementById("upload-name-input");
+const uploadButton = document.getElementById("upload-btn");
+const clipboardRefreshButton = document.getElementById("clipboard-refresh-btn");
 
 const markdown = window.markdownit({
   html: false,
@@ -30,6 +50,11 @@ window.mermaid.initialize({
 function setStatus(message, isError = false) {
   statusEl.textContent = message;
   statusEl.className = isError ? "error" : "muted";
+}
+
+function setClipboardStatus(message, isError = false) {
+  clipboardStatusEl.textContent = message;
+  clipboardStatusEl.className = isError ? "error" : "muted";
 }
 
 function escapeHtml(value) {
@@ -57,7 +82,7 @@ function isMarkdownPath(filePath) {
 }
 
 function isImagePath(filePath) {
-  return /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(filePath);
+  return /\.(png|jpe?g|gif|webp|svg|bmp|heic|heif|avif)$/i.test(filePath);
 }
 
 function isAbortError(error) {
@@ -73,6 +98,49 @@ function handleActionError(error) {
     return;
   }
   setStatus(toErrorMessage(error), true);
+}
+
+function handleUploadError(error) {
+  if (isAbortError(error)) {
+    return;
+  }
+  const message = toErrorMessage(error);
+  setClipboardStatus(message, true);
+  setStatus(message, true);
+}
+
+function normalizeSuggestedFilename(originalName) {
+  const trimmed = (originalName || "").trim();
+  const hasDot = trimmed.lastIndexOf(".") > 0;
+  const extension = hasDot ? trimmed.slice(trimmed.lastIndexOf(".")).toLowerCase() : "";
+  const safeExtension = ALLOWED_UPLOAD_EXTENSIONS.has(extension) ? extension : ".png";
+  const rawStem = hasDot ? trimmed.slice(0, trimmed.lastIndexOf(".")) : trimmed;
+  const safeStem = rawStem
+    .replace(/\s+/g, "-")
+    .replace(/[^A-Za-z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `${safeStem || "image"}${safeExtension}`;
+}
+
+function validateUploadFilename(fileName) {
+  if (!fileName) {
+    return "Filename is required.";
+  }
+  if (/\s/.test(fileName)) {
+    return "Filename cannot contain spaces.";
+  }
+  if (fileName === "." || fileName === ".." || fileName.startsWith(".")) {
+    return "Filename is invalid.";
+  }
+  if (!/^[A-Za-z0-9._-]+$/.test(fileName)) {
+    return "Use letters, numbers, dot, underscore, and dash only.";
+  }
+  const extension = fileName.slice(fileName.lastIndexOf(".")).toLowerCase();
+  if (!ALLOWED_UPLOAD_EXTENSIONS.has(extension)) {
+    return "Filename must include a supported image extension.";
+  }
+  return null;
 }
 
 async function readJsonResponse(response) {
@@ -112,9 +180,11 @@ async function loadDirectory(nextPath = "") {
     renderFileList(data.entries, data.parentPath);
     const skippedSymlinks = Number(data.skippedSymlinks || 0);
     const skippedHidden = Number(data.skippedHidden || 0);
+    const skippedIgnored = Number(data.skippedIgnored || 0);
     const skipDetails = [];
     if (skippedSymlinks > 0) skipDetails.push(`${skippedSymlinks} symlink(s)`);
     if (skippedHidden > 0) skipDetails.push(`${skippedHidden} hidden item(s)`);
+    if (skippedIgnored > 0) skipDetails.push(`${skippedIgnored} gitignored item(s)`);
     if (skipDetails.length > 0) {
       setStatus(`Loaded ${data.entries.length} entries. Skipped ${skipDetails.join(", ")}.`);
       return;
@@ -175,6 +245,69 @@ function renderFileList(entries, parentPath) {
       openFile(entry.path).catch(handleActionError);
     };
     fileList.appendChild(row);
+  }
+}
+
+function renderClipboardImages(imageEntries) {
+  clipboardGrid.innerHTML = "";
+  if (imageEntries.length === 0) {
+    clipboardGrid.innerHTML = '<p class="placeholder">No images in .clipboard yet.</p>';
+    return;
+  }
+
+  for (const entry of imageEntries) {
+    const container = document.createElement("div");
+    container.className = "clipboard-item";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.innerHTML = `<img alt="${escapeHtml(entry.name)}" src="/api/clipboard/file?name=${encodeURIComponent(entry.name)}" />`;
+    button.onclick = () => openClipboardImage(entry.name);
+
+    const fileName = document.createElement("div");
+    fileName.className = "filename";
+    fileName.textContent = entry.name;
+
+    container.appendChild(button);
+    container.appendChild(fileName);
+    clipboardGrid.appendChild(container);
+  }
+}
+
+function openClipboardImage(imageName) {
+  viewerTitle.textContent = `${".clipboard"}/${imageName}`;
+  viewer.innerHTML = `<img alt="${escapeHtml(imageName)}" src="/api/clipboard/file?name=${encodeURIComponent(imageName)}" style="max-width:100%;border-radius:10px;" />`;
+  setStatus(`Showing .clipboard image: ${imageName}`);
+}
+
+async function loadClipboardImages() {
+  const requestId = ++state.clipboardRequestId;
+  if (state.clipboardAbortController) {
+    state.clipboardAbortController.abort();
+  }
+  const controller = new AbortController();
+  state.clipboardAbortController = controller;
+
+  try {
+    setClipboardStatus("Loading .clipboard images...");
+    const response = await fetch("/api/clipboard/list", { signal: controller.signal });
+    const data = await readJsonResponse(response);
+    if (requestId !== state.clipboardRequestId) {
+      return;
+    }
+    if (!response.ok) {
+      throw new Error(data.error || "Unable to load .clipboard");
+    }
+
+    const imageEntries = (data.entries || []).filter((entry) =>
+      isImagePath(entry.path || entry.name),
+    );
+    renderClipboardImages(imageEntries);
+    setClipboardStatus(`.clipboard: ${imageEntries.length} image(s).`);
+  } catch (error) {
+    if (isAbortError(error)) {
+      return;
+    }
+    setClipboardStatus(toErrorMessage(error), true);
   }
 }
 
@@ -268,14 +401,36 @@ async function renderMarkdown(markdownContent, truncated, requestId) {
   }
 }
 
-async function uploadFiles(files) {
-  if (!files || files.length === 0) return;
-  setStatus(`Uploading ${files.length} image(s) to .clipboard...`);
-  const body = new FormData();
-  for (const file of files) {
-    body.append("files", file);
+function handleUploadSelection() {
+  const selectedFile = uploadInput.files?.[0];
+  state.pendingUploadFile = selectedFile ?? null;
+  if (!selectedFile) {
+    return;
   }
-  const response = await fetch("/api/upload", {
+
+  if (!uploadNameInput.value.trim()) {
+    uploadNameInput.value = normalizeSuggestedFilename(selectedFile.name);
+  }
+
+  setClipboardStatus(`Selected ${selectedFile.name}. Set filename, then tap Upload.`);
+}
+
+async function uploadPendingImage() {
+  if (!state.pendingUploadFile) {
+    throw new Error("Choose one image before uploading.");
+  }
+
+  const requestedName = uploadNameInput.value.trim();
+  const filenameError = validateUploadFilename(requestedName);
+  if (filenameError) {
+    throw new Error(filenameError);
+  }
+
+  setStatus(`Uploading ${requestedName} to .clipboard...`);
+  const body = new FormData();
+  body.append("file", state.pendingUploadFile);
+
+  const response = await fetch(`/api/upload?name=${encodeURIComponent(requestedName)}`, {
     method: "POST",
     body,
   });
@@ -283,44 +438,20 @@ async function uploadFiles(files) {
   if (!response.ok) {
     throw new Error(data.error || "Upload failed");
   }
-  setStatus(`Uploaded ${data.uploaded.length} image(s) to ${data.directory || ".clipboard"}.`);
-  await loadDirectory(state.currentPath);
-}
 
-async function createFolder() {
-  const folderName = mkdirInput.value.trim();
-  if (!folderName) {
-    return;
-  }
-  const pathValue = joinPath(state.currentPath, folderName);
-  setStatus(`Creating folder ${pathValue}...`);
-  const response = await fetch("/api/mkdir", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path: pathValue }),
-  });
-  const data = await readJsonResponse(response);
-  if (!response.ok) {
-    throw new Error(data.error || "Create folder failed");
-  }
-  mkdirInput.value = "";
-  setStatus(`Created folder ${data.path}.`);
+  setClipboardStatus(`Uploaded ${requestedName} to ${data.directory || ".clipboard"}.`);
+  state.pendingUploadFile = null;
+  uploadInput.value = "";
+  uploadNameInput.value = "";
+  await loadClipboardImages();
   await loadDirectory(state.currentPath);
 }
 
 document.getElementById("refresh-btn").onclick = () =>
   loadDirectory(state.currentPath).catch(handleActionError);
 
-document.getElementById("mkdir-btn").onclick = () => {
-  createFolder().catch(handleActionError);
-};
+uploadInput.addEventListener("change", handleUploadSelection);
+uploadButton.onclick = () => uploadPendingImage().catch(handleUploadError);
+clipboardRefreshButton.onclick = () => loadClipboardImages().catch(handleActionError);
 
-uploadInput.addEventListener("change", () => {
-  uploadFiles(uploadInput.files)
-    .catch(handleActionError)
-    .finally(() => {
-      uploadInput.value = "";
-    });
-});
-
-loadDirectory("").catch(handleActionError);
+Promise.all([loadDirectory(""), loadClipboardImages()]).catch(handleActionError);

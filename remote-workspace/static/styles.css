@@ -79,6 +79,37 @@ body {
   gap: 8px;
 }
 
+.clipboard-panel {
+  padding: 10px 12px;
+}
+
+.clipboard-panel summary {
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+}
+
+.clipboard-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.clipboard-panel summary::before {
+  content: "▾";
+  display: inline-block;
+  margin-right: 8px;
+  color: var(--muted);
+}
+
+.clipboard-panel:not([open]) summary::before {
+  content: "▸";
+}
+
+.clipboard-content {
+  margin-top: 10px;
+  display: grid;
+  gap: 10px;
+}
+
 button,
 input[type="text"] {
   min-height: 38px;
@@ -194,4 +225,47 @@ pre {
 
 #status {
   min-height: 1.2em;
+}
+
+#clipboard-status {
+  min-height: 1.2em;
+}
+
+.clipboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.clipboard-item {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f8fbff;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.clipboard-item button {
+  border: 0;
+  border-radius: 8px;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.clipboard-item img {
+  width: 100%;
+  max-height: 120px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #d9e3f3;
+  background: #eef4ff;
+}
+
+.clipboard-item .filename {
+  font-size: 0.8rem;
+  word-break: break-all;
+  color: var(--text);
 }
