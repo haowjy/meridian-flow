@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
-import type {
-  Proposal,
-  ProposalOperationsModel,
-} from "@meridian/cm6-collab";
+import type { Proposal, ProposalOperationsModel } from "@meridian/cm6-collab";
 import { ScrollArea } from "@/shared/components/ui/scroll-area";
-import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/shared/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/core/stores/useUIStore";
 import { AIProposalReviewDiff } from "./AIProposalReviewDiff";
@@ -17,7 +19,9 @@ interface AIProposalReviewPanelProps {
   onRejectProposal: (proposalId: string) => void;
 }
 
-export function sortPendingProposals(proposals: Iterable<Proposal>): Proposal[] {
+export function sortPendingProposals(
+  proposals: Iterable<Proposal>,
+): Proposal[] {
   return Array.from(proposals).sort((left, right) => {
     const byCreatedAt = left.createdAt.localeCompare(right.createdAt);
     if (byCreatedAt !== 0) {
@@ -69,12 +73,19 @@ export function AIProposalReviewPanel({
     return sortPendingProposals(proposals.values());
   }, [proposals]);
 
-  const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
+  const [selectedProposalId, setSelectedProposalId] = useState<string | null>(
+    null,
+  );
 
   // Pending proposal ID from thread navigation ("View in Editor" action).
   // Acts as an override: if the pending proposal exists in the current list, select it.
   // Cleared when the user manually clicks a different proposal.
   const pendingProposalId = useUIStore((s) => s.pendingProposalId);
+
+  const proposalReviewMode = useUIStore((s) => s.proposalReviewMode);
+  const toggleProposalReviewMode = useUIStore(
+    (s) => s.toggleProposalReviewMode,
+  );
 
   const resolvedSelectedProposalId = useMemo(() => {
     // If a pending proposal ID is set and matches a current proposal, prefer it
@@ -105,8 +116,22 @@ export function AIProposalReviewPanel({
 
   return (
     <Card className="mx-3 mt-2 overflow-hidden">
-      <CardHeader className="py-2">
-        <CardTitle className="text-sm">AI Proposals ({sortedProposals.length})</CardTitle>
+      <CardHeader className="flex flex-row items-center justify-between py-2">
+        <CardTitle className="text-sm">
+          AI Proposals ({sortedProposals.length})
+        </CardTitle>
+        <button
+          type="button"
+          onClick={toggleProposalReviewMode}
+          className="text-muted-foreground hover:text-foreground rounded p-1 text-xs transition-colors"
+          title={
+            proposalReviewMode === "unified"
+              ? "Switch to side-by-side view"
+              : "Switch to inline view"
+          }
+        >
+          {proposalReviewMode === "unified" ? "⇔ Split" : "≡ Inline"}
+        </button>
       </CardHeader>
       <CardContent className="grid gap-0 p-0 lg:grid-cols-[18rem_minmax(0,1fr)]">
         <ScrollArea className="border-r">
@@ -140,7 +165,9 @@ export function AIProposalReviewPanel({
                       </span>
                     )}
                   </p>
-                  <p className="text-muted-foreground truncate text-[11px]">{proposal.createdAt}</p>
+                  <p className="text-muted-foreground truncate text-[11px]">
+                    {proposal.createdAt}
+                  </p>
                 </button>
               );
             })}
@@ -151,21 +178,36 @@ export function AIProposalReviewPanel({
           <div className="min-h-0 flex-1">
             <AIProposalReviewDiff
               operationsModel={selectedOperationsModel}
+              mode={proposalReviewMode}
+              // Slice 3: chunk-level partial apply is deferred to Slice 4.
+              // For now all chunk actions map to proposal-level accept/reject — chunkId is ignored.
               onAcceptChunk={() => {
-                invokeSelectedProposalAction(resolvedSelectedProposalId, onAcceptProposal);
+                invokeSelectedProposalAction(
+                  resolvedSelectedProposalId,
+                  onAcceptProposal,
+                );
               }}
               onRejectChunk={() => {
-                invokeSelectedProposalAction(resolvedSelectedProposalId, onRejectProposal);
+                invokeSelectedProposalAction(
+                  resolvedSelectedProposalId,
+                  onRejectProposal,
+                );
               }}
             />
           </div>
           <AIProposalReviewActions
             disabled={resolvedSelectedProposalId == null}
             onAccept={() => {
-              invokeSelectedProposalAction(resolvedSelectedProposalId, onAcceptProposal);
+              invokeSelectedProposalAction(
+                resolvedSelectedProposalId,
+                onAcceptProposal,
+              );
             }}
             onReject={() => {
-              invokeSelectedProposalAction(resolvedSelectedProposalId, onRejectProposal);
+              invokeSelectedProposalAction(
+                resolvedSelectedProposalId,
+                onRejectProposal,
+              );
             }}
           />
         </div>

@@ -10,6 +10,9 @@ export {
   mountProposalReviewMergeView,
   type ProposalReviewMergeViewParams,
   type ProposalReviewMergeViewHandle,
+  mountSplitReviewView,
+  type SplitReviewParams,
+  type SplitReviewHandle,
 } from "./merge";
 
 export {
@@ -17,6 +20,8 @@ export {
   type UnifiedReviewParams,
   type UnifiedReviewHandle,
 } from "./unified-review";
+
+export { chunkNavigationKeymap, type ChunkNavigationOptions } from "./chunk-navigation";
 
 export type {
   ProposalReviewUnavailableReason,
