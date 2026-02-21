@@ -134,7 +134,7 @@ Before submitting code, verify:
 
 Three tiers: **Features** (`_docs/features/`, start here) > **High-Level** (`_docs/high-level/`) > **Technical** (`_docs/technical/`). Minimum content by default — diagrams > words, reference don't duplicate. See `_docs/conventions/documentation-writing-rules.md` for full rules.
 
-**Mermaid diagrams**: Load the `mermaid` skill before writing/editing diagrams. Always validate with `./scripts/check-mermaid.sh <file>` after changes.
+**Mermaid diagrams**: Load the `mermaid` skill before writing/editing diagrams. Always validate with `./scripts/check-mermaid.sh <file>` after changes. **Design docs and plans MUST use Mermaid diagrams** for data flows, architecture, and state transitions — diagrams > ASCII art > prose.
 
 ### Feature Documentation Sync Rule
 
