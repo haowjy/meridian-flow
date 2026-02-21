@@ -13,13 +13,12 @@
  * Yjs owns persistence and this hook is disabled via `enabled=false`.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useEditorStore } from "@/core/stores/useEditorStore";
 import { documentSyncService } from "@/core/services/documentSyncService";
-import { getAdapter } from "@/core/editor/adapters";
-import { detectEditorType } from "@/core/editor/types/editorRegistry";
 import type { DocumentSyncContext } from "./useDocumentContent";
 import type { BaseEditorRef } from "@/core/editor/types/editorRegistry";
+import { createTextDocumentContentDriver } from "./documentContentDriver";
 
 // =============================================================================
 // TYPES
@@ -34,9 +33,8 @@ interface HydrationInput {
 // =============================================================================
 
 /**
- * Document sync hook - Adapter-based multi-editor support.
+ * Document sync hook for text documents.
  *
- * @template TEditor - Editor content type (inferred from extension)
  * @param documentId - Document ID to sync
  * @param extension - File extension (used to determine adapter)
  * @param syncContext - Sync context from useDocumentContent
@@ -46,20 +44,20 @@ interface HydrationInput {
  * @param hydrateDocument - Hydration function for corruption repair
  * @param enabled - Whether sync is active (false when collab owns persistence)
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function useDocumentSync<TEditor = any>(
+export function useDocumentSync(
   documentId: string,
   extension: string,
-  syncContext: DocumentSyncContext<TEditor>,
-  localDocument: TEditor,
+  syncContext: DocumentSyncContext,
+  localDocument: string,
   hasUserEdit: boolean,
-  editorRef: React.MutableRefObject<BaseEditorRef<TEditor> | null>,
+  editorRef: React.MutableRefObject<BaseEditorRef<string> | null>,
   hydrateDocument: (doc: HydrationInput) => void,
   enabled = true,
 ): void {
-  // Detect editor type and get adapter
-  const editorType = detectEditorType(extension);
-  const adapter = getAdapter(editorType);
+  const contentDriver = useMemo(
+    () => createTextDocumentContentDriver(extension),
+    [extension],
+  );
   const {
     pendingServerSnapshot,
     setPendingServerSnapshot,
@@ -108,9 +106,7 @@ export function useDocumentSync<TEditor = any>(
       let storageContent: string;
 
       try {
-        // Type assertion safe: all current text-based adapters expect string
-        const storageData = adapter.toStorage(localDoc as string);
-        storageContent = storageData.content as string;
+        storageContent = contentDriver.toStorage(localDoc);
       } catch (err) {
         // Log error for debugging - this indicates a bug in our transaction logic
         console.error(
@@ -164,7 +160,7 @@ export function useDocumentSync<TEditor = any>(
     hydrateDocument,
     resetEditVersion,
     editVersionRef,
-    adapter,
+    contentDriver,
     enabled,
   ]);
 
@@ -189,23 +185,15 @@ export function useDocumentSync<TEditor = any>(
 
         // Content-only save (no AI suggestions in non-collab path)
         try {
-          const storageData = adapter.toStorage(editorContent as string);
-          void documentSyncService.save(
-            docId,
-            storageData.content as string,
-            doc ?? undefined,
-          );
+          const storageContent = contentDriver.toStorage(editorContent);
+          void documentSyncService.save(docId, storageContent, doc ?? undefined);
         } catch {
           // If adapter fails, save raw content as fallback
-          void documentSyncService.save(
-            docId,
-            editorContent as string,
-            doc ?? undefined,
-          );
+          void documentSyncService.save(docId, editorContent, doc ?? undefined);
         }
       }
     };
     /* eslint-enable react-hooks/exhaustive-deps */
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refs are stable, documentId/adapter trigger re-subscription
-  }, [documentId, adapter, enabled]);
+  }, [contentDriver, documentId, enabled]);
 }

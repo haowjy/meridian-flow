@@ -10,13 +10,12 @@
  * and REST hydration is deferred to Yjs.
  */
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useEditorStore } from "@/core/stores/useEditorStore";
 import { useLatestRef } from "@/core/hooks";
-import { getAdapter } from "@/core/editor/adapters";
-import { detectEditorType } from "@/core/editor/types/editorRegistry";
 import { isCollabEnabled } from "../lib/collabFeatureFlag";
 import type { BaseEditorRef } from "@/core/editor/types/editorRegistry";
+import { createTextDocumentContentDriver } from "./documentContentDriver";
 
 // =============================================================================
 // TYPES
@@ -34,10 +33,8 @@ interface PendingSnapshot {
  * Context passed to useDocumentSync for composition.
  * Contains refs and state needed for save/flush logic.
  *
- * @template TEditor - Editor content type (generic to support different editor formats)
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export interface DocumentSyncContext<TEditor = any> {
+export interface DocumentSyncContext {
   pendingServerSnapshot: PendingSnapshot | null;
   setPendingServerSnapshot: (snapshot: PendingSnapshot | null) => void;
   /** Ref to current editVersion (for capturing at save-initiation time) */
@@ -45,7 +42,7 @@ export interface DocumentSyncContext<TEditor = any> {
   /** Conditionally reset editVersion to 0 only if no new edits arrived since save started */
   resetEditVersion: (savedAtVersion: number) => void;
   // Refs for cleanup effects (stale closure prevention)
-  localDocumentRef: React.MutableRefObject<TEditor>;
+  localDocumentRef: React.MutableRefObject<string>;
   hasUserEditRef: React.MutableRefObject<boolean>;
   initializedRef: React.MutableRefObject<boolean>;
   activeDocumentRef: React.MutableRefObject<
@@ -56,12 +53,10 @@ export interface DocumentSyncContext<TEditor = any> {
 /**
  * Result of useDocumentContent hook.
  *
- * @template TEditor - Editor content type (generic to support different editor formats)
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export interface UseDocumentContentResult<TEditor = any> {
+export interface UseDocumentContentResult {
   // Content state
-  localDocument: TEditor;
+  localDocument: string;
   isInitialized: boolean;
   isEditable: boolean;
 
@@ -69,12 +64,12 @@ export interface UseDocumentContentResult<TEditor = any> {
   hasUserEdit: boolean;
 
   // Editor lifecycle
-  handleEditorReady: (ref: BaseEditorRef<TEditor>) => void;
-  handleContentChange: (content: TEditor) => void;
+  handleEditorReady: (ref: BaseEditorRef<string>) => void;
+  handleContentChange: (content: string) => void;
   hydrateDocument: (doc: HydrationInput) => void;
 
   // For composition (sync hook needs these)
-  syncContext: DocumentSyncContext<TEditor>;
+  syncContext: DocumentSyncContext;
 }
 
 // =============================================================================
@@ -82,28 +77,26 @@ export interface UseDocumentContentResult<TEditor = any> {
 // =============================================================================
 
 /**
- * Document content hook - Adapter-based multi-editor support.
+ * Document content hook for text documents.
  *
  * Derives collab state internally from `extension` — no options needed.
  * When collab is enabled, AI version is ignored (Yjs owns the doc).
  *
- * @template TEditor - Editor content type (inferred from extension)
  * @param documentId - Document ID to load
  * @param extension - File extension (used to determine adapter)
  * @param editorRef - Editor reference for programmatic access
  * @returns Document content state and sync context
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function useDocumentContent<TEditor = any>(
+export function useDocumentContent(
   documentId: string,
   extension: string,
-  editorRef: React.MutableRefObject<BaseEditorRef<TEditor> | null>,
-): UseDocumentContentResult<TEditor> {
+  editorRef: React.MutableRefObject<BaseEditorRef<string> | null>,
+): UseDocumentContentResult {
   const collabEnabled = isCollabEnabled(extension);
-
-  // Detect editor type and get adapter
-  const editorType = detectEditorType(extension);
-  const adapter = getAdapter(editorType);
+  const contentDriver = useMemo(
+    () => createTextDocumentContentDriver(extension),
+    [extension],
+  );
   // ---------------------------------------------------------------------------
   // STORE STATE
   // ---------------------------------------------------------------------------
@@ -116,14 +109,9 @@ export function useDocumentContent<TEditor = any>(
   // LOCAL STATE
   // ---------------------------------------------------------------------------
 
-  // Single document (generic type based on adapter)
-  // For string-based editors (markdown, latex, plaintext), default to empty string
-  // For object-based editors, default to empty object
-  const [localDocument, setLocalDocument] = useState<TEditor>(() => {
-    return (
-      adapter.capabilities.contentFormat === "string" ? "" : {}
-    ) as TEditor;
-  });
+  const [localDocument, setLocalDocument] = useState<string>(
+    contentDriver.emptyContent,
+  );
   const [editVersion, setEditVersion] = useState(0);
   const hasUserEdit = editVersion > 0; // Derived: any edit makes this true
   const [isInitialized, setIsInitialized] = useState(false);
@@ -180,8 +168,7 @@ export function useDocumentContent<TEditor = any>(
    */
   const hydrateDocument = useCallback(
     (doc: HydrationInput) => {
-      // Use adapter to transform storage -> editor format
-      const editorContent = adapter.toEditor(doc.content) as TEditor;
+      const editorContent = contentDriver.toEditor(doc.content);
 
       setLocalDocument(editorContent);
       setEditVersion(0);
@@ -193,12 +180,12 @@ export function useDocumentContent<TEditor = any>(
         });
       }
     },
-    [adapter, editorRef],
+    [contentDriver, editorRef],
   );
 
   // Handle content changes from the editor
   const handleContentChange = useCallback(
-    (content: TEditor) => {
+    (content: string) => {
       // Ignore changes before initialization
       if (!initializedRef.current) {
         return;
@@ -212,7 +199,7 @@ export function useDocumentContent<TEditor = any>(
 
   // Handle editor ready
   const handleEditorReady = useCallback(
-    (ref: BaseEditorRef<TEditor>) => {
+    (ref: BaseEditorRef<string>) => {
       editorRef.current = ref;
       setIsEditorReady(true);
     },
@@ -311,7 +298,7 @@ export function useDocumentContent<TEditor = any>(
     // If editor just became ready but content was already loaded,
     // ensure editor has the correct content
     const currentEditorContent = editorRef.current?.getContent();
-    if (currentEditorContent !== localDocument && localDocument !== undefined) {
+    if (currentEditorContent !== localDocument) {
       editorRef.current?.setContent(localDocument, {
         addToHistory: false,
         emitChange: false,
@@ -331,7 +318,7 @@ export function useDocumentContent<TEditor = any>(
   // SYNC CONTEXT (for composition with useDocumentSync)
   // ---------------------------------------------------------------------------
 
-  const syncContext: DocumentSyncContext<TEditor> = {
+  const syncContext: DocumentSyncContext = {
     pendingServerSnapshot,
     setPendingServerSnapshot,
     editVersionRef,

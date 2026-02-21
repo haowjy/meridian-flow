@@ -11,7 +11,10 @@
 
 import { StateEffect } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import type { HighlighterGeneric } from "shiki";
+import type { Highlighter } from "shiki";
+
+type ShikiLoadLanguageArg = Parameters<Highlighter["loadLanguage"]>[0];
+type ShikiCodeLang = Parameters<Highlighter["codeToTokens"]>[1]["lang"];
 
 // ============================================================================
 // PUBLIC TYPES
@@ -56,8 +59,7 @@ function notifyViews(): void {
 // HIGHLIGHTER SINGLETON
 // ============================================================================
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let highlighter: HighlighterGeneric<any, any> | null = null;
+let highlighter: Highlighter | null = null;
 let loading = false;
 let ready = false;
 
@@ -93,7 +95,7 @@ async function bootstrap(): Promise<void> {
   try {
     const { createHighlighter } = await import("shiki");
     highlighter = await createHighlighter({
-      themes: ["github-light", "github-dark"],
+      themes: ["github-light", "github-dark"] as const,
       // Start with no languages — load on demand
       langs: [],
     });
@@ -116,9 +118,7 @@ async function ensureLang(lang: string): Promise<boolean> {
 
   pendingLangs.add(lang);
   try {
-    await highlighter.loadLanguage(
-      lang as Parameters<typeof highlighter.loadLanguage>[0],
-    );
+    await highlighter.loadLanguage(lang as ShikiLoadLanguageArg);
     loadedLangs.add(lang);
     pendingLangs.delete(lang);
     // Notify views so they rebuild with the newly available language
@@ -173,7 +173,7 @@ export function tokenizeCode(
 
   try {
     const result = highlighter.codeToTokens(code, {
-      lang,
+      lang: lang as ShikiCodeLang,
       themes: {
         light: "github-light",
         dark: "github-dark",
