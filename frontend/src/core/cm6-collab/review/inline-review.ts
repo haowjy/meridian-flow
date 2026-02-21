@@ -19,12 +19,10 @@ import {
   type Extension,
 } from "@codemirror/state";
 import {
-  ViewPlugin,
   Decoration,
   WidgetType,
   type DecorationSet,
   EditorView,
-  type ViewUpdate,
   keymap,
 } from "@codemirror/view";
 import { RangeSetBuilder } from "@codemirror/state";
@@ -82,9 +80,18 @@ export const inlineReviewField = StateField.define<InlineReviewState>({
   update(value, tr) {
     for (const effect of tr.effects) {
       if (effect.is(setReviewChunks)) {
+        // Carry over existing resolutions for chunks that still exist.
+        // This prevents the re-sync race (Bug 2): accepting a chunk changes
+        // the Yjs doc → reviewRevision++ → setReviewChunks fires, and we
+        // must not wipe the just-recorded resolution.
+        const newIds = new Set(effect.value.map((c) => c.id));
+        const carried = new Map<string, "accepted" | "rejected">();
+        for (const [id, status] of value.resolutions) {
+          if (newIds.has(id)) carried.set(id, status);
+        }
         return {
           chunks: effect.value,
-          resolutions: new Map(),
+          resolutions: carried,
           activeChunkIndex: effect.value.length > 0 ? 0 : -1,
         };
       }
@@ -201,141 +208,163 @@ class InsertedTextWidget extends WidgetType {
 }
 
 // ============================================================================
-// VIEW PLUGIN: Build decorations from state
+// DECORATION STATE FIELD
 // ============================================================================
+// Block widgets (block: true) MUST be provided via a StateField, not a
+// ViewPlugin — CM6 forbids block-level decorations from ViewPlugins.
+// This follows the same pattern as inlineElementsField in inlineElements.ts.
 
-function makeInlineReviewPlugin(callbacks: InlineReviewCallbacks) {
-  return ViewPlugin.fromClass(
-    class {
-      decorations: DecorationSet;
+/**
+ * Build decorations from the current inline review state.
+ * Pure function — no side effects, no view dependency.
+ */
+function buildInlineReviewDecorations(
+  state: EditorState,
+  reviewState: InlineReviewState,
+  callbacks: InlineReviewCallbacks,
+): DecorationSet {
+  if (reviewState.chunks.length === 0) {
+    return Decoration.none;
+  }
 
-      constructor(view: EditorView) {
-        this.decorations = this.buildDecorations(view);
-      }
+  const builder = new RangeSetBuilder<Decoration>();
 
-      update(update: ViewUpdate) {
-        const oldState = update.startState.field(inlineReviewField);
-        const newState = update.state.field(inlineReviewField);
-        if (oldState !== newState || update.docChanged) {
-          this.decorations = this.buildDecorations(update.view);
+  // RangeSetBuilder requires ranges sorted by (from, startSide).
+  // Track startSide explicitly so same-position decorations are ordered safely.
+  const decos: {
+    from: number;
+    to: number;
+    startSide: number;
+    deco: Decoration;
+  }[] = [];
+  const lineStartSide = Decoration.line({ class: "" }).startSide;
 
-          // Scroll to active chunk when activeChunkIndex changes
-          if (
-            oldState.activeChunkIndex !== newState.activeChunkIndex &&
-            newState.activeChunkIndex >= 0 &&
-            newState.activeChunkIndex < newState.chunks.length
-          ) {
-            const chunk = newState.chunks[newState.activeChunkIndex]!;
-            // Defer scroll to after the current transaction is applied
-            requestAnimationFrame(() => {
-              scrollToChunk(update.view, chunk);
-            });
-          }
-        }
-      }
+  for (let i = 0; i < reviewState.chunks.length; i++) {
+    const chunk = reviewState.chunks[i]!;
+    const isActive = i === reviewState.activeChunkIndex;
 
-      buildDecorations(view: EditorView): DecorationSet {
-        const state = view.state.field(inlineReviewField);
-        if (state.chunks.length === 0) {
-          return Decoration.none;
-        }
+    // Skip resolved chunks — they disappear immediately
+    if (reviewState.resolutions.has(chunk.id)) {
+      continue;
+    }
 
-        const builder = new RangeSetBuilder<Decoration>();
+    const doc = state.doc;
+    const docLength = doc.length;
 
-        // RangeSetBuilder requires ranges sorted by (from, startSide).
-        // Track startSide explicitly so same-position decorations are ordered safely.
-        const decos: {
-          from: number;
-          to: number;
-          startSide: number;
-          deco: Decoration;
-        }[] = [];
-        const lineStartSide = Decoration.line({ class: "" }).startSide;
+    // Clamp positions to document bounds
+    const chunkStart = Math.min(chunk.baseStart, docLength);
+    const chunkEnd = Math.min(chunk.baseEnd, docLength);
 
-        for (let i = 0; i < state.chunks.length; i++) {
-          const chunk = state.chunks[i]!;
-          const isActive = i === state.activeChunkIndex;
+    // Action widget at the start of the chunk
+    decos.push({
+      from: chunkStart,
+      to: chunkStart,
+      startSide: -1,
+      deco: Decoration.widget({
+        widget: new ChunkActionWidget(chunk, callbacks),
+        side: -1, // before the content
+      }),
+    });
 
-          // Skip resolved chunks — they disappear immediately
-          if (state.resolutions.has(chunk.id)) {
-            continue;
-          }
+    // Deleted text decorations (red background + strikethrough on each line)
+    if (chunk.deletedText) {
+      const startLine = doc.lineAt(chunkStart);
+      const endLine = doc.lineAt(Math.max(chunkStart, chunkEnd - 1));
 
-          const doc = view.state.doc;
-          const docLength = doc.length;
+      for (let line = startLine.number; line <= endLine.number; line++) {
+        const lineObj = doc.line(line);
+        const cls = isActive
+          ? "cm-review-deleted-line cm-review-active-chunk"
+          : "cm-review-deleted-line";
 
-          // Clamp positions to document bounds
-          const chunkStart = Math.min(chunk.baseStart, docLength);
-          const chunkEnd = Math.min(chunk.baseEnd, docLength);
-
-          // Action widget at the start of the chunk
-          decos.push({
-            from: chunkStart,
-            to: chunkStart,
-            startSide: -1,
-            deco: Decoration.widget({
-              widget: new ChunkActionWidget(chunk, callbacks),
-              side: -1, // before the content
-            }),
-          });
-
-          // Deleted text decorations (red background + strikethrough on each line)
-          if (chunk.deletedText) {
-            const startLine = doc.lineAt(chunkStart);
-            const endLine = doc.lineAt(Math.max(chunkStart, chunkEnd - 1));
-
-            for (let line = startLine.number; line <= endLine.number; line++) {
-              const lineObj = doc.line(line);
-              const cls = isActive
-                ? "cm-review-deleted-line cm-review-active-chunk"
-                : "cm-review-deleted-line";
-
-              decos.push({
-                from: lineObj.from,
-                to: lineObj.from,
-                startSide: lineStartSide,
-                deco: Decoration.line({ class: cls }),
-              });
-            }
-          }
-
-          // Inserted text as a block widget below the deletion point
-          if (chunk.insertedText) {
-            // For pure inserts (baseStart === baseEnd), show at baseStart.
-            // For replaces, show after the deleted region.
-            const insertPos = chunkEnd;
-
-            decos.push({
-              from: insertPos,
-              to: insertPos,
-              startSide: 1,
-              deco: Decoration.widget({
-                widget: new InsertedTextWidget(chunk.insertedText, isActive),
-                block: true,
-                side: 1, // after the line content
-              }),
-            });
-          }
-        }
-
-        // Sort by (from, startSide) to satisfy RangeSetBuilder ordering constraints.
-        decos.sort((a, b) => {
-          if (a.from !== b.from) return a.from - b.from;
-          if (a.startSide !== b.startSide) return a.startSide - b.startSide;
-          return a.to - b.to;
+        decos.push({
+          from: lineObj.from,
+          to: lineObj.from,
+          startSide: lineStartSide,
+          deco: Decoration.line({ class: cls }),
         });
-
-        for (const { from, to, deco } of decos) {
-          builder.add(from, to, deco);
-        }
-
-        return builder.finish();
       }
+    }
+
+    // Inserted text as a block widget below the deletion point
+    if (chunk.insertedText) {
+      // For pure inserts (baseStart === baseEnd), show at baseStart.
+      // For replaces, show after the deleted region.
+      const insertPos = chunkEnd;
+
+      decos.push({
+        from: insertPos,
+        to: insertPos,
+        startSide: 1,
+        deco: Decoration.widget({
+          widget: new InsertedTextWidget(chunk.insertedText, isActive),
+          block: true,
+          side: 1, // after the line content
+        }),
+      });
+    }
+  }
+
+  // Sort by (from, startSide) to satisfy RangeSetBuilder ordering constraints.
+  decos.sort((a, b) => {
+    if (a.from !== b.from) return a.from - b.from;
+    if (a.startSide !== b.startSide) return a.startSide - b.startSide;
+    return a.to - b.to;
+  });
+
+  for (const { from, to, deco } of decos) {
+    builder.add(from, to, deco);
+  }
+
+  return builder.finish();
+}
+
+/**
+ * Create the decoration StateField. Needs callbacks in closure so the
+ * ChunkActionWidget buttons can fire accept/reject handlers.
+ */
+function makeInlineReviewDecorationField(callbacks: InlineReviewCallbacks) {
+  return StateField.define<DecorationSet>({
+    create(state) {
+      const reviewState = state.field(inlineReviewField);
+      return buildInlineReviewDecorations(state, reviewState, callbacks);
     },
-    {
-      decorations: (v) => v.decorations,
+
+    update(decos, tr) {
+      const oldReview = tr.startState.field(inlineReviewField);
+      const newReview = tr.state.field(inlineReviewField);
+      if (oldReview !== newReview || tr.docChanged) {
+        return buildInlineReviewDecorations(tr.state, newReview, callbacks);
+      }
+      return decos;
     },
-  );
+
+    provide: (f) => EditorView.decorations.from(f),
+  });
+}
+
+// ============================================================================
+// SCROLL LISTENER: Scroll to active chunk on navigation
+// ============================================================================
+// Replaces the ViewPlugin's scroll-on-active-chunk-change behavior.
+// EditorView.updateListener is appropriate for side effects like scrolling.
+
+function makeScrollOnActiveChunkListener() {
+  return EditorView.updateListener.of((update) => {
+    const oldState = update.startState.field(inlineReviewField);
+    const newState = update.state.field(inlineReviewField);
+    if (
+      oldState.activeChunkIndex !== newState.activeChunkIndex &&
+      newState.activeChunkIndex >= 0 &&
+      newState.activeChunkIndex < newState.chunks.length
+    ) {
+      const chunk = newState.chunks[newState.activeChunkIndex]!;
+      // Defer scroll to after the current transaction is applied
+      requestAnimationFrame(() => {
+        scrollToChunk(update.view, chunk);
+      });
+    }
+  });
 }
 
 // ============================================================================
@@ -511,7 +540,8 @@ const inlineReviewTheme = EditorView.baseTheme({
 export function inlineReviewExtension(callbacks: InlineReviewCallbacks): Extension[] {
   return [
     inlineReviewField,
-    makeInlineReviewPlugin(callbacks),
+    makeInlineReviewDecorationField(callbacks),
+    makeScrollOnActiveChunkListener(),
     makeInlineReviewKeymap(callbacks),
     inlineReviewTheme,
   ];

@@ -198,10 +198,13 @@ export function useDocumentCollab({
     // Intentional: the review runtime is created alongside the Yjs runtime
     // and must be available for the reviewModels memo on the first render.
     setReviewRuntime(proposalReviewRuntime);
-    const handleDocUpdate = () => {
+    // Use ytext.observe instead of ydoc.on("update") — review derivation
+    // only depends on text content, so we avoid spurious recomputes from
+    // unrelated Y.Doc changes (e.g. shared-type metadata, map updates).
+    const handleTextChange = () => {
       setReviewRevision((current) => current + 1);
     };
-    runtime.ydoc.on("update", handleDocUpdate);
+    runtime.ytext.observe(handleTextChange);
 
     setExtensions(runtime.extensions);
 
@@ -363,7 +366,7 @@ export function useDocumentCollab({
       void persistenceRef.current?.destroy();
       persistenceRef.current = null;
 
-      runtime!.ydoc.off("update", handleDocUpdate);
+      runtime!.ytext.unobserve(handleTextChange);
       setReviewRuntime(null);
       runtime!.destroy();
       runtimeRef.current = null;

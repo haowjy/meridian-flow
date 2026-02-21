@@ -109,7 +109,61 @@ describe("inline review state field", () => {
       expect(getReviewState(state).activeChunkIndex).toBe(-1);
     });
 
-    it("resets resolutions when new chunks are loaded", () => {
+    it("preserves resolutions for chunks that still exist after re-sync", () => {
+      const chunks = makeChunks(3);
+      let state = createState();
+      state = applyEffect(state, setReviewChunks.of(chunks));
+
+      // Resolve chunk-0 and chunk-2
+      state = applyEffect(
+        state,
+        resolveChunk.of({ chunkId: "chunk-0", status: "accepted" }),
+      );
+      state = applyEffect(
+        state,
+        resolveChunk.of({ chunkId: "chunk-2", status: "rejected" }),
+      );
+      expect(getReviewState(state).resolutions.size).toBe(2);
+
+      // Re-sync with same chunks — resolutions should carry over
+      state = applyEffect(state, setReviewChunks.of(makeChunks(3)));
+      const review = getReviewState(state);
+      expect(review.resolutions.size).toBe(2);
+      expect(review.resolutions.get("chunk-0")).toBe("accepted");
+      expect(review.resolutions.get("chunk-2")).toBe("rejected");
+    });
+
+    it("drops resolutions for chunks that no longer exist", () => {
+      const chunks = makeChunks(3);
+      let state = createState();
+      state = applyEffect(state, setReviewChunks.of(chunks));
+
+      // Resolve all three
+      state = applyEffect(
+        state,
+        resolveChunk.of({ chunkId: "chunk-0", status: "accepted" }),
+      );
+      state = applyEffect(
+        state,
+        resolveChunk.of({ chunkId: "chunk-1", status: "rejected" }),
+      );
+      state = applyEffect(
+        state,
+        resolveChunk.of({ chunkId: "chunk-2", status: "accepted" }),
+      );
+      expect(getReviewState(state).resolutions.size).toBe(3);
+
+      // Re-sync with only 2 chunks (chunk-0 and chunk-1, chunk-2 gone)
+      const newChunks = makeChunks(2); // chunk-0, chunk-1
+      state = applyEffect(state, setReviewChunks.of(newChunks));
+      const review = getReviewState(state);
+      expect(review.resolutions.size).toBe(2);
+      expect(review.resolutions.has("chunk-0")).toBe(true);
+      expect(review.resolutions.has("chunk-1")).toBe(true);
+      expect(review.resolutions.has("chunk-2")).toBe(false);
+    });
+
+    it("resets all resolutions when entirely new chunks are loaded", () => {
       const chunks = makeChunks(2);
       let state = createState();
       state = applyEffect(state, setReviewChunks.of(chunks));
@@ -119,8 +173,12 @@ describe("inline review state field", () => {
       );
       expect(getReviewState(state).resolutions.size).toBe(1);
 
-      // Load new chunks — resolutions should reset
-      state = applyEffect(state, setReviewChunks.of(makeChunks(3)));
+      // Load entirely different chunks — no IDs match
+      const differentChunks = [
+        makeChunk({ id: "new-0", baseStart: 50, baseEnd: 55 }),
+        makeChunk({ id: "new-1", baseStart: 60, baseEnd: 65 }),
+      ];
+      state = applyEffect(state, setReviewChunks.of(differentChunks));
       expect(getReviewState(state).resolutions.size).toBe(0);
     });
 
