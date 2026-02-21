@@ -1,8 +1,9 @@
-import { EditorState } from "@codemirror/state";
+import { type Extension, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { unifiedMergeView } from "@codemirror/merge";
 import type { ReviewChunk } from "./types";
 import { editOpsToMergeChanges } from "./ops-to-changes";
+import { chunkNavigationKeymap } from "./chunk-navigation";
 
 export interface UnifiedReviewParams {
   parent: Element;
@@ -57,11 +58,11 @@ const chunkControlTheme = EditorView.theme({
   },
 });
 
-function createReviewView(params: UnifiedReviewParams): EditorView {
+function createReviewView(params: UnifiedReviewParams, extraExtensions: Extension[] = []): EditorView {
   const { parent, baseText, proposedText, chunks, onAcceptChunk, onRejectChunk } = params;
   const mergeChanges = editOpsToMergeChanges(chunks);
 
-  // For Slice 2, all per-chunk actions map to proposal-level accept/reject
+  // For Slice 2/3, all per-chunk actions map to proposal-level accept/reject
   // (the EditorPanel maps onAcceptChunk → onAcceptProposal). Per-chunk partial
   // apply is Slice 4. We use the first chunk's id as the representative id.
   const firstChunkId = chunks[0]?.id ?? "";
@@ -109,6 +110,7 @@ function createReviewView(params: UnifiedReviewParams): EditorView {
         EditorView.editable.of(false),
         chunkControlTheme,
         extension,
+        ...extraExtensions,
       ],
     }),
     parent,
@@ -119,7 +121,24 @@ export function mountUnifiedReviewView(params: UnifiedReviewParams): UnifiedRevi
   params.parent.replaceChildren();
 
   let currentParams = params;
-  let view = createReviewView(params);
+  // Keyboard navigation state — lives in closure, not React state.
+  let focusedIndex = 0;
+
+  // Build the keymap extension once; it reads from closures so it stays fresh
+  // across remounts without needing to be recreated.
+  const navKeymap = chunkNavigationKeymap({
+    getChunks: () => currentParams.chunks,
+    getFocusedChunkIndex: () => focusedIndex,
+    setFocusedChunkIndex: (idx) => {
+      focusedIndex = idx;
+      // Visible evidence of navigation (scroll-to-chunk is Slice 4+).
+      console.debug("[chunk-nav] focused chunk index:", idx, currentParams.chunks[idx]?.id);
+    },
+    onAcceptChunk: (id) => currentParams.onAcceptChunk(id),
+    onRejectChunk: (id) => currentParams.onRejectChunk(id),
+  });
+
+  let view = createReviewView(params, [navKeymap]);
 
   return {
     update(next) {
@@ -138,7 +157,9 @@ export function mountUnifiedReviewView(params: UnifiedReviewParams): UnifiedRevi
       view.destroy();
       params.parent.replaceChildren();
       currentParams = { ...currentParams, ...next };
-      view = createReviewView(currentParams);
+      // Reset focused index when chunks change — stale index could go out of bounds.
+      focusedIndex = 0;
+      view = createReviewView(currentParams, [navKeymap]);
     },
     destroy() {
       view.destroy();
