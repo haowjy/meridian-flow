@@ -2,21 +2,24 @@
  * Inline Review CM6 Extension
  *
  * Renders diff decorations directly in the main editor — green/red backgrounds
- * for inserted/deleted text, with per-chunk accept/reject widget buttons.
+ * for inserted/deleted text, with a floating hover toolbar for per-chunk
+ * keep/discard actions.
  *
  * The editor shows the LIVE Yjs doc (base text before proposal). Chunk positions
  * (baseStart/baseEnd) map directly to editor positions.
  *
- * - Deleted text: highlighted with red background + strikethrough
+ * - Deleted text: highlighted with red background + strikethrough (line deco)
+ *   + mark deco with data-hunk-id for hover identity
  * - Inserted text: shown as a green block widget below the deletion point
  * - Replace: deleted lines in red, then inserted lines in green widget below
+ * - Action buttons: floating toolbar (hidden by default, shown on hover/focus)
  */
 
 import {
   StateField,
-  StateEffect,
   type EditorState,
   type Extension,
+  RangeSetBuilder,
 } from "@codemirror/state";
 import {
   Decoration,
@@ -25,139 +28,92 @@ import {
   EditorView,
   keymap,
 } from "@codemirror/view";
-import { RangeSetBuilder } from "@codemirror/state";
 import type { ReviewChunk } from "./types";
+import { hunkHoverPlugin } from "./hover-manager";
+import {
+  inlineReviewField,
+  setReviewChunks,
+  resolveChunk,
+  setActiveChunk,
+  clearReview,
+  type InlineReviewState,
+  type InlineReviewCallbacks,
+} from "./state";
+
+// Re-export shared state for consumers
+export {
+  inlineReviewField,
+  setReviewChunks,
+  resolveChunk,
+  setActiveChunk,
+  clearReview,
+  type InlineReviewState,
+  type InlineReviewCallbacks,
+} from "./state";
 
 // ============================================================================
-// TYPES
+// WIDGET: Hunk Action Buttons (Keep / Discard) — Floating Toolbar
 // ============================================================================
+// Replaces the old ChunkActionWidget that rendered inline at chunkStart and
+// caused stacking in document flow. This widget is absolutely positioned and
+// hidden by default — shown on hover via HunkHoverManager or on focus via
+// keyboard navigation (.cm-review-focused-visible class).
+//
+// Uses onclick (not mousedown) because ignoreEvent() returns true, which
+// prevents CM6 from processing events on the widget. This avoids the need
+// for preventDefault() to prevent editor focus loss.
 
-export interface InlineReviewState {
-  chunks: ReviewChunk[];
-  resolutions: Map<string, "accepted" | "rejected">;
-  activeChunkIndex: number; // -1 = none
-}
-
-interface InlineReviewCallbacks {
-  onAcceptChunk: (chunk: ReviewChunk) => void;
-  onRejectChunk: (chunk: ReviewChunk) => void;
-}
-
-// ============================================================================
-// STATE EFFECTS
-// ============================================================================
-
-/** Load chunks for review */
-export const setReviewChunks = StateEffect.define<ReviewChunk[]>();
-
-/** Resolve a chunk (accept or reject) */
-export const resolveChunk = StateEffect.define<{
-  chunkId: string;
-  status: "accepted" | "rejected";
-}>();
-
-/** Set active chunk index for navigation */
-export const setActiveChunk = StateEffect.define<number>();
-
-/** Clear all review state */
-export const clearReview = StateEffect.define<void>();
-
-// ============================================================================
-// STATE FIELD
-// ============================================================================
-
-const emptyState: InlineReviewState = {
-  chunks: [],
-  resolutions: new Map(),
-  activeChunkIndex: -1,
-};
-
-export const inlineReviewField = StateField.define<InlineReviewState>({
-  create() {
-    return emptyState;
-  },
-
-  update(value, tr) {
-    for (const effect of tr.effects) {
-      if (effect.is(setReviewChunks)) {
-        // Carry over existing resolutions for chunks that still exist.
-        // This prevents the re-sync race (Bug 2): accepting a chunk changes
-        // the Yjs doc → reviewRevision++ → setReviewChunks fires, and we
-        // must not wipe the just-recorded resolution.
-        const newIds = new Set(effect.value.map((c) => c.id));
-        const carried = new Map<string, "accepted" | "rejected">();
-        for (const [id, status] of value.resolutions) {
-          if (newIds.has(id)) carried.set(id, status);
-        }
-        return {
-          chunks: effect.value,
-          resolutions: carried,
-          activeChunkIndex: effect.value.length > 0 ? 0 : -1,
-        };
-      }
-      if (effect.is(resolveChunk)) {
-        const next = new Map(value.resolutions);
-        next.set(effect.value.chunkId, effect.value.status);
-        return { ...value, resolutions: next };
-      }
-      if (effect.is(setActiveChunk)) {
-        return { ...value, activeChunkIndex: effect.value };
-      }
-      if (effect.is(clearReview)) {
-        return emptyState;
-      }
-    }
-    return value;
-  },
-});
-
-// ============================================================================
-// WIDGET: Chunk Action Buttons (Accept / Reject)
-// ============================================================================
-
-class ChunkActionWidget extends WidgetType {
+class HunkActionWidget extends WidgetType {
   constructor(
     private chunk: ReviewChunk,
     private callbacks: InlineReviewCallbacks,
+    private isFocused: boolean,
   ) {
     super();
   }
 
   toDOM(): HTMLElement {
-    const wrap = document.createElement("span");
-    wrap.className = "cm-review-chunk-actions";
+    const container = document.createElement("span");
+    // Focused class for auto-visibility (keyboard nav / mobile)
+    container.className = this.isFocused
+      ? "cm-review-actions cm-review-focused-visible"
+      : "cm-review-actions";
+    container.dataset.hunkId = this.chunk.id;
 
-    const acceptBtn = document.createElement("button");
-    acceptBtn.className = "cm-review-accept-btn";
-    acceptBtn.textContent = "\u2713 Accept";
-    acceptBtn.title = "Accept chunk (Ctrl-Enter)";
-    acceptBtn.type = "button";
-    acceptBtn.addEventListener("mousedown", (e) => {
-      e.preventDefault(); // prevent editor focus loss
-      this.callbacks.onAcceptChunk(this.chunk);
-    });
-
-    const rejectBtn = document.createElement("button");
-    rejectBtn.className = "cm-review-reject-btn";
-    rejectBtn.textContent = "\u2717 Reject";
-    rejectBtn.title = "Reject chunk (Ctrl-Backspace)";
-    rejectBtn.type = "button";
-    rejectBtn.addEventListener("mousedown", (e) => {
+    // Writer-first language: "Keep" / "Discard" instead of "Accept" / "Reject"
+    const keepBtn = document.createElement("button");
+    keepBtn.textContent = "Keep \u2713";
+    keepBtn.className = "cm-review-accept-btn";
+    keepBtn.title = "Keep this change (Ctrl-Enter)";
+    keepBtn.type = "button";
+    keepBtn.onclick = (e) => {
       e.preventDefault();
-      this.callbacks.onRejectChunk(this.chunk);
-    });
+      e.stopPropagation();
+      this.callbacks.onAcceptChunk(this.chunk);
+    };
 
-    wrap.appendChild(acceptBtn);
-    wrap.appendChild(rejectBtn);
-    return wrap;
+    const discardBtn = document.createElement("button");
+    discardBtn.textContent = "Discard \u2717";
+    discardBtn.className = "cm-review-reject-btn";
+    discardBtn.title = "Discard this change (Ctrl-Backspace)";
+    discardBtn.type = "button";
+    discardBtn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.callbacks.onRejectChunk(this.chunk);
+    };
+
+    container.appendChild(keepBtn);
+    container.appendChild(discardBtn);
+    return container;
   }
 
-  eq(other: ChunkActionWidget): boolean {
-    return this.chunk.id === other.chunk.id;
+  eq(other: HunkActionWidget): boolean {
+    return this.chunk.id === other.chunk.id && this.isFocused === other.isFocused;
   }
 
   ignoreEvent(): boolean {
-    return false; // allow click events to propagate
+    return true; // CM6 must not hijack widget interactions
   }
 }
 
@@ -169,6 +125,7 @@ class InsertedTextWidget extends WidgetType {
   constructor(
     private text: string,
     private isActive: boolean,
+    private chunkId: string,
   ) {
     super();
   }
@@ -176,8 +133,11 @@ class InsertedTextWidget extends WidgetType {
   toDOM(): HTMLElement {
     const wrap = document.createElement("div");
     wrap.className = "cm-review-inserted-block";
+    // data-hunk-id for hover identity — HunkHoverManager uses this to
+    // know which hunk the mouse is over
+    wrap.dataset.hunkId = this.chunkId;
     if (this.isActive) {
-      wrap.classList.add("cm-review-active-chunk");
+      wrap.classList.add("cm-review-active-hunk");
     }
 
     // Render each line of inserted text
@@ -194,7 +154,11 @@ class InsertedTextWidget extends WidgetType {
   }
 
   eq(other: InsertedTextWidget): boolean {
-    return this.text === other.text && this.isActive === other.isActive;
+    return (
+      this.text === other.text &&
+      this.isActive === other.isActive &&
+      this.chunkId === other.chunkId
+    );
   }
 
   ignoreEvent(): boolean {
@@ -217,6 +181,12 @@ class InsertedTextWidget extends WidgetType {
 /**
  * Build decorations from the current inline review state.
  * Pure function — no side effects, no view dependency.
+ *
+ * Decoration strategy:
+ * - Decoration.line for deleted line visual styling (red bg + strikethrough)
+ * - Decoration.mark over deleted ranges for hover identity (data-hunk-id)
+ * - InsertedTextWidget block widget with data-hunk-id
+ * - HunkActionWidget at chunk end, floating, hidden by default
  */
 function buildInlineReviewDecorations(
   state: EditorState,
@@ -255,26 +225,17 @@ function buildInlineReviewDecorations(
     const chunkStart = Math.min(chunk.baseStart, docLength);
     const chunkEnd = Math.min(chunk.baseEnd, docLength);
 
-    // Action widget at the start of the chunk
-    decos.push({
-      from: chunkStart,
-      to: chunkStart,
-      startSide: -1,
-      deco: Decoration.widget({
-        widget: new ChunkActionWidget(chunk, callbacks),
-        side: -1, // before the content
-      }),
-    });
-
-    // Deleted text decorations (red background + strikethrough on each line)
-    if (chunk.deletedText) {
+    // Deleted text decorations (#4: check !== undefined, not falsy —
+    // empty string "" is valid data per project rules)
+    if (chunk.deletedText !== undefined) {
       const startLine = doc.lineAt(chunkStart);
       const endLine = doc.lineAt(Math.max(chunkStart, chunkEnd - 1));
 
+      // Line decorations for visual styling (red bg + strikethrough per line)
       for (let line = startLine.number; line <= endLine.number; line++) {
         const lineObj = doc.line(line);
         const cls = isActive
-          ? "cm-review-deleted-line cm-review-active-chunk"
+          ? "cm-review-deleted-line cm-review-active-hunk"
           : "cm-review-deleted-line";
 
         decos.push({
@@ -284,10 +245,27 @@ function buildInlineReviewDecorations(
           deco: Decoration.line({ class: cls }),
         });
       }
+
+      // Mark decoration over deleted text range for hover identity (data-hunk-id).
+      // Mark decorations are per-range so multiple hunks on the same line each
+      // get their own attribute — unlike line decorations which are ambiguous.
+      if (chunkStart < chunkEnd) {
+        const markDeco = Decoration.mark({
+          class: "cm-review-deleted-mark",
+          attributes: { "data-hunk-id": chunk.id },
+        });
+        decos.push({
+          from: chunkStart,
+          to: chunkEnd,
+          startSide: markDeco.startSide,
+          deco: markDeco,
+        });
+      }
     }
 
     // Inserted text as a block widget below the deletion point
-    if (chunk.insertedText) {
+    // (#4: check !== undefined, not falsy — empty string "" is valid data)
+    if (chunk.insertedText !== undefined) {
       // For pure inserts (baseStart === baseEnd), show at baseStart.
       // For replaces, show after the deleted region.
       const insertPos = chunkEnd;
@@ -297,12 +275,25 @@ function buildInlineReviewDecorations(
         to: insertPos,
         startSide: 1,
         deco: Decoration.widget({
-          widget: new InsertedTextWidget(chunk.insertedText, isActive),
+          widget: new InsertedTextWidget(chunk.insertedText, isActive, chunk.id),
           block: true,
           side: 1, // after the line content
         }),
       });
     }
+
+    // Floating action widget at the END of the chunk (not start).
+    // Hidden by default, shown on hover via HunkHoverManager or on focus
+    // via keyboard navigation (.cm-review-focused-visible class).
+    decos.push({
+      from: chunkEnd,
+      to: chunkEnd,
+      startSide: 1,
+      deco: Decoration.widget({
+        widget: new HunkActionWidget(chunk, callbacks, isActive),
+        side: 1,
+      }),
+    });
   }
 
   // Sort by (from, startSide) to satisfy RangeSetBuilder ordering constraints.
@@ -321,7 +312,7 @@ function buildInlineReviewDecorations(
 
 /**
  * Create the decoration StateField. Needs callbacks in closure so the
- * ChunkActionWidget buttons can fire accept/reject handlers.
+ * HunkActionWidget buttons can fire accept/reject handlers.
  */
 function makeInlineReviewDecorationField(callbacks: InlineReviewCallbacks) {
   return StateField.define<DecorationSet>({
@@ -344,10 +335,29 @@ function makeInlineReviewDecorationField(callbacks: InlineReviewCallbacks) {
 }
 
 // ============================================================================
+// EDITOR ATTRIBUTES: Conditionally apply .cm-review-active
+// ============================================================================
+// CSS uses .cm-editor.cm-review-active for positioning context (relative
+// scroller + bottom padding). Applied via EditorView.editorAttributes when
+// review chunks are present.
+
+const reviewActiveAttrs = EditorView.editorAttributes.compute(
+  [inlineReviewField],
+  (state): Record<string, string> => {
+    const review = state.field(inlineReviewField, false);
+    if (review && review.chunks.length > 0) {
+      return { class: "cm-review-active" };
+    }
+    return {};
+  },
+);
+
+// ============================================================================
 // SCROLL LISTENER: Scroll to active chunk on navigation
 // ============================================================================
-// Replaces the ViewPlugin's scroll-on-active-chunk-change behavior.
 // EditorView.updateListener is appropriate for side effects like scrolling.
+// This is the SINGLE scrolling mechanism — keymap handlers rely on this
+// listener to scroll after dispatching setActiveChunk (#6: no double scroll).
 
 function makeScrollOnActiveChunkListener() {
   return EditorView.updateListener.of((update) => {
@@ -381,11 +391,11 @@ function makeInlineReviewKeymap(callbacks: InlineReviewCallbacks) {
         if (pending.length === 0) return false;
 
         const currentIdx = state.activeChunkIndex;
-        // Find next pending chunk index
         const nextIdx = findNextPendingIndex(state, currentIdx, 1);
         if (nextIdx !== -1) {
+          // Only dispatch the effect — scrollOnActiveChunkListener handles
+          // scrolling (#6: single scroll mechanism)
           view.dispatch({ effects: setActiveChunk.of(nextIdx) });
-          scrollToChunk(view, state.chunks[nextIdx]!);
         }
         return true;
       },
@@ -400,8 +410,9 @@ function makeInlineReviewKeymap(callbacks: InlineReviewCallbacks) {
         const currentIdx = state.activeChunkIndex;
         const prevIdx = findNextPendingIndex(state, currentIdx, -1);
         if (prevIdx !== -1) {
+          // Only dispatch the effect — scrollOnActiveChunkListener handles
+          // scrolling (#6: single scroll mechanism)
           view.dispatch({ effects: setActiveChunk.of(prevIdx) });
-          scrollToChunk(view, state.chunks[prevIdx]!);
         }
         return true;
       },
@@ -438,6 +449,18 @@ function makeInlineReviewKeymap(callbacks: InlineReviewCallbacks) {
 
         callbacks.onRejectChunk(chunk);
         return true;
+      },
+    },
+    {
+      // Escape clears focused state — returns to Idle (toolbar hidden)
+      key: "Escape",
+      run(view) {
+        const state = view.state.field(inlineReviewField);
+        if (state.activeChunkIndex >= 0) {
+          view.dispatch({ effects: setActiveChunk.of(-1) });
+          return true;
+        }
+        return false;
       },
     },
   ]);
@@ -478,72 +501,25 @@ function scrollToChunk(view: EditorView, chunk: ReviewChunk): void {
 }
 
 // ============================================================================
-// THEME
-// ============================================================================
-
-const inlineReviewTheme = EditorView.baseTheme({
-  ".cm-review-deleted-line": {
-    backgroundColor: "rgba(239, 68, 68, 0.15)", // red-500 at 15%
-    textDecoration: "line-through",
-    opacity: "0.7",
-  },
-  ".cm-review-inserted-block": {
-    backgroundColor: "rgba(34, 197, 94, 0.15)", // green-500 at 15%
-    padding: "2px 0",
-    borderLeft: "3px solid rgba(34, 197, 94, 0.6)",
-  },
-  ".cm-review-inserted-line": {
-    padding: "0 4px",
-    whiteSpace: "pre-wrap",
-    fontFamily: "inherit",
-    fontSize: "inherit",
-    lineHeight: "inherit",
-  },
-  ".cm-review-active-chunk": {
-    outline: "2px solid rgba(59, 130, 246, 0.5)", // blue-500 at 50%
-    outlineOffset: "-2px",
-  },
-  ".cm-review-chunk-actions": {
-    display: "inline-flex",
-    gap: "4px",
-    padding: "2px 4px",
-    fontSize: "12px",
-  },
-  ".cm-review-accept-btn": {
-    cursor: "pointer",
-    padding: "1px 6px",
-    borderRadius: "3px",
-    border: "1px solid rgba(34, 197, 94, 0.5)",
-    backgroundColor: "rgba(34, 197, 94, 0.1)",
-    color: "inherit",
-    "&:hover": { backgroundColor: "rgba(34, 197, 94, 0.25)" },
-  },
-  ".cm-review-reject-btn": {
-    cursor: "pointer",
-    padding: "1px 6px",
-    borderRadius: "3px",
-    border: "1px solid rgba(239, 68, 68, 0.5)",
-    backgroundColor: "rgba(239, 68, 68, 0.1)",
-    color: "inherit",
-    "&:hover": { backgroundColor: "rgba(239, 68, 68, 0.25)" },
-  },
-});
-
-// ============================================================================
 // PUBLIC API
 // ============================================================================
 
 /**
  * Create the inline review extension array.
  * Add to editor's extensions when review is active.
+ *
+ * Styles are in globals.css (.cm-review-* classes), not baseTheme —
+ * for consistency with meridian's approach, easier pseudo-element styling
+ * (the ::after bridge), and @media query ergonomics.
  */
 export function inlineReviewExtension(callbacks: InlineReviewCallbacks): Extension[] {
   return [
     inlineReviewField,
+    reviewActiveAttrs,
     makeInlineReviewDecorationField(callbacks),
+    hunkHoverPlugin,
     makeScrollOnActiveChunkListener(),
     makeInlineReviewKeymap(callbacks),
-    inlineReviewTheme,
   ];
 }
 
@@ -581,10 +557,7 @@ export function setActiveChunkIndex(
 export function getInlineReviewState(
   state: EditorState,
 ): InlineReviewState | null {
-  try {
-    return state.field(inlineReviewField);
-  } catch {
-    // Field not in editor — extension not loaded
-    return null;
-  }
+  // #7: Use the optional second param instead of try/catch — returns
+  // undefined when the field is absent (extension not loaded)
+  return state.field(inlineReviewField, false) ?? null;
 }

@@ -35,3 +35,7 @@ scripts/get-token.sh
 
 # Go build artifacts outside of standard paths
 backend/orchestrator
+
+# Tool-local caches
+.playwright-mcp/
+.codex-local/

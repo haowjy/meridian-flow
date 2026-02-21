@@ -862,6 +862,156 @@ body.preload * {
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
+  /* ============================================================================
+     INLINE REVIEW — Floating Toolbar + Diff Decorations
+     ============================================================================
+     Styles for the inline review system that shows proposed changes directly
+     in the editor with floating keep/discard controls.
+
+     Architecture:
+     - .cm-review-active is applied to .cm-editor via EditorView.editorAttributes
+       when review chunks are present
+     - .cm-review-deleted-line is a CM6 line decoration (visual styling only)
+     - .cm-review-deleted-mark is a CM6 mark decoration (hover identity via data-hunk-id)
+     - .cm-review-inserted-block is the InsertedTextWidget container
+     - .cm-review-actions is the HunkActionWidget (floating toolbar)
+     - HunkHoverManager toggles .visible class on hover
+     - .cm-review-focused-visible is set by HunkActionWidget when active via keyboard
+     ============================================================================ */
+
+  /* Editor container — relative positioning for absolute action pills.
+     Applied via EditorView.editorAttributes when review chunks are present.
+     48px = pill height (~32px) + bottom offset (16px). */
+  .cm-editor.cm-review-active .cm-scroller {
+    position: relative;
+    padding-bottom: 48px;
+  }
+
+  /* Deleted text — red bg + strikethrough per line.
+     No opacity reduction — writer needs to read deleted text comfortably
+     to make an informed keep/discard decision. */
+  .cm-review-deleted-line {
+    background-color: color-mix(in srgb, var(--error) 15%, transparent);
+    text-decoration: line-through;
+  }
+
+  /* Hover preview: dim deleted lines when hunk is hovered/focused,
+     brighten inserted block — creates a "before → after" visual shift.
+
+     (#1) CSS descendant/sibling selectors can't reach across CM6's DOM
+     structure (mark spans inside line divs, inserted blocks as siblings
+     of line divs). Instead, HunkHoverManager toggles .cm-review-hovered
+     on the relevant DOM elements directly. For active/focused hunks,
+     .cm-review-active-hunk is applied as a compound selector on the
+     same element (line deco or inserted block). */
+  .cm-review-hovered.cm-review-deleted-line,
+  .cm-review-active-hunk.cm-review-deleted-line {
+    opacity: 0.4;
+  }
+
+  .cm-review-hovered.cm-review-inserted-block,
+  .cm-review-active-hunk.cm-review-inserted-block {
+    background-color: color-mix(in srgb, var(--success) 25%, transparent);
+  }
+
+  /* Inserted text block — green bg + left border */
+  .cm-review-inserted-block {
+    background-color: color-mix(in srgb, var(--success) 15%, transparent);
+    padding: 2px 0;
+    border-left: 3px solid color-mix(in srgb, var(--success) 60%, transparent);
+  }
+
+  .cm-review-inserted-line {
+    padding: 0 4px;
+    white-space: pre-wrap;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+  }
+
+  /* Active hunk highlight — left border accent (matches inserted block visual
+     language) instead of outline (which conflicts with CM6 selection highlight). */
+  .cm-review-active-hunk {
+    border-left: 3px solid var(--primary);
+  }
+
+  /* ========== FLOATING ACTION TOOLBAR ========== */
+
+  .cm-review-actions {
+    display: none;
+    position: absolute;
+    z-index: 50;
+    max-height: 1lh;
+    padding: 0;
+    gap: 2px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  }
+
+  /* Shown on hover via HunkHoverManager */
+  .cm-review-actions.visible {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* Auto-shown on focused hunk (keyboard nav / mobile).
+     Uses absolute positioning set by HunkHoverManager when available,
+     or falls back to CSS transform positioning above the widget. */
+  .cm-review-actions.cm-review-focused-visible {
+    display: inline-flex;
+    align-items: center;
+    position: absolute;
+    transform: translateY(-100%);
+    margin-top: -4px;
+  }
+
+  /* Invisible bridge for mouse travel from text to buttons.
+     16px is generous enough to survive fast/diagonal mouse movement.
+     Combined with the 150ms hide delay in HunkHoverManager, this
+     prevents flickering when moving between text and toolbar.
+     Default: bridge extends downward (toolbar is above the hunk).
+     When .flipped (toolbar below hunk), bridge extends upward (#9). */
+  .cm-review-actions::after {
+    content: "";
+    position: absolute;
+    left: -8px;
+    right: -8px;
+    top: 100%;
+    height: 16px;
+  }
+
+  .cm-review-actions.flipped::after {
+    top: auto;
+    bottom: 100%;
+  }
+
+  .cm-review-actions button {
+    padding: 4px 8px;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    transition:
+      background 150ms,
+      color 150ms;
+    white-space: nowrap;
+    background: transparent;
+    color: var(--muted-foreground);
+  }
+
+  .cm-review-accept-btn:hover {
+    background: color-mix(in srgb, var(--success) 15%, transparent);
+    color: var(--success);
+  }
+
+  .cm-review-reject-btn:hover {
+    background: color-mix(in srgb, var(--error) 15%, transparent);
+    color: var(--error);
+  }
 }
 
 /* ============================================================================
@@ -877,6 +1027,12 @@ body.preload * {
   /* Make hidden-on-hover action buttons always visible on touch devices */
   .group .opacity-0.group-hover\:opacity-100 {
     opacity: 1 !important;
+  }
+
+  /* On touch devices, always show toolbar for the active/focused hunk
+     (WCAG 1.4.13: content on hover must be accessible without hover) */
+  .cm-review-actions.cm-review-focused-visible {
+    display: inline-flex;
   }
 
   /* Ensure minimum touch target size (44x44px) */
