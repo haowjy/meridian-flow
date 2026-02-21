@@ -54,6 +54,8 @@ SLICE_NAME=""        # --slice shorthand
 
 # CLI_CMD_ARGV — populated by build_cli_command() in lib/exec.sh
 declare -a CLI_CMD_ARGV=()
+# CLI_HARNESS — populated by build_cli_command() in lib/exec.sh (claude|codex|opencode)
+CLI_HARNESS=""
 
 # ─── Source Modules ──────────────────────────────────────────────────────────
 
@@ -79,12 +81,22 @@ init_dirs() {
   mkdir -p "$SESSION_DIR/project"
 }
 
+inject_runtime_template_vars() {
+  # Make runtime paths explicit in prompts so agents write inside the managed
+  # run/session directories rather than the caller's working directory.
+  [[ -z "${VARS[RUNS_DIR]:-}" ]] && VARS[RUNS_DIR]="$RUNS_DIR"
+  [[ -z "${VARS[SESSION_DIR]:-}" ]] && VARS[SESSION_DIR]="$SESSION_DIR"
+  [[ -z "${VARS[SCOPE_ROOT]:-}" ]] && VARS[SCOPE_ROOT]="$(infer_scope_root)"
+  HAS_VARS=true
+}
+
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 parse_args "$@"
 init_work_dir
 validate_args
 init_dirs
+inject_runtime_template_vars
 
 COMPOSED_PROMPT="$(compose_prompt)"
 build_cli_command
