@@ -6,11 +6,32 @@ import type {
   ProposalReviewUnavailable,
   ProposalReviewUnavailableReason,
 } from "./contracts";
+import type { EditOp, ReviewChunk } from "./types";
+import { extractProposalOpsWithClone } from "./changeset-extractor";
+import { groupIntoChunks } from "./chunk-grouper";
 
 export interface CreateProposalReviewRuntimeOptions {
   ydoc: Y.Doc;
   textKey?: string;
 }
+
+/**
+ * Result of `deriveProposalOperations` when the update is successfully applied.
+ */
+export interface ProposalOperationsReady {
+  availability: "ready";
+  proposal: Proposal;
+  baseText: string;
+  proposedText: string;
+  ops: EditOp[];
+  chunks: ReviewChunk[];
+}
+
+/**
+ * Result of `deriveProposalOperations`: either a ready set of operations or
+ * an unavailable state (same reasons as `ProposalReviewUnavailable`).
+ */
+export type ProposalOperationsModel = ProposalOperationsReady | ProposalReviewUnavailable;
 
 export class ProposalReviewRuntime {
   private readonly ydoc: Y.Doc;
@@ -61,6 +82,60 @@ export class ProposalReviewRuntime {
         baseText,
         "update_apply_failed",
         "Proposal update payload could not be applied to current document state.",
+      );
+    }
+  }
+
+  /**
+   * Derive exact Yjs-operation-based review data for a proposal.
+   *
+   * Unlike `deriveProposalReview`, this does NOT route through text diffing.
+   * Operations are extracted directly from the Yjs update delta, preserving
+   * exact positions and deleted text.
+   *
+   * Returns `ProposalOperationsReady` on success or `ProposalReviewUnavailable`
+   * (with the same reasons as `deriveProposalReview`) on failure.
+   *
+   * Does NOT mutate the caller's ydoc.
+   */
+  deriveProposalOperations(proposal: Proposal): ProposalOperationsModel {
+    const baseText = this.currentText();
+
+    if (proposal.yjsUpdate == null || proposal.yjsUpdate.length === 0) {
+      return this.unavailable(proposal, baseText, "missing_update", "Proposal update payload is unavailable.");
+    }
+
+    const update = decodeBase64Update(proposal.yjsUpdate);
+    if (update == null) {
+      return this.unavailable(
+        proposal,
+        baseText,
+        "invalid_update",
+        "Proposal update payload is not valid base64.",
+      );
+    }
+
+    try {
+      // Extract ops and reuse the cloned doc (avoids cloning + applying twice)
+      const { ops, clonedDoc } = extractProposalOpsWithClone(this.ydoc, update, this.textKey);
+      const chunks = groupIntoChunks(ops, proposal.id, baseText);
+      const proposedText = clonedDoc.getText(this.textKey).toString();
+
+      return {
+        availability: "ready",
+        proposal,
+        baseText,
+        proposedText,
+        ops,
+        chunks,
+      };
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      return this.unavailable(
+        proposal,
+        baseText,
+        "update_apply_failed",
+        `Proposal update payload could not be applied to current document state: ${detail}`,
       );
     }
   }

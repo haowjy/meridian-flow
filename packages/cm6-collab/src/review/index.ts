@@ -2,6 +2,8 @@ export {
   ProposalReviewRuntime,
   createProposalReviewRuntime,
   type CreateProposalReviewRuntimeOptions,
+  type ProposalOperationsReady,
+  type ProposalOperationsModel,
 } from "./runtime";
 
 export {
@@ -17,3 +19,14 @@ export type {
   ProposalReviewModel,
   ProposalReviewSnapshot,
 } from "./contracts";
+
+export { extractProposalOps, extractProposalOpsWithClone } from "./changeset-extractor";
+export { groupIntoChunks } from "./chunk-grouper";
+export type {
+  EditOp,
+  InsertOp,
+  DeleteOp,
+  ReplaceOp,
+  ReviewChunk,
+  ReviewChunkStatus,
+} from "./types";
