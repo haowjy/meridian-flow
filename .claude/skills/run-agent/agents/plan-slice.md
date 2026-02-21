@@ -1,7 +1,7 @@
 ---
 name: plan-slice
 description: Planning agent — creates next implementable slice from a plan
-model: claude-sonnet-4-6
+model: gpt-5.3-codex
 tools: Read,Write,Bash,Glob,Grep
 skills:
   - plan-slice

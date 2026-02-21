@@ -1,7 +1,7 @@
 ---
 name: review-quick
 description: Fast sanity check — catches obvious blockers without deep analysis
-model: claude-haiku-4-5
+model: gpt-5.3-codex
 effort: low
 tools: Read,Write,Bash,Glob,Grep
 skills:
