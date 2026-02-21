@@ -1,6 +1,7 @@
 _docs/hidden/
 
 .DS_Store
+node_modules/
 
 # Go workspace files (local development only)
 go.work
