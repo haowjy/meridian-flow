@@ -28,9 +28,9 @@ SESSION_DIR="$SKILLS_DIR/orchestrate/.session"
 
 # ─── Defaults ────────────────────────────────────────────────────────────────
 
-# Default fallback model when the specified model is unavailable or the CLI
-# binary isn't installed.
-FALLBACK_MODEL="claude-sonnet-4-6"
+# Default fallback when the routed CLI isn't available.
+FALLBACK_CLI="codex"
+FALLBACK_MODEL="gpt-5.3-codex"
 
 MODEL=""
 EFFORT="high"
@@ -49,6 +49,8 @@ HAS_VARS=false
 MODEL_FROM_CLI=false
 EFFORT_FROM_CLI=false
 TOOLS_FROM_CLI=false
+PLAN_NAME=""         # --plan shorthand
+SLICE_NAME=""        # --slice shorthand
 
 # CLI_CMD_ARGV — populated by build_cli_command() in lib/exec.sh
 declare -a CLI_CMD_ARGV=()

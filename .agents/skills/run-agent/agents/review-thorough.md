@@ -1,7 +1,7 @@
 ---
 name: review-thorough
 description: Exhaustive review agent — leave-no-stone-unturned auditor for important slices
-model: gpt-5.3-codex
+model: claude-opus-4-6
 effort: high
 tools: Read,Write,Bash,Glob,Grep
 skills:

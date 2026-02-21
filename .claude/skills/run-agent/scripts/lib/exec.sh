@@ -73,12 +73,12 @@ build_cli_command() {
   # If route_model failed (unknown family) or CLI binary not installed, fall back:
   # try the routed CLI first, then fall back to claude + FALLBACK_MODEL.
   if [[ -z "$tool" ]]; then
-    echo "[run-agent] WARNING: Unknown model family '$MODEL'; falling back to $FALLBACK_MODEL (claude)" >&2
-    tool="claude"
+    echo "[run-agent] WARNING: Unknown model family '$MODEL'; falling back to $FALLBACK_MODEL ($FALLBACK_CLI)" >&2
+    tool="$FALLBACK_CLI"
     MODEL="$FALLBACK_MODEL"
   elif ! command -v "$tool" >/dev/null 2>&1; then
-    echo "[run-agent] WARNING: '$tool' CLI not found for model '$MODEL'; falling back to $FALLBACK_MODEL (claude)" >&2
-    tool="claude"
+    echo "[run-agent] WARNING: '$tool' CLI not found for model '$MODEL'; falling back to $FALLBACK_MODEL ($FALLBACK_CLI)" >&2
+    tool="$FALLBACK_CLI"
     MODEL="$FALLBACK_MODEL"
   fi
 
@@ -207,10 +207,15 @@ do_execute() {
 
   echo "[run-agent] Agent: ${AGENT_NAME:-ad-hoc} | Model: $MODEL | Effort: $EFFORT | Log: $LOG_DIR" >&2
 
-  # Execute via argv array — no eval needed
+  # Execute via argv array — no eval needed.
+  # stdout → output.json (structured JSON), stderr → tee to terminal + stderr.log.
+  # All three CLIs (claude, codex, opencode) send progress to stderr and structured
+  # output to stdout, so this streams progress in real-time while keeping output.json clean.
   cd "$WORK_DIR"
   set +e
-  "${CLI_CMD_ARGV[@]}" <<< "$COMPOSED_PROMPT" > "$LOG_DIR/output.json" 2>&1
+  "${CLI_CMD_ARGV[@]}" <<< "$COMPOSED_PROMPT" \
+    > "$LOG_DIR/output.json" \
+    2> >(tee "$LOG_DIR/stderr.log" >&2)
   EXIT_CODE=$?
   set -e
 

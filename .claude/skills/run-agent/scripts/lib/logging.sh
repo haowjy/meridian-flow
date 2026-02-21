@@ -12,7 +12,13 @@ resolve_repo_or_work_path() {
     return
   fi
 
-  # Prefer an existing path under WORK_DIR, then REPO_ROOT.
+  # Prefer an existing path under RUNS_DIR (shortest paths), then WORK_DIR, then REPO_ROOT.
+  # This lets callers write e.g. "plans/my-plan/slices/my-slice/slice.md" instead of the
+  # full ".claude/skills/run-agent/.runs/plans/..." path.
+  if [[ -e "$RUNS_DIR/$path" ]]; then
+    echo "$RUNS_DIR/$path"
+    return
+  fi
   if [[ -e "$WORK_DIR/$path" ]]; then
     echo "$WORK_DIR/$path"
     return

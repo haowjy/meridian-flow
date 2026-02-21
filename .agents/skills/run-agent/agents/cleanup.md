@@ -1,7 +1,7 @@
 ---
 name: cleanup
 description: Cleanup agent — implements a specific fix from review findings
-model: gpt-5.3-codex
+model: claude-sonnet-4-6
 tools: Read,Edit,Write,Bash,Glob,Grep
 skills:
   - smoke-test
