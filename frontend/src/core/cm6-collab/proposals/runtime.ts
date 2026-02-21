@@ -4,6 +4,7 @@ import type {
   ProposalNewEvent,
   ProposalSnapshotEvent,
   ProposalStatusChangedEvent,
+  ProposalUpdateDataEvent,
 } from "./contracts";
 
 export interface ProposalStateSnapshot {
@@ -64,6 +65,24 @@ export class ProposalManager {
     }
 
     this.proposals.delete(event.proposalId);
+    this.emit();
+  }
+
+  /**
+   * Updates an existing proposal's yjsUpdate field in-place.
+   * Called when the server responds to a proposal:requestUpdate command
+   * with the lazy-fetched update data.
+   */
+  onProposalUpdateData(event: ProposalUpdateDataEvent): void {
+    const existing = this.proposals.get(event.proposalId);
+    if (!existing) {
+      return;
+    }
+    // Update the proposal in-place with the yjsUpdate data
+    this.proposals.set(event.proposalId, {
+      ...existing,
+      yjsUpdate: event.yjsUpdate,
+    });
     this.emit();
   }
 

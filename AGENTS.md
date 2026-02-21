@@ -130,141 +130,21 @@ Before submitting code, verify:
 
 **Always check `_docs/features/` first for feature status, then `_docs/technical/` for implementation details.**
 
-## Documentation Philosophy
+## Documentation
 
-Documentation is organized in three tiers:
+Three tiers: **Features** (`_docs/features/`, start here) > **High-Level** (`_docs/high-level/`) > **Technical** (`_docs/technical/`). Minimum content by default — diagrams > words, reference don't duplicate. See `_docs/conventions/documentation-writing-rules.md` for full rules.
 
-1. **Features** (`_docs/features/`) - **Start here**
-   - What features exist and their status
-   - Stack-prefixed folders show frontend-only (f-), backend-only (b-), or both (fb-)
-   - Concise implementation guides with links to technical details
-
-2. **High-Level** (`_docs/high-level/`)
-   - Product vision, user stories, MVP specifications
-   - Non-technical stakeholder documentation
-
-3. **Technical** (`_docs/technical/`)
-   - Deep-dive architecture documents
-   - Detailed implementation patterns and edge cases
-   - Referenced from feature docs when needed
+**Mermaid diagrams**: Load the `mermaid` skill before writing/editing diagrams. Always validate with `./scripts/check-mermaid.sh <file>` after changes.
 
 ### Feature Documentation Sync Rule
 
 **IMPORTANT: When adding or significantly updating a feature, you MUST update the corresponding feature documentation.**
 
-This applies to both Claude and human developers:
-
-✅ **Update feature docs when:**
-- Implementing a new feature
-- Significantly changing existing feature behavior
-- Changing feature status (e.g., from partial to complete)
-- Adding/removing major functionality
-- Changing stack requirements (e.g., backend-only -> full-stack)
-
-**Workflow:**
 1. Implement the feature/update
 2. Update `_docs/features/<feature-name>/` with changes
 3. Update status in `_docs/features/README.md` if needed
 4. Run `./scripts/check-md-links.sh`
 5. Commit code + docs together
-
-## Repository Structure
-
-```
-backend/
-├── cmd/                    # Entry points (server, seed)
-├── internal/
-│   ├── domain/             # Interfaces + models (Clean Architecture)
-│   ├── service/            # Business logic
-│   ├── repository/         # Data access
-│   ├── handler/            # HTTP handlers
-│   ├── middleware/         # Auth, error handling
-│   └── config/             # Configuration
-├── scripts/                # Shell scripts (seeding)
-├── tests/                  # Test artifacts
-└── schema.sql              # Database schema
-
-_docs/
-├── features/               # Feature documentation (stack-prefixed)
-│   ├── README.md           # Feature inventory and status
-│   ├── fb-authentication/  # Both stacks
-│   ├── f-document-editor/  # Frontend only
-│   ├── fb-file-system/     # Both stacks
-│   ├── fb-thread-llm/      # Both stacks
-│   └── ...                 # Other features
-├── high-level/             # Product docs
-└── technical/              # Deep-dive technical docs
-    ├── backend/            # Backend architecture
-    ├── frontend/           # Frontend architecture
-    └── llm/                # LLM integration details
-```
-
-## Documentation Writing Rules
-
-**Default: MINIMUM content unless otherwise stated.**
-
-### Core Principles
-
-1. **Diagrams > Words** - A picture is easier to understand than paragraphs
-   - Prefer Mermaid diagrams to explain flows, architecture, relationships
-   - Use tables for comparisons or lists of issues
-   - Keep text minimal - just enough to connect the diagrams
-
-2. **Minimize words** - Every sentence should earn its place
-   - Can a diagram replace 3 paragraphs? Use the diagram
-   - Can a table replace verbose lists? Use the table
-   - Cut ruthlessly; too much text hurts comprehension
-
-3. **Reference, don't duplicate** - Point to code, don't copy it
-   - correct: "See `internal/service/document.go:29-33`"
-   - wrong: Pasting 50 lines of existing code
-
-4. **Split by purpose, not size** - Each doc should have a single, clear purpose
-   - If covering multiple distinct topics -> split into separate docs
-   - Organize related docs into folders (e.g., `features/fb-authentication/`, `technical/backend/`)
-   - Update index/README to maintain discoverability
-   - Guideline: If someone asks "where's the X doc?" and you can't point to one file, structure is wrong
-
-5. **Use frontmatter** for detail level:
-   ```yaml
-   ---
-   detail: minimal | standard | comprehensive
-   audience: developer | architect | claude
-   ---
-   ```
-
-6. **Code examples sparingly** - Only when:
-   - Showing a pattern that doesn't exist yet
-   - Demonstrating a specific fix/workaround
-   - Concept can't be found in existing code
-
-7. **Focus on WHY and WHAT, not HOW** - let the implementation show the how. How can always change. Some How details are important to note (like specific implementation details to ensure effiency, compliance, etc.), but not always.
-
-8. **Mermaid diagrams** - Use dark mode compatible colors:
-   - Use darker, saturated colors (e.g., `#2d7d2d` not `#90EE90`)
-   - Avoid light pastels that disappear on dark backgrounds
-   - Test: colors should be visible on both light AND dark backgrounds
-
-### Mermaid Quick Rules
-
-- Quote labels with spaces/punctuation: `Node["Label"]`, `A -->|"edge"| B`
-- Use ASCII operators (`>=`, `<=`) not unicode
-- Fix parse errors by adding quotes, not restructuring diagrams
-
-### Example
-
-```markdown
-# Database Connections
-
-## Problem
-Supabase's PgBouncer pooler (port 6543) doesn't support prepared statements.
-
-## Solution
-Auto-detect port 6543 and use `QueryExecModeCacheDescribe`.
-
-## Implementation
-See `internal/repository/postgres/connection.go`
-```
 
 ## General Conventions
 
@@ -324,11 +204,7 @@ FRONTEND_PORT=3001
 
 ### Smoke Testing
 
-- Get a dev access token: `./scripts/get-token.sh` (saves to root `.env`)
-  - First time: `cp scripts/get-token.sh.example scripts/get-token.sh && chmod +x scripts/get-token.sh`, then edit credentials
-- Token refresh is agent-authorized: Claude may run `./scripts/get-token.sh` whenever the current token is expired
-- Authenticated requests: `curl -H "Authorization: Bearer $(grep '^ACCESS_TOKEN=' .env | cut -d= -f2-)" http://localhost:<backend-port>/api/...`
-- See the `scratchpad` skill for scratch/smoke file conventions
+Token refresh is agent-authorized. See `backend/CLAUDE.md` -> "Smoke Testing" for full details. See the `scratchpad` skill for scratch/smoke file conventions.
 
 ### Long-Running Tasks
 
@@ -337,6 +213,14 @@ For multi-phase plans, use the `/orchestrate` skill interactively. It launches a
 **Install:** `/plugin marketplace add jimmyyao/orchestrate` (Claude Code)
 **Agent definitions:** `agents/*.md` in the orchestrate plugin — model, tools, prompt per agent.
 **Skills:** `*/SKILL.md` under your skills directory — reusable instruction bundles.
+
+### Plan Execution
+
+When a plan file exists (`.claude/plans/*.md` or `_docs/plans/**/*.md`):
+
+- **Multi-slice plans** (3+ slices or cross-cutting changes): Execute via `/orchestrate <plan-file>`. Never implement multi-slice plans directly.
+- **Single-slice plans**: Implement directly, following the plan's scope and acceptance criteria.
+- **Check for in-progress orchestrations**: Read `.claude/skills/orchestrate/.session/plans/` for handoff files before starting fresh.
 
 ### Agent Preferences
 

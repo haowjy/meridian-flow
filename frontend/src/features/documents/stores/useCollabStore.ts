@@ -3,7 +3,7 @@ import type {
   Proposal,
   ProposalGroupAcceptResultEvent,
   ProposalStateSnapshot,
-} from "@meridian/cm6-collab";
+} from "@/core/cm6-collab";
 
 export type CollabConnectionState = "connected" | "syncing" | "disconnected";
 

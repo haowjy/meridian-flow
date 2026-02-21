@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { editOpsToMergeChanges } from "../ops-to-changes";
-import type { ReviewChunk } from "../types";
+import { editOpsToMergeChanges } from "@/core/cm6-collab/review/ops-to-changes";
+import type { ReviewChunk } from "@/core/cm6-collab/review/types";
 
 // ---------------------------------------------------------------------------
 // Helpers

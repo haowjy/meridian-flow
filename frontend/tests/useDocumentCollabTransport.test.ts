@@ -452,7 +452,7 @@ const indexedDbMock = vi.hoisted(() => {
 });
 
 vi.mock("react", () => reactHarness.module);
-vi.mock("@meridian/cm6-collab", () => collabRuntimeMock.module);
+vi.mock("@/core/cm6-collab", () => collabRuntimeMock.module);
 vi.mock(
   "@/features/documents/contexts/ProjectCollabContext",
   () => projectCollabMock.module,

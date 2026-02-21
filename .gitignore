@@ -21,6 +21,7 @@ backend/.gocache/
 .gemini-clipboard
 
 .pnpm-store
+remote-workspace/dist/
 
 .env
 

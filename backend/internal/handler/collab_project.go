@@ -128,7 +128,7 @@ func (h *CollabHandler) handleProjectTextMessage(
 		h.handleDocUnsubscribe(ctx, conn, raw, connectionID)
 		return true
 
-	case wsTypeProposalAccept, wsTypeProposalReject, wsTypeProposalGroupAccept:
+	case wsTypeProposalAccept, wsTypeProposalReject, wsTypeProposalGroupAccept, wsTypeProposalRequestUpdate:
 		h.handleProjectProposalCommand(ctx, conn, projectID, userID, userUUID, raw, connectionID, msgType)
 		return true
 
@@ -463,6 +463,8 @@ func (h *CollabHandler) handleProjectProposalCommand(
 		h.handleProposalReject(ctx, conn, sub.DocID, sub.DocUUID, userUUID, raw)
 	case wsTypeProposalGroupAccept:
 		h.handleProposalGroupAccept(ctx, conn, sub.DocID, sub.DocUUID, userUUID, raw)
+	case wsTypeProposalRequestUpdate:
+		h.handleProposalRequestUpdate(ctx, conn, sub.DocID, sub.DocUUID, raw)
 	}
 }
 

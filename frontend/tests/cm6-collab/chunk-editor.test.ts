@@ -5,8 +5,8 @@ import {
   resetChunkEditSession,
   startChunkEditSession,
   updateChunkEditSession,
-} from "../chunk-editor";
-import type { ReviewChunk } from "../types";
+} from "@/core/cm6-collab/review/chunk-editor";
+import type { ReviewChunk } from "@/core/cm6-collab/review/types";
 
 function chunk(overrides: Partial<ReviewChunk> = {}): ReviewChunk {
   return {

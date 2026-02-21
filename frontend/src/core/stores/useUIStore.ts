@@ -47,7 +47,7 @@ export interface PendingThreadReference {
  * UI state store for workspace layout and panel management.
  *
  * Persisted to localStorage: leftPanelUserOverride, rightPanelUserOverride, activeDocumentId, activeThreadId, documentTreeCollapsed.
- * Not persisted (session-scoped): rightPanelState, threadFocusVersion, leftPanelReady, rightPanelReady, proposalReviewMode.
+ * Not persisted (session-scoped): rightPanelState, threadFocusVersion, leftPanelReady, rightPanelReady.
  *
  * ## Panel Collapse State Machine
  *
@@ -240,8 +240,8 @@ interface UIStore {
   pendingThreadReferences: PendingThreadReference[];
 
   /**
-   * Proposal ID to highlight in the review panel after navigating from thread.
-   * Set by TextEditorBlock "View in Editor" action, consumed by AIProposalReviewPanel.
+   * Proposal ID to highlight in the inline review after navigating from thread.
+   * Set by TextEditorBlock "View in Editor" action, consumed by inline review UI.
    * NOT persisted (ephemeral, one-shot).
    * @default null
    */
@@ -254,16 +254,6 @@ interface UIStore {
    * @default null
    */
   lastAtReferenceUsed: number | null;
-
-  /**
-   * View mode for the proposal review diff panel.
-   * NOT persisted — resets to 'unified' on page load.
-   * @default 'unified'
-   */
-  proposalReviewMode: "unified" | "split";
-
-  /** Toggle between unified and split review modes. */
-  toggleProposalReviewMode: () => void;
 
   /**
    * Toggles left panel collapsed/expanded state (sets user override)
@@ -416,8 +406,6 @@ export const useUIStore = create<UIStore>()(
       pendingThreadReferences: [],
       lastAtReferenceUsed: null,
       pendingProposalId: null,
-      proposalReviewMode: "unified",
-
       toggleLeftPanel: () => {
         const currentlyCollapsed = selectEffectiveLeftCollapsed(get());
         // Toggle sets user override to opposite of current effective state
@@ -541,11 +529,6 @@ export const useUIStore = create<UIStore>()(
       setShowVersionHistory: (show) => set({ showVersionHistory: show }),
       recordAtReferenceUsage: () => set({ lastAtReferenceUsed: Date.now() }),
       setPendingProposalId: (id) => set({ pendingProposalId: id }),
-      toggleProposalReviewMode: () =>
-        set((state) => ({
-          proposalReviewMode:
-            state.proposalReviewMode === "unified" ? "split" : "unified",
-        })),
     }),
     {
       name: "ui-store",
@@ -566,7 +549,7 @@ export const useUIStore = create<UIStore>()(
         // Composer hint state
         lastAtReferenceUsed: state.lastAtReferenceUsed,
         // NOT persisted: leftPanelReady, rightPanelReady (session-scoped, set by data loaders)
-        // NOT persisted: threadFocusVersion, rightPanelState, projectSearchQuery, proposalReviewMode (ephemeral)
+        // NOT persisted: threadFocusVersion, rightPanelState, projectSearchQuery (ephemeral)
         // REMOVED in v4: mobileActivePanel (new mobile layout uses local state)
       }),
       // Migrate from older versions

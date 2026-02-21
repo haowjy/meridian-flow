@@ -44,11 +44,19 @@ export interface ProposalGroupAcceptResultEvent {
   outcomes: ProposalGroupAcceptOutcome[];
 }
 
+export interface ProposalUpdateDataEvent {
+  type: "proposal:updateData";
+  documentId: string;
+  proposalId: string;
+  yjsUpdate: string;
+}
+
 export type ProposalServerEvent =
   | ProposalSnapshotEvent
   | ProposalNewEvent
   | ProposalStatusChangedEvent
-  | ProposalGroupAcceptResultEvent;
+  | ProposalGroupAcceptResultEvent
+  | ProposalUpdateDataEvent;
 
 export function isProposalSnapshotEvent(
   event: unknown,
@@ -99,6 +107,20 @@ export function isProposalGroupAcceptResultEvent(
   );
 }
 
+export function isProposalUpdateDataEvent(
+  event: unknown,
+): event is ProposalUpdateDataEvent {
+  if (!isRecord(event)) {
+    return false;
+  }
+  return (
+    event.type === "proposal:updateData" &&
+    typeof event.documentId === "string" &&
+    typeof event.proposalId === "string" &&
+    typeof event.yjsUpdate === "string"
+  );
+}
+
 function isRecord(event: unknown): event is Record<string, unknown> {
   return event != null && typeof event === "object";
 }
@@ -114,6 +136,23 @@ export interface ProposalRejectCommand {
   type: "proposal:reject";
   documentId: string;
   proposalId: string;
+}
+
+export interface ProposalRequestUpdateCommand {
+  type: "proposal:requestUpdate";
+  documentId: string;
+  proposalId: string;
+}
+
+export function buildProposalRequestUpdateCommand(params: {
+  documentId: string;
+  proposalId: string;
+}): ProposalRequestUpdateCommand {
+  return {
+    type: "proposal:requestUpdate",
+    documentId: params.documentId,
+    proposalId: params.proposalId,
+  };
 }
 
 export interface ProposalGroupAcceptCommand {

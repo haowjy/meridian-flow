@@ -10,18 +10,7 @@ export {
   mountProposalReviewMergeView,
   type ProposalReviewMergeViewParams,
   type ProposalReviewMergeViewHandle,
-  mountSplitReviewView,
-  type SplitReviewParams,
-  type SplitReviewHandle,
 } from "./merge";
-
-export {
-  mountUnifiedReviewView,
-  type UnifiedReviewParams,
-  type UnifiedReviewHandle,
-} from "./unified-review";
-
-export { chunkNavigationKeymap, type ChunkNavigationOptions } from "./chunk-navigation";
 
 export type {
   ProposalReviewUnavailableReason,
@@ -55,3 +44,13 @@ export type {
   ReviewChunk,
   ReviewChunkStatus,
 } from "./types";
+
+export {
+  inlineReviewExtension,
+  setReviewChunksEffect,
+  clearReviewEffect,
+  resolveChunkEffect,
+  setActiveChunkIndex,
+  getInlineReviewState,
+  type InlineReviewState,
+} from "./inline-review";

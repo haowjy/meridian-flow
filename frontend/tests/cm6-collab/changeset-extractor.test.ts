@@ -1,8 +1,7 @@
 import { describe, it, expect } from "vitest";
 import * as Y from "yjs";
-import { extractProposalOps } from "../changeset-extractor";
-import { groupIntoChunks } from "../chunk-grouper";
-import type { EditOp } from "../types";
+import { extractProposalOps } from "@/core/cm6-collab/review/changeset-extractor";
+import { groupIntoChunks } from "@/core/cm6-collab/review/chunk-grouper";
 
 // ---------------------------------------------------------------------------
 // Helpers

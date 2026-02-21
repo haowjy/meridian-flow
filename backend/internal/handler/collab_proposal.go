@@ -29,6 +29,8 @@ const (
 	wsTypeProposalNew              = "proposal:new"
 	wsTypeProposalStatusChanged    = "proposal:statusChanged"
 	wsTypeProposalGroupAcceptEvent = "proposal:groupAcceptResult"
+	wsTypeProposalRequestUpdate    = "proposal:requestUpdate"
+	wsTypeProposalUpdateData       = "proposal:updateData"
 )
 
 type collabTypedMessage struct {
@@ -46,6 +48,19 @@ type proposalRejectCommand struct {
 	Type       string `json:"type"`
 	DocumentID string `json:"documentId"`
 	ProposalID string `json:"proposalId"`
+}
+
+type proposalRequestUpdateCommand struct {
+	Type       string `json:"type"`
+	DocumentID string `json:"documentId"`
+	ProposalID string `json:"proposalId"`
+}
+
+type proposalUpdateDataEvent struct {
+	Type       string `json:"type"`
+	DocumentID string `json:"documentId"`
+	ProposalID string `json:"proposalId"`
+	YjsUpdate  string `json:"yjsUpdate"`
 }
 
 type proposalGroupAcceptCommand struct {
@@ -280,6 +295,60 @@ func (h *CollabHandler) handleProposalGroupAccept(
 		return
 	}
 	h.documentBroadcaster.Broadcast(docID, groupEventBytes, nil)
+}
+
+// handleProposalRequestUpdate fetches a single proposal's yjsUpdate and sends
+// it back as a unicast response. Used by the client to lazy-fetch update data
+// for proposals loaded via snapshot (which intentionally omits yjsUpdate).
+func (h *CollabHandler) handleProposalRequestUpdate(
+	ctx context.Context,
+	conn *websocketDocumentConnection,
+	docID string,
+	docUUID uuid.UUID,
+	raw []byte,
+) {
+	if h.proposalStore == nil {
+		h.sendError(conn, "INTERNAL_ERROR", "proposal store unavailable")
+		return
+	}
+
+	var cmd proposalRequestUpdateCommand
+	if err := json.Unmarshal(raw, &cmd); err != nil {
+		h.sendError(conn, "INTERNAL_ERROR", "invalid proposal:requestUpdate payload")
+		return
+	}
+	if _, ok := h.validateProposalCommandDocumentID(conn, cmd.DocumentID, docUUID); !ok {
+		return
+	}
+
+	proposalUUID, err := parseUUID(cmd.ProposalID)
+	if err != nil {
+		h.sendError(conn, "INTERNAL_ERROR", "proposalId must be a valid UUID")
+		return
+	}
+
+	proposal, err := h.proposalStore.GetByID(ctx, proposalUUID)
+	if err != nil {
+		h.logger.Error("collab requestUpdate fetch failed", "document_id", docID, "proposal_id", cmd.ProposalID, "error", err)
+		h.sendError(conn, mapProposalErrorCode(err), "proposal not found")
+		return
+	}
+
+	// Validate the proposal belongs to the requested document
+	if proposal.DocumentID != docUUID {
+		h.sendError(conn, "FORBIDDEN", "proposal does not belong to this document")
+		return
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(proposal.YjsUpdate)
+	if err := conn.SendJSON(proposalUpdateDataEvent{
+		Type:       wsTypeProposalUpdateData,
+		DocumentID: docUUID.String(),
+		ProposalID: proposalUUID.String(),
+		YjsUpdate:  encoded,
+	}); err != nil {
+		h.logger.Error("collab requestUpdate send failed", "document_id", docID, "error", err)
+	}
 }
 
 func (h *CollabHandler) sendProposalSnapshot(
