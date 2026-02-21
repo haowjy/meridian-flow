@@ -10,8 +10,8 @@ export interface UnifiedReviewParams {
   baseText: string;
   proposedText: string;
   chunks: ReviewChunk[];
-  onAcceptChunk: (chunkId: string) => void;
-  onRejectChunk: (chunkId: string) => void;
+  onAcceptChunk: (chunk: ReviewChunk) => void;
+  onRejectChunk: (chunk: ReviewChunk) => void;
 }
 
 export interface UnifiedReviewHandle {
@@ -62,10 +62,10 @@ function createReviewView(params: UnifiedReviewParams, extraExtensions: Extensio
   const { parent, baseText, proposedText, chunks, onAcceptChunk, onRejectChunk } = params;
   const mergeChanges = editOpsToMergeChanges(chunks);
 
-  // For Slice 2/3, all per-chunk actions map to proposal-level accept/reject
-  // (the EditorPanel maps onAcceptChunk → onAcceptProposal). Per-chunk partial
-  // apply is Slice 4. We use the first chunk's id as the representative id.
-  const firstChunkId = chunks[0]?.id ?? "";
+  // mergeControls is called sequentially: (accept, chunk0), (reject, chunk0),
+  // (accept, chunk1), (reject, chunk1), ... — 2 calls per chunk. We use a call
+  // counter to map each button back to the correct ReviewChunk.
+  let mergeControlCallCount = 0;
 
   const extension = unifiedMergeView({
     original: baseText,
@@ -75,6 +75,12 @@ function createReviewView(params: UnifiedReviewParams, extraExtensions: Extensio
     // _action is CM6's built-in editor mutation — NOT called here because proposal
     // acceptance is server-side (via sendProposalAccept), not an in-editor edit.
     mergeControls: (type, _action) => {
+      const chunkIndex = Math.floor(mergeControlCallCount / 2);
+      mergeControlCallCount++;
+      // chunks is guaranteed non-empty when mergeControls is called (CM6 only
+      // renders controls for changed regions), so the non-null assertion is safe.
+      const chunk = (chunks[chunkIndex] ?? chunks[0])!;
+
       const btn = document.createElement("button");
       if (type === "accept") {
         btn.className = "chunk-accept";
@@ -82,7 +88,7 @@ function createReviewView(params: UnifiedReviewParams, extraExtensions: Extensio
         btn.textContent = "✓ Accept";
         btn.addEventListener("click", (e) => {
           e.preventDefault();
-          onAcceptChunk(firstChunkId);
+          if (chunk) onAcceptChunk(chunk);
         });
       } else {
         btn.className = "chunk-reject";
@@ -90,7 +96,7 @@ function createReviewView(params: UnifiedReviewParams, extraExtensions: Extensio
         btn.textContent = "✗ Reject";
         btn.addEventListener("click", (e) => {
           e.preventDefault();
-          onRejectChunk(firstChunkId);
+          if (chunk) onRejectChunk(chunk);
         });
       }
       return btn;
@@ -134,8 +140,14 @@ export function mountUnifiedReviewView(params: UnifiedReviewParams): UnifiedRevi
       // Visible evidence of navigation (scroll-to-chunk is Slice 4+).
       console.debug("[chunk-nav] focused chunk index:", idx, currentParams.chunks[idx]?.id);
     },
-    onAcceptChunk: (id) => currentParams.onAcceptChunk(id),
-    onRejectChunk: (id) => currentParams.onRejectChunk(id),
+    onAcceptChunk: (id) => {
+      const chunk = currentParams.chunks.find((c) => c.id === id);
+      if (chunk) currentParams.onAcceptChunk(chunk);
+    },
+    onRejectChunk: (id) => {
+      const chunk = currentParams.chunks.find((c) => c.id === id);
+      if (chunk) currentParams.onRejectChunk(chunk);
+    },
   });
 
   let view = createReviewView(params, [navKeymap]);

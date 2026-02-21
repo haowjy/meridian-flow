@@ -159,3 +159,34 @@ export function buildProposalGroupAcceptCommand(params: {
     idempotencyKey: params.idempotencyKey,
   };
 }
+
+/**
+ * Client-side partial accept command: identifies which chunks from a proposal
+ * were accepted by the user. Used for local finalization logic.
+ * The actual Yjs edits are applied directly to the Y.Doc; the backend is
+ * sent a standard reject command to close the proposal.
+ */
+export interface ProposalPartialAcceptCommand {
+  type: "proposal:partialAccept";
+  documentId: string;
+  proposalId: string;
+  /** Chunk IDs that were accepted (their edits are already applied to the Y.Doc). */
+  acceptedChunkIds: string[];
+  /** Chunk IDs that were rejected (no edits applied). */
+  rejectedChunkIds: string[];
+}
+
+export function buildProposalPartialAcceptCommand(params: {
+  documentId: string;
+  proposalId: string;
+  acceptedChunkIds: string[];
+  rejectedChunkIds: string[];
+}): ProposalPartialAcceptCommand {
+  return {
+    type: "proposal:partialAccept",
+    documentId: params.documentId,
+    proposalId: params.proposalId,
+    acceptedChunkIds: params.acceptedChunkIds,
+    rejectedChunkIds: params.rejectedChunkIds,
+  };
+}

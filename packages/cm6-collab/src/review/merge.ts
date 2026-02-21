@@ -67,8 +67,8 @@ export interface SplitReviewParams {
   baseText: string;
   proposedText: string;
   chunks: ReviewChunk[];
-  onAcceptChunk: (chunkId: string) => void;
-  onRejectChunk: (chunkId: string) => void;
+  onAcceptChunk: (chunk: ReviewChunk) => void;
+  onRejectChunk: (chunk: ReviewChunk) => void;
 }
 
 export interface SplitReviewHandle {
@@ -124,9 +124,9 @@ function createSplitView(params: SplitReviewParams): MergeView {
   const { parent, baseText, proposedText, chunks, onAcceptChunk, onRejectChunk } = params;
   const mergeChanges = editOpsToMergeChanges(chunks);
 
-  // For Slice 3, all per-chunk actions map to proposal-level accept/reject.
-  // Per-chunk partial apply is Slice 4.
-  const firstChunkId = chunks[0]?.id ?? "";
+  // renderRevertControl is called once per chunk, sequentially. We use a call
+  // counter to map each button group back to the correct ReviewChunk.
+  let revertControlCallCount = 0;
 
   return new MergeView({
     parent,
@@ -154,6 +154,12 @@ function createSplitView(params: SplitReviewParams): MergeView {
     // call onAcceptChunk/onRejectChunk directly.
     revertControls: "a-to-b",
     renderRevertControl: () => {
+      const chunkIndex = revertControlCallCount;
+      revertControlCallCount++;
+      // chunks is guaranteed non-empty when renderRevertControl is called (CM6 only
+      // renders controls for changed regions), so the non-null assertion is safe.
+      const chunk = (chunks[chunkIndex] ?? chunks[0])!;
+
       const container = document.createElement("div");
       container.style.cssText =
         "display:flex;flex-direction:column;gap:2px;padding:2px;align-items:stretch;";
@@ -174,7 +180,7 @@ function createSplitView(params: SplitReviewParams): MergeView {
         e.preventDefault();
         // stopPropagation prevents MergeView's revert click handler from firing.
         e.stopPropagation();
-        onAcceptChunk(firstChunkId);
+        if (chunk) onAcceptChunk(chunk);
       });
 
       const rejectBtn = document.createElement("button");
@@ -191,7 +197,7 @@ function createSplitView(params: SplitReviewParams): MergeView {
       rejectBtn.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
-        onRejectChunk(firstChunkId);
+        if (chunk) onRejectChunk(chunk);
       });
 
       container.appendChild(acceptBtn);

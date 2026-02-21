@@ -3,6 +3,7 @@ import {
   mountUnifiedReviewView,
   mountSplitReviewView,
   type ProposalOperationsModel,
+  type ReviewChunk,
 } from "@meridian/cm6-collab";
 
 // Duck-typed handle — both UnifiedReviewHandle and SplitReviewHandle expose
@@ -20,8 +21,8 @@ interface ReviewHandle {
 interface AIProposalReviewDiffProps {
   operationsModel: ProposalOperationsModel | null;
   mode: "unified" | "split";
-  onAcceptChunk: (chunkId: string) => void;
-  onRejectChunk: (chunkId: string) => void;
+  onAcceptChunk: (chunk: ReviewChunk) => void;
+  onRejectChunk: (chunk: ReviewChunk) => void;
 }
 
 /**
@@ -95,8 +96,8 @@ export function AIProposalReviewDiff({
           baseText,
           proposedText,
           chunks,
-          onAcceptChunk: (chunkId) => onAcceptChunkRef.current(chunkId),
-          onRejectChunk: (chunkId) => onRejectChunkRef.current(chunkId),
+          onAcceptChunk: (chunk) => onAcceptChunkRef.current(chunk),
+          onRejectChunk: (chunk) => onRejectChunkRef.current(chunk),
         });
       } else {
         reviewViewRef.current = mountUnifiedReviewView({
@@ -104,8 +105,8 @@ export function AIProposalReviewDiff({
           baseText,
           proposedText,
           chunks,
-          onAcceptChunk: (chunkId) => onAcceptChunkRef.current(chunkId),
-          onRejectChunk: (chunkId) => onRejectChunkRef.current(chunkId),
+          onAcceptChunk: (chunk) => onAcceptChunkRef.current(chunk),
+          onRejectChunk: (chunk) => onRejectChunkRef.current(chunk),
         });
       }
       mountedModeRef.current = mode;
