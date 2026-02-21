@@ -3,6 +3,7 @@ import type { Extension } from "@codemirror/state";
 import { IndexeddbPersistence } from "y-indexeddb";
 import * as Y from "yjs";
 import {
+  buildEditedChunkUpdate,
   buildPartialUpdate,
   buildProposalAcceptCommand,
   buildProposalRejectCommand,
@@ -54,7 +55,7 @@ interface UseDocumentCollabResult {
    * and applies it to the document. The collab system automatically broadcasts
    * the update to other clients.
    */
-  applyChunkUpdate: (chunk: ReviewChunk) => void;
+  applyChunkUpdate: (chunk: ReviewChunk, editedInsertedText?: string) => void;
   isReady: boolean;
   /** Current Yjs text content — use as initialContent for CodeMirror to avoid
    *  flash of empty placeholder. Safe because ySync only applies future deltas,
@@ -418,15 +419,21 @@ export function useDocumentCollab({
     return result;
   }, [enabled, proposalState.proposals, reviewRevision, reviewRuntime]);
 
-  const applyChunkUpdate = useCallback((chunk: ReviewChunk) => {
-    const doc = runtimeRef.current?.ydoc;
-    if (doc == null) {
-      log.warn("applyChunkUpdate called but runtime not ready");
-      return;
-    }
-    const update = buildPartialUpdate(doc, chunk);
-    Y.applyUpdate(doc, update);
-  }, []);
+  const applyChunkUpdate = useCallback(
+    (chunk: ReviewChunk, editedInsertedText?: string) => {
+      const doc = runtimeRef.current?.ydoc;
+      if (doc == null) {
+        log.warn("applyChunkUpdate called but runtime not ready");
+        return;
+      }
+      const update =
+        editedInsertedText === undefined
+          ? buildPartialUpdate(doc, chunk)
+          : buildEditedChunkUpdate(doc, chunk, editedInsertedText);
+      Y.applyUpdate(doc, update);
+    },
+    [],
+  );
 
   return {
     extensions: enabled ? extensions : [],

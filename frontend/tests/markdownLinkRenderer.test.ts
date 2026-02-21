@@ -53,9 +53,9 @@ describe("markdown link renderer edge cases", () => {
     expect(decorations).toHaveLength(3);
     expect(decorations[0]?.from).toBe(node.from);
     expect(decorations[0]?.to).toBe(node.from + 1);
-    expect((decorations[1]?.deco as { spec?: { class?: string } }).spec?.class).toBe(
-      "cm-link",
-    );
+    expect(
+      (decorations[1]?.deco as { spec?: { class?: string } }).spec?.class,
+    ).toBe("cm-link");
   });
 
   it("skips malformed inline link syntax without URL node ([a](x y))", () => {
@@ -69,13 +69,15 @@ describe("markdown link renderer edge cases", () => {
   });
 
   it("still renders external widget when URL is angle-bracket form", () => {
-    const { node, decorations } = renderFirstLink("p [a](<https://example.com>) q");
+    const { node, decorations } = renderFirstLink(
+      "p [a](<https://example.com>) q",
+    );
 
     expect(decorations).toHaveLength(1);
     expect(decorations[0]?.from).toBe(node.from);
     expect(decorations[0]?.to).toBe(node.to);
-    const widget = (decorations[0]?.deco as { spec?: { widget?: unknown } }).spec
-      ?.widget;
+    const widget = (decorations[0]?.deco as { spec?: { widget?: unknown } })
+      .spec?.widget;
     expect(widget).toBeDefined();
   });
 });

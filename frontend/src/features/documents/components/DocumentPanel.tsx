@@ -52,7 +52,12 @@ export function DocumentPanel({
   effectiveSkillName,
   isResolvingDocument,
 }: DocumentPanelProps) {
-  const { documentTreeCollapsed, activeDocumentId, activeSkillId, showVersionHistory } = useUIStore(
+  const {
+    documentTreeCollapsed,
+    activeDocumentId,
+    activeSkillId,
+    showVersionHistory,
+  } = useUIStore(
     useShallow((s) => ({
       documentTreeCollapsed: s.documentTreeCollapsed,
       activeDocumentId: s.activeDocumentId,
@@ -183,7 +188,9 @@ export function DocumentPanel({
                   <div className="bg-background flex h-full flex-col">
                     <PanelHeader
                       leading={
-                        documentTreeCollapsed ? <DocumentTreeToggle /> : undefined
+                        documentTreeCollapsed ? (
+                          <DocumentTreeToggle />
+                        ) : undefined
                       }
                       ariaLabel="Skill editor"
                       showGradient={false}
@@ -203,7 +210,9 @@ export function DocumentPanel({
                   <div className="bg-background flex h-full flex-col">
                     <PanelHeader
                       leading={
-                        documentTreeCollapsed ? <DocumentTreeToggle /> : undefined
+                        documentTreeCollapsed ? (
+                          <DocumentTreeToggle />
+                        ) : undefined
                       }
                       ariaLabel="Document editor"
                       showGradient={false}

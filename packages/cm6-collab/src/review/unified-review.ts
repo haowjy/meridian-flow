@@ -12,6 +12,7 @@ export interface UnifiedReviewParams {
   chunks: ReviewChunk[];
   onAcceptChunk: (chunk: ReviewChunk) => void;
   onRejectChunk: (chunk: ReviewChunk) => void;
+  onEditChunk?: (chunk: ReviewChunk) => void;
 }
 
 export interface UnifiedReviewHandle {
@@ -56,10 +57,36 @@ const chunkControlTheme = EditorView.theme({
   ".chunk-reject:hover": {
     opacity: "1",
   },
+  ".chunk-edit": {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "2px 8px",
+    borderRadius: "4px",
+    fontSize: "11px",
+    cursor: "pointer",
+    border: "1px solid currentColor",
+    marginRight: "4px",
+    background: "transparent",
+    color: "inherit",
+    fontFamily: "inherit",
+    lineHeight: "1.5",
+    opacity: "0.7",
+  },
+  ".chunk-edit:hover": {
+    opacity: "1",
+  },
 });
 
 function createReviewView(params: UnifiedReviewParams, extraExtensions: Extension[] = []): EditorView {
-  const { parent, baseText, proposedText, chunks, onAcceptChunk, onRejectChunk } = params;
+  const {
+    parent,
+    baseText,
+    proposedText,
+    chunks,
+    onAcceptChunk,
+    onRejectChunk,
+    onEditChunk,
+  } = params;
   const mergeChanges = editOpsToMergeChanges(chunks);
 
   // mergeControls is called sequentially: (accept, chunk0), (reject, chunk0),
@@ -81,25 +108,43 @@ function createReviewView(params: UnifiedReviewParams, extraExtensions: Extensio
       // renders controls for changed regions), so the non-null assertion is safe.
       const chunk = (chunks[chunkIndex] ?? chunks[0])!;
 
-      const btn = document.createElement("button");
       if (type === "accept") {
-        btn.className = "chunk-accept";
-        btn.title = "Accept this change";
-        btn.textContent = "✓ Accept";
-        btn.addEventListener("click", (e) => {
+        const controls = document.createElement("span");
+
+        const acceptBtn = document.createElement("button");
+        acceptBtn.className = "chunk-accept";
+        acceptBtn.title = "Accept this change";
+        acceptBtn.textContent = "✓ Accept";
+        acceptBtn.addEventListener("click", (e) => {
           e.preventDefault();
           if (chunk) onAcceptChunk(chunk);
         });
+        controls.appendChild(acceptBtn);
+
+        if (onEditChunk) {
+          const editBtn = document.createElement("button");
+          editBtn.className = "chunk-edit";
+          editBtn.title = "Edit this change before accepting";
+          editBtn.textContent = "Edit";
+          editBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            if (chunk) onEditChunk(chunk);
+          });
+          controls.appendChild(editBtn);
+        }
+
+        return controls;
       } else {
-        btn.className = "chunk-reject";
-        btn.title = "Reject this change";
-        btn.textContent = "✗ Reject";
-        btn.addEventListener("click", (e) => {
+        const rejectBtn = document.createElement("button");
+        rejectBtn.className = "chunk-reject";
+        rejectBtn.title = "Reject this change";
+        rejectBtn.textContent = "✗ Reject";
+        rejectBtn.addEventListener("click", (e) => {
           e.preventDefault();
           if (chunk) onRejectChunk(chunk);
         });
+        return rejectBtn;
       }
-      return btn;
     },
     diffConfig: {
       // Path A: supply our own Change[] derived directly from Yjs delta ops.

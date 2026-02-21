@@ -37,9 +37,8 @@ export function useMentionPopoverAnchor({
   atMention,
   getView,
 }: UseMentionPopoverAnchorOptions) {
-  const [mentionAnchor, setMentionAnchor] = useState<MentionAnchorCoords | null>(
-    null,
-  );
+  const [mentionAnchor, setMentionAnchor] =
+    useState<MentionAnchorCoords | null>(null);
   const anchorContainerRef = useRef<HTMLDivElement>(null);
 
   const {

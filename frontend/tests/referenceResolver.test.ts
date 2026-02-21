@@ -145,7 +145,9 @@ describe("reference resolver (pure)", () => {
       ],
     };
 
-    expect(resolvePathByIdFromTree("doc-1", snapshot)).toBe("book/chapter-1.md");
+    expect(resolvePathByIdFromTree("doc-1", snapshot)).toBe(
+      "book/chapter-1.md",
+    );
     expect(resolvePathByIdFromTree("f-child", snapshot)).toBe("book/chapters");
   });
 

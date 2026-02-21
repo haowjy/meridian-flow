@@ -180,9 +180,9 @@ describe("treeSyncService", () => {
       await removeOpsForEntity("d1");
       expect(mockOps).toHaveLength(2);
       expect(mockOps.some((op) => op.entityId === "d2")).toBe(true);
-      expect(mockOps.some((op) => op.entityId === "d1" && op.status === "failed")).toBe(
-        true,
-      );
+      expect(
+        mockOps.some((op) => op.entityId === "d1" && op.status === "failed"),
+      ).toBe(true);
     });
   });
 });
@@ -236,7 +236,9 @@ describe("coalesceOps", () => {
     const result = coalesceOps(ops);
     expect(result).toHaveLength(1);
     expect(result[0]!.id).toBe(2);
-    expect((result[0] as { params: { folderId: string } }).params.folderId).toBe("f2");
+    expect(
+      (result[0] as { params: { folderId: string } }).params.folderId,
+    ).toBe("f2");
   });
 
   it("keeps only delete when rename then delete on same entity", () => {
@@ -328,7 +330,9 @@ describe("coalesceOps", () => {
     expect(rename!.id).toBe(3);
     expect((rename as { params: { name: string } }).params.name).toBe("Y");
     expect(move!.id).toBe(4);
-    expect((move as { params: { folderId: string } }).params.folderId).toBe("f2");
+    expect((move as { params: { folderId: string } }).params.folderId).toBe(
+      "f2",
+    );
   });
 
   it("delete supersedes all prior ops including rename and move", () => {

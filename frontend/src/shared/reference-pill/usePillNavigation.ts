@@ -41,9 +41,7 @@ export function usePillNavigation(): PillNavigationResult {
       }
 
       // Document click -> navigate to editor
-      const doc = useTreeStore
-        .getState()
-        .documents.find((d) => d.id === id);
+      const doc = useTreeStore.getState().documents.find((d) => d.id === id);
       if (!doc) return;
       const projectSlug =
         useProjectStore.getState().currentProject()?.slug ?? "";

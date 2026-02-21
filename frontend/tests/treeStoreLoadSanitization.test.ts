@@ -133,7 +133,13 @@ describe("useTreeStore.loadTree snapshot sanitization", () => {
       projectId,
       folders: [rootFolder],
       documents: [
-        makeDocument("valid-doc", projectId, "root", "Valid.md", "Root/Valid.md"),
+        makeDocument(
+          "valid-doc",
+          projectId,
+          "root",
+          "Valid.md",
+          "Root/Valid.md",
+        ),
         makeDocument("malformed-doc", projectId, "root", "Broken.md", ""),
       ],
       updatedAt: new Date("2026-01-01T00:00:00Z").toISOString(),
@@ -165,7 +171,13 @@ describe("useTreeStore.loadTree snapshot sanitization", () => {
     mockGetTree.mockResolvedValue({
       folders: [rootFolder],
       documents: [
-        makeDocument("valid-doc", projectId, "root", "Valid.md", "Root/Valid.md"),
+        makeDocument(
+          "valid-doc",
+          projectId,
+          "root",
+          "Valid.md",
+          "Root/Valid.md",
+        ),
         makeDocument("missing-path-doc", projectId, "root", "Broken.md", ""),
         makeDocument(
           "dangling-folder-doc",
@@ -186,7 +198,9 @@ describe("useTreeStore.loadTree snapshot sanitization", () => {
     const persistedCache = mockProjectTreesPut.mock.calls[0]?.[0] as
       | ProjectTreeCache
       | undefined;
-    expect(persistedCache?.documents.map((doc) => doc.id)).toEqual(["valid-doc"]);
+    expect(persistedCache?.documents.map((doc) => doc.id)).toEqual([
+      "valid-doc",
+    ]);
     expect(mockCancelRetry).toHaveBeenCalledWith("deleted-local-doc");
     expect(mockPendingDocumentSavesBulkDelete).toHaveBeenCalledWith([
       "deleted-local-doc",

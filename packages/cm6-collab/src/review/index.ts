@@ -31,7 +31,20 @@ export type {
   ProposalReviewSnapshot,
 } from "./contracts";
 
-export { buildPartialUpdate } from "./partial-apply";
+export {
+  buildPartialUpdate,
+  buildEditedChunkUpdate,
+  type BuildPartialUpdateOptions,
+} from "./partial-apply";
+export {
+  startChunkEditSession,
+  updateChunkEditSession,
+  resetChunkEditSession,
+  commitChunkEditSession,
+  cancelChunkEditSession,
+  type ChunkEditSession,
+  type ChunkEditCommit,
+} from "./chunk-editor";
 export { extractProposalOps, extractProposalOpsWithClone } from "./changeset-extractor";
 export { groupIntoChunks } from "./chunk-grouper";
 export type {

@@ -130,30 +130,25 @@ export function useDocumentSync<TEditor = any>(
       }
 
       // Content-only save (no AI suggestions in non-collab path)
-      documentSyncService.save(
-        saveDocumentId,
-        storageContent,
-        activeDocument,
-        {
-          onServerSaved: (doc) => {
-            const currentDocId = useEditorStore.getState()._activeDocumentId;
-            if (currentDocId !== saveDocumentId) return;
+      documentSyncService.save(saveDocumentId, storageContent, activeDocument, {
+        onServerSaved: (doc) => {
+          const currentDocId = useEditorStore.getState()._activeDocumentId;
+          if (currentDocId !== saveDocumentId) return;
 
-            // A newer local edit landed while this request was in-flight.
-            // Ignore this stale snapshot to avoid triggering false
-            // pendingServerSnapshot conflicts in useDocumentContent.
-            if (editVersionRef.current !== saveVersion) return;
+          // A newer local edit landed while this request was in-flight.
+          // Ignore this stale snapshot to avoid triggering false
+          // pendingServerSnapshot conflicts in useDocumentContent.
+          if (editVersionRef.current !== saveVersion) return;
 
-            useEditorStore.getState().updateActiveDocument(doc);
-            resetEditVersion(saveVersion);
-            // Clear stashed server snapshot so future saves aren't blocked.
-            // Without this, pendingServerSnapshot stays non-null forever
-            // and the debounced save guard (`if (pendingServerSnapshot) return`)
-            // prevents subsequent saves.
-            setPendingServerSnapshot(null);
-          },
+          useEditorStore.getState().updateActiveDocument(doc);
+          resetEditVersion(saveVersion);
+          // Clear stashed server snapshot so future saves aren't blocked.
+          // Without this, pendingServerSnapshot stays non-null forever
+          // and the debounced save guard (`if (pendingServerSnapshot) return`)
+          // prevents subsequent saves.
+          setPendingServerSnapshot(null);
         },
-      );
+      });
     }, 1000);
 
     return () => {

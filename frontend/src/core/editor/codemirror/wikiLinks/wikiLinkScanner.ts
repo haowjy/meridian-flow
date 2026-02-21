@@ -52,7 +52,7 @@ export const wikiLinkScanner: InlineScanner = {
       // Only when collapsed — a selection dragged through should keep the pill.
       if (
         selection.main.empty &&
-        (cursor >= link.from && cursor < link.to ||
+        ((cursor >= link.from && cursor < link.to) ||
           cursorAdjacentToRange(state, link.from, link.to))
       ) {
         continue;
@@ -66,9 +66,7 @@ export const wikiLinkScanner: InlineScanner = {
       const markClasses = [PILL_MARK_CLASS];
       if (isBroken) markClasses.push(PILL_BROKEN_CLASS);
       if (isFolder) markClasses.push(PILL_FOLDER_CLASS);
-      const title = isBroken
-        ? `Document not found: ${link.path}`
-        : link.path;
+      const title = isBroken ? `Document not found: ${link.path}` : link.path;
 
       // Data attributes for click handler, tooltip, and X-to-delete
       const attributes: Record<string, string> = {

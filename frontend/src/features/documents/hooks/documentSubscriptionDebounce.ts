@@ -33,10 +33,7 @@ export interface DocumentSubscriptionDebounce {
    * @param documentId - document to unsubscribe
    * @param doUnsubscribe - callback that performs the actual unsubscribe
    */
-  scheduleUnsubscribe: (
-    documentId: string,
-    doUnsubscribe: () => void,
-  ) => void;
+  scheduleUnsubscribe: (documentId: string, doUnsubscribe: () => void) => void;
 
   /**
    * Cancel all pending timers. Call on teardown to prevent leaks.
@@ -49,7 +46,8 @@ export function createDocumentSubscriptionDebounce(
 ): DocumentSubscriptionDebounce {
   const debounceMs = options.debounceMs ?? 100;
   const setTimerFn =
-    options.setTimer ?? ((cb: () => void, ms: number) => setTimeout(cb, ms) as unknown as number);
+    options.setTimer ??
+    ((cb: () => void, ms: number) => setTimeout(cb, ms) as unknown as number);
   const clearTimerFn = options.clearTimer ?? ((id: number) => clearTimeout(id));
 
   const pendingUnsubscribes = new Map<string, PendingUnsubscribe>();

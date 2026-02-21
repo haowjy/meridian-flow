@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-import { createProposalReviewRuntime, type Proposal } from "@meridian/cm6-collab";
 import {
+  createProposalReviewRuntime,
+  type Proposal,
+} from "@meridian/cm6-collab";
+import {
+  countChunkResolutions,
   invokeSelectedProposalAction,
   resolveSelectedProposalId,
+  setChunkResolutionStatus,
   sortPendingProposals,
 } from "@/features/documents/components/AIProposalReviewPanel";
 
@@ -32,7 +37,10 @@ function createBaseDoc(text: string): Y.Doc {
   return doc;
 }
 
-function buildRelativeUpdate(baseDoc: Y.Doc, applyEdit: (doc: Y.Doc) => void): string {
+function buildRelativeUpdate(
+  baseDoc: Y.Doc,
+  applyEdit: (doc: Y.Doc) => void,
+): string {
   const working = new Y.Doc();
   Y.applyUpdate(working, Y.encodeStateAsUpdate(baseDoc));
 
@@ -124,7 +132,9 @@ describe("proposal review panel helpers", () => {
     ]);
 
     expect(resolveSelectedProposalId("missing", proposals)).toBe("proposal-1");
-    expect(resolveSelectedProposalId("proposal-2", proposals)).toBe("proposal-2");
+    expect(resolveSelectedProposalId("proposal-2", proposals)).toBe(
+      "proposal-2",
+    );
     expect(resolveSelectedProposalId(null, proposals)).toBe("proposal-1");
   });
 
@@ -137,5 +147,33 @@ describe("proposal review panel helpers", () => {
 
     expect(accept).toHaveBeenCalledWith("proposal-1");
     expect(reject).not.toHaveBeenCalled();
+  });
+
+  it("tracks edited accepts as a distinct local resolution status", () => {
+    let resolutions = new Map<string, Map<string, "accepted" | "accepted_with_edits" | "rejected">>();
+
+    resolutions = setChunkResolutionStatus(
+      resolutions,
+      "proposal-1",
+      "chunk-1",
+      "accepted",
+    );
+    resolutions = setChunkResolutionStatus(
+      resolutions,
+      "proposal-1",
+      "chunk-2",
+      "accepted_with_edits",
+    );
+    resolutions = setChunkResolutionStatus(
+      resolutions,
+      "proposal-1",
+      "chunk-3",
+      "rejected",
+    );
+
+    expect(countChunkResolutions(resolutions.get("proposal-1"))).toEqual({
+      acceptedCount: 2,
+      rejectedCount: 1,
+    });
   });
 });

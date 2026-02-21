@@ -17,8 +17,7 @@ import type { EditorState } from "@codemirror/state";
  *
  * Deliberately excludes apostrophe to preserve contractions (don't, it's).
  */
-const isWordBreak = (char: string) =>
-  /[\s[\](){}*_~`]/.test(char);
+const isWordBreak = (char: string) => /[\s[\](){}*_~`]/.test(char);
 
 /**
  * Get word boundaries around a position using markdown-aware delimiters

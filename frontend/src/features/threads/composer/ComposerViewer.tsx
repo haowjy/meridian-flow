@@ -105,9 +105,7 @@ export function ComposerViewer({ blocks, onPillClick }: ComposerViewerProps) {
           mousedown(event) {
             const target = event.target as HTMLElement;
             if (target.closest(".ref-pill-remove")) return false;
-            const pill = target.closest(
-              ".ref-pill",
-            ) as HTMLElement | null;
+            const pill = target.closest(".ref-pill") as HTMLElement | null;
             if (!pill) return false;
 
             const documentId = pill.dataset.documentId;

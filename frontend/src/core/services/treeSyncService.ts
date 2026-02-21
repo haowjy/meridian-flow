@@ -87,7 +87,9 @@ export async function removeOpsForEntity(entityId: string): Promise<void> {
     .toArray();
 
   if (ops.length > 0) {
-    const ids = ops.map((op) => op.id).filter((id): id is number => id !== undefined);
+    const ids = ops
+      .map((op) => op.id)
+      .filter((id): id is number => id !== undefined);
     await db.pendingTreeOps.bulkDelete(ids);
     log.debug("Removed", ids.length, "ops for entity", entityId);
   }

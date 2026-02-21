@@ -36,7 +36,9 @@ describe("proposal manager", () => {
     manager.onProposalSnapshot({
       type: "proposal:snapshot",
       documentId: "doc-1",
-      proposals: [makeProposal({ id: "snapshot-proposal", yjsUpdate: undefined })],
+      proposals: [
+        makeProposal({ id: "snapshot-proposal", yjsUpdate: undefined }),
+      ],
     });
 
     const state = manager.getState();

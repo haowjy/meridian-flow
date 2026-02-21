@@ -112,11 +112,17 @@ export function createWikiLinkClickHandler(
       if (!refId && docPath && onBrokenClick) {
         event.preventDefault();
         const displayName = ref.dataset.displayName ?? docPath;
-        const refType = ref.dataset.folderHint === "true" ? "folder" : "document";
-        onBrokenClick(docPath, displayName, {
-          x: event.clientX,
-          y: event.clientY,
-        }, refType);
+        const refType =
+          ref.dataset.folderHint === "true" ? "folder" : "document";
+        onBrokenClick(
+          docPath,
+          displayName,
+          {
+            x: event.clientX,
+            y: event.clientY,
+          },
+          refType,
+        );
         // Restore selection after CM6's default handler runs
         setTimeout(() => view.dispatch({ selection: savedSelection }), 0);
         return true;

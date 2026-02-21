@@ -161,6 +161,21 @@ export function buildProposalGroupAcceptCommand(params: {
 }
 
 /**
+ * Client-side-only chunk resolution marker for partial proposal flows.
+ * Distinguishes plain accept from accept-with-edits without changing
+ * backend event contracts.
+ */
+export type ProposalChunkResolutionStatus =
+  | "accepted"
+  | "accepted_with_edits"
+  | "rejected";
+
+export interface ProposalChunkResolution {
+  chunkId: string;
+  status: ProposalChunkResolutionStatus;
+}
+
+/**
  * Client-side partial accept command: identifies which chunks from a proposal
  * were accepted by the user. Used for local finalization logic.
  * The actual Yjs edits are applied directly to the Y.Doc; the backend is
@@ -174,6 +189,8 @@ export interface ProposalPartialAcceptCommand {
   acceptedChunkIds: string[];
   /** Chunk IDs that were rejected (no edits applied). */
   rejectedChunkIds: string[];
+  /** Optional richer per-chunk local marker including edited accepts. */
+  resolutions?: ProposalChunkResolution[];
 }
 
 export function buildProposalPartialAcceptCommand(params: {
@@ -181,6 +198,7 @@ export function buildProposalPartialAcceptCommand(params: {
   proposalId: string;
   acceptedChunkIds: string[];
   rejectedChunkIds: string[];
+  resolutions?: ProposalChunkResolution[];
 }): ProposalPartialAcceptCommand {
   return {
     type: "proposal:partialAccept",
@@ -188,5 +206,8 @@ export function buildProposalPartialAcceptCommand(params: {
     proposalId: params.proposalId,
     acceptedChunkIds: params.acceptedChunkIds,
     rejectedChunkIds: params.rejectedChunkIds,
+    ...(params.resolutions !== undefined
+      ? { resolutions: params.resolutions }
+      : {}),
   };
 }

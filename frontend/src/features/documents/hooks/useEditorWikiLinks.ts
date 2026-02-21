@@ -79,8 +79,9 @@ export function useEditorWikiLinks(
     top: number;
     left: number;
   } | null>(null);
-  const [createPopover, setCreatePopover] =
-    useState<CreatePopoverState | null>(null);
+  const [createPopover, setCreatePopover] = useState<CreatePopoverState | null>(
+    null,
+  );
   const [isCreating, setIsCreating] = useState(false);
 
   const navigate = useNavigate();

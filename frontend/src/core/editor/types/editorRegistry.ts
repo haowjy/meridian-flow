@@ -111,4 +111,3 @@ export function detectEditorType(filename: string): EditorType {
       return "markdown";
   }
 }
-

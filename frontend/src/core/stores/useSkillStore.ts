@@ -96,7 +96,9 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
       retrieve: () => api.skills.list(projectId, { signal }),
       onSuccess: (skills) => {
         // Sort by position
-        const sortedSkills = [...skills].sort((a, b) => a.position - b.position);
+        const sortedSkills = [...skills].sort(
+          (a, b) => a.position - b.position,
+        );
         set((state) => {
           const shouldClearSelectedSkill =
             state.selectedSkillId !== null &&
@@ -106,7 +108,9 @@ export const useSkillStore = create<SkillStoreState>((set, get) => ({
             skillsStatus: "success",
             isLoadingSkills: false,
             skillsLoadedAt: Date.now(),
-            selectedSkillId: shouldClearSelectedSkill ? null : state.selectedSkillId,
+            selectedSkillId: shouldClearSelectedSkill
+              ? null
+              : state.selectedSkillId,
             selectedSkillContent: shouldClearSelectedSkill
               ? null
               : state.selectedSkillContent,

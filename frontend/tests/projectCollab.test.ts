@@ -102,7 +102,10 @@ describe("project collab transport", () => {
     reconnectedSocket.emitTextMessage(
       JSON.stringify({ type: "project:connected" }),
     );
-    expect(extractDocSubscribeIds(reconnectedSocket.sent)).toEqual([DOC_A, DOC_B]);
+    expect(extractDocSubscribeIds(reconnectedSocket.sent)).toEqual([
+      DOC_A,
+      DOC_B,
+    ]);
 
     transport.stop();
   });

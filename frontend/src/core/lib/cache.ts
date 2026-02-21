@@ -86,8 +86,7 @@ function shouldFallbackToCache(error: unknown): boolean {
     const appError = error as AppErrorLike;
     if (appError.name === "AppError") {
       return (
-        appError.type === "NETWORK_ERROR" ||
-        appError.type === "SERVER_ERROR"
+        appError.type === "NETWORK_ERROR" || appError.type === "SERVER_ERROR"
       );
     }
   }
