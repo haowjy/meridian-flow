@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "clear|startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/hooks/session-start-skills.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
