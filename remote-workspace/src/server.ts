@@ -119,19 +119,7 @@ async function getGitIgnoredPathSet(repoRelativePaths: string[]): Promise<Set<st
     );
     return parseGitIgnoredStdout(stdout);
   } catch (error) {
-    const gitError = error as NodeJS.ErrnoException & {
-      code?: string | number;
-      stdout?: string | Buffer;
-    };
-    const errorCode =
-      typeof gitError.code === "number"
-        ? gitError.code
-        : gitError.code !== undefined
-          ? Number.parseInt(gitError.code, 10)
-          : Number.NaN;
-    if (errorCode === 1) {
-      return parseGitIgnoredStdout(gitError.stdout);
-    }
+    const gitError = error as NodeJS.ErrnoException & { stdout?: string | Buffer };
     return parseGitIgnoredStdout(gitError.stdout);
   }
 }
@@ -245,8 +233,7 @@ async function ensureFile(
 const storage = multer.diskStorage({
   destination: async (req, _file, callback) => {
     try {
-      await fs.mkdir(CLIPBOARD_DIRECTORY_PATH, { recursive: true });
-      await ensureDirectory(CLIPBOARD_DIRECTORY_PATH, { allowHidden: true });
+      await ensureClipboardDirectoryReady();
       (req as express.Request & { uploadDirectoryPath?: string }).uploadDirectoryPath =
         CLIPBOARD_DIRECTORY_PATH;
       callback(null, CLIPBOARD_DIRECTORY_PATH);
@@ -304,6 +291,34 @@ const upload = multer({
     callback(null, true);
   },
 });
+const clipboardUploadMiddleware = upload.fields([
+  { name: "file", maxCount: 1 },
+  { name: "files", maxCount: 1 },
+]);
+
+function handleClipboardUpload(req: express.Request, res: express.Response): void {
+  const requestFiles = req.files as Record<string, Express.Multer.File[]> | undefined;
+  const uploadedFile = requestFiles?.file?.[0] ?? requestFiles?.files?.[0];
+  if (!uploadedFile) {
+    res.status(400).json({ error: "Missing upload file" });
+    return;
+  }
+
+  const uploaded = {
+    name: uploadedFile.filename,
+    path: toRepoRelativePath(uploadedFile.path),
+    size: uploadedFile.size,
+  };
+
+  const uploadDirectoryPath = (
+    req as express.Request & { uploadDirectoryPath?: string }
+  ).uploadDirectoryPath;
+
+  res.json({
+    directory: uploadDirectoryPath ? toRepoRelativePath(uploadDirectoryPath) : "",
+    uploaded: [uploaded],
+  });
+}
 
 async function ensureClipboardDirectoryReady(): Promise<void> {
   await fs.mkdir(CLIPBOARD_DIRECTORY_PATH, { recursive: true });
@@ -565,32 +580,9 @@ app.get("/api/file", async (req, res) => {
   }
 });
 
-app.post("/api/upload", upload.fields([
-  { name: "file", maxCount: 1 },
-  { name: "files", maxCount: 1 },
-]), (req, res) => {
-  const requestFiles = req.files as Record<string, Express.Multer.File[]> | undefined;
-  const uploadedFile = requestFiles?.file?.[0] ?? requestFiles?.files?.[0];
-  if (!uploadedFile) {
-    res.status(400).json({ error: "Missing upload file" });
-    return;
-  }
-
-  const uploaded = {
-    name: uploadedFile.filename,
-    path: toRepoRelativePath(uploadedFile.path),
-    size: uploadedFile.size,
-  };
-
-  const uploadDirectoryPath = (
-    req as express.Request & { uploadDirectoryPath?: string }
-  ).uploadDirectoryPath;
-
-  res.json({
-    directory: uploadDirectoryPath ? toRepoRelativePath(uploadDirectoryPath) : "",
-    uploaded: [uploaded],
-  });
-});
+app.post("/api/clipboard/upload", clipboardUploadMiddleware, handleClipboardUpload);
+// Backward compatibility for older cached clients still posting to /api/upload.
+app.post("/api/upload", clipboardUploadMiddleware, handleClipboardUpload);
 
 const currentFilePath = fileURLToPath(import.meta.url);
 const currentDirectoryPath = path.dirname(currentFilePath);
