@@ -338,6 +338,13 @@ For multi-phase plans, use the `/orchestrate` skill interactively. It launches a
 **Agent definitions:** `agents/*.md` in the orchestrate plugin — model, tools, prompt per agent.
 **Skills:** `*/SKILL.md` under your skills directory — reusable instruction bundles.
 
+### Agent Preferences
+
+**Prefer Codex (`research-codex`) for most subagent tasks** — research, exploration, codebase analysis, and general investigation. Use Claude agents for:
+- Review passes (especially `review-thorough`, `review-adversarial`)
+- Frontend implementation and planning
+- Tasks requiring deep architectural reasoning
+
 ### Frontend
 
 - use `pnpm` instead of `npm` for faster compile times
