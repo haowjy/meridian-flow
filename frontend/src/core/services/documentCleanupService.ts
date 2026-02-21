@@ -2,12 +2,20 @@ import { db } from "@/core/lib/db";
 import { buildTree } from "@/core/lib/treeBuilder";
 import { cancelRetry } from "@/core/lib/sync";
 import { makeLogger } from "@/core/lib/logger";
+import type { CachedDocumentMeta } from "@/core/lib/offlineTypes";
 import { sanitizeTreeSnapshot } from "@/core/retrieval";
 import { useRecentDocumentsStore } from "@/core/stores/useRecentDocumentsStore";
 import { useTreeStore } from "@/core/stores/useTreeStore";
 import { useUIStore } from "@/core/stores/useUIStore";
+import type { Document } from "@/features/documents/types/document";
 
 const logger = makeLogger("document-cleanup-service");
+
+function toCachedDocumentMeta(document: Document): CachedDocumentMeta {
+  const { content, ...metadataOnly } = document;
+  void content;
+  return metadataOnly;
+}
 
 /**
  * Remove all local traces of a document after the server confirms it no longer exists.
@@ -63,7 +71,7 @@ export async function purgeDeletedDocumentLocalState(
       await db.projectTrees.put({
         ...cache,
         folders: normalizedCache.folders,
-        documents: normalizedCache.documents,
+        documents: normalizedCache.documents.map(toCachedDocumentMeta),
         updatedAt: now,
       });
     }

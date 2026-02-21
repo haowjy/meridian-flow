@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Document } from "@/features/documents/types/document";
 import type { Folder } from "@/features/folders/types/folder";
-import type { ProjectTreeCache } from "@/core/lib/offlineTypes";
+import type {
+  CachedDocumentMeta,
+  ProjectTreeCache,
+} from "@/core/lib/offlineTypes";
 
 const {
   mockProjectTreesGet,
@@ -96,6 +99,12 @@ function makeDocument(
   };
 }
 
+function toCachedDocumentMeta(document: Document): CachedDocumentMeta {
+  const { content, ...metadataOnly } = document;
+  void content;
+  return metadataOnly;
+}
+
 describe("useTreeStore.loadTree snapshot sanitization", () => {
   beforeEach(() => {
     mockProjectTreesGet.mockReset();
@@ -133,14 +142,18 @@ describe("useTreeStore.loadTree snapshot sanitization", () => {
       projectId,
       folders: [rootFolder],
       documents: [
-        makeDocument(
-          "valid-doc",
-          projectId,
-          "root",
-          "Valid.md",
-          "Root/Valid.md",
+        toCachedDocumentMeta(
+          makeDocument(
+            "valid-doc",
+            projectId,
+            "root",
+            "Valid.md",
+            "Root/Valid.md",
+          ),
         ),
-        makeDocument("malformed-doc", projectId, "root", "Broken.md", ""),
+        toCachedDocumentMeta(
+          makeDocument("malformed-doc", projectId, "root", "Broken.md", ""),
+        ),
       ],
       updatedAt: new Date("2026-01-01T00:00:00Z").toISOString(),
     };
