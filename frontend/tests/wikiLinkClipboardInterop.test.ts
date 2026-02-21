@@ -106,6 +106,8 @@ describe("wiki-link clipboard interop", () => {
     expect(payload.elements).toHaveLength(1);
 
     const output = meridianPayloadToWikiLinkText(payload);
-    expect(output).toBe("A [[book-a/chapter-1.md | chapter-1]] B @[[chapter-1.md]]");
+    expect(output).toBe(
+      "A [[book-a/chapter-1.md | chapter-1]] B @[[chapter-1.md]]",
+    );
   });
 });

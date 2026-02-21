@@ -104,7 +104,7 @@ export function FolderContentPopover({
         refs.setFloating(node);
       }}
       style={floatingStyles}
-      className="bg-card border-border z-[70] max-h-64 min-w-[200px] max-w-[320px] overflow-y-auto rounded-md border p-1 shadow-md"
+      className="bg-card border-border z-[70] max-h-64 max-w-[320px] min-w-[200px] overflow-y-auto rounded-md border p-1 shadow-md"
     >
       <FolderTreeView
         rootFolderId={folderId}

@@ -276,9 +276,12 @@ normalize_var_aliases() {
 }
 
 validate_args() {
+  # ── Model fallback ─────────────────────────────────────────────────────────
+  # If no model was specified (neither CLI -m nor agent definition), fall back
+  # to FALLBACK_MODEL so ad-hoc runs don't fail with a cryptic error.
   if [[ -z "$MODEL" ]]; then
-    echo "ERROR: No model specified. Use -m MODEL or an agent definition with a model field." >&2
-    exit 1
+    echo "[run-agent] WARNING: No model specified; falling back to $FALLBACK_MODEL" >&2
+    MODEL="$FALLBACK_MODEL"
   fi
 
   if [[ -z "$PROMPT" ]] && [[ ${#SKILLS[@]} -eq 0 ]]; then
@@ -288,12 +291,20 @@ validate_args() {
 
   # Validate that template variables referenced in the prompt are not empty.
   # Empty vars cause scope_root to resolve to "/" which breaks mkdir.
+  #
+  # Common caller mistake: passing -v KEY="$SHELL_VAR" where SHELL_VAR was set
+  # as a command-line prefix (VAR=x ./run-agent.sh) without export, so it never
+  # expands and arrives here as a literal empty string.
   if [[ "$HAS_VARS" == true ]]; then
     local key val
     for key in "${!VARS[@]}"; do
       val="${VARS[$key]}"
       if [[ -z "$val" ]]; then
-        echo "ERROR: Template variable '$key' is empty. All -v KEY=VALUE arguments must have non-empty values." >&2
+        echo "ERROR: Template variable '$key' is empty." >&2
+        echo "  Hint: If you set the value via a shell variable, make sure it was exported" >&2
+        echo "  before the command, or use an inline value:" >&2
+        echo "    export MY_VAR=/some/path && ./run-agent.sh -v $key=\"\$MY_VAR\"" >&2
+        echo "    ./run-agent.sh -v $key=/some/path" >&2
         exit 1
       fi
     done

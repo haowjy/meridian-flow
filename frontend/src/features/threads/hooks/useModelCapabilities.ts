@@ -1,9 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type ModelCapabilitiesProvider } from "@/core/lib/api";
-import {
-  getErrorMessageWithFallback,
-  isAbortError,
-} from "@/core/lib/errors";
+import { getErrorMessageWithFallback, isAbortError } from "@/core/lib/errors";
 
 interface UseModelCapabilitiesResult {
   providers: ModelCapabilitiesProvider[];

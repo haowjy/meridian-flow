@@ -136,7 +136,11 @@ export const fencedCodeRenderer: NodeRenderer = {
         lineNum++
       ) {
         const line = state.doc.line(lineNum);
-        decorations.push({ from: line.from, to: line.from, deco: codeBlockLineDeco });
+        decorations.push({
+          from: line.from,
+          to: line.from,
+          deco: codeBlockLineDeco,
+        });
       }
       return decorations;
     }
@@ -194,7 +198,11 @@ export const fencedCodeRenderer: NodeRenderer = {
     const loopStart = language ? contentStart + 1 : contentStart;
     for (let lineNum = loopStart; lineNum < endLine.number; lineNum++) {
       const line = state.doc.line(lineNum);
-      decorations.push({ from: line.from, to: line.from, deco: codeBlockLineDeco });
+      decorations.push({
+        from: line.from,
+        to: line.from,
+        deco: codeBlockLineDeco,
+      });
     }
 
     // --- Shiki syntax highlighting marks ---

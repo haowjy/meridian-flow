@@ -530,7 +530,10 @@ export function createProjectCollabTransport(
 
   const subscribeDocument = (documentId: string) => {
     const normalizedDocumentId = normalizeDocumentId(documentId);
-    if (!normalizedDocumentId || activeSubscriptions.has(normalizedDocumentId)) {
+    if (
+      !normalizedDocumentId ||
+      activeSubscriptions.has(normalizedDocumentId)
+    ) {
       return;
     }
 
@@ -610,10 +613,13 @@ export function createProjectCollabTransport(
       framedDocumentId != null &&
       normalizeDocumentId(framedDocumentId) !== normalizedDocumentId
     ) {
-      log.warn("dropping outbound project collab frame with mismatched document", {
-        expectedDocumentId: normalizedDocumentId,
-        framedDocumentId,
-      });
+      log.warn(
+        "dropping outbound project collab frame with mismatched document",
+        {
+          expectedDocumentId: normalizedDocumentId,
+          framedDocumentId,
+        },
+      );
       return false;
     }
 
@@ -731,8 +737,7 @@ function isDocSubscribedEvent(event: unknown): event is DocSubscribedEvent {
   }
 
   return (
-    event.type === "doc:subscribed" &&
-    typeof event.documentId === "string"
+    event.type === "doc:subscribed" && typeof event.documentId === "string"
   );
 }
 
@@ -742,8 +747,7 @@ function isDocUnsubscribedEvent(event: unknown): event is DocUnsubscribedEvent {
   }
 
   return (
-    event.type === "doc:unsubscribed" &&
-    typeof event.documentId === "string"
+    event.type === "doc:unsubscribed" && typeof event.documentId === "string"
   );
 }
 

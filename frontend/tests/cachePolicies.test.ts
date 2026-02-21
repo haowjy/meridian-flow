@@ -136,5 +136,4 @@ describe("Cache policies", () => {
       }),
     ).rejects.toMatchObject({ type: ErrorType.Forbidden });
   });
-
 });

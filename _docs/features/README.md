@@ -165,6 +165,7 @@ This directory contains detailed documentation for all features in Meridian, org
 - Strategy pattern: `CollabProposalStrategy` (single path)
 - Yjs text diff converter, thread context propagation, WS proposal broadcasting
 - Frontend: connection indicator, proposal badges in thread, editor navigation
+- Frontend proposal review: chunk-level `Edit` with `Save & Accept` in unified mode, with local `accepted_with_edits` tracking
 - Auto-accept ON by default; project-level override in Project Settings
 - Legacy PUA system removed
 

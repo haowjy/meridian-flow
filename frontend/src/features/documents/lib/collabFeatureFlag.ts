@@ -2,8 +2,6 @@
 export function isCollabEnabled(extension: string): boolean {
   const normalized = extension.toLowerCase();
   return (
-    normalized === ".md" ||
-    normalized === ".markdown" ||
-    normalized === ".txt"
+    normalized === ".md" || normalized === ".markdown" || normalized === ".txt"
   );
 }

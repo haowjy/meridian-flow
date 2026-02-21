@@ -1,6 +1,14 @@
 import * as Y from "yjs";
 import type { ReviewChunk } from "./types";
 
+export interface BuildPartialUpdateOptions {
+  /**
+   * Optional override for this chunk's inserted text.
+   * `""` is valid and means "delete-only" for the chunk range.
+   */
+  insertedTextOverride?: string;
+}
+
 /**
  * Constructs a Yjs update that applies only one chunk's text changes to the given doc.
  *
@@ -19,7 +27,10 @@ export function buildPartialUpdate(
   baseDoc: Y.Doc,
   chunk: ReviewChunk,
   textKey = "content",
+  options: BuildPartialUpdateOptions = {},
 ): Uint8Array {
+  const insertedText = options.insertedTextOverride ?? chunk.insertedText;
+
   // 1. Clone baseDoc so we don't mutate the original
   const clone = new Y.Doc();
   Y.applyUpdate(clone, Y.encodeStateAsUpdate(baseDoc));
@@ -34,11 +45,25 @@ export function buildPartialUpdate(
     if (chunk.baseEnd > chunk.baseStart) {
       ytext.delete(chunk.baseStart, chunk.baseEnd - chunk.baseStart);
     }
-    if (chunk.insertedText) {
-      ytext.insert(chunk.baseStart, chunk.insertedText);
+    if (insertedText.length > 0) {
+      ytext.insert(chunk.baseStart, insertedText);
     }
   });
 
   // 4. Return only the new operations (the diff between before and after)
   return Y.encodeStateAsUpdate(clone, before);
+}
+
+/**
+ * Convenience helper for applying one chunk with writer-edited inserted text.
+ */
+export function buildEditedChunkUpdate(
+  baseDoc: Y.Doc,
+  chunk: ReviewChunk,
+  editedInsertedText: string,
+  textKey = "content",
+): Uint8Array {
+  return buildPartialUpdate(baseDoc, chunk, textKey, {
+    insertedTextOverride: editedInsertedText,
+  });
 }

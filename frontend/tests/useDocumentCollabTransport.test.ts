@@ -37,7 +37,7 @@ const reactHarness = vi.hoisted(() => {
     return true;
   };
 
-  const useState = <T,>(
+  const useState = <T>(
     initialState: T | (() => T),
   ): [T, (nextState: T | ((currentState: T) => T)) => void] => {
     const slotIndex = hookIndex;
@@ -61,7 +61,7 @@ const reactHarness = vi.hoisted(() => {
     return [hookSlots[slotIndex] as T, setState];
   };
 
-  const useRef = <T,>(initialValue: T): { current: T } => {
+  const useRef = <T>(initialValue: T): { current: T } => {
     const slotIndex = hookIndex;
     hookIndex += 1;
 
@@ -72,7 +72,10 @@ const reactHarness = vi.hoisted(() => {
     return hookSlots[slotIndex] as { current: T };
   };
 
-  const useMemo = <T,>(factory: () => T, deps: readonly unknown[] | undefined): T => {
+  const useMemo = <T>(
+    factory: () => T,
+    deps: readonly unknown[] | undefined,
+  ): T => {
     const slotIndex = hookIndex;
     hookIndex += 1;
 
@@ -369,7 +372,8 @@ const collabStoreMock = vi.hoisted(() => {
   }
 
   const stateByDocumentId: Record<string, ConnectionState> = {};
-  const proposalStateByDocumentId: Record<string, MockDocumentProposalState> = {};
+  const proposalStateByDocumentId: Record<string, MockDocumentProposalState> =
+    {};
 
   const setState = vi.fn((documentId: string, state: ConnectionState) => {
     stateByDocumentId[documentId] = state;
@@ -384,7 +388,7 @@ const collabStoreMock = vi.hoisted(() => {
     delete proposalStateByDocumentId[documentId];
   });
 
-  const useCollabStore = <T,>(selector: (store: MockCollabStore) => T): T => {
+  const useCollabStore = <T>(selector: (store: MockCollabStore) => T): T => {
     return selector({
       stateByDocumentId,
       proposalStateByDocumentId,
@@ -453,7 +457,10 @@ vi.mock(
   "@/features/documents/contexts/ProjectCollabContext",
   () => projectCollabMock.module,
 );
-vi.mock("@/features/documents/stores/useCollabStore", () => collabStoreMock.module);
+vi.mock(
+  "@/features/documents/stores/useCollabStore",
+  () => collabStoreMock.module,
+);
 vi.mock("y-indexeddb", () => indexedDbMock.module);
 vi.mock("@/core/lib/logger", () => ({
   makeLogger: () => ({
@@ -557,7 +564,10 @@ describe("useDocumentCollab transport wiring", () => {
     });
 
     expect(projectCollabMock.unsubscribeDocument).not.toHaveBeenCalled();
-    expect(collabStoreMock.setState).toHaveBeenCalledWith(DOC_ID, "disconnected");
+    expect(collabStoreMock.setState).toHaveBeenCalledWith(
+      DOC_ID,
+      "disconnected",
+    );
 
     hook.unmount();
   });
@@ -604,7 +614,8 @@ describe("useDocumentCollab IDB recreation after WS win (Slice 4)", () => {
     });
     await flushMicrotasks();
 
-    const createCall = collabRuntimeMock.module.createCollabSyncRuntime.mock.calls[0]![0];
+    const createCall =
+      collabRuntimeMock.module.createCollabSyncRuntime.mock.calls[0]![0];
 
     // Simulate WS winning the race: onInitialSyncComplete fires (which
     // calls cancelIdb -> destroys IDB, then recreates it).
@@ -648,12 +659,17 @@ describe("useDocumentCollab disabled path cleanup (Slice 3)", () => {
     await flushMicrotasks();
 
     // disabled path sets state to disconnected
-    expect(collabStoreMock.setState).toHaveBeenCalledWith(DOC_ID, "disconnected");
+    expect(collabStoreMock.setState).toHaveBeenCalledWith(
+      DOC_ID,
+      "disconnected",
+    );
 
     // Unmount triggers cleanup
     hook.unmount();
 
-    expect(collabStoreMock.module.useCollabStore((s) => s.clearState)).toHaveBeenCalledWith(DOC_ID);
+    expect(
+      collabStoreMock.module.useCollabStore((s) => s.clearState),
+    ).toHaveBeenCalledWith(DOC_ID);
   });
 });
 
@@ -676,7 +692,9 @@ describe("useDocumentCollab bootstrap timing (Slice 1)", () => {
     const hook = mountHook();
     await flushMicrotasks();
 
-    expect(collabRuntimeMock.module.createCollabSyncRuntime).toHaveBeenCalledWith(
+    expect(
+      collabRuntimeMock.module.createCollabSyncRuntime,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         onInitialSyncComplete: expect.any(Function),
       }),
@@ -697,7 +715,8 @@ describe("useDocumentCollab bootstrap timing (Slice 1)", () => {
     expect(runtime).toBeDefined();
 
     // Simulate connected status (without SyncStep2)
-    const createCall = collabRuntimeMock.module.createCollabSyncRuntime.mock.calls[0]![0];
+    const createCall =
+      collabRuntimeMock.module.createCollabSyncRuntime.mock.calls[0]![0];
     createCall.onStatusChange("connected");
 
     // Bootstrap should NOT have been called — no initial sync complete
@@ -718,7 +737,8 @@ describe("useDocumentCollab bootstrap timing (Slice 1)", () => {
     expect(runtime).toBeDefined();
 
     // Fire initial sync complete
-    const createCall = collabRuntimeMock.module.createCollabSyncRuntime.mock.calls[0]![0];
+    const createCall =
+      collabRuntimeMock.module.createCollabSyncRuntime.mock.calls[0]![0];
     createCall.onInitialSyncComplete();
 
     expect(runtime?.bootstrapTextIfEmpty).toHaveBeenCalledWith("seed text");
@@ -735,7 +755,8 @@ describe("useDocumentCollab bootstrap timing (Slice 1)", () => {
     await flushMicrotasks();
 
     const runtime = collabRuntimeMock.getLatestRuntime();
-    const createCall = collabRuntimeMock.module.createCollabSyncRuntime.mock.calls[0]![0];
+    const createCall =
+      collabRuntimeMock.module.createCollabSyncRuntime.mock.calls[0]![0];
     createCall.onInitialSyncComplete();
 
     expect(runtime?.bootstrapTextIfEmpty).not.toHaveBeenCalled();

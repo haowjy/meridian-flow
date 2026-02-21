@@ -44,4 +44,3 @@ export function formatRelativeTime(date: Date): string {
   // Format as "Jan 5" for older dates
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
-

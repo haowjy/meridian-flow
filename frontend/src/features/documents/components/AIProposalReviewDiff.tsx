@@ -23,6 +23,7 @@ interface AIProposalReviewDiffProps {
   mode: "unified" | "split";
   onAcceptChunk: (chunk: ReviewChunk) => void;
   onRejectChunk: (chunk: ReviewChunk) => void;
+  onEditChunk?: (chunk: ReviewChunk) => void;
 }
 
 /**
@@ -41,6 +42,7 @@ export function AIProposalReviewDiff({
   mode,
   onAcceptChunk,
   onRejectChunk,
+  onEditChunk,
 }: AIProposalReviewDiffProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const reviewViewRef = useRef<ReviewHandle | null>(null);
@@ -50,11 +52,13 @@ export function AIProposalReviewDiff({
   // Stable refs so the CM6 view callbacks don't capture stale closures.
   const onAcceptChunkRef = useRef(onAcceptChunk);
   const onRejectChunkRef = useRef(onRejectChunk);
+  const onEditChunkRef = useRef(onEditChunk);
   // Update refs after every render but before paint (useLayoutEffect), so CM6
   // callbacks always see the latest prop values without requiring view recreation.
   useLayoutEffect(() => {
     onAcceptChunkRef.current = onAcceptChunk;
     onRejectChunkRef.current = onRejectChunk;
+    onEditChunkRef.current = onEditChunk;
   });
 
   useEffect(() => {
@@ -107,6 +111,10 @@ export function AIProposalReviewDiff({
           chunks,
           onAcceptChunk: (chunk) => onAcceptChunkRef.current(chunk),
           onRejectChunk: (chunk) => onRejectChunkRef.current(chunk),
+          onEditChunk:
+            onEditChunkRef.current == null
+              ? undefined
+              : (chunk) => onEditChunkRef.current?.(chunk),
         });
       }
       mountedModeRef.current = mode;

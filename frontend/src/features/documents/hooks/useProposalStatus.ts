@@ -13,11 +13,7 @@
 
 import { useCollabStore } from "@/features/documents/stores/useCollabStore";
 
-export type ProposalBadgeStatus =
-  | "pending"
-  | "accepted"
-  | "resolved"
-  | null;
+export type ProposalBadgeStatus = "pending" | "accepted" | "resolved" | null;
 
 /**
  * Look up a proposal's display status for a thread tool-result badge.

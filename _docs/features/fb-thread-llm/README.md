@@ -26,6 +26,7 @@ feature: "Thread/LLM System"
 - Message rendering (text, thinking, tools with markdown)
 - Turn branching/navigation (sibling arrows, edit, regenerate)
 - Model selection, reasoning levels, web search toggle
+- Proposal review handoff to editor supports chunk-level edit-before-accept in unified diff mode
 - See [frontend-ui.md](frontend-ui.md)
 
 ---

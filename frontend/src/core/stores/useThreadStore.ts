@@ -371,19 +371,24 @@ export const useThreadStore = create<ThreadStore>()(
                 threadsProjectId: projectId,
                 threadsLoadedAt: Date.now(),
                 threadId: activeThreadStillExists ? state.threadId : null,
-                currentTurnId:
-                  activeThreadStillExists ? state.currentTurnId : null,
+                currentTurnId: activeThreadStillExists
+                  ? state.currentTurnId
+                  : null,
                 turnIds: activeThreadStillExists ? state.turnIds : [],
                 turnById: activeThreadStillExists ? state.turnById : {},
                 hasMoreBefore: activeThreadStillExists
                   ? state.hasMoreBefore
                   : false,
-                hasMoreAfter: activeThreadStillExists ? state.hasMoreAfter : false,
+                hasMoreAfter: activeThreadStillExists
+                  ? state.hasMoreAfter
+                  : false,
               };
             });
 
             if (removedActiveThreadId) {
-              useStreamStore.getState().removeStreamsByThread(removedActiveThreadId);
+              useStreamStore
+                .getState()
+                .removeStreamsByThread(removedActiveThreadId);
             }
           },
           onAbort: () => {
@@ -1112,7 +1117,10 @@ export const useThreadStore = create<ThreadStore>()(
           const { turnIds: incomingIds, turnById: incomingById } =
             normalizeTurnWindow(turns);
           set((current) => {
-            const mergedIds = mergeTurnIds([...incomingIds, ...current.turnIds]);
+            const mergedIds = mergeTurnIds([
+              ...incomingIds,
+              ...current.turnIds,
+            ]);
             const mergedById = { ...current.turnById, ...incomingById };
             detectStreamingState(threadId, mergedIds, mergedById);
             return {

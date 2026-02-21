@@ -16,7 +16,10 @@ import type { NodeRenderer, DecorationRange, RenderContext } from "../types";
 import { cursorInSameWord, cursorAdjacentToRange } from "../cursorUtils";
 import { classifyLinkTarget } from "@/core/references";
 import type { ResolvedRef } from "@/core/references";
-import { PILL_MARK_CLASS, PILL_FOLDER_CLASS } from "@/shared/reference-pill/constants";
+import {
+  PILL_MARK_CLASS,
+  PILL_FOLDER_CLASS,
+} from "@/shared/reference-pill/constants";
 
 // ============================================================================
 // DECORATIONS
@@ -53,14 +56,8 @@ export const linkRenderer: NodeRenderer = {
     if (!parsed) {
       return decorations;
     }
-    const {
-      linkText,
-      url,
-      textStart,
-      textEnd,
-      urlPartStart,
-      urlPartEnd,
-    } = parsed;
+    const { linkText, url, textStart, textEnd, urlPartStart, urlPartEnd } =
+      parsed;
 
     // Classify the link target
     const classification = classifyLinkTarget(url);
@@ -83,13 +80,7 @@ export const linkRenderer: NodeRenderer = {
 
       case "external":
         // External link: render as real <a> element (widget)
-        return renderExternalLink(
-          decorations,
-          from,
-          to,
-          linkText,
-          url,
-        );
+        return renderExternalLink(decorations, from, to, linkText, url);
 
       case "anchor":
       case "unsupported":

@@ -64,7 +64,10 @@ export function EditTurnInput({
   const shellRef = useRef<ComposerShellRef>(null);
 
   const isPopoverOpen = !isMobile && (atMention?.isActive ?? false);
-  const getComposerView = useCallback(() => shellRef.current?.getView() ?? null, []);
+  const getComposerView = useCallback(
+    () => shellRef.current?.getView() ?? null,
+    [],
+  );
   const {
     anchorContainerRef: mentionAnchorContainerRef,
     mentionAnchor,

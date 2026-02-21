@@ -51,8 +51,7 @@ async function replayOp(op: PendingTreeOp): Promise<void> {
     }
     case "move": {
       // Convert empty string back to null (move-to-root convention from slice 4)
-      const folderId =
-        op.params.folderId === "" ? null : op.params.folderId;
+      const folderId = op.params.folderId === "" ? null : op.params.folderId;
       if (op.entityType === "document") {
         await api.documents.move(op.entityId, op.projectId, folderId);
       } else {
@@ -125,9 +124,7 @@ export async function drainPendingTreeOps(): Promise<void> {
     }
 
     if (coalesced.length < allOps.length) {
-      log.info(
-        `Coalesced ${allOps.length} ops down to ${coalesced.length}`,
-      );
+      log.info(`Coalesced ${allOps.length} ops down to ${coalesced.length}`);
     }
 
     // Pre-drain: refresh tree to get authoritative server state.
@@ -149,11 +146,7 @@ export async function drainPendingTreeOps(): Promise<void> {
       } catch (error) {
         if (isNetworkError(error)) {
           // Transient (5xx / network): stop drain, keep remaining ops for next cycle
-          log.warn(
-            "Network error during drain, stopping",
-            op.entityId,
-            error,
-          );
+          log.warn("Network error during drain, stopping", op.entityId, error);
           break;
         }
 

@@ -16,6 +16,8 @@ export {
   type ProposalAcceptCommand,
   type ProposalRejectCommand,
   type ProposalGroupAcceptCommand,
+  type ProposalChunkResolutionStatus,
+  type ProposalChunkResolution,
   type ProposalPartialAcceptCommand,
   buildProposalPartialAcceptCommand,
 } from "./contracts";

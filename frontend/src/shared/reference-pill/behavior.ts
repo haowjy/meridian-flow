@@ -34,8 +34,7 @@ export function resolvePillBehavior(
 ): PillBehavior {
   const canNavigate = input.canNavigate ?? false;
   const canRemove = input.canRemove ?? false;
-  const hoverSwapIcon =
-    canRemove && (input.hoverSwapIcon ?? canRemove);
+  const hoverSwapIcon = canRemove && (input.hoverSwapIcon ?? canRemove);
 
   return {
     canNavigate,

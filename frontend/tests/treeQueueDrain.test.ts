@@ -8,7 +8,9 @@ import type { PendingTreeOp } from "@/core/lib/offlineTypes";
 const mockGetAllPendingOps = vi.fn<() => Promise<PendingTreeOp[]>>(
   async () => [],
 );
-const mockRemovePendingOp = vi.fn<(id: number) => Promise<void>>(async () => {});
+const mockRemovePendingOp = vi.fn<(id: number) => Promise<void>>(
+  async () => {},
+);
 const mockCoalesceOps = vi.fn<(ops: PendingTreeOp[]) => PendingTreeOp[]>(
   (ops) => ops,
 );
@@ -20,24 +22,36 @@ vi.mock("@/core/services/treeSyncService", () => ({
 }));
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
-const mockDocRename = vi.fn(async (_id: string, _pid: string, _name: string) => ({}));
-const mockDocMove = vi.fn(async (_id: string, _pid: string, _fid: string | null) => ({}));
+const mockDocRename = vi.fn(
+  async (_id: string, _pid: string, _name: string) => ({}),
+);
+const mockDocMove = vi.fn(
+  async (_id: string, _pid: string, _fid: string | null) => ({}),
+);
 const mockDocDelete = vi.fn(async (_id: string) => {});
-const mockFolderRename = vi.fn(async (_id: string, _pid: string, _name: string) => ({}));
-const mockFolderMove = vi.fn(async (_id: string, _pid: string, _parentId: string | null) => ({}));
+const mockFolderRename = vi.fn(
+  async (_id: string, _pid: string, _name: string) => ({}),
+);
+const mockFolderMove = vi.fn(
+  async (_id: string, _pid: string, _parentId: string | null) => ({}),
+);
 const mockFolderDelete = vi.fn(async (_id: string) => {});
 /* eslint-enable @typescript-eslint/no-unused-vars */
 
 vi.mock("@/core/lib/api", () => ({
   api: {
     documents: {
-      rename: (id: string, pid: string, name: string) => mockDocRename(id, pid, name),
-      move: (id: string, pid: string, fid: string | null) => mockDocMove(id, pid, fid),
+      rename: (id: string, pid: string, name: string) =>
+        mockDocRename(id, pid, name),
+      move: (id: string, pid: string, fid: string | null) =>
+        mockDocMove(id, pid, fid),
       delete: (id: string) => mockDocDelete(id),
     },
     folders: {
-      rename: (id: string, pid: string, name: string) => mockFolderRename(id, pid, name),
-      move: (id: string, pid: string, parentId: string | null) => mockFolderMove(id, pid, parentId),
+      rename: (id: string, pid: string, name: string) =>
+        mockFolderRename(id, pid, name),
+      move: (id: string, pid: string, parentId: string | null) =>
+        mockFolderMove(id, pid, parentId),
       delete: (id: string) => mockFolderDelete(id),
     },
   },
@@ -282,7 +296,11 @@ describe("treeQueueDrain", () => {
     ];
     mockGetAllPendingOps.mockResolvedValue(ops);
 
-    const notFoundErr = { type: "NOT_FOUND", name: "AppError", message: "not found" };
+    const notFoundErr = {
+      type: "NOT_FOUND",
+      name: "AppError",
+      message: "not found",
+    };
     mockDocRename.mockRejectedValueOnce(notFoundErr);
     vi.mocked(isAppError).mockImplementation((e) => e === notFoundErr);
 
@@ -301,7 +319,11 @@ describe("treeQueueDrain", () => {
     ];
     mockGetAllPendingOps.mockResolvedValue(ops);
 
-    const conflictErr = { type: "CONFLICT", name: "AppError", message: "conflict" };
+    const conflictErr = {
+      type: "CONFLICT",
+      name: "AppError",
+      message: "conflict",
+    };
     mockFolderDelete.mockRejectedValueOnce(conflictErr);
     vi.mocked(isAppError).mockImplementation((e) => e === conflictErr);
 
@@ -413,12 +435,14 @@ describe("treeQueueDrain", () => {
   });
 
   it("refreshes tree on 409 conflict before stopping", async () => {
-    const ops = [
-      makeOp(1, "delete", "folder", "f1", {}),
-    ];
+    const ops = [makeOp(1, "delete", "folder", "f1", {})];
     mockGetAllPendingOps.mockResolvedValue(ops);
 
-    const conflictErr = { type: "CONFLICT", name: "AppError", message: "conflict" };
+    const conflictErr = {
+      type: "CONFLICT",
+      name: "AppError",
+      message: "conflict",
+    };
     mockFolderDelete.mockRejectedValueOnce(conflictErr);
     vi.mocked(isAppError).mockImplementation((e) => e === conflictErr);
 

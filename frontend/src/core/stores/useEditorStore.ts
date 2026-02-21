@@ -12,10 +12,7 @@ import {
 import { documentSyncService } from "@/core/services/documentSyncService";
 import { purgeDeletedDocumentLocalState } from "@/core/services/documentCleanupService";
 import { shouldPruneLocalEntity } from "@/core/retrieval";
-import {
-  getErrorMessageWithFallback,
-  isAbortError,
-} from "@/core/lib/errors";
+import { getErrorMessageWithFallback, isAbortError } from "@/core/lib/errors";
 import { makeLogger } from "@/core/lib/logger";
 import { useRecentDocumentsStore } from "./useRecentDocumentsStore";
 
@@ -98,7 +95,9 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
         isLoading: false,
       });
       // Track recent document access (document has projectId from API response)
-      useRecentDocumentsStore.getState().addRecent(final.data.projectId, documentId);
+      useRecentDocumentsStore
+        .getState()
+        .addRecent(final.data.projectId, documentId);
     } catch (error) {
       // Handle AbortError silently (expected when user switches documents)
       if (isAbortError(error)) {
@@ -114,7 +113,9 @@ export const useEditorStore = create<EditorStore>()((set, get) => ({
         if (get()._activeDocumentId !== documentId) return;
         set((state) => ({
           activeDocument:
-            state.activeDocument?.id === documentId ? null : state.activeDocument,
+            state.activeDocument?.id === documentId
+              ? null
+              : state.activeDocument,
           error: getErrorMessageWithFallback(error, "Document not found"),
           isLoading: false,
         }));

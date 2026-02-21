@@ -10,7 +10,10 @@ import {
   isNetworkError,
 } from "@/core/lib/errors";
 import { db } from "@/core/lib/db";
-import type { CachedDocumentMeta, ProjectTreeCache } from "@/core/lib/offlineTypes";
+import type {
+  CachedDocumentMeta,
+  ProjectTreeCache,
+} from "@/core/lib/offlineTypes";
 import { cancelRetry } from "@/core/lib/sync";
 import { getDescendantDocumentIds } from "@/core/lib/treeUtils";
 import { makeLogger } from "@/core/lib/logger";
@@ -126,7 +129,11 @@ function optimisticRenameDocument(
     const pathPrefix = buildPathPrefix(folders, doc.folderId);
     return { ...doc, name: newName, filename, path: pathPrefix + filename };
   });
-  return { documents: updatedDocs, folders, tree: buildTree(folders, updatedDocs) };
+  return {
+    documents: updatedDocs,
+    folders,
+    tree: buildTree(folders, updatedDocs),
+  };
 }
 
 /** Rename a folder in-memory: update name, rebuild tree. */
@@ -141,7 +148,11 @@ function optimisticRenameFolder(
   );
   // Paths of documents inside this folder may change — rebuild paths
   const updatedDocs = rebuildDocumentPaths(documents, updatedFolders);
-  return { documents: updatedDocs, folders: updatedFolders, tree: buildTree(updatedFolders, updatedDocs) };
+  return {
+    documents: updatedDocs,
+    folders: updatedFolders,
+    tree: buildTree(updatedFolders, updatedDocs),
+  };
 }
 
 /** Move a document in-memory: update folderId, rebuild path, rebuild tree. */
@@ -156,7 +167,11 @@ function optimisticMoveDocument(
     const pathPrefix = buildPathPrefix(folders, newFolderId);
     return { ...doc, folderId: newFolderId, path: pathPrefix + doc.filename };
   });
-  return { documents: updatedDocs, folders, tree: buildTree(folders, updatedDocs) };
+  return {
+    documents: updatedDocs,
+    folders,
+    tree: buildTree(folders, updatedDocs),
+  };
 }
 
 /** Move a folder in-memory: update parentId, rebuild tree. */
@@ -170,7 +185,11 @@ function optimisticMoveFolder(
     f.id === folderId ? { ...f, parentId: newParentId } : f,
   );
   const updatedDocs = rebuildDocumentPaths(documents, updatedFolders);
-  return { documents: updatedDocs, folders: updatedFolders, tree: buildTree(updatedFolders, updatedDocs) };
+  return {
+    documents: updatedDocs,
+    folders: updatedFolders,
+    tree: buildTree(updatedFolders, updatedDocs),
+  };
 }
 
 /** Delete a document in-memory: remove from array, rebuild tree. */
@@ -180,7 +199,11 @@ function optimisticDeleteDocument(
   docId: string,
 ): { documents: Document[]; folders: Folder[]; tree: TreeNode[] } {
   const updatedDocs = documents.filter((d) => d.id !== docId);
-  return { documents: updatedDocs, folders, tree: buildTree(folders, updatedDocs) };
+  return {
+    documents: updatedDocs,
+    folders,
+    tree: buildTree(folders, updatedDocs),
+  };
 }
 
 /** Delete a folder and all descendants in-memory, rebuild tree. */
@@ -196,7 +219,11 @@ function optimisticDeleteFolder(
   while (changed) {
     changed = false;
     for (const f of folders) {
-      if (f.parentId !== null && folderIdsToRemove.has(f.parentId) && !folderIdsToRemove.has(f.id)) {
+      if (
+        f.parentId !== null &&
+        folderIdsToRemove.has(f.parentId) &&
+        !folderIdsToRemove.has(f.id)
+      ) {
         folderIdsToRemove.add(f.id);
         changed = true;
       }
@@ -207,7 +234,11 @@ function optimisticDeleteFolder(
   const updatedDocs = documents.filter(
     (d) => d.folderId === null || !folderIdsToRemove.has(d.folderId),
   );
-  return { documents: updatedDocs, folders: updatedFolders, tree: buildTree(updatedFolders, updatedDocs) };
+  return {
+    documents: updatedDocs,
+    folders: updatedFolders,
+    tree: buildTree(updatedFolders, updatedDocs),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -385,8 +416,7 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
           folders: normalizedCachedTree.folders,
           documents: normalizedCachedTree.documents,
           tree: normalizedCachedTree.tree,
-          selectedIds:
-            normalizedCachedTree.selectedIds ?? get().selectedIds,
+          selectedIds: normalizedCachedTree.selectedIds ?? get().selectedIds,
           status: "success",
           isFetching: true,
           error: null,
@@ -472,8 +502,7 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
         folders: normalizedServerTree.folders,
         documents: normalizedServerTree.documents,
         tree: normalizedServerTree.tree,
-        selectedIds:
-          normalizedServerTree.selectedIds ?? get().selectedIds,
+        selectedIds: normalizedServerTree.selectedIds ?? get().selectedIds,
         status: "success",
         isFetching: false,
         treeProjectId: projectId,
@@ -589,7 +618,11 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
 
       // Create missing segments from index i onward
       for (; i < segments.length; i++) {
-        const folder = await api.folders.create(projectId, parentId, segments[i]!);
+        const folder = await api.folders.create(
+          projectId,
+          parentId,
+          segments[i]!,
+        );
         parentId = folder.id;
       }
 
@@ -652,7 +685,10 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
       try {
         await useTreeStore.getState().loadTree(projectId);
       } catch (reloadError) {
-        log.warn("Failed to reload tree after rename document rejection", reloadError);
+        log.warn(
+          "Failed to reload tree after rename document rejection",
+          reloadError,
+        );
       }
       set({ error: message });
       throw error;
@@ -665,7 +701,11 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
     // 1. Optimistic in-memory update
     const { documents, folders } = get();
     const optimistic = optimisticRenameFolder(documents, folders, id, name);
-    set({ documents: optimistic.documents, folders: optimistic.folders, tree: optimistic.tree });
+    set({
+      documents: optimistic.documents,
+      folders: optimistic.folders,
+      tree: optimistic.tree,
+    });
 
     // 2. Persist optimistic tree snapshot to Dexie cache
     await persistTreeCache(projectId, optimistic.folders, optimistic.documents);
@@ -697,7 +737,10 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
       try {
         await useTreeStore.getState().loadTree(projectId);
       } catch (reloadError) {
-        log.warn("Failed to reload tree after rename folder rejection", reloadError);
+        log.warn(
+          "Failed to reload tree after rename folder rejection",
+          reloadError,
+        );
       }
       set({ error: message });
       throw error;
@@ -750,7 +793,10 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
       try {
         await useTreeStore.getState().loadTree(projectId);
       } catch (reloadError) {
-        log.warn("Failed to reload tree after move document rejection", reloadError);
+        log.warn(
+          "Failed to reload tree after move document rejection",
+          reloadError,
+        );
       }
       set({ error: message });
       throw error;
@@ -803,7 +849,10 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
       try {
         await useTreeStore.getState().loadTree(projectId);
       } catch (reloadError) {
-        log.warn("Failed to reload tree after move folder rejection", reloadError);
+        log.warn(
+          "Failed to reload tree after move folder rejection",
+          reloadError,
+        );
       }
       set({ error: message });
       throw error;
@@ -858,7 +907,10 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
       try {
         await useTreeStore.getState().loadTree(projectId);
       } catch (reloadError) {
-        log.warn("Failed to reload tree after delete document rejection", reloadError);
+        log.warn(
+          "Failed to reload tree after delete document rejection",
+          reloadError,
+        );
       }
       set({ error: message });
       throw error;
@@ -917,7 +969,10 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
       try {
         await useTreeStore.getState().loadTree(projectId);
       } catch (reloadError) {
-        log.warn("Failed to reload tree after delete folder rejection", reloadError);
+        log.warn(
+          "Failed to reload tree after delete folder rejection",
+          reloadError,
+        );
       }
       set({ error: message });
       throw error;
@@ -928,7 +983,10 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
 
   hydrateFromFolderView: (parentFolderId, viewFolders, viewDocuments) => {
     set((state) => {
-      const inferredProjectId = resolveHydrationProjectId(state, parentFolderId);
+      const inferredProjectId = resolveHydrationProjectId(
+        state,
+        parentFolderId,
+      );
       if (!inferredProjectId) {
         log.warn("Skipping folder hydration: could not infer project context", {
           parentFolderId,
@@ -965,7 +1023,8 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
       const staleDirectFolderIds = Array.from(folderMap.values())
         .filter(
           (folder) =>
-            folder.parentId === parentFolderId && !incomingFolderIds.has(folder.id),
+            folder.parentId === parentFolderId &&
+            !incomingFolderIds.has(folder.id),
         )
         .map((folder) => folder.id);
       const staleFolderIds = collectFolderSubtreeIds(
@@ -992,7 +1051,10 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
       // Prune stale direct child documents for this viewed folder.
       const incomingDocumentIds = new Set(viewDocuments.map((doc) => doc.id));
       for (const [docId, doc] of docMap.entries()) {
-        if (doc.folderId === parentFolderId && !incomingDocumentIds.has(docId)) {
+        if (
+          doc.folderId === parentFolderId &&
+          !incomingDocumentIds.has(docId)
+        ) {
           docMap.delete(docId);
         }
       }
@@ -1007,7 +1069,7 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
         const existing = docMap.get(doc.id);
         const nextUpdatedAt = doc.updated_at
           ? new Date(doc.updated_at)
-          : existing?.updatedAt ?? new Date();
+          : (existing?.updatedAt ?? new Date());
 
         docMap.set(doc.id, {
           id: doc.id,
@@ -1037,8 +1099,7 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
         documents: normalizedHydration.documents,
         tree: normalizedHydration.tree,
         selectedIds: normalizedHydration.selectedIds ?? state.selectedIds,
-        status:
-          normalizedHydration.tree.length > 0 ? "success" : state.status,
+        status: normalizedHydration.tree.length > 0 ? "success" : state.status,
       };
     });
   },

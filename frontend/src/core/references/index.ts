@@ -6,11 +6,7 @@
  */
 
 // Types
-export type {
-  LinkTargetType,
-  LinkClassification,
-  ResolvedRef,
-} from "./types";
+export type { LinkTargetType, LinkClassification, ResolvedRef } from "./types";
 
 // Classification
 export { classifyLinkTarget, isExternalLink } from "./classifyLinkTarget";

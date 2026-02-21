@@ -149,7 +149,8 @@ export const useProjectStore = create<ProjectStore>()(
             );
             // If we have cached data, keep status as 'success', otherwise set to 'error'
             const currentProjects = get().projects;
-            const errorStatus = currentProjects.length > 0 ? "success" : "error";
+            const errorStatus =
+              currentProjects.length > 0 ? "success" : "error";
             set({ error: message, status: errorStatus, isFetching: false });
           },
         });

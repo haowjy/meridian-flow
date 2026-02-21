@@ -69,17 +69,24 @@ export function createPillElement(options: PillOptions): HTMLElement {
     .join(" ");
   pill.className = pillClass;
   const behaviorAttrs = pillBehaviorToDataAttributes(finalBehavior);
-  pill.setAttribute("data-pill-navigable", behaviorAttrs["data-pill-navigable"]);
-  pill.setAttribute("data-pill-removable", behaviorAttrs["data-pill-removable"]);
+  pill.setAttribute(
+    "data-pill-navigable",
+    behaviorAttrs["data-pill-navigable"],
+  );
+  pill.setAttribute(
+    "data-pill-removable",
+    behaviorAttrs["data-pill-removable"],
+  );
   pill.setAttribute(
     "data-pill-hover-swap",
     behaviorAttrs["data-pill-hover-swap"],
   );
 
   const baseTitle = documentPath ?? displayName;
-  pill.title = finalBehavior.canRemove && finalBehavior.canNavigate
-    ? `${baseTitle}\nClick center to open, edge to place caret`
-    : baseTitle;
+  pill.title =
+    finalBehavior.canRemove && finalBehavior.canNavigate
+      ? `${baseTitle}\nClick center to open, edge to place caret`
+      : baseTitle;
   pill.setAttribute("role", "img");
   pill.setAttribute("aria-label", `Reference to ${displayName}`);
   if (documentId) {

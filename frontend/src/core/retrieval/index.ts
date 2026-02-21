@@ -6,7 +6,10 @@ export {
   shouldPruneLocalEntity,
   shouldClearActiveSelection,
 } from "./terminalErrorPolicy";
-export { sanitizeTreeSnapshot, normalizeTreeState } from "./treeSnapshotNormalization";
+export {
+  sanitizeTreeSnapshot,
+  normalizeTreeState,
+} from "./treeSnapshotNormalization";
 export type {
   RetrievalOperationKey,
   TerminalErrorAction,

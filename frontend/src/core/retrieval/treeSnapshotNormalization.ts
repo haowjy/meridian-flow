@@ -79,7 +79,8 @@ export function sanitizeTreeSnapshot({
     if (!rawFilename) continue;
 
     const dotIndex = rawFilename.lastIndexOf(".");
-    const inferredExtension = dotIndex > 0 ? rawFilename.slice(dotIndex) : ".md";
+    const inferredExtension =
+      dotIndex > 0 ? rawFilename.slice(dotIndex) : ".md";
     const rawExtension =
       typeof doc.extension === "string" && doc.extension.trim()
         ? doc.extension

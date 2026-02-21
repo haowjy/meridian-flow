@@ -30,7 +30,9 @@ export async function purgeDeletedDocumentLocalState(
   const staleDoc = treeState.documents.find((doc) => doc.id === documentId);
   if (staleDoc) {
     impactedProjectIds.add(staleDoc.projectId);
-    const nextDocuments = treeState.documents.filter((doc) => doc.id !== documentId);
+    const nextDocuments = treeState.documents.filter(
+      (doc) => doc.id !== documentId,
+    );
     const normalizedTree = sanitizeTreeSnapshot({
       folders: treeState.folders,
       documents: nextDocuments,
@@ -66,10 +68,13 @@ export async function purgeDeletedDocumentLocalState(
       });
     }
   } catch (error) {
-    logger.warn("Failed to update project tree cache after document 404 cleanup", {
-      documentId,
-      error,
-    });
+    logger.warn(
+      "Failed to update project tree cache after document 404 cleanup",
+      {
+        documentId,
+        error,
+      },
+    );
   }
 
   for (const projectId of impactedProjectIds) {

@@ -28,6 +28,10 @@ SESSION_DIR="$SKILLS_DIR/orchestrate/.session"
 
 # ─── Defaults ────────────────────────────────────────────────────────────────
 
+# Default fallback model when the specified model is unavailable or the CLI
+# binary isn't installed.
+FALLBACK_MODEL="claude-sonnet-4-6"
+
 MODEL=""
 EFFORT="high"
 TOOLS="Read,Edit,Write,Bash,Glob,Grep"

@@ -337,9 +337,7 @@ export const ComposerEditor = forwardRef<
             const target = event.target as HTMLElement;
             // Ignore clicks on the remove button (handled by its own onclick)
             if (target.closest("[data-action='remove']")) return false;
-            const pill = target.closest(
-              ".ref-pill",
-            ) as HTMLElement | null;
+            const pill = target.closest(".ref-pill") as HTMLElement | null;
             if (!pill) return false;
 
             const pos = view.posAtDOM(pill, 0);

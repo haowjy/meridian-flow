@@ -89,11 +89,14 @@ describe("offline retry integration", () => {
       .mockRejectedValueOnce(new TypeError("Failed to fetch"))
       .mockResolvedValueOnce({ id: documentId });
 
-    const { documentSyncService } = await import(
-      "@/core/services/documentSyncService"
-    );
+    const { documentSyncService } =
+      await import("@/core/services/documentSyncService");
 
-    await documentSyncService.save(documentId, content, makeDocument(documentId));
+    await documentSyncService.save(
+      documentId,
+      content,
+      makeDocument(documentId),
+    );
 
     expect(mockPendingPut).toHaveBeenCalledWith(
       expect.objectContaining({ documentId, content }),
@@ -103,7 +106,8 @@ describe("offline retry integration", () => {
     // Simulate app reload: module graph rebuilt, IndexedDB rows remain.
     vi.resetModules();
 
-    const { drainPendingSaves } = await import("@/core/lib/persistentSaveDrain");
+    const { drainPendingSaves } =
+      await import("@/core/lib/persistentSaveDrain");
     await drainPendingSaves();
 
     expect(mockSyncDocument).toHaveBeenNthCalledWith(2, documentId, content);
