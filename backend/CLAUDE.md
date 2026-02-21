@@ -117,71 +117,17 @@ httputil.RespondError(w, http.StatusBadRequest, "Invalid input")
 
 See `internal/handler/errors.go` for error mapping and `internal/httputil/` for response helpers.
 
-#### Error Response Format (RFC 7807)
+#### Error Response Format
 
-All errors use RFC 7807 Problem Details format:
-
-**Standard errors** (400, 401, 403, 404, 500):
-```json
-{
-  "type": "https://datatracker.ietf.org/doc/html/rfc7231#section-6.5.1",
-  "title": "Bad Request",
-  "status": 400,
-  "detail": "Human-readable error message"
-}
-```
-
-**409 Conflict errors** (with resource):
-```json
-{
-  "type": "https://datatracker.ietf.org/doc/html/rfc7231#section-6.5.8",
-  "title": "Conflict",
-  "status": 409,
-  "detail": "Resource already exists",
-  "resource": { /* existing/conflicting resource object */ }
-}
-```
-
-**Key convention**: Always use `resource` field (not `document`, `project`, etc.) for frontend compatibility. Use `RespondErrorWithExtras()` for 409s with resources.
+RFC 7807 Problem Details (`type`, `title`, `status`, `detail`). 409 Conflicts include generic `resource` field (not `document`/`project`) — use `RespondErrorWithExtras()`. See `internal/handler/errors.go` for mapping.
 
 ### 5. Local Development with Submodules
 
-**Library versions:**
-- **Production/Docker:** Uses tagged GitHub versions (v0.0.2, v0.0.4, etc.)
-- **Local development:** Uses `go.work` for live submodule changes
-
-**Development workflow:**
-
-```bash
-# Regular dev (uses go.work automatically)
-make run
-make build
-
-# Force local workspace (if go.work not auto-detected)
-make run-local   # GOWORK=../go.work go run ./cmd/server/main.go
-make build-local # GOWORK=../go.work go build -o bin/server ./cmd/server
-```
-
-**Important notes:**
-- ❌ **DO NOT use `replace` directives in `go.mod`** - breaks Docker builds
-- ✅ **Use `go.work`** for local submodule development (already configured)
-- ✅ **Use tagged versions** for production (Docker, Railway)
-
-**Updating library versions:**
-
-Patch versions for `meridian-llm-go` are **auto-bumped** by a post-commit hook. After committing in the submodule, the hook automatically:
-1. Tags the commit (v0.0.X+1)
-2. Pushes commit + tag to origin
-3. Updates `backend/go.mod` with the new version
-
-You just need to commit `backend/go.mod` + `go.sum` in the parent repo afterward.
-
-For **manual/interactive** version management (minor/major bumps, multi-library updates):
-```bash
-./scripts/update-libraries.sh "Add new feature"
-```
-
-**See:** `scripts/README.md` -> `llm-post-commit.sh` for hook details, `update-libraries.sh` for interactive mode.
+- **Local dev**: Uses `go.work` (already configured). Never use `replace` directives in `go.mod` (breaks Docker).
+- **Production**: Tagged GitHub versions.
+- **Auto-bump**: Patch versions for `meridian-llm-go` are auto-bumped by post-commit hook. Just commit `go.mod` + `go.sum` afterward.
+- **Manual bumps**: `./scripts/update-libraries.sh "message"`
+- **See**: `meridian-llm-go/CLAUDE.md`, `scripts/README.md`
 
 ## Environment Variables
 
@@ -267,239 +213,14 @@ See `internal/middleware/auth.go` for implementation.
 
 ### Key Pattern: Atomic PersistAndClear
 
-**Always use this pattern:**
-```go
-// ✅ Atomic persist-and-clear (prevents race conditions)
-stream.PersistAndClear(func(events []mstream.Event) error {
-    return db.SaveBlock(events)
-})
-```
+**Always use `stream.PersistAndClear()`** — never separate persist and clear (race condition). `DEBUG=true` enables sequential event IDs. Lorem testing: use `lorem_max` parameter to control output length.
 
-**Never do this:**
-```go
-// ❌ Race condition: buffer cleared before DB commit
-db.SaveBlock(events)
-stream.ClearBuffer()
-```
+**See**: `_docs/technical/llm/streaming/README.md` (navigation hub) | `_docs/technical/backend/architecture/streaming-architecture.md`
 
-### DEBUG Mode
+## Tool System
 
-**Development:** `DEBUG=true` in `.env` - enables sequential event IDs for debugging
+SOLID-compliant tool system: `ToolExecutor` interface + `ToolRegistry` + `ToolRegistryBuilder` (fluent API). Tools: document tools (internal), web search (external via `SearchClient` interface). Auto-maps minimal tool names (`web_search`, `bash`, `text_editor`) to provider built-ins.
 
-**Production:** `DEBUG=false` - no event IDs (better performance)
+**See**: `_docs/technical/backend/tools/architecture.md` for full details (adding tools, providers, auto-mapping logic).
 
-**Lorem Testing Parameters:**
-- `lorem_max`: Limits lorem provider output to N words
-- Works with any `lorem-*` model (`lorem-fast`, `lorem-slow`, `lorem-medium`)
-- Overrides `max_tokens` when set
-- Use cases:
-  - Quick testing: Set `lorem_max` < `max_tokens` for fast responses
-  - Cutoff simulation: Set `lorem_max` > `max_tokens` to test max_tokens limits
-- Examples:
-  ```json
-  // Quick test (stops early)
-  {
-    "model": "lorem-slow",
-    "max_tokens": 500,
-    "lorem_max": 50
-  }
-  // Result: Lorem stops at 50 words
-
-  // Simulate cutoff (hits limit)
-  {
-    "model": "lorem-slow",
-    "max_tokens": 100,
-    "lorem_max": 150
-  }
-  // Result: Lorem tries to generate 150 words but cuts off at 100 (stop_reason: "max_tokens")
-  ```
-
-### Documentation
-
-- **Start here:** `_docs/technical/llm/streaming/README.md` (navigation hub)
-- Architecture: `_docs/technical/backend/architecture/streaming-architecture.md`
-- Block types: `_docs/technical/llm/streaming/block-types-reference.md`
-- Race conditions: `_docs/technical/llm/streaming/race-conditions.md`
-- Library: `meridian-stream-go/README.md`
-
-## Tool System Architecture
-
-### Overview
-
-The tool system follows SOLID principles with clean separation of concerns:
-
-**Core Components:**
-- `ToolExecutor` interface - Single method: `Execute(ctx, input) (result, error)`
-- `ToolRegistry` - Thread-safe tool registration and execution
-- `ToolConfig` - Centralized configuration (replaces magic numbers)
-- `PathResolver` - Shared folder path resolution logic
-- `ToolRegistryBuilder` - Fluent API for building tool registries
-
-**Tool Types:**
-1. **Document Tools** (internal): `str_replace_based_edit_tool`, `doc_search`
-2. **Web Search Tools** (external): `web_search` (requires API key)
-
-### Adding New Tools
-
-**Using the Builder (Recommended):**
-```go
-registry := tools.NewToolRegistryBuilder().
-    WithDocumentTools(projectID, documentRepo, folderRepo).
-    WithWebSearch(searchClient). // Optional
-    Build()
-```
-
-**Creating Custom Tools:**
-1. Implement `ToolExecutor` interface
-2. Add to builder via new `With*()` method
-3. Define schema in `tool_definition.go`
-
-### External API Tools
-
-**Architecture:**
-- `external.SearchClient` interface - Provider abstraction
-- `external.TavilyClient` - Tavily implementation
-- Future: BraveClient, SerperClient, etc.
-
-**Provider-Specific Tool Names:**
-
-Frontend sends provider-specific tool name, Claude sees generic `web_search`:
-
-```json
-{
-  "tools": [
-    {"name": "tavily_web_search"}     // Frontend specifies provider
-  ]
-}
-```
-
-Backend resolves to `web_search` tool that Claude calls:
-```json
-{
-  "function": {
-    "name": "web_search",             // Claude sees this
-    "description": "Search the web...",
-    "parameters": {...}
-  }
-}
-```
-
-**Supported Providers:**
-- `tavily_web_search` - Tavily AI (implemented)
-- `brave_web_search` - Brave Search (future)
-- `serper_web_search` - Serper.dev (future)
-- `exa_web_search` - Exa AI (future)
-
-**Configuration:**
-```bash
-SEARCH_API_KEY=tvly-your-key
-SEARCH_API_PROVIDER=tavily  # Used for validation
-```
-
-**Wiring** (request-based in streaming service):
-- Frontend sends `tavily_web_search` in tools array
-- If `SEARCH_API_KEY` is set, backend registers Tavily
-- Logs include `web_search_enabled` and `web_search_provider` fields
-
-### SOLID Compliance
-
-**SRP** (9/10): PathResolver extracts duplicate logic
-**OCP** (8/10): Builder pattern allows extension without modification
-**LSP** (10/10): All tools are perfectly substitutable
-**ISP** (10/10): Minimal ToolExecutor interface
-**DIP** (7/10 -> 9/10): External API abstraction added
-
-See `_docs/technical/backend/tools/architecture.md` for detailed analysis.
-
-## Tool Auto-Mapping
-
-The backend automatically maps minimal tool definitions to provider-specific implementations.
-
-### Usage Patterns
-
-**Minimal definition (auto-map to built-in):**
-```json
-{
-  "tools": [
-    {"name": "web_search"},
-    {"name": "bash"},
-    {"name": "text_editor"}
-  ]
-}
-```
--> Library resolves to provider's built-in tools (e.g., Anthropic's `web_search_20250305`)
-
-**Custom tool (bypass auto-mapping):**
-```json
-{
-  "tools": [
-    {
-      "type": "custom",
-      "name": "make_file",
-      "description": "Write text to a file",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "filename": {"type": "string"},
-          "content": {"type": "string"}
-        }
-      }
-    }
-  ]
-}
-```
--> Used as-is, no mapping (user-provided custom tool)
-
-**Mix both:**
-```json
-{
-  "tools": [
-    {"name": "web_search"},
-    {"type": "custom", "name": "my_tool", "description": "...", "input_schema": {...}}
-  ]
-}
-```
--> First tool auto-maps, second bypasses
-
-### Supported Built-in Tools
-
-- `web_search` (or `search`) - Web search (server-executed)
-- `text_editor` (or `file_edit`) - Text editor (client-executed)
-- `bash` (or `code_exec`) - Bash command execution (client-executed)
-
-### Detection Logic
-
-```
-if tool.Type == "custom":
-    -> Pass through as-is (user-provided custom tool)
-elif tool has only Name (missing Category/ExecutionSide/Config):
-    -> Auto-map to built-in using MapToolByName()
-else:
-    -> Pass through as-is (already fully defined)
-```
-
-**Implementation:** See `backend/internal/service/llm/adapters/conversion.go:convertTools()`
-
-### Testing Submodule Examples
-
-The submodules have their own Makefiles for testing:
-
-```bash
-# Test meridian-stream-go examples
-cd meridian-stream-go
-make run-simple              # Basic streaming
-make run-nethttp-sse         # SSE with net/http
-make run-catchup-test        # Reconnection/catchup
-make clean                   # Remove binaries
-
-# Test meridian-llm-go examples
-cd meridian-llm-go
-make run-lorem-streaming     # Mock provider (no API key)
-make run-anthropic-streaming # Real Claude API
-make clean
-```
-
-See submodule READMEs for complete documentation:
-- `meridian-stream-go/README.md`
-- `meridian-llm-go/README.md`
-- `meridian-llm-go/examples/README.md`
+**Submodule testing**: See `meridian-stream-go/README.md` and `meridian-llm-go/README.md` for examples.
