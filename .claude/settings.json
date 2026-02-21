@@ -10,6 +10,17 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "EnterPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/hooks/plan-mode-skills.sh"
+          }
+        ]
+      }
     ]
   }
 }
