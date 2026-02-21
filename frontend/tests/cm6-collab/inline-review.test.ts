@@ -94,7 +94,7 @@ describe("inline review state field", () => {
       expect(review.chunks[2]!.id).toBe("chunk-2");
     });
 
-    it("sets activeChunkIndex to 0 when chunks are present", () => {
+    it("sets activeChunkIndex to 0 on initial load (no prior chunks)", () => {
       const chunks = makeChunks(2);
       let state = createState();
       state = applyEffect(state, setReviewChunks.of(chunks));
@@ -161,6 +161,44 @@ describe("inline review state field", () => {
       expect(review.resolutions.has("chunk-0")).toBe(true);
       expect(review.resolutions.has("chunk-1")).toBe(true);
       expect(review.resolutions.has("chunk-2")).toBe(false);
+    });
+
+    it("preserves activeChunkIndex across re-sync when index is valid", () => {
+      const chunks = makeChunks(5);
+      let state = createState();
+      state = applyEffect(state, setReviewChunks.of(chunks));
+      state = applyEffect(state, setActiveChunk.of(3));
+      expect(getReviewState(state).activeChunkIndex).toBe(3);
+
+      // Re-sync with same chunks — index should be preserved
+      state = applyEffect(state, setReviewChunks.of(makeChunks(5)));
+      expect(getReviewState(state).activeChunkIndex).toBe(3);
+    });
+
+    it("clamps activeChunkIndex when re-synced list is shorter", () => {
+      const chunks = makeChunks(5);
+      let state = createState();
+      state = applyEffect(state, setReviewChunks.of(chunks));
+      state = applyEffect(state, setActiveChunk.of(4));
+      expect(getReviewState(state).activeChunkIndex).toBe(4);
+
+      // Re-sync with fewer chunks — index should clamp
+      state = applyEffect(state, setReviewChunks.of(makeChunks(3)));
+      expect(getReviewState(state).activeChunkIndex).toBe(2);
+    });
+
+    it("preserves idle (-1) activeChunkIndex after Escape then re-sync", () => {
+      const chunks = makeChunks(3);
+      let state = createState();
+      state = applyEffect(state, setReviewChunks.of(chunks));
+
+      // Escape → idle
+      state = applyEffect(state, setActiveChunk.of(-1));
+      expect(getReviewState(state).activeChunkIndex).toBe(-1);
+
+      // Re-sync — should stay idle
+      state = applyEffect(state, setReviewChunks.of(makeChunks(3)));
+      expect(getReviewState(state).activeChunkIndex).toBe(-1);
     });
 
     it("resets all resolutions when entirely new chunks are loaded", () => {
@@ -312,6 +350,65 @@ describe("inline review state field", () => {
       expect(pending).toHaveLength(2);
       expect(pending[0]!.id).toBe("chunk-1");
       expect(pending[1]!.id).toBe("chunk-3");
+    });
+  });
+
+  describe("Escape focus clear (Phase 1)", () => {
+    it("setActiveChunk.of(-1) clears active focus from a focused chunk", () => {
+      const chunks = makeChunks(3);
+      let state = createState();
+      state = applyEffect(state, setReviewChunks.of(chunks));
+
+      // Initially active chunk is 0
+      expect(getReviewState(state).activeChunkIndex).toBe(0);
+
+      // Focus chunk 2
+      state = applyEffect(state, setActiveChunk.of(2));
+      expect(getReviewState(state).activeChunkIndex).toBe(2);
+
+      // Escape clears focus (Escape handler dispatches setActiveChunk.of(-1))
+      state = applyEffect(state, setActiveChunk.of(-1));
+      expect(getReviewState(state).activeChunkIndex).toBe(-1);
+    });
+
+    it("focus transitions: idle → focused → idle via Escape", () => {
+      const chunks = makeChunks(2);
+      let state = createState();
+
+      // Idle: no chunks loaded
+      expect(getReviewState(state).activeChunkIndex).toBe(-1);
+
+      // Load chunks → auto-focus first
+      state = applyEffect(state, setReviewChunks.of(chunks));
+      expect(getReviewState(state).activeChunkIndex).toBe(0);
+
+      // Navigate to next
+      state = applyEffect(state, setActiveChunk.of(1));
+      expect(getReviewState(state).activeChunkIndex).toBe(1);
+
+      // Escape → back to idle
+      state = applyEffect(state, setActiveChunk.of(-1));
+      expect(getReviewState(state).activeChunkIndex).toBe(-1);
+
+      // Can re-focus after Escape
+      state = applyEffect(state, setActiveChunk.of(0));
+      expect(getReviewState(state).activeChunkIndex).toBe(0);
+    });
+
+    it("Escape on already-idle state does not change state", () => {
+      const chunks = makeChunks(2);
+      let state = createState();
+      state = applyEffect(state, setReviewChunks.of(chunks));
+
+      // Clear focus
+      state = applyEffect(state, setActiveChunk.of(-1));
+      const stateBefore = getReviewState(state);
+
+      // Another clear — state should be identical reference
+      state = applyEffect(state, setActiveChunk.of(-1));
+      // activeChunkIndex is already -1, so value is unchanged
+      expect(getReviewState(state).activeChunkIndex).toBe(-1);
+      expect(getReviewState(state).chunks).toBe(stateBefore.chunks);
     });
   });
 });

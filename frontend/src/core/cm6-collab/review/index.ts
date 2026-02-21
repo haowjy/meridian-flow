@@ -53,4 +53,5 @@ export {
   setActiveChunkIndex,
   getInlineReviewState,
   type InlineReviewState,
+  type InlineReviewCallbacks,
 } from "./inline-review";
