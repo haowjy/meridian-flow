@@ -223,10 +223,7 @@ class LivePreviewPlugin {
             const decos = scanner.scan(text, from, ctx);
             decorations.push(...decos);
           } catch (error) {
-            log.warn(
-              `[LivePreview] Scanner "${scanner.id}" failed:`,
-              error,
-            );
+            log.warn(`[LivePreview] Scanner "${scanner.id}" failed:`, error);
           }
         }
       }

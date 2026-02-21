@@ -1012,6 +1012,11 @@ body.preload * {
     background: color-mix(in srgb, var(--error) 15%, transparent);
     color: var(--error);
   }
+
+  .cm-review-edit-btn:hover {
+    background: color-mix(in srgb, var(--primary) 15%, transparent);
+    color: var(--primary);
+  }
 }
 
 /* ============================================================================

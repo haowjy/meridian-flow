@@ -2,7 +2,11 @@ import { Prec, type Extension } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
 import * as decoding from "lib0/decoding";
 import * as encoding from "lib0/encoding";
-import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
+import {
+  Awareness,
+  applyAwarenessUpdate,
+  encodeAwarenessUpdate,
+} from "y-protocols/awareness";
 import * as syncProtocol from "y-protocols/sync";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import * as Y from "yjs";
@@ -107,7 +111,10 @@ export class CollabSyncRuntime {
 
       const encoder = encoding.createEncoder();
       syncProtocol.writeUpdate(encoder, update);
-      this.sendEnvelope(MeridianEnvelopeType.Update, encoding.toUint8Array(encoder));
+      this.sendEnvelope(
+        MeridianEnvelopeType.Update,
+        encoding.toUint8Array(encoder),
+      );
     };
 
     this.onAwarenessUpdate = ({ added, updated, removed }, origin) => {
@@ -141,7 +148,10 @@ export class CollabSyncRuntime {
 
     const encoder = encoding.createEncoder();
     syncProtocol.writeSyncStep1(encoder, this.ydoc);
-    this.sendEnvelope(MeridianEnvelopeType.SyncStep1, encoding.toUint8Array(encoder));
+    this.sendEnvelope(
+      MeridianEnvelopeType.SyncStep1,
+      encoding.toUint8Array(encoder),
+    );
   }
 
   /**
@@ -178,7 +188,10 @@ export class CollabSyncRuntime {
         this.handleSyncPayload(payload);
         // SyncStep2 = server's diff response = initial sync is complete.
         // Fire callback once so consumers know server state is in ytext.
-        if (envelope === MeridianEnvelopeType.SyncStep2 && !this.didFireInitialSync) {
+        if (
+          envelope === MeridianEnvelopeType.SyncStep2 &&
+          !this.didFireInitialSync
+        ) {
           this.didFireInitialSync = true;
           this.onInitialSyncComplete?.();
         }
@@ -217,7 +230,10 @@ export class CollabSyncRuntime {
     }
   }
 
-  private sendEnvelope(envelope: MeridianEnvelopeType, payload: Uint8Array): void {
+  private sendEnvelope(
+    envelope: MeridianEnvelopeType,
+    payload: Uint8Array,
+  ): void {
     this.sendBinary(frameEnvelope(envelope, this.documentId, payload));
   }
 
@@ -236,7 +252,9 @@ function readSyncType(syncPayload: Uint8Array): SyncMessageType {
   return decoding.readVarUint(decoder) as SyncMessageType;
 }
 
-export function parseCollabServerTextEvent(raw: string): CollabServerTextEvent | null {
+export function parseCollabServerTextEvent(
+  raw: string,
+): CollabServerTextEvent | null {
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (

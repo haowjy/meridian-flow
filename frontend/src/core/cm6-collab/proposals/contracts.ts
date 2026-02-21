@@ -71,9 +71,7 @@ export function isProposalSnapshotEvent(
   );
 }
 
-export function isProposalNewEvent(
-  event: unknown,
-): event is ProposalNewEvent {
+export function isProposalNewEvent(event: unknown): event is ProposalNewEvent {
   if (!isRecord(event)) {
     return false;
   }

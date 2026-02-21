@@ -34,7 +34,10 @@ export {
   type HunkEditSession,
   type HunkEditCommit,
 } from "./hunk-editor";
-export { extractProposalOps, extractProposalOpsWithClone } from "./changeset-extractor";
+export {
+  extractProposalOps,
+  extractProposalOpsWithClone,
+} from "./changeset-extractor";
 export { groupIntoHunks } from "./hunk-grouper";
 export type {
   EditOp,

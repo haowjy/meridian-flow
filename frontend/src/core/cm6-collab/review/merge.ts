@@ -44,11 +44,17 @@ function createMergeView(params: ProposalReviewMergeViewParams): MergeView {
     parent: params.parent,
     a: {
       doc: params.baseText,
-      extensions: [EditorState.readOnly.of(true), EditorView.editable.of(false)],
+      extensions: [
+        EditorState.readOnly.of(true),
+        EditorView.editable.of(false),
+      ],
     },
     b: {
       doc: params.proposedText,
-      extensions: [EditorState.readOnly.of(true), EditorView.editable.of(false)],
+      extensions: [
+        EditorState.readOnly.of(true),
+        EditorView.editable.of(false),
+      ],
     },
     highlightChanges: true,
     gutter: true,

@@ -56,4 +56,47 @@ describe("hunk editor session", () => {
     expect(reset.draftInsertedText).toBe("world");
     expect(cancelHunkEditSession()).toBeNull();
   });
+
+  it("treats empty string as valid edit (#7: empty is valid data)", () => {
+    const session = startHunkEditSession(hunk({ insertedText: "hello" }));
+    const updated = updateHunkEditSession(session, "");
+    const commit = commitHunkEditSession(updated);
+
+    // Empty string "" is valid — not coerced to absent/undefined
+    expect(commit.insertedText).toBe("");
+    expect(commit.wasEdited).toBe(true);
+  });
+
+  it("reports wasEdited=false when text is unchanged", () => {
+    const session = startHunkEditSession(hunk({ insertedText: "same" }));
+    // No update — commit directly
+    const commit = commitHunkEditSession(session);
+
+    expect(commit.insertedText).toBe("same");
+    expect(commit.wasEdited).toBe(false);
+  });
+
+  it("reports wasEdited=false when edited back to original", () => {
+    const session = startHunkEditSession(hunk({ insertedText: "original" }));
+    const edited = updateHunkEditSession(session, "changed");
+    const editedBack = updateHunkEditSession(edited, "original");
+    const commit = commitHunkEditSession(editedBack);
+
+    expect(commit.insertedText).toBe("original");
+    expect(commit.wasEdited).toBe(false);
+  });
+
+  it("handles empty-string original insertedText", () => {
+    const session = startHunkEditSession(hunk({ insertedText: "" }));
+
+    expect(session.originalInsertedText).toBe("");
+    expect(session.draftInsertedText).toBe("");
+
+    // Editing from "" to something
+    const updated = updateHunkEditSession(session, "new text");
+    const commit = commitHunkEditSession(updated);
+
+    expect(commit.insertedText).toBe("new text");
+    expect(commit.wasEdited).toBe(true);
+  });
 });

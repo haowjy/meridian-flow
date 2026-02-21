@@ -28,17 +28,29 @@ export function editOpsToMergeChanges(hunks: ReviewHunk[]): Change[] {
     if (deleteLen === 0 && insertLen > 0) {
       // Pure insert
       changes.push(
-        new Change(baseStart, baseStart, baseStart + offset, baseStart + offset + insertLen),
+        new Change(
+          baseStart,
+          baseStart,
+          baseStart + offset,
+          baseStart + offset + insertLen,
+        ),
       );
       offset += insertLen;
     } else if (insertLen === 0 && deleteLen > 0) {
       // Pure delete
-      changes.push(new Change(baseStart, baseEnd, baseStart + offset, baseStart + offset));
+      changes.push(
+        new Change(baseStart, baseEnd, baseStart + offset, baseStart + offset),
+      );
       offset -= deleteLen;
     } else if (deleteLen > 0 && insertLen > 0) {
       // Replace
       changes.push(
-        new Change(baseStart, baseEnd, baseStart + offset, baseStart + offset + insertLen),
+        new Change(
+          baseStart,
+          baseEnd,
+          baseStart + offset,
+          baseStart + offset + insertLen,
+        ),
       );
       offset += insertLen - deleteLen;
     }

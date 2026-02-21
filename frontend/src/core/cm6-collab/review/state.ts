@@ -22,6 +22,7 @@ export interface InlineReviewState {
 export interface InlineReviewCallbacks {
   onAcceptHunk: (hunk: ReviewHunk) => void;
   onRejectHunk: (hunk: ReviewHunk) => void;
+  onEditHunk: (hunk: ReviewHunk) => void;
 }
 
 // ============================================================================

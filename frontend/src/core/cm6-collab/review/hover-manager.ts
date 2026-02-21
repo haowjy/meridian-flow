@@ -43,8 +43,16 @@ class HunkHoverManager {
     this.handleMouseDown = this.onMouseDown.bind(this);
 
     // Capture phase for event delegation — intercepts before bubbling
-    this.view.contentDOM.addEventListener("mouseenter", this.handleMouseEnter, true);
-    this.view.contentDOM.addEventListener("mouseleave", this.handleMouseLeave, true);
+    this.view.contentDOM.addEventListener(
+      "mouseenter",
+      this.handleMouseEnter,
+      true,
+    );
+    this.view.contentDOM.addEventListener(
+      "mouseleave",
+      this.handleMouseLeave,
+      true,
+    );
     // mousedown on document to detect clicks outside hunk regions
     this.view.contentDOM.addEventListener("mousedown", this.handleMouseDown);
   }
@@ -57,7 +65,10 @@ class HunkHoverManager {
       this.currentHunkId = null;
     }
     // Reposition on geometry/viewport changes
-    if ((update.geometryChanged || update.viewportChanged) && this.currentHunkId) {
+    if (
+      (update.geometryChanged || update.viewportChanged) &&
+      this.currentHunkId
+    ) {
       this.requestReposition();
     }
 
@@ -65,12 +76,18 @@ class HunkHoverManager {
     // is positioned and that any stale hover toolbar is hidden.
     const oldState = update.startState.field(inlineReviewField, false);
     const newState = update.state.field(inlineReviewField, false);
-    if (oldState && newState && oldState.activeHunkIndex !== newState.activeHunkIndex) {
+    if (
+      oldState &&
+      newState &&
+      oldState.activeHunkIndex !== newState.activeHunkIndex
+    ) {
       // Hide any current hover toolbar that doesn't match the new focus
       if (this.currentHunkId) {
-        const focusedHunk = newState.activeHunkIndex >= 0 && newState.activeHunkIndex < newState.hunks.length
-          ? newState.hunks[newState.activeHunkIndex]!
-          : null;
+        const focusedHunk =
+          newState.activeHunkIndex >= 0 &&
+          newState.activeHunkIndex < newState.hunks.length
+            ? newState.hunks[newState.activeHunkIndex]!
+            : null;
         if (!focusedHunk || focusedHunk.id !== this.currentHunkId) {
           this.hideActions(this.currentHunkId);
           this.removeHoverPreview(this.currentHunkId);
@@ -79,7 +96,10 @@ class HunkHoverManager {
       }
 
       // Position the focused-visible toolbar if one exists
-      if (newState.activeHunkIndex >= 0 && newState.activeHunkIndex < newState.hunks.length) {
+      if (
+        newState.activeHunkIndex >= 0 &&
+        newState.activeHunkIndex < newState.hunks.length
+      ) {
         const hunk = newState.hunks[newState.activeHunkIndex]!;
         // Defer to next frame so the DOM has updated with the new focused-visible class
         requestAnimationFrame(() => {
@@ -93,11 +113,20 @@ class HunkHoverManager {
   }
 
   destroy() {
-    this.view.contentDOM.removeEventListener("mouseenter", this.handleMouseEnter, true);
-    this.view.contentDOM.removeEventListener("mouseleave", this.handleMouseLeave, true);
+    this.view.contentDOM.removeEventListener(
+      "mouseenter",
+      this.handleMouseEnter,
+      true,
+    );
+    this.view.contentDOM.removeEventListener(
+      "mouseleave",
+      this.handleMouseLeave,
+      true,
+    );
     this.view.contentDOM.removeEventListener("mousedown", this.handleMouseDown);
     if (this.hideTimeout) clearTimeout(this.hideTimeout);
-    if (this.pendingRepositionFrame) cancelAnimationFrame(this.pendingRepositionFrame);
+    if (this.pendingRepositionFrame)
+      cancelAnimationFrame(this.pendingRepositionFrame);
   }
 
   // === Event handlers ===
@@ -266,7 +295,8 @@ class HunkHoverManager {
   // === Positioning ===
 
   private requestReposition() {
-    if (this.pendingRepositionFrame) cancelAnimationFrame(this.pendingRepositionFrame);
+    if (this.pendingRepositionFrame)
+      cancelAnimationFrame(this.pendingRepositionFrame);
     this.pendingRepositionFrame = requestAnimationFrame(() => {
       this.pendingRepositionFrame = null;
       if (this.currentHunkId) {
