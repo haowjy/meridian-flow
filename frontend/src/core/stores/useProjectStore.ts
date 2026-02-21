@@ -4,6 +4,7 @@ import { Project } from "@/features/projects/types/project";
 import { api } from "@/core/lib/api";
 import { getErrorMessageWithFallback } from "@/core/lib/errors";
 import { makeLogger } from "@/core/lib/logger";
+import { runBackgroundRetrieval } from "@/core/retrieval";
 import { editorCache } from "@/core/editor/cache";
 
 const log = makeLogger("project-store");
@@ -52,6 +53,7 @@ interface ProjectStore {
  * Alternative considered: Store-level controller - rejected as it adds unnecessary state complexity
  */
 let loadProjectsController: AbortController | null = null;
+let loadProjectsRequestId = 0;
 
 export const useProjectStore = create<ProjectStore>()(
   persist(
@@ -99,6 +101,7 @@ export const useProjectStore = create<ProjectStore>()(
       },
 
       loadProjects: async () => {
+        const requestId = ++loadProjectsRequestId;
         // Abort any previous loadProjects request
         if (loadProjectsController) {
           loadProjectsController.abort();
@@ -107,32 +110,49 @@ export const useProjectStore = create<ProjectStore>()(
         // Create new controller for this request
         loadProjectsController = new AbortController();
         const signal = loadProjectsController.signal;
+        const hasCachedData = get().projects.length > 0;
 
-        // Set loading state based on whether we have cached data
-        const currentState = get();
-        const status =
-          currentState.projects.length === 0 ? "loading" : "success";
-        set({ status, isFetching: true, error: null });
+        await runBackgroundRetrieval({
+          hasCachedData,
+          isStale: () => requestId !== loadProjectsRequestId,
+          onBegin: (mode) => {
+            const status = mode === "initial" ? "loading" : "success";
+            set({ status, isFetching: true, error: null });
+          },
+          retrieve: () => api.projects.list({ signal }),
+          onSuccess: (projects) => {
+            const currentProjectId = get().currentProjectId;
+            const nextCurrentProjectId = projects.some(
+              (p) => p.id === currentProjectId,
+            )
+              ? currentProjectId
+              : null;
 
-        try {
-          const projects = await api.projects.list({ signal });
-          set({ projects, status: "success", isFetching: false });
-        } catch (error) {
-          // Handle AbortError silently
-          if (error instanceof Error && error.name === "AbortError") {
+            set({
+              currentProjectId: nextCurrentProjectId,
+              projects,
+              status: "success",
+              isFetching: false,
+            });
+
+            if (currentProjectId !== null && nextCurrentProjectId === null) {
+              editorCache.clear();
+            }
+          },
+          onAbort: () => {
             set({ isFetching: false });
-            return;
-          }
-
-          const message = getErrorMessageWithFallback(
-            error,
-            "Failed to load projects. Please check your connection.",
-          );
-          // If we have cached data, keep status as 'success', otherwise set to 'error'
-          const currentProjects = get().projects;
-          const errorStatus = currentProjects.length > 0 ? "success" : "error";
-          set({ error: message, status: errorStatus, isFetching: false });
-        }
+          },
+          onError: (error) => {
+            const message = getErrorMessageWithFallback(
+              error,
+              "Failed to load projects. Please check your connection.",
+            );
+            // If we have cached data, keep status as 'success', otherwise set to 'error'
+            const currentProjects = get().projects;
+            const errorStatus = currentProjects.length > 0 ? "success" : "error";
+            set({ error: message, status: errorStatus, isFetching: false });
+          },
+        });
       },
 
       createProject: async (name) => {

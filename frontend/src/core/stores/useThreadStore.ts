@@ -15,9 +15,14 @@ import {
 import { api } from "@/core/lib/api";
 import { getErrorMessageWithFallback } from "@/core/lib/errors";
 import { makeLogger } from "@/core/lib/logger";
+import {
+  runBackgroundRetrieval,
+  shouldClearActiveSelection,
+} from "@/core/retrieval";
 import { getTurnBlockIdentity } from "@/features/threads/utils/blockIdentity";
 import { turnToContentBlocks } from "@/features/threads/utils/turnHelpers";
 import { useStreamStore } from "./useStreamStore";
+import { useUIStore } from "./useUIStore";
 
 // Stream-end coordination for cancel flow.
 // Stored outside Zustand since it contains non-serializable data (functions, timers).
@@ -38,6 +43,7 @@ const streamEndWaiters = new Map<string, StreamEndWaiter>();
  * - Ensure no duplication and preserve chronological order on merges
  */
 type LoadStatus = "idle" | "loading" | "success" | "error";
+let loadThreadsRequestId = 0;
 
 interface ThreadStore {
   threads: Thread[];
@@ -315,6 +321,7 @@ export const useThreadStore = create<ThreadStore>()(
       },
 
       loadThreads: async (projectId: string, signal?: AbortSignal) => {
+        const requestId = ++loadThreadsRequestId;
         const state = get();
         // Stale-while-revalidate: show cached data immediately if same project
         const hasCachedData =
@@ -328,48 +335,75 @@ export const useThreadStore = create<ThreadStore>()(
           Date.now() - state.threadsLoadedAt < 30_000;
         if (isFresh) return;
 
-        if (!hasCachedData) {
-          // No cache or different project: show loading state
-          set({
-            statusThreads: "loading",
-            isFetchingThreads: true,
-            error: null,
-            threadsProjectId: projectId,
-          });
-        } else {
-          // Has cache for same project: keep showing cached data, fetch in background
-          set({ isFetchingThreads: true, error: null });
-        }
+        await runBackgroundRetrieval({
+          hasCachedData,
+          isStale: () => requestId !== loadThreadsRequestId,
+          onBegin: (mode) => {
+            if (mode === "initial") {
+              // No cache or different project: show loading state
+              set({
+                statusThreads: "loading",
+                isFetchingThreads: true,
+                error: null,
+                threadsProjectId: projectId,
+              });
+              return;
+            }
 
-        try {
-          const data = await api.threads.list(projectId, { signal });
-          set({
-            threads: data,
-            statusThreads: "success",
-            isFetchingThreads: false,
-            threadsProjectId: projectId,
-            threadsLoadedAt: Date.now(),
-          });
-        } catch (error) {
-          // Handle AbortError silently
-          if (error instanceof Error && error.name === "AbortError") {
+            // Has cache for same project: keep showing cached data, fetch in background
+            set({ isFetchingThreads: true, error: null });
+          },
+          retrieve: () => api.threads.list(projectId, { signal }),
+          onSuccess: (threads) => {
+            let removedActiveThreadId: string | null = null;
+            set((state) => {
+              const activeThreadStillExists =
+                state.threadId === null ||
+                threads.some((thread) => thread.id === state.threadId);
+              if (!activeThreadStillExists) {
+                removedActiveThreadId = state.threadId;
+              }
+
+              return {
+                threads,
+                statusThreads: "success",
+                isFetchingThreads: false,
+                threadsProjectId: projectId,
+                threadsLoadedAt: Date.now(),
+                threadId: activeThreadStillExists ? state.threadId : null,
+                currentTurnId:
+                  activeThreadStillExists ? state.currentTurnId : null,
+                turnIds: activeThreadStillExists ? state.turnIds : [],
+                turnById: activeThreadStillExists ? state.turnById : {},
+                hasMoreBefore: activeThreadStillExists
+                  ? state.hasMoreBefore
+                  : false,
+                hasMoreAfter: activeThreadStillExists ? state.hasMoreAfter : false,
+              };
+            });
+
+            if (removedActiveThreadId) {
+              useStreamStore.getState().removeStreamsByThread(removedActiveThreadId);
+            }
+          },
+          onAbort: () => {
             set({ isFetchingThreads: false });
-            return;
-          }
-
-          const message = getErrorMessageWithFallback(
-            error,
-            "Failed to load threads",
-          );
-          // On error with cached data for same project, keep showing cached data
-          const hasData =
-            get().threads.length > 0 && get().threadsProjectId === projectId;
-          set({
-            error: message,
-            statusThreads: hasData ? "success" : "error",
-            isFetchingThreads: false,
-          });
-        }
+          },
+          onError: (error) => {
+            const message = getErrorMessageWithFallback(
+              error,
+              "Failed to load threads",
+            );
+            // On error with cached data for same project, keep showing cached data
+            const hasData =
+              get().threads.length > 0 && get().threadsProjectId === projectId;
+            set({
+              error: message,
+              statusThreads: hasData ? "success" : "error",
+              isFetchingThreads: false,
+            });
+          },
+        });
       },
 
       loadTurns: async (threadId: string, signal?: AbortSignal) => {
@@ -387,6 +421,20 @@ export const useThreadStore = create<ThreadStore>()(
         } catch (error) {
           if (error instanceof Error && error.name === "AbortError") {
             log.debug("loadTurns:aborted", { threadId });
+            return;
+          }
+          if (shouldClearActiveSelection("thread:getById", error)) {
+            set({
+              threadId: null,
+              currentTurnId: null,
+              turnIds: [],
+              turnById: {},
+              hasMoreBefore: false,
+              hasMoreAfter: false,
+              isLoadingTurns: false,
+              error: getErrorMessageWithFallback(error, "Thread not found"),
+            });
+            useUIStore.getState().setActiveThread(null);
             return;
           }
           log.error("loadTurns:error", error);

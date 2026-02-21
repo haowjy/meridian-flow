@@ -35,6 +35,11 @@ export interface LoadPolicy<T> {
   run(args: LoadPolicyArgs<T>): Promise<LoadResult<T>>;
 }
 
+type AppErrorLike = {
+  name?: unknown;
+  type?: unknown;
+};
+
 // Helper to safely get timestamp from Date or ISO string
 // IndexedDB may serialize Date objects to strings, so we need to handle both
 // Returns NaN for missing/invalid timestamps (not 0/epoch) to distinguish "unknown" from "very old"
@@ -61,6 +66,33 @@ function defaultCompare<T>(a: T, b: T): number {
   if (isNaN(aTime) || isNaN(bTime)) return 0;
 
   return aTime - bTime;
+}
+
+/**
+ * Cache fallback should only happen for transient failures.
+ * Terminal server responses (for example 404) must surface to callers so they
+ * can reconcile local stale data.
+ */
+function shouldFallbackToCache(error: unknown): boolean {
+  if (error instanceof Error && error.name === "AbortError") {
+    return true;
+  }
+
+  if (error instanceof TypeError) {
+    return true;
+  }
+
+  if (error && typeof error === "object") {
+    const appError = error as AppErrorLike;
+    if (appError.name === "AppError") {
+      return (
+        appError.type === "NETWORK_ERROR" ||
+        appError.type === "SERVER_ERROR"
+      );
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -110,17 +142,11 @@ export class ReconcileNewestPolicy<T> implements LoadPolicy<T> {
       }
       return { data: cached, source: "cache", isFinal: true };
     } catch (err: unknown) {
-      // Abort: if we emitted cache, use it; else rethrow
-      if (err instanceof Error && err.name === "AbortError") {
-        if (cached) {
-          return { data: cached, source: "cache", isFinal: true };
-        }
-        throw err;
-      }
-      // Network failure: fallback to cache if we have it
-      if (cached) {
+      // Transient failures (abort/network/5xx) may use cache fallback.
+      if (cached && shouldFallbackToCache(err)) {
         return { data: cached, source: "cache", isFinal: true };
       }
+
       throw err;
     }
   }

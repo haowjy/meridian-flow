@@ -10,6 +10,7 @@ export enum ErrorType {
   Validation = "VALIDATION_ERROR",
   NotFound = "NOT_FOUND",
   Unauthorized = "UNAUTHORIZED",
+  Forbidden = "FORBIDDEN",
   Conflict = "CONFLICT",
   ServerError = "SERVER_ERROR",
   Unknown = "UNKNOWN_ERROR",
@@ -86,6 +87,11 @@ export function httpErrorToAppError<TResource = unknown>(
       return new AppError<TResource>(
         ErrorType.Unauthorized,
         message || "You are not authorized to perform this action.",
+      );
+    case 403:
+      return new AppError<TResource>(
+        ErrorType.Forbidden,
+        message || "You do not have permission to perform this action.",
       );
     case 404:
       return new AppError<TResource>(
