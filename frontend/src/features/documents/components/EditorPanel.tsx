@@ -105,7 +105,9 @@ export function EditorPanel({
   // documentId, otherwise a stale activeDocument from a previous navigation
   // could supply the wrong extension.
   const extension =
-    (activeDocument?.id === documentId ? activeDocument?.extension : undefined) ??
+    (activeDocument?.id === documentId
+      ? activeDocument?.extension
+      : undefined) ??
     documentMetadata?.extension ??
     ".md";
   const collabEnabled = isCollabEnabled(extension);
@@ -139,6 +141,7 @@ export function EditorPanel({
     operationsModels,
     sendProposalAccept,
     sendProposalReject,
+    applyChunkUpdate,
     isReady: isCollabReady,
     getYtextContent,
     idbSynced: isCollabIdbSynced,
@@ -298,7 +301,6 @@ export function EditorPanel({
     // This avoids blocking on WS round-trip for cached content display.
     (collabEnabled && !isCollabIdbSynced);
 
-
   // ---------------------------------------------------------------------------
   // MAIN RENDER
   // ---------------------------------------------------------------------------
@@ -327,6 +329,7 @@ export function EditorPanel({
             operationsModels={operationsModels}
             onAcceptProposal={handleProposalAccept}
             onRejectProposal={handleProposalReject}
+            applyChunkUpdate={applyChunkUpdate}
           />
         )}
 
@@ -344,7 +347,9 @@ export function EditorPanel({
                 // Collab: use current ytext snapshot so editor doc matches Yjs state
                 // at mount time. ySync only applies future deltas, so initial alignment
                 // is required to prevent flash-of-empty or stale content divergence.
-                initialContent={collabEnabled ? getYtextContent() : localDocument}
+                initialContent={
+                  collabEnabled ? getYtextContent() : localDocument
+                }
                 editable={isEditable}
                 placeholder="Start writing..."
                 onChange={handleContentChange}

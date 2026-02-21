@@ -16,6 +16,8 @@ export {
   type ProposalAcceptCommand,
   type ProposalRejectCommand,
   type ProposalGroupAcceptCommand,
+  type ProposalPartialAcceptCommand,
+  buildProposalPartialAcceptCommand,
 } from "./contracts";
 
 export {

@@ -31,6 +31,7 @@ export type {
   ProposalReviewSnapshot,
 } from "./contracts";
 
+export { buildPartialUpdate } from "./partial-apply";
 export { extractProposalOps, extractProposalOpsWithClone } from "./changeset-extractor";
 export { groupIntoChunks } from "./chunk-grouper";
 export type {

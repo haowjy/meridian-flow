@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Extension } from "@codemirror/state";
 import { IndexeddbPersistence } from "y-indexeddb";
+import * as Y from "yjs";
 import {
+  buildPartialUpdate,
   buildProposalAcceptCommand,
   buildProposalRejectCommand,
   createCollabSyncRuntime,
@@ -15,6 +17,7 @@ import {
   type ProposalGroupAcceptResultEvent,
   type ProposalOperationsModel,
   type ProposalReviewModel,
+  type ReviewChunk,
   toUint8Array,
 } from "@meridian/cm6-collab";
 
@@ -45,6 +48,13 @@ interface UseDocumentCollabResult {
   lastGroupAcceptResult: ProposalGroupAcceptResultEvent | null;
   sendProposalAccept: (proposalId: string, idempotencyKey: string) => boolean;
   sendProposalReject: (proposalId: string) => boolean;
+  /**
+   * Apply a single chunk's edit to the live Y.Doc.
+   * Used by partial chunk accept: builds a Yjs update for the chunk's text change
+   * and applies it to the document. The collab system automatically broadcasts
+   * the update to other clients.
+   */
+  applyChunkUpdate: (chunk: ReviewChunk) => void;
   isReady: boolean;
   /** Current Yjs text content — use as initialContent for CodeMirror to avoid
    *  flash of empty placeholder. Safe because ySync only applies future deltas,
@@ -70,18 +80,21 @@ export function useDocumentCollab({
     (s) => s.stateByDocumentId[documentId] ?? "disconnected",
   );
   const proposalState = useCollabStore(
-    (s) => s.proposalStateByDocumentId[documentId] ?? EMPTY_DOCUMENT_PROPOSAL_STATE,
+    (s) =>
+      s.proposalStateByDocumentId[documentId] ?? EMPTY_DOCUMENT_PROPOSAL_STATE,
   );
 
   const projectCollab = useProjectCollabContext();
 
   const persistenceRef = useRef<IndexeddbPersistence | null>(null);
-  const runtimeRef = useRef<ReturnType<typeof createCollabSyncRuntime> | null>(null);
+  const runtimeRef = useRef<ReturnType<typeof createCollabSyncRuntime> | null>(
+    null,
+  );
   // Keep debounce state stable across effect cleanup/re-run (React StrictMode)
   // so a pending unsubscribe can be canceled by the next subscribe call.
-  const subscriptionDebounceRef = useRef<
-    ReturnType<typeof createDocumentSubscriptionDebounce> | null
-  >(null);
+  const subscriptionDebounceRef = useRef<ReturnType<
+    typeof createDocumentSubscriptionDebounce
+  > | null>(null);
   if (subscriptionDebounceRef.current == null) {
     subscriptionDebounceRef.current = createDocumentSubscriptionDebounce();
   }
@@ -90,9 +103,9 @@ export function useDocumentCollab({
   // At this point ytext has content (if any was cached) and the editor can
   // render read-only while waiting for WS connection.
   const [idbSynced, setIdbSynced] = useState(false);
-  const [reviewRuntime, setReviewRuntime] = useState<
-    ReturnType<typeof createProposalReviewRuntime> | null
-  >(null);
+  const [reviewRuntime, setReviewRuntime] = useState<ReturnType<
+    typeof createProposalReviewRuntime
+  > | null>(null);
   const [reviewRevision, setReviewRevision] = useState(0);
 
   useEffect(() => {
@@ -108,9 +121,7 @@ export function useDocumentCollab({
 
     let isStopped = false;
     let didBootstrap = false;
-    let runtime:
-      | ReturnType<typeof createCollabSyncRuntime>
-      | null = null;
+    let runtime: ReturnType<typeof createCollabSyncRuntime> | null = null;
     const proposalManager = createProposalManager({
       onStateChange: (state) => {
         setProposalState(documentId, state);
@@ -232,7 +243,8 @@ export function useDocumentCollab({
       }
 
       if (isProposalNewEvent(event)) {
-        if (!isMatchingEventDocument(event.proposal.documentId, event.type)) return;
+        if (!isMatchingEventDocument(event.proposal.documentId, event.type))
+          return;
         proposalManager.onProposalNew(event);
         return;
       }
@@ -392,7 +404,8 @@ export function useDocumentCollab({
     const revision = reviewRevision;
     void revision;
 
-    return reviewRuntime.deriveProposalReviews(proposalState.proposals.values()).reviews;
+    return reviewRuntime.deriveProposalReviews(proposalState.proposals.values())
+      .reviews;
   }, [enabled, proposalState.proposals, reviewRevision, reviewRuntime]);
 
   const operationsModels = useMemo(() => {
@@ -405,6 +418,16 @@ export function useDocumentCollab({
     return result;
   }, [enabled, proposalState.proposals, reviewRevision, reviewRuntime]);
 
+  const applyChunkUpdate = useCallback((chunk: ReviewChunk) => {
+    const doc = runtimeRef.current?.ydoc;
+    if (doc == null) {
+      log.warn("applyChunkUpdate called but runtime not ready");
+      return;
+    }
+    const update = buildPartialUpdate(doc, chunk);
+    Y.applyUpdate(doc, update);
+  }, []);
+
   return {
     extensions: enabled ? extensions : [],
     connectionState,
@@ -414,6 +437,7 @@ export function useDocumentCollab({
     lastGroupAcceptResult: proposalState.lastGroupAcceptResult,
     sendProposalAccept,
     sendProposalReject,
+    applyChunkUpdate,
     isReady: !enabled || extensions.length > 0,
     idbSynced,
     getYtextContent: useCallback(

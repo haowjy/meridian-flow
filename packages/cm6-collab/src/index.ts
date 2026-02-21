@@ -39,6 +39,8 @@ export {
   type ProposalAcceptCommand,
   type ProposalRejectCommand,
   type ProposalGroupAcceptCommand,
+  type ProposalPartialAcceptCommand,
+  buildProposalPartialAcceptCommand,
 } from "./proposals";
 
 export {
@@ -47,6 +49,7 @@ export {
   mountProposalReviewMergeView,
   mountUnifiedReviewView,
   mountSplitReviewView,
+  buildPartialUpdate,
   extractProposalOps,
   extractProposalOpsWithClone,
   groupIntoChunks,

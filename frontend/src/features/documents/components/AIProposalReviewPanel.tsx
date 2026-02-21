@@ -1,5 +1,9 @@
-import { useMemo, useState } from "react";
-import type { Proposal, ProposalOperationsModel } from "@meridian/cm6-collab";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  Proposal,
+  ProposalOperationsModel,
+  ReviewChunk,
+} from "@meridian/cm6-collab";
 import { ScrollArea } from "@/shared/components/ui/scroll-area";
 import {
   Card,
@@ -17,6 +21,24 @@ interface AIProposalReviewPanelProps {
   operationsModels: Map<string, ProposalOperationsModel>;
   onAcceptProposal: (proposalId: string) => void;
   onRejectProposal: (proposalId: string) => void;
+  /**
+   * Apply a single chunk's edit to the live Y.Doc.
+   * Called when user accepts a chunk in partial-accept mode.
+   */
+  applyChunkUpdate: (chunk: ReviewChunk) => void;
+}
+
+/**
+ * Fingerprint for reject tracking: uses deletedText + insertedText as the
+ * stable identity across re-derives. Positions shift after a partial apply,
+ * but the text content of a chunk doesn't change.
+ *
+ * Collision risk: two chunks with identical deleted+inserted text would
+ * collide. This is extremely unlikely in real prose editing and acceptable
+ * for the current implementation.
+ */
+function chunkFingerprint(chunk: ReviewChunk): string {
+  return `${chunk.deletedText}|||${chunk.insertedText}`;
 }
 
 export function sortPendingProposals(
@@ -68,6 +90,7 @@ export function AIProposalReviewPanel({
   operationsModels,
   onAcceptProposal,
   onRejectProposal,
+  applyChunkUpdate,
 }: AIProposalReviewPanelProps) {
   const sortedProposals = useMemo(() => {
     return sortPendingProposals(proposals.values());
@@ -76,6 +99,17 @@ export function AIProposalReviewPanel({
   const [selectedProposalId, setSelectedProposalId] = useState<string | null>(
     null,
   );
+
+  // Per-proposal rejected chunk fingerprints: proposalId -> Set<fingerprint>.
+  // Fingerprints survive re-derive because they use text content, not positions.
+  const [rejectedFingerprints, setRejectedFingerprints] = useState<
+    Map<string, Set<string>>
+  >(new Map());
+
+  // Track accepted chunk fingerprints per proposal for auto-finalization counting.
+  const [acceptedFingerprints, setAcceptedFingerprints] = useState<
+    Map<string, Set<string>>
+  >(new Map());
 
   // Pending proposal ID from thread navigation ("View in Editor" action).
   // Acts as an override: if the pending proposal exists in the current list, select it.
@@ -103,12 +137,123 @@ export function AIProposalReviewPanel({
       ? null
       : (operationsModels.get(resolvedSelectedProposalId) ?? null);
 
+  // Filter out rejected chunks from the selected model for display.
+  // Accepted chunks disappear naturally via Y.Doc re-derive; rejected chunks
+  // are hidden via fingerprint matching.
+  const filteredOpsModel: ProposalOperationsModel | null = useMemo(() => {
+    if (
+      selectedOperationsModel == null ||
+      selectedOperationsModel.availability !== "ready"
+    ) {
+      return selectedOperationsModel;
+    }
+    const rejected =
+      rejectedFingerprints.get(resolvedSelectedProposalId ?? "") ?? new Set();
+    if (rejected.size === 0) return selectedOperationsModel;
+    const visibleChunks = selectedOperationsModel.chunks.filter(
+      (c) => !rejected.has(chunkFingerprint(c)),
+    );
+    if (visibleChunks.length === selectedOperationsModel.chunks.length) {
+      return selectedOperationsModel;
+    }
+    return { ...selectedOperationsModel, chunks: visibleChunks };
+  }, [selectedOperationsModel, rejectedFingerprints, resolvedSelectedProposalId]);
+
   // Chunk count badge: shown when operations model is ready with changes
   const getChunkCount = (proposalId: string): number | null => {
     const model = operationsModels.get(proposalId);
     if (model?.availability === "ready") return model.chunks.length;
     return null;
   };
+
+  // Ref to track which proposals have been auto-finalized to prevent double-finalize.
+  const finalizedRef = useRef<Set<string>>(new Set());
+
+  // Auto-finalization: when all chunks are resolved (accepted chunks disappear from
+  // re-derived model, remaining are all rejected), close the proposal via server reject.
+  // Uses useEffect watching operationsModels to ensure we have the LATEST model after
+  // Y.Doc update triggers re-derive — not the snapshot at accept/reject time.
+  //
+  // Fingerprint cleanup is NOT done here to avoid calling setState in the effect.
+  // Stale fingerprints for finalized proposals are harmless — the proposal will be
+  // removed from the proposals map by the server's statusChanged event.
+  useEffect(() => {
+    // Collect all proposal IDs that have any chunk-level interaction
+    const activeProposalIds = new Set<string>();
+    for (const id of acceptedFingerprints.keys()) activeProposalIds.add(id);
+    for (const id of rejectedFingerprints.keys()) activeProposalIds.add(id);
+
+    for (const proposalId of activeProposalIds) {
+      if (finalizedRef.current.has(proposalId)) continue;
+
+      const acceptedSet = acceptedFingerprints.get(proposalId);
+      const rejectedSet = rejectedFingerprints.get(proposalId);
+      // Only auto-finalize if we've actually done some chunk-level work
+      if (
+        (!acceptedSet || acceptedSet.size === 0) &&
+        (!rejectedSet || rejectedSet.size === 0)
+      ) {
+        continue;
+      }
+
+      const model = operationsModels.get(proposalId);
+      if (model == null || model.availability !== "ready") continue;
+
+      // Case 1: All accepted chunks absorbed — model re-derives to 0 chunks.
+      if (model.chunks.length === 0 && acceptedSet && acceptedSet.size > 0) {
+        finalizedRef.current.add(proposalId);
+        onRejectProposal(proposalId);
+        continue;
+      }
+
+      // Case 2: Remaining chunks are all rejected — none pending.
+      if (rejectedSet && rejectedSet.size > 0) {
+        const pendingChunks = model.chunks.filter(
+          (c) => !rejectedSet.has(chunkFingerprint(c)),
+        );
+        if (pendingChunks.length === 0) {
+          finalizedRef.current.add(proposalId);
+          onRejectProposal(proposalId);
+        }
+      }
+    }
+  }, [operationsModels, acceptedFingerprints, rejectedFingerprints, onRejectProposal]);
+
+  const handleAcceptChunk = useCallback(
+    (chunk: ReviewChunk) => {
+      if (resolvedSelectedProposalId == null) return;
+
+      // Apply the chunk's edit to the live Y.Doc
+      applyChunkUpdate(chunk);
+
+      // Track accepted fingerprint for auto-finalization
+      setAcceptedFingerprints((prev) => {
+        const next = new Map(prev);
+        const set = new Set(next.get(resolvedSelectedProposalId) ?? []);
+        set.add(chunkFingerprint(chunk));
+        next.set(resolvedSelectedProposalId, set);
+        return next;
+      });
+      // Auto-finalization handled via useEffect watching operationsModels
+    },
+    [resolvedSelectedProposalId, applyChunkUpdate],
+  );
+
+  const handleRejectChunk = useCallback(
+    (chunk: ReviewChunk) => {
+      if (resolvedSelectedProposalId == null) return;
+
+      setRejectedFingerprints((prev) => {
+        const next = new Map(prev);
+        const set = new Set(next.get(resolvedSelectedProposalId) ?? []);
+        set.add(chunkFingerprint(chunk));
+        next.set(resolvedSelectedProposalId, set);
+        return next;
+      });
+      // Auto-finalization handled via useEffect watching operationsModels + rejectedFingerprints
+    },
+    [resolvedSelectedProposalId],
+  );
 
   if (sortedProposals.length === 0) {
     return null;
@@ -177,22 +322,10 @@ export function AIProposalReviewPanel({
         <div className="flex min-h-52 flex-col">
           <div className="min-h-0 flex-1">
             <AIProposalReviewDiff
-              operationsModel={selectedOperationsModel}
+              operationsModel={filteredOpsModel}
               mode={proposalReviewMode}
-              // Slice 3: chunk-level partial apply is deferred to Slice 4.
-              // For now all chunk actions map to proposal-level accept/reject — chunkId is ignored.
-              onAcceptChunk={() => {
-                invokeSelectedProposalAction(
-                  resolvedSelectedProposalId,
-                  onAcceptProposal,
-                );
-              }}
-              onRejectChunk={() => {
-                invokeSelectedProposalAction(
-                  resolvedSelectedProposalId,
-                  onRejectProposal,
-                );
-              }}
+              onAcceptChunk={handleAcceptChunk}
+              onRejectChunk={handleRejectChunk}
             />
           </div>
           <AIProposalReviewActions
