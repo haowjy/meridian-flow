@@ -1,7 +1,7 @@
 ---
 name: implement
 description: Implementation agent — reads slice file and implements it
-model: gpt-5.3-codex
+model: claude-sonnet-4-6
 tools: Read,Edit,Write,Bash,Glob,Grep
 skills:
   - smoke-test

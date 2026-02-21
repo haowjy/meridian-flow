@@ -136,7 +136,7 @@ export function EditorPanel({
     extensions: collabExtensions,
     connectionState: collabConnectionState,
     proposals,
-    reviewModels,
+    operationsModels,
     sendProposalAccept,
     sendProposalReject,
     isReady: isCollabReady,
@@ -324,7 +324,7 @@ export function EditorPanel({
         {collabEnabled && (
           <AIProposalReviewPanel
             proposals={proposals}
-            reviewModels={reviewModels}
+            operationsModels={operationsModels}
             onAcceptProposal={handleProposalAccept}
             onRejectProposal={handleProposalReject}
           />

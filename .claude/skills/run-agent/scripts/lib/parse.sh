@@ -285,4 +285,17 @@ validate_args() {
     echo "ERROR: No prompt or skills specified. Use -p, -s, or an agent with a prompt." >&2
     exit 1
   fi
+
+  # Validate that template variables referenced in the prompt are not empty.
+  # Empty vars cause scope_root to resolve to "/" which breaks mkdir.
+  if [[ "$HAS_VARS" == true ]]; then
+    local key val
+    for key in "${!VARS[@]}"; do
+      val="${VARS[$key]}"
+      if [[ -z "$val" ]]; then
+        echo "ERROR: Template variable '$key' is empty. All -v KEY=VALUE arguments must have non-empty values." >&2
+        exit 1
+      fi
+    done
+  fi
 }

@@ -93,11 +93,12 @@ function mergeNearby(chunks: ReviewChunk[], baseText: string): ReviewChunk[] {
     return chunks.slice();
   }
 
-  const result: ReviewChunk[] = [{ ...chunks[0] }];
+  // chunks[0] is guaranteed by the length guard above; prev/curr are guaranteed by loop bounds.
+  const result: ReviewChunk[] = [{ ...chunks[0]! }];
 
   for (let i = 1; i < chunks.length; i++) {
-    const prev = result[result.length - 1];
-    const curr = chunks[i];
+    const prev = result[result.length - 1]!;
+    const curr = chunks[i]!;
 
     // Gap in base text between prev's end and curr's start
     const gapStart = prev.baseEnd;

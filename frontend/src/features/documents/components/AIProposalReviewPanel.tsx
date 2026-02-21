@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react";
-import type { Proposal, ProposalReviewModel } from "@meridian/cm6-collab";
+import type {
+  Proposal,
+  ProposalOperationsModel,
+} from "@meridian/cm6-collab";
 import { ScrollArea } from "@/shared/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -9,7 +12,7 @@ import { AIProposalReviewActions } from "./AIProposalReviewActions";
 
 interface AIProposalReviewPanelProps {
   proposals: Map<string, Proposal>;
-  reviewModels: Map<string, ProposalReviewModel>;
+  operationsModels: Map<string, ProposalOperationsModel>;
   onAcceptProposal: (proposalId: string) => void;
   onRejectProposal: (proposalId: string) => void;
 }
@@ -58,7 +61,7 @@ export function invokeSelectedProposalAction(
 
 export function AIProposalReviewPanel({
   proposals,
-  reviewModels,
+  operationsModels,
   onAcceptProposal,
   onRejectProposal,
 }: AIProposalReviewPanelProps) {
@@ -84,10 +87,17 @@ export function AIProposalReviewPanel({
     return resolveSelectedProposalId(selectedProposalId, sortedProposals);
   }, [selectedProposalId, sortedProposals, pendingProposalId]);
 
-  const selectedReview =
+  const selectedOperationsModel =
     resolvedSelectedProposalId == null
       ? null
-      : (reviewModels.get(resolvedSelectedProposalId) ?? null);
+      : (operationsModels.get(resolvedSelectedProposalId) ?? null);
+
+  // Chunk count badge: shown when operations model is ready with changes
+  const getChunkCount = (proposalId: string): number | null => {
+    const model = operationsModels.get(proposalId);
+    if (model?.availability === "ready") return model.chunks.length;
+    return null;
+  };
 
   if (sortedProposals.length === 0) {
     return null;
@@ -103,6 +113,7 @@ export function AIProposalReviewPanel({
           <div className="flex flex-col p-1">
             {sortedProposals.map((proposal) => {
               const isSelected = proposal.id === resolvedSelectedProposalId;
+              const chunkCount = getChunkCount(proposal.id);
               return (
                 <button
                   key={proposal.id}
@@ -121,7 +132,14 @@ export function AIProposalReviewPanel({
                     }
                   }}
                 >
-                  <p className="truncate text-xs font-medium">{proposal.description ?? proposal.id}</p>
+                  <p className="truncate text-xs font-medium">
+                    {proposal.description ?? proposal.id}
+                    {chunkCount !== null && chunkCount > 0 && (
+                      <span className="text-muted-foreground ml-1.5 font-normal">
+                        [{chunkCount} {chunkCount === 1 ? "chunk" : "chunks"}]
+                      </span>
+                    )}
+                  </p>
                   <p className="text-muted-foreground truncate text-[11px]">{proposal.createdAt}</p>
                 </button>
               );
@@ -131,7 +149,15 @@ export function AIProposalReviewPanel({
 
         <div className="flex min-h-52 flex-col">
           <div className="min-h-0 flex-1">
-            <AIProposalReviewDiff reviewModel={selectedReview} />
+            <AIProposalReviewDiff
+              operationsModel={selectedOperationsModel}
+              onAcceptChunk={() => {
+                invokeSelectedProposalAction(resolvedSelectedProposalId, onAcceptProposal);
+              }}
+              onRejectChunk={() => {
+                invokeSelectedProposalAction(resolvedSelectedProposalId, onRejectProposal);
+              }}
+            />
           </div>
           <AIProposalReviewActions
             disabled={resolvedSelectedProposalId == null}
