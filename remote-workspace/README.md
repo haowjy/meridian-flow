@@ -5,14 +5,14 @@ Mobile-friendly read/upload web workspace for this repository.
 ## Features
 
 - Browse repository folders/files
-- Upload images into `.clipboard/` at repo root
-- Create folders
+- Upload images into `.clipboard/` at repo root (single image per upload)
 - Preview text files and images
 - Render Markdown with Mermaid diagrams
 - Hide and block access to dotfiles/dot-directories (for example `.env`, `.git`)
+- Dedicated collapsible `.clipboard` panel for upload + quick image viewing
 
-This app is intentionally **no-edit** (except uploads + mkdir) to keep remote access simple and lower risk.
-Uploads are restricted to image files only.
+This app is intentionally **no-edit** (image upload only) to keep remote access simple and lower risk.
+Uploads are restricted to one image per request with required filename validation.
 
 ## Start
 
@@ -59,9 +59,13 @@ cd /home/jimyao/gitrepos/meridian-collab
 ## Upload Clipboard
 
 - `POST /api/upload` always writes to `REPO_ROOT/.clipboard`
-- `.clipboard` is the only allowed dot-path exception and is browsable in this UI
-- Other dotfiles/dot-directories remain blocked
+- `.clipboard` panel uses dedicated clipboard endpoints (`/api/clipboard/list`, `/api/clipboard/file`)
+- Main repository browser still blocks all hidden paths and gitignored paths
+- Gitignored paths are hidden/blocked (for example `node_modules/`, build artifacts, local secrets)
 - Accepted upload types are images only (`png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`, `bmp`, `heic`, `heif`, `avif`)
+- Upload requires `name` query parameter (filename is user-controlled)
+- Filename rules: no spaces, no leading dot, `[A-Za-z0-9._-]` only, and must use an allowed image extension
+- Multipart field names accepted: `file` (current UI) and `files` (legacy cached UI compatibility)
 
 ## Tailscale
 

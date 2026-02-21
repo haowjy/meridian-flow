@@ -13,14 +13,32 @@
         <div class="crumbs" id="crumbs"></div>
         <div class="controls">
           <button id="refresh-btn" class="ghost" type="button">Refresh</button>
-          <label class="upload-label">
-            Upload Images
-            <input id="upload-input" type="file" accept="image/*" multiple hidden />
-          </label>
-          <input id="mkdir-input" class="input" type="text" placeholder="New folder name" />
-          <button id="mkdir-btn" class="ghost" type="button">Create Folder</button>
         </div>
         <div id="status" class="muted"></div>
+      </section>
+
+      <section class="card">
+        <details id="clipboard-panel" class="clipboard-panel" open>
+          <summary>Clipboard Images (.clipboard)</summary>
+          <div class="clipboard-content">
+            <div class="controls">
+              <label class="upload-label">
+                Choose Image
+                <input id="upload-input" type="file" accept="image/*" hidden />
+              </label>
+              <input
+                id="upload-name-input"
+                class="input"
+                type="text"
+                placeholder="filename.png (no spaces)"
+              />
+              <button id="upload-btn" class="action" type="button">Upload</button>
+              <button id="clipboard-refresh-btn" class="ghost" type="button">Refresh Clipboard</button>
+            </div>
+            <div id="clipboard-status" class="muted"></div>
+            <div id="clipboard-grid" class="clipboard-grid"></div>
+          </div>
+        </details>
       </section>
 
       <section class="card">
