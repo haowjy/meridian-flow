@@ -1017,6 +1017,56 @@ body.preload * {
     background: color-mix(in srgb, var(--primary) 15%, transparent);
     color: var(--primary);
   }
+
+  /* ========== BOTTOM PILL ENTRANCE ANIMATION ========== */
+  /* Subtle slide-up + fade when the review toolbar pill appears.
+     ~200ms duration keeps it snappy without being jarring. */
+
+  .cm-review-toolbar-pill {
+    animation: cm-review-pill-enter 200ms ease-out both;
+  }
+
+  @keyframes cm-review-pill-enter {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* ========== PER-HUNK RESOLVE FEEDBACK ========== */
+  /* Brief flash on the next active hunk after resolving one — anchors
+     the writer's eye to the new focus point after content shifts.
+     Applied transiently by useInlineReview after resolve; removed
+     after the animation completes. Purely presentational — no impact
+     on resolution ordering or state transitions. */
+
+  .cm-review-resolve-flash {
+    animation: cm-review-flash 400ms ease-out;
+  }
+
+  @keyframes cm-review-flash {
+    0% {
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 50%, transparent);
+    }
+    100% {
+      box-shadow: 0 0 0 2px transparent;
+    }
+  }
+}
+
+/* Respect reduced-motion: disable review animations entirely */
+@media (prefers-reduced-motion: reduce) {
+  .cm-review-toolbar-pill {
+    animation: none;
+  }
+
+  .cm-review-resolve-flash {
+    animation: none;
+  }
 }
 
 /* ============================================================================

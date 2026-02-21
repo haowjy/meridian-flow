@@ -377,7 +377,7 @@ export function EditorPanel({
           {/* Folder content popover (from usePillNavigation) */}
           {folderPopover}
 
-          {/* Floating review toolbar — accept/reject all, hunk navigation */}
+          {/* Floating review toolbar — keep/discard all, hunk navigation */}
           <ProposalReviewToolbar {...reviewToolbarProps} />
         </div>
       </div>
