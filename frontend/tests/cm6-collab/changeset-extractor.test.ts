@@ -2,6 +2,13 @@ import { describe, it, expect } from "vitest";
 import * as Y from "yjs";
 import { extractProposalOps } from "@/core/cm6-collab/review/changeset-extractor";
 import { groupIntoChunks } from "@/core/cm6-collab/review/chunk-grouper";
+import type {
+  DeleteOp,
+  EditOp,
+  InsertOp,
+  ReplaceOp,
+  ReviewChunk,
+} from "@/core/cm6-collab/review/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -36,6 +43,46 @@ function buildUpdate(
   return Y.encodeStateAsUpdate(workDoc, beforeSV);
 }
 
+function requiredAt<T>(
+  values: readonly T[],
+  index: number,
+  label: string,
+): T {
+  const value = values[index];
+  if (value === undefined) {
+    throw new Error(`Missing ${label} at index ${String(index)}`);
+  }
+  return value;
+}
+
+function expectInsertOp(op: EditOp): InsertOp {
+  expect(op.kind).toBe("insert");
+  if (op.kind !== "insert") {
+    throw new Error(`Expected insert op, got ${String(op.kind)}`);
+  }
+  return op;
+}
+
+function expectDeleteOp(op: EditOp): DeleteOp {
+  expect(op.kind).toBe("delete");
+  if (op.kind !== "delete") {
+    throw new Error(`Expected delete op, got ${String(op.kind)}`);
+  }
+  return op;
+}
+
+function expectReplaceOp(op: EditOp): ReplaceOp {
+  expect(op.kind).toBe("replace");
+  if (op.kind !== "replace") {
+    throw new Error(`Expected replace op, got ${String(op.kind)}`);
+  }
+  return op;
+}
+
+function requiredChunk(chunks: readonly ReviewChunk[], index: number): ReviewChunk {
+  return requiredAt(chunks, index, "chunk");
+}
+
 // ---------------------------------------------------------------------------
 // Simple insert
 // ---------------------------------------------------------------------------
@@ -49,12 +96,9 @@ describe("extractProposalOps — simple insert", () => {
     const ops = extractProposalOps(base, update);
 
     expect(ops).toHaveLength(1);
-    const op = ops[0];
-    expect(op.kind).toBe("insert");
-    if (op.kind === "insert") {
-      expect(op.basePos).toBe(5);
-      expect(op.insertedText).toBe(" beautiful");
-    }
+    const op = expectInsertOp(requiredAt(ops, 0, "op"));
+    expect(op.basePos).toBe(5);
+    expect(op.insertedText).toBe(" beautiful");
   });
 
   it("does not mutate the base doc", () => {
@@ -81,13 +125,10 @@ describe("extractProposalOps — simple delete", () => {
     const ops = extractProposalOps(base, update);
 
     expect(ops).toHaveLength(1);
-    const op = ops[0];
-    expect(op.kind).toBe("delete");
-    if (op.kind === "delete") {
-      expect(op.baseStart).toBe(0);
-      expect(op.baseEnd).toBe(6);
-      expect(op.deletedText).toBe("Hello ");
-    }
+    const op = expectDeleteOp(requiredAt(ops, 0, "op"));
+    expect(op.baseStart).toBe(0);
+    expect(op.baseEnd).toBe(6);
+    expect(op.deletedText).toBe("Hello ");
   });
 
   it("recovers deleted text from base text by position", () => {
@@ -98,13 +139,10 @@ describe("extractProposalOps — simple delete", () => {
     const ops = extractProposalOps(base, update);
 
     expect(ops).toHaveLength(1);
-    const op = ops[0];
-    expect(op.kind).toBe("delete");
-    if (op.kind === "delete") {
-      expect(op.baseStart).toBe(4);
-      expect(op.baseEnd).toBe(10);
-      expect(op.deletedText).toBe("quick ");
-    }
+    const op = expectDeleteOp(requiredAt(ops, 0, "op"));
+    expect(op.baseStart).toBe(4);
+    expect(op.baseEnd).toBe(10);
+    expect(op.deletedText).toBe("quick ");
   });
 });
 
@@ -124,14 +162,11 @@ describe("extractProposalOps — replace", () => {
     const ops = extractProposalOps(base, update);
 
     expect(ops).toHaveLength(1);
-    const op = ops[0];
-    expect(op.kind).toBe("replace");
-    if (op.kind === "replace") {
-      expect(op.baseStart).toBe(6);
-      expect(op.baseEnd).toBe(11);
-      expect(op.deletedText).toBe("world");
-      expect(op.insertedText).toBe("earth");
-    }
+    const op = expectReplaceOp(requiredAt(ops, 0, "op"));
+    expect(op.baseStart).toBe(6);
+    expect(op.baseEnd).toBe(11);
+    expect(op.deletedText).toBe("world");
+    expect(op.insertedText).toBe("earth");
   });
 });
 
@@ -189,20 +224,16 @@ describe("extractProposalOps — multi-op proposal", () => {
     expect(ops).toHaveLength(2);
 
     // First op: insert "dear " at base position 0
-    expect(ops[0].kind).toBe("insert");
-    if (ops[0].kind === "insert") {
-      expect(ops[0].basePos).toBe(0);
-      expect(ops[0].insertedText).toBe("dear ");
-    }
+    const firstOp = expectInsertOp(requiredAt(ops, 0, "op"));
+    expect(firstOp.basePos).toBe(0);
+    expect(firstOp.insertedText).toBe("dear ");
 
     // Second op: replace "world" with "earth" at base position 6
-    expect(ops[1].kind).toBe("replace");
-    if (ops[1].kind === "replace") {
-      expect(ops[1].baseStart).toBe(6);
-      expect(ops[1].baseEnd).toBe(11);
-      expect(ops[1].deletedText).toBe("world");
-      expect(ops[1].insertedText).toBe("earth");
-    }
+    const secondOp = expectReplaceOp(requiredAt(ops, 1, "op"));
+    expect(secondOp.baseStart).toBe(6);
+    expect(secondOp.baseEnd).toBe(11);
+    expect(secondOp.deletedText).toBe("world");
+    expect(secondOp.insertedText).toBe("earth");
   });
 });
 
@@ -224,8 +255,9 @@ describe("groupIntoChunks", () => {
     const chunks = groupIntoChunks(ops, "proposal-abc", "Hello world");
 
     expect(chunks).toHaveLength(1);
-    expect(chunks[0].id).toBe("proposal-abc-chunk-0");
-    expect(chunks[0].proposalId).toBe("proposal-abc");
+    const chunk = requiredChunk(chunks, 0);
+    expect(chunk.id).toBe("proposal-abc-chunk-0");
+    expect(chunk.proposalId).toBe("proposal-abc");
   });
 
   it("sets status to 'pending' for new chunks", () => {
@@ -235,7 +267,7 @@ describe("groupIntoChunks", () => {
 
     const chunks = groupIntoChunks(ops, "prop-1", "Hello world");
 
-    expect(chunks[0].status).toBe("pending");
+    expect(requiredChunk(chunks, 0).status).toBe("pending");
   });
 
   it("merges two ops separated by <=2 lines into one chunk", () => {
@@ -277,10 +309,11 @@ describe("groupIntoChunks", () => {
     const chunks = groupIntoChunks(ops, "prop-1", baseText);
 
     expect(chunks).toHaveLength(1);
-    expect(chunks[0].baseStart).toBe(5);
-    expect(chunks[0].baseEnd).toBe(5); // pure insert → baseStart === baseEnd
-    expect(chunks[0].deletedText).toBe("");
-    expect(chunks[0].insertedText).toBe(" beautiful");
+    const chunk = requiredChunk(chunks, 0);
+    expect(chunk.baseStart).toBe(5);
+    expect(chunk.baseEnd).toBe(5); // pure insert → baseStart === baseEnd
+    expect(chunk.deletedText).toBe("");
+    expect(chunk.insertedText).toBe(" beautiful");
   });
 
   it("produces correct fields for a replace chunk", () => {
@@ -295,10 +328,11 @@ describe("groupIntoChunks", () => {
     const chunks = groupIntoChunks(ops, "prop-1", baseText);
 
     expect(chunks).toHaveLength(1);
-    expect(chunks[0].baseStart).toBe(6);
-    expect(chunks[0].baseEnd).toBe(11);
-    expect(chunks[0].deletedText).toBe("world");
-    expect(chunks[0].insertedText).toBe("earth");
+    const chunk = requiredChunk(chunks, 0);
+    expect(chunk.baseStart).toBe(6);
+    expect(chunk.baseEnd).toBe(11);
+    expect(chunk.deletedText).toBe("world");
+    expect(chunk.insertedText).toBe("earth");
   });
 });
 
@@ -314,11 +348,9 @@ describe("position accuracy", () => {
     const ops = extractProposalOps(base, update);
 
     expect(ops).toHaveLength(1);
-    expect(ops[0].kind).toBe("insert");
-    if (ops[0].kind === "insert") {
-      expect(ops[0].basePos).toBe(3);
-      expect(ops[0].insertedText).toBe("XYZ");
-    }
+    const op = expectInsertOp(requiredAt(ops, 0, "op"));
+    expect(op.basePos).toBe(3);
+    expect(op.insertedText).toBe("XYZ");
   });
 
   it("correctly recovers deletedText at end of string", () => {
@@ -328,12 +360,9 @@ describe("position accuracy", () => {
     const ops = extractProposalOps(base, update);
 
     expect(ops).toHaveLength(1);
-    const op = ops[0];
-    expect(op.kind).toBe("delete");
-    if (op.kind === "delete") {
-      expect(op.baseStart).toBe(5);
-      expect(op.baseEnd).toBe(12);
-      expect(op.deletedText).toBe(" world!");
-    }
+    const op = expectDeleteOp(requiredAt(ops, 0, "op"));
+    expect(op.baseStart).toBe(5);
+    expect(op.baseEnd).toBe(12);
+    expect(op.deletedText).toBe(" world!");
   });
 });

@@ -185,6 +185,15 @@ const reactHarness = vi.hoisted(() => {
 });
 
 const collabRuntimeMock = vi.hoisted(() => {
+  type ConnectionState = "connected" | "syncing" | "disconnected";
+
+  interface CreateRuntimeOptions {
+    documentId: string;
+    sendBinary: (frame: Uint8Array) => void;
+    onStatusChange?: (status: ConnectionState) => void;
+    onInitialSyncComplete?: () => void;
+  }
+
   interface MockRuntime {
     ydoc: {
       on: ReturnType<typeof vi.fn>;
@@ -199,7 +208,8 @@ const collabRuntimeMock = vi.hoisted(() => {
 
   const runtimes: MockRuntime[] = [];
 
-  const createCollabSyncRuntime = vi.fn(() => {
+  const createCollabSyncRuntime = vi.fn((options: CreateRuntimeOptions) => {
+    void options;
     const ydoc = {
       on: vi.fn(),
       off: vi.fn(),
@@ -217,6 +227,16 @@ const collabRuntimeMock = vi.hoisted(() => {
     runtimes.push(runtime);
     return runtime;
   });
+
+  const getCreateCall = (index = 0): CreateRuntimeOptions => {
+    const call = createCollabSyncRuntime.mock.calls[index];
+    if (!call) {
+      throw new Error(
+        `Missing createCollabSyncRuntime call at index ${String(index)}`,
+      );
+    }
+    return call[0];
+  };
 
   const createProposalManager = vi.fn(() => ({
     onProposalSnapshot: vi.fn(),
@@ -289,6 +309,7 @@ const collabRuntimeMock = vi.hoisted(() => {
       toUint8Array: (frame: Uint8Array) => frame,
     },
     getLatestRuntime: (): MockRuntime | undefined => runtimes.at(-1),
+    getCreateCall,
     reset,
   };
 });
@@ -614,13 +635,13 @@ describe("useDocumentCollab IDB recreation after WS win (Slice 4)", () => {
     });
     await flushMicrotasks();
 
-    const createCall =
-      collabRuntimeMock.module.createCollabSyncRuntime.mock.calls[0]![0];
+    const createCall = collabRuntimeMock.getCreateCall();
 
     // Simulate WS winning the race: onInitialSyncComplete fires (which
     // calls cancelIdb -> destroys IDB, then recreates it).
     // The IndexeddbPersistence mock tracks all instances.
-    createCall.onInitialSyncComplete();
+    expect(createCall.onInitialSyncComplete).toBeTypeOf("function");
+    createCall.onInitialSyncComplete?.();
 
     // The IDB mock should have been constructed at least twice:
     // once during effect setup, once after recreation.
@@ -715,9 +736,9 @@ describe("useDocumentCollab bootstrap timing (Slice 1)", () => {
     expect(runtime).toBeDefined();
 
     // Simulate connected status (without SyncStep2)
-    const createCall =
-      collabRuntimeMock.module.createCollabSyncRuntime.mock.calls[0]![0];
-    createCall.onStatusChange("connected");
+    const createCall = collabRuntimeMock.getCreateCall();
+    expect(createCall.onStatusChange).toBeTypeOf("function");
+    createCall.onStatusChange?.("connected");
 
     // Bootstrap should NOT have been called — no initial sync complete
     expect(runtime?.bootstrapTextIfEmpty).not.toHaveBeenCalled();
@@ -737,9 +758,9 @@ describe("useDocumentCollab bootstrap timing (Slice 1)", () => {
     expect(runtime).toBeDefined();
 
     // Fire initial sync complete
-    const createCall =
-      collabRuntimeMock.module.createCollabSyncRuntime.mock.calls[0]![0];
-    createCall.onInitialSyncComplete();
+    const createCall = collabRuntimeMock.getCreateCall();
+    expect(createCall.onInitialSyncComplete).toBeTypeOf("function");
+    createCall.onInitialSyncComplete?.();
 
     expect(runtime?.bootstrapTextIfEmpty).toHaveBeenCalledWith("seed text");
 
@@ -755,9 +776,9 @@ describe("useDocumentCollab bootstrap timing (Slice 1)", () => {
     await flushMicrotasks();
 
     const runtime = collabRuntimeMock.getLatestRuntime();
-    const createCall =
-      collabRuntimeMock.module.createCollabSyncRuntime.mock.calls[0]![0];
-    createCall.onInitialSyncComplete();
+    const createCall = collabRuntimeMock.getCreateCall();
+    expect(createCall.onInitialSyncComplete).toBeTypeOf("function");
+    createCall.onInitialSyncComplete?.();
 
     expect(runtime?.bootstrapTextIfEmpty).not.toHaveBeenCalled();
 

@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { EditorState } from "@codemirror/state";
+import { EditorState, type StateEffect } from "@codemirror/state";
 import {
   inlineReviewField,
   setReviewChunks,
@@ -63,9 +63,9 @@ function getReviewState(state: EditorState): InlineReviewState {
 /** Apply an effect and return the new EditorState */
 function applyEffect(
   state: EditorState,
-  ...effects: Parameters<typeof state.update>[0]["effects"][]
+  ...effects: Array<StateEffect<unknown>>
 ): EditorState {
-  return state.update({ effects: effects.flat() }).state;
+  return state.update({ effects }).state;
 }
 
 // ============================================================================
