@@ -816,10 +816,7 @@ func TestProposalServiceAcceptProposal_PendingCapAndRecovery(t *testing.T) {
 	}
 
 	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if svc.acceptGate.pendingCount(docID) == maxPendingAcceptOperationsPerDocument {
-			break
-		}
+	for svc.acceptGate.pendingCount(docID) != maxPendingAcceptOperationsPerDocument {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for pending accepts to reach %d", maxPendingAcceptOperationsPerDocument)
 		}
