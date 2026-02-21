@@ -67,8 +67,8 @@ interface UseInlineReviewResult {
     totalHunks: number;
     activeHunkIndex: number;
     resolvedCount: number;
-    onAcceptAll: () => void;
-    onRejectAll: () => void;
+    onKeepAll: () => void;
+    onDiscardAll: () => void;
     onPrevHunk: () => void;
     onNextHunk: () => void;
   };
@@ -103,6 +103,29 @@ function scrollToPos(view: EditorView, pos: number): void {
   const clampedPos = Math.min(pos, view.state.doc.length);
   view.dispatch({
     effects: EditorView.scrollIntoView(clampedPos, { y: "center" }),
+  });
+}
+
+/**
+ * Trigger a brief flash on the next active hunk's inserted block widget
+ * (or the editor container as fallback) after a per-hunk resolve action.
+ * Anchors the writer's eye to the new focus point after content shifts.
+ * Purely presentational — no state change, no delay on resolve.
+ */
+function triggerResolveFeedback(view: EditorView): void {
+  requestAnimationFrame(() => {
+    // Find the next active hunk's inserted block in the DOM
+    const target =
+      view.dom.querySelector(".cm-review-active-hunk.cm-review-inserted-block") ??
+      view.dom.querySelector(".cm-review-active-hunk");
+    if (!target) return;
+
+    target.classList.add("cm-review-resolve-flash");
+    target.addEventListener(
+      "animationend",
+      () => target.classList.remove("cm-review-resolve-flash"),
+      { once: true },
+    );
   });
 }
 
@@ -253,6 +276,7 @@ export function useInlineReview({
 
       resolveHunkEffect(view, hunk.id, "accepted");
       bump();
+      triggerResolveFeedback(view);
       maybeAutoFinalize(view);
 
       // Clear after microtask so the synchronous effect from the same
@@ -276,6 +300,7 @@ export function useInlineReview({
 
       resolveHunkEffect(view, hunk.id, "rejected");
       bump();
+      triggerResolveFeedback(view);
       maybeAutoFinalize(view);
 
       queueMicrotask(() => {
@@ -593,8 +618,8 @@ export function useInlineReview({
       totalHunks: state?.hunks.length ?? 0,
       activeHunkIndex: state?.activeHunkIndex ?? -1,
       resolvedCount: state?.resolutions.size ?? 0,
-      onAcceptAll: handleAcceptAll,
-      onRejectAll: handleRejectAll,
+      onKeepAll: handleAcceptAll,
+      onDiscardAll: handleRejectAll,
       onPrevHunk: handlePrevHunk,
       onNextHunk: handleNextHunk,
     };

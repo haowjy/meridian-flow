@@ -1,9 +1,14 @@
 /**
  * ProposalReviewToolbar — floating pill at the bottom-center of the editor
- * providing batch actions (accept/reject all) and hunk navigation for
+ * providing batch actions (keep/discard all) and hunk navigation for
  * proposal review.
  *
- * Only visible when there are pending review hunks.
+ * Writer-first language: "Keep All" / "Discard All" instead of
+ * "Accept All" / "Reject All" — the writer is the author making creative
+ * choices about their text, not a code reviewer gatekeeping changes.
+ *
+ * Only visible when there are pending review hunks. Entrance animation
+ * (slide-up + fade) anchors the writer's attention when review starts.
  */
 
 import { Button } from "@/shared/components/ui/button";
@@ -16,8 +21,8 @@ interface ProposalReviewToolbarProps {
   activeHunkIndex: number;
   /** Number of hunks already resolved */
   resolvedCount: number;
-  onAcceptAll: () => void;
-  onRejectAll: () => void;
+  onKeepAll: () => void;
+  onDiscardAll: () => void;
   onPrevHunk: () => void;
   onNextHunk: () => void;
 }
@@ -26,8 +31,8 @@ export function ProposalReviewToolbar({
   totalHunks,
   activeHunkIndex,
   resolvedCount,
-  onAcceptAll,
-  onRejectAll,
+  onKeepAll,
+  onDiscardAll,
   onPrevHunk,
   onNextHunk,
 }: ProposalReviewToolbarProps) {
@@ -41,29 +46,29 @@ export function ProposalReviewToolbar({
 
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center">
-      <div className="bg-surface border-border pointer-events-auto inline-flex items-center gap-1.5 rounded-full border px-2 py-1 shadow-lg">
-        {/* Accept All */}
+      <div className="cm-review-toolbar-pill bg-surface border-border pointer-events-auto inline-flex items-center gap-1.5 rounded-full border px-2 py-1 shadow-lg">
+        {/* Keep All */}
         <Button
           variant="accent"
           size="xs"
-          onClick={onAcceptAll}
-          title="Accept all changes"
+          onClick={onKeepAll}
+          title="Keep all changes"
           className="bg-success/15 text-success hover:bg-success/25 rounded-full"
         >
           <Check className="size-3" />
-          Accept All
+          Keep All
         </Button>
 
-        {/* Reject All */}
+        {/* Discard All */}
         <Button
           variant="ghost"
           size="xs"
-          onClick={onRejectAll}
-          title="Reject all changes"
+          onClick={onDiscardAll}
+          title="Discard all changes"
           className="text-error hover:bg-error/10 rounded-full"
         >
           <X className="size-3" />
-          Reject All
+          Discard All
         </Button>
 
         {/* Separator */}
