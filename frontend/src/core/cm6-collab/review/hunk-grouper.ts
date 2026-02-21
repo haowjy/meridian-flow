@@ -1,42 +1,43 @@
-import type { EditOp, ReviewChunk } from "./types";
+import type { EditOp, ReviewHunk } from "./types";
 
 /**
- * Group EditOps into prose-oriented ReviewChunks.
+ * Group EditOps into prose-oriented ReviewHunks.
  *
  * Grouping rules (applied in order):
- *   1. Adjacent insert/delete at the same location become a single replace chunk
+ *   1. Adjacent insert/delete at the same location become a single replace hunk
  *      (if not already merged by the extractor).
  *   2. Ops in the same paragraph (no blank line between them) are merged.
  *   3. Ops separated by <=2 unchanged lines are merged.
- *   4. Ops separated by >2 unchanged lines remain separate chunks.
+ *   4. Ops separated by >2 unchanged lines remain separate hunks.
  *
- * Chunk ids are deterministic: `${proposalId}-chunk-${index}`.
+ * Hunk ids are deterministic: `${proposalId}-chunk-${index}`.
  */
-export function groupIntoChunks(
+export function groupIntoHunks(
   ops: EditOp[],
   proposalId: string,
   baseText: string,
-): ReviewChunk[] {
+): ReviewHunk[] {
   if (ops.length === 0) {
     return [];
   }
 
-  // Convert each op into a preliminary chunk (1:1 mapping)
-  const preliminary: ReviewChunk[] = ops.map((op, i) =>
-    opToChunk(op, proposalId, i),
+  // Convert each op into a preliminary hunk (1:1 mapping)
+  const preliminary: ReviewHunk[] = ops.map((op, i) =>
+    opToHunk(op, proposalId, i),
   );
 
   // Sort by baseStart so adjacent-proximity merging works left-to-right
   preliminary.sort((a, b) => a.baseStart - b.baseStart);
 
-  // Merge nearby chunks using prose-oriented proximity rules
+  // Merge nearby hunks using prose-oriented proximity rules
   const merged = mergeNearby(preliminary, baseText);
 
-  // Re-assign stable ids after merging (index reflects final chunk position)
-  return merged.map((chunk, i) => ({ ...chunk, id: `${proposalId}-chunk-${i}` }));
+  // Re-assign stable ids after merging (index reflects final hunk position)
+  // NOTE: chunk ID format is a stable protocol identifier — do not rename
+  return merged.map((hunk, i) => ({ ...hunk, id: `${proposalId}-chunk-${i}` }));
 }
 
-function opToChunk(op: EditOp, proposalId: string, index: number): ReviewChunk {
+function opToHunk(op: EditOp, proposalId: string, index: number): ReviewHunk {
   if (op.kind === "insert") {
     return {
       id: `${proposalId}-chunk-${index}`,
@@ -74,9 +75,9 @@ function opToChunk(op: EditOp, proposalId: string, index: number): ReviewChunk {
 }
 
 /**
- * Merge consecutive chunks that are "close enough" in the base text.
+ * Merge consecutive hunks that are "close enough" in the base text.
  *
- * Two chunks A and B (A before B) are merged when the gap between them
+ * Two hunks A and B (A before B) are merged when the gap between them
  * (baseText[A.baseEnd..B.baseStart]) has <=2 lines.
  *
  * Line count: `gap.split("\n").length` — empty string gives 0, "foo" gives 1,
@@ -88,17 +89,17 @@ function opToChunk(op: EditOp, proposalId: string, index: number): ReviewChunk {
  *   - insertedText = prev.insertedText + gapText + curr.insertedText
  *     (the gap text is unchanged in the proposed doc, so it appears in both)
  */
-function mergeNearby(chunks: ReviewChunk[], baseText: string): ReviewChunk[] {
-  if (chunks.length <= 1) {
-    return chunks.slice();
+function mergeNearby(hunks: ReviewHunk[], baseText: string): ReviewHunk[] {
+  if (hunks.length <= 1) {
+    return hunks.slice();
   }
 
-  // chunks[0] is guaranteed by the length guard above; prev/curr are guaranteed by loop bounds.
-  const result: ReviewChunk[] = [{ ...chunks[0]! }];
+  // hunks[0] is guaranteed by the length guard above; prev/curr are guaranteed by loop bounds.
+  const result: ReviewHunk[] = [{ ...hunks[0]! }];
 
-  for (let i = 1; i < chunks.length; i++) {
+  for (let i = 1; i < hunks.length; i++) {
     const prev = result[result.length - 1]!;
-    const curr = chunks[i]!;
+    const curr = hunks[i]!;
 
     // Gap in base text between prev's end and curr's start
     const gapStart = prev.baseEnd;
@@ -107,7 +108,7 @@ function mergeNearby(chunks: ReviewChunk[], baseText: string): ReviewChunk[] {
     const gapText = gapStart <= gapEnd ? baseText.substring(gapStart, gapEnd) : "";
 
     if (shouldMerge(gapText)) {
-      // Extend the previous chunk to cover curr
+      // Extend the previous hunk to cover curr
       result[result.length - 1] = {
         ...prev,
         baseEnd: curr.baseEnd,
@@ -125,7 +126,7 @@ function mergeNearby(chunks: ReviewChunk[], baseText: string): ReviewChunk[] {
 }
 
 /**
- * Decide whether to merge two chunks based on their gap text.
+ * Decide whether to merge two hunks based on their gap text.
  *
  * Threshold: <=2 unchanged lines (split("\n").length <= 2).
  *

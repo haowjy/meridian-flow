@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
-  buildEditedChunkUpdate,
+  buildEditedHunkUpdate,
   buildPartialUpdate,
 } from "@/core/cm6-collab/review/partial-apply";
-import type { ReviewChunk } from "@/core/cm6-collab/review/types";
+import type { ReviewHunk } from "@/core/cm6-collab/review/types";
 
 function createDoc(content: string): Y.Doc {
   const doc = new Y.Doc();
@@ -12,7 +12,7 @@ function createDoc(content: string): Y.Doc {
   return doc;
 }
 
-function chunk(overrides: Partial<ReviewChunk> = {}): ReviewChunk {
+function hunk(overrides: Partial<ReviewHunk> = {}): ReviewHunk {
   return {
     id: "proposal-1-chunk-0",
     proposalId: "proposal-1",
@@ -33,9 +33,9 @@ function textAfterUpdate(baseDoc: Y.Doc, update: Uint8Array): string {
 }
 
 describe("buildPartialUpdate", () => {
-  it("uses the chunk inserted text by default", () => {
+  it("uses the hunk inserted text by default", () => {
     const base = createDoc("hello world");
-    const update = buildPartialUpdate(base, chunk());
+    const update = buildPartialUpdate(base, hunk());
 
     expect(textAfterUpdate(base, update)).toBe("hello earth");
     expect(base.getText("content").toString()).toBe("hello world");
@@ -43,7 +43,7 @@ describe("buildPartialUpdate", () => {
 
   it("uses insertedTextOverride when provided", () => {
     const base = createDoc("hello world");
-    const update = buildPartialUpdate(base, chunk(), "content", {
+    const update = buildPartialUpdate(base, hunk(), "content", {
       insertedTextOverride: "planet",
     });
 
@@ -52,7 +52,7 @@ describe("buildPartialUpdate", () => {
 
   it("treats empty-string override as valid delete-only result", () => {
     const base = createDoc("hello world");
-    const update = buildEditedChunkUpdate(base, chunk(), "");
+    const update = buildEditedHunkUpdate(base, hunk(), "");
 
     expect(textAfterUpdate(base, update)).toBe("hello ");
   });
