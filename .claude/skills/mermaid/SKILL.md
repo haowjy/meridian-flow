@@ -6,7 +6,7 @@ user-invocable: false
 
 # Mermaid Diagram Rules
 
-**Always follow these rules when writing Mermaid diagrams.** After writing or editing any Mermaid block, validate with `./scripts/check-mermaid.sh <file>`.
+**Always follow these rules when writing Mermaid diagrams.** After writing or editing any Mermaid block, validate with the co-located script: `.claude/skills/mermaid/scripts/check-mermaid.sh <file>` (or `./scripts/check-mermaid.sh` if the project has a wrapper).
 
 ## Syntax Rules (Critical)
 
@@ -109,15 +109,15 @@ Note over A: First; isLoading=false
 
 ## Validation
 
+The validation script lives at `scripts/check-mermaid.sh` within this skill directory. It extracts each ` ```mermaid ` block, validates it with `mmdc`, and reports file + line number for failures.
+
 ```bash
 # Validate specific file
-./scripts/check-mermaid.sh path/to/file.md
+.claude/skills/mermaid/scripts/check-mermaid.sh path/to/file.md
 
-# Validate all docs
-./scripts/check-mermaid.sh
+# Validate all .md files recursively from cwd
+.claude/skills/mermaid/scripts/check-mermaid.sh
 
 # Validate a directory
-./scripts/check-mermaid.sh _docs/features/
+.claude/skills/mermaid/scripts/check-mermaid.sh docs/features/
 ```
-
-The script extracts each ` ```mermaid ` block, validates it with `mmdc`, and reports the file + line number of failures.
