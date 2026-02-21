@@ -26,7 +26,7 @@ Markdown files with YAML frontmatter. Each defines model, tools, skills, and pro
 
 | Agent | Model | Best For |
 |---|---|---|
-| `implement` | gpt-5.3-codex | Default — most slices |
+| `implement` | claude-sonnet-4-6 | Default — most slices |
 | `implement-iterative` | claude-sonnet-4-6 | Fast UI iteration loops |
 | `implement-deliberate` | claude-opus-4-6 | Complex logic, subtle bugs |
 
@@ -35,8 +35,8 @@ Markdown files with YAML frontmatter. Each defines model, tools, skills, and pro
 | Agent | Model | Effort | Personality |
 |---|---|---|---|
 | `review` | claude-opus-4-6 | high | Thoughtful senior dev |
-| `review-thorough` | gpt-5.3-codex | high | Exhaustive auditor |
-| `review-quick` | gpt-5.3-codex | low | Fast sanity check |
+| `review-thorough` | claude-opus-4-6 | high | Exhaustive auditor |
+| `review-quick` | claude-haiku-4-5 | low | Fast sanity check |
 | `review-adversarial` | claude-sonnet-4-6 | high | Adversarial tester |
 
 ### Research
@@ -44,15 +44,15 @@ Markdown files with YAML frontmatter. Each defines model, tools, skills, and pro
 | Agent | Model | Focus |
 |---|---|---|
 | `research-claude` | claude-sonnet-4-6 | Web + codebase exploration |
-| `research-codex` | gpt-5.3-codex | Deep codebase analysis + web search |
+| `research-codex` | claude-sonnet-4-6 | Deep codebase analysis + web search |
 | `research-kimi` | opencode/kimi-k2.5-free | Alternative perspective via Kimi |
 
 ### Utility
 
 | Agent | Model | Purpose |
 |---|---|---|
-| `plan-slice` | gpt-5.3-codex | Creates next implementable slice from a plan |
-| `cleanup` | gpt-5.3-codex | Targeted fix from review findings |
+| `plan-slice` | claude-sonnet-4-6 | Creates next implementable slice from a plan |
+| `cleanup` | claude-sonnet-4-6 | Targeted fix from review findings |
 | `commit` | claude-haiku-4-5 | Clean commit message from working tree |
 
 ## Scripts

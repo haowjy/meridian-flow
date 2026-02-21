@@ -19,10 +19,13 @@ Options:
   -v, --var KEY=VALUE  Template variable substitution (repeatable)
   -f, --file PATH      Reference file/dir to list in prompt (repeatable)
   -D, --detail LEVEL   Report detail level: brief | standard | detailed (default: standard)
+      --plan NAME      Shorthand: sets PLAN_FILE=plans/NAME/plan.md
+      --slice NAME     Shorthand: sets SLICE_FILE + SLICES_DIR (requires --plan)
       --dry-run        Print composed prompt + CLI command, don't execute
   -C, --cd DIR         Working directory for subprocess
 
 Environment:
+  ORCHESTRATE_PLAN         Default plan name (inherited by --slice without --plan)
   ORCHESTRATE_DEFAULT_CLI  Force all model routing to a specific CLI (claude, codex, opencode)
   ORCHESTRATE_AGENT_DIR  Override agent definition directory (highest precedence)
 EOF
@@ -223,6 +226,16 @@ parse_args() {
         esac
         shift 2
         ;;
+      --plan)
+        require_option_value "$1" "$#"
+        PLAN_NAME="$2"
+        shift 2
+        ;;
+      --slice)
+        require_option_value "$1" "$#"
+        SLICE_NAME="$2"
+        shift 2
+        ;;
       --dry-run) DRY_RUN=true; shift ;;
       -C|--cd)
         require_option_value "$1" "$#"
@@ -238,6 +251,7 @@ parse_args() {
   done
 
   normalize_var_aliases
+  expand_plan_slice_shorthand
 
   # ─── Read prompt from stdin if not provided via -p ─────────────────────────
   if [[ -z "$CLI_PROMPT" ]] && [[ ! -t 0 ]]; then
@@ -251,6 +265,39 @@ parse_args() {
     PROMPT="$AGENT_PROMPT"
   else
     PROMPT="$CLI_PROMPT"
+  fi
+}
+
+expand_plan_slice_shorthand() {
+  # Inherit plan from orchestrator env if not set via CLI flag
+  if [[ -z "$PLAN_NAME" ]] && [[ -n "${ORCHESTRATE_PLAN:-}" ]]; then
+    PLAN_NAME="$ORCHESTRATE_PLAN"
+  fi
+
+  # --slice without --plan is an error
+  if [[ -n "$SLICE_NAME" ]] && [[ -z "$PLAN_NAME" ]]; then
+    echo "ERROR: --slice requires --plan (or set ORCHESTRATE_PLAN env var)." >&2
+    exit 1
+  fi
+
+  [[ -z "$PLAN_NAME" ]] && return
+
+  # --plan X → PLAN_FILE=plans/X/plan.md (explicit -v wins)
+  if [[ -z "${VARS[PLAN_FILE]:-}" ]]; then
+    VARS[PLAN_FILE]="plans/$PLAN_NAME/plan.md"
+    HAS_VARS=true
+  fi
+
+  # --plan X --slice Y → SLICE_FILE + SLICES_DIR (explicit -v wins)
+  if [[ -n "$SLICE_NAME" ]]; then
+    if [[ -z "${VARS[SLICE_FILE]:-}" ]]; then
+      VARS[SLICE_FILE]="plans/$PLAN_NAME/slices/$SLICE_NAME/slice.md"
+      HAS_VARS=true
+    fi
+    if [[ -z "${VARS[SLICES_DIR]:-}" ]]; then
+      VARS[SLICES_DIR]="plans/$PLAN_NAME/slices/$SLICE_NAME"
+      HAS_VARS=true
+    fi
   fi
 }
 
@@ -282,6 +329,13 @@ validate_args() {
   if [[ -z "$MODEL" ]]; then
     echo "[run-agent] WARNING: No model specified; falling back to $FALLBACK_MODEL" >&2
     MODEL="$FALLBACK_MODEL"
+  fi
+
+  # Advisory: warn early if the routed CLI isn't installed (build_cli_command handles actual fallback).
+  local routed_cli
+  routed_cli="$(route_model "$MODEL" 2>/dev/null || echo "")"
+  if [[ -n "$routed_cli" ]] && ! command -v "$routed_cli" >/dev/null 2>&1; then
+    echo "[run-agent] WARNING: '$routed_cli' not installed for model '$MODEL'; will fall back to $FALLBACK_MODEL ($FALLBACK_CLI)" >&2
   fi
 
   if [[ -z "$PROMPT" ]] && [[ ${#SKILLS[@]} -eq 0 ]]; then
