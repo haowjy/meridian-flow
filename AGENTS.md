@@ -26,11 +26,12 @@ See `frontend/CLAUDE.md` for UI-specific implementation of this philosophy.
 
 ## Guiding Principles for Development
 
-ALWAYS FOLLOW SOLID PRINCIPLES.
+ALWAYS FOLLOW SOLID PRINCIPLES. 
+ALWAYS ENSURE THERE IS A PLAN APPROVED BY THE USER BEFORE IMPLEMENTING ANYTHING GREATER THAN A FEW LINES OF CODE. This is to make sure a developer understands the situation and knows whats happening to the system. You should also make sure to follow [[## Before Writing New Code]] 
 
 ### SOLID Quick Reference
 
-- **SRP**: Files should be about <500 lines. One store = one domain. Split large components.
+- **SRP**: Files should only have a single purpose. One store = one domain. Split large components.
 - **OCP**: Use registries/factories for extensibility (see ToolRegistry, BlockRenderer)
 - **LSP**: All implementations must be substitutable for their interfaces
 - **ISP**: Split large interfaces (Reader vs Writer, Metadata vs CRUD)

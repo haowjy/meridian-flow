@@ -33,8 +33,6 @@ flowchart TB
     parse --> content
     parse --> aiVersion
 
-    style Storage fill:#2d5f8d,color:#fff
-    style Editor fill:#2d7d2d,color:#fff
 ```
 
 ---

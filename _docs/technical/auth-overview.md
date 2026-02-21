@@ -26,10 +26,6 @@ flowchart TD
     DB -->|11. Protected Data| Backend
     Backend -->|12. Response| Frontend2
 
-    style Supabase fill:#2d7d2d
-    style Backend fill:#1e5a8e
-    style Frontend fill:#5d4d7a
-    style Frontend2 fill:#5d4d7a
 ```
 
 ## Components

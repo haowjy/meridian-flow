@@ -80,9 +80,6 @@ graph TB
     StreamSvc -->|Persist TurnBlocks| DB
     StreamSvc -->|SSE events| Client
 
-    style Lib fill:#2d7d9d
-    style StreamSvc fill:#7d4d4d
-    style DB fill:#2d5d2d
 ```
 
 **Key components:**

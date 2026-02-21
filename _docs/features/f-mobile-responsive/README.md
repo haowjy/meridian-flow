@@ -38,10 +38,6 @@ flowchart LR
     Mobile --> Panels
     Desktop --> Panels
 
-    style Hook fill:#1e40af,color:#fff
-    style Selector fill:#1e40af,color:#fff
-    style Mobile fill:#2d7d2d,color:#fff
-    style Desktop fill:#2d7d2d,color:#fff
 ```
 
 ---
@@ -102,11 +98,6 @@ flowchart TB
         D3["Document"]
     end
 
-    style MContent fill:#2d7d2d,color:#fff
-    style MNav fill:#1e40af,color:#fff
-    style D1 fill:#2d7d2d,color:#fff
-    style D2 fill:#2d7d2d,color:#fff
-    style D3 fill:#2d7d2d,color:#fff
 ```
 
 ---

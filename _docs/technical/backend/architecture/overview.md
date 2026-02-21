@@ -32,10 +32,6 @@ graph TB
     Repo -.implements.-> Domain
     Handler -.uses.-> Domain
 
-    style Handler fill:#2d8d2d
-    style Service fill:#2d7d9d
-    style Repo fill:#9d4d9d
-    style Domain fill:#9d8d2d
 ```
 
 ## The Three Layers
@@ -214,9 +210,6 @@ graph TB
     Handler --> Convo
     Handler --> Stream
 
-    style Thread fill:#2d7d7d
-    style Convo fill:#2d7d7d
-    style Stream fill:#2d7d7d
 ```
 
 ### Service Responsibilities
@@ -278,7 +271,6 @@ graph LR
     Repo[repository/] --> Domain
     Handler -.uses.-> Domain
 
-    style Domain fill:#9d8d2d,stroke:#333,stroke-width:3px
 ```
 
 **Critical:** Service depends on `DocumentRepository` **interface** (domain), not `PostgresDocumentRepository` **implementation** (repository).

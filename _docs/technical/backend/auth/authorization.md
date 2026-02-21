@@ -31,8 +31,6 @@ graph TB
         Turn[Turn] -->|"thread_id"| Thread
     end
 
-    style Authorizer fill:#2d7d2d
-    style Project fill:#2d7d7d
 ```
 
 ## ResourceAuthorizer Interface

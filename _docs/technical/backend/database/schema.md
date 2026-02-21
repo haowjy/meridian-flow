@@ -221,15 +221,6 @@ graph TB
     turn2 --> cb2_think
     turn2 --> cb2_text
 
-    style thread fill:#2d5a7d
-    style turn1 fill:#2d7d2d
-    style turn2 fill:#7d2d5a
-    style turn3a fill:#2d7d2d
-    style turn3b fill:#2d7d2d
-    style cb1_text fill:#7d5a2d
-    style cb1_ref fill:#7d5a2d
-    style cb2_think fill:#5a2d7d
-    style cb2_text fill:#5a2d7d
 ```
 
 ### Tables

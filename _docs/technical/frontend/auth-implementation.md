@@ -67,10 +67,6 @@ flowchart TD
     F -->|No| G[throw redirect to /login]
     F -->|Yes| H[Render Protected Route]
 
-    style E fill:#2d7d2d
-    style H fill:#2d7d2d
-    style G fill:#8b0000
-    style D fill:#1e5a8e
 ```
 
 ## Components

@@ -46,10 +46,6 @@ graph TB
     Executor -->|TurnBlockDelta events| MStream
     Executor -->|Persist TurnBlock| DB
 
-    style Client fill:#2d7d9d
-    style Executor fill:#7d4d4d
-    style DB fill:#2d5d2d
-    style MStream fill:#7d7d2d
 ```
 
 ---

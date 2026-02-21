@@ -28,7 +28,6 @@ flowchart TB
   User --> Merge
   AI --> Merge
 
-  classDef node fill:#2d5f8d,stroke:#1b3a56,color:#fff
   class Base,User,AI,Merge node
 ```
 
@@ -413,8 +412,6 @@ sequenceDiagram
     Editor->>DB: Delete session (all applied)
     Editor->>User: All suggestions applied ✓
 
-    style AI fill:#2d7d2d
-    style Editor fill:#2d5f8d
 ```
 
 ### Conflict Path
@@ -458,8 +455,6 @@ sequenceDiagram
     Editor->>DB: Delete session
     Editor->>User: All resolved ✓
 
-    style AI fill:#2d7d2d
-    style Editor fill:#b8860b
 ```
 
 ## Implementation Libraries

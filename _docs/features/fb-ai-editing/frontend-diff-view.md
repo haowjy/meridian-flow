@@ -25,7 +25,6 @@ flowchart TB
     clipboard --> hover
     hover --> blocked
 
-    style Bundle fill:#2d5f8d,color:#fff
 ```
 
 **Order matters**: Each extension depends on the ones above it.

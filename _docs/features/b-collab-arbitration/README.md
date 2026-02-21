@@ -59,9 +59,6 @@ flowchart TD
     G -->|Under limit| D
     G -->|Over limit| H["429 Rate Limited"]
 
-    style A fill:#2d5a2d
-    style F fill:#2d5a7d
-    style H fill:#7d2d2d
 ```
 
 ## Adding New Arbiter Strategies

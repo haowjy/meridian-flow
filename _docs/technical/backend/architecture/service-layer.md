@@ -42,11 +42,6 @@ graph TB
     Registry --> Executor
     Generator --> Provider[LLM Provider]
 
-    style ThreadSvc fill:#2d7d7d
-    style ConvoSvc fill:#2d7d7d
-    style StreamSvc fill:#2d7d7d
-    style Executor fill:#7d4d4d
-    style Generator fill:#7d4d4d
 ```
 
 ## The Three Services
@@ -335,7 +330,6 @@ graph TB
     Service -.depends on.-> Interface
     Postgres -.implements.-> Interface
 
-    style Interface fill:#9d8d2d,stroke:#333,stroke-width:3px
 ```
 
 **Example:**

@@ -270,9 +270,6 @@ graph LR
     A[<30ms<br/>Excessive overhead] -->|Too fast| B[30-100ms<br/>OPTIMAL]
     B -->|Too slow| C[>100ms<br/>Looks choppy]
 
-    style A fill:#8d2d2d,stroke:#5a1a1a,color:#fff
-    style B fill:#2d7d2d,stroke:#1e4d1e,color:#fff
-    style C fill:#8d6d2d,stroke:#5a441a,color:#fff
 ```
 
 **Why this matters:**
@@ -712,10 +709,6 @@ flowchart TD
     Docs --> TipTap[TipTap Editor]
     Chat --> Streamdown[Streamdown Renderer]
 
-    style TipTap fill:#2d5f8d,stroke:#1a3f5a,color:#fff
-    style Streamdown fill:#2d7d2d,stroke:#1e4d1e,color:#fff
-    style Docs fill:#7d2d5f,stroke:#4d1a3f,color:#fff
-    style Chat fill:#7d2d5f,stroke:#4d1a3f,color:#fff
 ```
 
 **Hybrid approach:**

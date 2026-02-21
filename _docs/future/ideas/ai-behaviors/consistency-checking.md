@@ -46,8 +46,6 @@ sequenceDiagram
     AI-->>Editor: Contradiction detected
     Editor->>User: Show inline warning ⚠️
 
-    style AI fill:#2d7d2d
-    style VectorDB fill:#7d4d4d
 ```
 
 **Components:**

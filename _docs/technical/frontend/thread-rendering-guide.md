@@ -30,11 +30,6 @@ flowchart TB
     TB --> Buffer
     Buffer --> Render[UI Update]
 
-    style SSE fill:#2d5f8d,stroke:#1a3f5a,color:#fff
-    style SD1 fill:#2d7d2d,stroke:#1e4d1e,color:#fff
-    style TB fill:#2d7d2d,stroke:#1e4d1e,color:#fff
-    style Buffer fill:#8d6d2d,stroke:#5a441a,color:#fff
-    style Render fill:#7d2d5f,stroke:#4d1a3f,color:#fff
 ```
 
 ## Installation

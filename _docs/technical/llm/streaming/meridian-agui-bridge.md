@@ -28,9 +28,6 @@ graph LR
         BT --> ST[Thread Store]
     end
 
-    style Library fill:#2d5d7d
-    style Backend fill:#5d4d7d
-    style Frontend fill:#2d7d5d
 ```
 
 **Data flow:**

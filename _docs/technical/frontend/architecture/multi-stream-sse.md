@@ -137,13 +137,6 @@ flowchart TB
   Dispatch2 -->|Tool adapters| ToolStore[useToolStreamStore<br/>tool UI state]
   Dispatch3 -->|Agent adapters| AgentStore[useAgentStore<br/>agent thread state]
 
-  style StreamStore fill:#2d5f8d,stroke:#1a3f5a,color:#fff
-  style Conn1 fill:#2d7d2d,stroke:#1e4d1e,color:#fff
-  style Conn2 fill:#2d7d2d,stroke:#1e4d1e,color:#fff
-  style Conn3 fill:#2d7d2d,stroke:#1e4d1e,color:#fff
-  style ThreadStore fill:#7d2d5f,stroke:#4d1a3f,color:#fff
-  style ToolStore fill:#8d6d2d,stroke:#5a441a,color:#fff
-  style AgentStore fill:#8d6d2d,stroke:#5a441a,color:#fff
 ```
 
 Key properties:
