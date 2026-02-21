@@ -104,13 +104,21 @@ export function useInlineReview({
   collabEnabled,
   operationsModels,
   applyChunkUpdate,
-  sendProposalAccept,
+  // sendProposalAccept is intentionally unused — inline chunk review applies
+  // edits via Yjs sync, so we always close proposals with reject (Bug 3 fix).
   sendProposalReject,
   requestProposalUpdate,
 }: UseInlineReviewOptions): UseInlineReviewResult {
   // Proposal IDs for the current review session — needed for finalization
   // (not tracked in CM6 state since it's proposal-level, not chunk-level)
   const activeProposalIdsRef = useRef<Set<string>>(new Set());
+
+  // Guard: suppress re-sync while a chunk is being resolved.
+  // Accepting a chunk mutates the Yjs doc → reviewRevision++ → the sync effect
+  // would re-dispatch setReviewChunksEffect and wipe the just-recorded resolution.
+  // We set this flag before resolve and clear it via queueMicrotask so the
+  // synchronous effect triggered by the same Yjs update is skipped.
+  const isResolvingRef = useRef(false);
 
   // Track proposals we've already requested yjsUpdate for to avoid duplicate requests
   const requestedUpdatesRef = useRef<Set<string>>(new Set());
@@ -181,20 +189,17 @@ export function useInlineReview({
         perProposal.set(chunk.proposalId, cur);
       }
 
-      // For each proposal: if any accepted -> accept, else reject
+      // Always send reject to close the proposal — chunk edits are already
+      // applied to the Yjs doc and synced to the server via collab transport.
+      // Sending accept would cause the server to re-apply the full yjsUpdate,
+      // duplicating the accepted text (Bug 3: double-apply).
       for (const [proposalId, counts] of perProposal) {
-        if (counts.accepted > 0) {
-          const key = crypto.randomUUID();
-          sendProposalAccept(proposalId, key);
-          log.info("Auto-accepted proposal", {
-            proposalId,
-            acceptedChunks: counts.accepted,
-            rejectedChunks: counts.rejected,
-          });
-        } else {
-          sendProposalReject(proposalId);
-          log.info("Auto-rejected proposal", { proposalId });
-        }
+        sendProposalReject(proposalId);
+        log.info("Closed proposal after inline chunk review", {
+          proposalId,
+          acceptedChunks: counts.accepted,
+          rejectedChunks: counts.rejected,
+        });
       }
 
       // Clear review state
@@ -202,7 +207,7 @@ export function useInlineReview({
       activeProposalIdsRef.current = new Set();
       bump();
     },
-    [sendProposalAccept, sendProposalReject, bump],
+    [sendProposalReject, bump],
   );
 
   // ------------------------------------------------------------------
@@ -211,29 +216,54 @@ export function useInlineReview({
 
   const handleAcceptChunk = useCallback(
     (chunk: ReviewChunk) => {
+      // Suppress re-sync while resolving — accepting mutates the Yjs doc
+      // which triggers reviewRevision++ and the sync effect. Without this
+      // guard the sync effect would re-dispatch setReviewChunks and could
+      // produce phantom chunks from the mutated doc.
+      isResolvingRef.current = true;
+
       const { ok } = applyChunkUpdate(chunk);
       if (!ok) {
         log.warn("Failed to apply chunk update", { chunkId: chunk.id });
+        isResolvingRef.current = false;
         return;
       }
       const view = getView();
-      if (!view) return;
+      if (!view) {
+        isResolvingRef.current = false;
+        return;
+      }
 
       resolveChunkEffect(view, chunk.id, "accepted");
       bump();
       maybeAutoFinalize(view);
+
+      // Clear after microtask so the synchronous effect from the same
+      // Yjs update cycle is still suppressed
+      queueMicrotask(() => {
+        isResolvingRef.current = false;
+      });
     },
     [applyChunkUpdate, getView, bump, maybeAutoFinalize],
   );
 
   const handleRejectChunk = useCallback(
     (chunk: ReviewChunk) => {
+      isResolvingRef.current = true;
+
       const view = getView();
-      if (!view) return;
+      if (!view) {
+        isResolvingRef.current = false;
+        return;
+      }
 
       resolveChunkEffect(view, chunk.id, "rejected");
       bump();
       maybeAutoFinalize(view);
+
+      queueMicrotask(() => {
+        isResolvingRef.current = false;
+      });
     },
     [getView, bump, maybeAutoFinalize],
   );
@@ -261,17 +291,18 @@ export function useInlineReview({
       }
     }
 
-    // Send accept for each active proposal
+    // Send reject to close each proposal — chunk edits are already in the
+    // Yjs doc and synced via collab transport. Accept would re-apply the
+    // full yjsUpdate, duplicating text (Bug 3: double-apply).
     for (const proposalId of activeProposalIdsRef.current) {
-      const key = crypto.randomUUID();
-      sendProposalAccept(proposalId, key);
+      sendProposalReject(proposalId);
     }
 
     // Clear review state
     clearReviewEffect(view);
     activeProposalIdsRef.current = new Set();
     bump();
-  }, [applyChunkUpdate, getView, sendProposalAccept, bump]);
+  }, [applyChunkUpdate, getView, sendProposalReject, bump]);
 
   const handleRejectAll = useCallback(() => {
     const view = getView();
@@ -368,6 +399,15 @@ export function useInlineReview({
       return;
     }
 
+    // Skip re-sync while a chunk is being resolved — the Yjs mutation from
+    // accept triggers reviewRevision++ which re-runs this effect. Re-deriving
+    // chunks against the mutated doc would produce phantom diffs (Bug 4) and
+    // wipe the just-recorded resolution (Bug 2).
+    if (isResolvingRef.current) {
+      log.debug("Sync effect skipped: chunk resolution in progress");
+      return;
+    }
+
     const readyGroups = collectReadyChunks(operationsModels);
     const allChunks = readyGroups.flatMap((g) => g.chunks);
     const proposalIds = new Set(readyGroups.map((g) => g.proposalId));
@@ -392,8 +432,21 @@ export function useInlineReview({
         proposals: readyGroups.map((g) => g.proposalId),
       });
     } else {
-      clearReviewEffect(view);
-      log.debug("No ready chunks — cleared review state");
+      // Don't clear on transient unavailability — proposals may still be
+      // loading their yjsUpdate (snapshot reload) or hit a temporary apply
+      // error. Only clear when there are genuinely no active proposals.
+      const hasProposalsLoading = [...operationsModels.values()].some(
+        (m) =>
+          m.availability === "ready" ||
+          (m.availability === "unavailable" &&
+            m.reason === "missing_update"),
+      );
+      if (!hasProposalsLoading) {
+        clearReviewEffect(view);
+        log.debug("No ready chunks and no loading proposals — cleared review state");
+      } else {
+        log.debug("No ready chunks but proposals still loading — preserving current decorations");
+      }
     }
     bump();
   }, [collabEnabled, getView, operationsModels, bump]);
@@ -416,8 +469,14 @@ export function useInlineReview({
           reason: model.reason,
           message: model.message,
         });
-        requestedUpdatesRef.current.add(proposalId);
-        requestProposalUpdate(proposalId);
+        const sent = requestProposalUpdate(proposalId);
+        if (sent) {
+          // Only mark as requested if the command was actually sent.
+          // If WS isn't connected yet, we'll retry on the next effect run.
+          requestedUpdatesRef.current.add(proposalId);
+        } else {
+          log.warn("Failed to send yjsUpdate request — will retry", { proposalId });
+        }
       }
     }
   }, [collabEnabled, operationsModels, requestProposalUpdate]);
