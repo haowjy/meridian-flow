@@ -189,7 +189,11 @@ export function useDocumentSync(
         // Content-only save (no AI suggestions in non-collab path)
         try {
           const storageContent = contentDriver.toStorage(editorContent);
-          void documentSyncService.save(docId, storageContent, doc ?? undefined);
+          void documentSyncService.save(
+            docId,
+            storageContent,
+            doc ?? undefined,
+          );
         } catch {
           // If adapter fails, save raw content as fallback
           void documentSyncService.save(docId, editorContent, doc ?? undefined);

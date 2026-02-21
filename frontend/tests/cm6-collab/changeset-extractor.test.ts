@@ -43,11 +43,7 @@ function buildUpdate(
   return Y.encodeStateAsUpdate(workDoc, beforeSV);
 }
 
-function requiredAt<T>(
-  values: readonly T[],
-  index: number,
-  label: string,
-): T {
+function requiredAt<T>(values: readonly T[], index: number, label: string): T {
   const value = values[index];
   if (value === undefined) {
     throw new Error(`Missing ${label} at index ${String(index)}`);
@@ -178,12 +174,9 @@ describe("extractProposalOps — no-op update", () => {
   it("returns [] when the update does not change the observed Y.Text", () => {
     const base = makeBaseDoc("Hello world");
     // Modify a different Y.Text key — "content" is unchanged
-    const update = buildUpdate(
-      base,
-      (_text, doc) => {
-        doc.getText("other_key").insert(0, "irrelevant change");
-      },
-    );
+    const update = buildUpdate(base, (_text, doc) => {
+      doc.getText("other_key").insert(0, "irrelevant change");
+    });
 
     const ops = extractProposalOps(base, update);
 
@@ -196,7 +189,10 @@ describe("extractProposalOps — no-op update", () => {
     const sameDoc = new Y.Doc();
     Y.applyUpdate(sameDoc, Y.encodeStateAsUpdate(base));
     // Encode delta since base → should be empty / no-op
-    const noOpUpdate = Y.encodeStateAsUpdate(sameDoc, Y.encodeStateVector(base));
+    const noOpUpdate = Y.encodeStateAsUpdate(
+      sameDoc,
+      Y.encodeStateVector(base),
+    );
 
     const ops = extractProposalOps(base, noOpUpdate);
 
@@ -213,9 +209,9 @@ describe("extractProposalOps — multi-op proposal", () => {
     const base = makeBaseDoc("Hello world");
     // Two separate changes: insert at start, replace at end
     const update = buildUpdate(base, (text) => {
-      text.insert(0, "dear ");   // insert "dear " at position 0
-      text.delete(11, 5);        // delete "world" (now at position 11 due to prior insert)
-      text.insert(11, "earth");  // insert "earth"
+      text.insert(0, "dear "); // insert "dear " at position 0
+      text.delete(11, 5); // delete "world" (now at position 11 due to prior insert)
+      text.insert(11, "earth"); // insert "earth"
     });
 
     const ops = extractProposalOps(base, update);

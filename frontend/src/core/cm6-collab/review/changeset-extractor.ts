@@ -18,10 +18,7 @@ interface PositionedInsert {
 type PositionedOp = PositionedDelete | PositionedInsert;
 
 // Yjs text delta op shape
-type YjsDeltaOp =
-  | { retain: number }
-  | { delete: number }
-  | { insert: string };
+type YjsDeltaOp = { retain: number } | { delete: number } | { insert: string };
 
 /**
  * Extract exact edit operations from a Yjs update applied to a base document.
@@ -89,7 +86,10 @@ export function extractProposalOpsWithClone(
  * text. Insert ops do NOT advance basePos (they are insertions at the current
  * base position).
  */
-function deltaToPositionedOps(delta: YjsDeltaOp[], baseText: string): PositionedOp[] {
+function deltaToPositionedOps(
+  delta: YjsDeltaOp[],
+  baseText: string,
+): PositionedOp[] {
   const ops: PositionedOp[] = [];
   let basePos = 0;
 

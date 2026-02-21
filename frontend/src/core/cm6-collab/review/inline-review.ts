@@ -52,7 +52,7 @@ export {
 } from "./state";
 
 // ============================================================================
-// WIDGET: Hunk Action Buttons (Keep / Discard) — Floating Toolbar
+// WIDGET: Hunk Action Buttons (Keep / Edit / Discard) — Floating Toolbar
 // ============================================================================
 // Replaces the old ChunkActionWidget that rendered inline at chunkStart and
 // caused stacking in document flow. This widget is absolutely positioned and
@@ -103,7 +103,19 @@ class HunkActionWidget extends WidgetType {
       this.callbacks.onRejectHunk(this.hunk);
     };
 
+    const editBtn = document.createElement("button");
+    editBtn.textContent = "Edit \u270E";
+    editBtn.className = "cm-review-edit-btn";
+    editBtn.title = "Edit this suggestion";
+    editBtn.type = "button";
+    editBtn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.callbacks.onEditHunk(this.hunk);
+    };
+
     container.appendChild(keepBtn);
+    container.appendChild(editBtn);
     container.appendChild(discardBtn);
     return container;
   }
@@ -484,7 +496,7 @@ function findNextPendingIndex(
   if (len === 0) return -1;
 
   for (let step = 1; step <= len; step++) {
-    const idx = ((currentIdx + direction * step) % len + len) % len;
+    const idx = (((currentIdx + direction * step) % len) + len) % len;
     if (!state.resolutions.has(state.hunks[idx]!.id)) {
       return idx;
     }
@@ -512,7 +524,9 @@ function scrollToHunk(view: EditorView, hunk: ReviewHunk): void {
  * for consistency with meridian's approach, easier pseudo-element styling
  * (the ::after bridge), and @media query ergonomics.
  */
-export function inlineReviewExtension(callbacks: InlineReviewCallbacks): Extension[] {
+export function inlineReviewExtension(
+  callbacks: InlineReviewCallbacks,
+): Extension[] {
   return [
     inlineReviewField,
     reviewActiveAttrs,
@@ -546,10 +560,7 @@ export function resolveHunkEffect(
 }
 
 /** Set the active hunk index for navigation */
-export function setActiveHunkIndex(
-  view: EditorView,
-  index: number,
-): void {
+export function setActiveHunkIndex(view: EditorView, index: number): void {
   view.dispatch({ effects: setActiveHunk.of(index) });
 }
 

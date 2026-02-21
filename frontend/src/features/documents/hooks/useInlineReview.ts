@@ -31,6 +31,10 @@ import {
   resolveHunkEffect,
   setActiveHunkIndex,
   getInlineReviewState,
+  startHunkEditSession,
+  updateHunkEditSession,
+  commitHunkEditSession,
+  type HunkEditSession,
   type ReviewHunk,
   type ProposalOperationsModel,
 } from "@/core/cm6-collab";
@@ -67,6 +71,13 @@ interface UseInlineReviewResult {
     onRejectAll: () => void;
     onPrevHunk: () => void;
     onNextHunk: () => void;
+  };
+  /** Props to pass to ProposalHunkEditDialog */
+  editDialogProps: {
+    editSession: HunkEditSession | null;
+    onUpdateDraft: (draftText: string) => void;
+    onCommit: () => void;
+    onCancel: () => void;
   };
 }
 
@@ -142,6 +153,14 @@ export function useInlineReview({
 
   const acceptHunkRef = useRef<(hunk: ReviewHunk) => void>(() => {});
   const rejectHunkRef = useRef<(hunk: ReviewHunk) => void>(() => {});
+  const editHunkRef = useRef<(hunk: ReviewHunk) => void>(() => {});
+
+  // Edit session state — tracks the hunk being edited in the dialog.
+  // null = no edit dialog open.
+  const [editSession, setEditSession] = useState<HunkEditSession | null>(null);
+  // Ref to the hunk being edited — needed for commit to access the original
+  // ReviewHunk object (which has baseStart/baseEnd for partial apply).
+  const editingHunkRef = useRef<ReviewHunk | null>(null);
 
   // ------------------------------------------------------------------
   // Auto-finalization helper
@@ -157,9 +176,7 @@ export function useInlineReview({
       const state = getInlineReviewState(view.state);
       if (!state || state.hunks.length === 0) return;
 
-      const allResolved = state.hunks.every((c) =>
-        state.resolutions.has(c.id),
-      );
+      const allResolved = state.hunks.every((c) => state.resolutions.has(c.id));
       if (!allResolved) return;
 
       log.info("All hunks resolved, auto-finalizing", {
@@ -268,9 +285,82 @@ export function useInlineReview({
     [getView, bump, maybeAutoFinalize],
   );
 
+  // ------------------------------------------------------------------
+  // Edit hunk handlers
+  // ------------------------------------------------------------------
+
+  /** Open the edit dialog for a hunk — prefills with its insertedText */
+  const handleEditHunk = useCallback((hunk: ReviewHunk) => {
+    editingHunkRef.current = hunk;
+    setEditSession(startHunkEditSession(hunk));
+    log.info("Opened edit dialog for hunk", { hunkId: hunk.id });
+  }, []);
+
+  /** Update draft text while editing (controlled input) */
+  const handleUpdateDraft = useCallback((draftText: string) => {
+    setEditSession((prev) =>
+      prev ? updateHunkEditSession(prev, draftText) : null,
+    );
+  }, []);
+
+  /** Commit the edit: apply edited text, resolve hunk, auto-finalize */
+  const handleCommitEdit = useCallback(() => {
+    if (!editSession) return;
+    const hunk = editingHunkRef.current;
+    if (!hunk) return;
+
+    const commit = commitHunkEditSession(editSession);
+
+    // Suppress re-sync while resolving (same guard as handleAcceptHunk)
+    isResolvingRef.current = true;
+
+    // Only pass editedText when the user actually changed something.
+    // When wasEdited is false, use the same code path as "Keep" (no edited
+    // text arg) so semantics are identical to handleAcceptHunk.
+    const { ok } = commit.wasEdited
+      ? applyHunkUpdate(hunk, commit.insertedText)
+      : applyHunkUpdate(hunk);
+    if (!ok) {
+      log.warn("Failed to apply edited hunk update", { hunkId: hunk.id });
+      isResolvingRef.current = false;
+      return;
+    }
+
+    const view = getView();
+    if (!view) {
+      isResolvingRef.current = false;
+      return;
+    }
+
+    resolveHunkEffect(view, hunk.id, "accepted");
+    bump();
+    maybeAutoFinalize(view);
+
+    // Clear edit session
+    setEditSession(null);
+    editingHunkRef.current = null;
+
+    log.info("Committed edited hunk", {
+      hunkId: hunk.id,
+      wasEdited: commit.wasEdited,
+    });
+
+    queueMicrotask(() => {
+      isResolvingRef.current = false;
+    });
+  }, [editSession, applyHunkUpdate, getView, bump, maybeAutoFinalize]);
+
+  /** Cancel the edit dialog — no document change, no resolution */
+  const handleCancelEdit = useCallback(() => {
+    setEditSession(null);
+    editingHunkRef.current = null;
+    log.info("Cancelled hunk edit");
+  }, []);
+
   // Keep refs in sync with latest callback versions
   acceptHunkRef.current = handleAcceptHunk;
   rejectHunkRef.current = handleRejectHunk;
+  editHunkRef.current = handleEditHunk;
 
   // ------------------------------------------------------------------
   // Batch actions
@@ -372,6 +462,7 @@ export function useInlineReview({
     return inlineReviewExtension({
       onAcceptHunk: (hunk) => acceptHunkRef.current(hunk),
       onRejectHunk: (hunk) => rejectHunkRef.current(hunk),
+      onEditHunk: (hunk) => editHunkRef.current(hunk),
     });
     // Only depends on collabEnabled — callbacks go through stable refs
   }, [collabEnabled]);
@@ -389,7 +480,9 @@ export function useInlineReview({
     // Check that the inlineReviewField is present in the editor state
     const currentState = getInlineReviewState(view.state);
     if (!currentState) {
-      log.warn("Sync effect: inlineReviewField NOT found in editor state — extension not registered");
+      log.warn(
+        "Sync effect: inlineReviewField NOT found in editor state — extension not registered",
+      );
       return;
     }
 
@@ -420,8 +513,7 @@ export function useInlineReview({
       const hasProposalsLoading = [...operationsModels.values()].some(
         (m) =>
           m.availability === "ready" ||
-          (m.availability === "unavailable" &&
-            m.reason === "missing_update"),
+          (m.availability === "unavailable" && m.reason === "missing_update"),
       );
       if (!hasProposalsLoading) {
         clearReviewEffect(view);
@@ -454,7 +546,9 @@ export function useInlineReview({
           // If WS isn't connected yet, we'll retry on the next effect run.
           requestedUpdatesRef.current.add(proposalId);
         } else {
-          log.warn("Failed to send yjsUpdate request — will retry", { proposalId });
+          log.warn("Failed to send yjsUpdate request — will retry", {
+            proposalId,
+          });
         }
       }
     }
@@ -507,7 +601,24 @@ export function useInlineReview({
     // version is a render trigger — its value is unused, but its change forces
     // re-computation so toolbar reads fresh CM6 state after each mutation
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [version, getView, handleAcceptAll, handleRejectAll, handlePrevHunk, handleNextHunk]);
+  }, [
+    version,
+    getView,
+    handleAcceptAll,
+    handleRejectAll,
+    handlePrevHunk,
+    handleNextHunk,
+  ]);
 
-  return { extensions, toolbarProps };
+  const editDialogProps = useMemo(
+    () => ({
+      editSession,
+      onUpdateDraft: handleUpdateDraft,
+      onCommit: handleCommitEdit,
+      onCancel: handleCancelEdit,
+    }),
+    [editSession, handleUpdateDraft, handleCommitEdit, handleCancelEdit],
+  );
+
+  return { extensions, toolbarProps, editDialogProps };
 }

@@ -434,7 +434,8 @@ export const useUIStore = create<UIStore>()(
           activeSkillId: null,
           showVersionHistory: false,
         }),
-      setActiveSkill: (id) => set({ activeSkillId: id, activeDocumentId: null }),
+      setActiveSkill: (id) =>
+        set({ activeSkillId: id, activeDocumentId: null }),
       setActiveThread: (id) => set({ activeThreadId: id }),
       bumpThreadFocusVersion: () =>
         set((state) => ({ threadFocusVersion: state.threadFocusVersion + 1 })),

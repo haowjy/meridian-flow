@@ -102,7 +102,9 @@ export class ProposalManager {
   }
 }
 
-export function createProposalManager(options?: CreateProposalManagerOptions): ProposalManager {
+export function createProposalManager(
+  options?: CreateProposalManagerOptions,
+): ProposalManager {
   return new ProposalManager(options);
 }
 

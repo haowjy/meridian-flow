@@ -31,7 +31,9 @@ export interface ProposalOperationsReady {
  * Result of `deriveProposalOperations`: either a ready set of operations or
  * an unavailable state (same reasons as `ProposalReviewUnavailable`).
  */
-export type ProposalOperationsModel = ProposalOperationsReady | ProposalReviewUnavailable;
+export type ProposalOperationsModel =
+  | ProposalOperationsReady
+  | ProposalReviewUnavailable;
 
 export class ProposalReviewRuntime {
   private readonly ydoc: Y.Doc;
@@ -46,7 +48,12 @@ export class ProposalReviewRuntime {
     const baseText = this.currentText();
 
     if (proposal.yjsUpdate == null || proposal.yjsUpdate.length === 0) {
-      return this.unavailable(proposal, baseText, "missing_update", "Proposal update payload is unavailable.");
+      return this.unavailable(
+        proposal,
+        baseText,
+        "missing_update",
+        "Proposal update payload is unavailable.",
+      );
     }
 
     const update = decodeBase64Update(proposal.yjsUpdate);
@@ -102,7 +109,12 @@ export class ProposalReviewRuntime {
     const baseText = this.currentText();
 
     if (proposal.yjsUpdate == null || proposal.yjsUpdate.length === 0) {
-      return this.unavailable(proposal, baseText, "missing_update", "Proposal update payload is unavailable.");
+      return this.unavailable(
+        proposal,
+        baseText,
+        "missing_update",
+        "Proposal update payload is unavailable.",
+      );
     }
 
     const update = decodeBase64Update(proposal.yjsUpdate);
@@ -117,7 +129,11 @@ export class ProposalReviewRuntime {
 
     try {
       // Extract ops and reuse the cloned doc (avoids cloning + applying twice)
-      const { ops, clonedDoc } = extractProposalOpsWithClone(this.ydoc, update, this.textKey);
+      const { ops, clonedDoc } = extractProposalOpsWithClone(
+        this.ydoc,
+        update,
+        this.textKey,
+      );
       const hunks = groupIntoHunks(ops, proposal.id, baseText);
       const proposedText = clonedDoc.getText(this.textKey).toString();
 

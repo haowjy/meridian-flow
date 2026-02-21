@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import {
-  createProposalReviewRuntime,
-  type Proposal,
-} from "@/core/cm6-collab";
+import { createProposalReviewRuntime, type Proposal } from "@/core/cm6-collab";
 
 function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
   return {

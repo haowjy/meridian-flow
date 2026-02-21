@@ -208,9 +208,7 @@ export function useDocumentCollab({
 
     setExtensions(runtime.extensions);
 
-    const isMatchingEventDocument = (
-      eventDocumentId: string,
-    ): boolean => {
+    const isMatchingEventDocument = (eventDocumentId: string): boolean => {
       if (eventDocumentId === documentId) {
         return true;
       }

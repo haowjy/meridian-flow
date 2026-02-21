@@ -219,7 +219,6 @@ describe("inline review state field", () => {
       state = applyEffect(state, setReviewHunks.of(differentHunks));
       expect(getReviewState(state).resolutions.size).toBe(0);
     });
-
   });
 
   describe("resolveHunk", () => {
@@ -246,9 +245,7 @@ describe("inline review state field", () => {
         resolveHunk.of({ hunkId: "chunk-0", status: "rejected" }),
       );
 
-      expect(getReviewState(state).resolutions.get("chunk-0")).toBe(
-        "rejected",
-      );
+      expect(getReviewState(state).resolutions.get("chunk-0")).toBe("rejected");
     });
 
     it("can resolve multiple hunks", () => {
@@ -344,9 +341,7 @@ describe("inline review state field", () => {
       );
 
       const review = getReviewState(state);
-      const pending = review.hunks.filter(
-        (c) => !review.resolutions.has(c.id),
-      );
+      const pending = review.hunks.filter((c) => !review.resolutions.has(c.id));
       expect(pending).toHaveLength(2);
       expect(pending[0]!.id).toBe("chunk-1");
       expect(pending[1]!.id).toBe("chunk-3");

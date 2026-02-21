@@ -33,6 +33,7 @@ import { EditorHeader } from "./EditorHeader";
 import { EditorWikiLinkPopover } from "./EditorWikiLinkPopover";
 import { WikiLinkCreatePopover } from "./WikiLinkCreatePopover";
 import { ProposalReviewToolbar } from "./ProposalReviewToolbar";
+import { ProposalHunkEditDialog } from "./ProposalHunkEditDialog";
 import {
   useDocumentContent,
   useDocumentCollab,
@@ -152,17 +153,20 @@ export function EditorPanel({
     initialContent: collabSeedContent,
   });
 
-  // 4. Inline review — wires proposal hunks to CM6 decorations + toolbar
-  const { extensions: inlineReviewExts, toolbarProps: reviewToolbarProps } =
-    useInlineReview({
-      editorRef,
-      collabEnabled,
-      operationsModels,
-      applyHunkUpdate,
-      sendProposalAccept,
-      sendProposalReject,
-      requestProposalUpdate,
-    });
+  // 4. Inline review — wires proposal hunks to CM6 decorations + toolbar + edit dialog
+  const {
+    extensions: inlineReviewExts,
+    toolbarProps: reviewToolbarProps,
+    editDialogProps,
+  } = useInlineReview({
+    editorRef,
+    collabEnabled,
+    operationsModels,
+    applyHunkUpdate,
+    sendProposalAccept,
+    sendProposalReject,
+    requestProposalUpdate,
+  });
   // 2. Document sync (save, flush) — only active for non-collab extensions
   useDocumentSync(
     documentId,
@@ -377,6 +381,9 @@ export function EditorPanel({
           <ProposalReviewToolbar {...reviewToolbarProps} />
         </div>
       </div>
+
+      {/* Edit suggestion dialog — modal for editing hunk text before applying */}
+      <ProposalHunkEditDialog {...editDialogProps} />
     </div>
   );
 }

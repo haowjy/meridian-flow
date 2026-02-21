@@ -306,4 +306,3 @@ frontend/src/
 │   └── components/             # Shared UI components
 └── types/                      # Shared TypeScript types
 ```
-

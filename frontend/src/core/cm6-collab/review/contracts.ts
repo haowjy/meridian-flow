@@ -22,7 +22,9 @@ export interface ProposalReviewUnavailable extends ProposalReviewBase {
   message: string;
 }
 
-export type ProposalReviewModel = ProposalReviewReady | ProposalReviewUnavailable;
+export type ProposalReviewModel =
+  | ProposalReviewReady
+  | ProposalReviewUnavailable;
 
 export interface ProposalReviewSnapshot {
   reviews: Map<string, ProposalReviewModel>;

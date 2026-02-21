@@ -1,7 +1,4 @@
-import {
-  getAdapter,
-  type EditorContentMap,
-} from "@/core/editor/adapters";
+import { getAdapter, type EditorContentMap } from "@/core/editor/adapters";
 import {
   detectEditorType,
   type EditorType,

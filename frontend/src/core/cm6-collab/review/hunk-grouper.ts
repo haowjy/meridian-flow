@@ -105,7 +105,8 @@ function mergeNearby(hunks: ReviewHunk[], baseText: string): ReviewHunk[] {
     const gapStart = prev.baseEnd;
     const gapEnd = curr.baseStart;
     // Guard: if ops overlap or are adjacent, gapText is empty
-    const gapText = gapStart <= gapEnd ? baseText.substring(gapStart, gapEnd) : "";
+    const gapText =
+      gapStart <= gapEnd ? baseText.substring(gapStart, gapEnd) : "";
 
     if (shouldMerge(gapText)) {
       // Extend the previous hunk to cover curr

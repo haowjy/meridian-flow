@@ -38,7 +38,9 @@ export function unwrapEnvelope(frame: Uint8Array): {
   }
 
   const envelope = frame[0] as MeridianEnvelopeType;
-  const documentId = uuidBytesToString(frame.subarray(ENVELOPE_FRAME_BYTES, FRAME_PREFIX_BYTES));
+  const documentId = uuidBytesToString(
+    frame.subarray(ENVELOPE_FRAME_BYTES, FRAME_PREFIX_BYTES),
+  );
   return {
     envelope,
     documentId,
