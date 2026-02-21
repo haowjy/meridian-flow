@@ -29,62 +29,12 @@ pnpm run test:watch   # Vitest in watch mode
 
 **Status**: ✅ Complete (Supabase Auth integration)
 
-**Overview**: Cookie-based sessions with automatic JWT injection into all API calls. TanStack Router handles route protection. Google OAuth only (no email/password).
+Cookie-based sessions with automatic JWT injection into all API calls. TanStack Router handles route protection. Google OAuth only (no email/password).
 
-### Supabase Client
-
-**Browser Client** (`src/core/supabase/client.ts`) - Use throughout the application (Vite is client-side only)
-
-### Accessing User Session
-
-```typescript
-import { createClient } from "@/core/supabase/client";
-
-const supabase = createClient();
-const {
-  data: { session },
-} = await supabase.auth.getSession();
-// session?.user.id, session?.user.email
-```
-
-### Route Protection
-
-Routes use TanStack Router's `beforeLoad` hooks for authentication checks.
-
-- Unauthenticated users -> Redirect to `/login`
-- Authenticated users on `/login` or `/` -> Redirect to `/projects`
-
-### API Calls
-
-**JWT injection is automatic**. No action needed in components:
-
-```typescript
-import { api } from "@/core/lib/api";
-
-// JWT automatically added to Authorization header
-const threads = await api.threads.list(projectId);
-```
-
-Implementation: `src/core/lib/api.ts:21-27` extracts JWT from session and adds to every request.
-
-### Key Files
-
-- `src/core/supabase/client.ts` - Supabase client factory
-- `src/core/lib/api.ts` - JWT injection
-- `src/routes/login.tsx` - Login route
-- `src/features/auth/components/LoginForm.tsx` - Google OAuth login button
-- TanStack Router routes with auth guards
-
-### Environment Variables
-
-Required in `.env.local`:
-
-```bash
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-anon-key
-```
-
-See `frontend/.env.example` for template.
+- **Supabase client**: `src/core/supabase/client.ts`
+- **JWT injection**: Automatic via `src/core/lib/api.ts:21-27` — no action needed in components
+- **Route protection**: TanStack Router `beforeLoad` hooks. Unauthed -> `/login`, authed on `/login` -> `/projects`
+- **Env vars**: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` (see `.env.example`)
 
 **Full documentation**: `_docs/technical/frontend/auth-implementation.md`
 
@@ -190,54 +140,17 @@ Document and panel navigation uses a **two-pronged approach**:
 
 ### Sync System
 
-- Document save path: `frontend/src/core/services/documentSyncService.ts`, `frontend/src/core/lib/persistentSaveDrain.ts`
-- Tree queue path: `frontend/src/core/services/treeSyncService.ts`, `frontend/src/core/lib/treeQueueDrain.ts`
-- Shared sync helpers: `frontend/src/core/lib/cache.ts`, `frontend/src/core/lib/retry.ts`, `frontend/src/core/lib/sync.ts`
+- Document save: `core/services/documentSyncService.ts`, `core/lib/persistentSaveDrain.ts`
+- Tree queue: `core/services/treeSyncService.ts`, `core/lib/treeQueueDrain.ts`
+- Shared helpers: `core/lib/cache.ts`, `core/lib/retry.ts`, `core/lib/sync.ts`
 
-Flow (documents, non-collab):
+Both paths use optimistic updates + persistent retry queues. Dev: `VITE_DEV_TOOLS=1` for retry inspector.
 
-1. Optimistic write to IndexedDB -> direct PATCH to API -> apply server doc (server timestamps become canonical once applied).
-2. On network/5xx, persist failed save to `pendingDocumentSaves` (last-write-wins by `documentId`).
-3. `persistentSaveDrain.ts` retries on startup, `online` event, and periodic tick (5s). 4xx failures are treated as permanent and removed.
-
-Flow (tree):
-
-1. `useTreeStore.loadTree()` warm-reads `projectTrees` cache immediately, then reconciles with server.
-2. Rename/move/delete apply optimistic in-memory update and persist snapshot to `projectTrees`.
-3. Offline/network failures are queued to `pendingTreeOps`.
-4. `treeQueueDrain.ts` replays queued ops FIFO on startup/`online`/periodic tick with coalescing and conflict handling (404 drop, 409 stop+refresh, 5xx retry later).
-
-Dev: optional retry inspector in dev builds — set `VITE_DEV_TOOLS=1` to enable small bottom-left panel.
-
-**See**: `_docs/technical/frontend/architecture/sync-system.md` for detailed sync mechanics and diagrams.
+**See**: `_docs/technical/frontend/architecture/sync-system.md` for flows and diagrams.
 
 ### IndexedDB Schema
 
-**Location**: `frontend/src/core/lib/db.ts`
-
-Current version: 5
-
-**Tables**:
-
-- `documents`: Full documents with content (cache-first)
-- `threads`: Thread metadata (network-first)
-- `messages`: Thread messages (network-first, windowed to 100)
-- `projectTrees`: Per-project tree snapshot cache (`projectId`, `folders`, `documents`, `updatedAt`)
-- `pendingDocumentSaves`: Last-write-wins persistent document save queue (`documentId`, `content`, `createdAt`)
-- `pendingTreeOps`: Ordered persistent tree operation queue (`id`, `projectId`, `opType`, `entityType`, `entityId`, `params`, `createdAt`, `status`)
-
-**Indexes**:
-
-- `documents`: `id, projectId, folderId, updatedAt`
-- `threads`: `id, projectId, createdAt`
-- `messages`: `id, threadId, createdAt, lastAccessedAt`
-- `projectTrees`: `projectId`
-- `pendingDocumentSaves`: `documentId`
-- `pendingTreeOps`: `++id, projectId, [projectId+status]`
-
-**Runtime note**: `projectTrees`, `pendingDocumentSaves`, and `pendingTreeOps` are active runtime tables used by offline-first cache/queue/drain paths.
-
-**Auto-eviction**: Not implemented yet (YAGNI). Add only when quota issues appear.
+Schema in `core/lib/db.ts`, version 5. Tables: `documents`, `threads`, `messages`, `projectTrees`, `pendingDocumentSaves`, `pendingTreeOps`. Runtime tables (`projectTrees`, `pendingDocumentSaves`, `pendingTreeOps`) power offline-first cache/queue/drain paths.
 
 ### Logging
 
@@ -272,82 +185,18 @@ Meridian's UI serves the writer's creative process. Everything else is secondary
 
 ### Theme System
 
-Single theme architecture using **Modern Literary** (Warm Paper + Sage + Gold). Users can toggle between light/dark modes, but theme switching is disabled.
+Single theme: **Modern Literary** (Warm Paper + Sage + Gold). Light/dark mode toggle via `useThemeContext()`.
 
-**Usage**:
+- **Interactive elements**: `primary` (sage green #5F8575)
+- **Special emphasis**: `favorite` (gold #F4B41A)
+- **Foundation**: `background`, `surface`, `text`, `muted`
+- **Spacing**: 8pt grid (`gap-2` = 8px)
 
-```typescript
-import { useThemeContext } from "@/core/theme";
-const { isDark, setMode } = useThemeContext();
-// setMode('light' | 'dark' | 'system')
-// Note: setThemeId is available but disabled (single theme)
-```
-
-#### Color Philosophy
-
-The theme system uses semantic color naming (v3+) with clear intent:
-
-**Interactive Elements** - Use `primary` (sage green: #5F8575)
-
-- Buttons, focus rings, hover states, selection
-- "This is the main action color"
-
-**Special Emphasis** - Use `favorite` (gold: #F4B41A)
-
-- Stars, bookmarks, featured content
-- "I want this to stand out as special"
-
-**Foundation Colors**
-
-- `background`: Base page background
-- `surface`: Card/panel background (elevated from background)
-- `text`: Primary text color
-- `muted`: Secondary text and disabled states
-
-**Feedback Colors** - `success/warning/error`
-
-- Use with `-foreground` variants on solid backgrounds for proper contrast
-- Example: `bg-success` + `text-success-foreground` ensures readability
-
-**Migration Note (v2 -> v3)**: The legacy `accent` color was split for clearer intent:
-
-- `accent` -> `favorite` for starred items, special markings
-- `accent` -> `primary` for interactive UI elements
-
-**Key CSS variables**: `--theme-bg`, `--theme-surface`, `--theme-text`, `--theme-primary`, `--theme-favorite`, `--theme-font-display`, `--theme-font-body`, `--theme-font-ui`
-
-**Spacing**: 8pt grid (`gap-2` = 8px standard)
-
-**Shadows**: `--theme-shadow-1`, `--theme-shadow-2`, `--theme-shadow-3`
-
-**Full docs**: `_docs/technical/frontend/themes/README.md`
-
-**Tailwind patterns**: `_docs/technical/frontend/tailwind-strategies.md`
+**Full docs**: `_docs/technical/frontend/themes/README.md` | **Tailwind**: `_docs/technical/frontend/tailwind-strategies.md`
 
 ### Layout System
 
-Responsive layouts using the Strategy Pattern (mobile tabs vs desktop panels).
-
-**Desktop TwoPanelLayout** (≥768px):
-
-- **Chat: 42% (left)** - Primary AI interaction surface, prominent position
-- **Documents: 58% (right)** - Unified workspace (tree + editor)
-
-**Panel Sizing Philosophy:**
-
-- 42% chat (vs 35% before): Substantial space without dominating, emphasizes AI-native nature
-- 58% docs (vs 65% before): Still ample room for writing, not cramped
-- User can resize (25-60% chat range) or collapse chat for distraction-free editing
-- Collapsible chat: Can hide for distraction-free editing
-
-**Design principle**: Chat is the "special thing" (AI-native focus), but documents need real space (writer-first philosophy). Left position gives chat appropriate visual prominence while unified right-side workspace emphasizes document editing as primary activity.
-
-**Mobile MobileTabLayout** (<768px):
-
-- Full-screen tabs, one at a time
-- Bottom tab nav (3 tabs): Thread List, Active Thread, Documents
-
-**Full documentation**: `_docs/technical/frontend/architecture/layout-system.md`
+Strategy Pattern: desktop two-panel (chat 42% left, docs 58% right, resizable/collapsible) vs mobile full-screen tabs. **See**: `_docs/technical/frontend/architecture/layout-system.md`
 
 ## Key Conventions
 
@@ -411,39 +260,10 @@ if (content) { ... }  // Fails for empty strings
 ### Error Handling
 
 - Network errors (5xx, timeout, fetch fail): Automatic retry
-- Client errors (4xx, validation): Show error, manual retry only
-- Abort errors: Silent (user cancelled operation)
+- Client errors (4xx): Show error, manual retry only
+- Abort errors: Silent (`isAbortError()` early return)
 
-Conventions:
-
-- Use `handleApiError(error, fallback)` from `core/lib/errors.ts` in UI/store catch blocks for consistent toasts.
-- Use `isAbortError(error)` for early returns on cancelled requests.
-- Error boundaries handle global errors and log via `makeLogger()`.
-
-#### Expected Error Response Format
-
-Backend returns RFC 7807 Problem Details. The API client (`core/lib/api.ts`) extracts:
-
-**Message extraction** (in order of priority):
-
-```typescript
-errorBody.detail || errorBody.title || errorBody.message || errorBody.error;
-```
-
-**409 Conflict resource**:
-
-```typescript
-if (response.status === 409 && errorBody.resource) {
-  // errorBody.resource contains existing/conflicting resource
-}
-```
-
-**AppError for conflicts**:
-
-```typescript
-throw new AppError(ErrorType.Conflict, message, undefined, resource);
-// Access via: error.resource
-```
+Use `handleApiError(error, fallback)` from `core/lib/errors.ts` for consistent toasts. Backend returns RFC 7807 Problem Details; API client extracts `detail || title || message || error`. 409 Conflicts include `resource` field (access via `AppError.resource`).
 
 ### Cursor Pointer on Interactive Elements
 
@@ -487,13 +307,3 @@ frontend/src/
 └── types/                      # Shared TypeScript types
 ```
 
-## Testing
-
-- User runs tests manually
-- Claude can suggest test commands
-- Claude can help write/fix tests
-
-## Deployment
-
-- **Platform**: Vercel (future)
-- **Environment**: Production builds via `pnpm run build`
