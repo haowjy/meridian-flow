@@ -15,7 +15,7 @@ allowed-tools: Bash(*/run-agent/scripts/run-agent.sh *), Bash(*/run-agent/script
 
 1. **NEVER write implementation code.** You compose *prompts* and launch *agents* that do the work.
 2. **NEVER edit source files.** You have no `Edit` or `Write` tool access. Use `Bash(cat > ...)` for slice/prompt files only.
-3. **Every slice MUST go through `run-agent/scripts/run-agent.sh`.** No exceptions, even if trivial.
+3. **Every slice MUST go through `run-agent/scripts/run-agent.sh` (or a subagent if its available in your toolset).** No exceptions, even if trivial.
 4. **Your job is: read plan -> decide next action -> launch agent -> evaluate -> repeat.**
 5. **NEVER stop to ask the user to continue.** Only stop on: plan complete, or unrecoverable failure.
 6. **NEVER push to remote.** Commit after each slice, but never `git push`.
@@ -127,14 +127,26 @@ But you can deviate: skip review for trivial changes, run multiple reviewers in 
 
 ### Step 0 (Optional): Research
 
-If the plan doesn't exist yet or needs deeper context, launch research with multiple models for different perspectives:
+If the plan doesn't exist yet or needs deeper context, launch research with multiple models for different perspectives.
+
+**Always include the plan file path in the `-p` prompt** so the agent knows what to read. Don't rely on template variables alone — if `-v PLAN_FILE=...` is omitted, the agent will waste turns searching for a non-existent path.
 
 ```bash
-# Parallel multi-model research — PID-based log dirs keep them separate
-run-agent/scripts/run-agent.sh research -v PLAN_FILE=_docs/plans/my-plan.md &
-run-agent/scripts/run-agent.sh research -v PLAN_FILE=_docs/plans/my-plan.md -m claude-sonnet-4-6 &
+# Parallel multi-model research — include plan path in prompt explicitly
+run-agent/scripts/run-agent.sh research \
+    -v PLAN_FILE=_docs/plans/my-plan.md \
+    -p "Research approaches for <topic>. Plan file: _docs/plans/my-plan.md" &
+run-agent/scripts/run-agent.sh research \
+    -v PLAN_FILE=_docs/plans/my-plan.md \
+    -p "Research approaches for <topic>. Plan file: _docs/plans/my-plan.md" \
+    -m claude-sonnet-4-6 &
 wait
 # Read reports from each run's log dir
+```
+
+**Ad-hoc research (no plan file):** Just use `-p` with your prompt. No `-v PLAN_FILE` needed:
+```bash
+run-agent/scripts/run-agent.sh research -p "Audit the collab system for dead code and complexity"
 ```
 
 ### Step 1: Setup
