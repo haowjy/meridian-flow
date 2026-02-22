@@ -2,7 +2,6 @@ package collab
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -12,11 +11,6 @@ import (
 	ycrdt "github.com/skyterra/y-crdt"
 	collabSvc "meridian/internal/domain/services/collab"
 )
-
-// ErrNoActiveSession is returned by ApplyUpdate when no collab session exists for a document.
-// Callers can check for this to gracefully handle the case (e.g., auto-accepted proposals
-// when the editor isn't open — the update is persisted and synced on next connect).
-var ErrNoActiveSession = errors.New("no active collab session")
 
 const (
 	defaultPersistDebounce         = 2 * time.Second

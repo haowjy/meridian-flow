@@ -48,13 +48,6 @@ type DocumentStore interface {
 	DeleteExpiredAutoSnapshots(ctx context.Context, ttlHours int) (int64, error)
 }
 
-// DocumentTouchStore records and queries document-turn provenance.
-type DocumentTouchStore interface {
-	RecordTouch(ctx context.Context, documentID, threadID, turnID string) error
-	ListByDocument(ctx context.Context, documentID string, limit, offset int) ([]collabModels.DocumentTouch, error)
-	ListByTurn(ctx context.Context, turnID string) ([]collabModels.DocumentTouch, error)
-}
-
 // ProposalStore manages proposal persistence and terminal status transitions.
 type ProposalStore interface {
 	Create(ctx context.Context, proposal *collabModels.Proposal) error

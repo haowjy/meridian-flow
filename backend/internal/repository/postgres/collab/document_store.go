@@ -3,7 +3,6 @@ package collab
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -16,7 +15,6 @@ import (
 type PostgresDocumentStore struct {
 	pool   *pgxpool.Pool
 	tables *postgres.TableNames
-	logger *slog.Logger
 }
 
 // NewDocumentStore creates a service-scoped document store.
@@ -26,7 +24,6 @@ func NewDocumentStore(config *postgres.RepositoryConfig) *PostgresDocumentStore 
 	return &PostgresDocumentStore{
 		pool:   config.Pool,
 		tables: config.Tables,
-		logger: config.Logger,
 	}
 }
 
