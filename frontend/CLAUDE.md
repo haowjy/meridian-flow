@@ -140,17 +140,27 @@ Document and panel navigation uses a **two-pronged approach**:
 
 ### Sync System
 
-- Document save: `core/services/documentSyncService.ts`, `core/lib/persistentSaveDrain.ts`
-- Tree queue: `core/services/treeSyncService.ts`, `core/lib/treeQueueDrain.ts`
-- Shared helpers: `core/lib/cache.ts`, `core/lib/retry.ts`, `core/lib/sync.ts`
+Five transport-specific subsystems — no shared abstraction (different transports, retry strategies, and error handling):
 
-Both paths use optimistic updates + persistent retry queues. Dev: `VITE_DEV_TOOLS=1` for retry inspector.
+- **HTTP drains** (IndexedDB-backed, survive reload):
+  - Document save: `core/services/documentSyncService.ts`, `core/lib/persistentSaveDrain.ts`
+  - Tree queue: `core/services/treeSyncService.ts`, `core/lib/treeQueueDrain.ts`
+- **WebSocket** (session-scoped):
+  - Yjs doc sync: Y.Doc + y-indexeddb → `runtime.startSync()` on `doc:subscribed`
+  - Pending rejects: in-memory `pendingRejectsRef` → flush on `doc:subscribed`
+- **Local cache** (IndexedDB, fire-and-forget):
+  - Proposal yjsUpdate: `core/lib/proposalCache.ts` — write-through cache for instant re-open
+- **Shared helpers**: `core/lib/cache.ts`, `core/lib/retry.ts`, `core/lib/sync.ts`
 
-**See**: `_docs/technical/frontend/architecture/sync-system.md` for flows and diagrams.
+Convention across all: concurrency guard, init/cleanup API, transient→retry / permanent→drop.
+
+Dev: `VITE_DEV_TOOLS=1` for retry inspector.
+
+**See**: `_docs/technical/frontend/architecture/sync-system.md` for full architecture, transport comparison, and diagrams.
 
 ### IndexedDB Schema
 
-Schema in `core/lib/db.ts`, version 5. Tables: `documents`, `threads`, `messages`, `projectTrees`, `pendingDocumentSaves`, `pendingTreeOps`. Runtime tables (`projectTrees`, `pendingDocumentSaves`, `pendingTreeOps`) power offline-first cache/queue/drain paths.
+Schema in `core/lib/db.ts`, version 6. Tables: `documents`, `threads`, `messages`, `projectTrees`, `pendingDocumentSaves`, `pendingTreeOps`, `proposalUpdates`. Runtime tables (`projectTrees`, `pendingDocumentSaves`, `pendingTreeOps`) power offline-first cache/queue/drain paths. `proposalUpdates` caches proposal yjsUpdate payloads for instant re-open.
 
 ### Logging
 

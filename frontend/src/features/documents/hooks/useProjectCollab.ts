@@ -286,6 +286,19 @@ export function createProjectCollabTransport(
       return;
     }
 
+    // NOT_SUBSCRIBED means the server rejected a command because the
+    // subscribe→ack handshake hasn't completed (or was lost). Clear the
+    // local "subscribed" flag and re-subscribe if the document is still
+    // active. No resubscribe loop risk: the gate in sendDocumentCommand
+    // prevents further commands until the next doc:subscribed ack.
+    if (event.code === "NOT_SUBSCRIBED") {
+      subscribedDocuments.delete(documentId);
+      if (activeSubscriptions.has(documentId)) {
+        pendingBinaryByDocument.set(documentId, []);
+        sendDocSubscribe(documentId);
+      }
+    }
+
     notifyDocumentTextListeners(documentId, {
       ...event,
       documentId,
@@ -576,6 +589,13 @@ export function createProjectCollabTransport(
       !normalizedDocumentId ||
       !activeSubscriptions.has(normalizedDocumentId)
     ) {
+      return false;
+    }
+
+    // Wait for the server to confirm the subscription before sending
+    // commands. Without this gate, commands sent during the subscribe→ack
+    // window are rejected with NOT_SUBSCRIBED on the server side.
+    if (!subscribedDocuments.has(normalizedDocumentId)) {
       return false;
     }
 

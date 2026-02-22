@@ -19,12 +19,17 @@ import {
   type Proposal,
   type ProposalGroupAcceptResultEvent,
   type ProposalOperationsModel,
-  type ProposalReviewModel,
   type ReviewHunk,
   toUint8Array,
 } from "@/core/cm6-collab";
 
 import { makeLogger } from "@/core/lib/logger";
+import {
+  cacheProposalUpdate,
+  deleteCachedProposalUpdate,
+  getCachedUpdatesForDocument,
+  pruneStaleProposalUpdates,
+} from "@/core/lib/proposalCache";
 import {
   EMPTY_DOCUMENT_PROPOSAL_STATE,
   useCollabStore,
@@ -46,7 +51,6 @@ interface UseDocumentCollabResult {
   extensions: Extension[];
   connectionState: CollabConnectionState;
   proposals: Map<string, Proposal>;
-  reviewModels: Map<string, ProposalReviewModel>;
   operationsModels: Map<string, ProposalOperationsModel>;
   lastGroupAcceptResult: ProposalGroupAcceptResultEvent | null;
   sendProposalAccept: (proposalId: string, idempotencyKey: string) => boolean;
@@ -78,7 +82,6 @@ interface UseDocumentCollabResult {
   idbSynced: boolean;
 }
 
-const EMPTY_REVIEW_MODELS = new Map<string, ProposalReviewModel>();
 const EMPTY_OPERATIONS_MODELS = new Map<string, ProposalOperationsModel>();
 
 export function useDocumentCollab({
@@ -120,6 +123,9 @@ export function useDocumentCollab({
     typeof createProposalReviewRuntime
   > | null>(null);
   const [reviewRevision, setReviewRevision] = useState(0);
+  // Queued reject commands that failed because WS wasn't subscribed yet.
+  // Flushed on doc:subscribed — same principle as Yjs buffering offline updates.
+  const pendingRejectsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!enabled) {
@@ -140,6 +146,9 @@ export function useDocumentCollab({
         setProposalState(documentId, state);
       },
     });
+    // Monotonic counter to guard async snapshot prune against races with
+    // newer proposal events (e.g. proposal:new arriving during prune).
+    let snapshotSeq = 0;
 
     const debounce = subscriptionDebounceRef.current!;
 
@@ -195,14 +204,16 @@ export function useDocumentCollab({
     const proposalReviewRuntime = createProposalReviewRuntime({
       ydoc: runtime.ydoc,
     });
-    // Intentional: the review runtime is created alongside the Yjs runtime
-    // and must be available for the reviewModels memo on the first render.
     setReviewRuntime(proposalReviewRuntime);
     // Use ytext.observe instead of ydoc.on("update") — review derivation
     // only depends on text content, so we avoid spurious recomputes from
     // unrelated Y.Doc changes (e.g. shared-type metadata, map updates).
     const handleTextChange = () => {
-      setReviewRevision((current) => current + 1);
+      // Skip revision bump when no proposals exist — avoids expensive
+      // operationsModels recompute during normal typing without proposals.
+      if (proposalManager.hasProposals()) {
+        setReviewRevision((current) => current + 1);
+      }
     };
     runtime.ytext.observe(handleTextChange);
 
@@ -220,6 +231,35 @@ export function useDocumentCollab({
       if (event.type === "doc:subscribed") {
         // Handshake completion — start sync
         runtime!.startSync();
+        // Flush any reject commands that were queued while offline/pre-subscribe.
+        // Same principle as Yjs buffering offline doc updates.
+        if (pendingRejectsRef.current.size > 0) {
+          let flushed = 0;
+          for (const proposalId of pendingRejectsRef.current) {
+            const sent = projectCollab.sendDocumentCommand(
+              documentId,
+              buildProposalRejectCommand({
+                documentId,
+                proposalId,
+              }) as unknown as Record<string, unknown>,
+            );
+            if (sent) {
+              pendingRejectsRef.current.delete(proposalId);
+              flushed++;
+            }
+          }
+          if (flushed > 0) {
+            log.info("Flushed pending proposal rejects on subscribe", {
+              flushed,
+              remaining: pendingRejectsRef.current.size,
+            });
+          }
+        }
+        // Bump reviewRevision so the auto-request effect in useInlineReview
+        // re-evaluates. Proposals loaded from snapshot before subscription was
+        // confirmed couldn't send yjsUpdate requests (gate returned false).
+        // Now that subscription is confirmed, the re-run will succeed.
+        setReviewRevision((current) => current + 1);
         return;
       }
 
@@ -247,18 +287,60 @@ export function useDocumentCollab({
       if (isProposalSnapshotEvent(event)) {
         if (!isMatchingEventDocument(event.documentId)) return;
         proposalManager.onProposalSnapshot(event);
+
+        // Merge cached yjsUpdate for proposals that arrived without one
+        // (server omits yjsUpdate from snapshot for bandwidth). Fire-and-forget.
+        const seq = ++snapshotSeq;
+        void (async () => {
+          const cached = await getCachedUpdatesForDocument(event.documentId);
+          if (isStopped || cached.size === 0) return;
+
+          for (const proposal of event.proposals) {
+            if (proposal.yjsUpdate === undefined && cached.has(proposal.id)) {
+              proposalManager.onProposalUpdateData({
+                type: "proposal:updateData",
+                documentId: event.documentId,
+                proposalId: proposal.id,
+                yjsUpdate: cached.get(proposal.id)!,
+              });
+              // No reviewRevision bump needed — onProposalUpdateData triggers
+              // emit() which creates a new Map identity for proposalState.proposals,
+              // already a dependency of operationsModels useMemo.
+            }
+          }
+
+          // Only prune if no newer snapshot has arrived while we were awaiting
+          // IndexedDB. A stale prune could delete entries cached by a
+          // proposal:new that arrived between this snapshot and the prune.
+          if (seq === snapshotSeq) {
+            const activeIds = new Set(event.proposals.map((p) => p.id));
+            void pruneStaleProposalUpdates(event.documentId, activeIds);
+          }
+        })();
         return;
       }
 
       if (isProposalNewEvent(event)) {
         if (!isMatchingEventDocument(event.proposal.documentId)) return;
         proposalManager.onProposalNew(event);
+        // Cache yjsUpdate if the new proposal includes it
+        if (event.proposal.yjsUpdate !== undefined) {
+          void cacheProposalUpdate(
+            event.proposal.id,
+            event.proposal.documentId,
+            event.proposal.yjsUpdate,
+          );
+        }
         return;
       }
 
       if (isProposalStatusChangedEvent(event)) {
         if (!isMatchingEventDocument(event.documentId)) return;
         proposalManager.onProposalStatusChanged(event);
+        // Remove cache entry when proposal is resolved
+        if (event.status === "accepted" || event.status === "rejected") {
+          void deleteCachedProposalUpdate(event.proposalId);
+        }
         return;
       }
 
@@ -271,6 +353,12 @@ export function useDocumentCollab({
       if (isProposalUpdateDataEvent(event)) {
         if (!isMatchingEventDocument(event.documentId)) return;
         proposalManager.onProposalUpdateData(event);
+        // Cache the yjsUpdate for instant re-open (fire-and-forget)
+        void cacheProposalUpdate(
+          event.proposalId,
+          event.documentId,
+          event.yjsUpdate,
+        );
         // Bump review revision so operationsModels recompute with the new yjsUpdate
         setReviewRevision((current) => current + 1);
       }
@@ -341,6 +429,8 @@ export function useDocumentCollab({
         tryBootstrap();
       });
 
+    const pendingRejects = pendingRejectsRef.current;
+
     return () => {
       isStopped = true;
       clearTimeout(idbTimeout);
@@ -361,6 +451,7 @@ export function useDocumentCollab({
       setReviewRuntime(null);
       runtime!.destroy();
       runtimeRef.current = null;
+      pendingRejects.clear();
       setExtensions([]);
       setIdbSynced(false);
       clearState(documentId);
@@ -408,37 +499,28 @@ export function useDocumentCollab({
 
   const sendProposalReject = useCallback(
     (proposalId: string): boolean => {
-      return projectCollab.sendDocumentCommand(
+      const sent = projectCollab.sendDocumentCommand(
         documentId,
         buildProposalRejectCommand({
           documentId,
           proposalId,
         }) as unknown as Record<string, unknown>,
       );
+      if (!sent) {
+        // Queue for flush on doc:subscribed — same as Yjs buffering offline updates.
+        pendingRejectsRef.current.add(proposalId);
+      }
+      return sent;
     },
     [documentId, projectCollab],
   );
 
-  const reviewModels = useMemo(() => {
-    if (!enabled) {
-      return EMPTY_REVIEW_MODELS;
-    }
-
-    if (!reviewRuntime) {
-      return EMPTY_REVIEW_MODELS;
-    }
-
-    // reviewRevision is the recompute trigger from Yjs updates.
-    const revision = reviewRevision;
-    void revision;
-
-    return reviewRuntime.deriveProposalReviews(proposalState.proposals.values())
-      .reviews;
-  }, [enabled, proposalState.proposals, reviewRevision, reviewRuntime]);
-
   const operationsModels = useMemo(() => {
     if (!enabled || !reviewRuntime) return EMPTY_OPERATIONS_MODELS;
     void reviewRevision; // recompute trigger
+    // Skip derivation when no proposals exist — avoids expensive
+    // clone+apply+normalize passes during normal typing.
+    if (proposalState.proposals.size === 0) return EMPTY_OPERATIONS_MODELS;
     const result = new Map<string, ProposalOperationsModel>();
     for (const proposal of proposalState.proposals.values()) {
       result.set(proposal.id, reviewRuntime.deriveProposalOperations(proposal));
@@ -467,7 +549,6 @@ export function useDocumentCollab({
     extensions: enabled ? extensions : [],
     connectionState,
     proposals: proposalState.proposals,
-    reviewModels,
     operationsModels,
     lastGroupAcceptResult: proposalState.lastGroupAcceptResult,
     sendProposalAccept,

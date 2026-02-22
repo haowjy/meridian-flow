@@ -91,6 +91,11 @@ export class ProposalManager {
     this.emit();
   }
 
+  /** Quick check for gating expensive derivations (e.g. reviewRevision bump). */
+  hasProposals(): boolean {
+    return this.proposals.size > 0;
+  }
+
   clear(): void {
     this.proposals.clear();
     this.lastGroupAcceptResult = null;

@@ -2,6 +2,7 @@ import Dexie, { Table } from "dexie";
 import { Document } from "@/features/documents/types/document";
 import { Thread, Turn } from "@/features/threads/types";
 import type {
+  CachedProposalUpdate,
   PendingDocumentSave,
   PendingTreeOp,
   ProjectTreeCache,
@@ -14,6 +15,7 @@ export class MeridianDB extends Dexie {
   projectTrees!: Table<ProjectTreeCache, string>;
   pendingDocumentSaves!: Table<PendingDocumentSave, string>;
   pendingTreeOps!: Table<PendingTreeOp, number>;
+  proposalUpdates!: Table<CachedProposalUpdate, string>;
 
   constructor() {
     super("meridian");
@@ -55,6 +57,17 @@ export class MeridianDB extends Dexie {
       projectTrees: "projectId",
       pendingDocumentSaves: "documentId",
       pendingTreeOps: "++id, projectId, [projectId+status]",
+    });
+
+    // Version 6: Add proposal yjsUpdate cache for offline/instant re-open
+    this.version(6).stores({
+      documents: "id, projectId, folderId, updatedAt",
+      threads: "id, projectId, createdAt",
+      messages: "id, threadId, createdAt, lastAccessedAt",
+      projectTrees: "projectId",
+      pendingDocumentSaves: "documentId",
+      pendingTreeOps: "++id, projectId, [projectId+status]",
+      proposalUpdates: "proposalId, documentId",
     });
   }
 }

@@ -199,6 +199,11 @@ const collabRuntimeMock = vi.hoisted(() => {
       on: ReturnType<typeof vi.fn>;
       off: ReturnType<typeof vi.fn>;
     };
+    ytext: {
+      observe: ReturnType<typeof vi.fn>;
+      unobserve: ReturnType<typeof vi.fn>;
+      toString: ReturnType<typeof vi.fn>;
+    };
     extensions: unknown[];
     startSync: ReturnType<typeof vi.fn>;
     handleBinaryFrame: ReturnType<typeof vi.fn>;
@@ -215,8 +220,15 @@ const collabRuntimeMock = vi.hoisted(() => {
       off: vi.fn(),
     };
 
+    const ytext = {
+      observe: vi.fn(),
+      unobserve: vi.fn(),
+      toString: vi.fn(() => ""),
+    };
+
     const runtime: MockRuntime = {
       ydoc,
+      ytext,
       extensions: [],
       startSync: vi.fn(),
       handleBinaryFrame: vi.fn(),
@@ -243,11 +255,14 @@ const collabRuntimeMock = vi.hoisted(() => {
     onProposalNew: vi.fn(),
     onProposalStatusChanged: vi.fn(),
     onProposalGroupAcceptResult: vi.fn(),
+    onProposalUpdateData: vi.fn(),
+    hasProposals: vi.fn(() => false),
   }));
 
   const createProposalReviewRuntime = vi.fn(() => ({
-    deriveProposalReviews: vi.fn(() => ({
-      reviews: new Map<string, unknown>(),
+    deriveProposalOperations: vi.fn(() => ({
+      availability: "ready",
+      hunks: [],
     })),
   }));
 
@@ -306,6 +321,8 @@ const collabRuntimeMock = vi.hoisted(() => {
         event.type === "proposal:snapshot",
       isProposalStatusChangedEvent: (event: { type?: unknown }) =>
         event.type === "proposal:status_changed",
+      isProposalUpdateDataEvent: (event: { type?: unknown }) =>
+        event.type === "proposal:updateData",
       toUint8Array: (frame: Uint8Array) => frame,
     },
     getLatestRuntime: (): MockRuntime | undefined => runtimes.at(-1),
@@ -483,6 +500,12 @@ vi.mock(
   () => collabStoreMock.module,
 );
 vi.mock("y-indexeddb", () => indexedDbMock.module);
+vi.mock("@/core/lib/proposalCache", () => ({
+  cacheProposalUpdate: vi.fn().mockResolvedValue(undefined),
+  getCachedUpdatesForDocument: vi.fn().mockResolvedValue(new Map()),
+  deleteCachedProposalUpdate: vi.fn().mockResolvedValue(undefined),
+  pruneStaleProposalUpdates: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("@/core/lib/logger", () => ({
   makeLogger: () => ({
     debug: vi.fn(),
