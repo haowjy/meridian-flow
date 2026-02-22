@@ -68,6 +68,9 @@ func (s *PostgresDocumentTouchStore) ListByDocument(ctx context.Context, documen
 		}
 		touches = append(touches, t)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list touches by document: row iteration: %w", err)
+	}
 	return touches, nil
 }
 
@@ -94,6 +97,9 @@ func (s *PostgresDocumentTouchStore) ListByTurn(ctx context.Context, turnID stri
 			return nil, fmt.Errorf("scan document touch: %w", err)
 		}
 		touches = append(touches, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list touches by turn: row iteration: %w", err)
 	}
 	return touches, nil
 }

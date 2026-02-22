@@ -166,6 +166,9 @@ func (s *PostgresDocumentStore) ListSnapshots(ctx context.Context, docID string,
 		}
 		snapshots = append(snapshots, snap)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("list collab snapshots: row iteration: %w", err)
+	}
 
 	return snapshots, total, nil
 }
