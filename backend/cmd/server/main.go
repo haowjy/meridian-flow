@@ -252,6 +252,7 @@ func main() {
 		toolLimitResolver,
 		jobQueue,         // Phase 2: Background job queue for async generation enrichment
 		mutationStrategy, // Strategy for AI edit persistence (collab proposal)
+		collabStore,      // AIContentReader: reads ai_content so each str_replace sees prior edits
 		logger,
 	)
 	if err != nil {
@@ -452,7 +453,7 @@ func main() {
 
 	// Apply middleware in reverse order (they wrap each other)
 	// Order: CORS -> Recovery -> Auth -> Routes
-	handler = middleware.AuthMiddleware(jwtVerifier)(handler)
+	handler = middleware.AuthMiddleware(jwtVerifier, cfg.IsProdUserBlocked)(handler)
 	handler = middleware.Recovery(logger)(handler)
 
 	// CORS - Must be before auth to handle OPTIONS pre-flight requests

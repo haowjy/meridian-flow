@@ -12,11 +12,11 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/haowjy/meridian-llm-go v0.0.25
 	github.com/haowjy/meridian-stream-go v0.0.6
+	github.com/haowjy/y-crdt v0.0.2
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/joho/godotenv v1.5.1
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/rs/cors v1.11.1
-	github.com/skyterra/y-crdt v0.0.0-20260107060929-f10fac5b9f26
 	golang.org/x/net v0.43.0
 	golang.org/x/text v0.29.0
 	gopkg.in/yaml.v3 v3.0.1

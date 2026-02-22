@@ -61,8 +61,24 @@ func (s *CollabProposalStrategy) Apply(ctx context.Context, input MutationInput)
 		return nil, fmt.Errorf("invalid document ID: %w", err)
 	}
 
+	// Build targeted edit info when OldContent is provided (str_replace path).
+	// This produces a positional CRDT update instead of full-doc replacement,
+	// preventing duplicate content when multiple str_replace calls hit the same turn.
+	var edit *collab.TextEdit
+	if input.OldContent != "" {
+		pos := collab.FindEditPosition(input.Base, input.OldContent)
+		if pos >= 0 {
+			edit = &collab.TextEdit{
+				OldText:  input.OldContent,
+				NewText:  input.ReplContent,
+				Position: pos,
+			}
+		}
+		// If pos == -1 (not found / ambiguous), fall through to full-doc replacement
+	}
+
 	// Convert text diff to Yjs update bytes
-	yjsUpdate, err := s.converter.TextToUpdate(ctx, docUUID, input.NewContent)
+	yjsUpdate, err := s.converter.TextToUpdate(ctx, docUUID, input.NewContent, edit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert text to Yjs update: %w", err)
 	}

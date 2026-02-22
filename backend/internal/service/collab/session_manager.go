@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	ycrdt "github.com/skyterra/y-crdt"
+	ycrdt "github.com/haowjy/y-crdt"
 	collabSvc "meridian/internal/domain/services/collab"
 )
 

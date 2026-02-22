@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	ycrdt "github.com/skyterra/y-crdt"
+	ycrdt "github.com/haowjy/y-crdt"
 	"meridian/internal/config"
 	"meridian/internal/domain"
 	collabModels "meridian/internal/domain/models/collab"
