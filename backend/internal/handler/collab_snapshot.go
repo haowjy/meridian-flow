@@ -18,7 +18,8 @@ import (
 
 // CollabSnapshotHandler handles snapshot REST operations for collab documents.
 type CollabSnapshotHandler struct {
-	store            collabSvc.DocumentStore
+	stateStore       collabSvc.DocumentStateStore
+	snapshotStore    collabSvc.SnapshotStore
 	documentResolver collabSvc.DocumentResolver
 	txManager        repositories.TransactionManager
 	logger           *slog.Logger
@@ -27,14 +28,16 @@ type CollabSnapshotHandler struct {
 
 // NewCollabSnapshotHandler creates a new snapshot handler.
 func NewCollabSnapshotHandler(
-	store collabSvc.DocumentStore,
+	stateStore collabSvc.DocumentStateStore,
+	snapshotStore collabSvc.SnapshotStore,
 	documentResolver collabSvc.DocumentResolver,
 	txManager repositories.TransactionManager,
 	logger *slog.Logger,
 	cfg *config.Config,
 ) *CollabSnapshotHandler {
 	return &CollabSnapshotHandler{
-		store:            store,
+		stateStore:       stateStore,
+		snapshotStore:    snapshotStore,
 		documentResolver: documentResolver,
 		txManager:        txManager,
 		logger:           logger,
@@ -108,20 +111,20 @@ func (h *CollabSnapshotHandler) CreateSnapshot(w http.ResponseWriter, r *http.Re
 	}
 
 	// Load current Yjs state for the snapshot
-	state, err := h.store.LoadState(r.Context(), docID)
+	state, err := h.stateStore.LoadState(r.Context(), docID)
 	if err != nil {
 		handleError(w, err, h.config)
 		return
 	}
 
-	snapshotID, err := h.store.SaveSnapshot(r.Context(), docID, state, "named", &req.Name, &userID)
+	snapshotID, err := h.snapshotStore.SaveSnapshot(r.Context(), docID, state, "named", &req.Name, &userID)
 	if err != nil {
 		handleError(w, err, h.config)
 		return
 	}
 
 	// Fetch the created snapshot by ID for the response DTO
-	created, err := h.store.GetSnapshot(r.Context(), snapshotID)
+	created, err := h.snapshotStore.GetSnapshot(r.Context(), snapshotID)
 	if err != nil {
 		handleError(w, err, h.config)
 		return
@@ -150,7 +153,7 @@ func (h *CollabSnapshotHandler) ListSnapshots(w http.ResponseWriter, r *http.Req
 	limit := QueryInt(r, "limit", 50, 1, 100)
 	offset := QueryInt(r, "offset", 0, 0, 10000)
 
-	snapshots, total, err := h.store.ListSnapshots(r.Context(), docID, limit, offset)
+	snapshots, total, err := h.snapshotStore.ListSnapshots(r.Context(), docID, limit, offset)
 	if err != nil {
 		handleError(w, err, h.config)
 		return
@@ -193,7 +196,7 @@ func (h *CollabSnapshotHandler) GetSnapshotContent(w http.ResponseWriter, r *htt
 		return
 	}
 
-	target, err := h.store.GetSnapshot(r.Context(), snapshotID)
+	target, err := h.snapshotStore.GetSnapshot(r.Context(), snapshotID)
 	if err != nil {
 		handleError(w, err, h.config)
 		return
@@ -248,7 +251,7 @@ func (h *CollabSnapshotHandler) RestoreSnapshot(w http.ResponseWriter, r *http.R
 	}
 
 	// Fetch the target snapshot
-	target, err := h.store.GetSnapshot(r.Context(), snapshotID)
+	target, err := h.snapshotStore.GetSnapshot(r.Context(), snapshotID)
 	if err != nil {
 		handleError(w, err, h.config)
 		return
@@ -263,20 +266,20 @@ func (h *CollabSnapshotHandler) RestoreSnapshot(w http.ResponseWriter, r *http.R
 	// Atomic restore: save pre_restore snapshot + overwrite state in one transaction
 	err = h.txManager.ExecTx(r.Context(), func(ctx context.Context) error {
 		// 1. Save current state as pre_restore safety net
-		currentState, loadErr := h.store.LoadState(ctx, docID)
+		currentState, loadErr := h.stateStore.LoadState(ctx, docID)
 		if loadErr != nil {
 			return loadErr
 		}
 
 		preRestoreName := "Pre-restore safety snapshot"
-		if _, saveErr := h.store.SaveSnapshot(ctx, docID, currentState, "pre_restore", &preRestoreName, &userID); saveErr != nil {
+		if _, saveErr := h.snapshotStore.SaveSnapshot(ctx, docID, currentState, "pre_restore", &preRestoreName, &userID); saveErr != nil {
 			return saveErr
 		}
 
 		// 2. Overwrite document Yjs state + text projections.
 		// Content is set empty — the next collab session will re-derive from Yjs state.
 		// TODO(phase3): Extract text from Yjs state server-side for immediate content projection.
-		if saveErr := h.store.SaveState(ctx, docID, target.YjsState, "", ""); saveErr != nil {
+		if saveErr := h.stateStore.SaveState(ctx, docID, target.YjsState, "", ""); saveErr != nil {
 			return saveErr
 		}
 
@@ -326,7 +329,7 @@ func (h *CollabSnapshotHandler) DeleteSnapshot(w http.ResponseWriter, r *http.Re
 	}
 
 	// Verify the snapshot belongs to this document before deleting
-	target, err := h.store.GetSnapshot(r.Context(), snapshotID)
+	target, err := h.snapshotStore.GetSnapshot(r.Context(), snapshotID)
 	if err != nil {
 		handleError(w, err, h.config)
 		return
@@ -336,7 +339,7 @@ func (h *CollabSnapshotHandler) DeleteSnapshot(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if err := h.store.DeleteSnapshot(r.Context(), snapshotID); err != nil {
+	if err := h.snapshotStore.DeleteSnapshot(r.Context(), snapshotID); err != nil {
 		handleError(w, err, h.config)
 		return
 	}

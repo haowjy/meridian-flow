@@ -16,18 +16,18 @@ const proposalProjectorPageSize = 200
 
 // AIContentProjector recomputes ai_content from base document state + pending proposals.
 type AIContentProjector struct {
-	documentStore   collabSvc.DocumentStore
+	stateStore      collabSvc.DocumentStateStore
 	proposalStore   collabSvc.ProposalStore
 	proposalRuntime collabSvc.ProposalRuntime
 }
 
 func NewAIContentProjector(
-	documentStore collabSvc.DocumentStore,
+	stateStore collabSvc.DocumentStateStore,
 	proposalStore collabSvc.ProposalStore,
 	proposalRuntime collabSvc.ProposalRuntime,
 ) collabSvc.AIContentProjector {
 	return &AIContentProjector{
-		documentStore:   documentStore,
+		stateStore:      stateStore,
 		proposalStore:   proposalStore,
 		proposalRuntime: proposalRuntime,
 	}
@@ -39,7 +39,7 @@ func (p *AIContentProjector) Recompute(ctx context.Context, documentID uuid.UUID
 		return fmt.Errorf("get in-memory collab state snapshot: %w", err)
 	}
 	if !found {
-		baseState, err = p.documentStore.LoadState(ctx, documentID.String())
+		baseState, err = p.stateStore.LoadState(ctx, documentID.String())
 		if err != nil {
 			return fmt.Errorf("load persisted collab state: %w", err)
 		}
@@ -88,7 +88,7 @@ func (p *AIContentProjector) Recompute(ctx context.Context, documentID uuid.UUID
 		aiContent = yText.ToString()
 	}
 
-	if err := p.documentStore.SaveState(ctx, documentID.String(), nextBaseState, baseContent, aiContent); err != nil {
+	if err := p.stateStore.SaveState(ctx, documentID.String(), nextBaseState, baseContent, aiContent); err != nil {
 		return fmt.Errorf("save recomputed ai content: %w", err)
 	}
 

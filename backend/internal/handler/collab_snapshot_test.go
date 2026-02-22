@@ -19,20 +19,12 @@ import (
 	"meridian/internal/httputil"
 )
 
-type snapshotTestStore struct {
+type snapshotTestSnapshotStore struct {
 	snapshot       *collabModels.SnapshotWithState
 	getSnapshotErr error
 }
 
-func (s *snapshotTestStore) LoadState(_ context.Context, _ string) ([]byte, error) {
-	return nil, nil
-}
-
-func (s *snapshotTestStore) SaveState(_ context.Context, _ string, _ []byte, _ string, _ string) error {
-	return nil
-}
-
-func (s *snapshotTestStore) SaveSnapshot(
+func (s *snapshotTestSnapshotStore) SaveSnapshot(
 	_ context.Context,
 	_ string,
 	_ []byte,
@@ -43,11 +35,11 @@ func (s *snapshotTestStore) SaveSnapshot(
 	return "", nil
 }
 
-func (s *snapshotTestStore) ListSnapshots(_ context.Context, _ string, _, _ int) ([]collabModels.Snapshot, int, error) {
+func (s *snapshotTestSnapshotStore) ListSnapshots(_ context.Context, _ string, _, _ int) ([]collabModels.Snapshot, int, error) {
 	return nil, 0, nil
 }
 
-func (s *snapshotTestStore) GetSnapshot(_ context.Context, _ string) (*collabModels.SnapshotWithState, error) {
+func (s *snapshotTestSnapshotStore) GetSnapshot(_ context.Context, _ string) (*collabModels.SnapshotWithState, error) {
 	if s.getSnapshotErr != nil {
 		return nil, s.getSnapshotErr
 	}
@@ -57,12 +49,22 @@ func (s *snapshotTestStore) GetSnapshot(_ context.Context, _ string) (*collabMod
 	return s.snapshot, nil
 }
 
-func (s *snapshotTestStore) DeleteSnapshot(_ context.Context, _ string) error {
+func (s *snapshotTestSnapshotStore) DeleteSnapshot(_ context.Context, _ string) error {
 	return nil
 }
 
-func (s *snapshotTestStore) DeleteExpiredAutoSnapshots(_ context.Context, _ int) (int64, error) {
+func (s *snapshotTestSnapshotStore) DeleteExpiredAutoSnapshots(_ context.Context, _ int) (int64, error) {
 	return 0, nil
+}
+
+type noopSnapshotStateStore struct{}
+
+func (s *noopSnapshotStateStore) LoadState(_ context.Context, _ string) ([]byte, error) {
+	return nil, nil
+}
+
+func (s *noopSnapshotStateStore) SaveState(_ context.Context, _ string, _ []byte, _ string, _ string) error {
+	return nil
 }
 
 type snapshotTestResolver struct {
@@ -87,8 +89,9 @@ func (noopSnapshotTxManager) ExecTx(ctx context.Context, fn repositories.TxFn) e
 	return fn(ctx)
 }
 
-func newSnapshotHandlerForTest(store *snapshotTestStore, resolver *snapshotTestResolver) *CollabSnapshotHandler {
+func newSnapshotHandlerForTest(store *snapshotTestSnapshotStore, resolver *snapshotTestResolver) *CollabSnapshotHandler {
 	return NewCollabSnapshotHandler(
+		&noopSnapshotStateStore{},
 		store,
 		resolver,
 		noopSnapshotTxManager{},
@@ -110,7 +113,7 @@ func TestGetSnapshotContent_Success(t *testing.T) {
 	snapshotID := uuid.MustParse("22222222-2222-2222-2222-222222222222").String()
 	userID := uuid.MustParse("33333333-3333-3333-3333-333333333333").String()
 
-	store := &snapshotTestStore{
+	store := &snapshotTestSnapshotStore{
 		snapshot: &collabModels.SnapshotWithState{
 			Snapshot: collabModels.Snapshot{
 				ID:         snapshotID,
@@ -167,7 +170,7 @@ func TestGetSnapshotContent_InvalidUUID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := newSnapshotHandlerForTest(&snapshotTestStore{}, &snapshotTestResolver{allowed: true})
+			h := newSnapshotHandlerForTest(&snapshotTestSnapshotStore{}, &snapshotTestResolver{allowed: true})
 			rr := httptest.NewRecorder()
 
 			h.GetSnapshotContent(rr, newSnapshotContentRequest(tt.docID, tt.snapshotID, userID))
@@ -195,7 +198,7 @@ func TestGetSnapshotContent_DocumentSnapshotMismatch(t *testing.T) {
 	snapshotID := uuid.MustParse("22222222-2222-2222-2222-222222222222").String()
 	userID := uuid.MustParse("33333333-3333-3333-3333-333333333333").String()
 
-	store := &snapshotTestStore{
+	store := &snapshotTestSnapshotStore{
 		snapshot: &collabModels.SnapshotWithState{
 			Snapshot: collabModels.Snapshot{
 				ID:         snapshotID,
@@ -230,7 +233,7 @@ func TestGetSnapshotContent_OwnershipDenied(t *testing.T) {
 	snapshotID := uuid.MustParse("22222222-2222-2222-2222-222222222222").String()
 	userID := uuid.MustParse("33333333-3333-3333-3333-333333333333").String()
 
-	h := newSnapshotHandlerForTest(&snapshotTestStore{}, &snapshotTestResolver{allowed: false})
+	h := newSnapshotHandlerForTest(&snapshotTestSnapshotStore{}, &snapshotTestResolver{allowed: false})
 	rr := httptest.NewRecorder()
 	h.GetSnapshotContent(rr, newSnapshotContentRequest(docID, snapshotID, userID))
 
@@ -254,7 +257,7 @@ func TestGetSnapshotContent_EmptyStateReturnsEmptyContent(t *testing.T) {
 	snapshotID := uuid.MustParse("22222222-2222-2222-2222-222222222222").String()
 	userID := uuid.MustParse("33333333-3333-3333-3333-333333333333").String()
 
-	store := &snapshotTestStore{
+	store := &snapshotTestSnapshotStore{
 		snapshot: &collabModels.SnapshotWithState{
 			Snapshot: collabModels.Snapshot{
 				ID:         snapshotID,

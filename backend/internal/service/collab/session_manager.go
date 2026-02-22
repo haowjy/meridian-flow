@@ -22,7 +22,8 @@ const (
 type DocumentSessionManager struct {
 	mu                      sync.Mutex
 	sessions                map[string]*DocumentSession
-	store                   collabSvc.DocumentStore
+	stateStore              collabSvc.DocumentStateStore
+	snapshotStore           collabSvc.SnapshotStore
 	contentLoader           collabSvc.DocumentContentLoader
 	logger                  *slog.Logger
 	snapshotIntervalUpdates int
@@ -35,7 +36,8 @@ type DocumentSessionManager struct {
 type DocumentSession struct {
 	docID                   string
 	doc                     *ycrdt.Doc
-	store                   collabSvc.DocumentStore
+	stateStore              collabSvc.DocumentStateStore
+	snapshotStore           collabSvc.SnapshotStore
 	contentLoader           collabSvc.DocumentContentLoader
 	logger                  *slog.Logger
 	snapshotIntervalUpdates int
@@ -49,9 +51,10 @@ type DocumentSession struct {
 }
 
 // NewDocumentSessionManager creates the collab document runtime cache.
-// contentLoader is separated from store (ISP) — only session bootstrap needs it.
+// contentLoader is separated from state/snapshot stores (ISP) — only session bootstrap needs it.
 func NewDocumentSessionManager(
-	store collabSvc.DocumentStore,
+	stateStore collabSvc.DocumentStateStore,
+	snapshotStore collabSvc.SnapshotStore,
 	contentLoader collabSvc.DocumentContentLoader,
 	logger *slog.Logger,
 	snapshotIntervalUpdates int,
@@ -62,7 +65,8 @@ func NewDocumentSessionManager(
 
 	return &DocumentSessionManager{
 		sessions:                make(map[string]*DocumentSession),
-		store:                   store,
+		stateStore:              stateStore,
+		snapshotStore:           snapshotStore,
 		contentLoader:           contentLoader,
 		logger:                  logger,
 		snapshotIntervalUpdates: snapshotIntervalUpdates,
@@ -82,7 +86,8 @@ func (m *DocumentSessionManager) Acquire(ctx context.Context, docID string) (*Do
 	session := &DocumentSession{
 		docID:                   docID,
 		doc:                     ycrdt.NewDoc(docID, true, ycrdt.DefaultGCFilter, nil, false),
-		store:                   m.store,
+		stateStore:              m.stateStore,
+		snapshotStore:           m.snapshotStore,
 		contentLoader:           m.contentLoader,
 		logger:                  m.logger,
 		snapshotIntervalUpdates: m.snapshotIntervalUpdates,
@@ -156,7 +161,7 @@ func (m *DocumentSessionManager) ApplyUpdate(ctx context.Context, documentID uui
 // and saves the merged state back. This ensures auto-accepted proposals are reflected in
 // the document state even without a live WS session.
 func (m *DocumentSessionManager) applyUpdateOffline(ctx context.Context, docID string, update []byte, origin string) error {
-	state, err := m.store.LoadState(ctx, docID)
+	state, err := m.stateStore.LoadState(ctx, docID)
 	if err != nil {
 		return fmt.Errorf("load state for offline apply: %w", err)
 	}
@@ -183,7 +188,7 @@ func (m *DocumentSessionManager) applyUpdateOffline(ctx context.Context, docID s
 	}
 
 	// Keep content and ai_content aligned for offline applies.
-	if err := m.store.SaveState(ctx, docID, newState, content, content); err != nil {
+	if err := m.stateStore.SaveState(ctx, docID, newState, content, content); err != nil {
 		return fmt.Errorf("save state after offline apply: %w", err)
 	}
 
@@ -271,7 +276,7 @@ func (s *DocumentSession) applyUpdate(ctx context.Context, update []byte, origin
 }
 
 func (s *DocumentSession) loadState(ctx context.Context) error {
-	state, err := s.store.LoadState(ctx, s.docID)
+	state, err := s.stateStore.LoadState(ctx, s.docID)
 	if err != nil {
 		return err
 	}
@@ -313,7 +318,7 @@ func (s *DocumentSession) loadState(ctx context.Context) error {
 	}
 
 	// Keep content and ai_content aligned with the bootstrap state.
-	if err := s.store.SaveState(ctx, s.docID, persistedState, content, content); err != nil {
+	if err := s.stateStore.SaveState(ctx, s.docID, persistedState, content, content); err != nil {
 		return fmt.Errorf("persist bootstrapped yjs state: %w", err)
 	}
 
@@ -390,7 +395,7 @@ func (s *DocumentSession) persistLocked(ctx context.Context, writeSnapshot bool)
 
 	// Phase 1: aiContent == content because there is no separate AI-edited view yet.
 	// Phase 2+ will diverge these when AI suggestions produce a distinct aiContent.
-	if err := s.store.SaveState(ctx, s.docID, state, content, content); err != nil {
+	if err := s.stateStore.SaveState(ctx, s.docID, state, content, content); err != nil {
 		return err
 	}
 
@@ -404,7 +409,7 @@ func (s *DocumentSession) persistLocked(ctx context.Context, writeSnapshot bool)
 			snapshotType = "auto_ai_accept"
 		}
 
-		if _, err := s.store.SaveSnapshot(ctx, s.docID, state, snapshotType, nil, nil); err != nil {
+		if _, err := s.snapshotStore.SaveSnapshot(ctx, s.docID, state, snapshotType, nil, nil); err != nil {
 			return err
 		}
 	}
