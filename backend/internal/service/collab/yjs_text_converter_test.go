@@ -19,10 +19,6 @@ func (s *fakeConverterStore) LoadState(_ context.Context, _ string) ([]byte, err
 	return s.state, nil
 }
 
-func (s *fakeConverterStore) LoadContentForBootstrap(_ context.Context, _ string) (string, error) {
-	return "", nil
-}
-
 func (s *fakeConverterStore) SaveState(context.Context, string, []byte, string, string) error {
 	return nil
 }

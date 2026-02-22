@@ -28,10 +28,6 @@ func (s *snapshotTestStore) LoadState(_ context.Context, _ string) ([]byte, erro
 	return nil, nil
 }
 
-func (s *snapshotTestStore) LoadContentForBootstrap(_ context.Context, _ string) (string, error) {
-	return "", nil
-}
-
 func (s *snapshotTestStore) SaveState(_ context.Context, _ string, _ []byte, _ string, _ string) error {
 	return nil
 }

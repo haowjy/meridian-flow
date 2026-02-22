@@ -11,13 +11,17 @@ import (
 	serviceCollab "meridian/internal/service/collab"
 )
 
+// noopContentLoader satisfies DocumentContentLoader for tests that don't exercise bootstrap.
+type noopContentLoader struct{}
+
+func (l *noopContentLoader) LoadContentForBootstrap(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
+
 // testSubStore implements collab.DocumentStore minimally for subscription tests.
 type testSubStore struct{}
 
 func (s *testSubStore) LoadState(_ context.Context, _ string) ([]byte, error) { return nil, nil }
-func (s *testSubStore) LoadContentForBootstrap(_ context.Context, _ string) (string, error) {
-	return "", nil
-}
 func (s *testSubStore) SaveState(_ context.Context, _ string, _ []byte, _ string, _ string) error {
 	return nil
 }
@@ -47,7 +51,7 @@ func newSubLogger() *slog.Logger {
 
 func TestSubscriptionService_SubscribeIdempotent(t *testing.T) {
 	logger := newSubLogger()
-	sessionMgr := serviceCollab.NewDocumentSessionManager(&testSubStore{}, logger, 500)
+	sessionMgr := serviceCollab.NewDocumentSessionManager(&testSubStore{}, &noopContentLoader{}, logger, 500)
 	broadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
 	svc := serviceCollab.NewSubscriptionService(sessionMgr, broadcaster, logger, 10)
 
@@ -88,7 +92,7 @@ func TestSubscriptionService_SubscribeIdempotent(t *testing.T) {
 
 func TestSubscriptionService_LimitExceeded(t *testing.T) {
 	logger := newSubLogger()
-	sessionMgr := serviceCollab.NewDocumentSessionManager(&testSubStore{}, logger, 500)
+	sessionMgr := serviceCollab.NewDocumentSessionManager(&testSubStore{}, &noopContentLoader{}, logger, 500)
 	broadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
 	svc := serviceCollab.NewSubscriptionService(sessionMgr, broadcaster, logger, 3)
 
@@ -116,7 +120,7 @@ func TestSubscriptionService_LimitExceeded(t *testing.T) {
 
 func TestSubscriptionService_UnsubscribeAndResubscribe(t *testing.T) {
 	logger := newSubLogger()
-	sessionMgr := serviceCollab.NewDocumentSessionManager(&testSubStore{}, logger, 500)
+	sessionMgr := serviceCollab.NewDocumentSessionManager(&testSubStore{}, &noopContentLoader{}, logger, 500)
 	broadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
 	svc := serviceCollab.NewSubscriptionService(sessionMgr, broadcaster, logger, 10)
 
@@ -157,7 +161,7 @@ func TestSubscriptionService_UnsubscribeAndResubscribe(t *testing.T) {
 
 func TestSubscriptionService_UnsubscribeAll(t *testing.T) {
 	logger := newSubLogger()
-	sessionMgr := serviceCollab.NewDocumentSessionManager(&testSubStore{}, logger, 500)
+	sessionMgr := serviceCollab.NewDocumentSessionManager(&testSubStore{}, &noopContentLoader{}, logger, 500)
 	broadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
 	svc := serviceCollab.NewSubscriptionService(sessionMgr, broadcaster, logger, 10)
 

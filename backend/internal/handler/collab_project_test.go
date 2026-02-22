@@ -187,7 +187,7 @@ func newTestProjectCollabServerWithDeps(
 		broadcaster = serviceCollab.NewInMemoryDocumentBroadcaster()
 	}
 	if sessionManager == nil {
-		sessionManager = serviceCollab.NewDocumentSessionManager(store, slog.New(slog.NewTextHandler(io.Discard, nil)), 500)
+		sessionManager = serviceCollab.NewDocumentSessionManager(store, &noopContentLoader{}, slog.New(slog.NewTextHandler(io.Discard, nil)), 500)
 	}
 
 	subscriptionSvc := serviceCollab.NewSubscriptionService(
@@ -384,7 +384,7 @@ func TestProjectWS_DocSubscribeIdempotent(t *testing.T) {
 		},
 	}
 	store := &testCollabStore{}
-	baseSessionManager := serviceCollab.NewDocumentSessionManager(store, slog.New(slog.NewTextHandler(io.Discard, nil)), 500)
+	baseSessionManager := serviceCollab.NewDocumentSessionManager(store, &noopContentLoader{}, slog.New(slog.NewTextHandler(io.Discard, nil)), 500)
 	sessionSpy := newSpySessionManager(baseSessionManager)
 	broadcasterSpy := newSpyDocumentBroadcaster(serviceCollab.NewInMemoryDocumentBroadcaster())
 	server := newTestProjectCollabServerWithDeps(t, resolver, verifier, store, broadcasterSpy, sessionSpy)
@@ -443,7 +443,7 @@ func TestProjectWS_DocSubscribeCanonicalizesMixedCaseUUID(t *testing.T) {
 		},
 	}
 	store := &testCollabStore{}
-	baseSessionManager := serviceCollab.NewDocumentSessionManager(store, slog.New(slog.NewTextHandler(io.Discard, nil)), 500)
+	baseSessionManager := serviceCollab.NewDocumentSessionManager(store, &noopContentLoader{}, slog.New(slog.NewTextHandler(io.Discard, nil)), 500)
 	sessionSpy := newSpySessionManager(baseSessionManager)
 	broadcasterSpy := newSpyDocumentBroadcaster(serviceCollab.NewInMemoryDocumentBroadcaster())
 	server := newTestProjectCollabServerWithDeps(t, resolver, verifier, store, broadcasterSpy, sessionSpy)
@@ -736,7 +736,7 @@ func TestProjectWS_ServerInvalidationAccessRevoked(t *testing.T) {
 		},
 	}
 	store := &testCollabStore{}
-	baseSessionManager := serviceCollab.NewDocumentSessionManager(store, slog.New(slog.NewTextHandler(io.Discard, nil)), 500)
+	baseSessionManager := serviceCollab.NewDocumentSessionManager(store, &noopContentLoader{}, slog.New(slog.NewTextHandler(io.Discard, nil)), 500)
 	sessionSpy := newSpySessionManager(baseSessionManager)
 	broadcasterSpy := newSpyDocumentBroadcaster(serviceCollab.NewInMemoryDocumentBroadcaster())
 	server := newTestProjectCollabServerWithDeps(t, resolver, verifier, store, broadcasterSpy, sessionSpy)
@@ -789,7 +789,7 @@ func TestProjectWS_ServerInvalidationProjectMismatch(t *testing.T) {
 		},
 	}
 	store := &testCollabStore{}
-	baseSessionManager := serviceCollab.NewDocumentSessionManager(store, slog.New(slog.NewTextHandler(io.Discard, nil)), 500)
+	baseSessionManager := serviceCollab.NewDocumentSessionManager(store, &noopContentLoader{}, slog.New(slog.NewTextHandler(io.Discard, nil)), 500)
 	sessionSpy := newSpySessionManager(baseSessionManager)
 	broadcasterSpy := newSpyDocumentBroadcaster(serviceCollab.NewInMemoryDocumentBroadcaster())
 	server := newTestProjectCollabServerWithDeps(t, resolver, verifier, store, broadcasterSpy, sessionSpy)

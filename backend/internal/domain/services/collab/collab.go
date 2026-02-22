@@ -22,10 +22,15 @@ type DocumentBroadcaster interface {
 	Broadcast(docID string, update []byte, exclude Connection)
 }
 
+// DocumentContentLoader loads raw markdown content for server-side Yjs bootstrap.
+// Separated from DocumentStore (ISP) because only DocumentSessionManager needs it.
+type DocumentContentLoader interface {
+	LoadContentForBootstrap(ctx context.Context, docID string) (string, error)
+}
+
 // DocumentStore persists Yjs state plus derived projections.
 type DocumentStore interface {
 	LoadState(ctx context.Context, docID string) ([]byte, error)
-	LoadContentForBootstrap(ctx context.Context, docID string) (string, error)
 	SaveState(ctx context.Context, docID string, state []byte, content string, aiContent string) error
 	SaveSnapshot(
 		ctx context.Context,

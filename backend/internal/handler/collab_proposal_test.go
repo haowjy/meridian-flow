@@ -187,7 +187,7 @@ func newTestProjectCollabServerWithProposalDeps(
 	}
 
 	broadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
-	sessionManager := serviceCollab.NewDocumentSessionManager(store, slog.New(slog.NewTextHandler(io.Discard, nil)), 500)
+	sessionManager := serviceCollab.NewDocumentSessionManager(store, &noopContentLoader{}, slog.New(slog.NewTextHandler(io.Discard, nil)), 500)
 	subscriptionSvc := serviceCollab.NewSubscriptionService(
 		sessionManager,
 		broadcaster,

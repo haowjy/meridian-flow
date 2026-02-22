@@ -9,7 +9,6 @@ import (
 
 	"meridian/internal/domain"
 	collabModels "meridian/internal/domain/models/collab"
-	collabSvc "meridian/internal/domain/services/collab"
 	"meridian/internal/repository/postgres"
 )
 
@@ -21,7 +20,9 @@ type PostgresDocumentStore struct {
 }
 
 // NewDocumentStore creates a service-scoped document store.
-func NewDocumentStore(config *postgres.RepositoryConfig) collabSvc.DocumentStore {
+// Returns the concrete type so callers can use it as both DocumentStore
+// and DocumentContentLoader (ISP — separate interfaces, single implementation).
+func NewDocumentStore(config *postgres.RepositoryConfig) *PostgresDocumentStore {
 	return &PostgresDocumentStore{
 		pool:   config.Pool,
 		tables: config.Tables,
