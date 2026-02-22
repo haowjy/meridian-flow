@@ -88,6 +88,11 @@ export class CollabSyncRuntime {
   private didFireInitialSync = false;
   // Defense-in-depth: prevents duplicate doc:subscribed events from
   // re-sending SyncStep1 within the same runtime lifecycle.
+  //
+  // COUPLING NOTE: on WebSocket reconnect, the runtime instance is reused
+  // and didStartSync stays true. Re-sync still works because the backend
+  // sends SyncStep1 on every doc:subscribe (collab_project.go). If that
+  // server behavior changes, revisit this guard.
   private didStartSync = false;
 
   constructor(options: CreateCollabSyncRuntimeOptions) {
