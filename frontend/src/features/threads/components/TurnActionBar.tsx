@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { makeLogger } from "@/core/lib/logger";
 import { extractTextContent } from "@/features/threads/utils/turnHelpers";
 import { TurnDebugDialog } from "@/core/components/DebugInfoDialog";
+import { copyTextToClipboard } from "@/core/lib/copyToClipboard";
 
 const log = makeLogger("TurnActionBar");
 
@@ -74,8 +75,13 @@ export const TurnActionBar = React.memo(function TurnActionBar({
 
   const handleCopy = useCallback(async () => {
     try {
-      const content = extractTextContent(turn);
-      await navigator.clipboard.writeText(content);
+      const textContent = extractTextContent(turn);
+      const content = textContent !== "" ? textContent : (turn.error ?? "");
+      if (content === "") {
+        return;
+      }
+
+      await copyTextToClipboard(content);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {

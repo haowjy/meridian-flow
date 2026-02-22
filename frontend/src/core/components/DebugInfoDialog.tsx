@@ -12,6 +12,7 @@ import {
   CollapsibleTrigger,
 } from "@/shared/components/ui/collapsible";
 import type { Turn, TurnBlock } from "@/features/threads/types";
+import { copyTextToClipboard } from "@/core/lib/copyToClipboard";
 
 interface TurnDebugDialogProps {
   isOpen: boolean;
@@ -175,19 +176,11 @@ function CopyButton({ text }: { text: string }) {
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyTextToClipboard(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      // Fallback for older browsers
-      const textarea = document.createElement("textarea");
-      textarea.value = text;
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand("copy");
-      document.body.removeChild(textarea);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      // Keep silent: this is a debug-only UI action.
     }
   };
 

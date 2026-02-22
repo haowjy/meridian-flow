@@ -297,6 +297,10 @@ func (se *StreamExecutor) handleError(_ context.Context, send func(mstream.Event
 	isContextCancelled := errors.Is(err, context.Canceled)
 	isCancelled := wasCancelled || isContextCancelled
 
+	// Prepare user-facing error message for DB/UI.
+	// Provider errors can include verbose HTML payloads (e.g., Cloudflare 502 pages).
+	userErrorMsg := sanitizeProviderError(err)
+
 	// Update turn status in database
 	// IMPORTANT: Skip UpdateTurnError if cancelled (soft/hard cancel case)
 	// InterruptTurn already set status to "cancelled" - don't override it with "error"
@@ -308,7 +312,7 @@ func (se *StreamExecutor) handleError(_ context.Context, send func(mstream.Event
 		)
 	} else {
 		// Only update turn status to "error" for actual errors (not user cancellations)
-		if updateErr := se.turnRepo.UpdateTurnError(persistCtx, se.turnID, err.Error()); updateErr != nil {
+		if updateErr := se.turnRepo.UpdateTurnError(persistCtx, se.turnID, userErrorMsg); updateErr != nil {
 			se.logger.Error("failed to update turn error", "error", updateErr)
 		}
 	}
@@ -316,12 +320,8 @@ func (se *StreamExecutor) handleError(_ context.Context, send func(mstream.Event
 	// Emit AG-UI RUN_ERROR event with isCancelled flag
 	// This is the primary error event - frontend uses this for cleanup and error handling
 	// isCancelled distinguishes user cancellation (no error toast) from actual errors
-	errorMsg := err.Error()
-	if errorMsg == "" {
-		errorMsg = "Unknown error occurred"
-	}
 	if se.aguiEmitter != nil {
-		se.aguiEmitter.EmitRunError(errorMsg, isCancelled)
+		se.aguiEmitter.EmitRunError(userErrorMsg, isCancelled)
 	}
 
 	// Call cleanup callback if registered

@@ -92,9 +92,9 @@ type StreamExecutor struct {
 
 	// AG-UI Protocol Support
 	// These enable the new AG-UI streaming protocol alongside legacy events (dual protocol mode)
-	threadID    string           // Thread/conversation ID for AG-UI events
-	idFactory   *agui.IDFactory  // Generates stable IDs for AG-UI events
-	aguiEmitter *agui.Emitter    // Serializes and sends AG-UI events via SSE
+	threadID    string          // Thread/conversation ID for AG-UI events
+	idFactory   *agui.IDFactory // Generates stable IDs for AG-UI events
+	aguiEmitter *agui.Emitter   // Serializes and sends AG-UI events via SSE
 
 	// Tool call correlation for backend-emitted AG-UI TOOL_CALL_RESULT.
 	// ToolCallStartEvent provides parentMessageId; we persist that mapping so tool results
@@ -126,7 +126,7 @@ type StreamSwitchResult struct {
 func NewStreamExecutor(
 	turnID string,
 	threadID string, // Thread ID for AG-UI events
-	userID string,   // User who initiated this turn (for tool provenance)
+	userID string, // User who initiated this turn (for tool provenance)
 	model string,
 	turnWriter llmRepo.TurnWriter,
 	turnReader llmRepo.TurnReader,
@@ -147,31 +147,31 @@ func NewStreamExecutor(
 	idFactory := agui.NewIDFactory(turnID, threadID)
 
 	se := &StreamExecutor{
-		turnID:              turnID,
-		threadID:            threadID,
-		userID:              userID,
-		model:               model,
-		turnRepo:            turnWriter,
-		provider:            provider,
-		logger:              logger,
-		toolRegistry:        toolRegistry,
-		turnNavigator:       turnNavigator,
-		turnReader:          turnReader,
-		messageBuilder:      messageBuilder,
-		toolResultIDs:       make(map[string]bool),
-		toolIteration:       0,
-		requestIndex:        0, // Initial request (increments with each tool continuation)
-		maxToolRounds:       maxToolRounds,
-		maxBlockSequence:    -1, // No blocks persisted yet (so first block is sequence 0)
-		state:               StateStreaming,
-		ctrlCh:              make(chan controlMsg, 1), // Buffered for non-blocking sends
-		tokenFinalizer:      tokenFinalizer,
-		jobQueue:            jobQueue,
-		softCancelTimeout:   time.Duration(softCancelTimeoutSeconds) * time.Second,
-		persistenceGuard:    NewPersistenceGuard(), // Armed initially, disarmed on cancel
-		idFactory:           idFactory,             // AG-UI ID generation
-		interjectionBuffer:  interjectionBuffer,    // For user interjections
-		streamSwitchFn:      streamSwitchFn,        // For stream switch on interjection
+		turnID:             turnID,
+		threadID:           threadID,
+		userID:             userID,
+		model:              model,
+		turnRepo:           turnWriter,
+		provider:           provider,
+		logger:             logger,
+		toolRegistry:       toolRegistry,
+		turnNavigator:      turnNavigator,
+		turnReader:         turnReader,
+		messageBuilder:     messageBuilder,
+		toolResultIDs:      make(map[string]bool),
+		toolIteration:      0,
+		requestIndex:       0, // Initial request (increments with each tool continuation)
+		maxToolRounds:      maxToolRounds,
+		maxBlockSequence:   -1, // No blocks persisted yet (so first block is sequence 0)
+		state:              StateStreaming,
+		ctrlCh:             make(chan controlMsg, 1), // Buffered for non-blocking sends
+		tokenFinalizer:     tokenFinalizer,
+		jobQueue:           jobQueue,
+		softCancelTimeout:  time.Duration(softCancelTimeoutSeconds) * time.Second,
+		persistenceGuard:   NewPersistenceGuard(), // Armed initially, disarmed on cancel
+		idFactory:          idFactory,             // AG-UI ID generation
+		interjectionBuffer: interjectionBuffer,    // For user interjections
+		streamSwitchFn:     streamSwitchFn,        // For stream switch on interjection
 		// aguiEmitter initialized in workFunc when send function is available
 
 		toolCallParentMessageIDs: make(map[string]string),
@@ -265,7 +265,7 @@ func (se *StreamExecutor) workFunc(ctx context.Context, send func(mstream.Event)
 	// Live streaming starts with block events (event-1+)
 
 	// Start provider streaming
-	streamChan, err := se.provider.StreamResponse(ctx, req)
+	streamChan, err := se.startProviderStreamWithRetry(ctx, req)
 	if err != nil {
 		se.handleError(ctx, send, fmt.Errorf("failed to start provider streaming: %w", err))
 		return err
@@ -273,6 +273,46 @@ func (se *StreamExecutor) workFunc(ctx context.Context, send func(mstream.Event)
 
 	// Delegate to stream processor (reusable for continuation)
 	return se.processProviderStream(ctx, streamChan, send)
+}
+
+func (se *StreamExecutor) startProviderStreamWithRetry(
+	ctx context.Context,
+	req *domainllm.GenerateRequest,
+) (<-chan domainllm.StreamEvent, error) {
+	var lastErr error
+
+	for attempt := 1; attempt <= providerStartMaxAttempts; attempt++ {
+		streamChan, err := se.provider.StreamResponse(ctx, req)
+		if err == nil {
+			return streamChan, nil
+		}
+
+		lastErr = err
+		if attempt >= providerStartMaxAttempts || !isRetryableProviderStartError(err) {
+			return nil, err
+		}
+
+		se.logger.Warn("provider stream start failed; retrying",
+			"turn_id", se.turnID,
+			"attempt", attempt,
+			"max_attempts", providerStartMaxAttempts,
+			"retry_delay", providerStartRetryDelay,
+			"error", err,
+		)
+
+		retryTimer := time.NewTimer(providerStartRetryDelay)
+		select {
+		case <-ctx.Done():
+			retryTimer.Stop()
+			return nil, ctx.Err()
+		case <-retryTimer.C:
+		}
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("failed to start provider stream")
 }
 
 // processProviderStream processes streaming events from the provider.
