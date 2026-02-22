@@ -400,7 +400,7 @@ function makeScrollOnActiveHunkListener() {
 function makeInlineReviewKeymap(callbacks: InlineReviewCallbacks) {
   return keymap.of([
     {
-      key: "Ctrl-]",
+      key: "Alt-]",
       run(view) {
         const state = view.state.field(inlineReviewField);
         const pending = getPendingHunks(state);
@@ -417,7 +417,7 @@ function makeInlineReviewKeymap(callbacks: InlineReviewCallbacks) {
       },
     },
     {
-      key: "Ctrl-[",
+      key: "Alt-[",
       run(view) {
         const state = view.state.field(inlineReviewField);
         const pending = getPendingHunks(state);

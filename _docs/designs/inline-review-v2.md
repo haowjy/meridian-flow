@@ -22,7 +22,7 @@ The current inline review UI has a critical visual bug: **Accept/Reject buttons 
 - `InsertedTextWidget` as `block: true` widget — shows formatted preview of proposed text
 - Line decorations for deleted text (red bg + strikethrough)
 - Bottom floating pill (`ProposalReviewToolbar`) — Accept All / Reject All + navigation
-- Keyboard shortcuts (Ctrl-], Ctrl-[, Ctrl-Enter, Ctrl-Backspace)
+- Keyboard shortcuts (Alt-], Alt-[, Ctrl-Enter, Ctrl-Backspace)
 - StateField-based architecture with `inlineReviewField`
 - Changeset extraction pipeline: `extractProposalOps` -> `groupIntoChunks` -> `ReviewChunk[]`
 - Partial application via `buildPartialUpdate` (clone, mutate, diff-only update)
@@ -42,7 +42,7 @@ PUA markers put both versions inline as flat text. You lose the ability to rende
 Making the green block `contentEditable` creates a split UX:
 - CM6 undo/redo doesn't reach inside widgets (two undo stacks)
 - Cursor can't arrow-key into widgets (CM6 treats them as atomic)
-- Keybindings (Ctrl-], Ctrl-Enter) don't fire inside the widget
+- Keybindings (Alt-], Ctrl-Enter) don't fire inside the widget
 
 Instead: **"Edit" button** on the floating toolbar opens a proper editing context.
 
@@ -125,7 +125,7 @@ flowchart TD
         SF["inlineReviewField\n(StateField)"]
         DF["decorationField\n(StateField — block widgets need StateField, not ViewPlugin)"]
         HM["HunkHoverManager\n(ViewPlugin — manages hover visibility)"]
-        KM["Keymaps\n(Ctrl-Enter, Ctrl-[, etc.)"]
+        KM["Keymaps\n(Ctrl-Enter, Alt-[, etc.)"]
         SL["scrollOnActiveHunkListener\n(EditorView.updateListener)"]
     end
 
@@ -165,14 +165,14 @@ stateDiagram-v2
     [*] --> Idle: Review chunks loaded
 
     Idle --> Hovered: mouseenter hunk
-    Idle --> Focused: Ctrl-] / Ctrl-[
+    Idle --> Focused: Alt-] / Alt-[
 
     Hovered --> Idle: mouseleave
     Hovered --> Resolving: Click Keep/Discard
-    Hovered --> Focused: Ctrl-] / Ctrl-[
+    Hovered --> Focused: Alt-] / Alt-[
 
     Focused --> Resolving: Ctrl-Enter / Ctrl-Backspace
-    Focused --> Focused: Ctrl-] / Ctrl-[
+    Focused --> Focused: Alt-] / Alt-[
     Focused --> Hovered: mouseenter different hunk
     Focused --> Idle: Escape
     Focused --> Idle: Click outside hunk
@@ -812,7 +812,7 @@ Resolve animation (deferred from Phase 1 due to CM6 complexity):
 - [ ] On hover/focus: deleted lines dim to 0.4 opacity, inserted block brightens (before→after preview)
 
 **Keyboard-only**:
-- [ ] `Ctrl-]` / `Ctrl-[` navigates between pending hunks, showing pinned toolbar on active hunk
+- [ ] `Alt-]` / `Alt-[` navigates between pending hunks, showing pinned toolbar on active hunk
 - [ ] `Ctrl-Enter` keeps active hunk; `Ctrl-Backspace` discards active hunk
 - [ ] `Escape` dismisses focused state (returns to Idle, toolbar hidden)
 - [ ] After resolving a hunk, focus advances to next pending hunk

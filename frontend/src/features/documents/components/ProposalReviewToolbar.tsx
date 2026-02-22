@@ -79,7 +79,7 @@ export function ProposalReviewToolbar({
           variant="ghost"
           size="icon-xs"
           onClick={onPrevHunk}
-          title="Previous hunk (Ctrl-[)"
+          title="Previous hunk (Alt-[)"
           disabled={pendingCount <= 1}
           className="rounded-full"
         >
@@ -96,7 +96,7 @@ export function ProposalReviewToolbar({
           variant="ghost"
           size="icon-xs"
           onClick={onNextHunk}
-          title="Next hunk (Ctrl-])"
+          title="Next hunk (Alt-])"
           disabled={pendingCount <= 1}
           className="rounded-full"
         >
