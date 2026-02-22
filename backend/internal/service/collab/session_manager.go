@@ -188,8 +188,8 @@ func (m *DocumentSessionManager) applyUpdateOffline(ctx context.Context, docID s
 		content = yText.ToString()
 	}
 
-	// aiContent is recomputed separately by the AIContentProjector, pass empty here
-	if err := m.store.SaveState(ctx, docID, newState, content, ""); err != nil {
+	// Keep content and ai_content aligned for offline applies.
+	if err := m.store.SaveState(ctx, docID, newState, content, content); err != nil {
 		return fmt.Errorf("save state after offline apply: %w", err)
 	}
 

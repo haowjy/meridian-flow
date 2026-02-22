@@ -2,8 +2,11 @@ package collab
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"testing"
 
+	"github.com/google/uuid"
 	ycrdt "github.com/skyterra/y-crdt"
 	collabModels "meridian/internal/domain/models/collab"
 )
@@ -125,6 +128,32 @@ func TestDocumentSessionLoadState_ExistingStateSkipsBootstrapPath(t *testing.T) 
 	}
 	if store.saveCalls != 0 {
 		t.Fatalf("expected no SaveState call for existing yjs_state, got %d", store.saveCalls)
+	}
+}
+
+func TestDocumentSessionManagerApplyUpdate_OfflinePersistsAIContentWithContent(t *testing.T) {
+	expectedContent := "offline ai apply content"
+	update := mustBuildSessionState(t, expectedContent)
+	store := &fakeSessionStore{state: []byte{}}
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	manager := NewDocumentSessionManager(store, store, logger, 0)
+
+	if err := manager.ApplyUpdate(context.Background(), uuid.New(), update, "ai_accept"); err != nil {
+		t.Fatalf("ApplyUpdate returned error: %v", err)
+	}
+
+	if store.saveCalls != 1 {
+		t.Fatalf("expected one SaveState call, got %d", store.saveCalls)
+	}
+	if store.savedContent != expectedContent {
+		t.Fatalf("expected saved content %q, got %q", expectedContent, store.savedContent)
+	}
+	if store.savedAIContent != store.savedContent {
+		t.Fatalf("expected saved ai_content to match content, got ai_content=%q content=%q", store.savedAIContent, store.savedContent)
+	}
+	if got := decodeStateContent(t, store.savedState); got != expectedContent {
+		t.Fatalf("expected persisted state content %q, got %q", expectedContent, got)
 	}
 }
 
