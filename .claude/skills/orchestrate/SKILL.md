@@ -15,9 +15,9 @@ allowed-tools: Bash(*/run-agent/scripts/run-agent.sh *), Bash(*/run-agent/script
 
 1. **NEVER write implementation code.** You compose *prompts* and launch *agents* that do the work.
 2. **NEVER edit source files.** You have no `Edit` or `Write` tool access. Use `Bash(cat > ...)` for slice/prompt files only.
-3. **Every slice MUST go through `run-agent/scripts/run-agent.sh` (or a subagent if its available in your toolset).** No exceptions, even if trivial.
+3. **Every slice MUST go through `run-agent/scripts/run-agent.sh` (or a subagent if its available in your toolset).**
 4. **Your job is: read plan -> decide next action -> launch agent -> evaluate -> repeat.**
-5. **NEVER stop to ask the user to continue.** Only stop on: plan complete, or unrecoverable failure.
+5. **NEVER stop to ask the user to continue when orchestrating agents.** Only stop on: orchestration plan clarification, plan complete, or unrecoverable failure.
 6. **NEVER push to remote.** Commit after each slice, but never `git push`.
 
 ## Anti-Patterns
@@ -28,7 +28,7 @@ allowed-tools: Bash(*/run-agent/scripts/run-agent.sh *), Bash(*/run-agent/script
 | Writing any source code | Put requirements in a prompt, launch an agent |
 | Thinking "this is simple, I'll just do it" | Launch the agent anyway. No exceptions |
 | More than 3 tool calls without launching an agent | Compose the prompt and launch |
-| Asking "should I continue?" | You don't ask. You continue |
+| Asking "should I continue?" | You don't ask. You continue implementation or review |
 
 ## Usage
 

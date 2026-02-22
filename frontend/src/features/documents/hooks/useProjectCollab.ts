@@ -286,6 +286,23 @@ export function createProjectCollabTransport(
       return;
     }
 
+    if (event.code === "DOCUMENT_NOT_FOUND") {
+      log.warn("project collab document no longer exists", {
+        projectId: options.projectId,
+        documentId,
+      });
+
+      activeSubscriptions.delete(documentId);
+      subscribedDocuments.delete(documentId);
+      pendingBinaryByDocument.delete(documentId);
+
+      notifyDocumentTextListeners(documentId, {
+        ...event,
+        documentId,
+      });
+      return;
+    }
+
     // NOT_SUBSCRIBED means the server rejected a command because the
     // subscribe→ack handshake hasn't completed (or was lost). Clear the
     // local "subscribed" flag and re-subscribe if the document is still
