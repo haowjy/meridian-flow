@@ -10,8 +10,8 @@ function chunk(
   id: string,
   baseStart: number,
   baseEnd: number,
-  deletedText: string,
-  insertedText: string,
+  deletedText: string | undefined,
+  insertedText: string | undefined,
 ): ReviewHunk {
   return {
     id,
@@ -35,7 +35,7 @@ describe("editOpsToMergeChanges", () => {
 
   it("pure insert: fromA=fromB=baseStart, toA=fromA, toB=fromB+insertLen", () => {
     // base: "hello world" (11 chars), insert " beautiful" at pos 5
-    const chunks = [chunk("c0", 5, 5, "", " beautiful")];
+    const chunks = [chunk("c0", 5, 5, undefined, " beautiful")];
     const [change] = editOpsToMergeChanges(chunks);
     expect(change!.fromA).toBe(5);
     expect(change!.toA).toBe(5);
@@ -45,7 +45,7 @@ describe("editOpsToMergeChanges", () => {
 
   it("pure delete: fromB=toB (no proposed text in range)", () => {
     // base: "hello world", delete " world" (6 chars) at [5, 11)
-    const chunks = [chunk("c0", 5, 11, " world", "")];
+    const chunks = [chunk("c0", 5, 11, " world", undefined)];
     const [change] = editOpsToMergeChanges(chunks);
     expect(change!.fromA).toBe(5);
     expect(change!.toA).toBe(11);
@@ -68,8 +68,8 @@ describe("editOpsToMergeChanges", () => {
     // chunk 0: insert "XY" at pos 2 → proposed: "abXYcdef"
     // chunk 1: delete "ef" [4,6) in base → in proposed, [4,6) shifted by +2 → [6,8)
     const chunks = [
-      chunk("c0", 2, 2, "", "XY"), // insert, offset becomes +2
-      chunk("c1", 4, 6, "ef", ""), // delete 2, offset becomes 0
+      chunk("c0", 2, 2, undefined, "XY"), // insert, offset becomes +2
+      chunk("c1", 4, 6, "ef", undefined), // delete 2, offset becomes 0
     ];
     const changes = editOpsToMergeChanges(chunks);
     expect(changes).toHaveLength(2);
@@ -89,7 +89,7 @@ describe("editOpsToMergeChanges", () => {
   });
 
   it("no-op chunk (both deleteLen=0 and insertLen=0) is skipped", () => {
-    const chunks = [chunk("c0", 3, 3, "", "")];
+    const chunks = [chunk("c0", 3, 3, undefined, undefined)];
     expect(editOpsToMergeChanges(chunks)).toHaveLength(0);
   });
 });

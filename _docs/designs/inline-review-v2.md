@@ -269,15 +269,15 @@ Proposal.yjsUpdate (base64)
 ### Key Types
 
 ```typescript
-// review/types.ts — UNCHANGED
-interface ReviewChunk {
+// review/types.ts (now ReviewHunk)
+interface ReviewHunk {
   id: string;                // "${proposalId}-chunk-${index}"
   proposalId: string;
   baseStart: number;         // Offset in base text (inclusive)
   baseEnd: number;           // Offset in base text (exclusive)
-  deletedText: string;
-  insertedText: string;
-  status: ReviewChunkStatus;
+  deletedText: string | undefined;   // undefined for pure inserts
+  insertedText: string | undefined;  // undefined for pure deletes
+  status: ReviewHunkStatus;
 }
 
 // inline-review.ts — UNCHANGED

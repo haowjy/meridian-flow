@@ -29,7 +29,7 @@ export function buildPartialUpdate(
   textKey = "content",
   options: BuildPartialUpdateOptions = {},
 ): Uint8Array {
-  const insertedText = options.insertedTextOverride ?? hunk.insertedText;
+  const insertedText = options.insertedTextOverride ?? hunk.insertedText ?? "";
 
   // 1. Clone baseDoc so we don't mutate the original
   const clone = new Y.Doc();

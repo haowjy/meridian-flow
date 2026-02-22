@@ -53,6 +53,30 @@ func (s *PostgresDocumentStore) LoadState(ctx context.Context, docID string) ([]
 	return state, nil
 }
 
+// LoadContentForBootstrap loads markdown content when server-side Yjs bootstrap is needed.
+func (s *PostgresDocumentStore) LoadContentForBootstrap(ctx context.Context, docID string) (string, error) {
+	query := fmt.Sprintf(`
+		SELECT content
+		FROM %s
+		WHERE id = $1 AND deleted_at IS NULL
+	`, s.tables.Documents)
+
+	var content *string
+	executor := postgres.GetExecutor(ctx, s.pool)
+	if err := executor.QueryRow(ctx, query, docID).Scan(&content); err != nil {
+		if postgres.IsPgNoRowsError(err) {
+			return "", domain.NewNotFoundError("document", fmt.Sprintf("document %s not found", docID))
+		}
+		return "", fmt.Errorf("load bootstrap content: %w", err)
+	}
+
+	if content == nil {
+		return "", nil
+	}
+
+	return *content, nil
+}
+
 // SaveState persists Yjs state and both derived text projections in one UPDATE statement.
 func (s *PostgresDocumentStore) SaveState(
 	ctx context.Context,

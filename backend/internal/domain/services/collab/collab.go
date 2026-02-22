@@ -25,6 +25,7 @@ type DocumentBroadcaster interface {
 // DocumentStore persists Yjs state plus derived projections.
 type DocumentStore interface {
 	LoadState(ctx context.Context, docID string) ([]byte, error)
+	LoadContentForBootstrap(ctx context.Context, docID string) (string, error)
 	SaveState(ctx context.Context, docID string, state []byte, content string, aiContent string) error
 	SaveSnapshot(
 		ctx context.Context,
@@ -202,10 +203,10 @@ const (
 
 // ArbiterInput provides the arbiter with proposal metadata and the resolved auto-accept baseline.
 type ArbiterInput struct {
-	DocumentID        uuid.UUID
-	Source            collabModels.ProposalSource
-	ProducerAgentType string
-	YjsUpdateSize     int
+	DocumentID         uuid.UUID
+	Source             collabModels.ProposalSource
+	ProducerAgentType  string
+	YjsUpdateSize      int
 	BaselineAutoAccept bool
 }
 

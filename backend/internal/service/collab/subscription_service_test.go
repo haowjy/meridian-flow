@@ -14,7 +14,10 @@ import (
 // testSubStore implements collab.DocumentStore minimally for subscription tests.
 type testSubStore struct{}
 
-func (s *testSubStore) LoadState(_ context.Context, _ string) ([]byte, error)   { return nil, nil }
+func (s *testSubStore) LoadState(_ context.Context, _ string) ([]byte, error) { return nil, nil }
+func (s *testSubStore) LoadContentForBootstrap(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
 func (s *testSubStore) SaveState(_ context.Context, _ string, _ []byte, _ string, _ string) error {
 	return nil
 }

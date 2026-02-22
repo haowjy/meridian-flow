@@ -308,7 +308,7 @@ describe("groupIntoHunks", () => {
     const hunk = requiredHunk(hunks, 0);
     expect(hunk.baseStart).toBe(5);
     expect(hunk.baseEnd).toBe(5); // pure insert → baseStart === baseEnd
-    expect(hunk.deletedText).toBe("");
+    expect(hunk.deletedText).toBeUndefined();
     expect(hunk.insertedText).toBe(" beautiful");
   });
 

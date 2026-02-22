@@ -119,7 +119,7 @@ function computeHunkSignature(hunks: ReviewHunk[]): string {
   return hunks
     .map(
       (h) =>
-        `${h.id}:${h.baseStart}:${h.baseEnd}:${djb2(h.deletedText)}:${djb2(h.insertedText)}`,
+        `${h.id}:${h.baseStart}:${h.baseEnd}:${djb2(h.deletedText ?? "")}:${djb2(h.insertedText ?? "")}`,
     )
     .join("|");
 }

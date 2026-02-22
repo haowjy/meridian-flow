@@ -137,6 +137,10 @@ func (s *fakeProjectorDocumentStore) LoadState(_ context.Context, _ string) ([]b
 	return s.loadedState, nil
 }
 
+func (s *fakeProjectorDocumentStore) LoadContentForBootstrap(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
+
 func (s *fakeProjectorDocumentStore) SaveState(
 	_ context.Context,
 	docID string,
