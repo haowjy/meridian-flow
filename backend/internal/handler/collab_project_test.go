@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/net/websocket"
 	"meridian/internal/config"
+	"meridian/internal/domain"
 	"meridian/internal/domain/models"
 	collabModels "meridian/internal/domain/models/collab"
 	collabSvc "meridian/internal/domain/services/collab"
@@ -655,6 +656,48 @@ func TestProjectWS_DocSubscribeLimitExceeded(t *testing.T) {
 	}
 	if msg["code"] != "SUBSCRIPTION_LIMIT" {
 		t.Fatalf("expected SUBSCRIPTION_LIMIT, got %v", msg["code"])
+	}
+}
+
+func TestProjectWS_DocSubscribeDocumentNotFound(t *testing.T) {
+	resolver := &testProjectCollabResolver{allowed: true, projectID: testProjectID}
+	verifier := &testJWTVerifier{
+		tokens: map[string]*models.SupabaseClaims{
+			testToken: {RegisteredClaims: jwt.RegisteredClaims{Subject: testUserID}},
+		},
+	}
+	store := &testCollabStore{
+		loadErr: domain.NewNotFoundError("document", testDocID1),
+	}
+	server := newTestProjectCollabServer(t, resolver, verifier, store)
+	defer server.Close()
+
+	conn := dialProjectWS(t, server.URL, testProjectID)
+	defer closeWSConn(t, conn)
+	authenticateWS(t, conn, testToken)
+
+	canonicalDocumentID := uuid.MustParse(testDocID1).String()
+	cmd := map[string]string{
+		"type":       "doc:subscribe",
+		"documentId": strings.ToUpper(testDocID1),
+	}
+	cmdBytes, _ := json.Marshal(cmd)
+	if err := websocket.Message.Send(conn, string(cmdBytes)); err != nil {
+		t.Fatalf("send doc:subscribe: %v", err)
+	}
+
+	msg := readWSJSONMessage(t, conn)
+	if msg["type"] != "doc:error" {
+		t.Fatalf("expected doc:error, got %v", msg["type"])
+	}
+	if msg["documentId"] != canonicalDocumentID {
+		t.Fatalf("expected canonical documentId %s, got %v", canonicalDocumentID, msg["documentId"])
+	}
+	if msg["code"] != "DOCUMENT_NOT_FOUND" {
+		t.Fatalf("expected DOCUMENT_NOT_FOUND, got %v", msg["code"])
+	}
+	if msg["message"] != "document no longer exists" {
+		t.Fatalf("expected message %q, got %v", "document no longer exists", msg["message"])
 	}
 }
 

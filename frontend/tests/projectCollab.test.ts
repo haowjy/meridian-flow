@@ -213,6 +213,61 @@ describe("project collab transport", () => {
     transport.stop();
   });
 
+  it("drops active subscription after DOCUMENT_NOT_FOUND doc:error", async () => {
+    const factory = new MockWebSocketFactory();
+    const transport = createProjectCollabTransport({
+      projectId: PROJECT_ID,
+      createWebSocket: factory.create,
+      resolveAccessToken: async () => AUTH_TOKEN,
+      random: () => 0.5,
+    });
+
+    transport.start();
+    await flushMicrotasks();
+
+    const initialSocket = factory.sockets[0]!;
+    initialSocket.open();
+    transport.subscribeDocument(DOC_A);
+    expect(extractDocSubscribeIds(initialSocket.sent)).toEqual([DOC_A]);
+
+    const textEvents: unknown[] = [];
+    transport.registerDocumentListener(DOC_A, {
+      onTextEvent: (event) => {
+        textEvents.push(event);
+      },
+    });
+
+    initialSocket.emitTextMessage(
+      JSON.stringify({
+        type: "doc:error",
+        documentId: DOC_A,
+        code: "DOCUMENT_NOT_FOUND",
+        message: "document no longer exists",
+      }),
+    );
+
+    expect(textEvents).toHaveLength(1);
+    expect(textEvents[0]).toMatchObject({
+      type: "doc:error",
+      documentId: DOC_A,
+      code: "DOCUMENT_NOT_FOUND",
+    });
+
+    initialSocket.close();
+    await vi.runOnlyPendingTimersAsync();
+    await flushMicrotasks();
+
+    expect(factory.sockets).toHaveLength(2);
+    const reconnectedSocket = factory.sockets[1]!;
+    reconnectedSocket.open();
+    reconnectedSocket.emitTextMessage(
+      JSON.stringify({ type: "project:connected" }),
+    );
+
+    expect(extractDocSubscribeIds(reconnectedSocket.sent)).toEqual([]);
+    transport.stop();
+  });
+
   it("keeps websocket open for non-auth project-level error events", async () => {
     const factory = new MockWebSocketFactory();
     const refreshSession = vi.fn(async () => ({}));

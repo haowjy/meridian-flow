@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	ycrdt "github.com/skyterra/y-crdt"
 	"golang.org/x/net/websocket"
+	"meridian/internal/domain"
 	"meridian/internal/httputil"
 	serviceCollab "meridian/internal/service/collab"
 )
@@ -192,6 +193,10 @@ func (h *CollabHandler) handleDocSubscribe(
 		if errors.Is(err, serviceCollab.ErrSubscriptionLimitExceeded) {
 			h.sendDocError(conn, canonicalDocumentID, "SUBSCRIPTION_LIMIT",
 				fmt.Sprintf("max %d concurrent subscriptions", h.subscriptionService.MaxPerConnection()))
+			return
+		}
+		if errors.Is(err, domain.ErrNotFound) {
+			h.sendDocError(conn, canonicalDocumentID, "DOCUMENT_NOT_FOUND", "document no longer exists")
 			return
 		}
 		h.logger.Error("project ws subscribe failed",
