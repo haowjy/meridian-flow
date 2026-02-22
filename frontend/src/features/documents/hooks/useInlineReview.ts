@@ -98,6 +98,32 @@ function collectReadyHunks(
   return result;
 }
 
+/**
+ * Simple djb2 hash — just needs collision resistance, not cryptographic strength.
+ * Used to fingerprint hunk text payloads for equality checks.
+ */
+function djb2(s: string): number {
+  let hash = 5381;
+  for (let i = 0; i < s.length; i++) {
+    hash = ((hash << 5) + hash + s.charCodeAt(i)) | 0;
+  }
+  return hash;
+}
+
+/**
+ * Compute a stable signature for a set of hunks.
+ * Used to skip CM6 dispatch when the derived hunks are identical to the last dispatch.
+ * Format: `id:baseStart:baseEnd:hash(deleted):hash(inserted)` per hunk, joined by `|`.
+ */
+function computeHunkSignature(hunks: ReviewHunk[]): string {
+  return hunks
+    .map(
+      (h) =>
+        `${h.id}:${h.baseStart}:${h.baseEnd}:${djb2(h.deletedText)}:${djb2(h.insertedText)}`,
+    )
+    .join("|");
+}
+
 /** Scroll editor to a document position */
 function scrollToPos(view: EditorView, pos: number): void {
   const clampedPos = Math.min(pos, view.state.doc.length);
@@ -156,6 +182,11 @@ export function useInlineReview({
 
   // Track proposals we've already requested yjsUpdate for to avoid duplicate requests
   const requestedUpdatesRef = useRef<Set<string>>(new Set());
+
+  // Signature of the last dispatched hunk set — skip CM6 dispatch when unchanged.
+  // Avoids unnecessary inlineReviewField state updates and decoration rebuilds
+  // when text changes don't affect proposal hunks (most keystrokes).
+  const lastDispatchedHunksRef = useRef<string>("");
 
   // Version counter — incremented on every CM6 state mutation to trigger
   // toolbar re-render and re-read of CM6 state for toolbar props.
@@ -497,7 +528,13 @@ export function useInlineReview({
   // ------------------------------------------------------------------
 
   useEffect(() => {
-    if (!collabEnabled) return;
+    if (!collabEnabled) {
+      // Reset hunk signature so a fresh dispatch occurs if collab re-enables.
+      // Without this, the stale signature from a previous session would cause
+      // the first sync to skip dispatch even though CM6 state was cleared.
+      lastDispatchedHunksRef.current = "";
+      return;
+    }
 
     const view = getView();
     if (!view) return;
@@ -526,25 +563,35 @@ export function useInlineReview({
     activeProposalIdsRef.current = proposalIds;
 
     if (allHunks.length > 0) {
-      setReviewHunksEffect(view, allHunks);
-      log.info("Loaded review hunks into editor", {
-        count: allHunks.length,
-        proposals: readyGroups.map((g) => g.proposalId),
-      });
+      // Skip CM6 dispatch when hunk signature is unchanged — avoids
+      // unnecessary state updates and full decoration rebuilds on every keystroke.
+      const signature = computeHunkSignature(allHunks);
+      if (signature !== lastDispatchedHunksRef.current) {
+        lastDispatchedHunksRef.current = signature;
+        setReviewHunksEffect(view, allHunks);
+        bump();
+        log.info("Loaded review hunks into editor", {
+          count: allHunks.length,
+          proposals: readyGroups.map((g) => g.proposalId),
+        });
+      }
     } else {
-      // Don't clear on transient unavailability — proposals may still be
-      // loading their yjsUpdate (snapshot reload) or hit a temporary apply
-      // error. Only clear when there are genuinely no active proposals.
-      const hasProposalsLoading = [...operationsModels.values()].some(
-        (m) =>
-          m.availability === "ready" ||
-          (m.availability === "unavailable" && m.reason === "missing_update"),
-      );
-      if (!hasProposalsLoading) {
+      // Only suppress clear when ALL models are transiently unavailable
+      // (waiting for yjsUpdate data via lazy-fetch). "Ready with zero hunks"
+      // is a valid final state (proposal has no text diff), not a transient
+      // state — those must clear stale decorations.
+      const allTransientlyUnavailable =
+        operationsModels.size > 0 &&
+        [...operationsModels.values()].every(
+          (m) =>
+            m.availability === "unavailable" && m.reason === "missing_update",
+        );
+      if (!allTransientlyUnavailable) {
         clearReviewEffect(view);
+        lastDispatchedHunksRef.current = "";
+        bump();
       }
     }
-    bump();
   }, [collabEnabled, getView, operationsModels, bump]);
 
   // ------------------------------------------------------------------

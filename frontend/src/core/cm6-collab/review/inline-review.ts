@@ -282,29 +282,33 @@ function buildInlineReviewDecorations(
       // For replaces, show after the deleted region.
       const insertPos = hunkEnd;
 
+      const insertDeco = Decoration.widget({
+        widget: new InsertedTextWidget(hunk.insertedText, isActive, hunk.id),
+        block: true,
+        side: 1, // after the line content
+      });
       decos.push({
         from: insertPos,
         to: insertPos,
-        startSide: 1,
-        deco: Decoration.widget({
-          widget: new InsertedTextWidget(hunk.insertedText, isActive, hunk.id),
-          block: true,
-          side: 1, // after the line content
-        }),
+        // Use deco.startSide — block widgets have a much larger internal
+        // startSide than inline widgets. Hardcoding would break sort order.
+        startSide: insertDeco.startSide,
+        deco: insertDeco,
       });
     }
 
     // Floating action widget at the END of the hunk (not start).
     // Hidden by default, shown on hover via HunkHoverManager or on focus
     // via keyboard navigation (.cm-review-focused-visible class).
+    const actionDeco = Decoration.widget({
+      widget: new HunkActionWidget(hunk, callbacks, isActive),
+      side: 1,
+    });
     decos.push({
       from: hunkEnd,
       to: hunkEnd,
-      startSide: 1,
-      deco: Decoration.widget({
-        widget: new HunkActionWidget(hunk, callbacks, isActive),
-        side: 1,
-      }),
+      startSide: actionDeco.startSide,
+      deco: actionDeco,
     });
   }
 

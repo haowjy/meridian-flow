@@ -62,3 +62,11 @@ export type PendingTreeOp =
   | PendingRenameTreeOp
   | PendingMoveTreeOp
   | PendingDeleteTreeOp;
+
+// Cached proposal yjsUpdate for instant re-open (avoids server round-trip)
+export interface CachedProposalUpdate {
+  proposalId: string;
+  documentId: string;
+  yjsUpdate: string; // base64-encoded
+  cachedAt: string; // ISO timestamp
+}
