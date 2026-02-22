@@ -46,7 +46,7 @@ function buildRelativeUpdate(
 }
 
 describe("proposal review runtime", () => {
-  it("derives a ready review model from current yjs state + update bytes", () => {
+  it("derives a ready operations model from current yjs state + update bytes", () => {
     const ydoc = createBaseDoc("hello");
     const runtime = createProposalReviewRuntime({ ydoc });
 
@@ -54,7 +54,7 @@ describe("proposal review runtime", () => {
       doc.getText("content").insert(5, " world");
     });
 
-    const model = runtime.deriveProposalReview(
+    const model = runtime.deriveProposalOperations(
       makeProposal({
         id: "proposal-ready",
         yjsUpdate: update,
@@ -65,7 +65,8 @@ describe("proposal review runtime", () => {
     if (model.availability === "ready") {
       expect(model.baseText).toBe("hello");
       expect(model.proposedText).toBe("hello world");
-      expect(model.hasChanges).toBe(true);
+      expect(model.ops).toHaveLength(1);
+      expect(model.hunks).toHaveLength(1);
     }
   });
 
@@ -73,7 +74,7 @@ describe("proposal review runtime", () => {
     const ydoc = createBaseDoc("hello");
     const runtime = createProposalReviewRuntime({ ydoc });
 
-    const model = runtime.deriveProposalReview(
+    const model = runtime.deriveProposalOperations(
       makeProposal({
         id: "proposal-missing",
         yjsUpdate: undefined,
@@ -90,7 +91,7 @@ describe("proposal review runtime", () => {
     const ydoc = createBaseDoc("hello");
     const runtime = createProposalReviewRuntime({ ydoc });
 
-    const model = runtime.deriveProposalReview(
+    const model = runtime.deriveProposalOperations(
       makeProposal({
         id: "proposal-invalid",
         yjsUpdate: "%%%not_base64%%%",
