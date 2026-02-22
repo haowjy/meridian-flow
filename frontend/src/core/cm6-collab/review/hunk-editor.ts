@@ -19,8 +19,8 @@ export function startHunkEditSession(hunk: ReviewHunk): HunkEditSession {
   return {
     proposalId: hunk.proposalId,
     hunkId: hunk.id,
-    originalInsertedText: hunk.insertedText,
-    draftInsertedText: hunk.insertedText,
+    originalInsertedText: hunk.insertedText ?? "",
+    draftInsertedText: hunk.insertedText ?? "",
   };
 }
 

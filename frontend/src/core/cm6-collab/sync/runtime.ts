@@ -154,24 +154,6 @@ export class CollabSyncRuntime {
     );
   }
 
-  /**
-   * Bootstrap legacy REST content only when the synced doc is still empty.
-   * Returns true when bootstrap text was inserted.
-   */
-  bootstrapTextIfEmpty(text: string): boolean {
-    if (!text || this.ytext.length > 0) {
-      return false;
-    }
-
-    this.ydoc.transact(() => {
-      if (this.ytext.length === 0) {
-        this.ytext.insert(0, text);
-      }
-    }, "bootstrap");
-
-    return this.ytext.length > 0;
-  }
-
   handleBinaryFrame(frame: Uint8Array): void {
     const { envelope, documentId, payload } = unwrapEnvelope(frame);
     if (envelope == null || documentId == null) {

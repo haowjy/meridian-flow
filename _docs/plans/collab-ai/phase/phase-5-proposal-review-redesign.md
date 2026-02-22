@@ -134,10 +134,10 @@ interface ReviewChunk {
   type: "insert" | "delete" | "replace";
   /** Line range in the base document this chunk covers */
   baseRange: { from: number; to: number };
-  /** The deleted text (for delete/replace) */
-  deletedText: string;
-  /** The inserted text (for insert/replace) */
-  insertedText: string;
+  /** The deleted text (for delete/replace); undefined for pure inserts */
+  deletedText: string | undefined;
+  /** The inserted text (for insert/replace); undefined for pure deletes */
+  insertedText: string | undefined;
   /** Diff spans within this chunk (for inline rendering) */
   spans: DiffSpan[];
   /** Accept/reject state */

@@ -49,6 +49,10 @@ func (s *testCollabStore) LoadState(_ context.Context, _ string) ([]byte, error)
 	return s.state, nil
 }
 
+func (s *testCollabStore) LoadContentForBootstrap(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
+
 func (s *testCollabStore) SaveState(_ context.Context, _ string, state []byte, _ string, _ string) error {
 	if s.saveErr != nil {
 		return s.saveErr

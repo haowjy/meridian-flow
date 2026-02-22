@@ -237,8 +237,7 @@ function buildInlineReviewDecorations(
     const hunkStart = Math.min(hunk.baseStart, docLength);
     const hunkEnd = Math.min(hunk.baseEnd, docLength);
 
-    // Deleted text decorations (#4: check !== undefined, not falsy —
-    // empty string "" is valid data per project rules)
+    // Deleted text decorations — only present for delete/replace hunks
     if (hunk.deletedText !== undefined) {
       const startLine = doc.lineAt(hunkStart);
       const endLine = doc.lineAt(Math.max(hunkStart, hunkEnd - 1));
@@ -276,7 +275,6 @@ function buildInlineReviewDecorations(
     }
 
     // Inserted text as a block widget below the deletion point
-    // (#4: check !== undefined, not falsy — empty string "" is valid data)
     if (hunk.insertedText !== undefined) {
       // For pure inserts (baseStart === baseEnd), show at baseStart.
       // For replaces, show after the deleted region.

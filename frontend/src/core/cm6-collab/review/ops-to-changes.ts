@@ -23,7 +23,7 @@ export function editOpsToMergeChanges(hunks: ReviewHunk[]): Change[] {
   for (const hunk of hunks) {
     const { baseStart, baseEnd, insertedText } = hunk;
     const deleteLen = baseEnd - baseStart;
-    const insertLen = insertedText.length;
+    const insertLen = (insertedText ?? "").length;
 
     if (deleteLen === 0 && insertLen > 0) {
       // Pure insert

@@ -87,8 +87,10 @@ const EMPTY_OPERATIONS_MODELS = new Map<string, ProposalOperationsModel>();
 export function useDocumentCollab({
   documentId,
   enabled,
-  initialContent,
+  initialContent: _initialContent,
 }: UseDocumentCollabOptions): UseDocumentCollabResult {
+  void _initialContent;
+
   const setState = useCollabStore((s) => s.setState);
   const setProposalState = useCollabStore((s) => s.setProposalState);
   const clearState = useCollabStore((s) => s.clearState);
@@ -139,7 +141,6 @@ export function useDocumentCollab({
     }
 
     let isStopped = false;
-    let didBootstrap = false;
     let runtime: ReturnType<typeof createCollabSyncRuntime> | null = null;
     const proposalManager = createProposalManager({
       onStateChange: (state) => {
@@ -153,7 +154,6 @@ export function useDocumentCollab({
     const debounce = subscriptionDebounceRef.current!;
 
     let isIdbLoaded = false;
-    let isInitialSyncDone = false;
 
     // Destroy IDB persistence — server state is authoritative once initial sync completes.
     const cancelIdb = () => {
@@ -166,18 +166,6 @@ export function useDocumentCollab({
       if (!isStopped) setIdbSynced(true);
     };
 
-    // Bootstrap seed content only after initial sync completes (SyncStep2 processed,
-    // server state is in ytext). If IDB loaded first, ytext already has cached
-    // content and bootstrap will skip (ytext.length > 0). If WS won, IDB is
-    // cancelled above.
-    const tryBootstrap = () => {
-      if (didBootstrap || !isInitialSyncDone) return;
-      // Initial sync done — server state wins. Cancel any pending IDB load.
-      cancelIdb();
-      if (!runtime || initialContent.length === 0) return;
-      didBootstrap = runtime.bootstrapTextIfEmpty(initialContent);
-    };
-
     runtimeRef.current = runtime = createCollabSyncRuntime({
       documentId,
       sendBinary: (frame) => {
@@ -187,8 +175,8 @@ export function useDocumentCollab({
         setState(documentId, status);
       },
       onInitialSyncComplete: () => {
-        isInitialSyncDone = true;
-        tryBootstrap();
+        // Initial server diff is applied — server state is now authoritative.
+        cancelIdb();
 
         // If WS won the race (cancelIdb destroyed persistence), recreate IDB
         // so ongoing edits are cached for future offline access.
@@ -426,7 +414,6 @@ export function useDocumentCollab({
         if (isStopped || isIdbLoaded) return; // WS may have already won the race
         isIdbLoaded = true;
         if (!isStopped) setIdbSynced(true);
-        tryBootstrap();
       });
 
     const pendingRejects = pendingRejectsRef.current;
@@ -460,7 +447,6 @@ export function useDocumentCollab({
     clearState,
     documentId,
     enabled,
-    initialContent,
     projectCollab,
     setProposalState,
     setState,

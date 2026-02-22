@@ -41,8 +41,8 @@ export type ReviewHunkStatus = "pending" | "accepted" | "rejected";
  * may be merged into a single ReviewHunk by the grouper when they are
  * close enough (same paragraph or separated by <=2 lines).
  *
- * For pure inserts: baseStart === baseEnd, deletedText === "".
- * For pure deletes: insertedText === "".
+ * For pure inserts: baseStart === baseEnd, deletedText === undefined.
+ * For pure deletes: insertedText === undefined.
  */
 export interface ReviewHunk {
   /** Stable id: deterministic from proposalId + chunk index. */
@@ -52,9 +52,9 @@ export interface ReviewHunk {
   baseStart: number;
   /** End offset in base text (exclusive). For pure inserts, equals baseStart. */
   baseEnd: number;
-  /** Text from base document that this hunk covers. Empty for pure inserts. */
-  deletedText: string;
-  /** Text that the proposed document has in place of deletedText. Empty for pure deletes. */
-  insertedText: string;
+  /** Text from base document that this hunk covers. undefined for pure inserts. */
+  deletedText: string | undefined;
+  /** Text that the proposed document has in place of deletedText. undefined for pure deletes. */
+  insertedText: string | undefined;
   status: ReviewHunkStatus;
 }

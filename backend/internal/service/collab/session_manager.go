@@ -275,15 +275,46 @@ func (s *DocumentSession) loadState(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if len(state) == 0 {
+	if len(state) > 0 {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		if err := safeApplyUpdate(s.doc, state, nil); err != nil {
+			return fmt.Errorf("apply persisted yjs state: %w", err)
+		}
+
+		return nil
+	}
+
+	bootstrapContent, err := s.store.LoadContentForBootstrap(ctx, s.docID)
+	if err != nil {
+		return fmt.Errorf("load bootstrap content: %w", err)
+	}
+	if bootstrapContent == "" {
 		return nil
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := safeApplyUpdate(s.doc, state, nil); err != nil {
-		return fmt.Errorf("apply persisted yjs state: %w", err)
+	yText := s.doc.GetText("content")
+	if yText == nil {
+		return nil
+	}
+	s.doc.Transact(func(_ *ycrdt.Transaction) {
+		if yText.Length() == 0 {
+			yText.Insert(0, bootstrapContent, nil)
+		}
+	}, "server-bootstrap")
+
+	persistedState, content, err := s.currentStateLocked()
+	if err != nil {
+		return err
+	}
+
+	// Keep content and ai_content aligned with the bootstrap state.
+	if err := s.store.SaveState(ctx, s.docID, persistedState, content, content); err != nil {
+		return fmt.Errorf("persist bootstrapped yjs state: %w", err)
 	}
 
 	return nil

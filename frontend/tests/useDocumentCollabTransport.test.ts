@@ -207,7 +207,6 @@ const collabRuntimeMock = vi.hoisted(() => {
     extensions: unknown[];
     startSync: ReturnType<typeof vi.fn>;
     handleBinaryFrame: ReturnType<typeof vi.fn>;
-    bootstrapTextIfEmpty: ReturnType<typeof vi.fn>;
     destroy: ReturnType<typeof vi.fn>;
   }
 
@@ -232,7 +231,6 @@ const collabRuntimeMock = vi.hoisted(() => {
       extensions: [],
       startSync: vi.fn(),
       handleBinaryFrame: vi.fn(),
-      bootstrapTextIfEmpty: vi.fn(() => false),
       destroy: vi.fn(),
     };
 
@@ -717,7 +715,7 @@ describe("useDocumentCollab disabled path cleanup (Slice 3)", () => {
   });
 });
 
-describe("useDocumentCollab bootstrap timing (Slice 1)", () => {
+describe("useDocumentCollab initial sync bootstrap ownership (Slice 1)", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     reactHarness.reset();
@@ -763,13 +761,13 @@ describe("useDocumentCollab bootstrap timing (Slice 1)", () => {
     expect(createCall.onStatusChange).toBeTypeOf("function");
     createCall.onStatusChange?.("connected");
 
-    // Bootstrap should NOT have been called — no initial sync complete
-    expect(runtime?.bootstrapTextIfEmpty).not.toHaveBeenCalled();
+    // Sync-start is only driven by doc:subscribed events.
+    expect(runtime?.startSync).not.toHaveBeenCalled();
 
     hook.unmount();
   });
 
-  it("bootstraps after onInitialSyncComplete fires", async () => {
+  it("keeps bootstrap server-owned after onInitialSyncComplete fires", async () => {
     const hook = mountHook({
       documentId: DOC_ID,
       enabled: true,
@@ -785,25 +783,8 @@ describe("useDocumentCollab bootstrap timing (Slice 1)", () => {
     expect(createCall.onInitialSyncComplete).toBeTypeOf("function");
     createCall.onInitialSyncComplete?.();
 
-    expect(runtime?.bootstrapTextIfEmpty).toHaveBeenCalledWith("seed text");
-
-    hook.unmount();
-  });
-
-  it("skips bootstrap when initialContent is empty", async () => {
-    const hook = mountHook({
-      documentId: DOC_ID,
-      enabled: true,
-      initialContent: "",
-    });
-    await flushMicrotasks();
-
-    const runtime = collabRuntimeMock.getLatestRuntime();
-    const createCall = collabRuntimeMock.getCreateCall();
-    expect(createCall.onInitialSyncComplete).toBeTypeOf("function");
-    createCall.onInitialSyncComplete?.();
-
-    expect(runtime?.bootstrapTextIfEmpty).not.toHaveBeenCalled();
+    expect(runtime).toBeDefined();
+    expect("bootstrapTextIfEmpty" in (runtime as object)).toBe(false);
 
     hook.unmount();
   });

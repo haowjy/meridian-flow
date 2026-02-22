@@ -44,7 +44,7 @@ function opToHunk(op: EditOp, proposalId: string, index: number): ReviewHunk {
       proposalId,
       baseStart: op.basePos,
       baseEnd: op.basePos, // insert covers zero base chars
-      deletedText: "",
+      deletedText: undefined,
       insertedText: op.insertedText,
       status: "pending",
     };
@@ -57,7 +57,7 @@ function opToHunk(op: EditOp, proposalId: string, index: number): ReviewHunk {
       baseStart: op.baseStart,
       baseEnd: op.baseEnd,
       deletedText: op.deletedText,
-      insertedText: "",
+      insertedText: undefined,
       status: "pending",
     };
   }
@@ -113,10 +113,15 @@ function mergeNearby(hunks: ReviewHunk[], baseText: string): ReviewHunk[] {
       result[result.length - 1] = {
         ...prev,
         baseEnd: curr.baseEnd,
-        // Deleted text = full base text span (includes the unchanged gap as context)
-        deletedText: baseText.substring(prev.baseStart, curr.baseEnd),
-        // Inserted text = prev's insert + unchanged gap + curr's insert
-        insertedText: prev.insertedText + gapText + curr.insertedText,
+        // Deleted text = full base text span when the merged range covers base chars
+        deletedText:
+          prev.baseStart < curr.baseEnd
+            ? baseText.substring(prev.baseStart, curr.baseEnd)
+            : undefined,
+        // Inserted text = concatenate non-undefined parts with gap
+        insertedText:
+          (prev.insertedText ?? "") + gapText + (curr.insertedText ?? "") ||
+          undefined,
       };
     } else {
       result.push({ ...curr });
