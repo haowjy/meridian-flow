@@ -86,6 +86,9 @@ export class CollabSyncRuntime {
   ) => void;
   private status: CollabSyncStatus = "disconnected";
   private didFireInitialSync = false;
+  // Defense-in-depth: prevents duplicate doc:subscribed events from
+  // re-sending SyncStep1 within the same runtime lifecycle.
+  private didStartSync = false;
 
   constructor(options: CreateCollabSyncRuntimeOptions) {
     this.documentId = options.documentId;
@@ -144,6 +147,13 @@ export class CollabSyncRuntime {
   }
 
   startSync(): void {
+    if (this.didStartSync) {
+      log.debug("startSync already called, skipping duplicate", {
+        documentId: this.documentId,
+      });
+      return;
+    }
+    this.didStartSync = true;
     this.setStatus("syncing");
 
     const encoder = encoding.createEncoder();
