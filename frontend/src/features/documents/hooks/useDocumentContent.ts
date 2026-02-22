@@ -275,13 +275,18 @@ export function useDocumentContent(
     lastHydratedDocIdRef.current = activeDocument.id;
     setPendingServerSnapshot(null);
 
-    hydrateDocument({
-      content: activeDocument.content ?? "",
-    });
+    // In collab mode, Yjs owns editor content via y-websocket sync.
+    // Pushing REST content here would fight yCollab and cause duplication.
+    if (!collabEnabled) {
+      hydrateDocument({
+        content: activeDocument.content ?? "",
+      });
+    }
 
     setIsInitialized(true);
   }, [
     activeDocument,
+    collabEnabled,
     documentId,
     editVersion,
     hydrateDocument,

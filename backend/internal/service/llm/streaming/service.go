@@ -14,6 +14,7 @@ import (
 	"meridian/internal/capabilities"
 	"meridian/internal/config"
 	"meridian/internal/domain"
+	collabSvc "meridian/internal/domain/services/collab"
 	llmModels "meridian/internal/domain/models/llm"
 	"meridian/internal/domain/repositories"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
@@ -97,6 +98,7 @@ type Service struct {
 	tokenFinalizer       tokens.TokenFinalizer           // For finalizing tokens on completion/interruption
 	jobQueue             jobs.JobQueue                   // NEW: Phase 2 - background job queue for async operations
 	mutationStrategy     tools.DocumentMutationStrategy  // Strategy for AI edit persistence (collab proposal)
+	aiContentReader      collabSvc.AIContentReader       // For reading ai_content in text editor (stale-base fix)
 	userStreamTracker    *UserStreamTracker              // Per-user concurrent stream limiter
 	logger               *slog.Logger
 }
@@ -125,6 +127,7 @@ func NewService(
 	tokenFinalizer tokens.TokenFinalizer,
 	jobQueue jobs.JobQueue,
 	mutationStrategy tools.DocumentMutationStrategy,
+	aiContentReader collabSvc.AIContentReader,
 	logger *slog.Logger,
 ) llmSvc.StreamingService {
 	return &Service{
@@ -152,6 +155,7 @@ func NewService(
 		tokenFinalizer:       tokenFinalizer,
 		jobQueue:             jobQueue,
 		mutationStrategy:     mutationStrategy,
+		aiContentReader:      aiContentReader,
 		userStreamTracker:    NewUserStreamTracker(cfg.MaxConcurrentStreams),
 		logger:               logger,
 	}
@@ -328,6 +332,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	tempToolRegistry := tools.NewToolRegistryBuilder().
 		WithNamespaceService(s.namespaceSvc).
 		WithMutationStrategy(s.mutationStrategy).
+		WithAIContentReader(s.aiContentReader).
 		WithEnabledDocumentTools(enabledTools, threadContext.projectID, req.UserID, s.documentSvc, s.folderSvc).
 		WithEnabledSkillTools(enabledTools, threadContext.projectID, req.UserID, s.skillService, false, availableSkills).
 		Build()
@@ -486,6 +491,7 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	builder := tools.NewToolRegistryBuilder().
 		WithNamespaceService(s.namespaceSvc).
 		WithMutationStrategy(s.mutationStrategy).
+		WithAIContentReader(s.aiContentReader).
 		WithEnabledDocumentTools(enabledTools, thread.ProjectID, req.UserID, s.documentSvc, s.folderSvc).
 		WithEnabledSkillTools(enabledTools, thread.ProjectID, req.UserID, s.skillService, false, availableSkills) // false = model invocation, not user slash command
 

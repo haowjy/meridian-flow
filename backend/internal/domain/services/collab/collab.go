@@ -28,6 +28,14 @@ type DocumentContentLoader interface {
 	LoadContentForBootstrap(ctx context.Context, docID string) (string, error)
 }
 
+// AIContentReader loads the projected AI content for a document.
+// This is the content that includes pending AI proposals applied on top of the
+// base content. Used by the text editor tool so each str_replace call in a turn
+// sees prior edits instead of reading stale base content.
+type AIContentReader interface {
+	LoadAIContent(ctx context.Context, docID string) (string, error)
+}
+
 // DocumentStateStore persists Yjs state plus derived text projections.
 type DocumentStateStore interface {
 	LoadState(ctx context.Context, docID string) ([]byte, error)

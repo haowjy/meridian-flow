@@ -3,11 +3,22 @@ package collab
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
-	ycrdt "github.com/skyterra/y-crdt"
+	ycrdt "github.com/haowjy/y-crdt"
 	collabSvc "meridian/internal/domain/services/collab"
 )
+
+// TextEdit describes a targeted edit within the document content.
+// When provided to TextToUpdate, it enables positional delete+insert instead of
+// full-doc replacement, producing smaller CRDT updates that merge correctly when
+// multiple edits are applied against the same base state.
+type TextEdit struct {
+	OldText  string // text being replaced
+	NewText  string // replacement text
+	Position int    // byte offset of OldText in the current content
+}
 
 // YjsTextConverter converts plain-text content into Yjs update bytes that are
 // ancestry-compatible with the live Y.Doc stored in DocumentStateStore.
@@ -23,7 +34,11 @@ func NewYjsTextConverter(store collabSvc.DocumentStateStore) *YjsTextConverter {
 // TextToUpdate loads the current Yjs state for documentID, diffs it against
 // newContent, and returns a relative Yjs update that transforms the current
 // state into newContent. Returns (nil, nil) when content is identical (no-op).
-func (c *YjsTextConverter) TextToUpdate(ctx context.Context, documentID uuid.UUID, newContent string) (update []byte, err error) {
+//
+// If edit is provided, uses targeted positional diff (delete old at position,
+// insert new at position). Otherwise falls back to full-doc replacement for
+// backward compat.
+func (c *YjsTextConverter) TextToUpdate(ctx context.Context, documentID uuid.UUID, newContent string, edit *TextEdit) (update []byte, err error) {
 	// Panic recovery for all Yjs FFI calls (reuses safeEncodeStateAsUpdate pattern).
 	defer func() {
 		if r := recover(); r != nil {
@@ -64,22 +79,47 @@ func (c *YjsTextConverter) TextToUpdate(ctx context.Context, documentID uuid.UUI
 
 	targetText := targetDoc.GetText("content")
 
-	// Replace content using insert-at-0 + delete strategy.
-	// Why not granular diffs: the y-crdt Go library panics when inserting at
-	// position == Length() on a doc with deleted tombstones at the end of the
-	// internal linked list (nil pointer in MinimizeAttributeChanges). The
-	// insert-at-0 approach avoids this bug while maintaining full CRDT lineage.
-	oldLen := targetText.Length()
-	if len(newContent) > 0 {
-		targetText.Insert(0, newContent, nil)
-	}
-	if oldLen > 0 {
-		targetText.Delete(utf16Len(newContent), oldLen)
+	if edit != nil {
+		// Targeted positional diff: delete old text at position, insert new text.
+		// This produces a minimal CRDT update that merges correctly when multiple
+		// edits hit different regions of the same document.
+		utf16Pos := utf16Len(currentContent[:edit.Position])
+		oldUTF16Len := utf16Len(edit.OldText)
+
+		if oldUTF16Len > 0 {
+			targetText.Delete(utf16Pos, oldUTF16Len)
+		}
+		if len(edit.NewText) > 0 {
+			targetText.Insert(utf16Pos, edit.NewText, nil)
+		}
+	} else {
+		// Full-doc replacement fallback for callers that don't provide edit info.
+		oldLen := targetText.Length()
+		if len(newContent) > 0 {
+			targetText.Insert(0, newContent, nil)
+		}
+		if oldLen > 0 {
+			targetText.Delete(utf16Len(newContent), oldLen)
+		}
 	}
 
 	// Encode only the delta (changes relative to base).
 	update = ycrdt.EncodeStateAsUpdate(targetDoc, baseStateVector)
 	return update, nil
+}
+
+// FindEditPosition locates oldText within content and returns the byte offset.
+// Returns -1 if not found or if there are multiple matches (ambiguous).
+func FindEditPosition(content, oldText string) int {
+	idx := strings.Index(content, oldText)
+	if idx == -1 {
+		return -1
+	}
+	// Check for ambiguous match (multiple occurrences)
+	if strings.Index(content[idx+1:], oldText) != -1 {
+		return -1
+	}
+	return idx
 }
 
 // utf16Len returns the number of UTF-16 code units needed to represent s.

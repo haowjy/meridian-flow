@@ -9,6 +9,7 @@ import (
 
 	"meridian/internal/domain"
 	"meridian/internal/domain/models/docsystem"
+	collabSvc "meridian/internal/domain/services/collab"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
@@ -41,6 +42,7 @@ type TextEditorTool struct {
 	config           *ToolConfig
 	normalizers      []TextNormalizer         // For str_replace text normalization (OCP)
 	mutationStrategy DocumentMutationStrategy // Strategy for persisting AI edits (collab proposal)
+	aiContentReader  collabSvc.AIContentReader // Optional: reads ai_content so each str_replace sees prior edits
 }
 
 // NewTextEditorTool creates a new TextEditorTool instance.
@@ -53,6 +55,7 @@ func NewTextEditorTool(
 	namespaceSvc docsysSvc.NamespaceService,
 	config *ToolConfig,
 	mutationStrategy DocumentMutationStrategy,
+	aiContentReader collabSvc.AIContentReader,
 ) *TextEditorTool {
 	if config == nil {
 		config = DefaultToolConfig()
@@ -70,6 +73,7 @@ func NewTextEditorTool(
 		config:           config,
 		normalizers:      DefaultNormalizers(), // OCP: extensible without modifying str_replace logic
 		mutationStrategy: mutationStrategy,
+		aiContentReader:  aiContentReader,
 	}
 }
 
@@ -129,6 +133,13 @@ func (t *TextEditorTool) executeView(ctx context.Context, path string, input map
 	// Try to get as document first (using service layer)
 	doc, err := t.documentSvc.GetDocumentByPath(ctx, t.userID, path, t.projectID)
 	if err == nil {
+		// Show ai_content (projected with pending proposals) so the AI sees
+		// prior edits when viewing after str_replace in the same turn.
+		if t.aiContentReader != nil {
+			if aiContent, aiErr := t.aiContentReader.LoadAIContent(ctx, doc.ID); aiErr == nil && aiContent != "" {
+				doc.Content = aiContent
+			}
+		}
 		// Found a document - format with line numbers
 		return t.formatDocumentWithLineNumbers(doc, input)
 	}
@@ -271,7 +282,7 @@ func (t *TextEditorTool) executeStrReplace(ctx context.Context, path string, inp
 	}
 	newStr, _ := input["new_str"].(string) // Can be empty string (deletion)
 
-	// Get document
+	// Get document (for ID and metadata)
 	doc, err := t.documentSvc.GetDocumentByPath(ctx, t.userID, path, t.projectID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
@@ -280,7 +291,15 @@ func (t *TextEditorTool) executeStrReplace(ctx context.Context, path string, inp
 		return nil, fmt.Errorf("failed to get document: %w", err)
 	}
 
+	// Read ai_content (projected with pending proposals) so each str_replace call
+	// in a multi-tool turn sees prior edits, not stale base content.
 	base := doc.Content
+	if t.aiContentReader != nil {
+		if aiContent, err := t.aiContentReader.LoadAIContent(ctx, doc.ID); err == nil && aiContent != "" {
+			base = aiContent
+		}
+		// On error or empty ai_content, fall back to doc.Content
+	}
 
 	// Try to match using normalizer chain (OCP: extensible without modifying this function)
 	result, errMsg := tryMatchWithNormalizers(base, oldStr, newStr, t.normalizers)
@@ -318,6 +337,8 @@ func (t *TextEditorTool) executeStrReplace(ctx context.Context, path string, inp
 		Path:        path,
 		Base:        base,
 		NewContent:  newVersion,
+		OldContent:  result.matchedOld,
+		ReplContent: result.normalizedNew,
 		Description: description,
 	})
 	if err != nil {
@@ -354,7 +375,7 @@ func (t *TextEditorTool) executeInsert(ctx context.Context, path string, input m
 		return ErrorResult(ErrMissingParam, "insert requires new_str parameter", map[string]any{"param": "new_str"}), nil
 	}
 
-	// Get document
+	// Get document (for ID and metadata)
 	doc, err := t.documentSvc.GetDocumentByPath(ctx, t.userID, path, t.projectID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
@@ -363,7 +384,13 @@ func (t *TextEditorTool) executeInsert(ctx context.Context, path string, input m
 		return nil, fmt.Errorf("failed to get document: %w", err)
 	}
 
+	// Read ai_content so insert sees prior edits in the same turn.
 	base := doc.Content
+	if t.aiContentReader != nil {
+		if aiContent, err := t.aiContentReader.LoadAIContent(ctx, doc.ID); err == nil && aiContent != "" {
+			base = aiContent
+		}
+	}
 	lines := strings.Split(base, "\n")
 
 	// Validate line number (0 = insert at beginning, len(lines) = insert at end)

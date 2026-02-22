@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	ycrdt "github.com/skyterra/y-crdt"
+	ycrdt "github.com/haowjy/y-crdt"
 
 	collabModels "meridian/internal/domain/models/collab"
 )

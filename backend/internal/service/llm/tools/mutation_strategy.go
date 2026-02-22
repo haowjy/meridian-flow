@@ -16,6 +16,8 @@ type MutationInput struct {
 	Path        string // file path in project
 	Base        string // current document content (before edit)
 	NewContent  string // content after edit
+	OldContent  string // original text being replaced (for targeted Yjs diffs)
+	ReplContent string // replacement text (for targeted Yjs diffs)
 	Description string // human-readable edit description
 }
 

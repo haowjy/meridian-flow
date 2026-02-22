@@ -38,6 +38,8 @@ github.com/haowjy/meridian-llm-go v0.0.25 h1:T9Np8mg9pL7JBDcUTkMKLtVjbCSxXQ0/TIN
 github.com/haowjy/meridian-llm-go v0.0.25/go.mod h1:X6oh98nCh7ZXFeL6Hcmkq+5RB1O6HKob2VOi4J6O8oY=
 github.com/haowjy/meridian-stream-go v0.0.6 h1:C6jh0mNyvwNnANmIE12F8vEpHW7+Raxo3+vy7lcGv8A=
 github.com/haowjy/meridian-stream-go v0.0.6/go.mod h1:peM6Dz8/NGmYHR9Ep/uHm6jDrn6d9NH75eEjgpYSx7c=
+github.com/haowjy/y-crdt v0.0.2 h1:z3RLrt75ICOvJjAUSwv/X9U4gXIfXjBwaR+8Bcuj7QE=
+github.com/haowjy/y-crdt v0.0.2/go.mod h1:ICYFz61yqvBzqsi2AjvPiULZxa51OiU9qNmVU5bjcaw=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=
 github.com/jackc/pgpassfile v1.0.0/go.mod h1:CEx0iS5ambNFdcRtxPj5JhEz+xB6uRky5eyVu/W2HEg=
 github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 h1:iCEnooe7UlwOQYpKFhBabPMi4aNAfoODPEFNiAnClxo=
@@ -78,8 +80,6 @@ github.com/sergi/go-diff v1.4.0 h1:n/SP9D5ad1fORl+llWyN+D6qoUETXNZARKjyY2/KVCw=
 github.com/sergi/go-diff v1.4.0/go.mod h1:A0bzQcvG0E7Rwjx0REVgAGH58e96+X0MeOfepqsbeW4=
 github.com/sirupsen/logrus v1.9.3 h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=
 github.com/sirupsen/logrus v1.9.3/go.mod h1:naHLuLoDiP4jHNo9R0sCBMtWGeIprob74mVsIT4qYEQ=
-github.com/skyterra/y-crdt v0.0.0-20260107060929-f10fac5b9f26 h1:wThuC5t7/Y1k2xTGvIBx0PwsOpPguDvSwGPstywfRWE=
-github.com/skyterra/y-crdt v0.0.0-20260107060929-f10fac5b9f26/go.mod h1:CIYoN3lzie2UwAyFBDilfjpFlHtA1DThnt3RhlKrDAk=
 github.com/smartystreets/assertions v1.2.0 h1:42S6lae5dvLc7BrLu/0ugRtcFVjoJNMC/N3yZFZkDFs=
 github.com/smartystreets/assertions v1.2.0/go.mod h1:tcbTF8ujkAEcZ8TElKY+i30BzYlVhC/LOxJk7iOWnoo=
 github.com/smartystreets/goconvey v1.7.2 h1:9RBaZCeXEQ3UselpuwUQHltGVXvdwm6cv1hgR6gDIPg=

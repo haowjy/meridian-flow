@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	ycrdt "github.com/skyterra/y-crdt"
+	ycrdt "github.com/haowjy/y-crdt"
 	"golang.org/x/net/websocket"
 	"meridian/internal/domain"
 	"meridian/internal/httputil"
