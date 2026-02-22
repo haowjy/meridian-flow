@@ -39,3 +39,6 @@ backend/orchestrator
 # Tool-local caches
 .playwright-mcp/
 .codex-local/
+
+# Hidden local scratch artifacts
+.scratch/
