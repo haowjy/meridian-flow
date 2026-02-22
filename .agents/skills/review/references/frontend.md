@@ -175,6 +175,42 @@ This is fundamentally different from conditional rendering (`{active && <Compone
 
 **What goes wrong**: Using `{active && <Component />}` destroys component state on every tab switch — scroll resets, editors re-initialize, WebSocket reconnects. Using CSS `visibility: hidden` or `display: none` doesn't pause effects (hidden views keep fetching, streaming, running timers).
 
+## Offline Sync: Transport-Specific, Not Generic
+
+**Why**: The frontend has five offline/retry subsystems that look similar ("buffer → flush → retry") but use different transports with fundamentally different failure modes. A shared `OfflineQueue<T>` abstraction would need so many configuration callbacks that each usage would be more verbose than the standalone code. The domain-specific logic (retry strategy, error classification, flush trigger) is where all the complexity lives — the ~20 lines of shared boilerplate (timer + online listener) isn't worth abstracting.
+
+**The subsystems**:
+
+| Subsystem | Transport | Storage | Why it's different |
+|-----------|-----------|---------|-------------------|
+| Document saves | HTTP | IndexedDB `pendingDocumentSaves` | Last-write-wins, no backoff |
+| Tree ops | HTTP | IndexedDB `pendingTreeOps` | Op coalescing, 409 conflict → refresh tree |
+| Yjs doc sync | WebSocket | Y.Doc + y-indexeddb | CRDTs handle merge automatically |
+| Pending rejects | WebSocket | In-memory Set | Ephemeral, immediate flush on `doc:subscribed` |
+| Proposal cache | Local only | IndexedDB `proposalUpdates` | Write-through cache, not a queue at all |
+
+**The pattern** (convention, not shared code):
+1. **Concurrency guard**: `if (draining) return; draining = true; try {...} finally { draining = false; }`
+2. **Init/cleanup API**: Export `init()`, `cleanup()`; register in SyncProvider
+3. **Failure classification**: Transient (network/5xx) → keep/retry; Permanent (4xx) → drop + log
+4. **Fire-and-forget for non-critical**: IndexedDB writes in proposal cache don't block event handlers
+5. **Staleness guards**: Check intent flags / sequence counters after async ops before writing state
+
+**What goes wrong**: Trying to force these into a shared generic queue. Adding IndexedDB persistence to ephemeral WS buffers (unnecessary — collab session re-initializes on reload). Using the same retry strategy across transports (HTTP needs backoff; WS commands flush immediately on subscribe ack).
+
+**See**: `_docs/technical/frontend/architecture/sync-system.md` for full architecture with diagrams.
+
+## Expensive Derivation Gating
+
+**Why**: Review derivation (clone Y.Doc + apply + normalize per proposal) is O(N×D) per keystroke when driven by a revision counter. Unguarded derivation causes visible jank on large documents with many proposals. The same pattern applies to any `useMemo` that depends on a "recompute on every text change" counter.
+
+**The pattern**:
+1. **Gate the revision bump**: Only bump `setReviewRevision` when proposals actually exist (`proposalManager.hasProposals()`) — avoids triggering the entire derivation pipeline during normal typing
+2. **Early-return empty**: In the `useMemo`, early-return `EMPTY_*` when `proposals.size === 0` — second line of defense, eliminates derivation loop overhead even if the counter bumps
+3. **Check output before dispatch**: Before dispatching to CM6 (e.g., `setReviewHunksEffect`), compute a signature of the output and skip dispatch if unchanged — prevents unnecessary StateField updates and decoration rebuilds
+
+**What goes wrong**: Bumping a revision counter on every keystroke without gating triggers `useMemo` recompute → CM6 dispatch → full decoration rebuild, even when the derived output is identical. Each derivation pass clones the entire Y.Doc.
+
 ## CSS: Use cn() for Class Merging
 
 **Why**: All conditional Tailwind classes must go through `cn()` (which is `clsx` + `twMerge`). This resolves utility conflicts — `cn("px-2", condition && "px-4")` outputs `px-4`, not both.

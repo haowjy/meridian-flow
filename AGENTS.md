@@ -209,11 +209,11 @@ Token refresh is agent-authorized. See `backend/CLAUDE.md` -> "Smoke Testing" fo
 
 ### Long-Running Tasks
 
-For multi-phase plans, use the `/orchestrate` skill interactively. It launches agents via `run-agent.sh` to implement plans autonomously. See the orchestrate plugin's SKILL.md for full details.
+For multi-phase plans, use the `/orchestrate` skill interactively. It discovers available skills, picks the right model for each subtask, and composes runs via `run-agent.sh`. See the orchestrate skill's SKILL.md for full details.
 
 **Install:** `/plugin marketplace add jimmyyao/orchestrate` (Claude Code)
-**Agent definitions:** `agents/*.md` in the orchestrate plugin — model, tools, prompt per agent.
-**Skills:** `*/SKILL.md` under your skills directory — reusable instruction bundles.
+**Skills:** `*/SKILL.md` under `.orchestrate/skills/` — self-describing building blocks discovered at runtime.
+**Model guidance:** `model-guidance` skill — model strengths, task-type heuristics, and skill-composition patterns.
 
 ### Plan Execution
 
@@ -221,14 +221,17 @@ When a plan file exists (`.claude/plans/*.md` or `_docs/plans/**/*.md`):
 
 - **Multi-slice plans** (3+ slices or cross-cutting changes): Execute via `/orchestrate <plan-file>`. Never implement multi-slice plans directly.
 - **Single-slice plans**: Implement directly, following the plan's scope and acceptance criteria.
-- **Check for in-progress orchestrations**: Read `.claude/skills/orchestrate/.session/plans/` for handoff files before starting fresh.
+- **Check for in-progress orchestrations**: Read `.orchestrate/session/plans/` for handoff files before starting fresh.
 
-### Agent Preferences
+### Model Selection
 
-**Prefer Codex (`research-codex`) for most subagent tasks** — research, exploration, codebase analysis, and general investigation. Use Claude agents for:
-- Review passes (especially `review-thorough`, `review-adversarial`)
-- Frontend implementation and planning
-- Tasks requiring deep architectural reasoning
+The orchestrator dynamically selects models based on the `model-guidance` skill. General heuristics:
+- **Implementation**: `gpt-5.3-codex` (default), `claude-sonnet-4-6` (UI iteration), `claude-opus-4-6` (subtle correctness)
+- **Review**: Fan out to multiple model families for medium/high risk changes
+- **Research**: Use model diversity for different perspectives
+- **Commit**: `claude-haiku-4-5` for fast, clean messages
+
+See the `model-guidance` skill for detailed task-type heuristics and skill-composition patterns.
 
 ### Frontend
 
