@@ -200,6 +200,7 @@ func main() {
 	collabBroadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
 	collabSessionManager := serviceCollab.NewDocumentSessionManager(
 		collabStore,
+		collabStore, // also satisfies DocumentContentLoader (ISP)
 		logger,
 		cfg.CollabSnapshotIntervalUpdates,
 	)

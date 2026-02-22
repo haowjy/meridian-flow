@@ -43,9 +43,10 @@ func TestDocumentSessionLoadState_BootstrapsFromContentWhenStateEmpty(t *testing
 		bootstrapContent: "seed text",
 	}
 	session := &DocumentSession{
-		docID: "doc-bootstrap",
-		doc:   ycrdt.NewDoc("doc-bootstrap", true, ycrdt.DefaultGCFilter, nil, false),
-		store: store,
+		docID:         "doc-bootstrap",
+		doc:           ycrdt.NewDoc("doc-bootstrap", true, ycrdt.DefaultGCFilter, nil, false),
+		store:         store,
+		contentLoader: store,
 	}
 
 	if err := session.loadState(context.Background()); err != nil {
@@ -78,9 +79,10 @@ func TestDocumentSessionLoadState_EmptyStateAndEmptyContentNoop(t *testing.T) {
 		bootstrapContent: "",
 	}
 	session := &DocumentSession{
-		docID: "doc-empty",
-		doc:   ycrdt.NewDoc("doc-empty", true, ycrdt.DefaultGCFilter, nil, false),
-		store: store,
+		docID:         "doc-empty",
+		doc:           ycrdt.NewDoc("doc-empty", true, ycrdt.DefaultGCFilter, nil, false),
+		store:         store,
+		contentLoader: store,
 	}
 
 	if err := session.loadState(context.Background()); err != nil {
@@ -105,9 +107,10 @@ func TestDocumentSessionLoadState_ExistingStateSkipsBootstrapPath(t *testing.T) 
 		bootstrapContent: "should-not-load",
 	}
 	session := &DocumentSession{
-		docID: "doc-existing",
-		doc:   ycrdt.NewDoc("doc-existing", true, ycrdt.DefaultGCFilter, nil, false),
-		store: store,
+		docID:         "doc-existing",
+		doc:           ycrdt.NewDoc("doc-existing", true, ycrdt.DefaultGCFilter, nil, false),
+		store:         store,
+		contentLoader: store,
 	}
 
 	if err := session.loadState(context.Background()); err != nil {

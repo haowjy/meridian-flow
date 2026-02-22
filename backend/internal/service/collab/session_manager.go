@@ -29,6 +29,7 @@ type DocumentSessionManager struct {
 	mu                      sync.Mutex
 	sessions                map[string]*DocumentSession
 	store                   collabSvc.DocumentStore
+	contentLoader           collabSvc.DocumentContentLoader
 	logger                  *slog.Logger
 	snapshotIntervalUpdates int
 }
@@ -41,6 +42,7 @@ type DocumentSession struct {
 	docID                   string
 	doc                     *ycrdt.Doc
 	store                   collabSvc.DocumentStore
+	contentLoader           collabSvc.DocumentContentLoader
 	logger                  *slog.Logger
 	snapshotIntervalUpdates int
 
@@ -53,8 +55,10 @@ type DocumentSession struct {
 }
 
 // NewDocumentSessionManager creates the collab document runtime cache.
+// contentLoader is separated from store (ISP) — only session bootstrap needs it.
 func NewDocumentSessionManager(
 	store collabSvc.DocumentStore,
+	contentLoader collabSvc.DocumentContentLoader,
 	logger *slog.Logger,
 	snapshotIntervalUpdates int,
 ) *DocumentSessionManager {
@@ -65,6 +69,7 @@ func NewDocumentSessionManager(
 	return &DocumentSessionManager{
 		sessions:                make(map[string]*DocumentSession),
 		store:                   store,
+		contentLoader:           contentLoader,
 		logger:                  logger,
 		snapshotIntervalUpdates: snapshotIntervalUpdates,
 	}
@@ -84,6 +89,7 @@ func (m *DocumentSessionManager) Acquire(ctx context.Context, docID string) (*Do
 		docID:                   docID,
 		doc:                     ycrdt.NewDoc(docID, true, ycrdt.DefaultGCFilter, nil, false),
 		store:                   m.store,
+		contentLoader:           m.contentLoader,
 		logger:                  m.logger,
 		snapshotIntervalUpdates: m.snapshotIntervalUpdates,
 		refCount:                1,
@@ -286,7 +292,7 @@ func (s *DocumentSession) loadState(ctx context.Context) error {
 		return nil
 	}
 
-	bootstrapContent, err := s.store.LoadContentForBootstrap(ctx, s.docID)
+	bootstrapContent, err := s.contentLoader.LoadContentForBootstrap(ctx, s.docID)
 	if err != nil {
 		return fmt.Errorf("load bootstrap content: %w", err)
 	}
