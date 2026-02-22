@@ -10,7 +10,7 @@ import (
 
 // CollabCleanup runs periodic cleanup of expired auto snapshots.
 type CollabCleanup struct {
-	store    collabSvc.DocumentStore
+	store    collabSvc.SnapshotStore
 	ttlHours int
 	interval time.Duration
 	logger   *slog.Logger
@@ -20,7 +20,7 @@ type CollabCleanup struct {
 
 // NewCollabCleanup creates a new collab cleanup goroutine manager.
 func NewCollabCleanup(
-	store collabSvc.DocumentStore,
+	store collabSvc.SnapshotStore,
 	ttlHours int,
 	intervalMinutes int,
 	logger *slog.Logger,

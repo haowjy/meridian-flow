@@ -18,24 +18,26 @@ func (l *noopContentLoader) LoadContentForBootstrap(_ context.Context, _ string)
 	return "", nil
 }
 
-// testSubStore implements collab.DocumentStore minimally for subscription tests.
-type testSubStore struct{}
+type testSubStateStore struct{}
 
-func (s *testSubStore) LoadState(_ context.Context, _ string) ([]byte, error) { return nil, nil }
-func (s *testSubStore) SaveState(_ context.Context, _ string, _ []byte, _ string, _ string) error {
+func (s *testSubStateStore) LoadState(_ context.Context, _ string) ([]byte, error) { return nil, nil }
+func (s *testSubStateStore) SaveState(_ context.Context, _ string, _ []byte, _ string, _ string) error {
 	return nil
 }
-func (s *testSubStore) SaveSnapshot(_ context.Context, _ string, _ []byte, _ string, _ *string, _ *string) (string, error) {
+
+type testSubSnapshotStore struct{}
+
+func (s *testSubSnapshotStore) SaveSnapshot(_ context.Context, _ string, _ []byte, _ string, _ *string, _ *string) (string, error) {
 	return "", nil
 }
-func (s *testSubStore) ListSnapshots(_ context.Context, _ string, _, _ int) ([]collabModels.Snapshot, int, error) {
+func (s *testSubSnapshotStore) ListSnapshots(_ context.Context, _ string, _, _ int) ([]collabModels.Snapshot, int, error) {
 	return nil, 0, nil
 }
-func (s *testSubStore) GetSnapshot(_ context.Context, _ string) (*collabModels.SnapshotWithState, error) {
+func (s *testSubSnapshotStore) GetSnapshot(_ context.Context, _ string) (*collabModels.SnapshotWithState, error) {
 	return nil, nil
 }
-func (s *testSubStore) DeleteSnapshot(_ context.Context, _ string) error { return nil }
-func (s *testSubStore) DeleteExpiredAutoSnapshots(_ context.Context, _ int) (int64, error) {
+func (s *testSubSnapshotStore) DeleteSnapshot(_ context.Context, _ string) error { return nil }
+func (s *testSubSnapshotStore) DeleteExpiredAutoSnapshots(_ context.Context, _ int) (int64, error) {
 	return 0, nil
 }
 
@@ -51,7 +53,7 @@ func newSubLogger() *slog.Logger {
 
 func TestSubscriptionService_SubscribeIdempotent(t *testing.T) {
 	logger := newSubLogger()
-	sessionMgr := serviceCollab.NewDocumentSessionManager(&testSubStore{}, &noopContentLoader{}, logger, 500)
+	sessionMgr := serviceCollab.NewDocumentSessionManager(&testSubStateStore{}, &testSubSnapshotStore{}, &noopContentLoader{}, logger, 500)
 	broadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
 	svc := serviceCollab.NewSubscriptionService(sessionMgr, broadcaster, logger, 10)
 
@@ -92,7 +94,7 @@ func TestSubscriptionService_SubscribeIdempotent(t *testing.T) {
 
 func TestSubscriptionService_LimitExceeded(t *testing.T) {
 	logger := newSubLogger()
-	sessionMgr := serviceCollab.NewDocumentSessionManager(&testSubStore{}, &noopContentLoader{}, logger, 500)
+	sessionMgr := serviceCollab.NewDocumentSessionManager(&testSubStateStore{}, &testSubSnapshotStore{}, &noopContentLoader{}, logger, 500)
 	broadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
 	svc := serviceCollab.NewSubscriptionService(sessionMgr, broadcaster, logger, 3)
 
@@ -120,7 +122,7 @@ func TestSubscriptionService_LimitExceeded(t *testing.T) {
 
 func TestSubscriptionService_UnsubscribeAndResubscribe(t *testing.T) {
 	logger := newSubLogger()
-	sessionMgr := serviceCollab.NewDocumentSessionManager(&testSubStore{}, &noopContentLoader{}, logger, 500)
+	sessionMgr := serviceCollab.NewDocumentSessionManager(&testSubStateStore{}, &testSubSnapshotStore{}, &noopContentLoader{}, logger, 500)
 	broadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
 	svc := serviceCollab.NewSubscriptionService(sessionMgr, broadcaster, logger, 10)
 
@@ -161,7 +163,7 @@ func TestSubscriptionService_UnsubscribeAndResubscribe(t *testing.T) {
 
 func TestSubscriptionService_UnsubscribeAll(t *testing.T) {
 	logger := newSubLogger()
-	sessionMgr := serviceCollab.NewDocumentSessionManager(&testSubStore{}, &noopContentLoader{}, logger, 500)
+	sessionMgr := serviceCollab.NewDocumentSessionManager(&testSubStateStore{}, &testSubSnapshotStore{}, &noopContentLoader{}, logger, 500)
 	broadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
 	svc := serviceCollab.NewSubscriptionService(sessionMgr, broadcaster, logger, 10)
 

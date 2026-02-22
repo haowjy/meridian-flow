@@ -20,7 +20,7 @@ func TestAIContentProjectorListPendingProposals_DeterministicOrder(t *testing.T)
 	p2 := collabModels.Proposal{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), DocumentID: docID, Status: collabModels.ProposalStatusProposed, CreatedAt: now.Add(2 * time.Minute)}
 
 	projector := &AIContentProjector{
-		documentStore:   &fakeProjectorDocumentStore{},
+		stateStore:      &fakeProjectorStateStore{},
 		proposalStore:   &fakeProjectorProposalStore{listByDocument: []collabModels.Proposal{p3, p1, p2}},
 		proposalRuntime: &fakeProjectorRuntime{},
 	}
@@ -43,7 +43,7 @@ func TestAIContentProjectorRecompute_UsesInMemorySnapshotAndPendingProposals(t *
 	updatedState := mustBuildDocState(t, "hello world")
 	expectedAIContent := applyStateSequenceToContent(t, baseState, updatedState)
 
-	docStore := &fakeProjectorDocumentStore{}
+	docStore := &fakeProjectorStateStore{}
 	proposalStore := &fakeProjectorProposalStore{
 		listByDocument: []collabModels.Proposal{
 			{
@@ -86,7 +86,7 @@ func TestAIContentProjectorRecompute_FallsBackToPersistedState(t *testing.T) {
 	docID := uuid.New()
 	baseState := mustBuildDocState(t, "persisted")
 
-	docStore := &fakeProjectorDocumentStore{loadedState: baseState}
+	docStore := &fakeProjectorStateStore{loadedState: baseState}
 	proposalStore := &fakeProjectorProposalStore{}
 	runtime := &fakeProjectorRuntime{found: false}
 	projector := NewAIContentProjector(docStore, proposalStore, runtime)
@@ -120,7 +120,7 @@ func (r *fakeProjectorRuntime) GetStateSnapshot(_ context.Context, _ uuid.UUID) 
 	return r.snapshot, r.found, nil
 }
 
-type fakeProjectorDocumentStore struct {
+type fakeProjectorStateStore struct {
 	loadedState []byte
 
 	loadStateCalls int
@@ -132,12 +132,12 @@ type fakeProjectorDocumentStore struct {
 	savedAIContent string
 }
 
-func (s *fakeProjectorDocumentStore) LoadState(_ context.Context, _ string) ([]byte, error) {
+func (s *fakeProjectorStateStore) LoadState(_ context.Context, _ string) ([]byte, error) {
 	s.loadStateCalls++
 	return s.loadedState, nil
 }
 
-func (s *fakeProjectorDocumentStore) SaveState(
+func (s *fakeProjectorStateStore) SaveState(
 	_ context.Context,
 	docID string,
 	state []byte,
@@ -150,37 +150,6 @@ func (s *fakeProjectorDocumentStore) SaveState(
 	s.savedContent = content
 	s.savedAIContent = aiContent
 	return nil
-}
-
-func (s *fakeProjectorDocumentStore) SaveSnapshot(
-	_ context.Context,
-	_ string,
-	_ []byte,
-	_ string,
-	_ *string,
-	_ *string,
-) (string, error) {
-	return "", nil
-}
-
-func (s *fakeProjectorDocumentStore) ListSnapshots(
-	_ context.Context,
-	_ string,
-	_, _ int,
-) ([]collabModels.Snapshot, int, error) {
-	return nil, 0, nil
-}
-
-func (s *fakeProjectorDocumentStore) GetSnapshot(_ context.Context, _ string) (*collabModels.SnapshotWithState, error) {
-	return nil, nil
-}
-
-func (s *fakeProjectorDocumentStore) DeleteSnapshot(_ context.Context, _ string) error {
-	return nil
-}
-
-func (s *fakeProjectorDocumentStore) DeleteExpiredAutoSnapshots(_ context.Context, _ int) (int64, error) {
-	return 0, nil
 }
 
 type fakeProjectorProposalStore struct {

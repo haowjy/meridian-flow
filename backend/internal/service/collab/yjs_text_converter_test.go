@@ -6,10 +6,9 @@ import (
 
 	"github.com/google/uuid"
 	ycrdt "github.com/skyterra/y-crdt"
-	collabModels "meridian/internal/domain/models/collab"
 )
 
-// --- fake DocumentStore for tests ---
+// --- fake DocumentStateStore for tests ---
 
 type fakeConverterStore struct {
 	state []byte
@@ -21,24 +20,6 @@ func (s *fakeConverterStore) LoadState(_ context.Context, _ string) ([]byte, err
 
 func (s *fakeConverterStore) SaveState(context.Context, string, []byte, string, string) error {
 	return nil
-}
-
-func (s *fakeConverterStore) SaveSnapshot(context.Context, string, []byte, string, *string, *string) (string, error) {
-	return "", nil
-}
-
-func (s *fakeConverterStore) ListSnapshots(context.Context, string, int, int) ([]collabModels.Snapshot, int, error) {
-	return nil, 0, nil
-}
-
-func (s *fakeConverterStore) GetSnapshot(context.Context, string) (*collabModels.SnapshotWithState, error) {
-	return nil, nil
-}
-
-func (s *fakeConverterStore) DeleteSnapshot(context.Context, string) error { return nil }
-
-func (s *fakeConverterStore) DeleteExpiredAutoSnapshots(context.Context, int) (int64, error) {
-	return 0, nil
 }
 
 // --- helpers ---

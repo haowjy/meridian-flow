@@ -10,13 +10,13 @@ import (
 )
 
 // YjsTextConverter converts plain-text content into Yjs update bytes that are
-// ancestry-compatible with the live Y.Doc stored in DocumentStore.
+// ancestry-compatible with the live Y.Doc stored in DocumentStateStore.
 type YjsTextConverter struct {
-	store collabSvc.DocumentStore
+	store collabSvc.DocumentStateStore
 }
 
-// NewYjsTextConverter creates a converter backed by the given DocumentStore.
-func NewYjsTextConverter(store collabSvc.DocumentStore) *YjsTextConverter {
+// NewYjsTextConverter creates a converter backed by the given DocumentStateStore.
+func NewYjsTextConverter(store collabSvc.DocumentStateStore) *YjsTextConverter {
 	return &YjsTextConverter{store: store}
 }
 

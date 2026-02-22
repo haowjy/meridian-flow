@@ -18,8 +18,8 @@ type PostgresDocumentStore struct {
 }
 
 // NewDocumentStore creates a service-scoped document store.
-// Returns the concrete type so callers can use it as both DocumentStore
-// and DocumentContentLoader (ISP — separate interfaces, single implementation).
+// Returns the concrete type so callers can use it as DocumentStateStore,
+// SnapshotStore, and DocumentContentLoader (ISP — separate interfaces, single implementation).
 func NewDocumentStore(config *postgres.RepositoryConfig) *PostgresDocumentStore {
 	return &PostgresDocumentStore{
 		pool:   config.Pool,

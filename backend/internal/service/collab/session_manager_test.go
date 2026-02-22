@@ -48,7 +48,7 @@ func TestDocumentSessionLoadState_BootstrapsFromContentWhenStateEmpty(t *testing
 	session := &DocumentSession{
 		docID:         "doc-bootstrap",
 		doc:           ycrdt.NewDoc("doc-bootstrap", true, ycrdt.DefaultGCFilter, nil, false),
-		store:         store,
+		stateStore:    store,
 		contentLoader: store,
 	}
 
@@ -84,7 +84,7 @@ func TestDocumentSessionLoadState_EmptyStateAndEmptyContentNoop(t *testing.T) {
 	session := &DocumentSession{
 		docID:         "doc-empty",
 		doc:           ycrdt.NewDoc("doc-empty", true, ycrdt.DefaultGCFilter, nil, false),
-		store:         store,
+		stateStore:    store,
 		contentLoader: store,
 	}
 
@@ -112,7 +112,7 @@ func TestDocumentSessionLoadState_ExistingStateSkipsBootstrapPath(t *testing.T) 
 	session := &DocumentSession{
 		docID:         "doc-existing",
 		doc:           ycrdt.NewDoc("doc-existing", true, ycrdt.DefaultGCFilter, nil, false),
-		store:         store,
+		stateStore:    store,
 		contentLoader: store,
 	}
 
@@ -135,9 +135,10 @@ func TestDocumentSessionManagerApplyUpdate_OfflinePersistsAIContentWithContent(t
 	expectedContent := "offline ai apply content"
 	update := mustBuildSessionState(t, expectedContent)
 	store := &fakeSessionStore{state: []byte{}}
+	snapshotStore := &fakeSessionSnapshotStore{}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	manager := NewDocumentSessionManager(store, store, logger, 0)
+	manager := NewDocumentSessionManager(store, snapshotStore, store, logger, 0)
 
 	if err := manager.ApplyUpdate(context.Background(), uuid.New(), update, "ai_accept"); err != nil {
 		t.Fatalf("ApplyUpdate returned error: %v", err)
@@ -192,21 +193,23 @@ func (s *fakeSessionStore) SaveState(
 	return nil
 }
 
-func (s *fakeSessionStore) SaveSnapshot(_ context.Context, _ string, _ []byte, _ string, _ *string, _ *string) (string, error) {
+type fakeSessionSnapshotStore struct{}
+
+func (s *fakeSessionSnapshotStore) SaveSnapshot(_ context.Context, _ string, _ []byte, _ string, _ *string, _ *string) (string, error) {
 	return "", nil
 }
 
-func (s *fakeSessionStore) ListSnapshots(_ context.Context, _ string, _, _ int) ([]collabModels.Snapshot, int, error) {
+func (s *fakeSessionSnapshotStore) ListSnapshots(_ context.Context, _ string, _, _ int) ([]collabModels.Snapshot, int, error) {
 	return nil, 0, nil
 }
 
-func (s *fakeSessionStore) GetSnapshot(_ context.Context, _ string) (*collabModels.SnapshotWithState, error) {
+func (s *fakeSessionSnapshotStore) GetSnapshot(_ context.Context, _ string) (*collabModels.SnapshotWithState, error) {
 	return nil, nil
 }
 
-func (s *fakeSessionStore) DeleteSnapshot(_ context.Context, _ string) error { return nil }
+func (s *fakeSessionSnapshotStore) DeleteSnapshot(_ context.Context, _ string) error { return nil }
 
-func (s *fakeSessionStore) DeleteExpiredAutoSnapshots(_ context.Context, _ int) (int64, error) {
+func (s *fakeSessionSnapshotStore) DeleteExpiredAutoSnapshots(_ context.Context, _ int) (int64, error) {
 	return 0, nil
 }
 
