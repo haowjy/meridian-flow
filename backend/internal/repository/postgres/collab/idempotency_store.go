@@ -3,7 +3,6 @@ package collab
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,7 +18,6 @@ import (
 type PostgresIdempotencyStore struct {
 	pool   *pgxpool.Pool
 	tables *postgres.TableNames
-	logger *slog.Logger
 }
 
 // NewIdempotencyStore creates a new idempotency store.
@@ -27,7 +25,6 @@ func NewIdempotencyStore(config *postgres.RepositoryConfig) collabSvc.Idempotenc
 	return &PostgresIdempotencyStore{
 		pool:   config.Pool,
 		tables: config.Tables,
-		logger: config.Logger,
 	}
 }
 

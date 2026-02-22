@@ -3,7 +3,6 @@ package collab
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -20,7 +19,6 @@ import (
 type PostgresProposalStore struct {
 	pool   *pgxpool.Pool
 	tables *postgres.TableNames
-	logger *slog.Logger
 }
 
 // NewProposalStore creates a new proposal store.
@@ -28,7 +26,6 @@ func NewProposalStore(config *postgres.RepositoryConfig) collabSvc.ProposalStore
 	return &PostgresProposalStore{
 		pool:   config.Pool,
 		tables: config.Tables,
-		logger: config.Logger,
 	}
 }
 

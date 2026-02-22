@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/google/uuid"
@@ -19,14 +18,12 @@ import (
 type PostgresAutoAcceptStore struct {
 	pool   *pgxpool.Pool
 	tables *postgres.TableNames
-	logger *slog.Logger
 }
 
 func NewAutoAcceptStore(config *postgres.RepositoryConfig) collabSvc.AutoAcceptPolicyStore {
 	return &PostgresAutoAcceptStore{
 		pool:   config.Pool,
 		tables: config.Tables,
-		logger: config.Logger,
 	}
 }
 
