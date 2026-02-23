@@ -1,14 +1,17 @@
 package collab
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/google/uuid"
 	ycrdt "github.com/haowjy/y-crdt"
-	collabSvc "meridian/internal/domain/services/collab"
 )
+
+// ErrEditPositionMismatch is returned when the text at the edit position doesn't
+// match the expected OldText. This means the caller's position was computed against
+// different content than the state provided to TextToUpdate.
+var ErrEditPositionMismatch = errors.New("edit position mismatch: text at position does not match OldText")
 
 // TextEdit describes a targeted edit within the document content.
 // When provided to TextToUpdate, it enables positional delete+insert instead of
@@ -20,25 +23,17 @@ type TextEdit struct {
 	Position int    // byte offset of OldText in the current content
 }
 
-// YjsTextConverter converts plain-text content into Yjs update bytes that are
-// ancestry-compatible with the live Y.Doc stored in DocumentStateStore.
-type YjsTextConverter struct {
-	store collabSvc.DocumentStateStore
-}
-
-// NewYjsTextConverter creates a converter backed by the given DocumentStateStore.
-func NewYjsTextConverter(store collabSvc.DocumentStateStore) *YjsTextConverter {
-	return &YjsTextConverter{store: store}
-}
-
-// TextToUpdate loads the current Yjs state for documentID, diffs it against
-// newContent, and returns a relative Yjs update that transforms the current
-// state into newContent. Returns (nil, nil) when content is identical (no-op).
+// TextToUpdate diffs the given Yjs state against newContent and returns a
+// relative Yjs update that transforms the state into newContent.
+// Returns (nil, nil) when content is identical (no-op).
+//
+// The caller is responsible for providing the correct state bytes — typically
+// the projected state (base + pending proposals) so positions align with ai_content.
 //
 // If edit is provided, uses targeted positional diff (delete old at position,
 // insert new at position). Otherwise falls back to full-doc replacement for
 // backward compat.
-func (c *YjsTextConverter) TextToUpdate(ctx context.Context, documentID uuid.UUID, newContent string, edit *TextEdit) (update []byte, err error) {
+func TextToUpdate(state []byte, newContent string, edit *TextEdit) (update []byte, err error) {
 	// Panic recovery for all Yjs FFI calls (reuses safeEncodeStateAsUpdate pattern).
 	defer func() {
 		if r := recover(); r != nil {
@@ -47,12 +42,7 @@ func (c *YjsTextConverter) TextToUpdate(ctx context.Context, documentID uuid.UUI
 		}
 	}()
 
-	state, err := c.store.LoadState(ctx, documentID.String())
-	if err != nil {
-		return nil, fmt.Errorf("load yjs state: %w", err)
-	}
-
-	// Build base doc from persisted state to establish CRDT lineage.
+	// Build base doc from provided state to establish CRDT lineage.
 	baseDoc := ycrdt.NewDoc("base", true, ycrdt.DefaultGCFilter, nil, false)
 	if len(state) > 0 {
 		ycrdt.ApplyUpdate(baseDoc, state, "converter-base")
@@ -80,6 +70,19 @@ func (c *YjsTextConverter) TextToUpdate(ctx context.Context, documentID uuid.UUI
 	targetText := targetDoc.GetText("content")
 
 	if edit != nil {
+		// Defensive bounds check: position must be within content, and the text
+		// at that position must match OldText. Without this, a position computed
+		// against different content causes silent corruption or out-of-bounds panic.
+		if edit.Position < 0 || edit.Position+len(edit.OldText) > len(currentContent) {
+			return nil, fmt.Errorf("%w: position=%d oldTextLen=%d contentLen=%d",
+				ErrEditPositionMismatch, edit.Position, len(edit.OldText), len(currentContent))
+		}
+		actual := currentContent[edit.Position : edit.Position+len(edit.OldText)]
+		if actual != edit.OldText {
+			return nil, fmt.Errorf("%w: expected %q at position %d, found %q",
+				ErrEditPositionMismatch, edit.OldText, edit.Position, actual)
+		}
+
 		// Targeted positional diff: delete old text at position, insert new text.
 		// This produces a minimal CRDT update that merges correctly when multiple
 		// edits hit different regions of the same document.

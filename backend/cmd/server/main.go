@@ -209,6 +209,7 @@ func main() {
 		collabStore,
 		proposalStore,
 		collabSessionManager,
+		collabStore, // also satisfies DocumentContentLoader for bootstrap
 	)
 	sizeStrategy := serviceCollab.NewSizeThresholdStrategy(51200)
 	densityStrategy := serviceCollab.NewRecentChangeDensityStrategy(proposalStore, 5, 60*time.Second, logger)
@@ -229,9 +230,10 @@ func main() {
 
 	// Build mutation strategy for AI edits.
 	// CollabProposalStrategy creates collab proposals with Yjs updates and WS broadcasting.
-	yjsConverter := serviceCollab.NewYjsTextConverter(collabStore)
+	// aiContentProjector implements ProjectedStateBuilder — provides projected Yjs state
+	// (base + pending proposals) so edit positions align with ai_content.
 	proposalBroadcasterImpl := handler.NewProposalBroadcasterImpl(collabBroadcaster)
-	mutationStrategy := tools.NewCollabProposalStrategy(proposalService, proposalBroadcasterImpl, yjsConverter, logger)
+	mutationStrategy := tools.NewCollabProposalStrategy(proposalService, proposalBroadcasterImpl, aiContentProjector, logger)
 
 	// Setup LLM services (thread, thread history, streaming)
 	// docService and folderService are passed for tool write operations (SOLID: DIP)

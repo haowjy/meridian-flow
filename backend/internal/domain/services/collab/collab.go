@@ -129,6 +129,13 @@ type AIContentProjector interface {
 	Recompute(ctx context.Context, documentID uuid.UUID) error
 }
 
+// ProjectedStateBuilder builds Yjs state bytes that include pending proposals
+// applied on top of the base document state. Used by the mutation strategy so
+// the converter operates on the same content the text editor sees (ai_content).
+type ProjectedStateBuilder interface {
+	BuildProjectedState(ctx context.Context, documentID uuid.UUID) ([]byte, error)
+}
+
 // ProposalMutationIntent describes what should be broadcast after a successful proposal mutation.
 type ProposalMutationIntent struct {
 	DocumentID uuid.UUID

@@ -1,27 +1,12 @@
 package collab
 
 import (
-	"context"
+	"errors"
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
 	ycrdt "github.com/haowjy/y-crdt"
 )
-
-// --- fake DocumentStateStore for tests ---
-
-type fakeConverterStore struct {
-	state []byte
-}
-
-func (s *fakeConverterStore) LoadState(_ context.Context, _ string) ([]byte, error) {
-	return s.state, nil
-}
-
-func (s *fakeConverterStore) SaveState(context.Context, string, []byte, string, string) error {
-	return nil
-}
 
 // --- helpers ---
 
@@ -57,12 +42,10 @@ func applyAndRead(t *testing.T, baseState, update []byte) string {
 
 // --- tests (full-doc replacement, edit=nil) ---
 
-func TestYjsTextConverter_SimpleReplacement(t *testing.T) {
+func TestTextToUpdate_SimpleReplacement(t *testing.T) {
 	baseState := buildDocState(t, "hello world")
-	store := &fakeConverterStore{state: baseState}
-	conv := NewYjsTextConverter(store)
 
-	update, err := conv.TextToUpdate(context.Background(), uuid.New(), "hello Go", nil)
+	update, err := TextToUpdate(baseState, "hello Go", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -76,12 +59,10 @@ func TestYjsTextConverter_SimpleReplacement(t *testing.T) {
 	}
 }
 
-func TestYjsTextConverter_PureInsertion(t *testing.T) {
+func TestTextToUpdate_PureInsertion(t *testing.T) {
 	baseState := buildDocState(t, "hello")
-	store := &fakeConverterStore{state: baseState}
-	conv := NewYjsTextConverter(store)
 
-	update, err := conv.TextToUpdate(context.Background(), uuid.New(), "hello world", nil)
+	update, err := TextToUpdate(baseState, "hello world", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -95,12 +76,10 @@ func TestYjsTextConverter_PureInsertion(t *testing.T) {
 	}
 }
 
-func TestYjsTextConverter_PureDeletion(t *testing.T) {
+func TestTextToUpdate_PureDeletion(t *testing.T) {
 	baseState := buildDocState(t, "hello world")
-	store := &fakeConverterStore{state: baseState}
-	conv := NewYjsTextConverter(store)
 
-	update, err := conv.TextToUpdate(context.Background(), uuid.New(), "hello", nil)
+	update, err := TextToUpdate(baseState, "hello", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -114,15 +93,13 @@ func TestYjsTextConverter_PureDeletion(t *testing.T) {
 	}
 }
 
-func TestYjsTextConverter_MultiLine(t *testing.T) {
+func TestTextToUpdate_MultiLine(t *testing.T) {
 	original := "line one\nline two\nline three"
 	replacement := "line one\nline TWO\nline three\nline four"
 
 	baseState := buildDocState(t, original)
-	store := &fakeConverterStore{state: baseState}
-	conv := NewYjsTextConverter(store)
 
-	update, err := conv.TextToUpdate(context.Background(), uuid.New(), replacement, nil)
+	update, err := TextToUpdate(baseState, replacement, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -133,16 +110,14 @@ func TestYjsTextConverter_MultiLine(t *testing.T) {
 	}
 }
 
-func TestYjsTextConverter_Emoji(t *testing.T) {
+func TestTextToUpdate_Emoji(t *testing.T) {
 	// 🎉 is U+1F389 — a supplementary character (2 UTF-16 code units).
 	original := "hello 🎉 world"
 	replacement := "hello 🎉 Go 🚀"
 
 	baseState := buildDocState(t, original)
-	store := &fakeConverterStore{state: baseState}
-	conv := NewYjsTextConverter(store)
 
-	update, err := conv.TextToUpdate(context.Background(), uuid.New(), replacement, nil)
+	update, err := TextToUpdate(baseState, replacement, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -153,12 +128,10 @@ func TestYjsTextConverter_Emoji(t *testing.T) {
 	}
 }
 
-func TestYjsTextConverter_IdenticalContent(t *testing.T) {
+func TestTextToUpdate_IdenticalContent(t *testing.T) {
 	baseState := buildDocState(t, "no change")
-	store := &fakeConverterStore{state: baseState}
-	conv := NewYjsTextConverter(store)
 
-	update, err := conv.TextToUpdate(context.Background(), uuid.New(), "no change", nil)
+	update, err := TextToUpdate(baseState, "no change", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -167,13 +140,11 @@ func TestYjsTextConverter_IdenticalContent(t *testing.T) {
 	}
 }
 
-func TestYjsTextConverter_EmptyBase(t *testing.T) {
+func TestTextToUpdate_EmptyBase(t *testing.T) {
 	// Empty doc — no prior state.
 	baseState := buildDocState(t, "")
-	store := &fakeConverterStore{state: baseState}
-	conv := NewYjsTextConverter(store)
 
-	update, err := conv.TextToUpdate(context.Background(), uuid.New(), "brand new content", nil)
+	update, err := TextToUpdate(baseState, "brand new content", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -187,12 +158,10 @@ func TestYjsTextConverter_EmptyBase(t *testing.T) {
 	}
 }
 
-func TestYjsTextConverter_EmptyNew(t *testing.T) {
+func TestTextToUpdate_EmptyNew(t *testing.T) {
 	baseState := buildDocState(t, "delete me")
-	store := &fakeConverterStore{state: baseState}
-	conv := NewYjsTextConverter(store)
 
-	update, err := conv.TextToUpdate(context.Background(), uuid.New(), "", nil)
+	update, err := TextToUpdate(baseState, "", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -206,12 +175,9 @@ func TestYjsTextConverter_EmptyNew(t *testing.T) {
 	}
 }
 
-func TestYjsTextConverter_NilState(t *testing.T) {
-	// No persisted state at all (nil bytes).
-	store := &fakeConverterStore{state: nil}
-	conv := NewYjsTextConverter(store)
-
-	update, err := conv.TextToUpdate(context.Background(), uuid.New(), "new content", nil)
+func TestTextToUpdate_NilState(t *testing.T) {
+	// No persisted state at all (nil bytes) — full insert of newContent, no panic.
+	update, err := TextToUpdate(nil, "new content", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -225,7 +191,23 @@ func TestYjsTextConverter_NilState(t *testing.T) {
 	}
 }
 
-func TestYjsTextConverter_RoundTrip(t *testing.T) {
+func TestTextToUpdate_EmptyStateBytes(t *testing.T) {
+	// Empty byte slice (LoadState returns []byte{} for NULL yjs_state) — no panic.
+	update, err := TextToUpdate([]byte{}, "new content", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if update == nil {
+		t.Fatal("expected non-nil update")
+	}
+
+	got := applyAndRead(t, nil, update)
+	if got != "new content" {
+		t.Errorf("expected %q, got %q", "new content", got)
+	}
+}
+
+func TestTextToUpdate_RoundTrip(t *testing.T) {
 	// Multiple sequential edits, each building on the previous state.
 	steps := []string{
 		"initial content",
@@ -238,10 +220,7 @@ func TestYjsTextConverter_RoundTrip(t *testing.T) {
 	state := buildDocState(t, steps[0])
 
 	for i := 1; i < len(steps); i++ {
-		store := &fakeConverterStore{state: state}
-		conv := NewYjsTextConverter(store)
-
-		update, err := conv.TextToUpdate(context.Background(), uuid.New(), steps[i], nil)
+		update, err := TextToUpdate(state, steps[i], nil)
 		if err != nil {
 			t.Fatalf("step %d: unexpected error: %v", i, err)
 		}
@@ -266,11 +245,9 @@ func TestYjsTextConverter_RoundTrip(t *testing.T) {
 
 // --- tests (targeted positional diffs) ---
 
-func TestYjsTextConverter_PositionalEdit_Simple(t *testing.T) {
+func TestTextToUpdate_PositionalEdit_Simple(t *testing.T) {
 	content := "hello world"
 	baseState := buildDocState(t, content)
-	store := &fakeConverterStore{state: baseState}
-	conv := NewYjsTextConverter(store)
 
 	// Replace "world" with "Go" using positional edit
 	edit := &TextEdit{
@@ -280,7 +257,7 @@ func TestYjsTextConverter_PositionalEdit_Simple(t *testing.T) {
 	}
 
 	newContent := strings.Replace(content, "world", "Go", 1)
-	update, err := conv.TextToUpdate(context.Background(), uuid.New(), newContent, edit)
+	update, err := TextToUpdate(baseState, newContent, edit)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -294,12 +271,10 @@ func TestYjsTextConverter_PositionalEdit_Simple(t *testing.T) {
 	}
 }
 
-func TestYjsTextConverter_PositionalEdit_InsertAtEnd(t *testing.T) {
+func TestTextToUpdate_PositionalEdit_InsertAtEnd(t *testing.T) {
 	// This is the case that previously panicked with MinimizeAttributeChanges nil deref.
 	content := "hello"
 	baseState := buildDocState(t, content)
-	store := &fakeConverterStore{state: baseState}
-	conv := NewYjsTextConverter(store)
 
 	// Insert " world" at end (no old text to delete, just insert)
 	edit := &TextEdit{
@@ -308,7 +283,7 @@ func TestYjsTextConverter_PositionalEdit_InsertAtEnd(t *testing.T) {
 		Position: len(content),
 	}
 
-	update, err := conv.TextToUpdate(context.Background(), uuid.New(), "hello world", edit)
+	update, err := TextToUpdate(baseState, "hello world", edit)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -322,11 +297,9 @@ func TestYjsTextConverter_PositionalEdit_InsertAtEnd(t *testing.T) {
 	}
 }
 
-func TestYjsTextConverter_PositionalEdit_Emoji(t *testing.T) {
+func TestTextToUpdate_PositionalEdit_Emoji(t *testing.T) {
 	content := "hello 🎉 world"
 	baseState := buildDocState(t, content)
-	store := &fakeConverterStore{state: baseState}
-	conv := NewYjsTextConverter(store)
 
 	// Replace "world" (after emoji) with "Go 🚀"
 	edit := &TextEdit{
@@ -336,7 +309,7 @@ func TestYjsTextConverter_PositionalEdit_Emoji(t *testing.T) {
 	}
 
 	newContent := strings.Replace(content, "world", "Go 🚀", 1)
-	update, err := conv.TextToUpdate(context.Background(), uuid.New(), newContent, edit)
+	update, err := TextToUpdate(baseState, newContent, edit)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -347,7 +320,7 @@ func TestYjsTextConverter_PositionalEdit_Emoji(t *testing.T) {
 	}
 }
 
-func TestYjsTextConverter_PositionalEdit_ConcurrentDifferentSections(t *testing.T) {
+func TestTextToUpdate_PositionalEdit_ConcurrentDifferentSections(t *testing.T) {
 	// Simulate two str_replace calls in one turn targeting different sections.
 	// Both updates are generated against the SAME base state (the bug scenario).
 	// With positional diffs, they should merge correctly without duplication.
@@ -355,29 +328,25 @@ func TestYjsTextConverter_PositionalEdit_ConcurrentDifferentSections(t *testing.
 	baseState := buildDocState(t, content)
 
 	// Edit 1: replace "one" -> "ONE" in section one
-	store1 := &fakeConverterStore{state: baseState}
-	conv1 := NewYjsTextConverter(store1)
 	edit1 := &TextEdit{
 		OldText:  "one",
 		NewText:  "ONE",
 		Position: strings.Index(content, "one"),
 	}
 	newContent1 := strings.Replace(content, "one", "ONE", 1)
-	update1, err := conv1.TextToUpdate(context.Background(), uuid.New(), newContent1, edit1)
+	update1, err := TextToUpdate(baseState, newContent1, edit1)
 	if err != nil {
 		t.Fatalf("edit 1: unexpected error: %v", err)
 	}
 
 	// Edit 2: replace "three" -> "THREE" in section three (against SAME base)
-	store2 := &fakeConverterStore{state: baseState}
-	conv2 := NewYjsTextConverter(store2)
 	edit2 := &TextEdit{
 		OldText:  "three",
 		NewText:  "THREE",
 		Position: strings.LastIndex(content, "three"),
 	}
 	newContent2 := strings.Replace(content, "three", "THREE", 1)
-	update2, err := conv2.TextToUpdate(context.Background(), uuid.New(), newContent2, edit2)
+	update2, err := TextToUpdate(baseState, newContent2, edit2)
 	if err != nil {
 		t.Fatalf("edit 2: unexpected error: %v", err)
 	}
@@ -392,6 +361,66 @@ func TestYjsTextConverter_PositionalEdit_ConcurrentDifferentSections(t *testing.
 	want := "section ONE\nsection two\nsection THREE"
 	if got != want {
 		t.Errorf("concurrent edits produced wrong result:\nwant: %q\ngot:  %q", want, got)
+	}
+}
+
+// --- tests (bounds checking / anchor validation) ---
+
+func TestTextToUpdate_PositionalEdit_OutOfBounds(t *testing.T) {
+	content := "hello"
+	baseState := buildDocState(t, content)
+
+	edit := &TextEdit{
+		OldText:  "world",
+		NewText:  "Go",
+		Position: 10, // beyond content length
+	}
+
+	_, err := TextToUpdate(baseState, "hello Go", edit)
+	if err == nil {
+		t.Fatal("expected error for out-of-bounds position")
+	}
+	if !errors.Is(err, ErrEditPositionMismatch) {
+		t.Errorf("expected ErrEditPositionMismatch, got: %v", err)
+	}
+}
+
+func TestTextToUpdate_PositionalEdit_AnchorMismatch(t *testing.T) {
+	// Position is valid but text at that position doesn't match OldText.
+	// This simulates Bug 2: position computed against ai_content but state is base-only.
+	content := "hello world"
+	baseState := buildDocState(t, content)
+
+	edit := &TextEdit{
+		OldText:  "xyz", // not present at position 6
+		NewText:  "Go",
+		Position: 6,
+	}
+
+	_, err := TextToUpdate(baseState, "hello Go", edit)
+	if err == nil {
+		t.Fatal("expected error for anchor mismatch")
+	}
+	if !errors.Is(err, ErrEditPositionMismatch) {
+		t.Errorf("expected ErrEditPositionMismatch, got: %v", err)
+	}
+}
+
+func TestTextToUpdate_PositionalEdit_NegativePosition(t *testing.T) {
+	baseState := buildDocState(t, "hello")
+
+	edit := &TextEdit{
+		OldText:  "hello",
+		NewText:  "world",
+		Position: -1,
+	}
+
+	_, err := TextToUpdate(baseState, "world", edit)
+	if err == nil {
+		t.Fatal("expected error for negative position")
+	}
+	if !errors.Is(err, ErrEditPositionMismatch) {
+		t.Errorf("expected ErrEditPositionMismatch, got: %v", err)
 	}
 }
 
