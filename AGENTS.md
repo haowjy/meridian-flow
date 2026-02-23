@@ -184,8 +184,8 @@ FRONTEND_PORT=3001
 **Daily usage:**
 - Start: `./scripts/dev/setup.sh` (creates tmux session)
 - Restart backend: `./scripts/restart-server.sh`
-- Attach: `tmux attach -t <session-name>`
-- Session name = repo directory basename (e.g., `meridian-collab`)
+- Attach: `tmux attach -t <session_name>`
+- Session name = branch basename (e.g., `h_meridian_collab`)
 
 **Agent permissions:**
 - Claude CAN restart the backend server via: `./scripts/restart-server.sh`
@@ -212,7 +212,7 @@ Token refresh is agent-authorized. See `backend/CLAUDE.md` -> "Smoke Testing" fo
 For multi-phase plans, use the `/orchestrate` skill interactively. It discovers available skills, picks the right model for each subtask, and composes runs via `run-agent.sh`. See the orchestrate skill's SKILL.md for full details.
 
 **Install:** `/plugin marketplace add jimmyyao/orchestrate` (Claude Code)
-**Skills:** `*/SKILL.md` under `.orchestrate/skills/` — self-describing building blocks discovered at runtime.
+**Skills:** `*/SKILL.md` under `orchestrate/skills/` — self-describing building blocks discovered at runtime.
 **Model guidance:** `model-guidance` skill — model strengths, task-type heuristics, and skill-composition patterns.
 
 ### Plan Execution
