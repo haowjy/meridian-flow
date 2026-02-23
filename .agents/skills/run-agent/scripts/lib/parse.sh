@@ -1,34 +1,33 @@
 #!/usr/bin/env bash
-# lib/parse.sh — Usage display, agent .md parsing, argument parsing loop.
+# lib/parse.sh — Usage display and argument parsing.
 # Sourced by run-agent.sh; expects globals from the entrypoint.
 
 # ─── Usage ───────────────────────────────────────────────────────────────────
 
 usage() {
   cat <<'EOF'
-Usage: scripts/run-agent.sh [agent] [OPTIONS]
-
-  [agent]              Optional. Resolves to .orchestrate/agents/<name>.md
+Usage: run-agent.sh [OPTIONS]
 
 Options:
-  -m, --model MODEL    Model override (default: from agent definition)
-  -e, --effort EFFORT  low | medium | high (default: high)
-  -t, --tools TOOLS    Allowed tools, claude-only (default: "Read,Edit,Write,Bash,Glob,Grep")
-  -s, --skills LIST    Comma-separated skill names to load
-  -p, --prompt TEXT    Prompt text (can also pipe via stdin)
-  -v, --var KEY=VALUE  Template variable substitution (repeatable)
-  -f, --file PATH      Reference file/dir to list in prompt (repeatable)
-  -D, --detail LEVEL   Report detail level: brief | standard | detailed (default: standard)
-      --plan NAME      Shorthand: sets PLAN_FILE=$RUNS_DIR/plans/NAME/plan.md
-      --slice NAME     Shorthand: sets SLICE_FILE + SLICES_DIR (requires --plan)
-      --dry-run        Print composed prompt + CLI command, don't execute
-  -C, --cd DIR         Working directory for subprocess
-
-Environment:
-  ORCHESTRATE_ROOT         Canonical orchestrate root (default: <repo>/.orchestrate)
-  ORCHESTRATE_PLAN         Default plan name (inherited by --slice without --plan)
-  ORCHESTRATE_DEFAULT_CLI  Force all model routing to a specific CLI (claude, codex, opencode)
-  ORCHESTRATE_AGENT_DIR    Override agent definition directory (highest precedence)
+  -m, --model MODEL        Model to use (required unless fallback applies)
+  -V, --variant VARIANT    Model variant passed to harness (default: high)
+                           Presets: low, medium, high, xhigh, max
+                           Not all variants apply to all models.
+      --timeout M          Kill hung harness runs after M minutes (default: 15). Supports fractional minutes.
+      --agent NAME         Agent profile (passed to harness natively where supported)
+  -s, --skills LIST        Comma-separated skill names to load
+  -p, --prompt TEXT        Prompt text (can also pipe via stdin)
+      --session ID         Session ID for grouping related runs
+      --label K=V          Run metadata label (repeatable)
+  -v, --var KEY=VALUE      Template variable substitution (repeatable)
+  -f, --file PATH          Reference file/dir to list in prompt (repeatable)
+  -D, --detail LEVEL       Report detail level: brief | standard | detailed (default: standard)
+      --continue-run REF   Continue a previous run's harness session
+      --fork               Fork the session on continuation (default where supported)
+      --in-place           Resume without forking (always for Codex)
+      --dry-run            Print composed prompt + CLI command, don't execute
+  -C, --cd DIR             Working directory for subprocess
+  -h, --help               Show this help
 EOF
   exit 1
 }
@@ -67,89 +66,26 @@ preparse_work_dir_override() {
   fi
 }
 
-resolve_agent_file() {
-  local agent_name="$1"
-  local candidate
-  local -a dirs=()
+parse_label_kv() {
+  local raw="$1"
+  local key="${raw%%=*}"
+  local val="${raw#*=}"
 
-  if [[ -n "${ORCHESTRATE_AGENT_DIR:-}" ]]; then
-    dirs+=("$ORCHESTRATE_AGENT_DIR")
+  if [[ "$raw" != *=* ]]; then
+    echo "ERROR: --label requires KEY=VALUE (got: $raw)" >&2
+    exit 1
   fi
-  dirs+=("$AGENTS_DIR")
-
-  for candidate_dir in "${dirs[@]}"; do
-    candidate="$candidate_dir/$agent_name.md"
-    if [[ -f "$candidate" ]]; then
-      echo "$candidate"
-      return 0
-    fi
-  done
-
-  return 1
-}
-
-# ─── Agent .md Parsing ──────────────────────────────────────────────────────
-# Parses YAML frontmatter between --- delimiters. Body after second --- = prompt.
-
-parse_agent_md() {
-  local file="$1"
-  local in_frontmatter=false
-  local past_frontmatter=false
-  local frontmatter=""
-  local body=""
-
-  while IFS= read -r line; do
-    if [[ "$past_frontmatter" == true ]]; then
-      body+="$line"$'\n'
-    elif [[ "$line" == "---" ]]; then
-      if [[ "$in_frontmatter" == true ]]; then
-        past_frontmatter=true
-      else
-        in_frontmatter=true
-      fi
-    elif [[ "$in_frontmatter" == true ]]; then
-      frontmatter+="$line"$'\n'
-    fi
-  done < "$file"
-
-  # Parse frontmatter fields (simple YAML key: value)
-  local val
-
-  val=$(echo "$frontmatter" | grep -E '^model:' | head -1 | sed 's/^model:[[:space:]]*//' || true)
-  [[ -n "$val" ]] && [[ "$MODEL_FROM_CLI" == false ]] && MODEL="$val"
-
-  val=$(echo "$frontmatter" | grep -E '^tools:' | head -1 | sed 's/^tools:[[:space:]]*//' || true)
-  [[ -n "$val" ]] && [[ "$TOOLS_FROM_CLI" == false ]] && TOOLS="$val"
-
-  val=$(echo "$frontmatter" | grep -E '^effort:' | head -1 | sed 's/^effort:[[:space:]]*//' || true)
-  [[ -n "$val" ]] && [[ "$EFFORT_FROM_CLI" == false ]] && EFFORT="$val"
-
-  # Skills: YAML list (  - name) or inline [name1, name2]
-  local skills_raw
-  skills_raw=$(echo "$frontmatter" | sed -n '/^skills:/,/^[^ -]/{ /^skills:/d; /^[^ -]/d; p; }' || true)
-  if [[ -n "$skills_raw" ]]; then
-    while IFS= read -r sline; do
-      sline=$(echo "$sline" | sed 's/^[[:space:]]*-[[:space:]]*//' | xargs)
-      [[ -n "$sline" ]] && SKILLS+=("$sline")
-    done <<< "$skills_raw"
-  else
-    # Try inline format: skills: [review, plan-slice] or skills: []
-    val=$(echo "$frontmatter" | grep -E '^skills:' | head -1 | sed 's/^skills:[[:space:]]*//' || true)
-    if [[ "$val" =~ ^\[.*\]$ ]]; then
-      val="${val#[}"
-      val="${val%]}"
-      val=$(echo "$val" | sed 's/,/ /g; s/"//g; s/'\''//g')
-      for s in $val; do
-        s=$(echo "$s" | xargs)
-        [[ -n "$s" ]] && SKILLS+=("$s")
-      done
-    fi
+  if [[ -z "$key" || -z "$val" ]]; then
+    echo "ERROR: --label requires non-empty KEY and VALUE (got: $raw)" >&2
+    exit 1
+  fi
+  if [[ ! "$key" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo "ERROR: Invalid label key '$key'. Allowed: letters, numbers, dot, underscore, dash." >&2
+    exit 1
   fi
 
-  # Body after frontmatter = agent prompt
-  if [[ -n "$body" ]]; then
-    AGENT_PROMPT="$body"
-  fi
+  LABELS["$key"]="$val"
+  HAS_LABELS=true
 }
 
 # ─── Argument Parsing ────────────────────────────────────────────────────────
@@ -157,22 +93,6 @@ parse_agent_md() {
 parse_args() {
   preparse_work_dir_override "$@"
   refresh_orchestrate_paths_from_workdir
-
-  # First arg might be an agent name (not starting with -)
-  if [[ $# -gt 0 && "${1:0:1}" != "-" ]]; then
-    AGENT_NAME="$1"
-    shift
-  fi
-
-  if [[ -n "$AGENT_NAME" ]]; then
-    AGENT_FILE="$(resolve_agent_file "$AGENT_NAME" || true)"
-    if [[ ! -f "$AGENT_FILE" ]]; then
-      echo "ERROR: Agent not found: $AGENT_NAME" >&2
-      echo "Checked: ORCHESTRATE_AGENT_DIR, $AGENTS_DIR" >&2
-      exit 1
-    fi
-    parse_agent_md "$AGENT_FILE"
-  fi
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -182,16 +102,20 @@ parse_args() {
         MODEL_FROM_CLI=true
         shift 2
         ;;
-      -e|--effort)
+      -V|--variant)
         require_option_value "$1" "$#"
-        EFFORT="$2"
-        EFFORT_FROM_CLI=true
+        VARIANT="$2"
+        VARIANT_FROM_CLI=true
         shift 2
         ;;
-      -t|--tools)
+      --timeout)
         require_option_value "$1" "$#"
-        TOOLS="$2"
-        TOOLS_FROM_CLI=true
+        TIMEOUT_MINUTES="$2"
+        shift 2
+        ;;
+      --agent)
+        require_option_value "$1" "$#"
+        AGENT_NAME="$2"
         shift 2
         ;;
       -s|--skills)
@@ -202,7 +126,21 @@ parse_args() {
         ;;
       -p|--prompt)
         require_option_value "$1" "$#"
-        CLI_PROMPT="$2"
+        if [[ "$2" == "-" ]]; then
+          CLI_PROMPT=""
+        else
+          CLI_PROMPT="$2"
+        fi
+        shift 2
+        ;;
+      --session)
+        require_option_value "$1" "$#"
+        SESSION_ID="$2"
+        shift 2
+        ;;
+      --label)
+        require_option_value "$1" "$#"
+        parse_label_kv "$2"
         shift 2
         ;;
       -f|--file)
@@ -226,20 +164,24 @@ parse_args() {
         esac
         shift 2
         ;;
-      --plan)
+      --continue-run)
         require_option_value "$1" "$#"
-        PLAN_NAME="$2"
+        CONTINUE_RUN_REF="$2"
         shift 2
         ;;
-      --slice)
-        require_option_value "$1" "$#"
-        SLICE_NAME="$2"
-        shift 2
+      --fork)
+        CONTINUATION_FORK=true
+        CONTINUATION_FORK_EXPLICIT=true
+        shift
+        ;;
+      --in-place)
+        CONTINUATION_FORK=false
+        CONTINUATION_FORK_EXPLICIT=true
+        shift
         ;;
       --dry-run) DRY_RUN=true; shift ;;
       -C|--cd)
-        require_option_value "$1" "$#"
-        WORK_DIR="$2"
+        # Already handled by preparse; skip here.
         shift 2
         ;;
       -h|--help)    usage ;;
@@ -250,83 +192,41 @@ parse_args() {
     esac
   done
 
-  expand_plan_slice_shorthand
-
-  # ─── Read prompt from stdin if not provided via -p ─────────────────────────
+  # Read prompt from stdin if not provided via -p
   if [[ -z "$CLI_PROMPT" ]] && [[ ! -t 0 ]]; then
     CLI_PROMPT="$(cat)"
   fi
 
-  # Agent prompt from .md body + optional CLI prompt/stdin
-  if [[ -n "$AGENT_PROMPT" ]] && [[ -n "$CLI_PROMPT" ]]; then
-    PROMPT="${AGENT_PROMPT}${CLI_PROMPT}"
-  elif [[ -n "$AGENT_PROMPT" ]]; then
-    PROMPT="$AGENT_PROMPT"
-  else
-    PROMPT="$CLI_PROMPT"
-  fi
-}
-
-expand_plan_slice_shorthand() {
-  # Inherit plan from orchestrator env if not set via CLI flag
-  if [[ -z "$PLAN_NAME" ]] && [[ -n "${ORCHESTRATE_PLAN:-}" ]]; then
-    PLAN_NAME="$ORCHESTRATE_PLAN"
-  fi
-
-  # --slice without --plan is an error
-  if [[ -n "$SLICE_NAME" ]] && [[ -z "$PLAN_NAME" ]]; then
-    echo "ERROR: --slice requires --plan (or set ORCHESTRATE_PLAN env var)." >&2
-    exit 1
-  fi
-
-  [[ -z "$PLAN_NAME" ]] && return
-
-  # --plan X → PLAN_FILE=$RUNS_DIR/plans/X/plan.md (explicit -v wins)
-  if [[ -z "${VARS[PLAN_FILE]:-}" ]]; then
-    VARS[PLAN_FILE]="$RUNS_DIR/plans/$PLAN_NAME/plan.md"
-    HAS_VARS=true
-  fi
-
-  # --plan X --slice Y → SLICE_FILE + SLICES_DIR (explicit -v wins)
-  if [[ -n "$SLICE_NAME" ]]; then
-    if [[ -z "${VARS[SLICE_FILE]:-}" ]]; then
-      VARS[SLICE_FILE]="$RUNS_DIR/plans/$PLAN_NAME/slices/$SLICE_NAME/slice.md"
-      HAS_VARS=true
-    fi
-    if [[ -z "${VARS[SLICES_DIR]:-}" ]]; then
-      VARS[SLICES_DIR]="$RUNS_DIR/plans/$PLAN_NAME/slices/$SLICE_NAME"
-      HAS_VARS=true
-    fi
-  fi
+  PROMPT="$CLI_PROMPT"
 }
 
 validate_args() {
-  # ── Model fallback ─────────────────────────────────────────────────────────
-  # If no model was specified (neither CLI -m nor agent definition), fall back
-  # to FALLBACK_MODEL so ad-hoc runs don't fail with a cryptic error.
+  if [[ -n "${TIMEOUT_MINUTES:-}" ]]; then
+    if ! [[ "$TIMEOUT_MINUTES" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+      echo "ERROR: --timeout must be a non-negative number of minutes (got: $TIMEOUT_MINUTES)" >&2
+      exit 1
+    fi
+  fi
+
+  # Model fallback
   if [[ -z "$MODEL" ]]; then
     echo "[run-agent] WARNING: No model specified; falling back to $FALLBACK_MODEL" >&2
     MODEL="$FALLBACK_MODEL"
   fi
 
-  # Advisory: warn early if the routed CLI isn't installed (build_cli_command handles actual fallback).
+  # Advisory: warn early if the routed CLI isn't installed.
   local routed_cli
   routed_cli="$(route_model "$MODEL" 2>/dev/null || echo "")"
   if [[ -n "$routed_cli" ]] && ! command -v "$routed_cli" >/dev/null 2>&1; then
     echo "[run-agent] WARNING: '$routed_cli' not installed for model '$MODEL'; will fall back to $FALLBACK_MODEL ($FALLBACK_CLI)" >&2
   fi
 
-  if [[ -z "$PROMPT" ]] && [[ ${#SKILLS[@]} -eq 0 ]]; then
-    echo "ERROR: No prompt or skills specified. Use -p, -s, or an agent with a prompt." >&2
+  if [[ -z "$PROMPT" ]] && [[ ${#SKILLS[@]} -eq 0 ]] && [[ -z "${CONTINUE_RUN_REF:-}" ]]; then
+    echo "ERROR: No prompt or skills specified. Use -p, -s, or --continue-run." >&2
     exit 1
   fi
 
-  # Validate that template variables referenced in the prompt are not empty.
-  # Empty vars cause scope_root to resolve to "/" which breaks mkdir.
-  #
-  # Common caller mistake: passing -v KEY="$SHELL_VAR" where SHELL_VAR was set
-  # as a command-line prefix (VAR=x ./run-agent.sh) without export, so it never
-  # expands and arrives here as a literal empty string.
+  # Validate template variables are not empty.
   if [[ "$HAS_VARS" == true ]]; then
     local key val
     for key in "${!VARS[@]}"; do

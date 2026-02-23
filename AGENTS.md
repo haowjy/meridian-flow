@@ -6,17 +6,9 @@ This file provides guidance when working with the code in this repository.
 
 Meridian is an agentic writing platform for writers, starting with fiction writers who manage 100+ chapter web serials, but being inclusive for any kind of writer.
 
-**Current Status:**
-- ✅ Backend (Go + net/http + PostgreSQL): File system complete, Auth complete (JWT/JWKS), Thread/LLM in progress (Anthropic provider working, streaming complete)
-- ✅ Frontend (Vite + TanStack Router + CodeMirror): Document editor complete, Thread UI complete
-
 For product details, see `_docs/high-level/1-overview.md`.
 
-## Concepts
-
-- **Plan** — the overall goal document describing what to build
-- **Slice** — a self-contained unit of work that ends in a commit. The codebase must be in a working state after each slice. Slices can be large (a cross-cutting refactor is fine) as long as they are self-contained
-- **Task** — a small tracked work item within a slice, managed via the built-in TaskCreate/TaskUpdate/TaskList tools. No separate commits or logs needed
+There are no users and there is no real user data. No need for backwards compatibility. It's okay to completely change the schema to get it into the right shape.
 
 ## Product Philosophy
 
@@ -26,7 +18,7 @@ See `frontend/CLAUDE.md` for UI-specific implementation of this philosophy.
 
 ## Guiding Principles for Development
 
-ALWAYS FOLLOW SOLID PRINCIPLES. 
+ALWAYS FOLLOW SOLID PRINCIPLES.
 ALWAYS ENSURE THERE IS A PLAN APPROVED BY THE USER BEFORE IMPLEMENTING ANYTHING GREATER THAN A FEW LINES OF CODE. This is to make sure a developer understands the situation and knows whats happening to the system. You should also make sure to follow [[## Before Writing New Code]] 
 
 ### SOLID Quick Reference
@@ -37,74 +29,23 @@ ALWAYS ENSURE THERE IS A PLAN APPROVED BY THE USER BEFORE IMPLEMENTING ANYTHING 
 - **ISP**: Split large interfaces (Reader vs Writer, Metadata vs CRUD)
 - **DIP**: Depend on interfaces, not concrete types (especially for external services)
 
-1. **Start Simple, Stay Simple**
-   - Write the simplest thing that could work
-   - Add complexity only when necessary
-   - Regularly refactor to remove unnecessary complexity
-   - Delete dead code — it's easier to clean up now than later
-
-2. **Make Correctness Obvious**
-   - Code should make bugs impossible or obvious
-   - Use types to prevent invalid states
-   - Fail fast and loudly (don't swallow errors)
-
-3. **One Thing At A Time**
-   - Don't optimize and add features simultaneously
-   - Test each change before moving on
-   - Small, incremental changes are easier to debug
-
-4. **Explicit Over Implicit**
-   - `hasUserEdit` flag > trying to detect user edits
-   - `content !== undefined` > `content` (falsy check)
-   - Direct sync > background queue
-
-5. **Design for Debuggability**
-   - Clear console logs at key decision points
-   - Helper functions to inspect state (`getRetryQueueState()`)
-   - Predictable, deterministic behavior
-
-6. **Guard Against Races**
-   - Add locks/flags to prevent concurrent execution
-   - Use intent flags to coordinate subsystems
-   - Cancel stale operations proactively
-
-7. **Treat Empty as Valid**
-   - Empty string `""` is valid data
-   - Empty array `[]` is valid data
-   - Only `undefined`/`null` means "absent"
-
-8. **Comment the "Weird" and the "WHY"**
+2. **Comment the "Weird" and the "WHY"**
    - anything that is not obvious, comment why.
    - If it needs a guard, comment why
    - If it prevents a race, explain the race
    - If you had to debug it, future you will too
 
-9. **Keep Documentation Up-to-Date** - Update documentation AFTER finalizing changes. See "Feature Documentation Sync Rule" for feature documentation workflow.
+3. **Keep Documentation Up-to-Date** - Update documentation AFTER finalizing changes. See "Feature Documentation Sync Rule" for feature documentation workflow.
 
 ## Before Writing New Code
 
-1. **Search for existing patterns** - Before implementing, search for similar implementations:
-   - Hooks: `grep -r "use<Similar>" frontend/src/`
-   - Services: Check `backend/internal/service/` for similar business logic
-   - Repositories: Check existing repos for query patterns
-   - Components: Search `frontend/src/features/` for similar UI patterns
+1. **Search for existing patterns** - Before implementing, search for similar implementations
 
 2. **Reuse over recreate** - If a pattern exists, use it. If it's close but not quite right, extend it.
 
-3. **Check shared utilities** - Before writing a helper:
-   - Backend: `backend/internal/util/`, domain errors, httputil
-   - Frontend: `frontend/src/core/lib/`, shared hooks, UI components
+3. **Check shared utilities** - Before writing a helper, search for existing utilities. If it is almost there, refactor/change the existing utility
 
 4. **When patterns diverge, consolidate** - If you find 2+ implementations of the same thing, refactor to one.
-
-## Consistency Checklist
-
-Before submitting code, verify:
-- [ ] Error handling follows existing patterns (HTTPError, domain errors)
-- [ ] Similar code elsewhere? -> Extract shared utility
-- [ ] Dialog patterns use shared components (DeleteConfirmationDialog, etc.)
-- [ ] Store patterns match existing stores (abort controllers, selectors)
-- [ ] API calls follow api.ts conventions
 
 ## Where to Find Things
 
@@ -135,7 +76,7 @@ Before submitting code, verify:
 
 Three tiers: **Features** (`_docs/features/`, start here) > **High-Level** (`_docs/high-level/`) > **Technical** (`_docs/technical/`). Minimum content by default — diagrams > words, reference don't duplicate. See `_docs/conventions/documentation-writing-rules.md` for full rules.
 
-**Mermaid diagrams**: Load the `mermaid` skill before writing/editing diagrams. Always validate with `./scripts/check-mermaid.sh <file>` after changes. **Design docs and plans MUST use Mermaid diagrams** for data flows, architecture, and state transitions — diagrams > ASCII art > prose.
+**Mermaid diagrams**: Load the `mermaid` skill before writing/editing diagrams. Always validate with `scripts/check-mermaid.sh <file>` after changes. **Design docs and plans MUST use Mermaid diagrams** for data flows, architecture, and state transitions — diagrams > ASCII art > prose.
 
 ### Feature Documentation Sync Rule
 
@@ -164,14 +105,6 @@ The dev environment uses tmux to run backend + frontend in parallel, with worktr
 - Frontend port is always `3000`
 - The backend port is passed as a Make variable override (`make run-local PORT=<port>`) to take precedence over `backend/.env`
 - `frontend/.env.local` must set `VITE_API_URL` to match the backend port for this worktree
-
-Common worktree ports (from `scripts/dev/lib.sh`):
-
-| Worktree | Backend Port |
-|----------|-------------|
-| meridian | 8140 |
-| meridian-agents | 8170 |
-| meridian-collab | 8130 |
 
 To check your worktree's port: `source scripts/dev/lib.sh && echo $BACKEND_PORT`
 
