@@ -42,3 +42,4 @@ backend/orchestrator
 
 # Hidden local scratch artifacts
 .scratch/
+.orchestrate
