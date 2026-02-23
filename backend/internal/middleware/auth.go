@@ -14,7 +14,10 @@ import (
 //
 // The /health endpoint is excluded from authentication to allow
 // load balancers and monitoring tools to check server health.
-func AuthMiddleware(jwtVerifier auth.JWTVerifier) func(http.Handler) http.Handler {
+func AuthMiddleware(
+	jwtVerifier auth.JWTVerifier,
+	isIdentityBlocked func(string, string) bool,
+) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Skip auth for health check and collab websocket entrypoint only.
@@ -48,8 +51,14 @@ func AuthMiddleware(jwtVerifier auth.JWTVerifier) func(http.Handler) http.Handle
 				return
 			}
 
+			userID := claims.GetUserID()
+			if isIdentityBlocked != nil && isIdentityBlocked(userID, claims.Email) {
+				httputil.RespondError(w, http.StatusForbidden, "Access denied")
+				return
+			}
+
 			// Inject user ID into request context
-			r = httputil.WithUserID(r, claims.GetUserID())
+			r = httputil.WithUserID(r, userID)
 			next.ServeHTTP(w, r)
 		})
 	}

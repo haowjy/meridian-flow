@@ -23,20 +23,23 @@ type collabAuthResult struct {
 // for the collaboration websocket: connection bootstrap, document access, and
 // active subscription invalidation.
 type collabAuthenticator struct {
-	jwtVerifier      auth.JWTVerifier
-	documentResolver collabSvc.DocumentResolver
-	logger           *slog.Logger
+	jwtVerifier       auth.JWTVerifier
+	documentResolver  collabSvc.DocumentResolver
+	isIdentityBlocked func(string, string) bool
+	logger            *slog.Logger
 }
 
 func newCollabAuthenticator(
 	jwtVerifier auth.JWTVerifier,
 	documentResolver collabSvc.DocumentResolver,
+	isIdentityBlocked func(string, string) bool,
 	logger *slog.Logger,
 ) *collabAuthenticator {
 	return &collabAuthenticator{
-		jwtVerifier:      jwtVerifier,
-		documentResolver: documentResolver,
-		logger:           logger,
+		jwtVerifier:       jwtVerifier,
+		documentResolver:  documentResolver,
+		isIdentityBlocked: isIdentityBlocked,
+		logger:            logger,
 	}
 }
 
@@ -73,6 +76,15 @@ func (a *collabAuthenticator) bootstrapAuth(
 	}
 
 	userID := claims.GetUserID()
+	if a.isIdentityBlocked != nil && a.isIdentityBlocked(userID, claims.Email) {
+		a.logger.Info("project websocket blocked user denied",
+			"project_id", projectID,
+			"user_id", userID,
+			"email", claims.Email,
+		)
+		return nil, "access denied"
+	}
+
 	userUUID, err := parseUUID(userID)
 	if err != nil {
 		a.logger.Error("project websocket user id is not a uuid",

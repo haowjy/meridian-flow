@@ -98,6 +98,9 @@ SUPABASE_KEY=sb_secret_your-production-key
 # Include both production and Vercel preview deployments
 CORS_ORIGINS=https://meridian.vercel.app,https://*.vercel.app
 
+# Optional emergency denylist (wildcard patterns matched against user ID and email)
+BLOCKED_PROD_IDENTITIES=*@example.com,test-*@my-domain.com
+
 # LLM - Production keys
 ANTHROPIC_API_KEY=sk-ant-prod-key-here
 OPENROUTER_API_KEY=sk-or-prod-key-here
@@ -122,6 +125,7 @@ DEFAULT_MODEL=moonshotai/kimi-k2-thinking
 **Security:**
 - HTTPS enforced (automatic on Railway)
 - JWT validation enabled
+- Optional production denylist by wildcard pattern (`BLOCKED_PROD_IDENTITIES`)
 - No test stubs (real auth only)
 - Environment variables encrypted in Railway
 
@@ -144,6 +148,7 @@ DEFAULT_MODEL=moonshotai/kimi-k2-thinking
 | `SUPABASE_DB_URL` | Yes | PostgreSQL connection string<br>**Dev:** Port 6543 (transaction mode)<br>**Prod:** Port 6543 (Railway has dynamic IPs) |
 | `SUPABASE_URL` | Yes | Project URL for JWT verification<br>Format: `https://[PROJECT-ID].supabase.co` |
 | `SUPABASE_KEY` | Yes | Service role secret (starts with `sb_secret_`) |
+| `BLOCKED_PROD_IDENTITIES` | No | Comma-separated wildcard patterns denied by backend when `ENVIRONMENT=prod` (matched against user ID and email) |
 
 **Note on SUPABASE_JWKS_URL:**
 - Auto-constructed from `SUPABASE_URL`

@@ -453,7 +453,7 @@ func main() {
 
 	// Apply middleware in reverse order (they wrap each other)
 	// Order: CORS -> Recovery -> Auth -> Routes
-	handler = middleware.AuthMiddleware(jwtVerifier, cfg.IsProdUserBlocked)(handler)
+	handler = middleware.AuthMiddleware(jwtVerifier, cfg.IsProdIdentityBlocked)(handler)
 	handler = middleware.Recovery(logger)(handler)
 
 	// CORS - Must be before auth to handle OPTIONS pre-flight requests
