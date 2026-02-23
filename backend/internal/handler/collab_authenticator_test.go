@@ -40,6 +40,7 @@ func newTestAuthenticator(resolver *testAuthResolver, verifier *testJWTVerifier)
 	return newCollabAuthenticator(
 		verifier,
 		resolver,
+		nil,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 }

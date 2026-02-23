@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 type Config struct {
@@ -12,8 +13,10 @@ type Config struct {
 	SupabaseKey     string
 	SupabaseDBURL   string
 	SupabaseJWKSURL string // Constructed from SupabaseURL + /auth/v1/.well-known/jwks.json
-	CORSOrigins     string
-	TablePrefix     string
+	// Production access controls
+	BlockedProdIdentities []string // Comma-separated identities from BLOCKED_PROD_IDENTITIES
+	CORSOrigins           string
+	TablePrefix           string
 	// Database pool configuration (pgxpool)
 	DBMaxConns int
 	DBMinConns int
@@ -29,7 +32,7 @@ type Config struct {
 	CollabSnapshotIntervalUpdates int // Collab snapshot safety net trigger (default: 500 updates)
 	CollabAutoSnapshotTTLHours    int // TTL for auto snapshots in hours (default: 168 = 7 days)
 	CollabCleanupIntervalMinutes  int // How often to run snapshot cleanup (default: 60 = 1 hour)
-	CollabDefaultAutoAccept bool
+	CollabDefaultAutoAccept       bool
 	// Search API Configuration (optional - for web_search tool)
 	SearchAPIKey      string // API key for external search provider
 	SearchAPIProvider string // Provider name: "tavily", "brave", "serper", etc.
@@ -52,16 +55,17 @@ func Load() *Config {
 	jwksURL := supabaseURL + "/auth/v1/.well-known/jwks.json"
 
 	return &Config{
-		Port:            getEnv("PORT", "8080"),
-		Environment:     env,
-		SupabaseURL:     supabaseURL,
-		SupabaseKey:     getEnv("SUPABASE_KEY", ""),
-		SupabaseDBURL:   getEnv("SUPABASE_DB_URL", ""),
-		SupabaseJWKSURL: jwksURL,
-		CORSOrigins:     getEnv("CORS_ORIGINS", "http://localhost:3000"),
-		TablePrefix:     tablePrefix,
-		DBMaxConns:      getEnvInt("DB_MAX_CONNS", 25),
-		DBMinConns:      getEnvInt("DB_MIN_CONNS", 5),
+		Port:                  getEnv("PORT", "8080"),
+		Environment:           env,
+		SupabaseURL:           supabaseURL,
+		SupabaseKey:           getEnv("SUPABASE_KEY", ""),
+		SupabaseDBURL:         getEnv("SUPABASE_DB_URL", ""),
+		SupabaseJWKSURL:       jwksURL,
+		BlockedProdIdentities: getEnvListNormalized("BLOCKED_PROD_IDENTITIES"),
+		CORSOrigins:           getEnv("CORS_ORIGINS", "http://localhost:3000"),
+		TablePrefix:           tablePrefix,
+		DBMaxConns:            getEnvInt("DB_MAX_CONNS", 25),
+		DBMinConns:            getEnvInt("DB_MIN_CONNS", 5),
 		// LLM Configuration
 		AnthropicAPIKey:               getEnv("ANTHROPIC_API_KEY", ""),
 		OpenRouterAPIKey:              getEnv("OPENROUTER_API_KEY", ""),
@@ -74,7 +78,7 @@ func Load() *Config {
 		CollabSnapshotIntervalUpdates: getEnvInt("MERIDIAN_COLLAB_SNAPSHOT_INTERVAL_UPDATES", 500),
 		CollabAutoSnapshotTTLHours:    getEnvInt("MERIDIAN_COLLAB_AUTO_SNAPSHOT_TTL_HOURS", 168), // 7 days
 		CollabCleanupIntervalMinutes:  getEnvInt("MERIDIAN_COLLAB_CLEANUP_INTERVAL_MINUTES", 60), // 1 hour
-		CollabDefaultAutoAccept: getEnv("MERIDIAN_COLLAB_DEFAULT_AUTO_ACCEPT", "true") == "true",
+		CollabDefaultAutoAccept:       getEnv("MERIDIAN_COLLAB_DEFAULT_AUTO_ACCEPT", "true") == "true",
 		// Search API Configuration (optional)
 		SearchAPIKey:      getEnv("SEARCH_API_KEY", ""),
 		SearchAPIProvider: getEnv("SEARCH_API_PROVIDER", "tavily"),
@@ -145,4 +149,91 @@ func getEnvInt(key string, defaultValue int) int {
 
 	// If parsing fails, return default
 	return defaultValue
+}
+
+func getEnvListNormalized(key string) []string {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	var result []string
+	for _, value := range strings.Split(raw, ",") {
+		trimmed := strings.ToLower(strings.TrimSpace(value))
+		if trimmed == "" {
+			continue
+		}
+		if _, exists := seen[trimmed]; exists {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
+	}
+	return result
+}
+
+// IsProdIdentityBlocked returns true only in production when userID/email
+// matches any wildcard rule from BLOCKED_PROD_IDENTITIES.
+//
+// Rule format uses glob-style '*' wildcards, for example:
+// - *@example.com
+// - test-*@my-domain.com
+// - cccccccc-cccc-cccc-cccc-cccccccccccc
+func (c *Config) IsProdIdentityBlocked(userID, email string) bool {
+	if c == nil || c.Environment != "prod" {
+		return false
+	}
+	userID = strings.ToLower(strings.TrimSpace(userID))
+	email = strings.ToLower(strings.TrimSpace(email))
+
+	if len(c.BlockedProdIdentities) == 0 {
+		return false
+	}
+
+	for _, pattern := range c.BlockedProdIdentities {
+		if userID != "" && wildcardMatch(pattern, userID) {
+			return true
+		}
+		if email != "" && wildcardMatch(pattern, email) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// wildcardMatch performs case-sensitive glob matching where '*' means "zero or more characters".
+// Inputs should be normalized by the caller when case-insensitive behavior is desired.
+func wildcardMatch(pattern, value string) bool {
+	p := 0
+	v := 0
+	star := -1
+	match := 0
+
+	for v < len(value) {
+		if p < len(pattern) && pattern[p] == value[v] {
+			p++
+			v++
+			continue
+		}
+		if p < len(pattern) && pattern[p] == '*' {
+			star = p
+			match = v
+			p++
+			continue
+		}
+		if star != -1 {
+			p = star + 1
+			match++
+			v = match
+			continue
+		}
+		return false
+	}
+
+	for p < len(pattern) && pattern[p] == '*' {
+		p++
+	}
+	return p == len(pattern)
 }

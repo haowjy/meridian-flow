@@ -131,13 +131,18 @@ func NewCollabHandler(
 	logger *slog.Logger,
 	cfg *config.Config,
 ) *CollabHandler {
+	var isIdentityBlocked func(string, string) bool
+	if cfg != nil {
+		isIdentityBlocked = cfg.IsProdIdentityBlocked
+	}
+
 	return &CollabHandler{
 		documentResolver:    documentResolver,
 		documentBroadcaster: documentBroadcaster,
 		subscriptionService: subscriptionService,
 		proposalService:     proposalService,
 		proposalStore:       proposalStore,
-		authenticator:       newCollabAuthenticator(jwtVerifier, documentResolver, logger),
+		authenticator:       newCollabAuthenticator(jwtVerifier, documentResolver, isIdentityBlocked, logger),
 		logger:              logger,
 		config:              cfg,
 	}

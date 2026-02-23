@@ -171,7 +171,7 @@ func newTestProjectCollabServer(
 	verifier *testJWTVerifier,
 	store *testCollabStore,
 ) *httptest.Server {
-	return newTestProjectCollabServerWithDeps(t, resolver, verifier, store, nil, nil)
+	return newTestProjectCollabServerWithDepsAndConfig(t, resolver, verifier, store, nil, nil, nil)
 }
 
 func newTestProjectCollabServerWithDeps(
@@ -182,10 +182,35 @@ func newTestProjectCollabServerWithDeps(
 	broadcaster collabSvc.DocumentBroadcaster,
 	sessionManager serviceCollab.SessionLifecycle,
 ) *httptest.Server {
+	return newTestProjectCollabServerWithDepsAndConfig(t, resolver, verifier, store, broadcaster, sessionManager, nil)
+}
+
+func newTestProjectCollabServerWithConfig(
+	t *testing.T,
+	resolver *testProjectCollabResolver,
+	verifier *testJWTVerifier,
+	store *testCollabStore,
+	cfg *config.Config,
+) *httptest.Server {
+	return newTestProjectCollabServerWithDepsAndConfig(t, resolver, verifier, store, nil, nil, cfg)
+}
+
+func newTestProjectCollabServerWithDepsAndConfig(
+	t *testing.T,
+	resolver *testProjectCollabResolver,
+	verifier *testJWTVerifier,
+	store *testCollabStore,
+	broadcaster collabSvc.DocumentBroadcaster,
+	sessionManager serviceCollab.SessionLifecycle,
+	cfg *config.Config,
+) *httptest.Server {
 	t.Helper()
 
 	if broadcaster == nil {
 		broadcaster = serviceCollab.NewInMemoryDocumentBroadcaster()
+	}
+	if cfg == nil {
+		cfg = &config.Config{}
 	}
 	if sessionManager == nil {
 		sessionManager = serviceCollab.NewDocumentSessionManager(store, store, &noopContentLoader{}, slog.New(slog.NewTextHandler(io.Discard, nil)), 500)
@@ -206,7 +231,7 @@ func newTestProjectCollabServerWithDeps(
 		&noopProposalStore{},
 		verifier,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		&config.Config{},
+		cfg,
 	)
 
 	mux := http.NewServeMux()
@@ -298,6 +323,39 @@ func TestProjectWS_AuthFailed(t *testing.T) {
 	got := readWSErrorMessage(t, conn)
 	if got.Code != "AUTH_FAILED" {
 		t.Fatalf("expected AUTH_FAILED, got %q", got.Code)
+	}
+}
+
+func TestProjectWS_AuthDeniedForBlockedProdPattern(t *testing.T) {
+	resolver := &testProjectCollabResolver{allowed: true, projectID: testProjectID}
+	verifier := &testJWTVerifier{
+		tokens: map[string]*models.SupabaseClaims{
+			testToken: {
+				RegisteredClaims: jwt.RegisteredClaims{Subject: testUserID},
+				Email:            "test-9@my-domain.com",
+			},
+		},
+	}
+	store := &testCollabStore{}
+	server := newTestProjectCollabServerWithConfig(t, resolver, verifier, store, &config.Config{
+		Environment:           "prod",
+		BlockedProdIdentities: []string{"test-*@my-domain.com"},
+	})
+	defer server.Close()
+
+	conn := dialProjectWS(t, server.URL, testProjectID)
+	defer closeWSConn(t, conn)
+
+	if err := websocket.Message.Send(conn, testToken); err != nil {
+		t.Fatalf("send auth token: %v", err)
+	}
+
+	got := readWSErrorMessage(t, conn)
+	if got.Code != "AUTH_FAILED" {
+		t.Fatalf("expected AUTH_FAILED, got %q", got.Code)
+	}
+	if got.Message != "access denied" {
+		t.Fatalf("expected access denied message, got %q", got.Message)
 	}
 }
 
