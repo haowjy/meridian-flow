@@ -56,7 +56,7 @@ func TestAIContentProjectorRecompute_UsesInMemorySnapshotAndPendingProposals(t *
 		},
 	}
 	runtime := &fakeProjectorRuntime{snapshot: baseState, found: true}
-	projector := NewAIContentProjector(docStore, proposalStore, runtime)
+	projector := NewAIContentProjector(docStore, proposalStore, runtime, &fakeContentLoader{})
 
 	if err := projector.Recompute(context.Background(), docID); err != nil {
 		t.Fatalf("recompute: %v", err)
@@ -82,6 +82,124 @@ func TestAIContentProjectorRecompute_UsesInMemorySnapshotAndPendingProposals(t *
 	}
 }
 
+func TestAIContentProjectorBuildProjectedState_BootstrapsFromContent(t *testing.T) {
+	docID := uuid.New()
+
+	docStore := &fakeProjectorStateStore{loadedState: nil} // empty yjs_state
+	contentLoader := &fakeContentLoader{content: "# Hello World"}
+	proposalStore := &fakeProjectorProposalStore{}
+	runtime := &fakeProjectorRuntime{found: false}
+
+	projector := &AIContentProjector{
+		stateStore:      docStore,
+		proposalStore:   proposalStore,
+		proposalRuntime: runtime,
+		contentLoader:   contentLoader,
+	}
+
+	state, err := projector.BuildProjectedState(context.Background(), docID)
+	if err != nil {
+		t.Fatalf("BuildProjectedState: %v", err)
+	}
+	if state == nil {
+		t.Fatal("expected non-nil state")
+	}
+
+	// Verify content was bootstrapped correctly
+	got := decodeDocContent(t, state)
+	if got != "# Hello World" {
+		t.Errorf("expected bootstrapped content %q, got %q", "# Hello World", got)
+	}
+
+	// Verify bootstrapped state was persisted
+	if docStore.saveStateCalls != 1 {
+		t.Fatalf("expected SaveState to be called once (persist bootstrap), got %d", docStore.saveStateCalls)
+	}
+}
+
+func TestAIContentProjectorBuildProjectedState_EmptyContent(t *testing.T) {
+	docID := uuid.New()
+
+	docStore := &fakeProjectorStateStore{loadedState: nil}
+	contentLoader := &fakeContentLoader{content: ""} // empty document
+	proposalStore := &fakeProjectorProposalStore{}
+	runtime := &fakeProjectorRuntime{found: false}
+
+	projector := &AIContentProjector{
+		stateStore:      docStore,
+		proposalStore:   proposalStore,
+		proposalRuntime: runtime,
+		contentLoader:   contentLoader,
+	}
+
+	state, err := projector.BuildProjectedState(context.Background(), docID)
+	if err != nil {
+		t.Fatalf("BuildProjectedState: %v", err)
+	}
+	if state == nil {
+		t.Fatal("expected non-nil state (valid empty Y.Doc)")
+	}
+
+	// Empty content should produce valid empty Y.Doc state, not panic
+	got := decodeDocContent(t, state)
+	if got != "" {
+		t.Errorf("expected empty content, got %q", got)
+	}
+}
+
+func TestAIContentProjectorBuildProjectedState_WithPendingProposals(t *testing.T) {
+	docID := uuid.New()
+
+	baseState := mustBuildDocState(t, "hello")
+	// Proposal that adds " world"
+	proposalUpdate := func() []byte {
+		doc := ycrdt.NewDoc("proposal", true, ycrdt.DefaultGCFilter, nil, false)
+		ycrdt.ApplyUpdate(doc, baseState, "base")
+		text := doc.GetText("content")
+		sv := ycrdt.EncodeStateVector(doc, nil, ycrdt.NewUpdateEncoderV1())
+		doc.Transact(func(_ *ycrdt.Transaction) {
+			text.Insert(text.Length(), " world", nil)
+		}, nil)
+		return ycrdt.EncodeStateAsUpdate(doc, sv)
+	}()
+
+	docStore := &fakeProjectorStateStore{loadedState: baseState}
+	proposalStore := &fakeProjectorProposalStore{
+		listByDocument: []collabModels.Proposal{
+			{
+				ID:         uuid.New(),
+				DocumentID: docID,
+				Status:     collabModels.ProposalStatusProposed,
+				YjsUpdate:  proposalUpdate,
+				CreatedAt:  time.Now().UTC(),
+			},
+		},
+	}
+	runtime := &fakeProjectorRuntime{found: false}
+
+	projector := &AIContentProjector{
+		stateStore:      docStore,
+		proposalStore:   proposalStore,
+		proposalRuntime: runtime,
+		contentLoader:   &fakeContentLoader{},
+	}
+
+	state, err := projector.BuildProjectedState(context.Background(), docID)
+	if err != nil {
+		t.Fatalf("BuildProjectedState: %v", err)
+	}
+
+	got := decodeDocContent(t, state)
+	if got != "hello world" {
+		t.Errorf("expected projected content %q, got %q", "hello world", got)
+	}
+
+	// Should NOT persist (no bootstrap needed)
+	if docStore.saveStateCalls != 0 {
+		t.Fatalf("expected no SaveState call (no bootstrap), got %d", docStore.saveStateCalls)
+	}
+}
+
 func TestAIContentProjectorRecompute_FallsBackToPersistedState(t *testing.T) {
 	docID := uuid.New()
 	baseState := mustBuildDocState(t, "persisted")
@@ -89,7 +207,7 @@ func TestAIContentProjectorRecompute_FallsBackToPersistedState(t *testing.T) {
 	docStore := &fakeProjectorStateStore{loadedState: baseState}
 	proposalStore := &fakeProjectorProposalStore{}
 	runtime := &fakeProjectorRuntime{found: false}
-	projector := NewAIContentProjector(docStore, proposalStore, runtime)
+	projector := NewAIContentProjector(docStore, proposalStore, runtime, &fakeContentLoader{})
 
 	if err := projector.Recompute(context.Background(), docID); err != nil {
 		t.Fatalf("recompute: %v", err)
@@ -200,6 +318,14 @@ func (s *fakeProjectorProposalStore) MarkRejected(_ context.Context, _ collabMod
 
 func (s *fakeProjectorProposalStore) CountRecentByDocumentAndStatus(_ context.Context, _ uuid.UUID, _ collabModels.ProposalStatus, _ time.Time) (int, error) {
 	return 0, nil
+}
+
+type fakeContentLoader struct {
+	content string
+}
+
+func (l *fakeContentLoader) LoadContentForBootstrap(_ context.Context, _ string) (string, error) {
+	return l.content, nil
 }
 
 func mustBuildDocState(t *testing.T, content string) []byte {

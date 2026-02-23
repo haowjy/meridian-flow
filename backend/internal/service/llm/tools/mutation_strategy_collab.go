@@ -26,24 +26,24 @@ type ProposalBroadcaster interface {
 
 // CollabProposalStrategy persists edits by creating a collab proposal with Yjs update bytes.
 type CollabProposalStrategy struct {
-	proposalCreator     ProposalCreator
-	proposalBroadcaster ProposalBroadcaster
-	converter           *collab.YjsTextConverter
-	logger              *slog.Logger
+	proposalCreator       ProposalCreator
+	proposalBroadcaster   ProposalBroadcaster
+	projectedStateBuilder collabSvc.ProjectedStateBuilder
+	logger                *slog.Logger
 }
 
 // NewCollabProposalStrategy creates a strategy backed by proposal creation and WS broadcasting.
 func NewCollabProposalStrategy(
 	proposalCreator ProposalCreator,
 	proposalBroadcaster ProposalBroadcaster,
-	converter *collab.YjsTextConverter,
+	projectedStateBuilder collabSvc.ProjectedStateBuilder,
 	logger *slog.Logger,
 ) *CollabProposalStrategy {
 	return &CollabProposalStrategy{
-		proposalCreator:     proposalCreator,
-		proposalBroadcaster: proposalBroadcaster,
-		converter:           converter,
-		logger:              logger,
+		proposalCreator:       proposalCreator,
+		proposalBroadcaster:   proposalBroadcaster,
+		projectedStateBuilder: projectedStateBuilder,
+		logger:                logger,
 	}
 }
 
@@ -77,8 +77,17 @@ func (s *CollabProposalStrategy) Apply(ctx context.Context, input MutationInput)
 		// If pos == -1 (not found / ambiguous), fall through to full-doc replacement
 	}
 
+	// Build projected Yjs state (base + pending proposals) so the converter
+	// operates on the same content the text editor sees. This fixes both:
+	// - Bootstrap panic: empty yjs_state is bootstrapped from markdown content
+	// - Position mismatch: edit positions align with projected content, not base
+	projectedState, err := s.projectedStateBuilder.BuildProjectedState(ctx, docUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build projected state: %w", err)
+	}
+
 	// Convert text diff to Yjs update bytes
-	yjsUpdate, err := s.converter.TextToUpdate(ctx, docUUID, input.NewContent, edit)
+	yjsUpdate, err := collab.TextToUpdate(projectedState, input.NewContent, edit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert text to Yjs update: %w", err)
 	}

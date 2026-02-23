@@ -135,8 +135,9 @@ func (t *TextEditorTool) executeView(ctx context.Context, path string, input map
 	if err == nil {
 		// Show ai_content (projected with pending proposals) so the AI sees
 		// prior edits when viewing after str_replace in the same turn.
+		// Empty string is valid content (empty document) — only fall back on error.
 		if t.aiContentReader != nil {
-			if aiContent, aiErr := t.aiContentReader.LoadAIContent(ctx, doc.ID); aiErr == nil && aiContent != "" {
+			if aiContent, aiErr := t.aiContentReader.LoadAIContent(ctx, doc.ID); aiErr == nil {
 				doc.Content = aiContent
 			}
 		}
@@ -293,12 +294,12 @@ func (t *TextEditorTool) executeStrReplace(ctx context.Context, path string, inp
 
 	// Read ai_content (projected with pending proposals) so each str_replace call
 	// in a multi-tool turn sees prior edits, not stale base content.
+	// Empty string is valid content (empty document) — only fall back on error.
 	base := doc.Content
 	if t.aiContentReader != nil {
-		if aiContent, err := t.aiContentReader.LoadAIContent(ctx, doc.ID); err == nil && aiContent != "" {
+		if aiContent, err := t.aiContentReader.LoadAIContent(ctx, doc.ID); err == nil {
 			base = aiContent
 		}
-		// On error or empty ai_content, fall back to doc.Content
 	}
 
 	// Try to match using normalizer chain (OCP: extensible without modifying this function)
@@ -385,9 +386,10 @@ func (t *TextEditorTool) executeInsert(ctx context.Context, path string, input m
 	}
 
 	// Read ai_content so insert sees prior edits in the same turn.
+	// Empty string is valid content (empty document) — only fall back on error.
 	base := doc.Content
 	if t.aiContentReader != nil {
-		if aiContent, err := t.aiContentReader.LoadAIContent(ctx, doc.ID); err == nil && aiContent != "" {
+		if aiContent, err := t.aiContentReader.LoadAIContent(ctx, doc.ID); err == nil {
 			base = aiContent
 		}
 	}
