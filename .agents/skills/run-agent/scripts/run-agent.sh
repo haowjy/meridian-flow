@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # run-agent.sh — Single entry point for running any agent.
-# Routes models to the correct CLI tool, loads skills, composes prompts, logs everything.
+# Routes models to the correct CLI tool, composes prompts, logs everything.
 #
 # Usage:
-#   scripts/run-agent.sh [agent] [OPTIONS]
-#   scripts/run-agent.sh --model claude-sonnet-4-6 --skills review -p "Review the changes"
-#   scripts/run-agent.sh review --dry-run
+#   run-agent.sh [OPTIONS]
+#   run-agent.sh --model claude-sonnet-4-6 --skills review -p "Review the changes"
+#   run-agent.sh --model gpt-5.3-codex -p "Implement feature" --label ticket=PAY-123
+#   run-agent.sh --dry-run --model claude-sonnet-4-6 --skills review -p "test"
 #
-# See the run-agent skill README.md for full documentation.
+# A run is model + skills + prompt. No "agent" abstraction.
 
 set -euo pipefail
 
@@ -21,27 +22,19 @@ done
 SCRIPT_DIR="$(cd "$(dirname "$_source")" && pwd -P)"
 CURRENT_DIR="$(pwd -P)"
 REPO_ROOT="$(git -C "$CURRENT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$CURRENT_DIR")"
-ORCHESTRATE_ROOT="${ORCHESTRATE_ROOT:-}"
-ORCHESTRATE_ROOT_LOCKED=false
-if [[ -n "$ORCHESTRATE_ROOT" ]]; then
-  ORCHESTRATE_ROOT_LOCKED=true
-fi
-AGENTS_DIR=""
+ORCHESTRATE_ROOT=""
 SKILLS_DIR=""
-RUNS_DIR=""
-SESSION_DIR=""
+AGENTS_DIR=""
 
 refresh_orchestrate_paths() {
   local repo_base="$1"
-  if [[ "$ORCHESTRATE_ROOT_LOCKED" != true ]]; then
-    ORCHESTRATE_ROOT="$repo_base/.orchestrate"
-  fi
-  AGENTS_DIR="$ORCHESTRATE_ROOT/agents"
+  ORCHESTRATE_ROOT="$repo_base/.orchestrate"
   # Skills live in the submodule/clone source, not the runtime dir.
-  # Derive from SCRIPT_DIR (inside orchestrate/skills/run-agent/scripts/).
-  SKILLS_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd -P)/skills"
-  RUNS_DIR="$ORCHESTRATE_ROOT/runs"
-  SESSION_DIR="$ORCHESTRATE_ROOT/session"
+  # Derive from SCRIPT_DIR (inside */run-agent/scripts/).
+  local source_root
+  source_root="$(cd "$SCRIPT_DIR/../../.." && pwd -P)"
+  SKILLS_DIR="$source_root/skills"
+  AGENTS_DIR="$source_root/agents"
 }
 
 refresh_orchestrate_paths_from_workdir() {
@@ -53,34 +46,48 @@ refresh_orchestrate_paths_from_workdir() {
 
 # ─── Defaults ────────────────────────────────────────────────────────────────
 
-# Default fallback when the routed CLI isn't available.
 FALLBACK_CLI="codex"
 FALLBACK_MODEL="gpt-5.3-codex"
 
 MODEL=""
-EFFORT="high"
-TOOLS="Read,Edit,Write,Bash,Glob,Grep"
+VARIANT="high"
+AGENT_NAME=""
+AGENT_BODY=""                    # markdown body (frontmatter stripped), used for Codex prompt injection
+AGENT_TOOLS=""                   # comma-separated tool allowlist from agent profile
+AGENT_SANDBOX=""                 # Codex sandbox: read-only, workspace-write, danger-full-access (or empty)
+# Kill hung harness invocations (default: 15 minutes).
+TIMEOUT_MINUTES=15
 SKILLS=()
 PROMPT=""
-AGENT_PROMPT=""
 CLI_PROMPT=""
-AGENT_NAME=""
 DRY_RUN=false
-DETAIL="standard"   # brief | standard | detailed
+DETAIL="standard"
 WORK_DIR="$REPO_ROOT"
-declare -A VARS=()  # template variables
-REF_FILES=()        # reference file paths (-f flag)
+SESSION_ID=""               # explicit session grouping (--session)
+CONTINUE_RUN_REF=""         # continuation target (--continue-run)
+CONTINUATION_FORK=true      # fork by default where supported
+CONTINUATION_FORK_EXPLICIT=false
+declare -A VARS=()
+declare -A LABELS=()
+REF_FILES=()
 HAS_VARS=false
+HAS_LABELS=false
 MODEL_FROM_CLI=false
-EFFORT_FROM_CLI=false
-TOOLS_FROM_CLI=false
-PLAN_NAME=""         # --plan shorthand
-SLICE_NAME=""        # --slice shorthand
+VARIANT_FROM_CLI=false
 
-# CLI_CMD_ARGV — populated by build_cli_command() in lib/exec.sh
+# Runtime state (populated during execution)
 declare -a CLI_CMD_ARGV=()
-# CLI_HARNESS — populated by build_cli_command() in lib/exec.sh (claude|codex|opencode)
 CLI_HARNESS=""
+RUN_ID=""
+LOG_DIR=""
+EXIT_CODE=0
+HEAD_BEFORE=""
+
+# Continuation/retry metadata (set when applicable)
+CONTINUES_RUN_ID=""
+CONTINUATION_MODE=""
+CONTINUATION_FALLBACK_REASON=""
+RETRIES_RUN_ID="${RETRIES_RUN_ID:-}"
 
 refresh_orchestrate_paths "$REPO_ROOT"
 
@@ -91,41 +98,38 @@ source "$SCRIPT_DIR/lib/prompt.sh"
 source "$SCRIPT_DIR/lib/logging.sh"
 source "$SCRIPT_DIR/lib/exec.sh"
 
-# ─── Init Helpers ────────────────────────────────────────────────────────────
+# ─── Init ────────────────────────────────────────────────────────────────────
 
 init_work_dir() {
   if ! WORK_DIR="$(cd "$WORK_DIR" 2>/dev/null && pwd -P)"; then
     echo "ERROR: Working directory does not exist: $WORK_DIR" >&2
-    exit 1
+    exit 2
   fi
 
-  # Prefer the git root of the working dir so relative file lookups map to the target project.
   REPO_ROOT="$(git -C "$WORK_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$WORK_DIR")"
   refresh_orchestrate_paths "$REPO_ROOT"
 }
 
 init_dirs() {
   mkdir -p "$ORCHESTRATE_ROOT"
-  mkdir -p "$RUNS_DIR/project"/{.scratch/code/smoke,logs/agent-runs}
-  mkdir -p "$SESSION_DIR/project"
-}
-
-inject_runtime_template_vars() {
-  # Make runtime paths explicit in prompts so agents write inside the managed
-  # run/session directories rather than the caller's working directory.
-  [[ -z "${VARS[RUNS_DIR]:-}" ]] && VARS[RUNS_DIR]="$RUNS_DIR"
-  [[ -z "${VARS[SESSION_DIR]:-}" ]] && VARS[SESSION_DIR]="$SESSION_DIR"
-  [[ -z "${VARS[SCOPE_ROOT]:-}" ]] && VARS[SCOPE_ROOT]="$(infer_scope_root)"
-  HAS_VARS=true
+  mkdir -p "$ORCHESTRATE_ROOT/runs/agent-runs"
+  mkdir -p "$ORCHESTRATE_ROOT/index"
 }
 
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 parse_args "$@"
 init_work_dir
+
+# Load agent profile (if --agent specified) before validation so profile
+# defaults (model, variant, skills) are available to validate_args.
+if [[ -n "$AGENT_NAME" ]]; then
+  load_agent_profile
+fi
+
 validate_args
+prepare_continuation
 init_dirs
-inject_runtime_template_vars
 
 COMPOSED_PROMPT="$(compose_prompt)"
 build_cli_command
