@@ -103,6 +103,13 @@ interface TreeStore {
       updated_at?: string;
     }>,
   ) => void;
+
+  /**
+   * Adjust pendingProposalCount for a document by a delta.
+   * Used by collab event handlers to keep badge counts in sync
+   * without a full tree reload.
+   */
+  adjustProposalCount: (documentId: string, delta: number) => void;
 }
 
 function toCachedDocumentMeta(document: Document): CachedDocumentMeta {
@@ -1138,5 +1145,19 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
 
   clearSelection: () => {
     set({ selectedIds: new Set() });
+  },
+
+  adjustProposalCount: (documentId, delta) => {
+    set((state) => {
+      const idx = state.documents.findIndex((d) => d.id === documentId);
+      if (idx === -1) return state;
+      const doc = state.documents[idx];
+      const current = doc.pendingProposalCount ?? 0;
+      const next = Math.max(0, current + delta);
+      if (next === current) return state;
+      const updated = [...state.documents];
+      updated[idx] = { ...doc, pendingProposalCount: next };
+      return { documents: updated };
+    });
   },
 }));

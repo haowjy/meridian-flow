@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi, afterEach } from "vitest";
 import { MeridianEnvelopeType, frameEnvelope } from "@/core/cm6-collab";
+import { useTreeStore } from "@/core/stores/useTreeStore";
 
 import {
   createProjectCollabTransport,
@@ -316,6 +317,66 @@ describe("project collab transport", () => {
     transport.subscribeDocument(DOC_A.toUpperCase());
 
     expect(extractDocSubscribeIds(socket.sent)).toEqual([DOC_A]);
+
+    transport.stop();
+  });
+
+  it("does not double-decrement pendingProposalCount on group-accept result", async () => {
+    useTreeStore.setState((state) => ({
+      ...state,
+      documents: [
+        {
+          id: DOC_A,
+          projectId: PROJECT_ID,
+          folderId: null,
+          name: "Doc A",
+          path: "Doc A.md",
+          extension: ".md",
+          filename: "Doc A.md",
+          updatedAt: new Date("2026-02-23T00:00:00Z"),
+          fileType: "markdown",
+          pendingProposalCount: 2,
+        },
+      ],
+    }));
+
+    const factory = new MockWebSocketFactory();
+    const transport = createProjectCollabTransport({
+      projectId: PROJECT_ID,
+      createWebSocket: factory.create,
+      resolveAccessToken: async () => AUTH_TOKEN,
+    });
+
+    transport.start();
+    await flushMicrotasks();
+
+    const socket = factory.sockets[0]!;
+    socket.open();
+
+    socket.emitTextMessage(
+      JSON.stringify({
+        type: "proposal:statusChanged",
+        documentId: DOC_A,
+        proposalId: "33333333-3333-4333-8333-333333333333",
+        status: "accepted",
+      }),
+    );
+
+    socket.emitTextMessage(
+      JSON.stringify({
+        type: "proposal:groupAcceptResult",
+        documentId: DOC_A,
+        outcomes: [
+          {
+            proposalId: "33333333-3333-4333-8333-333333333333",
+            status: "accepted",
+          },
+        ],
+      }),
+    );
+
+    const doc = useTreeStore.getState().documents.find((d) => d.id === DOC_A);
+    expect(doc?.pendingProposalCount).toBe(1);
 
     transport.stop();
   });

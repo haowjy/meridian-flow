@@ -19,6 +19,7 @@ import {
 import { API_BASE_URL } from "@/core/lib/api";
 import { makeLogger } from "@/core/lib/logger";
 import { createClient } from "@/core/supabase/client";
+import { useTreeStore } from "@/core/stores/useTreeStore";
 
 const log = makeLogger("use-project-collab");
 const WS_OPEN = 1;
@@ -333,6 +334,13 @@ export function createProjectCollabTransport(
 
     if (!eventDocumentId) {
       return;
+    }
+
+    // Keep tree badge counts in sync without a full tree reload.
+    if (isProposalNewEvent(event)) {
+      useTreeStore.getState().adjustProposalCount(eventDocumentId, 1);
+    } else if (isProposalStatusChangedEvent(event)) {
+      useTreeStore.getState().adjustProposalCount(eventDocumentId, -1);
     }
 
     notifyDocumentTextListeners(eventDocumentId, event);
