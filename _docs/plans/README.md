@@ -1,16 +1,6 @@
 # Implementation Plans
 
-This directory contains detailed implementation plans for features currently in development or ready to be built.
-
-## Organization
-
-Each plan document includes:
-- **Problem statement** - What we're solving and why
-- **Current state** - What works, what's missing
-- **Architecture context** - How it fits into existing systems
-- **Implementation plan** - Phased approach with code examples
-- **Testing strategy** - Test cases and verification steps
-- **Success criteria** - How we know it's done
+This directory contains implementation plans for features in development or ready to be built. Structure each plan however makes sense for the work — the only requirement is a `**Status:**` field at the top (`draft | approved | in-progress | done | archived`).
 
 ## Active Plans
 
@@ -43,48 +33,9 @@ Each plan document includes:
 
 ---
 
-## Plan Template
+## Conventions
 
-When creating new plans, include:
-
-```markdown
-# Feature Name
-
-**Status:** Ready to implement | In planning | Blocked
-**Priority:** High | Medium | Low
-**Estimated effort:** X hours/days
-
-## Problem Statement
-What problem are we solving? Why is it important?
-
-## Current State
-### What Works ✅
-### What's Missing ❌
-
-## Architecture Context
-How does this fit into existing systems?
-
-## Implementation Plan
-### Phase 1: [Name] (X hours)
-### Phase 2: [Name] (X hours)
-### Phase 3: Testing (X hours)
-
-## Dependencies
-What services/APIs/libraries are needed?
-
-## Testing
-Test cases and verification steps
-
-## Success Criteria
-- [ ] Checkbox list of done criteria
-
-## Risks & Mitigations
-| Risk | Mitigation |
-|------|------------|
-
-## Related Documentation
-Links to relevant docs
-```
+Every plan must include a `**Status:**` field at the top: `draft | approved | in-progress | done | archived`. See `CLAUDE.md` → Plan Lifecycle for the full workflow. Beyond that, structure the plan however makes sense for the work.
 
 ## Related Directories
 

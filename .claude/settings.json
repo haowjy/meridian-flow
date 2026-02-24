@@ -1,12 +1,26 @@
 {
+  "env": {
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"
+  },
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "clear|startup|resume",
+        "matcher": "compact|clear",
         "hooks": [
           {
             "type": "command",
-            "command": "./scripts/hooks/session-start-skills.sh"
+            "command": "bash .orchestrate/hooks/scripts/session-start.sh"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .orchestrate/hooks/scripts/session-end.sh"
           }
         ]
       }
@@ -17,7 +31,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "./scripts/hooks/plan-mode-skills.sh"
+            "command": "bash .orchestrate/hooks/scripts/plan-mode.sh"
           }
         ]
       }
