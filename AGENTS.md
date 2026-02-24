@@ -19,7 +19,9 @@ See `frontend/CLAUDE.md` for UI-specific implementation of this philosophy.
 ## Guiding Principles for Development
 
 ALWAYS FOLLOW SOLID PRINCIPLES.
-ALWAYS ENSURE THERE IS A PLAN APPROVED BY THE USER BEFORE IMPLEMENTING ANYTHING GREATER THAN A FEW LINES OF CODE. This is to make sure a developer understands the situation and knows whats happening to the system. You should also make sure to follow [[## Before Writing New Code]] 
+ALWAYS ENSURE THERE IS A PLAN APPROVED BY THE USER BEFORE IMPLEMENTING ANYTHING GREATER THAN A FEW LINES OF CODE. This is to make sure a developer understands the situation and knows whats happening to the system. You should also make sure to follow [[## Before Writing New Code]]
+
+**DO NOT ENTER PLAN MODE.** Instead, write plans as markdown files in `_docs/plans/`. During planning, use `/run-agent` (via the `researching` skill) for research and codebase exploration — stay in the normal conversation so these tools remain available. See [[### Plan Lifecycle]] for the full workflow.
 
 ### SOLID Quick Reference
 
@@ -146,25 +148,31 @@ For multi-phase plans, use the `/orchestrate` skill interactively. It discovers 
 
 **Install:** `/plugin marketplace add jimmyyao/orchestrate` (Claude Code)
 **Skills:** `*/SKILL.md` under `orchestrate/skills/` — self-describing building blocks discovered at runtime.
-**Model guidance:** `model-guidance` skill — model strengths, task-type heuristics, and skill-composition patterns.
+**Model guidance:** loaded from `run-agent/references/` — model strengths, task-type heuristics, and skill-composition patterns.
+
+### Plan Lifecycle
+
+All plans live in `_docs/plans/`. **Never use Claude Code's built-in plan mode.**
+
+- **Research first** — use `/run-agent` with the `researching` skill before writing a plan.
+- **Write plans** to `_docs/plans/<name>.md` with a `**Status:**` field at the top (`draft → approved → in-progress → done`).
+- **Never overwrite** an existing plan — move it to `_docs/plans/_archive/` first.
+- **Archive when done** — move completed plans to `_docs/plans/_archive/`.
 
 ### Plan Execution
 
-When a plan file exists (`.claude/plans/*.md` or `_docs/plans/**/*.md`):
-
-- **Multi-slice plans** (3+ slices or cross-cutting changes): Execute via `/orchestrate <plan-file>`. Never implement multi-slice plans directly.
-- **Single-slice plans**: Implement directly, following the plan's scope and acceptance criteria.
-- **Check for in-progress orchestrations**: Read `.orchestrate/session/plans/` for handoff files before starting fresh.
+- **Multi-slice plans** (3+ slices): Execute via `/orchestrate <plan-file>`. Never implement multi-slice plans directly.
+- **Single-slice plans**: Implement directly. Update progress in the plan file as you go.
 
 ### Model Selection
 
-The orchestrator dynamically selects models based on the `model-guidance` skill. General heuristics:
+The orchestrator dynamically selects models based on model guidance (loaded from `run-agent/references/`). General heuristics:
 - **Implementation**: `gpt-5.3-codex` (default), `claude-sonnet-4-6` (UI iteration), `claude-opus-4-6` (subtle correctness)
 - **Review**: Fan out to multiple model families for medium/high risk changes
 - **Research**: Use model diversity for different perspectives
 - **Commit**: `claude-haiku-4-5` for fast, clean messages
 
-See the `model-guidance` skill for detailed task-type heuristics and skill-composition patterns.
+See `orchestrate/skills/run-agent/references/default-model-guidance.md` for detailed heuristics.
 
 ### Frontend
 
@@ -182,7 +190,7 @@ See `backend/AGENTS.md` for backend deployment details.
 
 ## Refactoring Backlog
 
-Technical debt is tracked in `_docs/future/refactoring-backlog.md`. Use `/backlog` to:
+Technical debt is tracked in `_docs/future/refactoring-backlog.md`. Use `/backlog-managing` to:
 - Review current items
 - Add new discoveries
 - Work on refactors
