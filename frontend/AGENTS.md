@@ -227,7 +227,7 @@ Current version: 5
 - `pendingDocumentSaves`: `documentId`
 - `pendingTreeOps`: `++id, projectId, [projectId+status]`
 
-**Runtime note**: `projectTrees`, `pendingDocumentSaves`, and `pendingTreeOps` are part of the offline-first v5 schema foundation and are wired by follow-up slices.
+**Runtime note**: `projectTrees`, `pendingDocumentSaves`, and `pendingTreeOps` are part of the offline-first v5 schema foundation and are wired by follow-up tasks.
 
 **Auto-eviction**: Not implemented yet (YAGNI). Add only when quota issues appear.
 

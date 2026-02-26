@@ -29,13 +29,13 @@ A multi-agent audit of the WebSocket/Yjs collab system identified correctness bu
 - **`AIContentProjector` folding into `ProposalService`** — Valid observation but large blast radius. Better as a separate refactor.
 - **`proposalAcceptGate` dual-mutex consolidation** — Works correctly; simplification is low-value.
 
-## Slices
+## Tasks
 
-Seven lean slices. Each ends in a working commit.
+Seven lean tasks. Each ends in a working commit.
 
 ---
 
-## Slice 1: Fix `aiContent` Clobber in `applyUpdateOffline`
+## Task 1: Fix `aiContent` Clobber in `applyUpdateOffline`
 
 **Goal:** Stop wiping `ai_content` column on every offline proposal apply.
 
@@ -55,7 +55,7 @@ if err := m.store.SaveState(ctx, docID, newState, content, content); err != nil 
 
 ---
 
-## Slice 2: Subscribe Error Mapping for NotFound
+## Task 2: Subscribe Error Mapping for NotFound
 
 **Goal:** Surface `DOCUMENT_NOT_FOUND` instead of generic `INTERNAL_ERROR` when a document is deleted during subscribe.
 
@@ -89,7 +89,7 @@ if (docError.code === "DOCUMENT_NOT_FOUND") {
 
 ---
 
-## Slice 3: Add Missing `rows.Err()` Checks
+## Task 3: Add Missing `rows.Err()` Checks
 
 **Goal:** Stop silently ignoring row iteration errors in repository layer.
 
@@ -109,7 +109,7 @@ if err := rows.Err(); err != nil {
 
 ---
 
-## Slice 4: Remove Dead Backend Code
+## Task 4: Remove Dead Backend Code
 
 **Goal:** Clean up unused symbols and implementations.
 
@@ -143,7 +143,7 @@ Remove the `logger` field from each struct. Update `NewXxxStore` constructors to
 
 ---
 
-## Slice 5: Remove Dead Frontend Code
+## Task 5: Remove Dead Frontend Code
 
 **Goal:** Clean up exported-but-never-imported symbols from earlier design iterations.
 
@@ -167,7 +167,7 @@ Remove the `logger` field from each struct. Update `NewXxxStore` constructors to
 
 ---
 
-## Slice 6: Split `DocumentStore` Interface (ISP)
+## Task 6: Split `DocumentStore` Interface (ISP)
 
 **Goal:** Break the fat `DocumentStore` into focused consumer-side interfaces, reducing test stub noise.
 
@@ -207,7 +207,7 @@ Update `main.go` wiring — pass `collabStore` (concrete `*PostgresDocumentStore
 
 ---
 
-## Slice 7: Frontend Reconnect Sync Test + Coupling Comment
+## Task 7: Frontend Reconnect Sync Test + Coupling Comment
 
 **Goal:** Document the server-initiated SyncStep1 coupling and add test coverage.
 

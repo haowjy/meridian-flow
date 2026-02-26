@@ -10,7 +10,7 @@ Move first-write bootstrap from client to server. Add a subscription generation 
 
 ---
 
-## Slice 1: Server-Authoritative Bootstrap
+## Task 1: Server-Authoritative Bootstrap
 
 **Goal:** When `loadState()` finds empty `yjs_state` but the document has non-empty `content`, initialize the Y.Doc server-side before any client connects.
 
@@ -74,7 +74,7 @@ Key points:
 
 ---
 
-## Slice 2: Subscription Generation Guard (Defense-in-Depth)
+## Task 2: Subscription Generation Guard (Defense-in-Depth)
 
 **Goal:** Prevent repeated `doc:subscribed` events from re-triggering `startSync()` for the same runtime lifecycle.
 

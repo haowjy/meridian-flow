@@ -7,9 +7,9 @@ audience: developer
 
 ## Overview
 
-A set of independent fixes and improvements discovered during collab testing after Phase 4.7. Four slices, each independently shippable.
+A set of independent fixes and improvements discovered during collab testing after Phase 4.7. Four tasks, each independently shippable.
 
-## Slice 1: Editor Read-Only Until Connected
+## Task 1: Editor Read-Only Until Connected
 
 **Problem:** When a collab-enabled document isn't in IndexedDB and needs downloading, the editor briefly becomes editable during the "connecting" state. Users can type into "Start writing..." before the collab sync is established, leading to potential data loss or conflicts.
 
@@ -37,7 +37,7 @@ const isEditable = isInitialized && activeDocument?.id === documentId && !isLoad
 
 ---
 
-## Slice 2: Auto-Accept Toggle in Project Settings
+## Task 2: Auto-Accept Toggle in Project Settings
 
 **Problem:** Backend has full auto-accept policy infrastructure (project-level + user-level cascade), but there's no UI toggle. Users cannot turn off auto-apply for AI proposals.
 
@@ -66,7 +66,7 @@ const isEditable = isInitialized && activeDocument?.id === documentId && !isLoad
 
 ---
 
-## Slice 3: Unified Connection Status Indicator in Header
+## Task 3: Unified Connection Status Indicator in Header
 
 **Problem:** Two separate status displays — SaveStatusIcon (cloud icons) in the header and CollabConnectionIndicator as a separate row below the header. User wants a single, compact indicator in the header with tooltip for details.
 
@@ -99,7 +99,7 @@ const isEditable = isInitialized && activeDocument?.id === documentId && !isLoad
 
 ---
 
-## Slice 4: Snapshot Preview Without Restore
+## Task 4: Snapshot Preview Without Restore
 
 **Problem:** Version history requires applying a snapshot to see its content, then reverting. No preview capability. Users want Google Docs-style preview.
 
@@ -137,10 +137,10 @@ const isEditable = isInitialized && activeDocument?.id === documentId && !isLoad
 
 ---
 
-## Slice Order
+## Task Order
 
 These are independent — any order works. Suggested order by complexity/risk:
-1. Slice 1 (editor read-only) — smallest, highest user-impact bug
-2. Slice 3 (status indicator) — UI-only, straightforward
-3. Slice 2 (auto-accept toggle) — frontend + possible API work
-4. Slice 4 (snapshot preview) — most complex, full-stack
+1. Task 1 (editor read-only) — smallest, highest user-impact bug
+2. Task 3 (status indicator) — UI-only, straightforward
+3. Task 2 (auto-accept toggle) — frontend + possible API work
+4. Task 4 (snapshot preview) — most complex, full-stack

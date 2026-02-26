@@ -598,7 +598,7 @@ Production and test are still at migration 15. Keep `00016_normalize_legacy_tool
 
 **Dev safety note:** do not rely on rolling dev down to 15 before rebasing. `00022` down can fail if rows use new snapshot types. Use a dev reset (`make seed-fresh` / drop-and-recreate prefixed tables + migration tracking) before applying the rebased chain.
 
-**Table renames baked in (no separate Slice 0):**
+**Table renames baked in (no separate Task 0):**
 
 | Old Name (dev migrations) | Final Name |
 |---------------------------|------------|
@@ -608,7 +608,7 @@ Production and test are still at migration 15. Keep `00016_normalize_legacy_tool
 
 **Go code updates:** Update table name constants in store files to use clean names.
 
-### Slice 1: Backend Dependency Group Assignment
+### Task 1: Backend Dependency Group Assignment
 
 **Goal**: Finalize migration history safely (`00016` kept, `00017`–`00023` rebased). Detect edit-range overlap at proposal creation time. Assign `dependency_group_id`. Expose in WS events. Capture `proposal_id` in tool results.
 
@@ -640,7 +640,7 @@ Production and test are still at migration 15. Keep `00016_normalize_legacy_tool
    - Tool result content includes `proposal_id`
 3. Smoke: AI turn 1 edits para 1, turn 2 edits para 1 → same group. Turn 2 edits para 10 → different group.
 
-### Slice 2: Frontend Composite Hunks + Tool Call Integration
+### Task 2: Frontend Composite Hunks + Tool Call Integration
 
 **Goal**: Group proposals by `dependencyGroupId`, display composite hunks for multi-proposal groups. Proactively fetch group members' updates. Link tool results to proposals with status + navigation.
 

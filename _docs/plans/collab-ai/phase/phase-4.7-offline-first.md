@@ -36,7 +36,7 @@ No optimistic local state updates exist today. All mutations fail immediately if
 5. Collab docs do not use REST save path while collab is enabled (`useDocumentSync` is disabled in `EditorPanel`).
 6. Connectivity baseline already exists; do not add a parallel `useConnectivityStore`.
 7. `useTreeStore` caches document **content** to `db.documents` during `loadTree`, but does NOT cache tree metadata (folders, document metadata without content). The plan previously conflated these.
-8. Current `RetryScheduler` (in `retry.ts`) uses an in-memory `Map`, ticks every 1000ms, max 3 attempts with jittered backoff. The persistent save retry (Slice 2) replaces this Map with Dexie while keeping the same scheduler interface.
+8. Current `RetryScheduler` (in `retry.ts`) uses an in-memory `Map`, ticks every 1000ms, max 3 attempts with jittered backoff. The persistent save retry (Task 2) replaces this Map with Dexie while keeping the same scheduler interface.
 
 ## 3. Scope (Phase 4.7)
 
@@ -179,9 +179,9 @@ Coalescing rules for queued ops:
 | Move doc A to folder B | Folder B deleted | API returns 404 for target → drop op, notify user |
 | Rename doc A | Doc A renamed by another user | API accepts (last-write-wins at API level) |
 
-## 5. Slice Plan
+## 5. Task Plan
 
-| # | Slice | Depends On | Key Files | Exit Criteria |
+| # | Task | Depends On | Key Files | Exit Criteria |
 |---|---|---|---|---|
 | 1 | Dexie schema v5 + op models + types | - | `frontend/src/core/lib/db.ts`, new `frontend/src/core/lib/offlineTypes.ts` | New tables migrate cleanly (v4 → v5); TypeScript types for `PendingDocumentSave`, `PendingTreeOp`, `ProjectTreeCache` exported; no runtime behavior change |
 | 2 | Persistent non-collab save retry | 1 | `frontend/src/core/lib/sync.ts`, `frontend/src/core/services/documentSyncService.ts`, `frontend/src/core/components/SyncProvider.tsx` | `documentSyncService.save()` writes to `pendingDocumentSaves` on network error instead of in-memory map; `SyncProvider` drains `pendingDocumentSaves` on startup + `online` event; retries survive reload |
@@ -191,11 +191,11 @@ Coalescing rules for queued ops:
 | 6 | Connectivity/status UX integration | 2, 5 | `frontend/src/shared/components/NetworkStatusBanner.tsx`, `frontend/src/features/documents/components/CollabConnectionIndicator.tsx` | Banner shows "X changes pending" count from Dexie queues; syncing indicator during drain; no new stores |
 | 7 | Tests + docs | 1-6 | `frontend/tests/**`, `_docs/features/**`, `_docs/plans/**` | Unit tests for queue CRUD, coalescing, drain conflict handling; integration test for reload-survives-retry; feature docs updated; plan marked IMPLEMENTED |
 
-### Slice sizing notes
+### Task sizing notes
 
-- **Slices 2 and 3 are independent** and can be implemented in parallel after Slice 1 lands.
-- **Slice 4 is the largest slice.** It adds optimistic tree updates (changing every mutation method in `useTreeStore`) plus queue writes. Consider splitting into 4a (optimistic updates only, no queue) and 4b (add queue) if it's too large during implementation.
-- **Slice 7 is intentionally test + docs only.** Tests for individual slice behavior should be written alongside each slice (not deferred to 7). Slice 7 covers integration-level tests and documentation sync.
+- **Tasks 2 and 3 are independent** and can be implemented in parallel after Task 1 lands.
+- **Task 4 is the largest task.** It adds optimistic tree updates (changing every mutation method in `useTreeStore`) plus queue writes. Consider splitting into 4a (optimistic updates only, no queue) and 4b (add queue) if it's too large during implementation.
+- **Task 7 is intentionally test + docs only.** Tests for individual task behavior should be written alongside each task (not deferred to 7). Task 7 covers integration-level tests and documentation sync.
 
 ## 6. Risks and Mitigations
 
@@ -217,10 +217,10 @@ All changes in Phase 4.7 are **additive** and do not modify existing online-firs
 - Optimistic tree updates only differ from current behavior when offline (online mutations still call API + reload).
 - Queue drain only activates when there are pending ops.
 
-Therefore, **no feature flag is needed**. The new code paths activate naturally when offline conditions occur. If a regression is found, the fix is to revert the specific slice — the Dexie tables remain inert.
+Therefore, **no feature flag is needed**. The new code paths activate naturally when offline conditions occur. If a regression is found, the fix is to revert the specific task — the Dexie tables remain inert.
 
 ### Rollback
 
-1. Revert the offending slice's code changes.
+1. Revert the offending task's code changes.
 2. New Dexie tables remain in schema (empty/inert — no destructive migration needed).
 3. Existing online-first behavior is preserved as the fallback.

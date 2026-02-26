@@ -28,7 +28,7 @@ TARGET:
 
 ---
 
-## Slice 1: Yjs Text Diff Converter
+## Task 1: Yjs Text Diff Converter
 
 **Goal:** Go utility that converts text diffs into Yjs update bytes **against the real Yjs state**.
 
@@ -82,7 +82,7 @@ cd backend && go test ./internal/service/collab/ -run TestYjsTextConverter -v
 
 ---
 
-## Slice 2: Thread Context Propagation + Provenance Contract
+## Task 2: Thread Context Propagation + Provenance Contract
 
 **Goal:** Pass thread/turn IDs through tool execution context for proposal provenance.
 
@@ -117,7 +117,7 @@ cd backend && go test ./internal/service/llm/... -v
 
 ---
 
-## Slice 3: DocumentMutationStrategy + Tool Integration + Broadcast
+## Task 3: DocumentMutationStrategy + Tool Integration + Broadcast
 
 **Goal:** Refactor TextEditorTool to use a Strategy pattern for the save path. Wire collab proposal strategy with proper WS broadcasting.
 
@@ -180,7 +180,7 @@ cd backend && go build ./... && go test ./internal/service/llm/tools/... -v
 
 ---
 
-## Slice 4: Auto-Accept Default ON
+## Task 4: Auto-Accept Default ON
 
 **Goal:** System default auto-accept = true. AI proposals auto-apply unless arbiter downgrades.
 
@@ -199,7 +199,7 @@ cd backend && go build ./... && go test ./internal/service/llm/tools/... -v
 
 ---
 
-## Slice 5: Frontend Feature Flag + PUA Deprecation
+## Task 5: Frontend Feature Flag + PUA Deprecation
 
 **Goal:** Gate old PUA system off, new collab system on by default.
 
@@ -218,7 +218,7 @@ cd frontend && pnpm run lint
 
 ---
 
-## Slice 6: Connection Status Indicator
+## Task 6: Connection Status Indicator
 
 **Goal:** Show WS state in editor UI.
 
@@ -231,7 +231,7 @@ cd frontend && pnpm run lint
 
 ---
 
-## Slice 7: Proposal Status in Thread UI
+## Task 7: Proposal Status in Thread UI
 
 **Goal:** Badge on TextEditorBlock showing proposal accept/reject/pending state.
 
@@ -244,7 +244,7 @@ cd frontend && pnpm run lint
 
 ---
 
-## Slice 8: Version History Panel Toggle
+## Task 8: Version History Panel Toggle
 
 **Goal:** Expose existing `VersionHistoryPanel` via toolbar button.
 
@@ -256,7 +256,7 @@ cd frontend && pnpm run lint
 
 ---
 
-## Slice 9: Thread -> Editor Navigation
+## Task 9: Thread -> Editor Navigation
 
 **Goal:** "View in Editor" from thread navigates to document + selects proposal.
 
@@ -269,7 +269,7 @@ cd frontend && pnpm run lint
 
 ---
 
-## Slice 10: Cleanup + Documentation
+## Task 10: Cleanup + Documentation
 
 ### Files
 
@@ -285,15 +285,15 @@ cd frontend && pnpm run lint
 ## Dependencies
 
 ```
-Slice 1 (Yjs converter) ─┐
-                          ├─ Slice 3 (Strategy + integration) ─── Slice 4 (Auto-accept)
-Slice 2 (Thread context) ─┘                                   │
-                                                               ├─ Slice 7 (Thread badges)
-Slice 5 (Frontend flag) ──────────────────────────────────────┤
-                                                               ├─ Slice 9 (Navigation)
-Slice 6 (Connection indicator) ────── independent              │
-Slice 8 (Version history) ─────────── independent              │
-Slice 10 (Cleanup) ────────────────── after all others         │
+Task 1 (Yjs converter) ─┐
+                          ├─ Task 3 (Strategy + integration) ─── Task 4 (Auto-accept)
+Task 2 (Thread context) ─┘                                   │
+                                                               ├─ Task 7 (Thread badges)
+Task 5 (Frontend flag) ──────────────────────────────────────┤
+                                                               ├─ Task 9 (Navigation)
+Task 6 (Connection indicator) ────── independent              │
+Task 8 (Version history) ─────────── independent              │
+Task 10 (Cleanup) ────────────────── after all others         │
 ```
 
 ## Pipeline
@@ -304,7 +304,7 @@ Slice 10 (Cleanup) ────────────────── after 
 
 | Stage | CLI | Model | Effort | Notes |
 |-------|-----|-------|--------|-------|
-| plan-slice | claude -p | opus | high | codex rate-limited from Phase 4 |
+| plan-task | claude -p | opus | high | codex rate-limited from Phase 4 |
 | implement | claude -p | opus | medium | |
 | review | claude -p | opus | medium | single reviewer sufficient |
 | commit | claude -p | haiku | low | |

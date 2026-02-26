@@ -205,9 +205,9 @@ Just show the proposed text in the editor with no diff decorations. Toggle off d
 
 ---
 
-## Slices
+## Tasks
 
-### Slice 1: Changeset Extraction Engine
+### Task 1: Changeset Extraction Engine
 
 **Goal:** Extract exact edit operations from Yjs proposal updates using `YTextEvent.delta`, replacing text diffing entirely.
 
@@ -231,7 +231,7 @@ Just show the proposed text in the editor with no diff decorations. Toggle off d
 
 ---
 
-### Slice 2: Unified Inline Diff View
+### Task 2: Unified Inline Diff View
 
 **Goal:** Replace the current side-by-side-only review panel with an inline unified diff using `unifiedMergeView`.
 
@@ -254,7 +254,7 @@ Just show the proposed text in the editor with no diff decorations. Toggle off d
 
 ---
 
-### Slice 3: Side-by-Side Toggle + Chunk Navigation
+### Task 3: Side-by-Side Toggle + Chunk Navigation
 
 **Goal:** Toggle between unified and side-by-side views; keyboard navigation between chunks.
 
@@ -275,7 +275,7 @@ Just show the proposed text in the editor with no diff decorations. Toggle off d
 
 ---
 
-### Slice 4: Chunk-Level Partial Accept + Protocol
+### Task 4: Chunk-Level Partial Accept + Protocol
 
 **Goal:** Accept/reject individual chunks within a proposal, not just all-or-nothing.
 
@@ -298,7 +298,7 @@ This requires a new approach: when accepting a chunk, we construct a **partial Y
 
 ---
 
-### Slice 5: Edit-Before-Accept
+### Task 5: Edit-Before-Accept
 
 **Goal:** Allow the writer to modify a proposed change before accepting it.
 

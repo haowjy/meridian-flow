@@ -4,7 +4,7 @@ audience: developer
 ---
 # Phase 4: Multi-Agent Arbitration
 
-**Status:** Complete (5 slices delivered)
+**Status:** Complete (5 tasks delivered)
 **Priority:** High
 **Purpose:** Let multiple AI agents propose concurrently while maintaining semantic quality for writers.
 

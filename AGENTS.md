@@ -161,8 +161,8 @@ All plans live in `_docs/plans/`. **Never use Claude Code's built-in plan mode.*
 
 ### Plan Execution
 
-- **Multi-slice plans** (3+ slices): Execute via `/orchestrate <plan-file>`. Never implement multi-slice plans directly.
-- **Single-slice plans**: Implement directly. Update progress in the plan file as you go.
+- **Multi-task plans** (3+ tasks): Execute via `/orchestrate <plan-file>`. Never implement multi-task plans directly.
+- **Single-task plans**: Implement directly. Update progress in the plan file as you go.
 
 ### Model Selection
 
