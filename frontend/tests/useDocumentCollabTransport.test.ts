@@ -633,7 +633,7 @@ describe("useDocumentCollab transport wiring", () => {
   });
 });
 
-describe("useDocumentCollab IDB recreation after WS win (Slice 4)", () => {
+describe("useDocumentCollab IDB recreation after WS win (Task 4)", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     reactHarness.reset();
@@ -677,7 +677,7 @@ describe("useDocumentCollab IDB recreation after WS win (Slice 4)", () => {
   });
 });
 
-describe("useDocumentCollab disabled path cleanup (Slice 3)", () => {
+describe("useDocumentCollab disabled path cleanup (Task 3)", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     reactHarness.reset();
@@ -715,7 +715,7 @@ describe("useDocumentCollab disabled path cleanup (Slice 3)", () => {
   });
 });
 
-describe("useDocumentCollab initial sync bootstrap ownership (Slice 1)", () => {
+describe("useDocumentCollab initial sync bootstrap ownership (Task 1)", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     reactHarness.reset();

@@ -59,7 +59,7 @@ Project hook maintains `activeSubscriptions` set. On reconnect: re-auth → re-s
 
 ## Contract Fixes (Pre-Migration)
 
-These are **existing bugs** where `documentId` is missing from events/commands. Currently harmless because 1 WS = 1 document, but breaks with project WS multiplexing. Must be fixed in Slice 1.
+These are **existing bugs** where `documentId` is missing from events/commands. Currently harmless because 1 WS = 1 document, but breaks with project WS multiplexing. Must be fixed in Task 1.
 
 | What | Go Location | TS Location | Fix |
 |---|---|---|---|
@@ -75,15 +75,15 @@ Also update TS type guards in `contracts.ts` (`isProposalStatusChangedEvent`, `i
 
 ## Sub-Phases
 
-| Phase | Goal | Slices |
+| Phase | Goal | Tasks |
 |---|---|---|
 | 4.6a | Protocol + contract fixes + backend handler | 1–2 |
 | 4.6b | Frontend migration + old endpoint removal | 3–5 |
 | 4.6c | SRP refactoring + docs | 6–7 |
 
-### Slice Summary
+### Task Summary
 
-| Slice | Description |
+| Task | Description |
 |---|---|
 | 1 | Contract fixes: `documentId` on all events/commands (Go + TS) + `mutation.DocumentID` for broadcast + multiplexed frame format |
 | 2 | Backend project WS handler (`ConnectProject`, subscribe/unsubscribe, `multiplexedConnection`, max 10 subs) |
@@ -93,7 +93,7 @@ Also update TS type guards in `contracts.ts` (`isProposalStatusChangedEvent`, `i
 | 6 | Backend SRP refactoring: extract `collabAuthenticator` + shared message-loop core |
 | 7 | Documentation updates (phase doc, spec contract, feature docs) |
 
-### Slice 6 Detail: SRP Refactoring
+### Task 6 Detail: SRP Refactoring
 
 `collab.go` is ~500 lines with 6+ responsibilities (WS upgrade, JWT auth, ownership check, session lifecycle, heartbeat, rate limiting, binary frame dispatch). Both `handleDocumentSocket` and `ConnectProject` need auth and message dispatch, creating duplication risk.
 
@@ -136,7 +136,7 @@ Also update TS type guards in `contracts.ts` (`isProposalStatusChangedEvent`, `i
 
 ## Completion
 
-| Slice | Status | Delivered |
+| Task | Status | Delivered |
 |---|---|---|
 | 1 | Done | Contract fixes (`documentId` coverage + multiplexed envelope support) in Go + TS |
 | 2 | Done | Backend project WS transport (`ConnectProject`, subscribe/unsubscribe, max-subscription guard) |

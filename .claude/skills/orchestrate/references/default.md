@@ -10,7 +10,7 @@
 
 run-agent
 model-guidance
-plan-slice
+plan-task
 review
 smoke-test
 scratchpad

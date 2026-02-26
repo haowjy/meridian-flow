@@ -102,4 +102,4 @@ The legacy ai-version path has been removed:
 
 - [b-collab-arbitration/](../b-collab-arbitration/) — Arbiter chain, proposal guardrails (Phase 4)
 - [fb-ai-editing/](../fb-ai-editing/) — Legacy PUA-based inline suggestions
-- [Phase 4.5 plan](`../../plans/collab-ai/phase/phase-4.5-ai-collab-bridge.md`) — Implementation plan with all 10 slices
+- [Phase 4.5 plan](`../../plans/collab-ai/phase/phase-4.5-ai-collab-bridge.md`) — Implementation plan with all 10 tasks

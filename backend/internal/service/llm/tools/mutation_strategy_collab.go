@@ -99,7 +99,7 @@ func (s *CollabProposalStrategy) Apply(ctx context.Context, input MutationInput)
 		}, nil
 	}
 
-	// Extract thread context for provenance (Slice 2)
+	// Extract thread context for provenance (Task 2)
 	threadID, turnID, userID, ok := ExtractThreadContext(ctx)
 	if !ok {
 		// Default to empty strings — don't fail the edit

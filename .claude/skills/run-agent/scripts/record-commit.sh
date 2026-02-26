@@ -2,7 +2,7 @@
 # record-commit.sh — Record the latest commit and optionally update the handoff file.
 #
 # Usage:
-#   scripts/record-commit.sh --plan <name> [--slice <name>] [--update-handoff]
+#   scripts/record-commit.sh --plan <name> [--task <name>] [--update-handoff]
 #
 # Records the latest git commit into SESSION_DIR/plans/{plan}/commits/{NNN}-{hash}.md
 # and optionally appends to handoffs/latest.md.
@@ -30,10 +30,10 @@ UPDATE_HANDOFF=false
 
 usage() {
   cat <<'EOF'
-Usage: scripts/record-commit.sh --plan <name> [--slice <name>] [--update-handoff]
+Usage: scripts/record-commit.sh --plan <name> [--task <name>] [--update-handoff]
 
   --plan NAME          Plan name (required)
-  --slice NAME         Slice name (optional)
+  --task NAME         Task name (optional)
   --update-handoff     Append commit info to handoffs/latest.md
   -h, --help           Show this help
 EOF
@@ -45,8 +45,8 @@ while [[ $# -gt 0 ]]; do
     --plan)
       [[ $# -lt 2 ]] && { echo "ERROR: --plan requires a value." >&2; usage; }
       PLAN_NAME="$2"; shift 2 ;;
-    --slice)
-      [[ $# -lt 2 ]] && { echo "ERROR: --slice requires a value." >&2; usage; }
+    --task)
+      [[ $# -lt 2 ]] && { echo "ERROR: --task requires a value." >&2; usage; }
       SLICE_NAME="$2"; shift 2 ;;
     --update-handoff) UPDATE_HANDOFF=true; shift ;;
     -h|--help) usage ;;
@@ -87,7 +87,7 @@ cat > "$COMMIT_FILE" <<EOF
 EOF
 
 if [[ -n "$SLICE_NAME" ]]; then
-  echo "- **Slice:** ${SLICE_NAME}" >> "$COMMIT_FILE"
+  echo "- **Task:** ${SLICE_NAME}" >> "$COMMIT_FILE"
 fi
 
 echo "[record-commit] Recorded: $COMMIT_FILE" >&2
@@ -105,7 +105,7 @@ if [[ "$UPDATE_HANDOFF" == true ]]; then
     echo "- **Subject:** ${COMMIT_SUBJECT}"
     echo "- **Date:** ${COMMIT_DATE}"
     echo "- **Plan:** ${PLAN_NAME}"
-    [[ -n "$SLICE_NAME" ]] && echo "- **Slice:** ${SLICE_NAME}"
+    [[ -n "$SLICE_NAME" ]] && echo "- **Task:** ${SLICE_NAME}"
   } >> "$HANDOFF_FILE"
 
   echo "[record-commit] Updated handoff: $HANDOFF_FILE" >&2
