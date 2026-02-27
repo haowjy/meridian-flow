@@ -9,11 +9,9 @@
 # - Lines starting with "#" are comments.
 
 run-agent
-model-guidance
 plan-task
-review
-smoke-test
+reviewing
 scratchpad
-research
+researching
 mermaid
-backlog
+backlog-managing
