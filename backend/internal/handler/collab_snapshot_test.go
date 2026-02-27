@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -22,16 +23,39 @@ import (
 type snapshotTestSnapshotStore struct {
 	snapshot       *collabModels.SnapshotWithState
 	getSnapshotErr error
+
+	saveSnapshotCalls int
+	savedDocumentID   string
+	savedState        []byte
+	savedSnapshotType string
+	savedName         *string
+	savedCreatedBy    *string
+	saveSnapshotID    string
+	saveSnapshotErr   error
 }
 
 func (s *snapshotTestSnapshotStore) SaveSnapshot(
 	_ context.Context,
-	_ string,
-	_ []byte,
-	_ string,
-	_ *string,
-	_ *string,
+	docID string,
+	state []byte,
+	snapshotType string,
+	name *string,
+	createdBy *string,
 ) (string, error) {
+	if s.saveSnapshotErr != nil {
+		return "", s.saveSnapshotErr
+	}
+
+	s.saveSnapshotCalls++
+	s.savedDocumentID = docID
+	s.savedState = state
+	s.savedSnapshotType = snapshotType
+	s.savedName = name
+	s.savedCreatedBy = createdBy
+
+	if s.saveSnapshotID != "" {
+		return s.saveSnapshotID, nil
+	}
 	return "", nil
 }
 
@@ -67,6 +91,43 @@ func (s *noopSnapshotStateStore) SaveState(_ context.Context, _ string, _ []byte
 	return nil
 }
 
+type trackingSnapshotStateStore struct {
+	loadedState []byte
+	loadErr     error
+
+	saveCalls      int
+	savedDocument  string
+	savedState     []byte
+	savedContent   string
+	savedAIContent string
+	saveErr        error
+}
+
+func (s *trackingSnapshotStateStore) LoadState(_ context.Context, _ string) ([]byte, error) {
+	if s.loadErr != nil {
+		return nil, s.loadErr
+	}
+	return s.loadedState, nil
+}
+
+func (s *trackingSnapshotStateStore) SaveState(
+	_ context.Context,
+	docID string,
+	state []byte,
+	content string,
+	aiContent string,
+) error {
+	if s.saveErr != nil {
+		return s.saveErr
+	}
+	s.saveCalls++
+	s.savedDocument = docID
+	s.savedState = state
+	s.savedContent = content
+	s.savedAIContent = aiContent
+	return nil
+}
+
 type snapshotTestResolver struct {
 	allowed bool
 	err     error
@@ -86,6 +147,15 @@ func (r *snapshotTestResolver) VerifyOwnership(_ context.Context, _, _ string) (
 type noopSnapshotTxManager struct{}
 
 func (noopSnapshotTxManager) ExecTx(ctx context.Context, fn repositories.TxFn) error {
+	return fn(ctx)
+}
+
+type trackingSnapshotTxManager struct {
+	calls int
+}
+
+func (m *trackingSnapshotTxManager) ExecTx(ctx context.Context, fn repositories.TxFn) error {
+	m.calls++
 	return fn(ctx)
 }
 
@@ -284,6 +354,100 @@ func TestGetSnapshotContent_EmptyStateReturnsEmptyContent(t *testing.T) {
 	}
 	if resp.Content != "" {
 		t.Fatalf("expected empty content for empty yjs_state, got %q", resp.Content)
+	}
+}
+
+func TestRestoreSnapshot_Success(t *testing.T) {
+	docID := uuid.MustParse("11111111-1111-1111-1111-111111111111").String()
+	snapshotID := uuid.MustParse("22222222-2222-2222-2222-222222222222").String()
+	userID := uuid.MustParse("33333333-3333-3333-3333-333333333333").String()
+
+	currentState := buildSnapshotState(t, "current document content")
+	targetState := buildSnapshotState(t, "restored from snapshot")
+
+	stateStore := &trackingSnapshotStateStore{
+		loadedState: currentState,
+	}
+	snapshotStore := &snapshotTestSnapshotStore{
+		snapshot: &collabModels.SnapshotWithState{
+			Snapshot: collabModels.Snapshot{
+				ID:         snapshotID,
+				DocumentID: docID,
+				CreatedAt:  time.Now(),
+			},
+			YjsState: targetState,
+		},
+	}
+	txManager := &trackingSnapshotTxManager{}
+
+	h := NewCollabSnapshotHandler(
+		stateStore,
+		snapshotStore,
+		&snapshotTestResolver{allowed: true},
+		txManager,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		&config.Config{Environment: "test"},
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req = httputil.WithUserID(req, userID)
+	req.SetPathValue("id", docID)
+	req.SetPathValue("snapshotId", snapshotID)
+
+	rr := httptest.NewRecorder()
+	h.RestoreSnapshot(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rr.Code)
+	}
+
+	var resp struct {
+		Status     string `json:"status"`
+		SnapshotID string `json:"snapshot_id"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Status != "restored" {
+		t.Fatalf("expected status %q, got %q", "restored", resp.Status)
+	}
+	if resp.SnapshotID != snapshotID {
+		t.Fatalf("expected snapshot_id %q, got %q", snapshotID, resp.SnapshotID)
+	}
+
+	if txManager.calls != 1 {
+		t.Fatalf("expected one transaction, got %d", txManager.calls)
+	}
+	if snapshotStore.saveSnapshotCalls != 1 {
+		t.Fatalf("expected one pre_restore snapshot save, got %d", snapshotStore.saveSnapshotCalls)
+	}
+	if snapshotStore.savedDocumentID != docID {
+		t.Fatalf("expected pre_restore doc id %q, got %q", docID, snapshotStore.savedDocumentID)
+	}
+	if !bytes.Equal(snapshotStore.savedState, currentState) {
+		t.Fatalf("expected pre_restore snapshot state to match current state")
+	}
+	if snapshotStore.savedSnapshotType != "pre_restore" {
+		t.Fatalf("expected pre_restore snapshot type, got %q", snapshotStore.savedSnapshotType)
+	}
+	if snapshotStore.savedName == nil || *snapshotStore.savedName != "Pre-restore safety snapshot" {
+		t.Fatalf("expected pre_restore snapshot name to be set")
+	}
+	if snapshotStore.savedCreatedBy == nil || *snapshotStore.savedCreatedBy != userID {
+		t.Fatalf("expected pre_restore created_by_user_id to match request user")
+	}
+
+	if stateStore.saveCalls != 1 {
+		t.Fatalf("expected one SaveState call, got %d", stateStore.saveCalls)
+	}
+	if stateStore.savedDocument != docID {
+		t.Fatalf("expected SaveState doc id %q, got %q", docID, stateStore.savedDocument)
+	}
+	if !bytes.Equal(stateStore.savedState, targetState) {
+		t.Fatalf("expected restored yjs_state to match target snapshot")
+	}
+	if stateStore.savedContent != "" || stateStore.savedAIContent != "" {
+		t.Fatalf("expected restore projections cleared, got content=%q ai_content=%q", stateStore.savedContent, stateStore.savedAIContent)
 	}
 }
 

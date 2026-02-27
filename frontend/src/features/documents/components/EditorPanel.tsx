@@ -28,7 +28,7 @@ import { PanelHeader } from "@/shared/components/layout/headers";
 import { SidebarToggle } from "@/shared/components/layout/SidebarToggle";
 import { CompactBreadcrumb } from "@/shared/components/ui/CompactBreadcrumb";
 import { Button } from "@/shared/components/ui/button";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Loader2 } from "lucide-react";
 import { EditorHeader } from "./EditorHeader";
 import { EditorWikiLinkPopover } from "./EditorWikiLinkPopover";
 import { WikiLinkCreatePopover } from "./WikiLinkCreatePopover";
@@ -298,6 +298,26 @@ export function EditorPanel({
     // Show editor once IndexedDB cache has loaded (read-only until WS connects).
     // This avoids blocking on WS round-trip for cached content display.
     (collabEnabled && !isCollabIdbSynced);
+  const isWaitingForCollabConnection =
+    collabEnabled &&
+    isInitialized &&
+    isCollabReady &&
+    isCollabIdbSynced &&
+    collabConnectionState !== "connected";
+  const collabWaitMessage =
+    !isInitialized || !isCollabReady || !isCollabIdbSynced
+      ? "Loading collaborative document..."
+      : collabConnectionState === "syncing"
+        ? "Syncing collaborative document..."
+        : "Connecting to collaboration...";
+  const renderCollabWaitingIndicator = (className: string) => (
+    <div className={className}>
+      <div className="bg-background/80 border-border text-muted-foreground inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs">
+        <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+        <span>{collabWaitMessage}</span>
+      </div>
+    </div>
+  );
 
   // ---------------------------------------------------------------------------
   // MAIN RENDER
@@ -324,9 +344,12 @@ export function EditorPanel({
         {/* Editor content - scrolls with parent container */}
         <div ref={editorContentRef} className="relative my-2 flex-1">
           {isContentLoading ? (
-            // Empty placeholder while loading — consistent blank area for both
-            // collab (waiting for WS connection) and non-collab (waiting for content)
-            <div className="flex-1" />
+            collabEnabled ? (
+              renderCollabWaitingIndicator("flex h-full items-center justify-center")
+            ) : (
+              // Empty placeholder while loading (non-collab)
+              <div className="flex-1" />
+            )
           ) : (
             // eslint-disable-next-line react-hooks/refs -- intentional: stable ref passed as prop
             <EditorContextMenu editorRef={editorRef.current}>
@@ -339,7 +362,11 @@ export function EditorPanel({
                   collabEnabled ? getYtextContent() : localDocument
                 }
                 editable={isEditable}
-                placeholder="Start writing..."
+                placeholder={
+                  collabEnabled && collabConnectionState !== "connected"
+                    ? undefined
+                    : "Start writing..."
+                }
                 onChange={handleContentChange}
                 onReady={handleEditorReady}
                 extensions={[
@@ -352,6 +379,11 @@ export function EditorPanel({
               />
             </EditorContextMenu>
           )}
+          {!isContentLoading &&
+            isWaitingForCollabConnection &&
+            renderCollabWaitingIndicator(
+              "pointer-events-none absolute inset-0 z-10 flex items-center justify-center",
+            )}
 
           {/* Wiki-link @-mention popover (positioned relative to editor) */}
           <EditorWikiLinkPopover
