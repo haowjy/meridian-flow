@@ -5,7 +5,7 @@ audience: developer
 
 # Unified Internal Links: Remaining Work Plan (Re-reviewed)
 
-Status: Drafted after implementation audit  
+Status: archived (implemented)  
 Scope: Frontend only (`core/references`, CodeMirror live preview, thread composer/edit mention UX)
 
 ## Re-review Summary

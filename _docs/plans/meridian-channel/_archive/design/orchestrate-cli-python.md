@@ -1209,7 +1209,7 @@ These are invariants that every slice must preserve. Violation of any spec means
 **Description:** Set up the Python package structure, pyproject.toml, cyclopts CLI skeleton with resource-first subcommand groups stubbed, FastMCP server skeleton, Operation Registry scaffold, CI pipeline, and domain types (frozen dataclasses). After this slice, agents can invoke `orch --help` and `orch serve` starts (but has no tools). Surface parity test is in place from day one.
 
 **Required reading (`-f` files for orchestrator):**
-- `_docs/plans/orchestrate-cli-python.md` (this plan — Slice 0 section)
+- `_docs/plans/meridian-channel/_archive/design/orchestrate-cli-python.md` (this plan — Slice 0 section)
 - `orchestrate/skills/run-agent/scripts/run-agent.sh` (CLI interface being replaced)
 - `orchestrate/skills/run-agent/SKILL.md` (current interface contract)
 
@@ -1288,7 +1288,7 @@ ModelId = NewType("ModelId", str)            # "claude-opus-4-6", "gpt-5.3-codex
 **Description:** Implement the SQLite state database with WAL mode, event-sourced workflow state, trace spans, and workspace/context-pinning tables. Maintain JSONL dual-write for backwards compatibility. Fixes critical gaps #2 (lock mismatch) and #5 (index corruption).
 
 **Required reading (`-f` files for orchestrator):**
-- `_docs/plans/orchestrate-cli-python.md` (this plan — Slice 1 section)
+- `_docs/plans/meridian-channel/_archive/design/orchestrate-cli-python.md` (this plan — Slice 1 section)
 - `orchestrate/skills/run-agent/scripts/lib/logging.sh` (current JSONL index write logic)
 - `orchestrate/skills/run-agent/scripts/run-index.sh` (current index query/maintain logic)
 

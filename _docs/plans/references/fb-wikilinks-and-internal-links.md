@@ -236,8 +236,8 @@ Phase 4 (prompt guidance) — independent, parallel with anything
 
 ## Related Documentation
 
-- `_docs/plans/fb-at-references.md` — Thread composer @-file (depends on parser from this plan)
-- `_docs/plans/fb-compaction.md` — Compaction (depends on message builder from at-references)
+- `_docs/plans/_archive/fb-at-references.md` — Thread composer @-file (historical dependency on parser from this plan)
+- `_docs/plans/references/fb-compaction.md` — Compaction (depends on message builder from at-references)
 - `frontend/src/core/editor/codemirror/livePreview/plugin.ts` — Live preview architecture
 - `backend/internal/service/llm/tools/text_editor.go` — Guideline location
 - `backend/internal/service/llm/tools/registry.go` — Tool section prompt

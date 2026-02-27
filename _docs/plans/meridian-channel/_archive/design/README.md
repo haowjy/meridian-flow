@@ -30,7 +30,7 @@ Python 3.14 with pyright strict mode, frozen dataclasses in the core domain, pyd
 | [mcp-tools.md](mcp-tools.md) | MCP tool definitions, response types, parity contract, non-blocking `run_create`, `MERIDIAN_DEPTH` |
 | [cli-contract.md](cli-contract.md) | Output modes, error schema, `--json`/`--yes` specs, command grammar |
 | [correctness-specs.md](correctness-specs.md) | 10 invariants, execution model strategy |
-| [risk-and-gaps.md](risk-and-gaps.md) | Risk table, gap resolution, compatibility contract |
+| [risk-and-gaps.md](../../risk-and-gaps.md) | Risk table, gap resolution, compatibility contract |
 | [migration-from-rust.md](migration-from-rust.md) | What changed, what stayed, v2 horizon |
 
 ## Slice Summary

@@ -3,7 +3,7 @@
 **Required reading:**
 - [`_docs/plans/meridian-channel/README.md`](../README.md) (always)
 - [`_docs/plans/meridian-channel/design-philosophy.md`](../design-philosophy.md) (always)
-- [`_docs/plans/meridian-channel/risk-and-gaps.md`](../risk-and-gaps.md) (gap resolution, compatibility contract)
+- [`_docs/plans/meridian-channel/risk-and-gaps.md`](../../../risk-and-gaps.md) (gap resolution, compatibility contract)
 - [`_docs/plans/meridian-channel/cli-contract.md`](../cli-contract.md) (output modes)
 
 **Effort:** 2 days

@@ -4,7 +4,7 @@ audience: developer
 ---
 # `orch` — Orchestrate CLI
 
-**Status:** draft
+**Status:** archived (superseded)
 **Priority:** High
 **Estimated effort:** 18-22 days across 9 slices
 **Depends on:** None (greenfield — subsumes existing bash scripts)
@@ -1151,7 +1151,7 @@ pub struct ArtifactKey {
 **Model recommendation:** `gpt-5.3-codex` -- structured parsing with well-defined inputs/outputs.
 
 **Required reading (`-f` files for orchestrator):**
-- `_docs/plans/orchestrate-cli.md` (this plan — Slice 2 section, P8, P9)
+- `_docs/plans/meridian-channel/_archive/design/orchestrate-cli.md` (this plan — Slice 2 section, P8, P9)
 - `orchestrate/skills/run-agent/scripts/lib/parse.sh` (current model routing + arg parsing)
 - `orchestrate/skills/run-agent/scripts/load-model-guidance.sh` (guidance loading)
 - `orchestrate/skills/run-agent/references/default-model-guidance.md` (model heuristics)

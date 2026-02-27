@@ -1,4 +1,4 @@
-**Status:** done
+**Status:** archived (implemented)
 
 # Orchestrate Hook Sticky Skill Reload (Transcript + Unpin)
 

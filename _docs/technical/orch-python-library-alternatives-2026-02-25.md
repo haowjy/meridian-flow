@@ -14,10 +14,10 @@ Select libraries for `orch` that maximize:
 
 ## Codebase Context
 Current `orch` planning docs expect:
-- thin CLI/MCP adapters and business logic in `orch.lib` (`_docs/plans/orchestrate-cli-python.md:299-306`)
-- typed MCP tool IO via Pydantic (`_docs/plans/orchestrate-cli-python.md:310-470`)
-- SQLite state layer with WAL (`_docs/plans/orchestrate-cli-python.md:947-1033`)
-- initial dependency examples around `click`, `mcp`, `pydantic`, `jinja2`, `aiosqlite`, `pytest`, `pyright`, `ruff` (`_docs/plans/orchestrate-cli-python.md:687-748`)
+- thin CLI/MCP adapters and business logic in `orch.lib` (`_docs/plans/meridian-channel/_archive/design/orchestrate-cli-python.md:299-306`)
+- typed MCP tool IO via Pydantic (`_docs/plans/meridian-channel/_archive/design/orchestrate-cli-python.md:310-470`)
+- SQLite state layer with WAL (`_docs/plans/meridian-channel/_archive/design/orchestrate-cli-python.md:947-1033`)
+- initial dependency examples around `click`, `mcp`, `pydantic`, `jinja2`, `aiosqlite`, `pytest`, `pyright`, `ruff` (`_docs/plans/meridian-channel/_archive/design/orchestrate-cli-python.md:687-748`)
 
 Related existing Python CLI in repo (`cli/`) currently uses Textual (`cli/pyproject.toml:8`).
 
@@ -216,7 +216,7 @@ Use `nox` to orchestrate sessions (lint/type/test on 3.14), not instead of pytes
 ## Sources
 
 ### Repository context
-- `_docs/plans/orchestrate-cli-python.md` (local)
+- `_docs/plans/meridian-channel/_archive/design/orchestrate-cli-python.md` (local)
 - `cli/pyproject.toml` (local)
 
 ### Core docs / specs
