@@ -14,6 +14,8 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useEditorStore } from "@/core/stores/useEditorStore";
 import { useLatestRef } from "@/core/hooks";
 import { isCollabEnabled } from "../lib/collabFeatureFlag";
+import { useCollabStore } from "../stores/useCollabStore";
+import { computeDocumentEditable } from "../lib/documentEditability";
 import type { BaseEditorRef } from "@/core/editor/types/editorRegistry";
 import { createTextDocumentContentDriver } from "./documentContentDriver";
 
@@ -104,6 +106,9 @@ export function useDocumentContent(
   const _activeDocumentId = useEditorStore((s) => s._activeDocumentId);
   const isLoading = useEditorStore((s) => s.isLoading);
   const loadDocument = useEditorStore((s) => s.loadDocument);
+  const collabConnectionState = useCollabStore(
+    (s) => s.stateByDocumentId[documentId] ?? "disconnected",
+  );
 
   // ---------------------------------------------------------------------------
   // LOCAL STATE
@@ -151,11 +156,14 @@ export function useDocumentContent(
     setEditVersion((current) => (current === savedAtVersion ? 0 : current));
   }, []);
 
-  // Editable once document is initialized and loaded.
-  // Collab docs don't need to wait for WS — Yjs CRDTs handle offline edits
-  // and merge automatically when the connection is restored.
-  const isEditable =
-    isInitialized && activeDocument?.id === documentId && !isLoading;
+  const isEditable = computeDocumentEditable({
+    isInitialized,
+    activeDocumentId: activeDocument?.id,
+    documentId,
+    isLoading,
+    collabEnabled,
+    collabConnectionState,
+  });
 
   // ---------------------------------------------------------------------------
   // CALLBACKS
