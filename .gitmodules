@@ -7,3 +7,6 @@
 [submodule "orchestrate"]
 	path = orchestrate
 	url = https://github.com/haowjy/orchestrate
+[submodule "meridian-channel"]
+	path = meridian-channel
+	url = git@github.com:haowjy/meridian-channel.git
