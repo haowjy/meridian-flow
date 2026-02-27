@@ -1,8 +1,9 @@
 # Plan: Harden Collab Edge Cases + Clean Up Technical Debt
 
 **Branch:** `h/collab`
-**Status:** Draft
+**Status:** In Progress (audited 2026-02-27)
 **Created:** 2026-02-22
+**Last Audited:** 2026-02-27
 
 ## Problem
 
@@ -246,15 +247,35 @@ private didStartSync = false;
 - **Duplicate broadcast logic consolidation** — drift risk but low severity
 - **Horizontal scaling** — separate initiative
 
+## Verification Notes (Audit: 2026-02-27)
+
+- Code evidence reviewed:
+  - `ai_content` offline clobber fix + test: `backend/internal/service/collab/session_manager.go`, `backend/internal/service/collab/session_manager_test.go` (latest related commit: 2026-02-22).
+  - Subscribe not-found mapping + frontend handling + tests: `backend/internal/handler/collab_project.go`, `backend/internal/handler/collab_project_test.go`, `frontend/src/features/documents/hooks/useProjectCollab.ts`, `frontend/tests/projectCollab.test.ts` (latest related commit: 2026-02-23).
+  - Repository iteration guard/debt cleanup: `backend/internal/repository/postgres/collab/document_store.go`; `backend/internal/repository/postgres/collab/document_touch_store.go` removed; no `ErrNoActiveSession` symbol found; logger fields removed from collab stores (commits dated 2026-02-22).
+  - Frontend dead review API cleanup: `frontend/src/core/cm6-collab/review/runtime.ts`, `frontend/src/core/cm6-collab/review/index.ts`; `frontend/src/core/cm6-collab/review/merge.ts` removed (commit dated 2026-02-22).
+  - Interface split + reconnect coupling doc/test: `backend/internal/domain/services/collab/collab.go`, `frontend/src/core/cm6-collab/sync/runtime.ts`, `frontend/tests/cm6-collab/runtime-reconnect-sync.test.ts` (commits dated 2026-02-22 to 2026-02-23).
+- Targeted verification run on 2026-02-27:
+  - `go test ./backend/internal/service/collab ./backend/internal/handler` -> pass.
+  - `cd frontend && pnpm vitest run tests/projectCollab.test.ts tests/cm6-collab/runtime-reconnect-sync.test.ts tests/useDocumentCollabTransport.test.ts` -> pass (3 files, 17 tests).
+
+## Verification run (2026-02-27)
+
+- Reconnect/resubscribe: `cd frontend && pnpm vitest run --reporter=verbose tests/projectCollab.test.ts -t 'replays active document subscriptions after reconnect|drops active subscription after DOCUMENT_NOT_FOUND doc:error'` -> PASS (`replays active document subscriptions after reconnect`).
+- Offline proposal apply + `ai_content` projection: `cd backend && go test -v ./internal/service/collab -run 'TestDocumentSessionManagerApplyUpdate_OfflinePersistsAIContentWithContent' -count=1` -> PASS.
+- Snapshot preview/restore: `cd backend && go test -v ./internal/handler -run 'TestGetSnapshotContent_Success|TestRestoreSnapshot_Success' -count=1` -> PASS.
+- Deleted-doc subscribe error path (`DOCUMENT_NOT_FOUND`): `cd backend && go test -v ./internal/handler -run 'TestProjectWS_DocSubscribeDocumentNotFound' -count=1` and frontend command above -> PASS.
+
 ## Acceptance Criteria
 
-- [ ] `go test ./backend/...` passes
-- [ ] `cd frontend && pnpm run test` passes
-- [ ] `cd frontend && pnpm run lint` passes
-- [ ] `aiContent` is no longer clobbered to empty on offline apply
-- [ ] `DOCUMENT_NOT_FOUND` error code surfaces to frontend on deleted-doc subscribe
-- [ ] `rows.Err()` checked after all row iterations in collab repos
-- [ ] Dead backend code removed (`ErrNoActiveSession`, `DocumentTouchStore`, unused logger fields)
-- [ ] Dead frontend code removed (4 orphaned exports/files)
-- [ ] `DocumentStore` split into `DocumentStateStore` + `SnapshotStore`; test fakes simplified
-- [ ] Reconnect re-sync test proves server-initiated SyncStep1 works with reused runtime
+- [ ] `go test ./backend/...` passes (full suite not run in this audit)
+- [ ] `cd frontend && pnpm run test` passes (full suite not run in this audit)
+- [ ] `cd frontend && pnpm run lint` passes (not run in this audit)
+- [x] `aiContent` is no longer clobbered to empty on offline apply
+- [x] `DOCUMENT_NOT_FOUND` error code surfaces to frontend on deleted-doc subscribe
+- [x] `rows.Err()` checked after all row iterations in collab repos
+- [x] Dead backend code removed (`ErrNoActiveSession`, `DocumentTouchStore`, unused logger fields)
+- [x] Dead frontend code removed (4 orphaned exports/files)
+- [x] `DocumentStore` split into `DocumentStateStore` + `SnapshotStore`; test fakes simplified
+- [x] Reconnect re-sync test proves server-initiated SyncStep1 works with reused runtime
+- [x] Targeted regression tests listed in verification notes pass (2026-02-27)

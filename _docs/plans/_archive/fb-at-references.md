@@ -4,7 +4,7 @@ audience: developer
 ---
 # @-File References + Message Builder Pipeline
 
-**Status:** Ready to implement
+**Status:** archived (superseded)
 **Priority:** High
 **Estimated effort:** 2–3 days
 **Depends on:** `fb-wikilinks-and-internal-links.md` Phase 1 (parser + resolver)
@@ -302,8 +302,8 @@ Phase 1 and Phase 2 can be developed in parallel if the API contract for referen
 
 ## Related Documentation
 
-- `_docs/plans/fb-wikilinks-and-internal-links.md` — Parser + resolver (shared dependency)
-- `_docs/plans/fb-compaction.md` — Compaction (builds on BlockTransformer pipeline)
+- `_docs/plans/references/fb-wikilinks-and-internal-links.md` — Parser + resolver (shared dependency)
+- `_docs/plans/references/fb-compaction.md` — Compaction (builds on BlockTransformer pipeline)
 - `backend/internal/service/llm/thread_history/message_builder.go` — Pipeline integration point
 - `backend/internal/domain/models/llm/content_types.go` — Reference content types
 - `frontend/src/features/threads/components/blocks/registry.ts` — Block renderer registry

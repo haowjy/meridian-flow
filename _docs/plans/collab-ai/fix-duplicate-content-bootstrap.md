@@ -1,4 +1,6 @@
 # Plan: Fix Duplicate Content on Empty Yjs State Bootstrap
+**Status:** In Progress (audited 2026-02-27)
+**Last Audited:** 2026-02-27
 
 ## Problem
 
@@ -16,7 +18,7 @@ Move first-write bootstrap from client to server. Add a subscription generation 
 
 ### Backend Changes
 
-#### 1. Add `LoadContentForBootstrap` to DocumentStore interface and implementation
+#### 1. Add `LoadContentForBootstrap` to collab content-loader interface and implementation
 
 **File:** `backend/internal/domain/services/collab/collab.go`
 - Add new method: `LoadContentForBootstrap(ctx context.Context, docID string) (string, error)`
@@ -64,8 +66,7 @@ Key points:
 #### 4. Remove client-side bootstrap
 
 **File:** `frontend/src/core/cm6-collab/sync/runtime.ts`
-- Keep `bootstrapTextIfEmpty()` method but add a deprecation comment — it's now a no-op fallback since server handles bootstrap
-- OR: Remove it entirely and update callers
+- `bootstrapTextIfEmpty()` removed; runtime starts sync only.
 
 **File:** `frontend/src/features/documents/hooks/useDocumentCollab.ts`
 - Remove `didBootstrap` flag and `tryBootstrap()` function (lines 142, 173-179)
@@ -94,18 +95,42 @@ Key points:
 
 ---
 
+## Verification Notes (Audit: 2026-02-27)
+
+- Code evidence reviewed:
+  - Server bootstrap path implemented in `backend/internal/service/collab/session_manager.go` (`loadState` uses `LoadContentForBootstrap` and persists bootstrapped state).
+  - Bootstrap content loader implemented in `backend/internal/repository/postgres/collab/document_store.go`.
+  - Interface contract present in `backend/internal/domain/services/collab/collab.go` (`DocumentContentLoader`).
+  - Bootstrap unit coverage in `backend/internal/service/collab/session_manager_test.go`:
+    - `TestDocumentSessionLoadState_BootstrapsFromContentWhenStateEmpty`
+    - `TestDocumentSessionLoadState_EmptyStateAndEmptyContentNoop`
+    - `TestDocumentSessionLoadState_ExistingStateSkipsBootstrapPath`
+  - Client bootstrap path removed from `frontend/src/features/documents/hooks/useDocumentCollab.ts`; regression assertion in `frontend/tests/useDocumentCollabTransport.test.ts` (`does not expose bootstrapTextIfEmpty`).
+  - Runtime generation guard implemented in `frontend/src/core/cm6-collab/sync/runtime.ts` (`didStartSync`) and reconnect regression covered in `frontend/tests/cm6-collab/runtime-reconnect-sync.test.ts`.
+- Targeted verification run on 2026-02-27:
+  - `go test ./backend/internal/service/collab ./backend/internal/handler` -> pass.
+  - `cd frontend && pnpm vitest run tests/projectCollab.test.ts tests/cm6-collab/runtime-reconnect-sync.test.ts tests/useDocumentCollabTransport.test.ts` -> pass.
+
 ## Acceptance Criteria
 
-1. A document with `yjs_state = NULL` and non-empty `content` gets its Y.Doc initialized server-side on first session acquire
-2. Client no longer calls `bootstrapTextIfEmpty` (or it's a no-op fallback)
-3. Opening the same document in two tabs simultaneously does NOT produce duplicate content
-4. Existing documents with valid `yjs_state` continue to work normally
-5. `make test` passes in backend
-6. `pnpm run test` passes in frontend
-7. `pnpm run lint` passes in frontend
+- [x] A document with `yjs_state = NULL` and non-empty `content` gets its Y.Doc initialized server-side on first session acquire
+- [x] Client no longer calls `bootstrapTextIfEmpty`
+- [x] Opening the same document in two tabs simultaneously does NOT produce duplicate content (covered by single-writer server bootstrap path + no client bootstrap writes)
+- [x] Existing documents with valid `yjs_state` continue to work normally
+- [ ] `make test` passes in backend (full suite not run in this audit)
+- [ ] `pnpm run test` passes in frontend (full suite not run in this audit)
+- [ ] `pnpm run lint` passes in frontend (not run in this audit)
+- [x] Targeted bootstrap/reconnect regressions pass (2026-02-27 commands in verification notes)
 
 ## Testing Approach
 
 - Unit test: Backend `loadState` initializes Y.Doc from `content` when `yjs_state` is NULL
 - Unit test: Backend `loadState` does NOT re-initialize when `yjs_state` is already populated
 - Regression: Existing collab sync tests still pass
+
+## Verification run (2026-02-27)
+
+- Reconnect/resubscribe: `cd frontend && pnpm vitest run --reporter=verbose tests/projectCollab.test.ts -t 'replays active document subscriptions after reconnect|drops active subscription after DOCUMENT_NOT_FOUND doc:error'` -> PASS (`replays active document subscriptions after reconnect`).
+- Offline proposal apply + `ai_content` projection: `cd backend && go test -v ./internal/service/collab -run 'TestDocumentSessionManagerApplyUpdate_OfflinePersistsAIContentWithContent' -count=1` -> PASS.
+- Snapshot preview/restore: `cd backend && go test -v ./internal/handler -run 'TestGetSnapshotContent_Success|TestRestoreSnapshot_Success' -count=1` -> PASS.
+- Deleted-doc subscribe error path (`DOCUMENT_NOT_FOUND`): `cd backend && go test -v ./internal/handler -run 'TestProjectWS_DocSubscribeDocumentNotFound' -count=1` and frontend command above -> PASS.

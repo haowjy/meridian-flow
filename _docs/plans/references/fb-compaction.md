@@ -361,7 +361,7 @@ flowchart LR
 
 ## Related Documentation
 
-- `_docs/plans/fb-at-references.md` — BlockTransformer pipeline (prerequisite)
-- `_docs/plans/fb-wikilinks-and-internal-links.md` — Parser + resolver (shared)
+- `_docs/plans/_archive/fb-at-references.md` — BlockTransformer pipeline (historical prerequisite)
+- `_docs/plans/references/fb-wikilinks-and-internal-links.md` — Parser + resolver (shared)
 - `backend/internal/service/llm/thread_history/message_builder.go` — Pipeline integration
 - `backend/internal/service/llm/streaming/service.go` — Token tracking + streaming

@@ -5,7 +5,7 @@ audience: developer
 
 # Unified Internal Links Refactor Checklist
 
-Status: Ready for implementation
+Status: archived (superseded)
 Owner: Frontend
 Scope: Document editor + shared reference plumbing used by composer/edit-turn surfaces
 
@@ -173,7 +173,7 @@ Files to modify:
 |---|---|
 | `_docs/features/f-document-editor/README.md` | Update "Wiki-Link References" to include markdown internal link pill parity |
 | `_docs/features/f-document-editor/rich-text-features.md` | Add concise note on unified internal link rendering behavior |
-| `_docs/plans/fb-wikilinks-and-internal-links.md` | Add pointer to this checklist as implementation plan refinement |
+| `_docs/plans/references/fb-wikilinks-and-internal-links.md` | Add pointer to this checklist as implementation plan refinement |
 
 ## Execution Checklist (Ordered)
 
@@ -206,4 +206,3 @@ Files to modify:
   2. Shared pill builder
   3. Link renderer integration
   4. Mention plumbing dedupe
-
