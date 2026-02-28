@@ -15,14 +15,16 @@ The `.opencode/plugins/orchestrate.ts` plugin was written speculatively against 
 
 The current plugin is non-functional.
 
-### Key API constraints (from review)
+### Key API constraints (from source + live session)
 
-| Hook | Input | Output (mutate in place) |
-|---|---|---|
-| `event` | `{ event }` | (none — observe only) |
-| `experimental.session.compacting` | `{ sessionID }` | `{ context: string[]; prompt?: string }` |
-| `experimental.chat.system.transform` | `{ system }` | `{ system }` |
-| `tool.execute.before` | `{ tool, sessionID, callID }` | `{ args }` |
+| Hook | Input | Output (mutate in place) | Use |
+|---|---|---|---|
+| `chat.message` | `{ sessionID, agent?, model?, messageID?, variant? }` | `{ message: UserMessage; parts: Part[] }` | **Observe incoming messages — detect skill loads** |
+| `experimental.session.compacting` | `{ sessionID }` | `{ context: string[]; prompt?: string }` | **Reinject skills on compaction** |
+| `experimental.chat.system.transform` | `{ sessionID?, model }` | `{ system: string[] }` | Fallback: append to system prompt |
+| `command.execute.before` | `{ command, sessionID, arguments }` | `{ parts: Part[] }` | Could intercept `/unpin` commands |
+| `event` | `{ event }` | (none — observe only) | Debug logging |
+| `tool.execute.before` | `{ tool, sessionID, callID }` | `{ args }` | Not useful (args only, no context injection) |
 
 ### OpenCode storage model (from live session inspection)
 
@@ -60,12 +62,15 @@ The Claude Code / Cursor approach scans a JSONL transcript file for skill activa
 
 The shell scripts remain the mechanism for Claude Code and Cursor (they have JSONL transcripts). The OpenCode plugin is self-contained.
 
-### Skill detection strategy
+### Skill detection via `chat.message` hook
 
-Skills are loaded as user messages containing the full SKILL.md text. Detection approach:
-- Match known patterns: `"# <SkillName>"` headers, `"Base directory for this skill:"` markers
+The `chat.message` hook fires on every new message and provides `output.parts: Part[]` — the actual content parts. Skills appear as `text` parts containing the full SKILL.md content. Detection approach:
+- Scan `output.parts` where `type === "text"` for activation patterns:
+  - `"Base directory for this skill: .../skills/<name>"`
+  - `"Launching skill: <name>"`
+- Also detect unpin signals in text parts: `"/unpin <name>"`, `"SKILL_UNPIN:<name>"`
 - Cross-reference against the allow-list from `.orchestrate/sticky-skills.conf`
-- Track activations in a `Set<string>` — add on detection, remove on unpin signals
+- Track activations in a `Set<string>` — add on detection, remove on unpin
 
 ### EnterPlanMode blocking — dropped
 
@@ -121,16 +126,20 @@ Edit `orchestrate/hooks/.opencode/plugins/orchestrate.ts`, then sync.
 
 **Hooks:**
 
-`chat.message` (or equivalent message-observation hook):
-- On each user message, scan text parts for skill activation patterns
-- Patterns: `"Base directory for this skill: .../skills/<name>"`, `"Launching skill: <name>"`, SKILL.md headers
-- On match, add skill name (lowercased) to `activeSkills` if it's in the allow-list
-- Also detect unpin signals (`"/unpin <name>"`, `"SKILL_UNPIN:<name>"`) and remove from set
+`chat.message` — skill detection:
+- Fires on every new message with `output: { message: UserMessage; parts: Part[] }`
+- Scan `output.parts` where part type is `text` for skill activation patterns:
+  - `"Base directory for this skill: .../skills/<name>"` → add `<name>` to `activeSkills`
+  - `"Launching skill: <name>"` → add `<name>` to `activeSkills`
+- Scan for unpin signals:
+  - `"/unpin <name>"`, `"SKILL_UNPIN:<name>"` → remove from `activeSkills`
+- Filter against allow-list before adding
+- This runs in real-time as messages arrive — no transcript scanning needed
 
-`experimental.session.compacting`:
+`experimental.session.compacting` — skill reinjection:
 - Read allow-list from `.orchestrate/sticky-skills.conf` (inline TS parser)
 - For each skill in `activeSkills`:
-  - Read the skill's SKILL.md content from disk
+  - Read the skill's SKILL.md content from disk (resolve via `input.directory` or `PluginInput.directory`)
   - Push into `output.context` array
 - Log to stderr which skills are being reinjected
 
@@ -188,9 +197,9 @@ Edit `orchestrate/hooks/.opencode/plugins/orchestrate.ts`, then sync.
 
 ## Open Questions
 
-1. Which hook observes user messages in real-time? Need to confirm `chat.message` or `experimental.chat.messages.transform` is the right hook for intercepting incoming messages to detect skill loads.
-2. On compaction, should we reinject the full SKILL.md content or just a reload instruction (e.g., `"Load skill: /orchestrate"`)? Full content is self-contained but large; reload instruction is small but requires the model to invoke the Skill tool.
-3. Does the `event` hook fire with a useful event type when compaction starts/ends, or is `experimental.session.compacting` the only signal?
+1. ~~Which hook observes user messages in real-time?~~ **Answered:** `chat.message` — confirmed from `packages/plugin/src/index.ts` line 158. Provides `output: { message: UserMessage; parts: Part[] }`.
+2. On compaction, should we reinject the full SKILL.md content or just a reload instruction (e.g., `"Load skill: /orchestrate"`)? Full content is self-contained but large; reload instruction is small but requires the model to invoke the Skill tool. **Leaning toward:** full content — self-contained, no round-trip needed.
+3. Does the `event` hook fire with a useful event type when compaction starts/ends, or is `experimental.session.compacting` the only signal? **Low priority** — not blocking.
 
 ## Review Feedback Log
 
