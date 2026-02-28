@@ -10,9 +10,9 @@
 MCP serializes everything as JSON at the transport layer — we can't avoid that. But we control what goes *inside* the responses, and the primary consumer is an LLM. JSON is token-inefficient compared to markdown/plain text, so:
 
 - **Keep response types flat and small.** A `RunSummary` has 7 scalar fields — the JSON overhead is negligible. Don't add nested objects or arrays unless truly necessary.
-- **Content fields are markdown, not structured data.** `report`, `report_summary`, `workspace_summary` — these are markdown strings, not JSON sub-objects. The LLM reads them natively.
+- **Content fields are markdown, not structured data.** `report`, `report_summary`, `space_summary` — these are markdown strings, not JSON sub-objects. The LLM reads them natively.
 - **Don't duplicate what markdown already provides.** If the agent needs a full report, it reads `report.md` from disk. The MCP tool returns a path + short summary, not the full content by default.
-- **Avoid returning large lists.** `run_list` defaults to 20 items with filters. If an agent needs to understand 50 runs, it should use `workspace_show` for an aggregated summary, not paginate through `run_list`.
+- **Avoid returning large lists.** `run_list` defaults to 20 items with filters. If an agent needs to understand 50 runs, it should use `space_show` for an aggregated summary, not paginate through `run_list`.
 
 The real token cost is always in report bodies and prompt content, not in the `{}` and `""` characters around 7-field structs. Keep the structs small and the content markdown.
 
@@ -34,11 +34,11 @@ Every operation must be explicitly listed. Drift is a **CI failure**. Three surf
 | `skills.reindex` | `meridian skills reindex` | `skills_reindex` | `skills_reindex` | All |
 | `models.list` | `meridian models list` | `models_list` | `models_list` | All |
 | `models.show` | `meridian models show` | `models_show` | `models_show` | All |
-| `workspace.start` | `meridian workspace start` | `workspace_start` | `workspace_start` | All |
-| `workspace.resume` | `meridian workspace resume` | `workspace_resume` | `workspace_resume` | All |
-| `workspace.list` | `meridian workspace list` | `workspace_list` | `workspace_list` | All |
-| `workspace.show` | `meridian workspace show` | `workspace_show` | `workspace_show` | All |
-| `workspace.close` | `meridian workspace close` | `workspace_close` | `workspace_close` | All |
+| `space.start` | `meridian space start` | `space_start` | `space_start` | All |
+| `space.resume` | `meridian space resume` | `space_resume` | `space_resume` | All |
+| `space.list` | `meridian space list` | `space_list` | `space_list` | All |
+| `space.show` | `meridian space show` | `space_show` | `space_show` | All |
+| `space.close` | `meridian space close` | `space_close` | `space_close` | All |
 | `context.pin` | `meridian context pin` | `context_pin` | `context_pin` | All |
 | `context.unpin` | `meridian context unpin` | `context_unpin` | `context_unpin` | All |
 | `context.list` | `meridian context list` | `context_list` | `context_list` | All |
@@ -50,7 +50,7 @@ Every operation must be explicitly listed. Drift is a **CI failure**. Three surf
 
 ## MERIDIAN_DEPTH in MCP Context
 
-When `meridian serve` runs inside a workspace, `MERIDIAN_DEPTH` is read from the environment and incremented for each `run_create` tool call. The MCP server enforces the same depth limit as the CLI — agents calling `run_create` at max depth receive a structured error:
+When `meridian serve` runs inside a space, `MERIDIAN_DEPTH` is read from the environment and incremented for each `run_create` tool call. The MCP server enforces the same depth limit as the CLI — agents calling `run_create` at max depth receive a structured error:
 
 ```json
 {
@@ -97,7 +97,7 @@ async def run_create(
     name: str | None = None,
     timeout_secs: int | None = None,
     budget_usd: float | None = None,
-    workspace: str | None = None,     # override MERIDIAN_WORKSPACE_ID
+    space: str | None = None,     # override MERIDIAN_WORKSPACE_ID
 ) -> RunCreated:
     """Create and start a new agent run. Returns immediately (non-blocking).
     Use run_wait() or poll run_show() to get results."""
@@ -113,11 +113,11 @@ async def run_wait(
 
 @server.tool()
 async def run_list(
-    workspace: str | None = None,
+    space: str | None = None,
     status: str | None = None,
     model: str | None = None,
     limit: int = 20,
-    no_workspace: bool = False,
+    no_space: bool = False,
 ) -> list[RunSummary]:
     """List runs with optional filters. Returns structured JSON."""
     ...
@@ -187,66 +187,66 @@ async def models_show(
     """Show full detail for a model (aliases resolved)."""
     ...
 
-# ── Workspace management ────────────────────────────────────────
+# ── Space management ────────────────────────────────────────
 @server.tool()
-async def workspace_start(
+async def space_start(
     name: str | None = None,
     plan: str | None = None,
-) -> WorkspaceCreated:
-    """Create a new workspace and launch supervisor harness."""
+) -> SpaceCreated:
+    """Create a new space and launch supervisor harness."""
     ...
 
 @server.tool()
-async def workspace_resume(
-    workspace: str | None = None,
+async def space_resume(
+    space: str | None = None,
     fresh: bool = False,
-) -> WorkspaceResumed:
-    """Resume an existing workspace."""
+) -> SpaceResumed:
+    """Resume an existing space."""
     ...
 
 @server.tool()
-async def workspace_list(
+async def space_list(
     limit: int = 10,
-) -> list[WorkspaceSummary]:
-    """List all workspaces with status/cost."""
+) -> list[SpaceSummary]:
+    """List all spaces with status/cost."""
     ...
 
 @server.tool()
-async def workspace_show(
-    workspace: str,
-) -> WorkspaceDetail:
-    """Show workspace detail: runs, cost, pinned files."""
+async def space_show(
+    space: str,
+) -> SpaceDetail:
+    """Show space detail: runs, cost, pinned files."""
     ...
 
 @server.tool()
-async def workspace_close(
-    workspace: str,
-) -> WorkspaceClosed:
-    """Mark a workspace as complete."""
+async def space_close(
+    space: str,
+) -> SpaceClosed:
+    """Mark a space as complete."""
     ...
 
 # ── Context pinning ─────────────────────────────────────────────
 @server.tool()
 async def context_pin(
     file_path: str,
-    workspace: str | None = None,
+    space: str | None = None,
 ) -> PinResult:
-    """Pin a file to workspace context (survives compaction)."""
+    """Pin a file to space context (survives compaction)."""
     ...
 
 @server.tool()
 async def context_unpin(
     file_path: str,
-    workspace: str | None = None,
+    space: str | None = None,
 ) -> UnpinResult:
-    """Unpin a file from workspace context."""
+    """Unpin a file from space context."""
     ...
 
 @server.tool()
 async def context_list(
-    workspace: str | None = None,
+    space: str | None = None,
 ) -> list[PinnedFile]:
-    """List pinned files for a workspace."""
+    """List pinned files for a space."""
     ...
 
 # ── Diagnostics ─────────────────────────────────────────────────

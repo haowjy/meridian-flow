@@ -50,7 +50,7 @@ export function MobileMenuSheet({
       <SheetContent side="left" className="p-0">
         {/* Main content - left-aligned column with spacer */}
         <div className="flex h-full flex-col px-4 pt-14 pb-6">
-          {/* Top zone - Home button with text (only in workspace) */}
+          {/* Top zone - Home button with text (only in space) */}
           {inWorkspace && (
             <Button
               variant="ghost"

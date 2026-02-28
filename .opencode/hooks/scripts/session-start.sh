@@ -14,6 +14,11 @@
 # - activation signals add skills
 # - explicit unpin signals remove skills
 #
+# Optional allowlist file (repo-local, not synced by sync.sh):
+# - .orchestrate/config/sticky-skills.json
+# - format: { "allowlist": ["run-agent", "mermaid", "orchestrate"] }
+# - case-insensitive; values may include leading "/"
+#
 # Input: JSON on stdin with { transcript_path, source, cwd, ... }
 # Output: JSON with additionalContext on stdout (exit 0)
 
@@ -40,6 +45,20 @@ esac
 
 # Resolve project root from CWD
 PROJECT_ROOT="$(find_project_root "${CWD:-$PWD}")" || exit 0
+
+# Optional sticky-skill allowlist (repo-local customization).
+ALLOWLIST_FILE="$PROJECT_ROOT/.orchestrate/config/sticky-skills.json"
+declare -A ALLOWED_SKILLS=()
+if [[ -f "$ALLOWLIST_FILE" ]]; then
+  if command -v jq >/dev/null 2>&1; then
+    while IFS= read -r skill || [[ -n "$skill" ]]; do
+      skill="$(echo "$skill" | tr '[:upper:]' '[:lower:]' | xargs)"
+      skill="${skill#/}"  # Allow "/skill" syntax in file.
+      [[ -n "$skill" ]] || continue
+      ALLOWED_SKILLS["$skill"]=1
+    done < <(jq -r '.allowlist // [] | .[] | select(type=="string")' "$ALLOWLIST_FILE" 2>/dev/null || true)
+  fi
+fi
 
 # On clear, use the previous transcript saved by session-end.sh.
 # Only reload if the previous session ended with ExitPlanMode (plan acceptance).
@@ -161,6 +180,9 @@ done < <(extract_skill_events "$TRANSCRIPT_PATH")
 DETECTED_SKILLS=()
 for skill in "${ORDERED_SKILLS[@]}"; do
   if [[ -n "${ACTIVE_SKILLS[$skill]+x}" ]]; then
+    if [[ ${#ALLOWED_SKILLS[@]} -gt 0 && -z "${ALLOWED_SKILLS[$skill]+x}" ]]; then
+      continue
+    fi
     DETECTED_SKILLS+=("$skill")
   fi
 done

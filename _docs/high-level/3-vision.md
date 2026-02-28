@@ -54,7 +54,7 @@ Session: "My Fantasy Novel"
 ├─ Thread B (branch): "What if" exploration from Turn 12
 └─ Thread C (subagent): Character consistency check (spawned by A)
 
-All three share the same .session/ workspace
+All three share the same .session/ space
 ```
 
 **Use cases:**

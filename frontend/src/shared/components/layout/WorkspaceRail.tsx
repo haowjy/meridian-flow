@@ -14,7 +14,7 @@ import {
 
 interface WorkspaceRailProps {
   className?: string;
-  // Workspace-specific props (undefined when at /projects)
+  // Space-specific props (undefined when at /projects)
   projectSlug?: string;
 }
 
@@ -22,20 +22,20 @@ interface WorkspaceRailProps {
  * Vertical navigation rail (desktop only).
  *
  * Phase 2: Minimal (user only) at /projects
- * Phase 3: Full navigation (home, chat, threads, user) in workspace
+ * Phase 3: Full navigation (home, chat, threads, user) in space
  */
 export function WorkspaceRail({ className, projectSlug }: WorkspaceRailProps) {
   const navigate = useNavigate();
   const { profile, status } = useUserProfile();
   const { signOut } = useAuthActions();
 
-  // Read left panel view and collapse state from store (only relevant in workspace)
+  // Read left panel view and collapse state from store (only relevant in space)
   const leftPanelView = useUIStore((s) => s.leftPanelView);
   const setLeftPanelView = useUIStore((s) => s.setLeftPanelView);
   const toggleLeftPanel = useUIStore((s) => s.toggleLeftPanel);
   const isExpanded = !useUIStore(selectEffectiveLeftCollapsed);
 
-  // Check if we're in a workspace (project context)
+  // Check if we're in a space (project context)
   const inWorkspace = !!projectSlug;
 
   /**

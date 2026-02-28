@@ -1,14 +1,14 @@
-# Workspace Gaps — Tracking
+# Space Gaps — Tracking
 
 **Status:** draft
 
-Bugs and missing features in the workspace system. Detailed designs in [workspace-lifecycle.md](workspace-lifecycle.md).
+Bugs and missing features in the space system. Detailed designs in [space-lifecycle.md](space-lifecycle.md).
 
 ---
 
 ## 1. `meridian hooks` command group — hook handlers in Python
 
-**Problem:** Hook logic currently lives in shell scripts (`.orchestrate/hooks/scripts/`), which are part of the orchestrate plugin and not meridian-channel. Meridian-channel should own its own hook handlers so session tracking, compaction re-injection, and other workspace lifecycle concerns live in the Python CLI.
+**Problem:** Hook logic currently lives in shell scripts (`.orchestrate/hooks/scripts/`), which are part of the orchestrate plugin and not meridian-channel. Meridian-channel should own its own hook handlers so session tracking, compaction re-injection, and other space lifecycle concerns live in the Python CLI.
 
 **Design:** Hooks are thin entry points — the `.claude/settings.json` (or equivalent for other harnesses) calls `uv run meridian hooks <event>`, and all logic lives in Python.
 
@@ -48,13 +48,13 @@ Hook configuration (committed to repo in `.claude/settings.json` or distributed 
 
 | Command | Trigger | Responsibility |
 |---------|---------|---------------|
-| `session-track` | `SessionStart` (all), `SessionEnd` | Write session ID to workspace session log |
+| `session-track` | `SessionStart` (all), `SessionEnd` | Write session ID to space session log |
 | `context-reinject` | `SessionStart` (compact, clear) | Re-inject skills + pinned files |
 
 **`session-track`:**
 - Reads `session_id` from hook stdin JSON
 - Reads `MERIDIAN_WORKSPACE_ID` from env (if set)
-- Appends `{"session_id", "timestamp"}` to workspace session log
+- Appends `{"session_id", "timestamp"}` to space session log
 - Dedup at read time (same session ID may appear multiple times across compact/clear events)
 - Fires on every `SessionStart` (startup, compact, clear) and `SessionEnd`
 - Skipped when `MERIDIAN_DEPTH > 0` — child run sessions are tracked via run finalization, not hooks
@@ -63,7 +63,7 @@ Hook configuration (committed to repo in `.claude/settings.json` or distributed 
 - Only fires on compact/clear (not startup — skills are already in context)
 - Two sources of context to re-inject:
   1. **Skills:** Reads `MERIDIAN_RUN_ID` from env → looks up run's skills from SQLite. No transcript scanning needed — we know exactly what skills were launched because we stored them at run creation.
-  2. **Pinned files:** Reads `MERIDIAN_WORKSPACE_ID` from env → loads pinned files via workspace context. Only applies if run is within a workspace.
+  2. **Pinned files:** Reads `MERIDIAN_WORKSPACE_ID` from env → loads pinned files via space context. Only applies if run is within a space.
 - Returns `{"additionalContext": "<skill content + pinned file content>"}` so the harness injects it into the session
 - For clear: follow the existing pattern — only re-inject if the previous session ended with plan acceptance (ExitPlanMode). Manual `/clear` is intentional reset.
 
@@ -81,9 +81,9 @@ Hook configuration (committed to repo in `.claude/settings.json` or distributed 
 
 ## 2. No explicit session tracking on resume
 
-**Problem:** `workspace resume` launches the supervisor harness without passing an explicit session ID to continue. It relies on the harness implicitly continuing the last session in the working directory. The `supervisor_harness_session_id` column exists in the schema but is never populated.
+**Problem:** `space resume` launches the supervisor harness without passing an explicit session ID to continue. It relies on the harness implicitly continuing the last session in the working directory. The `supervisor_harness_session_id` column exists in the schema but is never populated.
 
-**Impact:** If a workspace had multiple supervisor sessions (e.g., from crashes or `--fresh` starts), there's no way to pick a specific one. The harness just continues whatever it thinks is latest.
+**Impact:** If a space had multiple supervisor sessions (e.g., from crashes or `--fresh` starts), there's no way to pick a specific one. The harness just continues whatever it thinks is latest.
 
 **Per-harness continuation mechanisms:**
 
@@ -97,9 +97,9 @@ Always use explicit session IDs — never rely on implicit "last session" behavi
 
 **Note:** Session IDs change — compaction, clear, and auto-accept plan edits each start a new session in Claude. So we need to track the *latest* session ID, not just the initial one.
 
-**Fix:** The `meridian hooks session-start` handler (#1) writes session events to a workspace session log on every session change (startup, compact, clear). `session-end` writes the close event.
+**Fix:** The `meridian hooks session-start` handler (#1) writes session events to a space session log on every session change (startup, compact, clear). `session-end` writes the close event.
 
-Session log at `.meridian/active-workspaces/<workspace_id>.sessions.jsonl`:
+Session log at `.meridian/active-spaces/<space_id>.sessions.jsonl`:
 ```jsonl
 {"session_id": "abc123", "source": "startup", "timestamp": "...", "harness": "claude"}
 {"session_id": "abc123", "source": "compact", "timestamp": "..."}
@@ -108,11 +108,11 @@ Session log at `.meridian/active-workspaces/<workspace_id>.sessions.jsonl`:
 ```
 
 Then:
-- `meridian workspace resume` reads the session log to get the latest session ID
+- `meridian space resume` reads the session log to get the latest session ID
 - Passes harness-specific continue flag: `--continue <session_id>` (Claude), `codex exec resume <session_id>` (Codex), etc.
 - Each adapter needs a `continue_flags(session_id: str) -> list[str]` method
-- `meridian workspace sessions [workspace]` — list all sessions with status (active/ended)
-- `meridian workspace resume [workspace] --session <session_id>` — resume a specific session (default: most recent)
+- `meridian space sessions [space]` — list all sessions with status (active/ended)
+- `meridian space resume [space] --session <session_id>` — resume a specific session (default: most recent)
 
 **Depends on:** #1 (hook handlers write the session log)
 
@@ -125,7 +125,7 @@ Then:
 **Problem:** When a harness compacts/summarizes its conversation, skill instructions and pinned file contents get lossy-compressed.
 
 **Fix:** Handled by `meridian hooks session-start` (#1). When `source` is `compact`, the handler:
-1. Loads the active skills for the workspace (from agent profile + explicit skills)
+1. Loads the active skills for the space (from agent profile + explicit skills)
 2. Loads pinned files via `meridian context list`
 3. Returns `{ "additionalContext": "<skills + pinned files>" }` so the harness re-injects them
 
@@ -139,14 +139,14 @@ This replaces the current shell-based approach in `.orchestrate/hooks/scripts/se
 
 ## 4. Resume re-injects pinned context unnecessarily
 
-~~**Problem:** `workspace resume` calls `inject_pinned_context()` and stuffs pinned file contents into the prompt, even on non-fresh resume where `--continue` means the conversation already has the full history.~~
+~~**Problem:** `space resume` calls `inject_pinned_context()` and stuffs pinned file contents into the prompt, even on non-fresh resume where `--continue` means the conversation already has the full history.~~
 
 **Status:** Fixed — pinned context is now only injected on `fresh=True` starts.
 
 ---
 
-## 5. Workspace summary re-generated on every resume
+## 5. Space summary re-generated on every resume
 
-**Problem:** `workspace resume` calls `generate_workspace_summary()` every time, even on non-fresh resume where it's not injected into the prompt. Unnecessary work.
+**Problem:** `space resume` calls `generate_space_summary()` every time, even on non-fresh resume where it's not injected into the prompt. Unnecessary work.
 
 **Investigate:** Is the summary generation cheap enough to not matter? Or should it be skipped on non-fresh resume?

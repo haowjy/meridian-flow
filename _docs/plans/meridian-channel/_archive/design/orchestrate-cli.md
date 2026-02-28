@@ -20,7 +20,7 @@ The orchestrate run-agent toolkit is ~1,400 lines of bash + jq that routes agent
 - JSONL index has no corruption recovery (#5)
 - jq injection in filter interpolation (#8)
 
-These gaps motivated the project, but `orch` is not a rewrite of the bash scripts — it is a **new application** that subsumes them. The bash scripts handle: arg parsing → prompt composition → process spawning → result extraction → JSONL logging. `orch` adds workspace persistence with compaction recovery, context pinning with auto re-injection, event-sourced workflow state, cost tracking and budget enforcement, permission tiers, a guardrail system, run dependency graphs, and a proper CLI with structured output. Roughly 30% of `orch` replaces existing bash functionality; the other 70% is new product surface that cannot be achieved by patching the scripts.
+These gaps motivated the project, but `orch` is not a rewrite of the bash scripts — it is a **new application** that subsumes them. The bash scripts handle: arg parsing → prompt composition → process spawning → result extraction → JSONL logging. `orch` adds space persistence with compaction recovery, context pinning with auto re-injection, event-sourced workflow state, cost tracking and budget enforcement, permission tiers, a guardrail system, run dependency graphs, and a proper CLI with structured output. Roughly 30% of `orch` replaces existing bash functionality; the other 70% is new product surface that cannot be achieved by patching the scripts.
 
 Rust provides type safety, proper async process management, SQLite state, and binary distribution for this scope.
 
@@ -43,7 +43,7 @@ What we explicitly **do NOT build**: declarative workflow DAGs, static task grap
 Every design decision flows from one question: **does this help the LLM supervisor manage its context better?**
 
 LLM agents have finite context windows. The orchestrator's job is to keep the right information accessible and the noise out:
-- **Workspace state** should be queryable, not buried in raw logs — so the supervisor can ask "what have I done?" cheaply
+- **Space state** should be queryable, not buried in raw logs — so the supervisor can ask "what have I done?" cheaply
 - **Reports and plans** should be markdown files the supervisor can read directly — not opaque database blobs
 - **Outputs** should be concise and token-efficient — every extra line costs input tokens on the next turn
 - **Run history** should be filterable/summarizable — so the supervisor loads only what's relevant
@@ -51,7 +51,7 @@ LLM agents have finite context windows. The orchestrator's job is to keep the ri
 **Informed by Manus AI's context engineering:**
 - **Context reduction** — run results have "full" and "compact" representations; stale results get compacted
 - **Context offloading** — filesystem as unlimited external memory; the supervisor uses `orch list`/`orch show` to load only what's relevant
-- **Context isolation** — each run agent gets only what's explicitly passed to it, not the full workspace state
+- **Context isolation** — each run agent gets only what's explicitly passed to it, not the full space state
 - **Attention management** — pinned context files are re-injected after compaction to keep key information in the model's recent attention span, but orch manages this as infrastructure (not as an LLM action loop that wastes tokens — Manus found ~33% of actions wasted on todo.md bookkeeping)
 
 This principle also drives the markdown-first artifact strategy (P4) and the output style guidelines (P3).
@@ -62,17 +62,17 @@ The CLI's primary consumer is an LLM, not a human. Design accordingly:
 
 **Resource-first command grammar** (follows docker/kubectl/gh/aws conventions for discoverability):
 ```bash
-orch workspace start|resume|list|show     # workspace management
+orch space start|resume|list|show     # space management
 orch run create|list|show|continue|retry  # run management
 orch skills list|search|show|reindex      # skill registry (P8)
 orch models list|show                     # model catalog (P11)
 orch context pin|unpin|list               # context pinning
 orch diag doctor|trace|diagnose|repair    # diagnostics
 ```
-Short aliases for common commands: `orch start` = `orch workspace start`, `orch run` = `orch run create`, `orch list` = `orch run list`.
+Short aliases for common commands: `orch start` = `orch space start`, `orch run` = `orch run create`, `orch list` = `orch run list`.
 
 **Recognizable patterns:** Use conventions from tools LLMs have seen extensively in training data:
-- `docker`/`kubectl`-style resource groups: `orch workspace`, `orch run`, `orch context`
+- `docker`/`kubectl`-style resource groups: `orch space`, `orch run`, `orch context`
 - `docker`/`kubectl`-style flags: `--format json`, `--output wide`, `-q` for quiet
 - `gh`-style references: `@latest`, `@last-failed`, prefix matching
 
@@ -109,51 +109,51 @@ Markdown files are the primary durable memory format — not SQLite, not JSON. S
 **What lives in markdown:**
 - `report.md` — every run's output report (written by subagent or extracted as fallback)
 - `input.md` — the composed prompt sent to the subagent
-- `workspace-summary.md` — per-workspace summary updated as the workspace progresses (committable)
+- `space-summary.md` — per-space summary updated as the space progresses (committable)
 - `plan.md` / task files referenced by `--file` — the orchestrator's input context
 
 **What lives in SQLite:**
 - Run metadata (timestamps, tokens, cost, status) — queryable index
-- Workflow events — workspace state for checkpoint/resume
+- Workflow events — space state for checkpoint/resume
 - Trace spans — cost/time rollups
 - Run edges — continuation/retry/review/parent-child relationships
 
 **Committable artifacts:** Some markdown artifacts are designed to be committed to the repo:
-- Workspace summaries (`workspace-summary.md`) — what was done, what was decided
+- Space summaries (`space-summary.md`) — what was done, what was decided
 - Plans and their updates — living documents the team can review
 - Research reports — findings worth preserving
 
-The `orch` CLI should make it easy to promote artifacts: `orch export --workspace $CID` gathers the workspace's key markdown artifacts into a committable directory.
+The `orch` CLI should make it easy to promote artifacts: `orch export --space $CID` gathers the space's key markdown artifacts into a committable directory.
 
-### P5: Workspaces are optional — `orch run` works standalone
+### P5: Spaces are optional — `orch run` works standalone
 
 `orch` has **two operating modes**, and the entire design must support both:
 
-| Mode | Entry point | Workspace? | Use case |
+| Mode | Entry point | Space? | Use case |
 |------|-------------|----------|----------|
-| **Workspace-bound** | `orch start` / `orch resume` | Yes — `ORCH_WORKSPACE_ID` set in process tree | Multi-run orchestration, supervisor-driven workflows |
-| **Standalone** | `orch run` directly | No — no workspace, no env var | Quick one-off runs, `/run-agent` skill usage, CI pipelines |
+| **Space-bound** | `orch start` / `orch resume` | Yes — `ORCH_WORKSPACE_ID` set in process tree | Multi-run orchestration, supervisor-driven workflows |
+| **Standalone** | `orch run` directly | No — no space, no env var | Quick one-off runs, `/run-agent` skill usage, CI pipelines |
 
-**Standalone mode is the simpler path.** Someone installs `orch`, runs `orch run -m claude-sonnet-4-6 -p "review this"`, and it just works. No workspace ceremony. Runs are still logged to SQLite, still get counter IDs, still write artifacts — they just aren't scoped to a workspace.
+**Standalone mode is the simpler path.** Someone installs `orch`, runs `orch run -m claude-sonnet-4-6 -p "review this"`, and it just works. No space ceremony. Runs are still logged to SQLite, still get counter IDs, still write artifacts — they just aren't scoped to a space.
 
-**Workspace-bound mode adds the workspace lifecycle on top.** `orch start` creates a workspace, launches the harness, sets `ORCH_WORKSPACE_ID` in the child process tree, and `orch run` calls within that tree auto-attach to the workspace transparently.
+**Space-bound mode adds the space lifecycle on top.** `orch start` creates a space, launches the harness, sets `ORCH_WORKSPACE_ID` in the child process tree, and `orch run` calls within that tree auto-attach to the space transparently.
 
 **Design implications — every feature must work in both modes:**
-- `orch run list` shows all runs (workspace-bound and standalone). Filter with `--workspace w3` or `--no-workspace`
-- `orch run show r7` works whether r7 belongs to a workspace or not
-- Run counters: workspace-bound runs use workspace-scoped counters (`w3/r1`). Standalone runs use a global counter (`r1`, `r2`, `r3`)
-- Directory layout: workspace-bound → `.orchestrate/workspaces/w3/runs/r1/`. Standalone → `.orchestrate/runs/r1/`
-- `orch run continue`, `orch run retry` work on any run regardless of workspace attachment
+- `orch run list` shows all runs (space-bound and standalone). Filter with `--space w3` or `--no-space`
+- `orch run show r7` works whether r7 belongs to a space or not
+- Run counters: space-bound runs use space-scoped counters (`w3/r1`). Standalone runs use a global counter (`r1`, `r2`, `r3`)
+- Directory layout: space-bound → `.orchestrate/spaces/w3/runs/r1/`. Standalone → `.orchestrate/runs/r1/`
+- `orch run continue`, `orch run retry` work on any run regardless of space attachment
 
-This is critical for the **`/run-agent` skill use case** — someone loading the skill in Claude Code or Codex just wants `orch run`. They shouldn't need to understand workspaces.
+This is critical for the **`/run-agent` skill use case** — someone loading the skill in Claude Code or Codex just wants `orch run`. They shouldn't need to understand spaces.
 
-#### Workspace model (workspace-bound mode)
+#### Space model (space-bound mode)
 
-A **workspace** is **orch's unit of orchestrated work** — one task from start to finish, potentially spanning many runs across different models and harnesses, and surviving context compactions, conversation clears, and harness restarts.
+A **space** is **orch's unit of orchestrated work** — one task from start to finish, potentially spanning many runs across different models and harnesses, and surviving context compactions, conversation clears, and harness restarts.
 
-**Why "workspace":** We avoid "session" because it conflicts with harness sessions (Claude conversations, Codex threads). We considered "container" but it has a strong Docker collision. A workspace is a boundary that holds multiple conversations and runs inside it with a shared working area.
+**Why "space":** We avoid "session" because it conflicts with harness sessions (Claude conversations, Codex threads). We considered "container" but it has a strong Docker collision. A space is a boundary that holds multiple conversations and runs inside it with a shared working area.
 
-**Two types of conversations within a workspace:**
+**Two types of conversations within a space:**
 
 | Type | Interactive? | Purpose | Examples |
 |------|-------------|---------|---------|
@@ -163,10 +163,10 @@ A **workspace** is **orch's unit of orchestrated work** — one task from start 
 The orchestrate reader is the "brain" — it spawns run agents, reads their reports, and decides next steps. Run agents are disposable workers with **isolated context** — they only see what's explicitly passed to them.
 
 **Flat runs with parent-child edges:**
-Runs within a workspace are all siblings — no nested scoping. A run can spawn other runs, but they all live at the same level. Parent-child relationships are tracked in `run_edges`:
+Runs within a space are all siblings — no nested scoping. A run can spawn other runs, but they all live at the same level. Parent-child relationships are tracked in `run_edges`:
 
 ```
-Workspace w3
+Space w3
   ├── r1 (orchestrate reader — spawns r2 and r3)
   ├── r2 (run agent, parent: r1)
   ├── r3 (run agent, parent: r1)
@@ -175,81 +175,81 @@ Workspace w3
 ```
 
 **Scoping via env vars** (follows docker DOCKER_CONTEXT, kubectl KUBECONFIG, gh GH_REPO patterns):
-- `ORCH_WORKSPACE_ID` auto-scopes commands to the current workspace
+- `ORCH_WORKSPACE_ID` auto-scopes commands to the current space
 - `ORCH_DEPTH` tracks agent spawning depth (P9) — incremented on each `orch run`, checked against `max_depth` (default: 3). Prevents runaway recursion.
-- `--workspace w3` flag overrides the env var
-- **Precedence:** `--workspace` flag > `ORCH_WORKSPACE_ID` env var > error (no default guess)
+- `--space w3` flag overrides the env var
+- **Precedence:** `--space` flag > `ORCH_WORKSPACE_ID` env var > error (no default guess)
 - Commands have **stable semantics** regardless of env var — same command, same output for humans and LLMs
 
-**Workspace lifecycle — owned by `orch`:**
+**Space lifecycle — owned by `orch`:**
 ```bash
 orch start                         # create w1, launch supervisor harness
 orch start --name auth-refactor    # create w2 with alias "auth-refactor"
 orch start --plan plan.md          # create w3 with a plan file
-orch resume                        # resume latest active workspace
-orch resume w3                     # resume specific workspace
+orch resume                        # resume latest active space
+orch resume w3                     # resume specific space
 orch resume auth-refactor          # resume by alias
-orch workspace list                # list all workspaces with status/cost
-orch workspace show w3             # workspace detail: runs, cost, pinned files
-orch workspace close w3            # mark as complete
+orch space list                # list all spaces with status/cost
+orch space show w3             # space detail: runs, cost, pinned files
+orch space close w3            # mark as complete
 orch explore                       # full wide view: aliases, descriptions, costs
-orch export --workspace w3         # gather committable markdown artifacts
+orch export --space w3         # gather committable markdown artifacts
 ```
 
 **`orch start` is the launcher.** It replaces `scripts/cc-orchestrate`:
-1. Creates workspace in SQLite with status `active`, generates workspace ID
-2. Writes `.orchestrate/active-workspaces/<cid>.lock` (PID file, advisory lock)
+1. Creates space in SQLite with status `active`, generates space ID
+2. Writes `.orchestrate/active-spaces/<cid>.lock` (PID file, advisory lock)
 3. Sets `ORCH_WORKSPACE_ID` env var in the child process environment
 4. Spawns the harness as a **child process** (NOT `exec` — `orch start` stays alive as parent)
-5. Waits for the harness to exit, then finalizes the workspace (status → `paused` or `completed`)
+5. Waits for the harness to exit, then finalizes the space (status → `paused` or `completed`)
 
-**The LLM never sees the workspace ID.** It just calls `orch run -p "..."` without `--workspace`. The `orch run` process inherits `ORCH_WORKSPACE_ID` from the process tree and auto-attaches. The workspace ID is **process plumbing**, not LLM context.
+**The LLM never sees the space ID.** It just calls `orch run -p "..."` without `--space`. The `orch run` process inherits `ORCH_WORKSPACE_ID` from the process tree and auto-attaches. The space ID is **process plumbing**, not LLM context.
 
 **`orch start` stays alive** as the parent process because:
-- It owns the workspace lifecycle (finalize on exit, detect crashes)
-- It holds the PID lock (prevents stale workspace state)
-- It can capture the harness's exit code and update the workspace
+- It owns the space lifecycle (finalize on exit, detect crashes)
+- It holds the PID lock (prevents stale space state)
+- It can capture the harness's exit code and update the space
 - It can write `supervisor_harness_session_id` from the harness's output
 
-**Parallel workspaces on the same machine:**
-Multiple `orch start` calls create independent workspaces in separate terminals. Each spawns its own harness child with its own `ORCH_WORKSPACE_ID`. Isolation is guaranteed by:
+**Parallel spaces on the same machine:**
+Multiple `orch start` calls create independent spaces in separate terminals. Each spawns its own harness child with its own `ORCH_WORKSPACE_ID`. Isolation is guaranteed by:
 - **Process-tree scoping:** `ORCH_WORKSPACE_ID` is inherited by child processes only, not shared globally
-- **PID lock files:** `.orchestrate/active-workspaces/<cid>.lock` holds the PID; stale locks detected via `kill -0`
+- **PID lock files:** `.orchestrate/active-spaces/<cid>.lock` holds the PID; stale locks detected via `kill -0`
 - **SQLite WAL mode:** Concurrent read/write without corruption
-- **`orch run` outside a workspace (standalone mode):** If `ORCH_WORKSPACE_ID` is not set and `--workspace` is not passed, `orch run` creates a standalone run — stored in `.orchestrate/runs/` with a global counter. This is the `/run-agent` skill path.
+- **`orch run` outside a space (standalone mode):** If `ORCH_WORKSPACE_ID` is not set and `--space` is not passed, `orch run` creates a standalone run — stored in `.orchestrate/runs/` with a global counter. This is the `/run-agent` skill path.
 
-**`orch resume` re-attaches to an existing workspace:**
-1. Loads workspace from SQLite (including `supervisor_harness_session_id`)
-2. Generates/updates `workspace-summary.md` with what's been done so far
+**`orch resume` re-attaches to an existing space:**
+1. Loads space from SQLite (including `supervisor_harness_session_id`)
+2. Generates/updates `space-summary.md` with what's been done so far
 3. Sets `ORCH_WORKSPACE_ID` env var, spawns harness as child (same as `start`)
 4. If harness supports resume AND harness session ID is known:
    - Launches with `claude --resume $ID` — continues the same conversation
 5. If not (cleared, crashed, or harness doesn't support resume):
-   - Starts fresh harness, injects workspace summary + pinned context into prompt
-6. Either way, the workspace ID is in the env — `orch run` auto-attaches transparently
+   - Starts fresh harness, injects space summary + pinned context into prompt
+6. Either way, the space ID is in the env — `orch run` auto-attaches transparently
 
-**Workspace state machine:**
+**Space state machine:**
 ```
 active → completed    (all work done, explicit close)
 active → paused       (user exits, can resume later)
 active → abandoned    (no activity for configurable timeout)
 ```
 
-**What a workspace tracks:**
-- All runs launched under the same workspace ID
+**What a space tracks:**
+- All runs launched under the same space ID
 - Accumulated cost, token usage, and duration across all runs
 - Harness-native session/thread IDs per run (for `orch run continue`)
 - Workflow events: decisions, observations, state transitions
 - Run edges: parent-child, continuation, retry, review relationships
 - Pinned context files (see P6)
-- Workspace-level metadata: plan file, labels, description
+- Space-level metadata: plan file, labels, description
 
 **Cross-harness session mapping:**
 Each harness has its own concept of continuity. `orch` tracks two levels:
 
 | Level | Column | Used by |
 |-------|--------|---------|
-| Supervisor | `workspaces.supervisor_harness_session_id` | `orch resume` — resume the supervisor's conversation |
+| Supervisor | `spaces.supervisor_harness_session_id` | `orch resume` — resume the supervisor's conversation |
 | Run agent | `runs.harness_session_id` | `orch run continue r3` — resume a specific run's conversation |
 
 Harness-specific resume mechanisms:
@@ -259,19 +259,19 @@ Harness-specific resume mechanisms:
 
 ### P6: Context pinning — durable context that survives compaction
 
-Within a workspace, certain files are **pinned** — they persist across compaction events and are automatically re-injected into new conversations and run agents.
+Within a space, certain files are **pinned** — they persist across compaction events and are automatically re-injected into new conversations and run agents.
 
 ```bash
-orch context pin research-findings.md     # pin to workspace context
+orch context pin research-findings.md     # pin to space context
 orch context unpin research-findings.md   # remove from pinned
 orch context list                         # list pinned files
 ```
 
 **What pinning does:**
 - Pinned files are re-injected into the orchestrate reader after each compaction (so they're never lost from context)
-- Pinned files are included in every new harness conversation started within the workspace
+- Pinned files are included in every new harness conversation started within the space
 - Pinned files are passed to run agents by default (the orchestrate reader can override with explicit `-f` flags)
-- The workspace's `workspace-summary.md` is always implicitly pinned
+- The space's `space-summary.md` is always implicitly pinned
 
 **What orch manages vs what the LLM manages:**
 - **orch manages** (as infrastructure): re-injection after compaction, inclusion in new conversations, tracking what's pinned
@@ -281,10 +281,10 @@ This avoids the Manus todo.md trap — the LLM doesn't waste actions maintaining
 
 **Context isolation for run agents:**
 Run agents get only:
-1. Pinned files from the workspace (default, overridable)
+1. Pinned files from the space (default, overridable)
 2. Files explicitly passed via `-f` by the orchestrate reader
 3. Whatever they explore on their own (read files, search codebase)
-4. They do **not** see other runs' context, other runs' reports, or the full workspace state
+4. They do **not** see other runs' context, other runs' reports, or the full space state
 
 The orchestrate reader curates what each run agent needs — this is the core "context management" job.
 
@@ -336,13 +336,13 @@ Harnesses (Claude Code, Codex) should **never** discover skills directly from `.
 
 | Skill | Injected when | Teaches | Independence |
 |-------|--------------|---------|-------------|
-| **`run-agent`** | Every `orch run` | How to use `orch run` to execute a model. Pass files with `-f`, read reports, basic CLI usage. Nothing about skill discovery, workspaces, or orchestration patterns. | **Fully standalone.** Someone installs `orch`, loads this skill, and can do `orch run -m claude-sonnet-4-6 -f file.rs -p "review this"`. Zero ceremony. |
+| **`run-agent`** | Every `orch run` | How to use `orch run` to execute a model. Pass files with `-f`, read reports, basic CLI usage. Nothing about skill discovery, spaces, or orchestration patterns. | **Fully standalone.** Someone installs `orch`, loads this skill, and can do `orch run -m claude-sonnet-4-6 -f file.rs -p "review this"`. Zero ceremony. |
 | **`agent`** | Every `orch run` (on top of `run-agent`) | How to be a good worker agent. Write concise reports, use `orch skills search` to find capabilities, use `orch models list` to see available models, manage context budget, use `-c` when appropriate. | **Needs `run-agent`.** This is the "how to behave in the orch ecosystem" skill. |
-| **`orchestrate`** | `orch workspace start` only (supervisor) | How to manage a multi-run workflow. Read plans, decompose into slices, pick models, dispatch runs, evaluate reports, use `orch workspace`, `orch context pin`, manage cost budgets. | **Needs `run-agent` + `agent`.** Only the supervisor gets this. |
+| **`orchestrate`** | `orch space start` only (supervisor) | How to manage a multi-run workflow. Read plans, decompose into slices, pick models, dispatch runs, evaluate reports, use `orch space`, `orch context pin`, manage cost budgets. | **Needs `run-agent` + `agent`.** Only the supervisor gets this. |
 
 **Injection model:**
-- Standalone `orch run` (no workspace): injects `run-agent` + `agent`
-- Workspace supervisor (`orch workspace start`): injects `run-agent` + `agent` + `orchestrate`
+- Standalone `orch run` (no space): injects `run-agent` + `agent`
+- Space supervisor (`orch space start`): injects `run-agent` + `agent` + `orchestrate`
 - Subagent spawned by supervisor: injects `run-agent` + `agent`
 
 **Depth limiting prevents runaway spawning:**
@@ -437,12 +437,12 @@ All business logic lives in `orch-lib`. The `orch` binary crate is a **thin disp
 ```mermaid
 graph TB
     subgraph Binary["orch (Rust binary — single installable CLI)"]
-        CLI["clap v4 CLI — resource-first grammar\norch workspace start|resume|list|show\norch run create|list|show|continue|retry\norch skills list|search|show|reindex\norch context pin|unpin|list\norch diag doctor|trace|diagnose|repair"]
+        CLI["clap v4 CLI — resource-first grammar\norch space start|resume|list|show\norch run create|list|show|continue|retry\norch skills list|search|show|reindex\norch context pin|unpin|list\norch diag doctor|trace|diagnose|repair"]
         Config["Config Layer\nSkill discovery, model guidance, agent profiles\n.orchestrate/config.toml defaults"]
         Prompt["Prompt Engine\nminijinja templates, skill assembly, sanitization\ncontext pin injection"]
         Harness["Harness Adapter Layer\nHarnessAdapter trait + HarnessRegistry\nClaude, Codex, OpenCode adapters"]
         Exec["Execution Engine\ntokio process spawn, signal handling, streaming\nfinalization guarantee (Drop guard)"]
-        State["State Layer\nSQLite WAL, event log, trace spans\ncheckpoint/resume, workspace tracking"]
+        State["State Layer\nSQLite WAL, event log, trace spans\ncheckpoint/resume, space tracking"]
         Post["Post-Processing\nHarnessAdapter extract methods\nreport fallback, files-touched, guardrails"]
     end
 
@@ -456,12 +456,12 @@ graph TB
 
     subgraph Artifacts["Markdown Artifacts (durable memory)"]
         RunMD["Per-run: report.md, input.md"]
-        WorkspaceMD["Per-workspace: workspace-summary.md"]
+        SpaceMD["Per-space: space-summary.md"]
         Committable["Committable: plans, summaries, research"]
     end
 
     Post --> RunMD
-    State --> WorkspaceMD
+    State --> SpaceMD
     CLI -->|"orch export"| Committable
 
     subgraph HarnessCLIs["CLI Harnesses (external)"]
@@ -481,18 +481,18 @@ graph TB
     Artifacts -->|"read .md files"| Supervisor
 ```
 
-### Workspace Layout
+### Space Layout
 
 ```
 orchestrate/crates/
-  Cargo.toml              # workspace root
+  Cargo.toml              # space root
   orch/                   # binary crate (installs as `orch`)
     Cargo.toml
     src/
       main.rs
       cli.rs              # clap derive structs (resource-first groups)
       commands/            # one module per subcommand group
-        workspace.rs       # start, resume, list, show, close
+        space.rs       # start, resume, list, show, close
         run.rs             # create, list, show, continue, retry
         context.rs         # pin, unpin, list
         diag.rs            # doctor, trace, diagnose, repair
@@ -502,7 +502,7 @@ orchestrate/crates/
     Cargo.toml
     src/
       lib.rs
-      types.rs            # domain newtypes: WorkspaceId, RunId, HarnessId, ModelId
+      types.rs            # domain newtypes: SpaceId, RunId, HarnessId, ModelId
       config/             # skill discovery, model guidance, agent profiles
       prompt/             # template engine, skill assembly, sanitization
       exec/               # process spawning, signal handling, streaming
@@ -513,9 +513,9 @@ orchestrate/crates/
         codex.rs           # CodexAdapter
         opencode.rs        # OpenCodeAdapter
       extract/            # token extraction, files-touched, report fallback (delegates to HarnessAdapter)
-      workspace/          # workspace CRUD, state machine, summary generation, launch
+      space/          # space CRUD, state machine, summary generation, launch
         mod.rs
-        summary.rs         # workspace-summary.md generation/update
+        summary.rs         # space-summary.md generation/update
         launch.rs          # supervisor harness launch + context injection
         context.rs         # context pinning: pin/unpin/list, re-injection logic
       error.rs            # thiserror error types
@@ -528,7 +528,7 @@ The binary is called `orch` (short for orchestrate). Agents and humans use it di
 **Resource-first grammar** with short aliases for common commands:
 
 ```bash
-# ── Standalone mode (no workspace, replaces run-agent.sh) ────────────
+# ── Standalone mode (no space, replaces run-agent.sh) ────────────
 orch run -m claude-opus-4-6 -p "Review this code"     # one-off run (alias: orch run create)
 orch run -m gpt-5.3-codex --skills research -p "..."   # with skills
 orch run list                                          # list all runs (alias: orch list)
@@ -536,14 +536,14 @@ orch run list --failed                                 # filter by status
 orch run show @latest                                  # show last run (alias: orch show)
 orch run show @latest --report                         # read report.md
 
-# ── Workspace-bound mode (replaces scripts/cc-orchestrate) ─────────────
-orch workspace start --plan plan.md                    # launch supervisor (alias: orch start)
-orch workspace start --name auth-refactor              # workspace with alias
-orch workspace resume                                  # resume latest active (alias: orch resume)
-orch workspace resume w3                               # resume specific workspace (or by alias)
-orch workspace list                                    # list all workspaces
-orch workspace show w3                                 # workspace detail: runs, cost, pinned files
-orch workspace close w3                                # mark as complete
+# ── Space-bound mode (replaces scripts/cc-orchestrate) ─────────────
+orch space start --plan plan.md                    # launch supervisor (alias: orch start)
+orch space start --name auth-refactor              # space with alias
+orch space resume                                  # resume latest active (alias: orch resume)
+orch space resume w3                               # resume specific space (or by alias)
+orch space list                                    # list all spaces
+orch space show w3                                 # space detail: runs, cost, pinned files
+orch space close w3                                # mark as complete
 
 # ── Skill registry (P8 — orch owns discovery, not the harness) ────────
 orch skills list                                       # list all indexed skills
@@ -556,8 +556,8 @@ orch models list                                       # all models with guidanc
 orch models list --defaults                            # task-type defaults (implement, review, etc.)
 orch models show codex                                 # full detail (aliases resolved)
 
-# ── Context pinning (within a workspace) ─────────────────────────────
-orch context pin research-findings.md                  # pin to workspace context
+# ── Context pinning (within a space) ─────────────────────────────
+orch context pin research-findings.md                  # pin to space context
 orch context unpin research-findings.md                # remove from pinned
 orch context list                                      # list pinned files
 
@@ -566,24 +566,24 @@ orch run continue r3 -p "Fix the 3 issues from review" # continue a specific run
 orch run retry @last-failed                            # retry with clean prompt
 orch run show @latest --files                          # files touched
 
-# ── Cross-workspace queries ──────────────────────────────────────────
-orch run list --workspace w3                           # runs in a specific workspace
-orch run list --no-workspace                           # standalone runs only
+# ── Cross-space queries ──────────────────────────────────────────
+orch run list --space w3                           # runs in a specific space
+orch run list --no-space                           # standalone runs only
 orch run list --all                                    # everything
 
 # ── Diagnostics ──────────────────────────────────────────────────────
 orch diag doctor                                       # health check (alias: orch doctor)
-orch diag trace --workspace w3                         # hierarchical cost/time view
+orch diag trace --space w3                         # hierarchical cost/time view
 orch diag diagnose @latest                             # failure diagnosis
 orch diag repair                                       # validate and fix index corruption
 
 # ── Export ───────────────────────────────────────────────────────────
-orch export --workspace w3                             # gather committable markdown artifacts
+orch export --space w3                             # gather committable markdown artifacts
 ```
 
 **Short aliases** (backward compatible, same behavior):
-- `orch start` = `orch workspace start`
-- `orch resume` = `orch workspace resume`
+- `orch start` = `orch space start`
+- `orch resume` = `orch space resume`
 - `orch run` (with `-p`) = `orch run create`
 - `orch list` = `orch run list`
 - `orch show` = `orch run show`
@@ -627,12 +627,12 @@ The `orch` binary replaces all scripts under `orchestrate/skills/run-agent/scrip
 ```mermaid
 graph TD
     S0["Slice 0: Scaffold + CI + orch binary"]
-    S1["Slice 1: State Layer (SQLite + workspaces + newtypes)"]
+    S1["Slice 1: State Layer (SQLite + spaces + newtypes)"]
     S2["Slice 2: Harness Adapters + Skill Discovery"]
     S3["Slice 3: Prompt Composition"]
     S4["Slice 4: Execution Engine"]
     S5["Slice 5: Post-Execution + Extraction"]
-    S6["Slice 6: Run Explorer + Workspace Launcher + Context Pinning"]
+    S6["Slice 6: Run Explorer + Space Launcher + Context Pinning"]
     S7["Slice 7: Safety + Cost Guardrails"]
     S8["Slice 8: Migration + Distribution"]
 
@@ -663,23 +663,23 @@ These are invariants that every slice must preserve. Violation of any spec means
 - Test: spawn run that times out → finalize row exists with exit code 3.
 - Test: spawn run where harness crashes → finalize row exists with correct exit code.
 
-**Spec 2: Context isolation.** A run agent MUST NOT see another run's context, report, or workspace state unless explicitly passed via `-f`. Prevents prompt injection across runs.
+**Spec 2: Context isolation.** A run agent MUST NOT see another run's context, report, or space state unless explicitly passed via `-f`. Prevents prompt injection across runs.
 - Test: run A writes a file containing prompt injection. Run B, without `-f` referencing that file, must not see it in composed prompt.
 - Test: composed `input.md` contains ONLY: `orch` base skill + requested skill content + agent profile + model guidance + explicit `-f` files + template vars + report path + user prompt. Nothing else.
 
-**Spec 3: Context pinning survives compaction.** Pinned files MUST be re-injected after workspace resume. Core value proposition.
-- Test: pin 3 files, close workspace, resume → composed supervisor prompt contains all 3.
+**Spec 3: Context pinning survives compaction.** Pinned files MUST be re-injected after space resume. Core value proposition.
+- Test: pin 3 files, close space, resume → composed supervisor prompt contains all 3.
 - Test: pin file, unpin it, resume → file does NOT appear.
 - Test: pin file that was deleted from disk → resume produces clear error, not silent drop.
 
 **Spec 4: Cost tracking accuracy.** Extracted token counts and cost MUST be within 5% of actual (for harnesses that report usage).
 - Test: run against each harness with known fixture output → extracted tokens match expected values.
 - Test: per-run budget $0.50, run costs $0.51 → run terminated.
-- Test: workspace budget $1.00, accumulated $0.95, new run costs $0.10 → run prevented or terminated.
+- Test: space budget $1.00, accumulated $0.95, new run costs $0.10 → run prevented or terminated.
 
-**Spec 5: ID uniqueness and resolution.** Run/workspace IDs MUST be globally unique. Resolution MUST be unambiguous within scope.
+**Spec 5: ID uniqueness and resolution.** Run/space IDs MUST be globally unique. Resolution MUST be unambiguous within scope.
 - Test: 100 concurrent `orch run` calls → all IDs unique, no counter collisions.
-- Test: `r3` within workspace `w2` resolves to `w2/r3`, not `w1/r3` or standalone `r3`.
+- Test: `r3` within space `w2` resolves to `w2/r3`, not `w1/r3` or standalone `r3`.
 - Test: `@latest` returns most recent by `started_at`.
 
 **Spec 6: Prompt sanitization.** Prior run output in continuation/retry MUST be wrapped in boundary markers. Stale report-path instructions MUST be stripped.
@@ -690,9 +690,9 @@ These are invariants that every slice must preserve. Violation of any spec means
 - Test: 10 parallel `orch run` processes writing to same DB → all finalize rows present and uncorrupted.
 - Test: long-running read does not block concurrent write beyond `busy_timeout` (5s).
 
-**Spec 8: Workspace state machine.** Transitions MUST follow: `active → paused | completed | abandoned`. No invalid transitions.
-- Test: close workspace then resume → clear error.
-- Test: `orch resume` with no active workspaces → error, not silent creation.
+**Spec 8: Space state machine.** Transitions MUST follow: `active → paused | completed | abandoned`. No invalid transitions.
+- Test: close space then resume → clear error.
+- Test: `orch resume` with no active spaces → error, not silent creation.
 
 **Spec 9: Skill discovery from `.agents/skills/` only.** Skills MUST be discovered from `.agents/skills/`, never from `.claude/skills/` or harness-specific directories. The `orch` base skill MUST be injected into every run. Harnesses receive fully composed prompts — no hook-based skill loading.
 - Test: place skill in `.claude/skills/` but not `.agents/skills/` → `orch skills list` does not find it.
@@ -734,7 +734,7 @@ These are invariants that every slice must preserve. Violation of any spec means
 
 ## Slice 0: Scaffold, CI, and `orch` Binary
 
-**Description:** Set up the Cargo workspace, clap CLI skeleton with resource-first subcommand groups stubbed, CI pipeline, cross-compilation matrix, and a repo-local wrapper script. After this slice, agents can invoke `orch --help` from anywhere in the repo.
+**Description:** Set up the Cargo space, clap CLI skeleton with resource-first subcommand groups stubbed, CI pipeline, cross-compilation matrix, and a repo-local wrapper script. After this slice, agents can invoke `orch --help` from anywhere in the repo.
 
 **Dependencies:** None (first slice).
 
@@ -747,13 +747,13 @@ These are invariants that every slice must preserve. Violation of any spec means
 - `_docs/technical/rust-cli-best-practices.md`
 
 **Files to create:**
-- `orchestrate/crates/Cargo.toml` -- workspace root with members
+- `orchestrate/crates/Cargo.toml` -- space root with members
 - `orchestrate/crates/orch/Cargo.toml` -- binary crate deps
 - `orchestrate/crates/orch/src/main.rs` -- entry point with anyhow
 - `orchestrate/crates/orch/src/cli.rs` -- clap derive structs for resource-first grammar (stubbed)
 - `orchestrate/crates/orch-lib/Cargo.toml` -- library crate deps
 - `orchestrate/crates/orch-lib/src/lib.rs` -- module declarations
-- `orchestrate/crates/orch-lib/src/types.rs` -- domain newtypes (WorkspaceId, RunId, HarnessId, ModelId)
+- `orchestrate/crates/orch-lib/src/types.rs` -- domain newtypes (SpaceId, RunId, HarnessId, ModelId)
 - `orchestrate/crates/orch-lib/src/error.rs` -- thiserror error enum
 - `orchestrate/crates/orch/build.rs` -- git hash + version embedding
 - `orchestrate/crates/orch/tests/cli_smoke.rs` -- assert_cmd smoke test
@@ -805,25 +805,25 @@ exec "$BIN" "$@"
 
 **Domain newtypes** (defined in Slice 0, used everywhere):
 ```rust
-/// Newtype wrappers for IDs — prevent mixing WorkspaceId with RunId at compile time.
+/// Newtype wrappers for IDs — prevent mixing SpaceId with RunId at compile time.
 /// All implement Display, FromStr, Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash.
-pub struct WorkspaceId(String);  // "w1", "w2", "w3"
-pub struct RunId(String);        // "r1", "w3/r1" (standalone vs workspace-bound)
+pub struct SpaceId(String);  // "w1", "w2", "w3"
+pub struct RunId(String);        // "r1", "w3/r1" (standalone vs space-bound)
 pub struct HarnessId(String);    // "claude", "codex", "opencode"
 pub struct ModelId(String);      // "claude-opus-4-6", "gpt-5.3-codex"
 ```
 
 **Acceptance criteria:**
-1. `cargo build --workspace` succeeds from `orchestrate/crates/`
-2. `cargo test --workspace` passes (smoke test: binary runs `--help` without error)
-3. `cargo clippy --workspace -- -D warnings` passes
-4. `cargo fmt --workspace -- --check` passes
+1. `cargo build --space` succeeds from `orchestrate/crates/`
+2. `cargo test --space` passes (smoke test: binary runs `--help` without error)
+3. `cargo clippy --space -- -D warnings` passes
+4. `cargo fmt --space -- --check` passes
 5. `orch --version` prints version with embedded git hash
 6. `scripts/orch --help` works from repo root (auto-builds if needed)
 7. CI workflow runs on PR and passes
 8. Cross-compilation targets defined: `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`, `x86_64-apple-darwin`, `aarch64-apple-darwin`
-9. Resource-first subcommand groups stubbed: `workspace` (start, resume, list, show, close), `run` (create, list, show, continue, retry), `skills` (list, search, show, reindex), `models` (list, show), `context` (pin, unpin, list), `diag` (doctor, trace, diagnose, repair), `export`
-10. Top-level aliases wired: `start` → `workspace start`, `resume` → `workspace resume`, `run` (with `-p`) → `run create`, `list` → `run list`, `show` → `run show`, `doctor` → `diag doctor`
+9. Resource-first subcommand groups stubbed: `space` (start, resume, list, show, close), `run` (create, list, show, continue, retry), `skills` (list, search, show, reindex), `models` (list, show), `context` (pin, unpin, list), `diag` (doctor, trace, diagnose, repair), `export`
+10. Top-level aliases wired: `start` → `space start`, `resume` → `space resume`, `run` (with `-p`) → `run create`, `list` → `run list`, `show` → `run show`, `doctor` → `diag doctor`
 11. Domain newtypes defined in `orch-lib/src/types.rs` with Display, FromStr, Serialize, Deserialize
 12. `mock-harness` binary builds and responds to `--exit-code`, `--duration`, `--hang`, `--stdout-file`, `--crash-after-lines` flags
 13. Test fixtures directory contains sample SKILL.md and agent .md files for discovery tests in Slice 2
@@ -832,9 +832,9 @@ pub struct ModelId(String);      // "claude-opus-4-6", "gpt-5.3-codex"
 
 ## Slice 1: State Layer (SQLite + Events + Traces)
 
-**Description:** Implement the SQLite state database with WAL mode, event-sourced workflow state, trace spans, and workspace/context-pinning tables — all designed from day one so the LLM supervisor has persistent memory across workspaces. Maintain JSONL dual-write for backwards compatibility. Fixes critical gaps #2 (lock mismatch) and #5 (index corruption). Includes schema migration infrastructure for forward evolution.
+**Description:** Implement the SQLite state database with WAL mode, event-sourced workflow state, trace spans, and space/context-pinning tables — all designed from day one so the LLM supervisor has persistent memory across spaces. Maintain JSONL dual-write for backwards compatibility. Fixes critical gaps #2 (lock mismatch) and #5 (index corruption). Includes schema migration infrastructure for forward evolution.
 
-**Dependencies:** Slice 0 (workspace must compile).
+**Dependencies:** Slice 0 (space must compile).
 
 **Model recommendation:** `gpt-5.3-codex` -- Codex excels at exhaustive Rust correctness; data integrity and locking semantics are well-specified by acceptance criteria. Opus review for schema API surface coherence.
 
@@ -848,11 +848,11 @@ pub struct ModelId(String);      // "claude-opus-4-6", "gpt-5.3-codex"
 - `orchestrate/crates/orch-lib/src/state/mod.rs` -- public API
 - `orchestrate/crates/orch-lib/src/state/db.rs` -- SQLite connection, WAL config, busy_timeout
 - `orchestrate/crates/orch-lib/src/state/schema.rs` -- table definitions + embedded migrations via rusqlite_migration
-- `orchestrate/crates/orch-lib/src/state/models.rs` -- Run, Workspace, PinnedFile, WorkflowEvent, Span, Artifact structs (serde, using domain newtypes)
+- `orchestrate/crates/orch-lib/src/state/models.rs` -- Run, Space, PinnedFile, WorkflowEvent, Span, Artifact structs (serde, using domain newtypes)
 - `orchestrate/crates/orch-lib/src/state/jsonl.rs` -- JSONL reader/writer for dual-write + import
 - `orchestrate/crates/orch-lib/src/state/lock.rs` -- fd-lock unified file lock
 - `orchestrate/crates/orch-lib/src/state/migrate.rs` -- JSONL-to-SQLite import tool
-- `orchestrate/crates/orch-lib/src/state/id_gen.rs` -- counter-based ID generation: workspace-scoped (w3/r1) and global (r1) counters, alias resolution (name → ID lookup)
+- `orchestrate/crates/orch-lib/src/state/id_gen.rs` -- counter-based ID generation: space-scoped (w3/r1) and global (r1) counters, alias resolution (name → ID lookup)
 - `orchestrate/crates/orch-lib/src/state/artifact_store.rs` -- ArtifactStore trait + LocalStore impl
 
 **Files to modify:**
@@ -861,13 +861,13 @@ pub struct ModelId(String);      // "claude-opus-4-6", "gpt-5.3-codex"
 
 **Key design decisions:**
 
-SQLite schema (initial — includes event log + trace spans + workspace + context pinning from day one):
+SQLite schema (initial — includes event log + trace spans + space + context pinning from day one):
 ```sql
 -- Core runs table
--- Workspace-bound runs: workspace-scoped counter (w3/r1). Standalone runs: global counter (r1).
+-- Space-bound runs: space-scoped counter (w3/r1). Standalone runs: global counter (r1).
 CREATE TABLE runs (
-    id              TEXT PRIMARY KEY,    -- globally unique: "w3/r1" (workspace-bound) or "r1" (standalone)
-    workspace_id    TEXT REFERENCES workspaces(id),  -- NULL for standalone runs
+    id              TEXT PRIMARY KEY,    -- globally unique: "w3/r1" (space-bound) or "r1" (standalone)
+    space_id    TEXT REFERENCES spaces(id),  -- NULL for standalone runs
     run_type        TEXT NOT NULL,       -- orchestrate_reader | run_agent
     name            TEXT,               -- optional alias: "review-auth" (lookup, not filesystem)
     model           TEXT NOT NULL,       -- ModelId newtype
@@ -898,9 +898,9 @@ CREATE TABLE runs (
     error_message   TEXT
 );
 
--- Workspaces table (orch's unit of orchestrated work — replaces "sessions")
-CREATE TABLE workspaces (
-    id              TEXT PRIMARY KEY,   -- WorkspaceId newtype: w1, w2, w3
+-- Spaces table (orch's unit of orchestrated work — replaces "sessions")
+CREATE TABLE spaces (
+    id              TEXT PRIMARY KEY,   -- SpaceId newtype: w1, w2, w3
     name            TEXT,               -- optional alias: "auth-refactor" (lookup, not filesystem)
     status          TEXT NOT NULL,       -- active | paused | completed | abandoned
     description     TEXT,               -- user-provided or auto-generated
@@ -918,22 +918,22 @@ CREATE TABLE workspaces (
     total_cost_usd  REAL DEFAULT 0.0,
     total_input_tokens  INTEGER DEFAULT 0,
     total_output_tokens INTEGER DEFAULT 0,
-    summary_path    TEXT               -- path to workspace-summary.md
+    summary_path    TEXT               -- path to space-summary.md
 );
 
 -- Context pinning (P6) — files that survive compaction and are auto-injected
 CREATE TABLE pinned_files (
-    workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+    space_id TEXT NOT NULL REFERENCES spaces(id),
     file_path    TEXT NOT NULL,         -- relative to repo root
     pinned_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     pinned_by    TEXT,                  -- run_id that pinned it (nullable, could be manual)
-    PRIMARY KEY (workspace_id, file_path)
+    PRIMARY KEY (space_id, file_path)
 );
 
 -- Event-sourced workflow state (the supervisor's memory)
 CREATE TABLE workflow_events (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    workspace_id  TEXT NOT NULL REFERENCES workspaces(id),
+    space_id  TEXT NOT NULL REFERENCES spaces(id),
     event_type    TEXT NOT NULL,        -- TaskScheduled | TaskCompleted | TaskFailed |
                                        -- RoutingDecision | RetryDecision | GuardrailTripped |
                                        -- CostAlert | HumanApprovalRequested | ContextPinned | ContextUnpinned
@@ -945,7 +945,7 @@ CREATE TABLE workflow_events (
 -- OpenTelemetry-aligned trace spans (the supervisor's eyes)
 CREATE TABLE spans (
     span_id     TEXT PRIMARY KEY,
-    trace_id    TEXT NOT NULL,          -- = workspace_id
+    trace_id    TEXT NOT NULL,          -- = space_id
     parent_id   TEXT,                   -- FK to spans.span_id (nullable for root)
     name        TEXT NOT NULL,
     kind        TEXT NOT NULL,          -- workflow | task | run | post-process | guardrail
@@ -979,16 +979,16 @@ CREATE TABLE schema_info (
 );
 -- INSERT INTO schema_info VALUES ('version', '1');
 
-CREATE INDEX idx_workspaces_status ON workspaces(status);
-CREATE INDEX idx_workspaces_started ON workspaces(started_at);
-CREATE INDEX idx_runs_workspace ON runs(workspace_id);
+CREATE INDEX idx_spaces_status ON spaces(status);
+CREATE INDEX idx_spaces_started ON spaces(started_at);
+CREATE INDEX idx_runs_space ON runs(space_id);
 CREATE INDEX idx_runs_status ON runs(status);
 CREATE INDEX idx_runs_started ON runs(started_at);
 CREATE INDEX idx_runs_model ON runs(model);
 CREATE INDEX idx_runs_dedup ON runs(dedup_key);
 CREATE INDEX idx_runs_type ON runs(run_type);
-CREATE INDEX idx_pinned_workspace ON pinned_files(workspace_id);
-CREATE INDEX idx_events_workspace ON workflow_events(workspace_id);
+CREATE INDEX idx_pinned_space ON pinned_files(space_id);
+CREATE INDEX idx_events_space ON workflow_events(space_id);
 CREATE INDEX idx_spans_trace ON spans(trace_id);
 ```
 
@@ -1014,14 +1014,14 @@ JSONL dual-write:
 ID format — counters + optional name aliases:
 
 **IDs are always monotonic counters (using domain newtypes):**
-- Workspace: `w1`, `w2`, `w3` — global counter (`SELECT MAX(...) + 1`), `WorkspaceId` newtype
-- Workspace-bound run: `r1`, `r2`, `r3` — counter scoped to workspace (stored as `w3/r1` in DB for global uniqueness), `RunId` newtype
-- Standalone run: `r1`, `r2`, `r3` — global counter (no workspace prefix), `RunId` newtype
+- Space: `w1`, `w2`, `w3` — global counter (`SELECT MAX(...) + 1`), `SpaceId` newtype
+- Space-bound run: `r1`, `r2`, `r3` — counter scoped to space (stored as `w3/r1` in DB for global uniqueness), `RunId` newtype
+- Standalone run: `r1`, `r2`, `r3` — global counter (no space prefix), `RunId` newtype
 - 2 tokens each, zero collisions, trivially implemented
-- Folders on disk match: workspace-bound → `workspaces/w3/runs/r1/`, standalone → `runs/r1/`
+- Folders on disk match: space-bound → `spaces/w3/runs/r1/`, standalone → `runs/r1/`
 
 **Names are optional aliases (metadata, not IDs):**
-- `orch start --name auth-refactor` → workspace `w3` with alias `auth-refactor`
+- `orch start --name auth-refactor` → space `w3` with alias `auth-refactor`
 - `orch run -n review-auth -p "..."` → run `r7` with alias `review-auth`
 - Alias stored in SQLite `name` column, resolved on lookup
 - Aliases don't need to be unique — the counter disambiguates
@@ -1030,19 +1030,19 @@ ID format — counters + optional name aliases:
 
 **`orch run list` shows both ID and alias (works for both modes):**
 ```
-# Inside a workspace (ORCH_WORKSPACE_ID=w3):
+# Inside a space (ORCH_WORKSPACE_ID=w3):
 r1  review-auth      completed  opus    orchestrate_reader  127s  $0.42
 r2  fix-badge-sync   completed  codex   run_agent           83s   $0.31
 r3                   completed  sonnet  run_agent           45s   $0.12
 
-# Global view (no workspace / --all):
+# Global view (no space / --all):
 w3/r1  review-auth      completed  opus    orchestrate_reader  127s  $0.42
 w3/r2  fix-badge-sync   completed  codex   run_agent           83s   $0.31
 r1     quick-check      completed  sonnet  run_agent           45s   $0.12  (standalone)
 r2                      completed  haiku   run_agent           12s   $0.02  (standalone)
 ```
 
-**`orch workspace show w3` gives the workspace detail view** — runs, accumulated cost, pinned files, harness session IDs.
+**`orch space show w3` gives the space detail view** — runs, accumulated cost, pinned files, harness session IDs.
 
 **Directory layout:**
 ```
@@ -1051,7 +1051,7 @@ r2                      completed  haiku   run_agent           12s   $0.02  (sta
   models.toml                    # model catalog overrides (P11, optional)
   index/
     runs.db                      # SQLite WAL database
-  runs/                          # standalone runs (orch run without a workspace)
+  runs/                          # standalone runs (orch run without a space)
     r1/
       params.json
       input.md
@@ -1059,9 +1059,9 @@ r2                      completed  haiku   run_agent           12s   $0.02  (sta
       report.md
     r2/
       ...
-  workspaces/                    # workspace-bound runs (orch start → orch run)
+  spaces/                    # space-bound runs (orch start → orch run)
     w3/
-      workspace-summary.md
+      space-summary.md
       runs/
         r1/
           params.json
@@ -1072,7 +1072,7 @@ r2                      completed  haiku   run_agent           12s   $0.02  (sta
           ...
     w4/
       ...
-  active-workspaces/             # PID lock files for running workspaces
+  active-spaces/             # PID lock files for running spaces
     w3.lock
 
 .agents/                         # harness-agnostic, industry-standard convention
@@ -1092,10 +1092,10 @@ r2                      completed  haiku   run_agent           12s   $0.02  (sta
 
 **References:**
 - Standalone run by counter: `orch run show r7`
-- Workspace-bound run by counter: `orch run show w3/r7` (workspace prefix required for workspace-bound runs)
-- By alias: `orch run show review-auth` (searches both workspace-bound and standalone)
+- Space-bound run by counter: `orch run show w3/r7` (space prefix required for space-bound runs)
+- By alias: `orch run show review-auth` (searches both space-bound and standalone)
 - Built-in aliases: `@latest`, `@last-failed`, `@last-completed`
-- Within an active workspace (env var set): `orch run show r7` resolves to the current workspace's r7
+- Within an active space (env var set): `orch run show r7` resolves to the current space's r7
 
 All paths stored as relative (to `.orchestrate/`), resolved to absolute on read.
 
@@ -1121,24 +1121,24 @@ pub struct ArtifactKey {
 **Acceptance criteria:**
 1. SQLite DB created at `.orchestrate/index/runs.db` with WAL mode enabled
 2. `busy_timeout` set to 5000ms for concurrent access
-3. Schema includes all 8 tables: `runs`, `workspaces`, `pinned_files`, `workflow_events`, `spans`, `run_edges`, `artifacts`, `schema_info`
+3. Schema includes all 8 tables: `runs`, `spaces`, `pinned_files`, `workflow_events`, `spans`, `run_edges`, `artifacts`, `schema_info`
 4. Schema migrations run automatically on first access via `rusqlite_migration` (embedded, versioned, forward-only)
 5. `append_start_row()` writes to both SQLite and JSONL atomically under exclusive lock
 6. `append_finalize_row()` updates SQLite row and appends JSONL under exclusive lock
-7. `append_workflow_event()` writes event with correct workspace scoping
+7. `append_workflow_event()` writes event with correct space scoping
 8. Span creation/finalization helpers work correctly
 9. Reader operations acquire shared lock
 10. JSONL import: reads existing `runs.jsonl` and populates SQLite (idempotent)
-11. Run ID generation supports both modes: workspace-scoped counters (workspace-bound) and global counters (standalone)
-12. `workspace_id` is nullable in `runs` table — standalone runs have `NULL` workspace_id
+11. Run ID generation supports both modes: space-scoped counters (space-bound) and global counters (standalone)
+12. `space_id` is nullable in `runs` table — standalone runs have `NULL` space_id
 13. `run_type` column enforced as `orchestrate_reader` or `run_agent`
-14. `pinned_files` table supports CRUD operations with workspace scoping
+14. `pinned_files` table supports CRUD operations with space scoping
 15. All paths stored as relative, resolved correctly on read
-16. All model structs use domain newtypes (`WorkspaceId`, `RunId`, `HarnessId`, `ModelId`)
+16. All model structs use domain newtypes (`SpaceId`, `RunId`, `HarnessId`, `ModelId`)
 17. `ArtifactStore` trait defined with `LocalStore` and `InMemoryStore` implementations
 18. All artifact reads/writes in later slices go through `ArtifactStore`, never raw `std::fs`
 19. `schema_info` table tracks schema version; `orch diag doctor` checks compatibility
-20. Unit tests for: schema creation, CRUD, events, spans, locking contention, JSONL round-trip, import, artifact store (both workspace-bound and standalone paths), pinned files, migration forward-compat
+20. Unit tests for: schema creation, CRUD, events, spans, locking contention, JSONL round-trip, import, artifact store (both space-bound and standalone paths), pinned files, migration forward-compat
 
 ---
 
@@ -1146,7 +1146,7 @@ pub struct ArtifactKey {
 
 **Description:** Implement the HarnessAdapter trait and registry (P7), the `orch`-owned skill registry (P8) with SQLite indexing and keyword search, SKILL.md frontmatter parsing, agent profile parsing, model guidance loading, and model-to-harness routing. Skills are discovered exclusively from `.agents/skills/` and indexed in SQLite — harnesses never discover skills directly (no `.claude/skills/` scanning). This fixes gap #8 (skill policy name mismatch) and establishes both the harness abstraction and the progressive skill disclosure model.
 
-**Dependencies:** Slice 0 (workspace must compile, domain newtypes available), Slice 1 (SQLite for skill index).
+**Dependencies:** Slice 0 (space must compile, domain newtypes available), Slice 1 (SQLite for skill index).
 
 **Model recommendation:** `gpt-5.3-codex` -- structured parsing with well-defined inputs/outputs.
 
@@ -1316,7 +1316,7 @@ struct AgentFrontmatter {
 21. `models.toml` overrides take precedence over built-in defaults; missing file is not an error
 22. Task-type defaults (`implement`, `review`, `research`, `commit`, `conversation`) resolved from `models.toml` > built-in defaults
 23. Three base skills (`run-agent`, `agent`, `orchestrate`) loadable from `.agents/skills/`
-24. Base skill injection follows P9 rules: standalone gets `run-agent` + `agent`; workspace supervisor gets all three
+24. Base skill injection follows P9 rules: standalone gets `run-agent` + `agent`; space supervisor gets all three
 25. Unit tests with fixture SKILL.md and agent .md files, harness routing, skill registry CRUD, search, model catalog, base skill injection
 
 ---
@@ -1580,9 +1580,9 @@ Report fallback:
 
 ---
 
-## Slice 6: Run Explorer + Workspace Launcher + Context Pinning
+## Slice 6: Run Explorer + Space Launcher + Context Pinning
 
-**Description:** Rewrite `run-index.sh` as Rust subcommands with type-safe filtering (no jq), continuation of crashed runs, index recovery/repair, the `orch workspace start`/`orch workspace resume` launcher (replaces `scripts/cc-orchestrate`), and `orch context pin/unpin/list` for context pinning (P6). Fixes gaps #6 (crashed runs can't continue), #7 (jq injection), and #5 (index corruption recovery).
+**Description:** Rewrite `run-index.sh` as Rust subcommands with type-safe filtering (no jq), continuation of crashed runs, index recovery/repair, the `orch space start`/`orch space resume` launcher (replaces `scripts/cc-orchestrate`), and `orch context pin/unpin/list` for context pinning (P6). Fixes gaps #6 (crashed runs can't continue), #7 (jq injection), and #5 (index corruption recovery).
 
 **Dependencies:** Slice 1 (state layer for reading), Slice 5 (post-execution for finalize format).
 
@@ -1592,21 +1592,21 @@ Report fallback:
 - `_docs/plans/orchestrate-rust-rewrite.md` (this plan — Slice 6 section)
 - `orchestrate/skills/run-agent/scripts/run-index.sh` (current run listing, filtering, show, recovery)
 - `orchestrate/skills/run-agent/scripts/log-inspect.sh` (current log/trace inspection)
-- `orchestrate/skills/orchestrate/SKILL.md` (supervisor workflow being wrapped by workspace launcher)
+- `orchestrate/skills/orchestrate/SKILL.md` (supervisor workflow being wrapped by space launcher)
 - `_docs/technical/orchestrate-system-review.md` (gaps #5, #6, #7 details)
 
 **Files to create:**
 - `orchestrate/crates/orch/src/commands/mod.rs` -- subcommand dispatch (resource-first groups)
-- `orchestrate/crates/orch/src/commands/workspace.rs` -- workspace start/resume/list/show/close subcommands
-- `orchestrate/crates/orch/src/commands/run.rs` -- run create/list/show/continue/retry subcommands (workspace-bound if ORCH_WORKSPACE_ID set, standalone otherwise)
+- `orchestrate/crates/orch/src/commands/space.rs` -- space start/resume/list/show/close subcommands
+- `orchestrate/crates/orch/src/commands/run.rs` -- run create/list/show/continue/retry subcommands (space-bound if ORCH_WORKSPACE_ID set, standalone otherwise)
 - `orchestrate/crates/orch/src/commands/context.rs` -- context pin/unpin/list subcommands
 - `orchestrate/crates/orch/src/commands/diag.rs` -- doctor/trace/diagnose/repair subcommands
 - `orchestrate/crates/orch/src/commands/export.rs` -- gather committable markdown artifacts
 - `orchestrate/crates/orch/src/output.rs` -- shared output formatting (plain, json, wide, porcelain)
-- `orchestrate/crates/orch-lib/src/workspace/mod.rs` -- workspace CRUD, aggregation, state machine
-- `orchestrate/crates/orch-lib/src/workspace/summary.rs` -- workspace-summary.md generation/update
-- `orchestrate/crates/orch-lib/src/workspace/launch.rs` -- supervisor harness launch + context injection
-- `orchestrate/crates/orch-lib/src/workspace/context.rs` -- context pinning: pin/unpin/list, re-injection logic
+- `orchestrate/crates/orch-lib/src/space/mod.rs` -- space CRUD, aggregation, state machine
+- `orchestrate/crates/orch-lib/src/space/summary.rs` -- space-summary.md generation/update
+- `orchestrate/crates/orch-lib/src/space/launch.rs` -- supervisor harness launch + context injection
+- `orchestrate/crates/orch-lib/src/space/context.rs` -- context pinning: pin/unpin/list, re-injection logic
 
 **Files to modify:**
 - `orchestrate/crates/orch/src/cli.rs` -- wire subcommands to implementations
@@ -1624,9 +1624,9 @@ struct RunListFilters {
     #[arg(long)]
     agent: Option<String>,
     #[arg(long)]
-    workspace: Option<String>,     // filter by workspace
+    space: Option<String>,     // filter by space
     #[arg(long)]
-    no_workspace: bool,            // standalone runs only
+    no_space: bool,            // standalone runs only
     #[arg(long)]
     run_type: Option<RunType>,     // orchestrate_reader | run_agent
     #[arg(long)]
@@ -1698,21 +1698,21 @@ Repair command (new, fix gap #5):
 fn repair(state: &State, rebuild: bool) -> Result<RepairReport> { ... }
 ```
 
-Workspace launcher (`orch workspace start` / `orch workspace resume` — replaces `scripts/cc-orchestrate`):
+Space launcher (`orch space start` / `orch space resume` — replaces `scripts/cc-orchestrate`):
 ```rust
-/// orch workspace start: create workspace, launch supervisor harness
+/// orch space start: create space, launch supervisor harness
 #[derive(clap::Args)]
-struct WorkspaceStartArgs {
+struct SpaceStartArgs {
     /// Plan file to start with
     #[arg(long)]
     plan: Option<PathBuf>,
     /// Supervisor model (default from config.toml)
     #[arg(long, short)]
     model: Option<String>,
-    /// Workspace name alias
+    /// Space name alias
     #[arg(long)]
     name: Option<String>,
-    /// Workspace description
+    /// Space description
     #[arg(long)]
     description: Option<String>,
     /// Autocompact percentage (passed to claude)
@@ -1723,56 +1723,56 @@ struct WorkspaceStartArgs {
     passthrough: Vec<String>,
 }
 
-/// orch workspace resume: resume an existing workspace
+/// orch space resume: resume an existing space
 #[derive(clap::Args)]
-struct WorkspaceResumeArgs {
-    /// Workspace ID or alias (default: latest active workspace)
-    workspace: Option<String>,
+struct SpaceResumeArgs {
+    /// Space ID or alias (default: latest active space)
+    space: Option<String>,
     #[arg(last = true)]
     passthrough: Vec<String>,
 }
 ```
 
-`orch workspace start` flow:
-1. Create `workspaces` row with status `active`, generate WorkspaceId
-2. Write `.orchestrate/active-workspaces/<cid>.lock` (PID file, advisory lock)
+`orch space start` flow:
+1. Create `spaces` row with status `active`, generate SpaceId
+2. Write `.orchestrate/active-spaces/<cid>.lock` (PID file, advisory lock)
 3. Set `ORCH_WORKSPACE_ID` + `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` in child env
 4. Spawn harness as child process (orch stays alive as parent)
-5. Wait for harness exit → finalize workspace (paused/completed/failed)
+5. Wait for harness exit → finalize space (paused/completed/failed)
 
-`orch workspace resume` flow:
-1. Find workspace (latest active/paused, or by ID/alias)
-2. Update `workspace-summary.md` from current SQLite state
+`orch space resume` flow:
+1. Find space (latest active/paused, or by ID/alias)
+2. Update `space-summary.md` from current SQLite state
 3. Re-inject pinned files (P6) into prompt
 4. Set `ORCH_WORKSPACE_ID` in child env
 5. If harness session ID known, spawn with `--resume`; otherwise inject summary + pinned context into prompt
-6. Spawn harness as child, wait for exit → update workspace
+6. Spawn harness as child, wait for exit → update space
 
 Context pinning commands:
 ```rust
-/// orch context pin: add file to workspace's pinned context
+/// orch context pin: add file to space's pinned context
 #[derive(clap::Args)]
 struct ContextPinArgs {
     /// File path to pin (relative to repo root)
     file: PathBuf,
-    /// Workspace ID (default: from ORCH_WORKSPACE_ID env var)
+    /// Space ID (default: from ORCH_WORKSPACE_ID env var)
     #[arg(long)]
-    workspace: Option<String>,
+    space: Option<String>,
 }
 
-/// orch context unpin: remove file from workspace's pinned context
+/// orch context unpin: remove file from space's pinned context
 #[derive(clap::Args)]
 struct ContextUnpinArgs {
     file: PathBuf,
     #[arg(long)]
-    workspace: Option<String>,
+    space: Option<String>,
 }
 
-/// orch context list: list pinned files for a workspace
+/// orch context list: list pinned files for a space
 #[derive(clap::Args)]
 struct ContextListArgs {
     #[arg(long)]
-    workspace: Option<String>,
+    space: Option<String>,
     #[arg(long)]
     format: Option<OutputFormat>,
 }
@@ -1796,58 +1796,58 @@ enum OutputFormat {
 // r3                   failed     sonnet  run_agent           12s   $0.08
 //
 // No headers, no borders, no box-drawing. Just data.
-// --format json for structured output. `orch workspace show` for full detail.
+// --format json for structured output. `orch space show` for full detail.
 ```
 
-Workspace management:
+Space management:
 ```rust
-/// Workspace subcommands — first-class workspace tracking across harnesses.
+/// Space subcommands — first-class space tracking across harnesses.
 #[derive(clap::Subcommand)]
-enum WorkspaceCmd {
-    /// Create workspace + launch supervisor harness
-    Start(WorkspaceStartArgs),
-    /// Resume an existing workspace
-    Resume(WorkspaceResumeArgs),
-    /// List all workspaces with status/cost
+enum SpaceCmd {
+    /// Create space + launch supervisor harness
+    Start(SpaceStartArgs),
+    /// Resume an existing space
+    Resume(SpaceResumeArgs),
+    /// List all spaces with status/cost
     List {
         #[arg(long, short = 'n', default_value = "10")]
         limit: usize,
         #[arg(long)]
         format: Option<OutputFormat>,
     },
-    /// Show workspace detail: runs, cost, pinned files, harness session IDs
+    /// Show space detail: runs, cost, pinned files, harness session IDs
     Show {
-        workspace: String,
+        space: String,
         #[arg(long)]
         format: Option<OutputFormat>,
     },
-    /// Mark workspace as complete
-    Close { workspace: String },
+    /// Mark space as complete
+    Close { space: String },
 }
 
-/// Export committable markdown artifacts from a workspace
+/// Export committable markdown artifacts from a space
 #[derive(clap::Args)]
 struct ExportArgs {
     #[arg(long)]
-    workspace: String,
-    /// Target directory (default: .orchestrate/exports/<workspace_id>/)
+    space: String,
+    /// Target directory (default: .orchestrate/exports/<space_id>/)
     #[arg(long, short)]
     output: Option<PathBuf>,
 }
 ```
 
-Workspace summary generation (`workspace-summary.md`):
-- Queries all runs for the workspace from SQLite
+Space summary generation (`space-summary.md`):
+- Queries all runs for the space from SQLite
 - Aggregates: total runs, cost, tokens, duration, status breakdown, run types
 - Lists key decisions (from workflow events with type `decision`)
 - Lists reports generated (links to run report.md files)
 - Lists pinned files with timestamps
-- Output is concise markdown — designed to be committed to the repo or fed as context to the next workspace resume
+- Output is concise markdown — designed to be committed to the repo or fed as context to the next space resume
 
 Run references:
 - By counter: `r7`
 - By alias: `review-auth`
-- Cross-workspace: `w3/r7` or `w3/review-auth`
+- Cross-space: `w3/r7` or `w3/review-auth`
 - `@latest` -- most recent run
 - `@last-failed` -- most recent failed run
 - `@last-completed` -- most recent completed run
@@ -1865,26 +1865,26 @@ Run references:
 10. `orch diag repair` validates and fixes index corruption (fix gap #5)
 11. `orch diag recover` reconstructs finalize rows from artifact directories
 12. All commands support `--format` (plain/json/wide/porcelain) — ANSI auto-detected via `is_terminal()`
-13. `orch workspace list` shows all workspaces with status, cost, run counts
-14. `orch workspace show w3` shows workspace detail: runs, accumulated cost/tokens, pinned files, harness session IDs
-15. `orch workspace close w3` transitions workspace to completed status
-16. `orch export --workspace w3` gathers key markdown artifacts (reports, summaries, plans) into a committable directory
+13. `orch space list` shows all spaces with status, cost, run counts
+14. `orch space show w3` shows space detail: runs, accumulated cost/tokens, pinned files, harness session IDs
+15. `orch space close w3` transitions space to completed status
+16. `orch export --space w3` gathers key markdown artifacts (reports, summaries, plans) into a committable directory
 17. Default output is compact: one line per item, no box-drawing, no decorations
-18. `orch workspace start` creates workspace in SQLite, sets env vars, spawns harness as child
-19. `orch workspace start --plan` injects orchestrate prompt into harness launch
-20. `orch workspace resume` generates workspace summary, re-injects pinned context, spawns harness
-21. `orch workspace resume` with no args picks latest active workspace
-22. Workspace state machine enforced: active → paused/completed/abandoned
-23. Workspace ID passed via `ORCH_WORKSPACE_ID` env var — LLM never sees it, `orch run` reads it automatically
-24. **Standalone `orch run` works without any workspace** — run stored in `.orchestrate/runs/`, global counter, no env var needed
-25. `orch run list` shows both workspace-bound and standalone runs; `--workspace` and `--no-workspace` filters work
-26. `orch context pin/unpin/list` works with workspace scoping (env var or `--workspace` flag)
+18. `orch space start` creates space in SQLite, sets env vars, spawns harness as child
+19. `orch space start --plan` injects orchestrate prompt into harness launch
+20. `orch space resume` generates space summary, re-injects pinned context, spawns harness
+21. `orch space resume` with no args picks latest active space
+22. Space state machine enforced: active → paused/completed/abandoned
+23. Space ID passed via `ORCH_WORKSPACE_ID` env var — LLM never sees it, `orch run` reads it automatically
+24. **Standalone `orch run` works without any space** — run stored in `.orchestrate/runs/`, global counter, no env var needed
+25. `orch run list` shows both space-bound and standalone runs; `--space` and `--no-space` filters work
+26. `orch context pin/unpin/list` works with space scoping (env var or `--space` flag)
 27. Pinned files tracked in `pinned_files` table, re-injected on resume (P6)
 28. `orch context pin` emits `ContextPinned` workflow event
 29. `orch context unpin` emits `ContextUnpinned` workflow event
 30. `orch context list` shows pinned files with timestamps and who pinned them
 31. Snapshot tests via `insta` for all output formats
-32. Integration tests for each subcommand (both workspace-bound and standalone paths)
+32. Integration tests for each subcommand (both space-bound and standalone paths)
 
 ---
 
@@ -1892,7 +1892,7 @@ Run references:
 
 **Description:** Implement permission tiers, cost tracking/budgets, guardrail/tripwire system, and prompt injection defenses. These are the safety rails that constrain the LLM supervisor without replacing its judgment. Fixes gaps #3 (dangerous permissions) and #4 (no cost tracking).
 
-**Dependencies:** Slice 4 (execution engine), Slice 6 (workspace launcher).
+**Dependencies:** Slice 4 (execution engine), Slice 6 (space launcher).
 
 **Model recommendation:** `gpt-5.3-codex` -- permission tiers and budget enforcement are well-specified. Opus review for safety reasoning and adversarial edge cases.
 
@@ -1905,7 +1905,7 @@ Run references:
 **Files to create:**
 - `orchestrate/crates/orch-lib/src/safety/mod.rs` -- public API
 - `orchestrate/crates/orch-lib/src/safety/permissions.rs` -- permission tier model (read-only → workspace-write → full-access → danger)
-- `orchestrate/crates/orch-lib/src/safety/budget.rs` -- per-run and per-workspace cost budgets
+- `orchestrate/crates/orch-lib/src/safety/budget.rs` -- per-run and per-space cost budgets
 - `orchestrate/crates/orch-lib/src/safety/guardrails.rs` -- script-based post-run validation with auto-retry
 - `orchestrate/crates/orch-lib/src/safety/secrets.rs` -- `--secret` flag, redaction in params.json/input.md
 
@@ -1919,7 +1919,7 @@ Permission tiers (fix gap #3):
 ```rust
 enum PermissionTier {
     ReadOnly,       // Read, Glob, Grep, Bash(git log/status/diff)
-    WorkspaceWrite, // + Edit, Write, Bash(git add/commit)
+    SpaceWrite, // + Edit, Write, Bash(git add/commit)
     FullAccess,     // + WebFetch, WebSearch, Bash(unrestricted)
     Danger,         // + skip-permissions (requires --unsafe flag)
 }
@@ -1930,9 +1930,9 @@ Cost guardrails:
 ```rust
 struct Budget {
     per_run_usd: Option<f64>,         // --budget 0.50
-    per_workspace_usd: Option<f64>,   // from config.toml
+    per_space_usd: Option<f64>,   // from config.toml
 }
-// Before each run: check accumulated workspace spend
+// Before each run: check accumulated space spend
 // On breach: SIGTERM to harness, budget_exceeded event, exit code 2
 ```
 
@@ -1950,11 +1950,11 @@ orch run --guardrail scripts/guardrails/non-empty-report.sh \
 1. Permission tiers enforced — no dangerous flags without `--unsafe`
 2. Cost extracted from all three harnesses (Claude, Codex, OpenCode)
 3. Per-run budget kills harness on breach
-4. Per-workspace budget tracked across runs via SQLite
+4. Per-space budget tracked across runs via SQLite
 5. Guardrail scripts run after each run, failure triggers auto-retry with context
 6. `--secret` flag redacts values from input.md and params.json
 7. Budget events written to `workflow_events` table
-8. `orch workspace show X` shows accumulated cost
+8. `orch space show X` shows accumulated cost
 9. Unit tests for: tier enforcement, budget breach, guardrail execution, secret redaction
 
 ---
@@ -1986,7 +1986,7 @@ orch run --guardrail scripts/guardrails/non-empty-report.sh \
 **Files to modify:**
 - `.github/workflows/orchestrate-release.yml` -- full release workflow
 - `orchestrate/crates/orch/Cargo.toml` -- add clap_complete, owo-colors, comfy-table; configure profile.release
-- `orchestrate/crates/Cargo.toml` -- workspace-level profile.release settings
+- `orchestrate/crates/Cargo.toml` -- space-level profile.release settings
 - `orchestrate/skills/run-agent/SKILL.md` -- document `orch` binary, deprecate bash scripts
 - `orchestrate/skills/orchestrate/SKILL.md` -- update supervisor: `orch run` instead of `run-agent.sh`
 - `orchestrate/agents/*.md` -- update all agent profiles to reference `orch`
@@ -2064,7 +2064,7 @@ orch completions fish > ~/.config/fish/completions/orch.fish
 | Cross-compilation failures on CI | Medium | Low | Use `cross` tool for Linux targets; native builds for macOS |
 | Harness CLI breaks between versions | High | Medium | HarnessAdapter abstracts away per-CLI details; semver-based parser routing; unknown events don't crash (forward compat) |
 | Schema migration breaks existing data | Low | High | Forward-only migrations via rusqlite_migration; schema version in `schema_info`; `orch diag doctor` checks compat |
-| ~~"Container" naming~~ | ~~Medium~~ | ~~Low~~ | **Resolved** — renamed to "workspace" to avoid Docker collision |
+| ~~"Container" naming~~ | ~~Medium~~ | ~~Low~~ | **Resolved** — renamed to "space" to avoid Docker collision |
 | Domain newtypes add boilerplate | Low | Low | Derive macros (Display, FromStr, Serialize) minimize friction; compile-time safety worth the cost |
 
 ## Gap Resolution Tracking
@@ -2090,11 +2090,11 @@ orch completions fish > ~/.config/fish/completions/orch.fish
 | Trace spans (OTel-aligned) | Slice 1 | `spans` table in initial schema |
 | Run dependency graph | Slice 1 | `run_edges` table with `parent` edge type for flat run graph |
 | Permission tier model | Slice 7 | Dedicated safety slice |
-| Cost guardrails / budgets | Slice 7 | Per-run and per-workspace budgets |
+| Cost guardrails / budgets | Slice 7 | Per-run and per-space budgets |
 | Guardrail/tripwire system | Slice 7 | Script-based validation with auto-retry |
 | Secrets management | Slice 7 | `--secret` flag with redaction |
 | Proper CLI binary | Slice 0 | `orch` binary, repo-local wrapper |
-| Discovery commands | Slice 6 | `orch diag doctor`, `orch workspace list` |
+| Discovery commands | Slice 6 | `orch diag doctor`, `orch space list` |
 | Per-project config | Slice 2 | `.orchestrate/config.toml` |
 | Relative paths | Slice 1 | All paths relative in SQLite |
 | Run deduplication | Slice 1 | `dedup_key` (BLAKE3) in schema |
@@ -2112,13 +2112,13 @@ orch completions fish > ~/.config/fish/completions/orch.fish
 | **Manus AI** | todo.md trap (33% wasted actions) | P6 | orch manages pinning as infrastructure, not LLM action loop |
 | **OpenAI** | Agent-as-tool pattern (typed context) | P5 | Run agents are disposable workers with explicit inputs |
 | **OpenAI** | Flat spawning (no infinite depth) | P5, Slice 1 | Flat runs with parent-child edges in `run_edges` |
-| **CLI Review** | Resource-first grammar (docker/kubectl/gh) | P3, Slice 0, Slice 6 | `orch workspace`, `orch run`, `orch context`, `orch diag` |
+| **CLI Review** | Resource-first grammar (docker/kubectl/gh) | P3, Slice 0, Slice 6 | `orch space`, `orch run`, `orch context`, `orch diag` |
 | **CLI Review** | Output stability contract | P3, Slice 6 | `--format json` versioned, `--porcelain` stable plain-text |
 | **CLI Review** | Stable command semantics regardless of env | P3 | Commands never change meaning based on ambient env vars |
-| **CLI Review** | "Container" Docker naming collision | P5 | **Resolved** — renamed to "workspace" |
+| **CLI Review** | "Container" Docker naming collision | P5 | **Resolved** — renamed to "space" |
 | **Extensibility Review** | HarnessAdapter trait + registry | P7, Slice 2 | Trait-based abstraction, no central match |
 | **Extensibility Review** | Schema migration policy | Slice 1 | rusqlite_migration, forward-only, `schema_info` table |
-| **Extensibility Review** | Domain newtypes | Slice 0 | WorkspaceId, RunId, HarnessId, ModelId |
+| **Extensibility Review** | Domain newtypes | Slice 0 | SpaceId, RunId, HarnessId, ModelId |
 | **Extensibility Review** | Harness version tracking | Slice 2, Slice 4 | semver-based parser routing per run |
 | **Extensibility Review** | Snapshot tests for output stability | Slice 8 | insta crate for CLI output regression |
 

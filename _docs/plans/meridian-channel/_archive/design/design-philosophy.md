@@ -21,7 +21,7 @@ What we explicitly **do NOT build**: declarative workflow DAGs, static task grap
 Every design decision flows from one question: **does this help the LLM supervisor manage its context better?**
 
 LLM agents have finite context windows. The orchestrator's job is to keep the right information accessible and the noise out:
-- **Workspace state** should be queryable, not buried in raw logs — so the supervisor can ask "what have I done?" cheaply
+- **Space state** should be queryable, not buried in raw logs — so the supervisor can ask "what have I done?" cheaply
 - **Reports and plans** should be markdown files the supervisor can read directly — not opaque database blobs
 - **Outputs** should be concise and token-efficient — every extra line costs input tokens on the next turn
 - **Run history** should be filterable/summarizable — so the supervisor loads only what's relevant
@@ -29,7 +29,7 @@ LLM agents have finite context windows. The orchestrator's job is to keep the ri
 **Informed by Manus AI's context engineering:**
 - **Context reduction** — run results have "full" and "compact" representations; stale results get compacted
 - **Context offloading** — filesystem as unlimited external memory; the supervisor uses `meridian list`/`meridian show` or MCP tools to load only what's relevant
-- **Context isolation** — each run agent gets only what's explicitly passed to it, not the full workspace state
+- **Context isolation** — each run agent gets only what's explicitly passed to it, not the full space state
 - **Attention management** — pinned context files are re-injected after compaction to keep key information in the model's recent attention span, but meridian manages this as infrastructure (not as an LLM action loop that wastes tokens — Manus found ~33% of actions wasted on todo.md bookkeeping)
 
 This principle also drives the markdown-first artifact strategy (P4) and the output style guidelines (P3).
@@ -66,42 +66,42 @@ Markdown files are the primary durable memory format — not SQLite, not JSON. S
 **What lives in markdown:**
 - `report.md` — every run's output report (written by subagent or extracted as fallback)
 - `input.md` — the composed prompt sent to the subagent
-- `workspace-summary.md` — per-workspace summary updated as the workspace progresses (committable)
+- `space-summary.md` — per-space summary updated as the space progresses (committable)
 - `plan.md` / task files referenced by `--file` — the orchestrator's input context
 
 **What lives in SQLite:**
 - Run metadata (timestamps, tokens, cost, status) — queryable index
-- Workflow events — workspace state for checkpoint/resume
+- Workflow events — space state for checkpoint/resume
 - Trace spans — cost/time rollups
 - Run edges — continuation/retry/review/parent-child relationships
 
-## P5: Workspaces are optional — `meridian run` works standalone
+## P5: Spaces are optional — `meridian run` works standalone
 
 `meridian` has **two operating modes**, and the entire design must support both:
 
-| Mode | Entry point | Workspace? | Use case |
+| Mode | Entry point | Space? | Use case |
 |------|-------------|----------|----------|
-| **Workspace-bound** | `meridian start` / `meridian resume` | Yes — `MERIDIAN_WORKSPACE_ID` set in process tree | Multi-run orchestration, supervisor-driven workflows |
-| **Standalone** | `meridian run` directly | No — no workspace, no env var | Quick one-off runs, `/run-agent` skill usage, CI pipelines |
+| **Space-bound** | `meridian start` / `meridian resume` | Yes — `MERIDIAN_WORKSPACE_ID` set in process tree | Multi-run orchestration, supervisor-driven workflows |
+| **Standalone** | `meridian run` directly | No — no space, no env var | Quick one-off runs, `/run-agent` skill usage, CI pipelines |
 
-**Standalone mode is the simpler path.** Someone installs `meridian`, runs `meridian run -m claude-sonnet-4-6 -p "review this"`, and it just works. No workspace ceremony. Runs are still logged to SQLite, still get counter IDs, still write artifacts — they just aren't scoped to a workspace.
+**Standalone mode is the simpler path.** Someone installs `meridian`, runs `meridian run -m claude-sonnet-4-6 -p "review this"`, and it just works. No space ceremony. Runs are still logged to SQLite, still get counter IDs, still write artifacts — they just aren't scoped to a space.
 
-**Workspace-bound mode adds the workspace lifecycle on top.** `meridian start` creates a workspace, launches the harness, sets `MERIDIAN_WORKSPACE_ID` in the child process tree, and `meridian run` calls within that tree auto-attach to the workspace transparently.
+**Space-bound mode adds the space lifecycle on top.** `meridian start` creates a space, launches the harness, sets `MERIDIAN_WORKSPACE_ID` in the child process tree, and `meridian run` calls within that tree auto-attach to the space transparently.
 
 **Design implications — every feature must work in both modes:**
-- `meridian run list` shows all runs (workspace-bound and standalone). Filter with `--workspace w3` or `--no-workspace`
-- `meridian run show r7` works whether r7 belongs to a workspace or not
-- Run counters: workspace-bound runs use workspace-scoped counters (`w3/r1`). Standalone runs use a global counter (`r1`, `r2`, `r3`)
-- Directory layout: workspace-bound -> `.meridian/workspaces/w3/runs/r1/`. Standalone -> `.meridian/runs/r1/`
-- MCP tools inherit workspace context from the server's environment
+- `meridian run list` shows all runs (space-bound and standalone). Filter with `--space w3` or `--no-space`
+- `meridian run show r7` works whether r7 belongs to a space or not
+- Run counters: space-bound runs use space-scoped counters (`w3/r1`). Standalone runs use a global counter (`r1`, `r2`, `r3`)
+- Directory layout: space-bound -> `.meridian/spaces/w3/runs/r1/`. Standalone -> `.meridian/runs/r1/`
+- MCP tools inherit space context from the server's environment
 
-This is critical for the **`/run-agent` skill use case** — someone loading the skill in Claude Code or Codex just wants `meridian run`. They shouldn't need to understand workspaces.
+This is critical for the **`/run-agent` skill use case** — someone loading the skill in Claude Code or Codex just wants `meridian run`. They shouldn't need to understand spaces.
 
-### Workspace model (workspace-bound mode)
+### Space model (space-bound mode)
 
-A **workspace** is **meridian's unit of orchestrated work** — one task from start to finish, potentially spanning many runs across different models and harnesses, and surviving context compactions, conversation clears, and harness restarts.
+A **space** is **meridian's unit of orchestrated work** — one task from start to finish, potentially spanning many runs across different models and harnesses, and surviving context compactions, conversation clears, and harness restarts.
 
-**Two types of conversations within a workspace:**
+**Two types of conversations within a space:**
 
 | Type | Interactive? | Purpose | Examples |
 |------|-------------|---------|---------|
@@ -109,29 +109,29 @@ A **workspace** is **meridian's unit of orchestrated work** — one task from st
 | **Run agent** | No (autonomous) | Task-focused. Accomplishes a specific task, returns a report | `meridian run -m gpt-5.3-codex -p "research X"` |
 
 **Flat runs with parent-child edges:**
-Runs within a workspace are all siblings — no nested scoping. A run can spawn other runs, but they all live at the same level. Parent-child relationships are tracked in `run_edges`.
+Runs within a space are all siblings — no nested scoping. A run can spawn other runs, but they all live at the same level. Parent-child relationships are tracked in `run_edges`.
 
 **Scoping via env vars** (follows docker DOCKER_CONTEXT, kubectl KUBECONFIG patterns):
-- `MERIDIAN_WORKSPACE_ID` auto-scopes commands to the current workspace
+- `MERIDIAN_WORKSPACE_ID` auto-scopes commands to the current space
 - `MERIDIAN_DEPTH` tracks agent spawning depth (P9) — incremented on each `meridian run`, checked against `max_depth` (default: 3). Prevents runaway recursion.
-- `--workspace w3` flag overrides the env var
-- **Precedence:** `--workspace` flag > `MERIDIAN_WORKSPACE_ID` env var > error (no default guess)
+- `--space w3` flag overrides the env var
+- **Precedence:** `--space` flag > `MERIDIAN_WORKSPACE_ID` env var > error (no default guess)
 
-**Workspace lifecycle — owned by `meridian`:**
+**Space lifecycle — owned by `meridian`:**
 ```bash
 meridian start                         # create w1, launch supervisor harness
 meridian start --name auth-refactor    # create w2 with alias "auth-refactor"
 meridian start --plan plan.md          # create w3 with a plan file
-meridian resume                        # resume latest active workspace
-meridian resume w3                     # resume specific workspace
+meridian resume                        # resume latest active space
+meridian resume w3                     # resume specific space
 meridian resume auth-refactor          # resume by alias
-meridian workspace list                # list all workspaces with status/cost
-meridian workspace show w3             # workspace detail: runs, cost, pinned files
-meridian workspace close w3            # mark as complete
-meridian export --workspace w3         # gather committable markdown artifacts
+meridian space list                # list all spaces with status/cost
+meridian space show w3             # space detail: runs, cost, pinned files
+meridian space close w3            # mark as complete
+meridian export --space w3         # gather committable markdown artifacts
 ```
 
-**Workspace state machine:**
+**Space state machine:**
 ```
 active -> completed    (all work done, explicit close)
 active -> paused       (user exits, can resume later)
@@ -140,19 +140,19 @@ active -> abandoned    (no activity for configurable timeout)
 
 ## P6: Context pinning — durable context that survives compaction
 
-Within a workspace, certain files are **pinned** — they persist across compaction events and are automatically re-injected into new conversations and run agents.
+Within a space, certain files are **pinned** — they persist across compaction events and are automatically re-injected into new conversations and run agents.
 
 ```bash
-meridian context pin research-findings.md     # pin to workspace context
+meridian context pin research-findings.md     # pin to space context
 meridian context unpin research-findings.md   # remove from pinned
 meridian context list                         # list pinned files
 ```
 
 **What pinning does:**
 - Pinned files are re-injected into the orchestrate reader after each compaction
-- Pinned files are included in every new harness conversation started within the workspace
+- Pinned files are included in every new harness conversation started within the space
 - Pinned files are passed to run agents by default (the orchestrate reader can override with explicit `-f` flags)
-- The workspace's `workspace-summary.md` is always implicitly pinned
+- The space's `space-summary.md` is always implicitly pinned
 
 ## P7: Harness abstraction — design for CLI change
 
@@ -200,7 +200,7 @@ Harnesses (Claude Code, Codex) should **never** discover skills directly from `.
 |-------|--------------|---------|-------------|
 | **`run-agent`** | Every `meridian run` | How to use `meridian run` CLI and MCP tools (`run_create`, `run_show`, `run_wait`). Pass files with `-f`, read reports. | **Fully standalone.** |
 | **`agent`** | Every `meridian run` (on top of `run-agent`) | How to be a good worker agent. Write concise reports, use `skills_search`/`skills_load` MCP tools, manage context budget. | **Needs `run-agent`.** |
-| **`orchestrate`** | `meridian workspace start` only (supervisor) | How to manage a multi-run workflow. Use `workspace_*`, `context_*` MCP tools. Read plans, decompose into slices, pick models, dispatch runs. | **Needs `run-agent` + `agent`.** |
+| **`orchestrate`** | `meridian space start` only (supervisor) | How to manage a multi-run workflow. Use `space_*`, `context_*` MCP tools. Read plans, decompose into slices, pick models, dispatch runs. | **Needs `run-agent` + `agent`.** |
 
 **Depth limiting prevents runaway spawning:**
 ```bash
@@ -270,7 +270,7 @@ from meridian.lib.ops.registry import get_all_operations, get_operation
 from meridian.lib.ops.run import run_create, run_list, run_show, run_continue, run_retry
 from meridian.lib.ops.skills import skills_search, skills_load, skills_list, skills_reindex
 from meridian.lib.ops.models import models_list, models_show
-from meridian.lib.ops.workspace import workspace_start, workspace_resume, workspace_list, workspace_show, workspace_close
+from meridian.lib.ops.space import space_start, space_resume, space_list, space_show, space_close
 from meridian.lib.ops.context import context_pin, context_unpin, context_list
 from meridian.lib.ops.diag import diag_doctor, diag_repair
 ```

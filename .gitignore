@@ -44,3 +44,10 @@ backend/orchestrator
 .scratch/
 .orchestrate/
 .meridian/
+
+# Python bytecode/cache artifacts
+__pycache__/
+*.py[cod]
+
+# Local editor settings
+.vscode/settings.json

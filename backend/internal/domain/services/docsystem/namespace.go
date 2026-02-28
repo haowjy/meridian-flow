@@ -10,7 +10,7 @@ import (
 type Namespace string
 
 const (
-	// NamespaceWorkspace is the default workspace namespace (user's documents)
+	// NamespaceWorkspace is the default space namespace (user's documents)
 	NamespaceWorkspace Namespace = ""
 
 	// NamespaceMeridian is the system namespace for Meridian internal files (/.meridian/**)

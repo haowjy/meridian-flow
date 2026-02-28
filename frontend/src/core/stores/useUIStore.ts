@@ -41,7 +41,7 @@ export interface PendingThreadReference {
 }
 
 /**
- * UI state store for workspace layout and panel management.
+ * UI state store for space layout and panel management.
  *
  * Persisted to localStorage: leftPanelUserOverride, rightPanelUserOverride, activeDocumentId, activeThreadId, documentTreeCollapsed.
  * Not persisted (session-scoped): rightPanelState, threadFocusVersion, leftPanelReady, rightPanelReady.
@@ -180,7 +180,7 @@ interface UIStore {
   documentTreeCollapsed: boolean;
 
   /**
-   * Current view of left panel in workspace.
+   * Current view of left panel in space.
    * 'chat': Show active thread view
    * 'threads': Show thread list
    * 'projectSettings': Show project settings panel
@@ -516,7 +516,7 @@ export const useUIStore = create<UIStore>()(
         projectSortOrder: state.projectSortOrder,
         // Document tree state
         documentTreeCollapsed: state.documentTreeCollapsed,
-        // Workspace state
+        // Space state
         leftPanelView: state.leftPanelView,
         // Composer hint state
         lastAtReferenceUsed: state.lastAtReferenceUsed,

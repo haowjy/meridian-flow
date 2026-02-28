@@ -17,7 +17,7 @@ The run-agent toolkit is ~1,400 lines of bash + jq that routes agent runs across
 - JSONL index has no corruption recovery (#5)
 - jq injection in filter interpolation (#8)
 
-These gaps motivated the project, but `meridian` is not a rewrite of the bash scripts — it is a **new application** that subsumes them. The bash scripts handle: arg parsing -> prompt composition -> process spawning -> result extraction -> JSONL logging. `meridian` adds workspace persistence with compaction recovery, context pinning with auto re-injection, event-sourced workflow state, cost tracking and budget enforcement, permission tiers, a guardrail system, run dependency graphs, MCP-native tool exposure, programmatic tool calling support (Anthropic API `code_execution` + `allowed_callers`), and CLI, MCP server, and API tool interfaces with structured output. Roughly 30% of `meridian` replaces existing bash functionality; the other 70% is new product surface that cannot be achieved by patching the scripts.
+These gaps motivated the project, but `meridian` is not a rewrite of the bash scripts — it is a **new application** that subsumes them. The bash scripts handle: arg parsing -> prompt composition -> process spawning -> result extraction -> JSONL logging. `meridian` adds space persistence with compaction recovery, context pinning with auto re-injection, event-sourced workflow state, cost tracking and budget enforcement, permission tiers, a guardrail system, run dependency graphs, MCP-native tool exposure, programmatic tool calling support (Anthropic API `code_execution` + `allowed_callers`), and CLI, MCP server, and API tool interfaces with structured output. Roughly 30% of `meridian` replaces existing bash functionality; the other 70% is new product surface that cannot be achieved by patching the scripts.
 
 Python 3.14 with pyright strict mode, frozen dataclasses in the core domain, pydantic only at boundaries, and the official `mcp` SDK provide type safety, rapid iteration, and native MCP server support. Python 3.14 unlocks t-strings (PEP 750) for type-safe prompt composition, deferred annotations (PEP 649) for cleaner Protocol definitions, and free-threaded Python (PEP 779) as a future concurrency option.
 
@@ -44,7 +44,7 @@ Python 3.14 with pyright strict mode, frozen dataclasses in the core domain, pyd
 | [4](slices/4-execution-engine.md) | Execution Engine | 2 days | Slices 1, 2, 3 |
 | [5a](slices/5a-extraction.md) | Post-Execution + Extraction | 1.5 days | Slices 1, 2, 4 |
 | [5b](slices/5b-mcp-cli-wiring.md) | MCP Server + CLI Commands | 1.5 days | Slices 2, 5a |
-| [6](slices/6-workspace-context.md) | Workspace Launcher + Context Pinning | 2 days | Slices 1, 5b |
+| [6](slices/6-space-context.md) | Space Launcher + Context Pinning | 2 days | Slices 1, 5b |
 | [7](slices/7-safety-migration.md) | Safety + Cost Guardrails + Migration | 2 days | Slices 4, 5b, 6 |
 
 ## Dependency Graph
@@ -58,7 +58,7 @@ graph TD
     S4["Slice 4: Execution Engine"]
     S5a["Slice 5a: Post-Execution + Extraction + Error Classification"]
     S5b["Slice 5b: MCP Server + CLI Commands (both surfaces)"]
-    S6["Slice 6: Workspace Launcher + Context Pinning"]
+    S6["Slice 6: Space Launcher + Context Pinning"]
     S7["Slice 7: Safety + Cost Guardrails + Migration"]
 
     S0 --> S1

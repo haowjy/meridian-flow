@@ -22,7 +22,7 @@ Findings from DX review. Scores represent current state (1-5 scale).
 
 ## DX-1: MCP docs don't match tool schemas (HIGH)
 
-**Problem:** Docs use wrong field names/types (`permission` vs `permission_tier`, object `template_vars` vs tuple, `workspace_id` vs `workspace`). `coerce_input_payload` silently drops unknown keys.
+**Problem:** Docs use wrong field names/types (`permission` vs `permission_tier`, object `template_vars` vs tuple, `space_id` vs `space`). `coerce_input_payload` silently drops unknown keys.
 
 **Fix:**
 - Auto-generate MCP docs from dataclass/registry definitions
@@ -131,9 +131,9 @@ Findings from DX review. Scores represent current state (1-5 scale).
   ```
 - Meridian translates `autocompact_pct` per-harness automatically (env var for Claude, config for OpenCode, skip for Codex)
 - Never pass compaction overrides or yolo flags to subagents — enforced in command builder
-- `--unsafe` on `meridian workspace start` unlocks danger tier
+- `--unsafe` on `meridian space start` unlocks danger tier
 
-**Files:** `lib/workspace/launch.py:216-231`, `lib/safety/permissions.py:222-237`, `lib/config/settings.py`
+**Files:** `lib/space/launch.py:216-231`, `lib/safety/permissions.py:222-237`, `lib/config/settings.py`
 
 ---
 

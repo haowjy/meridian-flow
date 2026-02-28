@@ -30,7 +30,7 @@ Set up the Python package structure, pyproject.toml, cyclopts CLI skeleton with 
 - `src/meridian/server/__init__.py`
 - `src/meridian/server/main.py` — FastMCP server skeleton with lifespan (no tools yet)
 - `src/meridian/lib/__init__.py`
-- `src/meridian/lib/types.py` — domain newtypes (WorkspaceId, RunId, HarnessId, ModelId) as NewType
+- `src/meridian/lib/types.py` — domain newtypes (SpaceId, RunId, HarnessId, ModelId) as NewType
 - `src/meridian/lib/domain.py` — frozen dataclasses for core domain types
 - `src/meridian/lib/ports.py` — Storage Protocol interfaces
 - `src/meridian/lib/ops/registry.py` — Operation Registry scaffold
@@ -58,7 +58,7 @@ python mock_harness.py --crash-after-lines 50 --stdout-file fixtures/partial.jso
 ```python
 from typing import NewType
 
-WorkspaceId = NewType("WorkspaceId", str)   # "w1", "w2", "w3"
+SpaceId = NewType("SpaceId", str)   # "w1", "w2", "w3"
 RunId = NewType("RunId", str)               # "r1", "w3/r1"
 HarnessId = NewType("HarnessId", str)       # "claude", "codex", "opencode"
 ModelId = NewType("ModelId", str)            # "claude-opus-4-6", "gpt-5.3-codex"
@@ -74,8 +74,8 @@ ModelId = NewType("ModelId", str)            # "claude-opus-4-6", "gpt-5.3-codex
 6. `pyright` passes in strict mode
 7. `pytest` passes (smoke test + surface parity test)
 8. CI workflow runs on PR and passes (Python 3.14 matrix)
-9. Resource-first subcommand groups stubbed: `serve`, `workspace`, `run`, `skills`, `models`, `context`, `diag`, `export`, `migrate`
-10. Top-level aliases wired: `start` -> `workspace start`, `run` (with `-p`) -> `run create`, etc.
+9. Resource-first subcommand groups stubbed: `serve`, `space`, `run`, `skills`, `models`, `context`, `diag`, `export`, `migrate`
+10. Top-level aliases wired: `start` -> `space start`, `run` (with `-p`) -> `run create`, etc.
 11. Domain newtypes defined in `meridian/lib/types.py`
 12. Core domain types as frozen dataclasses in `meridian/lib/domain.py`
 13. Storage Protocols defined in `meridian/lib/ports.py` (both `RunStore` async and `RunStoreSync` sync variants)

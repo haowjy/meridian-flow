@@ -15,7 +15,7 @@ Addresses Gap 16 from post-sandbox review + security audit test needs.
 
 ## TC-2: TTY execvp branch
 
-- **File:** `lib/workspace/launch.py:387-406` (NOT `exec/spawn.py` — corrected per gap re-review)
+- **File:** `lib/space/launch.py:387-406` (NOT `exec/spawn.py` — corrected per gap re-review)
 - **What:** The TTY-mode execution path using `os.execvp` is untested
 - **How:** Mock `os.execvp` and verify correct args when TTY mode detected
 - **Challenge:** `execvp` replaces process, must be mocked
@@ -29,14 +29,14 @@ Addresses Gap 16 from post-sandbox review + security audit test needs.
 
 ## TC-4: TTY launch env sanitization
 
-- **File:** `lib/workspace/launch.py:402-405`
+- **File:** `lib/space/launch.py:402-405`
 - **What:** Verify TTY/execvp path does NOT leak parent env (SEC-2)
 - **How:** Mock `os.execvp`, capture env arg, assert no leakage
 - **Depends on:** SEC-2 fix
 
 ## TC-5: Context pinning path traversal
 
-- **File:** `lib/workspace/context.py:42-45`
+- **File:** `lib/space/context.py:42-45`
 - **What:** Verify `../` paths outside repo root are rejected
 - **How:** Attempt to pin `../outside-file.txt`, assert rejection
 - **Depends on:** SEC-3 fix
@@ -50,7 +50,7 @@ Addresses Gap 16 from post-sandbox review + security audit test needs.
 
 ## TC-7: Harness passthrough arg validation
 
-- **File:** `lib/workspace/launch.py:212`
+- **File:** `lib/space/launch.py:212`
 - **What:** Verify dangerous flags in `harness_args` are blocked
 - **How:** Attempt `--dangerously-skip-permissions` in passthrough, assert blocked
 - **Depends on:** SEC-5 fix

@@ -105,7 +105,7 @@ export function DocumentPanel({
       {/* Project Header - unified header for the entire document zone */}
       <ProjectHeader projectId={projectId} projectSlug={projectSlug} />
 
-      {/* Document Workspace - Tree + Editor */}
+      {/* Document Space - Tree + Editor */}
       <div className="border-border/50 flex flex-1 overflow-hidden border-r">
         <ResizablePanelGroup
           direction="horizontal"

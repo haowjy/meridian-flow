@@ -25,7 +25,7 @@ export const Route = createFileRoute("/_authenticated")({
 });
 
 function AuthenticatedLayout() {
-  // Detect project slug from URL params (workspace routes have slug param)
+  // Detect project slug from URL params (space routes have slug param)
   const params = useParams({ strict: false });
   const projectSlug = (params as { slug?: string }).slug;
 

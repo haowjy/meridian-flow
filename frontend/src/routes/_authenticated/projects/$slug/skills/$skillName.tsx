@@ -8,8 +8,8 @@ export const Route = createFileRoute(
 });
 
 /**
- * Skill workspace route.
- * Shows workspace layout with skill editor open.
+ * Skill space route.
+ * Shows space layout with skill editor open.
  * URL uses skill name (e.g., "writing-coach") as identifier.
  */
 function SkillWorkspace() {

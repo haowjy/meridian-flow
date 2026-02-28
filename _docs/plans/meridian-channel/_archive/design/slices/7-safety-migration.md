@@ -7,7 +7,7 @@
 - [`_docs/plans/meridian-channel/cli-contract.md`](../cli-contract.md) (output modes)
 
 **Effort:** 2 days
-**Dependencies:** Slice 4 (execution engine), Slice 5b (MCP server), Slice 6 (workspace launcher).
+**Dependencies:** Slice 4 (execution engine), Slice 5b (MCP server), Slice 6 (space launcher).
 **Model recommendation:** `gpt-5.3-codex`
 
 ## Description
@@ -37,7 +37,7 @@ class PermissionTier(str, Enum):
 @dataclass
 class Budget:
     per_run_usd: float | None = None
-    per_workspace_usd: float | None = None
+    per_space_usd: float | None = None
 # On breach: SIGTERM to harness, budget_exceeded event, exit code 2
 ```
 
@@ -87,7 +87,7 @@ Rename the repository from `meridian-collab` → `meridian-channel`. This is the
 
 1. Permission tiers enforced — no dangerous flags without `--unsafe`
 2. Per-run budget kills harness on breach
-3. Per-workspace budget tracked across runs
+3. Per-space budget tracked across runs
 4. Guardrail scripts run after each run, failure triggers auto-retry
 5. `--secret KEY=VALUE` redacts values from all stored output (logs, reports, artifacts)
 6. `meridian migrate` imports existing JSONL data

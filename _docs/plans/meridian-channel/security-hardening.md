@@ -19,7 +19,7 @@ Addresses Gap 11 + 10 new findings from comprehensive security audit (2026-02-27
 
 ---
 
-## SEC-2: TTY workspace launch bypasses env sanitization
+## SEC-2: TTY space launch bypasses env sanitization
 
 **Severity:** CRITICAL
 **Source:** Security audit
@@ -28,7 +28,7 @@ Addresses Gap 11 + 10 new findings from comprehensive security audit (2026-02-27
 
 **Fix:** In TTY/execvp path, build a clean env dict and use `os.execvpe()` with explicit env, or clear parent env before merge.
 
-**Files:** `lib/workspace/launch.py:402-405`
+**Files:** `lib/space/launch.py:402-405`
 
 ---
 
@@ -39,9 +39,9 @@ Addresses Gap 11 + 10 new findings from comprehensive security audit (2026-02-27
 
 **Problem:** `../` traversal can pin files outside repo root. `_to_relative` fallback (`../<basename>`) makes this non-obvious. Pinned file contents are injected into resume prompts.
 
-**Fix:** Validate pinned paths are within repo root. Reject or warn on paths that resolve outside workspace.
+**Fix:** Validate pinned paths are within repo root. Reject or warn on paths that resolve outside space.
 
-**Files:** `lib/workspace/context.py:42-45,129-137`, `lib/adapters/sqlite.py:138-142`
+**Files:** `lib/space/context.py:42-45,129-137`, `lib/adapters/sqlite.py:138-142`
 
 ---
 
@@ -67,7 +67,7 @@ Addresses Gap 11 + 10 new findings from comprehensive security audit (2026-02-27
 
 **Fix:** Validate/blocklist passthrough args against known dangerous flags per harness. Or remove passthrough from MCP surface entirely.
 
-**Files:** `lib/ops/workspace.py:31-33,53`, `lib/workspace/launch.py:212`
+**Files:** `lib/ops/space.py:31-33,53`, `lib/space/launch.py:212`
 
 ---
 
@@ -76,9 +76,9 @@ Addresses Gap 11 + 10 new findings from comprehensive security audit (2026-02-27
 **Severity:** MAJOR
 **Source:** Security audit
 
-**Problem:** MCP tool callers can set `repo_root` to arbitrary directories, breaking workspace containment.
+**Problem:** MCP tool callers can set `repo_root` to arbitrary directories, breaking space containment.
 
-**Fix:** Lock `repo_root` to the server's configured workspace on MCP surface. CLI can still override.
+**Fix:** Lock `repo_root` to the server's configured space on MCP surface. CLI can still override.
 
 **Files:** `lib/ops/_runtime.py:43-45`, all MCP input dataclasses
 
@@ -89,7 +89,7 @@ Addresses Gap 11 + 10 new findings from comprehensive security audit (2026-02-27
 **Severity:** MAJOR
 **Source:** Security audit (confirmed — loaded `/tmp/secret.txt` into prompt)
 
-**Problem:** `run_create` reference files and template vars can load absolute paths outside workspace into prompt context.
+**Problem:** `run_create` reference files and template vars can load absolute paths outside space into prompt context.
 
 **Fix:** Validate reference paths are within repo root (or explicitly allowed via config).
 
@@ -132,7 +132,7 @@ Addresses Gap 11 + 10 new findings from comprehensive security audit (2026-02-27
 
 **Fix:** Wrap pinned context in containment markers (similar to prior-output boundaries). Warn if pinned files are outside repo root.
 
-**Files:** `lib/workspace/context.py:129-137`
+**Files:** `lib/space/context.py:129-137`
 
 ---
 
@@ -145,7 +145,7 @@ Addresses Gap 11 + 10 new findings from comprehensive security audit (2026-02-27
 
 **Fix:** Route all SQLite access through `open_connection()`.
 
-**Files:** `lib/workspace/summary.py:27,112,144`, `lib/ops/run.py:230`, `lib/ops/_run_query.py:20`
+**Files:** `lib/space/summary.py:27,112,144`, `lib/ops/run.py:230`, `lib/ops/_run_query.py:20`
 
 ---
 

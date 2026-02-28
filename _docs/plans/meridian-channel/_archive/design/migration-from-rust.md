@@ -19,8 +19,8 @@ This plan supersedes `orchestrate-cli.md` (the Rust plan). Here is what changed 
 - `pyright` strict mode (catches most of what the Rust compiler catches for business logic)
 - `@dataclass(frozen=True)` for all core domain types (immutable by default)
 - `pydantic` only at boundaries (MCP responses, config parsing — NOT in core domain)
-- `NewType` for domain IDs (WorkspaceId, RunId, etc.)
-- `Protocol` for interface contracts (HarnessAdapter, RunStore, WorkspaceStore, SkillIndex)
+- `NewType` for domain IDs (SpaceId, RunId, etc.)
+- `Protocol` for interface contracts (HarnessAdapter, RunStore, SpaceStore, SkillIndex)
 - `assert_never` for exhaustive pattern matching on StrEnum/Literal types
 - Deferred annotations (PEP 649) for cleaner forward references
 
@@ -74,7 +74,7 @@ The Rust plan had 9 slices (0-8). This plan has 9 (0-7, with 5 split into 5a/5b)
 ## What Stayed the Same
 
 - All design principles P1-P11 (adapted for Python, plus new P12 for MCP-first)
-- Workspace/run model, state machine, ID scheme
+- Space/run model, state machine, ID scheme
 - Context pinning (P6)
 - SQLite WAL schema (identical tables)
 - Three base skills (run-agent, agent, orchestrate)
@@ -102,8 +102,8 @@ Review convergence: all three independent reviews flagged these omissions.
 
 - **Model catalog failure modes** — model not found, alias ambiguous, model deprecated (now in ModelEntry)
 - **Open-weight model support** — model routing handles `provider/model` format for OpenCode
-- **Workspace management details** — `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`, `--autocompact`, passthrough args, harness resume vs fresh start
-- **Continuation pattern guidance** — injected into supervisor prompt on workspace resume
+- **Space management details** — `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`, `--autocompact`, passthrough args, harness resume vs fresh start
+- **Continuation pattern guidance** — injected into supervisor prompt on space resume
 - **Stronger acceptance criteria** — Slice 0 now has 20 criteria (was 13), Slice 6 has 11 (was 13 but more focused)
 - **Schema migration nullable-first policy** — new columns always nullable, no backfill in migration
 - **`meridian explore` command** — deferred to v2 (see v2 Horizon)
@@ -116,7 +116,7 @@ Review convergence: all three independent reviews flagged these omissions.
 - MCP tool definitions with frozen dataclass response types
 - **Operation Registry** — anti-drift mechanism, auto-exposes operations to both CLI + MCP
 - **CLI/MCP parity contract** — explicit table, CI-enforced test
-- **Storage Protocol layer** — `ports.py` with RunStore, RunStoreSync, WorkspaceStore, SkillIndex, ContextStore
+- **Storage Protocol layer** — `ports.py` with RunStore, RunStoreSync, SpaceStore, SkillIndex, ContextStore
 - P12 design principle (MCP-first)
 - Non-blocking `run_create` in MCP mode + `run_wait` tool
 - t-strings (PEP 750) for prompt composition

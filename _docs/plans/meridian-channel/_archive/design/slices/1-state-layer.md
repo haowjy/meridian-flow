@@ -11,7 +11,7 @@
 
 ## Description
 
-Implement the SQLite state database with WAL mode, event-sourced workflow state, trace spans, and workspace/context-pinning tables. Maintain JSONL dual-write for backwards compatibility. Fixes critical gaps #2 (lock mismatch) and #5 (index corruption).
+Implement the SQLite state database with WAL mode, event-sourced workflow state, trace spans, and space/context-pinning tables. Maintain JSONL dual-write for backwards compatibility. Fixes critical gaps #2 (lock mismatch) and #5 (index corruption).
 
 ## Required reading (`-f` files for orchestrator)
 
@@ -32,11 +32,11 @@ Implement the SQLite state database with WAL mode, event-sourced workflow state,
 
 ## SQLite schema
 
-Same schema as the Rust plan (all 8 tables: `runs`, `workspaces`, `pinned_files`, `workflow_events`, `spans`, `run_edges`, `artifacts`, `schema_info`). Key points:
+Same schema as the Rust plan (all 8 tables: `runs`, `spaces`, `pinned_files`, `workflow_events`, `spans`, `run_edges`, `artifacts`, `schema_info`). Key points:
 
 - WAL mode enabled, `busy_timeout` set to 5000ms
 - All IDs use domain newtypes
-- `workspace_id` nullable in `runs` (standalone runs have NULL)
+- `space_id` nullable in `runs` (standalone runs have NULL)
 - All paths stored as relative, resolved to absolute on read
 - Migrations are embedded Python functions, forward-only, versioned
 - **Nullable-first migration policy** (restored from Rust plan): new columns are always nullable; never require backfill in migration. Backfill is a separate step that can fail independently.
@@ -71,13 +71,13 @@ class ArtifactStore(Protocol):
   runs/                        # standalone runs
     r1/
       params.json, input.md, output.jsonl, report.md
-  workspaces/                  # workspace-bound runs
+  spaces/                  # space-bound runs
     w3/
-      workspace-summary.md
+      space-summary.md
       runs/
         r1/
           params.json, input.md, output.jsonl, report.md
-  active-workspaces/           # PID lock files
+  active-spaces/           # PID lock files
     w3.lock
 ```
 
@@ -89,7 +89,7 @@ class ArtifactStore(Protocol):
 4. Schema migrations run automatically on first access (embedded, versioned, forward-only)
 5. `append_start_row()` writes to both SQLite and JSONL atomically under lock
 6. `append_finalize_row()` updates SQLite row and appends JSONL under lock
-7. Run ID generation supports both workspace-scoped and global counters
+7. Run ID generation supports both space-scoped and global counters
 8. `ArtifactStore` Protocol defined with `LocalStore` and `InMemoryStore` implementations
 9. All domain types are frozen dataclasses using domain newtypes
 10. Unit tests for: schema creation, CRUD, events, spans, locking contention, JSONL round-trip, artifact store

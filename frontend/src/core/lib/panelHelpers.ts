@@ -4,7 +4,7 @@ import type { useNavigate } from "@tanstack/react-router";
 type NavigateFunction = ReturnType<typeof useNavigate>;
 
 /**
- * Panel coordination helpers for managing workspace state.
+ * Panel coordination helpers for managing space state.
  * These functions orchestrate routing and ensure panels stay in sync
  * when switching between threads, documents, and editor.
  *
