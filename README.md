@@ -18,6 +18,11 @@ meridian/
 │   ├── schema.sql           # Database schema
 │   ├── README.md            # Backend documentation
 │   └── QUICKSTART.md        # 5-minute setup guide
+├── meridian-channel/        # Agent coordination system (CLI + MCP)
+│   ├── src/                 # Python package
+│   ├── tests/               # Tests
+│   ├── README.md            # Agent documentation
+│   └── CLAUDE.md            # Development guide
 ├── _docs/                   # Product & technical documentation
 ├── frontend/                # Vite + TanStack Router + CodeMirror
 └── README.md                # This file
