@@ -1,49 +1,47 @@
-# Space System Prompt Composition for Meridian-Channel (Primary Agent = First Launched Agent)
+# Space Persistence for Meridian-Channel (Agent Profiles Define Skills)
 
-**Status:** Revision 4 (Final Design — Ready for Implementation)
+**Status:** Revision 5 (Simplified — Agent Profiles Own Skills)
 **Date:** 2026-02-28
 **Target Audience:** Agents (primary agent, child agents, coders, reviewers), operators
 **Key Architecture:**
-- Multiple agents per space (not one-at-a-time)
+- Multiple agents per space
 - The primary agent is the first agent launched in a space via `space start`
 - Primary and child agents are runtime-identical; they differ only by launch order/role label
-- Agents can spawn child agents (hierarchy)
-- Skills embedded in each agent's system prompt
-- SQLite is primary state; JSON files for human readability (no parallel state)
+- Agent profiles define which skills are available (static, not per-space)
+- Skills are loaded fresh on every agent launch/resume (survives compaction)
+- SQLite tracks space state; no parallel JSON state system
 
 ---
 
 ## Concepts & Definitions
 
-**Space:** A container for a primary agent and its spawned child agents. Defined by `space_id`, space metadata (agent, skills), and session state. Lives in `.meridian/spaces/<space_id>/`.
+**Space:** A container for an agent's work. Defined by `space_id`, agent type, and session state. Lives in `.meridian/spaces/<space_id>/`.
 
-**Primary agent:** The root agent launched via `meridian space start`. It is simply the first launched agent in that space.
+**Primary agent:** The agent launched first in a space via `meridian space start`. Simply the first agent to run in that space.
 
-**Child agent:** Any agent launched after the primary agent (for example via `meridian space spawn` or `meridian run create`), typically by another agent.
+**Child agent:** Any agent spawned after the primary agent (via `meridian run create` or by the primary agent's actions).
 
-**Run/Agent:** A single execution of an agent (primary or child). Launched via `meridian run create` with independent skills.
+**Agent:** An execution instance. All agents are capability-identical; "primary" and "child" are role labels based on launch order.
 
 **Session:** Active conversation with an agent. Can resume after compaction via session ID.
 
-**Skills:** Reusable instruction modules in `.claude/skills/`. Skills are:
-- Static at space creation (set once, not modified dynamically)
-- Embedded in each agent's system prompt (loaded from SKILL.md files)
-- Independent when spawning agents (agents get their own skill sets, not merged with space skills)
+**Skills:** Defined in agent profiles (not per-space). Loaded fresh on each agent launch. When an agent resumes after compaction, its skills are reloaded automatically.
 
 ---
 
 ## Executive Summary
 
-**Problem:** When Claude compacts context, agents can lose skills they need to continue managing work in the space.
+**Problem:** When Claude compacts context, agent sessions lose skills they've been using.
 
-**Solution:** Embed full skill file content in each launched agent's system prompt. On relaunch (after compaction), automatically reinject the same skill content.
+**Solution:** Skills are defined in agent profiles, not spaces. When an agent launches or resumes (after compaction), its profile skills are loaded fresh. No state to restore.
 
 **Why This Approach:**
-- ✅ Simplest for agents (skills always available, no state management)
-- ✅ Works across all harnesses (Claude, Codex, OpenCode, Cursor)
-- ✅ Lowest implementation complexity (reuses existing prompt composition)
-- ✅ No dynamic skill commands needed (skills are static at space creation)
-- ✅ Primary agent (and child agents) don't need to request context restoration
+- ✅ Simplest (skills are profile property, not per-space configuration)
+- ✅ Deterministic (same agent = same skills)
+- ✅ Works across harnesses (all harnesses load agent profiles the same way)
+- ✅ No skill composition machinery (agent profiles own their skill set)
+- ✅ Agents don't manage skill state (skills reload automatically)
+- ✅ Custom skills: user edits agent profile, not space config
 
 ---
 
@@ -51,70 +49,41 @@
 
 ### Data Model
 
-**Space Metadata** (`.meridian/spaces/<space-id>/space.json`):
-```json
-{
-  "space_id": "w1-abc123",
-  "name": "feature-x",
-  "created_at": "2026-02-28T03:00:00Z",
-  "agent": "primary",
-  "skills": ["researching", "reviewing", "planning"],
-  "status": "active"
-}
-```
+**Space** (stored in SQLite `spaces` table):
+- `space_id`: unique identifier
+- `name`: user-given name
+- `agent_type`: which agent (e.g., "orchestrator") — defines skills
+- `primary_session_id`: session ID of the agent running in this space
+- `status`: active, paused, completed
+- `created_at`, `updated_at`: timestamps
 
-**Key Insight:** Skills are **static** — set once at space creation, never changed dynamically.
-
-### System Prompt Composition
-
-When an agent launches, compose system prompt:
-
-```
-use these skills to aid you:
-
-Skill path: /path/to/.claude/skills/researching
-
-[full content of SKILL.md for researching]
-
----
-
-Skill path: /path/to/.claude/skills/reviewing
-
-[full content of SKILL.md for reviewing]
-
----
-
-Skill path: /path/to/.claude/skills/planning
-
-[full content of SKILL.md for planning]
-```
-
-Pass to harness: `claude ... --system-prompt "use these skills..."`
+**Key Insight:** Skills come from the agent profile, not the space. When an agent launches, its profile skills are loaded automatically.
 
 ### Lifecycle Flow
 
 ```
-1. User starts space with skills:
-   meridian space start --name feature-x --agent orchestrator --skills researching,reviewing,planning
-   → space.json created with static skills
+1. User creates space:
+   meridian space start --name feature-x --agent orchestrator
+   → Loads orchestrator agent profile (which defines skills)
+   → Launches agent in new space
 
-2. Primary agent launches (`space start`):
-   → Load space.json
-   → Read skill files from .claude/skills/*/SKILL.md
-   → Compose system prompt with full skill bodies + paths
-   → Pass to harness: --system-prompt "use these skills..."
+2. Agent launches:
+   → Agent profile is loaded (carries its skill set)
+   → Skills loaded by harness (Claude loads full SKILL.md content)
+   → Agent executes
 
-3. Primary agent executes, context grows...
+3. Agent spawns child agents:
+   meridian run create --agent reviewer
+   → Loads reviewer agent profile (different skill set)
+   → Launches in same space as child agent
 
-4. Primary agent can spawn child agents (`space spawn` or `run create`)
+4. Claude compacts internally (transparent)
 
-5. Claude compacts internally (transparent to meridian)
-
-6. Any agent relaunches (session resume or new run):
-   → Load space.json (same)
-   → Read skill files (same)
-   → Compose system prompt (same)
-   → Skills automatically available, no restoration logic needed
+5. Agent resumes:
+   meridian space resume --space-id w1-abc123
+   → Load agent profile (same as step 1)
+   → Skills reloaded automatically
+   → No restoration logic needed
 ```
 
 ### Files and State
@@ -122,9 +91,9 @@ Pass to harness: `claude ... --system-prompt "use these skills..."`
 **Primary State (SQLite):**
 ```
 runs.db (existing database)
-├── spaces table           (space metadata: primary agent model, skills, status, created_at)
-├── space_files table      (file state: what agents have created/modified)
-└── space_sessions table   (active sessions: session_id, resumed_at per agent)
+├── spaces table           (space metadata: agent_type, primary_session_id, status)
+├── runs table             (agents/runs in this space, linked to sessions)
+└── pinned_files table     (persistent context files for the space)
 ```
 
 **Human-Readable Output (Optional JSON):**
@@ -144,35 +113,30 @@ runs.db (existing database)
 ### Space Commands
 
 ```bash
-# Start space (creates + launches primary agent with skills)
-meridian space start \
-  --name feature-x \
-  --agent orchestrator \
-  --skills researching,reviewing,planning
+# Start space with a primary agent
+# (agent profile defines its skills)
+meridian space start --name feature-x --agent orchestrator
 
-# Launch child agent in same space
-meridian space spawn \
-  --space-id w1-abc123 \
-  --agent reviewer \
-  --skills planning,monitoring
-
-# Show space (including primary and child agents, skills, sessions)
+# Show space details
 meridian space show w1-abc123
 # Output:
 #   space_id: w1-abc123
-#   primary_agent: orchestrator (session ID: ...)
-#   child_agents: [reviewer (session ID: ...), coder (session ID: ...)]
-#   base_skills: researching, reviewing, planning
-#   sessions: 2 active
+#   primary_agent: orchestrator (session ID: s-abc-123)
+#   status: active
 
 # List spaces
 meridian space list
 
-# Close space (closes all agents)
+# Close space
 meridian space close w1-abc123
+
+# Resume space (after compaction)
+meridian space resume --space-id w1-abc123
 ```
 
-**Skills are static per agent launch:** Each agent gets skills when spawned/launched. No dynamic add/remove. Skills are embedded in each agent's system prompt, so compaction does not require restoration commands.
+**Agent profiles define skills:** Each agent carries its skills from its profile. When launched in a space, it loads those skills automatically. No per-space skill configuration.
+
+If a user wants different skills, they create a different agent profile (e.g., `researcher` vs `coder`), each with its own skill set defined.
 
 ---
 
@@ -433,44 +397,36 @@ This approach is designed **for agent usability**:
 
 ## Implementation Checklist (Phase 1)
 
-**Database Schema Updates:**
-- [ ] Add `skills TEXT NOT NULL DEFAULT '[]'` to `spaces` table (stores skills list for primary agent)
-- [ ] Add `parent_space_id TEXT` column to `spaces` table (for nested spaces hierarchy, optional Phase 1 or defer to Phase 1.5)
-- [ ] Add migration to handle schema upgrade (migration 004 after workspace→space rename migration 003)
-- [ ] Verify `runs` table already has `space_id` foreign key (it does)
-- [ ] Verify `pinned_files` and `workflow_events` use `space_id` correctly (they do)
+**Database Schema:**
+- [ ] Verify `spaces` table has: `id`, `name`, `agent_type`, `primary_session_id`, `status`, `created_at` (mostly exists)
+- [ ] Add `agent_type TEXT` column if missing (which agent profile this space uses)
+- [ ] Verify `runs` table links runs to spaces via `space_id` (it does)
 
 **Code Changes (lib/ modules):**
-- [ ] Update `lib/space/launch.py` to:
-  - Load space metadata from database (get skills list)
-  - Load skill files via existing `SkillRegistry`
-  - Compose system prompt with skill bodies + paths
-  - Pass to harness (Claude: `--system-prompt` flag, others: prompt injection fallback)
-  - Make harness selection agnostic (all harnesses can be primary)
+- [ ] Update `lib/space/launch.py`:
+  - Load agent profile (defines skills)
+  - Launch agent with that profile
+  - Agent's skills are loaded by harness automatically (no manual composition)
+  - Harness selection agnostic (any harness can be primary)
 - [ ] Update `lib/space/context.py` to skip missing pinned files with warning (not hard error)
 - [ ] Implement space-level locking in `lib/ops/space.py`: `try_acquire_lock()` with timeout + PID-based cleanup
-- [ ] Add token budget validation at space launch: warn (not hard-fail) if skills exceed `system_prompt_token_budget_percent`
 
-**CLI Commands (in space.py or main.py):**
-- [ ] Enhance `meridian space start --name <name> --agent <agent> --skills <skills>` (add --agent and --skills params)
-- [ ] Add `meridian space spawn --space-id <id> --agent <agent> --skills <skills>` (new command for child agents)
-- [ ] Enhance `meridian space show <id>` to list primary agent + child agents (if hierarchy implemented)
+**CLI Commands (in space.py):**
+- [ ] Enhance `meridian space start --name <name> --agent <agent>` (add --agent param, remove --skills)
+- [ ] Enhance `meridian space show <id>` to display primary agent type + session ID
 - [ ] Verify `meridian space list`, `resume`, `close` still work (already exist)
 
 **Testing:**
-- [ ] Create space with skills → launch primary agent → verify skills in system prompt
-- [ ] Resume space after context compaction → verify skills still in system prompt
-- [ ] Launch primary agent on Codex/OpenCode → verify prompt injection fallback works
-- [ ] Spawn child agents in same space → verify independent skill sets
+- [ ] Create space → launch primary agent → verify agent profile skills are loaded
+- [ ] Resume space after context compaction → verify skills still there (fresh load)
+- [ ] Spawn child agents (via `run create --agent <type>`) → verify independent skill sets
 - [ ] Missing pinned file on resume → verify warning (not error)
-- [ ] Token budget exceeded → verify warning logged (not hard failure)
-- [ ] Compaction → resume → verify skills still there
-- [ ] Resume with missing pinned file → verify warning and skip
-- [ ] Token budget warning: create space with 50+ skills → verify warning logged
+- [ ] Test with different agent types (researcher, coder, orchestrator) → verify each loads correct skills
 
 **Documentation:**
-- [ ] Update docs: primary/child role model, harness-agnostic role support, error cases, token budgets
-- [ ] Add example: primary-to-child workflow (primary agent → orchestrator child → agents)
+- [ ] Update docs: agent profiles define skills, not spaces
+- [ ] Add example: creating space with different agent types
+- [ ] Document how users customize skills (edit agent profile)
 
 ---
 
