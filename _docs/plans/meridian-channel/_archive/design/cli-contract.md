@@ -11,7 +11,7 @@ Follows docker/kubectl/gh/aws conventions for discoverability:
 
 ```bash
 meridian serve                                  # MCP server mode (stdio) — primary agent interface
-meridian workspace start|resume|list|show|close # workspace management
+meridian space start|resume|list|show|close # space management
 meridian run create|list|show|continue|retry|wait  # run management
 meridian skills list|search|show|reindex        # skill registry (P8)
 meridian models list|show                       # model catalog (P11)
@@ -21,7 +21,7 @@ meridian export                                 # gather committable artifacts
 meridian migrate                                # one-time JSONL-to-SQLite migration
 ```
 
-Short aliases for common commands: `meridian start` = `meridian workspace start`, `meridian run` (with `-p`) = `meridian run create`, `meridian list` = `meridian run list`.
+Short aliases for common commands: `meridian start` = `meridian space start`, `meridian run` (with `-p`) = `meridian run create`, `meridian list` = `meridian run list`.
 
 **MCP tools** (the primary agent interface — see [mcp-tools.md](mcp-tools.md)):
 - Agents call `skills.search(query)` and `skills.load(id)` as MCP tools

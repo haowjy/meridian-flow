@@ -4,7 +4,7 @@ Automation scripts for the Meridian project.
 
 ---
 
-Remote workspace launcher moved to `./remote-workspace/run.sh`.  
+Remote space launcher moved to `./remote-workspace/run.sh`.  
 See `remote-workspace/README.md` for usage and options.
 
 ---

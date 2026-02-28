@@ -10,7 +10,7 @@ import type { LayoutStrategyComponent } from "@/shared/components/layout/types";
  * - Desktop (>=768px): TwoPanelLayout - two-panel layout (chat left, documents right)
  * - Mobile (<768px): MobileLayout - Notion-style layout with top header and bottom tabs
  *
- * Design philosophy: Documents are the primary workspace for writers.
+ * Design philosophy: Documents are the primary space for writers.
  * Chat panel (left) is collapsible assistant sidebar.
  *
  * This allows the WorkspaceLayout to be viewport-agnostic and simply

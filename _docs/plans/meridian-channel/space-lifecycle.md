@@ -1,8 +1,8 @@
-# Workspace Lifecycle — Hooks, Sessions, Compaction
+# Space Lifecycle — Hooks, Sessions, Compaction
 
 **Status:** draft
 
-Addresses workspace gaps 1-3 and 5. These are feature gaps (not bugs) — they add proper lifecycle management to the workspace system.
+Addresses space gaps 1-3 and 5. These are feature gaps (not bugs) — they add proper lifecycle management to the space system.
 
 ---
 
@@ -18,7 +18,7 @@ Addresses workspace gaps 1-3 and 5. These are feature gaps (not bugs) — they a
 
 | Command | Trigger | Responsibility |
 |---------|---------|---------------|
-| `session-track` | `SessionStart` (all), `SessionEnd` | Write session ID to workspace session log |
+| `session-track` | `SessionStart` (all), `SessionEnd` | Write session ID to space session log |
 | `context-reinject` | `SessionStart` (compact, clear) | Re-inject skills + pinned files |
 
 **Requires:** `MERIDIAN_RUN_ID` env var set on all runs (supervisor + child). Currently not set.
@@ -33,13 +33,13 @@ Addresses workspace gaps 1-3 and 5. These are feature gaps (not bugs) — they a
 
 ## 2. Explicit session tracking on resume
 
-**Problem:** `workspace resume` doesn't pass explicit session ID. The `supervisor_harness_session_id` column exists but is never populated.
+**Problem:** `space resume` doesn't pass explicit session ID. The `supervisor_harness_session_id` column exists but is never populated.
 
-**Fix:** Hook handler (#1) writes session events to `.meridian/active-workspaces/<workspace_id>.sessions.jsonl`. Then:
-- `meridian workspace resume` reads latest session ID from log
+**Fix:** Hook handler (#1) writes session events to `.meridian/active-spaces/<space_id>.sessions.jsonl`. Then:
+- `meridian space resume` reads latest session ID from log
 - Passes harness-specific continue flag: `--continue <id>` (Claude), `codex exec resume <id>` (Codex)
 - Each adapter needs `continue_flags(session_id: str) -> list[str]`
-- New commands: `meridian workspace sessions`, `meridian workspace resume --session <id>`
+- New commands: `meridian space sessions`, `meridian space resume --session <id>`
 
 **Depends on:** #1
 
@@ -50,7 +50,7 @@ Addresses workspace gaps 1-3 and 5. These are feature gaps (not bugs) — they a
 **Problem:** When harness compacts, skill instructions and pinned files get lossy-compressed.
 
 **Fix:** Handled by `context-reinject` hook handler (#1). On compact/clear:
-1. Load active skills for workspace (from agent profile + explicit skills)
+1. Load active skills for space (from agent profile + explicit skills)
 2. Load pinned files via context system
 3. Return `{"additionalContext": "<skills + pinned files>"}`
 
@@ -58,41 +58,41 @@ Addresses workspace gaps 1-3 and 5. These are feature gaps (not bugs) — they a
 
 ---
 
-## 5. Workspace summary re-generated on every resume
+## 5. Space summary re-generated on every resume
 
-**Problem:** `workspace resume` calls `generate_workspace_summary()` every time, even on non-fresh resume where it's not injected.
+**Problem:** `space resume` calls `generate_space_summary()` every time, even on non-fresh resume where it's not injected.
 
 **Investigate:** Is summary generation cheap enough to ignore? Or skip on non-fresh resume?
 
 ---
 
-## 6. Workspace-scoped agent profiles
+## 6. Space-scoped agent profiles
 
 **Problem:** Agent profiles are either hardcoded builtins or repo-level `.agents/agents/*.md` files. A supervisor can't create ad-hoc agents during a session — e.g., "I keep needing a security-focused reviewer, let me define one."
 
-**Design:** Workspace agents are normal `.md` profile files stored under the workspace directory:
+**Design:** Space agents are normal `.md` profile files stored under the space directory:
 
 ```
-.meridian/workspace/<workspace-id>/agents/security-reviewer.md
+.meridian/space/<space-id>/agents/security-reviewer.md
 ```
 
-SQLite indexes them (name, workspace_id, created_at). Resolution order:
-1. Workspace agents — `.meridian/workspace/<id>/agents/`
+SQLite indexes them (name, space_id, created_at). Resolution order:
+1. Space agents — `.meridian/space/<id>/agents/`
 2. User's repo — `.agents/agents/`
 3. Meridian defaults — `src/meridian/resources/.agents/agents/`
 
 **Commands:**
 - `meridian agent create <name> --model X --skills S` — writes `.md` file + indexes
-- `meridian agent list` — shows all available (workspace + repo + builtin)
+- `meridian agent list` — shows all available (space + repo + builtin)
 - `meridian agent show <name>` — displays profile details
-- `meridian agent promote <name>` — copies workspace agent to `.agents/agents/` for permanent use
+- `meridian agent promote <name>` — copies space agent to `.agents/agents/` for permanent use
 
-**Lifecycle:** Workspace agents persist for the workspace lifetime. When workspace closes, they stay on disk (can be cleaned up explicitly) but drop out of the resolution chain for other workspaces.
+**Lifecycle:** Space agents persist for the space lifetime. When space closes, they stay on disk (can be cleaned up explicitly) but drop out of the resolution chain for other spaces.
 
 **Files:**
 - `src/meridian/cli/agent.py` — CLI command group
 - `src/meridian/lib/ops/agent.py` — agent CRUD operations
-- Update `lib/config/agent.py` resolution to check workspace path first
+- Update `lib/config/agent.py` resolution to check space path first
 
 ---
 
@@ -101,5 +101,5 @@ SQLite indexes them (name, workspace_id, created_at). Resolution order:
 1. Hook command group + session-track handler (#1 core)
 2. Session log reading + explicit resume (#2)
 3. Context-reinject handler (#1 + #3)
-4. Workspace-scoped agent profiles (#6)
+4. Space-scoped agent profiles (#6)
 5. Summary optimization (#5 — investigate first)

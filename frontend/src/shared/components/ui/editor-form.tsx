@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { Label } from "./label";
 
 /**
- * EditorForm - Reusable form components for editor/workspace contexts.
+ * EditorForm - Reusable form components for editor/space contexts.
  *
  * These components use an "editorial inset" style that creates depth through
  * inner shadows and subtle backgrounds, making form fields feel "pressed into"

@@ -21,7 +21,7 @@ The orchestrate run-agent toolkit is ~1,400 lines of bash + jq that routes agent
 - JSONL index has no corruption recovery (#5)
 - jq injection in filter interpolation (#8)
 
-These gaps motivated the project, but `orch` is not a rewrite of the bash scripts — it is a **new application** that subsumes them. The bash scripts handle: arg parsing -> prompt composition -> process spawning -> result extraction -> JSONL logging. `orch` adds workspace persistence with compaction recovery, context pinning with auto re-injection, event-sourced workflow state, cost tracking and budget enforcement, permission tiers, a guardrail system, run dependency graphs, MCP-native tool exposure, and both a CLI and MCP server interface with structured output. Roughly 30% of `orch` replaces existing bash functionality; the other 70% is new product surface that cannot be achieved by patching the scripts.
+These gaps motivated the project, but `orch` is not a rewrite of the bash scripts — it is a **new application** that subsumes them. The bash scripts handle: arg parsing -> prompt composition -> process spawning -> result extraction -> JSONL logging. `orch` adds space persistence with compaction recovery, context pinning with auto re-injection, event-sourced workflow state, cost tracking and budget enforcement, permission tiers, a guardrail system, run dependency graphs, MCP-native tool exposure, and both a CLI and MCP server interface with structured output. Roughly 30% of `orch` replaces existing bash functionality; the other 70% is new product surface that cannot be achieved by patching the scripts.
 
 Python 3.14 with pyright strict mode, frozen dataclasses in the core domain, pydantic only at boundaries, and the official `mcp` SDK provide type safety, rapid iteration, and native MCP server support. Python 3.14 unlocks t-strings (PEP 750) for type-safe prompt composition, deferred annotations (PEP 649) for cleaner Protocol definitions, and free-threaded Python (PEP 779) as a future concurrency option.
 
@@ -45,7 +45,7 @@ What we explicitly **do NOT build**: declarative workflow DAGs, static task grap
 Every design decision flows from one question: **does this help the LLM supervisor manage its context better?**
 
 LLM agents have finite context windows. The orchestrator's job is to keep the right information accessible and the noise out:
-- **Workspace state** should be queryable, not buried in raw logs — so the supervisor can ask "what have I done?" cheaply
+- **Space state** should be queryable, not buried in raw logs — so the supervisor can ask "what have I done?" cheaply
 - **Reports and plans** should be markdown files the supervisor can read directly — not opaque database blobs
 - **Outputs** should be concise and token-efficient — every extra line costs input tokens on the next turn
 - **Run history** should be filterable/summarizable — so the supervisor loads only what's relevant
@@ -53,7 +53,7 @@ LLM agents have finite context windows. The orchestrator's job is to keep the ri
 **Informed by Manus AI's context engineering:**
 - **Context reduction** — run results have "full" and "compact" representations; stale results get compacted
 - **Context offloading** — filesystem as unlimited external memory; the supervisor uses `orch list`/`orch show` or MCP tools to load only what's relevant
-- **Context isolation** — each run agent gets only what's explicitly passed to it, not the full workspace state
+- **Context isolation** — each run agent gets only what's explicitly passed to it, not the full space state
 - **Attention management** — pinned context files are re-injected after compaction to keep key information in the model's recent attention span, but orch manages this as infrastructure (not as an LLM action loop that wastes tokens — Manus found ~33% of actions wasted on todo.md bookkeeping)
 
 This principle also drives the markdown-first artifact strategy (P4) and the output style guidelines (P3).
@@ -65,14 +65,14 @@ The CLI's primary consumer is an LLM, not a human. The MCP server is the primary
 **Resource-first command grammar** (follows docker/kubectl/gh/aws conventions for discoverability):
 ```bash
 orch serve                                  # MCP server mode (stdio) — primary agent interface
-orch workspace start|resume|list|show       # workspace management
+orch space start|resume|list|show       # space management
 orch run create|list|show|continue|retry    # run management
 orch skills list|search|show|reindex        # skill registry (P8)
 orch models list|show                       # model catalog (P11)
 orch context pin|unpin|list                 # context pinning
 orch diag doctor|trace|diagnose|repair      # diagnostics
 ```
-Short aliases for common commands: `orch start` = `orch workspace start`, `orch run` = `orch run create`, `orch list` = `orch run list`.
+Short aliases for common commands: `orch start` = `orch space start`, `orch run` = `orch run create`, `orch list` = `orch run list`.
 
 **MCP tools** (the primary agent interface — see [MCP Tool Definitions](#mcp-tool-definitions)):
 - Agents call `skills.search(query)` and `skills.load(id)` as MCP tools
@@ -111,42 +111,42 @@ Markdown files are the primary durable memory format — not SQLite, not JSON. S
 **What lives in markdown:**
 - `report.md` — every run's output report (written by subagent or extracted as fallback)
 - `input.md` — the composed prompt sent to the subagent
-- `workspace-summary.md` — per-workspace summary updated as the workspace progresses (committable)
+- `space-summary.md` — per-space summary updated as the space progresses (committable)
 - `plan.md` / task files referenced by `--file` — the orchestrator's input context
 
 **What lives in SQLite:**
 - Run metadata (timestamps, tokens, cost, status) — queryable index
-- Workflow events — workspace state for checkpoint/resume
+- Workflow events — space state for checkpoint/resume
 - Trace spans — cost/time rollups
 - Run edges — continuation/retry/review/parent-child relationships
 
-### P5: Workspaces are optional — `orch run` works standalone
+### P5: Spaces are optional — `orch run` works standalone
 
 `orch` has **two operating modes**, and the entire design must support both:
 
-| Mode | Entry point | Workspace? | Use case |
+| Mode | Entry point | Space? | Use case |
 |------|-------------|----------|----------|
-| **Workspace-bound** | `orch start` / `orch resume` | Yes — `ORCH_WORKSPACE_ID` set in process tree | Multi-run orchestration, supervisor-driven workflows |
-| **Standalone** | `orch run` directly | No — no workspace, no env var | Quick one-off runs, `/run-agent` skill usage, CI pipelines |
+| **Space-bound** | `orch start` / `orch resume` | Yes — `ORCH_WORKSPACE_ID` set in process tree | Multi-run orchestration, supervisor-driven workflows |
+| **Standalone** | `orch run` directly | No — no space, no env var | Quick one-off runs, `/run-agent` skill usage, CI pipelines |
 
-**Standalone mode is the simpler path.** Someone installs `orch`, runs `orch run -m claude-sonnet-4-6 -p "review this"`, and it just works. No workspace ceremony. Runs are still logged to SQLite, still get counter IDs, still write artifacts — they just aren't scoped to a workspace.
+**Standalone mode is the simpler path.** Someone installs `orch`, runs `orch run -m claude-sonnet-4-6 -p "review this"`, and it just works. No space ceremony. Runs are still logged to SQLite, still get counter IDs, still write artifacts — they just aren't scoped to a space.
 
-**Workspace-bound mode adds the workspace lifecycle on top.** `orch start` creates a workspace, launches the harness, sets `ORCH_WORKSPACE_ID` in the child process tree, and `orch run` calls within that tree auto-attach to the workspace transparently.
+**Space-bound mode adds the space lifecycle on top.** `orch start` creates a space, launches the harness, sets `ORCH_WORKSPACE_ID` in the child process tree, and `orch run` calls within that tree auto-attach to the space transparently.
 
 **Design implications — every feature must work in both modes:**
-- `orch run list` shows all runs (workspace-bound and standalone). Filter with `--workspace w3` or `--no-workspace`
-- `orch run show r7` works whether r7 belongs to a workspace or not
-- Run counters: workspace-bound runs use workspace-scoped counters (`w3/r1`). Standalone runs use a global counter (`r1`, `r2`, `r3`)
-- Directory layout: workspace-bound -> `.orchestrate/workspaces/w3/runs/r1/`. Standalone -> `.orchestrate/runs/r1/`
-- MCP tools inherit workspace context from the server's environment
+- `orch run list` shows all runs (space-bound and standalone). Filter with `--space w3` or `--no-space`
+- `orch run show r7` works whether r7 belongs to a space or not
+- Run counters: space-bound runs use space-scoped counters (`w3/r1`). Standalone runs use a global counter (`r1`, `r2`, `r3`)
+- Directory layout: space-bound -> `.orchestrate/spaces/w3/runs/r1/`. Standalone -> `.orchestrate/runs/r1/`
+- MCP tools inherit space context from the server's environment
 
-This is critical for the **`/run-agent` skill use case** — someone loading the skill in Claude Code or Codex just wants `orch run`. They shouldn't need to understand workspaces.
+This is critical for the **`/run-agent` skill use case** — someone loading the skill in Claude Code or Codex just wants `orch run`. They shouldn't need to understand spaces.
 
-#### Workspace model (workspace-bound mode)
+#### Space model (space-bound mode)
 
-A **workspace** is **orch's unit of orchestrated work** — one task from start to finish, potentially spanning many runs across different models and harnesses, and surviving context compactions, conversation clears, and harness restarts.
+A **space** is **orch's unit of orchestrated work** — one task from start to finish, potentially spanning many runs across different models and harnesses, and surviving context compactions, conversation clears, and harness restarts.
 
-**Two types of conversations within a workspace:**
+**Two types of conversations within a space:**
 
 | Type | Interactive? | Purpose | Examples |
 |------|-------------|---------|---------|
@@ -154,29 +154,29 @@ A **workspace** is **orch's unit of orchestrated work** — one task from start 
 | **Run agent** | No (autonomous) | Task-focused. Accomplishes a specific task, returns a report | `orch run -m gpt-5.3-codex -p "research X"` |
 
 **Flat runs with parent-child edges:**
-Runs within a workspace are all siblings — no nested scoping. A run can spawn other runs, but they all live at the same level. Parent-child relationships are tracked in `run_edges`.
+Runs within a space are all siblings — no nested scoping. A run can spawn other runs, but they all live at the same level. Parent-child relationships are tracked in `run_edges`.
 
 **Scoping via env vars** (follows docker DOCKER_CONTEXT, kubectl KUBECONFIG patterns):
-- `ORCH_WORKSPACE_ID` auto-scopes commands to the current workspace
+- `ORCH_WORKSPACE_ID` auto-scopes commands to the current space
 - `ORCH_DEPTH` tracks agent spawning depth (P9) — incremented on each `orch run`, checked against `max_depth` (default: 3). Prevents runaway recursion.
-- `--workspace w3` flag overrides the env var
-- **Precedence:** `--workspace` flag > `ORCH_WORKSPACE_ID` env var > error (no default guess)
+- `--space w3` flag overrides the env var
+- **Precedence:** `--space` flag > `ORCH_WORKSPACE_ID` env var > error (no default guess)
 
-**Workspace lifecycle — owned by `orch`:**
+**Space lifecycle — owned by `orch`:**
 ```bash
 orch start                         # create w1, launch supervisor harness
 orch start --name auth-refactor    # create w2 with alias "auth-refactor"
 orch start --plan plan.md          # create w3 with a plan file
-orch resume                        # resume latest active workspace
-orch resume w3                     # resume specific workspace
+orch resume                        # resume latest active space
+orch resume w3                     # resume specific space
 orch resume auth-refactor          # resume by alias
-orch workspace list                # list all workspaces with status/cost
-orch workspace show w3             # workspace detail: runs, cost, pinned files
-orch workspace close w3            # mark as complete
-orch export --workspace w3         # gather committable markdown artifacts
+orch space list                # list all spaces with status/cost
+orch space show w3             # space detail: runs, cost, pinned files
+orch space close w3            # mark as complete
+orch export --space w3         # gather committable markdown artifacts
 ```
 
-**Workspace state machine:**
+**Space state machine:**
 ```
 active -> completed    (all work done, explicit close)
 active -> paused       (user exits, can resume later)
@@ -185,19 +185,19 @@ active -> abandoned    (no activity for configurable timeout)
 
 ### P6: Context pinning — durable context that survives compaction
 
-Within a workspace, certain files are **pinned** — they persist across compaction events and are automatically re-injected into new conversations and run agents.
+Within a space, certain files are **pinned** — they persist across compaction events and are automatically re-injected into new conversations and run agents.
 
 ```bash
-orch context pin research-findings.md     # pin to workspace context
+orch context pin research-findings.md     # pin to space context
 orch context unpin research-findings.md   # remove from pinned
 orch context list                         # list pinned files
 ```
 
 **What pinning does:**
 - Pinned files are re-injected into the orchestrate reader after each compaction
-- Pinned files are included in every new harness conversation started within the workspace
+- Pinned files are included in every new harness conversation started within the space
 - Pinned files are passed to run agents by default (the orchestrate reader can override with explicit `-f` flags)
-- The workspace's `workspace-summary.md` is always implicitly pinned
+- The space's `space-summary.md` is always implicitly pinned
 
 ### P7: Harness abstraction — design for CLI change
 
@@ -245,7 +245,7 @@ Harnesses (Claude Code, Codex) should **never** discover skills directly from `.
 |-------|--------------|---------|-------------|
 | **`run-agent`** | Every `orch run` | How to use `orch run` CLI and MCP tools (`run_create`, `run_show`, `run_wait`). Pass files with `-f`, read reports. | **Fully standalone.** |
 | **`agent`** | Every `orch run` (on top of `run-agent`) | How to be a good worker agent. Write concise reports, use `skills_search`/`skills_load` MCP tools, manage context budget. | **Needs `run-agent`.** |
-| **`orchestrate`** | `orch workspace start` only (supervisor) | How to manage a multi-run workflow. Use `workspace_*`, `context_*` MCP tools. Read plans, decompose into slices, pick models, dispatch runs. | **Needs `run-agent` + `agent`.** |
+| **`orchestrate`** | `orch space start` only (supervisor) | How to manage a multi-run workflow. Use `space_*`, `context_*` MCP tools. Read plans, decompose into slices, pick models, dispatch runs. | **Needs `run-agent` + `agent`.** |
 
 **Depth limiting prevents runaway spawning:**
 ```bash
@@ -313,7 +313,7 @@ from orch.lib.ops.registry import get_all_operations, get_operation
 from orch.lib.ops.run import run_create, run_list, run_show, run_continue, run_retry
 from orch.lib.ops.skills import skills_search, skills_load, skills_list, skills_reindex
 from orch.lib.ops.models import models_list, models_show
-from orch.lib.ops.workspace import workspace_start, workspace_resume, workspace_list, workspace_show, workspace_close
+from orch.lib.ops.space import space_start, space_resume, space_list, space_show, space_close
 from orch.lib.ops.context import context_pin, context_unpin, context_list
 from orch.lib.ops.diag import diag_doctor, diag_repair
 ```
@@ -398,11 +398,11 @@ Every operation must be explicitly listed. Drift is a **CI failure**.
 | `skills.reindex` | `orch skills reindex` | `skills_reindex` | Both |
 | `models.list` | `orch models list` | `models_list` | Both |
 | `models.show` | `orch models show` | `models_show` | Both |
-| `workspace.start` | `orch workspace start` | `workspace_start` | Both |
-| `workspace.resume` | `orch workspace resume` | `workspace_resume` | Both |
-| `workspace.list` | `orch workspace list` | `workspace_list` | Both |
-| `workspace.show` | `orch workspace show` | `workspace_show` | Both |
-| `workspace.close` | `orch workspace close` | `workspace_close` | Both |
+| `space.start` | `orch space start` | `space_start` | Both |
+| `space.resume` | `orch space resume` | `space_resume` | Both |
+| `space.list` | `orch space list` | `space_list` | Both |
+| `space.show` | `orch space show` | `space_show` | Both |
+| `space.close` | `orch space close` | `space_close` | Both |
 | `context.pin` | `orch context pin` | `context_pin` | Both |
 | `context.unpin` | `orch context unpin` | `context_unpin` | Both |
 | `context.list` | `orch context list` | `context_list` | Both |
@@ -459,11 +459,11 @@ class RunStore(Protocol):
     async def update_status(self, run_id: RunId, status: RunStatus) -> None: ...
     async def enrich(self, run_id: RunId, enrichment: RunEnrichment) -> None: ...
 
-class WorkspaceStore(Protocol):
-    async def create(self, params: WorkspaceCreateParams) -> Workspace: ...
-    async def get(self, workspace_id: WorkspaceId) -> Workspace | None: ...
-    async def list(self, filters: WorkspaceFilters) -> list[WorkspaceSummary]: ...
-    async def transition(self, workspace_id: WorkspaceId, new_state: WorkspaceState) -> None: ...
+class SpaceStore(Protocol):
+    async def create(self, params: SpaceCreateParams) -> Space: ...
+    async def get(self, space_id: SpaceId) -> Space | None: ...
+    async def list(self, filters: SpaceFilters) -> list[SpaceSummary]: ...
+    async def transition(self, space_id: SpaceId, new_state: SpaceState) -> None: ...
 
 class SkillIndex(Protocol):
     async def reindex(self, skills_dir: Path) -> IndexReport: ...
@@ -471,9 +471,9 @@ class SkillIndex(Protocol):
     async def load(self, names: list[str]) -> list[SkillContent]: ...
 
 class ContextStore(Protocol):
-    async def pin(self, workspace_id: WorkspaceId, file_path: str) -> None: ...
-    async def unpin(self, workspace_id: WorkspaceId, file_path: str) -> None: ...
-    async def list_pinned(self, workspace_id: WorkspaceId) -> list[PinnedFile]: ...
+    async def pin(self, space_id: SpaceId, file_path: str) -> None: ...
+    async def unpin(self, space_id: SpaceId, file_path: str) -> None: ...
+    async def list_pinned(self, space_id: SpaceId) -> list[PinnedFile]: ...
 ```
 
 **v1 adapter:** `orch/lib/adapters/sqlite.py` implements all protocols using SQLite (async via `aiosqlite` for MCP, sync via `sqlite3` for CLI).
@@ -522,7 +522,7 @@ async def lifespan(server: FastMCP):
     db = await aiosqlite.connect(db_path)
     await db.execute("PRAGMA journal_mode=WAL")
     await db.execute("PRAGMA busy_timeout=5000")
-    stores = create_stores(db)      # RunStore, WorkspaceStore, etc.
+    stores = create_stores(db)      # RunStore, SpaceStore, etc.
     configure_logging(json_mode=True)
     try:
         yield {"stores": stores, "db": db}
@@ -539,7 +539,7 @@ for op in get_all_operations():
 
 ### ORCH_DEPTH in MCP Context
 
-When `orch serve` runs inside a workspace, `ORCH_DEPTH` is read from the environment and incremented for each `run_create` tool call. The MCP server enforces the same depth limit as the CLI — agents calling `run_create` at max depth receive a structured error:
+When `orch serve` runs inside a space, `ORCH_DEPTH` is read from the environment and incremented for each `run_create` tool call. The MCP server enforces the same depth limit as the CLI — agents calling `run_create` at max depth receive a structured error:
 
 ```json
 {
@@ -588,7 +588,7 @@ async def run_create(
     name: str | None = None,
     timeout_secs: int | None = None,
     budget_usd: float | None = None,
-    workspace: str | None = None,     # override ORCH_WORKSPACE_ID
+    space: str | None = None,     # override ORCH_WORKSPACE_ID
 ) -> RunCreated:
     """Create and start a new agent run. Returns immediately (non-blocking).
     Use run_wait() or poll run_show() to get results."""
@@ -604,11 +604,11 @@ async def run_wait(
 
 @server.tool()
 async def run_list(
-    workspace: str | None = None,
+    space: str | None = None,
     status: str | None = None,
     model: str | None = None,
     limit: int = 20,
-    no_workspace: bool = False,
+    no_space: bool = False,
 ) -> list[RunSummary]:
     """List runs with optional filters. Returns structured JSON."""
     ...
@@ -673,43 +673,43 @@ async def models_show(
     """Show full detail for a model (aliases resolved)."""
     ...
 
-# ── Workspace management ────────────────────────────────────────
+# ── Space management ────────────────────────────────────────
 @server.tool()
-async def workspace_list(
+async def space_list(
     limit: int = 10,
-) -> list[WorkspaceSummary]:
-    """List all workspaces with status/cost."""
+) -> list[SpaceSummary]:
+    """List all spaces with status/cost."""
     ...
 
 @server.tool()
-async def workspace_show(
-    workspace: str,
-) -> WorkspaceDetail:
-    """Show workspace detail: runs, cost, pinned files."""
+async def space_show(
+    space: str,
+) -> SpaceDetail:
+    """Show space detail: runs, cost, pinned files."""
     ...
 
 # ── Context pinning ─────────────────────────────────────────────
 @server.tool()
 async def context_pin(
     file_path: str,
-    workspace: str | None = None,
+    space: str | None = None,
 ) -> PinResult:
-    """Pin a file to workspace context (survives compaction)."""
+    """Pin a file to space context (survives compaction)."""
     ...
 
 @server.tool()
 async def context_unpin(
     file_path: str,
-    workspace: str | None = None,
+    space: str | None = None,
 ) -> UnpinResult:
-    """Unpin a file from workspace context."""
+    """Unpin a file from space context."""
     ...
 
 @server.tool()
 async def context_list(
-    workspace: str | None = None,
+    space: str | None = None,
 ) -> list[PinnedFile]:
-    """List pinned files for a workspace."""
+    """List pinned files for a space."""
     ...
 
 # ── Diagnostics ─────────────────────────────────────────────────
@@ -829,10 +829,10 @@ v1 exposes only `orch`'s own tools. The architecture uses a `ToolRegistry` abstr
 graph TB
     subgraph Package["orch (Python 3.14 package — pip install orch-cli)"]
         MCP["MCP Server (orch serve)\nFastMCP, stdio transport\nPrimary agent interface"]
-        CLI["CLI (orch run/workspace/skills/...)\ncyclopts, resource-first grammar\nHuman interface + rich output"]
+        CLI["CLI (orch run/space/skills/...)\ncyclopts, resource-first grammar\nHuman interface + rich output"]
         Registry["Operation Registry\nSingle source of truth\nAuto-exposes to CLI + MCP"]
         Lib["orch.lib — all business logic\nfrozen dataclasses in core"]
-        Ports["Storage Protocols (ports.py)\nRunStore, WorkspaceStore, SkillIndex"]
+        Ports["Storage Protocols (ports.py)\nRunStore, SpaceStore, SkillIndex"]
         Config["Config Layer\nSkill discovery, model guidance, agent profiles\npydantic-settings, .orchestrate/config.toml"]
         Prompt["Prompt Engine\nt-strings (PEP 750) + Jinja2 fallback\nskill assembly, sanitization"]
         Harness["Harness Adapter Layer\nHarnessAdapter Protocol + HarnessRegistry\nClaude, Codex, OpenCode adapters"]
@@ -856,11 +856,11 @@ graph TB
 
     subgraph Artifacts["Markdown Artifacts (durable memory)"]
         RunMD["Per-run: report.md, input.md"]
-        WorkspaceMD["Per-workspace: workspace-summary.md"]
+        SpaceMD["Per-space: space-summary.md"]
     end
 
     Post --> RunMD
-    State --> WorkspaceMD
+    State --> SpaceMD
 
     subgraph HarnessCLIs["CLI Harnesses (external)"]
         Claude["claude -p"]
@@ -891,7 +891,7 @@ orchestrate/orch/                  # Python package root (no crates/ — not Rus
       cli/
         __init__.py
         main.py                    # cyclopts app, resource-first groups (built from registry)
-        workspace.py               # start, resume, list, show, close
+        space.py               # start, resume, list, show, close
         run.py                     # create, list, show, continue, retry, wait
         context.py                 # pin, unpin, list
         skills_cmd.py              # list, search, show, reindex
@@ -904,9 +904,9 @@ orchestrate/orch/                  # Python package root (no crates/ — not Rus
         main.py                    # FastMCP server setup, lifespan, tool registration from registry
       lib/
         __init__.py                # explicit public API
-        types.py                   # domain newtypes: WorkspaceId, RunId, HarnessId, ModelId
-        domain.py                  # frozen dataclasses: Run, Workspace, PinnedFile, etc.
-        ports.py                   # Storage Protocols: RunStore, WorkspaceStore, SkillIndex, ContextStore
+        types.py                   # domain newtypes: SpaceId, RunId, HarnessId, ModelId
+        domain.py                  # frozen dataclasses: Run, Space, PinnedFile, etc.
+        ports.py                   # Storage Protocols: RunStore, SpaceStore, SkillIndex, ContextStore
         logging.py                 # structlog configuration
         ops/
           __init__.py
@@ -914,7 +914,7 @@ orchestrate/orch/                  # Python package root (no crates/ — not Rus
           run.py                   # run_create, run_list, run_show, run_continue, run_retry, run_wait
           skills.py                # skills_search, skills_load, skills_list, skills_reindex
           models.py                # models_list, models_show
-          workspace.py             # workspace_start, workspace_resume, workspace_list, workspace_show, workspace_close
+          space.py             # space_start, space_resume, space_list, space_show, space_close
           context.py               # context_pin, context_unpin, context_list
           diag.py                  # diag_doctor, diag_repair
         adapters/
@@ -961,10 +961,10 @@ orchestrate/orch/                  # Python package root (no crates/ — not Rus
           files_touched.py         # file path extraction from output
           report.py                # report.md extraction/fallback
           finalize.py              # orchestrates extraction pipeline
-        workspace/
+        space/
           __init__.py
-          crud.py                  # workspace CRUD, state machine
-          summary.py               # workspace-summary.md generation
+          crud.py                  # space CRUD, state machine
+          summary.py               # space-summary.md generation
           launch.py                # supervisor harness launch + context injection
           context.py               # context pinning logic
         safety/
@@ -984,7 +984,7 @@ orchestrate/orch/                  # Python package root (no crates/ — not Rus
     test_harness/                  # harness adapter tests
     test_exec/                     # execution engine tests
     test_extract/                  # extraction tests
-    test_workspace/                # workspace launcher tests
+    test_space/                # space launcher tests
     test_safety/                   # safety/guardrail tests
     test_mcp/                      # MCP server integration tests
     test_cli/                      # CLI integration tests
@@ -1078,17 +1078,17 @@ Installed via `uv tool install orch-cli` or `pip install orch-cli`. Agents and h
 orch serve                                   # start MCP server on stdio
 
 # ── CLI mode (human interface, secondary agent interface) ────────
-# Standalone mode (no workspace, replaces run-agent.sh)
+# Standalone mode (no space, replaces run-agent.sh)
 orch run -m claude-opus-4-6 -p "Review this code"
 orch run -m gpt-5.3-codex --skills research -p "..."
 orch run list
 orch run show @latest --report
 
-# Workspace-bound mode (replaces scripts/cc-orchestrate)
-orch workspace start --plan plan.md
-orch workspace resume
-orch workspace list
-orch workspace show w3
+# Space-bound mode (replaces scripts/cc-orchestrate)
+orch space start --plan plan.md
+orch space resume
+orch space list
+orch space show w3
 
 # Skill registry
 orch skills list
@@ -1108,7 +1108,7 @@ orch diag doctor
 orch diag repair
 ```
 
-**Short aliases:** `orch start` = `orch workspace start`, `orch run` (with `-p`) = `orch run create`, `orch list` = `orch run list`, etc.
+**Short aliases:** `orch start` = `orch space start`, `orch run` (with `-p`) = `orch run create`, `orch list` = `orch run list`, etc.
 
 ### Bash Scripts Being Replaced
 
@@ -1125,7 +1125,7 @@ graph TD
     S4["Slice 4: Execution Engine"]
     S5a["Slice 5a: Post-Execution + Extraction + Error Classification"]
     S5b["Slice 5b: MCP Server + CLI Commands (both surfaces)"]
-    S6["Slice 6: Workspace Launcher + Context Pinning"]
+    S6["Slice 6: Space Launcher + Context Pinning"]
     S7["Slice 7: Safety + Cost Guardrails + Migration"]
 
     S0 --> S1
@@ -1155,19 +1155,19 @@ These are invariants that every slice must preserve. Violation of any spec means
 - Test: spawn run, SIGINT -> finalize row exists with exit code 130.
 - Test: spawn run that times out -> finalize row exists with exit code 3.
 
-**Spec 2: Context isolation.** A run agent MUST NOT see another run's context, report, or workspace state unless explicitly passed via `-f`.
+**Spec 2: Context isolation.** A run agent MUST NOT see another run's context, report, or space state unless explicitly passed via `-f`.
 - Test: run A writes a file containing prompt injection. Run B, without `-f` referencing that file, must not see it in composed prompt.
 - Test: composed `input.md` contains ONLY the expected components.
 
-**Spec 3: Context pinning survives compaction.** Pinned files MUST be re-injected after workspace resume.
-- Test: pin 3 files, close workspace, resume -> composed supervisor prompt contains all 3.
+**Spec 3: Context pinning survives compaction.** Pinned files MUST be re-injected after space resume.
+- Test: pin 3 files, close space, resume -> composed supervisor prompt contains all 3.
 - Test: pin file that was deleted from disk -> resume produces clear error.
 
 **Spec 4: Cost tracking accuracy.** Extracted token counts and cost MUST be within 5% of actual (for harnesses that report usage).
 - Test: run against each harness with known fixture output -> extracted tokens match expected values.
 - Test: per-run budget $0.50, run costs $0.51 -> run terminated.
 
-**Spec 5: ID uniqueness and resolution.** Run/workspace IDs MUST be globally unique. Resolution MUST be unambiguous within scope.
+**Spec 5: ID uniqueness and resolution.** Run/space IDs MUST be globally unique. Resolution MUST be unambiguous within scope.
 - Test: 100 concurrent `orch run` calls -> all IDs unique, no counter collisions.
 
 **Spec 6: Prompt sanitization.** Prior run output in continuation/retry MUST be wrapped in boundary markers.
@@ -1176,7 +1176,7 @@ These are invariants that every slice must preserve. Violation of any spec means
 **Spec 7: Lock correctness under concurrency.** Concurrent writers MUST NOT corrupt SQLite.
 - Test: 10 parallel `orch run` processes writing to same DB -> all finalize rows present and uncorrupted.
 
-**Spec 8: Workspace state machine.** Transitions MUST follow: `active -> paused | completed | abandoned`. No invalid transitions.
+**Spec 8: Space state machine.** Transitions MUST follow: `active -> paused | completed | abandoned`. No invalid transitions.
 
 **Spec 9: Skill discovery from `.agents/skills/` only.** Skills MUST be discovered from `.agents/skills/`, never from `.claude/skills/` or harness-specific directories.
 
@@ -1222,7 +1222,7 @@ These are invariants that every slice must preserve. Violation of any spec means
 - `orchestrate/orch/src/orch/server/__init__.py`
 - `orchestrate/orch/src/orch/server/main.py` — FastMCP server skeleton with lifespan (no tools yet)
 - `orchestrate/orch/src/orch/lib/__init__.py`
-- `orchestrate/orch/src/orch/lib/types.py` — domain newtypes (WorkspaceId, RunId, HarnessId, ModelId) as NewType
+- `orchestrate/orch/src/orch/lib/types.py` — domain newtypes (SpaceId, RunId, HarnessId, ModelId) as NewType
 - `orchestrate/orch/src/orch/lib/domain.py` — frozen dataclasses for core domain types
 - `orchestrate/orch/src/orch/lib/ports.py` — Storage Protocol interfaces
 - `orchestrate/orch/src/orch/lib/ops/registry.py` — Operation Registry scaffold
@@ -1249,7 +1249,7 @@ python mock_harness.py --crash-after-lines 50 --stdout-file fixtures/partial.jso
 ```python
 from typing import NewType
 
-WorkspaceId = NewType("WorkspaceId", str)   # "w1", "w2", "w3"
+SpaceId = NewType("SpaceId", str)   # "w1", "w2", "w3"
 RunId = NewType("RunId", str)               # "r1", "w3/r1"
 HarnessId = NewType("HarnessId", str)       # "claude", "codex", "opencode"
 ModelId = NewType("ModelId", str)            # "claude-opus-4-6", "gpt-5.3-codex"
@@ -1264,8 +1264,8 @@ ModelId = NewType("ModelId", str)            # "claude-opus-4-6", "gpt-5.3-codex
 6. `pyright` passes in strict mode
 7. `pytest` passes (smoke test + surface parity test)
 8. CI workflow runs on PR and passes (Python 3.14 matrix)
-9. Resource-first subcommand groups stubbed: `serve`, `workspace`, `run`, `skills`, `models`, `context`, `diag`, `export`
-10. Top-level aliases wired: `start` -> `workspace start`, `run` (with `-p`) -> `run create`, etc.
+9. Resource-first subcommand groups stubbed: `serve`, `space`, `run`, `skills`, `models`, `context`, `diag`, `export`
+10. Top-level aliases wired: `start` -> `space start`, `run` (with `-p`) -> `run create`, etc.
 11. Domain newtypes defined in `orch/lib/types.py`
 12. Core domain types as frozen dataclasses in `orch/lib/domain.py`
 13. Storage Protocols defined in `orch/lib/ports.py`
@@ -1285,7 +1285,7 @@ ModelId = NewType("ModelId", str)            # "claude-opus-4-6", "gpt-5.3-codex
 **Dependencies:** Slice 0 (package must install).
 **Model recommendation:** `gpt-5.3-codex`
 
-**Description:** Implement the SQLite state database with WAL mode, event-sourced workflow state, trace spans, and workspace/context-pinning tables. Maintain JSONL dual-write for backwards compatibility. Fixes critical gaps #2 (lock mismatch) and #5 (index corruption).
+**Description:** Implement the SQLite state database with WAL mode, event-sourced workflow state, trace spans, and space/context-pinning tables. Maintain JSONL dual-write for backwards compatibility. Fixes critical gaps #2 (lock mismatch) and #5 (index corruption).
 
 **Required reading (`-f` files for orchestrator):**
 - `_docs/plans/meridian-channel/_archive/design/orchestrate-cli-python.md` (this plan — Slice 1 section)
@@ -1304,11 +1304,11 @@ ModelId = NewType("ModelId", str)            # "claude-opus-4-6", "gpt-5.3-codex
 
 **SQLite schema:**
 
-Same schema as the Rust plan (all 8 tables: `runs`, `workspaces`, `pinned_files`, `workflow_events`, `spans`, `run_edges`, `artifacts`, `schema_info`). See the original plan for the full SQL. Key points:
+Same schema as the Rust plan (all 8 tables: `runs`, `spaces`, `pinned_files`, `workflow_events`, `spans`, `run_edges`, `artifacts`, `schema_info`). See the original plan for the full SQL. Key points:
 
 - WAL mode enabled, `busy_timeout` set to 5000ms
 - All IDs use domain newtypes
-- `workspace_id` nullable in `runs` (standalone runs have NULL)
+- `space_id` nullable in `runs` (standalone runs have NULL)
 - All paths stored as relative, resolved to absolute on read
 - Migrations are embedded Python functions, forward-only, versioned
 - **Nullable-first migration policy** (restored from Rust plan): new columns are always nullable; never require backfill in migration. Backfill is a separate step that can fail independently.
@@ -1340,13 +1340,13 @@ class ArtifactStore(Protocol):
   runs/                        # standalone runs
     r1/
       params.json, input.md, output.jsonl, report.md
-  workspaces/                  # workspace-bound runs
+  spaces/                  # space-bound runs
     w3/
-      workspace-summary.md
+      space-summary.md
       runs/
         r1/
           params.json, input.md, output.jsonl, report.md
-  active-workspaces/           # PID lock files
+  active-spaces/           # PID lock files
     w3.lock
 ```
 
@@ -1357,7 +1357,7 @@ class ArtifactStore(Protocol):
 4. Schema migrations run automatically on first access (embedded, versioned, forward-only)
 5. `append_start_row()` writes to both SQLite and JSONL atomically under lock
 6. `append_finalize_row()` updates SQLite row and appends JSONL under lock
-7. Run ID generation supports both workspace-scoped and global counters
+7. Run ID generation supports both space-scoped and global counters
 8. `ArtifactStore` Protocol defined with `LocalStore` and `InMemoryStore` implementations
 9. All domain types are frozen dataclasses using domain newtypes
 10. Unit tests for: schema creation, CRUD, events, spans, locking contention, JSONL round-trip, artifact store
@@ -1621,7 +1621,7 @@ async def enrich_finalize(run: Run, registry: HarnessRegistry, artifacts: Artifa
 **Files to create/update:**
 - `orchestrate/orch/src/orch/server/main.py` — FastMCP server with lifespan, auto-registers tools from registry
 - `orchestrate/orch/src/orch/cli/run.py` — run CLI commands (create, list, show, continue, retry, wait)
-- `orchestrate/orch/src/orch/cli/workspace.py` — workspace CLI commands
+- `orchestrate/orch/src/orch/cli/space.py` — space CLI commands
 - `orchestrate/orch/src/orch/cli/skills_cmd.py` — skills CLI commands
 - `orchestrate/orch/src/orch/cli/models_cmd.py` — models CLI commands
 - `orchestrate/orch/src/orch/cli/context.py` — context CLI commands
@@ -1672,19 +1672,19 @@ def run_create(...) -> None:
 
 ---
 
-## Slice 6: Workspace Launcher + Context Pinning + Advanced CLI
+## Slice 6: Space Launcher + Context Pinning + Advanced CLI
 
 **Effort:** 2 days
 **Dependencies:** Slice 1 (state layer), Slice 5b (MCP server + CLI commands).
 **Model recommendation:** `gpt-5.3-codex`
 
-**Description:** Implement workspace launcher logic (the `orch start`/`resume` lifecycle), context pinning, export command, and `diag repair`. CLI command handlers were wired in Slice 5b; this slice adds the workspace-specific business logic. Fixes gaps #5, #6, #7.
+**Description:** Implement space launcher logic (the `orch start`/`resume` lifecycle), context pinning, export command, and `diag repair`. CLI command handlers were wired in Slice 5b; this slice adds the space-specific business logic. Fixes gaps #5, #6, #7.
 
 **Files to create:**
-- `orchestrate/orch/src/orch/lib/workspace/crud.py` — workspace CRUD + state machine
-- `orchestrate/orch/src/orch/lib/workspace/summary.py` — workspace-summary.md generation
-- `orchestrate/orch/src/orch/lib/workspace/launch.py` — supervisor harness launch
-- `orchestrate/orch/src/orch/lib/workspace/context.py` — context pinning logic
+- `orchestrate/orch/src/orch/lib/space/crud.py` — space CRUD + state machine
+- `orchestrate/orch/src/orch/lib/space/summary.py` — space-summary.md generation
+- `orchestrate/orch/src/orch/lib/space/launch.py` — supervisor harness launch
+- `orchestrate/orch/src/orch/lib/space/context.py` — context pinning logic
 
 **Key design decisions:**
 
@@ -1693,65 +1693,65 @@ Type-safe filtering (fix gap #7):
 @dataclass
 class RunListFilters:
     model: str | None = None
-    workspace: str | None = None
-    no_workspace: bool = False
+    space: str | None = None
+    no_space: bool = False
     status: str | None = None
     failed: bool = False
     limit: int = 20
 # Translated to parameterized SQL — no string interpolation
 ```
 
-Workspace launcher (`orch workspace start`):
-1. Create `workspaces` row with status `active`, generate WorkspaceId
-2. Write `.orchestrate/active-workspaces/<cid>.lock` (PID file)
+Space launcher (`orch space start`):
+1. Create `spaces` row with status `active`, generate SpaceId
+2. Write `.orchestrate/active-spaces/<cid>.lock` (PID file)
 3. Set `ORCH_WORKSPACE_ID` in child env
 4. Spawn harness as child process (`orch start` stays alive as parent)
-5. Wait for harness exit -> finalize workspace
+5. Wait for harness exit -> finalize space
 
 Context pinning:
 ```python
-async def pin(workspace_id: WorkspaceId, file_path: str) -> None:
-    """Pin file to workspace context. Emits ContextPinned event."""
+async def pin(space_id: SpaceId, file_path: str) -> None:
+    """Pin file to space context. Emits ContextPinned event."""
     ...
 
-async def unpin(workspace_id: WorkspaceId, file_path: str) -> None:
+async def unpin(space_id: SpaceId, file_path: str) -> None:
     """Unpin file. Emits ContextUnpinned event."""
     ...
 
-async def get_pinned(workspace_id: WorkspaceId) -> list[PinnedFile]:
-    """List pinned files for workspace."""
+async def get_pinned(space_id: SpaceId) -> list[PinnedFile]:
+    """List pinned files for space."""
     ...
 
-async def inject_pinned_context(workspace_id: WorkspaceId) -> str:
+async def inject_pinned_context(space_id: SpaceId) -> str:
     """Load and concatenate all pinned file contents for prompt injection."""
     ...
 ```
 
-**Workspace launcher details (restored from Rust plan):**
+**Space launcher details (restored from Rust plan):**
 - `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` and `--autocompact` passthrough to harness
 - Passthrough args for harness-specific flags not modeled by orch
 - Continuation: `orch resume` vs `orch resume --fresh` (harness resume vs fresh start)
 - Continuation pattern guidance injected into supervisor prompt on resume
 
 **Acceptance criteria:**
-1. `orch workspace start` creates workspace, sets env vars, spawns harness
-2. `orch workspace resume` generates summary, re-injects pinned context
-3. `orch workspace resume --fresh` starts fresh harness (no session continuation)
-4. Workspace state machine enforced (active → paused | completed | abandoned)
+1. `orch space start` creates space, sets env vars, spawns harness
+2. `orch space resume` generates summary, re-injects pinned context
+3. `orch space resume --fresh` starts fresh harness (no session continuation)
+4. Space state machine enforced (active → paused | completed | abandoned)
 5. `orch run continue` works for completed, failed, AND running status runs (fix gap #6)
 6. `orch diag repair` validates and fixes index corruption (fix gap #5)
-7. `orch context pin/unpin/list` works with workspace scoping
+7. `orch context pin/unpin/list` works with space scoping
 8. Pinned files tracked in DB, re-injected on resume (P6)
 9. `orch export` gathers committable markdown artifacts
 10. Passthrough args forwarded to harness
-11. Integration tests for workspace lifecycle
+11. Integration tests for space lifecycle
 
 ---
 
 ## Slice 7: Safety + Cost Guardrails + Migration + Polish
 
 **Effort:** 2 days
-**Dependencies:** Slice 4 (execution engine), Slice 5b (MCP server), Slice 6 (workspace launcher).
+**Dependencies:** Slice 4 (execution engine), Slice 5b (MCP server), Slice 6 (space launcher).
 **Model recommendation:** `gpt-5.3-codex`
 
 **Description:** Implement permission tiers, cost tracking/budgets, guardrail system, JSONL-to-SQLite migration, skill/agent reference updates, shell completions, and documentation. After this slice, the bash scripts are deprecated. This combines the original Rust plan's Slices 7 and 8.
@@ -1775,7 +1775,7 @@ class PermissionTier(str, Enum):
 @dataclass
 class Budget:
     per_run_usd: float | None = None
-    per_workspace_usd: float | None = None
+    per_space_usd: float | None = None
 # On breach: SIGTERM to harness, budget_exceeded event, exit code 2
 ```
 
@@ -1793,7 +1793,7 @@ class Budget:
 **Acceptance criteria:**
 1. Permission tiers enforced — no dangerous flags without `--unsafe`
 2. Per-run budget kills harness on breach
-3. Per-workspace budget tracked across runs
+3. Per-space budget tracked across runs
 4. Guardrail scripts run after each run, failure triggers auto-retry
 5. `orch migrate` imports existing JSONL data
 6. All SKILL.md and agent files reference `orch`
@@ -1866,8 +1866,8 @@ This plan supersedes `orchestrate-cli.md` (the Rust plan). Here is what changed 
 - `pyright` strict mode (catches most of what the Rust compiler catches for business logic)
 - `@dataclass(frozen=True)` for all core domain types (immutable by default)
 - `pydantic` only at boundaries (MCP responses, config parsing — NOT in core domain)
-- `NewType` for domain IDs (WorkspaceId, RunId, etc.)
-- `Protocol` for interface contracts (HarnessAdapter, RunStore, WorkspaceStore, SkillIndex)
+- `NewType` for domain IDs (SpaceId, RunId, etc.)
+- `Protocol` for interface contracts (HarnessAdapter, RunStore, SpaceStore, SkillIndex)
 - `assert_never` for exhaustive pattern matching on StrEnum/Literal types
 - Deferred annotations (PEP 649) for cleaner forward references
 
@@ -1921,7 +1921,7 @@ The Rust plan had 9 slices (0-8). This plan has 9 (0-7, with 5 split into 5a/5b)
 ### What Stayed the Same
 
 - All design principles P1-P11 (adapted for Python, plus new P12 for MCP-first)
-- Workspace/run model, state machine, ID scheme
+- Space/run model, state machine, ID scheme
 - Context pinning (P6)
 - SQLite WAL schema (identical tables)
 - Three base skills (run-agent, agent, orchestrate)
@@ -1949,8 +1949,8 @@ Review convergence: all three independent reviews flagged these omissions.
 
 - **Model catalog failure modes** — model not found, alias ambiguous, model deprecated (now in ModelEntry)
 - **Open-weight model support** — model routing handles `provider/model` format for OpenCode
-- **Workspace management details** — `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`, `--autocompact`, passthrough args, harness resume vs fresh start
-- **Continuation pattern guidance** — injected into supervisor prompt on workspace resume
+- **Space management details** — `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`, `--autocompact`, passthrough args, harness resume vs fresh start
+- **Continuation pattern guidance** — injected into supervisor prompt on space resume
 - **Stronger acceptance criteria** — Slice 0 now has 20 criteria (was 13), Slice 6 has 11 (was 13 but more focused)
 - **Schema migration nullable-first policy** — new columns always nullable, no backfill in migration
 - **`orch explore` command** — deferred to v2 (see v2 Horizon)
@@ -1963,7 +1963,7 @@ Review convergence: all three independent reviews flagged these omissions.
 - MCP tool definitions with frozen dataclass response types
 - **Operation Registry** — anti-drift mechanism, auto-exposes operations to both CLI + MCP
 - **CLI/MCP parity contract** — explicit table, CI-enforced test
-- **Storage Protocol layer** — `ports.py` with RunStore, WorkspaceStore, SkillIndex, ContextStore
+- **Storage Protocol layer** — `ports.py` with RunStore, SpaceStore, SkillIndex, ContextStore
 - P12 design principle (MCP-first)
 - Non-blocking `run_create` in MCP mode + `run_wait` tool
 - t-strings (PEP 750) for prompt composition

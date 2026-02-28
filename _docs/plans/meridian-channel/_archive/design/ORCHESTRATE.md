@@ -8,7 +8,7 @@
 
 ## What We're Building
 
-**Meridian Channel** (`pip install meridian-channel`) is a Python 3.14 CLI + MCP server + API tool provider that orchestrates multi-model agent runs. It replaces ~1,400 lines of bash scripts with a proper application: workspace persistence, context pinning, cost tracking, permission tiers, MCP-native tool exposure, and programmatic tool calling support (Anthropic API `code_execution` + `allowed_callers`).
+**Meridian Channel** (`pip install meridian-channel`) is a Python 3.14 CLI + MCP server + API tool provider that orchestrates multi-model agent runs. It replaces ~1,400 lines of bash scripts with a proper application: space persistence, context pinning, cost tracking, permission tiers, MCP-native tool exposure, and programmatic tool calling support (Anthropic API `code_execution` + `allowed_callers`).
 
 - **CLI binary**: `meridian`
 - **Python package**: `meridian-channel`
@@ -37,7 +37,7 @@ Slice 0 (scaffold)
 │   │   └── Slice 4 (execution engine)
 │   │       ├── Slice 5a (extraction)
 │   │       │   └── Slice 5b (MCP + CLI wiring)
-│   │       │       ├── Slice 6 (workspace + context)
+│   │       │       ├── Slice 6 (space + context)
 │   │       │       │   └── Slice 7 (safety + migration)
 │   │       │       └── Slice 7
 │   │       └── Slice 7
@@ -86,7 +86,7 @@ $RUNNER --model gpt-5.3-codex \
     -f _docs/plans/meridian-channel/design-philosophy.md \
     -f _docs/plans/meridian-channel/architecture.md \
     -f _docs/plans/meridian-channel/slices/1-state-layer.md \
-    -p "Implement Slice 1 of meridian-channel. Create SQLite state layer with WAL mode, 8 tables (runs, workspaces, pinned_files, workflow_events, spans, run_edges, artifacts, schema_info), embedded migrations, JSONL dual-write for backwards compat, ArtifactStore Protocol with LocalStore and InMemoryStore, file locking via fcntl.flock, and ID generation. All acceptance criteria must pass."
+    -p "Implement Slice 1 of meridian-channel. Create SQLite state layer with WAL mode, 8 tables (runs, spaces, pinned_files, workflow_events, spans, run_edges, artifacts, schema_info), embedded migrations, JSONL dual-write for backwards compat, ArtifactStore Protocol with LocalStore and InMemoryStore, file locking via fcntl.flock, and ID generation. All acceptance criteria must pass."
 
 # Slice 2 — Harness Adapters + Skills + Models (parallel with Slice 1)
 $RUNNER --model gpt-5.3-codex \
@@ -184,7 +184,7 @@ $RUNNER --model gpt-5.3-codex \
     -f _docs/plans/meridian-channel/mcp-tools.md \
     -f _docs/plans/meridian-channel/cli-contract.md \
     -f _docs/plans/meridian-channel/slices/5b-mcp-cli-wiring.md \
-    -p "Implement Slice 5b of meridian-channel. Wire FastMCP server with all tool handlers auto-registered from Operation Registry. Wire CLI command handlers for run, workspace, skills, models, context, diag. Wire DirectAdapter API tool generation from the same registry with allowed_callers: [code_execution_20260120] for programmatic tool calling. run_create is non-blocking in MCP mode (returns RunCreated immediately, agent polls run_show or calls run_wait). CLI run_create blocks until completion. Output formatting: rich (TTY), plain, json, porcelain. All acceptance criteria must pass, especially: all three surfaces auto-registered from registry, surface parity test passes, no business logic in tool/command handlers."
+    -p "Implement Slice 5b of meridian-channel. Wire FastMCP server with all tool handlers auto-registered from Operation Registry. Wire CLI command handlers for run, space, skills, models, context, diag. Wire DirectAdapter API tool generation from the same registry with allowed_callers: [code_execution_20260120] for programmatic tool calling. run_create is non-blocking in MCP mode (returns RunCreated immediately, agent polls run_show or calls run_wait). CLI run_create blocks until completion. Output formatting: rich (TTY), plain, json, porcelain. All acceptance criteria must pass, especially: all three surfaces auto-registered from registry, surface parity test passes, no business logic in tool/command handlers."
 ```
 
 **Review** (medium risk — dual surface wiring):
@@ -206,7 +206,7 @@ $RUNNER --agent reviewer --model claude-opus-4-6 \
 wait
 ```
 
-### Phase 5: Workspace + Context (Slice 6)
+### Phase 5: Space + Context (Slice 6)
 
 ```bash
 $RUNNER --model gpt-5.3-codex \
@@ -214,23 +214,23 @@ $RUNNER --model gpt-5.3-codex \
     --skills scratchpad \
     -f _docs/plans/meridian-channel/design-philosophy.md \
     -f _docs/plans/meridian-channel/mcp-tools.md \
-    -f _docs/plans/meridian-channel/slices/6-workspace-context.md \
-    -p "Implement Slice 6 of meridian-channel. Create workspace CRUD + state machine (active → paused | completed | abandoned), workspace-summary.md generation, supervisor harness launch (meridian workspace start stays alive as parent), context pinning (pin/unpin/list with DB tracking), export command, diag repair. Workspace start must: create DB row, write lock file, set MERIDIAN_WORKSPACE_ID, spawn harness, wait for exit. Resume must: generate summary, re-inject pinned context. All acceptance criteria must pass."
+    -f _docs/plans/meridian-channel/slices/6-space-context.md \
+    -p "Implement Slice 6 of meridian-channel. Create space CRUD + state machine (active → paused | completed | abandoned), space-summary.md generation, supervisor harness launch (meridian space start stays alive as parent), context pinning (pin/unpin/list with DB tracking), export command, diag repair. Space start must: create DB row, write lock file, set MERIDIAN_WORKSPACE_ID, spawn harness, wait for exit. Resume must: generate summary, re-inject pinned context. All acceptance criteria must pass."
 ```
 
 **Review** (medium risk):
 ```bash
 $RUNNER --agent reviewer --model gpt-5.3-codex \
     --session "$SESSION" --label slice=6,phase=review,reviewer=codex \
-    -f _docs/plans/meridian-channel/slices/6-workspace-context.md \
+    -f _docs/plans/meridian-channel/slices/6-space-context.md \
     -f _docs/plans/meridian-channel/correctness-specs.md \
-    -p "Review Slice 6. Check: workspace state machine transitions (spec 8), context pinning survives compaction (spec 3), lock file cleanup on exit, MERIDIAN_WORKSPACE_ID propagation, passthrough args forwarded to harness." &
+    -p "Review Slice 6. Check: space state machine transitions (spec 8), context pinning survives compaction (spec 3), lock file cleanup on exit, MERIDIAN_WORKSPACE_ID propagation, passthrough args forwarded to harness." &
 
 $RUNNER --agent reviewer --model claude-opus-4-6 \
     --session "$SESSION" --label slice=6,phase=review,reviewer=opus \
-    -f _docs/plans/meridian-channel/slices/6-workspace-context.md \
+    -f _docs/plans/meridian-channel/slices/6-space-context.md \
     -f _docs/plans/meridian-channel/correctness-specs.md \
-    -p "Review Slice 6. Focus on: what happens if harness crashes during workspace start? Is the lock file cleaned up? Does resume --fresh correctly start a new harness without session continuation? Is diag repair idempotent?" &
+    -p "Review Slice 6. Focus on: what happens if harness crashes during space start? Is the lock file cleaned up? Does resume --fresh correctly start a new harness without session continuation? Is diag repair idempotent?" &
 
 wait
 ```
@@ -244,7 +244,7 @@ $RUNNER --model gpt-5.3-codex \
     -f _docs/plans/meridian-channel/design-philosophy.md \
     -f _docs/plans/meridian-channel/risk-and-gaps.md \
     -f _docs/plans/meridian-channel/slices/7-safety-migration.md \
-    -p "Implement Slice 7 of meridian-channel. Create permission tiers (read-only, workspace-write, full-access, danger), cost budgets (per-run and per-workspace with SIGTERM on breach), guardrail scripts (post-run validation), secret redaction (--secret KEY=VALUE redacts from all output), JSONL-to-SQLite migration (meridian migrate, idempotent), skill/agent reference updates (run-agent.sh → meridian run), shell completions (bash/zsh/fish via cyclopts). Also add repo rename step docs (meridian-collab → meridian-channel). All acceptance criteria must pass."
+    -p "Implement Slice 7 of meridian-channel. Create permission tiers (read-only, workspace-write, full-access, danger), cost budgets (per-run and per-space with SIGTERM on breach), guardrail scripts (post-run validation), secret redaction (--secret KEY=VALUE redacts from all output), JSONL-to-SQLite migration (meridian migrate, idempotent), skill/agent reference updates (run-agent.sh → meridian run), shell completions (bash/zsh/fish via cyclopts). Also add repo rename step docs (meridian-collab → meridian-channel). All acceptance criteria must pass."
 ```
 
 **Review** (high risk — security, permissions, migration):
@@ -263,7 +263,7 @@ $RUNNER --agent reviewer --model claude-opus-4-6 \
 $RUNNER --agent reviewer --model claude-sonnet-4-6 \
     --session "$SESSION" --label slice=7,phase=review,reviewer=sonnet \
     -f _docs/plans/meridian-channel/slices/7-safety-migration.md \
-    -p "Review Slice 7. Enumerate every place a secret value could appear in the system (env vars, process args, stdout, stderr, report.md, output.jsonl, runs.db, runs.jsonl, workspace-summary.md). Verify redaction covers each one." &
+    -p "Review Slice 7. Enumerate every place a secret value could appear in the system (env vars, process args, stdout, stderr, report.md, output.jsonl, runs.db, runs.jsonl, space-summary.md). Verify redaction covers each one." &
 
 wait
 ```
@@ -277,7 +277,7 @@ $RUNNER --model gpt-5.3-codex \
     --skills scratchpad \
     -f _docs/plans/meridian-channel/README.md \
     -f _docs/plans/meridian-channel/correctness-specs.md \
-    -p "Run integration tests for meridian-channel. Verify: (1) meridian --help shows all commands, (2) meridian run create with mock harness completes and writes all artifacts, (3) meridian serve starts and responds to MCP tool calls, (4) meridian workspace start/resume lifecycle works, (5) surface parity test passes (all operations exposed to both CLI and MCP), (6) all 10 correctness specs hold. Fix any failures."
+    -p "Run integration tests for meridian-channel. Verify: (1) meridian --help shows all commands, (2) meridian run create with mock harness completes and writes all artifacts, (3) meridian serve starts and responds to MCP tool calls, (4) meridian space start/resume lifecycle works, (5) surface parity test passes (all operations exposed to both CLI and MCP), (6) all 10 correctness specs hold. Fix any failures."
 
 # Final cross-model review
 $RUNNER --agent reviewer --model claude-opus-4-6 \
@@ -347,6 +347,6 @@ These are the 10 correctness specs — violations are blockers:
 5. **ID uniqueness** — globally unique, unambiguous within scope (Slice 1)
 6. **Prompt sanitization** — prior output in boundary markers (Slice 3)
 7. **Lock correctness** — no SQLite corruption with parallel writers (Slice 1)
-8. **Workspace state machine** — valid transitions only (Slice 6)
+8. **Space state machine** — valid transitions only (Slice 6)
 9. **Skill discovery from `.agents/skills/` only** (Slice 2)
 10. **Depth limiting** — refuses at `MERIDIAN_DEPTH >= max_depth` (Slice 4)

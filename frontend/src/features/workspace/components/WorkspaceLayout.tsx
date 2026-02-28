@@ -73,7 +73,7 @@ export default function WorkspaceLayout({
     })),
   );
 
-  // Projects store to centralize current project for the workspace
+  // Projects store to centralize current project for the space
   const { projects, currentProjectId, setCurrentProject } = useProjectStore(
     useShallow((s) => ({
       projects: s.projects,
@@ -386,7 +386,7 @@ export default function WorkspaceLayout({
     projectSlug,
   ]);
 
-  // Wait for mount and project resolution before rendering workspace
+  // Wait for mount and project resolution before rendering space
   if (!mounted || projectId === null || projectSlug === null) {
     return <div className="bg-background h-dvh w-full" />;
   }
@@ -394,7 +394,7 @@ export default function WorkspaceLayout({
   // Define panel content (what to show) - layout strategy decides how to arrange them
   // Layout Philosophy (Desktop TwoPanelLayout):
   // - LEFT (42%): Thread panel - Primary AI interaction, prominent position emphasizes AI-native nature
-  // - RIGHT (58%): Document workspace - Tree + Editor unified, substantial space for writing
+  // - RIGHT (58%): Document space - Tree + Editor unified, substantial space for writing
   const panels: PanelDefinitions = {
     threadList: <ThreadListPanel projectId={projectId} />,
     activeThread: <ActiveThreadView projectId={projectId} />,

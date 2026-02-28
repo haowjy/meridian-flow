@@ -19,14 +19,14 @@ Wire up the FastMCP server with all tool handlers from the Operation Registry, w
 
 - `src/meridian/server/main.py` — FastMCP server with lifespan, auto-registers tools from registry
 - `src/meridian/cli/run.py` — run CLI commands (create, list, show, continue, retry, wait)
-- `src/meridian/cli/workspace.py` — workspace CLI commands
+- `src/meridian/cli/space.py` — space CLI commands
 - `src/meridian/cli/skills_cmd.py` — skills CLI commands
 - `src/meridian/cli/models_cmd.py` — models CLI commands
 - `src/meridian/cli/context.py` — context CLI commands
 - `src/meridian/cli/diag.py` — diagnostics CLI commands
 - `src/meridian/cli/output.py` — output formatting: rich (TTY), plain, json, porcelain
 - `src/meridian/lib/ops/run.py` — run operations (create, list, show, continue, retry, wait)
-- `src/meridian/lib/ops/workspace.py` — workspace operations
+- `src/meridian/lib/ops/space.py` — space operations
 - `src/meridian/lib/ops/context.py` — context operations
 - `src/meridian/lib/ops/diag.py` — diagnostics operations
 

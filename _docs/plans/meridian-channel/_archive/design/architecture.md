@@ -10,11 +10,11 @@
 graph TB
     subgraph Package["meridian (Python 3.14 package — pip install meridian-channel)"]
         MCP["MCP Server (meridian serve)\nFastMCP, stdio transport\nPrimary agent interface"]
-        CLI["CLI (meridian run/workspace/skills/...)\ncyclopts, resource-first grammar\nHuman interface + rich output"]
+        CLI["CLI (meridian run/space/skills/...)\ncyclopts, resource-first grammar\nHuman interface + rich output"]
         Direct["Direct API Mode (DirectAdapter)\nAnthropic Messages API + code_execution\nProgrammatic tool calling"]
         Registry["Operation Registry\nSingle source of truth\nAuto-exposes to CLI + MCP + API tools"]
         Lib["meridian.lib — all business logic\nfrozen dataclasses in core"]
-        Ports["Storage Protocols (ports.py)\nRunStore, WorkspaceStore, SkillIndex"]
+        Ports["Storage Protocols (ports.py)\nRunStore, SpaceStore, SkillIndex"]
         Config["Config Layer\nSkill discovery, model guidance, agent profiles\npydantic-settings, .meridian/config.toml"]
         Prompt["Prompt Engine\nt-strings (PEP 750) + Jinja2 fallback\nskill assembly, sanitization"]
         Harness["Harness Adapter Layer\nHarnessAdapter Protocol + HarnessRegistry\nClaude, Codex, OpenCode adapters"]
@@ -39,11 +39,11 @@ graph TB
 
     subgraph Artifacts["Markdown Artifacts (durable memory)"]
         RunMD["Per-run: report.md, input.md"]
-        WorkspaceMD["Per-workspace: workspace-summary.md"]
+        SpaceMD["Per-space: space-summary.md"]
     end
 
     Post --> RunMD
-    State --> WorkspaceMD
+    State --> SpaceMD
 
     subgraph HarnessCLIs["CLI Harnesses (external)"]
         Claude["claude -p"]
@@ -165,11 +165,11 @@ class RunStoreSync(Protocol):
     def update_status(self, run_id: RunId, status: RunStatus) -> None: ...
     def enrich(self, run_id: RunId, enrichment: RunEnrichment) -> None: ...
 
-class WorkspaceStore(Protocol):
-    async def create(self, params: WorkspaceCreateParams) -> Workspace: ...
-    async def get(self, workspace_id: WorkspaceId) -> Workspace | None: ...
-    async def list(self, filters: WorkspaceFilters) -> list[WorkspaceSummary]: ...
-    async def transition(self, workspace_id: WorkspaceId, new_state: WorkspaceState) -> None: ...
+class SpaceStore(Protocol):
+    async def create(self, params: SpaceCreateParams) -> Space: ...
+    async def get(self, space_id: SpaceId) -> Space | None: ...
+    async def list(self, filters: SpaceFilters) -> list[SpaceSummary]: ...
+    async def transition(self, space_id: SpaceId, new_state: SpaceState) -> None: ...
 
 class SkillIndex(Protocol):
     async def reindex(self, skills_dir: Path) -> IndexReport: ...
@@ -177,9 +177,9 @@ class SkillIndex(Protocol):
     async def load(self, names: list[str]) -> list[SkillContent]: ...
 
 class ContextStore(Protocol):
-    async def pin(self, workspace_id: WorkspaceId, file_path: str) -> None: ...
-    async def unpin(self, workspace_id: WorkspaceId, file_path: str) -> None: ...
-    async def list_pinned(self, workspace_id: WorkspaceId) -> list[PinnedFile]: ...
+    async def pin(self, space_id: SpaceId, file_path: str) -> None: ...
+    async def unpin(self, space_id: SpaceId, file_path: str) -> None: ...
+    async def list_pinned(self, space_id: SpaceId) -> list[PinnedFile]: ...
 ```
 
 **v1 adapter:** `meridian/lib/adapters/sqlite.py` implements all protocols. The adapter implements both `RunStore` (async, via `aiosqlite` for MCP) and `RunStoreSync` (sync, via `sqlite3` for CLI). CLI uses sync variants; MCP uses async variants.
@@ -287,7 +287,7 @@ async def lifespan(server: FastMCP):
     db = await aiosqlite.connect(db_path)
     await db.execute("PRAGMA journal_mode=WAL")
     await db.execute("PRAGMA busy_timeout=5000")
-    stores = create_stores(db)      # RunStore, WorkspaceStore, etc.
+    stores = create_stores(db)      # RunStore, SpaceStore, etc.
     configure_logging(json_mode=True)
     try:
         yield {"stores": stores, "db": db}
@@ -314,7 +314,7 @@ meridian-channel/                  # Python package root (no crates/ — not Rus
       cli/
         __init__.py
         main.py                    # cyclopts app, resource-first groups (built from registry)
-        workspace.py               # start, resume, list, show, close
+        space.py               # start, resume, list, show, close
         run.py                     # create, list, show, continue, retry, wait
         context.py                 # pin, unpin, list
         skills_cmd.py              # list, search, show, reindex
@@ -327,9 +327,9 @@ meridian-channel/                  # Python package root (no crates/ — not Rus
         main.py                    # FastMCP server setup, lifespan, tool registration from registry
       lib/
         __init__.py                # explicit public API
-        types.py                   # domain newtypes: WorkspaceId, RunId, HarnessId, ModelId
-        domain.py                  # frozen dataclasses: Run, Workspace, PinnedFile, etc.
-        ports.py                   # Storage Protocols: RunStore, RunStoreSync, WorkspaceStore, SkillIndex, ContextStore
+        types.py                   # domain newtypes: SpaceId, RunId, HarnessId, ModelId
+        domain.py                  # frozen dataclasses: Run, Space, PinnedFile, etc.
+        ports.py                   # Storage Protocols: RunStore, RunStoreSync, SpaceStore, SkillIndex, ContextStore
         logging.py                 # structlog configuration
         ops/
           __init__.py
@@ -337,7 +337,7 @@ meridian-channel/                  # Python package root (no crates/ — not Rus
           run.py                   # run_create, run_list, run_show, run_continue, run_retry, run_wait
           skills.py                # skills_search, skills_load, skills_list, skills_reindex
           models.py                # models_list, models_show
-          workspace.py             # workspace_start, workspace_resume, workspace_list, workspace_show, workspace_close
+          space.py             # space_start, space_resume, space_list, space_show, space_close
           context.py               # context_pin, context_unpin, context_list
           diag.py                  # diag_doctor, diag_repair
         adapters/
@@ -384,10 +384,10 @@ meridian-channel/                  # Python package root (no crates/ — not Rus
           files_touched.py         # file path extraction from output
           report.py                # report.md extraction/fallback
           finalize.py              # orchestrates extraction pipeline
-        workspace/
+        space/
           __init__.py
-          crud.py                  # workspace CRUD, state machine
-          summary.py               # workspace-summary.md generation
+          crud.py                  # space CRUD, state machine
+          summary.py               # space-summary.md generation
           launch.py                # supervisor harness launch + context injection
           context.py               # context pinning logic
         safety/
@@ -407,7 +407,7 @@ meridian-channel/                  # Python package root (no crates/ — not Rus
     test_harness/                  # harness adapter tests
     test_exec/                     # execution engine tests
     test_extract/                  # extraction tests
-    test_workspace/                # workspace launcher tests
+    test_space/                # space launcher tests
     test_safety/                   # safety/guardrail tests
     test_mcp/                      # MCP server integration tests
     test_cli/                      # CLI integration tests
@@ -507,17 +507,17 @@ Installed via `uv tool install meridian-channel` or `pip install meridian-channe
 meridian serve                                   # start MCP server on stdio
 
 # ── CLI mode (human interface, secondary agent interface) ────────
-# Standalone mode (no workspace, replaces run-agent.sh)
+# Standalone mode (no space, replaces run-agent.sh)
 meridian run -m claude-opus-4-6 -p "Review this code"
 meridian run -m gpt-5.3-codex --skills research -p "..."
 meridian run list
 meridian run show @latest --report
 
-# Workspace-bound mode (replaces scripts/cc-meridian)
-meridian workspace start --plan plan.md
-meridian workspace resume
-meridian workspace list
-meridian workspace show w3
+# Space-bound mode (replaces scripts/cc-meridian)
+meridian space start --plan plan.md
+meridian space resume
+meridian space list
+meridian space show w3
 
 # Skill registry
 meridian skills list
@@ -537,7 +537,7 @@ meridian diag doctor
 meridian diag repair
 ```
 
-**Short aliases:** `meridian start` = `meridian workspace start`, `meridian run` (with `-p`) = `meridian run create`, `meridian list` = `meridian run list`, etc.
+**Short aliases:** `meridian start` = `meridian space start`, `meridian run` (with `-p`) = `meridian run create`, `meridian list` = `meridian run list`, etc.
 
 ## Bash Scripts Being Replaced
 

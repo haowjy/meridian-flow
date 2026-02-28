@@ -104,7 +104,7 @@ func (s *namespaceService) ParsePath(path string) (docsysSvc.Namespace, string, 
 		return docsysSvc.NamespaceSession, relPath, nil
 	}
 
-	// Default workspace namespace
+	// Default space namespace
 	return docsysSvc.NamespaceWorkspace, normalized, nil
 }
 

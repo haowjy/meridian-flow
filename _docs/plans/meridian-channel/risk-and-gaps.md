@@ -42,7 +42,7 @@
 | ID | Severity | Description |
 |----|----------|-------------|
 | SEC-1 | **CRITICAL** | Guardrail env leaks secrets (Gap 11) |
-| SEC-2 | **CRITICAL** | TTY workspace launch bypasses env sanitization |
+| SEC-2 | **CRITICAL** | TTY space launch bypasses env sanitization |
 | SEC-3 | **CRITICAL** | Context pinning allows out-of-repo file read |
 | SEC-4 | MAJOR | `--unsafe` bypassed for danger-full-access sandbox |
 | SEC-5 | MAJOR | Harness passthrough args override permission safety |
@@ -88,7 +88,7 @@
 | DX-5 | MEDIUM | TimeoutError not caught at CLI level |
 | DX-7 | MEDIUM | Skill authoring hidden constraints |
 
-### Workspace Lifecycle (see [workspace-lifecycle.md](workspace-lifecycle.md))
+### Space Lifecycle (see [space-lifecycle.md](space-lifecycle.md))
 
 | ID | Severity | Description |
 |----|----------|-------------|

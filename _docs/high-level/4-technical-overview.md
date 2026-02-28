@@ -537,7 +537,7 @@ Imported HTML -> DOMPurify -> Safe HTML -> Turndown -> Markdown
 - **Compaction** - Summarize long conversations
 
 **Low priority:**
-- **Multi-tenancy** - Team workspaces
+- **Multi-tenancy** - Team spaces
 - **RBAC** - Role-based access control
 - **Webhooks** - External integrations
 - **API rate limiting** - Per-user quotas

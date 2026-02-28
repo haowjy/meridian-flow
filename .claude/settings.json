@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/session-start.sh\" --allow orchestrate,run-agent,mermaid,scratchpad"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/session-start.sh\""
           }
         ]
       }

@@ -71,13 +71,13 @@ Flow already has skills (`fb-skills` feature). Channel's composition engine (tem
 | Budget enforcement (token/cost limits per run) | Token budget per writing session |
 | Guardrail scripts (pre/post execution checks) | Content guardrails (tone, consistency, style) |
 
-### Workspace context
+### Space context
 
 | Channel | Flow |
 |---------|------|
 | Pinned files persist across conversations | Pinned lore docs, character sheets, style guides |
 | Compaction re-injection preserves skills after context loss | Same — preserve writing context after long sessions |
-| Workspace summary for orientation | Project summary for AI orientation |
+| Space summary for orientation | Project summary for AI orientation |
 
 ### Run tracking and observability
 
@@ -85,7 +85,7 @@ Flow already has skills (`fb-skills` feature). Channel's composition engine (tem
 |---------|------|
 | Run history in SQLite with status/cost/artifacts | AI interaction history with diffs/suggestions/costs |
 | Report extraction from agent output | Suggestion extraction from AI responses |
-| Cost tracking per run and per workspace | Token usage visibility per session |
+| Cost tracking per run and per space | Token usage visibility per session |
 
 ---
 
@@ -95,7 +95,7 @@ Flow already has skills (`fb-skills` feature). Channel's composition engine (tem
 
 1. **Security hardening** — fix CRITICALs so channel is safe for daily use (see security-hardening.md)
 2. **DX polish** — CLI errors, docs accuracy, so less time fighting the tool (see dx-improvements.md)
-3. **Workspace lifecycle** — hooks + session tracking for long orchestration sessions (see workspace-lifecycle.md)
+3. **Space lifecycle** — hooks + session tracking for long orchestration sessions (see space-lifecycle.md)
 4. **Code quality** — layering fixes to keep the codebase maintainable as patterns evolve (see code-quality.md)
 
 ### Flow priorities (informed by channel learnings)
@@ -103,7 +103,7 @@ Flow already has skills (`fb-skills` feature). Channel's composition engine (tem
 1. **Multi-model routing** — apply harness adapter pattern to writing AI providers
 2. **Skill composition** — mature the writing skills system using channel's template/composition engine as reference
 3. **Safety tiers** — apply permission tier pattern to document editing safety
-4. **Context persistence** — apply workspace context pattern to writing project context
+4. **Context persistence** — apply space context pattern to writing project context
 
 ### NOT priorities
 
@@ -122,12 +122,12 @@ Direction is not enough; channel needs execution gates that prove it is doing it
 Scope:
 - Close CRITICAL security findings and the major permission/containment bypasses
 - Add missing critical-path tests for security and TTY launch paths
-- Resolve workspace lifecycle bugs that can lose session continuity
+- Resolve space lifecycle bugs that can lose session continuity
 
 Exit criteria:
 - SEC-1/SEC-2/SEC-3 fixed and covered by tests
 - No known path traversal or env-leak vectors in default workflows
-- Workspace resume succeeds after compact/clear events in repeated smoke runs
+- Space resume succeeds after compact/clear events in repeated smoke runs
 
 ### Phase 2 — Operator-Grade DX
 
@@ -166,7 +166,7 @@ Exit criteria:
 ### Channel KPIs
 
 - Run success rate for orchestrated tasks (target trend: up and stable)
-- Mean time to recover from interrupted workspace sessions (target trend: down)
+- Mean time to recover from interrupted space sessions (target trend: down)
 - Time-to-first-success for new repo/worktree setup (target trend: down)
 - Share of flow features that reuse channel-proven patterns (target trend: up)
 - Frequency of externally consumable proof artifacts (target: consistent weekly cadence)

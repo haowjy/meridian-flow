@@ -10,9 +10,11 @@ import { resolve } from "path";
 
 const SCRIPTS_DIR = resolve(process.cwd(), ".opencode/hooks/scripts");
 
-function runHook(script: string, input: Record<string, unknown>): string | undefined {
+const ALLOW_LIST = "orchestrate,run-agent,mermaid,scratchpad";
+
+function runHook(script: string, input: Record<string, unknown>, args = ""): string | undefined {
   try {
-    const result = execSync(`bash "${SCRIPTS_DIR}/${script}"`, {
+    const result = execSync(`bash "${SCRIPTS_DIR}/${script}" ${args}`, {
       input: JSON.stringify(input),
       encoding: "utf-8",
       timeout: 10_000,
@@ -34,7 +36,7 @@ export default {
         cwd: event.cwd ?? process.cwd(),
         transcript_path: event.transcript_path ?? "",
         source: event.source ?? "startup",
-      });
+      }, `--allow ${ALLOW_LIST}`);
       if (context) return { additionalContext: context };
     },
 

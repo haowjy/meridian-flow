@@ -12,11 +12,11 @@ Addresses Gaps 12-15, 17 from post-sandbox review + architecture deep-dive findi
 
 **Severity:** MAJOR
 
-**Problem:** Original `StateDB` was split, but the monolith moved to `lib/adapters/sqlite.py` (1,005 LOC). Mixes run/workspace/context/workflow/spans/artifacts concerns.
+**Problem:** Original `StateDB` was split, but the monolith moved to `lib/adapters/sqlite.py` (1,005 LOC). Mixes run/space/context/workflow/spans/artifacts concerns.
 
 **Fix:** Split into domain-specific stores:
 - `RunStore` — run CRUD, status transitions, queries
-- `WorkspaceStore` — workspace state, session tracking
+- `SpaceStore` — space state, session tracking
 - `ContextStore` — pinned files, context management
 - Keep `MigrationManager` separate
 
@@ -95,11 +95,11 @@ Addresses Gaps 12-15, 17 from post-sandbox review + architecture deep-dive findi
 **Severity:** MEDIUM
 **Source:** Architecture review
 
-**Problem:** Several ops/workspace paths use raw `sqlite3.connect()` instead of going through StateDB/store abstractions.
+**Problem:** Several ops/space paths use raw `sqlite3.connect()` instead of going through StateDB/store abstractions.
 
 **Fix:** Route all DB access through store layer.
 
-**Files:** `lib/ops/run.py:230`, `lib/ops/_run_query.py:20`, `lib/workspace/summary.py:27`, `lib/workspace/crud.py:41`
+**Files:** `lib/ops/run.py:230`, `lib/ops/_run_query.py:20`, `lib/space/summary.py:27`, `lib/space/crud.py:41`
 
 ---
 
@@ -169,11 +169,11 @@ Addresses Gaps 12-15, 17 from post-sandbox review + architecture deep-dive findi
 
 **Severity:** MINOR
 
-**Problem:** Workspace lock cleanup silently swallows parse errors.
+**Problem:** Space lock cleanup silently swallows parse errors.
 
 **Fix:** Add `logger.debug()`.
 
-**Files:** `lib/workspace/launch.py`
+**Files:** `lib/space/launch.py`
 
 ### CQ-15: HarnessAdapter abstraction leaks for DirectAdapter (MEDIUM)
 
