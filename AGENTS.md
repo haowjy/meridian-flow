@@ -129,8 +129,12 @@ FRONTEND_PORT=3001
 
 ### Git Commits
 
-- Only commit when user explicitly requests
+- For long-running tasks where you are `/orchestrate`ing, commit after each "testable" state, most often after each task of a plan. If the human is in the loop, you should confirm with the user before committing.
 - Follow repository's commit message style
+
+### Planning
+
+Make sure you use the `/mermaid` skill to help make markdown diagrams for your plans to help you and the user understand the plan. Using `/orchestrate` and multiple agents to review-cycle through the plan can help you catch issues early and get a better plan.
 
 ### Testing
 
@@ -140,11 +144,11 @@ FRONTEND_PORT=3001
 
 ### Smoke Testing
 
-Token refresh is agent-authorized. See `backend/CLAUDE.md` -> "Smoke Testing" for full details. See the `scratchpad` skill for scratch/smoke file conventions.
+Token refresh is agent-authorized. See `backend/CLAUDE.md` -> "Smoke Testing" for full details. See the `/scratchpad` skill for scratch/smoke file conventions.
 
 ### Long-Running Tasks
 
-For multi-phase plans, use the `/orchestrate` skill interactively. It discovers available skills, picks the right model for each subtask, and composes runs via `run-agent.sh`. See the orchestrate skill's SKILL.md for full details.
+For multi-phase plans, use the `/orchestrate` skill and NEVER write implementation code yourself. It discovers available skills, picks the right model for each subtask, and you should composes runs via `run-agent.sh`. See the orchestrate skill's SKILL.md for full details.
 
 **Install:** `/plugin marketplace add jimmyyao/orchestrate` (Claude Code)
 **Skills:** `*/SKILL.md` under `orchestrate/skills/` — self-describing building blocks discovered at runtime.
@@ -161,16 +165,19 @@ All plans live in `_docs/plans/`. **Never use Claude Code's built-in plan mode.*
 
 ### Plan Execution
 
-- **Multi-task plans** (3+ tasks): Execute via `/orchestrate <plan-file>`. Never implement multi-task plans directly.
-- **Single-task plans**: Implement directly. Update progress in the plan file as you go.
+- **Multi-stage plans** (2+ stages): Execute via `/orchestrate`. Never implement multi-stage plans directly.
+- **Single-stage plans**: You may implement directly. Update progress in the plan file as you go.
 
 ### Model Selection
 
-The orchestrator dynamically selects models based on model guidance (loaded from `run-agent/references/`). General heuristics:
-- **Implementation**: `gpt-5.3-codex` (default), `claude-sonnet-4-6` (UI iteration), `claude-opus-4-6` (subtle correctness)
+The orchestrator dynamically selects models based on model guidance (loaded from `run-agent/references/`). You MUST write a good prompt and pass in correct context files for the task/plan at hand. 
+
+General heuristics:
+- **Implementation**: `gpt-5.3-codex` (default), `claude-opus-4-6` (UI iteration + rare different perspectives)
 - **Review**: Fan out to multiple model families for medium/high risk changes
 - **Research**: Use model diversity for different perspectives
-- **Commit**: `claude-haiku-4-5` for fast, clean messages
+- **Commit**: `claude-haiku-4-5` to help create commits for the changes
+- **Documentation**: `claude-haiku-4-5` to help find the files that need to be updated for the changes you are making, `claude-opus-4-6` to help write the documentation itself.
 
 See `orchestrate/skills/run-agent/references/default-model-guidance.md` for detailed heuristics.
 

@@ -117,6 +117,12 @@ runs.db (existing database)
 # (agent profile defines its skills)
 meridian space start --name feature-x --agent orchestrator
 
+# Optionally pass custom system prompt content
+# (Claude: passed as flags; Codex/OpenCode: persisted and reinjected via plugin)
+meridian space start --name feature-x --agent orchestrator \
+  --system-prompt "Always prefer X approach" \
+  --append-system-prompt "Additionally, remember Y constraint"
+
 # Show space details
 meridian space show w1-abc123
 # Output:
@@ -134,9 +140,13 @@ meridian space close w1-abc123
 meridian space resume --space-id w1-abc123
 ```
 
-**Agent profiles define skills:** Each agent carries its skills from its profile. When launched in a space, it loads those skills automatically. No per-space skill configuration.
+**Agent profiles define base skills:** Each agent carries its skills from its profile. When launched in a space, it loads those skills automatically.
 
-If a user wants different skills, they create a different agent profile (e.g., `researcher` vs `coder`), each with its own skill set defined.
+**Optional custom system prompt:** Users can pass `--system-prompt` and `--append-system-prompt` flags. These are:
+- **Claude:** Passed directly to the harness (`--system-prompt` and `--append-system-prompt`)
+- **Codex/OpenCode:** Persisted in the space state and reinjected via prompt injection (see Harness Support section)
+
+**No `--skills` CLI flag:** Skills come from agent profiles, not CLI configuration. If users want different skills, they create a different agent profile or edit their existing profile.
 
 ---
 
@@ -145,30 +155,34 @@ If a user wants different skills, they create a different agent profile (e.g., `
 All agents are runtime-identical. "Primary" only means "first launched via `space start`."
 
 ```bash
-# Space created with initial primary agent + skills
-meridian space start --name feature-x --agent orchestrator --skills researching,reviewing
+# Space created with initial primary agent
+# Agent profile defines its skills; user can provide custom system prompt
+meridian space start --name feature-x --agent orchestrator \
+  --system-prompt "Custom constraint for this space"
 
-# Spawn child agents with independent skills
-meridian space spawn --space-id w1-abc123 --agent reviewer --skills reviewing
-meridian space spawn --space-id w1-abc123 --agent coder --skills scratchpad,planning
+# Spawn child agents with independent skill sets (from their own profiles)
+meridian run create --agent reviewer
+meridian run create --agent coder
 ```
 
 **Interaction model:**
 - Primary agent can spawn child agents.
 - Child agents can spawn additional child agents.
-- Each agent gets its own skill set; there is no implicit skill inheritance or merging.
+- Each agent gets its own independent skill set from its profile; there is no implicit skill inheritance or merging.
+- Custom `--system-prompt` and `--append-system-prompt` are space-level (inherited by all agents in that space).
 
 ### Spawned Agents (Independent Skill Sets)
 
 ```bash
 # Primary or child agents can spawn agents with their own independent skill sets
-meridian run -a coder -skills scratchpad,planning
-meridian run -a reviewer -skills reviewing
+# Each agent's profile defines its skills
+meridian run create --agent coder
+meridian run create --agent reviewer
 
-# Each agent gets its own skill set, not merged with any other agent's skills
+# Each agent gets its own skill set from its profile, not merged with any other agent's skills
 ```
 
-**Key Model:** The primary/child distinction is organizational only. All agents can coordinate hierarchically and each agent gets its own independent skill set embedded in its system prompt.
+**Key Model:** The primary/child distinction is organizational only. All agents can coordinate hierarchically and each agent gets its own independent skill set from its profile.
 
 ---
 
@@ -177,22 +191,32 @@ meridian run -a reviewer -skills reviewing
 ### Phase 1: Core
 
 **Files to create/modify:**
-- `src/meridian/lib/space/state.py` — space CRUD (load/save space.json)
-- `src/meridian/lib/space/primary_agent.py` — primary agent launch logic
-  - Load space metadata
-  - Load skill files
-  - Compose system prompt with skill bodies + paths
-  - Pass to harness via `--system-prompt`
+- `src/meridian/lib/space/launch.py` — primary agent launch logic
+  - Load agent profile (defines base skills)
+  - Load `--system-prompt` and `--append-system-prompt` from space state (if provided)
+  - **Claude:** Pass flags directly: `--system-prompt <content> --append-system-prompt <content>`
+  - **Codex/OpenCode:** Inject skill content + custom system prompt into prompt text
+  - Store custom system prompt in space state (SQLite) for Codex/OpenCode reinjection
+- `src/meridian/lib/space/context.py` — enhance context injection
+  - Include stored system prompt from previous runs (Codex/OpenCode persistence)
+- `.opencode/plugins/space-system-prompt-injector.ts` (new) — OpenCode plugin
+  - On each conversation start, reinject stored system prompt from space state
+  - Works for new conversations and post-compaction resumptions
 
-**Changes:**
-- Space creation stores agent + skills in space.json (one-time)
-- Primary agent launch composition uses space.json skills
-- All harnesses support --system-prompt or fallback to prompt injection
+**CLI Changes:**
+- Add `--system-prompt <text>` and `--append-system-prompt <text>` to `space start` and `space resume`
+- **Remove entirely:** `--skills` CLI flag (agent profiles define skills, no user configuration)
+
+**Data Changes:**
+- Store custom `--system-prompt` and `--append-system-prompt` content in `spaces` table (if provided)
+- Retrieve on resume and pass to harness or plugin
 
 **Test:**
-- Create space → launch primary agent → verify skills in system prompt
+- Create space with custom `--system-prompt` → launch primary agent → verify Claude receives flag
+- Create space with Codex/OpenCode → verify system prompt injected into prompt
+- Resume Codex/OpenCode space after compaction → verify plugin reinjects system prompt
 - Verify primary agent works across Claude, Codex, OpenCode
-- Verify compaction doesn't lose skills (they're in system prompt)
+- Verify `--skills` flag no longer exists on CLI
 
 ### Phase 2: File Management
 
@@ -222,27 +246,36 @@ meridian run -a reviewer -skills reviewing
 
 Any harness-supported agent can be the primary agent, because "primary" is a role label based on launch order, not an implementation subtype.
 
-**All harnesses can launch a primary agent.** However, feature availability varies:
+**All harnesses can launch a primary agent.** However, system-prompt persistence varies:
 
-| Harness | Primary Agent | System-Prompt Skills | Fallback |
+| Harness | Primary Agent | System-Prompt Flags | Persistence Strategy |
 |---------|---------------|----------------------|----------|
-| **Claude** | ✅ Yes | ✅ Native `--system-prompt` flag | — |
-| **Codex** | ✅ Yes | ⚠️ Via prompt injection | Skill content embedded in prompt text |
-| **OpenCode** | ✅ Yes | ⚠️ Via prompt injection | Skill content embedded in prompt text |
+| **Claude** | ✅ Yes | ✅ `--system-prompt` + `--append-system-prompt` passed directly | Native flag support; skills survive compaction natively |
+| **Codex** | ✅ Yes | ⚠️ Via prompt injection | Prompt injection (skills embedded in prompt text) |
+| **OpenCode** | ✅ Yes | ⚠️ Via plugin + prompt injection | Plugin stores system prompt; reinjects on each new conversation or post-compaction |
 | **Cursor** | ✅ Yes | ⚠️ To be validated | TBD |
 
-**Key:** Primary agents launch the same way on all harnesses. Skills are always embedded in the prompt (either via `--system-prompt` flag or prompt text injection). The primary agent's capabilities are identical across harnesses; only the delivery mechanism varies.
+**Key Points:**
+- `--system-prompt` and `--append-system-prompt` are **transparent pass-through for Claude** (user-customizable via CLI flags)
+- **Codex:** System prompt content is injected into the prompt text itself (no native flag support)
+- **OpenCode:** Designed plugin that:
+  - Stores `--system-prompt` and `--append-system-prompt` content in space state
+  - Reinjects the content at the start of each new conversation (new session or post-compaction)
+  - Ensures skills persist across context compaction within the same space
+- Skills defined in agent profiles are **always loaded and embedded** (via flags for Claude, via injection for others)
 
-- `space start` launches the primary agent (any harness) with skills embedded.
+**Primary agent capabilities are identical across harnesses.** Only the delivery mechanism for system prompts varies.
+
+- `space start` launches the primary agent (any harness) with skills embedded + optional custom system prompt.
 - `space spawn` and `run create` launch child agents with independent skill sets.
 - No Claude-only role constraint: all harnesses follow the same primary/child model.
 
 ### Spawned Agents (via `meridian run create`)
 
 Agents spawned by primary or child agents use harness-agnostic `_run_prepare.py` and work across all harnesses:
-- ✅ **Claude:** Skills injected via system prompt + prompt composition
-- ✅ **Codex:** Skills injected via prompt composition (adapters drop `--skills` flag)
-- ✅ **OpenCode:** Skills injected via prompt composition
+- ✅ **Claude:** Skills + custom system prompt injected via flags
+- ✅ **Codex:** Skills + custom system prompt injected via prompt composition
+- ✅ **OpenCode:** Skills injected via prompt injection; custom system prompt handled by plugin
 - ⚠️ **Cursor:** To be validated (hook config exists, adapter may be missing)
 
 ---
@@ -297,9 +330,9 @@ This approach is designed **for agent usability**:
 
 **For Agents You Spawn:**
 ```
-✅ Get their own independent skill sets
+✅ Get their own independent skill sets from their profile
 ✅ No merging with space skills
-✅ Launched with clear `-skills` parameter
+✅ No CLI skill configuration needed (profile owns skills)
 ```
 
 **For Implementation (agents like you):**
@@ -318,13 +351,13 @@ This approach is designed **for agent usability**:
 
 | Existing Component | How We Extend It |
 |--------------------|-----------------|
-| `launch.py:156-183` | Already composes system prompt. We extend to load and embed skill file bodies + paths. |
-| `SkillRegistry` | Already loads skill files. We call to get full SKILL.md content for system prompt composition. |
-| `space` table (SQLite) | Already stores space metadata. We add `skills TEXT` column for primary agent launch skills. |
-| `space_sessions` table (SQLite) | Already tracks sessions. We extend to store role (`primary`/`child`) and skills per agent session. |
+| `launch.py:156-183` | Already composes system prompt. We extend to: (1) load agent profile, (2) retrieve `--system-prompt` and `--append-system-prompt` from space state, (3) pass flags directly for Claude or inject for Codex/OpenCode. |
+| `SkillRegistry` | Already loads skill files. Reuse as-is. |
+| `space` table (SQLite) | Already stores space metadata. We add `agent_type TEXT` (which profile), `custom_system_prompt TEXT`, and `custom_append_system_prompt TEXT` (for Codex/OpenCode reinjection). |
+| `runs` table (SQLite) | Already tracks runs/agents. No changes needed. |
 | `pinned_files` table (SQLite) | Already tracks pinned context. We reuse as-is for space file management. |
-| `context.py:inject_pinned_context()` | Already injects pinned files into prompts. We extend to skip missing files with warning (vs hard error). |
-| `space_lock_path()` + `cleanup_orphaned_locks()` | Already exists for space locking. We reuse for concurrent write protection (not primary agent exclusion). |
+| `context.py:inject_pinned_context()` | Already injects pinned files into prompts. We extend to: (1) include custom system prompt from space state (Codex/OpenCode), (2) skip missing files with warning (vs hard error). |
+| `space_lock_path()` + `cleanup_orphaned_locks()` | Already exists for space locking. We reuse for concurrent write protection. |
 
 **Architecture decision: SQLite is authoritative state storage.** No parallel JSON state system. Clean extension of existing pattern.
 
@@ -398,35 +431,50 @@ This approach is designed **for agent usability**:
 ## Implementation Checklist (Phase 1)
 
 **Database Schema:**
-- [ ] Verify `spaces` table has: `id`, `name`, `agent_type`, `primary_session_id`, `status`, `created_at` (mostly exists)
+- [ ] Verify `spaces` table has: `id`, `name`, `agent_type`, `primary_session_id`, `status`, `created_at`
 - [ ] Add `agent_type TEXT` column if missing (which agent profile this space uses)
+- [ ] Add `custom_system_prompt TEXT` and `custom_append_system_prompt TEXT` columns to store user-provided system prompts (for Codex/OpenCode reinjection)
 - [ ] Verify `runs` table links runs to spaces via `space_id` (it does)
 
 **Code Changes (lib/ modules):**
 - [ ] Update `lib/space/launch.py`:
   - Load agent profile (defines skills)
-  - Launch agent with that profile
-  - Agent's skills are loaded by harness automatically (no manual composition)
+  - Retrieve custom `--system-prompt` and `--append-system-prompt` from space state
+  - **Claude:** Pass flags directly to harness: `--system-prompt <content> --append-system-prompt <content>`
+  - **Codex/OpenCode:** Inject skill content + custom system prompt into prompt text
+  - Load agent with that profile
   - Harness selection agnostic (any harness can be primary)
-- [ ] Update `lib/space/context.py` to skip missing pinned files with warning (not hard error)
+- [ ] Update `lib/space/context.py`:
+  - Skip missing pinned files with warning (not hard error)
+  - Include custom system prompt content in injected context (for Codex/OpenCode)
 - [ ] Implement space-level locking in `lib/ops/space.py`: `try_acquire_lock()` with timeout + PID-based cleanup
+- [ ] Create `.opencode/plugins/space-system-prompt-injector.ts`:
+  - Hook: on each new conversation or post-compaction resumption
+  - Read stored custom system prompt from space state
+  - Reinject into conversation start (same pattern as orchestrate.ts)
 
 **CLI Commands (in space.py):**
-- [ ] Enhance `meridian space start --name <name> --agent <agent>` (add --agent param, remove --skills)
+- [ ] Enhance `meridian space start --name <name> --agent <agent> [--system-prompt <text>] [--append-system-prompt <text>]`
+- [ ] Enhance `meridian space resume --space-id <id> [--system-prompt <text>] [--append-system-prompt <text>]`
 - [ ] Enhance `meridian space show <id>` to display primary agent type + session ID
-- [ ] Verify `meridian space list`, `resume`, `close` still work (already exist)
+- [ ] **Remove entirely:** `--skills` flag from all space commands
+- [ ] Verify `meridian space list`, `close` still work (already exist)
 
 **Testing:**
-- [ ] Create space → launch primary agent → verify agent profile skills are loaded
-- [ ] Resume space after context compaction → verify skills still there (fresh load)
+- [ ] Claude: Create space with custom `--system-prompt` → verify flag passed to harness
+- [ ] Codex/OpenCode: Create space → verify custom system prompt injected in prompt
+- [ ] Resume space after context compaction → verify skills + custom prompt reloaded
 - [ ] Spawn child agents (via `run create --agent <type>`) → verify independent skill sets
 - [ ] Missing pinned file on resume → verify warning (not error)
 - [ ] Test with different agent types (researcher, coder, orchestrator) → verify each loads correct skills
+- [ ] Verify `--skills` CLI flag is completely removed and CLI fails if user tries to use it
 
 **Documentation:**
 - [ ] Update docs: agent profiles define skills, not spaces
-- [ ] Add example: creating space with different agent types
+- [ ] Document `--system-prompt` and `--append-system-prompt` flags for space start/resume
+- [ ] Add example: creating space with custom system prompt and different agent types
 - [ ] Document how users customize skills (edit agent profile)
+- [ ] Document OpenCode plugin behavior: automatic system prompt reinjection
 
 ---
 

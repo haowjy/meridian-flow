@@ -15,7 +15,7 @@
 
 ### New Design (Simplified)
 - **Skills:** Set once at space creation → static for space lifetime
-- **Files:** Managed by supervisor/agents within `.meridian/spaces/<id>/` → snapshot entire state
+- **Files:** Managed by primary agent/agents within `.meridian/spaces/<id>/` → snapshot entire state
 - **Restoration:** Single snapshot/restore operation (not individual artifacts)
 
 ---
@@ -32,7 +32,7 @@
 ├── spaces/              (NEW: space-scoped state)
 │   └── <space-id>/
 │       ├── space.json   (space metadata: agent, skills, created_at, etc.)
-│       ├── files.json       (current space file state: what supervisor is working on)
+│       ├── files.json       (current space file state: what primary agent is working on)
 │       ├── snapshots/       (NEW: compaction snapshots)
 │       │   └── <timestamp>/
 │       │       ├── files.json.snapshot
@@ -70,7 +70,7 @@
       "size": 2048,
       "last_modified": "2026-02-28T03:15:00Z",
       "purpose": "entry point",
-      "managed_by": "supervisor"  // who last edited/added it
+      "managed_by": "primary_agent"  // who last edited/added it
     },
     "docs/api.md": {
       "path": "docs/api.md",
@@ -211,7 +211,7 @@ meridian space close w1-abc123
 - ❌ `meridian context skill add` — Removed (skills static at creation)
 - ❌ `meridian context list` — Removed
 
-**Why:** Skills are static (set at creation), files are implicit (what supervisor/agents work on), snapshots are automatic (on compaction).
+**Why:** Skills are static (set at creation), files are implicit (what primary agent/agents work on), snapshots are automatic (on compaction).
 
 ---
 
@@ -269,7 +269,7 @@ meridian space close w1-abc123
 ### Phase 3: Polish (1 week)
 
 - CLI: `meridian space files`, `meridian space snapshots`
-- Supervisor: built-in file discovery (finds new files created by agent)
+- Primary agent: built-in file discovery (finds new files created by agent)
 - Optional: compression for large snapshots
 
 ---
@@ -279,7 +279,7 @@ meridian space close w1-abc123
 | Aspect | Original | Revised |
 |--------|----------|---------|
 | **Skill management** | Dynamic CLI commands | Static at space creation |
-| **File management** | Individual pins | Implicit (supervisor manages) |
+| **File management** | Individual pins | Implicit (primary agent manages) |
 | **Complexity** | Multiple state types | Single space state |
 | **User UX** | `meridian context pin/unpin` | Just `meridian space show` |
 | **Restoration** | Per-artifact | Full space snapshot |
@@ -289,7 +289,7 @@ meridian space close w1-abc123
 
 ## Open Questions
 
-1. **File discovery:** Should supervisor auto-detect new files created by agents? Or explicit management?
+1. **File discovery:** Should primary agent auto-detect new files created by agents? Or explicit management?
 2. **Snapshot compression:** Should large snapshots be compressed / archived?
 3. **File size limits:** Cap on total space file size?
 4. **Multi-session:** Can one space have multiple concurrent sessions? Or one session at a time?
@@ -304,6 +304,6 @@ By shifting from **"individual file/skill pinning"** to **"static space profile 
 - ✅ Simplify state management (one JSON file per aspect)
 - ✅ Work across all harnesses (prompt injection fallback)
 - ✅ Make restoration a single operation (snapshot/restore space)
-- ✅ Let supervisor naturally discover and manage files
+- ✅ Let primary agent naturally discover and manage files
 
 This is how **tmux** (sessions), **vim** (swap files), and **git** (commits) approach it: not individual pin commands, but state snapshots.
