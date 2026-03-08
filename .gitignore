@@ -51,3 +51,5 @@ __pycache__/
 
 # Local editor settings
 .vscode/settings.json
+.claude/agents/__*-c[0-9]*
+.claude/skills/__*-c[0-9]*
