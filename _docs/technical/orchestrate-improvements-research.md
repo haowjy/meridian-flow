@@ -4,7 +4,7 @@ Consolidated findings from 6 focused research agents, building on the [system re
 
 **Date:** 2026-02-24
 **Source:** 6 parallel research agents across 3 model families (see [Methodology](#methodology))
-**Context:** The orchestrate system has three main goals: (1) run-agent CLI for tracking subagent runs across harnesses/models, (2) scratchpad as markdown-based LLM memory, (3) orchestrate skill teaching the AI supervisor to compose these tools in parallel.
+**Context:** The orchestrate system has three main goals: (1) run-agent CLI for tracking subagent runs across harnesses/models, (2) scratchpad as markdown-based LLM memory, (3) orchestrate skill teaching the AI primary agent to compose these tools in parallel.
 
 ---
 
@@ -27,7 +27,7 @@ Consolidated findings from 6 focused research agents, building on the [system re
 - **Permission defaults are dangerously permissive** -- `exec.sh` defaults to `--dangerously-skip-permissions` (Claude) and `--dangerously-bypass-approvals-and-sandbox` (Codex). All three safety-focused agents flagged this. Fix is minimal: swap defaults, add `--unsafe` opt-in.
 - **Plan execution manifests** transform the orchestrator from "LLM reconstructs state from prose" to "LLM reads structured JSON checkpoint." This eliminates the fragile handoff parsing that breaks on context compaction.
 - **SQLite is confirmed as the right index database** -- the storage agent validated it against DuckDB, RocksDB, and LMDB with binary size, concurrency, and query flexibility criteria. No alternative comes close for this use case.
-- **Cost guardrails are absent** -- token tracking only works for Claude; Codex and OpenCode produce nothing. No budget limits, no alerts, no auto-kill. Autonomous supervisor loops can burn API credits indefinitely.
+- **Cost guardrails are absent** -- token tracking only works for Claude; Codex and OpenCode produce nothing. No budget limits, no alerts, no auto-kill. Autonomous primary-agent loops can burn API credits indefinitely.
 - **Quick wins (7 items, <1 day each)** can ship immediately: fix stale skill names, add discovery commands, validate inputs, improve error messages, add run summaries, per-project config, and a doctor command.
 - **The guardrail/tripwire pattern** (script-based validation with auto-retry) was independently proposed by both the architecture and safety agents as the correct approach -- cheap, deterministic, composable.
 
@@ -163,7 +163,7 @@ Current state is derived from events via SQL view. The key advantage: **time tra
 
 ### Declarative workflow DAG with parallel scheduling
 
-**Problem:** The orchestrator makes sequential decisions: run A, read report, decide to run B. This is O(N) in LLM calls for N-step workflows. The latency is dominated by supervisor thinking time, not agent work.
+**Problem:** The orchestrator makes sequential decisions: run A, read report, decide to run B. This is O(N) in LLM calls for N-step workflows. The latency is dominated by primary-agent thinking time, not agent work.
 
 **Design:** Workflow definition files (TOML) that declare the full dependency graph upfront:
 
@@ -380,7 +380,7 @@ Session-level budgets stored in session state file. The orchestrate SKILL.md con
 
 ### Guardrail/tripwire system
 
-**Problem:** Post-execution validation is manual -- the supervisor LLM reads reports and judges quality. Every validation costs a full LLM round-trip. Simple structural checks use expensive models.
+**Problem:** Post-execution validation is manual -- the primary-agent LLM reads reports and judges quality. Every validation costs a full LLM round-trip. Simple structural checks use expensive models.
 
 **Consensus:** Both the Opus architecture and Sonnet safety agents proposed script-based validation with auto-retry, drawing from CrewAI guardrails and OpenAI Agents SDK tripwires.
 
@@ -485,7 +485,7 @@ max_cost_per_session = 5.00
 warn_at_cost = 3.50
 ```
 
-The Rust binary validates transitions and budget before execution, returning clear constraint violation messages to the supervisor.
+The Rust binary validates transitions and budget before execution, returning clear constraint violation messages to the primary agent.
 
 **Sources:** Opus architecture (AG2 constrained speaker pattern)
 
@@ -689,7 +689,7 @@ Usage: `run-agent run --template quick-review -p "Review auth changes"`
 
 SQL view computes per-model performance metrics. `run-agent suggest-model --task-type review` shows ranked recommendations by quality, cost, and speed.
 
-The orchestrate SKILL.md instructs the supervisor to consult `suggest-model` when historical data is sufficient (>10 runs per task type).
+The orchestrate SKILL.md instructs the primary agent to consult `suggest-model` when historical data is sufficient (>10 runs per task type).
 
 **Effort:** 3 days. Needs data accumulation before becoming useful.
 
@@ -759,7 +759,7 @@ Items are independent and can be developed in parallel.
 | Work journals | 1d | Sonnet task-tracking |
 | Structured artifact types | 2d | Opus storage |
 
-> **Note:** Declarative workflow DAG was deprioritized. The LLM supervisor's dynamic decision-making is the core value of the system — replacing it with a static DAG removes the judgment that makes orchestration valuable. The infrastructure (events, traces, budgets) supports the supervisor; it doesn't replace it.
+> **Note:** Declarative workflow DAG was deprioritized. The LLM primary agent's dynamic decision-making is the core value of the system — replacing it with a static DAG removes the judgment that makes orchestration valuable. The infrastructure (events, traces, budgets) supports the primary agent; it doesn't replace it.
 
 ### Phase 4: Polish
 

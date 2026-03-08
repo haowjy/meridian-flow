@@ -23,7 +23,7 @@ Claude API is **stateless and deterministic** — system prompt is required on e
 **Recommendation:**
 - **For space-level skills:** Add to space system prompt (built once, reused per run)
 - **For per-run context:** Store files in `.meridian/pinned.json`, load + inject at run start
-- **For compaction recovery:** Hooks detect/signal context loss, CLI or supervisor can trigger reload
+- **For compaction recovery:** Hooks detect/signal context loss, CLI or primary agent can trigger reload
 
 ---
 
@@ -220,11 +220,11 @@ Compaction detected 5 minutes ago — context may be stale. Use `meridian contex
 Running...
 ```
 
-### Integration with Supervisor
+### Integration with Primary Agent
 
-When supervisor launches a subagent run:
+When primary agent launches a subagent run:
 ```bash
-# Supervisor can pass pinned files as references
+# Primary agent can pass pinned files as references
 run-agent.sh \
   --model gpt-5.3-codex \
   --skills researching \

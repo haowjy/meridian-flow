@@ -21,13 +21,13 @@
 
 ## Architecture Overview
 
-The orchestrate system is a **two-layer architecture**: a supervisor prompt layer (orchestrate) atop a bash execution engine (run-agent). The core abstraction is `model + skills + prompt` -- implemented in roughly 1,400 lines of bash + jq with zero external dependencies.
+The orchestrate system is a **two-layer architecture**: a primary-agent prompt layer (orchestrate, as the root agent launched in a space) atop a bash execution engine (run-agent). The core abstraction is `model + skills + prompt` -- implemented in roughly 1,400 lines of bash + jq with zero external dependencies.
 
 The system routes across three CLI harnesses (Claude, Codex, OpenCode) based on model name patterns, enabling genuine cross-provider orchestration.
 
 ```mermaid
 graph TB
-    subgraph Orchestrate["Orchestrate - Supervisor Layer"]
+    subgraph Orchestrate["Orchestrate - Primary Agent Layer"]
         SM["SKILL.md\nPrompt instructions"]
         SD["Skill Discovery\nload-skill-policy.sh"]
         MG["Model Guidance\nload-model-guidance.sh"]
@@ -104,7 +104,7 @@ These strengths were validated across all 8 research agents and cross-referenced
 
 3. **Zero dependencies** -- Bash + jq works anywhere. Every other framework requires Python or Node.js.
 
-4. **Supervisor-as-LLM** -- Routing decisions made by an LLM interpreting markdown, not imperative code. More flexible for novel task structures. This is an underexplored pattern in the industry.
+4. **Primary-agent-as-LLM** -- Routing decisions made by an LLM interpreting markdown, not imperative code. More flexible for novel task structures. This is an underexplored pattern in the industry.
 
 5. **Two-row append-only index** -- Crash visibility without cleanup daemons. No other system surveyed does this.
 
@@ -155,7 +155,7 @@ These should require explicit opt-in, not be the default.
 
 #### 4. No cost tracking for Codex/OpenCode
 
-Token usage is only extracted for the Claude harness (`logging.sh:226`). Codex and OpenCode usage is not captured. No cost calculation, no budget limits, no alerting. Autonomous supervisor loops can burn through API costs with no guardrails.
+Token usage is only extracted for the Claude harness (`logging.sh:226`). Codex and OpenCode usage is not captured. No cost calculation, no budget limits, no alerting. Autonomous primary-agent loops can burn through API costs with no guardrails.
 
 #### 5. Index corruption has no recovery
 
@@ -247,7 +247,7 @@ Not a recognized value -- falls through to the `*` case which applies `--dangero
 **Key takeaways from the comparison:**
 
 - **Cross-harness fan-out is genuinely unique.** No other framework surveyed can run the same task across Claude, Codex, and Gemini in parallel.
-- **Supervisor-as-LLM is underexplored.** Every other framework uses imperative code for orchestration logic. Having the LLM interpret markdown instructions is more flexible for novel task structures but harder to debug.
+- **Primary-agent-as-LLM is underexplored.** Every other framework uses imperative code for orchestration logic. Having the LLM interpret markdown instructions is more flexible for novel task structures but harder to debug.
 - **SKILL.md and MCP are converging from different angles.** Both provide self-describing tool/skill interfaces; SKILL.md optimizes for LLM consumption, MCP for programmatic discovery.
 - **Model diversity for review quality is unique.** The risk-calibrated review pattern (fan out to N reviewers across model families) has no equivalent in other frameworks.
 
@@ -304,7 +304,7 @@ These findings come primarily from the Haiku UX review agent, supplemented by ob
 | Item | Description |
 |---|---|
 | Telemetry-driven model selection | Cost/quality feedback loop from `runs.jsonl` data |
-| Guardrails pattern | Cheap validation model before supervisor evaluation (inspired by CrewAI/Agents SDK) |
+| Guardrails pattern | Cheap validation model before primary-agent evaluation (inspired by CrewAI/Agents SDK) |
 | Semantic skill retrieval | For large skill catalogs, retrieve by semantic match (inspired by LangGraph bigtool) |
 | Implement variant-models fan-out | `--fan-out` flag using the already-declared `variant-models` frontmatter |
 
