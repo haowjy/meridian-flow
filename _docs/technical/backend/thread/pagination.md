@@ -88,4 +88,4 @@ The `update_last_viewed` parameter controls whether the server persists the posi
 - Repository: `internal/repository/postgres/llm/turn.go`
 - Service: `internal/service/llm/thread_history/service.go`
 - Handler: `internal/handler/thread.go`
-- Frontend guide: `_docs/technical/frontend/thread-pagination-guide.md`
+- Frontend guide: `_docs/technical/frontend/threads/thread-pagination-guide.md`

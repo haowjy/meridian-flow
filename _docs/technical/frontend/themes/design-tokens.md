@@ -105,6 +105,6 @@ Mobile (< 768px): `.type-body` 18px, `.type-label` 15px, `.type-meta` 14px.
 
 ## See Also
 
-- `themes/README.md` -- Theme system and color values
+- `README.md` -- Theme system and color values
 - `tailwind-strategies.md` -- When to use each styling approach
 - `globals.css` -- Source definitions

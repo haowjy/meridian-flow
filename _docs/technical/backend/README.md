@@ -61,7 +61,7 @@ See `/backend/CLAUDE.md` for commands and setup workflow.
 
 - [Cross-Stack Overview](../auth-overview.md) - Complete auth flow from frontend to backend
 - [Authorization](auth/authorization.md) - Service-layer ownership-based authorization
-- [Frontend Auth](../frontend/auth-implementation.md) - Frontend Supabase integration
+- [Frontend Auth](../frontend/auth/auth-implementation.md) - Frontend Supabase integration
 
 ### Thread System
 

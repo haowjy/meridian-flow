@@ -62,7 +62,7 @@ flowchart LR
 Supabase Auth integration with JWT-based authentication:
 
 - **Cross-stack overview:** [auth-overview.md](auth-overview.md) - Complete auth flow
-- **Frontend implementation:** [frontend/auth-implementation.md](frontend/auth-implementation.md) - Supabase integration, middleware, JWT injection
+- **Frontend implementation:** [frontend/auth/auth-implementation.md](frontend/auth/auth-implementation.md) - Supabase integration, middleware, JWT injection
 - **Backend authorization:** [backend/auth/authorization.md](backend/auth/authorization.md) - Service-layer authorization
 
 **Frontend:** SPA implicit flow, route protection, automatic JWT injection
@@ -92,9 +92,9 @@ Supabase Auth integration with JWT-based authentication:
 - Sync system: [frontend/architecture/sync-system.md](frontend/architecture/sync-system.md)
 
 **Features:**
-- Authentication: [frontend/auth-implementation.md](frontend/auth-implementation.md) ⭐
-- Editor caching/load flows: [frontend/editor-caching.md](frontend/editor-caching.md)
-- Editor patterns: [frontend/patterns.md](frontend/patterns.md)
+- Authentication: [frontend/auth/auth-implementation.md](frontend/auth/auth-implementation.md) ⭐
+- Editor caching/load flows: [frontend/editor/editor-caching.md](frontend/editor/editor-caching.md)
+- Editor patterns: [frontend/architecture/patterns.md](frontend/architecture/patterns.md)
 
 **Guides:**
 - Setup quickstart: [frontend/setup-quickstart.md](frontend/setup-quickstart.md)

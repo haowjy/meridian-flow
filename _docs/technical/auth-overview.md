@@ -46,7 +46,7 @@ flowchart TD
 - `src/features/auth/components/LoginForm.tsx` - Login UI
 - `src/routes/auth/callback.tsx` - OAuth callback handler
 
-**Docs**: [Frontend Auth Implementation](frontend/auth-implementation.md)
+**Docs**: [Frontend Auth Implementation](frontend/auth/auth-implementation.md)
 
 ### Backend (Go + JWT Validation)
 **Status**: ✅ Complete (JWT validation via JWKS)
@@ -245,7 +245,7 @@ curl -H "Authorization: Bearer <JWT>" http://localhost:8080/api/threads?project_
 
 ## References
 
-- **Frontend Details**: [Frontend Auth Implementation](frontend/auth-implementation.md)
+- **Frontend Details**: [Frontend Auth Implementation](frontend/auth/auth-implementation.md)
 - **Backend Authorization**: [Authorization](backend/auth/authorization.md)
 - **Supabase Docs**: https://supabase.com/docs/guides/auth
 - **JWT RFC**: https://datatracker.ietf.org/doc/html/rfc7519
