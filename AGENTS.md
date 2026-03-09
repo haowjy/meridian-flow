@@ -62,6 +62,7 @@ PLAN FOR EXTENSIBILITY
 
 - read `_docs/AGENTS.md` or `_docs/CLAUDE.md` before updating any documents under `_docs/`
 - The gist documentation should prefer diagrams (`/mermaid` skill) over words, higher level than code, and should POINT to code folders/locations. Documentation should know the WHY and generally, at a high level, the WHAT.
+- NEVER USE EMOJI's - they render poorly
 
 ### Feature Documentation Sync Rule
 
@@ -156,7 +157,7 @@ All plans live in `_docs/plans/`. **Never use Claude Code's built-in plan mode.*
 The orchestrator dynamically selects models based on model guidance (loaded from `run-agent/references/`). You MUST write a good prompt and pass in correct context files for the task/plan at hand. 
 
 General heuristics:
-- **Implementation**: `gpt-5.3-codex` (default), `claude-opus-4-6` (UI iteration + rare different perspectives)
+- **Implementation**: `gpt-5.4` (default), `claude-opus-4-6` (UI iteration + rare different perspectives)
 - **Review**: Fan out to multiple model families for medium/high risk changes
 - **Research**: Use model diversity for different perspectives
 - **Commit**: `claude-haiku-4-5` to help create commits for the changes

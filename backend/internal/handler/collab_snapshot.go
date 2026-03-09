@@ -20,6 +20,7 @@ import (
 type CollabSnapshotHandler struct {
 	stateStore       collabSvc.DocumentStateStore
 	snapshotStore    collabSvc.SnapshotStore
+	contentLoader    collabSvc.DocumentContentLoader
 	documentResolver collabSvc.DocumentResolver
 	txManager        repositories.TransactionManager
 	logger           *slog.Logger
@@ -30,6 +31,7 @@ type CollabSnapshotHandler struct {
 func NewCollabSnapshotHandler(
 	stateStore collabSvc.DocumentStateStore,
 	snapshotStore collabSvc.SnapshotStore,
+	contentLoader collabSvc.DocumentContentLoader,
 	documentResolver collabSvc.DocumentResolver,
 	txManager repositories.TransactionManager,
 	logger *slog.Logger,
@@ -38,6 +40,7 @@ func NewCollabSnapshotHandler(
 	return &CollabSnapshotHandler{
 		stateStore:       stateStore,
 		snapshotStore:    snapshotStore,
+		contentLoader:    contentLoader,
 		documentResolver: documentResolver,
 		txManager:        txManager,
 		logger:           logger,
@@ -110,11 +113,22 @@ func (h *CollabSnapshotHandler) CreateSnapshot(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Load current Yjs state for the snapshot
+	// Load current Yjs state for the snapshot. If yjs_state is empty (document
+	// was created via REST but never connected via WebSocket), bootstrap a Y.Doc
+	// from the content column and persist it so we establish CRDT lineage.
 	state, err := h.stateStore.LoadState(r.Context(), docID)
 	if err != nil {
 		handleError(w, err, h.config)
 		return
+	}
+
+	if len(state) == 0 {
+		state, err = h.bootstrapYjsState(r.Context(), docID)
+		if err != nil {
+			h.logger.Error("snapshot bootstrap failed", "document_id", docID, "error", err)
+			handleError(w, err, h.config)
+			return
+		}
 	}
 
 	snapshotID, err := h.snapshotStore.SaveSnapshot(r.Context(), docID, state, "named", &req.Name, &userID)
@@ -277,9 +291,14 @@ func (h *CollabSnapshotHandler) RestoreSnapshot(w http.ResponseWriter, r *http.R
 		}
 
 		// 2. Overwrite document Yjs state + text projections.
-		// Content is set empty — the next collab session will re-derive from Yjs state.
-		// TODO(phase3): Extract text from Yjs state server-side for immediate content projection.
-		if saveErr := h.stateStore.SaveState(ctx, docID, target.YjsState, "", ""); saveErr != nil {
+		// Extract text content from Yjs state so the REST content field is immediately correct.
+		restoredContent, decodeErr := decodeSnapshotContent(target.YjsState)
+		if decodeErr != nil {
+			h.logger.Warn("could not decode content from snapshot Yjs state, setting content empty",
+				"snapshot_id", snapshotID, "error", decodeErr)
+			restoredContent = ""
+		}
+		if saveErr := h.stateStore.SaveState(ctx, docID, target.YjsState, restoredContent, ""); saveErr != nil {
 			return saveErr
 		}
 
@@ -365,6 +384,55 @@ func (h *CollabSnapshotHandler) checkOwnership(w http.ResponseWriter, r *http.Re
 		return false
 	}
 	return true
+}
+
+// bootstrapYjsState creates initial Yjs state from the document's content column
+// and persists it. This establishes CRDT lineage for documents that were created
+// via REST but never connected via WebSocket. Same pattern as session_manager.loadState
+// and ai_content_projector.bootstrapFromContent.
+func (h *CollabSnapshotHandler) bootstrapYjsState(ctx context.Context, docID string) (state []byte, err error) {
+	// Guard Yjs operations from panics.
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("bootstrap yjs state panic: %v", r)
+			state = nil
+		}
+	}()
+
+	content, err := h.contentLoader.LoadContentForBootstrap(ctx, docID)
+	if err != nil {
+		return nil, fmt.Errorf("load content for bootstrap: %w", err)
+	}
+
+	doc := ycrdt.NewDoc("snapshot-bootstrap", true, ycrdt.DefaultGCFilter, nil, false)
+
+	if content != "" {
+		yText := doc.GetText("content")
+		if yText != nil {
+			doc.Transact(func(_ *ycrdt.Transaction) {
+				yText.Insert(0, content, nil)
+			}, "server-bootstrap")
+		}
+	}
+
+	state = ycrdt.EncodeStateAsUpdate(doc, nil)
+	if state == nil {
+		state = []byte{}
+	}
+
+	// Persist bootstrapped state so future WS sessions and operations share the
+	// same CRDT lineage. Without this, a later WS connection would bootstrap again
+	// and create divergent history.
+	if err := h.stateStore.SaveState(ctx, docID, state, content, content); err != nil {
+		return nil, fmt.Errorf("persist bootstrapped yjs state: %w", err)
+	}
+
+	h.logger.Info("bootstrapped yjs state from content for snapshot",
+		"document_id", docID,
+		"content_length", len(content),
+	)
+
+	return state, nil
 }
 
 func decodeSnapshotContent(state []byte) (content string, err error) {

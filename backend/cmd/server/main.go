@@ -309,6 +309,7 @@ func main() {
 	collabSnapshotHandler := handler.NewCollabSnapshotHandler(
 		collabStore,
 		collabStore,
+		collabStore, // also satisfies DocumentContentLoader for bootstrap
 		collabDocResolver,
 		txManager,
 		logger,

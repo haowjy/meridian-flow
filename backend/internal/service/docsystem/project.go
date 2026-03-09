@@ -215,7 +215,7 @@ func (s *projectService) validateCreateRequest(req *docsysSvc.CreateProjectReque
 func (s *projectService) validateUpdateRequest(req *docsysSvc.UpdateProjectRequest) error {
 	// Name is optional but if provided, must be valid
 	if req.Name != nil {
-		if err := validation.Validate(req.Name,
+		if err := validation.Validate(*req.Name,
 			validation.Required,
 			validation.Length(1, config.MaxProjectNameLength),
 			validation.By(s.validateProjectName),
