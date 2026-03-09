@@ -53,3 +53,7 @@ __pycache__/
 .vscode/settings.json
 .claude/agents/__*-c[0-9]*
 .claude/skills/__*-c[0-9]*
+.agents/agents/__*-c[0-9]*
+.codex/agents/__*-c[0-9]*
+.agents/skills/__*-c[0-9]*
+.codex/skills/__*-c[0-9]*

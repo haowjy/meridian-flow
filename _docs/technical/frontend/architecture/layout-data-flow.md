@@ -1,5 +1,5 @@
 ---
-detail: standard
+detail: minimal
 audience: developer
 ---
 
@@ -7,23 +7,24 @@ audience: developer
 
 How URL state, Zustand stores, and ready flags coordinate to render the workspace.
 
-## URL -> State Flow
+## URL to Rendering Pipeline
 
 ```mermaid
 flowchart TB
-    URL["URL<br/>/projects/{slug}/documents/{path}<br/>or /skills/{name}"]
+    URL["URL\n/projects/slug/documents/path\nor /skills/name"]
 
-    subgraph WL["WorkspaceLayout (Orchestrator)"]
-        Parse["Parse URL segments<br/>(slug, path, skillName)"]
-        Resolve["Resolve identifiers<br/>(path -> documentId, name -> skillId)"]
-        Sync["Sync to store<br/>(via getState())"]
+    subgraph WL["WorkspaceLayout"]
+        Parse["Parse URL segments"]
+        Resolve["Resolve path to ID"]
+        Sync["Sync to stores via getState"]
     end
 
     subgraph Stores["Zustand Stores"]
-        UI["useUIStore<br/>• activeDocumentId<br/>• activeSkillId<br/>• leftPanelReady<br/>• rightPanelReady"]
-        Project["useProjectStore<br/>• currentProject<br/>• projects[]"]
-        Tree["useTreeStore<br/>• documents[]<br/>• folders[]"]
-        Thread["useThreadStore<br/>• threads[]<br/>• activeTurnId"]
+        UI["useUIStore"]
+        Project["useProjectStore"]
+        Tree["useTreeStore"]
+        Thread["useThreadStore"]
+        Skill["useSkillStore"]
     end
 
     subgraph Components["Rendering"]
@@ -35,46 +36,19 @@ flowchart TB
     URL --> WL
     WL --> Stores
     Stores --> Components
-
 ```
 
-## Store Interaction Patterns
-
-### Subscribe for Display, Read for Action
-
-```typescript
-// ✅ Subscribe: Component re-renders when value changes
-const { activeDocumentId } = useUIStore()
-
-// ✅ Read: Get current value without subscribing (in effects/handlers)
-useEffect(() => {
-  const store = useUIStore.getState()
-  if (effectiveDocumentId) {
-    store.setActiveDocument(effectiveDocumentId)
-  }
-}, [effectiveDocumentId])
-```
-
-**Why?** Prevents subscription loops where a component subscribes to state it also updates.
-
-### Key Stores
-
-| Store | Purpose | Key State |
-|-------|---------|-----------|
-| `useUIStore` | UI state, panel collapse, active selections | `activeDocumentId`, `activeSkillId`, `*PanelReady`, `*PanelUserOverride` |
-| `useProjectStore` | Project data, current selection | `currentProject`, `projects` |
-| `useTreeStore` | Document tree data | `documents`, `folders` |
-| `useThreadStore` | Thread/turn data | `threads`, `activeTurnId` |
+Stores are in `frontend/src/core/stores/`. See `frontend/CLAUDE.md` for store conventions and the "Subscribe for Display, Read for Action" pattern.
 
 ## Ready Flag Flow
 
-Ready flags control panel auto-collapse behavior during data loading.
+Ready flags control right panel auto-collapse during data loading.
 
 ```mermaid
 flowchart LR
-    subgraph Hooks["Data Loading Hooks"]
-        TH["useThreadsForProject<br/>(status: 'success'/'error')"]
-        DT["DocumentTreeContainer<br/>(tree load status)"]
+    subgraph Hooks["Data Loading"]
+        TH["useThreadsForProject"]
+        DT["DocumentTreeContainer"]
     end
 
     subgraph Store["useUIStore"]
@@ -83,25 +57,17 @@ flowchart LR
     end
 
     subgraph Layout["TwoPanelLayout"]
-        LC["Left panel collapse<br/>(if !ready && !userOverride)"]
-        RC["Right panel collapse<br/>(if !ready && !userOverride)"]
+        RC["Right panel collapse\nif !ready and !userOverride"]
     end
 
     TH -->|"success/error"| LR
     DT -->|"success/error"| RR
-    LR --> LC
     RR --> RC
-
 ```
 
-**Who Sets Ready Flags:**
+`leftPanelReady` is only used by `WorkspaceRail` for icon highlighting -- it does not collapse the left panel.
 
-| Flag | Set By | Condition |
-|------|--------|-----------|
-| `leftPanelReady` | `useThreadsForProject` | `status === 'success' \|\| status === 'error'` |
-| `rightPanelReady` | `DocumentTreeContainer` | Tree data loaded or errored |
-
-## Panel Collapse State Machine
+## Right Panel Collapse Logic
 
 ```mermaid
 stateDiagram-v2
@@ -116,88 +82,28 @@ stateDiagram-v2
     AutoMode --> Manual: User clicks toggle
 
     state Manual {
-        ManualCollapsed: override = 'collapsed'
-        ManualExpanded: override = 'expanded'
+        ManualCollapsed: override = collapsed
+        ManualExpanded: override = expanded
         ManualCollapsed --> ManualExpanded: User expands
         ManualExpanded --> ManualCollapsed: User collapses
     }
-
-    note right of Manual: Persisted to localStorage
 ```
 
-**State Priority:**
-1. `userOverride !== null` -> Use override value (persisted)
-2. `userOverride === null` -> Follow `ready` flag (session-scoped)
-
-## URL Resolution
-
-### Document Path Resolution
-
-```typescript
-// URL: /projects/my-novel/documents/characters/heroes/aria
-// effectiveDocumentPath = "characters/heroes/aria"
-
-const effectiveDocumentId = useMemo(() => {
-  if (!effectiveDocumentPath) return undefined
-  const doc = documents.find(d => d.path === effectiveDocumentPath)
-  return doc?.id
-}, [effectiveDocumentPath, documents])
-```
-
-### Skill Name Resolution
-
-```typescript
-// URL: /projects/my-novel/skills/writing-coach
-// effectiveSkillName = "writing-coach"
-
-const effectiveSkillId = useMemo(() => {
-  if (!effectiveSkillName) return undefined
-  const skill = skills.find(s => s.name === effectiveSkillName)
-  return skill?.id
-}, [effectiveSkillName, skills])
-```
+Priority: `userOverride !== null` wins over `ready` flag. Override is persisted to localStorage; ready flags are session-scoped.
 
 ## Navigation Helpers
 
-`frontend/src/core/lib/panelHelpers.ts` provides navigation functions that update both state and URL:
+`frontend/src/core/lib/panelHelpers.ts` provides state-first navigation (instant feedback, then URL update for browser history):
 
-```typescript
-// Opens a document: updates state immediately, then URL
-openDocument(documentId, projectSlug, documentPath)
-
-// Opens a skill: updates state immediately, then URL
-openSkill(skillId, projectSlug, skillName)
-
-// Navigates to tree view (no document selected)
-openTree(projectSlug)
-```
-
-**Pattern**: State-first navigation for instant feedback, URL update for browser history.
+| Function | Purpose |
+|----------|---------|
+| `openDocument(documentId, documentPath, projectSlug, navigate)` | Opens doc in editor, expands right panel |
+| `openSkill(skillId, skillName, projectSlug, navigate)` | Opens skill in editor, expands right panel |
+| `closeEditor(projectSlug, navigate)` | Clears active doc, returns to tree view |
+| `decodeDocumentPath(urlPath)` | Decodes URL path back to document path (handles double-encoding) |
 
 ## Project Switching
 
-When switching projects, state must reset to prevent context leakage:
+When switching projects, `WorkspaceLayout` resets all document/skill/thread state to prevent context leakage. User panel override is preserved (it's a preference, not project-specific). First load skips reset to preserve deep-link state.
 
-```mermaid
-sequenceDiagram
-    participant URL
-    participant WL as WorkspaceLayout
-    participant Store as useUIStore
-
-    URL->>WL: /projects/new-project/...
-    WL->>WL: Detect project change
-    WL->>Store: setActiveDocument(null)
-    WL->>Store: setActiveSkill(null)
-    WL->>Store: setRightPanelState('documents')
-    WL->>Store: setLeftPanelReady(false)
-    WL->>Store: setRightPanelReady(false)
-    Note over Store: userOverride NOT reset<br/>(user preference persists)
-```
-
-**First Load Exception**: When `previousProjectId === null`, skip reset to preserve deep-link state.
-
-## Related Documentation
-
-- **Layout Architecture**: `layout-system.md` - Component structure, panel sizing
-- **Navigation Pattern**: `navigation-pattern.md` - URL patterns, routing
-- **State Management**: `frontend/CLAUDE.md` - Store conventions
+See `WorkspaceLayout.tsx` project change effect.

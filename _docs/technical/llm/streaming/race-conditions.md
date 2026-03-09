@@ -232,6 +232,6 @@ DEBUG=false
 
 ## Related Documentation
 
-- Architecture overview: [streaming-architecture.md](../../backend/architecture/streaming-architecture.md)
+- Architecture overview: [streaming-architecture.md](../../backend/architecture/service-layer.md)
 - Library documentation: `meridian-stream-go/README.md`
 - API endpoints: [api-endpoints.md](./api-endpoints.md)

@@ -58,27 +58,8 @@ ALWAYS ENSURE THERE IS A PLAN APPROVED BY THE USER BEFORE IMPLEMENTING ANYTHING 
 
 ### Documentation
 
-- **Features**: `_docs/features/` - Feature status, implementation guides by stack (f-/b-/fb- prefixes)
-  - **Overview**: `_docs/features/README.md` - Complete feature inventory with status
-  - **Authentication**: `_docs/features/fb-authentication/` - JWT validation, Supabase integration
-  - **Document Editor**: `_docs/features/f-document-editor/` - CodeMirror, auto-save, caching
-  - **Thread/LLM**: `_docs/features/fb-thread-llm/` - Turn branching, providers, streaming
-  - **File System**: `_docs/features/fb-file-system/` - CRUD operations, tree structure
-- **Product/high-level**: `_docs/high-level/` - Product vision, MVP specs, user stories
-- **Technical details**: `_docs/technical/` - Deep-dive architecture, implementation specifics
-  - **Backend**: `_docs/technical/backend/` - Go backend architecture, API design
-  - **Frontend**: `_docs/technical/frontend/` - Vite + TanStack Router frontend architecture, patterns
-  - **Authentication**: `_docs/technical/auth-overview.md` - Cross-stack auth flow (Supabase)
-  - **Streaming/SSE**: `_docs/technical/llm/streaming/` - Real-time LLM responses, block types
-- **Documentation structure**: `_docs/README.md` - How docs are organized
-
-**Always check `_docs/features/` first for feature status, then `_docs/technical/` for implementation details.**
-
-## Documentation
-
-Three tiers: **Features** (`_docs/features/`, start here) > **High-Level** (`_docs/high-level/`) > **Technical** (`_docs/technical/`). Minimum content by default — diagrams > words, reference don't duplicate. See `_docs/conventions/documentation-writing-rules.md` for full rules.
-
-**Mermaid diagrams**: Load the `mermaid` skill before writing/editing diagrams. Always validate with `scripts/check-mermaid.sh <file>` after changes. **Design docs and plans MUST use Mermaid diagrams** for data flows, architecture, and state transitions — diagrams > ASCII art > prose.
+- read `_docs/AGENTS.md` or `_docs/CLAUDE.md` before updating any documents under `_docs/`
+- The gist documentation should prefer diagrams (`/mermaid` skill) over words, higher level than code, and should POINT to code folders/locations. Documentation should know the WHY and generally, at a high level, the WHAT.
 
 ### Feature Documentation Sync Rule
 

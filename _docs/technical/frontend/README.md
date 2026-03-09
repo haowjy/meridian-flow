@@ -5,93 +5,48 @@ audience: developer
 
 # Frontend Technical Documentation
 
-Complete technical reference for Meridian frontend (Vite + TanStack Router + TypeScript + CodeMirror + Supabase).
-
-## Quick Links
-
-**First time?** -> [Setup Quickstart](setup-quickstart.md)
-**Architecture?** -> [Architecture Overview](#architecture)
-**Auth?** -> [Auth Implementation](auth-implementation.md) ⭐
-**Editor?** -> [Editor Caching](editor-caching.md)
-**Thread UI?** -> [Thread Rendering Guide](thread-rendering-guide.md)
+Vite + TanStack Router + TypeScript + CodeMirror + Supabase
 
 ## Getting Started
 
-- [Setup Quickstart](setup-quickstart.md) - Development environment setup
-- [Theme System](themes/README.md) - Theming architecture and presets
+- [Setup Quickstart](setup-quickstart.md)
+- [Theme System](themes/README.md)
 
 ## Architecture
 
-Core patterns and system design:
-
-- [Navigation Pattern](architecture/navigation-pattern.md) - Routing and navigation structure
-- [Sync System](architecture/sync-system.md) - Client-server synchronization
-- [Multi-Stream SSE](architecture/multi-stream-sse.md) - Concurrent streaming architecture (main + tool/agent streams)
-- [Workspace Rail Layout](architecture/workspace-rail-layout.md) - Main UI layout architecture
-- [Workspace Rail Audit](architecture/workspace-rail-audit.md) - Layout implementation review
+- [Patterns](patterns.md) -- Layer structure, state management, error handling, CodeMirror
+- [Navigation Pattern](architecture/navigation-pattern.md)
+- [Sync System](architecture/sync-system.md)
+- [Layout System](architecture/layout-system.md)
 
 ## Authentication
 
-- [Auth Implementation](auth-implementation.md) - Supabase Auth integration, middleware, JWT injection
+- [Auth Implementation](auth-implementation.md)
 
-## Features
+## Editor
 
-### Editor
+- [Editor Caching](editor-caching.md) -- Document loading, collab/non-collab paths
+- [Keybindings](keybindings.md)
 
-- [Editor Caching](editor-caching.md) - Document caching strategy with IndexedDB
-- [Editor UI Overview](editor-ui-overview.md) - CodeMirror editor UI components
-- [Inline Editing](inline-editing/) - AI suggestions with accept/reject (merged document pattern)
+## Thread UI
 
-### Thread UI
+- [Thread Rendering](thread-rendering.md) -- Block rendering, registries, grouping pipeline, SSE flow
+- [Thread Pagination](thread-pagination-guide.md) -- Turn pagination and scroll management
 
-- [Thread Rendering Guide](thread-rendering-guide.md) - Thread UI rendering patterns (primary reference)
-- [Thread Rendering](thread-rendering.md) - Earlier thread rendering documentation
-- [Thread Pagination Guide](thread-pagination-guide.md) - Turn pagination and infinite scroll
-- [Thread Rendering Research](architecture/thread-rendering-research.md) - Thread rendering exploration
+## Styling
 
-### State Management
-
-See `frontend/CLAUDE.md` for:
-- Zustand store patterns
-- Cache management conventions
-- Auth state access
-
-## Styling & UI
-
-- [Theme System](themes/README.md) - Theming architecture, presets, CSS variables
-- [Tailwind Strategies](tailwind-strategies.md) - Styling patterns and when to use each
-- Tailwind configuration in `globals.css` (Tailwind v4 CSS-first approach)
+- [Theme System](themes/README.md)
+- [Tailwind Strategies](tailwind-strategies.md)
+- [Design Tokens](design-tokens.md)
 
 ## Development
 
-### Commands
-
 ```bash
-pnpm dev       # Start dev server
-pnpm build     # Production build
-pnpm lint      # Run ESLint
-pnpm typecheck # TypeScript checking
+pnpm dev           # Start dev server
+pnpm build         # Production build (includes tsc --noEmit)
+pnpm lint          # ESLint
+pnpm format        # Prettier (includes Tailwind class sorting)
+pnpm test          # Vitest unit tests
 ```
 
-See `frontend/CLAUDE.md` for detailed development conventions.
-
-### Testing
-
-- User runs tests manually
-- Claude can help write/fix tests
-- See `frontend/CLAUDE.md` for testing guidance
-
-## Documentation Conventions
-
-All docs follow minimal detail principle from main `CLAUDE.md`:
-- **Diagrams > Words** - Use Mermaid diagrams for flows
-- **Reference, don't duplicate** - Point to code with file:line format
-- **Frontmatter** - Include `detail`, `audience`, `status` fields
-
-## External References
-
-- [Vite Docs](https://vitejs.dev/)
-- [TanStack Router Docs](https://tanstack.com/router)
-- [CodeMirror Docs](https://codemirror.net/)
-- [Supabase Auth Docs](https://supabase.com/docs/guides/auth)
-- [Tailwind CSS](https://tailwindcss.com/)
+See `frontend/CLAUDE.md` for detailed conventions, store architecture, and caching patterns.

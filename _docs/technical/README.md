@@ -63,9 +63,9 @@ Supabase Auth integration with JWT-based authentication:
 
 - **Cross-stack overview:** [auth-overview.md](auth-overview.md) - Complete auth flow
 - **Frontend implementation:** [frontend/auth-implementation.md](frontend/auth-implementation.md) - Supabase integration, middleware, JWT injection
-- **Backend implementation:** [backend/auth/supabase-jwt-implementation.md](backend/auth/supabase-jwt-implementation.md) - JWT validation with JWKS
+- **Backend authorization:** [backend/auth/authorization.md](backend/auth/authorization.md) - Service-layer authorization
 
-**Frontend:** Cookie-based sessions, route protection, automatic JWT injection
+**Frontend:** SPA implicit flow, route protection, automatic JWT injection
 **Backend:** JWT validation via Supabase JWKS endpoint (RS256/ES256)
 
 ## Backend (Go)
@@ -94,7 +94,7 @@ Supabase Auth integration with JWT-based authentication:
 **Features:**
 - Authentication: [frontend/auth-implementation.md](frontend/auth-implementation.md) ⭐
 - Editor caching/load flows: [frontend/editor-caching.md](frontend/editor-caching.md)
-- Editor UI overview: [frontend/editor-ui-overview.md](frontend/editor-ui-overview.md)
+- Editor patterns: [frontend/patterns.md](frontend/patterns.md)
 
 **Guides:**
 - Setup quickstart: [frontend/setup-quickstart.md](frontend/setup-quickstart.md)

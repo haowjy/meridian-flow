@@ -62,7 +62,7 @@ flowchart TD
 - `internal/auth/jwt_verifier.go` - JWKS-based token verification
 - `internal/config/config.go` - Supabase JWKS URL config
 
-**Docs**: [Backend Auth Implementation](backend/auth/supabase-jwt-implementation.md)
+**Docs**: [Backend Authorization](backend/auth/authorization.md)
 
 ### Supabase (Auth Provider)
 **Responsibilities**:
@@ -246,7 +246,6 @@ curl -H "Authorization: Bearer <JWT>" http://localhost:8080/api/threads?project_
 ## References
 
 - **Frontend Details**: [Frontend Auth Implementation](frontend/auth-implementation.md)
-- **Backend Details**: [Backend Auth Implementation](backend/auth/supabase-jwt-implementation.md)
-- **Backend Reference**: [Supabase JWT Full Reference](backend/auth/REFERENCE-supabase-jwt-full.md)
+- **Backend Authorization**: [Authorization](backend/auth/authorization.md)
 - **Supabase Docs**: https://supabase.com/docs/guides/auth
 - **JWT RFC**: https://datatracker.ietf.org/doc/html/rfc7519

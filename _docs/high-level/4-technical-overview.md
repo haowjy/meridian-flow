@@ -550,7 +550,7 @@ Imported HTML -> DOMPurify -> Safe HTML -> Turndown -> Markdown
 
 - **Backend architecture:** [`backend/architecture/overview.md`](../technical/backend/architecture/overview.md)
 - **Frontend architecture:** [`frontend/README.md`](../technical/frontend/README.md)
-- **Streaming architecture:** [`backend/architecture/streaming-architecture.md`](../technical/backend/architecture/streaming-architecture.md)
+- **Service layer (streaming):** [`backend/architecture/service-layer.md`](../technical/backend/architecture/service-layer.md)
 - **LLM integration:** [`llm/architecture.md`](../technical/llm/architecture.md)
 
 ### Feature Documentation

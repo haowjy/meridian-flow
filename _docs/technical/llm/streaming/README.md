@@ -13,7 +13,7 @@ Real-time LLM response delivery via Server-Sent Events (SSE) with turn block acc
 
 ## Quick Links
 
-**First time?** -> [Streaming Architecture](../../backend/architecture/streaming-architecture.md)
+**First time?** -> [Streaming Architecture](../../backend/architecture/service-layer.md)
 **AG-UI protocol?** -> [AG-UI Protocol Reference](ag-ui-protocol.md) | [Meridian Bridge](meridian-agui-bridge.md)
 **API integration?** -> [API Endpoints](api-endpoints.md)
 **Tool calling?** -> [Tool Execution](tool-execution.md)
@@ -100,7 +100,7 @@ Anthropic offers a beta feature (`fine-grained-tool-streaming-2025-05-14` header
 
 ### Core Concepts
 
-**[Streaming Architecture](../../backend/architecture/streaming-architecture.md)** (~600 lines)
+**[Streaming Architecture](../../backend/architecture/service-layer.md)** (~600 lines)
 - Overview of streaming system
 - TurnBlockDelta vs TurnBlock explained
 - Data models (SSE event types)

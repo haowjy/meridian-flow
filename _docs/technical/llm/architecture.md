@@ -11,7 +11,7 @@ audience: architect
 
 **Note:** This document describes the **meridian-llm-go library architecture**. For **backend integration architecture**, see:
 - [Backend README](./README.md)
-- [Backend Streaming Architecture](../backend/architecture/streaming-architecture.md)
+- [Backend Service Layer](../backend/architecture/service-layer.md)
 
 For **library usage docs**, see: `../../meridian-llm-go/docs/`
 
