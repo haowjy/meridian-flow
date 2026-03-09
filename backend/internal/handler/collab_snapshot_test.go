@@ -91,6 +91,12 @@ func (s *noopSnapshotStateStore) SaveState(_ context.Context, _ string, _ []byte
 	return nil
 }
 
+type noopSnapshotContentLoader struct{}
+
+func (l *noopSnapshotContentLoader) LoadContentForBootstrap(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
+
 type trackingSnapshotStateStore struct {
 	loadedState []byte
 	loadErr     error
@@ -163,6 +169,7 @@ func newSnapshotHandlerForTest(store *snapshotTestSnapshotStore, resolver *snaps
 	return NewCollabSnapshotHandler(
 		&noopSnapshotStateStore{},
 		store,
+		&noopSnapshotContentLoader{},
 		resolver,
 		noopSnapshotTxManager{},
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -383,6 +390,7 @@ func TestRestoreSnapshot_Success(t *testing.T) {
 	h := NewCollabSnapshotHandler(
 		stateStore,
 		snapshotStore,
+		&noopSnapshotContentLoader{},
 		&snapshotTestResolver{allowed: true},
 		txManager,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -446,8 +454,9 @@ func TestRestoreSnapshot_Success(t *testing.T) {
 	if !bytes.Equal(stateStore.savedState, targetState) {
 		t.Fatalf("expected restored yjs_state to match target snapshot")
 	}
-	if stateStore.savedContent != "" || stateStore.savedAIContent != "" {
-		t.Fatalf("expected restore projections cleared, got content=%q ai_content=%q", stateStore.savedContent, stateStore.savedAIContent)
+	// Restore now extracts content from Yjs state (instead of setting it empty).
+	if stateStore.savedContent != "restored from snapshot" {
+		t.Fatalf("expected restore to extract content from Yjs state, got content=%q", stateStore.savedContent)
 	}
 }
 
