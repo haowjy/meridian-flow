@@ -4,9 +4,9 @@ audience: developer
 ---
 # Wikilinks + Internal Links (Editor Only)
 
-**Status:** Ready to implement
+**Status:** Phases 1–3 complete; Phase 4 (LLM prompt guidance) pending
 **Priority:** High
-**Estimated effort:** 1.5–2.5 days
+**Estimated effort:** ~0.25 day remaining (Phase 4 only)
 **Depends on:** Nothing
 **Depended on by:** `fb-at-references.md` (reuses parser + resolver)
 
