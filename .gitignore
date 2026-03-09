@@ -53,3 +53,9 @@ __pycache__/
 .vscode/settings.json
 .claude/agents/__meridian--*
 .claude/skills/__meridian--*
+.agents/agents/__meridian--*
+.agents/skills/__meridian--*
+.codex/agents/__meridian--*
+.codex/skills/__meridian--*
+.opencode/agents/__meridian--*
+.opencode/skills/__meridian--*
