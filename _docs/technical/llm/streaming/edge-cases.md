@@ -206,6 +206,6 @@ func TestSSE_Reconnection(t *testing.T) {
 - Registry: `github.com/haowjy/meridian-stream-go` (wrapped in `backend/internal/service/llm/setup.go`)
 
 **Related:**
-- [Streaming Architecture](../../backend/architecture/streaming-architecture.md)
+- [Streaming Architecture](../../backend/architecture/service-layer.md)
 - [API Endpoints](api-endpoints.md)
 - [Service Layer](../../backend/architecture/service-layer.md)

@@ -1,184 +1,72 @@
 ---
-detail: comprehensive
+detail: minimal
 audience: developer
 ---
 
 # Turn Block Schemas
 
-Complete JSONB schema reference for all content block types.
+JSONB schema reference for content block types. For full streaming behavior, see `_docs/technical/llm/streaming/block-types-reference.md`.
 
-## Schema Design
+## Storage Design
 
-Content blocks use **two fields** for storage:
+Content blocks split storage across two fields to avoid JSONB parsing for common text queries:
 
 | Field | Type | Usage |
 |-------|------|-------|
-| `text_content` | TEXT | Plain text (text, thinking, tool_result blocks) |
+| `text_content` | TEXT | Plain text (text, thinking, tool_result) |
 | `content` | JSONB | Type-specific structured data |
 
-**Why split storage?**
-- Common text queries don't need JSONB parsing
-- Type-specific data stays structured
-- Cleaner than "everything in JSONB"
+See `internal/domain/models/llm/turn_block.go` for the full model.
 
 ## Block Type Matrix
 
 | Block Type | User | Assistant | text_content | content |
 |------------|------|-----------|--------------|---------|
-| text | ✅ | ✅ | Message text | null |
-| thinking | ❌ | ✅ | Reasoning | Signature (opt) |
-| tool_use | ❌ | ✅ | null | Tool invocation |
-| tool_result | ✅ | ❌ | Result text | Tool metadata |
-| image | ✅ | ❌ | null | Image data |
-| reference | ✅ | ❌ | null | Doc reference |
-| partial_reference | ✅ | ❌ | null | Selection reference |
-| web_search_use | ❌ | ✅ | null | Provider-side web search invocation |
-| web_search_result | ❌ | ✅ | null | Provider-side web search result payload |
+| text | Y | Y | Message text | null |
+| thinking | - | Y | Reasoning | signature in provider_data |
+| tool_use | - | Y | null | tool_use_id, tool_name, input |
+| tool_result | Y | - | Result text | tool_use_id, is_error |
+| image | Y | - | null | url, mime_type |
+| reference | Y | - | null | ref_id, ref_type |
+| partial_reference | Y | - | null | ref_id + selection offsets |
+| web_search_use | - | Y | null | Provider-side search invocation |
+| web_search_result | - | Y | null | Provider-side search results |
 
-## Block Types (DB View)
+## Partial Blocks (Streaming Interruption)
 
-For full JSON schemas and streaming behavior, use the canonical LLM reference:  
-`_docs/technical/llm/streaming/block-types-reference.md`.
+When a stream is interrupted, in-progress blocks are persisted as **partial blocks** -- a non-obvious pattern worth understanding.
 
-From the backend/DB perspective:
-- `text`: `text_content` holds plain text; `content` is always `null`.
-- `thinking`: `text_content` holds reasoning text; `content.signature` (optional) stores extended-thinking signature.
-- `tool_use`: `content` holds tool metadata (`tool_use_id`, `tool_name`, `input`); `text_content` is `null`.
-- `tool_result`: `text_content` is optional human-readable output; `content.tool_use_id` + `content.is_error` describe status.
-- `image`: `content` holds `{url, mime_type, alt_text?}`; `text_content` is `null`.
-- `reference` / `partial_reference`: `content` holds document reference and optional selection offsets; `text_content` is `null`.
-- `web_search_use`: provider-side tool invocation (`tool_use_id`, `tool_name: "web_search"`, `input.query`, `execution_side: "provider"`).
-- `web_search_result`: normalized provider search result or error payload; `text_content` is `null`; `content.tool_use_id` links back to `web_search_use`.
-
-Backend code that enforces these shapes:
-- Domain model: `backend/internal/domain/models/llm/turn_block.go`
-- Content validation: `backend/internal/domain/models/llm/content_types.go`
-
-## Examples (DB-Focused)
-
-### Document reference block
-
-```json
-{
-  "turn_id": "uuid",
-  "block_type": "reference",
-  "sequence": 1,
-  "text_content": null,
-  "content": {
-    "ref_id": "doc-uuid-1234",
-    "ref_type": "document",
-    "version_timestamp": "2025-01-15T10:30:00Z"
-  }
-}
+```mermaid
+stateDiagram-v2
+    [*] --> streaming: Block starts
+    streaming --> complete: Block finishes normally
+    streaming --> partial: Stream interrupted
+    complete --> [*]
+    partial --> [*]
 ```
 
-DB concerns:
-- Indexed via `idx_turn_blocks_content_gin` for queries like `content @> '{"ref_id": "doc-uuid-1234"}'`.
-- Used by conversation-loading code to attach referenced documents.
+Key rules:
+- Only `text` and `thinking` blocks are persisted as partial (human-readable content worth saving)
+- `tool_use` blocks with incomplete JSON are discarded (unparseable)
+- Partial blocks have `status = "partial"` and use `UpsertPartialBlock()` for idempotent persistence
 
-### Web search result block
+## Execution Side
 
-```json
-{
-  "turn_id": "uuid",
-  "block_type": "web_search_result",
-  "sequence": 2,
-  "text_content": null,
-  "content": {
-    "tool_use_id": "srvtoolu_abc123",
-    "results": [
-      {
-        "title": "Public Domain Poetry - Main Index",
-        "url": "https://www.public-domain-poetry.com/",
-        "page_age": ""
-      }
-    ]
-  }
-}
-```
+The `execution_side` field on `tool_use` blocks indicates where the tool runs:
 
-DB concerns:
-- `block_type = 'web_search_result'` for filtering.
-- `content->>'tool_use_id'` used to join back to the corresponding `web_search_use` block.
+| Value | Meaning | Example |
+|-------|---------|---------|
+| `"provider"` | LLM provider | Anthropic's built-in web_search |
+| `"local"` or nil | Backend | str_replace_based_edit_tool, doc_search |
+| `"client"` | Frontend | (future) |
 
-## Validation
+## Streaming Deltas
 
-JSONB schemas validated in Go application layer.
-
-**Validation file:** `internal/domain/models/llm/content_types.go`
-
-**Validation function:**
-```go
-func ValidateContent(blockType string, content map[string]interface{}) error
-```
-
-**Validation rules:**
-- Required fields must be present
-- Field types must match schema
-- Enum values must be valid
-- Numeric ranges validated where applicable
-
-**Example validation errors:**
-```
-invalid content for tool_use block: missing required field 'tool_use_id'
-invalid content for reference block: ref_type must be one of: document, image, s3_document
-invalid content for partial_reference block: selection_start must be >= 0
-```
-
-## Helper Methods
-
-**TurnBlock model methods:**
-
-```go
-// Check block ownership
-func (cb *TurnBlock) IsUserBlock() bool
-func (cb *TurnBlock) IsAssistantBlock() bool
-func (cb *TurnBlock) IsToolBlock() bool
-```
-
-**Usage:**
-```go
-if block.IsUserBlock() {
-    // Handle user-submitted content
-}
-
-if block.IsToolBlock() {
-    // Handle tool use/result flow
-}
-```
-
-## Database Constraints
-
-**Table-level:**
-```sql
-CHECK (block_type IN ('text', 'thinking', 'tool_use', 'tool_result',
-                      'image', 'reference', 'partial_reference',
-                      'web_search_use', 'web_search_result'))
-UNIQUE (turn_id, sequence)  -- Prevent duplicate sequences
-```
-
-**Indexes:**
-```sql
-CREATE INDEX idx_turn_blocks_turn_sequence ON turn_blocks(turn_id, sequence);
-CREATE INDEX idx_turn_blocks_turn_type ON turn_blocks(turn_id, block_type);
-CREATE INDEX idx_turn_blocks_content_gin ON turn_blocks USING GIN (content);
-```
-
-**GIN index enables fast JSONB queries:**
-```sql
--- Find all blocks referencing a specific document
-SELECT * FROM turn_blocks
-WHERE content @> '{"ref_id": "doc-uuid"}';
-
--- Find all tool uses for a specific tool
-SELECT * FROM turn_blocks
-WHERE block_type = 'tool_use'
-AND content->>'tool_name' = 'create_file';
-```
+Turn blocks are built from `TurnBlockDelta` events. Deltas are **not persisted** -- they accumulate in memory until a complete block is emitted. See `internal/domain/models/llm/turn_block_delta.go`.
 
 ## References
 
-- [Thread Overview](overview.md) - Turn tree structure
-- [Database Schema](../database/schema.md) - Table definition
-- Validation: `internal/domain/models/llm/content_types.go`
 - Domain model: `internal/domain/models/llm/turn_block.go`
+- Delta model: `internal/domain/models/llm/turn_block_delta.go`
+- Block processor: `internal/service/llm/streaming/block_processor.go`
+- Database schema: see `backend/schema.sql` for CHECK constraints and indexes

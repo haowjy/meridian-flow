@@ -5,114 +5,44 @@ audience: developer
 
 # Provider Routing
 
-## Problem
-
-Backend needs to route LLM requests to the correct provider (Anthropic, OpenRouter, OpenAI, etc.) based on client-specified parameters.
-
-## Solution
-
-Separate provider and model fields with smart defaults: Extract -> Infer -> Create -> Cache
+## How Provider Is Resolved
 
 ```mermaid
 graph TD
-    A["Client Request<br/>{provider: 'openrouter', model: 'moonshotai/kimi-k2-thinking'}"] --> B{Provider Specified?}
-    B -->|Yes| C[Use Explicit Provider]
-    B -->|No| D[Model Mapping]
+    A["Client request_params"] --> B{"provider specified?"}
+    B -->|Yes| C["Use explicit provider"]
+    B -->|No| D{"Model prefix match?"}
+    D -->|"claude-*"| F["anthropic"]
+    D -->|"gpt-*, o1-*"| G["openai"]
+    D -->|"gemini-*"| H["google"]
+    D -->|"lorem-*"| I["lorem"]
+    D -->|No match| J["openrouter"]
 
-    D --> E{Prefix Match?}
-    E -->|claude-*| F[provider = 'anthropic']
-    E -->|gpt-*, o1-*| G[provider = 'openai']
-    E -->|gemini-*| H[provider = 'google']
-    E -->|lorem-*| I[provider = 'lorem']
-    E -->|No match| J[provider = 'openrouter']
-
-    C --> K{Cache Hit?}
+    C --> K["ProviderRegistry\n+ ProviderFactory\n+ AdapterFactory"]
     F --> K
     G --> K
     H --> K
     I --> K
     J --> K
-
-    K -->|Yes| L[Return Cached Provider]
-    K -->|No| M[Provider Factory]
-
-    M --> N["Create Provider<br/>(with API key)"]
-    N --> O[Wrap in Adapter]
-    O --> P[Cache for Reuse]
-    P --> L
-
-    L --> Q[Execute Request]
-
+    K --> L["Execute Request"]
 ```
 
-## Request Format
+## Implemented Providers
 
-**Separate Fields:** Client sends provider and model as distinct parameters
+| Provider | API Key Env Var | Notes |
+|----------|----------------|-------|
+| `anthropic` | `ANTHROPIC_API_KEY` | Claude models directly |
+| `openrouter` | `OPENROUTER_API_KEY` | Universal gateway for any model |
+| `lorem` | (none) | Mock provider for testing |
 
-| request_params | Provider Used | Model Sent to Provider | Notes |
-|----------------|---------------|------------------------|-------|
-| `{model: "claude-haiku-4-5"}` | `anthropic` | `claude-haiku-4-5` | Inferred from `claude-` prefix |
-| `{model: "gpt-4o"}` | `openai` | `gpt-4o` | Inferred from `gpt-` prefix |
-| `{model: "gemini-2.0-flash"}` | `google` | `gemini-2.0-flash` | Inferred from `gemini-` prefix |
-| `{model: "moonshotai/kimi-k2"}` | `openrouter` | `moonshotai/kimi-k2` | No prefix match -> defaults to OpenRouter |
-| `{provider: "openrouter", model: "anthropic/claude-sonnet-4-5"}` | `openrouter` | `anthropic/claude-sonnet-4-5` | Explicit provider override |
+## Known Gap
 
-**Implementation:** `backend/internal/domain/models/llm/model_mapping.go:10-41`
+The model mapping infers `openai` from `gpt-*` prefixes and `google` from `gemini-*` prefixes, but neither provider is implemented. Requesting these models **without** an explicit `provider: "openrouter"` will fail with "unsupported provider". To use GPT or Gemini models, clients must explicitly set `provider: "openrouter"`.
 
-## Provider Factory
+## Implementation
 
-Creates provider instances with API keys from environment variables.
-
-**Supported Providers:** Anthropic, OpenRouter, OpenAI, Google, Lorem (testing)
-
-**Implementation:** `backend/internal/service/llm/provider_factory.go`
-
-## Registry
-
-Caches provider instances per provider name to avoid recreating clients.
-
-**Thread-safe:** Uses `sync.RWMutex` for concurrent access
-
-**Implementation:** `backend/internal/service/llm/registry.go:27-80`
-
-## GetProvider() API Contract
-
-**Critical:** `GetProvider()` accepts **provider name**, not model name.
-
-```go
-// ✅ Correct
-provider, err := registry.GetProvider("anthropic")
-provider, err := registry.GetProvider("openrouter")
-
-// ❌ Wrong (pre-refactor behavior)
-provider, err := registry.GetProvider("claude-sonnet-4-5")
-```
-
-**Recent Fix:** Debug route and response generator were incorrectly passing model to `GetProvider()`. Now properly resolve provider first using model mapping logic.
-
-**See:** `backend/internal/service/llm/streaming/debug.go:78-91`, `response_generator.go:69-82`
-
-## Model Mapping
-
-Smart defaults infer provider from model name prefixes when provider not specified.
-
-**Mappings:**
-- `claude-*` -> anthropic
-- `gpt-*`, `o1-*`, `text-*`, `davinci-*` -> openai
-- `gemini-*` -> google
-- `lorem-*` -> lorem (testing)
-- **No match** -> openrouter (universal fallback)
-
-**Implementation:** `backend/internal/domain/models/llm/model_mapping.go:10-41`
-
-## References
-
-- **Model mapping:** `backend/internal/domain/models/llm/model_mapping.go`
-- **Provider factory:** `backend/internal/service/llm/provider_factory.go`
-- **Registry:** `backend/internal/service/llm/registry.go`
-- **Request extraction:** `backend/internal/service/llm/streaming/service.go:96-130`
-
-## See Also
-
-- [LLM Integration Guide](llm-integration.md) - Complete backend integration patterns
-- [Environment Gating](environment-gating.md) - Tool restrictions
+- Model mapping: `internal/domain/models/llm/model_mapping.go`
+- Provider factory: `internal/service/llm/provider_factory.go`
+- Adapter factory: `internal/service/llm/adapter_factory.go`
+- Registry (cached, thread-safe): `internal/service/llm/registry.go`
+- Resolution call sites: `internal/service/llm/streaming/service.go`, `response_generator.go`, `debug.go`

@@ -1,70 +1,59 @@
 ---
-detail: standard
+detail: minimal
 audience: developer
 ---
 
 # Thread System Overview
 
-Multi-turn LLM conversations with branching support and unified JSONB turn blocks.
+Multi-turn LLM conversations with branching support, streaming responses, and unified JSONB turn blocks.
 
-## Core Concepts
+## Tree Structure
 
-### Tree Structure
-
-Conversations form a **tree** via `prev_turn_id` self-referencing, enabling branching:
+Conversations form a tree via `prev_turn_id` self-referencing, enabling branching:
 
 ```mermaid
 graph TD
-    T1[Turn 1: user<br/>"Write a story"]
-    T2[Turn 2: assistant<br/>"Once upon a time..."]
-    T3a[Turn 3a: user<br/>"Make it darker"]
-    T3b[Turn 3b: user<br/>"Add more humor"]
-    T4a[Turn 4a: assistant<br/>"The night grew cold..."]
-    T4b[Turn 4b: assistant<br/>"A chicken walked into..."]
-
-    T1 --> T2
-    T2 --> T3a
-    T2 -.branch.-> T3b
-    T3a --> T4a
-    T3b --> T4b
-
+    T1["Turn 1: user"] --> T2["Turn 2: assistant"]
+    T2 --> T3a["Turn 3a: user"]
+    T2 -.branch.-> T3b["Turn 3b: user"]
+    T3a --> T4a["Turn 4a: assistant"]
+    T3b --> T4b["Turn 4b: assistant"]
 ```
 
-**Key points:**
-- Root turns: `prev_turn_id IS NULL`
-- Each turn references exactly one previous turn (or null)
-- Multiple turns can reference the same `prev_turn_id` (branching)
-- Deleting a turn deletes entire downstream branch (CASCADE)
+- Root turns have `prev_turn_id IS NULL`
+- Multiple turns referencing the same parent = branching
+- Deleting a turn cascades to the entire downstream branch
 
-### Turn Roles
+## Service Architecture
 
-| Role | Created By | Contains |
-|------|-----------|----------|
-| `user` | Client | User message with optional document references |
-| `assistant` | Backend | LLM response with thinking blocks and tool use |
-
-### Turn Blocks
-
-Turns contain **ordered turn blocks** (0-indexed sequence):
+Three focused services (SRP compliance). See [service-layer.md](../architecture/service-layer.md) for rationale.
 
 ```mermaid
-graph LR
-    T1[Turn 1<br/>user]
-    B0[Block 0<br/>text]
-    B1[Block 1<br/>reference]
-    B2[Block 2<br/>text]
-
-    T1 --> B0
-    T1 --> B1
-    T1 --> B2
-
+graph TD
+    Handler["ThreadHandler"] --> TS["ThreadService\nThread CRUD"]
+    Handler --> THS["ThreadHistoryService\nHistory & Navigation"]
+    Handler --> SS["StreamingService\nTurn Creation & Streaming"]
 ```
 
-**Block types:**
-- **User:** text, image, reference, partial_reference, tool_result
-- **Assistant:** text, thinking, tool_use
+| Service | Responsibility | Interface |
+|---------|---------------|-----------|
+| ThreadService | Thread session CRUD | `domain/services/llm/thread.go` |
+| ThreadHistoryService | Turn path, siblings, tree, pagination, token usage | `domain/services/llm/thread_history.go` |
+| StreamingService | Turn creation, streaming orchestration, interjections | `domain/services/llm/streaming.go` |
 
-See [turn-blocks.md](turn-blocks.md) for JSONB schemas.
+## API Routes
+
+Routes are defined in `cmd/server/main.go`. Handler: `internal/handler/thread.go`.
+
+**Thread CRUD:** `POST/GET/PATCH/DELETE /api/threads`, `PATCH .../last-viewed-turn`
+
+**Turn & Pagination:** `POST /api/turns`, `GET /api/threads/{id}/turns`, `GET /api/turns/{id}/path`, `GET /api/turns/{id}/siblings`
+
+**Streaming:** `GET /api/turns/{id}/stream` (SSE), `GET .../blocks`, `GET .../token-usage`, `POST .../interrupt`
+
+**Interjections:** `POST/GET/DELETE /api/turns/{id}/interjection`
+
+**Debug (dev only):** `POST/GET /debug/api/threads/{id}/turns`, `GET .../tree`, `POST .../llm-request`
 
 ## Status Lifecycle
 
@@ -78,182 +67,48 @@ stateDiagram-v2
     streaming --> complete: All done
     streaming --> error: LLM error
     pending --> cancelled: User cancels
+    streaming --> cancelled: User interrupts
     error --> [*]
     complete --> [*]
     cancelled --> [*]
 ```
 
-| Status | Description |
-|--------|-------------|
-| `pending` | Turn created, waiting for LLM |
-| `streaming` | LLM generating response |
-| `waiting_subagents` | Waiting for tool execution results |
-| `complete` | Turn finished successfully |
-| `cancelled` | User cancelled generation |
-| `error` | LLM or system error occurred |
+## Streaming Flow
 
-## Token Tracking
-
-Tokens tracked at **turn level** (not block level):
-
-```go
-type Turn struct {
-    Model        *string  // "moonshotai/kimi-k2-thinking"
-    InputTokens  *int     // Context sent to LLM
-    OutputTokens *int     // LLM generated tokens
-}
-```
-
-**Why turn-level?**
-- Single LLM invocation per turn
-- Aggregated cost tracking
-- Simpler analytics
-
-## Navigation
-
-`last_viewed_turn_id` in Thread enables UI state persistence:
+`POST /api/turns` triggers async LLM generation. The response includes a `stream_url` for SSE connection.
 
 ```mermaid
-erDiagram
-    Thread ||--o{ Turn : "has many"
-    Thread }o--|| Turn : "last viewed"
+sequenceDiagram
+    participant Client
+    participant Handler
+    participant StreamingService
+    participant Provider
 
-    Thread {
-        uuid last_viewed_turn_id FK
-    }
+    Client->>Handler: POST /api/turns
+    Handler->>StreamingService: CreateTurn
+    StreamingService->>StreamingService: Create user + pending assistant turn
+    StreamingService-->>Handler: user_turn, assistant_turn, stream_url
+    Handler-->>Client: 201 Created
+
+    Client->>Handler: GET /api/turns/{id}/stream
+    Note over StreamingService,Provider: Background goroutine
+    StreamingService->>Provider: StreamResponse
+    Provider-->>StreamingService: AG-UI events
+    StreamingService-->>Client: SSE events
 ```
 
-When user switches threads, frontend can restore to last viewed turn in conversation tree.
+Key features: AG-UI protocol events, partial block persistence on interruption, soft/hard cancel, reconnection via `GET /api/turns/{id}/blocks`. See `_docs/technical/llm/streaming/README.md`.
 
-## Reference System
+## Interjections
 
-Content blocks can reference documents:
+Users can submit messages while the assistant is streaming. Content is buffered and injected at the next safe boundary (after tool execution or at stream completion). If the turn is no longer streaming, a new follow-up turn is created instead.
 
-**Full document:**
-```json
-{
-  "block_type": "reference",
-  "content": {
-    "ref_id": "doc-uuid",
-    "ref_type": "document",
-    "version_timestamp": "2025-01-15T10:30:00Z"
-  }
-}
-```
-
-**Text selection:**
-```json
-{
-  "block_type": "partial_reference",
-  "content": {
-    "ref_id": "doc-uuid",
-    "ref_type": "document",
-    "selection_start": 100,
-    "selection_end": 500
-  }
-}
-```
-
-Backend fetches document content and includes in LLM context.
-
----
-
-## Pagination
-
-For large conversations (1000+ turns), the system provides efficient pagination:
-
-### Two-Endpoint Strategy
-
-**Tree Endpoint** (`GET /api/threads/:id/tree`)
-- Returns lightweight structure (IDs + prev_turn_id only)
-- Used for cache validation
-- ~2KB for 1000 turns, <100ms response time
-
-**Pagination Endpoint** (`GET /api/threads/:id/turns`)
-- Returns full Turn objects with nested blocks
-- Direction modes: `before` (history), `after` (future), `both` (context window)
-- Defaults to `last_viewed_turn_id` if no starting point specified
-
-### Direction Modes
-
-- **`before`** - Follow prev_turn_id chain backwards (scroll up, load history)
-- **`after`** - Follow children forward, pick most recent on branches (scroll down)
-- **`both`** - Split limit 25%/75% (before/after) for initial context window
-
-### ConversationService
-
-Pagination is handled by ConversationService (one of 3 focused LLM services):
-
-```go
-conversationService.GetPaginatedTurns(
-    ctx,
-    threadID,
-    userID,
-    fromTurnID,  // Optional, defaults to last_viewed_turn_id
-    limit,       // Max 200, default 50
-    direction,   // "before", "after", or "both"
-)
-```
-
-**See:** [Backend Pagination Guide](pagination.md) for implementation details
-**Frontend:** `_docs/technical/frontend/thread-pagination-guide.md`
-
----
-
-## Database Schema
-
-See [database/schema.md](../database/schema.md#thread-system) for:
-- Table structures
-- Foreign keys
-- Indexes
-- Constraints
-
-## Implementation Status
-
-**Core Features:**
-- ✅ Schema migrations
-- ✅ Domain models (Thread, Turn, TurnBlock)
-- ✅ JSONB validation for all turn block types
-- ✅ Repository layer (PostgreSQL)
-- ✅ Service layer refactored into 3 focused services (SOLID compliance)
-  - ThreadService - Thread session CRUD
-  - ConversationService - History & navigation
-  - StreamingService - Turn creation & streaming
-- ✅ HTTP handlers (complete CRUD)
-- ✅ Thread creation, retrieval, update, deletion
-- ✅ Turn creation and retrieval
-- ✅ Content block support (text, thinking, tool_use, tool_result, image, reference, partial_reference)
-- ✅ Turn tree navigation (get path, get siblings)
-- ✅ Pagination (tree endpoint + direction-based turn loading)
-- ✅ Request parameters (temperature, thinking, top-k, top-p, model, stop_sequences)
-- ✅ Soft delete with cascade
-
-**LLM Integration:**
-- ✅ Provider abstraction layer (`LLMProvider` interface)
-- ✅ Provider registry (dynamic provider selection)
-- ✅ Anthropic Claude provider (fully implemented)
-  - Models: claude-haiku-4-5, claude-sonnet-4-5, claude-opus-4-5
-  - Extended thinking support (low/medium/high budgets)
-  - Token tracking (input/output)
-  - Request/response metadata
-- ✅ Response generation pipeline
-- ❌ Streaming infrastructure (async with goroutines) - **In Progress**
-- ❌ SSE endpoints for real-time updates
-- ❌ Tool execution
-- ❌ OpenAI provider
-- ❌ Google Gemini provider
-
-**Testing:**
-- ✅ All CRUD operations tested
-- ✅ Content block variations tested
-- ✅ Parameter validation tested
-- ✅ Integration tests (full workflows)
-
-**Current Limitation:** LLM calls are synchronous (blocking HTTP response). Streaming infrastructure (Task 5) in development to enable async execution and SSE streaming.
+Modes: `append` (add to existing) or `replace` (overwrite existing).
 
 ## References
 
-- [Turn Blocks](turn-blocks.md) - JSONB schemas
-- [Database Schema](../database/schema.md#thread-system) - Table details
+- [Turn Blocks](turn-blocks.md) -- JSONB schemas
+- [LLM Providers](llm-providers.md) -- Provider architecture
+- [Pagination](pagination.md) -- Pagination implementation
 - Domain models: `internal/domain/models/llm/`
-- Validation: `internal/domain/models/llm/content_types.go`
+- Handler: `internal/handler/thread.go`

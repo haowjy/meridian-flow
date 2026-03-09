@@ -33,30 +33,18 @@ Clean Architecture (Hexagonal) with clear layer separation:
 
 ## API
 
-Complete API reference with contracts, validation rules, and examples:
-
-- [Overview](api/overview.md) - API design and navigation
-- [Contracts](api/contracts.md) - All endpoints with request/response formats ⭐
-- [Error Responses](api/error-responses.md) - RFC 7807 error format and conflict resolution
+- [Overview](api/overview.md) - Endpoint groups, auth pattern, key behaviors
+- [Contracts](api/contracts.md) - Route table with handler files ⭐
+- [Error Responses](api/error-responses.md) - RFC 7807 error format
 
 ## Database
 
-PostgreSQL schema, connections, and data management:
-
-- [Schema](database/schema.md) - Database structure with ER diagram ⭐
-- [Connections](database/connections.md) - Connection setup and troubleshooting
+- [Schema](database/schema.md) - ER diagram, table purposes, FK cascades ⭐
+- [Connections](database/connections.md) - PgBouncer auto-config and pool settings
 
 ## Document Search
 
-Full-text search across documents with multi-field support and weighted ranking:
-
-- [Search Architecture](search-architecture.md) - PostgreSQL FTS implementation, indexing strategy, and future vector search plans ⭐
-
-**Features:**
-- Multi-field search (name, content) with configurable weighting
-- Multi-language support (17 languages)
-- Pagination and folder filtering
-- Extensible design for future vector/hybrid search
+- [Search Architecture](search-architecture.md) - PostgreSQL FTS with snippets, ranking, and pagination
 
 ## LLM Integration
 
@@ -66,29 +54,24 @@ The backend uses the `meridian-llm-go` library for all LLM provider interactions
 
 **For LLM library documentation:**
 - [Architecture](../llm/architecture.md) - Library design and 3-layer architecture
-- [Tool Mapping](../../../meridian-llm-go/docs/tools.md) - Unified tool abstraction across providers
-- [Error Handling](../../../meridian-llm-go/docs/errors.md) - Error normalization
-- [Retry Strategies](../../future/ideas/infrastructure/retry-strategies.md) - Future retry implementation
-- [Capability Loading](../llm/extensibility-and-lifecycle.md) - Provider config loading patterns
 - [Streaming](../llm/streaming/README.md) - Streaming architecture and block types
 
 **For backend integration:**
-- [LLM Integration Guide](./llm-integration.md) - How backend uses meridian-llm-go
 - [Provider Routing](provider-routing.md) - Model string parsing and provider selection
-- [Environment Gating](environment-gating.md) - Tool restrictions (dev/test only)
+- [Tools Architecture](tools/architecture.md) - Tool registry, builder, and execution
+- [Service Layer](architecture/service-layer.md) - ThreadHistoryService, StreamingService
+
+## Repository Patterns
+
+**Conditional updates with pointer semantics**: Use `nil` pointer to mean "skip update", non-nil to mean "update to this value". Combined with `COALESCE` in SQL for atomic partial updates. See `internal/repository/postgres/llm/turn.go:AccumulateTokensAndUpdateMetadata()` and domain types in `internal/domain/repositories/llm/turn_writer.go`.
 
 ## Authentication
 
 **Status:** Backend ✅ Complete | Frontend ✅ Complete
 
-JWT-based authentication with Supabase Auth integration:
-
 - [Cross-Stack Overview](../auth-overview.md) - Complete auth flow from frontend to backend ⭐
-- [Implementation Guide](auth/supabase-jwt-implementation.md) - Backend JWT validation reference
-- [Comprehensive Reference](auth/REFERENCE-supabase-jwt-full.md) - Full implementation code and detailed explanations
-- [Frontend Auth](../frontend/auth-implementation.md) - Frontend Supabase integration (complete)
-
-**Current state:** Backend uses JWT validation via Supabase JWKS endpoint (RS256/ES256). Frontend auth is complete with Supabase integration, middleware, and automatic JWT injection. Both frontend and backend are production-ready.
+- [Authorization](auth/authorization.md) - Service-layer ownership-based authorization
+- [Frontend Auth](../frontend/auth-implementation.md) - Frontend Supabase integration
 
 ## Thread System
 
@@ -110,7 +93,7 @@ Multi-turn LLM conversations with SOLID-compliant service architecture:
 Real-time LLM response delivery via Server-Sent Events:
 
 - **Start here:** [../llm/streaming/README.md](../llm/streaming/README.md) ⭐
-- Architecture: [architecture/streaming-architecture.md](architecture/streaming-architecture.md)
+- Architecture: [architecture/service-layer.md](architecture/service-layer.md)
 - Block types: [thread/turn-blocks.md](thread/turn-blocks.md)
 - API endpoints: [../llm/streaming/api-endpoints.md](../llm/streaming/api-endpoints.md)
 - Race conditions: [../llm/streaming/race-conditions.md](../llm/streaming/race-conditions.md)

@@ -254,6 +254,6 @@ if err != nil {
 - Backend tool handling: see `_docs/technical/backend/llm-integration.md`
 
 **Related:**
-- [Streaming Architecture](../../backend/architecture/streaming-architecture.md)
+- [Streaming Architecture](../../backend/architecture/service-layer.md)
 - [Turn Blocks](../../backend/thread/turn-blocks.md)
 - [API Endpoints](api-endpoints.md)

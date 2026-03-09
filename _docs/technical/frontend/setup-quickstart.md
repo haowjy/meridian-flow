@@ -1,57 +1,52 @@
 ---
-title: Frontend Setup Quickstart
-detail: brief
+detail: minimal
 audience: developer
-status: active
 ---
 
 # Frontend Setup Quickstart
 
-Purpose: provide only the initial environment setup and run commands. The UI is being overhauled separately and is intentionally omitted here.
-
 ## Prerequisites
 
-- Node.js LTS and npm
-- Backend API running locally or remote (see backend QUICKSTART)
+- Node.js LTS, pnpm v10+
+- Backend API running (see backend quickstart)
 
 ## Environment
 
-- Set `VITE_API_URL` to your backend (e.g., `http://localhost:8080`).
-- Optional: `VITE_DEV_TOOLS=1` to enable extra debug UI (e.g., turn debug dialog).
+Copy `frontend/.env.example` to `frontend/.env.local`:
+
+| Variable | Value | Notes |
+|----------|-------|-------|
+| `VITE_SUPABASE_URL` | `https://your-project.supabase.co` | From Supabase project settings |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | `your-anon-key` | From Supabase API settings |
+| `VITE_API_URL` | `http://localhost:8080` | Must match backend port |
+| `VITE_DEV_TOOLS` | `0` | Set `1` for retry inspector overlay |
+
+Backend port is worktree-aware (`8080 + hash(dir) % 100`). Check with `source scripts/dev/lib.sh && echo $BACKEND_PORT`.
 
 ## Commands
 
+| Command | Purpose |
+|---------|---------|
+| `pnpm install` | Install dependencies |
+| `pnpm run dev` | Dev server at localhost:3000 |
+| `pnpm run build` | `tsc --noEmit` + vite build |
+| `pnpm run lint` | ESLint |
+| `pnpm run format 2>&1 \| grep -v "unchanged"` | Prettier write (Tailwind class sorting) |
+| `pnpm run test` | Vitest unit tests |
+
+All commands run from `frontend/`.
+
+## Dev Environment (tmux)
+
 ```bash
-cd frontend
-pnpm install
-pnpm run dev          # http://localhost:3000
-pnpm run test         # unit tests (Vitest)
+./scripts/dev/setup.sh   # Creates tmux session with backend + frontend
+tmux attach -t <session> # Session name = branch basename
 ```
 
-These commands are intentionally generic to avoid coupling to specific layouts; use the project’s standard task runner targets (e.g., install, run, dev, test, seed) as provided.
+See root `CLAUDE.md` "Dev Environment Setup" for full details.
 
-## Notes
+## Architecture Notes
 
-- The backend is the system of record; local browser storage is treated as a cache.
-- See `_docs/technical/frontend/architecture/sync-system.md` for the current sync architecture.
-- This quickstart will change only if setup changes; UI details live in the design/flows docs.
-
-## High‑Level Dev Flow (Mermaid)
-
-```mermaid
-flowchart LR
-    subgraph "Browser (Dev)"
-      UI["Vite App (localhost:3000)"]
-      IDB["IndexedDB (Dexie)"]
-    end
-
-    API["Backend API (VITE_API_URL)"]
-
-    UI -->|"fetch JSON"| API
-    UI <-->|"cache/read/write"| IDB
-
-
-    class UI primary
-    class IDB storage
-    class API backend
-```
+- Backend is system of record; IndexedDB (Dexie) and localStorage are caches.
+- See `frontend/CLAUDE.md` for store conventions, caching patterns, and coding guidelines.
+- See `_docs/technical/frontend/architecture/sync-system.md` for sync architecture.

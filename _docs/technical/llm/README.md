@@ -42,9 +42,8 @@ For **standalone library usage**:
 For **Meridian backend implementation**:
 
 - **[Architecture](./architecture.md)** - Backend service layer architecture
-- **[LLM Integration Guide](../backend/llm-integration.md)** - How backend uses meridian-llm-go (comprehensive)
 - **[Provider Routing](../backend/provider-routing.md)** - Model-based provider selection
-- **[Environment Gating](../backend/environment-gating.md)** - Tool restrictions (dev/test only)
+- **[Tools Architecture](../backend/tools/architecture.md)** - Tool registry, builder, and execution
 
 ### Backend Streaming
 
