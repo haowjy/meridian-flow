@@ -19,30 +19,30 @@ _Architecture sections verified against `frontend/src` on 2026-03-08._
 
 ### Architecture
 
-- [Patterns](patterns.md) -- layer structure, state management, error handling, CodeMirror
+- [Patterns](architecture/patterns.md) -- layer structure, state management, error handling, CodeMirror
 - [Navigation Pattern](architecture/navigation-pattern.md)
 - [Sync System](architecture/sync-system.md)
 - [Layout System](architecture/layout-system.md)
 
 ### Authentication
 
-- [Auth Implementation](auth-implementation.md)
+- [Auth Implementation](auth/auth-implementation.md)
 
 ### Editor
 
-- [Editor Caching](editor-caching.md) -- document loading, collab/non-collab paths
-- [Keybindings](keybindings.md)
+- [Editor Caching](editor/editor-caching.md) -- document loading, collab/non-collab paths
+- [Keybindings](editor/keybindings.md)
 
 ### Thread UI
 
-- [Thread Rendering](thread-rendering.md) -- block rendering, registries, grouping pipeline, SSE flow
-- [Thread Pagination](thread-pagination-guide.md) -- turn pagination and scroll management
+- [Thread Rendering](threads/thread-rendering.md) -- block rendering, registries, grouping pipeline, SSE flow
+- [Thread Pagination](threads/thread-pagination-guide.md) -- turn pagination and scroll management
 
 ### Styling
 
 - [Theme System](themes/README.md)
-- [Tailwind Strategies](tailwind-strategies.md)
-- [Design Tokens](design-tokens.md)
+- [Tailwind Strategies](themes/tailwind-strategies.md)
+- [Design Tokens](themes/design-tokens.md)
 
 ### Development
 
@@ -257,7 +257,7 @@ Desktop: left panel (chat/threads/settings) is the non-collapsible anchor, right
 
 Mobile: all views stay mounted via React `Activity`, switching visibility by `mobileActiveTab`. Bottom nav sets tab in store; state-driven tabs preserve component state/scroll.
 
-For layer boundaries (core vs features vs shared), see [Patterns](patterns.md).
+For layer boundaries (core vs features vs shared), see [Patterns](architecture/patterns.md).
 
 ### Common Gotchas
 
