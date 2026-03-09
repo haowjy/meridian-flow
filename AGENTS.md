@@ -23,9 +23,11 @@ ALWAYS ENSURE THERE IS A PLAN APPROVED BY THE USER BEFORE IMPLEMENTING ANYTHING 
 
 **DO NOT ENTER PLAN MODE.** Instead, write plans as markdown files in `_docs/plans/`. During planning, use `/run-agent` (via the `researching` skill) for research and codebase exploration — stay in the normal conversation so these tools remain available. See [[### Plan Lifecycle]] for the full workflow.
 
+PLAN FOR EXTENSIBILITY
+
 ### SOLID Quick Reference
 
-- **SRP**: Files should only have a single purpose. One store = one domain. Split large components.
+- **SRP**: Files should typically only have a single purpose. One store = one domain. Split large components.
 - **OCP**: Use registries/factories for extensibility (see ToolRegistry, BlockRenderer)
 - **LSP**: All implementations must be substitutable for their interfaces
 - **ISP**: Split large interfaces (Reader vs Writer, Metadata vs CRUD)
