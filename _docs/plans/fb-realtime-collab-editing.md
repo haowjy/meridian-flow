@@ -5,7 +5,7 @@ audience: developer, architect
 
 # RFC: Yjs-Based Editing with Real-Time AI Collaboration
 
-**Status:** Draft
+**Status:** In progress — Phases 1–4 + 4.5/4.6 complete; Phase 5 (multi-user) in design
 **Priority:** High (foundational architecture change)
 
 ---
@@ -43,13 +43,15 @@ This is the **main/canonical plan** for collaboration + AI collaboration.
 | Phase 4.6: per-project WebSocket overhaul | `_docs/plans/collab-ai/phase/phase-4.6-project-ws-overhaul.md` |
 | Phase 5: multi-user collaboration | `_docs/plans/collab-ai/phase/phase-5-multi-user-collaboration.md` |
 
-## Legacy Mapping (Superseded Inputs)
+## Legacy Mapping (Superseded Inputs — deleted)
 
-| Legacy Plan | New Home |
+Legacy standalone plans have been deleted. Their content was absorbed into:
+
+| Original Plan | Absorbed Into |
 |---|---|
-| `_docs/plans/fb-document-history-v1.md` | `_docs/plans/collab-ai/phase/phase-2-history-and-undo.md` |
-| `_docs/plans/fb-tree-ai-suggestions-banner-accept-all.md` | `_docs/plans/collab-ai/phase/phase-3-ai-proposals-and-review.md` |
-| `_docs/plans/fb-event-driven-refresh-framework.md` | `_docs/plans/collab-ai/spec/refresh-read-model-framework.md` |
+| `fb-document-history-v1.md` | Phase 2: history + undo |
+| `fb-tree-ai-suggestions-banner-accept-all.md` | Phase 3: AI proposals + review |
+| `fb-event-driven-refresh-framework.md` | Spec: refresh read-model framework |
 
 ---
 
