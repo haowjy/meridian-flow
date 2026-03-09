@@ -56,21 +56,13 @@ audience: developer
 
 | Role | Font | Fallback |
 |------|------|----------|
-| Display | Browser default sans | system-ui, sans-serif |
-| Body | Browser default sans | system-ui, sans-serif |
-| UI | Browser default sans | system-ui, sans-serif |
+| Display | Source Serif 4 | Georgia, serif |
+| Body | Source Serif 4 | Georgia, serif |
+| UI | Inter | system-ui, sans-serif |
 | Mono | JetBrains Mono | ui-monospace, monospace |
 
 ### Font Weights
 
-- **Browser default sans**: platform-managed
 - **JetBrains Mono**: 400, 500, 600
 
-## Usage
-
-```typescript
-import { useThemeContext } from '@/core/theme';
-
-const { setThemeId } = useThemeContext();
-setThemeId('modern-literary');
-```
+See `frontend/src/core/theme/themes.ts` for the full preset definition.

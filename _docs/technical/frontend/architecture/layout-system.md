@@ -90,4 +90,19 @@ stateDiagram-v2
     UserExpanded --> AutoBehavior: Reset override
 ```
 
-State lives in `useUIStore`: `rightPanelUserOverride` (persisted) + `rightPanelReady` (session-scoped). See `layout-data-flow.md` for the full data flow.
+State lives in `useUIStore`: `rightPanelUserOverride` (persisted) + `rightPanelReady` (session-scoped).
+
+## Data Flow
+
+### Ready Flags
+
+Ready flags control right panel auto-collapse during data loading.
+
+- `leftPanelReady`: set by `useThreadsForProject` on success/error. Only used by `WorkspaceRail` for icon highlighting -- does not collapse the left panel.
+- `rightPanelReady`: set by `DocumentTreeContainer` on success/error. Drives right panel auto-collapse when `userOverride` is null.
+
+Priority: `userOverride !== null` wins over `ready` flag. Override is persisted to localStorage; ready flags are session-scoped.
+
+### Project Switching
+
+When switching projects, `WorkspaceLayout` resets all document/skill/thread state to prevent context leakage. User panel override is preserved (it is a preference, not project-specific). First load skips reset to preserve deep-link state. See `WorkspaceLayout.tsx` project change effect.

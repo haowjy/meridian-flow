@@ -116,38 +116,9 @@ function MyComponent() {
 
 **Design Decision**: Single theme simplifies the UX and ensures consistent visual identity. Theme switching can be re-enabled in the future if needed by reversing these changes.
 
-## CSS Variables
+## CSS Variables and Color Semantics
 
-Theme system sets `--theme-*` variables on `:root`. Key variables:
-
-| Variable | Description |
-|----------|-------------|
-| `--theme-bg` | Page background |
-| `--theme-surface` | Card/panel background |
-| `--theme-text` | Primary text |
-| `--theme-text-muted` | Secondary text |
-| `--theme-favorite` | Favorite/special marking color (gold) |
-| `--theme-primary` | Primary action/interactive color (sage) |
-| `--theme-sidebar` | Sidebar background |
-| `--theme-font-display` | Heading font family |
-| `--theme-font-body` | Body text font family |
-| `--theme-font-ui` | UI element font family |
-
-## Color Semantics
-
-Theme v3+ uses semantic color naming with clear intent:
-
-**`favorite`** (#F4B41A gold): Special markings
-- Stars, bookmarks, featured content
-- "I want this to stand out as special"
-
-**`primary`** (#5F8575 sage): Interactive UI elements
-- Buttons, focus rings, hover states, selection
-- "This is the main action color"
-
-**Migration from v2**: The legacy `accent` color was split for clearer intent:
-- `accent` -> `favorite` for starred items, special markings
-- `accent` -> `primary` for interactive UI elements
+See [design-tokens.md](design-tokens.md) for the full token reference. See the Color Hierarchy diagram above for semantic color intent (`favorite` = gold/special, `primary` = sage/interactive).
 
 ## Adding New Themes
 
