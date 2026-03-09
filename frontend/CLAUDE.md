@@ -29,7 +29,7 @@ pnpm run test:watch   # Vitest in watch mode
 
 **Status**: ✅ Complete (Supabase Auth integration)
 
-Cookie-based sessions with automatic JWT injection into all API calls. TanStack Router handles route protection. Google OAuth only (no email/password).
+Cookie-based sessions with automatic JWT injection into all API calls. TanStack Router handles route protection. Supports Google OAuth, email/password sign-in, and email/password sign-up.
 
 - **Supabase client**: `src/core/supabase/client.ts`
 - **JWT injection**: Automatic via `src/core/lib/api.ts:21-27` — no action needed in components

@@ -17,7 +17,7 @@ flowchart TD
     URLChange -->|"Yes"| Effect["WorkspaceLayout effect\nsyncs UI to URL"]
     URLChange -->|"No\n(same doc)"| Skip["Effect skips\n(direct update already worked)"]
 
-    Effect --> Done["✓ UI shows editor"]
+    Effect --> Done["UI shows editor"]
     Skip --> Done
 
     Back["Browser back"] --> Effect
@@ -31,7 +31,7 @@ flowchart TD
 
 ## Critical Pattern: getState()
 
-**❌ Bad** - Effect re-runs on state changes (race condition):
+**Bad** - Effect re-runs on state changes (race condition):
 ```typescript
 const { activeDocumentId } = useUIStore(/* subscribes */)
 
@@ -42,7 +42,7 @@ useEffect(() => {
 }, [initialDocumentId, activeDocumentId])  // State in deps
 ```
 
-**✅ Good** - Effect runs only on URL changes:
+**Good** - Effect runs only on URL changes:
 ```typescript
 useEffect(() => {
   const store = useUIStore.getState()  // Read without subscribing
@@ -53,50 +53,7 @@ useEffect(() => {
 }, [initialDocumentId])  // Only URL param
 ```
 
-## State Management
-
-```mermaid
-flowchart LR
-    subgraph "URL (source of truth)"
-        URL["/projects/x/documents/chars/heroes/aria"]
-    end
-
-    subgraph "useUIStore"
-        Active["activeDocumentId\n(persisted)"]
-        Panel["rightPanelState\n(NOT persisted)"]
-    end
-
-    URL -->|"Effect syncs"| Active
-    URL -->|"Effect syncs"| Panel
-
-    Panel -.->|"Resets to 'documents'\non page load"| Default["'documents'"]
-
-```
-
-**Project-relative paths:** URLs include folder path (`chars/heroes/aria`). Splat route (`$.tsx`) captures all segments after `/documents/`. WorkspaceLayout resolves path -> UUID via tree store.
-
-**Why rightPanelState isn't persisted:** URL is source of truth; effect syncs it on mount.
-
-## Future: Chat Independence
-
-```mermaid
-flowchart LR
-    URL["/projects/x/documents/A?chat=C"]
-
-    subgraph "Independent Effects"
-        DocEffect["Document effect\n[initialDocumentId]"]
-        ChatEffect["Chat effect\n[threadId]"]
-    end
-
-    URL -->|"Doc param changes"| DocEffect
-    URL -->|"Chat param changes"| ChatEffect
-
-    DocEffect -.->|"Doesn't trigger"| ChatEffect
-    ChatEffect -.->|"Doesn't trigger"| DocEffect
-
-```
-
-Navigating between documents won't reload chat data.
+See README.md for URL/state synchronization flow.
 
 ## Common Issues
 
