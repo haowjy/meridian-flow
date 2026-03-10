@@ -85,11 +85,13 @@ flowchart TD
 
 | Stage | What | Fixes | Key Files |
 |-------|------|-------|-----------|
-| 1 | Per-document WS + simplified project WS + session manager + origin validation | Bug #10 (eliminated), Bug #11 (origin) | See `stage-1-per-doc-ws.md` |
+| 1 | Per-document WS (`coder/websocket`) + simplified project WS + session manager + origin validation. Old `golang.org/x/net/websocket` code deleted. | Bug #10 (eliminated), Bug #11 (origin), Acquire() TOCTOU race | See `stage-1-per-doc-ws.md` |
 | 2 | Application-level size check, structured rejection | Bug #9 | `collab_document_handler.go`, `collab.go` |
 | 3 | `GET /api/documents/{id}/yjs-state` + client two-lane decision | Large doc bootstrap | New `collab_state.go`, `httpBootstrap.ts` |
 
 Stage 1 is the foundation. Stages 2-3 are independent after Stage 1.
+
+**Note:** Chat stream delta piggybacking (described in `ws-patterns.md`) is deferred to a future stage. Stage 1 defines the `applyExternalUpdate(docId, delta)` API on the session manager but does not wire it to the chat/SSE system.
 
 ## Relationship to Existing Plans
 

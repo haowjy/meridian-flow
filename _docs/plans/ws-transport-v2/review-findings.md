@@ -16,13 +16,9 @@ These must be resolved before or during Stage 1 implementation.
 
 **Fix:** Replace `GetSubscription` check with direct `checkDocumentAccess` call. The subscription check was a proxy for "user has access to this document" -- in v2, use the authenticator directly. Document this decision in `stage-1-per-doc-ws.md`.
 
-### B-2: Migrate from `golang.org/x/net/websocket` [ARCHITECTURE REVIEWER]
+### B-2: Migrate from `golang.org/x/net/websocket` [ARCHITECTURE REVIEWER] -- RESOLVED
 
-The Go team has effectively deprecated `golang.org/x/net/websocket` ([golang/go#33215](https://github.com/golang/go/issues/33215)). The package lacks the hooks needed for Bug #9's fix -- `MaxPayloadBytes` kills the connection with no application-level intercept. You cannot "raise the library limit to 2MB and add application-level check at 256KB" cleanly with this library.
-
-**Real systems use:** `github.com/coder/websocket` (formerly `nhooyr.io/websocket`) or `gorilla/websocket`.
-
-**Fix:** Make WS library migration Stage 0 or part of Stage 1. Building v2 on a deprecated library with known limitations in the exact area you need (frame size handling) is building on sand.
+**Resolution:** Use `coder/websocket` for new handlers; old `golang.org/x/net/websocket` code is deleted with old handlers. This is not a separate migration step -- new handlers are written with `coder/websocket` from the start, and the old library disappears when old code is deleted. `coder/websocket` provides context-native API, concurrent-write safety, modern patterns, and is actively maintained by Coder Inc.
 
 ### B-3: Fix Bug #11 (Origin validation) NOW, not Stage 4 [BUG REVIEWER]
 
@@ -166,6 +162,7 @@ Error codes are defined but user-facing messages are not. Temporary approach dur
 | Code | Temporary behavior |
 |------|-------------------|
 | `AUTH_FAILED` | Auto-refresh token + reconnect silently |
+| `AUTH_EXPIRED` | Auto-refresh token + reconnect silently |
 | `FRAME_TOO_LARGE` | Console warn, keep connection alive |
 | `RATE_LIMITED` | Auto-retry with backoff, no UI |
 | `RESET_REQUIRED` | Full document reload |
@@ -188,7 +185,7 @@ Keep-alive pool already covers the primary use case. Defer anticipatory connecti
 | Warm pool diagnostics missing | Architecture | Add `getPoolState()` debug method for dev tools |
 | `stateSize` TOCTOU between connected message and HTTP fetch | Architecture | Yjs merge is idempotent; performance-only, not correctness |
 | Flash of empty content during two-lane HTTP fetch | UX | Show IndexedDB cached content during fetch |
-| `beforeunload` unreliable for cleanup | Both | Server-side heartbeat is the real safety net; `beforeunload` is courtesy only |
+| `pagehide`/`beforeunload` unreliable for cleanup | Both | Use `pagehide` with `beforeunload` fallback. Server-side heartbeat is the real safety net; browser events are courtesy only |
 
 ## Action Summary
 
@@ -197,7 +194,7 @@ flowchart TD
     NOW["Fix Now<br/>(independent of v2)"] --> B3["B-3: Origin validation"]
     NOW --> M4["M-4: Bugs #6 + #7"]
 
-    S0["Stage 0<br/>(before v2)"] --> B2["B-2: Migrate WS library<br/>(less featureful, not hard-blocked)"]
+    S0["Stage 0<br/>(before v2)"] --> B2["B-2: RESOLVED<br/>coder/websocket used in new handlers"]
 
     PLAN["Update Stage 1 Plan<br/>(before implementing)"] --> S1_bl["S-1: Full session abstraction<br/>not just WS pool"]
     PLAN --> S2_bl["S-2: Broadcaster coexistence<br/>strategy for migration"]

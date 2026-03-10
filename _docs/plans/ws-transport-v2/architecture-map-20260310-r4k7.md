@@ -68,8 +68,8 @@ flowchart LR
 
     ProposalSvc --> ProposalStore
     ProposalSvc --> SessRuntime
-    ProposalSvc --> ProjBroad
-    ProposalSvc --> DocBroad
+    ProposalSvc -->|"proposal JSON events"| ProjBroad
+    ProposalSvc -->|"Yjs update fanout (binary)"| DocBroad
 ```
 
 ## Frontend Ownership
@@ -128,4 +128,4 @@ sequenceDiagram
 | Project WS | Project WS carries only JSON events and proposal commands. |
 | Document WS | Document WS carries only document-scoped sync traffic. |
 | Broadcasting | Project JSON fanout and document Yjs fanout use separate registries. |
-| Migration | Cut over by client cohort or feature flag, not mixed payloads on one broadcaster. |
+| Migration | Hard cutover. Replace old transport wholesale, delete old code. No feature flags or mixed payloads (no deployed users to migrate). |

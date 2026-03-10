@@ -14,12 +14,15 @@ No envelope header. No `doc:subscribe` / `doc:unsubscribe`. Connect = subscribe.
 
 ```
 Client -> Server: [text] raw JWT string (first message)
-Server -> Client: [text] {"type":"connected","stateSize":12345}
-Server -> Client: [binary] raw SyncStep1 bytes
-Client -> Server: [binary] raw SyncStep1 bytes
-Server -> Client: [binary] raw SyncStep2 bytes
+Server -> Client: [text] {"type":"connected","stateSize":12345,"protocol":1}
+Server -> Client: [binary] SyncStep1 (server sends proactively after connected)
+Client -> Server: [binary] SyncStep1 (client sends upon receiving connected)
+Server -> Client: [binary] SyncStep2 (response to client's SyncStep1)
+Client -> Server: [binary] SyncStep2 (response to server's SyncStep1)
                   [synced, live editing begins]
 ```
+
+BOTH sides send SyncStep1 proactively. Server sends its SyncStep1 immediately after the `connected` JSON. Client sends its SyncStep1 upon receiving `connected`. Both sides respond to a received SyncStep1 with SyncStep2. Duplicate SyncStep1/SyncStep2 messages are harmless -- Yjs state vector reconciliation is idempotent.
 
 ### Binary Frame Types
 
@@ -30,7 +33,18 @@ Server -> Client: [binary] raw SyncStep2 bytes
 | `0x00` | Sync | Yjs sync protocol (SyncStep1=0, SyncStep2=1, Update=2) |
 | `0x01` | Awareness | `encodeAwarenessUpdate(...)` bytes |
 
-This is NOT the old envelope (`[1B type][16B docUUID][payload]`). The prefix is a single discriminator byte — no document ID, since the document is implicit from the WS connection. This follows the y-websocket convention where the first byte distinguishes sync from awareness.
+This is NOT the old envelope (`[1B type][16B docUUID][payload]`). The prefix is a single discriminator byte -- no document ID, since the document is implicit from the WS connection. This follows the y-websocket convention where the first byte distinguishes sync from awareness.
+
+```
+Example SyncStep1 frame:  [0x00] [0x00] [state_vector_bytes...]
+                           ^       ^
+                           |       +-- Yjs sync message type (SyncStep1=0x00)
+                           +---------- Transport prefix (sync)
+
+Example Awareness frame: [0x01] [awareness_update_bytes...]
+                          ^
+                          +-- Transport prefix (awareness)
+```
 
 ### JSON Messages (Text Frames)
 
@@ -43,13 +57,15 @@ Client -> Server: {"type":"heartbeat"}
 
 `protocol` field enables future negotiation (e.g., client checks `protocol >= 2` before attempting HTTP bootstrap in Stage 3).
 
-Error codes: `AUTH_FAILED`, `FRAME_TOO_LARGE`, `RATE_LIMITED`, `RESET_REQUIRED`, `CONNECTION_LIMIT`
+Error codes: `AUTH_FAILED`, `AUTH_EXPIRED`, `FRAME_TOO_LARGE`, `RATE_LIMITED`, `RESET_REQUIRED`, `CONNECTION_LIMIT`
 
 ### Auth
 
 Same JWT-in-first-message pattern. Server validates JWT + checks document access via `collabAuthenticator`. On failure: `{"type":"error","code":"AUTH_FAILED"}` + close.
 
 Auth timeout: 5 seconds. If no JWT received within 5s, close with `AUTH_FAILED`.
+
+**Token lifetime enforcement:** Server carries JWT `exp` claim into per-connection state. On each heartbeat cycle, check if token has expired. If expired, send `{"type":"error","code":"AUTH_EXPIRED"}` and close. Frontend reconnect path fetches a fresh token before reopening.
 
 ---
 
@@ -147,6 +163,8 @@ With the session manager, switching back to a recently-used document is **instan
 ---
 
 ## Chat Stream Delta Piggybacking
+
+**Staging: Deferred.** This section describes the target design. Implementation is not part of Stages 1-3. Stage 1 provides the session manager API (`applyExternalUpdate`) that this feature will use.
 
 ### Why
 

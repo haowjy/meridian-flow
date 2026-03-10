@@ -20,9 +20,9 @@ audience: developer
 
 **Symptom:** Sending a 1MB binary frame causes immediate EOF -- connection torn down, all document sessions lost.
 
-**Root cause:** `conn.MaxPayloadBytes = 64KB`. Library (`golang.org/x/net/websocket`) closes the connection on exceed with no application-level hook.
+**Root cause:** `conn.MaxPayloadBytes = 64KB`. Old library (`golang.org/x/net/websocket`) closes the connection on exceed with no application-level hook.
 
-**How v2 fixes it:** Raise library limit to 2MB (safety net). Add application-level check at 256KB -- returns `{"type":"error","code":"FRAME_TOO_LARGE"}` and continues the message loop. Connection stays alive.
+**How v2 fixes it:** New handlers use `coder/websocket` which supports application-level size handling. Set read limit to 2MB (safety net). Add application-level check at 256KB -- returns `{"type":"error","code":"FRAME_TOO_LARGE"}` and continues the message loop. Connection stays alive.
 
 **Smoke probe:** `tests/smoke/collab/envelope/` -- oversized test case updated to verify `FRAME_TOO_LARGE` error.
 
@@ -103,7 +103,7 @@ From production reports across y-websocket, Hocuspocus, and Liveblocks. These ar
 **Risk:** Warm connections not properly cleaned up on project switch or tab close.
 
 **Guard:** Connection manager must hook into:
-- `beforeunload` event (tab close)
+- `pagehide` event (with `beforeunload` fallback) to call `closeAll()` on tab close
 - Project navigation (close all document connections for old project)
 - Warm pool eviction timer must use `clearTimeout` on cleanup
 
