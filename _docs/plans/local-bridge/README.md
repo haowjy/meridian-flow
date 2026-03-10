@@ -41,6 +41,16 @@ Files:
 - Stage 7: `./stage-7-ollama.md`
 - Stage 8: `./stage-8-desktop.md`
 
+## Local Yjs State Cache
+
+The bridge cannot use IndexedDB (browser-only). Use a lightweight SQLite database as the equivalent local Yjs state cache for fast sync and offline resilience. Same role as `y-indexeddb` in the browser, different runtime.
+
+```
+Browser:  Y.Doc <-> IndexedDB (y-indexeddb) <-> Document WS <-> Server
+Bridge:   Y.Doc <-> SQLite                  <-> Bridge HTTP <-> Server
+                <-> Filesystem (disk files)
+```
+
 ## Target Architecture (End State)
 
 ```mermaid

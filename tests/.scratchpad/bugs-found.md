@@ -66,3 +66,30 @@
 **Fix:** Add tests for: (1) CreateSnapshot with non-empty yjs_state (happy path), (2) CreateSnapshot with empty yjs_state triggering bootstrap, (3) restore checking ai_content is set correctly.
 **Classification:** Test gap. Found by gpt-5.4 audit.
 **Status:** Not yet fixed.
+
+## 9. Oversized WebSocket frame kills connection (no graceful rejection)
+
+**File:** Backend WebSocket handler (likely gorilla/websocket read-limit or similar)
+**Symptom:** Sending a 1MB binary frame over the collab WebSocket causes an immediate EOF — connection is torn down rather than returning an error and keeping the socket alive.
+**Root cause:** The server likely has a max message size limit (e.g., `ReadLimit` on the websocket upgrader) but when a frame exceeds it, the library closes the connection entirely instead of the server sending back a `doc:error` or similar structured rejection.
+**Expected behavior:** Like the other malformed frames (truncated, corrupted-yjs, wrong-doc-uuid, unknown-type, zero-payload), oversized frames should be rejected gracefully while keeping the WebSocket alive.
+**Found by:** `collab/envelope` smoke probe — oversized test case.
+**Status:** Not yet fixed.
+
+## 10. Multi-doc sync responses misrouted to wrong document
+
+**File:** Backend collab session manager / WebSocket message routing
+**Symptom:** After subscribing to 3 documents (A, B, C) on one WebSocket, sending a follow-up sync-step1 for doc A returns a response tagged with doc B or C's UUID.
+**Root cause:** The server's document-scoped sync response routing doesn't properly isolate responses per document when multiple subscriptions exist on a single WebSocket connection. A sync response may be tagged with a different document's UUID than the one that triggered it.
+**Expected behavior:** Sync responses should always carry the document UUID they correspond to. A sync-step1 for doc A must only produce responses with doc A's UUID.
+**Found by:** `collab/multi-doc` smoke probe — multi-subscribe follow-up sync test.
+**Status:** Not yet fixed.
+
+## 11. WebSocket Origin header not validated (CSWSH risk)
+
+**File:** Backend WebSocket upgrader configuration
+**Symptom:** `Origin: https://evil.example.com` is accepted during WebSocket upgrade with no rejection.
+**Root cause:** The WebSocket upgrader's `CheckOrigin` function likely returns `true` unconditionally (or is not set), allowing any origin to establish a collab WebSocket connection.
+**Expected behavior:** In production, only allowed origins should be accepted. In dev, this may be intentionally permissive.
+**Found by:** `collab/security` smoke probe — cswsh-origin test (logged as WARN, not FAIL).
+**Status:** Not yet fixed. Low priority in dev, but should be hardened before production.

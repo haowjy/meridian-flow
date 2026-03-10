@@ -27,7 +27,7 @@ Browser ──WS────> Go Backend (same process)
 
 Key architectural decisions:
 - Go uses [`skyterra/y-crdt`](https://github.com/skyterra/y-crdt) (MIT) for server-side Yjs operations
-- Single WebSocket per project carries Yjs sync, awareness, and proposal messages for all documents (Phase 4.6; previously per-document)
+- **Per-document WebSocket** for Yjs sync (supersedes Phase 4.6 per-project WS; see `_docs/plans/ws-transport-v2/`)
 - JWT-in-first-message auth (no ticket table)
 - `documents.content` and `documents.ai_content` are derived projections from Yjs state (persisted alongside `yjs_state`, never written independently)
 - Accepted/rejected proposals are retained indefinitely as permanent audit records (no TTL purge)
@@ -73,7 +73,7 @@ Canonical route and boundary contract: `spec/api-events-contract.md`
 | 3 | AI proposal lifecycle (Yjs update buffers) + review UX | `phase/phase-3-ai-proposals-and-review.md` |
 | 4 | Multi-agent semantic arbitration | `phase/phase-4-multi-agent-arbitration.md` |
 | 4.5 | AI collaboration bridge (Yjs proposals from tool edits) | `phase/phase-4.5-ai-collab-bridge.md` |
-| 4.6 | Per-project WebSocket overhaul | `phase/phase-4.6-project-ws-overhaul.md` |
+| 4.6 | ~~Per-project WebSocket overhaul~~ | `phase/phase-4.6-project-ws-overhaul.md` — **SUPERSEDED by `_docs/plans/ws-transport-v2/`** |
 | 5 | Multi-user collaboration (native to Yjs) | `phase/phase-5-multi-user-collaboration.md` |
 
 ```mermaid
@@ -106,3 +106,4 @@ flowchart LR
 - `_docs/plans/fb-document-history-v1.md` -> `phase/phase-2-history-and-undo.md`
 - `_docs/plans/fb-tree-ai-suggestions-banner-accept-all.md` -> `phase/phase-3-ai-proposals-and-review.md`
 - `_docs/plans/fb-event-driven-refresh-framework.md` -> `spec/refresh-read-model-framework.md`
+- `phase/phase-4.6-project-ws-overhaul.md` -> `_docs/plans/ws-transport-v2/` (per-project WS replaced by per-document WS)
