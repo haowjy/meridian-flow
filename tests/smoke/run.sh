@@ -64,6 +64,9 @@ run_probe "collab/sync"      "tests/smoke/collab/sync/smoke.sh"
 run_probe "collab/proposals"   "tests/smoke/collab/proposals/smoke.sh"
 run_probe "collab/snapshots"   "tests/smoke/collab/snapshots/smoke.sh"
 run_probe "collab/persistence" "tests/smoke/collab/persistence/smoke.sh"
+run_probe "collab/envelope"    "tests/smoke/collab/envelope/smoke.sh"
+run_probe "collab/security"    "tests/smoke/collab/security/smoke.sh"
+run_probe "collab/multi-doc"   "tests/smoke/collab/multi-doc/smoke.sh"
 
 # REST features (uncomment as probes are written)
 run_probe "documents" "tests/smoke/documents/smoke.sh"

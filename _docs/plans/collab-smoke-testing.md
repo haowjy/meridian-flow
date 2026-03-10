@@ -5,7 +5,7 @@ audience: developer
 
 # Collab Smoke Testing Plan
 
-**Status:** in-progress
+**Status:** in-progress (umbrella doc — see notes on actual vs planned coverage below)
 **Scope:** Phases 1-4.6 (single-user Yjs + AI proposals over project-scoped WebSocket)
 
 ---
@@ -269,17 +269,25 @@ tests/                                    # black-box tests (need running system
       sync/
         smoke.sh                          # append + reconnect + persistence verify
         probe.go                          # standalone Go WS client with Yjs ops
-      proposals/                          # (scaffolded, probe not yet written)
-      snapshots/                          # (scaffolded, probe not yet written)
-      persistence/                        # (scaffolded, probe not yet written)
-    documents/                            # (scaffolded, REST CRUD probes)
-    projects/                             # (scaffolded, REST CRUD probes)
-    threads/                              # (scaffolded, SSE + REST probes)
-    auth/                                 # (scaffolded, JWT probes)
+      proposals/
+        smoke.sh                          # proposal error-path probes (empty snapshot, not-found, not-subscribed)
+        probe.go                          # standalone Go WS client
+      snapshots/
+        smoke.sh                          # snapshot REST CRUD + restore flow (bash-only, no Go probe)
+      persistence/
+        smoke.sh                          # debounce, disconnect-flush, content round-trip
+        probe.go                          # standalone Go WS client with Yjs ops
+    documents/
+      smoke.sh                            # document REST CRUD probe (create, get, patch, delete)
+    projects/
+      smoke.sh                            # project REST CRUD probe (create, get, patch, delete, tree)
+    threads/                              # (not yet written)
+    auth/                                 # (not yet written)
+  .scratchpad/                            # notes, bugs, findings from smoke test development
   e2e/                                    # Playwright (needs frontend + backend)
     README.md                             # setup + directory plan
-    collab/                               # (scaffolded, no specs yet)
-  fixtures/                               # (scaffolded, seed data)
+    collab/                               # (not yet written)
+  fixtures/                               # (not yet written)
   playbooks/                              # LLM-driven exploratory testing
     README.md                             # playbook format spec
     collab/
@@ -292,23 +300,37 @@ Package-level tests stay in their existing locations:
 
 ### Progress
 
-| Item | Status |
-|---|---|
-| Directory structure + READMEs | Done |
-| `tests/smoke/helpers.sh` (shared bash utilities) | Done |
-| `tests/smoke/run.sh` (orchestrator) | Done |
-| `tests/smoke/collab/handshake/` (migrated from tmp/) | Done |
-| `tests/smoke/collab/sync/` (migrated from tmp/) | Done |
-| `tests/playbooks/collab/ws-sync-roundtrip.md` | Done |
-| Update probes for project-scoped WS (`/ws/projects/{id}` + `doc:subscribe`) | Done |
-| `tests/smoke/collab/proposals/` probe | Done |
-| `tests/smoke/collab/snapshots/` probe | Done |
-| `tests/smoke/collab/persistence/` probe | Done |
-| `tests/smoke/documents/` REST probes | Done |
-| `tests/smoke/projects/` REST probes | Done |
-| `tests/smoke/threads/` SSE probes | TODO |
-| Playwright setup + first spec | TODO |
-| Additional Vitest unit tests | TODO |
+| Item | Status | Notes |
+|---|---|---|
+| Directory structure + READMEs | Done | |
+| `tests/smoke/helpers.sh` (shared bash utilities) | Done | |
+| `tests/smoke/run.sh` (orchestrator) | Done | Runs 7 probes (5 collab + 2 REST) |
+| `tests/smoke/collab/handshake/` | Done | Go probe: auth gates, sync handshake, FORBIDDEN |
+| `tests/smoke/collab/sync/` | Done | Go probe: append, reconnect, persistence verify |
+| `tests/smoke/collab/proposals/` | Done | Go probe: error-path only (empty snapshot, not-found, not-subscribed). NOT broad proposal flows. |
+| `tests/smoke/collab/snapshots/` | Done | Bash-only: REST CRUD + restore. Found bugs #2, #3, #6, #7 (see `tests/.scratchpad/bugs-found.md`). |
+| `tests/smoke/collab/persistence/` | Done | Go probe: debounce, disconnect-flush, round-trip |
+| `tests/smoke/documents/` REST probes | Done | Bash: create, get, patch, delete |
+| `tests/smoke/projects/` REST probes | Done | Bash: create, get, patch, delete, tree. Found bug #1 (*string validation). |
+| `tests/playbooks/collab/ws-sync-roundtrip.md` | Done | |
+| Update probes for project-scoped WS | Done | |
+| `tests/smoke/threads/` SSE probes | TODO | |
+| Playwright setup + first spec | TODO | |
+| Additional Vitest unit tests | TODO | |
+
+### Actual vs Planned Coverage
+
+The scenario tables above (sections 1-7) describe the **full test vision**, not what smoke probes currently cover. The actual smoke probes cover a narrow slice:
+
+| Scenario Section | Actually Covered by Smoke Probes | Not Covered |
+|---|---|---|
+| 1. Connection Lifecycle | 1.1-1.4 (handshake probe) | 1.5-1.7 (heartbeat, rate limiting) |
+| 2. Document Sync | 2.1-2.4 (sync probe) | 2.5-2.7 (multi-doc, unsubscribe, rapid sub/unsub) |
+| 3. Reconnection | 3.1 (sync probe reconnect) | 3.2-3.8 (offline edits, stale IDB, backoff, mid-sync disconnect) |
+| 4. Binary Envelope | Implicit via sync/persistence probes | 4.2-4.8 (fuzz, corrupted, unknown type) |
+| 5. Persistence | 5.1, 5.3, 5.4 (persistence probe) | 5.2 (auto-snapshot trigger), 5.5 (concurrent race) |
+| 6. AI Proposals | Error paths only (proposals probe) | 6.1-6.9 (actual proposal creation, accept, reject, concurrent edit) |
+| 7. Undo/Redo | None | All (requires Playwright/browser) |
 
 ### Known Issue: Probes Use Old WS Endpoint — RESOLVED
 
