@@ -121,7 +121,8 @@ The transport returns structured error codes. The UI must translate these into w
 
 | Error Code | What Happened | UI Response | Recovery |
 |------------|--------------|-------------|----------|
-| `AUTH_FAILED` | JWT expired mid-session | Auto-refresh token, reconnect silently. If refresh fails: "Session expired, please sign in again." | Redirect to login on failure |
+| `AUTH_FAILED` | JWT invalid or missing | Auto-refresh token, reconnect silently. If refresh fails: "Session expired, please sign in again." | Redirect to login on failure |
+| `AUTH_EXPIRED` | JWT expired after connect (checked on heartbeat) | Auto-refresh token, reconnect silently. If refresh fails: "Session expired, please sign in again." | Redirect to login on failure |
 | `FRAME_TOO_LARGE` | Update exceeded 256KB app limit | Silent retry via HTTP if two-lane available. If not: "Your change couldn't be saved. Try a smaller edit." | Keep connection alive |
 | `RATE_LIMITED` | >30 messages/second | Buffer and retry silently. After 10s: "Changes are saving slowly." | Auto-resolves |
 | `RESET_REQUIRED` | State divergence unrecoverable | Save local changes to IndexedDB, reload document. "Reloading document..." | Automatic |

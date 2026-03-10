@@ -12,9 +12,18 @@ The largest stage. Replaces the multiplexed per-project WS with per-document con
 
 ## Backend Changes
 
+### Dependencies (New or Updated)
+
+| Package | Purpose | Notes |
+|---------|---------|-------|
+| `github.com/coder/websocket` | WS library for new handlers | Context-native API, concurrent-write-safe, actively maintained by Coder Inc. Old `golang.org/x/net/websocket` code is deleted with old handlers. |
+| `golang.org/x/sync/singleflight` | Fix Acquire() TOCTOU race in session manager | See session_manager.go changes below |
+| `golang.org/x/time/rate` | Inbound rate limiting for document handler | Replaces bespoke rate tracker |
+| `go.uber.org/goleak` | Test-only goroutine leak detection | Verify no leaked goroutines after connect/disconnect cycles |
+
 ### New: `collab_document_handler.go`
 
-New handler for `GET /ws/documents/{documentId}`.
+New handler for `GET /ws/documents/{documentId}`. Uses `coder/websocket` (not the old `golang.org/x/net/websocket` library).
 
 **Responsibilities:**
 - WS upgrade + auth (reuse `collabAuthenticator`)
@@ -67,6 +76,7 @@ Strip down to JSON-only project events handler.
 
 **Change: Proposal handling (see S-3 in review-findings.md):**
 - Replace `GetSubscription(connectionID, documentID)` with direct `checkDocumentAccess()` call for proposal commands. The subscription check was a proxy for access validation -- in v2, use the authenticator directly.
+- Cache `documentId -> projectId` mapping per-connection at first use. Subsequent proposal commands for the same document verify against the cached project binding without hitting the DB. Cache lives for the connection lifetime.
 - Proposals now broadcast to **project WS connections** via a new `ProjectConnectionRegistry` (see below), not the document broadcaster.
 
 **Add:**
@@ -97,9 +107,19 @@ The proposal broadcaster (`collab_proposal_broadcaster.go`) switches from `docum
 
 ### Modify: `session_manager.go`
 
-Minimal changes. `Acquire()` / `Release()` stay the same. The caller changes (document handler instead of subscription service), but the session manager doesn't know or care.
+Minimal changes. The caller changes (document handler instead of subscription service), but the session manager API stays the same.
 
 Remove any `SubscriptionService` coupling if it exists.
+
+**Fix Acquire() TOCTOU race (CRITICAL, pre-existing bug):** The current `Acquire()` checks existence under lock, then loads state outside lock. Two concurrent callers can both see "not loaded" and create duplicate Y.Docs. Fix using `singleflight`:
+
+1. Under the lock, check if session exists. If so, increment refcount and return.
+2. If not, insert a loading placeholder (e.g., a channel or `singleflight.Group.Do` key) under the lock.
+3. Release the lock. Load state (DB read, Y.Doc creation) outside the lock.
+4. Concurrent callers hitting step 1-2 find the placeholder and wait on its result via `singleflight` instead of creating duplicate sessions.
+5. On load completion, replace placeholder with live session under lock.
+
+**Lease generation guard for release/acquire races:** Each session carries a monotonic `leaseGeneration` counter. `release()` captures the current generation when scheduling warm eviction. `acquire()` increments the generation, invalidating any pending eviction timer. The eviction callback only destroys the session if the generation still matches -- this prevents a race where a slow eviction timer fires after a new acquire has already reclaimed the session.
 
 ### Modify: `collab_message_loop.go`
 
@@ -109,7 +129,10 @@ The project WS gets its own simpler loop (JSON only, no binary).
 
 ### Modify: Proposal Broadcasting
 
-`collab_proposal_broadcaster.go` -- proposals broadcast to project WS connections (not document WS). The broadcaster sends JSON events to the project handler's write channel, same as today but without the multiplexed binary layer.
+`collab_proposal_broadcaster.go` -- the fanout is split across two transports:
+
+- **JSON proposal events** (`proposal:snapshot`, `proposal:new`, `proposal:statusChanged`, `doc:edited`) -> **project WS** via `ProjectConnectionRegistry`. These are notifications/metadata only.
+- **Yjs update bytes** (from accepted proposals) -> **document WS** via existing document broadcaster/session runtime. The proposal service applies the update to the in-memory Y.Doc, which then broadcasts to connected document WS clients through the normal Yjs fanout path.
 
 Add: broadcast `{"type":"doc:edited","documentId":"...","source":"proposal_accepted"}` on the project WS when a proposal is accepted.
 
@@ -138,11 +161,17 @@ interface DocumentSession {
   indexeddbProvider: IndexeddbPersistence
   runtime: CollabSyncRuntime
   connection: DocumentConnection    // WS wrapper
+  proposalManager: ProposalManager
+  proposalReviewRuntime: ProposalReviewRuntime | null
   status: 'active' | 'warm' | 'disconnected'
   sendBinary(data: Uint8Array): void
   onStatusChange(handler: (status) => void): Unsubscribe
 }
 ```
+
+Session owns all document-scoped state that must survive the warm pool. Hook-local state (ephemeral UI like review revision selection) stays in the component.
+
+**Initialization:** Must register `pagehide` (with `beforeunload` fallback) handler at initialization to call `closeAll()` on tab close. React unmount is secondary cleanup; heartbeat timeout is the server-side safety net.
 
 **Lifecycle:**
 - `acquire()` -- if session exists in warm pool and last heartbeat was within 60s, promote to active (instant, no resync). If session exists in warm pool but last heartbeat was >60s ago (stale), destroy and recreate (cold path). If cold, create new Y.Doc + IndexedDB + WS + runtime.
