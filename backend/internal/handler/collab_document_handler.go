@@ -580,6 +580,12 @@ func (h *CollabDocumentHandler) broadcastDocumentBinary(
 	}
 }
 
+// BroadcastToDocument sends binary data to all connected document WS clients.
+// Used by proposal acceptance to fan out Yjs updates from server-initiated actions.
+func (h *CollabDocumentHandler) BroadcastToDocument(documentID string, data []byte) {
+	h.broadcastDocumentBinary(context.Background(), documentID, nil, data)
+}
+
 func (h *CollabDocumentHandler) sendBinary(ctx context.Context, conn *websocket.Conn, data []byte) error {
 	return conn.Write(ctx, websocket.MessageBinary, data)
 }

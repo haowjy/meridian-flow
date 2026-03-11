@@ -119,6 +119,7 @@ type groupAcceptOutcomeDTO struct {
 func (h *CollabHandler) handleProposalAccept(
 	ctx context.Context,
 	conn *websocketDocumentConnection,
+	projectID string,
 	docID string,
 	docUUID uuid.UUID,
 	userUUID uuid.UUID,
@@ -176,7 +177,7 @@ func (h *CollabHandler) handleProposalAccept(
 		h.sendError(conn, "IDEMPOTENCY_REPLAY", "proposal:accept already processed")
 		return
 	}
-	if err := h.broadcastProposalMutations(result.Mutations); err != nil {
+	if err := h.broadcastProposalMutations(projectID, result.Mutations); err != nil {
 		h.logger.Error("collab accept mutation broadcast failed", "document_id", docID, "error", err)
 		h.sendError(conn, "INTERNAL_ERROR", "failed to broadcast proposal updates")
 	}
@@ -185,6 +186,7 @@ func (h *CollabHandler) handleProposalAccept(
 func (h *CollabHandler) handleProposalReject(
 	ctx context.Context,
 	conn *websocketDocumentConnection,
+	projectID string,
 	docID string,
 	docUUID uuid.UUID,
 	userUUID uuid.UUID,
@@ -218,7 +220,7 @@ func (h *CollabHandler) handleProposalReject(
 		h.sendError(conn, mapProposalErrorCode(err), err.Error())
 		return
 	}
-	if err := h.broadcastProposalMutations(result.Mutations); err != nil {
+	if err := h.broadcastProposalMutations(projectID, result.Mutations); err != nil {
 		h.logger.Error("collab reject mutation broadcast failed", "document_id", docID, "error", err)
 		h.sendError(conn, "INTERNAL_ERROR", "failed to broadcast proposal updates")
 	}
@@ -227,6 +229,7 @@ func (h *CollabHandler) handleProposalReject(
 func (h *CollabHandler) handleProposalGroupAccept(
 	ctx context.Context,
 	conn *websocketDocumentConnection,
+	projectID string,
 	docID string,
 	docUUID uuid.UUID,
 	userUUID uuid.UUID,
@@ -282,7 +285,7 @@ func (h *CollabHandler) handleProposalGroupAccept(
 		return
 	}
 
-	if err := h.broadcastProposalMutations(result.Mutations); err != nil {
+	if err := h.broadcastProposalMutations(projectID, result.Mutations); err != nil {
 		h.logger.Error("collab group accept mutation broadcast failed", "document_id", docID, "error", err)
 		h.sendError(conn, "INTERNAL_ERROR", "failed to broadcast proposal updates")
 		return
@@ -294,7 +297,9 @@ func (h *CollabHandler) handleProposalGroupAccept(
 		h.sendError(conn, "INTERNAL_ERROR", "failed to encode group accept result")
 		return
 	}
-	h.documentBroadcaster.Broadcast(docID, groupEventBytes, nil)
+	if h.projectRegistry != nil {
+		h.projectRegistry.BroadcastToProject(projectID, groupEventBytes)
+	}
 }
 
 // handleProposalRequestUpdate fetches a single proposal's yjsUpdate and sends
@@ -387,22 +392,29 @@ func (h *CollabHandler) sendProposalSnapshot(
 	return conn.SendJSON(buildProposalSnapshotEvent(docUUID, proposals))
 }
 
-func (h *CollabHandler) broadcastProposalMutations(mutations []collabSvc.ProposalMutationIntent) error {
+func (h *CollabHandler) broadcastProposalMutations(projectID string, mutations []collabSvc.ProposalMutationIntent) error {
 	for _, mutation := range mutations {
 		documentID := mutation.DocumentID.String()
+
+		// Broadcast Yjs update to document WS connections (binary framing).
 		if mutation.Status == collabModels.ProposalStatusAccepted && len(mutation.YjsUpdate) > 0 {
-			updateFrame, err := buildUpdateFrame(mutation.DocumentID, mutation.YjsUpdate)
-			if err != nil {
-				return err
+			if h.docHandler != nil {
+				encodedUpdate, err := encodeSyncUpdatePayload(mutation.YjsUpdate)
+				if err != nil {
+					return err
+				}
+				h.docHandler.BroadcastToDocument(documentID, addDocPrefix(docWSPrefixSync, encodedUpdate))
 			}
-			h.documentBroadcaster.Broadcast(documentID, updateFrame, nil)
 		}
 
+		// Broadcast status change JSON event to project WS connections.
 		statusEventBytes, err := buildProposalStatusChangedEventBytes(mutation.DocumentID, mutation.ProposalID, mutation.Status)
 		if err != nil {
 			return err
 		}
-		h.documentBroadcaster.Broadcast(documentID, statusEventBytes, nil)
+		if h.projectRegistry != nil {
+			h.projectRegistry.BroadcastToProject(projectID, statusEventBytes)
+		}
 	}
 	return nil
 }

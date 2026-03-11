@@ -212,20 +212,3 @@ func closeHTTPBody(t *testing.T, body interface{ Close() error }) {
 		t.Errorf("close HTTP response body: %v", err)
 	}
 }
-
-func readWSBinaryMessage(t *testing.T, conn *websocket.Conn) []byte {
-	t.Helper()
-
-	// Skip any text frames (e.g., proposal:snapshot) and return the next binary frame.
-	for {
-		var raw []byte
-		if err := websocket.Message.Receive(conn, &raw); err != nil {
-			t.Fatalf("receive ws binary message: %v", err)
-		}
-		// Text frames start with '{' (JSON). Skip them.
-		if len(raw) > 0 && raw[0] == '{' {
-			continue
-		}
-		return raw
-	}
-}

@@ -18,6 +18,13 @@ type ProjectConnectionRegistrar interface {
 	Unregister(connectionID string)
 }
 
+// ProjectConnectionRegistry combines project websocket registration and broadcast
+// capabilities for handlers that need both behaviors.
+type ProjectConnectionRegistry interface {
+	ProjectBroadcaster
+	ProjectConnectionRegistrar
+}
+
 // ProjectConnection represents a single project WS connection.
 // No writeChan -- coder/websocket is concurrent-write-safe, so Send() calls
 // conn.Write() directly.
