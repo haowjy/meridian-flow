@@ -48,6 +48,47 @@ These are pre-existing bugs from the audit (`tests/.scratchpad/bugs-found.md`) t
 | #7 | `collab_snapshot.go:283` | Pre-restore safety snapshot captures empty state for REST-only docs | Bootstrap before saving safety snapshot |
 | #8 | `collab_snapshot_test.go` | No `CreateSnapshot` handler tests | Add tests for bootstrap path |
 
+### Bug #12: ApplyUpdate() use-after-delete race (CRITICAL, pre-existing)
+
+**Symptom:** Accepted proposal silently fails to apply -- data loss with no error.
+
+**Root cause:** `ApplyUpdate()` reads the session reference under the manager lock, then releases the lock and operates on the session. A concurrent `Release()` can destroy the session between the lock release and the `applyUpdate` call. The session's Y.Doc is garbage-collected or closed while `applyUpdate` is mid-operation.
+
+**Impact:** Silent data loss for accepted proposals. The proposal is marked as accepted but the Yjs update is never applied to the document.
+
+**Fix:** Increment `refCount` under the manager lock before calling `applyUpdate`, decrement after. This prevents `Release()` from destroying the session while an update is in flight. The same fix is needed for `GetStateSnapshot()` -- any method that reads session state outside the lock must hold a reference.
+
+```
+applyUpdate(docId, update):
+  lock()
+  session = sessions[docId]
+  if session == nil: unlock(); return ErrNotLoaded
+  session.refCount++
+  unlock()
+
+  defer func():
+    lock()
+    session.refCount--
+    // check if pending destroy
+    unlock()
+
+  session.applyUpdate(update)
+```
+
+**Smoke probe:** Concurrent accept + release stress test.
+
+### Bug #13: Subscribe() exposes partially-initialized subscription (CRITICAL, pre-existing)
+
+**Symptom:** Panic: nil pointer dereference in `handleProjectBinaryMessage` on `sub.Session`.
+
+**Root cause:** `Subscribe()` reserves a slot in the subscription map with `Session=nil`, releases the lock, then calls `Acquire()` (which does I/O -- DB read, Y.Doc creation). A concurrent `GetSubscription()` finds the subscription entry but its `Session` field is nil. `handleProjectBinaryMessage` dereferences `sub.Session` and panics.
+
+**Impact:** Server crash (goroutine panic) on concurrent subscribe + binary message.
+
+**Fix:** Do not insert the subscription into the map until fully initialized. Alternatively, check `sub.Session != nil` in all callers before use.
+
+**Note:** This bug is in `SubscriptionService` code that v2 deletes entirely. The pattern must not be repeated in the new document handler -- the handler must not expose partially-initialized state to concurrent readers.
+
 ---
 
 ## Real-World Yjs Pitfalls to Watch For

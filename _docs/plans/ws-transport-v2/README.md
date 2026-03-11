@@ -91,7 +91,7 @@ flowchart TD
 
 Stage 1 is the foundation. Stages 2-3 are independent after Stage 1.
 
-**Note:** Chat stream delta piggybacking (described in `ws-patterns.md`) is deferred to a future stage. Stage 1 defines the `applyExternalUpdate(docId, delta)` API on the session manager but does not wire it to the chat/SSE system.
+**Note:** Chat stream delta piggybacking (described in `ws-patterns.md`) is deferred to a future stage. The `applyExternalUpdate(docId, delta)` API is a placeholder in the session manager interface -- Stage 1 does not implement or wire it. It exists as a design marker for the future chat delta integration.
 
 ## Relationship to Existing Plans
 
@@ -108,6 +108,10 @@ Stage 1 is the foundation. Stages 2-3 are independent after Stage 1.
 | `stage-1-per-doc-ws.md` | Stage 1 implementation plan (replace, don't migrate) |
 | `ws-patterns.md` | Protocol specs, session manager, chat delta piggybacking, CRDT guarantee |
 | `known-bugs-and-pitfalls.md` | Bugs being fixed + real-world Yjs failure modes to watch for |
-| `review-findings.md` | Adversarial review findings (rounds 1 + 2) |
+| `review-findings.md` | Adversarial review findings (rounds 1-4) |
 | `ui-requirements.md` | What the UI must handle from the transport layer (for new UI effort) |
 | `architecture-map-20260310-r4k7.md` | Target architecture diagrams (GPT-generated, round 2 review artifact) |
+| `implementation-plan.md` | Stage 1 master implementation plan: 5 phases, dependency graph, estimates |
+| `agent-headcount.md` | Orchestration model, per-phase staffing, review loop process |
+| `decision-log.md` | Immutable log of implementation decisions (append-only) |
+| `whats-weird.md` | Surprising patterns implementers should know + out-of-scope bugs |

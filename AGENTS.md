@@ -21,7 +21,7 @@ See `frontend/CLAUDE.md` for UI-specific implementation of this philosophy.
 ALWAYS FOLLOW SOLID PRINCIPLES.
 ALWAYS ENSURE THERE IS A PLAN APPROVED BY THE USER BEFORE IMPLEMENTING ANYTHING GREATER THAN A FEW LINES OF CODE. This is to make sure a developer understands the situation and knows whats happening to the system. You should also make sure to follow [[## Before Writing New Code]]
 
-**DO NOT ENTER PLAN MODE.** Instead, write plans as markdown files in `_docs/plans/`. During planning, use `/run-agent` (via the `researching` skill) for research and codebase exploration — stay in the normal conversation so these tools remain available. See [[### Plan Lifecycle]] for the full workflow.
+**DO NOT ENTER PLAN MODE.** Instead, write plans as markdown files in `_docs/plans/`. During planning, use meridian subagents (researcher, reviewer) for research and codebase exploration. See [[### Plan Lifecycle]] for the full workflow.
 
 PLAN FOR EXTENSIBILITY
 
@@ -113,12 +113,12 @@ FRONTEND_PORT=3001
 
 ### Git Commits
 
-- For long-running tasks where you are `/orchestrate`ing, commit after each "testable" state, most often after each task of a plan. If the human is in the loop, you should confirm with the user before committing.
+- For long-running tasks, commit after each "testable" state, most often after each task of a plan. If the human is in the loop, you should confirm with the user before committing.
 - Follow repository's commit message style
 
 ### Planning
 
-Make sure you use the `/mermaid` skill to help make markdown diagrams for your plans to help you and the user understand the plan. Using `/orchestrate` and multiple agents to review-cycle through the plan can help you catch issues early and get a better plan.
+Make sure you use the `/mermaid` skill to help make markdown diagrams for your plans to help you and the user understand the plan. Using meridian and multiple subagents to review-cycle through the plan can help you catch issues early and get a better plan.
 
 ### Testing
 
@@ -132,38 +132,35 @@ Token refresh is agent-authorized. See `backend/CLAUDE.md` -> "Smoke Testing" fo
 
 ### Long-Running Tasks
 
-For multi-phase plans, use the `/orchestrate` skill and NEVER write implementation code yourself. It discovers available skills, picks the right model for each subtask, and you should composes runs via `run-agent.sh`. See the orchestrate skill's SKILL.md for full details.
+For multi-phase plans, use meridian to orchestrate and NEVER write implementation code yourself. The primary agent coordinates subagent runs (coder, researcher, reviewer) across model families, picking the best model for each subtask.
 
-**Install:** `/plugin marketplace add jimmyyao/orchestrate` (Claude Code)
-**Skills:** `*/SKILL.md` under `orchestrate/skills/` — self-describing building blocks discovered at runtime.
-**Model guidance:** loaded from `run-agent/references/` — model strengths, task-type heuristics, and skill-composition patterns.
+**Agents** (defined in `.claude/agents/`): coder (implementation), researcher (read-only exploration), reviewer (code review). Each supports variant models (GPT-5.3-codex, Claude Opus 4.6, Gemini 3.1 Pro).
+**Meridian**: manages orchestration, spawning, and coordination of multi-agent workflows.
 
 ### Plan Lifecycle
 
 All plans live in `_docs/plans/`. **Never use Claude Code's built-in plan mode.**
 
-- **Research first** — use `/run-agent` with the `researching` skill before writing a plan.
+- **Research first** — use meridian researcher subagents before writing a plan.
 - **Write plans** to `_docs/plans/<name>.md` with a `**Status:**` field at the top (`draft → approved → in-progress → done`).
 - **Never overwrite** an existing plan — move it to `_docs/plans/_archive/` first.
 - **Archive when done** — move completed plans to `_docs/plans/_archive/`.
 
 ### Plan Execution
 
-- **Multi-stage plans** (2+ stages): Execute via `/orchestrate`. Never implement multi-stage plans directly.
+- **Multi-stage plans** (2+ stages): Execute via meridian orchestration. Never implement multi-stage plans directly.
 - **Single-stage plans**: You may implement directly. Update progress in the plan file as you go.
 
 ### Model Selection
 
-The orchestrator dynamically selects models based on model guidance (loaded from `run-agent/references/`). You MUST write a good prompt and pass in correct context files for the task/plan at hand. 
+The orchestrator selects models based on task type. You MUST write a good prompt and pass in correct context files for the task/plan at hand.
 
 General heuristics:
-- **Implementation**: `gpt-5.4` (default), `claude-opus-4-6` (UI iteration + rare different perspectives)
-- **Review**: Fan out to multiple model families for medium/high risk changes
+- **Implementation**: `gpt-5.3-codex` (default), `claude-opus-4-6` (UI iteration + rare different perspectives)
+- **Review**: Fan out to multiple model families for medium/high risk changes, prefer `gpt-5.4` as the main reviewer
 - **Research**: Use model diversity for different perspectives
 - **Commit**: `claude-haiku-4-5` to help create commits for the changes
 - **Documentation**: `claude-haiku-4-5` to help find the files that need to be updated for the changes you are making, `claude-opus-4-6` to help write the documentation itself.
-
-See `orchestrate/skills/run-agent/references/default-model-guidance.md` for detailed heuristics.
 
 ### Frontend
 
@@ -181,7 +178,7 @@ See `backend/AGENTS.md` for backend deployment details.
 
 ## Refactoring Backlog
 
-Technical debt is tracked in `_docs/future/refactoring-backlog.md`. Use `/backlog-managing` to:
-- Review current items
-- Add new discoveries
-- Work on refactors
+Technical debt is tracked in `_docs/future/refactoring-backlog.md`.
+- Review current items before starting related work
+- Add new discoveries as you find them
+- Work on refactors when explicitly requested

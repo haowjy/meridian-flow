@@ -162,6 +162,7 @@ Error codes are defined but user-facing messages are not. Temporary approach dur
 | Code | Temporary behavior |
 |------|-------------------|
 | `AUTH_FAILED` | Auto-refresh token + reconnect silently |
+| `AUTH_TIMEOUT` | Auto-refresh token + reconnect silently (same as AUTH_FAILED) |
 | `AUTH_EXPIRED` | Auto-refresh token + reconnect silently |
 | `FRAME_TOO_LARGE` | Console warn, keep connection alive |
 | `RATE_LIMITED` | Auto-retry with backoff, no UI |
@@ -187,12 +188,44 @@ Keep-alive pool already covers the primary use case. Defer anticipatory connecti
 | Flash of empty content during two-lane HTTP fetch | UX | Show IndexedDB cached content during fetch |
 | `pagehide`/`beforeunload` unreliable for cleanup | Both | Use `pagehide` with `beforeunload` fallback. Server-side heartbeat is the real safety net; browser events are courtesy only |
 
+## Round 4: Opus Deep-Dive Reviews (Completeness, Concurrency, Go Idioms)
+
+Three focused reviews by Opus analyzed the design for completeness gaps, concurrency correctness, and Go idiom adherence.
+
+### Summary Table
+
+| ID | Severity | Finding | Resolution |
+|----|----------|---------|------------|
+| C1 | CRITICAL | Acquire() singleflight eliminates loser entirely -- no duplicate to clean up | RESOLVED (stage-1 updated) |
+| C2 | CRITICAL | ApplyUpdate() use-after-delete race -- session destroyed between lock release and applyUpdate call | TRACKED (known-bugs + stage-1 updated) |
+| C3 | CRITICAL | Subscribe() nil Session race -- partially-initialized subscription exposed to concurrent readers | TRACKED (known-bugs updated; pre-existing in code v2 deletes) |
+| C4 | HIGH | Double-release on warm eviction -- Release() needs underflow guard | RESOLVED (stage-1 updated) |
+| C5 | HIGH | DocumentSessionManager integration spec missing -- instantiation, context, store interaction | RESOLVED (stage-1 updated) |
+| C6 | HIGH | leaseGeneration pseudocode missing -- acquire/release/eviction semantics unclear | RESOLVED (stage-1 updated) |
+| M1 | MEDIUM | Context threading -- singleflight needs detached context, handler needs context.WithCancel | RESOLVED (stage-1 updated) |
+| M2 | MEDIUM | Error modeling -- need sentinel errors, bootstrapAuth should return error not string | RESOLVED (stage-1 updated) |
+| M3 | MEDIUM | Interface split -- ProjectConnectionRegistry should split into Broadcaster + Registrar | RESOLVED (stage-1 updated) |
+| M4 | MEDIUM | Direct write -- replace writeChan with Send(data) interface; coder/websocket handles concurrency | RESOLVED (stage-1 updated) |
+| M5 | MEDIUM | AcceptOptions -- concrete websocket.Accept configuration missing | RESOLVED (ws-patterns updated) |
+| M6 | MEDIUM | Rate limiter scope -- one per connection, created at setup | RESOLVED (stage-1 updated) |
+| M7 | MEDIUM | proposal:snapshot query scope -- only pending proposals, not all documents | RESOLVED (ws-patterns updated) |
+| M9 | MEDIUM | Document broadcaster replaced -- per-doc handler owns fanout via connection set | RESOLVED (stage-1 updated) |
+| M10 | MEDIUM | Server has no warm pool -- must state explicitly | RESOLVED (stage-1 updated) |
+| M11 | MEDIUM | applyExternalUpdate deferred -- README overstates Stage 1 scope | RESOLVED (README updated) |
+| M12 | MEDIUM | Proposal auth cache detail -- map[string]string, connection-scoped mutex | RESOLVED (stage-1 updated) |
+| M13 | MEDIUM | Atomic eviction -- generation check + delete + mark-destroying under one lock | RESOLVED (stage-1 updated) |
+| M14 | MEDIUM | doc:edited source enum -- expand with future values | RESOLVED (ws-patterns updated) |
+| L1 | LOW | AUTH_TIMEOUT as distinct error code | RESOLVED (ws-patterns updated) |
+| L2 | LOW | Server sends heartbeat, client responds (not bidirectional proactive) | RESOLVED (ws-patterns updated) |
+| L3 | LOW | Eviction cleanup must call ydoc.destroy(), indexeddbProvider.destroy(), runtime.destroy() | RESOLVED (ui-requirements + stage-1 updated) |
+| L4 | LOW | goleak: prefer per-test defer over TestMain | RESOLVED (stage-1 updated) |
+
 ## Action Summary
 
 ```mermaid
 flowchart TD
     NOW["Fix Now<br/>(independent of v2)"] --> B3["B-3: Origin validation"]
-    NOW --> M4["M-4: Bugs #6 + #7"]
+    NOW --> M4_old["M-4: Bugs #6 + #7"]
 
     S0["Stage 0<br/>(before v2)"] --> B2["B-2: RESOLVED<br/>coder/websocket used in new handlers"]
 
@@ -206,7 +239,17 @@ flowchart TD
     PLAN --> H3["H-3: Exactly-once release"]
     PLAN --> H4["H-4: Server connection limit"]
     PLAN --> H5["H-5: Server idle timeout"]
-    PLAN --> M2["M-2: Rate limiting"]
+    PLAN --> M2_old["M-2: Rate limiting"]
+
+    R4["Round 4 Findings<br/>(RESOLVED in docs)"] --> C1["C1: singleflight insight"]
+    R4 --> C2["C2: ApplyUpdate use-after-delete"]
+    R4 --> C4["C4: Release underflow guard"]
+    R4 --> C5["C5: SessionManager integration"]
+    R4 --> C6["C6: leaseGeneration pseudocode"]
+    R4 --> M1_r4["M1-M14: Context, errors,<br/>interface split, etc."]
+
+    TRACKED["Pre-existing Bugs<br/>(TRACKED)"] --> C3["C3: Subscribe nil Session<br/>(deleted in v2)"]
+    TRACKED --> C2b["C2: ApplyUpdate race<br/>(fix in session_manager)"]
 
     DEFER["Deferred to New UI"] --> UX1["AI edit notifications"]
     DEFER --> UX2["Unified offline display"]
