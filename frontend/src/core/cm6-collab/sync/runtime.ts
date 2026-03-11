@@ -82,11 +82,7 @@ export class CollabSyncRuntime {
   private status: CollabSyncStatus = "disconnected";
   private didFireInitialSync = false;
   // Defense-in-depth: prevents duplicate start calls from re-sending SyncStep1
-  // within the same runtime lifecycle.
-  //
-  // On reconnect, the runtime is typically reused and didStartSync stays true.
-  // Re-sync still works because the document websocket backend sends SyncStep1
-  // after each authenticated connection.
+  // within the same websocket lifecycle.
   private didStartSync = false;
 
   constructor(options: CreateCollabSyncRuntimeOptions) {
@@ -162,6 +158,12 @@ export class CollabSyncRuntime {
     this.sendBinary(
       frameWithPrefix(DOC_WS_PREFIX_SYNC, encoding.toUint8Array(encoder)),
     );
+  }
+
+  reset(): void {
+    this.didStartSync = false;
+    this.didFireInitialSync = false;
+    this.setStatus("disconnected");
   }
 
   handleBinaryFrame(frame: Uint8Array): void {
