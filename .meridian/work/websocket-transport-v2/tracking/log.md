@@ -85,3 +85,33 @@ Each entry:
 - **Category:** decision
 - **Description:** releaseSessionRef extracted as shared helper for ApplyUpdate/GetStateSnapshot temporary refCount pin cleanup. Same logic as Release() but callable with a specific session reference.
 - **Resolution:** Accepted; reduces duplication between Release() and operational ref releases.
+
+#### IL-4
+- **Phase:** 1B
+- **Category:** decision
+- **Description:** Phase 1B review (p61/p62/p63) flagged per-connection document access cache as stale-authorization risk (HIGH by reviewer-solid). The cache never revalidates during connection lifetime.
+- **Resolution:** Accepted as deliberate design. The old subscription model had identical behavior (once subscribed, stayed subscribed until disconnect). Connection lifetimes are short (page session). Revalidation hooks add complexity with no current use case.
+
+#### IL-5
+- **Phase:** 1B
+- **Category:** bug
+- **Description:** Both reviewer-solid and reviewer-concurrency flagged BroadcastToProject holding RLock during network I/O (Send calls). Slow/broken clients can block Register/Unregister, causing contention.
+- **Resolution:** Fix spawned (p64): snapshot connections under lock, release, send outside lock. Same pattern as BroadcastToDocument.
+
+#### IL-6
+- **Phase:** 1B
+- **Category:** decision
+- **Description:** reviewer-planning flagged missing doc:edited event (in plan.md as Phase 1B task) and broken frontend proposal compatibility (frontend gates on doc:subscribed which was removed).
+- **Resolution:** Accepted. Working on h/collab feature branch — all phases land atomically before merge to main. Frontend compatibility handled in Phase 3. doc:edited deferred since it's new functionality, not a regression.
+
+#### IL-7
+- **Phase:** 1B
+- **Category:** backlog
+- **Description:** reviewer-solid flagged concrete *CollabDocumentHandler dependency where a narrow interface would suffice (DIP violation).
+- **Resolution:** Deferred to Phase 2 cleanup — introduce DocumentBroadcaster interface.
+
+#### IL-8
+- **Phase:** 1B
+- **Category:** backlog
+- **Description:** Dead code: getSubscriptionInvalidationReason in collab_authenticator.go no longer used at runtime.
+- **Resolution:** Deferred to Phase 2 cleanup.
