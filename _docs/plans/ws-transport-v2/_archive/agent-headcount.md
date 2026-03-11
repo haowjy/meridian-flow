@@ -16,7 +16,7 @@ audience: developer, architect
 
 **Smoke testing**: via `meridian spawn -a smoke-tester -m sonnet` -- QA agent that writes disposable curl/WS scripts to test from the outside like a real user. Scripts go in `scratch/smoke/` (gitignored).
 
-**Tracking**: orchestrator appends to `implementation-log.md` after each spawn report -- decisions, weird findings, backlog items, bugs.
+**Tracking**: orchestrator appends to `../tracking/log.md` after each spawn report -- decisions, weird findings, backlog items, bugs.
 
 ## Execution Workflow (per phase)
 
@@ -152,7 +152,7 @@ Within a single worktree, work is SEQUENTIAL (one implementer at a time). Parall
 1. **Compose prompts** -- detailed, scoped, with correct -f context files
 2. **Evaluate reports** -- never blindly accept; check against design docs
 3. **Synthesize reviews** -- resolve reviewer conflicts, make final calls
-4. **Track everything** -- append to `implementation-log.md` after each spawn:
+4. **Track everything** -- append to `../tracking/log.md` after each spawn:
    - Decisions made (even small ones)
    - Weird things the implementer found
    - Backlog items for later

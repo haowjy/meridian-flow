@@ -14,7 +14,7 @@ These must be resolved before or during Stage 1 implementation.
 
 **Current code:** `handleProjectProposalCommand()` in `collab_project.go:452` calls `GetSubscription(connectionID, documentID)` to validate access. In v2, document subscriptions live on separate document WS connections, so this check will **always fail** -- `proposal:accept` and `proposal:reject` are dead on arrival.
 
-**Fix:** Replace `GetSubscription` check with direct `checkDocumentAccess` call. The subscription check was a proxy for "user has access to this document" -- in v2, use the authenticator directly. Document this decision in `stage-1-per-doc-ws.md`.
+**Fix:** Replace `GetSubscription` check with direct `checkDocumentAccess` call. The subscription check was a proxy for "user has access to this document" -- in v2, use the authenticator directly. Document this decision in `../spec/backend-frontend.md`.
 
 ### B-2: Migrate from `golang.org/x/net/websocket` [ARCHITECTURE REVIEWER] -- RESOLVED
 
@@ -97,7 +97,7 @@ The `connected` message `{"type":"connected","stateSize":N}` has no version fiel
 
 Removing the envelope means the Go backend must parse the Yjs varint to distinguish sync messages (type 0,1,2) from awareness messages (different range). The current envelope explicitly tags awareness as `0x03`. The plan does not specify how the new document handler distinguishes these.
 
-**Fix:** Add explicit documentation in `stage-1-per-doc-ws.md` about Yjs message type parsing.
+**Fix:** Add explicit documentation in `../spec/backend-frontend.md` about Yjs message type parsing.
 
 ### H-3: Double-release risk in connection lifecycle [BUG REVIEWER]
 
