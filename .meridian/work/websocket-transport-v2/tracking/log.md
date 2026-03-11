@@ -68,4 +68,20 @@ Each entry:
 
 ### Log
 
-(Entries added during implementation below)
+#### IL-1
+- **Phase:** 0
+- **Category:** decision
+- **Description:** Spawned agents report exit 143 (SIGTERM from codex harness) but complete their work and produce correct output. Treating these as successful completions since go vet + go test pass.
+- **Resolution:** Accepted; verified all output manually.
+
+#### IL-2
+- **Phase:** 0
+- **Category:** decision
+- **Description:** singleflight Acquire keeps a post-singleflight lock re-check (existing session check) even though singleflight should prevent duplicates. This is belt-and-suspenders since singleflight.Do results are shared by reference -- a second caller could race into the map insertion.
+- **Resolution:** Kept the re-check as defensive programming.
+
+#### IL-3
+- **Phase:** 0
+- **Category:** decision
+- **Description:** releaseSessionRef extracted as shared helper for ApplyUpdate/GetStateSnapshot temporary refCount pin cleanup. Same logic as Release() but callable with a specific session reference.
+- **Resolution:** Accepted; reduces duplication between Release() and operational ref releases.
