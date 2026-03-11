@@ -4,7 +4,7 @@ audience: developer, architect
 ---
 # ws-transport-v2 Stage 1: Implementation Plan
 
-**Status:** draft
+**Status:** in-progress
 
 ## Overview
 
