@@ -60,6 +60,7 @@ audience: developer, architect
 - 1x `meridian spawn -a reviewer-concurrency` -- singleflight + refcount race analysis
 - 1x `meridian spawn -a unit-tester` -- verify singleflight + refcount guards with race tests
 - 1x `meridian spawn -a reviewer-planning` -- does Phase 0 set up Phase 1A/1B correctly?
+- 1x `meridian spawn -a documenter -m haiku` then `-m opus` -- update design docs if implementation deviated
 - Gate: orchestrator approves, all existing + new tests pass
 
 ### Phase 1A: Document WS Handler (~700 lines)
@@ -70,6 +71,7 @@ audience: developer, architect
 - 1x `meridian spawn -a unit-tester` -- handler tests: handshake, heartbeat, limits
 - 1x `meridian spawn -a smoke-tester` -- connect to /ws/documents/{id}, bad auth, oversized frames
 - 1x `meridian spawn -a reviewer-planning` -- API shape right for Phase 3 frontend?
+- 1x `meridian spawn -a documenter -m opus` -- update feature docs, API contract
 - Gate: orchestrator approves, Yjs handshake works
 
 ### Phase 1B: Project WS Simplification (~800 lines)
@@ -78,6 +80,7 @@ audience: developer, architect
 - 1x `meridian spawn -a reviewer-concurrency` -- broadcast fanout, connection registry
 - 1x `meridian spawn -a unit-tester` -- proposal routing tests, verify binary rejection
 - 1x `meridian spawn -a reviewer-planning` -- proposal flow intact for existing frontend?
+- 1x `meridian spawn -a documenter -m opus` -- update proposal event docs
 - Gate: orchestrator approves, proposals work correctly
 - NOTE: runs in parallel with 1A via git worktree
 
@@ -92,6 +95,7 @@ audience: developer, architect
 - 1x `meridian spawn -a reviewer-concurrency` -- async interleaving, warm pool lifecycle
 - 1x `meridian spawn -a smoke-tester` -- open document in browser, test warm pool transitions
 - 1x `meridian spawn -a reviewer-planning` -- does the frontend match the backend API?
+- 1x `meridian spawn -a documenter -m opus` -- final doc sweep: feature docs, api-events-contract, README
 - Gate: pnpm build + lint pass
 
 ## Agent Profiles
@@ -122,6 +126,16 @@ Each reviewer type has a distinct focus area and system prompt. This prevents th
 |-------|---------------|---------|
 | `unit-tester` | gpt-5.4 | Write focused unit tests, run them. Most tests are disposable -- only keep regression guards. |
 | `smoke-tester` | claude-sonnet-4-6 | QA from outside -- curl, WS clients, race probes in `scratch/smoke/` |
+
+### Documentation
+
+| Agent | Default Model | Purpose |
+|-------|---------------|---------|
+| `documenter` | claude-opus-4-6 | Keeps docs in sync with code changes. Uses `documenting` + `mermaid` skills. |
+
+Two-pass usage:
+- **Discovery** (cheap): `meridian spawn -a documenter -m haiku -p "Find all docs affected by Phase N changes"`
+- **Writing** (quality): `meridian spawn -a documenter -m opus -p "Update these docs: ..."`
 
 ## Parallel Work Strategy
 
