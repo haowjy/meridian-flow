@@ -154,57 +154,6 @@ func (a *collabAuthenticator) checkDocumentAccess(
 	return "", ""
 }
 
-// getSubscriptionInvalidationReason checks whether an active subscription should
-// be invalidated due to revoked access or project scope change. Returns the reason
-// string and true if the subscription should be torn down.
-func (a *collabAuthenticator) getSubscriptionInvalidationReason(
-	ctx context.Context,
-	projectID string,
-	userID string,
-	documentID string,
-) (string, bool) {
-	allowed, err := a.documentResolver.VerifyOwnership(ctx, documentID, userID)
-	if err != nil {
-		a.logger.Error("project ws ownership check failed during active subscription validation",
-			"project_id", projectID,
-			"document_id", documentID,
-			"user_id", userID,
-			"error", err,
-		)
-		// Don't invalidate on transient errors — fail open to avoid disconnecting users.
-		return "", false
-	}
-	if !allowed {
-		return "access_revoked", true
-	}
-
-	docRef, err := a.documentResolver.ResolveDocument(ctx, documentID)
-	if err != nil {
-		a.logger.Error("project ws resolve failed during active subscription validation",
-			"project_id", projectID,
-			"document_id", documentID,
-			"error", err,
-		)
-		return "", false
-	}
-
-	resolvedProjectUUID, err := parseUUID(strings.TrimSpace(docRef.ProjectID))
-	if err != nil {
-		a.logger.Error("project ws resolve returned invalid project id during active subscription validation",
-			"project_id", projectID,
-			"document_id", documentID,
-			"resolved_project_id", docRef.ProjectID,
-			"error", err,
-		)
-		return "", false
-	}
-	if resolvedProjectUUID.String() != projectID {
-		return "project_mismatch", true
-	}
-
-	return "", false
-}
-
 // readFirstJWTMessage reads and validates the initial JWT auth message from a websocket.
 func readFirstJWTMessage(conn *websocket.Conn) (string, error) {
 	var token string

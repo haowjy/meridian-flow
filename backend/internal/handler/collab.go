@@ -28,7 +28,7 @@ type CollabHandler struct {
 	projectRegistry ProjectConnectionRegistry
 
 	// docHandler provides document-level binary fanout for Yjs updates from proposal acceptance.
-	docHandler *CollabDocumentHandler
+	docHandler DocumentBroadcaster
 }
 
 const (
@@ -37,11 +37,6 @@ const (
 	collabHeartbeatInterval  = 30 * time.Second
 	collabHeartbeatTimeout   = 5 * time.Second
 	collabInboundRateLimit   = 30
-
-	collabEnvelopeSyncStep1 byte = 0x00
-	collabEnvelopeSyncStep2 byte = 0x01
-	collabEnvelopeUpdate    byte = 0x02
-	collabEnvelopeAwareness byte = 0x03
 )
 
 const (
@@ -132,7 +127,7 @@ func NewCollabHandler(
 	logger *slog.Logger,
 	cfg *config.Config,
 	projectRegistry ProjectConnectionRegistry,
-	docHandler *CollabDocumentHandler,
+	docHandler DocumentBroadcaster,
 ) *CollabHandler {
 	var isIdentityBlocked func(string, string) bool
 	if cfg != nil {
@@ -202,4 +197,23 @@ func isLikelyJSONMessage(raw []byte) bool {
 		return false
 	}
 	return json.Valid(raw)
+}
+
+// nonBlockingSignal sends a signal without blocking if the channel is full.
+func nonBlockingSignal(ch chan<- struct{}) {
+	select {
+	case ch <- struct{}{}:
+	default:
+	}
+}
+
+// drainSignalChannel discards all pending signals so the next receive blocks on a fresh signal.
+func drainSignalChannel(ch <-chan struct{}) {
+	for {
+		select {
+		case <-ch:
+		default:
+			return
+		}
+	}
 }

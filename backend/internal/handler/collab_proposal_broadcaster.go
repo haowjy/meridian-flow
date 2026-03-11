@@ -17,19 +17,19 @@ import (
 // websocket connections.
 type ProposalBroadcasterImpl struct {
 	projectBroadcaster ProjectBroadcaster
-	docHandler         *CollabDocumentHandler
+	docBroadcaster     DocumentBroadcaster
 	documentResolver   collabSvc.DocumentResolver
 }
 
 // NewProposalBroadcasterImpl creates a broadcaster backed by the project/document WS handlers.
 func NewProposalBroadcasterImpl(
 	projectBroadcaster ProjectBroadcaster,
-	docHandler *CollabDocumentHandler,
+	docBroadcaster DocumentBroadcaster,
 	documentResolver collabSvc.DocumentResolver,
 ) *ProposalBroadcasterImpl {
 	return &ProposalBroadcasterImpl{
 		projectBroadcaster: projectBroadcaster,
-		docHandler:         docHandler,
+		docBroadcaster:     docBroadcaster,
 		documentResolver:   documentResolver,
 	}
 }
@@ -69,12 +69,12 @@ func (b *ProposalBroadcasterImpl) BroadcastProposalAccepted(documentID string, p
 	}
 	canonicalDocumentID := documentUUID.String()
 
-	if len(yjsUpdate) > 0 && b.docHandler != nil {
+	if len(yjsUpdate) > 0 && b.docBroadcaster != nil {
 		encodedUpdate, err := encodeSyncUpdatePayload(yjsUpdate)
 		if err != nil {
 			return err
 		}
-		b.docHandler.BroadcastToDocument(canonicalDocumentID, addDocPrefix(docWSPrefixSync, encodedUpdate))
+		b.docBroadcaster.BroadcastToDocument(canonicalDocumentID, addDocPrefix(docWSPrefixSync, encodedUpdate))
 	}
 
 	statusEventBytes, err := buildProposalStatusChangedEventBytes(documentUUID, proposalID, collabModels.ProposalStatusAccepted)

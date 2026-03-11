@@ -9,19 +9,6 @@ import (
 	collabModels "meridian/internal/domain/models/collab"
 )
 
-// Connection is transport-agnostic and can represent WebSocket or future transports.
-type Connection interface {
-	ID() string
-	Send(data []byte) error
-}
-
-// DocumentBroadcaster fans out binary updates to document subscribers.
-type DocumentBroadcaster interface {
-	Subscribe(docID string, conn Connection) error
-	Unsubscribe(docID string, conn Connection)
-	Broadcast(docID string, update []byte, exclude Connection)
-}
-
 // DocumentContentLoader loads raw markdown content for server-side Yjs bootstrap.
 // Separated from state/snapshot stores (ISP) because only DocumentSessionManager needs it.
 type DocumentContentLoader interface {

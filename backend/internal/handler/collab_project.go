@@ -23,6 +23,18 @@ func (c *projectWSConnection) Send(data []byte) error {
 	return c.wsConn.Send(data)
 }
 
+const (
+	wsTypeDocError         = "doc:error"
+	wsTypeProjectConnected = "project:connected"
+)
+
+type docErrorEvent struct {
+	Type       string `json:"type"`
+	DocumentID string `json:"documentId"`
+	Code       string `json:"code"`
+	Message    string `json:"message"`
+}
+
 // --- ConnectProject handler ---
 
 // ConnectProject upgrades and serves a project-scoped websocket connection.
