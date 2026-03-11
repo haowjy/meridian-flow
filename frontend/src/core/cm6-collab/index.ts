@@ -10,12 +10,11 @@ export {
 } from "./sync/runtime";
 
 export {
-  MeridianEnvelopeType,
-  frameEnvelope,
-  unwrapEnvelope,
-  envelopeFromSyncType,
-  type SyncMessageType,
-} from "./sync/envelope";
+  DocumentSessionManager,
+  resolveDocumentAccessToken,
+  type DocumentSession,
+  type DocumentSessionStatus,
+} from "./sync/DocumentSessionManager";
 
 export {
   ProposalManager,

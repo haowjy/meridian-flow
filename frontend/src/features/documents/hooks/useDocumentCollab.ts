@@ -8,7 +8,6 @@ import {
   buildProposalAcceptCommand,
   buildProposalRejectCommand,
   buildProposalRequestUpdateCommand,
-  createCollabSyncRuntime,
   createProposalManager,
   createProposalReviewRuntime,
   isProposalGroupAcceptResultEvent,
@@ -16,13 +15,12 @@ import {
   isProposalSnapshotEvent,
   isProposalStatusChangedEvent,
   isProposalUpdateDataEvent,
+  type CollabSyncRuntime,
   type Proposal,
   type ProposalGroupAcceptResultEvent,
   type ProposalOperationsModel,
   type ReviewHunk,
-  toUint8Array,
 } from "@/core/cm6-collab";
-
 import { makeLogger } from "@/core/lib/logger";
 import {
   cacheProposalUpdate,
@@ -36,7 +34,6 @@ import {
   type CollabConnectionState,
 } from "../stores/useCollabStore";
 import { useProjectCollabContext } from "../contexts/ProjectCollabContext";
-import { createDocumentSubscriptionDebounce } from "./documentSubscriptionDebounce";
 import type { ProjectCollabDocumentTextEvent } from "./useProjectCollab";
 
 const log = makeLogger("use-document-collab");
@@ -92,6 +89,9 @@ export function useDocumentCollab({
   void _initialContent;
 
   const setState = useCollabStore((s) => s.setState);
+  const setStateFromSessionStatus = useCollabStore(
+    (s) => s.setStateFromSessionStatus,
+  );
   const setProposalState = useCollabStore((s) => s.setProposalState);
   const clearState = useCollabStore((s) => s.clearState);
   const connectionState = useCollabStore(
@@ -102,20 +102,10 @@ export function useDocumentCollab({
       s.proposalStateByDocumentId[documentId] ?? EMPTY_DOCUMENT_PROPOSAL_STATE,
   );
 
-  const projectCollab = useProjectCollabContext();
+  const { projectCollab, documentSessionManager } = useProjectCollabContext();
 
   const persistenceRef = useRef<IndexeddbPersistence | null>(null);
-  const runtimeRef = useRef<ReturnType<typeof createCollabSyncRuntime> | null>(
-    null,
-  );
-  // Keep debounce state stable across effect cleanup/re-run (React StrictMode)
-  // so a pending unsubscribe can be canceled by the next subscribe call.
-  const subscriptionDebounceRef = useRef<ReturnType<
-    typeof createDocumentSubscriptionDebounce
-  > | null>(null);
-  if (subscriptionDebounceRef.current == null) {
-    subscriptionDebounceRef.current = createDocumentSubscriptionDebounce();
-  }
+  const runtimeRef = useRef<CollabSyncRuntime | null>(null);
   const [extensions, setExtensions] = useState<Extension[]>([]);
   // True once IndexedDB persistence has loaded cached Yjs state into ytext.
   // At this point ytext has content (if any was cached) and the editor can
@@ -125,23 +115,19 @@ export function useDocumentCollab({
     typeof createProposalReviewRuntime
   > | null>(null);
   const [reviewRevision, setReviewRevision] = useState(0);
-  // Queued reject commands that failed because WS wasn't subscribed yet.
-  // Flushed on doc:subscribed — same principle as Yjs buffering offline updates.
   const pendingRejectsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!enabled) {
       setState(documentId, "disconnected");
-      // Clean up stale state from a previously-enabled document when collab is
-      // disabled (e.g., switching from .md to .json). Without this, the old
-      // document's state leaks in the store until the component fully unmounts.
       return () => {
         clearState(documentId);
       };
     }
 
     let isStopped = false;
-    let runtime: ReturnType<typeof createCollabSyncRuntime> | null = null;
+    let runtime: CollabSyncRuntime | null = null;
+    let hasHandledInitialConnected = false;
     const proposalManager = createProposalManager({
       onStateChange: (state) => {
         setProposalState(documentId, state);
@@ -150,8 +136,7 @@ export function useDocumentCollab({
     // Monotonic counter to guard async snapshot prune against races with
     // newer proposal events (e.g. proposal:new arriving during prune).
     let snapshotSeq = 0;
-
-    const debounce = subscriptionDebounceRef.current!;
+    const pendingRejects = pendingRejectsRef.current;
 
     let isIdbLoaded = false;
 
@@ -160,39 +145,49 @@ export function useDocumentCollab({
       if (isIdbLoaded) return;
       isIdbLoaded = true;
       if (persistenceRef.current) {
-        persistenceRef.current.destroy();
+        void persistenceRef.current.destroy();
         persistenceRef.current = null;
       }
       if (!isStopped) setIdbSynced(true);
     };
 
-    runtimeRef.current = runtime = createCollabSyncRuntime({
-      documentId,
-      sendBinary: (frame) => {
-        projectCollab.sendDocumentBinary(documentId, frame);
-      },
-      onStatusChange: (status) => {
-        setState(documentId, status);
-      },
-      onInitialSyncComplete: () => {
-        // Initial server diff is applied — server state is now authoritative.
-        cancelIdb();
+    const flushPendingRejects = () => {
+      if (!projectCollab.isConnected() || pendingRejects.size === 0) {
+        return;
+      }
 
-        // If WS won the race (cancelIdb destroyed persistence), recreate IDB
-        // so ongoing edits are cached for future offline access.
-        if (!isStopped && persistenceRef.current == null && runtime) {
-          persistenceRef.current = new IndexeddbPersistence(
-            `meridian-collab:${documentId}`,
-            runtime.ydoc,
-          );
-        }
-      },
-    });
+      let flushed = 0;
+      for (const proposalId of pendingRejects) {
+        projectCollab.sendDocumentCommand(
+          documentId,
+          buildProposalRejectCommand({
+            documentId,
+            proposalId,
+          }) as unknown as Record<string, unknown>,
+        );
+
+        // sendDocumentCommand has no explicit ack; if transport is connected,
+        // this is best-effort fire-and-forget.
+        pendingRejects.delete(proposalId);
+        flushed += 1;
+      }
+
+      if (flushed > 0) {
+        log.info("flushed pending proposal rejects", {
+          flushed,
+          remaining: pendingRejects.size,
+        });
+      }
+    };
+
+    const session = documentSessionManager.acquire(documentId);
+    runtimeRef.current = runtime = session.runtime;
 
     const proposalReviewRuntime = createProposalReviewRuntime({
       ydoc: runtime.ydoc,
     });
     setReviewRuntime(proposalReviewRuntime);
+
     // Use ytext.observe instead of ydoc.on("update") — review derivation
     // only depends on text content, so we avoid spurious recomputes from
     // unrelated Y.Doc changes (e.g. shared-type metadata, map updates).
@@ -207,6 +202,33 @@ export function useDocumentCollab({
 
     setExtensions(runtime.extensions);
 
+    const unregisterStatus = documentSessionManager.onStatusChange(
+      documentId,
+      (status) => {
+        setStateFromSessionStatus(documentId, status);
+
+        if (status === "connected") {
+          if (!hasHandledInitialConnected) {
+            hasHandledInitialConnected = true;
+            cancelIdb();
+
+            // Recreate IDB after initial sync so new edits continue to cache.
+            if (!isStopped && persistenceRef.current == null && runtime) {
+              persistenceRef.current = new IndexeddbPersistence(
+                `meridian-collab:${documentId}`,
+                runtime.ydoc,
+              );
+            }
+          }
+
+          flushPendingRejects();
+          // Re-evaluate derived review models and deferred proposal fetches
+          // once the document session is fully connected.
+          setReviewRevision((current) => current + 1);
+        }
+      },
+    );
+
     const isMatchingEventDocument = (eventDocumentId: string): boolean => {
       if (eventDocumentId === documentId) {
         return true;
@@ -214,64 +236,7 @@ export function useDocumentCollab({
       return false;
     };
 
-    // Document listener for text events from the project transport
     const onTextEvent = (event: ProjectCollabDocumentTextEvent) => {
-      if (event.type === "doc:subscribed") {
-        // Handshake completion — start sync
-        runtime!.startSync();
-        // Flush any reject commands that were queued while offline/pre-subscribe.
-        // Same principle as Yjs buffering offline doc updates.
-        if (pendingRejectsRef.current.size > 0) {
-          let flushed = 0;
-          for (const proposalId of pendingRejectsRef.current) {
-            const sent = projectCollab.sendDocumentCommand(
-              documentId,
-              buildProposalRejectCommand({
-                documentId,
-                proposalId,
-              }) as unknown as Record<string, unknown>,
-            );
-            if (sent) {
-              pendingRejectsRef.current.delete(proposalId);
-              flushed++;
-            }
-          }
-          if (flushed > 0) {
-            log.info("Flushed pending proposal rejects on subscribe", {
-              flushed,
-              remaining: pendingRejectsRef.current.size,
-            });
-          }
-        }
-        // Bump reviewRevision so the auto-request effect in useInlineReview
-        // re-evaluates. Proposals loaded from snapshot before subscription was
-        // confirmed couldn't send yjsUpdate requests (gate returned false).
-        // Now that subscription is confirmed, the re-run will succeed.
-        setReviewRevision((current) => current + 1);
-        return;
-      }
-
-      if (event.type === "doc:unsubscribed") {
-        // Document-scoped disconnection; do NOT tear down project transport
-        setState(documentId, "disconnected");
-        log.info("document unsubscribed via project transport", {
-          documentId,
-          reason: event.reason,
-        });
-        return;
-      }
-
-      if (event.type === "doc:error") {
-        // Document-scoped error; do NOT tear down project transport
-        log.warn("document-scoped collab error", {
-          documentId,
-          code: event.code,
-          message: event.message,
-        });
-        return;
-      }
-
-      // Proposal events
       if (isProposalSnapshotEvent(event)) {
         if (!isMatchingEventDocument(event.documentId)) return;
         proposalManager.onProposalSnapshot(event);
@@ -291,9 +256,6 @@ export function useDocumentCollab({
                 proposalId: proposal.id,
                 yjsUpdate: cached.get(proposal.id)!,
               });
-              // No reviewRevision bump needed — onProposalUpdateData triggers
-              // emit() which creates a new Map identity for proposalState.proposals,
-              // already a dependency of operationsModels useMemo.
             }
           }
 
@@ -311,7 +273,6 @@ export function useDocumentCollab({
       if (isProposalNewEvent(event)) {
         if (!isMatchingEventDocument(event.proposal.documentId)) return;
         proposalManager.onProposalNew(event);
-        // Cache yjsUpdate if the new proposal includes it
         if (event.proposal.yjsUpdate !== undefined) {
           void cacheProposalUpdate(
             event.proposal.id,
@@ -325,7 +286,6 @@ export function useDocumentCollab({
       if (isProposalStatusChangedEvent(event)) {
         if (!isMatchingEventDocument(event.documentId)) return;
         proposalManager.onProposalStatusChanged(event);
-        // Remove cache entry when proposal is resolved
         if (event.status === "accepted" || event.status === "rejected") {
           void deleteCachedProposalUpdate(event.proposalId);
         }
@@ -341,59 +301,27 @@ export function useDocumentCollab({
       if (isProposalUpdateDataEvent(event)) {
         if (!isMatchingEventDocument(event.documentId)) return;
         proposalManager.onProposalUpdateData(event);
-        // Cache the yjsUpdate for instant re-open (fire-and-forget)
         void cacheProposalUpdate(
           event.proposalId,
           event.documentId,
           event.yjsUpdate,
         );
-        // Bump review revision so operationsModels recompute with the new yjsUpdate
         setReviewRevision((current) => current + 1);
       }
     };
 
-    // Binary frame listener — isolated error handling per document
-    const onBinaryFrame = (frame: Uint8Array) => {
-      try {
-        runtime!.handleBinaryFrame(toUint8Array(frame));
-      } catch (err) {
-        // Document-scoped error: log but do NOT tear down project transport
-        log.warn("failed to handle collab binary frame", {
-          documentId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    };
+    const unregisterListener = projectCollab.registerDocumentListener(documentId, {
+      onTextEvent,
+    });
 
-    const startSubscription = () => {
-      if (isStopped) return;
-
-      setState(documentId, "syncing");
-
-      // Cancel any pending debounced unsubscribe for this document
-      debounce.subscribe(documentId);
-
-      projectCollab.subscribeDocument(documentId);
-    };
-
-    // Create IDB persistence BEFORE registering listeners so that
-    // persistenceRef.current exists if WS connects very fast (cleanup-007).
+    // Create IDB persistence immediately so cached content can render while WS sync runs.
     persistenceRef.current = new IndexeddbPersistence(
       `meridian-collab:${documentId}`,
       runtime.ydoc,
     );
 
-    // Register listener before subscribing so we don't miss the doc:subscribed event
-    const unregisterListener = projectCollab.registerDocumentListener(
-      documentId,
-      { onTextEvent, onBinaryFrame },
-    );
-
-    // Start WS subscription immediately (in parallel with IDB load).
-    startSubscription();
-
     // IDB timeout: if whenSynced never resolves (corruption/quota), unblock
-    // loading after 3s so the editor isn't stuck forever (cleanup-006).
+    // loading after 3s so the editor isn't stuck forever.
     const idbTimeout = setTimeout(() => {
       if (isStopped || isIdbLoaded) return;
       log.warn("collab indexeddb load timed out, proceeding without cache", {
@@ -402,7 +330,8 @@ export function useDocumentCollab({
       cancelIdb();
     }, 3000);
 
-    persistenceRef.current.whenSynced
+    const bootstrapPersistence = persistenceRef.current;
+    bootstrapPersistence.whenSynced
       .catch((err: unknown) => {
         log.warn("collab indexeddb bootstrap failed", {
           documentId,
@@ -411,32 +340,27 @@ export function useDocumentCollab({
       })
       .finally(() => {
         clearTimeout(idbTimeout);
-        if (isStopped || isIdbLoaded) return; // WS may have already won the race
+        if (isStopped || isIdbLoaded) return;
         isIdbLoaded = true;
         if (!isStopped) setIdbSynced(true);
       });
 
-    const pendingRejects = pendingRejectsRef.current;
+    const flushTimer = setInterval(flushPendingRejects, 1000);
 
     return () => {
       isStopped = true;
       clearTimeout(idbTimeout);
+      clearInterval(flushTimer);
 
+      unregisterStatus();
       unregisterListener();
-
-      // Debounced unsubscribe: wait 100ms before actually unsubscribing.
-      // If the same document re-mounts (StrictMode), the new effect's
-      // debounce.subscribe() call will cancel this pending unsubscribe.
-      debounce.scheduleUnsubscribe(documentId, () => {
-        projectCollab.unsubscribeDocument(documentId);
-      });
+      documentSessionManager.release(documentId);
 
       void persistenceRef.current?.destroy();
       persistenceRef.current = null;
 
-      runtime!.ytext.unobserve(handleTextChange);
+      runtime?.ytext.unobserve(handleTextChange);
       setReviewRuntime(null);
-      runtime!.destroy();
       runtimeRef.current = null;
       pendingRejects.clear();
       setExtensions([]);
@@ -446,10 +370,12 @@ export function useDocumentCollab({
   }, [
     clearState,
     documentId,
+    documentSessionManager,
     enabled,
     projectCollab,
     setProposalState,
     setState,
+    setStateFromSessionStatus,
   ]);
 
   // Phase 5: setLocalAwarenessState() for multi-user cursors / presence.
@@ -458,7 +384,11 @@ export function useDocumentCollab({
 
   const sendProposalAccept = useCallback(
     (proposalId: string, idempotencyKey: string): boolean => {
-      return projectCollab.sendDocumentCommand(
+      if (!projectCollab.isConnected()) {
+        return false;
+      }
+
+      projectCollab.sendDocumentCommand(
         documentId,
         buildProposalAcceptCommand({
           documentId,
@@ -466,37 +396,44 @@ export function useDocumentCollab({
           idempotencyKey,
         }) as unknown as Record<string, unknown>,
       );
+      return true;
     },
     [documentId, projectCollab],
   );
 
   const requestProposalUpdate = useCallback(
     (proposalId: string): boolean => {
-      return projectCollab.sendDocumentCommand(
+      if (!projectCollab.isConnected()) {
+        return false;
+      }
+
+      projectCollab.sendDocumentCommand(
         documentId,
         buildProposalRequestUpdateCommand({
           documentId,
           proposalId,
         }) as unknown as Record<string, unknown>,
       );
+      return true;
     },
     [documentId, projectCollab],
   );
 
   const sendProposalReject = useCallback(
     (proposalId: string): boolean => {
-      const sent = projectCollab.sendDocumentCommand(
+      if (!projectCollab.isConnected()) {
+        pendingRejectsRef.current.add(proposalId);
+        return false;
+      }
+
+      projectCollab.sendDocumentCommand(
         documentId,
         buildProposalRejectCommand({
           documentId,
           proposalId,
         }) as unknown as Record<string, unknown>,
       );
-      if (!sent) {
-        // Queue for flush on doc:subscribed — same as Yjs buffering offline updates.
-        pendingRejectsRef.current.add(proposalId);
-      }
-      return sent;
+      return true;
     },
     [documentId, projectCollab],
   );

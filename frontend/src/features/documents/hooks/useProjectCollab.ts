@@ -7,15 +7,12 @@ import {
   isProposalStatusChangedEvent,
   isProposalUpdateDataEvent,
   parseCollabServerTextEvent,
-  toUint8Array,
-  unwrapEnvelope,
   type ProposalGroupAcceptResultEvent,
   type ProposalNewEvent,
   type ProposalSnapshotEvent,
   type ProposalStatusChangedEvent,
   type ProposalUpdateDataEvent,
 } from "@/core/cm6-collab";
-
 import { API_BASE_URL } from "@/core/lib/api";
 import { makeLogger } from "@/core/lib/logger";
 import { createClient } from "@/core/supabase/client";
@@ -24,29 +21,6 @@ import { useTreeStore } from "@/core/stores/useTreeStore";
 const log = makeLogger("use-project-collab");
 const WS_OPEN = 1;
 
-export interface DocSubscribedEvent {
-  type: "doc:subscribed";
-  documentId: string;
-}
-
-export interface DocUnsubscribedEvent {
-  type: "doc:unsubscribed";
-  documentId: string;
-  reason?: string;
-}
-
-export interface DocErrorEvent {
-  type: "doc:error";
-  documentId: string;
-  code: string;
-  message: string;
-}
-
-export type ProjectCollabControlEvent =
-  | DocSubscribedEvent
-  | DocUnsubscribedEvent
-  | DocErrorEvent;
-
 export type ProjectCollabProposalEvent =
   | ProposalSnapshotEvent
   | ProposalNewEvent
@@ -54,27 +28,19 @@ export type ProjectCollabProposalEvent =
   | ProposalGroupAcceptResultEvent
   | ProposalUpdateDataEvent;
 
-export type ProjectCollabDocumentTextEvent =
-  | ProjectCollabControlEvent
-  | ProjectCollabProposalEvent;
+export type ProjectCollabDocumentTextEvent = ProjectCollabProposalEvent;
 
 export interface ProjectCollabDocumentListener {
-  onBinaryFrame?: (frame: Uint8Array) => void;
   onTextEvent?: (event: ProjectCollabDocumentTextEvent) => void;
 }
 
 export interface ProjectCollabTransport {
-  subscribeDocument: (documentId: string) => void;
-  unsubscribeDocument: (documentId: string) => void;
-  sendDocumentCommand: (
-    documentId: string,
-    command: Record<string, unknown>,
-  ) => boolean;
-  sendDocumentBinary: (documentId: string, frame: Uint8Array) => boolean;
+  sendDocumentCommand: (documentId: string, command: Record<string, unknown>) => void;
   registerDocumentListener: (
     documentId: string,
     listener: ProjectCollabDocumentListener,
   ) => () => void;
+  isConnected: () => boolean;
 }
 
 export interface ProjectCollabWebSocket {
@@ -123,10 +89,8 @@ export function createProjectCollabTransport(
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectAttempt = 0;
   let isStopped = true;
+  let isAuthenticated = false;
 
-  const activeSubscriptions = new Set<string>();
-  const subscribedDocuments = new Set<string>();
-  const pendingBinaryByDocument = new Map<string, Uint8Array[]>();
   const listenersByDocument = new Map<
     string,
     Set<ProjectCollabDocumentListener>
@@ -162,72 +126,6 @@ export function createProjectCollabTransport(
     }
   };
 
-  const notifyDocumentBinaryListeners = (
-    documentId: string,
-    frame: Uint8Array,
-  ) => {
-    const listeners = listenersByDocument.get(documentId);
-    if (!listeners) {
-      return;
-    }
-
-    for (const listener of listeners) {
-      listener.onBinaryFrame?.(frame);
-    }
-  };
-
-  const flushPendingBinaryFrames = (documentId: string) => {
-    const pendingFrames = pendingBinaryByDocument.get(documentId);
-    if (!pendingFrames || pendingFrames.length === 0) {
-      return;
-    }
-
-    pendingBinaryByDocument.delete(documentId);
-    for (const frame of pendingFrames) {
-      notifyDocumentBinaryListeners(documentId, frame);
-    }
-  };
-
-  const sendDocSubscribe = (
-    documentId: string,
-    targetSocket?: ProjectCollabWebSocket,
-  ) => {
-    const ws = targetSocket ?? getOpenSocket();
-    if (ws == null) {
-      return;
-    }
-
-    ws.send(
-      JSON.stringify({
-        type: "doc:subscribe",
-        documentId,
-      }),
-    );
-  };
-
-  const sendDocUnsubscribe = (documentId: string) => {
-    const ws = getOpenSocket();
-    if (ws == null) {
-      return;
-    }
-
-    ws.send(
-      JSON.stringify({
-        type: "doc:unsubscribe",
-        documentId,
-      }),
-    );
-  };
-
-  const replayActiveSubscriptions = (targetSocket: ProjectCollabWebSocket) => {
-    subscribedDocuments.clear();
-
-    for (const documentId of activeSubscriptions) {
-      pendingBinaryByDocument.set(documentId, []);
-      sendDocSubscribe(documentId, targetSocket);
-    }
-  };
-
   const scheduleReconnect = () => {
     if (isStopped) {
       return;
@@ -246,83 +144,6 @@ export function createProjectCollabTransport(
     }, delayMs);
   };
 
-  const handleDocSubscribed = (event: DocSubscribedEvent) => {
-    const documentId = normalizeDocumentId(event.documentId);
-    if (!documentId || !activeSubscriptions.has(documentId)) {
-      return;
-    }
-
-    pendingBinaryByDocument.set(
-      documentId,
-      pendingBinaryByDocument.get(documentId) ?? [],
-    );
-    subscribedDocuments.add(documentId);
-
-    notifyDocumentTextListeners(documentId, {
-      ...event,
-      documentId,
-    });
-    flushPendingBinaryFrames(documentId);
-  };
-
-  const handleDocUnsubscribed = (event: DocUnsubscribedEvent) => {
-    const documentId = normalizeDocumentId(event.documentId);
-    if (!documentId) {
-      return;
-    }
-
-    activeSubscriptions.delete(documentId);
-    subscribedDocuments.delete(documentId);
-    pendingBinaryByDocument.delete(documentId);
-
-    notifyDocumentTextListeners(documentId, {
-      ...event,
-      documentId,
-    });
-  };
-
-  const handleDocError = (event: DocErrorEvent) => {
-    const documentId = normalizeDocumentId(event.documentId);
-    if (!documentId) {
-      return;
-    }
-
-    if (event.code === "DOCUMENT_NOT_FOUND") {
-      log.warn("project collab document no longer exists", {
-        projectId: options.projectId,
-        documentId,
-      });
-
-      activeSubscriptions.delete(documentId);
-      subscribedDocuments.delete(documentId);
-      pendingBinaryByDocument.delete(documentId);
-
-      notifyDocumentTextListeners(documentId, {
-        ...event,
-        documentId,
-      });
-      return;
-    }
-
-    // NOT_SUBSCRIBED means the server rejected a command because the
-    // subscribe→ack handshake hasn't completed (or was lost). Clear the
-    // local "subscribed" flag and re-subscribe if the document is still
-    // active. No resubscribe loop risk: the gate in sendDocumentCommand
-    // prevents further commands until the next doc:subscribed ack.
-    if (event.code === "NOT_SUBSCRIBED") {
-      subscribedDocuments.delete(documentId);
-      if (activeSubscriptions.has(documentId)) {
-        pendingBinaryByDocument.set(documentId, []);
-        sendDocSubscribe(documentId);
-      }
-    }
-
-    notifyDocumentTextListeners(documentId, {
-      ...event,
-      documentId,
-    });
-  };
-
   const handleProposalEvent = (event: ProjectCollabProposalEvent) => {
     let eventDocumentId: string;
 
@@ -336,7 +157,6 @@ export function createProjectCollabTransport(
       return;
     }
 
-    // Keep tree badge counts in sync without a full tree reload.
     if (isProposalNewEvent(event)) {
       useTreeStore.getState().adjustProposalCount(eventDocumentId, 1);
     } else if (isProposalStatusChangedEvent(event)) {
@@ -344,42 +164,6 @@ export function createProjectCollabTransport(
     }
 
     notifyDocumentTextListeners(eventDocumentId, event);
-  };
-
-  const handleBinaryMessage = (data: ArrayBuffer | ArrayBufferView) => {
-    const inboundFrame = new Uint8Array(toUint8Array(data));
-
-    let unwrappedDocumentId: string | null;
-    try {
-      unwrappedDocumentId = unwrapEnvelope(inboundFrame).documentId;
-    } catch (error) {
-      log.warn("failed to parse project collab envelope", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return;
-    }
-
-    if (unwrappedDocumentId == null) {
-      return;
-    }
-
-    const documentId = normalizeDocumentId(unwrappedDocumentId);
-    if (!documentId || !activeSubscriptions.has(documentId)) {
-      return;
-    }
-
-    if (subscribedDocuments.has(documentId)) {
-      notifyDocumentBinaryListeners(documentId, inboundFrame);
-      return;
-    }
-
-    const pendingFrames = pendingBinaryByDocument.get(documentId);
-    if (pendingFrames != null) {
-      pendingFrames.push(inboundFrame);
-      return;
-    }
-
-    pendingBinaryByDocument.set(documentId, [inboundFrame]);
   };
 
   const handleTextMessage = (
@@ -392,8 +176,9 @@ export function createProjectCollabTransport(
     }
 
     if (textEvent.type === "project:connected") {
-      // Auth succeeded — safe to send commands now.
-      replayActiveSubscriptions(sourceSocket);
+      if (websocket === sourceSocket) {
+        isAuthenticated = true;
+      }
       return;
     }
 
@@ -409,7 +194,6 @@ export function createProjectCollabTransport(
 
     if (textEvent.type === "error") {
       if (textEvent.code === "AUTH_FAILED") {
-        // Fire-and-forget warmup. Reconnect loop will resolve a fresh token.
         void refreshSessionFn();
         sourceSocket.close();
         return;
@@ -423,42 +207,13 @@ export function createProjectCollabTransport(
       return;
     }
 
-    if (isDocSubscribedEvent(textEvent)) {
-      handleDocSubscribed(textEvent);
-      return;
-    }
-
-    if (isDocUnsubscribedEvent(textEvent)) {
-      handleDocUnsubscribed(textEvent);
-      return;
-    }
-
-    if (isDocErrorEvent(textEvent)) {
-      handleDocError(textEvent);
-      return;
-    }
-
-    if (isProposalSnapshotEvent(textEvent)) {
-      handleProposalEvent(textEvent);
-      return;
-    }
-
-    if (isProposalNewEvent(textEvent)) {
-      handleProposalEvent(textEvent);
-      return;
-    }
-
-    if (isProposalStatusChangedEvent(textEvent)) {
-      handleProposalEvent(textEvent);
-      return;
-    }
-
-    if (isProposalGroupAcceptResultEvent(textEvent)) {
-      handleProposalEvent(textEvent);
-      return;
-    }
-
-    if (isProposalUpdateDataEvent(textEvent)) {
+    if (
+      isProposalSnapshotEvent(textEvent) ||
+      isProposalNewEvent(textEvent) ||
+      isProposalStatusChangedEvent(textEvent) ||
+      isProposalGroupAcceptResultEvent(textEvent) ||
+      isProposalUpdateDataEvent(textEvent)
+    ) {
       handleProposalEvent(textEvent);
     }
   };
@@ -503,11 +258,11 @@ export function createProjectCollabTransport(
 
     ws.binaryType = "arraybuffer";
     websocket = ws;
+    isAuthenticated = false;
 
     ws.onopen = () => {
       reconnectAttempt = 0;
       ws.send(token);
-      // Subscriptions are replayed after "project:connected" ack from server.
     };
 
     ws.onmessage = (event) => {
@@ -517,11 +272,6 @@ export function createProjectCollabTransport(
 
       if (typeof event.data === "string") {
         handleTextMessage(event.data, ws);
-        return;
-      }
-
-      if (isBinaryFrameData(event.data)) {
-        handleBinaryMessage(event.data);
       }
     };
 
@@ -534,7 +284,7 @@ export function createProjectCollabTransport(
         websocket = null;
       }
 
-      subscribedDocuments.clear();
+      isAuthenticated = false;
 
       if (isStopped) {
         return;
@@ -561,6 +311,7 @@ export function createProjectCollabTransport(
     isStopped = true;
     clearReconnectTimer();
     reconnectAttempt = 0;
+    isAuthenticated = false;
 
     const ws = websocket;
     websocket = null;
@@ -568,65 +319,21 @@ export function createProjectCollabTransport(
       ws.close();
     }
 
-    activeSubscriptions.clear();
-    subscribedDocuments.clear();
-    pendingBinaryByDocument.clear();
     listenersByDocument.clear();
-  };
-
-  const subscribeDocument = (documentId: string) => {
-    const normalizedDocumentId = normalizeDocumentId(documentId);
-    if (
-      !normalizedDocumentId ||
-      activeSubscriptions.has(normalizedDocumentId)
-    ) {
-      return;
-    }
-
-    activeSubscriptions.add(normalizedDocumentId);
-    subscribedDocuments.delete(normalizedDocumentId);
-    pendingBinaryByDocument.set(normalizedDocumentId, []);
-
-    sendDocSubscribe(normalizedDocumentId);
-  };
-
-  const unsubscribeDocument = (documentId: string) => {
-    const normalizedDocumentId = normalizeDocumentId(documentId);
-    if (!normalizedDocumentId) {
-      return;
-    }
-
-    const hadSubscription = activeSubscriptions.delete(normalizedDocumentId);
-    subscribedDocuments.delete(normalizedDocumentId);
-    pendingBinaryByDocument.delete(normalizedDocumentId);
-
-    if (hadSubscription) {
-      sendDocUnsubscribe(normalizedDocumentId);
-    }
   };
 
   const sendDocumentCommand = (
     documentId: string,
     command: Record<string, unknown>,
-  ): boolean => {
+  ): void => {
     const normalizedDocumentId = normalizeDocumentId(documentId);
-    if (
-      !normalizedDocumentId ||
-      !activeSubscriptions.has(normalizedDocumentId)
-    ) {
-      return false;
-    }
-
-    // Wait for the server to confirm the subscription before sending
-    // commands. Without this gate, commands sent during the subscribe→ack
-    // window are rejected with NOT_SUBSCRIBED on the server side.
-    if (!subscribedDocuments.has(normalizedDocumentId)) {
-      return false;
+    if (!normalizedDocumentId || !isAuthenticated) {
+      return;
     }
 
     const ws = getOpenSocket();
     if (ws == null) {
-      return false;
+      return;
     }
 
     ws.send(
@@ -635,54 +342,6 @@ export function createProjectCollabTransport(
         documentId: normalizedDocumentId,
       }),
     );
-
-    return true;
-  };
-
-  const sendDocumentBinary = (
-    documentId: string,
-    frame: Uint8Array,
-  ): boolean => {
-    const normalizedDocumentId = normalizeDocumentId(documentId);
-    if (
-      !normalizedDocumentId ||
-      !activeSubscriptions.has(normalizedDocumentId)
-    ) {
-      return false;
-    }
-
-    let framedDocumentId: string | null;
-    try {
-      framedDocumentId = unwrapEnvelope(frame).documentId;
-    } catch (error) {
-      log.warn("failed to parse outbound project collab envelope", {
-        documentId: normalizedDocumentId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return false;
-    }
-
-    if (
-      framedDocumentId != null &&
-      normalizeDocumentId(framedDocumentId) !== normalizedDocumentId
-    ) {
-      log.warn(
-        "dropping outbound project collab frame with mismatched document",
-        {
-          expectedDocumentId: normalizedDocumentId,
-          framedDocumentId,
-        },
-      );
-      return false;
-    }
-
-    const ws = getOpenSocket();
-    if (ws == null) {
-      return false;
-    }
-
-    ws.send(frame);
-    return true;
   };
 
   const registerDocumentListener = (
@@ -713,14 +372,16 @@ export function createProjectCollabTransport(
     };
   };
 
+  const isConnected = (): boolean => {
+    return isAuthenticated && getOpenSocket() != null;
+  };
+
   return {
     start,
     stop,
-    subscribeDocument,
-    unsubscribeDocument,
     sendDocumentCommand,
-    sendDocumentBinary,
     registerDocumentListener,
+    isConnected,
   };
 }
 
@@ -738,11 +399,9 @@ export function useProjectCollab(projectId: string): ProjectCollabTransport {
 
   return useMemo(
     () => ({
-      subscribeDocument: transport.subscribeDocument,
-      unsubscribeDocument: transport.unsubscribeDocument,
       sendDocumentCommand: transport.sendDocumentCommand,
-      sendDocumentBinary: transport.sendDocumentBinary,
       registerDocumentListener: transport.registerDocumentListener,
+      isConnected: transport.isConnected,
     }),
     [transport],
   );
@@ -778,47 +437,4 @@ function normalizeAPIBase(base: string): string {
 
 function normalizeDocumentId(documentId: string): string {
   return documentId.trim().toLowerCase();
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object";
-}
-
-function isDocSubscribedEvent(event: unknown): event is DocSubscribedEvent {
-  if (!isRecord(event)) {
-    return false;
-  }
-
-  return (
-    event.type === "doc:subscribed" && typeof event.documentId === "string"
-  );
-}
-
-function isDocUnsubscribedEvent(event: unknown): event is DocUnsubscribedEvent {
-  if (!isRecord(event)) {
-    return false;
-  }
-
-  return (
-    event.type === "doc:unsubscribed" && typeof event.documentId === "string"
-  );
-}
-
-function isDocErrorEvent(event: unknown): event is DocErrorEvent {
-  if (!isRecord(event)) {
-    return false;
-  }
-
-  return (
-    event.type === "doc:error" &&
-    typeof event.documentId === "string" &&
-    typeof event.code === "string" &&
-    typeof event.message === "string"
-  );
-}
-
-function isBinaryFrameData(
-  data: unknown,
-): data is ArrayBuffer | ArrayBufferView {
-  return data instanceof ArrayBuffer || ArrayBuffer.isView(data);
 }

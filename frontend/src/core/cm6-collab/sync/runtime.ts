@@ -18,15 +18,10 @@ import type {
   ProposalStatusChangedEvent,
 } from "../proposals/contracts";
 
-import {
-  envelopeFromSyncType,
-  frameEnvelope,
-  MeridianEnvelopeType,
-  unwrapEnvelope,
-  type SyncMessageType,
-} from "./envelope";
-
 const log = makeLogger("cm6-collab-runtime");
+const DOC_WS_PREFIX_SYNC = 0x00;
+const DOC_WS_PREFIX_AWARENESS = 0x01;
+const SYNC_MESSAGE_STEP2 = 1;
 
 export type CollabSyncStatus = "disconnected" | "syncing" | "connected";
 
@@ -86,13 +81,12 @@ export class CollabSyncRuntime {
   ) => void;
   private status: CollabSyncStatus = "disconnected";
   private didFireInitialSync = false;
-  // Defense-in-depth: prevents duplicate doc:subscribed events from
-  // re-sending SyncStep1 within the same runtime lifecycle.
+  // Defense-in-depth: prevents duplicate start calls from re-sending SyncStep1
+  // within the same runtime lifecycle.
   //
-  // COUPLING NOTE: on WebSocket reconnect, the runtime instance is reused
-  // and didStartSync stays true. Re-sync still works because the backend
-  // sends SyncStep1 on every doc:subscribe (collab_project.go). If that
-  // server behavior changes, revisit this guard.
+  // On reconnect, the runtime is typically reused and didStartSync stays true.
+  // Re-sync still works because the document websocket backend sends SyncStep1
+  // after each authenticated connection.
   private didStartSync = false;
 
   constructor(options: CreateCollabSyncRuntimeOptions) {
@@ -119,9 +113,11 @@ export class CollabSyncRuntime {
 
       const encoder = encoding.createEncoder();
       syncProtocol.writeUpdate(encoder, update);
-      this.sendEnvelope(
-        MeridianEnvelopeType.Update,
-        encoding.toUint8Array(encoder),
+      this.sendBinary(
+        frameWithPrefix(
+          DOC_WS_PREFIX_SYNC,
+          encoding.toUint8Array(encoder),
+        ),
       );
     };
 
@@ -136,7 +132,7 @@ export class CollabSyncRuntime {
       }
 
       const payload = encodeAwarenessUpdate(this.awareness, clients);
-      this.sendEnvelope(MeridianEnvelopeType.Awareness, payload);
+      this.sendBinary(frameWithPrefix(DOC_WS_PREFIX_AWARENESS, payload));
     };
 
     this.ydoc.on("update", this.onDocUpdate);
@@ -163,37 +159,31 @@ export class CollabSyncRuntime {
 
     const encoder = encoding.createEncoder();
     syncProtocol.writeSyncStep1(encoder, this.ydoc);
-    this.sendEnvelope(
-      MeridianEnvelopeType.SyncStep1,
-      encoding.toUint8Array(encoder),
+    this.sendBinary(
+      frameWithPrefix(DOC_WS_PREFIX_SYNC, encoding.toUint8Array(encoder)),
     );
   }
 
   handleBinaryFrame(frame: Uint8Array): void {
-    const { envelope, documentId, payload } = unwrapEnvelope(frame);
-    if (envelope == null || documentId == null) {
-      return;
-    }
-    if (documentId !== this.documentId) {
+    if (frame.length < 1) {
       return;
     }
 
-    switch (envelope) {
-      case MeridianEnvelopeType.SyncStep1:
-      case MeridianEnvelopeType.SyncStep2:
-      case MeridianEnvelopeType.Update:
+    const prefix = frame[0];
+    const payload = frame.subarray(1);
+    switch (prefix) {
+      case DOC_WS_PREFIX_SYNC: {
+        const syncType = readSyncType(payload);
         this.handleSyncPayload(payload);
         // SyncStep2 = server's diff response = initial sync is complete.
         // Fire callback once so consumers know server state is in ytext.
-        if (
-          envelope === MeridianEnvelopeType.SyncStep2 &&
-          !this.didFireInitialSync
-        ) {
+        if (syncType === SYNC_MESSAGE_STEP2 && !this.didFireInitialSync) {
           this.didFireInitialSync = true;
           this.onInitialSyncComplete?.();
         }
         return;
-      case MeridianEnvelopeType.Awareness:
+      }
+      case DOC_WS_PREFIX_AWARENESS:
         applyAwarenessUpdate(this.awareness, payload, this);
         return;
       default:
@@ -218,20 +208,12 @@ export class CollabSyncRuntime {
 
     const response = encoding.toUint8Array(encoder);
     if (response.length > 0) {
-      const syncType = readSyncType(response);
-      this.sendEnvelope(envelopeFromSyncType(syncType), response);
+      this.sendBinary(frameWithPrefix(DOC_WS_PREFIX_SYNC, response));
     }
 
     if (this.status !== "connected") {
       this.setStatus("connected");
     }
-  }
-
-  private sendEnvelope(
-    envelope: MeridianEnvelopeType,
-    payload: Uint8Array,
-  ): void {
-    this.sendBinary(frameEnvelope(envelope, this.documentId, payload));
   }
 
   private setStatus(next: CollabSyncStatus): void {
@@ -244,9 +226,20 @@ export class CollabSyncRuntime {
   }
 }
 
-function readSyncType(syncPayload: Uint8Array): SyncMessageType {
+function readSyncType(syncPayload: Uint8Array): number {
+  if (syncPayload.length === 0) {
+    return -1;
+  }
+
   const decoder = decoding.createDecoder(syncPayload);
-  return decoding.readVarUint(decoder) as SyncMessageType;
+  return decoding.readVarUint(decoder);
+}
+
+function frameWithPrefix(prefix: number, payload: Uint8Array): Uint8Array {
+  const framed = new Uint8Array(1 + payload.length);
+  framed[0] = prefix;
+  framed.set(payload, 1);
+  return framed;
 }
 
 export function parseCollabServerTextEvent(

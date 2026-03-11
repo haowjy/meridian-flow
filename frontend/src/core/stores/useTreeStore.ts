@@ -1152,6 +1152,7 @@ export const useTreeStore = create<TreeStore>()((set, get) => ({
       const idx = state.documents.findIndex((d) => d.id === documentId);
       if (idx === -1) return state;
       const doc = state.documents[idx];
+      if (!doc) return state;
       const current = doc.pendingProposalCount ?? 0;
       const next = Math.max(0, current + delta);
       if (next === current) return state;
