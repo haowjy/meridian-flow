@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	ycrdt "github.com/haowjy/y-crdt"
+	"golang.org/x/sync/singleflight"
 	collabSvc "meridian/internal/domain/services/collab"
 )
 
@@ -16,12 +17,14 @@ const (
 	defaultPersistDebounce         = 2 * time.Second
 	defaultSnapshotIntervalUpdates = 500
 	persistTimeout                 = 10 * time.Second
+	sessionLoadTimeout             = 30 * time.Second
 )
 
 // DocumentSessionManager manages in-memory Yjs docs for active websocket sessions.
 type DocumentSessionManager struct {
 	mu                      sync.Mutex
 	sessions                map[string]*DocumentSession
+	loadGroup               singleflight.Group
 	stateStore              collabSvc.DocumentStateStore
 	snapshotStore           collabSvc.SnapshotStore
 	contentLoader           collabSvc.DocumentContentLoader
@@ -83,19 +86,33 @@ func (m *DocumentSessionManager) Acquire(ctx context.Context, docID string) (*Do
 	}
 	m.mu.Unlock()
 
-	session := &DocumentSession{
-		docID:                   docID,
-		doc:                     ycrdt.NewDoc(docID, true, ycrdt.DefaultGCFilter, nil, false),
-		stateStore:              m.stateStore,
-		snapshotStore:           m.snapshotStore,
-		contentLoader:           m.contentLoader,
-		logger:                  m.logger,
-		snapshotIntervalUpdates: m.snapshotIntervalUpdates,
-		refCount:                1,
+	loadedSessionAny, err, _ := m.loadGroup.Do(docID, func() (interface{}, error) {
+		// Detached context keeps the shared load alive even if the triggering request is canceled.
+		loadCtx, cancel := context.WithTimeout(context.Background(), sessionLoadTimeout)
+		defer cancel()
+
+		session := &DocumentSession{
+			docID:                   docID,
+			doc:                     ycrdt.NewDoc(docID, true, ycrdt.DefaultGCFilter, nil, false),
+			stateStore:              m.stateStore,
+			snapshotStore:           m.snapshotStore,
+			contentLoader:           m.contentLoader,
+			logger:                  m.logger,
+			snapshotIntervalUpdates: m.snapshotIntervalUpdates,
+		}
+
+		if err := session.loadState(loadCtx); err != nil {
+			return nil, err
+		}
+		return session, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	if err := session.loadState(ctx); err != nil {
-		return nil, err
+	loadedSession, ok := loadedSessionAny.(*DocumentSession)
+	if !ok {
+		return nil, fmt.Errorf("load session returned unexpected type %T", loadedSessionAny)
 	}
 
 	m.mu.Lock()
@@ -105,8 +122,9 @@ func (m *DocumentSessionManager) Acquire(ctx context.Context, docID string) (*Do
 		return existing, nil
 	}
 
-	m.sessions[docID] = session
-	return session, nil
+	loadedSession.refCount = 1
+	m.sessions[docID] = loadedSession
+	return loadedSession, nil
 }
 
 // Release decrements references and flushes state when the last websocket disconnects.
@@ -114,6 +132,12 @@ func (m *DocumentSessionManager) Release(ctx context.Context, docID string) erro
 	m.mu.Lock()
 	session, ok := m.sessions[docID]
 	if !ok {
+		m.mu.Unlock()
+		return nil
+	}
+
+	if session.refCount == 0 {
+		m.logger.Warn("collab session release underflow", "document_id", docID)
 		m.mu.Unlock()
 		return nil
 	}
@@ -136,6 +160,32 @@ func (m *DocumentSessionManager) Release(ctx context.Context, docID string) erro
 	return nil
 }
 
+func (m *DocumentSessionManager) releaseSessionRef(ctx context.Context, docID string, session *DocumentSession) error {
+	m.mu.Lock()
+	if session.refCount == 0 {
+		m.logger.Warn("collab session ref underflow", "document_id", docID)
+		m.mu.Unlock()
+		return nil
+	}
+
+	session.refCount--
+	if session.refCount > 0 {
+		m.mu.Unlock()
+		return nil
+	}
+
+	delete(m.sessions, docID)
+	m.mu.Unlock()
+
+	flushCtx, cancel := context.WithTimeout(ctx, persistTimeout)
+	defer cancel()
+
+	if err := session.flushOnDisconnect(flushCtx); err != nil {
+		return err
+	}
+	return nil
+}
+
 // ApplyUpdate applies a proposal update to the active in-memory Y.Doc for a document.
 // If an active session exists, the update is applied to the live doc. Otherwise, it falls
 // back to loading persisted state, applying offline, and saving back — so auto-accepted
@@ -145,10 +195,18 @@ func (m *DocumentSessionManager) ApplyUpdate(ctx context.Context, documentID uui
 
 	m.mu.Lock()
 	session, ok := m.sessions[docID]
+	if ok {
+		session.refCount++
+	}
 	m.mu.Unlock()
 
 	if ok {
-		return session.applyUpdate(ctx, update, origin)
+		err := session.applyUpdate(ctx, update, origin)
+		releaseErr := m.releaseSessionRef(ctx, docID, session)
+		if err != nil {
+			return err
+		}
+		return releaseErr
 	}
 
 	// No active session — apply directly to persisted state so the update isn't lost.
@@ -197,23 +255,31 @@ func (m *DocumentSessionManager) applyUpdateOffline(ctx context.Context, docID s
 
 // GetStateSnapshot returns encoded Yjs state for an active in-memory session.
 // If no active session exists, found=false and caller should fall back to persisted state.
-func (m *DocumentSessionManager) GetStateSnapshot(_ context.Context, documentID uuid.UUID) ([]byte, bool, error) {
+func (m *DocumentSessionManager) GetStateSnapshot(ctx context.Context, documentID uuid.UUID) ([]byte, bool, error) {
 	docID := documentID.String()
 
 	m.mu.Lock()
 	session, ok := m.sessions[docID]
+	if ok {
+		session.refCount++
+	}
 	m.mu.Unlock()
 	if !ok {
 		return nil, false, nil
 	}
 
 	session.mu.Lock()
-	defer session.mu.Unlock()
-
 	state, err := safeEncodeStateAsUpdate(session.doc)
+	session.mu.Unlock()
+
+	releaseErr := m.releaseSessionRef(ctx, docID, session)
 	if err != nil {
 		return nil, true, fmt.Errorf("encode in-memory state: %w", err)
 	}
+	if releaseErr != nil {
+		return nil, true, releaseErr
+	}
+
 	return state, true, nil
 }
 
