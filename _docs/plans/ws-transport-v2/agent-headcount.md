@@ -8,9 +8,13 @@ audience: developer, architect
 
 **Primary orchestrator**: Claude Opus (this conversation) -- exercises ultimate judgment on all decisions, resolves conflicts between reviewers, approves merges between phases. NEVER writes implementation code directly.
 
-**Implementation**: via `meridian spawn -m gpt-5.3-codex` (alias: `codex`) -- one implementer at a time per worktree to avoid merge conflicts.
+**Implementation**: via `meridian spawn -a coder -m codex` -- one implementer at a time per worktree to avoid merge conflicts.
 
-**Review**: via `meridian spawn -m gpt-5.4` (alias: `gpt`) -- 2-3 reviewers per phase, fanned out in parallel with different review angles.
+**Code review**: via `meridian spawn -a reviewer -m gpt` -- 2-3 reviewers per phase, fanned out in parallel with different review angles.
+
+**Unit testing**: via `meridian spawn -a unit-tester -m gpt` -- writes focused unit tests to verify correctness, runs them, reports results. Tests are marked with `[unit-tester]` comments so orchestrator can decide keep vs discard.
+
+**Smoke testing**: via `meridian spawn -a smoke-tester -m sonnet` -- QA agent that writes disposable curl/WS scripts to test from the outside like a real user. Scripts go in `scratch/smoke/` (gitignored).
 
 **Tracking**: orchestrator appends to `implementation-log.md` after each spawn report -- decisions, weird findings, backlog items, bugs.
 
@@ -51,43 +55,59 @@ audience: developer, architect
 ## Per-Phase Staffing
 
 ### Phase 0: Foundation (~400 lines)
-- 1x `codex` implementer: session manager fixes + authenticator refactor + error sentinels
-- 2x `gpt` reviewers: (1) correctness/concurrency, (2) Go idioms
-- Gate: orchestrator approves, all existing tests pass
+- 1x `meridian spawn -a coder -m codex` -- session manager fixes + authenticator refactor + error sentinels
+- 2x `meridian spawn -a reviewer -m gpt` -- (1) correctness/concurrency, (2) Go idioms
+- 1x `meridian spawn -a unit-tester -m gpt` -- verify singleflight + refcount guards with race tests
+- Gate: orchestrator approves, all existing + new tests pass
 
 ### Phase 1A: Document WS Handler (~700 lines)
-- 1x `codex` implementer: new document handler + tests + registry
-- 3x `gpt` reviewers: (1) correctness, (2) security (auth, origin, limits), (3) test coverage
+- 1x `meridian spawn -a coder -m codex` -- new document handler + registry
+- 2x `meridian spawn -a reviewer -m gpt` -- (1) correctness, (2) security (auth, origin, limits)
+- 1x `meridian spawn -a unit-tester -m gpt` -- handler tests: handshake, heartbeat, limits
+- 1x `meridian spawn -a smoke-tester -m sonnet` -- connect to /ws/documents/{id}, send bad auth, oversized frames
 - Gate: orchestrator approves, Yjs handshake works
 
 ### Phase 1B: Project WS Simplification (~800 lines)
-- 1x `codex` implementer: strip binary/subscription, split broadcast
-- 2x `gpt` reviewers: (1) correctness, (2) backwards compat (proposal flow intact)
+- 1x `meridian spawn -a coder -m codex` -- strip binary/subscription, split broadcast
+- 2x `meridian spawn -a reviewer -m gpt` -- (1) correctness, (2) backwards compat (proposal flow intact)
+- 1x `meridian spawn -a unit-tester -m gpt` -- proposal routing tests, verify binary rejection
 - Gate: orchestrator approves, proposals work correctly
 - NOTE: runs in parallel with 1A via git worktree
 
 ### Phase 2: Cleanup (~300 net lines)
-- 1x `codex` implementer: delete dead code, update interfaces
-- 1x `gpt` reviewer: dead code / unused imports / build check
+- 1x `meridian spawn -a coder -m codex` -- delete dead code, update interfaces
+- 1x `meridian spawn -a reviewer -m gpt` -- dead code / unused imports / build check
 - Gate: build passes, all tests pass
 
 ### Phase 3: Frontend (~1000 lines)
-- 1x `codex` implementer: DocumentSessionManager + hook rewrites
-- 2x `gpt` reviewers: (1) React patterns/lifecycle, (2) TypeScript + warm pool logic
+- 1x `meridian spawn -a coder -m codex` -- DocumentSessionManager + hook rewrites
+- 2x `meridian spawn -a reviewer -m gpt` -- (1) React patterns/lifecycle, (2) TypeScript + warm pool logic
+- 1x `meridian spawn -a smoke-tester -m sonnet` -- open document in browser, test warm pool transitions
 - Gate: pnpm build + lint pass
 
-## Reviewer Profiles
+## Agent Profiles
 
-| Role | Model | Focus | Phases |
-|------|-------|-------|--------|
-| Correctness | gpt-5.4 | Logic errors, edge cases, nil checks | All |
-| Concurrency | gpt-5.4 | Races, deadlocks, lock ordering, goroutine leaks | 0, 1A |
-| Security | gpt-5.4 | Auth bypass, origin validation, rate limiting | 1A |
-| Go idioms | gpt-5.4 | Context threading, error wrapping, interface design | 0, 1A, 1B |
-| Test coverage | gpt-5.4 | Missing test cases, edge cases, goleak usage | 1A, 1B |
-| React/TS | gpt-5.4 | Hook lifecycle, cleanup, TypeScript strictness | 3 |
-| Backwards compat | gpt-5.4 | Proposal flow intact, no regressions | 1B |
-| Tiebreaker | claude-opus | Conflict resolution, final judgment | As needed |
+All agents defined in `.claude/agents/`. Use with `meridian spawn -a <name>`.
+
+| Agent | Profile | Default Model | Purpose |
+|-------|---------|---------------|---------|
+| `coder` | Implementation | gpt-5.3-codex | Write production code, follow SOLID |
+| `reviewer` | Code review | gpt-5.4 | Read-only review against project rules |
+| `unit-tester` | Test engineer | gpt-5.4 | Write focused unit tests, run them, report results |
+| `smoke-tester` | QA tester | claude-sonnet-4-6 | Write disposable scripts to test from outside |
+| `researcher` | Investigation | gpt-5.3-codex | Read-only codebase exploration + web search |
+
+## Review Angles (passed via prompt, not separate agents)
+
+| Angle | Focus | Phases |
+|-------|-------|--------|
+| Correctness | Logic errors, edge cases, nil checks | All |
+| Concurrency | Races, deadlocks, lock ordering, goroutine leaks | 0, 1A |
+| Security | Auth bypass, origin validation, rate limiting | 1A |
+| Go idioms | Context threading, error wrapping, interface design | 0, 1A, 1B |
+| React/TS | Hook lifecycle, cleanup, TypeScript strictness | 3 |
+| Backwards compat | Proposal flow intact, no regressions | 1B |
+| Tiebreaker | Conflict resolution, final judgment (orchestrator) | As needed |
 
 ## Parallel Work Strategy
 
