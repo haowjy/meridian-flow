@@ -158,11 +158,27 @@ Key patterns:
 
 ### Collab System
 
-Project-scoped WebSocket transport with per-document multiplexing over a Yjs runtime. This is the most complex subsystem -- the diagrams below capture the protocol, state machine, and full message flow.
+Split-transport WebSocket architecture: one **project WS** (JSON-only, cross-document events) and per-document **document WS** connections (binary Yjs sync). Connect = subscribe; no envelope framing.
 
-**Wire protocol:**
-- JSON command/event channel: `project:connected`, `heartbeat`, `doc:subscribe`/`doc:unsubscribe`/`doc:subscribed`/`doc:error`/`doc:unsubscribed`, and `proposal:*` commands/events
-- Binary multiplexed frames: `[envelopeType][documentUUID16][payload]` for Yjs sync and awareness
+Full protocol spec: `.meridian/work/websocket-transport-v2/spec/ws-patterns.md`
+Architecture diagrams: `.meridian/work/websocket-transport-v2/spec/architecture.md`
+
+**Two transports:**
+
+| Transport | Endpoint | Library | Carries |
+|-----------|----------|---------|---------|
+| Project WS | `GET /ws/projects/{projectId}` | `golang.org/x/net/websocket` | JSON: proposal commands/events, heartbeat, `doc:error` |
+| Document WS | `GET /ws/documents/{documentId}` | `github.com/coder/websocket` | Binary: Yjs sync frames (1-byte prefix, no envelope) |
+
+**Key components:**
+
+| Component | File | Role |
+|-----------|------|------|
+| `CollabDocumentHandler` | `handler/collab_document_handler.go` | Per-document WS: auth, Yjs sync loop, heartbeat, idle timeout |
+| `CollabHandler.ConnectProject` | `handler/collab_project.go` | Project WS: JSON proposal commands, heartbeat |
+| `ProjectConnectionRegistry` | `handler/project_connection_registry.go` | Registration + broadcast for project WS connections |
+| `DocumentBroadcaster` | `handler/project_connection_registry.go` | Interface for binary fanout to document WS connections |
+| `DocumentSessionManager` | `service/collab/session_manager.go` | In-memory Yjs sessions with singleflight + refCount |
 
 **Proposal state machine:**
 
@@ -173,53 +189,55 @@ stateDiagram-v2
   Proposed --> Rejected: reject
 ```
 
-**Message flow:**
+**Broadcasting split (ISP):**
+
+```mermaid
+flowchart LR
+  ProposalSvc["Proposal Service"]
+  ProjBroadcaster["ProjectBroadcaster\n(JSON to project WS)"]
+  DocBroadcaster["DocumentBroadcaster\n(binary to document WS)"]
+  ProjRegistry["ProjectConnectionRegistry"]
+  DocHandler["CollabDocumentHandler"]
+
+  ProposalSvc -->|"proposal:new\nproposal:statusChanged"| ProjBroadcaster
+  ProposalSvc -->|"Yjs update bytes"| DocBroadcaster
+  ProjBroadcaster -.->|"implements"| ProjRegistry
+  DocBroadcaster -.->|"implements"| DocHandler
+```
+
+**Document WS message flow:**
 
 ```mermaid
 sequenceDiagram
   participant Client
-  participant Handler as CollabHandler
-  participant Auth as CollabAuthenticator
-  participant Subs as SubscriptionService
+  participant DocHandler as CollabDocumentHandler
   participant Session as DocumentSessionManager
   participant Store as PostgresDocumentStore
-  participant Broadcaster as DocumentBroadcaster
-  participant ProposalSvc as ProposalService
-  participant ProposalStore as PostgresProposalStore
-  participant Projector as AIContentProjector
 
-  Client->>Handler: Connect to project websocket
-  Handler->>Auth: Read first message token and verify
-  Auth-->>Handler: Auth result with user identity
-  Handler-->>Client: project:connected
+  Client->>DocHandler: Connect /ws/documents/{docId}
+  Client->>DocHandler: [text] JWT token (first message)
+  DocHandler->>DocHandler: Verify JWT + document ownership
+  DocHandler->>Session: Acquire(docId)
+  Session->>Store: Load state or bootstrap
+  DocHandler-->>Client: {"type":"connected","protocol":1}
+  DocHandler-->>Client: [binary] SyncStep1
 
-  Client->>Handler: doc:subscribe
-  Handler->>Subs: Subscribe request
-  Subs->>Session: Acquire document session
-  Session->>Store: Load state or bootstrap content
-  Subs-->>Handler: Subscription ready
-  Handler-->>Client: Sync step1 frame
-  Handler-->>Client: proposal:snapshot
-  Handler-->>Client: doc:subscribed
+  Client->>DocHandler: [binary] SyncStep1
+  DocHandler->>Session: HandleSyncPayload
+  DocHandler-->>Client: [binary] SyncStep2
 
-  Client->>Handler: Binary sync update frame
-  Handler->>Session: HandleSyncPayload
-  Session-->>Handler: Response payload and update payload
-  Handler-->>Client: Sync response frame
-  Handler->>Broadcaster: Broadcast update to other subscribers
-
-  Client->>Handler: proposal:accept
-  Handler->>ProposalSvc: AcceptProposal request
-  ProposalSvc->>ProposalStore: Load and mark accepted
-  ProposalSvc->>Session: ApplyUpdate runtime state
-  ProposalSvc->>Projector: Recompute ai_content
-  Handler->>Broadcaster: Broadcast update and status event
+  Client->>DocHandler: [binary] Yjs update
+  DocHandler->>Session: HandleSyncPayload
+  DocHandler->>DocHandler: Broadcast to other connections
 ```
 
 **Runtime behaviors:**
-- Server-driven heartbeats every 30s; socket closes if no ack within 5s
-- Rate limited to 30 messages/second per socket; excess triggers `RATE_LIMITED` error and 1s mute
-- Active subscriptions revalidated on sync traffic; revoked access emits `doc:unsubscribed`
+- Per-connection heartbeat (30s interval, 5s ack timeout)
+- Server-side idle timeout (5 min of no application messages)
+- JWT expiry checked on each heartbeat cycle
+- Rate limited to 30 msg/sec per connection
+- Per-user connection limit (max 10 document WS)
+- `singleflight.Do` prevents duplicate Yjs session loads
 
 ### LLM and AI Integration
 

@@ -202,6 +202,31 @@ func newTestProjectCollabServerWithProposalDeps(
 	return httptest.NewServer(mux)
 }
 
+func newTestProjectCollabServerWithExplicitDeps(
+	t *testing.T,
+	resolver collabSvc.DocumentResolver,
+	verifier *testJWTVerifier,
+	proposalService collabSvc.ProposalService,
+	proposalStore collabSvc.ProposalStore,
+) *httptest.Server {
+	t.Helper()
+
+	h := NewCollabHandler(
+		resolver,
+		proposalService,
+		proposalStore,
+		verifier,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		&config.Config{},
+		NewInMemoryProjectConnectionRegistry(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		nil,
+	)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /ws/projects/{projectId}", h.ConnectProject)
+	return httptest.NewServer(mux)
+}
+
 func TestProjectWS_ProposalAcceptDispatchAndBroadcast(t *testing.T) {
 	resolver := &testProjectCollabResolver{allowed: true, projectID: testProposalProjectID}
 	verifier := &testJWTVerifier{
@@ -277,6 +302,43 @@ func TestProjectWS_ProposalAcceptDispatchAndBroadcast(t *testing.T) {
 	}
 	if gotReq.RequestHash != expectedHash {
 		t.Fatalf("unexpected request hash: got %q want %q", gotReq.RequestHash, expectedHash)
+	}
+}
+
+// [unit-tester:dispose] verification -- safe to delete after passing
+func TestProjectWS_ProposalAcceptIdempotencyReplay(t *testing.T) {
+	resolver := &testProjectCollabResolver{allowed: true, projectID: testProposalProjectID}
+	verifier := &testJWTVerifier{
+		tokens: map[string]*models.SupabaseClaims{
+			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "56565656-5656-5656-5656-565656565656"}},
+		},
+	}
+
+	documentID := uuid.MustParse("67676767-6767-6767-6767-676767676767")
+	proposalService := &testProposalService{
+		acceptResult: &collabSvc.AcceptProposalResult{IsReplay: true},
+	}
+
+	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, proposalService, &noopProposalStore{})
+	defer server.Close()
+
+	conn := dialProjectWS(t, server.URL, testProposalProjectID)
+	defer closeWSConn(t, conn)
+	authenticateWS(t, conn, "valid-token")
+
+	msg := proposalAcceptCommand{
+		Type:           wsTypeProposalAccept,
+		DocumentID:     documentID.String(),
+		ProposalID:     uuid.MustParse("78787878-7878-7878-7878-787878787878").String(),
+		IdempotencyKey: "replay-key",
+	}
+	if err := websocket.JSON.Send(conn, msg); err != nil {
+		t.Fatalf("send proposal:accept: %v", err)
+	}
+
+	got := readWSErrorMessage(t, conn)
+	if got.Code != "IDEMPOTENCY_REPLAY" {
+		t.Fatalf("expected IDEMPOTENCY_REPLAY, got %q", got.Code)
 	}
 }
 
@@ -358,6 +420,41 @@ func TestProjectWS_ProposalGroupAcceptResultEvent(t *testing.T) {
 	}
 }
 
+// [unit-tester:dispose] verification -- safe to delete after passing
+func TestProjectWS_ProposalGroupAcceptRequiresIdempotencyKey(t *testing.T) {
+	resolver := &testProjectCollabResolver{allowed: true, projectID: testProposalProjectID}
+	verifier := &testJWTVerifier{
+		tokens: map[string]*models.SupabaseClaims{
+			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "89898989-8989-8989-8989-898989898989"}},
+		},
+	}
+
+	proposalService := &testProposalService{}
+	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, proposalService, &noopProposalStore{})
+	defer server.Close()
+
+	conn := dialProjectWS(t, server.URL, testProposalProjectID)
+	defer closeWSConn(t, conn)
+	authenticateWS(t, conn, "valid-token")
+
+	msg := proposalGroupAcceptCommand{
+		Type:       wsTypeProposalGroupAccept,
+		DocumentID: uuid.MustParse("90909090-9090-9090-9090-909090909090").String(),
+		GroupID:    uuid.MustParse("91919191-9191-9191-9191-919191919191").String(),
+	}
+	if err := websocket.JSON.Send(conn, msg); err != nil {
+		t.Fatalf("send proposal:groupAccept: %v", err)
+	}
+
+	got := readWSErrorMessage(t, conn)
+	if got.Code != "INTERNAL_ERROR" {
+		t.Fatalf("expected INTERNAL_ERROR, got %q", got.Code)
+	}
+	if len(proposalService.groupAcceptReqs) != 0 {
+		t.Fatalf("expected no group accept calls, got %d", len(proposalService.groupAcceptReqs))
+	}
+}
+
 // TestProjectWS_ProposalAcceptMissingDocumentID verifies that a proposal:accept
 // without documentId gets an INTERNAL_ERROR because the empty string fails UUID parsing.
 func TestProjectWS_ProposalAcceptMissingDocumentID(t *testing.T) {
@@ -390,6 +487,48 @@ func TestProjectWS_ProposalAcceptMissingDocumentID(t *testing.T) {
 	got := readWSErrorMessage(t, conn)
 	if got.Code != "INTERNAL_ERROR" {
 		t.Fatalf("expected INTERNAL_ERROR, got %q", got.Code)
+	}
+	if len(proposalService.acceptReqs) != 0 {
+		t.Fatalf("expected no accept calls, got %d", len(proposalService.acceptReqs))
+	}
+}
+
+// [unit-tester:keep] security boundary -- cross-project document commands must be rejected per message
+func TestProjectWS_ProposalAcceptProjectMismatchReturnsDocError(t *testing.T) {
+	resolver := &testProjectCollabResolver{
+		allowed:   true,
+		projectID: "abababab-abab-abab-abab-abababababab",
+	}
+	verifier := &testJWTVerifier{
+		tokens: map[string]*models.SupabaseClaims{
+			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "15151515-1515-1515-1515-151515151515"}},
+		},
+	}
+
+	proposalService := &testProposalService{}
+	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, proposalService, &noopProposalStore{})
+	defer server.Close()
+
+	conn := dialProjectWS(t, server.URL, testProposalProjectID)
+	defer closeWSConn(t, conn)
+	authenticateWS(t, conn, "valid-token")
+
+	msg := proposalAcceptCommand{
+		Type:           wsTypeProposalAccept,
+		DocumentID:     "17171717-1717-1717-1717-171717171717",
+		ProposalID:     "18181818-1818-1818-1818-181818181818",
+		IdempotencyKey: "project-mismatch-key",
+	}
+	if err := websocket.JSON.Send(conn, msg); err != nil {
+		t.Fatalf("send proposal:accept: %v", err)
+	}
+
+	got := readWSJSONMessage(t, conn)
+	if got["type"] != "doc:error" {
+		t.Fatalf("expected doc:error, got %v", got["type"])
+	}
+	if got["code"] != "PROJECT_MISMATCH" {
+		t.Fatalf("expected PROJECT_MISMATCH, got %v", got["code"])
 	}
 	if len(proposalService.acceptReqs) != 0 {
 		t.Fatalf("expected no accept calls, got %d", len(proposalService.acceptReqs))
@@ -507,6 +646,41 @@ func TestProjectWS_ProposalAcceptErrorMapping_RateLimited(t *testing.T) {
 	}
 }
 
+// [unit-tester:dispose] verification -- safe to delete after passing
+func TestProjectWS_ProposalRejectInvalidProposalID(t *testing.T) {
+	resolver := &testProjectCollabResolver{allowed: true, projectID: testProposalProjectID}
+	verifier := &testJWTVerifier{
+		tokens: map[string]*models.SupabaseClaims{
+			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "abababab-1111-1111-1111-111111111111"}},
+		},
+	}
+
+	proposalService := &testProposalService{}
+	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, proposalService, &noopProposalStore{})
+	defer server.Close()
+
+	conn := dialProjectWS(t, server.URL, testProposalProjectID)
+	defer closeWSConn(t, conn)
+	authenticateWS(t, conn, "valid-token")
+
+	msg := proposalRejectCommand{
+		Type:       wsTypeProposalReject,
+		DocumentID: uuid.MustParse("cdcdcdcd-cdcd-cdcd-cdcd-cdcdcdcdcdcd").String(),
+		ProposalID: "not-a-uuid",
+	}
+	if err := websocket.JSON.Send(conn, msg); err != nil {
+		t.Fatalf("send proposal:reject: %v", err)
+	}
+
+	got := readWSErrorMessage(t, conn)
+	if got.Code != "INTERNAL_ERROR" {
+		t.Fatalf("expected INTERNAL_ERROR, got %q", got.Code)
+	}
+	if len(proposalService.rejectReqs) != 0 {
+		t.Fatalf("expected no reject calls, got %d", len(proposalService.rejectReqs))
+	}
+}
+
 func TestProjectWS_ProposalRequestUpdate(t *testing.T) {
 	resolver := &testProjectCollabResolver{allowed: true, projectID: testProposalProjectID}
 	verifier := &testJWTVerifier{
@@ -574,6 +748,37 @@ func TestProjectWS_ProposalRequestUpdate(t *testing.T) {
 	}
 }
 
+// [unit-tester:dispose] verification -- safe to delete after passing
+func TestProjectWS_ProposalRequestUpdateStoreUnavailable(t *testing.T) {
+	resolver := &testProjectCollabResolver{allowed: true, projectID: testProposalProjectID}
+	verifier := &testJWTVerifier{
+		tokens: map[string]*models.SupabaseClaims{
+			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "12121212-3434-5656-7878-909090909090"}},
+		},
+	}
+
+	server := newTestProjectCollabServerWithExplicitDeps(t, resolver, verifier, &noopProposalService{}, nil)
+	defer server.Close()
+
+	conn := dialProjectWS(t, server.URL, testProposalProjectID)
+	defer closeWSConn(t, conn)
+	authenticateWS(t, conn, "valid-token")
+
+	msg := map[string]string{
+		"type":       wsTypeProposalRequestUpdate,
+		"documentId": uuid.MustParse("abababab-2222-2222-2222-222222222222").String(),
+		"proposalId": uuid.MustParse("cdcdcdcd-3333-3333-3333-333333333333").String(),
+	}
+	if err := websocket.JSON.Send(conn, msg); err != nil {
+		t.Fatalf("send proposal:requestUpdate: %v", err)
+	}
+
+	got := readWSErrorMessage(t, conn)
+	if got.Code != "INTERNAL_ERROR" {
+		t.Fatalf("expected INTERNAL_ERROR, got %q", got.Code)
+	}
+}
+
 func TestProjectWS_ProposalRequestUpdateNotFound(t *testing.T) {
 	resolver := &testProjectCollabResolver{allowed: true, projectID: testProposalProjectID}
 	verifier := &testJWTVerifier{
@@ -605,6 +810,37 @@ func TestProjectWS_ProposalRequestUpdateNotFound(t *testing.T) {
 	got := readWSErrorMessage(t, conn)
 	if got.Code != "PROPOSAL_NOT_FOUND" {
 		t.Fatalf("expected PROPOSAL_NOT_FOUND, got %q", got.Code)
+	}
+}
+
+// [unit-tester:dispose] verification -- safe to delete after passing
+func TestProjectWS_ProposalRequestUpdateInvalidProposalID(t *testing.T) {
+	resolver := &testProjectCollabResolver{allowed: true, projectID: testProposalProjectID}
+	verifier := &testJWTVerifier{
+		tokens: map[string]*models.SupabaseClaims{
+			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "44444444-1111-1111-1111-111111111111"}},
+		},
+	}
+
+	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, &noopProposalService{}, &noopProposalStore{})
+	defer server.Close()
+
+	conn := dialProjectWS(t, server.URL, testProposalProjectID)
+	defer closeWSConn(t, conn)
+	authenticateWS(t, conn, "valid-token")
+
+	msg := map[string]string{
+		"type":       wsTypeProposalRequestUpdate,
+		"documentId": uuid.MustParse("55555555-2222-2222-2222-222222222222").String(),
+		"proposalId": "not-a-uuid",
+	}
+	if err := websocket.JSON.Send(conn, msg); err != nil {
+		t.Fatalf("send proposal:requestUpdate: %v", err)
+	}
+
+	got := readWSErrorMessage(t, conn)
+	if got.Code != "INTERNAL_ERROR" {
+		t.Fatalf("expected INTERNAL_ERROR, got %q", got.Code)
 	}
 }
 

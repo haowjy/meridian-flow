@@ -76,8 +76,9 @@ Route table with handler files. For auth pattern, see [authorization.md](../auth
 | **User Preferences** | | | `user_preferences.go` |
 | GET | `/api/users/me/preferences` | Get preferences | |
 | PATCH | `/api/users/me/preferences` | Update preferences (partial) | |
-| **Collaboration** | | | `collab.go` |
-| GET | `/ws/projects/{projectId}` | WebSocket (JWT in first message) | |
+| **Collaboration** | | | |
+| GET | `/ws/projects/{projectId}` | Project WebSocket -- JSON-only proposal commands/events (JWT in first message) | `collab.go` |
+| GET | `/ws/documents/{documentId}` | Document WebSocket -- binary Yjs sync (`coder/websocket`, JWT in first message) | `collab_document_handler.go` |
 | **Debug** | | | `debug.go` |
 | POST | `/debug/api/threads/{id}/turns` | Debug create turn (dev only) | |
 | GET | `/debug/api/threads/{id}/tree` | Debug thread tree (dev only) | |

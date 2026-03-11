@@ -166,11 +166,11 @@ flowchart LR
   H --> J["Shiki lazy highlighter"]
 ```
 
-`core/cm6-collab` is the frontend collab library: `sync/` (transport-agnostic Yjs runtime), `proposals/` (event contracts + manager + commands), `review/` (inline review decorations/widgets).
+`core/cm6-collab` is the frontend collab library: `sync/` (transport-agnostic Yjs runtime + `DocumentSessionManager`), `proposals/` (event contracts + manager + commands), `review/` (inline review decorations/widgets).
 
 ### Frontend Collab System
 
-One project-scoped WebSocket transport (`useProjectCollab`) feeds per-document subscriptions (`useDocumentCollab`). Each document gets its own `Y.Doc`, `Y.Text`, awareness, and IndexedDB persistence.
+Two WebSocket transports: a project WS (`useProjectCollab` -- JSON-only proposal events/commands) and per-document WS connections managed by `DocumentSessionManager` (binary Yjs sync). Each document gets its own `Y.Doc`, `Y.Text`, awareness, and IndexedDB persistence. `useDocumentCollab` hooks acquire/release sessions from the manager.
 
 #### Dual-transport proposal discovery
 
@@ -209,8 +209,8 @@ Five transport types coordinate data persistence:
 |---|---|---|
 | HTTP document save drain | Optimistic local write, Dexie retry queue, drain on startup/online/tick | `documentSyncService.ts`, `persistentSaveDrain.ts` |
 | HTTP tree operation drain | Queue optimistic ops, coalesce, replay to REST, conflict-aware errors | `treeSyncService.ts`, `treeQueueDrain.ts` |
-| WebSocket Yjs binary sync | Per-document subscribe, custom envelope framing | `useProjectCollab.ts`, `useDocumentCollab.ts`, `cm6-collab/sync/*` |
-| WebSocket pending reject flush | Buffer reject commands when gate fails, flush on next `doc:subscribed` | `useDocumentCollab.ts` |
+| WebSocket Yjs binary sync | Per-document WS via `DocumentSessionManager`, 1-byte prefix framing | `DocumentSessionManager.ts`, `useDocumentCollab.ts`, `cm6-collab/sync/*` |
+| WebSocket proposal commands | Project WS JSON commands (accept/reject) via `useProjectCollab` | `useProjectCollab.ts`, `useDocumentCollab.ts` |
 | Local proposal update cache | Fire-and-forget write-through Dexie cache, merged on reopen, stale-pruned | `proposalCache.ts` |
 
 ```mermaid
@@ -219,10 +219,11 @@ flowchart TD
   A --> C["initTreeQueueDrain"]
   A --> D["initializeRetryProcessor"]
 
-  E["ProjectCollabProvider mount"] --> F["useProjectCollab websocket start"]
-  F --> G["Document subscribe"]
-  G --> H["Yjs runtime startSync"]
-  G --> I["Flush pending proposal rejects"]
+  E["ProjectCollabProvider mount"] --> F["useProjectCollab project WS start"]
+  F --> G["Proposal event routing"]
+
+  L["useDocumentCollab mount"] --> M["DocumentSessionManager.acquire"]
+  M --> N["Document WS connect + Yjs sync"]
 
   J["Proposal events"] --> K["proposalCache put/get/prune in Dexie"]
 ```

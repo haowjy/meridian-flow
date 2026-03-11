@@ -44,15 +44,14 @@ Lean, up-to-date references for engineers. Prefer code over prose; include file/
 ```mermaid
 flowchart LR
   FE["Vite + TanStack Router Frontend\n(Zustand + Dexie)"]
-  API["Go + Fiber API\n(Handler -> Service -> Repository)"]
+  API["Go net/http API\n(Handler -> Service -> Repository)"]
   DB[("PostgreSQL\n(Supabase)")]
 
-  FE <---> | JSON (DTOs) | API
-  FE <-->| Cache | IDB["IndexedDB (Dexie)"]
-  API <---> | pgx | DB
-
-  class FE a
-  class API b
+  FE <--->|"REST JSON"| API
+  FE <--->|"Project WS\n(JSON proposals)"| API
+  FE <--->|"Document WS\n(binary Yjs sync)"| API
+  FE <-->|"Cache"| IDB["IndexedDB (Dexie + y-indexeddb)"]
+  API <--->|"pgx"| DB
 ```
 
 ## Authentication

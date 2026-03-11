@@ -189,6 +189,10 @@ export class DocumentSessionManager {
     this.activeSessionId = null;
   }
 
+  revive(): void {
+    this.isDestroyed = false;
+  }
+
   private attachSocket(session: ManagedDocumentSession, ws: WebSocket): void {
     ws.onopen = async () => {
       if (this.isDestroyed || session.isReleased || session.ws !== ws) {

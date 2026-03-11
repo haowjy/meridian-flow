@@ -181,6 +181,54 @@ func TestProjectWS_AuthExpiredForBadToken(t *testing.T) {
 	}
 }
 
+// [unit-tester:keep] security boundary -- blank auth bootstrap messages must be rejected
+func TestProjectWS_AuthFailedForBlankToken(t *testing.T) {
+	resolver := &testProjectCollabResolver{allowed: true, projectID: testProjectID}
+	verifier := &testJWTVerifier{
+		tokens: map[string]*models.SupabaseClaims{
+			testToken: {RegisteredClaims: jwt.RegisteredClaims{Subject: testUserID}},
+		},
+	}
+	server := newTestProjectCollabServer(t, resolver, verifier, nil)
+	defer server.Close()
+
+	conn := dialProjectWS(t, server.URL, testProjectID)
+	defer closeWSConn(t, conn)
+
+	if err := websocket.Message.Send(conn, "   "); err != nil {
+		t.Fatalf("send blank auth token: %v", err)
+	}
+
+	got := readWSErrorMessage(t, conn)
+	if got.Code != "AUTH_FAILED" {
+		t.Fatalf("expected AUTH_FAILED, got %q", got.Code)
+	}
+}
+
+// [unit-tester:keep] security boundary -- authenticated project ws users must have UUID subjects
+func TestProjectWS_AuthFailedForNonUUIDUserID(t *testing.T) {
+	resolver := &testProjectCollabResolver{allowed: true, projectID: testProjectID}
+	verifier := &testJWTVerifier{
+		tokens: map[string]*models.SupabaseClaims{
+			testToken: {RegisteredClaims: jwt.RegisteredClaims{Subject: "not-a-uuid"}},
+		},
+	}
+	server := newTestProjectCollabServer(t, resolver, verifier, nil)
+	defer server.Close()
+
+	conn := dialProjectWS(t, server.URL, testProjectID)
+	defer closeWSConn(t, conn)
+
+	if err := websocket.Message.Send(conn, testToken); err != nil {
+		t.Fatalf("send auth token: %v", err)
+	}
+
+	got := readWSErrorMessage(t, conn)
+	if got.Code != "AUTH_FAILED" {
+		t.Fatalf("expected AUTH_FAILED, got %q", got.Code)
+	}
+}
+
 // TestProjectWS_AuthDeniedForBlockedProdPattern verifies that blocked identities
 // receive AUTH_FAILED with "authentication failed" message.
 func TestProjectWS_AuthDeniedForBlockedProdPattern(t *testing.T) {
