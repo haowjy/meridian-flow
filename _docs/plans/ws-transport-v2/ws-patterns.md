@@ -57,13 +57,25 @@ Client -> Server: {"type":"heartbeat"}
 
 `protocol` field enables future negotiation (e.g., client checks `protocol >= 2` before attempting HTTP bootstrap in Stage 3).
 
-Error codes: `AUTH_FAILED`, `AUTH_EXPIRED`, `FRAME_TOO_LARGE`, `RATE_LIMITED`, `RESET_REQUIRED`, `CONNECTION_LIMIT`
+Error codes: `AUTH_FAILED`, `AUTH_EXPIRED`, `AUTH_TIMEOUT`, `FRAME_TOO_LARGE`, `RATE_LIMITED`, `RESET_REQUIRED`, `CONNECTION_LIMIT`
+
+`AUTH_TIMEOUT` is distinct from `AUTH_FAILED`: it means no JWT was received within the 5-second auth window. `AUTH_FAILED` means a JWT was received but was invalid.
 
 ### Auth
 
 Same JWT-in-first-message pattern. Server validates JWT + checks document access via `collabAuthenticator`. On failure: `{"type":"error","code":"AUTH_FAILED"}` + close.
 
-Auth timeout: 5 seconds. If no JWT received within 5s, close with `AUTH_FAILED`.
+Auth timeout: 5 seconds. If no JWT received within 5s, close with `AUTH_TIMEOUT`.
+
+### WS Accept Configuration
+
+```go
+websocket.Accept(w, r, &websocket.AcceptOptions{
+    InsecureSkipVerify: cfg.IsDev(),
+    OriginPatterns:     cfg.CORSOrigins,
+    CompressionMode:    websocket.CompressionDisabled, // binary Yjs frames, already compact
+})
+```
 
 **Token lifetime enforcement:** Server carries JWT `exp` claim into per-connection state. On each heartbeat cycle, check if token has expired. If expired, send `{"type":"error","code":"AUTH_EXPIRED"}` and close. Frontend reconnect path fetches a fresh token before reopening.
 
@@ -103,7 +115,7 @@ Client -> Server:
 
 ### Proposal Event Contract
 
-Unchanged from Phase 4.6. All events include `documentId`. `proposal:snapshot` sent per-document on connect (server sends snapshot for all documents in the project with pending proposals).
+Unchanged from Phase 4.6. All events include `documentId`. `proposal:snapshot` sent per-document on connect -- server queries only documents with pending proposals (`WHERE status='pending'`), not all documents. Performance is bounded by pending proposal count, not total chapter count.
 
 ---
 
@@ -164,7 +176,7 @@ With the session manager, switching back to a recently-used document is **instan
 
 ## Chat Stream Delta Piggybacking
 
-**Staging: Deferred.** This section describes the target design. Implementation is not part of Stages 1-3. Stage 1 provides the session manager API (`applyExternalUpdate`) that this feature will use.
+**Staging: Deferred.** This section describes the target design. Implementation is not part of Stages 1-3. The `applyExternalUpdate(docId, delta)` API is a placeholder in the session manager interface -- Stage 1 does not implement or wire it.
 
 ### Why
 
@@ -235,6 +247,12 @@ Still broadcast on project WS as a lightweight notification:
 {"type": "doc:edited", "documentId": "uuid", "source": "proposal_accepted"}
 ```
 
+**`source` values:**
+- `proposal_accepted` -- Stage 1. A proposal was accepted, applying Yjs changes.
+- `ai_tool_call` -- future. An AI agent directly edited the document via a tool call.
+
+Human edits do NOT trigger `doc:edited` -- they flow through the Yjs sync protocol on the document WS and are applied automatically.
+
 This does NOT carry Yjs bytes (the chat stream does that). It serves as a notification for the frontend to show passive indicators (e.g., tree badges in future UI) and optionally warm up sessions.
 
 Hook location: `proposal_service.go` on proposal accept -> broadcast to project WS connections.
@@ -289,9 +307,8 @@ Logic: in-memory session state (freshest) -> DB `yjs_state` -> bootstrap from `c
 ## Heartbeat
 
 Same contract as Phase 4.6, applied per-connection:
-- Server sends every 30s if idle
-- Client must respond within 5s
-- Client considers connection dead after 60s silence
+- **Server sends** heartbeat every 30s if idle. **Client responds** within 5s. Client does NOT proactively send heartbeats -- it only responds to server pings.
+- Client considers connection dead after 60s of silence from the server
 - Applied independently to each document WS and the project WS
 
 ---

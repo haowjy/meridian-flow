@@ -122,6 +122,7 @@ The transport returns structured error codes. The UI must translate these into w
 | Error Code | What Happened | UI Response | Recovery |
 |------------|--------------|-------------|----------|
 | `AUTH_FAILED` | JWT invalid or missing | Auto-refresh token, reconnect silently. If refresh fails: "Session expired, please sign in again." | Redirect to login on failure |
+| `AUTH_TIMEOUT` | No JWT received within 5s auth window | Auto-refresh token, reconnect silently. Same UX as AUTH_FAILED. | Redirect to login on failure |
 | `AUTH_EXPIRED` | JWT expired after connect (checked on heartbeat) | Auto-refresh token, reconnect silently. If refresh fails: "Session expired, please sign in again." | Redirect to login on failure |
 | `FRAME_TOO_LARGE` | Update exceeded 256KB app limit | Silent retry via HTTP if two-lane available. If not: "Your change couldn't be saved. Try a smaller edit." | Keep connection alive |
 | `RATE_LIMITED` | >30 messages/second | Buffer and retry silently. After 10s: "Changes are saving slowly." | Auto-resolves |
@@ -172,3 +173,13 @@ sequenceDiagram
 ### Stale Warm Connection Detection
 
 Transport provides a health check: if last heartbeat on a warm connection was >60s ago, it is preemptively marked cold. The UI should treat the next switch to that document as a cold-to-active transition (show cached content + sync indicator) rather than an instant switch that then fails.
+
+### Eviction Cleanup Requirements
+
+When a session is evicted from the warm pool (timeout or LRU), the transport layer must destroy all resources in order:
+1. `runtime.destroy()` -- stops sync protocol
+2. `indexeddbProvider.destroy()` -- flushes and closes IDB
+3. `yDoc.destroy()` -- releases CRDT memory
+4. Close WS connection -- triggers server-side `Release()` via handler defer
+
+The UI does not need to act on eviction -- it is invisible to the writer. But the transport must guarantee no resource leaks.
