@@ -1,11 +1,28 @@
-import { createContext, useContext, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  type ReactNode,
+} from "react";
+import {
+  DocumentSessionManager,
+  resolveDocumentAccessToken,
+} from "@/core/cm6-collab/sync/DocumentSessionManager";
 
 import {
   useProjectCollab,
   type ProjectCollabTransport,
 } from "../hooks/useProjectCollab";
 
-const ProjectCollabContext = createContext<ProjectCollabTransport | null>(null);
+export interface ProjectCollabContextValue {
+  projectCollab: ProjectCollabTransport;
+  documentSessionManager: DocumentSessionManager;
+}
+
+const ProjectCollabContext = createContext<ProjectCollabContextValue | null>(
+  null,
+);
 
 interface ProjectCollabProviderProps {
   projectId: string;
@@ -17,15 +34,29 @@ export function ProjectCollabProvider({
   children,
 }: ProjectCollabProviderProps) {
   const projectCollab = useProjectCollab(projectId);
+  const documentSessionManager = useMemo(() => {
+    return new DocumentSessionManager(resolveDocumentAccessToken);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      documentSessionManager.destroy();
+    };
+  }, [documentSessionManager]);
 
   return (
-    <ProjectCollabContext.Provider value={projectCollab}>
+    <ProjectCollabContext.Provider
+      value={{
+        projectCollab,
+        documentSessionManager,
+      }}
+    >
       {children}
     </ProjectCollabContext.Provider>
   );
 }
 
-export function useProjectCollabContext(): ProjectCollabTransport {
+export function useProjectCollabContext(): ProjectCollabContextValue {
   const context = useContext(ProjectCollabContext);
   if (context == null) {
     throw new Error(
