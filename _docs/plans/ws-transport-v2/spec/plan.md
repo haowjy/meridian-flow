@@ -14,7 +14,7 @@ Design docs: `backend-frontend.md` (technical spec), `ws-patterns.md` (protocol)
 
 ## Review Loop
 
-Every phase follows: implement -> fan out reviewers -> synthesize -> fix -> re-review (max 3 cycles). Phase gate = reviewer consensus + tests pass.
+Every phase follows: implement -> fan out reviewers -> synthesize -> fix -> re-review. Phase gate = reviewer consensus + tests pass.
 
 ```
 coder implements
