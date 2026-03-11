@@ -4,7 +4,7 @@ audience: developer, architect
 ---
 # WebSocket Transport v2: Per-Document Connections
 
-**Status:** draft
+**Status:** in-progress
 
 ## Why
 
@@ -115,3 +115,4 @@ Stage 1 is the foundation. Stages 2-3 are independent after Stage 1.
 | `agent-headcount.md` | Orchestration model, per-phase staffing, review loop process |
 | `decision-log.md` | Immutable log of implementation decisions (append-only) |
 | `whats-weird.md` | Surprising patterns implementers should know + out-of-scope bugs |
+| `implementation-log.md` | Append-only log of decisions, weird findings, and backlog items during implementation |

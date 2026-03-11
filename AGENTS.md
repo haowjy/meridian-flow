@@ -132,17 +132,53 @@ Token refresh is agent-authorized. See `backend/CLAUDE.md` -> "Smoke Testing" fo
 
 ### Long-Running Tasks
 
-For multi-phase plans, use meridian to orchestrate and NEVER write implementation code yourself. The primary agent coordinates subagent runs (coder, researcher, reviewer) across model families, picking the best model for each subtask.
+For multi-phase plans, use meridian to orchestrate and NEVER write implementation code yourself. The primary agent coordinates subagent runs across model families, picking the best model for each subtask.
 
-**Agents** (defined in `.claude/agents/`): coder (implementation), researcher (read-only exploration), reviewer (code review). Each supports variant models (GPT-5.3-codex, Claude Opus 4.6, Gemini 3.1 Pro).
-**Meridian**: manages orchestration, spawning, and coordination of multi-agent workflows.
+There are two ways to spawn subagents:
+
+**1. Claude Code Agent tool** (built-in, Claude models only):
+- Use `subagent_type: "coder"` / `"researcher"` / `"reviewer"` for quick Claude-native tasks
+- Agents defined in `.claude/agents/` — coder (implementation), researcher (read-only), reviewer (code review)
+- Good for: fast parallel reviews, codebase exploration, small implementation tasks
+
+**2. `meridian spawn` CLI** (multi-model, preferred for implementation):
+```bash
+# Spawn with a specific model
+meridian spawn -m gpt-5.3-codex -p "Implement the document WS handler"
+
+# With reference files for context
+meridian spawn -m gpt-5.4 -p "Review this change" \
+  -f _docs/plans/ws-transport-v2/stage-1-per-doc-ws.md \
+  -f backend/internal/handler/collab.go
+
+# With an agent profile
+meridian spawn -a reviewer -m gpt-5.4 -p "Review for concurrency issues"
+
+# Parallel spawns — launch multiple, then wait
+meridian spawn -m gpt-5.4 -p "Review A"   # -> spawn_id: p101
+meridian spawn -m gemini -p "Review B"     # -> spawn_id: p102
+meridian spawn wait p101 p102
+
+# Check status and read results
+meridian spawn list
+meridian spawn show p101
+```
+- Access to all model families: GPT (gpt-5.4, gpt-5.3-codex), Claude (opus, sonnet, haiku), Gemini (gemini)
+- Good for: implementation tasks, cross-family reviews, anything needing non-Claude models
+- Run `meridian models list` to see all available models and aliases
+
+**When to use which:**
+- Quick Claude-only task (explore codebase, fast review) -> Agent tool
+- Implementation work -> `meridian spawn -m gpt-5.3-codex` (or codex alias)
+- Cross-family review -> `meridian spawn` with different model families in parallel
+- Research needing web access -> Agent tool with researcher type, or `meridian spawn -a researcher`
 
 ### Plan Lifecycle
 
 All plans live in `_docs/plans/`. **Never use Claude Code's built-in plan mode.**
 
-- **Research first** — use meridian researcher subagents before writing a plan.
-- **Write plans** to `_docs/plans/<name>.md` with a `**Status:**` field at the top (`draft → approved → in-progress → done`).
+- **Research first** — use researcher subagents (either tool) before writing a plan.
+- **Write plans** to `_docs/plans/<name>.md` with a `**Status:**` field at the top (`draft -> approved -> in-progress -> done`).
 - **Never overwrite** an existing plan — move it to `_docs/plans/_archive/` first.
 - **Archive when done** — move completed plans to `_docs/plans/_archive/`.
 
@@ -153,14 +189,14 @@ All plans live in `_docs/plans/`. **Never use Claude Code's built-in plan mode.*
 
 ### Model Selection
 
-The orchestrator selects models based on task type. You MUST write a good prompt and pass in correct context files for the task/plan at hand.
+The orchestrator selects models based on task type. You MUST write a good prompt and pass in correct context files for the task/plan at hand. Run `meridian models list` to see available models.
 
 General heuristics:
-- **Implementation**: `gpt-5.3-codex` (default), `claude-opus-4-6` (UI iteration + rare different perspectives)
-- **Review**: Fan out to multiple model families for medium/high risk changes, prefer `gpt-5.4` as the main reviewer
+- **Implementation**: `gpt-5.3-codex` (default, alias: `codex`), `claude-opus-4-6` (UI iteration + rare different perspectives)
+- **Review**: Fan out to multiple model families for medium/high risk changes, prefer `gpt-5.4` (alias: `gpt`) as the main reviewer
 - **Research**: Use model diversity for different perspectives
-- **Commit**: `claude-haiku-4-5` to help create commits for the changes
-- **Documentation**: `claude-haiku-4-5` to help find the files that need to be updated for the changes you are making, `claude-opus-4-6` to help write the documentation itself.
+- **Commit**: `claude-haiku-4-5` (alias: `haiku`) to help create commits
+- **Documentation**: `haiku` to find files that need updating, `opus` to write the documentation itself.
 
 ### Frontend
 
