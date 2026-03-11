@@ -54,12 +54,11 @@ Stage 1 is the foundation. Stages 2-3 are independent after Stage 1.
 ### Spec
 | Doc | Purpose |
 |-----|---------|
-| `spec/plan.md` | Stage 1 phases, tasks, dependency graph, estimates |
+| `spec/plan.md` | Implementation plan: phases, tasks, reviewer assignments, review loop |
 | `spec/backend-frontend.md` | Stage 1 technical spec (backend + frontend changes) |
 | `spec/ws-patterns.md` | Protocol specs, session manager, chat delta piggybacking, CRDT guarantee |
 | `spec/ui-requirements.md` | What the UI must handle from the transport layer |
 | `spec/architecture.md` | Target architecture diagrams |
-| `spec/agent-headcount.md` | Per-phase agent staffing and orchestration workflow |
 
 ### Reference
 | Doc | Purpose |
