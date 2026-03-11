@@ -15,13 +15,6 @@ import (
 	collabSvc "meridian/internal/domain/services/collab"
 )
 
-// noopContentLoader satisfies DocumentContentLoader for tests that don't exercise bootstrap.
-type noopContentLoader struct{}
-
-func (l *noopContentLoader) LoadContentForBootstrap(_ context.Context, _ string) (string, error) {
-	return "", nil
-}
-
 // --- shared test doubles used by collab_project_test.go and collab_proposal_test.go ---
 
 type testJWTVerifier struct {

@@ -25,6 +25,11 @@ type ProjectConnectionRegistry interface {
 	ProjectConnectionRegistrar
 }
 
+// DocumentBroadcaster sends binary data to all WebSocket connections for a document.
+type DocumentBroadcaster interface {
+	BroadcastToDocument(documentID string, data []byte)
+}
+
 // ProjectConnection represents a single project WS connection.
 // No writeChan -- coder/websocket is concurrent-write-safe, so Send() calls
 // conn.Write() directly.

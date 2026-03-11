@@ -78,7 +78,7 @@ func runMessageLoop(
 			}
 		}
 
-		// Binary envelope handling
+		// Binary message handling
 		if handlers.onBinaryMessage != nil {
 			handlers.onBinaryMessage(rawMessage)
 		}
