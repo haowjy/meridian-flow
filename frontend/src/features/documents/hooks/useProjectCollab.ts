@@ -28,7 +28,16 @@ export type ProjectCollabProposalEvent =
   | ProposalGroupAcceptResultEvent
   | ProposalUpdateDataEvent;
 
-export type ProjectCollabDocumentTextEvent = ProjectCollabProposalEvent;
+export interface ProjectCollabDocErrorEvent {
+  type: "doc:error";
+  documentId: string;
+  code: string;
+  message: string;
+}
+
+export type ProjectCollabDocumentTextEvent =
+  | ProjectCollabProposalEvent
+  | ProjectCollabDocErrorEvent;
 
 export interface ProjectCollabDocumentListener {
   onTextEvent?: (event: ProjectCollabDocumentTextEvent) => void;
@@ -193,7 +202,10 @@ export function createProjectCollabTransport(
     }
 
     if (textEvent.type === "error") {
-      if (textEvent.code === "AUTH_FAILED") {
+      if (
+        textEvent.code === "AUTH_FAILED" ||
+        textEvent.code === "AUTH_EXPIRED"
+      ) {
         void refreshSessionFn();
         sourceSocket.close();
         return;
@@ -201,6 +213,25 @@ export function createProjectCollabTransport(
 
       log.warn("project collab websocket error", {
         projectId: options.projectId,
+        code: textEvent.code,
+        message: textEvent.message,
+      });
+      return;
+    }
+
+    if (
+      textEvent.type === "doc:error" &&
+      typeof textEvent.documentId === "string" &&
+      typeof textEvent.code === "string" &&
+      typeof textEvent.message === "string"
+    ) {
+      const eventDocumentId = normalizeDocumentId(textEvent.documentId);
+      if (!eventDocumentId) {
+        return;
+      }
+      notifyDocumentTextListeners(eventDocumentId, {
+        type: "doc:error",
+        documentId: eventDocumentId,
         code: textEvent.code,
         message: textEvent.message,
       });

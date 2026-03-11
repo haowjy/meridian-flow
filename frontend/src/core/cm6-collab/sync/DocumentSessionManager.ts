@@ -316,6 +316,9 @@ export class DocumentSessionManager {
         return;
       }
 
+      // Re-open the sync handshake on each socket reconnect while preserving
+      // the existing Y.Doc and in-memory collab state.
+      session.runtime.reset();
       const nextSocket = new WebSocket(buildDocumentWSURL(session.documentId));
       nextSocket.binaryType = "arraybuffer";
       session.ws = nextSocket;
