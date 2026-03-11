@@ -43,7 +43,6 @@ backend/orchestrator
 # Hidden local scratch artifacts
 .scratch/
 .orchestrate/
-.meridian/
 
 # Python bytecode/cache artifacts
 __pycache__/

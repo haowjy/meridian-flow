@@ -1,0 +1,11 @@
+# Ignore everything by default
+*
+
+# Track .gitignore itself
+!.gitignore
+
+# Track fs/ and work/
+!fs/
+!fs/**
+!work/
+!work/**
