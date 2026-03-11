@@ -13,19 +13,22 @@ import (
 	"meridian/internal/auth"
 	"meridian/internal/config"
 	collabSvc "meridian/internal/domain/services/collab"
-	serviceCollab "meridian/internal/service/collab"
 )
 
 // CollabHandler handles collaboration transport entrypoints.
 type CollabHandler struct {
-	documentResolver    collabSvc.DocumentResolver
-	documentBroadcaster collabSvc.DocumentBroadcaster
-	subscriptionService *serviceCollab.SubscriptionService
-	proposalService     collabSvc.ProposalService
-	proposalStore       collabSvc.ProposalStore
-	authenticator       *collabAuthenticator
-	logger              *slog.Logger
-	config              *config.Config
+	documentResolver collabSvc.DocumentResolver
+	proposalService  collabSvc.ProposalService
+	proposalStore    collabSvc.ProposalStore
+	authenticator    *collabAuthenticator
+	logger           *slog.Logger
+	config           *config.Config
+
+	// projectRegistry tracks project WS connections and broadcasts JSON proposal events.
+	projectRegistry ProjectConnectionRegistry
+
+	// docHandler provides document-level binary fanout for Yjs updates from proposal acceptance.
+	docHandler *CollabDocumentHandler
 }
 
 const (
@@ -123,13 +126,13 @@ func (c *websocketDocumentConnection) Close() error {
 // NewCollabHandler creates a new collaboration handler.
 func NewCollabHandler(
 	documentResolver collabSvc.DocumentResolver,
-	documentBroadcaster collabSvc.DocumentBroadcaster,
-	subscriptionService *serviceCollab.SubscriptionService,
 	proposalService collabSvc.ProposalService,
 	proposalStore collabSvc.ProposalStore,
 	jwtVerifier auth.JWTVerifier,
 	logger *slog.Logger,
 	cfg *config.Config,
+	projectRegistry ProjectConnectionRegistry,
+	docHandler *CollabDocumentHandler,
 ) *CollabHandler {
 	var isIdentityBlocked func(string, string) bool
 	if cfg != nil {
@@ -137,14 +140,14 @@ func NewCollabHandler(
 	}
 
 	return &CollabHandler{
-		documentResolver:    documentResolver,
-		documentBroadcaster: documentBroadcaster,
-		subscriptionService: subscriptionService,
-		proposalService:     proposalService,
-		proposalStore:       proposalStore,
-		authenticator:       newCollabAuthenticator(jwtVerifier, documentResolver, isIdentityBlocked, logger),
-		logger:              logger,
-		config:              cfg,
+		documentResolver: documentResolver,
+		proposalService:  proposalService,
+		proposalStore:    proposalStore,
+		authenticator:    newCollabAuthenticator(jwtVerifier, documentResolver, isIdentityBlocked, logger),
+		logger:           logger,
+		config:           cfg,
+		projectRegistry:  projectRegistry,
+		docHandler:       docHandler,
 	}
 }
 

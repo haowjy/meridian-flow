@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -10,54 +12,101 @@ import (
 	collabSvc "meridian/internal/domain/services/collab"
 )
 
-// ProposalBroadcasterImpl implements tools.ProposalBroadcaster by wrapping the
-// existing DocumentBroadcaster WS infrastructure. This bridges the gap between
-// tool-created proposals (which bypass the WS command path) and connected clients.
+// ProposalBroadcasterImpl implements tools.ProposalBroadcaster by routing JSON
+// proposal events to project websocket connections and Yjs frames to document
+// websocket connections.
 type ProposalBroadcasterImpl struct {
-	documentBroadcaster collabSvc.DocumentBroadcaster
+	projectBroadcaster ProjectBroadcaster
+	docHandler         *CollabDocumentHandler
+	documentResolver   collabSvc.DocumentResolver
 }
 
-// NewProposalBroadcasterImpl creates a broadcaster backed by the document WS broadcaster.
-func NewProposalBroadcasterImpl(documentBroadcaster collabSvc.DocumentBroadcaster) *ProposalBroadcasterImpl {
+// NewProposalBroadcasterImpl creates a broadcaster backed by the project/document WS handlers.
+func NewProposalBroadcasterImpl(
+	projectBroadcaster ProjectBroadcaster,
+	docHandler *CollabDocumentHandler,
+	documentResolver collabSvc.DocumentResolver,
+) *ProposalBroadcasterImpl {
 	return &ProposalBroadcasterImpl{
-		documentBroadcaster: documentBroadcaster,
+		projectBroadcaster: projectBroadcaster,
+		docHandler:         docHandler,
+		documentResolver:   documentResolver,
 	}
 }
 
-// BroadcastProposalCreated sends a proposal:new event to all document subscribers.
+// BroadcastProposalCreated sends a proposal:new event to all project connections
+// for the proposal's document.
 func (b *ProposalBroadcasterImpl) BroadcastProposalCreated(documentID string, proposal *collabModels.Proposal) error {
+	documentUUID, err := parseUUID(documentID)
+	if err != nil {
+		return fmt.Errorf("invalid document id for proposal broadcast: %w", err)
+	}
+	canonicalDocumentID := documentUUID.String()
+
 	event := buildProposalNewEvent(*proposal)
 	eventBytes, err := json.Marshal(event)
 	if err != nil {
 		return err
 	}
-	b.documentBroadcaster.Broadcast(documentID, eventBytes, nil)
+
+	projectID, err := b.resolveProjectID(context.Background(), canonicalDocumentID)
+	if err != nil {
+		return err
+	}
+
+	if b.projectBroadcaster != nil {
+		b.projectBroadcaster.BroadcastToProject(projectID, eventBytes)
+	}
 	return nil
 }
 
-// BroadcastProposalAccepted sends a Yjs update frame followed by a proposal:statusChanged
-// event to all document subscribers. This mirrors broadcastProposalMutations for
-// the auto-accept case.
+// BroadcastProposalAccepted sends a Yjs update frame to document websocket
+// connections and a proposal:statusChanged event to project websocket connections.
 func (b *ProposalBroadcasterImpl) BroadcastProposalAccepted(documentID string, proposalID uuid.UUID, yjsUpdate []byte) error {
 	documentUUID, err := parseUUID(documentID)
 	if err != nil {
 		return fmt.Errorf("invalid document id for proposal broadcast: %w", err)
 	}
+	canonicalDocumentID := documentUUID.String()
 
-	// Send Yjs update frame so connected editors apply the change
-	if len(yjsUpdate) > 0 {
-		updateFrame, err := buildUpdateFrame(documentUUID, yjsUpdate)
+	if len(yjsUpdate) > 0 && b.docHandler != nil {
+		encodedUpdate, err := encodeSyncUpdatePayload(yjsUpdate)
 		if err != nil {
 			return err
 		}
-		b.documentBroadcaster.Broadcast(documentID, updateFrame, nil)
+		b.docHandler.BroadcastToDocument(canonicalDocumentID, addDocPrefix(docWSPrefixSync, encodedUpdate))
 	}
 
-	// Send status changed event so UI updates the proposal badge
 	statusEventBytes, err := buildProposalStatusChangedEventBytes(documentUUID, proposalID, collabModels.ProposalStatusAccepted)
 	if err != nil {
 		return err
 	}
-	b.documentBroadcaster.Broadcast(documentID, statusEventBytes, nil)
+
+	projectID, err := b.resolveProjectID(context.Background(), canonicalDocumentID)
+	if err != nil {
+		return err
+	}
+
+	if b.projectBroadcaster != nil {
+		b.projectBroadcaster.BroadcastToProject(projectID, statusEventBytes)
+	}
 	return nil
+}
+
+func (b *ProposalBroadcasterImpl) resolveProjectID(ctx context.Context, documentID string) (string, error) {
+	if b.documentResolver == nil {
+		return "", fmt.Errorf("document resolver unavailable")
+	}
+
+	docRef, err := b.documentResolver.ResolveDocument(ctx, documentID)
+	if err != nil {
+		return "", err
+	}
+
+	projectUUID, err := parseUUID(strings.TrimSpace(docRef.ProjectID))
+	if err != nil {
+		return "", fmt.Errorf("resolved invalid project id for proposal broadcast: %w", err)
+	}
+
+	return projectUUID.String(), nil
 }

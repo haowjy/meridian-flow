@@ -19,7 +19,6 @@ import (
 	"meridian/internal/domain/models"
 	collabModels "meridian/internal/domain/models/collab"
 	collabSvc "meridian/internal/domain/services/collab"
-	serviceCollab "meridian/internal/service/collab"
 )
 
 // testProposalProjectID is the project ID used by proposal tests.
@@ -173,7 +172,6 @@ func newTestProjectCollabServerWithProposalDeps(
 	t *testing.T,
 	resolver *testProjectCollabResolver,
 	verifier *testJWTVerifier,
-	store *testCollabStore,
 	proposalService collabSvc.ProposalService,
 	proposalStore collabSvc.ProposalStore,
 ) *httptest.Server {
@@ -186,147 +184,22 @@ func newTestProjectCollabServerWithProposalDeps(
 		proposalStore = &noopProposalStore{}
 	}
 
-	broadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
-	sessionManager := serviceCollab.NewDocumentSessionManager(store, store, &noopContentLoader{}, slog.New(slog.NewTextHandler(io.Discard, nil)), 500)
-	subscriptionSvc := serviceCollab.NewSubscriptionService(
-		sessionManager,
-		broadcaster,
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
-		10,
-	)
+	projectRegistry := NewInMemoryProjectConnectionRegistry(slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	h := NewCollabHandler(
 		resolver,
-		broadcaster,
-		subscriptionSvc,
 		proposalService,
 		proposalStore,
 		verifier,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 		&config.Config{},
+		projectRegistry,
+		nil,
 	)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /ws/projects/{projectId}", h.ConnectProject)
 	return httptest.NewServer(mux)
-}
-
-// subscribeDocOnProjectWS performs the full subscribe handshake:
-// sends doc:subscribe, drains sync-step1 binary, proposal:snapshot, and doc:subscribed.
-func subscribeDocOnProjectWS(t *testing.T, conn *websocket.Conn, documentID string) {
-	t.Helper()
-	cmd := map[string]string{"type": "doc:subscribe", "documentId": documentID}
-	cmdBytes, _ := json.Marshal(cmd)
-	if err := websocket.Message.Send(conn, string(cmdBytes)); err != nil {
-		t.Fatalf("send doc:subscribe: %v", err)
-	}
-	// Drain: binary sync-step1, proposal:snapshot JSON, doc:subscribed JSON
-	_ = readWSBinaryMessage(t, conn)
-	_ = readWSRawMessage(t, conn) // proposal:snapshot
-	_ = readWSRawMessage(t, conn) // doc:subscribed
-}
-
-func TestProjectWS_ProposalSnapshotAfterSubscribe(t *testing.T) {
-	resolver := &testProjectCollabResolver{allowed: true, projectID: testProposalProjectID}
-	verifier := &testJWTVerifier{
-		tokens: map[string]*models.SupabaseClaims{
-			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "11111111-1111-1111-1111-111111111111"}},
-		},
-	}
-	store := &testCollabStore{}
-
-	docID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
-	proposed1ID := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
-	proposed2ID := uuid.MustParse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
-	rejectedID := uuid.MustParse("cccccccc-cccc-cccc-cccc-cccccccccccc")
-	threadID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
-	agentRunID := uuid.MustParse("44444444-4444-4444-4444-444444444444")
-	userID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-
-	proposalStore := &testProposalStore{
-		proposals: []collabModels.Proposal{
-			{
-				ID:                proposed2ID,
-				DocumentID:        docID,
-				Source:            collabModels.ProposalSourceAI,
-				ProducerAgentType: "editing_agent",
-				ThreadID:          threadID,
-				AgentRunID:        agentRunID,
-				Status:            collabModels.ProposalStatusProposed,
-				YjsUpdate:         []byte{0x01},
-				CreatedByUserID:   userID,
-				CreatedAt:         time.Date(2026, 1, 2, 10, 0, 0, 0, time.UTC),
-			},
-			{
-				ID:                proposed1ID,
-				DocumentID:        docID,
-				Source:            collabModels.ProposalSourceAI,
-				ProducerAgentType: "editing_agent",
-				ThreadID:          threadID,
-				AgentRunID:        agentRunID,
-				Status:            collabModels.ProposalStatusProposed,
-				YjsUpdate:         []byte{0x02},
-				CreatedByUserID:   userID,
-				CreatedAt:         time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC),
-			},
-			{
-				ID:                rejectedID,
-				DocumentID:        docID,
-				Source:            collabModels.ProposalSourceAI,
-				ProducerAgentType: "editing_agent",
-				ThreadID:          threadID,
-				AgentRunID:        agentRunID,
-				Status:            collabModels.ProposalStatusRejected,
-				CreatedByUserID:   userID,
-				CreatedAt:         time.Date(2026, 1, 3, 10, 0, 0, 0, time.UTC),
-			},
-		},
-	}
-
-	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, store, &noopProposalService{}, proposalStore)
-	defer server.Close()
-
-	conn := dialProjectWS(t, server.URL, testProposalProjectID)
-	defer closeWSConn(t, conn)
-	authenticateWS(t, conn, "valid-token")
-
-	// Send doc:subscribe — manually read the subscribe sequence to inspect proposal:snapshot
-	cmd := map[string]string{"type": "doc:subscribe", "documentId": docID.String()}
-	cmdBytes, _ := json.Marshal(cmd)
-	if err := websocket.Message.Send(conn, string(cmdBytes)); err != nil {
-		t.Fatalf("send doc:subscribe: %v", err)
-	}
-
-	_ = readWSBinaryMessage(t, conn) // sync-step1
-	raw := readWSRawMessage(t, conn) // proposal:snapshot
-
-	var event struct {
-		Type       string                   `json:"type"`
-		DocumentID string                   `json:"documentId"`
-		Proposals  []map[string]interface{} `json:"proposals"`
-	}
-	if err := json.Unmarshal(raw, &event); err != nil {
-		t.Fatalf("decode proposal snapshot: %v", err)
-	}
-
-	if event.Type != wsTypeProposalSnapshot {
-		t.Fatalf("expected type %q, got %q", wsTypeProposalSnapshot, event.Type)
-	}
-	if event.DocumentID != docID.String() {
-		t.Fatalf("expected snapshot documentId %q, got %q", docID, event.DocumentID)
-	}
-	if len(event.Proposals) != 2 {
-		t.Fatalf("expected 2 pending proposals, got %d", len(event.Proposals))
-	}
-	if event.Proposals[0]["id"] != proposed1ID.String() {
-		t.Fatalf("expected first proposal %s, got %v", proposed1ID, event.Proposals[0]["id"])
-	}
-	if event.Proposals[1]["id"] != proposed2ID.String() {
-		t.Fatalf("expected second proposal %s, got %v", proposed2ID, event.Proposals[1]["id"])
-	}
-	if _, ok := event.Proposals[0]["yjsUpdate"]; ok {
-		t.Fatal("proposal:snapshot should not include yjsUpdate")
-	}
 }
 
 func TestProjectWS_ProposalAcceptDispatchAndBroadcast(t *testing.T) {
@@ -336,7 +209,6 @@ func TestProjectWS_ProposalAcceptDispatchAndBroadcast(t *testing.T) {
 			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "55555555-5555-5555-5555-555555555555"}},
 		},
 	}
-	store := &testCollabStore{}
 
 	proposalID := uuid.MustParse("66666666-6666-6666-6666-666666666666")
 	documentID := uuid.MustParse("77777777-7777-7777-7777-777777777777")
@@ -356,14 +228,14 @@ func TestProjectWS_ProposalAcceptDispatchAndBroadcast(t *testing.T) {
 		},
 	}
 
-	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, store, proposalService, &noopProposalStore{})
+	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, proposalService, &noopProposalStore{})
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProposalProjectID)
 	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, "valid-token")
-	subscribeDocOnProjectWS(t, conn, documentID.String())
 
+	// Send proposal:accept directly (no subscription needed in v2).
 	acceptMsg := proposalAcceptCommand{
 		Type:           wsTypeProposalAccept,
 		DocumentID:     documentID.String(),
@@ -374,21 +246,7 @@ func TestProjectWS_ProposalAcceptDispatchAndBroadcast(t *testing.T) {
 		t.Fatalf("send proposal:accept: %v", err)
 	}
 
-	updateMsg := readWSBinaryMessage(t, conn)
-	updateEnvelope, updateDocID, updatePayload, err := unframeEnvelope(updateMsg)
-	if err != nil {
-		t.Fatalf("unframe update message: %v", err)
-	}
-	if updateEnvelope != collabEnvelopeUpdate {
-		t.Fatalf("expected collab update envelope, got %d", updateEnvelope)
-	}
-	if updateDocID != documentID {
-		t.Fatalf("expected update documentId %s, got %s", documentID, updateDocID)
-	}
-	if len(updatePayload) == 0 {
-		t.Fatalf("expected non-empty update payload")
-	}
-
+	// Read proposal:statusChanged broadcast (JSON only; Yjs binary goes via document WS).
 	statusRaw := readWSRawMessage(t, conn)
 	var statusEvent proposalStatusChangedEvent
 	if err := json.Unmarshal(statusRaw, &statusEvent); err != nil {
@@ -429,7 +287,6 @@ func TestProjectWS_ProposalGroupAcceptResultEvent(t *testing.T) {
 			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "88888888-8888-8888-8888-888888888888"}},
 		},
 	}
-	store := &testCollabStore{}
 
 	groupID := uuid.MustParse("99999999-9999-9999-9999-999999999999")
 	documentID := uuid.MustParse("aaaaaaaa-1111-1111-1111-111111111111")
@@ -451,13 +308,12 @@ func TestProjectWS_ProposalGroupAcceptResultEvent(t *testing.T) {
 		},
 	}
 
-	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, store, proposalService, &noopProposalStore{})
+	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, proposalService, &noopProposalStore{})
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProposalProjectID)
 	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, "valid-token")
-	subscribeDocOnProjectWS(t, conn, documentID.String())
 
 	msg := proposalGroupAcceptCommand{
 		Type:           wsTypeProposalGroupAccept,
@@ -502,29 +358,26 @@ func TestProjectWS_ProposalGroupAcceptResultEvent(t *testing.T) {
 	}
 }
 
-// TestProjectWS_ProposalAcceptNonSubscribedDocument verifies that a proposal:accept
-// for a document that isn't subscribed gets a doc:error with NOT_SUBSCRIBED code.
-// (Migrated from legacy per-doc WS test for missing documentId.)
-func TestProjectWS_ProposalAcceptNonSubscribedDocument(t *testing.T) {
+// TestProjectWS_ProposalAcceptMissingDocumentID verifies that a proposal:accept
+// without documentId gets an INTERNAL_ERROR because the empty string fails UUID parsing.
+func TestProjectWS_ProposalAcceptMissingDocumentID(t *testing.T) {
 	resolver := &testProjectCollabResolver{allowed: true, projectID: testProposalProjectID}
 	verifier := &testJWTVerifier{
 		tokens: map[string]*models.SupabaseClaims{
 			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "12121212-1212-1212-1212-121212121212"}},
 		},
 	}
-	store := &testCollabStore{}
 
-	documentID := uuid.MustParse("13131313-1313-1313-1313-131313131313")
 	proposalService := &testProposalService{}
-	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, store, proposalService, &noopProposalStore{})
+	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, proposalService, &noopProposalStore{})
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProposalProjectID)
 	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, "valid-token")
-	subscribeDocOnProjectWS(t, conn, documentID.String())
 
-	// Send proposal:accept WITHOUT documentId — routes to empty string → NOT_SUBSCRIBED
+	// Send proposal:accept WITHOUT documentId — the empty string fails UUID parsing
+	// in handleProjectProposalCommand.
 	msg := map[string]string{
 		"type":           wsTypeProposalAccept,
 		"proposalId":     "14141414-1414-1414-1414-141414141414",
@@ -534,61 +387,53 @@ func TestProjectWS_ProposalAcceptNonSubscribedDocument(t *testing.T) {
 		t.Fatalf("send proposal:accept: %v", err)
 	}
 
-	// In project WS, missing documentId means NOT_SUBSCRIBED via doc:error
-	got := readWSJSONMessage(t, conn)
-	if got["type"] != "doc:error" {
-		t.Fatalf("expected doc:error, got %v", got["type"])
-	}
-	if got["code"] != "NOT_SUBSCRIBED" {
-		t.Fatalf("expected NOT_SUBSCRIBED, got %v", got["code"])
+	got := readWSErrorMessage(t, conn)
+	if got.Code != "INTERNAL_ERROR" {
+		t.Fatalf("expected INTERNAL_ERROR, got %q", got.Code)
 	}
 	if len(proposalService.acceptReqs) != 0 {
 		t.Fatalf("expected no accept calls, got %d", len(proposalService.acceptReqs))
 	}
 }
 
-// TestProjectWS_ProposalRejectNonSubscribedDocument verifies that a proposal:reject
-// for a document that isn't subscribed gets a doc:error with NOT_SUBSCRIBED code.
-// (Migrated from legacy per-doc WS test for mismatched documentId.)
-func TestProjectWS_ProposalRejectNonSubscribedDocument(t *testing.T) {
-	resolver := &testProjectCollabResolver{allowed: true, projectID: testProposalProjectID}
+// TestProjectWS_ProposalAcceptAccessDenied verifies that a proposal:accept
+// for a document the user doesn't own returns FORBIDDEN via doc:error.
+func TestProjectWS_ProposalAcceptAccessDenied(t *testing.T) {
+	resolver := &testProjectCollabResolver{allowed: false, projectID: testProposalProjectID}
 	verifier := &testJWTVerifier{
 		tokens: map[string]*models.SupabaseClaims{
 			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "15151515-1515-1515-1515-151515151515"}},
 		},
 	}
-	store := &testCollabStore{}
 
-	documentID := uuid.MustParse("16161616-1616-1616-1616-161616161616")
 	proposalService := &testProposalService{}
-	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, store, proposalService, &noopProposalStore{})
+	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, proposalService, &noopProposalStore{})
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProposalProjectID)
 	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, "valid-token")
-	subscribeDocOnProjectWS(t, conn, documentID.String())
 
-	// Send proposal:reject with a DIFFERENT documentId than the one subscribed
-	msg := proposalRejectCommand{
-		Type:       wsTypeProposalReject,
-		DocumentID: "17171717-1717-1717-1717-171717171717",
-		ProposalID: "18181818-1818-1818-1818-181818181818",
+	// Send proposal:accept for a document the user doesn't own.
+	msg := proposalAcceptCommand{
+		Type:           wsTypeProposalAccept,
+		DocumentID:     "17171717-1717-1717-1717-171717171717",
+		ProposalID:     "18181818-1818-1818-1818-181818181818",
+		IdempotencyKey: "access-denied-key",
 	}
 	if err := websocket.JSON.Send(conn, msg); err != nil {
-		t.Fatalf("send proposal:reject: %v", err)
+		t.Fatalf("send proposal:accept: %v", err)
 	}
 
-	// In project WS, mismatched documentId means NOT_SUBSCRIBED via doc:error
 	got := readWSJSONMessage(t, conn)
 	if got["type"] != "doc:error" {
 		t.Fatalf("expected doc:error, got %v", got["type"])
 	}
-	if got["code"] != "NOT_SUBSCRIBED" {
-		t.Fatalf("expected NOT_SUBSCRIBED, got %v", got["code"])
+	if got["code"] != "FORBIDDEN" {
+		t.Fatalf("expected FORBIDDEN, got %v", got["code"])
 	}
-	if len(proposalService.rejectReqs) != 0 {
-		t.Fatalf("expected no reject calls, got %d", len(proposalService.rejectReqs))
+	if len(proposalService.acceptReqs) != 0 {
+		t.Fatalf("expected no accept calls, got %d", len(proposalService.acceptReqs))
 	}
 }
 
@@ -599,19 +444,17 @@ func TestProjectWS_ProposalAcceptErrorMapping_IdempotencyConflict(t *testing.T) 
 			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "dddddddd-dddd-dddd-dddd-dddddddddddd"}},
 		},
 	}
-	store := &testCollabStore{}
 
 	documentID := uuid.MustParse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
 	proposalService := &testProposalService{
 		acceptErr: domain.NewConflictError("idempotency_key", "k", "key conflict"),
 	}
-	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, store, proposalService, &noopProposalStore{})
+	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, proposalService, &noopProposalStore{})
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProposalProjectID)
 	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, "valid-token")
-	subscribeDocOnProjectWS(t, conn, documentID.String())
 
 	msg := proposalAcceptCommand{
 		Type:           wsTypeProposalAccept,
@@ -636,19 +479,17 @@ func TestProjectWS_ProposalAcceptErrorMapping_RateLimited(t *testing.T) {
 			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "dddddddd-dddd-dddd-dddd-dddddddddddd"}},
 		},
 	}
-	store := &testCollabStore{}
 
 	documentID := uuid.MustParse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
 	proposalService := &testProposalService{
 		acceptErr: domain.NewRateLimitError("too many pending accept operations"),
 	}
-	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, store, proposalService, &noopProposalStore{})
+	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, proposalService, &noopProposalStore{})
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProposalProjectID)
 	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, "valid-token")
-	subscribeDocOnProjectWS(t, conn, documentID.String())
 
 	msg := proposalAcceptCommand{
 		Type:           wsTypeProposalAccept,
@@ -673,7 +514,6 @@ func TestProjectWS_ProposalRequestUpdate(t *testing.T) {
 			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "11111111-1111-1111-1111-111111111111"}},
 		},
 	}
-	store := &testCollabStore{}
 
 	docID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
 	proposalID := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
@@ -698,15 +538,14 @@ func TestProjectWS_ProposalRequestUpdate(t *testing.T) {
 		},
 	}
 
-	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, store, &noopProposalService{}, proposalStore)
+	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, &noopProposalService{}, proposalStore)
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProposalProjectID)
 	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, "valid-token")
-	subscribeDocOnProjectWS(t, conn, docID.String())
 
-	// Send proposal:requestUpdate
+	// Send proposal:requestUpdate directly (no subscription needed in v2).
 	msg := map[string]string{
 		"type":       wsTypeProposalRequestUpdate,
 		"documentId": docID.String(),
@@ -742,19 +581,17 @@ func TestProjectWS_ProposalRequestUpdateNotFound(t *testing.T) {
 			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "11111111-1111-1111-1111-111111111111"}},
 		},
 	}
-	store := &testCollabStore{}
 
 	docID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
 	// Empty proposal store — proposal not found
 	proposalStore := &testProposalStore{}
 
-	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, store, &noopProposalService{}, proposalStore)
+	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, &noopProposalService{}, proposalStore)
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProposalProjectID)
 	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, "valid-token")
-	subscribeDocOnProjectWS(t, conn, docID.String())
 
 	msg := map[string]string{
 		"type":       wsTypeProposalRequestUpdate,
@@ -778,10 +615,9 @@ func TestProjectWS_ProposalRequestUpdateWrongDocument(t *testing.T) {
 			"valid-token": {RegisteredClaims: jwt.RegisteredClaims{Subject: "11111111-1111-1111-1111-111111111111"}},
 		},
 	}
-	store := &testCollabStore{}
 
-	// The document the user is subscribed to
-	subscribedDocID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	// The document the user sends the command with
+	commandDocID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
 	// The document the proposal actually belongs to
 	otherDocID := uuid.MustParse("99999999-9999-9999-9999-999999999999")
 	proposalID := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
@@ -806,17 +642,16 @@ func TestProjectWS_ProposalRequestUpdateWrongDocument(t *testing.T) {
 		},
 	}
 
-	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, store, &noopProposalService{}, proposalStore)
+	server := newTestProjectCollabServerWithProposalDeps(t, resolver, verifier, &noopProposalService{}, proposalStore)
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProposalProjectID)
 	defer closeWSConn(t, conn)
 	authenticateWS(t, conn, "valid-token")
-	subscribeDocOnProjectWS(t, conn, subscribedDocID.String())
 
 	msg := map[string]string{
 		"type":       wsTypeProposalRequestUpdate,
-		"documentId": subscribedDocID.String(),
+		"documentId": commandDocID.String(),
 		"proposalId": proposalID.String(),
 	}
 	if err := websocket.JSON.Send(conn, msg); err != nil {

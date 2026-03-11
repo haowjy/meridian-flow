@@ -197,7 +197,6 @@ func main() {
 	proposalStore := postgresCollab.NewProposalStore(repoConfig)
 	idempotencyStore := postgresCollab.NewIdempotencyStore(repoConfig)
 	autoAcceptStore := postgresCollab.NewAutoAcceptStore(repoConfig)
-	collabBroadcaster := serviceCollab.NewInMemoryDocumentBroadcaster()
 	collabSessionManager := serviceCollab.NewDocumentSessionManager(
 		collabStore,
 		collabStore,
@@ -228,11 +227,23 @@ func main() {
 		cfg.CollabDefaultAutoAccept,
 	)
 
+	// Create collab document resolver and per-document WS handler early,
+	// needed by both the proposal broadcaster (for AI edits) and the collab handler.
+	collabDocResolver := serviceCollab.NewDocumentResolver(docRepo, authorizer)
+	projectConnectionRegistry := handler.NewInMemoryProjectConnectionRegistry(logger)
+	collabDocumentHandler := handler.NewCollabDocumentHandler(
+		collabSessionManager,
+		jwtVerifier,
+		collabDocResolver,
+		logger,
+		cfg,
+	)
+
 	// Build mutation strategy for AI edits.
 	// CollabProposalStrategy creates collab proposals with Yjs updates and WS broadcasting.
 	// aiContentProjector implements ProjectedStateBuilder — provides projected Yjs state
 	// (base + pending proposals) so edit positions align with ai_content.
-	proposalBroadcasterImpl := handler.NewProposalBroadcasterImpl(collabBroadcaster)
+	proposalBroadcasterImpl := handler.NewProposalBroadcasterImpl(projectConnectionRegistry, collabDocumentHandler, collabDocResolver)
 	mutationStrategy := tools.NewCollabProposalStrategy(proposalService, proposalBroadcasterImpl, aiContentProjector, logger)
 
 	// Setup LLM services (thread, thread history, streaming)
@@ -288,30 +299,16 @@ func main() {
 	newFolderHandler := handler.NewFolderHandler(folderService, logger, cfg)
 	newTreeHandler := handler.NewTreeHandler(treeService, identifierResolver, logger, cfg)
 	importHandler := handler.NewImportHandler(importService, authorizer, logger, cfg)
-	// Collab handler + snapshot handler (stores created above before LLM services)
-	collabDocResolver := serviceCollab.NewDocumentResolver(docRepo, authorizer)
-	collabSubscriptionService := serviceCollab.NewSubscriptionService(
-		collabSessionManager,
-		collabBroadcaster,
-		logger,
-		10, // max concurrent document subscriptions per project WS connection
-	)
+	// Collab handler (doc resolver, registry, and doc handler created above before LLM services)
 	collabHandler := handler.NewCollabHandler(
 		collabDocResolver,
-		collabBroadcaster,
-		collabSubscriptionService,
 		proposalService,
 		proposalStore,
 		jwtVerifier,
 		logger,
 		cfg,
-	)
-	collabDocumentHandler := handler.NewCollabDocumentHandler(
-		collabSessionManager,
-		jwtVerifier,
-		collabDocResolver,
-		logger,
-		cfg,
+		projectConnectionRegistry,
+		collabDocumentHandler,
 	)
 	collabSnapshotHandler := handler.NewCollabSnapshotHandler(
 		collabStore,
