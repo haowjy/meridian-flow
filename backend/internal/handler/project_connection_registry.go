@@ -75,17 +75,30 @@ func (r *InMemoryProjectConnectionRegistry) Unregister(connectionID string) {
 
 func (r *InMemoryProjectConnectionRegistry) BroadcastToProject(projectID string, message []byte) {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
-
+	targets := make([]struct {
+		connectionID string
+		conn         ProjectConnection
+	}, 0, len(r.conns))
 	for connectionID, registered := range r.conns {
 		if registered == nil || registered.projectID != projectID || registered.conn == nil {
 			continue
 		}
 
-		if err := registered.conn.Send(message); err != nil {
+		targets = append(targets, struct {
+			connectionID string
+			conn         ProjectConnection
+		}{
+			connectionID: connectionID,
+			conn:         registered.conn,
+		})
+	}
+	r.mu.RUnlock()
+
+	for _, target := range targets {
+		if err := target.conn.Send(message); err != nil {
 			r.logger.Warn("project connection broadcast send failed",
 				"project_id", projectID,
-				"connection_id", connectionID,
+				"connection_id", target.connectionID,
 				"error", err,
 			)
 		}
