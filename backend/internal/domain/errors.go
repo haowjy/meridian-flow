@@ -66,6 +66,14 @@ var (
 	ErrRateLimit    = errors.New("rate limit exceeded")
 )
 
+// WebSocket transport error sentinels
+var (
+	ErrAuthFailed      = errors.New("authentication failed")
+	ErrAuthExpired     = errors.New("authentication expired")
+	ErrConnectionLimit = errors.New("connection limit exceeded")
+	ErrFrameTooLarge   = errors.New("frame too large")
+)
+
 // RateLimitError indicates the user has exceeded a concurrency or rate limit.
 // Implements HTTPError interface for extensible error handling.
 type RateLimitError struct {
