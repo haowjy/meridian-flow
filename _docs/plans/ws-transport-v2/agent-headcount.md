@@ -56,58 +56,72 @@ audience: developer, architect
 
 ### Phase 0: Foundation (~400 lines)
 - 1x `meridian spawn -a coder -m codex` -- session manager fixes + authenticator refactor + error sentinels
-- 2x `meridian spawn -a reviewer -m gpt` -- (1) correctness/concurrency, (2) Go idioms
-- 1x `meridian spawn -a unit-tester -m gpt` -- verify singleflight + refcount guards with race tests
+- 1x `meridian spawn -a reviewer-solid` -- SOLID, code consistency
+- 1x `meridian spawn -a reviewer-concurrency` -- singleflight + refcount race analysis
+- 1x `meridian spawn -a unit-tester` -- verify singleflight + refcount guards with race tests
+- 1x `meridian spawn -a reviewer-planning` -- does Phase 0 set up Phase 1A/1B correctly?
 - Gate: orchestrator approves, all existing + new tests pass
 
 ### Phase 1A: Document WS Handler (~700 lines)
 - 1x `meridian spawn -a coder -m codex` -- new document handler + registry
-- 2x `meridian spawn -a reviewer -m gpt` -- (1) correctness, (2) security (auth, origin, limits)
-- 1x `meridian spawn -a unit-tester -m gpt` -- handler tests: handshake, heartbeat, limits
-- 1x `meridian spawn -a smoke-tester -m sonnet` -- connect to /ws/documents/{id}, send bad auth, oversized frames
+- 1x `meridian spawn -a reviewer-solid` -- SOLID, consistency with existing handlers
+- 1x `meridian spawn -a reviewer-concurrency` -- connection lifecycle, goroutine leaks
+- 1x `meridian spawn -a reviewer-security` -- auth, origin, rate limits, frame size
+- 1x `meridian spawn -a unit-tester` -- handler tests: handshake, heartbeat, limits
+- 1x `meridian spawn -a smoke-tester` -- connect to /ws/documents/{id}, bad auth, oversized frames
+- 1x `meridian spawn -a reviewer-planning` -- API shape right for Phase 3 frontend?
 - Gate: orchestrator approves, Yjs handshake works
 
 ### Phase 1B: Project WS Simplification (~800 lines)
 - 1x `meridian spawn -a coder -m codex` -- strip binary/subscription, split broadcast
-- 2x `meridian spawn -a reviewer -m gpt` -- (1) correctness, (2) backwards compat (proposal flow intact)
-- 1x `meridian spawn -a unit-tester -m gpt` -- proposal routing tests, verify binary rejection
+- 1x `meridian spawn -a reviewer-solid` -- clean separation of JSON vs binary paths
+- 1x `meridian spawn -a reviewer-concurrency` -- broadcast fanout, connection registry
+- 1x `meridian spawn -a unit-tester` -- proposal routing tests, verify binary rejection
+- 1x `meridian spawn -a reviewer-planning` -- proposal flow intact for existing frontend?
 - Gate: orchestrator approves, proposals work correctly
 - NOTE: runs in parallel with 1A via git worktree
 
 ### Phase 2: Cleanup (~300 net lines)
 - 1x `meridian spawn -a coder -m codex` -- delete dead code, update interfaces
-- 1x `meridian spawn -a reviewer -m gpt` -- dead code / unused imports / build check
+- 1x `meridian spawn -a reviewer-solid` -- dead code, unused imports, interface hygiene
 - Gate: build passes, all tests pass
 
 ### Phase 3: Frontend (~1000 lines)
 - 1x `meridian spawn -a coder -m codex` -- DocumentSessionManager + hook rewrites
-- 2x `meridian spawn -a reviewer -m gpt` -- (1) React patterns/lifecycle, (2) TypeScript + warm pool logic
-- 1x `meridian spawn -a smoke-tester -m sonnet` -- open document in browser, test warm pool transitions
+- 1x `meridian spawn -a reviewer-solid` -- React/TS patterns, store consistency
+- 1x `meridian spawn -a reviewer-concurrency` -- async interleaving, warm pool lifecycle
+- 1x `meridian spawn -a smoke-tester` -- open document in browser, test warm pool transitions
+- 1x `meridian spawn -a reviewer-planning` -- does the frontend match the backend API?
 - Gate: pnpm build + lint pass
 
 ## Agent Profiles
 
 All agents defined in `.claude/agents/`. Use with `meridian spawn -a <name>`.
 
-| Agent | Profile | Default Model | Purpose |
-|-------|---------|---------------|---------|
-| `coder` | Implementation | gpt-5.3-codex | Write production code, follow SOLID |
-| `reviewer` | Code review | gpt-5.4 | Read-only review against project rules |
-| `unit-tester` | Test engineer | gpt-5.4 | Write focused unit tests, run them, report results |
-| `smoke-tester` | QA tester | claude-sonnet-4-6 | Write disposable scripts to test from outside |
-| `researcher` | Investigation | gpt-5.3-codex | Read-only codebase exploration + web search |
+### Builders
 
-## Review Angles (passed via prompt, not separate agents)
+| Agent | Default Model | Purpose |
+|-------|---------------|---------|
+| `coder` | gpt-5.3-codex | Write production code, follow SOLID |
+| `researcher` | gpt-5.3-codex | Read-only codebase exploration + web search |
 
-| Angle | Focus | Phases |
-|-------|-------|--------|
-| Correctness | Logic errors, edge cases, nil checks | All |
-| Concurrency | Races, deadlocks, lock ordering, goroutine leaks | 0, 1A |
-| Security | Auth bypass, origin validation, rate limiting | 1A |
-| Go idioms | Context threading, error wrapping, interface design | 0, 1A, 1B |
-| React/TS | Hook lifecycle, cleanup, TypeScript strictness | 3 |
-| Backwards compat | Proposal flow intact, no regressions | 1B |
-| Tiebreaker | Conflict resolution, final judgment (orchestrator) | As needed |
+### Reviewers
+
+Each reviewer type has a distinct focus area and system prompt. This prevents the "review everything" problem where findings are shallow across all areas.
+
+| Agent | Default Model | Focus |
+|-------|---------------|-------|
+| `reviewer-solid` | gpt-5.4 | SOLID principles, code style, project consistency, correctness |
+| `reviewer-concurrency` | gpt-5.4 | Races, deadlocks, lock ordering, goroutine leaks |
+| `reviewer-security` | gpt-5.4 | Auth bypass, input validation, rate limiting, resource exhaustion |
+| `reviewer-planning` | claude-opus-4-6 | Long-term architecture alignment, design doc drift, future-proofing |
+
+### Testers
+
+| Agent | Default Model | Purpose |
+|-------|---------------|---------|
+| `unit-tester` | gpt-5.4 | Write focused unit tests, run them. Most tests are disposable -- only keep regression guards. |
+| `smoke-tester` | claude-sonnet-4-6 | QA from outside -- curl, WS clients, race probes in `scratch/smoke/` |
 
 ## Parallel Work Strategy
 
