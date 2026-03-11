@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/net/websocket"
 	"meridian/internal/auth"
+	"meridian/internal/domain"
 	collabSvc "meridian/internal/domain/services/collab"
 )
 
@@ -45,11 +46,11 @@ func newCollabAuthenticator(
 
 // bootstrapAuth performs the initial websocket authentication handshake:
 // reads the first JWT message, verifies the token, and parses the user UUID.
-// Returns nil result and an error string on failure.
+// Returns nil result and a typed domain error on failure.
 func (a *collabAuthenticator) bootstrapAuth(
 	conn *websocket.Conn,
 	projectID string,
-) (*collabAuthResult, string) {
+) (*collabAuthResult, error) {
 	if err := conn.SetReadDeadline(time.Now().Add(collabAuthMessageTimeout)); err != nil {
 		a.logger.Debug("project websocket failed to set auth read deadline",
 			"project_id", projectID,
@@ -63,7 +64,7 @@ func (a *collabAuthenticator) bootstrapAuth(
 			"project_id", projectID,
 			"error", err,
 		)
-		return nil, "missing or invalid authentication token"
+		return nil, domain.ErrAuthFailed
 	}
 
 	claims, err := a.jwtVerifier.VerifyToken(token)
@@ -72,7 +73,7 @@ func (a *collabAuthenticator) bootstrapAuth(
 			"project_id", projectID,
 			"error", err,
 		)
-		return nil, "invalid or expired token"
+		return nil, domain.ErrAuthExpired
 	}
 
 	userID := claims.GetUserID()
@@ -82,7 +83,7 @@ func (a *collabAuthenticator) bootstrapAuth(
 			"user_id", userID,
 			"email", claims.Email,
 		)
-		return nil, "access denied"
+		return nil, domain.ErrAuthFailed
 	}
 
 	userUUID, err := parseUUID(userID)
@@ -92,7 +93,7 @@ func (a *collabAuthenticator) bootstrapAuth(
 			"user_id", userID,
 			"error", err,
 		)
-		return nil, "invalid user identity"
+		return nil, domain.ErrAuthFailed
 	}
 
 	if err := conn.SetReadDeadline(time.Time{}); err != nil {
@@ -101,7 +102,7 @@ func (a *collabAuthenticator) bootstrapAuth(
 			"error", err,
 		)
 	}
-	return &collabAuthResult{UserID: userID, UserUUID: userUUID}, ""
+	return &collabAuthResult{UserID: userID, UserUUID: userUUID}, nil
 }
 
 // checkDocumentAccess verifies the user owns the document and that the document

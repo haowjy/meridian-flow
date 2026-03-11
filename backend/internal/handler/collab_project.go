@@ -53,8 +53,12 @@ func (h *CollabHandler) handleProjectSocket(ctx context.Context, projectID strin
 
 	// Auth bootstrap via authenticator
 	authResult, authErr := h.authenticator.bootstrapAuth(conn, projectID)
-	if authResult == nil {
-		h.sendError(wsConn, "AUTH_FAILED", authErr)
+	if authErr != nil {
+		code := "AUTH_FAILED"
+		if errors.Is(authErr, domain.ErrAuthExpired) {
+			code = "AUTH_EXPIRED"
+		}
+		h.sendError(wsConn, code, authErr.Error())
 		return
 	}
 
