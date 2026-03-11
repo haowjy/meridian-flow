@@ -59,6 +59,7 @@ Stage 1 is the foundation. Stages 2-3 are independent after Stage 1.
 | `spec/ws-patterns.md` | Protocol specs, session manager, chat delta piggybacking, CRDT guarantee |
 | `spec/ui-requirements.md` | What the UI must handle from the transport layer |
 | `spec/architecture.md` | Target architecture diagrams |
+| `spec/agent-headcount.md` | Per-phase agent staffing and orchestration workflow |
 
 ### Reference
 | Doc | Purpose |
@@ -75,4 +76,3 @@ Stage 1 is the foundation. Stages 2-3 are independent after Stage 1.
 | Doc | Purpose |
 |-----|---------|
 | `_archive/review-findings.md` | Adversarial review findings (rounds 1-4, all resolved) |
-| `_archive/agent-headcount.md` | Original orchestration staffing plan |
