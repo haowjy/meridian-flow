@@ -115,3 +115,51 @@ Each entry:
 - **Category:** backlog
 - **Description:** Dead code: getSubscriptionInvalidationReason in collab_authenticator.go no longer used at runtime.
 - **Resolution:** Deferred to Phase 2 cleanup.
+
+#### IL-9
+- **Phase:** 2
+- **Category:** decision
+- **Description:** Phase 2 reviewer-solid approved cleanup. No issues found — all dead code removed cleanly, DocumentBroadcaster interface well-placed.
+- **Resolution:** Approved, no changes needed.
+
+#### IL-10
+- **Phase:** 3
+- **Category:** bug
+- **Description:** Phase 3 reviewer-solid flagged CollabSyncRuntime's didStartSync guard is one-shot — on reconnect, runtime stays stuck in syncing state.
+- **Resolution:** Fixed: added reset() method to CollabSyncRuntime, called from DocumentSessionManager on reconnect.
+
+#### IL-11
+- **Phase:** 3
+- **Category:** bug
+- **Description:** All three Phase 3 reviewers flagged AUTH_EXPIRED not handled for token refresh in frontend project WS transport.
+- **Resolution:** Fixed: added AUTH_EXPIRED to same refresh condition as AUTH_FAILED in useProjectCollab.ts.
+
+#### IL-12
+- **Phase:** 3
+- **Category:** bug
+- **Description:** reviewer-planning flagged doc:error events not routed to document listeners in project WS transport.
+- **Resolution:** Fixed: added doc:error routing in useProjectCollab.ts handleTextMessage.
+
+#### IL-13
+- **Phase:** 3
+- **Category:** backlog
+- **Description:** Proposal snapshot bootstrap gap — backend no longer sends proposal:snapshot (was part of removed doc:subscribe handshake). Proposals won't appear until a mutation event occurs.
+- **Resolution:** Deferred — requires new proposal:getSnapshot command. Will be separate work item.
+
+#### IL-14
+- **Phase:** 3
+- **Category:** backlog
+- **Description:** Stale connect() race in useProjectCollab.ts — no generation/cancel token, StrictMode double-mount can create parallel sockets.
+- **Resolution:** Pre-existing issue, not a Phase 3 regression. Noted for future hardening.
+
+#### IL-15
+- **Phase:** 3
+- **Category:** backlog
+- **Description:** Warm pool not implemented in DocumentSessionManager — release immediately destroys sessions.
+- **Resolution:** Intentionally deferred per Phase 3 prompt. Future optimization.
+
+#### IL-16
+- **Phase:** 3
+- **Category:** decision
+- **Description:** doc:edited event not implemented (was in plan.md as Phase 1B task).
+- **Resolution:** Deferred — new functionality, not a regression. Will be separate work item.
