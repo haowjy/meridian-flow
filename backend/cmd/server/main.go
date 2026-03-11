@@ -306,6 +306,13 @@ func main() {
 		logger,
 		cfg,
 	)
+	collabDocumentHandler := handler.NewCollabDocumentHandler(
+		collabSessionManager,
+		jwtVerifier,
+		collabDocResolver,
+		logger,
+		cfg,
+	)
 	collabSnapshotHandler := handler.NewCollabSnapshotHandler(
 		collabStore,
 		collabStore,
@@ -394,6 +401,7 @@ func main() {
 
 	// Collaboration routes
 	mux.HandleFunc("GET /ws/projects/{projectId}", collabHandler.ConnectProject)
+	mux.HandleFunc("GET /ws/documents/{documentId}", collabDocumentHandler.ConnectDocument)
 
 	// Snapshot routes (collab document version history)
 	mux.HandleFunc("POST /api/documents/{id}/snapshots", collabSnapshotHandler.CreateSnapshot)

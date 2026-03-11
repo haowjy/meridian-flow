@@ -7,6 +7,7 @@ require (
 	github.com/MicahParks/keyfunc/v3 v3.7.0
 	github.com/ag-ui-protocol/ag-ui/sdks/community/go v0.0.0-20260117220954-5dcb78c9722d
 	github.com/anthropics/anthropic-sdk-go v1.17.0
+	github.com/coder/websocket v1.8.14
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
