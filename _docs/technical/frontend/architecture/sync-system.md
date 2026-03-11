@@ -17,8 +17,8 @@ The frontend uses three distinct transports. Each has its own offline/retry stra
 |-----------|-----------|---------|---------------|-------|----------------|
 | **HTTP** | Document saves | IndexedDB `pendingDocumentSaves` | startup + online + 5s tick | Cycle-based (no backoff) | Transient: keep; 4xx: drop |
 | **HTTP** | Tree ops | IndexedDB `pendingTreeOps` | startup + online + 30s tick | Op coalescing | 404: drop; 409: drop + refresh; 5xx: stop |
-| **WebSocket** | Collab commands | In-memory `pendingRejectsRef` | `doc:subscribed` event | Immediate | Queue on gate failure, flush on ack |
-| **WebSocket** | Yjs doc sync | Y.Doc (in-memory + IDB) | `doc:subscribed` → `startSync()` | Yjs sync protocol (automatic) | CRDTs handle merge |
+| **WebSocket** | Collab commands | In-memory (proposal command queue) | Project WS `project:connected` | Immediate | Auth refresh on `AUTH_FAILED`/`AUTH_EXPIRED` |
+| **WebSocket** | Yjs doc sync | Y.Doc (in-memory + IDB) | Document WS `connected` → `startSync()` | Yjs sync protocol (automatic) | CRDTs handle merge |
 | **Local only** | Proposal cache | IndexedDB `proposalUpdates` | N/A (write-through) | Fire-and-forget | Swallow errors; auto-request fallback |
 
 ### Why Not a Shared Abstraction?
@@ -58,20 +58,22 @@ The only shared code is ~20 lines of init/cleanup boilerplate (timer + online li
 
 ## WebSocket Sync: Yjs Document Collab
 
-- **Pattern**: Y.Doc stores all edits locally → `doc:subscribed` ack → `runtime.startSync()` flushes via Yjs sync protocol
+- **Pattern**: `DocumentSessionManager.acquire(docId)` opens a dedicated document WS. Server sends `connected` JSON → runtime sends SyncStep1 → Yjs protocol handles the rest.
+- **Transport**: Per-document WebSocket (`/ws/documents/{documentId}`), binary frames with 1-byte prefix (`0x00`=sync, `0x01`=awareness). No envelope framing.
+- **Session lifecycle**: refCount-based. `acquire()` creates or reuses session (refCount++). `release()` decrements; refCount 0 destroys WS + runtime immediately.
+- **Reconnect**: Per-session exponential backoff (`min(5s, 250ms * 2^attempt) + 15% jitter`). Calls `runtime.reset()` to clear handshake state.
 - **IndexedDB persistence**: `y-indexeddb` (`IndexeddbPersistence`) provides durability across page reload
 - **No manual queue**: Yjs CRDTs handle merge/conflict resolution automatically
-- **Subscribe gate**: `subscribedDocuments` Set in `useProjectCollab.ts` prevents commands before server ack
-- **NOT_SUBSCRIBED recovery**: If server rejects with NOT_SUBSCRIBED, clear gate + re-subscribe if still active
+- **Files**: `core/cm6-collab/sync/DocumentSessionManager.ts`, `core/cm6-collab/sync/runtime.ts`, `features/documents/hooks/useDocumentCollab.ts`
+
+## WebSocket Sync: Project Events (Proposals)
+
+- **Pattern**: Single project WS (`/ws/projects/{projectId}`) carries JSON proposal events + commands. No binary traffic.
+- **Transport factory**: `createProjectCollabTransport()` with injected dependencies for testability. Thin `useProjectCollab` hook wrapper.
+- **Proposal routing**: `registerDocumentListener(docId, listener)` routes per-document proposal events to hooks.
+- **Commands**: `proposal:accept`, `proposal:reject`, `proposal:groupAccept`, `proposal:requestUpdate` -- all include `documentId`.
+- **Error routing**: `doc:error` events forwarded to document listeners without closing the WS.
 - **Files**: `features/documents/hooks/useProjectCollab.ts`, `features/documents/hooks/useDocumentCollab.ts`
-
-## WebSocket Sync: Pending Proposal Rejects
-
-- **Pattern**: Failed reject commands buffered in-memory → flushed on `doc:subscribed`
-- **Storage**: `pendingRejectsRef` (React `useRef<Set<string>>`) — ephemeral, lost on reload (acceptable: collab session re-initializes)
-- **Flush**: Per-item success tracking — only successfully sent items removed from queue
-- **Why not IndexedDB**: Reject is a lightweight signal; if page reloads, the proposal state re-syncs from server via `proposal:snapshot`
-- **Files**: `features/documents/hooks/useDocumentCollab.ts`
 
 ## Local Cache: Proposal yjsUpdate
 
@@ -105,7 +107,7 @@ The inline review pipeline derives proposal hunks from `operationsModels`, which
 - Save: post-sync guard ensures we only apply to the currently active doc. See `core/stores/useEditorStore.ts:132`.
 - Editor init: content only applies after `isInitialized` to avoid stale overwrites. See `features/documents/components/EditorPanel.tsx:84`.
 - Proposal cache prune: `snapshotSeq` counter prevents stale snapshot prune from deleting fresh cache entries.
-- Subscribe gate: `subscribedDocuments` prevents WS commands during subscribe→ack window.
+- Document session: `DocumentSessionManager` guards stale socket references via `session.ws === ws` checks on all callbacks.
 
 ## Timestamp Handling
 - Missing timestamps return `NaN` (not `0`/epoch) to distinguish "unknown" from "very old"
@@ -115,7 +117,7 @@ The inline review pipeline derives proposal hunks from `operationsModels`, which
 ## Failure Handling
 - Network/5xx -> retry; 4xx/validation -> toast error, no retry. See `core/lib/errors.ts:73`.
 - On new edits, cancel older retries so newer content wins. See `core/lib/sync.ts:103`.
-- NOT_SUBSCRIBED (WS): re-subscribe if still active. See `features/documents/hooks/useProjectCollab.ts`.
+- AUTH_FAILED/AUTH_EXPIRED (WS): trigger Supabase session refresh + reconnect. See `DocumentSessionManager.ts`, `useProjectCollab.ts`.
 
 ## Observability
 - `getRetryQueueState()` returns `{ id, attempt, nextAt }[]` for dev tooling. See `core/lib/sync.ts:202`.
@@ -156,8 +158,8 @@ flowchart LR
 
     DS -->|"HTTP POST"| Server["Backend"]
     TQ -->|"HTTP REST"| Server
-    YJS -->|"WS binary"| Server
-    PR -->|"WS command"| Server
+    YJS -->|"Document WS\nbinary"| Server
+    PR -->|"Project WS\nJSON"| Server
 ```
 
 ### Document Open (Reconcile Newest)
@@ -208,44 +210,39 @@ sequenceDiagram
     end
 ```
 
-### WebSocket Subscribe + Proposal Flow
+### Document WS Sync + Project WS Proposal Flow
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant Hook as "useDocumentCollab"
-    participant Transport as "useProjectCollab"
-    participant WS as "WebSocket"
+    participant SessMgr as "DocumentSessionManager"
+    participant DocWS as "Document WS"
+    participant ProjWS as "Project WS (useProjectCollab)"
     participant IDB as "IndexedDB"
     participant CM as "CodeMirror"
 
-    Hook->>Transport: subscribe(docId)
-    Transport->>WS: doc:subscribe
-    Note over Transport: subscribedDocuments gate CLOSED
+    Hook->>SessMgr: acquire(docId)
+    SessMgr->>DocWS: connect /ws/documents/{docId}
+    DocWS->>DocWS: send JWT (first message)
+    DocWS-->>SessMgr: {"type":"connected"}
+    SessMgr->>SessMgr: runtime.startSync()
+    DocWS-->>SessMgr: SyncStep1 + SyncStep2 (binary)
+    SessMgr-->>Hook: status: connected
 
-    alt "command sent before ack"
-        Hook->>Transport: sendDocumentCommand(docId, ...)
-        Transport-->>Hook: false (gate closed)
-        Hook->>Hook: pendingRejectsRef.add(proposalId)
-    end
-
-    WS-->>Transport: doc:subscribed
-    Transport->>Transport: subscribedDocuments.add(docId)
-    Note over Transport: gate OPEN
-    Transport-->>Hook: event(doc:subscribed)
-    Hook->>Hook: runtime.startSync()
-    Hook->>Hook: flush pendingRejectsRef (per-item)
-    Hook->>Hook: bump reviewRevision
-
-    WS-->>Hook: proposal:snapshot (no yjsUpdate)
+    ProjWS-->>Hook: proposal:new (JSON via registerDocumentListener)
     Hook->>IDB: getCachedUpdatesForDocument(docId)
     IDB-->>Hook: cached yjsUpdate map
     Hook->>CM: merge cached yjsUpdate into proposals
     Hook->>IDB: pruneStaleProposalUpdates (guarded by snapshotSeq)
 
-    WS-->>Hook: proposal:updateData (with yjsUpdate)
+    ProjWS-->>Hook: proposal:updateData (with yjsUpdate)
     Hook->>IDB: cacheProposalUpdate (fire-and-forget)
     Hook->>CM: apply yjsUpdate to proposal
+
+    Hook->>Hook: unmount
+    Hook->>SessMgr: release(docId)
+    SessMgr->>DocWS: close WS + destroy runtime
 ```
 
 ### Retry Processor (Background)

@@ -57,7 +57,7 @@ Client -> Server: {"type":"heartbeat"}
 
 `protocol` field enables future negotiation (e.g., client checks `protocol >= 2` before attempting HTTP bootstrap in Stage 3).
 
-Error codes: `AUTH_FAILED`, `AUTH_EXPIRED`, `AUTH_TIMEOUT`, `FRAME_TOO_LARGE`, `RATE_LIMITED`, `RESET_REQUIRED`, `CONNECTION_LIMIT`
+Error codes: `AUTH_FAILED`, `AUTH_EXPIRED`, `AUTH_TIMEOUT`, `FRAME_TOO_LARGE`, `RATE_LIMITED`, `RESET_REQUIRED`, `CONNECTION_LIMIT`, `INTERNAL_ERROR`, `FORBIDDEN`
 
 `AUTH_TIMEOUT` is distinct from `AUTH_FAILED`: it means no JWT was received within the 5-second auth window. `AUTH_FAILED` means a JWT was received but was invalid.
 
@@ -91,12 +91,13 @@ JSON only. No binary frames. Handles cross-document events.
 
 ```
 Server -> Client:
-  proposal:snapshot      (per-document, sent on connect)
+  proposal:snapshot      (per-document -- BROKEN: not sent on connect, see IL-13)
   proposal:new           (new AI proposal for any document)
   proposal:statusChanged (accept/reject on any document)
   proposal:groupAcceptResult
   proposal:updateData    (lazy-fetched yjsUpdate)
-  doc:edited             (LLM edited a document -- triggers anticipatory connect)
+  doc:edited             (DEFERRED: not implemented, see IL-16)
+  doc:error              (document-scoped error, does NOT close the WS)
   heartbeat
 
 Client -> Server:
@@ -115,62 +116,29 @@ Client -> Server:
 
 ### Proposal Event Contract
 
-Unchanged from Phase 4.6. All events include `documentId`. `proposal:snapshot` sent per-document on connect -- server queries only documents with pending proposals (`WHERE status='pending'`), not all documents. Performance is bounded by pending proposal count, not total chapter count.
+All events include `documentId`.
+
+**Known gap (IL-13):** `proposal:snapshot` is NOT sent on project WS connect. The old `doc:subscribe` handshake triggered snapshot delivery; that path was removed. Proposals only appear after a mutation event (`proposal:new`, `proposal:statusChanged`). Requires a new `proposal:getSnapshot` request/response command to fix.
 
 ---
 
-## Keep-Alive Pool (Session Manager)
+## Session Manager (Frontend)
 
-### Why
+**Status: implemented (warm pool deferred)**
 
-Without keep-alive, switching documents means: destroy Y.Doc + runtime -> close WS -> open new WS -> JWT auth -> full Yjs sync -> create new Y.Doc + runtime. The writer sees "Connecting..." and "Syncing..." spinners every time.
+### Current Behavior
 
-With the session manager, switching back to a recently-used document is **instant** -- the full session (Y.Doc + IndexedDB + runtime + WS) stays alive. No spinners, no resync.
+`DocumentSessionManager` manages per-document WS + `CollabSyncRuntime`. RefCount lifecycle: acquire increments, release decrements. RefCount 0 destroys immediately.
 
-### Strategy
+### Deferred: Warm Pool
 
-```
-┌──────────────────────────────────────────────┐
-│         Document Session Manager             │
-│                                              │
-│  Active:  [Chapter 3 - Y.Doc + WS + runtime]│
-│                                              │
-│  Warm pool (max 3, LRU eviction):            │
-│    [Chapter 1 - full session, 2m30s left]    │
-│    [Outline   - full session, 4m15s left]    │
-│    [Notes     - full session, 1m02s left]    │
-│                                              │
-│  On acquire(docId):                          │
-│    1. Check warm pool -> promote if found    │
-│    2. Check IndexedDB -> show cached content │
-│    3. Open new WS, create session            │
-│    Never block render on sync.               │
-│                                              │
-│  On release(docId):                          │
-│    Move to warm pool, start 5min timer.      │
-│    Session stays alive (WS open, Y.Doc in    │
-│    memory, background updates applied).      │
-│                                              │
-│  On eviction/timeout:                        │
-│    Close WS (triggers server-side Release).  │
-│    Destroy Y.Doc and runtime.                │
-│    IndexedDB cache persists for next open.   │
-└──────────────────────────────────────────────┘
-```
+Target design unchanged from plan. When implemented, `release()` will move sessions to a warm pool instead of destroying.
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
 | Warm timeout | 5 minutes | Covers "flip between two chapters" workflows |
 | Max warm connections | 3 | Keeps resource usage bounded for writers |
 | Eviction | LRU | Least-recently-used document closes first |
-
-### Warm Session Behavior
-
-- Full session stays alive: Y.Doc in memory, IndexedDB provider active, WS open
-- Continues receiving Yjs updates from server (state stays current)
-- Awareness updates paused (no phantom cursors in docs user isn't viewing)
-- On reactivation: no resync needed, just resume awareness and rebind to editor
-- **Health check:** If last heartbeat was >60s ago, mark session as stale. On next `acquire()`, treat as cold (destroy and recreate) to avoid promoting a dead session
 
 ---
 
@@ -239,23 +207,15 @@ If Chat A and Chat B both edit chapter 47, each stream only carries its own agen
 
 See "CRDT Convergence Guarantee" below for why partial state from multiple channels always resolves correctly.
 
-### `doc:edited` Event (Project WS)
+### `doc:edited` Event (Project WS) -- DEFERRED
 
-Still broadcast on project WS as a lightweight notification:
+**Not yet implemented** (IL-16). Target design unchanged:
 
 ```json
 {"type": "doc:edited", "documentId": "uuid", "source": "proposal_accepted"}
 ```
 
-**`source` values:**
-- `proposal_accepted` -- Stage 1. A proposal was accepted, applying Yjs changes.
-- `ai_tool_call` -- future. An AI agent directly edited the document via a tool call.
-
-Human edits do NOT trigger `doc:edited` -- they flow through the Yjs sync protocol on the document WS and are applied automatically.
-
-This does NOT carry Yjs bytes (the chat stream does that). It serves as a notification for the frontend to show passive indicators (e.g., tree badges in future UI) and optionally warm up sessions.
-
-Hook location: `proposal_service.go` on proposal accept -> broadcast to project WS connections.
+Hook location when implemented: `proposal_service.go` on proposal accept -> broadcast to project WS via `ProjectBroadcaster`.
 
 ---
 
@@ -297,8 +257,8 @@ Logic: in-memory session state (freshest) -> DB `yjs_state` -> bootstrap from `c
 
 | Limit | Value | Behavior | Rationale |
 |-------|-------|----------|-----------|
-| Library-level max (`MaxPayloadBytes`) | 2MB | Connection killed (last resort) | Prevents memory exhaustion |
-| Application-level max | 256KB | `FRAME_TOO_LARGE` error, connection stays alive | Catches abuse, legitimate large payloads use HTTP |
+| Library-level max (`SetReadLimit`) | 2MB | Connection killed (last resort) | Prevents memory exhaustion |
+| Application-level max | 256KB | `FRAME_TOO_LARGE` error + close | Simpler than graceful reject; Stage 3 HTTP handles large payloads |
 | HTTP bootstrap threshold | 128KB | Client switches to HTTP lane | Below 128KB, WS sync is fast enough |
 | Proposal `yjs_update` max | 256KB | Reject proposal creation | Same as application max |
 
@@ -318,8 +278,8 @@ Same contract as Phase 4.6, applied per-connection:
 Same backoff formula as Phase 4.6: `min(5s, 250ms * 2^attempt) + jitter(15%)`
 
 Per-connection reconnect:
-- Document WS reconnect: re-auth -> Yjs sync (automatic state reconciliation)
-- Project WS reconnect: re-auth -> server replays `proposal:snapshot` for all docs with pending proposals
+- Document WS reconnect: re-auth -> Yjs sync (automatic state reconciliation). Runtime `reset()` clears handshake state.
+- Project WS reconnect: re-auth -> `project:connected`. Note: `proposal:snapshot` replay is broken (IL-13).
 - Session manager handles document WS reconnects independently (one doc reconnecting doesn't affect others)
 
 ---

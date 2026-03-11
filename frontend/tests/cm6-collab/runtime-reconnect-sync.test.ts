@@ -10,6 +10,7 @@ const TEST_DOC_ID = "00000000-0000-0000-0000-000000000001";
 const DOC_WS_PREFIX_SYNC = 0x00;
 
 describe("CollabSyncRuntime reconnect sync", () => {
+  // [unit-tester:dispose] verification -- safe to delete after passing
   it("responds with SyncStep2 when reused runtime receives server SyncStep1", () => {
     const sentFrames: Uint8Array[] = [];
     const runtime = new CollabSyncRuntime({
@@ -39,6 +40,23 @@ describe("CollabSyncRuntime reconnect sync", () => {
 
     runtime.destroy();
     serverDoc.destroy();
+  });
+
+  // [unit-tester:dispose] verification -- safe to delete after passing
+  it("uses raw transport prefix bytes for sync and awareness frames", () => {
+    const sentFrames: Uint8Array[] = [];
+    const runtime = new CollabSyncRuntime({
+      documentId: TEST_DOC_ID,
+      sendBinary: (frame) => sentFrames.push(frame),
+    });
+
+    runtime.startSync();
+    runtime.setLocalAwarenessState({ name: "Meridian" });
+
+    expect(sentFrames[0]?.[0]).toBe(DOC_WS_PREFIX_SYNC);
+    expect(sentFrames[1]?.[0]).toBe(0x01);
+
+    runtime.destroy();
   });
 });
 

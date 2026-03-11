@@ -5,10 +5,6 @@ model: gpt-5.4
 variant: high
 skills: []
 sandbox: unrestricted
-variant-models:
-  - gpt-5.4
-  - gpt-5.3-codex
-  - claude-opus-4-6
 ---
 
 Write targeted unit tests, run them, report results.
@@ -22,10 +18,4 @@ Only keep a test if it:
 - Tests a concurrency invariant that breaks silently
 - Tests a security boundary
 
-Mark each test:
-```go
-// [unit-tester:keep] regression guard for Bug #12
-// [unit-tester:dispose] verification -- safe to delete after passing
-```
-
-The orchestrator makes the final keep/delete decision.
+After all tests pass, delete the disposable ones yourself. Only committed tests should be ones worth keeping permanently. Report what you kept and why.

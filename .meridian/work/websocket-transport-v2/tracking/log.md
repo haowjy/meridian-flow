@@ -77,7 +77,7 @@ Each entry:
 #### IL-2
 - **Phase:** 0
 - **Category:** decision
-- **Description:** singleflight Acquire keeps a post-singleflight lock re-check (existing session check) even though singleflight should prevent duplicates. This is belt-and-suspenders since singleflight.Do results are shared by reference -- a second caller could race into the map insertion.
+- **Description:** singleflight Acquire keeps a post-singleflight lock re-check (existing session check) even though singleflight should prevent duplicates. This is belt-and-suspenders since singleflight. Do results are shared by reference -- a second caller could race into the map insertion.
 - **Resolution:** Kept the re-check as defensive programming.
 
 #### IL-3
@@ -163,3 +163,39 @@ Each entry:
 - **Category:** decision
 - **Description:** doc:edited event not implemented (was in plan.md as Phase 1B task).
 - **Resolution:** Deferred — new functionality, not a regression. Will be separate work item.
+
+#### IL-17
+- **Phase:** 3
+- **Category:** bug
+- **Description:** DocumentSessionManager throws "is destroyed" on mount due to React StrictMode double-mount. useMemo creates one instance, useEffect cleanup destroys it, StrictMode re-mount tries to acquire on the destroyed instance.
+- **Resolution:** Fixed: added revive() method, called in useEffect setup in ProjectCollabContext.tsx.
+
+#### IL-18
+- **Phase:** review
+- **Category:** backlog
+- **Description:** Reconnect backoff resets too early — both DocumentSessionManager and useProjectCollab zero reconnectAttempt on socket open, before auth succeeds. Bad token causes infinite fast retries.
+- **Resolution:** Deferred. Reset should happen after connected/project:connected, not on socket open.
+
+#### IL-19
+- **Phase:** review
+- **Category:** backlog
+- **Description:** Document handler uses HTTP request context after websocket.Accept. Should detach from request context and manage cancellation from socket lifecycle.
+- **Resolution:** Deferred.
+
+#### IL-20
+- **Phase:** review
+- **Category:** backlog
+- **Description:** Duplicate normalizeDocumentId() and normalizeAPIBase() in DocumentSessionManager.ts and useProjectCollab.ts. Extract to shared utility.
+- **Resolution:** Deferred to frontend rewrite.
+
+#### IL-21
+- **Phase:** review
+- **Category:** backlog
+- **Description:** pagehide/beforeunload handler missing — tab close leaves server waiting for heartbeat timeout (~35s). Add alongside warm pool.
+- **Resolution:** Deferred.
+
+#### IL-22
+- **Phase:** review
+- **Category:** bug
+- **Description:** Group proposal accept applies Yjs updates sequentially to a mutating doc. Each update was built against the original state, but the 2nd+ update's positions are stale. Causes truncation when accepting multiple proposals.
+- **Resolution:** Identified during dogfooding. Backend issue in proposal accept loop. Deferred to backlog — needs update merging or rebasing.

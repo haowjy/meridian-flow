@@ -39,6 +39,10 @@ export function ProjectCollabProvider({
   }, []);
 
   useEffect(() => {
+    // React StrictMode runs mount cleanup once before the committed mount.
+    // Re-enable the memoized manager so downstream hooks can reacquire sessions.
+    documentSessionManager.revive();
+
     return () => {
       documentSessionManager.destroy();
     };

@@ -40,6 +40,10 @@ class MockWebSocket implements ProjectCollabWebSocket {
   emitTextMessage(data: string): void {
     this.onmessage?.({ data });
   }
+
+  emitBinaryMessage(data: ArrayBuffer | ArrayBufferView): void {
+    this.onmessage?.({ data });
+  }
 }
 
 class MockWebSocketFactory {
@@ -54,6 +58,7 @@ class MockWebSocketFactory {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  useTreeStore.setState({ documents: [] });
 });
 
 afterEach(() => {
@@ -61,6 +66,7 @@ afterEach(() => {
 });
 
 describe("project collab transport", () => {
+  // [unit-tester:dispose] verification -- safe to delete after passing
   it("marks transport connected only after project:connected ack", async () => {
     const factory = new MockWebSocketFactory();
     const transport = createProjectCollabTransport({
@@ -84,6 +90,7 @@ describe("project collab transport", () => {
     transport.stop();
   });
 
+  // [unit-tester:dispose] verification -- safe to delete after passing
   it("reconnects after socket closes", async () => {
     const factory = new MockWebSocketFactory();
     const transport = createProjectCollabTransport({
@@ -98,7 +105,9 @@ describe("project collab transport", () => {
 
     const initialSocket = factory.sockets[0]!;
     initialSocket.open();
-    initialSocket.emitTextMessage(JSON.stringify({ type: "project:connected" }));
+    initialSocket.emitTextMessage(
+      JSON.stringify({ type: "project:connected" }),
+    );
     expect(transport.isConnected()).toBe(true);
 
     initialSocket.close();
@@ -115,6 +124,7 @@ describe("project collab transport", () => {
     transport.stop();
   });
 
+  // [unit-tester:dispose] verification -- safe to delete after passing
   it("routes proposal events by document id", async () => {
     const factory = new MockWebSocketFactory();
     const transport = createProjectCollabTransport({
@@ -154,6 +164,129 @@ describe("project collab transport", () => {
     transport.stop();
   });
 
+  // [unit-tester:dispose] verification -- safe to delete after passing
+  it("ignores non-string websocket payloads", async () => {
+    const factory = new MockWebSocketFactory();
+    const transport = createProjectCollabTransport({
+      projectId: PROJECT_ID,
+      createWebSocket: factory.create,
+      resolveAccessToken: async () => AUTH_TOKEN,
+    });
+
+    const events: unknown[] = [];
+    transport.registerDocumentListener(DOC_A, {
+      onTextEvent: (event) => events.push(event),
+    });
+
+    transport.start();
+    await flushMicrotasks();
+
+    const socket = factory.sockets[0]!;
+    socket.open();
+    socket.emitTextMessage(JSON.stringify({ type: "project:connected" }));
+    expect(transport.isConnected()).toBe(true);
+
+    socket.emitBinaryMessage(new Uint8Array([0x00, 0x01]));
+    expect(events).toHaveLength(0);
+    expect(transport.isConnected()).toBe(true);
+
+    transport.stop();
+  });
+
+  // [unit-tester:dispose] verification -- safe to delete after passing
+  it("ignores malformed JSON websocket payloads", async () => {
+    const factory = new MockWebSocketFactory();
+    const transport = createProjectCollabTransport({
+      projectId: PROJECT_ID,
+      createWebSocket: factory.create,
+      resolveAccessToken: async () => AUTH_TOKEN,
+    });
+
+    const events: unknown[] = [];
+    transport.registerDocumentListener(DOC_A, {
+      onTextEvent: (event) => events.push(event),
+    });
+
+    transport.start();
+    await flushMicrotasks();
+
+    const socket = factory.sockets[0]!;
+    socket.open();
+    socket.emitTextMessage(JSON.stringify({ type: "project:connected" }));
+
+    socket.emitTextMessage("{not-json");
+
+    expect(events).toHaveLength(0);
+    expect(transport.isConnected()).toBe(true);
+
+    transport.stop();
+  });
+
+  // [unit-tester:dispose] verification -- safe to delete after passing
+  it("routes doc:error events to the target document listener", async () => {
+    const factory = new MockWebSocketFactory();
+    const transport = createProjectCollabTransport({
+      projectId: PROJECT_ID,
+      createWebSocket: factory.create,
+      resolveAccessToken: async () => AUTH_TOKEN,
+    });
+
+    const events: unknown[] = [];
+    transport.registerDocumentListener(DOC_A, {
+      onTextEvent: (event) => events.push(event),
+    });
+
+    transport.start();
+    await flushMicrotasks();
+
+    const socket = factory.sockets[0]!;
+    socket.open();
+    socket.emitTextMessage(JSON.stringify({ type: "project:connected" }));
+    socket.emitTextMessage(
+      JSON.stringify({
+        type: "doc:error",
+        documentId: DOC_A.toUpperCase(),
+        code: "SYNC_FAILED",
+        message: "document stream unavailable",
+      }),
+    );
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({
+      type: "doc:error",
+      documentId: DOC_A,
+      code: "SYNC_FAILED",
+      message: "document stream unavailable",
+    });
+
+    transport.stop();
+  });
+
+  // [unit-tester:dispose] verification -- safe to delete after passing
+  it("acks heartbeat frames on the active socket", async () => {
+    const factory = new MockWebSocketFactory();
+    const transport = createProjectCollabTransport({
+      projectId: PROJECT_ID,
+      createWebSocket: factory.create,
+      resolveAccessToken: async () => AUTH_TOKEN,
+    });
+
+    transport.start();
+    await flushMicrotasks();
+
+    const socket = factory.sockets[0]!;
+    socket.open();
+    socket.emitTextMessage(JSON.stringify({ type: "heartbeat" }));
+
+    expect(socket.sent).toEqual([
+      AUTH_TOKEN,
+      JSON.stringify({ type: "heartbeat" }),
+    ]);
+
+    transport.stop();
+  });
+
+  // [unit-tester:dispose] verification -- safe to delete after passing
   it("adjusts pendingProposalCount on proposal new/status events", async () => {
     useTreeStore.setState((state) => ({
       ...state,
@@ -221,6 +354,7 @@ describe("project collab transport", () => {
     transport.stop();
   });
 
+  // [unit-tester:dispose] verification -- safe to delete after passing
   it("sends proposal command only when connected", async () => {
     const factory = new MockWebSocketFactory();
     const transport = createProjectCollabTransport({
@@ -249,7 +383,8 @@ describe("project collab transport", () => {
     });
 
     const sentCommands = socket.sent.filter(
-      (entry): entry is string => typeof entry === "string" && entry.startsWith("{"),
+      (entry): entry is string =>
+        typeof entry === "string" && entry.startsWith("{"),
     );
     expect(sentCommands).toHaveLength(1);
     expect(JSON.parse(sentCommands[0]!)).toMatchObject({
@@ -257,6 +392,37 @@ describe("project collab transport", () => {
       documentId: DOC_A,
       proposalId: "33333333-3333-4333-8333-333333333333",
     });
+
+    transport.stop();
+  });
+
+  // [unit-tester:dispose] verification -- safe to delete after passing
+  it("refreshes session and closes socket on AUTH_EXPIRED", async () => {
+    const factory = new MockWebSocketFactory();
+    const refreshSession = vi.fn(async () => undefined);
+    const transport = createProjectCollabTransport({
+      projectId: PROJECT_ID,
+      createWebSocket: factory.create,
+      resolveAccessToken: async () => AUTH_TOKEN,
+      refreshSession,
+    });
+
+    transport.start();
+    await flushMicrotasks();
+
+    const socket = factory.sockets[0]!;
+    socket.open();
+    socket.emitTextMessage(
+      JSON.stringify({
+        type: "error",
+        code: "AUTH_EXPIRED",
+        message: "token expired",
+      }),
+    );
+
+    expect(refreshSession).toHaveBeenCalledTimes(1);
+    expect(socket.closeCalls).toBe(1);
+    expect(transport.isConnected()).toBe(false);
 
     transport.stop();
   });

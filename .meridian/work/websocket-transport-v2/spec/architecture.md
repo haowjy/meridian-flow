@@ -2,9 +2,9 @@
 detail: standard
 audience: developer, architect
 ---
-# Recommended v2 Architecture Map
+# v2 Architecture Map
 
-This maps the recommended transport redesign, not the current implementation.
+Maps the implemented transport redesign. Warm pool and `doc:edited` are deferred (see `ws-patterns.md`).
 
 ## System Overview
 
@@ -14,17 +14,18 @@ flowchart LR
         UI["Editor UI\nDocument tree\nProposal panels"]
         ProjCtx["ProjectCollabProvider"]
         ProjWS["ProjectCollabTransport\nOne project websocket"]
-        SessMgr["DocumentSessionManager"]
+        SessMgr["DocumentSessionManager\nWS + CollabSyncRuntime"]
 
-        subgraph SessionA["DocumentSession A"]
-            AState["Y.Doc\nProposal state\nIndexedDB persistence"]
-            AWS["Document websocket"]
+        subgraph HookA["useDocumentCollab (doc A)"]
+            AState["Y.Doc + IndexedDB\nProposal state"]
         end
 
-        subgraph SessionB["DocumentSession B"]
-            BState["Y.Doc\nProposal state\nIndexedDB persistence"]
-            BWS["Document websocket"]
+        subgraph HookB["useDocumentCollab (doc B)"]
+            BState["Y.Doc + IndexedDB\nProposal state"]
         end
+
+        AWS["Document WS A"]
+        BWS["Document WS B"]
     end
 
     subgraph Backend["Go backend"]
@@ -46,10 +47,10 @@ flowchart LR
     UI --> ProjCtx
     UI --> SessMgr
     ProjCtx --> ProjWS
-    SessMgr --> SessionA
-    SessMgr --> SessionB
-    AState <--> AWS
-    BState <--> BWS
+    SessMgr --> AWS
+    SessMgr --> BWS
+    AState <--> SessMgr
+    BState <--> SessMgr
 
     ProjWS -->|"JSON events and commands"| ProjHandler
     AWS -->|"Raw Yjs frames"| DocHandler
@@ -76,21 +77,21 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    Open["User opens document"] --> Get["DocumentSessionManager.getOrCreate documentId"]
-    Get --> Exists{"Session exists?"}
-    Exists -->|No| Create["Create DocumentSession\nY.Doc\nSync runtime\nIndexedDB\nProposal manager\nDocument websocket"]
-    Exists -->|Yes| Reuse["Reuse existing session"]
-    Create --> Activate["Mark session active"]
-    Reuse --> Activate
-    Activate --> Bind["useDocumentCollab binds UI to session"]
+    Open["User opens document"] --> Get["DocumentSessionManager.acquire(documentId)"]
+    Get --> Exists{"Session exists\nin map?"}
+    Exists -->|No| Create["Create ManagedDocumentSession\nWS + CollabSyncRuntime\nrefCount = 1"]
+    Exists -->|Yes| Reuse["refCount++"]
+    Create --> Bind["useDocumentCollab binds\nY.Doc + IndexedDB + proposals\nto session runtime"]
+    Reuse --> Bind
 
-    Bind --> Switch["User switches away"]
-    Switch --> Warm["Session retained as warm\nSocket stays open\nY.Doc stays alive"]
-    Warm --> Return["User returns within warm window"]
-    Return --> Bind
-    Warm --> Evict["Warm eviction or closeAll"]
-    Evict --> Destroy["Destroy session exactly once"]
+    Bind --> Switch["User switches away\nsessionManager.release()"]
+    Switch --> Dec["refCount--"]
+    Dec --> Zero{"refCount == 0?"}
+    Zero -->|Yes| Destroy["Close WS\nDestroy runtime\nRemove from map"]
+    Zero -->|No| Keep["Session stays alive\nfor other consumers"]
 ```
+
+Note: Y.Doc, IndexedDB, and proposal state live in `useDocumentCollab` hook, NOT in the session manager. The session manager owns only WS + runtime. Warm pool (deferred) would change the refCount=0 path to retain sessions temporarily.
 
 ## Backend Event Split
 
@@ -115,17 +116,18 @@ sequenceDiagram
     PS-->>PH: proposal status mutation
     PS-->>DH: accepted Yjs update fanout
     PH-->>PWS: proposal:statusChanged
-    PH-->>PWS: doc:edited
+    Note over PH,PWS: doc:edited deferred (IL-16)
     DH-->>DWS: Yjs update
 ```
 
 ## Rules
 
-| Area | Recommended rule |
-|------|------------------|
-| React ownership | Components bind to sessions. Components do not own `Y.Doc` lifetime. |
-| Warm state | A warm session keeps websocket, `Y.Doc`, proposal state, and IndexedDB alive together. |
-| Project WS | Project WS carries only JSON events and proposal commands. |
-| Document WS | Document WS carries only document-scoped sync traffic. |
-| Broadcasting | Project JSON fanout and document Yjs fanout use separate registries. |
-| Migration | Hard cutover. Replace old transport wholesale, delete old code. No feature flags or mixed payloads (no deployed users to migrate). |
+| Area | Rule | Status |
+|------|------|--------|
+| React ownership | `useDocumentCollab` owns Y.Doc, IndexedDB, proposal state. Session manager owns WS + runtime only. | Implemented |
+| Project WS | JSON events and proposal commands only. No binary frames. | Implemented |
+| Document WS | Document-scoped Yjs sync traffic only. `coder/websocket` library. | Implemented |
+| Broadcasting | `ProjectBroadcaster` (JSON to project WS) and `DocumentBroadcaster` (binary to document WS) are separate interfaces. | Implemented |
+| Warm pool | Release retains session with open WS for instant re-acquire. | Deferred (IL-15) |
+| `doc:edited` | Project WS notification when server-side edits occur. | Deferred (IL-16) |
+| `proposal:snapshot` | Sent on project WS connect for documents with pending proposals. | Broken (IL-13) |
