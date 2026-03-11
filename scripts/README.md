@@ -11,31 +11,14 @@ See `remote-workspace/README.md` for usage and options.
 
 ## `check-md-links.sh`
 
-**Purpose:** Validate local markdown links and wiki-links to `.md` files.
-
-### Quick Start
+**Moved** to `.claude/skills/documenting/check-md-links.sh` (part of the `documenting` skill).
 
 ```bash
-# From repo root, check all docs (default target)
-./scripts/check-md-links.sh
-
-# Check a specific docs subtree
-./scripts/check-md-links.sh _docs/hidden/guide
-
-# Disable wiki-link checks (markdown links only)
-./scripts/check-md-links.sh _docs --no-wikilinks
-
-# Skip fragment anchor checks
-./scripts/check-md-links.sh _docs --no-anchors
+.claude/skills/documenting/check-md-links.sh              # default: _docs/
+.claude/skills/documenting/check-md-links.sh _docs/technical  # specific subtree
 ```
 
-### What It Checks
-
-1. Scans all `.md` files under the target directory
-2. Extracts markdown links like `[text](target.md)` and wiki-links like `[[target]]` / `@[[target|Label]]`
-3. Ignores fenced code blocks and external links (`http(s)`, `mailto`, etc.)
-4. Handles fragment links (`#section`, `file.md#section`) and checks target heading anchors by default
-5. Fails if a referenced local `.md` file does not exist
+The `scripts/check-md-links.sh` wrapper still works (delegates to the skill).
 
 ---
 

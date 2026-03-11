@@ -74,7 +74,7 @@ Strip down to JSON-only project events handler.
 - Heartbeat
 - Rate limiting (JSON messages only now)
 
-**Change: Proposal handling (see S-3 in review-findings.md):**
+**Change: Proposal handling (see S-3 in ../_archive/review-findings.md):**
 - Replace `GetSubscription(connectionID, documentID)` with direct `checkDocumentAccess()` call for proposal commands. The subscription check was a proxy for access validation -- in v2, use the authenticator directly.
 - Cache `documentId -> projectId` mapping per-connection at first use. Implementation: simple `map[string]string` guarded by a connection-scoped `sync.Mutex`. Subsequent proposal commands for the same document verify against the cached project binding without hitting the DB. Cache lives for the connection lifetime. Staleness is acceptable -- project WS reconnect resets it. No explicit invalidation needed.
 - Proposals now broadcast to **project WS connections** via a new `ProjectConnectionRegistry` (see below), not the document broadcaster.

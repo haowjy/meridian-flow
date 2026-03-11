@@ -1,220 +1,117 @@
-# AGENTS.md
-
-This file provides guidance when working with the code in this repository.
+# CLAUDE.md
 
 ## Project Overview
 
-Meridian is an agentic writing platform for writers, starting with fiction writers who manage 100+ chapter web serials, but being inclusive for any kind of writer.
+Meridian is an agentic writing platform for fiction writers managing 100+ chapter web serials, inclusive of any kind of writer.
 
-For product details, see `_docs/high-level/1-overview.md`.
+See `_docs/high-level/1-overview.md` for product details.
 
-There are no users and there is no real user data. No need for backwards compatibility. It's okay to completely change the schema to get it into the right shape.
+No real users or user data. No backwards compatibility needed. Schema can change freely.
 
 ## Product Philosophy
 
-**Writer-first**: Meridian exists to serve the writer. Every feature, UI element, and AI interaction should support—not distract from—the writing process.
+**Writer-first**: every feature, UI element, and AI interaction should support the writing process.
 
-See `frontend/CLAUDE.md` for UI-specific implementation of this philosophy.
+See `frontend/CLAUDE.md` for UI-specific implementation.
 
-## Guiding Principles for Development
+## Development Principles
 
-ALWAYS FOLLOW SOLID PRINCIPLES.
-ALWAYS ENSURE THERE IS A PLAN APPROVED BY THE USER BEFORE IMPLEMENTING ANYTHING GREATER THAN A FEW LINES OF CODE. This is to make sure a developer understands the situation and knows whats happening to the system. You should also make sure to follow [[## Before Writing New Code]]
+### SOLID
 
-**DO NOT ENTER PLAN MODE.** Instead, write plans as markdown files in `_docs/plans/`. During planning, use meridian subagents (researcher, reviewer) for research and codebase exploration. See [[### Plan Lifecycle]] for the full workflow.
-
-PLAN FOR EXTENSIBILITY
-
-### SOLID Quick Reference
-
-- **SRP**: Files should typically only have a single purpose. One store = one domain. Split large components.
+- **SRP**: One file = one purpose. One store = one domain. Split large components.
 - **OCP**: Use registries/factories for extensibility (see ToolRegistry, BlockRenderer)
 - **LSP**: All implementations must be substitutable for their interfaces
 - **ISP**: Split large interfaces (Reader vs Writer, Metadata vs CRUD)
 - **DIP**: Depend on interfaces, not concrete types (especially for external services)
 
-2. **Comment the "Weird" and the "WHY"**
-   - anything that is not obvious, comment why.
-   - If it needs a guard, comment why
-   - If it prevents a race, explain the race
-   - If you had to debug it, future you will too
+### Code Quality
 
-3. **Keep Documentation Up-to-Date** - Update documentation AFTER finalizing changes. See "Feature Documentation Sync Rule" for feature documentation workflow.
+- **Comment the "weird" and the "why"** -- if it needs a guard, comment why. If it prevents a race, explain the race.
+- **Plan before implementing** -- anything beyond a few lines needs an approved plan. Write plans as markdown in `_docs/plans/`.
+- **Plan for extensibility**
 
-## Before Writing New Code
+### Before Writing New Code
 
-1. **Search for existing patterns** - Before implementing, search for similar implementations
-
-2. **Reuse over recreate** - If a pattern exists, use it. If it's close but not quite right, extend it.
-
-3. **Check shared utilities** - Before writing a helper, search for existing utilities. If it is almost there, refactor/change the existing utility
-
-4. **When patterns diverge, consolidate** - If you find 2+ implementations of the same thing, refactor to one.
+1. **Search for existing patterns** -- before implementing, search for similar implementations
+2. **Reuse over recreate** -- if a pattern exists, use it or extend it
+3. **Check shared utilities** -- before writing a helper, search for existing ones
+4. **When patterns diverge, consolidate** -- 2+ implementations of the same thing? Refactor to one.
 
 ## Where to Find Things
 
-### Code-Specific Instructions
+| Area | Location |
+|------|----------|
+| Backend instructions | `backend/CLAUDE.md` |
+| Frontend instructions | `frontend/CLAUDE.md` |
+| Documentation rules | `_docs/CLAUDE.md` |
+| Technical architecture docs | `_docs/technical/` |
+| Feature docs | `_docs/features/` |
+| Plans | `_docs/plans/` |
+| Agent profiles | `.claude/agents/` |
 
-- **Backend**: `backend/CLAUDE.md` - Development commands, architecture, conventions
-- **Frontend**: `frontend/CLAUDE.md` - Caching patterns, store architecture, CodeMirror conventions
+## Dev Environment
 
-### Documentation
-
-- read `_docs/AGENTS.md` or `_docs/CLAUDE.md` before updating any documents under `_docs/`
-- The gist documentation should prefer diagrams (`/mermaid` skill) over words, higher level than code, and should POINT to code folders/locations. Documentation should know the WHY and generally, at a high level, the WHAT.
-- NEVER USE EMOJI's - they render poorly
-
-### Feature Documentation Sync Rule
-
-**IMPORTANT: When adding or significantly updating a feature, you MUST update the corresponding feature documentation.**
-
-1. Implement the feature/update
-2. Update `_docs/features/<feature-name>/` with changes
-3. Update status in `_docs/features/README.md` if needed
-4. Run `./scripts/check-md-links.sh`
-5. Commit code + docs together
-
-## General Conventions
-
-### Dev Environment Setup
-
-The dev environment uses tmux to run backend + frontend in parallel, with worktree-aware port allocation.
+The dev environment uses tmux with worktree-aware port allocation.
 
 **First-time setup:**
-1. `cp backend/.env.example backend/.env` — edit with Supabase/API credentials
-2. `cp frontend/.env.example frontend/.env.local` — set `VITE_API_URL` to match backend port (see below)
-3. `cp scripts/get-token.sh.example scripts/get-token.sh && chmod +x scripts/get-token.sh` — edit credentials
-4. `./scripts/dev/setup.sh` — creates tmux session with backend + frontend
+1. `cp backend/.env.example backend/.env` -- edit with Supabase/API credentials
+2. `cp frontend/.env.example frontend/.env.local` -- set `VITE_API_URL` to match backend port
+3. `cp scripts/get-token.sh.example scripts/get-token.sh && chmod +x scripts/get-token.sh`
+4. `./scripts/dev/setup.sh` -- creates tmux session with backend + frontend
 
 **Port allocation:**
-- Backend port is computed per worktree: `8080 + hash(directory_name) % 100`
-- Frontend port is always `3000`
-- The backend port is passed as a Make variable override (`make run-local PORT=<port>`) to take precedence over `backend/.env`
-- `frontend/.env.local` must set `VITE_API_URL` to match the backend port for this worktree
-
-To check your worktree's port: `source scripts/dev/lib.sh && echo $BACKEND_PORT`
-
-Optional override: create `.dev-ports` (gitignored) in repo root:
-```bash
-BACKEND_PORT=8081
-FRONTEND_PORT=3001
-```
+- Backend: `8080 + hash(directory_name) % 100` (per worktree)
+- Frontend: always `3000`
+- Check your port: `source scripts/dev/lib.sh && echo $BACKEND_PORT`
+- Override: create `.dev-ports` (gitignored) in repo root
 
 **Daily usage:**
-- Start: `./scripts/dev/setup.sh` (creates tmux session)
+- Start: `./scripts/dev/setup.sh`
 - Restart backend: `./scripts/restart-server.sh`
 - Attach: `tmux attach -t <session_name>`
-- Session name = branch basename (e.g., `h_meridian_collab`)
 
 **Agent permissions:**
-- Claude CAN restart the backend server via: `./scripts/restart-server.sh`
-- Claude CAN run curl commands to test APIs
-- Claude CAN run `./scripts/get-token.sh` to refresh `ACCESS_TOKEN` in root `.env` before authenticated smoke tests
+- Can restart backend via `./scripts/restart-server.sh`
+- Can run curl commands to test APIs
+- Can run `./scripts/get-token.sh` to refresh `ACCESS_TOKEN` for smoke tests
 
-### Git Commits
-
-- For long-running tasks, commit after each "testable" state, most often after each task of a plan. If the human is in the loop, you should confirm with the user before committing.
-- Follow repository's commit message style
-
-### Planning
-
-Make sure you use the `/mermaid` skill to help make markdown diagrams for your plans to help you and the user understand the plan. Using meridian and multiple subagents to review-cycle through the plan can help you catch issues early and get a better plan.
-
-### Testing
-
-- User runs tests manually or via CI/CD
-- Claude can suggest test commands
-- Claude can help write/fix tests
-
-### Smoke Testing
-
-Token refresh is agent-authorized. See `backend/CLAUDE.md` -> "Smoke Testing" for full details. See the `/scratchpad` skill for scratch/smoke file conventions.
-
-### Long-Running Tasks
-
-For multi-phase plans, use meridian to orchestrate and NEVER write implementation code yourself. The primary agent coordinates subagent runs across model families, picking the best model for each subtask.
-
-There are two ways to spawn subagents:
-
-**1. Claude Code Agent tool** (built-in, Claude models only):
-- Use `subagent_type: "coder"` / `"researcher"` / `"reviewer"` for quick Claude-native tasks
-- Agents defined in `.claude/agents/` — coder (implementation), researcher (read-only), reviewer (code review)
-- Good for: fast parallel reviews, codebase exploration, small implementation tasks
-
-**2. `meridian spawn` CLI** (multi-model, preferred for implementation):
-```bash
-# Spawn with a specific model
-meridian spawn -m gpt-5.3-codex -p "Implement the document WS handler"
-
-# With reference files for context
-meridian spawn -m gpt-5.4 -p "Review this change" \
-  -f _docs/plans/ws-transport-v2/stage-1-per-doc-ws.md \
-  -f backend/internal/handler/collab.go
-
-# With an agent profile
-meridian spawn -a reviewer -m gpt-5.4 -p "Review for concurrency issues"
-
-# Parallel spawns — launch multiple, then wait
-meridian spawn -m gpt-5.4 -p "Review A"   # -> spawn_id: p101
-meridian spawn -m gemini -p "Review B"     # -> spawn_id: p102
-meridian spawn wait p101 p102
-
-# Check status and read results
-meridian spawn list
-meridian spawn show p101
-```
-- Access to all model families: GPT (gpt-5.4, gpt-5.3-codex), Claude (opus, sonnet, haiku), Gemini (gemini)
-- Good for: implementation tasks, cross-family reviews, anything needing non-Claude models
-- Run `meridian models list` to see all available models and aliases
-
-**When to use which:**
-- Quick Claude-only task (explore codebase, fast review) -> Agent tool
-- Implementation work -> `meridian spawn -m gpt-5.3-codex` (or codex alias)
-- Cross-family review -> `meridian spawn` with different model families in parallel
-- Research needing web access -> Agent tool with researcher type, or `meridian spawn -a researcher`
-
-### Plan Lifecycle
-
-All plans live in `_docs/plans/`. **Never use Claude Code's built-in plan mode.**
-
-- **Research first** — use researcher subagents (either tool) before writing a plan.
-- **Write plans** to `_docs/plans/<name>.md` with a `**Status:**` field at the top (`draft -> approved -> in-progress -> done`).
-- **Never overwrite** an existing plan — move it to `_docs/plans/_archive/` first.
-- **Archive when done** — move completed plans to `_docs/plans/_archive/`.
-
-### Plan Execution
-
-- **Multi-stage plans** (2+ stages): Execute via meridian orchestration. Never implement multi-stage plans directly.
-- **Single-stage plans**: You may implement directly. Update progress in the plan file as you go.
-
-### Model Selection
-
-The orchestrator selects models based on task type. You MUST write a good prompt and pass in correct context files for the task/plan at hand. Run `meridian models list` to see available models.
-
-General heuristics:
-- **Implementation**: `gpt-5.3-codex` (default, alias: `codex`), `claude-opus-4-6` (UI iteration + rare different perspectives)
-- **Review**: Fan out to multiple model families for medium/high risk changes, prefer `gpt-5.4` (alias: `gpt`) as the main reviewer
-- **Research**: Use model diversity for different perspectives
-- **Commit**: `claude-haiku-4-5` (alias: `haiku`) to help create commits
-- **Documentation**: `haiku` to find files that need updating, `opus` to write the documentation itself.
+## Build and Test
 
 ### Frontend
+- `pnpm` (not npm)
+- `pnpm run lint` after changes
+- `pnpm run format 2>&1 | grep -v "unchanged"` after Tailwind/CSS changes
 
-- use `pnpm` instead of `npm` for faster compile times
-- run `pnpm run lint` to run ESLint after making changes
-- run `pnpm run format 2>&1 | grep -v "unchanged"` after Tailwind/CSS class changes
+### Backend
+- See `backend/CLAUDE.md` for Go commands
+
+### Smoke Testing
+- See `backend/CLAUDE.md` -> "Smoke Testing"
+- See `/scratchpad` skill for scratch/smoke file conventions
+
+### Documentation
+- Read `_docs/CLAUDE.md` before updating docs
+- Prefer diagrams over words, point to code locations
+- No emojis
+- Run `.claude/skills/documenting/check-md-links.sh` to verify links
+- When adding/updating a feature: update `_docs/features/<feature-name>/`, then commit code + docs together
+
+## Git Conventions
+
+- Commit after each testable state
+- Confirm with user before committing if they are in the loop
+- Follow repository's commit message style
 
 ## Deployment
 
-- **Backend**: Railway
-- **Database**: Supabase (PostgreSQL)
-- **Frontend**: Vercel
+| Component | Platform |
+|-----------|----------|
+| Backend | Railway |
+| Database | Supabase (PostgreSQL) |
+| Frontend | Vercel |
 
-See `backend/AGENTS.md` for backend deployment details.
+See `backend/CLAUDE.md` for deployment details.
 
 ## Refactoring Backlog
 
-Technical debt is tracked in `_docs/future/refactoring-backlog.md`.
-- Review current items before starting related work
-- Add new discoveries as you find them
-- Work on refactors when explicitly requested
+Tracked in `_docs/future/refactoring-backlog.md`. Review before starting related work.

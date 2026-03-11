@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
+# Delegates to .claude/skills/documenting/check-md-links.sh
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-python3 "$SCRIPT_DIR/check_md_links.py" "$@"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec "$REPO_ROOT/.claude/skills/documenting/check-md-links.sh" "$@"

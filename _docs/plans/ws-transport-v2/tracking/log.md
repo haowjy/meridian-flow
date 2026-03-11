@@ -1,12 +1,14 @@
 ---
 detail: standard
-audience: developer
+audience: developer, architect
 ---
-# ws-transport-v2: Decision Log
+# ws-transport-v2: Tracking Log
+
+## Decisions
 
 Tracks implementation decisions as they come up. Each entry is immutable once written -- add new entries, do not modify old ones.
 
-## Format
+### Format
 
 Each decision:
 - **ID**: D-{number}
@@ -16,8 +18,6 @@ Each decision:
 - **Rationale**: Why
 - **Alternatives considered**: What else we thought about
 - **Decided by**: Who made the call
-
-## Decisions
 
 ### D-1: WebSocket Library Choice
 - **Date:** 2026-03-10
@@ -52,3 +52,20 @@ Each decision:
 ---
 
 (New decisions added below as implementation proceeds)
+
+## Implementation Log
+
+Append-only log of decisions, weird findings, and backlog items discovered during implementation. The orchestrator (Claude Opus primary) writes entries here as reports come back from spawned agents.
+
+### Format
+
+Each entry:
+- **ID**: IL-{number}
+- **Phase**: which phase
+- **Category**: decision | weird | backlog | bug
+- **Description**: what happened
+- **Resolution**: what we did about it (or "deferred")
+
+### Log
+
+(Entries added during implementation below)
