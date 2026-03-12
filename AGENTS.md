@@ -37,6 +37,10 @@ See `frontend/CLAUDE.md` for UI-specific implementation.
 3. **Check shared utilities** -- before writing a helper, search for existing ones
 4. **When patterns diverge, consolidate** -- 2+ implementations of the same thing? Refactor to one.
 
+## Documentation Principles
+
+Similarly to code, keep document files single responsibility. 1 file = 1 purpose. 1 folder + README = 1 domain. Split large documentation. This applies to EVERY kind of documentation including architecture, product descriptions, feature descriptions, plans, designs, specs, etc.
+
 ## Where to Find Things
 
 | Area | Location |
@@ -54,10 +58,21 @@ See `frontend/CLAUDE.md` for UI-specific implementation.
 The dev environment uses tmux with worktree-aware port allocation.
 
 **First-time setup:**
-1. `cp backend/.env.example backend/.env` -- edit with Supabase/API credentials
-2. `cp frontend/.env.example frontend/.env.local` -- set `VITE_API_URL` to match backend port
-3. `cp scripts/get-token.sh.example scripts/get-token.sh && chmod +x scripts/get-token.sh`
-4. `./scripts/dev/setup.sh` -- creates tmux session with backend + frontend
+1. `./scripts/dev/supabase-start.sh` -- starts local Supabase, patches `.env` files, runs migrations
+2. `cp scripts/get-token.sh.example scripts/get-token.sh && chmod +x scripts/get-token.sh`
+3. `./scripts/dev/setup.sh` -- creates tmux session with backend + frontend
+
+**Local Supabase** (Docker-based, no egress charges):
+- Start: `./scripts/dev/supabase-start.sh` -- idempotent, auto-configures backend + frontend env
+- Stop: `./scripts/dev/supabase-stop.sh` -- data preserved in Docker volumes
+- Studio: `http://127.0.0.1:54323`
+- Inbucket (email): `http://127.0.0.1:54324`
+- JWT signing: ES256 via `backend/supabase/signing_keys.json` (copied from `.example` on first start)
+- Prerequisites: Docker, `supabase` CLI, `jq`
+
+**Cloud Supabase** (fallback):
+1. `cp backend/.env.example backend/.env` -- edit with cloud Supabase credentials
+2. `cp frontend/.env.example frontend/.env.local` -- set `VITE_SUPABASE_URL` and key
 
 **Port allocation:**
 - Backend: `8080 + hash(directory_name) % 100` (per worktree)
@@ -66,7 +81,7 @@ The dev environment uses tmux with worktree-aware port allocation.
 - Override: create `.dev-ports` (gitignored) in repo root
 
 **Daily usage:**
-- Start: `./scripts/dev/setup.sh`
+- Start: `./scripts/dev/setup.sh` (auto-starts local Supabase if available)
 - Restart backend: `./scripts/restart-server.sh`
 - Attach: `tmux attach -t <session_name>`
 

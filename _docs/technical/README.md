@@ -21,6 +21,8 @@ Lean, up-to-date references for engineers. Prefer code over prose; include file/
 
 - **Block types & schemas (canonical):**  
   `llm/streaming/block-types-reference.md`
+- **Collaboration target state:**  
+  `collab/ideal-state.md`
 - **Unified tool mapping (search, tools, providers):**  
   `llm/unified-tool-mapping.md`
 - **LLM library architecture & adapters:**  

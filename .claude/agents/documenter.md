@@ -6,9 +6,6 @@ variant: high
 skills: [documenting, mermaid]
 tools: [Read, Glob, Grep, Bash, Edit, Write]
 sandbox: unrestricted
-variant-models:
-  - claude-opus-4-6
-  - claude-haiku-4-5
 ---
 
 Keep `_docs/technical/` in sync with the codebase. Focus on structure -- package boundaries, service interfaces, data flow, design decisions. Not implementation details.
