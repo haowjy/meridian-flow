@@ -4,8 +4,26 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(dirname "$0")"
+
 # shellcheck source=lib.sh
-source "$(dirname "$0")/lib.sh"
+source "$SCRIPT_DIR/lib.sh"
+
+# ── Optional: start local Supabase if available ───────────────────────────
+
+if command -v supabase &>/dev/null && command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
+  # Check if Supabase is already running
+  if ! (cd "$REPO_ROOT/backend" && supabase status &>/dev/null 2>&1); then
+    echo "Starting local Supabase..."
+    "$SCRIPT_DIR/supabase-start.sh"
+  else
+    echo "Local Supabase already running"
+  fi
+else
+  echo "Skipping local Supabase (missing docker or supabase CLI)"
+fi
+
+# ── tmux session ──────────────────────────────────────────────────────────
 
 # Kill existing session if present
 tmux kill-session -t "$SESSION" 2>/dev/null || true
