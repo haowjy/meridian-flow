@@ -1,7 +1,6 @@
 ---
 name: mermaid
 description: Rules and validation for Mermaid diagrams. Use when creating or editing Mermaid diagrams in documentation.
-user-invocable: false
 ---
 
 # Mermaid Diagram Rules
@@ -15,11 +14,11 @@ user-invocable: false
 Any label with `()`, `[]`, `<>`, `"`, `,`, `<br/>`, or emoji **must** be wrapped in `["..."]`:
 
 ```mermaid
-%% ✅ GOOD — quoted labels
+%% GOOD — quoted labels
 A["Turn 1: user"] --> B["blocks list"]
 C["UI Panels (Thread, Tool)"]
 
-%% ❌ BAD — unquoted special chars cause parse errors
+%% BAD — unquoted special chars cause parse errors
 A[Turn 1: user<br/>"Write a story"] --> B[blocks[]]
 C[UI Panels (Thread, Tool)]
 ```
@@ -29,44 +28,46 @@ C[UI Panels (Thread, Tool)]
 Edge labels with `()`, `<>`, `<br/>`, or `[]` must be quoted with `|"..."|`:
 
 ```mermaid
-%% ✅ GOOD
+%% GOOD
 A -->|"StreamEvents (Delta, Block)"| B
 A -->|"JSON DTOs"| B
 
-%% ❌ BAD — parentheses in edge labels
+%% BAD — parentheses in edge labels
 A -->|StreamEvents<br/>(Delta, Block)| B
 A -->|JSON (DTOs)| B
 ```
 
-### 3. Never use `<br/>` inside labels — use multiline with `\n` or separate lines
+### 3. Use `<br/>` for line breaks
+
+Use `<br/>` for line breaks in all diagram types. In flowchart labels, quote the label with `["..."]` when using `<br/>`.
 
 ```mermaid
-%% ✅ GOOD — no <br/>
-A["Turn 1\nuser message"]
-
-%% ❌ BAD — <br/> inside labels often breaks
-A["Turn 1<br/>user message"]
+%% GOOD — quoted label with <br/>
+A["Turn 1<br/>user message"] --> B["Next step"]
 ```
 
-**Note:** `<br/>` works in *some* Mermaid versions but not all. `\n` is safer.
+```
+%% GOOD — <br/> in sequence diagram Note
+Note over A,B: First line<br/>Second line
+```
 
 ### 4. Escape or avoid `[]` inside node text
 
 ```mermaid
-%% ✅ GOOD
+%% GOOD
 Store -->|"blocks list"| UI["Chat UI"]
 
-%% ❌ BAD — nested [] conflicts with node shape syntax
+%% BAD — nested [] conflicts with node shape syntax
 Store -->|blocks[]| UI[Chat UI]
 ```
 
 ### 5. No emoji in node IDs or unquoted labels
 
 ```mermaid
-%% ✅ GOOD
+%% GOOD
 A["Step complete ✓"] --> B
 
-%% ❌ BAD — emoji in unquoted context
+%% BAD — emoji in unquoted context
 A[Step ✓] --> B
 ```
 
@@ -75,10 +76,10 @@ A[Step ✓] --> B
 Hardcoded `style` / `classDef` colors override Mermaid's theme engine and break when switching between light and dark mode. Let the built-in `dark` / `default` themes handle node colors.
 
 ```mermaid
-%% ✅ GOOD — no hardcoded colors, theme handles it
+%% GOOD — no hardcoded colors, theme handles it
 A[Service] --> B[Database]
 
-%% ❌ BAD — hardcoded fill/color overrides theme
+%% BAD — hardcoded fill/color overrides theme
 style A fill:#2d7d2d,color:#fff
 classDef foo fill:#1a5276,color:#fff
 ```
@@ -87,7 +88,7 @@ For sequence diagram `rect` grouping, use near-transparent fills so they work in
 
 ```
 rect rgba(128, 128, 128, 0.08)
-    Note over A,B: Phase label
+  Note over A,B: Phase label
 end
 ```
 
@@ -96,11 +97,11 @@ end
 Sequence diagram statements must end with a newline, not a semicolon followed by more statements on the same line:
 
 ```mermaid
-%% ✅ GOOD
+%% GOOD
 Note over A: First
 Note over A: Second
 
-%% ❌ BAD — multiple statements on one line with semicolons
+%% BAD — multiple statements on one line with semicolons
 Note over A: First; isLoading=false
 ```
 
@@ -111,7 +112,7 @@ Note over A: First; isLoading=false
 | Simple text only | No | `A[Hello World]` |
 | Contains `()` | **Yes** | `A["Config (optional)"]` |
 | Contains `[]` | **Yes** | `A["items list"]` (avoid `[]` entirely) |
-| Contains `<br/>` | **Avoid** | Use `\n` instead |
+| Contains `<br/>` | **Yes** (quote the label) | `A["Line 1<br/>Line 2"]` |
 | Contains emoji | **Yes** | `A["Done ✓"]` |
 | Contains `"` | **Escape** | `A["Say 'hello'"]` |
 | Edge with specials | **Yes** | `A -->\|"data (raw)"\| B` |

@@ -6,8 +6,6 @@ variant: high
 skills: [reviewing]
 tools: [Read, Glob, Grep, Bash, WebSearch, WebFetch]
 sandbox: danger-full-access
-variant-models:
-  - claude-opus-4-6
 ---
 
 Zoom out and check whether implementation aligns with the broader architecture and future plans. Read-only -- never modify code.

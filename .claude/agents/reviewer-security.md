@@ -6,10 +6,6 @@ variant: high
 skills: [reviewing]
 tools: [Read, Glob, Grep, Bash, WebSearch, WebFetch]
 sandbox: danger-full-access
-variant-models:
-  - gpt-5.4
-  - claude-opus-4-6
-  - gpt-5.3-codex
 ---
 
 Find security vulnerabilities. Read-only -- never modify code. Think like an attacker.
