@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	ycrdt "github.com/haowjy/y-crdt"
 
 	"meridian/internal/domain"
 	collabModels "meridian/internal/domain/models/collab"
@@ -370,6 +371,10 @@ func (s *ProposalService) GroupAccept(ctx context.Context, req collabSvc.GroupAc
 			outcomes := make([]collabModels.GroupAcceptOutcome, 0, len(proposals))
 			mutations := make([]collabSvc.ProposalMutationIntent, 0, len(proposals))
 			var hadAcceptedMutation bool
+
+			// First pass: validate and collect proposals with matching document ID.
+			var validProposals []groupAcceptValidProposal
+
 			for _, proposal := range proposals {
 				if proposal.DocumentID != req.DocumentID {
 					msg := fmt.Sprintf(
@@ -384,54 +389,84 @@ func (s *ProposalService) GroupAccept(ctx context.Context, req collabSvc.GroupAc
 					})
 					continue
 				}
-
-				// Apply runtime update before MarkAccepted. If MarkAccepted fails, retry is safe because
-				// Yjs updates are idempotent: re-applying the same update does not change document state.
-				if err := s.runtime.ApplyUpdate(txCtx, proposal.DocumentID, proposal.YjsUpdate, req.TransactionOrigin); err != nil {
-					var validationErr *domain.ValidationError
-					if errors.As(err, &validationErr) {
-						msg := fmt.Sprintf("apply failed: %v", err)
-						outcomes = append(outcomes, collabModels.GroupAcceptOutcome{
-							ProposalID: proposal.ID,
-							Status:     collabModels.GroupAcceptOutcomeStatusSkipped,
-							Error:      &msg,
-						})
-						continue
-					}
-					return fmt.Errorf("apply proposal update: %w", err)
-				}
-
-				decision := collabModels.ProposalDecision{
-					ProposalID:      proposal.ID,
-					DecidedByUserID: req.UserID,
-					DecidedAt:       time.Now().UTC(),
-				}
-				if err := s.proposalStore.MarkAccepted(txCtx, decision); err != nil {
-					var validationErr *domain.ValidationError
-					if errors.As(err, &validationErr) {
-						msg := fmt.Sprintf("mark accepted failed: %v", err)
-						outcomes = append(outcomes, collabModels.GroupAcceptOutcome{
-							ProposalID: proposal.ID,
-							Status:     collabModels.GroupAcceptOutcomeStatusSkipped,
-							Error:      &msg,
-						})
-						continue
-					}
-					return fmt.Errorf("mark proposal accepted: %w", err)
-				}
-
-				outcomes = append(outcomes, collabModels.GroupAcceptOutcome{
-					ProposalID: proposal.ID,
-					Status:     collabModels.GroupAcceptOutcomeStatusAccepted,
-				})
-				hadAcceptedMutation = true
-				mutations = append(mutations, collabSvc.ProposalMutationIntent{
-					DocumentID: proposal.DocumentID,
-					ProposalID: proposal.ID,
-					Status:     collabModels.ProposalStatusAccepted,
-					YjsUpdate:  proposal.YjsUpdate,
-				})
+				idx := len(outcomes)
+				outcomes = append(outcomes, collabModels.GroupAcceptOutcome{}) // placeholder
+				validProposals = append(validProposals, groupAcceptValidProposal{proposal: proposal, index: idx})
 			}
+
+			// Compose all valid proposals into a single composite Yjs update and apply once.
+			// This avoids subtle CRDT composition issues from applying updates individually.
+			if len(validProposals) > 0 {
+				// Get current base state to build composite update
+				baseState, err := s.runtime.GetCurrentState(txCtx, req.DocumentID)
+				if err != nil {
+					return fmt.Errorf("get current state for composite: %w", err)
+				}
+
+				// Build composite in a temp doc (same pattern as buildProjectedDoc)
+				compositeUpdate, applyErrors, err := composeProposalUpdates(baseState, validProposals)
+				if err != nil {
+					return fmt.Errorf("compose proposal updates: %w", err)
+				}
+
+				// Handle individual apply errors (from composition)
+				for i, vp := range validProposals {
+					if applyErrors[i] != nil {
+						msg := fmt.Sprintf("apply failed: %v", applyErrors[i])
+						outcomes[vp.index] = collabModels.GroupAcceptOutcome{
+							ProposalID: vp.proposal.ID,
+							Status:     collabModels.GroupAcceptOutcomeStatusSkipped,
+							Error:      &msg,
+						}
+					}
+				}
+
+				// Apply the composite update once to the live runtime
+				if compositeUpdate != nil {
+					if err := s.runtime.ApplyUpdate(txCtx, req.DocumentID, compositeUpdate, req.TransactionOrigin); err != nil {
+						return fmt.Errorf("apply composite update: %w", err)
+					}
+				}
+
+				// Mark accepted and build mutations
+				for i, vp := range validProposals {
+					if applyErrors[i] != nil {
+						continue
+					}
+
+					decision := collabModels.ProposalDecision{
+						ProposalID:      vp.proposal.ID,
+						DecidedByUserID: req.UserID,
+						DecidedAt:       time.Now().UTC(),
+					}
+					if err := s.proposalStore.MarkAccepted(txCtx, decision); err != nil {
+						var validationErr *domain.ValidationError
+						if errors.As(err, &validationErr) {
+							msg := fmt.Sprintf("mark accepted failed: %v", err)
+							outcomes[vp.index] = collabModels.GroupAcceptOutcome{
+								ProposalID: vp.proposal.ID,
+								Status:     collabModels.GroupAcceptOutcomeStatusSkipped,
+								Error:      &msg,
+							}
+							continue
+						}
+						return fmt.Errorf("mark proposal accepted: %w", err)
+					}
+
+					outcomes[vp.index] = collabModels.GroupAcceptOutcome{
+						ProposalID: vp.proposal.ID,
+						Status:     collabModels.GroupAcceptOutcomeStatusAccepted,
+					}
+					hadAcceptedMutation = true
+					mutations = append(mutations, collabSvc.ProposalMutationIntent{
+						DocumentID: vp.proposal.DocumentID,
+						ProposalID: vp.proposal.ID,
+						Status:     collabModels.ProposalStatusAccepted,
+						YjsUpdate:  vp.proposal.YjsUpdate,
+					})
+				}
+			}
+
 			if hadAcceptedMutation {
 				if err := s.aiContentProjector.Recompute(txCtx, req.DocumentID); err != nil {
 					return err
@@ -474,5 +509,57 @@ func (s *ProposalService) GroupAccept(ctx context.Context, req collabSvc.GroupAc
 	}
 
 	return result, nil
+}
+
+// groupAcceptValidProposal pairs a proposal with its position in the outcomes slice.
+type groupAcceptValidProposal struct {
+	proposal collabModels.Proposal
+	index    int // position in outcomes slice
+}
+
+// composeProposalUpdates applies proposal updates sequentially to a temp Y.Doc
+// and returns a single composite update encoding the combined result.
+// Returns per-proposal error slice (nil for successful applications).
+// The temp doc approach mirrors buildProjectedDoc and is provably safe.
+func composeProposalUpdates(baseState []byte, proposals []groupAcceptValidProposal) (compositeUpdate []byte, perError []error, err error) {
+	perError = make([]error, len(proposals))
+
+	tempDoc := ycrdt.NewDoc("group-accept-composite", true, ycrdt.DefaultGCFilter, nil, false)
+	if len(baseState) > 0 {
+		if err := safeApplyUpdate(tempDoc, baseState, "group-accept-base"); err != nil {
+			return nil, perError, fmt.Errorf("apply base state to temp doc: %w", err)
+		}
+	}
+
+	// Capture base state vector before applying proposals
+	baseStateVector := ycrdt.EncodeStateVector(tempDoc, nil, ycrdt.NewUpdateEncoderV1())
+
+	anyApplied := false
+	for i, vp := range proposals {
+		if applyErr := safeApplyUpdate(tempDoc, vp.proposal.YjsUpdate, "group-accept-proposal"); applyErr != nil {
+			perError[i] = applyErr
+			continue
+		}
+		anyApplied = true
+	}
+
+	if !anyApplied {
+		return nil, perError, nil
+	}
+
+	// Encode only the delta (proposals' changes relative to base)
+	composite, encErr := func() (state []byte, err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("encode composite state panic: %v", r)
+			}
+		}()
+		return ycrdt.EncodeStateAsUpdate(tempDoc, baseStateVector), nil
+	}()
+	if encErr != nil {
+		return nil, perError, encErr
+	}
+
+	return composite, perError, nil
 }
 

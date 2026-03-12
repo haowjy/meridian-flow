@@ -283,6 +283,23 @@ func (m *DocumentSessionManager) GetStateSnapshot(ctx context.Context, documentI
 	return state, true, nil
 }
 
+// GetCurrentState returns the current Yjs state for a document. Unlike GetStateSnapshot,
+// this always returns state — from the active in-memory session if one exists, otherwise
+// by loading from persisted storage. Used by GroupAccept to compose updates safely.
+func (m *DocumentSessionManager) GetCurrentState(ctx context.Context, documentID uuid.UUID) ([]byte, error) {
+	// Try active session first (same as GetStateSnapshot)
+	state, found, err := m.GetStateSnapshot(ctx, documentID)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		return state, nil
+	}
+	// Fall back to persisted state
+	docID := documentID.String()
+	return m.stateStore.LoadState(ctx, docID)
+}
+
 // BuildSyncStep1Payload creates a sync-step1 message from current in-memory state.
 func (s *DocumentSession) BuildSyncStep1Payload() ([]byte, error) {
 	s.mu.Lock()

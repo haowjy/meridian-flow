@@ -40,6 +40,20 @@ func applyAndRead(t *testing.T, baseState, update []byte) string {
 	return text.ToString()
 }
 
+// applyUpdateToState applies an update to baseState and returns the combined state bytes.
+// Used by tests that need projected state for generating subsequent proposals.
+func applyUpdateToState(t *testing.T, baseState, update []byte) []byte {
+	t.Helper()
+	doc := ycrdt.NewDoc("apply-state", true, ycrdt.DefaultGCFilter, nil, false)
+	if len(baseState) > 0 {
+		ycrdt.ApplyUpdate(doc, baseState, "base")
+	}
+	if len(update) > 0 {
+		ycrdt.ApplyUpdate(doc, update, "update")
+	}
+	return ycrdt.EncodeStateAsUpdate(doc, nil)
+}
+
 // --- tests (full-doc replacement, edit=nil) ---
 
 func TestTextToUpdate_SimpleReplacement(t *testing.T) {

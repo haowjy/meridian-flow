@@ -98,6 +98,10 @@ type DocumentResolver interface {
 type ProposalRuntime interface {
 	ApplyUpdate(ctx context.Context, documentID uuid.UUID, update []byte, origin string) error
 	GetStateSnapshot(ctx context.Context, documentID uuid.UUID) ([]byte, bool, error)
+	// GetCurrentState returns the current Yjs state for a document. Unlike GetStateSnapshot,
+	// this always returns state — from the active in-memory session if one exists, otherwise
+	// by loading from persisted storage. Used by GroupAccept to compose updates safely.
+	GetCurrentState(ctx context.Context, documentID uuid.UUID) ([]byte, error)
 }
 
 // AutoAcceptPolicyInputs captures project/user tri-state values for proposal auto-accept.
