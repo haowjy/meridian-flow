@@ -198,4 +198,4 @@ Each entry:
 - **Phase:** review
 - **Category:** bug
 - **Description:** Group proposal accept applies Yjs updates sequentially to a mutating doc. Each update was built against the original state, but the 2nd+ update's positions are stale. Causes truncation when accepting multiple proposals.
-- **Resolution:** Identified during dogfooding. Backend issue in proposal accept loop. Deferred to backlog — needs update merging or rebasing.
+- **Resolution:** Fixed. GroupAccept now composes all proposal Yjs updates into a single composite update via a temp Y.Doc (mirrors buildProjectedDoc pattern) before applying once to the live runtime. Added GetCurrentState to ProposalRuntime interface. 5 new composition tests.

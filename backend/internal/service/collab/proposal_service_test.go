@@ -362,12 +362,38 @@ func TestProposalServiceGroupAccept_DeterministicOutcomesAndReplay(t *testing.T)
 	groupID := uuid.New()
 	docID := uuid.New()
 	created := time.Now().UTC()
+
+	// Build real Yjs updates so composition works in the temp doc.
+	baseState := buildDocState(t, "Line 1\nLine 2\nLine 3")
+	update1, err := TextToUpdate(baseState, "Modified Line 1\nLine 2\nLine 3", &TextEdit{
+		OldText: "Line 1", NewText: "Modified Line 1", Position: 0,
+	})
+	if err != nil {
+		t.Fatalf("build update1: %v", err)
+	}
+	projState1 := applyUpdateToState(t, baseState, update1)
+	update2, err := TextToUpdate(projState1, "Modified Line 1\nChanged Line 2\nLine 3", &TextEdit{
+		OldText: "Line 2", NewText: "Changed Line 2",
+		Position: len("Modified Line 1\n"),
+	})
+	if err != nil {
+		t.Fatalf("build update2: %v", err)
+	}
+	projState2 := applyUpdateToState(t, projState1, update2)
+	update3, err := TextToUpdate(projState2, "Modified Line 1\nChanged Line 2\nModified Line 3", &TextEdit{
+		OldText: "Line 3", NewText: "Modified Line 3",
+		Position: len("Modified Line 1\nChanged Line 2\n"),
+	})
+	if err != nil {
+		t.Fatalf("build update3: %v", err)
+	}
+
 	p1 := collabModels.Proposal{
 		ID:              uuid.New(),
 		DocumentID:      docID,
 		ProposalGroupID: &groupID,
 		Status:          collabModels.ProposalStatusProposed,
-		YjsUpdate:       []byte("u1"),
+		YjsUpdate:       update1,
 		CreatedByUserID: uuid.New(),
 		CreatedAt:       created.Add(1 * time.Minute),
 	}
@@ -376,7 +402,7 @@ func TestProposalServiceGroupAccept_DeterministicOutcomesAndReplay(t *testing.T)
 		DocumentID:      docID,
 		ProposalGroupID: &groupID,
 		Status:          collabModels.ProposalStatusProposed,
-		YjsUpdate:       []byte("u2"),
+		YjsUpdate:       update2,
 		CreatedByUserID: uuid.New(),
 		CreatedAt:       created.Add(2 * time.Minute),
 	}
@@ -385,7 +411,7 @@ func TestProposalServiceGroupAccept_DeterministicOutcomesAndReplay(t *testing.T)
 		DocumentID:      docID,
 		ProposalGroupID: &groupID,
 		Status:          collabModels.ProposalStatusProposed,
-		YjsUpdate:       []byte("u3"),
+		YjsUpdate:       update3,
 		CreatedByUserID: uuid.New(),
 		CreatedAt:       created.Add(3 * time.Minute),
 	}
@@ -394,9 +420,10 @@ func TestProposalServiceGroupAccept_DeterministicOutcomesAndReplay(t *testing.T)
 	stores.put(p1)
 	stores.put(p2)
 
-	runtime := newFakeProposalRuntime(map[string]error{
-		string(p2.YjsUpdate): domain.NewValidationError("bad update"),
-	})
+	// Inject a ValidationError on MarkAccepted for p2 to test skip path.
+	stores.markAcceptedErrs[p2.ID] = domain.NewValidationError("already decided")
+
+	runtime := newFakeProposalRuntime(nil)
 	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
 
 	userID := uuid.New()
@@ -447,8 +474,9 @@ func TestProposalServiceGroupAccept_DeterministicOutcomesAndReplay(t *testing.T)
 	if !second.IsReplay {
 		t.Fatalf("expected second group accept to replay")
 	}
-	if runtime.callCount() != 3 {
-		t.Fatalf("expected replay to avoid extra applies, got %d calls", runtime.callCount())
+	// Composite approach: one runtime apply for the composite update (not per-proposal).
+	if runtime.callCount() != 1 {
+		t.Fatalf("expected one composite runtime apply, got %d calls", runtime.callCount())
 	}
 	if projector.count() != 1 {
 		t.Fatalf("expected replay to avoid extra recomputes, got %d", projector.count())
@@ -478,12 +506,20 @@ func TestProposalServiceGroupAccept_SkipsDifferentDocumentInGroup(t *testing.T) 
 	targetDocID := uuid.New()
 	otherDocID := uuid.New()
 	created := time.Now().UTC()
+
+	// Build real Yjs update for the matching proposal.
+	baseState := buildDocState(t, "hello world")
+	update1, err := TextToUpdate(baseState, "hello Go", nil)
+	if err != nil {
+		t.Fatalf("build update1: %v", err)
+	}
+
 	p1 := collabModels.Proposal{
 		ID:              uuid.New(),
 		DocumentID:      targetDocID,
 		ProposalGroupID: &groupID,
 		Status:          collabModels.ProposalStatusProposed,
-		YjsUpdate:       []byte("u1"),
+		YjsUpdate:       update1,
 		CreatedByUserID: uuid.New(),
 		CreatedAt:       created.Add(1 * time.Minute),
 	}
@@ -492,7 +528,7 @@ func TestProposalServiceGroupAccept_SkipsDifferentDocumentInGroup(t *testing.T) 
 		DocumentID:      otherDocID,
 		ProposalGroupID: &groupID,
 		Status:          collabModels.ProposalStatusProposed,
-		YjsUpdate:       []byte("u2"),
+		YjsUpdate:       []byte("u2"), // never composed (doc mismatch skip)
 		CreatedByUserID: uuid.New(),
 		CreatedAt:       created.Add(2 * time.Minute),
 	}
@@ -548,12 +584,20 @@ func TestProposalServiceGroupAccept_TransientMarkAcceptedErrorAborts(t *testing.
 
 	groupID := uuid.New()
 	docID := uuid.New()
+
+	// Build real Yjs update so composition succeeds.
+	baseState := buildDocState(t, "some content")
+	realUpdate, updateErr := TextToUpdate(baseState, "modified content", nil)
+	if updateErr != nil {
+		t.Fatalf("build real update: %v", updateErr)
+	}
+
 	proposal := collabModels.Proposal{
 		ID:              uuid.New(),
 		DocumentID:      docID,
 		ProposalGroupID: &groupID,
 		Status:          collabModels.ProposalStatusProposed,
-		YjsUpdate:       []byte("u1"),
+		YjsUpdate:       realUpdate,
 		CreatedByUserID: uuid.New(),
 		CreatedAt:       time.Now().UTC(),
 	}
@@ -1199,6 +1243,10 @@ func (r *fakeProposalRuntime) GetStateSnapshot(_ context.Context, _ uuid.UUID) (
 	return nil, false, nil
 }
 
+func (r *fakeProposalRuntime) GetCurrentState(_ context.Context, _ uuid.UUID) ([]byte, error) {
+	return nil, nil
+}
+
 type fakeAutoAcceptPolicyStore struct {
 	inputs      *collabSvc.AutoAcceptPolicyInputs
 	lookupCount int
@@ -1438,6 +1486,219 @@ func TestProposalServiceCreateProposal_ArbiterPanicDegradesToReview(t *testing.T
 	}
 	if runtime.callCount() != 0 {
 		t.Fatalf("expected no runtime apply after arbiter panic, got %d", runtime.callCount())
+	}
+}
+
+// --- composeProposalUpdates tests ---
+
+func TestComposeProposalUpdates_PositionalEdits(t *testing.T) {
+	baseContent := "Line 1\nLine 2\nLine 3"
+	baseState := buildDocState(t, baseContent)
+
+	// Proposal 1: replace "Line 1" with "Modified Line 1"
+	update1, err := TextToUpdate(baseState, "Modified Line 1\nLine 2\nLine 3", &TextEdit{
+		OldText: "Line 1", NewText: "Modified Line 1", Position: 0,
+	})
+	if err != nil {
+		t.Fatalf("TextToUpdate proposal 1: %v", err)
+	}
+
+	// Build projected state for proposal 2 (base + proposal 1)
+	projState := applyUpdateToState(t, baseState, update1)
+
+	// Proposal 2: replace "Line 3" with "Modified Line 3"
+	update2, err := TextToUpdate(projState, "Modified Line 1\nLine 2\nModified Line 3", &TextEdit{
+		OldText:  "Line 3",
+		NewText:  "Modified Line 3",
+		Position: len("Modified Line 1\nLine 2\n"),
+	})
+	if err != nil {
+		t.Fatalf("TextToUpdate proposal 2: %v", err)
+	}
+
+	// Compose
+	proposals := []groupAcceptValidProposal{
+		{proposal: collabModels.Proposal{YjsUpdate: update1}},
+		{proposal: collabModels.Proposal{YjsUpdate: update2}},
+	}
+	composite, perErrors, err := composeProposalUpdates(baseState, proposals)
+	if err != nil {
+		t.Fatalf("composeProposalUpdates: %v", err)
+	}
+	for i, e := range perErrors {
+		if e != nil {
+			t.Fatalf("proposal %d error: %v", i, e)
+		}
+	}
+	if composite == nil {
+		t.Fatal("expected non-nil composite update")
+	}
+
+	// Apply composite to a fresh doc and verify content
+	resultText := applyAndRead(t, baseState, composite)
+	expected := "Modified Line 1\nLine 2\nModified Line 3"
+	if resultText != expected {
+		t.Fatalf("content mismatch:\nexpected: %q\ngot:      %q", expected, resultText)
+	}
+}
+
+func TestComposeProposalUpdates_ThreeProposalsWithFullDocReplacement(t *testing.T) {
+	baseContent := "Chapter 1\n\nOnce upon a time.\n\nThe end."
+	baseState := buildDocState(t, baseContent)
+
+	// Proposal 1: targeted edit - replace "Once upon a time." with "It was a dark night."
+	update1, err := TextToUpdate(baseState, "Chapter 1\n\nIt was a dark night.\n\nThe end.", &TextEdit{
+		OldText:  "Once upon a time.",
+		NewText:  "It was a dark night.",
+		Position: len("Chapter 1\n\n"),
+	})
+	if err != nil {
+		t.Fatalf("TextToUpdate proposal 1: %v", err)
+	}
+
+	// Build projected state for proposal 2
+	proj1 := applyUpdateToState(t, baseState, update1)
+
+	// Proposal 2: full-doc replacement (edit=nil)
+	update2, err := TextToUpdate(proj1, "Chapter 1\n\nIt was a dark night.\n\nTo be continued.", nil)
+	if err != nil {
+		t.Fatalf("TextToUpdate proposal 2: %v", err)
+	}
+
+	// Build projected state for proposal 3
+	proj2 := applyUpdateToState(t, proj1, update2)
+
+	// Proposal 3: targeted edit on the result
+	update3, err := TextToUpdate(proj2, "Chapter ONE\n\nIt was a dark night.\n\nTo be continued.", &TextEdit{
+		OldText:  "Chapter 1",
+		NewText:  "Chapter ONE",
+		Position: 0,
+	})
+	if err != nil {
+		t.Fatalf("TextToUpdate proposal 3: %v", err)
+	}
+
+	proposals := []groupAcceptValidProposal{
+		{proposal: collabModels.Proposal{YjsUpdate: update1}},
+		{proposal: collabModels.Proposal{YjsUpdate: update2}},
+		{proposal: collabModels.Proposal{YjsUpdate: update3}},
+	}
+	composite, perErrors, err := composeProposalUpdates(baseState, proposals)
+	if err != nil {
+		t.Fatalf("composeProposalUpdates: %v", err)
+	}
+	for i, e := range perErrors {
+		if e != nil {
+			t.Fatalf("proposal %d error: %v", i, e)
+		}
+	}
+	if composite == nil {
+		t.Fatal("expected non-nil composite update")
+	}
+
+	resultText := applyAndRead(t, baseState, composite)
+	expected := "Chapter ONE\n\nIt was a dark night.\n\nTo be continued."
+	if resultText != expected {
+		t.Fatalf("content mismatch:\nexpected: %q\ngot:      %q", expected, resultText)
+	}
+}
+
+func TestComposeProposalUpdates_MultipleIndependentEdits(t *testing.T) {
+	// Two proposals editing different sections of the same document.
+	// Both generated against sequential projected states (real scenario).
+	baseState := buildDocState(t, "hello world foo bar")
+
+	update1, err := TextToUpdate(baseState, "HELLO world foo bar", &TextEdit{
+		OldText: "hello", NewText: "HELLO", Position: 0,
+	})
+	if err != nil {
+		t.Fatalf("TextToUpdate 1: %v", err)
+	}
+
+	proj1 := applyUpdateToState(t, baseState, update1)
+	update2, err := TextToUpdate(proj1, "HELLO world FOO bar", &TextEdit{
+		OldText: "foo", NewText: "FOO",
+		Position: len("HELLO world "),
+	})
+	if err != nil {
+		t.Fatalf("TextToUpdate 2: %v", err)
+	}
+
+	proposals := []groupAcceptValidProposal{
+		{proposal: collabModels.Proposal{YjsUpdate: update1}},
+		{proposal: collabModels.Proposal{YjsUpdate: update2}},
+	}
+	composite, perErrors, err := composeProposalUpdates(baseState, proposals)
+	if err != nil {
+		t.Fatalf("composeProposalUpdates: %v", err)
+	}
+	for i, e := range perErrors {
+		if e != nil {
+			t.Fatalf("proposal %d error: %v", i, e)
+		}
+	}
+	if composite == nil {
+		t.Fatal("expected non-nil composite")
+	}
+
+	resultText := applyAndRead(t, baseState, composite)
+	expected := "HELLO world FOO bar"
+	if resultText != expected {
+		t.Fatalf("expected %q, got %q", expected, resultText)
+	}
+}
+
+func TestComposeProposalUpdates_SingleProposal(t *testing.T) {
+	baseState := buildDocState(t, "hello")
+	update, err := TextToUpdate(baseState, "hello world", nil)
+	if err != nil {
+		t.Fatalf("TextToUpdate: %v", err)
+	}
+
+	proposals := []groupAcceptValidProposal{
+		{proposal: collabModels.Proposal{YjsUpdate: update}},
+	}
+	composite, perErrors, err := composeProposalUpdates(baseState, proposals)
+	if err != nil {
+		t.Fatalf("composeProposalUpdates: %v", err)
+	}
+	if perErrors[0] != nil {
+		t.Fatalf("unexpected error: %v", perErrors[0])
+	}
+	if composite == nil {
+		t.Fatal("expected non-nil composite")
+	}
+
+	resultText := applyAndRead(t, baseState, composite)
+	if resultText != "hello world" {
+		t.Fatalf("expected %q, got %q", "hello world", resultText)
+	}
+}
+
+func TestComposeProposalUpdates_EmptyBaseState(t *testing.T) {
+	// Nil base state should work (empty doc).
+	update, err := TextToUpdate(nil, "new content", nil)
+	if err != nil {
+		t.Fatalf("TextToUpdate: %v", err)
+	}
+
+	proposals := []groupAcceptValidProposal{
+		{proposal: collabModels.Proposal{YjsUpdate: update}},
+	}
+	composite, perErrors, err := composeProposalUpdates(nil, proposals)
+	if err != nil {
+		t.Fatalf("composeProposalUpdates: %v", err)
+	}
+	if perErrors[0] != nil {
+		t.Fatalf("expected no error, got: %v", perErrors[0])
+	}
+	if composite == nil {
+		t.Fatal("expected non-nil composite")
+	}
+
+	resultText := applyAndRead(t, nil, composite)
+	if resultText != "new content" {
+		t.Fatalf("expected %q, got %q", "new content", resultText)
 	}
 }
 

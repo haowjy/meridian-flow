@@ -238,6 +238,13 @@ func (r *fakeProjectorRuntime) GetStateSnapshot(_ context.Context, _ uuid.UUID) 
 	return r.snapshot, r.found, nil
 }
 
+func (r *fakeProjectorRuntime) GetCurrentState(_ context.Context, _ uuid.UUID) ([]byte, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	return r.snapshot, nil
+}
+
 type fakeProjectorStateStore struct {
 	loadedState []byte
 
