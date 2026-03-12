@@ -1,0 +1,14 @@
+[
+  {
+    "kty": "EC",
+    "kid": "meridian-local-dev",
+    "use": "sig",
+    "key_ops": ["sign", "verify"],
+    "alg": "ES256",
+    "ext": true,
+    "crv": "P-256",
+    "x": "nl7OAI1n7P7-dMbRaru2r4OJB5Ix63zeVvhC1t9k3gI",
+    "y": "OchzYDKYliw9p1IQ70eTO5gBSq3ikhCyM0r3RjC3PVI",
+    "d": "rQnH-SPYfiQOJqsJw_R-zoTMCAQ1NVhp2HECLZPCx94"
+  }
+]

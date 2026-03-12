@@ -5,15 +5,16 @@ Backend-specific guidance for Agents. For general project info, see `/AGENTS.md`
 ## Quick Start
 
 ```bash
-# First time setup
+# Option A: Local Supabase (recommended)
+# From repo root:
+./scripts/dev/supabase-start.sh   # starts Docker containers, patches .env, runs migrations
+make seed                          # seed test data
+
+# Option B: Cloud Supabase
 cp .env.example .env
-# Edit .env with Supabase credentials
+# Edit .env with cloud Supabase credentials
 go mod download
-
 # Run schema in Supabase SQL Editor (one-time)
-# Copy contents of schema.sql -> Supabase Dashboard -> SQL Editor -> Run
-
-# Seed test data (creates test project + sample documents)
 make seed
 
 # Start server
@@ -131,10 +132,10 @@ RFC 7807 Problem Details (`type`, `title`, `status`, `detail`). 409 Conflicts in
 
 ## Environment Variables
 
-Required:
-- `SUPABASE_DB_URL` - Port 6543 auto-configures for PgBouncer compatibility
-- `SUPABASE_URL` - Supabase project URL (for JWT verification)
-- `SUPABASE_KEY` - Supabase service role secret
+Required (auto-configured by `supabase-start.sh` for local dev):
+- `SUPABASE_DB_URL` - Local: `postgresql://postgres:postgres@127.0.0.1:54322/postgres`. Cloud: port 6543 auto-configures for PgBouncer
+- `SUPABASE_URL` - Local: `http://127.0.0.1:54321`. Cloud: `https://your-project.supabase.co`
+- `SUPABASE_KEY` - Local: JWT-format service_role key (auto-set). Cloud: `sb_secret_...` format
 - `ENVIRONMENT` - `dev`, `test`, or `prod` (determines table prefix)
 - `PORT` - Default 8080 (Railway auto-injects in production)
 - `CORS_ORIGINS` - Comma-separated list of allowed frontend origins
@@ -204,6 +205,9 @@ Backend uses JWT validation via Supabase Auth:
 - Middleware validates JWT tokens from `Authorization: Bearer <token>` header
 - User ID extracted from JWT claims and injected into request context
 - JWKS endpoint: `{SUPABASE_URL}/auth/v1/.well-known/jwks.json`
+- Allowed algorithms: RS256, ES256 (`internal/auth/jwt_verifier.go:64-68`)
+- Local Supabase: uses ES256 via `supabase/signing_keys.json` (copied from `.example` by `supabase-start.sh`)
+- Cloud Supabase: uses RS256 by default
 
 See `internal/middleware/auth.go` for implementation.
 
