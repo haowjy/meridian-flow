@@ -173,9 +173,20 @@ After compaction:
 Next compaction triggers at 30,000 total (20k remaining again).
 ```
 
-### GC and Undo Window
+### GC Strategy: Two-Phase
 
-Yjs GC is **disabled** — deleted Items remain as tombstones while updates are in the retained log window. Tombstones older than the compaction threshold are GC'd when their updates are compacted into a checkpoint.
+Yjs GC operates in two phases — disabled at runtime, enabled during compaction:
+
+| Phase | `doc.gc` | Tombstone behavior |
+|-------|----------|-------------------|
+| **Runtime** | `false` | Tombstones preserved — needed for undo and concurrent merge |
+| **Compaction** | `true` | Tombstones from compacted range are GC'd into lightweight ID placeholders |
+
+Compaction GC bounds tombstone growth: tombstones accumulate within the retained 10k update window, then get cleaned up when those updates are compacted into a checkpoint. The checkpoint blob stays proportional to current document size plus recent tombstones, not the entire editing history.
+
+GC'd placeholders preserve item IDs (so future updates with left/right references still resolve), but drop the deleted content. Replaying retained updates on top of a GC'd checkpoint is safe.
+
+### Undo Window
 
 The retained 10,000 updates provide replay headroom for recent timeline/history operations and short-lived auto-event bookmarks. Thread-level undo/reapply does not depend on Yjs inverse computation; it uses proposal text strings (`region_text_before`/`region_text_after`) and therefore survives compaction.
 
@@ -184,7 +195,7 @@ The retained 10,000 updates provide replay headroom for recent timeline/history 
 | Component | Per doc (at 20k threshold) | 100 chapters |
 |-----------|--------------------------|-------------|
 | Update log rows (~200 bytes avg) | ~4MB max | ~400MB |
-| Checkpoint blob (with tombstones) | ~2-3MB | ~250MB |
+| Checkpoint blob (GC'd on compaction) | ~2-3MB | ~250MB |
 | **Total** | **~6-7MB** | **~650MB** |
 
 ## Undo / Restore Semantics

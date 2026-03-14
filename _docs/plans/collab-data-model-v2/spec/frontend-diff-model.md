@@ -28,7 +28,7 @@ flowchart TB
     K --> L["Destroy projection"]
 ```
 
-Re-derive triggers: canonical text change, `_proposal_status` map change, or proposal-set change.
+Full re-derive triggers: `_proposal_status` map change or proposal-set change. Canonical text changes (user typing) only remap existing decoration positions via CM6 `map()` — no re-derive needed.
 
 ## Grouped Hunk Identity
 
@@ -103,7 +103,19 @@ Hunk rendering remains decoration-based:
 | Group + decorate | ~1-3ms |
 | Total derive cycle | ~5-15ms |
 
-No debounce is required at chapter scale.
+### Re-Derive Strategy
+
+The full clone/apply/diff pipeline only runs on **proposal events**, not on every keystroke:
+
+| Trigger | Action |
+|---------|--------|
+| New proposal arrives | Full re-derive |
+| Proposal status changes (accept/reject/stale) | Full re-derive |
+| User types (canonical text change, no proposal change) | CM6 decoration `map()` shifts hunk positions — no re-derive |
+
+CM6 decorations automatically remap their positions when the document changes via `map()`. User typing shifts existing hunk positions without recomputing the diff. The expensive pipeline only runs when the set of pending proposals or their statuses change.
+
+If proposal events arrive in bursts (e.g., AI streaming multiple `edit_document` calls), debounce re-derive by 50-100ms. Decoration updates lagging by one frame are invisible to the writer. When no proposals are pending, the pipeline is skipped entirely.
 
 ## Cross-References
 
