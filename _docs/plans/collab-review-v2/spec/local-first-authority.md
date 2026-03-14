@@ -17,12 +17,12 @@ sequenceDiagram
     participant BE as Backend
 
     W->>FE: clicks Accept on hunk
-    FE->>YDoc: transact(ORIGIN_REVIEW_ACCEPT)
+    FE->>YDoc: transact(ORIGIN_ACCEPT)
     Note over YDoc: Y.Text: apply proposal updates<br/>Y.Map: set(P1, 'accepted')
     YDoc-->>FE: hunk disappears instantly
     YDoc->>Sync: Yjs update delta
     Sync->>BE: delta arrives
-    BE->>BE: detect _review_status change
+    BE->>BE: detect _proposal_status change
     BE->>BE: mirror proposal row status
 ```
 
@@ -33,13 +33,13 @@ The writer sees the result immediately. Backend mirroring is asynchronous and dr
 | Concern | Authority | Storage | Notes |
 |---|---|---|---|
 | Canonical document text | Yjs | `Y.Text('content')` | Synced via existing collab transport |
-| Review status map | Yjs | `Y.Map('_review_status')` | Decision ledger for `accepted`, `rejected`, `stale` |
+| Proposal status map | Yjs | `Y.Map('_proposal_status')` | Decision ledger for `accepted`, `rejected`, `stale` |
 | Diff derivation | Frontend | Ephemeral | Projection + diff only |
 | Accept/reject hunk actions | Frontend | Yjs transactions | Immediate, undoable |
 | Projection GC | Frontend | Yjs transaction | Auto-marks stale proposals during recompute |
 | Session undo/redo | Frontend | UndoManager in memory | Session-scoped |
 | Proposal status row | Backend + mirror | `proposals.status` | Always current: `pending`, `accepted`, `rejected`, `stale`, `reverted` |
-| Thread undo/redo | Backend | `region_text_before/after` | Persistent, status-gated |
+| Thread undo/reapply | Frontend | `ORIGIN_THREAD` Yjs transaction | Local-first, tracked in undo stack |
 
 ## Immediate Operations
 
@@ -49,9 +49,9 @@ The writer sees the result immediately. Backend mirroring is asynchronous and dr
 canonicalDoc.transact(() => {
   for (const proposal of hunk.proposals) {
     Y.applyUpdate(canonicalDoc, proposal.yjs_update);
-    canonicalDoc.getMap('_review_status').set(proposal.id, 'accepted');
+    canonicalDoc.getMap('_proposal_status').set(proposal.id, 'accepted');
   }
-}, ORIGIN_REVIEW_ACCEPT);
+}, ORIGIN_ACCEPT);
 ```
 
 - Applies all grouped hunk proposal updates to canonical text.
@@ -63,9 +63,9 @@ canonicalDoc.transact(() => {
 ```typescript
 canonicalDoc.transact(() => {
   for (const proposal of hunk.proposals) {
-    canonicalDoc.getMap('_review_status').set(proposal.id, 'rejected');
+    canonicalDoc.getMap('_proposal_status').set(proposal.id, 'rejected');
   }
-}, ORIGIN_REVIEW_REJECT);
+}, ORIGIN_REJECT);
 ```
 
 - No canonical text mutation.
@@ -88,7 +88,7 @@ canonicalDoc.transact(() => {
 ```typescript
 canonicalDoc.transact(() => {
   for (const proposal of pendingProposalsWithoutDiff) {
-    canonicalDoc.getMap('_review_status').set(proposal.id, 'stale');
+    canonicalDoc.getMap('_proposal_status').set(proposal.id, 'stale');
   }
 }, ORIGIN_GC);
 ```
@@ -110,9 +110,9 @@ undoManager.undo();
 
 Backend logic on Yjs sync:
 
-1. Detect `_review_status` key changes by `proposalId`.
+1. Detect `_proposal_status` key changes by `proposalId`.
 2. Upsert proposal-row status to match map value (`accepted`, `rejected`, `stale`).
-3. Thread undo updates proposal row status to `reverted` directly.
+3. Thread undo/reapply writes to `_proposal_status` Y.Map (using `ORIGIN_THREAD`), mirrored to row like all other status changes.
 4. Keep row status current for UI (`pending`, `accepted`, `rejected`, `stale`, `reverted`).
 
 ## Reconnect / Reload
@@ -120,24 +120,24 @@ Backend logic on Yjs sync:
 | State | Reconnect (same tab) | Reload (new tab) |
 |-------|-----------------------|------------------|
 | Canonical text | Synced | Rehydrated from backend |
-| `_review_status` | Synced via Yjs deltas | Rehydrated from canonical Yjs state |
+| `_proposal_status` | Synced via Yjs deltas | Rehydrated from canonical Yjs state |
 | Undo stack | Preserved | Lost |
 | Display hunks | Re-derived | Re-derived |
 
-### Example: Tab Reload Mid-Review
+### Example: Tab Reload
 
 ```
 Writer has accepted P1 and rejected P2. Undo stack has both.
 
 Tab reloads:
-  1. Canonical Y.Doc rehydrated from backend (includes P1 text + _review_status)
-  2. _review_status already has P1='accepted', P2='rejected' (persisted in Y.Doc)
+  1. Canonical Y.Doc rehydrated from backend (includes P1 text + _proposal_status)
+  2. _proposal_status already has P1='accepted', P2='rejected' (persisted in Y.Doc)
   3. Projection re-derives — P1 and P2 excluded (not pending), only P3 shows
   4. Undo stack is empty — session undo for P1/P2 is lost
   5. Thread undo for P1 is still available (uses stored text, not undo stack)
 ```
 
-No full-state reconciliation needed — Yjs sync guarantees convergence. Backend mirrors `_review_status` changes as they arrive via delta, not by scanning the full map.
+No full-state reconciliation needed — Yjs sync guarantees convergence. Backend mirrors `_proposal_status` changes as they arrive via delta, not by scanning the full map.
 
 ## Cross-References
 

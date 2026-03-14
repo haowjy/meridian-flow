@@ -12,7 +12,7 @@ There is one materialized document authority: canonical `Y.Doc`. The projection 
 flowchart LR
     subgraph doc ["Canonical Y.Doc (persistent, synced)"]
         T["Y.Text('content')"]
-        M["Y.Map('_review_status')"]
+        M["Y.Map('_proposal_status')"]
     end
     doc -->|"clone + apply pending"| P["Projection clone"]
     P -->|"diff + group"| H["Grouped hunks"]
@@ -20,7 +20,7 @@ flowchart LR
 ```
 
 - `Y.Text('content')` stores canonical text.
-- `Y.Map('_review_status')` stores decision state by proposal.
+- `Y.Map('_proposal_status')` stores decision state by proposal.
 - Projection is a throwaway clone. No projection state is stored in Postgres or Yjs.
 
 ### Example: What Lives Where
@@ -30,7 +30,7 @@ Canonical Y.Doc at some point in time:
 
   Y.Text('content'): "The cat sat on the mat."
 
-  Y.Map('_review_status'):
+  Y.Map('_proposal_status'):
     P1 → 'accepted'     (writer accepted earlier)
     P3 → 'rejected'     (writer rejected earlier)
     (P5 has no entry)   → means pending
@@ -53,7 +53,7 @@ P1 and P3 are skipped because they already have decisions. Only `pending` propos
 | Structure | Lifetime | Purpose |
 |-----------|----------|---------|
 | Canonical Y.Doc | Persistent | Shared document state |
-| `_review_status` Y.Map | Persistent | Proposal decision state |
+| `_proposal_status` Y.Map | Persistent | Proposal decision state |
 | Projection Y.Doc clone | Ephemeral | Diff derivation input |
 | Raw hunks | Ephemeral | Direct diff output before grouping |
 | Grouped hunks | Ephemeral | UI rendering regions mapped to proposal sets |
@@ -85,8 +85,8 @@ projection.destroy();
 
 ## Immediate Resolution Effects
 
-- Accept hunk applies all contributing proposal updates to canonical and sets `_review_status[proposalId]='accepted'` for each proposal atomically.
-- Reject hunk sets `_review_status[proposalId]='rejected'` for each contributing proposal atomically.
+- Accept hunk applies all contributing proposal updates to canonical and sets `_proposal_status[proposalId]='accepted'` for each proposal atomically.
+- Reject hunk sets `_proposal_status[proposalId]='rejected'` for each contributing proposal atomically.
 - Edit is plain `ORIGIN_HUMAN` typing after reject, or modification after accept.
 - Projection GC marks pending proposals as `stale` when their update yields no remaining diff.
 
@@ -97,13 +97,13 @@ Accept/reject and stale-GC writes are normal Yjs transactions and therefore sync
 The same UndoManager tracks:
 
 - canonical text mutations
-- `_review_status` mutations
+- `_proposal_status` mutations
 
 This gives one chronological undo stack for typing + hunk actions.
 
 ## Backend Mirror
 
-Backend listens to synced canonical state changes and mirrors `_review_status` values into proposal-row status for querying/reporting. Thread undo writes `reverted` directly on proposal rows and does not mutate `_review_status`.
+Backend listens to synced canonical state changes and mirrors `_proposal_status` values into proposal-row status for querying/reporting. Thread undo/reapply also writes to `_proposal_status`, so all status changes flow through the same mirror path.
 
 ## What Does Not Exist
 

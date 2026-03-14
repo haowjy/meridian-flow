@@ -1,7 +1,7 @@
 ---
-
-## detail: standard
+detail: standard
 audience: developer, architect
+---
 
 # Implementation Plan
 
@@ -12,18 +12,19 @@ audience: developer, architect
 
 | #   | Decision                 | Detail                                                                                                                        |
 | --- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| 1   | One canonical Y.Doc      | Canonical state lives in `Y.Text('content')` and `Y.Map('_review_status')`.                                                   |
+| 1   | One canonical Y.Doc      | Canonical state lives in `Y.Text('content')` and `Y.Map('_proposal_status')`.                                                   |
 | 2   | Ephemeral projection     | Diff view is `clone(canonical) + apply(pending proposal updates) + diff + group`.                                             |
 | 3   | Hunk identity            | Hunks are grouped text regions with contributing proposal sets.                                                               |
-| 4   | Accept is immediate      | Apply all grouped hunk proposal updates and set `_review_status[proposalId]='accepted'` in one transaction.                   |
-| 5   | Reject is immediate      | Set `_review_status[proposalId]='rejected'` for all proposals in the grouped hunk.                                            |
+| 4   | Accept is immediate      | Apply all grouped hunk proposal updates and set `_proposal_status[proposalId]='accepted'` in one transaction.                   |
+| 5   | Reject is immediate      | Set `_proposal_status[proposalId]='rejected'` for all proposals in the grouped hunk.                                            |
 | 6   | Edit is plain typing     | Edit is reject + type or accept + modify with `ORIGIN_HUMAN`; no separate review-edit status value.                           |
-| 7   | Unified UndoManager      | One stack over `[Y.Text('content'), Y.Map('_review_status')]`.                                                                |
+| 7   | Unified UndoManager      | One stack over `[Y.Text('content'), Y.Map('_proposal_status')]`.                                                                |
 | 8   | Undo boundaries          | Keep single UndoManager; call `clear()` at mode transitions (e.g., toggling manual diff view).                                |
 | 9   | Projection GC            | Every recompute auto-marks no-diff pending proposals as `stale`.                                                              |
 | 10  | Status chain             | `edit_tool -> proposal -> yjs_update -> status` is always current in backend row and thread UI.                               |
-| 11  | Thread undo              | Use `region_text_before/after` text replacement; no Yjs inverse/snapshot dependency.                                          |
-| 12  | Thread undo map behavior | Thread undo/redo does not mutate `_review_status`; it mutates canonical text and proposal row status (`reverted`/`accepted`). |
+| 11  | Thread undo/reapply      | Use `region_text_before/after` text replacement for undo, reapply (from reverted), and reapply (from rejected).               |
+| 12  | Thread undo map behavior | Thread undo/reapply writes to both canonical text and `_proposal_status` Y.Map in one transaction (`ORIGIN_THREAD`).           |
+| 13  | Immutable thread history | Thread messages are never modified. Tool call status is a UI-only overlay derived from proposal row status.                    |
 
 
 ## Phases
@@ -48,7 +49,7 @@ Tasks:
 1. Implement projection derivation from canonical + pending proposal updates with region tracking.
 2. Diff into raw hunks, then group nearby/overlapping hunks into user-facing regions.
 3. Attach contributing proposal sets and update references to each grouped hunk.
-4. Re-derive on canonical text, `_review_status`, or proposal-set changes.
+4. Re-derive on canonical text, `_proposal_status`, or proposal-set changes.
 5. Run projection GC on each recompute and auto-mark no-diff proposals as `stale`.
 6. Render CM6 decorations for grouped hunk actions.
 
@@ -67,18 +68,20 @@ Tasks:
 
 Tasks:
 
-1. Mirror `_review_status` changes into proposal row status.
-2. Verify status mirroring is driven by `_review_status` key deltas from Yjs sync.
+1. Mirror `_proposal_status` changes into proposal row status.
+2. Verify status mirroring is driven by `_proposal_status` key deltas from Yjs sync.
 3. Verify row status stays current for `pending`, `accepted`, `rejected`, `stale`, `reverted`.
 
-### Phase 5: Thread-Level Undo/Redo
+### Phase 5: Thread-Level Undo/Reapply
 
 Tasks:
 
 1. Implement `thread:undo` (`accepted -> reverted`) via `region_text_after -> region_text_before` replacement.
-2. Implement `thread:redo` (`reverted -> accepted`) via reverse replacement.
-3. Apply undo/redo as canonical Yjs updates appended to `document_updates`.
-4. Return conflict when target region no longer exists.
+2. Implement `thread:reapply` (`reverted -> accepted` and `rejected -> accepted`) via `region_text_before -> region_text_after` replacement.
+3. Implement `thread:undo_all` — iterate accepted proposals in a thread, undo each independently, return per-proposal results.
+4. Apply undo/reapply as canonical Yjs updates appended to `document_updates`.
+5. Return conflict when target region no longer exists.
+6. Thread UI renders proposal status as overlay on tool calls — no thread message mutation.
 
 ## Dependency Graph
 
@@ -88,7 +91,7 @@ flowchart TB
     P1 --> P2[Phase 2\nProjection + Diff]
     P2 --> P3[Phase 3\nImmediate Actions + Undo]
     P3 --> P4[Phase 4\nStatus Mirror]
-    P4 --> P5[Phase 5\nThread Undo/Redo]
+    P4 --> P5[Phase 5\nThread Undo/Reapply]
 ```
 
 

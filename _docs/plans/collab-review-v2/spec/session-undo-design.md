@@ -9,7 +9,7 @@ audience: developer, architect
 Session undo uses one `Y.UndoManager` across:
 
 - `Y.Text('content')`
-- `Y.Map('_review_status')`
+- `Y.Map('_proposal_status')`
 
 All tracked actions interleave in a single stack: typing and grouped-hunk accept/reject.
 
@@ -17,17 +17,19 @@ All tracked actions interleave in a single stack: typing and grouped-hunk accept
 
 ```typescript
 const ORIGIN_HUMAN = 'human';
-const ORIGIN_REVIEW_ACCEPT = 'review:accept';
-const ORIGIN_REVIEW_REJECT = 'review:reject';
-const ORIGIN_GC = 'review:gc';
+const ORIGIN_ACCEPT = 'accept';
+const ORIGIN_REJECT = 'reject';
+const ORIGIN_GC = 'gc';
+const ORIGIN_THREAD = 'thread';
 
 const undoManager = new Y.UndoManager(
-  [doc.getText('content'), doc.getMap('_review_status')],
+  [doc.getText('content'), doc.getMap('_proposal_status')],
   {
     trackedOrigins: new Set([
       ORIGIN_HUMAN,
-      ORIGIN_REVIEW_ACCEPT,
-      ORIGIN_REVIEW_REJECT,
+      ORIGIN_ACCEPT,
+      ORIGIN_REJECT,
+      ORIGIN_THREAD,
     ]),
   }
 );
@@ -44,9 +46,9 @@ undoManager.clear();
 doc.transact(() => {
   for (const proposal of hunk.proposals) {
     Y.applyUpdate(doc, proposal.yjs_update);
-    doc.getMap('_review_status').set(proposal.id, 'accepted');
+    doc.getMap('_proposal_status').set(proposal.id, 'accepted');
   }
-}, ORIGIN_REVIEW_ACCEPT);
+}, ORIGIN_ACCEPT);
 ```
 
 ### Reject Hunk
@@ -54,9 +56,9 @@ doc.transact(() => {
 ```typescript
 doc.transact(() => {
   for (const proposal of hunk.proposals) {
-    doc.getMap('_review_status').set(proposal.id, 'rejected');
+    doc.getMap('_proposal_status').set(proposal.id, 'rejected');
   }
-}, ORIGIN_REVIEW_REJECT);
+}, ORIGIN_REJECT);
 ```
 
 ### Edit
@@ -72,7 +74,7 @@ doc.transact(() => {
 ```typescript
 doc.transact(() => {
   for (const proposal of pendingProposalsWithoutDiff) {
-    doc.getMap('_review_status').set(proposal.id, 'stale');
+    doc.getMap('_proposal_status').set(proposal.id, 'stale');
   }
 }, ORIGIN_GC);
 ```
@@ -93,9 +95,9 @@ Writer performs these actions in order:
 
 ```
 1. Type "Hello "                          (ORIGIN_HUMAN)
-2. Accept hunk [P1]                       (ORIGIN_REVIEW_ACCEPT)
+2. Accept hunk [P1]                       (ORIGIN_ACCEPT)
 3. Type "world"                           (ORIGIN_HUMAN)
-4. Reject hunk [P2, P3]                   (ORIGIN_REVIEW_REJECT)
+4. Reject hunk [P2, P3]                   (ORIGIN_REJECT)
 ```
 
 Undo stack (top = most recent):
@@ -127,29 +129,29 @@ Projection GC uses `ORIGIN_GC` which is NOT in `trackedOrigins`. If GC marks P4 
 | State | Persistent? | Notes |
 |-------|-------------|-------|
 | Canonical text | Yes | Yjs synced |
-| `_review_status` entries | Yes | Yjs synced |
+| `_proposal_status` entries | Yes | Yjs synced |
 | Undo stack | No | In-memory session state |
 
 ## Proposal Status Matrix
 
 | Status | Meaning | Undo/Redo? |
 |--------|---------|-----------|
-| `pending` | Waiting for review | N/A |
-| `accepted` | User explicitly accepted | Yes (thread undo) |
-| `rejected` | User explicitly rejected | Yes (session Ctrl-Z while still in stack) |
+| `pending` | Waiting for action | N/A |
+| `accepted` | User explicitly accepted or auto-applied | Yes (thread undo) |
+| `rejected` | User explicitly rejected | Session Ctrl-Z while in stack, or thread reapply |
 | `stale` | Auto-resolved, canonical diverged and no diff remains | No |
-| `reverted` | Accepted then thread-undone | Yes (thread redo) |
+| `reverted` | Accepted then thread-undone | Yes (thread reapply) |
 
 ## Backend Status Mirror
 
-Backend updates proposal rows from `_review_status` changes:
+Backend updates proposal rows from `_proposal_status` changes:
 
 - `accepted` -> proposal row `accepted`
 - `rejected` -> proposal row `rejected`
 - `stale` -> proposal row `stale`
 - key removed -> no decision entry remains in map
 
-Thread-level undo/redo updates proposal rows to `reverted`/`accepted` directly and does not mutate `_review_status`.
+Thread-level undo/reapply writes to `_proposal_status` Y.Map using `ORIGIN_THREAD` (non-tracked). The backend mirrors the map change to the proposal row through the standard sync path.
 
 ## Implementation Notes
 
