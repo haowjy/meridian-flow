@@ -49,7 +49,7 @@ Tasks:
 1. Implement projection derivation from canonical + pending proposal updates with region tracking.
 2. Diff into raw hunks, then group nearby/overlapping hunks into user-facing regions.
 3. Attach contributing proposal sets and update references to each grouped hunk.
-4. Re-derive on canonical text, `_proposal_status`, or proposal-set changes.
+4. Re-derive on `_proposal_status` or proposal-set changes. Canonical text changes (user typing) only remap decoration positions via CM6 `map()`.
 5. Run projection GC on each recompute and auto-mark no-diff proposals as `stale`.
 6. Render CM6 decorations for grouped hunk actions.
 
@@ -88,11 +88,11 @@ Tasks:
 
 ```mermaid
 flowchart TB
-    P0[Phase 0\nAppend-Only Persistence] --> P1[Phase 1\nSchema Housekeeping]
-    P1 --> P2[Phase 2\nProjection + Diff]
-    P2 --> P3[Phase 3\nImmediate Actions + Undo]
-    P3 --> P4[Phase 4\nStatus Mirror]
-    P4 --> P5[Phase 5\nThread Undo/Reapply]
+    P0["Phase 0<br/>Append-Only Persistence"] --> P1["Phase 1<br/>Schema Housekeeping"]
+    P1 --> P2["Phase 2<br/>Projection + Diff"]
+    P2 --> P3["Phase 3<br/>Immediate Actions + Undo"]
+    P3 --> P4["Phase 4<br/>Status Mirror"]
+    P4 --> P5["Phase 5<br/>Thread Undo/Reapply"]
 ```
 
 

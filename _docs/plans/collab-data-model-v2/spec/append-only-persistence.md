@@ -224,6 +224,13 @@ There is no Go server library for CodeMirror's OT-based `@codemirror/collab` tra
 
 This is Phase 0 of collab data model v2 and must land before subsequent phases.
 
+## Cross-References
+
+- [Architecture](architecture.md)
+- [Undo Design](undo.md) — thread undo survives compaction via text search
+- [Schema Design](schema-design.md) — `document_updates`, `document_checkpoints`, `document_bookmarks` tables
+- [Implementation Plan](plan.md) — Phase 0
+
 ## Related
 
 - `_docs/future/features/document-timeline.md` — product motivation
