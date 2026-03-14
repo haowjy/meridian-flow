@@ -181,6 +181,7 @@ stateDiagram-v2
     pending --> stale : projection GC
 
     accepted --> reverted : thread undo
+    accepted --> pending : session Ctrl-Z
     reverted --> accepted : thread reapply
     rejected --> accepted : thread reapply
 
@@ -192,7 +193,7 @@ stateDiagram-v2
 | Status | Meaning | Undo/Redo? |
 |--------|---------|-----------|
 | `pending` | Proposed, waiting for action | N/A |
-| `accepted` | User accepted (or auto-applied) | Thread undo |
+| `accepted` | User accepted (or auto-applied) | Session Ctrl-Z or thread undo |
 | `rejected` | User rejected | Session Ctrl-Z while in stack, or thread reapply |
 | `stale` | Canonical already contains the change -- auto-resolved by projection GC | No |
 | `reverted` | Was accepted, then thread-undone | Thread reapply |

@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Collab v2 Toy -- Frontend</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 860px; margin: 0 auto; padding: 24px; line-height: 1.5; color: #222; }
+    h1 { font-size: 20px; margin-bottom: 4px; }
+    h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: #888; margin: 0 0 10px; }
+    p.subtitle { color: #666; font-size: 13px; margin: 0 0 20px; }
+    .panel { border: 1px solid #ddd; border-radius: 6px; padding: 16px; margin-bottom: 14px; }
+    .mono { font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace; font-size: 13px; padding: 8px 12px; border-radius: 4px; white-space: pre-wrap; word-break: break-word; min-height: 1.5em; }
+    .bg-canon { background: #f5f5f5; }
+    .bg-proj { background: #fffde7; }
+    .bg-map { background: #f0f4f8; font-size: 12px; }
+    .diff-del { background: #ffcdd2; text-decoration: line-through; }
+    .diff-ins { background: #c8e6c9; }
+    .proposal { padding: 10px 12px; margin: 6px 0; border-left: 4px solid; border-radius: 0 4px 4px 0; font-size: 13px; }
+    .st-pending  { border-color: #ff9800; background: #fff3e0; }
+    .st-accepted { border-color: #4caf50; background: #e8f5e9; }
+    .st-rejected { border-color: #f44336; background: #ffebee; }
+    .st-stale    { border-color: #9e9e9e; background: #fafafa; color: #999; }
+    .st-reverted { border-color: #9c27b0; background: #f3e5f5; }
+    .badge { display: inline-block; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 3px; text-transform: uppercase; margin-left: 6px; vertical-align: middle; }
+    .badge-pending  { background: #ff9800; color: #fff; }
+    .badge-accepted { background: #4caf50; color: #fff; }
+    .badge-rejected { background: #f44336; color: #fff; }
+    .badge-stale    { background: #9e9e9e; color: #fff; }
+    .badge-reverted { background: #9c27b0; color: #fff; }
+    button { padding: 5px 12px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; font-size: 12px; }
+    button:hover { background: #f0f0f0; }
+    button:disabled { opacity: 0.35; cursor: not-allowed; }
+    .controls { display: flex; flex-wrap: wrap; gap: 6px; }
+    .log { font-family: 'SF Mono', Monaco, monospace; font-size: 11px; max-height: 220px; overflow-y: auto; border: 1px solid #eee; border-radius: 4px; padding: 8px; }
+    .log-entry { padding: 2px 0; border-bottom: 1px solid #f5f5f5; }
+    .log-entry:last-child { border-bottom: none; }
+    .section-label { font-size: 11px; color: #999; margin-bottom: 4px; }
+    .row { display: flex; gap: 12px; }
+    .row > * { flex: 1; min-width: 0; }
+    .actions { margin-top: 6px; display: flex; gap: 4px; flex-wrap: wrap; }
+    hr { border: none; border-top: 1px solid #eee; margin: 6px 0; }
+  </style>
+</head>
+<body>
+  <h1>Collab Data Model v2 -- Frontend Toy</h1>
+  <p class="subtitle">Interactive demo using real Yjs. All operations match the v2 spec: ephemeral projection, immediate transactions, session undo, thread undo, projection GC.</p>
+
+  <!-- Canonical Y.Doc -->
+  <div class="panel">
+    <h2>Canonical Y.Doc</h2>
+    <div class="row">
+      <div>
+        <div class="section-label">Y.Text('content')</div>
+        <div class="mono bg-canon" id="el-canon"></div>
+      </div>
+      <div>
+        <div class="section-label">Y.Map('_proposal_status')</div>
+        <div class="mono bg-map" id="el-map"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Projection -->
+  <div class="panel">
+    <h2>Projection (ephemeral clone -- destroyed after each derive)</h2>
+    <div class="section-label">Projected text (canonical + pending proposals)</div>
+    <div class="mono bg-proj" id="el-proj"></div>
+    <div class="section-label" style="margin-top:8px">Inline diff (canonical vs projection)</div>
+    <div class="mono" id="el-diff"></div>
+  </div>
+
+  <!-- Proposals -->
+  <div class="panel">
+    <h2>Proposals (simulated DB rows -- status mirrored from Y.Map)</h2>
+    <div id="el-proposals"><em>No proposals yet</em></div>
+  </div>
+
+  <!-- Controls -->
+  <div class="panel">
+    <h2>Simulate Actions</h2>
+    <div class="controls" id="el-controls"></div>
+    <hr>
+    <div class="controls">
+      <button onclick="sessionUndo()">Undo (Ctrl-Z)</button>
+      <button onclick="sessionRedo()">Redo (Ctrl-Y)</button>
+      <span id="el-undo-info" style="font-size:12px;color:#666;align-self:center"></span>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="panel">
+    <h2>Event Log</h2>
+    <div class="log" id="el-log"></div>
+  </div>
+
+<script type="module">
+import * as Y from 'https://esm.sh/yjs@13';
+
+// ============================================================
+// ORIGINS -- match the spec (local-first-authority.md)
+// ============================================================
+const ORIGIN_HUMAN  = 'human';
+const ORIGIN_ACCEPT = 'accept';
+const ORIGIN_REJECT = 'reject';
+const ORIGIN_GC     = 'gc';       // NOT tracked by UndoManager
+const ORIGIN_THREAD = 'thread';
+
+// ============================================================
+// CANONICAL Y.Doc
+// ============================================================
+const canonical = new Y.Doc();
+const text      = canonical.getText('content');
+const statusMap = canonical.getMap('_proposal_status');
+
+// UndoManager over both shared types (undo.md)
+const undoManager = new Y.UndoManager(
+  [text, statusMap],
+  { trackedOrigins: new Set([ORIGIN_HUMAN, ORIGIN_ACCEPT, ORIGIN_REJECT, ORIGIN_THREAD]) }
+);
+
+// Proposal store (simulates backend DB rows)
+const proposals = [];
+
+// Initialize document
+text.insert(0, 'The cat sat on the mat.');
+undoManager.clear(); // Don't track initialization
+
+// ============================================================
+// BACKEND STATUS MIRROR (local-first-authority.md)
+// Observes _proposal_status Y.Map changes and mirrors to
+// proposal rows. In production this runs on the backend via
+// Yjs sync deltas. Here we simulate it locally.
+// ============================================================
+statusMap.observe(event => {
+  for (const [key, change] of event.changes.keys) {
+    const p = proposals.find(x => x.id === key);
+    if (!p) continue;
+    if (change.action === 'delete') {
+      log(`Mirror: ${p.id.slice(0,6)} -> pending (Y.Map key removed by undo)`);
+    } else {
+      log(`Mirror: ${p.id.slice(0,6)} -> ${statusMap.get(key)}`);
+    }
+  }
+});
+
+// ============================================================
+// PROPOSAL CREATION (architecture.md -- proposal payload model)
+//
+// Simulates what happens when AI calls edit_document:
+// 1. Clone canonical
+// 2. Apply the edit to the clone
+// 3. Capture the yjs_update (binary CRDT delta)
+// 4. Store as a pending proposal row
+// ============================================================
+function createProposal(description, editFn, regionBefore, regionAfter) {
+  const clone = new Y.Doc();
+  Y.applyUpdate(clone, Y.encodeStateAsUpdate(canonical));
+
+  // Capture ONLY the edit delta (listener added after initial state)
+  let capturedUpdate = null;
+  clone.on('update', (update) => { capturedUpdate = update; });
+
+  editFn(clone.getText('content'));
+
+  if (!capturedUpdate) {
+    log(`WARNING: edit produced no Yjs update for "${description}"`);
+    return null;
+  }
+
+  const proposal = {
+    id: crypto.randomUUID(),
+    description,
+    yjs_update: capturedUpdate,        // Binary Yjs update bytes
+    region_text_before: regionBefore,   // For thread-level undo
+    region_text_after: regionAfter,     // For thread-level undo
+    status: 'pending',
+  };
+
+  proposals.push(proposal);
+  log(`Created proposal ${proposal.id.slice(0,6)}: ${description}`);
+  log(`  yjs_update: ${capturedUpdate.length} bytes`);
+  log(`  region_text_before: "${regionBefore}"`);
+  log(`  region_text_after:  "${regionAfter}"`);
+  refresh();
+  return proposal;
+}
+
+// ============================================================
+// PROJECTION PIPELINE (frontend-diff-model.md)
+//
+// 1. Clone canonical Y.Doc
+// 2. Apply each pending proposal's yjs_update
+// 3. Diff canonical vs projection
+// 4. Run projection GC (stale detection)
+// 5. Destroy clone
+// ============================================================
+function deriveProjection() {
+  const pendingProposals = proposals.filter(p => getStatus(p.id) === 'pending');
+
+  // Clone canonical
+  const projDoc = new Y.Doc();
+  Y.applyUpdate(projDoc, Y.encodeStateAsUpdate(canonical));
+
+  // Apply each pending proposal
+  for (const p of pendingProposals) {
+    Y.applyUpdate(projDoc, p.yjs_update);
+  }
+
+  const canonicalText = text.toString();
+  const projectedText = projDoc.getText('content').toString();
+
+  // Projection GC: check each pending proposal individually
+  // If applying it produces no diff, it's stale (architecture.md)
+  const staleIds = [];
+  for (const p of pendingProposals) {
+    const testDoc = new Y.Doc();
+    Y.applyUpdate(testDoc, Y.encodeStateAsUpdate(canonical));
+    Y.applyUpdate(testDoc, p.yjs_update);
+    if (testDoc.getText('content').toString() === canonicalText) {
+      staleIds.push(p.id);
+    }
+  }
+
+  if (staleIds.length > 0) {
+    // GC uses ORIGIN_GC -- NOT tracked by UndoManager (undo.md)
+    canonical.transact(() => {
+      for (const id of staleIds) {
+        statusMap.set(id, 'stale');
+      }
+    }, ORIGIN_GC);
+    log(`Projection GC: marked ${staleIds.map(id => id.slice(0,6)).join(', ')} as stale`);
+  }
+
+  // Clone is destroyed (garbage collected) -- projection is ephemeral
+  return { canonicalText, projectedText };
+}
+
+// ============================================================
+// HUNK ACTIONS (local-first-authority.md)
+// ============================================================
+
+// Accept: apply yjs_update to canonical + set status in ONE transaction
+function acceptProposal(id) {
+  const p = proposals.find(x => x.id === id);
+  if (!p || getStatus(id) !== 'pending') return;
+
+  canonical.transact(() => {
+    Y.applyUpdate(canonical, p.yjs_update);
+    statusMap.set(p.id, 'accepted');
+  }, ORIGIN_ACCEPT);
+
+  log(`Accept: ${p.id.slice(0,6)} -- applied yjs_update + set status in one transaction`);
+  refresh();
+}
+
+// Reject: set status only -- no canonical text mutation
+function rejectProposal(id) {
+  const p = proposals.find(x => x.id === id);
+  if (!p || getStatus(id) !== 'pending') return;
+
+  canonical.transact(() => {
+    statusMap.set(p.id, 'rejected');
+  }, ORIGIN_REJECT);
+
+  log(`Reject: ${p.id.slice(0,6)} -- Y.Map status only, no text change`);
+  refresh();
+}
+
+// ============================================================
+// SESSION UNDO (undo.md -- UndoManager over Y.Text + Y.Map)
+// ============================================================
+function sessionUndo() {
+  if (undoManager.undoStack.length === 0) {
+    log('Undo: nothing to undo');
+    return;
+  }
+  undoManager.undo();
+  log('Session undo (Ctrl-Z) -- reverted last tracked transaction');
+  refresh();
+}
+
+function sessionRedo() {
+  if (undoManager.redoStack.length === 0) {
+    log('Redo: nothing to redo');
+    return;
+  }
+  undoManager.redo();
+  log('Session redo (Ctrl-Y) -- reapplied last undone transaction');
+  refresh();
+}
+
+// ============================================================
+// THREAD-LEVEL UNDO/REAPPLY (undo.md)
+//
+// Uses text find-and-replace, NOT Yjs inverse operations.
+// Survives compaction because it only needs current text +
+// stored region_text_before/after strings.
+// ============================================================
+function threadUndo(id) {
+  const p = proposals.find(x => x.id === id);
+  if (!p || getStatus(id) !== 'accepted') return;
+
+  const currentText = text.toString();
+  const idx = currentText.indexOf(p.region_text_after);
+
+  if (idx === -1) {
+    log(`Thread undo CONFLICT: "${p.region_text_after}" not found in canonical`);
+    log('  (text was modified since accept -- conflict is expected)');
+    return;
+  }
+
+  // Both text mutation + status write in one ORIGIN_THREAD transaction
+  canonical.transact(() => {
+    text.delete(idx, p.region_text_after.length);
+    text.insert(idx, p.region_text_before);
+    statusMap.set(p.id, 'reverted');
+  }, ORIGIN_THREAD);
+
+  log(`Thread undo: ${p.id.slice(0,6)} -- "${p.region_text_after}" -> "${p.region_text_before}"`);
+  log('  (ORIGIN_THREAD -- enters session undo stack, Ctrl-Z can reverse it)');
+  refresh();
+}
+
+function threadReapply(id) {
+  const p = proposals.find(x => x.id === id);
+  const status = getStatus(id);
+  if (!p || (status !== 'reverted' && status !== 'rejected')) return;
+
+  const currentText = text.toString();
+  const idx = currentText.indexOf(p.region_text_before);
+
+  if (idx === -1) {
+    log(`Thread reapply CONFLICT: "${p.region_text_before}" not found in canonical`);
+    return;
+  }
+
+  canonical.transact(() => {
+    text.delete(idx, p.region_text_before.length);
+    text.insert(idx, p.region_text_after);
+    statusMap.set(p.id, 'accepted');
+  }, ORIGIN_THREAD);
+
+  log(`Thread reapply: ${p.id.slice(0,6)} -- "${p.region_text_before}" -> "${p.region_text_after}"`);
+  refresh();
+}
+
+// ============================================================
+// HUMAN TYPING (local-first-authority.md -- ORIGIN_HUMAN)
+// ============================================================
+function humanType(description, editFn) {
+  canonical.transact(() => {
+    editFn(text);
+  }, ORIGIN_HUMAN);
+  log(`Human typed: ${description}`);
+  refresh();
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+// Read status from Y.Map (schema-design.md -- dual authority)
+function getStatus(proposalId) {
+  const mapVal = statusMap.get(proposalId);
+  return mapVal || 'pending'; // No Y.Map entry = pending
+}
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Character-level LCS diff for inline display
+function charDiff(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({length: m+1}, () => new Uint16Array(n+1));
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1]+1 : Math.max(dp[i-1][j], dp[i][j-1]);
+
+  const result = [];
+  let i = m, j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && a[i-1] === b[j-1]) {
+      result.unshift({ t: 'eq', c: a[i-1] });
+      i--; j--;
+    } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
+      result.unshift({ t: 'ins', c: b[j-1] });
+      j--;
+    } else {
+      result.unshift({ t: 'del', c: a[i-1] });
+      i--;
+    }
+  }
+
+  // Merge consecutive same-type
+  const merged = [];
+  for (const r of result) {
+    if (merged.length && merged[merged.length-1].t === r.t)
+      merged[merged.length-1].s += r.c;
+    else
+      merged.push({ t: r.t, s: r.c });
+  }
+  return merged;
+}
+
+// ============================================================
+// RENDERING
+// ============================================================
+const logEntries = [];
+
+function log(msg) {
+  logEntries.unshift(msg); // newest first
+  if (logEntries.length > 200) logEntries.length = 200;
+}
+
+function refresh() {
+  const { canonicalText, projectedText } = deriveProjection();
+
+  // Canonical
+  document.getElementById('el-canon').textContent = canonicalText;
+
+  // Status map
+  const mapEntries = [];
+  statusMap.forEach((val, key) => {
+    const p = proposals.find(x => x.id === key);
+    const label = p ? p.id.slice(0,6) : key.slice(0,6);
+    mapEntries.push(`${label}: ${val}`);
+  });
+  document.getElementById('el-map').textContent =
+    mapEntries.length ? mapEntries.join('\n') : '(empty -- all proposals are pending)';
+
+  // Projection
+  document.getElementById('el-proj').textContent = projectedText;
+
+  // Diff
+  if (canonicalText === projectedText) {
+    document.getElementById('el-diff').innerHTML =
+      '<em style="color:#999">No diff -- projection equals canonical</em>';
+  } else {
+    const segments = charDiff(canonicalText, projectedText);
+    document.getElementById('el-diff').innerHTML = segments.map(s => {
+      if (s.t === 'eq')  return esc(s.s);
+      if (s.t === 'del') return `<span class="diff-del">${esc(s.s)}</span>`;
+      if (s.t === 'ins') return `<span class="diff-ins">${esc(s.s)}</span>`;
+    }).join('');
+  }
+
+  // Proposals
+  const el = document.getElementById('el-proposals');
+  if (proposals.length === 0) {
+    el.innerHTML = '<em style="color:#999">No proposals yet. Click a scenario button below.</em>';
+  } else {
+    el.innerHTML = proposals.map(p => {
+      const st = getStatus(p.id);
+      const short = p.id.slice(0,6);
+      let btns = '';
+      if (st === 'pending') {
+        btns = `<button onclick="window._accept('${p.id}')">Accept</button>` +
+               `<button onclick="window._reject('${p.id}')">Reject</button>`;
+      } else if (st === 'accepted') {
+        btns = `<button onclick="window._threadUndo('${p.id}')">Thread Undo</button>`;
+      } else if (st === 'reverted' || st === 'rejected') {
+        btns = `<button onclick="window._threadReapply('${p.id}')">Thread Reapply</button>`;
+      }
+      return `<div class="proposal st-${st}">` +
+        `<strong>${short}</strong>` +
+        `<span class="badge badge-${st}">${st}</span> ` +
+        `${esc(p.description)}` +
+        (st === 'stale' ? ' <em>(no longer relevant)</em>' : '') +
+        `<div class="actions">${btns}</div>` +
+        `</div>`;
+    }).join('');
+  }
+
+  // Undo info
+  document.getElementById('el-undo-info').textContent =
+    `Undo stack: ${undoManager.undoStack.length} | Redo stack: ${undoManager.redoStack.length}`;
+
+  // Log
+  document.getElementById('el-log').innerHTML =
+    logEntries.map(e => `<div class="log-entry">${esc(e)}</div>`).join('');
+}
+
+// ============================================================
+// SCENARIO BUTTONS
+// ============================================================
+function findAndInsert(ytext, find, insertion) {
+  const idx = ytext.toString().indexOf(find);
+  if (idx === -1) throw new Error(`"${find}" not found`);
+  ytext.insert(idx, insertion);
+}
+
+function findAndReplace(ytext, find, replacement) {
+  const idx = ytext.toString().indexOf(find);
+  if (idx === -1) throw new Error(`"${find}" not found`);
+  ytext.delete(idx, find.length);
+  ytext.insert(idx, replacement);
+}
+
+const scenarios = [
+  {
+    label: 'AI: insert "black " before "cat"',
+    action: () => createProposal(
+      'insert "black " before "cat"',
+      t => findAndInsert(t, 'cat', 'black '),
+      'The cat', 'The black cat'
+    ),
+  },
+  {
+    label: 'AI: replace "mat" with "rug"',
+    action: () => createProposal(
+      'replace "mat" with "rug"',
+      t => findAndReplace(t, 'mat', 'rug'),
+      'the mat', 'the rug'
+    ),
+  },
+  {
+    label: 'Human: type "big " before "cat"',
+    action: () => humanType(
+      'insert "big " before "cat"',
+      t => { const i = t.toString().indexOf('cat'); if (i>=0) t.insert(i, 'big '); }
+    ),
+  },
+  {
+    label: 'Demo: stale proposal',
+    action: () => {
+      log('--- Stale demo: creating proposal then applying its update directly ---');
+      const p = createProposal(
+        'insert "lazy " before "sat"',
+        t => findAndInsert(t, 'sat', 'lazy '),
+        'cat sat', 'cat lazy sat'
+      );
+      if (p) {
+        // Simulate: the same update reaches canonical via another path
+        // (e.g., auto-apply race, or another client applied same edit)
+        // Yjs deduplicates by client ID + clock -- same bytes = no change
+        Y.applyUpdate(canonical, p.yjs_update);
+        log('Applied same yjs_update to canonical directly (simulating auto-apply sync)');
+        log('Next projection derive will detect no diff -> mark stale');
+        refresh();
+      }
+    },
+  },
+];
+
+document.getElementById('el-controls').innerHTML = scenarios.map((s, i) =>
+  `<button onclick="window._scenario(${i})">${s.label}</button>`
+).join('');
+
+// Expose to onclick handlers
+window._scenario = (i) => scenarios[i].action();
+window._accept = acceptProposal;
+window._reject = rejectProposal;
+window._threadUndo = threadUndo;
+window._threadReapply = threadReapply;
+window.sessionUndo = sessionUndo;
+window.sessionRedo = sessionRedo;
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); sessionUndo(); }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); sessionRedo(); }
+});
+
+// Initial render
+log('Initialized canonical: "The cat sat on the mat."');
+log('UndoManager tracking: ORIGIN_HUMAN, ORIGIN_ACCEPT, ORIGIN_REJECT, ORIGIN_THREAD');
+log('NOT tracking: ORIGIN_GC (stale is terminal, never undoable)');
+refresh();
+</script>
+</body>
+</html>
