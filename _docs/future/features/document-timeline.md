@@ -2,7 +2,7 @@
 detail: minimal
 audience: developer, architect
 status: future
-depends-on: _docs/plans/collab-review-v2/spec/append-only-persistence.md
+depends-on: _docs/plans/collab-data-model-v2/spec/append-only-persistence.md
 ---
 
 # Document Timeline
@@ -26,7 +26,7 @@ Writers scrub a timeline slider to view their document at any past point. Each p
 
 ## Dependency
 
-This feature requires the append-only Yjs update log described in `_docs/plans/collab-review-v2/spec/append-only-persistence.md`. The current snapshot-overwrite model cannot support it.
+This feature requires the append-only Yjs update log described in `_docs/plans/collab-data-model-v2/spec/append-only-persistence.md`. The current snapshot-overwrite model cannot support it.
 
 ## Notes
 
@@ -36,5 +36,5 @@ This feature requires the append-only Yjs update log described in `_docs/plans/c
 
 ## Related
 
-- `_docs/plans/collab-review-v2/spec/append-only-persistence.md` — required infrastructure
+- `_docs/plans/collab-data-model-v2/spec/append-only-persistence.md` — required infrastructure
 - `_docs/technical/collab/yjs-state-lifecycle.md` — current persistence model
