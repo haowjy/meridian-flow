@@ -8,7 +8,7 @@ audience: developer, architect
 
 The frontend derives diff hunks by comparing canonical text with an ephemeral projection. The projection is per-user: only pending proposals where `created_by_user_id = current_user` are applied. Hunks are grouped text regions — the writer acts on what they see, not on individual proposals.
 
-The projection computation itself is shared logic (frontend for diff UI, backend for AI context — see [Dual-Version Yjs Model](dual-version-yjs-model.md)). This spec covers the frontend-specific diff and rendering pipeline on top of it.
+The projection computation itself is shared logic (frontend for diff UI, backend for AI context -- see [Architecture](architecture.md)). This spec covers the frontend-specific diff and rendering pipeline on top of it.
 
 ## Derivation Pipeline
 
@@ -120,7 +120,6 @@ If proposal events arrive in bursts (e.g., AI streaming multiple `edit_document`
 ## Cross-References
 
 - [Architecture](architecture.md)
-- [Dual-Version Yjs Model](dual-version-yjs-model.md)
 - [Local-First Authority](local-first-authority.md)
-- [Session Undo Design](session-undo-design.md)
+- [Undo Design](undo.md)
 - [Implementation Plan](plan.md)

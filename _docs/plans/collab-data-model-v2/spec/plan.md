@@ -112,10 +112,8 @@ flowchart TB
 ## Cross-References
 
 - [Architecture](architecture.md)
-- [Dual-Version Yjs Model](dual-version-yjs-model.md)
 - [Frontend Diff Model](frontend-diff-model.md)
 - [Local-First Authority](local-first-authority.md)
-- [Session Undo Design](session-undo-design.md)
+- [Undo Design](undo.md)
 - [Schema Design](schema-design.md)
-- [Thread-Level Undo](thread-level-undo.md)
 

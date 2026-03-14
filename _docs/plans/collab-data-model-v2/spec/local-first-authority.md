@@ -142,7 +142,7 @@ No full-state reconciliation needed — Yjs sync guarantees convergence. Backend
 ## Cross-References
 
 - [Architecture](architecture.md)
-- [Dual-Version Yjs Model](dual-version-yjs-model.md)
 - [Frontend Diff Model](frontend-diff-model.md)
-- [Session Undo Design](session-undo-design.md)
+- [Undo Design](undo.md)
+- [Schema Design](schema-design.md)
 - [Implementation Plan](plan.md)
