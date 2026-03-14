@@ -11,7 +11,7 @@ Session undo uses one `Y.UndoManager` across:
 - `Y.Text('content')`
 - `Y.Map('_review_status')`
 
-All tracked actions interleave in a single stack: typing, grouped-hunk accept/reject, and projection GC status writes.
+All tracked actions interleave in a single stack: typing and grouped-hunk accept/reject.
 
 ## UndoManager Setup
 
@@ -19,7 +19,7 @@ All tracked actions interleave in a single stack: typing, grouped-hunk accept/re
 const ORIGIN_HUMAN = 'human';
 const ORIGIN_REVIEW_ACCEPT = 'review:accept';
 const ORIGIN_REVIEW_REJECT = 'review:reject';
-const ORIGIN_REVIEW_GC = 'review:gc';
+const ORIGIN_GC = 'review:gc';
 
 const undoManager = new Y.UndoManager(
   [doc.getText('content'), doc.getMap('_review_status')],
@@ -28,7 +28,6 @@ const undoManager = new Y.UndoManager(
       ORIGIN_HUMAN,
       ORIGIN_REVIEW_ACCEPT,
       ORIGIN_REVIEW_REJECT,
-      ORIGIN_REVIEW_GC,
     ]),
   }
 );
@@ -78,7 +77,7 @@ doc.transact(() => {
   for (const proposal of pendingProposalsWithoutDiff) {
     doc.getMap('_review_status').set(proposal.id, 'stale');
   }
-}, ORIGIN_REVIEW_GC);
+}, ORIGIN_GC);
 ```
 
 ## Ctrl-Z Behavior
@@ -90,14 +89,13 @@ doc.transact(() => {
 | Accept hunk | Reverts all grouped proposal updates and status writes as one step |
 | Reject hunk | Reverts all grouped status writes as one step |
 | Typing | Reverts recent text change |
-| Projection GC | Reverts stale status writes |
 
 ## Persistence Model
 
 | State | Persistent? | Notes |
 |-------|-------------|-------|
 | Canonical text | Yes | Yjs synced |
-| `_review_status` entries | Yes (time-bounded) | Yjs synced, cleaned by 7-day retention job |
+| `_review_status` entries | Yes | Yjs synced |
 | Undo stack | No | In-memory session state |
 
 ## Proposal Status Matrix
@@ -106,22 +104,9 @@ doc.transact(() => {
 |--------|---------|-----------|
 | `pending` | Waiting for review | N/A |
 | `accepted` | User explicitly accepted | Yes (thread undo) |
-| `rejected` | User explicitly rejected | Yes (Ctrl+Z within 7 days) |
+| `rejected` | User explicitly rejected | Yes (session Ctrl-Z while still in stack) |
 | `stale` | Auto-resolved, canonical diverged and no diff remains | No |
 | `reverted` | Accepted then thread-undone | Yes (thread redo) |
-
-## 7-Day Retention Job
-
-Server job behavior:
-
-1. Find proposal decisions older than 7 days.
-2. Remove corresponding `_review_status[proposalId]` entries from canonical docs.
-3. Leave canonical text unchanged.
-
-Result:
-- Old decision-map entries are trimmed.
-- If a user attempts Ctrl-Z against aged-out reject state, the operation no-ops safely.
-- Thread-level undo/redo is unaffected because it uses persisted proposal text regions and row status.
 
 ## Backend Status Mirror
 
@@ -133,6 +118,10 @@ Backend updates proposal rows from `_review_status` changes:
 - key removed -> no decision entry remains in map
 
 Thread-level undo/redo updates proposal rows to `reverted`/`accepted` directly and does not mutate `_review_status`.
+
+## Implementation Notes
+
+Projection GC stale writes must use a non-tracked origin (for example, `ORIGIN_GC`) so they never pollute the undo stack.
 
 ## Cross-References
 

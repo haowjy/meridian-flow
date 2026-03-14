@@ -32,7 +32,6 @@ The v1 review design added complexity that did not improve writer workflow: lega
   - stale proposals never render as hunks and show as "No longer relevant" in thread UI
 - UndoManager scopes `Y.Text('content')` + `Y.Map('_review_status')`.
 - Backend status sync keeps proposal rows current for `pending | accepted | rejected | stale | reverted`.
-- A server background job removes `_review_status` entries older than 7 days.
 
 ## Spec Documents
 

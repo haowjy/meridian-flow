@@ -26,7 +26,7 @@ No projection state is stored in Postgres or Yjs.
 | Structure | Lifetime | Purpose |
 |-----------|----------|---------|
 | Canonical Y.Doc | Persistent | Shared document state |
-| `_review_status` Y.Map | Persistent (7-day status retention) | Proposal decision state |
+| `_review_status` Y.Map | Persistent | Proposal decision state |
 | Projection Y.Doc clone | Ephemeral | Diff derivation input |
 | Raw hunks | Ephemeral | Direct diff output before grouping |
 | Grouped hunks | Ephemeral | UI rendering regions mapped to proposal sets |

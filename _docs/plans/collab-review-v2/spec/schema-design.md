@@ -8,6 +8,10 @@ audience: developer, architect
 
 Database schema stays minimal. Review decision state is stored in canonical Yjs (`_review_status`) and mirrored to proposal rows.
 
+## Implementation Notes
+
+- Clean-slate schema: define `${TABLE_PREFIX}proposals` fresh with canonical names (`pending` status) and no legacy columns.
+
 ## Tables
 
 ### `${TABLE_PREFIX}proposals`
@@ -25,7 +29,6 @@ Stores proposal payload and lifecycle status.
 | `region_text_before` | `TEXT NULL` | Captured at proposal creation from `edit_document` find text |
 | `region_text_after` | `TEXT NULL` | Captured at proposal creation from `edit_document` replacement text |
 | `created_at` | `TIMESTAMPTZ DEFAULT NOW()` | Created time |
-| `decided_at` | `TIMESTAMPTZ` | Time proposal was decided (`accepted`, `rejected`, `stale`, `reverted`) for 7-day TTL cleanup |
 
 Backend mirrors `status` from `_review_status` map updates, keyed by `proposalId`.
 Thread undo/redo updates proposal `status` between `accepted` and `reverted` directly.
@@ -59,19 +62,9 @@ Pending proposals are represented by missing keys plus proposal row `status = 'p
 |--------|---------|-----------|
 | `pending` | Waiting for review | N/A |
 | `accepted` | User explicitly accepted | Yes (thread undo) |
-| `rejected` | User explicitly rejected | Yes (Ctrl+Z within 7 days) |
+| `rejected` | User explicitly rejected | Yes (session Ctrl-Z while still in stack) |
 | `stale` | Auto-resolved, canonical diverged and no diff remains | No |
 | `reverted` | Accepted then thread-undone | Yes (thread redo) |
-
-## 7-Day Retention
-
-Server background job removes `_review_status` entries older than 7 days (based on mirrored decision timestamps).
-
-Effects:
-- Reduces long-lived map growth.
-- Leaves canonical document text untouched.
-- Old reject undo attempts safely no-op once the map entry is gone.
-- Does not affect thread undo/redo because those use proposal row fields and canonical text find/replace.
 
 ## What Was Eliminated
 
@@ -80,6 +73,7 @@ Effects:
 | `documents.ai_content` | Derived on demand from projection |
 | Backend hunk tables | Hunks are frontend-only ephemeral view data |
 | One-proposal-to-one-hunk identity | Hunks are grouped regions with proposal sets |
+| Legacy proposal grouping linkage columns | Grouped hunks are derived dynamically from projection diff regions |
 | Separate review-edit proposal status | Edit is plain user typing after reject or after accept |
 | Separate review decision persistence stores | Canonical `_review_status` already persists via Yjs |
 
