@@ -109,6 +109,13 @@ flowchart TB
 | 5     | Low    | Deterministic text replacement with conflict handling |
 
 
+## Related Work (Separate Scope)
+
+These specs are part of the v2 design but are separate work streams -- not gated by the phases above:
+
+- [Review Comments](../future/review-comments.md) -- annotation comments (Y.Array), `add_comment` tool
+- [Editor Strategy](../future/editor-strategy.md) -- block rendering (KaTeX, Mermaid), DOCX/PDF import/export
+
 ## Cross-References
 
 - [Architecture](architecture.md)
@@ -116,4 +123,6 @@ flowchart TB
 - [Local-First Authority](local-first-authority.md)
 - [Undo Design](undo.md)
 - [Schema Design](schema-design.md)
+- [Review Comments](../future/review-comments.md)
+- [Editor Strategy](../future/editor-strategy.md)
 

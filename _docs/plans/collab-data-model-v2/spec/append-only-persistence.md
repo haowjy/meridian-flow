@@ -1,7 +1,6 @@
 ---
 detail: standard
 audience: developer, architect
-status: future
 motivates: _docs/future/features/document-timeline.md
 ---
 

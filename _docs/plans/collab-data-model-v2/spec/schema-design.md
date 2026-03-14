@@ -41,6 +41,14 @@ erDiagram
         BYTEA state
         BIGINT up_to_id
     }
+    document_bookmarks {
+        UUID id PK
+        UUID doc_id FK
+        BIGINT update_id FK
+        BYTEA state
+        TEXT bookmark_type
+        TEXT name
+    }
 ```
 
 ## Dual Authority: Y.Map + Proposal Rows
