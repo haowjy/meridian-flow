@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meridian Studio — Creative IDE</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, 'Times New Roman', serif; background: #1a1714; color: #d4c8b8; height: 100vh; display: flex; flex-direction: column; }
+  .topbar { height: 40px; background: #211e19; display: flex; align-items: center; padding: 0 16px; border-bottom: 1px solid #3a332a; font-size: 13px; color: #a89880; }
+  .topbar .brand { color: #c9a96e; font-weight: bold; letter-spacing: 1px; margin-right: 24px; }
+  .topbar .mode { background: #2e2820; padding: 3px 10px; border-radius: 4px; color: #c9a96e; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  .topbar .file-path { margin-left: auto; color: #7a6e5e; font-size: 12px; }
+  .main { flex: 1; display: flex; overflow: hidden; }
+
+  /* Explorer */
+  .explorer { width: 230px; min-width: 230px; background: #1c1915; border-right: 1px solid #3a332a; display: flex; flex-direction: column; }
+  .explorer-header { padding: 12px 14px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: #8a7d6b; display: flex; justify-content: space-between; align-items: center; }
+  .explorer-header span:last-child { cursor: pointer; font-size: 14px; color: #7a6e5e; }
+  .explorer-tree { flex: 1; overflow-y: auto; padding: 4px 8px; }
+  .tree-item { padding: 5px 8px; font-size: 13px; color: #a89880; cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px; }
+  .tree-item:hover { background: #262218; }
+  .tree-item.active { background: #2e2820; color: #e0d4c4; }
+  .tree-item .icon { font-size: 11px; width: 14px; text-align: center; color: #7a6e5e; }
+  .tree-item.folder .icon { color: #c9a96e; }
+  .tree-item.folder { font-weight: bold; color: #b8a888; }
+  .tree-children { padding-left: 14px; }
+  .tree-section { margin-top: 12px; padding: 6px 8px 4px; font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: #6a5e4e; }
+  .word-count { padding: 10px 14px; border-top: 1px solid #3a332a; font-size: 11px; color: #7a6e5e; }
+  .word-count strong { color: #a89880; }
+
+  /* Editor */
+  .editor { flex: 1; display: flex; flex-direction: column; background: #201d18; min-width: 0; }
+  .editor-tabs { display: flex; border-bottom: 1px solid #3a332a; background: #1e1b16; }
+  .tab { padding: 8px 16px; font-size: 12px; color: #7a6e5e; cursor: pointer; border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 6px; }
+  .tab.active { color: #d4c8b8; border-bottom-color: #c9a96e; background: #201d18; }
+  .tab .dot { width: 6px; height: 6px; border-radius: 50%; background: #c9a96e; }
+  .editor-content { flex: 1; overflow-y: auto; padding: 32px 48px; max-width: 720px; margin: 0 auto; width: 100%; }
+  .editor-content h2 { font-size: 22px; color: #d4c8b8; margin-bottom: 20px; font-weight: normal; }
+  .editor-content p { font-size: 15px; line-height: 1.85; color: #c0b4a0; margin-bottom: 14px; }
+  .editor-content p .cursor { border-right: 2px solid #c9a96e; animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { border-color: transparent; } }
+  .editor-content .ai-suggestion { background: #2a3028; border-left: 2px solid #5f8575; padding: 2px 6px; border-radius: 2px; color: #8fb89a; }
+  .editor-status { padding: 6px 16px; border-top: 1px solid #3a332a; font-size: 11px; color: #6a5e4e; display: flex; gap: 16px; }
+
+  /* Assistant sidebar */
+  .assistant { width: 280px; min-width: 280px; background: #1c1915; border-left: 1px solid #3a332a; display: flex; flex-direction: column; }
+  .assistant-header { padding: 10px 14px; border-bottom: 1px solid #3a332a; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #8a7d6b; display: flex; justify-content: space-between; }
+  .assistant-header .status { color: #5f8575; font-size: 10px; text-transform: none; letter-spacing: 0; }
+  .thread { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .bubble { padding: 10px 12px; border-radius: 6px; font-size: 13px; line-height: 1.55; }
+  .bubble.user { background: #2e2820; color: #d4c8b8; align-self: flex-end; max-width: 90%; }
+  .bubble.ai { background: #232018; border: 1px solid #3a332a; color: #b8ac98; max-width: 95%; }
+  .bubble .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: #7a6e5e; margin-bottom: 4px; }
+  .bubble em { color: #c9a96e; font-style: normal; }
+  .quick-actions { padding: 8px 12px; border-top: 1px solid #3a332a; display: flex; flex-wrap: wrap; gap: 4px; }
+  .qaction { padding: 4px 10px; font-size: 11px; background: #262218; border: 1px solid #3a332a; border-radius: 4px; color: #a89880; cursor: pointer; font-family: inherit; }
+  .qaction:hover { border-color: #c9a96e; color: #c9a96e; }
+  .assistant-input { padding: 10px 12px; border-top: 1px solid #3a332a; }
+  .assistant-input input { width: 100%; background: #1a1714; border: 1px solid #3a332a; border-radius: 5px; padding: 8px 10px; color: #d4c8b8; font-family: inherit; font-size: 12px; outline: none; }
+  .assistant-input input:focus { border-color: #5f8575; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <span class="brand">MERIDIAN</span>
+    <span class="mode">Studio</span>
+    <span class="file-path">The Wandering Stars / Ch. 47 &mdash; The Campfire</span>
+  </div>
+  <div class="main">
+    <div class="explorer">
+      <div class="explorer-header"><span>Explorer</span><span>+</span></div>
+      <div class="explorer-tree">
+        <div class="tree-item folder"><span class="icon">&#9662;</span> The Wandering Stars</div>
+        <div class="tree-children">
+          <div class="tree-section">Act III &mdash; The Betrayal</div>
+          <div class="tree-item"><span class="icon">&#9702;</span> Ch. 45 &mdash; The Crossing</div>
+          <div class="tree-item"><span class="icon">&#9702;</span> Ch. 46 &mdash; Ember and Ash</div>
+          <div class="tree-item active"><span class="icon">&#9702;</span> Ch. 47 &mdash; The Campfire</div>
+          <div class="tree-item"><span class="icon">&#9702;</span> Ch. 48 &mdash; (draft)</div>
+          <div class="tree-item"><span class="icon">&#9702;</span> Ch. 49 &mdash; (outline)</div>
+        </div>
+        <div class="tree-item folder" style="margin-top:8px"><span class="icon">&#9656;</span> Characters</div>
+        <div class="tree-item folder"><span class="icon">&#9656;</span> Worldbuilding</div>
+        <div class="tree-item folder"><span class="icon">&#9656;</span> Story Bible</div>
+        <div class="tree-item folder"><span class="icon">&#9656;</span> Research Notes</div>
+      </div>
+      <div class="word-count">Ch. 47: <strong>3,842</strong> words &middot; Serial: <strong>248k</strong></div>
+    </div>
+
+    <div class="editor">
+      <div class="editor-tabs">
+        <div class="tab active"><span class="dot"></span> Ch. 47 &mdash; The Campfire</div>
+        <div class="tab">Ch. 48 &mdash; (draft)</div>
+      </div>
+      <div class="editor-content">
+        <h2>Chapter 47: The Campfire</h2>
+        <p>The fire had burned low by the time Sera stopped talking. Embers drifted upward like small prayers, and Kael watched them vanish against the darkness of the canopy above.</p>
+        <p>"Wake me for second watch," she said, pulling the cloak tighter around her shoulders. Her voice was already half-gone, softened by exhaustion and the particular quiet that descends after hard truths have been spoken aloud.</p>
+        <p>He nodded, though she couldn't see it. The fire popped. Somewhere in the valley below, a river moved through stone.<span class="cursor"></span></p>
+        <p><span class="ai-suggestion">He counted her breaths the way a man counts coins he owes. Each one steady, trusting, unearned. The firelight caught the edge of her jaw, and he looked away before the guilt could settle into something he'd have to name.</span></p>
+        <p>When the second watch came, he didn't wake her. He sat with the silence and the dark and the weight of what he was about to do, and he let her have one more hour of not knowing.</p>
+      </div>
+      <div class="editor-status">
+        <span>Line 371, Col 42</span>
+        <span>Markdown</span>
+        <span>AI suggestion pending</span>
+      </div>
+    </div>
+
+    <div class="assistant">
+      <div class="assistant-header"><span>Assistant</span><span class="status">&#9679; Active</span></div>
+      <div class="thread">
+        <div class="bubble user"><div class="label">You</div>Can we add Kael's POV here? Something that hints at the betrayal without telegraphing it.</div>
+        <div class="bubble ai"><div class="label">Meridian</div>I've drafted an insert after line 371. It uses a <em>financial metaphor</em> &mdash; counting breaths like coins &mdash; to hint at transactional thinking without naming the betrayal. The guilt is present but unnamed, which keeps tension without spoiling.<br><br>Accept, revise, or discard?</div>
+        <div class="bubble user"><div class="label">You</div>I like it. Can the last line feel more final?</div>
+        <div class="bubble ai"><div class="label">Meridian</div>Added: <em>"he let her have one more hour of not knowing."</em> This gives closure to the scene beat while loading the next chapter with inevitability.</div>
+      </div>
+      <div class="quick-actions">
+        <button class="qaction">Continue</button>
+        <button class="qaction">Revise tone</button>
+        <button class="qaction">Check consistency</button>
+        <button class="qaction">Outline next</button>
+      </div>
+      <div class="assistant-input"><input type="text" placeholder="Ask about your story..."></div>
+    </div>
+  </div>
+</body>
+</html>

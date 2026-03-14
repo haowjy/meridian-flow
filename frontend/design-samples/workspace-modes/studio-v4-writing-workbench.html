@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meridian Studio — Writing Workbench</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --surface: #fffaf1;
+      --surface-2: #f0e6d8;
+      --line: #d8c8b3;
+      --text: #33291d;
+      --muted: #776552;
+      --accent: #896f37;
+      --sage: #6f8777;
+      --rose: #9a7068;
+      --shadow: 0 18px 36px rgba(64, 46, 21, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+      color: var(--text);
+      background: linear-gradient(180deg, #f9f5ed 0%, #ede3d4 100%);
+      min-height: 100vh;
+    }
+    .app {
+      display: grid;
+      grid-template-columns: 64px 260px minmax(0, 1fr) 320px;
+      height: 100vh;
+    }
+    .rail, .explorer, .assistant {
+      background: rgba(255,250,241,0.76);
+      backdrop-filter: blur(14px);
+      border-right: 1px solid var(--line);
+    }
+    .rail {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 0;
+    }
+    .rail .brand {
+      width: 36px;
+      height: 36px;
+      border-radius: 12px;
+      background: var(--text);
+      color: #fbf6ed;
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+    }
+    .rail button {
+      width: 40px; height: 40px; border: none; border-radius: 12px; background: transparent; color: var(--muted); cursor: pointer;
+    }
+    .rail button.active { background: #efe3c4; color: var(--accent); }
+    .explorer, .editor, .assistant { overflow: auto; }
+    .explorer { padding: 18px 14px; }
+    .eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); }
+    .explorer h2, .assistant h2 { margin: 8px 0 14px; font-size: 21px; }
+    .folder-label {
+      margin: 14px 0 8px;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .doc-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.58);
+      border: 1px solid rgba(127,103,69,0.08);
+    }
+    .doc-item.active { background: linear-gradient(180deg, #fffbf4 0%, #f4ead8 100%); }
+    .doc-item strong { display: block; font-size: 14px; margin-bottom: 3px; }
+    .doc-item p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+    .doc-item .status {
+      white-space: nowrap;
+      color: var(--accent);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .editor {
+      background:
+        radial-gradient(circle at top right, rgba(255,255,255,0.78), transparent 24%),
+        linear-gradient(180deg, rgba(255,255,255,0.34), rgba(255,255,255,0.14));
+      padding: 22px 28px 18px;
+    }
+    .editor-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .editor-head h1 { margin: 8px 0 4px; font-size: 32px; font-weight: 600; }
+    .editor-head p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; max-width: 650px; }
+    .head-badges { display: flex; gap: 8px; }
+    .head-badges span {
+      padding: 7px 11px;
+      border-radius: 999px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      background: rgba(255,250,241,0.78);
+      border: 1px solid rgba(137,111,55,0.14);
+    }
+    .page {
+      max-width: 830px;
+      padding: 28px 42px;
+      border-radius: 22px;
+      background: rgba(255,252,246,0.84);
+      border: 1px solid rgba(127,103,69,0.08);
+      box-shadow: var(--shadow);
+    }
+    .page p {
+      margin: 0 0 16px;
+      font-size: 16px;
+      line-height: 1.82;
+      color: #443627;
+    }
+    .page p:last-child { margin-bottom: 0; }
+    .hunk {
+      position: relative;
+      padding: 14px 14px 14px 16px;
+      margin: 18px 0;
+      border-left: 3px solid var(--accent);
+      background: #fbf4e5;
+      border-radius: 0 14px 14px 0;
+    }
+    .hunk .label {
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+    }
+    .hunk .actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .hunk .actions span {
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      background: var(--surface-2);
+    }
+    .editor-foot {
+      display: flex;
+      gap: 16px;
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .assistant {
+      border-right: none;
+      padding: 16px 14px;
+      background: linear-gradient(180deg, rgba(255,250,241,0.9), rgba(240,230,216,0.9));
+    }
+    .assistant-card {
+      padding: 14px;
+      margin-bottom: 12px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.62);
+      border: 1px solid rgba(127,103,69,0.08);
+    }
+    .assistant-card h3 { margin: 0 0 10px; font-size: 16px; }
+    .assistant-card p, .assistant-card li {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .assistant-card ul { margin: 0; padding-left: 18px; }
+    .assistant-card .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .assistant-card .pill-row span {
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: var(--surface-2);
+      font-size: 11px;
+      color: var(--text);
+    }
+
+    @media (max-width: 1180px) {
+      .app { grid-template-columns: 64px 240px minmax(0, 1fr); }
+      .assistant { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <nav class="rail">
+      <div class="brand">M</div>
+      <button title="Agents">A</button>
+      <button title="Converse">C</button>
+      <button class="active" title="Studio">S</button>
+      <button title="Atlas">◎</button>
+    </nav>
+
+    <aside class="explorer">
+      <div class="eyebrow">Project Files</div>
+      <h2>Studio</h2>
+      <div class="folder-label">Drafts</div>
+      <div class="doc-item active">
+        <div>
+          <strong>Opening draft</strong>
+          <p>Active working document with inline proposal review.</p>
+        </div>
+        <div class="status">review</div>
+      </div>
+      <div class="doc-item">
+        <div>
+          <strong>Structure notes</strong>
+          <p>Reference notes for the current revision pass.</p>
+        </div>
+        <div class="status">open</div>
+      </div>
+      <div class="doc-item">
+        <div>
+          <strong>Release summary</strong>
+          <p>Short-form copy and metadata draft.</p>
+        </div>
+        <div class="status">draft</div>
+      </div>
+
+      <div class="folder-label">References</div>
+      <div class="doc-item">
+        <div>
+          <strong>Source summary</strong>
+          <p>Session artifact reused across writing threads.</p>
+        </div>
+        <div class="status">linked</div>
+      </div>
+    </aside>
+
+    <main class="editor">
+      <div class="editor-head">
+        <div>
+          <div class="eyebrow">Writing Workbench</div>
+          <h1>Opening draft</h1>
+          <p>Studio keeps the document in the center. Use it for direct editing, file exploration, and inline proposal review while the assistant stays available on the right.</p>
+        </div>
+        <div class="head-badges">
+          <span>2 hunks pending</span>
+          <span>Autosaved</span>
+        </div>
+      </div>
+
+      <section class="page">
+        <p>The introduction lands quickly now, but section two still lingers too long on setup before it turns toward the real point. The contrast is there; the pacing just needs a firmer hand.</p>
+        <p>The current draft keeps circling the same explanation from two angles. It reads clearly, but it also burns attention before the piece has earned that much space.</p>
+
+        <div class="hunk">
+          <div class="label">Inline proposal hunk</div>
+          <p>The shorter version makes the turn earlier, keeps the timeline marker, and leaves the supporting note available by reference instead of repeating it in the body.</p>
+          <div class="actions">
+            <span>Keep</span>
+            <span>Edit</span>
+            <span>Discard</span>
+          </div>
+        </div>
+
+        <p>That change lets the final paragraph do more work. Instead of feeling like a recap, it becomes the first moment where the argument actually gathers pressure.</p>
+      </section>
+
+      <div class="editor-foot">
+        <span>1,284 words</span>
+        <span>Last saved 2m ago</span>
+        <span>1 linked note</span>
+      </div>
+    </main>
+
+    <aside class="assistant">
+      <div class="eyebrow">Assistant</div>
+      <h2>Context</h2>
+
+      <div class="assistant-card">
+        <h3>Active thread</h3>
+        <p>Revision pass · Opened from Draft Sprint. This thread is focused on shortening section two without losing framing context.</p>
+        <div class="pill-row">
+          <span>Open in Converse</span>
+          <span>View session</span>
+        </div>
+      </div>
+
+      <div class="assistant-card">
+        <h3>Review cues</h3>
+        <ul>
+          <li>One hunk shortens repeated explanation.</li>
+          <li>One hunk adjusts the bridge into the close.</li>
+        </ul>
+      </div>
+
+      <div class="assistant-card">
+        <h3>Handoff</h3>
+        <p>A continuity thread is still checking linked references. When that finishes, Studio can surface any new inline hunks directly in this document.</p>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>

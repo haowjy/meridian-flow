@@ -8,6 +8,7 @@ This directory contains implementation plans for features in development or read
 - `references/` - Internal-linking, document references, and context-window/compaction planning. There is no sub-README, so start with the highest-level current plan in this folder before reading deeper dependencies.
 - `import/` - File import strategy and format handling. Start with the top plan in this folder to understand scope boundaries before touching implementation docs.
 - `agents/` - Agent/skills product plans and related archives. Read `agents/agents.md` first to understand ownership and active tracks in this domain.
+- `frontend-workspace-modes/` - High-level workspace rail refactor for `Agents`, `Converse`, and `Studio`. Read `frontend-workspace-modes/README.md` first.
 - `meridian-channel/` - Orchestration/runtime planning for the meridian-channel track (active strategy/risk docs plus archived design/implementation slices). Start with `meridian-channel/strategic-direction.md`, then `meridian-channel/risk-and-gaps.md`.
 - `ws-transport-v2/` - Per-document WebSocket refactor + two-lane transport. Supersedes Phase 4.6. Read `ws-transport-v2/README.md` first.
 - `collab-data-model-v2/` - Collaboration data model evolution: one canonical Y.Doc, ephemeral projection, immediate undoable actions, thread-level undo/reapply. Read `collab-data-model-v2/README.md` first.

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meridian - Agents Monitor Grid</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, 'Times New Roman', serif; background: #1a1714; color: #d4c8b8; height: 100vh; display: flex; overflow: hidden; }
+  .rail { width: 56px; background: #141210; display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 16px; border-right: 1px solid #2a2520; }
+  .rail-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; cursor: pointer; color: #8a7e6e; }
+  .rail-icon:hover { background: #2a2520; color: #d4c8b8; }
+  .rail-icon.active { background: #3a2e1e; color: #e8b84a; }
+  .thread-list { width: 240px; background: #1e1b17; border-right: 1px solid #2a2520; display: flex; flex-direction: column; }
+  .thread-header { padding: 14px 16px; font-size: 13px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: #8a7e6e; border-bottom: 1px solid #2a2520; }
+  .thread-item { padding: 10px 16px; border-bottom: 1px solid #22201c; cursor: pointer; }
+  .thread-item:hover { background: #252219; }
+  .thread-item.active { background: #2a2418; border-left: 3px solid #e8b84a; }
+  .thread-name { font-size: 13px; color: #d4c8b8; margin-bottom: 3px; }
+  .thread-meta { font-size: 11px; color: #6a6050; }
+  .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+  .dot-running { background: #7ab87a; }
+  .dot-queued { background: #e8b84a; }
+  .dot-done { background: #5a8a5a; }
+  .dot-idle { background: #4a4438; }
+  .center { flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1px; background: #2a2520; padding: 1px; }
+  .stream-card { background: #1e1b17; display: flex; flex-direction: column; overflow: hidden; }
+  .card-bar { padding: 8px 14px; display: flex; justify-content: space-between; align-items: center; font-size: 12px; border-bottom: 1px solid #2a2520; background: #1a1814; }
+  .card-title { font-weight: 600; color: #c8b898; }
+  .card-status { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
+  .st-running { background: #1e3020; color: #7ab87a; }
+  .st-queued { background: #302a18; color: #e8b84a; }
+  .st-done { background: #1e2818; color: #5a8a5a; }
+  .card-body { flex: 1; padding: 10px 14px; overflow-y: auto; font-size: 12px; line-height: 1.6; }
+  .log-line { padding: 2px 0; color: #9a8e7e; }
+  .log-line .ts { color: #5a5448; margin-right: 6px; font-family: monospace; font-size: 11px; }
+  .log-line.highlight { color: #c8b898; }
+  .progress-bar { height: 3px; background: #2a2520; margin-top: 6px; border-radius: 2px; }
+  .progress-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, #8a6a2a, #e8b84a); }
+  .detail { width: 280px; background: #1e1b17; border-left: 1px solid #2a2520; padding: 16px; overflow-y: auto; }
+  .detail h3 { font-size: 14px; color: #c8b898; margin-bottom: 12px; }
+  .detail-section { margin-bottom: 16px; }
+  .detail-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: #6a6050; margin-bottom: 4px; }
+  .detail-value { font-size: 13px; color: #b8a888; line-height: 1.5; }
+  .detail-list { list-style: none; }
+  .detail-list li { font-size: 12px; padding: 4px 0; color: #9a8e7e; border-bottom: 1px solid #22201c; }
+  .detail-list li span { float: right; font-size: 11px; color: #6a6050; }
+  .queue-count { font-size: 20px; font-weight: 700; color: #e8b84a; }
+</style>
+</head>
+<body>
+  <nav class="rail">
+    <div class="rail-icon" title="Write">W</div>
+    <div class="rail-icon active" title="Agents">A</div>
+    <div class="rail-icon" title="Outline">O</div>
+    <div class="rail-icon" title="World">B</div>
+    <div class="rail-icon" title="Settings">S</div>
+  </nav>
+  <aside class="thread-list">
+    <div class="thread-header">Agent Threads</div>
+    <div class="thread-item active">
+      <div class="thread-name"><span class="status-dot dot-running"></span>Chapter Polish</div>
+      <div class="thread-meta">Ch 47-52 -- running 3m</div>
+    </div>
+    <div class="thread-item">
+      <div class="thread-name"><span class="status-dot dot-running"></span>Continuity Pass</div>
+      <div class="thread-meta">Arc 3 cross-refs -- running 1m</div>
+    </div>
+    <div class="thread-item">
+      <div class="thread-name"><span class="status-dot dot-queued"></span>Worldbuilding Audit</div>
+      <div class="thread-meta">Magic system -- queued</div>
+    </div>
+    <div class="thread-item">
+      <div class="thread-name"><span class="status-dot dot-done"></span>Series Metadata</div>
+      <div class="thread-meta">Tags + blurbs -- done 12m ago</div>
+    </div>
+    <div class="thread-item">
+      <div class="thread-name"><span class="status-dot dot-idle"></span>Publish Prep</div>
+      <div class="thread-meta">Ch 46 formatting -- idle</div>
+    </div>
+  </aside>
+  <main class="center">
+    <div class="stream-card">
+      <div class="card-bar"><span class="card-title">Chapter Polish</span><span class="card-status st-running">running</span></div>
+      <div class="card-body">
+        <div class="log-line"><span class="ts">12:04</span>Scanning Ch 47 for pacing issues...</div>
+        <div class="log-line"><span class="ts">12:04</span>Found 3 overlong paragraphs in mid-chapter</div>
+        <div class="log-line highlight"><span class="ts">12:05</span>Tightened dialogue tags, Ch 48 lines 140-188</div>
+        <div class="log-line"><span class="ts">12:06</span>Smoothing POV transition Ch 49 opening</div>
+        <div class="log-line highlight"><span class="ts">12:06</span>Rewrote Maren's interior monologue (draft ready)</div>
+        <div class="progress-bar"><div class="progress-fill" style="width:55%"></div></div>
+      </div>
+    </div>
+    <div class="stream-card">
+      <div class="card-bar"><span class="card-title">Continuity Pass</span><span class="card-status st-running">running</span></div>
+      <div class="card-body">
+        <div class="log-line"><span class="ts">12:05</span>Cross-referencing Arc 3 character timelines</div>
+        <div class="log-line highlight"><span class="ts">12:05</span>Flag: Liran's scar moved from left to right arm (Ch 34 vs 41)</div>
+        <div class="log-line"><span class="ts">12:06</span>Validating season references against world calendar</div>
+        <div class="log-line"><span class="ts">12:06</span>Checking faction name consistency across 18 chapters</div>
+        <div class="progress-bar"><div class="progress-fill" style="width:30%"></div></div>
+      </div>
+    </div>
+    <div class="stream-card">
+      <div class="card-bar"><span class="card-title">Worldbuilding Audit</span><span class="card-status st-queued">queued</span></div>
+      <div class="card-body">
+        <div class="log-line"><span class="ts">--:--</span>Pending: magic system rule extraction</div>
+        <div class="log-line"><span class="ts">--:--</span>Pending: cost/limitation consistency check</div>
+        <div class="log-line"><span class="ts">--:--</span>Pending: cross-ref with codex entries</div>
+        <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
+      </div>
+    </div>
+    <div class="stream-card">
+      <div class="card-bar"><span class="card-title">Series Metadata</span><span class="card-status st-done">done</span></div>
+      <div class="card-body">
+        <div class="log-line"><span class="ts">11:48</span>Generated 6 genre tags from content analysis</div>
+        <div class="log-line"><span class="ts">11:50</span>Wrote 120-word series blurb (v2)</div>
+        <div class="log-line highlight"><span class="ts">11:52</span>Updated arc summaries for Arcs 1-3</div>
+        <div class="log-line"><span class="ts">11:52</span>All metadata tasks complete.</div>
+        <div class="progress-bar"><div class="progress-fill" style="width:100%"></div></div>
+      </div>
+    </div>
+  </main>
+  <aside class="detail">
+    <h3>Chapter Polish</h3>
+    <div class="detail-section">
+      <div class="detail-label">Scope</div>
+      <div class="detail-value">Chapters 47 through 52 -- prose tightening, dialogue cleanup, POV transitions</div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-label">Progress</div>
+      <div class="detail-value">3 of 6 chapters processed</div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-label">Edits Proposed</div>
+      <ul class="detail-list">
+        <li>Ch 47: trim 3 paragraphs <span>ready</span></li>
+        <li>Ch 48: dialogue tags <span>ready</span></li>
+        <li>Ch 49: POV transition <span>drafting</span></li>
+        <li>Ch 50-52 <span>pending</span></li>
+      </ul>
+    </div>
+    <div class="detail-section">
+      <div class="detail-label">Queue Depth</div>
+      <div class="queue-count">2</div>
+      <div class="detail-value">Worldbuilding Audit, Publish Prep</div>
+    </div>
+  </aside>
+</body>
+</html>

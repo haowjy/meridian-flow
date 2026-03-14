@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meridian Converse — Docs + Review Tabs</title>
+  <style>
+    :root {
+      --bg: #f4efe5; --surface: #fffaf1; --surface-2: #f1e6d5; --line: #d7c7b1;
+      --text: #33291d; --muted: #796552; --accent: #8a6f35; --sage: #5f8575;
+      --shadow: 0 16px 32px rgba(65,47,22,0.07);
+    }
+    * { box-sizing: border-box; margin: 0; }
+    body { font-family: "Iowan Old Style","Palatino Linotype",Georgia,serif; color: var(--text); background: linear-gradient(180deg,#f8f4ec,#efe4d3); min-height: 100vh; }
+    .app { display: grid; grid-template-columns: 56px 230px minmax(0,1fr) 300px; height: 100vh; }
+    .rail,.threads,.ctx { background: rgba(255,250,241,0.78); backdrop-filter: blur(12px); border-right: 1px solid var(--line); }
+    .rail { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px 0; }
+    .brand { width: 32px; height: 32px; border-radius: 10px; background: var(--text); color: #f8f4ec; display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+    .rail button { width: 36px; height: 36px; border: none; border-radius: 10px; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: 13px; }
+    .rail button.active { background: #efe4c3; color: var(--accent); }
+    .eyebrow { font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); }
+    .threads { padding: 14px 12px; overflow: auto; }
+    .threads h2 { margin: 6px 0 12px; font-size: 18px; }
+    .th { padding: 10px; margin-bottom: 8px; border-radius: 14px; background: rgba(255,255,255,0.6); border: 1px solid rgba(127,103,69,0.07); cursor: pointer; }
+    .th.active { background: linear-gradient(180deg,#fffbf3,#f4ead8); }
+    .th strong { display: block; font-size: 14px; margin-bottom: 3px; }
+    .th p { color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .conv { background: radial-gradient(circle at top right,rgba(255,255,255,0.6),transparent 28%),linear-gradient(180deg,rgba(255,255,255,0.35),rgba(255,255,255,0.1)); padding: 18px 24px 14px; display: flex; flex-direction: column; overflow: auto; }
+    .conv-head { margin-bottom: 14px; }
+    .conv-head h1 { font-size: 26px; font-weight: 600; margin: 4px 0; }
+    .conv-head p { color: var(--muted); font-size: 13px; max-width: 580px; line-height: 1.5; }
+    .stream { display: flex; flex-direction: column; gap: 12px; max-width: 760px; flex: 1; }
+    .msg { padding: 14px 16px; border-radius: 18px; box-shadow: var(--shadow); border: 1px solid rgba(127,103,69,0.07); line-height: 1.65; font-size: 14px; }
+    .msg.ai { background: rgba(255,255,255,0.8); }
+    .msg.user { align-self: flex-end; max-width: 76%; background: #f0e6d3; }
+    .sender { margin-bottom: 4px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .12em; }
+    .ref { display: inline-block; margin-top: 6px; padding: 3px 8px; border-radius: 999px; background: var(--surface-2); color: var(--accent); font-size: 10px; cursor: pointer; }
+    .open-studio { display: inline-block; margin-top: 6px; margin-left: 4px; padding: 3px 8px; border-radius: 999px; background: var(--sage); color: #fff; font-size: 10px; cursor: pointer; }
+    .input { position: sticky; bottom: 0; margin-top: 14px; padding-top: 12px; background: linear-gradient(180deg,rgba(244,239,229,0),rgba(244,239,229,0.94) 40%); }
+    .input-shell { display: flex; gap: 8px; max-width: 760px; padding: 8px; border-radius: 18px; background: rgba(255,250,241,0.88); border: 1px solid rgba(127,103,69,0.12); box-shadow: var(--shadow); }
+    .input-shell input { flex: 1; border: none; outline: none; background: transparent; font: inherit; font-size: 13px; color: var(--text); }
+    .input-shell button { border: none; border-radius: 12px; background: var(--text); color: #fff8ed; padding: 8px 14px; font: inherit; font-size: 13px; cursor: pointer; }
+    /* Right context pane */
+    .ctx { border-right: none; display: flex; flex-direction: column; padding: 14px 12px; background: linear-gradient(180deg,rgba(255,250,241,0.92),rgba(241,230,213,0.92)); overflow: hidden; }
+    .ctx-tabs { display: flex; gap: 4px; margin-bottom: 10px; flex-shrink: 0; }
+    .ctx-tabs button { padding: 6px 12px; border-radius: 999px; border: 1px solid transparent; background: rgba(255,255,255,0.5); color: var(--muted); font: inherit; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; cursor: pointer; }
+    .ctx-tabs button.active { background: #efe4c3; color: var(--accent); border-color: rgba(138,111,53,0.15); }
+    .ctx-body { flex: 1; overflow: auto; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .card { padding: 12px; margin-bottom: 10px; border-radius: 14px; background: rgba(255,255,255,0.6); border: 1px solid rgba(127,103,69,0.07); }
+    .card h3 { font-size: 14px; margin-bottom: 6px; }
+    .card p, .card li { color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .card ul { padding-left: 16px; }
+    /* Docs panel: explorer */
+    .doc-nav { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-shrink: 0; }
+    .doc-nav .back { display: none; border: none; background: rgba(255,255,255,0.5); border-radius: 8px; padding: 3px 8px; font: inherit; font-size: 11px; color: var(--accent); cursor: pointer; }
+    .doc-nav .back.visible { display: inline-block; }
+    .doc-nav .crumb { font-size: 11px; color: var(--muted); }
+    .doc-item { padding: 8px 10px; border-radius: 10px; cursor: pointer; font-size: 13px; border: 1px solid transparent; margin-bottom: 4px; }
+    .doc-item:hover { background: rgba(255,255,255,0.5); border-color: rgba(127,103,69,0.08); }
+    .doc-item .path { font-size: 10px; color: var(--muted); margin-top: 2px; }
+    .doc-preview { display: none; }
+    .doc-preview h3 { font-size: 15px; margin-bottom: 8px; }
+    .doc-preview .body { font-size: 13px; line-height: 1.7; color: var(--text); }
+    .doc-preview .body p { margin-bottom: 8px; }
+    .doc-preview .studio-link { display: inline-block; margin-top: 8px; padding: 5px 12px; border-radius: 10px; background: var(--sage); color: #fff; font-size: 11px; cursor: pointer; border: none; font: inherit; }
+    /* Diff in review */
+    .diff { margin-top: 6px; padding: 8px; border-radius: 10px; background: #faf4e7; font-size: 11px; line-height: 1.5; }
+    .diff .add { color: var(--sage); }
+    .diff .del { color: #9a6d66; text-decoration: line-through; }
+    .review-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .review-actions button { border: none; border-radius: 8px; padding: 4px 10px; font: inherit; font-size: 11px; cursor: pointer; }
+    .btn-accept { background: var(--sage); color: #fff; }
+    .btn-dismiss { background: var(--surface-2); color: var(--muted); }
+    @media(max-width:1100px){ .app{grid-template-columns:56px 210px minmax(0,1fr);} .ctx{display:none;} }
+  </style>
+</head>
+<body>
+<div class="app">
+  <nav class="rail">
+    <div class="brand">M</div>
+    <button title="Agents">A</button>
+    <button class="active" title="Converse">C</button>
+    <button title="Studio">S</button>
+  </nav>
+  <aside class="threads">
+    <div class="eyebrow">Threads</div>
+    <h2>Converse</h2>
+    <div class="th active"><strong>Chapter 14 revision</strong><p>Tightening the midpoint turn and fixing pacing in the second half.</p></div>
+    <div class="th"><strong>Character arc check</strong><p>Reviewing Lena's motivation across chapters 8-14.</p></div>
+    <div class="th"><strong>Worldbuilding notes</strong><p>Consolidating geography references.</p></div>
+  </aside>
+  <main class="conv">
+    <div class="conv-head">
+      <div class="eyebrow">Thread</div>
+      <h1>Chapter 14 revision</h1>
+      <p>Discuss changes, review proposals, and reference documents without leaving the conversation.</p>
+    </div>
+    <section class="stream">
+      <div class="msg ai"><div class="sender">Assistant</div>The midpoint turn in section two still restates the setup. I trimmed 80 words and kept the tension line intact. See the proposal in Review.<span class="ref" onclick="switchTab('review')">View proposal</span><span class="open-studio">Open in Studio</span></div>
+      <div class="msg user"><div class="sender">You</div>Good direction. Can you also pull up the earlier draft so I can compare side by side?</div>
+      <div class="msg ai"><div class="sender">Assistant</div>Done. I've loaded chapter-14-v2.md in the Docs pane. The key difference is paragraphs 3-5 where the revised version compresses the flashback transition.<span class="ref" onclick="openDoc('chapter-14-v2')">View in Docs</span></div>
+    </section>
+    <div class="input"><div class="input-shell"><input value="Keep the compressed version but restore the last image..." aria-label="Prompt"><button>Send</button></div></div>
+  </main>
+  <aside class="ctx">
+    <div class="ctx-tabs">
+      <button class="active" data-tab="docs" onclick="switchTab('docs')">Docs</button>
+      <button data-tab="review" onclick="switchTab('review')">Review</button>
+    </div>
+    <div class="ctx-body">
+      <div class="panel active" id="panel-docs">
+        <div class="doc-nav"><button class="back" onclick="closeDoc()">Back</button><span class="crumb">Documents</span></div>
+        <div id="doc-list">
+          <div class="doc-item" onclick="openDoc('chapter-14-v3')"><strong>chapter-14-v3.md</strong><div class="path">drafts/chapter-14-v3.md</div></div>
+          <div class="doc-item" onclick="openDoc('chapter-14-v2')"><strong>chapter-14-v2.md</strong><div class="path">drafts/chapter-14-v2.md</div></div>
+          <div class="doc-item" onclick="openDoc('notes-midpoint')"><strong>midpoint-notes.md</strong><div class="path">notes/midpoint-notes.md</div></div>
+          <div class="doc-item" onclick="openDoc('arc-lena')"><strong>lena-arc.md</strong><div class="path">characters/lena-arc.md</div></div>
+        </div>
+        <div class="doc-preview" id="doc-view">
+          <h3 id="doc-title"></h3>
+          <div class="body" id="doc-body"></div>
+          <button class="studio-link">Open in Studio</button>
+        </div>
+      </div>
+      <div class="panel" id="panel-review">
+        <div class="card">
+          <h3>Proposal: Compress midpoint turn</h3>
+          <p>Remove restated setup; keep the tension line as anchor.</p>
+          <div class="diff">
+            <div class="del">- She thought about what he said for a long moment, turning the words over, remembering the argument from two days before.</div>
+            <div class="add">+ She turned his words over. The argument was still fresh.</div>
+          </div>
+          <div class="review-actions"><button class="btn-accept">Accept</button><button class="btn-dismiss">Dismiss</button><button class="studio-link" style="padding:4px 10px;margin:0;font-size:11px;border-radius:8px;">Open in Studio</button></div>
+        </div>
+        <div class="card">
+          <h3>Proposal: Trim flashback transition</h3>
+          <p>Cut the three-sentence lead-in; start inside the memory.</p>
+          <div class="diff">
+            <div class="del">- It had been a Thursday when everything changed. She remembered it clearly now. The light was different that morning.</div>
+            <div class="add">+ The light was different that Thursday morning.</div>
+          </div>
+          <div class="review-actions"><button class="btn-accept">Accept</button><button class="btn-dismiss">Dismiss</button></div>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+<script>
+const docs = {
+  'chapter-14-v3': { title: 'chapter-14-v3.md', body: '<p>The market square emptied fast. She turned his words over. The argument was still fresh.</p><p>By the time she reached the bridge, the last stalls were folding down and the light was thinning into that grey the river towns got before rain.</p>' },
+  'chapter-14-v2': { title: 'chapter-14-v2.md', body: '<p>She thought about what he said for a long moment, turning the words over, remembering the argument from two days before. The market was closing around her.</p><p>It had been a Thursday when everything changed. She remembered it clearly now. The light was different that morning.</p>' },
+  'notes-midpoint': { title: 'midpoint-notes.md', body: '<p>The midpoint needs to feel like a hinge, not a pause. Reader should sense the shift before the character names it.</p><p>Key beats: recognition, denial, forced action.</p>' },
+  'arc-lena': { title: 'lena-arc.md', body: '<p>Ch 1-7: reactive, shaped by others\' expectations. Ch 8-14: begins making choices that cost something. Turning point is the bridge scene in Ch 14.</p>' }
+};
+function switchTab(tab) {
+  document.querySelectorAll('.ctx-tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + tab));
+}
+function openDoc(id) {
+  const d = docs[id]; if (!d) return;
+  switchTab('docs');
+  document.getElementById('doc-list').style.display = 'none';
+  const v = document.getElementById('doc-view'); v.style.display = 'block';
+  document.getElementById('doc-title').textContent = d.title;
+  document.getElementById('doc-body').innerHTML = d.body;
+  document.querySelector('.doc-nav .back').classList.add('visible');
+  document.querySelector('.doc-nav .crumb').textContent = 'Documents / ' + d.title;
+}
+function closeDoc() {
+  document.getElementById('doc-list').style.display = '';
+  document.getElementById('doc-view').style.display = 'none';
+  document.querySelector('.doc-nav .back').classList.remove('visible');
+  document.querySelector('.doc-nav .crumb').textContent = 'Documents';
+}
+</script>
+</body>
+</html>
