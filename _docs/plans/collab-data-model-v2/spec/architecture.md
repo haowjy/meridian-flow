@@ -6,7 +6,7 @@ audience: developer, architect
 
 ## Overview
 
-This plan covers core data model changes to the collaboration system and an improved manual-path experience for writers who want to review agent changes before they land.
+This plan covers core data model changes to the collaboration system. The proposal model is participant-agnostic — proposals can come from AI agents or human collaborators. The projection, diff, and undo primitives work the same regardless of who created the proposal.
 
 ### What's Changing
 
@@ -18,23 +18,32 @@ This plan covers core data model changes to the collaboration system and an impr
 
 ### Two Collaboration Modes
 
-Agents write through the same pipeline regardless of mode. The mode determines when changes land on canonical.
+Collaborators (AI or human) write through the same pipeline regardless of mode. The mode is per-user and determines when incoming proposals land on canonical.
 
-| Mode | When agent writes... | Writer experience |
-|------|---------------------|-------------------|
-| **Auto-apply** (existing) | yjs_update applied to canonical immediately, proposal marked `accepted` | Changes appear inline. Writer can revert via thread undo. |
-| **Manual** | yjs_update stored as `pending` proposal | Writer sees diff hunks, accepts/rejects/edits when ready. No session — changes accumulate continuously. |
+| Mode | When a proposal arrives... | User experience |
+|------|---------------------------|-----------------|
+| **Auto-apply** | yjs_update applied to canonical immediately, proposal marked `accepted` | Changes appear inline. User can revert via thread undo. |
+| **Manual** | yjs_update stored as `pending` proposal | User sees diff hunks, accepts/rejects/edits when ready. No session — changes accumulate continuously. |
 
 Both modes are continuous. There is no "review session" with entry/exit. In manual mode, pending proposals are always visible as inline diffs whenever they exist.
 
+### Per-User Projection
+
+Projection is per-user: only pending proposals where `created_by_user_id = current_user` are included. This means:
+
+- Each user sees only their own pending proposals as diff hunks
+- Other users' pending proposals are invisible until accepted into canonical
+- The AI sees the same projected view as its thread owner (backend computes the same projection)
+- Other users' AI activity can be shown as awareness indicators without revealing content
+
 ```mermaid
 flowchart LR
-    A["AI edit_document call"] --> B["Backend creates proposal<br/>with yjs_update"]
+    A["Collaborator proposes edit"] --> B["Backend creates proposal<br/>with yjs_update"]
     B --> C{"auto-apply?"}
     C -->|yes| D["Apply to canonical<br/>mark accepted<br/>broadcast"]
     C -->|no| E["Store as pending<br/>broadcast proposal:new"]
-    E --> F["Frontend derives diff<br/>shows inline hunks"]
-    F --> G["Writer accepts/rejects<br/>whenever they want"]
+    E --> F["Owner's frontend derives diff<br/>shows inline hunks"]
+    F --> G["Owner accepts/rejects<br/>whenever they want"]
 ```
 
 ## Core Data Flow (Manual Path)
@@ -120,10 +129,10 @@ Agent P3 proposes: insert "black " before "cat" — but the canonical already ha
 
 ```mermaid
 stateDiagram-v2
-    [*] --> pending : agent writes
+    [*] --> pending : collaborator proposes
 
-    pending --> accepted : auto-apply / writer accepts hunk
-    pending --> rejected : writer rejects hunk
+    pending --> accepted : auto-apply / user accepts hunk
+    pending --> rejected : user rejects hunk
     pending --> stale : projection GC
 
     accepted --> reverted : thread undo
@@ -137,9 +146,9 @@ stateDiagram-v2
 
 | Status | Meaning | Undo/Redo? |
 |--------|---------|-----------|
-| `pending` | Agent wrote, waiting for writer action | N/A |
-| `accepted` | Writer accepted (or auto-applied) | Thread undo |
-| `rejected` | Writer rejected | Session Ctrl-Z while in stack, or thread reapply |
+| `pending` | Proposed, waiting for action | N/A |
+| `accepted` | User accepted (or auto-applied) | Thread undo |
+| `rejected` | User rejected | Session Ctrl-Z while in stack, or thread reapply |
 | `stale` | Canonical already contains the change — auto-resolved by projection GC | No |
 | `reverted` | Was accepted, then thread-undone | Thread reapply |
 
@@ -194,10 +203,10 @@ UndoManager reverses:
   P1 reappears as a diff hunk
 ```
 
-## Edit Tool Linkage
+## Proposal Creation
 
-- Every AI `edit_document` call creates one proposal row with `status = 'pending'` and its `yjs_update`.
-- `edit_tool -> proposal -> yjs_update -> status` chain stays current after every recompute and action.
+- Every proposal (from AI `edit_document` or human suggest-mode edit) creates one proposal row with `status = 'pending'` and its `yjs_update`.
+- `proposal -> yjs_update -> status` chain stays current after every recompute and action.
 - Projection GC marks no-diff pending proposals as `stale` on every derive.
 - Thread UI reads proposal row status to show `accepted`, `rejected`, `stale`, `reverted`.
 
@@ -205,10 +214,10 @@ UndoManager reverses:
 
 | Decision | Rationale |
 |----------|-----------|
-| No persistent AI document | Removes stale state and convergence machinery. Diff is computed on demand. |
+| No persistent projection document | Removes stale state and convergence machinery. Diff is computed on demand. |
 | Proposals store `yjs_update` | Binary Yjs operations compose cleanly. No text-diff translation layer. |
 | `_proposal_status` in Y.Doc | Enables Ctrl-Z for reject (Y.Map mutation is tracked by UndoManager) and delta-based backend sync. |
-| Grouped region hunks | Writers act on visible regions, not individual proposals. Multiple proposals can contribute to one hunk. |
+| Grouped region hunks | Users act on visible regions, not individual proposals. Multiple proposals can contribute to one hunk. |
 | Immediate actions | No finalization step. Accept/reject are durable immediately. |
 | Projection GC | Stale proposals are cleaned up automatically — no manual resolution needed. |
 | Edit is plain typing | No separate status. User types with `ORIGIN_HUMAN` after accept or reject. |
@@ -228,7 +237,7 @@ UndoManager reverses:
 **Out of scope:**
 - Multi-user concurrent conflict policy
 - Backend hunk derivation or persistence
-- Persistent AI-version Y.Doc
+- Persistent projection Y.Doc
 
 ## Cross-References
 
