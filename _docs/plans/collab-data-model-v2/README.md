@@ -36,14 +36,12 @@ flowchart LR
 
 | Doc | Purpose |
 |-----|---------|
-| [Architecture](spec/architecture.md) | Data model evolution, two modes, key decisions |
-| [Append-Only Persistence](spec/append-only-persistence.md) | Update log, checkpoints, bookmarks, compaction |
-| [Dual-Version Yjs Model](spec/dual-version-yjs-model.md) | Canonical Y.Doc + ephemeral projection mental model |
-| [Frontend Diff Model](spec/frontend-diff-model.md) | Projection/diff pipeline and grouped region hunks |
-| [Local-First Authority](spec/local-first-authority.md) | Immediate local actions and backend status mirroring |
-| [Session Undo Design](spec/session-undo-design.md) | Single UndoManager across text + status map |
+| [Architecture](spec/architecture.md) | Data model evolution, canonical + projection model, two modes, key decisions |
+| [Append-Only Persistence](spec/append-only-persistence.md) | Update log, checkpoints, bookmarks, compaction, GC strategy |
+| [Frontend Diff Model](spec/frontend-diff-model.md) | Projection/diff pipeline, grouped region hunks, CM6 rendering |
+| [Local-First Authority](spec/local-first-authority.md) | Immediate local actions, transaction code, backend status mirroring |
+| [Undo Design](spec/undo.md) | Session Ctrl-Z + thread-level undo/reapply |
 | [Schema Design](spec/schema-design.md) | Database schema, dual authority, eliminated complexity |
-| [Thread-Level Undo](spec/thread-level-undo.md) | Per-proposal undo/reapply via stored before/after text |
 | [Implementation Plan](spec/plan.md) | Phased execution plan and dependencies |
 
 ## Dependencies

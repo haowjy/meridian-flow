@@ -113,16 +113,6 @@ Unchanged request-idempotency table.
 
 Pending proposals are represented by missing keys plus proposal row `status = 'pending'`.
 
-## Proposal Status Matrix
-
-| Status | Meaning | Undo/Redo? |
-|--------|---------|-----------|
-| `pending` | Waiting for action | N/A |
-| `accepted` | User explicitly accepted or auto-applied | Yes (thread undo) |
-| `rejected` | User explicitly rejected | Session Ctrl-Z while in stack, or thread reapply |
-| `stale` | Auto-resolved, canonical diverged and no diff remains | No |
-| `reverted` | Accepted then thread-undone | Yes (thread reapply) |
-
 ## What Was Eliminated
 
 | Eliminated | Reason |
@@ -133,11 +123,14 @@ Pending proposals are represented by missing keys plus proposal row `status = 'p
 | Legacy proposal grouping linkage columns | Grouped hunks are derived dynamically from projection diff regions |
 | Separate review-edit proposal status | Edit is plain user typing after reject or after accept |
 | Separate decision persistence stores | Canonical `_proposal_status` already persists via Yjs |
+| Persistent AI-version Y.Doc or Y.Text | Projection is ephemeral, computed on demand |
+| Extra review command protocol | Actions are immediate Yjs transactions |
+
+For the full proposal status lifecycle, see [Architecture](architecture.md).
 
 ## Cross-References
 
 - [Architecture](architecture.md)
-- [Dual-Version Yjs Model](dual-version-yjs-model.md)
-- [Session Undo Design](session-undo-design.md)
-- [Thread-Level Undo](thread-level-undo.md)
+- [Local-First Authority](local-first-authority.md)
+- [Undo Design](undo.md)
 - [Implementation Plan](plan.md)
