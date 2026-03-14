@@ -2,13 +2,31 @@
 detail: standard
 audience: developer, architect
 ---
-# Local-First Review Authority
+# Local-First Authority
 
 ## Overview
 
-Review behavior is local-first on canonical Yjs data structures. The frontend applies actions immediately; the backend mirrors status from synced Yjs state.
+Actions are local-first on canonical Yjs data structures. The frontend applies accept/reject immediately; the backend mirrors status from synced Yjs state. No round-trip needed for any user action.
 
-Every AI `edit_tool` call creates a proposal row with `status = 'pending'` and a `yjs_update` payload. The frontend and backend keep that proposal status current through accept/reject, projection GC (`stale`), and thread undo/redo (`reverted`).
+```mermaid
+sequenceDiagram
+    participant W as Writer
+    participant FE as Frontend
+    participant YDoc as Canonical Y.Doc
+    participant Sync as Yjs Sync
+    participant BE as Backend
+
+    W->>FE: clicks Accept on hunk
+    FE->>YDoc: transact(ORIGIN_REVIEW_ACCEPT)
+    Note over YDoc: Y.Text: apply proposal updates<br/>Y.Map: set(P1, 'accepted')
+    YDoc-->>FE: hunk disappears instantly
+    YDoc->>Sync: Yjs update delta
+    Sync->>BE: delta arrives
+    BE->>BE: detect _review_status change
+    BE->>BE: mirror proposal row status
+```
+
+The writer sees the result immediately. Backend mirroring is asynchronous and driven by Yjs sync deltas.
 
 ## Authority Boundary
 
@@ -106,14 +124,25 @@ Backend logic on Yjs sync:
 | Undo stack | Preserved | Lost |
 | Display hunks | Re-derived | Re-derived |
 
-## Implementation Notes
+### Example: Tab Reload Mid-Review
 
-Backend status mirroring is event-driven from `_review_status` Y.Map deltas only; no full-state reconciliation step is needed on reconnect because Yjs sync already guarantees convergence.
+```
+Writer has accepted P1 and rejected P2. Undo stack has both.
+
+Tab reloads:
+  1. Canonical Y.Doc rehydrated from backend (includes P1 text + _review_status)
+  2. _review_status already has P1='accepted', P2='rejected' (persisted in Y.Doc)
+  3. Projection re-derives — P1 and P2 excluded (not pending), only P3 shows
+  4. Undo stack is empty — session undo for P1/P2 is lost
+  5. Thread undo for P1 is still available (uses stored text, not undo stack)
+```
+
+No full-state reconciliation needed — Yjs sync guarantees convergence. Backend mirrors `_review_status` changes as they arrive via delta, not by scanning the full map.
 
 ## Cross-References
 
 - [Architecture](architecture.md)
 - [Dual-Version Yjs Model](dual-version-yjs-model.md)
 - [Frontend Diff Model](frontend-diff-model.md)
-- [Review Undo Design](review-undo-design.md)
+- [Session Undo Design](session-undo-design.md)
 - [Implementation Plan](plan.md)

@@ -2,7 +2,7 @@
 detail: standard
 audience: developer, architect
 ---
-# Review Undo Design
+# Session Undo Design
 
 ## Overview
 
@@ -32,10 +32,7 @@ const undoManager = new Y.UndoManager(
   }
 );
 
-// Enter review mode
-undoManager.clear();
-
-// Exit review mode
+// On mode transition (e.g., toggling manual diff view)
 undoManager.clear();
 ```
 
@@ -89,6 +86,41 @@ doc.transact(() => {
 | Accept hunk | Reverts all grouped proposal updates and status writes as one step |
 | Reject hunk | Reverts all grouped status writes as one step |
 | Typing | Reverts recent text change |
+
+### Example: Interleaved Undo Stack
+
+Writer performs these actions in order:
+
+```
+1. Type "Hello "                          (ORIGIN_HUMAN)
+2. Accept hunk [P1]                       (ORIGIN_REVIEW_ACCEPT)
+3. Type "world"                           (ORIGIN_HUMAN)
+4. Reject hunk [P2, P3]                   (ORIGIN_REVIEW_REJECT)
+```
+
+Undo stack (top = most recent):
+
+```
+[4] Reject [P2,P3]:  Y.Map set(P2,'rejected') + set(P3,'rejected')
+[3] Type:            Y.Text insert "world"
+[2] Accept [P1]:     Y.Text apply P1 update + Y.Map set(P1,'accepted')
+[1] Type:            Y.Text insert "Hello "
+```
+
+Ctrl-Z sequence:
+
+```
+1st Ctrl-Z → undo [4]: P2 and P3 rejections reverted, both hunks reappear
+2nd Ctrl-Z → undo [3]: "world" removed from text
+3rd Ctrl-Z → undo [2]: P1 text reverted + P1 back to pending, hunk reappears
+4th Ctrl-Z → undo [1]: "Hello " removed
+```
+
+All operations interleave in one chronological stack. No separate stacks for typing vs actions.
+
+### Why ORIGIN_GC Is Not Tracked
+
+Projection GC uses `ORIGIN_GC` which is NOT in `trackedOrigins`. If GC marks P4 as `stale`, that write is invisible to UndoManager. Ctrl-Z will never "un-stale" a proposal — stale is terminal and automatic.
 
 ## Persistence Model
 

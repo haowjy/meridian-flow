@@ -6,20 +6,47 @@ audience: developer, architect
 
 ## Mental Model
 
-There is one materialized document authority: canonical `Y.Doc`.
+There is one materialized document authority: canonical `Y.Doc`. The projection is temporary and local.
+
+```mermaid
+flowchart LR
+    subgraph doc ["Canonical Y.Doc (persistent, synced)"]
+        T["Y.Text('content')"]
+        M["Y.Map('_review_status')"]
+    end
+    doc -->|"clone + apply pending"| P["Projection clone"]
+    P -->|"diff + group"| H["Grouped hunks"]
+    H -->|"render, then destroy clone"| CM["CM6 inline diffs"]
+```
 
 - `Y.Text('content')` stores canonical text.
-- `Y.Map('_review_status')` stores review decision state by proposal.
+- `Y.Map('_review_status')` stores decision state by proposal.
+- Projection is a throwaway clone. No projection state is stored in Postgres or Yjs.
 
-The projection is temporary and local:
+### Example: What Lives Where
 
-1. clone canonical
-2. apply each `pending` proposal update while tracking touched regions
-3. diff against canonical to produce raw hunks
-4. group nearby or overlapping raw hunks into user-facing regions
-5. discard projection
+```
+Canonical Y.Doc at some point in time:
 
-No projection state is stored in Postgres or Yjs.
+  Y.Text('content'): "The cat sat on the mat."
+
+  Y.Map('_review_status'):
+    P1 → 'accepted'     (writer accepted earlier)
+    P3 → 'rejected'     (writer rejected earlier)
+    (P5 has no entry)   → means pending
+
+Pending proposals in DB (status = 'pending'):
+  P5: yjs_update that inserts "fluffy " before "cat"
+
+Projection (ephemeral):
+  1. clone → "The cat sat on the mat."
+  2. apply P5 → "The fluffy cat sat on the mat."
+  3. diff → one hunk: insert "fluffy " at pos 4, carries [P5]
+  4. writer sees inline diff, acts when ready
+  5. clone destroyed
+```
+
+P1 and P3 are skipped because they already have decisions. Only `pending` proposals feed the projection.
 
 ## Data Structures
 
@@ -72,7 +99,7 @@ The same UndoManager tracks:
 - canonical text mutations
 - `_review_status` mutations
 
-This gives one chronological undo stack for typing + review actions.
+This gives one chronological undo stack for typing + hunk actions.
 
 ## Backend Mirror
 
@@ -92,5 +119,5 @@ Backend listens to synced canonical state changes and mirrors `_review_status` v
 - [Architecture](architecture.md)
 - [Frontend Diff Model](frontend-diff-model.md)
 - [Local-First Authority](local-first-authority.md)
-- [Review Undo Design](review-undo-design.md)
+- [Session Undo Design](session-undo-design.md)
 - [Schema Design](schema-design.md)
