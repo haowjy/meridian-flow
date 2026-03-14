@@ -42,6 +42,8 @@ flowchart LR
 | [Local-First Authority](spec/local-first-authority.md) | Immediate local actions, transaction code, backend status mirroring |
 | [Undo Design](spec/undo.md) | Session Ctrl-Z + thread-level undo/reapply |
 | [Schema Design](spec/schema-design.md) | Database schema, dual authority, eliminated complexity |
+| [Editor Strategy](spec/editor-strategy.md) | CM6 decision rationale, block rendering extensions, DOCX/PDF import/export |
+| [Review Comments](spec/review-comments.md) | Annotation comments (human + AI), Y.RelativePosition anchoring, `add_comment` tool |
 | [Implementation Plan](spec/plan.md) | Phased execution plan and dependencies |
 
 ## Dependencies
