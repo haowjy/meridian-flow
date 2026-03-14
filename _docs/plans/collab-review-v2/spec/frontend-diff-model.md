@@ -6,35 +6,64 @@ audience: developer, architect
 
 ## Overview
 
-The frontend derives review hunks by comparing canonical text with an ephemeral projection.
-
-| Element | Description |
-|---|---|
-| Source | `canonicalDoc.getText('content')` plus ephemeral `clone + apply(pending proposals)` |
-| Diff | `diff(toPlainText(canonicalDoc), toPlainText(projectedDoc))` |
-| Trigger | Canonical text change, `_review_status` map change, or active proposal-set change |
-| Identity | Grouped hunk region with contributing proposal set |
-| Filtering | Projection input only includes proposals with `status = 'pending'` |
+The frontend derives diff hunks by comparing canonical text with an ephemeral projection. Hunks are grouped text regions — the writer acts on what they see, not on individual proposals.
 
 ## Derivation Pipeline
 
-1. Clone canonical Y.Doc.
-2. Apply each pending proposal's `yjs_update` to the clone while tracking the text regions touched by that proposal.
-3. Diff canonical vs clone to produce raw hunks.
-4. Group nearby or overlapping raw hunks into user-facing hunk regions.
-5. Attach the contributing proposal set (and proposal `yjs_update` references) to each grouped hunk.
-6. Run projection GC: any pending proposal whose update contributes no remaining diff is auto-marked `stale`.
-7. Render grouped hunks in CM6.
-8. Destroy projection.
+```mermaid
+flowchart TB
+    A["Canonical Y.Doc"] --> B["Clone"]
+    B --> C["Apply each pending<br/>proposal yjs_update"]
+    C --> D["Track which proposals<br/>touch which text regions"]
+    D --> E["diff canonical vs projection"]
+    E --> F{"Raw hunks<br/>adjacent?"}
+    F -->|yes| G["Merge into<br/>grouped hunk"]
+    F -->|no| H["Keep as<br/>separate hunks"]
+    G --> I["Attach contributing<br/>proposal IDs"]
+    H --> I
+    I --> J["Projection GC:<br/>no-diff proposals → stale"]
+    J --> K["CM6 decorations"]
+    K --> L["Destroy projection"]
+```
+
+Re-derive triggers: canonical text change, `_review_status` map change, or proposal-set change.
 
 ## Grouped Hunk Identity
 
-Each hunk represents one visible region that may include one or more proposals.
+Each hunk represents one visible region that may include one or more proposals. The writer acts on regions, not on proposal rows.
 
-Properties:
-- Stable enough for user action in the current derive cycle.
-- Carries all contributing `proposalId` values and `yjs_update` payload references.
-- Matches the writer mental model: review by region, not by proposal rows.
+### Example: Hunk Grouping
+
+```
+Canonical: "She walked to the store and bought some milk."
+
+Pending proposals:
+  P1: replace "walked" with "ran"         (chars 4-10)
+  P2: replace "store" with "market"       (chars 18-23)
+  P3: replace "milk" with "oat milk"      (chars 40-44)
+
+After projection + diff:
+  Raw hunk A: "walked" → "ran"       at 4-10    [P1]
+  Raw hunk B: "store" → "market"     at 18-23   [P2]
+  Raw hunk C: "milk" → "oat milk"    at 40-44   [P3]
+
+Grouping (nearby threshold ~20 chars):
+  A and B are 8 chars apart → MERGE into one grouped hunk [P1, P2]
+  C is 17 chars away from B → separate hunk [P3]
+```
+
+What the writer sees in the editor:
+
+```
+Hunk 1:  "She [walked→ran] to the [store→market] and bought some milk."
+         Accept = applies both P1 and P2
+         Reject = rejects both P1 and P2
+
+Hunk 2:  "...bought some [milk→oat milk]."
+         Accept = applies only P3
+```
+
+The writer never needs to know how many proposals contributed. They see regions and act on them.
 
 ## Projection GC and Stale Proposals
 
@@ -79,5 +108,5 @@ No debounce is required at chapter scale.
 - [Architecture](architecture.md)
 - [Dual-Version Yjs Model](dual-version-yjs-model.md)
 - [Local-First Authority](local-first-authority.md)
-- [Review Undo Design](review-undo-design.md)
+- [Session Undo Design](session-undo-design.md)
 - [Implementation Plan](plan.md)

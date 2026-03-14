@@ -6,7 +6,64 @@ audience: developer, architect
 
 ## Overview
 
-Database schema stays minimal. Review decision state is stored in canonical Yjs (`_review_status`) and mirrored to proposal rows.
+Database schema stays minimal. Decision state lives in Yjs (`_review_status`) and is mirrored to proposal rows for querying.
+
+```mermaid
+erDiagram
+    documents ||--o{ proposals : has
+    documents ||--o{ document_updates : has
+    documents ||--o{ document_checkpoints : has
+    documents ||--o{ document_bookmarks : has
+    threads ||--o{ proposals : owns
+
+    documents {
+        UUID id PK
+        BYTEA yjs_state
+        TEXT content
+    }
+    proposals {
+        UUID id PK
+        UUID document_id FK
+        UUID thread_id FK
+        TEXT status
+        BYTEA yjs_update
+        TEXT region_text_before
+        TEXT region_text_after
+    }
+    document_updates {
+        BIGSERIAL id PK
+        UUID doc_id FK
+        BYTEA update
+        TEXT origin
+    }
+    document_checkpoints {
+        BIGSERIAL id PK
+        UUID doc_id FK
+        BYTEA state
+        BIGINT up_to_id
+    }
+```
+
+## Dual Authority: Y.Map + Proposal Rows
+
+Decision state has two representations that stay in sync:
+
+```mermaid
+flowchart LR
+    subgraph yjs ["Y.Doc (canonical, synced)"]
+        M["Y.Map('_review_status')<br/>P1: accepted<br/>P3: rejected<br/>P4: stale"]
+    end
+    subgraph db ["Postgres (queryable)"]
+        R["proposals table<br/>P1: accepted<br/>P2: pending<br/>P3: rejected<br/>P4: stale<br/>P5: reverted"]
+    end
+    M -->|"Yjs sync delta"| BE["Backend Mirror"]
+    BE -->|"upsert status"| R
+    TU["Thread Undo"] -->|"direct row update"| R
+```
+
+- `pending` = no Y.Map entry, proposal row exists with `status = 'pending'`
+- `accepted`, `rejected`, `stale` = Y.Map entry, mirrored to row
+- `reverted` = thread undo writes directly to row (does not touch Y.Map)
 
 ## Implementation Notes
 
@@ -38,10 +95,10 @@ Thread undo/redo updates proposal `status` between `accepted` and `reverted` dir
 | Column | Type | Notes |
 |---|---|---|
 | `id` | `UUID PRIMARY KEY` | Document key |
-| `yjs_state` | `BYTEA NOT NULL` | Canonical Yjs state |
 | `content` | `TEXT` | Plain-text cache |
 
-`ai_content` is removed.
+`yjs_state` is removed — replaced by `document_updates` + `document_checkpoints` (see [Append-Only Persistence](append-only-persistence.md)).
+`ai_content` is removed — derived on demand from projection.
 
 ### `${TABLE_PREFIX}idempotency_keys`
 
@@ -75,12 +132,12 @@ Pending proposals are represented by missing keys plus proposal row `status = 'p
 | One-proposal-to-one-hunk identity | Hunks are grouped regions with proposal sets |
 | Legacy proposal grouping linkage columns | Grouped hunks are derived dynamically from projection diff regions |
 | Separate review-edit proposal status | Edit is plain user typing after reject or after accept |
-| Separate review decision persistence stores | Canonical `_review_status` already persists via Yjs |
+| Separate decision persistence stores | Canonical `_review_status` already persists via Yjs |
 
 ## Cross-References
 
 - [Architecture](architecture.md)
 - [Dual-Version Yjs Model](dual-version-yjs-model.md)
-- [Review Undo Design](review-undo-design.md)
+- [Session Undo Design](session-undo-design.md)
 - [Thread-Level Undo](thread-level-undo.md)
 - [Implementation Plan](plan.md)

@@ -142,6 +142,37 @@ Compaction steps:
 5. Load the oldest 10,000 updates + latest checkpoint, merge into a new `document_checkpoints` row
 6. Delete the oldest 10,000 `document_updates` rows
 
+### Example: Compaction Lifecycle
+
+```
+Day 1: Writer types 2,000 updates
+  document_updates:      rows 1-2000
+  document_checkpoints:  (none)
+  document_bookmarks:    daily bookmark → update_id=2000
+
+Day 2-7: More writing + AI edits accumulate to 20,000 updates
+  document_updates:      rows 1-20000  ← hits 20k threshold
+  document_bookmarks:    daily bookmarks at rows 2000, 5000, 8000, ...
+
+Compaction runs (compact oldest 10,000):
+  1. Daily bookmark at row 2000 is in compaction range
+     → Materialize: replay updates 1-2000 into full state blob
+     → Bookmark preserved forever with its own state
+  2. Daily bookmark at row 5000 is in compaction range
+     → Materialize similarly
+  3. Auto-event bookmarks in rows 1-10000
+     → Deleted (ephemeral, not worth materializing)
+  4. Merge rows 1-10000 into new document_checkpoints row
+  5. Delete rows 1-10000
+
+After compaction:
+  document_updates:      rows 10001-20000 (10k remaining)
+  document_checkpoints:  1 row (state through row 10000)
+  document_bookmarks:    2 materialized daily bookmarks (rows 2000, 5000)
+
+Next compaction triggers at 30,000 total (20k remaining again).
+```
+
 ### GC and Undo Window
 
 Yjs GC is **disabled** — deleted Items remain as tombstones while updates are in the retained log window. Tombstones older than the compaction threshold are GC'd when their updates are compacted into a checkpoint.

@@ -2,49 +2,47 @@
 detail: standard
 audience: developer, architect
 ---
-# Collab Review v2: Projection + Review Status Map
+# Collab Data Model v2
 
 **Status:** draft
 
 ## Why
 
-The v1 review design added complexity that did not improve writer workflow: legacy text-derived hunk identity, extra review-state indirection, and delayed resolution semantics. v2 simplifies to one canonical Y.Doc and immediate, undoable actions.
+The v1 collab design accumulated unnecessary complexity: legacy text-derived hunk identity, extra review-state indirection, delayed resolution semantics, and a persistent AI document. v2 simplifies to one canonical Y.Doc, ephemeral projection, and immediate undoable actions.
+
+This plan covers core data model changes (append-only persistence, yjs_update proposals, decision state in Yjs) and an improved manual-path experience for the writer. Both auto-apply and manual modes are continuous — agents write autonomously, writers manage changes when they want.
 
 ## Core Model
 
-- Proposal rows store `yjs_update` as pending change payloads.
-- Diff display is ephemeral:
-  - clone canonical
-  - apply each `pending` proposal update while tracking which proposals affect which regions
-  - diff projection vs canonical into raw hunks
-  - group nearby or overlapping raw hunks into user-facing hunk regions
-  - discard projection
-- `_review_status` is a `Y.Map` on canonical:
-  - key: `proposalId`
-  - value: `accepted | rejected | stale`
-- Actions are immediate:
-  - Accept hunk: apply all grouped hunk proposal updates to canonical and set `_review_status` to `accepted` for every contributing proposal in one transaction.
-  - Reject hunk: set `_review_status` to `rejected` for every contributing proposal in one transaction.
-  - Edit hunk: user rejects then types, or accepts then modifies; edits are normal `ORIGIN_HUMAN` typing.
-- Hunk identity is a grouped text region with one or more contributing proposals.
-- Projection GC auto-resolves stale proposals:
-  - if applying a pending proposal yields no remaining diff, set its status to `stale`
-  - stale proposals never render as hunks and show as "No longer relevant" in thread UI
-- UndoManager scopes `Y.Text('content')` + `Y.Map('_review_status')`.
-- Backend status sync keeps proposal rows current for `pending | accepted | rejected | stale | reverted`.
+```mermaid
+flowchart LR
+    A["AI edit_document"] --> B["Proposal with yjs_update"]
+    B --> C{"auto-apply?"}
+    C -->|yes| D["Apply to canonical<br/>mark accepted"]
+    C -->|no| E["Store as pending"]
+    E --> F["Projection: clone + apply + diff"]
+    F --> G["Writer sees inline hunks<br/>accepts/rejects when ready"]
+```
+
+- One canonical Y.Doc: `Y.Text('content')` + `Y.Map('_review_status')`
+- Proposals store `yjs_update` (binary Yjs operations)
+- Diff is ephemeral: clone canonical, apply pending proposals, diff, group into hunks, discard
+- Actions are immediate: accept/reject are Yjs transactions, undoable via Ctrl-Z
+- Projection GC auto-marks stale proposals (no remaining diff)
+- Thread-level undo: revert any individual AI edit through the thread UI, in either mode
 
 ## Spec Documents
 
 | Doc | Purpose |
 |-----|---------|
-| [Architecture](spec/architecture.md) | System design, boundaries, and locked decisions |
-| [Append-Only Persistence](spec/append-only-persistence.md) | Update log, checkpoints/bookmarks, compaction model |
+| [Architecture](spec/architecture.md) | Data model evolution, two modes, key decisions |
+| [Append-Only Persistence](spec/append-only-persistence.md) | Update log, checkpoints, bookmarks, compaction |
 | [Dual-Version Yjs Model](spec/dual-version-yjs-model.md) | Canonical Y.Doc + ephemeral projection mental model |
 | [Frontend Diff Model](spec/frontend-diff-model.md) | Projection/diff pipeline and grouped region hunks |
 | [Local-First Authority](spec/local-first-authority.md) | Immediate local actions and backend status mirroring |
-| [Review Undo Design](spec/review-undo-design.md) | Single UndoManager behavior across text + status map |
-| [Schema Design](spec/schema-design.md) | Database schema, eliminated complexity, status sync |
-| [Thread-Level Undo](spec/thread-level-undo.md) | Persistent undo/redo via stored before/after text |
+| [Session Undo Design](spec/session-undo-design.md) | Single UndoManager across text + status map |
+| [Schema Design](spec/schema-design.md) | Database schema, dual authority, eliminated complexity |
+| [Thread-Level Undo](spec/thread-level-undo.md) | Per-proposal undo/redo via stored before/after text |
 | [Implementation Plan](spec/plan.md) | Phased execution plan and dependencies |
 
 ## Dependencies
@@ -54,5 +52,5 @@ The v1 review design added complexity that did not improve writer workflow: lega
 
 ## Relationship to Existing Plans
 
-- **Supersedes** `collab-review-v2/spec/backend-hunk-authority.md` and `collab-review-v2/spec/proposal-undo.md` (v1 specs)
-- **References** `_docs/technical/collab/` for implementation architecture docs
+- **Supersedes** v1 specs (`backend-hunk-authority.md`, `proposal-undo.md`)
+- **References** `_docs/technical/collab/` for current implementation docs
