@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meridian Converse v2 — Focused Sidecar</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, 'Times New Roman', serif; background: #1b1815; color: #d6cbb8; height: 100vh; display: flex; flex-direction: column; }
+
+  /* Top bar — minimal, warm */
+  .topbar { height: 36px; background: #1f1c17; display: flex; align-items: center; padding: 0 14px; border-bottom: 1px solid #302a22; font-size: 12px; color: #8a7e6c; }
+  .brand { color: #c4a265; font-weight: bold; letter-spacing: 1.2px; margin-right: 20px; font-size: 11px; }
+  .mode-pill { padding: 2px 10px; border-radius: 10px; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
+  .mode-pill.active { background: #2a2419; color: #c4a265; border: 1px solid #3d3428; }
+  .mode-pill.inactive { color: #6b6050; cursor: pointer; border: 1px solid transparent; }
+  .mode-pill.inactive:hover { color: #a0917a; }
+  .topbar .spacer { flex: 1; }
+  .topbar .project { color: #7a6e5c; font-style: italic; font-size: 12px; }
+
+  .main { flex: 1; display: flex; overflow: hidden; }
+
+  /* Thread list — narrow, compact */
+  .threads { width: 180px; min-width: 180px; background: #1a1713; border-right: 1px solid #302a22; overflow-y: auto; }
+  .threads h3 { padding: 10px 12px 6px; font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #6b6050; }
+  .thread-item { padding: 7px 12px; cursor: pointer; border-left: 2px solid transparent; }
+  .thread-item:hover { background: #231f1a; }
+  .thread-item.active { background: #251f18; border-left-color: #c4a265; }
+  .thread-item .t-name { font-size: 12px; color: #c8bca8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .thread-item .t-meta { font-size: 10px; color: #6b6050; margin-top: 1px; }
+  .thread-item .t-from { font-size: 9px; color: #8a7040; background: #2a2318; padding: 1px 5px; border-radius: 3px; display: inline-block; margin-top: 3px; }
+
+  /* Conversation — expansive center */
+  .conversation { flex: 1; display: flex; flex-direction: column; background: #1d1a15; min-width: 0; }
+  .conv-header { padding: 10px 24px; border-bottom: 1px solid #302a22; display: flex; align-items: center; gap: 10px; }
+  .conv-title { font-size: 14px; color: #c4a265; font-weight: bold; }
+  .conv-agent { font-size: 10px; color: #7a6e5c; background: #252018; padding: 2px 8px; border-radius: 8px; }
+  .conv-body { flex: 1; overflow-y: auto; padding: 24px 48px; display: flex; flex-direction: column; gap: 20px; max-width: 780px; margin: 0 auto; width: 100%; }
+  .msg { padding: 14px 18px; border-radius: 10px; font-size: 14px; line-height: 1.7; }
+  .msg.user { background: #262118; border: 1px solid #3a3226; color: #ddd0be; margin-left: 40px; }
+  .msg.ai { background: #1f1c16; border: 1px solid #2e2820; color: #c4b8a4; margin-right: 40px; }
+  .msg .sender { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #7a6e5c; margin-bottom: 5px; }
+  .msg em { color: #c4a265; font-style: normal; }
+  .msg .ref-tag { font-size: 10px; color: #8a7040; background: #2a2318; padding: 1px 6px; border-radius: 3px; cursor: pointer; }
+  .conv-input { padding: 12px 48px 16px; display: flex; gap: 8px; max-width: 780px; margin: 0 auto; width: 100%; }
+  .conv-input input { flex: 1; background: #181510; border: 1px solid #302a22; border-radius: 8px; padding: 10px 14px; color: #d6cbb8; font-family: inherit; font-size: 13px; outline: none; }
+  .conv-input input:focus { border-color: #c4a265; }
+  .conv-input button { background: #c4a265; color: #1a1714; border: none; border-radius: 8px; padding: 8px 16px; font-family: inherit; font-size: 12px; font-weight: bold; cursor: pointer; }
+
+  /* Sidecar — elegant right panel */
+  .sidecar { width: 280px; min-width: 280px; background: #1a1713; border-left: 1px solid #302a22; display: flex; flex-direction: column; }
+  .sc-tabs { display: flex; padding: 6px 8px; gap: 2px; border-bottom: 1px solid #302a22; }
+  .sc-tab { padding: 5px 10px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: #6b6050; cursor: pointer; border-radius: 5px; }
+  .sc-tab.active { color: #c4a265; background: #252018; }
+  .sc-tab:hover { color: #a0917a; }
+  .sc-content { flex: 1; overflow-y: auto; padding: 12px; }
+  .sc-panel { display: none; } .sc-panel.active { display: block; }
+
+  /* Document preview */
+  .doc-title { font-size: 13px; color: #c4a265; margin-bottom: 8px; border-bottom: 1px solid #2a2418; padding-bottom: 6px; }
+  .doc-text { font-size: 12.5px; line-height: 1.75; color: #a89a84; margin-bottom: 8px; }
+  .doc-text .hl { background: #302818; padding: 1px 3px; border-radius: 2px; color: #d4b870; }
+  .doc-line { font-size: 10px; color: #5a5040; margin-bottom: 2px; }
+
+  /* File tree */
+  .ft-item { padding: 4px 8px; font-size: 12px; color: #9a8e7a; cursor: pointer; border-radius: 3px; }
+  .ft-item:hover { background: #231f1a; }
+  .ft-item.folder { color: #b09a70; font-weight: bold; margin-top: 6px; }
+  .ft-item.current { color: #c4a265; }
+  .ft-indent { display: inline-block; width: 14px; }
+
+  /* Proposal review */
+  .pr-card { padding: 8px 10px; margin-bottom: 6px; background: #201c16; border-radius: 6px; border-left: 2px solid #8a7a50; }
+  .pr-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: #7a6e5c; margin-bottom: 3px; }
+  .pr-text { font-size: 12px; color: #b0a490; line-height: 1.5; }
+  .pr-diff { font-family: 'SF Mono', Menlo, monospace; font-size: 11px; margin-top: 4px; }
+  .pr-add { color: #8aaa70; } .pr-del { color: #aa7a6a; text-decoration: line-through; }
+  .pr-actions { display: flex; gap: 4px; margin-top: 6px; }
+  .pr-btn { font-size: 10px; padding: 3px 10px; border-radius: 4px; border: none; cursor: pointer; font-family: inherit; }
+  .pr-btn.accept { background: #3a4a30; color: #a0c888; } .pr-btn.reject { background: #3a2a28; color: #c0908a; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <span class="brand">MERIDIAN</span>
+    <span class="mode-pill inactive">Agents</span>
+    <span class="mode-pill active">Converse</span>
+    <span class="spacer"></span>
+    <span class="project">The Wandering Stars</span>
+  </div>
+  <div class="main">
+    <div class="threads">
+      <h3>Threads</h3>
+      <div class="thread-item active"><div class="t-name">Kael's betrayal arc</div><div class="t-meta">12 turns &middot; 3m ago</div><div class="t-from">from Agents</div></div>
+      <div class="thread-item"><div class="t-name">Magic system rules</div><div class="t-meta">8 turns &middot; 1h ago</div></div>
+      <div class="thread-item"><div class="t-name">Ch. 47 outline</div><div class="t-meta">5 turns &middot; 2h ago</div></div>
+      <div class="thread-item"><div class="t-name">Sera's dialogue voice</div><div class="t-meta">20 turns &middot; yesterday</div></div>
+    </div>
+    <div class="conversation">
+      <div class="conv-header">
+        <span class="conv-title">Kael's betrayal arc</span>
+        <span class="conv-agent">Story Agent</span>
+      </div>
+      <div class="conv-body">
+        <div class="msg ai"><div class="sender">Story Agent</div>I've been analyzing Kael's arc across chapters 40-46. The betrayal in 48 currently lacks grounding. I'd suggest planting three seeds in the campfire scene. <span class="ref-tag" onclick="switchSidecar('doc')">Ch. 47 ln 340-382</span></div>
+        <div class="msg user"><div class="sender">You</div>Good catch. What kind of seeds? I don't want anything that reads as foreshadowing on first pass.</div>
+        <div class="msg ai"><div class="sender">Story Agent</div>Subtle, character-rooted beats that only resonate in retrospect:<br><br>1. Kael volunteers for first watch but <em>faces away from the road</em> — toward the valley where the vault lies.<br>2. When Sera says "I trust you," he responds a beat late. Just: <em>"I know."</em><br>3. After she sleeps, a single POV line: <em>"He counted her breaths the way a man counts coins he owes."</em><br><br>I've drafted the insert for option 3. <span class="ref-tag" onclick="switchSidecar('proposal')">View proposal</span></div>
+        <div class="msg user"><div class="sender">You</div>Option 3 is perfect. Show me the proposal against the original text.</div>
+      </div>
+      <div class="conv-input"><input type="text" placeholder="Continue..."><button>Send</button></div>
+    </div>
+    <div class="sidecar">
+      <div class="sc-tabs">
+        <div class="sc-tab active" onclick="switchSidecar('doc')">Document</div>
+        <div class="sc-tab" onclick="switchSidecar('tree')">Files</div>
+        <div class="sc-tab" onclick="switchSidecar('proposal')">Proposal</div>
+      </div>
+      <div class="sc-content">
+        <div class="sc-panel active" id="sc-doc">
+          <div class="doc-title">Ch. 47 &mdash; The Campfire</div>
+          <div class="doc-line">ln 368</div>
+          <div class="doc-text">The fire had burned low by the time Sera stopped talking. Embers drifted upward like small prayers.</div>
+          <div class="doc-line">ln 371</div>
+          <div class="doc-text">"Wake me for second watch," she said, pulling the cloak tighter.</div>
+          <div class="doc-line">ln 372</div>
+          <div class="doc-text" style="color:#6b6050;font-style:italic;">— insert point —</div>
+          <div class="doc-line">ln 373</div>
+          <div class="doc-text">He nodded, though she couldn't see it. The fire popped. Somewhere in the valley, a river moved through stone.</div>
+        </div>
+        <div class="sc-panel" id="sc-tree">
+          <div class="ft-item folder">The Wandering Stars</div>
+          <div class="ft-item"><span class="ft-indent"></span>Ch. 45 — The Crossing</div>
+          <div class="ft-item"><span class="ft-indent"></span>Ch. 46 — Ember and Ash</div>
+          <div class="ft-item current"><span class="ft-indent"></span>Ch. 47 — The Campfire</div>
+          <div class="ft-item"><span class="ft-indent"></span>Ch. 48 — (draft)</div>
+          <div class="ft-item folder">Characters</div>
+          <div class="ft-item"><span class="ft-indent"></span>Kael</div>
+          <div class="ft-item"><span class="ft-indent"></span>Sera</div>
+          <div class="ft-item folder">Worldbuilding</div>
+          <div class="ft-item"><span class="ft-indent"></span>Magic system</div>
+        </div>
+        <div class="sc-panel" id="sc-proposal">
+          <div class="pr-card">
+            <div class="pr-label">Insert after ln 371</div>
+            <div class="pr-text">Kael's POV — betrayal seed</div>
+            <div class="pr-diff">
+              <div class="pr-add">+ He watched her breathing slow, each exhale a small surrender. He counted her breaths the way a man counts coins he owes.</div>
+            </div>
+            <div class="pr-actions"><button class="pr-btn accept">Accept</button><button class="pr-btn reject">Reject</button></div>
+          </div>
+          <div class="pr-card">
+            <div class="pr-label">Edit ln 373</div>
+            <div class="pr-text">Transition after insert</div>
+            <div class="pr-diff">
+              <div class="pr-del">- He nodded, though she couldn't see it.</div>
+              <div class="pr-add">+ He nodded to no one. The gesture felt like practice.</div>
+            </div>
+            <div class="pr-actions"><button class="pr-btn accept">Accept</button><button class="pr-btn reject">Reject</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+<script>
+function switchSidecar(name) {
+  document.querySelectorAll('.sc-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.sc-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('.sc-tab[onclick*="'+name+'"]').classList.add('active');
+  document.getElementById('sc-' + name).classList.add('active');
+}
+</script>
+</body>
+</html>

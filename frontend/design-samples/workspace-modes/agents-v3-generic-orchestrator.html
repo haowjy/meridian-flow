@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meridian - Agents v3 Generic Orchestrator</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, 'Times New Roman', serif; background: #1a1714; color: #d4c8b8; height: 100vh; display: flex; overflow: hidden; }
+  .rail { width: 48px; background: #141210; display: flex; flex-direction: column; align-items: center; padding: 10px 0; gap: 14px; border-right: 1px solid #2a2520; }
+  .rail-icon { width: 30px; height: 30px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 13px; cursor: pointer; color: #8a7e6e; }
+  .rail-icon:hover { background: #2a2520; color: #d4c8b8; }
+  .rail-icon.active { background: #3a2e1e; color: #e8b84a; }
+  .roster { width: 210px; background: #1e1b17; border-right: 1px solid #2a2520; display: flex; flex-direction: column; font-size: 12px; }
+  .roster-head { padding: 10px 12px; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: #6a6050; border-bottom: 1px solid #2a2520; display: flex; justify-content: space-between; align-items: center; }
+  .roster-count { color: #e8b84a; font-size: 10px; }
+  .roster-add { color: #6a6050; cursor: pointer; font-size: 16px; line-height: 1; }
+  .roster-add:hover { color: #e8b84a; }
+  .r-group { padding: 6px 12px 2px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: #4a4438; }
+  .r-item { padding: 6px 12px; border-bottom: 1px solid #1f1c18; cursor: pointer; display: flex; align-items: center; gap: 7px; }
+  .r-item:hover { background: #252219; }
+  .r-item.sel { background: #2a2418; border-left: 2px solid #c89a3a; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .d-run { background: #7ab87a; } .d-wait { background: #e8b84a; } .d-done { background: #5a7a5a; } .d-idle { background: #3a3830; }
+  .r-name { color: #c8b898; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .r-sub { color: #5a5448; font-size: 10px; margin-top: 1px; }
+  .r-info { flex: 1; min-width: 0; }
+  .center { flex: 1; display: flex; flex-direction: column; background: #191714; }
+  .orch-bar { padding: 8px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2a2520; background: #1c1916; }
+  .orch-title { font-size: 13px; color: #c8b898; font-weight: 600; }
+  .orch-tabs { display: flex; gap: 2px; }
+  .orch-tab { padding: 3px 10px; font-size: 11px; border-radius: 4px; cursor: pointer; color: #6a6050; }
+  .orch-tab.active { background: #2a2418; color: #e8b84a; }
+  .stream { flex: 1; overflow-y: auto; padding: 12px 16px; }
+  .s-entry { padding: 6px 0; display: flex; gap: 10px; font-size: 12px; border-bottom: 1px solid #1f1c18; }
+  .s-time { color: #4a4438; font-family: monospace; font-size: 11px; flex-shrink: 0; width: 38px; }
+  .s-agent { color: #c89a3a; font-size: 11px; flex-shrink: 0; width: 100px; overflow: hidden; text-overflow: ellipsis; }
+  .s-msg { color: #9a8e7e; flex: 1; }
+  .s-msg.important { color: #c8b898; }
+  .s-tag { font-size: 10px; color: #5a7a5a; flex-shrink: 0; padding: 1px 6px; border: 1px solid #2a3a28; border-radius: 3px; cursor: pointer; align-self: center; }
+  .s-tag.handoff { color: #c89a3a; border-color: #3a3020; }
+  .s-tag.artifact { color: #7a9ab8; border-color: #1e2a3a; }
+  .handoff-banner { margin: 8px 0; padding: 8px 12px; background: #28231a; border: 1px solid #3a3020; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
+  .hb-text { font-size: 12px; color: #e8b84a; }
+  .hb-btn { padding: 4px 12px; background: #3a3020; color: #e8b84a; border: none; border-radius: 4px; font-size: 11px; cursor: pointer; font-family: inherit; }
+  .hb-btn:hover { background: #4a4030; }
+  .dossier { width: 250px; background: #1e1b17; border-left: 1px solid #2a2520; padding: 12px; overflow-y: auto; font-size: 12px; }
+  .dos-title { font-size: 13px; color: #c8b898; font-weight: 600; margin-bottom: 10px; }
+  .dos-section { margin-bottom: 12px; }
+  .dos-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: #5a5448; margin-bottom: 3px; }
+  .dos-val { color: #a89878; line-height: 1.5; }
+  .dos-list { list-style: none; }
+  .dos-list li { padding: 3px 0; color: #8a7e6e; border-bottom: 1px solid #1f1c18; display: flex; justify-content: space-between; }
+  .tag { font-size: 10px; padding: 1px 5px; border-radius: 3px; }
+  .tag-run { background: #1e3020; color: #7ab87a; } .tag-wait { background: #302a18; color: #e8b84a; } .tag-done { background: #1e2818; color: #5a7a5a; }
+  .dos-stat { display: flex; gap: 12px; margin-top: 4px; }
+  .dos-stat div { text-align: center; }
+  .dos-stat .num { font-size: 18px; font-weight: 700; color: #c89a3a; }
+  .dos-stat .lbl { font-size: 10px; color: #5a5448; }
+  .dos-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+  .dos-chip { font-size: 10px; padding: 2px 6px; background: #252219; border-radius: 3px; color: #8a7e6e; }
+</style>
+</head>
+<body>
+  <nav class="rail">
+    <div class="rail-icon" title="Dashboard">D</div>
+    <div class="rail-icon active" title="Agents">A</div>
+    <div class="rail-icon" title="Artifacts">F</div>
+    <div class="rail-icon" title="Queue">Q</div>
+    <div class="rail-icon" title="Settings">S</div>
+  </nav>
+  <aside class="roster">
+    <div class="roster-head">Threads <span class="roster-count">8</span> <span class="roster-add" title="New thread">+</span></div>
+    <div class="r-group">Running</div>
+    <div class="r-item sel"><span class="dot d-run"></span><div class="r-info"><div class="r-name">Release Notes</div><div class="r-sub">v2.4 docs -- 3m</div></div></div>
+    <div class="r-item"><span class="dot d-run"></span><div class="r-info"><div class="r-name">Data Migration</div><div class="r-sub">Schema v6 -- 5m</div></div></div>
+    <div class="r-item"><span class="dot d-run"></span><div class="r-info"><div class="r-name">Compliance Scan</div><div class="r-sub">Q1 audit -- 2m</div></div></div>
+    <div class="r-group">Queued</div>
+    <div class="r-item"><span class="dot d-wait"></span><div class="r-info"><div class="r-name">API Docs Sync</div><div class="r-sub">OpenAPI spec -- pending</div></div></div>
+    <div class="r-item"><span class="dot d-wait"></span><div class="r-info"><div class="r-name">Vendor Outreach</div><div class="r-sub">3 contacts -- pending</div></div></div>
+    <div class="r-group">Completed</div>
+    <div class="r-item"><span class="dot d-done"></span><div class="r-info"><div class="r-name">Test Coverage</div><div class="r-sub">87% target -- 14m ago</div></div></div>
+    <div class="r-item"><span class="dot d-done"></span><div class="r-info"><div class="r-name">Asset Inventory</div><div class="r-sub">218 items -- 22m ago</div></div></div>
+    <div class="r-item"><span class="dot d-idle"></span><div class="r-info"><div class="r-name">Onboarding Flow</div><div class="r-sub">Draft v1 -- idle</div></div></div>
+  </aside>
+  <main class="center">
+    <div class="orch-bar">
+      <span class="orch-title">Orchestration Stream</span>
+      <div class="orch-tabs"><span class="orch-tab active">All</span><span class="orch-tab">Running</span><span class="orch-tab">Handoffs</span><span class="orch-tab">Artifacts</span></div>
+    </div>
+    <div class="stream">
+      <div class="s-entry"><span class="s-time">14:12</span><span class="s-agent">Release Notes</span><span class="s-msg important">Generated changelog from 43 commits -- draft ready for review</span><span class="s-tag handoff">Review</span></div>
+      <div class="s-entry"><span class="s-time">14:11</span><span class="s-agent">Data Migration</span><span class="s-msg important">Flag: 12 rows with nullable foreign keys need manual resolution</span><span class="s-tag handoff">Decide</span></div>
+      <div class="s-entry"><span class="s-time">14:11</span><span class="s-agent">Compliance</span><span class="s-msg">Scanning access logs against retention policy</span></div>
+      <div class="s-entry"><span class="s-time">14:10</span><span class="s-agent">Release Notes</span><span class="s-msg">Cross-referencing tickets with merged PRs</span></div>
+      <div class="handoff-banner"><span class="hb-text">Migration dry-run complete -- 3 conflicts need your input</span><button class="hb-btn">Open Handoff</button></div>
+      <div class="s-entry"><span class="s-time">14:09</span><span class="s-agent">Data Migration</span><span class="s-msg">Dry-run on staging: 1,847 rows processed, 3 conflicts</span><span class="s-tag artifact">Report</span></div>
+      <div class="s-entry"><span class="s-time">14:09</span><span class="s-agent">Compliance</span><span class="s-msg">Loaded 6 policy documents, extracting requirements</span></div>
+      <div class="s-entry"><span class="s-time">14:08</span><span class="s-agent">Release Notes</span><span class="s-msg">Categorizing changes: 8 features, 15 fixes, 20 chores</span></div>
+      <div class="s-entry"><span class="s-time">14:07</span><span class="s-agent">Data Migration</span><span class="s-msg">Building dependency graph for 24 tables</span></div>
+      <div class="s-entry"><span class="s-time">14:06</span><span class="s-agent">Compliance</span><span class="s-msg">Started Q1 audit -- checking data handling, access controls, retention</span></div>
+      <div class="s-entry"><span class="s-time">13:58</span><span class="s-agent">Test Coverage</span><span class="s-msg">Final: 87.2% coverage, 14 new tests added, 2 flaky tests fixed</span><span class="s-tag">Done</span></div>
+      <div class="s-entry"><span class="s-time">13:50</span><span class="s-agent">Asset Inventory</span><span class="s-msg">Cataloged 218 assets across 4 repositories, tagged by owner</span><span class="s-tag">Done</span></div>
+    </div>
+  </main>
+  <aside class="dossier">
+    <div class="dos-title">Release Notes</div>
+    <div class="dos-section"><div class="dos-label">Task</div><div class="dos-val">Generate v2.4 release notes from commit history, tickets, and PR descriptions</div></div>
+    <div class="dos-section"><div class="dos-label">References</div>
+      <div class="dos-meta"><span class="dos-chip">43 commits</span><span class="dos-chip">12 tickets</span><span class="dos-chip">8 PRs</span></div>
+    </div>
+    <div class="dos-section"><div class="dos-label">Artifacts</div>
+      <ul class="dos-list">
+        <li>CHANGELOG.md <span class="tag tag-run">drafting</span></li>
+        <li>release-summary.pdf <span class="tag tag-wait">pending</span></li>
+        <li>migration-guide.md <span class="tag tag-wait">pending</span></li>
+      </ul>
+    </div>
+    <div class="dos-section">
+      <div class="dos-label">Fleet Overview</div>
+      <div class="dos-stat">
+        <div><div class="num">3</div><div class="lbl">Running</div></div>
+        <div><div class="num">2</div><div class="lbl">Queued</div></div>
+        <div><div class="num">2</div><div class="lbl">Done</div></div>
+      </div>
+    </div>
+    <div class="dos-section"><div class="dos-label">Handoff Queue</div>
+      <ul class="dos-list">
+        <li>Migration conflicts <span class="tag tag-wait">decide</span></li>
+        <li>Changelog draft <span class="tag tag-wait">review</span></li>
+      </ul>
+    </div>
+  </aside>
+</body>
+</html>
