@@ -46,6 +46,10 @@ flowchart LR
 | [Review Comments](spec/review-comments.md) | Annotation comments (human + AI), Y.RelativePosition anchoring, `add_comment` tool |
 | [Implementation Plan](spec/plan.md) | Phased execution plan and dependencies |
 
+## Research
+
+[Research Notes](_other/research.md) -- competitive landscape, CRDT research, and ecosystem analysis. These are background reference notes only; they informed the design but are not required reading for implementation. Skip unless you need to understand *why* a decision was made.
+
 ## Dependencies
 
 - **Yjs collab foundation complete** -- canonical Y.Doc sync is the transport foundation.
