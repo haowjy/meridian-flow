@@ -10,7 +10,7 @@ This directory contains implementation plans for features in development or read
 - `agents/` - Agent/skills product plans and related archives. Read `agents/agents.md` first to understand ownership and active tracks in this domain.
 - `meridian-channel/` - Orchestration/runtime planning for the meridian-channel track (active strategy/risk docs plus archived design/implementation slices). Start with `meridian-channel/strategic-direction.md`, then `meridian-channel/risk-and-gaps.md`.
 - `ws-transport-v2/` - Per-document WebSocket refactor + two-lane transport. Supersedes Phase 4.6. Read `ws-transport-v2/README.md` first.
-- `collab-review-v2/` - Server-authoritative hunks + proposal undo. Moves hunk derivation to backend, adds undo for accept/reject. Depends on ws-transport-v2 Stage 1. Read `collab-review-v2/README.md` first.
+- `collab-data-model-v2/` - Collaboration data model evolution: one canonical Y.Doc, ephemeral projection, immediate undoable actions, thread-level undo/reapply. Read `collab-data-model-v2/README.md` first.
 - `local-bridge/` - Staged local-bridge rollout plans. Read `local-bridge/README.md` first, then follow stage files in order.
 - `_archive/` - Archived or superseded standalone plans retained for history and cross-reference only; do not treat as active implementation intent.
 
