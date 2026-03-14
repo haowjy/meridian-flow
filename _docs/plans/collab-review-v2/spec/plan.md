@@ -20,9 +20,8 @@ audience: developer, architect
 | 8 | Undo boundaries | Keep single UndoManager; call `clear()` on review mode entry and exit. |
 | 9 | Projection GC | Every recompute auto-marks no-diff pending proposals as `stale`. |
 | 10 | Status chain | `edit_tool -> proposal -> yjs_update -> status` is always current in backend row and thread UI. |
-| 11 | 7-day retention | Server job removes old `_review_status` entries older than 7 days. |
-| 12 | Thread undo | Use `region_text_before/after` text replacement; no Yjs inverse/snapshot dependency. |
-| 13 | Thread undo map behavior | Thread undo/redo does not mutate `_review_status`; it mutates canonical text and proposal row status (`reverted`/`accepted`). |
+| 11 | Thread undo | Use `region_text_before/after` text replacement; no Yjs inverse/snapshot dependency. |
+| 12 | Thread undo map behavior | Thread undo/redo does not mutate `_review_status`; it mutates canonical text and proposal row status (`reverted`/`accepted`). |
 
 ## Phases
 
@@ -34,7 +33,7 @@ Goal: keep existing append-only checkpoint model workstream as foundation.
 
 Tasks:
 1. Ensure proposal table supports `pending`, `accepted`, `rejected`, `stale`, `reverted`.
-2. Add `created_by_user_id` and `decided_at` to proposal schema.
+2. Add `created_by_user_id` to proposal schema.
 3. Ensure `region_text_before` and `region_text_after` are present and documented as captured at proposal creation.
 4. Remove `ai_content` from document schema and consumers.
 
@@ -58,13 +57,12 @@ Tasks:
 5. Verify one Ctrl-Z undoes the whole grouped hunk transaction.
 6. Verify interleaved undo/redo across typing and review actions.
 
-### Phase 4: Backend Status Mirror + 7-Day Retention
+### Phase 4: Backend Status Mirror
 
 Tasks:
 1. Mirror `_review_status` changes into proposal row status.
-2. Persist decision timestamps for retention eligibility.
-3. Implement background cleanup that removes `_review_status` entries older than 7 days.
-4. Verify aged-out reject undo attempts no-op safely.
+2. Verify status mirroring is driven by `_review_status` key deltas from Yjs sync.
+3. Verify row status stays current for `pending`, `accepted`, `rejected`, `stale`, `reverted`.
 
 ### Phase 5: Thread-Level Undo/Redo
 
@@ -81,7 +79,7 @@ flowchart TB
     P0[Phase 0\nAppend-Only Persistence] --> P1[Phase 1\nSchema Housekeeping]
     P1 --> P2[Phase 2\nProjection + Diff]
     P2 --> P3[Phase 3\nImmediate Actions + Undo]
-    P3 --> P4[Phase 4\nStatus Mirror + 7-Day Retention]
+    P3 --> P4[Phase 4\nStatus Mirror]
     P4 --> P5[Phase 5\nThread Undo/Redo]
 ```
 
@@ -92,7 +90,7 @@ flowchart TB
 | 1 | Low | Mostly schema cleanup |
 | 2 | Medium | Diff quality and UI derivation correctness |
 | 3 | Medium | Transaction and undo boundary correctness |
-| 4 | Medium | Status mirror consistency and retention safety |
+| 4 | Medium | Status mirror consistency |
 | 5 | Low | Deterministic text replacement with conflict handling |
 
 ## Cross-References

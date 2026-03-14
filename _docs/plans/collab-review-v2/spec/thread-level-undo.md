@@ -32,7 +32,7 @@ No dedicated thread-undo table is required.
 4. Search `Y.Text('content')` for `region_text_after`.
 5. If found, delete match and insert `region_text_before`.
 6. Encode resulting Yjs delta as `yjs_update` and append to `document_updates`.
-7. Update proposal row status to `reverted` and set `decided_at`.
+7. Update proposal row status to `reverted`.
 8. If not found, return conflict.
 
 ## Redo Flow (`reverted -> accepted`)
@@ -43,7 +43,7 @@ No dedicated thread-undo table is required.
 4. Search `Y.Text('content')` for `region_text_before`.
 5. If found, delete match and insert `region_text_after`.
 6. Encode resulting Yjs delta as `yjs_update` and append to `document_updates`.
-7. Update proposal row status to `accepted` and set `decided_at`.
+7. Update proposal row status to `accepted`.
 8. If not found, return conflict.
 
 ## Relationship to `_review_status`
@@ -52,7 +52,6 @@ Thread-level undo/redo does not mutate `_review_status`.
 
 - `_review_status` exists for short-lived review decisions (`accepted`, `rejected`, `stale`) and session undo windows.
 - Thread undo/redo is a separate post-review operation that mutates canonical text plus proposal row status (`accepted <-> reverted`).
-- By the time thread undo runs, the 7-day TTL may already have removed `_review_status` entries.
 
 Reverted proposals are not projection inputs. After accept, proposal CRDT items were already applied to canonical; thread undo then replaces canonical text. There is no remaining pending proposal update to project.
 

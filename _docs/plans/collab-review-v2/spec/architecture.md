@@ -12,7 +12,7 @@ The review system is built on five decisions:
 2. Review diffs are ephemeral projections, not stored artifacts.
 3. User-facing hunks are grouped text regions, not one-proposal records.
 4. Accept/reject are immediate local transactions over grouped hunks.
-5. `_review_status` (Y.Map keyed by `proposalId`) is short-lived decision state used for sync and undo windows.
+5. `_review_status` (Y.Map keyed by `proposalId`) is decision state used for sync and undo windows.
 
 ## Core Data Flow
 
@@ -42,7 +42,7 @@ The review system is built on five decisions:
 |--------|---------|-----------|
 | `pending` | Waiting for review | N/A |
 | `accepted` | User explicitly accepted | Yes (thread undo) |
-| `rejected` | User explicitly rejected | Yes (Ctrl+Z within 7 days) |
+| `rejected` | User explicitly rejected | Yes (session Ctrl-Z while still in stack) |
 | `stale` | Auto-resolved, canonical diverged and no diff remains | No |
 | `reverted` | Accepted then thread-undone | Yes (thread redo) |
 
@@ -65,7 +65,6 @@ The review system is built on five decisions:
 | Projection GC runs every re-derive | Stale proposals are auto-resolved and removed from review surface. |
 | Edit is plain typing | No separate review-edit status value or origin; user edits are normal human text operations. |
 | Status chain is always current | `edit_tool -> proposal -> yjs_update -> status` stays synchronized in UI and backend row. |
-| 7-day `_review_status` TTL | Bounds long-term map growth and keeps old undo effects harmless. |
 | Single UndoManager | One stack across `Y.Text('content')` and `Y.Map('_review_status')`. |
 | Undo boundaries use `clear()` | Entering/leaving review mode isolates review undo history. |
 
@@ -76,7 +75,6 @@ The review system is built on five decisions:
 - Projection GC to auto-resolve stale proposals
 - `_review_status` map semantics and undo behavior
 - Backend mirror of proposal status from `_review_status` plus thread undo row updates
-- 7-day server cleanup for old `_review_status` entries
 - Thread-level undo/redo via stored before/after text
 
 ## Out of Scope

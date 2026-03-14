@@ -72,7 +72,7 @@ canonicalDoc.transact(() => {
   for (const proposal of pendingProposalsWithoutDiff) {
     canonicalDoc.getMap('_review_status').set(proposal.id, 'stale');
   }
-}, ORIGIN_REVIEW_GC);
+}, ORIGIN_GC);
 ```
 
 - Runs on every projection recompute.
@@ -94,26 +94,21 @@ Backend logic on Yjs sync:
 
 1. Detect `_review_status` key changes by `proposalId`.
 2. Upsert proposal-row status to match map value (`accepted`, `rejected`, `stale`).
-3. Record decision timestamp used for retention cleanup.
-4. Thread undo updates proposal row status to `reverted` directly.
-5. Keep row status current for UI (`pending`, `accepted`, `rejected`, `stale`, `reverted`).
+3. Thread undo updates proposal row status to `reverted` directly.
+4. Keep row status current for UI (`pending`, `accepted`, `rejected`, `stale`, `reverted`).
 
 ## Reconnect / Reload
 
 | State | Reconnect (same tab) | Reload (new tab) |
 |-------|-----------------------|------------------|
 | Canonical text | Synced | Rehydrated from backend |
-| `_review_status` | Synced | Rehydrated from backend state |
+| `_review_status` | Synced via Yjs deltas | Rehydrated from canonical Yjs state |
 | Undo stack | Preserved | Lost |
 | Display hunks | Re-derived | Re-derived |
 
-## 7-Day Status Retention
+## Implementation Notes
 
-A server background job removes stale `_review_status` entries older than 7 days.
-
-- Scope: entries whose mirrored proposal decision timestamp is older than 7 days.
-- Effect: old accepted/rejected/stale decisions no longer have explicit map entries.
-- Undo impact: Ctrl-Z for aged-out map state becomes a safe no-op.
+Backend status mirroring is event-driven from `_review_status` Y.Map deltas only; no full-state reconciliation step is needed on reconnect because Yjs sync already guarantees convergence.
 
 ## Cross-References
 
