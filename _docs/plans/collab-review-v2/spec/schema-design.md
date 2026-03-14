@@ -18,7 +18,6 @@ erDiagram
 
     documents {
         UUID id PK
-        BYTEA yjs_state
         TEXT content
     }
     proposals {

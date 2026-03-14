@@ -111,7 +111,7 @@ undoManager.undo();
 Backend logic on Yjs sync:
 
 1. Detect `_proposal_status` key changes by `proposalId`.
-2. Upsert proposal-row status to match map value (`accepted`, `rejected`, `stale`).
+2. Upsert proposal-row status to match map value (`accepted`, `rejected`, `stale`, `reverted`). Key removal (from session Ctrl-Z undoing a reject) sets row back to `pending`.
 3. Thread undo/reapply writes to `_proposal_status` Y.Map (using `ORIGIN_THREAD`), mirrored to row like all other status changes.
 4. Keep row status current for UI (`pending`, `accepted`, `rejected`, `stale`, `reverted`).
 

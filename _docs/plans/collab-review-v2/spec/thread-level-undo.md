@@ -38,7 +38,7 @@ Thread ops are **local-first** — the frontend applies the transaction directly
 
 It is separate from session Ctrl-Z:
 - Session Ctrl-Z uses local UndoManager state and is ephemeral.
-- Thread-level undo/reapply uses persisted proposal text regions and status-gated backend commands.
+- Thread-level undo/reapply uses persisted proposal text regions and local-first Yjs transactions.
 
 ## Storage
 
@@ -208,7 +208,11 @@ Thread-level undo uses text find-and-replace rather than Yjs inverse operations 
 - **Natural conflict detection**: text not found = conflict, no additional checks needed
 - **Simple implementation**: string search vs hooking into Yjs UndoManager internals
 
-The tradeoff is ambiguity when identical text appears multiple times (rare for fiction writing, mitigated by storing sufficient context in region strings).
+The tradeoff is ambiguity when identical text appears multiple times (rare for fiction writing, mitigated by capturing surrounding context in `region_text_before` / `region_text_after` at proposal creation time).
+
+### Grouped Hunk Limitation
+
+When a hunk groups multiple proposals and they are accepted together, the per-proposal `region_text_after` may not appear as an exact substring in the combined result (e.g., two adjacent insertions merge into one text span). Thread-level undo for individual proposals within a grouped accept may conflict. This is acceptable — the conflict UI handles it gracefully, and writers can use session Ctrl-Z to undo the entire grouped accept as one step.
 
 ## Cross-References
 

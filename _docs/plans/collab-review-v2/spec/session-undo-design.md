@@ -34,7 +34,7 @@ const undoManager = new Y.UndoManager(
   }
 );
 
-// On mode transition (e.g., toggling manual diff view)
+// On collaboration mode change (auto-apply <-> manual)
 undoManager.clear();
 ```
 
@@ -149,9 +149,10 @@ Backend updates proposal rows from `_proposal_status` changes:
 - `accepted` -> proposal row `accepted`
 - `rejected` -> proposal row `rejected`
 - `stale` -> proposal row `stale`
-- key removed -> no decision entry remains in map
+- `reverted` -> proposal row `reverted`
+- key removed (session Ctrl-Z undoing a reject) -> proposal row `pending`
 
-Thread-level undo/reapply writes to `_proposal_status` Y.Map using `ORIGIN_THREAD` (non-tracked). The backend mirrors the map change to the proposal row through the standard sync path.
+Thread-level undo/reapply writes to `_proposal_status` Y.Map using `ORIGIN_THREAD` (tracked — enters session undo stack). The backend mirrors the map change to the proposal row through the standard sync path.
 
 ## Implementation Notes
 
