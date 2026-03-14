@@ -42,9 +42,26 @@ flowchart LR
 | [Local-First Authority](spec/local-first-authority.md) | Immediate local actions, transaction code, backend status mirroring |
 | [Undo Design](spec/undo.md) | Session Ctrl-Z + thread-level undo/reapply |
 | [Schema Design](spec/schema-design.md) | Database schema, dual authority, eliminated complexity |
-| [Editor Strategy](spec/editor-strategy.md) | CM6 decision rationale, block rendering extensions, DOCX/PDF import/export |
-| [Review Comments](spec/review-comments.md) | Annotation comments (human + AI), Y.RelativePosition anchoring, `add_comment` tool |
 | [Implementation Plan](spec/plan.md) | Phased execution plan and dependencies |
+
+## Future
+
+Designs for features that build on the core v2 model but are separate work streams:
+
+| Doc | Purpose |
+|-----|---------|
+| [Editor Strategy](future/editor-strategy.md) | CM6 decision rationale, block rendering extensions, DOCX/PDF import/export |
+| [Review Comments](future/review-comments.md) | Annotation comments (human + AI), Y.RelativePosition anchoring, `add_comment` tool |
+
+## UX Behaviors
+
+Concrete walkthroughs of what the writer sees and does -- editor mockups, state transitions, edge cases.
+
+| Doc | Flow |
+|-----|------|
+| [Proposal Review](ux/proposal-review.md) | AI proposes edits, writer accepts/rejects individual hunks |
+| [Thread Undo](ux/thread-undo.md) | Writer reverts/reapplies accepted edits days later via thread UI |
+| [Auto-Apply Mode](ux/auto-apply-mode.md) | Changes land immediately, writer reverts what they don't like |
 
 ## Research
 

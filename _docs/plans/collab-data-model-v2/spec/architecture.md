@@ -66,6 +66,7 @@ flowchart LR
     subgraph doc ["Canonical Y.Doc (persistent, synced)"]
         T["Y.Text('content')"]
         M["Y.Map('_proposal_status')"]
+        C["Y.Array('_comments')"]
     end
     doc -->|"clone + apply pending"| P["Projection clone"]
     P -->|"diff + group"| H["Grouped hunks"]
@@ -74,6 +75,7 @@ flowchart LR
 
 - `Y.Text('content')` stores canonical text.
 - `Y.Map('_proposal_status')` stores decision state by proposal.
+- `Y.Array('_comments')` stores review comment annotations (see [Review Comments](../future/review-comments.md)).
 - Projection is a throwaway clone. No projection state is stored in Postgres or Yjs.
 - Frontend uses projection for diff UI (hunk rendering). Backend uses projection to give the AI the document view its owner sees.
 

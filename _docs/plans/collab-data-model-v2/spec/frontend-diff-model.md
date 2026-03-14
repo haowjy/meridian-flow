@@ -12,60 +12,133 @@ The projection computation itself is shared logic (frontend for diff UI, backend
 
 ## Derivation Pipeline
 
+Two passes: one combined projection for the diff, then per-proposal clones for attribution.
+
 ```mermaid
 flowchart TB
-    A["Canonical Y.Doc"] --> B["Clone"]
-    B --> C["Apply each pending<br/>proposal yjs_update"]
-    C --> D["Track which proposals<br/>touch which text regions"]
-    D --> E["diff canonical vs projection"]
-    E --> F{"Raw hunks<br/>adjacent?"}
-    F -->|yes| G["Merge into<br/>grouped hunk"]
-    F -->|no| H["Keep as<br/>separate hunks"]
-    G --> I["Attach contributing<br/>proposal IDs"]
-    H --> I
-    I --> J["Projection GC:<br/>no-diff proposals → stale"]
-    J --> K["CM6 decorations"]
-    K --> L["Destroy projection"]
+    subgraph pass1 ["Pass 1: Combined Diff"]
+        A["Canonical Y.Doc"] --> B["Clone"]
+        B --> C["Apply ALL pending<br/>proposal yjs_updates"]
+        C --> D["Text diff:<br/>canonical vs projection"]
+        D --> E["Raw hunks with<br/>canonical ranges"]
+    end
+    subgraph pass2 ["Pass 2: Attribution"]
+        F["For each pending proposal"] --> G["Clone canonical"]
+        G --> H["Apply single<br/>proposal yjs_update"]
+        H --> I["Text diff:<br/>canonical vs single clone"]
+        I --> J["Per-proposal<br/>affected ranges"]
+    end
+    E --> K["Map per-proposal ranges<br/>into combined hunks"]
+    J --> K
+    K --> L["Group adjacent hunks"]
+    L --> M["Projection GC:<br/>no-diff proposals → stale"]
+    M --> N["CM6 decorations"]
+    N --> O["Destroy all clones"]
 ```
 
 Full re-derive triggers: `_proposal_status` map change or proposal-set change. Canonical text changes (user typing) only remap existing decoration positions via CM6 `map()` — no re-derive needed.
+
+### How Yjs Handles Overlapping Updates
+
+When two proposals edit the same text region, Yjs CRDT composition (YATA algorithm) merges them automatically via left/right origin references. Applying both yjs_updates to a clone produces one merged result — the text diff shows one hunk naturally.
+
+| Case | Yjs behavior | Grouping needed? |
+|------|-------------|-----------------|
+| Overlapping (same region) | CRDT composition → one merged result | No — one hunk naturally |
+| Adjacent (nearby lines) | Separate text changes | Yes — threshold determines merge |
+| Distant (far apart) | Separate text changes | No — separate hunks |
+
+### Attribution Algorithm
+
+Yjs has no built-in API for "which update changed which text region." We compute this by cloning canonical once per pending proposal, applying each individually, and diffing:
+
+```
+Pass 1 — combined diff:
+  projection = clone(canonical)
+  for each pending P: applyUpdate(projection, P.yjs_update)
+  combinedHunks = textDiff(canonical.text, projection.text)
+
+Pass 2 — per-proposal attribution:
+  for each pending P:
+    solo = clone(canonical)
+    applyUpdate(solo, P.yjs_update)
+    P.regions = textDiff(canonical.text, solo.text)
+
+  for each combinedHunk:
+    hunk.proposals = [P for P where P.regions overlaps hunk.range]
+```
+
+This correctly attributes even when proposals interact:
+
+```
+P1: insert "black " before "cat"   → solo diff: insert at pos 4
+P2: insert "big " before "cat"     → solo diff: insert at pos 4
+Combined (CRDT ordering):          → "big black cat" (one hunk at pos 4)
+Both P1.regions and P2.regions overlap → hunk carries [P1, P2]
+```
 
 ## Grouped Hunk Identity
 
 Each hunk represents one visible region that may include one or more proposals. The writer acts on regions, not on proposal rows.
 
-### Example: Hunk Grouping
+### Grouping Algorithm
+
+Two rules, applied via transitive closure:
+
+1. **Proposal atomicity**: Hunks that share any contributing proposal must be in the same group. A proposal's `yjs_update` is atomic -- you can't partially apply it.
+2. **Overlapping ranges**: Hunks whose text ranges overlap merge into one group.
+
+Both rules are transitive: if hunk A overlaps B and B shares a proposal with C, all three merge.
+
+```mermaid
+flowchart TB
+    A["Raw hunks with<br/>proposal attribution"] --> B["Merge hunks sharing<br/>any proposal ID"]
+    B --> C["Merge hunks with<br/>overlapping text ranges"]
+    C --> D["Final grouped hunks<br/>with proposal sets"]
+```
+
+No paragraph-level heuristic. If two edits don't overlap and don't share a proposal, the writer can accept/reject each independently -- even within the same paragraph.
+
+### Example: Non-Overlapping Edits Stay Separate
 
 ```
 Canonical: "She walked to the store and bought some milk."
 
-Pending proposals:
-  P1: replace "walked" with "ran"         (chars 4-10)
-  P2: replace "store" with "market"       (chars 18-23)
-  P3: replace "milk" with "oat milk"      (chars 40-44)
+Three separate proposals:
+  P1: "walked" → "ran"
+  P2: "store" → "market"
+  P3: "milk" → "oat milk"
 
-After projection + diff:
-  Raw hunk A: "walked" → "ran"       at 4-10    [P1]
-  Raw hunk B: "store" → "market"     at 18-23   [P2]
-  Raw hunk C: "milk" → "oat milk"    at 40-44   [P3]
-
-Grouping (nearby threshold ~20 chars):
-  A and B are 8 chars apart → MERGE into one grouped hunk [P1, P2]
-  C is 17 chars away from B → separate hunk [P3]
+No overlapping ranges, no shared proposals → three independent hunks.
+Writer acts on each one separately.
 ```
 
-What the writer sees in the editor:
+### Example: Overlapping Edits Merge
 
 ```
-Hunk 1:  "She [walked→ran] to the [store→market] and bought some milk."
-         Accept = applies both P1 and P2
-         Reject = rejects both P1 and P2
+Canonical: "The cat sat on the mat."
 
-Hunk 2:  "...bought some [milk→oat milk]."
-         Accept = applies only P3
+P1: "cat sat" → "cat lazily sat"    (insert "lazily ")
+P2: "cat sat" → "cat quietly sat"   (insert "quietly ")
+
+CRDT composition → "cat quietly lazily sat" (one combined hunk)
+Both P1 and P2 attributed → grouped hunk [P1, P2].
 ```
 
-The writer never needs to know how many proposals contributed. They see regions and act on them.
+### Example: Multi-Paragraph Proposal
+
+```
+Canonical:
+  "The sun set behind the hills.\n\nShe turned and walked home."
+
+P1 rewrites both paragraphs (one edit_document call):
+  "The sun dipped below the ridge.\n\nShe turned and ran home."
+
+Raw hunks span two paragraphs, but both carry [P1] → one grouped hunk.
+Writer accepts or rejects the entire edit.
+```
+
+If the writer wants finer-grained control over multi-paragraph edits, the AI should produce smaller proposals. That's a prompt/tool concern, not a diff model concern.
 
 ## Projection GC and Stale Proposals
 
@@ -98,10 +171,13 @@ Hunk rendering remains decoration-based:
 
 | Workload | Expected cost |
 |----------|---------------|
-| Clone + apply updates | ~2ms |
-| Diff (~2000 words) | ~3-10ms |
+| Pass 1: clone + apply all updates | ~2ms |
+| Pass 1: text diff (~2000 words) | ~3-10ms |
+| Pass 2: N solo clones + diffs (attribution) | ~2-5ms per proposal |
 | Group + decorate | ~1-3ms |
-| Total derive cycle | ~5-15ms |
+| Total derive cycle (5 pending proposals) | ~20-35ms |
+
+With 5 pending proposals, the attribution pass dominates. This is acceptable -- the pipeline only runs on proposal events, not keystrokes. If proposal counts grow large, the solo-clone pass can be optimized by caching per-proposal diffs and only recomputing changed proposals.
 
 ### Re-Derive Strategy
 

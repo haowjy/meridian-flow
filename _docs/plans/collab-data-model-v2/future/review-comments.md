@@ -161,7 +161,7 @@ These are observations, not actionable text changes -- comments, not proposals.
 
 ## Cross-References
 
-- [Architecture](architecture.md) -- canonical Y.Doc structure
-- [Undo Design](undo.md) -- why comments are excluded from UndoManager
-- [Editor Strategy](editor-strategy.md) -- CM6 decoration architecture
+- [Architecture](../spec/architecture.md) -- canonical Y.Doc structure
+- [Undo Design](../spec/undo.md) -- why comments are excluded from UndoManager
+- [Editor Strategy](editor-strategy.md) -- CM6 decoration architecture (same folder)
 - `_docs/plans/collab-ai/spec/cm6-library-model.md` -- package boundary
