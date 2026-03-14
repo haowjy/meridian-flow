@@ -4,7 +4,7 @@ audience: developer, architect
 ---
 # Collab Data Model v2
 
-**Status:** draft
+**Status:** approved
 
 ## Why
 
@@ -66,6 +66,15 @@ Concrete walkthroughs of what the writer sees and does -- editor mockups, state 
 ## Research
 
 [Research Notes](_other/research.md) -- competitive landscape, CRDT research, and ecosystem analysis. These are background reference notes only; they informed the design but are not required reading for implementation. Skip unless you need to understand *why* a decision was made.
+
+## Implementation Strategy
+
+A complete frontend overhaul is planned separately. For v2 implementation, **do not integrate into the production frontend**. Instead:
+
+- Backend changes (schema, append-only persistence, status mirror) land in production normally.
+- Frontend logic (projection pipeline, hunk grouping, undo transactions) is built and verified as **standalone toy examples** in `toy/` -- similar to the existing `frontend.html` and `backend.go`.
+- Toy examples validate the core algorithms (two-pass attribution, overlap grouping, Ctrl-Z interleaving) without coupling to the current CM6 editor or React component tree.
+- Production frontend integration happens during the UI/UX overhaul, using the verified toy logic as the reference implementation.
 
 ## Dependencies
 
