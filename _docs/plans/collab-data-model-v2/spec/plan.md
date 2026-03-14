@@ -5,7 +5,7 @@ audience: developer, architect
 
 # Implementation Plan
 
-**Status:** draft
+**Status:** approved
 
 ## Locked Decisions
 
