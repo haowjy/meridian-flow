@@ -24,12 +24,12 @@ flowchart LR
     F --> G["Writer sees inline hunks<br/>accepts/rejects when ready"]
 ```
 
-- One canonical Y.Doc: `Y.Text('content')` + `Y.Map('_review_status')`
+- One canonical Y.Doc: `Y.Text('content')` + `Y.Map('_proposal_status')`
 - Proposals store `yjs_update` (binary Yjs operations)
 - Diff is ephemeral: clone canonical, apply pending proposals, diff, group into hunks, discard
 - Actions are immediate: accept/reject are Yjs transactions, undoable via Ctrl-Z
 - Projection GC auto-marks stale proposals (no remaining diff)
-- Thread-level undo: revert any individual AI edit through the thread UI, in either mode
+- Thread-level undo/reapply: revert or reapply any individual AI edit through the thread UI, in either mode
 
 ## Spec Documents
 
@@ -42,7 +42,7 @@ flowchart LR
 | [Local-First Authority](spec/local-first-authority.md) | Immediate local actions and backend status mirroring |
 | [Session Undo Design](spec/session-undo-design.md) | Single UndoManager across text + status map |
 | [Schema Design](spec/schema-design.md) | Database schema, dual authority, eliminated complexity |
-| [Thread-Level Undo](spec/thread-level-undo.md) | Per-proposal undo/redo via stored before/after text |
+| [Thread-Level Undo](spec/thread-level-undo.md) | Per-proposal undo/reapply via stored before/after text |
 | [Implementation Plan](spec/plan.md) | Phased execution plan and dependencies |
 
 ## Dependencies

@@ -6,7 +6,7 @@ audience: developer, architect
 
 ## Overview
 
-Database schema stays minimal. Decision state lives in Yjs (`_review_status`) and is mirrored to proposal rows for querying.
+Database schema stays minimal. Decision state lives in Yjs (`_proposal_status`) and is mirrored to proposal rows for querying.
 
 ```mermaid
 erDiagram
@@ -51,19 +51,20 @@ Decision state has two representations that stay in sync:
 ```mermaid
 flowchart LR
     subgraph yjs ["Y.Doc (canonical, synced)"]
-        M["Y.Map('_review_status')<br/>P1: accepted<br/>P3: rejected<br/>P4: stale"]
+        M["Y.Map('_proposal_status')<br/>P1: accepted<br/>P3: rejected<br/>P4: stale"]
     end
     subgraph db ["Postgres (queryable)"]
         R["proposals table<br/>P1: accepted<br/>P2: pending<br/>P3: rejected<br/>P4: stale<br/>P5: reverted"]
     end
     M -->|"Yjs sync delta"| BE["Backend Mirror"]
     BE -->|"upsert status"| R
-    TU["Thread Undo"] -->|"direct row update"| R
+    TU["Thread Undo/Reapply"] -->|"writes to Y.Map"| M
 ```
 
 - `pending` = no Y.Map entry, proposal row exists with `status = 'pending'`
 - `accepted`, `rejected`, `stale` = Y.Map entry, mirrored to row
-- `reverted` = thread undo writes directly to row (does not touch Y.Map)
+- `reverted` = thread undo writes to Y.Map, mirrored to row
+- `rejected -> accepted` = thread reapply writes to Y.Map, mirrored to row
 
 ## Implementation Notes
 
@@ -87,8 +88,8 @@ Stores proposal payload and lifecycle status.
 | `region_text_after` | `TEXT NULL` | Captured at proposal creation from `edit_document` replacement text |
 | `created_at` | `TIMESTAMPTZ DEFAULT NOW()` | Created time |
 
-Backend mirrors `status` from `_review_status` map updates, keyed by `proposalId`.
-Thread undo/redo updates proposal `status` between `accepted` and `reverted` directly.
+Backend mirrors `status` from `_proposal_status` map updates, keyed by `proposalId`.
+Thread undo/reapply also writes to `_proposal_status`, so all status changes flow through the same mirror path.
 
 ### `${TABLE_PREFIX}documents`
 
@@ -104,12 +105,12 @@ Thread undo/redo updates proposal `status` between `accepted` and `reverted` dir
 
 Unchanged request-idempotency table.
 
-## Yjs Review State Shape
+## Yjs Proposal State Shape
 
-`_review_status` lives inside canonical Y.Doc:
+`_proposal_status` lives inside canonical Y.Doc:
 
 - key: `proposalId`
-- value: status string (`accepted`, `rejected`, `stale`)
+- value: status string (`accepted`, `rejected`, `stale`, `reverted`)
 
 Pending proposals are represented by missing keys plus proposal row `status = 'pending'`.
 
@@ -117,11 +118,11 @@ Pending proposals are represented by missing keys plus proposal row `status = 'p
 
 | Status | Meaning | Undo/Redo? |
 |--------|---------|-----------|
-| `pending` | Waiting for review | N/A |
-| `accepted` | User explicitly accepted | Yes (thread undo) |
-| `rejected` | User explicitly rejected | Yes (session Ctrl-Z while still in stack) |
+| `pending` | Waiting for action | N/A |
+| `accepted` | User explicitly accepted or auto-applied | Yes (thread undo) |
+| `rejected` | User explicitly rejected | Session Ctrl-Z while in stack, or thread reapply |
 | `stale` | Auto-resolved, canonical diverged and no diff remains | No |
-| `reverted` | Accepted then thread-undone | Yes (thread redo) |
+| `reverted` | Accepted then thread-undone | Yes (thread reapply) |
 
 ## What Was Eliminated
 
@@ -132,7 +133,7 @@ Pending proposals are represented by missing keys plus proposal row `status = 'p
 | One-proposal-to-one-hunk identity | Hunks are grouped regions with proposal sets |
 | Legacy proposal grouping linkage columns | Grouped hunks are derived dynamically from projection diff regions |
 | Separate review-edit proposal status | Edit is plain user typing after reject or after accept |
-| Separate decision persistence stores | Canonical `_review_status` already persists via Yjs |
+| Separate decision persistence stores | Canonical `_proposal_status` already persists via Yjs |
 
 ## Cross-References
 

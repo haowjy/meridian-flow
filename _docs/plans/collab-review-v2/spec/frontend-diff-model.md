@@ -26,7 +26,7 @@ flowchart TB
     K --> L["Destroy projection"]
 ```
 
-Re-derive triggers: canonical text change, `_review_status` map change, or proposal-set change.
+Re-derive triggers: canonical text change, `_proposal_status` map change, or proposal-set change.
 
 ## Grouped Hunk Identity
 

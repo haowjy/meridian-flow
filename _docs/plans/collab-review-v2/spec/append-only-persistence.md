@@ -177,7 +177,7 @@ Next compaction triggers at 30,000 total (20k remaining again).
 
 Yjs GC is **disabled** — deleted Items remain as tombstones while updates are in the retained log window. Tombstones older than the compaction threshold are GC'd when their updates are compacted into a checkpoint.
 
-The retained 10,000 updates provide replay headroom for recent timeline/history operations and short-lived auto-event bookmarks. Thread-level undo/redo does not depend on Yjs inverse computation; it uses proposal text strings (`region_text_before`/`region_text_after`) and therefore survives compaction.
+The retained 10,000 updates provide replay headroom for recent timeline/history operations and short-lived auto-event bookmarks. Thread-level undo/reapply does not depend on Yjs inverse computation; it uses proposal text strings (`region_text_before`/`region_text_after`) and therefore survives compaction.
 
 ### Storage Estimate
 
@@ -193,10 +193,10 @@ With GC disabled, all Items (including deleted ones) remain as tombstones. This 
 
 - **Session undo**: UndoManager handles accept/reject/edit via Ctrl-Z (session-scoped)
 - **Thread-level undo**: text-based find-and-replace using `region_text_before` and `region_text_after` on the proposal row. Find `region_text_after` in current doc text, then replace with `region_text_before`. This is persistence-model-agnostic and works identically with append-only or overwrite-merge.
-- **Thread-level redo**: find `region_text_before`, then replace with `region_text_after`.
-- **No inverse-op column and no Yjs snapshots**: thread-level undo/redo only needs stored before/after text strings, which survive compaction.
+- **Thread-level reapply**: find `region_text_before`, then replace with `region_text_after`.
+- **No inverse-op column and no Yjs snapshots**: thread-level undo/reapply only needs stored before/after text strings, which survive compaction.
 
-Undo/redo writes are normal document mutations and are appended to the log. The log is always append-only.
+Undo/reapply writes are normal document mutations and are appended to the log. The log is always append-only.
 
 ## Why Yjs (not @codemirror/collab)
 
@@ -211,7 +211,7 @@ There is no Go server library for CodeMirror's OT-based `@codemirror/collab` tra
 | 3 | New compaction worker | Goroutine or cron job merging checkpoints |
 | 4 | Schema migration | Add `document_updates`, `document_checkpoints`, `document_bookmarks`; migrate off `collab_document_snapshots`; deprecate `documents.yjs_state` |
 
-This is Phase 0 of collab review v2 and must land before review workflow phases.
+This is Phase 0 of collab data model v2 and must land before subsequent phases.
 
 ## Related
 

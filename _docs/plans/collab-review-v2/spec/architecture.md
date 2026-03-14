@@ -12,7 +12,7 @@ This plan covers core data model changes to the collaboration system and an impr
 
 1. **Append-only persistence** — replace `documents.yjs_state` overwrite with an update log, checkpoints, and bookmarks.
 2. **Proposal payload model** — proposals store `yjs_update` (binary Yjs operation) instead of derived text diffs.
-3. **Decision state in Yjs** — `Y.Map('_review_status')` on canonical Y.Doc tracks accept/reject/stale per proposal, enabling undo and sync.
+3. **Decision state in Yjs** — `Y.Map('_proposal_status')` on canonical Y.Doc tracks accept/reject/stale per proposal, enabling undo and sync.
 4. **Ephemeral projection** — no persistent AI document. Diff view is computed on demand from canonical + pending proposals, then discarded.
 5. **Projection GC** — auto-resolves proposals whose changes are already in canonical.
 
@@ -42,13 +42,14 @@ flowchart LR
 | Step | Operation | Persisted outcome |
 |------|-----------|-------------------|
 | Derive diff | Clone canonical, apply each `pending` proposal update, diff, group nearby regions | None (ephemeral) |
-| Projection GC | Pending proposal yields no diff — mark `stale` | `_review_status` entry + proposal row |
-| Accept hunk | Apply grouped hunk proposal updates to canonical + set `_review_status` to `accepted` in one transaction | Canonical text + status entries |
-| Reject hunk | Set `_review_status` to `rejected` for each proposal in hunk | Status entries only |
+| Projection GC | Pending proposal yields no diff — mark `stale` | `_proposal_status` entry + proposal row |
+| Accept hunk | Apply grouped hunk proposal updates to canonical + set `_proposal_status` to `accepted` in one transaction | Canonical text + status entries |
+| Reject hunk | Set `_proposal_status` to `rejected` for each proposal in hunk | Status entries only |
 | Edit | User types after reject, or modifies after accept (`ORIGIN_HUMAN`) | Canonical text mutation |
 | Session undo | `undoManager.undo()` on unified stack | Reverts most recent tracked transaction |
 | Thread undo | Find/replace (`region_text_after` -> `region_text_before`) + proposal row `reverted` | Canonical text + proposal row |
-| Backend mirror | Observe `_review_status` deltas from Yjs sync | `proposals.status` mirrored |
+| Thread reapply | Find/replace (`region_text_before` -> `region_text_after`) + proposal row `accepted` | Canonical text + proposal row |
+| Backend mirror | Observe `_proposal_status` deltas from Yjs sync | `proposals.status` mirrored |
 
 ### Projection Pipeline
 
@@ -111,7 +112,7 @@ Agent P3 proposes: insert "black " before "cat" — but the canonical already ha
 | Layer | Authority | Shape |
 |------|-----------|-------|
 | Canonical document | Yjs | `Y.Text('content')` |
-| Decision state | Yjs | `Y.Map('_review_status'): proposalId -> status` |
+| Decision state | Yjs | `Y.Map('_proposal_status'): proposalId -> status` |
 | Diff hunks | Frontend only | Ephemeral grouped regions from projection |
 | Proposal row | Backend | `pending | accepted | rejected | stale | reverted` |
 
@@ -121,12 +122,13 @@ Agent P3 proposes: insert "black " before "cat" — but the canonical already ha
 stateDiagram-v2
     [*] --> pending : agent writes
 
-    pending --> accepted : writer accepts hunk
+    pending --> accepted : auto-apply / writer accepts hunk
     pending --> rejected : writer rejects hunk
     pending --> stale : projection GC
 
     accepted --> reverted : thread undo
-    reverted --> accepted : thread redo
+    reverted --> accepted : thread reapply
+    rejected --> accepted : thread reapply
 
     rejected --> pending : session Ctrl-Z
 
@@ -137,9 +139,9 @@ stateDiagram-v2
 |--------|---------|-----------|
 | `pending` | Agent wrote, waiting for writer action | N/A |
 | `accepted` | Writer accepted (or auto-applied) | Thread undo |
-| `rejected` | Writer rejected | Session Ctrl-Z while in stack |
+| `rejected` | Writer rejected | Session Ctrl-Z while in stack, or thread reapply |
 | `stale` | Canonical already contains the change — auto-resolved by projection GC | No |
-| `reverted` | Was accepted, then thread-undone | Thread redo |
+| `reverted` | Was accepted, then thread-undone | Thread reapply |
 
 ### Example: Why Reject Needs Y.Map
 
@@ -151,9 +153,9 @@ Pending P1: insert "black " → would produce `The black cat sat on the mat.`
 **Writer rejects P1:**
 
 ```
-Transaction (ORIGIN_REVIEW_REJECT):
+Transaction (ORIGIN_REJECT):
   Y.Text('content'):       unchanged — "The cat sat on the mat."
-  Y.Map('_review_status'): set(P1, 'rejected')
+  Y.Map('_proposal_status'): set(P1, 'rejected')
 ```
 
 The text didn't change, but the Y.Map mutation IS a Yjs operation. UndoManager tracks it.
@@ -162,7 +164,7 @@ The text didn't change, but the Y.Map mutation IS a Yjs operation. UndoManager t
 
 ```
 UndoManager reverses the transaction:
-  Y.Map('_review_status'): delete(P1) → back to no entry = pending
+  Y.Map('_proposal_status'): delete(P1) → back to no entry = pending
   Projection re-derives → P1 reappears as a diff hunk
 ```
 
@@ -176,9 +178,9 @@ Pending P1: insert "black "
 **Writer accepts:**
 
 ```
-Transaction (ORIGIN_REVIEW_ACCEPT):
+Transaction (ORIGIN_ACCEPT):
   Y.Text('content'):       "The cat sat" → "The black cat sat on the mat."
-  Y.Map('_review_status'): set(P1, 'accepted')
+  Y.Map('_proposal_status'): set(P1, 'accepted')
 ```
 
 Both mutations in one transaction = one undo entry.
@@ -188,7 +190,7 @@ Both mutations in one transaction = one undo entry.
 ```
 UndoManager reverses:
   Y.Text('content'):       "The black cat sat" → "The cat sat on the mat."
-  Y.Map('_review_status'): delete(P1) → back to pending
+  Y.Map('_proposal_status'): delete(P1) → back to pending
   P1 reappears as a diff hunk
 ```
 
@@ -205,7 +207,7 @@ UndoManager reverses:
 |----------|-----------|
 | No persistent AI document | Removes stale state and convergence machinery. Diff is computed on demand. |
 | Proposals store `yjs_update` | Binary Yjs operations compose cleanly. No text-diff translation layer. |
-| `_review_status` in Y.Doc | Enables Ctrl-Z for reject (Y.Map mutation is tracked by UndoManager) and delta-based backend sync. |
+| `_proposal_status` in Y.Doc | Enables Ctrl-Z for reject (Y.Map mutation is tracked by UndoManager) and delta-based backend sync. |
 | Grouped region hunks | Writers act on visible regions, not individual proposals. Multiple proposals can contribute to one hunk. |
 | Immediate actions | No finalization step. Accept/reject are durable immediately. |
 | Projection GC | Stale proposals are cleaned up automatically — no manual resolution needed. |
@@ -220,8 +222,8 @@ UndoManager reverses:
 - Ephemeral projection + diff pipeline for manual path
 - Grouped hunk accept/reject as immediate Yjs transactions
 - Projection GC for stale proposal auto-resolution
-- `_review_status` Y.Map semantics, undo, and backend sync
-- Thread-level undo/redo via stored before/after text
+- `_proposal_status` Y.Map semantics, undo, and backend sync
+- Thread-level undo/reapply via stored before/after text
 
 **Out of scope:**
 - Multi-user concurrent conflict policy
