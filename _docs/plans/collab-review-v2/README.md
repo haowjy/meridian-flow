@@ -2,39 +2,58 @@
 detail: standard
 audience: developer, architect
 ---
-# Collab Review v2: Server-Authoritative Hunks + Proposal Undo
+# Collab Review v2: Projection + Review Status Map
 
 **Status:** draft
 
 ## Why
 
-The current proposal review system derives hunks entirely on the frontend, making undo impossible and multi-client consistency unenforceable. `ai_content` goes stale between proposal lifecycle events, and auto-snapshot TTL deletes recovery points too aggressively for fiction writers.
+The v1 review design added complexity that did not improve writer workflow: legacy text-derived hunk identity, extra review-state indirection, and delayed resolution semantics. v2 simplifies to one canonical Y.Doc and immediate, undoable actions.
 
-## What Changes
+## Core Model
 
-| Area | Current State | Target State |
-|------|--------------|--------------|
-| Hunk derivation | Frontend-only (diff computed in browser) | Backend derives hunks at proposal creation; hunks are server-authoritative records with state transitions |
-| Undo support | None -- accept is permanent, reject is frontend-only | Yjs UndoManager with tracked origins; deferred finalization enables undo for accepts and rejects |
-| `ai_content` freshness | Updates only on proposal lifecycle events; stale when user types between AI edits | During persistence: `ai_content = content` when no pending proposals exist; eliminates staleness with auto-accept ON |
-| Snapshot retention | Auto-snapshots deleted after 7-day TTL | No TTL cleanup; auto-snapshots kept indefinitely (storage is negligible) |
+- Proposal rows store `yjs_update` as pending change payloads.
+- Diff display is ephemeral:
+  - clone canonical
+  - apply each `pending` proposal update while tracking which proposals affect which regions
+  - diff projection vs canonical into raw hunks
+  - group nearby or overlapping raw hunks into user-facing hunk regions
+  - discard projection
+- `_review_status` is a `Y.Map` on canonical:
+  - key: `proposalId`
+  - value: `accepted | rejected | stale`
+- Actions are immediate:
+  - Accept hunk: apply all grouped hunk proposal updates to canonical and set `_review_status` to `accepted` for every contributing proposal in one transaction.
+  - Reject hunk: set `_review_status` to `rejected` for every contributing proposal in one transaction.
+  - Edit hunk: user rejects then types, or accepts then modifies; edits are normal `ORIGIN_HUMAN` typing.
+- Hunk identity is a grouped text region with one or more contributing proposals.
+- Projection GC auto-resolves stale proposals:
+  - if applying a pending proposal yields no remaining diff, set its status to `stale`
+  - stale proposals never render as hunks and show as "No longer relevant" in thread UI
+- UndoManager scopes `Y.Text('content')` + `Y.Map('_review_status')`.
+- Backend status sync keeps proposal rows current for `pending | accepted | rejected | stale | reverted`.
+- A server background job removes `_review_status` entries older than 7 days.
 
-## Design Docs
+## Spec Documents
 
 | Doc | Purpose |
 |-----|---------|
-| `spec/architecture.md` | Target architecture and data flow diagrams |
-| `spec/backend-hunk-authority.md` | Backend hunk derivation, data model, API |
-| `spec/proposal-undo.md` | Undo system, tracked origins, deferred finalization |
-| `spec/plan.md` | Implementation phases and agent headcount (planned) |
+| [Architecture](spec/architecture.md) | System design, boundaries, and locked decisions |
+| [Append-Only Persistence](spec/append-only-persistence.md) | Update log, checkpoints/bookmarks, compaction model |
+| [Dual-Version Yjs Model](spec/dual-version-yjs-model.md) | Canonical Y.Doc + ephemeral projection mental model |
+| [Frontend Diff Model](spec/frontend-diff-model.md) | Projection/diff pipeline and grouped region hunks |
+| [Local-First Authority](spec/local-first-authority.md) | Immediate local actions and backend status mirroring |
+| [Review Undo Design](spec/review-undo-design.md) | Single UndoManager behavior across text + status map |
+| [Schema Design](spec/schema-design.md) | Database schema, eliminated complexity, status sync |
+| [Thread-Level Undo](spec/thread-level-undo.md) | Persistent undo/redo via stored before/after text |
+| [Implementation Plan](spec/plan.md) | Phased execution plan and dependencies |
 
 ## Dependencies
 
-- **ws-transport-v2 Stage 1 complete** -- per-document WebSocket is the transport foundation for hunk-level server events
-- **Current proposal system stable** -- this redesign builds on the existing proposal lifecycle, not a greenfield replacement
+- **Yjs collab foundation complete** -- canonical Y.Doc sync is the transport foundation.
+- **Current proposal system stable** -- this redesign refines proposal resolution behavior.
 
 ## Relationship to Existing Plans
 
-- **Builds on** `collab-ai/phase/phase-5-proposal-review-redesign.md` -- refines the concepts into implementable specs
-- **Depends on** `ws-transport-v2/` -- per-document WS transport layer
-- **References** `_docs/technical/collab/` -- inline review, ai-content projection, ai-edit-flow documentation
+- **Supersedes** `collab-review-v2/spec/backend-hunk-authority.md` and `collab-review-v2/spec/proposal-undo.md` (v1 specs)
+- **References** `_docs/technical/collab/` for implementation architecture docs

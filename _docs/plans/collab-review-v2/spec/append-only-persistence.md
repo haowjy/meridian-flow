@@ -1,0 +1,190 @@
+---
+detail: standard
+audience: developer, architect
+status: future
+motivates: _docs/future/features/document-timeline.md
+---
+
+# Append-Only Yjs Update Log
+
+Migrate from merged-snapshot persistence to an append-only update log, enabling point-in-time document history.
+
+## Current Model
+
+Each update merges into an in-memory Y.Doc, then:
+
+| Trigger | Action |
+|---------|--------|
+| Debounce 2s | Overwrite `documents.yjs_state` with full merged blob |
+| Every 500 updates | Write full snapshot to `collab_document_snapshots` |
+| Last WS disconnect | Write full snapshot to `collab_document_snapshots` |
+
+Individual update bytes are discarded after merging. History is irrecoverable.
+
+See `service/collab/session_manager.go` and `_docs/technical/collab/yjs-state-lifecycle.md`.
+
+## Target Model
+
+```mermaid
+flowchart LR
+    subgraph "Write Path"
+        WS["WebSocket Update"] --> SM["SessionManager<br/>apply to Y.Doc"]
+        SM --> AL["document_updates<br/>(append row)"]
+        SM --> IM["in-memory Y.Doc<br/>(broadcast to peers)"]
+    end
+
+    subgraph "Compaction"
+        CW["Compaction Worker"] --> LC["Load latest checkpoint<br/>+ updates since it"]
+        LC --> MG["Merge into new<br/>document_checkpoints row"]
+        MG --> GC["GC old<br/>document_updates rows"]
+    end
+
+    subgraph "Read Path"
+        RP["Load Document"] --> CP["Fetch latest checkpoint"]
+        CP --> RU["Replay updates<br/>since checkpoint"]
+        RU --> YD["Reconstruct Y.Doc"]
+    end
+```
+
+## Schema
+
+```sql
+-- Replaces documents.yjs_state (overwritten blob)
+CREATE TABLE document_updates (
+    id          BIGSERIAL PRIMARY KEY,
+    doc_id      UUID NOT NULL REFERENCES documents(id),
+    update      BYTEA NOT NULL,        -- raw Yjs update bytes
+    origin      TEXT,                  -- "human" | "ai_proposal" | etc.
+    user_id     UUID,
+    created_at  TIMESTAMPTZ DEFAULT now()
+);
+
+-- Replaces collab_document_snapshots for compaction storage
+CREATE TABLE document_checkpoints (
+    id          BIGSERIAL PRIMARY KEY,
+    doc_id      UUID NOT NULL REFERENCES documents(id),
+    state       BYTEA NOT NULL,        -- merged Yjs state up to up_to_id
+    up_to_id    BIGINT NOT NULL REFERENCES document_updates(id),
+    created_at  TIMESTAMPTZ DEFAULT now()
+);
+
+-- Bookmarks into the update log — named points in time
+CREATE TABLE document_bookmarks (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    doc_id          UUID NOT NULL REFERENCES documents(id),
+    update_id       BIGINT REFERENCES document_updates(id),  -- NULL once materialized
+    state           BYTEA,                                    -- materialized blob, NULL while pointer
+    bookmark_type   TEXT NOT NULL,       -- "manual" | "daily" | "auto_event"
+    name            TEXT,                -- user-provided label (manual only)
+    created_by      UUID,
+    created_at      TIMESTAMPTZ DEFAULT now()
+);
+```
+
+`collab_document_snapshots` is replaced by:
+- `document_checkpoints` for compaction state (system-managed merged Yjs blobs)
+- `document_bookmarks` for named restore points (user/system-visible versions)
+
+## Snapshot Migration (Bookmarks)
+
+The old snapshot table is split into checkpoint storage + bookmark semantics:
+- `collab_document_snapshots` is removed
+- `document_checkpoints` stores compaction checkpoints
+- `document_bookmarks` stores restore points (`manual`, `daily`, `auto_event`)
+
+Retention and creation rules:
+- Daily snapshots: auto-created at end of the last editing session each day, materialized on compaction, retained forever
+- Manual snapshots: created by user "Save Version", materialized on compaction, retained forever
+- Auto-event bookmarks: created for workflow events (AI accept/session boundaries), and discarded during compaction
+
+Compaction preservation rule:
+- Manual and daily bookmarks are preserved by materializing full `state` blobs
+- Auto-event bookmarks are deleted once they age into the compacted window
+
+### Bookmark Tiers
+
+Bookmarks are lightweight pointers into the update log. On compaction, some are materialized into full state blobs, others are discarded.
+
+| Type | Created | On compaction | Retention |
+|------|---------|--------------|-----------|
+| Manual | User clicks "Save Version" | Materialize into blob | Forever |
+| Daily | End of last editing session each day | Materialize into blob | Forever |
+| Auto event | AI accept, session start, etc. | Delete | Only within update window |
+
+Within the retained update window (10k updates), all bookmark types work as free pointers — replay the log to that `update_id`. Beyond the window, only manual and daily bookmarks survive as materialized blobs.
+
+## Write Path
+
+Each Yjs update byte slice is appended as a row — no merge required on write. Writes are tiny and fast. The in-memory Y.Doc continues to hold merged state for broadcasting to connected peers.
+
+## Read Path
+
+1. Load latest `document_checkpoints` row for the document
+2. Query `document_updates` rows with `id > up_to_id`
+3. Apply updates to a fresh Y.Doc seeded from the checkpoint state
+
+Yjs updates are order-independent (CRDT) — forward application converges regardless of order.
+
+## Compaction
+
+Threshold-based per document: accumulate up to 20,000 updates, then compact the oldest 10,000 into a new checkpoint. Always retains at least 10,000 updates of undo headroom.
+
+```
+Updates accumulate → hit 20k → compact oldest 10k into checkpoint → 10k remain
+                               → accumulate → hit 20k → compact → 10k remain
+```
+
+Compaction steps:
+1. Count `document_updates` rows for the document
+2. If count >= 20,000:
+3. Find manual and daily bookmarks in the oldest 10,000 updates — materialize their state blobs by replaying the log to each bookmark's `update_id`
+4. Delete auto-event bookmarks in the oldest 10,000 updates
+5. Load the oldest 10,000 updates + latest checkpoint, merge into a new `document_checkpoints` row
+6. Delete the oldest 10,000 `document_updates` rows
+
+### GC and Undo Window
+
+Yjs GC is **disabled** — deleted Items remain as tombstones while updates are in the retained log window. Tombstones older than the compaction threshold are GC'd when their updates are compacted into a checkpoint.
+
+The retained 10,000 updates provide replay headroom for recent timeline/history operations and short-lived auto-event bookmarks. Thread-level undo/redo does not depend on Yjs inverse computation; it uses proposal text strings (`region_text_before`/`region_text_after`) and therefore survives compaction.
+
+### Storage Estimate
+
+| Component | Per doc (at 20k threshold) | 100 chapters |
+|-----------|--------------------------|-------------|
+| Update log rows (~200 bytes avg) | ~4MB max | ~400MB |
+| Checkpoint blob (with tombstones) | ~2-3MB | ~250MB |
+| **Total** | **~6-7MB** | **~650MB** |
+
+## Undo / Restore Semantics
+
+With GC disabled, all Items (including deleted ones) remain as tombstones. This means:
+
+- **Session undo**: UndoManager handles accept/reject/edit via Ctrl-Z (session-scoped)
+- **Thread-level undo**: text-based find-and-replace using `region_text_before` and `region_text_after` on the proposal row. Find `region_text_after` in current doc text, then replace with `region_text_before`. This is persistence-model-agnostic and works identically with append-only or overwrite-merge.
+- **Thread-level redo**: find `region_text_before`, then replace with `region_text_after`.
+- **No inverse-op column and no Yjs snapshots**: thread-level undo/redo only needs stored before/after text strings, which survive compaction.
+
+Undo/redo writes are normal document mutations and are appended to the log. The log is always append-only.
+
+## Why Yjs (not @codemirror/collab)
+
+There is no Go server library for CodeMirror's OT-based `@codemirror/collab` transforms. The backend uses `github.com/y-crdt/y-crdt` (Go). Yjs was chosen because of this library availability, not the other way around.
+
+## Migration Path
+
+| Step | File | Change |
+|------|------|--------|
+| 1 | `service/collab/session_manager.go` | Append update row instead of debounce-overwrite |
+| 2 | `repository/postgres/collab/document_store.go` | Load = checkpoint + replay; save = insert row |
+| 3 | New compaction worker | Goroutine or cron job merging checkpoints |
+| 4 | Schema migration | Add `document_updates`, `document_checkpoints`, `document_bookmarks`; migrate off `collab_document_snapshots`; deprecate `documents.yjs_state` |
+
+This is Phase 0 of collab review v2 and must land before review workflow phases.
+
+## Related
+
+- `_docs/future/features/document-timeline.md` — product motivation
+- `_docs/technical/collab/yjs-state-lifecycle.md` — current persistence model (what this replaces)
+- `service/collab/session_manager.go` — persist logic to change
+- `repository/postgres/collab/document_store.go` — load/save logic to change
