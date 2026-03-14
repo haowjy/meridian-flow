@@ -19,7 +19,7 @@ audience: developer, architect
 | 5   | Reject is immediate      | Set `_proposal_status[proposalId]='rejected'` for all proposals in the grouped hunk.                                            |
 | 6   | Edit is plain typing     | Edit is reject + type or accept + modify with `ORIGIN_HUMAN`; no separate review-edit status value.                           |
 | 7   | Unified UndoManager      | One stack over `[Y.Text('content'), Y.Map('_proposal_status')]`.                                                                |
-| 8   | Undo boundaries          | Keep single UndoManager; call `clear()` at mode transitions (e.g., toggling manual diff view).                                |
+| 8   | Undo boundaries          | Keep single UndoManager; call `clear()` when collaboration mode changes (auto-apply to manual or vice versa).                 |
 | 9   | Projection GC            | Every recompute auto-marks no-diff pending proposals as `stale`.                                                              |
 | 10  | Status chain             | `edit_tool -> proposal -> yjs_update -> status` is always current in backend row and thread UI.                               |
 | 11  | Thread undo/reapply      | Use `region_text_before/after` text replacement for undo, reapply (from reverted), and reapply (from rejected).               |
@@ -59,10 +59,11 @@ Tasks:
 
 1. Wire grouped hunk accept/reject to immediate Yjs transactions.
 2. Ensure hunk accept performs multi-update text apply + status writes atomically.
-3. Initialize a single UndoManager over text + status map.
-4. Call `undoManager.clear()` at mode transitions.
-5. Verify one Ctrl-Z undoes the whole grouped hunk transaction.
-6. Verify interleaved undo/redo across typing and hunk actions.
+3. Wire auto-apply mode: apply yjs_update to canonical and mark proposal `accepted` on creation.
+4. Initialize a single UndoManager over text + status map.
+5. Call `undoManager.clear()` on collaboration mode changes (auto-apply to manual or vice versa).
+6. Verify one Ctrl-Z undoes the whole grouped hunk transaction.
+7. Verify interleaved undo/redo across typing and hunk actions.
 
 ### Phase 4: Backend Status Mirror
 
