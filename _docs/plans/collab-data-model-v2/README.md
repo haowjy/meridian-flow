@@ -72,9 +72,10 @@ Concrete walkthroughs of what the writer sees and does -- editor mockups, state 
 A complete frontend overhaul is planned separately. For v2 implementation, **do not integrate into the production frontend**. Instead:
 
 - Backend changes (schema, append-only persistence, status mirror) land in production normally.
-- Frontend logic (projection pipeline, hunk grouping, undo transactions) is built and verified as **standalone toy examples** in `toy/` -- similar to the existing `frontend.html` and `backend.go`.
-- Toy examples validate the core algorithms (two-pass attribution, overlap grouping, Ctrl-Z interleaving) without coupling to the current CM6 editor or React component tree.
-- Production frontend integration happens during the UI/UX overhaul, using the verified toy logic as the reference implementation.
+- Frontend logic is built and verified in two layers:
+  1. **Pure Yjs toys** (`toy/`) -- validate data model logic (projection, undo, status mirror) without any editor. Already exists (`frontend.html`, `backend.go`).
+  2. **Dev-only CM6 route** -- bare `EditorView` + `y-codemirror.next` + the projection/diff pipeline. Validates real CM6 behavior (decorations, `map()` remapping, widget interactions) without production components or styling. Minimal UI -- just enough to test hunk rendering, accept/reject, and undo.
+- Production frontend integration happens during the UI/UX overhaul, using the verified dev route logic as the reference implementation.
 
 ## Dependencies
 
