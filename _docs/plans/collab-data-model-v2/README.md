@@ -10,18 +10,18 @@ audience: developer, architect
 
 The v1 collab design accumulated unnecessary complexity: legacy text-derived hunk identity, extra review-state indirection, delayed resolution semantics, and a persistent AI document. v2 simplifies to one canonical Y.Doc, ephemeral projection, and immediate undoable actions.
 
-This plan covers core data model changes (append-only persistence, yjs_update proposals, decision state in Yjs) and an improved manual-path experience for the writer. Both auto-apply and manual modes are continuous — agents write autonomously, writers manage changes when they want.
+This plan covers core data model changes (append-only persistence, yjs_update proposals, decision state in Yjs) and the manual-path experience for reviewing proposed changes. The proposal model is participant-agnostic — proposals can come from AI agents or human collaborators. Both auto-apply and manual modes are continuous.
 
 ## Core Model
 
 ```mermaid
 flowchart LR
-    A["AI edit_document"] --> B["Proposal with yjs_update"]
+    A["Collaborator proposes edit"] --> B["Proposal with yjs_update"]
     B --> C{"auto-apply?"}
     C -->|yes| D["Apply to canonical<br/>mark accepted"]
     C -->|no| E["Store as pending"]
-    E --> F["Projection: clone + apply + diff"]
-    F --> G["Writer sees inline hunks<br/>accepts/rejects when ready"]
+    E --> F["Per-user projection:<br/>clone + apply + diff"]
+    F --> G["Owner sees inline hunks<br/>accepts/rejects when ready"]
 ```
 
 - One canonical Y.Doc: `Y.Text('content')` + `Y.Map('_proposal_status')`
@@ -29,7 +29,8 @@ flowchart LR
 - Diff is ephemeral: clone canonical, apply pending proposals, diff, group into hunks, discard
 - Actions are immediate: accept/reject are Yjs transactions, undoable via Ctrl-Z
 - Projection GC auto-marks stale proposals (no remaining diff)
-- Thread-level undo/reapply: revert or reapply any individual AI edit through the thread UI, in either mode
+- Thread-level undo/reapply: revert or reapply any individual proposal through the UI, in either mode
+- Per-user projection: each user sees only their own pending proposals; other users' activity shown as awareness indicators
 
 ## Spec Documents
 

@@ -6,7 +6,7 @@ audience: developer, architect
 
 ## Mental Model
 
-There is one materialized document authority: canonical `Y.Doc`. The projection is temporary and local.
+There is one materialized document authority: canonical `Y.Doc`. The projection is ephemeral and computed wherever needed — frontend for diff UI, backend for AI document context.
 
 ```mermaid
 flowchart LR
@@ -22,6 +22,8 @@ flowchart LR
 - `Y.Text('content')` stores canonical text.
 - `Y.Map('_proposal_status')` stores decision state by proposal.
 - Projection is a throwaway clone. No projection state is stored in Postgres or Yjs.
+- Projection is per-user: only pending proposals where `created_by_user_id = current_user` are applied.
+- Frontend uses projection for diff UI (hunk rendering). Backend uses projection to give the AI the document view its owner sees.
 
 ### Example: What Lives Where
 
@@ -104,6 +106,21 @@ This gives one chronological undo stack for typing + hunk actions.
 ## Backend Mirror
 
 Backend listens to synced canonical state changes and mirrors `_proposal_status` values into proposal-row status for querying/reporting. Thread undo/reapply also writes to `_proposal_status`, so all status changes flow through the same mirror path.
+
+## Backend Projection for AI Context
+
+When an AI agent reads the document (e.g., to generate its next `edit_document` call), the backend computes the same projection:
+
+1. Load canonical Y.Doc state
+2. Clone
+3. Apply pending proposals where `created_by_user_id = thread_owner`
+4. Extract text — this is what the AI sees
+
+This ensures the AI works against the same view its owner sees. Without this, an AI in manual mode would propose edits against canonical text that doesn't include its own pending proposals — leading to conflicts and incoherent edits.
+
+## Multi-User Hunk Visibility
+
+One projection includes all pending proposals for the current user. In multi-user collaboration, other users' pending proposals are not in your projection. However, the frontend can query all pending proposals to render awareness indicators ("User B's AI edited near paragraph 3") without showing the actual content — see [Architecture](architecture.md).
 
 ## What Does Not Exist
 
