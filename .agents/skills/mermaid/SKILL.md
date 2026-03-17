@@ -5,86 +5,56 @@ description: Rules and validation for Mermaid diagrams. Use when creating or edi
 
 # Mermaid Diagram Rules
 
-**Always follow these rules when writing Mermaid diagrams.** After writing or editing any Mermaid block, validate with the co-located script: `scripts/check-mermaid.sh <file>`.
+After writing or editing any Mermaid block, validate with the co-located script: `scripts/check-mermaid.sh <file>`.
 
-## Syntax Rules (Critical)
+## 1. Quote labels and edges that contain special characters
 
-### 1. Always quote labels that contain special characters
+Any node label with `()`, `[]`, `<>`, `<br/>`, `,`, or emoji must be wrapped in `["..."]`. Same idea for edge labels — use `|"..."|`.
 
-Any label with `()`, `[]`, `<>`, `"`, `,`, `<br/>`, or emoji **must** be wrapped in `["..."]`:
-
-```mermaid
-%% GOOD — quoted labels
-A["Turn 1: user"] --> B["blocks list"]
-C["UI Panels (Thread, Tool)"]
-
-%% BAD — unquoted special chars cause parse errors
-A[Turn 1: user<br/>"Write a story"] --> B[blocks[]]
-C[UI Panels (Thread, Tool)]
-```
-
-### 2. Quote edge labels that contain special characters
-
-Edge labels with `()`, `<>`, `<br/>`, or `[]` must be quoted with `|"..."|`:
+| Context | Needs quotes? | Example |
+|---------|--------------|---------|
+| Simple text only | No | `A[Hello World]` |
+| Contains `()` | **Yes** | `A["Config (optional)"]` |
+| Contains `[]` | **Yes** | `A["items list"]` (avoid `[]` entirely) |
+| Contains `<br/>` | **Yes** | `A["Line 1<br/>Line 2"]` |
+| Contains emoji | **Yes** | `A["Done ✓"]` |
+| Contains `"` | **Escape** | `A["Say 'hello'"]` |
+| Edge with specials | **Yes** | `A -->\|"data (raw)"\| B` |
 
 ```mermaid
-%% GOOD
-A -->|"StreamEvents (Delta, Block)"| B
-A -->|"JSON DTOs"| B
-
-%% BAD — parentheses in edge labels
-A -->|StreamEvents<br/>(Delta, Block)| B
-A -->|JSON (DTOs)| B
+flowchart LR
+  A["Turn 1: user"] -->|"StreamEvents (Delta, Block)"| B["blocks list"]
+  C["UI Panels (Thread, Tool)"]
 ```
 
-### 3. Use `<br/>` for line breaks
+## 2. Use `<br/>` for line breaks
 
-Use `<br/>` for line breaks in all diagram types. In flowchart labels, quote the label with `["..."]` when using `<br/>`.
+Not `\n`. In flowchart labels, quote the label when using `<br/>`.
 
 ```mermaid
-%% GOOD — quoted label with <br/>
-A["Turn 1<br/>user message"] --> B["Next step"]
+flowchart LR
+  A["Turn 1<br/>user message"] --> B["Next step"]
 ```
-
-```
-%% GOOD — <br/> in sequence diagram Note
-Note over A,B: First line<br/>Second line
-```
-
-### 4. Escape or avoid `[]` inside node text
 
 ```mermaid
-%% GOOD
-Store -->|"blocks list"| UI["Chat UI"]
-
-%% BAD — nested [] conflicts with node shape syntax
-Store -->|blocks[]| UI[Chat UI]
+sequenceDiagram
+  Note over A,B: First line<br/>Second line
 ```
 
-### 5. No emoji in node IDs or unquoted labels
+## 3. The `end` keyword
+
+Lowercase `end` as a node label breaks flowcharts and sequence diagrams. Capitalize it or wrap in quotes:
 
 ```mermaid
-%% GOOD
-A["Step complete ✓"] --> B
-
-%% BAD — emoji in unquoted context
-A[Step ✓] --> B
+flowchart LR
+  A["end of process"] --> B["End"]
 ```
 
-### 6. Do not hardcode colors — rely on Mermaid's built-in themes
+## 4. Prefer Mermaid themes for general styling
 
-Hardcoded `style` / `classDef` colors override Mermaid's theme engine and break when switching between light and dark mode. Let the built-in `dark` / `default` themes handle node colors.
+Use built-in themes (`default`, `dark`, `neutral`, `forest`, `base`) rather than styling every node. `classDef` and `style` are fine for intentional emphasis (error paths, highlights), but avoid overriding the theme's defaults — hardcoded fills break in dark mode.
 
-```mermaid
-%% GOOD — no hardcoded colors, theme handles it
-A[Service] --> B[Database]
-
-%% BAD — hardcoded fill/color overrides theme
-style A fill:#2d7d2d,color:#fff
-classDef foo fill:#1a5276,color:#fff
-```
-
-For sequence diagram `rect` grouping, use near-transparent fills so they work in both themes:
+For `rect` grouping in sequence diagrams, use near-transparent fills:
 
 ```
 rect rgba(128, 128, 128, 0.08)
@@ -92,30 +62,10 @@ rect rgba(128, 128, 128, 0.08)
 end
 ```
 
-### 7. Semicolons in sequence diagrams
+## Edge Cases
 
-Sequence diagram statements must end with a newline, not a semicolon followed by more statements on the same line:
-
-```mermaid
-%% GOOD
-Note over A: First
-Note over A: Second
-
-%% BAD — multiple statements on one line with semicolons
-Note over A: First; isLoading=false
-```
-
-## Quick Reference: When to Quote
-
-| Context | Needs quotes? | Example |
-|---------|--------------|---------|
-| Simple text only | No | `A[Hello World]` |
-| Contains `()` | **Yes** | `A["Config (optional)"]` |
-| Contains `[]` | **Yes** | `A["items list"]` (avoid `[]` entirely) |
-| Contains `<br/>` | **Yes** (quote the label) | `A["Line 1<br/>Line 2"]` |
-| Contains emoji | **Yes** | `A["Done ✓"]` |
-| Contains `"` | **Escape** | `A["Say 'hello'"]` |
-| Edge with specials | **Yes** | `A -->\|"data (raw)"\| B` |
+- **`o` and `x` after links**: `A---oB` creates a circle-end edge, `A---xB` a cross-end. Add a space if your node ID starts with `o` or `x`: `A--- oNode`.
+- **Semicolons in sequence diagrams**: Interpreted as markup. Use `#59;` for literal semicolons.
 
 ## Validation
 

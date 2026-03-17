@@ -4,8 +4,16 @@
 # Track .gitignore itself
 !.gitignore
 
-# Track fs/ and work/
+# Track shared install manifest and lock
+!agents.toml
+!agents.lock
+
+# Track shared repo state
 !fs/
 !fs/**
+!work-items/
+!work-items/**
 !work/
 !work/**
+!work-archive/
+!work-archive/**
