@@ -47,6 +47,7 @@ Similarly to code, keep document files single responsibility. 1 file = 1 purpose
 |------|----------|
 | Backend instructions | `backend/CLAUDE.md` |
 | Frontend instructions | `frontend/CLAUDE.md` |
+| Frontend v2 (rebuild) | `frontend-v2/CLAUDE.md` |
 | Documentation rules | `_docs/CLAUDE.md` |
 | Technical architecture docs | `_docs/technical/` |
 | Feature docs | `_docs/features/` |

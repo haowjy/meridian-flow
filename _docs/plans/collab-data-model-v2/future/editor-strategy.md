@@ -35,6 +35,19 @@ The current live preview (Obsidian-style: hide syntax when cursor is away, revea
 
 None of these are currently on the roadmap.
 
+## Frontend v2: Clean Reimplementation
+
+`frontend-v2/` rebuilds the live preview from scratch using the same Obsidian-style approach but with a clean decoration architecture. The current frontend's live preview has accumulated decoration conflicts, content jumping, and viewport instability. Rather than patching, v2 rebuilds:
+
+- **Separate decoration layers** with explicit precedence (live preview, block rendering, proposal hunks, remote cursors)
+- **Single-pass decoration compute** per layer -- no incremental patching, no stale state
+- **Scroll anchor preservation** using CM6's built-in `scrollSnapshot()` mechanism
+- **Storybook-first** development: editor stories exercise cursor behavior, decoration stability, and simulated collab scenarios
+
+Same concept, same CM6 + Y.Text foundation, same collab v2 data model. Just a cleaner implementation.
+
+See `_docs/plans/frontend-workspace-modes/spec/editor-direction.md` for the full decoration architecture.
+
 ## Block Rendering Extensions
 
 Extend the live preview renderer registry with rich block renderers. Same architecture as existing heading/emphasis/code renderers -- no new editor infrastructure needed.
