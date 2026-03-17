@@ -51,9 +51,9 @@ flowchart LR
 -- Replaces documents.yjs_state (overwritten blob)
 CREATE TABLE document_updates (
     id          BIGSERIAL PRIMARY KEY,
-    doc_id      UUID NOT NULL REFERENCES documents(id),
+    document_id UUID NOT NULL REFERENCES documents(id),
     update      BYTEA NOT NULL,        -- raw Yjs update bytes
-    origin      TEXT,                  -- "human" | "ai_proposal" | etc.
+    origin      TEXT,                  -- "human" | "accept" | "reject" | "gc" | "thread"
     user_id     UUID,
     created_at  TIMESTAMPTZ DEFAULT now()
 );
@@ -61,7 +61,7 @@ CREATE TABLE document_updates (
 -- Replaces collab_document_snapshots for compaction storage
 CREATE TABLE document_checkpoints (
     id          BIGSERIAL PRIMARY KEY,
-    doc_id      UUID NOT NULL REFERENCES documents(id),
+    document_id UUID NOT NULL REFERENCES documents(id),
     state       BYTEA NOT NULL,        -- merged Yjs state up to up_to_id
     up_to_id    BIGINT NOT NULL REFERENCES document_updates(id),
     created_at  TIMESTAMPTZ DEFAULT now()
@@ -70,10 +70,10 @@ CREATE TABLE document_checkpoints (
 -- Bookmarks into the update log — named points in time
 CREATE TABLE document_bookmarks (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    doc_id          UUID NOT NULL REFERENCES documents(id),
+    document_id     UUID NOT NULL REFERENCES documents(id),
     update_id       BIGINT REFERENCES document_updates(id),  -- NULL once materialized
     state           BYTEA,                                    -- materialized blob, NULL while pointer
-    bookmark_type   TEXT NOT NULL,       -- "manual" | "daily" | "auto_event"
+    bookmark_type   TEXT NOT NULL,       -- "manual" | "daily" | "ai_turn"
     name            TEXT,                -- user-provided label (manual only)
     created_by      UUID,
     created_at      TIMESTAMPTZ DEFAULT now()
@@ -89,16 +89,16 @@ CREATE TABLE document_bookmarks (
 The old snapshot table is split into checkpoint storage + bookmark semantics:
 - `collab_document_snapshots` is removed
 - `document_checkpoints` stores compaction checkpoints
-- `document_bookmarks` stores restore points (`manual`, `daily`, `auto_event`)
+- `document_bookmarks` stores restore points (`manual`, `daily`, `ai_turn`)
 
 Retention and creation rules:
 - Daily snapshots: auto-created at end of the last editing session each day, materialized on compaction, retained forever
 - Manual snapshots: created by user "Save Version", materialized on compaction, retained forever
-- Auto-event bookmarks: created for workflow events (AI accept/session boundaries), and discarded during compaction
+- AI turn bookmarks: created before each AI turn's proposals are applied, capturing the document state before the turn touched anything. Discarded during compaction.
 
 Compaction preservation rule:
 - Manual and daily bookmarks are preserved by materializing full `state` blobs
-- Auto-event bookmarks are deleted once they age into the compacted window
+- AI turn bookmarks are deleted once they age into the compacted window
 
 ### Bookmark Tiers
 
@@ -108,9 +108,11 @@ Bookmarks are lightweight pointers into the update log. On compaction, some are 
 |------|---------|--------------|-----------|
 | Manual | User clicks "Save Version" | Materialize into blob | Forever |
 | Daily | End of last editing session each day | Materialize into blob | Forever |
-| Auto event | AI accept, session start, etc. | Delete | Only within update window |
+| AI turn | Before AI turn's proposals apply | Delete | Only within update window |
 
 Within the retained update window (10k updates), all bookmark types work as free pointers — replay the log to that `update_id`. Beyond the window, only manual and daily bookmarks survive as materialized blobs.
+
+AI turn bookmarks enable the thread UI's "Restore to before this turn" action (see [Undo Design](undo.md) — Turn-Level Restore). When the bookmark is compacted away, the restore button disappears from the UI. Per-proposal undo/reapply still works (it uses text search, not bookmarks).
 
 ## Write Path
 
@@ -137,7 +139,7 @@ Compaction steps:
 1. Count `document_updates` rows for the document
 2. If count >= 20,000:
 3. Find manual and daily bookmarks in the oldest 10,000 updates — materialize their state blobs by replaying the log to each bookmark's `update_id`
-4. Delete auto-event bookmarks in the oldest 10,000 updates
+4. Delete AI turn bookmarks in the oldest 10,000 updates
 5. Load the oldest 10,000 updates + latest checkpoint, merge into a new `document_checkpoints` row
 6. Delete the oldest 10,000 `document_updates` rows
 
@@ -159,7 +161,7 @@ Compaction runs (compact oldest 10,000):
      → Bookmark preserved forever with its own state
   2. Daily bookmark at row 5000 is in compaction range
      → Materialize similarly
-  3. Auto-event bookmarks in rows 1-10000
+  3. AI turn bookmarks in rows 1-10000
      → Deleted (ephemeral, not worth materializing)
   4. Merge rows 1-10000 into new document_checkpoints row
   5. Delete rows 1-10000
@@ -187,7 +189,7 @@ GC'd placeholders preserve item IDs (so future updates with left/right reference
 
 ### Undo Window
 
-The retained 10,000 updates provide replay headroom for recent timeline/history operations and short-lived auto-event bookmarks. Thread-level undo/reapply uses offset-anchored text search (`region_text_before`/`region_text_after` + `accepted_at_offset`) and therefore survives compaction -- it only needs current document text, not CRDT history.
+The retained 10,000 updates provide replay headroom for recent timeline/history operations and short-lived AI turn bookmarks. Thread-level undo/reapply uses offset-anchored text search (`region_text_before`/`region_text_after` + `accepted_at_offset`) and therefore survives compaction -- it only needs current document text, not CRDT history.
 
 ### Storage Estimate
 

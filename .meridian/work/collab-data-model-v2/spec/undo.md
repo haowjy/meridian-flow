@@ -35,16 +35,24 @@ const undoManager = new Y.UndoManager(
       ORIGIN_REJECT,
       ORIGIN_THREAD,
     ]),
+    // null is intentionally excluded — sync providers use null as origin.
+    // Tracking null would make remote changes undoable, breaking local-first authority.
+    // Never add null or the sync provider instance to trackedOrigins.
   }
 );
 
 // On collaboration mode change (auto-apply <-> manual)
+// Intentionally drops session undo history to prevent cross-mode undo confusion.
+// Thread undo (via sidebar) is unaffected — it uses stored text, not the undo stack.
+undoManager.stopCapturing(); // Force capture boundary before clearing
 undoManager.clear();
 ```
 
 ### Ctrl-Z Behavior
 
 `undoManager.undo()` reverts the most recent tracked transaction.
+
+**Important:** UndoManager has a default `captureTimeout` of 500ms. Consecutive tracked transactions within this window are merged into a single undo item. To ensure each discrete action (Accept, Reject, Thread op) is its own undo step, call `undoManager.stopCapturing()` before each action. Without this, accepting a hunk and then immediately typing would merge into one undo step.
 
 | Last action | Undo effect |
 |-------------|-------------|
@@ -83,6 +91,20 @@ Ctrl-Z sequence:
 
 All operations interleave in one chronological stack. No separate stacks for typing vs actions.
 
+### Redo (Ctrl-Y / Ctrl-Shift-Z)
+
+Redo works symmetrically via `undoManager.redo()`. Same origin tracking, same scope. Redo replays the most recently undone transaction.
+
+### Ctrl-Z of Thread Operations
+
+Thread undo/reapply uses `ORIGIN_THREAD` which IS tracked. When UndoManager reverses a thread operation, it restores the previous Y.Map value and text, creating additional transitions not shown in the main state diagram:
+
+- `reverted → accepted` via Ctrl-Z (undoing a thread undo)
+- `accepted → reverted` via Ctrl-Z (undoing a thread reapply from reverted)
+- `accepted → rejected` via Ctrl-Z (undoing a thread reapply from rejected)
+
+These are mechanical consequences of UndoManager tracking — no special handling needed.
+
 ### Why ORIGIN_GC Is Not Tracked
 
 Projection GC uses `ORIGIN_GC` which is NOT in `trackedOrigins`. If GC marks P4 as `stale`, that write is invisible to UndoManager. Ctrl-Z will never "un-stale" a proposal -- stale is terminal and automatic.
@@ -94,6 +116,15 @@ Projection GC uses `ORIGIN_GC` which is NOT in `trackedOrigins`. If GC marks P4 
 | Canonical text | Yes | Yjs synced |
 | `_proposal_status` entries | Yes | Yjs synced |
 | Undo stack | No | In-memory session state |
+
+### Offset Persistence
+
+`accepted_at_offset` and `proposed_at_offset` must survive reloads for thread-level undo. Persistence path:
+
+1. **`proposed_at_offset`** — set by the backend at proposal creation time. The backend computes the target position in canonical when generating the `yjs_update`. Stored directly in the proposal row. Always present for proposals created via `edit_document`. NULL for future non-offset proposal types (e.g., suggest-mode human proposals where offset is implicit).
+2. **`accepted_at_offset`** — set by the frontend at accept time. The frontend makes an API call to persist the offset to the proposal row after the Yjs transaction succeeds. If the API call fails, thread undo falls back to `proposed_at_offset` with the same ±500 char tolerance window.
+
+Both offsets are stored in the Postgres proposal row, not in the Y.Map (which only stores status). The Y.Map stays lightweight (status strings only); offsets are metadata that don't need CRDT merge semantics.
 
 ## Thread-Level Undo
 
@@ -133,7 +164,8 @@ Thread-level operations use fields on `${TABLE_PREFIX}proposals` (see [Schema De
 |---|---|---|
 | `region_text_before` | `TEXT NULL` | Original text before the edit (from `edit_document` find param) |
 | `region_text_after` | `TEXT NULL` | Replacement text after the edit (from `edit_document` replacement param) |
-| `accepted_at_offset` | `INT NULL` | Character offset where the edit was applied; set at accept time for offset-anchored search |
+| `proposed_at_offset` | `INT NULL` | Character offset where the edit targets in canonical; set at proposal creation time. Used as search anchor for reapply-from-rejected. |
+| `accepted_at_offset` | `INT NULL` | Character offset where the edit was applied; set at accept time. Used as search anchor for undo-of-accepted. |
 | `turn_id` | `UUID NULL` | Tool call turn; used for per-tool-call status overlays in thread UI |
 | `status` | `TEXT` | Gates which operations are available |
 
@@ -144,19 +176,20 @@ All thread operations use offset-anchored text search:
 | Operation | Source status | Find | Replace with | Target status |
 |-----------|-------------|------|-------------|---------------|
 | Undo | `accepted` | `region_text_after` near `accepted_at_offset` | `region_text_before` | `reverted` |
-| Reapply | `reverted` | `region_text_before` near stored offset | `region_text_after` | `accepted` |
-| Reapply | `rejected` | `region_text_before` near stored offset | `region_text_after` | `accepted` |
+| Reapply | `reverted` | `region_text_before` near `accepted_at_offset` | `region_text_after` | `accepted` |
+| Reapply | `rejected` | `region_text_before` near `proposed_at_offset` | `region_text_after` | `accepted` |
 
 If the find text is not found in canonical, the operation returns a conflict.
 
 ### Offset-Anchored Search
 
-Unlike blind `indexOf`, the search uses `accepted_at_offset` to disambiguate repeated phrases:
+Unlike blind `indexOf`, the search uses the stored offset to disambiguate repeated phrases:
 
-1. Search for `region_text_after` starting at `accepted_at_offset` (within a tolerance window, e.g. +/- 500 chars to account for subsequent edits shifting positions).
-2. If multiple matches exist, use the one closest to the stored offset.
-3. If no match within the tolerance window, expand to full-document search.
-4. If no match at all, return conflict.
+1. Search for the target text starting at the stored offset (within a tolerance window, e.g. ±500 chars to account for subsequent edits shifting positions).
+2. If multiple matches exist within the window, use the one closest to the stored offset.
+3. If no match within the tolerance window, return conflict. **No full-document fallback** — expanding beyond the window risks replacing the wrong occurrence in fiction with repeated phrases.
+
+For `accepted → reverted` (undo), the stored offset is `accepted_at_offset`. For `rejected → accepted` (reapply from rejected), the stored offset is `proposed_at_offset` (set at proposal creation time — see [Schema Design](schema-design.md)).
 
 This handles fiction writing's repeated phrases ("she said", "he nodded") by anchoring to the original edit position.
 
@@ -194,6 +227,24 @@ Writers can undo all proposals in a thread at once. This iterates through each `
 - Per-proposal results (success or conflict) are returned to the UI.
 - Proposals that conflict stay `accepted`; successfully undone proposals become `reverted`.
 
+### Overlapping Proposal Limitation
+
+When proposals are accepted as a grouped hunk containing overlapping proposals (e.g., P1 and P5 both editing "The morning light"), the CRDT-composed canonical text may differ from either proposal's individual `region_text_after`. Individual thread undo will search for the solo `region_text_after` and return a conflict because that exact text doesn't exist in the composed result.
+
+This is correct behavior — the writer should use session Ctrl-Z for recently-accepted grouped hunks, or Undo All for the thread. Overlapping proposals within a single hunk are rare in practice (the AI typically produces non-overlapping edits per turn).
+
+### Turn-Level Restore
+
+When per-proposal thread undo fails (e.g., due to conflict or overlapping edits), the writer can restore the document to the state before an entire AI turn. This uses `ai_turn` bookmarks from the append-only update log (see [Append-Only Persistence](append-only-persistence.md)).
+
+| Action | Scope | Mechanism | Availability |
+|--------|-------|-----------|-------------|
+| Per-proposal Undo/Reapply | One proposal | Offset-anchored text search | Always (text-based) |
+| Undo All | All accepted in thread | Iterates per-proposal undo | Always |
+| **Restore to before this turn** | Entire document | Bookmark restore | Only while `ai_turn` bookmark exists (pre-compaction) |
+
+Turn-level restore replaces the entire canonical Y.Doc state with the bookmarked snapshot. This is destructive — all changes since that point (including the writer's own edits) are lost. The UI should show a confirmation with what will be lost. Before restoring, a new bookmark of the current state is created so the writer can undo the restoration.
+
 ### Thread UI: Immutable History + Status Overlay
 
 Thread messages (tool_use, tool_result) are **immutable**. Thread-level undo/reapply does not modify conversation history. This preserves prompt caching and conversation integrity.
@@ -207,7 +258,7 @@ Tool call: edit_document("insert black before cat")
 
 After writer clicks Undo:
   tool_result: "Edit applied successfully"     <- still immutable
-  overlay: [Undone] [Reapply]                   <- from proposal.status = 'reverted'
+  overlay: [Reverted] [Reapply]                   <- from proposal.status = 'reverted'
 
 After conflict:
   tool_result: "Edit applied successfully"     <- still immutable
@@ -215,6 +266,14 @@ After conflict:
 ```
 
 The overlay is purely derived from proposal row status. No writes to thread/message storage.
+
+At the turn level (grouping all tool calls in one AI turn):
+
+```
+Turn: AI Assistant - Chapter 4 Review
+  [Undo All Accepted]
+  [Restore to before this turn]    <- only shown while ai_turn bookmark exists
+```
 
 ### Relationship to `_proposal_status`
 
@@ -241,7 +300,7 @@ Canonical: "The black cat sat on the mat."
 3. Replace with "The cat"
 4. Canonical: "The cat sat on the mat."
 5. P1 status -> reverted
-6. Thread UI: tool call shows [Undone] [Reapply]
+6. Thread UI: tool call shows [Reverted] [Reapply]
 ```
 
 **Reapply (from reverted):**

@@ -24,28 +24,30 @@ erDiagram
         UUID id PK
         UUID document_id FK
         UUID thread_id FK
+        UUID created_by_user_id FK
         TEXT status
         BYTEA yjs_update
         TEXT region_text_before
         TEXT region_text_after
+        INT proposed_at_offset
         INT accepted_at_offset
         UUID turn_id
     }
     document_updates {
         BIGSERIAL id PK
-        UUID doc_id FK
+        UUID document_id FK
         BYTEA update
         TEXT origin
     }
     document_checkpoints {
         BIGSERIAL id PK
-        UUID doc_id FK
+        UUID document_id FK
         BYTEA state
         BIGINT up_to_id
     }
     document_bookmarks {
         UUID id PK
-        UUID doc_id FK
+        UUID document_id FK
         BIGINT update_id FK
         BYTEA state
         TEXT bookmark_type
@@ -91,11 +93,12 @@ Stores proposal payload and lifecycle status.
 | `document_id` | `UUID NOT NULL` | FK to `documents` |
 | `thread_id` | `UUID NOT NULL` | Thread owner |
 | `created_by_user_id` | `UUID NOT NULL` | User who initiated the AI proposal request |
-| `status` | `TEXT NOT NULL` | `pending`, `accepted`, `rejected`, `stale`, `reverted` |
+| `status` | `TEXT NOT NULL` | `pending`, `accepted`, `rejected`, `stale`, `reverted`, `invalid` |
 | `yjs_update` | `BYTEA NOT NULL` | Proposal payload |
 | `region_text_before` | `TEXT NULL` | Original text before the edit (from `edit_document` find param) |
 | `region_text_after` | `TEXT NULL` | Replacement text after the edit (from `edit_document` replacement param) |
-| `accepted_at_offset` | `INT NULL` | Character offset where edit was applied; set at accept time for offset-anchored search |
+| `proposed_at_offset` | `INT NULL` | Character offset where the edit targets in canonical; set at proposal creation time by backend. Used as search anchor for reapply-from-rejected. |
+| `accepted_at_offset` | `INT NULL` | Character offset where edit was applied; set at accept time by frontend API call. Used as search anchor for undo-of-accepted. |
 | `turn_id` | `UUID NULL` | Tool call turn; used for per-tool-call status overlays in thread UI |
 | `created_at` | `TIMESTAMPTZ DEFAULT NOW()` | Created time |
 
@@ -125,6 +128,8 @@ Unchanged request-idempotency table.
 
 Pending proposals are represented by missing keys plus proposal row `status = 'pending'`.
 
+Offsets (`proposed_at_offset`, `accepted_at_offset`) are stored in the Postgres proposal row only, not in the Y.Map. Offsets don't need CRDT merge semantics — they are metadata set once (at creation or accept time) and read later for thread undo.
+
 ## What Was Eliminated
 
 | Eliminated | Reason |
@@ -145,4 +150,6 @@ For the full proposal status lifecycle, see [Architecture](architecture.md).
 - [Architecture](architecture.md)
 - [Local-First Authority](local-first-authority.md)
 - [Undo Design](undo.md)
+- [Frontend Diff Model](frontend-diff-model.md) -- grouped hunks derived from proposals
+- [Append-Only Persistence](append-only-persistence.md) -- `document_updates`, `document_checkpoints`, `document_bookmarks` tables
 - [Implementation Plan](plan.md)

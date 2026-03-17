@@ -61,6 +61,7 @@ Step 1: Search near stored offset for region_text_before
 Step 2: Yjs transaction (ORIGIN_THREAD)
   - Delete match, insert region_text_after
   - Set _proposal_status[P1] = 'accepted'
+  - Record new accepted_at_offset for future undo
 
 Step 3: Result
   "Pale morning light sliced through the gap in the curtains. Sarah..."
@@ -76,10 +77,13 @@ Same mechanism works for rejected proposals. Writer rejected P2 during review bu
 P2 stored data:
   region_text_before: "checking the time. It was already past nine."
   region_text_after:  "checking the time. 9:14. Shit."
+  proposed_at_offset: 78
+  accepted_at_offset: NULL  (never accepted)
   status: rejected
 
 Writer clicks Reapply:
-  Search near stored offset for region_text_before → found → replace → status = accepted
+  Search near proposed_at_offset (78) for region_text_before → found → replace → status = accepted
+  accepted_at_offset set to landing position
 ```
 
 ## Conflict: Text Was Edited
@@ -128,6 +132,22 @@ If some succeed and others conflict, the UI shows per-proposal results:
   P1: reverted ✓
 ```
 
+## Turn-Level Restore
+
+When per-proposal undo fails (e.g., conflict after the writer edited the region), the writer can restore the document to the state before the entire AI turn:
+
+```
+Thread has P1 (conflict on undo), P3 (accepted), P4 (accepted).
+
+Writer clicks "Restore to before this turn":
+  1. Current document state saved as a new bookmark (safety net)
+  2. Document restored to ai_turn bookmark (state before P1, P3, P4 were applied)
+  3. All three proposals' statuses reset
+  4. Confirmation shown: "Document restored. You can undo this restoration."
+```
+
+This is only available while the `ai_turn` bookmark exists in the update log (pre-compaction). After compaction deletes the bookmark, the button disappears from the thread UI.
+
 ## What the Writer Sees
 
 ### Thread Sidebar
@@ -153,6 +173,7 @@ If some succeed and others conflict, the UI shows per-proposal results:
 |  [Accepted] [Undo]                                |
 |                                                    |
 |              [Undo All Accepted]                   |
+|         [Restore to before this turn]              |
 +--------------------------------------------------+
 ```
 

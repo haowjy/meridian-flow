@@ -26,12 +26,16 @@ Writer is watching the document while AI works. AI sends `edit_document`:
 Before: "The cat sat on the mat."
 After:  "The black cat sat on the mat."
 
-Proposal created with status = 'accepted' (auto-apply).
-yjs_update applied to canonical immediately.
+Proposal created with status = 'pending' on backend.
+Backend broadcasts proposal:new to owner's frontend.
+Owner's frontend applies yjs_update with ORIGIN_ACCEPT → status = 'accepted'.
 Writer sees the text change in real time.
+UndoManager tracks the transaction (Ctrl-Z works).
 ```
 
 No diff highlights. No Accept/Reject buttons. The text just changes.
+
+If the owner's tab is closed, the backend applies the update directly. When the tab reopens, the undo stack is empty (session-scoped), and thread undo is still available via the sidebar. See [Local-First Authority](../spec/local-first-authority.md) — Auto-Apply Tab Election.
 
 ### 2. Writer Doesn't Like It
 
@@ -149,5 +153,6 @@ Pending proposals retain their pending status across mode switches. The writer s
 ## Cross-References
 
 - [Architecture](../spec/architecture.md) -- two collaboration modes
+- [Local-First Authority](../spec/local-first-authority.md) -- auto-apply tab election, proposal:new delivery
 - [Undo Design](../spec/undo.md) -- undoManager.clear() on mode change
 - [Thread Undo](thread-undo.md) -- revert auto-applied edits via thread

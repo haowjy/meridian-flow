@@ -169,12 +169,11 @@ Writer types "black cat" manually while AI proposal P6 also inserts "black ":
 P6: "The cat" -> "The black cat"
 Writer types the same edit directly.
 
-Projection pipeline:
-  Clone canonical (already has "black cat")
-  Apply P6 yjs_update → no change (Yjs deduplicates)
-  Diff → empty
+Projection GC pre-check:
+  Compare P6's region_text_before ("The cat") against canonical at proposed_at_offset
+  Canonical already has "The black cat" at that position (matches region_text_after)
 
-P6 is auto-marked "stale". No hunk rendered.
+P6 is auto-marked "stale" — skipped in projection. No hunk rendered.
 Thread UI: "No longer relevant"
 ```
 

@@ -52,10 +52,22 @@ When two proposals edit the same text region, Yjs CRDT composition (YATA algorit
 
 Yjs has no built-in API for "which update changed which text region." We compute this by cloning canonical once per pending proposal, applying each individually, and diffing:
 
+Clone procedure (Yjs has no public `Y.Doc.clone()`):
+```typescript
+function cloneDoc(source: Y.Doc): Y.Doc {
+  const clone = new Y.Doc(); // gc: true by default — acceptable for projection
+  Y.applyUpdate(clone, Y.encodeStateAsUpdate(source));
+  return clone;
+}
+// Note: clone uses gc: true (default). Tombstones from canonical are GC'd on apply.
+// Safe for projection: we only extract text and destroy the clone immediately.
+// Canonical Y.Doc must always remain gc: false (tombstones needed for UndoManager).
+```
+
 ```
 Pass 1 — combined diff:
-  projection = clone(canonical)
-  for each pending P: applyUpdate(projection, P.yjs_update)
+  projection = cloneDoc(canonical)
+  for each pending P (not stale per pre-check): applyUpdate(projection, P.yjs_update)
   combinedHunks = textDiff(canonical.text, projection.text)
 
 Pass 2 — per-proposal attribution:
@@ -142,11 +154,15 @@ If the writer wants finer-grained control over multi-paragraph edits, the AI sho
 
 ## Projection GC and Stale Proposals
 
-During projection recompute:
+Stale detection uses a **text pre-check** before applying to the projection clone:
 
-- If applying a pending proposal yields no diff in any grouped hunk, that proposal is stale.
-- Stale proposals are auto-resolved to `stale` and never rendered as hunks.
-- Thread UI shows stale proposals as "No longer relevant".
+1. For each pending proposal, compare `region_text_before` against canonical text at `proposed_at_offset`.
+2. If canonical already contains `region_text_after` at that position, the proposal is stale — skip it entirely (do not apply its `yjs_update` to the clone).
+3. Mark stale proposals with `ORIGIN_GC` (not tracked by UndoManager).
+
+**Why not apply-then-diff?** Yjs idempotence only applies to the *same update bytes* (same struct IDs). Independently-created semantically equivalent edits (different Yjs client IDs) would produce duplicate content in the clone, not a no-op. The text pre-check avoids this.
+
+Stale proposals are never rendered as hunks. Thread UI shows stale proposals as "No longer relevant".
 
 ## Hunk Actions
 
@@ -158,6 +174,8 @@ During projection recompute:
 | Undo accept hunk | Revert full transaction | Entire hunk reappears as one undo step |
 | Undo reject hunk | Revert full transaction | Entire hunk reappears as one undo step |
 
+**Freshness guard:** Before executing Accept/Reject, check that the hunk's derivation sequence number matches the current derivation. If canonical text or proposal set changed since the hunk was rendered (e.g., user typed near the hunk or a remote edit landed during the 500ms debounce window), force a synchronous re-derive before committing. See [Local-First Authority](local-first-authority.md) — Hunk Action Freshness.
+
 ## CM6 Rendering
 
 Hunk rendering remains decoration-based:
@@ -165,7 +183,7 @@ Hunk rendering remains decoration-based:
 - Deletions: mark decorations on canonical ranges.
 - Insertions: widget decorations for inserted text.
 - Replacements: deletion mark + insertion widget.
-- Action controls: Keep / Edit / Discard widgets bound to grouped hunk region data.
+- Action controls: Accept / Reject / Edit widgets bound to grouped hunk region data.
 
 ## Performance
 
@@ -179,6 +197,8 @@ Hunk rendering remains decoration-based:
 
 With 5 pending proposals, the attribution pass dominates. This is acceptable -- the pipeline only runs on proposal events, not keystrokes. If proposal counts grow large, the solo-clone pass can be optimized by caching per-proposal diffs and only recomputing changed proposals.
 
+**Scaling note:** The pipeline is O(P × N) where P = pending proposals and N = document size. For the target workload (individual chapters of ~5-20k words, not entire 100+ chapter serials), this is well within budget. Each chapter is a separate document with its own projection. If a single chapter accumulates >20 pending proposals, consider incremental diff (only recompute changed proposals' solo diffs, reuse cached results for unchanged ones).
+
 ### Re-Derive Strategy
 
 The full clone/apply/diff pipeline only runs on **proposal events**, not on every keystroke:
@@ -187,8 +207,9 @@ The full clone/apply/diff pipeline only runs on **proposal events**, not on ever
 |---------|--------|
 | New proposal arrives | Full re-derive |
 | Proposal status changes (accept/reject/stale) | Full re-derive |
-| User types (canonical text change, no proposal change) | CM6 decoration `map()` shifts hunk positions — no re-derive |
-| User pauses typing (500ms debounce) | Full re-derive — catches staleness from user edits |
+| Local typing (canonical text change, no proposal change) | CM6 decoration `map()` shifts hunk positions — no re-derive |
+| Local typing pause (500ms debounce) | Full re-derive — catches staleness from user edits |
+| Remote canonical text change (other user's accept, thread undo, auto-apply) | Immediate full re-derive — remote edits can change hunk grouping and staleness |
 
 CM6 decorations automatically remap their positions when the document changes via `map()`. User typing shifts existing hunk positions without recomputing the diff. The expensive pipeline only runs when the set of pending proposals or their statuses change.
 
@@ -199,4 +220,5 @@ If proposal events arrive in bursts (e.g., AI streaming multiple `edit_document`
 - [Architecture](architecture.md)
 - [Local-First Authority](local-first-authority.md)
 - [Undo Design](undo.md)
+- [Schema Design](schema-design.md) -- proposal columns used in projection
 - [Implementation Plan](plan.md)
