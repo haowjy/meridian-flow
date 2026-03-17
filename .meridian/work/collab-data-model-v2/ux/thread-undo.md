@@ -18,6 +18,7 @@ Current canonical:
 P1's stored data:
   region_text_before: "The morning light filtered through the curtains"
   region_text_after:  "Pale morning light sliced through the gap in the curtains"
+  accepted_at_offset: 0
   status: accepted
 ```
 
@@ -26,13 +27,12 @@ P1's stored data:
 Writer clicks **Undo** on P1 in the thread sidebar.
 
 ```
-Step 1: Search canonical for region_text_after
+Step 1: Search near offset 0 for region_text_after
   "Pale morning light sliced through the gap in the curtains"
   Found at position 0. ✓
 
 Step 2: Yjs transaction (ORIGIN_THREAD)
-  - Delete match
-  - Insert region_text_before
+  - Delete match, insert region_text_before
   - Set _proposal_status[P1] = 'reverted'
 
 Step 3: Result
@@ -54,13 +54,12 @@ This transaction enters the session undo stack -- Ctrl-Z can reverse it immediat
 Writer changes their mind. Clicks **Reapply**.
 
 ```
-Step 1: Search canonical for region_text_before
+Step 1: Search near stored offset for region_text_before
   "The morning light filtered through the curtains"
   Found. ✓
 
 Step 2: Yjs transaction (ORIGIN_THREAD)
-  - Delete match
-  - Insert region_text_after
+  - Delete match, insert region_text_after
   - Set _proposal_status[P1] = 'accepted'
 
 Step 3: Result
@@ -80,7 +79,7 @@ P2 stored data:
   status: rejected
 
 Writer clicks Reapply:
-  Search for region_text_before → found → replace → status = accepted
+  Search near stored offset for region_text_before → found → replace → status = accepted
 ```
 
 ## Conflict: Text Was Edited
@@ -93,7 +92,7 @@ Canonical after manual edit:
                                       (writer changed "Pale" to "Weak")
 
 Writer clicks Undo on P1:
-  Search for "Pale morning light sliced through the gap in the curtains"
+  Search near offset 0 for "Pale morning light sliced through the gap in the curtains"
   NOT FOUND. ✗
 
 Thread UI shows: [Undo failed -- text was edited]
@@ -109,9 +108,9 @@ Writer wants to revert everything the AI did in one thread:
 Thread has P1 (accepted), P3 (accepted), P4 (accepted).
 
 "Undo All" iterates in reverse chronological order (newest first):
-  P4: search for region_text_after → found → reverted ✓
-  P3: search for region_text_after → found → reverted ✓
-  P1: search for region_text_after → found → reverted ✓
+  P4: search near offset for region_text_after → found → reverted ✓
+  P3: search near offset for region_text_after → found → reverted ✓
+  P1: search near offset for region_text_after → found → reverted ✓
 
 Results:
   P1: reverted ✓
@@ -171,6 +170,6 @@ The failure message is transient UI state, not persisted.
 
 ## Cross-References
 
-- [Undo Design](../spec/undo.md) -- thread undo mechanics, conflict handling
+- [Undo Design](../spec/undo.md) -- thread undo mechanics, offset-anchored search
 - [Local-First Authority](../spec/local-first-authority.md) -- ORIGIN_THREAD transactions
 - [Proposal Review](proposal-review.md) -- the initial review flow

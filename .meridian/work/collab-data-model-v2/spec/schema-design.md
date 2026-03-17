@@ -28,6 +28,8 @@ erDiagram
         BYTEA yjs_update
         TEXT region_text_before
         TEXT region_text_after
+        INT accepted_at_offset
+        UUID turn_id
     }
     document_updates {
         BIGSERIAL id PK
@@ -91,8 +93,10 @@ Stores proposal payload and lifecycle status.
 | `created_by_user_id` | `UUID NOT NULL` | User who initiated the AI proposal request |
 | `status` | `TEXT NOT NULL` | `pending`, `accepted`, `rejected`, `stale`, `reverted` |
 | `yjs_update` | `BYTEA NOT NULL` | Proposal payload |
-| `region_text_before` | `TEXT NULL` | Captured at proposal creation from `edit_document` find text |
-| `region_text_after` | `TEXT NULL` | Captured at proposal creation from `edit_document` replacement text |
+| `region_text_before` | `TEXT NULL` | Original text before the edit (from `edit_document` find param) |
+| `region_text_after` | `TEXT NULL` | Replacement text after the edit (from `edit_document` replacement param) |
+| `accepted_at_offset` | `INT NULL` | Character offset where edit was applied; set at accept time for offset-anchored search |
+| `turn_id` | `UUID NULL` | Tool call turn; used for per-tool-call status overlays in thread UI |
 | `created_at` | `TIMESTAMPTZ DEFAULT NOW()` | Created time |
 
 Backend mirrors `status` from `_proposal_status` map updates, keyed by `proposalId`.

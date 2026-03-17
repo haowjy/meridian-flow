@@ -22,7 +22,7 @@ audience: developer, architect
 | 8   | Undo boundaries          | Keep single UndoManager; call `clear()` when collaboration mode changes (auto-apply to manual or vice versa).                 |
 | 9   | Projection GC            | Every recompute auto-marks no-diff pending proposals as `stale`.                                                              |
 | 10  | Status chain             | `edit_tool -> proposal -> yjs_update -> status` is always current in backend row and thread UI.                               |
-| 11  | Thread undo/reapply      | Use `region_text_before/after` text replacement for undo, reapply (from reverted), and reapply (from rejected).               |
+| 11  | Thread undo/reapply      | Offset-anchored text search using `region_text_before`/`region_text_after` + `accepted_at_offset`. Search near stored offset to disambiguate repeated phrases. Conflict when text not found. |
 | 12  | Thread undo map behavior | Thread undo/reapply writes to both canonical text and `_proposal_status` Y.Map in one transaction (`ORIGIN_THREAD`).           |
 | 13  | Immutable thread history | Thread messages are never modified. Tool call status is a UI-only overlay derived from proposal row status.                    |
 
@@ -39,8 +39,10 @@ Tasks:
 
 1. Ensure proposal table supports `pending`, `accepted`, `rejected`, `stale`, `reverted`.
 2. Add `created_by_user_id` to proposal schema.
-3. Ensure `region_text_before` and `region_text_after` are present and documented as captured at proposal creation.
+3. Ensure `region_text_before`, `region_text_after` are present. Add `accepted_at_offset INT NULL` (set at accept time) and `turn_id UUID NULL`.
 4. Remove `ai_content` from document schema and consumers.
+
+**Transition sub-phase:** Keep `ai_content` as a derived/computed column during transition. New system writes `yjs_update`; `ai_content` is populated from it for backwards compatibility. Remove in a later phase once frontend is fully cut over.
 
 ### Phase 2: Projection + Diff Pipeline
 
@@ -77,11 +79,11 @@ Tasks:
 
 Tasks:
 
-1. Implement `thread:undo` (`accepted -> reverted`) via `region_text_after -> region_text_before` replacement.
-2. Implement `thread:reapply` (`reverted -> accepted` and `rejected -> accepted`) via `region_text_before -> region_text_after` replacement.
+1. Implement `thread:undo` (`accepted -> reverted`) via offset-anchored `region_text_after -> region_text_before` replacement.
+2. Implement `thread:reapply` (`reverted -> accepted` and `rejected -> accepted`) via offset-anchored `region_text_before -> region_text_after` replacement.
 3. Implement `thread:undo_all` — iterate accepted proposals in a thread, undo each independently, return per-proposal results.
 4. Apply undo/reapply as canonical Yjs updates appended to `document_updates`.
-5. Return conflict when target region no longer exists.
+5. Return conflict when target text not found near stored offset.
 6. Thread UI renders proposal status as overlay on tool calls — no thread message mutation.
 
 ## Dependency Graph
@@ -106,7 +108,7 @@ flowchart TB
 | 2     | Medium | Diff quality and UI derivation correctness            |
 | 3     | Medium | Transaction and undo boundary correctness             |
 | 4     | Medium | Status mirror consistency                             |
-| 5     | Low    | Deterministic text replacement with conflict handling |
+| 5     | Low    | Offset-anchored text replacement with conflict handling |
 
 
 ## Related Work (Separate Scope)

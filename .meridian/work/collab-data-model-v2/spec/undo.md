@@ -11,7 +11,7 @@ Two complementary undo systems handle different scopes:
 | System | Trigger | Scope | Persistence | Mechanism |
 |--------|---------|-------|-------------|-----------|
 | **Session Ctrl-Z** | Keyboard shortcut | Recent local history | No (session-scoped) | UndoManager over Yjs shared types |
-| **Thread-level** | Click in thread UI | One persisted proposal | Yes (survives reload) | Text find-and-replace using stored regions |
+| **Thread-level** | Click in thread UI | One persisted proposal | Yes (survives reload) | Offset-anchored text search and replace |
 
 Both systems write to `_proposal_status` Y.Map and both are tracked in the session undo stack. They compose: a thread undo can be Ctrl-Z'd, and vice versa.
 
@@ -97,7 +97,7 @@ Projection GC uses `ORIGIN_GC` which is NOT in `trackedOrigins`. If GC marks P4 
 
 ## Thread-Level Undo
 
-Thread-level undo lets the writer revert or reapply any individual proposal through the conversation thread UI. It persists across sessions and works days or weeks later, as long as the target text hasn't been modified.
+Thread-level undo lets the writer revert or reapply any individual proposal through the conversation thread UI. It persists across sessions and works days or weeks later.
 
 This works in both collaboration modes:
 - **Auto-apply**: the edit landed automatically -- writer clicks undo in thread UI to revert it
@@ -112,11 +112,11 @@ sequenceDiagram
     participant BE as Backend
 
     UI->>FE: click Undo on P1
-    FE->>FE: load proposal data (region_text_after)
-    FE->>YDoc: search Y.Text for region_text_after
-    Note over YDoc: Found "The black cat" at pos 0
+    FE->>FE: load proposal data (region_text_after, accepted_at_offset)
+    FE->>YDoc: search near offset for region_text_after
+    Note over YDoc: Found "The black cat" near offset 0
     FE->>YDoc: transact(ORIGIN_THREAD)
-    Note over YDoc: Y.Text: "The black cat" -> "The cat"<br/>Y.Map: set(P1, 'reverted')
+    Note over YDoc: Y.Text: replace region_text_after with region_text_before<br/>Y.Map: set(P1, 'reverted')
     YDoc-->>FE: undo stack records transaction
     YDoc->>Sync: Yjs update delta
     Sync->>BE: delta arrives
@@ -131,27 +131,40 @@ Thread-level operations use fields on `${TABLE_PREFIX}proposals` (see [Schema De
 
 | Column | Type | Purpose |
 |---|---|---|
-| `region_text_before` | `TEXT NULL` | Captured at proposal creation from `edit_document` find text |
-| `region_text_after` | `TEXT NULL` | Captured at proposal creation from `edit_document` replacement text |
+| `region_text_before` | `TEXT NULL` | Original text before the edit (from `edit_document` find param) |
+| `region_text_after` | `TEXT NULL` | Replacement text after the edit (from `edit_document` replacement param) |
+| `accepted_at_offset` | `INT NULL` | Character offset where the edit was applied; set at accept time for offset-anchored search |
+| `turn_id` | `UUID NULL` | Tool call turn; used for per-tool-call status overlays in thread UI |
 | `status` | `TEXT` | Gates which operations are available |
 
 ### Operations
 
-All thread operations use the same text find-and-replace mechanism:
+All thread operations use offset-anchored text search:
 
 | Operation | Source status | Find | Replace with | Target status |
 |-----------|-------------|------|-------------|---------------|
-| Undo | `accepted` | `region_text_after` | `region_text_before` | `reverted` |
-| Reapply | `reverted` | `region_text_before` | `region_text_after` | `accepted` |
-| Reapply | `rejected` | `region_text_before` | `region_text_after` | `accepted` |
+| Undo | `accepted` | `region_text_after` near `accepted_at_offset` | `region_text_before` | `reverted` |
+| Reapply | `reverted` | `region_text_before` near stored offset | `region_text_after` | `accepted` |
+| Reapply | `rejected` | `region_text_before` near stored offset | `region_text_after` | `accepted` |
 
 If the find text is not found in canonical, the operation returns a conflict.
+
+### Offset-Anchored Search
+
+Unlike blind `indexOf`, the search uses `accepted_at_offset` to disambiguate repeated phrases:
+
+1. Search for `region_text_after` starting at `accepted_at_offset` (within a tolerance window, e.g. +/- 500 chars to account for subsequent edits shifting positions).
+2. If multiple matches exist, use the one closest to the stored offset.
+3. If no match within the tolerance window, expand to full-document search.
+4. If no match at all, return conflict.
+
+This handles fiction writing's repeated phrases ("she said", "he nodded") by anchoring to the original edit position.
 
 ### Undo Flow (`accepted -> reverted`)
 
 1. User clicks Undo on tool call in thread UI.
-2. Frontend loads proposal data (`region_text_after`, `region_text_before`).
-3. Search local `Y.Text('content')` for `region_text_after`.
+2. Frontend loads proposal data (`region_text_after`, `region_text_before`, `accepted_at_offset`).
+3. Search canonical `Y.Text('content')` for `region_text_after` near `accepted_at_offset`.
 4. If found, transact with `ORIGIN_THREAD`:
    - Delete match and insert `region_text_before` on `Y.Text('content')`.
    - Set `_proposal_status[proposalId] = 'reverted'` on `Y.Map('_proposal_status')`.
@@ -163,10 +176,11 @@ If the find text is not found in canonical, the operation returns a conflict.
 
 1. User clicks Reapply on tool call in thread UI.
 2. Frontend loads proposal data (`region_text_before`, `region_text_after`).
-3. Search local `Y.Text('content')` for `region_text_before`.
+3. Search canonical `Y.Text('content')` for `region_text_before` near stored offset.
 4. If found, transact with `ORIGIN_THREAD`:
    - Delete match and insert `region_text_after` on `Y.Text('content')`.
    - Set `_proposal_status[proposalId] = 'accepted'` on `Y.Map('_proposal_status')`.
+   - Record new `accepted_at_offset` for future undo.
 5. Transaction enters session undo stack (Ctrl-Z can reverse it).
 6. Yjs sync delivers delta to backend; backend mirrors status to proposal row.
 7. If not found, show conflict in thread UI.
@@ -208,20 +222,6 @@ Thread-level undo/reapply writes to `_proposal_status` Y.Map in the same transac
 
 Reverted proposals are not projection inputs. After accept, proposal CRDT items were already applied to canonical; thread undo then replaces canonical text. There is no remaining pending proposal update to project.
 
-### Design Rationale: Text Search over Yjs Inverse
-
-Thread-level undo uses text find-and-replace rather than Yjs inverse operations because:
-
-- **Survives compaction**: text search only needs current document content, while Yjs inverse depends on CRDT item IDs that may be GC'd during compaction
-- **Natural conflict detection**: text not found = conflict, no additional checks needed
-- **Simple implementation**: string search vs hooking into Yjs UndoManager internals
-
-The tradeoff is ambiguity when identical text appears multiple times (rare for fiction writing, mitigated by capturing surrounding context in `region_text_before` / `region_text_after` at proposal creation time).
-
-### Grouped Hunk Limitation
-
-When a hunk groups multiple proposals and they are accepted together, the per-proposal `region_text_after` may not appear as an exact substring in the combined result (e.g., two adjacent insertions merge into one text span). Thread-level undo for individual proposals within a grouped accept may conflict. This is acceptable -- the conflict UI handles it gracefully, and writers can use session Ctrl-Z to undo the entire grouped accept as one step.
-
 ## Examples
 
 ### Undo, Reapply, and Conflict
@@ -229,15 +229,15 @@ When a hunk groups multiple proposals and they are accepted together, the per-pr
 ```
 Original: "The cat sat on the mat."
 Agent proposes P1: insert "black " -> region_text_before="The cat", region_text_after="The black cat"
-Writer accepts P1 (or auto-applied).
+Writer accepts P1 (or auto-applied). accepted_at_offset=0.
 Canonical: "The black cat sat on the mat."
 ```
 
 **Thread undo (days later):**
 
 ```
-1. Load P1 (status = accepted)
-2. Search canonical for "The black cat" -> found at pos 0
+1. Load P1 (status = accepted, accepted_at_offset=0)
+2. Search near offset 0 for "The black cat" -> found at pos 0
 3. Replace with "The cat"
 4. Canonical: "The cat sat on the mat."
 5. P1 status -> reverted
@@ -248,10 +248,10 @@ Canonical: "The black cat sat on the mat."
 
 ```
 1. Load P1 (status = reverted)
-2. Search canonical for "The cat" -> found at pos 0
+2. Search near stored offset for "The cat" -> found at pos 0
 3. Replace with "The black cat"
 4. Canonical: "The black cat sat on the mat."
-5. P1 status -> accepted
+5. P1 status -> accepted, accepted_at_offset updated
 6. Thread UI: tool call shows [Undo]
 ```
 
@@ -261,10 +261,10 @@ Canonical: "The black cat sat on the mat."
 Writer rejected P1 in manual mode. Canonical still has "The cat".
 Writer later clicks Reapply in thread UI:
   1. Load P1 (status = rejected)
-  2. Search canonical for "The cat" -> found at pos 0
+  2. Search near stored offset for "The cat" -> found at pos 0
   3. Replace with "The black cat"
   4. Canonical: "The black cat sat on the mat."
-  5. P1 status -> accepted
+  5. P1 status -> accepted, accepted_at_offset set
   6. Thread UI: tool call shows [Undo]
 ```
 
@@ -275,10 +275,27 @@ After accepting P1, writer manually changed "black cat" to "big black cat."
 Canonical: "The big black cat sat on the mat."
 
 Writer clicks Undo for P1:
-  1. Search for "The black cat" -> NOT FOUND
+  1. Search near offset 0 for "The black cat" -> NOT FOUND
   2. Return conflict: text has been modified since accept
   3. Thread UI: tool call shows [Undo failed -- text was edited]
 ```
+
+### Disambiguating Repeated Phrases
+
+```
+Canonical: "She said hello. ... (500 words later) ... She said goodbye."
+
+P1 edited the first "She said" at offset 0.
+P2 edited the second "She said" at offset 2847.
+
+Writer clicks Undo on P1:
+  1. Search near offset 0 for P1's region_text_after
+  2. Finds match at pos 0 (closest to stored offset)
+  3. Ignores the second "She said" at pos 2847
+  4. Correct occurrence undone
+```
+
+Without offset anchoring, blind `indexOf` would always hit the first match regardless of which proposal the writer intended to undo.
 
 ### Why Reject Needs Y.Map
 
