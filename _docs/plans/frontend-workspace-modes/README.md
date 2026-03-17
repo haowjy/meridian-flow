@@ -90,6 +90,19 @@ This split preserves one clear primary canvas per mode.
 
 The shell stays writer-first, but the taxonomy stays flexible because project structure still comes from the writer's folders.
 
+## Specs
+
+| Spec | Purpose |
+|---|---|
+| [Layout Architecture](spec/layout-architecture.md) | Converse/Studio panel layouts, mode switching, state scoping |
+| [Collab v2 Integration](spec/collab-v2-integration.md) | Inline review, hunk toolbar, proposal quick actions, decoration layers |
+| [Studio Chrome](spec/studio-chrome.md) | Tab bar, file explorer, tab lifecycle |
+| [Editor Direction](spec/editor-direction.md) | CM6 live preview rebuild, decoration architecture, formatting toolbar |
+
+## Frontend v2 Approach
+
+The workspace modes are being built as part of `frontend-v2/`, a ground-up rebuild using Storybook-first development. Components are mode-agnostic; only the layout shells are mode-aware. See `frontend-v2/CLAUDE.md` for build phases.
+
 ## Non-Goals
 
 - Defining exact pane counts or exact tab layouts
