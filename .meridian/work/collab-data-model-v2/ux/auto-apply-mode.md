@@ -48,11 +48,13 @@ Ctrl-Z → reverts the auto-apply transaction
 
 Wait -- this means Ctrl-Z on an auto-applied edit shows it as a pending hunk? Yes. The undo reverts both the text change and the status. The proposal is back to `pending`, so the projection pipeline picks it up and renders it as an inline diff. The writer can now Accept (re-apply) or Reject.
 
+Ctrl-Z undoes the auto-apply: the text change reverts, the proposal goes back to `pending`, and it appears as a diff hunk for manual review.
+
 **Option B: Thread undo (any time later)**
 
 ```
 Click Undo on P1 in thread sidebar:
-  Search for "The black cat" → found
+  Search near stored offset for "The black cat" → found
   Replace with "The cat"
   Status → reverted
 
@@ -125,6 +127,24 @@ New AI edits arrive as pending (manual mode).
 ```
 
 The mode switch is a clean break. Old auto-applied edits can only be reverted via thread undo.
+
+### Manual -> Auto-Apply
+
+Writer starts in manual mode with pending hunks visible. Switches to auto-apply.
+
+```
+Before switch:
+  P4 (pending) visible as inline diff hunk
+  P5 (pending) visible as inline diff hunk
+
+After switch:
+  undoManager.clear()  -- undo stack emptied
+  P4, P5 remain pending -- they are NOT auto-applied or discarded
+  Diff hunks stay visible until acted on
+  New AI edits arrive as accepted (auto-apply mode)
+```
+
+Pending proposals retain their pending status across mode switches. The writer still needs to accept or reject them manually.
 
 ## Cross-References
 

@@ -28,12 +28,31 @@ sequenceDiagram
 
 The writer sees the result immediately. Backend mirroring is asynchronous and driven by Yjs sync deltas.
 
+## Auto-Apply Path
+
+In auto-apply mode, the backend applies the update and marks the proposal accepted directly on canonical, without waiting for user action.
+
+```mermaid
+sequenceDiagram
+    participant AI as AI Agent
+    participant BE as Backend
+    participant YDoc as Canonical Y.Doc
+    participant Sync as Yjs Sync
+    participant FE as Frontend
+
+    AI->>BE: edit_document(update)
+    BE->>YDoc: apply yjs_update + set _proposal_status[P] = accepted
+    YDoc->>Sync: Yjs update delta
+    Sync->>FE: delta arrives
+    FE->>FE: text change appears inline
+```
+
 ## Authority Boundary
 
 | Concern | Authority | Storage | Notes |
 |---|---|---|---|
 | Canonical document text | Yjs | `Y.Text('content')` | Synced via existing collab transport |
-| Proposal status map | Yjs | `Y.Map('_proposal_status')` | Decision ledger for `accepted`, `rejected`, `stale` |
+| Proposal status map | Yjs | `Y.Map('_proposal_status')` | Decision ledger for `accepted`, `rejected`, `stale`, `reverted` |
 | Diff derivation | Frontend | Ephemeral | Projection + diff only |
 | Accept/reject hunk actions | Frontend | Yjs transactions | Immediate, undoable |
 | Projection GC | Frontend | Yjs transaction | Auto-marks stale proposals during recompute |
@@ -50,6 +69,8 @@ canonicalDoc.transact(() => {
   for (const proposal of hunk.proposals) {
     Y.applyUpdate(canonicalDoc, proposal.yjs_update);
     canonicalDoc.getMap('_proposal_status').set(proposal.id, 'accepted');
+    // Record offset for offset-anchored thread undo
+    proposal.accepted_at_offset = /* position where edit landed */;
   }
 }, ORIGIN_ACCEPT);
 ```
@@ -134,7 +155,7 @@ Tab reloads:
   2. _proposal_status already has P1='accepted', P2='rejected' (persisted in Y.Doc)
   3. Projection re-derives — P1 and P2 excluded (not pending), only P3 shows
   4. Undo stack is empty — session undo for P1/P2 is lost
-  5. Thread undo for P1 is still available (uses stored text, not undo stack)
+  5. Thread undo for P1 is still available (uses stored region_text + accepted_at_offset, not undo stack)
 ```
 
 No full-state reconciliation needed — Yjs sync guarantees convergence. Backend mirrors `_proposal_status` changes as they arrive via delta, not by scanning the full map.

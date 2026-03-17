@@ -188,6 +188,7 @@ The full clone/apply/diff pipeline only runs on **proposal events**, not on ever
 | New proposal arrives | Full re-derive |
 | Proposal status changes (accept/reject/stale) | Full re-derive |
 | User types (canonical text change, no proposal change) | CM6 decoration `map()` shifts hunk positions — no re-derive |
+| User pauses typing (500ms debounce) | Full re-derive — catches staleness from user edits |
 
 CM6 decorations automatically remap their positions when the document changes via `map()`. User typing shifts existing hunk positions without recomputing the diff. The expensive pipeline only runs when the set of pending proposals or their statuses change.
 

@@ -27,6 +27,8 @@ Collaborators (AI or human) write through the same pipeline regardless of mode. 
 
 Both modes are continuous. There is no "review session" with entry/exit. In manual mode, pending proposals are always visible as inline diffs whenever they exist.
 
+When switching modes, pending proposals retain their pending status. New proposals follow the new mode's behavior. No proposals are auto-applied, discarded, or force-resolved on mode switch.
+
 ### Per-User Projection
 
 Projection is per-user: only pending proposals where `created_by_user_id = current_user` are included. This means:
@@ -56,6 +58,10 @@ When an AI agent reads the document (e.g., to generate its next `edit_document` 
 4. Extract text -- this is what the AI sees
 
 This ensures the AI works against the same view its owner sees. Without this, an AI in manual mode would propose edits against canonical text that doesn't include its own pending proposals -- leading to conflicts and incoherent edits.
+
+### Proposal Independence
+
+Proposals store `yjs_update` computed against canonical (not the projected view). The AI sees the projected view for writing context, but the `yjs_update` is diffed against canonical. Attribution cloning from canonical is intentional -- it ensures proposals are portable and apply cleanly regardless of projection state.
 
 ## Canonical + Projection Model
 
@@ -118,8 +124,8 @@ One projection includes all pending proposals for the current user. In multi-use
 | Reject hunk | Set `_proposal_status` to `rejected` for each proposal in hunk | Status entries only |
 | Edit | User types after reject, or modifies after accept (`ORIGIN_HUMAN`) | Canonical text mutation |
 | Session undo | `undoManager.undo()` on unified stack | Reverts most recent tracked transaction |
-| Thread undo | Find/replace (`region_text_after` -> `region_text_before`) + proposal row `reverted` | Canonical text + proposal row |
-| Thread reapply | Find/replace (`region_text_before` -> `region_text_after`) + proposal row `accepted` | Canonical text + proposal row |
+| Thread undo | Offset-anchored find/replace (`region_text_after` -> `region_text_before`) + set `_proposal_status` to `reverted` | Canonical text + proposal row |
+| Thread reapply | Offset-anchored find/replace (`region_text_before` -> `region_text_after`) + set `_proposal_status` to `accepted` | Canonical text + proposal row |
 | Backend mirror | Observe `_proposal_status` deltas from Yjs sync | `proposals.status` mirrored |
 
 ### Example: Ephemeral Projection
@@ -229,7 +235,7 @@ stateDiagram-v2
 - Grouped hunk accept/reject as immediate Yjs transactions
 - Projection GC for stale proposal auto-resolution
 - `_proposal_status` Y.Map semantics, undo, and backend sync
-- Thread-level undo/reapply via stored before/after text
+- Thread-level undo/reapply via offset-anchored text search
 
 **Out of scope:**
 - Multi-user concurrent conflict policy

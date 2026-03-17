@@ -187,7 +187,7 @@ GC'd placeholders preserve item IDs (so future updates with left/right reference
 
 ### Undo Window
 
-The retained 10,000 updates provide replay headroom for recent timeline/history operations and short-lived auto-event bookmarks. Thread-level undo/reapply does not depend on Yjs inverse computation; it uses proposal text strings (`region_text_before`/`region_text_after`) and therefore survives compaction.
+The retained 10,000 updates provide replay headroom for recent timeline/history operations and short-lived auto-event bookmarks. Thread-level undo/reapply uses offset-anchored text search (`region_text_before`/`region_text_after` + `accepted_at_offset`) and therefore survives compaction -- it only needs current document text, not CRDT history.
 
 ### Storage Estimate
 
@@ -202,9 +202,9 @@ The retained 10,000 updates provide replay headroom for recent timeline/history 
 With GC disabled, all Items (including deleted ones) remain as tombstones. This means:
 
 - **Session undo**: UndoManager handles accept/reject/edit via Ctrl-Z (session-scoped)
-- **Thread-level undo**: text-based find-and-replace using `region_text_before` and `region_text_after` on the proposal row. Find `region_text_after` in current doc text, then replace with `region_text_before`. This is persistence-model-agnostic and works identically with append-only or overwrite-merge.
-- **Thread-level reapply**: find `region_text_before`, then replace with `region_text_after`.
-- **No inverse-op column and no Yjs snapshots**: thread-level undo/reapply only needs stored before/after text strings, which survive compaction.
+- **Thread-level undo**: offset-anchored text search using `region_text_before` and `region_text_after` on the proposal row. Search near `accepted_at_offset` for `region_text_after`, then replace with `region_text_before`. This is persistence-model-agnostic and survives compaction.
+- **Thread-level reapply**: search near stored offset for `region_text_before`, then replace with `region_text_after`.
+- **No CRDT dependency**: thread-level undo/reapply only needs stored text strings and offset, which survive compaction. No inverse operations or tombstone references.
 
 Undo/reapply writes are normal document mutations and are appended to the log. The log is always append-only.
 
@@ -226,7 +226,7 @@ This is Phase 0 of collab data model v2 and must land before subsequent phases.
 ## Cross-References
 
 - [Architecture](architecture.md)
-- [Undo Design](undo.md) — thread undo survives compaction via text search
+- [Undo Design](undo.md) — thread undo survives compaction via offset-anchored text search
 - [Schema Design](schema-design.md) — `document_updates`, `document_checkpoints`, `document_bookmarks` tables
 - [Implementation Plan](plan.md) — Phase 0
 
