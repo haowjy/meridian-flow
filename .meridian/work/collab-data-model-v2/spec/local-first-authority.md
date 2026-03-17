@@ -30,22 +30,43 @@ The writer sees the result immediately. Backend mirroring is asynchronous and dr
 
 ## Auto-Apply Path
 
-In auto-apply mode, the backend applies the update and marks the proposal accepted directly on canonical, without waiting for user action.
+In auto-apply mode, the **owner's frontend** applies the update — not the backend. This ensures the transaction uses `ORIGIN_ACCEPT`, which is tracked by UndoManager, making Ctrl-Z work.
 
 ```mermaid
 sequenceDiagram
     participant AI as AI Agent
     participant BE as Backend
-    participant YDoc as Canonical Y.Doc
     participant Sync as Yjs Sync
-    participant FE as Frontend
+    participant FE as Frontend (owner tab)
+    participant YDoc as Canonical Y.Doc
 
     AI->>BE: edit_document(update)
-    BE->>YDoc: apply yjs_update + set _proposal_status[P] = accepted
+    BE->>BE: create proposal row (status=pending)
+    BE->>Sync: broadcast proposal:new
+    Sync->>FE: proposal notification arrives
+    FE->>YDoc: transact(ORIGIN_ACCEPT): apply yjs_update + set _proposal_status[P] = accepted
+    YDoc-->>FE: UndoManager tracks transaction (Ctrl-Z works)
     YDoc->>Sync: Yjs update delta
-    Sync->>FE: delta arrives
-    FE->>FE: text change appears inline
+    Sync->>BE: delta arrives, mirror status
 ```
+
+### Auto-Apply Tab Election
+
+The backend tracks connected owner tabs via WebSocket presence:
+
+- If ≥1 owner tab is connected → backend broadcasts `proposal:new`, does NOT apply the update itself
+- If 0 owner tabs are connected → backend applies the update directly (no `ORIGIN_ACCEPT`, not undoable via Ctrl-Z)
+- If a tab reconnects after backend already applied → the proposal is already `accepted`, which is a no-op for the frontend (idempotent by proposal_id + status check)
+
+This is not full leader election — just a binary "any owner tab connected?" check. The backend does not need to pick a specific tab. Any connected owner tab that receives `proposal:new` applies it.
+
+**Why frontend-driven?** Yjs update origins are local apply-time metadata, not carried in the update payload. If the backend applied with `ORIGIN_ACCEPT`, the frontend's UndoManager would see the update arriving via the sync provider with no tracked origin — making it invisible to Ctrl-Z.
+
+### `proposal:new` Delivery
+
+`proposal:new` is a WebSocket event (not Yjs awareness). Payload: `{ proposal_id, document_id, status }`. The frontend does NOT need the full proposal payload from the event — it fetches proposal data (including `yjs_update`) via REST after receiving the notification.
+
+On reconnect, the frontend queries pending proposals for the current user via REST to catch up on any missed `proposal:new` events.
 
 ## Authority Boundary
 
@@ -57,7 +78,8 @@ sequenceDiagram
 | Accept/reject hunk actions | Frontend | Yjs transactions | Immediate, undoable |
 | Projection GC | Frontend | Yjs transaction | Auto-marks stale proposals during recompute |
 | Session undo/redo | Frontend | UndoManager in memory | Session-scoped |
-| Proposal status row | Backend + mirror | `proposals.status` | Always current: `pending`, `accepted`, `rejected`, `stale`, `reverted` |
+| Proposal status row | Backend + mirror | `proposals.status` | Always current: `pending`, `accepted`, `rejected`, `stale`, `reverted`, `invalid` |
+| Offset persistence | Backend | `proposals.accepted_at_offset` | Frontend API call after accept transaction; `proposed_at_offset` set at creation |
 | Thread undo/reapply | Frontend | `ORIGIN_THREAD` Yjs transaction | Local-first, tracked in undo stack |
 
 ## Immediate Operations
@@ -65,23 +87,33 @@ sequenceDiagram
 ### Accept Hunk
 
 ```typescript
+undoManager.stopCapturing(); // Force capture boundary — prevents merging with adjacent typing
 canonicalDoc.transact(() => {
+  // Y.applyUpdate inside transact() inherits the outer origin (ORIGIN_ACCEPT).
+  // This is load-bearing: UndoManager sees one transaction, producing one Ctrl-Z step.
+  // Do NOT move applyUpdate outside this transaction block.
   for (const proposal of hunk.proposals) {
     Y.applyUpdate(canonicalDoc, proposal.yjs_update);
     canonicalDoc.getMap('_proposal_status').set(proposal.id, 'accepted');
-    // Record offset for offset-anchored thread undo
-    proposal.accepted_at_offset = /* position where edit landed */;
   }
 }, ORIGIN_ACCEPT);
+
+// After transaction succeeds, persist offset to backend for thread undo
+for (const proposal of hunk.proposals) {
+  const offset = /* compute character position where edit landed */;
+  api.setAcceptedAtOffset(proposal.id, offset);  // async, non-blocking
+}
 ```
 
 - Applies all grouped hunk proposal updates to canonical text.
 - Writes all proposal statuses in the same transaction.
+- `stopCapturing()` ensures this is a discrete undo step, not merged with adjacent typing.
 - Syncs to backend through normal Yjs update flow.
 
 ### Reject Hunk
 
 ```typescript
+undoManager.stopCapturing(); // Force capture boundary
 canonicalDoc.transact(() => {
   for (const proposal of hunk.proposals) {
     canonicalDoc.getMap('_proposal_status').set(proposal.id, 'rejected');
@@ -135,6 +167,7 @@ Backend logic on Yjs sync:
 2. Upsert proposal-row status to match map value (`accepted`, `rejected`, `stale`, `reverted`). Key removal (from session Ctrl-Z undoing a reject) sets row back to `pending`.
 3. Thread undo/reapply writes to `_proposal_status` Y.Map (using `ORIGIN_THREAD`), mirrored to row like all other status changes.
 4. Keep row status current for UI (`pending`, `accepted`, `rejected`, `stale`, `reverted`).
+5. On document load (new connection or reconnect), read the full `_proposal_status` Y.Map and reconcile all proposal rows against it. Delta-driven mirroring handles steady-state; full reconciliation on load handles missed deltas.
 
 ## Reconnect / Reload
 
@@ -158,7 +191,13 @@ Tab reloads:
   5. Thread undo for P1 is still available (uses stored region_text + accepted_at_offset, not undo stack)
 ```
 
-No full-state reconciliation needed — Yjs sync guarantees convergence. Backend mirrors `_proposal_status` changes as they arrive via delta, not by scanning the full map.
+Yjs sync guarantees convergence. Backend mirrors `_proposal_status` changes as they arrive via delta, with full reconciliation on load as a safety net (see Backend Status Mirroring above).
+
+### Hunk Action Freshness
+
+Before executing Accept/Reject, the frontend checks whether the hunk's source derivation is still current (canonical text and proposal set haven't changed since the hunk was rendered). If stale, force a synchronous re-derive before committing. This prevents accepting against a projection the user hasn't seen.
+
+Implementation: attach a derivation sequence number to each hunk. Bump on every re-derive. Accept/Reject checks that the current sequence matches the hunk's sequence.
 
 ## Cross-References
 

@@ -20,9 +20,9 @@ audience: developer, architect
 | 6   | Edit is plain typing     | Edit is reject + type or accept + modify with `ORIGIN_HUMAN`; no separate review-edit status value.                           |
 | 7   | Unified UndoManager      | One stack over `[Y.Text('content'), Y.Map('_proposal_status')]`.                                                                |
 | 8   | Undo boundaries          | Keep single UndoManager; call `clear()` when collaboration mode changes (auto-apply to manual or vice versa).                 |
-| 9   | Projection GC            | Every recompute auto-marks no-diff pending proposals as `stale`.                                                              |
+| 9   | Projection GC            | Text pre-check: if canonical already contains `region_text_after` at `proposed_at_offset`, mark `stale`. No apply-then-diff.  |
 | 10  | Status chain             | `edit_tool -> proposal -> yjs_update -> status` is always current in backend row and thread UI.                               |
-| 11  | Thread undo/reapply      | Offset-anchored text search using `region_text_before`/`region_text_after` + `accepted_at_offset`. Search near stored offset to disambiguate repeated phrases. Conflict when text not found. |
+| 11  | Thread undo/reapply      | Offset-anchored text search using `region_text_before`/`region_text_after` + stored offset (`accepted_at_offset` or `proposed_at_offset`). No full-document fallback — conflict if not found within ±500 char window. |
 | 12  | Thread undo map behavior | Thread undo/reapply writes to both canonical text and `_proposal_status` Y.Map in one transaction (`ORIGIN_THREAD`).           |
 | 13  | Immutable thread history | Thread messages are never modified. Tool call status is a UI-only overlay derived from proposal row status.                    |
 
@@ -39,21 +39,24 @@ Tasks:
 
 1. Ensure proposal table supports `pending`, `accepted`, `rejected`, `stale`, `reverted`.
 2. Add `created_by_user_id` to proposal schema.
-3. Ensure `region_text_before`, `region_text_after` are present. Add `accepted_at_offset INT NULL` (set at accept time) and `turn_id UUID NULL`.
-4. Remove `ai_content` from document schema and consumers.
+3. Ensure `region_text_before`, `region_text_after` are present. Add `proposed_at_offset INT NULL` (set at creation by backend), `accepted_at_offset INT NULL` (set at accept time by frontend), and `turn_id UUID NULL`.
+4. Add `accepted_at_offset` API endpoint — frontend calls this after accept transaction to persist the offset to the proposal row.
+5. Remove `ai_content` from document schema and consumers.
 
-**Transition sub-phase:** Keep `ai_content` as a derived/computed column during transition. New system writes `yjs_update`; `ai_content` is populated from it for backwards compatibility. Remove in a later phase once frontend is fully cut over.
+**Transition sub-phase:** Keep `ai_content` as canonical text (without per-user projection) during transition. Old consumers that read `ai_content` get canonical text, which is what they got before the projection concept existed. New consumers use the per-user projection API. Remove `ai_content` once all old consumers are migrated.
 
 ### Phase 2: Projection + Diff Pipeline
 
 Tasks:
 
-1. Implement projection derivation from canonical + pending proposal updates with region tracking.
-2. Diff into raw hunks, then group nearby/overlapping hunks into user-facing regions.
-3. Attach contributing proposal sets and update references to each grouped hunk.
-4. Re-derive on `_proposal_status` or proposal-set changes. Canonical text changes (user typing) only remap decoration positions via CM6 `map()`.
-5. Run projection GC on each recompute and auto-mark no-diff proposals as `stale`.
-6. Render CM6 decorations for grouped hunk actions.
+1. Implement projection derivation from canonical + pending proposal updates with region tracking. Clone via `new Y.Doc()` + `applyUpdate(clone, encodeStateAsUpdate(source))` (no public `Y.Doc.clone()` API).
+2. Lock `yjs_update` generation algorithm: `encodeStateAsUpdate(tempDoc, encodeStateVector(canonical))` — ensures proposals carry only the delta, not full state.
+3. Validate `yjs_update` at proposal creation time on the backend. If `Y.applyUpdate` fails against canonical, reject the proposal before storing. Validate that the `yjs_update` only modifies `Y.Text('content')` — reject with `invalid` if it includes `Y.Map` or `Y.Array` mutations (prevents accidental `_proposal_status` contamination). Validate `region_text_before` exists in canonical at `proposed_at_offset` (within tolerance). Derive `region_text_after` server-side from the solo diff rather than trusting AI-supplied metadata. Add `invalid` as a terminal status for defense-in-depth.
+4. Diff into raw hunks, then group nearby/overlapping hunks into user-facing regions.
+5. Attach contributing proposal sets and update references to each grouped hunk.
+6. Re-derive triggers: proposal-set changes and `_proposal_status` changes trigger full re-derive. Local typing remaps decorations via CM6 `map()` (debounced 500ms re-derive for staleness). Remote canonical text changes (other users' accepts, thread undo) trigger immediate full re-derive.
+7. Run projection GC via text pre-check: if canonical already contains `region_text_after` at `proposed_at_offset`, mark `stale` without applying. Skip stale proposals in projection clone.
+8. Render CM6 decorations for grouped hunk actions.
 
 ### Phase 3: Immediate Hunk Actions + Session Undo
 
@@ -61,11 +64,12 @@ Tasks:
 
 1. Wire grouped hunk accept/reject to immediate Yjs transactions.
 2. Ensure hunk accept performs multi-update text apply + status writes atomically.
-3. Wire auto-apply mode: apply yjs_update to canonical and mark proposal `accepted` on creation.
+3. Wire auto-apply mode: owner's frontend receives `proposal:new` (WebSocket event with `{ proposal_id, document_id, status }`), fetches proposal via REST, applies `yjs_update` with `ORIGIN_ACCEPT` locally (UndoManager tracks it for Ctrl-Z). Backend tracks owner tab presence via WebSocket — if 0 owner tabs connected, backend applies directly.
 4. Initialize a single UndoManager over text + status map.
-5. Call `undoManager.clear()` on collaboration mode changes (auto-apply to manual or vice versa).
-6. Verify one Ctrl-Z undoes the whole grouped hunk transaction.
-7. Verify interleaved undo/redo across typing and hunk actions.
+5. Call `undoManager.stopCapturing()` before every discrete action (Accept, Reject, Thread op) to prevent merging with adjacent typing via UndoManager's default 500ms `captureTimeout`.
+6. Call `undoManager.clear()` on collaboration mode changes (auto-apply to manual or vice versa).
+7. Verify one Ctrl-Z undoes the whole grouped hunk transaction (multi-proposal accept = exactly one undo entry).
+8. Verify interleaved undo/redo across typing and hunk actions.
 
 ### Phase 4: Backend Status Mirror
 
@@ -74,6 +78,10 @@ Tasks:
 1. Mirror `_proposal_status` changes into proposal row status.
 2. Verify status mirroring is driven by `_proposal_status` key deltas from Yjs sync.
 3. Verify row status stays current for `pending`, `accepted`, `rejected`, `stale`, `reverted`.
+4. Pin all Yjs wire format to v1 (`update`/`encodeStateAsUpdate`). Reject or gate v2 payloads. Add JS↔Go compatibility tests for both Y.Text and Y.Map updates.
+5. Add full `_proposal_status` reconciliation on document load (read Y.Map, reconcile all proposal rows). Delta-driven mirroring for steady-state; full reconciliation on load as safety net.
+
+**API contract:** The API surface between frontend and backend is minimal given the local-first model. Proposal CRUD (REST), document sync (Yjs provider), awareness (Yjs awareness protocol), `accepted_at_offset` persistence (REST endpoint), and `proposal:new` WebSocket event. Exact endpoint signatures are defined at implementation time.
 
 ### Phase 5: Thread-Level Undo/Reapply
 
@@ -83,8 +91,9 @@ Tasks:
 2. Implement `thread:reapply` (`reverted -> accepted` and `rejected -> accepted`) via offset-anchored `region_text_before -> region_text_after` replacement.
 3. Implement `thread:undo_all` — iterate accepted proposals in a thread, undo each independently, return per-proposal results.
 4. Apply undo/reapply as canonical Yjs updates appended to `document_updates`.
-5. Return conflict when target text not found near stored offset.
+5. Return conflict when target text not found within ±500 char tolerance window of stored offset. No full-document fallback — prevents wrong-occurrence replacement in fiction with repeated phrases.
 6. Thread UI renders proposal status as overlay on tool calls — no thread message mutation.
+7. Create `ai_turn` bookmark (update log pointer) before each AI turn's proposals are applied. Thread UI shows "Restore to before this turn" while bookmark exists (pre-compaction).
 
 ## Dependency Graph
 

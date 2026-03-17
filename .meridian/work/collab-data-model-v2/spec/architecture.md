@@ -114,12 +114,16 @@ P1 and P3 are skipped because they already have decisions. Only `pending` propos
 
 One projection includes all pending proposals for the current user. In multi-user collaboration, other users' pending proposals are not in your projection. However, the frontend can query all pending proposals to render awareness indicators ("User B's AI edited near paragraph 3") without showing the actual content.
 
+### Single Writer Per Proposal
+
+Per-user projection ensures each proposal has exactly one writer who can accept/reject it: the user whose `created_by_user_id` matches. No two users can act on the same proposal concurrently. The only concurrent scenario is the same user on two tabs, where CRDT deterministic ordering by clientID resolves concurrent writes (higher clientID wins, not wall-clock recency). This eliminates the need for a multi-user conflict policy on `_proposal_status`.
+
 ## Core Data Flow (Manual Path)
 
 | Step | Operation | Persisted outcome |
 |------|-----------|-------------------|
 | Derive diff | Clone canonical, apply each `pending` proposal update, diff, group nearby regions | None (ephemeral) |
-| Projection GC | Pending proposal yields no diff -- mark `stale` | `_proposal_status` entry + proposal row |
+| Projection GC | Text pre-check detects proposal is already in canonical -- mark `stale` | `_proposal_status` entry + proposal row |
 | Accept hunk | Apply grouped hunk proposal updates to canonical + set `_proposal_status` to `accepted` in one transaction | Canonical text + status entries |
 | Reject hunk | Set `_proposal_status` to `rejected` for each proposal in hunk | Status entries only |
 | Edit | User types after reject, or modifies after accept (`ORIGIN_HUMAN`) | Canonical text mutation |
@@ -163,11 +167,15 @@ The black cat sat on the mat.
 
 Agent P3 proposes: insert "black " before "cat" -- but the canonical already has it.
 
-1. Clone canonical -> `The black cat sat on the mat.`
-2. Apply P3 yjs_update -> `The black cat sat on the mat.` (no change -- Yjs is idempotent for already-applied content)
-3. Diff vs canonical -> empty
-4. P3 is auto-marked `stale` (uses `ORIGIN_GC`, not tracked by UndoManager)
-5. Thread UI shows "No longer relevant" -- no hunk rendered
+**Important:** Yjs idempotence only applies when reapplying the *same update bytes* (same struct IDs). If P3 was created independently (different Yjs client ID), applying its `yjs_update` to a clone would produce duplicate content ("black black cat"), not a no-op.
+
+Therefore, stale detection uses a **text pre-check** instead of apply-then-diff:
+
+1. Compare `region_text_before` from P3 against canonical at `proposed_at_offset`
+2. If canonical already contains `region_text_after` at that position, P3 is stale
+3. Mark `stale` (uses `ORIGIN_GC`, not tracked by UndoManager)
+4. Thread UI shows "No longer relevant" -- no hunk rendered
+5. Skip applying P3's `yjs_update` to the projection clone entirely
 
 ## State Model
 
@@ -189,14 +197,22 @@ stateDiagram-v2
     pending --> stale : projection GC
 
     accepted --> reverted : thread undo
-    accepted --> pending : session Ctrl-Z
+    accepted --> pending : session Ctrl-Z (of accept)
     reverted --> accepted : thread reapply
+    reverted --> accepted : session Ctrl-Z (of thread undo)
     rejected --> accepted : thread reapply
 
-    rejected --> pending : session Ctrl-Z
+    rejected --> pending : session Ctrl-Z (of reject)
+    accepted --> reverted : session Ctrl-Z (of thread reapply from reverted)
+    accepted --> rejected : session Ctrl-Z (of thread reapply from rejected)
+
+    [*] --> invalid : yjs_update validation fails
 
     note right of stale : Terminal. Canonical already<br/>contains the change.
+    note right of invalid : Terminal. Bad payload<br/>rejected at creation.
 ```
+
+Note: Ctrl-Z transitions for thread ops are mechanical consequences of UndoManager restoring previous Y.Map values. No special handling needed — see [Undo Design](undo.md).
 
 | Status | Meaning | Undo/Redo? |
 |--------|---------|-----------|
@@ -205,10 +221,11 @@ stateDiagram-v2
 | `rejected` | User rejected | Session Ctrl-Z while in stack, or thread reapply |
 | `stale` | Canonical already contains the change -- auto-resolved by projection GC | No |
 | `reverted` | Was accepted, then thread-undone | Thread reapply |
+| `invalid` | `yjs_update` failed validation at creation time (defense-in-depth) | No |
 
 ## Proposal Creation
 
-- Every proposal (from AI `edit_document` or human suggest-mode edit) creates one proposal row with `status = 'pending'` and its `yjs_update`.
+- Every proposal (from AI `edit_document` or human suggest-mode edit) creates one proposal row with `status = 'pending'` and its `yjs_update`. In auto-apply mode, the owner's frontend immediately accepts the proposal in the same tick (see [Local-First Authority](local-first-authority.md) — Auto-Apply Path).
 - `proposal -> yjs_update -> status` chain stays current after every recompute and action.
 - Projection GC marks no-diff pending proposals as `stale` on every derive.
 - Thread UI reads proposal row status to show `accepted`, `rejected`, `stale`, `reverted`.
@@ -238,9 +255,12 @@ stateDiagram-v2
 - Thread-level undo/reapply via offset-anchored text search
 
 **Out of scope:**
-- Multi-user concurrent conflict policy
+- Multi-user concurrent conflict policy (beyond single-writer-per-proposal — see below)
 - Backend hunk derivation or persistence
 - Persistent projection Y.Doc
+- Proposal discovery/notification UX (badge counts, jump-to-next)
+- Collaborative awareness indicator design
+- Accept All / Reject All bulk operations (data model supports them; UX is deferred)
 
 ## Cross-References
 
