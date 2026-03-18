@@ -1,7 +1,6 @@
 package tools
 
 import (
-	collabSvc "meridian/internal/domain/services/collab"
 	skillModels "meridian/internal/domain/models/skill"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	skillSvc "meridian/internal/domain/services/skill"
@@ -18,9 +17,8 @@ import (
 type ToolRegistryBuilder struct {
 	registry         *ToolRegistry
 	config           *ToolConfig
-	namespaceSvc     docsysSvc.NamespaceService  // Optional, for namespace-aware tools
-	mutationStrategy DocumentMutationStrategy    // Optional, for AI edit persistence strategy
-	aiContentReader  collabSvc.AIContentReader   // Optional, for reading ai_content in text editor
+	namespaceSvc     docsysSvc.NamespaceService // Optional, for namespace-aware tools
+	mutationStrategy DocumentMutationStrategy   // Optional, for AI edit persistence strategy
 }
 
 // NewToolRegistryBuilder creates a new builder with a fresh registry.
@@ -54,14 +52,6 @@ func (b *ToolRegistryBuilder) WithMutationStrategy(strategy DocumentMutationStra
 	return b
 }
 
-// WithAIContentReader sets the reader for projected AI content.
-// When set, str_replace/insert/view read ai_content instead of stale doc.Content,
-// so each tool call in a multi-tool turn sees prior edits.
-func (b *ToolRegistryBuilder) WithAIContentReader(reader collabSvc.AIContentReader) *ToolRegistryBuilder {
-	b.aiContentReader = reader
-	return b
-}
-
 // WithDocumentTools registers all document-related tools (str_replace_based_edit_tool, doc_search).
 // These tools operate on the project's document system.
 // All tools use services for data access (SOLID: DIP - depends on interfaces).
@@ -78,7 +68,7 @@ func (b *ToolRegistryBuilder) WithDocumentTools(
 ) *ToolRegistryBuilder {
 	// All tools use service layer for data access (Phase 4: zero repo dependencies)
 	// Tools self-describe via metadata for system prompt generation (OCP compliance)
-	textEditorTool := NewTextEditorTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config, b.mutationStrategy, b.aiContentReader)
+	textEditorTool := NewTextEditorTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config, b.mutationStrategy)
 	searchTool := NewSearchTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config)
 
 	b.registry.RegisterWithMetadata("str_replace_based_edit_tool", textEditorTool, TextEditorToolMetadata())
@@ -105,7 +95,7 @@ func (b *ToolRegistryBuilder) WithEnabledDocumentTools(
 	}
 
 	if toolSet["str_replace_based_edit_tool"] {
-		textEditorTool := NewTextEditorTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config, b.mutationStrategy, b.aiContentReader)
+		textEditorTool := NewTextEditorTool(projectID, userID, documentSvc, folderSvc, b.namespaceSvc, b.config, b.mutationStrategy)
 		b.registry.RegisterWithMetadata("str_replace_based_edit_tool", textEditorTool, TextEditorToolMetadata())
 	}
 

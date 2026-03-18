@@ -81,9 +81,12 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.Crea
 		TurnID:            req.TurnID,
 		AgentRunID:        req.AgentRunID,
 		ProposalGroupID:   req.ProposalGroupID,
-		Status:            collabModels.ProposalStatusProposed,
+		Status:            collabModels.ProposalStatusPending,
 		YjsUpdate:         req.YjsUpdate,
 		Description:       req.Description,
+		RegionTextBefore:  req.RegionTextBefore,
+		RegionTextAfter:   req.RegionTextAfter,
+		ProposedAtOffset:  req.ProposedAtOffset,
 		CreatedByUserID:   req.CreatedByUserID,
 	}
 
@@ -120,7 +123,7 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.Crea
 					count, err := s.proposalStore.CountByDocumentAndStatusAndSource(
 						txCtx,
 						req.DocumentID,
-						collabModels.ProposalStatusProposed,
+						collabModels.ProposalStatusPending,
 						collabModels.ProposalSourceAI,
 					)
 					if err != nil {
@@ -221,7 +224,7 @@ func (s *ProposalService) AcceptProposal(ctx context.Context, req collabSvc.Acce
 			if err != nil {
 				return err
 			}
-			if proposal.Status != collabModels.ProposalStatusProposed {
+			if proposal.Status != collabModels.ProposalStatusPending {
 				return domain.NewValidationError(
 					fmt.Sprintf("proposal %s is %s and cannot be accepted", proposal.ID, proposal.Status),
 				)
@@ -311,7 +314,7 @@ func (s *ProposalService) RejectProposal(ctx context.Context, req collabSvc.Reje
 			return domain.NewValidationError(
 				fmt.Sprintf("proposal %s is %s and cannot be rejected", proposal.ID, proposal.Status),
 			)
-		case collabModels.ProposalStatusProposed:
+		case collabModels.ProposalStatusPending:
 			decision := collabModels.ProposalDecision{
 				ProposalID:      proposal.ID,
 				DecidedByUserID: req.UserID,
@@ -342,7 +345,7 @@ func (s *ProposalService) RejectProposal(ctx context.Context, req collabSvc.Reje
 	return result, nil
 }
 
-// GroupAccept accepts all currently-proposed rows in a group in deterministic order.
+// GroupAccept accepts all currently-pending rows in a group in deterministic order.
 func (s *ProposalService) GroupAccept(ctx context.Context, req collabSvc.GroupAcceptRequest) (*collabSvc.GroupAcceptResult, error) {
 	if err := validateIdempotencyRequest(req.IdempotencyKey, req.RequestHash); err != nil {
 		return nil, err
@@ -362,8 +365,8 @@ func (s *ProposalService) GroupAccept(ctx context.Context, req collabSvc.GroupAc
 		}
 
 		return s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
-			proposedStatus := collabModels.ProposalStatusProposed
-			proposals, err := s.proposalStore.ListByGroup(txCtx, req.ProposalGroupID, &proposedStatus)
+			pendingStatus := collabModels.ProposalStatusPending
+			proposals, err := s.proposalStore.ListByGroup(txCtx, req.ProposalGroupID, &pendingStatus)
 			if err != nil {
 				return err
 			}
@@ -562,4 +565,3 @@ func composeProposalUpdates(baseState []byte, proposals []groupAcceptValidPropos
 
 	return composite, perError, nil
 }
-

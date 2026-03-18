@@ -65,9 +65,18 @@ func (s *CollabProposalStrategy) Apply(ctx context.Context, input MutationInput)
 	// This produces a positional CRDT update instead of full-doc replacement,
 	// preventing duplicate content when multiple str_replace calls hit the same turn.
 	var edit *collab.TextEdit
+	var regionTextBefore *string
+	var regionTextAfter *string
+	var proposedAtOffset *int
 	if input.OldContent != "" {
 		pos := collab.FindEditPosition(input.Base, input.OldContent)
 		if pos >= 0 {
+			position := pos
+			replacement := input.ReplContent
+			regionTextBefore = &input.OldContent
+			regionTextAfter = &replacement
+			proposedAtOffset = &position
+
 			edit = &collab.TextEdit{
 				OldText:  input.OldContent,
 				NewText:  input.ReplContent,
@@ -141,6 +150,9 @@ func (s *CollabProposalStrategy) Apply(ctx context.Context, input MutationInput)
 		AgentRunID:        agentRunID,
 		YjsUpdate:         yjsUpdate,
 		Description:       description,
+		RegionTextBefore:  regionTextBefore,
+		RegionTextAfter:   regionTextAfter,
+		ProposedAtOffset:  proposedAtOffset,
 		CreatedByUserID:   userUUID,
 	})
 	if err != nil {
@@ -155,7 +167,7 @@ func (s *CollabProposalStrategy) Apply(ctx context.Context, input MutationInput)
 			// Log but don't fail — proposal is persisted, broadcast is best-effort
 			s.logger.Warn("failed to broadcast proposal accepted", "document_id", input.DocumentID, "proposal_id", proposal.ID, "error", err)
 		}
-	case collabModels.ProposalStatusProposed:
+	case collabModels.ProposalStatusPending:
 		// Pending review: broadcast new proposal event
 		if err := s.proposalBroadcaster.BroadcastProposalCreated(input.DocumentID, proposal); err != nil {
 			s.logger.Warn("failed to broadcast proposal created", "document_id", input.DocumentID, "proposal_id", proposal.ID, "error", err)

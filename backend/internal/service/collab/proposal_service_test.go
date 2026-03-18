@@ -30,7 +30,7 @@ func TestProposalServiceAcceptProposal_IdempotencyReplayAndConflict(t *testing.T
 	proposal := collabModels.Proposal{
 		ID:              uuid.New(),
 		DocumentID:      uuid.New(),
-		Status:          collabModels.ProposalStatusProposed,
+		Status:          collabModels.ProposalStatusPending,
 		YjsUpdate:       []byte("update-1"),
 		CreatedByUserID: uuid.New(),
 		CreatedAt:       time.Now().UTC(),
@@ -104,7 +104,7 @@ func TestProposalServiceAcceptProposal_SerializesSameDocument(t *testing.T) {
 	firstProposal := collabModels.Proposal{
 		ID:              uuid.New(),
 		DocumentID:      documentID,
-		Status:          collabModels.ProposalStatusProposed,
+		Status:          collabModels.ProposalStatusPending,
 		YjsUpdate:       []byte("u1"),
 		CreatedByUserID: uuid.New(),
 		CreatedAt:       time.Now().UTC(),
@@ -112,7 +112,7 @@ func TestProposalServiceAcceptProposal_SerializesSameDocument(t *testing.T) {
 	secondProposal := collabModels.Proposal{
 		ID:              uuid.New(),
 		DocumentID:      documentID,
-		Status:          collabModels.ProposalStatusProposed,
+		Status:          collabModels.ProposalStatusPending,
 		YjsUpdate:       []byte("u2"),
 		CreatedByUserID: uuid.New(),
 		CreatedAt:       time.Now().UTC().Add(time.Second),
@@ -197,7 +197,7 @@ func TestProposalServiceAcceptProposal_DifferentDocumentsProceedIndependently(t 
 	firstProposal := collabModels.Proposal{
 		ID:              uuid.New(),
 		DocumentID:      uuid.New(),
-		Status:          collabModels.ProposalStatusProposed,
+		Status:          collabModels.ProposalStatusPending,
 		YjsUpdate:       []byte("u1"),
 		CreatedByUserID: uuid.New(),
 		CreatedAt:       time.Now().UTC(),
@@ -205,7 +205,7 @@ func TestProposalServiceAcceptProposal_DifferentDocumentsProceedIndependently(t 
 	secondProposal := collabModels.Proposal{
 		ID:              uuid.New(),
 		DocumentID:      uuid.New(),
-		Status:          collabModels.ProposalStatusProposed,
+		Status:          collabModels.ProposalStatusPending,
 		YjsUpdate:       []byte("u2"),
 		CreatedByUserID: uuid.New(),
 		CreatedAt:       time.Now().UTC().Add(time.Second),
@@ -287,10 +287,10 @@ func TestProposalServiceRejectProposal_TerminalBehavior(t *testing.T) {
 	autoAccept := &fakeAutoAcceptPolicyStore{}
 	projector := &fakeAIContentProjector{}
 
-	proposed := collabModels.Proposal{
+	pending := collabModels.Proposal{
 		ID:              uuid.New(),
 		DocumentID:      uuid.New(),
-		Status:          collabModels.ProposalStatusProposed,
+		Status:          collabModels.ProposalStatusPending,
 		YjsUpdate:       []byte("u1"),
 		CreatedByUserID: uuid.New(),
 		CreatedAt:       time.Now().UTC(),
@@ -303,18 +303,18 @@ func TestProposalServiceRejectProposal_TerminalBehavior(t *testing.T) {
 		CreatedByUserID: uuid.New(),
 		CreatedAt:       time.Now().UTC(),
 	}
-	stores.put(proposed)
+	stores.put(pending)
 	stores.put(accepted)
 
 	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
 	userID := uuid.New()
 
 	first, err := svc.RejectProposal(ctx, collabSvc.RejectProposalRequest{
-		ProposalID: proposed.ID,
+		ProposalID: pending.ID,
 		UserID:     userID,
 	})
 	if err != nil {
-		t.Fatalf("reject proposed: %v", err)
+		t.Fatalf("reject pending: %v", err)
 	}
 	if first.Noop {
 		t.Fatalf("expected first reject to mutate proposal")
@@ -327,7 +327,7 @@ func TestProposalServiceRejectProposal_TerminalBehavior(t *testing.T) {
 	}
 
 	second, err := svc.RejectProposal(ctx, collabSvc.RejectProposalRequest{
-		ProposalID: proposed.ID,
+		ProposalID: pending.ID,
 		UserID:     userID,
 	})
 	if err != nil {
@@ -392,7 +392,7 @@ func TestProposalServiceGroupAccept_DeterministicOutcomesAndReplay(t *testing.T)
 		ID:              uuid.New(),
 		DocumentID:      docID,
 		ProposalGroupID: &groupID,
-		Status:          collabModels.ProposalStatusProposed,
+		Status:          collabModels.ProposalStatusPending,
 		YjsUpdate:       update1,
 		CreatedByUserID: uuid.New(),
 		CreatedAt:       created.Add(1 * time.Minute),
@@ -401,7 +401,7 @@ func TestProposalServiceGroupAccept_DeterministicOutcomesAndReplay(t *testing.T)
 		ID:              uuid.New(),
 		DocumentID:      docID,
 		ProposalGroupID: &groupID,
-		Status:          collabModels.ProposalStatusProposed,
+		Status:          collabModels.ProposalStatusPending,
 		YjsUpdate:       update2,
 		CreatedByUserID: uuid.New(),
 		CreatedAt:       created.Add(2 * time.Minute),
@@ -410,7 +410,7 @@ func TestProposalServiceGroupAccept_DeterministicOutcomesAndReplay(t *testing.T)
 		ID:              uuid.New(),
 		DocumentID:      docID,
 		ProposalGroupID: &groupID,
-		Status:          collabModels.ProposalStatusProposed,
+		Status:          collabModels.ProposalStatusPending,
 		YjsUpdate:       update3,
 		CreatedByUserID: uuid.New(),
 		CreatedAt:       created.Add(3 * time.Minute),
@@ -518,7 +518,7 @@ func TestProposalServiceGroupAccept_SkipsDifferentDocumentInGroup(t *testing.T) 
 		ID:              uuid.New(),
 		DocumentID:      targetDocID,
 		ProposalGroupID: &groupID,
-		Status:          collabModels.ProposalStatusProposed,
+		Status:          collabModels.ProposalStatusPending,
 		YjsUpdate:       update1,
 		CreatedByUserID: uuid.New(),
 		CreatedAt:       created.Add(1 * time.Minute),
@@ -527,7 +527,7 @@ func TestProposalServiceGroupAccept_SkipsDifferentDocumentInGroup(t *testing.T) 
 		ID:              uuid.New(),
 		DocumentID:      otherDocID,
 		ProposalGroupID: &groupID,
-		Status:          collabModels.ProposalStatusProposed,
+		Status:          collabModels.ProposalStatusPending,
 		YjsUpdate:       []byte("u2"), // never composed (doc mismatch skip)
 		CreatedByUserID: uuid.New(),
 		CreatedAt:       created.Add(2 * time.Minute),
@@ -596,7 +596,7 @@ func TestProposalServiceGroupAccept_TransientMarkAcceptedErrorAborts(t *testing.
 		ID:              uuid.New(),
 		DocumentID:      docID,
 		ProposalGroupID: &groupID,
-		Status:          collabModels.ProposalStatusProposed,
+		Status:          collabModels.ProposalStatusPending,
 		YjsUpdate:       realUpdate,
 		CreatedByUserID: uuid.New(),
 		CreatedAt:       time.Now().UTC(),
@@ -734,8 +734,8 @@ func TestProposalServiceCreateProposal_AutoAcceptCascade(t *testing.T) {
 					t.Fatalf("expected two recomputes for auto-accept, got %d", projector.count())
 				}
 			} else {
-				if stored.Status != collabModels.ProposalStatusProposed {
-					t.Fatalf("expected proposed status, got %s", stored.Status)
+				if stored.Status != collabModels.ProposalStatusPending {
+					t.Fatalf("expected pending status, got %s", stored.Status)
 				}
 				if runtime.callCount() != 0 {
 					t.Fatalf("expected no runtime apply, got %d", runtime.callCount())
@@ -790,7 +790,7 @@ func TestProposalServiceCreateProposal_QueuedAIProposalCap(t *testing.T) {
 	count, err := stores.CountByDocumentAndStatusAndSource(
 		ctx,
 		docID,
-		collabModels.ProposalStatusProposed,
+		collabModels.ProposalStatusPending,
 		collabModels.ProposalSourceAI,
 	)
 	if err != nil {
@@ -817,7 +817,7 @@ func TestProposalServiceAcceptProposal_PendingCapAndRecovery(t *testing.T) {
 			ID:              uuid.New(),
 			DocumentID:      docID,
 			Source:          collabModels.ProposalSourceAI,
-			Status:          collabModels.ProposalStatusProposed,
+			Status:          collabModels.ProposalStatusPending,
 			YjsUpdate:       []byte(fmt.Sprintf("u-%d", i)),
 			CreatedByUserID: userID,
 			CreatedAt:       time.Now().UTC().Add(time.Duration(i) * time.Millisecond),
@@ -976,7 +976,7 @@ func (s *fakeProposalStore) Create(_ context.Context, proposal *collabModels.Pro
 		proposal.CreatedAt = time.Now().UTC()
 	}
 	if proposal.Status == "" {
-		proposal.Status = collabModels.ProposalStatusProposed
+		proposal.Status = collabModels.ProposalStatusPending
 	}
 	s.proposals[proposal.ID] = *proposal
 	return nil
@@ -1078,8 +1078,8 @@ func (s *fakeProposalStore) MarkAccepted(_ context.Context, decision collabModel
 	if !ok {
 		return domain.NewNotFoundError("proposal", "proposal not found")
 	}
-	if proposal.Status != collabModels.ProposalStatusProposed {
-		return domain.NewValidationError("proposal is not proposed")
+	if proposal.Status != collabModels.ProposalStatusPending {
+		return domain.NewValidationError("proposal is not pending")
 	}
 	proposal.Status = collabModels.ProposalStatusAccepted
 	proposal.DecidedByUserID = &decision.DecidedByUserID
@@ -1095,12 +1095,40 @@ func (s *fakeProposalStore) MarkRejected(_ context.Context, decision collabModel
 	if !ok {
 		return domain.NewNotFoundError("proposal", "proposal not found")
 	}
-	if proposal.Status != collabModels.ProposalStatusProposed {
-		return domain.NewValidationError("proposal is not proposed")
+	if proposal.Status != collabModels.ProposalStatusPending {
+		return domain.NewValidationError("proposal is not pending")
 	}
 	proposal.Status = collabModels.ProposalStatusRejected
 	proposal.DecidedByUserID = &decision.DecidedByUserID
 	proposal.DecidedAt = &decision.DecidedAt
+	s.proposals[proposal.ID] = proposal
+	return nil
+}
+
+func (s *fakeProposalStore) UpsertStatus(_ context.Context, proposalID uuid.UUID, status collabModels.ProposalStatus) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	proposal, ok := s.proposals[proposalID]
+	if !ok {
+		return nil
+	}
+	proposal.Status = status
+	s.proposals[proposal.ID] = proposal
+	return nil
+}
+
+func (s *fakeProposalStore) SetAcceptedAtOffset(_ context.Context, proposalID uuid.UUID, offset int, version int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	proposal, ok := s.proposals[proposalID]
+	if !ok {
+		return domain.NewNotFoundError("proposal", "proposal not found")
+	}
+	if proposal.OffsetVersion >= version {
+		return nil
+	}
+	proposal.AcceptedAtOffset = &offset
+	proposal.OffsetVersion = version
 	s.proposals[proposal.ID] = proposal
 	return nil
 }
@@ -1336,8 +1364,8 @@ func TestProposalServiceCreateProposal_ArbiterForcesReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create proposal: %v", err)
 	}
-	if created.Status != collabModels.ProposalStatusProposed {
-		t.Fatalf("expected proposed (review-required) status, got %s", created.Status)
+	if created.Status != collabModels.ProposalStatusPending {
+		t.Fatalf("expected pending (review-required) status, got %s", created.Status)
 	}
 	if runtime.callCount() != 0 {
 		t.Fatalf("expected no runtime apply when arbiter forces review, got %d", runtime.callCount())
@@ -1450,8 +1478,8 @@ func TestProposalServiceCreateProposal_ArbiterNotCalledWhenBaselineReview(t *tes
 	if err != nil {
 		t.Fatalf("create proposal: %v", err)
 	}
-	if created.Status != collabModels.ProposalStatusProposed {
-		t.Fatalf("expected proposed, got %s", created.Status)
+	if created.Status != collabModels.ProposalStatusPending {
+		t.Fatalf("expected pending, got %s", created.Status)
 	}
 	// Arbiter should not be called when baseline is already review-required.
 	if arbiter.callCount != 0 {
@@ -1481,8 +1509,8 @@ func TestProposalServiceCreateProposal_ArbiterPanicDegradesToReview(t *testing.T
 		t.Fatalf("create proposal should succeed despite arbiter panic: %v", err)
 	}
 	// Panic degrades to review-required: proposal should NOT be auto-accepted.
-	if created.Status != collabModels.ProposalStatusProposed {
-		t.Fatalf("expected proposed after arbiter panic, got %s", created.Status)
+	if created.Status != collabModels.ProposalStatusPending {
+		t.Fatalf("expected pending after arbiter panic, got %s", created.Status)
 	}
 	if runtime.callCount() != 0 {
 		t.Fatalf("expected no runtime apply after arbiter panic, got %d", runtime.callCount())

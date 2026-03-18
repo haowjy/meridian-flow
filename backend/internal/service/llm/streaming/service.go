@@ -14,7 +14,6 @@ import (
 	"meridian/internal/capabilities"
 	"meridian/internal/config"
 	"meridian/internal/domain"
-	collabSvc "meridian/internal/domain/services/collab"
 	llmModels "meridian/internal/domain/models/llm"
 	"meridian/internal/domain/repositories"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
@@ -86,20 +85,19 @@ type Service struct {
 	validator            ThreadValidator
 	providerGetter       LLMProviderGetter
 	registry             *mstream.Registry
-	executorRegistry     *ExecutorRegistry            // Tracks StreamExecutors by turn ID for interruption
+	executorRegistry     *ExecutorRegistry             // Tracks StreamExecutors by turn ID for interruption
 	interjectionRegistry *mstream.InterjectionRegistry // Tracks interjection buffers by turn ID
 	config               *config.Config
 	txManager            repositories.TransactionManager
 	systemPromptResolver llmSvc.SystemPromptResolver
 	messageBuilder       llmSvc.MessageBuilder
-	toolLimitResolver    llmSvc.ToolLimitResolver // Resolves tool round limits (tier-ready)
-	capabilityRegistry   *capabilities.Registry          // For checking model capabilities (e.g., supports_tools)
-	formatterRegistry    *formatting.FormatterRegistry   // For formatting synthetic tool results (ref transformer)
-	tokenFinalizer       tokens.TokenFinalizer           // For finalizing tokens on completion/interruption
-	jobQueue             jobs.JobQueue                   // NEW: Phase 2 - background job queue for async operations
-	mutationStrategy     tools.DocumentMutationStrategy  // Strategy for AI edit persistence (collab proposal)
-	aiContentReader      collabSvc.AIContentReader       // For reading ai_content in text editor (stale-base fix)
-	userStreamTracker    *UserStreamTracker              // Per-user concurrent stream limiter
+	toolLimitResolver    llmSvc.ToolLimitResolver       // Resolves tool round limits (tier-ready)
+	capabilityRegistry   *capabilities.Registry         // For checking model capabilities (e.g., supports_tools)
+	formatterRegistry    *formatting.FormatterRegistry  // For formatting synthetic tool results (ref transformer)
+	tokenFinalizer       tokens.TokenFinalizer          // For finalizing tokens on completion/interruption
+	jobQueue             jobs.JobQueue                  // NEW: Phase 2 - background job queue for async operations
+	mutationStrategy     tools.DocumentMutationStrategy // Strategy for AI edit persistence (collab proposal)
+	userStreamTracker    *UserStreamTracker             // Per-user concurrent stream limiter
 	logger               *slog.Logger
 }
 
@@ -127,7 +125,6 @@ func NewService(
 	tokenFinalizer tokens.TokenFinalizer,
 	jobQueue jobs.JobQueue,
 	mutationStrategy tools.DocumentMutationStrategy,
-	aiContentReader collabSvc.AIContentReader,
 	logger *slog.Logger,
 ) llmSvc.StreamingService {
 	return &Service{
@@ -155,7 +152,6 @@ func NewService(
 		tokenFinalizer:       tokenFinalizer,
 		jobQueue:             jobQueue,
 		mutationStrategy:     mutationStrategy,
-		aiContentReader:      aiContentReader,
 		userStreamTracker:    NewUserStreamTracker(cfg.MaxConcurrentStreams),
 		logger:               logger,
 	}
@@ -332,7 +328,6 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	tempToolRegistry := tools.NewToolRegistryBuilder().
 		WithNamespaceService(s.namespaceSvc).
 		WithMutationStrategy(s.mutationStrategy).
-		WithAIContentReader(s.aiContentReader).
 		WithEnabledDocumentTools(enabledTools, threadContext.projectID, req.UserID, s.documentSvc, s.folderSvc).
 		WithEnabledSkillTools(enabledTools, threadContext.projectID, req.UserID, s.skillService, false, availableSkills).
 		Build()
@@ -491,7 +486,6 @@ func (s *Service) CreateTurn(ctx context.Context, req *llmSvc.CreateTurnRequest)
 	builder := tools.NewToolRegistryBuilder().
 		WithNamespaceService(s.namespaceSvc).
 		WithMutationStrategy(s.mutationStrategy).
-		WithAIContentReader(s.aiContentReader).
 		WithEnabledDocumentTools(enabledTools, thread.ProjectID, req.UserID, s.documentSvc, s.folderSvc).
 		WithEnabledSkillTools(enabledTools, thread.ProjectID, req.UserID, s.skillService, false, availableSkills) // false = model invocation, not user slash command
 
@@ -1299,10 +1293,10 @@ func (s *Service) createStreamSwitchFn(threadID, userID string, requestParams ma
 		// The interjection becomes a regular user message
 		textContent := interjection
 		resp, err := s.CreateTurn(ctx, &llmSvc.CreateTurnRequest{
-			ThreadID:      &threadID,
-			PrevTurnID:    &currentAssistantTurnID, // Chain after the (now complete) assistant turn
-			UserID:        userID,
-			Role:          "user",
+			ThreadID:   &threadID,
+			PrevTurnID: &currentAssistantTurnID, // Chain after the (now complete) assistant turn
+			UserID:     userID,
+			Role:       "user",
 			TurnBlocks: []llmSvc.TurnBlockInput{
 				{
 					BlockType:   "text",

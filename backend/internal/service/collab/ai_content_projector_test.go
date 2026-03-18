@@ -15,9 +15,9 @@ func TestAIContentProjectorListPendingProposals_DeterministicOrder(t *testing.T)
 	docID := uuid.New()
 	now := time.Now().UTC()
 
-	p3 := collabModels.Proposal{ID: uuid.MustParse("00000000-0000-0000-0000-000000000003"), DocumentID: docID, Status: collabModels.ProposalStatusProposed, CreatedAt: now.Add(3 * time.Minute)}
-	p1 := collabModels.Proposal{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), DocumentID: docID, Status: collabModels.ProposalStatusProposed, CreatedAt: now.Add(1 * time.Minute)}
-	p2 := collabModels.Proposal{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), DocumentID: docID, Status: collabModels.ProposalStatusProposed, CreatedAt: now.Add(2 * time.Minute)}
+	p3 := collabModels.Proposal{ID: uuid.MustParse("00000000-0000-0000-0000-000000000003"), DocumentID: docID, Status: collabModels.ProposalStatusPending, CreatedAt: now.Add(3 * time.Minute)}
+	p1 := collabModels.Proposal{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), DocumentID: docID, Status: collabModels.ProposalStatusPending, CreatedAt: now.Add(1 * time.Minute)}
+	p2 := collabModels.Proposal{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), DocumentID: docID, Status: collabModels.ProposalStatusPending, CreatedAt: now.Add(2 * time.Minute)}
 
 	projector := &AIContentProjector{
 		stateStore:      &fakeProjectorStateStore{},
@@ -41,7 +41,6 @@ func TestAIContentProjectorRecompute_UsesInMemorySnapshotAndPendingProposals(t *
 	docID := uuid.New()
 	baseState := mustBuildDocState(t, "hello")
 	updatedState := mustBuildDocState(t, "hello world")
-	expectedAIContent := applyStateSequenceToContent(t, baseState, updatedState)
 
 	docStore := &fakeProjectorStateStore{}
 	proposalStore := &fakeProjectorProposalStore{
@@ -49,7 +48,7 @@ func TestAIContentProjectorRecompute_UsesInMemorySnapshotAndPendingProposals(t *
 			{
 				ID:         uuid.New(),
 				DocumentID: docID,
-				Status:     collabModels.ProposalStatusProposed,
+				Status:     collabModels.ProposalStatusPending,
 				YjsUpdate:  updatedState,
 				CreatedAt:  time.Now().UTC(),
 			},
@@ -73,9 +72,6 @@ func TestAIContentProjectorRecompute_UsesInMemorySnapshotAndPendingProposals(t *
 	}
 	if docStore.savedContent != "hello" {
 		t.Fatalf("expected base content 'hello', got %q", docStore.savedContent)
-	}
-	if docStore.savedAIContent != expectedAIContent {
-		t.Fatalf("expected ai content %q, got %q", expectedAIContent, docStore.savedAIContent)
 	}
 	if got := decodeDocContent(t, docStore.savedState); got != "hello" {
 		t.Fatalf("expected saved yjs_state content 'hello', got %q", got)
@@ -169,7 +165,7 @@ func TestAIContentProjectorBuildProjectedState_WithPendingProposals(t *testing.T
 			{
 				ID:         uuid.New(),
 				DocumentID: docID,
-				Status:     collabModels.ProposalStatusProposed,
+				Status:     collabModels.ProposalStatusPending,
 				YjsUpdate:  proposalUpdate,
 				CreatedAt:  time.Now().UTC(),
 			},
@@ -216,8 +212,8 @@ func TestAIContentProjectorRecompute_FallsBackToPersistedState(t *testing.T) {
 	if docStore.loadStateCalls != 1 {
 		t.Fatalf("expected one LoadState call, got %d", docStore.loadStateCalls)
 	}
-	if docStore.savedContent != "persisted" || docStore.savedAIContent != "persisted" {
-		t.Fatalf("expected aligned content/ai_content from persisted base, got %q / %q", docStore.savedContent, docStore.savedAIContent)
+	if docStore.savedContent != "persisted" {
+		t.Fatalf("expected persisted content %q, got %q", "persisted", docStore.savedContent)
 	}
 }
 
@@ -251,10 +247,9 @@ type fakeProjectorStateStore struct {
 	loadStateCalls int
 	saveStateCalls int
 
-	savedDocID     string
-	savedState     []byte
-	savedContent   string
-	savedAIContent string
+	savedDocID   string
+	savedState   []byte
+	savedContent string
 }
 
 func (s *fakeProjectorStateStore) LoadState(_ context.Context, _ string) ([]byte, error) {
@@ -267,13 +262,11 @@ func (s *fakeProjectorStateStore) SaveState(
 	docID string,
 	state []byte,
 	content string,
-	aiContent string,
 ) error {
 	s.saveStateCalls++
 	s.savedDocID = docID
 	s.savedState = state
 	s.savedContent = content
-	s.savedAIContent = aiContent
 	return nil
 }
 
@@ -320,6 +313,14 @@ func (s *fakeProjectorProposalStore) MarkAccepted(_ context.Context, _ collabMod
 }
 
 func (s *fakeProjectorProposalStore) MarkRejected(_ context.Context, _ collabModels.ProposalDecision) error {
+	return nil
+}
+
+func (s *fakeProjectorProposalStore) UpsertStatus(_ context.Context, _ uuid.UUID, _ collabModels.ProposalStatus) error {
+	return nil
+}
+
+func (s *fakeProjectorProposalStore) SetAcceptedAtOffset(_ context.Context, _ uuid.UUID, _ int, _ int) error {
 	return nil
 }
 
