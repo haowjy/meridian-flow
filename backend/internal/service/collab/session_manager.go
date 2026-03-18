@@ -244,8 +244,7 @@ func (m *DocumentSessionManager) applyUpdateOffline(ctx context.Context, docID s
 		return fmt.Errorf("encode state after offline apply: %w", err)
 	}
 
-	// Keep content and ai_content aligned for offline applies during migration.
-	if err := m.stateStore.SaveState(ctx, docID, newState, content, content); err != nil {
+	if err := m.stateStore.SaveState(ctx, docID, newState, content); err != nil {
 		return fmt.Errorf("save state after offline apply: %w", err)
 	}
 
@@ -462,8 +461,7 @@ func (s *DocumentSession) loadState(ctx context.Context) error {
 		return err
 	}
 
-	// Keep content and ai_content aligned with the bootstrap state.
-	if err := s.stateStore.SaveState(ctx, s.docID, persistedState, content, content); err != nil {
+	if err := s.stateStore.SaveState(ctx, s.docID, persistedState, content); err != nil {
 		return fmt.Errorf("persist bootstrapped yjs state: %w", err)
 	}
 	// Bootstrap row becomes the first append-only update for this document.
@@ -554,8 +552,7 @@ func (s *DocumentSession) persistLocked(ctx context.Context) error {
 		}
 	}
 
-	// Keep content + ai_content aligned during migration.
-	if err := s.stateStore.SaveState(ctx, s.docID, state, content, content); err != nil {
+	if err := s.stateStore.SaveState(ctx, s.docID, state, content); err != nil {
 		return err
 	}
 

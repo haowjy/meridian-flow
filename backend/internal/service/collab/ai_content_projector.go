@@ -14,7 +14,7 @@ import (
 
 const proposalProjectorPageSize = 200
 
-// AIContentProjector recomputes ai_content from base document state + pending proposals.
+// AIContentProjector recomputes proposal projections from base document state + pending proposals.
 // Also implements ProjectedStateBuilder for the mutation strategy.
 type AIContentProjector struct {
 	stateStore      collabSvc.DocumentStateStore
@@ -66,7 +66,7 @@ func (p *AIContentProjector) Recompute(ctx context.Context, documentID uuid.UUID
 		return err
 	}
 
-	baseDoc, projectedDoc, err := buildProjectedDoc(baseState, pendingProposals)
+	baseDoc, _, err := buildProjectedDoc(baseState, pendingProposals)
 	if err != nil {
 		return err
 	}
@@ -81,13 +81,8 @@ func (p *AIContentProjector) Recompute(ctx context.Context, documentID uuid.UUID
 		baseContent = yText.ToString()
 	}
 
-	aiContent := ""
-	if yText := projectedDoc.GetText("content"); yText != nil {
-		aiContent = yText.ToString()
-	}
-
-	if err := p.stateStore.SaveState(ctx, documentID.String(), nextBaseState, baseContent, aiContent); err != nil {
-		return fmt.Errorf("save recomputed ai content: %w", err)
+	if err := p.stateStore.SaveState(ctx, documentID.String(), nextBaseState, baseContent); err != nil {
+		return fmt.Errorf("save recomputed content projection: %w", err)
 	}
 
 	return nil
@@ -133,10 +128,8 @@ func (p *AIContentProjector) BuildProjectedState(ctx context.Context, documentID
 	// updates generated against the bootstrapped doc become no-ops when
 	// later applied to an empty persisted state.
 	//
-	// content and ai_content are derived from baseState (not projectedDoc) because
-	// SaveState stores yjs_state = baseState. In practice these are identical during
-	// bootstrap (no proposals can exist yet), but the columns should stay aligned
-	// with the yjs_state being persisted.
+	// Content is derived from baseState (not projectedDoc) because SaveState persists
+	// canonical document content from the base state.
 	if bootstrapped {
 		baseDoc := ycrdt.NewDoc("bootstrap-persist", true, ycrdt.DefaultGCFilter, nil, false)
 		if len(baseState) > 0 {
@@ -148,7 +141,7 @@ func (p *AIContentProjector) BuildProjectedState(ctx context.Context, documentID
 		if yText := baseDoc.GetText("content"); yText != nil {
 			content = yText.ToString()
 		}
-		if saveErr := p.stateStore.SaveState(ctx, documentID.String(), baseState, content, content); saveErr != nil {
+		if saveErr := p.stateStore.SaveState(ctx, documentID.String(), baseState, content); saveErr != nil {
 			return nil, fmt.Errorf("persist bootstrapped yjs state: %w", saveErr)
 		}
 	}
@@ -213,12 +206,12 @@ func buildProjectedDoc(baseState []byte, proposals []collabModels.Proposal) (*yc
 }
 
 func (p *AIContentProjector) listPendingProposals(ctx context.Context, documentID uuid.UUID) ([]collabModels.Proposal, error) {
-	proposedStatus := collabModels.ProposalStatusProposed
+	pendingStatus := collabModels.ProposalStatusPending
 	offset := 0
 	proposals := make([]collabModels.Proposal, 0, proposalProjectorPageSize)
 
 	for {
-		batch, err := p.proposalStore.ListByDocument(ctx, documentID, &proposedStatus, proposalProjectorPageSize, offset)
+		batch, err := p.proposalStore.ListByDocument(ctx, documentID, &pendingStatus, proposalProjectorPageSize, offset)
 		if err != nil {
 			return nil, fmt.Errorf("list pending proposals: %w", err)
 		}

@@ -365,13 +365,13 @@ func (h *CollabHandler) sendProposalSnapshot(
 		return conn.SendJSON(buildProposalSnapshotEvent(docUUID, nil))
 	}
 
-	proposedStatus := collabModels.ProposalStatusProposed
+	pendingStatus := collabModels.ProposalStatusPending
 	const pageSize = 200
 	offset := 0
 	proposals := make([]collabModels.Proposal, 0, pageSize)
 
 	for {
-		batch, err := h.proposalStore.ListByDocument(ctx, docUUID, &proposedStatus, pageSize, offset)
+		batch, err := h.proposalStore.ListByDocument(ctx, docUUID, &pendingStatus, pageSize, offset)
 		if err != nil {
 			return err
 		}

@@ -13,7 +13,6 @@ import (
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	llmRepo "meridian/internal/domain/repositories/llm"
 	"meridian/internal/domain/services"
-	collabSvc "meridian/internal/domain/services/collab"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	llmSvc "meridian/internal/domain/services/llm"
 	skillSvc "meridian/internal/domain/services/skill"
@@ -87,7 +86,6 @@ func SetupServices(
 	toolLimitResolver llmSvc.ToolLimitResolver,
 	jobQueue jobs.JobQueue,
 	mutationStrategy tools.DocumentMutationStrategy, // Strategy for AI edit persistence (collab proposal)
-	aiContentReader collabSvc.AIContentReader,       // For reading ai_content in text editor (stale-base fix)
 	logger *slog.Logger,
 ) (*Services, *mstream.Registry, error) {
 	// Create shared validator
@@ -179,13 +177,12 @@ func SetupServices(
 		txManager,
 		systemPromptResolver,
 		messageBuilder,
-		toolLimitResolver,   // Tool round limit resolver (tier-ready)
-		capabilityRegistry,  // For checking model capabilities (e.g., supports_tools)
-		formatterRegistry,   // For formatting synthetic tool results (ref transformer)
-		tokenFinalizer,      // For finalizing tokens on completion/interruption
-		jobQueue,            // Phase 2: Background job queue for async generation enrichment
-		mutationStrategy,    // Strategy for AI edit persistence (collab proposal)
-		aiContentReader,     // For reading ai_content in text editor (stale-base fix)
+		toolLimitResolver,  // Tool round limit resolver (tier-ready)
+		capabilityRegistry, // For checking model capabilities (e.g., supports_tools)
+		formatterRegistry,  // For formatting synthetic tool results (ref transformer)
+		tokenFinalizer,     // For finalizing tokens on completion/interruption
+		jobQueue,           // Phase 2: Background job queue for async generation enrichment
+		mutationStrategy,   // Strategy for AI edit persistence (collab proposal)
 		logger,
 	)
 

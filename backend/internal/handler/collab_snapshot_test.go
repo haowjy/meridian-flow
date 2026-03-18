@@ -87,7 +87,7 @@ func (s *noopSnapshotStateStore) LoadState(_ context.Context, _ string) ([]byte,
 	return nil, nil
 }
 
-func (s *noopSnapshotStateStore) SaveState(_ context.Context, _ string, _ []byte, _ string, _ string) error {
+func (s *noopSnapshotStateStore) SaveState(_ context.Context, _ string, _ []byte, _ string) error {
 	return nil
 }
 
@@ -101,12 +101,11 @@ type trackingSnapshotStateStore struct {
 	loadedState []byte
 	loadErr     error
 
-	saveCalls      int
-	savedDocument  string
-	savedState     []byte
-	savedContent   string
-	savedAIContent string
-	saveErr        error
+	saveCalls     int
+	savedDocument string
+	savedState    []byte
+	savedContent  string
+	saveErr       error
 }
 
 func (s *trackingSnapshotStateStore) LoadState(_ context.Context, _ string) ([]byte, error) {
@@ -121,7 +120,6 @@ func (s *trackingSnapshotStateStore) SaveState(
 	docID string,
 	state []byte,
 	content string,
-	aiContent string,
 ) error {
 	if s.saveErr != nil {
 		return s.saveErr
@@ -130,7 +128,6 @@ func (s *trackingSnapshotStateStore) SaveState(
 	s.savedDocument = docID
 	s.savedState = state
 	s.savedContent = content
-	s.savedAIContent = aiContent
 	return nil
 }
 

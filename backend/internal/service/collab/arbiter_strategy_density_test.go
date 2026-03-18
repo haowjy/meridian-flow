@@ -38,6 +38,12 @@ func (s *stubProposalStore) MarkAccepted(_ context.Context, _ collabModels.Propo
 func (s *stubProposalStore) MarkRejected(_ context.Context, _ collabModels.ProposalDecision) error {
 	return nil
 }
+func (s *stubProposalStore) UpsertStatus(_ context.Context, _ uuid.UUID, _ collabModels.ProposalStatus) error {
+	return nil
+}
+func (s *stubProposalStore) SetAcceptedAtOffset(_ context.Context, _ uuid.UUID, _ int, _ int) error {
+	return nil
+}
 func (s *stubProposalStore) CountRecentByDocumentAndStatus(_ context.Context, _ uuid.UUID, _ collabModels.ProposalStatus, _ time.Time) (int, error) {
 	return s.count, s.err
 }

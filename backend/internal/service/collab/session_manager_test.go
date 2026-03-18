@@ -69,9 +69,6 @@ func TestDocumentSessionLoadState_BootstrapsFromContentWhenStateEmpty(t *testing
 	if store.savedContent != "seed text" {
 		t.Fatalf("expected persisted content %q, got %q", "seed text", store.savedContent)
 	}
-	if store.savedAIContent != "seed text" {
-		t.Fatalf("expected persisted ai_content %q, got %q", "seed text", store.savedAIContent)
-	}
 	if got := decodeStateContent(t, store.savedState); got != "seed text" {
 		t.Fatalf("expected persisted yjs_state content %q, got %q", "seed text", got)
 	}
@@ -134,7 +131,7 @@ func TestDocumentSessionLoadState_ExistingStateSkipsBootstrapPath(t *testing.T) 
 	}
 }
 
-func TestDocumentSessionManagerApplyUpdate_OfflinePersistsAIContentWithContent(t *testing.T) {
+func TestDocumentSessionManagerApplyUpdate_OfflinePersistsContent(t *testing.T) {
 	expectedContent := "offline ai apply content"
 	update := mustBuildSessionState(t, expectedContent)
 	store := &fakeSessionStore{state: []byte{}}
@@ -154,9 +151,6 @@ func TestDocumentSessionManagerApplyUpdate_OfflinePersistsAIContentWithContent(t
 	if store.savedContent != expectedContent {
 		t.Fatalf("expected saved content %q, got %q", expectedContent, store.savedContent)
 	}
-	if store.savedAIContent != store.savedContent {
-		t.Fatalf("expected saved ai_content to match content, got ai_content=%q content=%q", store.savedAIContent, store.savedContent)
-	}
 	if updateLogStore.appendCalls != 1 {
 		t.Fatalf("expected one AppendUpdate call, got %d", updateLogStore.appendCalls)
 	}
@@ -175,9 +169,8 @@ type fakeSessionStore struct {
 	loadContentCalls int
 	saveCalls        int
 
-	savedState     []byte
-	savedContent   string
-	savedAIContent string
+	savedState   []byte
+	savedContent string
 }
 
 func (s *fakeSessionStore) LoadState(_ context.Context, _ string) ([]byte, error) {
@@ -194,12 +187,10 @@ func (s *fakeSessionStore) SaveState(
 	_ string,
 	state []byte,
 	content string,
-	aiContent string,
 ) error {
 	s.saveCalls++
 	s.savedState = state
 	s.savedContent = content
-	s.savedAIContent = aiContent
 	return nil
 }
 

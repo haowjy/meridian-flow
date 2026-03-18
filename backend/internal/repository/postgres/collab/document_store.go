@@ -114,28 +114,6 @@ func (s *PostgresDocumentStore) LoadContentForBootstrap(ctx context.Context, doc
 	return *content, nil
 }
 
-// LoadAIContent loads the projected AI content for a document.
-// Returns COALESCE(ai_content, content, empty string) for backward compatibility
-// with documents that don't yet have ai_content populated.
-func (s *PostgresDocumentStore) LoadAIContent(ctx context.Context, docID string) (string, error) {
-	query := fmt.Sprintf(`
-		SELECT COALESCE(ai_content, content, '')
-		FROM %s
-		WHERE id = $1 AND deleted_at IS NULL
-	`, s.tables.Documents)
-
-	var content string
-	executor := postgres.GetExecutor(ctx, s.pool)
-	if err := executor.QueryRow(ctx, query, docID).Scan(&content); err != nil {
-		if postgres.IsPgNoRowsError(err) {
-			return "", domain.NewNotFoundError("document", fmt.Sprintf("document %s not found", docID))
-		}
-		return "", fmt.Errorf("load ai content: %w", err)
-	}
-
-	return content, nil
-}
-
 // SaveState persists derived text projections. The state argument is retained for
 // temporary interface compatibility during migration, but is no longer written to documents.
 func (s *PostgresDocumentStore) SaveState(
@@ -143,16 +121,15 @@ func (s *PostgresDocumentStore) SaveState(
 	docID string,
 	_ []byte,
 	content string,
-	aiContent string,
 ) error {
 	query := fmt.Sprintf(`
 		UPDATE %s
-		SET content = $1, ai_content = $2
-		WHERE id = $3 AND deleted_at IS NULL
+		SET content = $1
+		WHERE id = $2 AND deleted_at IS NULL
 	`, s.tables.Documents)
 
 	executor := postgres.GetExecutor(ctx, s.pool)
-	cmdTag, err := executor.Exec(ctx, query, content, aiContent, docID)
+	cmdTag, err := executor.Exec(ctx, query, content, docID)
 	if err != nil {
 		return fmt.Errorf("save document content projections: %w", err)
 	}

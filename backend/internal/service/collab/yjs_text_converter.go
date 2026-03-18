@@ -28,7 +28,7 @@ type TextEdit struct {
 // Returns (nil, nil) when content is identical (no-op).
 //
 // The caller is responsible for providing the correct state bytes — typically
-// the projected state (base + pending proposals) so positions align with ai_content.
+// the projected state (base + pending proposals) so positions align with pending edits.
 //
 // If edit is provided, uses targeted positional diff (delete old at position,
 // insert new at position). Otherwise falls back to full-doc replacement for

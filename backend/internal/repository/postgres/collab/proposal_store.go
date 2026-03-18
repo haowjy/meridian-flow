@@ -34,16 +34,17 @@ func (s *PostgresProposalStore) Create(ctx context.Context, proposal *collabMode
 	query := fmt.Sprintf(`
 		INSERT INTO %s (
 			document_id, source, producer_agent_type, thread_id, turn_id, agent_run_id,
-			proposal_group_id, status, yjs_update, description, created_by_user_id,
-			decided_by_user_id, decided_at
+			proposal_group_id, status, yjs_update, description, region_text_before,
+			region_text_after, proposed_at_offset, accepted_at_offset, offset_version,
+			created_by_user_id, decided_by_user_id, decided_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		RETURNING id, created_at
 	`, s.tables.CollabDocumentProposals)
 
 	status := proposal.Status
 	if status == "" {
-		status = collabModels.ProposalStatusProposed
+		status = collabModels.ProposalStatusPending
 	}
 
 	executor := postgres.GetExecutor(ctx, s.pool)
@@ -60,6 +61,11 @@ func (s *PostgresProposalStore) Create(ctx context.Context, proposal *collabMode
 		status,
 		proposal.YjsUpdate,
 		proposal.Description,
+		proposal.RegionTextBefore,
+		proposal.RegionTextAfter,
+		proposal.ProposedAtOffset,
+		proposal.AcceptedAtOffset,
+		proposal.OffsetVersion,
 		proposal.CreatedByUserID,
 		proposal.DecidedByUserID,
 		proposal.DecidedAt,
@@ -75,8 +81,9 @@ func (s *PostgresProposalStore) Create(ctx context.Context, proposal *collabMode
 func (s *PostgresProposalStore) GetByID(ctx context.Context, proposalID uuid.UUID) (*collabModels.Proposal, error) {
 	query := fmt.Sprintf(`
 		SELECT id, document_id, source, producer_agent_type, thread_id, turn_id, agent_run_id,
-		       proposal_group_id, status, yjs_update, description, created_by_user_id,
-		       decided_by_user_id, created_at, decided_at
+		       proposal_group_id, status, yjs_update, description, region_text_before,
+		       region_text_after, proposed_at_offset, accepted_at_offset, offset_version,
+		       created_by_user_id, decided_by_user_id, created_at, decided_at
 		FROM %s
 		WHERE id = $1
 	`, s.tables.CollabDocumentProposals)
@@ -95,6 +102,11 @@ func (s *PostgresProposalStore) GetByID(ctx context.Context, proposalID uuid.UUI
 		&proposal.Status,
 		&proposal.YjsUpdate,
 		&proposal.Description,
+		&proposal.RegionTextBefore,
+		&proposal.RegionTextAfter,
+		&proposal.ProposedAtOffset,
+		&proposal.AcceptedAtOffset,
+		&proposal.OffsetVersion,
 		&proposal.CreatedByUserID,
 		&proposal.DecidedByUserID,
 		&proposal.CreatedAt,
@@ -140,8 +152,9 @@ func (s *PostgresProposalStore) ListByDocument(
 ) ([]collabModels.Proposal, error) {
 	base := fmt.Sprintf(`
 		SELECT id, document_id, source, producer_agent_type, thread_id, turn_id, agent_run_id,
-		       proposal_group_id, status, yjs_update, description, created_by_user_id,
-		       decided_by_user_id, created_at, decided_at
+		       proposal_group_id, status, yjs_update, description, region_text_before,
+		       region_text_after, proposed_at_offset, accepted_at_offset, offset_version,
+		       created_by_user_id, decided_by_user_id, created_at, decided_at
 		FROM %s
 		WHERE document_id = $1
 	`, s.tables.CollabDocumentProposals)
@@ -168,8 +181,9 @@ func (s *PostgresProposalStore) ListByGroup(
 ) ([]collabModels.Proposal, error) {
 	base := fmt.Sprintf(`
 		SELECT id, document_id, source, producer_agent_type, thread_id, turn_id, agent_run_id,
-		       proposal_group_id, status, yjs_update, description, created_by_user_id,
-		       decided_by_user_id, created_at, decided_at
+		       proposal_group_id, status, yjs_update, description, region_text_before,
+		       region_text_after, proposed_at_offset, accepted_at_offset, offset_version,
+		       created_by_user_id, decided_by_user_id, created_at, decided_at
 		FROM %s
 		WHERE proposal_group_id = $1
 	`, s.tables.CollabDocumentProposals)
@@ -184,18 +198,76 @@ func (s *PostgresProposalStore) ListByGroup(
 	return s.queryProposals(ctx, base, args...)
 }
 
-// MarkAccepted transitions proposed -> accepted and captures decision metadata.
+// MarkAccepted transitions pending -> accepted and captures decision metadata.
 func (s *PostgresProposalStore) MarkAccepted(ctx context.Context, decision collabModels.ProposalDecision) error {
 	return s.markTerminalStatus(ctx, decision, collabModels.ProposalStatusAccepted)
 }
 
-// MarkRejected transitions proposed -> rejected and captures decision metadata.
+// MarkRejected transitions pending -> rejected and captures decision metadata.
 func (s *PostgresProposalStore) MarkRejected(ctx context.Context, decision collabModels.ProposalDecision) error {
 	return s.markTerminalStatus(ctx, decision, collabModels.ProposalStatusRejected)
 }
 
+// UpsertStatus updates a proposal status if the row exists.
+func (s *PostgresProposalStore) UpsertStatus(
+	ctx context.Context,
+	proposalID uuid.UUID,
+	status collabModels.ProposalStatus,
+) error {
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET status = $2
+		WHERE id = $1
+	`, s.tables.CollabDocumentProposals)
+
+	executor := postgres.GetExecutor(ctx, s.pool)
+	if _, err := executor.Exec(ctx, query, proposalID, status); err != nil {
+		return fmt.Errorf("upsert proposal status: %w", err)
+	}
+	return nil
+}
+
+// SetAcceptedAtOffset persists accepted offset with monotonic version guard.
+func (s *PostgresProposalStore) SetAcceptedAtOffset(
+	ctx context.Context,
+	proposalID uuid.UUID,
+	offset int,
+	version int,
+) error {
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET accepted_at_offset = $2, offset_version = $3
+		WHERE id = $1 AND offset_version < $3
+	`, s.tables.CollabDocumentProposals)
+
+	executor := postgres.GetExecutor(ctx, s.pool)
+	tag, err := executor.Exec(ctx, query, proposalID, offset, version)
+	if err != nil {
+		return fmt.Errorf("set accepted_at_offset: %w", err)
+	}
+	if tag.RowsAffected() > 0 {
+		return nil
+	}
+
+	existsQuery := fmt.Sprintf(`
+		SELECT 1
+		FROM %s
+		WHERE id = $1
+	`, s.tables.CollabDocumentProposals)
+	var exists int
+	if err := executor.QueryRow(ctx, existsQuery, proposalID).Scan(&exists); err != nil {
+		if postgres.IsPgNoRowsError(err) {
+			return domain.NewNotFoundError("proposal", fmt.Sprintf("proposal %s not found", proposalID))
+		}
+		return fmt.Errorf("verify proposal exists for accepted_at_offset: %w", err)
+	}
+
+	// Stale version: no-op by design.
+	return nil
+}
+
 // CountRecentByDocumentAndStatus counts proposals for a document with the given
-// status that were decided within the lookback window. For "proposed" status,
+// status that were decided within the lookback window. For "pending" status,
 // uses created_at instead of decided_at.
 func (s *PostgresProposalStore) CountRecentByDocumentAndStatus(
 	ctx context.Context,
@@ -203,9 +275,9 @@ func (s *PostgresProposalStore) CountRecentByDocumentAndStatus(
 	status collabModels.ProposalStatus,
 	since time.Time,
 ) (int, error) {
-	// "proposed" rows have no decided_at; use created_at instead.
+	// "pending" rows have no decided_at; use created_at instead.
 	timeCol := "decided_at"
-	if status == collabModels.ProposalStatusProposed {
+	if status == collabModels.ProposalStatusPending {
 		timeCol = "created_at"
 	}
 
@@ -246,6 +318,11 @@ func (s *PostgresProposalStore) queryProposals(ctx context.Context, query string
 			&proposal.Status,
 			&proposal.YjsUpdate,
 			&proposal.Description,
+			&proposal.RegionTextBefore,
+			&proposal.RegionTextAfter,
+			&proposal.ProposedAtOffset,
+			&proposal.AcceptedAtOffset,
+			&proposal.OffsetVersion,
 			&proposal.CreatedByUserID,
 			&proposal.DecidedByUserID,
 			&proposal.CreatedAt,
@@ -281,7 +358,7 @@ func (s *PostgresProposalStore) markTerminalStatus(
 		newStatus,
 		decision.DecidedByUserID,
 		decision.DecidedAt,
-		collabModels.ProposalStatusProposed,
+		collabModels.ProposalStatusPending,
 	)
 	if err != nil {
 		return fmt.Errorf("mark proposal %s: %w", newStatus, err)

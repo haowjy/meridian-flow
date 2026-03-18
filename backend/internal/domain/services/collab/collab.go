@@ -15,18 +15,10 @@ type DocumentContentLoader interface {
 	LoadContentForBootstrap(ctx context.Context, docID string) (string, error)
 }
 
-// AIContentReader loads the projected AI content for a document.
-// This is the content that includes pending AI proposals applied on top of the
-// base content. Used by the text editor tool so each str_replace call in a turn
-// sees prior edits instead of reading stale base content.
-type AIContentReader interface {
-	LoadAIContent(ctx context.Context, docID string) (string, error)
-}
-
 // DocumentStateStore persists Yjs state plus derived text projections.
 type DocumentStateStore interface {
 	LoadState(ctx context.Context, docID string) ([]byte, error)
-	SaveState(ctx context.Context, docID string, state []byte, content string, aiContent string) error
+	SaveState(ctx context.Context, docID string, state []byte, content string) error
 }
 
 // UpdateLogEntry is one append-only Yjs update row.
@@ -119,9 +111,11 @@ type ProposalStore interface {
 	) ([]collabModels.Proposal, error)
 	MarkAccepted(ctx context.Context, decision collabModels.ProposalDecision) error
 	MarkRejected(ctx context.Context, decision collabModels.ProposalDecision) error
+	UpsertStatus(ctx context.Context, proposalID uuid.UUID, status collabModels.ProposalStatus) error
+	SetAcceptedAtOffset(ctx context.Context, proposalID uuid.UUID, offset int, version int) error
 	// CountRecentByDocumentAndStatus counts proposals for a document with the given
 	// status that were decided (accepted/rejected) within the lookback window.
-	// For "proposed" status, uses created_at instead of decided_at.
+	// For "pending" status, uses created_at instead of decided_at.
 	CountRecentByDocumentAndStatus(ctx context.Context, documentID uuid.UUID, status collabModels.ProposalStatus, since time.Time) (int, error)
 }
 
@@ -163,14 +157,14 @@ type AutoAcceptPolicyStore interface {
 	GetPolicyInputs(ctx context.Context, documentID uuid.UUID, userID uuid.UUID) (*AutoAcceptPolicyInputs, error)
 }
 
-// AIContentProjector recomputes and persists ai_content for a document.
+// AIContentProjector recomputes proposal projections for a document.
 type AIContentProjector interface {
 	Recompute(ctx context.Context, documentID uuid.UUID) error
 }
 
 // ProjectedStateBuilder builds Yjs state bytes that include pending proposals
 // applied on top of the base document state. Used by the mutation strategy so
-// the converter operates on the same content the text editor sees (ai_content).
+// the converter operates on the same content as pending proposals.
 type ProjectedStateBuilder interface {
 	BuildProjectedState(ctx context.Context, documentID uuid.UUID) ([]byte, error)
 }
@@ -194,6 +188,9 @@ type CreateProposalRequest struct {
 	ProposalGroupID   *uuid.UUID
 	YjsUpdate         []byte
 	Description       *string
+	RegionTextBefore  *string
+	RegionTextAfter   *string
+	ProposedAtOffset  *int
 	CreatedByUserID   uuid.UUID
 	AgentAutoAccept   *bool
 }

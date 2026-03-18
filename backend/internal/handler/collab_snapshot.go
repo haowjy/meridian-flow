@@ -298,7 +298,7 @@ func (h *CollabSnapshotHandler) RestoreSnapshot(w http.ResponseWriter, r *http.R
 				"snapshot_id", snapshotID, "error", decodeErr)
 			restoredContent = ""
 		}
-		if saveErr := h.stateStore.SaveState(ctx, docID, target.YjsState, restoredContent, ""); saveErr != nil {
+		if saveErr := h.stateStore.SaveState(ctx, docID, target.YjsState, restoredContent); saveErr != nil {
 			return saveErr
 		}
 
@@ -389,7 +389,7 @@ func (h *CollabSnapshotHandler) checkOwnership(w http.ResponseWriter, r *http.Re
 // bootstrapYjsState creates initial Yjs state from the document's content column
 // and persists it. This establishes CRDT lineage for documents that were created
 // via REST but never connected via WebSocket. Same pattern as session_manager.loadState
-// and ai_content_projector.bootstrapFromContent.
+// and AIContentProjector.bootstrapFromContent.
 func (h *CollabSnapshotHandler) bootstrapYjsState(ctx context.Context, docID string) (state []byte, err error) {
 	// Guard Yjs operations from panics.
 	defer func() {
@@ -423,7 +423,7 @@ func (h *CollabSnapshotHandler) bootstrapYjsState(ctx context.Context, docID str
 	// Persist bootstrapped state so future WS sessions and operations share the
 	// same CRDT lineage. Without this, a later WS connection would bootstrap again
 	// and create divergent history.
-	if err := h.stateStore.SaveState(ctx, docID, state, content, content); err != nil {
+	if err := h.stateStore.SaveState(ctx, docID, state, content); err != nil {
 		return nil, fmt.Errorf("persist bootstrapped yjs state: %w", err)
 	}
 

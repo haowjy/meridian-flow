@@ -244,7 +244,7 @@ func main() {
 	// Build mutation strategy for AI edits.
 	// CollabProposalStrategy creates collab proposals with Yjs updates and WS broadcasting.
 	// aiContentProjector implements ProjectedStateBuilder — provides projected Yjs state
-	// (base + pending proposals) so edit positions align with ai_content.
+	// (base + pending proposals) so edit positions align with pending proposal context.
 	proposalBroadcasterImpl := handler.NewProposalBroadcasterImpl(projectConnectionRegistry, collabDocumentHandler, collabDocResolver)
 	mutationStrategy := tools.NewCollabProposalStrategy(proposalService, proposalBroadcasterImpl, aiContentProjector, logger)
 
@@ -267,7 +267,6 @@ func main() {
 		toolLimitResolver,
 		jobQueue,         // Phase 2: Background job queue for async generation enrichment
 		mutationStrategy, // Strategy for AI edit persistence (collab proposal)
-		collabStore,      // AIContentReader: reads ai_content so each str_replace sees prior edits
 		logger,
 	)
 	if err != nil {
@@ -403,6 +402,7 @@ func main() {
 	// Collaboration routes
 	mux.HandleFunc("GET /ws/projects/{projectId}", collabHandler.ConnectProject)
 	mux.HandleFunc("GET /ws/documents/{documentId}", collabDocumentHandler.ConnectDocument)
+	mux.HandleFunc("PATCH /api/proposals/{id}/offset", collabHandler.SetAcceptedAtOffset)
 
 	// Snapshot routes (collab document version history)
 	mux.HandleFunc("POST /api/documents/{id}/snapshots", collabSnapshotHandler.CreateSnapshot)

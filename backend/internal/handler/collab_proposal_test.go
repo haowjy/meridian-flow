@@ -111,6 +111,14 @@ func (s *testProposalStore) MarkRejected(_ context.Context, _ collabModels.Propo
 	return nil
 }
 
+func (s *testProposalStore) UpsertStatus(_ context.Context, _ uuid.UUID, _ collabModels.ProposalStatus) error {
+	return nil
+}
+
+func (s *testProposalStore) SetAcceptedAtOffset(_ context.Context, _ uuid.UUID, _ int, _ int) error {
+	return nil
+}
+
 func (s *testProposalStore) CountRecentByDocumentAndStatus(_ context.Context, _ uuid.UUID, _ collabModels.ProposalStatus, _ time.Time) (int, error) {
 	return 0, nil
 }
@@ -704,7 +712,7 @@ func TestProjectWS_ProposalRequestUpdate(t *testing.T) {
 				ProducerAgentType: "editing_agent",
 				ThreadID:          threadID,
 				AgentRunID:        agentRunID,
-				Status:            collabModels.ProposalStatusProposed,
+				Status:            collabModels.ProposalStatusPending,
 				YjsUpdate:         []byte{0x01, 0x02, 0x03},
 				CreatedByUserID:   userID,
 				CreatedAt:         time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC),
@@ -870,7 +878,7 @@ func TestProjectWS_ProposalRequestUpdateWrongDocument(t *testing.T) {
 				ProducerAgentType: "editing_agent",
 				ThreadID:          threadID,
 				AgentRunID:        agentRunID,
-				Status:            collabModels.ProposalStatusProposed,
+				Status:            collabModels.ProposalStatusPending,
 				YjsUpdate:         []byte{0x01},
 				CreatedByUserID:   userID,
 				CreatedAt:         time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC),

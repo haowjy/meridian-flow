@@ -19,9 +19,12 @@ const (
 type ProposalStatus string
 
 const (
-	ProposalStatusProposed ProposalStatus = "proposed"
+	ProposalStatusPending  ProposalStatus = "pending"
 	ProposalStatusAccepted ProposalStatus = "accepted"
 	ProposalStatusRejected ProposalStatus = "rejected"
+	ProposalStatusStale    ProposalStatus = "stale"
+	ProposalStatusReverted ProposalStatus = "reverted"
+	ProposalStatusInvalid  ProposalStatus = "invalid"
 )
 
 // Proposal stores an AI/template/user-suggestion edit proposal as a Yjs update buffer.
@@ -37,6 +40,11 @@ type Proposal struct {
 	Status            ProposalStatus `json:"status"`
 	YjsUpdate         []byte         `json:"-"`
 	Description       *string        `json:"description,omitempty"`
+	RegionTextBefore  *string        `json:"region_text_before,omitempty"`
+	RegionTextAfter   *string        `json:"region_text_after,omitempty"`
+	ProposedAtOffset  *int           `json:"proposed_at_offset,omitempty"`
+	AcceptedAtOffset  *int           `json:"accepted_at_offset,omitempty"`
+	OffsetVersion     int            `json:"offset_version"`
 	CreatedByUserID   uuid.UUID      `json:"created_by_user_id"`
 	DecidedByUserID   *uuid.UUID     `json:"decided_by_user_id,omitempty"`
 	CreatedAt         time.Time      `json:"created_at"`

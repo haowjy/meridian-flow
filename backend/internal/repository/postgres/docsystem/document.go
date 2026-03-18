@@ -35,8 +35,8 @@ func NewDocumentRepository(config *postgres.RepositoryConfig) docsysRepo.Documen
 // Create creates a new document
 func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *models.Document) error {
 	query := fmt.Sprintf(`
-		INSERT INTO %s (project_id, folder_id, name, extension, content, ai_content, metadata, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO %s (project_id, folder_id, name, extension, content, metadata, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, created_at, updated_at
 	`, r.tables.Documents)
 
@@ -47,7 +47,6 @@ func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *models.Doc
 		doc.Name,
 		doc.Extension,
 		doc.Content,
-		doc.Content, // ai_content mirrors content until Yjs transport is active.
 		doc.Metadata,
 		doc.CreatedAt,
 		doc.UpdatedAt,
@@ -310,7 +309,7 @@ func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Doc
 	if doc.ProjectID != "" {
 		query = fmt.Sprintf(`
 			UPDATE %s
-			SET folder_id = $1, name = $2, extension = $3, content = $4, ai_content = $4, metadata = $5, updated_at = $6
+			SET folder_id = $1, name = $2, extension = $3, content = $4, metadata = $5, updated_at = $6
 			WHERE id = $7 AND project_id = $8 AND deleted_at IS NULL
 		`, r.tables.Documents)
 		args = []interface{}{
@@ -326,7 +325,7 @@ func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Doc
 	} else {
 		query = fmt.Sprintf(`
 			UPDATE %s
-			SET folder_id = $1, name = $2, extension = $3, content = $4, ai_content = $4, metadata = $5, updated_at = $6
+			SET folder_id = $1, name = $2, extension = $3, content = $4, metadata = $5, updated_at = $6
 			WHERE id = $7 AND deleted_at IS NULL
 		`, r.tables.Documents)
 		args = []interface{}{
@@ -537,7 +536,7 @@ func (r *PostgresDocumentRepository) GetAllMetadataByProject(ctx context.Context
 	`, r.tables.Documents, r.tables.CollabDocumentProposals)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
-	rows, err := executor.Query(ctx, query, projectID, collabModels.ProposalStatusProposed)
+	rows, err := executor.Query(ctx, query, projectID, collabModels.ProposalStatusPending)
 	if err != nil {
 		return nil, fmt.Errorf("get all document metadata: %w", err)
 	}

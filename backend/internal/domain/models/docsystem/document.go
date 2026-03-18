@@ -18,13 +18,13 @@ type DocumentMetadata map[string]interface{}
 type Document struct {
 	ID                   string           `json:"id" db:"id"`
 	ProjectID            string           `json:"project_id" db:"project_id"`
-	FolderID             *string          `json:"folder_id" db:"folder_id"`                           // NULL = root level
-	Name                 string           `json:"name" db:"name"`                                     // Display name: "Chapter 5" (no extension)
-	Extension            string           `json:"extension" db:"extension"`                           // File extension: ".md", ".excalidraw", etc.
-	Path                 string           `json:"path,omitempty"`                                     // Computed display path with extension, not stored in DB
-	PendingProposalCount int              `json:"pending_proposal_count,omitempty" db:"pending_proposal_count"` // Metadata-only tree field: count of proposals with status='proposed'
-	Content              string           `json:"content" db:"content"`                               // Markdown content (for text-based files)
-	Metadata             DocumentMetadata `json:"metadata" db:"metadata"`                             // Format-specific stats (JSONB)
+	FolderID             *string          `json:"folder_id" db:"folder_id"`                                     // NULL = root level
+	Name                 string           `json:"name" db:"name"`                                               // Display name: "Chapter 5" (no extension)
+	Extension            string           `json:"extension" db:"extension"`                                     // File extension: ".md", ".excalidraw", etc.
+	Path                 string           `json:"path,omitempty"`                                               // Computed display path with extension, not stored in DB
+	PendingProposalCount int              `json:"pending_proposal_count,omitempty" db:"pending_proposal_count"` // Metadata-only tree field: count of proposals with status='pending'
+	Content              string           `json:"content" db:"content"`                                         // Markdown content (for text-based files)
+	Metadata             DocumentMetadata `json:"metadata" db:"metadata"`                                       // Format-specific stats (JSONB)
 	CreatedAt            time.Time        `json:"created_at" db:"created_at"`
 	UpdatedAt            time.Time        `json:"updated_at" db:"updated_at"`
 	DeletedAt            *time.Time       `json:"deleted_at,omitempty" db:"deleted_at"`

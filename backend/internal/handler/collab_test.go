@@ -49,7 +49,7 @@ func (s *testCollabStore) LoadState(_ context.Context, _ string) ([]byte, error)
 	return s.state, nil
 }
 
-func (s *testCollabStore) SaveState(_ context.Context, _ string, state []byte, _ string, _ string) error {
+func (s *testCollabStore) SaveState(_ context.Context, _ string, state []byte, _ string) error {
 	if s.saveErr != nil {
 		return s.saveErr
 	}
@@ -157,6 +157,14 @@ func (s *noopProposalStore) MarkAccepted(_ context.Context, _ collabModels.Propo
 }
 
 func (s *noopProposalStore) MarkRejected(_ context.Context, _ collabModels.ProposalDecision) error {
+	return nil
+}
+
+func (s *noopProposalStore) UpsertStatus(_ context.Context, _ uuid.UUID, _ collabModels.ProposalStatus) error {
+	return nil
+}
+
+func (s *noopProposalStore) SetAcceptedAtOffset(_ context.Context, _ uuid.UUID, _ int, _ int) error {
 	return nil
 }
 
