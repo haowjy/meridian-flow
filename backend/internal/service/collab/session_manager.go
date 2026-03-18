@@ -29,6 +29,7 @@ type DocumentSessionManager struct {
 	stateStore     collabSvc.DocumentStateStore
 	updateLogStore collabSvc.UpdateLogStore
 	bookmarkStore  collabSvc.BookmarkStore
+	statusMirror   collabSvc.StatusMirror
 	contentLoader  collabSvc.DocumentContentLoader
 	logger         *slog.Logger
 }
@@ -43,6 +44,7 @@ type DocumentSession struct {
 	stateStore         collabSvc.DocumentStateStore
 	updateLogStore     collabSvc.UpdateLogStore
 	contentLoader      collabSvc.DocumentContentLoader
+	statusMirror       collabSvc.StatusMirror
 	logger             *slog.Logger
 	lastPersistedSV    []byte
 	lastMutationOrigin string // "human" | "ai_accept" | ...
@@ -59,6 +61,7 @@ func NewDocumentSessionManager(
 	stateStore collabSvc.DocumentStateStore,
 	updateLogStore collabSvc.UpdateLogStore,
 	bookmarkStore collabSvc.BookmarkStore,
+	statusMirror collabSvc.StatusMirror,
 	contentLoader collabSvc.DocumentContentLoader,
 	logger *slog.Logger,
 ) *DocumentSessionManager {
@@ -67,6 +70,7 @@ func NewDocumentSessionManager(
 		stateStore:     stateStore,
 		updateLogStore: updateLogStore,
 		bookmarkStore:  bookmarkStore,
+		statusMirror:   statusMirror,
 		contentLoader:  contentLoader,
 		logger:         logger,
 	}
@@ -92,6 +96,7 @@ func (m *DocumentSessionManager) Acquire(ctx context.Context, docID string) (*Do
 			doc:            ycrdt.NewDoc(docID, true, ycrdt.DefaultGCFilter, nil, false),
 			stateStore:     m.stateStore,
 			updateLogStore: m.updateLogStore,
+			statusMirror:   m.statusMirror,
 			contentLoader:  m.contentLoader,
 			logger:         m.logger,
 		}
@@ -432,10 +437,7 @@ func (s *DocumentSession) loadState(ctx context.Context) error {
 				return fmt.Errorf("append proposal status map bootstrap update: %w", err)
 			}
 		}
-		if err := s.refreshPersistedStateVectorLocked(); err != nil {
-			return err
-		}
-		return nil
+		return s.finalizeLoadStateLocked(ctx)
 	}
 
 	bootstrapContent, err := s.contentLoader.LoadContentForBootstrap(ctx, s.docID)
@@ -458,10 +460,7 @@ func (s *DocumentSession) loadState(ctx context.Context) error {
 				return fmt.Errorf("append empty bootstrap proposal status map update: %w", err)
 			}
 		}
-		if err := s.refreshPersistedStateVectorLocked(); err != nil {
-			return err
-		}
-		return nil
+		return s.finalizeLoadStateLocked(ctx)
 	}
 
 	s.mu.Lock()
@@ -481,10 +480,7 @@ func (s *DocumentSession) loadState(ctx context.Context) error {
 				return fmt.Errorf("append nil-content bootstrap proposal status map update: %w", err)
 			}
 		}
-		if err := s.refreshPersistedStateVectorLocked(); err != nil {
-			return err
-		}
-		return nil
+		return s.finalizeLoadStateLocked(ctx)
 	}
 	s.doc.Transact(func(_ *ycrdt.Transaction) {
 		if yText.Length() == 0 {
@@ -505,11 +501,7 @@ func (s *DocumentSession) loadState(ctx context.Context) error {
 	if _, err := s.updateLogStore.AppendUpdate(ctx, s.docID, persistedState, "server-bootstrap", nil); err != nil {
 		return fmt.Errorf("append bootstrapped yjs state: %w", err)
 	}
-	if err := s.refreshPersistedStateVectorLocked(); err != nil {
-		return err
-	}
-
-	return nil
+	return s.finalizeLoadStateLocked(ctx)
 }
 
 // bootstrapProposalStatusMapLocked ensures Y.Map("_proposal_status") exists in canonical state.
@@ -520,6 +512,113 @@ func (s *DocumentSession) bootstrapProposalStatusMapLocked() bool {
 	}
 	s.doc.GetMap("_proposal_status")
 	return true
+}
+
+func (s *DocumentSession) finalizeLoadStateLocked(ctx context.Context) error {
+	if err := s.observeProposalStatusMapLocked(); err != nil {
+		return err
+	}
+	if err := s.reconcileProposalStatusLocked(ctx); err != nil {
+		return err
+	}
+	return s.refreshPersistedStateVectorLocked()
+}
+
+func (s *DocumentSession) observeProposalStatusMapLocked() error {
+	if s.statusMirror == nil {
+		return nil
+	}
+
+	statusMap, ok := s.doc.GetMap("_proposal_status").(*ycrdt.YMap)
+	if !ok || statusMap == nil {
+		return fmt.Errorf("resolve _proposal_status map for observation")
+	}
+
+	statusMap.Observe(func(eventAny interface{}, _ interface{}) {
+		event, ok := eventAny.(*ycrdt.YMapEvent)
+		if !ok || event == nil {
+			return
+		}
+
+		for proposalIDAny := range event.KeysChanged {
+			proposalID, isString := proposalIDAny.(string)
+			if !isString {
+				s.logger.Warn(
+					"status map update ignored non-string proposal id",
+					"document_id", s.docID,
+					"proposal_id_type", fmt.Sprintf("%T", proposalIDAny),
+				)
+				continue
+			}
+
+			var nextStatus *string
+			if statusMap.Has(proposalID) {
+				raw := statusMap.Get(proposalID)
+				status, isString := raw.(string)
+				if !isString {
+					s.logger.Warn(
+						"status map update ignored non-string value",
+						"document_id", s.docID,
+						"proposal_id", proposalID,
+						"value_type", fmt.Sprintf("%T", raw),
+					)
+					continue
+				}
+				statusCopy := status
+				nextStatus = &statusCopy
+			}
+
+			mirrorCtx, cancel := context.WithTimeout(context.Background(), persistTimeout)
+			err := s.statusMirror.OnStatusChange(mirrorCtx, proposalID, nextStatus)
+			cancel()
+			if err != nil {
+				action := ycrdt.ActionDelete
+				if nextStatus != nil {
+					action = ycrdt.ActionUpdate
+				}
+				s.logger.Error(
+					"status mirror update failed from map delta",
+					"document_id", s.docID,
+					"proposal_id", proposalID,
+					"action", action,
+					"error", err,
+				)
+			}
+		}
+	})
+
+	return nil
+}
+
+func (s *DocumentSession) reconcileProposalStatusLocked(ctx context.Context) error {
+	if s.statusMirror == nil {
+		return nil
+	}
+
+	statusMap, ok := s.doc.GetMap("_proposal_status").(*ycrdt.YMap)
+	if !ok || statusMap == nil {
+		return fmt.Errorf("resolve _proposal_status map for reconciliation")
+	}
+
+	snapshot := make(map[string]string)
+	statusMap.Range(func(key string, value interface{}) {
+		status, isString := value.(string)
+		if !isString {
+			s.logger.Warn(
+				"status map reconciliation ignored non-string value",
+				"document_id", s.docID,
+				"proposal_id", key,
+				"value_type", fmt.Sprintf("%T", value),
+			)
+			return
+		}
+		snapshot[key] = status
+	})
+
+	if err := s.statusMirror.ReconcileAll(ctx, s.docID, snapshot); err != nil {
+		return fmt.Errorf("reconcile status map with proposal rows: %w", err)
+	}
+	return nil
 }
 
 func (s *DocumentSession) flushOnDisconnect(ctx context.Context) error {

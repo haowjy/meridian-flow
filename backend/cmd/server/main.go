@@ -196,10 +196,12 @@ func main() {
 	updateLogStore := postgresCollab.NewUpdateLogStore(repoConfig)
 	bookmarkStore := postgresCollab.NewBookmarkStore(repoConfig)
 	proposalStore := postgresCollab.NewProposalStore(repoConfig)
+	statusMirror := serviceCollab.NewStatusMirror(proposalStore, logger)
 	collabSessionManager := serviceCollab.NewDocumentSessionManager(
 		collabStore,
 		updateLogStore,
 		bookmarkStore,
+		statusMirror,
 		collabStore, // also satisfies DocumentContentLoader (ISP)
 		logger,
 	)
