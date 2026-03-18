@@ -194,15 +194,17 @@ func main() {
 
 	// Collab stores (needed before mutation strategy and LLM services)
 	collabStore := postgresCollab.NewDocumentStore(repoConfig)
+	updateLogStore := postgresCollab.NewUpdateLogStore(repoConfig)
+	bookmarkStore := postgresCollab.NewBookmarkStore(repoConfig)
 	proposalStore := postgresCollab.NewProposalStore(repoConfig)
 	idempotencyStore := postgresCollab.NewIdempotencyStore(repoConfig)
 	autoAcceptStore := postgresCollab.NewAutoAcceptStore(repoConfig)
 	collabSessionManager := serviceCollab.NewDocumentSessionManager(
 		collabStore,
-		collabStore,
+		updateLogStore,
+		bookmarkStore,
 		collabStore, // also satisfies DocumentContentLoader (ISP)
 		logger,
-		cfg.CollabSnapshotIntervalUpdates,
 	)
 	aiContentProjector := serviceCollab.NewAIContentProjector(
 		collabStore,
@@ -320,14 +322,16 @@ func main() {
 		cfg,
 	)
 
-	// Start collab auto-snapshot cleanup goroutine
-	collabCleanup := jobs.NewCollabCleanup(
-		collabStore,
-		cfg.CollabAutoSnapshotTTLHours,
-		cfg.CollabCleanupIntervalMinutes,
+	// Start append-only compaction worker goroutine.
+	compactionWorker := serviceCollab.NewCompactionWorker(
+		updateLogStore,
+		collabStore,   // CheckpointStore
+		bookmarkStore, // BookmarkStore
+		txManager,
 		logger,
+		60*time.Second,
 	)
-	go collabCleanup.Start(queueCtx)
+	go compactionWorker.Start(queueCtx)
 
 	// Thread handlers (follows Clean Architecture - no repository access)
 	threadHandler := handler.NewThreadHandler(
@@ -487,9 +491,9 @@ func main() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		logger.Info("shutting down collab cleanup...")
-		if err := collabCleanup.Stop(shutdownCtx); err != nil {
-			logger.Error("collab cleanup shutdown error", "error", err)
+		logger.Info("shutting down collab compaction worker...")
+		if err := compactionWorker.Stop(shutdownCtx); err != nil {
+			logger.Error("collab compaction worker shutdown error", "error", err)
 		}
 
 		logger.Info("shutting down job queue...")

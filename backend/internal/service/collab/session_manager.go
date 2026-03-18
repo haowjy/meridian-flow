@@ -2,6 +2,7 @@ package collab
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -10,26 +11,26 @@ import (
 	"github.com/google/uuid"
 	ycrdt "github.com/haowjy/y-crdt"
 	"golang.org/x/sync/singleflight"
+	"meridian/internal/domain"
 	collabSvc "meridian/internal/domain/services/collab"
 )
 
 const (
-	defaultPersistDebounce         = 2 * time.Second
-	defaultSnapshotIntervalUpdates = 500
-	persistTimeout                 = 10 * time.Second
-	sessionLoadTimeout             = 30 * time.Second
+	defaultPersistDebounce = 2 * time.Second
+	persistTimeout         = 10 * time.Second
+	sessionLoadTimeout     = 30 * time.Second
 )
 
 // DocumentSessionManager manages in-memory Yjs docs for active websocket sessions.
 type DocumentSessionManager struct {
-	mu                      sync.Mutex
-	sessions                map[string]*DocumentSession
-	loadGroup               singleflight.Group
-	stateStore              collabSvc.DocumentStateStore
-	snapshotStore           collabSvc.SnapshotStore
-	contentLoader           collabSvc.DocumentContentLoader
-	logger                  *slog.Logger
-	snapshotIntervalUpdates int
+	mu             sync.Mutex
+	sessions       map[string]*DocumentSession
+	loadGroup      singleflight.Group
+	stateStore     collabSvc.DocumentStateStore
+	updateLogStore collabSvc.UpdateLogStore
+	bookmarkStore  collabSvc.BookmarkStore
+	contentLoader  collabSvc.DocumentContentLoader
+	logger         *slog.Logger
 }
 
 // DocumentSession wraps a single in-memory Y.Doc lifecycle.
@@ -37,42 +38,37 @@ type DocumentSessionManager struct {
 // Concurrency: refCount is guarded by DocumentSessionManager.mu (not this session's mu).
 // Acquire/Release hold the manager lock when reading or writing refCount.
 type DocumentSession struct {
-	docID                   string
-	doc                     *ycrdt.Doc
-	stateStore              collabSvc.DocumentStateStore
-	snapshotStore           collabSvc.SnapshotStore
-	contentLoader           collabSvc.DocumentContentLoader
-	logger                  *slog.Logger
-	snapshotIntervalUpdates int
+	docID              string
+	doc                *ycrdt.Doc
+	stateStore         collabSvc.DocumentStateStore
+	updateLogStore     collabSvc.UpdateLogStore
+	contentLoader      collabSvc.DocumentContentLoader
+	logger             *slog.Logger
+	lastPersistedSV    []byte
+	lastMutationOrigin string // "human" | "ai_accept" | ...
 
 	mu            sync.Mutex
 	refCount      int
 	dirty         bool
-	updateCount   int
 	debounceTimer *time.Timer
-	lastOrigin    string // "human" or "ai_accept" - tracks origin of most recent mutation for snapshot typing
 }
 
 // NewDocumentSessionManager creates the collab document runtime cache.
-// contentLoader is separated from state/snapshot stores (ISP) — only session bootstrap needs it.
+// contentLoader is separated from persistence stores (ISP) — only session bootstrap needs it.
 func NewDocumentSessionManager(
 	stateStore collabSvc.DocumentStateStore,
-	snapshotStore collabSvc.SnapshotStore,
+	updateLogStore collabSvc.UpdateLogStore,
+	bookmarkStore collabSvc.BookmarkStore,
 	contentLoader collabSvc.DocumentContentLoader,
 	logger *slog.Logger,
-	snapshotIntervalUpdates int,
 ) *DocumentSessionManager {
-	if snapshotIntervalUpdates <= 0 {
-		snapshotIntervalUpdates = defaultSnapshotIntervalUpdates
-	}
-
 	return &DocumentSessionManager{
-		sessions:                make(map[string]*DocumentSession),
-		stateStore:              stateStore,
-		snapshotStore:           snapshotStore,
-		contentLoader:           contentLoader,
-		logger:                  logger,
-		snapshotIntervalUpdates: snapshotIntervalUpdates,
+		sessions:       make(map[string]*DocumentSession),
+		stateStore:     stateStore,
+		updateLogStore: updateLogStore,
+		bookmarkStore:  bookmarkStore,
+		contentLoader:  contentLoader,
+		logger:         logger,
 	}
 }
 
@@ -92,13 +88,12 @@ func (m *DocumentSessionManager) Acquire(ctx context.Context, docID string) (*Do
 		defer cancel()
 
 		session := &DocumentSession{
-			docID:                   docID,
-			doc:                     ycrdt.NewDoc(docID, true, ycrdt.DefaultGCFilter, nil, false),
-			stateStore:              m.stateStore,
-			snapshotStore:           m.snapshotStore,
-			contentLoader:           m.contentLoader,
-			logger:                  m.logger,
-			snapshotIntervalUpdates: m.snapshotIntervalUpdates,
+			docID:          docID,
+			doc:            ycrdt.NewDoc(docID, true, ycrdt.DefaultGCFilter, nil, false),
+			stateStore:     m.stateStore,
+			updateLogStore: m.updateLogStore,
+			contentLoader:  m.contentLoader,
+			logger:         m.logger,
 		}
 
 		if err := session.loadState(loadCtx); err != nil {
@@ -215,9 +210,9 @@ func (m *DocumentSessionManager) ApplyUpdate(ctx context.Context, documentID uui
 	return m.applyUpdateOffline(ctx, docID, update, origin)
 }
 
-// applyUpdateOffline loads persisted yjs_state, applies the update to a temporary Y.Doc,
-// and saves the merged state back. This ensures auto-accepted proposals are reflected in
-// the document state even without a live WS session.
+// applyUpdateOffline loads persisted state, applies update, appends the delta,
+// and refreshes derived text projections. This keeps offline AI applies durable
+// without requiring an active websocket owner tab.
 func (m *DocumentSessionManager) applyUpdateOffline(ctx context.Context, docID string, update []byte, origin string) error {
 	state, err := m.stateStore.LoadState(ctx, docID)
 	if err != nil {
@@ -235,19 +230,75 @@ func (m *DocumentSessionManager) applyUpdateOffline(ctx context.Context, docID s
 		return fmt.Errorf("apply proposal update offline: %w", err)
 	}
 
-	newState, err := safeEncodeStateAsUpdate(doc)
-	if err != nil {
-		return fmt.Errorf("encode state after offline apply: %w", err)
-	}
-
 	content := ""
 	if yText := doc.GetText("content"); yText != nil {
 		content = yText.ToString()
 	}
 
-	// Keep content and ai_content aligned for offline applies.
+	if _, err := m.updateLogStore.AppendUpdate(ctx, docID, update, origin, nil); err != nil {
+		return fmt.Errorf("append offline update: %w", err)
+	}
+
+	newState, err := safeEncodeStateAsUpdate(doc)
+	if err != nil {
+		return fmt.Errorf("encode state after offline apply: %w", err)
+	}
+
+	// Keep content and ai_content aligned for offline applies during migration.
 	if err := m.stateStore.SaveState(ctx, docID, newState, content, content); err != nil {
 		return fmt.Errorf("save state after offline apply: %w", err)
+	}
+
+	return nil
+}
+
+// CreateAITurnBookmark pins the latest update row for a turn before AI proposals apply.
+// This powers turn-level restore (phase 5b).
+func (m *DocumentSessionManager) CreateAITurnBookmark(
+	ctx context.Context,
+	documentID uuid.UUID,
+	turnID uuid.UUID,
+) error {
+	docID := documentID.String()
+
+	m.mu.Lock()
+	session := m.sessions[docID]
+	m.mu.Unlock()
+
+	// Flush pending local changes so bookmark points to the latest committed update.
+	if session != nil {
+		session.mu.Lock()
+		if session.dirty {
+			if err := session.persistLocked(ctx); err != nil {
+				session.mu.Unlock()
+				return fmt.Errorf("flush dirty session before ai_turn bookmark: %w", err)
+			}
+		}
+		session.mu.Unlock()
+	}
+
+	latestUpdateID, err := m.updateLogStore.GetLatestUpdateID(ctx, docID)
+	if err != nil {
+		// Migrated or freshly-created documents may have checkpoint data but no
+		// update rows yet.  Use update_id=0 (i.e. "at checkpoint baseline") so
+		// the bookmark can still be created.
+		if errors.Is(err, domain.ErrNotFound) {
+			latestUpdateID = 0
+		} else {
+			return fmt.Errorf("get latest update id for ai_turn bookmark: %w", err)
+		}
+	}
+
+	turnIDStr := turnID.String()
+	bookmark := &collabSvc.Bookmark{
+		DocumentID:   docID,
+		UpdateID:     &latestUpdateID,
+		BookmarkType: "ai_turn",
+		TurnID:       &turnIDStr,
+	}
+
+	if err := m.bookmarkStore.Create(ctx, bookmark); err != nil {
+		return fmt.Errorf("create ai_turn bookmark: %w", err)
 	}
 
 	return nil
@@ -332,8 +383,8 @@ func (s *DocumentSession) HandleSyncPayload(ctx context.Context, payload []byte,
 			return 0, nil, nil, err
 		}
 
-		// Mark origin as human since this came from user sync
-		s.lastOrigin = "human"
+		// Mark origin as human since this came from user sync.
+		s.lastMutationOrigin = "human"
 		if err := s.markDirtyLocked(ctx); err != nil {
 			return 0, nil, nil, err
 		}
@@ -350,8 +401,8 @@ func (s *DocumentSession) applyUpdate(ctx context.Context, update []byte, origin
 		return fmt.Errorf("apply yjs update: %w", err)
 	}
 
-	// Mark origin as AI accept since this is a proposal runtime update
-	s.lastOrigin = "ai_accept"
+	// Mark origin as AI accept since this is a proposal runtime update.
+	s.lastMutationOrigin = "ai_accept"
 	if err := s.markDirtyLocked(ctx); err != nil {
 		return err
 	}
@@ -368,9 +419,11 @@ func (s *DocumentSession) loadState(ctx context.Context) error {
 		defer s.mu.Unlock()
 
 		if err := safeApplyUpdate(s.doc, state, nil); err != nil {
-			return fmt.Errorf("apply persisted yjs state: %w", err)
+			return fmt.Errorf("apply persisted yjs state from checkpoint+replay: %w", err)
 		}
-
+		if err := s.refreshPersistedStateVectorLocked(); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -379,6 +432,12 @@ func (s *DocumentSession) loadState(ctx context.Context) error {
 		return fmt.Errorf("load bootstrap content: %w", err)
 	}
 	if bootstrapContent == "" {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		if err := s.refreshPersistedStateVectorLocked(); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -387,6 +446,9 @@ func (s *DocumentSession) loadState(ctx context.Context) error {
 
 	yText := s.doc.GetText("content")
 	if yText == nil {
+		if err := s.refreshPersistedStateVectorLocked(); err != nil {
+			return err
+		}
 		return nil
 	}
 	s.doc.Transact(func(_ *ycrdt.Transaction) {
@@ -403,6 +465,13 @@ func (s *DocumentSession) loadState(ctx context.Context) error {
 	// Keep content and ai_content aligned with the bootstrap state.
 	if err := s.stateStore.SaveState(ctx, s.docID, persistedState, content, content); err != nil {
 		return fmt.Errorf("persist bootstrapped yjs state: %w", err)
+	}
+	// Bootstrap row becomes the first append-only update for this document.
+	if _, err := s.updateLogStore.AppendUpdate(ctx, s.docID, persistedState, "server-bootstrap", nil); err != nil {
+		return fmt.Errorf("append bootstrapped yjs state: %w", err)
+	}
+	if err := s.refreshPersistedStateVectorLocked(); err != nil {
+		return err
 	}
 
 	return nil
@@ -421,29 +490,20 @@ func (s *DocumentSession) flushOnDisconnect(ctx context.Context) error {
 		return nil
 	}
 
-	if err := s.persistLocked(ctx, true); err != nil {
+	if err := s.persistLocked(ctx); err != nil {
 		return err
 	}
 
-	s.updateCount = 0
 	return nil
 }
 
 func (s *DocumentSession) markDirtyLocked(ctx context.Context) error {
 	s.dirty = true
-	s.updateCount++
 
 	if s.debounceTimer == nil {
 		s.debounceTimer = time.AfterFunc(defaultPersistDebounce, s.runDebouncePersist)
 	} else {
 		s.debounceTimer.Reset(defaultPersistDebounce)
-	}
-
-	if s.updateCount >= s.snapshotIntervalUpdates {
-		if err := s.persistLocked(ctx, true); err != nil {
-			return err
-		}
-		s.updateCount = 0
 	}
 
 	return nil
@@ -462,7 +522,7 @@ func (s *DocumentSession) runDebouncePersist() {
 	ctx, cancel := context.WithTimeout(context.Background(), persistTimeout)
 	defer cancel()
 
-	if err := s.persistLocked(ctx, false); err != nil {
+	if err := s.persistLocked(ctx); err != nil {
 		s.logger.Error("collab debounce persist failed",
 			"document_id", s.docID,
 			"error", err,
@@ -470,31 +530,33 @@ func (s *DocumentSession) runDebouncePersist() {
 	}
 }
 
-func (s *DocumentSession) persistLocked(ctx context.Context, writeSnapshot bool) error {
+func (s *DocumentSession) persistLocked(ctx context.Context) error {
 	state, content, err := s.currentStateLocked()
 	if err != nil {
 		return err
 	}
 
-	// Phase 1: aiContent == content because there is no separate AI-edited view yet.
-	// Phase 2+ will diverge these when AI suggestions produce a distinct aiContent.
-	if err := s.stateStore.SaveState(ctx, s.docID, state, content, content); err != nil {
+	updateDelta, err := s.computeStateDeltaLocked()
+	if err != nil {
 		return err
 	}
 
-	if writeSnapshot {
-		// Route snapshot type by last mutation origin.
-		// Mixed-batch tradeoff: if a batch contains both human and AI edits,
-		// the last origin wins for this snapshot. This is acceptable since
-		// snapshots are frequent (every 500 updates) and TTL-cleaned.
-		snapshotType := "auto_human" // default to human if no origin set
-		if s.lastOrigin == "ai_accept" {
-			snapshotType = "auto_ai_accept"
+	if len(updateDelta) > 0 {
+		origin := s.lastMutationOrigin
+		if origin == "" {
+			origin = "human"
 		}
-
-		if _, err := s.snapshotStore.SaveSnapshot(ctx, s.docID, state, snapshotType, nil, nil); err != nil {
+		if _, err := s.updateLogStore.AppendUpdate(ctx, s.docID, updateDelta, origin, nil); err != nil {
 			return err
 		}
+		if err := s.refreshPersistedStateVectorLocked(); err != nil {
+			return err
+		}
+	}
+
+	// Keep content + ai_content aligned during migration.
+	if err := s.stateStore.SaveState(ctx, s.docID, state, content, content); err != nil {
+		return err
 	}
 
 	s.dirty = false
@@ -524,6 +586,22 @@ func (s *DocumentSession) currentStateLocked() ([]byte, string, error) {
 	}
 
 	return state, content, nil
+}
+
+func (s *DocumentSession) computeStateDeltaLocked() ([]byte, error) {
+	if len(s.lastPersistedSV) == 0 {
+		return safeEncodeStateAsUpdate(s.doc)
+	}
+	return safeEncodeStateAsUpdateFromStateVector(s.doc, s.lastPersistedSV)
+}
+
+func (s *DocumentSession) refreshPersistedStateVectorLocked() error {
+	stateVector, err := safeEncodeStateVector(s.doc)
+	if err != nil {
+		return err
+	}
+	s.lastPersistedSV = stateVector
+	return nil
 }
 
 func extractUpdatePayload(syncPayload []byte) ([]byte, error) {
@@ -590,5 +668,29 @@ func safeEncodeStateAsUpdate(doc *ycrdt.Doc) (state []byte, err error) {
 	}()
 
 	state = ycrdt.EncodeStateAsUpdate(doc, nil)
+	return state, nil
+}
+
+// safeEncodeStateVector wraps ycrdt.EncodeStateVector with panic recovery.
+func safeEncodeStateVector(doc *ycrdt.Doc) (stateVector []byte, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("encode state vector panic: %v", r)
+		}
+	}()
+
+	stateVector = ycrdt.EncodeStateVector(doc, nil, ycrdt.NewUpdateEncoderV1())
+	return stateVector, nil
+}
+
+// safeEncodeStateAsUpdateFromStateVector encodes the delta relative to a prior state vector.
+func safeEncodeStateAsUpdateFromStateVector(doc *ycrdt.Doc, stateVector []byte) (state []byte, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("encode state delta panic: %v", r)
+		}
+	}()
+
+	state = ycrdt.EncodeStateAsUpdate(doc, stateVector)
 	return state, nil
 }

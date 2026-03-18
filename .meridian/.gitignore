@@ -11,9 +11,10 @@
 # Track shared repo state
 !fs/
 !fs/**
-!work-items/
-!work-items/**
 !work/
 !work/**
 !work-archive/
 !work-archive/**
+# Added by Meridian to keep required project state tracked
+!config.toml
+!models.toml

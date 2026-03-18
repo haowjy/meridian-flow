@@ -29,6 +29,54 @@ type DocumentStateStore interface {
 	SaveState(ctx context.Context, docID string, state []byte, content string, aiContent string) error
 }
 
+// UpdateLogEntry is one append-only Yjs update row.
+type UpdateLogEntry struct {
+	ID     int64
+	Update []byte
+}
+
+// UpdateLogStore persists append-only Yjs update rows.
+type UpdateLogStore interface {
+	AppendUpdate(ctx context.Context, docID string, update []byte, origin string, userID *string) (int64, error)
+	LoadSinceCheckpoint(ctx context.Context, docID string) (checkpoint []byte, updates [][]byte, err error)
+	CountUpdates(ctx context.Context, docID string) (int64, error)
+	DeleteUpTo(ctx context.Context, docID string, cutoffID int64) error
+	GetLatestUpdateID(ctx context.Context, docID string) (int64, error)
+	ListDocumentsWithMinUpdates(ctx context.Context, minUpdates int64) ([]string, error)
+	GetNthOldestUpdateID(ctx context.Context, docID string, n int64) (int64, error)
+	ListUpdatesInRange(ctx context.Context, docID string, afterID int64, upToID int64) ([]UpdateLogEntry, error)
+	AcquireCompactionLock(ctx context.Context, docID string) error
+}
+
+// CheckpointStore persists compacted Yjs checkpoints.
+type CheckpointStore interface {
+	GetLatest(ctx context.Context, docID string) (state []byte, upToID int64, err error)
+	Create(ctx context.Context, docID string, state []byte, upToID int64) error
+}
+
+// Bookmark is a point-in-time reference into the update log.
+type Bookmark struct {
+	ID           string
+	DocumentID   string
+	UpdateID     *int64
+	State        []byte
+	BookmarkType string
+	TurnID       *string
+	Name         *string
+	CreatedBy    *string
+	CreatedAt    time.Time
+}
+
+// BookmarkStore persists document bookmarks.
+type BookmarkStore interface {
+	Create(ctx context.Context, bookmark *Bookmark) error
+	ListByDocumentAndType(ctx context.Context, docID string, bookmarkType string) ([]Bookmark, error)
+	ListByTurnID(ctx context.Context, turnID string) ([]Bookmark, error)
+	GetState(ctx context.Context, bookmarkID string) ([]byte, error)
+	MaterializeState(ctx context.Context, bookmarkID string, state []byte) error
+	DeleteByTypeAndCutoff(ctx context.Context, docID string, bookmarkType string, cutoffUpdateID int64) error
+}
+
 // SnapshotStore persists restore/history points for collab documents.
 type SnapshotStore interface {
 	SaveSnapshot(

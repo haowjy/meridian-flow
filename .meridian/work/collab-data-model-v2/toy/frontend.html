@@ -566,7 +566,7 @@ document.addEventListener('keydown', (e) => {
 // Initial render
 log('Initialized canonical: "The cat sat on the mat."');
 log('UndoManager tracking: ORIGIN_HUMAN, ORIGIN_ACCEPT, ORIGIN_REJECT, ORIGIN_THREAD');
-log('NOT tracking: ORIGIN_GC (stale is terminal, never undoable)');
+log('NOT tracking: ORIGIN_GC (stale is non-terminal but GC transitions are not undoable — unstale is driven by re-derive)');
 refresh();
 </script>
 </body>

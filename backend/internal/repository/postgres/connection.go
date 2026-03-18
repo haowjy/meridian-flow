@@ -39,10 +39,13 @@ type TableNames struct {
 	ProjectSkills string
 
 	// Collaboration tables
-	CollabDocumentSnapshots  string
-	CollabDocumentProposals  string
-	CollabRequestIdempotency string
-	TurnDocumentTouches      string
+	CollabDocumentSnapshots   string
+	CollabDocumentUpdates     string
+	CollabDocumentCheckpoints string
+	CollabDocumentBookmarks   string
+	CollabDocumentProposals   string
+	CollabRequestIdempotency  string
+	TurnDocumentTouches       string
 }
 
 // NewTableNames creates table names with the given prefix
@@ -68,10 +71,13 @@ func NewTableNames(prefix string) *TableNames {
 		ProjectSkills: fmt.Sprintf("%sproject_skills", prefix),
 
 		// Collaboration tables
-		CollabDocumentSnapshots:  fmt.Sprintf("%scollab_document_snapshots", prefix),
-		CollabDocumentProposals:  fmt.Sprintf("%scollab_document_edit_proposals", prefix),
-		CollabRequestIdempotency: fmt.Sprintf("%scollab_request_idempotency", prefix),
-		TurnDocumentTouches:      fmt.Sprintf("%sturn_document_touches", prefix),
+		CollabDocumentSnapshots:   fmt.Sprintf("%scollab_document_snapshots", prefix),
+		CollabDocumentUpdates:     fmt.Sprintf("%scollab_document_updates", prefix),
+		CollabDocumentCheckpoints: fmt.Sprintf("%scollab_document_checkpoints", prefix),
+		CollabDocumentBookmarks:   fmt.Sprintf("%scollab_document_bookmarks", prefix),
+		CollabDocumentProposals:   fmt.Sprintf("%scollab_document_edit_proposals", prefix),
+		CollabRequestIdempotency:  fmt.Sprintf("%scollab_request_idempotency", prefix),
+		TurnDocumentTouches:       fmt.Sprintf("%sturn_document_touches", prefix),
 	}
 }
 

@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	ycrdt "github.com/haowjy/y-crdt"
-	collabModels "meridian/internal/domain/models/collab"
+	collabSvc "meridian/internal/domain/services/collab"
 )
 
 func TestDocumentSessionCurrentStateLocked_DerivesContentFromAppliedUpdate(t *testing.T) {
@@ -46,10 +46,11 @@ func TestDocumentSessionLoadState_BootstrapsFromContentWhenStateEmpty(t *testing
 		bootstrapContent: "seed text",
 	}
 	session := &DocumentSession{
-		docID:         "doc-bootstrap",
-		doc:           ycrdt.NewDoc("doc-bootstrap", true, ycrdt.DefaultGCFilter, nil, false),
-		stateStore:    store,
-		contentLoader: store,
+		docID:          "doc-bootstrap",
+		doc:            ycrdt.NewDoc("doc-bootstrap", true, ycrdt.DefaultGCFilter, nil, false),
+		stateStore:     store,
+		updateLogStore: &fakeSessionUpdateLogStore{},
+		contentLoader:  store,
 	}
 
 	if err := session.loadState(context.Background()); err != nil {
@@ -82,10 +83,11 @@ func TestDocumentSessionLoadState_EmptyStateAndEmptyContentNoop(t *testing.T) {
 		bootstrapContent: "",
 	}
 	session := &DocumentSession{
-		docID:         "doc-empty",
-		doc:           ycrdt.NewDoc("doc-empty", true, ycrdt.DefaultGCFilter, nil, false),
-		stateStore:    store,
-		contentLoader: store,
+		docID:          "doc-empty",
+		doc:            ycrdt.NewDoc("doc-empty", true, ycrdt.DefaultGCFilter, nil, false),
+		stateStore:     store,
+		updateLogStore: &fakeSessionUpdateLogStore{},
+		contentLoader:  store,
 	}
 
 	if err := session.loadState(context.Background()); err != nil {
@@ -110,10 +112,11 @@ func TestDocumentSessionLoadState_ExistingStateSkipsBootstrapPath(t *testing.T) 
 		bootstrapContent: "should-not-load",
 	}
 	session := &DocumentSession{
-		docID:         "doc-existing",
-		doc:           ycrdt.NewDoc("doc-existing", true, ycrdt.DefaultGCFilter, nil, false),
-		stateStore:    store,
-		contentLoader: store,
+		docID:          "doc-existing",
+		doc:            ycrdt.NewDoc("doc-existing", true, ycrdt.DefaultGCFilter, nil, false),
+		stateStore:     store,
+		updateLogStore: &fakeSessionUpdateLogStore{},
+		contentLoader:  store,
 	}
 
 	if err := session.loadState(context.Background()); err != nil {
@@ -135,10 +138,11 @@ func TestDocumentSessionManagerApplyUpdate_OfflinePersistsAIContentWithContent(t
 	expectedContent := "offline ai apply content"
 	update := mustBuildSessionState(t, expectedContent)
 	store := &fakeSessionStore{state: []byte{}}
-	snapshotStore := &fakeSessionSnapshotStore{}
+	updateLogStore := &fakeSessionUpdateLogStore{}
+	bookmarkStore := &fakeSessionBookmarkStore{}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	manager := NewDocumentSessionManager(store, snapshotStore, store, logger, 0)
+	manager := NewDocumentSessionManager(store, updateLogStore, bookmarkStore, store, logger)
 
 	if err := manager.ApplyUpdate(context.Background(), uuid.New(), update, "ai_accept"); err != nil {
 		t.Fatalf("ApplyUpdate returned error: %v", err)
@@ -152,6 +156,12 @@ func TestDocumentSessionManagerApplyUpdate_OfflinePersistsAIContentWithContent(t
 	}
 	if store.savedAIContent != store.savedContent {
 		t.Fatalf("expected saved ai_content to match content, got ai_content=%q content=%q", store.savedAIContent, store.savedContent)
+	}
+	if updateLogStore.appendCalls != 1 {
+		t.Fatalf("expected one AppendUpdate call, got %d", updateLogStore.appendCalls)
+	}
+	if string(updateLogStore.lastUpdate) != string(update) {
+		t.Fatal("expected appended update to match offline apply update payload")
 	}
 	if got := decodeStateContent(t, store.savedState); got != expectedContent {
 		t.Fatalf("expected persisted state content %q, got %q", expectedContent, got)
@@ -193,24 +203,73 @@ func (s *fakeSessionStore) SaveState(
 	return nil
 }
 
-type fakeSessionSnapshotStore struct{}
-
-func (s *fakeSessionSnapshotStore) SaveSnapshot(_ context.Context, _ string, _ []byte, _ string, _ *string, _ *string) (string, error) {
-	return "", nil
+type fakeSessionUpdateLogStore struct {
+	appendCalls int
+	lastUpdate  []byte
 }
 
-func (s *fakeSessionSnapshotStore) ListSnapshots(_ context.Context, _ string, _, _ int) ([]collabModels.Snapshot, int, error) {
-	return nil, 0, nil
+func (s *fakeSessionUpdateLogStore) AppendUpdate(_ context.Context, _ string, update []byte, _ string, _ *string) (int64, error) {
+	s.appendCalls++
+	s.lastUpdate = update
+	return int64(s.appendCalls), nil
 }
 
-func (s *fakeSessionSnapshotStore) GetSnapshot(_ context.Context, _ string) (*collabModels.SnapshotWithState, error) {
+func (s *fakeSessionUpdateLogStore) LoadSinceCheckpoint(_ context.Context, _ string) ([]byte, [][]byte, error) {
+	return nil, nil, nil
+}
+
+func (s *fakeSessionUpdateLogStore) CountUpdates(_ context.Context, _ string) (int64, error) {
+	return 0, nil
+}
+
+func (s *fakeSessionUpdateLogStore) DeleteUpTo(_ context.Context, _ string, _ int64) error {
+	return nil
+}
+
+func (s *fakeSessionUpdateLogStore) GetLatestUpdateID(_ context.Context, _ string) (int64, error) {
+	return 0, nil
+}
+
+func (s *fakeSessionUpdateLogStore) ListDocumentsWithMinUpdates(_ context.Context, _ int64) ([]string, error) {
 	return nil, nil
 }
 
-func (s *fakeSessionSnapshotStore) DeleteSnapshot(_ context.Context, _ string) error { return nil }
-
-func (s *fakeSessionSnapshotStore) DeleteExpiredAutoSnapshots(_ context.Context, _ int) (int64, error) {
+func (s *fakeSessionUpdateLogStore) GetNthOldestUpdateID(_ context.Context, _ string, _ int64) (int64, error) {
 	return 0, nil
+}
+
+func (s *fakeSessionUpdateLogStore) ListUpdatesInRange(_ context.Context, _ string, _, _ int64) ([]collabSvc.UpdateLogEntry, error) {
+	return nil, nil
+}
+
+func (s *fakeSessionUpdateLogStore) AcquireCompactionLock(_ context.Context, _ string) error {
+	return nil
+}
+
+type fakeSessionBookmarkStore struct{}
+
+func (s *fakeSessionBookmarkStore) Create(_ context.Context, _ *collabSvc.Bookmark) error {
+	return nil
+}
+
+func (s *fakeSessionBookmarkStore) ListByDocumentAndType(_ context.Context, _, _ string) ([]collabSvc.Bookmark, error) {
+	return nil, nil
+}
+
+func (s *fakeSessionBookmarkStore) ListByTurnID(_ context.Context, _ string) ([]collabSvc.Bookmark, error) {
+	return nil, nil
+}
+
+func (s *fakeSessionBookmarkStore) GetState(_ context.Context, _ string) ([]byte, error) {
+	return nil, nil
+}
+
+func (s *fakeSessionBookmarkStore) MaterializeState(_ context.Context, _ string, _ []byte) error {
+	return nil
+}
+
+func (s *fakeSessionBookmarkStore) DeleteByTypeAndCutoff(_ context.Context, _, _ string, _ int64) error {
+	return nil
 }
 
 func mustBuildSessionState(t *testing.T, content string) []byte {

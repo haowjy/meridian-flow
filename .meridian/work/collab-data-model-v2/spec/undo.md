@@ -44,6 +44,13 @@ const undoManager = new Y.UndoManager(
 // On collaboration mode change (auto-apply <-> manual)
 // Intentionally drops session undo history to prevent cross-mode undo confusion.
 // Thread undo (via sidebar) is unaffected — it uses stored text, not the undo stack.
+// IMPORTANT: prompt for confirmation if the undo stack is non-empty before clearing.
+if (undoManager.undoStack.length > 0) {
+  const confirmed = await showConfirmation(
+    "Switching modes will clear your undo history. Thread undo is unaffected."
+  );
+  if (!confirmed) return; // abort mode switch
+}
 undoManager.clear();
 ```
 
@@ -106,7 +113,7 @@ These are mechanical consequences of UndoManager tracking — no special handlin
 
 ### Why ORIGIN_GC Is Not Tracked
 
-Projection GC uses `ORIGIN_GC` which is NOT in `trackedOrigins`. If GC marks P4 as `stale`, that write is invisible to UndoManager. Ctrl-Z will never "un-stale" a proposal -- stale is terminal and automatic.
+Projection GC uses `ORIGIN_GC` which is NOT in `trackedOrigins`. If GC marks P4 as `stale`, that write is invisible to UndoManager. Ctrl-Z will never directly "un-stale" a proposal. However, stale is **non-terminal**: if Ctrl-Z reverses the accept or edit that caused canonical to match P4's text, the next re-derive detects that the stale pre-check no longer passes and deletes P4's Y.Map entry (also via `ORIGIN_GC`), returning it to `pending`. The unstale transition is driven by re-derive, not by UndoManager.
 
 ### Persistence
 
@@ -252,27 +259,33 @@ An AI turn can edit multiple documents (e.g., several chapters). The `turn_id` o
 
 1. Writer clicks "Restore to before this turn" in thread UI
 2. UI shows confirmation with scope: "This will restore N document(s) to their state before this turn. All changes since then (including your own edits) will be lost."
-3. Backend creates `safety_restore` bookmarks for **all** affected documents atomically first (if any bookmark creation fails, abort before modifying any document)
-4. For each document with an `ai_turn` bookmark for this `turn_id`:
-   a. Backend acquires `pg_advisory_xact_lock(document_id)` (serializes with compaction)
-   b. Backend replaces persisted state: write new checkpoint from `ai_turn` bookmark state, delete post-bookmark update rows
-   c. Backend disconnects all WebSocket clients for this document and broadcasts `document:restored` event
-   d. Clients reconnect, rehydrate Y.Doc from fresh persisted state (standard Yjs sync)
-   e. All reconnected tabs call `undoManager.clear()` on receiving `document:restored`
-5. Backend reconciliation runs on each restored document, resetting proposal row statuses from the restored `_proposal_status` Y.Map
-6. Thread UI updates to `[Restored] [Undo restore]` on the turn
-7. UI shows "Restoring..." interstitial during the operation
+3. Backend acquires `pg_advisory_xact_lock(document_id)` for **all** affected documents (sorted by document ID to prevent deadlocks)
+4. Backend tears down live `SessionManager` instances for all affected documents — stops accepting WebSocket updates, drains in-flight mutations. No new updates can land after this point.
+5. Backend creates `safety_restore` bookmarks for **all** affected documents atomically (idempotent: `INSERT ... ON CONFLICT (document_id, turn_id, bookmark_type) DO NOTHING`). If any bookmark creation fails, abort — release locks, re-attach sessions, no state changes.
+6. For each document with an `ai_turn` bookmark for this `turn_id`:
+   a. Backend replaces persisted state: write new checkpoint from `ai_turn` bookmark state, delete post-bookmark update rows
+   b. Backend broadcasts `document:restored` event
+   c. Clients reconnect, rehydrate Y.Doc from fresh persisted state (standard Yjs sync)
+   d. All reconnected tabs call `undoManager.clear()` on receiving `document:restored`
+7. Backend reconciliation runs on each restored document, resetting proposal row statuses from the restored `_proposal_status` Y.Map
+8. Release advisory locks, rebuild `SessionManager` instances
+9. Thread UI updates to `[Restored] [Undo restore]` on the turn
+10. UI shows "Restoring..." interstitial during the operation
+
+**Idempotency:** The `safety_restore` bookmark is keyed by `(document_id, turn_id, bookmark_type)`. If the client retries due to a lost response, the second call finds the existing bookmark and proceeds without creating a duplicate — preventing the "retry destroys rollback point" failure mode.
 
 #### Undo Restore Flow
 
 1. Writer clicks "Undo restore" on the turn in thread UI
-2. For each document with a `safety_restore` bookmark for this `turn_id`:
-   a. Backend acquires `pg_advisory_xact_lock(document_id)`
-   b. Backend replaces persisted state with `safety_restore` bookmark state
-   c. Backend disconnects all WebSocket clients, broadcasts `document:restored`
-   d. Clients reconnect, rehydrate, call `undoManager.clear()`
-3. Backend reconciliation runs, restoring proposal row statuses
-4. Thread UI returns to pre-restore state with per-proposal actions
+2. Backend acquires `pg_advisory_xact_lock(document_id)` for all affected documents (sorted by document ID)
+3. Backend tears down live `SessionManager` instances for all affected documents
+4. For each document with a `safety_restore` bookmark for this `turn_id`:
+   a. Backend replaces persisted state with `safety_restore` bookmark state
+   b. Backend broadcasts `document:restored`
+   c. Clients reconnect, rehydrate, call `undoManager.clear()`
+5. Backend reconciliation runs, restoring proposal row statuses
+6. Release advisory locks, rebuild `SessionManager` instances
+7. Thread UI returns to pre-restore state with per-proposal actions
 
 #### Why Not UndoManager
 

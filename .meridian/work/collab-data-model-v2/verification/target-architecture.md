@@ -110,7 +110,7 @@ flowchart LR
                  +--> rejected --> accepted (thread reapply)
                  |        ^
                  |        +-- (Ctrl-Z of reject) --> pending
-                 +--> stale (terminal, auto-resolved by projection GC)
+                 +--> stale (non-terminal, re-derive can return to pending)
 
   [create, validation fails] --> invalid (terminal, backend-only, never enters Y.Map)
 ```
@@ -122,7 +122,7 @@ flowchart LR
 | `pending` | Missing key | `status = 'pending'` | Default on creation |
 | `accepted` | `proposalId: 'accepted'` | `status = 'accepted'` | Mirrored |
 | `rejected` | `proposalId: 'rejected'` | `status = 'rejected'` | Mirrored |
-| `stale` | `proposalId: 'stale'` | `status = 'stale'` | Terminal, GC origin |
+| `stale` | `proposalId: 'stale'` | `status = 'stale'` | Non-terminal, GC origin. Re-derive returns to pending if canonical no longer matches. |
 | `reverted` | `proposalId: 'reverted'` | `status = 'reverted'` | Thread undo |
 | `invalid` | Never enters Y.Map | `status = 'invalid'` | Backend-only |
 
@@ -151,7 +151,7 @@ flowchart LR
 7. **Auto-apply tab election**: track owner WebSocket presence, apply directly if 0 owner tabs
 8. **`proposal:new` broadcast**: WebSocket event with `{ proposal_id, document_id, status }`
 9. **`accepted_at_offset` endpoint**: persist offset with monotonic version guard
-10. **Turn-level restore**: query bookmarks by `turn_id`, create safety bookmarks for ALL affected documents atomically first, then replace persisted state (new checkpoint from bookmark), disconnect all document WebSocket clients, clients reconnect and rehydrate from fresh state. Broadcast `document:restored` event so all tabs call `undoManager.clear()`.
+10. **Turn-level restore**: query bookmarks by `turn_id`. Acquire advisory locks for all affected documents (sorted by ID). Tear down live `SessionManager` instances (freeze — no new updates accepted). Create idempotent safety bookmarks (`ON CONFLICT DO NOTHING` keyed on `document_id, turn_id, bookmark_type`). Replace persisted state (new checkpoint from bookmark). Broadcast `document:restored` event. Clients reconnect, rehydrate, call `undoManager.clear()`. Release locks, rebuild sessions.
 11. **AI context projection**: compute same projection as frontend (clone + apply specified user's pending proposals) for AI document reads. `BuildProjectedState(ctx, documentID, userID)` — user-scoped, not document-global.
 
 ### What the Backend Does NOT Do

@@ -240,6 +240,10 @@ After all phases are complete, verify:
 - [ ] UndoManager does NOT track `ORIGIN_GC` or `null`
 - [ ] Thread undo/reapply uses offset-anchored search (no full-document fallback)
 - [ ] Turn-level restore is backend-coordinated with safety bookmarks
+- [ ] Turn-level restore freezes live `SessionManager` before rewriting persisted state
+- [ ] Turn-level restore is idempotent (safety bookmark `UNIQUE(document_id, turn_id, bookmark_type)`)
+- [ ] Stale proposals are non-terminal: re-derive detects when canonical no longer matches and returns proposal to pending
+- [ ] Mode switch prompts for confirmation when undo stack is non-empty
 
 ## Cross-References
 

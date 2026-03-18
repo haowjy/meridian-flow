@@ -165,7 +165,9 @@ Stale detection uses a **text pre-check** before applying to the projection clon
 
 Additionally, after Pass 2 attribution, any pending proposal whose solo diff produces empty regions (no text change vs canonical) is marked `stale` via `ORIGIN_GC`. This catches proposals whose changes landed in canonical through other means (e.g., an overlapping proposal was accepted that included the same text change).
 
-Stale proposals are never rendered as hunks. Thread UI shows stale proposals as "No longer relevant".
+**Unstale: stale is non-terminal.** On every re-derive, previously-stale proposals are re-evaluated. If the stale pre-check no longer passes (canonical no longer contains `region_text_after` at the position — e.g., because the accept that caused staleness was Ctrl-Z'd or a restore rolled back canonical), the proposal's `_proposal_status` entry is deleted via `ORIGIN_GC` (returning it to `pending`). The proposal re-enters the projection and renders as a hunk again.
+
+Stale proposals are never rendered as hunks. Thread UI shows stale proposals as "No longer relevant" while stale, and returns to normal pending/hunk display if the proposal becomes unstale.
 
 ## Hunk Actions
 

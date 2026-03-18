@@ -111,6 +111,8 @@ One projection includes all pending proposals for the current user. In multi-use
 
 Per-user projection ensures each proposal has exactly one writer who can accept/reject it: the user whose `created_by_user_id` matches. No two users can act on the same proposal concurrently. The only concurrent scenario is the same user on two tabs, where CRDT deterministic ordering resolves concurrent writes (Lamport clock, with clientID as tiebreaker — not wall-clock recency). This eliminates the need for a multi-user conflict policy on `_proposal_status`.
 
+**Known edge case: same-user multi-tab concurrent actions.** If the same user accepts a proposal on tab A and rejects it on tab B within the Yjs sync window, Y.Map LWW resolves the status while the text mutation from accept merges independently. This can produce a transient inconsistent state (e.g., text applied but status = `rejected`). Full reconciliation on document load detects and repairs such inconsistencies. This is acceptable because the scenario requires the same user to act on the same proposal on two tabs within sub-second timing — rare enough that LWW resolution plus load-time repair is sufficient.
+
 ## Core Data Flow (Manual Path)
 
 | Step | Operation | Persisted outcome |
@@ -180,6 +182,7 @@ stateDiagram-v2
     pending --> accepted : auto-apply / user accepts hunk
     pending --> rejected : user rejects hunk
     pending --> stale : projection GC
+    stale --> pending : canonical rolls back (re-derive)
 
     accepted --> reverted : thread undo
     accepted --> pending : session Ctrl-Z (of accept)
@@ -193,7 +196,7 @@ stateDiagram-v2
 
     [*] --> invalid : yjs_update validation fails
 
-    note right of stale : Terminal. Canonical already<br/>contains the change.
+    note right of stale : Re-evaluated on every derive.<br/>Returns to pending if canonical<br/>no longer contains the change.
     note right of invalid : Terminal. Bad payload<br/>rejected at creation.
 ```
 
@@ -204,7 +207,7 @@ Note: Ctrl-Z transitions for thread ops are mechanical consequences of UndoManag
 | `pending` | Proposed, waiting for action | N/A |
 | `accepted` | User accepted (or auto-applied) | Session Ctrl-Z or thread undo |
 | `rejected` | User rejected | Session Ctrl-Z while in stack, or thread reapply |
-| `stale` | Canonical already contains the change -- auto-resolved by projection GC | No |
+| `stale` | Canonical already contains the change -- auto-resolved by projection GC. Non-terminal: re-evaluated on every derive, returns to `pending` if canonical rolls back (e.g., Ctrl-Z of the accept that caused staleness). | Re-derive |
 | `reverted` | Was accepted, then thread-undone | Thread reapply |
 | `invalid` | `yjs_update` failed validation at creation time (defense-in-depth). Backend-only — never enters `_proposal_status` Y.Map. | No |
 
