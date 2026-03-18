@@ -120,6 +120,10 @@ func (s *noopProposalStore) CountByDocumentAndStatusAndSource(
 	return 0, nil
 }
 
+func (s *noopProposalStore) CountByDocumentAndTurnID(_ context.Context, _ uuid.UUID, _ uuid.UUID) (int, error) {
+	return 0, nil
+}
+
 func (s *noopProposalStore) ListByDocument(
 	_ context.Context,
 	_ uuid.UUID,

@@ -39,6 +39,11 @@
     .row { display: flex; gap: 12px; }
     .row > * { flex: 1; min-width: 0; }
     .actions { margin-top: 6px; display: flex; gap: 4px; flex-wrap: wrap; }
+    .thread-turn { border: 1px solid #e5e5e5; border-radius: 6px; padding: 10px; margin-bottom: 10px; background: #fff; }
+    .thread-turn-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .thread-call { border-top: 1px solid #f0f0f0; padding-top: 8px; margin-top: 8px; }
+    .thread-status { font-size: 12px; color: #666; }
+    .thread-conflict { margin-top: 4px; color: #b71c1c; font-size: 12px; }
     hr { border: none; border-top: 1px solid #eee; margin: 6px 0; }
   </style>
 </head>
@@ -82,6 +87,12 @@
     <div id="el-hunks"><em>No hunks yet</em></div>
   </div>
 
+  <!-- Thread UI -->
+  <div class="panel">
+    <h2>Thread UI (tool call overlays)</h2>
+    <div id="el-thread"><em>No tool calls yet</em></div>
+  </div>
+
   <!-- Controls -->
   <div class="panel">
     <h2>Simulate Actions</h2>
@@ -116,17 +127,46 @@ const ORIGIN_GC = 'gc';
 const ORIGIN_THREAD = 'thread';
 const CURRENT_USER_ID = 'toy-user';
 const CURRENT_DOCUMENT_ID = 'toy-doc';
+const THREAD_CONFLICT_TTL_MS = 3000;
 
-const canonical = new Y.Doc();
-const text = canonical.getText('content');
-const statusMap = canonical.getMap('_proposal_status');
+const TOY_PROVIDER_URL = 'ws://toy.local/ws/documents';
+let canonical = null;
+let text = null;
+let statusMap = null;
+let undoManager = null;
+let statusMapObserver = null;
 
-const undoManager = new Y.UndoManager([text, statusMap], {
-  trackedOrigins: new Set([ORIGIN_HUMAN, ORIGIN_ACCEPT, ORIGIN_REJECT, ORIGIN_THREAD]),
-});
+class ToyProvider {
+  constructor(url, documentId, doc) {
+    this.url = url;
+    this.documentId = documentId;
+    this.doc = doc;
+    this.connected = true;
+  }
 
-/** @type {Array<{id:string, description:string, created_by_user_id:string, yjs_update:Uint8Array, region_text_before:string, region_text_after:string, proposed_at_offset:number, accepted_at_offset:number|null, offset_version:number}>} */
+  disconnect() {
+    if (!this.connected) return;
+    this.connected = false;
+    log(`Provider disconnected (${this.documentId})`);
+  }
+
+  reconnect(nextDoc) {
+    this.doc = nextDoc;
+    this.connected = true;
+    log(`Provider reconnected (${this.documentId})`);
+  }
+}
+
+let provider = null;
+
+/** @type {Array<{id:string, description:string, turn_id:string, created_at:number, created_by_user_id:string, yjs_update:Uint8Array, region_text_before:string, region_text_after:string, proposed_at_offset:number, accepted_at_offset:number|null, offset_version:number}>} */
 const proposals = [];
+const aiTurnBookmarks = new Map();
+const safetyRestoreBookmarks = new Map();
+const transientThreadConflicts = new Map();
+const transientThreadConflictTimers = new Map();
+let proposalCreatedAtSequence = 0;
+let turnSequence = 0;
 
 /**
  * @typedef {{from:number,to:number}} Range
@@ -146,20 +186,45 @@ let lastDeriveResult = { hunks: [], sequenceNumber: 0 };
 let lastProjectionText = '';
 let lastDiffSegments = [{ t: 'eq', s: '' }];
 
+function createUndoManager(currentText, currentStatusMap) {
+  return new Y.UndoManager([currentText, currentStatusMap], {
+    trackedOrigins: new Set([ORIGIN_HUMAN, ORIGIN_ACCEPT, ORIGIN_REJECT, ORIGIN_THREAD]),
+  });
+}
+
+function bindCanonicalDoc(doc) {
+  if (statusMap && statusMapObserver) {
+    statusMap.unobserve(statusMapObserver);
+  }
+
+  canonical = doc;
+  text = canonical.getText('content');
+  statusMap = canonical.getMap('_proposal_status');
+  undoManager = createUndoManager(text, statusMap);
+
+  statusMapObserver = event => {
+    for (const [key, change] of event.changes.keys) {
+      const p = proposals.find(x => x.id === key);
+      if (!p) continue;
+      if (change.action === 'delete') {
+        log(`Mirror: ${p.id.slice(0, 6)} -> pending (Y.Map key removed)`);
+      } else {
+        log(`Mirror: ${p.id.slice(0, 6)} -> ${statusMap.get(key)}`);
+      }
+    }
+  };
+  statusMap.observe(statusMapObserver);
+}
+
+function initCanonicalRuntime() {
+  const doc = new Y.Doc();
+  bindCanonicalDoc(doc);
+  provider = new ToyProvider(`${TOY_PROVIDER_URL}/${CURRENT_DOCUMENT_ID}`, CURRENT_DOCUMENT_ID, doc);
+}
+
+initCanonicalRuntime();
 text.insert(0, 'The cat sat on the mat.');
 undoManager.clear();
-
-statusMap.observe(event => {
-  for (const [key, change] of event.changes.keys) {
-    const p = proposals.find(x => x.id === key);
-    if (!p) continue;
-    if (change.action === 'delete') {
-      log(`Mirror: ${p.id.slice(0, 6)} -> pending (Y.Map key removed)`);
-    } else {
-      log(`Mirror: ${p.id.slice(0, 6)} -> ${statusMap.get(key)}`);
-    }
-  }
-});
 
 function log(msg) {
   logEntries.unshift(msg);
@@ -173,6 +238,103 @@ function esc(s) {
 function getStatus(proposalId) {
   const mapVal = statusMap.get(proposalId);
   return mapVal || 'pending';
+}
+
+function nextTurnId() {
+  turnSequence += 1;
+  return `turn-${turnSequence}`;
+}
+
+function snapshotCanonicalState() {
+  return Y.encodeStateAsUpdate(canonical);
+}
+
+function ensureAITurnBookmark(turnId) {
+  const existingInTurn = proposals.some(p => p.turn_id === turnId);
+  if (existingInTurn || aiTurnBookmarks.has(turnId)) return;
+  aiTurnBookmarks.set(turnId, snapshotCanonicalState());
+  log(`Created ai_turn bookmark for ${turnId}`);
+}
+
+function reconnectAfterRestore(stateUpdate, reason) {
+  if (provider) provider.disconnect();
+
+  const freshDoc = new Y.Doc();
+  if (stateUpdate && stateUpdate.length > 0) {
+    Y.applyUpdate(freshDoc, stateUpdate);
+  }
+
+  bindCanonicalDoc(freshDoc);
+  if (!provider) {
+    provider = new ToyProvider(`${TOY_PROVIDER_URL}/${CURRENT_DOCUMENT_ID}`, CURRENT_DOCUMENT_ID, freshDoc);
+  } else {
+    provider.reconnect(freshDoc);
+  }
+
+  undoManager.clear();
+  deriveProjection(reason);
+  render();
+}
+
+function onDocumentRestored(event) {
+  if (!event || event.document_id !== CURRENT_DOCUMENT_ID) return;
+  reconnectAfterRestore(event.state_update || null, 'document:restored');
+}
+
+function restoreTurn(turnId) {
+  const aiTurnState = aiTurnBookmarks.get(turnId);
+  if (!aiTurnState) {
+    log(`Restore skipped: no ai_turn bookmark for ${turnId}`);
+    return;
+  }
+
+  if (!safetyRestoreBookmarks.has(turnId)) {
+    safetyRestoreBookmarks.set(turnId, snapshotCanonicalState());
+  }
+
+  log(`Turn restore -> ${turnId}`);
+  onDocumentRestored({
+    type: 'document:restored',
+    turn_id: turnId,
+    document_id: CURRENT_DOCUMENT_ID,
+    state_update: aiTurnState,
+  });
+}
+
+function undoRestoreTurn(turnId) {
+  const safetyState = safetyRestoreBookmarks.get(turnId);
+  if (!safetyState) {
+    log(`Undo restore skipped: no safety_restore bookmark for ${turnId}`);
+    return;
+  }
+
+  log(`Undo turn restore -> ${turnId}`);
+  onDocumentRestored({
+    type: 'document:restored',
+    turn_id: turnId,
+    document_id: CURRENT_DOCUMENT_ID,
+    state_update: safetyState,
+  });
+  safetyRestoreBookmarks.delete(turnId);
+}
+
+function clearTransientThreadConflict(proposalId) {
+  if (!transientThreadConflicts.has(proposalId)) return;
+  transientThreadConflicts.delete(proposalId);
+  const timer = transientThreadConflictTimers.get(proposalId);
+  if (timer) clearTimeout(timer);
+  transientThreadConflictTimers.delete(proposalId);
+}
+
+function setTransientThreadConflict(proposalId, message) {
+  clearTransientThreadConflict(proposalId);
+  transientThreadConflicts.set(proposalId, message);
+  const timer = setTimeout(() => {
+    transientThreadConflicts.delete(proposalId);
+    transientThreadConflictTimers.delete(proposalId);
+    render();
+  }, THREAD_CONFLICT_TTL_MS);
+  transientThreadConflictTimers.set(proposalId, timer);
 }
 
 function isTerminalStatus(status) {
@@ -638,6 +800,8 @@ function acceptProposal(id) {
   canonical.transact(() => {
     Y.applyUpdate(canonical, proposal.yjs_update);
     statusMap.set(id, 'accepted');
+    proposal.accepted_at_offset = proposal.proposed_at_offset;
+    proposal.offset_version += 1;
   }, ORIGIN_ACCEPT);
   deriveProjection('proposal status changed (accept single)');
   render();
@@ -680,50 +844,160 @@ function sessionRedo() {
   render();
 }
 
-function threadUndo(id) {
-  const proposal = proposals.find(x => x.id === id);
-  if (!proposal || getStatus(id) !== 'accepted') return;
+function findNearOffset(sourceText, target, offset, tolerance = 500) {
+  if (typeof sourceText !== 'string' || typeof target !== 'string' || target.length === 0) return -1;
+  if (typeof offset !== 'number' || Number.isNaN(offset)) return -1;
+  const anchor = Math.max(0, Math.floor(offset));
+  const windowStart = Math.max(0, anchor - tolerance);
+  const windowEnd = Math.min(sourceText.length, anchor + tolerance + target.length);
+  const window = sourceText.substring(windowStart, windowEnd);
 
-  const currentText = text.toString();
-  const idx = currentText.indexOf(proposal.region_text_after);
-  if (idx === -1) {
-    log(`Thread undo CONFLICT: "${proposal.region_text_after}" not found in canonical`);
-    return;
+  let bestPos = -1;
+  let bestDist = Number.POSITIVE_INFINITY;
+  let searchStart = 0;
+
+  while (true) {
+    const idx = window.indexOf(target, searchStart);
+    if (idx === -1) break;
+    const absolutePos = windowStart + idx;
+    const dist = Math.abs(absolutePos - anchor);
+    if (dist < bestDist || (dist === bestDist && (bestPos === -1 || absolutePos < bestPos))) {
+      bestDist = dist;
+      bestPos = absolutePos;
+    }
+    searchStart = idx + 1;
   }
 
+  return bestPos;
+}
+
+const api = {
+  async setAcceptedAtOffset(proposalId, acceptedAtOffset, nextOffsetVersion) {
+    await Promise.resolve();
+    const proposal = proposals.find(p => p.id === proposalId);
+    if (!proposal) return;
+    if (nextOffsetVersion <= proposal.offset_version) return;
+    proposal.accepted_at_offset = acceptedAtOffset;
+    proposal.offset_version = nextOffsetVersion;
+    log(`Persisted accepted_at_offset via REST: ${proposal.id.slice(0, 6)} -> ${acceptedAtOffset} (v${proposal.offset_version})`);
+    render();
+  },
+};
+
+function threadUndo(doc, proposal) {
+  const docText = doc.getText('content');
+  const docStatusMap = doc.getMap('_proposal_status');
+  const canonicalText = docText.toString();
+  const anchorOffset = typeof proposal.accepted_at_offset === 'number'
+    ? proposal.accepted_at_offset
+    : proposal.proposed_at_offset;
+  const pos = findNearOffset(canonicalText, proposal.region_text_after, anchorOffset);
+  if (pos === -1) return { success: false, conflict: 'text was edited' };
+
   stopCapturingForDiscreteAction();
-  canonical.transact(() => {
-    text.delete(idx, proposal.region_text_after.length);
-    text.insert(idx, proposal.region_text_before);
-    statusMap.set(id, 'reverted');
+  doc.transact(() => {
+    docText.delete(pos, proposal.region_text_after.length);
+    docText.insert(pos, proposal.region_text_before);
+    docStatusMap.set(proposal.id, 'reverted');
   }, ORIGIN_THREAD);
 
-  log(`Thread undo: ${id.slice(0, 6)} -- "${proposal.region_text_after}" -> "${proposal.region_text_before}"`);
+  return { success: true, position: pos };
+}
+
+function threadReapply(doc, proposal) {
+  const status = getStatus(proposal.id);
+  if (status !== 'reverted' && status !== 'rejected') {
+    return { success: false, conflict: `status ${status} cannot be reapplied` };
+  }
+
+  const docText = doc.getText('content');
+  const docStatusMap = doc.getMap('_proposal_status');
+  const canonicalText = docText.toString();
+  const anchorOffset = status === 'reverted'
+    ? (typeof proposal.accepted_at_offset === 'number' ? proposal.accepted_at_offset : proposal.proposed_at_offset)
+    : proposal.proposed_at_offset;
+  const pos = findNearOffset(canonicalText, proposal.region_text_before, anchorOffset);
+  if (pos === -1) return { success: false, conflict: 'text was edited' };
+
+  stopCapturingForDiscreteAction();
+  doc.transact(() => {
+    docText.delete(pos, proposal.region_text_before.length);
+    docText.insert(pos, proposal.region_text_after);
+    docStatusMap.set(proposal.id, 'accepted');
+  }, ORIGIN_THREAD);
+
+  void api.setAcceptedAtOffset(proposal.id, pos, proposal.offset_version + 1).catch(err => {
+    log(`Persist accepted_at_offset failed for ${proposal.id.slice(0, 6)}: ${err?.message || err}`);
+  });
+  return { success: true, position: pos };
+}
+
+function undoAll(doc, proposalRows) {
+  const accepted = proposalRows
+    .filter(p => getStatus(p.id) === 'accepted')
+    .sort((a, b) => b.created_at - a.created_at);
+
+  const results = new Map();
+  for (const proposal of accepted) {
+    results.set(proposal.id, threadUndo(doc, proposal));
+  }
+  return results;
+}
+
+function runThreadUndo(id) {
+  const proposal = proposals.find(x => x.id === id);
+  if (!proposal || getStatus(id) !== 'accepted') return;
+  const result = threadUndo(canonical, proposal);
+  if (!result.success) {
+    setTransientThreadConflict(id, `Undo failed -- ${result.conflict}`);
+    log(`Thread undo CONFLICT: ${id.slice(0, 6)} -- ${result.conflict}`);
+    render();
+    return;
+  }
+  clearTransientThreadConflict(id);
+  log(`Thread undo: ${id.slice(0, 6)} -- "${proposal.region_text_after}" -> "${proposal.region_text_before}" @${result.position}`);
   deriveProjection('proposal status changed (thread undo)');
   render();
 }
 
-function threadReapply(id) {
+function runThreadReapply(id) {
   const proposal = proposals.find(x => x.id === id);
   const status = getStatus(id);
   if (!proposal || (status !== 'reverted' && status !== 'rejected')) return;
+  const result = threadReapply(canonical, proposal);
+  if (!result.success) {
+    setTransientThreadConflict(id, `Reapply failed -- ${result.conflict}`);
+    log(`Thread reapply CONFLICT: ${id.slice(0, 6)} -- ${result.conflict}`);
+    render();
+    return;
+  }
+  clearTransientThreadConflict(id);
+  log(`Thread reapply: ${id.slice(0, 6)} -- "${proposal.region_text_before}" -> "${proposal.region_text_after}" @${result.position}`);
+  deriveProjection('proposal status changed (thread reapply)');
+  render();
+}
 
-  const currentText = text.toString();
-  const idx = currentText.indexOf(proposal.region_text_before);
-  if (idx === -1) {
-    log(`Thread reapply CONFLICT: "${proposal.region_text_before}" not found in canonical`);
+function runUndoAllAccepted(turnId = null) {
+  const inTurn = turnId === null ? proposals : proposals.filter(p => p.turn_id === turnId);
+  const results = undoAll(canonical, inTurn);
+  if (results.size === 0) {
+    log(turnId ? `Undo all accepted: none in ${turnId}` : 'Undo all accepted: none');
     return;
   }
 
-  stopCapturingForDiscreteAction();
-  canonical.transact(() => {
-    text.delete(idx, proposal.region_text_before.length);
-    text.insert(idx, proposal.region_text_after);
-    statusMap.set(id, 'accepted');
-  }, ORIGIN_THREAD);
-
-  log(`Thread reapply: ${id.slice(0, 6)} -- "${proposal.region_text_before}" -> "${proposal.region_text_after}"`);
-  deriveProjection('proposal status changed (thread reapply)');
+  let successCount = 0;
+  let conflictCount = 0;
+  for (const [proposalId, result] of results.entries()) {
+    if (result.success) {
+      clearTransientThreadConflict(proposalId);
+      successCount += 1;
+      continue;
+    }
+    setTransientThreadConflict(proposalId, `Undo failed -- ${result.conflict}`);
+    conflictCount += 1;
+  }
+  log(`Undo all accepted${turnId ? ` (${turnId})` : ''}: ${successCount} succeeded, ${conflictCount} conflicted`);
+  deriveProjection('proposal status changed (undo all accepted)');
   render();
 }
 
@@ -744,7 +1018,7 @@ function humanType(description, editFn) {
   render();
 }
 
-function createProposal(description, editFn, regionBefore, regionAfter) {
+function createProposal(description, editFn, regionBefore, regionAfter, options = {}) {
   const clone = cloneDoc(canonical);
   const cloneText = clone.getText('content');
   const baseText = cloneText.toString();
@@ -759,10 +1033,15 @@ function createProposal(description, editFn, regionBefore, regionAfter) {
     return null;
   }
 
+  const turnId = options.turn_id || nextTurnId();
+  ensureAITurnBookmark(turnId);
+
   const fallbackOffset = baseText.indexOf(regionBefore);
   const proposal = {
     id: crypto.randomUUID(),
     description,
+    turn_id: turnId,
+    created_at: ++proposalCreatedAtSequence,
     created_by_user_id: CURRENT_USER_ID,
     yjs_update: capturedUpdate,
     region_text_before: regionBefore,
@@ -773,7 +1052,7 @@ function createProposal(description, editFn, regionBefore, regionAfter) {
   };
 
   proposals.push(proposal);
-  log(`Created proposal ${proposal.id.slice(0, 6)}: ${description}`);
+  log(`Created proposal ${proposal.id.slice(0, 6)} (${proposal.turn_id}): ${description}`);
   log(`  yjs_update=${capturedUpdate.length} bytes, proposed_at_offset=${proposal.proposed_at_offset}`);
   if (applyMode === 'auto') {
     void onProposalNew({
@@ -829,7 +1108,8 @@ function render() {
   if (proposals.length === 0) {
     proposalsEl.innerHTML = '<em style="color:#999">No proposals yet. Click a scenario button below.</em>';
   } else {
-    proposalsEl.innerHTML = proposals.map(p => {
+    const orderedProposals = [...proposals].sort((a, b) => a.created_at - b.created_at);
+    proposalsEl.innerHTML = orderedProposals.map(p => {
       const status = getStatus(p.id);
       const short = p.id.slice(0, 6);
       let buttons = '';
@@ -842,11 +1122,78 @@ function render() {
       }
       return `<div class="proposal st-${status}">` +
         `<strong>${short}</strong><span class="badge badge-${status}">${status}</span> ${esc(p.description)}` +
+        `<div style="font-size:11px;color:#666;margin-top:4px">turn=${esc(p.turn_id)} | created_at=${p.created_at}</div>` +
         `<div style="font-size:11px;color:#666;margin-top:4px">offset: proposed=${p.proposed_at_offset}, accepted=${p.accepted_at_offset ?? '-'}, version=${p.offset_version}</div>` +
         (status === 'stale' ? ' <em>(no longer relevant)</em>' : '') +
         `<div class="actions">${buttons}</div>` +
       `</div>`;
     }).join('');
+  }
+
+  const threadEl = document.getElementById('el-thread');
+  if (proposals.length === 0) {
+    threadEl.innerHTML = '<em style="color:#999">No thread messages yet.</em>';
+  } else {
+    const orderedProposals = [...proposals].sort((a, b) => a.created_at - b.created_at);
+    const byTurn = new Map();
+    for (const proposal of orderedProposals) {
+      const list = byTurn.get(proposal.turn_id) || [];
+      list.push(proposal);
+      byTurn.set(proposal.turn_id, list);
+    }
+
+    const allAcceptedCount = proposals.filter(p => getStatus(p.id) === 'accepted').length;
+    const allTurnHtml = `<div class="thread-turn">` +
+      `<div class="thread-turn-head">` +
+        `<strong>All tool calls</strong>` +
+        `<button onclick="window._undoAllAccepted()" ${allAcceptedCount === 0 ? 'disabled' : ''}>Undo All Accepted</button>` +
+      `</div>` +
+    `</div>`;
+
+    const turnHtml = Array.from(byTurn.entries()).map(([turnId, items]) => {
+      const acceptedCount = items.filter(p => getStatus(p.id) === 'accepted').length;
+      const hasSafetyBookmark = safetyRestoreBookmarks.has(turnId);
+      const hasAITurnBookmark = aiTurnBookmarks.has(turnId);
+      const callHtml = items.map(p => {
+        const status = getStatus(p.id);
+        const short = p.id.slice(0, 6);
+        const conflict = transientThreadConflicts.get(p.id);
+        let overlay = '';
+        if (hasSafetyBookmark) {
+          overlay = `<span class="thread-status">Per-proposal actions hidden while turn restore is active</span>`;
+        } else if (status === 'accepted') {
+          overlay = `<span class="badge badge-accepted">Accepted</span> <button onclick="window._threadUndo('${p.id}')">Undo</button>`;
+        } else if (status === 'rejected') {
+          overlay = `<span class="badge badge-rejected">Rejected</span> <button onclick="window._threadReapply('${p.id}')">Reapply</button>`;
+        } else if (status === 'reverted') {
+          overlay = `<span class="badge badge-reverted">Reverted</span> <button onclick="window._threadReapply('${p.id}')">Reapply</button>`;
+        } else if (status === 'stale') {
+          overlay = `<span class="badge badge-stale">Stale</span> <span class="thread-status">No longer relevant</span>`;
+        } else {
+          overlay = `<span class="badge badge-pending">Pending</span> <span class="thread-status">Pending review (visible as diff hunk in editor)</span>`;
+        }
+
+        return `<div class="thread-call">` +
+          `<div><strong>${short}</strong> ${esc(p.description)}</div>` +
+          `<div class="actions">${overlay}</div>` +
+          (!hasSafetyBookmark && conflict ? `<div class="thread-conflict">${esc(conflict)}</div>` : '') +
+        `</div>`;
+      }).join('');
+
+      const turnControls = hasSafetyBookmark
+        ? `<span class="badge badge-reverted">Restored</span> <button onclick="window._undoRestoreTurn('${turnId}')">Undo restore</button>`
+        : `${hasAITurnBookmark ? `<button onclick="window._restoreTurn('${turnId}')">Restore to before this turn</button>` : ''} <button onclick="window._undoAllAccepted('${turnId}')" ${acceptedCount === 0 ? 'disabled' : ''}>Undo All Accepted</button>`;
+
+      return `<div class="thread-turn">` +
+        `<div class="thread-turn-head">` +
+          `<strong>${esc(turnId)}</strong>` +
+          `<div class="actions">${turnControls}</div>` +
+        `</div>` +
+        callHtml +
+      `</div>`;
+    }).join('');
+
+    threadEl.innerHTML = allTurnHtml + turnHtml;
   }
 
   const hunksEl = document.getElementById('el-hunks');
@@ -965,8 +1312,11 @@ window._accept = acceptProposal;
 window._reject = rejectProposal;
 window._acceptHunk = acceptHunk;
 window._rejectHunk = rejectHunk;
-window._threadUndo = threadUndo;
-window._threadReapply = threadReapply;
+window._threadUndo = runThreadUndo;
+window._threadReapply = runThreadReapply;
+window._undoAllAccepted = runUndoAllAccepted;
+window._restoreTurn = restoreTurn;
+window._undoRestoreTurn = undoRestoreTurn;
 window._setMode = setApplyMode;
 window.sessionUndo = sessionUndo;
 window.sessionRedo = sessionRedo;

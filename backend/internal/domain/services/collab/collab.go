@@ -10,7 +10,7 @@ import (
 )
 
 // DocumentContentLoader loads raw markdown content for server-side Yjs bootstrap.
-// Separated from state/snapshot stores (ISP) because only DocumentSessionManager needs it.
+// Separated from persistence stores (ISP) because only DocumentSessionManager needs it.
 type DocumentContentLoader interface {
 	LoadContentForBootstrap(ctx context.Context, docID string) (string, error)
 }
@@ -69,24 +69,6 @@ type BookmarkStore interface {
 	DeleteByTypeAndCutoff(ctx context.Context, docID string, bookmarkType string, cutoffUpdateID int64) error
 }
 
-// SnapshotStore persists restore/history points for collab documents.
-type SnapshotStore interface {
-	SaveSnapshot(
-		ctx context.Context,
-		docID string,
-		state []byte,
-		snapshotType string,
-		name *string,
-		createdByUserID *string,
-	) (string, error)
-	ListSnapshots(ctx context.Context, docID string, limit, offset int) ([]collabModels.Snapshot, int, error)
-	GetSnapshot(ctx context.Context, snapshotID string) (*collabModels.SnapshotWithState, error)
-	DeleteSnapshot(ctx context.Context, snapshotID string) error
-	// DeleteExpiredAutoSnapshots removes auto snapshots older than the given TTL.
-	// Returns the number of deleted rows.
-	DeleteExpiredAutoSnapshots(ctx context.Context, ttlHours int) (int64, error)
-}
-
 // ProposalStore manages proposal persistence and mirrored status transitions.
 type ProposalStore interface {
 	Create(ctx context.Context, proposal *collabModels.Proposal) error
@@ -97,6 +79,7 @@ type ProposalStore interface {
 		status collabModels.ProposalStatus,
 		source collabModels.ProposalSource,
 	) (int, error)
+	CountByDocumentAndTurnID(ctx context.Context, documentID uuid.UUID, turnID uuid.UUID) (int, error)
 	ListByDocument(
 		ctx context.Context,
 		documentID uuid.UUID,
@@ -125,6 +108,7 @@ type ProposalRuntime interface {
 	// this always returns state — from the active in-memory session if one exists, otherwise
 	// by loading from persisted storage.
 	GetCurrentState(ctx context.Context, documentID uuid.UUID) ([]byte, error)
+	CreateAITurnBookmark(ctx context.Context, documentID uuid.UUID, turnID uuid.UUID) error
 }
 
 // OwnerTabPresenceTracker reports whether a document has at least one connected owner tab.
@@ -170,4 +154,13 @@ type CreateProposalRequest struct {
 // ProposalService executes proposal lifecycle operations.
 type ProposalService interface {
 	CreateProposal(ctx context.Context, req CreateProposalRequest) (*collabModels.Proposal, error)
+}
+
+type RestoreResult struct {
+	AffectedDocumentIDs []uuid.UUID
+}
+
+type RestoreService interface {
+	RestoreTurn(ctx context.Context, turnID uuid.UUID) (*RestoreResult, error)
+	UndoRestore(ctx context.Context, turnID uuid.UUID) (*RestoreResult, error)
 }

@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	wsTypeHeartbeat   = "heartbeat"
-	wsTypeProposalNew = "proposal:new"
+	wsTypeHeartbeat        = "heartbeat"
+	wsTypeProposalNew      = "proposal:new"
+	wsTypeDocumentRestored = "document:restored"
 )
 
 type collabTypedMessage struct {

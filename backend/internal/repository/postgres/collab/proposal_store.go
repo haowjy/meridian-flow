@@ -137,6 +137,26 @@ func (s *PostgresProposalStore) CountByDocumentAndStatusAndSource(
 	return count, nil
 }
 
+// CountByDocumentAndTurnID counts proposal rows for one document/turn tuple.
+func (s *PostgresProposalStore) CountByDocumentAndTurnID(
+	ctx context.Context,
+	documentID uuid.UUID,
+	turnID uuid.UUID,
+) (int, error) {
+	query := fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM %s
+		WHERE document_id = $1 AND turn_id = $2
+	`, s.tables.CollabDocumentProposals)
+
+	var count int
+	executor := postgres.GetExecutor(ctx, s.pool)
+	if err := executor.QueryRow(ctx, query, documentID, turnID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count proposals by document/turn: %w", err)
+	}
+	return count, nil
+}
+
 // ListByDocument lists proposals for a document with optional status filter.
 func (s *PostgresProposalStore) ListByDocument(
 	ctx context.Context,
