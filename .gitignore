@@ -40,21 +40,9 @@ backend/orchestrator
 .playwright-mcp/
 .codex-local/
 
-# Hidden local scratch artifacts
-.scratch/
-.orchestrate/
-
 # Python bytecode/cache artifacts
 __pycache__/
 *.py[cod]
 
 # Local editor settings
 .vscode/settings.json
-.claude/agents/__meridian--*
-.claude/skills/__meridian--*
-.agents/agents/__meridian--*
-.agents/skills/__meridian--*
-.codex/agents/__meridian--*
-.codex/skills/__meridian--*
-.opencode/agents/__meridian--*
-.opencode/skills/__meridian--*
