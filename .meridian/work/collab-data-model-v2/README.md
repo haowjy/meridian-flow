@@ -53,6 +53,16 @@ Designs for features that build on the core v2 model but are separate work strea
 | [Editor Strategy](future/editor-strategy.md) | CM6 decision rationale, block rendering extensions, DOCX/PDF import/export |
 | [Review Comments](future/review-comments.md) | Annotation comments (human + AI), Y.RelativePosition anchoring, `add_comment` tool |
 
+## Verification
+
+Target state specs for verifying implementation completeness -- what the system should look like when done, and what must be cleaned up.
+
+| Doc | Purpose |
+|-----|---------|
+| [Target Architecture](verification/target-architecture.md) | Authority model, separation of concerns, persistence layer, what backend does vs doesn't do |
+| [Target API](verification/target-api.md) | Complete REST/WS endpoint list, removed endpoints, internal interface changes |
+| [Cleanup Checklist](verification/cleanup-checklist.md) | Tables, columns, files, interfaces, and code to remove -- with verification grep commands |
+
 ## UX Behaviors
 
 Concrete walkthroughs of what the writer sees and does -- editor mockups, state transitions, edge cases.
