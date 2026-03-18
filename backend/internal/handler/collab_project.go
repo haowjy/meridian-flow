@@ -1,14 +1,11 @@
 package handler
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"strings"
 
-	"github.com/google/uuid"
 	"golang.org/x/net/websocket"
 	"meridian/internal/domain"
 	"meridian/internal/httputil"
@@ -55,13 +52,13 @@ func (h *CollabHandler) ConnectProject(w http.ResponseWriter, r *http.Request) {
 	wsServer := websocket.Server{
 		Handshake: func(_ *websocket.Config, _ *http.Request) error { return nil },
 		Handler: func(conn *websocket.Conn) {
-			h.handleProjectSocket(r.Context(), canonicalProjectID, conn)
+			h.handleProjectSocket(canonicalProjectID, conn)
 		},
 	}
 	wsServer.ServeHTTP(w, r)
 }
 
-func (h *CollabHandler) handleProjectSocket(ctx context.Context, projectID string, conn *websocket.Conn) {
+func (h *CollabHandler) handleProjectSocket(projectID string, conn *websocket.Conn) {
 	wsConn := newWebsocketDocumentConnection(conn)
 	defer func() {
 		_ = wsConn.Close()
@@ -81,7 +78,6 @@ func (h *CollabHandler) handleProjectSocket(ctx context.Context, projectID strin
 	}
 
 	userID := authResult.UserID
-	userUUID := authResult.UserUUID
 	connectionID := wsConn.ID()
 	h.logger.Info("project websocket authenticated",
 		"project_id", projectID,
@@ -110,12 +106,10 @@ func (h *CollabHandler) handleProjectSocket(ctx context.Context, projectID strin
 	go h.runHeartbeatLoop(wsConn, heartbeatAcks, heartbeatStop)
 	defer close(heartbeatStop)
 
-	documentAccessCache := make(map[string]bool)
-
 	// Run the shared message loop with project-specific handlers.
 	runMessageLoop(conn, wsConn, messageLoopHandlers{
 		onTextMessage: func(raw []byte) bool {
-			return h.handleProjectTextMessage(ctx, wsConn, projectID, userID, userUUID, raw, heartbeatAcks, documentAccessCache)
+			return h.handleProjectTextMessage(raw, heartbeatAcks)
 		},
 		onBinaryMessage: nil,
 	}, messageLoopConfig{
@@ -126,14 +120,8 @@ func (h *CollabHandler) handleProjectSocket(ctx context.Context, projectID strin
 // handleProjectTextMessage handles JSON messages on the project websocket.
 // Returns true if the message was handled (even if it resulted in an error).
 func (h *CollabHandler) handleProjectTextMessage(
-	ctx context.Context,
-	conn *websocketDocumentConnection,
-	projectID string,
-	userID string,
-	userUUID uuid.UUID,
 	raw []byte,
 	heartbeatAcks chan<- struct{},
-	documentAccessCache map[string]bool,
 ) bool {
 	msgType, ok := tryParseTypedMessage(raw)
 	if !ok {
@@ -145,59 +133,9 @@ func (h *CollabHandler) handleProjectTextMessage(
 		nonBlockingSignal(heartbeatAcks)
 		return true
 
-	case wsTypeProposalAccept, wsTypeProposalReject, wsTypeProposalGroupAccept, wsTypeProposalRequestUpdate:
-		h.handleProjectProposalCommand(ctx, conn, projectID, userID, userUUID, raw, msgType, documentAccessCache)
-		return true
-
 	default:
 		// Ignore unknown JSON message types for forward compatibility.
 		return true
-	}
-}
-
-// handleProjectProposalCommand routes proposal commands after validating document access.
-func (h *CollabHandler) handleProjectProposalCommand(
-	ctx context.Context,
-	conn *websocketDocumentConnection,
-	projectID string,
-	userID string,
-	userUUID uuid.UUID,
-	raw []byte,
-	msgType string,
-	documentAccessCache map[string]bool,
-) {
-	var docIDMsg struct {
-		DocumentID string `json:"documentId"`
-	}
-	if err := json.Unmarshal(raw, &docIDMsg); err != nil {
-		h.sendError(conn, "INTERNAL_ERROR", "invalid proposal command payload")
-		return
-	}
-
-	docUUID, err := parseUUID(strings.TrimSpace(docIDMsg.DocumentID))
-	if err != nil {
-		h.sendError(conn, "INTERNAL_ERROR", "documentId must be a valid UUID")
-		return
-	}
-	documentID := docUUID.String()
-
-	if !documentAccessCache[documentID] {
-		if errCode, errMsg := h.authenticator.checkDocumentAccess(ctx, projectID, userID, documentID); errCode != "" {
-			h.sendDocError(conn, documentID, errCode, errMsg)
-			return
-		}
-		documentAccessCache[documentID] = true
-	}
-
-	switch msgType {
-	case wsTypeProposalAccept:
-		h.handleProposalAccept(ctx, conn, projectID, documentID, docUUID, userUUID, raw)
-	case wsTypeProposalReject:
-		h.handleProposalReject(ctx, conn, projectID, documentID, docUUID, userUUID, raw)
-	case wsTypeProposalGroupAccept:
-		h.handleProposalGroupAccept(ctx, conn, projectID, documentID, docUUID, userUUID, raw)
-	case wsTypeProposalRequestUpdate:
-		h.handleProposalRequestUpdate(ctx, conn, documentID, docUUID, raw)
 	}
 }
 

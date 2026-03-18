@@ -50,10 +50,3 @@ type Proposal struct {
 	CreatedAt         time.Time      `json:"created_at"`
 	DecidedAt         *time.Time     `json:"decided_at,omitempty"`
 }
-
-// ProposalDecision captures terminal transition metadata.
-type ProposalDecision struct {
-	ProposalID      uuid.UUID
-	DecidedByUserID uuid.UUID
-	DecidedAt       time.Time
-}

@@ -101,20 +101,6 @@ func (s *noopProposalService) CreateProposal(_ context.Context, _ collabSvc.Crea
 	return nil, nil
 }
 
-func (s *noopProposalService) AcceptProposal(_ context.Context, _ collabSvc.AcceptProposalRequest) (*collabSvc.AcceptProposalResult, error) {
-	return &collabSvc.AcceptProposalResult{}, nil
-}
-
-func (s *noopProposalService) RejectProposal(_ context.Context, _ collabSvc.RejectProposalRequest) (*collabSvc.RejectProposalResult, error) {
-	return &collabSvc.RejectProposalResult{}, nil
-}
-
-func (s *noopProposalService) GroupAccept(_ context.Context, _ collabSvc.GroupAcceptRequest) (*collabSvc.GroupAcceptResult, error) {
-	return &collabSvc.GroupAcceptResult{
-		Payload: collabModels.GroupAcceptResponsePayload{},
-	}, nil
-}
-
 type noopProposalStore struct{}
 
 func (s *noopProposalStore) Create(_ context.Context, _ *collabModels.Proposal) error {
@@ -152,11 +138,11 @@ func (s *noopProposalStore) ListByGroup(
 	return nil, nil
 }
 
-func (s *noopProposalStore) MarkAccepted(_ context.Context, _ collabModels.ProposalDecision) error {
+func (s *noopProposalStore) MarkAccepted(_ context.Context, _ uuid.UUID, _ uuid.UUID, _ time.Time) error {
 	return nil
 }
 
-func (s *noopProposalStore) MarkRejected(_ context.Context, _ collabModels.ProposalDecision) error {
+func (s *noopProposalStore) MarkRejected(_ context.Context, _ uuid.UUID, _ uuid.UUID, _ time.Time) error {
 	return nil
 }
 

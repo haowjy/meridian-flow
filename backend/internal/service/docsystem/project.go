@@ -94,7 +94,7 @@ func (s *projectService) ListProjects(ctx context.Context, userID string) ([]mod
 	return projects, nil
 }
 
-// UpdateProject updates a project's fields (name, system_prompt, auto_accept_proposals).
+// UpdateProject updates a project's fields (name, system_prompt).
 // Only provided fields are updated - nil fields are left unchanged.
 func (s *projectService) UpdateProject(ctx context.Context, id, userID string, req *docsysSvc.UpdateProjectRequest) (*models.Project, error) {
 	// Validate request
@@ -138,16 +138,6 @@ func (s *projectService) UpdateProject(ctx context.Context, id, userID string, r
 		}
 	}
 
-	// Update auto_accept_proposals if present (tri-state: absent=don't change, null=clear, value=set)
-	if req.AutoAcceptProposals.Present {
-		if req.AutoAcceptProposals.Value == nil {
-			project.AutoAcceptProposals = nil
-		} else {
-			autoAccept := *req.AutoAcceptProposals.Value
-			project.AutoAcceptProposals = &autoAccept
-		}
-	}
-
 	// Update preferences if provided (replaces entire preferences object)
 	if req.Preferences != nil {
 		project.Preferences = req.Preferences
@@ -164,7 +154,6 @@ func (s *projectService) UpdateProject(ctx context.Context, id, userID string, r
 		"name", project.Name,
 		"slug", project.Slug,
 		"has_system_prompt", project.SystemPrompt != nil,
-		"has_auto_accept_override", project.AutoAcceptProposals != nil,
 		"user_id", userID,
 	)
 

@@ -13,7 +13,6 @@ import (
 	"meridian/internal/auth"
 	"meridian/internal/capabilities"
 	"meridian/internal/config"
-	collabSvc "meridian/internal/domain/services/collab"
 	domainLLM "meridian/internal/domain/services/llm"
 	"meridian/internal/handler"
 	"meridian/internal/jobs"
@@ -197,7 +196,6 @@ func main() {
 	updateLogStore := postgresCollab.NewUpdateLogStore(repoConfig)
 	bookmarkStore := postgresCollab.NewBookmarkStore(repoConfig)
 	proposalStore := postgresCollab.NewProposalStore(repoConfig)
-	autoAcceptStore := postgresCollab.NewAutoAcceptStore(repoConfig)
 	collabSessionManager := serviceCollab.NewDocumentSessionManager(
 		collabStore,
 		updateLogStore,
@@ -211,20 +209,6 @@ func main() {
 		collabSessionManager,
 		collabStore, // also satisfies DocumentContentLoader for bootstrap
 	)
-	sizeStrategy := serviceCollab.NewSizeThresholdStrategy(51200)
-	densityStrategy := serviceCollab.NewRecentChangeDensityStrategy(proposalStore, 5, 60*time.Second, logger)
-	agentArbiter := serviceCollab.NewStrategyChainArbiter(
-		[]collabSvc.ArbiterStrategy{sizeStrategy, densityStrategy},
-		logger,
-	)
-	proposalService := serviceCollab.NewProposalService(
-		proposalStore,
-		txManager,
-		collabSessionManager,
-		autoAcceptStore,
-		agentArbiter,
-		cfg.CollabDefaultAutoAccept,
-	)
 
 	// Create collab document resolver and per-document WS handler early,
 	// needed by both the proposal broadcaster (for AI edits) and the collab handler.
@@ -236,6 +220,12 @@ func main() {
 		collabDocResolver,
 		logger,
 		cfg,
+	)
+	proposalService := serviceCollab.NewProposalService(
+		proposalStore,
+		txManager,
+		collabSessionManager,
+		collabDocumentHandler,
 	)
 
 	// Build mutation strategy for AI edits.
@@ -308,16 +298,6 @@ func main() {
 		projectConnectionRegistry,
 		collabDocumentHandler,
 	)
-	collabSnapshotHandler := handler.NewCollabSnapshotHandler(
-		collabStore,
-		collabStore,
-		collabStore, // also satisfies DocumentContentLoader for bootstrap
-		collabDocResolver,
-		txManager,
-		logger,
-		cfg,
-	)
-
 	// Start append-only compaction worker goroutine.
 	compactionWorker := serviceCollab.NewCompactionWorker(
 		updateLogStore,
@@ -400,13 +380,6 @@ func main() {
 	mux.HandleFunc("GET /ws/projects/{projectId}", collabHandler.ConnectProject)
 	mux.HandleFunc("GET /ws/documents/{documentId}", collabDocumentHandler.ConnectDocument)
 	mux.HandleFunc("PATCH /api/proposals/{id}/offset", collabHandler.SetAcceptedAtOffset)
-
-	// Snapshot routes (collab document version history)
-	mux.HandleFunc("POST /api/documents/{id}/snapshots", collabSnapshotHandler.CreateSnapshot)
-	mux.HandleFunc("GET /api/documents/{id}/snapshots", collabSnapshotHandler.ListSnapshots)
-	mux.HandleFunc("GET /api/documents/{id}/snapshots/{snapshotId}/content", collabSnapshotHandler.GetSnapshotContent)
-	mux.HandleFunc("POST /api/documents/{id}/snapshots/{snapshotId}/restore", collabSnapshotHandler.RestoreSnapshot)
-	mux.HandleFunc("DELETE /api/documents/{id}/snapshots/{snapshotId}", collabSnapshotHandler.DeleteSnapshot)
 
 	// Import routes
 	mux.HandleFunc("POST /api/import", importHandler.Merge)

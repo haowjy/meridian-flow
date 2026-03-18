@@ -109,8 +109,8 @@ type ProposalStore interface {
 		proposalGroupID uuid.UUID,
 		status *collabModels.ProposalStatus,
 	) ([]collabModels.Proposal, error)
-	MarkAccepted(ctx context.Context, decision collabModels.ProposalDecision) error
-	MarkRejected(ctx context.Context, decision collabModels.ProposalDecision) error
+	MarkAccepted(ctx context.Context, proposalID uuid.UUID, decidedByUserID uuid.UUID, decidedAt time.Time) error
+	MarkRejected(ctx context.Context, proposalID uuid.UUID, decidedByUserID uuid.UUID, decidedAt time.Time) error
 	UpsertStatus(ctx context.Context, proposalID uuid.UUID, status collabModels.ProposalStatus) error
 	SetAcceptedAtOffset(ctx context.Context, proposalID uuid.UUID, offset int, version int) error
 	// CountRecentByDocumentAndStatus counts proposals for a document with the given
@@ -131,19 +131,13 @@ type ProposalRuntime interface {
 	GetStateSnapshot(ctx context.Context, documentID uuid.UUID) ([]byte, bool, error)
 	// GetCurrentState returns the current Yjs state for a document. Unlike GetStateSnapshot,
 	// this always returns state — from the active in-memory session if one exists, otherwise
-	// by loading from persisted storage. Used by GroupAccept to compose updates safely.
+	// by loading from persisted storage.
 	GetCurrentState(ctx context.Context, documentID uuid.UUID) ([]byte, error)
 }
 
-// AutoAcceptPolicyInputs captures project/user tri-state values for proposal auto-accept.
-type AutoAcceptPolicyInputs struct {
-	Project *bool
-	User    *bool
-}
-
-// AutoAcceptPolicyStore resolves project/user auto-accept tri-state inputs.
-type AutoAcceptPolicyStore interface {
-	GetPolicyInputs(ctx context.Context, documentID uuid.UUID, userID uuid.UUID) (*AutoAcceptPolicyInputs, error)
+// OwnerTabPresenceTracker reports whether a document has at least one connected owner tab.
+type OwnerTabPresenceTracker interface {
+	HasOwnerTabs(documentID uuid.UUID) bool
 }
 
 // ProjectedStateBuilder builds Yjs state bytes that include pending proposals
@@ -151,14 +145,6 @@ type AutoAcceptPolicyStore interface {
 // the converter operates on the same content as pending proposals.
 type ProjectedStateBuilder interface {
 	BuildProjectedState(ctx context.Context, documentID uuid.UUID, userID uuid.UUID) ([]byte, error)
-}
-
-// ProposalMutationIntent describes what should be broadcast after a successful proposal mutation.
-type ProposalMutationIntent struct {
-	DocumentID uuid.UUID
-	ProposalID uuid.UUID
-	Status     collabModels.ProposalStatus
-	YjsUpdate  []byte
 }
 
 // CreateProposalRequest captures proposal-creation inputs from internal producers.
@@ -179,97 +165,7 @@ type CreateProposalRequest struct {
 	AgentAutoAccept   *bool
 }
 
-// AcceptProposalRequest captures writer proposal-accept command inputs.
-type AcceptProposalRequest struct {
-	ProposalID        uuid.UUID
-	UserID            uuid.UUID
-	IdempotencyKey    string
-	RequestHash       string
-	IdempotencyTTL    time.Duration
-	TransactionOrigin string
-}
-
-// AcceptProposalResult captures accept response and broadcast intents.
-type AcceptProposalResult struct {
-	Payload   collabModels.ProposalAcceptResponsePayload
-	IsReplay  bool
-	Mutations []ProposalMutationIntent
-}
-
-// RejectProposalRequest captures writer proposal-reject command inputs.
-type RejectProposalRequest struct {
-	ProposalID uuid.UUID
-	UserID     uuid.UUID
-}
-
-// RejectProposalResult captures reject output and broadcast intents.
-type RejectProposalResult struct {
-	Noop      bool
-	Mutations []ProposalMutationIntent
-}
-
-// GroupAcceptRequest captures grouped proposal-accept command inputs.
-type GroupAcceptRequest struct {
-	DocumentID        uuid.UUID
-	ProposalGroupID   uuid.UUID
-	UserID            uuid.UUID
-	IdempotencyKey    string
-	RequestHash       string
-	IdempotencyTTL    time.Duration
-	TransactionOrigin string
-}
-
-// GroupAcceptResult captures group-accept outcomes and broadcast intents.
-type GroupAcceptResult struct {
-	Payload   collabModels.GroupAcceptResponsePayload
-	IsReplay  bool
-	Mutations []ProposalMutationIntent
-}
-
-// ArbiterVerdict is the arbiter's final ruling on whether auto-accept should proceed.
-type ArbiterVerdict string
-
-const (
-	// ArbiterVerdictPassThrough means the arbiter has no opinion; defer to the baseline.
-	ArbiterVerdictPassThrough ArbiterVerdict = "pass_through"
-	// ArbiterVerdictAllow means the arbiter explicitly approves auto-accept.
-	ArbiterVerdictAllow ArbiterVerdict = "allow"
-	// ArbiterVerdictRequireReview means the arbiter overrides auto-accept -> proposal needs writer review.
-	ArbiterVerdictRequireReview ArbiterVerdict = "require_review"
-)
-
-// ArbiterInput provides the arbiter with proposal metadata and the resolved auto-accept baseline.
-type ArbiterInput struct {
-	DocumentID         uuid.UUID
-	Source             collabModels.ProposalSource
-	ProducerAgentType  string
-	YjsUpdateSize      int
-	BaselineAutoAccept bool
-}
-
-// ArbiterDecision captures the arbiter's output for a single proposal evaluation.
-type ArbiterDecision struct {
-	Verdict ArbiterVerdict
-	Reason  string // human-readable explanation (logged, not user-facing)
-}
-
-// ArbiterStrategy is a single evaluation rule in the arbiter chain.
-// Strategies return PassThrough to defer to the next strategy in the chain.
-type ArbiterStrategy interface {
-	Name() string
-	Evaluate(ctx context.Context, input ArbiterInput) ArbiterDecision
-}
-
-// AgentArbiter evaluates AI proposals at creation time and can override auto-accept.
-// Implementations must be safe for concurrent use.
-type AgentArbiter interface {
-	Evaluate(ctx context.Context, input ArbiterInput) ArbiterDecision
-}
-
 // ProposalService executes proposal lifecycle operations.
 type ProposalService interface {
 	CreateProposal(ctx context.Context, req CreateProposalRequest) (*collabModels.Proposal, error)
-	AcceptProposal(ctx context.Context, req AcceptProposalRequest) (*AcceptProposalResult, error)
-	RejectProposal(ctx context.Context, req RejectProposalRequest) (*RejectProposalResult, error)
-	GroupAccept(ctx context.Context, req GroupAcceptRequest) (*GroupAcceptResult, error)
 }
