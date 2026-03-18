@@ -389,7 +389,7 @@ func (h *CollabSnapshotHandler) checkOwnership(w http.ResponseWriter, r *http.Re
 // bootstrapYjsState creates initial Yjs state from the document's content column
 // and persists it. This establishes CRDT lineage for documents that were created
 // via REST but never connected via WebSocket. Same pattern as session_manager.loadState
-// and AIContentProjector.bootstrapFromContent.
+// and ProjectedStateBuilderService.bootstrapFromContent.
 func (h *CollabSnapshotHandler) bootstrapYjsState(ctx context.Context, docID string) (state []byte, err error) {
 	// Guard Yjs operations from panics.
 	defer func() {

@@ -61,6 +61,16 @@ func (s *CollabProposalStrategy) Apply(ctx context.Context, input MutationInput)
 		return nil, fmt.Errorf("invalid document ID: %w", err)
 	}
 
+	// Extract thread context for provenance.
+	threadID, turnID, userID, ok := ExtractThreadContext(ctx)
+	if !ok {
+		// Default to empty strings — don't fail the edit.
+		threadID = ""
+		turnID = ""
+		userID = input.UserID
+	}
+	userUUID, _ := uuid.Parse(userID)
+
 	// Build targeted edit info when OldContent is provided (str_replace path).
 	// This produces a positional CRDT update instead of full-doc replacement,
 	// preventing duplicate content when multiple str_replace calls hit the same turn.
@@ -90,7 +100,7 @@ func (s *CollabProposalStrategy) Apply(ctx context.Context, input MutationInput)
 	// operates on the same content the text editor sees. This fixes both:
 	// - Bootstrap panic: empty yjs_state is bootstrapped from markdown content
 	// - Position mismatch: edit positions align with projected content, not base
-	projectedState, err := s.projectedStateBuilder.BuildProjectedState(ctx, docUUID)
+	projectedState, err := s.projectedStateBuilder.BuildProjectedState(ctx, docUUID, userUUID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build projected state: %w", err)
 	}
@@ -108,18 +118,8 @@ func (s *CollabProposalStrategy) Apply(ctx context.Context, input MutationInput)
 		}, nil
 	}
 
-	// Extract thread context for provenance (Task 2)
-	threadID, turnID, userID, ok := ExtractThreadContext(ctx)
-	if !ok {
-		// Default to empty strings — don't fail the edit
-		threadID = ""
-		turnID = ""
-		userID = input.UserID
-	}
-
 	// Parse provenance UUIDs
 	threadUUID, _ := uuid.Parse(threadID)
-	userUUID, _ := uuid.Parse(userID)
 
 	var turnUUID *uuid.UUID
 	if turnID != "" {

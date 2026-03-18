@@ -438,6 +438,44 @@ func TestTextToUpdate_PositionalEdit_NegativePosition(t *testing.T) {
 	}
 }
 
+func TestValidateYjsUpdate_AllowsContentOnlyMutation(t *testing.T) {
+	baseState := buildDocState(t, "hello")
+	update, err := TextToUpdate(baseState, "hello world", nil)
+	if err != nil {
+		t.Fatalf("TextToUpdate: %v", err)
+	}
+
+	if err := ValidateYjsUpdate(baseState, update); err != nil {
+		t.Fatalf("expected validation success, got %v", err)
+	}
+}
+
+func TestValidateYjsUpdate_RejectsProposalStatusMapMutation(t *testing.T) {
+	baseState := buildDocState(t, "hello")
+	update := buildStatusMapMutationUpdate(t, baseState)
+
+	err := ValidateYjsUpdate(baseState, update)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !errors.Is(err, ErrInvalidYjsUpdateMutation) {
+		t.Fatalf("expected ErrInvalidYjsUpdateMutation, got %v", err)
+	}
+}
+
+func TestValidateYjsUpdate_RejectsCommentsArrayMutation(t *testing.T) {
+	baseState := buildDocState(t, "hello")
+	update := buildCommentsArrayMutationUpdate(t, baseState)
+
+	err := ValidateYjsUpdate(baseState, update)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !errors.Is(err, ErrInvalidYjsUpdateMutation) {
+		t.Fatalf("expected ErrInvalidYjsUpdateMutation, got %v", err)
+	}
+}
+
 func TestFindEditPosition(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -483,4 +521,28 @@ func TestUtf16Len(t *testing.T) {
 			}
 		})
 	}
+}
+
+func buildStatusMapMutationUpdate(t *testing.T, baseState []byte) []byte {
+	t.Helper()
+	doc := ycrdt.NewDoc("status-map-update", true, ycrdt.DefaultGCFilter, nil, false)
+	ycrdt.ApplyUpdate(doc, baseState, "base")
+	statusMap := doc.GetMap("_proposal_status").(*ycrdt.YMap)
+	stateVector := ycrdt.EncodeStateVector(doc, nil, ycrdt.NewUpdateEncoderV1())
+	doc.Transact(func(_ *ycrdt.Transaction) {
+		statusMap.Set("proposal-1", "accepted")
+	}, nil)
+	return ycrdt.EncodeStateAsUpdate(doc, stateVector)
+}
+
+func buildCommentsArrayMutationUpdate(t *testing.T, baseState []byte) []byte {
+	t.Helper()
+	doc := ycrdt.NewDoc("comments-array-update", true, ycrdt.DefaultGCFilter, nil, false)
+	ycrdt.ApplyUpdate(doc, baseState, "base")
+	comments := doc.GetArray("_comments")
+	stateVector := ycrdt.EncodeStateVector(doc, nil, ycrdt.NewUpdateEncoderV1())
+	doc.Transact(func(_ *ycrdt.Transaction) {
+		comments.Push([]interface{}{"comment"})
+	}, nil)
+	return ycrdt.EncodeStateAsUpdate(doc, stateVector)
 }

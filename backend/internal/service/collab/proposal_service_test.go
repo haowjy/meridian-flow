@@ -2,7 +2,6 @@ package collab
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -19,13 +18,11 @@ import (
 	collabSvc "meridian/internal/domain/services/collab"
 )
 
-func TestProposalServiceAcceptProposal_IdempotencyReplayAndConflict(t *testing.T) {
+func TestProposalServiceAcceptProposal_SecondAcceptFailsWhenAlreadyAccepted(t *testing.T) {
 	ctx := context.Background()
 	stores := newFakeProposalStore()
-	idempotency := newFakeIdempotencyStore()
 	runtime := newFakeProposalRuntime(nil)
 	autoAccept := &fakeAutoAcceptPolicyStore{}
-	projector := &fakeAIContentProjector{}
 
 	proposal := collabModels.Proposal{
 		ID:              uuid.New(),
@@ -37,7 +34,7 @@ func TestProposalServiceAcceptProposal_IdempotencyReplayAndConflict(t *testing.T
 	}
 	stores.put(proposal)
 
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
+	svc := NewProposalService(stores, fakeTxManager{}, runtime, autoAccept, NoOpArbiter, false)
 	userID := uuid.New()
 	req := collabSvc.AcceptProposalRequest{
 		ProposalID:     proposal.ID,
@@ -59,45 +56,24 @@ func TestProposalServiceAcceptProposal_IdempotencyReplayAndConflict(t *testing.T
 	if runtime.callCount() != 1 {
 		t.Fatalf("expected one runtime apply, got %d", runtime.callCount())
 	}
-	if projector.count() != 1 {
-		t.Fatalf("expected one ai_content recompute, got %d", projector.count())
-	}
 
-	second, err := svc.AcceptProposal(ctx, req)
-	if err != nil {
-		t.Fatalf("accept replay: %v", err)
+	_, err = svc.AcceptProposal(ctx, req)
+	if err == nil {
+		t.Fatal("expected second accept to fail")
 	}
-	if !second.IsReplay {
-		t.Fatalf("expected replay call to be marked replay")
+	var validationErr *domain.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected validation error, got %T", err)
 	}
 	if runtime.callCount() != 1 {
-		t.Fatalf("expected replay to avoid extra applies, got %d applies", runtime.callCount())
-	}
-	if projector.count() != 1 {
-		t.Fatalf("expected replay to avoid extra recomputes, got %d", projector.count())
-	}
-
-	_, err = svc.AcceptProposal(ctx, collabSvc.AcceptProposalRequest{
-		ProposalID:     proposal.ID,
-		UserID:         userID,
-		IdempotencyKey: req.IdempotencyKey,
-		RequestHash:    "hash-b",
-	})
-	if err == nil {
-		t.Fatal("expected idempotency conflict error")
-	}
-	var conflictErr *domain.ConflictError
-	if !errors.As(err, &conflictErr) {
-		t.Fatalf("expected conflict error, got %T", err)
+		t.Fatalf("expected second accept to avoid extra runtime apply, got %d", runtime.callCount())
 	}
 }
 
 func TestProposalServiceAcceptProposal_SerializesSameDocument(t *testing.T) {
 	ctx := context.Background()
 	stores := newFakeProposalStore()
-	idempotency := newFakeIdempotencyStore()
 	autoAccept := &fakeAutoAcceptPolicyStore{}
-	projector := &fakeAIContentProjector{}
 	runtime := newFakeProposalRuntime(nil)
 
 	documentID := uuid.New()
@@ -133,7 +109,7 @@ func TestProposalServiceAcceptProposal_SerializesSameDocument(t *testing.T) {
 		}
 	}
 
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
+	svc := NewProposalService(stores, fakeTxManager{}, runtime, autoAccept, NoOpArbiter, false)
 	errCh := make(chan error, 2)
 
 	go func() {
@@ -189,9 +165,7 @@ func TestProposalServiceAcceptProposal_SerializesSameDocument(t *testing.T) {
 func TestProposalServiceAcceptProposal_DifferentDocumentsProceedIndependently(t *testing.T) {
 	ctx := context.Background()
 	stores := newFakeProposalStore()
-	idempotency := newFakeIdempotencyStore()
 	autoAccept := &fakeAutoAcceptPolicyStore{}
-	projector := &fakeAIContentProjector{}
 	runtime := newFakeProposalRuntime(nil)
 
 	firstProposal := collabModels.Proposal{
@@ -226,7 +200,7 @@ func TestProposalServiceAcceptProposal_DifferentDocumentsProceedIndependently(t 
 		}
 	}
 
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
+	svc := NewProposalService(stores, fakeTxManager{}, runtime, autoAccept, NoOpArbiter, false)
 	errCh := make(chan error, 2)
 
 	go func() {
@@ -282,10 +256,8 @@ func TestProposalServiceAcceptProposal_DifferentDocumentsProceedIndependently(t 
 func TestProposalServiceRejectProposal_TerminalBehavior(t *testing.T) {
 	ctx := context.Background()
 	stores := newFakeProposalStore()
-	idempotency := newFakeIdempotencyStore()
 	runtime := newFakeProposalRuntime(nil)
 	autoAccept := &fakeAutoAcceptPolicyStore{}
-	projector := &fakeAIContentProjector{}
 
 	pending := collabModels.Proposal{
 		ID:              uuid.New(),
@@ -306,7 +278,7 @@ func TestProposalServiceRejectProposal_TerminalBehavior(t *testing.T) {
 	stores.put(pending)
 	stores.put(accepted)
 
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
+	svc := NewProposalService(stores, fakeTxManager{}, runtime, autoAccept, NoOpArbiter, false)
 	userID := uuid.New()
 
 	first, err := svc.RejectProposal(ctx, collabSvc.RejectProposalRequest{
@@ -322,9 +294,6 @@ func TestProposalServiceRejectProposal_TerminalBehavior(t *testing.T) {
 	if len(first.Mutations) != 1 {
 		t.Fatalf("expected one mutation from first reject, got %d", len(first.Mutations))
 	}
-	if projector.count() != 1 {
-		t.Fatalf("expected one recompute for first reject, got %d", projector.count())
-	}
 
 	second, err := svc.RejectProposal(ctx, collabSvc.RejectProposalRequest{
 		ProposalID: pending.ID,
@@ -339,9 +308,6 @@ func TestProposalServiceRejectProposal_TerminalBehavior(t *testing.T) {
 	if len(second.Mutations) != 0 {
 		t.Fatalf("expected no mutation on noop reject, got %d", len(second.Mutations))
 	}
-	if projector.count() != 1 {
-		t.Fatalf("expected noop reject to avoid recompute, got %d", projector.count())
-	}
 
 	_, err = svc.RejectProposal(ctx, collabSvc.RejectProposalRequest{
 		ProposalID: accepted.ID,
@@ -352,12 +318,10 @@ func TestProposalServiceRejectProposal_TerminalBehavior(t *testing.T) {
 	}
 }
 
-func TestProposalServiceGroupAccept_DeterministicOutcomesAndReplay(t *testing.T) {
+func TestProposalServiceGroupAccept_DeterministicOutcomesAndSecondCallSkips(t *testing.T) {
 	ctx := context.Background()
 	stores := newFakeProposalStore()
-	idempotency := newFakeIdempotencyStore()
 	autoAccept := &fakeAutoAcceptPolicyStore{}
-	projector := &fakeAIContentProjector{}
 
 	groupID := uuid.New()
 	docID := uuid.New()
@@ -424,7 +388,7 @@ func TestProposalServiceGroupAccept_DeterministicOutcomesAndReplay(t *testing.T)
 	stores.markAcceptedErrs[p2.ID] = domain.NewValidationError("already decided")
 
 	runtime := newFakeProposalRuntime(nil)
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
+	svc := NewProposalService(stores, fakeTxManager{}, runtime, autoAccept, NoOpArbiter, false)
 
 	userID := uuid.New()
 	req := collabSvc.GroupAcceptRequest{
@@ -438,9 +402,6 @@ func TestProposalServiceGroupAccept_DeterministicOutcomesAndReplay(t *testing.T)
 	first, err := svc.GroupAccept(ctx, req)
 	if err != nil {
 		t.Fatalf("group accept: %v", err)
-	}
-	if first.IsReplay {
-		t.Fatalf("expected first group accept to not be replay")
 	}
 
 	if len(first.Payload.Outcomes) != 3 {
@@ -463,44 +424,28 @@ func TestProposalServiceGroupAccept_DeterministicOutcomesAndReplay(t *testing.T)
 	if len(first.Mutations) != 2 {
 		t.Fatalf("expected only accepted proposals to emit mutations, got %d", len(first.Mutations))
 	}
-	if projector.count() != 1 {
-		t.Fatalf("expected one recompute for group accept, got %d", projector.count())
-	}
 
 	second, err := svc.GroupAccept(ctx, req)
 	if err != nil {
-		t.Fatalf("group accept replay: %v", err)
+		t.Fatalf("second group accept: %v", err)
 	}
-	if !second.IsReplay {
-		t.Fatalf("expected second group accept to replay")
+	if second.IsReplay {
+		t.Fatalf("expected second group accept to execute, not replay")
 	}
-	// Composite approach: one runtime apply for the composite update (not per-proposal).
-	if runtime.callCount() != 1 {
-		t.Fatalf("expected one composite runtime apply, got %d calls", runtime.callCount())
+	if len(second.Mutations) != 0 {
+		t.Fatalf("expected no mutations on second group accept, got %d", len(second.Mutations))
 	}
-	if projector.count() != 1 {
-		t.Fatalf("expected replay to avoid extra recomputes, got %d", projector.count())
-	}
-
-	_, err = svc.GroupAccept(ctx, collabSvc.GroupAcceptRequest{
-		DocumentID:      docID,
-		ProposalGroupID: groupID,
-		UserID:          userID,
-		IdempotencyKey:  req.IdempotencyKey,
-		RequestHash:     "group-hash-other",
-	})
-	if err == nil {
-		t.Fatal("expected idempotency conflict on group accept hash mismatch")
+	// Without idempotency replay, the second call executes again for still-pending rows.
+	if runtime.callCount() != 2 {
+		t.Fatalf("expected two runtime applies across two calls, got %d", runtime.callCount())
 	}
 }
 
 func TestProposalServiceGroupAccept_SkipsDifferentDocumentInGroup(t *testing.T) {
 	ctx := context.Background()
 	stores := newFakeProposalStore()
-	idempotency := newFakeIdempotencyStore()
 	runtime := newFakeProposalRuntime(nil)
 	autoAccept := &fakeAutoAcceptPolicyStore{}
-	projector := &fakeAIContentProjector{}
 
 	groupID := uuid.New()
 	targetDocID := uuid.New()
@@ -535,7 +480,7 @@ func TestProposalServiceGroupAccept_SkipsDifferentDocumentInGroup(t *testing.T) 
 	stores.put(p1)
 	stores.put(p2)
 
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
+	svc := NewProposalService(stores, fakeTxManager{}, runtime, autoAccept, NoOpArbiter, false)
 	req := collabSvc.GroupAcceptRequest{
 		DocumentID:      targetDocID,
 		ProposalGroupID: groupID,
@@ -569,18 +514,13 @@ func TestProposalServiceGroupAccept_SkipsDifferentDocumentInGroup(t *testing.T) 
 	if runtime.callCount() != 1 {
 		t.Fatalf("expected one runtime apply, got %d", runtime.callCount())
 	}
-	if projector.count() != 1 {
-		t.Fatalf("expected one recompute for one accepted proposal, got %d", projector.count())
-	}
 }
 
 func TestProposalServiceGroupAccept_TransientMarkAcceptedErrorAborts(t *testing.T) {
 	ctx := context.Background()
 	stores := newFakeProposalStore()
-	idempotency := newFakeIdempotencyStore()
 	runtime := newFakeProposalRuntime(nil)
 	autoAccept := &fakeAutoAcceptPolicyStore{}
-	projector := &fakeAIContentProjector{}
 
 	groupID := uuid.New()
 	docID := uuid.New()
@@ -605,7 +545,7 @@ func TestProposalServiceGroupAccept_TransientMarkAcceptedErrorAborts(t *testing.
 
 	expectedErr := errors.New("db connection dropped")
 	stores.markAcceptedErrs[proposal.ID] = expectedErr
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
+	svc := NewProposalService(stores, fakeTxManager{}, runtime, autoAccept, NoOpArbiter, false)
 
 	_, err := svc.GroupAccept(ctx, collabSvc.GroupAcceptRequest{
 		DocumentID:      docID,
@@ -619,9 +559,6 @@ func TestProposalServiceGroupAccept_TransientMarkAcceptedErrorAborts(t *testing.
 	}
 	if !errors.Is(err, expectedErr) {
 		t.Fatalf("expected wrapped transient error, got %v", err)
-	}
-	if projector.count() != 0 {
-		t.Fatalf("expected transient error to avoid recompute, got %d", projector.count())
 	}
 }
 
@@ -689,9 +626,7 @@ func TestProposalServiceCreateProposal_AutoAcceptCascade(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			stores := newFakeProposalStore()
-			idempotency := newFakeIdempotencyStore()
 			runtime := newFakeProposalRuntime(nil)
-			projector := &fakeAIContentProjector{}
 			autoAccept := &fakeAutoAcceptPolicyStore{
 				inputs: &collabSvc.AutoAcceptPolicyInputs{
 					Project: tc.projectValue,
@@ -699,7 +634,7 @@ func TestProposalServiceCreateProposal_AutoAcceptCascade(t *testing.T) {
 				},
 			}
 
-			svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, tc.systemDefault)
+			svc := NewProposalService(stores, fakeTxManager{}, runtime, autoAccept, NoOpArbiter, tc.systemDefault)
 			created, err := svc.CreateProposal(ctx, collabSvc.CreateProposalRequest{
 				DocumentID:        docID,
 				Source:            collabModels.ProposalSourceAI,
@@ -730,18 +665,12 @@ func TestProposalServiceCreateProposal_AutoAcceptCascade(t *testing.T) {
 				if runtime.callCount() != 1 {
 					t.Fatalf("expected one runtime apply for auto-accept, got %d", runtime.callCount())
 				}
-				if projector.count() != 2 {
-					t.Fatalf("expected two recomputes for auto-accept, got %d", projector.count())
-				}
 			} else {
 				if stored.Status != collabModels.ProposalStatusPending {
 					t.Fatalf("expected pending status, got %s", stored.Status)
 				}
 				if runtime.callCount() != 0 {
 					t.Fatalf("expected no runtime apply, got %d", runtime.callCount())
-				}
-				if projector.count() != 1 {
-					t.Fatalf("expected one recompute for non-auto-accept create, got %d", projector.count())
 				}
 			}
 		})
@@ -754,12 +683,10 @@ func TestProposalServiceCreateProposal_QueuedAIProposalCap(t *testing.T) {
 	userID := uuid.New()
 
 	stores := newFakeProposalStore()
-	idempotency := newFakeIdempotencyStore()
 	runtime := newFakeProposalRuntime(nil)
 	autoAccept := &fakeAutoAcceptPolicyStore{}
-	projector := &fakeAIContentProjector{}
 
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
+	svc := NewProposalService(stores, fakeTxManager{}, runtime, autoAccept, NoOpArbiter, false)
 	createReq := collabSvc.CreateProposalRequest{
 		DocumentID:        docID,
 		Source:            collabModels.ProposalSourceAI,
@@ -804,9 +731,7 @@ func TestProposalServiceCreateProposal_QueuedAIProposalCap(t *testing.T) {
 func TestProposalServiceAcceptProposal_PendingCapAndRecovery(t *testing.T) {
 	ctx := context.Background()
 	stores := newFakeProposalStore()
-	idempotency := newFakeIdempotencyStore()
 	autoAccept := &fakeAutoAcceptPolicyStore{}
-	projector := &fakeAIContentProjector{}
 	runtime := newFakeProposalRuntime(nil)
 
 	docID := uuid.New()
@@ -836,7 +761,7 @@ func TestProposalServiceAcceptProposal_PendingCapAndRecovery(t *testing.T) {
 		})
 	}
 
-	svcIface := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
+	svcIface := NewProposalService(stores, fakeTxManager{}, runtime, autoAccept, NoOpArbiter, false)
 	svc := svcIface.(*ProposalService)
 
 	errCh := make(chan error, maxPendingAcceptOperationsPerDocument)
@@ -913,12 +838,10 @@ func TestProposalServiceAcceptProposal_PendingCapAndRecovery(t *testing.T) {
 func TestProposalServiceCreateProposal_RejectsOversizedYjsUpdate(t *testing.T) {
 	ctx := context.Background()
 	stores := newFakeProposalStore()
-	idempotency := newFakeIdempotencyStore()
 	runtime := newFakeProposalRuntime(nil)
 	autoAccept := &fakeAutoAcceptPolicyStore{}
-	projector := &fakeAIContentProjector{}
 
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, NoOpArbiter, false)
+	svc := NewProposalService(stores, fakeTxManager{}, runtime, autoAccept, NoOpArbiter, false)
 	_, err := svc.CreateProposal(ctx, collabSvc.CreateProposalRequest{
 		DocumentID:        uuid.New(),
 		Source:            collabModels.ProposalSourceAI,
@@ -1142,70 +1065,6 @@ func (s *fakeProposalStore) CountRecentByDocumentAndStatus(
 	return 0, nil
 }
 
-type fakeIdempotencyStore struct {
-	mu      sync.Mutex
-	records map[string]collabModels.IdempotencyRecord
-}
-
-func newFakeIdempotencyStore() *fakeIdempotencyStore {
-	return &fakeIdempotencyStore{
-		records: map[string]collabModels.IdempotencyRecord{},
-	}
-}
-
-func (s *fakeIdempotencyStore) GetByUserAndKey(
-	_ context.Context,
-	userID uuid.UUID,
-	idempotencyKey string,
-) (*collabModels.IdempotencyRecord, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	record, ok := s.records[s.key(userID, idempotencyKey)]
-	if !ok {
-		return nil, nil
-	}
-	copy := record
-	return &copy, nil
-}
-
-func (s *fakeIdempotencyStore) Create(_ context.Context, record *collabModels.IdempotencyRecord) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	key := s.key(record.UserID, record.IdempotencyKey)
-	if _, exists := s.records[key]; exists {
-		return domain.NewConflictError("idempotency_key", record.IdempotencyKey, "idempotency key already exists")
-	}
-	if record.ID == uuid.Nil {
-		record.ID = uuid.New()
-	}
-	if record.CreatedAt.IsZero() {
-		record.CreatedAt = time.Now().UTC()
-	}
-	copy := *record
-	if record.ResponsePayload != nil {
-		copy.ResponsePayload = append([]byte{}, record.ResponsePayload...)
-	}
-	s.records[key] = copy
-	return nil
-}
-
-func (s *fakeIdempotencyStore) DeleteExpired(_ context.Context, now time.Time) (int64, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var deleted int64
-	for key, record := range s.records {
-		if record.ExpiresAt.Before(now) {
-			delete(s.records, key)
-			deleted++
-		}
-	}
-	return deleted, nil
-}
-
-func (s *fakeIdempotencyStore) key(userID uuid.UUID, idempotencyKey string) string {
-	return userID.String() + "|" + idempotencyKey
-}
-
 type fakeProposalRuntime struct {
 	mu            sync.Mutex
 	failures      map[string]error
@@ -1292,24 +1151,6 @@ func (s *fakeAutoAcceptPolicyStore) GetPolicyInputs(
 	return s.inputs, nil
 }
 
-type fakeAIContentProjector struct {
-	mu          sync.Mutex
-	documentIDs []uuid.UUID
-}
-
-func (p *fakeAIContentProjector) Recompute(_ context.Context, documentID uuid.UUID) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.documentIDs = append(p.documentIDs, documentID)
-	return nil
-}
-
-func (p *fakeAIContentProjector) count() int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return len(p.documentIDs)
-}
-
 func boolPtr(v bool) *bool {
 	return &v
 }
@@ -1337,9 +1178,7 @@ func (a *panicArbiter) Evaluate(_ context.Context, _ collabSvc.ArbiterInput) col
 func TestProposalServiceCreateProposal_ArbiterForcesReview(t *testing.T) {
 	ctx := context.Background()
 	stores := newFakeProposalStore()
-	idempotency := newFakeIdempotencyStore()
 	runtime := newFakeProposalRuntime(nil)
-	projector := &fakeAIContentProjector{}
 
 	// Baseline auto-accept = true (agent override), but arbiter forces review.
 	arbiter := &fakeArbiter{
@@ -1350,7 +1189,7 @@ func TestProposalServiceCreateProposal_ArbiterForcesReview(t *testing.T) {
 	}
 	autoAccept := &fakeAutoAcceptPolicyStore{}
 
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, arbiter, true)
+	svc := NewProposalService(stores, fakeTxManager{}, runtime, autoAccept, arbiter, true)
 	created, err := svc.CreateProposal(ctx, collabSvc.CreateProposalRequest{
 		DocumentID:        uuid.New(),
 		Source:            collabModels.ProposalSourceAI,
@@ -1378,9 +1217,7 @@ func TestProposalServiceCreateProposal_ArbiterForcesReview(t *testing.T) {
 func TestProposalServiceCreateProposal_ArbiterPassThroughPreservesAutoAccept(t *testing.T) {
 	ctx := context.Background()
 	stores := newFakeProposalStore()
-	idempotency := newFakeIdempotencyStore()
 	runtime := newFakeProposalRuntime(nil)
-	projector := &fakeAIContentProjector{}
 	arbiter := &fakeArbiter{
 		decision: collabSvc.ArbiterDecision{
 			Verdict: collabSvc.ArbiterVerdictPassThrough,
@@ -1389,7 +1226,7 @@ func TestProposalServiceCreateProposal_ArbiterPassThroughPreservesAutoAccept(t *
 	}
 	autoAccept := &fakeAutoAcceptPolicyStore{}
 
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, arbiter, true)
+	svc := NewProposalService(stores, fakeTxManager{}, runtime, autoAccept, arbiter, true)
 	created, err := svc.CreateProposal(ctx, collabSvc.CreateProposalRequest{
 		DocumentID:        uuid.New(),
 		Source:            collabModels.ProposalSourceAI,
@@ -1416,9 +1253,7 @@ func TestProposalServiceCreateProposal_ArbiterPassThroughPreservesAutoAccept(t *
 func TestProposalServiceCreateProposal_ArbiterNotCalledForNonAI(t *testing.T) {
 	ctx := context.Background()
 	stores := newFakeProposalStore()
-	idempotency := newFakeIdempotencyStore()
 	runtime := newFakeProposalRuntime(nil)
-	projector := &fakeAIContentProjector{}
 	arbiter := &fakeArbiter{
 		decision: collabSvc.ArbiterDecision{
 			Verdict: collabSvc.ArbiterVerdictRequireReview,
@@ -1427,7 +1262,7 @@ func TestProposalServiceCreateProposal_ArbiterNotCalledForNonAI(t *testing.T) {
 	}
 	autoAccept := &fakeAutoAcceptPolicyStore{}
 
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, arbiter, true)
+	svc := NewProposalService(stores, fakeTxManager{}, runtime, autoAccept, arbiter, true)
 	created, err := svc.CreateProposal(ctx, collabSvc.CreateProposalRequest{
 		DocumentID:        uuid.New(),
 		Source:            collabModels.ProposalSourceUserSuggestion,
@@ -1452,9 +1287,7 @@ func TestProposalServiceCreateProposal_ArbiterNotCalledForNonAI(t *testing.T) {
 func TestProposalServiceCreateProposal_ArbiterNotCalledWhenBaselineReview(t *testing.T) {
 	ctx := context.Background()
 	stores := newFakeProposalStore()
-	idempotency := newFakeIdempotencyStore()
 	runtime := newFakeProposalRuntime(nil)
-	projector := &fakeAIContentProjector{}
 	arbiter := &fakeArbiter{
 		decision: collabSvc.ArbiterDecision{
 			Verdict: collabSvc.ArbiterVerdictAllow,
@@ -1464,7 +1297,7 @@ func TestProposalServiceCreateProposal_ArbiterNotCalledWhenBaselineReview(t *tes
 	autoAccept := &fakeAutoAcceptPolicyStore{}
 
 	// System default = false, agent override = false -> baseline is already review-required.
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, arbiter, false)
+	svc := NewProposalService(stores, fakeTxManager{}, runtime, autoAccept, arbiter, false)
 	created, err := svc.CreateProposal(ctx, collabSvc.CreateProposalRequest{
 		DocumentID:        uuid.New(),
 		Source:            collabModels.ProposalSourceAI,
@@ -1490,12 +1323,10 @@ func TestProposalServiceCreateProposal_ArbiterNotCalledWhenBaselineReview(t *tes
 func TestProposalServiceCreateProposal_ArbiterPanicDegradesToReview(t *testing.T) {
 	ctx := context.Background()
 	stores := newFakeProposalStore()
-	idempotency := newFakeIdempotencyStore()
 	runtime := newFakeProposalRuntime(nil)
-	projector := &fakeAIContentProjector{}
 	autoAccept := &fakeAutoAcceptPolicyStore{}
 
-	svc := NewProposalService(stores, idempotency, fakeTxManager{}, runtime, autoAccept, projector, &panicArbiter{}, true)
+	svc := NewProposalService(stores, fakeTxManager{}, runtime, autoAccept, &panicArbiter{}, true)
 	created, err := svc.CreateProposal(ctx, collabSvc.CreateProposalRequest{
 		DocumentID:        uuid.New(),
 		Source:            collabModels.ProposalSourceAI,
@@ -1727,37 +1558,5 @@ func TestComposeProposalUpdates_EmptyBaseState(t *testing.T) {
 	resultText := applyAndRead(t, nil, composite)
 	if resultText != "new content" {
 		t.Fatalf("expected %q, got %q", "new content", resultText)
-	}
-}
-
-func TestFakeIdempotencyStorePayloadRoundTrip(t *testing.T) {
-	store := newFakeIdempotencyStore()
-	userID := uuid.New()
-
-	payload, err := json.Marshal(collabModels.ProposalAcceptResponsePayload{ProposalID: uuid.New()})
-	if err != nil {
-		t.Fatalf("marshal payload: %v", err)
-	}
-
-	record := &collabModels.IdempotencyRecord{
-		UserID:          userID,
-		IdempotencyKey:  "k",
-		RequestScope:    collabModels.IdempotencyScopeProposalAccept,
-		ScopeID:         uuid.New(),
-		RequestHash:     "h",
-		DocumentID:      uuid.New(),
-		ResponsePayload: payload,
-		ExpiresAt:       time.Now().Add(time.Hour),
-	}
-	if err := store.Create(context.Background(), record); err != nil {
-		t.Fatalf("create record: %v", err)
-	}
-
-	got, err := store.GetByUserAndKey(context.Background(), userID, "k")
-	if err != nil {
-		t.Fatalf("get record: %v", err)
-	}
-	if got == nil {
-		t.Fatal("expected idempotency record")
 	}
 }

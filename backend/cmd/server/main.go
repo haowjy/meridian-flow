@@ -197,7 +197,6 @@ func main() {
 	updateLogStore := postgresCollab.NewUpdateLogStore(repoConfig)
 	bookmarkStore := postgresCollab.NewBookmarkStore(repoConfig)
 	proposalStore := postgresCollab.NewProposalStore(repoConfig)
-	idempotencyStore := postgresCollab.NewIdempotencyStore(repoConfig)
 	autoAcceptStore := postgresCollab.NewAutoAcceptStore(repoConfig)
 	collabSessionManager := serviceCollab.NewDocumentSessionManager(
 		collabStore,
@@ -206,7 +205,7 @@ func main() {
 		collabStore, // also satisfies DocumentContentLoader (ISP)
 		logger,
 	)
-	aiContentProjector := serviceCollab.NewAIContentProjector(
+	projectedStateBuilder := serviceCollab.NewProjectedStateBuilder(
 		collabStore,
 		proposalStore,
 		collabSessionManager,
@@ -220,11 +219,9 @@ func main() {
 	)
 	proposalService := serviceCollab.NewProposalService(
 		proposalStore,
-		idempotencyStore,
 		txManager,
 		collabSessionManager,
 		autoAcceptStore,
-		aiContentProjector,
 		agentArbiter,
 		cfg.CollabDefaultAutoAccept,
 	)
@@ -243,10 +240,10 @@ func main() {
 
 	// Build mutation strategy for AI edits.
 	// CollabProposalStrategy creates collab proposals with Yjs updates and WS broadcasting.
-	// aiContentProjector implements ProjectedStateBuilder — provides projected Yjs state
+	// projectedStateBuilder implements ProjectedStateBuilder — provides projected Yjs state
 	// (base + pending proposals) so edit positions align with pending proposal context.
 	proposalBroadcasterImpl := handler.NewProposalBroadcasterImpl(projectConnectionRegistry, collabDocumentHandler, collabDocResolver)
-	mutationStrategy := tools.NewCollabProposalStrategy(proposalService, proposalBroadcasterImpl, aiContentProjector, logger)
+	mutationStrategy := tools.NewCollabProposalStrategy(proposalService, proposalBroadcasterImpl, projectedStateBuilder, logger)
 
 	// Setup LLM services (thread, thread history, streaming)
 	// docService and folderService are passed for tool write operations (SOLID: DIP)

@@ -97,8 +97,8 @@ func TestDocumentSessionLoadState_EmptyStateAndEmptyContentNoop(t *testing.T) {
 	if store.loadContentCalls != 1 {
 		t.Fatalf("expected one LoadContentForBootstrap call, got %d", store.loadContentCalls)
 	}
-	if store.saveCalls != 0 {
-		t.Fatalf("expected no SaveState call, got %d", store.saveCalls)
+	if store.saveCalls != 1 {
+		t.Fatalf("expected one SaveState call to persist _proposal_status bootstrap, got %d", store.saveCalls)
 	}
 }
 
@@ -126,8 +126,8 @@ func TestDocumentSessionLoadState_ExistingStateSkipsBootstrapPath(t *testing.T) 
 	if store.loadContentCalls != 0 {
 		t.Fatalf("expected bootstrap content not to be loaded, got %d calls", store.loadContentCalls)
 	}
-	if store.saveCalls != 0 {
-		t.Fatalf("expected no SaveState call for existing yjs_state, got %d", store.saveCalls)
+	if store.saveCalls != 1 {
+		t.Fatalf("expected one SaveState call to persist _proposal_status bootstrap, got %d", store.saveCalls)
 	}
 }
 

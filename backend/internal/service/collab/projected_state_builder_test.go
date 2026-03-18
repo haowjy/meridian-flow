@@ -11,89 +11,69 @@ import (
 	collabModels "meridian/internal/domain/models/collab"
 )
 
-func TestAIContentProjectorListPendingProposals_DeterministicOrder(t *testing.T) {
+func TestProjectedStateBuilderListPendingProposalsForUser_DeterministicOrder(t *testing.T) {
 	docID := uuid.New()
+	userID := uuid.New()
+	otherUserID := uuid.New()
 	now := time.Now().UTC()
 
-	p3 := collabModels.Proposal{ID: uuid.MustParse("00000000-0000-0000-0000-000000000003"), DocumentID: docID, Status: collabModels.ProposalStatusPending, CreatedAt: now.Add(3 * time.Minute)}
-	p1 := collabModels.Proposal{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), DocumentID: docID, Status: collabModels.ProposalStatusPending, CreatedAt: now.Add(1 * time.Minute)}
-	p2 := collabModels.Proposal{ID: uuid.MustParse("00000000-0000-0000-0000-000000000002"), DocumentID: docID, Status: collabModels.ProposalStatusPending, CreatedAt: now.Add(2 * time.Minute)}
+	p3 := collabModels.Proposal{
+		ID:              uuid.MustParse("00000000-0000-0000-0000-000000000003"),
+		DocumentID:      docID,
+		Status:          collabModels.ProposalStatusPending,
+		CreatedByUserID: userID,
+		CreatedAt:       now.Add(3 * time.Minute),
+	}
+	p1 := collabModels.Proposal{
+		ID:              uuid.MustParse("00000000-0000-0000-0000-000000000001"),
+		DocumentID:      docID,
+		Status:          collabModels.ProposalStatusPending,
+		CreatedByUserID: userID,
+		CreatedAt:       now.Add(1 * time.Minute),
+	}
+	p2 := collabModels.Proposal{
+		ID:              uuid.MustParse("00000000-0000-0000-0000-000000000002"),
+		DocumentID:      docID,
+		Status:          collabModels.ProposalStatusPending,
+		CreatedByUserID: otherUserID,
+		CreatedAt:       now.Add(2 * time.Minute),
+	}
 
-	projector := &AIContentProjector{
+	builder := &ProjectedStateBuilderService{
 		stateStore:      &fakeProjectorStateStore{},
 		proposalStore:   &fakeProjectorProposalStore{listByDocument: []collabModels.Proposal{p3, p1, p2}},
 		proposalRuntime: &fakeProjectorRuntime{},
 	}
 
-	got, err := projector.listPendingProposals(context.Background(), docID)
+	got, err := builder.listPendingProposalsForUser(context.Background(), docID, userID)
 	if err != nil {
-		t.Fatalf("listPendingProposals: %v", err)
+		t.Fatalf("listPendingProposalsForUser: %v", err)
 	}
-	if len(got) != 3 {
-		t.Fatalf("expected 3 proposals, got %d", len(got))
+	if len(got) != 2 {
+		t.Fatalf("expected 2 proposals, got %d", len(got))
 	}
-	if got[0].ID != p1.ID || got[1].ID != p2.ID || got[2].ID != p3.ID {
-		t.Fatalf("unexpected proposal order: %s, %s, %s", got[0].ID, got[1].ID, got[2].ID)
-	}
-}
-
-func TestAIContentProjectorRecompute_UsesInMemorySnapshotAndPendingProposals(t *testing.T) {
-	docID := uuid.New()
-	baseState := mustBuildDocState(t, "hello")
-	updatedState := mustBuildDocState(t, "hello world")
-
-	docStore := &fakeProjectorStateStore{}
-	proposalStore := &fakeProjectorProposalStore{
-		listByDocument: []collabModels.Proposal{
-			{
-				ID:         uuid.New(),
-				DocumentID: docID,
-				Status:     collabModels.ProposalStatusPending,
-				YjsUpdate:  updatedState,
-				CreatedAt:  time.Now().UTC(),
-			},
-		},
-	}
-	runtime := &fakeProjectorRuntime{snapshot: baseState, found: true}
-	projector := NewAIContentProjector(docStore, proposalStore, runtime, &fakeContentLoader{})
-
-	if err := projector.Recompute(context.Background(), docID); err != nil {
-		t.Fatalf("recompute: %v", err)
-	}
-
-	if docStore.loadStateCalls != 0 {
-		t.Fatalf("expected no persisted LoadState call, got %d", docStore.loadStateCalls)
-	}
-	if docStore.saveStateCalls != 1 {
-		t.Fatalf("expected one SaveState call, got %d", docStore.saveStateCalls)
-	}
-	if docStore.savedDocID != docID.String() {
-		t.Fatalf("expected saved doc id %s, got %s", docID, docStore.savedDocID)
-	}
-	if docStore.savedContent != "hello" {
-		t.Fatalf("expected base content 'hello', got %q", docStore.savedContent)
-	}
-	if got := decodeDocContent(t, docStore.savedState); got != "hello" {
-		t.Fatalf("expected saved yjs_state content 'hello', got %q", got)
+	if got[0].ID != p1.ID || got[1].ID != p3.ID {
+		t.Fatalf("unexpected proposal order: %s, %s", got[0].ID, got[1].ID)
 	}
 }
 
-func TestAIContentProjectorBuildProjectedState_BootstrapsFromContent(t *testing.T) {
+func TestProjectedStateBuilderBuildProjectedState_BootstrapsFromContent(t *testing.T) {
 	docID := uuid.New()
+	userID := uuid.New()
 
 	docStore := &fakeProjectorStateStore{loadedState: nil} // empty yjs_state
 	contentLoader := &fakeContentLoader{content: "# Hello World"}
 	proposalStore := &fakeProjectorProposalStore{}
 	runtime := &fakeProjectorRuntime{found: false}
 
-	projector := &AIContentProjector{
+	builder := &ProjectedStateBuilderService{
 		stateStore:      docStore,
 		proposalStore:   proposalStore,
 		proposalRuntime: runtime,
 		contentLoader:   contentLoader,
 	}
 
-	state, err := projector.BuildProjectedState(context.Background(), docID)
+	state, err := builder.BuildProjectedState(context.Background(), docID, userID)
 	if err != nil {
 		t.Fatalf("BuildProjectedState: %v", err)
 	}
@@ -113,22 +93,23 @@ func TestAIContentProjectorBuildProjectedState_BootstrapsFromContent(t *testing.
 	}
 }
 
-func TestAIContentProjectorBuildProjectedState_EmptyContent(t *testing.T) {
+func TestProjectedStateBuilderBuildProjectedState_EmptyContent(t *testing.T) {
 	docID := uuid.New()
+	userID := uuid.New()
 
 	docStore := &fakeProjectorStateStore{loadedState: nil}
 	contentLoader := &fakeContentLoader{content: ""} // empty document
 	proposalStore := &fakeProjectorProposalStore{}
 	runtime := &fakeProjectorRuntime{found: false}
 
-	projector := &AIContentProjector{
+	builder := &ProjectedStateBuilderService{
 		stateStore:      docStore,
 		proposalStore:   proposalStore,
 		proposalRuntime: runtime,
 		contentLoader:   contentLoader,
 	}
 
-	state, err := projector.BuildProjectedState(context.Background(), docID)
+	state, err := builder.BuildProjectedState(context.Background(), docID, userID)
 	if err != nil {
 		t.Fatalf("BuildProjectedState: %v", err)
 	}
@@ -141,46 +122,51 @@ func TestAIContentProjectorBuildProjectedState_EmptyContent(t *testing.T) {
 	if got != "" {
 		t.Errorf("expected empty content, got %q", got)
 	}
+	if docStore.saveStateCalls != 1 {
+		t.Fatalf("expected SaveState once for bootstrap, got %d", docStore.saveStateCalls)
+	}
 }
 
-func TestAIContentProjectorBuildProjectedState_WithPendingProposals(t *testing.T) {
+func TestProjectedStateBuilderBuildProjectedState_WithPendingProposalsForUser(t *testing.T) {
 	docID := uuid.New()
+	userID := uuid.New()
+	otherUserID := uuid.New()
 
 	baseState := mustBuildDocState(t, "hello")
-	// Proposal that adds " world"
-	proposalUpdate := func() []byte {
-		doc := ycrdt.NewDoc("proposal", true, ycrdt.DefaultGCFilter, nil, false)
-		ycrdt.ApplyUpdate(doc, baseState, "base")
-		text := doc.GetText("content")
-		sv := ycrdt.EncodeStateVector(doc, nil, ycrdt.NewUpdateEncoderV1())
-		doc.Transact(func(_ *ycrdt.Transaction) {
-			text.Insert(text.Length(), " world", nil)
-		}, nil)
-		return ycrdt.EncodeStateAsUpdate(doc, sv)
-	}()
+	proposalUpdate1 := buildAppendUpdate(t, baseState, " world")
+	proposalUpdate2 := buildAppendUpdate(t, baseState, " from-other-user")
 
 	docStore := &fakeProjectorStateStore{loadedState: baseState}
 	proposalStore := &fakeProjectorProposalStore{
 		listByDocument: []collabModels.Proposal{
 			{
-				ID:         uuid.New(),
-				DocumentID: docID,
-				Status:     collabModels.ProposalStatusPending,
-				YjsUpdate:  proposalUpdate,
-				CreatedAt:  time.Now().UTC(),
+				ID:              uuid.New(),
+				DocumentID:      docID,
+				Status:          collabModels.ProposalStatusPending,
+				YjsUpdate:       proposalUpdate1,
+				CreatedByUserID: userID,
+				CreatedAt:       time.Now().UTC(),
+			},
+			{
+				ID:              uuid.New(),
+				DocumentID:      docID,
+				Status:          collabModels.ProposalStatusPending,
+				YjsUpdate:       proposalUpdate2,
+				CreatedByUserID: otherUserID,
+				CreatedAt:       time.Now().UTC().Add(1 * time.Minute),
 			},
 		},
 	}
 	runtime := &fakeProjectorRuntime{found: false}
 
-	projector := &AIContentProjector{
+	builder := &ProjectedStateBuilderService{
 		stateStore:      docStore,
 		proposalStore:   proposalStore,
 		proposalRuntime: runtime,
 		contentLoader:   &fakeContentLoader{},
 	}
 
-	state, err := projector.BuildProjectedState(context.Background(), docID)
+	state, err := builder.BuildProjectedState(context.Background(), docID, userID)
 	if err != nil {
 		t.Fatalf("BuildProjectedState: %v", err)
 	}
@@ -193,27 +179,6 @@ func TestAIContentProjectorBuildProjectedState_WithPendingProposals(t *testing.T
 	// Should NOT persist (no bootstrap needed)
 	if docStore.saveStateCalls != 0 {
 		t.Fatalf("expected no SaveState call (no bootstrap), got %d", docStore.saveStateCalls)
-	}
-}
-
-func TestAIContentProjectorRecompute_FallsBackToPersistedState(t *testing.T) {
-	docID := uuid.New()
-	baseState := mustBuildDocState(t, "persisted")
-
-	docStore := &fakeProjectorStateStore{loadedState: baseState}
-	proposalStore := &fakeProjectorProposalStore{}
-	runtime := &fakeProjectorRuntime{found: false}
-	projector := NewAIContentProjector(docStore, proposalStore, runtime, &fakeContentLoader{})
-
-	if err := projector.Recompute(context.Background(), docID); err != nil {
-		t.Fatalf("recompute: %v", err)
-	}
-
-	if docStore.loadStateCalls != 1 {
-		t.Fatalf("expected one LoadState call, got %d", docStore.loadStateCalls)
-	}
-	if docStore.savedContent != "persisted" {
-		t.Fatalf("expected persisted content %q, got %q", "persisted", docStore.savedContent)
 	}
 }
 
@@ -334,6 +299,18 @@ type fakeContentLoader struct {
 
 func (l *fakeContentLoader) LoadContentForBootstrap(_ context.Context, _ string) (string, error) {
 	return l.content, nil
+}
+
+func buildAppendUpdate(t *testing.T, baseState []byte, suffix string) []byte {
+	t.Helper()
+	doc := ycrdt.NewDoc("proposal", true, ycrdt.DefaultGCFilter, nil, false)
+	ycrdt.ApplyUpdate(doc, baseState, "base")
+	text := doc.GetText("content")
+	sv := ycrdt.EncodeStateVector(doc, nil, ycrdt.NewUpdateEncoderV1())
+	doc.Transact(func(_ *ycrdt.Transaction) {
+		text.Insert(text.Length(), suffix, nil)
+	}, nil)
+	return ycrdt.EncodeStateAsUpdate(doc, sv)
 }
 
 func mustBuildDocState(t *testing.T, content string) []byte {

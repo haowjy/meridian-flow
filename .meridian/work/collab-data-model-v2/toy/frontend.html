@@ -76,6 +76,12 @@
     <div id="el-proposals"><em>No proposals yet</em></div>
   </div>
 
+  <!-- Grouped Hunks -->
+  <div class="panel">
+    <h2>Grouped Hunks (derived from projection + attribution)</h2>
+    <div id="el-hunks"><em>No hunks yet</em></div>
+  </div>
+
   <!-- Controls -->
   <div class="panel">
     <h2>Simulate Actions</h2>
@@ -97,179 +103,496 @@
 <script type="module">
 import * as Y from 'https://esm.sh/yjs@13';
 
-// ============================================================
-// ORIGINS -- match the spec (local-first-authority.md)
-// ============================================================
-const ORIGIN_HUMAN  = 'human';
+const ORIGIN_HUMAN = 'human';
 const ORIGIN_ACCEPT = 'accept';
 const ORIGIN_REJECT = 'reject';
-const ORIGIN_GC     = 'gc';       // NOT tracked by UndoManager
+const ORIGIN_GC = 'gc';
 const ORIGIN_THREAD = 'thread';
+const CURRENT_USER_ID = 'toy-user';
 
-// ============================================================
-// CANONICAL Y.Doc
-// ============================================================
 const canonical = new Y.Doc();
-const text      = canonical.getText('content');
+const text = canonical.getText('content');
 const statusMap = canonical.getMap('_proposal_status');
 
-// UndoManager over both shared types (undo.md)
-const undoManager = new Y.UndoManager(
-  [text, statusMap],
-  { trackedOrigins: new Set([ORIGIN_HUMAN, ORIGIN_ACCEPT, ORIGIN_REJECT, ORIGIN_THREAD]) }
-);
+const undoManager = new Y.UndoManager([text, statusMap], {
+  trackedOrigins: new Set([ORIGIN_HUMAN, ORIGIN_ACCEPT, ORIGIN_REJECT, ORIGIN_THREAD]),
+});
 
-// Proposal store (simulates backend DB rows)
+/** @type {Array<{id:string, description:string, created_by_user_id:string, yjs_update:Uint8Array, region_text_before:string, region_text_after:string, proposed_at_offset:number, accepted_at_offset:number|null, offset_version:number}>} */
 const proposals = [];
 
-// Initialize document
-text.insert(0, 'The cat sat on the mat.');
-undoManager.clear(); // Don't track initialization
+/**
+ * @typedef {{from:number,to:number}} Range
+ * @typedef {{proposals:Array<{id:string,yjs_update:Uint8Array}>, canonicalRange:Range, insertedText:string, deletedText:string, sequenceNumber:number}} GroupedHunk
+ * @typedef {{hunks:GroupedHunk[], sequenceNumber:number}} DeriveResult
+ */
 
-// ============================================================
-// BACKEND STATUS MIRROR (local-first-authority.md)
-// Observes _proposal_status Y.Map changes and mirrors to
-// proposal rows. In production this runs on the backend via
-// Yjs sync deltas. Here we simulate it locally.
-// ============================================================
+const logEntries = [];
+let deriveSequenceNumber = 0;
+let typingPauseTimer = null;
+let typingPausePending = false;
+let deriveMeta = 'idle';
+
+/** @type {DeriveResult} */
+let lastDeriveResult = { hunks: [], sequenceNumber: 0 };
+let lastProjectionText = '';
+let lastDiffSegments = [{ t: 'eq', s: '' }];
+
+text.insert(0, 'The cat sat on the mat.');
+undoManager.clear();
+
 statusMap.observe(event => {
   for (const [key, change] of event.changes.keys) {
     const p = proposals.find(x => x.id === key);
     if (!p) continue;
     if (change.action === 'delete') {
-      log(`Mirror: ${p.id.slice(0,6)} -> pending (Y.Map key removed by undo)`);
+      log(`Mirror: ${p.id.slice(0, 6)} -> pending (Y.Map key removed)`);
     } else {
-      log(`Mirror: ${p.id.slice(0,6)} -> ${statusMap.get(key)}`);
+      log(`Mirror: ${p.id.slice(0, 6)} -> ${statusMap.get(key)}`);
     }
   }
 });
 
-// ============================================================
-// PROPOSAL CREATION (architecture.md -- proposal payload model)
-//
-// Simulates what happens when AI calls edit_document:
-// 1. Clone canonical
-// 2. Apply the edit to the clone
-// 3. Capture the yjs_update (binary CRDT delta)
-// 4. Store as a pending proposal row
-// ============================================================
-function createProposal(description, editFn, regionBefore, regionAfter) {
-  const clone = new Y.Doc();
-  Y.applyUpdate(clone, Y.encodeStateAsUpdate(canonical));
-
-  // Capture ONLY the edit delta (listener added after initial state)
-  let capturedUpdate = null;
-  clone.on('update', (update) => { capturedUpdate = update; });
-
-  editFn(clone.getText('content'));
-
-  if (!capturedUpdate) {
-    log(`WARNING: edit produced no Yjs update for "${description}"`);
-    return null;
-  }
-
-  const proposal = {
-    id: crypto.randomUUID(),
-    description,
-    yjs_update: capturedUpdate,        // Binary Yjs update bytes
-    region_text_before: regionBefore,   // For thread-level undo
-    region_text_after: regionAfter,     // For thread-level undo
-    status: 'pending',
-  };
-
-  proposals.push(proposal);
-  log(`Created proposal ${proposal.id.slice(0,6)}: ${description}`);
-  log(`  yjs_update: ${capturedUpdate.length} bytes`);
-  log(`  region_text_before: "${regionBefore}"`);
-  log(`  region_text_after:  "${regionAfter}"`);
-  refresh();
-  return proposal;
+function log(msg) {
+  logEntries.unshift(msg);
+  if (logEntries.length > 200) logEntries.length = 200;
 }
 
-// ============================================================
-// PROJECTION PIPELINE (frontend-diff-model.md)
-//
-// 1. Clone canonical Y.Doc
-// 2. Apply each pending proposal's yjs_update
-// 3. Diff canonical vs projection
-// 4. Run projection GC (stale detection)
-// 5. Destroy clone
-// ============================================================
-function deriveProjection() {
-  const pendingProposals = proposals.filter(p => getStatus(p.id) === 'pending');
+function esc(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
-  // Clone canonical
-  const projDoc = new Y.Doc();
-  Y.applyUpdate(projDoc, Y.encodeStateAsUpdate(canonical));
+function getStatus(proposalId) {
+  const mapVal = statusMap.get(proposalId);
+  return mapVal || 'pending';
+}
 
-  // Apply each pending proposal
-  for (const p of pendingProposals) {
-    Y.applyUpdate(projDoc, p.yjs_update);
-  }
+function isTerminalStatus(status) {
+  return status === 'accepted' || status === 'rejected' || status === 'reverted' || status === 'invalid';
+}
 
-  const canonicalText = text.toString();
-  const projectedText = projDoc.getText('content').toString();
+function cloneDoc(source) {
+  const clone = new Y.Doc();
+  Y.applyUpdate(clone, Y.encodeStateAsUpdate(source));
+  return clone;
+}
 
-  // Projection GC: check each pending proposal individually
-  // If applying it produces no diff, it's stale (architecture.md)
-  const staleIds = [];
-  for (const p of pendingProposals) {
-    const testDoc = new Y.Doc();
-    Y.applyUpdate(testDoc, Y.encodeStateAsUpdate(canonical));
-    Y.applyUpdate(testDoc, p.yjs_update);
-    if (testDoc.getText('content').toString() === canonicalText) {
-      staleIds.push(p.id);
+function computeDiffSegments(a, b) {
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Uint32Array(n + 1));
+
+  for (let i = 1; i <= m; i += 1) {
+    for (let j = 1; j <= n; j += 1) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1] + 1
+        : Math.max(dp[i - 1][j], dp[i][j - 1]);
     }
   }
 
-  if (staleIds.length > 0) {
-    // GC uses ORIGIN_GC -- NOT tracked by UndoManager (undo.md)
-    canonical.transact(() => {
-      for (const id of staleIds) {
-        statusMap.set(id, 'stale');
-      }
-    }, ORIGIN_GC);
-    log(`Projection GC: marked ${staleIds.map(id => id.slice(0,6)).join(', ')} as stale`);
+  const result = [];
+  let i = m;
+  let j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
+      result.unshift({ t: 'eq', c: a[i - 1] });
+      i -= 1;
+      j -= 1;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      result.unshift({ t: 'ins', c: b[j - 1] });
+      j -= 1;
+    } else {
+      result.unshift({ t: 'del', c: a[i - 1] });
+      i -= 1;
+    }
   }
 
-  // Clone is destroyed (garbage collected) -- projection is ephemeral
-  return { canonicalText, projectedText };
+  const merged = [];
+  for (const item of result) {
+    if (merged.length > 0 && merged[merged.length - 1].t === item.t) {
+      merged[merged.length - 1].s += item.c;
+    } else {
+      merged.push({ t: item.t, s: item.c });
+    }
+  }
+  return merged;
 }
 
-// ============================================================
-// HUNK ACTIONS (local-first-authority.md)
-// ============================================================
+function diffSegmentsToHunks(segments) {
+  const hunks = [];
+  let canonicalPos = 0;
+  let pending = null;
 
-// Accept: apply yjs_update to canonical + set status in ONE transaction
-function acceptProposal(id) {
-  const p = proposals.find(x => x.id === id);
-  if (!p || getStatus(id) !== 'pending') return;
+  const flush = () => {
+    if (!pending) return;
+    hunks.push({
+      canonicalRange: { from: pending.from, to: pending.to },
+      deletedText: pending.deletedText,
+      insertedText: pending.insertedText,
+    });
+    pending = null;
+  };
+
+  for (const segment of segments) {
+    if (segment.t === 'eq') {
+      flush();
+      canonicalPos += segment.s.length;
+      continue;
+    }
+    if (!pending) {
+      pending = {
+        from: canonicalPos,
+        to: canonicalPos,
+        deletedText: '',
+        insertedText: '',
+      };
+    }
+    if (segment.t === 'del') {
+      pending.deletedText += segment.s;
+      canonicalPos += segment.s.length;
+      pending.to = canonicalPos;
+    } else {
+      pending.insertedText += segment.s;
+    }
+  }
+  flush();
+  return hunks;
+}
+
+function textDiff(canonicalText, projectedText) {
+  const segments = computeDiffSegments(canonicalText, projectedText);
+  return {
+    segments,
+    hunks: diffSegmentsToHunks(segments),
+  };
+}
+
+function rangesOverlap(a, b) {
+  const aLen = a.to - a.from;
+  const bLen = b.to - b.from;
+  if (aLen === 0 && bLen === 0) return a.from === b.from;
+  if (aLen === 0) return b.from <= a.from && a.from <= b.to;
+  if (bLen === 0) return a.from <= b.from && b.from <= a.to;
+  return a.from < b.to && b.from < a.to;
+}
+
+function shareAnyProposal(a, b) {
+  const ids = new Set(a.proposals.map(p => p.id));
+  return b.proposals.some(p => ids.has(p.id));
+}
+
+function unionFind(size) {
+  const parent = Array.from({ length: size }, (_, i) => i);
+  const rank = Array.from({ length: size }, () => 0);
+  const find = i => {
+    if (parent[i] !== i) parent[i] = find(parent[i]);
+    return parent[i];
+  };
+  const unite = (a, b) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra === rb) return;
+    if (rank[ra] < rank[rb]) parent[ra] = rb;
+    else if (rank[ra] > rank[rb]) parent[rb] = ra;
+    else {
+      parent[rb] = ra;
+      rank[ra] += 1;
+    }
+  };
+  return { find, unite };
+}
+
+function groupHunks(attributedHunks, canonicalText, projectedText, sequenceNumber) {
+  if (attributedHunks.length === 0) return [];
+  const uf = unionFind(attributedHunks.length);
+
+  for (let i = 0; i < attributedHunks.length; i += 1) {
+    for (let j = i + 1; j < attributedHunks.length; j += 1) {
+      const ai = attributedHunks[i];
+      const aj = attributedHunks[j];
+      if (rangesOverlap(ai.canonicalRange, aj.canonicalRange) || shareAnyProposal(ai, aj)) {
+        uf.unite(i, j);
+      }
+    }
+  }
+
+  const components = new Map();
+  for (let i = 0; i < attributedHunks.length; i += 1) {
+    const root = uf.find(i);
+    const list = components.get(root) || [];
+    list.push(attributedHunks[i]);
+    components.set(root, list);
+  }
+
+  const grouped = [];
+  for (const members of components.values()) {
+    members.sort((a, b) => a.canonicalRange.from - b.canonicalRange.from);
+    const proposalRefs = new Map();
+    let from = members[0].canonicalRange.from;
+    let to = members[0].canonicalRange.to;
+    for (const member of members) {
+      from = Math.min(from, member.canonicalRange.from);
+      to = Math.max(to, member.canonicalRange.to);
+      for (const ref of member.proposals) proposalRefs.set(ref.id, ref);
+    }
+
+    // Toy simplification: surface changed fragments for display.
+    const deletedText = members.map(m => m.deletedText).join('');
+    const insertedText = members.map(m => m.insertedText).join('');
+    grouped.push({
+      proposals: Array.from(proposalRefs.values()),
+      canonicalRange: { from, to },
+      insertedText: insertedText || projectedText.slice(from, from),
+      deletedText: deletedText || canonicalText.slice(from, to),
+      sequenceNumber,
+    });
+  }
+
+  grouped.sort((a, b) => a.canonicalRange.from - b.canonicalRange.from);
+  return grouped;
+}
+
+function stalePrecheck(canonicalText, proposal) {
+  if (typeof proposal.proposed_at_offset !== 'number' || proposal.proposed_at_offset < 0) return false;
+  if (!proposal.region_text_after || proposal.region_text_after.length === 0) return false;
+  const start = proposal.proposed_at_offset;
+  const end = start + proposal.region_text_after.length;
+  return canonicalText.slice(start, end) === proposal.region_text_after;
+}
+
+function applyGCUpdates(staleIds, unstaleIds, reason) {
+  if (staleIds.length === 0 && unstaleIds.length === 0) return;
+  canonical.transact(() => {
+    for (const id of staleIds) statusMap.set(id, 'stale');
+    for (const id of unstaleIds) statusMap.delete(id);
+  }, ORIGIN_GC);
+
+  if (staleIds.length > 0) {
+    log(`Projection GC (${reason}): stale -> ${staleIds.map(id => id.slice(0, 6)).join(', ')}`);
+  }
+  if (unstaleIds.length > 0) {
+    log(`Projection GC (${reason}): unstale -> ${unstaleIds.map(id => id.slice(0, 6)).join(', ')}`);
+  }
+}
+
+function currentUserMutableProposals() {
+  return proposals.filter(p => p.created_by_user_id === CURRENT_USER_ID && !isTerminalStatus(getStatus(p.id)));
+}
+
+function deriveProjection(trigger) {
+  deriveSequenceNumber += 1;
+  const sequenceNumber = deriveSequenceNumber;
+  let canonicalText = text.toString();
+
+  const staleByPrecheck = [];
+  const unstaleIds = [];
+  for (const p of currentUserMutableProposals()) {
+    const status = getStatus(p.id);
+    const precheck = stalePrecheck(canonicalText, p);
+    if (status === 'pending' && precheck) staleByPrecheck.push(p.id);
+    if (status === 'stale' && !precheck) unstaleIds.push(p.id);
+  }
+  applyGCUpdates(staleByPrecheck, unstaleIds, 'pre-check');
+
+  canonicalText = text.toString();
+  const pending = proposals.filter(
+    p => p.created_by_user_id === CURRENT_USER_ID && getStatus(p.id) === 'pending'
+  );
+
+  const projection = cloneDoc(canonical);
+  for (const proposal of pending) {
+    Y.applyUpdate(projection, proposal.yjs_update);
+  }
+  const projectedText = projection.getText('content').toString();
+  const combined = textDiff(canonicalText, projectedText);
+
+  const proposalRegions = new Map();
+  const staleByEmptyAttribution = [];
+  for (const proposal of pending) {
+    const solo = cloneDoc(canonical);
+    Y.applyUpdate(solo, proposal.yjs_update);
+    const soloText = solo.getText('content').toString();
+    const soloDiff = textDiff(canonicalText, soloText);
+    proposalRegions.set(proposal.id, soloDiff.hunks);
+    if (soloDiff.hunks.length === 0) staleByEmptyAttribution.push(proposal.id);
+  }
+  applyGCUpdates(staleByEmptyAttribution, [], 'empty-attribution');
+
+  const pendingForAttribution = pending.filter(p => !staleByEmptyAttribution.includes(p.id));
+  const attributed = combined.hunks.map(h => ({
+    ...h,
+    proposals: [],
+  }));
+
+  for (const proposal of pendingForAttribution) {
+    const proposalRef = { id: proposal.id, yjs_update: proposal.yjs_update };
+    const regions = proposalRegions.get(proposal.id) || [];
+    for (const hunk of attributed) {
+      if (regions.some(region => rangesOverlap(region.canonicalRange, hunk.canonicalRange))) {
+        hunk.proposals.push(proposalRef);
+      }
+    }
+  }
+
+  const groupedHunks = groupHunks(attributed, canonicalText, projectedText, sequenceNumber);
+  lastDeriveResult = {
+    hunks: groupedHunks,
+    sequenceNumber,
+  };
+  lastProjectionText = projectedText;
+  lastDiffSegments = combined.segments;
+  deriveMeta = `derived #${sequenceNumber} (${trigger})`;
+  typingPausePending = false;
+  log(`Re-derive #${sequenceNumber} (${trigger}) -> ${groupedHunks.length} grouped hunk(s), ${pending.length} pending proposal(s)`);
+}
+
+function transformEditsFromDelta(delta) {
+  const edits = [];
+  let oldPos = 0;
+  for (const op of delta) {
+    if (typeof op.retain === 'number') {
+      oldPos += op.retain;
+      continue;
+    }
+    if (typeof op.delete === 'number') {
+      edits.push({ from: oldPos, to: oldPos + op.delete, insertLen: 0 });
+      oldPos += op.delete;
+      continue;
+    }
+    if (typeof op.insert === 'string') {
+      edits.push({ from: oldPos, to: oldPos, insertLen: op.insert.length });
+    }
+  }
+  return edits;
+}
+
+function mapPositionThroughEdits(pos, edits, assoc) {
+  let mapped = pos;
+  for (const edit of edits) {
+    if (edit.from > mapped) break;
+    if (edit.from === edit.to) {
+      if (edit.from < mapped || (edit.from === mapped && assoc > 0)) {
+        mapped += edit.insertLen;
+      }
+      continue;
+    }
+    if (mapped > edit.to) {
+      mapped += edit.insertLen - (edit.to - edit.from);
+      continue;
+    }
+    mapped = assoc < 0 ? edit.from : edit.from + edit.insertLen;
+  }
+  return mapped;
+}
+
+function mapHunksForLocalTyping(deltas) {
+  if (lastDeriveResult.hunks.length === 0 || deltas.length === 0) return;
+  const edits = deltas.flatMap(transformEditsFromDelta);
+  if (edits.length === 0) return;
+
+  lastDeriveResult = {
+    ...lastDeriveResult,
+    hunks: lastDeriveResult.hunks.map(hunk => {
+      const mappedFrom = mapPositionThroughEdits(hunk.canonicalRange.from, edits, 1);
+      const mappedTo = mapPositionThroughEdits(hunk.canonicalRange.to, edits, -1);
+      return {
+        ...hunk,
+        canonicalRange: {
+          from: Math.min(mappedFrom, mappedTo),
+          to: Math.max(mappedFrom, mappedTo),
+        },
+      };
+    }),
+  };
+  deriveMeta = `mapped only (local typing); waiting 500ms debounce`;
+}
+
+function scheduleTypingPauseDerive() {
+  if (typingPauseTimer) clearTimeout(typingPauseTimer);
+  typingPausePending = true;
+  typingPauseTimer = setTimeout(() => {
+    typingPauseTimer = null;
+    deriveProjection('typing pause (500ms)');
+    render();
+  }, 500);
+}
+
+function ensureHunkFresh(expectedSequence) {
+  if (expectedSequence === lastDeriveResult.sequenceNumber) return true;
+  log(`Hunk freshness guard: stale sequence ${expectedSequence}, forcing synchronous re-derive`);
+  deriveProjection('freshness guard');
+  render();
+  return false;
+}
+
+function acceptHunk(index, sequenceNumber) {
+  if (!ensureHunkFresh(sequenceNumber)) return;
+  const hunk = lastDeriveResult.hunks[index];
+  if (!hunk || hunk.proposals.length === 0) return;
 
   canonical.transact(() => {
-    Y.applyUpdate(canonical, p.yjs_update);
-    statusMap.set(p.id, 'accepted');
+    for (const proposalRef of hunk.proposals) {
+      Y.applyUpdate(canonical, proposalRef.yjs_update);
+      statusMap.set(proposalRef.id, 'accepted');
+      const proposal = proposals.find(p => p.id === proposalRef.id);
+      if (proposal) {
+        proposal.accepted_at_offset = hunk.canonicalRange.from;
+        proposal.offset_version += 1;
+      }
+    }
   }, ORIGIN_ACCEPT);
 
-  log(`Accept: ${p.id.slice(0,6)} -- applied yjs_update + set status in one transaction`);
-  refresh();
+  log(`Accept grouped hunk #${index + 1} -> ${hunk.proposals.map(p => p.id.slice(0, 6)).join(', ')}`);
+  deriveProjection('proposal status changed (accept)');
+  render();
 }
 
-// Reject: set status only -- no canonical text mutation
-function rejectProposal(id) {
-  const p = proposals.find(x => x.id === id);
-  if (!p || getStatus(id) !== 'pending') return;
+function rejectHunk(index, sequenceNumber) {
+  if (!ensureHunkFresh(sequenceNumber)) return;
+  const hunk = lastDeriveResult.hunks[index];
+  if (!hunk || hunk.proposals.length === 0) return;
 
   canonical.transact(() => {
-    statusMap.set(p.id, 'rejected');
+    for (const proposalRef of hunk.proposals) {
+      statusMap.set(proposalRef.id, 'rejected');
+    }
   }, ORIGIN_REJECT);
 
-  log(`Reject: ${p.id.slice(0,6)} -- Y.Map status only, no text change`);
-  refresh();
+  log(`Reject grouped hunk #${index + 1} -> ${hunk.proposals.map(p => p.id.slice(0, 6)).join(', ')}`);
+  deriveProjection('proposal status changed (reject)');
+  render();
 }
 
-// ============================================================
-// SESSION UNDO (undo.md -- UndoManager over Y.Text + Y.Map)
-// ============================================================
+function acceptProposal(id) {
+  const index = lastDeriveResult.hunks.findIndex(h => h.proposals.some(p => p.id === id));
+  if (index >= 0) {
+    acceptHunk(index, lastDeriveResult.sequenceNumber);
+    return;
+  }
+  const proposal = proposals.find(p => p.id === id);
+  if (!proposal || getStatus(id) !== 'pending') return;
+  canonical.transact(() => {
+    Y.applyUpdate(canonical, proposal.yjs_update);
+    statusMap.set(id, 'accepted');
+  }, ORIGIN_ACCEPT);
+  deriveProjection('proposal status changed (accept single)');
+  render();
+}
+
+function rejectProposal(id) {
+  const index = lastDeriveResult.hunks.findIndex(h => h.proposals.some(p => p.id === id));
+  if (index >= 0) {
+    rejectHunk(index, lastDeriveResult.sequenceNumber);
+    return;
+  }
+  if (getStatus(id) !== 'pending') return;
+  canonical.transact(() => {
+    statusMap.set(id, 'rejected');
+  }, ORIGIN_REJECT);
+  deriveProjection('proposal status changed (reject single)');
+  render();
+}
+
 function sessionUndo() {
   if (undoManager.undoStack.length === 0) {
     log('Undo: nothing to undo');
@@ -277,7 +600,8 @@ function sessionUndo() {
   }
   undoManager.undo();
   log('Session undo (Ctrl-Z) -- reverted last tracked transaction');
-  refresh();
+  deriveProjection('session undo');
+  render();
 }
 
 function sessionRedo() {
@@ -287,208 +611,200 @@ function sessionRedo() {
   }
   undoManager.redo();
   log('Session redo (Ctrl-Y) -- reapplied last undone transaction');
-  refresh();
+  deriveProjection('session redo');
+  render();
 }
 
-// ============================================================
-// THREAD-LEVEL UNDO/REAPPLY (undo.md)
-//
-// Uses text find-and-replace, NOT Yjs inverse operations.
-// Survives compaction because it only needs current text +
-// stored region_text_before/after strings.
-// ============================================================
 function threadUndo(id) {
-  const p = proposals.find(x => x.id === id);
-  if (!p || getStatus(id) !== 'accepted') return;
+  const proposal = proposals.find(x => x.id === id);
+  if (!proposal || getStatus(id) !== 'accepted') return;
 
   const currentText = text.toString();
-  const idx = currentText.indexOf(p.region_text_after);
-
+  const idx = currentText.indexOf(proposal.region_text_after);
   if (idx === -1) {
-    log(`Thread undo CONFLICT: "${p.region_text_after}" not found in canonical`);
-    log('  (text was modified since accept -- conflict is expected)');
+    log(`Thread undo CONFLICT: "${proposal.region_text_after}" not found in canonical`);
     return;
   }
 
-  // Both text mutation + status write in one ORIGIN_THREAD transaction
   canonical.transact(() => {
-    text.delete(idx, p.region_text_after.length);
-    text.insert(idx, p.region_text_before);
-    statusMap.set(p.id, 'reverted');
+    text.delete(idx, proposal.region_text_after.length);
+    text.insert(idx, proposal.region_text_before);
+    statusMap.set(id, 'reverted');
   }, ORIGIN_THREAD);
 
-  log(`Thread undo: ${p.id.slice(0,6)} -- "${p.region_text_after}" -> "${p.region_text_before}"`);
-  log('  (ORIGIN_THREAD -- enters session undo stack, Ctrl-Z can reverse it)');
-  refresh();
+  log(`Thread undo: ${id.slice(0, 6)} -- "${proposal.region_text_after}" -> "${proposal.region_text_before}"`);
+  deriveProjection('proposal status changed (thread undo)');
+  render();
 }
 
 function threadReapply(id) {
-  const p = proposals.find(x => x.id === id);
+  const proposal = proposals.find(x => x.id === id);
   const status = getStatus(id);
-  if (!p || (status !== 'reverted' && status !== 'rejected')) return;
+  if (!proposal || (status !== 'reverted' && status !== 'rejected')) return;
 
   const currentText = text.toString();
-  const idx = currentText.indexOf(p.region_text_before);
-
+  const idx = currentText.indexOf(proposal.region_text_before);
   if (idx === -1) {
-    log(`Thread reapply CONFLICT: "${p.region_text_before}" not found in canonical`);
+    log(`Thread reapply CONFLICT: "${proposal.region_text_before}" not found in canonical`);
     return;
   }
 
   canonical.transact(() => {
-    text.delete(idx, p.region_text_before.length);
-    text.insert(idx, p.region_text_after);
-    statusMap.set(p.id, 'accepted');
+    text.delete(idx, proposal.region_text_before.length);
+    text.insert(idx, proposal.region_text_after);
+    statusMap.set(id, 'accepted');
   }, ORIGIN_THREAD);
 
-  log(`Thread reapply: ${p.id.slice(0,6)} -- "${p.region_text_before}" -> "${p.region_text_after}"`);
-  refresh();
+  log(`Thread reapply: ${id.slice(0, 6)} -- "${proposal.region_text_before}" -> "${proposal.region_text_after}"`);
+  deriveProjection('proposal status changed (thread reapply)');
+  render();
 }
 
-// ============================================================
-// HUMAN TYPING (local-first-authority.md -- ORIGIN_HUMAN)
-// ============================================================
 function humanType(description, editFn) {
+  const localDeltas = [];
+  const observer = event => {
+    if (event.transaction.origin === ORIGIN_HUMAN) localDeltas.push(event.delta);
+  };
+  text.observe(observer);
   canonical.transact(() => {
     editFn(text);
   }, ORIGIN_HUMAN);
-  log(`Human typed: ${description}`);
-  refresh();
+  text.unobserve(observer);
+
+  mapHunksForLocalTyping(localDeltas);
+  scheduleTypingPauseDerive();
+  log(`Human typed: ${description} (mapped hunk ranges, deferred full derive 500ms)`);
+  render();
 }
 
-// ============================================================
-// HELPERS
-// ============================================================
+function createProposal(description, editFn, regionBefore, regionAfter) {
+  const clone = cloneDoc(canonical);
+  const cloneText = clone.getText('content');
+  const baseText = cloneText.toString();
+  let capturedUpdate = null;
+  clone.on('update', update => {
+    capturedUpdate = capturedUpdate === null ? update : Y.mergeUpdates([capturedUpdate, update]);
+  });
 
-// Read status from Y.Map (schema-design.md -- dual authority)
-function getStatus(proposalId) {
-  const mapVal = statusMap.get(proposalId);
-  return mapVal || 'pending'; // No Y.Map entry = pending
-}
-
-function esc(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-// Character-level LCS diff for inline display
-function charDiff(a, b) {
-  const m = a.length, n = b.length;
-  const dp = Array.from({length: m+1}, () => new Uint16Array(n+1));
-  for (let i = 1; i <= m; i++)
-    for (let j = 1; j <= n; j++)
-      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1]+1 : Math.max(dp[i-1][j], dp[i][j-1]);
-
-  const result = [];
-  let i = m, j = n;
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && a[i-1] === b[j-1]) {
-      result.unshift({ t: 'eq', c: a[i-1] });
-      i--; j--;
-    } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
-      result.unshift({ t: 'ins', c: b[j-1] });
-      j--;
-    } else {
-      result.unshift({ t: 'del', c: a[i-1] });
-      i--;
-    }
+  const maybeOffset = editFn(cloneText);
+  if (!capturedUpdate) {
+    log(`WARNING: edit produced no Yjs update for "${description}"`);
+    return null;
   }
 
-  // Merge consecutive same-type
-  const merged = [];
-  for (const r of result) {
-    if (merged.length && merged[merged.length-1].t === r.t)
-      merged[merged.length-1].s += r.c;
-    else
-      merged.push({ t: r.t, s: r.c });
+  const fallbackOffset = baseText.indexOf(regionBefore);
+  const proposal = {
+    id: crypto.randomUUID(),
+    description,
+    created_by_user_id: CURRENT_USER_ID,
+    yjs_update: capturedUpdate,
+    region_text_before: regionBefore,
+    region_text_after: regionAfter,
+    proposed_at_offset: typeof maybeOffset === 'number' ? maybeOffset : fallbackOffset,
+    accepted_at_offset: null,
+    offset_version: 0,
+  };
+
+  proposals.push(proposal);
+  log(`Created proposal ${proposal.id.slice(0, 6)}: ${description}`);
+  log(`  yjs_update=${capturedUpdate.length} bytes, proposed_at_offset=${proposal.proposed_at_offset}`);
+  deriveProjection('new proposal arrived');
+  render();
+  return proposal;
+}
+
+function applyRemoteCanonicalChange(description, mutateFn) {
+  canonical.transact(() => mutateFn(text, statusMap), null);
+  log(`Remote canonical change: ${description}`);
+  deriveProjection('remote canonical change');
+  render();
+}
+
+function renderDiffHtml(canonicalText, projectedText, segments) {
+  if (canonicalText === projectedText) {
+    return '<em style="color:#999">No diff -- projection equals canonical</em>';
   }
-  return merged;
+  return segments.map(segment => {
+    if (segment.t === 'eq') return esc(segment.s);
+    if (segment.t === 'del') return `<span class="diff-del">${esc(segment.s)}</span>`;
+    return `<span class="diff-ins">${esc(segment.s)}</span>`;
+  }).join('');
 }
 
-// ============================================================
-// RENDERING
-// ============================================================
-const logEntries = [];
-
-function log(msg) {
-  logEntries.unshift(msg); // newest first
-  if (logEntries.length > 200) logEntries.length = 200;
-}
-
-function refresh() {
-  const { canonicalText, projectedText } = deriveProjection();
-
-  // Canonical
+function render() {
+  const canonicalText = text.toString();
   document.getElementById('el-canon').textContent = canonicalText;
 
-  // Status map
   const mapEntries = [];
   statusMap.forEach((val, key) => {
-    const p = proposals.find(x => x.id === key);
-    const label = p ? p.id.slice(0,6) : key.slice(0,6);
+    const proposal = proposals.find(x => x.id === key);
+    const label = proposal ? proposal.id.slice(0, 6) : key.slice(0, 6);
     mapEntries.push(`${label}: ${val}`);
   });
   document.getElementById('el-map').textContent =
-    mapEntries.length ? mapEntries.join('\n') : '(empty -- all proposals are pending)';
+    mapEntries.length > 0 ? mapEntries.join('\n') : '(empty -- all proposals are pending)';
 
-  // Projection
-  document.getElementById('el-proj').textContent = projectedText;
+  const projectionLabel = typingPausePending
+    ? `${lastProjectionText}\n\n[projection pending re-derive: ${deriveMeta}]`
+    : lastProjectionText;
+  document.getElementById('el-proj').textContent = projectionLabel;
+  document.getElementById('el-diff').innerHTML = renderDiffHtml(canonicalText, lastProjectionText, lastDiffSegments);
 
-  // Diff
-  if (canonicalText === projectedText) {
-    document.getElementById('el-diff').innerHTML =
-      '<em style="color:#999">No diff -- projection equals canonical</em>';
-  } else {
-    const segments = charDiff(canonicalText, projectedText);
-    document.getElementById('el-diff').innerHTML = segments.map(s => {
-      if (s.t === 'eq')  return esc(s.s);
-      if (s.t === 'del') return `<span class="diff-del">${esc(s.s)}</span>`;
-      if (s.t === 'ins') return `<span class="diff-ins">${esc(s.s)}</span>`;
-    }).join('');
-  }
-
-  // Proposals
-  const el = document.getElementById('el-proposals');
+  const proposalsEl = document.getElementById('el-proposals');
   if (proposals.length === 0) {
-    el.innerHTML = '<em style="color:#999">No proposals yet. Click a scenario button below.</em>';
+    proposalsEl.innerHTML = '<em style="color:#999">No proposals yet. Click a scenario button below.</em>';
   } else {
-    el.innerHTML = proposals.map(p => {
-      const st = getStatus(p.id);
-      const short = p.id.slice(0,6);
-      let btns = '';
-      if (st === 'pending') {
-        btns = `<button onclick="window._accept('${p.id}')">Accept</button>` +
-               `<button onclick="window._reject('${p.id}')">Reject</button>`;
-      } else if (st === 'accepted') {
-        btns = `<button onclick="window._threadUndo('${p.id}')">Thread Undo</button>`;
-      } else if (st === 'reverted' || st === 'rejected') {
-        btns = `<button onclick="window._threadReapply('${p.id}')">Thread Reapply</button>`;
+    proposalsEl.innerHTML = proposals.map(p => {
+      const status = getStatus(p.id);
+      const short = p.id.slice(0, 6);
+      let buttons = '';
+      if (status === 'pending') {
+        buttons = `<button onclick="window._accept('${p.id}')">Accept</button><button onclick="window._reject('${p.id}')">Reject</button>`;
+      } else if (status === 'accepted') {
+        buttons = `<button onclick="window._threadUndo('${p.id}')">Thread Undo</button>`;
+      } else if (status === 'reverted' || status === 'rejected') {
+        buttons = `<button onclick="window._threadReapply('${p.id}')">Thread Reapply</button>`;
       }
-      return `<div class="proposal st-${st}">` +
-        `<strong>${short}</strong>` +
-        `<span class="badge badge-${st}">${st}</span> ` +
-        `${esc(p.description)}` +
-        (st === 'stale' ? ' <em>(no longer relevant)</em>' : '') +
-        `<div class="actions">${btns}</div>` +
-        `</div>`;
+      return `<div class="proposal st-${status}">` +
+        `<strong>${short}</strong><span class="badge badge-${status}">${status}</span> ${esc(p.description)}` +
+        `<div style="font-size:11px;color:#666;margin-top:4px">offset: proposed=${p.proposed_at_offset}, accepted=${p.accepted_at_offset ?? '-'}, version=${p.offset_version}</div>` +
+        (status === 'stale' ? ' <em>(no longer relevant)</em>' : '') +
+        `<div class="actions">${buttons}</div>` +
+      `</div>`;
     }).join('');
   }
 
-  // Undo info
-  document.getElementById('el-undo-info').textContent =
-    `Undo stack: ${undoManager.undoStack.length} | Redo stack: ${undoManager.redoStack.length}`;
+  const hunksEl = document.getElementById('el-hunks');
+  const hunks = lastDeriveResult.hunks;
+  if (hunks.length === 0) {
+    hunksEl.innerHTML = '<em style="color:#999">No grouped hunks in current derivation.</em>';
+  } else {
+    hunksEl.innerHTML = hunks.map((hunk, i) => {
+      const ids = hunk.proposals.map(p => p.id.slice(0, 6)).join(', ') || '(none)';
+      const actionDisabled = hunk.proposals.length === 0 ? 'disabled' : '';
+      return `<div class="proposal st-pending">` +
+        `<strong>Hunk ${i + 1}</strong> <span class="badge badge-pending">seq ${hunk.sequenceNumber}</span>` +
+        `<div style="font-size:12px;color:#666">range [${hunk.canonicalRange.from}, ${hunk.canonicalRange.to}) | proposals: ${ids}</div>` +
+        `<div style="margin-top:6px"><span class="diff-del">${esc(hunk.deletedText || '∅')}</span> → <span class="diff-ins">${esc(hunk.insertedText || '∅')}</span></div>` +
+        `<div class="actions">` +
+          `<button ${actionDisabled} onclick="window._acceptHunk(${i}, ${hunk.sequenceNumber})">Accept Hunk</button>` +
+          `<button ${actionDisabled} onclick="window._rejectHunk(${i}, ${hunk.sequenceNumber})">Reject Hunk</button>` +
+        `</div>` +
+      `</div>`;
+    }).join('');
+  }
 
-  // Log
+  document.getElementById('el-undo-info').textContent =
+    `Undo stack: ${undoManager.undoStack.length} | Redo stack: ${undoManager.redoStack.length} | ${deriveMeta}`;
   document.getElementById('el-log').innerHTML =
-    logEntries.map(e => `<div class="log-entry">${esc(e)}</div>`).join('');
+    logEntries.map(entry => `<div class="log-entry">${esc(entry)}</div>`).join('');
 }
 
-// ============================================================
-// SCENARIO BUTTONS
-// ============================================================
 function findAndInsert(ytext, find, insertion) {
   const idx = ytext.toString().indexOf(find);
   if (idx === -1) throw new Error(`"${find}" not found`);
   ytext.insert(idx, insertion);
+  return idx;
 }
 
 function findAndReplace(ytext, find, replacement) {
@@ -496,6 +812,7 @@ function findAndReplace(ytext, find, replacement) {
   if (idx === -1) throw new Error(`"${find}" not found`);
   ytext.delete(idx, find.length);
   ytext.insert(idx, replacement);
+  return idx;
 }
 
 const scenarios = [
@@ -504,7 +821,8 @@ const scenarios = [
     action: () => createProposal(
       'insert "black " before "cat"',
       t => findAndInsert(t, 'cat', 'black '),
-      'The cat', 'The black cat'
+      'The cat',
+      'The black cat'
     ),
   },
   {
@@ -512,62 +830,79 @@ const scenarios = [
     action: () => createProposal(
       'replace "mat" with "rug"',
       t => findAndReplace(t, 'mat', 'rug'),
-      'the mat', 'the rug'
+      'mat',
+      'rug'
+    ),
+  },
+  {
+    label: 'AI: multi-paragraph-ish (same proposal, 2 edits)',
+    action: () => createProposal(
+      'one proposal touching two regions',
+      t => {
+        const a = findAndInsert(t, 'cat', 'black ');
+        findAndReplace(t, 'mat', 'rug');
+        return a;
+      },
+      'The cat sat on the mat.',
+      'The black cat sat on the rug.'
     ),
   },
   {
     label: 'Human: type "big " before "cat"',
     action: () => humanType(
       'insert "big " before "cat"',
-      t => { const i = t.toString().indexOf('cat'); if (i>=0) t.insert(i, 'big '); }
+      t => { const i = t.toString().indexOf('cat'); if (i >= 0) t.insert(i, 'big '); }
     ),
   },
   {
-    label: 'Demo: stale proposal',
+    label: 'Demo: stale pre-check',
     action: () => {
-      log('--- Stale demo: creating proposal then applying its update directly ---');
       const p = createProposal(
         'insert "lazy " before "sat"',
         t => findAndInsert(t, 'sat', 'lazy '),
-        'cat sat', 'cat lazy sat'
+        'cat sat',
+        'cat lazy sat'
       );
-      if (p) {
-        // Simulate: the same update reaches canonical via another path
-        // (e.g., auto-apply race, or another client applied same edit)
-        // Yjs deduplicates by client ID + clock -- same bytes = no change
-        Y.applyUpdate(canonical, p.yjs_update);
-        log('Applied same yjs_update to canonical directly (simulating auto-apply sync)');
-        log('Next projection derive will detect no diff -> mark stale');
-        refresh();
-      }
+      if (!p) return;
+      applyRemoteCanonicalChange('apply proposal text remotely', t => {
+        const idx = t.toString().indexOf('sat');
+        if (idx >= 0) t.insert(idx, 'lazy ');
+      });
     },
+  },
+  {
+    label: 'Demo: remote canonical rollback',
+    action: () => applyRemoteCanonicalChange('remove "lazy " remotely', t => {
+      const idx = t.toString().indexOf('lazy ');
+      if (idx >= 0) t.delete(idx, 'lazy '.length);
+    }),
   },
 ];
 
-document.getElementById('el-controls').innerHTML = scenarios.map((s, i) =>
-  `<button onclick="window._scenario(${i})">${s.label}</button>`
+document.getElementById('el-controls').innerHTML = scenarios.map((scenario, i) =>
+  `<button onclick="window._scenario(${i})">${scenario.label}</button>`
 ).join('');
 
-// Expose to onclick handlers
-window._scenario = (i) => scenarios[i].action();
+window._scenario = i => scenarios[i].action();
 window._accept = acceptProposal;
 window._reject = rejectProposal;
+window._acceptHunk = acceptHunk;
+window._rejectHunk = rejectHunk;
 window._threadUndo = threadUndo;
 window._threadReapply = threadReapply;
 window.sessionUndo = sessionUndo;
 window.sessionRedo = sessionRedo;
 
-// Keyboard shortcuts
-document.addEventListener('keydown', (e) => {
+document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); sessionUndo(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); sessionRedo(); }
 });
 
-// Initial render
 log('Initialized canonical: "The cat sat on the mat."');
 log('UndoManager tracking: ORIGIN_HUMAN, ORIGIN_ACCEPT, ORIGIN_REJECT, ORIGIN_THREAD');
-log('NOT tracking: ORIGIN_GC (stale is non-terminal but GC transitions are not undoable — unstale is driven by re-derive)');
-refresh();
+log('NOT tracking: ORIGIN_GC (stale writes invisible to undo; unstale is derive-driven)');
+deriveProjection('initial');
+render();
 </script>
 </body>
 </html>
