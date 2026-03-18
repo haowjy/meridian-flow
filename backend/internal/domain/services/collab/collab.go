@@ -119,17 +119,6 @@ type ProposalStore interface {
 	CountRecentByDocumentAndStatus(ctx context.Context, documentID uuid.UUID, status collabModels.ProposalStatus, since time.Time) (int, error)
 }
 
-// IdempotencyStore persists request idempotency records for replay/conflict checks.
-type IdempotencyStore interface {
-	GetByUserAndKey(
-		ctx context.Context,
-		userID uuid.UUID,
-		idempotencyKey string,
-	) (*collabModels.IdempotencyRecord, error)
-	Create(ctx context.Context, record *collabModels.IdempotencyRecord) error
-	DeleteExpired(ctx context.Context, now time.Time) (int64, error)
-}
-
 // DocumentResolver is the only collab dependency on the document domain.
 type DocumentResolver interface {
 	ResolveDocument(ctx context.Context, docID string) (*collabModels.CollabDocRef, error)
@@ -157,16 +146,11 @@ type AutoAcceptPolicyStore interface {
 	GetPolicyInputs(ctx context.Context, documentID uuid.UUID, userID uuid.UUID) (*AutoAcceptPolicyInputs, error)
 }
 
-// AIContentProjector recomputes proposal projections for a document.
-type AIContentProjector interface {
-	Recompute(ctx context.Context, documentID uuid.UUID) error
-}
-
 // ProjectedStateBuilder builds Yjs state bytes that include pending proposals
 // applied on top of the base document state. Used by the mutation strategy so
 // the converter operates on the same content as pending proposals.
 type ProjectedStateBuilder interface {
-	BuildProjectedState(ctx context.Context, documentID uuid.UUID) ([]byte, error)
+	BuildProjectedState(ctx context.Context, documentID uuid.UUID, userID uuid.UUID) ([]byte, error)
 }
 
 // ProposalMutationIntent describes what should be broadcast after a successful proposal mutation.

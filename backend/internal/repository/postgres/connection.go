@@ -44,7 +44,6 @@ type TableNames struct {
 	CollabDocumentCheckpoints string
 	CollabDocumentBookmarks   string
 	CollabDocumentProposals   string
-	CollabRequestIdempotency  string
 	TurnDocumentTouches       string
 }
 
@@ -76,7 +75,6 @@ func NewTableNames(prefix string) *TableNames {
 		CollabDocumentCheckpoints: fmt.Sprintf("%scollab_document_checkpoints", prefix),
 		CollabDocumentBookmarks:   fmt.Sprintf("%scollab_document_bookmarks", prefix),
 		CollabDocumentProposals:   fmt.Sprintf("%scollab_document_edit_proposals", prefix),
-		CollabRequestIdempotency:  fmt.Sprintf("%scollab_request_idempotency", prefix),
 		TurnDocumentTouches:       fmt.Sprintf("%sturn_document_touches", prefix),
 	}
 }

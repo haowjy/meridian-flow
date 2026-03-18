@@ -86,21 +86,33 @@ const replaceFirst = (textType, target, replacement) => {
   return index
 }
 
-const createProposal = (canonicalDoc, { id, edit, regionTextBefore, regionTextAfter }) => {
+const createProposal = (canonicalDoc, {
+  id,
+  edit,
+  regionTextBefore,
+  regionTextAfter,
+  proposedAtOffset,
+  createdByUserID = 'toy-user'
+}) => {
   const clone = cloneDoc(canonicalDoc)
+  const baseText = clone.getText('content').toString()
   let capturedUpdate = null
   clone.on('update', update => {
     capturedUpdate = capturedUpdate === null ? update : Y.mergeUpdates([capturedUpdate, update])
   })
-  edit(clone.getText('content'), clone.getMap('_proposal_status'), clone)
+  const maybeOffset = edit(clone.getText('content'), clone.getMap('_proposal_status'), clone)
   if (capturedUpdate === null) {
     throw new Error(`Proposal ${id} did not emit a Yjs update`)
   }
   return {
     id,
+    created_by_user_id: createdByUserID,
     yjs_update: capturedUpdate,
     region_text_before: regionTextBefore,
-    region_text_after: regionTextAfter
+    region_text_after: regionTextAfter,
+    proposed_at_offset: typeof proposedAtOffset === 'number'
+      ? proposedAtOffset
+      : (typeof maybeOffset === 'number' ? maybeOffset : baseText.indexOf(regionTextBefore))
   }
 }
 
@@ -131,6 +143,26 @@ const createRugProposal = (canonicalDoc, id = 'p2') => createProposal(canonicalD
   regionTextAfter: 'rug'
 })
 
+const createDoubleEditProposal = (canonicalDoc, id = 'p3') => createProposal(canonicalDoc, {
+  id,
+  edit: text => {
+    const offset = insertBefore(text, 'cat', 'black ')
+    replaceFirst(text, 'mat', 'rug')
+    return offset
+  },
+  regionTextBefore: 'The cat sat on the mat.',
+  regionTextAfter: 'The black cat sat on the rug.'
+})
+
+const createDeleteMatProposal = (canonicalDoc, id = 'p4') => createProposal(canonicalDoc, {
+  id,
+  edit: text => {
+    replaceFirst(text, 'mat', '')
+  },
+  regionTextBefore: 'mat',
+  regionTextAfter: ''
+})
+
 const acceptProposal = (env, proposal) => {
   env.doc.transact(() => {
     Y.applyUpdate(env.doc, proposal.yjs_update)
@@ -156,6 +188,269 @@ const threadReapply = (env, proposal) => {
     replaceFirst(env.text, proposal.region_text_before, proposal.region_text_after)
     env.statusMap.set(proposal.id, 'accepted')
   }, ORIGIN_THREAD)
+}
+
+const getStatus = (statusMap, id) => statusMap.get(id) || 'pending'
+
+const isTerminalStatus = status => (
+  status === 'accepted' || status === 'rejected' || status === 'reverted' || status === 'invalid'
+)
+
+const computeDiffSegments = (a, b) => {
+  const m = a.length
+  const n = b.length
+  const dp = Array.from({ length: m + 1 }, () => new Uint32Array(n + 1))
+  for (let i = 1; i <= m; i += 1) {
+    for (let j = 1; j <= n; j += 1) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1] + 1
+        : Math.max(dp[i - 1][j], dp[i][j - 1])
+    }
+  }
+
+  const ops = []
+  let i = m
+  let j = n
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
+      ops.unshift({ t: 'eq', c: a[i - 1] })
+      i -= 1
+      j -= 1
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      ops.unshift({ t: 'ins', c: b[j - 1] })
+      j -= 1
+    } else {
+      ops.unshift({ t: 'del', c: a[i - 1] })
+      i -= 1
+    }
+  }
+
+  const merged = []
+  for (const op of ops) {
+    if (merged.length > 0 && merged[merged.length - 1].t === op.t) {
+      merged[merged.length - 1].s += op.c
+    } else {
+      merged.push({ t: op.t, s: op.c })
+    }
+  }
+  return merged
+}
+
+const diffSegmentsToHunks = segments => {
+  const hunks = []
+  let canonicalPos = 0
+  let pending = null
+
+  const flush = () => {
+    if (!pending) return
+    hunks.push({
+      canonicalRange: { from: pending.from, to: pending.to },
+      deletedText: pending.deletedText,
+      insertedText: pending.insertedText
+    })
+    pending = null
+  }
+
+  for (const segment of segments) {
+    if (segment.t === 'eq') {
+      flush()
+      canonicalPos += segment.s.length
+      continue
+    }
+    if (!pending) {
+      pending = { from: canonicalPos, to: canonicalPos, deletedText: '', insertedText: '' }
+    }
+    if (segment.t === 'del') {
+      pending.deletedText += segment.s
+      canonicalPos += segment.s.length
+      pending.to = canonicalPos
+    } else {
+      pending.insertedText += segment.s
+    }
+  }
+  flush()
+  return hunks
+}
+
+const textDiff = (canonicalText, projectedText) => {
+  const segments = computeDiffSegments(canonicalText, projectedText)
+  return { segments, hunks: diffSegmentsToHunks(segments) }
+}
+
+const rangesOverlap = (a, b) => {
+  const aLen = a.to - a.from
+  const bLen = b.to - b.from
+  if (aLen === 0 && bLen === 0) return a.from === b.from
+  if (aLen === 0) return b.from <= a.from && a.from <= b.to
+  if (bLen === 0) return a.from <= b.from && b.from <= a.to
+  return a.from < b.to && b.from < a.to
+}
+
+const shareAnyProposal = (a, b) => {
+  const ids = new Set(a.proposals.map(p => p.id))
+  return b.proposals.some(p => ids.has(p.id))
+}
+
+const stalePrecheck = (canonicalText, proposal) => {
+  if (typeof proposal.proposed_at_offset !== 'number' || proposal.proposed_at_offset < 0) return false
+  if (!proposal.region_text_after || proposal.region_text_after.length === 0) return false
+  const start = proposal.proposed_at_offset
+  const end = start + proposal.region_text_after.length
+  return canonicalText.slice(start, end) === proposal.region_text_after
+}
+
+const makeUnionFind = size => {
+  const parent = Array.from({ length: size }, (_, i) => i)
+  const rank = Array.from({ length: size }, () => 0)
+  const find = i => {
+    if (parent[i] !== i) parent[i] = find(parent[i])
+    return parent[i]
+  }
+  const unite = (a, b) => {
+    const ra = find(a)
+    const rb = find(b)
+    if (ra === rb) return
+    if (rank[ra] < rank[rb]) parent[ra] = rb
+    else if (rank[ra] > rank[rb]) parent[rb] = ra
+    else {
+      parent[rb] = ra
+      rank[ra] += 1
+    }
+  }
+  return { find, unite }
+}
+
+const groupHunks = (attributedHunks, sequenceNumber) => {
+  if (attributedHunks.length === 0) return []
+  const uf = makeUnionFind(attributedHunks.length)
+  for (let i = 0; i < attributedHunks.length; i += 1) {
+    for (let j = i + 1; j < attributedHunks.length; j += 1) {
+      const hi = attributedHunks[i]
+      const hj = attributedHunks[j]
+      if (rangesOverlap(hi.canonicalRange, hj.canonicalRange) || shareAnyProposal(hi, hj)) {
+        uf.unite(i, j)
+      }
+    }
+  }
+
+  const byRoot = new Map()
+  for (let i = 0; i < attributedHunks.length; i += 1) {
+    const root = uf.find(i)
+    const list = byRoot.get(root) || []
+    list.push(attributedHunks[i])
+    byRoot.set(root, list)
+  }
+
+  const grouped = []
+  for (const members of byRoot.values()) {
+    members.sort((a, b) => a.canonicalRange.from - b.canonicalRange.from)
+    const proposalByID = new Map()
+    let from = members[0].canonicalRange.from
+    let to = members[0].canonicalRange.to
+    for (const member of members) {
+      from = Math.min(from, member.canonicalRange.from)
+      to = Math.max(to, member.canonicalRange.to)
+      for (const proposalRef of member.proposals) {
+        proposalByID.set(proposalRef.id, proposalRef)
+      }
+    }
+    grouped.push({
+      proposals: Array.from(proposalByID.values()),
+      canonicalRange: { from, to },
+      insertedText: members.map(m => m.insertedText).join(''),
+      deletedText: members.map(m => m.deletedText).join(''),
+      sequenceNumber
+    })
+  }
+
+  grouped.sort((a, b) => a.canonicalRange.from - b.canonicalRange.from)
+  return grouped
+}
+
+const applyGC = (env, staleIDs, unstaleIDs) => {
+  if (staleIDs.length === 0 && unstaleIDs.length === 0) return
+  env.doc.transact(() => {
+    for (const id of staleIDs) env.statusMap.set(id, 'stale')
+    for (const id of unstaleIDs) env.statusMap.delete(id)
+  }, ORIGIN_GC)
+}
+
+const deriveProjectionPipeline = (env, proposalRows, sequenceNumber = 1) => {
+  let canonicalText = env.text.toString()
+  const mutable = proposalRows.filter(p => !isTerminalStatus(getStatus(env.statusMap, p.id)))
+
+  const staleByPrecheck = []
+  const unstaleIDs = []
+  for (const proposal of mutable) {
+    const status = getStatus(env.statusMap, proposal.id)
+    const precheck = stalePrecheck(canonicalText, proposal)
+    if (status === 'pending' && precheck) staleByPrecheck.push(proposal.id)
+    if (status === 'stale' && !precheck) unstaleIDs.push(proposal.id)
+  }
+  applyGC(env, staleByPrecheck, unstaleIDs)
+
+  canonicalText = env.text.toString()
+  const pending = proposalRows.filter(p => getStatus(env.statusMap, p.id) === 'pending')
+  const projection = cloneDoc(env.doc)
+  for (const proposal of pending) {
+    Y.applyUpdate(projection, proposal.yjs_update)
+  }
+  const projectedText = projection.getText('content').toString()
+  const combined = textDiff(canonicalText, projectedText)
+
+  const proposalRegions = new Map()
+  const staleByEmptyAttribution = []
+  for (const proposal of pending) {
+    const solo = cloneDoc(env.doc)
+    Y.applyUpdate(solo, proposal.yjs_update)
+    const soloText = solo.getText('content').toString()
+    const soloDiff = textDiff(canonicalText, soloText)
+    proposalRegions.set(proposal.id, soloDiff.hunks)
+    if (soloDiff.hunks.length === 0) staleByEmptyAttribution.push(proposal.id)
+  }
+  applyGC(env, staleByEmptyAttribution, [])
+
+  const pendingForAttribution = pending.filter(p => !staleByEmptyAttribution.includes(p.id))
+  const attributed = combined.hunks.map(h => ({ ...h, proposals: [] }))
+  for (const proposal of pendingForAttribution) {
+    const regions = proposalRegions.get(proposal.id) || []
+    const ref = { id: proposal.id, yjs_update: proposal.yjs_update }
+    for (const hunk of attributed) {
+      if (regions.some(region => rangesOverlap(region.canonicalRange, hunk.canonicalRange))) {
+        hunk.proposals.push(ref)
+      }
+    }
+  }
+
+  return {
+    hunks: groupHunks(attributed, sequenceNumber),
+    sequenceNumber,
+    canonicalText,
+    projectedText,
+    staleByPrecheck,
+    unstaleIDs,
+    staleByEmptyAttribution
+  }
+}
+
+const toBase64 = update => Buffer.from(update).toString('base64')
+
+const buildParityFixture = () => {
+  const env = setupDoc()
+  const p1 = createBlackProposal(env.doc, 'p1')
+  const p2 = createRugProposal(env.doc, 'p2')
+  const result = deriveProjectionPipeline(env, [p1, p2], 99)
+  return {
+    canonical_text: env.text.toString(),
+    projected_text: result.projectedText,
+    proposals: [p1, p2].map(p => ({
+      id: p.id,
+      yjs_update_base64: toBase64(p.yjs_update),
+      region_text_before: p.region_text_before,
+      region_text_after: p.region_text_after,
+      proposed_at_offset: p.proposed_at_offset
+    }))
+  }
 }
 
 const assert = (condition, message) => {
@@ -536,6 +831,125 @@ const tests = [
       detail(`after grouped accept: ${quote(current)}`)
       detail(`search for ${quote(soloSearch)} -> index=${foundIndex}`)
       assert(foundIndex === -1, 'Expected solo region_text_after search to fail after overlapping CRDT composition')
+    }
+  },
+  {
+    name: 'Projection pipeline Pass 1: combined diff canonical -> projection',
+    run: detail => {
+      const env = setupDoc()
+      const p1 = createBlackProposal(env.doc, 'p1')
+      const p2 = createRugProposal(env.doc, 'p2')
+      const result = deriveProjectionPipeline(env, [p1, p2], 1)
+
+      detail(`canonical: ${quote(result.canonicalText)}`)
+      detail(`projected: ${quote(result.projectedText)}`)
+      detail(`grouped hunks: ${result.hunks.length}`)
+      assertEqual(result.projectedText, 'The black cat sat on the rug.', 'Projection should apply all pending proposal updates')
+      assertEqual(result.hunks.length, 2, 'Non-overlapping proposals should stay as two grouped hunks')
+    }
+  },
+  {
+    name: 'Projection pipeline Pass 2 attribution: overlapping proposals map to one grouped hunk',
+    run: detail => {
+      const env = setupDoc()
+      const p1 = createBlackProposal(env.doc, 'p1')
+      const p2 = createBigProposal(env.doc, 'p2')
+      const result = deriveProjectionPipeline(env, [p1, p2], 2)
+
+      detail(`projected: ${quote(result.projectedText)}`)
+      detail(`hunks: ${result.hunks.length}`)
+      assertEqual(result.hunks.length, 1, 'Overlapping proposals should merge into one grouped hunk')
+      const ids = result.hunks[0].proposals.map(p => p.id).sort().join(',')
+      detail(`hunk proposal IDs: ${ids}`)
+      assertEqual(ids, 'p1,p2', 'Grouped hunk should carry both proposal IDs')
+      assertEqual(result.hunks[0].sequenceNumber, 2, 'Grouped hunk should carry derivation sequence number')
+    }
+  },
+  {
+    name: 'Grouping rule: single proposal touching multiple regions stays atomic',
+    run: detail => {
+      const env = setupDoc()
+      const p1 = createDoubleEditProposal(env.doc, 'p1')
+      const result = deriveProjectionPipeline(env, [p1], 3)
+
+      detail(`projected: ${quote(result.projectedText)}`)
+      detail(`hunks: ${result.hunks.length}`)
+      assertEqual(result.hunks.length, 1, 'Two disjoint edits from one proposal should group into one hunk')
+      assertEqual(result.hunks[0].proposals.length, 1, 'Grouped hunk should contain the single proposal')
+      assertEqual(result.hunks[0].proposals[0].id, 'p1', 'Grouped hunk should reference proposal p1')
+    }
+  },
+  {
+    name: 'Stale pre-check marks stale and excludes proposal from projection',
+    run: detail => {
+      const env = setupDoc()
+      const p1 = createBlackProposal(env.doc, 'p1')
+
+      env.doc.transact(() => {
+        insertBefore(env.text, 'cat', 'black ')
+      }, ORIGIN_HUMAN)
+
+      const result = deriveProjectionPipeline(env, [p1], 4)
+      detail(`canonical after manual apply: ${quote(env.text.toString())}`)
+      detail(`status p1: ${formatStatus(env.statusMap.get('p1'))}`)
+      detail(`hunks: ${result.hunks.length}`)
+      assertStatus(env.statusMap, 'p1', 'stale', 'Pre-check should mark proposal stale')
+      assertEqual(result.hunks.length, 0, 'Stale proposals must not render as hunks')
+      assertEqual(result.staleByPrecheck.length, 1, 'Pre-check stale set should include proposal')
+    }
+  },
+  {
+    name: 'Unstale: stale proposal returns to pending when pre-check no longer matches',
+    run: detail => {
+      const env = setupDoc()
+      const p1 = createBlackProposal(env.doc, 'p1')
+
+      env.doc.transact(() => {
+        insertBefore(env.text, 'cat', 'black ')
+      }, ORIGIN_HUMAN)
+      deriveProjectionPipeline(env, [p1], 5)
+      assertStatus(env.statusMap, 'p1', 'stale', 'Setup: proposal should be stale first')
+
+      env.doc.transact(() => {
+        replaceFirst(env.text, 'black cat', 'cat')
+      }, ORIGIN_HUMAN)
+      const result = deriveProjectionPipeline(env, [p1], 6)
+
+      detail(`status p1 after rollback: ${formatStatus(env.statusMap.get('p1'))}`)
+      detail(`hunks: ${result.hunks.length}`)
+      assertStatus(env.statusMap, 'p1', undefined, 'Proposal should be unstaled back to pending (key removed)')
+      assertEqual(result.hunks.length, 1, 'Unstaled proposal should render as a hunk again')
+      assertEqual(result.unstaleIDs.length, 1, 'Unstale list should include proposal')
+    }
+  },
+  {
+    name: 'Empty attribution catch marks stale when solo diff is empty',
+    run: detail => {
+      const env = setupDoc()
+      const p1 = createDeleteMatProposal(env.doc, 'p1')
+
+      env.doc.transact(() => {
+        replaceFirst(env.text, 'mat', '')
+      }, ORIGIN_HUMAN)
+
+      const result = deriveProjectionPipeline(env, [p1], 7)
+      detail(`canonical: ${quote(env.text.toString())}`)
+      detail(`status p1: ${formatStatus(env.statusMap.get('p1'))}`)
+      detail(`staleByEmptyAttribution: ${result.staleByEmptyAttribution.join(',')}`)
+      assertStatus(env.statusMap, 'p1', 'stale', 'Empty attribution should mark proposal stale')
+      assertEqual(result.staleByEmptyAttribution.length, 1, 'Expected empty attribution stale list to include proposal')
+    }
+  },
+  {
+    name: 'Parity fixture generation includes base64 updates and projected output',
+    run: detail => {
+      const fixture = buildParityFixture()
+      detail(`canonical: ${quote(fixture.canonical_text)}`)
+      detail(`projected: ${quote(fixture.projected_text)}`)
+      detail(`proposals: ${fixture.proposals.length}`)
+      assertEqual(fixture.projected_text, 'The black cat sat on the rug.', 'Parity fixture projected text should match JS projection')
+      assertEqual(fixture.proposals.length, 2, 'Parity fixture should include proposals')
+      assert(fixture.proposals.every(p => p.yjs_update_base64.length > 0), 'Each fixture proposal should include encoded update bytes')
     }
   },
   {

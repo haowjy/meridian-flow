@@ -420,6 +420,18 @@ func (s *DocumentSession) loadState(ctx context.Context) error {
 		if err := safeApplyUpdate(s.doc, state, nil); err != nil {
 			return fmt.Errorf("apply persisted yjs state from checkpoint+replay: %w", err)
 		}
+		if created := s.bootstrapProposalStatusMapLocked(); created {
+			persistedState, content, err := s.currentStateLocked()
+			if err != nil {
+				return err
+			}
+			if err := s.stateStore.SaveState(ctx, s.docID, persistedState, content); err != nil {
+				return fmt.Errorf("persist proposal status map bootstrap state: %w", err)
+			}
+			if _, err := s.updateLogStore.AppendUpdate(ctx, s.docID, persistedState, "server-bootstrap-proposal-status-map", nil); err != nil {
+				return fmt.Errorf("append proposal status map bootstrap update: %w", err)
+			}
+		}
 		if err := s.refreshPersistedStateVectorLocked(); err != nil {
 			return err
 		}
@@ -434,6 +446,18 @@ func (s *DocumentSession) loadState(ctx context.Context) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
+		if created := s.bootstrapProposalStatusMapLocked(); created {
+			persistedState, content, err := s.currentStateLocked()
+			if err != nil {
+				return err
+			}
+			if err := s.stateStore.SaveState(ctx, s.docID, persistedState, content); err != nil {
+				return fmt.Errorf("persist empty bootstrap proposal status map state: %w", err)
+			}
+			if _, err := s.updateLogStore.AppendUpdate(ctx, s.docID, persistedState, "server-bootstrap-proposal-status-map", nil); err != nil {
+				return fmt.Errorf("append empty bootstrap proposal status map update: %w", err)
+			}
+		}
 		if err := s.refreshPersistedStateVectorLocked(); err != nil {
 			return err
 		}
@@ -445,6 +469,18 @@ func (s *DocumentSession) loadState(ctx context.Context) error {
 
 	yText := s.doc.GetText("content")
 	if yText == nil {
+		if created := s.bootstrapProposalStatusMapLocked(); created {
+			persistedState, content, err := s.currentStateLocked()
+			if err != nil {
+				return err
+			}
+			if err := s.stateStore.SaveState(ctx, s.docID, persistedState, content); err != nil {
+				return fmt.Errorf("persist nil-content bootstrap proposal status map state: %w", err)
+			}
+			if _, err := s.updateLogStore.AppendUpdate(ctx, s.docID, persistedState, "server-bootstrap-proposal-status-map", nil); err != nil {
+				return fmt.Errorf("append nil-content bootstrap proposal status map update: %w", err)
+			}
+		}
 		if err := s.refreshPersistedStateVectorLocked(); err != nil {
 			return err
 		}
@@ -455,6 +491,7 @@ func (s *DocumentSession) loadState(ctx context.Context) error {
 			yText.Insert(0, bootstrapContent, nil)
 		}
 	}, "server-bootstrap")
+	s.bootstrapProposalStatusMapLocked()
 
 	persistedState, content, err := s.currentStateLocked()
 	if err != nil {
@@ -473,6 +510,16 @@ func (s *DocumentSession) loadState(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// bootstrapProposalStatusMapLocked ensures Y.Map("_proposal_status") exists in canonical state.
+// Caller must hold s.mu.
+func (s *DocumentSession) bootstrapProposalStatusMapLocked() bool {
+	if _, exists := s.doc.Share["_proposal_status"]; exists {
+		return false
+	}
+	s.doc.GetMap("_proposal_status")
+	return true
 }
 
 func (s *DocumentSession) flushOnDisconnect(ctx context.Context) error {

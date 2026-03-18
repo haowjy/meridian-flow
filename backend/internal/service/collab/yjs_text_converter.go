@@ -1,8 +1,10 @@
 package collab
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	ycrdt "github.com/haowjy/y-crdt"
@@ -12,6 +14,10 @@ import (
 // match the expected OldText. This means the caller's position was computed against
 // different content than the state provided to TextToUpdate.
 var ErrEditPositionMismatch = errors.New("edit position mismatch: text at position does not match OldText")
+
+// ErrInvalidYjsUpdateMutation is returned when a proposal update mutates
+// shared types other than Y.Text("content").
+var ErrInvalidYjsUpdateMutation = errors.New("proposal update modifies unsupported shared types")
 
 // TextEdit describes a targeted edit within the document content.
 // When provided to TextToUpdate, it enables positional delete+insert instead of
@@ -138,4 +144,156 @@ func utf16Len(s string) int {
 		}
 	}
 	return n
+}
+
+type sharedTypeSnapshot struct {
+	kind    string
+	payload string
+}
+
+// ValidateYjsUpdate checks that update only mutates Y.Text("content").
+func ValidateYjsUpdate(canonical []byte, update []byte) error {
+	doc := ycrdt.NewDoc("validate-yjs-update", true, ycrdt.DefaultGCFilter, nil, false)
+	if len(canonical) > 0 {
+		if err := safeApplyUpdate(doc, canonical, "validate-canonical"); err != nil {
+			return fmt.Errorf("apply canonical state: %w", err)
+		}
+	}
+
+	// Ensure canonical shared roots exist before diffing changed types.
+	doc.GetText("content")
+	doc.GetMap("_proposal_status")
+
+	beforeSnapshot, err := captureSharedTypeSnapshot(doc)
+	if err != nil {
+		return err
+	}
+
+	changedTypeNames := make(map[string]struct{})
+	afterTxnObserver := ycrdt.NewObserverHandler(func(v ...interface{}) {
+		if len(v) == 0 {
+			return
+		}
+		trans, ok := v[0].(*ycrdt.Transaction)
+		if !ok || trans == nil {
+			return
+		}
+		for changedTypeAny := range trans.Changed {
+			changedType, ok := changedTypeAny.(ycrdt.IAbstractType)
+			if !ok {
+				continue
+			}
+			if name, ok := lookupSharedTypeName(doc, changedType); ok {
+				changedTypeNames[name] = struct{}{}
+			}
+		}
+	})
+	doc.On("afterTransaction", afterTxnObserver)
+	defer doc.Off("afterTransaction", afterTxnObserver)
+
+	if err := safeApplyUpdate(doc, update, "validate-proposal"); err != nil {
+		return fmt.Errorf("apply proposal update: %w", err)
+	}
+
+	disallowedChanged := make([]string, 0, len(changedTypeNames))
+	for name := range changedTypeNames {
+		if name != "content" {
+			disallowedChanged = append(disallowedChanged, name)
+		}
+	}
+	sort.Strings(disallowedChanged)
+	if len(disallowedChanged) > 0 {
+		return fmt.Errorf("%w: %s", ErrInvalidYjsUpdateMutation, strings.Join(disallowedChanged, ", "))
+	}
+
+	// Fallback/defense-in-depth if transaction change sets ever become unavailable:
+	// compare non-content shared types before/after apply.
+	afterSnapshot, err := captureSharedTypeSnapshot(doc)
+	if err != nil {
+		return err
+	}
+	disallowedSnapshot := diffSharedTypeSnapshots(beforeSnapshot, afterSnapshot)
+	if len(disallowedSnapshot) > 0 {
+		return fmt.Errorf("%w: %s", ErrInvalidYjsUpdateMutation, strings.Join(disallowedSnapshot, ", "))
+	}
+
+	return nil
+}
+
+func captureSharedTypeSnapshot(doc *ycrdt.Doc) (map[string]sharedTypeSnapshot, error) {
+	snapshot := make(map[string]sharedTypeSnapshot, len(doc.Share))
+	for name, sharedType := range doc.Share {
+		if name == "content" {
+			continue
+		}
+		payload, err := json.Marshal(sharedType.ToJson())
+		if err != nil {
+			return nil, fmt.Errorf("marshal shared type %q snapshot: %w", name, err)
+		}
+		snapshot[name] = sharedTypeSnapshot{
+			kind:    sharedTypeKind(sharedType),
+			payload: string(payload),
+		}
+	}
+	return snapshot, nil
+}
+
+func lookupSharedTypeName(doc *ycrdt.Doc, target ycrdt.IAbstractType) (string, bool) {
+	for name, sharedType := range doc.Share {
+		if sharedType == target {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+func sharedTypeKind(sharedType ycrdt.IAbstractType) string {
+	switch sharedType.(type) {
+	case *ycrdt.YMap:
+		return "map"
+	case *ycrdt.YArray:
+		return "array"
+	case *ycrdt.YText:
+		return "text"
+	default:
+		return fmt.Sprintf("%T", sharedType)
+	}
+}
+
+func diffSharedTypeSnapshots(before, after map[string]sharedTypeSnapshot) []string {
+	disallowed := make([]string, 0)
+
+	for name, afterEntry := range after {
+		beforeEntry, exists := before[name]
+		if !exists {
+			disallowed = append(disallowed, name)
+			continue
+		}
+		if beforeEntry.kind != afterEntry.kind || beforeEntry.payload != afterEntry.payload {
+			disallowed = append(disallowed, name)
+		}
+	}
+
+	for name := range before {
+		if _, exists := after[name]; !exists {
+			disallowed = append(disallowed, name)
+		}
+	}
+
+	sort.Strings(disallowed)
+	return dedupeStrings(disallowed)
+}
+
+func dedupeStrings(values []string) []string {
+	if len(values) == 0 {
+		return values
+	}
+	out := values[:1]
+	for i := 1; i < len(values); i++ {
+		if values[i] == values[i-1] {
+			continue
+		}
+		out = append(out, values[i])
+	}
+	return out
 }
