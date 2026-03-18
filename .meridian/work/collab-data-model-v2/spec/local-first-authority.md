@@ -101,11 +101,11 @@ canonicalDoc.transact(() => {
 }, ORIGIN_ACCEPT);
 
 // After transaction succeeds, persist offset to backend for thread undo.
-// setAcceptedAtOffset is idempotent by proposal_id — subsequent calls overwrite.
-// No versioning needed: offset only changes on reapply, which also updates it.
+// Uses a monotonic version counter to prevent stale writes from overwriting
+// newer offsets (e.g., accept offset arriving after a reapply offset).
 for (const proposal of hunk.proposals) {
   const offset = /* compute character position where edit landed */;
-  api.setAcceptedAtOffset(proposal.id, offset);  // async, non-blocking
+  api.setAcceptedAtOffset(proposal.id, offset, version);  // async, non-blocking
 }
 ```
 
@@ -162,6 +162,8 @@ undoManager.undo();
 - No backend command path is required for undo semantics.
 
 ## Backend Status Mirroring
+
+**Bootstrap:** On document creation or first load, the backend must ensure `_proposal_status` Y.Map exists in the canonical Y.Doc (access it via `doc.getMap('_proposal_status')` which auto-creates it). This guarantees that `yjs_update` validation can detect unexpected Y.Map mutations — if the map doesn't exist yet, a malicious update that creates it would evade the `Transaction.Changed` check.
 
 Backend logic on Yjs sync:
 

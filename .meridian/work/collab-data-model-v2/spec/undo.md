@@ -240,11 +240,52 @@ When per-proposal thread undo fails (e.g., due to conflict or overlapping edits)
 |--------|-------|-----------|-------------|
 | Per-proposal Undo/Reapply | One proposal | Offset-anchored text search | Always (text-based) |
 | Undo All | All accepted in thread | Iterates per-proposal undo | Always |
-| **Restore to before this turn** | Entire document | Bookmark restore | Only while `ai_turn` bookmark exists (pre-compaction) |
+| **Restore to before this turn** | All documents edited in turn | Bookmark restore | Only while `ai_turn` bookmark exists (pre-compaction) |
+| **Undo restore** | All documents restored | Safety bookmark restore | Only while `safety_restore` bookmark exists (pre-compaction) |
 
-Turn-level restore replaces the entire canonical Y.Doc state with the bookmarked snapshot. This is destructive — all changes since that point (including the writer's own edits) are lost. The UI should show a confirmation with what will be lost. Before restoring, a new bookmark of the current state is created so the writer can undo the restoration.
+#### Multi-Document Restore
 
-**Status transitions on restore:** The bookmarked Y.Doc includes the `_proposal_status` Y.Map as it was before the turn. Proposals applied during that turn lose their Y.Map entries. Backend reconciliation on the restored state resets their row status accordingly. The restored proposals do NOT re-enter the projection as pending — their `yjs_update`s targeted the pre-turn canonical, and the restored canonical matches that state, but the proposals are marked `stale` on the next projection GC cycle (canonical already contains the pre-turn text). The thread UI shows these proposals with no action buttons (historical context only).
+An AI turn can edit multiple documents (e.g., several chapters). The `turn_id` on `ai_turn` bookmarks links them across documents. Restore operates on all documents that have an `ai_turn` bookmark matching the turn.
+
+#### Restore Flow
+
+1. Writer clicks "Restore to before this turn" in thread UI
+2. UI shows confirmation with scope: "This will restore N document(s) to their state before this turn. All changes since then (including your own edits) will be lost."
+3. For each document with an `ai_turn` bookmark for this `turn_id`:
+   a. Create a `safety_restore` bookmark of the current state (same `turn_id`)
+   b. Replace the entire Y.Doc state with the `ai_turn` bookmark snapshot
+   c. `undoManager.clear()` — the undo stack references struct IDs that no longer exist after state replacement
+4. Backend reconciliation runs on each restored document, resetting proposal row statuses from the restored `_proposal_status` Y.Map
+5. Thread UI updates to `[Restored] [Undo restore]` on the turn
+
+#### Undo Restore Flow
+
+1. Writer clicks "Undo restore" on the turn in thread UI
+2. For each document with a `safety_restore` bookmark for this `turn_id`:
+   a. Replace Y.Doc state with the `safety_restore` bookmark snapshot
+   b. `undoManager.clear()`
+3. Backend reconciliation runs, restoring proposal row statuses
+4. Thread UI returns to pre-restore state with per-proposal actions
+
+#### Why Not UndoManager
+
+Restore replaces the entire Y.Doc state — it is not a normal Yjs transaction with individual struct operations. After state replacement, all struct IDs from the post-bookmark period are gone. UndoManager references those old struct IDs and would be corrupt. `undoManager.clear()` is required after every restore. The "Undo restore" button in the thread UI (backed by the `safety_restore` bookmark) is the only way to reverse a restore. Ctrl-Z does nothing — the undo stack is empty.
+
+#### Not Local-First
+
+Unlike per-proposal undo (which is a local Yjs transaction), turn-level restore is a **backend-coordinated operation**. The frontend must:
+1. Query all documents with `ai_turn` bookmarks for the `turn_id`
+2. Fetch bookmark state for each document
+3. Apply state replacement to each document's Y.Doc
+4. Create safety bookmarks via backend API
+
+This requires network connectivity. If the backend is unreachable, the restore button should be disabled.
+
+#### Status Transitions on Restore
+
+The bookmarked Y.Doc includes the `_proposal_status` Y.Map as it was before the turn. Proposals applied during that turn lose their Y.Map entries — they return to `pending` (missing key = pending). Since canonical now matches the pre-turn state (which is what the proposals' `yjs_update`s were diffed against), these proposals re-enter the projection as diff hunks. The writer can re-review them.
+
+Proposals that were accepted *before* the restored turn retain their Y.Map entries and remain accepted.
 
 ### Thread UI: Immutable History + Status Overlay
 
@@ -271,9 +312,15 @@ The overlay is purely derived from proposal row status. No writes to thread/mess
 At the turn level (grouping all tool calls in one AI turn):
 
 ```
-Turn: AI Assistant - Chapter 4 Review
-  [Undo All Accepted]
-  [Restore to before this turn]    <- only shown while ai_turn bookmark exists
+Before restore:
+  Turn: AI Assistant - Chapter 4 Review
+    [Undo All Accepted]
+    [Restore to before this turn]    <- only shown while ai_turn bookmark exists
+
+After restore:
+  Turn: AI Assistant - Chapter 4 Review
+    [Restored] [Undo restore]        <- only shown while safety_restore bookmark exists
+    (per-proposal actions hidden — proposals are back to pending as diff hunks)
 ```
 
 ### Relationship to `_proposal_status`

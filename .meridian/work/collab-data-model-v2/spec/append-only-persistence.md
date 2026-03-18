@@ -73,7 +73,8 @@ CREATE TABLE document_bookmarks (
     document_id     UUID NOT NULL REFERENCES documents(id),
     update_id       BIGINT REFERENCES document_updates(id),  -- NULL once materialized
     state           BYTEA,                                    -- materialized blob, NULL while pointer
-    bookmark_type   TEXT NOT NULL,       -- "manual" | "daily" | "ai_turn"
+    bookmark_type   TEXT NOT NULL,       -- "manual" | "daily" | "ai_turn" | "safety_restore"
+    turn_id         UUID,               -- links ai_turn + safety_restore bookmarks across documents
     name            TEXT,                -- user-provided label (manual only)
     created_by      UUID,
     created_at      TIMESTAMPTZ DEFAULT now()
@@ -98,7 +99,7 @@ Retention and creation rules:
 
 Compaction preservation rule:
 - Manual and daily bookmarks are preserved by materializing full `state` blobs
-- AI turn bookmarks are deleted once they age into the compacted window
+- AI turn and safety restore bookmarks are deleted once they age into the compacted window
 
 ### Bookmark Tiers
 
@@ -109,10 +110,11 @@ Bookmarks are lightweight pointers into the update log. On compaction, some are 
 | Manual | User clicks "Save Version" | Materialize into blob | Forever |
 | Daily | End of last editing session each day | Materialize into blob | Forever |
 | AI turn | Before AI turn's proposals apply | Delete | Only within update window |
+| Safety restore | Before turn-level restore executes | Delete | Only within update window |
 
 Within the retained update window (10k updates), all bookmark types work as free pointers — replay the log to that `update_id`. Beyond the window, only manual and daily bookmarks survive as materialized blobs.
 
-AI turn bookmarks enable the thread UI's "Restore to before this turn" action (see [Undo Design](undo.md) — Turn-Level Restore). When the bookmark is compacted away, the restore button disappears from the UI. Per-proposal undo/reapply still works (it uses text search, not bookmarks).
+AI turn bookmarks enable the thread UI's "Restore to before this turn" action (see [Undo Design](undo.md) — Turn-Level Restore). Safety restore bookmarks capture the pre-restore state for "Undo restore." Both use `turn_id` to link bookmarks across documents when an AI turn edited multiple chapters. When these bookmarks are compacted away, their corresponding UI buttons disappear. Per-proposal undo/reapply still works (it uses text search, not bookmarks).
 
 ## Write Path
 
