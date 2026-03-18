@@ -29,8 +29,8 @@ Complete list of endpoints, WebSocket events, and internal interfaces after v2 i
 | `PATCH` | `/api/proposals/{id}/offset` | Persist `accepted_at_offset` with monotonic version. Called by frontend after accept transaction or thread reapply (any transition into `accepted`). |
 | `GET` | `/api/documents/{id}/proposals` | List proposals for a document (with status filter). Replaces WS `proposal:snapshot`. |
 | `GET` | `/api/proposals/{id}` | Get single proposal (including `yjs_update` bytes). Replaces WS `proposal:requestUpdate`. |
-| `POST` | `/api/turns/{id}/restore` | Turn-level restore: create safety bookmarks, replace Y.Doc state for all documents with `ai_turn` bookmark for this turn. Returns list of affected document IDs. |
-| `POST` | `/api/turns/{id}/undo-restore` | Undo restore: restore from safety bookmarks for this turn. |
+| `POST` | `/api/turns/{id}/restore` | Turn-level restore: freeze live sessions, create idempotent safety bookmarks (`ON CONFLICT DO NOTHING`), replace Y.Doc state for all documents with `ai_turn` bookmark for this turn. Returns list of affected document IDs. Idempotent — safe to retry on lost response. |
+| `POST` | `/api/turns/{id}/undo-restore` | Undo restore: freeze live sessions, restore from safety bookmarks for this turn. |
 
 ### Removed
 

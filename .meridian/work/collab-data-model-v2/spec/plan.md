@@ -19,8 +19,8 @@ audience: developer, architect
 | 5   | Reject is immediate      | Set `_proposal_status[proposalId]='rejected'` for all proposals in the grouped hunk.                                            |
 | 6   | Edit is plain typing     | Edit is reject + type or accept + modify with `ORIGIN_HUMAN`; no separate review-edit status value.                           |
 | 7   | Unified UndoManager      | One stack over `[Y.Text('content'), Y.Map('_proposal_status')]`.                                                                |
-| 8   | Undo boundaries          | Keep single UndoManager; call `clear()` when collaboration mode changes (auto-apply to manual or vice versa).                 |
-| 9   | Projection GC            | Text pre-check: if canonical already contains `region_text_after` at `proposed_at_offset`, mark `stale`. No apply-then-diff.  |
+| 8   | Undo boundaries          | Keep single UndoManager; call `clear()` when collaboration mode changes (auto-apply to manual or vice versa). Prompt for confirmation if undo stack is non-empty. |
+| 9   | Projection GC            | Text pre-check: if canonical already contains `region_text_after` at `proposed_at_offset`, mark `stale`. No apply-then-diff. **Stale is non-terminal**: re-evaluate on every derive; if canonical no longer matches, delete Y.Map entry (back to pending). |
 | 10  | Status chain             | `edit_tool -> proposal -> yjs_update -> status` is always current in backend row and thread UI.                               |
 | 11  | Thread undo/reapply      | Offset-anchored text search using `region_text_before`/`region_text_after` + stored offset (`accepted_at_offset` or `proposed_at_offset`). No full-document fallback — conflict if not found within ±500 char window. |
 | 12  | Thread undo map behavior | Thread undo/reapply writes to both canonical text and `_proposal_status` Y.Map in one transaction (`ORIGIN_THREAD`).           |

@@ -176,7 +176,7 @@ Backend logic on Yjs sync:
 2. Upsert proposal-row status to match map value (`accepted`, `rejected`, `stale`, `reverted`). Key removal (from session Ctrl-Z undoing a reject) sets row back to `pending`.
 3. Thread undo/reapply writes to `_proposal_status` Y.Map (using `ORIGIN_THREAD`), mirrored to row like all other status changes.
 4. Keep row status current for UI (`pending`, `accepted`, `rejected`, `stale`, `reverted`).
-5. On document load (new connection or reconnect), read the full `_proposal_status` Y.Map and reconcile all proposal rows against it. Delta-driven mirroring handles steady-state; full reconciliation on load handles missed deltas. Key removal (missing key) sets row back to `pending` **unless** the row status is `invalid` or `stale` — these are terminal statuses excluded from missing-key reconciliation.
+5. On document load (new connection or reconnect), read the full `_proposal_status` Y.Map and reconcile all proposal rows against it. Delta-driven mirroring handles steady-state; full reconciliation on load handles missed deltas. Key removal (missing key) sets row back to `pending` **unless** the row status is `invalid` — `invalid` is the only terminal status excluded from missing-key reconciliation. `stale` proposals may return to `pending` when canonical rolls back (stale is non-terminal — see [Frontend Diff Model](frontend-diff-model.md)).
 
 ## Reconnect / Reload
 

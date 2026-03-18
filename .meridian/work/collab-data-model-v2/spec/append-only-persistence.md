@@ -77,7 +77,9 @@ CREATE TABLE document_bookmarks (
     turn_id         UUID,               -- links ai_turn + safety_restore bookmarks across documents
     name            TEXT,                -- user-provided label (manual only)
     created_by      UUID,
-    created_at      TIMESTAMPTZ DEFAULT now()
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    -- Idempotency for restore operations: prevents duplicate safety bookmarks on retry
+    UNIQUE (document_id, turn_id, bookmark_type)
 );
 ```
 

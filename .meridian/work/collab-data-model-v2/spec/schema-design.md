@@ -129,6 +129,8 @@ Unchanged request-idempotency table.
 
 Pending proposals are represented by missing keys plus proposal row `status = 'pending'`.
 
+`stale` entries are non-terminal: on every projection re-derive, if canonical no longer contains `region_text_after` at the expected position, the Y.Map entry is deleted (returning the proposal to `pending`). See [Frontend Diff Model](frontend-diff-model.md) — Projection GC.
+
 Offsets (`proposed_at_offset`, `accepted_at_offset`) are stored in the Postgres proposal row only, not in the Y.Map. Offsets don't need CRDT merge semantics — they are metadata set once (at creation or accept time) and read later for thread undo.
 
 ## What Was Eliminated

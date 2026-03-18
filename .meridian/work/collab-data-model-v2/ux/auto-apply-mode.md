@@ -111,7 +111,7 @@ AI edits and human typing interleave naturally in one stack.
 | Quick fixes (typos, formatting) | Auto-apply | Low risk, high throughput |
 | Structural rewrites | Manual | High stakes, want to evaluate each change |
 
-The mode is per-user and can be changed at any time. Changing mode calls `undoManager.clear()` to prevent cross-mode undo confusion.
+The mode is per-user and can be changed at any time. Changing mode calls `undoManager.clear()` to prevent cross-mode undo confusion. **If the undo stack is non-empty, the UI prompts for confirmation** ("Switching modes will clear your undo history. Thread undo is unaffected.") before proceeding.
 
 ## Edge Case: Mode Switch Mid-Session
 
@@ -122,7 +122,10 @@ Before switch:
   P1, P2, P3 all accepted (auto-applied)
   Undo stack has 3 entries
 
-After switch:
+User sees confirmation: "Switching modes will clear your undo history.
+Thread undo is unaffected."
+
+After switch (confirmed):
   undoManager.clear()  -- undo stack emptied
   P1, P2, P3 remain accepted (they're in canonical)
   Thread undo still works for all three
@@ -141,7 +144,9 @@ Before switch:
   P4 (pending) visible as inline diff hunk
   P5 (pending) visible as inline diff hunk
 
-After switch:
+(If undo stack has entries, confirmation prompt shown first)
+
+After switch (confirmed):
   undoManager.clear()  -- undo stack emptied
   P4, P5 remain pending -- they are NOT auto-applied or discarded
   Diff hunks stay visible until acted on
