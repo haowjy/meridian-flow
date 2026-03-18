@@ -31,7 +31,17 @@ audience: developer, architect
 
 ### Phase 0: Append-Only Persistence
 
-Goal: keep existing append-only checkpoint model workstream as foundation.
+Goal: migrate from merged-snapshot persistence to append-only update log. Must land before subsequent phases.
+
+Tasks:
+
+1. Schema migration: add `document_updates`, `document_checkpoints`, `document_bookmarks` tables.
+2. Modify `SessionManager.persist()`: replace `documents.yjs_state` overwrite with `document_updates` row insert (append).
+3. Modify `SessionManager.loadState()`: load latest `document_checkpoints` row + replay `document_updates` rows since checkpoint.
+4. Implement compaction worker: count updates per document, compact oldest 10k into new checkpoint at 20k threshold. Acquire `pg_advisory_xact_lock(document_id)`, materialize manual/daily bookmarks, delete ai_turn/safety_restore bookmarks, merge updates into checkpoint, delete compacted update rows. Single transaction.
+5. Remove `documents.yjs_state` column (after append-only is live and verified).
+6. Migrate `collab_document_snapshots` to `document_bookmarks` (map existing named snapshots to manual bookmarks, drop old table).
+7. Verify: document load via checkpoint + replay produces identical Y.Doc state to old `yjs_state` overwrite.
 
 ### Phase 1: Schema Housekeeping
 
@@ -40,7 +50,7 @@ Tasks:
 1. Ensure proposal table supports `pending`, `accepted`, `rejected`, `stale`, `reverted`.
 2. Add `created_by_user_id` to proposal schema.
 3. Ensure `region_text_before`, `region_text_after` are present. Add `proposed_at_offset INT NULL` (set at creation by backend), `accepted_at_offset INT NULL` (set at accept time by frontend), and `turn_id UUID NULL`.
-4. Add `accepted_at_offset` API endpoint — frontend calls this after accept transaction to persist the offset to the proposal row.
+4. Add `accepted_at_offset` API endpoint with monotonic version guard — frontend calls this after any transition into `accepted` (hunk accept or thread reapply) to persist the offset to the proposal row. Add `offset_version INT DEFAULT 0` to proposal table; endpoint checks `request_version > stored_version`.
 5. Remove `ai_content` from document schema and consumers.
 
 **Transition sub-phase:** Keep `ai_content` as canonical text (without per-user projection) during transition. Old consumers that read `ai_content` get canonical text, which is what they got before the projection concept existed. New consumers use the per-user projection API. Remove `ai_content` once all old consumers are migrated.
@@ -51,7 +61,7 @@ Tasks:
 
 1. Implement projection derivation from canonical + pending proposal updates with region tracking. Clone via `new Y.Doc()` + `applyUpdate(clone, encodeStateAsUpdate(source))` (no public `Y.Doc.clone()` API).
 2. Lock `yjs_update` generation algorithm: `encodeStateAsUpdate(tempDoc, encodeStateVector(canonical))` — ensures proposals carry only the delta, not full state.
-3. Validate `yjs_update` at proposal creation time on the backend. If `Y.applyUpdate` fails against canonical, reject the proposal before storing. Validate that the `yjs_update` only modifies `Y.Text('content')` — reject with `invalid` if it includes `Y.Map` or `Y.Array` mutations (prevents accidental `_proposal_status` contamination). Ensure `_proposal_status` Y.Map is bootstrapped in canonical docs so `Transaction.Changed` can detect unexpected mutations. Verify `y-crdt` Go library supports inspecting which shared types an update touches before applying; fallback: apply to a test doc, check for unexpected Y.Map/Y.Array mutations, reject if found. Validate `region_text_before` exists in canonical at `proposed_at_offset` (within tolerance). Derive `region_text_after` server-side from the solo diff — enforce that the update produces exactly one contiguous text replacement (reject with `invalid` if multiple disjoint changes detected via `YTextEvent.GetDelta()`). Add `invalid` as a terminal status for defense-in-depth (`invalid` is backend-only, never enters `_proposal_status` Y.Map).
+3. Validate `yjs_update` at proposal creation time on the backend. If `Y.applyUpdate` fails against canonical, reject the proposal before storing. Validate that the `yjs_update` only modifies `Y.Text('content')` — reject with `invalid` if it includes `Y.Map` or `Y.Array` mutations (prevents accidental `_proposal_status` contamination). Ensure `_proposal_status` Y.Map is bootstrapped in canonical docs so `Transaction.Changed` can detect unexpected mutations. Verify `y-crdt` Go library supports inspecting which shared types an update touches before applying; fallback: apply to a test doc, check for unexpected Y.Map/Y.Array mutations, reject if found. Validate `region_text_before` exists in canonical at `proposed_at_offset` (within tolerance). Derive `region_text_after` server-side from the solo diff — enforce that the update produces exactly one contiguous text replacement at creation time (reject with `invalid` if multiple disjoint changes detected via delta inspection). This constraint applies to the `yjs_update` when diffed against canonical at creation time; when the same update is later applied to a diverged canonical via CRDT composition during projection, the textual result may differ, but the diff pipeline handles this naturally (hunks carry proposal IDs and get grouped by proposal atomicity). Add `invalid` as a terminal status for defense-in-depth (`invalid` is backend-only, never enters `_proposal_status` Y.Map).
 4. Diff into raw hunks, then group overlapping hunks into user-facing regions (overlap + proposal atomicity only — no proximity threshold).
 5. Attach contributing proposal sets and update references to each grouped hunk.
 6. Re-derive triggers: proposal-set changes and `_proposal_status` changes trigger full re-derive. Local typing remaps decorations via CM6 `map()` (debounced 500ms re-derive for staleness). Remote canonical text changes (other users' accepts, thread undo) trigger immediate full re-derive.

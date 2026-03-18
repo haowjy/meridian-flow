@@ -70,6 +70,8 @@ This is not full leader election — just a binary "any owner tab connected?" ch
 
 On reconnect, the frontend queries pending proposals for the current user via REST to catch up on any missed `proposal:new` events.
 
+**Reconnect race guard:** After receiving `proposal:new` in auto-apply mode, the frontend fetches the proposal via REST before applying. If `status != 'pending'` (e.g., backend already applied it during the tab's disconnection), skip — do not apply. This prevents creating a duplicate Y.Map write when Yjs sync hasn't yet delivered the backend's prior write.
+
 ## Authority Boundary
 
 | Concern | Authority | Storage | Notes |
@@ -103,6 +105,7 @@ canonicalDoc.transact(() => {
 // After transaction succeeds, persist offset to backend for thread undo.
 // Uses a monotonic version counter to prevent stale writes from overwriting
 // newer offsets (e.g., accept offset arriving after a reapply offset).
+// This same call is also made after thread reapply (any transition into 'accepted').
 for (const proposal of hunk.proposals) {
   const offset = /* compute character position where edit landed */;
   api.setAcceptedAtOffset(proposal.id, offset, version);  // async, non-blocking
@@ -164,6 +167,8 @@ undoManager.undo();
 ## Backend Status Mirroring
 
 **Bootstrap:** On document creation or first load, the backend must ensure `_proposal_status` Y.Map exists in the canonical Y.Doc (access it via `doc.getMap('_proposal_status')` which auto-creates it). This guarantees that `yjs_update` validation can detect unexpected Y.Map mutations — if the map doesn't exist yet, a malicious update that creates it would evade the `Transaction.Changed` check.
+
+**Known gap (authorization):** Any client connected to the document WebSocket can send Yjs updates that modify `_proposal_status`. A malicious client could accept another user's proposal or reject proposals to block work. For the current stage (no untrusted users), this is acceptable. For production, validate `_proposal_status` changes in the Yjs sync path: only allow the `created_by_user_id` of a proposal to modify its status entry.
 
 Backend logic on Yjs sync:
 

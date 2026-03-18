@@ -214,8 +214,9 @@ This handles fiction writing's repeated phrases ("she said", "he nodded") by anc
    - Set `_proposal_status[proposalId] = 'accepted'` on `Y.Map('_proposal_status')`.
    - Record new `accepted_at_offset` for future undo.
 5. Transaction enters session undo stack (Ctrl-Z can reverse it).
-6. Yjs sync delivers delta to backend; backend mirrors status to proposal row.
-7. If not found, show conflict in thread UI.
+6. Persist new `accepted_at_offset` via `PATCH /api/proposals/{id}/offset` (same endpoint as initial accept, same monotonic version guard).
+7. Yjs sync delivers delta to backend; backend mirrors status to proposal row.
+8. If not found, show conflict in thread UI.
 
 ### Undo All
 
@@ -251,33 +252,38 @@ An AI turn can edit multiple documents (e.g., several chapters). The `turn_id` o
 
 1. Writer clicks "Restore to before this turn" in thread UI
 2. UI shows confirmation with scope: "This will restore N document(s) to their state before this turn. All changes since then (including your own edits) will be lost."
-3. For each document with an `ai_turn` bookmark for this `turn_id`:
-   a. Create a `safety_restore` bookmark of the current state (same `turn_id`)
-   b. Replace the entire Y.Doc state with the `ai_turn` bookmark snapshot
-   c. `undoManager.clear()` — the undo stack references struct IDs that no longer exist after state replacement
-4. Backend reconciliation runs on each restored document, resetting proposal row statuses from the restored `_proposal_status` Y.Map
-5. Thread UI updates to `[Restored] [Undo restore]` on the turn
+3. Backend creates `safety_restore` bookmarks for **all** affected documents atomically first (if any bookmark creation fails, abort before modifying any document)
+4. For each document with an `ai_turn` bookmark for this `turn_id`:
+   a. Backend acquires `pg_advisory_xact_lock(document_id)` (serializes with compaction)
+   b. Backend replaces persisted state: write new checkpoint from `ai_turn` bookmark state, delete post-bookmark update rows
+   c. Backend disconnects all WebSocket clients for this document and broadcasts `document:restored` event
+   d. Clients reconnect, rehydrate Y.Doc from fresh persisted state (standard Yjs sync)
+   e. All reconnected tabs call `undoManager.clear()` on receiving `document:restored`
+5. Backend reconciliation runs on each restored document, resetting proposal row statuses from the restored `_proposal_status` Y.Map
+6. Thread UI updates to `[Restored] [Undo restore]` on the turn
+7. UI shows "Restoring..." interstitial during the operation
 
 #### Undo Restore Flow
 
 1. Writer clicks "Undo restore" on the turn in thread UI
 2. For each document with a `safety_restore` bookmark for this `turn_id`:
-   a. Replace Y.Doc state with the `safety_restore` bookmark snapshot
-   b. `undoManager.clear()`
+   a. Backend acquires `pg_advisory_xact_lock(document_id)`
+   b. Backend replaces persisted state with `safety_restore` bookmark state
+   c. Backend disconnects all WebSocket clients, broadcasts `document:restored`
+   d. Clients reconnect, rehydrate, call `undoManager.clear()`
 3. Backend reconciliation runs, restoring proposal row statuses
 4. Thread UI returns to pre-restore state with per-proposal actions
 
 #### Why Not UndoManager
 
-Restore replaces the entire Y.Doc state — it is not a normal Yjs transaction with individual struct operations. After state replacement, all struct IDs from the post-bookmark period are gone. UndoManager references those old struct IDs and would be corrupt. `undoManager.clear()` is required after every restore. The "Undo restore" button in the thread UI (backed by the `safety_restore` bookmark) is the only way to reverse a restore. Ctrl-Z does nothing — the undo stack is empty.
+Restore replaces the persisted document state entirely — it is not a normal Yjs transaction. Yjs is an append-only CRDT; you cannot "replace" a Y.Doc's state in-place. Instead, the backend replaces the persisted state (new checkpoint from bookmark), disconnects all clients, and clients reconnect to rehydrate a fresh Y.Doc from the new persisted state. After rehydration, struct IDs from the post-bookmark period are gone. UndoManager on all tabs must call `clear()` (triggered by the `document:restored` event). The "Undo restore" button in the thread UI (backed by the `safety_restore` bookmark) is the only way to reverse a restore. Ctrl-Z does nothing — the undo stack is empty.
 
 #### Not Local-First
 
-Unlike per-proposal undo (which is a local Yjs transaction), turn-level restore is a **backend-coordinated operation**. The frontend must:
-1. Query all documents with `ai_turn` bookmarks for the `turn_id`
-2. Fetch bookmark state for each document
-3. Apply state replacement to each document's Y.Doc
-4. Create safety bookmarks via backend API
+Unlike per-proposal undo (which is a local Yjs transaction), turn-level restore is a **backend-coordinated operation**. The frontend calls a single REST endpoint (`POST /api/turns/{id}/restore`); the backend handles all steps:
+1. Create safety bookmarks for all affected documents (atomic — abort if any fails)
+2. For each document: acquire advisory lock, replace persisted state, disconnect clients
+3. Clients reconnect and rehydrate automatically via standard Yjs sync
 
 This requires network connectivity. If the backend is unreachable, the restore button should be disabled.
 

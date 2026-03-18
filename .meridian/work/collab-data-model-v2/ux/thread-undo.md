@@ -143,21 +143,23 @@ Turn also edited Chapter 5 with P6 (accepted).
 Writer clicks "Restore to before this turn":
   1. Confirmation: "This will restore 2 document(s). All changes since
      this turn (including your edits) will be lost."
-  2. Writer confirms.
-  3. For each affected document:
-     - Current state saved as safety_restore bookmark
-     - Document restored to ai_turn bookmark
-     - Undo stack cleared (Ctrl-Z won't work — use "Undo restore")
-  4. P1, P3, P4, P6 return to pending — they re-appear as diff hunks
+  2. Writer confirms. UI shows "Restoring..." interstitial.
+  3. Backend creates safety_restore bookmarks for all documents first.
+  4. For each affected document:
+     - Backend replaces persisted state with ai_turn bookmark
+     - All WebSocket clients disconnected
+     - Clients reconnect, rehydrate fresh Y.Doc, clear undo stacks
+  5. P1, P3, P4, P6 return to pending — they re-appear as diff hunks
      for the writer to re-review.
 
 Thread UI after restore:
   [Restored] [Undo restore]
 
 Writer clicks "Undo restore":
-  1. Each document restored to its safety_restore bookmark
-  2. P1, P3, P4, P6 return to their pre-restore statuses
-  3. Thread UI returns to normal per-proposal actions
+  1. Backend replaces each document's state with safety_restore bookmark
+  2. Clients reconnect, rehydrate, clear undo stacks
+  3. P1, P3, P4, P6 return to their pre-restore statuses
+  4. Thread UI returns to normal per-proposal actions
 ```
 
 Both buttons are only available while their bookmarks exist (pre-compaction). After compaction deletes the bookmarks, the buttons disappear from the thread UI. Per-proposal undo/reapply still works (it uses text search, not bookmarks).

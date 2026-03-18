@@ -50,7 +50,7 @@ flowchart LR
 
 ### Backend Projection for AI Context
 
-When an AI agent reads the document, the backend computes the same projection (clone canonical + apply current-user pending proposals + extract text). This ensures the AI works against the same view its owner sees. See [Frontend Diff Model](frontend-diff-model.md) for the projection computation algorithm.
+When an AI agent reads the document, the backend computes the same projection (clone canonical + apply the thread owner's pending proposals + extract text). The projection builder takes `(documentID, userID)` — it is user-scoped, not document-global. This ensures the AI works against the same view its owner sees. See [Frontend Diff Model](frontend-diff-model.md) for the projection computation algorithm.
 
 ### Proposal Independence
 
