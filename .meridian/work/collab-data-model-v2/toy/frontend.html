@@ -1245,8 +1245,8 @@ const scenarios = [
     action: () => createProposal(
       'insert "black " before "cat"',
       t => findAndInsert(t, 'cat', 'black '),
-      'The cat',
-      'The black cat'
+      'cat',
+      'black cat'
     ),
   },
   {
@@ -1284,8 +1284,8 @@ const scenarios = [
       const p = createProposal(
         'insert "lazy " before "sat"',
         t => findAndInsert(t, 'sat', 'lazy '),
-        'cat sat',
-        'cat lazy sat'
+        'sat',
+        'lazy sat'
       );
       if (!p) return;
       applyRemoteCanonicalChange('apply proposal text remotely', t => {
