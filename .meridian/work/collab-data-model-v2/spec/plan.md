@@ -51,7 +51,7 @@ Tasks:
 
 1. Implement projection derivation from canonical + pending proposal updates with region tracking. Clone via `new Y.Doc()` + `applyUpdate(clone, encodeStateAsUpdate(source))` (no public `Y.Doc.clone()` API).
 2. Lock `yjs_update` generation algorithm: `encodeStateAsUpdate(tempDoc, encodeStateVector(canonical))` — ensures proposals carry only the delta, not full state.
-3. Validate `yjs_update` at proposal creation time on the backend. If `Y.applyUpdate` fails against canonical, reject the proposal before storing. Validate that the `yjs_update` only modifies `Y.Text('content')` — reject with `invalid` if it includes `Y.Map` or `Y.Array` mutations (prevents accidental `_proposal_status` contamination). Verify `y-crdt` Go library supports inspecting which shared types an update touches before applying; fallback: apply to a test doc, check for unexpected Y.Map/Y.Array mutations, reject if found. Validate `region_text_before` exists in canonical at `proposed_at_offset` (within tolerance). Derive `region_text_after` server-side from the solo diff rather than trusting AI-supplied metadata. Add `invalid` as a terminal status for defense-in-depth (`invalid` is backend-only, never enters `_proposal_status` Y.Map).
+3. Validate `yjs_update` at proposal creation time on the backend. If `Y.applyUpdate` fails against canonical, reject the proposal before storing. Validate that the `yjs_update` only modifies `Y.Text('content')` — reject with `invalid` if it includes `Y.Map` or `Y.Array` mutations (prevents accidental `_proposal_status` contamination). Ensure `_proposal_status` Y.Map is bootstrapped in canonical docs so `Transaction.Changed` can detect unexpected mutations. Verify `y-crdt` Go library supports inspecting which shared types an update touches before applying; fallback: apply to a test doc, check for unexpected Y.Map/Y.Array mutations, reject if found. Validate `region_text_before` exists in canonical at `proposed_at_offset` (within tolerance). Derive `region_text_after` server-side from the solo diff — enforce that the update produces exactly one contiguous text replacement (reject with `invalid` if multiple disjoint changes detected via `YTextEvent.GetDelta()`). Add `invalid` as a terminal status for defense-in-depth (`invalid` is backend-only, never enters `_proposal_status` Y.Map).
 4. Diff into raw hunks, then group overlapping hunks into user-facing regions (overlap + proposal atomicity only — no proximity threshold).
 5. Attach contributing proposal sets and update references to each grouped hunk.
 6. Re-derive triggers: proposal-set changes and `_proposal_status` changes trigger full re-derive. Local typing remaps decorations via CM6 `map()` (debounced 500ms re-derive for staleness). Remote canonical text changes (other users' accepts, thread undo) trigger immediate full re-derive.
@@ -93,7 +93,9 @@ Tasks:
 4. Apply undo/reapply as canonical Yjs updates appended to `document_updates`.
 5. Return conflict when target text not found within ±500 char tolerance window of stored offset. No full-document fallback — prevents wrong-occurrence replacement in fiction with repeated phrases.
 6. Thread UI renders proposal status as overlay on tool calls — no thread message mutation.
-7. Create `ai_turn` bookmark (update log pointer) before each AI turn's proposals are applied. Thread UI shows "Restore to before this turn" while bookmark exists (pre-compaction).
+7. Create `ai_turn` bookmark (update log pointer, per-document, linked by `turn_id`) before each AI turn's proposals are applied.
+8. Implement turn-level restore: query all documents with `ai_turn` bookmark for `turn_id`, create `safety_restore` bookmarks, replace Y.Doc state, `undoManager.clear()`. Backend-coordinated (not local-first).
+9. Implement undo restore: restore from `safety_restore` bookmark, `undoManager.clear()`. Thread UI shows `[Restored] [Undo restore]` on the turn while bookmarks exist (pre-compaction).
 
 ## Dependency Graph
 

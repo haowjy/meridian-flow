@@ -134,25 +134,40 @@ If some succeed and others conflict, the UI shows per-proposal results:
 
 ## Turn-Level Restore
 
-When per-proposal undo fails (e.g., conflict after the writer edited the region), the writer can restore the document to the state before the entire AI turn:
+When per-proposal undo fails (e.g., conflict after the writer edited the region), the writer can restore the document to the state before the entire AI turn. If the turn edited multiple documents, all are restored together.
 
 ```
 Thread has P1 (conflict on undo), P3 (accepted), P4 (accepted).
+Turn also edited Chapter 5 with P6 (accepted).
 
 Writer clicks "Restore to before this turn":
-  1. Current document state saved as a new bookmark (safety net)
-  2. Document restored to ai_turn bookmark (state before P1, P3, P4 were applied)
-  3. All three proposals' statuses reset
-  4. Confirmation shown: "Document restored. You can undo this restoration."
+  1. Confirmation: "This will restore 2 document(s). All changes since
+     this turn (including your edits) will be lost."
+  2. Writer confirms.
+  3. For each affected document:
+     - Current state saved as safety_restore bookmark
+     - Document restored to ai_turn bookmark
+     - Undo stack cleared (Ctrl-Z won't work — use "Undo restore")
+  4. P1, P3, P4, P6 return to pending — they re-appear as diff hunks
+     for the writer to re-review.
+
+Thread UI after restore:
+  [Restored] [Undo restore]
+
+Writer clicks "Undo restore":
+  1. Each document restored to its safety_restore bookmark
+  2. P1, P3, P4, P6 return to their pre-restore statuses
+  3. Thread UI returns to normal per-proposal actions
 ```
 
-This is only available while the `ai_turn` bookmark exists in the update log (pre-compaction). After compaction deletes the bookmark, the button disappears from the thread UI.
+Both buttons are only available while their bookmarks exist (pre-compaction). After compaction deletes the bookmarks, the buttons disappear from the thread UI. Per-proposal undo/reapply still works (it uses text search, not bookmarks).
 
 ## What the Writer Sees
 
 ### Thread Sidebar
 
 ```
+Normal state:
 +--------------------------------------------------+
 |  AI Assistant - Chapter 4 Review                  |
 |                                                    |
@@ -174,6 +189,23 @@ This is only available while the `ai_turn` bookmark exists in the update log (pr
 |                                                    |
 |              [Undo All Accepted]                   |
 |         [Restore to before this turn]              |
++--------------------------------------------------+
+
+After restore:
++--------------------------------------------------+
+|  AI Assistant - Chapter 4 Review                  |
+|                                                    |
+|  edit_document("Vivid opening")                   |
+|  "Edit applied successfully"                      |
+|  (pending — visible as diff hunk in editor)       |
+|                                                    |
+|  edit_document("Tighten time check")              |
+|  "Edit applied successfully"                      |
+|  (pending — visible as diff hunk in editor)       |
+|                                                    |
+|  ...                                               |
+|                                                    |
+|         [Restored] [Undo restore]                  |
 +--------------------------------------------------+
 ```
 

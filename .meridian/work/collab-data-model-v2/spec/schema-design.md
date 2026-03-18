@@ -51,6 +51,7 @@ erDiagram
         BIGINT update_id FK
         BYTEA state
         TEXT bookmark_type
+        UUID turn_id
         TEXT name
     }
 ```
