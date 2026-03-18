@@ -273,11 +273,11 @@ func (s *fakeProjectorProposalStore) ListByGroup(
 	return nil, nil
 }
 
-func (s *fakeProjectorProposalStore) MarkAccepted(_ context.Context, _ collabModels.ProposalDecision) error {
+func (s *fakeProjectorProposalStore) MarkAccepted(_ context.Context, _ uuid.UUID, _ uuid.UUID, _ time.Time) error {
 	return nil
 }
 
-func (s *fakeProjectorProposalStore) MarkRejected(_ context.Context, _ collabModels.ProposalDecision) error {
+func (s *fakeProjectorProposalStore) MarkRejected(_ context.Context, _ uuid.UUID, _ uuid.UUID, _ time.Time) error {
 	return nil
 }
 

@@ -199,13 +199,35 @@ func (s *PostgresProposalStore) ListByGroup(
 }
 
 // MarkAccepted transitions pending -> accepted and captures decision metadata.
-func (s *PostgresProposalStore) MarkAccepted(ctx context.Context, decision collabModels.ProposalDecision) error {
-	return s.markTerminalStatus(ctx, decision, collabModels.ProposalStatusAccepted)
+func (s *PostgresProposalStore) MarkAccepted(
+	ctx context.Context,
+	proposalID uuid.UUID,
+	decidedByUserID uuid.UUID,
+	decidedAt time.Time,
+) error {
+	return s.markTerminalStatus(
+		ctx,
+		proposalID,
+		decidedByUserID,
+		decidedAt,
+		collabModels.ProposalStatusAccepted,
+	)
 }
 
 // MarkRejected transitions pending -> rejected and captures decision metadata.
-func (s *PostgresProposalStore) MarkRejected(ctx context.Context, decision collabModels.ProposalDecision) error {
-	return s.markTerminalStatus(ctx, decision, collabModels.ProposalStatusRejected)
+func (s *PostgresProposalStore) MarkRejected(
+	ctx context.Context,
+	proposalID uuid.UUID,
+	decidedByUserID uuid.UUID,
+	decidedAt time.Time,
+) error {
+	return s.markTerminalStatus(
+		ctx,
+		proposalID,
+		decidedByUserID,
+		decidedAt,
+		collabModels.ProposalStatusRejected,
+	)
 }
 
 // UpsertStatus updates a proposal status if the row exists.
@@ -341,7 +363,9 @@ func (s *PostgresProposalStore) queryProposals(ctx context.Context, query string
 
 func (s *PostgresProposalStore) markTerminalStatus(
 	ctx context.Context,
-	decision collabModels.ProposalDecision,
+	proposalID uuid.UUID,
+	decidedByUserID uuid.UUID,
+	decidedAt time.Time,
 	newStatus collabModels.ProposalStatus,
 ) error {
 	query := fmt.Sprintf(`
@@ -354,10 +378,10 @@ func (s *PostgresProposalStore) markTerminalStatus(
 	tag, err := executor.Exec(
 		ctx,
 		query,
-		decision.ProposalID,
+		proposalID,
 		newStatus,
-		decision.DecidedByUserID,
-		decision.DecidedAt,
+		decidedByUserID,
+		decidedAt,
 		collabModels.ProposalStatusPending,
 	)
 	if err != nil {
@@ -367,12 +391,12 @@ func (s *PostgresProposalStore) markTerminalStatus(
 		return nil
 	}
 
-	currentStatus, statusErr := s.getCurrentStatus(ctx, decision.ProposalID)
+	currentStatus, statusErr := s.getCurrentStatus(ctx, proposalID)
 	if statusErr != nil {
 		return statusErr
 	}
 	return domain.NewValidationError(
-		fmt.Sprintf("proposal %s cannot transition to %s from %s", decision.ProposalID, newStatus, currentStatus),
+		fmt.Sprintf("proposal %s cannot transition to %s from %s", proposalID, newStatus, currentStatus),
 	)
 }
 

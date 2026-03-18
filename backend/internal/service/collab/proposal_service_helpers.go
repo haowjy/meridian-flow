@@ -1,45 +1,37 @@
 package collab
 
 import (
-	"context"
 	"fmt"
-	"log/slog"
-	collabSvc "meridian/internal/domain/services/collab"
+
+	"github.com/google/uuid"
+	ycrdt "github.com/haowjy/y-crdt"
+
+	collabModels "meridian/internal/domain/models/collab"
 )
 
-// --- Auto-accept resolution ---
+func buildProposalAcceptedStatusUpdate(proposalID uuid.UUID) ([]byte, error) {
+	doc := ycrdt.NewDoc("proposal-backend-fallback-status", true, ycrdt.DefaultGCFilter, nil, false)
+	statusMap := doc.GetMap("_proposal_status").(*ycrdt.YMap)
 
-// resolveAutoAccept resolves the auto-accept decision from the tri-state cascade:
-// agent override > project policy > user policy > service default.
-func (s *ProposalService) resolveAutoAccept(agent *bool, inputs *collabSvc.AutoAcceptPolicyInputs) bool {
-	if agent != nil {
-		return *agent
+	doc.Transact(func(_ *ycrdt.Transaction) {
+		statusMap.Set(proposalID.String(), string(collabModels.ProposalStatusAccepted))
+	}, nil)
+
+	update, err := safeEncodeStateAsUpdateForFallback(doc)
+	if err != nil {
+		return nil, fmt.Errorf("encode accepted status update: %w", err)
 	}
-	if inputs != nil && inputs.Project != nil {
-		return *inputs.Project
+	if len(update) == 0 {
+		return nil, fmt.Errorf("encoded empty accepted status update")
 	}
-	if inputs != nil && inputs.User != nil {
-		return *inputs.User
-	}
-	return s.defaultAutoAcceptValue
+	return update, nil
 }
 
-// --- Arbiter evaluation ---
-
-// evaluateArbiterSafe wraps arbiter evaluation with panic recovery.
-// On any panic, degrades to require-review for writer safety.
-func (s *ProposalService) evaluateArbiterSafe(ctx context.Context, input collabSvc.ArbiterInput) (decision collabSvc.ArbiterDecision) {
+func safeEncodeStateAsUpdateForFallback(doc *ycrdt.Doc) (state []byte, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Error("arbiter panicked, degrading to require-review",
-				"panic", fmt.Sprintf("%v", r),
-				"document_id", input.DocumentID,
-			)
-			decision = collabSvc.ArbiterDecision{
-				Verdict: collabSvc.ArbiterVerdictRequireReview,
-				Reason:  "arbiter panic recovery",
-			}
+			err = fmt.Errorf("encode state as update panic: %v", r)
 		}
 	}()
-	return s.arbiter.Evaluate(ctx, input)
+	return ycrdt.EncodeStateAsUpdate(doc, nil), nil
 }

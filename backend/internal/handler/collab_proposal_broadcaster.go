@@ -61,8 +61,10 @@ func (b *ProposalBroadcasterImpl) BroadcastProposalCreated(documentID string, pr
 }
 
 // BroadcastProposalAccepted sends a Yjs update frame to document websocket
-// connections and a proposal:statusChanged event to project websocket connections.
+// connections. Phase 3 removes project-level statusChanged events.
 func (b *ProposalBroadcasterImpl) BroadcastProposalAccepted(documentID string, proposalID uuid.UUID, yjsUpdate []byte) error {
+	_ = proposalID
+
 	documentUUID, err := parseUUID(documentID)
 	if err != nil {
 		return fmt.Errorf("invalid document id for proposal broadcast: %w", err)
@@ -75,20 +77,6 @@ func (b *ProposalBroadcasterImpl) BroadcastProposalAccepted(documentID string, p
 			return err
 		}
 		b.docBroadcaster.BroadcastToDocument(canonicalDocumentID, addDocPrefix(docWSPrefixSync, encodedUpdate))
-	}
-
-	statusEventBytes, err := buildProposalStatusChangedEventBytes(documentUUID, proposalID, collabModels.ProposalStatusAccepted)
-	if err != nil {
-		return err
-	}
-
-	projectID, err := b.resolveProjectID(context.Background(), canonicalDocumentID)
-	if err != nil {
-		return err
-	}
-
-	if b.projectBroadcaster != nil {
-		b.projectBroadcaster.BroadcastToProject(projectID, statusEventBytes)
 	}
 	return nil
 }

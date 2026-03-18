@@ -88,6 +88,12 @@
     <div class="controls" id="el-controls"></div>
     <hr>
     <div class="controls">
+      <button onclick="window._setMode('manual')">Manual Mode</button>
+      <button onclick="window._setMode('auto')">Auto-Apply Mode</button>
+      <span id="el-mode-info" style="font-size:12px;color:#666;align-self:center"></span>
+    </div>
+    <hr>
+    <div class="controls">
       <button onclick="sessionUndo()">Undo (Ctrl-Z)</button>
       <button onclick="sessionRedo()">Redo (Ctrl-Y)</button>
       <span id="el-undo-info" style="font-size:12px;color:#666;align-self:center"></span>
@@ -109,6 +115,7 @@ const ORIGIN_REJECT = 'reject';
 const ORIGIN_GC = 'gc';
 const ORIGIN_THREAD = 'thread';
 const CURRENT_USER_ID = 'toy-user';
+const CURRENT_DOCUMENT_ID = 'toy-doc';
 
 const canonical = new Y.Doc();
 const text = canonical.getText('content');
@@ -132,6 +139,7 @@ let deriveSequenceNumber = 0;
 let typingPauseTimer = null;
 let typingPausePending = false;
 let deriveMeta = 'idle';
+let applyMode = 'manual';
 
 /** @type {DeriveResult} */
 let lastDeriveResult = { hunks: [], sequenceNumber: 0 };
@@ -525,11 +533,65 @@ function ensureHunkFresh(expectedSequence) {
   return false;
 }
 
+function stopCapturingForDiscreteAction() {
+  undoManager.stopCapturing();
+}
+
+async function setApplyMode(nextMode) {
+  if (nextMode !== 'manual' && nextMode !== 'auto') return;
+  if (nextMode === applyMode) return;
+
+  if (undoManager.undoStack.length > 0) {
+    const confirmed = window.confirm(
+      'Switching modes will clear your undo history. Thread undo is unaffected.'
+    );
+    if (!confirmed) return;
+  }
+
+  undoManager.clear();
+  applyMode = nextMode;
+  log(`Switched mode -> ${applyMode}; session undo history cleared`);
+  render();
+}
+
+async function getProposalByIdForAutoApply(proposalId) {
+  const proposal = proposals.find(p => p.id === proposalId);
+  if (!proposal) return null;
+  return {
+    ...proposal,
+    status: getStatus(proposalId),
+  };
+}
+
+async function onProposalNew(event) {
+  if (!event || event.document_id !== CURRENT_DOCUMENT_ID) return;
+  const proposal = await getProposalByIdForAutoApply(event.proposal_id);
+  if (!proposal) return;
+  if (proposal.status !== 'pending') return; // reconnect race guard
+  if (statusMap.has(event.proposal_id)) return; // multi-tab guard
+
+  stopCapturingForDiscreteAction();
+  canonical.transact(() => {
+    Y.applyUpdate(canonical, proposal.yjs_update);
+    statusMap.set(proposal.id, 'accepted');
+    const row = proposals.find(p => p.id === proposal.id);
+    if (row) {
+      row.accepted_at_offset = proposal.proposed_at_offset;
+      row.offset_version += 1;
+    }
+  }, ORIGIN_ACCEPT);
+
+  log(`Auto-apply proposal:new -> ${proposal.id.slice(0, 6)}`);
+  deriveProjection('proposal:new auto-apply');
+  render();
+}
+
 function acceptHunk(index, sequenceNumber) {
   if (!ensureHunkFresh(sequenceNumber)) return;
   const hunk = lastDeriveResult.hunks[index];
   if (!hunk || hunk.proposals.length === 0) return;
 
+  stopCapturingForDiscreteAction();
   canonical.transact(() => {
     for (const proposalRef of hunk.proposals) {
       Y.applyUpdate(canonical, proposalRef.yjs_update);
@@ -552,6 +614,7 @@ function rejectHunk(index, sequenceNumber) {
   const hunk = lastDeriveResult.hunks[index];
   if (!hunk || hunk.proposals.length === 0) return;
 
+  stopCapturingForDiscreteAction();
   canonical.transact(() => {
     for (const proposalRef of hunk.proposals) {
       statusMap.set(proposalRef.id, 'rejected');
@@ -571,6 +634,7 @@ function acceptProposal(id) {
   }
   const proposal = proposals.find(p => p.id === id);
   if (!proposal || getStatus(id) !== 'pending') return;
+  stopCapturingForDiscreteAction();
   canonical.transact(() => {
     Y.applyUpdate(canonical, proposal.yjs_update);
     statusMap.set(id, 'accepted');
@@ -586,6 +650,7 @@ function rejectProposal(id) {
     return;
   }
   if (getStatus(id) !== 'pending') return;
+  stopCapturingForDiscreteAction();
   canonical.transact(() => {
     statusMap.set(id, 'rejected');
   }, ORIGIN_REJECT);
@@ -626,6 +691,7 @@ function threadUndo(id) {
     return;
   }
 
+  stopCapturingForDiscreteAction();
   canonical.transact(() => {
     text.delete(idx, proposal.region_text_after.length);
     text.insert(idx, proposal.region_text_before);
@@ -649,6 +715,7 @@ function threadReapply(id) {
     return;
   }
 
+  stopCapturingForDiscreteAction();
   canonical.transact(() => {
     text.delete(idx, proposal.region_text_before.length);
     text.insert(idx, proposal.region_text_after);
@@ -708,8 +775,16 @@ function createProposal(description, editFn, regionBefore, regionAfter) {
   proposals.push(proposal);
   log(`Created proposal ${proposal.id.slice(0, 6)}: ${description}`);
   log(`  yjs_update=${capturedUpdate.length} bytes, proposed_at_offset=${proposal.proposed_at_offset}`);
-  deriveProjection('new proposal arrived');
-  render();
+  if (applyMode === 'auto') {
+    void onProposalNew({
+      type: 'proposal:new',
+      proposal_id: proposal.id,
+      document_id: CURRENT_DOCUMENT_ID,
+    });
+  } else {
+    deriveProjection('new proposal arrived');
+    render();
+  }
   return proposal;
 }
 
@@ -796,6 +871,8 @@ function render() {
 
   document.getElementById('el-undo-info').textContent =
     `Undo stack: ${undoManager.undoStack.length} | Redo stack: ${undoManager.redoStack.length} | ${deriveMeta}`;
+  document.getElementById('el-mode-info').textContent =
+    `Mode: ${applyMode === 'auto' ? 'Auto-Apply' : 'Manual Review'}`;
   document.getElementById('el-log').innerHTML =
     logEntries.map(entry => `<div class="log-entry">${esc(entry)}</div>`).join('');
 }
@@ -890,6 +967,7 @@ window._acceptHunk = acceptHunk;
 window._rejectHunk = rejectHunk;
 window._threadUndo = threadUndo;
 window._threadReapply = threadReapply;
+window._setMode = setApplyMode;
 window.sessionUndo = sessionUndo;
 window.sessionRedo = sessionRedo;
 
@@ -901,6 +979,7 @@ document.addEventListener('keydown', e => {
 log('Initialized canonical: "The cat sat on the mat."');
 log('UndoManager tracking: ORIGIN_HUMAN, ORIGIN_ACCEPT, ORIGIN_REJECT, ORIGIN_THREAD');
 log('NOT tracking: ORIGIN_GC (stale writes invisible to undo; unstale is derive-driven)');
+log('Default mode: manual review (switching mode clears session undo history)');
 deriveProjection('initial');
 render();
 </script>

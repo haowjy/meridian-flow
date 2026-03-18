@@ -27,7 +27,7 @@ type CollabHandler struct {
 	// projectRegistry tracks project WS connections and broadcasts JSON proposal events.
 	projectRegistry ProjectConnectionRegistry
 
-	// docHandler provides document-level binary fanout for Yjs updates from proposal acceptance.
+	// docHandler provides document-level binary fanout for server-initiated Yjs updates.
 	docHandler DocumentBroadcaster
 }
 

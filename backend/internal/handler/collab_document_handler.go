@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/google/uuid"
 	ycrdt "github.com/haowjy/y-crdt"
 	"golang.org/x/time/rate"
 	"meridian/internal/auth"
@@ -584,6 +585,14 @@ func (h *CollabDocumentHandler) broadcastDocumentBinary(
 // Used by proposal acceptance to fan out Yjs updates from server-initiated actions.
 func (h *CollabDocumentHandler) BroadcastToDocument(documentID string, data []byte) {
 	h.broadcastDocumentBinary(context.Background(), documentID, nil, data)
+}
+
+// HasOwnerTabs reports whether the document currently has any connected owner tabs.
+func (h *CollabDocumentHandler) HasOwnerTabs(documentID uuid.UUID) bool {
+	h.documentConnMu.RLock()
+	defer h.documentConnMu.RUnlock()
+
+	return len(h.documentConns[documentID.String()]) > 0
 }
 
 func (h *CollabDocumentHandler) sendBinary(ctx context.Context, conn *websocket.Conn, data []byte) error {
