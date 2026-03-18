@@ -44,7 +44,6 @@ const undoManager = new Y.UndoManager(
 // On collaboration mode change (auto-apply <-> manual)
 // Intentionally drops session undo history to prevent cross-mode undo confusion.
 // Thread undo (via sidebar) is unaffected — it uses stored text, not the undo stack.
-undoManager.stopCapturing(); // Force capture boundary before clearing
 undoManager.clear();
 ```
 
@@ -245,6 +244,8 @@ When per-proposal thread undo fails (e.g., due to conflict or overlapping edits)
 
 Turn-level restore replaces the entire canonical Y.Doc state with the bookmarked snapshot. This is destructive — all changes since that point (including the writer's own edits) are lost. The UI should show a confirmation with what will be lost. Before restoring, a new bookmark of the current state is created so the writer can undo the restoration.
 
+**Status transitions on restore:** The bookmarked Y.Doc includes the `_proposal_status` Y.Map as it was before the turn. Proposals applied during that turn lose their Y.Map entries. Backend reconciliation on the restored state resets their row status accordingly. The restored proposals do NOT re-enter the projection as pending — their `yjs_update`s targeted the pre-turn canonical, and the restored canonical matches that state, but the proposals are marked `stale` on the next projection GC cycle (canonical already contains the pre-turn text). The thread UI shows these proposals with no action buttons (historical context only).
+
 ### Thread UI: Immutable History + Status Overlay
 
 Thread messages (tool_use, tool_result) are **immutable**. Thread-level undo/reapply does not modify conversation history. This preserves prompt caching and conversation integrity.
@@ -283,78 +284,7 @@ Reverted proposals are not projection inputs. After accept, proposal CRDT items 
 
 ## Examples
 
-### Undo, Reapply, and Conflict
-
-```
-Original: "The cat sat on the mat."
-Agent proposes P1: insert "black " -> region_text_before="The cat", region_text_after="The black cat"
-Writer accepts P1 (or auto-applied). accepted_at_offset=0.
-Canonical: "The black cat sat on the mat."
-```
-
-**Thread undo (days later):**
-
-```
-1. Load P1 (status = accepted, accepted_at_offset=0)
-2. Search near offset 0 for "The black cat" -> found at pos 0
-3. Replace with "The cat"
-4. Canonical: "The cat sat on the mat."
-5. P1 status -> reverted
-6. Thread UI: tool call shows [Reverted] [Reapply]
-```
-
-**Reapply (from reverted):**
-
-```
-1. Load P1 (status = reverted)
-2. Search near stored offset for "The cat" -> found at pos 0
-3. Replace with "The black cat"
-4. Canonical: "The black cat sat on the mat."
-5. P1 status -> accepted, accepted_at_offset updated
-6. Thread UI: tool call shows [Undo]
-```
-
-**Reapply (from rejected):**
-
-```
-Writer rejected P1 in manual mode. Canonical still has "The cat".
-Writer later clicks Reapply in thread UI:
-  1. Load P1 (status = rejected)
-  2. Search near stored offset for "The cat" -> found at pos 0
-  3. Replace with "The black cat"
-  4. Canonical: "The black cat sat on the mat."
-  5. P1 status -> accepted, accepted_at_offset set
-  6. Thread UI: tool call shows [Undo]
-```
-
-**Conflict (writer edited the region):**
-
-```
-After accepting P1, writer manually changed "black cat" to "big black cat."
-Canonical: "The big black cat sat on the mat."
-
-Writer clicks Undo for P1:
-  1. Search near offset 0 for "The black cat" -> NOT FOUND
-  2. Return conflict: text has been modified since accept
-  3. Thread UI: tool call shows [Undo failed -- text was edited]
-```
-
-### Disambiguating Repeated Phrases
-
-```
-Canonical: "She said hello. ... (500 words later) ... She said goodbye."
-
-P1 edited the first "She said" at offset 0.
-P2 edited the second "She said" at offset 2847.
-
-Writer clicks Undo on P1:
-  1. Search near offset 0 for P1's region_text_after
-  2. Finds match at pos 0 (closest to stored offset)
-  3. Ignores the second "She said" at pos 2847
-  4. Correct occurrence undone
-```
-
-Without offset anchoring, blind `indexOf` would always hit the first match regardless of which proposal the writer intended to undo.
+For thread-level undo/reapply/conflict walkthroughs, see [Thread Undo UX](../ux/thread-undo.md).
 
 ### Why Reject Needs Y.Map
 
