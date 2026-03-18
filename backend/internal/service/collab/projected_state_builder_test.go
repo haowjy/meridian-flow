@@ -206,6 +206,10 @@ func (r *fakeProjectorRuntime) GetCurrentState(_ context.Context, _ uuid.UUID) (
 	return r.snapshot, nil
 }
 
+func (r *fakeProjectorRuntime) CreateAITurnBookmark(_ context.Context, _ uuid.UUID, _ uuid.UUID) error {
+	return nil
+}
+
 type fakeProjectorStateStore struct {
 	loadedState []byte
 
@@ -253,6 +257,10 @@ func (s *fakeProjectorProposalStore) CountByDocumentAndStatusAndSource(
 	_ collabModels.ProposalStatus,
 	_ collabModels.ProposalSource,
 ) (int, error) {
+	return 0, nil
+}
+
+func (s *fakeProjectorProposalStore) CountByDocumentAndTurnID(_ context.Context, _ uuid.UUID, _ uuid.UUID) (int, error) {
 	return 0, nil
 }
 

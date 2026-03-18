@@ -167,6 +167,10 @@ func (s *fakeStatusMirrorProposalStore) CountByDocumentAndStatusAndSource(
 	return 0, nil
 }
 
+func (s *fakeStatusMirrorProposalStore) CountByDocumentAndTurnID(_ context.Context, _ uuid.UUID, _ uuid.UUID) (int, error) {
+	return 0, nil
+}
+
 func (s *fakeStatusMirrorProposalStore) ListByDocument(
 	_ context.Context,
 	documentID uuid.UUID,

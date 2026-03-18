@@ -21,10 +21,13 @@ const (
 	sessionLoadTimeout     = 30 * time.Second
 )
 
+var errSessionFrozen = errors.New("collab session is frozen")
+
 // DocumentSessionManager manages in-memory Yjs docs for active websocket sessions.
 type DocumentSessionManager struct {
 	mu             sync.Mutex
 	sessions       map[string]*DocumentSession
+	frozenDocs     map[string]struct{}
 	loadGroup      singleflight.Group
 	stateStore     collabSvc.DocumentStateStore
 	updateLogStore collabSvc.UpdateLogStore
@@ -52,6 +55,7 @@ type DocumentSession struct {
 	mu            sync.Mutex
 	refCount      int
 	dirty         bool
+	frozen        bool
 	debounceTimer *time.Timer
 }
 
@@ -67,6 +71,7 @@ func NewDocumentSessionManager(
 ) *DocumentSessionManager {
 	return &DocumentSessionManager{
 		sessions:       make(map[string]*DocumentSession),
+		frozenDocs:     make(map[string]struct{}),
 		stateStore:     stateStore,
 		updateLogStore: updateLogStore,
 		bookmarkStore:  bookmarkStore,
@@ -77,8 +82,12 @@ func NewDocumentSessionManager(
 }
 
 // Acquire returns a live document session, creating and loading it on first connect.
-func (m *DocumentSessionManager) Acquire(ctx context.Context, docID string) (*DocumentSession, error) {
+func (m *DocumentSessionManager) Acquire(_ context.Context, docID string) (*DocumentSession, error) {
 	m.mu.Lock()
+	if _, frozen := m.frozenDocs[docID]; frozen {
+		m.mu.Unlock()
+		return nil, errSessionFrozen
+	}
 	if existing, ok := m.sessions[docID]; ok {
 		existing.refCount++
 		m.mu.Unlock()
@@ -86,6 +95,27 @@ func (m *DocumentSessionManager) Acquire(ctx context.Context, docID string) (*Do
 	}
 	m.mu.Unlock()
 
+	loadedSession, err := m.loadSession(docID)
+	if err != nil {
+		return nil, err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, frozen := m.frozenDocs[docID]; frozen {
+		return nil, errSessionFrozen
+	}
+	if existing, ok := m.sessions[docID]; ok {
+		existing.refCount++
+		return existing, nil
+	}
+
+	loadedSession.refCount = 1
+	m.sessions[docID] = loadedSession
+	return loadedSession, nil
+}
+
+func (m *DocumentSessionManager) loadSession(docID string) (*DocumentSession, error) {
 	loadedSessionAny, err, _ := m.loadGroup.Do(docID, func() (interface{}, error) {
 		// Detached context keeps the shared load alive even if the triggering request is canceled.
 		loadCtx, cancel := context.WithTimeout(context.Background(), sessionLoadTimeout)
@@ -114,17 +144,74 @@ func (m *DocumentSessionManager) Acquire(ctx context.Context, docID string) (*Do
 	if !ok {
 		return nil, fmt.Errorf("load session returned unexpected type %T", loadedSessionAny)
 	}
+	return loadedSession, nil
+}
+
+// Freeze tears down the live session and blocks new acquires until Rebuild.
+func (m *DocumentSessionManager) Freeze(ctx context.Context, docID string) error {
+	m.mu.Lock()
+	m.frozenDocs[docID] = struct{}{}
+	session, ok := m.sessions[docID]
+	if ok {
+		delete(m.sessions, docID)
+	}
+	m.mu.Unlock()
+
+	if !ok {
+		return nil
+	}
+
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	session.frozen = true
+
+	if session.debounceTimer != nil {
+		session.debounceTimer.Stop()
+		session.debounceTimer = nil
+	}
+	if !session.dirty {
+		return nil
+	}
+	if err := session.persistLocked(ctx); err != nil {
+		return fmt.Errorf("flush frozen session: %w", err)
+	}
+	return nil
+}
+
+// Rebuild unfreezes the document and primes a fresh session from persisted state.
+func (m *DocumentSessionManager) Rebuild(_ context.Context, docID string) error {
+	m.mu.Lock()
+	delete(m.frozenDocs, docID)
+	if existing, ok := m.sessions[docID]; ok {
+		existing.mu.Lock()
+		existing.frozen = false
+		existing.mu.Unlock()
+		m.mu.Unlock()
+		return nil
+	}
+	m.mu.Unlock()
+
+	session, err := m.loadSession(docID)
+	if err != nil {
+		return fmt.Errorf("load rebuilt session: %w", err)
+	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if _, frozen := m.frozenDocs[docID]; frozen {
+		return errSessionFrozen
+	}
 	if existing, ok := m.sessions[docID]; ok {
-		existing.refCount++
-		return existing, nil
+		existing.mu.Lock()
+		existing.frozen = false
+		existing.mu.Unlock()
+		return nil
 	}
 
-	loadedSession.refCount = 1
-	m.sessions[docID] = loadedSession
-	return loadedSession, nil
+	session.refCount = 0
+	session.frozen = false
+	m.sessions[docID] = session
+	return nil
 }
 
 // Release decrements references and flushes state when the last websocket disconnects.
@@ -137,7 +224,6 @@ func (m *DocumentSessionManager) Release(ctx context.Context, docID string) erro
 	}
 
 	if session.refCount == 0 {
-		m.logger.Warn("collab session release underflow", "document_id", docID)
 		m.mu.Unlock()
 		return nil
 	}
@@ -360,6 +446,10 @@ func (s *DocumentSession) BuildSyncStep1Payload() ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.frozen {
+		return nil, errSessionFrozen
+	}
+
 	encoder := ycrdt.NewUpdateEncoderV1()
 	ycrdt.WriteSyncStep1(encoder, s.doc)
 	return encoder.ToUint8Array(), nil
@@ -369,6 +459,10 @@ func (s *DocumentSession) BuildSyncStep1Payload() ([]byte, error) {
 func (s *DocumentSession) HandleSyncPayload(ctx context.Context, payload []byte, transactionOrigin string) (int, []byte, []byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.frozen {
+		return 0, nil, nil, errSessionFrozen
+	}
 
 	decoder := ycrdt.NewUpdateDecoderV1(payload)
 	responseEncoder := ycrdt.NewUpdateEncoderV1()
@@ -400,6 +494,10 @@ func (s *DocumentSession) HandleSyncPayload(ctx context.Context, payload []byte,
 func (s *DocumentSession) applyUpdate(ctx context.Context, update []byte, origin string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.frozen {
+		return errSessionFrozen
+	}
 
 	if err := safeApplyUpdate(s.doc, update, origin); err != nil {
 		return fmt.Errorf("apply yjs update: %w", err)

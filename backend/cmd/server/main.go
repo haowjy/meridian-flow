@@ -229,6 +229,17 @@ func main() {
 		collabSessionManager,
 		collabDocumentHandler,
 	)
+	restoreService := serviceCollab.NewRestoreService(
+		bookmarkStore,
+		collabStore,
+		collabStore,
+		updateLogStore,
+		statusMirror,
+		collabSessionManager,
+		collabDocumentHandler,
+		txManager,
+		logger,
+	)
 
 	// Build mutation strategy for AI edits.
 	// CollabProposalStrategy creates collab proposals with Yjs updates and WS broadcasting.
@@ -300,6 +311,7 @@ func main() {
 		projectConnectionRegistry,
 		collabDocumentHandler,
 	)
+	collabRestoreHandler := handler.NewCollabRestoreHandler(restoreService, cfg)
 	// Start append-only compaction worker goroutine.
 	compactionWorker := serviceCollab.NewCompactionWorker(
 		updateLogStore,
@@ -382,6 +394,8 @@ func main() {
 	mux.HandleFunc("GET /ws/projects/{projectId}", collabHandler.ConnectProject)
 	mux.HandleFunc("GET /ws/documents/{documentId}", collabDocumentHandler.ConnectDocument)
 	mux.HandleFunc("PATCH /api/proposals/{id}/offset", collabHandler.SetAcceptedAtOffset)
+	mux.HandleFunc("POST /api/turns/{id}/restore", collabRestoreHandler.RestoreTurn)
+	mux.HandleFunc("POST /api/turns/{id}/undo-restore", collabRestoreHandler.UndoRestore)
 
 	// Import routes
 	mux.HandleFunc("POST /api/import", importHandler.Merge)

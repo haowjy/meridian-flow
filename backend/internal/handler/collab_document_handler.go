@@ -587,6 +587,50 @@ func (h *CollabDocumentHandler) BroadcastToDocument(documentID string, data []by
 	h.broadcastDocumentBinary(context.Background(), documentID, nil, data)
 }
 
+type documentRestoredEvent struct {
+	Type       string `json:"type"`
+	DocumentID string `json:"document_id"`
+}
+
+// BroadcastDocumentRestored notifies all connected tabs for a document that the backend
+// replaced persisted state and clients must reconnect/rehydrate.
+func (h *CollabDocumentHandler) BroadcastDocumentRestored(documentID string) {
+	documentUUID, err := parseUUID(documentID)
+	if err != nil {
+		h.logger.Warn("document restored broadcast ignored invalid document id",
+			"document_id", documentID,
+			"error", err,
+		)
+		return
+	}
+	canonicalDocumentID := documentUUID.String()
+
+	h.documentConnMu.RLock()
+	connections := h.documentConns[canonicalDocumentID]
+	targets := make([]*websocket.Conn, 0, len(connections))
+	for conn := range connections {
+		targets = append(targets, conn)
+	}
+	h.documentConnMu.RUnlock()
+
+	msg := documentRestoredEvent{
+		Type:       wsTypeDocumentRestored,
+		DocumentID: canonicalDocumentID,
+	}
+
+	for _, target := range targets {
+		writeCtx, writeCancel := context.WithTimeout(context.Background(), docWSHeartbeatTimeout)
+		sendErr := h.sendJSON(writeCtx, target, msg)
+		writeCancel()
+		if sendErr != nil {
+			h.logger.Debug("document restored broadcast send failed",
+				"document_id", canonicalDocumentID,
+				"error", sendErr,
+			)
+		}
+	}
+}
+
 // HasOwnerTabs reports whether the document currently has any connected owner tabs.
 func (h *CollabDocumentHandler) HasOwnerTabs(documentID uuid.UUID) bool {
 	h.documentConnMu.RLock()

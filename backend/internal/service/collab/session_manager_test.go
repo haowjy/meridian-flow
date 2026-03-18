@@ -2,6 +2,7 @@ package collab
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"sync"
@@ -241,6 +242,47 @@ func TestDocumentSessionLoadState_ObservesProposalStatusMapDeltas(t *testing.T) 
 	second := statusMirror.changeCalls[len(statusMirror.changeCalls)-1]
 	if second.proposalID != proposalID || second.status != nil {
 		t.Fatalf("unexpected delete delta call: %+v", second)
+	}
+}
+
+func TestDocumentSessionManagerFreezeAndRebuild(t *testing.T) {
+	docID := uuid.New().String()
+	store := &fakeSessionStore{
+		state: mustBuildSessionStateWithStatusMap(t, "seed", nil),
+	}
+	updateLogStore := &fakeSessionUpdateLogStore{}
+	manager := NewDocumentSessionManager(
+		store,
+		updateLogStore,
+		&fakeSessionBookmarkStore{},
+		nil,
+		store,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
+
+	originalSession, err := manager.Acquire(context.Background(), docID)
+	if err != nil {
+		t.Fatalf("Acquire returned error: %v", err)
+	}
+
+	if err := manager.Freeze(context.Background(), docID); err != nil {
+		t.Fatalf("Freeze returned error: %v", err)
+	}
+
+	if _, err := manager.Acquire(context.Background(), docID); !errors.Is(err, errSessionFrozen) {
+		t.Fatalf("expected frozen acquire error, got %v", err)
+	}
+
+	if err := manager.Rebuild(context.Background(), docID); err != nil {
+		t.Fatalf("Rebuild returned error: %v", err)
+	}
+
+	rebuiltSession, err := manager.Acquire(context.Background(), docID)
+	if err != nil {
+		t.Fatalf("Acquire after rebuild returned error: %v", err)
+	}
+	if rebuiltSession == originalSession {
+		t.Fatalf("expected rebuilt session pointer to differ from original")
 	}
 }
 

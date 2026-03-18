@@ -84,6 +84,18 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.Crea
 	hasOwnerTabs := s.ownerTabTracker != nil && s.ownerTabTracker.HasOwnerTabs(req.DocumentID)
 
 	persistFn := func(txCtx context.Context) error {
+		if req.Source == collabModels.ProposalSourceAI && req.TurnID != nil {
+			count, err := s.proposalStore.CountByDocumentAndTurnID(txCtx, req.DocumentID, *req.TurnID)
+			if err != nil {
+				return fmt.Errorf("count turn proposals for ai_turn bookmark: %w", err)
+			}
+			if count == 0 {
+				if err := s.runtime.CreateAITurnBookmark(txCtx, req.DocumentID, *req.TurnID); err != nil {
+					return fmt.Errorf("create ai_turn bookmark before first turn proposal: %w", err)
+				}
+			}
+		}
+
 		if err := s.createProposal(txCtx, proposal); err != nil {
 			return err
 		}
