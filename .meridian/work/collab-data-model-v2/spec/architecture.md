@@ -50,14 +50,7 @@ flowchart LR
 
 ### Backend Projection for AI Context
 
-When an AI agent reads the document (e.g., to generate its next `edit_document` call), the backend computes the same projection:
-
-1. Load canonical Y.Doc state
-2. Clone
-3. Apply pending proposals where `created_by_user_id = thread_owner`
-4. Extract text -- this is what the AI sees
-
-This ensures the AI works against the same view its owner sees. Without this, an AI in manual mode would propose edits against canonical text that doesn't include its own pending proposals -- leading to conflicts and incoherent edits.
+When an AI agent reads the document, the backend computes the same projection (clone canonical + apply current-user pending proposals + extract text). This ensures the AI works against the same view its owner sees. See [Frontend Diff Model](frontend-diff-model.md) for the projection computation algorithm.
 
 ### Proposal Independence
 
@@ -116,13 +109,13 @@ One projection includes all pending proposals for the current user. In multi-use
 
 ### Single Writer Per Proposal
 
-Per-user projection ensures each proposal has exactly one writer who can accept/reject it: the user whose `created_by_user_id` matches. No two users can act on the same proposal concurrently. The only concurrent scenario is the same user on two tabs, where CRDT deterministic ordering by clientID resolves concurrent writes (higher clientID wins, not wall-clock recency). This eliminates the need for a multi-user conflict policy on `_proposal_status`.
+Per-user projection ensures each proposal has exactly one writer who can accept/reject it: the user whose `created_by_user_id` matches. No two users can act on the same proposal concurrently. The only concurrent scenario is the same user on two tabs, where CRDT deterministic ordering resolves concurrent writes (Lamport clock, with clientID as tiebreaker — not wall-clock recency). This eliminates the need for a multi-user conflict policy on `_proposal_status`.
 
 ## Core Data Flow (Manual Path)
 
 | Step | Operation | Persisted outcome |
 |------|-----------|-------------------|
-| Derive diff | Clone canonical, apply each `pending` proposal update, diff, group nearby regions | None (ephemeral) |
+| Derive diff | Clone canonical, apply each `pending` proposal update, diff, group overlapping regions | None (ephemeral) |
 | Projection GC | Text pre-check detects proposal is already in canonical -- mark `stale` | `_proposal_status` entry + proposal row |
 | Accept hunk | Apply grouped hunk proposal updates to canonical + set `_proposal_status` to `accepted` in one transaction | Canonical text + status entries |
 | Reject hunk | Set `_proposal_status` to `rejected` for each proposal in hunk | Status entries only |
@@ -155,7 +148,7 @@ Projection pipeline:
 6. Hunk A carries `[P1]`, Hunk B carries `[P2]`
 7. Writer sees two inline diffs, acts on each independently
 
-If P1 and P2 edited adjacent text (e.g., both touching "cat sat"), they'd merge into one grouped hunk carrying `[P1, P2]` -- accepting that hunk applies both.
+If P1 and P2 edited overlapping text (e.g., both touching "cat sat"), they'd merge into one grouped hunk carrying `[P1, P2]` -- accepting that hunk applies both.
 
 ### Example: Projection GC (Stale Proposal)
 
@@ -167,15 +160,7 @@ The black cat sat on the mat.
 
 Agent P3 proposes: insert "black " before "cat" -- but the canonical already has it.
 
-**Important:** Yjs idempotence only applies when reapplying the *same update bytes* (same struct IDs). If P3 was created independently (different Yjs client ID), applying its `yjs_update` to a clone would produce duplicate content ("black black cat"), not a no-op.
-
-Therefore, stale detection uses a **text pre-check** instead of apply-then-diff:
-
-1. Compare `region_text_before` from P3 against canonical at `proposed_at_offset`
-2. If canonical already contains `region_text_after` at that position, P3 is stale
-3. Mark `stale` (uses `ORIGIN_GC`, not tracked by UndoManager)
-4. Thread UI shows "No longer relevant" -- no hunk rendered
-5. Skip applying P3's `yjs_update` to the projection clone entirely
+Stale detection uses a **text pre-check**: if canonical already contains `region_text_after` at `proposed_at_offset`, the proposal is marked `stale` with `ORIGIN_GC` (not tracked by UndoManager) and skipped in projection. See [Frontend Diff Model](frontend-diff-model.md) — Projection GC for the full algorithm.
 
 ## State Model
 
@@ -221,7 +206,7 @@ Note: Ctrl-Z transitions for thread ops are mechanical consequences of UndoManag
 | `rejected` | User rejected | Session Ctrl-Z while in stack, or thread reapply |
 | `stale` | Canonical already contains the change -- auto-resolved by projection GC | No |
 | `reverted` | Was accepted, then thread-undone | Thread reapply |
-| `invalid` | `yjs_update` failed validation at creation time (defense-in-depth) | No |
+| `invalid` | `yjs_update` failed validation at creation time (defense-in-depth). Backend-only — never enters `_proposal_status` Y.Map. | No |
 
 ## Proposal Creation
 

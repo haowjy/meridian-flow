@@ -18,25 +18,25 @@ Two passes: one combined projection for the diff, then per-proposal clones for a
 flowchart TB
     subgraph pass1 ["Pass 1: Combined Diff"]
         A["Canonical Y.Doc"] --> B["Clone"]
-        B --> C["Apply ALL pending<br/>proposal yjs_updates"]
+        B --> C["Apply current-user pending<br/>proposal yjs_updates<br/>(skip stale)"]
         C --> D["Text diff:<br/>canonical vs projection"]
         D --> E["Raw hunks with<br/>canonical ranges"]
     end
     subgraph pass2 ["Pass 2: Attribution"]
-        F["For each pending proposal"] --> G["Clone canonical"]
+        F["For each current-user<br/>pending proposal"] --> G["Clone canonical"]
         G --> H["Apply single<br/>proposal yjs_update"]
         H --> I["Text diff:<br/>canonical vs single clone"]
         I --> J["Per-proposal<br/>affected ranges"]
     end
     E --> K["Map per-proposal ranges<br/>into combined hunks"]
     J --> K
-    K --> L["Group adjacent hunks"]
+    K --> L["Group overlapping hunks"]
     L --> M["Projection GC:<br/>no-diff proposals → stale"]
     M --> N["CM6 decorations"]
     N --> O["Destroy all clones"]
 ```
 
-Full re-derive triggers: `_proposal_status` map change or proposal-set change. Canonical text changes (user typing) only remap existing decoration positions via CM6 `map()` — no re-derive needed.
+Full re-derive triggers: `_proposal_status` map change or proposal-set change. Local typing does not trigger re-derive immediately — CM6 decoration `map()` shifts hunk positions. A debounced 500ms re-derive runs after typing pauses to catch staleness. Remote canonical text changes trigger immediate re-derive.
 
 ### How Yjs Handles Overlapping Updates
 
@@ -45,7 +45,7 @@ When two proposals edit the same text region, Yjs CRDT composition (YATA algorit
 | Case | Yjs behavior | Grouping needed? |
 |------|-------------|-----------------|
 | Overlapping (same region) | CRDT composition → one merged result | No — one hunk naturally |
-| Adjacent (nearby lines) | Separate text changes | Yes — threshold determines merge |
+| Adjacent (nearby lines) | Separate text changes | Only if they share a proposal (proposal atomicity rule) |
 | Distant (far apart) | Separate text changes | No — separate hunks |
 
 ### Attribution Algorithm
@@ -67,11 +67,12 @@ function cloneDoc(source: Y.Doc): Y.Doc {
 ```
 Pass 1 — combined diff:
   projection = cloneDoc(canonical)
-  for each pending P (not stale per pre-check): applyUpdate(projection, P.yjs_update)
+  for each current-user pending P (not stale per pre-check):
+    applyUpdate(projection, P.yjs_update)
   combinedHunks = textDiff(canonical.text, projection.text)
 
 Pass 2 — per-proposal attribution:
-  for each pending P:
+  for each current-user pending P:
     solo = clone(canonical)
     applyUpdate(solo, P.yjs_update)
     P.regions = textDiff(canonical.text, solo.text)
@@ -162,6 +163,8 @@ Stale detection uses a **text pre-check** before applying to the projection clon
 
 **Why not apply-then-diff?** Yjs idempotence only applies to the *same update bytes* (same struct IDs). Independently-created semantically equivalent edits (different Yjs client IDs) would produce duplicate content in the clone, not a no-op. The text pre-check avoids this.
 
+Additionally, after Pass 2 attribution, any pending proposal whose solo diff produces empty regions (no text change vs canonical) is marked `stale` via `ORIGIN_GC`. This catches proposals whose changes landed in canonical through other means (e.g., an overlapping proposal was accepted that included the same text change).
+
 Stale proposals are never rendered as hunks. Thread UI shows stale proposals as "No longer relevant".
 
 ## Hunk Actions
@@ -195,13 +198,13 @@ Hunk rendering remains decoration-based:
 | Group + decorate | ~1-3ms |
 | Total derive cycle (5 pending proposals) | ~20-35ms |
 
-With 5 pending proposals, the attribution pass dominates. This is acceptable -- the pipeline only runs on proposal events, not keystrokes. If proposal counts grow large, the solo-clone pass can be optimized by caching per-proposal diffs and only recomputing changed proposals.
+With 5 pending proposals, the attribution pass dominates. This is acceptable -- the pipeline runs on proposal events and debounced typing pauses, not every keystroke. If proposal counts grow large, the solo-clone pass can be optimized by caching per-proposal diffs and only recomputing changed proposals.
 
 **Scaling note:** The pipeline is O(P × N) where P = pending proposals and N = document size. For the target workload (individual chapters of ~5-20k words, not entire 100+ chapter serials), this is well within budget. Each chapter is a separate document with its own projection. If a single chapter accumulates >20 pending proposals, consider incremental diff (only recompute changed proposals' solo diffs, reuse cached results for unchanged ones).
 
 ### Re-Derive Strategy
 
-The full clone/apply/diff pipeline only runs on **proposal events**, not on every keystroke:
+The full clone/apply/diff pipeline runs on **proposal events** and **debounced typing pauses**, not on every keystroke:
 
 | Trigger | Action |
 |---------|--------|
@@ -211,7 +214,7 @@ The full clone/apply/diff pipeline only runs on **proposal events**, not on ever
 | Local typing pause (500ms debounce) | Full re-derive — catches staleness from user edits |
 | Remote canonical text change (other user's accept, thread undo, auto-apply) | Immediate full re-derive — remote edits can change hunk grouping and staleness |
 
-CM6 decorations automatically remap their positions when the document changes via `map()`. User typing shifts existing hunk positions without recomputing the diff. The expensive pipeline only runs when the set of pending proposals or their statuses change.
+CM6 decorations automatically remap their positions when the document changes via `map()`. User typing shifts existing hunk positions without recomputing the diff. The expensive pipeline runs when the set of pending proposals or their statuses change, or after a 500ms typing pause (to catch staleness from user edits near pending hunks).
 
 If proposal events arrive in bursts (e.g., AI streaming multiple `edit_document` calls), debounce re-derive by 50-100ms. Decoration updates lagging by one frame are invisible to the writer. When no proposals are pending, the pipeline is skipped entirely.
 

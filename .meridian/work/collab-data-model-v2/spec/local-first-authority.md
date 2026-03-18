@@ -60,6 +60,8 @@ The backend tracks connected owner tabs via WebSocket presence:
 
 This is not full leader election — just a binary "any owner tab connected?" check. The backend does not need to pick a specific tab. Any connected owner tab that receives `proposal:new` applies it.
 
+**Multi-tab guard:** Before applying, the frontend checks `_proposal_status` Y.Map for the proposal key. If already set (any value), skip — another tab already applied. This is a local CRDT check (no network), making multi-tab auto-apply idempotent for UndoManager purposes. Without this guard, each tab would create a separate Y.Map write with different Yjs struct IDs, causing Ctrl-Z on the second tab to silently fail (its undo would delete its MapItem, but the first tab's MapItem persists as the winner).
+
 **Why frontend-driven?** Yjs update origins are local apply-time metadata, not carried in the update payload. If the backend applied with `ORIGIN_ACCEPT`, the frontend's UndoManager would see the update arriving via the sync provider with no tracked origin — making it invisible to Ctrl-Z.
 
 ### `proposal:new` Delivery
@@ -98,7 +100,9 @@ canonicalDoc.transact(() => {
   }
 }, ORIGIN_ACCEPT);
 
-// After transaction succeeds, persist offset to backend for thread undo
+// After transaction succeeds, persist offset to backend for thread undo.
+// setAcceptedAtOffset is idempotent by proposal_id — subsequent calls overwrite.
+// No versioning needed: offset only changes on reapply, which also updates it.
 for (const proposal of hunk.proposals) {
   const offset = /* compute character position where edit landed */;
   api.setAcceptedAtOffset(proposal.id, offset);  // async, non-blocking
@@ -146,9 +150,7 @@ canonicalDoc.transact(() => {
 }, ORIGIN_GC);
 ```
 
-- Runs on every projection recompute.
-- Keeps the `edit_tool -> proposal -> yjs_update -> status` chain current.
-- Stale proposals are removed from hunk UI and shown as "No longer relevant" in thread UI.
+Runs on every projection recompute. See [Frontend Diff Model](frontend-diff-model.md) — Projection GC for the full text pre-check algorithm and empty-attribution-diff catch.
 
 ### Undo
 
@@ -167,7 +169,7 @@ Backend logic on Yjs sync:
 2. Upsert proposal-row status to match map value (`accepted`, `rejected`, `stale`, `reverted`). Key removal (from session Ctrl-Z undoing a reject) sets row back to `pending`.
 3. Thread undo/reapply writes to `_proposal_status` Y.Map (using `ORIGIN_THREAD`), mirrored to row like all other status changes.
 4. Keep row status current for UI (`pending`, `accepted`, `rejected`, `stale`, `reverted`).
-5. On document load (new connection or reconnect), read the full `_proposal_status` Y.Map and reconcile all proposal rows against it. Delta-driven mirroring handles steady-state; full reconciliation on load handles missed deltas.
+5. On document load (new connection or reconnect), read the full `_proposal_status` Y.Map and reconcile all proposal rows against it. Delta-driven mirroring handles steady-state; full reconciliation on load handles missed deltas. Key removal (missing key) sets row back to `pending` **unless** the row status is `invalid` or `stale` — these are terminal statuses excluded from missing-key reconciliation.
 
 ## Reconnect / Reload
 

@@ -135,13 +135,17 @@ Updates accumulate → hit 20k → compact oldest 10k into checkpoint → 10k re
                                → accumulate → hit 20k → compact → 10k remain
 ```
 
+### Compaction Atomicity
+
+Compaction acquires a per-document advisory lock (`pg_advisory_xact_lock(document_id)`) and executes within a single database transaction. The `cutoff_update_id` is fixed at step 2 — all subsequent steps use it. Concurrent writes append rows above the cutoff and are unaffected. If compaction crashes mid-transaction, the advisory lock is released and no state changes persist (transaction rollback).
+
 Compaction steps:
 1. Count `document_updates` rows for the document
-2. If count >= 20,000:
-3. Find manual and daily bookmarks in the oldest 10,000 updates — materialize their state blobs by replaying the log to each bookmark's `update_id`
-4. Delete AI turn bookmarks in the oldest 10,000 updates
-5. Load the oldest 10,000 updates + latest checkpoint, merge into a new `document_checkpoints` row
-6. Delete the oldest 10,000 `document_updates` rows
+2. If count >= 20,000, fix `cutoff_update_id` as the 10,000th oldest row's ID:
+3. Find manual and daily bookmarks with `update_id <= cutoff_update_id` — materialize their state blobs by replaying the log to each bookmark's `update_id`
+4. Delete AI turn bookmarks with `update_id <= cutoff_update_id`
+5. Load updates with `id <= cutoff_update_id` + latest checkpoint, merge into a new `document_checkpoints` row
+6. Delete `document_updates` rows with `id <= cutoff_update_id`
 
 ### Example: Compaction Lifecycle
 
