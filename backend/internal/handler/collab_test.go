@@ -130,22 +130,6 @@ func (s *noopProposalStore) ListByDocument(
 	return nil, nil
 }
 
-func (s *noopProposalStore) ListByGroup(
-	_ context.Context,
-	_ uuid.UUID,
-	_ *collabModels.ProposalStatus,
-) ([]collabModels.Proposal, error) {
-	return nil, nil
-}
-
-func (s *noopProposalStore) MarkAccepted(_ context.Context, _ uuid.UUID, _ uuid.UUID, _ time.Time) error {
-	return nil
-}
-
-func (s *noopProposalStore) MarkRejected(_ context.Context, _ uuid.UUID, _ uuid.UUID, _ time.Time) error {
-	return nil
-}
-
 func (s *noopProposalStore) UpsertStatus(_ context.Context, _ uuid.UUID, _ collabModels.ProposalStatus) error {
 	return nil
 }

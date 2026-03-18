@@ -46,7 +46,5 @@ type Proposal struct {
 	AcceptedAtOffset  *int           `json:"accepted_at_offset,omitempty"`
 	OffsetVersion     int            `json:"offset_version"`
 	CreatedByUserID   uuid.UUID      `json:"created_by_user_id"`
-	DecidedByUserID   *uuid.UUID     `json:"decided_by_user_id,omitempty"`
 	CreatedAt         time.Time      `json:"created_at"`
-	DecidedAt         *time.Time     `json:"decided_at,omitempty"`
 }

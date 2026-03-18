@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
@@ -139,7 +140,7 @@ func TestDocumentSessionManagerApplyUpdate_OfflinePersistsContent(t *testing.T) 
 	bookmarkStore := &fakeSessionBookmarkStore{}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	manager := NewDocumentSessionManager(store, updateLogStore, bookmarkStore, store, logger)
+	manager := NewDocumentSessionManager(store, updateLogStore, bookmarkStore, nil, store, logger)
 
 	if err := manager.ApplyUpdate(context.Background(), uuid.New(), update, "ai_accept"); err != nil {
 		t.Fatalf("ApplyUpdate returned error: %v", err)
@@ -159,6 +160,87 @@ func TestDocumentSessionManagerApplyUpdate_OfflinePersistsContent(t *testing.T) 
 	}
 	if got := decodeStateContent(t, store.savedState); got != expectedContent {
 		t.Fatalf("expected persisted state content %q, got %q", expectedContent, got)
+	}
+}
+
+func TestDocumentSessionLoadState_ReconcilesProposalStatusMap(t *testing.T) {
+	docID := "doc-reconcile"
+	proposalID := uuid.New().String()
+	store := &fakeSessionStore{
+		state: mustBuildSessionStateWithStatusMap(t, "seed text", map[string]string{
+			proposalID: "accepted",
+		}),
+	}
+	statusMirror := &fakeSessionStatusMirror{}
+	session := &DocumentSession{
+		docID:          docID,
+		doc:            ycrdt.NewDoc(docID, true, ycrdt.DefaultGCFilter, nil, false),
+		stateStore:     store,
+		updateLogStore: &fakeSessionUpdateLogStore{},
+		statusMirror:   statusMirror,
+		contentLoader:  store,
+		logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	if err := session.loadState(context.Background()); err != nil {
+		t.Fatalf("loadState returned error: %v", err)
+	}
+
+	statusMirror.mu.Lock()
+	defer statusMirror.mu.Unlock()
+	if statusMirror.reconcileCalls != 1 {
+		t.Fatalf("expected one reconcile call, got %d", statusMirror.reconcileCalls)
+	}
+	if statusMirror.lastReconcileDocID != docID {
+		t.Fatalf("expected reconcile doc %q, got %q", docID, statusMirror.lastReconcileDocID)
+	}
+	if got := statusMirror.lastStatusMap[proposalID]; got != "accepted" {
+		t.Fatalf("expected reconciled status accepted for proposal %s, got %q", proposalID, got)
+	}
+}
+
+func TestDocumentSessionLoadState_ObservesProposalStatusMapDeltas(t *testing.T) {
+	docID := "doc-observe"
+	proposalID := uuid.New().String()
+	store := &fakeSessionStore{
+		state: mustBuildSessionStateWithStatusMap(t, "", nil),
+	}
+	statusMirror := &fakeSessionStatusMirror{}
+	session := &DocumentSession{
+		docID:          docID,
+		doc:            ycrdt.NewDoc(docID, true, ycrdt.DefaultGCFilter, nil, false),
+		stateStore:     store,
+		updateLogStore: &fakeSessionUpdateLogStore{},
+		statusMirror:   statusMirror,
+		contentLoader:  store,
+		logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	if err := session.loadState(context.Background()); err != nil {
+		t.Fatalf("loadState returned error: %v", err)
+	}
+
+	statusMap := session.doc.GetMap("_proposal_status").(*ycrdt.YMap)
+	session.doc.Transact(func(_ *ycrdt.Transaction) {
+		statusMap.Set(proposalID, "rejected")
+	}, "test-status-set")
+	session.doc.Transact(func(_ *ycrdt.Transaction) {
+		statusMap.Delete(proposalID)
+	}, "test-status-delete")
+
+	statusMirror.mu.Lock()
+	defer statusMirror.mu.Unlock()
+	if len(statusMirror.changeCalls) < 2 {
+		t.Fatalf("expected at least 2 status delta calls, got %d", len(statusMirror.changeCalls))
+	}
+
+	first := statusMirror.changeCalls[len(statusMirror.changeCalls)-2]
+	if first.proposalID != proposalID || first.status == nil || *first.status != "rejected" {
+		t.Fatalf("unexpected set delta call: %+v", first)
+	}
+	second := statusMirror.changeCalls[len(statusMirror.changeCalls)-1]
+	if second.proposalID != proposalID || second.status != nil {
+		t.Fatalf("unexpected delete delta call: %+v", second)
 	}
 }
 
@@ -273,6 +355,22 @@ func mustBuildSessionState(t *testing.T, content string) []byte {
 	return ycrdt.EncodeStateAsUpdate(doc, nil)
 }
 
+func mustBuildSessionStateWithStatusMap(t *testing.T, content string, status map[string]string) []byte {
+	t.Helper()
+	doc := ycrdt.NewDoc("session-state-with-map", true, ycrdt.DefaultGCFilter, nil, false)
+	yText := doc.GetText("content")
+	statusMap := doc.GetMap("_proposal_status").(*ycrdt.YMap)
+	doc.Transact(func(_ *ycrdt.Transaction) {
+		if content != "" {
+			yText.Insert(0, content, nil)
+		}
+		for proposalID, proposalStatus := range status {
+			statusMap.Set(proposalID, proposalStatus)
+		}
+	}, nil)
+	return ycrdt.EncodeStateAsUpdate(doc, nil)
+}
+
 func decodeStateContent(t *testing.T, state []byte) string {
 	t.Helper()
 	doc := ycrdt.NewDoc("decode-session-state", true, ycrdt.DefaultGCFilter, nil, false)
@@ -290,4 +388,46 @@ func readSessionContent(doc *ycrdt.Doc) string {
 		return ""
 	}
 	return text.ToString()
+}
+
+type fakeSessionStatusMirror struct {
+	mu                 sync.Mutex
+	reconcileCalls     int
+	lastReconcileDocID string
+	lastStatusMap      map[string]string
+	changeCalls        []statusMirrorChangeCall
+}
+
+type statusMirrorChangeCall struct {
+	proposalID string
+	status     *string
+}
+
+func (f *fakeSessionStatusMirror) OnStatusChange(_ context.Context, proposalID string, newStatus *string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	var statusCopy *string
+	if newStatus != nil {
+		value := *newStatus
+		statusCopy = &value
+	}
+	f.changeCalls = append(f.changeCalls, statusMirrorChangeCall{
+		proposalID: proposalID,
+		status:     statusCopy,
+	})
+	return nil
+}
+
+func (f *fakeSessionStatusMirror) ReconcileAll(_ context.Context, documentID string, statusMap map[string]string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.reconcileCalls++
+	f.lastReconcileDocID = documentID
+	f.lastStatusMap = make(map[string]string, len(statusMap))
+	for key, value := range statusMap {
+		f.lastStatusMap[key] = value
+	}
+	return nil
 }

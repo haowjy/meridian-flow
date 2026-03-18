@@ -265,22 +265,6 @@ func (s *fakeProjectorProposalStore) ListByDocument(
 	return s.listByDocument, nil
 }
 
-func (s *fakeProjectorProposalStore) ListByGroup(
-	_ context.Context,
-	_ uuid.UUID,
-	_ *collabModels.ProposalStatus,
-) ([]collabModels.Proposal, error) {
-	return nil, nil
-}
-
-func (s *fakeProjectorProposalStore) MarkAccepted(_ context.Context, _ uuid.UUID, _ uuid.UUID, _ time.Time) error {
-	return nil
-}
-
-func (s *fakeProjectorProposalStore) MarkRejected(_ context.Context, _ uuid.UUID, _ uuid.UUID, _ time.Time) error {
-	return nil
-}
-
 func (s *fakeProjectorProposalStore) UpsertStatus(_ context.Context, _ uuid.UUID, _ collabModels.ProposalStatus) error {
 	return nil
 }

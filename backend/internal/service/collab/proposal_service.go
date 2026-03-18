@@ -3,9 +3,6 @@ package collab
 import (
 	"context"
 	"fmt"
-	"time"
-
-	"github.com/google/uuid"
 
 	"meridian/internal/domain"
 	collabModels "meridian/internal/domain/models/collab"
@@ -93,7 +90,7 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.Crea
 		if hasOwnerTabs {
 			return nil
 		}
-		return s.applyBackendFallbackAccept(txCtx, proposal, req.CreatedByUserID)
+		return s.applyBackendFallbackAccept(txCtx, proposal)
 	}
 
 	if req.Source == collabModels.ProposalSourceAI && hasOwnerTabs {
@@ -141,7 +138,6 @@ func (s *ProposalService) createProposal(ctx context.Context, proposal *collabMo
 func (s *ProposalService) applyBackendFallbackAccept(
 	ctx context.Context,
 	proposal *collabModels.Proposal,
-	decidedByUserID uuid.UUID,
 ) error {
 	if err := s.runtime.ApplyUpdate(ctx, proposal.DocumentID, proposal.YjsUpdate, "proposal:backend_fallback_apply"); err != nil {
 		return fmt.Errorf("apply backend fallback proposal update: %w", err)
@@ -155,13 +151,10 @@ func (s *ProposalService) applyBackendFallbackAccept(
 		return fmt.Errorf("apply backend fallback status update: %w", err)
 	}
 
-	decidedAt := time.Now().UTC()
-	if err := s.proposalStore.MarkAccepted(ctx, proposal.ID, decidedByUserID, decidedAt); err != nil {
-		return err
+	if err := s.proposalStore.UpsertStatus(ctx, proposal.ID, collabModels.ProposalStatusAccepted); err != nil {
+		return fmt.Errorf("persist backend fallback accepted status: %w", err)
 	}
 
 	proposal.Status = collabModels.ProposalStatusAccepted
-	proposal.DecidedByUserID = &decidedByUserID
-	proposal.DecidedAt = &decidedAt
 	return nil
 }

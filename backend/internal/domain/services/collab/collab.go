@@ -87,7 +87,7 @@ type SnapshotStore interface {
 	DeleteExpiredAutoSnapshots(ctx context.Context, ttlHours int) (int64, error)
 }
 
-// ProposalStore manages proposal persistence and terminal status transitions.
+// ProposalStore manages proposal persistence and mirrored status transitions.
 type ProposalStore interface {
 	Create(ctx context.Context, proposal *collabModels.Proposal) error
 	GetByID(ctx context.Context, proposalID uuid.UUID) (*collabModels.Proposal, error)
@@ -104,18 +104,10 @@ type ProposalStore interface {
 		limit int,
 		offset int,
 	) ([]collabModels.Proposal, error)
-	ListByGroup(
-		ctx context.Context,
-		proposalGroupID uuid.UUID,
-		status *collabModels.ProposalStatus,
-	) ([]collabModels.Proposal, error)
-	MarkAccepted(ctx context.Context, proposalID uuid.UUID, decidedByUserID uuid.UUID, decidedAt time.Time) error
-	MarkRejected(ctx context.Context, proposalID uuid.UUID, decidedByUserID uuid.UUID, decidedAt time.Time) error
 	UpsertStatus(ctx context.Context, proposalID uuid.UUID, status collabModels.ProposalStatus) error
 	SetAcceptedAtOffset(ctx context.Context, proposalID uuid.UUID, offset int, version int) error
 	// CountRecentByDocumentAndStatus counts proposals for a document with the given
-	// status that were decided (accepted/rejected) within the lookback window.
-	// For "pending" status, uses created_at instead of decided_at.
+	// status that were created within the lookback window.
 	CountRecentByDocumentAndStatus(ctx context.Context, documentID uuid.UUID, status collabModels.ProposalStatus, since time.Time) (int, error)
 }
 
@@ -138,6 +130,16 @@ type ProposalRuntime interface {
 // OwnerTabPresenceTracker reports whether a document has at least one connected owner tab.
 type OwnerTabPresenceTracker interface {
 	HasOwnerTabs(documentID uuid.UUID) bool
+}
+
+// StatusMirror mirrors _proposal_status Y.Map values into proposal rows.
+type StatusMirror interface {
+	// OnStatusChange handles one _proposal_status key delta.
+	// newStatus == nil means the key was deleted and should map to pending.
+	OnStatusChange(ctx context.Context, proposalID string, newStatus *string) error
+	// ReconcileAll repairs drift for one document by reconciling all proposal rows
+	// against the current _proposal_status map snapshot.
+	ReconcileAll(ctx context.Context, documentID string, statusMap map[string]string) error
 }
 
 // ProjectedStateBuilder builds Yjs state bytes that include pending proposals
