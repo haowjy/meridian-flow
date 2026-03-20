@@ -109,6 +109,7 @@ The workspace modes are being built as part of `frontend-v2/`, a ground-up rebui
 - Locking in specific component implementations
 - Replacing the filesystem with a hidden schema
 - Turning Meridian into a generic IDE shell
+- Building mobile-specific layouts for v1 (but all components are responsive and touch-ready)
 
 ## Result
 
