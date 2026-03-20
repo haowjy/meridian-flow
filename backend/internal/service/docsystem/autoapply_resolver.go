@@ -34,61 +34,80 @@ func (r *autoapplyResolver) ResolveEffectiveAutoapply(ctx context.Context, docum
 		return false, fmt.Errorf("get document: %w", err)
 	}
 
-	folders, hasSystemAncestor, err := r.loadFolderChain(ctx, doc.FolderID)
+	folders, err := r.loadFolderChain(ctx, doc.FolderID)
 	if err != nil {
 		return false, err
 	}
 
-	// System folder policies are authoritative for their subtree, so document-level
-	// overrides only apply when the document is outside every system namespace.
-	if !hasSystemAncestor && doc.Autoapply != nil {
+	// System folders are authoritative for their entire subtree: a system
+	// ancestor's autoapply overrides any non-system folder or document setting
+	// nested below it. Scan the full chain first so that a non-system child
+	// folder override cannot sneak in before we reach the system ancestor.
+	// The chain is ordered innermost→outermost; the first system folder found
+	// is the most-specific namespace boundary.
+	for _, folder := range folders {
+		if folder.isSystem {
+			if folder.autoapply != nil {
+				return *folder.autoapply, nil
+			}
+			// System folder has no explicit value; stop walking and fall
+			// through to the project default — don't let any ancestors
+			// outside the system namespace bleed in.
+			return r.resolveProjectDefault(ctx, doc.ProjectID)
+		}
+	}
+
+	// No system ancestor — document-level override applies.
+	if doc.Autoapply != nil {
 		return *doc.Autoapply, nil
 	}
 
+	// Walk the non-system folder chain for the first explicit override
+	// (innermost folder wins).
 	for _, folder := range folders {
 		if folder.autoapply != nil {
 			return *folder.autoapply, nil
 		}
 	}
 
-	project, err := r.projectRepo.GetByIDOnly(ctx, doc.ProjectID)
+	return r.resolveProjectDefault(ctx, doc.ProjectID)
+}
+
+func (r *autoapplyResolver) resolveProjectDefault(ctx context.Context, projectID string) (bool, error) {
+	project, err := r.projectRepo.GetByIDOnly(ctx, projectID)
 	if err != nil {
 		return false, fmt.Errorf("get project: %w", err)
 	}
-
 	return project.Autoapply, nil
 }
 
-func (r *autoapplyResolver) loadFolderChain(ctx context.Context, folderID *string) ([]folderAutoapplyState, bool, error) {
+func (r *autoapplyResolver) loadFolderChain(ctx context.Context, folderID *string) ([]folderAutoapplyState, error) {
 	if folderID == nil {
-		return nil, false, nil
+		return nil, nil
 	}
 
 	var (
-		folders           []folderAutoapplyState
-		hasSystemAncestor bool
-		currentFolderID   = folderID
+		folders         []folderAutoapplyState
+		currentFolderID = folderID
 	)
 
 	for currentFolderID != nil {
 		folder, err := r.folderRepo.GetByIDOnly(ctx, *currentFolderID)
 		if err != nil {
-			return nil, false, fmt.Errorf("get folder %s: %w", *currentFolderID, err)
-		}
-
-		if folder.IsSystem {
-			hasSystemAncestor = true
+			return nil, fmt.Errorf("get folder %s: %w", *currentFolderID, err)
 		}
 
 		folders = append(folders, folderAutoapplyState{
 			autoapply: folder.Autoapply,
+			isSystem:  folder.IsSystem,
 		})
 		currentFolderID = folder.ParentID
 	}
 
-	return folders, hasSystemAncestor, nil
+	return folders, nil
 }
 
 type folderAutoapplyState struct {
 	autoapply *bool
+	isSystem  bool
 }
