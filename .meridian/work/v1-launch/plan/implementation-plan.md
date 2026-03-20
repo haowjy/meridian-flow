@@ -219,7 +219,7 @@ Needs: Design System (B1) atoms available. Data Layer (C1) sync primitives avail
 - just-bash TS sidecar: Vercel Labs integration, internal API from Go backend
 - Virtual FS mount (document tree projected as files in bash context)
 
-**Verification:** Write to live doc goes through Yjs, write to `.work/` goes direct, write to `.agents/` rejected. just-bash executes simple commands.
+**Verification:** Write to live doc goes through Yjs, write to `.meridian/work/` goes direct, write to `.agents/` rejected. just-bash executes simple commands.
 
 #### F1. CM6 Primitives
 **Needs:** Design System (B1) for theme tokens.

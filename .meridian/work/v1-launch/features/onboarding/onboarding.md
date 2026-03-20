@@ -4,7 +4,7 @@ First-time user experience and free tier flow.
 
 ## Scope
 
-- **Signup → credits** — new user signs up, gets free credits immediately (no card)
+- **Signup → credits** — Google OAuth signup gets 300 free credits instantly. Email/password signup gets credits after email verification. No card required.
 - **First project wizard** — create or import a project
 - **Feature introduction** — brief tooltips or walkthrough for key features (editor, threads, skills)
 - **Sample project** — optional pre-built project with example chapters + installed skills to explore
@@ -12,7 +12,7 @@ First-time user experience and free tier flow.
 ## Free Tier Flow
 
 1. Sign up (email or Google OAuth)
-2. Receive free credits (see [billing-design.md](../billing/billing-design.md))
+2. Receive free credits: instant for Google OAuth; after email verification for email/password signup (see [billing-design.md](../billing/billing-design.md))
 3. Create first project or import existing work
 4. Guided introduction to: editor, AI thread, @mentions, skills
 5. First AI interaction within 2 minutes of signup

@@ -8,7 +8,7 @@ audience: developer, architect
 
 The frontend derives diff hunks by comparing canonical text with an ephemeral projection. The projection is per-user: only pending proposals where `created_by_user_id = current_user` are applied. Hunks are grouped text regions — the writer acts on what they see, not on individual proposals.
 
-The projection computation itself is shared logic (frontend for diff UI, backend for AI context -- see [Architecture](architecture.md)). This spec covers the frontend-specific diff and rendering pipeline on top of it.
+The projection computation itself is shared logic (frontend for diff UI, backend for AI context). This spec covers the frontend-specific diff and rendering pipeline on top of it.
 
 ## Derivation Pipeline
 
@@ -179,7 +179,7 @@ Stale proposals are never rendered as hunks. Thread UI shows stale proposals as 
 | Undo accept hunk | Revert full transaction | Entire hunk reappears as one undo step |
 | Undo reject hunk | Revert full transaction | Entire hunk reappears as one undo step |
 
-**Freshness guard:** Before executing Accept/Reject, check that the hunk's derivation sequence number matches the current derivation. If canonical text or proposal set changed since the hunk was rendered (e.g., user typed near the hunk or a remote edit landed during the 500ms debounce window), force a synchronous re-derive before committing. See [Local-First Authority](local-first-authority.md) — Hunk Action Freshness.
+**Freshness guard:** Before executing Accept/Reject, check that the hunk's derivation sequence number matches the current derivation. If canonical text or proposal set changed since the hunk was rendered (e.g., user typed near the hunk or a remote edit landed during the 500ms debounce window), force a synchronous re-derive before committing. See Local-First Authority (not yet documented separately) — Hunk Action Freshness.
 
 ## CM6 Rendering
 
@@ -222,8 +222,8 @@ If proposal events arrive in bursts (e.g., AI streaming multiple `edit_document`
 
 ## Cross-References
 
-- [Architecture](architecture.md)
-- [Local-First Authority](local-first-authority.md)
+- Architecture -- not yet documented separately; see [foundations/domain-architecture.md](../../foundations/domain-architecture.md)
+- Local-First Authority -- not yet documented separately
 - [Undo Design](undo.md)
-- [Schema Design](schema-design.md) -- proposal columns used in projection
-- [Implementation Plan](plan.md)
+- Schema Design -- not yet documented separately (proposal columns used in projection)
+- Implementation Plan -- see [plan/implementation-plan.md](../../plan/implementation-plan.md)

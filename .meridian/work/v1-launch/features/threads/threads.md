@@ -5,7 +5,7 @@ Chat interface for AI interaction. CM6 input, streaming responses, tool calls.
 ## Scope
 
 - CM6-based chat input (shared with editor via cm6-shared extensions)
-- @mentions in chat input (resolves to @mention chips, not wiki links)
+- @mentions in chat input -- provided by F8 (@Mentions, Round 2b); not part of base Threads (F7). Base chat input works without mentions.
 - Message send with optimistic rendering (fix current 1s delay)
 - SSE streaming for AI responses via streamdown
 - Tool call display (collapsible, shows tool name + result)
@@ -33,7 +33,7 @@ Current thread send waits for server response before rendering the user's messag
 ## Dependencies
 
 - CM6 shared extensions (chat input)
-- @mentions (autocomplete in chat input)
+- @mentions (autocomplete in chat input) -- provided by F8 (@Mentions, Round 2b); Threads (F7) must work without this dependency
 - Data layer (optimistic flow)
 - Billing (credit check on send)
 - Work items (thread belongs to a work item)
