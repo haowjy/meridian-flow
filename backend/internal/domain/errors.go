@@ -2,17 +2,9 @@ package domain
 
 import (
 	"errors"
-	"net/http"
 )
 
-// HTTPError defines errors that can be mapped to HTTP status codes.
-// Implementing this interface enables extensible error handling (OCP compliance).
-type HTTPError interface {
-	error
-	StatusCode() int
-}
-
-// Domain error types implementing HTTPError interface
+// Domain error types
 type (
 	// NotFoundError indicates a resource was not found
 	NotFoundError struct {
@@ -38,16 +30,10 @@ type (
 )
 
 // Error implementations
-func (e *NotFoundError) Error() string      { return e.Message }
-func (e *ValidationError) Error() string    { return e.Message }
-func (e *UnauthorizedError) Error() string  { return e.Message }
-func (e *ForbiddenError) Error() string     { return e.Message }
-
-// StatusCode implementations (HTTPError interface)
-func (e *NotFoundError) StatusCode() int      { return http.StatusNotFound }
-func (e *ValidationError) StatusCode() int    { return http.StatusBadRequest }
-func (e *UnauthorizedError) StatusCode() int  { return http.StatusUnauthorized }
-func (e *ForbiddenError) StatusCode() int     { return http.StatusForbidden }
+func (e *NotFoundError) Error() string     { return e.Message }
+func (e *ValidationError) Error() string   { return e.Message }
+func (e *UnauthorizedError) Error() string { return e.Message }
+func (e *ForbiddenError) Error() string    { return e.Message }
 
 // Is implementations for errors.Is() support with sentinel errors
 func (e *NotFoundError) Is(target error) bool     { return target == ErrNotFound }
@@ -75,13 +61,11 @@ var (
 )
 
 // RateLimitError indicates the user has exceeded a concurrency or rate limit.
-// Implements HTTPError interface for extensible error handling.
 type RateLimitError struct {
 	Message string
 }
 
-func (e *RateLimitError) Error() string    { return e.Message }
-func (e *RateLimitError) StatusCode() int  { return http.StatusTooManyRequests }
+func (e *RateLimitError) Error() string        { return e.Message }
 func (e *RateLimitError) Is(target error) bool { return target == ErrRateLimit }
 
 // NewRateLimitError creates a structured RateLimitError
@@ -90,7 +74,6 @@ func NewRateLimitError(message string) *RateLimitError {
 }
 
 // ConflictError represents a resource conflict with details about the existing resource
-// Implements HTTPError interface for extensible error handling
 type ConflictError struct {
 	Message      string // Human-readable error message
 	ResourceType string // Type of resource (document, folder, project)
@@ -100,11 +83,6 @@ type ConflictError struct {
 // Error implements the error interface
 func (e *ConflictError) Error() string {
 	return e.Message
-}
-
-// StatusCode implements the HTTPError interface
-func (e *ConflictError) StatusCode() int {
-	return http.StatusConflict
 }
 
 // Is allows errors.Is() to match against ErrConflict
@@ -123,10 +101,6 @@ type ConstraintViolationError struct {
 
 func (e *ConstraintViolationError) Error() string {
 	return e.Message
-}
-
-func (e *ConstraintViolationError) StatusCode() int {
-	return http.StatusBadRequest // Client provided invalid data
 }
 
 // Is allows errors.Is() to match against ErrValidation

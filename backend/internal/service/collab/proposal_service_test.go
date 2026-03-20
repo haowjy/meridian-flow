@@ -29,6 +29,7 @@ func TestProposalServiceCreateProposal_FirstTurnProposalCreatesAITurnBookmark(t 
 		&fakeProposalServiceTxManager{},
 		runtime,
 		&fakeOwnerTabPresenceTracker{hasOwnerTabs: true},
+		&fakeProposalServiceDocumentResolver{allow: true},
 	)
 
 	_, err := service.CreateProposal(context.Background(), collabSvc.CreateProposalRequest{
@@ -69,6 +70,7 @@ func TestProposalServiceCreateProposal_NonFirstTurnProposalSkipsAITurnBookmark(t
 		&fakeProposalServiceTxManager{},
 		runtime,
 		&fakeOwnerTabPresenceTracker{hasOwnerTabs: true},
+		&fakeProposalServiceDocumentResolver{allow: true},
 	)
 
 	_, err := service.CreateProposal(context.Background(), collabSvc.CreateProposalRequest{
@@ -194,4 +196,20 @@ type fakeOwnerTabPresenceTracker struct {
 
 func (t *fakeOwnerTabPresenceTracker) HasOwnerTabs(uuid.UUID) bool {
 	return t.hasOwnerTabs
+}
+
+type fakeProposalServiceDocumentResolver struct {
+	allow bool
+	err   error
+}
+
+func (r *fakeProposalServiceDocumentResolver) ResolveDocument(_ context.Context, _ string) (*collabModels.CollabDocRef, error) {
+	return nil, nil
+}
+
+func (r *fakeProposalServiceDocumentResolver) VerifyOwnership(_ context.Context, _ string, _ string) (bool, error) {
+	if r.err != nil {
+		return false, r.err
+	}
+	return r.allow, nil
 }

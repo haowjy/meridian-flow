@@ -3,9 +3,21 @@ package llm
 import (
 	"encoding/json"
 	"fmt"
-
-	llmprovider "github.com/haowjy/meridian-llm-go"
 )
+
+type ToolChoiceMode string
+
+const (
+	ToolChoiceModeAuto ToolChoiceMode = "auto"
+	ToolChoiceModeAny  ToolChoiceMode = "any"
+	ToolChoiceModeTool ToolChoiceMode = "tool"
+	ToolChoiceModeNone ToolChoiceMode = "none"
+)
+
+type ToolChoice struct {
+	Mode     ToolChoiceMode
+	ToolName string // only used when Mode == ToolChoiceModeTool
+}
 
 // RequestParams represents all possible LLM request parameters across providers.
 // Client sends these as JSONB, provider adapters extract what they support.
@@ -87,8 +99,8 @@ type RequestParams struct {
 	Tools []ToolDefinition `json:"tools,omitempty"`
 
 	// ToolChoice controls whether/which tools to use
-	// Use library ToolChoice type for type safety
-	ToolChoice *llmprovider.ToolChoice `json:"tool_choice,omitempty"`
+	// Uses domain type; conversion layer maps to provider-specific representation.
+	ToolChoice *ToolChoice `json:"tool_choice,omitempty"`
 
 	// ParallelToolCalls allows model to use multiple tools simultaneously
 	ParallelToolCalls *bool `json:"parallel_tool_calls,omitempty"`
@@ -101,11 +113,11 @@ type RequestParams struct {
 	Provider *string `json:"provider,omitempty"`
 
 	// Provider routing (OpenRouter)
-	ProviderOrder      []string `json:"provider_order,omitempty"`
-	ProviderOnly       []string `json:"provider_only,omitempty"`
-	ProviderIgnore     []string `json:"provider_ignore,omitempty"`
-	AllowFallbacks     *bool    `json:"allow_fallbacks,omitempty"`
-	ProviderSort       *string  `json:"provider_sort,omitempty"`
+	ProviderOrder  []string `json:"provider_order,omitempty"`
+	ProviderOnly   []string `json:"provider_only,omitempty"`
+	ProviderIgnore []string `json:"provider_ignore,omitempty"`
+	AllowFallbacks *bool    `json:"allow_fallbacks,omitempty"`
+	ProviderSort   *string  `json:"provider_sort,omitempty"`
 
 	// ===== Debug Parameters (Only Active When DEBUG=true) =====
 

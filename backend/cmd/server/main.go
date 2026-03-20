@@ -228,6 +228,7 @@ func main() {
 		txManager,
 		collabSessionManager,
 		collabDocumentHandler,
+		collabDocResolver,
 	)
 	restoreService := serviceCollab.NewRestoreService(
 		bookmarkStore,
@@ -273,6 +274,7 @@ func main() {
 		logger.Error("failed to setup LLM services", "error", err)
 		os.Exit(1)
 	}
+	go streamRegistry.StartCleanup(context.Background())
 
 	// Create identifier resolver (for UUID/slug resolution)
 	identifierResolver := identifier.NewResolver(projectRepo, docRepo)

@@ -15,11 +15,12 @@ const maxQueuedAIProposalsPerDocument = 200
 
 // ProposalService executes proposal lifecycle operations.
 type ProposalService struct {
-	proposalStore   collabSvc.ProposalStore
-	txManager       repositories.TransactionManager
-	runtime         collabSvc.ProposalRuntime
-	createGate      *proposalDocumentGate
-	ownerTabTracker collabSvc.OwnerTabPresenceTracker
+	proposalStore    collabSvc.ProposalStore
+	txManager        repositories.TransactionManager
+	runtime          collabSvc.ProposalRuntime
+	createGate       *proposalDocumentGate
+	ownerTabTracker  collabSvc.OwnerTabPresenceTracker
+	documentResolver collabSvc.DocumentResolver
 }
 
 // NewProposalService creates a new proposal service.
@@ -28,13 +29,15 @@ func NewProposalService(
 	txManager repositories.TransactionManager,
 	runtime collabSvc.ProposalRuntime,
 	ownerTabTracker collabSvc.OwnerTabPresenceTracker,
+	documentResolver collabSvc.DocumentResolver,
 ) collabSvc.ProposalService {
 	return &ProposalService{
-		proposalStore:   proposalStore,
-		txManager:       txManager,
-		runtime:         runtime,
-		createGate:      newProposalDocumentGate(),
-		ownerTabTracker: ownerTabTracker,
+		proposalStore:    proposalStore,
+		txManager:        txManager,
+		runtime:          runtime,
+		createGate:       newProposalDocumentGate(),
+		ownerTabTracker:  ownerTabTracker,
+		documentResolver: documentResolver,
 	}
 }
 
@@ -145,6 +148,32 @@ func (s *ProposalService) createProposal(ctx context.Context, proposal *collabMo
 		return err
 	}
 	return nil
+}
+
+// SetProposalOffset persists accepted offset metadata after ownership verification.
+func (s *ProposalService) SetProposalOffset(ctx context.Context, req collabSvc.SetProposalOffsetRequest) error {
+	proposal, err := s.proposalStore.GetByID(ctx, req.ProposalID)
+	if err != nil {
+		return err
+	}
+	if s.documentResolver == nil {
+		return fmt.Errorf("proposal document resolver not configured")
+	}
+
+	allowed, err := s.documentResolver.VerifyOwnership(ctx, proposal.DocumentID.String(), req.UserID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", collabSvc.ErrProposalOffsetAccessCheckFailed, err)
+	}
+	if !allowed {
+		return domain.NewForbiddenError("access denied")
+	}
+
+	return s.proposalStore.SetAcceptedAtOffset(
+		ctx,
+		req.ProposalID,
+		req.AcceptedAtOffset,
+		req.OffsetVersion,
+	)
 }
 
 func (s *ProposalService) applyBackendFallbackAccept(

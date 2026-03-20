@@ -1,7 +1,6 @@
 package llm
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 
@@ -93,9 +92,6 @@ func SetupServices(
 
 	// Create mstream registry (for SSE streaming)
 	streamRegistry := mstream.NewRegistry()
-
-	// Start cleanup goroutine for old streams
-	go streamRegistry.StartCleanup(context.Background())
 
 	// Create response generator (uses TurnReader + TurnNavigator for ISP compliance)
 	responseGenerator := streaming.NewResponseGenerator(

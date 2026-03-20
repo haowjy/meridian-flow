@@ -23,6 +23,9 @@ const (
 
 var errSessionFrozen = errors.New("collab session is frozen")
 
+var _ collabSvc.DocumentSessionProvider = (*DocumentSessionManager)(nil)
+var _ collabSvc.SyncSession = (*DocumentSession)(nil)
+
 // DocumentSessionManager manages in-memory Yjs docs for active websocket sessions.
 type DocumentSessionManager struct {
 	mu             sync.Mutex
@@ -79,6 +82,31 @@ func NewDocumentSessionManager(
 		contentLoader:  contentLoader,
 		logger:         logger,
 	}
+}
+
+// GetOrCreateSession returns a live document session, creating and loading it on first connect.
+func (m *DocumentSessionManager) GetOrCreateSession(ctx context.Context, docID string, _ string) (collabSvc.SyncSession, func(), error) {
+	session, err := m.Acquire(ctx, docID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() {
+			closeCtx, cancel := context.WithTimeout(context.Background(), persistTimeout)
+			defer cancel()
+
+			if err := m.releaseSessionRef(closeCtx, docID, session); err != nil && m.logger != nil {
+				m.logger.Error("collab session release failed",
+					"document_id", docID,
+					"error", err,
+				)
+			}
+		})
+	}
+
+	return session, release, nil
 }
 
 // Acquire returns a live document session, creating and loading it on first connect.
@@ -260,7 +288,9 @@ func (m *DocumentSessionManager) releaseSessionRef(ctx context.Context, docID st
 		return nil
 	}
 
-	delete(m.sessions, docID)
+	if activeSession, ok := m.sessions[docID]; ok && activeSession == session {
+		delete(m.sessions, docID)
+	}
 	m.mu.Unlock()
 
 	flushCtx, cancel := context.WithTimeout(ctx, persistTimeout)

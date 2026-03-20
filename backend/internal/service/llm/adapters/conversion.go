@@ -6,8 +6,8 @@ import (
 
 	llmprovider "github.com/haowjy/meridian-llm-go"
 
-	domainllm "meridian/internal/domain/services/llm"
 	"meridian/internal/domain/models/llm"
+	domainllm "meridian/internal/domain/services/llm"
 )
 
 // normalizeToolResultContent converts tool result content to string format.
@@ -184,6 +184,38 @@ func convertFromLibraryEvent(event llmprovider.StreamEvent) domainllm.StreamEven
 	return backendEvent
 }
 
+// convertToolChoiceToLibrary maps domain tool-choice semantics to library semantics.
+// Domain modes:
+//   - auto: provider auto
+//   - any: provider required
+//   - tool: provider specific (with tool name)
+//   - none: provider none
+func convertToolChoiceToLibrary(choice *llm.ToolChoice) *llmprovider.ToolChoice {
+	if choice == nil {
+		return nil
+	}
+
+	libChoice := &llmprovider.ToolChoice{}
+
+	switch choice.Mode {
+	case llm.ToolChoiceModeAuto:
+		libChoice.Mode = llmprovider.ToolChoiceModeAuto
+	case llm.ToolChoiceModeAny, llm.ToolChoiceMode("required"):
+		libChoice.Mode = llmprovider.ToolChoiceModeRequired
+	case llm.ToolChoiceModeTool, llm.ToolChoiceMode("specific"):
+		libChoice.Mode = llmprovider.ToolChoiceModeSpecific
+		toolName := choice.ToolName
+		libChoice.ToolName = &toolName
+	case llm.ToolChoiceModeNone:
+		libChoice.Mode = llmprovider.ToolChoiceModeNone
+	default:
+		// Pass through unknown values unchanged so provider/library validation behavior remains unchanged.
+		libChoice.Mode = llmprovider.ToolChoiceMode(choice.Mode)
+	}
+
+	return libChoice
+}
+
 // convertToLibraryParams converts backend RequestParams to library RequestParams
 // For lorem models, applies lorem_max override if set (debug/testing feature)
 // Converts ToolDefinition[] to library Tool[] using constructors (NewCustomTool, MapToolByName)
@@ -211,8 +243,8 @@ func convertToLibraryParams(params *llm.RequestParams, model string) (*llmprovid
 		System:          params.System,
 		ThinkingEnabled: params.ThinkingEnabled,
 		ThinkingLevel:   params.ThinkingLevel,
-		Tools:           libraryTools,      // Converted from ToolDefinition[]
-		ToolChoice:      params.ToolChoice, // Direct copy (same library type)
+		Tools:           libraryTools,                                  // Converted from ToolDefinition[]
+		ToolChoice:      convertToolChoiceToLibrary(params.ToolChoice), // Domain type -> library type mapping
 
 		// Provider routing (OpenRouter)
 		ProviderOrder:  params.ProviderOrder,

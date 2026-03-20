@@ -2,6 +2,7 @@ package collab
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -9,10 +10,23 @@ import (
 	collabModels "meridian/internal/domain/models/collab"
 )
 
+var ErrProposalOffsetAccessCheckFailed = errors.New("proposal offset access check failed")
+
 // DocumentContentLoader loads raw markdown content for server-side Yjs bootstrap.
 // Separated from persistence stores (ISP) because only DocumentSessionManager needs it.
 type DocumentContentLoader interface {
 	LoadContentForBootstrap(ctx context.Context, docID string) (string, error)
+}
+
+// DocumentSessionProvider manages document collaboration sessions.
+type DocumentSessionProvider interface {
+	GetOrCreateSession(ctx context.Context, documentID string, userID string) (SyncSession, func(), error)
+}
+
+// SyncSession represents an active document collaboration session.
+type SyncSession interface {
+	BuildSyncStep1Payload() ([]byte, error)
+	HandleSyncPayload(ctx context.Context, payload []byte, transactionOrigin string) (int, []byte, []byte, error)
 }
 
 // DocumentStateStore persists Yjs state plus derived text projections.
@@ -151,9 +165,18 @@ type CreateProposalRequest struct {
 	AgentAutoAccept   *bool
 }
 
+// SetProposalOffsetRequest captures accept-offset updates from transport handlers.
+type SetProposalOffsetRequest struct {
+	ProposalID       uuid.UUID
+	UserID           string
+	AcceptedAtOffset int
+	OffsetVersion    int
+}
+
 // ProposalService executes proposal lifecycle operations.
 type ProposalService interface {
 	CreateProposal(ctx context.Context, req CreateProposalRequest) (*collabModels.Proposal, error)
+	SetProposalOffset(ctx context.Context, req SetProposalOffsetRequest) error
 }
 
 type RestoreResult struct {
