@@ -130,6 +130,11 @@ type OwnerTabPresenceTracker interface {
 	HasOwnerTabs(documentID uuid.UUID) bool
 }
 
+// AutoapplyResolver resolves the effective autoapply policy for a document.
+type AutoapplyResolver interface {
+	ResolveEffectiveAutoapply(ctx context.Context, documentID string) (bool, error)
+}
+
 // StatusMirror mirrors _proposal_status Y.Map values into proposal rows.
 type StatusMirror interface {
 	// OnStatusChange handles one _proposal_status key delta.

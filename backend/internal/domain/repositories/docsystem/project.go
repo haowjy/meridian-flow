@@ -14,6 +14,10 @@ type ProjectRepository interface {
 	// GetByID retrieves a project by ID
 	GetByID(ctx context.Context, id, userID string) (*docsystem.Project, error)
 
+	// GetByIDOnly retrieves a project by ID without user scoping.
+	// Use when authorization is already handled separately.
+	GetByIDOnly(ctx context.Context, id string) (*docsystem.Project, error)
+
 	// GetBySlug retrieves a project by slug (unique per user)
 	GetBySlug(ctx context.Context, slug, userID string) (*docsystem.Project, error)
 

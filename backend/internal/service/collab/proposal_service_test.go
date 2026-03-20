@@ -8,8 +8,10 @@ import (
 	"github.com/google/uuid"
 	ycrdt "github.com/haowjy/y-crdt"
 
+	"meridian/internal/domain"
 	collabModels "meridian/internal/domain/models/collab"
 	"meridian/internal/domain/repositories"
+	"meridian/internal/domain/services"
 	collabSvc "meridian/internal/domain/services/collab"
 )
 
@@ -27,7 +29,9 @@ func TestProposalServiceCreateProposal_FirstTurnProposalCreatesAITurnBookmark(t 
 	service := NewProposalService(
 		proposalStore,
 		&fakeProposalServiceTxManager{},
+		&fakeProposalServiceAuthorizer{},
 		runtime,
+		&fakeProposalAutoapplyResolver{effectiveAutoapply: true},
 		&fakeOwnerTabPresenceTracker{hasOwnerTabs: true},
 		&fakeProposalServiceDocumentResolver{allow: true},
 	)
@@ -68,7 +72,9 @@ func TestProposalServiceCreateProposal_NonFirstTurnProposalSkipsAITurnBookmark(t
 	service := NewProposalService(
 		proposalStore,
 		&fakeProposalServiceTxManager{},
+		&fakeProposalServiceAuthorizer{},
 		runtime,
+		&fakeProposalAutoapplyResolver{effectiveAutoapply: true},
 		&fakeOwnerTabPresenceTracker{hasOwnerTabs: true},
 		&fakeProposalServiceDocumentResolver{allow: true},
 	)
@@ -89,6 +95,77 @@ func TestProposalServiceCreateProposal_NonFirstTurnProposalSkipsAITurnBookmark(t
 
 	if len(runtime.aiTurnBookmarkCalls) != 0 {
 		t.Fatalf("expected no ai_turn bookmark call, got %d", len(runtime.aiTurnBookmarkCalls))
+	}
+}
+
+func TestProposalServiceCreateProposal_EnforcesDocumentAuthorization(t *testing.T) {
+	docID := uuid.New()
+	_, update := buildProposalValidationFixture(t)
+
+	proposalStore := &fakeProposalServiceStore{}
+	service := NewProposalService(
+		proposalStore,
+		&fakeProposalServiceTxManager{},
+		&fakeProposalServiceAuthorizer{err: domain.NewForbiddenError("access denied")},
+		&fakeProposalServiceRuntime{},
+		&fakeProposalAutoapplyResolver{effectiveAutoapply: true},
+		&fakeOwnerTabPresenceTracker{hasOwnerTabs: false},
+		&fakeProposalServiceDocumentResolver{allow: true},
+	)
+
+	_, err := service.CreateProposal(context.Background(), collabSvc.CreateProposalRequest{
+		DocumentID:      docID,
+		Source:          collabModels.ProposalSourceUserSuggestion,
+		ThreadID:        uuid.New(),
+		AgentRunID:      uuid.New(),
+		YjsUpdate:       update,
+		CreatedByUserID: uuid.New(),
+	})
+	if err == nil || err.Error() != "access denied" {
+		t.Fatalf("expected authorization error, got %v", err)
+	}
+	if proposalStore.createCalls != 0 {
+		t.Fatalf("expected no proposal persistence on auth failure, got %d create calls", proposalStore.createCalls)
+	}
+}
+
+func TestProposalServiceCreateProposal_AutoapplyDisabledKeepsProposalPending(t *testing.T) {
+	docID := uuid.New()
+	baseState, update := buildProposalValidationFixture(t)
+
+	proposalStore := &fakeProposalServiceStore{}
+	runtime := &fakeProposalServiceRuntime{
+		currentState: baseState,
+	}
+	service := NewProposalService(
+		proposalStore,
+		&fakeProposalServiceTxManager{},
+		&fakeProposalServiceAuthorizer{},
+		runtime,
+		&fakeProposalAutoapplyResolver{effectiveAutoapply: false},
+		&fakeOwnerTabPresenceTracker{hasOwnerTabs: false},
+		&fakeProposalServiceDocumentResolver{allow: true},
+	)
+
+	proposal, err := service.CreateProposal(context.Background(), collabSvc.CreateProposalRequest{
+		DocumentID:      docID,
+		Source:          collabModels.ProposalSourceUserSuggestion,
+		ThreadID:        uuid.New(),
+		AgentRunID:      uuid.New(),
+		YjsUpdate:       update,
+		CreatedByUserID: uuid.New(),
+	})
+	if err != nil {
+		t.Fatalf("CreateProposal returned error: %v", err)
+	}
+	if proposal.Status != collabModels.ProposalStatusPending {
+		t.Fatalf("expected pending proposal status, got %s", proposal.Status)
+	}
+	if proposalStore.createCalls != 1 {
+		t.Fatalf("expected one proposal create call, got %d", proposalStore.createCalls)
+	}
+	if len(runtime.applyCalls) != 0 {
+		t.Fatalf("expected no backend fallback apply, got %d apply calls", len(runtime.applyCalls))
 	}
 }
 
@@ -163,6 +240,7 @@ type fakeProposalServiceRuntime struct {
 	currentState []byte
 
 	aiTurnBookmarkCalls []proposalBookmarkCall
+	applyCalls          []proposalApplyCall
 }
 
 type proposalBookmarkCall struct {
@@ -170,7 +248,16 @@ type proposalBookmarkCall struct {
 	turnID     uuid.UUID
 }
 
-func (r *fakeProposalServiceRuntime) ApplyUpdate(_ context.Context, _ uuid.UUID, _ []byte, _ string) error {
+type proposalApplyCall struct {
+	documentID uuid.UUID
+	origin     string
+}
+
+func (r *fakeProposalServiceRuntime) ApplyUpdate(_ context.Context, documentID uuid.UUID, _ []byte, origin string) error {
+	r.applyCalls = append(r.applyCalls, proposalApplyCall{
+		documentID: documentID,
+		origin:     origin,
+	})
 	return nil
 }
 
@@ -213,3 +300,38 @@ func (r *fakeProposalServiceDocumentResolver) VerifyOwnership(_ context.Context,
 	}
 	return r.allow, nil
 }
+
+type fakeProposalServiceAuthorizer struct {
+	err error
+}
+
+func (a *fakeProposalServiceAuthorizer) CanAccessProject(context.Context, string, string) error {
+	return nil
+}
+func (a *fakeProposalServiceAuthorizer) CanAccessFolder(context.Context, string, string) error {
+	return nil
+}
+func (a *fakeProposalServiceAuthorizer) CanAccessDocument(context.Context, string, string) error {
+	return a.err
+}
+func (a *fakeProposalServiceAuthorizer) CanAccessThread(context.Context, string, string) error {
+	return nil
+}
+func (a *fakeProposalServiceAuthorizer) CanAccessTurn(context.Context, string, string) error {
+	return nil
+}
+
+type fakeProposalAutoapplyResolver struct {
+	effectiveAutoapply bool
+	err                error
+}
+
+func (r *fakeProposalAutoapplyResolver) ResolveEffectiveAutoapply(context.Context, string) (bool, error) {
+	if r.err != nil {
+		return false, r.err
+	}
+	return r.effectiveAutoapply, nil
+}
+
+var _ services.ResourceAuthorizer = (*fakeProposalServiceAuthorizer)(nil)
+var _ collabSvc.AutoapplyResolver = (*fakeProposalAutoapplyResolver)(nil)

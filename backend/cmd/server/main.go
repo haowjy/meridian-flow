@@ -136,6 +136,7 @@ func main() {
 	// Moved before SetupServices for proper dependency injection
 	contentAnalyzer := serviceDocsys.NewContentAnalyzer()
 	pathResolver := serviceDocsys.NewPathResolver(folderRepo, txManager)
+	autoapplyResolver := serviceDocsys.NewAutoapplyResolver(docRepo, folderRepo, projectRepo)
 	projectService := serviceDocsys.NewProjectService(projectRepo, folderRepo, txManager, logger)
 	favoriteService := serviceDocsys.NewFavoriteService(favoriteRepo, projectRepo, logger)
 	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, projectRepo, txManager, contentAnalyzer, pathResolver, docsysValidator, authorizer, logger)
@@ -226,7 +227,9 @@ func main() {
 	proposalService := serviceCollab.NewProposalService(
 		proposalStore,
 		txManager,
+		authorizer,
 		collabSessionManager,
+		autoapplyResolver,
 		collabDocumentHandler,
 		collabDocResolver,
 	)

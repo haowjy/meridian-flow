@@ -7,6 +7,7 @@ import (
 	"meridian/internal/domain"
 	collabModels "meridian/internal/domain/models/collab"
 	"meridian/internal/domain/repositories"
+	"meridian/internal/domain/services"
 	collabSvc "meridian/internal/domain/services/collab"
 )
 
@@ -15,34 +16,47 @@ const maxQueuedAIProposalsPerDocument = 200
 
 // ProposalService executes proposal lifecycle operations.
 type ProposalService struct {
-	proposalStore    collabSvc.ProposalStore
-	txManager        repositories.TransactionManager
-	runtime          collabSvc.ProposalRuntime
-	createGate       *proposalDocumentGate
-	ownerTabTracker  collabSvc.OwnerTabPresenceTracker
-	documentResolver collabSvc.DocumentResolver
+	proposalStore     collabSvc.ProposalStore
+	txManager         repositories.TransactionManager
+	authorizer        services.ResourceAuthorizer
+	runtime           collabSvc.ProposalRuntime
+	createGate        *proposalDocumentGate
+	autoapplyResolver collabSvc.AutoapplyResolver
+	ownerTabTracker   collabSvc.OwnerTabPresenceTracker
+	documentResolver  collabSvc.DocumentResolver
 }
 
 // NewProposalService creates a new proposal service.
 func NewProposalService(
 	proposalStore collabSvc.ProposalStore,
 	txManager repositories.TransactionManager,
+	authorizer services.ResourceAuthorizer,
 	runtime collabSvc.ProposalRuntime,
+	autoapplyResolver collabSvc.AutoapplyResolver,
 	ownerTabTracker collabSvc.OwnerTabPresenceTracker,
 	documentResolver collabSvc.DocumentResolver,
 ) collabSvc.ProposalService {
 	return &ProposalService{
-		proposalStore:    proposalStore,
-		txManager:        txManager,
-		runtime:          runtime,
-		createGate:       newProposalDocumentGate(),
-		ownerTabTracker:  ownerTabTracker,
-		documentResolver: documentResolver,
+		proposalStore:     proposalStore,
+		txManager:         txManager,
+		authorizer:        authorizer,
+		runtime:           runtime,
+		createGate:        newProposalDocumentGate(),
+		autoapplyResolver: autoapplyResolver,
+		ownerTabTracker:   ownerTabTracker,
+		documentResolver:  documentResolver,
 	}
 }
 
 // CreateProposal persists a new proposal row.
 func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.CreateProposalRequest) (*collabModels.Proposal, error) {
+	if s.authorizer == nil {
+		return nil, fmt.Errorf("proposal authorizer not configured")
+	}
+	if err := s.authorizer.CanAccessDocument(ctx, req.CreatedByUserID.String(), req.DocumentID.String()); err != nil {
+		return nil, err
+	}
+
 	if len(req.YjsUpdate) == 0 {
 		return nil, domain.NewValidationErrorWithField("proposal yjs_update is required", "yjs_update")
 	}
@@ -84,9 +98,17 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.Crea
 		return proposal, nil
 	}
 
+	if s.autoapplyResolver == nil {
+		return nil, fmt.Errorf("proposal autoapply resolver not configured")
+	}
+	effectiveAutoapply, err := s.autoapplyResolver.ResolveEffectiveAutoapply(ctx, req.DocumentID.String())
+	if err != nil {
+		return nil, fmt.Errorf("resolve autoapply for document: %w", err)
+	}
+
 	hasOwnerTabs := s.ownerTabTracker != nil && s.ownerTabTracker.HasOwnerTabs(req.DocumentID)
 
-	persistFn := func(txCtx context.Context) error {
+	persistFn := func(txCtx context.Context, allowBackendFallback bool) error {
 		if req.Source == collabModels.ProposalSourceAI && req.TurnID != nil {
 			count, err := s.proposalStore.CountByDocumentAndTurnID(txCtx, req.DocumentID, *req.TurnID)
 			if err != nil {
@@ -102,10 +124,19 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.Crea
 		if err := s.createProposal(txCtx, proposal); err != nil {
 			return err
 		}
-		if hasOwnerTabs {
+		if !allowBackendFallback || hasOwnerTabs {
 			return nil
 		}
 		return s.applyBackendFallbackAccept(txCtx, proposal)
+	}
+
+	if !effectiveAutoapply {
+		if err := s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
+			return persistFn(txCtx, false)
+		}); err != nil {
+			return nil, err
+		}
+		return proposal, nil
 	}
 
 	if req.Source == collabModels.ProposalSourceAI && hasOwnerTabs {
@@ -129,7 +160,7 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.Crea
 						),
 					)
 				}
-				return persistFn(txCtx)
+				return persistFn(txCtx, true)
 			})
 		}); err != nil {
 			return nil, err
@@ -137,7 +168,9 @@ func (s *ProposalService) CreateProposal(ctx context.Context, req collabSvc.Crea
 		return proposal, nil
 	}
 
-	if err := s.txManager.ExecTx(ctx, persistFn); err != nil {
+	if err := s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
+		return persistFn(txCtx, true)
+	}); err != nil {
 		return nil, err
 	}
 	return proposal, nil
