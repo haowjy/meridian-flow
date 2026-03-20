@@ -18,6 +18,7 @@ import (
 	"meridian/internal/domain/repositories"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	llmRepo "meridian/internal/domain/repositories/llm"
+	"meridian/internal/domain/services"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	llmSvc "meridian/internal/domain/services/llm"
 	skillSvc "meridian/internal/domain/services/skill"
@@ -83,6 +84,7 @@ type Service struct {
 	namespaceSvc         docsysSvc.NamespaceService   // For namespace routing in tools
 	skillService         skillSvc.ProjectSkillService // For skill_invoke/skill_list tools
 	validator            ThreadValidator
+	authorizer           services.ResourceAuthorizer
 	providerGetter       LLMProviderGetter
 	registry             *mstream.Registry
 	executorRegistry     *ExecutorRegistry             // Tracks StreamExecutors by turn ID for interruption
@@ -113,6 +115,7 @@ func NewService(
 	namespaceSvc docsysSvc.NamespaceService,
 	skillService skillSvc.ProjectSkillService,
 	validator ThreadValidator,
+	authorizer services.ResourceAuthorizer,
 	providerGetter LLMProviderGetter,
 	registry *mstream.Registry,
 	cfg *config.Config,
@@ -138,6 +141,7 @@ func NewService(
 		namespaceSvc:         namespaceSvc,
 		skillService:         skillService,
 		validator:            validator,
+		authorizer:           authorizer,
 		providerGetter:       providerGetter,
 		registry:             registry,
 		executorRegistry:     NewExecutorRegistry(),
@@ -1050,7 +1054,11 @@ func truncateTitleFromText(text string) string {
 // Behavior depends on the model's supports_streaming_cancel capability:
 // - true (Anthropic): Hard cancel (stops provider, uses token count API)
 // - false (some providers): Soft cancel (provider continues for accurate metadata, but stops persistence)
-func (s *Service) InterruptTurn(ctx context.Context, turnID string) error {
+func (s *Service) InterruptTurn(ctx context.Context, userID string, turnID string) error {
+	if err := s.authorizer.CanAccessTurn(ctx, userID, turnID); err != nil {
+		return err
+	}
+
 	// Get stream from mstream registry
 	stream := s.registry.Get(turnID)
 	if stream == nil {
@@ -1128,6 +1136,11 @@ func (s *Service) InterruptTurn(ctx context.Context, turnID string) error {
 	return nil
 }
 
+// AuthorizeTurnStream verifies the caller can connect to a turn stream.
+func (s *Service) AuthorizeTurnStream(ctx context.Context, userID string, turnID string) error {
+	return s.authorizer.CanAccessTurn(ctx, userID, turnID)
+}
+
 // getProviderFromModel determines the provider from a model name.
 // Used for capability lookup during interruption.
 func (s *Service) getProviderFromModel(model string) string {
@@ -1146,7 +1159,11 @@ func (s *Service) getProviderFromModel(model string) string {
 // UpsertInterjection adds or updates an interjection for a streaming assistant turn.
 // If the turn is actively streaming, the interjection is buffered.
 // If not streaming (race condition), falls back to creating follow-up turns.
-func (s *Service) UpsertInterjection(ctx context.Context, assistantTurnID string, content string, mode string) (*llmSvc.UpsertInterjectionResponse, error) {
+func (s *Service) UpsertInterjection(ctx context.Context, userID string, assistantTurnID string, content string, mode string) (*llmSvc.UpsertInterjectionResponse, error) {
+	if err := s.authorizer.CanAccessTurn(ctx, userID, assistantTurnID); err != nil {
+		return nil, err
+	}
+
 	// Check if executor exists (turn is actively streaming)
 	executor := s.executorRegistry.Get(assistantTurnID)
 
@@ -1238,7 +1255,11 @@ func (s *Service) UpsertInterjection(ctx context.Context, assistantTurnID string
 }
 
 // GetInterjection retrieves the current interjection state for an assistant turn.
-func (s *Service) GetInterjection(ctx context.Context, assistantTurnID string) (*llmSvc.GetInterjectionResponse, error) {
+func (s *Service) GetInterjection(ctx context.Context, userID string, assistantTurnID string) (*llmSvc.GetInterjectionResponse, error) {
+	if err := s.authorizer.CanAccessTurn(ctx, userID, assistantTurnID); err != nil {
+		return nil, err
+	}
+
 	// Check if executor exists (turn is actively streaming)
 	executor := s.executorRegistry.Get(assistantTurnID)
 	isStreaming := executor != nil
@@ -1259,7 +1280,11 @@ func (s *Service) GetInterjection(ctx context.Context, assistantTurnID string) (
 }
 
 // ClearInterjection removes any buffered interjection for an assistant turn.
-func (s *Service) ClearInterjection(ctx context.Context, assistantTurnID string) error {
+func (s *Service) ClearInterjection(ctx context.Context, userID string, assistantTurnID string) error {
+	if err := s.authorizer.CanAccessTurn(ctx, userID, assistantTurnID); err != nil {
+		return err
+	}
+
 	buffer, exists := s.interjectionRegistry.Get(assistantTurnID)
 	if exists {
 		buffer.Clear()

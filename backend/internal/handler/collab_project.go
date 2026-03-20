@@ -68,13 +68,21 @@ func (h *CollabHandler) handleProjectSocket(projectID string, conn *websocket.Co
 	conn.MaxPayloadBytes = collabMaxMessageBytes
 
 	// Auth bootstrap via authenticator.
-	authResult, authErr := h.authenticator.bootstrapAuth(conn, projectID)
+	authResult, authErr := h.authenticator.bootstrapProjectAuth(context.Background(), conn, projectID)
 	if authErr != nil {
 		code := "AUTH_FAILED"
-		if errors.Is(authErr, domain.ErrAuthExpired) {
+		message := authErr.Error()
+		switch {
+		case errors.Is(authErr, domain.ErrAuthExpired):
 			code = "AUTH_EXPIRED"
+		case errors.Is(authErr, domain.ErrForbidden):
+			code = "FORBIDDEN"
+			message = "access denied"
+		case !errors.Is(authErr, domain.ErrAuthFailed):
+			code = "INTERNAL_ERROR"
+			message = "failed to verify project access"
 		}
-		h.sendError(wsConn, code, authErr.Error())
+		h.sendError(wsConn, code, message)
 		return
 	}
 
@@ -82,34 +90,15 @@ func (h *CollabHandler) handleProjectSocket(projectID string, conn *websocket.Co
 	jwtExpiry := authResult.JWTExpiry
 	connectionID := wsConn.ID()
 
-	if h.authorizer == nil {
-		h.logger.Error("project websocket authorizer unavailable", "project_id", projectID)
-		h.sendError(wsConn, "INTERNAL_ERROR", "failed to verify project access")
-		return
-	}
-	if err := h.authorizer.CanAccessProject(context.Background(), userID, projectID); err != nil {
-		if errors.Is(err, domain.ErrForbidden) {
-			h.sendError(wsConn, "FORBIDDEN", "access denied")
-			return
-		}
-		h.logger.Error("project websocket ownership check failed",
-			"project_id", projectID,
-			"user_id", userID,
-			"error", err,
-		)
-		h.sendError(wsConn, "INTERNAL_ERROR", "failed to verify project access")
-		return
+	if h.projectRegistry != nil {
+		h.projectRegistry.Register(projectID, connectionID, &projectWSConnection{wsConn: wsConn})
+		defer h.projectRegistry.Unregister(connectionID)
 	}
 	h.logger.Info("project websocket authenticated",
 		"project_id", projectID,
 		"user_id", userID,
 		"connection_id", connectionID,
 	)
-
-	if h.projectRegistry != nil {
-		h.projectRegistry.Register(projectID, connectionID, &projectWSConnection{wsConn: wsConn})
-		defer h.projectRegistry.Unregister(connectionID)
-	}
 
 	// Signal auth success so the client knows it's safe to send commands.
 	if err := wsConn.SendJSON(struct {

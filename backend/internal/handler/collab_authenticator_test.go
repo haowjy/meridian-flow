@@ -39,6 +39,7 @@ func (r *testAuthResolver) VerifyOwnership(_ context.Context, _ string, _ string
 func newTestAuthenticator(resolver *testAuthResolver, verifier *testJWTVerifier) *collabAuthenticator {
 	return newCollabAuthenticator(
 		verifier,
+		nil,
 		resolver,
 		nil,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),

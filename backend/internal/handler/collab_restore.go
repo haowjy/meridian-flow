@@ -6,25 +6,21 @@ import (
 	"github.com/google/uuid"
 
 	"meridian/internal/config"
-	"meridian/internal/domain/services"
 	collabSvc "meridian/internal/domain/services/collab"
 	"meridian/internal/httputil"
 )
 
 type CollabRestoreHandler struct {
 	restoreService collabSvc.RestoreService
-	authorizer     services.ResourceAuthorizer
 	config         *config.Config
 }
 
 func NewCollabRestoreHandler(
 	restoreService collabSvc.RestoreService,
-	authorizer services.ResourceAuthorizer,
 	cfg *config.Config,
 ) *CollabRestoreHandler {
 	return &CollabRestoreHandler{
 		restoreService: restoreService,
-		authorizer:     authorizer,
 		config:         cfg,
 	}
 }
@@ -62,22 +58,13 @@ func (h *CollabRestoreHandler) handleRestore(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if h.authorizer == nil {
-		httputil.RespondError(w, http.StatusInternalServerError, "turn restore authorization unavailable")
-		return
-	}
-
 	userID := httputil.GetUserID(r)
-	if err := h.authorizer.CanAccessTurn(r.Context(), userID, turnID.String()); err != nil {
-		handleError(w, err, h.config)
-		return
-	}
 
 	var result *collabSvc.RestoreResult
 	if isRestore {
-		result, err = h.restoreService.RestoreTurn(r.Context(), turnID)
+		result, err = h.restoreService.RestoreTurn(r.Context(), userID, turnID)
 	} else {
-		result, err = h.restoreService.UndoRestore(r.Context(), turnID)
+		result, err = h.restoreService.UndoRestore(r.Context(), userID, turnID)
 	}
 	if err != nil {
 		handleError(w, err, h.config)

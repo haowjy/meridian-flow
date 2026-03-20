@@ -130,7 +130,7 @@ func main() {
 	fileProcessorRegistry.Register(individualProcessor)
 
 	// Create import service with processor registry
-	importService := serviceDocsys.NewImportService(docRepo, fileProcessorRegistry, logger)
+	importService := serviceDocsys.NewImportService(docRepo, fileProcessorRegistry, authorizer, logger)
 
 	// Ensure test project exists (service-layer path) and use returned ID consistently.
 	projectID, err := ensureTestProject(ctx, projectService, userID)

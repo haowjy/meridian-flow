@@ -511,11 +511,6 @@ func (t *TextEditorTool) checkEditNamespaceAccess(path string) interface{} {
 				"path": path,
 			})
 		}
-		if err == nil && namespace == docsysSvc.NamespaceAgents {
-			return ErrorResult(ErrInvalidInput, "Edit commands cannot modify /.agents/ paths", map[string]any{
-				"path": path,
-			})
-		}
 	}
 	return nil
 }

@@ -10,8 +10,31 @@ import (
 
 	"meridian/internal/domain"
 	"meridian/internal/domain/repositories"
+	"meridian/internal/domain/services"
 	collabSvc "meridian/internal/domain/services/collab"
 )
+
+const testRestoreUserID = "user-123"
+
+func TestRestoreServiceRestoreTurn_EnforcesAuthorization(t *testing.T) {
+	svc := NewRestoreService(
+		&fakeRestoreBookmarkStore{},
+		&fakeRestoreStateStore{},
+		&fakeRestoreCheckpointStore{},
+		&fakeRestoreUpdateLogStore{},
+		&fakeRestoreStatusMirror{},
+		&fakeRestoreSessionManager{},
+		&fakeRestoreBroadcaster{},
+		&fakeRestoreTxManager{},
+		&fakeRestoreAuthorizer{err: domain.NewForbiddenError("access denied")},
+		nil,
+	)
+
+	_, err := svc.RestoreTurn(context.Background(), testRestoreUserID, uuid.New())
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("expected forbidden error, got %v", err)
+	}
+}
 
 func TestRestoreServiceRestoreTurn_NotFound(t *testing.T) {
 	turnID := uuid.New()
@@ -24,10 +47,11 @@ func TestRestoreServiceRestoreTurn_NotFound(t *testing.T) {
 		&fakeRestoreSessionManager{},
 		&fakeRestoreBroadcaster{},
 		&fakeRestoreTxManager{},
+		&fakeRestoreAuthorizer{},
 		nil,
 	)
 
-	_, err := svc.RestoreTurn(context.Background(), turnID)
+	_, err := svc.RestoreTurn(context.Background(), testRestoreUserID, turnID)
 	if !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("expected not found error, got %v", err)
 	}
@@ -81,10 +105,11 @@ func TestRestoreServiceRestoreTurn_CreatesSafetyBookmarksRestoresStateAndReconci
 		sessionManager,
 		broadcaster,
 		&fakeRestoreTxManager{},
+		&fakeRestoreAuthorizer{},
 		nil,
 	)
 
-	result, err := svc.RestoreTurn(context.Background(), turnID)
+	result, err := svc.RestoreTurn(context.Background(), testRestoreUserID, turnID)
 	if err != nil {
 		t.Fatalf("RestoreTurn returned error: %v", err)
 	}
@@ -191,10 +216,11 @@ func TestRestoreServiceUndoRestore_SortsDocumentsAndSkipsSafetyBookmarkCreation(
 		sessionManager,
 		&fakeRestoreBroadcaster{},
 		&fakeRestoreTxManager{},
+		&fakeRestoreAuthorizer{},
 		nil,
 	)
 
-	result, err := svc.UndoRestore(context.Background(), turnID)
+	result, err := svc.UndoRestore(context.Background(), testRestoreUserID, turnID)
 	if err != nil {
 		t.Fatalf("UndoRestore returned error: %v", err)
 	}
@@ -216,6 +242,33 @@ func TestRestoreServiceUndoRestore_SortsDocumentsAndSkipsSafetyBookmarkCreation(
 		t.Fatalf("expected no safety bookmark create calls for undo restore, got %d", len(bookmarkStore.createCalls))
 	}
 }
+
+type fakeRestoreAuthorizer struct {
+	err         error
+	canAccesses []struct {
+		userID string
+		turnID string
+	}
+}
+
+func (a *fakeRestoreAuthorizer) CanAccessProject(context.Context, string, string) error { return nil }
+func (a *fakeRestoreAuthorizer) CanAccessFolder(context.Context, string, string) error  { return nil }
+func (a *fakeRestoreAuthorizer) CanAccessDocument(context.Context, string, string) error {
+	return nil
+}
+func (a *fakeRestoreAuthorizer) CanAccessThread(context.Context, string, string) error { return nil }
+func (a *fakeRestoreAuthorizer) CanAccessTurn(_ context.Context, userID, turnID string) error {
+	a.canAccesses = append(a.canAccesses, struct {
+		userID string
+		turnID string
+	}{
+		userID: userID,
+		turnID: turnID,
+	})
+	return a.err
+}
+
+var _ services.ResourceAuthorizer = (*fakeRestoreAuthorizer)(nil)
 
 type fakeRestoreBookmarkStore struct {
 	listByTurn          []collabSvc.Bookmark

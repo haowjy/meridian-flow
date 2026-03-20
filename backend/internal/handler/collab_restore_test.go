@@ -15,39 +15,16 @@ import (
 	"meridian/internal/httputil"
 )
 
-type fakeRestoreAuthorizer struct {
-	err            error
-	canAccessCalls []struct {
-		userID string
-		turnID string
-	}
-}
-
-func (a *fakeRestoreAuthorizer) CanAccessProject(context.Context, string, string) error { return nil }
-func (a *fakeRestoreAuthorizer) CanAccessFolder(context.Context, string, string) error  { return nil }
-func (a *fakeRestoreAuthorizer) CanAccessDocument(context.Context, string, string) error {
-	return nil
-}
-func (a *fakeRestoreAuthorizer) CanAccessThread(context.Context, string, string) error { return nil }
-func (a *fakeRestoreAuthorizer) CanAccessTurn(_ context.Context, userID, turnID string) error {
-	a.canAccessCalls = append(a.canAccessCalls, struct {
-		userID string
-		turnID string
-	}{userID: userID, turnID: turnID})
-	return a.err
-}
-
 func TestCollabRestoreHandlerRestoreTurnSuccess(t *testing.T) {
 	turnID := uuid.New()
 	docA := uuid.New()
 	docB := uuid.New()
-	authorizer := &fakeRestoreAuthorizer{}
 	service := &fakeRestoreService{
 		restoreResult: &collabSvc.RestoreResult{
 			AffectedDocumentIDs: []uuid.UUID{docA, docB},
 		},
 	}
-	h := NewCollabRestoreHandler(service, authorizer, &config.Config{Environment: "test"})
+	h := NewCollabRestoreHandler(service, &config.Config{Environment: "test"})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/turns/"+turnID.String()+"/restore", nil)
 	req.SetPathValue("id", turnID.String())
@@ -72,18 +49,17 @@ func TestCollabRestoreHandlerRestoreTurnSuccess(t *testing.T) {
 	if len(service.restoreCalls) != 1 || service.restoreCalls[0] != turnID {
 		t.Fatalf("expected one restore call for %s, got %+v", turnID, service.restoreCalls)
 	}
-	if len(authorizer.canAccessCalls) != 1 || authorizer.canAccessCalls[0].turnID != turnID.String() {
-		t.Fatalf("expected one auth check for turn %s, got %+v", turnID, authorizer.canAccessCalls)
+	if len(service.restoreUserIDs) != 1 || service.restoreUserIDs[0] != testUserID {
+		t.Fatalf("expected restore call with user %s, got %+v", testUserID, service.restoreUserIDs)
 	}
 }
 
 func TestCollabRestoreHandlerUndoRestoreNotFound(t *testing.T) {
 	turnID := uuid.New()
-	authorizer := &fakeRestoreAuthorizer{}
 	service := &fakeRestoreService{
 		undoErr: domain.NewNotFoundError("turn_restore", "not found"),
 	}
-	h := NewCollabRestoreHandler(service, authorizer, &config.Config{Environment: "test"})
+	h := NewCollabRestoreHandler(service, &config.Config{Environment: "test"})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/turns/"+turnID.String()+"/undo-restore", nil)
 	req.SetPathValue("id", turnID.String())
@@ -101,7 +77,7 @@ func TestCollabRestoreHandlerUndoRestoreNotFound(t *testing.T) {
 }
 
 func TestCollabRestoreHandlerRejectsInvalidTurnID(t *testing.T) {
-	h := NewCollabRestoreHandler(&fakeRestoreService{}, &fakeRestoreAuthorizer{}, &config.Config{Environment: "test"})
+	h := NewCollabRestoreHandler(&fakeRestoreService{}, &config.Config{Environment: "test"})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/turns/not-a-uuid/restore", nil)
 	req.SetPathValue("id", "not-a-uuid")
@@ -116,9 +92,8 @@ func TestCollabRestoreHandlerRejectsInvalidTurnID(t *testing.T) {
 
 func TestCollabRestoreHandlerRestoreTurnForbidden(t *testing.T) {
 	turnID := uuid.New()
-	authorizer := &fakeRestoreAuthorizer{err: domain.NewForbiddenError("access denied")}
-	service := &fakeRestoreService{}
-	h := NewCollabRestoreHandler(service, authorizer, &config.Config{Environment: "test"})
+	service := &fakeRestoreService{restoreErr: domain.NewForbiddenError("access denied")}
+	h := NewCollabRestoreHandler(service, &config.Config{Environment: "test"})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/turns/"+turnID.String()+"/restore", nil)
 	req.SetPathValue("id", turnID.String())
@@ -130,26 +105,33 @@ func TestCollabRestoreHandlerRestoreTurnForbidden(t *testing.T) {
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("expected status 403, got %d body=%s", rr.Code, rr.Body.String())
 	}
-	if len(service.restoreCalls) != 0 {
-		t.Fatalf("expected no restore service calls, got %+v", service.restoreCalls)
+	if len(service.restoreCalls) != 1 || service.restoreCalls[0] != turnID {
+		t.Fatalf("expected one restore service call for %s, got %+v", turnID, service.restoreCalls)
+	}
+	if len(service.restoreUserIDs) != 1 || service.restoreUserIDs[0] != testUserID {
+		t.Fatalf("expected restore call with user %s, got %+v", testUserID, service.restoreUserIDs)
 	}
 }
 
 type fakeRestoreService struct {
-	restoreResult *collabSvc.RestoreResult
-	restoreErr    error
-	undoResult    *collabSvc.RestoreResult
-	undoErr       error
-	restoreCalls  []uuid.UUID
-	undoCalls     []uuid.UUID
+	restoreResult  *collabSvc.RestoreResult
+	restoreErr     error
+	undoResult     *collabSvc.RestoreResult
+	undoErr        error
+	restoreCalls   []uuid.UUID
+	restoreUserIDs []string
+	undoCalls      []uuid.UUID
+	undoUserIDs    []string
 }
 
-func (s *fakeRestoreService) RestoreTurn(_ context.Context, turnID uuid.UUID) (*collabSvc.RestoreResult, error) {
+func (s *fakeRestoreService) RestoreTurn(_ context.Context, userID string, turnID uuid.UUID) (*collabSvc.RestoreResult, error) {
 	s.restoreCalls = append(s.restoreCalls, turnID)
+	s.restoreUserIDs = append(s.restoreUserIDs, userID)
 	return s.restoreResult, s.restoreErr
 }
 
-func (s *fakeRestoreService) UndoRestore(_ context.Context, turnID uuid.UUID) (*collabSvc.RestoreResult, error) {
+func (s *fakeRestoreService) UndoRestore(_ context.Context, userID string, turnID uuid.UUID) (*collabSvc.RestoreResult, error) {
 	s.undoCalls = append(s.undoCalls, turnID)
+	s.undoUserIDs = append(s.undoUserIDs, userID)
 	return s.undoResult, s.undoErr
 }

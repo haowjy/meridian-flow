@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"golang.org/x/net/websocket"
 	"meridian/internal/auth"
 	"meridian/internal/domain"
+	"meridian/internal/domain/services"
 	collabSvc "meridian/internal/domain/services/collab"
 )
 
@@ -26,6 +28,7 @@ type collabAuthResult struct {
 // active subscription invalidation.
 type collabAuthenticator struct {
 	jwtVerifier       auth.JWTVerifier
+	authorizer        services.ResourceAuthorizer
 	documentResolver  collabSvc.DocumentResolver
 	isIdentityBlocked func(string, string) bool
 	logger            *slog.Logger
@@ -33,12 +36,14 @@ type collabAuthenticator struct {
 
 func newCollabAuthenticator(
 	jwtVerifier auth.JWTVerifier,
+	authorizer services.ResourceAuthorizer,
 	documentResolver collabSvc.DocumentResolver,
 	isIdentityBlocked func(string, string) bool,
 	logger *slog.Logger,
 ) *collabAuthenticator {
 	return &collabAuthenticator{
 		jwtVerifier:       jwtVerifier,
+		authorizer:        authorizer,
 		documentResolver:  documentResolver,
 		isIdentityBlocked: isIdentityBlocked,
 		logger:            logger,
@@ -109,6 +114,38 @@ func (a *collabAuthenticator) bootstrapAuth(
 	}
 
 	return &collabAuthResult{UserID: userID, UserUUID: userUUID, JWTExpiry: jwtExpiry}, nil
+}
+
+// bootstrapProjectAuth performs the websocket auth bootstrap and verifies that
+// the authenticated user can access the requested project before the socket is
+// considered connected.
+func (a *collabAuthenticator) bootstrapProjectAuth(
+	ctx context.Context,
+	conn *websocket.Conn,
+	projectID string,
+) (*collabAuthResult, error) {
+	result, err := a.bootstrapAuth(conn, projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	if a.authorizer == nil {
+		a.logger.Error("project websocket authorizer unavailable", "project_id", projectID)
+		return nil, fmt.Errorf("failed to verify project access")
+	}
+
+	if err := a.authorizer.CanAccessProject(ctx, result.UserID, projectID); err != nil {
+		if !errors.Is(err, domain.ErrForbidden) {
+			a.logger.Error("project websocket ownership check failed",
+				"project_id", projectID,
+				"user_id", result.UserID,
+				"error", err,
+			)
+		}
+		return nil, err
+	}
+
+	return result, nil
 }
 
 // checkDocumentAccess verifies the user owns the document and that the document

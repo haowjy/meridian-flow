@@ -130,6 +130,30 @@ RFC 7807 Problem Details (`type`, `title`, `status`, `detail`). 409 Conflicts in
 - **Manual bumps**: `./scripts/update-libraries.sh "message"`
 - **See**: `meridian-llm-go/CLAUDE.md`, `scripts/README.md`
 
+### 6. Authorization Pattern
+
+Authorization lives in the service layer, not the handler layer:
+
+```go
+// Correct: service enforces ownership
+func (s *MyService) DoThing(ctx context.Context, userID string, resourceID string) error {
+    if err := s.authorizer.CanAccessResource(ctx, userID, resourceID); err != nil {
+        return err
+    }
+    // business logic
+}
+
+// Wrong: handler checks, service skips
+func (h *Handler) DoThing(w http.ResponseWriter, r *http.Request) {
+    if err := h.authorizer.CanAccessResource(ctx, userID, resourceID); err != nil { ... }
+    h.service.DoThing(ctx, resourceID) // no userID = no auth
+}
+```
+
+Services accept `userID` and call `authorizer.CanAccess*` internally. Handlers extract `userID` from request context and pass it through. This makes auth bypass impossible because service entrypoints require the authenticated user context.
+
+Canonical pattern: [`internal/service/docsystem/document.go`](internal/service/docsystem/document.go)
+
 ## Environment Variables
 
 Required (auto-configured by `supabase-start.sh` for local dev):

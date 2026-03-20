@@ -7,7 +7,7 @@ import (
 // ImportService handles bulk document import operations
 type ImportService interface {
 	// DeleteAllDocuments deletes all documents in a project
-	DeleteAllDocuments(ctx context.Context, projectID string) error
+	DeleteAllDocuments(ctx context.Context, userID string, projectID string) error
 
 	// ProcessFiles processes uploaded files (zip or individual files) and imports documents
 	// Uses file processor strategies to handle different file types

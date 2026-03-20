@@ -23,7 +23,6 @@ type CollabHandler struct {
 	proposalService  collabSvc.ProposalService
 	proposalStore    collabSvc.ProposalStore
 	authenticator    *collabAuthenticator
-	authorizer       services.ResourceAuthorizer
 	logger           *slog.Logger
 	config           *config.Config
 
@@ -142,8 +141,7 @@ func NewCollabHandler(
 		documentResolver: documentResolver,
 		proposalService:  proposalService,
 		proposalStore:    proposalStore,
-		authenticator:    newCollabAuthenticator(jwtVerifier, documentResolver, isIdentityBlocked, logger),
-		authorizer:       authorizer,
+		authenticator:    newCollabAuthenticator(jwtVerifier, authorizer, documentResolver, isIdentityBlocked, logger),
 		logger:           logger,
 		config:           cfg,
 		projectRegistry:  projectRegistry,
