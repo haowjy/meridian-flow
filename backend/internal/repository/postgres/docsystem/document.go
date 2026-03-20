@@ -23,6 +23,12 @@ type PostgresDocumentRepository struct {
 	logger *slog.Logger
 }
 
+const (
+	documentFullSelectColumns     = "id, project_id, folder_id, name, extension, description, autoapply, file_type, storage_url, mime_type, size_bytes, content, metadata, created_at, updated_at"
+	documentMetadataSelectColumns = "id, project_id, folder_id, name, extension, description, autoapply, file_type, storage_url, mime_type, size_bytes, metadata, updated_at"
+	folderLookupSelectColumns     = "id, project_id, parent_id, name, is_hidden, is_system, description, autoapply, metadata, created_at, updated_at"
+)
+
 // NewDocumentRepository creates a new document repository
 func NewDocumentRepository(config *postgres.RepositoryConfig) docsysRepo.DocumentRepository {
 	return &PostgresDocumentRepository{
@@ -34,23 +40,35 @@ func NewDocumentRepository(config *postgres.RepositoryConfig) docsysRepo.Documen
 
 // Create creates a new document
 func (r *PostgresDocumentRepository) Create(ctx context.Context, doc *models.Document) error {
+	doc.EnsureMetadata()
+	doc.EnsureFileType()
+
 	query := fmt.Sprintf(`
-		INSERT INTO %s (project_id, folder_id, name, extension, content, metadata, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING id, created_at, updated_at
-	`, r.tables.Documents)
+		INSERT INTO %s (
+			project_id, folder_id, name, extension, description, autoapply, file_type,
+			storage_url, mime_type, size_bytes, content, metadata, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		RETURNING %s
+	`, r.tables.Documents, documentFullSelectColumns)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
-	err := executor.QueryRow(ctx, query,
+	err := scanDocumentFull(executor.QueryRow(ctx, query,
 		doc.ProjectID,
 		doc.FolderID,
 		doc.Name,
 		doc.Extension,
+		doc.Description,
+		doc.Autoapply,
+		doc.FileType,
+		doc.StorageURL,
+		doc.MimeType,
+		doc.SizeBytes,
 		doc.Content,
 		doc.Metadata,
 		doc.CreatedAt,
 		doc.UpdatedAt,
-	).Scan(&doc.ID, &doc.CreatedAt, &doc.UpdatedAt)
+	), doc)
 
 	if err != nil {
 		if postgres.IsPgDuplicateError(err) {
@@ -109,33 +127,23 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 
 	if projectID != "" {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, folder_id, name, extension, content, metadata, created_at, updated_at
+			SELECT %s
 			FROM %s
 			WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
-		`, r.tables.Documents)
+		`, documentFullSelectColumns, r.tables.Documents)
 		args = []interface{}{id, projectID}
 	} else {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, folder_id, name, extension, content, metadata, created_at, updated_at
+			SELECT %s
 			FROM %s
 			WHERE id = $1 AND deleted_at IS NULL
-		`, r.tables.Documents)
+		`, documentFullSelectColumns, r.tables.Documents)
 		args = []interface{}{id}
 	}
 
 	var doc models.Document
 	executor := postgres.GetExecutor(ctx, r.pool)
-	err := executor.QueryRow(ctx, query, args...).Scan(
-		&doc.ID,
-		&doc.ProjectID,
-		&doc.FolderID,
-		&doc.Name,
-		&doc.Extension,
-		&doc.Content,
-		&doc.Metadata,
-		&doc.CreatedAt,
-		&doc.UpdatedAt,
-	)
+	err := scanDocumentFull(executor.QueryRow(ctx, query, args...), &doc)
 
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
@@ -153,24 +161,14 @@ func (r *PostgresDocumentRepository) GetByID(ctx context.Context, id, projectID 
 // Use when authorization is handled separately (e.g., by ResourceAuthorizer)
 func (r *PostgresDocumentRepository) GetByIDOnly(ctx context.Context, id string) (*models.Document, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, folder_id, name, extension, content, metadata, created_at, updated_at
+		SELECT %s
 		FROM %s
 		WHERE id = $1 AND deleted_at IS NULL
-	`, r.tables.Documents)
+	`, documentFullSelectColumns, r.tables.Documents)
 
 	var doc models.Document
 	executor := postgres.GetExecutor(ctx, r.pool)
-	err := executor.QueryRow(ctx, query, id).Scan(
-		&doc.ID,
-		&doc.ProjectID,
-		&doc.FolderID,
-		&doc.Name,
-		&doc.Extension,
-		&doc.Content,
-		&doc.Metadata,
-		&doc.CreatedAt,
-		&doc.UpdatedAt,
-	)
+	err := scanDocumentFull(executor.QueryRow(ctx, query, id), &doc)
 
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
@@ -221,10 +219,10 @@ func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string,
 
 	// Query for the document in the final folder
 	query := fmt.Sprintf(`
-		SELECT id, project_id, folder_id, name, extension, content, metadata, created_at, updated_at
+		SELECT %s
 		FROM %s
 		WHERE project_id = $1 AND name = $2 AND extension = $3 AND deleted_at IS NULL
-	`, r.tables.Documents)
+	`, documentFullSelectColumns, r.tables.Documents)
 
 	args := []interface{}{projectID, docName, extension}
 
@@ -238,17 +236,7 @@ func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string,
 
 	var doc models.Document
 	executor := postgres.GetExecutor(ctx, r.pool)
-	err := executor.QueryRow(ctx, query, args...).Scan(
-		&doc.ID,
-		&doc.ProjectID,
-		&doc.FolderID,
-		&doc.Name,
-		&doc.Extension,
-		&doc.Content,
-		&doc.Metadata,
-		&doc.CreatedAt,
-		&doc.UpdatedAt,
-	)
+	err := scanDocumentFull(executor.QueryRow(ctx, query, args...), &doc)
 
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
@@ -258,17 +246,16 @@ func (r *PostgresDocumentRepository) GetByPath(ctx context.Context, path string,
 		return nil, fmt.Errorf("get document by path: %w", err)
 	}
 
-	doc.EnsureMetadata()
 	return &doc, nil
 }
 
 // findFolderByName finds a folder by name within a parent folder
 func (r *PostgresDocumentRepository) findFolderByName(ctx context.Context, projectID string, parentID *string, name string) (*models.Folder, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, parent_id, name, created_at, updated_at
+		SELECT %s
 		FROM %s
 		WHERE project_id = $1 AND name = $2 AND deleted_at IS NULL
-	`, r.tables.Folders)
+	`, folderLookupSelectColumns, r.tables.Folders)
 
 	args := []interface{}{projectID, name}
 
@@ -282,14 +269,7 @@ func (r *PostgresDocumentRepository) findFolderByName(ctx context.Context, proje
 
 	var folder models.Folder
 	executor := postgres.GetExecutor(ctx, r.pool)
-	err := executor.QueryRow(ctx, query, args...).Scan(
-		&folder.ID,
-		&folder.ProjectID,
-		&folder.ParentID,
-		&folder.Name,
-		&folder.CreatedAt,
-		&folder.UpdatedAt,
-	)
+	err := scanFolderLookup(executor.QueryRow(ctx, query, args...), &folder)
 
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
@@ -304,18 +284,28 @@ func (r *PostgresDocumentRepository) findFolderByName(ctx context.Context, proje
 
 // Update updates an existing document
 func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Document) error {
+	doc.EnsureMetadata()
+	doc.EnsureFileType()
+
 	var query string
 	var args []interface{}
 	if doc.ProjectID != "" {
 		query = fmt.Sprintf(`
 			UPDATE %s
-			SET folder_id = $1, name = $2, extension = $3, content = $4, metadata = $5, updated_at = $6
-			WHERE id = $7 AND project_id = $8 AND deleted_at IS NULL
+			SET folder_id = $1, name = $2, extension = $3, description = $4, autoapply = $5, file_type = $6,
+			    storage_url = $7, mime_type = $8, size_bytes = $9, content = $10, metadata = $11, updated_at = $12
+			WHERE id = $13 AND project_id = $14 AND deleted_at IS NULL
 		`, r.tables.Documents)
 		args = []interface{}{
 			doc.FolderID,
 			doc.Name,
 			doc.Extension,
+			doc.Description,
+			doc.Autoapply,
+			doc.FileType,
+			doc.StorageURL,
+			doc.MimeType,
+			doc.SizeBytes,
 			doc.Content,
 			doc.Metadata,
 			doc.UpdatedAt,
@@ -325,13 +315,20 @@ func (r *PostgresDocumentRepository) Update(ctx context.Context, doc *models.Doc
 	} else {
 		query = fmt.Sprintf(`
 			UPDATE %s
-			SET folder_id = $1, name = $2, extension = $3, content = $4, metadata = $5, updated_at = $6
-			WHERE id = $7 AND deleted_at IS NULL
+			SET folder_id = $1, name = $2, extension = $3, description = $4, autoapply = $5, file_type = $6,
+			    storage_url = $7, mime_type = $8, size_bytes = $9, content = $10, metadata = $11, updated_at = $12
+			WHERE id = $13 AND deleted_at IS NULL
 		`, r.tables.Documents)
 		args = []interface{}{
 			doc.FolderID,
 			doc.Name,
 			doc.Extension,
+			doc.Description,
+			doc.Autoapply,
+			doc.FileType,
+			doc.StorageURL,
+			doc.MimeType,
+			doc.SizeBytes,
 			doc.Content,
 			doc.Metadata,
 			doc.UpdatedAt,
@@ -456,19 +453,19 @@ func (r *PostgresDocumentRepository) ListByFolder(ctx context.Context, folderID 
 
 	if folderID == nil {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, folder_id, name, extension, metadata, updated_at
+			SELECT %s
 			FROM %s
 			WHERE project_id = $1 AND folder_id IS NULL AND deleted_at IS NULL
 			ORDER BY name ASC, extension ASC
-		`, r.tables.Documents)
+		`, documentMetadataSelectColumns, r.tables.Documents)
 		args = append(args, projectID)
 	} else {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, folder_id, name, extension, metadata, updated_at
+			SELECT %s
 			FROM %s
 			WHERE project_id = $1 AND folder_id = $2 AND deleted_at IS NULL
 			ORDER BY name ASC, extension ASC
-		`, r.tables.Documents)
+		`, documentMetadataSelectColumns, r.tables.Documents)
 		args = append(args, projectID, *folderID)
 	}
 
@@ -482,19 +479,10 @@ func (r *PostgresDocumentRepository) ListByFolder(ctx context.Context, folderID 
 	var documents []models.Document
 	for rows.Next() {
 		var doc models.Document
-		err := rows.Scan(
-			&doc.ID,
-			&doc.ProjectID,
-			&doc.FolderID,
-			&doc.Name,
-			&doc.Extension,
-			&doc.Metadata,
-			&doc.UpdatedAt,
-		)
+		err := scanDocumentMetadata(rows, &doc)
 		if err != nil {
 			return nil, fmt.Errorf("scan document: %w", err)
 		}
-		doc.EnsureMetadata()
 		documents = append(documents, doc)
 	}
 
@@ -519,6 +507,12 @@ func (r *PostgresDocumentRepository) GetAllMetadataByProject(ctx context.Context
 			d.folder_id,
 			d.name,
 			d.extension,
+			d.description,
+			d.autoapply,
+			d.file_type,
+			d.storage_url,
+			d.mime_type,
+			d.size_bytes,
 			d.metadata,
 			d.updated_at,
 			COALESCE(pp.pending_proposal_count, 0) AS pending_proposal_count
@@ -551,6 +545,12 @@ func (r *PostgresDocumentRepository) GetAllMetadataByProject(ctx context.Context
 			&doc.FolderID,
 			&doc.Name,
 			&doc.Extension,
+			&doc.Description,
+			&doc.Autoapply,
+			&doc.FileType,
+			&doc.StorageURL,
+			&doc.MimeType,
+			&doc.SizeBytes,
 			&doc.Metadata,
 			&doc.UpdatedAt,
 			&doc.PendingProposalCount,
@@ -559,6 +559,7 @@ func (r *PostgresDocumentRepository) GetAllMetadataByProject(ctx context.Context
 			return nil, fmt.Errorf("scan document: %w", err)
 		}
 		doc.EnsureMetadata()
+		doc.EnsureFileType()
 		documents = append(documents, doc)
 	}
 
@@ -710,6 +711,7 @@ func (r *PostgresDocumentRepository) fullTextSearch(ctx context.Context, opts *m
 
 	baseQuery := fmt.Sprintf(`
 		SELECT id, project_id, folder_id, name, extension,
+		       description, autoapply, file_type, storage_url, mime_type, size_bytes,
 		       ts_headline($1, content, websearch_to_tsquery($1, $2),
 		                   'MaxWords=50, MinWords=20, MaxFragments=1') AS content,
 		       metadata, created_at, updated_at,
@@ -763,6 +765,12 @@ func (r *PostgresDocumentRepository) fullTextSearch(ctx context.Context, opts *m
 			&doc.FolderID,
 			&doc.Name,
 			&doc.Extension,
+			&doc.Description,
+			&doc.Autoapply,
+			&doc.FileType,
+			&doc.StorageURL,
+			&doc.MimeType,
+			&doc.SizeBytes,
 			&doc.Content,
 			&doc.Metadata,
 			&doc.CreatedAt,
@@ -773,6 +781,7 @@ func (r *PostgresDocumentRepository) fullTextSearch(ctx context.Context, opts *m
 			return nil, fmt.Errorf("scan search result: %w", err)
 		}
 		doc.EnsureMetadata()
+		doc.EnsureFileType()
 
 		searchResults = append(searchResults, models.SearchResult{
 			Document: doc,
@@ -872,7 +881,8 @@ func (r *PostgresDocumentRepository) GetAllByFolderRecursive(ctx context.Context
 			JOIN folder_descendants fd ON f.parent_id = fd.id
 			WHERE f.deleted_at IS NULL
 		)
-		SELECT d.id, d.project_id, d.folder_id, d.name, d.extension, d.metadata, d.updated_at
+		SELECT d.id, d.project_id, d.folder_id, d.name, d.extension, d.description, d.autoapply,
+		       d.file_type, d.storage_url, d.mime_type, d.size_bytes, d.metadata, d.updated_at
 		FROM %s d
 		JOIN folder_descendants fd ON d.folder_id = fd.id
 		WHERE d.project_id = $2 AND d.deleted_at IS NULL
@@ -889,19 +899,10 @@ func (r *PostgresDocumentRepository) GetAllByFolderRecursive(ctx context.Context
 	var documents []models.Document
 	for rows.Next() {
 		var doc models.Document
-		err := rows.Scan(
-			&doc.ID,
-			&doc.ProjectID,
-			&doc.FolderID,
-			&doc.Name,
-			&doc.Extension,
-			&doc.Metadata,
-			&doc.UpdatedAt,
-		)
+		err := scanDocumentMetadata(rows, &doc)
 		if err != nil {
 			return nil, fmt.Errorf("scan document: %w", err)
 		}
-		doc.EnsureMetadata()
 		documents = append(documents, doc)
 	}
 
@@ -915,4 +916,82 @@ func (r *PostgresDocumentRepository) GetAllByFolderRecursive(ctx context.Context
 	}
 
 	return documents, nil
+}
+
+type documentScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+func scanDocumentFull(scanner documentScanner, doc *models.Document) error {
+	err := scanner.Scan(
+		&doc.ID,
+		&doc.ProjectID,
+		&doc.FolderID,
+		&doc.Name,
+		&doc.Extension,
+		&doc.Description,
+		&doc.Autoapply,
+		&doc.FileType,
+		&doc.StorageURL,
+		&doc.MimeType,
+		&doc.SizeBytes,
+		&doc.Content,
+		&doc.Metadata,
+		&doc.CreatedAt,
+		&doc.UpdatedAt,
+	)
+	if err != nil {
+		return err
+	}
+
+	doc.EnsureMetadata()
+	doc.EnsureFileType()
+	return nil
+}
+
+func scanDocumentMetadata(scanner documentScanner, doc *models.Document) error {
+	err := scanner.Scan(
+		&doc.ID,
+		&doc.ProjectID,
+		&doc.FolderID,
+		&doc.Name,
+		&doc.Extension,
+		&doc.Description,
+		&doc.Autoapply,
+		&doc.FileType,
+		&doc.StorageURL,
+		&doc.MimeType,
+		&doc.SizeBytes,
+		&doc.Metadata,
+		&doc.UpdatedAt,
+	)
+	if err != nil {
+		return err
+	}
+
+	doc.EnsureMetadata()
+	doc.EnsureFileType()
+	return nil
+}
+
+func scanFolderLookup(scanner documentScanner, folder *models.Folder) error {
+	err := scanner.Scan(
+		&folder.ID,
+		&folder.ProjectID,
+		&folder.ParentID,
+		&folder.Name,
+		&folder.IsHidden,
+		&folder.IsSystem,
+		&folder.Description,
+		&folder.Autoapply,
+		&folder.Metadata,
+		&folder.CreatedAt,
+		&folder.UpdatedAt,
+	)
+	if err != nil {
+		return err
+	}
+
+	folder.EnsureMetadata()
+	return nil
 }

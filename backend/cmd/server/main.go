@@ -136,7 +136,7 @@ func main() {
 	// Moved before SetupServices for proper dependency injection
 	contentAnalyzer := serviceDocsys.NewContentAnalyzer()
 	pathResolver := serviceDocsys.NewPathResolver(folderRepo, txManager)
-	projectService := serviceDocsys.NewProjectService(projectRepo, logger)
+	projectService := serviceDocsys.NewProjectService(projectRepo, folderRepo, txManager, logger)
 	favoriteService := serviceDocsys.NewFavoriteService(favoriteRepo, projectRepo, logger)
 	docService := serviceDocsys.NewDocumentService(docRepo, folderRepo, projectRepo, txManager, contentAnalyzer, pathResolver, docsysValidator, authorizer, logger)
 	folderService := serviceDocsys.NewFolderService(folderRepo, docRepo, projectRepo, docService, pathResolver, txManager, docsysValidator, authorizer, logger)

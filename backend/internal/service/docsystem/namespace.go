@@ -116,10 +116,10 @@ func (s *namespaceService) ParsePath(path string) (docsysSvc.Namespace, string, 
 	return docsysSvc.NamespaceWorkspace, normalized, nil
 }
 
-// EnsureMeridianFolder creates /.meridian/ folder if it doesn't exist
+// EnsureMeridianFolder creates /.meridian/ folder if it doesn't exist.
+// Deprecated: keep until skills migrate off /.meridian.
 func (s *namespaceService) EnsureMeridianFolder(ctx context.Context, projectID string) (*models.Folder, error) {
-	// CreateHiddenIfNotExists handles idempotent creation
-	folder, err := s.folderRepo.CreateHiddenIfNotExists(ctx, projectID, nil, string(docsysSvc.NamespaceMeridian))
+	folder, err := s.folderRepo.CreateSystemIfNotExists(ctx, projectID, string(docsysSvc.NamespaceMeridian), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +132,8 @@ func (s *namespaceService) EnsureMeridianFolder(ctx context.Context, projectID s
 	return folder, nil
 }
 
-// EnsureMeridianSubfolder creates /.meridian/<name>/ subfolder if it doesn't exist
+// EnsureMeridianSubfolder creates /.meridian/<name>/ subfolder if it doesn't exist.
+// Deprecated: keep until skills migrate off /.meridian.
 func (s *namespaceService) EnsureMeridianSubfolder(ctx context.Context, projectID, name string) (*models.Folder, error) {
 	// First ensure parent .meridian folder exists
 	meridianFolder, err := s.EnsureMeridianFolder(ctx, projectID)

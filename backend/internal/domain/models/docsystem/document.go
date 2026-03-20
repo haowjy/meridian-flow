@@ -18,9 +18,15 @@ type DocumentMetadata map[string]interface{}
 type Document struct {
 	ID                   string           `json:"id" db:"id"`
 	ProjectID            string           `json:"project_id" db:"project_id"`
-	FolderID             *string          `json:"folder_id" db:"folder_id"`                                     // NULL = root level
-	Name                 string           `json:"name" db:"name"`                                               // Display name: "Chapter 5" (no extension)
-	Extension            string           `json:"extension" db:"extension"`                                     // File extension: ".md", ".excalidraw", etc.
+	FolderID             *string          `json:"folder_id" db:"folder_id"` // NULL = root level
+	Name                 string           `json:"name" db:"name"`           // Display name: "Chapter 5" (no extension)
+	Extension            string           `json:"extension" db:"extension"` // File extension: ".md", ".excalidraw", etc.
+	Description          *string          `json:"description,omitempty" db:"description"`
+	Autoapply            *bool            `json:"autoapply,omitempty" db:"autoapply"`
+	FileType             string           `json:"file_type" db:"file_type"`
+	StorageURL           *string          `json:"storage_url,omitempty" db:"storage_url"`
+	MimeType             *string          `json:"mime_type,omitempty" db:"mime_type"`
+	SizeBytes            *int64           `json:"size_bytes,omitempty" db:"size_bytes"`
 	Path                 string           `json:"path,omitempty"`                                               // Computed display path with extension, not stored in DB
 	PendingProposalCount int              `json:"pending_proposal_count,omitempty" db:"pending_proposal_count"` // Metadata-only tree field: count of proposals with status='pending'
 	Content              string           `json:"content" db:"content"`                                         // Markdown content (for text-based files)
@@ -39,6 +45,12 @@ func (d *Document) Filename() string {
 func (d *Document) EnsureMetadata() {
 	if d.Metadata == nil {
 		d.Metadata = DocumentMetadata{}
+	}
+}
+
+func (d *Document) EnsureFileType() {
+	if d.FileType == "" {
+		d.FileType = string(FileTypeFromExtension(d.Extension))
 	}
 }
 

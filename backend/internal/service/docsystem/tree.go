@@ -33,11 +33,11 @@ func NewTreeService(
 	}
 }
 
-// GetProjectTree builds and returns the nested folder/document tree for a project
-// Default: excludes hidden folders. Use GetProjectTreeWithOptions for control.
+// GetProjectTree builds and returns the nested folder/document tree for a project.
+// Default: excludes hidden/system folders. Use GetProjectTreeWithOptions for control.
 func (s *treeService) GetProjectTree(ctx context.Context, userID, projectID string) (*docsysSvc.ProjectTree, error) {
 	return s.GetProjectTreeWithOptions(ctx, userID, projectID, docsysSvc.TreeOptions{
-		IncludeHidden: false, // Default: exclude hidden folders
+		IncludeHidden: false, // Default: exclude hidden/system folders
 	})
 }
 
@@ -72,15 +72,19 @@ func (s *treeService) GetProjectTreeWithOptions(ctx context.Context, userID, pro
 		folder := &allFolders[i]
 		folderModelMap[folder.ID] = folder
 		folderMap[folder.ID] = &docsysSvc.TreeFolder{
-			ID:        folder.ID,
-			ProjectID: folder.ProjectID,
-			FolderID:  folder.ParentID,
-			Name:      folder.Name,
-			IsHidden:  folder.IsHidden,
-			CreatedAt: folder.CreatedAt,
-			UpdatedAt: folder.UpdatedAt,
-			Folders:   []*docsysSvc.TreeFolder{},
-			Documents: []docsysSvc.TreeDocument{},
+			ID:          folder.ID,
+			ProjectID:   folder.ProjectID,
+			FolderID:    folder.ParentID,
+			Name:        folder.Name,
+			IsHidden:    folder.IsHidden,
+			IsSystem:    folder.IsSystem,
+			Description: folder.Description,
+			Autoapply:   folder.Autoapply,
+			Metadata:    folder.Metadata,
+			CreatedAt:   folder.CreatedAt,
+			UpdatedAt:   folder.UpdatedAt,
+			Folders:     []*docsysSvc.TreeFolder{},
+			Documents:   []docsysSvc.TreeDocument{},
 		}
 	}
 
@@ -113,7 +117,7 @@ func (s *treeService) GetProjectTreeWithOptions(ctx context.Context, userID, pro
 			return nil, err
 		}
 		for _, folder := range allFoldersUnfiltered {
-			if folder.IsHidden || s.isInHiddenFolder(folder.ID, allFoldersUnfiltered) {
+			if s.isFilteredFolder(folder) || s.isInFilteredFolder(folder.ID, allFoldersUnfiltered) {
 				hiddenFolderIDs[folder.ID] = true
 			}
 		}
@@ -145,6 +149,8 @@ func (s *treeService) GetProjectTreeWithOptions(ctx context.Context, userID, pro
 			Name:                 doc.Name,
 			FolderID:             doc.FolderID,
 			Extension:            doc.Extension,
+			FileType:             doc.FileType,
+			Description:          doc.Description,
 			PendingProposalCount: doc.PendingProposalCount,
 			Path:                 docPath,
 			UpdatedAt:            doc.UpdatedAt,
@@ -205,8 +211,12 @@ func (s *treeService) computeFolderPath(folderID string, folderMap map[string]*m
 	return path
 }
 
-// isInHiddenFolder checks if a folder is inside a hidden parent folder
-func (s *treeService) isInHiddenFolder(folderID string, allFolders []models.Folder) bool {
+func (s *treeService) isFilteredFolder(folder models.Folder) bool {
+	return folder.IsHidden || folder.IsSystem
+}
+
+// isInFilteredFolder checks if a folder is inside a hidden/system parent folder.
+func (s *treeService) isInFilteredFolder(folderID string, allFolders []models.Folder) bool {
 	folderMap := make(map[string]*models.Folder)
 	for i := range allFolders {
 		folderMap[allFolders[i].ID] = &allFolders[i]
@@ -218,7 +228,7 @@ func (s *treeService) isInHiddenFolder(folderID string, allFolders []models.Fold
 		if !exists {
 			break
 		}
-		if folder.IsHidden {
+		if s.isFilteredFolder(*folder) {
 			return true
 		}
 		if folder.ParentID == nil {

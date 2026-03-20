@@ -6,20 +6,28 @@ import (
 	serviceDocsys "meridian/internal/service/docsystem"
 )
 
-func TestTextEditorCheckEditNamespaceAccessBlocksAgentsNamespace(t *testing.T) {
+func TestTextEditorCheckEditNamespaceAccessAllowsAgentsNamespace(t *testing.T) {
 	tool := &TextEditorTool{
 		namespaceSvc: serviceDocsys.NewNamespaceService(nil, nil),
 	}
 
-	result, ok := tool.checkEditNamespaceAccess("/.agents/config.md").(map[string]interface{})
+	// .agents/ paths are writable — review gating is handled by folder autoapply, not write-blocking
+	if result := tool.checkEditNamespaceAccess("/.agents/config.md"); result != nil {
+		t.Fatalf("expected .agents/ path to be editable, got %#v", result)
+	}
+}
+
+func TestTextEditorCheckEditNamespaceAccessBlocksMeridianNamespace(t *testing.T) {
+	tool := &TextEditorTool{
+		namespaceSvc: serviceDocsys.NewNamespaceService(nil, nil),
+	}
+
+	result, ok := tool.checkEditNamespaceAccess("/.meridian/config.md").(map[string]interface{})
 	if !ok {
 		t.Fatalf("expected error result map, got %#v", result)
 	}
 	if result["error_code"] != ErrInvalidInput {
 		t.Fatalf("expected error code %q, got %#v", ErrInvalidInput, result["error_code"])
-	}
-	if result["message"] != "Edit commands cannot modify /.agents/ paths" {
-		t.Fatalf("unexpected message: %#v", result["message"])
 	}
 }
 

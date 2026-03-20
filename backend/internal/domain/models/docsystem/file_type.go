@@ -3,13 +3,19 @@ package docsystem
 import "strings"
 
 // FileType represents the editor/storage type for a document.
-// Derived from file extension, not stored in database.
+// During the transition period we still derive behavior from the extension,
+// even though documents also store file_type explicitly in the database.
 type FileType string
 
 const (
 	FileTypeMarkdown   FileType = "markdown"
+	FileTypeSkill      FileType = "skill"
+	FileTypeAgent      FileType = "agent"
+	FileTypeTool       FileType = "tool"
 	FileTypeExcalidraw FileType = "excalidraw"
 	FileTypeMermaid    FileType = "mermaid"
+	FileTypeImage      FileType = "image"
+	FileTypePDF        FileType = "pdf"
 )
 
 // Default extension for new documents
@@ -75,14 +81,10 @@ func NormalizeExtension(ext string) string {
 // Binary file types (future) will use S3 storage instead.
 func IsTextBasedFileType(ft FileType) bool {
 	switch ft {
-	case FileTypeMarkdown, FileTypeMermaid:
-		return true
-	case FileTypeExcalidraw:
-		// Excalidraw stores JSON in content, which is text-based
-		// but may move to S3 for large drawings in the future
+	case FileTypeMarkdown, FileTypeMermaid, FileTypeSkill, FileTypeAgent, FileTypeTool:
 		return true
 	default:
-		return true // default to text-based for safety
+		return false
 	}
 }
 

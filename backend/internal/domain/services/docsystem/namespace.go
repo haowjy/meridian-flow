@@ -39,12 +39,12 @@ type NamespaceService interface {
 	// Example: "Characters/Aria.md" -> (NamespaceWorkspace, "Characters/Aria.md")
 	ParsePath(path string) (namespace Namespace, relativePath string, err error)
 
-	// EnsureMeridianFolder creates /.meridian/ folder if it doesn't exist
-	// The folder is created as hidden (is_hidden=true)
+	// EnsureMeridianFolder creates /.meridian/ folder if it doesn't exist.
+	// Deprecated: keep until skills migrate off /.meridian.
 	EnsureMeridianFolder(ctx context.Context, projectID string) (*models.Folder, error)
 
-	// EnsureMeridianSubfolder creates /.meridian/<name>/ subfolder if it doesn't exist
-	// Example: EnsureMeridianSubfolder(ctx, projectID, "skills") creates /.meridian/skills/
-	// The folder is created as hidden (is_hidden=true)
+	// EnsureMeridianSubfolder creates /.meridian/<name>/ subfolder if it doesn't exist.
+	// Example: EnsureMeridianSubfolder(ctx, projectID, "skills") creates /.meridian/skills/.
+	// Deprecated: keep until skills migrate off /.meridian.
 	EnsureMeridianSubfolder(ctx context.Context, projectID, name string) (*models.Folder, error)
 }

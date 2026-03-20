@@ -15,16 +15,20 @@ type treeResponseDTO struct {
 }
 
 type treeFolderDTO struct {
-	ID        string            `json:"id"`
-	ProjectID string            `json:"project_id"`
-	FolderID  *string           `json:"folder_id"`
-	Name      string            `json:"name"`
-	Path      string            `json:"path"`      // Normalized path (e.g., "Characters/Heroes")
-	IsHidden  bool              `json:"is_hidden"` // Hidden folders (e.g., .meridian)
-	CreatedAt time.Time         `json:"created_at"`
-	UpdatedAt time.Time         `json:"updated_at"`
-	Folders   []*treeFolderDTO  `json:"folders"`
-	Documents []treeDocumentDTO `json:"documents"`
+	ID          string                 `json:"id"`
+	ProjectID   string                 `json:"project_id"`
+	FolderID    *string                `json:"folder_id"`
+	Name        string                 `json:"name"`
+	Path        string                 `json:"path"`      // Normalized path (e.g., "Characters/Heroes")
+	IsHidden    bool                   `json:"is_hidden"` // Hidden folders (e.g., .meridian)
+	IsSystem    bool                   `json:"is_system"`
+	Description *string                `json:"description,omitempty"`
+	Autoapply   *bool                  `json:"autoapply,omitempty"`
+	Metadata    map[string]interface{} `json:"metadata"`
+	CreatedAt   time.Time              `json:"created_at"`
+	UpdatedAt   time.Time              `json:"updated_at"`
+	Folders     []*treeFolderDTO       `json:"folders"`
+	Documents   []treeDocumentDTO      `json:"documents"`
 }
 
 type treeDocumentDTO struct {
@@ -33,6 +37,8 @@ type treeDocumentDTO struct {
 	FolderID             *string   `json:"folder_id"`
 	Name                 string    `json:"name"`
 	Extension            string    `json:"extension"`
+	FileType             string    `json:"file_type"`
+	Description          *string   `json:"description,omitempty"`
 	PendingProposalCount int       `json:"pending_proposal_count"`
 	Path                 string    `json:"path"` // Normalized path with extension (e.g., "Characters/Heroes/Aria.md")
 	UpdatedAt            time.Time `json:"updated_at"`
@@ -81,16 +87,20 @@ func toTreeFolderDTO(folder *docsysSvc.TreeFolder) *treeFolderDTO {
 	}
 
 	return &treeFolderDTO{
-		ID:        folder.ID,
-		ProjectID: folder.ProjectID,
-		FolderID:  folder.FolderID,
-		Name:      folder.Name,
-		Path:      folder.Path,
-		IsHidden:  folder.IsHidden,
-		CreatedAt: folder.CreatedAt,
-		UpdatedAt: folder.UpdatedAt,
-		Folders:   children,
-		Documents: docs,
+		ID:          folder.ID,
+		ProjectID:   folder.ProjectID,
+		FolderID:    folder.FolderID,
+		Name:        folder.Name,
+		Path:        folder.Path,
+		IsHidden:    folder.IsHidden,
+		IsSystem:    folder.IsSystem,
+		Description: folder.Description,
+		Autoapply:   folder.Autoapply,
+		Metadata:    folder.Metadata,
+		CreatedAt:   folder.CreatedAt,
+		UpdatedAt:   folder.UpdatedAt,
+		Folders:     children,
+		Documents:   docs,
 	}
 }
 
@@ -101,6 +111,8 @@ func toTreeDocumentDTO(doc docsysSvc.TreeDocument) treeDocumentDTO {
 		FolderID:             doc.FolderID,
 		Name:                 doc.Name,
 		Extension:            doc.Extension,
+		FileType:             doc.FileType,
+		Description:          doc.Description,
 		PendingProposalCount: doc.PendingProposalCount,
 		Path:                 doc.Path,
 		UpdatedAt:            doc.UpdatedAt,

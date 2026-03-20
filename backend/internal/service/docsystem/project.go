@@ -10,6 +10,7 @@ import (
 	"meridian/internal/config"
 	"meridian/internal/domain"
 	models "meridian/internal/domain/models/docsystem"
+	"meridian/internal/domain/repositories"
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	"meridian/internal/service/identifier"
@@ -20,16 +21,22 @@ import (
 // projectService implements the ProjectService interface
 type projectService struct {
 	projectRepo docsysRepo.ProjectRepository
+	folderRepo  docsysRepo.FolderRepository
+	txManager   repositories.TransactionManager
 	logger      *slog.Logger
 }
 
 // NewProjectService creates a new project service
 func NewProjectService(
 	projectRepo docsysRepo.ProjectRepository,
+	folderRepo docsysRepo.FolderRepository,
+	txManager repositories.TransactionManager,
 	logger *slog.Logger,
 ) docsysSvc.ProjectService {
 	return &projectService{
 		projectRepo: projectRepo,
+		folderRepo:  folderRepo,
+		txManager:   txManager,
 		logger:      logger,
 	}
 }
@@ -56,11 +63,27 @@ func (s *projectService) CreateProject(ctx context.Context, req *docsysSvc.Creat
 		UserID:    req.UserID,
 		Name:      name,
 		Slug:      slug,
+		Autoapply: true,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
 
-	if err := s.projectRepo.Create(ctx, project); err != nil {
+	if err := s.txManager.ExecTx(ctx, func(txCtx context.Context) error {
+		if err := s.projectRepo.Create(txCtx, project); err != nil {
+			return err
+		}
+
+		if _, err := s.folderRepo.CreateSystemIfNotExists(txCtx, project.ID, string(docsysSvc.NamespaceMeridian), nil); err != nil {
+			return err
+		}
+
+		agentsAutoapply := false
+		if _, err := s.folderRepo.CreateSystemIfNotExists(txCtx, project.ID, string(docsysSvc.NamespaceAgents), &agentsAutoapply); err != nil {
+			return err
+		}
+
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 

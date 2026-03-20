@@ -125,6 +125,7 @@ func (s *documentService) CreateDocument(ctx context.Context, req *docsysSvc.Cre
 		FolderID:  folderID,
 		Name:      docName,
 		Extension: extension,
+		FileType:  string(models.FileTypeFromExtension(extension)),
 		Content:   req.Content,
 		Metadata:  models.DocumentMetadata{},
 		CreatedAt: time.Now(),
