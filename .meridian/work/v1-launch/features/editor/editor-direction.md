@@ -5,13 +5,45 @@ audience: architect, developer
 
 # Editor Direction
 
+## Two Editor Modes: Preview + Edit
+
+The editor has two distinct modes, toggled via toolbar button or keyboard shortcut.
+
+### Preview Mode (reading/reviewing)
+
+Fully rendered read-only view. All markdown formatted, no syntax visible. AI decorations (collab hunks) shown with accept/reject actions. This is where writers read their work and review AI suggestions.
+
+- `EditorState.readOnly` — no cursor, no typing
+- All Layer 1 decorations active (bold, italic, headings fully rendered, no cursor proximity)
+- All Layer 2 blocks rendered as widgets (no click-to-edit)
+- Layer 3 collab hunks visible with accept/reject toolbar
+- Layer 4 remote cursors hidden
+- No decoration conflict complexity — everything is simply rendered
+
+### Edit Mode (writing)
+
+Live preview with cursor-proximity syntax reveal. This is where you write.
+
+- Full editing, formatting toolbar, keyboard shortcuts
+- Cursor proximity: syntax revealed on the active line, formatted elsewhere
+- Click-to-edit on block widgets
+- Collab hunks visible with accept/reject
+- Remote cursors visible
+
+### Why Two Modes
+
+1. **Preview eliminates decoration conflicts** — no cursor proximity logic to conflict with collab hunks or block widgets
+2. **Better AI review** — clean formatted text with colored highlights, accept/reject without accidentally editing
+3. **Writer workflow** — writers naturally alternate between writing (edit) and reading back what they wrote (preview). Obsidian, Typora, and VS Code all support this pattern.
+4. **Simpler decoration stack** — the hard problems (cursor enters hunk inside hidden syntax, block widget click vs edit focus) only exist in edit mode
+
 ## Decision: Live Preview Done Right
 
-The frontend-v2 editor is a **clean reimplementation** of the Obsidian-style live preview approach. Same concept as the current frontend, but rebuilt from scratch to fix decoration conflicts, content jumping, and viewport instability.
+Edit mode is a **clean reimplementation** of the Obsidian-style live preview approach. Same concept as the current frontend, but rebuilt from scratch to fix decoration conflicts, content jumping, and viewport instability.
 
 The canonical document model remains **markdown text in `Y.Text`**. No change to the collab v2 data model.
 
-## What "Live Preview" Means
+## What "Live Preview" Means (Edit Mode)
 
 Markdown syntax is the source of truth. The editor renders formatted output **inline** using CM6 decorations, revealing raw syntax only when the cursor is nearby.
 
@@ -78,8 +110,11 @@ Complex blocks rendered as widgets using `Decoration.replace`:
 |---|---|---|---|
 | Math | `$$...$$` or ` ```math ` | KaTeX rendered output | Click to edit raw LaTeX |
 | Diagrams | ` ```mermaid ` | Mermaid SVG | Click to edit raw source |
+| Charts | ` ```vegalite ` | Vega-Lite rendered chart | Click to edit JSON spec |
 | Images | `![alt](url)` | `<img>` element | Click to edit URL/alt |
 | Code | ` ```lang ` | Shiki-highlighted block | Always editable (no widget toggle) |
+
+Vega-Lite enables declarative data charts (bar, line, scatter, pie, heatmaps) in markdown. Same click-to-edit pattern as Mermaid — rendered chart in read mode, JSON spec in edit mode. Useful for world-building data, story structure, and embedded analytics. Uses `react-vega` for rendering.
 
 Click-to-edit pattern:
 
@@ -140,7 +175,7 @@ Writer-first shortcuts, same philosophy as current frontend:
 - `Cmd+[` / `Cmd+]` are **not** bound to indentation (reserved for browser navigation)
 - `Tab` / `Shift+Tab` for indentation in list contexts
 - `Enter` in lists: continue list, double-enter to exit
-- `Cmd+Z` / `Cmd+Shift+Z`: standard undo/redo (character-level, CM6 built-in)
+- `Cmd+Z` / `Cmd+Shift+Z`: undo/redo via **Y.UndoManager** (not CM6 built-in). Y.UndoManager is the single source of truth for undo because it tracks both text edits and proposal status changes in one timeline. CM6's built-in undo is disabled. See collab undo.md for the full contract.
 
 ## Storybook Testing Strategy
 

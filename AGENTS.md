@@ -128,6 +128,12 @@ The dev environment uses tmux with worktree-aware port allocation.
 
 See `backend/CLAUDE.md` for deployment details.
 
+## Agent Spawning
+
+- Use `meridian spawn` for delegated work (coding, reviewing, testing, research) — agent profiles route each task to the best model across providers
+- Harness-native Agent types (`Explore`, `Plan`, `general-purpose`) are fine for quick lookups since they use the harness's own models
+- Harness-native tools (Read, Grep, Glob, Bash, Edit, Write) are fine for quick operations you do yourself
+
 ## Refactoring Backlog
 
 Tracked in `_docs/future/refactoring-backlog.md`. Review before starting related work.
