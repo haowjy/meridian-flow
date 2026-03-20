@@ -158,6 +158,7 @@ Round 0 is phase 1 only — backfill and dual-read. Table drop deferred to Round
 - Dual-read skill resolver: try document tree first, fall back to `project_skills` table
 - Agent resolver: parse YAML frontmatter from `.agents/agents/*.md`
 - Git import endpoint: `POST /api/projects/{id}/agents/import-git` (with URL allowlist, size limits, text-only filtering)
+- Import validation: when content is imported or written to `.agents/`, validate structure (`skills/<name>/SKILL.md` with valid YAML frontmatter, `agents/<name>.md` with valid profile). Reject invalid structure. Follow CLI conventions.
 - **Do NOT drop `project_skills` table yet** — deferred to Round 2+ after F12 Settings UI can verify migration
 
 **Carry forward:** Skill invocation in streaming (rewire to dual-read).
@@ -171,6 +172,7 @@ Round 0 is phase 1 only — backfill and dual-read. Table drop deferred to Round
 - Artifact space: `.meridian/work/<slug>/` folder creation in document tree
 - CRUD API: create, list, show, update status, complete, reopen
 - Archive behavior: complete -> artifacts read-only, reopen -> restore
+- Import validation: when content is imported to `.meridian/`, recognize and preserve CLI conventions (`.meridian/work/<slug>/`, `.meridian/fs/`). Validate structure on import.
 
 **Carry forward:** None — new feature (mirrors CLI `meridian work`).
 **Verification:** CRUD ops, thread grouping, artifact folder creation, archive/reopen.

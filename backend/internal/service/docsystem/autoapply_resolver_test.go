@@ -114,6 +114,144 @@ func TestAutoapplyResolver_FallsBackToProjectDefault(t *testing.T) {
 	}
 }
 
+func TestAutoapplyResolver_SystemFolderDominatesNonSystemChildOverride(t *testing.T) {
+	// Document in .agents/skills/foo/ where .agents/ is system with autoapply=false
+	// and skills/ is non-system with autoapply=true.
+	// The system folder must win; the non-system child override must be ignored.
+	systemAutoapply := false
+	childOverride := true
+	systemFolderID := "agents-folder"
+	skillsFolderID := "skills-folder"
+	fooFolderID := "foo-folder"
+
+	resolver := NewAutoapplyResolver(
+		&testAutoapplyDocumentRepo{
+			document: &models.Document{
+				ID:        "doc-1",
+				ProjectID: "project-1",
+				FolderID:  &fooFolderID,
+			},
+		},
+		&testAutoapplyFolderRepo{
+			folders: map[string]*models.Folder{
+				fooFolderID: {
+					ID:        fooFolderID,
+					ProjectID: "project-1",
+					ParentID:  &skillsFolderID,
+				},
+				skillsFolderID: {
+					ID:        skillsFolderID,
+					ProjectID: "project-1",
+					ParentID:  &systemFolderID,
+					Autoapply: &childOverride,
+				},
+				systemFolderID: {
+					ID:        systemFolderID,
+					ProjectID: "project-1",
+					IsSystem:  true,
+					Autoapply: &systemAutoapply,
+				},
+			},
+		},
+		&testAutoapplyProjectRepo{
+			project: &models.Project{ID: "project-1", Autoapply: true},
+		},
+	)
+
+	got, err := resolver.ResolveEffectiveAutoapply(context.Background(), "doc-1")
+	if err != nil {
+		t.Fatalf("ResolveEffectiveAutoapply returned error: %v", err)
+	}
+	if got {
+		t.Fatalf("expected system-folder autoapply=false to dominate non-system child override autoapply=true")
+	}
+}
+
+func TestAutoapplyResolver_NonSystemFolderChainInnermostWins(t *testing.T) {
+	// Document in chapters/part1/ where part1/ (innermost) has autoapply=false
+	// and chapters/ (outer) has autoapply=true.
+	// No system folders; first non-null encountered while walking inward→outward wins.
+	innerAutoapply := false
+	outerAutoapply := true
+	innerFolderID := "part1-folder"
+	outerFolderID := "chapters-folder"
+
+	resolver := NewAutoapplyResolver(
+		&testAutoapplyDocumentRepo{
+			document: &models.Document{
+				ID:        "doc-1",
+				ProjectID: "project-1",
+				FolderID:  &innerFolderID,
+			},
+		},
+		&testAutoapplyFolderRepo{
+			folders: map[string]*models.Folder{
+				innerFolderID: {
+					ID:        innerFolderID,
+					ProjectID: "project-1",
+					ParentID:  &outerFolderID,
+					Autoapply: &innerAutoapply,
+				},
+				outerFolderID: {
+					ID:        outerFolderID,
+					ProjectID: "project-1",
+					Autoapply: &outerAutoapply,
+				},
+			},
+		},
+		&testAutoapplyProjectRepo{
+			project: &models.Project{ID: "project-1", Autoapply: true},
+		},
+	)
+
+	got, err := resolver.ResolveEffectiveAutoapply(context.Background(), "doc-1")
+	if err != nil {
+		t.Fatalf("ResolveEffectiveAutoapply returned error: %v", err)
+	}
+	if got {
+		t.Fatalf("expected innermost non-system folder autoapply=false to win over outer autoapply=true")
+	}
+}
+
+func TestAutoapplyResolver_SystemFolderWithNullAutoapplyFallsBackToProject(t *testing.T) {
+	// Document directly in .meridian/ where .meridian/ is a system folder with
+	// no autoapply value set (null). The resolver must fall through to the project
+	// default rather than treating null as false or walking further ancestors.
+	systemFolderID := "meridian-folder"
+	projectAutoapply := true
+
+	resolver := NewAutoapplyResolver(
+		&testAutoapplyDocumentRepo{
+			document: &models.Document{
+				ID:        "doc-1",
+				ProjectID: "project-1",
+				FolderID:  &systemFolderID,
+			},
+		},
+		&testAutoapplyFolderRepo{
+			folders: map[string]*models.Folder{
+				systemFolderID: {
+					ID:        systemFolderID,
+					ProjectID: "project-1",
+					IsSystem:  true,
+					// Autoapply intentionally nil — no explicit policy set
+				},
+			},
+		},
+		&testAutoapplyProjectRepo{
+			project: &models.Project{ID: "project-1", Autoapply: projectAutoapply},
+		},
+	)
+
+	got, err := resolver.ResolveEffectiveAutoapply(context.Background(), "doc-1")
+	if err != nil {
+		t.Fatalf("ResolveEffectiveAutoapply returned error: %v", err)
+	}
+	if !got {
+		t.Fatalf("expected project autoapply=true to be used when system folder has null autoapply")
+	}
+}
+
 type testAutoapplyDocumentRepo struct {
 	document *models.Document
 }
