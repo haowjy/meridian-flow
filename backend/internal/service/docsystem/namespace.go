@@ -104,6 +104,14 @@ func (s *namespaceService) ParsePath(path string) (docsysSvc.Namespace, string, 
 		return docsysSvc.NamespaceSession, relPath, nil
 	}
 
+	if normalized == string(docsysSvc.NamespaceAgents) {
+		return docsysSvc.NamespaceAgents, "", nil
+	}
+	if strings.HasPrefix(normalized, string(docsysSvc.NamespaceAgents)+"/") {
+		relPath := strings.TrimPrefix(normalized, string(docsysSvc.NamespaceAgents)+"/")
+		return docsysSvc.NamespaceAgents, relPath, nil
+	}
+
 	// Default space namespace
 	return docsysSvc.NamespaceWorkspace, normalized, nil
 }

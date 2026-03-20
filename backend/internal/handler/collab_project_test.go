@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/net/websocket"
 	"meridian/internal/config"
+	"meridian/internal/domain"
 	"meridian/internal/domain/models"
 	collabModels "meridian/internal/domain/models/collab"
 )
@@ -60,18 +61,53 @@ func (r *testProjectCollabResolver) setProjectID(projectID string) {
 	r.projectID = projectID
 }
 
+type testProjectAuthorizer struct {
+	allowed bool
+	err     error
+}
+
+func (a *testProjectAuthorizer) CanAccessProject(_ context.Context, _ string, _ string) error {
+	if a.err != nil {
+		return a.err
+	}
+	if !a.allowed {
+		return domain.NewForbiddenError("access denied")
+	}
+	return nil
+}
+
+func (a *testProjectAuthorizer) CanAccessFolder(_ context.Context, _ string, _ string) error {
+	return nil
+}
+
+func (a *testProjectAuthorizer) CanAccessDocument(_ context.Context, _ string, _ string) error {
+	return nil
+}
+
+func (a *testProjectAuthorizer) CanAccessThread(_ context.Context, _ string, _ string) error {
+	return nil
+}
+
+func (a *testProjectAuthorizer) CanAccessTurn(_ context.Context, _ string, _ string) error {
+	return nil
+}
+
 // --- test helpers ---
 
 func newTestProjectCollabServer(
 	t *testing.T,
 	resolver *testProjectCollabResolver,
 	verifier *testJWTVerifier,
+	authorizer *testProjectAuthorizer,
 	cfg *config.Config,
 ) *httptest.Server {
 	t.Helper()
 
 	if cfg == nil {
 		cfg = &config.Config{}
+	}
+	if authorizer == nil {
+		authorizer = &testProjectAuthorizer{allowed: true}
 	}
 
 	projectRegistry := NewInMemoryProjectConnectionRegistry(slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -81,6 +117,7 @@ func newTestProjectCollabServer(
 		&noopProposalService{},
 		&noopProposalStore{},
 		verifier,
+		authorizer,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 		cfg,
 		projectRegistry,
@@ -163,7 +200,7 @@ var (
 func TestProjectWS_AuthExpiredForBadToken(t *testing.T) {
 	resolver := &testProjectCollabResolver{allowed: true, projectID: testProjectID}
 	verifier := &testJWTVerifier{tokens: map[string]*models.AuthClaims{}}
-	server := newTestProjectCollabServer(t, resolver, verifier, nil)
+	server := newTestProjectCollabServer(t, resolver, verifier, nil, nil)
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProjectID)
@@ -188,7 +225,7 @@ func TestProjectWS_AuthFailedForBlankToken(t *testing.T) {
 			testToken: {UserID: testUserID},
 		},
 	}
-	server := newTestProjectCollabServer(t, resolver, verifier, nil)
+	server := newTestProjectCollabServer(t, resolver, verifier, nil, nil)
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProjectID)
@@ -204,6 +241,30 @@ func TestProjectWS_AuthFailedForBlankToken(t *testing.T) {
 	}
 }
 
+// [unit-tester:keep] security boundary -- authenticated users must own the project to open the project ws
+func TestProjectWS_ProjectAccessDenied(t *testing.T) {
+	resolver := &testProjectCollabResolver{allowed: true, projectID: testProjectID}
+	verifier := &testJWTVerifier{
+		tokens: map[string]*models.AuthClaims{
+			testToken: {UserID: testUserID},
+		},
+	}
+	server := newTestProjectCollabServer(t, resolver, verifier, &testProjectAuthorizer{allowed: false}, nil)
+	defer server.Close()
+
+	conn := dialProjectWS(t, server.URL, testProjectID)
+	defer closeWSConn(t, conn)
+
+	if err := websocket.Message.Send(conn, testToken); err != nil {
+		t.Fatalf("send auth token: %v", err)
+	}
+
+	got := readWSErrorMessage(t, conn)
+	if got.Code != "FORBIDDEN" {
+		t.Fatalf("expected FORBIDDEN, got %q", got.Code)
+	}
+}
+
 // [unit-tester:keep] security boundary -- authenticated project ws users must have UUID subjects
 func TestProjectWS_AuthFailedForNonUUIDUserID(t *testing.T) {
 	resolver := &testProjectCollabResolver{allowed: true, projectID: testProjectID}
@@ -212,7 +273,7 @@ func TestProjectWS_AuthFailedForNonUUIDUserID(t *testing.T) {
 			testToken: {UserID: "not-a-uuid"},
 		},
 	}
-	server := newTestProjectCollabServer(t, resolver, verifier, nil)
+	server := newTestProjectCollabServer(t, resolver, verifier, nil, nil)
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProjectID)
@@ -240,7 +301,7 @@ func TestProjectWS_AuthDeniedForBlockedProdPattern(t *testing.T) {
 			},
 		},
 	}
-	server := newTestProjectCollabServer(t, resolver, verifier, &config.Config{
+	server := newTestProjectCollabServer(t, resolver, verifier, nil, &config.Config{
 		Environment:           "prod",
 		BlockedProdIdentities: []string{"test-*@my-domain.com"},
 	})
@@ -265,7 +326,7 @@ func TestProjectWS_AuthDeniedForBlockedProdPattern(t *testing.T) {
 func TestProjectWS_MalformedProjectID(t *testing.T) {
 	resolver := &testProjectCollabResolver{allowed: true, projectID: testProjectID}
 	verifier := &testJWTVerifier{tokens: map[string]*models.AuthClaims{}}
-	server := newTestProjectCollabServer(t, resolver, verifier, nil)
+	server := newTestProjectCollabServer(t, resolver, verifier, nil, nil)
 	defer server.Close()
 
 	resp, err := http.Get(server.URL + "/ws/projects/not-a-uuid")
@@ -288,7 +349,7 @@ func TestProjectWS_HeartbeatAfterConnect(t *testing.T) {
 			testToken: {UserID: testUserID},
 		},
 	}
-	server := newTestProjectCollabServer(t, resolver, verifier, nil)
+	server := newTestProjectCollabServer(t, resolver, verifier, nil, nil)
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProjectID)
@@ -317,7 +378,7 @@ func TestProjectWS_UnknownMessageTypeIgnored(t *testing.T) {
 			testToken: {UserID: testUserID},
 		},
 	}
-	server := newTestProjectCollabServer(t, resolver, verifier, nil)
+	server := newTestProjectCollabServer(t, resolver, verifier, nil, nil)
 	defer server.Close()
 
 	conn := dialProjectWS(t, server.URL, testProjectID)

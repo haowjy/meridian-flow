@@ -308,12 +308,13 @@ func main() {
 		proposalService,
 		proposalStore,
 		jwtVerifier,
+		authorizer,
 		logger,
 		cfg,
 		projectConnectionRegistry,
 		collabDocumentHandler,
 	)
-	collabRestoreHandler := handler.NewCollabRestoreHandler(restoreService, cfg)
+	collabRestoreHandler := handler.NewCollabRestoreHandler(restoreService, authorizer, cfg)
 	// Start append-only compaction worker goroutine.
 	compactionWorker := serviceCollab.NewCompactionWorker(
 		updateLogStore,

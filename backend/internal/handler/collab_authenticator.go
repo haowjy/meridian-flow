@@ -16,8 +16,9 @@ import (
 
 // collabAuthResult holds the outcome of a successful websocket auth bootstrap.
 type collabAuthResult struct {
-	UserID   string
-	UserUUID uuid.UUID
+	UserID    string
+	UserUUID  uuid.UUID
+	JWTExpiry time.Time
 }
 
 // collabAuthenticator encapsulates all authentication and authorization checks
@@ -102,7 +103,12 @@ func (a *collabAuthenticator) bootstrapAuth(
 			"error", err,
 		)
 	}
-	return &collabAuthResult{UserID: userID, UserUUID: userUUID}, nil
+	jwtExpiry := time.Time{}
+	if claims.ExpiresAt != nil {
+		jwtExpiry = *claims.ExpiresAt
+	}
+
+	return &collabAuthResult{UserID: userID, UserUUID: userUUID, JWTExpiry: jwtExpiry}, nil
 }
 
 // checkDocumentAccess verifies the user owns the document and that the document
