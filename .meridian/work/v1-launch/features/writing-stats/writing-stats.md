@@ -1,5 +1,7 @@
 # Writing Stats
 
+> **Status: Cut from v1 scope. See post-v1 roadmap.**
+
 Session-level and project-level writing statistics.
 
 ## Scope

@@ -164,7 +164,7 @@ Thread ops are **local-first** -- the frontend applies the transaction directly,
 
 ### Storage
 
-Thread-level operations use fields on `${TABLE_PREFIX}proposals` (see [Schema Design](schema-design.md)):
+Thread-level operations use fields on `${TABLE_PREFIX}proposals` (schema not yet documented separately):
 
 | Column | Type | Purpose |
 |---|---|---|
@@ -195,7 +195,7 @@ Unlike blind `indexOf`, the search uses the stored offset to disambiguate repeat
 2. If multiple matches exist within the window, use the one closest to the stored offset.
 3. If no match within the tolerance window, return conflict. **No full-document fallback** — expanding beyond the window risks replacing the wrong occurrence in fiction with repeated phrases.
 
-For `accepted → reverted` (undo), the stored offset is `accepted_at_offset`. For `rejected → accepted` (reapply from rejected), the stored offset is `proposed_at_offset` (set at proposal creation time — see [Schema Design](schema-design.md)).
+For `accepted → reverted` (undo), the stored offset is `accepted_at_offset`. For `rejected → accepted` (reapply from rejected), the stored offset is `proposed_at_offset` (set at proposal creation time).
 
 This handles fiction writing's repeated phrases ("she said", "he nodded") by anchoring to the original edit position.
 
@@ -242,7 +242,7 @@ This is correct behavior — the writer should use session Ctrl-Z for recently-a
 
 ### Turn-Level Restore
 
-When per-proposal thread undo fails (e.g., due to conflict or overlapping edits), the writer can restore the document to the state before an entire AI turn. This uses `ai_turn` bookmarks from the append-only update log (see [Append-Only Persistence](append-only-persistence.md)).
+When per-proposal thread undo fails (e.g., due to conflict or overlapping edits), the writer can restore the document to the state before an entire AI turn. This uses `ai_turn` bookmarks from the append-only update log (append-only persistence not yet documented separately).
 
 | Action | Scope | Mechanism | Availability |
 |--------|-------|-----------|-------------|
@@ -350,7 +350,7 @@ Reverted proposals are not projection inputs. After accept, proposal CRDT items 
 
 ## Examples
 
-For thread-level undo/reapply/conflict walkthroughs, see [Thread Undo UX](../ux/thread-undo.md).
+For thread-level undo/reapply/conflict walkthroughs, see Thread Undo UX (not yet documented separately).
 
 ### Why Reject Needs Y.Map
 
@@ -410,8 +410,8 @@ UndoManager reverses:
 
 ## Cross-References
 
-- [Architecture](architecture.md)
-- [Local-First Authority](local-first-authority.md) -- transaction code, backend mirror
+- Architecture -- not yet documented separately; see [foundations/domain-architecture.md](../../foundations/domain-architecture.md)
+- Local-First Authority -- not yet documented separately (transaction code, backend mirror)
 - [Frontend Diff Model](frontend-diff-model.md)
-- [Schema Design](schema-design.md) -- proposal table, `_proposal_status` shape
-- [Implementation Plan](plan.md)
+- Schema Design -- not yet documented separately (proposal table, `_proposal_status` shape)
+- Implementation Plan -- see [plan/implementation-plan.md](../../plan/implementation-plan.md)

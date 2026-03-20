@@ -6,8 +6,9 @@ Project and document import/export for portability.
 
 ### Export
 - **Zip archive** — full project export (documents, folder structure, `.agents/` config)
-- **EPUB export** — table of contents, chapter breaks, metadata. For distribution to readers.
 - **Single document** — markdown download
+
+> **Post-v1:** EPUB export (table of contents, chapter breaks, metadata; for distribution to readers) is deferred.
 
 ### Import
 - **Zip archive** — restore full project from export

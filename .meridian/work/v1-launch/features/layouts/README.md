@@ -94,10 +94,10 @@ The shell stays writer-first, but the taxonomy stays flexible because project st
 
 | Spec | Purpose |
 |---|---|
-| [Layout Architecture](spec/layout-architecture.md) | Converse/Studio panel layouts, mode switching, state scoping |
-| [Collab v2 Integration](spec/collab-v2-integration.md) | Inline review, hunk toolbar, proposal quick actions, decoration layers |
-| [Studio Chrome](spec/studio-chrome.md) | Tab bar, file explorer, tab lifecycle |
-| [Editor Direction](spec/editor-direction.md) | CM6 live preview rebuild, decoration architecture, formatting toolbar |
+| [Layout Architecture](layout-architecture.md) | Converse/Studio panel layouts, mode switching, state scoping |
+| [Collab v2 Integration](../collab/collab-v2-integration.md) | Inline review, hunk toolbar, proposal quick actions, decoration layers |
+| [Studio Chrome](studio-chrome.md) | Tab bar, file explorer, tab lifecycle |
+| [Editor Direction](../editor/editor-direction.md) | CM6 live preview rebuild, decoration architecture, formatting toolbar |
 
 ## Frontend v2 Approach
 

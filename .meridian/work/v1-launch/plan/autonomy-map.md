@@ -8,11 +8,11 @@ These have clear acceptance criteria — tests pass, API works, migration succee
 
 | Feature | What gets built | Verification |
 |---------|----------------|--------------|
-| **A1. Billing Backend** | Credit ledger, Stripe webhook, reservation middleware, FIFO lots | Unit tests for atomicity, FIFO ordering, idempotency. Smoke test: Stripe test mode purchase -> credits appear. |
+| **A1. Billing Backend** | Credit ledger, Stripe webhook, credit-check middleware (check-per-inference-step, no reservations), FIFO lots | Unit tests for atomicity, FIFO ordering, idempotency. Smoke test: Stripe test mode purchase -> credits appear. |
 | **A2. Auth Backend** | Free tier grant endpoint, JWKS validation | Signup -> credits granted. JWT validates. |
 | **A3. Agents+Skills Backend** | Skill resolver from doc tree, `.agents/` filter, git import endpoint, migration | Skill resolves from file. Explorer API hides `.agents/`. Git import creates documents. Migration preserves data. |
 | **A4. Work Items Backend** | DB schema, CRUD API, artifact space, archive/reopen | Full CRUD. Thread grouping. Artifact folder created. Archive makes read-only. |
-| **A5. Agent Tools Backend** | Write routing, context variable injection, permission boundaries | Write to doc -> Yjs. Write to `.work/` -> direct. Write to `.agents/` -> 403. Variables resolve. |
+| **A5. Agent Tools Backend** | Write routing, context variable injection, permission boundaries | Write to doc -> Yjs. Write to `.meridian/work/` -> direct. Write to `.agents/` -> 403. Variables resolve. |
 | **A5b. just-bash Sidecar** | TS sidecar, virtual FS mount, internal API | `cat file.md` returns content. `echo > file.md` creates document. No network/package escape. |
 
 ### Frontend Infrastructure
@@ -20,7 +20,7 @@ These have clear acceptance criteria — tests pass, API works, migration succee
 | Feature | What gets built | Verification |
 |---------|----------------|--------------|
 | **C1. Data Layer** | Optimistic flow, Dexie schema, sync service ports | Optimistic render < 16ms. Queue drains on reconnect. Dexie persists across reload. |
-| **F1. CM6 Shared Extensions** | Theme, keybindings, markdown decorations, mention autocomplete scaffold | CM6 renders with theme tokens. Markdown decorates correctly. `@` trigger fires. |
+| **F1. CM6 Primitives** | Theme, keybindings only (narrowed scope -- markdown decorations owned by Editor F4, mention autocomplete by @Mentions F8) | CM6 renders with theme tokens. Keybindings fire. |
 | **F3. Connectivity** | WebSocket manager, offline queue, SSE resilience | Reconnect after drop. Queue drains. Last-Event-ID resumes. |
 
 ### Frontend Logic (no UI judgment needed)
@@ -29,7 +29,7 @@ These have clear acceptance criteria — tests pass, API works, migration succee
 |---------|----------------|--------------|
 | **F8. @Mentions (data layer)** | Mention entity schema, stable IDs, rename handling, fuzzy search | Mention survives rename. Fuzzy matches. Cross-surface paste preserves. |
 | **F18. Prose Analysis (engine)** | Sentence length, passive voice, adverb density, readability algorithms | Correct detection rates on sample texts. No false positives on dialogue. |
-| **F17. Writing Stats (computation)** | Word count diffing, daily aggregation, streak logic, deadline projection | Counts match manual count. Streaks compute correctly. Projection math works. |
+| **F17. Writing Stats (computation)** | ~~Cut from v1 scope~~ -- see writing-stats.md | N/A |
 
 **Total: ~15 workstreams that can run fully autonomously.**
 

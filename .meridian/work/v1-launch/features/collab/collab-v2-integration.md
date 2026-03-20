@@ -45,9 +45,9 @@ Floating toolbar appears above the active hunk (hunk nearest cursor).
 
 Thread-scoped undo reverts the last accepted/rejected hunk for that thread's proposal.
 
-- `Cmd+Z` in editor triggers standard CM6 undo (character-level)
+- `Cmd+Z` in the document editor is handled by Y.UndoManager. CM6 built-in undo is disabled in the document editor -- Y.UndoManager is the single source of truth for document editor undo. See [Undo Design](undo.md).
+- Chat input uses independent CM6 local history (isolated from the document editor undo stack)
 - Thread undo is a separate action: button in hunk toolbar or thread panel
-- Uses `Y.UndoManager` scoped to the thread's operations
 
 ## Thread-Side Components
 
@@ -149,5 +149,5 @@ Each layer is a separate CM6 `ViewPlugin` with its own `DecorationSet`. Layers c
 
 - [Layout Architecture](layout-architecture.md) -- panel sizing and mode switching
 - [Editor Direction](editor-direction.md) -- live preview and decoration architecture
-- [Collab v2 Frontend Diff Model](../../collab-data-model-v2/spec/frontend-diff-model.md) -- hunk data model
-- [Collab v2 Undo Design](../../collab-data-model-v2/spec/undo.md) -- undo mechanics
+- [Frontend Diff Model](frontend-diff-model.md) -- hunk data model
+- [Undo Design](undo.md) -- undo mechanics
