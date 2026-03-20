@@ -19,7 +19,7 @@ const (
 	// NamespaceSession is the virtual session namespace for ephemeral storage (/.session/**)
 	NamespaceSession Namespace = ".session"
 
-	// NamespaceAgents is the agent profile namespace (/.agents/**), readable but not writable by agents.
+	// NamespaceAgents is the agent profile namespace (/.agents/**), writable but review-gated via folder autoapply.
 	NamespaceAgents Namespace = ".agents"
 )
 

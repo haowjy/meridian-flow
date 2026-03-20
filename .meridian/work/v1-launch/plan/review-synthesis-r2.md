@@ -52,7 +52,7 @@ When backend broadcasts `document:restored`, the frontend runtime preserves the 
 
 **Action:** Require `CanAccessProject` on WS connect, bind broadcasts to authorized user/project session. **Fix before v1 launch — this is a data leak.**
 
-**Status:** OPEN — existing bug in current code, not just a design gap.
+**Status:** RESOLVED (project WS auth fixed)
 
 ---
 
@@ -63,7 +63,7 @@ When backend broadcasts `document:restored`, the frontend runtime preserves the 
 
 **Action:** Add ownership chain validation: `turn -> thread -> project -> owner` before listing bookmarks or restoring state.
 
-**Status:** OPEN — existing bug in current code.
+**Status:** RESOLVED (restore ownership fixed)
 
 ---
 
@@ -98,7 +98,7 @@ Multiple docs still reference `.work/` while the canonical path is `.meridian/wo
 
 **Action:** Scrub all docs for `.work/` references. Replace with `.meridian/work/`.
 
-**Status:** RESOLVED — needs doc scrub only.
+**Status:** RESOLVED
 
 ---
 
@@ -169,10 +169,14 @@ Document WS has periodic JWT recheck; project WS does not. Connection can persis
 
 **Action:** Add JWT expiry check to project WS heartbeat loop, matching document WS pattern.
 
+**Status:** RESOLVED (JWT expiry check added)
+
 ### H14. `.agents/` namespace not enforced (p107)
 Current namespace parser only recognizes `.meridian` and `.session`. Agent tool permission boundary for `.agents/` is design-only.
 
-**Action:** Make `.agents` a first-class namespace. Enforce read-only policy for agents.
+**Action:** Make `.agents` a first-class namespace. Enforce autoapply enforcement needed in proposal acceptance — writes to `.agents/` are accepted but routed through the review queue (autoapply=false) rather than rejected outright.
+
+**Status:** OPEN — autoapply enforcement needed in proposal acceptance path
 
 ### H15. Medium/Compact responsive behavior undesigned (p109, p108)
 Breakpoints exist, intent clear, but no spec for: toggle placement, drawer interaction, overlay stacking, focus management, or compact rail behavior.
@@ -207,7 +211,11 @@ Design says Radix + shadcn + Phosphor but rebuild code hasn't been updated.
 ### M8. Import/Export doc still includes EPUB (p108, p111)
 Plan cuts EPUB; feature doc still includes it.
 
+**Status:** RESOLVED (EPUB deferred)
+
 ### M9. Thread spec includes @mentions despite being moved to Round 2b (p108)
+
+**Status:** RESOLVED (@mentions moved to F8)
 
 ### M10. Autonomy map stale (p108)
 Still references reservation billing, old F1 scope, claims ~15 fully autonomous streams.

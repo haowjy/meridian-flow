@@ -153,7 +153,7 @@ Implements domain interfaces. Only knows SQL and domain types.
 | Skill file read | Repository (`DocumentStore`) | Data access |
 | Write routing by target path | Service (`WriteRouter`) | Business rule: path → mechanism |
 | Context variable injection | Service (`AgentContextService`) | Business logic: resolve $MERIDIAN_WORK_DIR |
-| .agents/ write rejection | Service (`WriteRouter`) | Business rule (authorization) |
+| .agents/ write routing (review-gated) | Service (`WriteRouter`) | Business rule: writes to .agents/ accepted but marked autoapply=false for user review |
 | Git import clone + create docs | Service (`AgentImportService`) | Orchestration; repo handles doc creation |
 | Work item CRUD | Service → Repository | Standard CRUD through layers |
 | Artifact space creation | Service (`WorkItemService`) | Creates folder via DocumentStore interface |

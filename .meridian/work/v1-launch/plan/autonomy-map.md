@@ -12,7 +12,7 @@ These have clear acceptance criteria — tests pass, API works, migration succee
 | **A2. Auth Backend** | Free tier grant endpoint, JWKS validation | Signup -> credits granted. JWT validates. |
 | **A3. Agents+Skills Backend** | Skill resolver from doc tree, `.agents/` filter, git import endpoint, migration | Skill resolves from file. Explorer API hides `.agents/`. Git import creates documents. Migration preserves data. |
 | **A4. Work Items Backend** | DB schema, CRUD API, artifact space, archive/reopen | Full CRUD. Thread grouping. Artifact folder created. Archive makes read-only. |
-| **A5. Agent Tools Backend** | Write routing, context variable injection, permission boundaries | Write to doc -> Yjs. Write to `.meridian/work/` -> direct. Write to `.agents/` -> 403. Variables resolve. |
+| **A5. Agent Tools Backend** | Write routing, context variable injection, permission boundaries | Write to doc -> Yjs. Write to `.meridian/work/` -> direct. Write to `.agents/` -> review queue (autoapply=false). Variables resolve. |
 | **A5b. just-bash Sidecar** | TS sidecar, virtual FS mount, internal API | `cat file.md` returns content. `echo > file.md` creates document. No network/package escape. |
 
 ### Frontend Infrastructure
