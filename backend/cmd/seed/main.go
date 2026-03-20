@@ -10,6 +10,8 @@ import (
 
 	"meridian/internal/auth"
 	"meridian/internal/config"
+	"meridian/internal/domain/repositories"
+	docsysRepo "meridian/internal/domain/repositories/docsystem"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	"meridian/internal/repository/postgres"
 	postgresDocsys "meridian/internal/repository/postgres/docsystem"
@@ -102,7 +104,7 @@ func main() {
 	docRepo := postgresDocsys.NewDocumentRepository(repoConfig)
 	folderRepo := postgresDocsys.NewFolderRepository(repoConfig)
 	txManager := postgres.NewTransactionManager(pool)
-	projectService := serviceDocsys.NewProjectService(projectRepo, logger)
+	projectService := serviceDocsys.NewProjectService(projectRepo, folderRepo, txManager, logger)
 
 	// Thread/turn repos for authorizer (needed for auth chain: turn -> thread -> project -> user)
 	threadRepo := postgresLLM.NewThreadRepository(repoConfig)
@@ -143,6 +145,9 @@ func main() {
 		log.Println("🧹 Clearing existing documents and folders...")
 		if err := clearProjectData(ctx, pool, tables, projectID); err != nil {
 			log.Fatalf("Failed to clear data: %v", err)
+		}
+		if err := bootstrapSystemFolders(ctx, folderRepo, txManager, projectID); err != nil {
+			log.Fatalf("Failed to recreate system folders: %v", err)
 		}
 		log.Println("✅ Data cleared successfully")
 		return
@@ -240,4 +245,19 @@ func clearProjectData(ctx context.Context, pool *pgxpool.Pool, tables *postgres.
 	}
 
 	return nil
+}
+
+func bootstrapSystemFolders(ctx context.Context, folderRepo docsysRepo.FolderRepository, txManager repositories.TransactionManager, projectID string) error {
+	return txManager.ExecTx(ctx, func(txCtx context.Context) error {
+		if _, err := folderRepo.CreateSystemIfNotExists(txCtx, projectID, string(docsysSvc.NamespaceMeridian), nil); err != nil {
+			return err
+		}
+
+		agentsAutoapply := false
+		if _, err := folderRepo.CreateSystemIfNotExists(txCtx, projectID, string(docsysSvc.NamespaceAgents), &agentsAutoapply); err != nil {
+			return err
+		}
+
+		return nil
+	})
 }

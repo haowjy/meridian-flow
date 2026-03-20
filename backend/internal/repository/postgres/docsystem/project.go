@@ -19,6 +19,8 @@ type PostgresProjectRepository struct {
 	tables *postgres.TableNames
 }
 
+const projectSelectColumns = "p.id, p.user_id, p.name, p.slug, p.system_prompt, p.autoapply, p.preferences, p.last_activity_at, p.created_at, p.updated_at"
+
 // NewProjectRepository creates a new project repository
 func NewProjectRepository(config *postgres.RepositoryConfig) docsysRepo.ProjectRepository {
 	return &PostgresProjectRepository{
@@ -30,9 +32,9 @@ func NewProjectRepository(config *postgres.RepositoryConfig) docsysRepo.ProjectR
 // Create creates a new project
 func (r *PostgresProjectRepository) Create(ctx context.Context, project *models.Project) error {
 	query := fmt.Sprintf(`
-		INSERT INTO %s (user_id, name, slug, created_at, updated_at, last_activity_at)
-		VALUES ($1, $2, $3, $4, $5, $5)
-		RETURNING id, created_at, updated_at, last_activity_at
+		INSERT INTO %s (user_id, name, slug, autoapply, created_at, updated_at, last_activity_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $6)
+		RETURNING id, autoapply, created_at, updated_at, last_activity_at
 	`, r.tables.Projects)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
@@ -40,10 +42,12 @@ func (r *PostgresProjectRepository) Create(ctx context.Context, project *models.
 		project.UserID,
 		project.Name,
 		project.Slug,
+		project.Autoapply,
 		project.CreatedAt,
 		project.UpdatedAt,
 	).Scan(
 		&project.ID,
+		&project.Autoapply,
 		&project.CreatedAt,
 		&project.UpdatedAt,
 		&project.LastActivityAt,
@@ -72,12 +76,12 @@ func (r *PostgresProjectRepository) Create(ctx context.Context, project *models.
 // GetByID retrieves a project by ID with favorite status
 func (r *PostgresProjectRepository) GetByID(ctx context.Context, id, userID string) (*models.Project, error) {
 	query := fmt.Sprintf(`
-		SELECT p.id, p.user_id, p.name, p.slug, p.system_prompt, p.preferences, p.last_activity_at, p.created_at, p.updated_at,
+		SELECT %s,
 		       (f.user_id IS NOT NULL) AS is_favorite
 		FROM %s p
 		LEFT JOIN %s f ON p.id = f.project_id AND f.user_id = $2
 		WHERE p.id = $1 AND p.user_id = $2 AND p.deleted_at IS NULL
-	`, r.tables.Projects, r.tables.UserProjectFavorites)
+	`, projectSelectColumns, r.tables.Projects, r.tables.UserProjectFavorites)
 
 	var project models.Project
 	executor := postgres.GetExecutor(ctx, r.pool)
@@ -87,6 +91,7 @@ func (r *PostgresProjectRepository) GetByID(ctx context.Context, id, userID stri
 		&project.Name,
 		&project.Slug,
 		&project.SystemPrompt,
+		&project.Autoapply,
 		&project.Preferences,
 		&project.LastActivityAt,
 		&project.CreatedAt,
@@ -108,12 +113,12 @@ func (r *PostgresProjectRepository) GetByID(ctx context.Context, id, userID stri
 // GetBySlug retrieves a project by slug (unique per user) with favorite status
 func (r *PostgresProjectRepository) GetBySlug(ctx context.Context, slug, userID string) (*models.Project, error) {
 	query := fmt.Sprintf(`
-		SELECT p.id, p.user_id, p.name, p.slug, p.system_prompt, p.preferences, p.last_activity_at, p.created_at, p.updated_at,
+		SELECT %s,
 		       (f.user_id IS NOT NULL) AS is_favorite
 		FROM %s p
 		LEFT JOIN %s f ON p.id = f.project_id AND f.user_id = $2
 		WHERE p.slug = $1 AND p.user_id = $2 AND p.deleted_at IS NULL
-	`, r.tables.Projects, r.tables.UserProjectFavorites)
+	`, projectSelectColumns, r.tables.Projects, r.tables.UserProjectFavorites)
 
 	var project models.Project
 	executor := postgres.GetExecutor(ctx, r.pool)
@@ -123,6 +128,7 @@ func (r *PostgresProjectRepository) GetBySlug(ctx context.Context, slug, userID 
 		&project.Name,
 		&project.Slug,
 		&project.SystemPrompt,
+		&project.Autoapply,
 		&project.Preferences,
 		&project.LastActivityAt,
 		&project.CreatedAt,
@@ -177,13 +183,13 @@ func (r *PostgresProjectRepository) SlugExists(ctx context.Context, slug, userID
 // List retrieves all projects for a user with favorite status, ordered by last_activity_at DESC
 func (r *PostgresProjectRepository) List(ctx context.Context, userID string) ([]models.Project, error) {
 	query := fmt.Sprintf(`
-		SELECT p.id, p.user_id, p.name, p.slug, p.system_prompt, p.preferences, p.last_activity_at, p.created_at, p.updated_at,
+		SELECT %s,
 		       (f.user_id IS NOT NULL) AS is_favorite
 		FROM %s p
 		LEFT JOIN %s f ON p.id = f.project_id AND f.user_id = $1
 		WHERE p.user_id = $1 AND p.deleted_at IS NULL
 		ORDER BY p.last_activity_at DESC
-	`, r.tables.Projects, r.tables.UserProjectFavorites)
+	`, projectSelectColumns, r.tables.Projects, r.tables.UserProjectFavorites)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
 	rows, err := executor.Query(ctx, query, userID)
@@ -201,6 +207,7 @@ func (r *PostgresProjectRepository) List(ctx context.Context, userID string) ([]
 			&project.Name,
 			&project.Slug,
 			&project.SystemPrompt,
+			&project.Autoapply,
 			&project.Preferences,
 			&project.LastActivityAt,
 			&project.CreatedAt,
@@ -229,8 +236,8 @@ func (r *PostgresProjectRepository) List(ctx context.Context, userID string) ([]
 func (r *PostgresProjectRepository) Update(ctx context.Context, project *models.Project) error {
 	query := fmt.Sprintf(`
 		UPDATE %s
-		SET name = $1, slug = $2, system_prompt = $3, preferences = $4, updated_at = $5
-		WHERE id = $6 AND user_id = $7 AND deleted_at IS NULL
+		SET name = $1, slug = $2, system_prompt = $3, autoapply = $4, preferences = $5, updated_at = $6
+		WHERE id = $7 AND user_id = $8 AND deleted_at IS NULL
 	`, r.tables.Projects)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
@@ -238,6 +245,7 @@ func (r *PostgresProjectRepository) Update(ctx context.Context, project *models.
 		project.Name,
 		project.Slug,
 		project.SystemPrompt,
+		project.Autoapply,
 		project.Preferences,
 		project.UpdatedAt,
 		project.ID,
@@ -275,7 +283,7 @@ func (r *PostgresProjectRepository) Delete(ctx context.Context, id, userID strin
 		UPDATE %s
 		SET deleted_at = NOW()
 		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
-		RETURNING id, user_id, name, slug, system_prompt, preferences, last_activity_at, created_at, updated_at, deleted_at
+		RETURNING id, user_id, name, slug, system_prompt, autoapply, preferences, last_activity_at, created_at, updated_at, deleted_at
 	`, r.tables.Projects)
 
 	var project models.Project
@@ -286,6 +294,7 @@ func (r *PostgresProjectRepository) Delete(ctx context.Context, id, userID strin
 		&project.Name,
 		&project.Slug,
 		&project.SystemPrompt,
+		&project.Autoapply,
 		&project.Preferences,
 		&project.LastActivityAt,
 		&project.CreatedAt,

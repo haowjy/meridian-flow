@@ -40,10 +40,10 @@ type CreateFolderRequest struct {
 
 // UpdateFolderRequest represents a folder update request
 // Uses optional.Optional[string] for FolderID tri-state semantics (RFC 7396 PATCH)
+// ProjectID is not needed — derived from the folder record via folderID in the URL.
 type UpdateFolderRequest struct {
-	ProjectID string
-	Name      *string                   // rename
-	FolderID  optional.Optional[string] // Tri-state: absent=don't change, null=root, value=folder
+	Name     *string                   // rename
+	FolderID optional.Optional[string] // Tri-state: absent=don't change, null=root, value=folder
 }
 
 // FolderContents represents a folder with its children

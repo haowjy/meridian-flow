@@ -8,7 +8,7 @@ import (
 
 // FolderFilterOptions controls which folders are returned
 type FolderFilterOptions struct {
-	IncludeHidden bool // Default false: exclude is_hidden=true folders
+	IncludeHidden bool // Default false: exclude hidden/system folders
 }
 
 // FolderRepository defines data access operations for folders
@@ -41,6 +41,9 @@ type FolderRepository interface {
 
 	// CreateHiddenIfNotExists creates a hidden folder only if it doesn't exist
 	CreateHiddenIfNotExists(ctx context.Context, projectID string, parentID *string, name string) (*docsystem.Folder, error)
+
+	// CreateSystemIfNotExists creates a root-level system folder only if it doesn't exist.
+	CreateSystemIfNotExists(ctx context.Context, projectID, name string, autoapply *bool) (*docsystem.Folder, error)
 
 	// GetPath computes the path for a folder
 	GetPath(ctx context.Context, folderID *string, projectID string) (string, error)

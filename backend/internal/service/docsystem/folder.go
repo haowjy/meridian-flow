@@ -214,6 +214,9 @@ func (s *folderService) UpdateFolder(ctx context.Context, userID, folderID strin
 	if err != nil {
 		return nil, err
 	}
+	if folder.IsSystem {
+		return nil, domain.NewForbiddenError("cannot modify system folder")
+	}
 
 	// Track original values for logging purposes
 	originalName := folder.Name
@@ -318,6 +321,9 @@ func (s *folderService) DeleteFolder(ctx context.Context, userID, folderID strin
 	if err != nil {
 		return err
 	}
+	if folder.IsSystem {
+		return domain.NewForbiddenError("cannot modify system folder")
+	}
 
 	// Recursively delete all descendants (child folders and documents)
 	if err := s.deleteDescendants(ctx, userID, folderID, folder.ProjectID); err != nil {
@@ -356,6 +362,9 @@ func (s *folderService) deleteDescendants(ctx context.Context, userID, folderID,
 	}
 
 	for _, child := range childFolders {
+		if child.IsSystem {
+			return domain.NewForbiddenError(fmt.Sprintf("cannot delete: contains system folder %q", child.Name))
+		}
 		// Recursively delete this child's descendants first
 		if err := s.deleteDescendants(ctx, userID, child.ID, projectID); err != nil {
 			return err
@@ -450,9 +459,7 @@ func (s *folderService) validateUpdateRequest(req *docsysSvc.UpdateFolderRequest
 		return fmt.Errorf("at least one field must be provided")
 	}
 
-	rules := []*validation.FieldRules{
-		validation.Field(&req.ProjectID, validation.Required),
-	}
+	var rules []*validation.FieldRules
 
 	if req.Name != nil {
 		rules = append(rules,

@@ -6,7 +6,7 @@ import (
 
 // TreeOptions controls tree building behavior
 type TreeOptions struct {
-	IncludeHidden bool // Default false: exclude is_hidden=true folders
+	IncludeHidden bool // Default false: exclude is_hidden=true and is_system=true folders
 }
 
 // TreeService defines operations for building document trees

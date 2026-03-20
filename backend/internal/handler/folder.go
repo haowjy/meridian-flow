@@ -85,9 +85,8 @@ func (h *FolderHandler) GetFolder(w http.ResponseWriter, r *http.Request) {
 //   - field null = move to root
 //   - field has value = move to folder
 type updateFolderDTO struct {
-	ProjectID string                    `json:"project_id"`
-	Name      *string                   `json:"name,omitempty"`
-	FolderID  optional.Optional[string] `json:"folder_id"`
+	Name     *string                   `json:"name,omitempty"`
+	FolderID optional.Optional[string] `json:"folder_id"`
 }
 
 // UpdateFolder updates a folder (rename or move)
@@ -113,9 +112,8 @@ func (h *FolderHandler) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 
 	// Map transport DTO to service request
 	req := &docsysSvc.UpdateFolderRequest{
-		ProjectID: dto.ProjectID,
-		Name:      dto.Name,
-		FolderID:  dto.FolderID,
+		Name:     dto.Name,
+		FolderID: dto.FolderID,
 	}
 
 	// Get userID from context (set by auth middleware)

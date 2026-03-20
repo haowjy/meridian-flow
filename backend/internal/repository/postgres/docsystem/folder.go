@@ -21,6 +21,8 @@ type PostgresFolderRepository struct {
 	tables *postgres.TableNames
 }
 
+const folderSelectColumns = "id, project_id, parent_id, name, is_hidden, is_system, description, autoapply, metadata, created_at, updated_at"
+
 // NewFolderRepository creates a new folder repository
 func NewFolderRepository(config *postgres.RepositoryConfig) docsysRepo.FolderRepository {
 	return &PostgresFolderRepository{
@@ -31,6 +33,8 @@ func NewFolderRepository(config *postgres.RepositoryConfig) docsysRepo.FolderRep
 
 // Create creates a new folder (is_hidden defaults to false)
 func (r *PostgresFolderRepository) Create(ctx context.Context, folder *models.Folder) error {
+	folder.EnsureMetadata()
+
 	// Guard against duplicates at the application level
 	existing, err := r.getFolderByNameAndParent(ctx, folder.ProjectID, folder.Name, folder.ParentID)
 	if err != nil {
@@ -46,20 +50,24 @@ func (r *PostgresFolderRepository) Create(ctx context.Context, folder *models.Fo
 	}
 
 	query := fmt.Sprintf(`
-		INSERT INTO %s (project_id, parent_id, name, is_hidden, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, is_hidden, created_at, updated_at
-	`, r.tables.Folders)
+		INSERT INTO %s (project_id, parent_id, name, is_hidden, is_system, description, autoapply, metadata, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		RETURNING %s
+	`, r.tables.Folders, folderSelectColumns)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
-	err = executor.QueryRow(ctx, query,
+	err = scanFolder(executor.QueryRow(ctx, query,
 		folder.ProjectID,
 		folder.ParentID,
 		folder.Name,
 		folder.IsHidden,
+		folder.IsSystem,
+		folder.Description,
+		folder.Autoapply,
+		folder.Metadata,
 		folder.CreatedAt,
 		folder.UpdatedAt,
-	).Scan(&folder.ID, &folder.IsHidden, &folder.CreatedAt, &folder.UpdatedAt)
+	), folder)
 
 	if err != nil {
 		if postgres.IsPgDuplicateError(err) {
@@ -111,25 +119,47 @@ func (r *PostgresFolderRepository) CreateHidden(ctx context.Context, folder *mod
 	return r.Create(ctx, folder)
 }
 
+// CreateSystemIfNotExists creates a root-level system folder only if it doesn't exist.
+func (r *PostgresFolderRepository) CreateSystemIfNotExists(ctx context.Context, projectID, name string, autoapply *bool) (*models.Folder, error) {
+	existing, err := r.getFolderByNameAndParent(ctx, projectID, name, nil)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil
+	}
+
+	now := time.Now()
+	folder := &models.Folder{
+		ProjectID:   projectID,
+		Name:        name,
+		IsHidden:    true,
+		IsSystem:    true,
+		Autoapply:   autoapply,
+		Metadata:    map[string]interface{}{},
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		Description: nil,
+	}
+
+	if err := r.Create(ctx, folder); err != nil {
+		return nil, err
+	}
+
+	return folder, nil
+}
+
 // GetByID retrieves a folder by ID
 func (r *PostgresFolderRepository) GetByID(ctx context.Context, id, projectID string) (*models.Folder, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, parent_id, name, is_hidden, created_at, updated_at
+		SELECT %s
 		FROM %s
 		WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
-	`, r.tables.Folders)
+	`, folderSelectColumns, r.tables.Folders)
 
 	var folder models.Folder
 	executor := postgres.GetExecutor(ctx, r.pool)
-	err := executor.QueryRow(ctx, query, id, projectID).Scan(
-		&folder.ID,
-		&folder.ProjectID,
-		&folder.ParentID,
-		&folder.Name,
-		&folder.IsHidden,
-		&folder.CreatedAt,
-		&folder.UpdatedAt,
-	)
+	err := scanFolder(executor.QueryRow(ctx, query, id, projectID), &folder)
 
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
@@ -146,22 +176,14 @@ func (r *PostgresFolderRepository) GetByID(ctx context.Context, id, projectID st
 // Use when authorization is handled separately (e.g., by ResourceAuthorizer)
 func (r *PostgresFolderRepository) GetByIDOnly(ctx context.Context, id string) (*models.Folder, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, parent_id, name, is_hidden, created_at, updated_at
+		SELECT %s
 		FROM %s
 		WHERE id = $1 AND deleted_at IS NULL
-	`, r.tables.Folders)
+	`, folderSelectColumns, r.tables.Folders)
 
 	var folder models.Folder
 	executor := postgres.GetExecutor(ctx, r.pool)
-	err := executor.QueryRow(ctx, query, id).Scan(
-		&folder.ID,
-		&folder.ProjectID,
-		&folder.ParentID,
-		&folder.Name,
-		&folder.IsHidden,
-		&folder.CreatedAt,
-		&folder.UpdatedAt,
-	)
+	err := scanFolder(executor.QueryRow(ctx, query, id), &folder)
 
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
@@ -176,16 +198,23 @@ func (r *PostgresFolderRepository) GetByIDOnly(ctx context.Context, id string) (
 
 // Update updates a folder
 func (r *PostgresFolderRepository) Update(ctx context.Context, folder *models.Folder) error {
+	folder.EnsureMetadata()
+
 	query := fmt.Sprintf(`
 		UPDATE %s
-		SET parent_id = $1, name = $2, updated_at = $3
-		WHERE id = $4 AND project_id = $5 AND deleted_at IS NULL
+		SET parent_id = $1, name = $2, is_hidden = $3, is_system = $4, description = $5, autoapply = $6, metadata = $7, updated_at = $8
+		WHERE id = $9 AND project_id = $10 AND deleted_at IS NULL
 	`, r.tables.Folders)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
 	result, err := executor.Exec(ctx, query,
 		folder.ParentID,
 		folder.Name,
+		folder.IsHidden,
+		folder.IsSystem,
+		folder.Description,
+		folder.Autoapply,
+		folder.Metadata,
 		folder.UpdatedAt,
 		folder.ID,
 		folder.ProjectID,
@@ -276,23 +305,23 @@ func (r *PostgresFolderRepository) ListChildren(ctx context.Context, folderID *s
 
 	if folderID == nil {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, parent_id, name, is_hidden, created_at, updated_at
+			SELECT %s
 			FROM %s
 			WHERE project_id = $1 AND parent_id IS NULL AND deleted_at IS NULL
-		`, r.tables.Folders)
+		`, folderSelectColumns, r.tables.Folders)
 		args = append(args, projectID)
 	} else {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, parent_id, name, is_hidden, created_at, updated_at
+			SELECT %s
 			FROM %s
 			WHERE project_id = $1 AND parent_id = $2 AND deleted_at IS NULL
-		`, r.tables.Folders)
+		`, folderSelectColumns, r.tables.Folders)
 		args = append(args, projectID, *folderID)
 	}
 
-	// Filter hidden folders unless explicitly included
+	// Filter hidden/system folders unless explicitly included
 	if !includeHidden {
-		query += ` AND is_hidden = false`
+		query += ` AND is_hidden = false AND is_system = false`
 	}
 	query += ` ORDER BY name ASC`
 
@@ -306,15 +335,7 @@ func (r *PostgresFolderRepository) ListChildren(ctx context.Context, folderID *s
 	var folders []models.Folder
 	for rows.Next() {
 		var folder models.Folder
-		err := rows.Scan(
-			&folder.ID,
-			&folder.ProjectID,
-			&folder.ParentID,
-			&folder.Name,
-			&folder.IsHidden,
-			&folder.CreatedAt,
-			&folder.UpdatedAt,
-		)
+		err := scanFolder(rows, &folder)
 		if err != nil {
 			return nil, fmt.Errorf("scan folder: %w", err)
 		}
@@ -425,11 +446,11 @@ func (r *PostgresFolderRepository) GetPath(ctx context.Context, folderID *string
 // GetAllByProject retrieves all folders in a project (flat list, includes hidden)
 func (r *PostgresFolderRepository) GetAllByProject(ctx context.Context, projectID string) ([]models.Folder, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, parent_id, name, is_hidden, created_at, updated_at
+		SELECT %s
 		FROM %s
 		WHERE project_id = $1 AND deleted_at IS NULL
 		ORDER BY created_at ASC
-	`, r.tables.Folders)
+	`, folderSelectColumns, r.tables.Folders)
 
 	executor := postgres.GetExecutor(ctx, r.pool)
 	rows, err := executor.Query(ctx, query, projectID)
@@ -441,15 +462,7 @@ func (r *PostgresFolderRepository) GetAllByProject(ctx context.Context, projectI
 	var folders []models.Folder
 	for rows.Next() {
 		var folder models.Folder
-		err := rows.Scan(
-			&folder.ID,
-			&folder.ProjectID,
-			&folder.ParentID,
-			&folder.Name,
-			&folder.IsHidden,
-			&folder.CreatedAt,
-			&folder.UpdatedAt,
-		)
+		err := scanFolder(rows, &folder)
 		if err != nil {
 			return nil, fmt.Errorf("scan folder: %w", err)
 		}
@@ -466,13 +479,13 @@ func (r *PostgresFolderRepository) GetAllByProject(ctx context.Context, projectI
 // GetAllByProjectFiltered retrieves folders with filtering options
 func (r *PostgresFolderRepository) GetAllByProjectFiltered(ctx context.Context, projectID string, opts docsysRepo.FolderFilterOptions) ([]models.Folder, error) {
 	query := fmt.Sprintf(`
-		SELECT id, project_id, parent_id, name, is_hidden, created_at, updated_at
+		SELECT %s
 		FROM %s
 		WHERE project_id = $1 AND deleted_at IS NULL
-	`, r.tables.Folders)
+	`, folderSelectColumns, r.tables.Folders)
 
 	if !opts.IncludeHidden {
-		query += ` AND is_hidden = false`
+		query += ` AND is_hidden = false AND is_system = false`
 	}
 	query += ` ORDER BY created_at ASC`
 
@@ -486,15 +499,7 @@ func (r *PostgresFolderRepository) GetAllByProjectFiltered(ctx context.Context, 
 	var folders []models.Folder
 	for rows.Next() {
 		var folder models.Folder
-		err := rows.Scan(
-			&folder.ID,
-			&folder.ProjectID,
-			&folder.ParentID,
-			&folder.Name,
-			&folder.IsHidden,
-			&folder.CreatedAt,
-			&folder.UpdatedAt,
-		)
+		err := scanFolder(rows, &folder)
 		if err != nil {
 			return nil, fmt.Errorf("scan folder: %w", err)
 		}
@@ -545,31 +550,23 @@ func (r *PostgresFolderRepository) getFolderByNameAndParent(ctx context.Context,
 
 	if parentID == nil {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, parent_id, name, is_hidden, created_at, updated_at
+			SELECT %s
 			FROM %s
 			WHERE project_id = $1 AND name = $2 AND parent_id IS NULL AND deleted_at IS NULL
-		`, r.tables.Folders)
+		`, folderSelectColumns, r.tables.Folders)
 		args = append(args, projectID, name)
 	} else {
 		query = fmt.Sprintf(`
-			SELECT id, project_id, parent_id, name, is_hidden, created_at, updated_at
+			SELECT %s
 			FROM %s
 			WHERE project_id = $1 AND name = $2 AND parent_id = $3 AND deleted_at IS NULL
-		`, r.tables.Folders)
+		`, folderSelectColumns, r.tables.Folders)
 		args = append(args, projectID, name, *parentID)
 	}
 
 	var folder models.Folder
 	executor := postgres.GetExecutor(ctx, r.pool)
-	err := executor.QueryRow(ctx, query, args...).Scan(
-		&folder.ID,
-		&folder.ProjectID,
-		&folder.ParentID,
-		&folder.Name,
-		&folder.IsHidden,
-		&folder.CreatedAt,
-		&folder.UpdatedAt,
-	)
+	err := scanFolder(executor.QueryRow(ctx, query, args...), &folder)
 
 	if err != nil {
 		if postgres.IsPgNoRowsError(err) {
@@ -579,4 +576,30 @@ func (r *PostgresFolderRepository) getFolderByNameAndParent(ctx context.Context,
 	}
 
 	return &folder, nil
+}
+
+type folderScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+func scanFolder(scanner folderScanner, folder *models.Folder) error {
+	err := scanner.Scan(
+		&folder.ID,
+		&folder.ProjectID,
+		&folder.ParentID,
+		&folder.Name,
+		&folder.IsHidden,
+		&folder.IsSystem,
+		&folder.Description,
+		&folder.Autoapply,
+		&folder.Metadata,
+		&folder.CreatedAt,
+		&folder.UpdatedAt,
+	)
+	if err != nil {
+		return err
+	}
+
+	folder.EnsureMetadata()
+	return nil
 }
