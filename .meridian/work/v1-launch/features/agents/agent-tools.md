@@ -18,7 +18,7 @@ All mutation tools (`Write`, `Edit`) work on all writable surfaces. The backend 
 | Target path | Write mechanism | Why |
 |-------------|----------------|-----|
 | Live docs (chapters, story content) | Routed through Yjs collab pipeline | User and agents may both be editing — needs CRDT ordering |
-| `.meridian/work/` artifacts | Direct API write | Agent-owned workspace, no CRDT needed |
+| `.meridian/work/` artifacts | Direct API write | Agent-owned workspace, no CRDT needed, works for explicit and ephemeral work items |
 | `.agents/` | **Review-gated (autoapply=false)** | Agent profile namespace — changes require user review before taking effect |
 
 ### Context variables
@@ -27,7 +27,7 @@ Since we own the agent runtime, we inject the same environment variables as the 
 
 | Variable | Resolves to | Notes |
 |----------|-------------|-------|
-| `$MERIDIAN_WORK_DIR` | `.meridian/work/<work-item>/` | Scoped to the thread's work item |
+| `$MERIDIAN_WORK_DIR` | `.meridian/work/<work-item>/` | Always scoped to the thread's work item; if the thread was created without one, runtime auto-provisions an ephemeral work item first |
 | `$MERIDIAN_FS_DIR` | `.meridian/fs/` | Long-lived project reference material |
 | `$MERIDIAN_CHAT_ID` | Current thread/session ID | For context passing between threads |
 
