@@ -12,6 +12,8 @@ import (
 	"golang.org/x/net/websocket"
 	"meridian/internal/auth"
 	"meridian/internal/config"
+	"meridian/internal/domain"
+	"meridian/internal/domain/services"
 	collabSvc "meridian/internal/domain/services/collab"
 )
 
@@ -21,6 +23,7 @@ type CollabHandler struct {
 	proposalService  collabSvc.ProposalService
 	proposalStore    collabSvc.ProposalStore
 	authenticator    *collabAuthenticator
+	authorizer       services.ResourceAuthorizer
 	logger           *slog.Logger
 	config           *config.Config
 
@@ -124,6 +127,7 @@ func NewCollabHandler(
 	proposalService collabSvc.ProposalService,
 	proposalStore collabSvc.ProposalStore,
 	jwtVerifier auth.JWTVerifier,
+	authorizer services.ResourceAuthorizer,
 	logger *slog.Logger,
 	cfg *config.Config,
 	projectRegistry ProjectConnectionRegistry,
@@ -139,6 +143,7 @@ func NewCollabHandler(
 		proposalService:  proposalService,
 		proposalStore:    proposalStore,
 		authenticator:    newCollabAuthenticator(jwtVerifier, documentResolver, isIdentityBlocked, logger),
+		authorizer:       authorizer,
 		logger:           logger,
 		config:           cfg,
 		projectRegistry:  projectRegistry,
@@ -146,7 +151,12 @@ func NewCollabHandler(
 	}
 }
 
-func (h *CollabHandler) runHeartbeatLoop(conn *websocketDocumentConnection, acks <-chan struct{}, stop <-chan struct{}) {
+func (h *CollabHandler) runHeartbeatLoop(
+	conn *websocketDocumentConnection,
+	acks <-chan struct{},
+	stop <-chan struct{},
+	jwtExpiry time.Time,
+) {
 	ticker := time.NewTicker(collabHeartbeatInterval)
 	defer ticker.Stop()
 
@@ -155,6 +165,14 @@ func (h *CollabHandler) runHeartbeatLoop(conn *websocketDocumentConnection, acks
 		case <-stop:
 			return
 		case <-ticker.C:
+			if !jwtExpiry.IsZero() && time.Now().After(jwtExpiry) {
+				h.sendError(conn, "AUTH_EXPIRED", domain.ErrAuthExpired.Error())
+				if err := conn.Close(); err != nil {
+					h.logger.Debug("collab heartbeat auth expiry close failed", "error", err)
+				}
+				return
+			}
+
 			drainSignalChannel(acks)
 
 			if err := conn.SendJSON(collabHeartbeatMessage{Type: "heartbeat"}); err != nil {

@@ -18,6 +18,9 @@ const (
 
 	// NamespaceSession is the virtual session namespace for ephemeral storage (/.session/**)
 	NamespaceSession Namespace = ".session"
+
+	// NamespaceAgents is the agent profile namespace (/.agents/**), readable but not writable by agents.
+	NamespaceAgents Namespace = ".agents"
 )
 
 // NamespaceService handles path normalization and namespace routing

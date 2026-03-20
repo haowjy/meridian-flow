@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -78,7 +79,27 @@ func (h *CollabHandler) handleProjectSocket(projectID string, conn *websocket.Co
 	}
 
 	userID := authResult.UserID
+	jwtExpiry := authResult.JWTExpiry
 	connectionID := wsConn.ID()
+
+	if h.authorizer == nil {
+		h.logger.Error("project websocket authorizer unavailable", "project_id", projectID)
+		h.sendError(wsConn, "INTERNAL_ERROR", "failed to verify project access")
+		return
+	}
+	if err := h.authorizer.CanAccessProject(context.Background(), userID, projectID); err != nil {
+		if errors.Is(err, domain.ErrForbidden) {
+			h.sendError(wsConn, "FORBIDDEN", "access denied")
+			return
+		}
+		h.logger.Error("project websocket ownership check failed",
+			"project_id", projectID,
+			"user_id", userID,
+			"error", err,
+		)
+		h.sendError(wsConn, "INTERNAL_ERROR", "failed to verify project access")
+		return
+	}
 	h.logger.Info("project websocket authenticated",
 		"project_id", projectID,
 		"user_id", userID,
@@ -103,7 +124,7 @@ func (h *CollabHandler) handleProjectSocket(projectID string, conn *websocket.Co
 
 	heartbeatAcks := make(chan struct{}, 1)
 	heartbeatStop := make(chan struct{})
-	go h.runHeartbeatLoop(wsConn, heartbeatAcks, heartbeatStop)
+	go h.runHeartbeatLoop(wsConn, heartbeatAcks, heartbeatStop, jwtExpiry)
 	defer close(heartbeatStop)
 
 	// Run the shared message loop with project-specific handlers.

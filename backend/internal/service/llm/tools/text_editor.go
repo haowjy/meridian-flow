@@ -28,7 +28,7 @@ func TextEditorToolMetadata() *ToolMetadata {
 // This matches Anthropic's text_editor_20250728 API for seamless provider mapping.
 //
 // Uses service layer for all data access (SOLID: DIP - depends on interfaces).
-// Access to /.meridian/** is DENIED for edit commands - use dedicated skill editor API instead.
+// Access to /.meridian/**, /.session/**, and /.agents/** is DENIED for edit commands.
 //
 // Schema docs: https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool
 type TextEditorTool struct {
@@ -259,7 +259,7 @@ func (t *TextEditorTool) listFolderContents(ctx context.Context, folderID *strin
 // like including line number prefixes from view output. Normalizers are tried in order
 // until a match is found, allowing easy extension without modifying this function.
 func (t *TextEditorTool) executeStrReplace(ctx context.Context, path string, input map[string]interface{}) (interface{}, error) {
-	// Check namespace access - edit DENIED for /.meridian/**
+	// Check namespace access for reserved read-only namespaces.
 	if err := t.checkEditNamespaceAccess(path); err != nil {
 		return err, nil
 	}
@@ -508,6 +508,11 @@ func (t *TextEditorTool) checkEditNamespaceAccess(path string) interface{} {
 		}
 		if err == nil && namespace == docsysSvc.NamespaceSession {
 			return ErrorResult(ErrInvalidInput, "Edit commands cannot modify /.session/ paths", map[string]any{
+				"path": path,
+			})
+		}
+		if err == nil && namespace == docsysSvc.NamespaceAgents {
+			return ErrorResult(ErrInvalidInput, "Edit commands cannot modify /.agents/ paths", map[string]any{
 				"path": path,
 			})
 		}

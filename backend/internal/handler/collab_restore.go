@@ -6,21 +6,25 @@ import (
 	"github.com/google/uuid"
 
 	"meridian/internal/config"
+	"meridian/internal/domain/services"
 	collabSvc "meridian/internal/domain/services/collab"
 	"meridian/internal/httputil"
 )
 
 type CollabRestoreHandler struct {
 	restoreService collabSvc.RestoreService
+	authorizer     services.ResourceAuthorizer
 	config         *config.Config
 }
 
 func NewCollabRestoreHandler(
 	restoreService collabSvc.RestoreService,
+	authorizer services.ResourceAuthorizer,
 	cfg *config.Config,
 ) *CollabRestoreHandler {
 	return &CollabRestoreHandler{
 		restoreService: restoreService,
+		authorizer:     authorizer,
 		config:         cfg,
 	}
 }
@@ -55,6 +59,17 @@ func (h *CollabRestoreHandler) handleRestore(w http.ResponseWriter, r *http.Requ
 	turnID, err := uuid.Parse(turnIDRaw)
 	if err != nil {
 		httputil.RespondError(w, http.StatusBadRequest, "Turn identifier must be a valid UUID")
+		return
+	}
+
+	if h.authorizer == nil {
+		httputil.RespondError(w, http.StatusInternalServerError, "turn restore authorization unavailable")
+		return
+	}
+
+	userID := httputil.GetUserID(r)
+	if err := h.authorizer.CanAccessTurn(r.Context(), userID, turnID.String()); err != nil {
+		handleError(w, err, h.config)
 		return
 	}
 
