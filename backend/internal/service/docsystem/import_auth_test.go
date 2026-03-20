@@ -7,12 +7,13 @@ import (
 	"testing"
 
 	"meridian/internal/domain"
+	models "meridian/internal/domain/models/docsystem"
 	"meridian/internal/domain/services"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
 func TestImportServiceDeleteAllDocuments_EnforcesAuthorization(t *testing.T) {
-	svc := NewImportService(nil, NewFileProcessorRegistry(), &testImportAuthorizer{
+	svc := NewImportService(&testImportDocumentRepo{}, NewFileProcessorRegistry(), &testImportAuthorizer{
 		err: domain.NewForbiddenError("access denied"),
 	}, slog.Default())
 
@@ -22,9 +23,24 @@ func TestImportServiceDeleteAllDocuments_EnforcesAuthorization(t *testing.T) {
 	}
 }
 
+func TestImportServiceDeleteAllDocuments_PreservesSystemFolders(t *testing.T) {
+	docRepo := &testImportDocumentRepo{}
+	svc := NewImportService(docRepo, NewFileProcessorRegistry(), &testImportAuthorizer{}, slog.Default())
+
+	if err := svc.DeleteAllDocuments(context.Background(), "user-123", "project-123"); err != nil {
+		t.Fatalf("DeleteAllDocuments returned error: %v", err)
+	}
+	if docRepo.lastDeleteProjectID != "project-123" {
+		t.Fatalf("expected project delete for project-123, got %q", docRepo.lastDeleteProjectID)
+	}
+	if !docRepo.lastDeleteSkipSystemFolders {
+		t.Fatalf("expected DeleteAllByProject to preserve system folders")
+	}
+}
+
 func TestImportServiceProcessFiles_UsesServiceLayerAuthorization(t *testing.T) {
 	authorizer := &testImportAuthorizer{}
-	svc := NewImportService(nil, NewFileProcessorRegistry(), authorizer, slog.Default())
+	svc := NewImportService(&testImportDocumentRepo{}, NewFileProcessorRegistry(), authorizer, slog.Default())
 
 	result, err := svc.ProcessFiles(context.Background(), "project-123", "user-123", []docsysSvc.UploadedFile{
 		{
@@ -67,4 +83,51 @@ func (a *testImportAuthorizer) CanAccessDocument(context.Context, string, string
 func (a *testImportAuthorizer) CanAccessThread(context.Context, string, string) error   { return nil }
 func (a *testImportAuthorizer) CanAccessTurn(context.Context, string, string) error     { return nil }
 
+type testImportDocumentRepo struct {
+	lastDeleteProjectID         string
+	lastDeleteSkipSystemFolders bool
+}
+
+func (r *testImportDocumentRepo) Create(context.Context, *models.Document) error {
+	panic("unexpected call")
+}
+func (r *testImportDocumentRepo) GetByID(context.Context, string, string) (*models.Document, error) {
+	panic("unexpected call")
+}
+func (r *testImportDocumentRepo) GetByIDOnly(context.Context, string) (*models.Document, error) {
+	panic("unexpected call")
+}
+func (r *testImportDocumentRepo) GetByPath(context.Context, string, string) (*models.Document, error) {
+	panic("unexpected call")
+}
+func (r *testImportDocumentRepo) Update(context.Context, *models.Document) error {
+	panic("unexpected call")
+}
+func (r *testImportDocumentRepo) Delete(context.Context, string, string) error {
+	panic("unexpected call")
+}
+func (r *testImportDocumentRepo) DeleteAllByProject(_ context.Context, projectID string, skipSystemFolders bool) error {
+	r.lastDeleteProjectID = projectID
+	r.lastDeleteSkipSystemFolders = skipSystemFolders
+	return nil
+}
+func (r *testImportDocumentRepo) ListByFolder(context.Context, *string, string) ([]models.Document, error) {
+	panic("unexpected call")
+}
+func (r *testImportDocumentRepo) GetPath(context.Context, *models.Document) (string, error) {
+	panic("unexpected call")
+}
+func (r *testImportDocumentRepo) GetAllMetadataByProject(context.Context, string) ([]models.Document, error) {
+	panic("unexpected call")
+}
+func (r *testImportDocumentRepo) SearchDocuments(context.Context, *models.SearchOptions) (*models.SearchResults, error) {
+	panic("unexpected call")
+}
+func (r *testImportDocumentRepo) GetAllByFolderRecursive(context.Context, string, string) ([]models.Document, error) {
+	panic("unexpected call")
+}
+
 var _ services.ResourceAuthorizer = (*testImportAuthorizer)(nil)
+var _ interface {
+	DeleteAllByProject(context.Context, string, bool) error
+} = (*testImportDocumentRepo)(nil)

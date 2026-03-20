@@ -27,8 +27,9 @@ type DocumentRepository interface {
 	// Delete deletes a document
 	Delete(ctx context.Context, id, projectID string) error
 
-	// DeleteAllByProject deletes all documents in a project
-	DeleteAllByProject(ctx context.Context, projectID string) error
+	// DeleteAllByProject deletes all documents in a project.
+	// When skipSystemFolders is true, documents inside system-folder subtrees are preserved.
+	DeleteAllByProject(ctx context.Context, projectID string, skipSystemFolders bool) error
 
 	// ListByFolder lists documents in a folder
 	ListByFolder(ctx context.Context, folderID *string, projectID string) ([]docsystem.Document, error)

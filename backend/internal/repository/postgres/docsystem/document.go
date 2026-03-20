@@ -429,13 +429,33 @@ func (r *PostgresDocumentRepository) Delete(ctx context.Context, id, projectID s
 	return nil
 }
 
-// DeleteAllByProject soft-deletes all documents in a project
-func (r *PostgresDocumentRepository) DeleteAllByProject(ctx context.Context, projectID string) error {
+// DeleteAllByProject soft-deletes all documents in a project.
+func (r *PostgresDocumentRepository) DeleteAllByProject(ctx context.Context, projectID string, skipSystemFolders bool) error {
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET deleted_at = NOW()
 		WHERE project_id = $1 AND deleted_at IS NULL
 	`, r.tables.Documents)
+
+	if skipSystemFolders {
+		query += fmt.Sprintf(`
+			AND (
+				folder_id IS NULL OR folder_id NOT IN (
+					WITH RECURSIVE system_folders AS (
+						SELECT id
+						FROM %s
+						WHERE project_id = $1 AND is_system = TRUE AND deleted_at IS NULL
+						UNION ALL
+						SELECT child.id
+						FROM %s child
+						INNER JOIN system_folders parent ON child.parent_id = parent.id
+						WHERE child.deleted_at IS NULL
+					)
+					SELECT id FROM system_folders
+				)
+			)
+		`, r.tables.Folders, r.tables.Folders)
+	}
 
 	executor := postgres.GetExecutor(ctx, r.pool)
 	_, err := executor.Exec(ctx, query, projectID)

@@ -91,6 +91,10 @@ func (v *SupabaseJWTVerifier) VerifyToken(tokenString string) (*models.AuthClaim
 		)
 		return nil, domain.ErrUnauthorized
 	}
+	if claims.ExpiresAt == nil || claims.ExpiresAt.Time.IsZero() {
+		v.logger.Debug("jwt token missing required exp claim")
+		return nil, fmt.Errorf("token missing required exp claim")
+	}
 
 	var expiresAt *time.Time
 	if claims.ExpiresAt != nil {

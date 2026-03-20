@@ -110,6 +110,40 @@ func (r *PostgresProjectRepository) GetByID(ctx context.Context, id, userID stri
 	return &project, nil
 }
 
+// GetByIDOnly retrieves a project by ID without user scoping.
+func (r *PostgresProjectRepository) GetByIDOnly(ctx context.Context, id string) (*models.Project, error) {
+	query := fmt.Sprintf(`
+		SELECT %s
+		FROM %s p
+		WHERE p.id = $1 AND p.deleted_at IS NULL
+	`, projectSelectColumns, r.tables.Projects)
+
+	var project models.Project
+	executor := postgres.GetExecutor(ctx, r.pool)
+	err := executor.QueryRow(ctx, query, id).Scan(
+		&project.ID,
+		&project.UserID,
+		&project.Name,
+		&project.Slug,
+		&project.SystemPrompt,
+		&project.Autoapply,
+		&project.Preferences,
+		&project.LastActivityAt,
+		&project.CreatedAt,
+		&project.UpdatedAt,
+	)
+
+	if err != nil {
+		if postgres.IsPgNoRowsError(err) {
+			return nil, domain.NewNotFoundError("project",
+				fmt.Sprintf("project %s not found", id))
+		}
+		return nil, fmt.Errorf("get project: %w", err)
+	}
+
+	return &project, nil
+}
+
 // GetBySlug retrieves a project by slug (unique per user) with favorite status
 func (r *PostgresProjectRepository) GetBySlug(ctx context.Context, slug, userID string) (*models.Project, error) {
 	query := fmt.Sprintf(`

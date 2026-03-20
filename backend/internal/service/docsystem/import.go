@@ -38,7 +38,7 @@ func (s *importService) DeleteAllDocuments(ctx context.Context, userID string, p
 		return err
 	}
 
-	if err := s.docRepo.DeleteAllByProject(ctx, projectID); err != nil {
+	if err := s.docRepo.DeleteAllByProject(ctx, projectID, true); err != nil {
 		s.logger.Error("failed to delete all documents",
 			"project_id", projectID,
 			"error", err,
