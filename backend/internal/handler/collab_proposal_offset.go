@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/google/uuid"
 
+	collabSvc "meridian/internal/domain/services/collab"
 	"meridian/internal/httputil"
 )
 
@@ -16,7 +18,7 @@ type setProposalOffsetRequest struct {
 // SetAcceptedAtOffset stores proposal accept-offset metadata with a monotonic version guard.
 // PATCH /api/proposals/{id}/offset
 func (h *CollabHandler) SetAcceptedAtOffset(w http.ResponseWriter, r *http.Request) {
-	if h.proposalStore == nil || h.documentResolver == nil {
+	if h.proposalService == nil {
 		httputil.RespondError(w, http.StatusInternalServerError, "proposal offset service unavailable")
 		return
 	}
@@ -54,24 +56,17 @@ func (h *CollabHandler) SetAcceptedAtOffset(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	proposal, err := h.proposalStore.GetByID(r.Context(), proposalID)
-	if err != nil {
-		handleError(w, err, h.config)
-		return
-	}
-
 	userID := httputil.GetUserID(r)
-	allowed, err := h.documentResolver.VerifyOwnership(r.Context(), proposal.DocumentID.String(), userID)
-	if err != nil {
-		httputil.RespondError(w, http.StatusInternalServerError, "Failed to verify document access")
-		return
-	}
-	if !allowed {
-		httputil.RespondError(w, http.StatusForbidden, "access denied")
-		return
-	}
-
-	if err := h.proposalStore.SetAcceptedAtOffset(r.Context(), proposalID, *req.AcceptedAtOffset, *req.OffsetVersion); err != nil {
+	if err := h.proposalService.SetProposalOffset(r.Context(), collabSvc.SetProposalOffsetRequest{
+		ProposalID:       proposalID,
+		UserID:           userID,
+		AcceptedAtOffset: *req.AcceptedAtOffset,
+		OffsetVersion:    *req.OffsetVersion,
+	}); err != nil {
+		if errors.Is(err, collabSvc.ErrProposalOffsetAccessCheckFailed) {
+			httputil.RespondError(w, http.StatusInternalServerError, "Failed to verify document access")
+			return
+		}
 		handleError(w, err, h.config)
 		return
 	}

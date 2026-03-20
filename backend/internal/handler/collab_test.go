@@ -18,10 +18,10 @@ import (
 // --- shared test doubles used by collab_project_test.go and collab_proposal_test.go ---
 
 type testJWTVerifier struct {
-	tokens map[string]*models.SupabaseClaims
+	tokens map[string]*models.AuthClaims
 }
 
-func (v *testJWTVerifier) VerifyToken(tokenString string) (*models.SupabaseClaims, error) {
+func (v *testJWTVerifier) VerifyToken(tokenString string) (*models.AuthClaims, error) {
 	claims, ok := v.tokens[tokenString]
 	if !ok {
 		return nil, errors.New("invalid token")
@@ -99,6 +99,10 @@ type noopProposalService struct{}
 
 func (s *noopProposalService) CreateProposal(_ context.Context, _ collabSvc.CreateProposalRequest) (*collabModels.Proposal, error) {
 	return nil, nil
+}
+
+func (s *noopProposalService) SetProposalOffset(_ context.Context, _ collabSvc.SetProposalOffsetRequest) error {
+	return nil
 }
 
 type noopProposalStore struct{}

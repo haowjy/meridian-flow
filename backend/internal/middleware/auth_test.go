@@ -6,17 +6,16 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/golang-jwt/jwt/v5"
 	"meridian/internal/domain/models"
 )
 
 type testAuthJWTVerifier struct {
 	verifyCalls int
-	claims      *models.SupabaseClaims
+	claims      *models.AuthClaims
 	err         error
 }
 
-func (v *testAuthJWTVerifier) VerifyToken(_ string) (*models.SupabaseClaims, error) {
+func (v *testAuthJWTVerifier) VerifyToken(_ string) (*models.AuthClaims, error) {
 	v.verifyCalls++
 	if v.err != nil {
 		return nil, v.err
@@ -57,10 +56,7 @@ func TestAuthMiddleware_SkipsWebSocketRoutes(t *testing.T) {
 
 func TestAuthMiddleware_RequiresAuthForAPIRoutes(t *testing.T) {
 	verifier := &testAuthJWTVerifier{
-		claims: &models.SupabaseClaims{
-			RegisteredClaims: jwt.RegisteredClaims{Subject: "user-1"},
-			Role:             "authenticated",
-		},
+		claims: &models.AuthClaims{UserID: "user-1"},
 	}
 	nextCalled := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -86,10 +82,7 @@ func TestAuthMiddleware_RequiresAuthForAPIRoutes(t *testing.T) {
 
 func TestAuthMiddleware_DoesNotSkipOtherWebSocketRoutes(t *testing.T) {
 	verifier := &testAuthJWTVerifier{
-		claims: &models.SupabaseClaims{
-			RegisteredClaims: jwt.RegisteredClaims{Subject: "user-1"},
-			Role:             "authenticated",
-		},
+		claims: &models.AuthClaims{UserID: "user-1"},
 	}
 	nextCalled := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -116,10 +109,7 @@ func TestAuthMiddleware_DoesNotSkipOtherWebSocketRoutes(t *testing.T) {
 func TestAuthMiddleware_RejectsBlockedUser(t *testing.T) {
 	const blockedUserID = "blocked-user-id"
 	verifier := &testAuthJWTVerifier{
-		claims: &models.SupabaseClaims{
-			RegisteredClaims: jwt.RegisteredClaims{Subject: blockedUserID},
-			Role:             "authenticated",
-		},
+		claims: &models.AuthClaims{UserID: blockedUserID},
 	}
 	nextCalled := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -148,10 +138,7 @@ func TestAuthMiddleware_RejectsBlockedUser(t *testing.T) {
 
 func TestAuthMiddleware_AllowsUnblockedUser(t *testing.T) {
 	verifier := &testAuthJWTVerifier{
-		claims: &models.SupabaseClaims{
-			RegisteredClaims: jwt.RegisteredClaims{Subject: "user-1"},
-			Role:             "authenticated",
-		},
+		claims: &models.AuthClaims{UserID: "user-1"},
 	}
 	nextCalled := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -178,10 +165,9 @@ func TestAuthMiddleware_AllowsUnblockedUser(t *testing.T) {
 
 func TestAuthMiddleware_RejectsBlockedEmailPattern(t *testing.T) {
 	verifier := &testAuthJWTVerifier{
-		claims: &models.SupabaseClaims{
-			RegisteredClaims: jwt.RegisteredClaims{Subject: "user-1"},
-			Email:            "test-42@my-domain.com",
-			Role:             "authenticated",
+		claims: &models.AuthClaims{
+			UserID: "user-1",
+			Email:  "test-42@my-domain.com",
 		},
 	}
 	nextCalled := false

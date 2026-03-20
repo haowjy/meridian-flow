@@ -20,12 +20,11 @@ import (
 	"meridian/internal/config"
 	"meridian/internal/domain"
 	collabSvc "meridian/internal/domain/services/collab"
-	serviceCollab "meridian/internal/service/collab"
 )
 
 // CollabDocumentHandler serves per-document websocket connections.
 type CollabDocumentHandler struct {
-	sessionManager *serviceCollab.DocumentSessionManager
+	sessionManager collabSvc.DocumentSessionProvider
 	authenticator  *collabAuthenticator
 	logger         *slog.Logger
 	config         *config.Config
@@ -47,7 +46,6 @@ const (
 	docWSHeartbeatInterval = 30 * time.Second
 	docWSHeartbeatTimeout  = 5 * time.Second
 	docWSAuthTimeout       = 5 * time.Second
-	docWSReleaseTimeout    = 10 * time.Second
 
 	docWSPrefixSync      byte = 0x00
 	docWSPrefixAwareness byte = 0x01
@@ -55,7 +53,7 @@ const (
 
 // NewCollabDocumentHandler creates a per-document collaboration websocket handler.
 func NewCollabDocumentHandler(
-	sessionManager *serviceCollab.DocumentSessionManager,
+	sessionManager collabSvc.DocumentSessionProvider,
 	jwtVerifier auth.JWTVerifier,
 	documentResolver collabSvc.DocumentResolver,
 	logger *slog.Logger,
@@ -126,7 +124,8 @@ func (h *CollabDocumentHandler) handleDocumentSocket(parentCtx context.Context, 
 
 	var (
 		userID          string
-		session         *serviceCollab.DocumentSession
+		session         collabSvc.SyncSession
+		releaseSession  func()
 		ownsConnSlot    bool
 		isDocConnActive bool
 	)
@@ -136,16 +135,8 @@ func (h *CollabDocumentHandler) handleDocumentSocket(parentCtx context.Context, 
 			h.unregisterDocumentConnection(documentID, conn)
 		}
 
-		if session != nil {
-			releaseCtx, releaseCancel := context.WithTimeout(context.Background(), docWSReleaseTimeout)
-			if err := h.sessionManager.Release(releaseCtx, documentID); err != nil {
-				h.logger.Error("document ws session release failed",
-					"document_id", documentID,
-					"user_id", userID,
-					"error", err,
-				)
-			}
-			releaseCancel()
+		if releaseSession != nil {
+			releaseSession()
 		}
 
 		if ownsConnSlot {
@@ -216,7 +207,7 @@ func (h *CollabDocumentHandler) handleDocumentSocket(parentCtx context.Context, 
 
 	jwtExpiry := time.Time{}
 	if claims.ExpiresAt != nil {
-		jwtExpiry = claims.ExpiresAt.Time
+		jwtExpiry = *claims.ExpiresAt
 	}
 
 	if !h.tryIncrementConnectionCount(userID) {
@@ -229,9 +220,9 @@ func (h *CollabDocumentHandler) handleDocumentSocket(parentCtx context.Context, 
 	}
 	ownsConnSlot = true
 
-	session, err = h.sessionManager.Acquire(ctx, documentID)
+	session, releaseSession, err = h.sessionManager.GetOrCreateSession(ctx, documentID, userID)
 	if err != nil {
-		h.logger.Error("document ws session acquire failed",
+		h.logger.Error("document ws session get/create failed",
 			"document_id", documentID,
 			"user_id", userID,
 			"error", err,

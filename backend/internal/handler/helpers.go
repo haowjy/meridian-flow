@@ -35,14 +35,49 @@ func QueryInt(r *http.Request, name string, defaultVal, min, max int) int {
 	return defaultVal
 }
 
+func domainErrorStatusCode(err error) (int, bool) {
+	var notFoundErr *domain.NotFoundError
+	if errors.As(err, &notFoundErr) {
+		return http.StatusNotFound, true
+	}
+
+	var validationErr *domain.ValidationError
+	if errors.As(err, &validationErr) {
+		return http.StatusBadRequest, true
+	}
+
+	var unauthorizedErr *domain.UnauthorizedError
+	if errors.As(err, &unauthorizedErr) {
+		return http.StatusUnauthorized, true
+	}
+
+	var forbiddenErr *domain.ForbiddenError
+	if errors.As(err, &forbiddenErr) {
+		return http.StatusForbidden, true
+	}
+
+	var rateLimitErr *domain.RateLimitError
+	if errors.As(err, &rateLimitErr) {
+		return http.StatusTooManyRequests, true
+	}
+
+	var conflictErr *domain.ConflictError
+	if errors.As(err, &conflictErr) {
+		return http.StatusConflict, true
+	}
+
+	var constraintErr *domain.ConstraintViolationError
+	if errors.As(err, &constraintErr) {
+		return http.StatusBadRequest, true
+	}
+
+	return 0, false
+}
+
 // handleError converts domain errors to HTTP responses.
-// Uses HTTPError interface for extensible error handling (OCP compliance).
-// New error types can be added by implementing HTTPError interface without modifying this function.
 func handleError(w http.ResponseWriter, err error, cfg *config.Config) {
-	// Try to use HTTPError interface (supports new error types without modification)
-	var httpErr domain.HTTPError
-	if errors.As(err, &httpErr) {
-		message := httpErr.Error()
+	if statusCode, ok := domainErrorStatusCode(err); ok {
+		message := err.Error()
 
 		// In dev/test, add internal details for ConstraintViolationError
 		if cfg.Environment != "prod" {
@@ -55,13 +90,13 @@ func handleError(w http.ResponseWriter, err error, cfg *config.Config) {
 		// For ValidationError with field, include field in response extras for frontend routing
 		var validationErr *domain.ValidationError
 		if errors.As(err, &validationErr) && validationErr.Field != "" {
-			httputil.RespondErrorWithExtras(w, httpErr.StatusCode(), message, map[string]interface{}{
+			httputil.RespondErrorWithExtras(w, statusCode, message, map[string]interface{}{
 				"field": validationErr.Field,
 			})
 			return
 		}
 
-		httputil.RespondError(w, httpErr.StatusCode(), message)
+		httputil.RespondError(w, statusCode, message)
 		return
 	}
 

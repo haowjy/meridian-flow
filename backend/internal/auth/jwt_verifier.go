@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"meridian/internal/domain"
 	"meridian/internal/domain/models"
@@ -42,11 +43,11 @@ func NewJWTVerifier(jwksURL string, logger *slog.Logger) (JWTVerifier, error) {
 	}, nil
 }
 
-// VerifyToken validates a JWT token and extracts Supabase claims.
+// VerifyToken validates a JWT token and extracts auth claims.
 // Returns an error if the token is invalid, expired, or has incorrect claims.
-func (v *SupabaseJWTVerifier) VerifyToken(tokenString string) (*models.SupabaseClaims, error) {
+func (v *SupabaseJWTVerifier) VerifyToken(tokenString string) (*models.AuthClaims, error) {
 	// Parse and validate the token
-	token, err := jwt.ParseWithClaims(tokenString, &models.SupabaseClaims{}, v.jwks.Keyfunc)
+	token, err := jwt.ParseWithClaims(tokenString, &SupabaseClaims{}, v.jwks.Keyfunc)
 	if err != nil {
 		// Invalid/expired tokens are expected in normal operation (e.g., client refresh, bad auth header).
 		// Avoid logging at ERROR to prevent noisy logs and accidental PII exposure.
@@ -70,7 +71,7 @@ func (v *SupabaseJWTVerifier) VerifyToken(tokenString string) (*models.SupabaseC
 	}
 
 	// Extract claims
-	claims, ok := token.Claims.(*models.SupabaseClaims)
+	claims, ok := token.Claims.(*SupabaseClaims)
 	if !ok {
 		v.logger.Debug("failed to extract claims from token")
 		return nil, domain.ErrUnauthorized
@@ -91,7 +92,17 @@ func (v *SupabaseJWTVerifier) VerifyToken(tokenString string) (*models.SupabaseC
 		return nil, domain.ErrUnauthorized
 	}
 
-	return claims, nil
+	var expiresAt *time.Time
+	if claims.ExpiresAt != nil {
+		expiry := claims.ExpiresAt.Time
+		expiresAt = &expiry
+	}
+
+	return &models.AuthClaims{
+		UserID:    claims.Subject,
+		Email:     claims.Email,
+		ExpiresAt: expiresAt,
+	}, nil
 }
 
 // Close releases resources held by the JWT verifier.
