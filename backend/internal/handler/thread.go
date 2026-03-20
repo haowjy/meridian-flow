@@ -12,7 +12,6 @@ import (
 
 	"meridian/internal/config"
 	llmModels "meridian/internal/domain/models/llm"
-	"meridian/internal/domain/services"
 	llmSvc "meridian/internal/domain/services/llm"
 	"meridian/internal/handler/sse"
 	"meridian/internal/httputil"
@@ -25,7 +24,6 @@ type ThreadHandler struct {
 	threadHistoryService llmSvc.ThreadHistoryService
 	streamingService     llmSvc.StreamingService
 	registry             *mstream.Registry
-	authorizer           services.ResourceAuthorizer
 	logger               *slog.Logger
 	config               *config.Config
 }
@@ -36,7 +34,6 @@ func NewThreadHandler(
 	threadHistoryService llmSvc.ThreadHistoryService,
 	streamingService llmSvc.StreamingService,
 	registry *mstream.Registry,
-	authorizer services.ResourceAuthorizer,
 	logger *slog.Logger,
 	cfg *config.Config,
 ) *ThreadHandler {
@@ -45,7 +42,6 @@ func NewThreadHandler(
 		threadHistoryService: threadHistoryService,
 		streamingService:     streamingService,
 		registry:             registry,
-		authorizer:           authorizer,
 		logger:               logger,
 		config:               cfg,
 	}
@@ -408,12 +404,6 @@ func (h *ThreadHandler) InterruptTurn(w http.ResponseWriter, r *http.Request) {
 
 	userID := httputil.GetUserID(r)
 
-	// Authorize: check user can access this turn
-	if err := h.authorizer.CanAccessTurn(r.Context(), userID, turnID); err != nil {
-		handleError(w, err, h.config)
-		return
-	}
-
 	// Check if stream exists
 	stream := h.registry.Get(turnID)
 	if stream == nil {
@@ -423,7 +413,7 @@ func (h *ThreadHandler) InterruptTurn(w http.ResponseWriter, r *http.Request) {
 
 	// Delegate to streaming service for proper cancel handling
 	// Service handles capability check and soft/hard cancel decision
-	if err := h.streamingService.InterruptTurn(r.Context(), turnID); err != nil {
+	if err := h.streamingService.InterruptTurn(r.Context(), userID, turnID); err != nil {
 		h.logger.Error("failed to interrupt turn",
 			"turn_id", turnID,
 			"error", err,
@@ -449,8 +439,7 @@ func (h *ThreadHandler) StreamTurn(w http.ResponseWriter, r *http.Request) {
 
 	userID := httputil.GetUserID(r)
 
-	// Authorize: check user can access this turn
-	if err := h.authorizer.CanAccessTurn(r.Context(), userID, turnID); err != nil {
+	if err := h.streamingService.AuthorizeTurnStream(r.Context(), userID, turnID); err != nil {
 		handleError(w, err, h.config)
 		return
 	}
@@ -487,12 +476,6 @@ func (h *ThreadHandler) UpsertInterjection(w http.ResponseWriter, r *http.Reques
 
 	userID := httputil.GetUserID(r)
 
-	// Authorize: check user can access this turn
-	if err := h.authorizer.CanAccessTurn(r.Context(), userID, turnID); err != nil {
-		handleError(w, err, h.config)
-		return
-	}
-
 	// Parse request body
 	var req UpsertInterjectionRequest
 	if err := httputil.ParseJSON(w, r, &req); err != nil {
@@ -518,7 +501,7 @@ func (h *ThreadHandler) UpsertInterjection(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Call service
-	response, err := h.streamingService.UpsertInterjection(r.Context(), turnID, req.Content, req.Mode)
+	response, err := h.streamingService.UpsertInterjection(r.Context(), userID, turnID, req.Content, req.Mode)
 	if err != nil {
 		handleError(w, err, h.config)
 		return
@@ -549,14 +532,8 @@ func (h *ThreadHandler) GetInterjection(w http.ResponseWriter, r *http.Request) 
 
 	userID := httputil.GetUserID(r)
 
-	// Authorize: check user can access this turn
-	if err := h.authorizer.CanAccessTurn(r.Context(), userID, turnID); err != nil {
-		handleError(w, err, h.config)
-		return
-	}
-
 	// Call service
-	response, err := h.streamingService.GetInterjection(r.Context(), turnID)
+	response, err := h.streamingService.GetInterjection(r.Context(), userID, turnID)
 	if err != nil {
 		handleError(w, err, h.config)
 		return
@@ -581,14 +558,8 @@ func (h *ThreadHandler) ClearInterjection(w http.ResponseWriter, r *http.Request
 
 	userID := httputil.GetUserID(r)
 
-	// Authorize: check user can access this turn
-	if err := h.authorizer.CanAccessTurn(r.Context(), userID, turnID); err != nil {
-		handleError(w, err, h.config)
-		return
-	}
-
 	// Call service
-	if err := h.streamingService.ClearInterjection(r.Context(), turnID); err != nil {
+	if err := h.streamingService.ClearInterjection(r.Context(), userID, turnID); err != nil {
 		handleError(w, err, h.config)
 		return
 	}

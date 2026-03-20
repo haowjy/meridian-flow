@@ -239,6 +239,7 @@ func main() {
 		collabSessionManager,
 		collabDocumentHandler,
 		txManager,
+		authorizer,
 		logger,
 	)
 
@@ -291,7 +292,7 @@ func main() {
 	fileProcessorRegistry.Register(individualProcessor)
 
 	// Create import service with processor registry
-	importService := serviceDocsys.NewImportService(docRepo, fileProcessorRegistry, logger)
+	importService := serviceDocsys.NewImportService(docRepo, fileProcessorRegistry, authorizer, logger)
 
 	// Create user preferences service
 	userPrefsService := service.NewUserPreferencesService(userPrefsRepo, logger)
@@ -301,7 +302,7 @@ func main() {
 	newDocHandler := handler.NewDocumentHandler(docService, identifierResolver, logger, cfg)
 	newFolderHandler := handler.NewFolderHandler(folderService, logger, cfg)
 	newTreeHandler := handler.NewTreeHandler(treeService, identifierResolver, logger, cfg)
-	importHandler := handler.NewImportHandler(importService, authorizer, logger, cfg)
+	importHandler := handler.NewImportHandler(importService, logger, cfg)
 	// Collab handler (doc resolver, registry, and doc handler created above before LLM services)
 	collabHandler := handler.NewCollabHandler(
 		collabDocResolver,
@@ -314,7 +315,7 @@ func main() {
 		projectConnectionRegistry,
 		collabDocumentHandler,
 	)
-	collabRestoreHandler := handler.NewCollabRestoreHandler(restoreService, authorizer, cfg)
+	collabRestoreHandler := handler.NewCollabRestoreHandler(restoreService, cfg)
 	// Start append-only compaction worker goroutine.
 	compactionWorker := serviceCollab.NewCompactionWorker(
 		updateLogStore,
@@ -332,7 +333,6 @@ func main() {
 		llmServices.ThreadHistory,
 		llmServices.Streaming,
 		streamRegistry,
-		authorizer,
 		logger,
 		cfg,
 	)

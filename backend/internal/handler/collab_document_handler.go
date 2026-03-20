@@ -66,7 +66,7 @@ func NewCollabDocumentHandler(
 
 	return &CollabDocumentHandler{
 		sessionManager: sessionManager,
-		authenticator:  newCollabAuthenticator(jwtVerifier, documentResolver, isIdentityBlocked, logger),
+		authenticator:  newCollabAuthenticator(jwtVerifier, nil, documentResolver, isIdentityBlocked, logger),
 		logger:         logger,
 		config:         cfg,
 		connCounts:     make(map[string]int),

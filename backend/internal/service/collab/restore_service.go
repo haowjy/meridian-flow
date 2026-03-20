@@ -11,6 +11,7 @@ import (
 
 	"meridian/internal/domain"
 	"meridian/internal/domain/repositories"
+	"meridian/internal/domain/services"
 	collabSvc "meridian/internal/domain/services/collab"
 )
 
@@ -38,6 +39,7 @@ type RestoreService struct {
 	sessionManager  restoreSessionManager
 	broadcaster     restoreBroadcaster
 	txManager       repositories.TransactionManager
+	authorizer      services.ResourceAuthorizer
 	logger          *slog.Logger
 }
 
@@ -50,6 +52,7 @@ func NewRestoreService(
 	sessionManager restoreSessionManager,
 	broadcaster restoreBroadcaster,
 	txManager repositories.TransactionManager,
+	authorizer services.ResourceAuthorizer,
 	logger *slog.Logger,
 ) collabSvc.RestoreService {
 	if logger == nil {
@@ -64,15 +67,24 @@ func NewRestoreService(
 		sessionManager:  sessionManager,
 		broadcaster:     broadcaster,
 		txManager:       txManager,
+		authorizer:      authorizer,
 		logger:          logger,
 	}
 }
 
-func (s *RestoreService) RestoreTurn(ctx context.Context, turnID uuid.UUID) (*collabSvc.RestoreResult, error) {
+func (s *RestoreService) RestoreTurn(ctx context.Context, userID string, turnID uuid.UUID) (*collabSvc.RestoreResult, error) {
+	if err := s.authorizer.CanAccessTurn(ctx, userID, turnID.String()); err != nil {
+		return nil, err
+	}
+
 	return s.restoreFromTurn(ctx, turnID, restoreBookmarkTypeAITurn, true)
 }
 
-func (s *RestoreService) UndoRestore(ctx context.Context, turnID uuid.UUID) (*collabSvc.RestoreResult, error) {
+func (s *RestoreService) UndoRestore(ctx context.Context, userID string, turnID uuid.UUID) (*collabSvc.RestoreResult, error) {
+	if err := s.authorizer.CanAccessTurn(ctx, userID, turnID.String()); err != nil {
+		return nil, err
+	}
+
 	return s.restoreFromTurn(ctx, turnID, restoreBookmarkTypeSafetyRestore, false)
 }
 

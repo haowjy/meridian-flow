@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"meridian/internal/config"
-	"meridian/internal/domain/services"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 	"meridian/internal/httputil"
 )
@@ -18,16 +17,14 @@ import (
 //   - Replace: Deletes all project documents first, then imports
 type ImportHandler struct {
 	importService docsysSvc.ImportService
-	authorizer    services.ResourceAuthorizer
 	logger        *slog.Logger
 	config        *config.Config
 }
 
 // NewImportHandler creates a new import handler
-func NewImportHandler(importService docsysSvc.ImportService, authorizer services.ResourceAuthorizer, logger *slog.Logger, cfg *config.Config) *ImportHandler {
+func NewImportHandler(importService docsysSvc.ImportService, logger *slog.Logger, cfg *config.Config) *ImportHandler {
 	return &ImportHandler{
 		importService: importService,
-		authorizer:    authorizer,
 		logger:        logger,
 		config:        cfg,
 	}
@@ -76,7 +73,7 @@ func (h *ImportHandler) Replace(w http.ResponseWriter, r *http.Request) {
 }
 
 // processImportRequest handles common import logic for both merge and replace modes.
-// Extracts project/user IDs, validates authorization, parses files, and processes import.
+// Extracts project/user IDs, parses files, and delegates authorization + import work to the service layer.
 func (h *ImportHandler) processImportRequest(w http.ResponseWriter, r *http.Request, opts importOptions) {
 	// Get project ID from query parameter
 	projectID := r.URL.Query().Get("project_id")
@@ -87,12 +84,6 @@ func (h *ImportHandler) processImportRequest(w http.ResponseWriter, r *http.Requ
 
 	// Extract user ID from context
 	userID := httputil.GetUserID(r)
-
-	// Verify user owns the project before importing
-	if err := h.authorizer.CanAccessProject(r.Context(), userID, projectID); err != nil {
-		handleError(w, err, h.config)
-		return
-	}
 
 	// Parse multipart form (max 100MB for zip files)
 	if err := r.ParseMultipartForm(100 << 20); err != nil {
@@ -126,7 +117,7 @@ func (h *ImportHandler) processImportRequest(w http.ResponseWriter, r *http.Requ
 
 	// Delete all documents first if in replace mode
 	if opts.deleteFirst {
-		if err := h.importService.DeleteAllDocuments(r.Context(), projectID); err != nil {
+		if err := h.importService.DeleteAllDocuments(r.Context(), userID, projectID); err != nil {
 			h.logger.Error("failed to delete all documents",
 				"project_id", projectID,
 				"error", err,
@@ -163,7 +154,7 @@ func (h *ImportHandler) processImportRequest(w http.ResponseWriter, r *http.Requ
 	result, err := h.importService.ProcessFiles(r.Context(), projectID, userID, uploadedFiles, folderPath, opts.overwrite)
 	if err != nil {
 		h.logger.Error("failed to process files", "error", err)
-		httputil.RespondError(w, http.StatusInternalServerError, "Failed to process files")
+		handleError(w, err, h.config)
 		return
 	}
 

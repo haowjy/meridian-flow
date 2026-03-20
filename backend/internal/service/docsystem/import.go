@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	docsysRepo "meridian/internal/domain/repositories/docsystem"
+	"meridian/internal/domain/services"
 	docsysSvc "meridian/internal/domain/services/docsystem"
 )
 
@@ -12,6 +13,7 @@ import (
 type importService struct {
 	docRepo               docsysRepo.DocumentRepository
 	fileProcessorRegistry *FileProcessorRegistry
+	authorizer            services.ResourceAuthorizer
 	logger                *slog.Logger
 }
 
@@ -19,17 +21,23 @@ type importService struct {
 func NewImportService(
 	docRepo docsysRepo.DocumentRepository,
 	fileProcessorRegistry *FileProcessorRegistry,
+	authorizer services.ResourceAuthorizer,
 	logger *slog.Logger,
 ) docsysSvc.ImportService {
 	return &importService{
 		docRepo:               docRepo,
 		fileProcessorRegistry: fileProcessorRegistry,
+		authorizer:            authorizer,
 		logger:                logger,
 	}
 }
 
 // DeleteAllDocuments deletes all documents in a project
-func (s *importService) DeleteAllDocuments(ctx context.Context, projectID string) error {
+func (s *importService) DeleteAllDocuments(ctx context.Context, userID string, projectID string) error {
+	if err := s.authorizer.CanAccessProject(ctx, userID, projectID); err != nil {
+		return err
+	}
+
 	if err := s.docRepo.DeleteAllByProject(ctx, projectID); err != nil {
 		s.logger.Error("failed to delete all documents",
 			"project_id", projectID,
@@ -53,6 +61,10 @@ func (s *importService) DeleteAllDocuments(ctx context.Context, projectID string
 // (e.g., 8 of 10 files imported successfully). Errors are collected and returned
 // in the ImportResult for the frontend to display.
 func (s *importService) ProcessFiles(ctx context.Context, projectID, userID string, files []docsysSvc.UploadedFile, folderPath string, overwrite bool) (*docsysSvc.ImportResult, error) {
+	if err := s.authorizer.CanAccessProject(ctx, userID, projectID); err != nil {
+		return nil, err
+	}
+
 	// Initialize aggregated result - will collect stats from all processors
 	aggregatedResult := &docsysSvc.ImportResult{
 		Summary:   docsysSvc.ImportSummary{},

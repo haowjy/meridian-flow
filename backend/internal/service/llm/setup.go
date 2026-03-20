@@ -167,6 +167,7 @@ func SetupServices(
 		namespaceSvc, // For namespace routing in tools
 		skillService, // For skill_invoke/skill_list tools
 		validator,
+		authorizer,
 		responseGenerator,
 		streamRegistry,
 		cfg,
