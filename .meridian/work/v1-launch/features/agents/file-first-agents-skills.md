@@ -10,7 +10,7 @@ Current skill storage uses a dual model: DB table (`project_skills`) for content
 
 ## Decision
 
-Collapse to **one storage model**: `.agents/` folder in the project document tree, using the industry-standard layout. The files ARE the configuration. No separate DB table.
+Collapse to **one storage model**: `.agents/` folder in the project document tree, using the industry-standard layout. The files ARE the configuration. The `project_skills` DB table is removed in two phases — see Migration Path below.
 
 ## Design
 
@@ -67,9 +67,9 @@ Every interaction in the settings UI maps to a file operation:
 4. Settings UI immediately reflects the new agents/skills
 5. No DB migration, no sync state, no import pipeline — it's just files
 
-### What Gets Removed
+### What Gets Removed (Phase 2 — deferred)
 
-The `project_skills` DB table and all its machinery:
+The `project_skills` DB table and all its machinery are removed in Phase 2 (Round 2+), after the Settings UI exists to verify migration:
 - `project_skills` table (content, position, enabled, metadata, sync_state, is_dirty, etc.)
 - `SkillImportService`, `SkillPackagePolicy`, `ComponentHandler` registry
 - Dual-namespace export (`.meridian/skills/` + `.agents/skills/`)
@@ -110,8 +110,20 @@ Export is just: zip the `.agents/` folder. Import is just: unzip into the docume
 
 ## Migration Path
 
+Migration is two-phase to match the implementation plan (A3):
+
+### Phase 1 — Round 0: Backfill + Dual-Read
+
 1. Read all `project_skills` rows
 2. For each: create `.agents/skills/<name>/SKILL.md` document with frontmatter + content
 3. Move references from `/.meridian/skills/<name>/references/` to `.agents/skills/<name>/resources/`
-4. Drop `project_skills` table
-5. Update skill resolver to read from document tree
+4. Update skill resolver to dual-read: try file first (`.agents/skills/<name>/SKILL.md`), fall back to `project_skills` DB row if file not found
+
+**Do NOT drop `project_skills` table yet** — dual-read ensures no regressions while the file-based system is validated.
+
+### Phase 2 — Round 2+: Drop Table
+
+After the Settings UI (F12) can display and verify all skills from the file tree:
+
+5. Confirm all skills round-trip correctly through the Settings UI
+6. Drop `project_skills` table and all associated machinery

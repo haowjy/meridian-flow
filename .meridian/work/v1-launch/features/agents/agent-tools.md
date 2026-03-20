@@ -19,7 +19,7 @@ All mutation tools (`Write`, `Edit`) work on all writable surfaces. The backend 
 |-------------|----------------|-----|
 | Live docs (chapters, story content) | Routed through Yjs collab pipeline | User and agents may both be editing — needs CRDT ordering |
 | `.meridian/work/` artifacts | Direct API write | Agent-owned workspace, no CRDT needed |
-| `.agents/` | **Rejected** | Privileged config — only user can edit via settings UI |
+| `.agents/` | **Review-gated (autoapply=false)** | Agent profile namespace — changes require user review before taking effect |
 
 ### Context variables
 
@@ -47,9 +47,9 @@ Same interface as CLI. One vocabulary, zero translation.
 |------|----------------|-----------------|-----|
 | Project documents | Yes | Yes (via `Edit` / Yjs) | Collaborative editing through CRDT |
 | `.meridian/work/<work-item>/` | Yes | Yes (via `Write` / direct) | Work item artifacts, agent-owned |
-| `.agents/` | Yes | **No** | Privileged config — only user can edit via settings UI |
+| `.agents/` | Yes | **Yes (review-gated)** | Agents can write to `.agents/` but changes are review-gated (autoapply=false on the system folder). Changes do not take effect until the user reviews and approves them. |
 
-This prevents privilege escalation: an agent cannot modify its own profile, enable more tools, or change skill permissions.
+Write access to `.agents/` is review-gated rather than blocked outright: agents can propose profile or skill changes, but those proposals sit in a review queue until the user approves them. This preserves the human-in-the-loop on any modification to agent capabilities.
 
 No sidecar, no bash, no filesystem. Just API calls with path-based authorization. This covers the majority of agent interactions.
 

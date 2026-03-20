@@ -19,7 +19,7 @@ Supabase Auth integration — carry forward from existing frontend.
 
 ## v1 Additions
 
-- Free tier guest flow: signup → 300 free credits → no card required
+- Free tier guest flow: Google OAuth → instant 300 credits. Email/password → 300 credits after email verification. No card required.
 - Account settings page (change password, manage sessions)
 - Integration with billing (credit balance visible after auth)
 

@@ -137,8 +137,8 @@ This is a strength of keeping LaTeX in markdown rather than a proprietary equati
 
 ## Cross-References
 
-- [Architecture](../spec/architecture.md) -- canonical model, projection pipeline
-- [Frontend Diff Model](../spec/frontend-diff-model.md) -- CM6 decoration rendering
-- [Undo Design](../spec/undo.md) -- UndoManager, session + thread undo
+- Architecture — canonical model, projection pipeline (not yet documented separately)
+- `_docs/plans/frontend-workspace-modes/spec/editor-direction.md` -- CM6 decoration architecture and live preview rendering
+- Undo Design — UndoManager, session + thread undo (not yet documented separately; see C1 in review-synthesis-r2.md for decision)
 - `_docs/features/f-document-editor/rich-text-features.md` -- current live preview renderers
 - `_docs/plans/collab-ai/spec/cm6-library-model.md` -- CM6 package boundary

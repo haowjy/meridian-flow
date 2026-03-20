@@ -215,11 +215,11 @@ Needs: Design System (B1) atoms available. Data Layer (C1) sync primitives avail
 
 - Write routing middleware: target path -> Yjs pipeline OR direct API OR reject
 - Context variable injection: `$MERIDIAN_WORK_DIR`, `$MERIDIAN_FS_DIR`, `$MERIDIAN_CHAT_ID`
-- Permission boundary enforcement (`.agents/` = read-only to agents)
+- Permission boundary enforcement (`.agents/` = writable but review-gated via autoapply=false on the system folder)
 - just-bash TS sidecar: Vercel Labs integration, internal API from Go backend
 - Virtual FS mount (document tree projected as files in bash context)
 
-**Verification:** Write to live doc goes through Yjs, write to `.meridian/work/` goes direct, write to `.agents/` rejected. just-bash executes simple commands.
+**Verification:** Write to live doc goes through Yjs, write to `.meridian/work/` goes direct, write to `.agents/` enters review queue (autoapply=false). just-bash executes simple commands.
 
 #### F1. CM6 Primitives
 **Needs:** Design System (B1) for theme tokens.

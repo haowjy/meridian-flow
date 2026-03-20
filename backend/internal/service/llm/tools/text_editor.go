@@ -28,7 +28,7 @@ func TextEditorToolMetadata() *ToolMetadata {
 // This matches Anthropic's text_editor_20250728 API for seamless provider mapping.
 //
 // Uses service layer for all data access (SOLID: DIP - depends on interfaces).
-// Access to /.meridian/**, /.session/**, and /.agents/** is DENIED for edit commands.
+// Access to /.meridian/** and /.session/** is DENIED for edit commands. /.agents/** is writable but review-gated via folder autoapply.
 //
 // Schema docs: https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool
 type TextEditorTool struct {
