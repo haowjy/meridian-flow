@@ -115,26 +115,17 @@ Why one wrapper instead of nested providers:
 
 ### Optional Interface Preservation
 
+The wrapper uses a single struct with `Unwrap() Provider` as the mechanism for accessing optional interfaces. Consumers type-assert the unwrapped base provider for capabilities like `CancelGeneration` or `QueryGenerationStats`. This avoids variant structs and keeps the wrapper simple. The tradeoff is that consumers must know to call `Unwrap()` — but this is explicit and documented.
+
 ```mermaid
 flowchart TD
   A["WrapProvider(base, middleware...)"] --> B{"middleware count == 0?"}
-  B -->|yes| C["return base"]
-  B -->|no| D["compose generate and stream funcs"]
-  D --> E{"base optional interfaces"}
-  E -->|none| F["wrappedProviderCore"]
-  E -->|cancel only| G["wrappedProviderWithCancel"]
-  E -->|stats only| H["wrappedProviderWithStats"]
-  E -->|cancel and stats| I["wrappedProviderWithCancelAndStats"]
+  B -->|yes| C["return base unchanged"]
+  B -->|no| D["wrappedProvider with Unwrap()"]
 ```
 
-Capability rules:
-
-- if the base provider does not implement an optional interface, the wrapper must not advertise it
-- if the base provider implements `CancelGeneration(ctx, generationID) error`, the wrapper delegates it
-- if the base provider implements `GetGenerationStats(ctx, generationID) (*GenerationStats, error)`, the wrapper delegates it
 - `Unwrap()` returns the directly wrapped provider, so repeated `WrapProvider(...)` calls form a simple unwrap chain
-
-This preserves LSP and avoids false-positive type assertions.
+- consumers access optional interfaces via `wrapped.(WrappedProvider).Unwrap()` then type-assert
 
 ## Usage Metering Middleware
 
@@ -270,7 +261,7 @@ Verification criteria:
 - `WrapProvider(base)` returns `base` unchanged
 - composition order is outermost-first
 - wrapped providers preserve `Name()` and `SupportsModel()`
-- wrapped providers preserve optional interfaces exactly
+- wrapped providers provide `Unwrap()` for optional interface access
 - stream reporting happens only after terminal metadata
 - a reporter error becomes a terminal stream error
 - request mutation in one middleware does not leak into sibling middleware or the caller's original request

@@ -14,6 +14,10 @@ Phase 1 is intentionally transitional so the cutover is rollback-safe:
 
 This document fixes the Phase 1 gaps called out in review: transactional git import, git import security, invocation-policy frontmatter, dual-read precedence, invalid-file handling, backfill recovery, reference migration, domain interfaces, and backend API contracts.
 
+### Terminology: Files and Documents
+
+In this design, "file" refers to a document row in the Postgres-backed document tree, not a filesystem entry. The .agents/ tree consists of folder and document rows accessed through DocumentRepository and FolderRepository. When this doc says "look for .agents/skills/<slug>/SKILL.md", it means documentRepo.GetByPath(ctx, projectID, ".agents/skills/<slug>/SKILL.md"). Similarly, "create the file" means creating a document row via documentRepo.Create(). See backend/internal/repository/postgres/ for the repository implementations.
+
 ## Problem
 
 Current skill storage uses a split model:
@@ -277,6 +281,29 @@ Why file wins:
 
 For legacy-managed skills, successful DB writes must immediately refresh the corresponding `.agents` shadow file. "DB is the Phase 1 write path" means callers mutate through the DB-backed service, not that the file copy is allowed to drift.
 
+### Shadow file refresh specification
+
+The existing `ProjectSkillService` methods (Create, Update, Delete) gain a post-mutation shadow write inside the same `ExecTx` that performs the DB write. After any successful DB write, the service upserts the corresponding `.agents/skills/<slug>/SKILL.md` document within the same transaction.
+
+DB-field-to-frontmatter mapping function signature:
+
+```go
+func buildSkillFrontmatter(skill *domain.Skill) ([]byte, error)
+```
+
+Mapping rules:
+
+| DB field | Frontmatter key | Transform |
+|---|---|---|
+| `Name` | `name` | direct copy |
+| `Description` | `description` | direct copy |
+| `Metadata.DisableModelInvocation` | `model_invocable` | `!DisableModelInvocation` |
+| (none) | `user_invocable` | defaults to `true` |
+
+On delete: soft-delete the shadow document in the same `ExecTx`.
+
+Transaction boundary: the shadow write runs inside the same `ExecTx` as the DB write. If the shadow write fails, the entire mutation rolls back. This guarantees the DB row and the `.agents/` document never diverge within a single operation.
+
 Resolution algorithm for `ResolveSkill(projectID, name)`:
 
 1. Normalize `name` to slug.
@@ -351,10 +378,9 @@ The SSRF check applies to the resolved host, not just the URL string. DNS resolu
 
 ### DNS rebinding mitigation
 
-DNS rebinding protection is mandatory because a one-time DNS check is insufficient if the clone step performs a fresh lookup. Phase 1 therefore requires one of these concrete implementations:
+DNS rebinding protection is mandatory because a one-time DNS check is insufficient if the clone step performs a fresh lookup.
 
-1. preferred: a fetcher implementation that controls dialing directly and binds the git HTTPS connection to the previously validated IPs while preserving TLS verification against the original hostname
-2. acceptable fallback: a Meridian-controlled outbound proxy that receives the validated hostname plus approved IP set and refuses to connect anywhere else
+Use a custom `net.Dialer` with a `DialContext` that resolves the hostname, checks all A/AAAA records against RFC 1918/loopback ranges, and pins the resolved IP for the connection. The dialer preserves TLS verification against the original hostname while connecting to the validated IP. This gives the fetcher full control over DNS resolution and eliminates the window between validation and connection.
 
 Running the raw `git` CLI against the original hostname without a pinned dial path is not sufficient for Phase 1 because it can re-resolve after validation and bypass the SSRF check.
 
@@ -405,11 +431,30 @@ package agents
 
 import "context"
 
-type GitCloneOptions struct {
+var (
+	ErrNotHTTPS     = errors.New("agents: URL scheme must be HTTPS")
+	ErrBlockedHost  = errors.New("agents: host is blocked by policy")
+	ErrSSRFDetected = errors.New("agents: resolved address is not public (SSRF)")
+)
+
+type CloneOptions struct {
 	AllowedHosts []string
 	BlockedHosts []string
 	MaxRepoBytes int64
 	MaxFileBytes int64
+}
+
+type CloneResult struct {
+	Dir     string
+	Cleanup func()
+}
+
+type ValidateOptions struct {
+	AllowedExtensions []string
+}
+
+type ValidateResult struct {
+	Issues []ValidationIssue
 }
 
 type ImportCollisionPolicy string
@@ -427,14 +472,15 @@ type ValidationIssue struct {
 }
 
 type GitFetcher interface {
-	Clone(ctx context.Context, rawURL string, opts GitCloneOptions) (string, error)
-	Validate(ctx context.Context, dir string) ([]ValidationIssue, error)
+	ValidateURL(ctx context.Context, rawURL string) error
+	Clone(ctx context.Context, url string, opts CloneOptions) (*CloneResult, error)
+	Validate(ctx context.Context, dir string, opts ValidateOptions) (*ValidateResult, error)
 }
 ```
 
-`Clone` returns a temp directory containing the fetched repo snapshot. `Validate` performs structure and safety validation over the cloned contents, including `.agents/` schema checks.
+`ValidateURL` checks scheme, host policy, and DNS resolution. It returns `ErrNotHTTPS`, `ErrBlockedHost`, or `ErrSSRFDetected` on failure. `Clone` returns a `CloneResult` containing the temp directory and a cleanup function the caller must defer. `Validate` performs structure and safety validation over the cloned contents, including `.agents/` schema checks.
 
-The concrete implementation may use the `git` binary only if the network path is pinned through a controlled proxy that enforces the validated host to IP mapping. Otherwise the implementation should use a fetcher that owns DNS resolution and dialing directly. The service consumes only `GitFetcher`.
+The concrete implementation may use the `git` binary only if the network path is pinned through a controlled dialer that enforces the validated host-to-IP mapping. Otherwise the implementation should use a fetcher that owns DNS resolution and dialing directly. The service consumes only `GitFetcher`.
 
 ## Structure Validation
 
@@ -447,7 +493,7 @@ Validation runs on the temp clone before any project write:
 - no nested `.git` directories
 - no path traversal segments
 - no symlinks anywhere under `.agents/`
-- only text files are allowed in Phase 1
+- only text files are allowed in Phase 1: detect binary files by scanning the first 8192 bytes for null bytes; additionally, only allow files with text-format extensions: `.md`, `.txt`, `.yaml`, `.yml`, `.json`; reject all other extensions in Phase 1
 
 Files outside `.agents/` are ignored by import.
 

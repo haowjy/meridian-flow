@@ -243,6 +243,23 @@ type CreditGranter interface {
     InitializeSignupCredits(ctx context.Context, req InitializeSignupCreditsRequest) (*InitializeSignupCreditsResult, error)
 }
 
+// InitializeSignupCreditsRequest is the input to CreditGranter.InitializeSignupCredits.
+type InitializeSignupCreditsRequest struct {
+    UserID       string
+    Email        string
+    AuthProvider string // "google", "github", "email"
+    EmailVerified bool
+}
+
+// InitializeSignupCreditsResult is the output of CreditGranter.InitializeSignupCredits.
+type InitializeSignupCreditsResult struct {
+    CreditsGranted              int64  // millicredits granted (0 if already initialized or email unverified)
+    AlreadyInitialized          bool   // true if user was already initialized
+    PromotionalBalanceMillicredits int64
+    PurchasedBalanceMillicredits   int64
+    TotalBalanceMillicredits       int64
+}
+
 type CreditStore interface {
     GetBalance(ctx context.Context, userID string) (*CreditBalance, error)
     ListTransactions(ctx context.Context, userID string, req ListTransactionsRequest) (*CreditTransactionPage, error)
@@ -397,6 +414,28 @@ Rules:
 - minimum charge is 1 millicredit, not 1 whole credit
 - UI rounds for presentation; ledger never rounds to whole credits
 
+### Model Pricing Registry
+
+```go
+// ModelPricing contains per-model cost rates for credit calculation.
+type ModelPricing struct {
+    InputMicrousdPer1K  int64
+    OutputMicrousdPer1K int64
+}
+
+// DefaultModelPricing contains launch-day pricing.
+// Loaded from config in production; hardcoded defaults for development.
+var DefaultModelPricing = map[string]ModelPricing{
+    "claude-sonnet-4-20250514":    {InputMicrousdPer1K: 3000, OutputMicrousdPer1K: 15000},
+    "claude-haiku-4-5-20251001":   {InputMicrousdPer1K: 800, OutputMicrousdPer1K: 4000},
+    "claude-opus-4-20250515":      {InputMicrousdPer1K: 15000, OutputMicrousdPer1K: 75000},
+    "gpt-4o":                      {InputMicrousdPer1K: 2500, OutputMicrousdPer1K: 10000},
+    "gpt-4o-mini":                 {InputMicrousdPer1K: 150, OutputMicrousdPer1K: 600},
+}
+```
+
+Note: these prices are approximate and will be tuned. This map is the data source for `CalculateCreditCost`.
+
 ### FIFO Multi-Lot Deduction
 
 The repository does not assemble FIFO in Go with multiple ad hoc updates. It calls one PostgreSQL function that locks rows, updates lots, and writes audit rows atomically.
@@ -419,6 +458,11 @@ DECLARE
   v_consumed bigint;
   v_anchor_lot_id uuid;
 BEGIN
+  -- Prevent TOCTOU race: two concurrent calls with the same consumption_group_id
+  -- could both pass the EXISTS idempotency check before either inserts. The advisory
+  -- lock serializes callers per consumption_group_id within the transaction.
+  PERFORM pg_advisory_xact_lock(hashtext(p_consumption_group_id::text));
+
   IF p_amount_millicredits <= 0 THEN
     RAISE EXCEPTION '${TABLE_PREFIX}invalid_credit_amount'
       USING MESSAGE = 'p_amount_millicredits must be greater than zero';
@@ -965,36 +1009,7 @@ Errors:
 
 ### `POST /api/auth/initialize`
 
-Authenticated. Idempotent signup-credit initialization.
-
-Request:
-
-```json
-{}
-```
-
-Response `200`:
-
-```json
-{
-  "signup_credit_status": "granted",
-  "grant_reason": "signup_bonus_v1",
-  "balance": {
-    "total_balance_millicredits": 300000,
-    "display_total_credits": "300.0"
-  }
-}
-```
-
-Other valid statuses:
-
-- `already_granted`
-- `awaiting_email_verification`
-- `not_eligible`
-
-Errors:
-
-- `401` unauthenticated
+See auth.md for the POST /api/auth/initialize endpoint specification.
 
 ### `402` Initial Exhausted Credit Error Shape
 
@@ -1139,6 +1154,7 @@ Generation-record billing fields remain a JSON shape change inside existing `tur
 
 ```sql
 -- +goose Up
+-- +goose ENVSUB ON
 -- +goose StatementBegin
 CREATE TYPE ${TABLE_PREFIX}credit_source_type AS ENUM ('purchase', 'grant');
 CREATE TYPE ${TABLE_PREFIX}credit_transaction_type AS ENUM (
@@ -1265,6 +1281,11 @@ DECLARE
   v_consumed bigint;
   v_anchor_lot_id uuid;
 BEGIN
+  -- Prevent TOCTOU race: two concurrent calls with the same consumption_group_id
+  -- could both pass the EXISTS idempotency check before either inserts. The advisory
+  -- lock serializes callers per consumption_group_id within the transaction.
+  PERFORM pg_advisory_xact_lock(hashtext(p_consumption_group_id::text));
+
   IF p_amount_millicredits <= 0 THEN
     RAISE EXCEPTION '${TABLE_PREFIX}invalid_credit_amount'
       USING MESSAGE = 'p_amount_millicredits must be greater than zero';
@@ -1403,6 +1424,7 @@ $func$;
 
 ```sql
 -- +goose Down
+-- +goose ENVSUB ON
 -- +goose StatementBegin
 DROP FUNCTION IF EXISTS ${TABLE_PREFIX}consume_credit_lots_fifo(uuid, bigint, uuid, text, jsonb);
 DROP VIEW IF EXISTS ${TABLE_PREFIX}credit_balances;
