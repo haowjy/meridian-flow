@@ -333,6 +333,10 @@ func (s *chanStreamState) startDrain() {
 // from a different goroutine. NewStreamFromChan recovers its own receive/drain
 // paths, but the provider goroutine is still the crash boundary for transport code.
 func NewStreamFromChan(ctx context.Context, ch <-chan StreamEvent, cancel context.CancelFunc) *Stream {
+    if ctx == nil || ch == nil || cancel == nil {
+        panic("llmprovider: NewStreamFromChan requires non-nil ctx, ch, and cancel")
+    }
+
     state := &chanStreamState{
         ctx:      ctx,
         cancel:   cancel,
@@ -354,11 +358,10 @@ func NewStreamFromChan(ctx context.Context, ch <-chan StreamEvent, cancel contex
             return false
         }
 
+        // The two-level select gives channel reads priority. If an event
+        // is already buffered, it is delivered even when ctx is simultaneously
+        // cancelled. Only when the channel would block does ctx.Done() take effect.
         select {
-        case <-state.ctx.Done():
-            state.setTerminal(streamFailed, state.ctx.Err())
-            return false
-
         case ev, open := <-state.ch:
             if !open {
                 state.markProducerDone()
@@ -374,6 +377,27 @@ func NewStreamFromChan(ctx context.Context, ch <-chan StreamEvent, cancel contex
 
             state.setCurrent(ev)
             return true
+        default:
+            select {
+            case ev, open := <-state.ch:
+                if !open {
+                    state.markProducerDone()
+                    state.setTerminal(streamDone, nil)
+                    return false
+                }
+
+                if ev.Error != nil {
+                    state.setTerminal(streamFailed, ev.Error)
+                    state.cancel()
+                    return false
+                }
+
+                state.setCurrent(ev)
+                return true
+            case <-state.ctx.Done():
+                state.setTerminal(streamFailed, state.ctx.Err())
+                return false
+            }
         }
     }
 
@@ -426,10 +450,9 @@ func StreamFromSlice(events []StreamEvent, terminalErr error) *Stream {
     errFn := func() error {
         mu.Lock()
         defer mu.Unlock()
-
-        if closed {
-            return nil
-        }
+        // Terminal error is preserved even after Close().
+        // This matches NewStreamFromChan behavior where Close()
+        // after clean exhaustion preserves the terminal state.
         if index >= len(events) {
             return terminalErr
         }
@@ -537,7 +560,15 @@ func (s *transformState) getCloseErr() error {
 func TransformStream(upstream *Stream, interceptor StreamInterceptor) *Stream {
     state := &transformState{terminal: streamOpen}
 
-    next := func() bool {
+    next := func() (ok bool) {
+        defer func() {
+            if r := recover(); r != nil {
+                _ = upstream.Close()
+                state.setTerminal(streamFailed, NewStreamPanicError(r))
+                ok = false
+            }
+        }()
+
         if state.terminalState() != streamOpen {
             return false
         }
@@ -588,9 +619,16 @@ func TransformStream(upstream *Stream, interceptor StreamInterceptor) *Stream {
         state.closeOnce.Do(func() {
             if state.terminalState() == streamOpen {
                 state.setTerminal(streamClosed, nil)
-                if interceptor.OnClose != nil {
-                    state.appendCloseErr(interceptor.OnClose())
-                }
+                func() {
+                    defer func() {
+                        if r := recover(); r != nil {
+                            state.appendCloseErr(NewStreamPanicError(r))
+                        }
+                    }()
+                    if interceptor.OnClose != nil {
+                        state.appendCloseErr(interceptor.OnClose())
+                    }
+                }()
             }
             state.appendCloseErr(upstream.Close())
         })
@@ -865,6 +903,12 @@ Why this rewrite fixes the original issues:
 - AG-UI `RUN_ERROR` remains an ordinary `StreamEvent.Event`; it is not coupled to `stream.Err()`.
 - `TransformStream` cannot implement retry middleware, because it has no replay buffer and cannot restart an already-consumed upstream stream.
 
+### Concurrency Contract
+
+Stream is single-consumer. Next() must not be called concurrently with itself. However, Close() MAY be called from a different goroutine while Next() is blocked — this is the standard shutdown pattern (e.g., HTTP handler cancellation while the executor is iterating).
+
+Implementation requirement: NewStreamFromChan and TransformStream must serialize terminal state transitions with a mutex so that Close() racing with Next() at EOF produces a deterministic result. The rule is: whichever goroutine sets the terminal state first wins. If Next() reaches clean EOF and sets streamDone before Close() runs, OnDone fires and OnClose is skipped. If Close() sets streamClosed before Next() observes EOF, OnClose fires and OnDone is skipped. The terminalOnce in the implementation ensures exactly one transition.
+
 ## Provider Migration Pattern
 
 ### Minimal Lorem Diff
@@ -947,6 +991,41 @@ That follows the `bufio.Writer` sticky-error pattern: keep the convenience API, 
 ## Backend Adapter Strategy
 
 Backend adapters consume `*Stream` directly. Update `domain/services/llm/provider.go` `StreamResponse` to return `*Stream`. Update `mstream_adapter.go` and `tool_executor.go` to iterate with `Next()`/`Event()`/`Err()`.
+
+### Backend Executor Adapter
+
+The backend executor (mstream_adapter.go) uses a 5-way select loop multiplexing keepalive, drain timer, control commands, context cancellation, and stream events. stream.Next() is blocking and cannot participate in Go select.
+
+The adapter wraps *Stream back into a channel at the adapter boundary:
+
+```go
+// In the backend adapter — terminal consumer, not middleware
+libStream, err := a.provider.StreamResponse(ctx, libReq)
+if err != nil { return nil, err }
+
+backendEventCh := make(chan domainllm.StreamEvent)
+go func() {
+    defer close(backendEventCh)
+    defer libStream.Close()
+    for libStream.Next() {
+        backendEventCh <- convertFromLibraryEvent(libStream.Event())
+    }
+    if err := libStream.Err(); err != nil {
+        backendEventCh <- domainllm.StreamEvent{Error: err}
+    }
+}()
+```
+
+This adapter goroutine is justified because:
+- It is the terminal consumer, not middleware passthrough
+- It translates between different StreamEvent types (library vs domain)
+- The executor needs select-based multiplexing for keepalive/cancel/drain
+- A translation goroutine would exist regardless of the stream API
+- Cross-cutting concerns (metering, logging) are handled by library middleware, not the executor
+
+### Domain Type Boundary
+
+The backend domain Provider interface keeps its own StreamResponse returning <-chan domainllm.StreamEvent. The library *Stream is consumed only at the adapter boundary. Domain isolation is preserved — the domain layer never imports the library directly.
 
 ## Implementation Plan
 
