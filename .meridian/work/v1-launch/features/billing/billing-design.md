@@ -191,6 +191,7 @@ flowchart LR
 - Implementation: `CreditGate` calls `CreditAdmissionChecker.CheckAdmission(...)` synchronously before `CreateTurn`
 - Failure mode: fail closed
 - This is the coarse fast-fail path, not the authoritative request-boundary check
+- Sharing `CreditAdmissionChecker` with executor admission is intentional; both layers currently enforce the same `balance > 0` check and can be split later if thresholds diverge
 
 #### 2. Executor Step Gate
 
@@ -221,6 +222,8 @@ Design budget for v1:
 Worst-case negative exposure: `3 x 20 x 15 = 900 credits`, which is `$9.00`.
 
 This is the accepted v1 risk envelope. Runtime limits must remain at or below these values. The doc no longer claims the exposure is "one inference step."
+
+OpenRouter deferred settlement creates an exposure window between request completion and enrichment settlement where the admission gate checks a stale balance. V1 bounds this by enforcing `max_concurrent_streams_per_user = 3` in a process-local stream tracker on a single-replica deployment. Multi-replica deployment requires shared admission state. Future mitigation should use a reservation model (hold estimated credits at gate, settle actual usage at enrichment).
 
 ### Go Interfaces
 
@@ -389,20 +392,44 @@ Rules:
 ### Model Pricing Registry
 
 ```go
-// ModelPricing contains per-model cost rates for credit calculation.
-type ModelPricing struct {
-    InputMicrousdPer1K  int64
-    OutputMicrousdPer1K int64
-}
-
 // DefaultModelPricing contains launch-day pricing.
 // Loaded from config in production; hardcoded defaults for development.
 var DefaultModelPricing = map[string]ModelPricing{
-    "claude-sonnet-4-20250514":    {InputMicrousdPer1K: 3000, OutputMicrousdPer1K: 15000},
-    "claude-haiku-4-5-20251001":   {InputMicrousdPer1K: 800, OutputMicrousdPer1K: 4000},
-    "claude-opus-4-20250515":      {InputMicrousdPer1K: 15000, OutputMicrousdPer1K: 75000},
-    "gpt-4o":                      {InputMicrousdPer1K: 2500, OutputMicrousdPer1K: 10000},
-    "gpt-4o-mini":                 {InputMicrousdPer1K: 150, OutputMicrousdPer1K: 600},
+    "claude-sonnet-4-20250514": {
+        InputMicrousdPer1K:     3000,
+        OutputMicrousdPer1K:    15000,
+        ReasoningMicrousdPer1K: 15000,
+        CachedMicrousdPer1K:    1500,
+        MarkupBasisPoints:      2500,
+    },
+    "claude-haiku-4-5-20251001": {
+        InputMicrousdPer1K:     800,
+        OutputMicrousdPer1K:    4000,
+        ReasoningMicrousdPer1K: 4000,
+        CachedMicrousdPer1K:    400,
+        MarkupBasisPoints:      2000,
+    },
+    "claude-opus-4-20250515": {
+        InputMicrousdPer1K:     15000,
+        OutputMicrousdPer1K:    75000,
+        ReasoningMicrousdPer1K: 75000,
+        CachedMicrousdPer1K:    7500,
+        MarkupBasisPoints:      2500,
+    },
+    "gpt-4o": {
+        InputMicrousdPer1K:     2500,
+        OutputMicrousdPer1K:    10000,
+        ReasoningMicrousdPer1K: 10000,
+        CachedMicrousdPer1K:    1250,
+        MarkupBasisPoints:      2500,
+    },
+    "gpt-4o-mini": {
+        InputMicrousdPer1K:     150,
+        OutputMicrousdPer1K:    600,
+        ReasoningMicrousdPer1K: 600,
+        CachedMicrousdPer1K:    75,
+        MarkupBasisPoints:      2000,
+    },
 }
 ```
 
@@ -615,6 +642,12 @@ Each generation record should be extended with:
 
 This keeps exact usage, billing status, and retry state attached to the assistant turn that produced the cost.
 
+`billing_status` semantics:
+
+- `pending`: settlement attempt failed due to a retryable issue (for example transient DB or network error); reconciliation will retry
+- `settled`: FIFO deduction completed successfully
+- `failed`: reconciliation exhausted retries (max 5 attempts over 24 hours); manual review is required and monitoring fires an alert
+
 ### Failure Mode and Reconciliation
 
 #### Admission Check Failure
@@ -708,11 +741,21 @@ Required behavior:
 Reconciliation key:
 
 - `usage_event_id = assistant_turn_id:request_index`
-- `consumption_group_id = uuid_v5(usage_event_id)`
+- `consumption_group_id = uuid_v5(billing_namespace, usage_event_id)`
+- `billing_namespace` is a fixed UUID constant defined in the billing service
 
 This keeps retries idempotent.
 
 The user still receives the successful model output. Billing is corrected asynchronously.
+
+#### Reconciliation
+
+- Trigger: startup sweep scans generation records with `billing_status = pending`
+- Periodic: cron job runs every 15 minutes and checks pending settlements older than 5 minutes
+- Action: load stored `billing_amount_millicredits` from the generation record and call `CreditSettler.RetryPendingSettlement`
+- Retry policy: exponential backoff, max 5 attempts over 24 hours
+- Terminal behavior: after 5 failures, mark `billing_status = failed` and fire a monitoring alert
+- Durability note: durable reconciliation depends on persisting the generation record before attempting settlement (write-ahead pattern)
 
 Generation-record migration note:
 
