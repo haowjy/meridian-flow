@@ -226,7 +226,8 @@ type Service interface {
     Get(ctx context.Context, projectID, slug, userID string, threadFilter ThreadListFilter) (*Detail, error)
     List(ctx context.Context, projectID, userID string, filter ListFilter) (*ListResult, error)
     Update(ctx context.Context, projectID, slug, userID string, req *UpdateRequest) (*Summary, error)
-    UpdateStatus(ctx context.Context, projectID, slug, userID string, next Status) (*Summary, error)
+    // Status transitions are exposed only through Complete() and Reopen().
+    // UpdateStatus exists on the Store interface as an implementation primitive.
     Complete(ctx context.Context, projectID, slug, userID string) (*Summary, error)
     Reopen(ctx context.Context, projectID, slug, userID string) (*Summary, error)
     Delete(ctx context.Context, projectID, slug, userID string) (*Summary, error)
@@ -271,6 +272,20 @@ type Store interface {
 - `WorkItemStore` owns row persistence plus thread association writes on `${TABLE_PREFIX}chats`
 - `ThreadService` keeps ownership of thread creation, but validates the optional `work_item_id` through `WorkItemService` and auto-creates an ephemeral work item when omitted
 - `StreamingService` ensures the thread has a work item, then checks associated work item state before creating turns
+
+### ThreadService Integration
+
+`ThreadService` constructor accepts `WorkItemService` as a dependency.
+
+When creating a thread without a `work_item_id`, `ThreadService` calls `workItemService.EnsureThreadWorkItem(ctx, projectID, userID)` to get or create an ephemeral work item.
+
+Transaction ownership: `ThreadService` opens the `ExecTx`. Inside, it calls `EnsureThreadWorkItem` (which does its own store-level operations within the same tx), then creates the thread row.
+
+The streaming service's lazy work-item provisioning follows the same pattern: before creating a turn, ensure the thread has a work item.
+
+### `$MERIDIAN_WORK_DIR` Resolution
+
+The `$MERIDIAN_WORK_DIR` environment variable is resolved by the agent runtime context builder. It maps the active work item slug to the filesystem path: `.meridian/work/<slug>/`. The context builder reads the work item from the thread association and constructs the path. If no work item exists (pre-A4 threads), the runtime creates an ephemeral work item first.
 
 ## Persistence Design
 
@@ -471,7 +486,7 @@ Rules:
   - name from thread title or `Thread <short-id>`
   - hidden from the dashboard by default
   - still backed by `.meridian/work/<slug>/`
-- If a thread is later reassigned to a non-ephemeral work item, the old ephemeral work item may be soft-deleted once it has zero attached threads
+- Ephemeral work item garbage collection is deferred to post-v1. In v1, ephemeral work items accumulate. Thread reassignment (DetachThread, ReassignThread) is not supported in v1. When implemented, GC will soft-delete ephemeral items with zero attached threads.
 
 ### `ListThreads`
 

@@ -257,6 +257,23 @@ A2 consumes A1's billing-owned interface. The exact package path is owned by A1,
 type CreditGranter interface {
     InitializeSignupCredits(ctx context.Context, req InitializeSignupCreditsRequest) (*InitializeSignupCreditsResult, error)
 }
+
+// InitializeSignupCreditsRequest is the input to CreditGranter.InitializeSignupCredits.
+type InitializeSignupCreditsRequest struct {
+    UserID       string
+    Email        string
+    AuthProvider string // "google", "github", "email"
+    EmailVerified bool
+}
+
+// InitializeSignupCreditsResult is the output of CreditGranter.InitializeSignupCredits.
+type InitializeSignupCreditsResult struct {
+    CreditsGranted              int64  // millicredits granted (0 if already initialized or email unverified)
+    AlreadyInitialized          bool   // true if user was already initialized
+    PromotionalBalanceMillicredits int64
+    PurchasedBalanceMillicredits   int64
+    TotalBalanceMillicredits       int64
+}
 ```
 
 For A2 to stay decoupled from the rest of billing, `InitializeSignupCreditsResult` must include:
