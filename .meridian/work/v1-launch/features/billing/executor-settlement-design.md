@@ -1,501 +1,309 @@
-# Executor-Owned Billing Settlement
+# Executor-Owned Credit Settlement
 
 ## Problem
 
-The billing design doc (billing-design.md) puts credit settlement in `CreditUsageReporter`, a library middleware that wraps the provider. This doesn't work:
+The original billing design still treated settlement as library middleware work. That breaks in Meridian's actual control flow:
 
-1. **Hard cancel kills the context.** The middleware's `ReportUsage` runs in `OnDone` or `OnClose`, both of which need a live context. On hard cancel (Anthropic), the request context is cancelled, so `ReportUsage` fails silently.
+1. Middleware does not own the stream lifecycle details Meridian needs: `requestIndex`, initial vs continuation, generation IDs, cancel strategy, SSE emission, and turn status transitions all live in `StreamExecutor`.
+2. OpenRouter stream metadata is not authoritative for billing. `CalculateCreditCost` charges for `ReasoningTokens` and `CachedTokens`, but those dimensions only arrive from generation enrichment.
+3. `CreateTurn` returns `201` before `workFunc` runs, so the executor cannot produce the initial `402` response. Any denial that happens inside `workFunc` is already on the SSE path.
+4. Reconciliation cannot recompute from the current pricing table without drift. The first authoritative settlement attempt must persist `billing_amount_millicredits`, and retries must reuse it.
+5. Nil billing collaborators are a production footgun. Missing wiring should fail startup, not silently disable billing.
 
-2. **Soft cancel has a separate token resolution path.** The executor already has `QueryGenerationStats` and `EnrichGenerationJob` for getting authoritative OpenRouter token counts after cancel. If the middleware also tries to report, you get two settlement paths racing.
+## Decisions
 
-3. **Double-count risk.** Two independent components (middleware + executor) both trying to record usage for the same LLM request. The FIFO function's idempotency guard (`consumption_group_id`) prevents actual double-deduction, but the architecture shouldn't depend on the database to fix a structural concurrency bug.
+- Keep `CreditGate` HTTP middleware as the only synchronous `402` path for `POST /api/turns`.
+- Move authoritative step-level admission into `StreamExecutor`, immediately before every provider call.
+- Settle inline only when streaming metadata is authoritative for all billable token dimensions.
+- Defer OpenRouter settlement to `EnrichGenerationJob`, because enrichment is the first point where native prompt, completion, reasoning, and cached tokens are all available together.
+- Persist `billing_usage_event_id`, `billing_consumption_group_id`, and `billing_amount_millicredits` on the generation record. Reconciliation retries use those stored values; they do not recalculate price.
+- Keep billing as explicit executor collaborators rather than introducing a generic `StreamLifecycleObserver` abstraction.
 
-4. **Missing lifecycle context.** The middleware doesn't know `requestIndex`, can't distinguish initial from continuation, doesn't have the turn ID, and can't emit SSE events on denial. All of this lives in the executor.
+## Naming
 
-## Solution
+Use `CreditAdmissionChecker` and `CreditSettler`.
 
-Move both admission (gate check) and settlement into the `StreamExecutor`. The executor is the only component with full lifecycle visibility:
+- `CreditGate` remains the HTTP middleware name.
+- `CreditAdmissionChecker` is the executor-facing collaborator that answers "may this request start?"
+- `CreditSettler` is the executor-facing collaborator that records authoritative usage and deducts credits.
 
-- Knows whether this is initial request or tool continuation (`requestIndex`)
-- Knows the cancel strategy (state machine: `StateStreaming`, `StateDrainMetadata`, `StateHardCancelled`, `StateTimedOut`)
-- Has the generation ID for native stats queries
-- Has the background job queue for deferred enrichment
-- Runs every terminal path (completion, cancel, error, timeout)
-- Has `userID`, `turnID`, and `model` for billing context
-- Can emit SSE events (CREDITS_EXHAUSTED) on denial
+This avoids overloading "gate" across the HTTP and executor layers.
 
-The library's `UsageMeteringMiddleware` is **not used** for billing. It exists for generic metering use cases; Meridian's billing is executor-level.
+## Settlement Modes
+
+The executor resolves one settlement mode per provider request:
+
+```go
+type CreditSettlementMode string
+
+const (
+    CreditSettlementInlineAuthoritative  CreditSettlementMode = "inline_authoritative"
+    CreditSettlementDeferredToEnrichment CreditSettlementMode = "deferred_to_enrichment"
+)
+```
+
+Current mapping:
+
+- Anthropic: `inline_authoritative`
+- OpenRouter: `deferred_to_enrichment`
+
+Future providers can opt into inline settlement only if the stream terminal metadata includes every billable token dimension Meridian prices today.
 
 ## Interfaces
 
-Two narrow interfaces injected into `StreamExecutor`:
-
 ```go
-// BillingGate checks whether the user has sufficient credits to start an LLM request.
-// Returns nil if admitted, *domain.InsufficientCreditsError if denied.
-// Fail-closed: any non-nil error rejects the request.
-type BillingGate interface {
+// CreditAdmissionChecker answers whether a user may start the next provider call.
+// Returns nil on admit, or *domain.InsufficientCreditsError on denial.
+// Fail closed: any other error also blocks the call.
+type CreditAdmissionChecker interface {
     CheckAdmission(ctx context.Context, userID string) error
 }
 
-// BillingSettler computes cost and deducts credits for one completed LLM request.
-// Idempotent by turnID + requestIndex (internally generates usageEventID and consumptionGroupID).
-// Returns nil on success, or if tokens are zero (deferred to enrichment job).
-// Returns error on settlement failure (caller marks billing_status = pending).
-type BillingSettler interface {
-    SettleRequest(ctx context.Context, req SettleRequestInput) error
+// CreditSettler consumes authoritative usage for one request index.
+// The first authoritative attempt persists usage ids and billing_amount_millicredits
+// on the generation record before FIFO deduction. RetryPendingSettlement reuses that
+// stored amount; it does not re-price from the current pricing table.
+type CreditSettler interface {
+    SettleAuthoritativeRequest(ctx context.Context, req SettleRequestInput) error
+    RetryPendingSettlement(ctx context.Context, req RetryPendingSettlementInput) error
 }
 
 type SettleRequestInput struct {
-    UserID       string
+    UserID           string
+    TurnID           string
+    RequestIndex     int
+    Model            string
+    InputTokens      int64
+    OutputTokens     int64
+    ReasoningTokens  int64
+    CachedTokens     int64
+}
+
+type RetryPendingSettlementInput struct {
     TurnID       string
     RequestIndex int
-    Model        string
-    InputTokens  int
-    OutputTokens int
-    TokensFinal  bool   // false means background enrichment may provide better numbers later
 }
 ```
 
-`BillingSettler.SettleRequest` implementation (in the billing service, not in the executor):
+`SettleAuthoritativeRequest` performs:
 
-1. If `InputTokens == 0 && OutputTokens == 0` and `!TokensFinal`: return nil (deferred)
-2. Generate `usageEventID = fmt.Sprintf("%s:%d", turnID, requestIndex)`
-3. Generate `consumptionGroupID = uuid.NewSHA1(billingNamespace, []byte(usageEventID))`
-4. Look up model pricing, call `CalculateCreditCost`
-5. Call `ConsumeFIFO` with the computed cost
-6. Return nil on success, error on failure
+1. Derive `usageEventID = fmt.Sprintf("%s:%d", turnID, requestIndex)`.
+2. Derive `consumptionGroupID = uuid.NewSHA1(billingNamespace, []byte(usageEventID))`.
+3. Compute `amountMillicredits = CalculateCreditCost(...)` from all four token dimensions.
+4. Persist `billing_usage_event_id`, `billing_consumption_group_id`, and `billing_amount_millicredits` on the generation record before attempting FIFO deduction.
+5. Call `ConsumeFIFO` with the stored amount.
+6. Mark the generation record `settled` on success, or `pending` with `billing_last_error` on failure.
 
-ISP compliance: the executor depends on two small interfaces, not on the full `CreditService`.
+`RetryPendingSettlement` loads the persisted billing fields from the generation record and retries only the deduction/writeback path.
 
-## Executor Changes
+## Wiring And Nil Safety
 
-### New Fields
+The executor constructor takes interfaces, not optional pointers. Nil is a programming error.
 
 ```go
 type StreamExecutor struct {
     // ... existing fields ...
-
-    // Billing: injected by service layer. nil when billing is disabled.
-    billingGate    BillingGate
-    billingSettler BillingSettler
+    creditAdmissionChecker CreditAdmissionChecker
+    creditSettler          CreditSettler
+    settlementMode         CreditSettlementMode
 }
 ```
 
-Both are nil-safe: nil means billing is disabled (development, tests). All call sites guard with `if se.billingGate != nil` / `if se.billingSettler != nil`.
+Wiring rules:
 
-### Constructor
-
-`NewStreamExecutor` gets two new optional parameters:
-
-```go
-func NewStreamExecutor(
-    // ... existing params ...
-    billingGate BillingGate,       // nil to disable admission checks
-    billingSettler BillingSettler,  // nil to disable settlement
-) *StreamExecutor
-```
+- Production startup must provide non-nil implementations and fail fast if either dependency is missing.
+- Test and development wiring uses explicit no-op implementations such as `NoopCreditAdmissionChecker` and `NoopCreditSettler`.
+- Call sites do not branch on nil. Billing being "disabled" is an explicit dependency choice, not an implicit absence.
 
 ## Admission Flow
 
-Gate checks happen at three points, all immediately before a provider call:
+There are two admission layers with different jobs.
 
-### 1. Initial Request (workFunc)
+### 1. HTTP `CreditGate` Middleware
 
-```
+This is the only `402` path for the initial request.
+
+- Runs before `CreateTurn`.
+- Performs a coarse fail-closed balance check.
+- Returns HTTP `402` when the wallet is already exhausted.
+
+Because `CreateTurn` starts the executor in a background goroutine, no denial that happens later can rewrite the response code.
+
+### 2. Executor Step Gate
+
+The executor runs `CreditAdmissionChecker.CheckAdmission` immediately before every provider call:
+
+- initial assistant request
+- each tool continuation
+- graceful-completion continuation
+
+If the initial executor check denies after the HTTP middleware admitted, the executor emits `CREDITS_EXHAUSTED` and ends the run gracefully. It does not attempt to surface a second HTTP `402`.
+
+### Initial Request Ordering
+
+```text
 workFunc
   |
-  +-- updateTurnStatus("streaming")
+  +-- Emit RUN_STARTED
   |
-  +-- GATE CHECK  <--- new
+  +-- CheckAdmission()            <--- belt-and-suspenders race check
   |     |
-  |     +-- denied? -> return error (propagates to service layer -> HTTP 402)
-  |     +-- admitted? -> continue
+  |     +-- denied -> handleCreditsExhausted(initial request)
+  |     +-- admitted -> continue
   |
-  +-- emitStepStarted()  <--- moved after gate
-  |
+  +-- updateTurnStatus("streaming")
+  +-- emitStepStarted()
   +-- startProviderStreamWithRetry()
-  |
-  +-- processProviderStream()
 ```
 
-The initial gate denial returns an error from `workFunc`. The service layer maps `*domain.InsufficientCreditsError` to HTTP 402 (since SSE hasn't started yet).
+Important ordering change: a denied request does not emit a fake `STEP_STARTED`, and does not transiently mark the turn `streaming`.
 
-### 2. Tool Continuation (executeToolsAndContinue)
+### Continuation Ordering
 
-```
+```text
 executeToolsAndContinue
   |
-  +-- execute tools, persist results
-  |
-  +-- check interjection buffer
-  |
-  +-- toolIteration++, requestIndex++
-  |
-  +-- GATE CHECK  <--- new
+  +-- persist tool results
+  +-- emitStepFinished() for the completed step
+  +-- requestIndex++
+  +-- CheckAdmission()
   |     |
-  |     +-- denied? -> handleCreditsExhausted()
-  |     |               |
-  |     |               +-- emit CREDITS_EXHAUSTED SSE event
-  |     |               +-- mark turn status = credit_limited
-  |     |               +-- emit RUN_FINISHED(stopReason="credits_exhausted")
-  |     |               +-- return nil (graceful end, not an error)
-  |     |
-  |     +-- admitted? -> continue
+  |     +-- denied -> handleCreditsExhausted(continuation)
+  |     +-- admitted -> continue
   |
-  +-- emitStepStarted()  <--- moved after gate
-  |
-  +-- provider.StreamResponse(contReq)
+  +-- emitStepStarted()
+  +-- provider.StreamResponse(...)
 ```
 
-Key: a denied continuation does NOT kill the turn or discard existing blocks. It emits an SSE event and ends gracefully. The user sees their partial content plus a purchase CTA.
-
-### 3. Graceful Completion (executeToolsAndContinueWithLimit)
-
-Same pattern as tool continuation: gate check before `provider.StreamResponse`, handle denial with `handleCreditsExhausted`.
-
-### handleCreditsExhausted
-
-New method on `StreamExecutor`:
-
-```go
-func (se *StreamExecutor) handleCreditsExhausted(
-    ctx context.Context,
-    send func(mstream.Event),
-    err error,
-) error {
-    // Extract denial details
-    var insuffErr *domain.InsufficientCreditsError
-    errors.As(err, &insuffErr)
-
-    // Mark turn as credit-limited (not errored)
-    se.turnRepo.UpdateTurnStatus(ctx, se.turnID, "credit_limited", &err.Error())
-
-    // Emit SSE event
-    se.aguiEmitter.EmitCreditsExhausted(
-        se.turnID, se.threadID, se.requestIndex,
-        insuffErr.BalanceMillicredits,
-        insuffErr.RequiredMillicredits,
-        insuffErr.ShortfallMillicredits,
-    )
-
-    // Emit run finished (not error - this is a controlled stop)
-    se.aguiEmitter.EmitStepFinished()
-    se.aguiEmitter.EmitRunFinished("credits_exhausted", 0, 0)
-
-    if se.onCleanup != nil {
-        se.onCleanup()
-    }
-
-    return nil // Graceful end
-}
-```
+Continuation denial preserves all previously persisted blocks and ends the run with `credit_limited`.
 
 ## Settlement Flow
 
-Settlement happens in every terminal path. One helper method, `settleCurrentRequest`, centralizes the call:
+### Inline-Authoritative Providers
 
-```go
-func (se *StreamExecutor) settleCurrentRequest(ctx context.Context, inputTokens, outputTokens int, tokensFinal bool) {
-    if se.billingSettler == nil {
-        return
-    }
+For providers such as Anthropic, the terminal stream metadata is authoritative. The executor settles in the terminal handler for that request index.
 
-    err := se.billingSettler.SettleRequest(ctx, SettleRequestInput{
-        UserID:       se.userID,
-        TurnID:       se.turnID,
-        RequestIndex: se.requestIndex,
-        Model:        se.model,
-        InputTokens:  inputTokens,
-        OutputTokens: outputTokens,
-        TokensFinal:  tokensFinal,
-    })
-    if err != nil {
-        se.logger.Warn("billing settlement failed, marked pending",
-            "turn_id", se.turnID,
-            "request_index", se.requestIndex,
-            "input_tokens", inputTokens,
-            "output_tokens", outputTokens,
-            "error", err,
-        )
-        // Mark billing_status = pending on generation record
-        se.markBillingPending(ctx, err)
-    }
-}
-```
+Terminal-path behavior:
 
-### Terminal Path: Normal Completion (handleCompletion)
+- `handleCompletion`: settle inline after final metadata and generation record persistence.
+- `handleError` / timeout paths: settle inline only if the token finalizer already produced authoritative usage.
 
-```
-handleCompletion(metadata)
-  |
-  +-- TokenFinalizer.Finalize() -> tokens
-  +-- updateTurnMetadata()
-  +-- persistOpenRouterGenerationRecord()
-  |
-  +-- settleCurrentRequest(tokens)  <--- new
-  |
-  +-- if isDraining -> cleanup and return
-  +-- if collectedTools -> executeToolsAndContinue (next request gets its own settlement)
-  +-- if interjection -> stream switch
-  +-- completeTurn()
-```
+### Deferred-To-Enrichment Providers
 
-Settlement uses the finalized tokens from `TokenFinalizer`. For normal completion with provider metadata, `tokensFinal = true`. For soft cancel draining, tokens come from the provider finishing, also `tokensFinal = true`.
+For OpenRouter, the executor never settles from streaming metadata.
 
-### Terminal Path: Error / Hard Cancel (handleError)
+Instead it:
 
-```
-handleError(err)
-  |
-  +-- TokenFinalizer.Finalize() -> tokens
-  +-- persistTokenMetadata()
-  +-- persistPartialBlocks()
-  |
-  +-- settleCurrentRequest(tokens)  <--- new
-  |
-  +-- enqueue enrichment job (if cancel + OpenRouter)
-  +-- updateTurnError() or skip (if cancelled)
-  +-- emitRunError()
-  +-- cleanup()
-```
+1. Persists the generation record for the request index.
+2. Persists deterministic billing ids and marks `billing_status = pending`.
+3. Enqueues `EnrichGenerationJob`.
+4. Lets enrichment call `SettleAuthoritativeRequest` once native tokens are available.
 
-On hard cancel, tokens may be zero (no provider metadata). `TokensFinal = false`. The `SettleRequest` implementation returns nil for zero tokens (deferred). The enrichment job will settle later.
+This prevents the "first writer wins" idempotency bug where approximate inline settlement would permanently underbill reasoning-heavy requests.
 
-### Terminal Path: Soft Cancel Timeout (handleTimeoutInStreamingGoroutine)
+### Stored Amount And Retry Semantics
 
-```
-handleTimeoutInStreamingGoroutine()
-  |
-  +-- stream.Cancel()
-  +-- TokenFinalizer.Finalize(snapshot) -> tokens
-  +-- persistTokenMetadata()
-  |
-  +-- settleCurrentRequest(tokens)  <--- new
-  |
-  +-- emitRunError(isCancelled=true)
-  +-- cleanup()
-```
+The authoritative attempt is also the moment that fixes price.
 
-Tokens come from the cancel-time snapshot or OpenRouter API query. May be final or not.
+- First authoritative attempt computes `billing_amount_millicredits` and persists it.
+- `ReconcileBillingJob` retries deduction by loading the stored amount and ids from the generation record.
+- Reconciliation never calls `CalculateCreditCost` again.
 
-## Token Source Priority
+That keeps retries stable even if the pricing table changes after inference.
 
-Settlement uses whatever tokens the `TokenFinalizer` already resolved. The priority chain (unchanged):
+### Deferred Settlement Recovery
 
-1. **Provider metadata** (Anthropic: always present on completion; OpenRouter: usually present)
-2. **OpenRouter generation stats API** (queried inline with 2s timeout)
-3. **None** (IsFinal=false, settlement deferred to enrichment job)
+OpenRouter settlement depends on enrichment, so the durable recovery point is the generation record, not the in-memory queue.
 
-The executor doesn't add a new token resolution path. It takes the tokens that `TokenFinalizer` already computed and passes them to `settleCurrentRequest`.
+- Before enqueueing enrichment, the executor persists `billing_status = pending` plus deterministic usage identifiers.
+- If the process dies before the in-memory queue runs the job, a startup sweep or periodic reconciler can find pending generation records and re-enqueue enrichment or settlement.
 
-## Deferred Settlement via Enrichment Job
+The queue remains an operational dependency, but billing state is not lost just because a single in-memory job was dropped.
 
-When tokens aren't immediately available (OpenRouter eventual consistency on cancel), the existing `EnrichGenerationJob` already retries with exponential backoff. It needs one extension:
-
-```go
-// In EnrichGenerationJob.Execute(), after successfully getting native tokens:
-func (j *EnrichGenerationJob) Execute(ctx context.Context) error {
-    // ... existing: query stats, persist enriched generation record ...
-
-    // NEW: Trigger billing settlement with authoritative tokens
-    if j.billingSettler != nil {
-        err := j.billingSettler.SettleRequest(ctx, SettleRequestInput{
-            UserID:       j.userID,    // new field on job
-            TurnID:       j.turnID,
-            RequestIndex: j.requestIndex,
-            Model:        j.model,
-            InputTokens:  stats.NativeTokensPrompt,
-            OutputTokens: stats.NativeTokensCompletion,
-            TokensFinal:  true,
-        })
-        if err != nil {
-            j.logger.Warn("billing settlement from enrichment failed",
-                "turn_id", j.turnID,
-                "error", err,
-            )
-            // Don't fail the enrichment job - token data is already persisted
-        }
-    }
-
-    return nil
-}
-```
-
-The FIFO function's idempotency guard (`consumption_group_id` check) prevents double-deduction if the executor already settled synchronously.
-
-## Interaction with Existing Infrastructure
-
-### persistOpenRouterGenerationRecord
-
-**Unchanged.** This method captures per-request generation metadata for auditing (provider name, native tokens, cost from OpenRouter). It runs before `settleCurrentRequest`.
-
-The generation record is extended with billing fields (as specified in billing-design.md):
-- `billing_usage_event_id`
-- `billing_consumption_group_id`
-- `billing_amount_millicredits`
-- `billing_status` (pending | settled | failed)
-- `billing_last_error`
-
-`settleCurrentRequest` updates these fields after FIFO deduction succeeds or fails.
-
-### TokenFinalizer
-
-**Unchanged.** Settlement consumes the `TokenResult` that `TokenFinalizer` already produces. No new token resolution logic.
-
-### EnrichGenerationJob
-
-**Extended** with `BillingSettler` and `userID`. After enrichment succeeds, it calls `SettleRequest` with the authoritative native token counts.
-
-### JobQueue
-
-**Unchanged.** The existing job queue handles enrichment retry. A new reconciliation job type is added for settlement retry (separate from enrichment):
-
-```go
-// ReconcileBillingJob retries failed FIFO settlement.
-// Created when settleCurrentRequest fails due to transient DB errors.
-type ReconcileBillingJob struct {
-    UserID       string
-    TurnID       string
-    RequestIndex int
-    Model        string
-    InputTokens  int
-    OutputTokens int
-}
-```
-
-This job calls `SettleRequest` again. Idempotency key prevents double-deduction.
-
-## Complete Lifecycle Diagram
+## Lifecycle Diagram
 
 ```mermaid
 flowchart TD
-    WF["workFunc starts"] --> GateInit{"billingGate.CheckAdmission"}
-    GateInit -->|denied| Err402["Return error, HTTP 402"]
-    GateInit -->|admitted| StepStart["emitStepStarted"]
-    GateInit -->|nil gate| StepStart
-
-    StepStart --> ProviderCall["startProviderStreamWithRetry"]
-    ProviderCall --> Process["processProviderStream"]
-
-    Process -->|metadata event| HC["handleCompletion"]
-    Process -->|error event| HE["handleError"]
-    Process -->|ctx.Done| HE
-    Process -->|hard cancel cmd| HE
-    Process -->|soft cancel cmd| Drain["StateDrainMetadata"]
-    Process -->|drain timeout| HT["handleTimeout"]
-
-    Drain --> HC
-
-    HC --> Finalize1["TokenFinalizer.Finalize"]
-    Finalize1 --> UpdateMeta["updateTurnMetadata"]
-    UpdateMeta --> PersistGen["persistOpenRouterGenerationRecord"]
-    PersistGen --> Settle1["settleCurrentRequest"]
-
-    Settle1 -->|tool_use| ToolExec["executeToolsAndContinue"]
-    Settle1 -->|end_turn| Complete["completeTurn"]
-    Settle1 -->|draining| Cleanup1["cleanup"]
-
-    ToolExec --> GateCont{"billingGate.CheckAdmission"}
-    GateCont -->|denied| Exhaust["handleCreditsExhausted"]
-    GateCont -->|admitted| NextStep["emitStepStarted + StreamResponse"]
-    GateCont -->|nil gate| NextStep
-
-    NextStep --> Process
-
-    HE --> Finalize2["TokenFinalizer.Finalize"]
-    Finalize2 --> Settle2["settleCurrentRequest"]
-    Settle2 --> EnqueueEnrich{"tokens == 0?"}
-    EnqueueEnrich -->|yes| BgJob["EnrichGenerationJob<br/>deferred settlement"]
-    EnqueueEnrich -->|no| Cleanup2["cleanup"]
-    BgJob --> Cleanup2
-
-    HT --> Finalize3["TokenFinalizer.Finalize"]
-    Finalize3 --> Settle3["settleCurrentRequest"]
-    Settle3 --> Cleanup3["cleanup"]
+  A["HTTP request: POST /api/turns"] --> B{"CreditGate middleware"}
+  B -->|"deny"| C["HTTP 402"]
+  B -->|"allow"| D["CreateTurn returns 201<br/>and starts executor"]
+  D --> E{"Executor admission check<br/>before provider call"}
+  E -->|"deny"| F["Emit CREDITS_EXHAUSTED SSE<br/>mark turn credit_limited"]
+  E -->|"allow"| G["Mark turn streaming<br/>emit STEP_STARTED"]
+  G --> H["Provider stream"]
+  H --> I{"Settlement mode"}
+  I -->|"inline authoritative"| J["CreditSettler computes amount<br/>stores amount and deducts FIFO"]
+  I -->|"defer to enrichment"| K["Persist billing_status = pending<br/>enqueue EnrichGenerationJob"]
+  K --> L["Enrichment settles with native tokens"]
+  J --> M["Continue tool loop or finish turn"]
+  L --> M
 ```
 
-## Settlement Sequence for Each Terminal Path
+## Settlement Sequence
 
 ```mermaid
 sequenceDiagram
-    participant EX as StreamExecutor
-    participant TF as TokenFinalizer
-    participant TR as TurnRepo
-    participant BS as BillingSettler
-    participant FIFO as ConsumeFIFO
+  participant EX as StreamExecutor
+  participant GR as GenerationRecord
+  participant EN as EnrichGenerationJob
+  participant CS as CreditSettler
+  participant FIFO as ConsumeFIFO
 
-    rect rgba(128, 128, 128, 0.08)
-        Note over EX,FIFO: Normal Completion
-        EX->>TF: Finalize(providerTokens)
-        TF-->>EX: TokenResult(final=true)
-        EX->>TR: updateTurnMetadata
-        EX->>TR: persistOpenRouterGenerationRecord
-        EX->>BS: SettleRequest(tokens, final=true)
-        BS->>BS: CalculateCreditCost
-        BS->>FIFO: ConsumeFIFO(cost, usageEventID)
-        FIFO-->>BS: settled
-        BS-->>EX: nil
-    end
+  rect rgba(128, 128, 128, 0.08)
+    Note over EX,FIFO: Anthropic inline settlement
+    EX->>CS: SettleAuthoritativeRequest(tokens)
+    CS->>GR: Persist billing ids and amount
+    CS->>FIFO: ConsumeFIFO(stored amount)
+    FIFO-->>CS: success
+    CS->>GR: Mark settled
+  end
 
-    rect rgba(128, 128, 128, 0.08)
-        Note over EX,FIFO: Hard Cancel (no provider metadata)
-        EX->>TF: Finalize(snapshot, no providerTokens)
-        TF-->>EX: TokenResult(0, 0, final=false)
-        EX->>BS: SettleRequest(0, 0, final=false)
-        BS-->>EX: nil (deferred)
-        Note over EX: EnrichGenerationJob queued
-    end
+  rect rgba(128, 128, 128, 0.08)
+    Note over EX,FIFO: OpenRouter deferred settlement
+    EX->>GR: Persist billing ids and status pending
+    EX->>EN: Enqueue enrichment
+    EN->>CS: SettleAuthoritativeRequest(native tokens)
+    CS->>GR: Persist amount if missing
+    CS->>FIFO: ConsumeFIFO(stored amount)
+    FIFO-->>CS: success
+    CS->>GR: Mark settled
+  end
 
-    rect rgba(128, 128, 128, 0.08)
-        Note over EX,FIFO: Enrichment Job (deferred settlement)
-        Note over EX: Background, minutes later
-        EX->>TF: QueryGenerationStats
-        TF-->>EX: native tokens
-        EX->>TR: persist enriched record
-        EX->>BS: SettleRequest(nativeTokens, final=true)
-        BS->>FIFO: ConsumeFIFO(cost, usageEventID)
-        Note over FIFO: Idempotent: no-op if already settled
-    end
+  rect rgba(128, 128, 128, 0.08)
+    Note over EX,FIFO: Reconciliation retry
+    EN->>CS: RetryPendingSettlement(turnID, requestIndex)
+    CS->>GR: Load stored amount and ids
+    CS->>FIFO: ConsumeFIFO(stored amount)
+  end
 ```
 
-## Changes to billing-design.md
+## Why Not `StreamLifecycleObserver`
 
-### Remove
+I considered collapsing admission and settlement behind a generic observer such as:
 
-- "Provider Middleware Integration" section's reliance on `CreditUsageReporter` for settlement
-- "Settlement order inside CreditUsageReporter" (6-step list)
-- References to `UsageMeteringMiddleware` wrapping the provider for billing purposes
-- "Meridian library wiring" paragraph about `WrapProvider`
-- "Meridian attaches UsageScope" paragraph and the three call site references
-- "Scope values" list
+```go
+type StreamLifecycleObserver interface {
+    OnRequestStart(ctx context.Context, requestIndex int) error
+    OnRequestEnd(ctx context.Context, requestIndex int, usage TokenUsage) error
+}
+```
 
-### Replace With
+I am not using that abstraction in this design.
 
-A new subsection: "Executor-Level Settlement Architecture" that references this document for the detailed design.
+Reasons:
 
-Key points for the replacement text:
-- Settlement lives in `StreamExecutor`, not in library middleware
-- Gate check before each provider call (3 points)
-- Settlement after each request's terminal path
-- Deferred settlement via enrichment job when tokens unavailable
-- No billing code in meridian-llm-go
+- Billing is still the only concrete lifecycle concern here.
+- Denial handling is not pure observation. The executor must decide whether to emit `STEP_STARTED`, emit `CREDITS_EXHAUSTED`, and mark the turn `credit_limited`.
+- A generic observer would hide important control-flow edges without reducing much real complexity; it would replace two explicit collaborators with one more abstract collaborator plus executor-specific branches anyway.
 
-### Keep Unchanged
+If a second executor-level lifecycle concern arrives with similar hooks, revisit this and extract a shared observer then.
 
-- `BillingGate` concept (renamed from `CreditUsageGate`, moved to executor)
-- `CreditGate` HTTP middleware (coarse fast-fail for `POST /api/turns`)
-- `CalculateCreditCost` pure function
-- FIFO multi-lot deduction
-- Generation record billing fields
-- `CREDITS_EXHAUSTED` SSE event and turn state rules
-- `handleCreditsExhausted` implementation note (already aligned)
-- Failure mode and reconciliation section
-- All Stripe, API, and migration sections
+## Required Alignment In `billing-design.md`
 
-### Update
+`billing-design.md` should now reflect:
 
-- "Billing Boundaries" diagram: replace `UsageMeteringMiddleware` flow with executor-level settlement
-- "Two-Level Credit Gate" section: clarify that "step-level" gate is in the executor, not middleware
-- "Executor ordering changes" paragraph: restate in terms of this design's gate-before-step pattern
-- "Denial mapping rules": simplify since executor handles denial directly (no library error mapping needed for settlement path)
+- `CreditGate` middleware is the only HTTP `402` source.
+- Step-level admission and settlement are executor-owned.
+- OpenRouter settlement is always deferred to enrichment.
+- `billing_amount_millicredits` is stored on the first authoritative settlement attempt and reused by reconciliation.
+- No Meridian billing behavior depends on library middleware.

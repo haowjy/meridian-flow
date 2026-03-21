@@ -84,7 +84,7 @@ Model cost drift is absorbed by changing the pricing table, not by changing pack
 - `credit_transactions` is append-only audit history
 - `credit_balances` is a filtered view over spendable lots plus any negative debt rows
 - Existing assistant-turn generation records remain the durable source for exact token usage per billable step
-- Middleware can reject obviously empty balances, but authoritative billing happens inside streaming before each provider call
+- `CreditGate` middleware can reject obviously empty balances, but authoritative per-step admission and settlement happen at executor request boundaries
 
 ### Data Model
 
@@ -170,37 +170,39 @@ GROUP BY user_id;
 
 ```mermaid
 flowchart LR
-  A["POST /api/turns"] --> B["Initial usage preflight (402 path)"]
+  A["POST /api/turns"] --> B["CreditGate middleware"]
   B --> C["StreamingService.CreateTurn"]
-  C --> D["ProviderFactory / Registry"]
-  D --> E["WrapProvider(..., UsageMeteringMiddleware)"]
-  E --> F["Usage gate before each provider call"]
-  F --> G["Provider stream"]
-  G --> H["Usage reporter after final metadata"]
-  H --> I["CalculateCreditCost + FIFO consume"]
-  H --> J["Reconciliation job on failure"]
+  C --> D["StreamExecutor"]
+  D --> E["CreditAdmissionChecker before each provider call"]
+  E --> F["Provider stream"]
+  F --> G{"Authoritative usage available?"}
+  G -->|"yes"| H["CreditSettler computes amount<br/>stores amount and deducts FIFO"]
+  G -->|"no"| I["Persist billing_status = pending<br/>enqueue enrichment"]
+  I --> J["Enrichment settles with native tokens"]
 ```
 
 ### Two-Level Credit Gate
 
-#### 1. Initial Request Preflight
+#### 1. HTTP `CreditGate` Middleware
 
-`POST /api/turns` starts streaming in a background goroutine today (`backend/internal/service/llm/streaming/service.go:618-621`), so Meridian needs a synchronous preflight before the HTTP response returns.
+`POST /api/turns` starts streaming in a background goroutine today (`backend/internal/service/llm/streaming/service.go:618-621`), so the only reliable HTTP `402` path is the synchronous middleware before `CreateTurn`.
 
 - Responsibility: produce HTTP `402` when the initial request cannot start because the wallet is already exhausted
-- Implementation: call the same Meridian `CreditUsageGate` that the library wrapper uses, but do it synchronously with `request_index=0` and `phase=initial`
+- Implementation: `CreditGate` calls `CreditAdmissionChecker.CheckAdmission(...)` synchronously before `CreateTurn`
 - Failure mode: fail closed
-- Optional middleware may remain as a coarse fast-fail, but the service-level preflight is the contract because it has the actual model/scope context
+- This is the coarse fast-fail path, not the authoritative request-boundary check
 
-#### 2. Authoritative Step-Level Usage Gate
+#### 2. Executor Step Gate
 
-Authoritative checks happen inside the wrapped library provider before every `StreamResponse(...)` call:
+`StreamExecutor` runs `CreditAdmissionChecker` immediately before every provider call:
 
 - Initial assistant response
 - Every continuation after a tool round
-- Future non-thread AI endpoints that call providers directly
+- Graceful-completion continuation
 
-This is the actual trust boundary. If a later step has no credits, the next `StreamResponse(...)` returns a typed usage-denied error before any new provider bytes are emitted.
+This is the authoritative trust boundary. If a later step has no credits, the executor stops before any new provider bytes are emitted.
+
+If the initial executor check denies after the HTTP middleware admitted, the stream emits `CREDITS_EXHAUSTED` and ends gracefully. It does not attempt to turn the already-started `201` + SSE flow back into HTTP `402`.
 
 ### Bounded Negative Exposure
 
@@ -222,7 +224,7 @@ This is the accepted v1 risk envelope. Runtime limits must remain at or below th
 
 ### Go Interfaces
 
-Billing interfaces live in `internal/domain/` because services consume them and repositories implement them.
+Billing interfaces live in `internal/domain/` because services consume them and repositories implement them. The broad service owns user-facing billing operations; the executor depends on narrow collaborators.
 
 ```go
 package billing
@@ -230,13 +232,20 @@ package billing
 import "context"
 
 type CreditService interface {
-    CheckAdmission(ctx context.Context, userID string) error
     GetBalance(ctx context.Context, userID string) (*CreditBalance, error)
     ListCreditPacks(ctx context.Context) ([]CreditPack, error)
     ListTransactions(ctx context.Context, userID string, req ListTransactionsRequest) (*CreditTransactionPage, error)
     CreateCheckoutSession(ctx context.Context, userID string, req CreateCheckoutSessionRequest) (*CheckoutSession, error)
-    RecordUsage(ctx context.Context, req RecordUsageRequest) error
     HandleStripeWebhook(ctx context.Context, req StripeWebhookRequest) error
+}
+
+type CreditAdmissionChecker interface {
+    CheckAdmission(ctx context.Context, userID string) error
+}
+
+type CreditSettler interface {
+    SettleAuthoritativeRequest(ctx context.Context, req SettleRequestInput) error
+    RetryPendingSettlement(ctx context.Context, req RetryPendingSettlementInput) error
 }
 
 type CreditGranter interface {
@@ -268,90 +277,53 @@ type CreditStore interface {
     ConsumeFIFO(ctx context.Context, req ConsumeFIFORequest) error
     ExpireAvailableLots(ctx context.Context, nowUTC string, batchSize int) ([]ExpiredLot, error)
 }
+
+type SettleRequestInput struct {
+    UserID           string
+    TurnID           string
+    RequestIndex     int
+    Model            string
+    InputTokens      int64
+    OutputTokens     int64
+    ReasoningTokens  int64
+    CachedTokens     int64
+}
+
+type RetryPendingSettlementInput struct {
+    TurnID       string
+    RequestIndex int
+}
 ```
 
 Key request objects:
 
-- `RecordUsageRequest` includes `user_id`, `assistant_turn_id`, `request_index`, `usage_event_id`, `consumption_group_id`, `model`, token counts, and exact `amount_millicredits`
+- `SettleRequestInput` includes `user_id`, `assistant_turn_id`, `request_index`, `model`, and all billable token dimensions
+- `RetryPendingSettlementInput` includes the assistant turn id plus request index for loading stored billing fields from the generation record
 - `InitializeSignupCreditsRequest` includes `user_id`, `auth_provider`, and `email_verified`
 - `CreateCheckoutSessionRequest` includes `pack_id`, `success_url`, and `cancel_url`
 
-### Provider Middleware Integration
+### Executor-Level Settlement
 
-The public library contract now lives in [provider-middleware.md](../middleware/provider-middleware.md). This billing doc only owns Meridian's concrete credit-enforcement behavior on top of that generic wrapper system.
+Detailed design lives in [executor-settlement-design.md](./executor-settlement-design.md).
 
-Meridian library wiring:
+Summary:
 
-- create the raw library provider in `backend/internal/service/llm/provider_factory.go`
-- wrap it once with `llmprovider.WrapProvider(raw, llmprovider.NewUsageMeteringMiddleware(...))`
-- pass the wrapped provider into the adapter factory and then into the streaming executor
-
-That one wrapped provider instance must survive the full turn because the current executor reuses the same provider across the initial request and every tool continuation:
-
-- `backend/internal/service/llm/streaming/service.go:571-590`
-- `backend/internal/service/llm/streaming/mstream_adapter.go:267-275`
-- `backend/internal/service/llm/streaming/tool_executor.go:327-360`
-- `backend/internal/service/llm/streaming/tool_executor.go:496-522`
-
-Meridian attaches `UsageScope` immediately before every provider start:
-
-- initial request at `backend/internal/service/llm/streaming/mstream_adapter.go:278-286`
-- normal continuation at `backend/internal/service/llm/streaming/tool_executor.go:327-347`
-- graceful-completion continuation at `backend/internal/service/llm/streaming/tool_executor.go:496-510`
-
-Scope values:
-
-- `operation = "assistant_turn"`
-- `sequence = requestIndex`
-- `phase = "initial"` or `"tool_continue"`
-- `idempotency_key = assistant_turn_id:request_index`
-- `attributes.user_id`
-- `attributes.assistant_turn_id`
-- `attributes.thread_id`
-- `attributes.provider`
-
-Meridian-owned metering collaborators:
-
-- `CreditUsageGate` checks spendable balance `> 0` for the scoped user and returns a denied decision with:
-  - `balance_millicredits`
-  - `required_millicredits`
-  - `shortfall_millicredits`
-  - `billing_url`
-- `CreditUsageReporter` resolves exact usage, computes millicredits with `CalculateCreditCost(...)`, and calls `RecordUsage(...)`
-
-Settlement order inside `CreditUsageReporter`:
-
-1. Start from the middleware's `UsageReport.InputTokens` and `UsageReport.OutputTokens`
-2. If the wrapped provider also exposes generation stats and `GenerationID` is present, use native stats as the authoritative source
-3. Compute the exact cost with `CalculateCreditCost(...)`
-4. Persist generation-record billing metadata
-5. Call FIFO settlement
-6. If settlement fails after successful inference, mark `billing_status = pending`, enqueue reconciliation, and return `nil` so user-visible streaming still completes successfully
-
-Denial mapping rules:
-
-- the library middleware returns `*llmprovider.UsageDeniedError`
-- the adapter layer maps that into Meridian's domain insufficient-credit error
-- handlers still turn the initial failure path into HTTP `402`
-- streaming code branches on the mapped domain error for later-step SSE exhaustion handling
-
-Executor ordering changes required by this design:
-
-- `backend/internal/service/llm/streaming/mstream_adapter.go:250-269` should emit the initial `STEP_STARTED` only after the initial provider start passes the usage gate
-- `backend/internal/service/llm/streaming/tool_executor.go:252-258` should move the next `STEP_STARTED` until after continuation stream start succeeds
-
-`STEP_FINISHED` for the previous step can still be emitted immediately. The important rule is that a denied next step must not create a fake started step.
+- `CreditGate` middleware is the only HTTP `402` path.
+- `StreamExecutor` performs a second admission check immediately before every provider call. If the initial executor check fails after the HTTP gate passed, it emits `CREDITS_EXHAUSTED`; it does not try to rewrite the HTTP response.
+- Providers with authoritative stream usage settle inline. Providers whose authoritative usage only exists in enrichment defer settlement until native tokens are available.
+- The first authoritative settlement attempt writes `billing_amount_millicredits` to the generation record. Reconciliation reuses that stored amount.
+- `STEP_STARTED` is emitted only after executor admission succeeds, so denied requests do not create fake started steps.
 
 ### CreditGate Middleware
 
 Middleware stays thin and delegates to the service layer:
 
 ```go
-func CreditGate(creditSvc billing.CreditService) func(http.Handler) http.Handler {
+func CreditGate(checker billing.CreditAdmissionChecker) func(http.Handler) http.Handler {
     return func(next http.Handler) http.Handler {
         return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
             userID := httputil.GetUserID(r)
-            if err := creditSvc.CheckAdmission(r.Context(), userID); err != nil {
+            if err := checker.CheckAdmission(r.Context(), userID); err != nil {
                 handleError(w, err, cfg)
                 return
             }
@@ -657,7 +629,8 @@ This is fail-closed by design.
 
 `402 Payment Required` is only valid before the SSE stream begins.
 
-- `POST /api/turns`: middleware or the first authoritative step check returns HTTP `402`
+- `POST /api/turns`: `CreditGate` middleware returns HTTP `402`
+- executor denial on the initial request after middleware admit: the stream is already on the `201` path, so the backend must emit `CREDITS_EXHAUSTED`
 - later tool continuations: the SSE stream is already open, so the backend must emit a terminal exhausted-credit event instead of trying to write a new HTTP status
 
 Add a Meridian AG-UI extension event:
@@ -686,14 +659,11 @@ sequenceDiagram
   participant FE as Frontend
   participant SSE as SSE stream
   participant EX as StreamExecutor
-  participant UMP as WrappedProvider
-  participant G as CreditUsageGate
+  participant AC as CreditAdmissionChecker
 
   FE->>SSE: Existing stream remains open
-  EX->>UMP: StreamResponse(ctx with UsageScope)
-  UMP->>G: CheckUsage(scope)
-  G-->>UMP: deny
-  UMP-->>EX: UsageDeniedError
+  EX->>AC: CheckAdmission(userID)
+  AC-->>EX: deny
   EX->>EX: Persist existing blocks only
   EX->>EX: Mark turn status = credit_limited
   EX->>SSE: CREDITS_EXHAUSTED
@@ -719,7 +689,7 @@ Frontend behavior:
 
 Implementation note for the current executor:
 
-- `mstream_adapter.go` and `tool_executor.go` should branch on the mapped domain insufficient-credit error and call a dedicated `handleCreditsExhausted(...)` path
+- `mstream_adapter.go` and `tool_executor.go` should branch on `CreditAdmissionChecker` denial and call a dedicated `handleCreditsExhausted(...)` path
 - that path emits `CREDITS_EXHAUSTED` and marks the turn `credit_limited`
 - do not route insufficient-credit failures through the generic `handleError(...)`, because that emits `RUN_ERROR` and marks the turn `error`
 
@@ -729,11 +699,11 @@ The provider may finish successfully but FIFO deduction may fail because of a tr
 
 Required behavior:
 
-1. Persist exact usage on the generation record first
-2. Attempt `RecordUsage`
-3. If deduction succeeds, mark the generation record `billing_status = settled`
-4. If deduction fails, mark the generation record `billing_status = pending` and enqueue reconciliation
-5. Background reconciliation retries by `usage_event_id`
+1. Persist exact usage plus deterministic billing identifiers on the generation record first
+2. On the first authoritative settlement attempt, compute and store `billing_amount_millicredits`
+3. Attempt FIFO deduction using the stored amount
+4. If deduction succeeds, mark the generation record `billing_status = settled`
+5. If deduction fails, mark the generation record `billing_status = pending` and enqueue reconciliation that reuses the stored amount
 
 Reconciliation key:
 
