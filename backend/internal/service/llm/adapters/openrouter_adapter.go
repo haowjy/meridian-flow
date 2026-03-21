@@ -61,7 +61,7 @@ func (a *OpenRouterAdapter) StreamResponse(ctx context.Context, req *domainllm.G
 	}
 
 	// Call library provider
-	libEventCh, err := a.provider.StreamResponse(ctx, libReq)
+	libStream, err := a.provider.StreamResponse(ctx, libReq)
 	if err != nil {
 		return nil, err
 	}
@@ -72,8 +72,19 @@ func (a *OpenRouterAdapter) StreamResponse(ctx context.Context, req *domainllm.G
 	// Convert library events to backend events
 	go func() {
 		defer close(backendEventCh)
-		for libEvent := range libEventCh {
-			backendEventCh <- convertFromLibraryEvent(libEvent)
+		defer libStream.Close()
+		for libStream.Next() {
+			select {
+			case backendEventCh <- convertFromLibraryEvent(libStream.Event()):
+			case <-ctx.Done():
+				return
+			}
+		}
+		if err := libStream.Err(); err != nil {
+			select {
+			case backendEventCh <- domainllm.StreamEvent{Error: err}:
+			case <-ctx.Done():
+			}
 		}
 	}()
 
