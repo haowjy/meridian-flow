@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 
-import { UserCircle } from "@phosphor-icons/react"
+import { Robot } from "@phosphor-icons/react"
 
 import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
@@ -17,10 +17,10 @@ export function AgentDetail({ detail, depth, renderNestedActivity }: AgentDetail
   const { agent } = detail
 
   return (
-    <Card variant="outline" className="border-border/70 border-l-2 border-l-accent-fill bg-card/90">
+    <Card variant="outline" className="gap-0 rounded-md border-border/70 border-l-2 border-l-accent-fill bg-card/90 py-0">
       <CardContent className="space-y-3 p-3">
         <div className="flex items-center gap-2 text-sm">
-          <UserCircle className="size-4 text-muted-foreground" aria-hidden="true" />
+          <Robot className="size-4 text-muted-foreground" aria-hidden="true" />
           <p className="font-medium text-foreground">Agent: {agent.name}</p>
         </div>
 

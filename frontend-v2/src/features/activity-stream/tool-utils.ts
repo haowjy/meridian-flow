@@ -3,8 +3,8 @@ import {
   Globe,
   MagnifyingGlass,
   PencilSimple,
+  Robot,
   Terminal,
-  UserCircle,
 } from "@phosphor-icons/react"
 
 import type { BadgeProps } from "@/components/ui/badge"
@@ -101,11 +101,15 @@ export function getToolIcon(category: ToolCategory) {
     return Globe
   }
 
+  if (category === "agent") {
+    return Robot
+  }
+
   if (category === "bash" || category === "other") {
     return Terminal
   }
 
-  return UserCircle
+  return Terminal
 }
 
 function pluralize(count: number, singular: string, plural: string) {

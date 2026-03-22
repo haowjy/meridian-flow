@@ -19,7 +19,7 @@ function getDomain(url: string) {
 
 export function WebSearchDetail({ detail }: WebSearchDetailProps) {
   return (
-    <Card variant="outline" className="border-border/70">
+    <Card variant="outline" className="gap-0 rounded-md border-border/70 py-0">
       <CardContent className="space-y-2 p-3">
         {detail.results.length === 0 ? (
           <p className="text-sm text-muted-foreground">No results found.</p>
