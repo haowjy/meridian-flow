@@ -163,8 +163,7 @@ export const CompletedTurn: Story = {
           id: "completed",
           isStreaming: false,
           items: [
-            readTool("c-read-1", "chapters/chapter-18.md"),
-            readTool("c-read-2", "chapters/chapter-19.md"),
+            readTool("c-read-1", "chapters/chapter-19.md"),
             searchTool("c-search-1", "meditation hall"),
             editTool("c-edit-1", "chapters/chapter-19.md"),
           ],
